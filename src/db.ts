@@ -1,5 +1,6 @@
 import { openDB, type DBSchema } from 'idb'
 import { assertImportBundleSafe } from './importDiagnostics'
+import { actionForProcessEvent } from './processEvents'
 import type {
   Action,
   ApplicationGroup,
@@ -7,6 +8,7 @@ import type {
   ImportMeta,
   Opportunity,
   Prep,
+  ProcessEvent,
   ProcessRecord,
 } from './model'
 
@@ -15,6 +17,11 @@ interface PJSDASDatabase extends DBSchema {
   processes: {
     key: string
     value: ProcessRecord
+    indexes: { 'by-opportunity': string }
+  }
+  processEvents: {
+    key: string
+    value: ProcessEvent
     indexes: { 'by-opportunity': string }
   }
   actions: {
@@ -27,13 +34,17 @@ interface PJSDASDatabase extends DBSchema {
   meta: { key: string; value: ImportMeta }
 }
 
-export const dbPromise = openDB<PJSDASDatabase>('pjsdas', 2, {
+export const dbPromise = openDB<PJSDASDatabase>('pjsdas', 3, {
   upgrade(db) {
     if (!db.objectStoreNames.contains('opportunities')) {
       db.createObjectStore('opportunities', { keyPath: 'id' })
     }
     if (!db.objectStoreNames.contains('processes')) {
       const store = db.createObjectStore('processes', { keyPath: 'id' })
+      store.createIndex('by-opportunity', 'opportunityId')
+    }
+    if (!db.objectStoreNames.contains('processEvents')) {
+      const store = db.createObjectStore('processEvents', { keyPath: 'id' })
       store.createIndex('by-opportunity', 'opportunityId')
     }
     if (!db.objectStoreNames.contains('actions')) {
@@ -64,6 +75,10 @@ export async function getAllProcesses() {
   return (await dbPromise).getAll('processes')
 }
 
+export async function getAllProcessEvents() {
+  return (await dbPromise).getAll('processEvents')
+}
+
 export async function getAllPrep() {
   return (await dbPromise).getAll('prep')
 }
@@ -83,6 +98,23 @@ export async function updateActionStatus(id: string, status: Action['status']) {
   await db.put('actions', { ...action, status, updatedAt: new Date().toISOString() })
 }
 
+export async function addProcessEvent(event: ProcessEvent) {
+  const db = await dbPromise
+  const tx = db.transaction(['processEvents', 'actions'], 'readwrite')
+  await tx.objectStore('processEvents').put(event)
+  const action = actionForProcessEvent(event)
+  if (action) await tx.objectStore('actions').put(action)
+  await tx.done
+}
+
+export async function deleteProcessEvent(id: string) {
+  const db = await dbPromise
+  const tx = db.transaction(['processEvents', 'actions'], 'readwrite')
+  await tx.objectStore('processEvents').delete(id)
+  await tx.objectStore('actions').delete(`event-action:${id}`)
+  await tx.done
+}
+
 export async function replaceImportedData(bundle: ImportBundle) {
   // Validate before opening the destructive replacement transaction. A malformed
   // future workbook must fail closed instead of partially overwriting good data.
@@ -91,11 +123,13 @@ export async function replaceImportedData(bundle: ImportBundle) {
   const db = await dbPromise
 
   // Re-importing an updated spreadsheet must not resurrect actions the user has
-  // already completed or skipped. Action IDs are treated as stable source IDs.
+  // already completed or skipped. Process-event actions are local records rather
+  // than Excel-derived records, so they must survive the replacement entirely.
   const previousActions = await db.getAll('actions')
   const previousState = new Map(
     previousActions.map((item) => [item.id, { status: item.status, updatedAt: item.updatedAt }]),
   )
+  const localEventActions = previousActions.filter((item) => item.processEventId)
 
   const tx = db.transaction(
     ['opportunities', 'processes', 'actions', 'prep', 'applicationGroups', 'meta'],
@@ -121,6 +155,7 @@ export async function replaceImportedData(bundle: ImportBundle) {
         : item,
     )
   }
+  for (const item of localEventActions) await tx.objectStore('actions').put(item)
   for (const item of bundle.prep) await tx.objectStore('prep').put(item)
   for (const item of bundle.applicationGroups) await tx.objectStore('applicationGroups').put(item)
   await tx.objectStore('meta').put({ key: 'lastImport', ...bundle.summary })
