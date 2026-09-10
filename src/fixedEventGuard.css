@@ -1,7 +1,7 @@
 .fixed-guard {
   position: fixed;
   left: 50%;
-  bottom: 20px;
+  bottom: 140px;
   z-index: 70;
   width: min(760px, calc(100vw - 40px));
   transform: translateX(-50%);
@@ -73,7 +73,7 @@
   .fixed-guard {
     left: 12px;
     right: 12px;
-    bottom: 74px;
+    bottom: 132px;
     width: auto;
     transform: none;
     align-items: stretch;
