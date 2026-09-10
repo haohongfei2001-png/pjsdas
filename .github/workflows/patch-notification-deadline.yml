@@ -1,0 +1,76 @@
+name: Patch notification deadline parser
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/patch-notification-deadline.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Patch invitation classification and duration parsing
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('src/notificationParser.ts')
+          s = p.read_text()
+
+          old = """  if (/(未通过|很遗憾|流程结束|终止流程|暂不匹配|感谢.*关注)/.test(text)) {
+    return { type: 'rejection', confidence: 'high' }
+  }
+"""
+          new = """  if (
+    /(未通过|很遗憾|流程结束|终止流程|暂不匹配)/.test(text) ||
+    /感谢.*(?:参与|申请|投递).*?(?:遗憾|未能|不匹配)/.test(text)
+  ) {
+    return { type: 'rejection', confidence: 'high' }
+  }
+"""
+          if old not in s: raise SystemExit('rejection detection anchor not found')
+          s = s.replace(old, new, 1)
+
+          old = "  if (/(截止|最晚|前完成|之前完成|有效期至|有效期到|请在.*前|请于.*前)/.test(text)) return 'deadline'\n"
+          new = "  if (/(截止|最晚|前完成|之前完成|有效期至|有效期到|失效|链接.*失效|请在.*前|请于.*前)/.test(text)) return 'deadline'\n"
+          if old not in s: raise SystemExit('deadline mode anchor not found')
+          s = s.replace(old, new, 1)
+
+          anchor = "export function parseRecruitingNotification(\n"
+          helper = """function estimatedMinutesFromText(text: string, type?: ProcessEventType) {
+  if (!type) return undefined
+  const range = text.match(/(\\d{1,3})\\s*[-–—~～至到]\\s*(\\d{1,3})\\s*分钟/)
+  if (range?.[1] && range[2]) {
+    const upper = Math.max(Number(range[1]), Number(range[2]))
+    if (upper >= 5 && upper <= 360) return upper
+  }
+  const single = text.match(/(?:约|大约|预计|作答时间约)?\\s*(\\d{1,3})\\s*分钟/)
+  if (single?.[1]) {
+    const minutes = Number(single[1])
+    if (minutes >= 5 && minutes <= 360) return minutes
+  }
+  return defaultMinutesForProcessEvent(type)
+}
+
+""" + anchor
+          if anchor not in s: raise SystemExit('parse function anchor not found')
+          s = s.replace(anchor, helper, 1)
+
+          old = "    estimatedMinutes: typeMatch.type ? defaultMinutesForProcessEvent(typeMatch.type) : undefined,\n"
+          new = "    estimatedMinutes: estimatedMinutesFromText(text, typeMatch.type),\n"
+          if old not in s: raise SystemExit('estimated minutes return anchor not found')
+          s = s.replace(old, new, 1)
+
+          p.write_text(s)
+          PY
+      - name: Commit patch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/notificationParser.ts
+          git commit -m "Parse expiring assessment invitations accurately"
+          git push
