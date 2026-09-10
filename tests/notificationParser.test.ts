@@ -75,6 +75,12 @@ describe('notification type detection', () => {
     expect(detectNotificationType('恭喜收到录用通知').type).toBe('offer')
     expect(detectNotificationType('很遗憾本次流程未通过').type).toBe('rejection')
   })
+
+  it('does not mistake a polite assessment invitation for a rejection', () => {
+    expect(
+      detectNotificationType('感谢您关注并投递职位，现诚挚邀请您参加在线人才测评。').type,
+    ).toBe('assessment_invite')
+  })
 })
 
 describe('full notification parsing', () => {
@@ -95,6 +101,36 @@ describe('full notification parsing', () => {
     expect(due.getHours()).toBe(23)
     expect(due.getMinutes()).toBe(59)
     expect(result.confidence.time).toBe('high')
+  })
+
+  it('parses an expiring assessment link and reserves the upper bound of a stated duration range', () => {
+    const target: Opportunity = {
+      id: 'ASSESSMENT-ROLE',
+      company: '甲存储',
+      role: '产品经理',
+      currentStageLabel: '筛选中',
+      processStage: 'screening',
+      roleType: 'core',
+      early: false,
+      opportunityValue: 90,
+      fitScore: 70,
+      importedAt: '2026-09-01T00:00:00.000Z',
+    }
+    const result = parseRecruitingNotification(
+      '感谢您关注并投递甲存储职位，现诚挚邀请您参加在线人才测评-作答时间约25-30分钟。作答链接将在2026年09月12日 周六 08:10失效，请充分准备后及时完成。',
+      [target],
+      now,
+    )
+    expect(result.opportunity?.id).toBe('ASSESSMENT-ROLE')
+    expect(result.type).toBe('assessment_invite')
+    expect(result.timingMode).toBe('deadline')
+    expect(result.estimatedMinutes).toBe(30)
+    const due = new Date(result.dueAt!)
+    expect(due.getFullYear()).toBe(2026)
+    expect(due.getMonth()).toBe(8)
+    expect(due.getDate()).toBe(12)
+    expect(due.getHours()).toBe(8)
+    expect(due.getMinutes()).toBe(10)
   })
 
   it('parses a fixed interview and never converts it to deadline work', () => {
