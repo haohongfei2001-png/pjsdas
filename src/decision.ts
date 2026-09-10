@@ -25,11 +25,31 @@ export function computePriority(opportunity: Opportunity, now = new Date()): Pri
   return opportunity.early ? 'P1' : 'P2'
 }
 
-function urgencyScore(action: Action, now: Date) {
-  if (!action.dueAt) return action.kind === 'prep' ? 30 : 18
-  const hours = (new Date(action.dueAt).getTime() - now.getTime()) / HOUR
+function hoursUntil(dueAt: string | undefined, now: Date) {
+  if (!dueAt) return undefined
+  return (new Date(dueAt).getTime() - now.getTime()) / HOUR
+}
 
-  if (hours <= 0) return action.kind === 'apply' ? 0 : 100
+function urgencyScore(action: Action, now: Date) {
+  const hours = hoursUntil(action.dueAt, now)
+  if (hours === undefined) return action.kind === 'prep' ? 30 : 18
+
+  // A missed application deadline is no longer actionable. Follow-up dates are
+  // management checkpoints, not employer deadlines, so overdue follow-ups must
+  // not dominate a real hard deadline forever.
+  if (hours <= 0) {
+    if (action.kind === 'apply') return 0
+    if (action.kind === 'follow_up') return 72
+    return 70
+  }
+
+  if (action.kind === 'follow_up') {
+    if (hours <= 24) return 72
+    if (hours <= 72) return 60
+    if (hours <= 168) return 48
+    return 34
+  }
+
   if (hours <= 6) return 100
   if (hours <= 12) return 96
   if (hours <= 24) return 92
@@ -87,8 +107,16 @@ export function rankAction(
     breakdown.timeEfficiency * 0.07
 
   const reasons: string[] = []
-  if (breakdown.urgency >= 90) reasons.push('节点非常近')
-  else if (breakdown.urgency >= 70) reasons.push('近期节点')
+  const hours = hoursUntil(action.dueAt, now)
+  if (action.kind === 'apply' && hours !== undefined && hours >= 0 && hours <= 24) {
+    reasons.push('今天硬截止')
+  } else if (action.kind === 'apply' && hours !== undefined && hours <= 48) {
+    reasons.push('明天硬截止')
+  } else if (breakdown.urgency >= 90) {
+    reasons.push('节点非常近')
+  } else if (breakdown.urgency >= 70) {
+    reasons.push('近期节点')
+  }
   if (opportunity?.roleType === 'core') reasons.push('核心机会')
   if (opportunity?.early) reasons.push('早投有收益')
   if (breakdown.fit >= 72) reasons.push('现实成功率较高')
@@ -118,4 +146,59 @@ export function rankActions(actions: Action[], opportunities: Opportunity[], now
       ),
     )
     .sort((a, b) => b.score - a.score || a.action.estimatedMinutes - b.action.estimatedMinutes)
+}
+
+/**
+ * Turns the global score ranking into a usable daily queue.
+ *
+ * Guardrails:
+ * - real application deadlines inside 48h are surfaced first and ordered by time;
+ * - pipeline review reminders cannot occupy the entire Today page;
+ * - reusable preparation also gets a small cap;
+ * - everything else still follows the explainable score.
+ */
+export function selectTodayActions(ranked: RankedAction[], now = new Date(), limit = 10) {
+  const selected: RankedAction[] = []
+  const selectedIds = new Set<string>()
+
+  const hardDeadlines = ranked
+    .filter((item) => {
+      if (item.action.kind !== 'apply') return false
+      const hours = hoursUntil(item.action.dueAt, now)
+      return hours !== undefined && hours >= 0 && hours <= 48
+    })
+    .sort((a, b) => {
+      const aDue = new Date(a.action.dueAt!).getTime()
+      const bDue = new Date(b.action.dueAt!).getTime()
+      return aDue - bDue || b.score - a.score
+    })
+
+  for (const item of hardDeadlines) {
+    if (selected.length >= limit) break
+    selected.push(item)
+    selectedIds.add(item.action.id)
+  }
+
+  let followUps = 0
+  let prepItems = 0
+
+  for (const item of ranked) {
+    if (selected.length >= limit) break
+    if (selectedIds.has(item.action.id)) continue
+
+    if (item.action.kind === 'follow_up') {
+      if (followUps >= 2) continue
+      followUps += 1
+    }
+
+    if (item.action.kind === 'prep') {
+      if (prepItems >= 2) continue
+      prepItems += 1
+    }
+
+    selected.push(item)
+    selectedIds.add(item.action.id)
+  }
+
+  return selected
 }
