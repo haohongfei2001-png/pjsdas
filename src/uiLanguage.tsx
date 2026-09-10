@@ -71,7 +71,7 @@ const dictionary = {
   'prep.subtitle': ['只保留能跨岗位复用、并被真实机会或流程触发的准备。', 'Keep reusable preparation that is triggered by real opportunities or active processes.'],
 
   'settings.title': ['导入与设置', 'Import & Settings'],
-  'settings.subtitle': ['Excel 用于初始导入和恢复；日常更新优先通过自然语言进展与流程通知完成。', 'Use Excel for initial import and recovery; maintain day-to-day state through progress updates and process notifications.'],
+  'settings.subtitle': ['本地 IndexedDB 始终可独立工作；账号与云端同步用于跨设备恢复和未来 AI 接入。Excel 继续只承担初始导入与恢复。', 'Local IndexedDB always works independently; account and cloud sync support cross-device recovery and future AI access. Excel remains an initialization and recovery path.'],
   'settings.languageTitle': ['界面语言', 'Interface language'],
   'settings.languageText': ['切换一级目录、页面标题与主要操作。岗位和公司等原始数据保持原文。', 'Switch primary navigation, page headings and major controls. Company and role data remain unchanged.'],
   'settings.chooseFile': ['选择文件', 'Choose file'],

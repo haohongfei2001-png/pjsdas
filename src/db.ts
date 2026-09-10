@@ -676,6 +676,26 @@ export async function exportLocalSnapshot() {
   })
 }
 
+export async function replaceLocalSnapshotFromCloud(snapshot: PJSDASSnapshot) {
+  validateSnapshot(snapshot)
+
+  const db = await dbPromise
+  const tx = db.transaction([...DATA_STORES], 'readwrite')
+  await Promise.all(DATA_STORES.map((storeName) => tx.objectStore(storeName).clear()))
+
+  for (const item of snapshot.data.opportunities) await tx.objectStore('opportunities').put(item)
+  for (const item of snapshot.data.processes) await tx.objectStore('processes').put(item)
+  for (const item of snapshot.data.processEvents) await tx.objectStore('processEvents').put(item)
+  for (const item of snapshot.data.actions) await tx.objectStore('actions').put(item)
+  for (const item of snapshot.data.prep) await tx.objectStore('prep').put(item)
+  for (const item of snapshot.data.applicationGroups) await tx.objectStore('applicationGroups').put(item)
+  await tx.objectStore('decisionRules').put(snapshot.data.decisionRules ?? createDefaultDecisionRules())
+  for (const item of snapshot.data.timeline ?? []) await tx.objectStore('timeline').put(item)
+  for (const item of snapshot.data.changeSets ?? []) await tx.objectStore('changeSets').put(item)
+  if (snapshot.data.meta) await tx.objectStore('meta').put(snapshot.data.meta)
+  await tx.done
+}
+
 export async function restoreLocalSnapshot(snapshot: PJSDASSnapshot) {
   validateSnapshot(snapshot)
 

@@ -1,4 +1,4 @@
-import { StrictMode, useState } from 'react'
+import { StrictMode, useEffect, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import App from './AppV5'
 import FixedEventGuard from './FixedEventGuard'
@@ -6,12 +6,18 @@ import LocalBackupDock from './LocalBackupDock'
 import ProcessEventDock from './ProcessEventDock'
 import ProgressInbox from './ProgressInbox'
 import { UiLanguageProvider } from './uiLanguage'
+import { CloudProvider } from './cloud/CloudContext'
 import './styles.css'
 import './designSystem.css'
 
 function Root() {
   const [revision, setRevision] = useState(0)
   const refresh = () => setRevision((value) => value + 1)
+  useEffect(() => {
+    const handleWorkspaceReplace = () => setRevision((value) => value + 1)
+    window.addEventListener('pjsdas:workspace-replaced', handleWorkspaceReplace)
+    return () => window.removeEventListener('pjsdas:workspace-replaced', handleWorkspaceReplace)
+  }, [])
   return (
     <>
       <App key={revision} />
@@ -26,7 +32,9 @@ function Root() {
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <UiLanguageProvider>
-      <Root />
+      <CloudProvider>
+        <Root />
+      </CloudProvider>
     </UiLanguageProvider>
   </StrictMode>,
 )

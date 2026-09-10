@@ -27,6 +27,7 @@ import { currentUiLanguage, useUiLanguage } from './uiLanguage'
 import { DEFAULT_DECISION_RULES, type DecisionRules } from './decisionRules'
 import RulesView from './RulesView'
 import TimelineView from './TimelineView'
+import CloudSettingsCard from './cloud/CloudSettingsCard'
 import type { ChangeSetRecord } from './changeSet'
 import type {
   Action,
@@ -598,6 +599,8 @@ function SettingsView({ lastImport, onImported }: { lastImport?: ImportMeta; onI
         </div>
         <LanguageSwitch />
       </div>
+
+      <CloudSettingsCard />
 
       <div className="import-card">
         <div>

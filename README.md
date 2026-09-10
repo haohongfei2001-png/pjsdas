@@ -110,3 +110,16 @@ Restore is deliberately destructive but two-step: the selected JSON file is pars
 ## Status
 
 **v0.9** makes PJSDAS's decision and mutation layers explicit. Decision Rules are persisted user-controlled data, Timeline is a first-class factual history, and ChangeSet is the unified review/apply protocol for normalized mutations. Natural-language updates no longer write business state directly: they stage a ChangeSet, the user reviews it, and only confirmation applies it. Explicit UI actions use the same protocol with the click/save action serving as confirmation. Excel remains initialization/history migration and recovery rather than the daily source of truth. Cloud sync, account login, MCP/ChatGPT integration and automatic job discovery remain outside v0.9.
+
+
+## v1.0 account and cloud sync
+
+v1.0 keeps the local-first execution model: IndexedDB is still the immediate workspace used by the UI, and the application remains fully functional when cloud configuration is absent or the network is unavailable.
+
+When Supabase is configured, PJSDAS adds Google sign-in and one private cloud workspace per authenticated user. The browser synchronizes a validated PJSDAS snapshot with a monotonically increasing cloud revision. A SHA-256 fingerprint identifies whether the local workspace changed. Only-local changes push; only-remote changes pull; concurrent changes fail closed into an explicit conflict instead of using last-write-wins.
+
+The cloud row is protected by Supabase Row Level Security (`auth.uid() = user_id`). GitHub Pages receives only the project URL and Supabase Publishable key. A `service_role` key must never be exposed to the frontend.
+
+The first sync binds the browser's current local workspace to that account. Signing into another account pauses synchronization rather than silently uploading the existing user's job-search data. Conflict resolution always requires an explicit choice between the local and cloud versions.
+
+See `docs/CLOUD_SETUP.md` and `supabase/schema.sql` for deployment setup. Until those external settings are completed, the public site intentionally remains local-only while all v1.0 client-side sync code stays dormant.
