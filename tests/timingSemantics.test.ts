@@ -80,10 +80,11 @@ describe('process-event timing semantics', () => {
 
     expect(plan.planned.map((item) => item.action.id)).not.toContain(action.id)
     expect(plan.totalMinutes).toBe(0)
+    expect(plan.fixedTodayMinutes).toBe(0)
     expect(plan.upcomingFixedEvents.map((item) => item.action.id)).toContain(action.id)
   })
 
-  it('protects a fixed event that actually happens today', () => {
+  it('reserves today fixed event capacity without presenting it as startable work', () => {
     const event = createProcessEvent({
       opportunity,
       type: 'interview_invite',
@@ -96,7 +97,9 @@ describe('process-event timing semantics', () => {
     const ranked = rankActions([action], [opportunity], now)
     const plan = buildTimePlan(ranked, 60, now)
 
-    expect(plan.planned.map((item) => item.action.id)).toContain(action.id)
+    expect(plan.planned.map((item) => item.action.id)).not.toContain(action.id)
+    expect(plan.upcomingFixedEvents.map((item) => item.action.id)).toContain(action.id)
+    expect(plan.fixedTodayMinutes).toBe(90)
     expect(plan.requiredTodayMinutes).toBe(90)
     expect(plan.overrunReason).toBe('today_deadlines')
   })
