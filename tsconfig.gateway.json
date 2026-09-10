@@ -11,5 +11,5 @@
     "noEmit": true,
     "strict": true
   },
-  "include": ["gateway/**/*.ts", "src/**/*.ts"]
+  "include": ["gateway/**/*.ts", "api/**/*.ts", "src/**/*.ts"]
 }
