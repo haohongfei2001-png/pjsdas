@@ -1,0 +1,135 @@
+{
+  "schema": "pjsdas-local-snapshot",
+  "version": 1,
+  "exportedAt": "2026-09-11T01:00:00.000Z",
+  "data": {
+    "opportunities": [
+      {
+        "id": "opp-alpha",
+        "company": "示例科技",
+        "role": "AI 产品经理",
+        "currentStageLabel": "待投",
+        "processStage": "not_applied",
+        "roleType": "core",
+        "early": true,
+        "deadline": "2026-09-12T23:59:00+08:00",
+        "opportunityValue": 88,
+        "fitScore": 76,
+        "importedAt": "2026-09-10T08:00:00+08:00"
+      },
+      {
+        "id": "opp-beta",
+        "company": "示例汽车",
+        "role": "战略规划培训生",
+        "currentStageLabel": "筛选中",
+        "processStage": "screening",
+        "roleType": "reach",
+        "early": false,
+        "opportunityValue": 84,
+        "fitScore": 72,
+        "importedAt": "2026-09-08T08:00:00+08:00"
+      }
+    ],
+    "processes": [
+      {
+        "id": "proc-beta",
+        "opportunityId": "opp-beta",
+        "company": "示例汽车",
+        "role": "战略规划培训生",
+        "stage": "screening",
+        "stageLabel": "筛选中",
+        "lastProgressAt": "2026-09-09T08:00:00+08:00",
+        "nextCheckAt": "2026-09-15T00:00:00+08:00"
+      }
+    ],
+    "processEvents": [
+      {
+        "id": "evt-beta-interview",
+        "opportunityId": "opp-beta",
+        "company": "示例汽车",
+        "role": "战略规划培训生",
+        "type": "interview_invite",
+        "occurredAt": "2026-09-11T08:00:00+08:00",
+        "dueAt": "2026-09-12T10:00:00+08:00",
+        "timingMode": "fixed",
+        "estimatedMinutes": 60,
+        "source": "other",
+        "createdAt": "2026-09-11T08:00:00+08:00",
+        "updatedAt": "2026-09-11T08:00:00+08:00"
+      }
+    ],
+    "actions": [
+      {
+        "id": "apply:opp-alpha",
+        "kind": "apply",
+        "title": "投递 示例科技｜AI 产品经理",
+        "opportunityId": "opp-alpha",
+        "processStage": "not_applied",
+        "dueAt": "2026-09-12T23:59:00+08:00",
+        "timingMode": "deadline",
+        "estimatedMinutes": 45,
+        "leverage": 85,
+        "delayCost": 80,
+        "status": "todo",
+        "sourceLabel": "MCP Demo",
+        "createdAt": "2026-09-10T08:00:00+08:00",
+        "updatedAt": "2026-09-10T08:00:00+08:00"
+      }
+    ],
+    "prep": [],
+    "applicationGroups": [],
+    "decisionRules": {
+      "key": "current",
+      "version": 1,
+      "hardDeadlineHorizonHours": 48,
+      "fixedEventHorizonHours": 48,
+      "nearDeadlineStretchMinutes": 30,
+      "followUpDailyCap": 2,
+      "prepDailyCap": 2,
+      "upcomingHorizonDays": 7,
+      "upcomingNodeLimit": 12,
+      "riskCriticalHours": 6,
+      "riskHighHours": 24,
+      "riskNearHours": 48,
+      "riskWatchHours": 72,
+      "weights": {
+        "opportunity": 19,
+        "fit": 12,
+        "urgency": 23,
+        "stage": 12,
+        "leverage": 15,
+        "delayCost": 12,
+        "timeEfficiency": 7
+      },
+      "updatedAt": "2026-09-10T08:00:00+08:00"
+    },
+    "timeline": [
+      {
+        "id": "timeline-alpha-added",
+        "kind": "opportunity_added",
+        "category": "opportunity",
+        "source": "user_action",
+        "occurredAt": "2026-09-10T08:00:00+08:00",
+        "recordedAt": "2026-09-10T08:00:00+08:00",
+        "title": "加入 示例科技｜AI 产品经理",
+        "opportunityId": "opp-alpha",
+        "company": "示例科技",
+        "role": "AI 产品经理"
+      },
+      {
+        "id": "timeline-beta-interview",
+        "kind": "process_event_recorded",
+        "category": "process",
+        "source": "process_event",
+        "occurredAt": "2026-09-11T08:00:00+08:00",
+        "recordedAt": "2026-09-11T08:00:00+08:00",
+        "title": "示例汽车进入面试阶段",
+        "opportunityId": "opp-beta",
+        "processEventId": "evt-beta-interview",
+        "company": "示例汽车",
+        "role": "战略规划培训生"
+      }
+    ],
+    "changeSets": []
+  }
+}
