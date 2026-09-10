@@ -4,6 +4,7 @@ import {
   actionForProcessEvent,
   overlayProcessEventsOnOpportunities,
   overlayProcessEventsOnProcesses,
+  reconcileProcessEventActions,
   suppressSupersededActions,
 } from './processEvents'
 import { mergeActionsForReimport } from './reimportState'
@@ -96,11 +97,15 @@ export async function getAllOpportunities() {
 
 export async function getAllActions() {
   const db = await dbPromise
-  const [actions, opportunities] = await Promise.all([
+  const [actions, opportunities, events] = await Promise.all([
     db.getAll('actions'),
     effectiveOpportunities(db),
+    db.getAll('processEvents'),
   ])
-  return suppressSupersededActions(actions, opportunities)
+  return suppressSupersededActions(
+    reconcileProcessEventActions(actions, events),
+    opportunities,
+  )
 }
 
 export async function getAllProcesses() {

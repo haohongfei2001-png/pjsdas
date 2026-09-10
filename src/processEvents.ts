@@ -271,6 +271,29 @@ export function overlayProcessEventsOnProcesses(
   return overlaid
 }
 
+export function reconcileProcessEventActions(
+  actions: Action[],
+  events: ProcessEvent[],
+): Action[] {
+  const byId = new Map(actions.map((item) => [item.id, item]))
+
+  for (const event of events) {
+    const generated = actionForProcessEvent(event)
+    if (!generated) continue
+    const previous = byId.get(generated.id)
+    byId.set(generated.id, previous
+      ? {
+          ...generated,
+          status: previous.status,
+          createdAt: previous.createdAt,
+          updatedAt: previous.updatedAt,
+        }
+      : generated)
+  }
+
+  return [...byId.values()]
+}
+
 export function suppressSupersededActions(
   actions: Action[],
   opportunities: Opportunity[],
@@ -282,7 +305,15 @@ export function suppressSupersededActions(
     const opportunity = opportunityMap.get(action.opportunityId)
 
     if (action.processEventId) {
-      return opportunity?.effectiveProcessEventId === action.processEventId
+      if (opportunity?.effectiveProcessEventId) {
+        return opportunity.effectiveProcessEventId === action.processEventId
+      }
+      return Boolean(
+        opportunity &&
+        action.dueAt &&
+        action.processStage &&
+        opportunity.processStage === action.processStage
+      )
     }
 
     if (!opportunity?.effectiveProcessEventId) return true

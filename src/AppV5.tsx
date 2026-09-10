@@ -126,7 +126,6 @@ function AppV5() {
             ranked={ranked}
             now={now}
             opportunities={opportunities}
-            processes={processes}
             groups={groups}
             onMark={markAction}
           />
@@ -148,14 +147,12 @@ function TodayView({
   ranked,
   now,
   opportunities,
-  processes,
   groups,
   onMark,
 }: {
   ranked: ReturnType<typeof rankActions>
   now: Date
   opportunities: Opportunity[]
-  processes: ProcessRecord[]
   groups: ApplicationGroup[]
   onMark: (id: string, status: Action['status']) => Promise<void>
 }) {
@@ -163,15 +160,10 @@ function TodayView({
   const plan = buildTimePlan(ranked, budgetMinutes, now)
   const opportunityMap = new Map(opportunities.map((item) => [item.id, item]))
   const groupMap = new Map(groups.map((item) => [item.id, item]))
-  const pending = opportunities.filter((item) => item.currentStageLabel === '待投')
-  const expired = pending.filter((item) => computePriority(item, now) === 'expired').length
-  const p0 = pending.filter((item) => computePriority(item, now) === 'P0').length
-  const p1 = pending.filter((item) => computePriority(item, now) === 'P1').length
-  const review = processes.filter((item) => processNeedsReview(item, now)).length
   const top = plan.planned[0]
   const nextUnplanned = plan.nearDeadlineUnplanned[0]
   const nextFixed = plan.upcomingFixedEvents[0]
-  const upcoming = upcomingNodes(ranked, now, 7, 8)
+  const upcoming = upcomingNodes(ranked, now, 7, 12)
   const plannedIds = new Set(plan.planned.map((item) => item.action.id))
 
   return (
@@ -186,14 +178,30 @@ function TodayView({
         </div>
       </header>
 
-      {opportunities.length > 0 ? (
-        <div className="metric-grid">
-          <Metric label="待投" value={pending.length} />
-          <Metric label="P0 · 3天内" value={p0} emphasis />
-          <Metric label="P1 · 14天内/抢先" value={p1} />
-          <Metric label="已过节点" value={expired} />
-          <Metric label="在途" value={processes.length} />
-          <Metric label="需复核" value={review} emphasis={review > 0} />
+      {upcoming.length > 0 ? (
+        <div className="upcoming-panel">
+          <div className="upcoming-heading">
+            <div>
+              <div className="eyebrow">UPCOMING NODES · NEXT 7 DAYS</div>
+              <h2>近期节点</h2>
+              <p>这里看未来几天会发生什么；即使不在今天的时间预算里，也不会消失。</p>
+            </div>
+            <span>{upcoming.length} 个节点</span>
+          </div>
+          <div className="upcoming-list">
+            {upcoming.map((item) => (
+              <article className="upcoming-item" key={`upcoming-${item.action.id}`}>
+                <div className="upcoming-copy">
+                  <strong>{item.action.title}</strong>
+                  <small>{item.action.timingMode === 'fixed' ? '固定安排' : '截止节点'} · {formatDateTime(item.action.dueAt!)}</small>
+                </div>
+                <div className="upcoming-risk">
+                  <TimeRiskBadge action={item.action} now={now} compact />
+                  {plannedIds.has(item.action.id) ? <small>已纳入今日计划</small> : <small>提前有预期</small>}
+                </div>
+              </article>
+            ))}
+          </div>
         </div>
       ) : null}
 
@@ -258,33 +266,6 @@ function TodayView({
       {!plan.overrunReason && nextUnplanned ? (
         <div className="notice warning plan-notice">
           48 小时内还有 {plan.nearDeadlineUnplanned.length} 个可提前完成的硬截止无法完整装入当前预算。最近的是“{nextUnplanned.action.title}”，预计需要 {formatMinutes(nextUnplanned.action.estimatedMinutes)}；剩余时间应优先留给它，而不是被低优先级小任务填满。
-        </div>
-      ) : null}
-
-      {upcoming.length > 0 ? (
-        <div className="upcoming-panel">
-          <div className="upcoming-heading">
-            <div>
-              <div className="eyebrow">UPCOMING NODES · NEXT 7 DAYS</div>
-              <h2>近期节点</h2>
-              <p>这里看未来几天会发生什么；即使不在今天的时间预算里，也不会消失。</p>
-            </div>
-            <span>{upcoming.length} 个节点</span>
-          </div>
-          <div className="upcoming-list">
-            {upcoming.map((item) => (
-              <article className="upcoming-item" key={`upcoming-${item.action.id}`}>
-                <div className="upcoming-copy">
-                  <strong>{item.action.title}</strong>
-                  <small>{item.action.timingMode === 'fixed' ? '固定安排' : '截止节点'} · {formatDateTime(item.action.dueAt!)}</small>
-                </div>
-                <div className="upcoming-risk">
-                  <TimeRiskBadge action={item.action} now={now} compact />
-                  {plannedIds.has(item.action.id) ? <small>已纳入今日计划</small> : <small>提前有预期</small>}
-                </div>
-              </article>
-            ))}
-          </div>
         </div>
       ) : null}
 
@@ -366,8 +347,23 @@ function TodayView({
   )
 }
 
+type OpportunityScope = 'active' | 'pipeline' | 'expired' | 'closed' | 'all'
+
+function opportunityScopeMatches(item: Opportunity, scope: OpportunityScope, now: Date) {
+  const priority = computePriority(item, now)
+  if (scope === 'all') return true
+  if (scope === 'expired') return item.processStage === 'not_applied' && priority === 'expired'
+  if (scope === 'closed') return item.processStage === 'closed'
+  if (scope === 'pipeline') {
+    return ['screening', 'assessment', 'written_test', 'interview', 'offer'].includes(item.processStage)
+  }
+  return item.processStage === 'waiting_release' ||
+    (item.processStage === 'not_applied' && priority !== 'expired')
+}
+
 function OpportunitiesView({ opportunities, groups }: { opportunities: Opportunity[]; groups: ApplicationGroup[] }) {
   const [query, setQuery] = useState('')
+  const [scope, setScope] = useState<OpportunityScope>('active')
   const [role, setRole] = useState('all')
   const [priority, setPriority] = useState('all')
   const now = new Date()
@@ -375,18 +371,19 @@ function OpportunitiesView({ opportunities, groups }: { opportunities: Opportuni
   const filtered = useMemo(() => {
     const needle = query.trim().toLowerCase()
     return [...opportunities]
+      .filter((item) => opportunityScopeMatches(item, scope, now))
       .filter((item) => !needle || `${item.company} ${item.role}`.toLowerCase().includes(needle))
       .filter((item) => role === 'all' || item.roleType === role)
       .filter((item) => priority === 'all' || computePriority(item, now) === priority)
       .sort((a, b) => (a.order ?? 9999) - (b.order ?? 9999))
-  }, [opportunities, query, role, priority])
+  }, [opportunities, query, scope, role, priority])
 
   return (
     <section>
       <PageTitle
         eyebrow="OPPORTUNITIES"
         title="机会池"
-        text="岗位仍按 Opportunity 保存；共享志愿与有限名额由申请组统一约束，不再把相互竞争的岗位当成完全独立机会。"
+        text="默认只看仍需决策的当前机会；已投岗位自动进入 Pipeline，已过期岗位自动移出主列表，但仍可在筛选中查看历史。"
       />
       {opportunities.length === 0 ? (
         <EmptyState title="机会池为空" text="先导入秋招投递表。" />
@@ -394,6 +391,13 @@ function OpportunitiesView({ opportunities, groups }: { opportunities: Opportuni
         <>
           <div className="toolbar">
             <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索公司或岗位" />
+            <select value={scope} onChange={(event) => setScope(event.target.value as OpportunityScope)}>
+              <option value="active">当前机会</option>
+              <option value="pipeline">已投 / 在途</option>
+              <option value="expired">已过期</option>
+              <option value="closed">已结束</option>
+              <option value="all">全部记录</option>
+            </select>
             <select value={role} onChange={(event) => setRole(event.target.value)}>
               <option value="all">全部角色</option>
               <option value="core">核心</option>
