@@ -48,7 +48,7 @@ async function responseText(response: Response) {
 
 describe('PJSDAS remote MCP HTTP alpha', () => {
   it('serves modern MCP discovery over Streamable HTTP', async () => {
-    const response = await remoteMcpHandler(request('server/discover'))
+    const response = await remoteMcpHandler.fetch(request('server/discover'))
     const text = await responseText(response)
 
     expect(response.status).toBe(200)
@@ -58,7 +58,7 @@ describe('PJSDAS remote MCP HTTP alpha', () => {
   })
 
   it('advertises the six read-only PJSDAS tools remotely', async () => {
-    const response = await remoteMcpHandler(request('tools/list'))
+    const response = await remoteMcpHandler.fetch(request('tools/list'))
     const text = await responseText(response)
 
     expect(response.status).toBe(200)
@@ -75,7 +75,7 @@ describe('PJSDAS remote MCP HTTP alpha', () => {
   })
 
   it('executes a read-only tool through the remote HTTP handler', async () => {
-    const response = await remoteMcpHandler(request(
+    const response = await remoteMcpHandler.fetch(request(
       'tools/call',
       { name: 'get_decision_rules', arguments: {} },
       'get_decision_rules',
