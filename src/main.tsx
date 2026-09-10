@@ -2,6 +2,7 @@ import { StrictMode, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import App from './AppV5'
 import FixedEventGuard from './FixedEventGuard'
+import LocalBackupDock from './LocalBackupDock'
 import ProcessEventDock from './ProcessEventDock'
 import './styles.css'
 
@@ -12,6 +13,7 @@ function Root() {
     <>
       <App key={revision} />
       <ProcessEventDock onChanged={refresh} />
+      <LocalBackupDock onChanged={refresh} />
       <FixedEventGuard key={`fixed-${revision}`} onChanged={refresh} />
     </>
   )
