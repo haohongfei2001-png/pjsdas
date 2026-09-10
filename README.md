@@ -8,15 +8,17 @@ PJSDAS is a local-first personal job-search decision workspace. Its purpose is n
 
 **The system should help answer one question within 30 seconds: _What should I do next for my job search?_**
 
+The spreadsheet is now an **initial import / recovery source**, not the daily source of truth. After the first import, the normal workflow is to tell PJSDAS what happened and what is planned in natural language; confirmed local updates become authoritative state.
+
 ## Current workspace
 
 - **Today** — a time-boxed plan that protects real deadlines instead of showing a generic score leaderboard
 - **Opportunities** — the role pool and dynamic application priority
 - **Pipeline** — recruiting-process state and dynamically recalculated review checkpoints
 - **Prep** — reusable preparation across multiple opportunities
-- **Import & Settings** — local spreadsheet import with integrity checks
-- **Process Event capture** — record an actual assessment, written-test, interview, offer, rejection, or status notification without editing the spreadsheet first
-- **Paste notification** — locally parse pasted recruiting text, review the inferred role/event/time, then explicitly confirm before saving
+- **Natural Language Update** — paste several days of job-search history and plans, review a structured diff, then apply additions, changes, closures and process events in one confirmation
+- **Import & Settings** — one-time or recovery-oriented local spreadsheet import with integrity checks
+- **Process Event capture** — precise manual fallback for one assessment, written test, interview, offer, rejection or other recruiting event
 - **Local backup** — export and restore the complete browser workspace as a validated JSON snapshot
 
 ## Core model
@@ -30,7 +32,7 @@ PJSDAS separates job-search state into six concepts:
 5. **Prep** — reusable work that can improve more than one opportunity.
 6. **Today** — the constrained action plan produced by the decision engine under the user's available time.
 
-Imported spreadsheet data remains the baseline. Newer local Process Events are projected over that baseline rather than destructively rewriting it. Deleting the local event therefore restores the imported state automatically.
+Imported spreadsheet data initializes the workspace. Once an Opportunity or Process is changed through Natural Language Update, it is marked as locally managed and is preserved across later spreadsheet re-imports. Local Process Events and local Actions are preserved as well. This makes the browser database, rather than the workbook, the ongoing source of truth.
 
 ## Decision engine
 
@@ -55,17 +57,20 @@ Process Event timing has two explicit semantics:
 
 A fixed event happening today reserves daily capacity but is not presented as “Start here” hours before it begins. If either a fixed event or deadline-style Process Event passes without being resolved, PJSDAS removes it from startable work and asks the user to confirm completion or take recovery action instead of pretending the original task is still executable.
 
-## Paste notification workflow
+## Natural Language Update workflow
 
-v0.7 adds a local, deterministic notification parser for common recruiting messages. The workflow is deliberately conservative:
+v0.8 makes free-form progress updates the primary maintenance path. A user can paste several lines such as application history, renamed roles, closed processes, assessment windows, interviews and planned applications. PJSDAS then:
 
-1. paste a recruiting SMS, email, or portal notification;
-2. PJSDAS proposes a matching opportunity, Process Event type, timing semantics, time, and estimated duration;
-3. ambiguous same-company roles remain unresolved instead of being auto-selected;
-4. the user reviews and can edit every inferred field;
-5. only explicit confirmation writes a Process Event and updates Pipeline / Today.
+1. splits dated history into individual update clauses;
+2. matches existing opportunities or creates new locally managed opportunities when the company/role can be determined safely;
+3. detects application, planned application, role rename, process closure and recruiting events;
+4. resolves relative windows such as “48小时完成” or “7日内” into concrete local deadlines;
+5. distinguishes deadline work from fixed-time events;
+6. shows a structured diff before any write occurs;
+7. applies only confirmed, executable changes to Opportunities / Pipeline / Process Events / Actions;
+8. leaves ambiguous clauses unresolved instead of guessing.
 
-The pasted source text is used for the current parsing session and is not stored by default when the event is saved. The parser does not require an AI API.
+The original pasted text is used only to build the current review plan and is not stored by default. The parser is deterministic and local; it does not require an AI API.
 
 ## Local-first architecture
 
@@ -74,13 +79,13 @@ The pasted source text is used for the current parsing session and is not stored
 - local `.xlsx` parsing in the browser
 - GitHub repository contains application code, not the user's recruiting workbook or imported personal data
 - GitHub Pages deployment
-- Vitest decision/import/process-event/notification/snapshot regression suite in CI
+- Vitest decision/import/process-event/natural-language/snapshot regression suite in CI
 
-Spreadsheet re-import preserves local Process Events and the completion/skip status of stable Actions. Import integrity checks run before destructive replacement so malformed future workbook versions fail closed.
+Spreadsheet re-import preserves locally managed Opportunities and Processes, local Process Events, local natural-language Actions, and the completion/skip status of stable Actions. Import integrity checks run before destructive replacement so malformed future workbook versions fail closed.
 
 ## Local backup and restore
 
-PJSDAS stores more state than the spreadsheet once Process Events and Action completion statuses exist. The versioned local snapshot contains the raw browser stores rather than derived views:
+PJSDAS stores more state than the spreadsheet once Process Events, local opportunity changes and Action completion statuses exist. The versioned local snapshot contains the raw browser stores rather than derived views:
 
 - Opportunities
 - Processes
@@ -94,4 +99,4 @@ Restore is deliberately destructive but two-step: the selected JSON file is pars
 
 ## Status
 
-**v0.7** closes the main local input-to-action loop: spreadsheet baseline → pasted or manually recorded recruiting notification → reviewed Process Event → effective Pipeline state → time-aware Today action → completion/waiting or overdue confirmation → durable local backup. The release keeps ranking deterministic and local-first; AI parsing, cloud sync, automatic email ingestion, and auto-apply remain outside the current scope.
+**v0.8** changes the daily operating model from “maintain Excel, then import” to **“tell PJSDAS what happened and what is planned, review the diff, then confirm.”** Excel remains available for initialization and recovery, while the browser database becomes the ongoing local source of truth. The release keeps parsing deterministic, review-before-write and local-first; AI APIs, cloud sync, automatic email ingestion and auto-apply remain outside the current scope.
