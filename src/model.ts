@@ -9,7 +9,7 @@ export type ProcessStage =
   | 'waiting_release'
   | 'closed'
 
-export type ActionKind = 'apply' | 'follow_up' | 'prep' | 'manual'
+export type ActionKind = 'apply' | 'follow_up' | 'prep' | 'group_decision' | 'manual'
 export type ActionStatus = 'todo' | 'doing' | 'done' | 'skipped'
 export type PriorityLevel = 'P0' | 'P1' | 'P2' | 'expired' | 'none'
 
@@ -76,6 +76,7 @@ export interface Action {
   title: string
   opportunityId?: string
   prepId?: string
+  applicationGroupId?: string
   dueAt?: string
   estimatedMinutes: number
   leverage: number
