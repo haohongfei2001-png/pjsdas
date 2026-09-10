@@ -16,6 +16,7 @@ PJSDAS is a local-first personal job-search decision workspace. Its purpose is n
 - **Prep** — reusable preparation across multiple opportunities
 - **Import & Settings** — local spreadsheet import with integrity checks
 - **Process Event capture** — record an actual assessment, written-test, interview, offer, rejection, or status notification without editing the spreadsheet first
+- **Paste notification** — locally parse pasted recruiting text, review the inferred role/event/time, then explicitly confirm before saving
 - **Local backup** — export and restore the complete browser workspace as a validated JSON snapshot
 
 ## Core model
@@ -42,6 +43,7 @@ The current decision engine is deterministic and explainable. It combines opport
 - a newer real Process Event suppresses stale application/follow-up actions for the same role;
 - only the newest effective Process Event action remains active for one opportunity;
 - completed process actions move Pipeline into a waiting-for-result state instead of continuing to show the completed task;
+- overdue Process Event tasks leave the executable Today queue and move to a separate confirmation/recovery guard;
 - if the available-time budget cannot cover a hard deadline, PJSDAS reports the conflict rather than silently hiding the task.
 
 ### Deadline work vs fixed-time events
@@ -51,7 +53,19 @@ Process Event timing has two explicit semantics:
 - **deadline** — work can be completed before the stated time, so a tomorrow-night assessment may legitimately be scheduled into today's available time;
 - **fixed** — the event can only happen at the stated time, so a tomorrow interview is shown as an upcoming fixed event but does not consume today's startable-work queue.
 
-A fixed event happening today reserves daily capacity but is not presented as “Start here” hours before it begins. If a fixed time passes without the action being confirmed, a separate guard asks the user to confirm whether it was completed rather than assuming attendance or pretending the original session can still be performed.
+A fixed event happening today reserves daily capacity but is not presented as “Start here” hours before it begins. If either a fixed event or deadline-style Process Event passes without being resolved, PJSDAS removes it from startable work and asks the user to confirm completion or take recovery action instead of pretending the original task is still executable.
+
+## Paste notification workflow
+
+v0.7 adds a local, deterministic notification parser for common recruiting messages. The workflow is deliberately conservative:
+
+1. paste a recruiting SMS, email, or portal notification;
+2. PJSDAS proposes a matching opportunity, Process Event type, timing semantics, time, and estimated duration;
+3. ambiguous same-company roles remain unresolved instead of being auto-selected;
+4. the user reviews and can edit every inferred field;
+5. only explicit confirmation writes a Process Event and updates Pipeline / Today.
+
+The pasted source text is used for the current parsing session and is not stored by default when the event is saved. The parser does not require an AI API.
 
 ## Local-first architecture
 
@@ -60,13 +74,13 @@ A fixed event happening today reserves daily capacity but is not presented as �
 - local `.xlsx` parsing in the browser
 - GitHub repository contains application code, not the user's recruiting workbook or imported personal data
 - GitHub Pages deployment
-- Vitest decision/import/snapshot regression suite in CI
+- Vitest decision/import/process-event/notification/snapshot regression suite in CI
 
 Spreadsheet re-import preserves local Process Events and the completion/skip status of stable Actions. Import integrity checks run before destructive replacement so malformed future workbook versions fail closed.
 
 ## Local backup and restore
 
-PJSDAS stores more state than the spreadsheet once Process Events and Action completion statuses exist. v0.6 therefore adds a versioned local snapshot format that contains the raw browser stores rather than derived views:
+PJSDAS stores more state than the spreadsheet once Process Events and Action completion statuses exist. The versioned local snapshot contains the raw browser stores rather than derived views:
 
 - Opportunities
 - Processes
@@ -80,4 +94,4 @@ Restore is deliberately destructive but two-step: the selected JSON file is pars
 
 ## Status
 
-**v0.6** adds durable local backup/restore on top of the v0.5 Process Event state machine and the v0.4 time-budgeted Today planner. The current architecture now supports a stable loop of spreadsheet baseline → real recruiting event → effective pipeline state → executable action → completion/waiting state → local backup.
+**v0.7** closes the main local input-to-action loop: spreadsheet baseline → pasted or manually recorded recruiting notification → reviewed Process Event → effective Pipeline state → time-aware Today action → completion/waiting or overdue confirmation → durable local backup. The release keeps ranking deterministic and local-first; AI parsing, cloud sync, automatic email ingestion, and auto-apply remain outside the current scope.
