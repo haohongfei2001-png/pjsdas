@@ -1,0 +1,339 @@
+name: Patch Today opportunity reconciliation
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/patch-today-opportunity-reconcile.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Patch Today, opportunity scopes and process-event reconciliation
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          # --- AppV5: remove dashboard metrics, move upcoming nodes up, and default Opportunities to active records.
+          p = Path('src/AppV5.tsx')
+          s = p.read_text()
+
+          old = """            ranked={ranked}
+            now={now}
+            opportunities={opportunities}
+            processes={processes}
+            groups={groups}
+"""
+          new = """            ranked={ranked}
+            now={now}
+            opportunities={opportunities}
+            groups={groups}
+"""
+          if old not in s: raise SystemExit('TodayView call anchor not found')
+          s = s.replace(old, new, 1)
+
+          old = """  ranked,
+  now,
+  opportunities,
+  processes,
+  groups,
+"""
+          new = """  ranked,
+  now,
+  opportunities,
+  groups,
+"""
+          if old not in s: raise SystemExit('TodayView destructure anchor not found')
+          s = s.replace(old, new, 1)
+
+          old = """  ranked: ReturnType<typeof rankActions>
+  now: Date
+  opportunities: Opportunity[]
+  processes: ProcessRecord[]
+  groups: ApplicationGroup[]
+"""
+          new = """  ranked: ReturnType<typeof rankActions>
+  now: Date
+  opportunities: Opportunity[]
+  groups: ApplicationGroup[]
+"""
+          if old not in s: raise SystemExit('TodayView props anchor not found')
+          s = s.replace(old, new, 1)
+
+          old = """  const pending = opportunities.filter((item) => item.currentStageLabel === '待投')
+  const expired = pending.filter((item) => computePriority(item, now) === 'expired').length
+  const p0 = pending.filter((item) => computePriority(item, now) === 'P0').length
+  const p1 = pending.filter((item) => computePriority(item, now) === 'P1').length
+  const review = processes.filter((item) => processNeedsReview(item, now)).length
+"""
+          if old not in s: raise SystemExit('Today metric vars anchor not found')
+          s = s.replace(old, '', 1)
+          s = s.replace('  const upcoming = upcomingNodes(ranked, now, 7, 8)\n', '  const upcoming = upcomingNodes(ranked, now, 7, 12)\n', 1)
+
+          metric_start = s.find('      {opportunities.length > 0 ? (\n        <div className="metric-grid">')
+          if metric_start < 0: raise SystemExit('Today metric block start not found')
+          metric_end_marker = '      {ranked.length > 0 ? ('
+          metric_end = s.find(metric_end_marker, metric_start)
+          if metric_end < 0: raise SystemExit('Today metric block end not found')
+          s = s[:metric_start] + s[metric_end:]
+
+          upcoming_start = s.find('      {upcoming.length > 0 ? (')
+          top_marker = '      {top ? ('
+          upcoming_end = s.find(top_marker, upcoming_start)
+          if upcoming_start < 0 or upcoming_end < 0: raise SystemExit('upcoming block not found')
+          upcoming_block = s[upcoming_start:upcoming_end]
+          s = s[:upcoming_start] + s[upcoming_end:]
+          insert_at = s.find('      {ranked.length > 0 ? (')
+          if insert_at < 0: raise SystemExit('budget block not found for upcoming insertion')
+          s = s[:insert_at] + upcoming_block + s[insert_at:]
+
+          helper_anchor = 'function OpportunitiesView({ opportunities, groups }: { opportunities: Opportunity[]; groups: ApplicationGroup[] }) {'
+          helper = """type OpportunityScope = 'active' | 'pipeline' | 'expired' | 'closed' | 'all'
+
+function opportunityScopeMatches(item: Opportunity, scope: OpportunityScope, now: Date) {
+  const priority = computePriority(item, now)
+  if (scope === 'all') return true
+  if (scope === 'expired') return item.processStage === 'not_applied' && priority === 'expired'
+  if (scope === 'closed') return item.processStage === 'closed'
+  if (scope === 'pipeline') {
+    return ['screening', 'assessment', 'written_test', 'interview', 'offer'].includes(item.processStage)
+  }
+  return item.processStage === 'waiting_release' ||
+    (item.processStage === 'not_applied' && priority !== 'expired')
+}
+
+""" + helper_anchor
+          if helper_anchor not in s: raise SystemExit('Opportunities helper anchor not found')
+          s = s.replace(helper_anchor, helper, 1)
+
+          old = """  const [query, setQuery] = useState('')
+  const [role, setRole] = useState('all')
+  const [priority, setPriority] = useState('all')
+"""
+          new = """  const [query, setQuery] = useState('')
+  const [scope, setScope] = useState<OpportunityScope>('active')
+  const [role, setRole] = useState('all')
+  const [priority, setPriority] = useState('all')
+"""
+          if old not in s: raise SystemExit('Opportunity state anchor not found')
+          s = s.replace(old, new, 1)
+
+          old = """    return [...opportunities]
+      .filter((item) => !needle || `${item.company} ${item.role}`.toLowerCase().includes(needle))
+"""
+          new = """    return [...opportunities]
+      .filter((item) => opportunityScopeMatches(item, scope, now))
+      .filter((item) => !needle || `${item.company} ${item.role}`.toLowerCase().includes(needle))
+"""
+          if old not in s: raise SystemExit('Opportunity filter anchor not found')
+          s = s.replace(old, new, 1)
+          s = s.replace('  }, [opportunities, query, role, priority])\n', '  }, [opportunities, query, scope, role, priority])\n', 1)
+
+          old = '        text="岗位仍按 Opportunity 保存；共享志愿与有限名额由申请组统一约束，不再把相互竞争的岗位当成完全独立机会。"\n'
+          new = '        text="默认只看仍需决策的当前机会；已投岗位自动进入 Pipeline，已过期岗位自动移出主列表，但仍可在筛选中查看历史。"\n'
+          if old not in s: raise SystemExit('Opportunity title text anchor not found')
+          s = s.replace(old, new, 1)
+
+          role_select = """            <select value={role} onChange={(event) => setRole(event.target.value)}>
+"""
+          scope_select = """            <select value={scope} onChange={(event) => setScope(event.target.value as OpportunityScope)}>
+              <option value="active">当前机会</option>
+              <option value="pipeline">已投 / 在途</option>
+              <option value="expired">已过期</option>
+              <option value="closed">已结束</option>
+              <option value="all">全部记录</option>
+            </select>
+            <select value={role} onChange={(event) => setRole(event.target.value)}>
+"""
+          if role_select not in s: raise SystemExit('role select anchor not found')
+          s = s.replace(role_select, scope_select, 1)
+
+          p.write_text(s)
+
+          # --- processEvents: reconstruct missing event-actions and keep same-stage local deadlines visible.
+          p = Path('src/processEvents.ts')
+          s = p.read_text()
+          suppress_old = """    if (action.processEventId) {
+      return opportunity?.effectiveProcessEventId === action.processEventId
+    }
+"""
+          suppress_new = """    if (action.processEventId) {
+      if (opportunity?.effectiveProcessEventId) {
+        return opportunity.effectiveProcessEventId === action.processEventId
+      }
+      // The imported workbook may already carry the same assessment/interview stage,
+      // so an explicit local deadline event need not be newer than the baseline to
+      // remain actionable. Keep it only when it still matches the current stage.
+      return Boolean(
+        opportunity &&
+        action.dueAt &&
+        action.processStage &&
+        opportunity.processStage === action.processStage
+      )
+    }
+"""
+          if suppress_old not in s: raise SystemExit('suppress process-event anchor not found')
+          s = s.replace(suppress_old, suppress_new, 1)
+
+          reconcile_anchor = 'export function suppressSupersededActions(\n'
+          reconcile = """export function reconcileProcessEventActions(
+  actions: Action[],
+  events: ProcessEvent[],
+): Action[] {
+  const byId = new Map(actions.map((item) => [item.id, item]))
+
+  for (const event of events) {
+    const generated = actionForProcessEvent(event)
+    if (!generated) continue
+    const previous = byId.get(generated.id)
+    byId.set(generated.id, previous
+      ? {
+          ...generated,
+          status: previous.status,
+          createdAt: previous.createdAt,
+          updatedAt: previous.updatedAt,
+        }
+      : generated)
+  }
+
+  return [...byId.values()]
+}
+
+""" + reconcile_anchor
+          if reconcile_anchor not in s: raise SystemExit('reconcile insertion anchor not found')
+          s = s.replace(reconcile_anchor, reconcile, 1)
+          p.write_text(s)
+
+          # --- db: derive event-actions from Process Events on every read, instead of trusting one old action-store snapshot.
+          p = Path('src/db.ts')
+          s = p.read_text()
+          old = """  overlayProcessEventsOnProcesses,
+  suppressSupersededActions,
+"""
+          new = """  overlayProcessEventsOnProcesses,
+  reconcileProcessEventActions,
+  suppressSupersededActions,
+"""
+          if old not in s: raise SystemExit('db import anchor not found')
+          s = s.replace(old, new, 1)
+
+          old = """export async function getAllActions() {
+  const db = await dbPromise
+  const [actions, opportunities] = await Promise.all([
+    db.getAll('actions'),
+    effectiveOpportunities(db),
+  ])
+  return suppressSupersededActions(actions, opportunities)
+}
+"""
+          new = """export async function getAllActions() {
+  const db = await dbPromise
+  const [actions, opportunities, events] = await Promise.all([
+    db.getAll('actions'),
+    effectiveOpportunities(db),
+    db.getAll('processEvents'),
+  ])
+  return suppressSupersededActions(
+    reconcileProcessEventActions(actions, events),
+    opportunities,
+  )
+}
+"""
+          if old not in s: raise SystemExit('getAllActions anchor not found')
+          s = s.replace(old, new, 1)
+          p.write_text(s)
+
+          # --- regression tests: missing event-action recovery and same-stage imported baseline behavior.
+          Path('tests/processEventVisibility.test.ts').write_text(r'''import { describe, expect, it } from 'vitest'
+import {
+  actionForProcessEvent,
+  reconcileProcessEventActions,
+  suppressSupersededActions,
+} from '../src/processEvents'
+import { rankActions } from '../src/decisionV3'
+import { upcomingNodes } from '../src/timeRisk'
+import type { Action, Opportunity, ProcessEvent } from '../src/model'
+
+const event: ProcessEvent = {
+  id: 'jd-assessment',
+  opportunityId: 'jd-role',
+  company: '京东',
+  role: '技术产品经理',
+  type: 'assessment_invite',
+  occurredAt: '2026-09-10T12:00:00.000Z',
+  dueAt: '2026-09-11T22:00:00.000Z',
+  timingMode: 'deadline',
+  estimatedMinutes: 45,
+  source: 'manual',
+  createdAt: '2026-09-10T12:00:00.000Z',
+  updatedAt: '2026-09-10T12:00:00.000Z',
+}
+
+const opportunity: Opportunity = {
+  id: 'jd-role',
+  company: '京东',
+  role: '技术产品经理',
+  currentStageLabel: '筛选/测评',
+  processStage: 'assessment',
+  roleType: 'reach',
+  early: false,
+  opportunityValue: 90,
+  fitScore: 43,
+  importedAt: '2026-09-10T12:00:00.000Z',
+}
+
+describe('process-event action visibility', () => {
+  it('rebuilds a missing actionable event action from the Process Event itself', () => {
+    const reconciled = reconcileProcessEventActions([], [event])
+    expect(reconciled).toHaveLength(1)
+    expect(reconciled[0]).toMatchObject({
+      id: 'event-action:jd-assessment',
+      dueAt: '2026-09-11T22:00:00.000Z',
+      processStage: 'assessment',
+      status: 'todo',
+    })
+  })
+
+  it('preserves an existing completion state while refreshing event metadata', () => {
+    const generated = actionForProcessEvent(event)!
+    const done: Action = { ...generated, status: 'done', updatedAt: '2026-09-10T13:00:00.000Z' }
+    const reconciled = reconcileProcessEventActions([done], [{ ...event, estimatedMinutes: 30 }])
+    expect(reconciled[0].status).toBe('done')
+    expect(reconciled[0].estimatedMinutes).toBe(30)
+  })
+
+  it('keeps a concrete local deadline visible when imported baseline is already at the same stage', () => {
+    const generated = actionForProcessEvent(event)!
+    const visible = suppressSupersededActions([generated], [opportunity])
+    expect(visible).toHaveLength(1)
+
+    const now = new Date('2026-09-10T16:00:00.000Z')
+    const ranked = rankActions(visible, [opportunity], now)
+    expect(upcomingNodes(ranked, now).map((item) => item.action.id)).toContain('event-action:jd-assessment')
+  })
+
+  it('does not keep an old assessment deadline after the opportunity advances to interview', () => {
+    const generated = actionForProcessEvent(event)!
+    const advanced: Opportunity = { ...opportunity, processStage: 'interview', currentStageLabel: '面试' }
+    expect(suppressSupersededActions([generated], [advanced])).toHaveLength(0)
+  })
+})
+''')
+          PY
+      - name: Verify
+        run: |
+          npm ci
+          npm test
+          npm run build
+      - name: Commit patch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/AppV5.tsx src/processEvents.ts src/db.ts tests/processEventVisibility.test.ts
+          git commit -m "Prioritize upcoming nodes and reconcile process events"
+          git push
