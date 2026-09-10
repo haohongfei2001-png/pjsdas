@@ -54,6 +54,7 @@ export interface ProcessEventOperation extends OperationBase {
   dueAt?: string
   timingMode?: ActionTimingMode
   estimatedMinutes: number
+  completed?: boolean
 }
 
 export interface ManualActionOperation extends OperationBase {
@@ -138,6 +139,15 @@ function findKnownCompany(text: string, opportunities: Opportunity[]) {
   return matches[0]?.company
 }
 
+function stripCompanyPrefix(raw: string, company: string) {
+  const aliases = companyAliases(company).sort((a, b) => b.length - a.length)
+  const trimmed = raw.trim()
+  for (const alias of aliases) {
+    if (trimmed.startsWith(alias)) return trimmed.slice(alias.length).trim()
+  }
+  return trimmed
+}
+
 function inferCompanyAndRole(text: string, opportunities: Opportunity[]) {
   const known = findKnownCompany(text, opportunities)
   if (known) return { company: known, roleText: stripCompanyPrefix(text, known) }
@@ -148,6 +158,11 @@ function inferCompanyAndRole(text: string, opportunities: Opportunity[]) {
   const patterned = text.match(/^(.{2,18}?(?:公司|集团|银行|汽车|证券|保险|咨询|电子|科技|国际|机器人))(.+)$/)
   if (patterned?.[1] && patterned[2]) return { company: patterned[1].trim(), roleText: patterned[2].trim() }
   return undefined
+}
+
+function receivePrefix(text: string) {
+  const match = text.match(/((?:上午|早上|下午|晚上|晚间)?\s*\d{1,2}(?:\s*[:：]\s*\d{2}|\s*点(?:\s*\d{1,2}\s*分?)?)\s*(?:收到|接到))\s*[:：]?/)
+  return match?.[1]?.trim()
 }
 
 function splitInput(raw: string, now: Date) {
@@ -169,14 +184,26 @@ function splitInput(raw: string, now: Date) {
       content = line.slice(dateMatch[0].length)
     }
 
-    const normalized = content.replace(
-      /，(?=(?:准备投递|计划投递|准备申请|投递|申请|投(?=[A-Za-z\u4e00-\u9fa5])))/g,
-      '。',
-    )
+    const normalized = content
+      .replace(
+        /，(?=(?:准备投递|计划投递|准备申请|投递|申请|投(?=[A-Za-z\u4e00-\u9fa5])))/g,
+        '。',
+      )
+      .replace(
+        /，(?=[^，。]{1,40}?(?:(?:岗位)?(?:转变为|转为|改为|更名为|变为)|流程(?:结束|终止|开启|重启|开始|关闭)))/g,
+        '。',
+      )
 
+    let carriedReceive = ''
     for (const piece of normalized.split(/[。；;]+/)) {
-      const text = piece.trim().replace(/^[，,]+|[，,]+$/g, '')
-      if (text) rows.push({ text, baseDate: new Date(baseDate), explicitDate })
+      let text = piece.trim().replace(/^[，,]+|[，,]+$/g, '')
+      if (!text) continue
+      const ownPrefix = receivePrefix(text)
+      if (ownPrefix) carriedReceive = ownPrefix
+      else if (carriedReceive && /(测评|笔试|面试|考试)/.test(text) && !/(收到|接到)/.test(text)) {
+        text = `${carriedReceive}，${text}`
+      }
+      rows.push({ text, baseDate: new Date(baseDate), explicitDate })
     }
   }
 
@@ -220,6 +247,19 @@ function relativeDueAt(text: string, occurredAt: Date) {
   return undefined
 }
 
+function isPastLocalDay(baseDate: Date, now: Date) {
+  const a = new Date(baseDate)
+  const b = new Date(now)
+  a.setHours(0, 0, 0, 0)
+  b.setHours(0, 0, 0, 0)
+  return a.getTime() < b.getTime()
+}
+
+function historicalBareEvent(text: string, baseDate: Date, explicitDate: boolean, now: Date) {
+  if (!explicitDate || !isPastLocalDay(baseDate, now)) return false
+  return !/(收到|接到|通知|邀请|安排|将于|请于|请在|截止|最晚|小时|日内|天内|前完成)/.test(text)
+}
+
 function contextWithDate(text: string, baseDate: Date, explicitDate: boolean) {
   if (!explicitDate) return text
   return `${baseDate.getFullYear()}年${baseDate.getMonth() + 1}月${baseDate.getDate()}日 ${text}`
@@ -233,15 +273,6 @@ function roleList(raw: string) {
   const andParts = cleaned.split(/和/).map((item) => item.trim()).filter(Boolean)
   if (andParts.length > 1 && andParts.slice(1).every((item) => roleWords.test(item))) return andParts
   return [cleaned]
-}
-
-function stripCompanyPrefix(raw: string, company: string) {
-  const aliases = companyAliases(company).sort((a, b) => b.length - a.length)
-  const trimmed = raw.trim()
-  for (const alias of aliases) {
-    if (trimmed.startsWith(alias)) return trimmed.slice(alias.length).trim()
-  }
-  return trimmed
 }
 
 function touchRecent(recentByCompany: Map<string, string>, company: string, opportunityId: string) {
@@ -404,8 +435,37 @@ export function parseProgressUpdate(
       }
     }
 
+    const reopenLike = /(流程(?:开启|重启|开始)|开启流程|重启流程)/.test(sourceText)
+    if (reopenLike && !closeLike) {
+      const target = targetFor(sourceText, virtual, recentByCompany)
+      if (!target.opportunity) {
+        operations.push(unresolved(
+          sourceText,
+          occurredAt,
+          '无法唯一确定需要开启或重启的岗位流程。',
+          target.candidates?.map((item) => item.opportunity) ?? [],
+        ))
+      } else {
+        operations.push({
+          id: operationId('reopen', sourceText, target.opportunity.id),
+          kind: 'upsert_opportunity',
+          sourceText,
+          confidence: target.confidence,
+          occurredAt: occurredAt.toISOString(),
+          mode: 'submitted',
+          opportunityId: target.opportunity.id,
+          company: target.opportunity.company,
+          role: target.opportunity.role,
+        })
+        target.opportunity.processStage = 'screening'
+        target.opportunity.currentStageLabel = '筛选中'
+        target.opportunity.locallyManaged = true
+        touchRecent(recentByCompany, target.opportunity.company, target.opportunity.id)
+      }
+    }
+
     const application = applicationParts(sourceText)
-    if (application && !closeLike) {
+    if (application && !closeLike && !reopenLike) {
       const inferred = inferCompanyAndRole(application.tail, virtual)
       if (!inferred) {
         operations.push(unresolved(sourceText, occurredAt, '无法可靠拆分公司与岗位；请写成“投递 公司｜岗位”。'))
@@ -459,20 +519,21 @@ export function parseProgressUpdate(
       } else {
         const contextual = contextWithDate(sourceText, row.baseDate, row.explicitDate)
         const parsed = parseRecruitingNotification(contextual, [target.opportunity], occurredAt)
+        const completed = historicalBareEvent(sourceText, row.baseDate, row.explicitDate, now)
         const timingMode: ActionTimingMode | undefined = relativeDue
           ? 'deadline'
           : parsed.timingMode ?? defaultTimingModeForProcessEvent(detected.type!)
         const dueAt = relativeDue ?? parsed.dueAt
         const actionable = ['assessment_invite', 'written_test_invite', 'interview_invite'].includes(detected.type!)
 
-        if (actionable && !dueAt) {
+        if (actionable && !dueAt && !completed) {
           operations.push(unresolved(sourceText, occurredAt, '流程任务缺少可确认的截止时间或固定发生时间。', [target.opportunity]))
         } else {
           operations.push({
-            id: operationId('event', sourceText, `${target.opportunity.id}|${detected.type}|${dueAt ?? ''}`),
+            id: operationId('event', sourceText, `${target.opportunity.id}|${detected.type}|${dueAt ?? ''}|${completed}`),
             kind: 'process_event',
             sourceText,
-            confidence: target.confidence === 'high' && parsed.confidence.time !== 'low' ? 'high' : 'medium',
+            confidence: completed || (target.confidence === 'high' && parsed.confidence.time !== 'low') ? 'high' : 'medium',
             occurredAt: occurredAt.toISOString(),
             opportunityId: target.opportunity.id,
             company: target.opportunity.company,
@@ -481,13 +542,14 @@ export function parseProgressUpdate(
             dueAt,
             timingMode,
             estimatedMinutes: defaultMinutesForProcessEvent(detected.type!),
+            completed,
           })
           touchRecent(recentByCompany, target.opportunity.company, target.opportunity.id)
         }
       }
     }
 
-    if (!renameMatch && !closeLike && !application && !eventLike) {
+    if (!renameMatch && !closeLike && !reopenLike && !application && !eventLike) {
       const plannedTask = sourceText.match(/^(?:准备|计划|需要|要做)\s*(.+)/)
       if (plannedTask?.[1]) {
         operations.push({
@@ -518,7 +580,7 @@ export function parseProgressUpdate(
 export function progressOperationSummary(operation: ProgressOperation) {
   switch (operation.kind) {
     case 'upsert_opportunity':
-      return `${operation.mode === 'submitted' ? '已投递' : '计划投递'}：${operation.company}｜${operation.role}`
+      return `${operation.mode === 'submitted' ? '已投递/流程开启' : '计划投递'}：${operation.company}｜${operation.role}`
     case 'close_opportunity':
       return `结束流程：${operation.company}｜${operation.role}`
     case 'rename_opportunity':
@@ -533,7 +595,7 @@ export function progressOperationSummary(operation: ProgressOperation) {
         status_update: '状态更新',
         other: '其他进展',
       }
-      return `流程事件：${operation.company}｜${operation.role} · ${labels[operation.eventType]}${operation.dueAt ? ` · ${new Date(operation.dueAt).toLocaleString('zh-CN')}` : ''}`
+      return `流程事件：${operation.company}｜${operation.role} · ${labels[operation.eventType]}${operation.completed ? ' · 已完成' : ''}${operation.dueAt ? ` · ${new Date(operation.dueAt).toLocaleString('zh-CN')}` : ''}`
     }
     case 'manual_action':
       return `新增待办：${operation.title}`
