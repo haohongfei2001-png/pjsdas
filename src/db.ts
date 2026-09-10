@@ -84,6 +84,14 @@ export async function updateActionStatus(id: string, status: Action['status']) {
 
 export async function replaceImportedData(bundle: ImportBundle) {
   const db = await dbPromise
+
+  // Re-importing an updated spreadsheet must not resurrect actions the user has
+  // already completed or skipped. Action IDs are treated as stable source IDs.
+  const previousActions = await db.getAll('actions')
+  const previousState = new Map(
+    previousActions.map((item) => [item.id, { status: item.status, updatedAt: item.updatedAt }]),
+  )
+
   const tx = db.transaction(
     ['opportunities', 'processes', 'actions', 'prep', 'applicationGroups', 'meta'],
     'readwrite',
@@ -100,7 +108,14 @@ export async function replaceImportedData(bundle: ImportBundle) {
 
   for (const item of bundle.opportunities) await tx.objectStore('opportunities').put(item)
   for (const item of bundle.processes) await tx.objectStore('processes').put(item)
-  for (const item of bundle.actions) await tx.objectStore('actions').put(item)
+  for (const item of bundle.actions) {
+    const previous = previousState.get(item.id)
+    await tx.objectStore('actions').put(
+      previous
+        ? { ...item, status: previous.status, updatedAt: previous.updatedAt }
+        : item,
+    )
+  }
   for (const item of bundle.prep) await tx.objectStore('prep').put(item)
   for (const item of bundle.applicationGroups) await tx.objectStore('applicationGroups').put(item)
   await tx.objectStore('meta').put({ key: 'lastImport', ...bundle.summary })
