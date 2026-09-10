@@ -11,6 +11,8 @@ import {
   getLastImport,
   replaceImportedData,
   applyActionStatusChangeSet,
+  applyChangeSet,
+  discardChangeSet,
 } from './db'
 import {
   buildTimePlan,
@@ -115,6 +117,16 @@ function AppV5() {
     await reload()
   }
 
+  async function applyPendingChangeSet(id: string) {
+    await applyChangeSet(id)
+    await reload()
+  }
+
+  async function discardPendingChangeSet(id: string) {
+    await discardChangeSet(id)
+    await reload()
+  }
+
   return (
     <div className="app-shell">
       <aside className="sidebar">
@@ -163,7 +175,7 @@ function AppV5() {
         ) : null}
         {!loading && page === 'pipeline' ? <PipelineView processes={processes} /> : null}
         {!loading && page === 'prep' ? <PrepView prep={prep} /> : null}
-        {!loading && page === 'timeline' ? <TimelineView records={timeline} changeSets={changeSets} /> : null}
+        {!loading && page === 'timeline' ? <TimelineView records={timeline} changeSets={changeSets} onApplyChangeSet={applyPendingChangeSet} onDiscardChangeSet={discardPendingChangeSet} /> : null}
         {!loading && page === 'rules' ? <RulesView rules={rules} onChanged={reload} /> : null}
         {!loading && page === 'settings' ? (
           <SettingsView lastImport={lastImport} onImported={reload} />

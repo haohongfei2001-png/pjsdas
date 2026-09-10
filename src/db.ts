@@ -273,13 +273,11 @@ export async function resetDecisionRules() {
 
 export async function updateActionStatus(id: string, status: Action['status']) {
   const db = await dbPromise
-  const tx = db.transaction(['actions', 'timeline'], 'readwrite')
-  const action = await tx.objectStore('actions').get(id)
-  if (!action || action.status === status) {
-    await tx.done
-    return
-  }
+  const stored = await db.get('actions', id)
+  const action = stored ?? (await getAllActions()).find((item) => item.id === id)
+  if (!action || action.status === status) return
   const now = new Date().toISOString()
+  const tx = db.transaction(['actions', 'timeline'], 'readwrite')
   await tx.objectStore('actions').put({ ...action, status, updatedAt: now })
   await tx.objectStore('timeline').put(timelineFromActionStatus(action, action.status, status, now))
   await tx.done
@@ -558,7 +556,7 @@ export async function applyProcessEventDeleteChangeSet(eventId: string) {
 
 export async function applyActionStatusChangeSet(actionId: string, status: Action['status']) {
   const db = await dbPromise
-  const action = await db.get('actions', actionId)
+  const action = await db.get('actions', actionId) ?? (await getAllActions()).find((item) => item.id === actionId)
   if (!action) return undefined
   const changeSet = createActionStatusChangeSet(action, status)
   if (!changeSet) return undefined
@@ -587,7 +585,12 @@ export async function applyChangeSet(id: string) {
   if (changeSet.status !== 'pending') throw new Error(`ChangeSet ${id} 当前状态为 ${changeSet.status}，不能应用。`)
 
   try {
-    for (const operation of changeSet.operations) {
+    const progressOperations = changeSet.operations.filter((operation) => operation.kind === 'progress_update')
+    if (progressOperations.length === changeSet.operations.length) {
+      // The primary Natural Language Update path remains one IndexedDB transaction:
+      // either every normalized operation is committed or none of them is.
+      await applyProgressUpdate(progressOperations.map((operation) => restoreProgressOperation(operation, changeSet.id)))
+    } else for (const operation of changeSet.operations) {
       if (operation.kind === 'progress_update') {
         await applyProgressUpdate([restoreProgressOperation(operation, changeSet.id)])
         continue
@@ -613,7 +616,7 @@ export async function applyChangeSet(id: string) {
         continue
       }
 
-      const action = await db.get('actions', operation.actionId)
+      const action = await db.get('actions', operation.actionId) ?? (await getAllActions()).find((item) => item.id === operation.actionId)
       if (!action) throw new Error(`Action ${operation.actionId} 已不存在。`)
       if (action.status === operation.status) continue
       if (action.status !== operation.expectedStatus) {

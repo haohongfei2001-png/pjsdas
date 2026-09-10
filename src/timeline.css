@@ -55,3 +55,17 @@
 .timeline-event.category-change .timeline-marker span { background:#4f6571; }
 @media (max-width:900px) { .timeline-summary { grid-template-columns:repeat(2,minmax(0,1fr)); } }
 @media (max-width:620px) { .timeline-summary { grid-template-columns:1fr; } .changeset-ledger > summary { align-items:flex-start; flex-direction:column; } }
+
+.changeset-item-copy { flex:1; }
+.changeset-operation-preview { display:flex; flex-wrap:wrap; gap:5px; margin-top:7px; }
+.changeset-operation-preview span { border:1px solid rgba(49,46,42,.08); border-radius:7px; padding:3px 6px; background:#faf8f4; color:#777169; font-size:10px; line-height:1.35; }
+.changeset-item-state { display:flex; align-items:flex-end; flex-direction:column; gap:8px; }
+.changeset-item-state > span { border:1px solid rgba(49,46,42,.1); border-radius:999px; padding:4px 8px; background:#f6f3ed; color:#6d675f; font-size:10.5px; white-space:nowrap; }
+.changeset-item.status-pending .changeset-item-state > span { background:#fff4d9; color:#8b651c; }
+.changeset-item.status-failed .changeset-item-state > span { background:#fbe8e4; color:#9a4c3d; }
+.changeset-item.status-applied .changeset-item-state > span { background:#edf3ed; color:#526654; }
+.changeset-item-actions { display:flex; gap:6px; }
+.changeset-item-actions button { border:1px solid rgba(49,46,42,.12); border-radius:8px; padding:5px 9px; background:#fffdf9; color:#69645d; font:inherit; font-size:10.5px; cursor:pointer; }
+.changeset-item-actions button.apply { background:#35322d; color:#fff; }
+.changeset-item-actions button:disabled { opacity:.55; cursor:default; }
+@media (max-width:620px) { .changeset-item { align-items:flex-start; flex-direction:column; } .changeset-item-state { align-items:flex-start; } }

@@ -33,6 +33,22 @@ describe('ChangeSet protocol', () => {
     expect(restored.sourceText).toContain(changeSet.id)
   })
 
+  it('keeps multiple natural-language operations inside one ChangeSet', () => {
+    const base = {
+      sourceText: 'raw input must not persist',
+      confidence: 'high' as const,
+      occurredAt: '2026-09-11T01:00:00.000Z',
+    }
+    const operations: ExecutableProgressOperation[] = [
+      { ...base, id: 'nl:a', kind: 'manual_action', title: '任务 A', estimatedMinutes: 20 },
+      { ...base, id: 'nl:b', kind: 'manual_action', title: '任务 B', estimatedMinutes: 30 },
+    ]
+    const changeSet = createProgressChangeSet(operations, new Date('2026-09-11T01:10:00.000Z'))
+    expect(changeSet.operations).toHaveLength(2)
+    expect(changeSet.operations.every((item) => item.kind === 'progress_update')).toBe(true)
+    expect(JSON.stringify(changeSet)).not.toContain('raw input must not persist')
+  })
+
   it('creates an optimistic-concurrency rule ChangeSet only when rules differ', () => {
     const before = createDefaultDecisionRules('2026-09-11T00:00:00.000Z')
     const after = { ...before, hardDeadlineHorizonHours: 72 }

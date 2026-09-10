@@ -67,12 +67,23 @@ function changeValue(value: unknown) {
   return String(value)
 }
 
-export default function TimelineView({ records, changeSets }: { records: TimelineRecord[]; changeSets: ChangeSetRecord[] }) {
+export default function TimelineView({ records, changeSets, onApplyChangeSet, onDiscardChangeSet }: { records: TimelineRecord[]; changeSets: ChangeSetRecord[]; onApplyChangeSet: (id: string) => Promise<void>; onDiscardChangeSet: (id: string) => Promise<void> }) {
   const { lang } = useUiLanguage()
   const zh = lang === 'zh'
   const [query, setQuery] = useState('')
   const [category, setCategory] = useState<'all' | TimelineCategory>('all')
   const [source, setSource] = useState<'all' | TimelineSource>('all')
+  const [busyChangeSetId, setBusyChangeSetId] = useState<string | null>(null)
+
+  async function resolveChangeSet(id: string, action: 'apply' | 'discard') {
+    setBusyChangeSetId(id)
+    try {
+      if (action === 'apply') await onApplyChangeSet(id)
+      else await onDiscardChangeSet(id)
+    } finally {
+      setBusyChangeSetId(null)
+    }
+  }
 
   const filtered = useMemo(() => {
     const needle = query.trim().toLowerCase()
@@ -128,11 +139,23 @@ export default function TimelineView({ records, changeSets }: { records: Timelin
           <div className="changeset-list">
             {changeSets.slice(0, 8).map((item) => (
               <article className={`changeset-item status-${item.status}`} key={item.id}>
-                <div>
+                <div className="changeset-item-copy">
                   <strong>{item.title}</strong>
                   <small>{item.id} · {changeSetSourceLabels[item.source][zh ? 0 : 1]} · {item.operations.length} {zh ? '项' : 'ops'}</small>
+                  <div className="changeset-operation-preview">
+                    {item.operations.slice(0, 5).map((operation) => <span key={operation.id}>{operation.summary}</span>)}
+                    {item.operations.length > 5 ? <span>+{item.operations.length - 5}</span> : null}
+                  </div>
                 </div>
-                <span>{changeSetStatusLabels[item.status][zh ? 0 : 1]}</span>
+                <div className="changeset-item-state">
+                  <span>{changeSetStatusLabels[item.status][zh ? 0 : 1]}</span>
+                  {item.status === 'pending' ? (
+                    <div className="changeset-item-actions">
+                      <button disabled={busyChangeSetId === item.id} onClick={() => { void resolveChangeSet(item.id, 'discard') }}>{zh ? '放弃' : 'Discard'}</button>
+                      <button className="apply" disabled={busyChangeSetId === item.id} onClick={() => { void resolveChangeSet(item.id, 'apply') }}>{busyChangeSetId === item.id ? '…' : (zh ? '应用' : 'Apply')}</button>
+                    </div>
+                  ) : null}
+                </div>
               </article>
             ))}
           </div>
