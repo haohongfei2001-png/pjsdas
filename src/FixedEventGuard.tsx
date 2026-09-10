@@ -1,16 +1,11 @@
 import { useEffect, useMemo, useState } from 'react'
 import { getAllActions, updateActionStatus } from './db'
+import { isUnresolvedPastFixed } from './fixedEventGuardLogic'
 import type { Action } from './model'
 import './fixedEventGuard.css'
 
 interface FixedEventGuardProps {
   onChanged?: () => void
-}
-
-export function isUnresolvedPastFixed(action: Action, now: Date) {
-  if (!action.processEventId || action.timingMode !== 'fixed' || !action.dueAt) return false
-  if (action.status !== 'todo' && action.status !== 'doing') return false
-  return new Date(action.dueAt).getTime() < now.getTime()
 }
 
 export default function FixedEventGuard({ onChanged }: FixedEventGuardProps) {
