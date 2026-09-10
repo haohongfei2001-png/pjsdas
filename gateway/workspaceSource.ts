@@ -13,6 +13,18 @@ export interface WorkspaceSource {
   read(): Promise<GatewayWorkspace>
 }
 
+export class WorkspaceSourceError extends Error {
+  readonly code: string
+  readonly retryable: boolean
+
+  constructor(code: string, message: string, retryable = false) {
+    super(message)
+    this.name = 'WorkspaceSourceError'
+    this.code = code
+    this.retryable = retryable
+  }
+}
+
 export interface FileWorkspaceSourceOptions {
   file?: string | URL
   timezone?: string
