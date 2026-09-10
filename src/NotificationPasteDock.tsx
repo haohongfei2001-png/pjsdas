@@ -10,7 +10,6 @@ import {
 } from './processEvents'
 import type {
   ActionTimingMode,
-  NotificationParseResult as Never,
   Opportunity,
   ProcessEventType,
 } from './model'
@@ -282,6 +281,3 @@ export default function NotificationPasteDock({ onChanged }: NotificationPasteDo
     </>
   )
 }
-
-// Prevent accidental runtime import through an over-eager editor auto-import.
-void (0 as unknown as Never)
