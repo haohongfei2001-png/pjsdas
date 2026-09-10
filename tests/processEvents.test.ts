@@ -194,4 +194,30 @@ describe('process event projection', () => {
     expect(projectedOpportunity.effectiveProcessEventId).toBeUndefined()
     expect(visible).toHaveLength(0)
   })
+
+  it('turns a completed process action into a waiting-for-result Pipeline state', () => {
+    const assessment = event({
+      id: 'evt-done',
+      type: 'assessment_invite',
+      occurredAt: '2026-09-10T01:00:00.000Z',
+      dueAt: '2026-09-10T10:00:00.000Z',
+      timingMode: 'deadline',
+      estimatedMinutes: 45,
+    })
+    const completedAction: Action = {
+      ...actionForProcessEvent(assessment)!,
+      status: 'done',
+    }
+
+    const projected = overlayProcessEventsOnProcesses(
+      [importedProcess],
+      [opportunity],
+      [assessment],
+      [completedAction],
+    )[0]
+
+    expect(projected.stage).toBe('assessment')
+    expect(projected.stageLabel).toBe('测评完成 · 等待结果')
+    expect(projected.currentAction).toBeUndefined()
+  })
 })
