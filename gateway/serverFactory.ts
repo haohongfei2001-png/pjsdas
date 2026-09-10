@@ -15,16 +15,29 @@ const readOnlyAnnotations = {
   idempotentHint: true,
 } as const
 
-export function createPjsdasMcpServer(source: WorkspaceSource) {
+export interface PjsdasMcpServerOptions {
+  version?: string
+  dataMode?: 'workspace' | 'demo'
+}
+
+export function createPjsdasMcpServer(
+  source: WorkspaceSource,
+  options: PjsdasMcpServerOptions = {},
+) {
+  const dataMode = options.dataMode ?? 'workspace'
+  const instructions = [
+    'PJSDAS is a read-only personal job-search decision system in this alpha.',
+    'Use its explicit decision rules and deterministic explanations instead of inventing hidden ranking rules.',
+    'Never claim that a tool call changed PJSDAS state; this server exposes no mutation tools.',
+  ]
+
+  if (dataMode === 'demo') {
+    instructions.push('This endpoint contains synthetic demo data only. Never present demo companies, roles, events, or priorities as the user\'s real job-search state.')
+  }
+
   const server = new McpServer(
-    { name: 'pjsdas', version: '1.1.0-alpha.1' },
-    {
-      instructions: [
-        'PJSDAS is a read-only personal job-search decision system in this alpha.',
-        'Use its explicit decision rules and deterministic explanations instead of inventing hidden ranking rules.',
-        'Never claim that a tool call changed PJSDAS state; this server exposes no mutation tools.',
-      ].join(' '),
-    },
+    { name: 'pjsdas', version: options.version ?? '1.1.0-alpha.1' },
+    { instructions: instructions.join(' ') },
   )
 
   server.registerTool(
