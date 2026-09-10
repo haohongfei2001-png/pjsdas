@@ -243,12 +243,15 @@ export function selectTodayActions(ranked: RankedAction[], now = new Date(), lim
   return selected
 }
 
+export type TimePlanOverrunReason = 'today_deadlines' | 'near_deadline_stretch'
+
 export interface TimePlan {
   budgetMinutes: number
   planned: RankedAction[]
   totalMinutes: number
   requiredTodayMinutes: number
   overBudgetMinutes: number
+  overrunReason?: TimePlanOverrunReason
   remainingMinutes: number
   nearDeadlineUnplanned: RankedAction[]
 }
@@ -266,16 +269,20 @@ export function buildTimePlan(
   const endOfToday = new Date(now)
   endOfToday.setHours(23, 59, 59, 999)
 
-  const requiredToday = ranked
+  const hardWithin48h = ranked
     .filter((item) => {
       if (!isHardDeadlineAction(item) || !item.action.dueAt) return false
-      const due = new Date(item.action.dueAt)
-      return due.getTime() >= now.getTime() && due.getTime() <= endOfToday.getTime()
+      const hours = hoursUntil(item.action.dueAt, now)
+      return hours !== undefined && hours >= 0 && hours <= 48
     })
     .sort((a, b) =>
       new Date(a.action.dueAt!).getTime() - new Date(b.action.dueAt!).getTime() ||
       b.score - a.score,
     )
+
+  const requiredToday = hardWithin48h.filter(
+    (item) => new Date(item.action.dueAt!).getTime() <= endOfToday.getTime(),
+  )
 
   const planned = [...requiredToday]
   const selectedIds = new Set(planned.map((item) => item.action.id))
@@ -284,11 +291,36 @@ export function buildTimePlan(
     0,
   )
   let totalMinutes = requiredTodayMinutes
+  let blockOptionalPacking = false
 
   if (totalMinutes <= budget) {
+    const nextHardDeadlines = hardWithin48h.filter((item) => !selectedIds.has(item.action.id))
+
+    for (const item of nextHardDeadlines) {
+      const nextTotal = totalMinutes + item.action.estimatedMinutes
+      if (nextTotal <= budget) {
+        planned.push(item)
+        selectedIds.add(item.action.id)
+        totalMinutes = nextTotal
+        continue
+      }
+
+      const extraNeeded = nextTotal - budget
+      if (extraNeeded <= 30) {
+        planned.push(item)
+        selectedIds.add(item.action.id)
+        totalMinutes = nextTotal
+      } else {
+        blockOptionalPacking = true
+      }
+      break
+    }
+  }
+
+  if (totalMinutes <= budget && !blockOptionalPacking) {
     const candidates = selectTodayActions(ranked, now, 24)
-    let followUps = planned.filter((item) => item.action.kind === 'follow_up').length
-    let prepItems = planned.filter((item) => item.action.kind === 'prep').length
+    let followUps = 0
+    let prepItems = 0
 
     for (const item of candidates) {
       if (selectedIds.has(item.action.id)) continue
@@ -310,16 +342,16 @@ export function buildTimePlan(
     }
   }
 
-  const nearDeadlineUnplanned = ranked
-    .filter((item) => {
-      if (!isHardDeadlineAction(item) || !item.action.dueAt || selectedIds.has(item.action.id)) return false
-      const hours = hoursUntil(item.action.dueAt, now)
-      return hours !== undefined && hours >= 0 && hours <= 48
-    })
-    .sort((a, b) => new Date(a.action.dueAt!).getTime() - new Date(b.action.dueAt!).getTime())
-
+  const nearDeadlineUnplanned = hardWithin48h.filter(
+    (item) => !selectedIds.has(item.action.id),
+  )
   const overBudgetMinutes = Math.max(0, totalMinutes - budget)
-  const remainingMinutes = Math.max(0, budget - totalMinutes)
+  const overrunReason: TimePlanOverrunReason | undefined =
+    requiredTodayMinutes > budget
+      ? 'today_deadlines'
+      : overBudgetMinutes > 0
+        ? 'near_deadline_stretch'
+        : undefined
 
   return {
     budgetMinutes: budget,
@@ -327,7 +359,8 @@ export function buildTimePlan(
     totalMinutes,
     requiredTodayMinutes,
     overBudgetMinutes,
-    remainingMinutes,
+    overrunReason,
+    remainingMinutes: Math.max(0, budget - totalMinutes),
     nearDeadlineUnplanned,
   }
 }
