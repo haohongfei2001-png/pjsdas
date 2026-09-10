@@ -92,12 +92,13 @@ export async function getAllActions() {
 
 export async function getAllProcesses() {
   const db = await dbPromise
-  const [processes, opportunities, events] = await Promise.all([
+  const [processes, opportunities, events, actions] = await Promise.all([
     db.getAll('processes'),
     db.getAll('opportunities'),
     db.getAll('processEvents'),
+    db.getAll('actions'),
   ])
-  return overlayProcessEventsOnProcesses(processes, opportunities, events)
+  return overlayProcessEventsOnProcesses(processes, opportunities, events, actions)
 }
 
 export async function getAllProcessEvents() {
