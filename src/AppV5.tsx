@@ -17,6 +17,7 @@ import {
   rankActions,
 } from './decisionV3'
 import { parsePJSDASWorkbook } from './importExcelV2'
+import { actionNodePrefix, formatTimeRemaining, timeRisk, upcomingNodes } from './timeRisk'
 import type {
   Action,
   ApplicationGroup,
@@ -55,6 +56,7 @@ function AppV5() {
   const [groups, setGroups] = useState<ApplicationGroup[]>([])
   const [lastImport, setLastImport] = useState<ImportMeta | undefined>()
   const [loading, setLoading] = useState(true)
+  const [now, setNow] = useState(() => new Date())
 
   async function reload() {
     const [nextOpportunities, nextActions, nextProcesses, nextPrep, nextGroups, nextImport] =
@@ -78,7 +80,12 @@ function AppV5() {
     reload().finally(() => setLoading(false))
   }, [])
 
-  const ranked = useMemo(() => rankActions(actions, opportunities), [actions, opportunities])
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(new Date()), 60_000)
+    return () => window.clearInterval(timer)
+  }, [])
+
+  const ranked = useMemo(() => rankActions(actions, opportunities, now), [actions, opportunities, now])
 
   async function markAction(id: string, status: Action['status']) {
     await updateActionStatus(id, status)
@@ -117,6 +124,7 @@ function AppV5() {
         {!loading && page === 'today' ? (
           <TodayView
             ranked={ranked}
+            now={now}
             opportunities={opportunities}
             processes={processes}
             groups={groups}
@@ -138,19 +146,20 @@ function AppV5() {
 
 function TodayView({
   ranked,
+  now,
   opportunities,
   processes,
   groups,
   onMark,
 }: {
   ranked: ReturnType<typeof rankActions>
+  now: Date
   opportunities: Opportunity[]
   processes: ProcessRecord[]
   groups: ApplicationGroup[]
   onMark: (id: string, status: Action['status']) => Promise<void>
 }) {
   const [budgetMinutes, setBudgetMinutes] = useState(180)
-  const now = new Date()
   const plan = buildTimePlan(ranked, budgetMinutes, now)
   const opportunityMap = new Map(opportunities.map((item) => [item.id, item]))
   const groupMap = new Map(groups.map((item) => [item.id, item]))
@@ -162,6 +171,8 @@ function TodayView({
   const top = plan.planned[0]
   const nextUnplanned = plan.nearDeadlineUnplanned[0]
   const nextFixed = plan.upcomingFixedEvents[0]
+  const upcoming = upcomingNodes(ranked, now, 7, 8)
+  const plannedIds = new Set(plan.planned.map((item) => item.action.id))
 
   return (
     <section>
@@ -250,6 +261,33 @@ function TodayView({
         </div>
       ) : null}
 
+      {upcoming.length > 0 ? (
+        <div className="upcoming-panel">
+          <div className="upcoming-heading">
+            <div>
+              <div className="eyebrow">UPCOMING NODES · NEXT 7 DAYS</div>
+              <h2>近期节点</h2>
+              <p>这里看未来几天会发生什么；即使不在今天的时间预算里，也不会消失。</p>
+            </div>
+            <span>{upcoming.length} 个节点</span>
+          </div>
+          <div className="upcoming-list">
+            {upcoming.map((item) => (
+              <article className="upcoming-item" key={`upcoming-${item.action.id}`}>
+                <div className="upcoming-copy">
+                  <strong>{item.action.title}</strong>
+                  <small>{item.action.timingMode === 'fixed' ? '固定安排' : '截止节点'} · {formatDateTime(item.action.dueAt!)}</small>
+                </div>
+                <div className="upcoming-risk">
+                  <TimeRiskBadge action={item.action} now={now} compact />
+                  {plannedIds.has(item.action.id) ? <small>已纳入今日计划</small> : <small>提前有预期</small>}
+                </div>
+              </article>
+            ))}
+          </div>
+        </div>
+      ) : null}
+
       {top ? (
         <div className="focus-card">
           <div className="eyebrow">START HERE</div>
@@ -257,8 +295,9 @@ function TodayView({
             <div>
               <h2>{top.action.title}</h2>
               <p>{top.reasons.join(' · ') || '当前计划的第一项'}</p>
+              {top.action.dueAt ? <TimeRiskBadge action={top.action} now={now} /> : null}
             </div>
-            <div className="focus-score">{top.score}</div>
+            <div className="focus-order">第一要做</div>
           </div>
         </div>
       ) : null}
@@ -288,7 +327,7 @@ function TodayView({
 
               return (
                 <article className="action-card" key={item.action.id}>
-                  <div className="rank">{String(index + 1).padStart(2, '0')}</div>
+                  <div className="rank">第{index + 1}项</div>
                   <div className="action-copy">
                     <div className="action-line">
                       <h3>{item.action.title}</h3>
@@ -309,12 +348,12 @@ function TodayView({
                     <small>
                       预计 {formatMinutes(item.action.estimatedMinutes)}
                       {item.action.dueAt
-                        ? ` · ${item.action.timingMode === 'fixed' ? '固定' : '节点'} ${formatDateTime(item.action.dueAt)}`
+                        ? ` · ${item.action.timingMode === 'fixed' ? '固定' : '截止'} ${formatDateTime(item.action.dueAt)}`
                         : ''}
                     </small>
+                    {item.action.dueAt ? <TimeRiskBadge action={item.action} now={now} /> : null}
                   </div>
                   <div className="action-side">
-                    <div className="score">{item.score}</div>
                     <button className="text-button" onClick={() => onMark(item.action.id, 'done')}>完成</button>
                   </div>
                 </article>
@@ -577,6 +616,17 @@ function SettingsView({ lastImport, onImported }: { lastImport?: ImportMeta; onI
         <div className="last-import">最近导入：{lastImport.filename} · {formatDateTime(lastImport.importedAt)} · {lastImport.opportunities} 个岗位</div>
       ) : null}
     </section>
+  )
+}
+
+function TimeRiskBadge({ action, now, compact = false }: { action: Action; now: Date; compact?: boolean }) {
+  if (!action.dueAt) return null
+  const risk = timeRisk(action.dueAt, now)
+  return (
+    <div className={`deadline-countdown risk-${risk.level}${compact ? ' compact' : ''}`}>
+      <strong>{actionNodePrefix(action)} {formatTimeRemaining(action.dueAt, now)}</strong>
+      <span>{risk.label}</span>
+    </div>
   )
 }
 
