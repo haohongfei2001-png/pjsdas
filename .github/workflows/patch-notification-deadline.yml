@@ -74,3 +74,5 @@ jobs:
           git add src/notificationParser.ts
           git commit -m "Parse expiring assessment invitations accurately"
           git push
+
+# trigger
