@@ -1,0 +1,107 @@
+name: Patch Today sequence UI
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/patch-today-sequence.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Patch Today sequence, countdown and upcoming nodes
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('src/AppV5.tsx')
+          s = p.read_text()
+
+          old = "import { parsePJSDASWorkbook } from './importExcelV2'\n"
+          new = "import { parsePJSDASWorkbook } from './importExcelV2'\nimport { actionNodePrefix, formatTimeRemaining, timeRisk, upcomingNodes } from './timeRisk'\n"
+          if old not in s: raise SystemExit('import anchor not found')
+          s = s.replace(old, new, 1)
+
+          old = "  const [lastImport, setLastImport] = useState<ImportMeta | undefined>()\n  const [loading, setLoading] = useState(true)\n"
+          new = "  const [lastImport, setLastImport] = useState<ImportMeta | undefined>()\n  const [loading, setLoading] = useState(true)\n  const [now, setNow] = useState(() => new Date())\n"
+          if old not in s: raise SystemExit('clock state anchor not found')
+          s = s.replace(old, new, 1)
+
+          old = "  useEffect(() => {\n    reload().finally(() => setLoading(false))\n  }, [])\n\n  const ranked = useMemo(() => rankActions(actions, opportunities), [actions, opportunities])\n"
+          new = "  useEffect(() => {\n    reload().finally(() => setLoading(false))\n  }, [])\n\n  useEffect(() => {\n    const timer = window.setInterval(() => setNow(new Date()), 60_000)\n    return () => window.clearInterval(timer)\n  }, [])\n\n  const ranked = useMemo(() => rankActions(actions, opportunities, now), [actions, opportunities, now])\n"
+          if old not in s: raise SystemExit('ranked clock anchor not found')
+          s = s.replace(old, new, 1)
+
+          old = "            ranked={ranked}\n            opportunities={opportunities}\n"
+          new = "            ranked={ranked}\n            now={now}\n            opportunities={opportunities}\n"
+          if old not in s: raise SystemExit('TodayView call anchor not found')
+          s = s.replace(old, new, 1)
+
+          old = "function TodayView({\n  ranked,\n  opportunities,\n"
+          new = "function TodayView({\n  ranked,\n  now,\n  opportunities,\n"
+          if old not in s: raise SystemExit('TodayView destructure anchor not found')
+          s = s.replace(old, new, 1)
+
+          old = "}: {\n  ranked: ReturnType<typeof rankActions>\n  opportunities: Opportunity[]\n"
+          new = "}: {\n  ranked: ReturnType<typeof rankActions>\n  now: Date\n  opportunities: Opportunity[]\n"
+          if old not in s: raise SystemExit('TodayView prop anchor not found')
+          s = s.replace(old, new, 1)
+
+          old = "  const [budgetMinutes, setBudgetMinutes] = useState(180)\n  const now = new Date()\n  const plan = buildTimePlan(ranked, budgetMinutes, now)\n"
+          new = "  const [budgetMinutes, setBudgetMinutes] = useState(180)\n  const plan = buildTimePlan(ranked, budgetMinutes, now)\n"
+          if old not in s: raise SystemExit('Today local now anchor not found')
+          s = s.replace(old, new, 1)
+
+          old = "  const nextUnplanned = plan.nearDeadlineUnplanned[0]\n  const nextFixed = plan.upcomingFixedEvents[0]\n"
+          new = "  const nextUnplanned = plan.nearDeadlineUnplanned[0]\n  const nextFixed = plan.upcomingFixedEvents[0]\n  const upcoming = upcomingNodes(ranked, now, 7, 8)\n  const plannedIds = new Set(plan.planned.map((item) => item.action.id))\n"
+          if old not in s: raise SystemExit('upcoming anchor not found')
+          s = s.replace(old, new, 1)
+
+          old = "            <div className=\"focus-score\">{top.score}</div>\n"
+          new = "            <div className=\"focus-order\">第一要做</div>\n"
+          if old not in s: raise SystemExit('focus score anchor not found')
+          s = s.replace(old, new, 1)
+
+          old = "                  <div className=\"rank\">{String(index + 1).padStart(2, '0')}</div>\n"
+          new = "                  <div className=\"rank\">第{index + 1}项</div>\n"
+          if old not in s: raise SystemExit('rank label anchor not found')
+          s = s.replace(old, new, 1)
+
+          old = "                  <div className=\"action-side\">\n                    <div className=\"score\">{item.score}</div>\n                    <button className=\"text-button\" onClick={() => onMark(item.action.id, 'done')}>完成</button>\n                  </div>\n"
+          new = "                  <div className=\"action-side\">\n                    <button className=\"text-button\" onClick={() => onMark(item.action.id, 'done')}>完成</button>\n                  </div>\n"
+          if old not in s: raise SystemExit('action score anchor not found')
+          s = s.replace(old, new, 1)
+
+          old = "                    <small>\n                      预计 {formatMinutes(item.action.estimatedMinutes)}\n                      {item.action.dueAt\n                        ? ` · ${item.action.timingMode === 'fixed' ? '固定' : '节点'} ${formatDateTime(item.action.dueAt)}`\n                        : ''}\n                    </small>\n"
+          new = "                    <small>\n                      预计 {formatMinutes(item.action.estimatedMinutes)}\n                      {item.action.dueAt\n                        ? ` · ${item.action.timingMode === 'fixed' ? '固定' : '截止'} ${formatDateTime(item.action.dueAt)}`\n                        : ''}\n                    </small>\n                    {item.action.dueAt ? <TimeRiskBadge action={item.action} now={now} /> : null}\n"
+          if old not in s: raise SystemExit('action timing anchor not found')
+          s = s.replace(old, new, 1)
+
+          marker = "      {top ? (\n        <div className=\"focus-card\">\n"
+          panel = """      {upcoming.length > 0 ? (\n        <div className=\"upcoming-panel\">\n          <div className=\"upcoming-heading\">\n            <div>\n              <div className=\"eyebrow\">UPCOMING NODES · NEXT 7 DAYS</div>\n              <h2>近期节点</h2>\n              <p>这里看未来几天会发生什么；即使不在今天的时间预算里，也不会消失。</p>\n            </div>\n            <span>{upcoming.length} 个节点</span>\n          </div>\n          <div className=\"upcoming-list\">\n            {upcoming.map((item) => (\n              <article className=\"upcoming-item\" key={`upcoming-${item.action.id}`}>\n                <div className=\"upcoming-copy\">\n                  <strong>{item.action.title}</strong>\n                  <small>{item.action.timingMode === 'fixed' ? '固定安排' : '截止节点'} · {formatDateTime(item.action.dueAt!)}</small>\n                </div>\n                <div className=\"upcoming-risk\">\n                  <TimeRiskBadge action={item.action} now={now} compact />\n                  {plannedIds.has(item.action.id) ? <small>已纳入今日计划</small> : <small>提前有预期</small>}\n                </div>\n              </article>\n            ))}\n          </div>\n        </div>\n      ) : null}\n\n      {top ? (\n        <div className=\"focus-card\">\n"""
+          if marker not in s: raise SystemExit('upcoming panel anchor not found')
+          s = s.replace(marker, panel, 1)
+
+          old = "              <p>{top.reasons.join(' · ') || '当前计划的第一项'}</p>\n"
+          new = "              <p>{top.reasons.join(' · ') || '当前计划的第一项'}</p>\n              {top.action.dueAt ? <TimeRiskBadge action={top.action} now={now} /> : null}\n"
+          if old not in s: raise SystemExit('focus countdown anchor not found')
+          s = s.replace(old, new, 1)
+
+          anchor = "function Metric({ label, value, emphasis = false }: { label: string; value: number; emphasis?: boolean }) {\n"
+          helper = """function TimeRiskBadge({ action, now, compact = false }: { action: Action; now: Date; compact?: boolean }) {\n  if (!action.dueAt) return null\n  const risk = timeRisk(action.dueAt, now)\n  return (\n    <div className={`deadline-countdown risk-${risk.level}${compact ? ' compact' : ''}`}>\n      <strong>{actionNodePrefix(action)} {formatTimeRemaining(action.dueAt, now)}</strong>\n      <span>{risk.label}</span>\n    </div>\n  )\n}\n\n""" + anchor
+          if anchor not in s: raise SystemExit('TimeRiskBadge anchor not found')
+          s = s.replace(anchor, helper, 1)
+
+          p.write_text(s)
+          PY
+      - name: Commit patch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/AppV5.tsx
+          git commit -m "Show Today as sequence with deadline risk"
+          git push
