@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { getAllActions, updateActionStatus } from './db'
-import { isUnresolvedPastFixed } from './fixedEventGuardLogic'
+import { isUnresolvedPastProcessEvent } from './fixedEventGuardLogic'
 import type { Action } from './model'
 import './fixedEventGuard.css'
 
@@ -31,7 +31,7 @@ export default function FixedEventGuard({ onChanged }: FixedEventGuardProps) {
 
   const overdue = useMemo(
     () => actions
-      .filter((action) => isUnresolvedPastFixed(action, now))
+      .filter((action) => isUnresolvedPastProcessEvent(action, now))
       .sort((a, b) => (a.dueAt ?? '').localeCompare(b.dueAt ?? '')),
     [actions, now],
   )
@@ -53,19 +53,19 @@ export default function FixedEventGuard({ onChanged }: FixedEventGuardProps) {
   return (
     <aside className="fixed-guard" role="alert">
       <div className="fixed-guard-copy">
-        <div className="eyebrow">FIXED EVENT NEEDS CONFIRMATION</div>
+        <div className="eyebrow">PROCESS EVENT NEEDS CONFIRMATION</div>
         <strong>{current.title}</strong>
         <p>
-          原定 {formatDateTime(current.dueAt!)}，时间已经过去。
-          系统不会假定你参加过，也不会把它继续当成原时长任务。
+          原节点 {formatDateTime(current.dueAt!)} 已经过期。
+          系统不会把它继续当成可执行任务，也不会假定你已经完成。
         </p>
-        {overdue.length > 1 ? <small>另外还有 {overdue.length - 1} 个固定流程节点待确认。</small> : null}
+        {overdue.length > 1 ? <small>另外还有 {overdue.length - 1} 个流程节点待确认。</small> : null}
       </div>
       <div className="fixed-guard-actions">
         <button type="button" onClick={confirmCompleted} disabled={busy}>
           {busy ? '处理中…' : '确认已完成'}
         </button>
-        <small>若未参加，不要点完成；先联系招聘方，或记录新的流程通知。</small>
+        <small>如果实际没有完成，不要点完成；先确认是否还能补做、联系招聘方，或记录新的流程通知。</small>
       </div>
     </aside>
   )
