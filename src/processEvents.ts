@@ -254,8 +254,17 @@ export function suppressSupersededActions(
   const opportunityMap = new Map(opportunities.map((item) => [item.id, item]))
 
   return actions.filter((action) => {
-    if (action.processEventId || !action.opportunityId) return true
+    if (!action.opportunityId) return true
     const opportunity = opportunityMap.get(action.opportunityId)
+
+    if (action.processEventId) {
+      // Event Actions are only active while their event is the newest event that
+      // actually projects over the imported baseline. This removes an old
+      // assessment task after an interview/offer arrives and hides orphaned or
+      // stale local events when a newer spreadsheet already moved the pipeline.
+      return opportunity?.effectiveProcessEventId === action.processEventId
+    }
+
     if (!opportunity?.effectiveProcessEventId) return true
 
     // A newer real recruiting event proves that an old application or silence
