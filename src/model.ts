@@ -60,6 +60,8 @@ export interface Opportunity {
   opportunityValue: number
   fitScore: number
   detail?: OpportunityDetail
+  effectiveProcessEventId?: string
+  effectiveProcessEventAt?: string
   importedAt: string
 }
 
@@ -77,6 +79,8 @@ export interface ProcessRecord {
   currentAction?: string
   prepPack?: string
   notes?: string
+  effectiveProcessEventId?: string
+  effectiveProcessEventAt?: string
 }
 
 export interface ProcessEvent {
