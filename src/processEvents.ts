@@ -246,3 +246,21 @@ export function overlayProcessEventsOnProcesses(
 
   return overlaid
 }
+
+export function suppressSupersededActions(
+  actions: Action[],
+  opportunities: Opportunity[],
+): Action[] {
+  const opportunityMap = new Map(opportunities.map((item) => [item.id, item]))
+
+  return actions.filter((action) => {
+    if (action.processEventId || !action.opportunityId) return true
+    const opportunity = opportunityMap.get(action.opportunityId)
+    if (!opportunity?.effectiveProcessEventId) return true
+
+    // A newer real recruiting event proves that an old application or silence
+    // check for the same role has already been overtaken by reality. Keep the
+    // imported record as baseline, but do not show its superseded Action.
+    return action.kind !== 'apply' && action.kind !== 'follow_up'
+  })
+}
