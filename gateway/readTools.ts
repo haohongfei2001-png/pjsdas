@@ -1,0 +1,134 @@
+import type { CallToolResult } from '@modelcontextprotocol/server'
+import * as z from 'zod/v4'
+import {
+  BridgeReadError,
+  explainPriority,
+  getDecisionRules,
+  getPipeline,
+  getRecentTimeline,
+  getTodayPlan,
+  listOpportunities,
+} from '../src/ai/readLayer'
+import type { WorkspaceSource } from './workspaceSource'
+
+export const READ_TOOL_NAMES = [
+  'get_today_plan',
+  'list_opportunities',
+  'get_pipeline',
+  'get_decision_rules',
+  'explain_priority',
+  'get_recent_timeline',
+] as const
+
+export type ReadToolName = typeof READ_TOOL_NAMES[number]
+
+export const processStageSchema = z.enum([
+  'not_applied',
+  'screening',
+  'assessment',
+  'written_test',
+  'interview',
+  'offer',
+  'waiting_release',
+  'closed',
+])
+
+export const opportunityRoleSchema = z.enum(['core', 'backup', 'reach', 'lottery', 'practice'])
+export const timelineCategorySchema = z.enum(['opportunity', 'process', 'action', 'rules', 'change', 'data', 'note'])
+
+export const getTodayPlanSchema = z.object({
+  date: z.string().optional(),
+  availableMinutes: z.number().optional(),
+})
+
+export const listOpportunitiesSchema = z.object({
+  query: z.string().optional(),
+  stage: processStageSchema.optional(),
+  company: z.string().optional(),
+  roleType: opportunityRoleSchema.optional(),
+  deadlineBefore: z.string().optional(),
+  limit: z.number().int().optional(),
+})
+
+export const getPipelineSchema = z.object({
+  stage: processStageSchema.optional(),
+  attentionOnly: z.boolean().optional(),
+  company: z.string().optional(),
+  limit: z.number().int().optional(),
+})
+
+export const getDecisionRulesSchema = z.object({})
+
+export const explainPrioritySchema = z.object({
+  actionId: z.string().optional(),
+  opportunityId: z.string().optional(),
+  compareWithOpportunityId: z.string().optional(),
+})
+
+export const getRecentTimelineSchema = z.object({
+  since: z.string().optional(),
+  until: z.string().optional(),
+  categories: z.array(timelineCategorySchema).optional(),
+  company: z.string().optional(),
+  opportunityId: z.string().optional(),
+  limit: z.number().int().optional(),
+})
+
+function success(output: object): CallToolResult {
+  return {
+    content: [{ type: 'text', text: JSON.stringify(output, null, 2) }],
+    structuredContent: { ...output },
+  }
+}
+
+function failure(caught: unknown): CallToolResult {
+  if (caught instanceof BridgeReadError) {
+    return {
+      isError: true,
+      content: [{
+        type: 'text',
+        text: JSON.stringify({ code: caught.code, message: caught.message, retryable: caught.retryable }),
+      }],
+    }
+  }
+
+  return {
+    isError: true,
+    content: [{
+      type: 'text',
+      text: JSON.stringify({
+        code: 'TEMPORARILY_UNAVAILABLE',
+        message: caught instanceof Error ? caught.message : 'PJSDAS MCP gateway failed to read the workspace.',
+        retryable: true,
+      }),
+    }],
+  }
+}
+
+export async function invokeReadTool(
+  source: WorkspaceSource,
+  name: ReadToolName,
+  args: unknown = {},
+): Promise<CallToolResult> {
+  try {
+    const { snapshot, context } = await source.read()
+
+    switch (name) {
+      case 'get_today_plan':
+        return success(getTodayPlan(snapshot, getTodayPlanSchema.parse(args), context))
+      case 'list_opportunities':
+        return success(listOpportunities(snapshot, listOpportunitiesSchema.parse(args), context))
+      case 'get_pipeline':
+        return success(getPipeline(snapshot, getPipelineSchema.parse(args), context))
+      case 'get_decision_rules':
+        getDecisionRulesSchema.parse(args)
+        return success(getDecisionRules(snapshot, context))
+      case 'explain_priority':
+        return success(explainPriority(snapshot, explainPrioritySchema.parse(args), context))
+      case 'get_recent_timeline':
+        return success(getRecentTimeline(snapshot, getRecentTimelineSchema.parse(args), context))
+    }
+  } catch (caught) {
+    return failure(caught)
+  }
+}
