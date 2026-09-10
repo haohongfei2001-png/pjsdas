@@ -12,7 +12,7 @@ button, input, select { font: inherit; }
 button { cursor: pointer; }
 
 .app-shell { min-height: 100vh; display: grid; grid-template-columns: 236px minmax(0, 1fr); }
-.sidebar { position: sticky; top: 0; height: 100vh; padding: 28px 18px; border-right: 1px solid rgba(30,31,28,.09); background: rgba(250,248,242,.82); backdrop-filter: blur(18px); display: flex; flex-direction: column; }
+.sidebar { position: sticky; top: 0; height: 100vh; padding: 28px 18px 126px; border-right: 1px solid rgba(30,31,28,.09); background: rgba(250,248,242,.82); backdrop-filter: blur(18px); display: flex; flex-direction: column; }
 .brand { display: flex; align-items: center; gap: 12px; padding: 0 8px 28px; }
 .brand-mark { width: 36px; height: 36px; border-radius: 11px; display: grid; place-items: center; background: #20211e; color: #f8f5ed; font-weight: 760; }
 .brand strong { display: block; letter-spacing: .035em; }
@@ -23,7 +23,7 @@ nav { display: grid; gap: 5px; }
 .nav-item.active { background: #e4ded0; color: #20211e; font-weight: 680; }
 .sidebar-note { margin-top: auto; padding: 10px 12px; font-size: 12px; color: #8c8b84; display: grid; gap: 4px; }
 
-.main-panel { padding: 52px clamp(26px, 5vw, 76px) 80px; max-width: 1380px; width: 100%; }
+.main-panel { padding: 52px clamp(26px, 5vw, 76px) 170px; max-width: 1380px; width: 100%; }
 .page-header { display: flex; justify-content: space-between; gap: 28px; margin-bottom: 30px; }
 .page-header h1 { margin: 7px 0 10px; font-size: clamp(32px, 4vw, 50px); line-height: 1.06; letter-spacing: -.045em; font-weight: 690; }
 .page-header p { max-width: 800px; margin: 0; color: #6f706a; font-size: 15px; line-height: 1.7; }
@@ -142,7 +142,7 @@ dd { margin: 0; font-size: 12px; }
   nav { display: flex; gap: 4px; overflow-x: auto; }
   .nav-item { white-space: nowrap; }
   .sidebar-note { display: none; }
-  .main-panel { padding: 32px 16px 50px; }
+  .main-panel { padding: 32px 16px 180px; }
   .page-header h1 { font-size: 34px; }
   .metric-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .focus-row { grid-template-columns: 1fr auto; }
