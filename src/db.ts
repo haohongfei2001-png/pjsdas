@@ -6,6 +6,7 @@ import {
   overlayProcessEventsOnProcesses,
   suppressSupersededActions,
 } from './processEvents'
+import { mergeActionsForReimport } from './reimportState'
 import { createSnapshot, validateSnapshot, type PJSDASSnapshot } from './snapshot'
 import type {
   Action,
@@ -207,10 +208,7 @@ export async function replaceImportedData(bundle: ImportBundle) {
   // already completed or skipped. Process-event actions are local records rather
   // than Excel-derived records, so they must survive the replacement entirely.
   const previousActions = await db.getAll('actions')
-  const previousState = new Map(
-    previousActions.map((item) => [item.id, { status: item.status, updatedAt: item.updatedAt }]),
-  )
-  const localEventActions = previousActions.filter((item) => item.processEventId)
+  const mergedActions = mergeActionsForReimport(bundle.actions, previousActions)
 
   const tx = db.transaction(
     ['opportunities', 'processes', 'actions', 'prep', 'applicationGroups', 'meta'],
@@ -228,15 +226,7 @@ export async function replaceImportedData(bundle: ImportBundle) {
 
   for (const item of bundle.opportunities) await tx.objectStore('opportunities').put(item)
   for (const item of bundle.processes) await tx.objectStore('processes').put(item)
-  for (const item of bundle.actions) {
-    const previous = previousState.get(item.id)
-    await tx.objectStore('actions').put(
-      previous
-        ? { ...item, status: previous.status, updatedAt: previous.updatedAt }
-        : item,
-    )
-  }
-  for (const item of localEventActions) await tx.objectStore('actions').put(item)
+  for (const item of mergedActions) await tx.objectStore('actions').put(item)
   for (const item of bundle.prep) await tx.objectStore('prep').put(item)
   for (const item of bundle.applicationGroups) await tx.objectStore('applicationGroups').put(item)
   await tx.objectStore('meta').put({ key: 'lastImport', ...bundle.summary })
