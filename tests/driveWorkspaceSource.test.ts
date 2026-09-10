@@ -91,9 +91,9 @@ describe('Google Drive MCP workspace source', () => {
 
     expect(fetchImpl).toHaveBeenCalledTimes(2)
     const calls = vi.mocked(fetchImpl).mock.calls
-    const listUrl = String(calls[0]![0])
-    expect(listUrl).toContain('spaces=appDataFolder')
-    expect(decodeURIComponent(listUrl)).toContain("name = 'pjsdas-workspace.json' and trashed = false")
+    const listUrl = new URL(String(calls[0]![0]))
+    expect(listUrl.searchParams.get('spaces')).toBe('appDataFolder')
+    expect(listUrl.searchParams.get('q')).toBe("name = 'pjsdas-workspace.json' and trashed = false")
     expect(String(calls[1]![0])).toContain('/files/drive-file-1?alt=media')
 
     for (const [, init] of calls) {
