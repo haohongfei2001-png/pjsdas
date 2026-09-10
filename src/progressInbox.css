@@ -143,6 +143,17 @@
   background: #fffaeb;
 }
 
+.progress-operation.ignored {
+  border-color: #e4e7ec;
+  background: #f6f7f8;
+  opacity: .78;
+}
+
+.progress-operation.ignored .progress-operation-mark {
+  background: #e9ebee;
+  color: #667085;
+}
+
 .progress-operation-mark {
   display: grid;
   place-items: center;
