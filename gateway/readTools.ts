@@ -81,28 +81,25 @@ function success(output: object): CallToolResult {
   }
 }
 
-function failure(caught: unknown): CallToolResult {
-  if (caught instanceof BridgeReadError) {
-    return {
-      isError: true,
-      content: [{
-        type: 'text',
-        text: JSON.stringify({ code: caught.code, message: caught.message, retryable: caught.retryable }),
-      }],
-    }
-  }
-
+function toolError(code: string, message: string, retryable: boolean): CallToolResult {
   return {
     isError: true,
-    content: [{
-      type: 'text',
-      text: JSON.stringify({
-        code: 'TEMPORARILY_UNAVAILABLE',
-        message: caught instanceof Error ? caught.message : 'PJSDAS MCP gateway failed to read the workspace.',
-        retryable: true,
-      }),
-    }],
+    content: [{ type: 'text', text: JSON.stringify({ code, message, retryable }) }],
   }
+}
+
+function failure(caught: unknown): CallToolResult {
+  if (caught instanceof BridgeReadError) {
+    return toolError(caught.code, caught.message, caught.retryable)
+  }
+  if (caught instanceof z.ZodError) {
+    return toolError('INVALID_ARGUMENT', caught.issues[0]?.message ?? 'Invalid MCP tool arguments.', false)
+  }
+  return toolError(
+    'TEMPORARILY_UNAVAILABLE',
+    caught instanceof Error ? caught.message : 'PJSDAS MCP gateway failed to read the workspace.',
+    true,
+  )
 }
 
 export async function invokeReadTool(
