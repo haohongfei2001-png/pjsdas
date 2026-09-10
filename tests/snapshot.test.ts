@@ -93,13 +93,36 @@ describe('PJSDAS local snapshot', () => {
     expect(() => parseSnapshotText(JSON.stringify(broken))).toThrow(/ID 重复/)
   })
 
-  it('rejects an event whose opportunity is missing', () => {
+  it('allows an archived process event to outlive a removed opportunity', () => {
     const snapshot = createSnapshot(data(), '2026-09-10T05:00:00.000Z')
+    const archival = {
+      ...snapshot,
+      data: {
+        ...snapshot.data,
+        opportunities: [],
+      },
+    }
+    const restored = parseSnapshotText(JSON.stringify(archival))
+    expect(restored.data.opportunities).toHaveLength(0)
+    expect(restored.data.processEvents[0].company).toBe('测试公司')
+    expect(restored.data.actions[0].processEventId).toBe(event.id)
+  })
+
+  it('still rejects an ordinary action whose opportunity is missing', () => {
+    const snapshot = createSnapshot(data(), '2026-09-10T05:00:00.000Z')
+    const ordinaryAction: Action = {
+      ...action,
+      id: 'apply:OPP-001',
+      kind: 'apply',
+      processEventId: undefined,
+      timingMode: undefined,
+    }
     const broken = {
       ...snapshot,
       data: {
         ...snapshot.data,
         opportunities: [],
+        actions: [ordinaryAction],
       },
     }
     expect(() => parseSnapshotText(JSON.stringify(broken))).toThrow(/不存在的岗位/)
