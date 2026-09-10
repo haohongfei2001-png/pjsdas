@@ -1,6 +1,10 @@
 import { openDB, type DBSchema } from 'idb'
 import { assertImportBundleSafe } from './importDiagnostics'
-import { actionForProcessEvent } from './processEvents'
+import {
+  actionForProcessEvent,
+  overlayProcessEventsOnOpportunities,
+  overlayProcessEventsOnProcesses,
+} from './processEvents'
 import type {
   Action,
   ApplicationGroup,
@@ -64,7 +68,13 @@ export const dbPromise = openDB<PJSDASDatabase>('pjsdas', 3, {
 })
 
 export async function getAllOpportunities() {
-  return (await dbPromise).getAll('opportunities')
+  const db = await dbPromise
+  const [opportunities, processes, events] = await Promise.all([
+    db.getAll('opportunities'),
+    db.getAll('processes'),
+    db.getAll('processEvents'),
+  ])
+  return overlayProcessEventsOnOpportunities(opportunities, events, processes)
 }
 
 export async function getAllActions() {
@@ -72,7 +82,13 @@ export async function getAllActions() {
 }
 
 export async function getAllProcesses() {
-  return (await dbPromise).getAll('processes')
+  const db = await dbPromise
+  const [processes, opportunities, events] = await Promise.all([
+    db.getAll('processes'),
+    db.getAll('opportunities'),
+    db.getAll('processEvents'),
+  ])
+  return overlayProcessEventsOnProcesses(processes, opportunities, events)
 }
 
 export async function getAllProcessEvents() {
