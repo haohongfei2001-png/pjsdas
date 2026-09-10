@@ -60,10 +60,10 @@ export default function ProgressInbox({ onChanged }: ProgressInboxProps) {
     setMessage('')
     try {
       const result = await applyProgressUpdate(plan.executable)
-      const unresolvedText = plan.unresolved.length > 0
-        ? `；另有 ${plan.unresolved.length} 条歧义未写入，请补充公司/岗位后再提交。`
-        : '。'
-      setMessage(`已应用 ${result.applied} 项更新${unresolvedText}`)
+      const notes: string[] = []
+      if (plan.unresolved.length > 0) notes.push(`${plan.unresolved.length} 条歧义未写入`)
+      if (plan.ignored.length > 0) notes.push(`${plan.ignored.length} 条背景记录无需写入`)
+      setMessage(`已应用 ${result.applied} 项更新${notes.length ? `；${notes.join('，')}。` : '。'}`)
       setText('')
       setPlan(null)
       setOpportunities(await getAllOpportunities())
@@ -117,34 +117,53 @@ export default function ProgressInbox({ onChanged }: ProgressInboxProps) {
                     <div className="eyebrow">REVIEW DIFF</div>
                     <h3>准备执行 {plan.executable.length} 项修改</h3>
                   </div>
-                  {plan.unresolved.length > 0 ? <span>{plan.unresolved.length} 条需补充</span> : <span>可直接确认</span>}
+                  <span>
+                    {plan.unresolved.length > 0
+                      ? `${plan.unresolved.length} 条待确认${plan.ignored.length ? ` · ${plan.ignored.length} 条无需写入` : ''}`
+                      : plan.ignored.length > 0
+                        ? `${plan.ignored.length} 条无需写入`
+                        : '可直接确认'}
+                  </span>
                 </div>
 
                 <div className="progress-operation-list">
-                  {plan.operations.map((operation) => (
-                    <article
-                      key={operation.id}
-                      className={operation.kind === 'unresolved' ? 'progress-operation unresolved' : 'progress-operation'}
-                    >
-                      <div className="progress-operation-mark">
-                        {operation.kind === 'unresolved' ? '?' : operation.kind === 'close_opportunity' ? '−' : operation.kind === 'rename_opportunity' ? '→' : '+'}
-                      </div>
-                      <div>
-                        <strong>{progressOperationSummary(operation)}</strong>
-                        <p>{operation.sourceText}</p>
-                        {operation.kind === 'unresolved' && operation.candidates?.length ? (
-                          <small>可能对应：{operation.candidates.map((item) => item.label).join('；')}</small>
-                        ) : (
-                          <small>{confidenceLabel[operation.confidence]}</small>
-                        )}
-                      </div>
-                    </article>
-                  ))}
+                  {plan.operations.map((operation) => {
+                    const stateClass = operation.kind === 'unresolved'
+                      ? ' unresolved'
+                      : operation.kind === 'ignored'
+                        ? ' ignored'
+                        : ''
+                    const mark = operation.kind === 'unresolved'
+                      ? '?'
+                      : operation.kind === 'ignored'
+                        ? '·'
+                        : operation.kind === 'close_opportunity'
+                          ? '−'
+                          : operation.kind === 'rename_opportunity'
+                            ? '→'
+                            : '+'
+                    return (
+                      <article key={operation.id} className={`progress-operation${stateClass}`}>
+                        <div className="progress-operation-mark">{mark}</div>
+                        <div>
+                          <strong>{progressOperationSummary(operation)}</strong>
+                          <p>{operation.sourceText}</p>
+                          {operation.kind === 'unresolved' && operation.candidates?.length ? (
+                            <small>可能对应：{operation.candidates.map((item) => item.label).join('；')}</small>
+                          ) : operation.kind === 'ignored' ? (
+                            <small>已识别为背景记录 · 不修改岗位数据库</small>
+                          ) : (
+                            <small>{confidenceLabel[operation.confidence]}</small>
+                          )}
+                        </div>
+                      </article>
+                    )
+                  })}
                 </div>
 
                 {plan.unresolved.length > 0 ? (
                   <div className="progress-message warning">
-                    歧义项不会自动写入。你可以在上方原文中补全公司或岗位名称后重新解析；其他明确修改仍可先确认。
+                    只有黄色“待确认”项不会自动写入。可以补全公司或岗位后重新解析；其他明确修改仍可先确认。
                   </div>
                 ) : null}
 
