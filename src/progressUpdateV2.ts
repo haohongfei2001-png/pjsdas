@@ -753,7 +753,7 @@ export function parseProgressUpdate(
             eventType: detected.type!,
             dueAt,
             timingMode,
-            estimatedMinutes: defaultMinutesForProcessEvent(detected.type!),
+            estimatedMinutes: parsed.estimatedMinutes ?? defaultMinutesForProcessEvent(detected.type!),
             completed,
           })
           touchRecent(recentByCompany, target.opportunity.company, target.opportunity.id)
