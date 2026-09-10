@@ -7,7 +7,7 @@ function opportunity(id: string, company: string, role: string, stage: Opportuni
     id,
     company,
     role,
-    currentStageLabel: stage === 'closed' ? '流程结束' : stage === 'not_applied' ? '待投' : '筛选中',
+    currentStageLabel: stage === 'closed' ? '流程结束' : stage === 'not_applied' ? '待投' : stage === 'interview' ? '面试' : '筛选中',
     processStage: stage,
     roleType: 'core',
     early: false,
@@ -167,11 +167,37 @@ describe('natural-language progress planner', () => {
     })
   })
 
-  it('surfaces unmatched history instead of silently dropping it', () => {
+  it('infers a new Chinese company from a strong job-title anchor', () => {
+    const plan = parseProgressUpdate('9月10日，投递星河云AI产品经理。', current, now)
+    expect(plan.operations[0]).toMatchObject({
+      kind: 'upsert_opportunity',
+      company: '星河云',
+      role: 'AI产品经理',
+      mode: 'submitted',
+    })
+  })
+
+  it('uses an existing process stage to resolve a company-only historical interview', () => {
+    const roles = [
+      opportunity('E-PM', '戊公司', '产品经理', 'screening'),
+      opportunity('E-OPS', '戊公司', '运营经理', 'interview'),
+    ]
+    const plan = parseProgressUpdate('9月4日，戊公司AI面试。', roles, now)
+    const event = plan.operations.find((item) => item.kind === 'process_event')
+    expect(event).toMatchObject({
+      kind: 'process_event',
+      opportunityId: 'E-OPS',
+      eventType: 'interview_invite',
+      completed: true,
+    })
+  })
+
+  it('marks clearly non-recruiting history as ignored instead of demanding user repair', () => {
     const plan = parseProgressUpdate('9月5日，开始个人作品集项目。', current, now)
     expect(plan.executable).toHaveLength(0)
-    expect(plan.unresolved).toHaveLength(1)
-    expect(plan.unresolved[0].sourceText).toBe('开始个人作品集项目')
+    expect(plan.unresolved).toHaveLength(0)
+    expect(plan.ignored).toHaveLength(1)
+    expect(plan.ignored[0].sourceText).toBe('开始个人作品集项目')
   })
 
   it('fails closed when a process event cannot be mapped to one of several active roles', () => {
