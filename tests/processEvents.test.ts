@@ -151,4 +151,47 @@ describe('process event projection', () => {
     const visible = suppressSupersededActions(actions, [projectedOpportunity])
     expect(visible.map((item) => item.id)).toEqual(['prep:shared', eventAction.id])
   })
+
+  it('keeps only the newest effective process-event action for one opportunity', () => {
+    const assessment = event({
+      id: 'evt-assessment',
+      type: 'assessment_invite',
+      occurredAt: '2026-09-08T01:00:00.000Z',
+      dueAt: '2026-09-08T10:00:00.000Z',
+      estimatedMinutes: 45,
+    })
+    const interview = event({ id: 'evt-interview' })
+    const projectedOpportunity = overlayProcessEventsOnOpportunities(
+      [opportunity],
+      [assessment, interview],
+      [importedProcess],
+    )[0]
+
+    const visible = suppressSupersededActions(
+      [actionForProcessEvent(assessment)!, actionForProcessEvent(interview)!],
+      [projectedOpportunity],
+    )
+
+    expect(projectedOpportunity.effectiveProcessEventId).toBe(interview.id)
+    expect(visible.map((item) => item.processEventId)).toEqual([interview.id])
+  })
+
+  it('hides a local event action when the imported baseline is already newer', () => {
+    const older = event({
+      id: 'evt-old',
+      occurredAt: '2026-09-01T00:00:00.000Z',
+    })
+    const projectedOpportunity = overlayProcessEventsOnOpportunities(
+      [opportunity],
+      [older],
+      [importedProcess],
+    )[0]
+    const visible = suppressSupersededActions(
+      [actionForProcessEvent(older)!],
+      [projectedOpportunity],
+    )
+
+    expect(projectedOpportunity.effectiveProcessEventId).toBeUndefined()
+    expect(visible).toHaveLength(0)
+  })
 })
