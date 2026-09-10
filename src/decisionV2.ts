@@ -31,9 +31,20 @@ function hoursUntil(dueAt: string | undefined, now: Date) {
   return (new Date(dueAt).getTime() - now.getTime()) / HOUR
 }
 
+function localDayStart(iso: string) {
+  const date = new Date(iso)
+  date.setHours(0, 0, 0, 0)
+  return date
+}
+
+function followUpHoursUntil(dueAt: string | undefined, now: Date) {
+  if (!dueAt) return undefined
+  return (localDayStart(dueAt).getTime() - now.getTime()) / HOUR
+}
+
 export function processNeedsReview(process: ProcessRecord, now = new Date()) {
   if (!process.nextCheckAt) return false
-  return new Date(process.nextCheckAt).getTime() <= now.getTime()
+  return localDayStart(process.nextCheckAt).getTime() <= now.getTime()
 }
 
 export function processReviewLabel(process: ProcessRecord, now = new Date()) {
@@ -41,7 +52,10 @@ export function processReviewLabel(process: ProcessRecord, now = new Date()) {
 }
 
 function urgencyScore(action: Action, now: Date) {
-  const hours = hoursUntil(action.dueAt, now)
+  const hours = action.kind === 'follow_up'
+    ? followUpHoursUntil(action.dueAt, now)
+    : hoursUntil(action.dueAt, now)
+
   if (hours === undefined) {
     if (action.kind === 'prep') return 30
     if (action.kind === 'group_decision') return 38
@@ -100,7 +114,9 @@ export function rankAction(
   opportunity?: Opportunity,
   now = new Date(),
 ): RankedAction {
-  const hours = hoursUntil(action.dueAt, now)
+  const hours = action.kind === 'follow_up'
+    ? followUpHoursUntil(action.dueAt, now)
+    : hoursUntil(action.dueAt, now)
   const followUpDue = action.kind === 'follow_up' && hours !== undefined && hours <= 0
 
   const dynamicLeverage = followUpDue ? Math.max(action.leverage, 72) : action.leverage
@@ -163,8 +179,13 @@ export function rankActions(actions: Action[], opportunities: Opportunity[], now
   return actions
     .filter((action) => action.status === 'todo' || action.status === 'doing')
     .filter((action) => {
-      if ((action.kind !== 'apply' && action.kind !== 'group_decision') || !action.dueAt) return true
-      return new Date(action.dueAt).getTime() >= now.getTime()
+      if ((action.kind === 'apply' || action.kind === 'group_decision') && action.dueAt) {
+        return new Date(action.dueAt).getTime() >= now.getTime()
+      }
+      if (action.kind === 'follow_up' && action.dueAt) {
+        return localDayStart(action.dueAt).getTime() <= now.getTime()
+      }
+      return true
     })
     .map((action) =>
       rankAction(
@@ -176,13 +197,6 @@ export function rankActions(actions: Action[], opportunities: Opportunity[], now
     .sort((a, b) => b.score - a.score || a.action.estimatedMinutes - b.action.estimatedMinutes)
 }
 
-/**
- * Converts a global ranking into a usable Today queue.
- *
- * Hard deadline actions inside 48 hours are protected from being crowded out.
- * Management follow-ups and reusable prep are both capped so they cannot fill
- * the whole day merely because many old checkpoints became due at once.
- */
 export function selectTodayActions(ranked: RankedAction[], now = new Date(), limit = 10) {
   const selected: RankedAction[] = []
   const selectedIds = new Set<string>()
@@ -243,13 +257,6 @@ function isHardDeadlineAction(item: RankedAction) {
   return item.action.kind === 'apply' || item.action.kind === 'group_decision'
 }
 
-/**
- * Produces an executable plan for a concrete time budget instead of merely a
- * ranking. Hard deadlines due before the end of the local calendar day are
- * treated as required work. If those tasks alone exceed the budget, the plan
- * deliberately stays over budget and reports the deficit rather than hiding a
- * deadline and pretending the requested budget is sufficient.
- */
 export function buildTimePlan(
   ranked: RankedAction[],
   budgetMinutes: number,
