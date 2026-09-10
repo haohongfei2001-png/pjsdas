@@ -1,0 +1,39 @@
+name: Finalize v0.8 metadata
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/release-v08-metadata.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  finalize:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Synchronize package version
+        run: npm version 0.8.0 --no-git-tag-version
+      - name: Synchronize visible app version
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('src/AppV5.tsx')
+          text = path.read_text()
+          old = 'Local-first · v0.7'
+          if old not in text:
+              raise SystemExit('Expected old visible version marker not found')
+          path.write_text(text.replace(old, 'Local-first · v0.8', 1))
+          PY
+      - name: Commit synchronized metadata
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add package.json package-lock.json src/AppV5.tsx
+          git commit -m "Release PJSDAS v0.8.0 metadata"
+          git push
