@@ -1,13 +1,15 @@
 .event-dock-trigger {
   position: fixed;
   right: 24px;
-  bottom: 24px;
+  bottom: 82px;
   z-index: 40;
+  max-width: calc(100vw - 48px);
   border: 0;
   border-radius: 999px;
   padding: 12px 18px;
   font: inherit;
   font-weight: 700;
+  white-space: nowrap;
   background: #111827;
   color: white;
   box-shadow: 0 12px 32px rgba(17, 24, 39, 0.2);
@@ -228,7 +230,8 @@
 @media (max-width: 720px) {
   .event-dock-trigger {
     right: 16px;
-    bottom: 16px;
+    bottom: 72px;
+    max-width: calc(100vw - 32px);
   }
 
   .event-dock {
