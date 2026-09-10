@@ -138,7 +138,10 @@ export function matchNotificationOpportunity(
 export function detectNotificationType(text: string): { type?: ProcessEventType; confidence: 'high' | 'medium' | 'low' } {
   const normalized = normalize(text)
 
-  if (/(未通过|很遗憾|流程结束|终止流程|暂不匹配|感谢.*关注)/.test(text)) {
+  if (
+    /(未通过|很遗憾|流程结束|终止流程|暂不匹配)/.test(text) ||
+    /感谢.*(?:参与|申请|投递).*?(?:遗憾|未能|不匹配)/.test(text)
+  ) {
     return { type: 'rejection', confidence: 'high' }
   }
   if (/(offer|录用通知|拟录用|录取通知)/i.test(text)) {
@@ -163,7 +166,7 @@ export function detectNotificationType(text: string): { type?: ProcessEventType;
 function detectTimingMode(text: string, type?: ProcessEventType): ActionTimingMode | undefined {
   if (!type || !['assessment_invite', 'written_test_invite', 'interview_invite'].includes(type)) return undefined
   if (type === 'interview_invite') return 'fixed'
-  if (/(截止|最晚|前完成|之前完成|有效期至|有效期到|请在.*前|请于.*前)/.test(text)) return 'deadline'
+  if (/(截止|最晚|前完成|之前完成|有效期至|有效期到|失效|链接.*失效|请在.*前|请于.*前)/.test(text)) return 'deadline'
   if (/(固定时间|考试时间|笔试时间|开考|准时参加|场次|统一笔试|统一考试)/.test(text)) return 'fixed'
   return defaultTimingModeForProcessEvent(type)
 }
@@ -265,6 +268,24 @@ function extractDueAt(
   return { dueAt: target.toISOString(), confidence: 'high', warnings }
 }
 
+function estimatedMinutesFromText(text: string, type?: ProcessEventType) {
+  if (!type) return undefined
+
+  const range = text.match(/(\d{1,3})\s*[-–—~～至到]\s*(\d{1,3})\s*分钟/)
+  if (range?.[1] && range[2]) {
+    const upper = Math.max(Number(range[1]), Number(range[2]))
+    if (upper >= 5 && upper <= 360) return upper
+  }
+
+  const single = text.match(/(?:约|大约|预计|作答时间约)?\s*(\d{1,3})\s*分钟/)
+  if (single?.[1]) {
+    const minutes = Number(single[1])
+    if (minutes >= 5 && minutes <= 360) return minutes
+  }
+
+  return defaultMinutesForProcessEvent(type)
+}
+
 export function parseRecruitingNotification(
   rawText: string,
   opportunities: Opportunity[],
@@ -300,7 +321,7 @@ export function parseRecruitingNotification(
     timingMode,
     occurredAt: now.toISOString(),
     dueAt: timeResult.dueAt,
-    estimatedMinutes: typeMatch.type ? defaultMinutesForProcessEvent(typeMatch.type) : undefined,
+    estimatedMinutes: estimatedMinutesFromText(text, typeMatch.type),
     confidence: {
       opportunity: opportunityMatch.confidence,
       type: typeMatch.confidence,
