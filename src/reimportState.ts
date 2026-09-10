@@ -2,8 +2,8 @@ import type { Action } from './model'
 
 /**
  * Rebuild the action store for a spreadsheet re-import without resurrecting
- * actions the user already completed/skipped and without deleting local
- * Process Event actions that do not live in the workbook.
+ * actions the user already completed/skipped and without deleting local actions
+ * that do not live in the workbook.
  */
 export function mergeActionsForReimport(
   importedActions: Action[],
@@ -24,9 +24,11 @@ export function mergeActionsForReimport(
   })
 
   const importedIds = new Set(importedActions.map((item) => item.id))
-  const localEventActions = previousActions.filter(
-    (item) => item.processEventId && !importedIds.has(item.id),
+  const localActions = previousActions.filter(
+    (item) =>
+      !importedIds.has(item.id) &&
+      (Boolean(item.processEventId) || item.sourceLabel === '自然语言更新'),
   )
 
-  return [...mergedImported, ...localEventActions]
+  return [...mergedImported, ...localActions]
 }
