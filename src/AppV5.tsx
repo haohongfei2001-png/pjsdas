@@ -107,7 +107,7 @@ function AppV5() {
           ))}
         </nav>
         <div className="sidebar-note">
-          <span>Local-first · v0.7</span>
+          <span>Local-first · v0.8</span>
           {lastImport ? <span>最近导入 {formatDateTime(lastImport.importedAt)}</span> : null}
         </div>
       </aside>
