@@ -170,6 +170,22 @@ function baselineProgressByOpportunity(processes: ProcessRecord[]) {
   return baseline
 }
 
+function projectedStageLabel(event: ProcessEvent, actionsById: Map<string, Action>) {
+  const base = processEventStageLabel(event)
+  const task = actionForProcessEvent(event)
+  if (!task) return base
+  const status = actionsById.get(task.id)?.status
+  return status === 'done' ? `${base}完成 · 等待结果` : base
+}
+
+function projectedCurrentAction(event: ProcessEvent, actionsById: Map<string, Action>) {
+  const task = actionForProcessEvent(event)
+  if (!task) return undefined
+  const status = actionsById.get(task.id)?.status
+  if (status === 'done' || status === 'skipped') return undefined
+  return task.title
+}
+
 export function overlayProcessEventsOnOpportunities(
   opportunities: Opportunity[],
   events: ProcessEvent[],
@@ -199,10 +215,12 @@ export function overlayProcessEventsOnProcesses(
   processes: ProcessRecord[],
   opportunities: Opportunity[],
   events: ProcessEvent[],
+  actions: Action[] = [],
 ): ProcessRecord[] {
   const { latestAny, latestStage } = latestEventMaps(events)
   const opportunityMap = new Map(opportunities.map((item) => [item.id, item]))
   const represented = new Set(processes.flatMap((item) => item.opportunityId ? [item.opportunityId] : []))
+  const actionsById = new Map(actions.map((item) => [item.id, item]))
 
   const overlaid: ProcessRecord[] = processes.map((process): ProcessRecord => {
     if (!process.opportunityId) return process
@@ -212,16 +230,15 @@ export function overlayProcessEventsOnProcesses(
 
     const staged = latestStage.get(process.opportunityId)
     const stage = staged ? stageForProcessEvent(staged.type) : undefined
-    const task = staged ? actionForProcessEvent(staged) : undefined
 
     return {
       ...process,
       stage: stage ?? process.stage,
-      stageLabel: staged ? processEventStageLabel(staged) : process.stageLabel,
+      stageLabel: staged ? projectedStageLabel(staged, actionsById) : process.stageLabel,
       lastProgressAt: latest.occurredAt,
       nextCheckAt: staged ? undefined : process.nextCheckAt,
       silenceRisk: staged ? undefined : process.silenceRisk,
-      currentAction: task?.title ?? process.currentAction,
+      currentAction: staged ? projectedCurrentAction(staged, actionsById) : process.currentAction,
       notes: latest.notes ?? process.notes,
       effectiveProcessEventId: staged?.id,
       effectiveProcessEventAt: staged?.occurredAt,
@@ -234,18 +251,17 @@ export function overlayProcessEventsOnProcesses(
     if (!opportunity) continue
     const staged = latestStage.get(opportunityId)
     const stage = staged ? stageForProcessEvent(staged.type) : undefined
-    const task = staged ? actionForProcessEvent(staged) : undefined
     overlaid.push({
       id: `local-process:${opportunityId}`,
       opportunityId,
       company: opportunity.company,
       role: opportunity.role,
       stage: stage ?? opportunity.processStage,
-      stageLabel: staged ? processEventStageLabel(staged) : opportunity.currentStageLabel,
+      stageLabel: staged ? projectedStageLabel(staged, actionsById) : opportunity.currentStageLabel,
       lastProgressAt: latest.occurredAt,
       nextCheckAt: undefined,
       silenceRisk: undefined,
-      currentAction: task?.title,
+      currentAction: staged ? projectedCurrentAction(staged, actionsById) : undefined,
       notes: latest.notes,
       effectiveProcessEventId: staged?.id,
       effectiveProcessEventAt: staged?.occurredAt,
