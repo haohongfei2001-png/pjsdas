@@ -21,6 +21,7 @@ const current = [
   opportunity('A-PM', '甲公司', '产品经理'),
   opportunity('B-OLD', '乙公司', '战略规划AI培训生', 'closed'),
   opportunity('B-PM', '乙公司', 'AI产品经理'),
+  opportunity('B-OPS', '乙公司', '运营管培生'),
   opportunity('C-PM', '丙公司', '产品经理', 'not_applied'),
 ]
 
@@ -105,7 +106,7 @@ describe('natural-language progress planner', () => {
     }
   })
 
-  it('fails closed when a process event cannot be mapped to one role', () => {
+  it('fails closed when a process event cannot be mapped to one of several active roles', () => {
     const plan = parseProgressUpdate(
       '9月12日，乙公司收到面试通知，10点参加。',
       current,
