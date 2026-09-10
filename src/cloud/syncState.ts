@@ -1,12 +1,13 @@
 export interface CloudConflictState {
-  remoteRevision: number
+  remoteVersion: string
   remoteFingerprint: string
   remoteUpdatedAt: string
   remoteDeviceId?: string
+  remoteFileId?: string
 }
 
 export interface AccountSyncCheckpoint {
-  lastSyncedRevision?: number
+  lastSyncedVersion?: string
   lastSyncedFingerprint?: string
   lastSyncedAt?: string
   lastError?: string
@@ -14,14 +15,14 @@ export interface AccountSyncCheckpoint {
 }
 
 export interface CloudDeviceState {
-  version: 1
+  version: 2
   deviceId: string
   autoSync: boolean
   workspaceOwnerUserId?: string
   accounts: Record<string, AccountSyncCheckpoint>
 }
 
-const STORAGE_KEY = 'pjsdas-cloud-sync-state-v1'
+const STORAGE_KEY = 'pjsdas-google-drive-sync-state-v2'
 
 function randomDeviceId() {
   if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) return crypto.randomUUID()
@@ -29,7 +30,7 @@ function randomDeviceId() {
 }
 
 function freshState(): CloudDeviceState {
-  return { version: 1, deviceId: randomDeviceId(), autoSync: true, accounts: {} }
+  return { version: 2, deviceId: randomDeviceId(), autoSync: true, accounts: {} }
 }
 
 function readRaw(): CloudDeviceState {
@@ -42,9 +43,9 @@ function readRaw(): CloudDeviceState {
       return next
     }
     const parsed = JSON.parse(text) as Partial<CloudDeviceState>
-    if (parsed.version !== 1 || !parsed.deviceId || typeof parsed.autoSync !== 'boolean') throw new Error('invalid')
+    if (parsed.version !== 2 || !parsed.deviceId || typeof parsed.autoSync !== 'boolean') throw new Error('invalid')
     return {
-      version: 1,
+      version: 2,
       deviceId: parsed.deviceId,
       autoSync: parsed.autoSync,
       workspaceOwnerUserId: parsed.workspaceOwnerUserId,

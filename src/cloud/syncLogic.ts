@@ -1,10 +1,10 @@
 export interface SyncCheckpointInput {
-  lastSyncedRevision?: number
+  lastSyncedVersion?: string
   lastSyncedFingerprint?: string
 }
 
 export interface RemoteWorkspaceVersion {
-  revision: number
+  version: string
   fingerprint: string
 }
 
@@ -26,12 +26,12 @@ export function decideSyncAction(input: {
   if (!remote) return 'create_remote'
   if (remote.fingerprint === localFingerprint) return 'adopt_equal'
 
-  if (checkpoint.lastSyncedRevision === undefined || !checkpoint.lastSyncedFingerprint) {
+  if (!checkpoint.lastSyncedVersion || !checkpoint.lastSyncedFingerprint) {
     return localEmpty ? 'pull_remote' : 'conflict'
   }
 
   const localChanged = localFingerprint !== checkpoint.lastSyncedFingerprint
-  const remoteChanged = remote.revision !== checkpoint.lastSyncedRevision ||
+  const remoteChanged = remote.version !== checkpoint.lastSyncedVersion ||
     remote.fingerprint !== checkpoint.lastSyncedFingerprint
 
   if (!localChanged && !remoteChanged) return 'noop'

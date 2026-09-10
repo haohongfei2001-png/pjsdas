@@ -8,8 +8,12 @@ import {
   useState,
   type ReactNode,
 } from 'react'
-import type { Session } from '@supabase/supabase-js'
-import { getCloudClient, getCloudSession, signInWithGoogle, signOutCloud } from './cloudClient'
+import {
+  getCloudSession,
+  signInWithGoogle,
+  signOutCloud,
+  type CloudSession,
+} from './cloudClient'
 import { readCloudConfig } from './cloudConfig'
 import {
   getAccountCheckpoint,
@@ -28,7 +32,7 @@ import {
 
 interface CloudContextValue {
   configured: boolean
-  session: Session | null
+  session: CloudSession | null
   loading: boolean
   syncing: boolean
   device: CloudDeviceState
@@ -48,8 +52,8 @@ const CloudContext = createContext<CloudContextValue | null>(null)
 
 export function CloudProvider({ children }: { children: ReactNode }) {
   const configured = Boolean(readCloudConfig())
-  const [session, setSession] = useState<Session | null>(null)
-  const [loading, setLoading] = useState(configured)
+  const [session, setSession] = useState<CloudSession | null>(null)
+  const [loading, setLoading] = useState(false)
   const [syncing, setSyncing] = useState(false)
   const [device, setDevice] = useState(() => getCloudDeviceState())
   const [checkpoint, setCheckpoint] = useState<AccountSyncCheckpoint>({})
@@ -62,30 +66,13 @@ export function CloudProvider({ children }: { children: ReactNode }) {
     setCheckpoint(userId ? getAccountCheckpoint(userId) : {})
   }, [])
 
-  useEffect(() => {
-    if (!configured) return
-    let active = true
-    const client = getCloudClient()
-    if (!client) return
-    getCloudSession()
-      .then((next) => {
-        if (!active) return
-        setSession(next)
-        refreshState(next?.user.id)
-      })
-      .catch((caught) => setError(caught instanceof Error ? caught.message : String(caught)))
-      .finally(() => active && setLoading(false))
-
-    const { data } = client.auth.onAuthStateChange((_event, nextSession) => {
-      if (!active) return
-      setSession(nextSession)
-      refreshState(nextSession?.user.id)
-    })
-    return () => {
-      active = false
-      data.subscription.unsubscribe()
+  const clearExpiredSessionIfNeeded = useCallback(async () => {
+    const current = await getCloudSession()
+    if (!current) {
+      setSession(null)
+      refreshState()
     }
-  }, [configured, refreshState])
+  }, [refreshState])
 
   const syncNow = useCallback(async () => {
     const userId = session?.user.id
@@ -102,12 +89,13 @@ export function CloudProvider({ children }: { children: ReactNode }) {
       const message = caught instanceof Error ? caught.message : String(caught)
       setError(message)
       refreshState(userId)
+      await clearExpiredSessionIfNeeded()
       throw caught
     } finally {
       busyRef.current = false
       setSyncing(false)
     }
-  }, [configured, session?.user.id, refreshState])
+  }, [configured, session?.user.id, refreshState, clearExpiredSessionIfNeeded])
 
   useEffect(() => {
     const userId = session?.user.id
@@ -115,8 +103,8 @@ export function CloudProvider({ children }: { children: ReactNode }) {
     const ownerMismatch = Boolean(device.workspaceOwnerUserId && device.workspaceOwnerUserId !== userId)
     if (ownerMismatch) return
 
-    const initial = window.setTimeout(() => { void syncNow().catch(() => undefined) }, 900)
-    const interval = window.setInterval(() => { void syncNow().catch(() => undefined) }, 60_000)
+    const initial = window.setTimeout(() => { void syncNow().catch(() => undefined) }, 700)
+    const interval = window.setInterval(() => { void syncNow().catch(() => undefined) }, 120_000)
     const focus = () => { void syncNow().catch(() => undefined) }
     window.addEventListener('focus', focus)
     return () => {
@@ -145,12 +133,30 @@ export function CloudProvider({ children }: { children: ReactNode }) {
       const message = caught instanceof Error ? caught.message : String(caught)
       setError(message)
       refreshState(userId)
+      await clearExpiredSessionIfNeeded()
       throw caught
     } finally {
       busyRef.current = false
       setSyncing(false)
     }
-  }, [session?.user.id, refreshState])
+  }, [session?.user.id, refreshState, clearExpiredSessionIfNeeded])
+
+  const signIn = useCallback(async () => {
+    if (!configured || busyRef.current) return
+    setLoading(true)
+    setError(undefined)
+    try {
+      const next = await signInWithGoogle()
+      setSession(next)
+      setOutcome(undefined)
+      refreshState(next.user.id)
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : String(caught))
+      throw caught
+    } finally {
+      setLoading(false)
+    }
+  }, [configured, refreshState])
 
   const value = useMemo<CloudContextValue>(() => ({
     configured,
@@ -161,11 +167,12 @@ export function CloudProvider({ children }: { children: ReactNode }) {
     checkpoint,
     outcome,
     error,
-    signIn: signInWithGoogle,
+    signIn,
     signOut: async () => {
       await signOutCloud()
       setSession(null)
       setOutcome(undefined)
+      setError(undefined)
       refreshState()
     },
     syncNow,
@@ -176,7 +183,7 @@ export function CloudProvider({ children }: { children: ReactNode }) {
       setCloudAutoSync(enabled)
       refreshState(session?.user.id)
     },
-  }), [configured, session, loading, syncing, device, checkpoint, outcome, error, syncNow, runResolution, refreshState])
+  }), [configured, session, loading, syncing, device, checkpoint, outcome, error, signIn, syncNow, runResolution, refreshState])
 
   return <CloudContext.Provider value={value}>{children}</CloudContext.Provider>
 }
