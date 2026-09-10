@@ -46,9 +46,9 @@ describe('PJSDAS MCP gateway alpha', () => {
     expect(data.meta).toMatchObject({ source: 'pjsdas', workspaceVersion: 'demo-v1', timezone: 'Asia/Shanghai' })
   })
 
-  it('returns a tool error instead of throwing for invalid input', async () => {
+  it('returns a stable non-retryable tool error for invalid input', async () => {
     const result = await invokeReadTool(source, 'list_opportunities', { limit: 1000 })
     expect(result.isError).toBe(true)
-    expect(jsonFrom(result)).toMatchObject({ retryable: true })
+    expect(jsonFrom(result)).toMatchObject({ code: 'INVALID_ARGUMENT', retryable: false })
   })
 })
