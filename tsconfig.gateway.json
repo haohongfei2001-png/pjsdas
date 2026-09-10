@@ -1,0 +1,15 @@
+{
+  "compilerOptions": {
+    "composite": true,
+    "skipLibCheck": true,
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "types": ["node"],
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "allowImportingTsExtensions": true,
+    "noEmit": true,
+    "strict": true
+  },
+  "include": ["gateway/**/*.ts", "src/ai/readLayer.ts", "src/decisionV3.ts", "src/decisionCoreV3.ts", "src/decisionRules.ts", "src/fixedEventGuardLogic.ts", "src/model.ts", "src/processEvents.ts", "src/snapshot.ts", "src/changeSet.ts"]
+}
