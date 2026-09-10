@@ -1,0 +1,237 @@
+.backup-dock-trigger {
+  position: fixed;
+  left: 24px;
+  bottom: 24px;
+  z-index: 40;
+  border: 1px solid rgba(30,31,28,.12);
+  border-radius: 999px;
+  padding: 11px 16px;
+  background: rgba(255,253,248,.94);
+  color: #4f514b;
+  box-shadow: 0 10px 28px rgba(30,31,28,.09);
+  backdrop-filter: blur(10px);
+  cursor: pointer;
+  font: inherit;
+  font-weight: 650;
+}
+
+.backup-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 110;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(15,23,42,.34);
+  backdrop-filter: blur(3px);
+}
+
+.backup-dialog {
+  width: min(820px, 100%);
+  max-height: calc(100vh - 48px);
+  overflow-y: auto;
+  box-sizing: border-box;
+  border-radius: 20px;
+  padding: 28px;
+  background: #fff;
+  box-shadow: 0 28px 70px rgba(15,23,42,.2);
+}
+
+.backup-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 20px;
+}
+
+.backup-header h2 {
+  margin: 4px 0 7px;
+  font-size: 25px;
+}
+
+.backup-header p {
+  max-width: 620px;
+  margin: 0;
+  color: #667085;
+  line-height: 1.6;
+}
+
+.backup-close {
+  flex: 0 0 auto;
+  width: 36px;
+  height: 36px;
+  border: 1px solid #e4e7ec;
+  border-radius: 10px;
+  background: #fff;
+  cursor: pointer;
+  font-size: 24px;
+  line-height: 1;
+}
+
+.backup-actions-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+  margin-top: 24px;
+}
+
+.backup-actions-grid article {
+  padding: 20px;
+  border: 1px solid #e4e7ec;
+  border-radius: 16px;
+  background: #fafbfc;
+}
+
+.backup-actions-grid h3 {
+  margin: 5px 0 7px;
+  font-size: 16px;
+}
+
+.backup-actions-grid p {
+  min-height: 42px;
+  margin: 0 0 16px;
+  color: #667085;
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.backup-file-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid #d0d5dd;
+  border-radius: 10px;
+  padding: 9px 13px;
+  background: white;
+  color: #344054;
+  cursor: pointer;
+  font-weight: 650;
+}
+
+.backup-file-button input {
+  display: none;
+}
+
+.backup-notice {
+  margin-top: 16px;
+  border: 1px solid transparent;
+  border-radius: 12px;
+  padding: 11px 13px;
+  font-size: 13px;
+}
+
+.backup-notice.error {
+  border-color: rgba(180,35,24,.18);
+  background: #fff1f0;
+  color: #b42318;
+}
+
+.backup-notice.success {
+  border-color: rgba(3,126,91,.16);
+  background: #ecfdf3;
+  color: #027a48;
+}
+
+.backup-preview {
+  display: grid;
+  gap: 16px;
+  margin-top: 18px;
+  padding: 20px;
+  border: 1px solid rgba(126,86,22,.2);
+  border-radius: 16px;
+  background: #fffcf4;
+}
+
+.backup-preview > div:first-child > strong {
+  display: block;
+  margin-top: 4px;
+}
+
+.backup-preview > div:first-child > p {
+  margin: 4px 0 0;
+  color: #667085;
+  font-size: 12px;
+}
+
+.backup-counts {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+
+.backup-counts span {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  border-radius: 9px;
+  padding: 9px 10px;
+  background: rgba(255,255,255,.7);
+  color: #667085;
+  font-size: 12px;
+}
+
+.backup-counts strong {
+  color: #20211e;
+}
+
+.backup-danger {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 4px 16px;
+  align-items: center;
+  padding-top: 14px;
+  border-top: 1px solid rgba(126,86,22,.14);
+}
+
+.backup-danger strong,
+.backup-danger span {
+  grid-column: 1;
+}
+
+.backup-danger span {
+  color: #806a48;
+  font-size: 12px;
+}
+
+.backup-danger button {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  border: 0;
+  border-radius: 10px;
+  padding: 10px 14px;
+  background: #7a5428;
+  color: white;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 700;
+}
+
+@media (max-width: 720px) {
+  .backup-dock-trigger {
+    left: 16px;
+    bottom: 16px;
+  }
+
+  .backup-backdrop {
+    padding: 12px;
+  }
+
+  .backup-dialog {
+    max-height: calc(100vh - 24px);
+    padding: 20px 16px;
+  }
+
+  .backup-actions-grid,
+  .backup-counts {
+    grid-template-columns: 1fr;
+  }
+
+  .backup-danger {
+    grid-template-columns: 1fr;
+  }
+
+  .backup-danger button {
+    grid-column: 1;
+    grid-row: auto;
+    margin-top: 8px;
+  }
+}
