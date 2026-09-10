@@ -145,3 +145,5 @@ jobs:
           git add src/progressUpdate.ts
           git commit -m "Fail closed on unmatched progress text"
           git push
+
+# second commit intentionally triggers this already-present workflow
