@@ -22,6 +22,7 @@ function text(value: unknown) {
 }
 
 function numberOrUndefined(value: unknown) {
+  if (value === null || value === undefined || value === '') return undefined
   if (typeof value === 'number' && Number.isFinite(value)) return value
   const parsed = Number(value)
   return Number.isFinite(parsed) ? parsed : undefined
