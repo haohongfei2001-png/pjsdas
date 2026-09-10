@@ -33,3 +33,5 @@ jobs:
           git add src/progressUpdateV2.ts
           git commit -m "Preserve stated process-event duration"
           git push
+
+# trigger
