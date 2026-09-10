@@ -1,0 +1,155 @@
+import type {
+  Action,
+  ApplicationGroup,
+  ImportMeta,
+  Opportunity,
+  Prep,
+  ProcessEvent,
+  ProcessRecord,
+} from './model'
+
+export const SNAPSHOT_SCHEMA = 'pjsdas-local-snapshot' as const
+export const SNAPSHOT_VERSION = 1 as const
+
+export interface SnapshotData {
+  opportunities: Opportunity[]
+  processes: ProcessRecord[]
+  processEvents: ProcessEvent[]
+  actions: Action[]
+  prep: Prep[]
+  applicationGroups: ApplicationGroup[]
+  meta?: ImportMeta
+}
+
+export interface PJSDASSnapshot {
+  schema: typeof SNAPSHOT_SCHEMA
+  version: typeof SNAPSHOT_VERSION
+  exportedAt: string
+  data: SnapshotData
+}
+
+function isObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function assertArray(value: unknown, name: string): asserts value is unknown[] {
+  if (!Array.isArray(value)) throw new Error(`备份损坏：${name} 不是数组。`)
+}
+
+function assertStringId(value: unknown, label: string) {
+  if (!isObject(value) || typeof value.id !== 'string' || !value.id.trim()) {
+    throw new Error(`备份损坏：${label} 存在无效 ID。`)
+  }
+}
+
+function assertUniqueIds(items: unknown[], label: string) {
+  const seen = new Set<string>()
+  for (const item of items) {
+    assertStringId(item, label)
+    const id = (item as { id: string }).id
+    if (seen.has(id)) throw new Error(`备份损坏：${label} ID 重复（${id}）。`)
+    seen.add(id)
+  }
+  return seen
+}
+
+function assertIsoDate(value: unknown, label: string) {
+  if (typeof value !== 'string' || Number.isNaN(new Date(value).getTime())) {
+    throw new Error(`备份损坏：${label} 不是有效时间。`)
+  }
+}
+
+export function createSnapshot(data: SnapshotData, exportedAt = new Date().toISOString()): PJSDASSnapshot {
+  const snapshot: PJSDASSnapshot = {
+    schema: SNAPSHOT_SCHEMA,
+    version: SNAPSHOT_VERSION,
+    exportedAt,
+    data,
+  }
+  validateSnapshot(snapshot)
+  return snapshot
+}
+
+export function validateSnapshot(value: unknown): asserts value is PJSDASSnapshot {
+  if (!isObject(value)) throw new Error('备份损坏：根对象无效。')
+  if (value.schema !== SNAPSHOT_SCHEMA) throw new Error('这不是 PJSDAS 本地备份。')
+  if (value.version !== SNAPSHOT_VERSION) {
+    throw new Error(`不支持的备份版本：${String(value.version)}。当前仅支持 v${SNAPSHOT_VERSION}。`)
+  }
+  assertIsoDate(value.exportedAt, 'exportedAt')
+  if (!isObject(value.data)) throw new Error('备份损坏：缺少 data。')
+
+  const data = value.data
+  assertArray(data.opportunities, 'opportunities')
+  assertArray(data.processes, 'processes')
+  assertArray(data.processEvents, 'processEvents')
+  assertArray(data.actions, 'actions')
+  assertArray(data.prep, 'prep')
+  assertArray(data.applicationGroups, 'applicationGroups')
+
+  const opportunityIds = assertUniqueIds(data.opportunities, 'Opportunity')
+  const processIds = assertUniqueIds(data.processes, 'Process')
+  const eventIds = assertUniqueIds(data.processEvents, 'Process Event')
+  const actionIds = assertUniqueIds(data.actions, 'Action')
+  const prepIds = assertUniqueIds(data.prep, 'Prep')
+  const groupIds = assertUniqueIds(data.applicationGroups, 'Application Group')
+  void processIds
+  void actionIds
+  void prepIds
+
+  for (const raw of data.opportunities) {
+    const opportunity = raw as Opportunity
+    if (!opportunity.company?.trim() || !opportunity.role?.trim()) {
+      throw new Error(`备份损坏：岗位 ${opportunity.id} 缺少公司或岗位名称。`)
+    }
+    if (opportunity.applicationGroupId && !groupIds.has(opportunity.applicationGroupId)) {
+      throw new Error(`备份损坏：岗位 ${opportunity.id} 引用了不存在的申请组 ${opportunity.applicationGroupId}。`)
+    }
+  }
+
+  for (const raw of data.processes) {
+    const process = raw as ProcessRecord
+    if (process.opportunityId && !opportunityIds.has(process.opportunityId)) {
+      throw new Error(`备份损坏：流程 ${process.id} 引用了不存在的岗位 ${process.opportunityId}。`)
+    }
+  }
+
+  for (const raw of data.processEvents) {
+    const event = raw as ProcessEvent
+    if (!opportunityIds.has(event.opportunityId)) {
+      throw new Error(`备份损坏：流程事件 ${event.id} 引用了不存在的岗位 ${event.opportunityId}。`)
+    }
+    assertIsoDate(event.occurredAt, `流程事件 ${event.id} 的 occurredAt`)
+    if (event.dueAt) assertIsoDate(event.dueAt, `流程事件 ${event.id} 的 dueAt`)
+  }
+
+  for (const raw of data.actions) {
+    const action = raw as Action
+    if (action.opportunityId && !opportunityIds.has(action.opportunityId)) {
+      throw new Error(`备份损坏：Action ${action.id} 引用了不存在的岗位 ${action.opportunityId}。`)
+    }
+    if (action.processEventId && !eventIds.has(action.processEventId)) {
+      throw new Error(`备份损坏：Action ${action.id} 引用了不存在的流程事件 ${action.processEventId}。`)
+    }
+    if (action.applicationGroupId && !groupIds.has(action.applicationGroupId)) {
+      throw new Error(`备份损坏：Action ${action.id} 引用了不存在的申请组 ${action.applicationGroupId}。`)
+    }
+  }
+
+  if (data.meta !== undefined) {
+    if (!isObject(data.meta) || data.meta.key !== 'lastImport') {
+      throw new Error('备份损坏：meta 格式无效。')
+    }
+  }
+}
+
+export function parseSnapshotText(text: string): PJSDASSnapshot {
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(text)
+  } catch {
+    throw new Error('无法解析备份文件：JSON 格式无效。')
+  }
+  validateSnapshot(parsed)
+  return parsed
+}
