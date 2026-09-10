@@ -11,5 +11,5 @@
     "noEmit": true,
     "strict": true
   },
-  "include": ["gateway/**/*.ts", "src/ai/readLayer.ts", "src/decisionV3.ts", "src/decisionCoreV3.ts", "src/decisionRules.ts", "src/fixedEventGuardLogic.ts", "src/model.ts", "src/processEvents.ts", "src/snapshot.ts", "src/changeSet.ts"]
+  "include": ["gateway/**/*.ts", "src/**/*.ts"]
 }
