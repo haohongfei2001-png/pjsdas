@@ -1,0 +1,35 @@
+name: Fix Drive false conflict
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/fix-drive-false-conflict.py'
+      - '.github/workflows/fix-drive-false-conflict.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Apply false-conflict fix
+        run: python3 scripts/fix-drive-false-conflict.py
+      - name: Verify
+        run: |
+          npm ci
+          npm audit --audit-level=high
+          npm test
+          npm run build
+      - name: Commit product fix
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src tests
+          git commit -m "Stabilize default rules in cloud snapshots"
+          git push
