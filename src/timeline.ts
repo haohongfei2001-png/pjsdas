@@ -1,4 +1,5 @@
 import type { DecisionRules } from './decisionRules'
+import type { ChangeSetRecord } from './changeSet'
 import type { ProgressOperation } from './progressUpdate'
 import type {
   Action,
@@ -359,4 +360,21 @@ export function buildTimelineBackfill(input: {
   }
   records.push(timelineBackfillMarker(now))
   return records
+}
+
+
+export function timelineFromChangeSetApplied(changeSet: ChangeSetRecord): TimelineRecord {
+  const occurredAt = changeSet.appliedAt ?? changeSet.updatedAt
+  return {
+    id: `timeline:changeset:${changeSet.id}`,
+    kind: 'change_set_applied',
+    category: 'change',
+    source: 'changeset',
+    occurredAt,
+    recordedAt: occurredAt,
+    title: `应用 ChangeSet｜${changeSet.title}`,
+    detail: changeSet.operations.map((operation) => operation.summary).join('\n'),
+    changeSetId: changeSet.id,
+    sourceRef: changeSet.source,
+  }
 }

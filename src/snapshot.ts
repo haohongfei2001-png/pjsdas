@@ -9,6 +9,7 @@ import type {
   TimelineRecord,
 } from './model'
 import { validateDecisionRules, type DecisionRules } from './decisionRules'
+import { validateChangeSet, type ChangeSetRecord } from './changeSet'
 
 export const SNAPSHOT_SCHEMA = 'pjsdas-local-snapshot' as const
 export const SNAPSHOT_VERSION = 1 as const
@@ -22,6 +23,7 @@ export interface SnapshotData {
   applicationGroups: ApplicationGroup[]
   decisionRules?: DecisionRules
   timeline?: TimelineRecord[]
+  changeSets?: ChangeSetRecord[]
   meta?: ImportMeta
 }
 
@@ -91,6 +93,7 @@ export function validateSnapshot(value: unknown): asserts value is PJSDASSnapsho
   assertArray(data.prep, 'prep')
   assertArray(data.applicationGroups, 'applicationGroups')
   if (data.timeline !== undefined) assertArray(data.timeline, 'timeline')
+  if (data.changeSets !== undefined) assertArray(data.changeSets, 'changeSets')
   if (data.decisionRules !== undefined) {
     if (!isObject(data.decisionRules)) throw new Error('备份损坏：decisionRules 格式无效。')
     const errors = validateDecisionRules(data.decisionRules as unknown as DecisionRules)
@@ -104,6 +107,7 @@ export function validateSnapshot(value: unknown): asserts value is PJSDASSnapsho
   const prepIds = assertUniqueIds(data.prep, 'Prep')
   const groupIds = assertUniqueIds(data.applicationGroups, 'Application Group')
   if (data.timeline) assertUniqueIds(data.timeline, 'Timeline')
+  if (data.changeSets) assertUniqueIds(data.changeSets, 'ChangeSet')
   void processIds
   void actionIds
   void prepIds
@@ -139,8 +143,8 @@ export function validateSnapshot(value: unknown): asserts value is PJSDASSnapsho
   }
 
   if (data.timeline) {
-    const categories = new Set(['opportunity', 'process', 'action', 'rules', 'data', 'note'])
-    const sources = new Set(['excel', 'natural_language', 'process_event', 'user_action', 'rules', 'backup', 'system'])
+    const categories = new Set(['opportunity', 'process', 'action', 'rules', 'change', 'data', 'note'])
+    const sources = new Set(['excel', 'natural_language', 'process_event', 'user_action', 'rules', 'backup', 'system', 'changeset'])
     for (const raw of data.timeline) {
       const item = raw as TimelineRecord
       if (!item.title?.trim() || !categories.has(item.category) || !sources.has(item.source)) {
@@ -148,6 +152,13 @@ export function validateSnapshot(value: unknown): asserts value is PJSDASSnapsho
       }
       assertIsoDate(item.occurredAt, `Timeline ${item.id} 的 occurredAt`)
       assertIsoDate(item.recordedAt, `Timeline ${item.id} 的 recordedAt`)
+    }
+  }
+
+  if (data.changeSets) {
+    for (const raw of data.changeSets) {
+      const errors = validateChangeSet(raw)
+      if (errors.length) throw new Error(`备份损坏：ChangeSet 无效（${errors[0]}）`)
     }
   }
 

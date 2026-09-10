@@ -7,9 +7,10 @@ import {
   getAllProcesses,
   getDecisionRules,
   getAllTimelineRecords,
+  getAllChangeSets,
   getLastImport,
   replaceImportedData,
-  updateActionStatus,
+  applyActionStatusChangeSet,
 } from './db'
 import {
   buildTimePlan,
@@ -24,6 +25,7 @@ import { currentUiLanguage, useUiLanguage } from './uiLanguage'
 import { DEFAULT_DECISION_RULES, type DecisionRules } from './decisionRules'
 import RulesView from './RulesView'
 import TimelineView from './TimelineView'
+import type { ChangeSetRecord } from './changeSet'
 import type {
   Action,
   ApplicationGroup,
@@ -67,13 +69,14 @@ function AppV5() {
   const [prep, setPrep] = useState<Prep[]>([])
   const [groups, setGroups] = useState<ApplicationGroup[]>([])
   const [timeline, setTimeline] = useState<TimelineRecord[]>([])
+  const [changeSets, setChangeSets] = useState<ChangeSetRecord[]>([])
   const [rules, setRules] = useState<DecisionRules>(() => ({ ...DEFAULT_DECISION_RULES, weights: { ...DEFAULT_DECISION_RULES.weights } }))
   const [lastImport, setLastImport] = useState<ImportMeta | undefined>()
   const [loading, setLoading] = useState(true)
   const [now, setNow] = useState(() => new Date())
 
   async function reload() {
-    const [nextOpportunities, nextActions, nextProcesses, nextPrep, nextGroups, nextRules, nextTimeline, nextImport] =
+    const [nextOpportunities, nextActions, nextProcesses, nextPrep, nextGroups, nextRules, nextTimeline, nextChangeSets, nextImport] =
       await Promise.all([
         getAllOpportunities(),
         getAllActions(),
@@ -82,6 +85,7 @@ function AppV5() {
         getAllApplicationGroups(),
         getDecisionRules(),
         getAllTimelineRecords(),
+        getAllChangeSets(),
         getLastImport(),
       ])
     setOpportunities(nextOpportunities)
@@ -91,6 +95,7 @@ function AppV5() {
     setGroups(nextGroups)
     setRules(nextRules)
     setTimeline(nextTimeline)
+    setChangeSets(nextChangeSets)
     setLastImport(nextImport)
   }
 
@@ -106,7 +111,7 @@ function AppV5() {
   const ranked = useMemo(() => rankActions(actions, opportunities, now, rules), [actions, opportunities, now, rules])
 
   async function markAction(id: string, status: Action['status']) {
-    await updateActionStatus(id, status)
+    await applyActionStatusChangeSet(id, status)
     await reload()
   }
 
@@ -136,7 +141,7 @@ function AppV5() {
           <LanguageSwitch />
         </div>
         <div className="sidebar-note">
-          <span>Local-first · v0.8</span>
+          <span>Local-first · v0.9</span>
           {lastImport ? <span>{t('sidebar.lastImport')} {formatDateTime(lastImport.importedAt)}</span> : null}
         </div>
       </aside>
@@ -158,7 +163,7 @@ function AppV5() {
         ) : null}
         {!loading && page === 'pipeline' ? <PipelineView processes={processes} /> : null}
         {!loading && page === 'prep' ? <PrepView prep={prep} /> : null}
-        {!loading && page === 'timeline' ? <TimelineView records={timeline} /> : null}
+        {!loading && page === 'timeline' ? <TimelineView records={timeline} changeSets={changeSets} /> : null}
         {!loading && page === 'rules' ? <RulesView rules={rules} onChanged={reload} /> : null}
         {!loading && page === 'settings' ? (
           <SettingsView lastImport={lastImport} onImported={reload} />

@@ -16,6 +16,9 @@ The spreadsheet is now an **initial import / recovery source**, not the daily so
 - **Opportunities** — the role pool and dynamic application priority
 - **Pipeline** — recruiting-process state and dynamically recalculated review checkpoints
 - **Prep** — reusable preparation across multiple opportunities
+- **Timeline** — first-class chronological facts and audit history across applications, process events, actions, rule changes and data migrations
+- **Rules** — editable, persisted decision policy used by Today instead of hidden constants
+- **ChangeSet** — the single normalized mutation protocol used by natural-language updates and explicit product actions before state is changed
 - **Natural Language Update** — paste several days of job-search history and plans, review a structured diff, then apply additions, changes, closures and process events in one confirmation
 - **Import & Settings** — one-time or recovery-oriented local spreadsheet import with integrity checks
 - **Process Event capture** — precise manual fallback for one assessment, written test, interview, offer, rejection or other recruiting event
@@ -23,14 +26,17 @@ The spreadsheet is now an **initial import / recovery source**, not the daily so
 
 ## Core model
 
-PJSDAS separates job-search state into six concepts:
+PJSDAS separates job-search state into nine concepts:
 
 1. **Opportunity** — company/role and its value, fit, application deadline, application group, etc.
 2. **Process** — the effective recruiting stage for an opportunity.
 3. **Process Event** — a dated fact such as an assessment invitation, written-test notification, interview invitation, offer, rejection, or other real status update.
 4. **Action** — a concrete next move generated from an opportunity, application group, process checkpoint, process event, or preparation requirement.
 5. **Prep** — reusable work that can improve more than one opportunity.
-6. **Today** — the constrained action plan produced by the decision engine under the user's available time.
+6. **Decision Rules** — explicit user-controlled policy for deadlines, planning limits, visibility horizons and ranking weights.
+7. **Timeline** — durable facts about what happened and how the workspace changed.
+8. **ChangeSet** — a reviewable set of normalized mutations with an ID, source and application status.
+9. **Today** — the constrained action plan produced by the decision engine under the user's available time.
 
 Imported spreadsheet data initializes the workspace. Once an Opportunity or Process is changed through Natural Language Update, it is marked as locally managed and is preserved across later spreadsheet re-imports. Local Process Events and local Actions are preserved as well. This makes the browser database, rather than the workbook, the ongoing source of truth.
 
@@ -66,9 +72,10 @@ v0.8 makes free-form progress updates the primary maintenance path. A user can p
 3. detects application, planned application, role rename, process closure and recruiting events;
 4. resolves relative windows such as “48小时完成” or “7日内” into concrete local deadlines;
 5. distinguishes deadline work from fixed-time events;
-6. shows a structured diff before any write occurs;
-7. applies only confirmed, executable changes to Opportunities / Pipeline / Process Events / Actions;
-8. leaves ambiguous clauses unresolved instead of guessing.
+6. converts executable changes into a persistent ChangeSet without storing the full raw input;
+7. shows the ChangeSet as a structured diff before any business-state write occurs;
+8. applies only the confirmed ChangeSet to Opportunities / Pipeline / Process Events / Actions and records the application in Timeline;
+9. leaves ambiguous clauses unresolved instead of guessing.
 
 The original pasted text is used only to build the current review plan and is not stored by default. The parser is deterministic and local; it does not require an AI API.
 
@@ -93,10 +100,13 @@ PJSDAS stores more state than the spreadsheet once Process Events, local opportu
 - Actions and their statuses
 - Prep
 - Application Groups
+- Decision Rules
+- Timeline
+- ChangeSets and their application status
 - last-import metadata
 
 Restore is deliberately destructive but two-step: the selected JSON file is parsed and validated first, then the user explicitly confirms replacement. Unsupported versions, duplicate IDs, invalid dates, and broken references fail before any IndexedDB store is cleared. Historical Process Events may remain archived even if a later spreadsheet no longer contains the old opportunity; they are retained as facts but no longer affect current decisions.
 
 ## Status
 
-**v0.8** changes the daily operating model from “maintain Excel, then import” to **“tell PJSDAS what happened and what is planned, review the diff, then confirm.”** Excel remains available for initialization and recovery, while the browser database becomes the ongoing local source of truth. The release keeps parsing deterministic, review-before-write and local-first; AI APIs, cloud sync, automatic email ingestion and auto-apply remain outside the current scope.
+**v0.9** makes PJSDAS's decision and mutation layers explicit. Decision Rules are persisted user-controlled data, Timeline is a first-class factual history, and ChangeSet is the unified review/apply protocol for normalized mutations. Natural-language updates no longer write business state directly: they stage a ChangeSet, the user reviews it, and only confirmation applies it. Explicit UI actions use the same protocol with the click/save action serving as confirmation. Excel remains initialization/history migration and recovery rather than the daily source of truth. Cloud sync, account login, MCP/ChatGPT integration and automatic job discovery remain outside v0.9.

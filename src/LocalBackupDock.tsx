@@ -135,6 +135,7 @@ export default function LocalBackupDock({ onChanged }: LocalBackupDockProps) {
                   <span>Action <strong>{preview.data.actions.length}</strong></span>
                   <span>Prep <strong>{preview.data.prep.length}</strong></span>
                   <span>申请组 <strong>{preview.data.applicationGroups.length}</strong></span>
+                  <span>ChangeSet <strong>{preview.data.changeSets?.length ?? 0}</strong></span>
                   <span>历程 <strong>{preview.data.timeline?.length ?? 0}</strong></span>
                 </div>
                 <div className="backup-danger">

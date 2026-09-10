@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { getAllActions, updateActionStatus } from './db'
+import { applyActionStatusChangeSet, getAllActions } from './db'
 import { isUnresolvedPastProcessEvent } from './fixedEventGuardLogic'
 import type { Action } from './model'
 import './fixedEventGuard.css'
@@ -42,7 +42,7 @@ export default function FixedEventGuard({ onChanged }: FixedEventGuardProps) {
   async function confirmCompleted() {
     setBusy(true)
     try {
-      await updateActionStatus(current.id, 'done')
+      await applyActionStatusChangeSet(current.id, 'done')
       await reload()
       onChanged?.()
     } finally {

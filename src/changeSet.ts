@@ -1,0 +1,236 @@
+import { validateDecisionRules, type DecisionRules } from './decisionRules'
+import { progressOperationSummary, type ExecutableProgressOperation } from './progressUpdate'
+import type { Action, ActionStatus, ProcessEvent } from './model'
+
+export type ChangeSetStatus = 'pending' | 'applied' | 'discarded' | 'failed'
+export type ChangeSetSource = 'natural_language' | 'rules' | 'process_event' | 'user_action' | 'api' | 'mcp'
+
+type StripProgressMetadata<T> = T extends unknown ? Omit<T, 'sourceText' | 'confidence'> : never
+export type StoredProgressOperation = StripProgressMetadata<ExecutableProgressOperation>
+
+export type ChangeSetOperation =
+  | {
+      id: string
+      kind: 'progress_update'
+      summary: string
+      operation: StoredProgressOperation
+    }
+  | {
+      id: string
+      kind: 'replace_decision_rules'
+      summary: string
+      expectedUpdatedAt: string
+      mode: 'save' | 'reset'
+      rules: DecisionRules
+    }
+  | {
+      id: string
+      kind: 'add_process_event'
+      summary: string
+      event: ProcessEvent
+    }
+  | {
+      id: string
+      kind: 'delete_process_event'
+      summary: string
+      eventId: string
+    }
+  | {
+      id: string
+      kind: 'set_action_status'
+      summary: string
+      actionId: string
+      expectedStatus: ActionStatus
+      status: ActionStatus
+    }
+
+export interface ChangeSetRecord {
+  id: string
+  version: 1
+  source: ChangeSetSource
+  status: ChangeSetStatus
+  title: string
+  createdAt: string
+  updatedAt: string
+  appliedAt?: string
+  discardedAt?: string
+  failedAt?: string
+  error?: string
+  operations: ChangeSetOperation[]
+}
+
+function isObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function validIso(value: unknown) {
+  return typeof value === 'string' && !Number.isNaN(new Date(value).getTime())
+}
+
+function changeSetId(now = new Date()) {
+  const pad = (value: number) => String(value).padStart(2, '0')
+  const stamp = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`
+  const suffix = Math.random().toString(36).slice(2, 6).toUpperCase().padEnd(4, '0')
+  return `CS-${stamp}-${suffix}`
+}
+
+function baseChangeSet(source: ChangeSetSource, title: string, operations: ChangeSetOperation[], now = new Date()): ChangeSetRecord {
+  const timestamp = now.toISOString()
+  return {
+    id: changeSetId(now),
+    version: 1,
+    source,
+    status: 'pending',
+    title,
+    createdAt: timestamp,
+    updatedAt: timestamp,
+    operations,
+  }
+}
+
+function stripProgressOperation(operation: ExecutableProgressOperation): StoredProgressOperation {
+  const { sourceText: _sourceText, confidence: _confidence, ...stored } = operation
+  return stored as StoredProgressOperation
+}
+
+export function createProgressChangeSet(operations: ExecutableProgressOperation[], now = new Date()) {
+  const items: ChangeSetOperation[] = operations.map((operation) => ({
+    id: `progress:${operation.id}`,
+    kind: 'progress_update',
+    summary: progressOperationSummary(operation),
+    operation: stripProgressOperation(operation),
+  }))
+  return baseChangeSet('natural_language', `自然语言更新 · ${items.length} 项`, items, now)
+}
+
+export function restoreProgressOperation(operation: Extract<ChangeSetOperation, { kind: 'progress_update' }>, changeSetIdValue: string): ExecutableProgressOperation {
+  return {
+    ...operation.operation,
+    sourceText: `ChangeSet ${changeSetIdValue} · ${operation.summary}`,
+    confidence: 'high',
+  } as ExecutableProgressOperation
+}
+
+function comparableRules(rules: DecisionRules) {
+  return {
+    ...rules,
+    updatedAt: '',
+    weights: { ...rules.weights },
+  }
+}
+
+export function decisionRulesEquivalent(a: DecisionRules, b: DecisionRules) {
+  return JSON.stringify(comparableRules(a)) === JSON.stringify(comparableRules(b))
+}
+
+export function createRulesChangeSet(before: DecisionRules, after: DecisionRules, mode: 'save' | 'reset', now = new Date()) {
+  if (decisionRulesEquivalent(before, after)) return undefined
+  const timestamp = now.toISOString()
+  const proposed: DecisionRules = {
+    ...after,
+    key: 'current',
+    version: 1,
+    weights: { ...after.weights },
+    updatedAt: timestamp,
+  }
+  return baseChangeSet('rules', mode === 'reset' ? '恢复推荐决策规则' : '修改决策规则', [{
+    id: 'rules:current',
+    kind: 'replace_decision_rules',
+    summary: mode === 'reset' ? '恢复 PJSDAS 推荐规则' : '应用当前规则修改',
+    expectedUpdatedAt: before.updatedAt,
+    mode,
+    rules: proposed,
+  }], now)
+}
+
+function processEventName(type: ProcessEvent['type']) {
+  if (type === 'assessment_invite') return '测评'
+  if (type === 'written_test_invite') return '笔试'
+  if (type === 'interview_invite') return '面试'
+  if (type === 'offer') return 'Offer'
+  if (type === 'rejection') return '流程结束'
+  if (type === 'status_update') return '流程更新'
+  return '流程事件'
+}
+
+export function createProcessEventChangeSet(event: ProcessEvent, now = new Date()) {
+  const label = `${event.company}｜${event.role} · ${processEventName(event.type)}`
+  return baseChangeSet('process_event', '记录流程通知', [{
+    id: `process:add:${event.id}`,
+    kind: 'add_process_event',
+    summary: `记录 ${label}`,
+    event,
+  }], now)
+}
+
+export function createProcessEventDeleteChangeSet(event: ProcessEvent, now = new Date()) {
+  return baseChangeSet('user_action', '删除错误流程事件', [{
+    id: `process:delete:${event.id}`,
+    kind: 'delete_process_event',
+    summary: `删除 ${event.company}｜${event.role} 的 ${processEventName(event.type)}`,
+    eventId: event.id,
+  }], now)
+}
+
+export function createActionStatusChangeSet(action: Action, status: ActionStatus, now = new Date()) {
+  if (action.status === status) return undefined
+  const verb = status === 'done' ? '完成' : status === 'skipped' ? '跳过' : status === 'doing' ? '开始' : '恢复'
+  return baseChangeSet('user_action', `${verb}行动`, [{
+    id: `action:${action.id}:${status}`,
+    kind: 'set_action_status',
+    summary: `${verb}｜${action.title}`,
+    actionId: action.id,
+    expectedStatus: action.status,
+    status,
+  }], now)
+}
+
+export function validateChangeSet(value: unknown): string[] {
+  const errors: string[] = []
+  if (!isObject(value)) return ['ChangeSet 必须是对象。']
+  if (typeof value.id !== 'string' || !value.id.trim()) errors.push('ChangeSet 缺少 ID。')
+  if (value.version !== 1) errors.push('ChangeSet 版本必须为 1。')
+  if (!['natural_language', 'rules', 'process_event', 'user_action', 'api', 'mcp'].includes(String(value.source))) errors.push('ChangeSet source 无效。')
+  if (!['pending', 'applied', 'discarded', 'failed'].includes(String(value.status))) errors.push('ChangeSet status 无效。')
+  if (typeof value.title !== 'string' || !value.title.trim()) errors.push('ChangeSet 缺少标题。')
+  if (!validIso(value.createdAt) || !validIso(value.updatedAt)) errors.push('ChangeSet 时间字段无效。')
+  if (!Array.isArray(value.operations) || value.operations.length === 0) {
+    errors.push('ChangeSet 至少需要一个 operation。')
+    return errors
+  }
+
+  for (const raw of value.operations) {
+    if (!isObject(raw) || typeof raw.id !== 'string' || typeof raw.summary !== 'string') {
+      errors.push('ChangeSet operation 基础字段无效。')
+      continue
+    }
+    if (raw.kind === 'progress_update') {
+      if (!isObject(raw.operation) || typeof raw.operation.kind !== 'string' || !validIso(raw.operation.occurredAt)) {
+        errors.push(`ChangeSet operation ${raw.id} 的 progress payload 无效。`)
+      }
+      if ('sourceText' in (raw.operation as Record<string, unknown>)) errors.push(`ChangeSet operation ${raw.id} 不应持久化原始输入。`)
+    } else if (raw.kind === 'replace_decision_rules') {
+      if (!isObject(raw.rules)) errors.push(`ChangeSet operation ${raw.id} 缺少规则。`)
+      else {
+        const ruleErrors = validateDecisionRules(raw.rules as unknown as DecisionRules)
+        if (ruleErrors.length) errors.push(`ChangeSet operation ${raw.id} 的规则无效：${ruleErrors[0]}`)
+      }
+      if (typeof raw.expectedUpdatedAt !== 'string') errors.push(`ChangeSet operation ${raw.id} 缺少规则基线版本。`)
+    } else if (raw.kind === 'add_process_event') {
+      if (!isObject(raw.event) || typeof raw.event.id !== 'string' || !validIso(raw.event.occurredAt)) errors.push(`ChangeSet operation ${raw.id} 的流程事件无效。`)
+    } else if (raw.kind === 'delete_process_event') {
+      if (typeof raw.eventId !== 'string' || !raw.eventId) errors.push(`ChangeSet operation ${raw.id} 缺少 eventId。`)
+    } else if (raw.kind === 'set_action_status') {
+      if (typeof raw.actionId !== 'string' || !raw.actionId) errors.push(`ChangeSet operation ${raw.id} 缺少 actionId。`)
+      if (!['todo', 'doing', 'done', 'skipped'].includes(String(raw.expectedStatus)) || !['todo', 'doing', 'done', 'skipped'].includes(String(raw.status))) errors.push(`ChangeSet operation ${raw.id} 的 Action 状态无效。`)
+    } else {
+      errors.push(`ChangeSet operation ${raw.id} kind 无效。`)
+    }
+  }
+  return errors
+}
+
+export function assertChangeSetValid(value: unknown): asserts value is ChangeSetRecord {
+  const errors = validateChangeSet(value)
+  if (errors.length) throw new Error(errors[0])
+}

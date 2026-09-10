@@ -1,11 +1,12 @@
 import { useState } from 'react'
-import { applyProgressUpdate, getAllOpportunities } from './db'
+import { applyChangeSet, discardChangeSet, getAllOpportunities, stageProgressChangeSet } from './db'
 import {
   parseProgressUpdate,
   progressOperationSummary,
   type ProgressUpdatePlan,
 } from './progressUpdate'
 import type { Opportunity } from './model'
+import type { ChangeSetRecord } from './changeSet'
 import './progressInbox.css'
 
 interface ProgressInboxProps {
@@ -23,6 +24,7 @@ export default function ProgressInbox({ onChanged }: ProgressInboxProps) {
   const [text, setText] = useState('')
   const [opportunities, setOpportunities] = useState<Opportunity[]>([])
   const [plan, setPlan] = useState<ProgressUpdatePlan | null>(null)
+  const [changeSet, setChangeSet] = useState<ChangeSetRecord | null>(null)
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
@@ -41,31 +43,52 @@ export default function ProgressInbox({ onChanged }: ProgressInboxProps) {
       setError('先输入最近的求职历程或接下来安排。')
       return
     }
-    let current = opportunities
-    if (current.length === 0) {
-      current = await getAllOpportunities()
-      setOpportunities(current)
+    setBusy(true)
+    try {
+      let current = opportunities
+      if (current.length === 0) {
+        current = await getAllOpportunities()
+        setOpportunities(current)
+      }
+      if (current.length === 0) {
+        setError('还没有岗位基线，请先导入一次秋招投递表。之后即可只用自然语言维护。')
+        return
+      }
+      if (changeSet?.status === 'pending') await discardChangeSet(changeSet.id)
+      const nextPlan = parseProgressUpdate(text, current, new Date())
+      const nextChangeSet = nextPlan.executable.length > 0
+        ? await stageProgressChangeSet(nextPlan.executable)
+        : null
+      setPlan(nextPlan)
+      setChangeSet(nextChangeSet)
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : '无法生成 ChangeSet。')
+    } finally {
+      setBusy(false)
     }
-    if (current.length === 0) {
-      setError('还没有岗位基线，请先导入一次秋招投递表。之后即可只用自然语言维护。')
-      return
-    }
-    setPlan(parseProgressUpdate(text, current, new Date()))
+  }
+
+  async function close() {
+    if (changeSet?.status === 'pending') await discardChangeSet(changeSet.id)
+    setPlan(null)
+    setChangeSet(null)
+    setOpen(false)
   }
 
   async function confirm() {
-    if (!plan || plan.executable.length === 0) return
+    if (!plan || !changeSet || plan.executable.length === 0) return
     setBusy(true)
     setError('')
     setMessage('')
     try {
-      const result = await applyProgressUpdate(plan.executable)
+      const applied = await applyChangeSet(changeSet.id)
       const notes: string[] = []
       if (plan.unresolved.length > 0) notes.push(`${plan.unresolved.length} 条歧义未写入`)
       if (plan.ignored.length > 0) notes.push(`${plan.ignored.length} 条背景记录无需写入`)
-      setMessage(`已应用 ${result.applied} 项更新${notes.length ? `；${notes.join('，')}。` : '。'}`)
+      setMessage(`ChangeSet ${applied.id} 已应用 ${applied.operations.length} 项修改${notes.length ? `；${notes.join('，')}。` : '。'}`)
       setText('')
       setPlan(null)
+      setChangeSet(null)
       setOpportunities(await getAllOpportunities())
       onChanged?.()
     } catch (caught) {
@@ -81,17 +104,17 @@ export default function ProgressInbox({ onChanged }: ProgressInboxProps) {
         更新求职进展
       </button>
       {open ? (
-        <div className="progress-inbox-backdrop" onMouseDown={() => setOpen(false)}>
+        <div className="progress-inbox-backdrop" onMouseDown={() => { void close() }}>
           <section className="progress-inbox-dialog" onMouseDown={(event) => event.stopPropagation()}>
             <header className="progress-inbox-header">
               <div>
                 <div className="eyebrow">NATURAL LANGUAGE UPDATE</div>
                 <h2>把历程和安排直接告诉 PJSDAS</h2>
                 <p>
-                  可以一次粘贴多天记录。系统先生成变更清单，只有你确认后才修改本地数据库；原文默认不保存。
+                  可以一次粘贴多天记录。系统先生成持久化 ChangeSet，只有你确认后才修改业务数据；ChangeSet 只保存规范化修改，原始输入默认不保存。
                 </p>
               </div>
-              <button type="button" className="progress-inbox-close" onClick={() => setOpen(false)} aria-label="关闭">×</button>
+              <button type="button" className="progress-inbox-close" onClick={() => { void close() }} aria-label="关闭">×</button>
             </header>
 
             <textarea
@@ -104,7 +127,7 @@ export default function ProgressInbox({ onChanged }: ProgressInboxProps) {
 
             <div className="progress-inbox-toolbar">
               <small>Excel 只作为初始基线；确认后的本地更新优先于以后重新导入的旧表。</small>
-              <button className="primary-button" type="button" onClick={parse} disabled={busy}>解析更新</button>
+              <button className="primary-button" type="button" onClick={parse} disabled={busy}>{busy ? '处理中…' : '解析并生成 ChangeSet'}</button>
             </div>
 
             {error ? <div className="progress-message error">{error}</div> : null}
@@ -114,7 +137,7 @@ export default function ProgressInbox({ onChanged }: ProgressInboxProps) {
               <div className="progress-plan">
                 <div className="progress-plan-heading">
                   <div>
-                    <div className="eyebrow">REVIEW DIFF</div>
+                    <div className="eyebrow">CHANGESET · {changeSet?.id ?? 'NO WRITABLE CHANGE'}</div>
                     <h3>准备执行 {plan.executable.length} 项修改</h3>
                   </div>
                   <span>
@@ -168,14 +191,14 @@ export default function ProgressInbox({ onChanged }: ProgressInboxProps) {
                 ) : null}
 
                 <div className="progress-confirm-row">
-                  <small>确认后会直接更新 Opportunities / Pipeline / Process Events / Actions，并立即重算 Today。</small>
+                  <small>确认后由 ChangeSet 统一更新 Opportunities / Pipeline / Process Events / Actions；应用结果进入 Timeline，并立即重算 Today。</small>
                   <button
                     className="primary-button"
                     type="button"
                     onClick={confirm}
-                    disabled={busy || plan.executable.length === 0}
+                    disabled={busy || !changeSet || plan.executable.length === 0}
                   >
-                    {busy ? '更新中…' : `确认并应用 ${plan.executable.length} 项`}
+                    {busy ? '应用中…' : `确认并应用 ChangeSet · ${plan.executable.length} 项`}
                   </button>
                 </div>
               </div>

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import {
-  addProcessEvent,
-  deleteProcessEvent,
+  applyProcessEventChangeSet,
+  applyProcessEventDeleteChangeSet,
   getAllOpportunities,
   getAllProcessEvents,
 } from './db'
@@ -120,7 +120,7 @@ export default function ProcessEventDock({ onChanged }: ProcessEventDockProps) {
         notes,
         source: 'manual',
       })
-      await addProcessEvent(processEvent)
+      await applyProcessEventChangeSet(processEvent)
       await reloadLocal()
       setOpportunityText('')
       setDueAt('')
@@ -138,7 +138,7 @@ export default function ProcessEventDock({ onChanged }: ProcessEventDockProps) {
     setBusy(true)
     setError('')
     try {
-      await deleteProcessEvent(id)
+      await applyProcessEventDeleteChangeSet(id)
       await reloadLocal()
       onChanged?.()
     } catch (caught) {

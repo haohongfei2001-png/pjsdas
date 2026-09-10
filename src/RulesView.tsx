@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { resetDecisionRules, saveDecisionRules } from './db'
+import { applyDecisionRulesChangeSet } from './db'
 import {
   cloneDecisionRules,
   DEFAULT_DECISION_RULES,
@@ -51,9 +51,9 @@ export default function RulesView({ rules, onChanged }: Props) {
     if (errors.length) return
     setBusy(true)
     try {
-      await saveDecisionRules(draft)
+      const changeSet = await applyDecisionRulesChangeSet(draft, 'save')
       await onChanged()
-      setMessage(zh ? '规则已保存，Today 已按新规则重新计算。' : 'Rules saved. Today has been recalculated.')
+      setMessage(changeSet ? (zh ? `ChangeSet ${changeSet.id} 已应用，Today 已按新规则重新计算。` : `ChangeSet ${changeSet.id} applied. Today has been recalculated.`) : (zh ? '规则没有变化。' : 'No rule changes.'))
     } finally {
       setBusy(false)
     }
@@ -62,9 +62,9 @@ export default function RulesView({ rules, onChanged }: Props) {
   async function reset() {
     setBusy(true)
     try {
-      await resetDecisionRules()
+      const changeSet = await applyDecisionRulesChangeSet(DEFAULT_DECISION_RULES, 'reset')
       await onChanged()
-      setMessage(zh ? '已恢复 PJSDAS 推荐规则。' : 'Recommended PJSDAS rules restored.')
+      setMessage(changeSet ? (zh ? `ChangeSet ${changeSet.id} 已应用，已恢复 PJSDAS 推荐规则。` : `ChangeSet ${changeSet.id} applied. Recommended rules restored.`) : (zh ? '当前已经是推荐规则。' : 'Recommended rules are already active.'))
     } finally {
       setBusy(false)
     }
@@ -142,7 +142,7 @@ export default function RulesView({ rules, onChanged }: Props) {
       <div className="rules-footer">
         <div>
           <strong>{dirty ? (zh ? '有未保存修改' : 'Unsaved changes') : (zh ? '当前规则已保存' : 'Rules are saved')}</strong>
-          <small>{zh ? '未来 ChatGPT / MCP 修改规则时也会使用同一份结构化规则对象。' : 'Future ChatGPT / MCP rule changes will target this same structured rule object.'}</small>
+          <small>{zh ? '网站、未来 ChatGPT / MCP 都通过同一种 ChangeSet 修改这份结构化规则。' : 'Website edits and future ChatGPT / MCP changes use the same ChangeSet protocol for this structured rule object.'}</small>
         </div>
         <div className="rules-actions">
           <button className="rules-reset" disabled={busy || JSON.stringify(draft) === JSON.stringify(DEFAULT_DECISION_RULES)} onClick={reset}>{zh ? '恢复推荐值' : 'Restore defaults'}</button>

@@ -23,7 +23,7 @@ export type ActionKind = 'apply' | 'follow_up' | 'prep' | 'group_decision' | 'ma
 export type ActionStatus = 'todo' | 'doing' | 'done' | 'skipped'
 export type PriorityLevel = 'P0' | 'P1' | 'P2' | 'expired' | 'none'
 
-export type TimelineCategory = 'opportunity' | 'process' | 'action' | 'rules' | 'data' | 'note'
+export type TimelineCategory = 'opportunity' | 'process' | 'action' | 'rules' | 'change' | 'data' | 'note'
 export type TimelineSource =
   | 'excel'
   | 'natural_language'
@@ -32,6 +32,7 @@ export type TimelineSource =
   | 'rules'
   | 'backup'
   | 'system'
+  | 'changeset'
 export type TimelineKind =
   | 'history_imported'
   | 'opportunity_added'
@@ -47,6 +48,7 @@ export type TimelineKind =
   | 'excel_imported'
   | 'backup_restored'
   | 'baseline_backfill'
+  | 'change_set_applied'
 export type TimelineChangeValue = string | number | boolean | null
 export interface TimelineFieldChange {
   before?: TimelineChangeValue
@@ -64,6 +66,7 @@ export interface TimelineRecord {
   opportunityId?: string
   actionId?: string
   processEventId?: string
+  changeSetId?: string
   company?: string
   role?: string
   sourceRef?: string

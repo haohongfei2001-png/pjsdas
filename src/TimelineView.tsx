@@ -1,16 +1,18 @@
 import { useMemo, useState } from 'react'
 import type { TimelineCategory, TimelineRecord, TimelineSource } from './model'
+import type { ChangeSetRecord, ChangeSetSource, ChangeSetStatus } from './changeSet'
 import { useUiLanguage } from './uiLanguage'
 import './timeline.css'
 
-const categories: TimelineCategory[] = ['opportunity', 'process', 'action', 'rules', 'data', 'note']
-const sources: TimelineSource[] = ['excel', 'natural_language', 'process_event', 'user_action', 'rules', 'backup', 'system']
+const categories: TimelineCategory[] = ['opportunity', 'process', 'action', 'rules', 'change', 'data', 'note']
+const sources: TimelineSource[] = ['excel', 'natural_language', 'process_event', 'user_action', 'rules', 'backup', 'system', 'changeset']
 
 const categoryLabels: Record<TimelineCategory, [string, string]> = {
   opportunity: ['机会', 'Opportunity'],
   process: ['流程', 'Process'],
   action: ['行动', 'Action'],
   rules: ['规则', 'Rules'],
+  change: ['变更集', 'ChangeSet'],
   data: ['数据', 'Data'],
   note: ['记录', 'Note'],
 }
@@ -23,6 +25,23 @@ const sourceLabels: Record<TimelineSource, [string, string]> = {
   rules: ['规则设置', 'Rules'],
   backup: ['本地备份', 'Backup'],
   system: ['系统回填', 'System'],
+  changeset: ['ChangeSet', 'ChangeSet'],
+}
+
+const changeSetSourceLabels: Record<ChangeSetSource, [string, string]> = {
+  natural_language: ['自然语言', 'Natural language'],
+  rules: ['规则设置', 'Rules'],
+  process_event: ['流程通知', 'Process event'],
+  user_action: ['用户操作', 'User action'],
+  api: ['API', 'API'],
+  mcp: ['MCP', 'MCP'],
+}
+
+const changeSetStatusLabels: Record<ChangeSetStatus, [string, string]> = {
+  pending: ['待确认', 'Pending'],
+  applied: ['已应用', 'Applied'],
+  discarded: ['已放弃', 'Discarded'],
+  failed: ['失败', 'Failed'],
 }
 
 function dayKey(iso: string) {
@@ -48,7 +67,7 @@ function changeValue(value: unknown) {
   return String(value)
 }
 
-export default function TimelineView({ records }: { records: TimelineRecord[] }) {
+export default function TimelineView({ records, changeSets }: { records: TimelineRecord[]; changeSets: ChangeSetRecord[] }) {
   const { lang } = useUiLanguage()
   const zh = lang === 'zh'
   const [query, setQuery] = useState('')
@@ -96,7 +115,29 @@ export default function TimelineView({ records }: { records: TimelineRecord[] })
         <div><span>{zh ? '全部记录' : 'All records'}</span><strong>{records.length}</strong></div>
         <div><span>{zh ? '流程事件' : 'Process events'}</span><strong>{records.filter((item) => item.category === 'process').length}</strong></div>
         <div><span>{zh ? '机会 / 投递' : 'Opportunity / apply'}</span><strong>{records.filter((item) => item.category === 'opportunity').length}</strong></div>
+        <div><span>ChangeSet</span><strong>{changeSets.filter((item) => item.status === 'applied').length}</strong></div>
       </div>
+
+      <details className="changeset-ledger">
+        <summary>
+          <div><span className="eyebrow">CHANGESET LEDGER</span><strong>{zh ? '变更集账本' : 'ChangeSet ledger'}</strong></div>
+          <span>{changeSets.filter((item) => item.status === 'pending').length} {zh ? '条待确认' : 'pending'} · {changeSets.length} {zh ? '条记录' : 'records'}</span>
+        </summary>
+        <p>{zh ? '这里保存规范化修改和应用状态，不保存自然语言更新的完整原文。未来 API / MCP 也使用同一种协议。' : 'This ledger stores normalized changes and application status, not the full raw text of natural-language updates. Future API / MCP integrations use the same protocol.'}</p>
+        {changeSets.length === 0 ? <div className="changeset-empty">{zh ? '还没有 ChangeSet。' : 'No ChangeSets yet.'}</div> : (
+          <div className="changeset-list">
+            {changeSets.slice(0, 8).map((item) => (
+              <article className={`changeset-item status-${item.status}`} key={item.id}>
+                <div>
+                  <strong>{item.title}</strong>
+                  <small>{item.id} · {changeSetSourceLabels[item.source][zh ? 0 : 1]} · {item.operations.length} {zh ? '项' : 'ops'}</small>
+                </div>
+                <span>{changeSetStatusLabels[item.status][zh ? 0 : 1]}</span>
+              </article>
+            ))}
+          </div>
+        )}
+      </details>
 
       <div className="timeline-toolbar">
         <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={zh ? '搜索公司、岗位或事件' : 'Search company, role or event'} />
@@ -127,6 +168,7 @@ export default function TimelineView({ records }: { records: TimelineRecord[] })
                         <span className="timeline-category">{categoryLabels[item.category][zh ? 0 : 1]}</span>
                         <span>{sourceLabels[item.source][zh ? 0 : 1]}</span>
                         <span>{formatTime(item.occurredAt, zh)}</span>
+                        {item.changeSetId ? <span>{item.changeSetId}</span> : null}
                       </div>
                       <h3>{item.title}</h3>
                       {(item.company || item.role) ? <p className="timeline-entity">{[item.company, item.role].filter(Boolean).join('｜')}</p> : null}

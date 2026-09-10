@@ -11,6 +11,18 @@ import { mergeActionsForReimport } from './reimportState'
 import { createSnapshot, validateSnapshot, type PJSDASSnapshot } from './snapshot'
 import { createDefaultDecisionRules, validateDecisionRules, type DecisionRules } from './decisionRules'
 import {
+  assertChangeSetValid,
+  createActionStatusChangeSet,
+  createProcessEventChangeSet,
+  createProcessEventDeleteChangeSet,
+  createProgressChangeSet,
+  createRulesChangeSet,
+  decisionRulesEquivalent,
+  restoreProgressOperation,
+  type ChangeSetRecord,
+  type ChangeSetStatus,
+} from './changeSet'
+import {
   TIMELINE_BACKFILL_MARKER_ID,
   buildTimelineBackfill,
   timelineFromActionStatus,
@@ -20,8 +32,9 @@ import {
   timelineFromProgressOperation,
   timelineFromRestore,
   timelineFromRuleChange,
+  timelineFromChangeSetApplied,
 } from './timeline'
-import type { ProgressOperation } from './progressUpdate'
+import type { ExecutableProgressOperation, ProgressOperation } from './progressUpdate'
 import type {
   Action,
   ApplicationGroup,
@@ -60,6 +73,11 @@ interface PJSDASDatabase extends DBSchema {
     value: TimelineRecord
     indexes: { 'by-occurred-at': string; 'by-category': TimelineCategory; 'by-opportunity': string }
   }
+  changeSets: {
+    key: string
+    value: ChangeSetRecord
+    indexes: { 'by-status': ChangeSetStatus; 'by-created-at': string }
+  }
   meta: { key: string; value: ImportMeta }
 }
 
@@ -72,10 +90,11 @@ const DATA_STORES = [
   'applicationGroups',
   'decisionRules',
   'timeline',
+  'changeSets',
   'meta',
 ] as const
 
-export const dbPromise = openDB<PJSDASDatabase>('pjsdas', 5, {
+export const dbPromise = openDB<PJSDASDatabase>('pjsdas', 6, {
   upgrade(db) {
     if (!db.objectStoreNames.contains('opportunities')) {
       db.createObjectStore('opportunities', { keyPath: 'id' })
@@ -106,6 +125,11 @@ export const dbPromise = openDB<PJSDASDatabase>('pjsdas', 5, {
       store.createIndex('by-occurred-at', 'occurredAt')
       store.createIndex('by-category', 'category')
       store.createIndex('by-opportunity', 'opportunityId')
+    }
+    if (!db.objectStoreNames.contains('changeSets')) {
+      const store = db.createObjectStore('changeSets', { keyPath: 'id' })
+      store.createIndex('by-status', 'status')
+      store.createIndex('by-created-at', 'createdAt')
     }
     if (!db.objectStoreNames.contains('meta')) {
       db.createObjectStore('meta', { keyPath: 'key' })
@@ -194,6 +218,31 @@ export async function getAllTimelineRecords() {
   return records
     .filter((item) => item.kind !== 'baseline_backfill')
     .sort((a, b) => b.occurredAt.localeCompare(a.occurredAt) || b.recordedAt.localeCompare(a.recordedAt))
+}
+
+export async function getAllChangeSets() {
+  const records = await (await dbPromise).getAll('changeSets')
+  return records.sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+}
+
+export async function savePendingChangeSet(changeSet: ChangeSetRecord) {
+  assertChangeSetValid(changeSet)
+  if (changeSet.status !== 'pending') throw new Error('只能暂存 pending ChangeSet。')
+  const db = await dbPromise
+  const existing = await db.get('changeSets', changeSet.id)
+  if (existing && existing.status === 'applied') throw new Error(`ChangeSet ${changeSet.id} 已应用，不能覆盖。`)
+  await db.put('changeSets', changeSet)
+  return changeSet
+}
+
+export async function discardChangeSet(id: string) {
+  const db = await dbPromise
+  const existing = await db.get('changeSets', id)
+  if (!existing || existing.status !== 'pending') return existing
+  const now = new Date().toISOString()
+  const discarded: ChangeSetRecord = { ...existing, status: 'discarded', discardedAt: now, updatedAt: now }
+  await db.put('changeSets', discarded)
+  return discarded
 }
 
 export async function saveDecisionRules(rules: DecisionRules) {
@@ -478,10 +527,125 @@ export async function applyProgressUpdate(operations: ProgressOperation[]) {
   return { applied: executable.length }
 }
 
+export async function stageProgressChangeSet(operations: ExecutableProgressOperation[]) {
+  if (operations.length === 0) throw new Error('没有可执行修改，无法生成 ChangeSet。')
+  const changeSet = createProgressChangeSet(operations)
+  return savePendingChangeSet(changeSet)
+}
+
+export async function applyDecisionRulesChangeSet(rules: DecisionRules, mode: 'save' | 'reset' = 'save') {
+  const before = await getDecisionRules()
+  const changeSet = createRulesChangeSet(before, rules, mode)
+  if (!changeSet) return undefined
+  await savePendingChangeSet(changeSet)
+  return applyChangeSet(changeSet.id)
+}
+
+export async function applyProcessEventChangeSet(event: ProcessEvent) {
+  const changeSet = createProcessEventChangeSet(event)
+  await savePendingChangeSet(changeSet)
+  return applyChangeSet(changeSet.id)
+}
+
+export async function applyProcessEventDeleteChangeSet(eventId: string) {
+  const db = await dbPromise
+  const event = await db.get('processEvents', eventId)
+  if (!event) return undefined
+  const changeSet = createProcessEventDeleteChangeSet(event)
+  await savePendingChangeSet(changeSet)
+  return applyChangeSet(changeSet.id)
+}
+
+export async function applyActionStatusChangeSet(actionId: string, status: Action['status']) {
+  const db = await dbPromise
+  const action = await db.get('actions', actionId)
+  if (!action) return undefined
+  const changeSet = createActionStatusChangeSet(action, status)
+  if (!changeSet) return undefined
+  await savePendingChangeSet(changeSet)
+  return applyChangeSet(changeSet.id)
+}
+
+async function markChangeSetFailed(changeSet: ChangeSetRecord, caught: unknown) {
+  const now = new Date().toISOString()
+  const failed: ChangeSetRecord = {
+    ...changeSet,
+    status: 'failed',
+    failedAt: now,
+    updatedAt: now,
+    error: caught instanceof Error ? caught.message : String(caught),
+  }
+  await (await dbPromise).put('changeSets', failed)
+}
+
+export async function applyChangeSet(id: string) {
+  const db = await dbPromise
+  const changeSet = await db.get('changeSets', id)
+  if (!changeSet) throw new Error(`找不到 ChangeSet ${id}。`)
+  assertChangeSetValid(changeSet)
+  if (changeSet.status === 'applied') return changeSet
+  if (changeSet.status !== 'pending') throw new Error(`ChangeSet ${id} 当前状态为 ${changeSet.status}，不能应用。`)
+
+  try {
+    for (const operation of changeSet.operations) {
+      if (operation.kind === 'progress_update') {
+        await applyProgressUpdate([restoreProgressOperation(operation, changeSet.id)])
+        continue
+      }
+
+      if (operation.kind === 'replace_decision_rules') {
+        const current = await getDecisionRules()
+        const alreadyApplied = decisionRulesEquivalent(current, operation.rules)
+        if (!alreadyApplied && current.updatedAt !== operation.expectedUpdatedAt) {
+          throw new Error('决策规则在 ChangeSet 创建后已发生变化，请重新审阅再应用。')
+        }
+        if (!alreadyApplied) await saveDecisionRules(operation.rules)
+        continue
+      }
+
+      if (operation.kind === 'add_process_event') {
+        await addProcessEvent(operation.event)
+        continue
+      }
+
+      if (operation.kind === 'delete_process_event') {
+        await deleteProcessEvent(operation.eventId)
+        continue
+      }
+
+      const action = await db.get('actions', operation.actionId)
+      if (!action) throw new Error(`Action ${operation.actionId} 已不存在。`)
+      if (action.status === operation.status) continue
+      if (action.status !== operation.expectedStatus) {
+        throw new Error(`Action ${operation.actionId} 状态已经变化，请重新操作。`)
+      }
+      await updateActionStatus(operation.actionId, operation.status)
+    }
+
+    const appliedAt = new Date().toISOString()
+    const applied: ChangeSetRecord = {
+      ...changeSet,
+      status: 'applied',
+      appliedAt,
+      updatedAt: appliedAt,
+      error: undefined,
+      failedAt: undefined,
+    }
+    const tx = db.transaction(['changeSets', 'timeline'], 'readwrite')
+    await tx.objectStore('changeSets').put(applied)
+    await tx.objectStore('timeline').put(timelineFromChangeSetApplied(applied))
+    await tx.done
+    return applied
+  } catch (caught) {
+    await markChangeSetFailed(changeSet, caught)
+    throw caught
+  }
+}
+
 export async function exportLocalSnapshot() {
   const db = await dbPromise
   await ensureTimelineBackfill(db)
-  const [opportunities, processes, processEvents, actions, prep, applicationGroups, decisionRules, timeline, meta] =
+  const [opportunities, processes, processEvents, actions, prep, applicationGroups, decisionRules, timeline, changeSets, meta] =
     await Promise.all([
       db.getAll('opportunities'),
       db.getAll('processes'),
@@ -491,6 +655,7 @@ export async function exportLocalSnapshot() {
       db.getAll('applicationGroups'),
       db.get('decisionRules', 'current'),
       db.getAll('timeline'),
+      db.getAll('changeSets'),
       db.get('meta', 'lastImport'),
     ])
 
@@ -503,6 +668,7 @@ export async function exportLocalSnapshot() {
     applicationGroups,
     decisionRules: decisionRules ?? createDefaultDecisionRules(),
     timeline,
+    changeSets,
     meta,
   })
 }
@@ -523,6 +689,7 @@ export async function restoreLocalSnapshot(snapshot: PJSDASSnapshot) {
   for (const item of snapshot.data.applicationGroups) await tx.objectStore('applicationGroups').put(item)
   await tx.objectStore('decisionRules').put(snapshot.data.decisionRules ?? createDefaultDecisionRules())
   for (const item of snapshot.data.timeline ?? []) await tx.objectStore('timeline').put(item)
+  for (const item of snapshot.data.changeSets ?? []) await tx.objectStore('changeSets').put(item)
   await tx.objectStore('timeline').put(timelineFromRestore(snapshot.exportedAt))
   if (snapshot.data.meta) await tx.objectStore('meta').put(snapshot.data.meta)
   await tx.done
