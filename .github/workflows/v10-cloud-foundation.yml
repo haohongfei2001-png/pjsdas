@@ -78,6 +78,6 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add src tests docs supabase README.md package.json package-lock.json .env.example .gitignore .github/workflows/deploy-pages.yml
+          git add src tests docs supabase README.md package.json package-lock.json .env.example .gitignore
           git commit -m "Add local-first account and cloud sync foundation"
           git push
