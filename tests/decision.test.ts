@@ -182,4 +182,57 @@ describe('Today queue constraints', () => {
     expect(plan.overBudgetMinutes).toBe(20)
     expect(plan.overrunReason).toBe('near_deadline_stretch')
   })
+
+  it('does not treat a natural-language scheduled assessment date as a recruiter hard deadline', () => {
+    const now = new Date(2026, 8, 10, 23, 57)
+    const opportunities = [
+      opportunity({ id: 'dell', company: 'Dell', role: 'Analyst' }),
+      opportunity({ id: 'xpeng', company: 'Xpeng', role: 'AI PM', processStage: 'assessment', opportunityValue: 90, fitScore: 78 }),
+      opportunity({ id: 'cxmt', company: 'CXMT', role: 'Strategy', processStage: 'assessment', opportunityValue: 82, fitScore: 68 }),
+    ]
+    const actions = [
+      action({
+        id: 'dell-apply',
+        opportunityId: 'dell',
+        dueAt: new Date(2026, 8, 11, 23, 59, 59).toISOString(),
+        estimatedMinutes: 90,
+      }),
+      action({
+        id: 'xpeng-assessment',
+        kind: 'manual',
+        opportunityId: 'xpeng',
+        processEventId: 'progress-event:nl:event:xpeng',
+        processStage: 'assessment',
+        dueAt: new Date(2026, 8, 12, 14, 0).toISOString(),
+        timingMode: 'deadline',
+        estimatedMinutes: 45,
+        leverage: 90,
+        delayCost: 92,
+      }),
+      action({
+        id: 'cxmt-scheduled-assessment',
+        kind: 'manual',
+        opportunityId: 'cxmt',
+        processEventId: 'progress-event:nl3:event:cxmt',
+        processStage: 'assessment',
+        dueAt: new Date(2026, 8, 11, 23, 59, 59).toISOString(),
+        timingMode: 'deadline',
+        estimatedMinutes: 45,
+        leverage: 90,
+        delayCost: 92,
+      }),
+    ]
+
+    const ranked = rankActions(actions, opportunities, now)
+    const scheduled = ranked.find((item) => item.action.id === 'cxmt-scheduled-assessment')
+    expect(scheduled?.action.processEventId).toBeUndefined()
+    expect(scheduled?.reasons).toContain('计划执行日')
+
+    const plan = buildTimePlan(ranked, 180, now)
+    expect(plan.planned.map((item) => item.action.id)).toEqual([
+      'dell-apply',
+      'xpeng-assessment',
+      'cxmt-scheduled-assessment',
+    ])
+  })
 })
