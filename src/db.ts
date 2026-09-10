@@ -6,6 +6,7 @@ import {
   overlayProcessEventsOnProcesses,
   suppressSupersededActions,
 } from './processEvents'
+import { createSnapshot, validateSnapshot, type PJSDASSnapshot } from './snapshot'
 import type {
   Action,
   ApplicationGroup,
@@ -38,6 +39,16 @@ interface PJSDASDatabase extends DBSchema {
   applicationGroups: { key: string; value: ApplicationGroup }
   meta: { key: string; value: ImportMeta }
 }
+
+const DATA_STORES = [
+  'opportunities',
+  'processes',
+  'processEvents',
+  'actions',
+  'prep',
+  'applicationGroups',
+  'meta',
+] as const
 
 export const dbPromise = openDB<PJSDASDatabase>('pjsdas', 3, {
   upgrade(db) {
@@ -138,6 +149,50 @@ export async function deleteProcessEvent(id: string) {
   const tx = db.transaction(['processEvents', 'actions'], 'readwrite')
   await tx.objectStore('processEvents').delete(id)
   await tx.objectStore('actions').delete(`event-action:${id}`)
+  await tx.done
+}
+
+export async function exportLocalSnapshot() {
+  const db = await dbPromise
+  const [opportunities, processes, processEvents, actions, prep, applicationGroups, meta] =
+    await Promise.all([
+      db.getAll('opportunities'),
+      db.getAll('processes'),
+      db.getAll('processEvents'),
+      db.getAll('actions'),
+      db.getAll('prep'),
+      db.getAll('applicationGroups'),
+      db.get('meta', 'lastImport'),
+    ])
+
+  return createSnapshot({
+    opportunities,
+    processes,
+    processEvents,
+    actions,
+    prep,
+    applicationGroups,
+    meta,
+  })
+}
+
+export async function restoreLocalSnapshot(snapshot: PJSDASSnapshot) {
+  // Validation happens before any store is cleared. Unsupported or corrupt
+  // backups therefore fail closed and leave the existing workspace untouched.
+  validateSnapshot(snapshot)
+
+  const db = await dbPromise
+  const tx = db.transaction([...DATA_STORES], 'readwrite')
+
+  await Promise.all(DATA_STORES.map((storeName) => tx.objectStore(storeName).clear()))
+
+  for (const item of snapshot.data.opportunities) await tx.objectStore('opportunities').put(item)
+  for (const item of snapshot.data.processes) await tx.objectStore('processes').put(item)
+  for (const item of snapshot.data.processEvents) await tx.objectStore('processEvents').put(item)
+  for (const item of snapshot.data.actions) await tx.objectStore('actions').put(item)
+  for (const item of snapshot.data.prep) await tx.objectStore('prep').put(item)
+  for (const item of snapshot.data.applicationGroups) await tx.objectStore('applicationGroups').put(item)
+  if (snapshot.data.meta) await tx.objectStore('meta').put(snapshot.data.meta)
   await tx.done
 }
 
