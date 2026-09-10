@@ -63,6 +63,7 @@ export interface Opportunity {
   detail?: OpportunityDetail
   effectiveProcessEventId?: string
   effectiveProcessEventAt?: string
+  locallyManaged?: boolean
   importedAt: string
 }
 
@@ -82,6 +83,7 @@ export interface ProcessRecord {
   notes?: string
   effectiveProcessEventId?: string
   effectiveProcessEventAt?: string
+  locallyManaged?: boolean
 }
 
 export interface ProcessEvent {
