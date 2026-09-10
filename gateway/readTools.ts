@@ -9,7 +9,7 @@ import {
   getTodayPlan,
   listOpportunities,
 } from '../src/ai/readLayer'
-import type { WorkspaceSource } from './workspaceSource'
+import { WorkspaceSourceError, type WorkspaceSource } from './workspaceSource'
 
 export const READ_TOOL_NAMES = [
   'get_today_plan',
@@ -89,7 +89,7 @@ function toolError(code: string, message: string, retryable: boolean): CallToolR
 }
 
 function failure(caught: unknown): CallToolResult {
-  if (caught instanceof BridgeReadError) {
+  if (caught instanceof BridgeReadError || caught instanceof WorkspaceSourceError) {
     return toolError(caught.code, caught.message, caught.retryable)
   }
   if (caught instanceof z.ZodError) {
