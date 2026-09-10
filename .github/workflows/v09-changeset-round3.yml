@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - 'scripts/v09-changeset-round3.py'
+      - '.github/workflows/v09-changeset-round3.yml'
 
 permissions:
   contents: write
