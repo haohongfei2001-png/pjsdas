@@ -1,4 +1,5 @@
 import { openDB, type DBSchema } from 'idb'
+import { assertImportBundleSafe } from './importDiagnostics'
 import type {
   Action,
   ApplicationGroup,
@@ -83,6 +84,10 @@ export async function updateActionStatus(id: string, status: Action['status']) {
 }
 
 export async function replaceImportedData(bundle: ImportBundle) {
+  // Validate before opening the destructive replacement transaction. A malformed
+  // future workbook must fail closed instead of partially overwriting good data.
+  assertImportBundleSafe(bundle)
+
   const db = await dbPromise
 
   // Re-importing an updated spreadsheet must not resurrect actions the user has
