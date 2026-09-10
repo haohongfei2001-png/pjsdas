@@ -1,0 +1,223 @@
+.progress-inbox-trigger {
+  position: fixed;
+  right: 24px;
+  bottom: 24px;
+  z-index: 45;
+  border: 1px solid rgba(30, 31, 28, .14);
+  border-radius: 999px;
+  padding: 12px 17px;
+  background: rgba(255, 253, 248, .96);
+  color: #30322e;
+  box-shadow: 0 12px 30px rgba(30, 31, 28, .12);
+  backdrop-filter: blur(10px);
+  cursor: pointer;
+  font: inherit;
+  font-weight: 700;
+}
+
+.progress-inbox-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 150;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(15, 23, 42, .38);
+  backdrop-filter: blur(4px);
+}
+
+.progress-inbox-dialog {
+  width: min(920px, 100%);
+  max-height: calc(100vh - 48px);
+  overflow-y: auto;
+  box-sizing: border-box;
+  border-radius: 22px;
+  padding: 28px;
+  background: #fff;
+  box-shadow: 0 30px 80px rgba(15, 23, 42, .22);
+}
+
+.progress-inbox-header,
+.progress-inbox-toolbar,
+.progress-plan-heading,
+.progress-confirm-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 18px;
+}
+
+.progress-inbox-header h2,
+.progress-plan-heading h3 {
+  margin: 4px 0 7px;
+}
+
+.progress-inbox-header h2 {
+  font-size: 26px;
+}
+
+.progress-inbox-header p {
+  max-width: 700px;
+  margin: 0;
+  color: #667085;
+  line-height: 1.6;
+}
+
+.progress-inbox-close {
+  flex: 0 0 auto;
+  width: 36px;
+  height: 36px;
+  border: 1px solid #e4e7ec;
+  border-radius: 10px;
+  background: #fff;
+  cursor: pointer;
+  font-size: 24px;
+  line-height: 1;
+}
+
+.progress-inbox-textarea {
+  width: 100%;
+  min-height: 220px;
+  box-sizing: border-box;
+  margin-top: 22px;
+  border: 1px solid #d0d5dd;
+  border-radius: 14px;
+  padding: 15px 16px;
+  resize: vertical;
+  color: #101828;
+  background: #fff;
+  font: inherit;
+  line-height: 1.65;
+}
+
+.progress-inbox-toolbar {
+  align-items: center;
+  margin-top: 12px;
+}
+
+.progress-inbox-toolbar small,
+.progress-confirm-row small {
+  color: #667085;
+  line-height: 1.5;
+}
+
+.progress-plan {
+  margin-top: 22px;
+  border-top: 1px solid #eaecf0;
+  padding-top: 20px;
+}
+
+.progress-plan-heading {
+  align-items: center;
+}
+
+.progress-plan-heading span {
+  border-radius: 999px;
+  padding: 6px 10px;
+  background: #f2f4f7;
+  color: #475467;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.progress-operation-list {
+  display: grid;
+  gap: 10px;
+  margin-top: 15px;
+}
+
+.progress-operation {
+  display: grid;
+  grid-template-columns: 34px 1fr;
+  gap: 12px;
+  border: 1px solid #e4e7ec;
+  border-radius: 14px;
+  padding: 13px 14px;
+  background: #fafbfc;
+}
+
+.progress-operation.unresolved {
+  border-color: #f3d7a5;
+  background: #fffaeb;
+}
+
+.progress-operation-mark {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 9px;
+  background: #eef2f6;
+  color: #344054;
+  font-weight: 800;
+}
+
+.progress-operation strong {
+  color: #101828;
+  font-size: 14px;
+}
+
+.progress-operation p {
+  margin: 4px 0;
+  color: #667085;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.progress-operation small {
+  color: #98a2b3;
+}
+
+.progress-message {
+  margin-top: 14px;
+  border-radius: 12px;
+  padding: 11px 13px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.progress-message.error {
+  background: #fff1f0;
+  color: #b42318;
+}
+
+.progress-message.success {
+  background: #ecfdf3;
+  color: #027a48;
+}
+
+.progress-message.warning {
+  background: #fffaeb;
+  color: #7a5d2c;
+}
+
+.progress-confirm-row {
+  align-items: center;
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px solid #eaecf0;
+}
+
+@media (max-width: 720px) {
+  .progress-inbox-trigger {
+    right: 16px;
+    bottom: 16px;
+  }
+
+  .progress-inbox-backdrop {
+    padding: 10px;
+  }
+
+  .progress-inbox-dialog {
+    max-height: calc(100vh - 20px);
+    padding: 20px 16px 90px;
+  }
+
+  .progress-inbox-header,
+  .progress-inbox-toolbar,
+  .progress-plan-heading,
+  .progress-confirm-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}
