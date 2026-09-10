@@ -8,6 +8,7 @@ import {
 } from './processEvents'
 import { mergeActionsForReimport } from './reimportState'
 import { createSnapshot, validateSnapshot, type PJSDASSnapshot } from './snapshot'
+import type { ProgressOperation } from './progressUpdate'
 import type {
   Action,
   ApplicationGroup,
@@ -153,6 +154,215 @@ export async function deleteProcessEvent(id: string) {
   await tx.done
 }
 
+function defaultLocalOpportunity(
+  operation: Extract<ProgressOperation, { kind: 'upsert_opportunity' }>,
+): Opportunity {
+  const submitted = operation.mode === 'submitted'
+  return {
+    id: operation.opportunityId,
+    company: operation.company,
+    role: operation.role,
+    currentStageLabel: submitted ? '筛选中' : '待投',
+    processStage: submitted ? 'screening' : 'not_applied',
+    roleType: 'core',
+    early: false,
+    opportunityValue: 86,
+    fitScore: 60,
+    locallyManaged: true,
+    importedAt: operation.occurredAt,
+  }
+}
+
+async function upsertLocalProcess(
+  processStore: ReturnType<Awaited<typeof dbPromise>['transaction']>['objectStore'] extends never ? never : any,
+  opportunity: Opportunity,
+  stage: ProcessRecord['stage'],
+  stageLabel: string,
+  occurredAt: string,
+) {
+  const existing = await processStore.index('by-opportunity').getAll(opportunity.id) as ProcessRecord[]
+  if (existing.length > 0) {
+    for (const process of existing) {
+      await processStore.put({
+        ...process,
+        company: opportunity.company,
+        role: opportunity.role,
+        stage,
+        stageLabel,
+        lastProgressAt: occurredAt,
+        nextCheckAt: undefined,
+        silenceRisk: undefined,
+        currentAction: undefined,
+        locallyManaged: true,
+      })
+    }
+    return
+  }
+
+  await processStore.put({
+    id: `local-process:${opportunity.id}`,
+    opportunityId: opportunity.id,
+    company: opportunity.company,
+    role: opportunity.role,
+    stage,
+    stageLabel,
+    lastProgressAt: occurredAt,
+    locallyManaged: true,
+  })
+}
+
+export async function applyProgressUpdate(operations: ProgressOperation[]) {
+  const executable = operations.filter((item) => item.kind !== 'unresolved')
+  if (executable.length === 0) return { applied: 0 }
+
+  const db = await dbPromise
+  const tx = db.transaction(['opportunities', 'processes', 'processEvents', 'actions'], 'readwrite')
+  const opportunityStore = tx.objectStore('opportunities')
+  const processStore = tx.objectStore('processes')
+  const eventStore = tx.objectStore('processEvents')
+  const actionStore = tx.objectStore('actions')
+
+  for (const operation of executable) {
+    if (operation.kind === 'upsert_opportunity') {
+      const existing = await opportunityStore.get(operation.opportunityId)
+      const submitted = operation.mode === 'submitted'
+      const opportunity: Opportunity = existing
+        ? {
+            ...existing,
+            company: operation.company,
+            role: operation.role,
+            currentStageLabel: submitted ? '筛选中' : existing.currentStageLabel,
+            processStage: submitted ? 'screening' : existing.processStage,
+            locallyManaged: true,
+          }
+        : defaultLocalOpportunity(operation)
+      await opportunityStore.put(opportunity)
+
+      const applyId = `apply:${opportunity.id}`
+      const existingApply = await actionStore.get(applyId)
+      if (submitted) {
+        if (existingApply && (existingApply.status === 'todo' || existingApply.status === 'doing')) {
+          await actionStore.put({ ...existingApply, status: 'done', updatedAt: operation.occurredAt })
+        }
+        await upsertLocalProcess(processStore, opportunity, 'screening', '筛选中', operation.occurredAt)
+      } else if (!existingApply) {
+        await actionStore.put({
+          id: applyId,
+          kind: 'apply',
+          title: `投递 ${opportunity.company}｜${opportunity.role}`,
+          opportunityId: opportunity.id,
+          estimatedMinutes: 45,
+          leverage: 86,
+          delayCost: 40,
+          status: 'todo',
+          sourceLabel: '自然语言更新',
+          createdAt: operation.occurredAt,
+          updatedAt: operation.occurredAt,
+        })
+      }
+      continue
+    }
+
+    if (operation.kind === 'rename_opportunity') {
+      const existing = await opportunityStore.get(operation.opportunityId)
+      if (!existing) continue
+      const opportunity: Opportunity = {
+        ...existing,
+        company: operation.company,
+        role: operation.newRole,
+        locallyManaged: true,
+      }
+      await opportunityStore.put(opportunity)
+
+      const processes = await processStore.index('by-opportunity').getAll(operation.opportunityId) as ProcessRecord[]
+      for (const process of processes) {
+        await processStore.put({ ...process, company: operation.company, role: operation.newRole, locallyManaged: true })
+      }
+      const actions = await actionStore.index('by-opportunity').getAll(operation.opportunityId) as Action[]
+      for (const action of actions) {
+        const title = action.title.includes(operation.oldRole)
+          ? action.title.replace(operation.oldRole, operation.newRole)
+          : action.title
+        await actionStore.put({ ...action, title, updatedAt: operation.occurredAt })
+      }
+      continue
+    }
+
+    if (operation.kind === 'close_opportunity') {
+      const existing = await opportunityStore.get(operation.opportunityId)
+      if (!existing) continue
+      const opportunity: Opportunity = {
+        ...existing,
+        currentStageLabel: '流程结束',
+        processStage: 'closed',
+        locallyManaged: true,
+      }
+      await opportunityStore.put(opportunity)
+      await upsertLocalProcess(processStore, opportunity, 'closed', '流程结束', operation.occurredAt)
+
+      const actions = await actionStore.index('by-opportunity').getAll(operation.opportunityId) as Action[]
+      for (const action of actions) {
+        if (action.kind === 'prep') continue
+        if (action.status === 'todo' || action.status === 'doing') {
+          await actionStore.put({ ...action, status: 'skipped', updatedAt: operation.occurredAt })
+        }
+      }
+      continue
+    }
+
+    if (operation.kind === 'process_event') {
+      const eventId = `progress-event:${operation.id}`
+      const existingEvent = await eventStore.get(eventId)
+      const now = new Date().toISOString()
+      const event: ProcessEvent = {
+        id: eventId,
+        opportunityId: operation.opportunityId,
+        company: operation.company,
+        role: operation.role,
+        type: operation.eventType,
+        occurredAt: operation.occurredAt,
+        dueAt: operation.dueAt,
+        timingMode: operation.timingMode,
+        estimatedMinutes: operation.estimatedMinutes,
+        source: 'manual',
+        createdAt: existingEvent?.createdAt ?? now,
+        updatedAt: now,
+      }
+      await eventStore.put(event)
+      const generated = actionForProcessEvent(event)
+      if (generated) {
+        const previous = await actionStore.get(generated.id)
+        await actionStore.put(previous
+          ? { ...generated, status: previous.status, updatedAt: previous.updatedAt }
+          : generated)
+      }
+      continue
+    }
+
+    if (operation.kind === 'manual_action') {
+      const id = `progress-action:${operation.id}`
+      const previous = await actionStore.get(id)
+      const action: Action = {
+        id,
+        kind: 'manual',
+        title: operation.title,
+        dueAt: operation.dueAt,
+        estimatedMinutes: operation.estimatedMinutes,
+        leverage: 70,
+        delayCost: operation.dueAt ? 65 : 40,
+        status: previous?.status ?? 'todo',
+        sourceLabel: '自然语言更新',
+        createdAt: previous?.createdAt ?? operation.occurredAt,
+        updatedAt: previous?.updatedAt ?? operation.occurredAt,
+      }
+      await actionStore.put(action)
+    }
+  }
+
+  await tx.done
+  return { applied: executable.length }
+}
+
 export async function exportLocalSnapshot() {
   const db = await dbPromise
   const [opportunities, processes, processEvents, actions, prep, applicationGroups, meta] =
@@ -178,8 +388,6 @@ export async function exportLocalSnapshot() {
 }
 
 export async function restoreLocalSnapshot(snapshot: PJSDASSnapshot) {
-  // Validation happens before any store is cleared. Unsupported or corrupt
-  // backups therefore fail closed and leave the existing workspace untouched.
   validateSnapshot(snapshot)
 
   const db = await dbPromise
@@ -197,18 +405,42 @@ export async function restoreLocalSnapshot(snapshot: PJSDASSnapshot) {
   await tx.done
 }
 
+function mergeLocallyManagedOpportunities(imported: Opportunity[], previous: Opportunity[]) {
+  const local = previous.filter((item) => item.locallyManaged)
+  const localById = new Map(local.map((item) => [item.id, item]))
+  const merged = imported.map((item) => localById.get(item.id) ?? item)
+  const importedIds = new Set(imported.map((item) => item.id))
+  for (const item of local) if (!importedIds.has(item.id)) merged.push(item)
+  return merged
+}
+
+function mergeLocallyManagedProcesses(
+  imported: ProcessRecord[],
+  previous: ProcessRecord[],
+  locallyManagedOpportunityIds: Set<string>,
+) {
+  const local = previous.filter((item) => item.locallyManaged)
+  const importedSafe = imported.filter(
+    (item) => !item.opportunityId || !locallyManagedOpportunityIds.has(item.opportunityId),
+  )
+  return [...importedSafe, ...local]
+}
+
 export async function replaceImportedData(bundle: ImportBundle) {
-  // Validate before opening the destructive replacement transaction. A malformed
-  // future workbook must fail closed instead of partially overwriting good data.
   assertImportBundleSafe(bundle)
 
   const db = await dbPromise
-
-  // Re-importing an updated spreadsheet must not resurrect actions the user has
-  // already completed or skipped. Process-event actions are local records rather
-  // than Excel-derived records, so they must survive the replacement entirely.
-  const previousActions = await db.getAll('actions')
+  const [previousActions, previousOpportunities, previousProcesses] = await Promise.all([
+    db.getAll('actions'),
+    db.getAll('opportunities'),
+    db.getAll('processes'),
+  ])
   const mergedActions = mergeActionsForReimport(bundle.actions, previousActions)
+  const opportunities = mergeLocallyManagedOpportunities(bundle.opportunities, previousOpportunities)
+  const localOpportunityIds = new Set(
+    previousOpportunities.filter((item) => item.locallyManaged).map((item) => item.id),
+  )
+  const processes = mergeLocallyManagedProcesses(bundle.processes, previousProcesses, localOpportunityIds)
 
   const tx = db.transaction(
     ['opportunities', 'processes', 'actions', 'prep', 'applicationGroups', 'meta'],
@@ -224,8 +456,8 @@ export async function replaceImportedData(bundle: ImportBundle) {
     tx.objectStore('meta').clear(),
   ])
 
-  for (const item of bundle.opportunities) await tx.objectStore('opportunities').put(item)
-  for (const item of bundle.processes) await tx.objectStore('processes').put(item)
+  for (const item of opportunities) await tx.objectStore('opportunities').put(item)
+  for (const item of processes) await tx.objectStore('processes').put(item)
   for (const item of mergedActions) await tx.objectStore('actions').put(item)
   for (const item of bundle.prep) await tx.objectStore('prep').put(item)
   for (const item of bundle.applicationGroups) await tx.objectStore('applicationGroups').put(item)
