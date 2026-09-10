@@ -34,7 +34,7 @@ function temporaryOpportunity(operation: Extract<ProgressOperation, { kind: 'pro
     company: operation.company,
     role: operation.role,
     currentStageLabel: '流程中',
-    processStage: operation.processStage ?? 'screening',
+    processStage: 'screening',
     roleType: 'core',
     early: false,
     opportunityValue: 80,
