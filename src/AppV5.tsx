@@ -216,7 +216,7 @@ function TodayView({
           <div className="upcoming-panel">
             <div className="upcoming-heading">
               <div>
-                <div className="eyebrow">UPCOMING · NEXT 7 DAYS</div>
+                <div className="eyebrow">{lang === 'zh' ? `UPCOMING · 未来 ${rules.upcomingHorizonDays} 天` : `UPCOMING · NEXT ${rules.upcomingHorizonDays} DAYS`}</div>
                 <h2>{t('today.upcoming')}</h2>
                 <p>{t('today.upcomingText')}</p>
               </div>
@@ -239,7 +239,7 @@ function TodayView({
           </div>
         ) : (
           <div className="upcoming-panel upcoming-empty">
-            <div className="eyebrow">UPCOMING · NEXT 7 DAYS</div>
+            <div className="eyebrow">{lang === 'zh' ? `UPCOMING · 未来 ${rules.upcomingHorizonDays} 天` : `UPCOMING · NEXT ${rules.upcomingHorizonDays} DAYS`}</div>
             <h2>{t('today.upcoming')}</h2>
             <p>{t('today.upcomingText')}</p>
           </div>

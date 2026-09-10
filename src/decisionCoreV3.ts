@@ -196,7 +196,7 @@ export function rankAction(
   } else if (hardDeadlineAction && hours !== undefined && hours >= 0 && hours <= rules.riskHighHours) {
     reasons.push(processTask ? '流程节点今天到期' : '今天硬截止')
   } else if (hardDeadlineAction && hours !== undefined && hours <= rules.hardDeadlineHorizonHours) {
-    reasons.push(processTask ? '流程节点48小时内' : '明天硬截止')
+    reasons.push(processTask ? `流程节点${rules.hardDeadlineHorizonHours}小时内` : `${rules.hardDeadlineHorizonHours}小时内硬截止`)
   } else if (breakdown.urgency >= 90) {
     reasons.push('节点非常近')
   } else if (breakdown.urgency >= 70) {
