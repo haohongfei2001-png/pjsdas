@@ -34,9 +34,9 @@ function urgencyScore(action: Action, now: Date) {
   const hours = hoursUntil(action.dueAt, now)
   if (hours === undefined) return action.kind === 'prep' ? 30 : 18
 
-  // A missed application deadline is no longer actionable. Follow-up dates are
-  // management checkpoints, not employer deadlines, so overdue follow-ups must
-  // not dominate a real hard deadline forever.
+  // Application deadlines are hard expiry points. Pipeline review dates are
+  // only management checkpoints, so an overdue follow-up must not dominate a
+  // real deadline forever.
   if (hours <= 0) {
     if (action.kind === 'apply') return 0
     if (action.kind === 'follow_up') return 72
@@ -135,7 +135,7 @@ export function rankAction(
 export function rankActions(actions: Action[], opportunities: Opportunity[], now = new Date()) {
   const opportunityMap = new Map(opportunities.map((item) => [item.id, item]))
 
-  return actions
+  const ranked = actions
     .filter((action) => action.status === 'todo' || action.status === 'doing')
     .filter((action) => !(action.kind === 'apply' && action.dueAt && new Date(action.dueAt) < now))
     .map((action) =>
@@ -146,6 +146,13 @@ export function rankActions(actions: Action[], opportunities: Opportunity[], now
       ),
     )
     .sort((a, b) => b.score - a.score || a.action.estimatedMinutes - b.action.estimatedMinutes)
+
+  // The first ten positions are the actual Today queue shown by the UI. Keep
+  // the rest of the ranked list after them so future screens can still inspect
+  // every action without losing information.
+  const today = selectTodayActions(ranked, now, 10)
+  const todayIds = new Set(today.map((item) => item.action.id))
+  return [...today, ...ranked.filter((item) => !todayIds.has(item.action.id))]
 }
 
 /**
