@@ -1,0 +1,32 @@
+name: V09 ChangeSet Polish
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/v09-changeset-polish.py'
+      - '.github/workflows/v09-changeset-polish.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Apply ChangeSet polish
+        run: python3 scripts/v09-changeset-polish.py
+      - name: Verify
+        run: |
+          npm ci
+          npm audit --audit-level=high
+          npm test
+          npm run build
+      - name: Commit product changes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src tests
+          git commit -m "Make ChangeSets recoverable and atomic"
+          git push
