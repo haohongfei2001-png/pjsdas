@@ -214,15 +214,21 @@ function TodayView({
         </div>
       ) : null}
 
-      {plan.overBudgetMinutes > 0 ? (
+      {plan.overrunReason === 'today_deadlines' ? (
         <div className="notice error plan-notice">
-          今天硬截止任务至少需要 {formatMinutes(plan.requiredTodayMinutes)}，当前时间预算少了 {formatMinutes(plan.overBudgetMinutes)}。这里不会把超出的硬截止静默删除。
+          今天截止的行动本身就需要 {formatMinutes(plan.requiredTodayMinutes)}，当前预算不足 {formatMinutes(plan.overBudgetMinutes)}。系统仍把它们完整保留，避免制造“做得完”的假象。
         </div>
       ) : null}
 
-      {plan.overBudgetMinutes === 0 && nextUnplanned ? (
+      {plan.overrunReason === 'near_deadline_stretch' ? (
         <div className="notice warning plan-notice">
-          48 小时内还有 {plan.nearDeadlineUnplanned.length} 个硬截止没有装入当前时间预算。最近的是“{nextUnplanned.action.title}”，预计需要 {formatMinutes(nextUnplanned.action.estimatedMinutes)}。
+          为覆盖 48 小时内的下一硬截止，建议把今天的时间预算再增加 {formatMinutes(plan.overBudgetMinutes)}。相比用剩余时间塞入低优先级小任务，这个超时更值得。
+        </div>
+      ) : null}
+
+      {!plan.overrunReason && nextUnplanned ? (
+        <div className="notice warning plan-notice">
+          48 小时内还有 {plan.nearDeadlineUnplanned.length} 个硬截止无法完整装入当前预算。最近的是“{nextUnplanned.action.title}”，预计需要 {formatMinutes(nextUnplanned.action.estimatedMinutes)}；剩余时间应优先留给它，而不是被低优先级小任务填满。
         </div>
       ) : null}
 
