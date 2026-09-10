@@ -332,9 +332,11 @@ export async function applyProgressUpdate(operations: ProgressOperation[]) {
       const generated = actionForProcessEvent(event)
       if (generated) {
         const previous = await actionStore.get(generated.id)
-        await actionStore.put(previous
-          ? { ...generated, status: previous.status, updatedAt: previous.updatedAt }
-          : generated)
+        await actionStore.put(operation.completed
+          ? { ...generated, status: 'done', updatedAt: operation.occurredAt }
+          : previous
+            ? { ...generated, status: previous.status, updatedAt: previous.updatedAt }
+            : generated)
       }
       continue
     }
@@ -435,11 +437,11 @@ export async function replaceImportedData(bundle: ImportBundle) {
     db.getAll('opportunities'),
     db.getAll('processes'),
   ])
-  const mergedActions = mergeActionsForReimport(bundle.actions, previousActions)
-  const opportunities = mergeLocallyManagedOpportunities(bundle.opportunities, previousOpportunities)
   const localOpportunityIds = new Set(
     previousOpportunities.filter((item) => item.locallyManaged).map((item) => item.id),
   )
+  const mergedActions = mergeActionsForReimport(bundle.actions, previousActions, localOpportunityIds)
+  const opportunities = mergeLocallyManagedOpportunities(bundle.opportunities, previousOpportunities)
   const processes = mergeLocallyManagedProcesses(bundle.processes, previousProcesses, localOpportunityIds)
 
   const tx = db.transaction(
