@@ -246,24 +246,13 @@ function rankedIsHardDeadlineAction(item: RankedAction) {
     Boolean(item.action.processEventId)
 }
 
-function isFutureFixedOutsideToday(item: RankedAction, now: Date) {
-  if (!isFixedAction(item.action) || !item.action.dueAt) return false
-  const due = new Date(item.action.dueAt)
-  return due.getTime() > localDayEnd(now).getTime()
-}
-
 export function selectTodayActions(ranked: RankedAction[], now = new Date(), limit = 10) {
   const selected: RankedAction[] = []
   const selectedIds = new Set<string>()
-  const endOfToday = localDayEnd(now)
 
   const hardDeadlines = ranked
     .filter((item) => {
-      if (!rankedIsHardDeadlineAction(item) || !item.action.dueAt) return false
-      if (isFixedAction(item.action)) {
-        const due = new Date(item.action.dueAt)
-        return due.getTime() >= now.getTime() && due.getTime() <= endOfToday.getTime()
-      }
+      if (!rankedIsHardDeadlineAction(item) || !item.action.dueAt || isFixedAction(item.action)) return false
       const hours = hoursUntil(item.action.dueAt, now)
       return hours !== undefined && hours >= 0 && hours <= 48
     })
@@ -285,7 +274,7 @@ export function selectTodayActions(ranked: RankedAction[], now = new Date(), lim
   for (const item of ranked) {
     if (selected.length >= limit) break
     if (selectedIds.has(item.action.id)) continue
-    if (isFutureFixedOutsideToday(item, now)) continue
+    if (isFixedAction(item.action)) continue
 
     if (item.action.kind === 'follow_up') {
       if (followUps >= 2) continue
@@ -311,6 +300,7 @@ export interface TimePlan {
   planned: RankedAction[]
   totalMinutes: number
   requiredTodayMinutes: number
+  fixedTodayMinutes: number
   overBudgetMinutes: number
   overrunReason?: TimePlanOverrunReason
   remainingMinutes: number
@@ -334,9 +324,17 @@ export function buildTimePlan(
     .filter((item) => {
       if (!isFixedAction(item.action) || !item.action.dueAt) return false
       const hours = hoursUntil(item.action.dueAt, now)
-      return hours !== undefined && hours >= 0 && hours <= 48 && !isSameLocalDay(item.action.dueAt, now)
+      return hours !== undefined && hours >= 0 && hours <= 48
     })
     .sort((a, b) => new Date(a.action.dueAt!).getTime() - new Date(b.action.dueAt!).getTime())
+
+  const fixedToday = upcomingFixedEvents.filter(
+    (item) => item.action.dueAt && isSameLocalDay(item.action.dueAt, now),
+  )
+  const fixedTodayMinutes = fixedToday.reduce(
+    (total, item) => total + item.action.estimatedMinutes,
+    0,
+  )
 
   const deadlineWithin48h = ranked
     .filter((item) => {
@@ -349,26 +347,23 @@ export function buildTimePlan(
       b.score - a.score,
     )
 
-  const fixedToday = ranked
-    .filter((item) => {
-      if (!isFixedAction(item.action) || !item.action.dueAt) return false
-      const due = new Date(item.action.dueAt)
-      return due.getTime() >= now.getTime() && due.getTime() <= endOfToday.getTime()
-    })
-
-  const requiredToday = [
-    ...deadlineWithin48h.filter(
-      (item) => new Date(item.action.dueAt!).getTime() <= endOfToday.getTime(),
-    ),
-    ...fixedToday,
-  ].sort((a, b) => new Date(a.action.dueAt!).getTime() - new Date(b.action.dueAt!).getTime())
-
-  const planned = [...requiredToday]
-  const selectedIds = new Set(planned.map((item) => item.action.id))
-  const requiredTodayMinutes = requiredToday.reduce(
+  const requiredDeadlineToday = deadlineWithin48h.filter(
+    (item) => new Date(item.action.dueAt!).getTime() <= endOfToday.getTime(),
+  )
+  const requiredDeadlineMinutes = requiredDeadlineToday.reduce(
     (total, item) => total + item.action.estimatedMinutes,
     0,
   )
+  const requiredTodayMinutes = requiredDeadlineMinutes + fixedTodayMinutes
+
+  // Fixed appointments reserve capacity but are not placed in the startable work
+  // queue. Otherwise an interview at 20:00 could incorrectly become "Start here"
+  // at 13:00.
+  const planned = [...requiredDeadlineToday]
+  const selectedIds = new Set([
+    ...planned.map((item) => item.action.id),
+    ...fixedToday.map((item) => item.action.id),
+  ])
   let totalMinutes = requiredTodayMinutes
   let blockOptionalPacking = false
 
@@ -403,7 +398,7 @@ export function buildTimePlan(
 
     for (const item of candidates) {
       if (selectedIds.has(item.action.id)) continue
-      if (isFutureFixedOutsideToday(item, now)) continue
+      if (isFixedAction(item.action)) continue
       if (totalMinutes + item.action.estimatedMinutes > budget) continue
 
       if (item.action.kind === 'follow_up') {
@@ -438,6 +433,7 @@ export function buildTimePlan(
     planned,
     totalMinutes,
     requiredTodayMinutes,
+    fixedTodayMinutes,
     overBudgetMinutes,
     overrunReason,
     remainingMinutes: Math.max(0, budget - totalMinutes),
