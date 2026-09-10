@@ -9,6 +9,6 @@ import { remoteMcpHandler } from '../gateway/remoteHttp'
  */
 export default {
   fetch(request: Request) {
-    return remoteMcpHandler(request)
+    return remoteMcpHandler.fetch(request)
   },
 }
