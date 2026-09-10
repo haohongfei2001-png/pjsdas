@@ -42,6 +42,10 @@ function followUpHoursUntil(dueAt: string | undefined, now: Date) {
   return (localDayStart(dueAt).getTime() - now.getTime()) / HOUR
 }
 
+function isProcessEventAction(action: Action) {
+  return Boolean(action.processEventId)
+}
+
 export function processNeedsReview(process: ProcessRecord, now = new Date()) {
   if (!process.nextCheckAt) return false
   return localDayStart(process.nextCheckAt).getTime() <= now.getTime()
@@ -55,14 +59,17 @@ function urgencyScore(action: Action, now: Date) {
   const hours = action.kind === 'follow_up'
     ? followUpHoursUntil(action.dueAt, now)
     : hoursUntil(action.dueAt, now)
+  const processTask = isProcessEventAction(action)
 
   if (hours === undefined) {
+    if (processTask) return 65
     if (action.kind === 'prep') return 30
     if (action.kind === 'group_decision') return 38
     return 18
   }
 
   if (hours <= 0) {
+    if (processTask) return 96
     if (action.kind === 'apply' || action.kind === 'group_decision') return 0
     if (action.kind === 'follow_up') return 72
     return 70
@@ -82,10 +89,18 @@ function urgencyScore(action: Action, now: Date) {
   if (hours <= 72) return 72
   if (hours <= 168) return 55
   if (hours <= 336) return 40
-  return 24
+  return processTask ? 46 : 24
 }
 
-function stageScore(stage: ProcessStage | undefined, kind: Action['kind']) {
+function stageScore(stage: ProcessStage | undefined, kind: Action['kind'], processTask: boolean) {
+  if (processTask) {
+    const processScores: Partial<Record<ProcessStage, number>> = {
+      assessment: 90,
+      written_test: 94,
+      interview: 100,
+    }
+    return stage ? (processScores[stage] ?? 88) : 88
+  }
   if (kind === 'follow_up') return 68
   if (kind === 'prep') return 52
   if (kind === 'group_decision') return 78
@@ -118,6 +133,7 @@ export function rankAction(
     ? followUpHoursUntil(action.dueAt, now)
     : hoursUntil(action.dueAt, now)
   const followUpDue = action.kind === 'follow_up' && hours !== undefined && hours <= 0
+  const processTask = isProcessEventAction(action)
 
   const dynamicLeverage = followUpDue ? Math.max(action.leverage, 72) : action.leverage
   const dynamicDelayCost = followUpDue ? Math.max(action.delayCost, 74) : action.delayCost
@@ -125,11 +141,11 @@ export function rankAction(
   const breakdown: PriorityBreakdown = {
     opportunity: clamp(
       opportunity?.opportunityValue ??
-        (action.kind === 'prep' ? 68 : action.kind === 'group_decision' ? 82 : 55),
+        (action.kind === 'prep' ? 68 : action.kind === 'group_decision' ? 82 : processTask ? 88 : 55),
     ),
     fit: clamp(opportunity?.fitScore ?? (action.kind === 'group_decision' ? 62 : 55)),
     urgency: urgencyScore(action, now),
-    stage: stageScore(opportunity?.processStage, action.kind),
+    stage: stageScore(action.processStage ?? opportunity?.processStage, action.kind, processTask),
     leverage: clamp(dynamicLeverage),
     delayCost: clamp(dynamicDelayCost),
     timeEfficiency: timeEfficiency(action.estimatedMinutes),
@@ -145,18 +161,22 @@ export function rankAction(
     breakdown.timeEfficiency * 0.07
 
   const reasons: string[] = []
-  const isHardDeadlineAction = action.kind === 'apply' || action.kind === 'group_decision'
+  const hardDeadlineAction =
+    action.kind === 'apply' || action.kind === 'group_decision' || processTask
 
-  if (isHardDeadlineAction && hours !== undefined && hours >= 0 && hours <= 24) {
-    reasons.push('今天硬截止')
-  } else if (isHardDeadlineAction && hours !== undefined && hours <= 48) {
-    reasons.push('明天硬截止')
+  if (processTask && hours !== undefined && hours < 0) {
+    reasons.push('流程节点已过，立即确认')
+  } else if (hardDeadlineAction && hours !== undefined && hours >= 0 && hours <= 24) {
+    reasons.push(processTask ? '流程节点今天到期' : '今天硬截止')
+  } else if (hardDeadlineAction && hours !== undefined && hours <= 48) {
+    reasons.push(processTask ? '流程节点48小时内' : '明天硬截止')
   } else if (breakdown.urgency >= 90) {
     reasons.push('节点非常近')
   } else if (breakdown.urgency >= 70) {
     reasons.push('近期节点')
   }
 
+  if (processTask) reasons.push('真实流程通知')
   if (action.kind === 'group_decision') reasons.push('共享志愿/名额约束')
   if (opportunity?.roleType === 'core') reasons.push('核心机会')
   if (opportunity?.early) reasons.push('早投有收益')
@@ -197,13 +217,19 @@ export function rankActions(actions: Action[], opportunities: Opportunity[], now
     .sort((a, b) => b.score - a.score || a.action.estimatedMinutes - b.action.estimatedMinutes)
 }
 
+function rankedIsHardDeadlineAction(item: RankedAction) {
+  return item.action.kind === 'apply' ||
+    item.action.kind === 'group_decision' ||
+    Boolean(item.action.processEventId)
+}
+
 export function selectTodayActions(ranked: RankedAction[], now = new Date(), limit = 10) {
   const selected: RankedAction[] = []
   const selectedIds = new Set<string>()
 
   const hardDeadlines = ranked
     .filter((item) => {
-      if (item.action.kind !== 'apply' && item.action.kind !== 'group_decision') return false
+      if (!rankedIsHardDeadlineAction(item)) return false
       const hours = hoursUntil(item.action.dueAt, now)
       return hours !== undefined && hours >= 0 && hours <= 48
     })
@@ -257,7 +283,7 @@ export interface TimePlan {
 }
 
 function isHardDeadlineAction(item: RankedAction) {
-  return item.action.kind === 'apply' || item.action.kind === 'group_decision'
+  return rankedIsHardDeadlineAction(item)
 }
 
 export function buildTimePlan(
