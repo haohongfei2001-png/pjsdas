@@ -4,6 +4,7 @@ import {
   actionForProcessEvent,
   overlayProcessEventsOnOpportunities,
   overlayProcessEventsOnProcesses,
+  suppressSupersededActions,
 } from './processEvents'
 import type {
   Action,
@@ -67,8 +68,7 @@ export const dbPromise = openDB<PJSDASDatabase>('pjsdas', 3, {
   },
 })
 
-export async function getAllOpportunities() {
-  const db = await dbPromise
+async function effectiveOpportunities(db: Awaited<typeof dbPromise>) {
   const [opportunities, processes, events] = await Promise.all([
     db.getAll('opportunities'),
     db.getAll('processes'),
@@ -77,8 +77,17 @@ export async function getAllOpportunities() {
   return overlayProcessEventsOnOpportunities(opportunities, events, processes)
 }
 
+export async function getAllOpportunities() {
+  return effectiveOpportunities(await dbPromise)
+}
+
 export async function getAllActions() {
-  return (await dbPromise).getAll('actions')
+  const db = await dbPromise
+  const [actions, opportunities] = await Promise.all([
+    db.getAll('actions'),
+    effectiveOpportunities(db),
+  ])
+  return suppressSupersededActions(actions, opportunities)
 }
 
 export async function getAllProcesses() {
