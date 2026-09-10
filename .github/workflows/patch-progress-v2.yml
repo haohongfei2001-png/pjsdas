@@ -33,3 +33,5 @@ jobs:
           git add src/progressUpdateV2.ts
           git commit -m "Fix strict progress parser compile"
           git push
+
+# trigger
