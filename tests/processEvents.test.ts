@@ -76,13 +76,15 @@ describe('process event actions', () => {
     expect(actionForProcessEvent(event({ type: 'rejection' }))).toBeUndefined()
   })
 
-  it('protects a real interview deadline inside the time plan', () => {
+  it('reserves a real fixed interview inside Today capacity without making it startable work', () => {
     const action = actionForProcessEvent(event())!
     const now = new Date('2026-09-10T02:00:00.000Z')
     const ranked = rankActions([action], [opportunity], now)
     const plan = buildTimePlan(ranked, 60, now)
 
-    expect(plan.planned.map((item) => item.action.id)).toContain(action.id)
+    expect(plan.planned.map((item) => item.action.id)).not.toContain(action.id)
+    expect(plan.upcomingFixedEvents.map((item) => item.action.id)).toContain(action.id)
+    expect(plan.fixedTodayMinutes).toBe(90)
     expect(plan.requiredTodayMinutes).toBe(90)
     expect(plan.overrunReason).toBe('today_deadlines')
   })
