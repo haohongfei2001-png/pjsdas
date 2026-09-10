@@ -1,8 +1,13 @@
 .backup-dock-trigger {
   position: fixed;
-  left: 24px;
-  bottom: 24px;
+  left: 18px;
+  bottom: 78px;
   z-index: 40;
+  width: 200px;
+  max-width: calc(100vw - 36px);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   border: 1px solid rgba(30,31,28,.12);
   border-radius: 999px;
   padding: 11px 16px;
@@ -13,6 +18,7 @@
   cursor: pointer;
   font: inherit;
   font-weight: 650;
+  white-space: nowrap;
 }
 
 .backup-backdrop {
@@ -209,6 +215,9 @@
   .backup-dock-trigger {
     left: 16px;
     bottom: 16px;
+    width: auto;
+    max-width: calc(50vw - 20px);
+    padding-inline: 14px;
   }
 
   .backup-backdrop {
