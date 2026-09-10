@@ -152,8 +152,13 @@ function inferCompanyAndRole(text: string, opportunities: Opportunity[]) {
   const known = findKnownCompany(text, opportunities)
   if (known) return { company: known, roleText: stripCompanyPrefix(text, known) }
 
-  const explicit = text.split(/[｜|]/).map((item) => item.trim()).filter(Boolean)
+  const explicit = text.split(/[｜|:：]/).map((item) => item.trim()).filter(Boolean)
   if (explicit.length >= 2) return { company: explicit[0], roleText: explicit.slice(1).join('｜') }
+
+  const latinCompany = text.match(/^([A-Za-z][A-Za-z0-9& .'-]{1,30})([\u4e00-\u9fff].+)$/)
+  if (latinCompany?.[1] && latinCompany[2]) {
+    return { company: latinCompany[1].trim(), roleText: latinCompany[2].trim() }
+  }
 
   const patterned = text.match(/^(.{2,18}?(?:公司|集团|银行|汽车|证券|保险|咨询|电子|科技|国际|机器人))(.+)$/)
   if (patterned?.[1] && patterned[2]) return { company: patterned[1].trim(), roleText: patterned[2].trim() }
@@ -295,6 +300,25 @@ function targetFor(
   const company = findKnownCompany(text, opportunities)
   if (!company) return { confidence: 'low' as UpdateConfidence, candidates: direct.candidates }
   const same = opportunities.filter((item) => sameCompany(item.company, company))
+
+  let roleContext = text
+  for (const alias of companyAliases(company).sort((a, b) => b.length - a.length)) {
+    roleContext = roleContext.replace(alias, '')
+  }
+  const roleHint = roleContext
+    .split(/(?:流程|测评|笔试|面试|考试|收到|接到|通知|邀请|截止|开启|重启|开始|结束|终止|关闭)/)[0]
+    .trim()
+  if (compact(roleHint).length >= 2) {
+    const roleMatches = same.filter((item) => {
+      const candidate = compact(item.role)
+      const hint = compact(roleHint)
+      return candidate.includes(hint) || hint.includes(candidate)
+    })
+    if (roleMatches.length === 1) {
+      return { opportunity: roleMatches[0], confidence: 'medium' as UpdateConfidence, candidates: direct.candidates }
+    }
+  }
+
   const recentId = recentByCompany.get(compact(company))
   const recent = recentId ? same.find((item) => item.id === recentId) : undefined
   if (recent) return { opportunity: recent, confidence: 'medium' as UpdateConfidence, candidates: direct.candidates }
@@ -377,6 +401,7 @@ export function parseProgressUpdate(
   for (const row of splitInput(rawText, now)) {
     const sourceText = row.text
     const occurredAt = occurredAtFor(sourceText, row.baseDate, now)
+    const operationCountBefore = operations.length
 
     const renameMatch = sourceText.match(/(.+?)(?:岗位)?(?:转变为|转为|改为|更名为|变为)([^，,。；;]+)/)
     if (renameMatch) {
@@ -565,6 +590,14 @@ export function parseProgressUpdate(
           estimatedMinutes: 30,
         })
       }
+    }
+
+    if (operations.length === operationCountBefore) {
+      operations.push(unresolved(
+        sourceText,
+        occurredAt,
+        '这条文字没有被可靠识别为岗位、流程事件或待办，因此没有自动修改数据。',
+      ))
     }
   }
 
