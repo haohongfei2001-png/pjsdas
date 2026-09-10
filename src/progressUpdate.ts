@@ -123,6 +123,12 @@ function companyAliases(company: string) {
   return [...aliases].filter(Boolean)
 }
 
+function sameCompany(a: string, b: string) {
+  const aa = companyAliases(a).map(compact)
+  const bb = companyAliases(b).map(compact)
+  return aa.some((left) => bb.some((right) => left === right || left.includes(right) || right.includes(left)))
+}
+
 function findKnownCompany(text: string, opportunities: Opportunity[]) {
   const haystack = compact(text)
   const matches = [...new Set(opportunities.map((item) => item.company))]
@@ -132,10 +138,16 @@ function findKnownCompany(text: string, opportunities: Opportunity[]) {
   return matches[0]?.company
 }
 
-function sameCompany(a: string, b: string) {
-  const aa = companyAliases(a).map(compact)
-  const bb = companyAliases(b).map(compact)
-  return aa.some((left) => bb.some((right) => left === right || left.includes(right) || right.includes(left)))
+function inferCompanyAndRole(text: string, opportunities: Opportunity[]) {
+  const known = findKnownCompany(text, opportunities)
+  if (known) return { company: known, roleText: stripCompanyPrefix(text, known) }
+
+  const explicit = text.split(/[｜|]/).map((item) => item.trim()).filter(Boolean)
+  if (explicit.length >= 2) return { company: explicit[0], roleText: explicit.slice(1).join('｜') }
+
+  const patterned = text.match(/^(.{2,18}?(?:公司|集团|银行|汽车|证券|保险|咨询|电子|科技|国际|机器人))(.+)$/)
+  if (patterned?.[1] && patterned[2]) return { company: patterned[1].trim(), roleText: patterned[2].trim() }
+  return undefined
 }
 
 function splitInput(raw: string, now: Date) {
@@ -232,6 +244,13 @@ function stripCompanyPrefix(raw: string, company: string) {
   return trimmed
 }
 
+function touchRecent(recentByCompany: Map<string, string>, company: string, opportunityId: string) {
+  const key = compact(company)
+  const previous = recentByCompany.get(key)
+  if (previous === undefined || previous === opportunityId) recentByCompany.set(key, opportunityId)
+  else recentByCompany.set(key, '')
+}
+
 function targetFor(
   text: string,
   opportunities: Opportunity[],
@@ -252,7 +271,12 @@ function targetFor(
   const active = same.filter((item) => item.processStage !== 'closed')
   if (active.length === 1) return { opportunity: active[0], confidence: 'medium' as UpdateConfidence, candidates: direct.candidates }
   if (same.length === 1) return { opportunity: same[0], confidence: 'medium' as UpdateConfidence, candidates: direct.candidates }
-  return { confidence: 'low' as UpdateConfidence, candidates: direct.candidates.length ? direct.candidates : same.map((opportunity) => ({ opportunity, score: 1, reasons: [] })) }
+  return {
+    confidence: 'low' as UpdateConfidence,
+    candidates: direct.candidates.length
+      ? direct.candidates
+      : same.map((opportunity) => ({ opportunity, score: 1, reasons: [] })),
+  }
 }
 
 function unresolved(
@@ -302,6 +326,14 @@ function existingForCompanyRole(opportunities: Opportunity[], company: string, r
   )
 }
 
+function applicationParts(sourceText: string) {
+  const standard = sourceText.match(/(准备投递|计划投递|准备申请|投递|申请)(.+)/)
+  if (standard) return { verb: standard[1], tail: standard[2].trim() }
+  const short = sourceText.match(/^投(.+)/)
+  if (short) return { verb: '投', tail: short[1].trim() }
+  return undefined
+}
+
 export function parseProgressUpdate(
   rawText: string,
   currentOpportunities: Opportunity[],
@@ -340,7 +372,7 @@ export function parseProgressUpdate(
         })
         target.opportunity.role = newRole
         target.opportunity.locallyManaged = true
-        recentByCompany.set(compact(target.opportunity.company), target.opportunity.id)
+        touchRecent(recentByCompany, target.opportunity.company, target.opportunity.id)
       }
     }
 
@@ -368,25 +400,22 @@ export function parseProgressUpdate(
         target.opportunity.processStage = 'closed'
         target.opportunity.currentStageLabel = '流程结束'
         target.opportunity.locallyManaged = true
-        recentByCompany.set(compact(target.opportunity.company), target.opportunity.id)
+        touchRecent(recentByCompany, target.opportunity.company, target.opportunity.id)
       }
     }
 
-    const applicationMatch = sourceText.match(/(准备投递|计划投递|准备申请|投递|申请)(.+)/) ?? sourceText.match(/^投(.+)/)?.map((item, index) => index === 1 ? '投' : item) as RegExpMatchArray | null
-    if (applicationMatch && !closeLike) {
-      const verb = applicationMatch[1]
-      const tail = applicationMatch[2]?.trim() ?? ''
-      const company = findKnownCompany(tail, virtual)
-      if (!company) {
+    const application = applicationParts(sourceText)
+    if (application && !closeLike) {
+      const inferred = inferCompanyAndRole(application.tail, virtual)
+      if (!inferred) {
         operations.push(unresolved(sourceText, occurredAt, '无法可靠拆分公司与岗位；请写成“投递 公司｜岗位”。'))
       } else {
-        const roleText = stripCompanyPrefix(tail, company)
-        const roles = roleList(roleText)
+        const roles = roleList(inferred.roleText)
         for (const role of roles) {
           if (!role || role.length < 2) continue
-          const submitted = verb === '投递' || verb === '申请' || verb === '投'
-          const existing = existingForCompanyRole(virtual, company, role)
-          const opportunityId = existing?.id ?? localOpportunityId(company, role)
+          const submitted = application.verb === '投递' || application.verb === '申请' || application.verb === '投'
+          const existing = existingForCompanyRole(virtual, inferred.company, role)
+          const opportunityId = existing?.id ?? localOpportunityId(inferred.company, role)
           operations.push({
             id: operationId('opportunity', sourceText, `${opportunityId}|${role}`),
             kind: 'upsert_opportunity',
@@ -395,7 +424,7 @@ export function parseProgressUpdate(
             occurredAt: occurredAt.toISOString(),
             mode: submitted ? 'submitted' : 'planned',
             opportunityId,
-            company,
+            company: inferred.company,
             role,
           })
           if (existing) {
@@ -405,14 +434,18 @@ export function parseProgressUpdate(
               existing.currentStageLabel = '筛选中'
             }
           } else {
-            virtual.push(virtualOpportunity(opportunityId, company, role, submitted, occurredAt))
+            virtual.push(virtualOpportunity(opportunityId, inferred.company, role, submitted, occurredAt))
           }
-          recentByCompany.set(compact(company), opportunityId)
+          touchRecent(recentByCompany, inferred.company, opportunityId)
         }
       }
     }
 
-    const detected = detectNotificationType(sourceText)
+    const relativeDue = relativeDueAt(sourceText, occurredAt)
+    let detected = detectNotificationType(sourceText)
+    if (relativeDue && /测评/.test(sourceText)) {
+      detected = { type: 'assessment_invite', confidence: 'high' }
+    }
     const eventLike = detected.type && detected.type !== 'other' && detected.type !== 'status_update'
     if (eventLike && !closeLike) {
       const target = targetFor(sourceText, virtual, recentByCompany)
@@ -426,7 +459,6 @@ export function parseProgressUpdate(
       } else {
         const contextual = contextWithDate(sourceText, row.baseDate, row.explicitDate)
         const parsed = parseRecruitingNotification(contextual, [target.opportunity], occurredAt)
-        const relativeDue = relativeDueAt(sourceText, occurredAt)
         const timingMode: ActionTimingMode | undefined = relativeDue
           ? 'deadline'
           : parsed.timingMode ?? defaultTimingModeForProcessEvent(detected.type!)
@@ -450,12 +482,12 @@ export function parseProgressUpdate(
             timingMode,
             estimatedMinutes: defaultMinutesForProcessEvent(detected.type!),
           })
-          recentByCompany.set(compact(target.opportunity.company), target.opportunity.id)
+          touchRecent(recentByCompany, target.opportunity.company, target.opportunity.id)
         }
       }
     }
 
-    if (!renameMatch && !closeLike && !applicationMatch && !eventLike) {
+    if (!renameMatch && !closeLike && !application && !eventLike) {
       const plannedTask = sourceText.match(/^(?:准备|计划|需要|要做)\s*(.+)/)
       if (plannedTask?.[1]) {
         operations.push({
@@ -465,7 +497,9 @@ export function parseProgressUpdate(
           confidence: 'medium',
           occurredAt: occurredAt.toISOString(),
           title: plannedTask[1].trim(),
-          dueAt: row.explicitDate ? new Date(row.baseDate.getFullYear(), row.baseDate.getMonth(), row.baseDate.getDate(), 23, 59, 59).toISOString() : undefined,
+          dueAt: row.explicitDate
+            ? new Date(row.baseDate.getFullYear(), row.baseDate.getMonth(), row.baseDate.getDate(), 23, 59, 59).toISOString()
+            : undefined,
           estimatedMinutes: 30,
         })
       }
