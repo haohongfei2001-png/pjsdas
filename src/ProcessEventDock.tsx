@@ -8,11 +8,17 @@ import {
 import {
   createProcessEvent,
   defaultMinutesForProcessEvent,
+  defaultTimingModeForProcessEvent,
   isActionableProcessEvent,
   processEventLabels,
   processEventStageLabel,
 } from './processEvents'
-import type { Opportunity, ProcessEvent, ProcessEventType } from './model'
+import type {
+  ActionTimingMode,
+  Opportunity,
+  ProcessEvent,
+  ProcessEventType,
+} from './model'
 import './processEvents.css'
 
 interface ProcessEventDockProps {
@@ -34,12 +40,17 @@ function opportunityLabel(opportunity: Opportunity) {
   return `${opportunity.company}｜${opportunity.role} [${opportunity.id}]`
 }
 
+function effectiveTimingMode(event: ProcessEvent) {
+  return event.timingMode ?? defaultTimingModeForProcessEvent(event.type)
+}
+
 export default function ProcessEventDock({ onChanged }: ProcessEventDockProps) {
   const [open, setOpen] = useState(false)
   const [opportunities, setOpportunities] = useState<Opportunity[]>([])
   const [events, setEvents] = useState<ProcessEvent[]>([])
   const [opportunityText, setOpportunityText] = useState('')
   const [type, setType] = useState<ProcessEventType>('assessment_invite')
+  const [timingMode, setTimingMode] = useState<ActionTimingMode>('deadline')
   const [occurredAt, setOccurredAt] = useState(localDateTimeValue())
   const [dueAt, setDueAt] = useState('')
   const [estimatedMinutes, setEstimatedMinutes] = useState(
@@ -64,6 +75,7 @@ export default function ProcessEventDock({ onChanged }: ProcessEventDockProps) {
 
   useEffect(() => {
     setEstimatedMinutes(defaultMinutesForProcessEvent(type))
+    setTimingMode(defaultTimingModeForProcessEvent(type))
   }, [type])
 
   const opportunityByLabel = useMemo(
@@ -71,6 +83,7 @@ export default function ProcessEventDock({ onChanged }: ProcessEventDockProps) {
     [opportunities],
   )
   const actionable = isActionableProcessEvent(type)
+  const interview = type === 'interview_invite'
 
   async function submit(event: React.FormEvent) {
     event.preventDefault()
@@ -86,12 +99,12 @@ export default function ProcessEventDock({ onChanged }: ProcessEventDockProps) {
       return
     }
     if (actionable && !dueAt) {
-      setError('测评、笔试和面试通知必须填写真实截止/发生时间，避免制造无期限任务。')
+      setError('测评、笔试和面试通知必须填写真实截止或固定发生时间，避免制造无期限任务。')
       return
     }
     const dueIso = toIso(dueAt)
     if (dueAt && !dueIso) {
-      setError('截止/发生时间无效。')
+      setError('截止或固定发生时间无效。')
       return
     }
 
@@ -102,6 +115,7 @@ export default function ProcessEventDock({ onChanged }: ProcessEventDockProps) {
         type,
         occurredAt: occurredIso,
         dueAt: dueIso,
+        timingMode: interview ? 'fixed' : timingMode,
         estimatedMinutes: Math.max(5, Math.round(estimatedMinutes || 5)),
         notes,
         source: 'manual',
@@ -197,13 +211,38 @@ export default function ProcessEventDock({ onChanged }: ProcessEventDockProps) {
                   </label>
                 </div>
 
+                {actionable ? (
+                  <label>
+                    <span>时间性质</span>
+                    <select
+                      value={interview ? 'fixed' : timingMode}
+                      disabled={interview}
+                      onChange={(event) => setTimingMode(event.target.value as ActionTimingMode)}
+                    >
+                      <option value="deadline">截止时间｜可提前完成</option>
+                      <option value="fixed">固定时间｜只能到点进行</option>
+                    </select>
+                    <small className="event-field-help">
+                      {interview
+                        ? '面试按固定时间处理，不会被当成今天可以提前完成的任务。'
+                        : timingMode === 'deadline'
+                          ? '例如：明晚 23:59 前完成测评。PJSDAS 可以把它提前安排到今天。'
+                          : '例如：明天 19:00 统一笔试。PJSDAS 只在发生当天占用时间预算。'}
+                    </small>
+                  </label>
+                ) : null}
+
                 <div className="event-form-grid">
                   <label>
                     <span>收到通知时间</span>
                     <input type="datetime-local" value={occurredAt} onChange={(event) => setOccurredAt(event.target.value)} />
                   </label>
                   <label>
-                    <span>{actionable ? '截止 / 面试时间 *' : '关联时间（可选）'}</span>
+                    <span>
+                      {actionable
+                        ? (interview || timingMode === 'fixed' ? '固定开始时间 *' : '截止时间 *')
+                        : '关联时间（可选）'}
+                    </span>
                     <input type="datetime-local" value={dueAt} onChange={(event) => setDueAt(event.target.value)} />
                   </label>
                 </div>
@@ -221,7 +260,11 @@ export default function ProcessEventDock({ onChanged }: ProcessEventDockProps) {
                 {error ? <div className="event-error">{error}</div> : null}
 
                 <div className="event-form-footer">
-                  <small>{actionable ? '保存后会生成一个真实流程 Action，并进入统一决策排序。' : '此类事件只更新事实时间线，不自动制造 Action。'}</small>
+                  <small>
+                    {actionable
+                      ? '保存后会生成真实流程 Action；截止任务进入可提前安排的时间计划，固定事件只在发生当天占用预算。'
+                      : '此类事件只更新事实时间线，不自动制造 Action。'}
+                  </small>
                   <button className="primary-button" type="submit" disabled={busy}>
                     {busy ? '保存中…' : '保存事件'}
                   </button>
@@ -242,19 +285,22 @@ export default function ProcessEventDock({ onChanged }: ProcessEventDockProps) {
                 <div className="event-empty">还没有手动记录的流程事件。</div>
               ) : (
                 <div className="event-history-list">
-                  {events.slice(0, 10).map((item) => (
-                    <article className="event-history-item" key={item.id}>
-                      <div>
-                        <strong>{item.company}｜{processEventLabels[item.type]}</strong>
-                        <p>{item.role}</p>
-                        <small>
-                          {processEventStageLabel(item)} · 收到 {formatDateTime(item.occurredAt)}
-                          {item.dueAt ? ` · 节点 ${formatDateTime(item.dueAt)}` : ''}
-                        </small>
-                      </div>
-                      <button type="button" disabled={busy} onClick={() => remove(item.id)}>删除</button>
-                    </article>
-                  ))}
+                  {events.slice(0, 10).map((item) => {
+                    const mode = effectiveTimingMode(item)
+                    return (
+                      <article className="event-history-item" key={item.id}>
+                        <div>
+                          <strong>{item.company}｜{processEventLabels[item.type]}</strong>
+                          <p>{item.role}</p>
+                          <small>
+                            {processEventStageLabel(item)} · 收到 {formatDateTime(item.occurredAt)}
+                            {item.dueAt ? ` · ${mode === 'fixed' ? '固定' : '截止'} ${formatDateTime(item.dueAt)}` : ''}
+                          </small>
+                        </div>
+                        <button type="button" disabled={busy} onClick={() => remove(item.id)}>删除</button>
+                      </article>
+                    )
+                  })}
                 </div>
               )}
             </div>
