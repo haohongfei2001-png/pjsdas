@@ -10,15 +10,19 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@modelcontextprotocol/server": "^2.0.0",
     "idb": "^8.0.3",
     "react": "^19.1.1",
     "react-dom": "^19.1.1",
-    "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz"
+    "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz",
+    "zod": "^4.6.2"
   },
   "devDependencies": {
+    "@types/node": "^22.20.2",
     "@types/react": "^19.1.12",
     "@types/react-dom": "^19.1.9",
     "@vitejs/plugin-react": "^5.0.2",
+    "tsx": "^4.23.13",
     "typescript": "^5.9.2",
     "vite": "^7.1.5",
     "vitest": "^5.0.0"
