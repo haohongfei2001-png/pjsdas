@@ -1,10 +1,10 @@
 # PJSDAS Remote MCP Gateway
 
-Status: **v1.1 alpha — remote transport, synthetic data only**
+Status: **v1.1 alpha — remote transport accepted; authenticated Drive wiring in progress**
 
-PJSDAS now exposes the same six read-only AI Bridge tools through a stateless Streamable HTTP MCP handler suitable for a serverless deployment.
+PJSDAS exposes the same six read-only AI Bridge tools through a stateless Streamable HTTP MCP handler suitable for a serverless deployment.
 
-## Current endpoint
+## Current public endpoint
 
 When the repository is deployed on Vercel, the MCP endpoint is:
 
@@ -18,7 +18,7 @@ A separate health endpoint is available at:
 https://<vercel-project-domain>/api/health
 ```
 
-The health response explicitly reports:
+The current public handler still reports and serves synthetic demo data only:
 
 - `mode: demo`
 - `auth: none`
@@ -26,11 +26,11 @@ The health response explicitly reports:
 
 ## Security boundary
 
-The current remote endpoint is intentionally unauthenticated and MUST remain restricted to the synthetic fixture in `gateway/fixtures/demo-workspace.json`.
+The current public MCP endpoint is intentionally unauthenticated and MUST remain restricted to the synthetic fixture in `gateway/fixtures/demo-workspace.json`.
 
-Do not point the public handler at a real exported workspace, a local snapshot containing personal data, or a Google Drive access token. The next stage must introduce authentication and a Google Drive-backed workspace source before any real PJSDAS data is exposed remotely.
+The newly implemented Google Drive workspace reader is **not wired into the public handler** yet. A real Google access token must never be hard-coded, committed, exposed as an MCP argument, returned to the model, or placed in the synthetic public endpoint.
 
-The remote server instructions also tell MCP hosts that the current data is synthetic and must not be presented as the user's real job-search state.
+The remote server instructions tell MCP hosts that the current public data is synthetic and must not be presented as the user's real job-search state.
 
 ## Remote tools
 
@@ -47,42 +47,63 @@ All reuse `src/ai/readLayer.ts`; there is no second ranking implementation and t
 
 ## Transport
 
-`gateway/remoteHttp.ts` uses the official MCP TypeScript SDK v2 `createMcpHandler` entry. The handler is stateless and supports the 2026-07-28 protocol revision, while the SDK also provides its default stateless legacy compatibility lane.
+`gateway/remoteHttp.ts` uses the official MCP TypeScript SDK v2 `createMcpHandler` entry. `api/mcp.ts` is the Vercel Web Handler adapter and contains no business logic.
 
-`api/mcp.ts` is a Vercel Web Handler adapter. It does not contain business logic.
+The deployed endpoint has been accepted against ChatGPT after production-level Vercel Authentication was removed from the demo deployment. Deployment-provider authentication must not be used as the end-user identity mechanism for the production MCP connector.
 
-## Alpha acceptance
+## Remote transport acceptance
 
-Before connecting real user data, the remote transport stage is accepted only when all of the following are true:
+The remote transport stage is accepted:
 
-- `server/discover` succeeds over HTTP;
-- `tools/list` advertises exactly the intended six read tools;
-- at least one `tools/call` succeeds through the HTTP handler;
-- CI tests and the production Vite build remain green;
-- the deployed `/api/health` endpoint reports synthetic demo mode;
-- a ChatGPT custom app can scan the remote endpoint and see the six tools.
+- MCP discovery and tool listing succeed over public HTTPS;
+- the intended six read tools are advertised;
+- tool calls succeed through the HTTP handler;
+- CI tests and the production Vite build are green;
+- `/api/health` reports synthetic demo mode;
+- a ChatGPT custom connector can call PJSDAS and read Decision Rules.
 
-## Next stage: authenticated Google Drive source
+## Google Drive Server Reader — implemented, not yet public
 
-The next implementation stage replaces only the `WorkspaceSource`, not the read tools or decision engine:
+`gateway/driveWorkspaceSource.ts` implements the server-side read path needed for real user data. Given an access-token provider, it:
+
+1. requests only the Google Drive `appDataFolder` space;
+2. searches only for `pjsdas-workspace.json`;
+3. fails closed if zero or multiple PJSDAS workspace files exist;
+4. downloads the Drive workspace envelope;
+5. validates the envelope version and PJSDAS snapshot schema;
+6. recomputes the canonical SHA-256 workspace fingerprint and refuses mismatched data;
+7. returns the Drive file version as Bridge workspace metadata;
+8. never includes the access token in Bridge output or error text.
+
+The source maps Drive/auth failures to stable `WorkspaceSourceError` codes so MCP callers can distinguish missing workspace, invalid workspace, expired/forbidden Google authorization, and retryable Drive outages.
+
+This layer is deliberately dependency-injected: it receives `getAccessToken()` instead of knowing how Google OAuth credentials are stored. That keeps OAuth/token lifecycle separate from workspace parsing and makes the reader testable without real user credentials.
+
+## Next stage: PJSDAS OAuth and user-to-Drive binding
+
+The remaining v1.1 path is:
 
 ```text
 ChatGPT
   -> HTTPS MCP endpoint
-  -> PJSDAS authentication / authorization
+  -> PJSDAS OAuth / user session
+  -> server-side Google credential binding
+  -> short-lived Google access token
+  -> DriveWorkspaceSource
   -> Google Drive appDataFolder
-  -> validated pjsdas-workspace.json envelope
+  -> validated pjsdas-workspace.json
   -> AI Read Layer
 ```
 
-Required work before real data can be enabled:
+Before the public endpoint can switch from demo data to real data, PJSDAS still needs:
 
-1. define the PJSDAS remote user identity and authorization model;
-2. complete an OAuth flow that can maintain access without exposing Google credentials to the model;
-3. store refresh credentials securely server-side or use an equivalent delegated authorization mechanism;
-4. read only the user's PJSDAS file from Google Drive `appDataFolder`;
-5. validate the Drive envelope, snapshot schema and fingerprint before exposing any view;
-6. map Drive conflict/account mismatch/auth-expiry states to stable Bridge errors;
-7. keep the remote v1.1 surface read-only.
+1. a remote PJSDAS user identity model;
+2. an OAuth authorization flow compatible with the ChatGPT MCP connector;
+3. Google offline authorization for the minimal `drive.appdata` scope;
+4. secure server-side storage for the Google refresh credential or an equivalent delegated credential;
+5. strict mapping from one PJSDAS identity to exactly one authorized Google account/workspace;
+6. refresh-token rotation/revocation handling without exposing Google credentials to the model;
+7. an authenticated `WorkspaceSource` factory that creates `DriveWorkspaceSource` for the current authorized user;
+8. end-to-end tests proving user A can never read user B's workspace.
 
-Write-capable MCP tools remain a v1.2 concern and must create pending ChangeSets rather than mutate business state directly.
+The v1.1 surface remains read-only. Write-capable MCP tools remain a v1.2 concern and must create pending ChangeSets rather than mutate business state directly.
