@@ -3,6 +3,7 @@ import type {
   Opportunity,
   ProcessEvent,
   ProcessEventType,
+  ProcessRecord,
   ProcessStage,
 } from './model'
 
@@ -131,4 +132,109 @@ export function processEventStageLabel(event: ProcessEvent) {
     closed: '流程结束',
   }
   return stage ? labels[stage] : processEventLabels[event.type]
+}
+
+function newerEvent(current: ProcessEvent | undefined, candidate: ProcessEvent) {
+  if (!current) return candidate
+  return candidate.occurredAt > current.occurredAt ? candidate : current
+}
+
+function latestEventMaps(events: ProcessEvent[]) {
+  const latestAny = new Map<string, ProcessEvent>()
+  const latestStage = new Map<string, ProcessEvent>()
+
+  for (const event of events) {
+    latestAny.set(event.opportunityId, newerEvent(latestAny.get(event.opportunityId), event))
+    if (stageForProcessEvent(event.type)) {
+      latestStage.set(event.opportunityId, newerEvent(latestStage.get(event.opportunityId), event))
+    }
+  }
+  return { latestAny, latestStage }
+}
+
+function baselineProgressByOpportunity(processes: ProcessRecord[]) {
+  const baseline = new Map<string, string>()
+  for (const process of processes) {
+    if (!process.opportunityId || !process.lastProgressAt) continue
+    const current = baseline.get(process.opportunityId)
+    if (!current || process.lastProgressAt > current) baseline.set(process.opportunityId, process.lastProgressAt)
+  }
+  return baseline
+}
+
+export function overlayProcessEventsOnOpportunities(
+  opportunities: Opportunity[],
+  events: ProcessEvent[],
+  processes: ProcessRecord[] = [],
+) {
+  const { latestStage } = latestEventMaps(events)
+  const baseline = baselineProgressByOpportunity(processes)
+
+  return opportunities.map((opportunity) => {
+    const event = latestStage.get(opportunity.id)
+    if (!event) return opportunity
+    const importedProgress = baseline.get(opportunity.id)
+    if (importedProgress && event.occurredAt <= importedProgress) return opportunity
+    const stage = stageForProcessEvent(event.type)
+    if (!stage) return opportunity
+    return {
+      ...opportunity,
+      processStage: stage,
+      currentStageLabel: processEventStageLabel(event),
+    }
+  })
+}
+
+export function overlayProcessEventsOnProcesses(
+  processes: ProcessRecord[],
+  opportunities: Opportunity[],
+  events: ProcessEvent[],
+) {
+  const { latestAny, latestStage } = latestEventMaps(events)
+  const opportunityMap = new Map(opportunities.map((item) => [item.id, item]))
+  const represented = new Set(processes.flatMap((item) => item.opportunityId ? [item.opportunityId] : []))
+
+  const overlaid = processes.map((process) => {
+    if (!process.opportunityId) return process
+    const latest = latestAny.get(process.opportunityId)
+    if (!latest) return process
+    if (process.lastProgressAt && latest.occurredAt <= process.lastProgressAt) return process
+
+    const staged = latestStage.get(process.opportunityId)
+    const stage = staged ? stageForProcessEvent(staged.type) : undefined
+    const task = staged ? actionForProcessEvent(staged) : undefined
+
+    return {
+      ...process,
+      stage: stage ?? process.stage,
+      stageLabel: staged ? processEventStageLabel(staged) : process.stageLabel,
+      lastProgressAt: latest.occurredAt,
+      nextCheckAt: staged ? undefined : process.nextCheckAt,
+      silenceRisk: staged ? undefined : process.silenceRisk,
+      currentAction: task?.title ?? process.currentAction,
+      notes: latest.notes ?? process.notes,
+    }
+  })
+
+  for (const [opportunityId, latest] of latestAny) {
+    if (represented.has(opportunityId)) continue
+    const opportunity = opportunityMap.get(opportunityId)
+    if (!opportunity) continue
+    const staged = latestStage.get(opportunityId)
+    const stage = staged ? stageForProcessEvent(staged.type) : undefined
+    const task = staged ? actionForProcessEvent(staged) : undefined
+    overlaid.push({
+      id: `local-process:${opportunityId}`,
+      opportunityId,
+      company: opportunity.company,
+      role: opportunity.role,
+      stage: stage ?? opportunity.processStage,
+      stageLabel: staged ? processEventStageLabel(staged) : opportunity.currentStageLabel,
+      lastProgressAt: latest.occurredAt,
+      currentAction: task?.title,
+      notes: latest.notes,
+    })
+  }
+
+  return overlaid
 }
