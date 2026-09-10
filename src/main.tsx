@@ -5,7 +5,9 @@ import FixedEventGuard from './FixedEventGuard'
 import LocalBackupDock from './LocalBackupDock'
 import ProcessEventDock from './ProcessEventDock'
 import ProgressInbox from './ProgressInbox'
+import { UiLanguageProvider } from './uiLanguage'
 import './styles.css'
+import './designSystem.css'
 
 function Root() {
   const [revision, setRevision] = useState(0)
@@ -23,6 +25,8 @@ function Root() {
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <Root />
+    <UiLanguageProvider>
+      <Root />
+    </UiLanguageProvider>
   </StrictMode>,
 )
