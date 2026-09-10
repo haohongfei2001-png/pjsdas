@@ -1,5 +1,6 @@
 import type {
   Action,
+  ActionTimingMode,
   Opportunity,
   ProcessEvent,
   ProcessEventType,
@@ -25,6 +26,10 @@ export const actionableProcessEventTypes: ProcessEventType[] = [
 
 export function isActionableProcessEvent(type: ProcessEventType) {
   return actionableProcessEventTypes.includes(type)
+}
+
+export function defaultTimingModeForProcessEvent(type: ProcessEventType): ActionTimingMode {
+  return type === 'assessment_invite' ? 'deadline' : 'fixed'
 }
 
 export function stageForProcessEvent(type: ProcessEventType): ProcessStage | undefined {
@@ -56,6 +61,7 @@ export interface NewProcessEventInput {
   type: ProcessEventType
   occurredAt: string
   dueAt?: string
+  timingMode?: ActionTimingMode
   estimatedMinutes?: number
   notes?: string
   source?: ProcessEvent['source']
@@ -76,6 +82,7 @@ export function createProcessEvent(input: NewProcessEventInput): ProcessEvent {
     type: input.type,
     occurredAt: input.occurredAt,
     dueAt: input.dueAt || undefined,
+    timingMode: input.timingMode ?? defaultTimingModeForProcessEvent(input.type),
     estimatedMinutes: input.estimatedMinutes ?? defaultMinutesForProcessEvent(input.type),
     notes: input.notes?.trim() || undefined,
     source: input.source ?? 'manual',
@@ -112,6 +119,7 @@ export function actionForProcessEvent(event: ProcessEvent): Action | undefined {
     processEventId: event.id,
     processStage: stage,
     dueAt: event.dueAt,
+    timingMode: event.timingMode ?? defaultTimingModeForProcessEvent(event.type),
     estimatedMinutes: event.estimatedMinutes ?? defaultMinutesForProcessEvent(event.type),
     leverage: leverage[event.type] ?? 88,
     delayCost: delayCost[event.type] ?? 90,
@@ -258,18 +266,10 @@ export function suppressSupersededActions(
     const opportunity = opportunityMap.get(action.opportunityId)
 
     if (action.processEventId) {
-      // Event Actions are only active while their event is the newest event that
-      // actually projects over the imported baseline. This removes an old
-      // assessment task after an interview/offer arrives and hides orphaned or
-      // stale local events when a newer spreadsheet already moved the pipeline.
       return opportunity?.effectiveProcessEventId === action.processEventId
     }
 
     if (!opportunity?.effectiveProcessEventId) return true
-
-    // A newer real recruiting event proves that an old application or silence
-    // check for the same role has already been overtaken by reality. Keep the
-    // imported record as baseline, but do not show its superseded Action.
     return action.kind !== 'apply' && action.kind !== 'follow_up'
   })
 }
