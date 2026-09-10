@@ -1,0 +1,87 @@
+.fixed-guard {
+  position: fixed;
+  left: 50%;
+  bottom: 20px;
+  z-index: 70;
+  width: min(760px, calc(100vw - 40px));
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 16px 18px;
+  border: 1px solid rgba(174, 59, 48, .24);
+  border-radius: 16px;
+  background: rgba(255, 249, 247, .97);
+  box-shadow: 0 16px 42px rgba(52, 28, 24, .16);
+  backdrop-filter: blur(12px);
+}
+
+.fixed-guard-copy {
+  min-width: 0;
+}
+
+.fixed-guard-copy strong {
+  display: block;
+  margin: 4px 0 5px;
+  color: #642f29;
+}
+
+.fixed-guard-copy p {
+  margin: 0;
+  color: #76524d;
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.fixed-guard-copy small {
+  display: block;
+  margin-top: 5px;
+  color: #9b625a;
+}
+
+.fixed-guard-actions {
+  flex: 0 0 190px;
+  display: grid;
+  gap: 7px;
+  justify-items: stretch;
+}
+
+.fixed-guard-actions button {
+  border: 0;
+  border-radius: 10px;
+  padding: 9px 12px;
+  background: #7d342c;
+  color: white;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.fixed-guard-actions button:disabled {
+  cursor: default;
+  opacity: .6;
+}
+
+.fixed-guard-actions small {
+  color: #8f6a65;
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+@media (max-width: 720px) {
+  .fixed-guard {
+    left: 12px;
+    right: 12px;
+    bottom: 74px;
+    width: auto;
+    transform: none;
+    align-items: stretch;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .fixed-guard-actions {
+    flex-basis: auto;
+  }
+}
