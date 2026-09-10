@@ -1,5 +1,7 @@
 from pathlib import Path
 
+# trigger: v0.9 Timeline round 2
+
 # ---------- model: Timeline as a first-class domain ----------
 p = Path('src/model.ts')
 s = p.read_text()
@@ -467,7 +469,6 @@ anchor = """function getRecords(workbook: XLSX.WorkBook, sheetName: string, firs
 """
 if anchor not in s:
     raise SystemExit('getRecords anchor missing')
-# Insert optional reader after getRecords function by locating the next function.
 pos = s.index('function excelDate(')
 optional_reader = r'''function getOptionalRecords(workbook: XLSX.WorkBook, sheetName: string, firstHeader: string) {
   const sheet = workbook.Sheets[sheetName]
@@ -845,7 +846,6 @@ s = s.replace(
 """,
 1,
 )
-# Add timeline writes immediately before each branch continue.
 s = s.replace(
 """      }
       continue
