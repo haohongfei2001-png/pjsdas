@@ -1,0 +1,31 @@
+name: V09 Timeline Round 2
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/v09-timeline-round2.py'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Apply Timeline patch
+        run: python3 scripts/v09-timeline-round2.py
+      - name: Verify
+        run: |
+          npm ci
+          npm audit --audit-level=high
+          npm test
+          npm run build
+      - name: Commit product changes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src tests
+          git commit -m "Add first-class Timeline history"
+          git push
