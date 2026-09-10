@@ -1,0 +1,65 @@
+name: Remote MCP public E2E
+
+on:
+  push:
+    paths:
+      - '.github/workflows/remote-mcp-e2e.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Probe main PJSDAS remote MCP
+        shell: bash
+        run: |
+          set -euo pipefail
+          URL='https://pjsdas-remote-alpha-haohongfei2001-8529.vercel.app/api/mcp'
+          INIT='{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"github-e2e","version":"1.0.0"}}}'
+          curl --fail-with-body -sS -D /tmp/main-init-headers.txt -o /tmp/main-init-body.txt \
+            -X POST "$URL" \
+            -H 'content-type: application/json' \
+            -H 'accept: application/json, text/event-stream' \
+            --data "$INIT"
+          cat /tmp/main-init-headers.txt
+          cat /tmp/main-init-body.txt
+          grep -q 'protocolVersion' /tmp/main-init-body.txt
+          LIST='{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}'
+          curl --fail-with-body -sS -D /tmp/main-list-headers.txt -o /tmp/main-list-body.txt \
+            -X POST "$URL" \
+            -H 'content-type: application/json' \
+            -H 'accept: application/json, text/event-stream' \
+            -H 'MCP-Protocol-Version: 2025-06-18' \
+            --data "$LIST"
+          cat /tmp/main-list-headers.txt
+          cat /tmp/main-list-body.txt
+          grep -q 'get_today_plan' /tmp/main-list-body.txt
+          grep -q 'get_decision_rules' /tmp/main-list-body.txt
+
+      - name: Probe minimal compatibility MCP
+        shell: bash
+        run: |
+          set -euo pipefail
+          URL='https://pjsdas-mcp-compat-haohongfei2001-8529.vercel.app/api/mcp'
+          INIT='{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"github-e2e","version":"1.0.0"}}}'
+          curl --fail-with-body -sS -D /tmp/compat-init-headers.txt -o /tmp/compat-init-body.txt \
+            -X POST "$URL" \
+            -H 'content-type: application/json' \
+            -H 'accept: application/json, text/event-stream' \
+            --data "$INIT"
+          cat /tmp/compat-init-headers.txt
+          cat /tmp/compat-init-body.txt
+          grep -q 'protocolVersion' /tmp/compat-init-body.txt
+          LIST='{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}'
+          curl --fail-with-body -sS -D /tmp/compat-list-headers.txt -o /tmp/compat-list-body.txt \
+            -X POST "$URL" \
+            -H 'content-type: application/json' \
+            -H 'accept: application/json, text/event-stream' \
+            -H 'MCP-Protocol-Version: 2025-06-18' \
+            --data "$LIST"
+          cat /tmp/compat-list-headers.txt
+          cat /tmp/compat-list-body.txt
+          grep -q 'search' /tmp/compat-list-body.txt
+          grep -q 'fetch' /tmp/compat-list-body.txt
