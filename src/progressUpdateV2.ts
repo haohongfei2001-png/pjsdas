@@ -199,7 +199,8 @@ function companyAliases(company: string) {
   }
 
   const latinWords = company.match(/[A-Za-z][A-Za-z0-9&.'-]*/g) ?? []
-  if (latinWords[0]?.length >= 2) aliases.add(latinWords[0])
+  const firstLatinWord = latinWords[0]
+  if (firstLatinWord && firstLatinWord.length >= 2) aliases.add(firstLatinWord)
   if (latinWords.length >= 2) {
     const acronym = latinWords.map((word) => word[0]).join('')
     if (acronym.length >= 2) aliases.add(acronym)
