@@ -15,7 +15,7 @@ import {
   processNeedsReview,
   processReviewLabel,
   rankActions,
-} from './decisionV2'
+} from './decisionV3'
 import { parsePJSDASWorkbook } from './importExcelV2'
 import type {
   Action,
@@ -161,6 +161,7 @@ function TodayView({
   const review = processes.filter((item) => processNeedsReview(item, now)).length
   const top = plan.planned[0]
   const nextUnplanned = plan.nearDeadlineUnplanned[0]
+  const nextFixed = plan.upcomingFixedEvents[0]
 
   return (
     <section>
@@ -169,7 +170,7 @@ function TodayView({
           <div className="eyebrow">TODAY · {formatDateOnly(now.toISOString())}</div>
           <h1>今天先做什么</h1>
           <p>
-            先保护真正会失效的节点，再按你今天能投入的时间生成可执行计划；预算不足时直接报缺口，不隐藏截止任务。
+            先保护真正会失效的节点，再按你今天能投入的时间生成可执行计划；固定时刻的笔试和面试只在发生当天占用预算。
           </p>
         </div>
       </header>
@@ -214,9 +215,26 @@ function TodayView({
         </div>
       ) : null}
 
+      {nextFixed ? (
+        <div className="fixed-event-notice plan-notice">
+          <div>
+            <div className="eyebrow">UPCOMING FIXED EVENT</div>
+            <strong>{nextFixed.action.title}</strong>
+          </div>
+          <div className="fixed-event-time">
+            <span>{formatDateTime(nextFixed.action.dueAt!)}</span>
+            <small>
+              {plan.upcomingFixedEvents.length > 1
+                ? `未来 48 小时还有 ${plan.upcomingFixedEvents.length - 1} 个固定安排`
+                : '固定时刻 · 不占今天可提前完成的任务预算'}
+            </small>
+          </div>
+        </div>
+      ) : null}
+
       {plan.overrunReason === 'today_deadlines' ? (
         <div className="notice error plan-notice">
-          今天截止的行动本身就需要 {formatMinutes(plan.requiredTodayMinutes)}，当前预算不足 {formatMinutes(plan.overBudgetMinutes)}。系统仍把它们完整保留，避免制造“做得完”的假象。
+          今天必须发生或完成的行动需要 {formatMinutes(plan.requiredTodayMinutes)}，当前预算不足 {formatMinutes(plan.overBudgetMinutes)}。系统仍把它们完整保留，避免制造“做得完”的假象。
         </div>
       ) : null}
 
@@ -228,7 +246,7 @@ function TodayView({
 
       {!plan.overrunReason && nextUnplanned ? (
         <div className="notice warning plan-notice">
-          48 小时内还有 {plan.nearDeadlineUnplanned.length} 个硬截止无法完整装入当前预算。最近的是“{nextUnplanned.action.title}”，预计需要 {formatMinutes(nextUnplanned.action.estimatedMinutes)}；剩余时间应优先留给它，而不是被低优先级小任务填满。
+          48 小时内还有 {plan.nearDeadlineUnplanned.length} 个可提前完成的硬截止无法完整装入当前预算。最近的是“{nextUnplanned.action.title}”，预计需要 {formatMinutes(nextUnplanned.action.estimatedMinutes)}；剩余时间应优先留给它，而不是被低优先级小任务填满。
         </div>
       ) : null}
 
@@ -247,8 +265,8 @@ function TodayView({
 
       {plan.planned.length === 0 ? (
         <EmptyState
-          title="当前时间预算下没有可完成行动"
-          text="可增加可用时间，或到 Opportunities 查看所有活跃机会。"
+          title="当前时间预算下没有可执行行动"
+          text={nextFixed ? '近期固定安排已单独保留；它不会被误算成今天可以提前完成的任务。' : '可增加可用时间，或到 Opportunities 查看所有活跃机会。'}
         />
       ) : (
         <div className="section-block">
@@ -290,7 +308,9 @@ function TodayView({
                     </div>
                     <small>
                       预计 {formatMinutes(item.action.estimatedMinutes)}
-                      {item.action.dueAt ? ` · 节点 ${formatDateTime(item.action.dueAt)}` : ''}
+                      {item.action.dueAt
+                        ? ` · ${item.action.timingMode === 'fixed' ? '固定' : '节点'} ${formatDateTime(item.action.dueAt)}`
+                        : ''}
                     </small>
                   </div>
                   <div className="action-side">
