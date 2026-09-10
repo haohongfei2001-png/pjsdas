@@ -114,10 +114,14 @@ export function validateSnapshot(value: unknown): asserts value is PJSDASSnapsho
     }
   }
 
+  // Process Events are durable historical facts. If a later Excel import removes
+  // an old opportunity, the event may intentionally become archival/orphaned.
+  // It still carries company/role text and must remain backup-safe, but it will
+  // no longer project into current decisions because no active Opportunity exists.
   for (const raw of data.processEvents) {
     const event = raw as ProcessEvent
-    if (!opportunityIds.has(event.opportunityId)) {
-      throw new Error(`备份损坏：流程事件 ${event.id} 引用了不存在的岗位 ${event.opportunityId}。`)
+    if (!event.opportunityId?.trim() || !event.company?.trim() || !event.role?.trim()) {
+      throw new Error(`备份损坏：流程事件 ${event.id} 缺少岗位身份信息。`)
     }
     assertIsoDate(event.occurredAt, `流程事件 ${event.id} 的 occurredAt`)
     if (event.dueAt) assertIsoDate(event.dueAt, `流程事件 ${event.id} 的 dueAt`)
@@ -125,11 +129,11 @@ export function validateSnapshot(value: unknown): asserts value is PJSDASSnapsho
 
   for (const raw of data.actions) {
     const action = raw as Action
-    if (action.opportunityId && !opportunityIds.has(action.opportunityId)) {
-      throw new Error(`备份损坏：Action ${action.id} 引用了不存在的岗位 ${action.opportunityId}。`)
-    }
     if (action.processEventId && !eventIds.has(action.processEventId)) {
       throw new Error(`备份损坏：Action ${action.id} 引用了不存在的流程事件 ${action.processEventId}。`)
+    }
+    if (action.opportunityId && !opportunityIds.has(action.opportunityId) && !action.processEventId) {
+      throw new Error(`备份损坏：Action ${action.id} 引用了不存在的岗位 ${action.opportunityId}。`)
     }
     if (action.applicationGroupId && !groupIds.has(action.applicationGroupId)) {
       throw new Error(`备份损坏：Action ${action.id} 引用了不存在的申请组 ${action.applicationGroupId}。`)
