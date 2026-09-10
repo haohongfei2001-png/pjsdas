@@ -3,6 +3,7 @@
   right: 24px;
   bottom: 24px;
   z-index: 45;
+  max-width: calc(100vw - 48px);
   border: 1px solid rgba(30, 31, 28, .14);
   border-radius: 999px;
   padding: 12px 17px;
@@ -13,6 +14,7 @@
   cursor: pointer;
   font: inherit;
   font-weight: 700;
+  white-space: nowrap;
 }
 
 .progress-inbox-backdrop {
@@ -202,6 +204,7 @@
   .progress-inbox-trigger {
     right: 16px;
     bottom: 16px;
+    max-width: calc(100vw - 32px);
   }
 
   .progress-inbox-backdrop {
