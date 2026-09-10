@@ -3,6 +3,7 @@ export * from './decisionCoreV3'
 import { rankActions as rankActionsCore } from './decisionCoreV3'
 import { isUnresolvedPastProcessEvent } from './fixedEventGuardLogic'
 import type { Action, Opportunity } from './model'
+import { DEFAULT_DECISION_RULES, type DecisionRules } from './decisionRules'
 
 function isNaturalLanguageScheduledAssessment(action: Action) {
   if (!action.processEventId || action.processStage !== 'assessment' || !action.dueAt) return false
@@ -28,14 +29,14 @@ function normalizeScheduledAssessment(action: Action): Action {
   }
 }
 
-export function rankActions(actions: Action[], opportunities: Opportunity[], now = new Date()) {
+export function rankActions(actions: Action[], opportunities: Opportunity[], now = new Date(), rules: DecisionRules = DEFAULT_DECISION_RULES) {
   const actionable = actions.filter((action) => !isUnresolvedPastProcessEvent(action, now))
   const scheduledIds = new Set(
     actionable.filter(isNaturalLanguageScheduledAssessment).map((action) => action.id),
   )
   const normalized = actionable.map(normalizeScheduledAssessment)
 
-  return rankActionsCore(normalized, opportunities, now).map((item) => {
+  return rankActionsCore(normalized, opportunities, now, rules).map((item) => {
     if (!scheduledIds.has(item.action.id)) return item
     const reasons = ['计划执行日', ...item.reasons.filter((reason) => reason !== '真实流程通知')]
     return { ...item, reasons: [...new Set(reasons)].slice(0, 3) }

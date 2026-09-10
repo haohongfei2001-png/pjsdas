@@ -9,6 +9,7 @@ const dictionary = {
   'nav.opportunities': ['机会', 'Opportunities'],
   'nav.pipeline': ['流程', 'Pipeline'],
   'nav.prep': ['准备', 'Prep'],
+  'nav.rules': ['规则', 'Rules'],
   'nav.settings': ['导入与设置', 'Import & Settings'],
   'brand.subtitle': ['求职决策与行动', 'Decision & Action'],
   'language.label': ['界面语言', 'Interface language'],

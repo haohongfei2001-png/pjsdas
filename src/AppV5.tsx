@@ -5,6 +5,7 @@ import {
   getAllOpportunities,
   getAllPrep,
   getAllProcesses,
+  getDecisionRules,
   getLastImport,
   replaceImportedData,
   updateActionStatus,
@@ -19,6 +20,8 @@ import {
 import { parsePJSDASWorkbook } from './importExcelV2'
 import { actionNodePrefix, formatTimeRemaining, timeRisk, upcomingNodes } from './timeRisk'
 import { currentUiLanguage, useUiLanguage } from './uiLanguage'
+import { DEFAULT_DECISION_RULES, type DecisionRules } from './decisionRules'
+import RulesView from './RulesView'
 import type {
   Action,
   ApplicationGroup,
@@ -30,9 +33,9 @@ import type {
 } from './model'
 import './timeplan.css'
 
-type Page = 'today' | 'opportunities' | 'pipeline' | 'prep' | 'settings'
+type Page = 'today' | 'opportunities' | 'pipeline' | 'prep' | 'rules' | 'settings'
 
-const navigation: Page[] = ['today', 'opportunities', 'pipeline', 'prep', 'settings']
+const navigation: Page[] = ['today', 'opportunities', 'pipeline', 'prep', 'rules', 'settings']
 
 const roleLabels: Record<Opportunity['roleType'], string> = {
   core: '核心',
@@ -60,18 +63,20 @@ function AppV5() {
   const [processes, setProcesses] = useState<ProcessRecord[]>([])
   const [prep, setPrep] = useState<Prep[]>([])
   const [groups, setGroups] = useState<ApplicationGroup[]>([])
+  const [rules, setRules] = useState<DecisionRules>(() => ({ ...DEFAULT_DECISION_RULES, weights: { ...DEFAULT_DECISION_RULES.weights } }))
   const [lastImport, setLastImport] = useState<ImportMeta | undefined>()
   const [loading, setLoading] = useState(true)
   const [now, setNow] = useState(() => new Date())
 
   async function reload() {
-    const [nextOpportunities, nextActions, nextProcesses, nextPrep, nextGroups, nextImport] =
+    const [nextOpportunities, nextActions, nextProcesses, nextPrep, nextGroups, nextRules, nextImport] =
       await Promise.all([
         getAllOpportunities(),
         getAllActions(),
         getAllProcesses(),
         getAllPrep(),
         getAllApplicationGroups(),
+        getDecisionRules(),
         getLastImport(),
       ])
     setOpportunities(nextOpportunities)
@@ -79,6 +84,7 @@ function AppV5() {
     setProcesses(nextProcesses)
     setPrep(nextPrep)
     setGroups(nextGroups)
+    setRules(nextRules)
     setLastImport(nextImport)
   }
 
@@ -91,7 +97,7 @@ function AppV5() {
     return () => window.clearInterval(timer)
   }, [])
 
-  const ranked = useMemo(() => rankActions(actions, opportunities, now), [actions, opportunities, now])
+  const ranked = useMemo(() => rankActions(actions, opportunities, now, rules), [actions, opportunities, now, rules])
 
   async function markAction(id: string, status: Action['status']) {
     await updateActionStatus(id, status)
@@ -115,7 +121,7 @@ function AppV5() {
               className={page === item ? 'nav-item active' : 'nav-item'}
               onClick={() => setPage(item)}
             >
-              {t(`nav.${item}` as 'nav.today' | 'nav.opportunities' | 'nav.pipeline' | 'nav.prep' | 'nav.settings')}
+              {t(`nav.${item}` as 'nav.today' | 'nav.opportunities' | 'nav.pipeline' | 'nav.prep' | 'nav.rules' | 'nav.settings')}
             </button>
           ))}
         </nav>
@@ -137,6 +143,7 @@ function AppV5() {
             now={now}
             opportunities={opportunities}
             groups={groups}
+            rules={rules}
             onMark={markAction}
           />
         ) : null}
@@ -145,6 +152,7 @@ function AppV5() {
         ) : null}
         {!loading && page === 'pipeline' ? <PipelineView processes={processes} /> : null}
         {!loading && page === 'prep' ? <PrepView prep={prep} /> : null}
+        {!loading && page === 'rules' ? <RulesView rules={rules} onChanged={reload} /> : null}
         {!loading && page === 'settings' ? (
           <SettingsView lastImport={lastImport} onImported={reload} />
         ) : null}
@@ -158,23 +166,25 @@ function TodayView({
   now,
   opportunities,
   groups,
+  rules,
   onMark,
 }: {
   ranked: ReturnType<typeof rankActions>
   now: Date
   opportunities: Opportunity[]
   groups: ApplicationGroup[]
+  rules: DecisionRules
   onMark: (id: string, status: Action['status']) => Promise<void>
 }) {
   const { lang, t } = useUiLanguage()
   const [budgetMinutes, setBudgetMinutes] = useState(180)
-  const plan = buildTimePlan(ranked, budgetMinutes, now)
+  const plan = buildTimePlan(ranked, budgetMinutes, now, rules)
   const opportunityMap = new Map(opportunities.map((item) => [item.id, item]))
   const groupMap = new Map(groups.map((item) => [item.id, item]))
   const top = plan.planned[0]
   const nextUnplanned = plan.nearDeadlineUnplanned[0]
   const nextFixed = plan.upcomingFixedEvents[0]
-  const upcoming = upcomingNodes(ranked, now, 7, 12)
+  const upcoming = upcomingNodes(ranked, now, rules.upcomingHorizonDays, rules.upcomingNodeLimit)
   const plannedIds = new Set(plan.planned.map((item) => item.action.id))
 
   return (
@@ -194,7 +204,7 @@ function TodayView({
             <div>
               <h2>{top.action.title}</h2>
               <p>{top.reasons.join(' · ') || t('today.currentFirst')}</p>
-              {top.action.dueAt ? <TimeRiskBadge action={top.action} now={now} /> : null}
+              {top.action.dueAt ? <TimeRiskBadge action={top.action} now={now} rules={rules} /> : null}
             </div>
             <div className="focus-order">{t('today.first')}</div>
           </div>
@@ -220,7 +230,7 @@ function TodayView({
                     <small>{item.action.timingMode === 'fixed' ? t('today.fixed') : t('today.deadline')} · {formatDateTime(item.action.dueAt!)}</small>
                   </div>
                   <div className="upcoming-risk">
-                    <TimeRiskBadge action={item.action} now={now} compact />
+                    <TimeRiskBadge action={item.action} now={now} rules={rules} compact />
                     {plannedIds.has(item.action.id) ? <small>{t('today.inPlan')}</small> : <small>{t('today.ahead')}</small>}
                   </div>
                 </article>
@@ -273,7 +283,7 @@ function TodayView({
           </div>
           <div className="fixed-event-time">
             <span>{formatDateTime(nextFixed.action.dueAt!)}</span>
-            <small>{plan.upcomingFixedEvents.length > 1 ? `未来 48 小时还有 ${plan.upcomingFixedEvents.length - 1} 个固定安排` : '固定时刻 · 不占今天可提前完成的任务预算'}</small>
+            <small>{plan.upcomingFixedEvents.length > 1 ? `未来 ${rules.fixedEventHorizonHours} 小时还有 ${plan.upcomingFixedEvents.length - 1} 个固定安排` : '固定时刻 · 不占今天可提前完成的任务预算'}</small>
           </div>
         </div>
       ) : null}
@@ -282,10 +292,10 @@ function TodayView({
         <div className="notice error plan-notice">今天必须发生或完成的行动需要 {formatMinutes(plan.requiredTodayMinutes)}，当前预算不足 {formatMinutes(plan.overBudgetMinutes)}。系统仍把它们完整保留，避免制造“做得完”的假象。</div>
       ) : null}
       {plan.overrunReason === 'near_deadline_stretch' ? (
-        <div className="notice warning plan-notice">为覆盖 48 小时内的下一硬截止，建议把今天的时间预算再增加 {formatMinutes(plan.overBudgetMinutes)}。相比用剩余时间塞入低优先级小任务，这个超时更值得。</div>
+        <div className="notice warning plan-notice">为覆盖 ${rules.hardDeadlineHorizonHours} 小时内的下一硬截止，建议把今天的时间预算再增加 {formatMinutes(plan.overBudgetMinutes)}。相比用剩余时间塞入低优先级小任务，这个超时更值得。</div>
       ) : null}
       {!plan.overrunReason && nextUnplanned ? (
-        <div className="notice warning plan-notice">48 小时内还有 {plan.nearDeadlineUnplanned.length} 个可提前完成的硬截止无法完整装入当前预算。最近的是“{nextUnplanned.action.title}”，预计需要 {formatMinutes(nextUnplanned.action.estimatedMinutes)}；剩余时间应优先留给它。</div>
+        <div className="notice warning plan-notice">{rules.hardDeadlineHorizonHours} 小时内还有 {plan.nearDeadlineUnplanned.length} 个可提前完成的硬截止无法完整装入当前预算。最近的是“{nextUnplanned.action.title}”，预计需要 {formatMinutes(nextUnplanned.action.estimatedMinutes)}；剩余时间应优先留给它。</div>
       ) : null}
 
       {plan.planned.length === 0 ? (
@@ -311,7 +321,7 @@ function TodayView({
                     <p>{opportunity ? `${roleLabels[opportunity.roleType]} · ${opportunity.offerProbability ?? '成功率未知'}` : group ? `${group.id} · ${group.rule ?? '共享申请规则'}` : item.action.kind === 'prep' ? '跨岗位复用准备' : '流程管理'}</p>
                     <div className="reason-row">{item.reasons.map((reason) => <span key={reason}>{reason}</span>)}</div>
                     <small>预计 {formatMinutes(item.action.estimatedMinutes)}{item.action.dueAt ? ` · ${item.action.timingMode === 'fixed' ? t('today.fixed') : t('today.deadline')} ${formatDateTime(item.action.dueAt)}` : ''}</small>
-                    {item.action.dueAt ? <TimeRiskBadge action={item.action} now={now} /> : null}
+                    {item.action.dueAt ? <TimeRiskBadge action={item.action} now={now} rules={rules} /> : null}
                   </div>
                   <div className="action-side"><button className="text-button" onClick={() => onMark(item.action.id, 'done')}>{t('common.done')}</button></div>
                 </article>
@@ -612,9 +622,9 @@ function SettingsView({ lastImport, onImported }: { lastImport?: ImportMeta; onI
   )
 }
 
-function TimeRiskBadge({ action, now, compact = false }: { action: Action; now: Date; compact?: boolean }) {
+function TimeRiskBadge({ action, now, rules, compact = false }: { action: Action; now: Date; rules: DecisionRules; compact?: boolean }) {
   if (!action.dueAt) return null
-  const risk = timeRisk(action.dueAt, now)
+  const risk = timeRisk(action.dueAt, now, rules)
   return (
     <div className={`deadline-countdown risk-${risk.level}${compact ? ' compact' : ''}`}>
       <strong>{actionNodePrefix(action)} {formatTimeRemaining(action.dueAt, now)}</strong>

@@ -7,6 +7,7 @@ import type {
   ProcessStage,
   RankedAction,
 } from './model'
+import { DEFAULT_DECISION_RULES, type DecisionRules } from './decisionRules'
 
 const clamp = (value: number, min = 0, max = 100) => Math.min(max, Math.max(min, value))
 const HOUR = 3_600_000
@@ -145,6 +146,7 @@ export function rankAction(
   action: Action,
   opportunity?: Opportunity,
   now = new Date(),
+  rules: DecisionRules = DEFAULT_DECISION_RULES,
 ): RankedAction {
   const hours = action.kind === 'follow_up'
     ? followUpHoursUntil(action.dueAt, now)
@@ -168,14 +170,16 @@ export function rankAction(
     timeEfficiency: timeEfficiency(action.estimatedMinutes),
   }
 
-  const score =
-    breakdown.opportunity * 0.19 +
-    breakdown.fit * 0.12 +
-    breakdown.urgency * 0.23 +
-    breakdown.stage * 0.12 +
-    breakdown.leverage * 0.15 +
-    breakdown.delayCost * 0.12 +
-    breakdown.timeEfficiency * 0.07
+  const weightTotal = Math.max(1, Object.values(rules.weights).reduce((sum, value) => sum + value, 0))
+  const score = (
+    breakdown.opportunity * rules.weights.opportunity +
+    breakdown.fit * rules.weights.fit +
+    breakdown.urgency * rules.weights.urgency +
+    breakdown.stage * rules.weights.stage +
+    breakdown.leverage * rules.weights.leverage +
+    breakdown.delayCost * rules.weights.delayCost +
+    breakdown.timeEfficiency * rules.weights.timeEfficiency
+  ) / weightTotal
 
   const reasons: string[] = []
   const hardDeadlineAction =
@@ -185,13 +189,13 @@ export function rankAction(
     reasons.push('固定流程已过，立即确认')
   } else if (processTask && isFixedAction(action) && action.dueAt && isSameLocalDay(action.dueAt, now)) {
     reasons.push('今天固定时间')
-  } else if (processTask && isFixedAction(action) && hours !== undefined && hours <= 48) {
+  } else if (processTask && isFixedAction(action) && hours !== undefined && hours <= rules.fixedEventHorizonHours) {
     reasons.push('近期固定时间')
   } else if (processTask && hours !== undefined && hours < 0) {
     reasons.push('流程节点已过，立即确认')
-  } else if (hardDeadlineAction && hours !== undefined && hours >= 0 && hours <= 24) {
+  } else if (hardDeadlineAction && hours !== undefined && hours >= 0 && hours <= rules.riskHighHours) {
     reasons.push(processTask ? '流程节点今天到期' : '今天硬截止')
-  } else if (hardDeadlineAction && hours !== undefined && hours <= 48) {
+  } else if (hardDeadlineAction && hours !== undefined && hours <= rules.hardDeadlineHorizonHours) {
     reasons.push(processTask ? '流程节点48小时内' : '明天硬截止')
   } else if (breakdown.urgency >= 90) {
     reasons.push('节点非常近')
@@ -216,7 +220,7 @@ export function rankAction(
   }
 }
 
-export function rankActions(actions: Action[], opportunities: Opportunity[], now = new Date()) {
+export function rankActions(actions: Action[], opportunities: Opportunity[], now = new Date(), rules: DecisionRules = DEFAULT_DECISION_RULES) {
   const opportunityMap = new Map(opportunities.map((item) => [item.id, item]))
 
   return actions
@@ -235,6 +239,7 @@ export function rankActions(actions: Action[], opportunities: Opportunity[], now
         action,
         action.opportunityId ? opportunityMap.get(action.opportunityId) : undefined,
         now,
+        rules,
       ),
     )
     .sort((a, b) => b.score - a.score || a.action.estimatedMinutes - b.action.estimatedMinutes)
@@ -246,7 +251,7 @@ function rankedIsHardDeadlineAction(item: RankedAction) {
     Boolean(item.action.processEventId)
 }
 
-export function selectTodayActions(ranked: RankedAction[], now = new Date(), limit = 10) {
+export function selectTodayActions(ranked: RankedAction[], now = new Date(), limit = 10, rules: DecisionRules = DEFAULT_DECISION_RULES) {
   const selected: RankedAction[] = []
   const selectedIds = new Set<string>()
 
@@ -254,7 +259,7 @@ export function selectTodayActions(ranked: RankedAction[], now = new Date(), lim
     .filter((item) => {
       if (!rankedIsHardDeadlineAction(item) || !item.action.dueAt || isFixedAction(item.action)) return false
       const hours = hoursUntil(item.action.dueAt, now)
-      return hours !== undefined && hours >= 0 && hours <= 48
+      return hours !== undefined && hours >= 0 && hours <= rules.hardDeadlineHorizonHours
     })
     .sort((a, b) => {
       const aDue = new Date(a.action.dueAt!).getTime()
@@ -277,12 +282,12 @@ export function selectTodayActions(ranked: RankedAction[], now = new Date(), lim
     if (isFixedAction(item.action)) continue
 
     if (item.action.kind === 'follow_up') {
-      if (followUps >= 2) continue
+      if (followUps >= rules.followUpDailyCap) continue
       followUps += 1
     }
 
     if (item.action.kind === 'prep') {
-      if (prepItems >= 2) continue
+      if (prepItems >= rules.prepDailyCap) continue
       prepItems += 1
     }
 
@@ -316,6 +321,7 @@ export function buildTimePlan(
   ranked: RankedAction[],
   budgetMinutes: number,
   now = new Date(),
+  rules: DecisionRules = DEFAULT_DECISION_RULES,
 ): TimePlan {
   const budget = Math.max(30, Math.round(budgetMinutes))
   const endOfToday = localDayEnd(now)
@@ -324,7 +330,7 @@ export function buildTimePlan(
     .filter((item) => {
       if (!isFixedAction(item.action) || !item.action.dueAt) return false
       const hours = hoursUntil(item.action.dueAt, now)
-      return hours !== undefined && hours >= 0 && hours <= 48
+      return hours !== undefined && hours >= 0 && hours <= rules.fixedEventHorizonHours
     })
     .sort((a, b) => new Date(a.action.dueAt!).getTime() - new Date(b.action.dueAt!).getTime())
 
@@ -340,7 +346,7 @@ export function buildTimePlan(
     .filter((item) => {
       if (!isHardDeadlineAction(item) || !item.action.dueAt || isFixedAction(item.action)) return false
       const hours = hoursUntil(item.action.dueAt, now)
-      return hours !== undefined && hours >= 0 && hours <= 48
+      return hours !== undefined && hours >= 0 && hours <= rules.hardDeadlineHorizonHours
     })
     .sort((a, b) =>
       new Date(a.action.dueAt!).getTime() - new Date(b.action.dueAt!).getTime() ||
@@ -380,7 +386,7 @@ export function buildTimePlan(
       }
 
       const extraNeeded = nextTotal - budget
-      if (extraNeeded <= 30) {
+      if (extraNeeded <= rules.nearDeadlineStretchMinutes) {
         planned.push(item)
         selectedIds.add(item.action.id)
         totalMinutes = nextTotal
@@ -392,7 +398,7 @@ export function buildTimePlan(
   }
 
   if (totalMinutes <= budget && !blockOptionalPacking) {
-    const candidates = selectTodayActions(ranked, now, 24)
+    const candidates = selectTodayActions(ranked, now, 24, rules)
     let followUps = 0
     let prepItems = 0
 
@@ -402,12 +408,12 @@ export function buildTimePlan(
       if (totalMinutes + item.action.estimatedMinutes > budget) continue
 
       if (item.action.kind === 'follow_up') {
-        if (followUps >= 2) continue
+        if (followUps >= rules.followUpDailyCap) continue
         followUps += 1
       }
 
       if (item.action.kind === 'prep') {
-        if (prepItems >= 2) continue
+        if (prepItems >= rules.prepDailyCap) continue
         prepItems += 1
       }
 

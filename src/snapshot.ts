@@ -7,6 +7,7 @@ import type {
   ProcessEvent,
   ProcessRecord,
 } from './model'
+import { validateDecisionRules, type DecisionRules } from './decisionRules'
 
 export const SNAPSHOT_SCHEMA = 'pjsdas-local-snapshot' as const
 export const SNAPSHOT_VERSION = 1 as const
@@ -18,6 +19,7 @@ export interface SnapshotData {
   actions: Action[]
   prep: Prep[]
   applicationGroups: ApplicationGroup[]
+  decisionRules?: DecisionRules
   meta?: ImportMeta
 }
 
@@ -86,6 +88,11 @@ export function validateSnapshot(value: unknown): asserts value is PJSDASSnapsho
   assertArray(data.actions, 'actions')
   assertArray(data.prep, 'prep')
   assertArray(data.applicationGroups, 'applicationGroups')
+  if (data.decisionRules !== undefined) {
+    if (!isObject(data.decisionRules)) throw new Error('备份损坏：decisionRules 格式无效。')
+    const errors = validateDecisionRules(data.decisionRules as unknown as DecisionRules)
+    if (errors.length) throw new Error(`备份损坏：决策规则无效（${errors[0]}）`)
+  }
 
   const opportunityIds = assertUniqueIds(data.opportunities, 'Opportunity')
   const processIds = assertUniqueIds(data.processes, 'Process')

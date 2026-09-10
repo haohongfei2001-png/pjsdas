@@ -9,6 +9,7 @@ import {
 } from './processEvents'
 import { mergeActionsForReimport } from './reimportState'
 import { createSnapshot, validateSnapshot, type PJSDASSnapshot } from './snapshot'
+import { createDefaultDecisionRules, validateDecisionRules, type DecisionRules } from './decisionRules'
 import type { ProgressOperation } from './progressUpdate'
 import type {
   Action,
@@ -40,6 +41,7 @@ interface PJSDASDatabase extends DBSchema {
   }
   prep: { key: string; value: Prep }
   applicationGroups: { key: string; value: ApplicationGroup }
+  decisionRules: { key: string; value: DecisionRules }
   meta: { key: string; value: ImportMeta }
 }
 
@@ -50,10 +52,11 @@ const DATA_STORES = [
   'actions',
   'prep',
   'applicationGroups',
+  'decisionRules',
   'meta',
 ] as const
 
-export const dbPromise = openDB<PJSDASDatabase>('pjsdas', 3, {
+export const dbPromise = openDB<PJSDASDatabase>('pjsdas', 4, {
   upgrade(db) {
     if (!db.objectStoreNames.contains('opportunities')) {
       db.createObjectStore('opportunities', { keyPath: 'id' })
@@ -75,6 +78,9 @@ export const dbPromise = openDB<PJSDASDatabase>('pjsdas', 3, {
     }
     if (!db.objectStoreNames.contains('applicationGroups')) {
       db.createObjectStore('applicationGroups', { keyPath: 'id' })
+    }
+    if (!db.objectStoreNames.contains('decisionRules')) {
+      db.createObjectStore('decisionRules', { keyPath: 'key' })
     }
     if (!db.objectStoreNames.contains('meta')) {
       db.createObjectStore('meta', { keyPath: 'key' })
@@ -133,6 +139,25 @@ export async function getAllApplicationGroups() {
 
 export async function getLastImport() {
   return (await dbPromise).get('meta', 'lastImport')
+}
+
+export async function getDecisionRules() {
+  const stored = await (await dbPromise).get('decisionRules', 'current')
+  return stored ?? createDefaultDecisionRules()
+}
+
+export async function saveDecisionRules(rules: DecisionRules) {
+  const next: DecisionRules = { ...rules, weights: { ...rules.weights }, key: 'current', version: 1, updatedAt: new Date().toISOString() }
+  const errors = validateDecisionRules(next)
+  if (errors.length) throw new Error(errors[0])
+  await (await dbPromise).put('decisionRules', next)
+  return next
+}
+
+export async function resetDecisionRules() {
+  const next = createDefaultDecisionRules()
+  await (await dbPromise).put('decisionRules', next)
+  return next
 }
 
 export async function updateActionStatus(id: string, status: Action['status']) {
@@ -372,7 +397,7 @@ export async function applyProgressUpdate(operations: ProgressOperation[]) {
 
 export async function exportLocalSnapshot() {
   const db = await dbPromise
-  const [opportunities, processes, processEvents, actions, prep, applicationGroups, meta] =
+  const [opportunities, processes, processEvents, actions, prep, applicationGroups, decisionRules, meta] =
     await Promise.all([
       db.getAll('opportunities'),
       db.getAll('processes'),
@@ -380,6 +405,7 @@ export async function exportLocalSnapshot() {
       db.getAll('actions'),
       db.getAll('prep'),
       db.getAll('applicationGroups'),
+      db.get('decisionRules', 'current'),
       db.get('meta', 'lastImport'),
     ])
 
@@ -390,6 +416,7 @@ export async function exportLocalSnapshot() {
     actions,
     prep,
     applicationGroups,
+    decisionRules: decisionRules ?? createDefaultDecisionRules(),
     meta,
   })
 }
@@ -408,6 +435,7 @@ export async function restoreLocalSnapshot(snapshot: PJSDASSnapshot) {
   for (const item of snapshot.data.actions) await tx.objectStore('actions').put(item)
   for (const item of snapshot.data.prep) await tx.objectStore('prep').put(item)
   for (const item of snapshot.data.applicationGroups) await tx.objectStore('applicationGroups').put(item)
+  await tx.objectStore('decisionRules').put(snapshot.data.decisionRules ?? createDefaultDecisionRules())
   if (snapshot.data.meta) await tx.objectStore('meta').put(snapshot.data.meta)
   await tx.done
 }

@@ -1,4 +1,5 @@
 import type { Action, RankedAction } from './model'
+import { DEFAULT_DECISION_RULES, type DecisionRules } from './decisionRules'
 
 const MINUTE = 60_000
 const HOUR = 60 * MINUTE
@@ -35,12 +36,12 @@ export function formatTimeRemaining(dueAt: string, now = new Date()) {
   return `剩 ${Math.ceil(remaining / DAY)} 天`
 }
 
-export function timeRisk(dueAt: string, now = new Date()): TimeRisk {
+export function timeRisk(dueAt: string, now = new Date(), rules: DecisionRules = DEFAULT_DECISION_RULES): TimeRisk {
   const remainingMs = remainingTimeMs(dueAt, now)
-  if (remainingMs <= 6 * HOUR) return { level: 'critical', label: '极高风险', remainingMs }
-  if (remainingMs <= 24 * HOUR) return { level: 'high', label: '高风险', remainingMs }
-  if (remainingMs <= 48 * HOUR) return { level: 'near', label: '临近', remainingMs }
-  if (remainingMs <= 72 * HOUR) return { level: 'watch', label: '需准备', remainingMs }
+  if (remainingMs <= rules.riskCriticalHours * HOUR) return { level: 'critical', label: '极高风险', remainingMs }
+  if (remainingMs <= rules.riskHighHours * HOUR) return { level: 'high', label: '高风险', remainingMs }
+  if (remainingMs <= rules.riskNearHours * HOUR) return { level: 'near', label: '临近', remainingMs }
+  if (remainingMs <= rules.riskWatchHours * HOUR) return { level: 'watch', label: '需准备', remainingMs }
   return { level: 'upcoming', label: '已排期', remainingMs }
 }
 
