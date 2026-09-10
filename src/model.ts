@@ -23,6 +23,53 @@ export type ActionKind = 'apply' | 'follow_up' | 'prep' | 'group_decision' | 'ma
 export type ActionStatus = 'todo' | 'doing' | 'done' | 'skipped'
 export type PriorityLevel = 'P0' | 'P1' | 'P2' | 'expired' | 'none'
 
+export type TimelineCategory = 'opportunity' | 'process' | 'action' | 'rules' | 'data' | 'note'
+export type TimelineSource =
+  | 'excel'
+  | 'natural_language'
+  | 'process_event'
+  | 'user_action'
+  | 'rules'
+  | 'backup'
+  | 'system'
+export type TimelineKind =
+  | 'history_imported'
+  | 'opportunity_added'
+  | 'opportunity_updated'
+  | 'application_submitted'
+  | 'opportunity_renamed'
+  | 'process_event_recorded'
+  | 'process_closed'
+  | 'process_event_deleted'
+  | 'action_added'
+  | 'action_status_changed'
+  | 'rules_changed'
+  | 'excel_imported'
+  | 'backup_restored'
+  | 'baseline_backfill'
+export type TimelineChangeValue = string | number | boolean | null
+export interface TimelineFieldChange {
+  before?: TimelineChangeValue
+  after?: TimelineChangeValue
+}
+export interface TimelineRecord {
+  id: string
+  kind: TimelineKind
+  category: TimelineCategory
+  source: TimelineSource
+  occurredAt: string
+  recordedAt: string
+  title: string
+  detail?: string
+  opportunityId?: string
+  actionId?: string
+  processEventId?: string
+  company?: string
+  role?: string
+  sourceRef?: string
+  changes?: Record<string, TimelineFieldChange>
+}
+
 export interface OpportunityDetail {
   backgroundTag?: string
   coreOutput?: string
@@ -184,6 +231,7 @@ export interface ImportBundle {
   actions: Action[]
   prep: Prep[]
   applicationGroups: ApplicationGroup[]
+  timeline?: TimelineRecord[]
   summary: ImportSummary
 }
 

@@ -8,13 +8,16 @@ import type {
   Prep,
   ProcessRecord,
   ProcessStage,
+  TimelineRecord,
 } from './model'
+import { timelineFromImportedHistory } from './timeline'
 
 const MAIN_SHEET = '投递总表'
 const DETAIL_SHEET = '岗位详情'
 const PIPELINE_SHEET = '在途流程'
 const PREP_SHEET = '准备中心'
 const GROUP_SHEET = '申请组'
+const HISTORY_SHEET = '秋招经历'
 const DAY = 86_400_000
 
 function text(value: unknown) {
@@ -53,6 +56,21 @@ function getRecords(workbook: XLSX.WorkBook, sheetName: string, firstHeader: str
     headers.forEach((header, index) => {
       if (header) record[header] = row[index]
     })
+    return [record]
+  })
+}
+
+function getOptionalRecords(workbook: XLSX.WorkBook, sheetName: string, firstHeader: string) {
+  const sheet = workbook.Sheets[sheetName]
+  if (!sheet) return [] as Array<Record<string, unknown>>
+  const matrix = XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1, raw: true, defval: null })
+  const headerIndex = matrix.findIndex((row) => text(row?.[0]) === firstHeader)
+  if (headerIndex < 0) return [] as Array<Record<string, unknown>>
+  const headers = matrix[headerIndex].map(text)
+  return matrix.slice(headerIndex + 1).flatMap((row) => {
+    if (!row || row.every((value) => value === null || text(value) === '')) return []
+    const record: Record<string, unknown> = {}
+    headers.forEach((header, index) => { if (header) record[header] = row[index] })
     return [record]
   })
 }
@@ -224,6 +242,7 @@ export async function parsePJSDASWorkbook(file: File): Promise<ImportBundle> {
   const pipeline = getRecords(workbook, PIPELINE_SHEET, '公司')
   const prepRows = getRecords(workbook, PREP_SHEET, '能力包')
   const groupRows = getRecords(workbook, GROUP_SHEET, '申请组ID')
+  const historyRows = getOptionalRecords(workbook, HISTORY_SHEET, '日期')
 
   const detailById = new Map(details.map((row) => [text(row['岗位ID']), row]))
 
@@ -457,12 +476,37 @@ export async function parsePJSDASWorkbook(file: File): Promise<ImportBundle> {
     }]
   })
 
+  const opportunityById = new Map(opportunities.map((item) => [item.id, item]))
+  const timeline: TimelineRecord[] = historyRows.flatMap((row) => {
+    const occurredAt = excelDate(row['日期'])
+    const event = text(row['事件'] ?? row['发生了什么'])
+    const type = text(row['类型'])
+    if (!occurredAt || (!event && !type)) return []
+    const relation = cleanOptional(row['关联岗位'] ?? row['关联岗位/主题'])
+    const ids = relation?.match(/[A-Z][A-Z0-9]*-\d+/g) ?? []
+    const linked = ids.map((id) => opportunityById.get(id)).filter((item): item is Opportunity => Boolean(item))
+    const opportunity = linked.length === 1 ? linked[0] : undefined
+    return [timelineFromImportedHistory({
+      occurredAt,
+      importedAt,
+      type,
+      relation,
+      event: event || type,
+      result: cleanOptional(row['结果']),
+      learning: cleanOptional(row['学习/产出']),
+      reflection: cleanOptional(row['重要复盘']),
+      opportunity,
+      filename: file.name,
+    })]
+  })
+
   return {
     opportunities,
     processes,
     actions,
     prep,
     applicationGroups,
+    timeline,
     summary: {
       filename: file.name,
       importedAt,

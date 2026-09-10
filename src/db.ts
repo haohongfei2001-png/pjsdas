@@ -10,6 +10,17 @@ import {
 import { mergeActionsForReimport } from './reimportState'
 import { createSnapshot, validateSnapshot, type PJSDASSnapshot } from './snapshot'
 import { createDefaultDecisionRules, validateDecisionRules, type DecisionRules } from './decisionRules'
+import {
+  TIMELINE_BACKFILL_MARKER_ID,
+  buildTimelineBackfill,
+  timelineFromActionStatus,
+  timelineFromDeletedProcessEvent,
+  timelineFromImport,
+  timelineFromProcessEvent,
+  timelineFromProgressOperation,
+  timelineFromRestore,
+  timelineFromRuleChange,
+} from './timeline'
 import type { ProgressOperation } from './progressUpdate'
 import type {
   Action,
@@ -20,6 +31,8 @@ import type {
   Prep,
   ProcessEvent,
   ProcessRecord,
+  TimelineCategory,
+  TimelineRecord,
 } from './model'
 
 interface PJSDASDatabase extends DBSchema {
@@ -42,6 +55,11 @@ interface PJSDASDatabase extends DBSchema {
   prep: { key: string; value: Prep }
   applicationGroups: { key: string; value: ApplicationGroup }
   decisionRules: { key: string; value: DecisionRules }
+  timeline: {
+    key: string
+    value: TimelineRecord
+    indexes: { 'by-occurred-at': string; 'by-category': TimelineCategory; 'by-opportunity': string }
+  }
   meta: { key: string; value: ImportMeta }
 }
 
@@ -53,10 +71,11 @@ const DATA_STORES = [
   'prep',
   'applicationGroups',
   'decisionRules',
+  'timeline',
   'meta',
 ] as const
 
-export const dbPromise = openDB<PJSDASDatabase>('pjsdas', 4, {
+export const dbPromise = openDB<PJSDASDatabase>('pjsdas', 5, {
   upgrade(db) {
     if (!db.objectStoreNames.contains('opportunities')) {
       db.createObjectStore('opportunities', { keyPath: 'id' })
@@ -81,6 +100,12 @@ export const dbPromise = openDB<PJSDASDatabase>('pjsdas', 4, {
     }
     if (!db.objectStoreNames.contains('decisionRules')) {
       db.createObjectStore('decisionRules', { keyPath: 'key' })
+    }
+    if (!db.objectStoreNames.contains('timeline')) {
+      const store = db.createObjectStore('timeline', { keyPath: 'id' })
+      store.createIndex('by-occurred-at', 'occurredAt')
+      store.createIndex('by-category', 'category')
+      store.createIndex('by-opportunity', 'opportunityId')
     }
     if (!db.objectStoreNames.contains('meta')) {
       db.createObjectStore('meta', { keyPath: 'key' })
@@ -146,41 +171,88 @@ export async function getDecisionRules() {
   return stored ?? createDefaultDecisionRules()
 }
 
+async function ensureTimelineBackfill(db: Awaited<typeof dbPromise>) {
+  const marker = await db.get('timeline', TIMELINE_BACKFILL_MARKER_ID)
+  if (marker) return
+  const [processEvents, actions, lastImport, decisionRules] = await Promise.all([
+    db.getAll('processEvents'),
+    db.getAll('actions'),
+    db.get('meta', 'lastImport'),
+    db.get('decisionRules', 'current'),
+  ])
+  const tx = db.transaction('timeline', 'readwrite')
+  for (const record of buildTimelineBackfill({ processEvents, actions, lastImport, decisionRules })) {
+    if (!await tx.store.get(record.id)) await tx.store.put(record)
+  }
+  await tx.done
+}
+
+export async function getAllTimelineRecords() {
+  const db = await dbPromise
+  await ensureTimelineBackfill(db)
+  const records = await db.getAll('timeline')
+  return records
+    .filter((item) => item.kind !== 'baseline_backfill')
+    .sort((a, b) => b.occurredAt.localeCompare(a.occurredAt) || b.recordedAt.localeCompare(a.recordedAt))
+}
+
 export async function saveDecisionRules(rules: DecisionRules) {
+  const db = await dbPromise
+  const before = await db.get('decisionRules', 'current') ?? createDefaultDecisionRules('1970-01-01T00:00:00.000Z')
   const next: DecisionRules = { ...rules, weights: { ...rules.weights }, key: 'current', version: 1, updatedAt: new Date().toISOString() }
   const errors = validateDecisionRules(next)
   if (errors.length) throw new Error(errors[0])
-  await (await dbPromise).put('decisionRules', next)
+  const tx = db.transaction(['decisionRules', 'timeline'], 'readwrite')
+  await tx.objectStore('decisionRules').put(next)
+  const record = timelineFromRuleChange(before, next, 'save')
+  if (record) await tx.objectStore('timeline').put(record)
+  await tx.done
   return next
 }
 
 export async function resetDecisionRules() {
+  const db = await dbPromise
+  const before = await db.get('decisionRules', 'current') ?? createDefaultDecisionRules('1970-01-01T00:00:00.000Z')
   const next = createDefaultDecisionRules()
-  await (await dbPromise).put('decisionRules', next)
+  const tx = db.transaction(['decisionRules', 'timeline'], 'readwrite')
+  await tx.objectStore('decisionRules').put(next)
+  const record = timelineFromRuleChange(before, next, 'reset')
+  if (record) await tx.objectStore('timeline').put(record)
+  await tx.done
   return next
 }
 
 export async function updateActionStatus(id: string, status: Action['status']) {
   const db = await dbPromise
-  const action = await db.get('actions', id)
-  if (!action) return
-  await db.put('actions', { ...action, status, updatedAt: new Date().toISOString() })
+  const tx = db.transaction(['actions', 'timeline'], 'readwrite')
+  const action = await tx.objectStore('actions').get(id)
+  if (!action || action.status === status) {
+    await tx.done
+    return
+  }
+  const now = new Date().toISOString()
+  await tx.objectStore('actions').put({ ...action, status, updatedAt: now })
+  await tx.objectStore('timeline').put(timelineFromActionStatus(action, action.status, status, now))
+  await tx.done
 }
 
 export async function addProcessEvent(event: ProcessEvent) {
   const db = await dbPromise
-  const tx = db.transaction(['processEvents', 'actions'], 'readwrite')
+  const tx = db.transaction(['processEvents', 'actions', 'timeline'], 'readwrite')
   await tx.objectStore('processEvents').put(event)
   const action = actionForProcessEvent(event)
   if (action) await tx.objectStore('actions').put(action)
+  await tx.objectStore('timeline').put(timelineFromProcessEvent(event))
   await tx.done
 }
 
 export async function deleteProcessEvent(id: string) {
   const db = await dbPromise
-  const tx = db.transaction(['processEvents', 'actions'], 'readwrite')
+  const tx = db.transaction(['processEvents', 'actions', 'timeline'], 'readwrite')
+  const event = await tx.objectStore('processEvents').get(id)
   await tx.objectStore('processEvents').delete(id)
   await tx.objectStore('actions').delete(`event-action:${id}`)
+  if (event) await tx.objectStore('timeline').put(timelineFromDeletedProcessEvent(event))
   await tx.done
 }
 
@@ -242,15 +314,16 @@ async function upsertLocalProcess(
 }
 
 export async function applyProgressUpdate(operations: ProgressOperation[]) {
-  const executable = operations.filter((item) => item.kind !== 'unresolved')
+  const executable = operations.filter((item) => item.kind !== 'unresolved' && item.kind !== 'ignored')
   if (executable.length === 0) return { applied: 0 }
 
   const db = await dbPromise
-  const tx = db.transaction(['opportunities', 'processes', 'processEvents', 'actions'], 'readwrite')
+  const tx = db.transaction(['opportunities', 'processes', 'processEvents', 'actions', 'timeline'], 'readwrite')
   const opportunityStore = tx.objectStore('opportunities')
   const processStore = tx.objectStore('processes')
   const eventStore = tx.objectStore('processEvents')
   const actionStore = tx.objectStore('actions')
+  const timelineStore = tx.objectStore('timeline')
 
   for (const operation of executable) {
     if (operation.kind === 'upsert_opportunity') {
@@ -290,6 +363,8 @@ export async function applyProgressUpdate(operations: ProgressOperation[]) {
           updatedAt: operation.occurredAt,
         })
       }
+      const record = timelineFromProgressOperation(operation, existing)
+      if (record) await timelineStore.put(record)
       continue
     }
 
@@ -315,6 +390,8 @@ export async function applyProgressUpdate(operations: ProgressOperation[]) {
           : action.title
         await actionStore.put({ ...action, title, updatedAt: operation.occurredAt })
       }
+      const record = timelineFromProgressOperation(operation, existing)
+      if (record) await timelineStore.put(record)
       continue
     }
 
@@ -337,6 +414,8 @@ export async function applyProgressUpdate(operations: ProgressOperation[]) {
           await actionStore.put({ ...action, status: 'skipped', updatedAt: operation.occurredAt })
         }
       }
+      const record = timelineFromProgressOperation(operation, existing)
+      if (record) await timelineStore.put(record)
       continue
     }
 
@@ -368,6 +447,8 @@ export async function applyProgressUpdate(operations: ProgressOperation[]) {
             ? { ...generated, status: previous.status, updatedAt: previous.updatedAt }
             : generated)
       }
+      const record = timelineFromProgressOperation(operation)
+      if (record) await timelineStore.put(record)
       continue
     }
 
@@ -388,6 +469,8 @@ export async function applyProgressUpdate(operations: ProgressOperation[]) {
         updatedAt: previous?.updatedAt ?? operation.occurredAt,
       }
       await actionStore.put(action)
+      const record = timelineFromProgressOperation(operation)
+      if (record) await timelineStore.put(record)
     }
   }
 
@@ -397,7 +480,8 @@ export async function applyProgressUpdate(operations: ProgressOperation[]) {
 
 export async function exportLocalSnapshot() {
   const db = await dbPromise
-  const [opportunities, processes, processEvents, actions, prep, applicationGroups, decisionRules, meta] =
+  await ensureTimelineBackfill(db)
+  const [opportunities, processes, processEvents, actions, prep, applicationGroups, decisionRules, timeline, meta] =
     await Promise.all([
       db.getAll('opportunities'),
       db.getAll('processes'),
@@ -406,6 +490,7 @@ export async function exportLocalSnapshot() {
       db.getAll('prep'),
       db.getAll('applicationGroups'),
       db.get('decisionRules', 'current'),
+      db.getAll('timeline'),
       db.get('meta', 'lastImport'),
     ])
 
@@ -417,6 +502,7 @@ export async function exportLocalSnapshot() {
     prep,
     applicationGroups,
     decisionRules: decisionRules ?? createDefaultDecisionRules(),
+    timeline,
     meta,
   })
 }
@@ -436,6 +522,8 @@ export async function restoreLocalSnapshot(snapshot: PJSDASSnapshot) {
   for (const item of snapshot.data.prep) await tx.objectStore('prep').put(item)
   for (const item of snapshot.data.applicationGroups) await tx.objectStore('applicationGroups').put(item)
   await tx.objectStore('decisionRules').put(snapshot.data.decisionRules ?? createDefaultDecisionRules())
+  for (const item of snapshot.data.timeline ?? []) await tx.objectStore('timeline').put(item)
+  await tx.objectStore('timeline').put(timelineFromRestore(snapshot.exportedAt))
   if (snapshot.data.meta) await tx.objectStore('meta').put(snapshot.data.meta)
   await tx.done
 }
@@ -478,7 +566,7 @@ export async function replaceImportedData(bundle: ImportBundle) {
   const processes = mergeLocallyManagedProcesses(bundle.processes, previousProcesses, localOpportunityIds)
 
   const tx = db.transaction(
-    ['opportunities', 'processes', 'actions', 'prep', 'applicationGroups', 'meta'],
+    ['opportunities', 'processes', 'actions', 'prep', 'applicationGroups', 'timeline', 'meta'],
     'readwrite',
   )
 
@@ -496,6 +584,11 @@ export async function replaceImportedData(bundle: ImportBundle) {
   for (const item of mergedActions) await tx.objectStore('actions').put(item)
   for (const item of bundle.prep) await tx.objectStore('prep').put(item)
   for (const item of bundle.applicationGroups) await tx.objectStore('applicationGroups').put(item)
-  await tx.objectStore('meta').put({ key: 'lastImport', ...bundle.summary })
+  for (const item of bundle.timeline ?? []) {
+    if (!await tx.objectStore('timeline').get(item.id)) await tx.objectStore('timeline').put(item)
+  }
+  const importMeta: ImportMeta = { key: 'lastImport', ...bundle.summary }
+  await tx.objectStore('timeline').put(timelineFromImport(importMeta, bundle.timeline?.length ?? 0))
+  await tx.objectStore('meta').put(importMeta)
   await tx.done
 }

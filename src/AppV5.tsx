@@ -6,6 +6,7 @@ import {
   getAllPrep,
   getAllProcesses,
   getDecisionRules,
+  getAllTimelineRecords,
   getLastImport,
   replaceImportedData,
   updateActionStatus,
@@ -22,6 +23,7 @@ import { actionNodePrefix, formatTimeRemaining, timeRisk, upcomingNodes } from '
 import { currentUiLanguage, useUiLanguage } from './uiLanguage'
 import { DEFAULT_DECISION_RULES, type DecisionRules } from './decisionRules'
 import RulesView from './RulesView'
+import TimelineView from './TimelineView'
 import type {
   Action,
   ApplicationGroup,
@@ -30,12 +32,13 @@ import type {
   Opportunity,
   Prep,
   ProcessRecord,
+  TimelineRecord,
 } from './model'
 import './timeplan.css'
 
-type Page = 'today' | 'opportunities' | 'pipeline' | 'prep' | 'rules' | 'settings'
+type Page = 'today' | 'opportunities' | 'pipeline' | 'prep' | 'timeline' | 'rules' | 'settings'
 
-const navigation: Page[] = ['today', 'opportunities', 'pipeline', 'prep', 'rules', 'settings']
+const navigation: Page[] = ['today', 'opportunities', 'pipeline', 'prep', 'timeline', 'rules', 'settings']
 
 const roleLabels: Record<Opportunity['roleType'], string> = {
   core: '核心',
@@ -63,13 +66,14 @@ function AppV5() {
   const [processes, setProcesses] = useState<ProcessRecord[]>([])
   const [prep, setPrep] = useState<Prep[]>([])
   const [groups, setGroups] = useState<ApplicationGroup[]>([])
+  const [timeline, setTimeline] = useState<TimelineRecord[]>([])
   const [rules, setRules] = useState<DecisionRules>(() => ({ ...DEFAULT_DECISION_RULES, weights: { ...DEFAULT_DECISION_RULES.weights } }))
   const [lastImport, setLastImport] = useState<ImportMeta | undefined>()
   const [loading, setLoading] = useState(true)
   const [now, setNow] = useState(() => new Date())
 
   async function reload() {
-    const [nextOpportunities, nextActions, nextProcesses, nextPrep, nextGroups, nextRules, nextImport] =
+    const [nextOpportunities, nextActions, nextProcesses, nextPrep, nextGroups, nextRules, nextTimeline, nextImport] =
       await Promise.all([
         getAllOpportunities(),
         getAllActions(),
@@ -77,6 +81,7 @@ function AppV5() {
         getAllPrep(),
         getAllApplicationGroups(),
         getDecisionRules(),
+        getAllTimelineRecords(),
         getLastImport(),
       ])
     setOpportunities(nextOpportunities)
@@ -85,6 +90,7 @@ function AppV5() {
     setPrep(nextPrep)
     setGroups(nextGroups)
     setRules(nextRules)
+    setTimeline(nextTimeline)
     setLastImport(nextImport)
   }
 
@@ -121,7 +127,7 @@ function AppV5() {
               className={page === item ? 'nav-item active' : 'nav-item'}
               onClick={() => setPage(item)}
             >
-              {t(`nav.${item}` as 'nav.today' | 'nav.opportunities' | 'nav.pipeline' | 'nav.prep' | 'nav.rules' | 'nav.settings')}
+              {t(`nav.${item}` as 'nav.today' | 'nav.opportunities' | 'nav.pipeline' | 'nav.prep' | 'nav.timeline' | 'nav.rules' | 'nav.settings')}
             </button>
           ))}
         </nav>
@@ -152,6 +158,7 @@ function AppV5() {
         ) : null}
         {!loading && page === 'pipeline' ? <PipelineView processes={processes} /> : null}
         {!loading && page === 'prep' ? <PrepView prep={prep} /> : null}
+        {!loading && page === 'timeline' ? <TimelineView records={timeline} /> : null}
         {!loading && page === 'rules' ? <RulesView rules={rules} onChanged={reload} /> : null}
         {!loading && page === 'settings' ? (
           <SettingsView lastImport={lastImport} onImported={reload} />

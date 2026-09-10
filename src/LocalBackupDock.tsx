@@ -35,7 +35,7 @@ export default function LocalBackupDock({ onChanged }: LocalBackupDockProps) {
       anchor.click()
       anchor.remove()
       URL.revokeObjectURL(url)
-      setMessage(`已导出：${snapshot.data.opportunities.length} 个岗位、${snapshot.data.processEvents.length} 条流程事件、${snapshot.data.actions.length} 个 Action。`)
+      setMessage(`已导出：${snapshot.data.opportunities.length} 个岗位、${snapshot.data.processEvents.length} 条流程事件、${snapshot.data.timeline?.length ?? 0} 条历程、${snapshot.data.actions.length} 个 Action。`)
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : '导出备份失败。')
     } finally {
@@ -135,6 +135,7 @@ export default function LocalBackupDock({ onChanged }: LocalBackupDockProps) {
                   <span>Action <strong>{preview.data.actions.length}</strong></span>
                   <span>Prep <strong>{preview.data.prep.length}</strong></span>
                   <span>申请组 <strong>{preview.data.applicationGroups.length}</strong></span>
+                  <span>历程 <strong>{preview.data.timeline?.length ?? 0}</strong></span>
                 </div>
                 <div className="backup-danger">
                   <strong>恢复会替换当前本地工作区。</strong>

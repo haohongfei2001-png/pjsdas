@@ -6,6 +6,7 @@ import type {
   Prep,
   ProcessEvent,
   ProcessRecord,
+  TimelineRecord,
 } from './model'
 import { validateDecisionRules, type DecisionRules } from './decisionRules'
 
@@ -20,6 +21,7 @@ export interface SnapshotData {
   prep: Prep[]
   applicationGroups: ApplicationGroup[]
   decisionRules?: DecisionRules
+  timeline?: TimelineRecord[]
   meta?: ImportMeta
 }
 
@@ -88,6 +90,7 @@ export function validateSnapshot(value: unknown): asserts value is PJSDASSnapsho
   assertArray(data.actions, 'actions')
   assertArray(data.prep, 'prep')
   assertArray(data.applicationGroups, 'applicationGroups')
+  if (data.timeline !== undefined) assertArray(data.timeline, 'timeline')
   if (data.decisionRules !== undefined) {
     if (!isObject(data.decisionRules)) throw new Error('备份损坏：decisionRules 格式无效。')
     const errors = validateDecisionRules(data.decisionRules as unknown as DecisionRules)
@@ -100,6 +103,7 @@ export function validateSnapshot(value: unknown): asserts value is PJSDASSnapsho
   const actionIds = assertUniqueIds(data.actions, 'Action')
   const prepIds = assertUniqueIds(data.prep, 'Prep')
   const groupIds = assertUniqueIds(data.applicationGroups, 'Application Group')
+  if (data.timeline) assertUniqueIds(data.timeline, 'Timeline')
   void processIds
   void actionIds
   void prepIds
@@ -132,6 +136,19 @@ export function validateSnapshot(value: unknown): asserts value is PJSDASSnapsho
     }
     assertIsoDate(event.occurredAt, `流程事件 ${event.id} 的 occurredAt`)
     if (event.dueAt) assertIsoDate(event.dueAt, `流程事件 ${event.id} 的 dueAt`)
+  }
+
+  if (data.timeline) {
+    const categories = new Set(['opportunity', 'process', 'action', 'rules', 'data', 'note'])
+    const sources = new Set(['excel', 'natural_language', 'process_event', 'user_action', 'rules', 'backup', 'system'])
+    for (const raw of data.timeline) {
+      const item = raw as TimelineRecord
+      if (!item.title?.trim() || !categories.has(item.category) || !sources.has(item.source)) {
+        throw new Error(`备份损坏：Timeline ${item.id} 的基础字段无效。`)
+      }
+      assertIsoDate(item.occurredAt, `Timeline ${item.id} 的 occurredAt`)
+      assertIsoDate(item.recordedAt, `Timeline ${item.id} 的 recordedAt`)
+    }
   }
 
   for (const raw of data.actions) {
