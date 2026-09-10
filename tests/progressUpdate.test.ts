@@ -28,10 +28,10 @@ const current = [
 const now = new Date(2026, 8, 10, 20, 0, 0)
 
 describe('natural-language progress planner', () => {
-  it('handles short applications, rename, relative assessment deadline, closure and fixed interview in one batch', () => {
+  it('handles short applications, comma-separated rename, relative assessment deadline, closure and fixed interview in one batch', () => {
     const plan = parseProgressUpdate(
       [
-        '9月9日，投乙公司战略分析。乙公司AI产品经理岗位转变为AI全栈产品研发培训生，同时收到AI测评，14点收到，72小时完成。',
+        '9月9日，投乙公司战略分析，乙公司AI产品经理岗位转变为AI全栈产品研发培训生，同时收到AI测评，14点收到，72小时完成。',
         '9月10日，甲公司产品经理流程结束。',
         '9月22日，乙公司AI全栈产品研发培训生10点面试。',
       ].join('\n'),
@@ -104,6 +104,44 @@ describe('natural-language progress planner', () => {
     if (submitted?.kind === 'upsert_opportunity' && assessment?.kind === 'process_event') {
       expect(assessment.opportunityId).toBe(submitted.opportunityId)
     }
+  })
+
+  it('treats an explicit past bare interview as a completed historical event', () => {
+    const plan = parseProgressUpdate(
+      '9月4日，甲公司产品经理AI面试。',
+      current,
+      now,
+    )
+    const event = plan.operations.find((item) => item.kind === 'process_event')
+    expect(event?.kind).toBe('process_event')
+    if (event?.kind === 'process_event') {
+      expect(event.eventType).toBe('interview_invite')
+      expect(event.completed).toBe(true)
+    }
+    expect(plan.unresolved).toHaveLength(0)
+  })
+
+  it('reopens an existing process from a history statement', () => {
+    const closed = [opportunity('A-PM', '甲公司', '产品经理', 'closed')]
+    const plan = parseProgressUpdate('9月3日，甲公司产品经理流程开启。', closed, now)
+    expect(plan.operations[0]).toMatchObject({
+      kind: 'upsert_opportunity',
+      opportunityId: 'A-PM',
+      mode: 'submitted',
+    })
+  })
+
+  it('carries one stated receive time across adjacent assessment clauses', () => {
+    const plan = parseProgressUpdate(
+      '9月10日，6点收到：甲公司产品经理测评48小时。丙公司产品经理测评7日内。',
+      current,
+      now,
+    )
+    const events = plan.operations.filter((item) => item.kind === 'process_event')
+    expect(events).toHaveLength(2)
+    const occurred = events.map((item) => item.kind === 'process_event' ? new Date(item.occurredAt) : new Date(0))
+    expect(occurred[0].getHours()).toBe(6)
+    expect(occurred[1].getHours()).toBe(6)
   })
 
   it('fails closed when a process event cannot be mapped to one of several active roles', () => {
