@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - 'scripts/v10-cloud-foundation.py'
+      - 'src/vite-env.d.ts'
       - '.github/workflows/v10-cloud-foundation.yml'
 
 permissions:
