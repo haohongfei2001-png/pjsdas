@@ -131,6 +131,19 @@ describe('natural-language progress planner', () => {
     })
   })
 
+  it('matches a unique partial role name when one company has several roles', () => {
+    const roles = [
+      opportunity('D-PRODUCT', '丁公司', '产品管培生'),
+      opportunity('D-OPS', '丁公司', '运营管培生（上海）', 'closed'),
+    ]
+    const plan = parseProgressUpdate('9月3日，丁公司运营管培流程开启。', roles, now)
+    expect(plan.operations[0]).toMatchObject({
+      kind: 'upsert_opportunity',
+      opportunityId: 'D-OPS',
+      mode: 'submitted',
+    })
+  })
+
   it('carries one stated receive time across adjacent assessment clauses', () => {
     const plan = parseProgressUpdate(
       '9月10日，6点收到：甲公司产品经理测评48小时。丙公司产品经理测评7日内。',
@@ -142,6 +155,23 @@ describe('natural-language progress planner', () => {
     const occurred = events.map((item) => item.kind === 'process_event' ? new Date(item.occurredAt) : new Date(0))
     expect(occurred[0].getHours()).toBe(6)
     expect(occurred[1].getHours()).toBe(6)
+  })
+
+  it('can split an unknown Latin company from a role using an explicit colon', () => {
+    const plan = parseProgressUpdate('9月8日，投递NOVA：新品研发项目管理管培生。', current, now)
+    expect(plan.operations[0]).toMatchObject({
+      kind: 'upsert_opportunity',
+      company: 'NOVA',
+      role: '新品研发项目管理管培生',
+      mode: 'submitted',
+    })
+  })
+
+  it('surfaces unmatched history instead of silently dropping it', () => {
+    const plan = parseProgressUpdate('9月5日，开始个人作品集项目。', current, now)
+    expect(plan.executable).toHaveLength(0)
+    expect(plan.unresolved).toHaveLength(1)
+    expect(plan.unresolved[0].sourceText).toBe('开始个人作品集项目')
   })
 
   it('fails closed when a process event cannot be mapped to one of several active roles', () => {
