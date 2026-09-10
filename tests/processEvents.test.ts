@@ -5,8 +5,9 @@ import {
   createProcessEvent,
   overlayProcessEventsOnOpportunities,
   overlayProcessEventsOnProcesses,
+  suppressSupersededActions,
 } from '../src/processEvents'
-import type { Opportunity, ProcessEvent, ProcessRecord } from '../src/model'
+import type { Action, Opportunity, ProcessEvent, ProcessRecord } from '../src/model'
 
 const opportunity: Opportunity = {
   id: 'OPP-001',
@@ -35,6 +36,22 @@ function event(overrides: Partial<ProcessEvent> = {}): ProcessEvent {
     createdAt: '2026-09-10T01:00:00.000Z',
     updatedAt: '2026-09-10T01:00:00.000Z',
     ...overrides,
+  }
+}
+
+function importedAction(kind: Action['kind'], id: string): Action {
+  return {
+    id,
+    kind,
+    title: id,
+    opportunityId: opportunity.id,
+    dueAt: '2026-09-12T15:59:59.000Z',
+    estimatedMinutes: 20,
+    leverage: 70,
+    delayCost: 60,
+    status: 'todo',
+    createdAt: '2026-09-01T00:00:00.000Z',
+    updatedAt: '2026-09-01T00:00:00.000Z',
   }
 }
 
@@ -98,8 +115,10 @@ describe('process event projection', () => {
 
     expect(projectedOpportunities[0].processStage).toBe('interview')
     expect(projectedOpportunities[0].currentStageLabel).toBe('面试')
+    expect(projectedOpportunities[0].effectiveProcessEventId).toBe(latest.id)
     expect(projectedProcesses[0].stage).toBe('interview')
     expect(projectedProcesses[0].nextCheckAt).toBeUndefined()
+    expect(projectedProcesses[0].effectiveProcessEventId).toBe(latest.id)
     expect(importedProcess.stage).toBe('screening')
   })
 
@@ -112,5 +131,24 @@ describe('process event projection', () => {
     )
     expect(projected[0].stage).toBe('screening')
     expect(projected[0].nextCheckAt).toBe('2026-09-12T00:00:00.000Z')
+  })
+
+  it('hides stale apply and follow-up actions once a newer real stage event exists', () => {
+    const latest = event()
+    const projectedOpportunity = overlayProcessEventsOnOpportunities(
+      [opportunity],
+      [latest],
+      [importedProcess],
+    )[0]
+    const eventAction = actionForProcessEvent(latest)!
+    const actions = [
+      importedAction('apply', 'apply:OPP-001'),
+      importedAction('follow_up', 'follow-up:1'),
+      importedAction('prep', 'prep:shared'),
+      eventAction,
+    ]
+
+    const visible = suppressSupersededActions(actions, [projectedOpportunity])
+    expect(visible.map((item) => item.id)).toEqual(['prep:shared', eventAction.id])
   })
 })
