@@ -228,3 +228,99 @@ export function selectTodayActions(ranked: RankedAction[], now = new Date(), lim
 
   return selected
 }
+
+export interface TimePlan {
+  budgetMinutes: number
+  planned: RankedAction[]
+  totalMinutes: number
+  requiredTodayMinutes: number
+  overBudgetMinutes: number
+  remainingMinutes: number
+  nearDeadlineUnplanned: RankedAction[]
+}
+
+function isHardDeadlineAction(item: RankedAction) {
+  return item.action.kind === 'apply' || item.action.kind === 'group_decision'
+}
+
+/**
+ * Produces an executable plan for a concrete time budget instead of merely a
+ * ranking. Hard deadlines due before the end of the local calendar day are
+ * treated as required work. If those tasks alone exceed the budget, the plan
+ * deliberately stays over budget and reports the deficit rather than hiding a
+ * deadline and pretending the requested budget is sufficient.
+ */
+export function buildTimePlan(
+  ranked: RankedAction[],
+  budgetMinutes: number,
+  now = new Date(),
+): TimePlan {
+  const budget = Math.max(30, Math.round(budgetMinutes))
+  const endOfToday = new Date(now)
+  endOfToday.setHours(23, 59, 59, 999)
+
+  const requiredToday = ranked
+    .filter((item) => {
+      if (!isHardDeadlineAction(item) || !item.action.dueAt) return false
+      const due = new Date(item.action.dueAt)
+      return due.getTime() >= now.getTime() && due.getTime() <= endOfToday.getTime()
+    })
+    .sort((a, b) =>
+      new Date(a.action.dueAt!).getTime() - new Date(b.action.dueAt!).getTime() ||
+      b.score - a.score,
+    )
+
+  const planned = [...requiredToday]
+  const selectedIds = new Set(planned.map((item) => item.action.id))
+  const requiredTodayMinutes = requiredToday.reduce(
+    (total, item) => total + item.action.estimatedMinutes,
+    0,
+  )
+  let totalMinutes = requiredTodayMinutes
+
+  if (totalMinutes <= budget) {
+    const candidates = selectTodayActions(ranked, now, 24)
+    let followUps = planned.filter((item) => item.action.kind === 'follow_up').length
+    let prepItems = planned.filter((item) => item.action.kind === 'prep').length
+
+    for (const item of candidates) {
+      if (selectedIds.has(item.action.id)) continue
+      if (totalMinutes + item.action.estimatedMinutes > budget) continue
+
+      if (item.action.kind === 'follow_up') {
+        if (followUps >= 2) continue
+        followUps += 1
+      }
+
+      if (item.action.kind === 'prep') {
+        if (prepItems >= 2) continue
+        prepItems += 1
+      }
+
+      planned.push(item)
+      selectedIds.add(item.action.id)
+      totalMinutes += item.action.estimatedMinutes
+    }
+  }
+
+  const nearDeadlineUnplanned = ranked
+    .filter((item) => {
+      if (!isHardDeadlineAction(item) || !item.action.dueAt || selectedIds.has(item.action.id)) return false
+      const hours = hoursUntil(item.action.dueAt, now)
+      return hours !== undefined && hours >= 0 && hours <= 48
+    })
+    .sort((a, b) => new Date(a.action.dueAt!).getTime() - new Date(b.action.dueAt!).getTime())
+
+  const overBudgetMinutes = Math.max(0, totalMinutes - budget)
+  const remainingMinutes = Math.max(0, budget - totalMinutes)
+
+  return {
+    budgetMinutes: budget,
+    planned,
+    totalMinutes,
+    requiredTodayMinutes,
+    overBudgetMinutes,
+    remainingMinutes,
+    nearDeadlineUnplanned,
+  }
+}
