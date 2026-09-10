@@ -8,7 +8,7 @@ PJSDAS is a local-first personal job-search decision workspace. Its core purpose
 
 **The system should help answer one question within 30 seconds: _What should I do next for my job search?_**
 
-## v0.1 scope
+## Current scope
 
 - **Today** — prioritized actions for the current day, with clear reasons
 - **Opportunities** — the job opportunity pool
@@ -28,18 +28,22 @@ PJSDAS separates job-search information into five layers:
 
 ## Decision engine
 
-The initial version will be deterministic and explainable. Priority should be based on factors such as opportunity value, fit, urgency, process stage, consequence of delay, expected time cost, and reuse value. AI may later help interpret unstructured information, but it is not required for the core ranking logic.
+The initial version is deterministic and explainable. Priority is based on factors such as opportunity value, fit, urgency, process stage, consequence of delay, expected time cost, and reuse value. AI may later help interpret unstructured information, but it is not required for the core ranking logic.
 
-## Architecture direction
+## Architecture
 
 - Web App / PWA
 - Desktop-first, mobile-friendly
 - Local-first personal data storage
 - React + TypeScript
 - IndexedDB for local data
-- Spreadsheet import/export
+- Spreadsheet import
 - GitHub Pages deployment
+
+## Spreadsheet integration
+
+PJSDAS v0.2 maps the current job-search workbook into a smaller decision model instead of reproducing every worksheet. The primary imported sources are the application master table, role details, active pipeline, preparation center, and application groups. Derived sheets such as dashboard and recent-action views are recalculated by PJSDAS at runtime.
 
 ## Status
 
-Repository initialized. The next step is to map the current job-application spreadsheet into the PJSDAS data model before implementing the first usable Today engine.
+v0.2 is buildable and includes local Excel import, persistent IndexedDB storage, generated application/follow-up/preparation actions, and a first explainable Today ranking engine. GitHub Pages deployment is configured through GitHub Actions.
