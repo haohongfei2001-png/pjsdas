@@ -9,6 +9,15 @@ export type ProcessStage =
   | 'waiting_release'
   | 'closed'
 
+export type ProcessEventType =
+  | 'assessment_invite'
+  | 'written_test_invite'
+  | 'interview_invite'
+  | 'offer'
+  | 'rejection'
+  | 'status_update'
+  | 'other'
+
 export type ActionKind = 'apply' | 'follow_up' | 'prep' | 'group_decision' | 'manual'
 export type ActionStatus = 'todo' | 'doing' | 'done' | 'skipped'
 export type PriorityLevel = 'P0' | 'P1' | 'P2' | 'expired' | 'none'
@@ -70,6 +79,21 @@ export interface ProcessRecord {
   notes?: string
 }
 
+export interface ProcessEvent {
+  id: string
+  opportunityId: string
+  company: string
+  role: string
+  type: ProcessEventType
+  occurredAt: string
+  dueAt?: string
+  estimatedMinutes?: number
+  notes?: string
+  source: 'manual' | 'email' | 'other'
+  createdAt: string
+  updatedAt: string
+}
+
 export interface Action {
   id: string
   kind: ActionKind
@@ -77,6 +101,8 @@ export interface Action {
   opportunityId?: string
   prepId?: string
   applicationGroupId?: string
+  processEventId?: string
+  processStage?: ProcessStage
   dueAt?: string
   estimatedMinutes: number
   leverage: number
