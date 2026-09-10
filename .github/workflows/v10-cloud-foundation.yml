@@ -1,0 +1,35 @@
+name: V10 Cloud Foundation
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/v10-cloud-foundation.py'
+      - '.github/workflows/v10-cloud-foundation.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Apply v1.0 cloud foundation
+        run: python3 scripts/v10-cloud-foundation.py
+      - name: Add Supabase browser client
+        run: npm install @supabase/supabase-js@^2 --save
+      - name: Release v1.0
+        run: npm version 1.0.0 --no-git-tag-version --allow-same-version
+      - name: Verify
+        run: |
+          npm audit --audit-level=high
+          npm test
+          npm run build
+      - name: Commit product changes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src tests docs supabase README.md package.json package-lock.json .env.example .gitignore .github/workflows/deploy-pages.yml
+          git commit -m "Add local-first account and cloud sync foundation"
+          git push
