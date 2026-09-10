@@ -92,18 +92,26 @@ function initialLanguage(): UiLanguage {
   return window.localStorage.getItem(STORAGE_KEY) === 'en' ? 'en' : 'zh'
 }
 
+function applyLanguage(lang: UiLanguage) {
+  if (typeof window === 'undefined') return
+  window.localStorage.setItem(STORAGE_KEY, lang)
+  document.documentElement.lang = lang === 'zh' ? 'zh-CN' : 'en'
+  document.documentElement.dataset.uiLang = lang
+}
+
 export function UiLanguageProvider({ children }: { children: ReactNode }) {
   const [lang, setLanguage] = useState<UiLanguage>(initialLanguage)
 
   useEffect(() => {
-    window.localStorage.setItem(STORAGE_KEY, lang)
-    document.documentElement.lang = lang === 'zh' ? 'zh-CN' : 'en'
-    document.documentElement.dataset.uiLang = lang
+    applyLanguage(lang)
   }, [lang])
 
   const value = useMemo<UiLanguageContextValue>(() => ({
     lang,
-    setLang: setLanguage,
+    setLang: (next) => {
+      applyLanguage(next)
+      setLanguage(next)
+    },
     t: (key) => dictionary[key][lang === 'zh' ? 0 : 1],
   }), [lang])
 
