@@ -9,7 +9,7 @@ import {
 } from './processEvents'
 import { mergeActionsForReimport } from './reimportState'
 import { createSnapshot, validateSnapshot, type PJSDASSnapshot } from './snapshot'
-import { createDefaultDecisionRules, validateDecisionRules, type DecisionRules } from './decisionRules'
+import { createDefaultDecisionRules, decisionRulesForSnapshot, validateDecisionRules, type DecisionRules } from './decisionRules'
 import {
   assertChangeSetValid,
   createActionStatusChangeSet,
@@ -192,7 +192,7 @@ export async function getLastImport() {
 
 export async function getDecisionRules() {
   const stored = await (await dbPromise).get('decisionRules', 'current')
-  return stored ?? createDefaultDecisionRules()
+  return stored ?? decisionRulesForSnapshot()
 }
 
 async function ensureTimelineBackfill(db: Awaited<typeof dbPromise>) {
@@ -669,7 +669,7 @@ export async function exportLocalSnapshot() {
     actions,
     prep,
     applicationGroups,
-    decisionRules: decisionRules ?? createDefaultDecisionRules(),
+    decisionRules: decisionRulesForSnapshot(decisionRules),
     timeline,
     changeSets,
     meta,

@@ -60,6 +60,10 @@ export function createDefaultDecisionRules(now = new Date().toISOString()): Deci
   return { ...DEFAULT_DECISION_RULES, weights: { ...DEFAULT_DECISION_RULES.weights }, updatedAt: now }
 }
 
+export function decisionRulesForSnapshot(rules?: DecisionRules): DecisionRules {
+  return rules ? cloneDecisionRules(rules) : cloneDecisionRules(DEFAULT_DECISION_RULES)
+}
+
 export function validateDecisionRules(rules: DecisionRules): string[] {
   const errors: string[] = []
   const integerRange = (label: string, value: number, min: number, max: number) => {
