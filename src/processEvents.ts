@@ -181,6 +181,8 @@ export function overlayProcessEventsOnOpportunities(
       ...opportunity,
       processStage: stage,
       currentStageLabel: processEventStageLabel(event),
+      effectiveProcessEventId: event.id,
+      effectiveProcessEventAt: event.occurredAt,
     }
   })
 }
@@ -213,6 +215,8 @@ export function overlayProcessEventsOnProcesses(
       silenceRisk: staged ? undefined : process.silenceRisk,
       currentAction: task?.title ?? process.currentAction,
       notes: latest.notes ?? process.notes,
+      effectiveProcessEventId: staged?.id,
+      effectiveProcessEventAt: staged?.occurredAt,
     }
   })
 
@@ -235,6 +239,8 @@ export function overlayProcessEventsOnProcesses(
       silenceRisk: undefined,
       currentAction: task?.title,
       notes: latest.notes,
+      effectiveProcessEventId: staged?.id,
+      effectiveProcessEventAt: staged?.occurredAt,
     })
   }
 
