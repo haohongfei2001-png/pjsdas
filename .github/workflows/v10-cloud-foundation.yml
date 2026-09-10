@@ -16,6 +16,18 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Normalize Pages workflow input for one-shot patch
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('.github/workflows/deploy-pages.yml')
+          s = p.read_text()
+          env_block = """  build:\n    runs-on: ubuntu-latest\n    env:\n      VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL }}\n      VITE_SUPABASE_PUBLISHABLE_KEY: ${{ vars.VITE_SUPABASE_PUBLISHABLE_KEY }}\n    steps:\n"""
+          old_block = """  build:\n    runs-on: ubuntu-latest\n    steps:\n"""
+          if env_block in s:
+              s = s.replace(env_block, old_block, 1)
+              p.write_text(s)
+          PY
       - name: Apply v1.0 cloud foundation
         run: python3 scripts/v10-cloud-foundation.py
       - name: Add Supabase browser client
