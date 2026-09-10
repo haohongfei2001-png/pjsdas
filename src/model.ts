@@ -18,6 +18,7 @@ export type ProcessEventType =
   | 'status_update'
   | 'other'
 
+export type ActionTimingMode = 'deadline' | 'fixed'
 export type ActionKind = 'apply' | 'follow_up' | 'prep' | 'group_decision' | 'manual'
 export type ActionStatus = 'todo' | 'doing' | 'done' | 'skipped'
 export type PriorityLevel = 'P0' | 'P1' | 'P2' | 'expired' | 'none'
@@ -91,6 +92,7 @@ export interface ProcessEvent {
   type: ProcessEventType
   occurredAt: string
   dueAt?: string
+  timingMode?: ActionTimingMode
   estimatedMinutes?: number
   notes?: string
   source: 'manual' | 'email' | 'other'
@@ -108,6 +110,7 @@ export interface Action {
   processEventId?: string
   processStage?: ProcessStage
   dueAt?: string
+  timingMode?: ActionTimingMode
   estimatedMinutes: number
   leverage: number
   delayCost: number
