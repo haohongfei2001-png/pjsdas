@@ -588,6 +588,84 @@ export async function applyActionStatusChangeSet(actionId: string, status: Actio
   return applyChangeSet(changeSet.id)
 }
 
+function compactOpportunityIdentity(value: string) {
+  return value.toLocaleLowerCase().replace(/[\s\u3000·•｜|（）()【】\[\]，,。.!！?？:：;；/\\_-]+/g, '')
+}
+
+function opportunityIdentity(company: string, role: string) {
+  return `${compactOpportunityIdentity(company)}|${compactOpportunityIdentity(role)}`
+}
+
+type DiscoveredChangeOperation = Extract<ChangeSetRecord['operations'][number], { kind: 'add_discovered_opportunity' }>
+
+async function applyDiscoveredOpportunityOperations(operations: DiscoveredChangeOperation[], changeSetId: string) {
+  const db = await dbPromise
+  const existing = await db.getAll('opportunities')
+  const existingIds = new Set(existing.map((item) => item.id))
+  const identities = new Set(existing.map((item) => opportunityIdentity(item.company, item.role)))
+  const batchIds = new Set<string>()
+  const batchIdentities = new Set<string>()
+
+  for (const operation of operations) {
+    const opportunity = operation.opportunity
+    const identity = opportunityIdentity(opportunity.company, opportunity.role)
+    if (existingIds.has(opportunity.id) || identities.has(identity)) {
+      throw new Error(`岗位 ${opportunity.company}｜${opportunity.role} 已存在，请重新让 ChatGPT 基于最新工作区生成提议。`)
+    }
+    if (batchIds.has(opportunity.id) || batchIdentities.has(identity)) {
+      throw new Error(`岗位发现 ChangeSet 内含重复岗位：${opportunity.company}｜${opportunity.role}。`)
+    }
+    batchIds.add(opportunity.id)
+    batchIdentities.add(identity)
+  }
+
+  const tx = db.transaction(['opportunities', 'actions', 'timeline'], 'readwrite')
+  const opportunityStore = tx.objectStore('opportunities')
+  const actionStore = tx.objectStore('actions')
+  const timelineStore = tx.objectStore('timeline')
+  const recordedAt = new Date().toISOString()
+
+  for (const operation of operations) {
+    const opportunity = operation.opportunity
+    await opportunityStore.put(opportunity)
+    const actionId = `apply:${opportunity.id}`
+    await actionStore.put({
+      id: actionId,
+      kind: 'apply',
+      title: `投递 ${opportunity.company}｜${opportunity.role}`,
+      opportunityId: opportunity.id,
+      processStage: 'not_applied',
+      dueAt: opportunity.deadline,
+      timingMode: opportunity.deadline ? 'deadline' : undefined,
+      estimatedMinutes: opportunity.prepEstimateMinutes ?? 45,
+      leverage: 70,
+      delayCost: opportunity.deadline ? 65 : 40,
+      status: 'todo',
+      sourceLabel: 'ChatGPT 岗位发现',
+      createdAt: opportunity.importedAt,
+      updatedAt: opportunity.importedAt,
+    })
+    await timelineStore.put({
+      id: `timeline:discovery:${opportunity.id}`,
+      kind: 'opportunity_added',
+      category: 'opportunity',
+      source: 'changeset',
+      occurredAt: opportunity.importedAt,
+      recordedAt,
+      title: '接受 AI 发现岗位',
+      detail: opportunity.detail?.discovery?.rationale,
+      opportunityId: opportunity.id,
+      actionId,
+      changeSetId,
+      company: opportunity.company,
+      role: opportunity.role,
+      sourceRef: opportunity.detail?.discovery?.sourceUrl,
+    })
+  }
+
+  await tx.done
+}
+
 async function markChangeSetFailed(changeSet: ChangeSetRecord, caught: unknown) {
   const now = new Date().toISOString()
   const failed: ChangeSetRecord = {
@@ -609,6 +687,10 @@ export async function applyChangeSet(id: string) {
   if (changeSet.status !== 'pending') throw new Error(`ChangeSet ${id} 当前状态为 ${changeSet.status}，不能应用。`)
 
   try {
+    const discoveredOperations = changeSet.operations.filter((operation): operation is DiscoveredChangeOperation => operation.kind === 'add_discovered_opportunity')
+    if (discoveredOperations.length > 0) {
+      await applyDiscoveredOpportunityOperations(discoveredOperations, changeSet.id)
+    } else {
     const progressOperations = changeSet.operations.filter((operation) => operation.kind === 'progress_update')
     if (progressOperations.length === changeSet.operations.length) {
       // The primary Natural Language Update path remains one IndexedDB transaction:
@@ -647,6 +729,7 @@ export async function applyChangeSet(id: string) {
         throw new Error(`Action ${operation.actionId} 状态已经变化，请重新操作。`)
       }
       await updateActionStatus(operation.actionId, operation.status)
+    }
     }
 
     const appliedAt = new Date().toISOString()
