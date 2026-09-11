@@ -12,6 +12,7 @@ import {
   listOpportunities,
 } from '../src/ai/readLayer.js'
 import { enrichOpportunityListWithFacts } from '../src/ai/richOpportunityRead.js'
+import { decisionRulesForSnapshot } from '../src/decisionRules.js'
 import { WorkspaceSourceError, type WorkspaceSource } from './workspaceSource.js'
 
 export const READ_TOOL_NAMES = [
@@ -153,9 +154,16 @@ export async function invokeReadTool(
       }
       case 'get_pipeline':
         return success(getPipeline(snapshot, getPipelineSchema.parse(args), context))
-      case 'get_decision_rules':
+      case 'get_decision_rules': {
         getDecisionRulesSchema.parse(args)
-        return success(getDecisionRules(snapshot, context))
+        const output = getDecisionRules(snapshot, context)
+        const rules = decisionRulesForSnapshot(snapshot.data.decisionRules)
+        return success({
+          ...output,
+          fitComponentWeights: { ...rules.fitComponentWeights! },
+          opportunityValueComponentWeights: { ...rules.opportunityValueComponentWeights! },
+        })
+      }
       case 'get_discovery_context':
         getDiscoveryContextSchema.parse(args)
         return success(getDiscoveryContext(snapshot, context))
