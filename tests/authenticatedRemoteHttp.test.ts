@@ -47,7 +47,7 @@ describe('authenticated remote MCP', () => {
     expect(fetchImpl).not.toHaveBeenCalled()
   })
 
-  it('allows authenticated tool discovery without touching Google Drive', async () => {
+  it('allows authenticated tool discovery, including propose_changes, without touching Google Drive', async () => {
     const fetchImpl = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input)
       if (url.endsWith('/auth/v1/user')) return json({ id: 'user-a', email: 'a@gmail.com' })
@@ -60,6 +60,8 @@ describe('authenticated remote MCP', () => {
     const text = await responseText(response)
     expect(text).toContain('get_today_plan')
     expect(text).toContain('get_decision_rules')
+    expect(text).toContain('propose_changes')
+    expect(text).toContain('does not change the workspace')
     expect(fetchImpl).toHaveBeenCalledTimes(1)
     expect(String(vi.mocked(fetchImpl).mock.calls[0]?.[0])).toContain('/auth/v1/user')
   })
