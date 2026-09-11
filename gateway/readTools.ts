@@ -118,6 +118,16 @@ function failure(caught: unknown): CallToolResult {
   )
 }
 
+function readMeta(context: { now?: Date; timezone?: string; workspaceVersion?: string }) {
+  const now = context.now ?? new Date()
+  return {
+    workspaceVersion: context.workspaceVersion,
+    generatedAt: now.toISOString(),
+    timezone: context.timezone ?? Intl.DateTimeFormat().resolvedOptions().timeZone ?? 'UTC',
+    source: 'pjsdas' as const,
+  }
+}
+
 export async function invokeReadTool(
   source: WorkspaceSource,
   name: ReadToolName,
@@ -150,7 +160,7 @@ export async function invokeReadTool(
         if (!snapshot.data.opportunities.some((item) => item.id === parsed.opportunityId)) {
           return toolError('NOT_FOUND', `Opportunity ${parsed.opportunityId} was not found.`, false)
         }
-        return success(getOpportunityAssessment(snapshot, parsed))
+        return success({ meta: readMeta(context), ...getOpportunityAssessment(snapshot, parsed) })
       }
       case 'get_pipeline':
         return success(getPipeline(snapshot, getPipelineSchema.parse(args), context))
