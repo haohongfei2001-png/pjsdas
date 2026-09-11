@@ -18,7 +18,7 @@ import {
 import { discoveryProfileForSnapshot, isDiscoveryProfileConfigured } from '../src/discoveryProfile.js'
 import { screenDiscoveryCandidates } from '../src/discoveryQuality.js'
 import { createJobPostingEvidence } from '../src/jobPosting.js'
-import { createOpportunityFacts } from '../src/richOpportunity.js'
+import { createOpportunityFacts, validateOpportunityFacts } from '../src/richOpportunity.js'
 import { buildMcpProposalReviewUrl, type McpDiscoveryReview } from '../src/ai/mcpProposal.js'
 import { parseProgressUpdate } from '../src/progressUpdate.js'
 import type { ActionStatus, DiscoveryConfidence, Opportunity, OpportunityRole } from '../src/model.js'
@@ -256,6 +256,10 @@ function discoveredOpportunity(
     annualCompensationMinWan: candidate.annualCompensationMinWan,
     facts: candidate.facts,
   })
+  const factErrors = validateOpportunityFacts(facts)
+  if (factErrors.length) {
+    throw new WorkspaceSourceError('INVALID_ARGUMENT', `Rich Opportunity facts are invalid: ${factErrors[0]}`, false)
+  }
   return {
     id: discoveredOpportunityId(candidate.company, candidate.role),
     company: candidate.company,
