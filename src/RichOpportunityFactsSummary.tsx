@@ -1,5 +1,6 @@
 import { opportunityFactsCompleteness } from './richOpportunity.js'
 import type { OpportunityFacts } from './model.js'
+import './richOpportunityFacts.css'
 
 function join(values: string[] | undefined) {
   return values?.length ? values.join(' · ') : undefined
