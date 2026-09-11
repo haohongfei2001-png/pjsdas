@@ -1,6 +1,7 @@
 import { McpServer } from '@modelcontextprotocol/server'
 import {
   explainPrioritySchema,
+  getOpportunityAssessmentSchema,
   getPipelineSchema,
   getRecentTimelineSchema,
   getDiscoveryContextSchema,
@@ -43,6 +44,8 @@ export function createPjsdasMcpServer(
     'For job discovery, first call get_discovery_context. Treat its Discovery Profile as the durable user-controlled search preference source; do not silently invent or rewrite durable preferences from chat history.',
     'PJSDAS itself does not crawl the web. If the user asks for current job opportunities, use ChatGPT web search/browsing outside PJSDAS, preserve public source URLs, and keep unknown job facts unknown rather than fabricating them.',
     'When a public source explicitly supports them, submit bounded structured Rich Opportunity facts such as responsibilities, requirements, education, majors, experience, skills, languages, department/business unit, recruitment batch, application method, and compensation evidence. Do not convert model inference into source facts.',
+    'For new web-discovered jobs, prefer bounded component assessments over opaque aggregate ratings. PJSDAS derives Fit and Opportunity Value totals from explicit component scores, confidence, rationale, and user-controlled component weights.',
+    'Use get_opportunity_assessment when the user asks why a stored Fit or Opportunity Value score exists, or how current component weights would project the saved assessment. Do not claim current-rule projection silently rewrites historical stored scores.',
   ]
 
   if (proposalMode === 'review-link') {
@@ -51,7 +54,7 @@ export function createPjsdasMcpServer(
       'Never tell the user that a proposed change was applied. State clearly that the user must open the returned reviewUrl and explicitly Apply or Discard it in PJSDAS.',
       'For action status changes, read current actions first and use exact action IDs. For ambiguous updates, ask the user to clarify rather than guessing.',
       'For web-discovered jobs, submit only source-backed candidates through discoveredOpportunities. Do not mix discovery candidates with unrelated updates in the same ChangeSet.',
-      'Rich Opportunity facts are evidence fields, not ratings. Keep fitScore, opportunityValue, confidence, and rationale separate from source-backed job facts.',
+      'Rich Opportunity facts are evidence fields, not ratings. Component assessment is the preferred rating path; legacy aggregate score fields remain compatibility input only.',
     )
   } else {
     instructions.push('This server exposes no mutation or proposal tools.')
@@ -65,7 +68,7 @@ export function createPjsdasMcpServer(
   }
 
   const server = new McpServer(
-    { name: 'pjsdas', version: options.version ?? '1.5.0-alpha.1' },
+    { name: 'pjsdas', version: options.version ?? '1.5.0-alpha.2' },
     { instructions: instructions.join(' ') },
   )
 
@@ -84,11 +87,22 @@ export function createPjsdasMcpServer(
     'list_opportunities',
     {
       title: 'List PJSDAS opportunities',
-      description: 'Query the PJSDAS opportunity pool with bounded filters such as stage, company, role type, query text, or deadline.',
+      description: 'Query the PJSDAS opportunity pool with bounded filters such as stage, company, role type, query text, or deadline. Rich facts are optional and bounded.',
       inputSchema: listOpportunitiesSchema,
       annotations: readOnlyAnnotations,
     },
     async (args) => invokeReadTool(source, 'list_opportunities', args),
+  )
+
+  server.registerTool(
+    'get_opportunity_assessment',
+    {
+      title: 'Get PJSDAS opportunity assessment',
+      description: 'Read a single Opportunity component assessment, stored aggregate Fit/Opportunity Value scores, and the explicit current-rules projection. This tool never rewrites historical scores.',
+      inputSchema: getOpportunityAssessmentSchema,
+      annotations: readOnlyAnnotations,
+    },
+    async (args) => invokeReadTool(source, 'get_opportunity_assessment', args),
   )
 
   server.registerTool(
@@ -106,7 +120,7 @@ export function createPjsdasMcpServer(
     'get_decision_rules',
     {
       title: 'Get PJSDAS decision rules',
-      description: 'Read the explicit user-controlled rules that govern PJSDAS planning, risk thresholds, and ranking weights.',
+      description: 'Read the explicit user-controlled rules that govern PJSDAS planning, risk thresholds, ranking weights, and component-assessment weights.',
       annotations: readOnlyAnnotations,
     },
     async () => invokeReadTool(source, 'get_decision_rules', {}),
@@ -127,7 +141,7 @@ export function createPjsdasMcpServer(
     'explain_priority',
     {
       title: 'Explain PJSDAS priority',
-      description: 'Explain an action or opportunity using PJSDAS deterministic scoring components and active guardrails.',
+      description: 'Explain an action or opportunity using PJSDAS deterministic Today-ranking components and active guardrails.',
       inputSchema: explainPrioritySchema,
       annotations: readOnlyAnnotations,
     },
@@ -151,7 +165,7 @@ export function createPjsdasMcpServer(
       'propose_changes',
       {
         title: 'Propose PJSDAS changes for review',
-        description: 'Create a signed, review-only PJSDAS ChangeSet. Supports natural-language progress, exact action-status changes, explicit Decision Rules patches, or a separate batch of source-backed discoveredOpportunities from current public job-search results. Discovery candidates may include bounded source-backed Rich Opportunity facts. This does not change the workspace. Return reviewUrl for explicit Apply/Discard in PJSDAS.',
+        description: 'Create a signed, review-only PJSDAS ChangeSet. Supports natural-language progress, exact action-status changes, explicit Decision Rules patches, or a separate batch of source-backed discoveredOpportunities. New discovery candidates should use bounded component assessments; legacy aggregate scores remain accepted for compatibility. This does not change the workspace. Return reviewUrl for explicit Apply/Discard in PJSDAS.',
         inputSchema: proposeChangesSchema,
         annotations: proposalAnnotations,
       },
