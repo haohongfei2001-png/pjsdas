@@ -1,7 +1,5 @@
-import {
-  AUTHENTICATED_MCP_RESOURCE,
-  AUTHORIZATION_SERVER,
-} from '../gateway/authenticatedRemoteHttp'
+const AUTHENTICATED_MCP_RESOURCE = 'https://pjsdas-remote-alpha.vercel.app/api/mcp-auth'
+const AUTHORIZATION_SERVER = 'https://yyrzwpoxlxpafdlbkdtg.supabase.co/auth/v1'
 
 export default {
   fetch() {
