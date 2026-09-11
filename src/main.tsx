@@ -8,6 +8,7 @@ import ProgressInbox from './ProgressInbox.js'
 import { UiLanguageProvider } from './uiLanguage.js'
 import { CloudProvider } from './cloud/CloudContext.js'
 import { AiAccessProvider } from './aiAccess/AiAccessContext.js'
+import McpProposalReview from './aiAccess/McpProposalReview.js'
 import OAuthConsentPage from './aiAccess/OAuthConsentPage.js'
 import './styles.css'
 import './designSystem.css'
@@ -41,6 +42,7 @@ function Entry() {
   return (
     <CloudProvider>
       <AiAccessProvider>
+        <McpProposalReview />
         <Root />
       </AiAccessProvider>
     </CloudProvider>

@@ -27,7 +27,10 @@ async function responseText(response: Response) {
   return text.split('\n').filter((line) => line.startsWith('data:')).map((line) => line.slice(5).trim()).join('\n')
 }
 
-afterEach(() => vi.unstubAllGlobals())
+afterEach(() => {
+  vi.unstubAllGlobals()
+  vi.unstubAllEnvs()
+})
 
 describe('authenticated remote MCP', () => {
   it('makes the existing /api/mcp connector require OAuth instead of serving demo data', async () => {
@@ -47,7 +50,8 @@ describe('authenticated remote MCP', () => {
     expect(fetchImpl).not.toHaveBeenCalled()
   })
 
-  it('allows authenticated tool discovery without touching Google Drive', async () => {
+  it('allows authenticated tool discovery, including propose_changes, without touching Google Drive', async () => {
+    vi.stubEnv('PJSDAS_TOKEN_ENCRYPTION_KEY', 'test-proposal-signing-secret')
     const fetchImpl = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input)
       if (url.endsWith('/auth/v1/user')) return json({ id: 'user-a', email: 'a@gmail.com' })
@@ -60,6 +64,8 @@ describe('authenticated remote MCP', () => {
     const text = await responseText(response)
     expect(text).toContain('get_today_plan')
     expect(text).toContain('get_decision_rules')
+    expect(text).toContain('propose_changes')
+    expect(text).toContain('does not change the workspace')
     expect(fetchImpl).toHaveBeenCalledTimes(1)
     expect(String(vi.mocked(fetchImpl).mock.calls[0]?.[0])).toContain('/auth/v1/user')
   })
