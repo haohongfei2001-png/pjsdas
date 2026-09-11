@@ -27,7 +27,10 @@ async function responseText(response: Response) {
   return text.split('\n').filter((line) => line.startsWith('data:')).map((line) => line.slice(5).trim()).join('\n')
 }
 
-afterEach(() => vi.unstubAllGlobals())
+afterEach(() => {
+  vi.unstubAllGlobals()
+  vi.unstubAllEnvs()
+})
 
 describe('authenticated remote MCP', () => {
   it('makes the existing /api/mcp connector require OAuth instead of serving demo data', async () => {
@@ -48,6 +51,7 @@ describe('authenticated remote MCP', () => {
   })
 
   it('allows authenticated tool discovery, including propose_changes, without touching Google Drive', async () => {
+    vi.stubEnv('PJSDAS_TOKEN_ENCRYPTION_KEY', 'test-proposal-signing-secret')
     const fetchImpl = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input)
       if (url.endsWith('/auth/v1/user')) return json({ id: 'user-a', email: 'a@gmail.com' })
