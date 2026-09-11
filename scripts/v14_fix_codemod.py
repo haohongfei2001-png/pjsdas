@@ -35,5 +35,6 @@ block = '''replace_once(
 )
 '''
 s = s[:start] + block + s[end:]
+s += '''\n# Keep the production health regression test aligned with the v1.4 gateway contract.\nreplace_once(\n    'tests/healthApi.test.ts',\n    "describes the authenticated v1.3 primary gateway without exposing demo data or secrets",\n    "describes the authenticated v1.4 primary gateway without exposing demo data or secrets",\n)\nreplace_once(\n    'tests/healthApi.test.ts',\n    "version: '1.3.0-alpha.1'",\n    "version: '1.4.0-alpha.1'",\n)\n'''
 p.write_text(s, encoding='utf-8')
-print('codemod quality-gate target fixed')
+print('codemod compatibility targets fixed')
