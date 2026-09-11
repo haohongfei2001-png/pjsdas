@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useUiLanguage } from '../uiLanguage'
 import { useCloud } from './CloudContext'
+import AiAccessSettingsCard from '../aiAccess/AiAccessSettingsCard'
 import './cloudSettings.css'
 
 function formatTime(iso: string | undefined, zh: boolean) {
@@ -38,7 +39,8 @@ export default function CloudSettingsCard() {
               : (zh ? '已同步' : 'Synced')
 
   return (
-    <section className="cloud-settings-card">
+    <>
+      <section className="cloud-settings-card">
       <div className="cloud-settings-heading">
         <div>
           <div className="eyebrow">GOOGLE DRIVE SYNC · V1.0</div>
@@ -135,6 +137,8 @@ export default function CloudSettingsCard() {
 
       {(localError || cloud.error || cloud.checkpoint.lastError) ? <div className="cloud-error">{localError || cloud.error || cloud.checkpoint.lastError}</div> : null}
       <small className="cloud-security-note">{zh ? 'Google Access Token 只保存在当前页面内存中，不写入 IndexedDB 或 localStorage；授权过期只会暂停云同步，本地 PJSDAS 继续可用。' : 'The Google access token is kept only in current-page memory, never IndexedDB or localStorage. Expired authorization pauses cloud sync while local PJSDAS remains usable.'}</small>
-    </section>
+      </section>
+      <AiAccessSettingsCard />
+    </>
   )
 }
