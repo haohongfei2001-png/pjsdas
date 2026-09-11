@@ -40,6 +40,8 @@ export function createPjsdasMcpServer(
     'PJSDAS is a personal job-search decision and action system.',
     'Use its explicit decision rules and deterministic explanations instead of inventing hidden ranking rules.',
     'Read tools never change PJSDAS state.',
+    'For job discovery, first call get_discovery_context. Treat its Discovery Profile as the durable user-controlled search preference source; do not silently invent or rewrite durable preferences from chat history.',
+    'PJSDAS itself does not crawl the web. If the user asks for current job opportunities, use ChatGPT web search/browsing outside PJSDAS, preserve public source URLs, and keep unknown job facts unknown rather than fabricating them.',
   ]
 
   if (proposalMode === 'review-link') {
@@ -47,6 +49,7 @@ export function createPjsdasMcpServer(
       'The propose_changes tool is review-only: it creates a validated pending ChangeSet and a signed PJSDAS review link, but it never mutates the workspace itself.',
       'Never tell the user that a proposed change was applied. State clearly that the user must open the returned reviewUrl and explicitly Apply or Discard it in PJSDAS.',
       'For action status changes, read current actions first and use exact action IDs. For ambiguous updates, ask the user to clarify rather than guessing.',
+      'For web-discovered jobs, submit only source-backed candidates through discoveredOpportunities. Do not mix discovery candidates with unrelated updates in the same ChangeSet.',
     )
   } else {
     instructions.push('This server exposes no mutation or proposal tools.')
@@ -60,7 +63,7 @@ export function createPjsdasMcpServer(
   }
 
   const server = new McpServer(
-    { name: 'pjsdas', version: options.version ?? '1.1.0-alpha.1' },
+    { name: 'pjsdas', version: options.version ?? '1.3.0-alpha.1' },
     { instructions: instructions.join(' ') },
   )
 
@@ -111,7 +114,7 @@ export function createPjsdasMcpServer(
     'get_discovery_context',
     {
       title: 'Get PJSDAS job discovery context',
-      description: 'Read the user-controlled Discovery Profile, active decision weights, and bounded existing opportunity identities before searching the web for new jobs. This tool does not search the web or mutate PJSDAS.',
+      description: 'Read the explicit user-controlled Discovery Profile, active decision weights, and bounded existing/closed opportunity identities before searching public job sources. PJSDAS does not search the web or mutate state in this tool.',
       inputSchema: getDiscoveryContextSchema,
       annotations: readOnlyAnnotations,
     },
@@ -146,7 +149,7 @@ export function createPjsdasMcpServer(
       'propose_changes',
       {
         title: 'Propose PJSDAS changes for review',
-        description: 'Create a pending PJSDAS ChangeSet from a natural-language progress update, exact action-status changes, and/or an explicit Decision Rules patch. This does not change the workspace. Return the signed reviewUrl so the user can inspect and explicitly Apply or Discard the proposal in PJSDAS.',
+        description: 'Create a signed, review-only PJSDAS ChangeSet. Supports natural-language progress, exact action-status changes, explicit Decision Rules patches, or a separate batch of source-backed discoveredOpportunities from current public job-search results. This tool never directly changes the workspace; return reviewUrl for explicit Apply/Discard in PJSDAS.',
         inputSchema: proposeChangesSchema,
         annotations: proposalAnnotations,
       },
