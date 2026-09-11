@@ -17,7 +17,7 @@ import {
 } from '../src/decisionRules.js'
 import { discoveryProfileForSnapshot, isDiscoveryProfileConfigured } from '../src/discoveryProfile.js'
 import { screenDiscoveryCandidates } from '../src/discoveryQuality.js'
-import { buildMcpProposalReviewUrl } from '../src/ai/mcpProposal.js'
+import { buildMcpProposalReviewUrl, type McpDiscoveryReview } from '../src/ai/mcpProposal.js'
 import { parseProgressUpdate } from '../src/progressUpdate.js'
 import type { ActionStatus, DiscoveryConfidence, Opportunity, OpportunityRole } from '../src/model.js'
 import { createSignedProposalToken } from './proposalToken.js'
@@ -248,6 +248,21 @@ function discoveredOpportunity(
   }
 }
 
+function discoveryReviewMetadata(
+  screening: NonNullable<ReturnType<typeof screenDiscoveryCandidates>>,
+): McpDiscoveryReview {
+  return {
+    received: screening.received,
+    accepted: screening.accepted.length,
+    duplicateCount: screening.skippedDuplicates.length,
+    rejectedCount: screening.rejectedCandidates.length,
+    deferredCount: screening.deferredCandidates.length,
+    skippedDuplicates: screening.skippedDuplicates.map((item) => ({ ...item })),
+    rejectedCandidates: screening.rejectedCandidates.map((item) => ({ ...item, reasons: [...item.reasons] })),
+    deferredCandidates: screening.deferredCandidates.map((item) => ({ ...item })),
+  }
+}
+
 export async function invokeProposeChanges(
   source: WorkspaceSource,
   rawInput: unknown,
@@ -276,6 +291,7 @@ export async function invokeProposeChanges(
         snapshot.data.opportunities,
         rules.weights,
         now,
+        snapshot.data.timeline ?? [],
       )
       discoveryScreening = screened
       for (const item of screened.accepted) {
@@ -355,7 +371,8 @@ export async function invokeProposeChanges(
       expectedWorkspaceFingerprint,
       now,
     )
-    const signedToken = await createSignedProposalToken(changeSet, context.workspaceVersion, options.signingKey, now)
+    const discoveryReview = discoveryScreening ? discoveryReviewMetadata(discoveryScreening) : undefined
+    const signedToken = await createSignedProposalToken(changeSet, context.workspaceVersion, options.signingKey, now, discoveryReview)
     const reviewUrl = buildMcpProposalReviewUrl(signedToken)
 
     return success({

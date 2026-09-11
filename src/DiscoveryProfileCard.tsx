@@ -1,8 +1,9 @@
-import { useEffect, useState } from 'react'
-import { getDiscoveryProfile, saveDiscoveryProfile } from './db.js'
+import { useEffect, useMemo, useState } from 'react'
+import { getAllTimelineRecords, getDiscoveryProfile, saveDiscoveryProfile } from './db.js'
 import { useCloud } from './cloud/CloudContext.js'
+import { discoveryFeedbackSummary } from './discoveryFeedback.js'
 import type { DiscoveryProfile } from './discoveryProfile.js'
-import type { OpportunityRole } from './model.js'
+import type { OpportunityRole, TimelineRecord } from './model.js'
 import './discoveryProfile.css'
 
 function lines(values: string[]) {
@@ -24,6 +25,24 @@ const roleTypeOptions: Array<{ value: OpportunityRole; label: string }> = [
   { value: 'practice', label: '练手' },
 ]
 
+const discoveryDecisionLabels: Record<NonNullable<TimelineRecord['discoveryDecision']>, string> = {
+  accepted: '已接受',
+  rejected: '已拒绝',
+  filtered: '质量过滤',
+  duplicate: '重复',
+  deferred: '暂缓',
+}
+
+function formatHistoryTime(value: string) {
+  return new Intl.DateTimeFormat('zh-CN', {
+    month: 'numeric',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).format(new Date(value))
+}
+
 export default function DiscoveryProfileCard() {
   const cloud = useCloud()
   const [profile, setProfile] = useState<DiscoveryProfile | null>(null)
@@ -32,13 +51,23 @@ export default function DiscoveryProfileCard() {
   const [mustHave, setMustHave] = useState('')
   const [mustNotHave, setMustNotHave] = useState('')
   const [strengths, setStrengths] = useState('')
+  const [history, setHistory] = useState<TimelineRecord[]>([])
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
 
   useEffect(() => {
     let active = true
-    void getDiscoveryProfile().then((value) => {
+
+    const loadHistory = async () => {
+      const records = await getAllTimelineRecords()
+      if (!active) return
+      setHistory(records
+        .filter((item) => Boolean(item.discoveryDecision))
+        .sort((a, b) => b.occurredAt.localeCompare(a.occurredAt) || b.recordedAt.localeCompare(a.recordedAt)))
+    }
+
+    void Promise.all([getDiscoveryProfile(), getAllTimelineRecords()]).then(([value, records]) => {
       if (!active) return
       setProfile(value)
       setTargetRoles(lines(value.targetRoleQueries))
@@ -46,9 +75,21 @@ export default function DiscoveryProfileCard() {
       setMustHave(lines(value.mustHave))
       setMustNotHave(lines(value.mustNotHave))
       setStrengths(lines(value.strengths))
+      setHistory(records
+        .filter((item) => Boolean(item.discoveryDecision))
+        .sort((a, b) => b.occurredAt.localeCompare(a.occurredAt) || b.recordedAt.localeCompare(a.recordedAt)))
     })
-    return () => { active = false }
+
+    const onWorkspaceChanged = () => { void loadHistory() }
+    window.addEventListener('pjsdas:workspace-replaced', onWorkspaceChanged)
+    return () => {
+      active = false
+      window.removeEventListener('pjsdas:workspace-replaced', onWorkspaceChanged)
+    }
   }, [])
+
+  const historySummary = useMemo(() => discoveryFeedbackSummary(history), [history])
+  const recentHistory = history.slice(0, 8)
 
   async function save() {
     if (!profile) return
@@ -222,6 +263,39 @@ export default function DiscoveryProfileCard() {
       {error ? <div className="notice error">{error}</div> : null}
       {message ? <div className="notice success">{message}</div> : null}
       <small>质量闸门会直接拦截已过期、明确关闭、命中排除条件、低于显式分数/薪资门槛或相似重复的岗位；无法从公开来源确认的事实保持未知并在审阅中提示。</small>
+
+      <div className="discovery-history">
+        <div className="discovery-history-heading">
+          <div>
+            <div className="eyebrow">DISCOVERY HISTORY · ROUND 3</div>
+            <h3>岗位发现历史</h3>
+          </div>
+          <span>显式反馈会随工作区同步，用于减少重复推荐。</span>
+        </div>
+        <div className="discovery-history-metrics">
+          <div><strong>{historySummary.accepted}</strong><span>已接受</span></div>
+          <div><strong>{historySummary.rejected}</strong><span>已拒绝</span></div>
+          <div><strong>{historySummary.filtered}</strong><span>质量过滤</span></div>
+          <div><strong>{historySummary.duplicate}</strong><span>重复</span></div>
+          <div><strong>{historySummary.deferred}</strong><span>暂缓</span></div>
+        </div>
+        {recentHistory.length ? (
+          <div className="discovery-history-list">
+            {recentHistory.map((item) => (
+              <div className="discovery-history-row" key={item.id}>
+                <span className={`discovery-history-badge ${item.discoveryDecision}`}>{discoveryDecisionLabels[item.discoveryDecision!]}</span>
+                <div>
+                  <strong>{item.company}｜{item.role}</strong>
+                  {item.detail ? <small>{item.detail}</small> : null}
+                </div>
+                <time>{formatHistoryTime(item.occurredAt)}</time>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="discovery-history-empty">还没有岗位发现反馈。第一次逐岗位审阅后，这里会显示接受、拒绝和质量闸门结果。</p>
+        )}
+      </div>
     </section>
   )
 }

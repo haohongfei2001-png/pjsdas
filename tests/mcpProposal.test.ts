@@ -40,6 +40,18 @@ describe('MCP proposal review links', () => {
     })
   })
 
+  it('round-trips signed discovery screening diagnostics', () => {
+    const now = new Date('2026-09-11T02:00:00.000Z')
+    const discoveryReview = {
+      received: 3, accepted: 1, duplicateCount: 1, rejectedCount: 1, deferredCount: 0,
+      skippedDuplicates: [{ company: '甲公司', role: 'AI 产品经理', reason: '重复' }],
+      rejectedCandidates: [{ company: '乙公司', role: '销售', reasons: ['命中排除'] }],
+      deferredCandidates: [],
+    }
+    const encoded = encodeMcpProposal(createMcpProposalEnvelope(changeSet, 'drive:6', now, discoveryReview))
+    expect(decodeMcpProposal(encoded).discoveryReview).toEqual(discoveryReview)
+  })
+
   it('puts an opaque signed token only in the URL fragment', () => {
     const reviewUrl = buildMcpProposalReviewUrl('payload.signature')
     const url = new URL(reviewUrl)

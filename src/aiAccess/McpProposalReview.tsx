@@ -1,6 +1,13 @@
 import { useEffect, useMemo, useState } from 'react'
 import { discardChangeSet, savePendingChangeSet } from '../db.js'
 import {
+  DISCOVERY_REJECTION_REASON_OPTIONS,
+  createDiscoveryFeedbackRecords,
+  deriveDiscoveryReviewChangeSet,
+  type DiscoveryRejectionSelection,
+} from '../discoveryFeedback.js'
+import { saveDiscoveryFeedbackRecords } from '../discoveryFeedbackStore.js'
+import {
   encodedProposalFromHash,
   removeProposalFromUrl,
   type McpProposalEnvelope,
@@ -41,6 +48,10 @@ function confidenceLabel(value: string, zh: boolean) {
   return '低'
 }
 
+function defaultRejectionSelections(ids: string[]) {
+  return Object.fromEntries(ids.map((id) => [id, { code: 'not_interested' }])) as Record<string, DiscoveryRejectionSelection>
+}
+
 export default function McpProposalReview() {
   const { lang } = useUiLanguage()
   const zh = lang === 'zh'
@@ -50,6 +61,8 @@ export default function McpProposalReview() {
   const [busy, setBusy] = useState(false)
   const [verifying, setVerifying] = useState(() => typeof window !== 'undefined' && Boolean(encodedProposalFromHash(window.location.hash)))
   const [result, setResult] = useState('')
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set())
+  const [rejectionSelections, setRejectionSelections] = useState<Record<string, DiscoveryRejectionSelection>>({})
 
   useEffect(() => {
     if (typeof window === 'undefined') return
@@ -92,8 +105,13 @@ export default function McpProposalReview() {
         }
         await assertMcpChangeSetBaseline(verified.changeSet)
         if (!active) return
-        // Opening a signed review link must not mutate IndexedDB. The ChangeSet is
-        // persisted only after the user explicitly chooses Apply or Discard.
+        const discoveryIds = verified.changeSet.operations
+          .filter((item) => item.kind === 'add_discovered_opportunity')
+          .map((item) => item.id)
+        setSelectedIds(new Set(discoveryIds))
+        setRejectionSelections(defaultRejectionSelections(discoveryIds))
+        // Opening a signed review link remains non-mutating. Review feedback is
+        // persisted only after explicit Apply or Discard.
         setProposal(verified)
       })
       .catch((caught) => {
@@ -117,31 +135,73 @@ export default function McpProposalReview() {
     () => proposal?.changeSet.operations.filter((item) => item.kind === 'add_discovered_opportunity') ?? [],
     [proposal],
   )
+  const selectedCount = discoveryOperations.filter((item) => selectedIds.has(item.id)).length
+
+  function toggleDiscovery(id: string) {
+    setSelectedIds((current) => {
+      const next = new Set(current)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  function setRejectionCode(id: string, code: DiscoveryRejectionSelection['code']) {
+    setRejectionSelections((current) => ({
+      ...current,
+      [id]: { ...(current[id] ?? {}), code },
+    }))
+  }
 
   async function applyProposal() {
     if (!proposal) return
     setBusy(true)
     setError('')
     try {
-      await assertMcpChangeSetBaseline(proposal.changeSet)
-      await savePendingChangeSet(proposal.changeSet)
-      await applyMcpChangeSetWithBaseline(proposal.changeSet)
+      const reviewedChangeSet = discoveryOperations.length
+        ? deriveDiscoveryReviewChangeSet(proposal.changeSet, selectedIds)
+        : proposal.changeSet
+      await assertMcpChangeSetBaseline(reviewedChangeSet)
+      await savePendingChangeSet(reviewedChangeSet)
+      await applyMcpChangeSetWithBaseline(reviewedChangeSet)
+
+      let feedbackSaved = true
+      if (discoveryOperations.length) {
+        try {
+          await saveDiscoveryFeedbackRecords(createDiscoveryFeedbackRecords(
+            proposal.changeSet,
+            selectedIds,
+            rejectionSelections,
+            proposal.discoveryReview,
+          ))
+        } catch {
+          feedbackSaved = false
+        }
+      }
+
       announceWorkspaceChange()
+      const feedbackNote = discoveryOperations.length && !feedbackSaved
+        ? (zh ? '；岗位已应用，但发现反馈记录失败。' : '; jobs applied, but discovery feedback could not be saved.')
+        : ''
+      const selectionNote = discoveryOperations.length
+        ? (zh ? `已选择 ${selectedCount}/${discoveryOperations.length} 个岗位。` : `Selected ${selectedCount}/${discoveryOperations.length} jobs.`)
+        : ''
+
       if (cloud.session && !cloud.checkpoint.conflict) {
         try {
           await cloud.syncNow()
           setResult(zh
-            ? 'ChangeSet 已应用，并已请求同步到 Google Drive。'
-            : 'ChangeSet applied and Google Drive sync was requested.')
+            ? `${selectionNote} ChangeSet 已应用，并已请求同步到 Google Drive${feedbackNote}`
+            : `${selectionNote} ChangeSet applied and Google Drive sync was requested${feedbackNote}`)
         } catch {
           setResult(zh
-            ? 'ChangeSet 已应用到本机；Google Drive 同步未完成，请稍后在“导入与设置”中同步。'
-            : 'ChangeSet applied locally; Google Drive sync did not complete. Sync later in Import & Settings.')
+            ? `${selectionNote} ChangeSet 已应用到本机；Google Drive 同步未完成，请稍后在“导入与设置”中同步${feedbackNote}`
+            : `${selectionNote} ChangeSet applied locally; Google Drive sync did not complete. Sync later in Import & Settings${feedbackNote}`)
         }
       } else {
         setResult(zh
-          ? 'ChangeSet 已应用到本机。Google Drive 当前未连接；请在“导入与设置”连接并同步，之后 ChatGPT 才能读取到新状态。'
-          : 'ChangeSet applied locally. Connect and sync Google Drive in Import & Settings before ChatGPT can read the new state.')
+          ? `${selectionNote} ChangeSet 已应用到本机。Google Drive 当前未连接；请在“导入与设置”连接并同步，之后 ChatGPT 才能读取到新状态${feedbackNote}`
+          : `${selectionNote} ChangeSet applied locally. Connect and sync Google Drive in Import & Settings before ChatGPT can read the new state${feedbackNote}`)
       }
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : String(caught))
@@ -157,8 +217,27 @@ export default function McpProposalReview() {
     try {
       await savePendingChangeSet(proposal.changeSet)
       await discardChangeSet(proposal.changeSet.id)
+      let feedbackSaved = true
+      if (discoveryOperations.length) {
+        try {
+          await saveDiscoveryFeedbackRecords(createDiscoveryFeedbackRecords(
+            proposal.changeSet,
+            new Set(),
+            rejectionSelections,
+            proposal.discoveryReview,
+          ))
+        } catch {
+          feedbackSaved = false
+        }
+      }
       announceWorkspaceChange()
-      setResult(zh ? '这条 ChatGPT 提议已放弃，没有修改求职数据。' : 'Proposal discarded. No job-search data was changed.')
+      if (discoveryOperations.length) {
+        setResult(zh
+          ? `整批岗位已放弃，没有加入 Opportunities。${feedbackSaved ? '已记录你的拒绝反馈，后续发现会尽量避免重复推荐。' : '拒绝反馈记录失败。'}`
+          : `The batch was discarded and no jobs were added. ${feedbackSaved ? 'Your rejection feedback was saved for future discovery.' : 'Rejection feedback could not be saved.'}`)
+      } else {
+        setResult(zh ? '这条 ChatGPT 提议已放弃，没有修改求职数据。' : 'Proposal discarded. No job-search data was changed.')
+      }
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : String(caught))
     } finally {
@@ -171,16 +250,20 @@ export default function McpProposalReview() {
   return (
     <div className="mcp-proposal-backdrop" role="dialog" aria-modal="true" aria-label={zh ? 'ChatGPT 修改提议' : 'ChatGPT change proposal'}>
       <section className={`mcp-proposal-card ${discoveryOperations.length ? 'discovery-review' : ''}`}>
-        <div className="mcp-proposal-eyebrow">CHATGPT · CHANGESET · {discoveryOperations.length ? 'V1.3' : 'V1.2'}</div>
-        <h2>{discoveryOperations.length ? (zh ? '审阅发现的岗位' : 'Review discovered jobs') : (zh ? '审阅 ChatGPT 提议' : 'Review ChatGPT proposal')}</h2>
+        <div className="mcp-proposal-eyebrow">CHATGPT · CHANGESET · {discoveryOperations.length ? 'V1.3 · ROUND 3' : 'V1.2'}</div>
+        <h2>{discoveryOperations.length ? (zh ? '逐岗位审阅发现结果' : 'Review discovered jobs') : (zh ? '审阅 ChatGPT 提议' : 'Review ChatGPT proposal')}</h2>
 
         {verifying ? <p className="mcp-proposal-safety">{zh ? '正在验证提议签名、有效期与本机工作区基线…' : 'Verifying proposal signature, expiry, and local workspace baseline…'}</p> : null}
 
         {proposal ? (
           <>
-            <p className="mcp-proposal-safety">{zh
-              ? '打开这条链接没有修改任何 PJSDAS 数据。只有你点击“应用 ChangeSet”后，这些规范化修改才会进入求职数据。'
-              : 'Opening this link changed no PJSDAS data. These normalized edits enter your job-search data only after you click Apply ChangeSet.'}</p>
+            <p className="mcp-proposal-safety">{discoveryOperations.length
+              ? (zh
+                ? '打开链接没有修改数据。你可以逐个取消不想要的岗位；只有勾选并应用的岗位会进入 Opportunities，未选择岗位会在你确认后记录为显式反馈。'
+                : 'Opening this link changed no data. Select jobs individually; only selected jobs are added, while rejected jobs become explicit feedback after you confirm.')
+              : (zh
+                ? '打开这条链接没有修改任何 PJSDAS 数据。只有你点击“应用 ChangeSet”后，这些规范化修改才会进入求职数据。'
+                : 'Opening this link changed no PJSDAS data. These normalized edits enter your job-search data only after you click Apply ChangeSet.')}</p>
             <div className="mcp-proposal-meta">
               <strong>{proposal.changeSet.title}</strong>
               <span>{proposal.changeSet.id}</span>
@@ -189,43 +272,87 @@ export default function McpProposalReview() {
             </div>
 
             {discoveryOperations.length ? (
-              <div className="mcp-discovery-list">
-                {discoveryOperations.map((operation) => {
-                  const item = operation.opportunity
-                  const evidence = item.detail?.discovery
-                  return (
-                    <article className="mcp-discovery-item" key={operation.id}>
-                      <div className="mcp-discovery-title">
-                        <div>
-                          <strong>{item.company}</strong>
-                          <h3>{item.role}</h3>
+              <>
+                {proposal.discoveryReview ? (
+                  <div className="mcp-discovery-screening">
+                    <div className="mcp-discovery-screening-head">
+                      <strong>{zh ? '质量闸门结果' : 'Quality gate'}</strong>
+                      <span>{zh ? `搜索 ${proposal.discoveryReview.received} · 审阅 ${proposal.discoveryReview.accepted} · 去重 ${proposal.discoveryReview.duplicateCount} · 过滤 ${proposal.discoveryReview.rejectedCount} · 暂缓 ${proposal.discoveryReview.deferredCount}` : `searched ${proposal.discoveryReview.received} · review ${proposal.discoveryReview.accepted} · duplicates ${proposal.discoveryReview.duplicateCount} · filtered ${proposal.discoveryReview.rejectedCount} · deferred ${proposal.discoveryReview.deferredCount}`}</span>
+                    </div>
+                    {(proposal.discoveryReview.skippedDuplicates.length || proposal.discoveryReview.rejectedCandidates.length || proposal.discoveryReview.deferredCandidates.length) ? (
+                      <details>
+                        <summary>{zh ? '查看没有进入审阅区的岗位' : 'See jobs that did not enter review'}</summary>
+                        <div className="mcp-discovery-screening-list">
+                          {proposal.discoveryReview.skippedDuplicates.map((item) => <p key={`dup:${item.company}:${item.role}`}><b>{item.company}｜{item.role}</b> · {item.reason}</p>)}
+                          {proposal.discoveryReview.rejectedCandidates.map((item) => <p key={`reject:${item.company}:${item.role}`}><b>{item.company}｜{item.role}</b> · {item.reasons?.join('；')}</p>)}
+                          {proposal.discoveryReview.deferredCandidates.map((item) => <p key={`defer:${item.company}:${item.role}`}><b>{item.company}｜{item.role}</b> · {item.reason}</p>)}
                         </div>
-                        <span>{item.roleType}</span>
-                      </div>
-                      <div className="mcp-discovery-facts">
-                        <span>{zh ? '地点' : 'Location'}：{evidence?.location ?? (zh ? '来源未明确' : 'Not stated')}</span>
-                        <span>{zh ? '截止' : 'Deadline'}：{formatDeadline(item.deadline, zh)}</span>
-                        <span>{zh ? '薪资' : 'Compensation'}：{evidence?.compensationText ?? (zh ? '来源未明确' : 'Not stated')}</span>
-                      </div>
-                      <div className="mcp-discovery-scores">
-                        <span>{zh ? '机会价值' : 'Opportunity'} <b>{item.opportunityValue}</b> · {confidenceLabel(evidence?.opportunityValueConfidence ?? 'low', zh)}</span>
-                        <span>{zh ? '匹配度' : 'Fit'} <b>{item.fitScore}</b> · {confidenceLabel(evidence?.fitConfidence ?? 'low', zh)}</span>
-                      </div>
-                      {evidence?.rationale ? <p className="mcp-discovery-rationale">{evidence.rationale}</p> : null}
-                      {evidence?.profileWarnings?.length ? (
-                        <div className="mcp-discovery-warnings">
-                          {evidence.profileWarnings.map((warning) => <span key={warning}>{warning}</span>)}
+                      </details>
+                    ) : null}
+                  </div>
+                ) : null}
+
+                <div className="mcp-discovery-selection-summary">
+                  <strong>{zh ? `已选择 ${selectedCount}/${discoveryOperations.length}` : `${selectedCount}/${discoveryOperations.length} selected`}</strong>
+                  <span>{zh ? '取消勾选后可记录拒绝原因。' : 'Unselect a job to record why you do not want it.'}</span>
+                </div>
+
+                <div className="mcp-discovery-list">
+                  {discoveryOperations.map((operation) => {
+                    const item = operation.opportunity
+                    const evidence = item.detail?.discovery
+                    const selected = selectedIds.has(operation.id)
+                    const rejection = rejectionSelections[operation.id] ?? { code: 'not_interested' as const }
+                    return (
+                      <article className={`mcp-discovery-item ${selected ? 'selected' : 'rejected'}`} key={operation.id}>
+                        <div className="mcp-discovery-review-choice">
+                          <label>
+                            <input type="checkbox" checked={selected} onChange={() => toggleDiscovery(operation.id)} />
+                            <span>{selected ? (zh ? '加入 PJSDAS' : 'Add to PJSDAS') : (zh ? '不加入' : 'Do not add')}</span>
+                          </label>
                         </div>
-                      ) : null}
-                      {evidence?.sourceUrl ? (
-                        <a className="mcp-discovery-source" href={evidence.sourceUrl} target="_blank" rel="noreferrer">
-                          {zh ? '查看招聘来源' : 'Open job source'} · {evidence.sourceTitle}
-                        </a>
-                      ) : null}
-                    </article>
-                  )
-                })}
-              </div>
+                        <div className="mcp-discovery-title">
+                          <div>
+                            <strong>{item.company}</strong>
+                            <h3>{item.role}</h3>
+                          </div>
+                          <span>{item.roleType}</span>
+                        </div>
+                        <div className="mcp-discovery-facts">
+                          <span>{zh ? '地点' : 'Location'}：{evidence?.location ?? (zh ? '来源未明确' : 'Not stated')}</span>
+                          <span>{zh ? '截止' : 'Deadline'}：{formatDeadline(item.deadline, zh)}</span>
+                          <span>{zh ? '薪资' : 'Compensation'}：{evidence?.compensationText ?? (zh ? '来源未明确' : 'Not stated')}</span>
+                        </div>
+                        <div className="mcp-discovery-scores">
+                          <span>{zh ? '机会价值' : 'Opportunity'} <b>{item.opportunityValue}</b> · {confidenceLabel(evidence?.opportunityValueConfidence ?? 'low', zh)}</span>
+                          <span>{zh ? '匹配度' : 'Fit'} <b>{item.fitScore}</b> · {confidenceLabel(evidence?.fitConfidence ?? 'low', zh)}</span>
+                        </div>
+                        {evidence?.rationale ? <p className="mcp-discovery-rationale">{evidence.rationale}</p> : null}
+                        {evidence?.profileWarnings?.length ? (
+                          <div className="mcp-discovery-warnings">
+                            {evidence.profileWarnings.map((warning) => <span key={warning}>{warning}</span>)}
+                          </div>
+                        ) : null}
+                        {!selected ? (
+                          <label className="mcp-discovery-rejection-reason">
+                            <span>{zh ? '不加入原因' : 'Reason'}</span>
+                            <select value={rejection.code} onChange={(event) => setRejectionCode(operation.id, event.target.value as DiscoveryRejectionSelection['code'])}>
+                              {DISCOVERY_REJECTION_REASON_OPTIONS.map((option) => (
+                                <option key={option.value} value={option.value}>{zh ? option.zh : option.en}</option>
+                              ))}
+                            </select>
+                          </label>
+                        ) : null}
+                        {evidence?.sourceUrl ? (
+                          <a className="mcp-discovery-source" href={evidence.sourceUrl} target="_blank" rel="noreferrer">
+                            {zh ? '查看招聘来源' : 'Open job source'} · {evidence.sourceTitle}
+                          </a>
+                        ) : null}
+                      </article>
+                    )
+                  })}
+                </div>
+              </>
             ) : (
               <div className="mcp-proposal-ops">
                 {operationSummary.map((summary, index) => (
@@ -242,9 +369,11 @@ export default function McpProposalReview() {
         <div className="mcp-proposal-actions">
           {!result && proposal ? (
             <>
-              <button disabled={busy} onClick={() => { void discardProposal() }}>{zh ? '放弃' : 'Discard'}</button>
-              <button className="primary" disabled={busy} onClick={() => { void applyProposal() }}>
-                {busy ? '…' : (zh ? '应用 ChangeSet' : 'Apply ChangeSet')}
+              <button disabled={busy} onClick={() => { void discardProposal() }}>{discoveryOperations.length ? (zh ? '放弃整批' : 'Discard batch') : (zh ? '放弃' : 'Discard')}</button>
+              <button className="primary" disabled={busy || (discoveryOperations.length > 0 && selectedCount === 0)} onClick={() => { void applyProposal() }}>
+                {busy ? '…' : discoveryOperations.length
+                  ? (zh ? `应用已选择的 ${selectedCount} 个` : `Apply ${selectedCount} selected`)
+                  : (zh ? '应用 ChangeSet' : 'Apply ChangeSet')}
               </button>
             </>
           ) : !verifying ? (

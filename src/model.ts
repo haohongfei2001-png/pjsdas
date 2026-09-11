@@ -23,6 +23,16 @@ export type ActionKind = 'apply' | 'follow_up' | 'prep' | 'group_decision' | 'ma
 export type ActionStatus = 'todo' | 'doing' | 'done' | 'skipped'
 export type PriorityLevel = 'P0' | 'P1' | 'P2' | 'expired' | 'none'
 export type DiscoveryConfidence = 'high' | 'medium' | 'low'
+export type DiscoveryReviewDecision = 'accepted' | 'rejected' | 'filtered' | 'duplicate' | 'deferred'
+export type DiscoveryRejectionReason =
+  | 'location'
+  | 'compensation'
+  | 'role_direction'
+  | 'company_value'
+  | 'requirements'
+  | 'already_have_better'
+  | 'not_interested'
+  | 'other'
 
 export type TimelineCategory = 'opportunity' | 'process' | 'action' | 'rules' | 'change' | 'data' | 'note'
 export type TimelineSource =
@@ -50,6 +60,11 @@ export type TimelineKind =
   | 'backup_restored'
   | 'baseline_backfill'
   | 'change_set_applied'
+  | 'discovery_accepted'
+  | 'discovery_rejected'
+  | 'discovery_filtered'
+  | 'discovery_duplicate'
+  | 'discovery_deferred'
 export type TimelineChangeValue = string | number | boolean | null
 export interface TimelineFieldChange {
   before?: TimelineChangeValue
@@ -71,6 +86,9 @@ export interface TimelineRecord {
   company?: string
   role?: string
   sourceRef?: string
+  discoveryDecision?: DiscoveryReviewDecision
+  discoveryReasonCode?: DiscoveryRejectionReason
+  discoveryQualityScore?: number
   changes?: Record<string, TimelineFieldChange>
 }
 

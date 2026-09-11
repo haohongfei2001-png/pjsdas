@@ -104,6 +104,7 @@ describe('v1.3 discovered opportunity proposals', () => {
       },
     })
     expect(envelope.changeSet.expectedWorkspaceFingerprint).toMatch(/^[a-f0-9]{64}$/)
+    expect(envelope.discoveryReview).toMatchObject({ received: 1, accepted: 1, duplicateCount: 0, rejectedCount: 0, deferredCount: 0 })
   })
 
   it('requires an explicit durable Discovery Profile instead of using hidden chat inference', async () => {

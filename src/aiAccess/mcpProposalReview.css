@@ -228,3 +228,96 @@
   line-height: 1.5;
   color: rgba(41, 39, 32, 0.55);
 }
+
+
+.mcp-discovery-screening {
+  margin: 16px 0;
+  padding: 13px 14px;
+  border: 1px solid rgba(41, 39, 32, 0.1);
+  border-radius: 13px;
+  background: rgba(49, 91, 117, 0.055);
+}
+
+.mcp-discovery-screening-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  font-size: 12px;
+}
+
+.mcp-discovery-screening-head span {
+  color: rgba(41, 39, 32, 0.64);
+}
+
+.mcp-discovery-screening details {
+  margin-top: 9px;
+  font-size: 12px;
+}
+
+.mcp-discovery-screening summary {
+  cursor: pointer;
+  color: #315b75;
+}
+
+.mcp-discovery-screening-list {
+  display: grid;
+  gap: 7px;
+  margin-top: 9px;
+}
+
+.mcp-discovery-screening-list p {
+  margin: 0;
+  line-height: 1.5;
+  color: rgba(41, 39, 32, 0.7);
+}
+
+.mcp-discovery-selection-summary {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: baseline;
+  margin: 16px 0 8px;
+  font-size: 12px;
+}
+
+.mcp-discovery-selection-summary span {
+  color: rgba(41, 39, 32, 0.58);
+}
+
+.mcp-discovery-item.rejected {
+  opacity: 0.76;
+  background: rgba(255, 255, 255, 0.28);
+}
+
+.mcp-discovery-review-choice {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 8px;
+}
+
+.mcp-discovery-review-choice label {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.mcp-discovery-rejection-reason {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin-top: 12px;
+  font-size: 12px;
+}
+
+.mcp-discovery-rejection-reason select {
+  flex: 1;
+  min-width: 0;
+  padding: 7px 9px;
+  border: 1px solid rgba(41, 39, 32, 0.14);
+  border-radius: 9px;
+  background: #fffaf0;
+  color: #292720;
+}

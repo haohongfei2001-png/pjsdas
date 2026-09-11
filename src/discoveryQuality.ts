@@ -1,6 +1,6 @@
 import type { DecisionWeights } from './decisionRules.js'
 import { discoveryProfileForSnapshot, type DiscoveryProfile } from './discoveryProfile.js'
-import type { DiscoveryConfidence, Opportunity, OpportunityRole } from './model.js'
+import type { DiscoveryConfidence, Opportunity, OpportunityRole, TimelineRecord } from './model.js'
 
 export type DiscoveryPostingStatus = 'open' | 'closed' | 'unknown'
 
@@ -91,6 +91,24 @@ function similarCandidate(
   b: Pick<DiscoveryCandidateForQuality, 'company' | 'role'>,
 ) {
   return normalizedCompany(a.company) === normalizedCompany(b.company) && discoveryRoleSimilarity(a.role, b.role) >= 0.72
+}
+
+function latestExplicitFeedbackForCandidate(
+  timeline: TimelineRecord[],
+  candidate: Pick<DiscoveryCandidateForQuality, 'company' | 'role'>,
+  now: Date,
+  windowDays = 120,
+) {
+  const cutoff = now.getTime() - windowDays * 24 * 60 * 60 * 1000
+  return timeline
+    .filter((item) =>
+      (item.discoveryDecision === 'accepted' || item.discoveryDecision === 'rejected') &&
+      Boolean(item.company && item.role) &&
+      new Date(item.occurredAt).getTime() >= cutoff &&
+      normalizedCompany(item.company!) === normalizedCompany(candidate.company) &&
+      discoveryRoleSimilarity(item.role!, candidate.role) >= 0.72
+    )
+    .sort((a, b) => b.occurredAt.localeCompare(a.occurredAt) || b.recordedAt.localeCompare(a.recordedAt))[0]
 }
 
 function candidateEvidence(candidate: DiscoveryCandidateForQuality) {
@@ -216,6 +234,7 @@ export function screenDiscoveryCandidates<T extends DiscoveryCandidateForQuality
   existing: Opportunity[],
   weights: DecisionWeights,
   now = new Date(),
+  timeline: TimelineRecord[] = [],
 ): DiscoveryScreeningResult<T> {
   const profile = discoveryProfileForSnapshot(rawProfile)
   const eligible: ScreenedDiscoveryCandidate<T>[] = []
@@ -223,6 +242,16 @@ export function screenDiscoveryCandidates<T extends DiscoveryCandidateForQuality
   const rejectedCandidates: DiscoveryScreeningResult<T>['rejectedCandidates'] = []
 
   for (const candidate of candidates) {
+    const latestFeedback = latestExplicitFeedbackForCandidate(timeline, candidate, now)
+    if (latestFeedback?.discoveryDecision === 'rejected') {
+      rejectedCandidates.push({
+        company: candidate.company,
+        role: candidate.role,
+        reasons: [`用户在最近 120 天已明确拒绝高度相似岗位“${latestFeedback.company}｜${latestFeedback.role}”。`],
+      })
+      continue
+    }
+
     const duplicate = findSimilarOpportunity(candidate, existing)
     if (duplicate) {
       skippedDuplicates.push({

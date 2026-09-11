@@ -116,6 +116,60 @@ describe('v1.3 discovery quality gate', () => {
     expect(result.hardRejectReasons.join(' ')).toContain('18')
   })
 
+  it('suppresses a highly similar role the user explicitly rejected recently', () => {
+    const history = [{
+      id: 'feedback-1',
+      kind: 'discovery_rejected' as const,
+      category: 'opportunity' as const,
+      source: 'user_action' as const,
+      occurredAt: '2026-09-05T00:00:00.000Z',
+      recordedAt: '2026-09-05T00:00:00.000Z',
+      title: '拒绝 AI 发现岗位',
+      company: '甲公司',
+      role: '产品经理（AI方向）',
+      discoveryDecision: 'rejected' as const,
+    }]
+    const result = screenDiscoveryCandidates(profile(), [
+      candidate({ company: '甲公司', role: 'AI 产品经理', sourceTitle: '甲公司 AI PM' }),
+    ], [], weights, now, history)
+    expect(result.accepted).toHaveLength(0)
+    expect(result.rejectedCandidates[0].reasons.join(' ')).toContain('最近 120 天')
+  })
+
+  it('allows a similar role again when a later explicit acceptance supersedes the rejection', () => {
+    const history = [
+      {
+        id: 'feedback-rejected',
+        kind: 'discovery_rejected' as const,
+        category: 'opportunity' as const,
+        source: 'user_action' as const,
+        occurredAt: '2026-09-03T00:00:00.000Z',
+        recordedAt: '2026-09-03T00:00:00.000Z',
+        title: '拒绝 AI 发现岗位',
+        company: '甲公司',
+        role: '产品经理（AI方向）',
+        discoveryDecision: 'rejected' as const,
+      },
+      {
+        id: 'feedback-accepted',
+        kind: 'discovery_accepted' as const,
+        category: 'opportunity' as const,
+        source: 'user_action' as const,
+        occurredAt: '2026-09-06T00:00:00.000Z',
+        recordedAt: '2026-09-06T00:00:00.000Z',
+        title: '接受 AI 发现岗位',
+        company: '甲公司',
+        role: 'AI 产品经理',
+        discoveryDecision: 'accepted' as const,
+      },
+    ]
+    const result = screenDiscoveryCandidates(profile(), [
+      candidate({ company: '甲公司', role: 'AI 产品经理（平台方向）', sourceTitle: '甲公司 AI PM 平台方向' }),
+    ], [], weights, now, history)
+    expect(result.rejectedCandidates).toHaveLength(0)
+    expect(result.accepted).toHaveLength(1)
+  })
+
   it('deduplicates against existing similar roles and keeps only the strongest bounded review batch', () => {
     const configured = { ...profile(), maxReviewCandidates: 2 }
     const result = screenDiscoveryCandidates(configured, [

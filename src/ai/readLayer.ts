@@ -1,6 +1,7 @@
 import { buildTimePlan, processNeedsReview, rankAction, rankActions } from '../decisionV3.js'
 import { decisionRulesForSnapshot, type DecisionRules, type DecisionWeights } from '../decisionRules.js'
 import { discoveryProfileForSnapshot, type DiscoveryProfile } from '../discoveryProfile.js'
+import { discoveryFeedbackSummary, recentRejectedDiscoveryFeedback } from '../discoveryFeedback.js'
 import { isUnresolvedPastProcessEvent } from '../fixedEventGuardLogic.js'
 import {
   overlayProcessEventsOnOpportunities,
@@ -175,6 +176,20 @@ export interface GetDiscoveryContextOutput {
     company: string
     role: string
   }>
+  recentlyRejected: Array<{
+    company: string
+    role: string
+    rejectedAt: string
+    reasonCode?: string
+    reason?: string
+  }>
+  discoveryHistorySummary: {
+    accepted: number
+    rejected: number
+    filtered: number
+    duplicate: number
+    deferred: number
+  }
   instructions: string[]
 }
 
@@ -602,6 +617,9 @@ export function getDiscoveryContext(
     .filter((item) => item.processStage === 'closed')
     .sort((a, b) => b.importedAt.localeCompare(a.importedAt))
     .slice(0, 60)
+  const history = snapshot.data.timeline ?? []
+  const recentlyRejected = recentRejectedDiscoveryFeedback(history, context.now).slice(0, 40)
+  const historySummary = discoveryFeedbackSummary(history)
 
   return {
     meta: meta(context),
@@ -621,10 +639,19 @@ export function getDiscoveryContext(
       company: item.company,
       role: item.role,
     })),
+    recentlyRejected: recentlyRejected.map((item) => ({
+      company: item.company,
+      role: item.role,
+      rejectedAt: item.occurredAt,
+      reasonCode: item.discoveryReasonCode,
+      reason: item.detail,
+    })),
+    discoveryHistorySummary: historySummary,
     instructions: [
       'Use the explicit Discovery Profile as durable search preferences; do not silently infer or rewrite it.',
       'Search public job sources outside PJSDAS, and keep unknown salary, deadline or location fields unknown instead of inventing them.',
       'Do not rediscover an obviously identical company+role already present in existingOpportunities.',
+      'Avoid recentlyRejected roles unless the user explicitly asks to reconsider them; the quality gate also suppresses highly similar recent rejections.',
       'Use propose_changes for any candidate the user wants to add; never claim discovery results were added before ChangeSet review and Apply.',
     ],
   }
