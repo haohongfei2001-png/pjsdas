@@ -1,0 +1,28 @@
+name: fix v1.3 discovery proposal
+
+on:
+  push:
+    branches: [v1.3-discovery-alpha]
+    paths:
+      - '.github/workflows/fix-v13-discovery-proposal.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: v1.3-discovery-alpha
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: node scripts/fix-v13-discovery-proposal.mjs
+      - run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add gateway/proposeChanges.ts
+          git commit -m 'Fix discovered proposal snapshot typing'
+          git push origin HEAD:v1.3-discovery-alpha
