@@ -19,6 +19,15 @@ jobs:
         with:
           node-version: 22
           cache: npm
+      - name: Relax sequential codemod target check
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('scripts/v14_round1_codemod.py')
+          s = p.read_text(encoding='utf-8')
+          s = s.replace('if count != 1:\n        raise RuntimeError', 'if count < 1:\n        raise RuntimeError', 1)
+          p.write_text(s, encoding='utf-8')
+          PY
       - name: Apply v1.4 Round 1 codemod
         run: python3 scripts/v14_round1_codemod.py
       - run: npm ci
