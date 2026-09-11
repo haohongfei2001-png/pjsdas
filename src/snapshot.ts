@@ -10,6 +10,7 @@ import type {
 } from './model.js'
 import { validateDecisionRules, type DecisionRules } from './decisionRules.js'
 import { validateChangeSet, type ChangeSetRecord } from './changeSet.js'
+import { validateDiscoveryProfile, type DiscoveryProfile } from './discoveryProfile.js'
 
 export const SNAPSHOT_SCHEMA = 'pjsdas-local-snapshot' as const
 export const SNAPSHOT_VERSION = 1 as const
@@ -22,6 +23,7 @@ export interface SnapshotData {
   prep: Prep[]
   applicationGroups: ApplicationGroup[]
   decisionRules?: DecisionRules
+  discoveryProfile?: DiscoveryProfile
   timeline?: TimelineRecord[]
   changeSets?: ChangeSetRecord[]
   meta?: ImportMeta
@@ -98,6 +100,11 @@ export function validateSnapshot(value: unknown): asserts value is PJSDASSnapsho
     if (!isObject(data.decisionRules)) throw new Error('备份损坏：decisionRules 格式无效。')
     const errors = validateDecisionRules(data.decisionRules as unknown as DecisionRules)
     if (errors.length) throw new Error(`备份损坏：决策规则无效（${errors[0]}）`)
+  }
+  if (data.discoveryProfile !== undefined) {
+    if (!isObject(data.discoveryProfile)) throw new Error('备份损坏：discoveryProfile 格式无效。')
+    const errors = validateDiscoveryProfile(data.discoveryProfile as unknown as DiscoveryProfile)
+    if (errors.length) throw new Error(`备份损坏：岗位发现偏好无效（${errors[0]}）`)
   }
 
   const opportunityIds = assertUniqueIds(data.opportunities, 'Opportunity')
