@@ -13,14 +13,15 @@ const source = createFileWorkspaceSource({
 function jsonFrom(result: Awaited<ReturnType<typeof invokeReadTool>>) {
   const item = result.content[0]
   if (!item || item.type !== 'text') throw new Error('Expected a text MCP tool result.')
-  return JSON.parse(item.text) as Record<string, unknown>
+  return JSON.parse(item.text) as Record<string, any>
 }
 
 describe('PJSDAS MCP gateway alpha', () => {
-  it('exposes exactly the six v1.1 read-only tool names', () => {
+  it('exposes the bounded v1.5 Round 2 read-only tool set', () => {
     expect(READ_TOOL_NAMES).toEqual([
       'get_today_plan',
       'list_opportunities',
+      'get_opportunity_assessment',
       'get_pipeline',
       'get_decision_rules',
       'get_discovery_context',
@@ -36,6 +37,7 @@ describe('PJSDAS MCP gateway alpha', () => {
   it.each([
     ['get_today_plan', { availableMinutes: 180 }],
     ['list_opportunities', { limit: 10 }],
+    ['get_opportunity_assessment', { opportunityId: 'opp-alpha' }],
     ['get_pipeline', { attentionOnly: true }],
     ['get_decision_rules', {}],
     ['get_discovery_context', {}],
@@ -46,6 +48,14 @@ describe('PJSDAS MCP gateway alpha', () => {
     expect(result.isError).not.toBe(true)
     const data = jsonFrom(result)
     expect(data.meta).toMatchObject({ source: 'pjsdas', workspaceVersion: 'demo-v1', timezone: 'Asia/Shanghai' })
+  })
+
+  it('returns component weight policy through get_decision_rules', async () => {
+    const result = await invokeReadTool(source, 'get_decision_rules', {})
+    expect(result.isError).not.toBe(true)
+    const data = jsonFrom(result)
+    expect(data.fitComponentWeights).toMatchObject({ roleDirection: 24, location: 18 })
+    expect(data.opportunityValueComponentWeights).toMatchObject({ companyQuality: 18, roleGrowth: 18 })
   })
 
   it('returns a stable non-retryable tool error for invalid input', async () => {
