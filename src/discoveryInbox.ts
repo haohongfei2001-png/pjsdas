@@ -5,6 +5,7 @@ import {
   mergeJobPostingEvidence,
   validateJobPostingEvidence,
 } from './jobPosting.js'
+import { validateOpportunityAssessment } from './opportunityAssessment.js'
 import {
   cloneOpportunityFacts,
   mergeOpportunityFacts,
@@ -58,6 +59,7 @@ export function validateDiscoveryInboxItem(item: DiscoveryInboxItem): string[] {
     errors.push(...validateJobPostingEvidence(posting).map((error) => `发现箱岗位发布历史无效：${error}`))
   }
   if (item.facts) errors.push(...validateOpportunityFacts(item.facts).map((error) => `发现箱 Rich Opportunity 无效：${error}`))
+  if (item.assessment) errors.push(...validateOpportunityAssessment(item.assessment).map((error) => `发现箱组件评估无效：${error}`))
   return errors
 }
 
@@ -97,6 +99,7 @@ function fromOperation(operation: DiscoveryOperation, changeSet: ChangeSetRecord
     posting,
     postingHistory: evidence.postingHistory ? evidence.postingHistory.map((item) => ({ ...item })) : undefined,
     facts: cloneOpportunityFacts(opportunity.detail?.facts),
+    assessment: opportunity.detail?.assessment ? structuredClone(opportunity.detail.assessment) : undefined,
     status: 'new',
     sourceChangeSetId: changeSet.id,
     sourceOperationId: operation.id,
@@ -137,6 +140,7 @@ export function mergeDiscoveryInboxItems(existing: DiscoveryInboxItem[], incomin
       jobPostingForInboxItem(candidate),
       now,
     )
+    const keepPreviousAssessment = !candidate.assessment && Boolean(previous.assessment)
     const merged: DiscoveryInboxItem = {
       ...candidate,
       id: previous.id,
@@ -144,6 +148,11 @@ export function mergeDiscoveryInboxItems(existing: DiscoveryInboxItem[], incomin
       posting: mergedPosting.current,
       postingHistory: mergedPosting.history.length ? mergedPosting.history : undefined,
       facts: mergeOpportunityFacts(previous.facts, candidate.facts),
+      assessment: candidate.assessment ? structuredClone(candidate.assessment) : previous.assessment ? structuredClone(previous.assessment) : undefined,
+      fitScore: keepPreviousAssessment ? previous.fitScore : candidate.fitScore,
+      opportunityValue: keepPreviousAssessment ? previous.opportunityValue : candidate.opportunityValue,
+      fitConfidence: keepPreviousAssessment ? previous.fitConfidence : candidate.fitConfidence,
+      opportunityValueConfidence: keepPreviousAssessment ? previous.opportunityValueConfidence : candidate.opportunityValueConfidence,
       status: previous.status,
       rejectionReason: previous.rejectionReason,
       createdAt: previous.createdAt,
@@ -183,6 +192,7 @@ export function inboxOpportunity(item: DiscoveryInboxItem, now = new Date()): Op
       salaryBasis: item.facts?.compensation.basis,
       salaryRaw: item.compensationText,
       facts: cloneOpportunityFacts(item.facts),
+      assessment: item.assessment ? structuredClone(item.assessment) : undefined,
       discovery: {
         sourceUrl: item.sourceUrl,
         sourceTitle: item.sourceTitle,
