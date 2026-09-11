@@ -1,14 +1,16 @@
 import { useEffect, useMemo, useState } from 'react'
 import { applyChangeSet, discardChangeSet, savePendingChangeSet } from '../db.js'
 import {
-  decodeMcpProposal,
   encodedProposalFromHash,
   removeProposalFromUrl,
   type McpProposalEnvelope,
 } from '../ai/mcpProposal.js'
 import { useCloud } from '../cloud/CloudContext.js'
+import { getAccountCheckpoint } from '../cloud/syncState.js'
 import { useUiLanguage } from '../uiLanguage.js'
 import './mcpProposalReview.css'
+
+const VERIFY_ENDPOINT = 'https://pjsdas-remote-alpha.vercel.app/api/proposal-verify'
 
 function clearProposalHash() {
   if (typeof window === 'undefined') return
@@ -20,6 +22,10 @@ function announceWorkspaceChange() {
   window.setTimeout(() => window.dispatchEvent(new Event('pjsdas:workspace-replaced')), 0)
 }
 
+function driveVersion(workspaceVersion?: string) {
+  return workspaceVersion?.startsWith('drive:') ? workspaceVersion.slice('drive:'.length) : undefined
+}
+
 export default function McpProposalReview() {
   const { lang } = useUiLanguage()
   const zh = lang === 'zh'
@@ -27,32 +33,55 @@ export default function McpProposalReview() {
   const [proposal, setProposal] = useState<McpProposalEnvelope | null>(null)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
+  const [verifying, setVerifying] = useState(() => typeof window !== 'undefined' && Boolean(encodedProposalFromHash(window.location.hash)))
   const [result, setResult] = useState('')
 
   useEffect(() => {
     if (typeof window === 'undefined') return
-    const encoded = encodedProposalFromHash(window.location.hash)
-    if (!encoded) return
+    const token = encodedProposalFromHash(window.location.hash)
+    if (!token) {
+      setVerifying(false)
+      return
+    }
 
     let active = true
-    try {
-      const decoded = decodeMcpProposal(encoded)
-      void savePendingChangeSet(decoded.changeSet)
-        .then(() => {
-          if (!active) return
-          clearProposalHash()
-          setProposal(decoded)
-          announceWorkspaceChange()
-        })
-        .catch((caught) => {
-          if (!active) return
-          clearProposalHash()
-          setError(caught instanceof Error ? caught.message : String(caught))
-        })
-    } catch (caught) {
-      clearProposalHash()
-      setError(caught instanceof Error ? caught.message : String(caught))
-    }
+    void fetch(VERIFY_ENDPOINT, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ token }),
+    })
+      .then(async (response) => {
+        const body = await response.json().catch(() => ({})) as {
+          proposal?: McpProposalEnvelope
+          message?: string
+        }
+        if (!response.ok || !body.proposal) throw new Error(body.message || `Proposal verification failed (HTTP ${response.status}).`)
+        return body.proposal
+      })
+      .then(async (verified) => {
+        if (!active) return
+        const ownerId = cloud.device.workspaceOwnerUserId
+        const checkpoint = ownerId ? getAccountCheckpoint(ownerId) : cloud.checkpoint
+        const proposedVersion = driveVersion(verified.workspaceVersion)
+        if (proposedVersion && checkpoint.lastSyncedVersion && proposedVersion !== checkpoint.lastSyncedVersion) {
+          throw new Error(zh
+            ? `这条提议基于 Google Drive ${verified.workspaceVersion}，但本机最近同步的是 drive:${checkpoint.lastSyncedVersion}。请先同步 PJSDAS，再让 ChatGPT 重新生成提议。`
+            : `This proposal was based on ${verified.workspaceVersion}, while this device last synced drive:${checkpoint.lastSyncedVersion}. Sync PJSDAS first, then ask ChatGPT to create a fresh proposal.`)
+        }
+        await savePendingChangeSet(verified.changeSet)
+        if (!active) return
+        setProposal(verified)
+        announceWorkspaceChange()
+      })
+      .catch((caught) => {
+        if (!active) return
+        setError(caught instanceof Error ? caught.message : String(caught))
+      })
+      .finally(() => {
+        if (!active) return
+        clearProposalHash()
+        setVerifying(false)
+      })
 
     return () => { active = false }
   }, [])
@@ -107,13 +136,15 @@ export default function McpProposalReview() {
     }
   }
 
-  if (!proposal && !error) return null
+  if (!proposal && !error && !verifying) return null
 
   return (
     <div className="mcp-proposal-backdrop" role="dialog" aria-modal="true" aria-label={zh ? 'ChatGPT 修改提议' : 'ChatGPT change proposal'}>
       <section className="mcp-proposal-card">
         <div className="mcp-proposal-eyebrow">CHATGPT · CHANGESET · V1.2</div>
         <h2>{zh ? '审阅 ChatGPT 提议' : 'Review ChatGPT proposal'}</h2>
+
+        {verifying ? <p className="mcp-proposal-safety">{zh ? '正在验证提议签名与有效期…' : 'Verifying proposal signature and expiry…'}</p> : null}
 
         {proposal ? (
           <>
@@ -124,6 +155,7 @@ export default function McpProposalReview() {
               <strong>{proposal.changeSet.title}</strong>
               <span>{proposal.changeSet.id}</span>
               {proposal.workspaceVersion ? <span>{zh ? '提议基于' : 'Proposed from'} {proposal.workspaceVersion}</span> : null}
+              <span>{zh ? '链接有效至' : 'Link expires'} {new Date(proposal.expiresAt).toLocaleString()}</span>
             </div>
             <div className="mcp-proposal-ops">
               {operationSummary.map((summary, index) => (
@@ -145,9 +177,9 @@ export default function McpProposalReview() {
                 {busy ? '…' : (zh ? '应用 ChangeSet' : 'Apply ChangeSet')}
               </button>
             </>
-          ) : (
+          ) : !verifying ? (
             <button className="primary" onClick={() => { setProposal(null); setError(''); setResult('') }}>{zh ? '关闭' : 'Close'}</button>
-          )}
+          ) : null}
         </div>
         {!result && proposal ? <small>{zh ? '选择“稍后处理”后，待确认 ChangeSet 仍保留在「历程 → ChangeSet 账本」。' : 'Review later keeps this pending ChangeSet in Timeline → ChangeSet ledger.'}</small> : null}
       </section>
