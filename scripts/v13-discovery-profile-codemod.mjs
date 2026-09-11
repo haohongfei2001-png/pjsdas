@@ -64,9 +64,7 @@ replaceOnce(
 
 const restoreAnchor = "  await tx.objectStore('decisionRules').put(snapshot.data.decisionRules ?? createDefaultDecisionRules())\n  for (const item of snapshot.data.timeline ?? []) await tx.objectStore('timeline').put(item)"
 const restoreReplacement = "  await tx.objectStore('decisionRules').put(snapshot.data.decisionRules ?? createDefaultDecisionRules())\n  if (snapshot.data.discoveryProfile) await tx.objectStore('discoveryProfiles').put(snapshot.data.discoveryProfile)\n  for (const item of snapshot.data.timeline ?? []) await tx.objectStore('timeline').put(item)"
-if ((text.match(new RegExp(restoreAnchor.replace(/[.*+?^${}()|[\\]\\]/g, '\\$&'), 'g')) ?? []).length !== 2) {
-  throw new Error('Expected two snapshot restore anchors')
-}
+if (text.split(restoreAnchor).length - 1 !== 2) throw new Error('Expected two snapshot restore anchors')
 text = text.split(restoreAnchor).join(restoreReplacement)
 
 await writeFile(path, text)
