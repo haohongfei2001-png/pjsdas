@@ -1,0 +1,27 @@
+name: v1.3 production smoke
+
+on:
+  workflow_dispatch:
+    inputs:
+      base_url:
+        description: Production base URL
+        required: true
+        default: https://pjsdas-remote-alpha.vercel.app
+      expected_version:
+        description: Expected authenticated gateway version
+        required: true
+        default: 1.3.0-alpha.1
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Verify public production contract
+        env:
+          PJSDAS_BASE_URL: ${{ inputs.base_url }}
+          PJSDAS_EXPECTED_VERSION: ${{ inputs.expected_version }}
+        run: node scripts/v13-production-smoke.mjs
