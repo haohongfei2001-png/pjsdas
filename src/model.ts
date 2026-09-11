@@ -34,6 +34,27 @@ export type DiscoveryRejectionReason =
   | 'not_interested'
   | 'other'
 
+export type JobPostingStatus = 'open' | 'closed' | 'unknown'
+export type JobPostingFreshness = 'fresh' | 'aging' | 'stale' | 'closed' | 'unknown'
+
+export interface JobPostingEvidence {
+  id: string
+  identityKey: string
+  sourceUrl: string
+  canonicalSourceUrl: string
+  sourceHost: string
+  sourceTitle: string
+  postingStatus: JobPostingStatus
+  location?: string
+  deadline?: string
+  compensationText?: string
+  firstSeenAt: string
+  lastSeenAt: string
+  lastVerifiedAt: string
+  fingerprint: string
+  supersededByPostingId?: string
+}
+
 export type DiscoveryInboxStatus = 'new' | 'seen' | 'later' | 'dismissed' | 'promoted'
 
 export interface DiscoveryInboxItem {
@@ -53,6 +74,8 @@ export interface DiscoveryInboxItem {
   fitConfidence: DiscoveryConfidence
   opportunityValueConfidence: DiscoveryConfidence
   profileWarnings?: string[]
+  posting?: JobPostingEvidence
+  postingHistory?: JobPostingEvidence[]
   status: DiscoveryInboxStatus
   rejectionReason?: DiscoveryRejectionReason
   sourceChangeSetId?: string
@@ -132,6 +155,8 @@ export interface OpportunityDiscoveryEvidence {
   fitConfidence: DiscoveryConfidence
   opportunityValueConfidence: DiscoveryConfidence
   profileWarnings?: string[]
+  posting?: JobPostingEvidence
+  postingHistory?: JobPostingEvidence[]
 }
 
 export interface OpportunityDetail {

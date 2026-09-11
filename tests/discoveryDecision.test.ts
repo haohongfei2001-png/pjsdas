@@ -4,6 +4,7 @@ import {
   discoveryReviewScore,
   sortDiscoveryInboxItems,
 } from '../src/discoveryDecision.js'
+import { createJobPostingEvidence } from '../src/jobPosting.js'
 import type { DiscoveryInboxItem } from '../src/model.js'
 
 function candidate(overrides: Partial<DiscoveryInboxItem> = {}): DiscoveryInboxItem {
@@ -31,7 +32,7 @@ function candidate(overrides: Partial<DiscoveryInboxItem> = {}): DiscoveryInboxI
   }
 }
 
-describe('v1.4 round 2 discovery decision workspace', () => {
+describe('v1.4 round 2/3 discovery decision workspace', () => {
   it('keeps the inbox review reference transparent and separate from formal priority', () => {
     expect(discoveryReviewScore(candidate({ fitScore: 82, opportunityValue: 94 }))).toBe(88)
   })
@@ -44,7 +45,7 @@ describe('v1.4 round 2 discovery decision workspace', () => {
     expect(summary.missing.map((entry) => entry.key)).toEqual(['location', 'compensation'])
   })
 
-  it('surfaces low-confidence and near-deadline risks deterministically', () => {
+  it('surfaces low-confidence, unknown source status and near-deadline risks deterministically', () => {
     const summary = discoveryDecisionSummary(candidate({
       deadline: '2026-09-14T10:00:00.000Z',
       fitConfidence: 'low',
@@ -55,8 +56,29 @@ describe('v1.4 round 2 discovery decision workspace', () => {
       'fit-low-confidence',
       'opportunity-low-confidence',
       'profile-warnings',
+      'posting-status-unknown',
       'deadline-soon',
     ])
+  })
+
+  it('surfaces stale source evidence separately from score uncertainty', () => {
+    const posting = createJobPostingEvidence({
+      company: '甲公司', role: 'AI 产品经理', sourceUrl: 'https://careers.example.com/job-1', sourceTitle: '甲公司 AI 产品经理',
+      location: '北京', postingStatus: 'open', observedAt: '2026-08-01T00:00:00.000Z',
+    })
+    const summary = discoveryDecisionSummary(candidate({ posting }), new Date('2026-09-12T10:00:00.000Z'))
+    expect(summary.risks.map((entry) => entry.key)).toContain('source-stale')
+    expect(summary.strengths.map((entry) => entry.key)).not.toContain('source-fresh-open')
+  })
+
+  it('marks a recently verified open source as a positive signal', () => {
+    const posting = createJobPostingEvidence({
+      company: '甲公司', role: 'AI 产品经理', sourceUrl: 'https://careers.example.com/job-1', sourceTitle: '甲公司 AI 产品经理',
+      location: '北京', postingStatus: 'open', observedAt: '2026-09-11T00:00:00.000Z',
+    })
+    const summary = discoveryDecisionSummary(candidate({ posting }), new Date('2026-09-12T10:00:00.000Z'))
+    expect(summary.strengths.map((entry) => entry.key)).toContain('source-fresh-open')
+    expect(summary.risks.map((entry) => entry.key)).not.toContain('posting-status-unknown')
   })
 
   it('keeps active candidates ahead of archived candidates in review-priority sorting', () => {

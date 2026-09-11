@@ -17,6 +17,7 @@ import {
 } from '../src/decisionRules.js'
 import { discoveryProfileForSnapshot, isDiscoveryProfileConfigured } from '../src/discoveryProfile.js'
 import { screenDiscoveryCandidates } from '../src/discoveryQuality.js'
+import { createJobPostingEvidence } from '../src/jobPosting.js'
 import { buildMcpProposalReviewUrl, type McpDiscoveryReview } from '../src/ai/mcpProposal.js'
 import { parseProgressUpdate } from '../src/progressUpdate.js'
 import type { ActionStatus, DiscoveryConfidence, Opportunity, OpportunityRole } from '../src/model.js'
@@ -213,6 +214,17 @@ function discoveredOpportunity(
   now: Date,
 ): Opportunity {
   const discoveredAt = candidate.discoveredAt ?? now.toISOString()
+  const posting = createJobPostingEvidence({
+    company: candidate.company,
+    role: candidate.role,
+    sourceUrl: candidate.sourceUrl,
+    sourceTitle: candidate.sourceTitle,
+    location: candidate.location,
+    deadline: candidate.deadline,
+    compensationText: candidate.compensationText,
+    postingStatus: candidate.postingStatus ?? 'unknown',
+    observedAt: discoveredAt,
+  })
   return {
     id: discoveredOpportunityId(candidate.company, candidate.role),
     company: candidate.company,
@@ -243,6 +255,7 @@ function discoveredOpportunity(
         fitConfidence: candidate.fitConfidence as DiscoveryConfidence,
         opportunityValueConfidence: candidate.opportunityValueConfidence as DiscoveryConfidence,
         profileWarnings: warnings.length ? warnings : undefined,
+        posting,
       },
     },
   }
@@ -395,7 +408,7 @@ export async function invokeProposeChanges(
         deferredCount: discoveryScreening.deferredCandidates.length,
       } : undefined,
       reviewUrl,
-      instruction: 'No PJSDAS job-search data has changed. Ask the user to open the signed reviewUrl within 24 hours and explicitly Apply or Discard the ChangeSet in PJSDAS. Web-discovered opportunities must retain their public source evidence. PJSDAS quality-gates expired, closed, explicitly excluded, below-threshold and duplicate candidates before review; unknown source facts remain visible as warnings. If PJSDAS reports that the local workspace has changed since this proposal was created, sync first and ask for a fresh proposal.',
+      instruction: 'No PJSDAS job-search data has changed. Ask the user to open the signed reviewUrl within 24 hours and explicitly Apply or Discard the ChangeSet in PJSDAS. Web-discovered opportunities retain canonical source identity, posting status and verification timestamps. PJSDAS quality-gates expired, closed, explicitly excluded, below-threshold and duplicate candidates before review; stale source evidence may be refreshed or treated as a possible re-post instead of being silently suppressed. Unknown source facts remain visible as warnings. If PJSDAS reports that the local workspace has changed since this proposal was created, sync first and ask for a fresh proposal.',
     })
   } catch (caught) {
     if (caught instanceof WorkspaceSourceError) return failure(caught.code, caught.message, caught.retryable)

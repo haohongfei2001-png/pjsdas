@@ -8,7 +8,7 @@ import {
 } from './supabaseProject.js'
 import { WorkspaceSourceError, type WorkspaceSource } from './workspaceSource.js'
 
-export const AUTHENTICATED_GATEWAY_VERSION = '1.4.0-alpha.1' as const
+export const AUTHENTICATED_GATEWAY_VERSION = '1.4.0-alpha.3' as const
 export const AUTHENTICATED_MCP_RESOURCE = 'https://pjsdas-remote-alpha.vercel.app/api/mcp'
 export const AUTHORIZATION_SERVER = `${PJSDAS_SUPABASE_URL}/auth/v1`
 export const PROTECTED_RESOURCE_METADATA_URL = 'https://pjsdas-remote-alpha.vercel.app/.well-known/oauth-protected-resource'
@@ -68,8 +68,9 @@ function lazyDriveSource(request: Request): WorkspaceSource {
  * tools resolve the user's encrypted Google Drive connection lazily. Job
  * discovery context is read-only; ChatGPT performs public web search outside
  * PJSDAS and may submit source-backed candidates only through propose_changes.
- * That tool returns a validated, signed pending ChangeSet review link and never
- * writes the Google Drive workspace directly.
+ * The Round 3 discovery gate now distinguishes source-specific posting identity
+ * and freshness from the durable Opportunity itself. The tool still returns a
+ * validated, signed pending ChangeSet review link and never writes Drive directly.
  */
 export async function authenticatedRemoteMcpFetch(request: Request) {
   try {

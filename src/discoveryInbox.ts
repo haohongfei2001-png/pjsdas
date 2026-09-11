@@ -1,4 +1,10 @@
 import { assertChangeSetValid, type ChangeSetRecord } from './changeSet.js'
+import {
+  createJobPostingEvidence,
+  jobPostingForInboxItem,
+  mergeJobPostingEvidence,
+  validateJobPostingEvidence,
+} from './jobPosting.js'
 import type {
   DiscoveryInboxItem,
   DiscoveryRejectionReason,
@@ -42,6 +48,10 @@ export function validateDiscoveryInboxItem(item: DiscoveryInboxItem): string[] {
   }
   if (item.deadline && Number.isNaN(new Date(item.deadline).getTime())) errors.push('发现箱截止时间无效。')
   if (item.seenAt && Number.isNaN(new Date(item.seenAt).getTime())) errors.push('发现箱 seenAt 无效。')
+  if (item.posting) errors.push(...validateJobPostingEvidence(item.posting).map((error) => `发现箱岗位发布记录无效：${error}`))
+  for (const posting of item.postingHistory ?? []) {
+    errors.push(...validateJobPostingEvidence(posting).map((error) => `发现箱岗位发布历史无效：${error}`))
+  }
   return errors
 }
 
@@ -50,6 +60,17 @@ function fromOperation(operation: DiscoveryOperation, changeSet: ChangeSetRecord
   const evidence = opportunity.detail?.discovery
   if (!evidence) throw new Error(`发现岗位 ${opportunity.company}｜${opportunity.role} 缺少来源证据。`)
   const timestamp = now.toISOString()
+  const posting = evidence.posting ?? createJobPostingEvidence({
+    company: opportunity.company,
+    role: opportunity.role,
+    sourceUrl: evidence.sourceUrl,
+    sourceTitle: evidence.sourceTitle,
+    location: evidence.location,
+    deadline: opportunity.deadline,
+    compensationText: evidence.compensationText,
+    postingStatus: 'unknown',
+    observedAt: evidence.discoveredAt,
+  })
   const item: DiscoveryInboxItem = {
     id: `inbox:${opportunity.id}`,
     candidateOpportunityId: opportunity.id,
@@ -67,6 +88,8 @@ function fromOperation(operation: DiscoveryOperation, changeSet: ChangeSetRecord
     fitConfidence: evidence.fitConfidence,
     opportunityValueConfidence: evidence.opportunityValueConfidence,
     profileWarnings: evidence.profileWarnings ? [...evidence.profileWarnings] : undefined,
+    posting,
+    postingHistory: evidence.postingHistory ? evidence.postingHistory.map((item) => ({ ...item })) : undefined,
     status: 'new',
     sourceChangeSetId: changeSet.id,
     sourceOperationId: operation.id,
@@ -89,7 +112,7 @@ export function discoveryInboxItemsFromChangeSet(changeSet: ChangeSetRecord, now
   return operations.map((operation) => fromOperation(operation, changeSet, now))
 }
 
-export function mergeDiscoveryInboxItems(existing: DiscoveryInboxItem[], incoming: DiscoveryInboxItem[]) {
+export function mergeDiscoveryInboxItems(existing: DiscoveryInboxItem[], incoming: DiscoveryInboxItem[], now = new Date()) {
   const byIdentity = new Map(existing.map((item) => [discoveryInboxIdentity(item.company, item.role), item]))
   const result = [...existing]
   for (const candidate of incoming) {
@@ -100,10 +123,19 @@ export function mergeDiscoveryInboxItems(existing: DiscoveryInboxItem[], incomin
       byIdentity.set(key, candidate)
       continue
     }
+
+    const mergedPosting = mergeJobPostingEvidence(
+      jobPostingForInboxItem(previous),
+      previous.postingHistory,
+      jobPostingForInboxItem(candidate),
+      now,
+    )
     const merged: DiscoveryInboxItem = {
       ...candidate,
       id: previous.id,
       candidateOpportunityId: previous.candidateOpportunityId || candidate.candidateOpportunityId,
+      posting: mergedPosting.current,
+      postingHistory: mergedPosting.history.length ? mergedPosting.history : undefined,
       status: previous.status,
       rejectionReason: previous.rejectionReason,
       createdAt: previous.createdAt,
@@ -119,6 +151,7 @@ export function mergeDiscoveryInboxItems(existing: DiscoveryInboxItem[], incomin
 }
 
 export function inboxOpportunity(item: DiscoveryInboxItem, now = new Date()): Opportunity {
+  const posting = jobPostingForInboxItem(item)
   return {
     id: item.candidateOpportunityId,
     company: item.company,
@@ -148,6 +181,8 @@ export function inboxOpportunity(item: DiscoveryInboxItem, now = new Date()): Op
         fitConfidence: item.fitConfidence,
         opportunityValueConfidence: item.opportunityValueConfidence,
         profileWarnings: item.profileWarnings ? [...item.profileWarnings] : undefined,
+        posting,
+        postingHistory: item.postingHistory?.map((entry) => ({ ...entry })),
       },
     },
   }
