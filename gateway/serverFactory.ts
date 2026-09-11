@@ -17,7 +17,7 @@ const readOnlyAnnotations = {
 
 export interface PjsdasMcpServerOptions {
   version?: string
-  dataMode?: 'workspace' | 'demo'
+  dataMode?: 'workspace' | 'demo' | 'google-drive-readonly'
 }
 
 export function createPjsdasMcpServer(
@@ -33,6 +33,9 @@ export function createPjsdasMcpServer(
 
   if (dataMode === 'demo') {
     instructions.push('This endpoint contains synthetic demo data only. Never present demo companies, roles, events, or priorities as the user\'s real job-search state.')
+  }
+  if (dataMode === 'google-drive-readonly') {
+    instructions.push('This endpoint reads the authenticated user\'s validated PJSDAS workspace from Google Drive appDataFolder. Treat returned records as private user data and expose only what is needed to answer the user\'s request.')
   }
 
   const server = new McpServer(
