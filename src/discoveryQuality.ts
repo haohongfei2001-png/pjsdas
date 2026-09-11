@@ -1,6 +1,7 @@
 import type { DecisionWeights } from './decisionRules.js'
 import { discoveryProfileForSnapshot, type DiscoveryProfile } from './discoveryProfile.js'
-import type { DiscoveryConfidence, Opportunity, OpportunityRole } from './model.js'
+import { recentRejectedDiscoveryFeedback } from './discoveryFeedback.js'
+import type { DiscoveryConfidence, Opportunity, OpportunityRole, TimelineRecord } from './model.js'
 
 export type DiscoveryPostingStatus = 'open' | 'closed' | 'unknown'
 
@@ -216,13 +217,28 @@ export function screenDiscoveryCandidates<T extends DiscoveryCandidateForQuality
   existing: Opportunity[],
   weights: DecisionWeights,
   now = new Date(),
+  timeline: TimelineRecord[] = [],
 ): DiscoveryScreeningResult<T> {
   const profile = discoveryProfileForSnapshot(rawProfile)
   const eligible: ScreenedDiscoveryCandidate<T>[] = []
   const skippedDuplicates: DiscoveryScreeningResult<T>['skippedDuplicates'] = []
   const rejectedCandidates: DiscoveryScreeningResult<T>['rejectedCandidates'] = []
+  const recentlyRejected = recentRejectedDiscoveryFeedback(timeline, now)
 
   for (const candidate of candidates) {
+    const priorRejection = recentlyRejected.find((item) =>
+      normalizedCompany(item.company) === normalizedCompany(candidate.company) &&
+      discoveryRoleSimilarity(item.role, candidate.role) >= 0.72
+    )
+    if (priorRejection) {
+      rejectedCandidates.push({
+        company: candidate.company,
+        role: candidate.role,
+        reasons: [`用户在最近 120 天已明确拒绝高度相似岗位“${priorRejection.company}｜${priorRejection.role}”。`],
+      })
+      continue
+    }
+
     const duplicate = findSimilarOpportunity(candidate, existing)
     if (duplicate) {
       skippedDuplicates.push({

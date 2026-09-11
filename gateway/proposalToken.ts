@@ -2,6 +2,7 @@ import {
   createMcpProposalEnvelope,
   decodeMcpProposal,
   encodeMcpProposal,
+  type McpDiscoveryReview,
   type McpProposalEnvelope,
 } from '../src/ai/mcpProposal.js'
 import type { ChangeSetRecord } from '../src/changeSet.js'
@@ -34,8 +35,9 @@ export async function createSignedProposalToken(
   workspaceVersion: string | undefined,
   secret: string,
   now = new Date(),
+  discoveryReview?: McpDiscoveryReview,
 ) {
-  const envelope = createMcpProposalEnvelope(changeSet, workspaceVersion, now)
+  const envelope = createMcpProposalEnvelope(changeSet, workspaceVersion, now, discoveryReview)
   const encoded = encodeMcpProposal(envelope)
   const key = await signingKey(secret)
   const signature = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(encoded))
