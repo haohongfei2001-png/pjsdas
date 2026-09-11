@@ -12,52 +12,58 @@ jobs:
   verify:
     runs-on: ubuntu-latest
     steps:
-      - name: Verify authenticated runtime rejection paths
+      - name: Diagnose static authenticated runtime imports
         shell: bash
         run: |
           set -euo pipefail
           base='https://pjsdas-remote-alpha.vercel.app'
 
-          # Wait for the Git-linked Vercel production deployment triggered by this commit.
-          for i in {1..18}; do
-            status=$(curl -sS -o /tmp/health.json -w '%{http_code}' "$base/api/health-auth" || true)
-            if [ "$status" = '200' ] && jq -e '.ready == true' /tmp/health.json >/dev/null; then break; fi
+          # These temporary endpoints only exist in the deployment for this probe,
+          # so their appearance proves Vercel is serving the current commit.
+          for i in {1..24}; do
+            drive_code=$(curl -sS -o /tmp/static-drive.json -w '%{http_code}' "$base/api/diagnose-auth-static-drive" || true)
+            mcp_code=$(curl -sS -o /tmp/static-mcp.json -w '%{http_code}' "$base/api/diagnose-auth-static-mcp" || true)
+            if [ "$drive_code" != '404' ] && [ "$mcp_code" != '404' ]; then break; fi
             sleep 5
           done
-          jq -e '.ready == true' /tmp/health.json >/dev/null
 
-          # Supplying a malformed-but-present bearer token forces the authenticated
-          # module to load and reach Supabase identity validation. It must fail closed
-          # as AUTH_INVALID, not crash at module load.
-          code=$(curl -sS -o /tmp/mcp-invalid.json -w '%{http_code}' \
+          echo "static_drive_status=$drive_code"
+          cat /tmp/static-drive.json
+          echo
+          echo "static_mcp_status=$mcp_code"
+          cat /tmp/static-mcp.json
+          echo
+
+          invalid_code=$(curl -sS -o /tmp/mcp-invalid.json -w '%{http_code}' \
             -X POST "$base/api/mcp-auth" \
             -H 'authorization: Bearer pjsdas-invalid-runtime-probe' \
             -H 'content-type: application/json' \
             -H 'accept: application/json, text/event-stream' \
             --data '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"auth-runtime-check","version":"1"}}}')
-          echo "invalid_bearer_status=$code"
+          echo "invalid_bearer_status=$invalid_code"
           cat /tmp/mcp-invalid.json
-          test "$code" = '401'
-          jq -e '.code == "AUTH_INVALID"' /tmp/mcp-invalid.json >/dev/null
+          echo
 
-          # The browser linking endpoint must accept preflight only from the production
-          # PJSDAS origin and must reject an unauthenticated POST without touching Drive.
-          code=$(curl -sS -o /dev/null -w '%{http_code}' \
+          preflight_code=$(curl -sS -o /tmp/preflight.body -w '%{http_code}' \
             -X OPTIONS "$base/api/google-link" \
             -H 'Origin: https://haohongfei2001-png.github.io' \
             -H 'Access-Control-Request-Method: POST' \
             -H 'Access-Control-Request-Headers: authorization,content-type')
-          echo "google_link_preflight_status=$code"
-          test "$code" = '204'
+          echo "google_link_preflight_status=$preflight_code"
 
-          code=$(curl -sS -o /tmp/link-noauth.json -w '%{http_code}' \
+          link_code=$(curl -sS -o /tmp/link-noauth.json -w '%{http_code}' \
             -X POST "$base/api/google-link" \
             -H 'Origin: https://haohongfei2001-png.github.io' \
             -H 'content-type: application/json' \
             --data '{"providerToken":"x","providerRefreshToken":"y"}')
-          echo "google_link_noauth_status=$code"
+          echo "google_link_noauth_status=$link_code"
           cat /tmp/link-noauth.json
-          test "$code" = '401'
-          jq -e '.code == "AUTH_REQUIRED"' /tmp/link-noauth.json >/dev/null
+          echo
 
-          echo 'Authenticated runtime and Google-link rejection boundaries are healthy.'
+          test "$drive_code" = '200'
+          test "$mcp_code" = '200'
+          test "$invalid_code" = '401'
+          jq -e '.code == "AUTH_INVALID"' /tmp/mcp-invalid.json >/dev/null
+          test "$preflight_code" = '204'
+          test "$link_code" = '401'
+          jq -e '.code == "AUTH_REQUIRED"' /tmp/link-noauth.json >/dev/null
