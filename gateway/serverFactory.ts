@@ -149,7 +149,7 @@ export function createPjsdasMcpServer(
       'propose_changes',
       {
         title: 'Propose PJSDAS changes for review',
-        description: 'Create a signed, review-only PJSDAS ChangeSet. Supports natural-language progress, exact action-status changes, explicit Decision Rules patches, or a separate batch of source-backed discoveredOpportunities from current public job-search results. This tool never directly changes the workspace; return reviewUrl for explicit Apply/Discard in PJSDAS.',
+        description: 'Create a signed, review-only PJSDAS ChangeSet. Supports natural-language progress, exact action-status changes, explicit Decision Rules patches, or a separate batch of source-backed discoveredOpportunities from current public job-search results. This does not change the workspace. Return reviewUrl for explicit Apply/Discard in PJSDAS.',
         inputSchema: proposeChangesSchema,
         annotations: proposalAnnotations,
       },
