@@ -87,7 +87,9 @@ describe('v1.5 Round 2 component-derived discovery proposals', () => {
     expect(operation.opportunity.opportunityValue).toBeGreaterThan(80)
     expect(operation.opportunity.fitScore).not.toBe(5)
     expect(operation.opportunity.detail?.assessment?.fit.roleDirection).toMatchObject({ score: 92, confidence: 'high' })
-    expect(operation.opportunity.detail?.discovery?.fitConfidence).toBe('medium')
+    // Only 42% of configured Fit weight is covered here; strong known components
+    // keep merit high while overall certainty correctly remains low.
+    expect(operation.opportunity.detail?.discovery?.fitConfidence).toBe('low')
     expect(operation.opportunity.detail?.discovery?.profileWarnings?.join(' ')).toContain('覆盖')
   })
 
