@@ -41,6 +41,10 @@ jobs:
           set -euo pipefail
           git config user.name "haohongfei2001-png"
           git config user.email "haohongfei2001@gmail.com"
+          # The GitHub Actions token has contents:write but not workflows:write.
+          # Restore workflow files touched by the codemod; they are updated later
+          # through the GitHub connector after the implementation is transferred.
+          git checkout HEAD -- .github/workflows/v13-production-smoke.yml
           git add -A
           if git diff --cached --quiet; then
             echo "No changes to commit."
