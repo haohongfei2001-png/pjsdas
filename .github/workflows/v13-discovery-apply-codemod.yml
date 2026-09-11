@@ -1,5 +1,6 @@
 name: v1.3 discovered opportunity apply codemod
 
+# one-shot retry after codemod syntax fix
 on:
   push:
     branches: [v1.3-discovery-alpha]
