@@ -1,0 +1,40 @@
+name: v1.4 Round 1 discovery inbox one-shot
+
+on:
+  push:
+    branches: [v1.4-round1-work]
+
+permissions:
+  contents: write
+
+jobs:
+  implement:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: v1.4-round1-work
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Apply v1.4 Round 1 codemod
+        run: python3 scripts/v14_round1_codemod.py
+      - run: npm ci
+      - name: Dependency security gate
+        run: npm audit --audit-level=high
+      - run: npm test
+      - run: npm run build
+      - name: Commit implementation
+        run: |
+          set -euo pipefail
+          git config user.name "haohongfei2001-png"
+          git config user.email "haohongfei2001@gmail.com"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "No changes to commit."
+            exit 0
+          fi
+          git commit -m "v1.4 Round 1: durable Discovery Inbox"
+          git push origin HEAD:v1.4-round1-work
