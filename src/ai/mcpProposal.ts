@@ -3,10 +3,12 @@ import { assertChangeSetValid, type ChangeSetRecord } from '../changeSet.js'
 export const MCP_PROPOSAL_VERSION = 1 as const
 export const MCP_PROPOSAL_FRAGMENT_KEY = 'pjsdas-proposal'
 export const PJSDAS_REVIEW_BASE_URL = 'https://haohongfei2001-png.github.io/pjsdas/'
+export const MCP_PROPOSAL_TTL_MS = 24 * 60 * 60 * 1000
 
 export interface McpProposalEnvelope {
   version: typeof MCP_PROPOSAL_VERSION
   workspaceVersion?: string
+  expiresAt: string
   changeSet: ChangeSetRecord
 }
 
@@ -41,9 +43,28 @@ function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
+function validIso(value: unknown) {
+  return typeof value === 'string' && !Number.isNaN(new Date(value).getTime())
+}
+
+export function createMcpProposalEnvelope(
+  changeSet: ChangeSetRecord,
+  workspaceVersion?: string,
+  now = new Date(),
+): McpProposalEnvelope {
+  assertChangeSetValid(changeSet)
+  return {
+    version: MCP_PROPOSAL_VERSION,
+    workspaceVersion,
+    expiresAt: new Date(now.getTime() + MCP_PROPOSAL_TTL_MS).toISOString(),
+    changeSet,
+  }
+}
+
 export function encodeMcpProposal(envelope: McpProposalEnvelope) {
   assertChangeSetValid(envelope.changeSet)
   if (envelope.version !== MCP_PROPOSAL_VERSION) throw new Error('Unsupported PJSDAS proposal version.')
+  if (!validIso(envelope.expiresAt)) throw new Error('PJSDAS proposal expiry is invalid.')
   return toBase64Url(JSON.stringify(envelope))
 }
 
@@ -61,21 +82,17 @@ export function decodeMcpProposal(encoded: string): McpProposalEnvelope {
   if (parsed.workspaceVersion !== undefined && typeof parsed.workspaceVersion !== 'string') {
     throw new Error('PJSDAS proposal workspace version is invalid.')
   }
+  if (!validIso(parsed.expiresAt)) throw new Error('PJSDAS proposal expiry is invalid.')
   assertChangeSetValid(parsed.changeSet)
   return parsed as unknown as McpProposalEnvelope
 }
 
 export function buildMcpProposalReviewUrl(
-  changeSet: ChangeSetRecord,
-  workspaceVersion?: string,
+  signedToken: string,
   baseUrl = PJSDAS_REVIEW_BASE_URL,
 ) {
-  const encoded = encodeMcpProposal({
-    version: MCP_PROPOSAL_VERSION,
-    workspaceVersion,
-    changeSet,
-  })
-  return `${baseUrl}#${MCP_PROPOSAL_FRAGMENT_KEY}=${encoded}`
+  if (!signedToken || signedToken.length > 32_000) throw new Error('PJSDAS proposal token is invalid or too large.')
+  return `${baseUrl}#${MCP_PROPOSAL_FRAGMENT_KEY}=${signedToken}`
 }
 
 export function encodedProposalFromHash(hash: string) {
