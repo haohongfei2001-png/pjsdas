@@ -19,8 +19,9 @@ jobs:
         with:
           node-version: 22
           cache: npm
-      - name: Relax sequential codemod target check
+      - name: Patch codemod for current Round 3 code
         run: |
+          python3 scripts/v14_fix_codemod.py
           python3 - <<'PY'
           from pathlib import Path
           p = Path('scripts/v14_round1_codemod.py')
