@@ -8,6 +8,7 @@ import {
   type ChangeSetOperation,
   type ChangeSetRecord,
 } from '../src/changeSet.js'
+import { fingerprintWorkspace } from '../src/cloud/workspaceFingerprint.js'
 import {
   decisionRulesForSnapshot,
   validateDecisionRules,
@@ -113,7 +114,13 @@ function uniqueOperations(operations: ChangeSetOperation[]) {
   return [...byId.values()]
 }
 
-function makeMcpChangeSet(title: string, operations: ChangeSetOperation[], now: Date): ChangeSetRecord {
+function makeMcpChangeSet(
+  title: string,
+  operations: ChangeSetOperation[],
+  expectedWorkspaceVersion: string | undefined,
+  expectedWorkspaceFingerprint: string,
+  now: Date,
+): ChangeSetRecord {
   const timestamp = now.toISOString()
   const changeSet: ChangeSetRecord = {
     id: proposalId(now),
@@ -123,6 +130,8 @@ function makeMcpChangeSet(title: string, operations: ChangeSetOperation[], now: 
     title,
     createdAt: timestamp,
     updatedAt: timestamp,
+    expectedWorkspaceVersion,
+    expectedWorkspaceFingerprint,
     operations,
   }
   assertChangeSetValid(changeSet)
@@ -183,8 +192,15 @@ export async function invokeProposeChanges(
       return failure('PROPOSAL_TOO_LARGE', 'Split this request into smaller PJSDAS proposals of at most 24 normalized operations.', false)
     }
 
+    const expectedWorkspaceFingerprint = await fingerprintWorkspace(snapshot)
     const title = input.title ?? `ChatGPT 提议 · ${normalized.length} 项`
-    const changeSet = makeMcpChangeSet(title, normalized, now)
+    const changeSet = makeMcpChangeSet(
+      title,
+      normalized,
+      context.workspaceVersion,
+      expectedWorkspaceFingerprint,
+      now,
+    )
     const signedToken = await createSignedProposalToken(changeSet, context.workspaceVersion, options.signingKey, now)
     const reviewUrl = buildMcpProposalReviewUrl(signedToken)
 
@@ -197,7 +213,7 @@ export async function invokeProposeChanges(
       operationCount: changeSet.operations.length,
       operations: changeSet.operations.map((item) => ({ id: item.id, kind: item.kind, summary: item.summary })),
       reviewUrl,
-      instruction: 'No PJSDAS job-search data has changed. Ask the user to open the signed reviewUrl within 24 hours and explicitly Apply or Discard the pending ChangeSet in PJSDAS.',
+      instruction: 'No PJSDAS job-search data has changed. Ask the user to open the signed reviewUrl within 24 hours and explicitly Apply or Discard the ChangeSet in PJSDAS. If PJSDAS reports that the local workspace has changed since this proposal was created, sync first and ask for a fresh proposal.',
     })
   } catch (caught) {
     if (caught instanceof WorkspaceSourceError) return failure(caught.code, caught.message, caught.retryable)
