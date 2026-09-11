@@ -4,6 +4,8 @@ import {
   PJSDAS_SUPABASE_URL,
 } from '../../gateway/supabaseProject'
 
+const storage = typeof window !== 'undefined' ? window.sessionStorage : undefined
+
 export const pjsdasSupabase = createClient(
   PJSDAS_SUPABASE_URL,
   PJSDAS_SUPABASE_PUBLISHABLE_KEY,
@@ -13,6 +15,7 @@ export const pjsdasSupabase = createClient(
       detectSessionInUrl: true,
       persistSession: true,
       autoRefreshToken: true,
+      ...(storage ? { storage } : {}),
     },
   },
 )
