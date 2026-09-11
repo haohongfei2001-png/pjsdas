@@ -1,4 +1,4 @@
-const AUTHENTICATED_MCP_RESOURCE = 'https://pjsdas-remote-alpha.vercel.app/api/mcp-auth'
+const AUTHENTICATED_MCP_RESOURCE = 'https://pjsdas-remote-alpha.vercel.app/api/mcp'
 const AUTHORIZATION_SERVER = 'https://yyrzwpoxlxpafdlbkdtg.supabase.co/auth/v1'
 
 export default {
