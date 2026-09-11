@@ -42,6 +42,7 @@ export function createPjsdasMcpServer(
     'Read tools never change PJSDAS state.',
     'For job discovery, first call get_discovery_context. Treat its Discovery Profile as the durable user-controlled search preference source; do not silently invent or rewrite durable preferences from chat history.',
     'PJSDAS itself does not crawl the web. If the user asks for current job opportunities, use ChatGPT web search/browsing outside PJSDAS, preserve public source URLs, and keep unknown job facts unknown rather than fabricating them.',
+    'When a public source explicitly supports them, submit bounded structured Rich Opportunity facts such as responsibilities, requirements, education, majors, experience, skills, languages, department/business unit, recruitment batch, application method, and compensation evidence. Do not convert model inference into source facts.',
   ]
 
   if (proposalMode === 'review-link') {
@@ -50,6 +51,7 @@ export function createPjsdasMcpServer(
       'Never tell the user that a proposed change was applied. State clearly that the user must open the returned reviewUrl and explicitly Apply or Discard it in PJSDAS.',
       'For action status changes, read current actions first and use exact action IDs. For ambiguous updates, ask the user to clarify rather than guessing.',
       'For web-discovered jobs, submit only source-backed candidates through discoveredOpportunities. Do not mix discovery candidates with unrelated updates in the same ChangeSet.',
+      'Rich Opportunity facts are evidence fields, not ratings. Keep fitScore, opportunityValue, confidence, and rationale separate from source-backed job facts.',
     )
   } else {
     instructions.push('This server exposes no mutation or proposal tools.')
@@ -63,7 +65,7 @@ export function createPjsdasMcpServer(
   }
 
   const server = new McpServer(
-    { name: 'pjsdas', version: options.version ?? '1.3.0-alpha.1' },
+    { name: 'pjsdas', version: options.version ?? '1.5.0-alpha.1' },
     { instructions: instructions.join(' ') },
   )
 
@@ -149,7 +151,7 @@ export function createPjsdasMcpServer(
       'propose_changes',
       {
         title: 'Propose PJSDAS changes for review',
-        description: 'Create a signed, review-only PJSDAS ChangeSet. Supports natural-language progress, exact action-status changes, explicit Decision Rules patches, or a separate batch of source-backed discoveredOpportunities from current public job-search results. This does not change the workspace. Return reviewUrl for explicit Apply/Discard in PJSDAS.',
+        description: 'Create a signed, review-only PJSDAS ChangeSet. Supports natural-language progress, exact action-status changes, explicit Decision Rules patches, or a separate batch of source-backed discoveredOpportunities from current public job-search results. Discovery candidates may include bounded source-backed Rich Opportunity facts. This does not change the workspace. Return reviewUrl for explicit Apply/Discard in PJSDAS.',
         inputSchema: proposeChangesSchema,
         annotations: proposalAnnotations,
       },
