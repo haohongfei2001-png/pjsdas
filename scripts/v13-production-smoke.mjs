@@ -1,5 +1,5 @@
 const base = (process.env.PJSDAS_BASE_URL || process.argv[2] || 'https://pjsdas-remote-alpha.vercel.app').replace(/\/+$/, '')
-const expectedVersion = process.env.PJSDAS_EXPECTED_VERSION || '1.4.0-alpha.3'
+const expectedVersion = process.env.PJSDAS_EXPECTED_VERSION || '1.5.0-alpha.1'
 const expectedResource = (process.env.PJSDAS_EXPECTED_RESOURCE || `${base}/api/mcp`).replace(/\/+$/, '')
 const githubPagesOrigin = 'https://haohongfei2001-png.github.io'
 
@@ -38,6 +38,7 @@ async function main() {
   assert(health.body?.capabilities?.discoveredOpportunityProposals === true, 'discovered-opportunity proposal capability is not advertised')
   assert(health.body?.capabilities?.discoveryInbox === 'v1.4-round-2', 'v1.4 Discovery Inbox decision workspace is not advertised')
   assert(health.body?.capabilities?.jobPostingIdentityFreshness === 'v1.4-round-3', 'job posting identity/freshness capability is not advertised')
+  assert(health.body?.capabilities?.richOpportunityFacts === 'v1.5-round-1', 'Rich Opportunity fact capability is not advertised')
   console.log('✓ health/version/capabilities')
 
   const unauth = await fetchJson('/api/mcp', {
@@ -75,13 +76,13 @@ async function main() {
       origin: githubPagesOrigin,
       'content-type': 'application/json',
     },
-    body: JSON.stringify({ token: 'invalid.v1.4-round3-smoke-token' }),
+    body: JSON.stringify({ token: 'invalid.v1.5-round1-smoke-token' }),
   })
   assert(invalidProposal.response.status === 400, `invalid proposal expected 400, got ${invalidProposal.response.status}`)
   assert(invalidProposal.body?.code === 'PROPOSAL_INVALID', `invalid proposal code expected PROPOSAL_INVALID, got ${invalidProposal.body?.code}`)
   console.log('✓ signed proposal verifier rejects invalid capability tokens')
 
-  console.log('PJSDAS v1.4 Round 3 public production contract passed.')
+  console.log('PJSDAS v1.5 Round 1 public production contract passed.')
 }
 
 main().catch((error) => {
