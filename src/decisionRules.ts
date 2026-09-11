@@ -134,8 +134,8 @@ export function decisionRulesForSnapshot(rules?: DecisionRules): DecisionRules {
   return rules ? cloneDecisionRules(rules) : cloneDecisionRules(DEFAULT_DECISION_RULES)
 }
 
-function validateWeightMap(label: string, weights: Record<string, number>, errors: string[]) {
-  const values = Object.values(weights)
+function validateWeightMap(label: string, weights: object, errors: string[]) {
+  const values = Object.values(weights) as number[]
   if (values.some((value) => !Number.isFinite(value) || value < 0 || value > 100)) {
     errors.push(`${label}必须位于 0–100。`)
   }
