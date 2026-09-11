@@ -7,10 +7,10 @@ import {
 import {
   createInboxPromotionChangeSet,
   discoveryInboxDecisionTimeline,
-  discoveryInboxIdentity,
   discoveryInboxItemsFromChangeSet,
   mergeDiscoveryInboxItems,
 } from './discoveryInbox.js'
+import { findSimilarOpportunity } from './discoveryQuality.js'
 import type { ChangeSetRecord } from './changeSet.js'
 import type {
   DiscoveryInboxItem,
@@ -68,10 +68,8 @@ export async function promoteDiscoveryInboxItem(id: string) {
   if (item.status === 'promoted') return item
 
   const opportunities = await getAllOpportunities()
-  const existing = opportunities.find((opportunity) =>
-    opportunity.id === item.candidateOpportunityId ||
-    discoveryInboxIdentity(opportunity.company, opportunity.role) === discoveryInboxIdentity(item.company, item.role)
-  )
+  const existing = opportunities.find((opportunity) => opportunity.id === item.candidateOpportunityId)
+    ?? findSimilarOpportunity({ company: item.company, role: item.role }, opportunities)
   let promotedOpportunityId = existing?.id
   if (!existing) {
     const changeSet = createInboxPromotionChangeSet(item)
