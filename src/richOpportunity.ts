@@ -99,7 +99,7 @@ function unknownFieldsFor(facts: Omit<OpportunityFacts, 'unknownFields'>) {
   if (!facts.role.languageRequirements?.length) unknown.push('languages')
   if (!facts.application.applicationMethod) unknown.push('application_method')
   if (!facts.application.deadline) unknown.push('deadline')
-  if (!facts.compensation.raw && facts.compensation.annualMinWan === undefined && facts.compensation.annualMaxWan === undefined) unknown.push('compensation')
+  if (facts.compensation.annualMinWan === undefined && facts.compensation.annualMaxWan === undefined) unknown.push('compensation')
   return unknown
 }
 
@@ -153,6 +153,12 @@ function equalStringArrays(a: string[], b: string[]) {
   return a.length === b.length && a.every((value, index) => value === b[index])
 }
 
+function validateOptionalText(value: string | undefined, label: string, maxLength: number, errors: string[]) {
+  if (value !== undefined && (typeof value !== 'string' || !value.trim() || value.length > maxLength)) {
+    errors.push(`Rich Opportunity ${label} 无效。`)
+  }
+}
+
 function validateList(values: string[] | undefined, label: string, maxItems: number, maxLength: number, errors: string[]) {
   if (values === undefined) return
   if (!Array.isArray(values) || values.length === 0 || values.length > maxItems || values.some((item) => typeof item !== 'string' || !item.trim() || item.length > maxLength)) {
@@ -166,9 +172,18 @@ export function validateOpportunityFacts(facts: OpportunityFacts): string[] {
   if (!isPublicHttpUrl(facts.evidence?.sourceUrl)) errors.push('Rich Opportunity 来源 URL 无效。')
   if (!facts.evidence?.sourceTitle?.trim() || facts.evidence.sourceTitle.length > 300) errors.push('Rich Opportunity 来源标题无效。')
   if (!facts.evidence?.verifiedAt || Number.isNaN(new Date(facts.evidence.verifiedAt).getTime())) errors.push('Rich Opportunity verifiedAt 无效。')
-  if (facts.evidence.evidenceSummary !== undefined && (!facts.evidence.evidenceSummary.trim() || facts.evidence.evidenceSummary.length > 1200)) errors.push('Rich Opportunity evidenceSummary 无效。')
+  validateOptionalText(facts.evidence.evidenceSummary, 'evidenceSummary', 1200, errors)
   if (facts.application.applicationUrl !== undefined && !isPublicHttpUrl(facts.application.applicationUrl)) errors.push('Rich Opportunity 投递 URL 无效。')
   if (facts.application.deadline !== undefined && Number.isNaN(new Date(facts.application.deadline).getTime())) errors.push('Rich Opportunity 截止时间无效。')
+  validateOptionalText(facts.identity.department, 'department', 200, errors)
+  validateOptionalText(facts.identity.businessUnit, 'businessUnit', 200, errors)
+  validateOptionalText(facts.identity.recruitmentBatch, 'recruitmentBatch', 160, errors)
+  validateOptionalText(facts.application.recruitmentBatch, 'application.recruitmentBatch', 160, errors)
+  validateOptionalText(facts.role.educationRequirement, 'educationRequirement', 300, errors)
+  validateOptionalText(facts.role.experienceRequirement, 'experienceRequirement', 300, errors)
+  validateOptionalText(facts.application.applicationMethod, 'applicationMethod', 300, errors)
+  validateOptionalText(facts.compensation.raw, 'compensation.raw', 500, errors)
+  validateOptionalText(facts.compensation.basis, 'compensation.basis', 300, errors)
   validateList(facts.identity.locations, 'locations', 10, 120, errors)
   validateList(facts.role.responsibilities, 'responsibilities', 12, 320, errors)
   validateList(facts.role.requirements, 'requirements', 16, 320, errors)
