@@ -1,0 +1,39 @@
+name: v1.3 discovery narrowing fix
+
+on:
+  push:
+    branches: [v1.3-discovery-alpha]
+    paths:
+      - '.github/workflows/v13-fix-discovery-narrowing.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: v1.3-discovery-alpha
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Narrow non-discovery operation type
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('src/db.ts')
+          text = path.read_text()
+          before = """      if (operation.kind === 'delete_process_event') {\n        await deleteProcessEvent(operation.eventId)\n        continue\n      }\n\n      const action = await db.get('actions', operation.actionId) ?? (await getAllActions()).find((item) => item.id === operation.actionId)"""
+          after = """      if (operation.kind === 'delete_process_event') {\n        await deleteProcessEvent(operation.eventId)\n        continue\n      }\n\n      if (operation.kind === 'add_discovered_opportunity') {\n        throw new Error('岗位发现 ChangeSet 必须作为独立批次应用。')\n      }\n\n      const action = await db.get('actions', operation.actionId) ?? (await getAllActions()).find((item) => item.id === operation.actionId)"""
+          if before not in text:
+              raise SystemExit('narrowing anchor not found')
+          path.write_text(text.replace(before, after, 1))
+          PY
+      - run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src/db.ts
+          git commit -m 'Narrow discovered ChangeSet operations before action handling'
+          git push origin HEAD:v1.3-discovery-alpha
