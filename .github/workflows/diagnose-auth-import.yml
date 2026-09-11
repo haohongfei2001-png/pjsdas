@@ -1,0 +1,30 @@
+name: Diagnose authenticated module imports
+
+on:
+  push:
+    paths:
+      - '.github/workflows/diagnose-auth-import.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fetch production import diagnostic
+        shell: bash
+        run: |
+          set -euo pipefail
+          base='https://pjsdas-remote-alpha.vercel.app'
+          for i in {1..24}; do
+            code=$(curl -sS -o /tmp/diag.json -w '%{http_code}' "$base/api/diagnose-auth-import" || true)
+            if [ "$code" = '200' ] || [ "$code" = '500' ]; then
+              if jq -e '.checks' /tmp/diag.json >/dev/null 2>&1; then break; fi
+            fi
+            sleep 5
+          done
+          echo "diagnostic_status=$code"
+          cat /tmp/diag.json
+          jq . /tmp/diag.json
+          test "$code" = '200'
