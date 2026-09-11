@@ -8,6 +8,7 @@ import ProgressInbox from './ProgressInbox'
 import { UiLanguageProvider } from './uiLanguage'
 import { CloudProvider } from './cloud/CloudContext'
 import { AiAccessProvider } from './aiAccess/AiAccessContext'
+import OAuthConsentPage from './aiAccess/OAuthConsentPage'
 import './styles.css'
 import './designSystem.css'
 
@@ -30,14 +31,26 @@ function Root() {
   )
 }
 
+function Entry() {
+  const authorizationId = typeof window !== 'undefined'
+    ? new URL(window.location.href).searchParams.get('authorization_id')
+    : null
+
+  if (authorizationId) return <OAuthConsentPage />
+
+  return (
+    <CloudProvider>
+      <AiAccessProvider>
+        <Root />
+      </AiAccessProvider>
+    </CloudProvider>
+  )
+}
+
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <UiLanguageProvider>
-      <CloudProvider>
-        <AiAccessProvider>
-          <Root />
-        </AiAccessProvider>
-      </CloudProvider>
+      <Entry />
     </UiLanguageProvider>
   </StrictMode>,
 )
