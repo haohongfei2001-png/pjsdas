@@ -349,7 +349,7 @@ export async function invokeProposeChanges(
           false,
         )
       }
-      const discovered = discoveredOperations(input.discoveredOpportunities, { snapshot, context } as Awaited<ReturnType<WorkspaceSource['read']>>, profile, now)
+      const discovered = discoveredOperations(input.discoveredOpportunities, snapshot, profile, now)
       operations.push(...discovered.operations)
       skippedDuplicates = discovered.skippedDuplicates
     }
