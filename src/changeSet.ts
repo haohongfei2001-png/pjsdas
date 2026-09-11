@@ -52,6 +52,8 @@ export interface ChangeSetRecord {
   title: string
   createdAt: string
   updatedAt: string
+  expectedWorkspaceVersion?: string
+  expectedWorkspaceFingerprint?: string
   appliedAt?: string
   discardedAt?: string
   failedAt?: string
@@ -194,6 +196,13 @@ export function validateChangeSet(value: unknown): string[] {
   if (!['pending', 'applied', 'discarded', 'failed'].includes(String(value.status))) errors.push('ChangeSet status 无效。')
   if (typeof value.title !== 'string' || !value.title.trim()) errors.push('ChangeSet 缺少标题。')
   if (!validIso(value.createdAt) || !validIso(value.updatedAt)) errors.push('ChangeSet 时间字段无效。')
+  if (value.expectedWorkspaceVersion !== undefined && (typeof value.expectedWorkspaceVersion !== 'string' || !value.expectedWorkspaceVersion.trim())) {
+    errors.push('ChangeSet 工作区基线版本无效。')
+  }
+  if (value.expectedWorkspaceFingerprint !== undefined &&
+    (typeof value.expectedWorkspaceFingerprint !== 'string' || !/^[a-f0-9]{64}$/i.test(value.expectedWorkspaceFingerprint))) {
+    errors.push('ChangeSet 工作区基线指纹无效。')
+  }
   if (!Array.isArray(value.operations) || value.operations.length === 0) {
     errors.push('ChangeSet 至少需要一个 operation。')
     return errors
