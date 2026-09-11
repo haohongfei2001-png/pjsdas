@@ -61,6 +61,19 @@ export async function updateDiscoveryInboxStatus(
   return next
 }
 
+export async function bulkUpdateDiscoveryInboxStatus(
+  ids: string[],
+  status: 'later' | 'dismissed',
+  rejectionReason?: DiscoveryRejectionReason,
+) {
+  const uniqueIds = Array.from(new Set(ids))
+  const updated: DiscoveryInboxItem[] = []
+  for (const id of uniqueIds) {
+    updated.push(await updateDiscoveryInboxStatus(id, status, rejectionReason))
+  }
+  return updated
+}
+
 export async function promoteDiscoveryInboxItem(id: string) {
   const db = await dbPromise
   const item = await db.get('discoveryInbox', id)
