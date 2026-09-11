@@ -1,0 +1,77 @@
+.opportunity-assessment-summary {
+  margin-top: 12px;
+  padding: 10px 12px;
+  border: 1px solid rgba(41, 39, 32, 0.11);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.42);
+}
+
+.opportunity-assessment-summary > summary {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.opportunity-assessment-summary > summary strong {
+  font-size: 12px;
+}
+
+.opportunity-assessment-note {
+  margin: 10px 0;
+  font-size: 12px;
+  line-height: 1.55;
+  color: rgba(41, 39, 32, 0.64);
+}
+
+.opportunity-assessment-axis {
+  display: grid;
+  gap: 7px;
+  margin-top: 10px;
+}
+
+.opportunity-assessment-axis-head,
+.opportunity-assessment-component > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  align-items: baseline;
+}
+
+.opportunity-assessment-axis-head {
+  padding-bottom: 5px;
+  border-bottom: 1px solid rgba(41, 39, 32, 0.1);
+  font-size: 12px;
+}
+
+.opportunity-assessment-axis-head span,
+.opportunity-assessment-component span {
+  color: rgba(41, 39, 32, 0.62);
+  font-size: 11px;
+}
+
+.opportunity-assessment-component {
+  padding: 7px 8px;
+  border-radius: 9px;
+  background: rgba(41, 39, 32, 0.035);
+}
+
+.opportunity-assessment-component strong {
+  font-size: 12px;
+}
+
+.opportunity-assessment-component p {
+  margin: 4px 0 0;
+  font-size: 11px;
+  line-height: 1.5;
+  color: rgba(41, 39, 32, 0.65);
+}
+
+.opportunity-assessment-summary > small {
+  display: block;
+  margin-top: 10px;
+  color: rgba(41, 39, 32, 0.52);
+  font-size: 10px;
+}
