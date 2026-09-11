@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { decideSyncAction } from '../src/cloud/syncLogic'
+import { decideSyncAction } from '../src/cloud/syncLogic.js'
 
 describe('local-first Google Drive sync decisions', () => {
   it('creates Drive workspace when no remote file exists', () => {

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import { READ_TOOL_NAMES, invokeReadTool, type ReadToolName } from '../gateway/readTools'
-import { createPjsdasMcpServer } from '../gateway/serverFactory'
-import { createFileWorkspaceSource } from '../gateway/workspaceSource'
+import { READ_TOOL_NAMES, invokeReadTool, type ReadToolName } from '../gateway/readTools.js'
+import { createPjsdasMcpServer } from '../gateway/serverFactory.js'
+import { createFileWorkspaceSource } from '../gateway/workspaceSource.js'
 
 const source = createFileWorkspaceSource({
   file: new URL('../gateway/fixtures/demo-workspace.json', import.meta.url),

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { User } from '@supabase/supabase-js'
-import { pjsdasSupabase } from './supabaseClient'
+import { pjsdasSupabase } from './supabaseClient.js'
 
 function authIdFromLocation() {
   if (typeof window === 'undefined') return ''

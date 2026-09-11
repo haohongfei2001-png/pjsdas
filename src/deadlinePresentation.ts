@@ -1,4 +1,4 @@
-import type { ActionTimingMode, RankedAction } from './model'
+import type { ActionTimingMode, RankedAction } from './model.js'
 
 const MINUTE = 60_000
 const HOUR = 60 * MINUTE

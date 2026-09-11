@@ -11,13 +11,13 @@ import {
   type UnresolvedOperation,
   type UpsertOpportunityOperation,
   type UpdateConfidence,
-} from './progressUpdateV2'
-import { detectNotificationType } from './notificationParser'
+} from './progressUpdateV2.js'
+import { detectNotificationType } from './notificationParser.js'
 import {
   defaultMinutesForProcessEvent,
   defaultTimingModeForProcessEvent,
-} from './processEvents'
-import type { ActionTimingMode, Opportunity, ProcessEventType, ProcessStage } from './model'
+} from './processEvents.js'
+import type { ActionTimingMode, Opportunity, ProcessEventType, ProcessStage } from './model.js'
 
 export { progressOperationSummary }
 export type {

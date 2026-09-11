@@ -1,12 +1,12 @@
 import { describe, expect, it } from 'vitest'
-import { createDefaultDecisionRules } from '../src/decisionRules'
+import { createDefaultDecisionRules } from '../src/decisionRules.js'
 import {
   buildTimelineBackfill,
   decisionRuleChanges,
   timelineFromImportedHistory,
   timelineFromProgressOperation,
-} from '../src/timeline'
-import type { Opportunity, ProcessEvent } from '../src/model'
+} from '../src/timeline.js'
+import type { Opportunity, ProcessEvent } from '../src/model.js'
 
 const opportunity: Opportunity = {
   id: 'J27-001', company: '测试公司', role: '产品经理', currentStageLabel: '待投', processStage: 'not_applied',

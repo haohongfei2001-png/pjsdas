@@ -1,13 +1,13 @@
 import { describe, expect, it } from 'vitest'
-import { buildTimePlan, selectTodayActions } from '../src/decisionCoreV3'
-import { createSnapshot, parseSnapshotText } from '../src/snapshot'
-import { timeRisk } from '../src/timeRisk'
+import { buildTimePlan, selectTodayActions } from '../src/decisionCoreV3.js'
+import { createSnapshot, parseSnapshotText } from '../src/snapshot.js'
+import { timeRisk } from '../src/timeRisk.js'
 import {
   cloneDecisionRules,
   DEFAULT_DECISION_RULES,
   validateDecisionRules,
-} from '../src/decisionRules'
-import type { Action, RankedAction } from '../src/model'
+} from '../src/decisionRules.js'
+import type { Action, RankedAction } from '../src/model.js'
 
 function ranked(id: string, kind: Action['kind'], minutes = 10, dueAt?: string): RankedAction {
   return {

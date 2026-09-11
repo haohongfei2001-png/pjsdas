@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { buildTimePlan, rankActions } from '../src/decisionV3'
+import { buildTimePlan, rankActions } from '../src/decisionV3.js'
 import {
   actionForProcessEvent,
   createProcessEvent,
-} from '../src/processEvents'
-import type { Opportunity } from '../src/model'
+} from '../src/processEvents.js'
+import type { Opportunity } from '../src/model.js'
 
 const opportunity: Opportunity = {
   id: 'OPP-TIMING',

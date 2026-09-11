@@ -1,12 +1,12 @@
 import {
   defaultMinutesForProcessEvent,
   defaultTimingModeForProcessEvent,
-} from './processEvents'
+} from './processEvents.js'
 import type {
   ActionTimingMode,
   Opportunity,
   ProcessEventType,
-} from './model'
+} from './model.js'
 
 export interface OpportunityCandidate {
   opportunity: Opportunity

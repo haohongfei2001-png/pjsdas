@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { mergeActionsForReimport } from '../src/reimportState'
-import type { Action } from '../src/model'
+import { mergeActionsForReimport } from '../src/reimportState.js'
+import type { Action } from '../src/model.js'
 
 function action(id: string, overrides: Partial<Action> = {}): Action {
   return {

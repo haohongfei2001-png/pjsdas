@@ -1,13 +1,13 @@
 import { useEffect, useMemo, useState } from 'react'
-import { applyDecisionRulesChangeSet } from './db'
+import { applyDecisionRulesChangeSet } from './db.js'
 import {
   cloneDecisionRules,
   DEFAULT_DECISION_RULES,
   validateDecisionRules,
   type DecisionRules,
   type DecisionWeights,
-} from './decisionRules'
-import { useUiLanguage } from './uiLanguage'
+} from './decisionRules.js'
+import { useUiLanguage } from './uiLanguage.js'
 import './rules.css'
 
 type Props = {

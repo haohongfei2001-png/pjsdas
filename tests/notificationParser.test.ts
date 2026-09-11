@@ -3,8 +3,8 @@ import {
   detectNotificationType,
   matchNotificationOpportunity,
   parseRecruitingNotification,
-} from '../src/notificationParser'
-import type { Opportunity } from '../src/model'
+} from '../src/notificationParser.js'
+import type { Opportunity } from '../src/model.js'
 
 const opportunities: Opportunity[] = [
   {

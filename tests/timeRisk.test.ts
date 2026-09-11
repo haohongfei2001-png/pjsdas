@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { actionNodePrefix, formatTimeRemaining, timeRisk, upcomingNodes } from '../src/timeRisk'
-import type { Action, RankedAction } from '../src/model'
+import { actionNodePrefix, formatTimeRemaining, timeRisk, upcomingNodes } from '../src/timeRisk.js'
+import type { Action, RankedAction } from '../src/model.js'
 
 function ranked(id: string, dueAt: string, overrides: Partial<Action> = {}): RankedAction {
   return {

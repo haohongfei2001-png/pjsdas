@@ -1,4 +1,4 @@
-import { GOOGLE_OAUTH_SCOPES, readCloudConfig } from './cloudConfig'
+import { GOOGLE_OAUTH_SCOPES, readCloudConfig } from './cloudConfig.js'
 
 export interface CloudUser {
   id: string

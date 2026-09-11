@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { isUnresolvedPastFixed } from '../src/fixedEventGuardLogic'
-import type { Action } from '../src/model'
+import { isUnresolvedPastFixed } from '../src/fixedEventGuardLogic.js'
+import type { Action } from '../src/model.js'
 
 const now = new Date('2026-09-10T05:00:00.000Z')
 

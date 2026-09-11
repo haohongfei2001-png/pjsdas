@@ -7,10 +7,10 @@ import {
   getRecentTimeline,
   getTodayPlan,
   listOpportunities,
-} from '../src/ai/readLayer'
-import { createSnapshot } from '../src/snapshot'
-import { createDefaultDecisionRules } from '../src/decisionRules'
-import type { Action, Opportunity, ProcessEvent, ProcessRecord, TimelineRecord } from '../src/model'
+} from '../src/ai/readLayer.js'
+import { createSnapshot } from '../src/snapshot.js'
+import { createDefaultDecisionRules } from '../src/decisionRules.js'
+import type { Action, Opportunity, ProcessEvent, ProcessRecord, TimelineRecord } from '../src/model.js'
 
 const NOW = new Date('2026-09-11T08:00:00.000Z')
 

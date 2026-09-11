@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import * as XLSX from 'xlsx'
-import { parsePJSDASWorkbook } from '../src/importExcelV2'
+import { parsePJSDASWorkbook } from '../src/importExcelV2.js'
 
 function sheet(rows: unknown[][]) {
   return XLSX.utils.aoa_to_sheet(rows)

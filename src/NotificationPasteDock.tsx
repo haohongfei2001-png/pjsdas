@@ -1,19 +1,19 @@
 import { useMemo, useState } from 'react'
-import { addProcessEvent, getAllOpportunities } from './db'
-import { parseRecruitingNotification } from './notificationParser'
+import { addProcessEvent, getAllOpportunities } from './db.js'
+import { parseRecruitingNotification } from './notificationParser.js'
 import {
   createProcessEvent,
   defaultMinutesForProcessEvent,
   defaultTimingModeForProcessEvent,
   isActionableProcessEvent,
   processEventLabels,
-} from './processEvents'
+} from './processEvents.js'
 import type {
   ActionTimingMode,
   Opportunity,
   ProcessEventType,
-} from './model'
-import type { NotificationParseResult } from './notificationParser'
+} from './model.js'
+import type { NotificationParseResult } from './notificationParser.js'
 import './notificationPaste.css'
 
 interface NotificationPasteDockProps {

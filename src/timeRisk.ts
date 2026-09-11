@@ -1,5 +1,5 @@
-import type { Action, RankedAction } from './model'
-import { DEFAULT_DECISION_RULES, type DecisionRules } from './decisionRules'
+import type { Action, RankedAction } from './model.js'
+import { DEFAULT_DECISION_RULES, type DecisionRules } from './decisionRules.js'
 
 const MINUTE = 60_000
 const HOUR = 60 * MINUTE

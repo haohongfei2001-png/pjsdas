@@ -1,4 +1,4 @@
-import { WorkspaceSourceError } from './workspaceSource'
+import { WorkspaceSourceError } from './workspaceSource.js'
 
 export interface GoogleDriveBinding {
   googleSubject: string

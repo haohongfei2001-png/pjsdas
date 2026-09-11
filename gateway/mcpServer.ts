@@ -1,6 +1,6 @@
 import { serveStdio } from '@modelcontextprotocol/server/stdio'
-import { createPjsdasMcpServer } from './serverFactory'
-import { createEnvWorkspaceSource } from './workspaceSource'
+import { createPjsdasMcpServer } from './serverFactory.js'
+import { createEnvWorkspaceSource } from './workspaceSource.js'
 
 const source = createEnvWorkspaceSource()
 

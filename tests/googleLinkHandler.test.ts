@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { createGoogleLinkHandler } from '../gateway/googleLinkHandler'
+import { createGoogleLinkHandler } from '../gateway/googleLinkHandler.js'
 
 function json(data: unknown, status = 200) {
   return new Response(JSON.stringify(data), {

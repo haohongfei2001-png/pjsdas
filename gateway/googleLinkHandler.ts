@@ -1,6 +1,6 @@
-import { createSupabaseIdentityResolver } from './supabaseIdentity'
-import { encryptSecret } from './tokenCrypto'
-import { WorkspaceSourceError } from './workspaceSource'
+import { createSupabaseIdentityResolver } from './supabaseIdentity.js'
+import { encryptSecret } from './tokenCrypto.js'
+import { WorkspaceSourceError } from './workspaceSource.js'
 
 const DRIVE_APPDATA_SCOPE = 'https://www.googleapis.com/auth/drive.appdata'
 

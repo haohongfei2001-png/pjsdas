@@ -4,8 +4,8 @@ import {
   parseSnapshotText,
   SNAPSHOT_SCHEMA,
   SNAPSHOT_VERSION,
-} from '../src/snapshot'
-import type { Action, Opportunity, ProcessEvent } from '../src/model'
+} from '../src/snapshot.js'
+import type { Action, Opportunity, ProcessEvent } from '../src/model.js'
 
 const opportunity: Opportunity = {
   id: 'OPP-001',

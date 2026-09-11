@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import { createSnapshot } from '../src/snapshot'
-import { DEFAULT_DECISION_RULES } from '../src/decisionRules'
-import { canonicalWorkspaceJson, fingerprintWorkspace, workspaceIsEffectivelyEmpty } from '../src/cloud/workspaceFingerprint'
+import { createSnapshot } from '../src/snapshot.js'
+import { DEFAULT_DECISION_RULES } from '../src/decisionRules.js'
+import { canonicalWorkspaceJson, fingerprintWorkspace, workspaceIsEffectivelyEmpty } from '../src/cloud/workspaceFingerprint.js'
 
 function snapshot(exportedAt: string, company?: string) {
   return createSnapshot({

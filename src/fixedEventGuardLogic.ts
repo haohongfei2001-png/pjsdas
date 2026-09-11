@@ -1,4 +1,4 @@
-import type { Action } from './model'
+import type { Action } from './model.js'
 
 export function isUnresolvedPastProcessEvent(action: Action, now: Date) {
   if (!action.processEventId || !action.dueAt) return false

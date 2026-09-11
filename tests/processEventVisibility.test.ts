@@ -3,10 +3,10 @@ import {
   actionForProcessEvent,
   reconcileProcessEventActions,
   suppressSupersededActions,
-} from '../src/processEvents'
-import { rankActions } from '../src/decisionV3'
-import { upcomingNodes } from '../src/timeRisk'
-import type { Action, Opportunity, ProcessEvent } from '../src/model'
+} from '../src/processEvents.js'
+import { rankActions } from '../src/decisionV3.js'
+import { upcomingNodes } from '../src/timeRisk.js'
+import type { Action, Opportunity, ProcessEvent } from '../src/model.js'
 
 const event: ProcessEvent = {
   id: 'jd-assessment',

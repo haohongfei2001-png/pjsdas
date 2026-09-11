@@ -1,5 +1,5 @@
-import { useAiAccess } from './AiAccessContext'
-import { useUiLanguage } from '../uiLanguage'
+import { useAiAccess } from './AiAccessContext.js'
+import { useUiLanguage } from '../uiLanguage.js'
 import '../cloud/cloudSettings.css'
 
 export default function AiAccessSettingsCard() {

@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from 'react'
 import type { Session } from '@supabase/supabase-js'
-import { pjsdasSupabase } from './supabaseClient'
+import { pjsdasSupabase } from './supabaseClient.js'
 
 const PENDING_KEY = 'pjsdas-ai-google-link-pending'
 const LINK_ENDPOINT = 'https://pjsdas-remote-alpha-haohongfei2001-8529.vercel.app/api/google-link'

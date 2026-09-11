@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { assertImportBundleSafe, diagnoseImport } from '../src/importDiagnostics'
-import type { ImportBundle } from '../src/model'
+import { assertImportBundleSafe, diagnoseImport } from '../src/importDiagnostics.js'
+import type { ImportBundle } from '../src/model.js'
 
 function bundle(): ImportBundle {
   return {

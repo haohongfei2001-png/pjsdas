@@ -1,8 +1,8 @@
-import { createGoogleLinkHandler } from '../gateway/googleLinkHandler'
+import { createGoogleLinkHandler } from '../gateway/googleLinkHandler.js'
 import {
   PJSDAS_SUPABASE_PUBLISHABLE_KEY,
   PJSDAS_SUPABASE_URL,
-} from '../gateway/supabaseProject'
+} from '../gateway/supabaseProject.js'
 
 const handler = createGoogleLinkHandler({
   supabaseUrl: PJSDAS_SUPABASE_URL,

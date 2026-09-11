@@ -3,7 +3,7 @@ import {
   DEFAULT_DECISION_RULES,
   createDefaultDecisionRules,
   decisionRulesForSnapshot,
-} from '../src/decisionRules'
+} from '../src/decisionRules.js'
 
 describe('decision rules snapshot stability', () => {
   it('uses a stable default rule record when no rules have been persisted', () => {

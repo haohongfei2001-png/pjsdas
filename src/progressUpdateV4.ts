@@ -1,14 +1,14 @@
-import { parseProgressUpdate as parseV3 } from './progressUpdateV3'
-import { parseRecruitingNotification } from './notificationParser'
-import type { Opportunity } from './model'
+import { parseProgressUpdate as parseV3 } from './progressUpdateV3.js'
+import { parseRecruitingNotification } from './notificationParser.js'
+import type { Opportunity } from './model.js'
 import type {
   ExecutableProgressOperation,
   IgnoredOperation,
   ProgressOperation,
   UnresolvedOperation,
-} from './progressUpdateV3'
+} from './progressUpdateV3.js'
 
-export * from './progressUpdateV3'
+export * from './progressUpdateV3.js'
 
 /**
  * Recruiter messages often put the event in one sentence and the expiry in the

@@ -1,10 +1,10 @@
 import { describe, expect, it, vi } from 'vitest'
-import { createDriveWorkspaceEnvelope } from '../src/cloud/driveEnvelope'
-import { fingerprintWorkspace } from '../src/cloud/workspaceFingerprint'
-import { createSnapshot } from '../src/snapshot'
-import { createDriveWorkspaceSource } from '../gateway/driveWorkspaceSource'
-import { invokeReadTool } from '../gateway/readTools'
-import { WorkspaceSourceError } from '../gateway/workspaceSource'
+import { createDriveWorkspaceEnvelope } from '../src/cloud/driveEnvelope.js'
+import { fingerprintWorkspace } from '../src/cloud/workspaceFingerprint.js'
+import { createSnapshot } from '../src/snapshot.js'
+import { createDriveWorkspaceSource } from '../gateway/driveWorkspaceSource.js'
+import { invokeReadTool } from '../gateway/readTools.js'
+import { WorkspaceSourceError } from '../gateway/workspaceSource.js'
 
 function json(data: unknown, status = 200) {
   return new Response(JSON.stringify(data), {

@@ -1,9 +1,9 @@
-export * from './decisionCoreV3'
+export * from './decisionCoreV3.js'
 
-import { rankActions as rankActionsCore } from './decisionCoreV3'
-import { isUnresolvedPastProcessEvent } from './fixedEventGuardLogic'
-import type { Action, Opportunity } from './model'
-import { DEFAULT_DECISION_RULES, type DecisionRules } from './decisionRules'
+import { rankActions as rankActionsCore } from './decisionCoreV3.js'
+import { isUnresolvedPastProcessEvent } from './fixedEventGuardLogic.js'
+import type { Action, Opportunity } from './model.js'
+import { DEFAULT_DECISION_RULES, type DecisionRules } from './decisionRules.js'
 
 function isNaturalLanguageScheduledAssessment(action: Action) {
   if (!action.processEventId || action.processStage !== 'assessment' || !action.dueAt) return false

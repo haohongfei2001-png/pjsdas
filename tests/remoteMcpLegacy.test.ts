@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { remoteMcpHandler } from '../gateway/remoteHttp'
+import { remoteMcpHandler } from '../gateway/remoteHttp.js'
 
 const legacyVersions = ['2025-06-18', '2025-11-25'] as const
 

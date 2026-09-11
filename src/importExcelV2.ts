@@ -9,8 +9,8 @@ import type {
   ProcessRecord,
   ProcessStage,
   TimelineRecord,
-} from './model'
-import { timelineFromImportedHistory } from './timeline'
+} from './model.js'
+import { timelineFromImportedHistory } from './timeline.js'
 
 const MAIN_SHEET = '投递总表'
 const DETAIL_SHEET = '岗位详情'

@@ -1,12 +1,12 @@
 import { useState } from 'react'
-import { applyChangeSet, discardChangeSet, getAllOpportunities, stageProgressChangeSet } from './db'
+import { applyChangeSet, discardChangeSet, getAllOpportunities, stageProgressChangeSet } from './db.js'
 import {
   parseProgressUpdate,
   progressOperationSummary,
   type ProgressUpdatePlan,
-} from './progressUpdate'
-import type { Opportunity } from './model'
-import type { ChangeSetRecord } from './changeSet'
+} from './progressUpdate.js'
+import type { Opportunity } from './model.js'
+import type { ChangeSetRecord } from './changeSet.js'
 import './progressInbox.css'
 
 interface ProgressInboxProps {

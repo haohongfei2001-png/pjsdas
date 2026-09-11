@@ -1,6 +1,6 @@
 import { createMcpHandler } from '@modelcontextprotocol/server'
-import { createPjsdasMcpServer } from './serverFactory'
-import { createFileWorkspaceSource } from './workspaceSource'
+import { createPjsdasMcpServer } from './serverFactory.js'
+import { createFileWorkspaceSource } from './workspaceSource.js'
 
 export const REMOTE_GATEWAY_MODE = 'demo' as const
 export const REMOTE_GATEWAY_VERSION = '1.1.0-alpha.2' as const

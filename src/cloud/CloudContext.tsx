@@ -13,22 +13,22 @@ import {
   signInWithGoogle,
   signOutCloud,
   type CloudSession,
-} from './cloudClient'
-import { readCloudConfig } from './cloudConfig'
+} from './cloudClient.js'
+import { readCloudConfig } from './cloudConfig.js'
 import {
   getAccountCheckpoint,
   getCloudDeviceState,
   setCloudAutoSync,
   type AccountSyncCheckpoint,
   type CloudDeviceState,
-} from './syncState'
+} from './syncState.js'
 import {
   rebindCurrentLocalWorkspace,
   resolveConflictKeepLocal,
   resolveConflictUseCloud,
   runCloudSync,
   type CloudSyncOutcome,
-} from './cloudSync'
+} from './cloudSync.js'
 
 interface CloudContextValue {
   configured: boolean

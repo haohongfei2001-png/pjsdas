@@ -1,4 +1,4 @@
-import type { ImportBundle } from './model'
+import type { ImportBundle } from './model.js'
 
 export type ImportDiagnosticSeverity = 'error' | 'warning' | 'info'
 

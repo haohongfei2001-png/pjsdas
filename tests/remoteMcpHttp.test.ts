@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { remoteMcpHandler } from '../gateway/remoteHttp'
+import { remoteMcpHandler } from '../gateway/remoteHttp.js'
 
 const protocolVersion = '2026-07-28'
 const requestMeta = {

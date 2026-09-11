@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import { rankActions } from '../src/decisionV3'
-import { isUnresolvedPastProcessEvent } from '../src/fixedEventGuardLogic'
-import type { Action, Opportunity } from '../src/model'
+import { rankActions } from '../src/decisionV3.js'
+import { isUnresolvedPastProcessEvent } from '../src/fixedEventGuardLogic.js'
+import type { Action, Opportunity } from '../src/model.js'
 
 const now = new Date('2026-09-10T05:00:00.000Z')
 

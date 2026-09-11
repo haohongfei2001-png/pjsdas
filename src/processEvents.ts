@@ -6,7 +6,7 @@ import type {
   ProcessEventType,
   ProcessRecord,
   ProcessStage,
-} from './model'
+} from './model.js'
 
 export const processEventLabels: Record<ProcessEventType, string> = {
   assessment_invite: '测评通知',

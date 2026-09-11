@@ -6,8 +6,8 @@ import {
   getTodayPlanSchema,
   invokeReadTool,
   listOpportunitiesSchema,
-} from './readTools'
-import type { WorkspaceSource } from './workspaceSource'
+} from './readTools.js'
+import type { WorkspaceSource } from './workspaceSource.js'
 
 const readOnlyAnnotations = {
   readOnlyHint: true,

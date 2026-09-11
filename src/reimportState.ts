@@ -1,4 +1,4 @@
-import type { Action } from './model'
+import type { Action } from './model.js'
 
 /**
  * Rebuild the action store for a spreadsheet re-import without resurrecting

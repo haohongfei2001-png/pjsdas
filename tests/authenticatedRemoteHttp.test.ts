@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { authenticatedRemoteMcpFetch, PROTECTED_RESOURCE_METADATA_URL } from '../gateway/authenticatedRemoteHttp'
-import protectedResource from '../api/oauth-protected-resource'
+import { authenticatedRemoteMcpFetch, PROTECTED_RESOURCE_METADATA_URL } from '../gateway/authenticatedRemoteHttp.js'
+import protectedResource from '../api/oauth-protected-resource.js'
 
 function json(data: unknown, status = 200) {
   return new Response(JSON.stringify(data), { status, headers: { 'content-type': 'application/json' } })

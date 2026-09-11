@@ -22,12 +22,12 @@ async function check(module: string, load: () => Promise<unknown>): Promise<Chec
 export default {
   async fetch() {
     const checks: Check[] = []
-    checks.push(await check('supabaseIdentity', () => import('../gateway/supabaseIdentity')))
-    checks.push(await check('serverFactory', () => import('../gateway/serverFactory')))
-    checks.push(await check('tokenCrypto', () => import('../gateway/tokenCrypto')))
-    checks.push(await check('driveWorkspaceSource', () => import('../gateway/driveWorkspaceSource')))
-    checks.push(await check('authenticatedDriveSource', () => import('../gateway/authenticatedDriveSource')))
-    checks.push(await check('authenticatedRemoteHttp', () => import('../gateway/authenticatedRemoteHttp')))
+    checks.push(await check('supabaseIdentity', () => import('../gateway/supabaseIdentity.js')))
+    checks.push(await check('serverFactory', () => import('../gateway/serverFactory.js')))
+    checks.push(await check('tokenCrypto', () => import('../gateway/tokenCrypto.js')))
+    checks.push(await check('driveWorkspaceSource', () => import('../gateway/driveWorkspaceSource.js')))
+    checks.push(await check('authenticatedDriveSource', () => import('../gateway/authenticatedDriveSource.js')))
+    checks.push(await check('authenticatedRemoteHttp', () => import('../gateway/authenticatedRemoteHttp.js')))
 
     return new Response(JSON.stringify({ checks }), {
       status: checks.every((item) => item.ok) ? 200 : 500,

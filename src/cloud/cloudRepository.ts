@@ -1,10 +1,10 @@
-import type { PJSDASSnapshot } from '../snapshot'
-import { getCloudAccessToken, invalidateCloudSession } from './cloudClient'
+import type { PJSDASSnapshot } from '../snapshot.js'
+import { getCloudAccessToken, invalidateCloudSession } from './cloudClient.js'
 import {
   DRIVE_WORKSPACE_FILENAME,
   createDriveWorkspaceEnvelope,
   parseDriveWorkspaceEnvelope,
-} from './driveEnvelope'
+} from './driveEnvelope.js'
 
 export interface RemoteWorkspaceRow {
   fileId: string

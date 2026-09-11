@@ -6,11 +6,11 @@ import {
   decisionRulesEquivalent,
   restoreProgressOperation,
   validateChangeSet,
-} from '../src/changeSet'
-import { createDefaultDecisionRules } from '../src/decisionRules'
-import { timelineFromChangeSetApplied } from '../src/timeline'
-import type { Action } from '../src/model'
-import type { ExecutableProgressOperation } from '../src/progressUpdate'
+} from '../src/changeSet.js'
+import { createDefaultDecisionRules } from '../src/decisionRules.js'
+import { timelineFromChangeSetApplied } from '../src/timeline.js'
+import type { Action } from '../src/model.js'
+import type { ExecutableProgressOperation } from '../src/progressUpdate.js'
 
 describe('ChangeSet protocol', () => {
   it('persists normalized natural-language changes without raw input text', () => {

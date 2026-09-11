@@ -2,7 +2,7 @@ import { createClient } from '@supabase/supabase-js'
 import {
   PJSDAS_SUPABASE_PUBLISHABLE_KEY,
   PJSDAS_SUPABASE_URL,
-} from '../../gateway/supabaseProject'
+} from '../../gateway/supabaseProject.js'
 
 const storage = typeof window !== 'undefined' ? window.sessionStorage : undefined
 

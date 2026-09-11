@@ -1,4 +1,4 @@
-import { REMOTE_GATEWAY_MODE, REMOTE_GATEWAY_VERSION } from '../gateway/remoteHttp'
+import { REMOTE_GATEWAY_MODE, REMOTE_GATEWAY_VERSION } from '../gateway/remoteHttp.js'
 
 export default {
   fetch() {

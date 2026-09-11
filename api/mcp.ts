@@ -1,4 +1,4 @@
-import { remoteMcpHandler } from '../gateway/remoteHttp'
+import { remoteMcpHandler } from '../gateway/remoteHttp.js'
 
 /**
  * Vercel-compatible Web Handler for the PJSDAS remote MCP alpha.

@@ -1,9 +1,9 @@
 import { describe, expect, it, vi } from 'vitest'
-import { createSnapshot } from '../src/snapshot'
-import { createDriveWorkspaceEnvelope } from '../src/cloud/driveEnvelope'
-import { fingerprintWorkspace } from '../src/cloud/workspaceFingerprint'
-import { createAuthenticatedDriveWorkspaceSource } from '../gateway/authenticatedDriveSource'
-import { encryptSecret } from '../gateway/tokenCrypto'
+import { createSnapshot } from '../src/snapshot.js'
+import { createDriveWorkspaceEnvelope } from '../src/cloud/driveEnvelope.js'
+import { fingerprintWorkspace } from '../src/cloud/workspaceFingerprint.js'
+import { createAuthenticatedDriveWorkspaceSource } from '../gateway/authenticatedDriveSource.js'
+import { encryptSecret } from '../gateway/tokenCrypto.js'
 
 function json(data: unknown, status = 200) {
   return new Response(JSON.stringify(data), { status, headers: { 'content-type': 'application/json' } })

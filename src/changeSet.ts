@@ -1,6 +1,6 @@
-import { validateDecisionRules, type DecisionRules } from './decisionRules'
-import { progressOperationSummary, type ExecutableProgressOperation } from './progressUpdate'
-import type { Action, ActionStatus, ProcessEvent } from './model'
+import { validateDecisionRules, type DecisionRules } from './decisionRules.js'
+import { progressOperationSummary, type ExecutableProgressOperation } from './progressUpdate.js'
+import type { Action, ActionStatus, ProcessEvent } from './model.js'
 
 export type ChangeSetStatus = 'pending' | 'applied' | 'discarded' | 'failed'
 export type ChangeSetSource = 'natural_language' | 'rules' | 'process_event' | 'user_action' | 'api' | 'mcp'

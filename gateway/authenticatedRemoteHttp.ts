@@ -1,12 +1,12 @@
 import { createMcpHandler } from '@modelcontextprotocol/server'
-import { createAuthenticatedDriveWorkspaceSource } from './authenticatedDriveSource'
-import { createPjsdasMcpServer } from './serverFactory'
-import { createSupabaseIdentityResolver } from './supabaseIdentity'
+import { createAuthenticatedDriveWorkspaceSource } from './authenticatedDriveSource.js'
+import { createPjsdasMcpServer } from './serverFactory.js'
+import { createSupabaseIdentityResolver } from './supabaseIdentity.js'
 import {
   PJSDAS_SUPABASE_PUBLISHABLE_KEY,
   PJSDAS_SUPABASE_URL,
-} from './supabaseProject'
-import { WorkspaceSourceError, type WorkspaceSource } from './workspaceSource'
+} from './supabaseProject.js'
+import { WorkspaceSourceError, type WorkspaceSource } from './workspaceSource.js'
 
 export const AUTHENTICATED_GATEWAY_VERSION = '1.1.0-alpha.4' as const
 export const AUTHENTICATED_MCP_RESOURCE = 'https://pjsdas-remote-alpha.vercel.app/api/mcp-auth'

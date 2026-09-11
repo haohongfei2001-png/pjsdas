@@ -1,13 +1,13 @@
 import { describe, expect, it } from 'vitest'
-import { buildTimePlan, rankActions } from '../src/decisionV3'
-import { parseRecruitingNotification } from '../src/notificationParser'
+import { buildTimePlan, rankActions } from '../src/decisionV3.js'
+import { parseRecruitingNotification } from '../src/notificationParser.js'
 import {
   actionForProcessEvent,
   createProcessEvent,
   overlayProcessEventsOnOpportunities,
   overlayProcessEventsOnProcesses,
-} from '../src/processEvents'
-import type { Opportunity } from '../src/model'
+} from '../src/processEvents.js'
+import type { Opportunity } from '../src/model.js'
 
 const opportunity: Opportunity = {
   id: 'SMIC-PM',

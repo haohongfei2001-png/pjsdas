@@ -13,22 +13,22 @@ import {
   applyActionStatusChangeSet,
   applyChangeSet,
   discardChangeSet,
-} from './db'
+} from './db.js'
 import {
   buildTimePlan,
   computePriority,
   processNeedsReview,
   processReviewLabel,
   rankActions,
-} from './decisionV3'
-import { parsePJSDASWorkbook } from './importExcelV2'
-import { actionNodePrefix, formatTimeRemaining, timeRisk, upcomingNodes } from './timeRisk'
-import { currentUiLanguage, useUiLanguage } from './uiLanguage'
-import { DEFAULT_DECISION_RULES, type DecisionRules } from './decisionRules'
-import RulesView from './RulesView'
-import TimelineView from './TimelineView'
-import CloudSettingsCard from './cloud/CloudSettingsCard'
-import type { ChangeSetRecord } from './changeSet'
+} from './decisionV3.js'
+import { parsePJSDASWorkbook } from './importExcelV2.js'
+import { actionNodePrefix, formatTimeRemaining, timeRisk, upcomingNodes } from './timeRisk.js'
+import { currentUiLanguage, useUiLanguage } from './uiLanguage.js'
+import { DEFAULT_DECISION_RULES, type DecisionRules } from './decisionRules.js'
+import RulesView from './RulesView.js'
+import TimelineView from './TimelineView.js'
+import CloudSettingsCard from './cloud/CloudSettingsCard.js'
+import type { ChangeSetRecord } from './changeSet.js'
 import type {
   Action,
   ApplicationGroup,
@@ -38,7 +38,7 @@ import type {
   Prep,
   ProcessRecord,
   TimelineRecord,
-} from './model'
+} from './model.js'
 import './timeplan.css'
 
 type Page = 'today' | 'opportunities' | 'pipeline' | 'prep' | 'timeline' | 'rules' | 'settings'

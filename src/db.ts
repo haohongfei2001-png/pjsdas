@@ -1,15 +1,15 @@
 import { openDB, type DBSchema } from 'idb'
-import { assertImportBundleSafe } from './importDiagnostics'
+import { assertImportBundleSafe } from './importDiagnostics.js'
 import {
   actionForProcessEvent,
   overlayProcessEventsOnOpportunities,
   overlayProcessEventsOnProcesses,
   reconcileProcessEventActions,
   suppressSupersededActions,
-} from './processEvents'
-import { mergeActionsForReimport } from './reimportState'
-import { createSnapshot, validateSnapshot, type PJSDASSnapshot } from './snapshot'
-import { createDefaultDecisionRules, decisionRulesForSnapshot, validateDecisionRules, type DecisionRules } from './decisionRules'
+} from './processEvents.js'
+import { mergeActionsForReimport } from './reimportState.js'
+import { createSnapshot, validateSnapshot, type PJSDASSnapshot } from './snapshot.js'
+import { createDefaultDecisionRules, decisionRulesForSnapshot, validateDecisionRules, type DecisionRules } from './decisionRules.js'
 import {
   assertChangeSetValid,
   createActionStatusChangeSet,
@@ -21,7 +21,7 @@ import {
   restoreProgressOperation,
   type ChangeSetRecord,
   type ChangeSetStatus,
-} from './changeSet'
+} from './changeSet.js'
 import {
   TIMELINE_BACKFILL_MARKER_ID,
   buildTimelineBackfill,
@@ -33,8 +33,8 @@ import {
   timelineFromRestore,
   timelineFromRuleChange,
   timelineFromChangeSetApplied,
-} from './timeline'
-import type { ExecutableProgressOperation, ProgressOperation } from './progressUpdate'
+} from './timeline.js'
+import type { ExecutableProgressOperation, ProgressOperation } from './progressUpdate.js'
 import type {
   Action,
   ApplicationGroup,
@@ -46,7 +46,7 @@ import type {
   ProcessRecord,
   TimelineCategory,
   TimelineRecord,
-} from './model'
+} from './model.js'
 
 interface PJSDASDatabase extends DBSchema {
   opportunities: { key: string; value: Opportunity }

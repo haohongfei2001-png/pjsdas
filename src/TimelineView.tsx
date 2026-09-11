@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
-import type { TimelineCategory, TimelineRecord, TimelineSource } from './model'
-import type { ChangeSetRecord, ChangeSetSource, ChangeSetStatus } from './changeSet'
-import { useUiLanguage } from './uiLanguage'
+import type { TimelineCategory, TimelineRecord, TimelineSource } from './model.js'
+import type { ChangeSetRecord, ChangeSetSource, ChangeSetStatus } from './changeSet.js'
+import { useUiLanguage } from './uiLanguage.js'
 import './timeline.css'
 
 const categories: TimelineCategory[] = ['opportunity', 'process', 'action', 'rules', 'change', 'data', 'note']

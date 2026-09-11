@@ -1,7 +1,7 @@
 import { useState } from 'react'
-import { useUiLanguage } from '../uiLanguage'
-import { useCloud } from './CloudContext'
-import AiAccessSettingsCard from '../aiAccess/AiAccessSettingsCard'
+import { useUiLanguage } from '../uiLanguage.js'
+import { useCloud } from './CloudContext.js'
+import AiAccessSettingsCard from '../aiAccess/AiAccessSettingsCard.js'
 import './cloudSettings.css'
 
 function formatTime(iso: string | undefined, zh: boolean) {

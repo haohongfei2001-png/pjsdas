@@ -28,7 +28,7 @@ export default {
     if (!hasBearerToken(request)) return unauthorized()
 
     try {
-      const { authenticatedRemoteMcpFetch } = await import('../gateway/authenticatedRemoteHttp')
+      const { authenticatedRemoteMcpFetch } = await import('../gateway/authenticatedRemoteHttp.js')
       return await authenticatedRemoteMcpFetch(request)
     } catch {
       return new Response(JSON.stringify({

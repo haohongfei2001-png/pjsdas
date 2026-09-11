@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { parseProgressUpdate } from '../src/progressUpdate'
-import type { Opportunity } from '../src/model'
+import { parseProgressUpdate } from '../src/progressUpdate.js'
+import type { Opportunity } from '../src/model.js'
 
 function opportunity(id: string, company: string, role: string, stage: Opportunity['processStage'] = 'screening'): Opportunity {
   return {

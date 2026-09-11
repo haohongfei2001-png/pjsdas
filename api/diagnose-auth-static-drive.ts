@@ -1,6 +1,6 @@
-import { createAuthenticatedDriveWorkspaceSource } from '../gateway/authenticatedDriveSource'
-import { createSupabaseIdentityResolver } from '../gateway/supabaseIdentity'
-import { decryptSecret } from '../gateway/tokenCrypto'
+import { createAuthenticatedDriveWorkspaceSource } from '../gateway/authenticatedDriveSource.js'
+import { createSupabaseIdentityResolver } from '../gateway/supabaseIdentity.js'
+import { decryptSecret } from '../gateway/tokenCrypto.js'
 
 export default {
   fetch() {

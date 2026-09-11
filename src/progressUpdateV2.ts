@@ -2,17 +2,17 @@ import {
   detectNotificationType,
   matchNotificationOpportunity,
   parseRecruitingNotification,
-} from './notificationParser'
+} from './notificationParser.js'
 import {
   defaultMinutesForProcessEvent,
   defaultTimingModeForProcessEvent,
-} from './processEvents'
+} from './processEvents.js'
 import type {
   ActionTimingMode,
   Opportunity,
   ProcessEventType,
   ProcessStage,
-} from './model'
+} from './model.js'
 
 export type UpdateConfidence = 'high' | 'medium' | 'low'
 

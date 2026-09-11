@@ -4,8 +4,8 @@ import {
   processNeedsReview,
   rankActions,
   selectTodayActions,
-} from '../src/decisionV2'
-import type { Action, Opportunity, ProcessRecord } from '../src/model'
+} from '../src/decisionV2.js'
+import type { Action, Opportunity, ProcessRecord } from '../src/model.js'
 
 function opportunity(overrides: Partial<Opportunity> = {}): Opportunity {
   return {

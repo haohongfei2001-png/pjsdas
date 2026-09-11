@@ -1,1 +1,1 @@
-export * from './progressUpdateV4'
+export * from './progressUpdateV4.js'

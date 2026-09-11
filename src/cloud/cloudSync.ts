@@ -1,20 +1,20 @@
-import { exportLocalSnapshot, replaceLocalSnapshotFromCloud } from '../db'
-import { validateSnapshot } from '../snapshot'
+import { exportLocalSnapshot, replaceLocalSnapshotFromCloud } from '../db.js'
+import { validateSnapshot } from '../snapshot.js'
 import {
   bindLocalWorkspaceToUser,
   getAccountCheckpoint,
   getCloudDeviceState,
   patchAccountCheckpoint,
   type CloudConflictState,
-} from './syncState'
-import { decideSyncAction } from './syncLogic'
+} from './syncState.js'
+import { decideSyncAction } from './syncLogic.js'
 import {
   createRemoteWorkspace,
   fetchRemoteWorkspace,
   updateRemoteWorkspace,
   type RemoteWorkspaceRow,
-} from './cloudRepository'
-import { fingerprintWorkspace, workspaceIsEffectivelyEmpty } from './workspaceFingerprint'
+} from './cloudRepository.js'
+import { fingerprintWorkspace, workspaceIsEffectivelyEmpty } from './workspaceFingerprint.js'
 
 export type CloudSyncOutcomeKind =
   | 'created'

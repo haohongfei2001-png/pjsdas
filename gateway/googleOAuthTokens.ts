@@ -1,4 +1,4 @@
-import { WorkspaceSourceError } from './workspaceSource'
+import { WorkspaceSourceError } from './workspaceSource.js'
 
 export interface GoogleOAuthClientConfig {
   clientId: string

@@ -1,13 +1,13 @@
 import { describe, expect, it } from 'vitest'
-import { buildTimePlan, rankActions } from '../src/decisionV2'
+import { buildTimePlan, rankActions } from '../src/decisionV2.js'
 import {
   actionForProcessEvent,
   createProcessEvent,
   overlayProcessEventsOnOpportunities,
   overlayProcessEventsOnProcesses,
   suppressSupersededActions,
-} from '../src/processEvents'
-import type { Action, Opportunity, ProcessEvent, ProcessRecord } from '../src/model'
+} from '../src/processEvents.js'
+import type { Action, Opportunity, ProcessEvent, ProcessRecord } from '../src/model.js'
 
 const opportunity: Opportunity = {
   id: 'OPP-001',

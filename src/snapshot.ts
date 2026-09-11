@@ -7,9 +7,9 @@ import type {
   ProcessEvent,
   ProcessRecord,
   TimelineRecord,
-} from './model'
-import { validateDecisionRules, type DecisionRules } from './decisionRules'
-import { validateChangeSet, type ChangeSetRecord } from './changeSet'
+} from './model.js'
+import { validateDecisionRules, type DecisionRules } from './decisionRules.js'
+import { validateChangeSet, type ChangeSetRecord } from './changeSet.js'
 
 export const SNAPSHOT_SCHEMA = 'pjsdas-local-snapshot' as const
 export const SNAPSHOT_VERSION = 1 as const

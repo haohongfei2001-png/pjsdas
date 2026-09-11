@@ -1,4 +1,4 @@
-import type { PJSDASSnapshot } from '../snapshot'
+import type { PJSDASSnapshot } from '../snapshot.js'
 
 export const DRIVE_WORKSPACE_SCHEMA = 'pjsdas-google-drive-workspace' as const
 export const DRIVE_WORKSPACE_ENVELOPE_VERSION = 1 as const

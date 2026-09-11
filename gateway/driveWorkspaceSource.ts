@@ -1,15 +1,15 @@
-import type { BridgeReadContext } from '../src/ai/readLayer'
+import type { BridgeReadContext } from '../src/ai/readLayer.js'
 import {
   DRIVE_WORKSPACE_FILENAME,
   parseDriveWorkspaceEnvelope,
-} from '../src/cloud/driveEnvelope'
-import { fingerprintWorkspace } from '../src/cloud/workspaceFingerprint'
-import { validateSnapshot } from '../src/snapshot'
+} from '../src/cloud/driveEnvelope.js'
+import { fingerprintWorkspace } from '../src/cloud/workspaceFingerprint.js'
+import { validateSnapshot } from '../src/snapshot.js'
 import {
   WorkspaceSourceError,
   type GatewayWorkspace,
   type WorkspaceSource,
-} from './workspaceSource'
+} from './workspaceSource.js'
 
 const DRIVE_API = 'https://www.googleapis.com/drive/v3'
 const METADATA_FIELDS = 'id,name,version,modifiedTime'

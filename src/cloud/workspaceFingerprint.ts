@@ -1,5 +1,5 @@
-import { DEFAULT_DECISION_RULES } from '../decisionRules'
-import type { PJSDASSnapshot } from '../snapshot'
+import { DEFAULT_DECISION_RULES } from '../decisionRules.js'
+import type { PJSDASSnapshot } from '../snapshot.js'
 
 function canonical(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(canonical)

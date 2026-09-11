@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { countdownMeta, priorityStepLabel, selectUpcomingDeadlineNodes } from '../src/deadlinePresentation'
-import type { RankedAction } from '../src/model'
+import { countdownMeta, priorityStepLabel, selectUpcomingDeadlineNodes } from '../src/deadlinePresentation.js'
+import type { RankedAction } from '../src/model.js'
 
 function ranked(id: string, dueAt: string, timingMode: 'deadline' | 'fixed' = 'deadline'): RankedAction {
   return {

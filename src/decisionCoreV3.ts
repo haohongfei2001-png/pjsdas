@@ -6,8 +6,8 @@ import type {
   ProcessRecord,
   ProcessStage,
   RankedAction,
-} from './model'
-import { DEFAULT_DECISION_RULES, type DecisionRules } from './decisionRules'
+} from './model.js'
+import { DEFAULT_DECISION_RULES, type DecisionRules } from './decisionRules.js'
 
 const clamp = (value: number, min = 0, max = 100) => Math.min(max, Math.max(min, value))
 const HOUR = 3_600_000

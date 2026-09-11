@@ -8,8 +8,8 @@ import {
   getRecentTimeline,
   getTodayPlan,
   listOpportunities,
-} from '../src/ai/readLayer'
-import { WorkspaceSourceError, type WorkspaceSource } from './workspaceSource'
+} from '../src/ai/readLayer.js'
+import { WorkspaceSourceError, type WorkspaceSource } from './workspaceSource.js'
 
 export const READ_TOOL_NAMES = [
   'get_today_plan',

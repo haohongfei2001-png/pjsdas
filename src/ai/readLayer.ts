@@ -1,14 +1,14 @@
-import { buildTimePlan, processNeedsReview, rankAction, rankActions } from '../decisionV3'
-import { decisionRulesForSnapshot, type DecisionRules, type DecisionWeights } from '../decisionRules'
-import { isUnresolvedPastProcessEvent } from '../fixedEventGuardLogic'
+import { buildTimePlan, processNeedsReview, rankAction, rankActions } from '../decisionV3.js'
+import { decisionRulesForSnapshot, type DecisionRules, type DecisionWeights } from '../decisionRules.js'
+import { isUnresolvedPastProcessEvent } from '../fixedEventGuardLogic.js'
 import {
   overlayProcessEventsOnOpportunities,
   overlayProcessEventsOnProcesses,
   processEventStageLabel,
   reconcileProcessEventActions,
   suppressSupersededActions,
-} from '../processEvents'
-import { validateSnapshot, type PJSDASSnapshot } from '../snapshot'
+} from '../processEvents.js'
+import { validateSnapshot, type PJSDASSnapshot } from '../snapshot.js'
 import type {
   Action,
   Opportunity,
@@ -17,7 +17,7 @@ import type {
   ProcessStage,
   RankedAction,
   TimelineCategory,
-} from '../model'
+} from '../model.js'
 
 const DEFAULT_LIMIT = 30
 const MAX_LIMIT = 100

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { createSnapshot } from '../src/snapshot'
-import { createDriveWorkspaceEnvelope, parseDriveWorkspaceEnvelope } from '../src/cloud/driveEnvelope'
+import { createSnapshot } from '../src/snapshot.js'
+import { createDriveWorkspaceEnvelope, parseDriveWorkspaceEnvelope } from '../src/cloud/driveEnvelope.js'
 
 const empty = createSnapshot({
   opportunities: [],

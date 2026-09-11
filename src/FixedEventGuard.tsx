@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
-import { applyActionStatusChangeSet, getAllActions } from './db'
-import { isUnresolvedPastProcessEvent } from './fixedEventGuardLogic'
-import type { Action } from './model'
+import { applyActionStatusChangeSet, getAllActions } from './db.js'
+import { isUnresolvedPastProcessEvent } from './fixedEventGuardLogic.js'
+import type { Action } from './model.js'
 import './fixedEventGuard.css'
 
 interface FixedEventGuardProps {

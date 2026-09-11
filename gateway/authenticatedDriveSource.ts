@@ -1,9 +1,9 @@
-import { createDriveWorkspaceSource } from './driveWorkspaceSource'
-import { createGoogleConnectionStore } from './googleConnectionStore'
-import { refreshGoogleAccessToken } from './googleOAuthTokens'
-import { createSupabaseIdentityResolver } from './supabaseIdentity'
-import { decryptSecret } from './tokenCrypto'
-import type { WorkspaceSource } from './workspaceSource'
+import { createDriveWorkspaceSource } from './driveWorkspaceSource.js'
+import { createGoogleConnectionStore } from './googleConnectionStore.js'
+import { refreshGoogleAccessToken } from './googleOAuthTokens.js'
+import { createSupabaseIdentityResolver } from './supabaseIdentity.js'
+import { decryptSecret } from './tokenCrypto.js'
+import type { WorkspaceSource } from './workspaceSource.js'
 
 export interface AuthenticatedDriveSourceOptions {
   supabaseUrl: string

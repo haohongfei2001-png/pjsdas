@@ -4,7 +4,7 @@ import {
   applyProcessEventDeleteChangeSet,
   getAllOpportunities,
   getAllProcessEvents,
-} from './db'
+} from './db.js'
 import {
   createProcessEvent,
   defaultMinutesForProcessEvent,
@@ -12,13 +12,13 @@ import {
   isActionableProcessEvent,
   processEventLabels,
   processEventStageLabel,
-} from './processEvents'
+} from './processEvents.js'
 import type {
   ActionTimingMode,
   Opportunity,
   ProcessEvent,
   ProcessEventType,
-} from './model'
+} from './model.js'
 import './processEvents.css'
 
 interface ProcessEventDockProps {

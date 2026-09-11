@@ -1,6 +1,6 @@
-import type { DecisionRules } from './decisionRules'
-import type { ChangeSetRecord } from './changeSet'
-import type { ProgressOperation } from './progressUpdate'
+import type { DecisionRules } from './decisionRules.js'
+import type { ChangeSetRecord } from './changeSet.js'
+import type { ProgressOperation } from './progressUpdate.js'
 import type {
   Action,
   ImportMeta,
@@ -10,7 +10,7 @@ import type {
   TimelineChangeValue,
   TimelineFieldChange,
   TimelineRecord,
-} from './model'
+} from './model.js'
 
 export const TIMELINE_BACKFILL_MARKER_ID = 'timeline:system:backfill-v1'
 

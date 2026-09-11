@@ -1,8 +1,8 @@
 import { readFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { validateSnapshot, type PJSDASSnapshot } from '../src/snapshot'
-import type { BridgeReadContext } from '../src/ai/readLayer'
+import { validateSnapshot, type PJSDASSnapshot } from '../src/snapshot.js'
+import type { BridgeReadContext } from '../src/ai/readLayer.js'
 
 export interface GatewayWorkspace {
   snapshot: PJSDASSnapshot

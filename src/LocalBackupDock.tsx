@@ -1,6 +1,6 @@
 import { useState } from 'react'
-import { exportLocalSnapshot, restoreLocalSnapshot } from './db'
-import { parseSnapshotText, type PJSDASSnapshot } from './snapshot'
+import { exportLocalSnapshot, restoreLocalSnapshot } from './db.js'
+import { parseSnapshotText, type PJSDASSnapshot } from './snapshot.js'
 import './localBackup.css'
 
 interface LocalBackupDockProps {
