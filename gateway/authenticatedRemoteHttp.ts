@@ -9,7 +9,7 @@ import {
 import { WorkspaceSourceError, type WorkspaceSource } from './workspaceSource.js'
 
 export const AUTHENTICATED_GATEWAY_VERSION = '1.1.0-alpha.4' as const
-export const AUTHENTICATED_MCP_RESOURCE = 'https://pjsdas-remote-alpha.vercel.app/api/mcp-auth'
+export const AUTHENTICATED_MCP_RESOURCE = 'https://pjsdas-remote-alpha.vercel.app/api/mcp'
 export const AUTHORIZATION_SERVER = `${PJSDAS_SUPABASE_URL}/auth/v1`
 export const PROTECTED_RESOURCE_METADATA_URL = 'https://pjsdas-remote-alpha.vercel.app/.well-known/oauth-protected-resource'
 
@@ -61,11 +61,11 @@ function lazyDriveSource(request: Request): WorkspaceSource {
 }
 
 /**
- * Authenticated v1.1 endpoint for real PJSDAS data.
+ * Authenticated v1.1 runtime for real PJSDAS data.
  *
- * Unlike /api/mcp, this route never has a demo fallback. A valid Supabase OAuth
- * bearer identity is required before MCP discovery succeeds. Google credentials
- * are resolved lazily only when a read tool is actually called.
+ * Both /api/mcp (primary) and /api/mcp-auth (compatibility alias) enter this
+ * runtime only after a valid Supabase OAuth bearer identity is present. Google
+ * credentials are resolved lazily only when a read tool is actually called.
  */
 export async function authenticatedRemoteMcpFetch(request: Request) {
   try {
