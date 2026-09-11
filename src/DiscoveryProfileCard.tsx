@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { getDiscoveryProfile, saveDiscoveryProfile } from './db.js'
 import { useCloud } from './cloud/CloudContext.js'
 import type { DiscoveryProfile } from './discoveryProfile.js'
+import type { OpportunityRole } from './model.js'
 import './discoveryProfile.css'
 
 function lines(values: string[]) {
@@ -14,6 +15,14 @@ function parseLines(value: string) {
     .map((item) => item.trim())
     .filter(Boolean)
 }
+
+const roleTypeOptions: Array<{ value: OpportunityRole; label: string }> = [
+  { value: 'core', label: '核心' },
+  { value: 'backup', label: '保底' },
+  { value: 'reach', label: '冲刺' },
+  { value: 'lottery', label: '彩票' },
+  { value: 'practice', label: '练手' },
+]
 
 export default function DiscoveryProfileCard() {
   const cloud = useCloud()
@@ -79,6 +88,17 @@ export default function DiscoveryProfileCard() {
     }
   }
 
+  function toggleRoleType(value: OpportunityRole) {
+    if (!profile) return
+    const current = profile.preferredRoleTypes ?? []
+    setProfile({
+      ...profile,
+      preferredRoleTypes: current.includes(value)
+        ? current.filter((item) => item !== value)
+        : [...current, value],
+    })
+  }
+
   if (!profile) return <div className="discovery-profile-card">正在读取岗位发现偏好…</div>
 
   return (
@@ -105,11 +125,11 @@ export default function DiscoveryProfileCard() {
         </label>
         <label>
           <span>必须满足</span>
-          <textarea value={mustHave} onChange={(event) => setMustHave(event.target.value)} placeholder={'每行一条硬要求；不确定时宁可留空'} />
+          <textarea value={mustHave} onChange={(event) => setMustHave(event.target.value)} placeholder={'每行一条硬要求；未从来源确认时会显示警告'} />
         </label>
         <label>
           <span>明确排除</span>
-          <textarea value={mustNotHave} onChange={(event) => setMustNotHave(event.target.value)} placeholder={'每行一条排除条件'} />
+          <textarea value={mustNotHave} onChange={(event) => setMustNotHave(event.target.value)} placeholder={'每行一条；来源明确命中时不进入 ChangeSet'} />
         </label>
         <label>
           <span>可用于判断匹配度的个人优势</span>
@@ -129,9 +149,69 @@ export default function DiscoveryProfileCard() {
             })}
           />
         </label>
+
+        <div className="discovery-profile-field wide">
+          <span>允许的岗位类型（不选 = 不限制）</span>
+          <div className="role-type-options">
+            {roleTypeOptions.map((item) => (
+              <label className="role-type-chip" key={item.value}>
+                <input
+                  type="checkbox"
+                  checked={(profile.preferredRoleTypes ?? []).includes(item.value)}
+                  onChange={() => toggleRoleType(item.value)}
+                />
+                <span>{item.label}</span>
+              </label>
+            ))}
+          </div>
+        </div>
+
+        <label>
+          <span>地点约束</span>
+          <select
+            value={profile.locationPolicy ?? 'prefer'}
+            onChange={(event) => setProfile({ ...profile, locationPolicy: event.target.value as 'prefer' | 'strict' })}
+          >
+            <option value="prefer">偏好：不匹配时保留并警告</option>
+            <option value="strict">严格：不匹配或地点未知时拦截</option>
+          </select>
+        </label>
+        <label>
+          <span>单批最多审阅岗位</span>
+          <input
+            type="number"
+            min="1"
+            max="12"
+            step="1"
+            value={profile.maxReviewCandidates ?? 6}
+            onChange={(event) => setProfile({ ...profile, maxReviewCandidates: Number(event.target.value) })}
+          />
+        </label>
+        <label>
+          <span>最低匹配度（0–100，可空）</span>
+          <input
+            type="number"
+            min="0"
+            max="100"
+            step="1"
+            value={profile.minimumFitScore ?? ''}
+            onChange={(event) => setProfile({ ...profile, minimumFitScore: event.target.value === '' ? undefined : Number(event.target.value) })}
+          />
+        </label>
+        <label>
+          <span>最低机会价值（0–100，可空）</span>
+          <input
+            type="number"
+            min="0"
+            max="100"
+            step="1"
+            value={profile.minimumOpportunityValue ?? ''}
+            onChange={(event) => setProfile({ ...profile, minimumOpportunityValue: event.target.value === '' ? undefined : Number(event.target.value) })}
+          />
+        </label>
         <label className="wide">
           <span>地点规则 / 例外</span>
-          <textarea value={profile.locationNotes} onChange={(event) => setProfile({ ...profile, locationNotes: event.target.value })} placeholder="例如：通常按某个地域范围；特定城市例外可接受。" />
+          <textarea value={profile.locationNotes} onChange={(event) => setProfile({ ...profile, locationNotes: event.target.value })} placeholder="例如：通常按某个地域范围；特定城市例外可接受。严格模式只执行上面的地点列表，复杂例外仍需人工确认。" />
         </label>
         <label className="wide">
           <span>其他发现说明</span>
@@ -141,7 +221,7 @@ export default function DiscoveryProfileCard() {
 
       {error ? <div className="notice error">{error}</div> : null}
       {message ? <div className="notice success">{message}</div> : null}
-      <small>ChatGPT 当前会把这里的内容当作发现约束；实时岗位事实仍必须来自公开招聘页面，而不是由模型补全。</small>
+      <small>质量闸门会直接拦截已过期、明确关闭、命中排除条件、低于显式分数/薪资门槛或相似重复的岗位；无法从公开来源确认的事实保持未知并在审阅中提示。</small>
     </section>
   )
 }

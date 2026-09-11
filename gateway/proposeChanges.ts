@@ -15,7 +15,8 @@ import {
   type DecisionRules,
   type DecisionWeights,
 } from '../src/decisionRules.js'
-import { discoveryProfileForSnapshot, type DiscoveryProfile } from '../src/discoveryProfile.js'
+import { discoveryProfileForSnapshot, isDiscoveryProfileConfigured } from '../src/discoveryProfile.js'
+import { screenDiscoveryCandidates } from '../src/discoveryQuality.js'
 import { buildMcpProposalReviewUrl } from '../src/ai/mcpProposal.js'
 import { parseProgressUpdate } from '../src/progressUpdate.js'
 import type { ActionStatus, DiscoveryConfidence, Opportunity, OpportunityRole } from '../src/model.js'
@@ -54,6 +55,7 @@ const actionStatusChangeSchema = z.object({
 
 const discoveryConfidenceSchema = z.enum(['high', 'medium', 'low'])
 const opportunityRoleSchema = z.enum(['core', 'backup', 'reach', 'lottery', 'practice'])
+const postingStatusSchema = z.enum(['open', 'closed', 'unknown'])
 
 function validDateString(value: string) {
   return !Number.isNaN(new Date(value).getTime())
@@ -75,9 +77,12 @@ const discoveredOpportunitySchema = z.object({
   role: z.string().trim().min(1).max(240),
   sourceUrl: z.string().trim().min(1).max(2_000).refine(publicHttpUrl, 'sourceUrl must be a public http(s) URL.'),
   sourceTitle: z.string().trim().min(1).max(300),
+  sourceEvidenceText: z.string().trim().min(1).max(2_000).optional(),
+  postingStatus: postingStatusSchema.optional(),
   location: z.string().trim().min(1).max(240).optional(),
   deadline: z.string().trim().refine(validDateString, 'deadline must be a valid date/time.').optional(),
   compensationText: z.string().trim().min(1).max(500).optional(),
+  annualCompensationMinWan: z.number().min(0).max(1000).optional(),
   rationale: z.string().trim().min(1).max(1_600),
   roleType: opportunityRoleSchema,
   opportunityValue: z.number().min(0).max(100),
@@ -92,7 +97,7 @@ export const proposeChangesSchema = z.object({
   progressText: z.string().trim().min(1).max(4000).optional(),
   actionStatusChanges: z.array(actionStatusChangeSchema).max(20).optional(),
   decisionRulesPatch: rulesPatchSchema.optional(),
-  discoveredOpportunities: z.array(discoveredOpportunitySchema).min(1).max(12).optional(),
+  discoveredOpportunities: z.array(discoveredOpportunitySchema).min(1).max(20).optional(),
 }).refine(
   (value) => Boolean(
     value.progressText ||
@@ -202,64 +207,12 @@ function makeMcpChangeSet(
   return changeSet
 }
 
-function profileConfigured(profile: DiscoveryProfile) {
-  return Boolean(
-    profile.targetRoleQueries.length ||
-    profile.preferredLocations.length ||
-    profile.locationNotes ||
-    profile.minimumAnnualCompensationWan !== undefined ||
-    profile.mustHave.length ||
-    profile.mustNotHave.length ||
-    profile.strengths.length ||
-    profile.notes
-  )
-}
-
-function profileWarnings(profile: DiscoveryProfile, candidate: z.infer<typeof discoveredOpportunitySchema>) {
-  const warnings: string[] = []
-  const searchable = [
-    candidate.company,
-    candidate.role,
-    candidate.location,
-    candidate.sourceTitle,
-    candidate.compensationText,
-    candidate.rationale,
-  ].filter(Boolean).join(' ').toLocaleLowerCase()
-
-  if (profile.preferredLocations.length > 0) {
-    if (!candidate.location) {
-      warnings.push('来源没有明确岗位地点，无法验证地点偏好。')
-    } else {
-      const location = compactIdentity(candidate.location)
-      const matches = profile.preferredLocations.some((item) => {
-        const preferred = compactIdentity(item)
-        return location.includes(preferred) || preferred.includes(location)
-      })
-      if (!matches) warnings.push(`岗位地点“${candidate.location}”不在显式偏好列表中；请结合地点例外规则人工确认。`)
-    }
-  }
-
-  if (profile.minimumAnnualCompensationWan !== undefined && !candidate.compensationText) {
-    warnings.push(`来源没有明确薪资，无法验证最低年薪 ${profile.minimumAnnualCompensationWan} 万元要求。`)
-  }
-
-  for (const exclusion of profile.mustNotHave) {
-    const token = exclusion.trim().toLocaleLowerCase()
-    if (token.length >= 2 && searchable.includes(token)) {
-      warnings.push(`候选信息包含排除规则关键词“${exclusion}”，请确认是否应舍弃。`)
-    }
-  }
-
-  return warnings.slice(0, 10)
-}
-
 function discoveredOpportunity(
   candidate: z.infer<typeof discoveredOpportunitySchema>,
-  profile: DiscoveryProfile,
+  warnings: string[],
   now: Date,
 ): Opportunity {
   const discoveredAt = candidate.discoveredAt ?? now.toISOString()
-  const warnings = profileWarnings(profile, candidate)
   return {
     id: discoveredOpportunityId(candidate.company, candidate.role),
     company: candidate.company,
@@ -278,6 +231,7 @@ function discoveredOpportunity(
     locallyManaged: true,
     importedAt: discoveredAt,
     detail: {
+      salaryMinWan: candidate.annualCompensationMinWan,
       salaryRaw: candidate.compensationText,
       discovery: {
         sourceUrl: candidate.sourceUrl,
@@ -294,40 +248,6 @@ function discoveredOpportunity(
   }
 }
 
-function discoveredOperations(
-  candidates: NonNullable<ProposeChangesInput['discoveredOpportunities']>,
-  snapshot: Awaited<ReturnType<WorkspaceSource['read']>>['snapshot'],
-  profile: DiscoveryProfile,
-  now: Date,
-) {
-  const existing = new Set(snapshot.data.opportunities.map((item) => opportunityIdentity(item.company, item.role)))
-  const accepted = new Set<string>()
-  const operations: ChangeSetOperation[] = []
-  const skippedDuplicates: Array<{ company: string; role: string; reason: string }> = []
-
-  for (const candidate of candidates) {
-    const identity = opportunityIdentity(candidate.company, candidate.role)
-    if (existing.has(identity) || accepted.has(identity)) {
-      skippedDuplicates.push({
-        company: candidate.company,
-        role: candidate.role,
-        reason: existing.has(identity) ? 'PJSDAS 已存在相同公司和岗位。' : '本次提议中重复。',
-      })
-      continue
-    }
-    accepted.add(identity)
-    const opportunity = discoveredOpportunity(candidate, profile, now)
-    operations.push({
-      id: `discovery:add:${opportunity.id}`,
-      kind: 'add_discovered_opportunity',
-      summary: `新增发现岗位｜${opportunity.company}｜${opportunity.role}`,
-      opportunity,
-    })
-  }
-
-  return { operations, skippedDuplicates }
-}
-
 export async function invokeProposeChanges(
   source: WorkspaceSource,
   rawInput: unknown,
@@ -338,20 +258,34 @@ export async function invokeProposeChanges(
     const { snapshot, context } = await source.read()
     const now = context.now ? new Date(context.now) : new Date()
     const operations: ChangeSetOperation[] = []
-    let skippedDuplicates: Array<{ company: string; role: string; reason: string }> = []
+    let discoveryScreening: ReturnType<typeof screenDiscoveryCandidates> | undefined
 
     if (input.discoveredOpportunities?.length) {
       const profile = discoveryProfileForSnapshot(snapshot.data.discoveryProfile)
-      if (!profileConfigured(profile)) {
+      if (!isDiscoveryProfileConfigured(profile)) {
         throw new WorkspaceSourceError(
           'DISCOVERY_PROFILE_REQUIRED',
           'PJSDAS Discovery Profile is empty. Ask the user to configure explicit durable job-discovery preferences in PJSDAS before proposing web-discovered jobs.',
           false,
         )
       }
-      const discovered = discoveredOperations(input.discoveredOpportunities, snapshot, profile, now)
-      operations.push(...discovered.operations)
-      skippedDuplicates = discovered.skippedDuplicates
+      const rules = decisionRulesForSnapshot(snapshot.data.decisionRules)
+      discoveryScreening = screenDiscoveryCandidates(
+        profile,
+        input.discoveredOpportunities,
+        snapshot.data.opportunities,
+        rules.weights,
+        now,
+      )
+      for (const item of discoveryScreening.accepted) {
+        const opportunity = discoveredOpportunity(item.candidate, item.warnings, now)
+        operations.push({
+          id: `discovery:add:${opportunity.id}`,
+          kind: 'add_discovered_opportunity',
+          summary: `新增发现岗位｜${opportunity.company}｜${opportunity.role}`,
+          opportunity,
+        })
+      }
     }
 
     if (input.progressText) {
@@ -391,10 +325,19 @@ export async function invokeProposeChanges(
 
     const normalized = uniqueOperations(operations)
     if (normalized.length === 0) {
-      const duplicateDetail = skippedDuplicates.length
-        ? ` ${skippedDuplicates.map((item) => `${item.company}｜${item.role}`).join('、')} 已存在或重复。`
-        : ''
-      return failure('NO_CHANGES', `The requested state already matches PJSDAS, so there is nothing to propose.${duplicateDetail}`, false)
+      if (discoveryScreening) {
+        const onlyDuplicates = discoveryScreening.skippedDuplicates.length > 0 && discoveryScreening.rejectedCandidates.length === 0
+        const detail = [
+          ...discoveryScreening.skippedDuplicates.map((item) => `${item.company}｜${item.role}：${item.reason}`),
+          ...discoveryScreening.rejectedCandidates.map((item) => `${item.company}｜${item.role}：${item.reasons.join('；')}`),
+        ].slice(0, 6).join(' ')
+        return failure(
+          onlyDuplicates ? 'NO_CHANGES' : 'DISCOVERY_NO_ELIGIBLE_CANDIDATES',
+          `${onlyDuplicates ? 'All discovered opportunities are already represented in PJSDAS.' : 'No discovered opportunity passed the PJSDAS quality gate.'}${detail ? ` ${detail}` : ''}`,
+          false,
+        )
+      }
+      return failure('NO_CHANGES', 'The requested state already matches PJSDAS, so there is nothing to propose.', false)
     }
     if (normalized.length > 24) {
       return failure('PROPOSAL_TOO_LARGE', 'Split this request into smaller PJSDAS proposals of at most 24 normalized operations.', false)
@@ -422,9 +365,18 @@ export async function invokeProposeChanges(
       title: changeSet.title,
       operationCount: changeSet.operations.length,
       operations: changeSet.operations.map((item) => ({ id: item.id, kind: item.kind, summary: item.summary })),
-      skippedDuplicates,
+      skippedDuplicates: discoveryScreening?.skippedDuplicates ?? [],
+      rejectedCandidates: discoveryScreening?.rejectedCandidates ?? [],
+      deferredCandidates: discoveryScreening?.deferredCandidates ?? [],
+      discoveryScreening: discoveryScreening ? {
+        received: discoveryScreening.received,
+        accepted: discoveryScreening.accepted.length,
+        duplicateCount: discoveryScreening.skippedDuplicates.length,
+        rejectedCount: discoveryScreening.rejectedCandidates.length,
+        deferredCount: discoveryScreening.deferredCandidates.length,
+      } : undefined,
       reviewUrl,
-      instruction: 'No PJSDAS job-search data has changed. Ask the user to open the signed reviewUrl within 24 hours and explicitly Apply or Discard the ChangeSet in PJSDAS. Web-discovered opportunities must retain their public source evidence. If PJSDAS reports that the local workspace has changed since this proposal was created, sync first and ask for a fresh proposal.',
+      instruction: 'No PJSDAS job-search data has changed. Ask the user to open the signed reviewUrl within 24 hours and explicitly Apply or Discard the ChangeSet in PJSDAS. Web-discovered opportunities must retain their public source evidence. PJSDAS quality-gates expired, closed, explicitly excluded, below-threshold and duplicate candidates before review; unknown source facts remain visible as warnings. If PJSDAS reports that the local workspace has changed since this proposal was created, sync first and ask for a fresh proposal.',
     })
   } catch (caught) {
     if (caught instanceof WorkspaceSourceError) return failure(caught.code, caught.message, caught.retryable)

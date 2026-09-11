@@ -13,7 +13,7 @@ const base = createFileWorkspaceSource({
   workspaceVersion: 'drive:9',
 })
 
-function source(configured = true): WorkspaceSource {
+function source(configured = true, maxReviewCandidates = 6): WorkspaceSource {
   return {
     async read() {
       const workspace = await base.read()
@@ -30,6 +30,7 @@ function source(configured = true): WorkspaceSource {
               mustHave: ['2027 届校招'],
               mustNotHave: ['纯销售'],
               strengths: ['理工科硕士'],
+              maxReviewCandidates,
             } : undefined,
           },
         },
@@ -49,6 +50,8 @@ const candidate = {
   role: 'AI 产品经理校招生',
   sourceUrl: 'https://careers.example.com/jobs/ai-pm-2027',
   sourceTitle: '候选科技 2027 校招｜AI 产品经理',
+  sourceEvidenceText: '2027 届校招，工作地点北京，负责 AI 产品规划与跨团队协作。',
+  postingStatus: 'open' as const,
   location: '北京',
   deadline: '2026-09-30T23:59:00+08:00',
   compensationText: '招聘页面未披露明确薪资',
@@ -76,6 +79,7 @@ describe('v1.3 discovered opportunity proposals', () => {
       workspaceVersion: 'drive:9',
       operationCount: 1,
       skippedDuplicates: [],
+      discoveryScreening: { received: 1, accepted: 1, duplicateCount: 0, rejectedCount: 0, deferredCount: 0 },
     })
 
     const url = new URL(String(data.reviewUrl))
@@ -110,12 +114,12 @@ describe('v1.3 discovered opportunity proposals', () => {
     expect(resultJson(result)).toMatchObject({ code: 'DISCOVERY_PROFILE_REQUIRED', retryable: false })
   })
 
-  it('drops an exact company+role duplicate already present in PJSDAS', async () => {
+  it('drops an exact or highly similar company+role duplicate already present in PJSDAS', async () => {
     const result = await invokeProposeChanges(source(), {
       discoveredOpportunities: [{
         ...candidate,
         company: '示例科技',
-        role: 'AI 产品经理',
+        role: '产品经理（AI方向）',
         sourceUrl: 'https://careers.example.com/jobs/duplicate',
       }],
     }, { signingKey })
@@ -123,12 +127,13 @@ describe('v1.3 discovered opportunity proposals', () => {
     expect(resultJson(result)).toMatchObject({ code: 'NO_CHANGES', retryable: false })
   })
 
-  it('keeps profile mismatches visible as review warnings instead of pretending free text was deterministically proven', async () => {
+  it('keeps soft profile mismatches visible as review warnings', async () => {
     const result = await invokeProposeChanges(source(), {
       discoveredOpportunities: [{
         ...candidate,
         location: '广州',
         compensationText: undefined,
+        sourceEvidenceText: '2027 届校招，工作地点广州。',
         rationale: '来源明确写明为产品岗位，但地点不在显式地点列表中。',
       }],
     }, { signingKey })
@@ -141,6 +146,35 @@ describe('v1.3 discovered opportunity proposals', () => {
     if (operation.kind === 'add_discovered_opportunity') {
       expect(operation.opportunity.detail?.discovery?.profileWarnings?.join(' ')).toContain('广州')
     }
+  })
+
+  it('rejects expired and explicitly excluded discovered jobs before signing a ChangeSet', async () => {
+    const expired = await invokeProposeChanges(source(), {
+      discoveredOpportunities: [{ ...candidate, deadline: '2026-09-10T23:59:00+08:00' }],
+    }, { signingKey })
+    expect(expired.isError).toBe(true)
+    expect(resultJson(expired)).toMatchObject({ code: 'DISCOVERY_NO_ELIGIBLE_CANDIDATES', retryable: false })
+
+    const excluded = await invokeProposeChanges(source(), {
+      discoveredOpportunities: [{ ...candidate, sourceEvidenceText: '2027 届校招，北京，纯销售岗位。' }],
+    }, { signingKey })
+    expect(excluded.isError).toBe(true)
+    expect(String(resultJson(excluded).message)).toContain('纯销售')
+  })
+
+  it('caps the review batch after quality ranking instead of sending every search hit to the user', async () => {
+    const result = await invokeProposeChanges(source(true, 2), {
+      discoveredOpportunities: [
+        { ...candidate, company: '甲公司', fitScore: 92, opportunityValue: 94, sourceUrl: 'https://careers.example.com/a' },
+        { ...candidate, company: '乙公司', fitScore: 84, opportunityValue: 88, sourceUrl: 'https://careers.example.com/b' },
+        { ...candidate, company: '丙公司', fitScore: 65, opportunityValue: 70, sourceUrl: 'https://careers.example.com/c' },
+      ],
+    }, { signingKey })
+    expect(result.isError).not.toBe(true)
+    const data = resultJson(result)
+    expect(data.operationCount).toBe(2)
+    expect(data.discoveryScreening).toMatchObject({ received: 3, accepted: 2, deferredCount: 1 })
+    expect(data.deferredCandidates[0].company).toBe('丙公司')
   })
 
   it('rejects non-public source schemes before a ChangeSet can be signed', async () => {
