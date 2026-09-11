@@ -23,6 +23,7 @@ describe('PJSDAS MCP gateway alpha', () => {
       'list_opportunities',
       'get_pipeline',
       'get_decision_rules',
+      'get_discovery_context',
       'explain_priority',
       'get_recent_timeline',
     ])
@@ -37,6 +38,7 @@ describe('PJSDAS MCP gateway alpha', () => {
     ['list_opportunities', { limit: 10 }],
     ['get_pipeline', { attentionOnly: true }],
     ['get_decision_rules', {}],
+    ['get_discovery_context', {}],
     ['explain_priority', { opportunityId: 'opp-alpha', compareWithOpportunityId: 'opp-beta' }],
     ['get_recent_timeline', { since: '2026-09-10T00:00:00+08:00' }],
   ] satisfies Array<[ReadToolName, unknown]>)('runs %s against the validated snapshot source', async (name, args) => {

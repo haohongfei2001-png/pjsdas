@@ -1,5 +1,6 @@
 import { buildTimePlan, processNeedsReview, rankAction, rankActions } from '../decisionV3.js'
 import { decisionRulesForSnapshot, type DecisionRules, type DecisionWeights } from '../decisionRules.js'
+import { discoveryProfileForSnapshot, type DiscoveryProfile } from '../discoveryProfile.js'
 import { isUnresolvedPastProcessEvent } from '../fixedEventGuardLogic.js'
 import {
   overlayProcessEventsOnOpportunities,
@@ -154,6 +155,27 @@ export interface GetDecisionRulesOutput {
   deadlines: Record<string, number | boolean | string>
   visibility: Record<string, number | boolean | string>
   humanSummary: string[]
+}
+
+export interface GetDiscoveryContextOutput {
+  meta: BridgeMeta
+  configured: boolean
+  profile: DiscoveryProfile
+  decisionWeights: DecisionWeights
+  existingOpportunities: Array<{
+    opportunityId: string
+    company: string
+    role: string
+    stage: string
+    roleType: Opportunity['roleType']
+    deadline?: string
+  }>
+  recentlyClosed: Array<{
+    opportunityId: string
+    company: string
+    role: string
+  }>
+  instructions: string[]
 }
 
 export interface ExplainPriorityInput {
@@ -548,6 +570,62 @@ export function getDecisionRules(
       `固定时间事件预告窗口：${rules.fixedEventHorizonHours} 小时。`,
       `每日最多纳入 ${rules.followUpDailyCap} 个复核任务和 ${rules.prepDailyCap} 个准备任务。`,
       `排序权重最高项：${highestWeightLabel(rules.weights)}。`,
+    ],
+  }
+}
+
+function discoveryProfileConfigured(profile: DiscoveryProfile) {
+  return Boolean(
+    profile.targetRoleQueries.length ||
+    profile.preferredLocations.length ||
+    profile.locationNotes ||
+    profile.minimumAnnualCompensationWan !== undefined ||
+    profile.mustHave.length ||
+    profile.mustNotHave.length ||
+    profile.strengths.length ||
+    profile.notes
+  )
+}
+
+export function getDiscoveryContext(
+  snapshot: PJSDASSnapshot,
+  bridgeContext: BridgeReadContext = {},
+): GetDiscoveryContextOutput {
+  const context = resolvedContext(bridgeContext)
+  const workspace = readWorkspace(snapshot)
+  const profile = discoveryProfileForSnapshot(snapshot.data.discoveryProfile)
+  const active = workspace.opportunities
+    .filter((item) => item.processStage !== 'closed')
+    .sort((a, b) => a.company.localeCompare(b.company) || a.role.localeCompare(b.role))
+    .slice(0, 150)
+  const recentlyClosed = workspace.opportunities
+    .filter((item) => item.processStage === 'closed')
+    .sort((a, b) => b.importedAt.localeCompare(a.importedAt))
+    .slice(0, 60)
+
+  return {
+    meta: meta(context),
+    configured: discoveryProfileConfigured(profile),
+    profile,
+    decisionWeights: { ...workspace.rules.weights },
+    existingOpportunities: active.map((item) => ({
+      opportunityId: item.id,
+      company: item.company,
+      role: item.role,
+      stage: item.processStage,
+      roleType: item.roleType,
+      deadline: item.deadline,
+    })),
+    recentlyClosed: recentlyClosed.map((item) => ({
+      opportunityId: item.id,
+      company: item.company,
+      role: item.role,
+    })),
+    instructions: [
+      'Use the explicit Discovery Profile as durable search preferences; do not silently infer or rewrite it.',
+      'Search public job sources outside PJSDAS, and keep unknown salary, deadline or location fields unknown instead of inventing them.',
+      'Do not rediscover an obviously identical company+role already present in existingOpportunities.',
+      'Use propose_changes for any candidate the user wants to add; never claim discovery results were added before ChangeSet review and Apply.',
     ],
   }
 }

@@ -4,6 +4,7 @@ import {
   BridgeReadError,
   explainPriority,
   getDecisionRules,
+  getDiscoveryContext,
   getPipeline,
   getRecentTimeline,
   getTodayPlan,
@@ -16,6 +17,7 @@ export const READ_TOOL_NAMES = [
   'list_opportunities',
   'get_pipeline',
   'get_decision_rules',
+  'get_discovery_context',
   'explain_priority',
   'get_recent_timeline',
 ] as const
@@ -58,6 +60,7 @@ export const getPipelineSchema = z.object({
 })
 
 export const getDecisionRulesSchema = z.object({})
+export const getDiscoveryContextSchema = z.object({})
 
 export const explainPrioritySchema = z.object({
   actionId: z.string().optional(),
@@ -120,6 +123,9 @@ export async function invokeReadTool(
       case 'get_decision_rules':
         getDecisionRulesSchema.parse(args)
         return success(getDecisionRules(snapshot, context))
+      case 'get_discovery_context':
+        getDiscoveryContextSchema.parse(args)
+        return success(getDiscoveryContext(snapshot, context))
       case 'explain_priority':
         return success(explainPriority(snapshot, explainPrioritySchema.parse(args), context))
       case 'get_recent_timeline':

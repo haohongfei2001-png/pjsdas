@@ -28,6 +28,7 @@ import { DEFAULT_DECISION_RULES, type DecisionRules } from './decisionRules.js'
 import RulesView from './RulesView.js'
 import TimelineView from './TimelineView.js'
 import CloudSettingsCard from './cloud/CloudSettingsCard.js'
+import DiscoveryProfileCard from './DiscoveryProfileCard.js'
 import type { ChangeSetRecord } from './changeSet.js'
 import type {
   Action,
@@ -601,6 +602,7 @@ function SettingsView({ lastImport, onImported }: { lastImport?: ImportMeta; onI
       </div>
 
       <CloudSettingsCard />
+      <DiscoveryProfileCard />
 
       <div className="import-card">
         <div>

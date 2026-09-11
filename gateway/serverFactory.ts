@@ -3,6 +3,7 @@ import {
   explainPrioritySchema,
   getPipelineSchema,
   getRecentTimelineSchema,
+  getDiscoveryContextSchema,
   getTodayPlanSchema,
   invokeReadTool,
   listOpportunitiesSchema,
@@ -104,6 +105,17 @@ export function createPjsdasMcpServer(
       annotations: readOnlyAnnotations,
     },
     async () => invokeReadTool(source, 'get_decision_rules', {}),
+  )
+
+  server.registerTool(
+    'get_discovery_context',
+    {
+      title: 'Get PJSDAS job discovery context',
+      description: 'Read the user-controlled Discovery Profile, active decision weights, and bounded existing opportunity identities before searching the web for new jobs. This tool does not search the web or mutate PJSDAS.',
+      inputSchema: getDiscoveryContextSchema,
+      annotations: readOnlyAnnotations,
+    },
+    async (args) => invokeReadTool(source, 'get_discovery_context', args),
   )
 
   server.registerTool(
