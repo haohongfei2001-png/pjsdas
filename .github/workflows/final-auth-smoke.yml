@@ -1,0 +1,72 @@
+name: Final authenticated gateway smoke test
+
+on:
+  push:
+    paths:
+      - '.github/workflows/final-auth-smoke.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify production demo and OAuth boundaries
+        shell: bash
+        run: |
+          set -euo pipefail
+          base='https://pjsdas-remote-alpha.vercel.app'
+          auth='https://yyrzwpoxlxpafdlbkdtg.supabase.co'
+
+          curl -fsS "$base/api/health-auth" -o /tmp/health.json
+          jq -e '.ready == true and .secretsConfigured.tokenEncryptionKey == true and .secretsConfigured.googleClientId == true and .secretsConfigured.googleClientSecret == true' /tmp/health.json >/dev/null
+
+          curl -fsS "$base/.well-known/oauth-protected-resource" -o /tmp/resource.json
+          jq -e '.resource == "https://pjsdas-remote-alpha.vercel.app/api/mcp-auth" and (.authorization_servers | index("https://yyrzwpoxlxpafdlbkdtg.supabase.co/auth/v1")) != null' /tmp/resource.json >/dev/null
+
+          curl -fsS "$auth/.well-known/oauth-authorization-server/auth/v1" -o /tmp/oauth.json
+          jq -e '.authorization_endpoint and .token_endpoint and .registration_endpoint' /tmp/oauth.json >/dev/null
+
+          code=$(curl -sS -D /tmp/noauth.headers -o /tmp/noauth.json -w '%{http_code}' \
+            -X POST "$base/api/mcp-auth" \
+            -H 'content-type: application/json' \
+            -H 'accept: application/json, text/event-stream' \
+            --data '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"final-smoke","version":"1"}}}')
+          test "$code" = '401'
+          grep -qi 'www-authenticate:.*resource_metadata=' /tmp/noauth.headers
+          jq -e '.code == "AUTH_REQUIRED"' /tmp/noauth.json >/dev/null
+
+          code=$(curl -sS -o /tmp/invalid.json -w '%{http_code}' \
+            -X POST "$base/api/mcp-auth" \
+            -H 'authorization: Bearer deliberately-invalid-token' \
+            -H 'content-type: application/json' \
+            -H 'accept: application/json, text/event-stream' \
+            --data '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"final-smoke","version":"1"}}}')
+          test "$code" = '401'
+          jq -e '.code == "AUTH_REQUIRED"' /tmp/invalid.json >/dev/null
+
+          code=$(curl -sS -o /dev/null -w '%{http_code}' \
+            -X OPTIONS "$base/api/google-link" \
+            -H 'Origin: https://haohongfei2001-png.github.io' \
+            -H 'Access-Control-Request-Method: POST' \
+            -H 'Access-Control-Request-Headers: authorization,content-type')
+          test "$code" = '204'
+
+          code=$(curl -sS -o /tmp/link.json -w '%{http_code}' \
+            -X POST "$base/api/google-link" \
+            -H 'Origin: https://haohongfei2001-png.github.io' \
+            -H 'content-type: application/json' \
+            --data '{"providerToken":"x","providerRefreshToken":"y"}')
+          test "$code" = '401'
+          jq -e '.code == "AUTH_REQUIRED"' /tmp/link.json >/dev/null
+
+          code=$(curl -sS -o /tmp/demo.out -w '%{http_code}' \
+            -X POST "$base/api/mcp" \
+            -H 'content-type: application/json' \
+            -H 'accept: application/json, text/event-stream' \
+            --data '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"final-smoke","version":"1"}}}')
+          test "$code" = '200'
+          grep -q 'pjsdas' /tmp/demo.out
+
+          echo 'FINAL_AUTH_SMOKE_OK'
