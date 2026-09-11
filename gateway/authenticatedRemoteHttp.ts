@@ -66,8 +66,8 @@ function lazyDriveSource(request: Request): WorkspaceSource {
  * Both /api/mcp (primary) and /api/mcp-auth (compatibility alias) enter this
  * runtime only after a valid Supabase OAuth bearer identity is present. Read
  * tools resolve the user's encrypted Google Drive connection lazily. The
- * propose_changes tool only returns a validated pending ChangeSet review link;
- * it never writes the Google Drive workspace directly.
+ * propose_changes tool only returns a validated, signed pending ChangeSet
+ * review link; it never writes the Google Drive workspace directly.
  */
 export async function authenticatedRemoteMcpFetch(request: Request) {
   try {
@@ -83,6 +83,7 @@ export async function authenticatedRemoteMcpFetch(request: Request) {
         version: AUTHENTICATED_GATEWAY_VERSION,
         dataMode: 'google-drive-readonly',
         proposalMode: 'review-link',
+        proposalSigningKey: env('PJSDAS_TOKEN_ENCRYPTION_KEY'),
       }),
     )
     return handler.fetch(request)
