@@ -33,7 +33,11 @@ describe('authenticated Google Drive workspace source', () => {
     const fetchImpl = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input)
       const auth = new Headers(init?.headers).get('authorization')
-      calls.push({ url, auth, body: typeof init?.body === 'string' ? init.body : undefined })
+      calls.push({
+        url,
+        auth,
+        body: init?.body === undefined || init.body === null ? undefined : String(init.body),
+      })
 
       if (url.endsWith('/auth/v1/user')) return json({ id: 'user-a', email: 'a@example.com' })
       if (url.includes('/rest/v1/google_drive_connections?')) {
