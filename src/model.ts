@@ -109,6 +109,38 @@ export interface OpportunityFacts {
   unknownFields: OpportunityFactUnknownField[]
 }
 
+export type FitAssessmentComponentKey =
+  | 'roleDirection'
+  | 'skills'
+  | 'education'
+  | 'experience'
+  | 'industry'
+  | 'language'
+  | 'location'
+
+export type OpportunityValueAssessmentComponentKey =
+  | 'companyQuality'
+  | 'roleGrowth'
+  | 'compensation'
+  | 'careerOptionality'
+  | 'brandValue'
+  | 'industryGrowth'
+  | 'locationValue'
+
+export interface OpportunityAssessmentComponent {
+  score: number
+  confidence: DiscoveryConfidence
+  rationale: string
+}
+
+export interface OpportunityAssessment {
+  version: 1
+  mode: 'component'
+  fit: Partial<Record<FitAssessmentComponentKey, OpportunityAssessmentComponent>>
+  opportunityValue: Partial<Record<OpportunityValueAssessmentComponentKey, OpportunityAssessmentComponent>>
+  assessedAt: string
+}
+
 export type DiscoveryInboxStatus = 'new' | 'seen' | 'later' | 'dismissed' | 'promoted'
 
 export interface DiscoveryInboxItem {
@@ -131,6 +163,7 @@ export interface DiscoveryInboxItem {
   posting?: JobPostingEvidence
   postingHistory?: JobPostingEvidence[]
   facts?: OpportunityFacts
+  assessment?: OpportunityAssessment
   status: DiscoveryInboxStatus
   rejectionReason?: DiscoveryRejectionReason
   sourceChangeSetId?: string
@@ -231,6 +264,7 @@ export interface OpportunityDetail {
   earlyReason?: string
   rules?: string
   facts?: OpportunityFacts
+  assessment?: OpportunityAssessment
   discovery?: OpportunityDiscoveryEvidence
 }
 
