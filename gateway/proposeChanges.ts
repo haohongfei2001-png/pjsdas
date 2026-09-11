@@ -17,6 +17,7 @@ import {
 import { buildMcpProposalReviewUrl } from '../src/ai/mcpProposal.js'
 import { parseProgressUpdate } from '../src/progressUpdate.js'
 import type { ActionStatus } from '../src/model.js'
+import { createSignedProposalToken } from './proposalToken.js'
 import { WorkspaceSourceError, type WorkspaceSource } from './workspaceSource.js'
 
 const weightPatchSchema = z.object({
@@ -64,6 +65,10 @@ export const proposeChangesSchema = z.object({
 )
 
 export type ProposeChangesInput = z.infer<typeof proposeChangesSchema>
+
+export interface ProposeChangesOptions {
+  signingKey: string
+}
 
 function proposalId(now: Date) {
   const compact = now.toISOString().replace(/[-:TZ.]/g, '').slice(0, 14)
@@ -127,6 +132,7 @@ function makeMcpChangeSet(title: string, operations: ChangeSetOperation[], now: 
 export async function invokeProposeChanges(
   source: WorkspaceSource,
   rawInput: unknown,
+  options: ProposeChangesOptions,
 ): Promise<CallToolResult> {
   try {
     const input = proposeChangesSchema.parse(rawInput)
@@ -179,7 +185,8 @@ export async function invokeProposeChanges(
 
     const title = input.title ?? `ChatGPT 提议 · ${normalized.length} 项`
     const changeSet = makeMcpChangeSet(title, normalized, now)
-    const reviewUrl = buildMcpProposalReviewUrl(changeSet, context.workspaceVersion)
+    const signedToken = await createSignedProposalToken(changeSet, context.workspaceVersion, options.signingKey, now)
+    const reviewUrl = buildMcpProposalReviewUrl(signedToken)
 
     return success({
       status: 'proposal_created',
@@ -190,7 +197,7 @@ export async function invokeProposeChanges(
       operationCount: changeSet.operations.length,
       operations: changeSet.operations.map((item) => ({ id: item.id, kind: item.kind, summary: item.summary })),
       reviewUrl,
-      instruction: 'No PJSDAS workspace data has changed. Ask the user to open reviewUrl and explicitly Apply or Discard the pending ChangeSet in PJSDAS.',
+      instruction: 'No PJSDAS job-search data has changed. Ask the user to open the signed reviewUrl within 24 hours and explicitly Apply or Discard the pending ChangeSet in PJSDAS.',
     })
   } catch (caught) {
     if (caught instanceof WorkspaceSourceError) return failure(caught.code, caught.message, caught.retryable)
