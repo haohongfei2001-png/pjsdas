@@ -1,5 +1,6 @@
 const base = (process.env.PJSDAS_BASE_URL || process.argv[2] || 'https://pjsdas-remote-alpha.vercel.app').replace(/\/+$/, '')
 const expectedVersion = process.env.PJSDAS_EXPECTED_VERSION || '1.3.0-alpha.1'
+const expectedResource = (process.env.PJSDAS_EXPECTED_RESOURCE || `${base}/api/mcp`).replace(/\/+$/, '')
 const githubPagesOrigin = 'https://haohongfei2001-png.github.io'
 
 function assert(condition, message) {
@@ -23,12 +24,14 @@ async function fetchJson(path, init = {}) {
 
 async function main() {
   console.log(`PJSDAS production smoke: ${base}`)
+  console.log(`Expected OAuth resource: ${expectedResource}`)
 
   const health = await fetchJson('/api/health')
   assert(health.response.status === 200, `/api/health expected 200, got ${health.response.status}`)
   assert(health.body?.version === expectedVersion, `/api/health version expected ${expectedVersion}, got ${health.body?.version}`)
   assert(health.body?.mode === 'google-drive-readonly', 'health mode is not google-drive-readonly')
   assert(health.body?.auth === 'supabase-oauth-2.1', 'health auth contract is not Supabase OAuth')
+  assert(health.body?.resource === expectedResource, `health resource expected ${expectedResource}, got ${health.body?.resource}`)
   assert(health.body?.capabilities?.discoveryContext === true, 'get_discovery_context capability is not advertised')
   assert(health.body?.capabilities?.discoveryQualityGate === 'v1.3-round-1', 'Round 1 discovery quality gate is not advertised')
   assert(health.body?.capabilities?.reviewOnlyProposals === true, 'review-only proposal capability is not advertised')
@@ -51,7 +54,7 @@ async function main() {
 
   const metadata = await fetchJson('/.well-known/oauth-protected-resource')
   assert(metadata.response.status === 200, `protected-resource metadata expected 200, got ${metadata.response.status}`)
-  assert(metadata.body?.resource === `${base}/api/mcp`, `protected resource mismatch: ${metadata.body?.resource}`)
+  assert(metadata.body?.resource === expectedResource, `protected resource expected ${expectedResource}, got ${metadata.body?.resource}`)
   assert(Array.isArray(metadata.body?.authorization_servers) && metadata.body.authorization_servers.length > 0, 'authorization_servers missing')
   console.log('✓ OAuth protected-resource metadata')
 
