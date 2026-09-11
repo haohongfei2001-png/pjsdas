@@ -11,6 +11,12 @@ import { mergeActionsForReimport } from './reimportState.js'
 import { createSnapshot, validateSnapshot, type PJSDASSnapshot } from './snapshot.js'
 import { createDefaultDecisionRules, decisionRulesForSnapshot, validateDecisionRules, type DecisionRules } from './decisionRules.js'
 import {
+  createDefaultDiscoveryProfile,
+  normalizeDiscoveryProfile,
+  validateDiscoveryProfile,
+  type DiscoveryProfile,
+} from './discoveryProfile.js'
+import {
   assertChangeSetValid,
   createActionStatusChangeSet,
   createProcessEventChangeSet,
@@ -68,6 +74,7 @@ interface PJSDASDatabase extends DBSchema {
   prep: { key: string; value: Prep }
   applicationGroups: { key: string; value: ApplicationGroup }
   decisionRules: { key: string; value: DecisionRules }
+  discoveryProfiles: { key: string; value: DiscoveryProfile }
   timeline: {
     key: string
     value: TimelineRecord
@@ -89,12 +96,13 @@ const DATA_STORES = [
   'prep',
   'applicationGroups',
   'decisionRules',
+  'discoveryProfiles',
   'timeline',
   'changeSets',
   'meta',
 ] as const
 
-export const dbPromise = openDB<PJSDASDatabase>('pjsdas', 6, {
+export const dbPromise = openDB<PJSDASDatabase>('pjsdas', 7, {
   upgrade(db) {
     if (!db.objectStoreNames.contains('opportunities')) {
       db.createObjectStore('opportunities', { keyPath: 'id' })
@@ -119,6 +127,9 @@ export const dbPromise = openDB<PJSDASDatabase>('pjsdas', 6, {
     }
     if (!db.objectStoreNames.contains('decisionRules')) {
       db.createObjectStore('decisionRules', { keyPath: 'key' })
+    }
+    if (!db.objectStoreNames.contains('discoveryProfiles')) {
+      db.createObjectStore('discoveryProfiles', { keyPath: 'key' })
     }
     if (!db.objectStoreNames.contains('timeline')) {
       const store = db.createObjectStore('timeline', { keyPath: 'id' })
@@ -193,6 +204,19 @@ export async function getLastImport() {
 export async function getDecisionRules() {
   const stored = await (await dbPromise).get('decisionRules', 'current')
   return stored ?? decisionRulesForSnapshot()
+}
+
+export async function getDiscoveryProfile() {
+  const stored = await (await dbPromise).get('discoveryProfiles', 'current')
+  return stored ?? createDefaultDiscoveryProfile('1970-01-01T00:00:00.000Z')
+}
+
+export async function saveDiscoveryProfile(profile: DiscoveryProfile) {
+  const next = normalizeDiscoveryProfile(profile)
+  const errors = validateDiscoveryProfile(next)
+  if (errors.length) throw new Error(errors[0])
+  await (await dbPromise).put('discoveryProfiles', next)
+  return next
 }
 
 async function ensureTimelineBackfill(db: Awaited<typeof dbPromise>) {
@@ -648,7 +672,7 @@ export async function applyChangeSet(id: string) {
 export async function exportLocalSnapshot() {
   const db = await dbPromise
   await ensureTimelineBackfill(db)
-  const [opportunities, processes, processEvents, actions, prep, applicationGroups, decisionRules, timeline, changeSets, meta] =
+  const [opportunities, processes, processEvents, actions, prep, applicationGroups, decisionRules, discoveryProfile, timeline, changeSets, meta] =
     await Promise.all([
       db.getAll('opportunities'),
       db.getAll('processes'),
@@ -657,6 +681,7 @@ export async function exportLocalSnapshot() {
       db.getAll('prep'),
       db.getAll('applicationGroups'),
       db.get('decisionRules', 'current'),
+      db.get('discoveryProfiles', 'current'),
       db.getAll('timeline'),
       db.getAll('changeSets'),
       db.get('meta', 'lastImport'),
@@ -670,6 +695,7 @@ export async function exportLocalSnapshot() {
     prep,
     applicationGroups,
     decisionRules: decisionRulesForSnapshot(decisionRules),
+    discoveryProfile,
     timeline,
     changeSets,
     meta,
@@ -690,6 +716,7 @@ export async function replaceLocalSnapshotFromCloud(snapshot: PJSDASSnapshot) {
   for (const item of snapshot.data.prep) await tx.objectStore('prep').put(item)
   for (const item of snapshot.data.applicationGroups) await tx.objectStore('applicationGroups').put(item)
   await tx.objectStore('decisionRules').put(snapshot.data.decisionRules ?? createDefaultDecisionRules())
+  if (snapshot.data.discoveryProfile) await tx.objectStore('discoveryProfiles').put(snapshot.data.discoveryProfile)
   for (const item of snapshot.data.timeline ?? []) await tx.objectStore('timeline').put(item)
   for (const item of snapshot.data.changeSets ?? []) await tx.objectStore('changeSets').put(item)
   if (snapshot.data.meta) await tx.objectStore('meta').put(snapshot.data.meta)
@@ -711,6 +738,7 @@ export async function restoreLocalSnapshot(snapshot: PJSDASSnapshot) {
   for (const item of snapshot.data.prep) await tx.objectStore('prep').put(item)
   for (const item of snapshot.data.applicationGroups) await tx.objectStore('applicationGroups').put(item)
   await tx.objectStore('decisionRules').put(snapshot.data.decisionRules ?? createDefaultDecisionRules())
+  if (snapshot.data.discoveryProfile) await tx.objectStore('discoveryProfiles').put(snapshot.data.discoveryProfile)
   for (const item of snapshot.data.timeline ?? []) await tx.objectStore('timeline').put(item)
   for (const item of snapshot.data.changeSets ?? []) await tx.objectStore('changeSets').put(item)
   await tx.objectStore('timeline').put(timelineFromRestore(snapshot.exportedAt))
