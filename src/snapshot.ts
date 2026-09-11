@@ -14,6 +14,7 @@ import { validateChangeSet, type ChangeSetRecord } from './changeSet.js'
 import { validateDiscoveryProfile, type DiscoveryProfile } from './discoveryProfile.js'
 import { validateDiscoveryInboxItem } from './discoveryInbox.js'
 import { validateJobPostingEvidence } from './jobPosting.js'
+import { validateOpportunityAssessment } from './opportunityAssessment.js'
 import { validateOpportunityFacts } from './richOpportunity.js'
 
 export const SNAPSHOT_SCHEMA = 'pjsdas-local-snapshot' as const
@@ -145,6 +146,11 @@ export function validateSnapshot(value: unknown): asserts value is PJSDASSnapsho
       const errors = validateOpportunityFacts(facts)
       if (errors.length) throw new Error(`备份损坏：岗位 ${opportunity.id} 的 Rich Opportunity facts 无效（${errors[0]}）`)
     }
+    const assessment = opportunity.detail?.assessment
+    if (assessment) {
+      const errors = validateOpportunityAssessment(assessment)
+      if (errors.length) throw new Error(`备份损坏：岗位 ${opportunity.id} 的组件评估无效（${errors[0]}）`)
+    }
     const discovery = opportunity.detail?.discovery
     if (discovery?.posting) {
       const errors = validateJobPostingEvidence(discovery.posting)
@@ -163,10 +169,6 @@ export function validateSnapshot(value: unknown): asserts value is PJSDASSnapsho
     }
   }
 
-  // Process Events are durable historical facts. If a later Excel import removes
-  // an old opportunity, the event may intentionally become archival/orphaned.
-  // It still carries company/role text and must remain backup-safe, but it will
-  // no longer project into current decisions because no active Opportunity exists.
   for (const raw of data.processEvents) {
     const event = raw as ProcessEvent
     if (!event.opportunityId?.trim() || !event.company?.trim() || !event.role?.trim()) {
