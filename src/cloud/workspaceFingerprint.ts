@@ -51,6 +51,7 @@ export function workspaceIsEffectivelyEmpty(snapshot: PJSDASSnapshot) {
     data.actions.length === 0 &&
     data.prep.length === 0 &&
     data.applicationGroups.length === 0 &&
+    (data.discoveryInbox ?? []).length === 0 &&
     (data.changeSets ?? []).length === 0 &&
     !meaningfulTimeline &&
     !data.meta &&

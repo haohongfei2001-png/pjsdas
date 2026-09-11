@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { discardChangeSet, savePendingChangeSet } from '../db.js'
+import { saveDiscoveryInboxFromChangeSet } from '../discoveryInboxStore.js'
 import {
   DISCOVERY_REJECTION_REASON_OPTIONS,
   createDiscoveryFeedbackRecords,
@@ -210,6 +211,33 @@ export default function McpProposalReview() {
     }
   }
 
+  async function saveToInbox() {
+    if (!proposal || !discoveryOperations.length) return
+    setBusy(true)
+    setError('')
+    try {
+      await assertMcpChangeSetBaseline(proposal.changeSet)
+      const saved = await saveDiscoveryInboxFromChangeSet(proposal.changeSet)
+      await savePendingChangeSet(proposal.changeSet)
+      await discardChangeSet(proposal.changeSet.id)
+      announceWorkspaceChange()
+      if (cloud.session && !cloud.checkpoint.conflict) {
+        try {
+          await cloud.syncNow()
+          setResult(zh ? `已保存 ${saved} 个岗位到发现箱，没有加入 Opportunities；已请求同步到 Google Drive。` : `Saved ${saved} jobs to Discovery Inbox without adding Opportunities; Google Drive sync was requested.`)
+        } catch {
+          setResult(zh ? `已保存 ${saved} 个岗位到本机发现箱，没有加入 Opportunities；Google Drive 暂未同步。` : `Saved ${saved} jobs to the local Discovery Inbox without adding Opportunities; Google Drive sync did not complete.`)
+        }
+      } else {
+        setResult(zh ? `已保存 ${saved} 个岗位到本机发现箱，没有加入 Opportunities。` : `Saved ${saved} jobs to the local Discovery Inbox without adding Opportunities.`)
+      }
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : String(caught))
+    } finally {
+      setBusy(false)
+    }
+  }
+
   async function discardProposal() {
     if (!proposal) return
     setBusy(true)
@@ -369,6 +397,7 @@ export default function McpProposalReview() {
         <div className="mcp-proposal-actions">
           {!result && proposal ? (
             <>
+              {discoveryOperations.length ? <button disabled={busy} onClick={() => { void saveToInbox() }}>{zh ? '保存到发现箱' : 'Save to Inbox'}</button> : null}
               <button disabled={busy} onClick={() => { void discardProposal() }}>{discoveryOperations.length ? (zh ? '放弃整批' : 'Discard batch') : (zh ? '放弃' : 'Discard')}</button>
               <button className="primary" disabled={busy || (discoveryOperations.length > 0 && selectedCount === 0)} onClick={() => { void applyProposal() }}>
                 {busy ? '…' : discoveryOperations.length

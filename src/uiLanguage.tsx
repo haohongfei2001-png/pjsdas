@@ -6,6 +6,7 @@ const STORAGE_KEY = 'pjsdas-ui-language'
 
 const dictionary = {
   'nav.today': ['今日', 'Today'],
+  'nav.discovery': ['发现箱', 'Discovery Inbox'],
   'nav.opportunities': ['机会', 'Opportunities'],
   'nav.pipeline': ['流程', 'Pipeline'],
   'nav.prep': ['准备', 'Prep'],

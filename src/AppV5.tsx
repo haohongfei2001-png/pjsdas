@@ -29,6 +29,7 @@ import RulesView from './RulesView.js'
 import TimelineView from './TimelineView.js'
 import CloudSettingsCard from './cloud/CloudSettingsCard.js'
 import DiscoveryProfileCard from './DiscoveryProfileCard.js'
+import DiscoveryInboxView from './DiscoveryInboxView.js'
 import type { ChangeSetRecord } from './changeSet.js'
 import type {
   Action,
@@ -42,9 +43,9 @@ import type {
 } from './model.js'
 import './timeplan.css'
 
-type Page = 'today' | 'opportunities' | 'pipeline' | 'prep' | 'timeline' | 'rules' | 'settings'
+type Page = 'today' | 'discovery' | 'opportunities' | 'pipeline' | 'prep' | 'timeline' | 'rules' | 'settings'
 
-const navigation: Page[] = ['today', 'opportunities', 'pipeline', 'prep', 'timeline', 'rules', 'settings']
+const navigation: Page[] = ['today', 'discovery', 'opportunities', 'pipeline', 'prep', 'timeline', 'rules', 'settings']
 
 const roleLabels: Record<Opportunity['roleType'], string> = {
   core: '核心',
@@ -146,7 +147,7 @@ function AppV5() {
               className={page === item ? 'nav-item active' : 'nav-item'}
               onClick={() => setPage(item)}
             >
-              {t(`nav.${item}` as 'nav.today' | 'nav.opportunities' | 'nav.pipeline' | 'nav.prep' | 'nav.timeline' | 'nav.rules' | 'nav.settings')}
+              {t(`nav.${item}` as 'nav.today' | 'nav.discovery' | 'nav.opportunities' | 'nav.pipeline' | 'nav.prep' | 'nav.timeline' | 'nav.rules' | 'nav.settings')}
             </button>
           ))}
         </nav>
@@ -172,6 +173,7 @@ function AppV5() {
             onMark={markAction}
           />
         ) : null}
+        {!loading && page === 'discovery' ? <DiscoveryInboxView /> : null}
         {!loading && page === 'opportunities' ? (
           <OpportunitiesView opportunities={opportunities} groups={groups} />
         ) : null}

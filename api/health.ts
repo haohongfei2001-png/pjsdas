@@ -8,6 +8,7 @@ export const PUBLIC_HEALTH_CAPABILITIES = {
   discoveryQualityGate: 'v1.3-round-1',
   reviewOnlyProposals: true,
   discoveredOpportunityProposals: true,
+  discoveryInbox: 'v1.4-round-1',
 } as const
 
 export default {

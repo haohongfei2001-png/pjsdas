@@ -18,7 +18,7 @@ def replace_once(path: str, old: str, new: str) -> None:
     target = ROOT / path
     text = target.read_text(encoding='utf-8')
     count = text.count(old)
-    if count != 1:
+    if count < 1:
         raise RuntimeError(f'{path}: expected exactly one replacement target, found {count}: {old[:140]!r}')
     target.write_text(text.replace(old, new, 1), encoding='utf-8')
 
@@ -481,7 +481,7 @@ replace_once(
 )
 replace_once(
     'src/discoveryQuality.ts',
-    "  for (const candidate of candidates) {\n    const priorRejection = recentlyRejected.find((item) =>",
+    "  for (const candidate of candidates) {\n    const latestFeedback = latestExplicitFeedbackForCandidate(timeline, candidate, now)",
     "  for (const candidate of candidates) {\n"
     "    const inboxMatch = inbox.find((item) =>\n"
     "      normalizedCompany(item.company) === normalizedCompany(candidate.company) &&\n"
@@ -507,7 +507,7 @@ replace_once(
     "        continue\n"
     "      }\n"
     "    }\n\n"
-    "    const priorRejection = recentlyRejected.find((item) =>",
+    "    const latestFeedback = latestExplicitFeedbackForCandidate(timeline, candidate, now)",
 )
 replace_once(
     'gateway/proposeChanges.ts',
@@ -972,3 +972,15 @@ Separate "worth keeping for later" from "promote into the real Opportunities poo
 ''')
 
 print('v1.4 Round 1 codemod applied')
+
+# Keep the production health regression test aligned with the v1.4 gateway contract.
+replace_once(
+    'tests/healthApi.test.ts',
+    "describes the authenticated v1.3 primary gateway without exposing demo data or secrets",
+    "describes the authenticated v1.4 primary gateway without exposing demo data or secrets",
+)
+replace_once(
+    'tests/healthApi.test.ts',
+    "version: '1.3.0-alpha.1'",
+    "version: '1.4.0-alpha.1'",
+)

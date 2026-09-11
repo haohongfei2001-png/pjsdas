@@ -190,6 +190,15 @@ export interface GetDiscoveryContextOutput {
     duplicate: number
     deferred: number
   }
+  discoveryInboxSummary: { new: number; seen: number; later: number; dismissed: number; promoted: number }
+  discoveryInbox: Array<{
+    inboxId: string
+    company: string
+    role: string
+    status: string
+    updatedAt: string
+    sourceUrl: string
+  }>
   instructions: string[]
 }
 
@@ -620,6 +629,10 @@ export function getDiscoveryContext(
   const history = snapshot.data.timeline ?? []
   const recentlyRejected = recentRejectedDiscoveryFeedback(history, context.now).slice(0, 40)
   const historySummary = discoveryFeedbackSummary(history)
+  const inbox = [...(snapshot.data.discoveryInbox ?? [])]
+    .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+  const inboxSummary = { new: 0, seen: 0, later: 0, dismissed: 0, promoted: 0 }
+  for (const item of inbox) inboxSummary[item.status] += 1
 
   return {
     meta: meta(context),
@@ -647,11 +660,21 @@ export function getDiscoveryContext(
       reason: item.detail,
     })),
     discoveryHistorySummary: historySummary,
+    discoveryInboxSummary: inboxSummary,
+    discoveryInbox: inbox.slice(0, 100).map((item) => ({
+      inboxId: item.id,
+      company: item.company,
+      role: item.role,
+      status: item.status,
+      updatedAt: item.updatedAt,
+      sourceUrl: item.sourceUrl,
+    })),
     instructions: [
       'Use the explicit Discovery Profile as durable search preferences; do not silently infer or rewrite it.',
       'Search public job sources outside PJSDAS, and keep unknown salary, deadline or location fields unknown instead of inventing them.',
       'Do not rediscover an obviously identical company+role already present in existingOpportunities.',
       'Avoid recentlyRejected roles unless the user explicitly asks to reconsider them; the quality gate also suppresses highly similar recent rejections.',
+      'Do not repeatedly surface roles already present in discoveryInbox with new, seen or later status; dismissed inbox items are suppressed for 120 days.',
       'Use propose_changes for any candidate the user wants to add; never claim discovery results were added before ChangeSet review and Apply.',
     ],
   }

@@ -292,6 +292,7 @@ export async function invokeProposeChanges(
         rules.weights,
         now,
         snapshot.data.timeline ?? [],
+        snapshot.data.discoveryInbox ?? [],
       )
       discoveryScreening = screened
       for (const item of screened.accepted) {
