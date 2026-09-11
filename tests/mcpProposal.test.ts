@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import {
   buildMcpProposalReviewUrl,
+  createMcpProposalEnvelope,
   decodeMcpProposal,
+  encodeMcpProposal,
   encodedProposalFromHash,
   removeProposalFromUrl,
 } from '../src/ai/mcpProposal.js'
@@ -26,20 +28,27 @@ const changeSet: ChangeSetRecord = {
 }
 
 describe('MCP proposal review links', () => {
-  it('round-trips a validated ChangeSet through a URL fragment', () => {
-    const reviewUrl = buildMcpProposalReviewUrl(changeSet, 'drive:6')
-    const url = new URL(reviewUrl)
-    const encoded = encodedProposalFromHash(url.hash)
-    expect(encoded).toBeTruthy()
-    expect(decodeMcpProposal(encoded!)).toEqual({
+  it('round-trips a validated ChangeSet envelope with a 24-hour expiry', () => {
+    const now = new Date('2026-09-11T02:00:00.000Z')
+    const envelope = createMcpProposalEnvelope(changeSet, 'drive:6', now)
+    const encoded = encodeMcpProposal(envelope)
+    expect(decodeMcpProposal(encoded)).toEqual({
       version: 1,
       workspaceVersion: 'drive:6',
+      expiresAt: '2026-09-12T02:00:00.000Z',
       changeSet,
     })
   })
 
+  it('puts an opaque signed token only in the URL fragment', () => {
+    const reviewUrl = buildMcpProposalReviewUrl('payload.signature')
+    const url = new URL(reviewUrl)
+    expect(url.search).toBe('')
+    expect(encodedProposalFromHash(url.hash)).toBe('payload.signature')
+  })
+
   it('removes only the proposal fragment entry after the browser consumes it', () => {
-    const url = new URL(`${buildMcpProposalReviewUrl(changeSet)}&keep=1`)
+    const url = new URL(`${buildMcpProposalReviewUrl('payload.signature')}&keep=1`)
     const cleaned = removeProposalFromUrl(url)
     expect(encodedProposalFromHash(cleaned.hash)).toBeNull()
     expect(new URLSearchParams(cleaned.hash.replace(/^#/, '')).get('keep')).toBe('1')
