@@ -106,10 +106,23 @@ export function resolvedOpportunityValueComponentWeights(rules?: Pick<DecisionRu
 
 export function cloneDecisionRules(rules: DecisionRules = DEFAULT_DECISION_RULES): DecisionRules {
   return {
-    ...rules,
+    key: 'current',
+    version: 1,
+    hardDeadlineHorizonHours: rules.hardDeadlineHorizonHours,
+    fixedEventHorizonHours: rules.fixedEventHorizonHours,
+    nearDeadlineStretchMinutes: rules.nearDeadlineStretchMinutes,
+    followUpDailyCap: rules.followUpDailyCap,
+    prepDailyCap: rules.prepDailyCap,
+    upcomingHorizonDays: rules.upcomingHorizonDays,
+    upcomingNodeLimit: rules.upcomingNodeLimit,
+    riskCriticalHours: rules.riskCriticalHours,
+    riskHighHours: rules.riskHighHours,
+    riskNearHours: rules.riskNearHours,
+    riskWatchHours: rules.riskWatchHours,
     weights: { ...rules.weights },
     fitComponentWeights: resolvedFitComponentWeights(rules),
     opportunityValueComponentWeights: resolvedOpportunityValueComponentWeights(rules),
+    updatedAt: rules.updatedAt,
   }
 }
 
