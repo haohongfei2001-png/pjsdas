@@ -1,7 +1,15 @@
-import { validateDecisionRules, type DecisionRules } from './decisionRules.js'
+import { decisionRulesForSnapshot, validateDecisionRules, type DecisionRules } from './decisionRules.js'
+import { validateOpportunityAssessment } from './opportunityAssessment.js'
 import { progressOperationSummary, type ExecutableProgressOperation } from './progressUpdate.js'
 import { validateOpportunityFacts } from './richOpportunity.js'
-import type { Action, ActionStatus, Opportunity, OpportunityFacts, ProcessEvent } from './model.js'
+import type {
+  Action,
+  ActionStatus,
+  Opportunity,
+  OpportunityAssessment,
+  OpportunityFacts,
+  ProcessEvent,
+} from './model.js'
 
 export type ChangeSetStatus = 'pending' | 'applied' | 'discarded' | 'failed'
 export type ChangeSetSource = 'natural_language' | 'rules' | 'process_event' | 'user_action' | 'api' | 'mcp'
@@ -134,10 +142,13 @@ export function restoreProgressOperation(operation: Extract<ChangeSetOperation, 
 }
 
 function comparableRules(rules: DecisionRules) {
+  const normalized = decisionRulesForSnapshot(rules)
   return {
-    ...rules,
+    ...normalized,
     updatedAt: '',
-    weights: { ...rules.weights },
+    weights: { ...normalized.weights },
+    fitComponentWeights: { ...normalized.fitComponentWeights! },
+    opportunityValueComponentWeights: { ...normalized.opportunityValueComponentWeights! },
   }
 }
 
@@ -148,11 +159,14 @@ export function decisionRulesEquivalent(a: DecisionRules, b: DecisionRules) {
 export function createRulesChangeSet(before: DecisionRules, after: DecisionRules, mode: 'save' | 'reset', now = new Date()) {
   if (decisionRulesEquivalent(before, after)) return undefined
   const timestamp = now.toISOString()
+  const normalizedAfter = decisionRulesForSnapshot(after)
   const proposed: DecisionRules = {
-    ...after,
+    ...normalizedAfter,
     key: 'current',
     version: 1,
-    weights: { ...after.weights },
+    weights: { ...normalizedAfter.weights },
+    fitComponentWeights: { ...normalizedAfter.fitComponentWeights! },
+    opportunityValueComponentWeights: { ...normalizedAfter.opportunityValueComponentWeights! },
     updatedAt: timestamp,
   }
   return baseChangeSet('rules', mode === 'reset' ? '恢复推荐决策规则' : '修改决策规则', [{
@@ -233,6 +247,13 @@ function validateDiscoveredOpportunity(raw: Record<string, unknown>, operationId
     else {
       const factErrors = validateOpportunityFacts(opportunity.detail.facts as unknown as OpportunityFacts)
       if (factErrors.length) errors.push(`ChangeSet operation ${operationId} 的 Rich Opportunity facts 无效：${factErrors[0]}`)
+    }
+  }
+  if (opportunity.detail.assessment !== undefined) {
+    if (!isObject(opportunity.detail.assessment)) errors.push(`ChangeSet operation ${operationId} 的组件评估无效。`)
+    else {
+      const assessmentErrors = validateOpportunityAssessment(opportunity.detail.assessment as unknown as OpportunityAssessment)
+      if (assessmentErrors.length) errors.push(`ChangeSet operation ${operationId} 的组件评估无效：${assessmentErrors[0]}`)
     }
   }
   const discovery = opportunity.detail.discovery
