@@ -1,4 +1,5 @@
 import { DEFAULT_DECISION_RULES } from '../decisionRules.js'
+import { DEFAULT_DISCOVERY_PROFILE } from '../discoveryProfile.js'
 import type { PJSDASSnapshot } from '../snapshot.js'
 
 function canonical(value: unknown): unknown {
@@ -33,6 +34,14 @@ function rulesAreDefault(snapshot: PJSDASSnapshot) {
   return JSON.stringify(a) === JSON.stringify(b)
 }
 
+function discoveryProfileIsDefault(snapshot: PJSDASSnapshot) {
+  const profile = snapshot.data.discoveryProfile
+  if (!profile) return true
+  const a = { ...profile, updatedAt: '' }
+  const b = { ...DEFAULT_DISCOVERY_PROFILE, updatedAt: '' }
+  return JSON.stringify(a) === JSON.stringify(b)
+}
+
 export function workspaceIsEffectivelyEmpty(snapshot: PJSDASSnapshot) {
   const data = snapshot.data
   const meaningfulTimeline = (data.timeline ?? []).some((item) => item.kind !== 'baseline_backfill' && item.source !== 'system')
@@ -45,5 +54,6 @@ export function workspaceIsEffectivelyEmpty(snapshot: PJSDASSnapshot) {
     (data.changeSets ?? []).length === 0 &&
     !meaningfulTimeline &&
     !data.meta &&
-    rulesAreDefault(snapshot)
+    rulesAreDefault(snapshot) &&
+    discoveryProfileIsDefault(snapshot)
 }
