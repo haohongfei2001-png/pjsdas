@@ -16,6 +16,6 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          body=$(curl -fsS https://pjsdas-remote-alpha.vercel.app/api/health-auth)
+          body=$(curl -sS https://pjsdas-remote-alpha.vercel.app/api/health-auth)
           echo "$body"
-          echo "$body" | jq -e '.status == "ok" and .checks.tokenEncryptionKey == true and .checks.googleClientId == true and .checks.googleClientSecret == true'
+          echo "$body" | jq -e '.ready == true and .secretsConfigured.tokenEncryptionKey == true and .secretsConfigured.googleClientId == true and .secretsConfigured.googleClientSecret == true'
