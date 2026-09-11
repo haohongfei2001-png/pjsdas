@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import type { TimelineCategory, TimelineRecord, TimelineSource } from './model.js'
 import type { ChangeSetRecord, ChangeSetSource, ChangeSetStatus } from './changeSet.js'
+import { assertMcpChangeSetBaseline } from './ai/mcpProposalApply.js'
 import { useUiLanguage } from './uiLanguage.js'
 import './timeline.css'
 
@@ -74,12 +75,21 @@ export default function TimelineView({ records, changeSets, onApplyChangeSet, on
   const [category, setCategory] = useState<'all' | TimelineCategory>('all')
   const [source, setSource] = useState<'all' | TimelineSource>('all')
   const [busyChangeSetId, setBusyChangeSetId] = useState<string | null>(null)
+  const [changeSetError, setChangeSetError] = useState('')
 
   async function resolveChangeSet(id: string, action: 'apply' | 'discard') {
     setBusyChangeSetId(id)
+    setChangeSetError('')
     try {
-      if (action === 'apply') await onApplyChangeSet(id)
-      else await onDiscardChangeSet(id)
+      const changeSet = changeSets.find((item) => item.id === id)
+      if (action === 'apply') {
+        if (changeSet?.source === 'mcp') await assertMcpChangeSetBaseline(changeSet)
+        await onApplyChangeSet(id)
+      } else {
+        await onDiscardChangeSet(id)
+      }
+    } catch (caught) {
+      setChangeSetError(caught instanceof Error ? caught.message : String(caught))
     } finally {
       setBusyChangeSetId(null)
     }
@@ -134,7 +144,8 @@ export default function TimelineView({ records, changeSets, onApplyChangeSet, on
           <div><span className="eyebrow">CHANGESET LEDGER</span><strong>{zh ? '变更集账本' : 'ChangeSet ledger'}</strong></div>
           <span>{changeSets.filter((item) => item.status === 'pending').length} {zh ? '条待确认' : 'pending'} · {changeSets.length} {zh ? '条记录' : 'records'}</span>
         </summary>
-        <p>{zh ? '这里保存规范化修改和应用状态，不保存自然语言更新的完整原文。未来 API / MCP 也使用同一种协议。' : 'This ledger stores normalized changes and application status, not the full raw text of natural-language updates. Future API / MCP integrations use the same protocol.'}</p>
+        <p>{zh ? '这里保存规范化修改和应用状态，不保存自然语言更新的完整原文。API / MCP 使用同一种协议；MCP 提议从账本应用时也会重新核对工作区基线。' : 'This ledger stores normalized changes and application status, not the full raw text of natural-language updates. API / MCP use the same protocol; MCP proposals re-check their workspace baseline before ledger Apply.'}</p>
+        {changeSetError ? <div className="changeset-empty">{changeSetError}</div> : null}
         {changeSets.length === 0 ? <div className="changeset-empty">{zh ? '还没有 ChangeSet。' : 'No ChangeSets yet.'}</div> : (
           <div className="changeset-list">
             {changeSets.slice(0, 8).map((item) => (
