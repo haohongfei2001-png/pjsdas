@@ -722,6 +722,10 @@ export async function applyChangeSet(id: string) {
         continue
       }
 
+      if (operation.kind === 'add_discovered_opportunity') {
+        throw new Error('岗位发现 ChangeSet 必须作为独立批次应用。')
+      }
+
       const action = await db.get('actions', operation.actionId) ?? (await getAllActions()).find((item) => item.id === operation.actionId)
       if (!action) throw new Error(`Action ${operation.actionId} 已不存在。`)
       if (action.status === operation.status) continue
