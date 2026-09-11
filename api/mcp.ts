@@ -1,14 +1,11 @@
-import { remoteMcpHandler } from '../gateway/remoteHttp.js'
+import authenticatedMcpHandler from './mcp-auth.js'
 
 /**
- * Vercel-compatible Web Handler for the PJSDAS remote MCP alpha.
+ * Primary PJSDAS MCP endpoint.
  *
- * The current public alpha intentionally serves synthetic demo data only.
- * Real user data will require authenticated Google Drive access before this
- * endpoint can be switched to a personal workspace source.
+ * v1.1 serves only the authenticated user's validated PJSDAS workspace from
+ * Google Drive appDataFolder. There is no synthetic/demo fallback on this
+ * endpoint. The existing ChatGPT connector can keep using /api/mcp and will be
+ * challenged through OAuth before any personal data is read.
  */
-export default {
-  fetch(request: Request) {
-    return remoteMcpHandler.fetch(request)
-  },
-}
+export default authenticatedMcpHandler
