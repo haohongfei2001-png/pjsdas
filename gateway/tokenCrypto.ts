@@ -10,6 +10,12 @@ function base64ToBytes(value: string) {
   return new Uint8Array(Buffer.from(value, 'base64url'))
 }
 
+function toArrayBuffer(bytes: Uint8Array): ArrayBuffer {
+  const copy = new Uint8Array(bytes.byteLength)
+  copy.set(bytes)
+  return copy.buffer
+}
+
 function parseKey(encodedKey: string) {
   let key: Uint8Array
   try {
@@ -26,8 +32,12 @@ function parseKey(encodedKey: string) {
 export async function encryptSecret(plaintext: string, encodedKey: string) {
   if (!plaintext) throw new WorkspaceSourceError('INVALID_SOURCE_CONFIG', 'Cannot encrypt an empty secret.', false)
   const iv = crypto.getRandomValues(new Uint8Array(12))
-  const key = await crypto.subtle.importKey('raw', parseKey(encodedKey), 'AES-GCM', false, ['encrypt'])
-  const ciphertext = new Uint8Array(await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, new TextEncoder().encode(plaintext)))
+  const key = await crypto.subtle.importKey('raw', toArrayBuffer(parseKey(encodedKey)), 'AES-GCM', false, ['encrypt'])
+  const ciphertext = new Uint8Array(await crypto.subtle.encrypt(
+    { name: 'AES-GCM', iv: toArrayBuffer(iv) },
+    key,
+    new TextEncoder().encode(plaintext),
+  ))
   return `${VERSION}.${bytesToBase64(iv)}.${bytesToBase64(ciphertext)}`
 }
 
@@ -38,11 +48,11 @@ export async function decryptSecret(envelope: string, encodedKey: string) {
   }
 
   try {
-    const key = await crypto.subtle.importKey('raw', parseKey(encodedKey), 'AES-GCM', false, ['decrypt'])
+    const key = await crypto.subtle.importKey('raw', toArrayBuffer(parseKey(encodedKey)), 'AES-GCM', false, ['decrypt'])
     const plaintext = await crypto.subtle.decrypt(
-      { name: 'AES-GCM', iv: base64ToBytes(ivRaw) },
+      { name: 'AES-GCM', iv: toArrayBuffer(base64ToBytes(ivRaw)) },
       key,
-      base64ToBytes(ciphertextRaw),
+      toArrayBuffer(base64ToBytes(ciphertextRaw)),
     )
     const value = new TextDecoder().decode(plaintext)
     if (!value) throw new Error('empty')
