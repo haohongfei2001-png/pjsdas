@@ -12,6 +12,7 @@ import {
   updateDiscoveryInboxStatus,
 } from './discoveryInboxStore.js'
 import { useCloud } from './cloud/CloudContext.js'
+import RichOpportunityFactsSummary from './RichOpportunityFactsSummary.js'
 import { useUiLanguage } from './uiLanguage.js'
 import type { DiscoveryInboxItem, DiscoveryInboxStatus, DiscoveryRejectionReason } from './model.js'
 import './discoveryInbox.css'
@@ -167,9 +168,9 @@ export default function DiscoveryInboxView() {
     <section className="discovery-inbox-page">
       <header className="page-header">
         <div>
-          <div className="eyebrow">AI JOB DISCOVERY · V1.4</div>
+          <div className="eyebrow">AI JOB DISCOVERY · V1.5</div>
           <h1>{zh ? '发现箱' : 'Discovery Inbox'}</h1>
-          <p>{zh ? '先判断，再进入正式机会池。这里的审阅辅助只整理现有事实、评分和不确定性，不会改写你的 Discovery Profile，也不会自动推广岗位。' : 'Decide before promoting. Review aids organize existing facts, scores, and uncertainty; they do not rewrite your Discovery Profile or auto-promote jobs.'}</p>
+          <p>{zh ? '先判断，再进入正式机会池。招聘事实与 AI 评估保持分层，未知事实不会被补造。' : 'Decide before promoting. Source-backed job facts stay separate from AI assessment, and unknown facts remain unknown.'}</p>
         </div>
       </header>
 
@@ -188,7 +189,7 @@ export default function DiscoveryInboxView() {
           </select>
         </label>
         <button onClick={selectVisible}>{zh ? '选择当前列表' : 'Select visible'}</button>
-        <span className="discovery-inbox-sort-note">{zh ? '“建议先看”仅按候选状态、现有匹配度/机会价值与信息完整度排序，不改变正式 PJSDAS 优先级。' : 'Review priority uses inbox status, existing fit/opportunity scores, and information completeness only. It does not change formal PJSDAS priority.'}</span>
+        <span className="discovery-inbox-sort-note">{zh ? '“建议先看”仅按候选状态、现有匹配度/机会价值与基础信息完整度排序，不改变正式 PJSDAS 优先级。' : 'Review priority uses inbox status, existing fit/opportunity scores, and basic information completeness only. It does not change formal PJSDAS priority.'}</span>
       </div>
 
       {selectedIds.length ? (
@@ -223,12 +224,13 @@ export default function DiscoveryInboxView() {
                     <div><dt>{zh ? '匹配度' : 'Fit'}</dt><dd>{item.fitScore} · {confidenceLabel(item.fitConfidence, zh)}</dd></div>
                     <div><dt>{zh ? '机会价值' : 'Opportunity'}</dt><dd>{item.opportunityValue} · {confidenceLabel(item.opportunityValueConfidence, zh)}</dd></div>
                     <div><dt>{zh ? '审阅参考' : 'Review reference'}</dt><dd>{summary.reviewScore}</dd></div>
-                    <div><dt>{zh ? '信息完整度' : 'Info completeness'}</dt><dd>{summary.knownFacts}/{summary.totalFacts}</dd></div>
+                    <div><dt>{zh ? '基础信息完整度' : 'Basic info completeness'}</dt><dd>{summary.knownFacts}/{summary.totalFacts}</dd></div>
                     <div><dt>{zh ? '地点' : 'Location'}</dt><dd>{item.location ?? (zh ? '未知' : 'Unknown')}</dd></div>
                     <div><dt>{zh ? '截止' : 'Deadline'}</dt><dd>{item.deadline ?? (zh ? '未知' : 'Unknown')}</dd></div>
                     <div><dt>{zh ? '薪资' : 'Compensation'}</dt><dd>{item.compensationText ?? (zh ? '未知' : 'Unknown')}</dd></div>
                   </dl>
                   {summary.risks.length || summary.missing.length ? <div className="comparison-flags">{[...summary.risks, ...summary.missing].map((entry) => <span key={entry.key}>{zh ? entry.zh : entry.en}</span>)}</div> : null}
+                  <RichOpportunityFactsSummary facts={item.facts} zh={zh} />
                   <a href={item.sourceUrl} target="_blank" rel="noreferrer">{zh ? '查看来源' : 'Open source'}</a>
                 </article>
               )
@@ -257,7 +259,7 @@ export default function DiscoveryInboxView() {
 
               <div className="discovery-inbox-decision-grid">
                 <div title={zh ? '（匹配度 + 机会价值）/ 2，仅用于发现箱审阅排序。' : '(Fit + opportunity value) / 2, used only for inbox review ordering.'}><span>{zh ? '审阅参考' : 'Review reference'}</span><strong>{summary.reviewScore}</strong></div>
-                <div><span>{zh ? '信息完整度' : 'Info completeness'}</span><strong>{summary.knownFacts}/{summary.totalFacts}</strong><small>{summary.completenessPercent}%</small></div>
+                <div><span>{zh ? '基础信息完整度' : 'Basic info completeness'}</span><strong>{summary.knownFacts}/{summary.totalFacts}</strong><small>{summary.completenessPercent}%</small></div>
                 <div><span>{zh ? '匹配度置信度' : 'Fit confidence'}</span><strong>{confidenceLabel(item.fitConfidence, zh)}</strong></div>
                 <div><span>{zh ? '机会价值置信度' : 'Opportunity confidence'}</span><strong>{confidenceLabel(item.opportunityValueConfidence, zh)}</strong></div>
               </div>
@@ -271,6 +273,7 @@ export default function DiscoveryInboxView() {
               </div>
 
               <p>{item.rationale}</p>
+              <RichOpportunityFactsSummary facts={item.facts} zh={zh} />
 
               {(summary.strengths.length || summary.risks.length || summary.missing.length) ? (
                 <div className="discovery-inbox-signals">
@@ -307,7 +310,7 @@ export default function DiscoveryInboxView() {
       {promotePreview ? (
         <div className="discovery-inbox-modal-backdrop" onMouseDown={() => setPromotePreview(null)}>
           <section className="discovery-inbox-modal" role="dialog" aria-modal="true" aria-label={zh ? '加入机会池预览' : 'Promotion preview'} onMouseDown={(event) => event.stopPropagation()}>
-            <div className="eyebrow">PROMOTE PREVIEW</div>
+            <div className="eyebrow">PROMOTE PREVIEW · RICH OPPORTUNITY</div>
             <h2>{zh ? '确认进入正式机会池' : 'Confirm promotion to Opportunities'}</h2>
             <p><strong>{promotePreview.company}</strong> · {promotePreview.role}</p>
             <div className="discovery-inbox-preview-grid">
@@ -318,7 +321,8 @@ export default function DiscoveryInboxView() {
               <span>{zh ? '截止' : 'Deadline'}<strong>{promotePreview.deadline ?? (zh ? '未知' : 'Unknown')}</strong></span>
               <span>{zh ? '薪资' : 'Compensation'}<strong>{promotePreview.compensationText ?? (zh ? '未知' : 'Unknown')}</strong></span>
             </div>
-            <p className="discovery-inbox-preview-note">{zh ? '确认后，该候选会通过现有 ChangeSet 路径进入 Opportunities。来源证据、评分与警告会继续保留；这一步不会自动提交申请。' : 'After confirmation, this candidate enters Opportunities through the existing ChangeSet path. Source evidence, scores, and warnings remain attached. This does not submit an application.'}</p>
+            <RichOpportunityFactsSummary facts={promotePreview.facts} zh={zh} />
+            <p className="discovery-inbox-preview-note">{zh ? '确认后，该候选会通过现有 ChangeSet 路径进入 Opportunities。招聘事实、来源证据、评分与警告会继续保留；这一步不会自动提交申请。' : 'After confirmation, this candidate enters Opportunities through the existing ChangeSet path. Source-backed job facts, evidence, scores, and warnings remain attached. This does not submit an application.'}</p>
             {promotePreview.profileWarnings?.length ? <div className="discovery-inbox-warnings">{promotePreview.profileWarnings.map((warning) => <span key={warning}>{warning}</span>)}</div> : null}
             <a href={promotePreview.sourceUrl} target="_blank" rel="noreferrer">{zh ? '再次查看招聘来源' : 'Open source again'}</a>
             <div className="discovery-inbox-modal-actions">
