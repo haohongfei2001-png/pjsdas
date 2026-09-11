@@ -1,5 +1,6 @@
 import type { CallToolResult } from '@modelcontextprotocol/server'
 import * as z from 'zod/v4'
+import { getOpportunityAssessment } from '../src/ai/assessmentRead.js'
 import {
   BridgeReadError,
   explainPriority,
@@ -16,6 +17,7 @@ import { WorkspaceSourceError, type WorkspaceSource } from './workspaceSource.js
 export const READ_TOOL_NAMES = [
   'get_today_plan',
   'list_opportunities',
+  'get_opportunity_assessment',
   'get_pipeline',
   'get_decision_rules',
   'get_discovery_context',
@@ -56,6 +58,10 @@ export const listOpportunitiesSchema = z.object({
   if (value.includeFacts && value.limit !== undefined && value.limit > 20) {
     context.addIssue({ code: 'custom', message: 'limit must be at most 20 when includeFacts is true.' })
   }
+})
+
+export const getOpportunityAssessmentSchema = z.object({
+  opportunityId: z.string().trim().min(1),
 })
 
 export const getPipelineSchema = z.object({
@@ -137,6 +143,13 @@ export async function invokeReadTool(
           listOpportunities(snapshot, readInput, context),
           Boolean(parsed.includeFacts),
         ))
+      }
+      case 'get_opportunity_assessment': {
+        const parsed = getOpportunityAssessmentSchema.parse(args)
+        if (!snapshot.data.opportunities.some((item) => item.id === parsed.opportunityId)) {
+          return toolError('NOT_FOUND', `Opportunity ${parsed.opportunityId} was not found.`, false)
+        }
+        return success(getOpportunityAssessment(snapshot, parsed))
       }
       case 'get_pipeline':
         return success(getPipeline(snapshot, getPipelineSchema.parse(args), context))
