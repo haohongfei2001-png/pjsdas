@@ -11,17 +11,33 @@ import {
 import { fingerprintWorkspace } from '../src/cloud/workspaceFingerprint.js'
 import {
   decisionRulesForSnapshot,
+  resolvedFitComponentWeights,
+  resolvedOpportunityValueComponentWeights,
   validateDecisionRules,
   type DecisionRules,
   type DecisionWeights,
+  type FitComponentWeights,
+  type OpportunityValueComponentWeights,
 } from '../src/decisionRules.js'
 import { discoveryProfileForSnapshot, isDiscoveryProfileConfigured } from '../src/discoveryProfile.js'
 import { screenDiscoveryCandidates } from '../src/discoveryQuality.js'
 import { createJobPostingEvidence } from '../src/jobPosting.js'
+import {
+  assessmentWarnings,
+  createOpportunityAssessment,
+  scoreOpportunityAssessment,
+  validateOpportunityAssessment,
+} from '../src/opportunityAssessment.js'
 import { createOpportunityFacts, validateOpportunityFacts } from '../src/richOpportunity.js'
 import { buildMcpProposalReviewUrl, type McpDiscoveryReview } from '../src/ai/mcpProposal.js'
 import { parseProgressUpdate } from '../src/progressUpdate.js'
-import type { ActionStatus, DiscoveryConfidence, Opportunity, OpportunityRole } from '../src/model.js'
+import type {
+  ActionStatus,
+  DiscoveryConfidence,
+  Opportunity,
+  OpportunityAssessment,
+  OpportunityRole,
+} from '../src/model.js'
 import { createSignedProposalToken } from './proposalToken.js'
 import { WorkspaceSourceError, type WorkspaceSource } from './workspaceSource.js'
 
@@ -33,6 +49,26 @@ const weightPatchSchema = z.object({
   leverage: z.number().min(0).max(100).optional(),
   delayCost: z.number().min(0).max(100).optional(),
   timeEfficiency: z.number().min(0).max(100).optional(),
+}).strict()
+
+const fitComponentWeightPatchSchema = z.object({
+  roleDirection: z.number().min(0).max(100).optional(),
+  skills: z.number().min(0).max(100).optional(),
+  education: z.number().min(0).max(100).optional(),
+  experience: z.number().min(0).max(100).optional(),
+  industry: z.number().min(0).max(100).optional(),
+  language: z.number().min(0).max(100).optional(),
+  location: z.number().min(0).max(100).optional(),
+}).strict()
+
+const opportunityValueComponentWeightPatchSchema = z.object({
+  companyQuality: z.number().min(0).max(100).optional(),
+  roleGrowth: z.number().min(0).max(100).optional(),
+  compensation: z.number().min(0).max(100).optional(),
+  careerOptionality: z.number().min(0).max(100).optional(),
+  brandValue: z.number().min(0).max(100).optional(),
+  industryGrowth: z.number().min(0).max(100).optional(),
+  locationValue: z.number().min(0).max(100).optional(),
 }).strict()
 
 const rulesPatchSchema = z.object({
@@ -48,6 +84,8 @@ const rulesPatchSchema = z.object({
   riskNearHours: z.number().int().min(1).max(504).optional(),
   riskWatchHours: z.number().int().min(1).max(720).optional(),
   weights: weightPatchSchema.optional(),
+  fitComponentWeights: fitComponentWeightPatchSchema.optional(),
+  opportunityValueComponentWeights: opportunityValueComponentWeightPatchSchema.optional(),
 }).strict()
 
 const actionStatusChangeSchema = z.object({
@@ -93,6 +131,37 @@ const richFactsSchema = z.object({
   evidenceSummary: z.string().trim().min(1).max(1_200).optional(),
 }).strict()
 
+const assessmentComponentSchema = z.object({
+  score: z.number().min(0).max(100),
+  confidence: discoveryConfidenceSchema,
+  rationale: z.string().trim().min(1).max(500),
+}).strict()
+
+const fitAssessmentSchema = z.object({
+  roleDirection: assessmentComponentSchema.optional(),
+  skills: assessmentComponentSchema.optional(),
+  education: assessmentComponentSchema.optional(),
+  experience: assessmentComponentSchema.optional(),
+  industry: assessmentComponentSchema.optional(),
+  language: assessmentComponentSchema.optional(),
+  location: assessmentComponentSchema.optional(),
+}).strict().refine((value) => Object.values(value).some(Boolean), 'assessment.fit must include at least one component.')
+
+const opportunityValueAssessmentSchema = z.object({
+  companyQuality: assessmentComponentSchema.optional(),
+  roleGrowth: assessmentComponentSchema.optional(),
+  compensation: assessmentComponentSchema.optional(),
+  careerOptionality: assessmentComponentSchema.optional(),
+  brandValue: assessmentComponentSchema.optional(),
+  industryGrowth: assessmentComponentSchema.optional(),
+  locationValue: assessmentComponentSchema.optional(),
+}).strict().refine((value) => Object.values(value).some(Boolean), 'assessment.opportunityValue must include at least one component.')
+
+const componentAssessmentSchema = z.object({
+  fit: fitAssessmentSchema,
+  opportunityValue: opportunityValueAssessmentSchema,
+}).strict()
+
 const discoveredOpportunitySchema = z.object({
   company: z.string().trim().min(1).max(200),
   role: z.string().trim().min(1).max(240),
@@ -105,14 +174,20 @@ const discoveredOpportunitySchema = z.object({
   compensationText: z.string().trim().min(1).max(500).optional(),
   annualCompensationMinWan: z.number().min(0).max(1000).optional(),
   facts: richFactsSchema.optional(),
+  assessment: componentAssessmentSchema.optional(),
   rationale: z.string().trim().min(1).max(1_600),
   roleType: opportunityRoleSchema,
-  opportunityValue: z.number().min(0).max(100),
-  fitScore: z.number().min(0).max(100),
-  fitConfidence: discoveryConfidenceSchema,
-  opportunityValueConfidence: discoveryConfidenceSchema,
+  opportunityValue: z.number().min(0).max(100).optional(),
+  fitScore: z.number().min(0).max(100).optional(),
+  fitConfidence: discoveryConfidenceSchema.optional(),
+  opportunityValueConfidence: discoveryConfidenceSchema.optional(),
   discoveredAt: z.string().trim().refine(validDateString, 'discoveredAt must be a valid date/time.').optional(),
-}).strict()
+}).strict().superRefine((value, ctx) => {
+  const legacyComplete = value.opportunityValue !== undefined && value.fitScore !== undefined && value.fitConfidence !== undefined && value.opportunityValueConfidence !== undefined
+  if (!value.assessment && !legacyComplete) {
+    ctx.addIssue({ code: 'custom', message: 'Provide component assessment, or all legacy score/confidence fields.' })
+  }
+})
 
 export const proposeChangesSchema = z.object({
   title: z.string().trim().min(1).max(120).optional(),
@@ -136,6 +211,16 @@ export const proposeChangesSchema = z.object({
 )
 
 export type ProposeChangesInput = z.infer<typeof proposeChangesSchema>
+
+type ParsedDiscoveryCandidate = z.infer<typeof discoveredOpportunitySchema>
+type NormalizedDiscoveryCandidate = ParsedDiscoveryCandidate & {
+  opportunityValue: number
+  fitScore: number
+  fitConfidence: DiscoveryConfidence
+  opportunityValueConfidence: DiscoveryConfidence
+  assessment?: OpportunityAssessment
+  assessmentWarnings?: string[]
+}
 
 export interface ProposeChangesOptions {
   signingKey: string
@@ -187,16 +272,52 @@ function applyRulesPatch(current: DecisionRules, patch: NonNullable<ProposeChang
     ...current.weights,
     ...(patch.weights ?? {}),
   }
+  const fitComponentWeights: FitComponentWeights = {
+    ...resolvedFitComponentWeights(current),
+    ...(patch.fitComponentWeights ?? {}),
+  }
+  const opportunityValueComponentWeights: OpportunityValueComponentWeights = {
+    ...resolvedOpportunityValueComponentWeights(current),
+    ...(patch.opportunityValueComponentWeights ?? {}),
+  }
   const next: DecisionRules = {
     ...current,
     ...patch,
     weights,
+    fitComponentWeights,
+    opportunityValueComponentWeights,
   }
   const errors = validateDecisionRules(next)
   if (errors.length) {
     throw new WorkspaceSourceError('INVALID_ARGUMENT', `Decision Rules proposal is invalid: ${errors[0]}`, false)
   }
   return next
+}
+
+function normalizeDiscoveryCandidate(candidate: ParsedDiscoveryCandidate, rules: DecisionRules, now: Date): NormalizedDiscoveryCandidate {
+  if (!candidate.assessment) {
+    return {
+      ...candidate,
+      opportunityValue: candidate.opportunityValue!,
+      fitScore: candidate.fitScore!,
+      fitConfidence: candidate.fitConfidence!,
+      opportunityValueConfidence: candidate.opportunityValueConfidence!,
+    }
+  }
+  const assessedAt = candidate.discoveredAt ?? now.toISOString()
+  const assessment = createOpportunityAssessment(candidate.assessment, assessedAt)
+  const errors = validateOpportunityAssessment(assessment)
+  if (errors.length) throw new WorkspaceSourceError('INVALID_ARGUMENT', `Opportunity component assessment is invalid: ${errors[0]}`, false)
+  const scored = scoreOpportunityAssessment(assessment, rules)
+  return {
+    ...candidate,
+    assessment,
+    fitScore: scored.fit.score,
+    opportunityValue: scored.opportunityValue.score,
+    fitConfidence: scored.fit.confidence,
+    opportunityValueConfidence: scored.opportunityValue.confidence,
+    assessmentWarnings: assessmentWarnings(assessment, rules),
+  }
 }
 
 function uniqueOperations(operations: ChangeSetOperation[]) {
@@ -230,7 +351,7 @@ function makeMcpChangeSet(
 }
 
 function discoveredOpportunity(
-  candidate: z.infer<typeof discoveredOpportunitySchema>,
+  candidate: NormalizedDiscoveryCandidate,
   warnings: string[],
   now: Date,
 ): Opportunity {
@@ -283,6 +404,7 @@ function discoveredOpportunity(
       salaryBasis: candidate.facts?.compensationBasis,
       salaryRaw: candidate.compensationText,
       facts,
+      assessment: candidate.assessment,
       discovery: {
         sourceUrl: candidate.sourceUrl,
         sourceTitle: candidate.sourceTitle,
@@ -290,8 +412,8 @@ function discoveredOpportunity(
         compensationText: candidate.compensationText,
         rationale: candidate.rationale,
         discoveredAt,
-        fitConfidence: candidate.fitConfidence as DiscoveryConfidence,
-        opportunityValueConfidence: candidate.opportunityValueConfidence as DiscoveryConfidence,
+        fitConfidence: candidate.fitConfidence,
+        opportunityValueConfidence: candidate.opportunityValueConfidence,
         profileWarnings: warnings.length ? warnings : undefined,
         posting,
       },
@@ -324,7 +446,7 @@ export async function invokeProposeChanges(
     const { snapshot, context } = await source.read()
     const now = context.now ? new Date(context.now) : new Date()
     const operations: ChangeSetOperation[] = []
-    let discoveryScreening: ReturnType<typeof screenDiscoveryCandidates> | undefined
+    let discoveryScreening: ReturnType<typeof screenDiscoveryCandidates<NormalizedDiscoveryCandidate>> | undefined
 
     if (input.discoveredOpportunities?.length) {
       const profile = discoveryProfileForSnapshot(snapshot.data.discoveryProfile)
@@ -336,9 +458,10 @@ export async function invokeProposeChanges(
         )
       }
       const rules = decisionRulesForSnapshot(snapshot.data.decisionRules)
+      const normalizedCandidates = input.discoveredOpportunities.map((candidate) => normalizeDiscoveryCandidate(candidate, rules, now))
       const screened = screenDiscoveryCandidates(
         profile,
-        input.discoveredOpportunities,
+        normalizedCandidates,
         snapshot.data.opportunities,
         rules.weights,
         now,
@@ -347,7 +470,8 @@ export async function invokeProposeChanges(
       )
       discoveryScreening = screened
       for (const item of screened.accepted) {
-        const opportunity = discoveredOpportunity(item.candidate, item.warnings, now)
+        const warnings = [...(item.candidate.assessmentWarnings ?? []), ...item.warnings].slice(0, 10)
+        const opportunity = discoveredOpportunity(item.candidate, warnings, now)
         operations.push({
           id: `discovery:add:${opportunity.id}`,
           kind: 'add_discovered_opportunity',
@@ -446,7 +570,7 @@ export async function invokeProposeChanges(
         deferredCount: discoveryScreening.deferredCandidates.length,
       } : undefined,
       reviewUrl,
-      instruction: 'No PJSDAS job-search data has changed. Ask the user to open the signed reviewUrl within 24 hours and explicitly Apply or Discard the ChangeSet in PJSDAS. Web-discovered opportunities retain canonical source identity and source-backed Rich Opportunity facts; unknown requirements, education, skills, application details, deadlines or compensation remain explicitly unknown instead of being inferred. PJSDAS quality-gates expired, closed, explicitly excluded, below-threshold and duplicate candidates before review; stale source evidence may be refreshed or treated as a possible re-post instead of being silently suppressed. If PJSDAS reports that the local workspace has changed since this proposal was created, sync first and ask for a fresh proposal.',
+      instruction: 'No PJSDAS job-search data has changed. Ask the user to open the signed reviewUrl within 24 hours and explicitly Apply or Discard the ChangeSet in PJSDAS. Prefer component assessment for new web-discovered opportunities: submit bounded fit and opportunity-value components with score, confidence and rationale; PJSDAS derives the two aggregate scores using explicit Decision Rules. Legacy aggregate score fields remain accepted only for backward compatibility. Source-backed Rich Opportunity facts remain separate from AI assessment, and unknown source facts stay unknown. If PJSDAS reports that the local workspace has changed since this proposal was created, sync first and ask for a fresh proposal.',
     })
   } catch (caught) {
     if (caught instanceof WorkspaceSourceError) return failure(caught.code, caught.message, caught.retryable)
