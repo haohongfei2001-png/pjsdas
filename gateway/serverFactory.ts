@@ -26,6 +26,7 @@ export interface PjsdasMcpServerOptions {
   version?: string
   dataMode?: 'workspace' | 'demo' | 'google-drive-readonly'
   proposalMode?: 'disabled' | 'review-link'
+  proposalSigningKey?: string
 }
 
 export function createPjsdasMcpServer(
@@ -42,7 +43,7 @@ export function createPjsdasMcpServer(
 
   if (proposalMode === 'review-link') {
     instructions.push(
-      'The propose_changes tool is review-only: it creates a validated pending ChangeSet and a PJSDAS review link, but it never mutates the workspace itself.',
+      'The propose_changes tool is review-only: it creates a validated pending ChangeSet and a signed PJSDAS review link, but it never mutates the workspace itself.',
       'Never tell the user that a proposed change was applied. State clearly that the user must open the returned reviewUrl and explicitly Apply or Discard it in PJSDAS.',
       'For action status changes, read current actions first and use exact action IDs. For ambiguous updates, ask the user to clarify rather than guessing.',
     )
@@ -128,15 +129,16 @@ export function createPjsdasMcpServer(
   )
 
   if (proposalMode === 'review-link') {
+    if (!options.proposalSigningKey?.trim()) throw new Error('PJSDAS proposal signing key is not configured.')
     server.registerTool(
       'propose_changes',
       {
         title: 'Propose PJSDAS changes for review',
-        description: 'Create a pending PJSDAS ChangeSet from a natural-language progress update, exact action-status changes, and/or an explicit Decision Rules patch. This does not change the workspace. Return the reviewUrl so the user can inspect and explicitly Apply or Discard the proposal in PJSDAS.',
+        description: 'Create a pending PJSDAS ChangeSet from a natural-language progress update, exact action-status changes, and/or an explicit Decision Rules patch. This does not change the workspace. Return the signed reviewUrl so the user can inspect and explicitly Apply or Discard the proposal in PJSDAS.',
         inputSchema: proposeChangesSchema,
         annotations: proposalAnnotations,
       },
-      async (args) => invokeProposeChanges(source, args),
+      async (args) => invokeProposeChanges(source, args, { signingKey: options.proposalSigningKey! }),
     )
   }
 
