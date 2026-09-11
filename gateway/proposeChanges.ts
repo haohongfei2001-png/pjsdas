@@ -296,8 +296,10 @@ function applyRulesPatch(current: DecisionRules, patch: NonNullable<ProposeChang
 
 function normalizeDiscoveryCandidate(candidate: ParsedDiscoveryCandidate, rules: DecisionRules, now: Date): NormalizedDiscoveryCandidate {
   if (!candidate.assessment) {
+    const { assessment: _assessment, ...legacyCandidate } = candidate
     return {
-      ...candidate,
+      ...legacyCandidate,
+      assessment: undefined,
       opportunityValue: candidate.opportunityValue!,
       fitScore: candidate.fitScore!,
       fitConfidence: candidate.fitConfidence!,
