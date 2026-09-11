@@ -1,32 +1,21 @@
-import {
-  AUTHENTICATED_GATEWAY_VERSION,
-  AUTHENTICATED_MCP_RESOURCE,
-  AUTHORIZATION_SERVER,
-  PROTECTED_RESOURCE_METADATA_URL,
-} from '../gateway/authenticatedRemoteHttp'
-
 function configured(name: string) {
   return Boolean(process.env[name]?.trim())
 }
 
 export default {
   fetch() {
-    const secrets = {
+    const secretsConfigured = {
       tokenEncryptionKey: configured('PJSDAS_TOKEN_ENCRYPTION_KEY'),
       googleClientId: configured('PJSDAS_GOOGLE_CLIENT_ID'),
       googleClientSecret: configured('PJSDAS_GOOGLE_CLIENT_SECRET'),
     }
-    const ready = Object.values(secrets).every(Boolean)
+    const ready = Object.values(secretsConfigured).every(Boolean)
 
     return new Response(JSON.stringify({
       service: 'pjsdas-authenticated-mcp',
-      version: AUTHENTICATED_GATEWAY_VERSION,
       mode: 'google-drive-readonly',
       auth: 'supabase-oauth-2.1',
-      mcpResource: AUTHENTICATED_MCP_RESOURCE,
-      authorizationServer: AUTHORIZATION_SERVER,
-      protectedResourceMetadata: PROTECTED_RESOURCE_METADATA_URL,
-      secretsConfigured: secrets,
+      secretsConfigured,
       ready,
     }), {
       status: ready ? 200 : 503,
