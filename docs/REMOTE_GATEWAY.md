@@ -119,6 +119,10 @@ PJSDAS_GOOGLE_CLIENT_SECRET
 
 The Google Client ID/Secret here must be the separate **PJSDAS Supabase Auth** Web OAuth client, not values committed into browser code. The secret values must be entered directly in Vercel and never pasted into GitHub or chat.
 
+## Deployment status
+
+The Vercel project is connected to `haohongfei2001-png/pjsdas` on `main`. Production environment variables have been entered in Vercel, so a fresh Git-triggered deployment is required to pick up the latest authenticated MCP code and secrets.
+
 ## Remaining v1.1 acceptance
 
 Before switching normal usage from demo to authenticated real data:
