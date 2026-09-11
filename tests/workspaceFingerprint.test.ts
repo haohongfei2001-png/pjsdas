@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { createSnapshot } from '../src/snapshot.js'
 import { DEFAULT_DECISION_RULES } from '../src/decisionRules.js'
+import { createDefaultDiscoveryProfile } from '../src/discoveryProfile.js'
 import { canonicalWorkspaceJson, fingerprintWorkspace, workspaceIsEffectivelyEmpty } from '../src/cloud/workspaceFingerprint.js'
 
 function snapshot(exportedAt: string, company?: string) {
@@ -31,5 +32,18 @@ describe('cloud workspace fingerprint', () => {
   it('recognizes an untouched empty local workspace', () => {
     expect(workspaceIsEffectivelyEmpty(snapshot('2026-09-11T00:00:00.000Z'))).toBe(true)
     expect(workspaceIsEffectivelyEmpty(snapshot('2026-09-11T00:00:00.000Z', 'A'))).toBe(false)
+  })
+
+  it('treats a configured Discovery Profile as meaningful local data', () => {
+    const empty = snapshot('2026-09-11T00:00:00.000Z')
+    empty.data.discoveryProfile = createDefaultDiscoveryProfile('2026-09-11T01:00:00.000Z')
+    expect(workspaceIsEffectivelyEmpty(empty)).toBe(true)
+
+    const configured = snapshot('2026-09-11T00:00:00.000Z')
+    configured.data.discoveryProfile = {
+      ...createDefaultDiscoveryProfile('2026-09-11T01:00:00.000Z'),
+      targetRoleQueries: ['AI 产品经理'],
+    }
+    expect(workspaceIsEffectivelyEmpty(configured)).toBe(false)
   })
 })

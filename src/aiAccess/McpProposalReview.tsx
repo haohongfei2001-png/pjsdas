@@ -27,6 +27,20 @@ function driveVersion(workspaceVersion?: string) {
   return workspaceVersion?.startsWith('drive:') ? workspaceVersion.slice('drive:'.length) : undefined
 }
 
+function formatDeadline(value: string | undefined, zh: boolean) {
+  if (!value) return zh ? '来源未明确' : 'Not stated by source'
+  return new Intl.DateTimeFormat(zh ? 'zh-CN' : 'en-GB', {
+    year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false,
+  }).format(new Date(value))
+}
+
+function confidenceLabel(value: string, zh: boolean) {
+  if (!zh) return value
+  if (value === 'high') return '高'
+  if (value === 'medium') return '中'
+  return '低'
+}
+
 export default function McpProposalReview() {
   const { lang } = useUiLanguage()
   const zh = lang === 'zh'
@@ -99,6 +113,10 @@ export default function McpProposalReview() {
     () => proposal?.changeSet.operations.map((item) => item.summary) ?? [],
     [proposal],
   )
+  const discoveryOperations = useMemo(
+    () => proposal?.changeSet.operations.filter((item) => item.kind === 'add_discovered_opportunity') ?? [],
+    [proposal],
+  )
 
   async function applyProposal() {
     if (!proposal) return
@@ -152,9 +170,9 @@ export default function McpProposalReview() {
 
   return (
     <div className="mcp-proposal-backdrop" role="dialog" aria-modal="true" aria-label={zh ? 'ChatGPT 修改提议' : 'ChatGPT change proposal'}>
-      <section className="mcp-proposal-card">
-        <div className="mcp-proposal-eyebrow">CHATGPT · CHANGESET · V1.2</div>
-        <h2>{zh ? '审阅 ChatGPT 提议' : 'Review ChatGPT proposal'}</h2>
+      <section className={`mcp-proposal-card ${discoveryOperations.length ? 'discovery-review' : ''}`}>
+        <div className="mcp-proposal-eyebrow">CHATGPT · CHANGESET · {discoveryOperations.length ? 'V1.3' : 'V1.2'}</div>
+        <h2>{discoveryOperations.length ? (zh ? '审阅发现的岗位' : 'Review discovered jobs') : (zh ? '审阅 ChatGPT 提议' : 'Review ChatGPT proposal')}</h2>
 
         {verifying ? <p className="mcp-proposal-safety">{zh ? '正在验证提议签名、有效期与本机工作区基线…' : 'Verifying proposal signature, expiry, and local workspace baseline…'}</p> : null}
 
@@ -169,11 +187,52 @@ export default function McpProposalReview() {
               {proposal.workspaceVersion ? <span>{zh ? '提议基于' : 'Proposed from'} {proposal.workspaceVersion}</span> : null}
               <span>{zh ? '链接有效至' : 'Link expires'} {new Date(proposal.expiresAt).toLocaleString()}</span>
             </div>
-            <div className="mcp-proposal-ops">
-              {operationSummary.map((summary, index) => (
-                <div key={`${proposal.changeSet.id}:${index}`}><span>{index + 1}</span><p>{summary}</p></div>
-              ))}
-            </div>
+
+            {discoveryOperations.length ? (
+              <div className="mcp-discovery-list">
+                {discoveryOperations.map((operation) => {
+                  const item = operation.opportunity
+                  const evidence = item.detail?.discovery
+                  return (
+                    <article className="mcp-discovery-item" key={operation.id}>
+                      <div className="mcp-discovery-title">
+                        <div>
+                          <strong>{item.company}</strong>
+                          <h3>{item.role}</h3>
+                        </div>
+                        <span>{item.roleType}</span>
+                      </div>
+                      <div className="mcp-discovery-facts">
+                        <span>{zh ? '地点' : 'Location'}：{evidence?.location ?? (zh ? '来源未明确' : 'Not stated')}</span>
+                        <span>{zh ? '截止' : 'Deadline'}：{formatDeadline(item.deadline, zh)}</span>
+                        <span>{zh ? '薪资' : 'Compensation'}：{evidence?.compensationText ?? (zh ? '来源未明确' : 'Not stated')}</span>
+                      </div>
+                      <div className="mcp-discovery-scores">
+                        <span>{zh ? '机会价值' : 'Opportunity'} <b>{item.opportunityValue}</b> · {confidenceLabel(evidence?.opportunityValueConfidence ?? 'low', zh)}</span>
+                        <span>{zh ? '匹配度' : 'Fit'} <b>{item.fitScore}</b> · {confidenceLabel(evidence?.fitConfidence ?? 'low', zh)}</span>
+                      </div>
+                      {evidence?.rationale ? <p className="mcp-discovery-rationale">{evidence.rationale}</p> : null}
+                      {evidence?.profileWarnings?.length ? (
+                        <div className="mcp-discovery-warnings">
+                          {evidence.profileWarnings.map((warning) => <span key={warning}>{warning}</span>)}
+                        </div>
+                      ) : null}
+                      {evidence?.sourceUrl ? (
+                        <a className="mcp-discovery-source" href={evidence.sourceUrl} target="_blank" rel="noreferrer">
+                          {zh ? '查看招聘来源' : 'Open job source'} · {evidence.sourceTitle}
+                        </a>
+                      ) : null}
+                    </article>
+                  )
+                })}
+              </div>
+            ) : (
+              <div className="mcp-proposal-ops">
+                {operationSummary.map((summary, index) => (
+                  <div key={`${proposal.changeSet.id}:${index}`}><span>{index + 1}</span><p>{summary}</p></div>
+                ))}
+              </div>
+            )}
           </>
         ) : null}
 

@@ -11,6 +11,12 @@ import { mergeActionsForReimport } from './reimportState.js'
 import { createSnapshot, validateSnapshot, type PJSDASSnapshot } from './snapshot.js'
 import { createDefaultDecisionRules, decisionRulesForSnapshot, validateDecisionRules, type DecisionRules } from './decisionRules.js'
 import {
+  createDefaultDiscoveryProfile,
+  normalizeDiscoveryProfile,
+  validateDiscoveryProfile,
+  type DiscoveryProfile,
+} from './discoveryProfile.js'
+import {
   assertChangeSetValid,
   createActionStatusChangeSet,
   createProcessEventChangeSet,
@@ -68,6 +74,7 @@ interface PJSDASDatabase extends DBSchema {
   prep: { key: string; value: Prep }
   applicationGroups: { key: string; value: ApplicationGroup }
   decisionRules: { key: string; value: DecisionRules }
+  discoveryProfiles: { key: string; value: DiscoveryProfile }
   timeline: {
     key: string
     value: TimelineRecord
@@ -89,12 +96,13 @@ const DATA_STORES = [
   'prep',
   'applicationGroups',
   'decisionRules',
+  'discoveryProfiles',
   'timeline',
   'changeSets',
   'meta',
 ] as const
 
-export const dbPromise = openDB<PJSDASDatabase>('pjsdas', 6, {
+export const dbPromise = openDB<PJSDASDatabase>('pjsdas', 7, {
   upgrade(db) {
     if (!db.objectStoreNames.contains('opportunities')) {
       db.createObjectStore('opportunities', { keyPath: 'id' })
@@ -119,6 +127,9 @@ export const dbPromise = openDB<PJSDASDatabase>('pjsdas', 6, {
     }
     if (!db.objectStoreNames.contains('decisionRules')) {
       db.createObjectStore('decisionRules', { keyPath: 'key' })
+    }
+    if (!db.objectStoreNames.contains('discoveryProfiles')) {
+      db.createObjectStore('discoveryProfiles', { keyPath: 'key' })
     }
     if (!db.objectStoreNames.contains('timeline')) {
       const store = db.createObjectStore('timeline', { keyPath: 'id' })
@@ -193,6 +204,19 @@ export async function getLastImport() {
 export async function getDecisionRules() {
   const stored = await (await dbPromise).get('decisionRules', 'current')
   return stored ?? decisionRulesForSnapshot()
+}
+
+export async function getDiscoveryProfile() {
+  const stored = await (await dbPromise).get('discoveryProfiles', 'current')
+  return stored ?? createDefaultDiscoveryProfile('1970-01-01T00:00:00.000Z')
+}
+
+export async function saveDiscoveryProfile(profile: DiscoveryProfile) {
+  const next = normalizeDiscoveryProfile(profile)
+  const errors = validateDiscoveryProfile(next)
+  if (errors.length) throw new Error(errors[0])
+  await (await dbPromise).put('discoveryProfiles', next)
+  return next
 }
 
 async function ensureTimelineBackfill(db: Awaited<typeof dbPromise>) {
@@ -564,6 +588,84 @@ export async function applyActionStatusChangeSet(actionId: string, status: Actio
   return applyChangeSet(changeSet.id)
 }
 
+function compactOpportunityIdentity(value: string) {
+  return value.toLocaleLowerCase().replace(/[\s\u3000·•｜|（）()【】\[\]，,。.!！?？:：;；/\\_-]+/g, '')
+}
+
+function opportunityIdentity(company: string, role: string) {
+  return `${compactOpportunityIdentity(company)}|${compactOpportunityIdentity(role)}`
+}
+
+type DiscoveredChangeOperation = Extract<ChangeSetRecord['operations'][number], { kind: 'add_discovered_opportunity' }>
+
+async function applyDiscoveredOpportunityOperations(operations: DiscoveredChangeOperation[], changeSetId: string) {
+  const db = await dbPromise
+  const existing = await db.getAll('opportunities')
+  const existingIds = new Set(existing.map((item) => item.id))
+  const identities = new Set(existing.map((item) => opportunityIdentity(item.company, item.role)))
+  const batchIds = new Set<string>()
+  const batchIdentities = new Set<string>()
+
+  for (const operation of operations) {
+    const opportunity = operation.opportunity
+    const identity = opportunityIdentity(opportunity.company, opportunity.role)
+    if (existingIds.has(opportunity.id) || identities.has(identity)) {
+      throw new Error(`岗位 ${opportunity.company}｜${opportunity.role} 已存在，请重新让 ChatGPT 基于最新工作区生成提议。`)
+    }
+    if (batchIds.has(opportunity.id) || batchIdentities.has(identity)) {
+      throw new Error(`岗位发现 ChangeSet 内含重复岗位：${opportunity.company}｜${opportunity.role}。`)
+    }
+    batchIds.add(opportunity.id)
+    batchIdentities.add(identity)
+  }
+
+  const tx = db.transaction(['opportunities', 'actions', 'timeline'], 'readwrite')
+  const opportunityStore = tx.objectStore('opportunities')
+  const actionStore = tx.objectStore('actions')
+  const timelineStore = tx.objectStore('timeline')
+  const recordedAt = new Date().toISOString()
+
+  for (const operation of operations) {
+    const opportunity = operation.opportunity
+    await opportunityStore.put(opportunity)
+    const actionId = `apply:${opportunity.id}`
+    await actionStore.put({
+      id: actionId,
+      kind: 'apply',
+      title: `投递 ${opportunity.company}｜${opportunity.role}`,
+      opportunityId: opportunity.id,
+      processStage: 'not_applied',
+      dueAt: opportunity.deadline,
+      timingMode: opportunity.deadline ? 'deadline' : undefined,
+      estimatedMinutes: opportunity.prepEstimateMinutes ?? 45,
+      leverage: 70,
+      delayCost: opportunity.deadline ? 65 : 40,
+      status: 'todo',
+      sourceLabel: 'ChatGPT 岗位发现',
+      createdAt: opportunity.importedAt,
+      updatedAt: opportunity.importedAt,
+    })
+    await timelineStore.put({
+      id: `timeline:discovery:${opportunity.id}`,
+      kind: 'opportunity_added',
+      category: 'opportunity',
+      source: 'changeset',
+      occurredAt: opportunity.importedAt,
+      recordedAt,
+      title: '接受 AI 发现岗位',
+      detail: opportunity.detail?.discovery?.rationale,
+      opportunityId: opportunity.id,
+      actionId,
+      changeSetId,
+      company: opportunity.company,
+      role: opportunity.role,
+      sourceRef: opportunity.detail?.discovery?.sourceUrl,
+    })
+  }
+
+  await tx.done
+}
+
 async function markChangeSetFailed(changeSet: ChangeSetRecord, caught: unknown) {
   const now = new Date().toISOString()
   const failed: ChangeSetRecord = {
@@ -585,6 +687,10 @@ export async function applyChangeSet(id: string) {
   if (changeSet.status !== 'pending') throw new Error(`ChangeSet ${id} 当前状态为 ${changeSet.status}，不能应用。`)
 
   try {
+    const discoveredOperations = changeSet.operations.filter((operation): operation is DiscoveredChangeOperation => operation.kind === 'add_discovered_opportunity')
+    if (discoveredOperations.length > 0) {
+      await applyDiscoveredOpportunityOperations(discoveredOperations, changeSet.id)
+    } else {
     const progressOperations = changeSet.operations.filter((operation) => operation.kind === 'progress_update')
     if (progressOperations.length === changeSet.operations.length) {
       // The primary Natural Language Update path remains one IndexedDB transaction:
@@ -616,6 +722,10 @@ export async function applyChangeSet(id: string) {
         continue
       }
 
+      if (operation.kind === 'add_discovered_opportunity') {
+        throw new Error('岗位发现 ChangeSet 必须作为独立批次应用。')
+      }
+
       const action = await db.get('actions', operation.actionId) ?? (await getAllActions()).find((item) => item.id === operation.actionId)
       if (!action) throw new Error(`Action ${operation.actionId} 已不存在。`)
       if (action.status === operation.status) continue
@@ -623,6 +733,7 @@ export async function applyChangeSet(id: string) {
         throw new Error(`Action ${operation.actionId} 状态已经变化，请重新操作。`)
       }
       await updateActionStatus(operation.actionId, operation.status)
+    }
     }
 
     const appliedAt = new Date().toISOString()
@@ -648,7 +759,7 @@ export async function applyChangeSet(id: string) {
 export async function exportLocalSnapshot() {
   const db = await dbPromise
   await ensureTimelineBackfill(db)
-  const [opportunities, processes, processEvents, actions, prep, applicationGroups, decisionRules, timeline, changeSets, meta] =
+  const [opportunities, processes, processEvents, actions, prep, applicationGroups, decisionRules, discoveryProfile, timeline, changeSets, meta] =
     await Promise.all([
       db.getAll('opportunities'),
       db.getAll('processes'),
@@ -657,6 +768,7 @@ export async function exportLocalSnapshot() {
       db.getAll('prep'),
       db.getAll('applicationGroups'),
       db.get('decisionRules', 'current'),
+      db.get('discoveryProfiles', 'current'),
       db.getAll('timeline'),
       db.getAll('changeSets'),
       db.get('meta', 'lastImport'),
@@ -670,6 +782,7 @@ export async function exportLocalSnapshot() {
     prep,
     applicationGroups,
     decisionRules: decisionRulesForSnapshot(decisionRules),
+    discoveryProfile,
     timeline,
     changeSets,
     meta,
@@ -690,6 +803,7 @@ export async function replaceLocalSnapshotFromCloud(snapshot: PJSDASSnapshot) {
   for (const item of snapshot.data.prep) await tx.objectStore('prep').put(item)
   for (const item of snapshot.data.applicationGroups) await tx.objectStore('applicationGroups').put(item)
   await tx.objectStore('decisionRules').put(snapshot.data.decisionRules ?? createDefaultDecisionRules())
+  if (snapshot.data.discoveryProfile) await tx.objectStore('discoveryProfiles').put(snapshot.data.discoveryProfile)
   for (const item of snapshot.data.timeline ?? []) await tx.objectStore('timeline').put(item)
   for (const item of snapshot.data.changeSets ?? []) await tx.objectStore('changeSets').put(item)
   if (snapshot.data.meta) await tx.objectStore('meta').put(snapshot.data.meta)
@@ -711,6 +825,7 @@ export async function restoreLocalSnapshot(snapshot: PJSDASSnapshot) {
   for (const item of snapshot.data.prep) await tx.objectStore('prep').put(item)
   for (const item of snapshot.data.applicationGroups) await tx.objectStore('applicationGroups').put(item)
   await tx.objectStore('decisionRules').put(snapshot.data.decisionRules ?? createDefaultDecisionRules())
+  if (snapshot.data.discoveryProfile) await tx.objectStore('discoveryProfiles').put(snapshot.data.discoveryProfile)
   for (const item of snapshot.data.timeline ?? []) await tx.objectStore('timeline').put(item)
   for (const item of snapshot.data.changeSets ?? []) await tx.objectStore('changeSets').put(item)
   await tx.objectStore('timeline').put(timelineFromRestore(snapshot.exportedAt))

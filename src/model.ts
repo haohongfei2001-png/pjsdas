@@ -22,6 +22,7 @@ export type ActionTimingMode = 'deadline' | 'fixed'
 export type ActionKind = 'apply' | 'follow_up' | 'prep' | 'group_decision' | 'manual'
 export type ActionStatus = 'todo' | 'doing' | 'done' | 'skipped'
 export type PriorityLevel = 'P0' | 'P1' | 'P2' | 'expired' | 'none'
+export type DiscoveryConfidence = 'high' | 'medium' | 'low'
 
 export type TimelineCategory = 'opportunity' | 'process' | 'action' | 'rules' | 'change' | 'data' | 'note'
 export type TimelineSource =
@@ -73,6 +74,18 @@ export interface TimelineRecord {
   changes?: Record<string, TimelineFieldChange>
 }
 
+export interface OpportunityDiscoveryEvidence {
+  sourceUrl: string
+  sourceTitle: string
+  location?: string
+  compensationText?: string
+  rationale: string
+  discoveredAt: string
+  fitConfidence: DiscoveryConfidence
+  opportunityValueConfidence: DiscoveryConfidence
+  profileWarnings?: string[]
+}
+
 export interface OpportunityDetail {
   backgroundTag?: string
   coreOutput?: string
@@ -89,6 +102,7 @@ export interface OpportunityDetail {
   windowType?: string
   earlyReason?: string
   rules?: string
+  discovery?: OpportunityDiscoveryEvidence
 }
 
 export interface Opportunity {
