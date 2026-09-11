@@ -270,14 +270,15 @@ export async function invokeProposeChanges(
         )
       }
       const rules = decisionRulesForSnapshot(snapshot.data.decisionRules)
-      discoveryScreening = screenDiscoveryCandidates(
+      const screened = screenDiscoveryCandidates(
         profile,
         input.discoveredOpportunities,
         snapshot.data.opportunities,
         rules.weights,
         now,
       )
-      for (const item of discoveryScreening.accepted) {
+      discoveryScreening = screened
+      for (const item of screened.accepted) {
         const opportunity = discoveredOpportunity(item.candidate, item.warnings, now)
         operations.push({
           id: `discovery:add:${opportunity.id}`,
