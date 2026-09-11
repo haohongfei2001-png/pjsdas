@@ -1,6 +1,6 @@
 import { validateDecisionRules, type DecisionRules } from './decisionRules.js'
 import { progressOperationSummary, type ExecutableProgressOperation } from './progressUpdate.js'
-import type { Action, ActionStatus, ProcessEvent } from './model.js'
+import type { Action, ActionStatus, Opportunity, ProcessEvent } from './model.js'
 
 export type ChangeSetStatus = 'pending' | 'applied' | 'discarded' | 'failed'
 export type ChangeSetSource = 'natural_language' | 'rules' | 'process_event' | 'user_action' | 'api' | 'mcp'
@@ -43,6 +43,12 @@ export type ChangeSetOperation =
       expectedStatus: ActionStatus
       status: ActionStatus
     }
+  | {
+      id: string
+      kind: 'add_discovered_opportunity'
+      summary: string
+      opportunity: Opportunity
+    }
 
 export interface ChangeSetRecord {
   id: string
@@ -67,6 +73,19 @@ function isObject(value: unknown): value is Record<string, unknown> {
 
 function validIso(value: unknown) {
   return typeof value === 'string' && !Number.isNaN(new Date(value).getTime())
+}
+
+function validPublicHttpUrl(value: unknown) {
+  if (typeof value !== 'string' || value.length > 2_000) return false
+  try {
+    const url = new URL(value)
+    if (url.protocol !== 'https:' && url.protocol !== 'http:') return false
+    const host = url.hostname.toLocaleLowerCase()
+    if (!host || host === 'localhost' || host === '0.0.0.0' || host === '::1' || host.startsWith('127.')) return false
+    return true
+  } catch {
+    return false
+  }
 }
 
 function changeSetId(now = new Date()) {
@@ -187,6 +206,41 @@ export function createActionStatusChangeSet(action: Action, status: ActionStatus
   }], now)
 }
 
+function validateDiscoveredOpportunity(raw: Record<string, unknown>, operationId: string, errors: string[]) {
+  const opportunity = raw.opportunity
+  if (!isObject(opportunity)) {
+    errors.push(`ChangeSet operation ${operationId} 缺少岗位发现 payload。`)
+    return
+  }
+  if (typeof opportunity.id !== 'string' || !opportunity.id.trim()) errors.push(`ChangeSet operation ${operationId} 的岗位 ID 无效。`)
+  if (typeof opportunity.company !== 'string' || !opportunity.company.trim() || opportunity.company.length > 200) errors.push(`ChangeSet operation ${operationId} 的公司名无效。`)
+  if (typeof opportunity.role !== 'string' || !opportunity.role.trim() || opportunity.role.length > 240) errors.push(`ChangeSet operation ${operationId} 的岗位名无效。`)
+  if (opportunity.processStage !== 'not_applied' || opportunity.currentStageLabel !== '待投') errors.push(`ChangeSet operation ${operationId} 的发现岗位必须处于待投状态。`)
+  if (!['core', 'backup', 'reach', 'lottery', 'practice'].includes(String(opportunity.roleType))) errors.push(`ChangeSet operation ${operationId} 的岗位类型无效。`)
+  if (typeof opportunity.opportunityValue !== 'number' || opportunity.opportunityValue < 0 || opportunity.opportunityValue > 100) errors.push(`ChangeSet operation ${operationId} 的机会价值无效。`)
+  if (typeof opportunity.fitScore !== 'number' || opportunity.fitScore < 0 || opportunity.fitScore > 100) errors.push(`ChangeSet operation ${operationId} 的匹配度无效。`)
+  if (opportunity.locallyManaged !== true) errors.push(`ChangeSet operation ${operationId} 的发现岗位必须标记为本地管理。`)
+  if (!validIso(opportunity.importedAt)) errors.push(`ChangeSet operation ${operationId} 的发现时间无效。`)
+  if (opportunity.deadline !== undefined && !validIso(opportunity.deadline)) errors.push(`ChangeSet operation ${operationId} 的截止时间无效。`)
+
+  if (!isObject(opportunity.detail) || !isObject(opportunity.detail.discovery)) {
+    errors.push(`ChangeSet operation ${operationId} 缺少来源证据。`)
+    return
+  }
+  const discovery = opportunity.detail.discovery
+  if (!validPublicHttpUrl(discovery.sourceUrl)) errors.push(`ChangeSet operation ${operationId} 的来源 URL 无效。`)
+  if (typeof discovery.sourceTitle !== 'string' || !discovery.sourceTitle.trim() || discovery.sourceTitle.length > 300) errors.push(`ChangeSet operation ${operationId} 的来源标题无效。`)
+  if (typeof discovery.rationale !== 'string' || !discovery.rationale.trim() || discovery.rationale.length > 1600) errors.push(`ChangeSet operation ${operationId} 的匹配理由无效。`)
+  if (!validIso(discovery.discoveredAt)) errors.push(`ChangeSet operation ${operationId} 的发现时间证据无效。`)
+  if (!['high', 'medium', 'low'].includes(String(discovery.fitConfidence))) errors.push(`ChangeSet operation ${operationId} 的匹配度置信度无效。`)
+  if (!['high', 'medium', 'low'].includes(String(discovery.opportunityValueConfidence))) errors.push(`ChangeSet operation ${operationId} 的机会价值置信度无效。`)
+  if (discovery.location !== undefined && (typeof discovery.location !== 'string' || discovery.location.length > 240)) errors.push(`ChangeSet operation ${operationId} 的地点字段无效。`)
+  if (discovery.compensationText !== undefined && (typeof discovery.compensationText !== 'string' || discovery.compensationText.length > 500)) errors.push(`ChangeSet operation ${operationId} 的薪资证据无效。`)
+  if (discovery.profileWarnings !== undefined && (!Array.isArray(discovery.profileWarnings) || discovery.profileWarnings.length > 10 || discovery.profileWarnings.some((item) => typeof item !== 'string' || item.length > 300))) {
+    errors.push(`ChangeSet operation ${operationId} 的岗位发现警告无效。`)
+  }
+}
+
 export function validateChangeSet(value: unknown): string[] {
   const errors: string[] = []
   if (!isObject(value)) return ['ChangeSet 必须是对象。']
@@ -206,6 +260,11 @@ export function validateChangeSet(value: unknown): string[] {
   if (!Array.isArray(value.operations) || value.operations.length === 0) {
     errors.push('ChangeSet 至少需要一个 operation。')
     return errors
+  }
+
+  const discoveryOperationCount = value.operations.filter((item) => isObject(item) && item.kind === 'add_discovered_opportunity').length
+  if (discoveryOperationCount > 0 && discoveryOperationCount !== value.operations.length) {
+    errors.push('岗位发现 ChangeSet 不能与其他修改类型混合，请拆分审阅。')
   }
 
   for (const raw of value.operations) {
@@ -232,6 +291,8 @@ export function validateChangeSet(value: unknown): string[] {
     } else if (raw.kind === 'set_action_status') {
       if (typeof raw.actionId !== 'string' || !raw.actionId) errors.push(`ChangeSet operation ${raw.id} 缺少 actionId。`)
       if (!['todo', 'doing', 'done', 'skipped'].includes(String(raw.expectedStatus)) || !['todo', 'doing', 'done', 'skipped'].includes(String(raw.status))) errors.push(`ChangeSet operation ${raw.id} 的 Action 状态无效。`)
+    } else if (raw.kind === 'add_discovered_opportunity') {
+      validateDiscoveredOpportunity(raw, raw.id, errors)
     } else {
       errors.push(`ChangeSet operation ${raw.id} kind 无效。`)
     }
