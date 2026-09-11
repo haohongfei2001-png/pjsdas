@@ -88,7 +88,13 @@ describe('v1.3 discovery quality gate', () => {
   it('keeps unknown evidence visible instead of fabricating salary or must-have facts', () => {
     const result = evaluateDiscoveryCandidate(
       profile(),
-      candidate({ compensationText: undefined, annualCompensationMinWan: undefined, sourceEvidenceText: '工作地点北京。', postingStatus: 'unknown' }),
+      candidate({
+        sourceTitle: '候选科技 AI 产品经理',
+        compensationText: undefined,
+        annualCompensationMinWan: undefined,
+        sourceEvidenceText: '工作地点北京。',
+        postingStatus: 'unknown',
+      }),
       weights,
       now,
     )
