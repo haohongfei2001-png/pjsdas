@@ -1,19 +1,20 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { authenticatedRemoteMcpFetch, PROTECTED_RESOURCE_METADATA_URL } from '../gateway/authenticatedRemoteHttp.js'
 import protectedResource from '../api/oauth-protected-resource.js'
+import primaryMcp from '../api/mcp.js'
 
 function json(data: unknown, status = 200) {
   return new Response(JSON.stringify(data), { status, headers: { 'content-type': 'application/json' } })
 }
 
-function mcpRequest(method: string, token?: string) {
+function mcpRequest(method: string, token?: string, path = '/api/mcp-auth') {
   const headers = new Headers({
     'content-type': 'application/json',
     accept: 'application/json, text/event-stream',
     'MCP-Protocol-Version': '2025-06-18',
   })
   if (token) headers.set('authorization', `Bearer ${token}`)
-  return new Request('https://pjsdas-remote-alpha.vercel.app/api/mcp-auth', {
+  return new Request(`https://pjsdas-remote-alpha.vercel.app${path}`, {
     method: 'POST',
     headers,
     body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params: {} }),
@@ -29,6 +30,13 @@ async function responseText(response: Response) {
 afterEach(() => vi.unstubAllGlobals())
 
 describe('authenticated remote MCP', () => {
+  it('makes the existing /api/mcp connector require OAuth instead of serving demo data', async () => {
+    const response = await primaryMcp.fetch(mcpRequest('tools/list', undefined, '/api/mcp'))
+    expect(response.status).toBe(401)
+    expect(response.headers.get('www-authenticate')).toContain(PROTECTED_RESOURCE_METADATA_URL)
+    expect(await response.text()).not.toContain('synthetic demo data')
+  })
+
   it('advertises OAuth metadata instead of exposing tools anonymously', async () => {
     const fetchImpl = vi.fn() as unknown as typeof fetch
     vi.stubGlobal('fetch', fetchImpl)
@@ -56,11 +64,11 @@ describe('authenticated remote MCP', () => {
     expect(String(vi.mocked(fetchImpl).mock.calls[0]?.[0])).toContain('/auth/v1/user')
   })
 
-  it('publishes standard protected-resource metadata pointing to Supabase Auth', async () => {
+  it('publishes standard protected-resource metadata pointing to the existing /api/mcp connector', async () => {
     const response = protectedResource.fetch()
     expect(response.status).toBe(200)
     await expect(response.json()).resolves.toMatchObject({
-      resource: 'https://pjsdas-remote-alpha.vercel.app/api/mcp-auth',
+      resource: 'https://pjsdas-remote-alpha.vercel.app/api/mcp',
       authorization_servers: ['https://yyrzwpoxlxpafdlbkdtg.supabase.co/auth/v1'],
       bearer_methods_supported: ['header'],
     })
