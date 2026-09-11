@@ -7,6 +7,7 @@ import ProcessEventDock from './ProcessEventDock'
 import ProgressInbox from './ProgressInbox'
 import { UiLanguageProvider } from './uiLanguage'
 import { CloudProvider } from './cloud/CloudContext'
+import { AiAccessProvider } from './aiAccess/AiAccessContext'
 import './styles.css'
 import './designSystem.css'
 
@@ -33,7 +34,9 @@ createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <UiLanguageProvider>
       <CloudProvider>
-        <Root />
+        <AiAccessProvider>
+          <Root />
+        </AiAccessProvider>
       </CloudProvider>
     </UiLanguageProvider>
   </StrictMode>,
