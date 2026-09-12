@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { invokeReadTool } from '../gateway/readTools.js'
 import { createFileWorkspaceSource, type WorkspaceSource } from '../gateway/workspaceSource.js'
+import { createOpportunityFacts } from '../src/richOpportunity.js'
 
 const base = createFileWorkspaceSource({
   file: new URL('../gateway/fixtures/demo-workspace.json', import.meta.url),
@@ -16,19 +17,12 @@ const source: WorkspaceSource = {
       ...item,
       detail: {
         ...item.detail,
-        facts: {
-          version: 1 as const,
-          identity: {},
-          role: { skills: ['SQL'] },
-          application: {},
-          compensation: {},
-          evidence: {
-            sourceUrl: 'https://example.com/alpha',
-            sourceTitle: 'alpha',
-            verifiedAt: '2026-09-12T00:00:00.000Z',
-          },
-          unknownFields: [],
-        },
+        facts: createOpportunityFacts({
+          sourceUrl: 'https://example.com/alpha',
+          sourceTitle: 'alpha',
+          verifiedAt: '2026-09-12T00:00:00.000Z',
+          facts: { skills: ['SQL'] },
+        }),
         assessment: {
           version: 1 as const,
           mode: 'component' as const,
