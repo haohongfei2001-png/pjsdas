@@ -1,10 +1,15 @@
 import { useEffect, useMemo, useState } from 'react'
 import { getAllTimelineRecords } from './db.js'
-import { summarizeCoverage, type CoverageSummary } from './ingestion.js'
+import {
+  PJSDAS_EXPECTED_INGESTION_SOURCES,
+  summarizeCoverage,
+  type CoverageSummary,
+} from './ingestion.js'
 import type { TimelineRecord } from './model.js'
 import './coverageIndicator.css'
 
-function sourceLabel(kind: string, sourceId: string) {
+function sourceLabel(kind: string, sourceId: string, label?: string) {
+  if (label) return label
   if (kind === 'gmail') return `Gmail · ${sourceId}`
   if (kind === 'gpt_monitor') return `Monitor · ${sourceId}`
   return `${kind} · ${sourceId}`
@@ -32,11 +37,13 @@ function outcomeText(outcomes: CoverageSummary['sources'][number]['outcomes']) {
 export default function CoverageIndicator() {
   const [open, setOpen] = useState(false)
   const [timeline, setTimeline] = useState<TimelineRecord[]>([])
+  const [now, setNow] = useState(() => new Date())
   const [error, setError] = useState('')
 
   async function reload() {
     try {
       setTimeline(await getAllTimelineRecords())
+      setNow(new Date())
       setError('')
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : String(caught))
@@ -56,18 +63,25 @@ export default function CoverageIndicator() {
     }
   }, [])
 
-  const coverage = useMemo(() => summarizeCoverage(timeline), [timeline])
+  const coverage = useMemo(() => summarizeCoverage(timeline, {
+    now,
+    expectedSources: PJSDAS_EXPECTED_INGESTION_SOURCES,
+  }), [timeline, now])
   const hasRuns = coverage.sourceCount > 0
-  const status = error ? 'error' : !hasRuns ? 'idle' : coverage.allCaughtUp ? 'ok' : 'attention'
+  const status = error ? 'error' : coverage.allCaughtUp ? 'ok' : 'attention'
   const label = error
     ? 'Coverage 不可用'
-    : !hasRuns
-      ? '自动摄入尚未运行'
-      : coverage.allCaughtUp
-        ? 'All caught up'
-        : coverage.unresolvedCount > 0
-          ? `${coverage.unresolvedCount} 条待解析`
-          : 'Coverage 需检查'
+    : coverage.allCaughtUp
+      ? 'All caught up'
+      : coverage.unresolvedCount > 0
+        ? `${coverage.unresolvedCount} 条待解析`
+        : coverage.missingSourceCount > 0
+          ? `${coverage.missingSourceCount} 个来源未覆盖`
+          : coverage.staleSourceCount > 0
+            ? `${coverage.staleSourceCount} 个来源已过期`
+            : !hasRuns
+              ? '自动摄入尚未运行'
+              : 'Coverage 需检查'
 
   return (
     <div className={`coverage-indicator ${status}`}>
@@ -88,40 +102,51 @@ export default function CoverageIndicator() {
           <header>
             <div>
               <div className="eyebrow">COVERAGE</div>
-              <h2>{coverage.allCaughtUp ? '所有已接入输入都有去处' : '自动摄入对账'}</h2>
+              <h2>{coverage.allCaughtUp ? '预期来源都按时运行，且每条输入都有去处' : '自动摄入对账'}</h2>
             </div>
             <button type="button" onClick={() => setOpen(false)} aria-label="关闭">×</button>
           </header>
 
-          {error ? <div className="coverage-warning">{error}</div> : !hasRuns ? (
-            <p className="coverage-muted">还没有完成过 GPT Monitor 或 Gmail 的自动摄入 run。这里不会伪装成“没有遗漏”。</p>
-          ) : (
+          {error ? <div className="coverage-warning">{error}</div> : (
             <>
               <div className="coverage-summary">
                 <div><small>最近完成</small><strong>{formatTime(coverage.latestCompletedAt)}</strong></div>
-                <div><small>已接收</small><strong>{coverage.totalReceived}</strong></div>
-                <div><small>已对账</small><strong>{coverage.totalAccounted}</strong></div>
-                <div><small>异常</small><strong>{coverage.unresolvedCount}</strong></div>
+                <div><small>来源覆盖</small><strong>{coverage.sourceCount}/{coverage.expectedSourceCount || coverage.sourceCount}</strong></div>
+                <div><small>已接收 / 对账</small><strong>{coverage.totalReceived}/{coverage.totalAccounted}</strong></div>
+                <div><small>异常</small><strong>{coverage.unresolvedCount + coverage.missingSourceCount + coverage.staleSourceCount}</strong></div>
               </div>
+
+              {coverage.missingSources.length ? (
+                <div className="coverage-exceptions">
+                  <h3>尚未完成过摄入的预期来源</h3>
+                  {coverage.missingSources.map((source) => (
+                    <article key={`missing:${source.sourceKind}:${source.sourceId}`}>
+                      <strong>{sourceLabel(source.sourceKind, source.sourceId, source.label)}</strong>
+                      <p>这个来源尚没有可验证的完成 run，因此 Coverage 不会显示绿色。</p>
+                      <small>要求至少每 {source.maxAgeHours} 小时完成一次</small>
+                    </article>
+                  ))}
+                </div>
+              ) : null}
 
               <div className="coverage-source-list">
                 {coverage.sources.map((source) => (
                   <article key={`${source.sourceKind}:${source.sourceId}`}>
                     <div>
-                      <strong>{sourceLabel(source.sourceKind, source.sourceId)}</strong>
-                      <small>{formatTime(source.lastCompletedAt)}</small>
+                      <strong>{sourceLabel(source.sourceKind, source.sourceId, source.label)}</strong>
+                      <small>{formatTime(source.lastCompletedAt)}{source.stale ? ' · 已过期' : ''}</small>
                     </div>
-                    <span className={source.balanced && source.unresolvedCount === 0 ? 'good' : 'warn'}>
+                    <span className={source.balanced && source.unresolvedCount === 0 && !source.stale ? 'good' : 'warn'}>
                       {source.accountedCount}/{source.receivedCount}
                     </span>
-                    <p>{outcomeText(source.outcomes) || '无输入'}</p>
+                    <p>{outcomeText(source.outcomes) || '本轮 0 条输入'}{source.maxAgeHours ? ` · SLA ${source.maxAgeHours}h` : ''}</p>
                   </article>
                 ))}
               </div>
 
               {coverage.exceptions.length ? (
                 <div className="coverage-exceptions">
-                  <h3>需要处理的异常</h3>
+                  <h3>需要处理的解析异常</h3>
                   {coverage.exceptions.slice(0, 8).map((record) => (
                     <article key={record.id}>
                       <strong>{record.company && record.role ? `${record.company}｜${record.role}` : record.sourceRef ?? record.title}</strong>
@@ -130,11 +155,11 @@ export default function CoverageIndicator() {
                     </article>
                   ))}
                 </div>
-              ) : (
-                <p className="coverage-success">✓ 最新完成的来源 run 全部守恒，且没有待解析输入。</p>
-              )}
+              ) : coverage.allCaughtUp ? (
+                <p className="coverage-success">✓ 4 个岗位 Monitor 与 Gmail 都在 SLA 内完成，最新 run 守恒，且没有待解析输入。</p>
+              ) : null}
 
-              <p className="coverage-footnote">Coverage 证明的是“已接入来源没有静默丢记录”，不是“互联网上不存在尚未被任何监控发现的岗位”。</p>
+              <p className="coverage-footnote">Coverage 证明的是“已配置来源按期运行，且进入 PJSDAS 的记录没有静默丢失”，不是“互联网上不存在尚未被任何监控发现的岗位”。</p>
             </>
           )}
         </section>
