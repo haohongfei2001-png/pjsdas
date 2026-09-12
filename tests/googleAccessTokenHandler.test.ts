@@ -58,18 +58,19 @@ describe('stable account Google access token handler', () => {
     expect(response.status).toBe(200)
     expect(response.headers.get('cache-control')).toBe('no-store')
     expect(response.headers.get('access-control-allow-origin')).toBe(ORIGIN)
-    await expect(response.json()).resolves.toEqual({
+    const payload = await response.json() as Record<string, unknown>
+    expect(payload).toEqual({
       accessToken: 'short-google-token',
       expiresInSeconds: 3000,
       googleEmail: 'a@gmail.com',
     })
+    expect(JSON.stringify(payload)).not.toContain('google-refresh-secret')
 
     expect(calls[0]).toMatchObject({ auth: 'Bearer pjsdas-session-token' })
     expect(calls[1]).toMatchObject({ auth: 'Bearer pjsdas-session-token' })
     expect(calls[2]?.body).toContain('refresh_token=google-refresh-secret')
     expect(calls[2]?.body).toContain('client_id=google-client-id')
     expect(calls[2]?.body).toContain('client_secret=google-client-secret')
-    expect(JSON.stringify(await response.clone().json()).includes('google-refresh-secret')).toBe(false)
   })
 
   it('fails closed when this account has no durable Google Drive binding', async () => {
