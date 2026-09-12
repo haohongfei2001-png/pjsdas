@@ -18,6 +18,16 @@ function opportunity(
     early: false,
     opportunityValue: 90,
     fitScore: 70,
+    detail: {
+      discovery: {
+        sourceUrl: `https://careers.example.com/${id}`,
+        sourceTitle: role,
+        rationale: 'test source',
+        discoveredAt: '2026-09-01T00:00:00.000Z',
+        fitConfidence: 'high',
+        opportunityValueConfidence: 'high',
+      },
+    },
     importedAt: '2026-09-01T00:00:00.000Z',
   }
 }
