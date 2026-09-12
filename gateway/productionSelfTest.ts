@@ -23,6 +23,7 @@ const REQUIRED_CAPABILITIES: Record<string, unknown> = {
   workspaceIntegrityAudit: true,
   ingestionDryRunReplay: true,
   sourceHealthHistory: true,
+  productionSelfTest: true,
 }
 
 function check(name: string, condition: boolean, detail: string): ProductionSelfTestCheck {
