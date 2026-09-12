@@ -1,8 +1,11 @@
 import { describe, expect, it } from 'vitest'
+import { createJobPostingEvidence } from '../src/jobPosting.js'
 import { parseProgressUpdate, type CanonicalJobReference } from '../src/progressUpdate.js'
 import type { Opportunity } from '../src/model.js'
 
 function opportunity(id: string, company: string, role: string, stage: Opportunity['processStage'] = 'screening'): Opportunity {
+  const observedAt = '2026-09-01T00:00:00.000Z'
+  const sourceUrl = `https://careers.example.com/${id}`
   return {
     id,
     company,
@@ -15,15 +18,16 @@ function opportunity(id: string, company: string, role: string, stage: Opportuni
     fitScore: 70,
     detail: {
       discovery: {
-        sourceUrl: `https://careers.example.com/${id}`,
+        sourceUrl,
         sourceTitle: role,
         rationale: 'test source',
-        discoveredAt: '2026-09-01T00:00:00.000Z',
+        discoveredAt: observedAt,
         fitConfidence: 'high',
         opportunityValueConfidence: 'high',
+        posting: createJobPostingEvidence({ company, role, sourceUrl, sourceTitle: role, observedAt }),
       },
     },
-    importedAt: '2026-09-01T00:00:00.000Z',
+    importedAt: observedAt,
   }
 }
 
@@ -85,7 +89,7 @@ describe('natural-language progress planner', () => {
     expect(planned.every((item) => item.kind === 'upsert_opportunity' && item.mode === 'planned')).toBe(true)
   })
 
-  it('uses the most recently touched canonical role in the same company for a later company-only process event', () => {
+  it('uses the most recently touched canonical role in the same company for a later company-only assessment', () => {
     const plan = parse('9月9日，投乙公司战略分析。\n9月11日，乙公司在线测评。')
     const submitted = plan.operations.find((item) => item.kind === 'upsert_opportunity' && item.role === '战略分析')
     const assessment = plan.operations.find((item) => item.kind === 'process_event' && item.eventType === 'assessment_invite')
