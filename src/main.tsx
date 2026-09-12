@@ -9,6 +9,7 @@ import McpProposalReview from './aiAccess/McpProposalReview.js'
 import OAuthConsentPage from './aiAccess/OAuthConsentPage.js'
 import './styles.css'
 import './designSystem.css'
+import './visualPolish.css'
 
 function Root() {
   const [revision, setRevision] = useState(0)
