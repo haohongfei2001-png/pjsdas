@@ -90,6 +90,14 @@ describe('explicit process-task completion', () => {
     expect(assessment?.kind).toBe('process_event')
     if (assessment?.kind === 'process_event') expect(assessment.completed).not.toBe(true)
   })
+
+  it('does not mistake completion time metadata for an already completed task', () => {
+    const jd = opportunity('JD-PM', '京东', '技术产品经理', 'assessment')
+    const plan = parseProgressUpdate('JDS技术产品经理测评完成时间为9月13日23:59。', [jd], now)
+    const assessment = plan.operations.find((item) => item.kind === 'process_event')
+
+    if (assessment?.kind === 'process_event') expect(assessment.completed).not.toBe(true)
+  })
 })
 
 describe('completion ChangeSet canonicalization', () => {
