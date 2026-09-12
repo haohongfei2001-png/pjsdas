@@ -223,8 +223,10 @@ function workspaceReferences(currentOpportunities: Opportunity[]): CanonicalJobR
   })
 }
 
+type IdentityOperation = Extract<ProgressOperation, { kind: 'upsert_opportunity' | 'rename_opportunity' }>
+
 function identityUnresolved(
-  operation: Extract<ProgressOperation, { kind: 'upsert_opportunity' }>,
+  operation: IdentityOperation,
   reason: string,
   candidates: Array<{ reference: CanonicalJobReference; score: number }> = [],
 ): UnresolvedOperation {
@@ -252,6 +254,34 @@ function repairOpportunityIdentities(
   const sourceBackedCurrentReferences = currentReferences.filter((item) => item.sourceBacked)
   const officialReferences = canonicalReferences.map((item) => ({ ...item, sourceBacked: item.sourceBacked ?? true }))
   const operations: ProgressOperation[] = plan.operations.map((operation) => {
+    if (operation.kind === 'rename_opportunity') {
+      const official = resolveReferences(operation.company, operation.newRole, officialReferences)
+      if (official.kind === 'ambiguous') {
+        return identityUnresolved(operation, '新岗位名在官网/来源候选中对应多个相近岗位；不会把手写的新名称直接写入主数据。', official.candidates)
+      }
+      if (official.kind !== 'match') {
+        return identityUnresolved(operation, '岗位转变后的新名称没有官网/来源支持；手写新岗位名不能直接成为 canonical title。请先通过岗位发现或官网来源确认目标岗位。')
+      }
+      const otherCurrentReferences = currentReferences.filter((item) => item.opportunityId !== operation.opportunityId)
+      const existingTarget = resolveReferences(official.reference.company, official.reference.role, otherCurrentReferences)
+      if (existingTarget.kind === 'ambiguous') {
+        return identityUnresolved(operation, '目标 canonical 岗位在当前工作区存在多个可能记录；为避免重复或错误合并，本次不自动改名。', existingTarget.candidates)
+      }
+      if (existingTarget.kind === 'match') {
+        return identityUnresolved(
+          operation,
+          '岗位转变后的 canonical 岗位已经作为另一个 Opportunity 存在；为避免生成两个相同岗位，本次不自动 rename，需要先合并流程身份。',
+          [existingTarget],
+        )
+      }
+      return {
+        ...operation,
+        company: official.reference.company,
+        newRole: official.reference.role,
+        confidence: 'high',
+      }
+    }
+
     if (operation.kind !== 'upsert_opportunity') return operation
     const existing = resolveReferences(operation.company, operation.role, currentReferences)
     const sourceBackedExisting = resolveReferences(operation.company, operation.role, sourceBackedCurrentReferences)
