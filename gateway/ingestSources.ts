@@ -1,12 +1,15 @@
 import type { CallToolResult } from '@modelcontextprotocol/server'
 import * as z from 'zod/v4'
-import {
-  applyGmailIngestion,
-  applyMonitorIngestion,
-  type GmailIngestionRunInput,
-  type GmailMessageObservation,
-  type MonitorIngestionRunInput,
+import type {
+  GmailMessageObservation,
+  MonitorIngestionRunInput,
 } from '../src/autonomousIngestion.js'
+import {
+  applyGmailIngestionHardened,
+  applyMonitorIngestionHardened,
+  type HardenedGmailIngestionRunInput,
+  type HardenedGmailMessageObservation,
+} from '../src/ingestionHardening.js'
 import { jobRoleSimilarity, normalizeJobCompany } from '../src/jobPosting.js'
 import type { Opportunity } from '../src/model.js'
 import { requireWritableWorkspaceSource, WorkspaceSourceError, type WorkspaceSource } from './workspaceSource.js'
@@ -18,6 +21,7 @@ const postingStatusSchema = z.enum(['open', 'closed', 'unknown'])
 const processEventTypeSchema = z.enum(['assessment_invite', 'written_test_invite', 'interview_invite', 'offer', 'rejection', 'status_update', 'other'])
 const processStageSchema = z.enum(['not_applied', 'screening', 'assessment', 'written_test', 'interview', 'offer', 'waiting_release', 'closed'])
 const timingModeSchema = z.enum(['deadline', 'fixed'])
+const eventStateSchema = z.enum(['scheduled', 'rescheduled', 'completed', 'cancelled'])
 
 export const ingestDiscoveryRunSchema = z.object({
   runId: z.string().trim().min(1).max(180),
@@ -60,6 +64,8 @@ export const ingestGmailRunSchema = z.object({
     company: z.string().trim().max(200).optional(),
     role: z.string().trim().max(260).optional(),
     eventType: processEventTypeSchema.optional(),
+    eventKey: z.string().trim().max(500).optional(),
+    eventState: eventStateSchema.optional(),
     dueAt: isoString.optional(),
     timingMode: timingModeSchema.optional(),
     estimatedMinutes: z.number().int().min(5).max(720).optional(),
@@ -98,7 +104,7 @@ function failure(caught: unknown): CallToolResult {
   )
 }
 
-function appendResolutionNote(message: GmailMessageObservation, note: string): GmailMessageObservation {
+function appendResolutionNote<T extends GmailMessageObservation>(message: T, note: string): T {
   const notes = [message.notes?.trim(), note].filter(Boolean).join('；')
   return { ...message, notes: notes.slice(0, 800) }
 }
@@ -122,10 +128,10 @@ function activeOpportunity(opportunity: Opportunity) {
  * active Opportunity. Otherwise confidence is downgraded and the ingestion
  * engine will preserve the message as unresolved instead of guessing.
  */
-export function normalizeGmailMessagesForWorkspace(
-  messages: GmailMessageObservation[],
+export function normalizeGmailMessagesForWorkspace<T extends HardenedGmailMessageObservation>(
+  messages: T[],
   opportunities: Opportunity[],
-): GmailMessageObservation[] {
+): T[] {
   return messages.map((message) => {
     if (message.classification !== 'recruiting' || message.confidence !== 'high' || !message.company?.trim()) {
       return message
@@ -184,7 +190,7 @@ async function persistResult(
   source: WorkspaceSource,
   workspaceVersion: string | undefined,
   updatedByDevice: string,
-  result: ReturnType<typeof applyMonitorIngestion> | ReturnType<typeof applyGmailIngestion>,
+  result: ReturnType<typeof applyMonitorIngestionHardened> | ReturnType<typeof applyGmailIngestionHardened>,
 ) {
   if (result.alreadyApplied) return { workspaceVersion, result }
   const writable = requireWritableWorkspaceSource(source)
@@ -198,7 +204,7 @@ async function persistResult(
 
 function outputFor(
   workspaceVersion: string | undefined,
-  result: ReturnType<typeof applyMonitorIngestion> | ReturnType<typeof applyGmailIngestion>,
+  result: ReturnType<typeof applyMonitorIngestionHardened> | ReturnType<typeof applyGmailIngestionHardened>,
 ) {
   return {
     workspaceVersion,
@@ -224,7 +230,7 @@ export async function invokeTrustedIngestion(
     const workspace = await source.read()
     if (name === 'ingest_discovery_run') {
       const input = ingestDiscoveryRunSchema.parse(args) as MonitorIngestionRunInput
-      const result = applyMonitorIngestion(workspace.snapshot, input)
+      const result = applyMonitorIngestionHardened(workspace.snapshot, input)
       const persisted = await persistResult(
         source,
         workspace.context.workspaceVersion,
@@ -234,12 +240,12 @@ export async function invokeTrustedIngestion(
       return success(outputFor(persisted.workspaceVersion, persisted.result))
     }
 
-    const parsed = ingestGmailRunSchema.parse(args) as GmailIngestionRunInput
-    const input: GmailIngestionRunInput = {
+    const parsed = ingestGmailRunSchema.parse(args) as HardenedGmailIngestionRunInput
+    const input: HardenedGmailIngestionRunInput = {
       ...parsed,
       messages: normalizeGmailMessagesForWorkspace(parsed.messages, workspace.snapshot.data.opportunities),
     }
-    const result = applyGmailIngestion(workspace.snapshot, input)
+    const result = applyGmailIngestionHardened(workspace.snapshot, input)
     const persisted = await persistResult(
       source,
       workspace.context.workspaceVersion,
