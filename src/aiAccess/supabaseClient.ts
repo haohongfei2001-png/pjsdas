@@ -4,7 +4,10 @@ import {
   PJSDAS_SUPABASE_URL,
 } from '../../gateway/supabaseProject.js'
 
-const storage = typeof window !== 'undefined' ? window.sessionStorage : undefined
+// PJSDAS account identity is intentionally durable across page refreshes and
+// browser restarts. Workspace data remains local-first in IndexedDB; this only
+// persists the Supabase Auth session needed to identify the account.
+const storage = typeof window !== 'undefined' ? window.localStorage : undefined
 
 export const pjsdasSupabase = createClient(
   PJSDAS_SUPABASE_URL,
