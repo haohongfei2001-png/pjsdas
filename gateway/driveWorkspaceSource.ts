@@ -1,6 +1,7 @@
 import type { BridgeReadContext } from '../src/ai/readLayer.js'
 import {
   DRIVE_WORKSPACE_FILENAME,
+  createDriveWorkspaceEnvelope,
   parseDriveWorkspaceEnvelope,
 } from '../src/cloud/driveEnvelope.js'
 import { fingerprintWorkspace } from '../src/cloud/workspaceFingerprint.js'
@@ -9,9 +10,11 @@ import {
   WorkspaceSourceError,
   type GatewayWorkspace,
   type WorkspaceSource,
+  type WorkspaceWriteInput,
 } from './workspaceSource.js'
 
 const DRIVE_API = 'https://www.googleapis.com/drive/v3'
+const DRIVE_UPLOAD_API = 'https://www.googleapis.com/upload/drive/v3'
 const METADATA_FIELDS = 'id,name,version,modifiedTime'
 
 interface DriveFileMetadata {
@@ -227,6 +230,20 @@ async function downloadAndVerifyWorkspace(fetchImpl: typeof fetch, token: string
   return envelope
 }
 
+function workspaceContext(
+  metadataVersion: string,
+  nowProvider: () => Date,
+  timezone: string,
+  defaultAvailableMinutes: number | undefined,
+): BridgeReadContext {
+  return {
+    now: validateNow(nowProvider()),
+    timezone,
+    workspaceVersion: `drive:${metadataVersion}`,
+    defaultAvailableMinutes,
+  }
+}
+
 export function createDriveWorkspaceSource(options: DriveWorkspaceSourceOptions): WorkspaceSource {
   const fetchImpl = options.fetchImpl ?? fetch
   const defaultAvailableMinutes = validateAvailableMinutes(options.defaultAvailableMinutes)
@@ -240,16 +257,69 @@ export function createDriveWorkspaceSource(options: DriveWorkspaceSourceOptions)
       const metadata = await resolveMetadata(fetchImpl, token, file)
       const envelope = await downloadAndVerifyWorkspace(fetchImpl, token, metadata.id)
 
-      const context: BridgeReadContext = {
-        now: validateNow(nowProvider()),
-        timezone,
-        workspaceVersion: `drive:${metadata.version}`,
-        defaultAvailableMinutes,
+      return {
+        snapshot: envelope.snapshot,
+        context: workspaceContext(metadata.version, nowProvider, timezone, defaultAvailableMinutes),
+      }
+    },
+
+    async write(input: WorkspaceWriteInput): Promise<GatewayWorkspace> {
+      validateSnapshot(input.snapshot)
+      const token = validateToken(await options.getAccessToken())
+      const file = await listWorkspaceFiles(fetchImpl, token)
+      const metadata = await resolveMetadata(fetchImpl, token, file)
+      const actualVersion = `drive:${metadata.version}`
+      if (input.expectedWorkspaceVersion && input.expectedWorkspaceVersion !== actualVersion) {
+        throw new WorkspaceSourceError(
+          'WORKSPACE_CONFLICT',
+          `PJSDAS workspace changed since the ingestion baseline (${input.expectedWorkspaceVersion} → ${actualVersion}). Retry from the latest workspace instead of overwriting it.`,
+          true,
+        )
+      }
+
+      // Check again immediately before upload. This mirrors the browser sync's
+      // fail-closed optimistic baseline and prevents the common stale-writer case.
+      const beforeUpload = await metadataForFile(fetchImpl, token, metadata.id)
+      const beforeUploadVersion = `drive:${beforeUpload.version}`
+      if (input.expectedWorkspaceVersion && input.expectedWorkspaceVersion !== beforeUploadVersion) {
+        throw new WorkspaceSourceError(
+          'WORKSPACE_CONFLICT',
+          `PJSDAS workspace changed while preparing ingestion (${input.expectedWorkspaceVersion} → ${beforeUploadVersion}).`,
+          true,
+        )
+      }
+
+      const fingerprint = await fingerprintWorkspace(input.snapshot)
+      const envelope = createDriveWorkspaceEnvelope({
+        fingerprint,
+        snapshot: input.snapshot,
+        deviceId: input.updatedByDevice?.trim() || 'gateway-autonomous-ingestion',
+      })
+      const params = new URLSearchParams({ uploadType: 'media', fields: METADATA_FIELDS })
+      const response = await driveRequest(
+        fetchImpl,
+        token,
+        `${DRIVE_UPLOAD_API}/files/${encodeURIComponent(metadata.id)}?${params.toString()}`,
+        {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json; charset=UTF-8' },
+          body: JSON.stringify(envelope),
+        },
+      )
+
+      let updated: DriveFileMetadata
+      try {
+        updated = await response.json() as DriveFileMetadata
+      } catch {
+        throw new WorkspaceSourceError('WORKSPACE_INVALID', 'Google Drive returned invalid metadata after workspace update.', false)
+      }
+      if (!updated.id || updated.version === undefined || !updated.modifiedTime) {
+        throw new WorkspaceSourceError('WORKSPACE_INVALID', 'Google Drive returned incomplete metadata after workspace update.', false)
       }
 
       return {
-        snapshot: envelope.snapshot,
-        context,
+        snapshot: input.snapshot,
+        context: workspaceContext(String(updated.version), nowProvider, timezone, defaultAvailableMinutes),
       }
     },
   }
