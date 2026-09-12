@@ -2,125 +2,304 @@
 
 **Personal Job Search Decision & Action System**
 
-PJSDAS is a local-first personal job-search decision workspace. Its purpose is not merely to track applications, but to turn opportunities, recruiting-process changes, deadlines, preparation work, and available time into a prioritized and executable set of next actions.
+PJSDAS is a local-first personal job-search decision workspace. It is not primarily an application tracker. Its job is to turn opportunities, recruiting-process changes, shared application quotas, preparation work, deadlines, discovery history and available time into a small set of explainable next decisions and actions.
 
 ## Product principle
 
-**The system should help answer one question within 30 seconds: _What should I do next for my job search?_**
+> **The system should help answer one question within 30 seconds: _What should I do next for my job search?_**
 
-The spreadsheet is now an **initial import / recovery source**, not the daily source of truth. After the first import, the normal workflow is to tell PJSDAS what happened and what is planned in natural language; confirmed local updates become authoritative state.
+The spreadsheet is an initialization / recovery source, not the daily source of truth. The browser workspace is authoritative for day-to-day use, with optional Google Drive synchronization.
 
-## Current workspace
+PJSDAS follows one architectural rule throughout the product:
 
-- **Today** — a time-boxed plan that protects real deadlines instead of showing a generic score leaderboard
-- **Opportunities** — the role pool and dynamic application priority
-- **Pipeline** — recruiting-process state and dynamically recalculated review checkpoints
-- **Prep** — reusable preparation across multiple opportunities
-- **Timeline** — first-class chronological facts and audit history across applications, process events, actions, rule changes and data migrations
-- **Rules** — editable, persisted decision policy used by Today instead of hidden constants
-- **ChangeSet** — the single normalized mutation protocol used by natural-language updates and explicit product actions before state is changed
-- **Natural Language Update** — paste several days of job-search history and plans, review a structured diff, then apply additions, changes, closures and process events in one confirmation
-- **Import & Settings** — one-time or recovery-oriented local spreadsheet import with integrity checks
-- **Process Event capture** — precise manual fallback for one assessment, written test, interview, offer, rejection or other recruiting event
-- **Local backup** — export and restore the complete browser workspace as a validated JSON snapshot
+> **AI may read, explain and propose. PJSDAS owns state, policy, validation, ChangeSets and final mutation semantics.**
+
+No AI-facing tool directly applies arbitrary workspace mutations. AI write intent is normalized into a bounded ChangeSet, signed when it comes from the remote MCP gateway, and requires explicit local review before Apply.
+
+## Current product surfaces
+
+- **Today** — time-boxed next actions under available time, deadlines and fixed events.
+- **Opportunities** — the active role pool, Rich Opportunity facts and current assessment state.
+- **Pipeline** — effective recruiting stages, process events, waiting states and review checkpoints.
+- **Prep** — reusable preparation nodes whose leverage can span multiple opportunities.
+- **Discovery Inbox** — persistent intermediate state between “AI found this” and “this belongs in Opportunities”.
+- **Discovery Decision Workspace** — sorting, comparison, evidence completeness, risks, batch Later / Dismiss and explicit Promote preview.
+- **Discovery Radar** — Continuous Discovery history, incremental baseline, source coverage and posting refresh queue.
+- **Application Portfolio** — deterministic recommendations inside explicit shared-quota Application Groups; capacity is a ceiling, not a fill target.
+- **Prep Graph** — deterministic links from job requirements / explicit gaps / process needs to reusable Prep nodes and Today leverage.
+- **Timeline** — durable factual history and audit trail.
+- **Decision Rules** — explicit user-controlled policy for Today ranking, component assessment and portfolio decisions.
+- **Natural Language Update** — deterministic free-form progress parsing → structured review → ChangeSet → Apply.
+- **Import & Settings** — recovery-oriented spreadsheet import, Google Drive synchronization, AI access and local backup.
 
 ## Core model
 
-PJSDAS separates job-search state into nine concepts:
+PJSDAS currently separates the workspace into these main concepts:
 
-1. **Opportunity** — company/role and its value, fit, application deadline, application group, etc.
-2. **Process** — the effective recruiting stage for an opportunity.
-3. **Process Event** — a dated fact such as an assessment invitation, written-test notification, interview invitation, offer, rejection, or other real status update.
-4. **Action** — a concrete next move generated from an opportunity, application group, process checkpoint, process event, or preparation requirement.
-5. **Prep** — reusable work that can improve more than one opportunity.
-6. **Decision Rules** — explicit user-controlled policy for deadlines, planning limits, visibility horizons and ranking weights.
-7. **Timeline** — durable facts about what happened and how the workspace changed.
-8. **ChangeSet** — a reviewable set of normalized mutations with an ID, source and application status.
-9. **Today** — the constrained action plan produced by the decision engine under the user's available time.
-
-Imported spreadsheet data initializes the workspace. Once an Opportunity or Process is changed through Natural Language Update, it is marked as locally managed and is preserved across later spreadsheet re-imports. Local Process Events and local Actions are preserved as well. This makes the browser database, rather than the workbook, the ongoing source of truth.
+1. **Opportunity** — a job opportunity the user has decided belongs in the active workspace.
+2. **Job Posting** — one public source record supporting an Opportunity or Discovery Inbox item. Opportunity and Posting are deliberately different concepts.
+3. **Rich Opportunity Facts** — bounded, source-backed structured facts such as responsibilities, requirements, education, skills, location, application method and compensation evidence.
+4. **Opportunity Assessment** — AI-proposed component judgments kept separate from source facts.
+5. **Process** — the effective recruiting stage for an Opportunity.
+6. **Process Event** — a dated recruiting fact such as assessment, written test, interview, offer, rejection or status update.
+7. **Action** — a concrete next move.
+8. **Prep** — reusable preparation work.
+9. **Prep Graph** — derived links from Prep to current opportunities, gaps and process-preparation needs.
+10. **Application Group** — an explicit shared-quota / shared-preference constraint across roles.
+11. **Discovery Profile** — durable user-controlled job-discovery preferences. PJSDAS does not silently infer or rewrite this profile from chat history.
+12. **Discovery Inbox** — candidate jobs held before explicit promotion into Opportunities.
+13. **Discovery Run** — an auditable public-search / refresh pass used by Continuous Discovery.
+14. **Decision Rules** — explicit policy and weights.
+15. **Timeline** — factual workspace history.
+16. **ChangeSet** — the normalized review/apply mutation protocol.
+17. **Today** — the constrained plan produced from the current workspace and available time.
 
 ## Decision engine
 
-The current decision engine is deterministic and explainable. It combines opportunity value, fit, urgency, recruiting stage, action leverage, delay cost, and time efficiency, then applies operational guardrails:
+PJSDAS is deterministic after interpretation. AI may propose assessments, but PJSDAS owns aggregation and policy.
 
-- real application deadlines inside 48 hours cannot be crowded out by routine follow-ups;
-- overdue recruiting review checkpoints do not receive unlimited priority;
-- reusable Prep and follow-ups are capped inside Today;
-- shared application quotas are represented by one application-group decision instead of mutually conflicting role actions;
-- a newer real Process Event suppresses stale application/follow-up actions for the same role;
-- only the newest effective Process Event action remains active for one opportunity;
-- completed process actions move Pipeline into a waiting-for-result state instead of continuing to show the completed task;
-- overdue Process Event tasks leave the executable Today queue and move to a separate confirmation/recovery guard;
-- if the available-time budget cannot cover a hard deadline, PJSDAS reports the conflict rather than silently hiding the task.
+### Today ranking
 
-### Deadline work vs fixed-time events
+Today combines:
 
-Process Event timing has two explicit semantics:
+- Opportunity Value
+- Fit
+- urgency
+- recruiting stage
+- leverage
+- delay cost
+- time efficiency
 
-- **deadline** — work can be completed before the stated time, so a tomorrow-night assessment may legitimately be scheduled into today's available time;
-- **fixed** — the event can only happen at the stated time, so a tomorrow interview is shown as an upcoming fixed event but does not consume today's startable-work queue.
+and then applies operational guardrails. Real deadlines and fixed events use different timing semantics; overdue process-event work leaves the executable queue and enters recovery/confirmation instead of remaining falsely actionable.
 
-A fixed event happening today reserves daily capacity but is not presented as “Start here” hours before it begins. If either a fixed event or deadline-style Process Event passes without being resolved, PJSDAS removes it from startable work and asks the user to confirm completion or take recovery action instead of pretending the original task is still executable.
+### Component assessment
 
-## Natural Language Update workflow
+Fit is decomposed into bounded components such as:
 
-v0.8 makes free-form progress updates the primary maintenance path. A user can paste several lines such as application history, renamed roles, closed processes, assessment windows, interviews and planned applications. PJSDAS then:
+- role direction
+- skills
+- education
+- experience
+- industry
+- language
+- location
 
-1. splits dated history into individual update clauses;
-2. matches existing opportunities or creates new locally managed opportunities when the company/role can be determined safely;
-3. detects application, planned application, role rename, process closure and recruiting events;
-4. resolves relative windows such as “48小时完成” or “7日内” into concrete local deadlines;
-5. distinguishes deadline work from fixed-time events;
-6. converts executable changes into a persistent ChangeSet without storing the full raw input;
-7. shows the ChangeSet as a structured diff before any business-state write occurs;
-8. applies only the confirmed ChangeSet to Opportunities / Pipeline / Process Events / Actions and records the application in Timeline;
-9. leaves ambiguous clauses unresolved instead of guessing.
+Opportunity Value is decomposed into components such as:
 
-The original pasted text is used only to build the current review plan and is not stored by default. The parser is deterministic and local; it does not require an AI API.
+- company quality
+- role growth
+- compensation value
+- career optionality
+- brand value
+- industry growth
+- location value
 
-## Local-first architecture
+Each component carries a score, confidence and rationale. Missing components are not silently filled with neutral values. PJSDAS aggregates known components using explicit Decision Rules while keeping coverage / confidence separate from merit.
 
-- React + TypeScript + Vite
-- IndexedDB for personal data
-- local `.xlsx` parsing in the browser
-- GitHub repository contains application code, not the user's recruiting workbook or imported personal data
-- GitHub Pages deployment
-- Vitest decision/import/process-event/natural-language/snapshot regression suite in CI
+Historical stored aggregate scores are not silently rewritten when weights later change. The read layer can explicitly show the current-rules projection alongside the stored historical aggregate.
 
-Spreadsheet re-import preserves locally managed Opportunities and Processes, local Process Events, local natural-language Actions, and the completion/skip status of stable Actions. Import integrity checks run before destructive replacement so malformed future workbook versions fail closed.
+### Application Portfolio
 
-## Local backup and restore
+Inside an explicit Application Group, PJSDAS can recommend a portfolio of roles using Fit, Opportunity Value, role priority, deadline pressure, application efficiency, evidence confidence and pairwise overlap penalties.
 
-PJSDAS stores more state than the spreadsheet once Process Events, local opportunity changes and Action completion statuses exist. The versioned local snapshot contains the raw browser stores rather than derived views:
+A remaining quota is a **maximum**, not a target. PJSDAS may recommend fewer roles than the available slots when the marginal portfolio value is not high enough.
 
-- Opportunities
-- Processes
-- Process Events
-- Actions and their statuses
+## Discovery architecture
+
+PJSDAS itself does not run a public-web crawler. The AI client performs public web search; PJSDAS supplies durable preferences, current state, deterministic quality gates and review-only mutation semantics.
+
+### Discovery flow
+
+```text
+Discovery Profile
+→ get_discovery_context
+→ AI public-web search
+→ source-backed candidates
+→ component assessment + Rich Opportunity facts
+→ deterministic quality gate / dedup / suppression
+→ signed review
+→ Discovery Inbox or Opportunity
+→ Timeline / ChangeSet / Drive sync
+```
+
+### Discovery Inbox
+
+A discovered job does not have to become an Opportunity immediately. It can be explicitly saved to the Discovery Inbox with states:
+
+- `new`
+- `seen`
+- `later`
+- `dismissed`
+- `promoted`
+
+Dismissal feedback suppresses highly similar same-company jobs for a bounded period; promotion remains explicit.
+
+### Job identity and freshness
+
+Public postings have canonicalized source URLs, stable posting identities and freshness states:
+
+- `fresh`
+- `aging`
+- `stale`
+- `closed`
+- `unknown`
+
+Tracking parameters do not create duplicate posting identities. A new source URL can represent a replacement / re-post instead of overwriting source history.
+
+### Continuous Discovery — v1.7
+
+Discovery is no longer treated as a stateless full search every time. Durable Discovery Runs provide:
+
+- last-run baseline
+- `incrementalSince`
+- aggregate screening counts
+- source coverage
+- recent recorded queries when the client supplied them
+- a bounded posting refresh queue
+
+Normal discovery can therefore prefer new or materially updated postings after the last durable baseline instead of repeatedly searching the entire historical space.
+
+### Discovery Refresh Protocol — v1.7 Round 2
+
+Stale / aging / unknown sources can be re-verified through a review-only posting refresh protocol.
+
+The refresh target is bound to an exact:
+
+- owner kind
+- owner ID
+- posting ID
+- canonical source URL
+
+The server validates this baseline before signing a proposal, and the local Apply path validates it again before writing.
+
+A refresh may update same-source evidence such as posting status, verification time, source title, location, deadline or compensation evidence. A different canonical source is not allowed to overwrite the old posting; it must go through normal discovery / re-post semantics.
+
+**A public posting becoming closed does not automatically close the Opportunity or Process.** Source state and user/recruiting lifecycle state remain separate.
+
+A discovery pass with zero eligible candidates can also produce a review-only `record_discovery_run` ChangeSet. Applying it records the search as an auditable Run but creates no Opportunity or Action.
+
+## Prep Graph
+
+Prep Graph is derived state; it is not another persistent database.
+
+Deterministic links can come from:
+
+- explicit `Prep.triggeredBy`
+- explicit Process prep-pack relationships
+- structured requirements
+- explicit / assessment-backed gaps
+- active assessment / written-test / interview preparation needs
+
+Generic words or fuzzy semantic similarity do not silently create leverage edges.
+
+Existing Prep Actions can receive runtime-only leverage / urgency projection from the graph. Their stored historical Action records are not rewritten.
+
+## ChangeSet and audit boundary
+
+ChangeSet is the normalized mutation protocol across PJSDAS.
+
+Examples include:
+
+- normalized natural-language progress updates
+- Decision Rules changes
+- Process Event creation/deletion
+- Action status changes
+- discovered Opportunity additions
+- review-only posting refreshes
+- zero-result Discovery Run records
+
+Remote MCP proposals are bound to the exact workspace fingerprint / Drive checkpoint used when the proposal was created. The browser verifies the signed capability, expiry and local baseline before Apply.
+
+Opening a review link never mutates PJSDAS.
+
+## Local-first storage and sync
+
+- **React + TypeScript + Vite**
+- **IndexedDB** is the immediate local workspace.
+- **Google Drive `appDataFolder`** is the optional private cloud copy / synchronization target.
+- Workspace snapshots are validated before restore or remote replacement.
+- SHA-256 workspace fingerprints participate in conflict and proposal-baseline checks.
+- Drive synchronization is fail-closed on concurrent changes rather than silent last-write-wins.
+- Supabase is used for authenticated remote AI-access plumbing, not as the primary job-search database.
+
+Current snapshot schema remains **v1**. Newer derived layers such as Prep Graph and Continuous Discovery reuse existing persisted structures rather than multiplying stores unnecessarily.
+
+## AI / MCP gateway
+
+The authenticated MCP gateway exposes bounded semantic reads rather than raw database access. Current capabilities include:
+
+- Today plan
+- Opportunities and optional Rich facts
+- component-assessment explanation
+- application-portfolio decision
+- Prep Graph
+- Pipeline
+- Decision Rules
+- Discovery Context / Continuous Discovery state
+- deterministic priority explanation
+- recent Timeline
+- review-only ChangeSet proposals
+
+The remote gateway never directly applies workspace changes.
+
+## Natural Language Update
+
+Free-form progress updates remain a deterministic local maintenance path. PJSDAS can split dated clauses, match or create opportunities when safe, record applications and process events, resolve relative windows, distinguish deadline work from fixed events, and leave ambiguity unresolved instead of guessing.
+
+The original pasted text is not stored by default; only the normalized reviewed mutation is persisted.
+
+## Backup and recovery
+
+The local snapshot includes the authoritative persistent workspace, including:
+
+- Opportunities and source evidence
+- Processes / Process Events
+- Actions
 - Prep
 - Application Groups
 - Decision Rules
+- Discovery Profile / Discovery Inbox
 - Timeline
-- ChangeSets and their application status
-- last-import metadata
+- ChangeSets, including durable Discovery Run metadata
+- import metadata
 
-Restore is deliberately destructive but two-step: the selected JSON file is parsed and validated first, then the user explicitly confirms replacement. Unsupported versions, duplicate IDs, invalid dates, and broken references fail before any IndexedDB store is cleared. Historical Process Events may remain archived even if a later spreadsheet no longer contains the old opportunity; they are retained as facts but no longer affect current decisions.
+Restore validates schema, IDs, references and dates before destructive replacement.
 
-## Status
+## Current status
 
-**v0.9** makes PJSDAS's decision and mutation layers explicit. Decision Rules are persisted user-controlled data, Timeline is a first-class factual history, and ChangeSet is the unified review/apply protocol for normalized mutations. Natural-language updates no longer write business state directly: they stage a ChangeSet, the user reviews it, and only confirmation applies it. Explicit UI actions use the same protocol with the click/save action serving as confirmation. Excel remains initialization/history migration and recovery rather than the daily source of truth. Cloud sync, account login, MCP/ChatGPT integration and automatic job discovery remain outside v0.9.
+**Current architecture baseline: v1.7 + Discovery Refresh Protocol (Round 2).**
 
-## v1.0 account and Google Drive sync
+The main decision loop is now connected end to end:
 
-v1.0 keeps PJSDAS local-first. IndexedDB is still the immediate workspace used by the UI, and the application remains fully functional without cloud configuration, while offline, or after Google authorization expires.
+```text
+public discovery
+→ posting identity / freshness
+→ Discovery Inbox
+→ Rich Opportunity facts
+→ component assessment
+→ application-portfolio decision
+→ Prep Graph
+→ Today
+→ Continuous Discovery
+→ review-only source refresh
+```
 
-Optional synchronization uses **Google Identity Services + Google Drive `appDataFolder`** rather than a PJSDAS-owned user database. After the user explicitly connects a Google account, PJSDAS can create one hidden `pjsdas-workspace.json` file in that account's application-data folder. The requested `drive.appdata` permission is limited to PJSDAS application data and does not allow the app to browse ordinary Drive files.
+The next product phase should prioritize **surface consolidation and day-to-day product experience**, not another large expansion of backend decision concepts. PJSDAS already has enough decision primitives; the next risk is allowing the UI to become a collection of expert dashboards rather than a fast personal workflow.
 
-The Drive file stores a validated PJSDAS snapshot plus a SHA-256 workspace fingerprint and device metadata. Google Drive's monotonically increasing file `version` is the remote synchronization checkpoint. Only-local changes push, only-Drive changes pull, and concurrent local/Drive changes fail closed into an explicit conflict instead of silently using last-write-wins.
+## Development
 
-The Google access token is kept only in page memory and is never persisted to IndexedDB or localStorage. v1.0 has no refresh-token backend, so a reload or expired authorization can require the user to reconnect Google; local PJSDAS functionality never depends on that authorization.
+```bash
+npm ci
+npm test
+npm run build
+npm run dev
+```
 
-The first successful sync binds the current browser workspace to that Google account. Connecting a different Google account pauses synchronization rather than silently uploading another user's local job-search data.
+CI runs dependency auditing, the Vitest regression suite and the TypeScript/Vite production build.
 
-See `docs/CLOUD_SETUP.md` for the one-time Google Cloud OAuth and Drive API setup. The public build reads only `VITE_GOOGLE_CLIENT_ID`; no OAuth client secret or server credential belongs in the frontend.
+Design / architecture notes for recent rounds live under `docs/`, including:
+
+- `V1_6_ROUND_1_APPLICATION_PORTFOLIO.md`
+- `V1_6_ROUND_2_PREP_GRAPH.md`
+- `V1_7_CONTINUOUS_DISCOVERY.md`
+- `V1_7_ROUND_2_DISCOVERY_REFRESH_PROTOCOL.md`
