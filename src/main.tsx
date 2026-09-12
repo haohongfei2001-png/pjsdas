@@ -10,6 +10,7 @@ import OAuthConsentPage from './aiAccess/OAuthConsentPage.js'
 import './styles.css'
 import './designSystem.css'
 import './visualPolish.css'
+import './usabilityFriction.css'
 
 function Root() {
   const [revision, setRevision] = useState(0)

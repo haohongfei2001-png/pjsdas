@@ -14,6 +14,7 @@ import {
   getLastImport,
   replaceImportedData,
 } from './db.js'
+import { getAllDiscoveryInboxItems } from './discoveryInboxStore.js'
 import {
   buildTimePlan,
   computePriority,
@@ -54,6 +55,7 @@ import './interactionDetail.css'
 
 type Surface = 'today' | 'decide' | 'prepare' | 'history' | 'settings'
 type DecideTab = 'review' | 'opportunities' | 'pipeline'
+type CompletionFeedback = { id: string; title: string; previousStatus: Action['status']; error?: string }
 
 const surfaceLabels: Record<Surface, { zh: string; en: string; hintZh: string; hintEn: string }> = {
   today: { zh: '今天', en: 'Today', hintZh: '做什么', hintEn: 'Act' },
@@ -86,7 +88,10 @@ export default function AppV8() {
   const zh = lang === 'zh'
   const [surface, setSurface] = useState<Surface>('today')
   const [decideTab, setDecideTab] = useState<DecideTab>('review')
+  const [decideTabExplicit, setDecideTabExplicit] = useState(false)
+  const [discoveryReviewCount, setDiscoveryReviewCount] = useState(0)
   const [selectedOpportunityId, setSelectedOpportunityId] = useState<string>()
+  const [lastCompletedAction, setLastCompletedAction] = useState<CompletionFeedback | null>(null)
   const [opportunities, setOpportunities] = useState<Opportunity[]>([])
   const [actions, setActions] = useState<Action[]>([])
   const [processes, setProcesses] = useState<ProcessRecord[]>([])
@@ -100,9 +105,9 @@ export default function AppV8() {
   const [now, setNow] = useState(() => new Date())
 
   async function reload() {
-    const [nextOpportunities, nextActions, nextProcesses, nextPrep, nextGroups, nextRules, nextTimeline, nextChangeSets, nextImport] = await Promise.all([
+    const [nextOpportunities, nextActions, nextProcesses, nextPrep, nextGroups, nextRules, nextTimeline, nextChangeSets, nextImport, nextDiscoveryInbox] = await Promise.all([
       getAllOpportunities(), getAllActions(), getAllProcesses(), getAllPrep(), getAllApplicationGroups(),
-      getDecisionRules(), getAllTimelineRecords(), getAllChangeSets(), getLastImport(),
+      getDecisionRules(), getAllTimelineRecords(), getAllChangeSets(), getLastImport(), getAllDiscoveryInboxItems(),
     ])
     setOpportunities(nextOpportunities)
     setActions(nextActions)
@@ -113,6 +118,7 @@ export default function AppV8() {
     setTimeline(nextTimeline)
     setChangeSets(nextChangeSets)
     setLastImport(nextImport)
+    setDiscoveryReviewCount(nextDiscoveryInbox.filter((item) => item.status === 'new' || item.status === 'later' || item.status === 'seen').length)
   }
 
   useEffect(() => { void reload().finally(() => setLoading(false)) }, [])
@@ -125,8 +131,21 @@ export default function AppV8() {
       window.removeEventListener('pjsdas:workspace-replaced', refresh)
     }
   }, [])
+  useEffect(() => {
+    if (!lastCompletedAction) return
+    const timer = window.setTimeout(() => setLastCompletedAction(null), 8_000)
+    return () => window.clearTimeout(timer)
+  }, [lastCompletedAction])
+  useEffect(() => {
+    if (loading || decideTabExplicit) return
+    const hasPipeline = processes.some((item) => ['screening', 'assessment', 'written_test', 'interview', 'offer'].includes(item.stage))
+    const hasOpportunities = opportunities.some((item) => item.processStage !== 'closed')
+    const nextTab: DecideTab = discoveryReviewCount > 0 ? 'review' : hasPipeline ? 'pipeline' : hasOpportunities ? 'opportunities' : 'review'
+    setDecideTab(nextTab)
+  }, [loading, decideTabExplicit, discoveryReviewCount, processes, opportunities])
 
   const ranked = useMemo(() => rankActions(actions, opportunities, now, rules), [actions, opportunities, now, rules])
+  const workspaceEmpty = opportunities.length === 0 && actions.length === 0 && processes.length === 0 && prep.length === 0
   const selectedOpportunity = selectedOpportunityId ? opportunities.find((item) => item.id === selectedOpportunityId) : undefined
   const selectedProcess = selectedOpportunity
     ? processes.find((item) => item.opportunityId === selectedOpportunity.id)
@@ -143,8 +162,24 @@ export default function AppV8() {
     : []
 
   async function markAction(id: string, status: Action['status']) {
+    const before = actions.find((item) => item.id === id)
     await applyActionStatusChangeSet(id, status)
     await reload()
+    if (status === 'done' && before && before.status !== 'done') {
+      setLastCompletedAction({ id: before.id, title: before.title, previousStatus: before.status })
+    } else if (lastCompletedAction?.id === id) setLastCompletedAction(null)
+  }
+
+  async function undoLastCompletion() {
+    const item = lastCompletedAction
+    if (!item) return
+    try {
+      await applyActionStatusChangeSet(item.id, item.previousStatus)
+      await reload()
+      setLastCompletedAction(null)
+    } catch (caught) {
+      setLastCompletedAction({ ...item, error: caught instanceof Error ? caught.message : String(caught) })
+    }
   }
 
   async function applyPendingChangeSet(id: string) {
@@ -157,15 +192,32 @@ export default function AppV8() {
     await reload()
   }
 
+  function chooseDecideTab(tab: DecideTab) {
+    setDecideTabExplicit(true)
+    setDecideTab(tab)
+  }
+
+  function navigateFromStart(destination: 'review' | 'settings') {
+    if (destination === 'review') {
+      setSurface('decide')
+      setDecideTabExplicit(true)
+      setDecideTab('review')
+      return
+    }
+    setSurface('settings')
+  }
+
   function navigateFromDetail(destination: OpportunityDetailDestination) {
     if (destination === 'today') setSurface('today')
     if (destination === 'prepare') setSurface('prepare')
     if (destination === 'opportunities') {
       setSurface('decide')
+      setDecideTabExplicit(true)
       setDecideTab('opportunities')
     }
     if (destination === 'pipeline') {
       setSurface('decide')
+      setDecideTabExplicit(true)
       setDecideTab('pipeline')
     }
     setSelectedOpportunityId(undefined)
@@ -199,10 +251,10 @@ export default function AppV8() {
       <main className="main-panel surface-main">
         {loading ? <div className="empty-card">{zh ? '正在读取本地工作区…' : 'Loading local workspace…'}</div> : null}
         {!loading && surface === 'today' ? (
-          <TodaySurface ranked={ranked} now={now} opportunities={opportunities} groups={groups} rules={rules} onMark={markAction} onChanged={reload} onOpenOpportunity={setSelectedOpportunityId} />
+          <TodaySurface ranked={ranked} now={now} opportunities={opportunities} groups={groups} rules={rules} workspaceEmpty={workspaceEmpty} onStart={navigateFromStart} onMark={markAction} onChanged={reload} onOpenOpportunity={setSelectedOpportunityId} />
         ) : null}
         {!loading && surface === 'decide' ? (
-          <DecideSurface opportunities={opportunities} groups={groups} processes={processes} tab={decideTab} onTabChange={setDecideTab} onOpenOpportunity={setSelectedOpportunityId} />
+          <DecideSurface opportunities={opportunities} groups={groups} processes={processes} reviewCount={discoveryReviewCount} tab={decideTab} onTabChange={chooseDecideTab} onOpenOpportunity={setSelectedOpportunityId} />
         ) : null}
         {!loading && surface === 'prepare' ? <PrepareSurface prep={prep} /> : null}
         {!loading && surface === 'history' ? (
@@ -222,16 +274,28 @@ export default function AppV8() {
           onNavigate={navigateFromDetail}
         />
       ) : null}
+
+      {lastCompletedAction ? (
+        <div className="action-undo-toast" role="status" aria-live="polite">
+          <div>
+            <strong>{lastCompletedAction.error ? (zh ? '撤销未完成' : 'Undo did not complete') : (zh ? '已标记完成' : 'Marked done')}</strong>
+            <span>{lastCompletedAction.error ?? lastCompletedAction.title}</span>
+          </div>
+          <button type="button" onClick={() => { void undoLastCompletion() }}>{zh ? '撤销' : 'Undo'}</button>
+        </div>
+      ) : null}
     </div>
   )
 }
 
-function TodaySurface({ ranked, now, opportunities, groups, rules, onMark, onChanged, onOpenOpportunity }: {
+function TodaySurface({ ranked, now, opportunities, groups, rules, workspaceEmpty, onStart, onMark, onChanged, onOpenOpportunity }: {
   ranked: ReturnType<typeof rankActions>
   now: Date
   opportunities: Opportunity[]
   groups: ApplicationGroup[]
   rules: DecisionRules
+  workspaceEmpty: boolean
+  onStart: (destination: 'review' | 'settings') => void
   onMark: (id: string, status: Action['status']) => Promise<void>
   onChanged: () => Promise<void>
   onOpenOpportunity: (id: string) => void
@@ -269,52 +333,57 @@ function TodaySurface({ ranked, now, opportunities, groups, rules, onMark, onCha
             </div>
           </div>
         </article>
-      ) : <EmptyState title={zh ? '今天没有可执行行动' : 'No executable action today'} text={zh ? '如果刚收到邮件或完成了投递，用上方“快速记录”更新工作区。' : 'If something just changed, use Quick capture above to update the workspace.'} />}
+      ) : workspaceEmpty ? (
+        <GettingStartedCard onStart={onStart} />
+      ) : <EmptyState title={zh ? '今天没有可执行行动' : 'No executable action today'} text={zh ? '如果刚收到邮件或完成了投递，用“快速记录”更新工作区。' : 'If something just changed, use Quick capture to update the workspace.'} />}
 
-      <div className="surface-two-column">
-        <section className="surface-panel">
-          <div className="surface-panel-head"><div><div className="eyebrow">TIME-BOXED PLAN</div><h2>{zh ? '今日行动' : 'Today plan'}</h2></div><span>{formatMinutes(plan.totalMinutes)} / {formatMinutes(plan.budgetMinutes)}</span></div>
-          <div className="budget-options compact-budget-options">{[60, 180, 360].map((value) => <button key={value} className={budgetMinutes === value ? 'budget-chip active' : 'budget-chip'} onClick={() => setBudgetMinutes(value)}>{formatMinutes(value)}</button>)}</div>
-          {plan.planned.length ? (
-            <div className="surface-action-list">
-              {plan.planned.map((item, index) => {
-                const opportunity = item.action.opportunityId ? opportunityMap.get(item.action.opportunityId) : undefined
-                const group = item.action.applicationGroupId ? groupMap.get(item.action.applicationGroupId) : undefined
-                return (
-                  <article className="surface-action-row" key={item.action.id}>
-                    <span className="surface-rank">{index + 1}</span>
-                    <div><strong>{item.action.title}</strong><small>{opportunity ? `${roleLabels[opportunity.roleType][zh ? 0 : 1]} · ${item.reasons.join(' · ')}` : group ? group.rule ?? group.id : item.reasons.join(' · ')}</small></div>
-                    <div className="surface-action-controls">
-                      {opportunity ? <button className="text-button" onClick={() => onOpenOpportunity(opportunity.id)}>{zh ? '详情' : 'Details'}</button> : null}
-                      <button className="text-button" onClick={() => { void onMark(item.action.id, 'done') }}>{zh ? '完成' : 'Done'}</button>
-                    </div>
-                  </article>
-                )
-              })}
-            </div>
-          ) : <p className="surface-muted">{zh ? '当前预算内没有可执行任务。' : 'No executable task fits the current budget.'}</p>}
-        </section>
+      {!workspaceEmpty ? (
+        <div className="surface-two-column">
+          <section className="surface-panel">
+            <div className="surface-panel-head"><div><div className="eyebrow">TIME-BOXED PLAN</div><h2>{zh ? '今日行动' : 'Today plan'}</h2></div><span>{formatMinutes(plan.totalMinutes)} / {formatMinutes(plan.budgetMinutes)}</span></div>
+            <div className="budget-options compact-budget-options">{[60, 180, 360].map((value) => <button key={value} className={budgetMinutes === value ? 'budget-chip active' : 'budget-chip'} onClick={() => setBudgetMinutes(value)}>{formatMinutes(value)}</button>)}</div>
+            {plan.planned.length ? (
+              <div className="surface-action-list">
+                {plan.planned.map((item, index) => {
+                  const opportunity = item.action.opportunityId ? opportunityMap.get(item.action.opportunityId) : undefined
+                  const group = item.action.applicationGroupId ? groupMap.get(item.action.applicationGroupId) : undefined
+                  return (
+                    <article className="surface-action-row" key={item.action.id}>
+                      <span className="surface-rank">{index + 1}</span>
+                      <div><strong>{item.action.title}</strong><small>{opportunity ? `${roleLabels[opportunity.roleType][zh ? 0 : 1]} · ${item.reasons.join(' · ')}` : group ? group.rule ?? group.id : item.reasons.join(' · ')}</small></div>
+                      <div className="surface-action-controls">
+                        {opportunity ? <button className="text-button" onClick={() => onOpenOpportunity(opportunity.id)}>{zh ? '详情' : 'Details'}</button> : null}
+                        <button className="text-button" onClick={() => { void onMark(item.action.id, 'done') }}>{zh ? '完成' : 'Done'}</button>
+                      </div>
+                    </article>
+                  )
+                })}
+              </div>
+            ) : <p className="surface-muted">{zh ? '当前预算内没有可执行任务。' : 'No executable task fits the current budget.'}</p>}
+          </section>
 
-        <section className="surface-panel">
-          <div className="surface-panel-head"><div><div className="eyebrow">UPCOMING</div><h2>{zh ? '近期节点' : 'Upcoming nodes'}</h2></div><span>{upcoming.length}</span></div>
-          {upcoming.length ? <div className="surface-upcoming-list">{upcoming.map((item) => (
-            <article key={item.action.id}>
-              <div><strong>{item.action.title}</strong><small>{item.action.dueAt ? formatDateTime(item.action.dueAt) : '—'}</small></div>
-              <div className="surface-upcoming-actions">{item.action.opportunityId ? <button className="text-button" onClick={() => onOpenOpportunity(item.action.opportunityId!)}>{zh ? '岗位' : 'Job'}</button> : null}{item.action.dueAt ? <TimeRiskBadge action={item.action} now={now} rules={rules} compact /> : null}</div>
-            </article>
-          ))}</div> : <p className="surface-muted">{zh ? '近期没有已知固定节点或硬截止。' : 'No known fixed event or hard deadline is near.'}</p>}
-        </section>
-      </div>
+          <section className="surface-panel">
+            <div className="surface-panel-head"><div><div className="eyebrow">UPCOMING</div><h2>{zh ? '近期节点' : 'Upcoming nodes'}</h2></div><span>{upcoming.length}</span></div>
+            {upcoming.length ? <div className="surface-upcoming-list">{upcoming.map((item) => (
+              <article key={item.action.id}>
+                <div><strong>{item.action.title}</strong><small>{item.action.dueAt ? formatDateTime(item.action.dueAt) : '—'}</small></div>
+                <div className="surface-upcoming-actions">{item.action.opportunityId ? <button className="text-button" onClick={() => onOpenOpportunity(item.action.opportunityId!)}>{zh ? '岗位' : 'Job'}</button> : null}{item.action.dueAt ? <TimeRiskBadge action={item.action} now={now} rules={rules} compact /> : null}</div>
+              </article>
+            ))}</div> : <p className="surface-muted">{zh ? '近期没有已知固定节点或硬截止。' : 'No known fixed event or hard deadline is near.'}</p>}
+          </section>
+        </div>
+      ) : null}
 
-      {plan.overrunReason ? <div className="surface-warning">{zh ? '当前可用时间不足以完整覆盖已知硬约束；PJSDAS 保留这些任务，不会为了让计划看起来可完成而隐藏它们。' : 'Current available time cannot cover every known hard constraint. PJSDAS keeps those tasks visible rather than pretending the plan fits.'}</div> : null}
+      {!workspaceEmpty && plan.overrunReason ? <div className="surface-warning">{zh ? '当前可用时间不足以完整覆盖已知硬约束；PJSDAS 保留这些任务，不会为了让计划看起来可完成而隐藏它们。' : 'Current available time cannot cover every known hard constraint. PJSDAS keeps those tasks visible rather than pretending the plan fits.'}</div> : null}
     </section>
   )
 }
 
-function DecideSurface({ opportunities, groups, processes, tab, onTabChange, onOpenOpportunity }: {
+function DecideSurface({ opportunities, groups, processes, reviewCount, tab, onTabChange, onOpenOpportunity }: {
   opportunities: Opportunity[]
   groups: ApplicationGroup[]
   processes: ProcessRecord[]
+  reviewCount: number
   tab: DecideTab
   onTabChange: (tab: DecideTab) => void
   onOpenOpportunity: (id: string) => void
@@ -329,7 +398,7 @@ function DecideSurface({ opportunities, groups, processes, tab, onTabChange, onO
       <SurfaceHeader eyebrow="DECIDE" title={zh ? '决定哪些机会值得占用你的时间' : 'Decide which opportunities deserve your time'} text={zh ? '发现、岗位池和在途流程不再是三个彼此割裂的产品入口，而是同一条决策链。' : 'Discovery, the opportunity pool, and recruiting pipeline now live in one decision flow.'} />
 
       <div className="surface-context-tabs" role="tablist">
-        <button className={tab === 'review' ? 'active' : ''} onClick={() => onTabChange('review')}><span>{zh ? '发现与审阅' : 'Discover & review'}</span><small>{zh ? '新候选' : 'New candidates'}</small></button>
+        <button className={tab === 'review' ? 'active' : ''} onClick={() => onTabChange('review')}><span>{zh ? '发现与审阅' : 'Discover & review'}</span><small>{reviewCount} {zh ? '待处理' : 'to review'}</small></button>
         <button className={tab === 'opportunities' ? 'active' : ''} onClick={() => onTabChange('opportunities')}><span>{zh ? '机会池' : 'Opportunities'}</span><small>{active} {zh ? '活跃' : 'active'}</small></button>
         <button className={tab === 'pipeline' ? 'active' : ''} onClick={() => onTabChange('pipeline')}><span>{zh ? '在途流程' : 'Pipeline'}</span><small>{inPipeline} {zh ? '在途' : 'in progress'}</small></button>
       </div>
@@ -453,6 +522,22 @@ function SettingsSurface({ lastImport, rules, onChanged }: { lastImport?: Import
 
 function SurfaceHeader({ eyebrow, title, text }: { eyebrow: string; title: string; text: string }) {
   return <header className="surface-header"><div className="eyebrow">{eyebrow}</div><h1>{title}</h1><p>{text}</p></header>
+}
+
+function GettingStartedCard({ onStart }: { onStart: (destination: 'review' | 'settings') => void }) {
+  const { lang } = useUiLanguage()
+  const zh = lang === 'zh'
+  return (
+    <article className="usability-start-card">
+      <div className="eyebrow">START PJSDAS</div>
+      <h2>{zh ? '先让工作区有第一批真实机会' : 'Start with real opportunities'}</h2>
+      <p>{zh ? '当前工作区还是空的。你可以先让 ChatGPT 发现适合的岗位并进入审阅，也可以从 Settings 导入已有求职表；PJSDAS 不需要你先配置完整系统。' : 'The workspace is empty. Start by reviewing jobs discovered with ChatGPT, or import an existing job-search workbook from Settings. You do not need to configure the whole system first.'}</p>
+      <div className="usability-start-actions">
+        <button className="primary-button" type="button" onClick={() => onStart('review')}>{zh ? '去发现与审阅' : 'Discover & review'}</button>
+        <button className="secondary-button" type="button" onClick={() => onStart('settings')}>{zh ? '导入已有数据' : 'Import existing data'}</button>
+      </div>
+    </article>
+  )
 }
 
 function EmptyState({ title, text }: { title: string; text: string }) {
