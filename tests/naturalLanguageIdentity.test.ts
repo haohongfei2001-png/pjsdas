@@ -1,8 +1,11 @@
 import { describe, expect, it } from 'vitest'
+import { createJobPostingEvidence } from '../src/jobPosting.js'
 import { parseProgressUpdate, type CanonicalJobReference } from '../src/progressUpdate.js'
 import type { Opportunity } from '../src/model.js'
 
 function opportunity(id: string, company: string, role: string, sourceBacked = true): Opportunity {
+  const observedAt = '2026-09-10T00:00:00.000Z'
+  const sourceUrl = `https://careers.example.com/${id}`
   return {
     id,
     company,
@@ -15,15 +18,16 @@ function opportunity(id: string, company: string, role: string, sourceBacked = t
     fitScore: 70,
     detail: sourceBacked ? {
       discovery: {
-        sourceUrl: `https://careers.example.com/${id}`,
+        sourceUrl,
         sourceTitle: role,
         rationale: 'test source',
-        discoveredAt: '2026-09-10T00:00:00.000Z',
+        discoveredAt: observedAt,
         fitConfidence: 'high',
         opportunityValueConfidence: 'high',
+        posting: createJobPostingEvidence({ company, role, sourceUrl, sourceTitle: role, observedAt }),
       },
     } : undefined,
-    importedAt: '2026-09-10T00:00:00.000Z',
+    importedAt: observedAt,
   }
 }
 
@@ -92,8 +96,19 @@ describe('natural-language opportunity identity guard', () => {
 
     expect(plan.executable).toHaveLength(0)
     expect(plan.unresolved).toHaveLength(1)
-    expect(plan.unresolved[0]?.reason).toContain('没有官网/来源证据')
+    expect(plan.unresolved[0]?.reason).toContain('Job Posting identity')
     expect(plan.unresolved[0]?.candidates?.[0]?.id).toBe('legacy-strategy')
+  })
+
+  it('does not treat a source URL as title proof after the stored role drifts away from its original posting identity', () => {
+    const existing = opportunity('drifted-ai-pm', '甲公司', 'AI产品经理培训生')
+    existing.role = 'AI产品经理'
+    const plan = parseProgressUpdate('投递 甲公司AI产品经理。', [existing], now)
+
+    expect(plan.executable).toHaveLength(0)
+    expect(plan.unresolved).toHaveLength(1)
+    expect(plan.unresolved[0]?.reason).toContain('Job Posting identity')
+    expect(plan.unresolved[0]?.candidates?.[0]?.id).toBe('drifted-ai-pm')
   })
 
   it('uses a source-backed reference to normalize a legacy Opportunity while preserving its ID', () => {
