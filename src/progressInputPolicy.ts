@@ -234,17 +234,19 @@ function identityUnresolved(
   }
 }
 
-/** User-entered role text is an alias; canonical role names come from existing or source-backed job records. */
+/** User-entered role text is an alias; canonical role names come only from source-backed job records. */
 function repairOpportunityIdentities(
   plan: ProgressUpdatePlan,
   currentOpportunities: Opportunity[],
   canonicalReferences: CanonicalJobReference[],
 ): ProgressUpdatePlan {
   const currentReferences = workspaceReferences(currentOpportunities)
+  const sourceBackedCurrentReferences = currentReferences.filter((item) => item.sourceBacked)
   const officialReferences = canonicalReferences.map((item) => ({ ...item, sourceBacked: item.sourceBacked ?? true }))
   const operations: ProgressOperation[] = plan.operations.map((operation) => {
     if (operation.kind !== 'upsert_opportunity') return operation
     const existing = resolveReferences(operation.company, operation.role, currentReferences)
+    const sourceBackedExisting = resolveReferences(operation.company, operation.role, sourceBackedCurrentReferences)
     const official = resolveReferences(operation.company, operation.role, officialReferences)
     if (official.kind === 'ambiguous') {
       return identityUnresolved(operation, '官网/来源候选中存在多个相近岗位；本次不会用手输简称直接创建或合并。', official.candidates)
@@ -261,15 +263,31 @@ function repairOpportunityIdentities(
           : official.reference.opportunityId
       return { ...operation, opportunityId, company: official.reference.company, role: official.reference.role, confidence: 'high' }
     }
+    if (sourceBackedExisting.kind === 'ambiguous') {
+      return identityUnresolved(operation, '检测到多个来源支持的相近现有岗位；为避免错误合并，本次不自动选择。', sourceBackedExisting.candidates)
+    }
+    if (sourceBackedExisting.kind === 'match') {
+      return {
+        ...operation,
+        opportunityId: sourceBackedExisting.reference.opportunityId,
+        company: sourceBackedExisting.reference.company,
+        role: sourceBackedExisting.reference.role,
+        confidence: 'high',
+      }
+    }
     if (existing.kind === 'match') {
-      return { ...operation, opportunityId: existing.reference.opportunityId, company: existing.reference.company, role: existing.reference.role, confidence: 'high' }
+      return identityUnresolved(
+        operation,
+        '检测到相似的历史 Opportunity，但它没有官网/来源证据，不能继续充当 canonical 岗位名。请先用岗位发现或官网来源确认统一岗位名；确认后会沿用原 Opportunity ID，而不是创建第二个岗位。',
+        [existing],
+      )
     }
     if (existing.kind === 'ambiguous') {
-      return identityUnresolved(operation, '检测到多个高度相似的现有岗位；为避免重复或错误合并，本次不自动新建。', existing.candidates)
+      return identityUnresolved(operation, '检测到多个高度相似的历史岗位，且缺少足够来源证据；为避免重复或错误合并，本次不自动新建。', existing.candidates)
     }
     return identityUnresolved(
       operation,
-      '未找到已存在或官网来源支持的统一岗位名；手输岗位名只作为别名，不会直接创建第二个 Opportunity。请先让岗位发现/官网来源建立 canonical 岗位。',
+      '未找到官网/来源支持的统一岗位名；手输岗位名只作为别名，不会直接创建第二个 Opportunity。请先让岗位发现/官网来源建立 canonical 岗位。',
     )
   })
   return rebuildPlan(operations)
