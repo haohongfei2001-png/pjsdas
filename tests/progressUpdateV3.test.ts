@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { createJobPostingEvidence } from '../src/jobPosting.js'
 import { parseProgressUpdate, type CanonicalJobReference } from '../src/progressUpdate.js'
 import type { Opportunity } from '../src/model.js'
 
@@ -8,6 +9,8 @@ function opportunity(
   role: string,
   stage: Opportunity['processStage'] = 'screening',
 ): Opportunity {
+  const observedAt = '2026-09-01T00:00:00.000Z'
+  const sourceUrl = `https://careers.example.com/${id}`
   return {
     id,
     company,
@@ -20,15 +23,16 @@ function opportunity(
     fitScore: 70,
     detail: {
       discovery: {
-        sourceUrl: `https://careers.example.com/${id}`,
+        sourceUrl,
         sourceTitle: role,
         rationale: 'test source',
-        discoveredAt: '2026-09-01T00:00:00.000Z',
+        discoveredAt: observedAt,
         fitConfidence: 'high',
         opportunityValueConfidence: 'high',
+        posting: createJobPostingEvidence({ company, role, sourceUrl, sourceTitle: role, observedAt }),
       },
     },
-    importedAt: '2026-09-01T00:00:00.000Z',
+    importedAt: observedAt,
   }
 }
 
