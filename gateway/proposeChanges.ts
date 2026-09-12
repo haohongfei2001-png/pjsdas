@@ -21,13 +21,15 @@ import {
 } from '../src/decisionRules.js'
 import { discoveryProfileForSnapshot, isDiscoveryProfileConfigured } from '../src/discoveryProfile.js'
 import { screenDiscoveryCandidates } from '../src/discoveryQuality.js'
-import { createJobPostingEvidence } from '../src/jobPosting.js'
+import { createDiscoveryRunRecord, type DiscoveryRunRecord } from '../src/discoveryRun.js'
+import { canonicalizeJobSourceUrl, createJobPostingEvidence } from '../src/jobPosting.js'
 import {
   assessmentWarnings,
   createOpportunityAssessment,
   scoreOpportunityAssessment,
   validateOpportunityAssessment,
 } from '../src/opportunityAssessment.js'
+import { resolvePostingRefreshTarget } from '../src/postingRefresh.js'
 import { createOpportunityFacts, validateOpportunityFacts } from '../src/richOpportunity.js'
 import { buildMcpProposalReviewUrl, type McpDiscoveryReview } from '../src/ai/mcpProposal.js'
 import { parseProgressUpdate } from '../src/progressUpdate.js'
@@ -96,6 +98,7 @@ const actionStatusChangeSchema = z.object({
 const discoveryConfidenceSchema = z.enum(['high', 'medium', 'low'])
 const opportunityRoleSchema = z.enum(['core', 'backup', 'reach', 'lottery', 'practice'])
 const postingStatusSchema = z.enum(['open', 'closed', 'unknown'])
+const discoveryRunModeSchema = z.enum(['ad_hoc', 'full', 'incremental', 'refresh'])
 
 function validDateString(value: string) {
   return !Number.isNaN(new Date(value).getTime())
@@ -111,6 +114,13 @@ function publicHttpUrl(value: string) {
     return false
   }
 }
+
+const discoveryRunContextSchema = z.object({
+  mode: discoveryRunModeSchema.optional(),
+  startedAt: z.string().trim().refine(validDateString, 'startedAt must be a valid date/time.').optional(),
+  queries: z.array(z.string().trim().min(1).max(240)).max(20).optional(),
+  searchedSourceHosts: z.array(z.string().trim().min(1).max(253)).max(32).optional(),
+}).strict()
 
 const richFactsSchema = z.object({
   department: z.string().trim().min(1).max(200).optional(),
@@ -189,25 +199,50 @@ const discoveredOpportunitySchema = z.object({
   }
 })
 
+const postingRefreshSchema = z.object({
+  ownerKind: z.enum(['opportunity', 'inbox']),
+  ownerId: z.string().trim().min(1).max(240),
+  postingId: z.string().trim().min(1).max(240),
+  canonicalSourceUrl: z.string().trim().min(1).max(2_000).refine(publicHttpUrl, 'canonicalSourceUrl must be a public http(s) URL.'),
+  sourceUrl: z.string().trim().min(1).max(2_000).refine(publicHttpUrl, 'sourceUrl must be a public http(s) URL.'),
+  sourceTitle: z.string().trim().min(1).max(300),
+  postingStatus: postingStatusSchema,
+  observedAt: z.string().trim().refine(validDateString, 'observedAt must be a valid date/time.').optional(),
+  location: z.string().trim().min(1).max(240).optional(),
+  deadline: z.string().trim().refine(validDateString, 'deadline must be a valid date/time.').optional(),
+  compensationText: z.string().trim().min(1).max(500).optional(),
+}).strict()
+
 export const proposeChangesSchema = z.object({
   title: z.string().trim().min(1).max(120).optional(),
   progressText: z.string().trim().min(1).max(4000).optional(),
   actionStatusChanges: z.array(actionStatusChangeSchema).max(20).optional(),
   decisionRulesPatch: rulesPatchSchema.optional(),
   discoveredOpportunities: z.array(discoveredOpportunitySchema).min(1).max(20).optional(),
+  postingRefreshes: z.array(postingRefreshSchema).min(1).max(20).optional(),
+  discoveryRunContext: discoveryRunContextSchema.optional(),
 }).refine(
   (value) => Boolean(
     value.progressText ||
     value.actionStatusChanges?.length ||
     value.decisionRulesPatch ||
-    value.discoveredOpportunities?.length,
+    value.discoveredOpportunities?.length ||
+    value.postingRefreshes?.length,
   ),
   { message: 'At least one proposed change is required.' },
 ).refine(
   (value) => !value.discoveredOpportunities?.length || !(
-    value.progressText || value.actionStatusChanges?.length || value.decisionRulesPatch
+    value.progressText || value.actionStatusChanges?.length || value.decisionRulesPatch || value.postingRefreshes?.length
   ),
   { message: 'Discovered opportunities must be reviewed in their own ChangeSet instead of being mixed with other changes.' },
+).refine(
+  (value) => !value.postingRefreshes?.length || !(
+    value.progressText || value.actionStatusChanges?.length || value.decisionRulesPatch || value.discoveredOpportunities?.length
+  ),
+  { message: 'Posting refreshes must be reviewed in their own ChangeSet instead of being mixed with other changes.' },
+).refine(
+  (value) => !value.discoveryRunContext || Boolean(value.discoveredOpportunities?.length || value.postingRefreshes?.length),
+  { message: 'discoveryRunContext is only valid for discovery or posting-refresh proposals.' },
 )
 
 export type ProposeChangesInput = z.infer<typeof proposeChangesSchema>
@@ -334,6 +369,7 @@ function makeMcpChangeSet(
   expectedWorkspaceVersion: string | undefined,
   expectedWorkspaceFingerprint: string,
   now: Date,
+  discoveryRun?: DiscoveryRunRecord,
 ): ChangeSetRecord {
   const timestamp = now.toISOString()
   const changeSet: ChangeSetRecord = {
@@ -346,6 +382,7 @@ function makeMcpChangeSet(
     updatedAt: timestamp,
     expectedWorkspaceVersion,
     expectedWorkspaceFingerprint,
+    discoveryRun,
     operations,
   }
   assertChangeSetValid(changeSet)
@@ -449,9 +486,12 @@ export async function invokeProposeChanges(
     const now = context.now ? new Date(context.now) : new Date()
     const operations: ChangeSetOperation[] = []
     let discoveryScreening: ReturnType<typeof screenDiscoveryCandidates<NormalizedDiscoveryCandidate>> | undefined
+    let discoveryProfileUpdatedAt: string | undefined
+    let explicitDiscoveryRun: DiscoveryRunRecord | undefined
 
     if (input.discoveredOpportunities?.length) {
       const profile = discoveryProfileForSnapshot(snapshot.data.discoveryProfile)
+      discoveryProfileUpdatedAt = profile.updatedAt
       if (!isDiscoveryProfileConfigured(profile)) {
         throw new WorkspaceSourceError(
           'DISCOVERY_PROFILE_REQUIRED',
@@ -481,6 +521,82 @@ export async function invokeProposeChanges(
           opportunity,
         })
       }
+      const review = discoveryReviewMetadata(screened)
+      const acceptedSourceUrls = screened.accepted.map((item) => item.candidate.sourceUrl)
+      explicitDiscoveryRun = createDiscoveryRunRecord({
+        context: input.discoveryRunContext,
+        screening: review,
+        candidateSourceUrls: acceptedSourceUrls,
+        profileUpdatedAt: discoveryProfileUpdatedAt,
+        workspaceVersion: context.workspaceVersion,
+        defaultMode: input.discoveryRunContext?.mode ?? 'ad_hoc',
+        completedAt: now.toISOString(),
+      })
+      if (screened.accepted.length === 0) {
+        operations.push({
+          id: `discovery:run:${explicitDiscoveryRun.id}`,
+          kind: 'record_discovery_run',
+          summary: `记录岗位发现运行｜收到 ${screened.received} · 可审阅 0 · 去重 ${screened.skippedDuplicates.length} · 过滤 ${screened.rejectedCandidates.length} · 暂缓 ${screened.deferredCandidates.length}`,
+          runId: explicitDiscoveryRun.id,
+        })
+      }
+    }
+
+    if (input.postingRefreshes?.length) {
+      for (const requested of input.postingRefreshes) {
+        const observedAt = requested.observedAt ?? now.toISOString()
+        const operation: Extract<ChangeSetOperation, { kind: 'refresh_job_posting' }> = {
+          id: `posting:refresh:${requested.ownerKind}:${requested.ownerId}:${requested.postingId}`,
+          kind: 'refresh_job_posting',
+          summary: `复核招聘来源｜${requested.sourceTitle}｜${requested.postingStatus}`,
+          ownerKind: requested.ownerKind,
+          ownerId: requested.ownerId,
+          expectedPostingId: requested.postingId,
+          expectedCanonicalSourceUrl: canonicalizeJobSourceUrl(requested.canonicalSourceUrl),
+          sourceUrl: requested.sourceUrl,
+          sourceTitle: requested.sourceTitle,
+          postingStatus: requested.postingStatus,
+          observedAt,
+          location: requested.location,
+          deadline: requested.deadline,
+          compensationText: requested.compensationText,
+        }
+        const target = resolvePostingRefreshTarget(
+          operation,
+          snapshot.data.opportunities,
+          snapshot.data.discoveryInbox ?? [],
+        )
+        if (!target) {
+          throw new WorkspaceSourceError(
+            'PROPOSAL_NEEDS_REFRESH',
+            `Posting ${requested.postingId} is no longer bound to ${requested.ownerKind} ${requested.ownerId}. Read get_discovery_context again before proposing a refresh.`,
+            false,
+          )
+        }
+        if (canonicalizeJobSourceUrl(requested.sourceUrl) !== target.posting.canonicalSourceUrl) {
+          throw new WorkspaceSourceError(
+            'INVALID_ARGUMENT',
+            'A posting refresh must verify the same canonical source. A newly discovered source must go through normal discovery/re-post review instead of overwriting the old posting.',
+            false,
+          )
+        }
+        operations.push(operation)
+      }
+      explicitDiscoveryRun = createDiscoveryRunRecord({
+        context: { ...input.discoveryRunContext, mode: input.discoveryRunContext?.mode ?? 'refresh' },
+        screening: {
+          received: input.postingRefreshes.length,
+          accepted: input.postingRefreshes.length,
+          duplicateCount: 0,
+          rejectedCount: 0,
+          deferredCount: 0,
+        },
+        candidateSourceUrls: input.postingRefreshes.map((item) => item.sourceUrl),
+        profileUpdatedAt: snapshot.data.discoveryProfile?.updatedAt,
+        workspaceVersion: context.workspaceVersion,
+        defaultMode: 'refresh',
+        completedAt: now.toISOString(),
+      })
     }
 
     if (input.progressText) {
@@ -520,18 +636,6 @@ export async function invokeProposeChanges(
 
     const normalized = uniqueOperations(operations)
     if (normalized.length === 0) {
-      if (discoveryScreening) {
-        const onlyDuplicates = discoveryScreening.skippedDuplicates.length > 0 && discoveryScreening.rejectedCandidates.length === 0
-        const detail = [
-          ...discoveryScreening.skippedDuplicates.map((item) => `${item.company}｜${item.role}：${item.reason}`),
-          ...discoveryScreening.rejectedCandidates.map((item) => `${item.company}｜${item.role}：${item.reasons.join('；')}`),
-        ].slice(0, 6).join(' ')
-        return failure(
-          onlyDuplicates ? 'NO_CHANGES' : 'DISCOVERY_NO_ELIGIBLE_CANDIDATES',
-          `${onlyDuplicates ? 'All discovered opportunities are already represented in PJSDAS.' : 'No discovered opportunity passed the PJSDAS quality gate.'}${detail ? ` ${detail}` : ''}`,
-          false,
-        )
-      }
       return failure('NO_CHANGES', 'The requested state already matches PJSDAS, so there is nothing to propose.', false)
     }
     if (normalized.length > 24) {
@@ -539,15 +643,20 @@ export async function invokeProposeChanges(
     }
 
     const expectedWorkspaceFingerprint = await fingerprintWorkspace(snapshot)
-    const title = input.title ?? (input.discoveredOpportunities?.length
-      ? `ChatGPT 岗位发现 · ${normalized.length} 个候选`
-      : `ChatGPT 提议 · ${normalized.length} 项`)
+    const title = input.title ?? (input.postingRefreshes?.length
+      ? `ChatGPT 来源复核 · ${normalized.length} 项`
+      : input.discoveredOpportunities?.length
+        ? discoveryScreening?.accepted.length
+          ? `ChatGPT 岗位发现 · ${discoveryScreening.accepted.length} 个候选`
+          : 'ChatGPT 岗位发现 · 0 个候选通过质量闸门'
+        : `ChatGPT 提议 · ${normalized.length} 项`)
     const changeSet = makeMcpChangeSet(
       title,
       normalized,
       context.workspaceVersion,
       expectedWorkspaceFingerprint,
       now,
+      explicitDiscoveryRun,
     )
     const discoveryReview = discoveryScreening ? discoveryReviewMetadata(discoveryScreening) : undefined
     const signedToken = await createSignedProposalToken(changeSet, context.workspaceVersion, options.signingKey, now, discoveryReview)
@@ -571,8 +680,13 @@ export async function invokeProposeChanges(
         rejectedCount: discoveryScreening.rejectedCandidates.length,
         deferredCount: discoveryScreening.deferredCandidates.length,
       } : undefined,
+      discoveryRun: explicitDiscoveryRun,
       reviewUrl,
-      instruction: 'No PJSDAS job-search data has changed. Ask the user to open the signed reviewUrl within 24 hours and explicitly Apply or Discard the ChangeSet in PJSDAS. Prefer component assessment for new web-discovered opportunities: submit bounded fit and opportunity-value components with score, confidence and rationale; PJSDAS derives the two aggregate scores using explicit Decision Rules. Legacy aggregate score fields remain accepted only for backward compatibility. Source-backed Rich Opportunity facts remain separate from AI assessment, and unknown source facts stay unknown. If PJSDAS reports that the local workspace has changed since this proposal was created, sync first and ask for a fresh proposal.',
+      instruction: input.postingRefreshes?.length
+        ? 'No PJSDAS data has changed. Ask the user to open the signed reviewUrl and explicitly Apply or Discard the posting refresh. A closed public posting does not automatically close the Opportunity; PJSDAS only refreshes source evidence.'
+        : discoveryScreening && discoveryScreening.accepted.length === 0
+          ? 'No job passed the quality gate. PJSDAS created a review-only zero-result Discovery Run record so the search itself can be audited. Ask the user to Apply or Discard the run record; no Opportunity will be created.'
+          : 'No PJSDAS job-search data has changed. Ask the user to open the signed reviewUrl within 24 hours and explicitly Apply or Discard the ChangeSet in PJSDAS. Prefer component assessment for new web-discovered opportunities: submit bounded fit and opportunity-value components with score, confidence and rationale; PJSDAS derives the two aggregate scores using explicit Decision Rules. Legacy aggregate score fields remain accepted only for backward compatibility. Source-backed Rich Opportunity facts remain separate from AI assessment, and unknown source facts stay unknown. If PJSDAS reports that the local workspace has changed since this proposal was created, sync first and ask for a fresh proposal.',
     })
   } catch (caught) {
     if (caught instanceof WorkspaceSourceError) return failure(caught.code, caught.message, caught.retryable)
