@@ -1,6 +1,7 @@
 import { applyChangeSet, exportLocalSnapshot } from '../db.js'
 import type { ChangeSetRecord } from '../changeSet.js'
 import { fingerprintWorkspace } from '../cloud/workspaceFingerprint.js'
+import { applyMcpDiscoveryExtensionChangeSet } from '../postingRefreshStore.js'
 
 function snapshotWithoutProposal(changeSet: ChangeSetRecord, snapshot: Awaited<ReturnType<typeof exportLocalSnapshot>>) {
   return {
@@ -23,5 +24,7 @@ export async function assertMcpChangeSetBaseline(changeSet: ChangeSetRecord) {
 
 export async function applyMcpChangeSetWithBaseline(changeSet: ChangeSetRecord) {
   await assertMcpChangeSetBaseline(changeSet)
+  const specialized = await applyMcpDiscoveryExtensionChangeSet(changeSet)
+  if (specialized) return specialized
   return applyChangeSet(changeSet.id)
 }
