@@ -93,10 +93,25 @@ describe('v1.5 Round 2 component-derived discovery proposals', () => {
     expect(operation.opportunity.detail?.discovery?.profileWarnings?.join(' ')).toContain('覆盖')
   })
 
-  it('applies Discovery Profile thresholds to PJSDAS-derived component totals', async () => {
-    const result = await invokeProposeChanges(source(90), { discoveredOpportunities: [candidate()] }, { signingKey })
-    expect(result.isError).toBe(true)
-    expect(resultJson(result).code).toBe('DISCOVERY_NO_ELIGIBLE_CANDIDATES')
+  it('applies Discovery Profile thresholds and records a review-only zero-result run', async () => {
+    const result = await invokeProposeChanges(source(90), {
+      discoveredOpportunities: [candidate()],
+      discoveryRunContext: { mode: 'incremental', queries: ['AI 产品经理 2027 校招'] },
+    }, { signingKey })
+    expect(result.isError).not.toBe(true)
+    const data = resultJson(result)
+    expect(data.discoveryScreening).toMatchObject({ received: 1, accepted: 0, rejectedCount: 1 })
+    const token = encodedProposalFromHash(new URL(String(data.reviewUrl)).hash)!
+    const envelope = await verifySignedProposalToken(token, signingKey, new Date('2026-09-12T10:01:00+08:00'))
+    expect(envelope.changeSet.operations).toHaveLength(1)
+    expect(envelope.changeSet.operations[0]).toMatchObject({ kind: 'record_discovery_run' })
+    expect(envelope.changeSet.discoveryRun).toMatchObject({
+      mode: 'incremental',
+      queries: ['AI 产品经理 2027 校招'],
+      receivedCount: 1,
+      reviewCandidateCount: 0,
+      filteredCount: 1,
+    })
   })
 
   it('keeps the legacy aggregate contract available for stale connector schemas', async () => {
