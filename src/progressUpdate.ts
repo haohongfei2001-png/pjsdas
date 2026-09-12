@@ -21,6 +21,14 @@ const PROCESS_TASK = '(?:测评|笔试|面试|考试)'
 function explicitProcessCompletion(text: string) {
   if (!new RegExp(PROCESS_TASK, 'i').test(text)) return false
 
+  // “测评完成时间/日期/期限…” describes metadata about a task, not a report
+  // that the user has actually completed it.
+  const completionMetadata = new RegExp(
+    `${PROCESS_TASK}.{0,6}(?:已(?:经)?)?完成(?:时间|日期|期限|截止|要求|说明|状态|节点)|(?:完成|做完)${PROCESS_TASK}.{0,6}(?:时间|日期|期限|截止|要求|说明)`,
+    'i',
+  )
+  if (completionMetadata.test(text)) return false
+
   // Do not mistake an instruction/deadline containing “完成” for a report that
   // the user has actually finished the task.
   const pendingInstruction = new RegExp(
@@ -32,8 +40,8 @@ function explicitProcessCompletion(text: string) {
     'i',
   )
 
-  if (strongCompletion.test(text)) return true
   if (pendingInstruction.test(text)) return false
+  if (strongCompletion.test(text)) return true
 
   // “测评完成 / 笔试结束” are concise status statements; unlike
   // “48 小时内完成测评”, the task noun appears first with no instruction cue.
