@@ -18,6 +18,7 @@ import {
 import { discoveryProfileForSnapshot, isDiscoveryProfileConfigured } from '../src/discoveryProfile.js'
 import { screenDiscoveryCandidates } from '../src/discoveryQuality.js'
 import { createJobPostingEvidence } from '../src/jobPosting.js'
+import { createOpportunityFacts, validateOpportunityFacts } from '../src/richOpportunity.js'
 import { buildMcpProposalReviewUrl, type McpDiscoveryReview } from '../src/ai/mcpProposal.js'
 import { parseProgressUpdate } from '../src/progressUpdate.js'
 import type { ActionStatus, DiscoveryConfidence, Opportunity, OpportunityRole } from '../src/model.js'
@@ -73,6 +74,25 @@ function publicHttpUrl(value: string) {
   }
 }
 
+const richFactsSchema = z.object({
+  department: z.string().trim().min(1).max(200).optional(),
+  businessUnit: z.string().trim().min(1).max(200).optional(),
+  locations: z.array(z.string().trim().min(1).max(120)).max(10).optional(),
+  recruitmentBatch: z.string().trim().min(1).max(160).optional(),
+  responsibilities: z.array(z.string().trim().min(1).max(320)).max(12).optional(),
+  requirements: z.array(z.string().trim().min(1).max(320)).max(16).optional(),
+  educationRequirement: z.string().trim().min(1).max(300).optional(),
+  majorRequirements: z.array(z.string().trim().min(1).max(200)).max(12).optional(),
+  experienceRequirement: z.string().trim().min(1).max(300).optional(),
+  skills: z.array(z.string().trim().min(1).max(160)).max(16).optional(),
+  languageRequirements: z.array(z.string().trim().min(1).max(180)).max(8).optional(),
+  applicationMethod: z.string().trim().min(1).max(300).optional(),
+  applicationUrl: z.string().trim().min(1).max(2_000).refine(publicHttpUrl, 'applicationUrl must be a public http(s) URL.').optional(),
+  annualCompensationMaxWan: z.number().min(0).max(1000).optional(),
+  compensationBasis: z.string().trim().min(1).max(300).optional(),
+  evidenceSummary: z.string().trim().min(1).max(1_200).optional(),
+}).strict()
+
 const discoveredOpportunitySchema = z.object({
   company: z.string().trim().min(1).max(200),
   role: z.string().trim().min(1).max(240),
@@ -84,6 +104,7 @@ const discoveredOpportunitySchema = z.object({
   deadline: z.string().trim().refine(validDateString, 'deadline must be a valid date/time.').optional(),
   compensationText: z.string().trim().min(1).max(500).optional(),
   annualCompensationMinWan: z.number().min(0).max(1000).optional(),
+  facts: richFactsSchema.optional(),
   rationale: z.string().trim().min(1).max(1_600),
   roleType: opportunityRoleSchema,
   opportunityValue: z.number().min(0).max(100),
@@ -225,6 +246,20 @@ function discoveredOpportunity(
     postingStatus: candidate.postingStatus ?? 'unknown',
     observedAt: discoveredAt,
   })
+  const facts = createOpportunityFacts({
+    sourceUrl: candidate.sourceUrl,
+    sourceTitle: candidate.sourceTitle,
+    verifiedAt: discoveredAt,
+    location: candidate.location,
+    deadline: candidate.deadline,
+    compensationText: candidate.compensationText,
+    annualCompensationMinWan: candidate.annualCompensationMinWan,
+    facts: candidate.facts,
+  })
+  const factErrors = validateOpportunityFacts(facts)
+  if (factErrors.length) {
+    throw new WorkspaceSourceError('INVALID_ARGUMENT', `Rich Opportunity facts are invalid: ${factErrors[0]}`, false)
+  }
   return {
     id: discoveredOpportunityId(candidate.company, candidate.role),
     company: candidate.company,
@@ -244,7 +279,10 @@ function discoveredOpportunity(
     importedAt: discoveredAt,
     detail: {
       salaryMinWan: candidate.annualCompensationMinWan,
+      salaryMaxWan: candidate.facts?.annualCompensationMaxWan,
+      salaryBasis: candidate.facts?.compensationBasis,
       salaryRaw: candidate.compensationText,
+      facts,
       discovery: {
         sourceUrl: candidate.sourceUrl,
         sourceTitle: candidate.sourceTitle,
@@ -408,7 +446,7 @@ export async function invokeProposeChanges(
         deferredCount: discoveryScreening.deferredCandidates.length,
       } : undefined,
       reviewUrl,
-      instruction: 'No PJSDAS job-search data has changed. Ask the user to open the signed reviewUrl within 24 hours and explicitly Apply or Discard the ChangeSet in PJSDAS. Web-discovered opportunities retain canonical source identity, posting status and verification timestamps. PJSDAS quality-gates expired, closed, explicitly excluded, below-threshold and duplicate candidates before review; stale source evidence may be refreshed or treated as a possible re-post instead of being silently suppressed. Unknown source facts remain visible as warnings. If PJSDAS reports that the local workspace has changed since this proposal was created, sync first and ask for a fresh proposal.',
+      instruction: 'No PJSDAS job-search data has changed. Ask the user to open the signed reviewUrl within 24 hours and explicitly Apply or Discard the ChangeSet in PJSDAS. Web-discovered opportunities retain canonical source identity and source-backed Rich Opportunity facts; unknown requirements, education, skills, application details, deadlines or compensation remain explicitly unknown instead of being inferred. PJSDAS quality-gates expired, closed, explicitly excluded, below-threshold and duplicate candidates before review; stale source evidence may be refreshed or treated as a possible re-post instead of being silently suppressed. If PJSDAS reports that the local workspace has changed since this proposal was created, sync first and ask for a fresh proposal.',
     })
   } catch (caught) {
     if (caught instanceof WorkspaceSourceError) return failure(caught.code, caught.message, caught.retryable)

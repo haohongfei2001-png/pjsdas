@@ -1,6 +1,7 @@
 import { validateDecisionRules, type DecisionRules } from './decisionRules.js'
 import { progressOperationSummary, type ExecutableProgressOperation } from './progressUpdate.js'
-import type { Action, ActionStatus, Opportunity, ProcessEvent } from './model.js'
+import { validateOpportunityFacts } from './richOpportunity.js'
+import type { Action, ActionStatus, Opportunity, OpportunityFacts, ProcessEvent } from './model.js'
 
 export type ChangeSetStatus = 'pending' | 'applied' | 'discarded' | 'failed'
 export type ChangeSetSource = 'natural_language' | 'rules' | 'process_event' | 'user_action' | 'api' | 'mcp'
@@ -226,6 +227,13 @@ function validateDiscoveredOpportunity(raw: Record<string, unknown>, operationId
   if (!isObject(opportunity.detail) || !isObject(opportunity.detail.discovery)) {
     errors.push(`ChangeSet operation ${operationId} 缺少来源证据。`)
     return
+  }
+  if (opportunity.detail.facts !== undefined) {
+    if (!isObject(opportunity.detail.facts)) errors.push(`ChangeSet operation ${operationId} 的 Rich Opportunity facts 无效。`)
+    else {
+      const factErrors = validateOpportunityFacts(opportunity.detail.facts as unknown as OpportunityFacts)
+      if (factErrors.length) errors.push(`ChangeSet operation ${operationId} 的 Rich Opportunity facts 无效：${factErrors[0]}`)
+    }
   }
   const discovery = opportunity.detail.discovery
   if (!validPublicHttpUrl(discovery.sourceUrl)) errors.push(`ChangeSet operation ${operationId} 的来源 URL 无效。`)

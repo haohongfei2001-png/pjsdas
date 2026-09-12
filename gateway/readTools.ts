@@ -10,6 +10,7 @@ import {
   getTodayPlan,
   listOpportunities,
 } from '../src/ai/readLayer.js'
+import { enrichOpportunityListWithFacts } from '../src/ai/richOpportunityRead.js'
 import { WorkspaceSourceError, type WorkspaceSource } from './workspaceSource.js'
 
 export const READ_TOOL_NAMES = [
@@ -50,6 +51,11 @@ export const listOpportunitiesSchema = z.object({
   roleType: opportunityRoleSchema.optional(),
   deadlineBefore: z.string().optional(),
   limit: z.number().int().optional(),
+  includeFacts: z.boolean().optional(),
+}).superRefine((value, context) => {
+  if (value.includeFacts && value.limit !== undefined && value.limit > 20) {
+    context.addIssue({ code: 'custom', message: 'limit must be at most 20 when includeFacts is true.' })
+  }
 })
 
 export const getPipelineSchema = z.object({
@@ -116,8 +122,22 @@ export async function invokeReadTool(
     switch (name) {
       case 'get_today_plan':
         return success(getTodayPlan(snapshot, getTodayPlanSchema.parse(args), context))
-      case 'list_opportunities':
-        return success(listOpportunities(snapshot, listOpportunitiesSchema.parse(args), context))
+      case 'list_opportunities': {
+        const parsed = listOpportunitiesSchema.parse(args)
+        const readInput = {
+          query: parsed.query,
+          stage: parsed.stage,
+          company: parsed.company,
+          roleType: parsed.roleType,
+          deadlineBefore: parsed.deadlineBefore,
+          limit: parsed.includeFacts ? (parsed.limit ?? 20) : parsed.limit,
+        }
+        return success(enrichOpportunityListWithFacts(
+          snapshot,
+          listOpportunities(snapshot, readInput, context),
+          Boolean(parsed.includeFacts),
+        ))
+      }
       case 'get_pipeline':
         return success(getPipeline(snapshot, getPipelineSchema.parse(args), context))
       case 'get_decision_rules':

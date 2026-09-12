@@ -55,6 +55,60 @@ export interface JobPostingEvidence {
   supersededByPostingId?: string
 }
 
+export type OpportunityFactUnknownField =
+  | 'department'
+  | 'business_unit'
+  | 'locations'
+  | 'recruitment_batch'
+  | 'responsibilities'
+  | 'requirements'
+  | 'education'
+  | 'majors'
+  | 'experience'
+  | 'skills'
+  | 'languages'
+  | 'application_method'
+  | 'deadline'
+  | 'compensation'
+
+export interface OpportunityFacts {
+  version: 1
+  identity: {
+    department?: string
+    businessUnit?: string
+    locations?: string[]
+    recruitmentBatch?: string
+  }
+  role: {
+    responsibilities?: string[]
+    requirements?: string[]
+    educationRequirement?: string
+    majorRequirements?: string[]
+    experienceRequirement?: string
+    skills?: string[]
+    languageRequirements?: string[]
+  }
+  application: {
+    applicationUrl?: string
+    applicationMethod?: string
+    deadline?: string
+    recruitmentBatch?: string
+  }
+  compensation: {
+    raw?: string
+    annualMinWan?: number
+    annualMaxWan?: number
+    basis?: string
+  }
+  evidence: {
+    sourceUrl: string
+    sourceTitle: string
+    verifiedAt: string
+    evidenceSummary?: string
+  }
+  unknownFields: OpportunityFactUnknownField[]
+}
+
 export type DiscoveryInboxStatus = 'new' | 'seen' | 'later' | 'dismissed' | 'promoted'
 
 export interface DiscoveryInboxItem {
@@ -76,6 +130,7 @@ export interface DiscoveryInboxItem {
   profileWarnings?: string[]
   posting?: JobPostingEvidence
   postingHistory?: JobPostingEvidence[]
+  facts?: OpportunityFacts
   status: DiscoveryInboxStatus
   rejectionReason?: DiscoveryRejectionReason
   sourceChangeSetId?: string
@@ -175,6 +230,7 @@ export interface OpportunityDetail {
   windowType?: string
   earlyReason?: string
   rules?: string
+  facts?: OpportunityFacts
   discovery?: OpportunityDiscoveryEvidence
 }
 

@@ -5,6 +5,11 @@ import {
   mergeJobPostingEvidence,
   validateJobPostingEvidence,
 } from './jobPosting.js'
+import {
+  cloneOpportunityFacts,
+  mergeOpportunityFacts,
+  validateOpportunityFacts,
+} from './richOpportunity.js'
 import type {
   DiscoveryInboxItem,
   DiscoveryRejectionReason,
@@ -52,6 +57,7 @@ export function validateDiscoveryInboxItem(item: DiscoveryInboxItem): string[] {
   for (const posting of item.postingHistory ?? []) {
     errors.push(...validateJobPostingEvidence(posting).map((error) => `发现箱岗位发布历史无效：${error}`))
   }
+  if (item.facts) errors.push(...validateOpportunityFacts(item.facts).map((error) => `发现箱 Rich Opportunity 无效：${error}`))
   return errors
 }
 
@@ -90,6 +96,7 @@ function fromOperation(operation: DiscoveryOperation, changeSet: ChangeSetRecord
     profileWarnings: evidence.profileWarnings ? [...evidence.profileWarnings] : undefined,
     posting,
     postingHistory: evidence.postingHistory ? evidence.postingHistory.map((item) => ({ ...item })) : undefined,
+    facts: cloneOpportunityFacts(opportunity.detail?.facts),
     status: 'new',
     sourceChangeSetId: changeSet.id,
     sourceOperationId: operation.id,
@@ -136,6 +143,7 @@ export function mergeDiscoveryInboxItems(existing: DiscoveryInboxItem[], incomin
       candidateOpportunityId: previous.candidateOpportunityId || candidate.candidateOpportunityId,
       posting: mergedPosting.current,
       postingHistory: mergedPosting.history.length ? mergedPosting.history : undefined,
+      facts: mergeOpportunityFacts(previous.facts, candidate.facts),
       status: previous.status,
       rejectionReason: previous.rejectionReason,
       createdAt: previous.createdAt,
@@ -170,7 +178,11 @@ export function inboxOpportunity(item: DiscoveryInboxItem, now = new Date()): Op
     locallyManaged: true,
     importedAt: now.toISOString(),
     detail: {
+      salaryMinWan: item.facts?.compensation.annualMinWan,
+      salaryMaxWan: item.facts?.compensation.annualMaxWan,
+      salaryBasis: item.facts?.compensation.basis,
       salaryRaw: item.compensationText,
+      facts: cloneOpportunityFacts(item.facts),
       discovery: {
         sourceUrl: item.sourceUrl,
         sourceTitle: item.sourceTitle,
