@@ -301,18 +301,22 @@ function readWorkspace(snapshot: PJSDASSnapshot): EffectiveWorkspace {
   }
 
   const processEvents = snapshot.data.processEvents
+  // Process Action status is part of the effective recruiting state. Reconcile
+  // every event Action before projecting Opportunities so list_opportunities and
+  // get_pipeline cannot disagree about an already completed assessment/test/interview.
+  const reconciledActions = reconcileProcessEventActions(snapshot.data.actions, processEvents)
   const opportunities = overlayProcessEventsOnOpportunities(
     snapshot.data.opportunities,
     processEvents,
     snapshot.data.processes,
+    reconciledActions,
   )
-  const reconciledActions = reconcileProcessEventActions(snapshot.data.actions, processEvents)
   const actions = suppressSupersededActions(reconciledActions, opportunities)
   const processes = overlayProcessEventsOnProcesses(
     snapshot.data.processes,
     opportunities,
     processEvents,
-    actions,
+    reconciledActions,
   )
 
   return {
