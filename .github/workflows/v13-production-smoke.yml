@@ -1,4 +1,4 @@
-name: v1.5 production smoke
+name: v1.6 production smoke
 
 on:
   workflow_dispatch:
@@ -10,7 +10,7 @@ on:
       expected_version:
         description: Expected authenticated gateway version
         required: true
-        default: 1.5.0-alpha.2
+        default: 1.6.0-alpha.1
 
 jobs:
   smoke:
