@@ -15,6 +15,9 @@ export const PUBLIC_HEALTH_CAPABILITIES = {
   opportunityAssessmentRead: true,
   applicationPortfolioDecision: 'v1.6-round-1',
   applicationPortfolioRead: true,
+  prepGraph: 'v1.6-round-2',
+  prepGraphRead: true,
+  prepGraphTodayProjection: true,
 } as const
 
 export default {
