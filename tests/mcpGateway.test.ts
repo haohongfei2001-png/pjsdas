@@ -17,11 +17,12 @@ function jsonFrom(result: Awaited<ReturnType<typeof invokeReadTool>>) {
 }
 
 describe('PJSDAS MCP gateway alpha', () => {
-  it('exposes the bounded v1.5 Round 2 read-only tool set', () => {
+  it('exposes the bounded v1.6 Round 1 read-only tool set', () => {
     expect(READ_TOOL_NAMES).toEqual([
       'get_today_plan',
       'list_opportunities',
       'get_opportunity_assessment',
+      'get_application_portfolio',
       'get_pipeline',
       'get_decision_rules',
       'get_discovery_context',
@@ -38,6 +39,7 @@ describe('PJSDAS MCP gateway alpha', () => {
     ['get_today_plan', { availableMinutes: 180 }],
     ['list_opportunities', { limit: 10 }],
     ['get_opportunity_assessment', { opportunityId: 'opp-alpha' }],
+    ['get_application_portfolio', { limit: 10 }],
     ['get_pipeline', { attentionOnly: true }],
     ['get_decision_rules', {}],
     ['get_discovery_context', {}],
@@ -50,12 +52,14 @@ describe('PJSDAS MCP gateway alpha', () => {
     expect(data.meta).toMatchObject({ source: 'pjsdas', workspaceVersion: 'demo-v1', timezone: 'Asia/Shanghai' })
   })
 
-  it('returns component weight policy through get_decision_rules', async () => {
+  it('returns component and portfolio policy through get_decision_rules', async () => {
     const result = await invokeReadTool(source, 'get_decision_rules', {})
     expect(result.isError).not.toBe(true)
     const data = jsonFrom(result)
     expect(data.fitComponentWeights).toMatchObject({ roleDirection: 24, location: 18 })
     expect(data.opportunityValueComponentWeights).toMatchObject({ companyQuality: 18, roleGrowth: 18 })
+    expect(data.portfolioWeights).toMatchObject({ opportunityValue: 28, fit: 28, overlapPenalty: 18 })
+    expect(data.portfolioMinimumCandidateScore).toBe(62)
   })
 
   it('returns a stable non-retryable tool error for invalid input', async () => {
