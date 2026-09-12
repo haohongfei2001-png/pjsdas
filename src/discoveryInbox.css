@@ -1,0 +1,23 @@
+.discovery-inbox-page { display: grid; gap: 18px; }
+.discovery-inbox-metrics { display: flex; gap: 8px; flex-wrap: wrap; }
+.discovery-inbox-metrics button { min-width: 104px; display: flex; justify-content: space-between; gap: 12px; padding: 10px 12px; border: 1px solid var(--line, #ded8cc); border-radius: 12px; background: rgba(255,255,255,.55); color: inherit; cursor: pointer; }
+.discovery-inbox-metrics button.active { border-color: #292720; background: #292720; color: #fff; }
+.discovery-inbox-list { display: grid; gap: 12px; }
+.discovery-inbox-item { padding: 18px; border: 1px solid var(--line, #ded8cc); border-radius: 18px; background: rgba(255,255,255,.58); }
+.discovery-inbox-item.status-dismissed { opacity: .72; }
+.discovery-inbox-title { display: flex; justify-content: space-between; gap: 16px; align-items: flex-start; }
+.discovery-inbox-title strong { font-size: 13px; opacity: .68; }
+.discovery-inbox-title h3 { margin: 4px 0 0; font-size: 20px; }
+.discovery-inbox-title > span { padding: 5px 9px; border-radius: 999px; background: rgba(41,39,32,.07); font-size: 11px; font-weight: 700; }
+.discovery-inbox-facts { display: flex; flex-wrap: wrap; gap: 8px 16px; margin-top: 12px; font-size: 12px; color: var(--muted, #6f6a61); }
+.discovery-inbox-item > p { margin: 12px 0; line-height: 1.6; font-size: 13px; }
+.discovery-inbox-item > a { color: #315b75; font-size: 12px; }
+.discovery-inbox-warnings { display: grid; gap: 5px; margin: 10px 0; }
+.discovery-inbox-warnings span { padding: 7px 9px; border-radius: 9px; background: #fff1de; color: #80531e; font-size: 12px; }
+.discovery-inbox-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 16px; }
+.discovery-inbox-actions button, .discovery-inbox-actions select { min-height: 36px; border: 1px solid var(--line, #ded8cc); border-radius: 10px; background: rgba(255,255,255,.7); color: inherit; padding: 7px 10px; }
+.discovery-inbox-actions button { cursor: pointer; }
+.discovery-inbox-actions button.primary { background: #292720; color: #fff; border-color: #292720; }
+.discovery-inbox-actions button:disabled { opacity: .5; cursor: wait; }
+.discovery-inbox-dismiss { display: inline-flex; gap: 6px; align-items: center; }
+@media (max-width: 720px) { .discovery-inbox-title { flex-direction: column; } .discovery-inbox-dismiss { width: 100%; } .discovery-inbox-dismiss select { flex: 1; } }

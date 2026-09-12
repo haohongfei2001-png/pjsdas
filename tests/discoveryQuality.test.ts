@@ -170,6 +170,21 @@ describe('v1.3 discovery quality gate', () => {
     expect(result.accepted).toHaveLength(1)
   })
 
+  it('does not reprocess active or recently dismissed Discovery Inbox candidates', () => {
+    const inboxBase = {
+      id: 'inbox-1', candidateOpportunityId: 'candidate-1', company: '甲公司', role: '产品经理（AI方向）', roleType: 'core' as const,
+      sourceUrl: 'https://careers.example.com/inbox', sourceTitle: '甲公司 AI 产品', rationale: '历史发现',
+      opportunityValue: 85, fitScore: 80, fitConfidence: 'high' as const, opportunityValueConfidence: 'high' as const,
+      discoveredAt: '2026-09-10T00:00:00.000Z', createdAt: '2026-09-10T00:00:00.000Z', updatedAt: '2026-09-10T00:00:00.000Z',
+    }
+    const active = screenDiscoveryCandidates(profile(), [candidate({ company: '甲公司', role: 'AI 产品经理' })], [], weights, now, [], [{ ...inboxBase, status: 'later' as const }])
+    expect(active.accepted).toHaveLength(0)
+    expect(active.skippedDuplicates[0].reason).toContain('发现箱')
+    const dismissed = screenDiscoveryCandidates(profile(), [candidate({ company: '甲公司', role: 'AI 产品经理' })], [], weights, now, [], [{ ...inboxBase, status: 'dismissed' as const, rejectionReason: 'not_interested' as const }])
+    expect(dismissed.accepted).toHaveLength(0)
+    expect(dismissed.rejectedCandidates[0].reasons.join(' ')).toContain('发现箱')
+  })
+
   it('deduplicates against existing similar roles and keeps only the strongest bounded review batch', () => {
     const configured = { ...profile(), maxReviewCandidates: 2 }
     const result = screenDiscoveryCandidates(configured, [

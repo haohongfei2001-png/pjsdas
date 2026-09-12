@@ -1,6 +1,6 @@
 import type { DecisionWeights } from './decisionRules.js'
 import { discoveryProfileForSnapshot, type DiscoveryProfile } from './discoveryProfile.js'
-import type { DiscoveryConfidence, Opportunity, OpportunityRole, TimelineRecord } from './model.js'
+import type { DiscoveryConfidence, DiscoveryInboxItem, Opportunity, OpportunityRole, TimelineRecord } from './model.js'
 
 export type DiscoveryPostingStatus = 'open' | 'closed' | 'unknown'
 
@@ -235,6 +235,7 @@ export function screenDiscoveryCandidates<T extends DiscoveryCandidateForQuality
   weights: DecisionWeights,
   now = new Date(),
   timeline: TimelineRecord[] = [],
+  inbox: DiscoveryInboxItem[] = [],
 ): DiscoveryScreeningResult<T> {
   const profile = discoveryProfileForSnapshot(rawProfile)
   const eligible: ScreenedDiscoveryCandidate<T>[] = []
@@ -242,6 +243,31 @@ export function screenDiscoveryCandidates<T extends DiscoveryCandidateForQuality
   const rejectedCandidates: DiscoveryScreeningResult<T>['rejectedCandidates'] = []
 
   for (const candidate of candidates) {
+    const inboxMatch = inbox.find((item) =>
+      normalizedCompany(item.company) === normalizedCompany(candidate.company) &&
+      discoveryRoleSimilarity(item.role, candidate.role) >= 0.72
+    )
+    if (inboxMatch && inboxMatch.status !== 'promoted') {
+      const ageMs = now.getTime() - new Date(inboxMatch.updatedAt).getTime()
+      if (inboxMatch.status === 'dismissed') {
+        if (ageMs <= 120 * 24 * 60 * 60 * 1000) {
+          rejectedCandidates.push({
+            company: candidate.company,
+            role: candidate.role,
+            reasons: [`发现箱中高度相似岗位“${inboxMatch.company}｜${inboxMatch.role}”最近已被明确拒绝。`],
+          })
+          continue
+        }
+      } else {
+        skippedDuplicates.push({
+          company: candidate.company,
+          role: candidate.role,
+          reason: `高度相似岗位“${inboxMatch.company}｜${inboxMatch.role}”已经在发现箱（${inboxMatch.status}）。`,
+        })
+        continue
+      }
+    }
+
     const latestFeedback = latestExplicitFeedbackForCandidate(timeline, candidate, now)
     if (latestFeedback?.discoveryDecision === 'rejected') {
       rejectedCandidates.push({

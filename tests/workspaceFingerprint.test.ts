@@ -16,6 +16,32 @@ function snapshot(exportedAt: string, company?: string) {
   }, exportedAt)
 }
 
+function inboxSnapshot(exportedAt: string) {
+  return createSnapshot({
+    opportunities: [], processes: [], processEvents: [], actions: [], prep: [], applicationGroups: [],
+    decisionRules: { ...DEFAULT_DECISION_RULES, weights: { ...DEFAULT_DECISION_RULES.weights } },
+    discoveryInbox: [{
+      id: 'inbox:role-1',
+      candidateOpportunityId: 'role-1',
+      company: 'Example',
+      role: 'AI Product Manager',
+      roleType: 'core',
+      sourceUrl: 'https://careers.example.com/role-1',
+      sourceTitle: 'Example AI Product Manager',
+      rationale: 'Matches the explicit AI product target.',
+      opportunityValue: 86,
+      fitScore: 78,
+      fitConfidence: 'medium',
+      opportunityValueConfidence: 'medium',
+      status: 'later',
+      discoveredAt: '2026-09-11T01:00:00.000Z',
+      createdAt: '2026-09-11T01:05:00.000Z',
+      updatedAt: '2026-09-11T01:05:00.000Z',
+    }],
+    timeline: [], changeSets: [],
+  }, exportedAt)
+}
+
 describe('cloud workspace fingerprint', () => {
   it('ignores snapshot export time', async () => {
     const a = snapshot('2026-09-11T00:00:00.000Z', 'Example')
@@ -45,5 +71,12 @@ describe('cloud workspace fingerprint', () => {
       targetRoleQueries: ['AI 产品经理'],
     }
     expect(workspaceIsEffectivelyEmpty(configured)).toBe(false)
+  })
+
+  it('treats Discovery Inbox as durable workspace data included in the fingerprint', async () => {
+    const empty = snapshot('2026-09-11T00:00:00.000Z')
+    const inbox = inboxSnapshot('2026-09-11T00:00:00.000Z')
+    expect(workspaceIsEffectivelyEmpty(inbox)).toBe(false)
+    expect(await fingerprintWorkspace(inbox)).not.toBe(await fingerprintWorkspace(empty))
   })
 })

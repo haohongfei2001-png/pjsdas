@@ -34,6 +34,36 @@ export type DiscoveryRejectionReason =
   | 'not_interested'
   | 'other'
 
+export type DiscoveryInboxStatus = 'new' | 'seen' | 'later' | 'dismissed' | 'promoted'
+
+export interface DiscoveryInboxItem {
+  id: string
+  candidateOpportunityId: string
+  company: string
+  role: string
+  roleType: OpportunityRole
+  sourceUrl: string
+  sourceTitle: string
+  location?: string
+  deadline?: string
+  compensationText?: string
+  rationale: string
+  opportunityValue: number
+  fitScore: number
+  fitConfidence: DiscoveryConfidence
+  opportunityValueConfidence: DiscoveryConfidence
+  profileWarnings?: string[]
+  status: DiscoveryInboxStatus
+  rejectionReason?: DiscoveryRejectionReason
+  sourceChangeSetId?: string
+  sourceOperationId?: string
+  discoveredAt: string
+  createdAt: string
+  updatedAt: string
+  seenAt?: string
+  promotedOpportunityId?: string
+}
+
 export type TimelineCategory = 'opportunity' | 'process' | 'action' | 'rules' | 'change' | 'data' | 'note'
 export type TimelineSource =
   | 'excel'

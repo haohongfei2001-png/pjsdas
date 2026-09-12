@@ -1,6 +1,7 @@
 import type {
   Action,
   ApplicationGroup,
+  DiscoveryInboxItem,
   ImportMeta,
   Opportunity,
   Prep,
@@ -11,6 +12,7 @@ import type {
 import { validateDecisionRules, type DecisionRules } from './decisionRules.js'
 import { validateChangeSet, type ChangeSetRecord } from './changeSet.js'
 import { validateDiscoveryProfile, type DiscoveryProfile } from './discoveryProfile.js'
+import { validateDiscoveryInboxItem } from './discoveryInbox.js'
 
 export const SNAPSHOT_SCHEMA = 'pjsdas-local-snapshot' as const
 export const SNAPSHOT_VERSION = 1 as const
@@ -24,6 +26,7 @@ export interface SnapshotData {
   applicationGroups: ApplicationGroup[]
   decisionRules?: DecisionRules
   discoveryProfile?: DiscoveryProfile
+  discoveryInbox?: DiscoveryInboxItem[]
   timeline?: TimelineRecord[]
   changeSets?: ChangeSetRecord[]
   meta?: ImportMeta
@@ -94,6 +97,7 @@ export function validateSnapshot(value: unknown): asserts value is PJSDASSnapsho
   assertArray(data.actions, 'actions')
   assertArray(data.prep, 'prep')
   assertArray(data.applicationGroups, 'applicationGroups')
+  if (data.discoveryInbox !== undefined) assertArray(data.discoveryInbox, 'discoveryInbox')
   if (data.timeline !== undefined) assertArray(data.timeline, 'timeline')
   if (data.changeSets !== undefined) assertArray(data.changeSets, 'changeSets')
   if (data.decisionRules !== undefined) {
@@ -113,11 +117,18 @@ export function validateSnapshot(value: unknown): asserts value is PJSDASSnapsho
   const actionIds = assertUniqueIds(data.actions, 'Action')
   const prepIds = assertUniqueIds(data.prep, 'Prep')
   const groupIds = assertUniqueIds(data.applicationGroups, 'Application Group')
+  if (data.discoveryInbox) assertUniqueIds(data.discoveryInbox, 'Discovery Inbox')
   if (data.timeline) assertUniqueIds(data.timeline, 'Timeline')
   if (data.changeSets) assertUniqueIds(data.changeSets, 'ChangeSet')
   void processIds
   void actionIds
   void prepIds
+
+  for (const raw of data.discoveryInbox ?? []) {
+    const item = raw as DiscoveryInboxItem
+    const errors = validateDiscoveryInboxItem(item)
+    if (errors.length) throw new Error(`备份损坏：发现箱条目无效（${errors[0]}）`)
+  }
 
   for (const raw of data.opportunities) {
     const opportunity = raw as Opportunity

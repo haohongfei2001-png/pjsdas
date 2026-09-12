@@ -8,7 +8,7 @@ import {
 } from './supabaseProject.js'
 import { WorkspaceSourceError, type WorkspaceSource } from './workspaceSource.js'
 
-export const AUTHENTICATED_GATEWAY_VERSION = '1.3.0-alpha.1' as const
+export const AUTHENTICATED_GATEWAY_VERSION = '1.4.0-alpha.1' as const
 export const AUTHENTICATED_MCP_RESOURCE = 'https://pjsdas-remote-alpha.vercel.app/api/mcp'
 export const AUTHORIZATION_SERVER = `${PJSDAS_SUPABASE_URL}/auth/v1`
 export const PROTECTED_RESOURCE_METADATA_URL = 'https://pjsdas-remote-alpha.vercel.app/.well-known/oauth-protected-resource'
@@ -61,7 +61,7 @@ function lazyDriveSource(request: Request): WorkspaceSource {
 }
 
 /**
- * Authenticated v1.3 runtime for real PJSDAS data.
+ * Authenticated v1.4 runtime for real PJSDAS data.
  *
  * Both /api/mcp (primary) and /api/mcp-auth (compatibility alias) enter this
  * runtime only after a valid Supabase OAuth bearer identity is present. Read

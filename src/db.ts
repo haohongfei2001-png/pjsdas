@@ -46,6 +46,7 @@ import type {
   ApplicationGroup,
   ImportBundle,
   ImportMeta,
+  DiscoveryInboxItem,
   Opportunity,
   Prep,
   ProcessEvent,
@@ -75,6 +76,7 @@ interface PJSDASDatabase extends DBSchema {
   applicationGroups: { key: string; value: ApplicationGroup }
   decisionRules: { key: string; value: DecisionRules }
   discoveryProfiles: { key: string; value: DiscoveryProfile }
+  discoveryInbox: { key: string; value: DiscoveryInboxItem; indexes: { 'by-status': string; 'by-updated-at': string } }
   timeline: {
     key: string
     value: TimelineRecord
@@ -97,12 +99,13 @@ const DATA_STORES = [
   'applicationGroups',
   'decisionRules',
   'discoveryProfiles',
+  'discoveryInbox',
   'timeline',
   'changeSets',
   'meta',
 ] as const
 
-export const dbPromise = openDB<PJSDASDatabase>('pjsdas', 7, {
+export const dbPromise = openDB<PJSDASDatabase>('pjsdas', 8, {
   upgrade(db) {
     if (!db.objectStoreNames.contains('opportunities')) {
       db.createObjectStore('opportunities', { keyPath: 'id' })
@@ -130,6 +133,11 @@ export const dbPromise = openDB<PJSDASDatabase>('pjsdas', 7, {
     }
     if (!db.objectStoreNames.contains('discoveryProfiles')) {
       db.createObjectStore('discoveryProfiles', { keyPath: 'key' })
+    }
+    if (!db.objectStoreNames.contains('discoveryInbox')) {
+      const store = db.createObjectStore('discoveryInbox', { keyPath: 'id' })
+      store.createIndex('by-status', 'status')
+      store.createIndex('by-updated-at', 'updatedAt')
     }
     if (!db.objectStoreNames.contains('timeline')) {
       const store = db.createObjectStore('timeline', { keyPath: 'id' })
@@ -759,7 +767,7 @@ export async function applyChangeSet(id: string) {
 export async function exportLocalSnapshot() {
   const db = await dbPromise
   await ensureTimelineBackfill(db)
-  const [opportunities, processes, processEvents, actions, prep, applicationGroups, decisionRules, discoveryProfile, timeline, changeSets, meta] =
+  const [opportunities, processes, processEvents, actions, prep, applicationGroups, decisionRules, discoveryProfile, discoveryInbox, timeline, changeSets, meta] =
     await Promise.all([
       db.getAll('opportunities'),
       db.getAll('processes'),
@@ -769,6 +777,7 @@ export async function exportLocalSnapshot() {
       db.getAll('applicationGroups'),
       db.get('decisionRules', 'current'),
       db.get('discoveryProfiles', 'current'),
+      db.getAll('discoveryInbox'),
       db.getAll('timeline'),
       db.getAll('changeSets'),
       db.get('meta', 'lastImport'),
@@ -783,6 +792,7 @@ export async function exportLocalSnapshot() {
     applicationGroups,
     decisionRules: decisionRulesForSnapshot(decisionRules),
     discoveryProfile,
+    discoveryInbox,
     timeline,
     changeSets,
     meta,
@@ -804,6 +814,7 @@ export async function replaceLocalSnapshotFromCloud(snapshot: PJSDASSnapshot) {
   for (const item of snapshot.data.applicationGroups) await tx.objectStore('applicationGroups').put(item)
   await tx.objectStore('decisionRules').put(snapshot.data.decisionRules ?? createDefaultDecisionRules())
   if (snapshot.data.discoveryProfile) await tx.objectStore('discoveryProfiles').put(snapshot.data.discoveryProfile)
+  for (const item of snapshot.data.discoveryInbox ?? []) await tx.objectStore('discoveryInbox').put(item)
   for (const item of snapshot.data.timeline ?? []) await tx.objectStore('timeline').put(item)
   for (const item of snapshot.data.changeSets ?? []) await tx.objectStore('changeSets').put(item)
   if (snapshot.data.meta) await tx.objectStore('meta').put(snapshot.data.meta)
@@ -826,6 +837,7 @@ export async function restoreLocalSnapshot(snapshot: PJSDASSnapshot) {
   for (const item of snapshot.data.applicationGroups) await tx.objectStore('applicationGroups').put(item)
   await tx.objectStore('decisionRules').put(snapshot.data.decisionRules ?? createDefaultDecisionRules())
   if (snapshot.data.discoveryProfile) await tx.objectStore('discoveryProfiles').put(snapshot.data.discoveryProfile)
+  for (const item of snapshot.data.discoveryInbox ?? []) await tx.objectStore('discoveryInbox').put(item)
   for (const item of snapshot.data.timeline ?? []) await tx.objectStore('timeline').put(item)
   for (const item of snapshot.data.changeSets ?? []) await tx.objectStore('changeSets').put(item)
   await tx.objectStore('timeline').put(timelineFromRestore(snapshot.exportedAt))
