@@ -165,7 +165,7 @@ export function discoveryRunsFromChangeSets(
   return changeSets.flatMap((changeSet) => {
     const run = discoveryRunFromChangeSet(changeSet)
     if (!run) return []
-    const selectedCount = changeSet.operations.filter((operation) => operation.kind === 'add_discovered_opportunity').length
+    const operationCount = changeSet.operations.filter((operation) => operation.kind === 'add_discovered_opportunity').length
     const outcome: StoredDiscoveryRun['outcome'] = changeSet.status === 'applied'
       ? 'applied'
       : changeSet.status === 'failed'
@@ -175,6 +175,7 @@ export function discoveryRunsFromChangeSets(
           : inboxSourceChangeSetIds.has(changeSet.id)
             ? 'saved_to_inbox'
             : 'discarded'
+    const selectedCount = outcome === 'applied' || outcome === 'saved_to_inbox' ? operationCount : 0
     return [{
       ...run,
       changeSetId: changeSet.id,
