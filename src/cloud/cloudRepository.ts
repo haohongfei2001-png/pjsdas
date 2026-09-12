@@ -42,11 +42,11 @@ async function errorMessage(response: Response) {
 
 async function driveFetch(url: string, init: RequestInit = {}) {
   const headers = new Headers(init.headers)
-  headers.set('Authorization', `Bearer ${getCloudAccessToken()}`)
+  headers.set('Authorization', `Bearer ${await getCloudAccessToken()}`)
   const response = await fetch(url, { ...init, headers })
   if (response.status === 401) {
     invalidateCloudSession()
-    throw new Error('Google Drive 授权已过期，请重新连接 Google 账号。')
+    throw new Error('Google Drive 短期授权已失效，PJSDAS 会在下次同步时自动重新获取。')
   }
   if (!response.ok) throw new Error(`Google Drive 请求失败：${await errorMessage(response)}`)
   return response
