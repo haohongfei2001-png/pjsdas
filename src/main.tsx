@@ -1,6 +1,7 @@
 import { StrictMode, useEffect, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import App from './AppV5.js'
+import ApplicationPortfolioDock from './ApplicationPortfolioDock.js'
 import FixedEventGuard from './FixedEventGuard.js'
 import LocalBackupDock from './LocalBackupDock.js'
 import ProcessEventDock from './ProcessEventDock.js'
@@ -24,6 +25,7 @@ function Root() {
   return (
     <>
       <App key={revision} />
+      <ApplicationPortfolioDock />
       <ProgressInbox onChanged={refresh} />
       <ProcessEventDock onChanged={refresh} />
       <LocalBackupDock onChanged={refresh} />
