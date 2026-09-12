@@ -1,6 +1,7 @@
 import type { CallToolResult } from '@modelcontextprotocol/server'
 import * as z from 'zod/v4'
 import { expectedSourcesFromRegistry, summarizeCoverage } from '../src/ingestion.js'
+import { summarizeSourceHealth } from '../src/sourceHealth.js'
 import { WorkspaceSourceError, type WorkspaceSource } from './workspaceSource.js'
 
 export const getCoverageStatusSchema = z.object({})
@@ -22,9 +23,11 @@ export async function invokeCoverageStatus(source: WorkspaceSource): Promise<Cal
     const generatedAt = context.now ?? new Date()
     const expectedSources = expectedSourcesFromRegistry(snapshot.data.timeline)
     const coverage = summarizeCoverage(snapshot.data.timeline, { now: generatedAt, expectedSources })
+    const sourceHealth = summarizeSourceHealth(snapshot.data.timeline, generatedAt)
     return success({
       meta: { workspaceVersion: context.workspaceVersion, generatedAt: generatedAt.toISOString(), source: 'pjsdas' },
       coverage,
+      sourceHealth,
       assurance: coverage.allCaughtUp
         ? `All ${coverage.expectedSourceCount} enabled ingestion sources have completed within their registry SLA; each latest run is balanced and no enabled source record remains unresolved.`
         : coverage.missingSourceCount > 0
