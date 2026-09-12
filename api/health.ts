@@ -13,6 +13,8 @@ export const PUBLIC_HEALTH_CAPABILITIES = {
   richOpportunityFacts: 'v1.5-round-1',
   componentAssessment: 'v1.5-round-2',
   opportunityAssessmentRead: true,
+  applicationPortfolioDecision: 'v1.6-round-1',
+  applicationPortfolioRead: true,
 } as const
 
 export default {
