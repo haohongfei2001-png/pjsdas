@@ -15,24 +15,29 @@ Rules:
 
 This deliberately changes the older contract that allowed a small daily quota of follow-up items in Today.
 
-## 2. Manual role text is an alias, not canonical job identity
+## 2. Manual role text is an alias, never canonical job identity
 
-PJSDAS must not create duplicate Opportunities because the user omitted a character, used a shorthand role name, or typed an informal title.
+PJSDAS must not create duplicate Opportunities because the user omitted a character, used a shorthand role name, or typed an informal title. A manually typed role string is evidence about which job the user means; it is never authoritative evidence for the canonical role title.
 
-Canonical role identity is resolved in this order:
+Canonical role-title authority is source-backed:
 
-1. an existing Opportunity with a unique matching company + role identity;
-2. a source-backed canonical reference, currently supplied to the browser input path by non-dismissed Discovery Inbox candidates;
-3. otherwise fail closed as `unresolved`.
+1. a source-backed canonical reference, currently supplied to the browser input path by non-dismissed Discovery Inbox candidates;
+2. an existing Opportunity may provide its stored role as canonical only when it itself carries source evidence;
+3. an unsourced legacy Opportunity may be used as the existing target object, but may not supply the canonical role title;
+4. otherwise the update fails closed as `unresolved`.
 
 Rules:
 
-- existing canonical jobs tolerate brand aliases and small role-name edits when the match is unique;
+- source-backed canonical jobs tolerate brand aliases, omitted characters and small role-name edits when the match is unique;
 - source-backed canonical references replace manual shorthand with the source role name before write;
-- several similarly plausible same-company roles remain unresolved rather than selecting the first match;
-- a genuinely new manually typed role with no existing/source-backed canonical reference does not directly create an Opportunity;
+- if a source-backed canonical reference uniquely corresponds to an unsourced legacy Opportunity, PJSDAS preserves the legacy Opportunity ID but rewrites the incoming update to the source-backed company/role title; it does not create a second Opportunity;
+- an unsourced legacy Opportunity cannot become canonical merely because the user's text exactly matches its old stored title;
+- several similarly plausible source-backed roles remain unresolved rather than selecting the first match;
+- a genuinely new manually typed role with no source-backed canonical reference does not directly create an Opportunity;
 - later operations in the same input batch are relinked to the canonical Opportunity ID after canonicalization;
-- MCP progress proposals inherit this boundary: existing canonical jobs can be updated, but brand-new text-only job identities fail closed.
+- MCP progress proposals inherit the same boundary: a source-backed existing job can be updated, while unsourced/new text-only job identity fails closed until source evidence exists.
+
+This is intentionally conservative. Historical manually entered records are not destructively batch-renamed from guesses. They are normalized when a source-backed reference can identify the same logical job safely, retaining the existing Opportunity ID and history.
 
 The job-discovery/trusted-ingestion path remains the normal source-backed path for introducing a genuinely new job.
 
@@ -75,7 +80,7 @@ This separation is intentional:
 - input policy: what PJSDAS object is it safe to create/update?
 - ChangeSet: what mutation is actually proposed/applied?
 
-The browser input UI reads Discovery Inbox source candidates and supplies them as canonical references. The UI remains on the canonical ChangeSet mutation path.
+The browser input UI reads Discovery Inbox source candidates and supplies them as canonical references. Existing source-backed Opportunities are also recognized as canonical references by the policy layer. The UI remains on the canonical ChangeSet mutation path.
 
 ## 6. Performance
 
@@ -83,33 +88,35 @@ The richer Input Policy initially pushed the initial JS bundle above the existin
 
 Validated build:
 
-- `ProgressInboxHeavy`: 28.64 kB / 10.72 kB gzip
+- `ProgressInboxHeavy`: 29.13 kB / 10.87 kB gzip
 - initial main JS: 475.16 kB / 145.92 kB gzip
 - no Vite >500 kB warning
 
 ## 7. Validation
 
-Final code candidate before this documentation commit:
+Latest validated code candidate before this documentation commit:
 
-- code head: `a36670c6478be5e04dc02202d198f3f4b32a684c`
-- CI #624: success
+- code head: `06f2bb76f6ec99b3b3b09d0359ab13471b332655`
+- CI #631: success
 - dependency audit: 0 vulnerabilities
-- 89 test files / 370 tests passed
+- 89 test files / 372 tests passed
 - TypeScript + Vite production build: passed
 - 183 modules transformed
 
 Dedicated regressions include:
 
 - review/follow-up absent from Today;
-- role typo / missing-character canonicalization;
-- source-backed shorthand -> official role name;
-- ambiguous same-company role fail-closed;
+- role typo / missing-character canonicalization for source-backed jobs;
+- source-backed shorthand -> official/source role name;
+- unsourced legacy Opportunity cannot define a canonical title, even on exact text match;
+- source-backed reference normalizes a matching legacy Opportunity while preserving its ID;
+- ambiguous same-company canonical role fail-closed;
 - new unsourced manual role fail-closed;
+- MCP progress proposal respects the same source-backed canonical boundary;
 - non-job task with no Opportunity baseline;
 - product test not mistaken for recruiting;
 - company + test unique resolution;
 - company + test completion;
 - assessment-stage preference;
 - same-batch previous-role preference;
-- ambiguous company + test fail-closed;
-- MCP progress proposal respects canonical identity.
+- ambiguous company + test fail-closed.
