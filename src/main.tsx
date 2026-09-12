@@ -1,13 +1,7 @@
 import { StrictMode, useEffect, useState } from 'react'
 import { createRoot } from 'react-dom/client'
-import App from './AppV5.js'
-import ApplicationPortfolioDock from './ApplicationPortfolioDock.js'
-import ContinuousDiscoveryDock from './ContinuousDiscoveryDock.js'
-import PrepGraphDock from './PrepGraphDock.js'
+import App from './AppV8.js'
 import FixedEventGuard from './FixedEventGuard.js'
-import LocalBackupDock from './LocalBackupDock.js'
-import ProcessEventDock from './ProcessEventDock.js'
-import ProgressInbox from './ProgressInbox.js'
 import { UiLanguageProvider } from './uiLanguage.js'
 import { CloudProvider } from './cloud/CloudContext.js'
 import { AiAccessProvider } from './aiAccess/AiAccessContext.js'
@@ -27,12 +21,6 @@ function Root() {
   return (
     <>
       <App key={revision} />
-      <ApplicationPortfolioDock />
-      <PrepGraphDock />
-      <ContinuousDiscoveryDock />
-      <ProgressInbox onChanged={refresh} />
-      <ProcessEventDock onChanged={refresh} />
-      <LocalBackupDock onChanged={refresh} />
       <FixedEventGuard key={`fixed-${revision}`} onChanged={refresh} />
     </>
   )
