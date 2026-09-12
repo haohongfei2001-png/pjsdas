@@ -70,7 +70,10 @@ export default function ProcessEventDock({ onChanged }: ProcessEventDockProps) {
   }
 
   useEffect(() => {
-    reloadLocal()
+    void reloadLocal()
+    const refresh = () => { void reloadLocal() }
+    window.addEventListener('pjsdas:workspace-replaced', refresh)
+    return () => window.removeEventListener('pjsdas:workspace-replaced', refresh)
   }, [])
 
   useEffect(() => {
@@ -85,12 +88,23 @@ export default function ProcessEventDock({ onChanged }: ProcessEventDockProps) {
   const actionable = isActionableProcessEvent(type)
   const interview = type === 'interview_invite'
 
+  async function show() {
+    setError('')
+    await reloadLocal()
+    setOpen(true)
+  }
+
   async function submit(event: React.FormEvent) {
     event.preventDefault()
     setError('')
-    const opportunity = opportunityByLabel.get(opportunityText)
+    // Resolve against a freshly loaded workspace. The selected text may refer to
+    // a role that was renamed/closed/replaced while this dock stayed mounted.
+    const latestOpportunities = await getAllOpportunities()
+    setOpportunities(latestOpportunities)
+    const latestByLabel = new Map(latestOpportunities.map((item) => [opportunityLabel(item), item]))
+    const opportunity = latestByLabel.get(opportunityText)
     if (!opportunity) {
-      setError('请选择岗位列表中的完整公司与岗位。')
+      setError('当前工作区已变化，请从最新岗位列表重新选择公司与岗位。')
       return
     }
     const occurredIso = toIso(occurredAt)
@@ -150,7 +164,7 @@ export default function ProcessEventDock({ onChanged }: ProcessEventDockProps) {
 
   return (
     <>
-      <button className="event-dock-trigger" type="button" onClick={() => setOpen(true)}>
+      <button className="event-dock-trigger" type="button" onClick={() => { void show() }}>
         + 记录流程通知
       </button>
 
