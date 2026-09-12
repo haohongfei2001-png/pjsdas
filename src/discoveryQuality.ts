@@ -1,12 +1,28 @@
 import type { DecisionWeights } from './decisionRules.js'
 import { discoveryProfileForSnapshot, type DiscoveryProfile } from './discoveryProfile.js'
-import type { DiscoveryConfidence, DiscoveryInboxItem, Opportunity, OpportunityRole, TimelineRecord } from './model.js'
+import {
+  createJobPostingEvidence,
+  jobPostingFreshness,
+  jobRoleSimilarity,
+  knownJobPostings,
+  logicalJobMatches,
+  normalizeJobCompany,
+} from './jobPosting.js'
+import type {
+  DiscoveryConfidence,
+  DiscoveryInboxItem,
+  JobPostingStatus,
+  Opportunity,
+  OpportunityRole,
+  TimelineRecord,
+} from './model.js'
 
-export type DiscoveryPostingStatus = 'open' | 'closed' | 'unknown'
+export type DiscoveryPostingStatus = JobPostingStatus
 
 export interface DiscoveryCandidateForQuality {
   company: string
   role: string
+  sourceUrl: string
   sourceTitle: string
   location?: string
   deadline?: string
@@ -19,6 +35,7 @@ export interface DiscoveryCandidateForQuality {
   fitScore: number
   fitConfidence: DiscoveryConfidence
   opportunityValueConfidence: DiscoveryConfidence
+  discoveredAt?: string
 }
 
 export interface ScreenedDiscoveryCandidate<T extends DiscoveryCandidateForQuality = DiscoveryCandidateForQuality> {
@@ -39,58 +56,23 @@ function compact(value: string) {
   return value.toLocaleLowerCase().replace(/[\s\u3000·•｜|（）()【】\[\]，,。.!！?？:：;；/\\_-]+/g, '')
 }
 
-function normalizedCompany(value: string) {
-  return compact(value).replace(/(股份有限公司|有限责任公司|有限公司|集团公司|公司|ltd|inc)$/gi, '')
-}
-
-function normalizedRole(value: string) {
-  return compact(value)
-    .replace(/20\d{2}届/g, '')
-    .replace(/20\d{2}(秋招|春招|校招)/g, '')
-    .replace(/(校园招聘|校招|秋招|春招|应届生|应届|全职|职位|岗位|方向)$/g, '')
-}
-
-function bigrams(value: string) {
-  const chars = Array.from(value)
-  if (chars.length < 2) return new Set(chars)
-  const result = new Set<string>()
-  for (let index = 0; index < chars.length - 1; index += 1) result.add(`${chars[index]}${chars[index + 1]}`)
-  return result
-}
-
-export function discoveryRoleSimilarity(a: string, b: string) {
-  const left = normalizedRole(a)
-  const right = normalizedRole(b)
-  if (!left || !right) return 0
-  if (left === right) return 1
-  const shorter = left.length <= right.length ? left : right
-  const longer = left.length > right.length ? left : right
-  if (shorter.length >= 4 && longer.includes(shorter)) return 0.9
-
-  const leftPairs = bigrams(left)
-  const rightPairs = bigrams(right)
-  let overlap = 0
-  for (const pair of leftPairs) if (rightPairs.has(pair)) overlap += 1
-  const denominator = leftPairs.size + rightPairs.size
-  return denominator ? (2 * overlap) / denominator : 0
-}
+export const discoveryRoleSimilarity = jobRoleSimilarity
 
 export function findSimilarOpportunity(
-  candidate: Pick<DiscoveryCandidateForQuality, 'company' | 'role'>,
+  candidate: Pick<DiscoveryCandidateForQuality, 'company' | 'role'> & { location?: string },
   opportunities: Opportunity[],
 ) {
-  const company = normalizedCompany(candidate.company)
-  return opportunities.find((item) => {
-    if (normalizedCompany(item.company) !== company) return false
-    return discoveryRoleSimilarity(item.role, candidate.role) >= 0.72
-  })
+  return opportunities.find((item) => logicalJobMatches(
+    { company: candidate.company, role: candidate.role, location: candidate.location },
+    { company: item.company, role: item.role, location: item.detail?.discovery?.location },
+  ))
 }
 
 function similarCandidate(
-  a: Pick<DiscoveryCandidateForQuality, 'company' | 'role'>,
-  b: Pick<DiscoveryCandidateForQuality, 'company' | 'role'>,
+  a: Pick<DiscoveryCandidateForQuality, 'company' | 'role' | 'location'>,
+  b: Pick<DiscoveryCandidateForQuality, 'company' | 'role' | 'location'>,
 ) {
-  return normalizedCompany(a.company) === normalizedCompany(b.company) && discoveryRoleSimilarity(a.role, b.role) >= 0.72
+  return logicalJobMatches(a, b)
 }
 
 function latestExplicitFeedbackForCandidate(
@@ -105,7 +87,7 @@ function latestExplicitFeedbackForCandidate(
       (item.discoveryDecision === 'accepted' || item.discoveryDecision === 'rejected') &&
       Boolean(item.company && item.role) &&
       new Date(item.occurredAt).getTime() >= cutoff &&
-      normalizedCompany(item.company!) === normalizedCompany(candidate.company) &&
+      normalizeJobCompany(item.company!) === normalizeJobCompany(candidate.company) &&
       discoveryRoleSimilarity(item.role!, candidate.role) >= 0.72
     )
     .sort((a, b) => b.occurredAt.localeCompare(a.occurredAt) || b.recordedAt.localeCompare(a.recordedAt))[0]
@@ -228,6 +210,32 @@ export function evaluateDiscoveryCandidate(
   }
 }
 
+function postingRefreshWarnings(
+  candidate: DiscoveryCandidateForQuality,
+  existing: Opportunity[],
+  inbox: DiscoveryInboxItem[],
+  now: Date,
+) {
+  const known = knownJobPostings(existing, inbox)
+  const incomingPosting = createJobPostingEvidence({
+    company: candidate.company,
+    role: candidate.role,
+    sourceUrl: candidate.sourceUrl,
+    sourceTitle: candidate.sourceTitle,
+    location: candidate.location,
+    deadline: candidate.deadline,
+    compensationText: candidate.compensationText,
+    postingStatus: candidate.postingStatus ?? 'unknown',
+    observedAt: candidate.discoveredAt ?? now.toISOString(),
+  })
+  const logicalMatches = known.filter((entry) => logicalJobMatches(
+    { company: candidate.company, role: candidate.role, location: candidate.location },
+    { company: entry.company, role: entry.role, location: entry.location },
+  ))
+  const sourceMatches = logicalMatches.filter((entry) => entry.posting.canonicalSourceUrl === incomingPosting.canonicalSourceUrl)
+  return { incomingPosting, logicalMatches, sourceMatches }
+}
+
 export function screenDiscoveryCandidates<T extends DiscoveryCandidateForQuality>(
   rawProfile: DiscoveryProfile,
   candidates: T[],
@@ -243,29 +251,54 @@ export function screenDiscoveryCandidates<T extends DiscoveryCandidateForQuality
   const rejectedCandidates: DiscoveryScreeningResult<T>['rejectedCandidates'] = []
 
   for (const candidate of candidates) {
-    const inboxMatch = inbox.find((item) =>
-      normalizedCompany(item.company) === normalizedCompany(candidate.company) &&
-      discoveryRoleSimilarity(item.role, candidate.role) >= 0.72
-    )
-    if (inboxMatch && inboxMatch.status !== 'promoted') {
-      const ageMs = now.getTime() - new Date(inboxMatch.updatedAt).getTime()
-      if (inboxMatch.status === 'dismissed') {
-        if (ageMs <= 120 * 24 * 60 * 60 * 1000) {
-          rejectedCandidates.push({
-            company: candidate.company,
-            role: candidate.role,
-            reasons: [`发现箱中高度相似岗位“${inboxMatch.company}｜${inboxMatch.role}”最近已被明确拒绝。`],
-          })
-          continue
-        }
-      } else {
-        skippedDuplicates.push({
-          company: candidate.company,
-          role: candidate.role,
-          reason: `高度相似岗位“${inboxMatch.company}｜${inboxMatch.role}”已经在发现箱（${inboxMatch.status}）。`,
-        })
-        continue
-      }
+    const postingWarnings: string[] = []
+    const postingState = postingRefreshWarnings(candidate, existing, inbox, now)
+    const opportunityPosting = postingState.logicalMatches.find((entry) => entry.ownerKind === 'opportunity')
+    if (opportunityPosting) {
+      skippedDuplicates.push({
+        company: candidate.company,
+        role: candidate.role,
+        reason: `PJSDAS 已存在相同或高度相似岗位“${opportunityPosting.company}｜${opportunityPosting.role}”；公开来源 ${opportunityPosting.posting.sourceHost} 已归属于正式 Opportunity。`,
+      })
+      continue
+    }
+
+    const inboxMatches = postingState.logicalMatches.filter((entry) => entry.ownerKind === 'inbox')
+    const recentlyDismissed = inboxMatches.find((entry) => {
+      if (entry.inboxStatus !== 'dismissed') return false
+      return now.getTime() - new Date(entry.ownerUpdatedAt).getTime() <= 120 * 24 * 60 * 60 * 1000
+    })
+    if (recentlyDismissed) {
+      rejectedCandidates.push({
+        company: candidate.company,
+        role: candidate.role,
+        reasons: [`发现箱中高度相似岗位“${recentlyDismissed.company}｜${recentlyDismissed.role}”最近已被明确拒绝。`],
+      })
+      continue
+    }
+
+    const activeInboxMatches = inboxMatches.filter((entry) => entry.inboxStatus === 'new' || entry.inboxStatus === 'seen' || entry.inboxStatus === 'later')
+    const freshActive = activeInboxMatches.find((entry) => {
+      const freshness = jobPostingFreshness(entry.posting, now)
+      return freshness === 'fresh' || freshness === 'aging'
+    })
+    if (freshActive) {
+      const sameSource = freshActive.posting.canonicalSourceUrl === postingState.incomingPosting.canonicalSourceUrl
+      skippedDuplicates.push({
+        company: candidate.company,
+        role: candidate.role,
+        reason: sameSource
+          ? `同一招聘来源已经在发现箱（${freshActive.inboxStatus}），最近验证于 ${freshActive.posting.lastVerifiedAt}。`
+          : `高度相似岗位已经在发现箱（${freshActive.inboxStatus}），且已有近期公开来源 ${freshActive.posting.sourceHost}；本次跨来源结果不重复进入审阅。`,
+      })
+      continue
+    }
+
+    if (activeInboxMatches.length > 0) {
+      const sameSourceStale = postingState.sourceMatches.find((entry) => entry.ownerKind === 'inbox')
+      postingWarnings.push(sameSourceStale
+        ? '同一公开招聘来源此前已经记录，但来源证据已陈旧；本次候选用于刷新岗位状态与来源事实。'
+        : '发现箱中存在同一逻辑岗位的陈旧来源；本次新来源可能是重新发布或替代发布，请在审阅时确认。')
     }
 
     const latestFeedback = latestExplicitFeedbackForCandidate(timeline, candidate, now)
@@ -311,7 +344,7 @@ export function screenDiscoveryCandidates<T extends DiscoveryCandidateForQuality
     eligible.push({
       candidate,
       qualityScore: evaluated.qualityScore,
-      warnings: evaluated.warnings,
+      warnings: [...postingWarnings, ...evaluated.warnings].slice(0, 10),
     })
   }
 

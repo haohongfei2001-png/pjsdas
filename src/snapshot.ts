@@ -13,6 +13,7 @@ import { validateDecisionRules, type DecisionRules } from './decisionRules.js'
 import { validateChangeSet, type ChangeSetRecord } from './changeSet.js'
 import { validateDiscoveryProfile, type DiscoveryProfile } from './discoveryProfile.js'
 import { validateDiscoveryInboxItem } from './discoveryInbox.js'
+import { validateJobPostingEvidence } from './jobPosting.js'
 
 export const SNAPSHOT_SCHEMA = 'pjsdas-local-snapshot' as const
 export const SNAPSHOT_VERSION = 1 as const
@@ -137,6 +138,15 @@ export function validateSnapshot(value: unknown): asserts value is PJSDASSnapsho
     }
     if (opportunity.applicationGroupId && !groupIds.has(opportunity.applicationGroupId)) {
       throw new Error(`备份损坏：岗位 ${opportunity.id} 引用了不存在的申请组 ${opportunity.applicationGroupId}。`)
+    }
+    const discovery = opportunity.detail?.discovery
+    if (discovery?.posting) {
+      const errors = validateJobPostingEvidence(discovery.posting)
+      if (errors.length) throw new Error(`备份损坏：岗位 ${opportunity.id} 的发布记录无效（${errors[0]}）`)
+    }
+    for (const posting of discovery?.postingHistory ?? []) {
+      const errors = validateJobPostingEvidence(posting)
+      if (errors.length) throw new Error(`备份损坏：岗位 ${opportunity.id} 的发布历史无效（${errors[0]}）`)
     }
   }
 

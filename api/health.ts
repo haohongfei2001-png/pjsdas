@@ -5,10 +5,11 @@ import {
 
 export const PUBLIC_HEALTH_CAPABILITIES = {
   discoveryContext: true,
-  discoveryQualityGate: 'v1.3-round-1',
+  discoveryQualityGate: 'v1.4-round-3',
   reviewOnlyProposals: true,
   discoveredOpportunityProposals: true,
-  discoveryInbox: 'v1.4-round-1',
+  discoveryInbox: 'v1.4-round-2',
+  jobPostingIdentityFreshness: 'v1.4-round-3',
 } as const
 
 export default {

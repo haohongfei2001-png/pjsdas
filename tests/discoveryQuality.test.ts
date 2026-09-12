@@ -7,7 +7,8 @@ import {
   screenDiscoveryCandidates,
   type DiscoveryCandidateForQuality,
 } from '../src/discoveryQuality.js'
-import type { Opportunity } from '../src/model.js'
+import { createJobPostingEvidence } from '../src/jobPosting.js'
+import type { DiscoveryInboxItem, Opportunity } from '../src/model.js'
 
 const weights = DEFAULT_DECISION_RULES.weights
 const now = new Date('2026-09-11T12:00:00+08:00')
@@ -16,6 +17,7 @@ function candidate(patch: Partial<DiscoveryCandidateForQuality> = {}): Discovery
   return {
     company: '候选科技',
     role: 'AI 产品经理',
+    sourceUrl: 'https://careers.example.com/jobs/ai-pm',
     sourceTitle: '候选科技 2027 届校园招聘 AI 产品经理',
     sourceEvidenceText: '2027 届校园招聘，工作地点北京，负责 AI 产品规划与跨团队协作。',
     postingStatus: 'open',
@@ -28,6 +30,7 @@ function candidate(patch: Partial<DiscoveryCandidateForQuality> = {}): Discovery
     fitScore: 78,
     fitConfidence: 'medium',
     opportunityValueConfidence: 'medium',
+    discoveredAt: '2026-09-11T03:30:00.000Z',
     ...patch,
   }
 }
@@ -58,7 +61,27 @@ function existing(role = '产品经理（AI方向）'): Opportunity {
   }
 }
 
-describe('v1.3 discovery quality gate', () => {
+function inbox(updatedAt: string, sourceUrl = 'https://careers.example.com/jobs/ai-pm'): DiscoveryInboxItem {
+  const posting = createJobPostingEvidence({
+    company: '甲公司',
+    role: '产品经理（AI方向）',
+    sourceUrl,
+    sourceTitle: '甲公司 AI 产品',
+    location: '北京',
+    postingStatus: 'open',
+    observedAt: updatedAt,
+  })
+  return {
+    id: 'inbox-1', candidateOpportunityId: 'candidate-1', company: '甲公司', role: '产品经理（AI方向）', roleType: 'core',
+    sourceUrl, sourceTitle: '甲公司 AI 产品', location: '北京', rationale: '历史发现',
+    opportunityValue: 85, fitScore: 80, fitConfidence: 'high', opportunityValueConfidence: 'high',
+    posting,
+    status: 'later',
+    discoveredAt: updatedAt, createdAt: updatedAt, updatedAt,
+  }
+}
+
+describe('v1.4 discovery quality gate', () => {
   it('detects semantically reordered AI product-manager titles as similar', () => {
     expect(discoveryRoleSimilarity('产品经理（AI方向）', 'AI 产品经理')).toBeGreaterThanOrEqual(0.72)
     expect(discoveryRoleSimilarity('商业分析', 'AI 产品经理')).toBeLessThan(0.72)
@@ -170,28 +193,42 @@ describe('v1.3 discovery quality gate', () => {
     expect(result.accepted).toHaveLength(1)
   })
 
-  it('does not reprocess active or recently dismissed Discovery Inbox candidates', () => {
-    const inboxBase = {
-      id: 'inbox-1', candidateOpportunityId: 'candidate-1', company: '甲公司', role: '产品经理（AI方向）', roleType: 'core' as const,
-      sourceUrl: 'https://careers.example.com/inbox', sourceTitle: '甲公司 AI 产品', rationale: '历史发现',
-      opportunityValue: 85, fitScore: 80, fitConfidence: 'high' as const, opportunityValueConfidence: 'high' as const,
-      discoveredAt: '2026-09-10T00:00:00.000Z', createdAt: '2026-09-10T00:00:00.000Z', updatedAt: '2026-09-10T00:00:00.000Z',
-    }
-    const active = screenDiscoveryCandidates(profile(), [candidate({ company: '甲公司', role: 'AI 产品经理' })], [], weights, now, [], [{ ...inboxBase, status: 'later' as const }])
+  it('does not reprocess active or recently dismissed Discovery Inbox candidates with recent source evidence', () => {
+    const active = screenDiscoveryCandidates(profile(), [candidate({ company: '甲公司', role: 'AI 产品经理' })], [], weights, now, [], [inbox('2026-09-10T00:00:00.000Z')])
     expect(active.accepted).toHaveLength(0)
     expect(active.skippedDuplicates[0].reason).toContain('发现箱')
-    const dismissed = screenDiscoveryCandidates(profile(), [candidate({ company: '甲公司', role: 'AI 产品经理' })], [], weights, now, [], [{ ...inboxBase, status: 'dismissed' as const, rejectionReason: 'not_interested' as const }])
+
+    const dismissedItem = { ...inbox('2026-09-10T00:00:00.000Z'), status: 'dismissed' as const, rejectionReason: 'not_interested' as const }
+    const dismissed = screenDiscoveryCandidates(profile(), [candidate({ company: '甲公司', role: 'AI 产品经理' })], [], weights, now, [], [dismissedItem])
     expect(dismissed.accepted).toHaveLength(0)
     expect(dismissed.rejectedCandidates[0].reasons.join(' ')).toContain('发现箱')
+  })
+
+  it('allows stale Inbox source evidence to be refreshed instead of suppressing it forever', () => {
+    const stale = inbox('2026-08-01T00:00:00.000Z')
+    const result = screenDiscoveryCandidates(profile(), [candidate({ company: '甲公司', role: 'AI 产品经理' })], [], weights, now, [], [stale])
+    expect(result.accepted).toHaveLength(1)
+    expect(result.accepted[0].warnings.join(' ')).toContain('刷新')
+  })
+
+  it('treats a new source for a stale logical job as a possible re-post', () => {
+    const stale = inbox('2026-08-01T00:00:00.000Z', 'https://jobs.example.com/old-ai-pm')
+    const result = screenDiscoveryCandidates(profile(), [candidate({
+      company: '甲公司',
+      role: 'AI 产品经理',
+      sourceUrl: 'https://careers.example.com/new-ai-pm?utm_source=search',
+    })], [], weights, now, [], [stale])
+    expect(result.accepted).toHaveLength(1)
+    expect(result.accepted[0].warnings.join(' ')).toContain('重新发布')
   })
 
   it('deduplicates against existing similar roles and keeps only the strongest bounded review batch', () => {
     const configured = { ...profile(), maxReviewCandidates: 2 }
     const result = screenDiscoveryCandidates(configured, [
       candidate({ company: '候选科技', role: 'AI 产品经理' }),
-      candidate({ company: '甲公司', role: 'AI 产品经理', fitScore: 92, opportunityValue: 94, sourceTitle: '甲公司 AI PM', sourceEvidenceText: '2027 届校园招聘，北京。' }),
-      candidate({ company: '乙公司', role: 'AI 产品经理', fitScore: 84, opportunityValue: 88, sourceTitle: '乙公司 AI PM', sourceEvidenceText: '2027 届校园招聘，北京。' }),
-      candidate({ company: '丙公司', role: 'AI 产品经理', fitScore: 68, opportunityValue: 70, sourceTitle: '丙公司 AI PM', sourceEvidenceText: '2027 届校园招聘，北京。' }),
+      candidate({ company: '甲公司', role: 'AI 产品经理', fitScore: 92, opportunityValue: 94, sourceUrl: 'https://careers.example.com/a', sourceTitle: '甲公司 AI PM', sourceEvidenceText: '2027 届校园招聘，北京。' }),
+      candidate({ company: '乙公司', role: 'AI 产品经理', fitScore: 84, opportunityValue: 88, sourceUrl: 'https://careers.example.com/b', sourceTitle: '乙公司 AI PM', sourceEvidenceText: '2027 届校园招聘，北京。' }),
+      candidate({ company: '丙公司', role: 'AI 产品经理', fitScore: 68, opportunityValue: 70, sourceUrl: 'https://careers.example.com/c', sourceTitle: '丙公司 AI PM', sourceEvidenceText: '2027 届校园招聘，北京。' }),
     ], [existing()], weights, now)
 
     expect(result.skippedDuplicates).toHaveLength(1)

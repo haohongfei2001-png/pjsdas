@@ -1,3 +1,4 @@
+import { jobPostingForInboxItem, jobPostingFreshness } from './jobPosting.js'
 import type { DiscoveryInboxItem, DiscoveryInboxStatus } from './model.js'
 
 export type DiscoveryInboxSort =
@@ -53,12 +54,25 @@ export function discoveryDecisionSummary(item: DiscoveryInboxItem, now = new Dat
   }
   if (!item.profileWarnings?.length) strengths.push(signal('no-profile-warning', '暂无偏好或证据警告', 'No profile or evidence warnings'))
 
+  const posting = jobPostingForInboxItem(item)
+  const freshness = jobPostingFreshness(posting, now)
+  if (freshness === 'fresh' && posting.postingStatus === 'open') {
+    strengths.push(signal('source-fresh-open', '公开来源近期验证为开放', 'Public source was recently verified open'))
+  }
+
   const risks: DiscoveryDecisionSignal[] = []
   if (item.fitConfidence === 'low') risks.push(signal('fit-low-confidence', '匹配度估计置信度低', 'Fit estimate has low confidence'))
   if (item.opportunityValueConfidence === 'low') risks.push(signal('opportunity-low-confidence', '机会价值估计置信度低', 'Opportunity-value estimate has low confidence'))
   if (item.profileWarnings?.length) {
     risks.push(signal('profile-warnings', `存在 ${item.profileWarnings.length} 条偏好或证据警告`, `${item.profileWarnings.length} profile or evidence warning(s)`))
   }
+  if (posting.postingStatus === 'unknown') risks.push(signal('posting-status-unknown', '来源未明确确认岗位仍开放', 'Source does not explicitly confirm the posting is open'))
+  if (freshness === 'aging') risks.push(signal('source-aging', '来源验证已超过 7 天', 'Source verification is more than 7 days old'))
+  if (freshness === 'stale') risks.push(signal('source-stale', '来源验证已超过 21 天，建议重新确认', 'Source verification is over 21 days old; re-check recommended'))
+  if (freshness === 'closed') risks.push(signal('source-closed', '来源状态或截止时间显示岗位已关闭', 'Source status or deadline indicates the posting is closed'))
+  if (posting.supersededByPostingId) risks.push(signal('source-superseded', '该来源已被更新的招聘发布替代', 'This source has been superseded by a newer posting'))
+  if (item.postingHistory?.length) risks.push(signal('source-history', `已记录 ${item.postingHistory.length + 1} 个来源版本`, `${item.postingHistory.length + 1} source versions recorded`))
+
   if (item.deadline) {
     const deadline = new Date(item.deadline).getTime()
     if (!Number.isNaN(deadline)) {
