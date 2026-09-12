@@ -52,7 +52,7 @@ describe('autonomous Drive workspace writes', () => {
         expect(init?.method).toBe('PATCH')
         expect(new Headers(init?.headers).get('authorization')).toBe('Bearer token')
         const body = JSON.parse(String(init?.body)) as { schema?: string; fingerprint?: string; updatedByDevice?: string }
-        expect(body.schema).toBe('pjsdas-drive-workspace')
+        expect(body.schema).toBe('pjsdas-google-drive-workspace')
         expect(body.fingerprint).toMatch(/^[a-f0-9]{64}$/)
         expect(body.updatedByDevice).toBe('monitor-test')
         return json({ id: 'drive-file-1', version: '18', modifiedTime: '2026-09-13T00:02:00.000Z' })
