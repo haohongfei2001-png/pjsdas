@@ -26,7 +26,7 @@ describe('stable account Google access token handler', () => {
     const fetchImpl = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input)
       const headers = new Headers(init?.headers)
-      const body = typeof init?.body === 'string' ? init.body : undefined
+      const body = init?.body == null ? undefined : String(init.body)
       calls.push({ url, auth: headers.get('authorization'), body })
 
       if (url.endsWith('/auth/v1/user')) return json({ id: 'user-a', email: 'a@gmail.com' })
