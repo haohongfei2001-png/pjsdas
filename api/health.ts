@@ -25,6 +25,14 @@ export const PUBLIC_HEALTH_CAPABILITIES = {
   postingRefreshReview: 'v1.7-round-2',
   zeroResultDiscoveryRun: true,
   explicitDiscoveryRunContext: true,
+  stableAccountSession: 'v1.8.1',
+  browserDriveTokenRestoration: true,
+  autonomousIngestion: 'v1.9',
+  ingestionReconciliationLedger: true,
+  coverageStatusRead: true,
+  trustedMonitorIngestion: true,
+  trustedGmailIngestion: true,
+  optimisticDriveWriteGuard: true,
 } as const
 
 export default {
@@ -32,7 +40,7 @@ export default {
     return new Response(JSON.stringify({
       service: 'pjsdas-authenticated-mcp',
       version: AUTHENTICATED_GATEWAY_VERSION,
-      mode: 'google-drive-readonly',
+      mode: 'google-drive-trusted-ingestion',
       auth: 'supabase-oauth-2.1',
       resource: AUTHENTICATED_MCP_RESOURCE,
       capabilities: PUBLIC_HEALTH_CAPABILITIES,
