@@ -4,6 +4,7 @@ import {
   getApplicationPortfolioSchema,
   getOpportunityAssessmentSchema,
   getPipelineSchema,
+  getPrepGraphSchema,
   getRecentTimelineSchema,
   getDiscoveryContextSchema,
   getTodayPlanSchema,
@@ -48,6 +49,7 @@ export function createPjsdasMcpServer(
     'For new web-discovered jobs, prefer bounded component assessments over opaque aggregate ratings. PJSDAS derives Fit and Opportunity Value totals from explicit component scores, confidence, rationale, and user-controlled component weights.',
     'Use get_opportunity_assessment when the user asks why a stored Fit or Opportunity Value score exists, or how current component weights would project the saved assessment. Do not claim current-rule projection silently rewrites historical stored scores.',
     'Use get_application_portfolio when the user asks which roles to choose inside an explicit Application Group with shared quota or preference constraints. Capacity is a maximum, not a target: never recommend weak roles merely to fill every available slot.',
+    'Use get_prep_graph when the user asks what preparation has the highest leverage, which opportunities a Prep item supports, or which current gaps/process-prep needs are uncovered. Prep Graph edges are explicit or deterministic exact matches only; do not invent fuzzy semantic edges or claim that a waiting Prep task was automatically activated.',
   ]
 
   if (proposalMode === 'review-link') {
@@ -70,7 +72,7 @@ export function createPjsdasMcpServer(
   }
 
   const server = new McpServer(
-    { name: 'pjsdas', version: options.version ?? '1.6.0-alpha.1' },
+    { name: 'pjsdas', version: options.version ?? '1.6.0-alpha.2' },
     { instructions: instructions.join(' ') },
   )
 
@@ -78,7 +80,7 @@ export function createPjsdasMcpServer(
     'get_today_plan',
     {
       title: 'Get PJSDAS today plan',
-      description: 'Read the deterministic PJSDAS action plan for a day and optional available-time budget.',
+      description: 'Read the deterministic PJSDAS action plan for a day and optional available-time budget. Existing Prep Actions may receive runtime leverage/urgency boosts from deterministic Prep Graph coverage without rewriting stored Action records.',
       inputSchema: getTodayPlanSchema,
       annotations: readOnlyAnnotations,
     },
@@ -116,6 +118,17 @@ export function createPjsdasMcpServer(
       annotations: readOnlyAnnotations,
     },
     async (args) => invokeReadTool(source, 'get_application_portfolio', args),
+  )
+
+  server.registerTool(
+    'get_prep_graph',
+    {
+      title: 'Get PJSDAS Prep Graph',
+      description: 'Read deterministic links from Prep to current opportunities, structured requirements/gaps, and process-prep needs. Returns leverage signals, coverage, trigger suggestions, and uncovered needs. It never creates Prep Actions or mutates job-search state.',
+      inputSchema: getPrepGraphSchema,
+      annotations: readOnlyAnnotations,
+    },
+    async (args) => invokeReadTool(source, 'get_prep_graph', args),
   )
 
   server.registerTool(
