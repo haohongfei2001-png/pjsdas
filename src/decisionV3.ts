@@ -57,7 +57,13 @@ function projectPrepGraphIntoActions(actions: Action[], opportunities: Opportuni
 }
 
 export function rankActions(actions: Action[], opportunities: Opportunity[], now = new Date(), rules: DecisionRules = DEFAULT_DECISION_RULES) {
-  const actionable = actions.filter((action) => !isUnresolvedPastProcessEvent(action, now))
+  // Follow-up/review reminders are passive observation state, not work the user
+  // should repeatedly see in Today. Keep them in Pipeline/history, but do not
+  // let them compete with applications, real recruiting events, prep, or manual
+  // tasks for the user's primary action surface.
+  const actionable = actions
+    .filter((action) => action.kind !== 'follow_up')
+    .filter((action) => !isUnresolvedPastProcessEvent(action, now))
   const scheduledIds = new Set(
     actionable.filter(isNaturalLanguageScheduledAssessment).map((action) => action.id),
   )
