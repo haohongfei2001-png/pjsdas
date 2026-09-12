@@ -16,6 +16,7 @@ import {
 import { applyMcpChangeSetWithBaseline, assertMcpChangeSetBaseline } from '../ai/mcpProposalApply.js'
 import { useCloud } from '../cloud/CloudContext.js'
 import { getAccountCheckpoint } from '../cloud/syncState.js'
+import OpportunityAssessmentSummary from '../OpportunityAssessmentSummary.js'
 import RichOpportunityFactsSummary from '../RichOpportunityFactsSummary.js'
 import { useUiLanguage } from '../uiLanguage.js'
 import './mcpProposalReview.css'
@@ -277,7 +278,7 @@ export default function McpProposalReview() {
   return (
     <div className="mcp-proposal-backdrop" role="dialog" aria-modal="true" aria-label={zh ? 'ChatGPT 修改提议' : 'ChatGPT change proposal'}>
       <section className={`mcp-proposal-card ${discoveryOperations.length ? 'discovery-review' : ''}`}>
-        <div className="mcp-proposal-eyebrow">CHATGPT · CHANGESET · {discoveryOperations.length ? 'V1.5 · RICH OPPORTUNITY' : 'V1.2'}</div>
+        <div className="mcp-proposal-eyebrow">CHATGPT · CHANGESET · {discoveryOperations.length ? 'V1.5 · COMPONENT ASSESSMENT' : 'V1.2'}</div>
         <h2>{discoveryOperations.length ? (zh ? '逐岗位审阅发现结果' : 'Review discovered jobs') : (zh ? '审阅 ChatGPT 提议' : 'Review ChatGPT proposal')}</h2>
 
         {verifying ? <p className="mcp-proposal-safety">{zh ? '正在验证提议签名、有效期与本机工作区基线…' : 'Verifying proposal signature, expiry, and local workspace baseline…'}</p> : null}
@@ -286,8 +287,8 @@ export default function McpProposalReview() {
           <>
             <p className="mcp-proposal-safety">{discoveryOperations.length
               ? (zh
-                ? '打开链接没有修改数据。招聘事实与匹配度/机会价值评估分层显示；只有勾选并应用的岗位会进入 Opportunities。'
-                : 'Opening this link changed no data. Source-backed job facts are shown separately from fit/opportunity assessments; only selected jobs are added to Opportunities.')
+                ? '打开链接没有修改数据。招聘事实与匹配度/机会价值分项评估分层显示；只有勾选并应用的岗位会进入 Opportunities。'
+                : 'Opening this link changed no data. Source-backed job facts and component assessments are shown separately; only selected jobs are added to Opportunities.')
               : (zh
                 ? '打开这条链接没有修改任何 PJSDAS 数据。只有你点击“应用 ChangeSet”后，这些规范化修改才会进入求职数据。'
                 : 'Opening this link changed no PJSDAS data. These normalized edits enter your job-search data only after you click Apply ChangeSet.')}</p>
@@ -356,6 +357,14 @@ export default function McpProposalReview() {
                         </div>
                         {evidence?.rationale ? <p className="mcp-discovery-rationale">{evidence.rationale}</p> : null}
                         <RichOpportunityFactsSummary facts={item.detail?.facts} zh={zh} />
+                        <OpportunityAssessmentSummary
+                          assessment={item.detail?.assessment}
+                          fitScore={item.fitScore}
+                          opportunityValue={item.opportunityValue}
+                          fitConfidence={evidence?.fitConfidence}
+                          opportunityValueConfidence={evidence?.opportunityValueConfidence}
+                          zh={zh}
+                        />
                         {evidence?.profileWarnings?.length ? (
                           <div className="mcp-discovery-warnings">
                             {evidence.profileWarnings.map((warning) => <span key={warning}>{warning}</span>)}

@@ -8,6 +8,26 @@ export interface DecisionWeights {
   timeEfficiency: number
 }
 
+export interface FitComponentWeights {
+  roleDirection: number
+  skills: number
+  education: number
+  experience: number
+  industry: number
+  language: number
+  location: number
+}
+
+export interface OpportunityValueComponentWeights {
+  companyQuality: number
+  roleGrowth: number
+  compensation: number
+  careerOptionality: number
+  brandValue: number
+  industryGrowth: number
+  locationValue: number
+}
+
 export interface DecisionRules {
   key: 'current'
   version: 1
@@ -23,7 +43,29 @@ export interface DecisionRules {
   riskNearHours: number
   riskWatchHours: number
   weights: DecisionWeights
+  fitComponentWeights?: FitComponentWeights
+  opportunityValueComponentWeights?: OpportunityValueComponentWeights
   updatedAt: string
+}
+
+export const DEFAULT_FIT_COMPONENT_WEIGHTS: FitComponentWeights = {
+  roleDirection: 24,
+  skills: 18,
+  education: 10,
+  experience: 14,
+  industry: 8,
+  language: 8,
+  location: 18,
+}
+
+export const DEFAULT_OPPORTUNITY_VALUE_COMPONENT_WEIGHTS: OpportunityValueComponentWeights = {
+  companyQuality: 18,
+  roleGrowth: 18,
+  compensation: 14,
+  careerOptionality: 16,
+  brandValue: 10,
+  industryGrowth: 12,
+  locationValue: 12,
 }
 
 export const DEFAULT_DECISION_RULES: DecisionRules = {
@@ -49,19 +91,57 @@ export const DEFAULT_DECISION_RULES: DecisionRules = {
     delayCost: 12,
     timeEfficiency: 7,
   },
+  fitComponentWeights: { ...DEFAULT_FIT_COMPONENT_WEIGHTS },
+  opportunityValueComponentWeights: { ...DEFAULT_OPPORTUNITY_VALUE_COMPONENT_WEIGHTS },
   updatedAt: '1970-01-01T00:00:00.000Z',
 }
 
+export function resolvedFitComponentWeights(rules?: Pick<DecisionRules, 'fitComponentWeights'>) {
+  return { ...DEFAULT_FIT_COMPONENT_WEIGHTS, ...(rules?.fitComponentWeights ?? {}) }
+}
+
+export function resolvedOpportunityValueComponentWeights(rules?: Pick<DecisionRules, 'opportunityValueComponentWeights'>) {
+  return { ...DEFAULT_OPPORTUNITY_VALUE_COMPONENT_WEIGHTS, ...(rules?.opportunityValueComponentWeights ?? {}) }
+}
+
 export function cloneDecisionRules(rules: DecisionRules = DEFAULT_DECISION_RULES): DecisionRules {
-  return { ...rules, weights: { ...rules.weights } }
+  return {
+    key: 'current',
+    version: 1,
+    hardDeadlineHorizonHours: rules.hardDeadlineHorizonHours,
+    fixedEventHorizonHours: rules.fixedEventHorizonHours,
+    nearDeadlineStretchMinutes: rules.nearDeadlineStretchMinutes,
+    followUpDailyCap: rules.followUpDailyCap,
+    prepDailyCap: rules.prepDailyCap,
+    upcomingHorizonDays: rules.upcomingHorizonDays,
+    upcomingNodeLimit: rules.upcomingNodeLimit,
+    riskCriticalHours: rules.riskCriticalHours,
+    riskHighHours: rules.riskHighHours,
+    riskNearHours: rules.riskNearHours,
+    riskWatchHours: rules.riskWatchHours,
+    weights: { ...rules.weights },
+    fitComponentWeights: resolvedFitComponentWeights(rules),
+    opportunityValueComponentWeights: resolvedOpportunityValueComponentWeights(rules),
+    updatedAt: rules.updatedAt,
+  }
 }
 
 export function createDefaultDecisionRules(now = new Date().toISOString()): DecisionRules {
-  return { ...DEFAULT_DECISION_RULES, weights: { ...DEFAULT_DECISION_RULES.weights }, updatedAt: now }
+  return { ...cloneDecisionRules(DEFAULT_DECISION_RULES), updatedAt: now }
 }
 
 export function decisionRulesForSnapshot(rules?: DecisionRules): DecisionRules {
   return rules ? cloneDecisionRules(rules) : cloneDecisionRules(DEFAULT_DECISION_RULES)
+}
+
+function validateWeightMap(label: string, weights: object, errors: string[]) {
+  const values = Object.values(weights) as number[]
+  if (values.some((value) => !Number.isFinite(value) || value < 0 || value > 100)) {
+    errors.push(`${label}必须位于 0–100。`)
+  }
+  if (values.reduce((sum, value) => sum + value, 0) <= 0) {
+    errors.push(`${label}不能全部为 0。`)
+  }
 }
 
 export function validateDecisionRules(rules: DecisionRules): string[] {
@@ -88,12 +168,8 @@ export function validateDecisionRules(rules: DecisionRules): string[] {
     errors.push('风险阈值必须按 极高风险 ≤ 高风险 ≤ 临近 ≤ 需准备 递增。')
   }
 
-  const weights = Object.values(rules.weights)
-  if (weights.some((value) => !Number.isFinite(value) || value < 0 || value > 100)) {
-    errors.push('高级排序权重必须位于 0–100。')
-  }
-  if (weights.reduce((sum, value) => sum + value, 0) <= 0) {
-    errors.push('高级排序权重不能全部为 0。')
-  }
+  validateWeightMap('高级排序权重', rules.weights, errors)
+  validateWeightMap('匹配度组件权重', resolvedFitComponentWeights(rules), errors)
+  validateWeightMap('机会价值组件权重', resolvedOpportunityValueComponentWeights(rules), errors)
   return errors
 }

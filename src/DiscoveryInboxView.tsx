@@ -12,6 +12,7 @@ import {
   updateDiscoveryInboxStatus,
 } from './discoveryInboxStore.js'
 import { useCloud } from './cloud/CloudContext.js'
+import OpportunityAssessmentSummary from './OpportunityAssessmentSummary.js'
 import RichOpportunityFactsSummary from './RichOpportunityFactsSummary.js'
 import { useUiLanguage } from './uiLanguage.js'
 import type { DiscoveryInboxItem, DiscoveryInboxStatus, DiscoveryRejectionReason } from './model.js'
@@ -170,7 +171,7 @@ export default function DiscoveryInboxView() {
         <div>
           <div className="eyebrow">AI JOB DISCOVERY · V1.5</div>
           <h1>{zh ? '发现箱' : 'Discovery Inbox'}</h1>
-          <p>{zh ? '先判断，再进入正式机会池。招聘事实与 AI 评估保持分层，未知事实不会被补造。' : 'Decide before promoting. Source-backed job facts stay separate from AI assessment, and unknown facts remain unknown.'}</p>
+          <p>{zh ? '先判断，再进入正式机会池。招聘事实与 AI 分项评估保持分层，未知事实不会被补造。' : 'Decide before promoting. Source-backed job facts stay separate from component assessment, and unknown facts remain unknown.'}</p>
         </div>
       </header>
 
@@ -231,6 +232,14 @@ export default function DiscoveryInboxView() {
                   </dl>
                   {summary.risks.length || summary.missing.length ? <div className="comparison-flags">{[...summary.risks, ...summary.missing].map((entry) => <span key={entry.key}>{zh ? entry.zh : entry.en}</span>)}</div> : null}
                   <RichOpportunityFactsSummary facts={item.facts} zh={zh} />
+                  <OpportunityAssessmentSummary
+                    assessment={item.assessment}
+                    fitScore={item.fitScore}
+                    opportunityValue={item.opportunityValue}
+                    fitConfidence={item.fitConfidence}
+                    opportunityValueConfidence={item.opportunityValueConfidence}
+                    zh={zh}
+                  />
                   <a href={item.sourceUrl} target="_blank" rel="noreferrer">{zh ? '查看来源' : 'Open source'}</a>
                 </article>
               )
@@ -274,6 +283,14 @@ export default function DiscoveryInboxView() {
 
               <p>{item.rationale}</p>
               <RichOpportunityFactsSummary facts={item.facts} zh={zh} />
+              <OpportunityAssessmentSummary
+                assessment={item.assessment}
+                fitScore={item.fitScore}
+                opportunityValue={item.opportunityValue}
+                fitConfidence={item.fitConfidence}
+                opportunityValueConfidence={item.opportunityValueConfidence}
+                zh={zh}
+              />
 
               {(summary.strengths.length || summary.risks.length || summary.missing.length) ? (
                 <div className="discovery-inbox-signals">
@@ -310,7 +327,7 @@ export default function DiscoveryInboxView() {
       {promotePreview ? (
         <div className="discovery-inbox-modal-backdrop" onMouseDown={() => setPromotePreview(null)}>
           <section className="discovery-inbox-modal" role="dialog" aria-modal="true" aria-label={zh ? '加入机会池预览' : 'Promotion preview'} onMouseDown={(event) => event.stopPropagation()}>
-            <div className="eyebrow">PROMOTE PREVIEW · RICH OPPORTUNITY</div>
+            <div className="eyebrow">PROMOTE PREVIEW · COMPONENT ASSESSMENT</div>
             <h2>{zh ? '确认进入正式机会池' : 'Confirm promotion to Opportunities'}</h2>
             <p><strong>{promotePreview.company}</strong> · {promotePreview.role}</p>
             <div className="discovery-inbox-preview-grid">
@@ -322,7 +339,15 @@ export default function DiscoveryInboxView() {
               <span>{zh ? '薪资' : 'Compensation'}<strong>{promotePreview.compensationText ?? (zh ? '未知' : 'Unknown')}</strong></span>
             </div>
             <RichOpportunityFactsSummary facts={promotePreview.facts} zh={zh} />
-            <p className="discovery-inbox-preview-note">{zh ? '确认后，该候选会通过现有 ChangeSet 路径进入 Opportunities。招聘事实、来源证据、评分与警告会继续保留；这一步不会自动提交申请。' : 'After confirmation, this candidate enters Opportunities through the existing ChangeSet path. Source-backed job facts, evidence, scores, and warnings remain attached. This does not submit an application.'}</p>
+            <OpportunityAssessmentSummary
+              assessment={promotePreview.assessment}
+              fitScore={promotePreview.fitScore}
+              opportunityValue={promotePreview.opportunityValue}
+              fitConfidence={promotePreview.fitConfidence}
+              opportunityValueConfidence={promotePreview.opportunityValueConfidence}
+              zh={zh}
+            />
+            <p className="discovery-inbox-preview-note">{zh ? '确认后，该候选会通过现有 ChangeSet 路径进入 Opportunities。招聘事实、来源证据、分项评估、聚合分数与警告会继续保留；这一步不会自动提交申请。' : 'After confirmation, this candidate enters Opportunities through the existing ChangeSet path. Source-backed facts, evidence, component assessment, aggregate scores, and warnings remain attached. This does not submit an application.'}</p>
             {promotePreview.profileWarnings?.length ? <div className="discovery-inbox-warnings">{promotePreview.profileWarnings.map((warning) => <span key={warning}>{warning}</span>)}</div> : null}
             <a href={promotePreview.sourceUrl} target="_blank" rel="noreferrer">{zh ? '再次查看招聘来源' : 'Open source again'}</a>
             <div className="discovery-inbox-modal-actions">

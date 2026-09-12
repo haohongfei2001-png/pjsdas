@@ -1,5 +1,6 @@
 import type { CallToolResult } from '@modelcontextprotocol/server'
 import * as z from 'zod/v4'
+import { getOpportunityAssessment } from '../src/ai/assessmentRead.js'
 import {
   BridgeReadError,
   explainPriority,
@@ -11,11 +12,13 @@ import {
   listOpportunities,
 } from '../src/ai/readLayer.js'
 import { enrichOpportunityListWithFacts } from '../src/ai/richOpportunityRead.js'
+import { decisionRulesForSnapshot } from '../src/decisionRules.js'
 import { WorkspaceSourceError, type WorkspaceSource } from './workspaceSource.js'
 
 export const READ_TOOL_NAMES = [
   'get_today_plan',
   'list_opportunities',
+  'get_opportunity_assessment',
   'get_pipeline',
   'get_decision_rules',
   'get_discovery_context',
@@ -56,6 +59,10 @@ export const listOpportunitiesSchema = z.object({
   if (value.includeFacts && value.limit !== undefined && value.limit > 20) {
     context.addIssue({ code: 'custom', message: 'limit must be at most 20 when includeFacts is true.' })
   }
+})
+
+export const getOpportunityAssessmentSchema = z.object({
+  opportunityId: z.string().trim().min(1),
 })
 
 export const getPipelineSchema = z.object({
@@ -111,6 +118,16 @@ function failure(caught: unknown): CallToolResult {
   )
 }
 
+function readMeta(context: { now?: Date; timezone?: string; workspaceVersion?: string }) {
+  const now = context.now ?? new Date()
+  return {
+    workspaceVersion: context.workspaceVersion,
+    generatedAt: now.toISOString(),
+    timezone: context.timezone ?? Intl.DateTimeFormat().resolvedOptions().timeZone ?? 'UTC',
+    source: 'pjsdas' as const,
+  }
+}
+
 export async function invokeReadTool(
   source: WorkspaceSource,
   name: ReadToolName,
@@ -138,11 +155,25 @@ export async function invokeReadTool(
           Boolean(parsed.includeFacts),
         ))
       }
+      case 'get_opportunity_assessment': {
+        const parsed = getOpportunityAssessmentSchema.parse(args)
+        if (!snapshot.data.opportunities.some((item) => item.id === parsed.opportunityId)) {
+          return toolError('NOT_FOUND', `Opportunity ${parsed.opportunityId} was not found.`, false)
+        }
+        return success({ meta: readMeta(context), ...getOpportunityAssessment(snapshot, parsed) })
+      }
       case 'get_pipeline':
         return success(getPipeline(snapshot, getPipelineSchema.parse(args), context))
-      case 'get_decision_rules':
+      case 'get_decision_rules': {
         getDecisionRulesSchema.parse(args)
-        return success(getDecisionRules(snapshot, context))
+        const output = getDecisionRules(snapshot, context)
+        const rules = decisionRulesForSnapshot(snapshot.data.decisionRules)
+        return success({
+          ...output,
+          fitComponentWeights: { ...rules.fitComponentWeights! },
+          opportunityValueComponentWeights: { ...rules.opportunityValueComponentWeights! },
+        })
+      }
       case 'get_discovery_context':
         getDiscoveryContextSchema.parse(args)
         return success(getDiscoveryContext(snapshot, context))

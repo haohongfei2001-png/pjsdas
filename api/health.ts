@@ -11,6 +11,8 @@ export const PUBLIC_HEALTH_CAPABILITIES = {
   discoveryInbox: 'v1.4-round-2',
   jobPostingIdentityFreshness: 'v1.4-round-3',
   richOpportunityFacts: 'v1.5-round-1',
+  componentAssessment: 'v1.5-round-2',
+  opportunityAssessmentRead: true,
 } as const
 
 export default {
