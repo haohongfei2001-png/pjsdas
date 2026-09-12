@@ -2,11 +2,11 @@ import { useState } from 'react'
 import {
   applyChangeSet,
   discardChangeSet,
-  getAllActions,
   getAllOpportunities,
   getAllProcessEvents,
   savePendingChangeSet,
 } from './db.js'
+import { getAllActionsForMutationBaseline } from './mutationBaselines.js'
 import {
   parseProgressUpdate,
   progressOperationSummary,
@@ -56,7 +56,7 @@ export default function ProgressInbox({ onChanged }: ProgressInboxProps) {
       const [current, processEvents, actions] = await Promise.all([
         getAllOpportunities(),
         getAllProcessEvents(),
-        getAllActions(),
+        getAllActionsForMutationBaseline(),
       ])
       setOpportunities(current)
       if (current.length === 0) {
