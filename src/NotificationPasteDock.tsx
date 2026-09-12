@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { addProcessEvent, getAllOpportunities } from './db.js'
+import { applyProcessEventChangeSet, getAllOpportunities } from './db.js'
 import { parseRecruitingNotification } from './notificationParser.js'
 import {
   createProcessEvent,
@@ -66,7 +66,7 @@ export default function NotificationPasteDock({ onChanged }: NotificationPasteDo
   async function show() {
     setOpen(true)
     setError('')
-    if (opportunities.length === 0) setOpportunities(await getAllOpportunities())
+    setOpportunities(await getAllOpportunities())
   }
 
   function applyResult(parsed: NotificationParseResult) {
@@ -86,11 +86,8 @@ export default function NotificationPasteDock({ onChanged }: NotificationPasteDo
       setError('先粘贴招聘通知文本。')
       return
     }
-    let current = opportunities
-    if (current.length === 0) {
-      current = await getAllOpportunities()
-      setOpportunities(current)
-    }
+    const current = await getAllOpportunities()
+    setOpportunities(current)
     if (current.length === 0) {
       setError('还没有岗位数据，请先导入秋招投递表。')
       return
@@ -136,8 +133,8 @@ export default function NotificationPasteDock({ onChanged }: NotificationPasteDo
         notes,
         source: 'manual',
       })
-      await addProcessEvent(event)
-      setMessage('已保存流程事件。粘贴的原始通知文本没有写入本地数据库。')
+      const applied = await applyProcessEventChangeSet(event)
+      setMessage(`已通过 ChangeSet ${applied.id} 保存流程事件；粘贴的原始通知文本没有写入本地数据库。`)
       setResult(null)
       setText('')
       setOpportunityText('')
@@ -268,7 +265,7 @@ export default function NotificationPasteDock({ onChanged }: NotificationPasteDo
                 </div>
 
                 <div className="paste-confirm">
-                  <small>点击保存后才会写入 Process Event，并据此更新 Pipeline / Today。</small>
+                  <small>点击保存后会先生成并应用 ChangeSet，再写入 Process Event 并更新 Pipeline / Today。</small>
                   <button className="primary-button" type="button" disabled={busy} onClick={confirm}>
                     {busy ? '保存中…' : '确认并保存'}
                   </button>
