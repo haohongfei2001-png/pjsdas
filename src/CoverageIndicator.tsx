@@ -5,6 +5,7 @@ import {
   summarizeCoverage,
   type CoverageSummary,
 } from './ingestion.js'
+import { summarizeSourceHealth } from './sourceHealth.js'
 import type { TimelineRecord } from './model.js'
 import './coverageIndicator.css'
 
@@ -19,9 +20,7 @@ function formatTime(value?: string) {
   if (!value) return '—'
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return value
-  return new Intl.DateTimeFormat('zh-CN', {
-    month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false,
-  }).format(date)
+  return new Intl.DateTimeFormat('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false }).format(date)
 }
 
 function formatCadence(minutes?: number) {
@@ -32,13 +31,8 @@ function formatCadence(minutes?: number) {
 }
 
 function outcomeText(outcomes: CoverageSummary['sources'][number]['outcomes']) {
-  const labels: Record<string, string> = {
-    created: '新增', merged: '归并', updated: '更新', duplicate: '重复', filtered: '过滤', ignored: '忽略', unresolved: '待解析',
-  }
-  return Object.entries(outcomes)
-    .filter(([, value]) => Boolean(value))
-    .map(([key, value]) => `${labels[key] ?? key} ${value}`)
-    .join(' · ')
+  const labels: Record<string, string> = { created: '新增', merged: '归并', updated: '更新', duplicate: '重复', filtered: '过滤', ignored: '忽略', unresolved: '待解析' }
+  return Object.entries(outcomes).filter(([, value]) => Boolean(value)).map(([key, value]) => `${labels[key] ?? key} ${value}`).join(' · ')
 }
 
 export default function CoverageIndicator() {
@@ -74,6 +68,8 @@ export default function CoverageIndicator() {
     const expectedSources = expectedSourcesFromRegistry(timeline)
     return summarizeCoverage(timeline, { now, expectedSources })
   }, [timeline, now])
+  const sourceHealth = useMemo(() => summarizeSourceHealth(timeline, now), [timeline, now])
+  const healthBySource = useMemo(() => new Map(sourceHealth.map((item) => [`${item.sourceKind}:${item.sourceId}`, item])), [sourceHealth])
   const hasRuns = coverage.sourceCount > 0
   const status = error ? 'error' : coverage.allCaughtUp ? 'ok' : 'attention'
   const label = error
@@ -101,10 +97,7 @@ export default function CoverageIndicator() {
       {open ? (
         <section className="coverage-popover" role="dialog" aria-label="Coverage 对账状态">
           <header>
-            <div>
-              <div className="eyebrow">COVERAGE</div>
-              <h2>{coverage.allCaughtUp ? '已启用来源都按时运行，且每条输入都有去处' : '自动摄入对账'}</h2>
-            </div>
+            <div><div className="eyebrow">COVERAGE</div><h2>{coverage.allCaughtUp ? '已启用来源都按时运行，且每条输入都有去处' : '自动摄入对账'}</h2></div>
             <button type="button" onClick={() => setOpen(false)} aria-label="关闭">×</button>
           </header>
 
@@ -131,18 +124,20 @@ export default function CoverageIndicator() {
               ) : null}
 
               <div className="coverage-source-list">
-                {coverage.sources.map((source) => (
-                  <article key={`${source.sourceKind}:${source.sourceId}`}>
-                    <div>
-                      <strong>{sourceLabel(source.sourceKind, source.sourceId, source.label)}</strong>
-                      <small>{formatTime(source.lastCompletedAt)}{source.stale ? ' · 已过期' : ''}</small>
-                    </div>
-                    <span className={source.balanced && source.unresolvedCount === 0 && !source.stale ? 'good' : 'warn'}>
-                      {source.accountedCount}/{source.receivedCount}
-                    </span>
-                    <p>{outcomeText(source.outcomes) || '本轮 0 条输入'}{source.cadenceMinutes ? ` · 每 ${formatCadence(source.cadenceMinutes)}` : ''}{source.maxAgeHours ? ` · SLA ${source.maxAgeHours}h` : ''}</p>
-                  </article>
-                ))}
+                {coverage.sources.map((source) => {
+                  const health = healthBySource.get(`${source.sourceKind}:${source.sourceId}`)
+                  return (
+                    <article key={`${source.sourceKind}:${source.sourceId}`}>
+                      <div>
+                        <strong>{sourceLabel(source.sourceKind, source.sourceId, source.label)}</strong>
+                        <small>{formatTime(source.lastCompletedAt)}{source.stale ? ' · 已过期' : ''}</small>
+                      </div>
+                      <span className={source.balanced && source.unresolvedCount === 0 && !source.stale ? 'good' : 'warn'}>{source.accountedCount}/{source.receivedCount}</span>
+                      <p>{outcomeText(source.outcomes) || '本轮 0 条输入'}{source.cadenceMinutes ? ` · 每 ${formatCadence(source.cadenceMinutes)}` : ''}{source.maxAgeHours ? ` · SLA ${source.maxAgeHours}h` : ''}</p>
+                      {health ? <small>24h {health.runCount24h} 次 · 7天健康 {health.healthyRunCount7d}/{health.runCount7d} · 连续健康 {health.consecutiveHealthyRuns} · 下次预计 {formatTime(health.nextExpectedBy)}</small> : null}
+                    </article>
+                  )
+                })}
               </div>
 
               {coverage.exceptions.length ? (
