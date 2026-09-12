@@ -20,6 +20,7 @@ function health() {
       workspaceIntegrityAudit: true,
       ingestionDryRunReplay: true,
       sourceHealthHistory: true,
+      productionSelfTest: true,
     },
   }
 }
