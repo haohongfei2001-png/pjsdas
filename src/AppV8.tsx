@@ -379,7 +379,7 @@ function DecideSurface({ opportunities, groups, processes, tab, onTabChange, onO
 
   return (
     <section className="surface-page decide-surface">
-      <SurfaceHeader eyebrow="DECIDE" title={zh ? '决定哪些机会值得占用你的时间' : 'Decide which opportunities deserve your time'} text={zh ? '机会池和在途流程是同一条决策链；岗位发现和来源判断由系统在后台完成，不需要你维护复核队列。' : 'The opportunity pool and recruiting pipeline are one decision flow. Discovery and source checks stay in the background instead of becoming a review queue you maintain.'} />
+      <SurfaceHeader eyebrow="DECIDE" title={zh ? '决定哪些机会值得占用你的时间' : 'Decide which opportunities deserve your time'} text={zh ? '机会池和在途流程是同一条决策链；岗位发现和来源判断由系统在后台完成，不需要你维护额外的系统队列。' : 'The opportunity pool and recruiting pipeline are one decision flow. Discovery and source checks stay in the background instead of creating another maintenance queue.'} />
 
       <div className="surface-context-tabs" role="tablist">
         <button className={tab === 'opportunities' ? 'active' : ''} onClick={() => onTabChange('opportunities')}><span>{zh ? '机会池' : 'Opportunities'}</span><small>{active} {zh ? '活跃' : 'active'}</small></button>
@@ -521,7 +521,7 @@ function GettingStartedCard({ onStart }: { onStart: () => void }) {
     <article className="usability-start-card">
       <div className="eyebrow">START PJSDAS</div>
       <h2>{zh ? '先让工作区有第一批真实机会' : 'Start with real opportunities'}</h2>
-      <p>{zh ? '当前工作区还是空的。先在 Settings 配置岗位发现偏好，或导入已有求职表；符合规则且身份明确的岗位会直接进入机会池，不需要维护复核队列。' : 'The workspace is empty. Configure discovery preferences or import an existing job-search workbook in Settings. Eligible, confidently identified jobs enter the opportunity pool without creating a review queue for you to maintain.'}</p>
+      <p>{zh ? '当前工作区还是空的。先在 Settings 配置岗位发现偏好，或导入已有求职表；符合规则且身份明确的岗位会直接进入机会池，不需要你维护额外的系统队列。' : 'The workspace is empty. Configure discovery preferences or import an existing job-search workbook in Settings. Eligible, confidently identified jobs enter the opportunity pool without creating another maintenance queue.'}</p>
       <div className="usability-start-actions">
         <button className="primary-button" type="button" onClick={onStart}>{zh ? '打开设置' : 'Open settings'}</button>
       </div>
