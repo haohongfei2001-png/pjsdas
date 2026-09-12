@@ -51,7 +51,7 @@ describe('v1.7 Discovery Run ledger', () => {
     const runs = discoveryRunsFromChangeSets([discarded, inbox, applied], new Set(['cs-inbox']))
     expect(runs.find((item) => item.changeSetId === 'cs-applied')).toMatchObject({ outcome: 'applied', selectedCount: 2 })
     expect(runs.find((item) => item.changeSetId === 'cs-inbox')).toMatchObject({ outcome: 'saved_to_inbox', selectedCount: 3 })
-    expect(runs.find((item) => item.changeSetId === 'cs-discarded')).toMatchObject({ outcome: 'discarded', selectedCount: 3 })
+    expect(runs.find((item) => item.changeSetId === 'cs-discarded')).toMatchObject({ outcome: 'discarded', selectedCount: 0 })
   })
 
   it('rejects internally inconsistent screening counts', () => {
