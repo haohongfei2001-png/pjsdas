@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import health, { PUBLIC_HEALTH_CAPABILITIES } from '../api/health.js'
 
 describe('public production health contract', () => {
-  it('describes the authenticated v1.6 Round 2 primary gateway without exposing demo data or secrets', async () => {
+  it('describes the authenticated v1.7 primary gateway without exposing demo data or secrets', async () => {
     const response = health.fetch()
     expect(response.status).toBe(200)
     expect(response.headers.get('cache-control')).toBe('no-store')
@@ -10,7 +10,7 @@ describe('public production health contract', () => {
     const body = await response.json() as Record<string, any>
     expect(body).toMatchObject({
       service: 'pjsdas-authenticated-mcp',
-      version: '1.6.0-alpha.2',
+      version: '1.7.0-alpha.1',
       mode: 'google-drive-readonly',
       auth: 'supabase-oauth-2.1',
       resource: 'https://pjsdas-remote-alpha.vercel.app/api/mcp',
@@ -26,6 +26,10 @@ describe('public production health contract', () => {
     expect(body.capabilities.prepGraph).toBe('v1.6-round-2')
     expect(body.capabilities.prepGraphRead).toBe(true)
     expect(body.capabilities.prepGraphTodayProjection).toBe(true)
+    expect(body.capabilities.continuousDiscovery).toBe('v1.7')
+    expect(body.capabilities.discoveryRunLedger).toBe(true)
+    expect(body.capabilities.incrementalDiscoveryContext).toBe(true)
+    expect(body.capabilities.postingRefreshQueue).toBe(true)
     expect(JSON.stringify(body)).not.toContain('synthetic-demo-only')
     expect(body).not.toHaveProperty('secretsConfigured')
   })
