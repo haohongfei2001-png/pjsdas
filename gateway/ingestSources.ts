@@ -9,7 +9,7 @@ import {
   type HardenedMonitorIngestionRunInput,
 } from '../src/ingestionHardening.js'
 import { jobRoleSimilarity, normalizeJobCompany } from '../src/jobPosting.js'
-import type { Opportunity } from '../src/model.js'
+import type { IngestionRunSummary, Opportunity } from '../src/model.js'
 import { resolveSourcePolicy } from '../src/sourceRegistry.js'
 import { requireWritableWorkspaceSource, WorkspaceSourceError, type WorkspaceSource } from './workspaceSource.js'
 
@@ -22,16 +22,17 @@ const processStageSchema = z.enum(['not_applied', 'screening', 'assessment', 'wr
 const timingModeSchema = z.enum(['deadline', 'fixed'])
 const eventStateSchema = z.enum(['scheduled', 'rescheduled', 'completed', 'cancelled'])
 const sourcePolicySchema = z.object({
-  version: z.literal(1),
-  enabled: z.boolean(),
-  label: z.string().trim().min(1).max(160).optional(),
-  cadenceMinutes: z.number().int().min(15).max(60 * 24 * 30),
-  freshnessSlaMinutes: z.number().int().min(15).max(60 * 24 * 30),
+  version: z.literal(1), enabled: z.boolean(), label: z.string().trim().min(1).max(160).optional(),
+  cadenceMinutes: z.number().int().min(15).max(60 * 24 * 30), freshnessSlaMinutes: z.number().int().min(15).max(60 * 24 * 30),
 })
+const simulationFields = {
+  dryRun: z.boolean().optional(),
+  replayOfRunId: z.string().trim().min(1).max(180).optional(),
+}
 
 export const ingestDiscoveryRunSchema = z.object({
   runId: z.string().trim().min(1).max(180), sourceId: z.string().trim().min(1).max(180), startedAt: isoString, completedAt: isoString,
-  sourcePolicy: sourcePolicySchema.optional(),
+  sourcePolicy: sourcePolicySchema.optional(), ...simulationFields,
   observations: z.array(z.object({
     sourceRecordId: z.string().trim().min(1).max(500), company: z.string().trim().min(1).max(200), role: z.string().trim().min(1).max(260),
     sourceUrl: z.string().url().max(2_000), sourceTitle: z.string().trim().min(1).max(400), location: z.string().trim().max(240).optional(), deadline: isoString.optional(),
@@ -43,7 +44,7 @@ export const ingestDiscoveryRunSchema = z.object({
 
 export const ingestGmailRunSchema = z.object({
   runId: z.string().trim().min(1).max(180), sourceId: z.string().trim().min(1).max(180), startedAt: isoString, completedAt: isoString,
-  cursor: z.string().trim().max(500).optional(), sourcePolicy: sourcePolicySchema.optional(),
+  cursor: z.string().trim().max(500).optional(), sourcePolicy: sourcePolicySchema.optional(), ...simulationFields,
   messages: z.array(z.object({
     sourceRecordId: z.string().trim().min(1).max(500), receivedAt: isoString, classification: z.enum(['recruiting', 'ignored']), confidence: confidenceSchema,
     sender: z.string().trim().max(320).optional(), subject: z.string().trim().max(500).optional(), company: z.string().trim().max(200).optional(), role: z.string().trim().max(260).optional(),
@@ -54,6 +55,8 @@ export const ingestGmailRunSchema = z.object({
 })
 
 export type TrustedIngestionToolName = 'ingest_discovery_run' | 'ingest_gmail_run'
+
+type SimulationArgs = { dryRun?: boolean; replayOfRunId?: string }
 
 function success(output: object): CallToolResult { return { content: [{ type: 'text', text: JSON.stringify(output, null, 2) }], structuredContent: { ...output } } }
 function toolError(code: string, message: string, retryable: boolean): CallToolResult { return { isError: true, content: [{ type: 'text', text: JSON.stringify({ code, message, retryable }) }] } }
@@ -94,6 +97,20 @@ export function normalizeGmailMessagesForWorkspace<T extends HardenedGmailMessag
   })
 }
 
+function findRun(snapshot: Awaited<ReturnType<WorkspaceSource['read']>>['snapshot'], sourceKind: 'gpt_monitor' | 'gmail', sourceId: string, runId: string) {
+  return snapshot.data.timeline.find((item) => item.ingestionRun?.sourceKind === sourceKind && item.ingestionRun.sourceId === sourceId && item.ingestionRun.runId === runId)?.ingestionRun
+}
+
+function snapshotForReplay(snapshot: Awaited<ReturnType<WorkspaceSource['read']>>['snapshot'], sourceKind: 'gpt_monitor' | 'gmail', sourceId: string, replayOfRunId?: string) {
+  if (!replayOfRunId) return snapshot
+  const next = structuredClone(snapshot)
+  next.data.timeline = (next.data.timeline ?? []).filter((item) => !(
+    (item.ingestionRun?.sourceKind === sourceKind && item.ingestionRun.sourceId === sourceId && item.ingestionRun.runId === replayOfRunId) ||
+    (item.ingestion?.sourceKind === sourceKind && item.ingestion.sourceId === sourceId && item.ingestion.runId === replayOfRunId)
+  ))
+  return next
+}
+
 async function persistResult(source: WorkspaceSource, workspaceVersion: string | undefined, updatedByDevice: string, result: ReturnType<typeof applyMonitorIngestionHardened> | ReturnType<typeof applyGmailIngestionHardened>) {
   if (result.alreadyApplied) return { workspaceVersion, result }
   const writable = requireWritableWorkspaceSource(source)
@@ -101,35 +118,66 @@ async function persistResult(source: WorkspaceSource, workspaceVersion: string |
   return { workspaceVersion: written.context.workspaceVersion, result }
 }
 
-function outputFor(workspaceVersion: string | undefined, result: ReturnType<typeof applyMonitorIngestionHardened> | ReturnType<typeof applyGmailIngestionHardened>) {
+function replayComparison(baseline: IngestionRunSummary | undefined, preview: IngestionRunSummary, replayOfRunId?: string) {
+  if (!replayOfRunId) return undefined
   return {
-    workspaceVersion, run: result.run, alreadyApplied: result.alreadyApplied,
+    replayOfRunId,
+    baselineFound: Boolean(baseline),
+    baseline: baseline ? { receivedCount: baseline.receivedCount, accountedCount: baseline.accountedCount, outcomes: baseline.outcomes } : undefined,
+    preview: { receivedCount: preview.receivedCount, accountedCount: preview.accountedCount, outcomes: preview.outcomes },
+  }
+}
+
+function outputFor(workspaceVersion: string | undefined, result: ReturnType<typeof applyMonitorIngestionHardened> | ReturnType<typeof applyGmailIngestionHardened>, simulation: SimulationArgs = {}, baseline?: IngestionRunSummary) {
+  return {
+    workspaceVersion,
+    dryRun: Boolean(simulation.dryRun),
+    run: result.run,
+    alreadyApplied: result.alreadyApplied,
     allInputsAccounted: result.run.receivedCount === result.run.accountedCount,
-    createdOpportunityIds: result.createdOpportunityIds, touchedOpportunityIds: result.touchedOpportunityIds, processEventIds: result.processEventIds,
+    createdOpportunityIds: result.createdOpportunityIds,
+    touchedOpportunityIds: result.touchedOpportunityIds,
+    processEventIds: result.processEventIds,
     unresolvedCount: result.run.outcomes.unresolved ?? 0,
-    message: result.run.outcomes.unresolved ? `${result.run.receivedCount} inputs were fully accounted for; ${result.run.outcomes.unresolved} remain as explicit exceptions.` : `${result.run.receivedCount} inputs were fully accounted for with no unresolved exceptions.`,
+    replay: replayComparison(baseline, result.run, simulation.replayOfRunId),
+    message: simulation.dryRun
+      ? `Dry run only: ${result.run.receivedCount} inputs simulated; no workspace write was performed.`
+      : result.run.outcomes.unresolved
+        ? `${result.run.receivedCount} inputs were fully accounted for; ${result.run.outcomes.unresolved} remain as explicit exceptions.`
+        : `${result.run.receivedCount} inputs were fully accounted for with no unresolved exceptions.`,
   }
 }
 
 export async function invokeTrustedIngestion(source: WorkspaceSource, name: TrustedIngestionToolName, args: unknown): Promise<CallToolResult> {
   try {
     const workspace = await source.read()
-    // Fail read-only before policy validation so the external boundary reports the real capability error.
-    requireWritableWorkspaceSource(source)
     if (name === 'ingest_discovery_run') {
-      const parsed = ingestDiscoveryRunSchema.parse(args) as HardenedMonitorIngestionRunInput
+      const parsed = ingestDiscoveryRunSchema.parse(args) as HardenedMonitorIngestionRunInput & SimulationArgs
+      if (parsed.replayOfRunId && !parsed.dryRun) return toolError('INVALID_ARGUMENT', 'replayOfRunId is dry-run only.', false)
+      if (!parsed.dryRun) requireWritableWorkspaceSource(source)
+      const baseline = parsed.replayOfRunId ? findRun(workspace.snapshot, 'gpt_monitor', parsed.sourceId, parsed.replayOfRunId) : undefined
+      if (parsed.replayOfRunId && !baseline) return toolError('REPLAY_BASELINE_NOT_FOUND', `Run ${parsed.replayOfRunId} was not found for ${parsed.sourceId}.`, false)
+      const simulationSnapshot = snapshotForReplay(workspace.snapshot, 'gpt_monitor', parsed.sourceId, parsed.replayOfRunId)
       const input: HardenedMonitorIngestionRunInput = { ...parsed, sourcePolicy: resolveSourcePolicy('gpt_monitor', parsed.sourceId, parsed.sourcePolicy) }
-      const result = applyMonitorIngestionHardened(workspace.snapshot, input)
+      const result = applyMonitorIngestionHardened(simulationSnapshot, input)
+      if (parsed.dryRun) return success(outputFor(workspace.context.workspaceVersion, result, parsed, baseline))
       const persisted = await persistResult(source, workspace.context.workspaceVersion, `gpt-monitor:${input.sourceId}`, result)
       return success(outputFor(persisted.workspaceVersion, persisted.result))
     }
-    const parsed = ingestGmailRunSchema.parse(args) as HardenedGmailIngestionRunInput
+
+    const parsed = ingestGmailRunSchema.parse(args) as HardenedGmailIngestionRunInput & SimulationArgs
+    if (parsed.replayOfRunId && !parsed.dryRun) return toolError('INVALID_ARGUMENT', 'replayOfRunId is dry-run only.', false)
+    if (!parsed.dryRun) requireWritableWorkspaceSource(source)
+    const baseline = parsed.replayOfRunId ? findRun(workspace.snapshot, 'gmail', parsed.sourceId, parsed.replayOfRunId) : undefined
+    if (parsed.replayOfRunId && !baseline) return toolError('REPLAY_BASELINE_NOT_FOUND', `Run ${parsed.replayOfRunId} was not found for ${parsed.sourceId}.`, false)
+    const simulationSnapshot = snapshotForReplay(workspace.snapshot, 'gmail', parsed.sourceId, parsed.replayOfRunId)
     const input: HardenedGmailIngestionRunInput = {
       ...parsed,
       sourcePolicy: resolveSourcePolicy('gmail', parsed.sourceId, parsed.sourcePolicy),
-      messages: normalizeGmailMessagesForWorkspace(parsed.messages, workspace.snapshot.data.opportunities),
+      messages: normalizeGmailMessagesForWorkspace(parsed.messages, simulationSnapshot.data.opportunities),
     }
-    const result = applyGmailIngestionHardened(workspace.snapshot, input)
+    const result = applyGmailIngestionHardened(simulationSnapshot, input)
+    if (parsed.dryRun) return success(outputFor(workspace.context.workspaceVersion, result, parsed, baseline))
     const persisted = await persistResult(source, workspace.context.workspaceVersion, `gmail-ingestion:${input.sourceId}`, result)
     return success(outputFor(persisted.workspaceVersion, persisted.result))
   } catch (caught) {
