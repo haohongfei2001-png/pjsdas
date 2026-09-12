@@ -3,6 +3,9 @@ import type {
   ApplicationGroup,
   DiscoveryInboxItem,
   ImportMeta,
+  IngestionLedgerEntry,
+  IngestionOutcome,
+  IngestionRunSummary,
   Opportunity,
   Prep,
   ProcessEvent,
@@ -70,6 +73,46 @@ function assertUniqueIds(items: unknown[], label: string) {
 function assertIsoDate(value: unknown, label: string) {
   if (typeof value !== 'string' || Number.isNaN(new Date(value).getTime())) {
     throw new Error(`备份损坏：${label} 不是有效时间。`)
+  }
+}
+
+const INGESTION_SOURCE_KINDS = new Set(['gpt_monitor', 'gmail', 'natural_language', 'manual'])
+const INGESTION_RECORD_TYPES = new Set(['job_observation', 'recruiting_message'])
+const INGESTION_OUTCOMES = new Set<IngestionOutcome>([
+  'created', 'merged', 'updated', 'duplicate', 'filtered', 'ignored', 'unresolved',
+])
+
+function validateIngestionEntry(entry: IngestionLedgerEntry, timelineId: string) {
+  if (entry.version !== 1) throw new Error(`备份损坏：Timeline ${timelineId} 的 ingestion 版本无效。`)
+  if (!INGESTION_SOURCE_KINDS.has(entry.sourceKind)) throw new Error(`备份损坏：Timeline ${timelineId} 的 ingestion sourceKind 无效。`)
+  if (!entry.sourceId?.trim() || !entry.sourceRecordId?.trim() || !entry.runId?.trim() || !entry.fingerprint?.trim()) {
+    throw new Error(`备份损坏：Timeline ${timelineId} 的 ingestion 身份字段不完整。`)
+  }
+  if (!INGESTION_RECORD_TYPES.has(entry.recordType)) throw new Error(`备份损坏：Timeline ${timelineId} 的 ingestion recordType 无效。`)
+  if (!INGESTION_OUTCOMES.has(entry.outcome)) throw new Error(`备份损坏：Timeline ${timelineId} 的 ingestion outcome 无效。`)
+  assertIsoDate(entry.receivedAt, `Timeline ${timelineId} ingestion.receivedAt`)
+  assertIsoDate(entry.accountedAt, `Timeline ${timelineId} ingestion.accountedAt`)
+}
+
+function validateIngestionRun(run: IngestionRunSummary, timelineId: string) {
+  if (run.version !== 1) throw new Error(`备份损坏：Timeline ${timelineId} 的 ingestionRun 版本无效。`)
+  if (!INGESTION_SOURCE_KINDS.has(run.sourceKind) || !run.runId?.trim() || !run.sourceId?.trim()) {
+    throw new Error(`备份损坏：Timeline ${timelineId} 的 ingestionRun 身份无效。`)
+  }
+  assertIsoDate(run.startedAt, `Timeline ${timelineId} ingestionRun.startedAt`)
+  assertIsoDate(run.completedAt, `Timeline ${timelineId} ingestionRun.completedAt`)
+  if (!Number.isInteger(run.receivedCount) || run.receivedCount < 0 || !Number.isInteger(run.accountedCount) || run.accountedCount < 0) {
+    throw new Error(`备份损坏：Timeline ${timelineId} 的 ingestionRun 计数无效。`)
+  }
+  let outcomeTotal = 0
+  for (const [key, value] of Object.entries(run.outcomes)) {
+    if (!INGESTION_OUTCOMES.has(key as IngestionOutcome) || !Number.isInteger(value) || Number(value) < 0) {
+      throw new Error(`备份损坏：Timeline ${timelineId} 的 ingestionRun outcome 计数无效。`)
+    }
+    outcomeTotal += Number(value)
+  }
+  if (outcomeTotal !== run.accountedCount || run.accountedCount !== run.receivedCount) {
+    throw new Error(`备份损坏：Timeline ${timelineId} ingestionRun 未守恒（received=${run.receivedCount}, accounted=${run.accountedCount}, outcomes=${outcomeTotal}）。`)
   }
 }
 
@@ -180,7 +223,7 @@ export function validateSnapshot(value: unknown): asserts value is PJSDASSnapsho
 
   if (data.timeline) {
     const categories = new Set(['opportunity', 'process', 'action', 'rules', 'change', 'data', 'note'])
-    const sources = new Set(['excel', 'natural_language', 'process_event', 'user_action', 'rules', 'backup', 'system', 'changeset'])
+    const sources = new Set(['excel', 'natural_language', 'process_event', 'user_action', 'rules', 'backup', 'system', 'changeset', 'automation', 'gmail'])
     for (const raw of data.timeline) {
       const item = raw as TimelineRecord
       if (!item.title?.trim() || !categories.has(item.category) || !sources.has(item.source)) {
@@ -188,6 +231,14 @@ export function validateSnapshot(value: unknown): asserts value is PJSDASSnapsho
       }
       assertIsoDate(item.occurredAt, `Timeline ${item.id} 的 occurredAt`)
       assertIsoDate(item.recordedAt, `Timeline ${item.id} 的 recordedAt`)
+      if (item.ingestion) validateIngestionEntry(item.ingestion, item.id)
+      if (item.ingestionRun) validateIngestionRun(item.ingestionRun, item.id)
+      if (item.kind === 'ingestion_recorded' && !item.ingestion) {
+        throw new Error(`备份损坏：Timeline ${item.id} ingestion_recorded 缺少 ingestion payload。`)
+      }
+      if (item.kind === 'ingestion_run_completed' && !item.ingestionRun) {
+        throw new Error(`备份损坏：Timeline ${item.id} ingestion_run_completed 缺少 ingestionRun payload。`)
+      }
     }
   }
 

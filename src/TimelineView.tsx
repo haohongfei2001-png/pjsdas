@@ -6,7 +6,7 @@ import { useUiLanguage } from './uiLanguage.js'
 import './timeline.css'
 
 const categories: TimelineCategory[] = ['opportunity', 'process', 'action', 'rules', 'change', 'data', 'note']
-const sources: TimelineSource[] = ['excel', 'natural_language', 'process_event', 'user_action', 'rules', 'backup', 'system', 'changeset']
+const sources: TimelineSource[] = ['excel', 'natural_language', 'process_event', 'user_action', 'rules', 'backup', 'system', 'changeset', 'automation', 'gmail']
 
 const categoryLabels: Record<TimelineCategory, [string, string]> = {
   opportunity: ['机会', 'Opportunity'],
@@ -27,6 +27,8 @@ const sourceLabels: Record<TimelineSource, [string, string]> = {
   backup: ['本地备份', 'Backup'],
   system: ['系统回填', 'System'],
   changeset: ['ChangeSet', 'ChangeSet'],
+  automation: ['自动摄入', 'Automation'],
+  gmail: ['Gmail', 'Gmail'],
 }
 
 const changeSetSourceLabels: Record<ChangeSetSource, [string, string]> = {

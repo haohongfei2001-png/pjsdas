@@ -19,12 +19,54 @@ jobs:
     runs-on: ubuntu-latest
     env:
       VITE_GOOGLE_CLIENT_ID: ${{ vars.VITE_GOOGLE_CLIENT_ID }}
+      PJSDAS_BACKEND_HEALTH_URL: https://pjsdas-remote-alpha.vercel.app/api/health
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
+
+      - name: Wait for matching v1.9 production backend
+        shell: bash
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 40); do
+            echo "Backend release gate attempt ${attempt}/40"
+            body="$(curl -fsS --max-time 10 "$PJSDAS_BACKEND_HEALTH_URL" 2>/dev/null || true)"
+            if [ -n "$body" ] && printf '%s' "$body" | node -e '
+              let raw = "";
+              process.stdin.setEncoding("utf8");
+              process.stdin.on("data", chunk => raw += chunk);
+              process.stdin.on("end", () => {
+                try {
+                  const health = JSON.parse(raw);
+                  const capabilities = health.capabilities ?? {};
+                  const ready =
+                    health.status === "ok" &&
+                    health.version === "1.9.0-alpha.1" &&
+                    health.mode === "google-drive-trusted-ingestion" &&
+                    capabilities.autonomousIngestion === "v1.9" &&
+                    capabilities.ingestionReconciliationLedger === true &&
+                    capabilities.coverageStatusRead === true &&
+                    capabilities.trustedMonitorIngestion === true &&
+                    capabilities.trustedGmailIngestion === true &&
+                    capabilities.stableAccountSession === "v1.8.1";
+                  process.exit(ready ? 0 : 1);
+                } catch {
+                  process.exit(1);
+                }
+              });
+            '; then
+              echo "PJSDAS v1.9 production backend is ready."
+              exit 0
+            fi
+            sleep 15
+          done
+
+          echo "PJSDAS v1.9 production backend did not become ready; refusing to publish a frontend that depends on it." >&2
+          exit 1
+
       - run: npm ci
       - run: npm run build
       - uses: actions/configure-pages@v5

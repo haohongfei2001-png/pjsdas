@@ -6,9 +6,13 @@ import {
   PJSDAS_SUPABASE_PUBLISHABLE_KEY,
   PJSDAS_SUPABASE_URL,
 } from './supabaseProject.js'
-import { WorkspaceSourceError, type WorkspaceSource } from './workspaceSource.js'
+import {
+  WorkspaceSourceError,
+  type WorkspaceSource,
+  type WorkspaceWriteInput,
+} from './workspaceSource.js'
 
-export const AUTHENTICATED_GATEWAY_VERSION = '1.7.0-alpha.2' as const
+export const AUTHENTICATED_GATEWAY_VERSION = '1.9.0-alpha.1' as const
 export const AUTHENTICATED_MCP_RESOURCE = 'https://pjsdas-remote-alpha.vercel.app/api/mcp'
 export const AUTHORIZATION_SERVER = `${PJSDAS_SUPABASE_URL}/auth/v1`
 export const PROTECTED_RESOURCE_METADATA_URL = 'https://pjsdas-remote-alpha.vercel.app/.well-known/oauth-protected-resource'
@@ -33,8 +37,9 @@ function unauthorized(message = 'PJSDAS authentication is required.') {
 function serviceError(caught: unknown) {
   if (caught instanceof WorkspaceSourceError) {
     if (caught.code === 'AUTH_REQUIRED' || caught.code === 'AUTH_INVALID') return unauthorized(caught.message)
+    const conflict = caught.code === 'WORKSPACE_CONFLICT'
     return new Response(JSON.stringify({ code: caught.code, message: caught.message, retryable: caught.retryable }), {
-      status: caught.retryable ? 503 : 500,
+      status: conflict ? 409 : caught.retryable ? 503 : 500,
       headers: { 'cache-control': 'no-store', 'content-type': 'application/json; charset=utf-8' },
     })
   }
@@ -44,31 +49,39 @@ function serviceError(caught: unknown) {
   })
 }
 
+async function authenticatedSource(request: Request) {
+  return createAuthenticatedDriveWorkspaceSource(request, {
+    supabaseUrl: PJSDAS_SUPABASE_URL,
+    supabasePublishableKey: PJSDAS_SUPABASE_PUBLISHABLE_KEY,
+    tokenEncryptionKey: env('PJSDAS_TOKEN_ENCRYPTION_KEY'),
+    googleClientId: env('PJSDAS_GOOGLE_CLIENT_ID'),
+    googleClientSecret: env('PJSDAS_GOOGLE_CLIENT_SECRET'),
+    timezone: 'Asia/Shanghai',
+  })
+}
+
 function lazyDriveSource(request: Request): WorkspaceSource {
   return {
     async read() {
-      const source = await createAuthenticatedDriveWorkspaceSource(request, {
-        supabaseUrl: PJSDAS_SUPABASE_URL,
-        supabasePublishableKey: PJSDAS_SUPABASE_PUBLISHABLE_KEY,
-        tokenEncryptionKey: env('PJSDAS_TOKEN_ENCRYPTION_KEY'),
-        googleClientId: env('PJSDAS_GOOGLE_CLIENT_ID'),
-        googleClientSecret: env('PJSDAS_GOOGLE_CLIENT_SECRET'),
-        timezone: 'Asia/Shanghai',
-      })
+      const source = await authenticatedSource(request)
       return source.read()
+    },
+    async write(input: WorkspaceWriteInput) {
+      const source = await authenticatedSource(request)
+      if (!source.write) throw new WorkspaceSourceError('WORKSPACE_READ_ONLY', 'Authenticated Drive workspace unexpectedly became read-only.', false)
+      return source.write(input)
     },
   }
 }
 
 /**
- * Authenticated v1.7 Round 2 runtime for real PJSDAS data.
+ * Authenticated v1.9 runtime for the user's real PJSDAS Drive workspace.
  *
- * Continuous Discovery remains review-only. New discovery passes can retain an
- * explicit run context, including zero-eligible runs, inside signed ChangeSets.
- * Stale posting refreshes are bound to an exact owner + posting id + canonical
- * public source and only update source evidence after explicit local Apply. A
- * closed public posting never implicitly closes the Opportunity/Process. PJSDAS
- * still performs no background crawl or autonomous mutation.
+ * Read tools remain side-effect free. Review-only ChangeSets remain the path for
+ * policy, preference, ambiguous and destructive changes. The only autonomous
+ * mutations exposed here are bounded trusted-source ingestion batches
+ * (GPT-monitor and structured Gmail facts). Those writes are idempotent,
+ * reconciliation-accounted, and guarded by exact Drive workspace versions.
  */
 export async function authenticatedRemoteMcpFetch(request: Request) {
   try {
@@ -82,8 +95,9 @@ export async function authenticatedRemoteMcpFetch(request: Request) {
     const handler = createMcpHandler(
       () => createPjsdasMcpServer(source, {
         version: AUTHENTICATED_GATEWAY_VERSION,
-        dataMode: 'google-drive-readonly',
+        dataMode: 'google-drive',
         proposalMode: 'review-link',
+        trustedIngestionMode: 'enabled',
         proposalSigningKey: env('PJSDAS_TOKEN_ENCRYPTION_KEY'),
       }),
     )

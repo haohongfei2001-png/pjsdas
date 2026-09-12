@@ -11,6 +11,12 @@ import {
   invokeReadTool,
   listOpportunitiesSchema,
 } from './readTools.js'
+import { getCoverageStatusSchema, invokeCoverageStatus } from './coverageTool.js'
+import {
+  ingestDiscoveryRunSchema,
+  ingestGmailRunSchema,
+  invokeTrustedIngestion,
+} from './ingestSources.js'
 import { invokeProposeChanges, proposeChangesSchema } from './proposeChanges.js'
 import type { WorkspaceSource } from './workspaceSource.js'
 
@@ -26,11 +32,18 @@ const proposalAnnotations = {
   idempotentHint: true,
 } as const
 
+const trustedIngestionAnnotations = {
+  readOnlyHint: false,
+  destructiveHint: false,
+  idempotentHint: true,
+} as const
+
 export interface PjsdasMcpServerOptions {
   version?: string
-  dataMode?: 'workspace' | 'demo' | 'google-drive-readonly'
+  dataMode?: 'workspace' | 'demo' | 'google-drive-readonly' | 'google-drive'
   proposalMode?: 'disabled' | 'review-link'
   proposalSigningKey?: string
+  trustedIngestionMode?: 'disabled' | 'enabled'
 }
 
 export function createPjsdasMcpServer(
@@ -39,33 +52,45 @@ export function createPjsdasMcpServer(
 ) {
   const dataMode = options.dataMode ?? 'workspace'
   const proposalMode = options.proposalMode ?? 'disabled'
+  const trustedIngestionMode = options.trustedIngestionMode ?? 'disabled'
   const instructions = [
     'PJSDAS is a personal job-search decision and action system.',
     'Use its explicit decision rules and deterministic explanations instead of inventing hidden ranking rules.',
     'Read tools never change PJSDAS state.',
     'For job discovery, first call get_discovery_context. Treat its Discovery Profile as the durable user-controlled search preference source; do not silently invent or rewrite durable preferences from chat history.',
-    'When get_discovery_context returns continuousDiscovery, use incrementalSince as the normal lower bound for new or materially updated postings, and treat refreshQueue as separate source-verification work. Do not repeat a full historical search without a reason, and do not claim a search was recorded unless PJSDAS returns it in the durable run state.',
-    'For refreshQueue work, preserve ownerKind, ownerId, postingId and canonicalSourceUrl exactly. Verify that same public source and propose the result through postingRefreshes; never match a refresh target only by company or role name. A newly found canonical URL is a new/re-posted source and must go through normal discovery instead of overwriting an existing posting.',
-    'A public posting becoming closed does not by itself close the PJSDAS Opportunity or recruitment Process. Posting refresh updates source evidence only; Opportunity lifecycle remains a separate explicit decision/state transition.',
+    'When get_discovery_context returns continuousDiscovery, use incrementalSince as the normal lower bound for new or materially updated postings, and treat refreshQueue as separate source-verification work. Do not repeat a full historical search without a reason.',
+    'For refreshQueue work, preserve ownerKind, ownerId, postingId and canonicalSourceUrl exactly. A newly found canonical URL is a new/re-posted source and must go through normal discovery instead of overwriting an existing posting.',
+    'A public posting becoming closed does not by itself close the PJSDAS Opportunity or recruitment Process. Posting lifecycle and recruiting lifecycle are separate facts.',
     'PJSDAS itself does not crawl the web. If the user asks for current job opportunities, use ChatGPT web search/browsing outside PJSDAS, preserve public source URLs, and keep unknown job facts unknown rather than fabricating them.',
-    'When a public source explicitly supports them, submit bounded structured Rich Opportunity facts such as responsibilities, requirements, education, majors, experience, skills, languages, department/business unit, recruitment batch, application method, and compensation evidence. Do not convert model inference into source facts.',
-    'For new web-discovered jobs, prefer bounded component assessments over opaque aggregate ratings. PJSDAS derives Fit and Opportunity Value totals from explicit component scores, confidence, rationale, and user-controlled component weights.',
-    'Use get_opportunity_assessment when the user asks why a stored Fit or Opportunity Value score exists, or how current component weights would project the saved assessment. Do not claim current-rule projection silently rewrites historical stored scores.',
-    'Use get_application_portfolio when the user asks which roles to choose inside an explicit Application Group with shared quota or preference constraints. Capacity is a maximum, not a target: never recommend weak roles merely to fill every available slot.',
-    'Use get_prep_graph when the user asks what preparation has the highest leverage, which opportunities a Prep item supports, or which current gaps/process-prep needs are uncovered. Prep Graph edges are explicit or deterministic exact matches only; do not invent fuzzy semantic edges or claim that a waiting Prep task was automatically activated.',
+    'When a public source explicitly supports them, submit bounded structured job facts. Do not convert model inference into source facts.',
+    'For new web-discovered jobs, prefer bounded component assessments over opaque aggregate ratings. PJSDAS derives Fit and Opportunity Value totals from explicit components and user-controlled weights.',
+    'Use get_opportunity_assessment when the user asks why a stored Fit or Opportunity Value score exists.',
+    'Use get_application_portfolio when the user asks which roles to choose inside an explicit Application Group. Capacity is a maximum, not a target.',
+    'Use get_prep_graph when the user asks what preparation has the highest leverage or which current gaps are uncovered.',
+    'Use get_coverage_status when the user asks whether automated sources missed anything. A green coverage result means every input in each latest completed ingestion run is accounted for; it does not claim that the entire public internet contains no other jobs.',
   ]
+
+  if (trustedIngestionMode === 'enabled') {
+    instructions.push(
+      'Trusted factual ingestion is autonomous and does not require a review click. It is deliberately narrower than generic mutation.',
+      'Use ingest_discovery_run only for a bounded completed GPT/ChatGPT monitoring run with stable sourceRecordId values and source-backed public URLs. The tool performs identity resolution, quality gates, duplicate merging, accounting, and fail-closed workspace-version checks itself.',
+      'Use ingest_gmail_run only after Gmail messages have been classified and reduced to bounded structured facts. Never submit raw mailbox contents as notes. Low-confidence or ambiguous messages must be submitted with low/medium confidence so PJSDAS records them as unresolved instead of guessing.',
+      'Every submitted source record must be accounted for as created, merged, updated, duplicate, filtered, ignored, or unresolved. Never silently omit an inconvenient result from the ingestion batch.',
+      'Trusted ingestion may add or merge factual opportunities and process events, but it must not silently change Decision Rules, durable user preferences, rejection decisions, or delete data.',
+    )
+  }
 
   if (proposalMode === 'review-link') {
     instructions.push(
-      'The propose_changes tool is review-only: it creates a validated pending ChangeSet and a signed PJSDAS review link, but it never mutates the workspace itself.',
-      'Never tell the user that a proposed change was applied. State clearly that the user must open the returned reviewUrl and explicitly Apply or Discard it in PJSDAS.',
+      'The propose_changes tool remains review-only for ambiguous, destructive, preference, policy, or user-decision mutations. It creates a pending ChangeSet and signed review link but never applies it.',
+      'Never tell the user that a proposed change was applied. State clearly that Apply or Discard is still required for review-only changes.',
       'For action status changes, read current actions first and use exact action IDs. For ambiguous updates, ask the user to clarify rather than guessing.',
-      'For web-discovered jobs, submit only source-backed candidates through discoveredOpportunities. Do not mix discovery candidates with unrelated updates in the same ChangeSet.',
-      'When a discovery pass produces zero eligible jobs, PJSDAS can return a review-only record_discovery_run proposal. Explain that applying it records the search/run only and creates no Opportunity or Action.',
-      'For refreshQueue verification, use postingRefreshes as a separate review batch. Copy the exact refresh identity from get_discovery_context, report only source-backed status/deadline/location/compensation evidence, and never treat the proposal as already applied.',
-      'Rich Opportunity facts are evidence fields, not ratings. Component assessment is the preferred rating path; legacy aggregate score fields remain compatibility input only.',
+      'For ad-hoc web-discovered jobs that are not part of a trusted monitoring run, submit only source-backed candidates through discoveredOpportunities.',
+      'When a discovery pass produces zero eligible jobs, PJSDAS can return a review-only record_discovery_run proposal.',
+      'For refreshQueue verification, use postingRefreshes as a separate review batch.',
+      'Rich Opportunity facts are evidence fields, not ratings. Component assessment is the preferred rating path.',
     )
-  } else {
+  } else if (trustedIngestionMode !== 'enabled') {
     instructions.push('This server exposes no mutation or proposal tools.')
   }
 
@@ -73,11 +98,14 @@ export function createPjsdasMcpServer(
     instructions.push('This endpoint contains synthetic demo data only. Never present demo companies, roles, events, or priorities as the user\'s real job-search state.')
   }
   if (dataMode === 'google-drive-readonly') {
-    instructions.push('Read operations use the authenticated user\'s validated PJSDAS workspace from Google Drive appDataFolder. Treat returned records as private user data and expose only what is needed to answer the user\'s request.')
+    instructions.push('Read operations use the authenticated user\'s validated PJSDAS workspace from Google Drive appDataFolder. This endpoint is read-only.')
+  }
+  if (dataMode === 'google-drive') {
+    instructions.push('The authenticated user\'s validated PJSDAS workspace lives in Google Drive appDataFolder. Reads are private; autonomous writes are permitted only through the bounded trusted-ingestion tools and use optimistic workspace-version conflict checks.')
   }
 
   const server = new McpServer(
-    { name: 'pjsdas', version: options.version ?? '1.7.0-alpha.2' },
+    { name: 'pjsdas', version: options.version ?? '1.9.0-alpha.1' },
     { instructions: instructions.join(' ') },
   )
 
@@ -85,7 +113,7 @@ export function createPjsdasMcpServer(
     'get_today_plan',
     {
       title: 'Get PJSDAS today plan',
-      description: 'Read the deterministic PJSDAS action plan for a day and optional available-time budget. Existing Prep Actions may receive runtime leverage/urgency boosts from deterministic Prep Graph coverage without rewriting stored Action records.',
+      description: 'Read the deterministic PJSDAS action plan for a day and optional available-time budget. Existing Prep Actions may receive runtime leverage/urgency boosts without rewriting stored records.',
       inputSchema: getTodayPlanSchema,
       annotations: readOnlyAnnotations,
     },
@@ -107,7 +135,7 @@ export function createPjsdasMcpServer(
     'get_opportunity_assessment',
     {
       title: 'Get PJSDAS opportunity assessment',
-      description: 'Read a single Opportunity component assessment, stored aggregate Fit/Opportunity Value scores, and the explicit current-rules projection. This tool never rewrites historical scores.',
+      description: 'Read a single Opportunity component assessment, stored aggregate scores, and current-rules projection without rewriting history.',
       inputSchema: getOpportunityAssessmentSchema,
       annotations: readOnlyAnnotations,
     },
@@ -118,7 +146,7 @@ export function createPjsdasMcpServer(
     'get_application_portfolio',
     {
       title: 'Get PJSDAS application portfolio decision',
-      description: 'Read deterministic portfolio recommendations for explicit Application Groups with shared application quotas. Returns recommended and not-recommended roles, capacity status, component scores, overlap effects, and warnings. Capacity is treated as a maximum; this tool never submits applications or changes priorities.',
+      description: 'Read deterministic portfolio recommendations for explicit Application Groups with shared application quotas. Capacity is treated as a maximum.',
       inputSchema: getApplicationPortfolioSchema,
       annotations: readOnlyAnnotations,
     },
@@ -129,7 +157,7 @@ export function createPjsdasMcpServer(
     'get_prep_graph',
     {
       title: 'Get PJSDAS Prep Graph',
-      description: 'Read deterministic links from Prep to current opportunities, structured requirements/gaps, and process-prep needs. Returns leverage signals, coverage, trigger suggestions, and uncovered needs. It never creates Prep Actions or mutates job-search state.',
+      description: 'Read deterministic links from Prep to current opportunities, structured requirements/gaps, and process-prep needs.',
       inputSchema: getPrepGraphSchema,
       annotations: readOnlyAnnotations,
     },
@@ -151,7 +179,7 @@ export function createPjsdasMcpServer(
     'get_decision_rules',
     {
       title: 'Get PJSDAS decision rules',
-      description: 'Read the explicit user-controlled rules that govern PJSDAS planning, risk thresholds, ranking weights, component-assessment weights, and application-portfolio policy.',
+      description: 'Read the explicit user-controlled rules that govern planning, risk thresholds, ranking weights, component-assessment weights, and portfolio policy.',
       annotations: readOnlyAnnotations,
     },
     async () => invokeReadTool(source, 'get_decision_rules', {}),
@@ -161,7 +189,7 @@ export function createPjsdasMcpServer(
     'get_discovery_context',
     {
       title: 'Get PJSDAS continuous job-discovery context',
-      description: 'Read the explicit user-controlled Discovery Profile, active decision weights, existing/inbox identities, durable Discovery Run history, incremental baseline, source coverage, and exact posting-refresh queue before searching public job sources. PJSDAS does not search the web or mutate state in this tool.',
+      description: 'Read the Discovery Profile, active weights, existing/inbox identities, Discovery Run history, incremental baseline, source coverage, and posting-refresh queue.',
       inputSchema: getDiscoveryContextSchema,
       annotations: readOnlyAnnotations,
     },
@@ -169,10 +197,21 @@ export function createPjsdasMcpServer(
   )
 
   server.registerTool(
+    'get_coverage_status',
+    {
+      title: 'Get PJSDAS autonomous-ingestion coverage',
+      description: 'Read reconciliation status for trusted ingestion sources. Reports whether every input in each source latest completed run is durably accounted for and lists explicit unresolved exceptions.',
+      inputSchema: getCoverageStatusSchema,
+      annotations: readOnlyAnnotations,
+    },
+    async () => invokeCoverageStatus(source),
+  )
+
+  server.registerTool(
     'explain_priority',
     {
       title: 'Explain PJSDAS priority',
-      description: 'Explain an action or opportunity using PJSDAS deterministic Today-ranking components and active guardrails.',
+      description: 'Explain an action or opportunity using deterministic Today-ranking components and active guardrails.',
       inputSchema: explainPrioritySchema,
       annotations: readOnlyAnnotations,
     },
@@ -190,13 +229,37 @@ export function createPjsdasMcpServer(
     async (args) => invokeReadTool(source, 'get_recent_timeline', args),
   )
 
+  if (trustedIngestionMode === 'enabled') {
+    server.registerTool(
+      'ingest_discovery_run',
+      {
+        title: 'Autonomously ingest a trusted job-monitor run',
+        description: 'Auto-apply one completed trusted monitoring batch. Each submitted source record is durably accounted for; new jobs are created, known jobs are merged, hard-filtered/duplicate/unresolved records remain auditable, and workspace conflicts fail closed.',
+        inputSchema: ingestDiscoveryRunSchema,
+        annotations: trustedIngestionAnnotations,
+      },
+      async (args) => invokeTrustedIngestion(source, 'ingest_discovery_run', args),
+    )
+
+    server.registerTool(
+      'ingest_gmail_run',
+      {
+        title: 'Autonomously ingest structured Gmail recruitment facts',
+        description: 'Auto-apply one bounded Gmail ingestion batch after classification/extraction. High-confidence facts may create/update opportunities and process events; low-confidence facts are explicitly unresolved rather than guessed.',
+        inputSchema: ingestGmailRunSchema,
+        annotations: trustedIngestionAnnotations,
+      },
+      async (args) => invokeTrustedIngestion(source, 'ingest_gmail_run', args),
+    )
+  }
+
   if (proposalMode === 'review-link') {
     if (!options.proposalSigningKey?.trim()) throw new Error('PJSDAS proposal signing key is not configured.')
     server.registerTool(
       'propose_changes',
       {
         title: 'Propose PJSDAS changes for review',
-        description: 'Create a signed, review-only PJSDAS ChangeSet. Supports natural-language progress, exact action-status changes, explicit Decision Rules patches, a separate batch of source-backed discoveredOpportunities, or a separate batch of exact postingRefreshes. Zero-eligible discovery passes can produce a record-only Discovery Run proposal. Nothing changes until explicit Apply in PJSDAS.',
+        description: 'Create a signed, review-only PJSDAS ChangeSet for changes outside the narrow trusted factual-ingestion boundary. Nothing changes until explicit Apply in PJSDAS.',
         inputSchema: proposeChangesSchema,
         annotations: proposalAnnotations,
       },

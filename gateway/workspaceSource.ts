@@ -9,8 +9,28 @@ export interface GatewayWorkspace {
   context: BridgeReadContext
 }
 
+export interface WorkspaceWriteInput {
+  snapshot: PJSDASSnapshot
+  /** Exact read baseline. Autonomous writers must fail closed if the workspace moved. */
+  expectedWorkspaceVersion?: string
+  updatedByDevice?: string
+}
+
 export interface WorkspaceSource {
   read(): Promise<GatewayWorkspace>
+  /** Optional: only authenticated durable sources expose autonomous writes. */
+  write?(input: WorkspaceWriteInput): Promise<GatewayWorkspace>
+}
+
+export function requireWritableWorkspaceSource(source: WorkspaceSource) {
+  if (!source.write) {
+    throw new WorkspaceSourceError(
+      'WORKSPACE_READ_ONLY',
+      'This PJSDAS workspace source is read-only and cannot accept autonomous ingestion.',
+      false,
+    )
+  }
+  return source as WorkspaceSource & { write(input: WorkspaceWriteInput): Promise<GatewayWorkspace> }
 }
 
 export class WorkspaceSourceError extends Error {

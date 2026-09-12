@@ -175,6 +175,47 @@ export interface DiscoveryInboxItem {
   promotedOpportunityId?: string
 }
 
+export type IngestionSourceKind = 'gpt_monitor' | 'gmail' | 'natural_language' | 'manual'
+export type IngestionRecordType = 'job_observation' | 'recruiting_message'
+export type IngestionOutcome =
+  | 'created'
+  | 'merged'
+  | 'updated'
+  | 'duplicate'
+  | 'filtered'
+  | 'ignored'
+  | 'unresolved'
+
+export interface IngestionLedgerEntry {
+  version: 1
+  sourceKind: IngestionSourceKind
+  sourceId: string
+  sourceRecordId: string
+  runId: string
+  recordType: IngestionRecordType
+  outcome: IngestionOutcome
+  fingerprint: string
+  receivedAt: string
+  accountedAt: string
+  reason?: string
+  opportunityId?: string
+  processEventId?: string
+  actionId?: string
+}
+
+export interface IngestionRunSummary {
+  version: 1
+  runId: string
+  sourceKind: IngestionSourceKind
+  sourceId: string
+  startedAt: string
+  completedAt: string
+  receivedCount: number
+  accountedCount: number
+  outcomes: Partial<Record<IngestionOutcome, number>>
+  cursor?: string
+}
+
 export type TimelineCategory = 'opportunity' | 'process' | 'action' | 'rules' | 'change' | 'data' | 'note'
 export type TimelineSource =
   | 'excel'
@@ -185,6 +226,8 @@ export type TimelineSource =
   | 'backup'
   | 'system'
   | 'changeset'
+  | 'automation'
+  | 'gmail'
 export type TimelineKind =
   | 'history_imported'
   | 'opportunity_added'
@@ -206,6 +249,8 @@ export type TimelineKind =
   | 'discovery_filtered'
   | 'discovery_duplicate'
   | 'discovery_deferred'
+  | 'ingestion_recorded'
+  | 'ingestion_run_completed'
 export type TimelineChangeValue = string | number | boolean | null
 export interface TimelineFieldChange {
   before?: TimelineChangeValue
@@ -230,6 +275,8 @@ export interface TimelineRecord {
   discoveryDecision?: DiscoveryReviewDecision
   discoveryReasonCode?: DiscoveryRejectionReason
   discoveryQualityScore?: number
+  ingestion?: IngestionLedgerEntry
+  ingestionRun?: IngestionRunSummary
   changes?: Record<string, TimelineFieldChange>
 }
 
