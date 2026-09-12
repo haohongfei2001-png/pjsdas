@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import health, { PUBLIC_HEALTH_CAPABILITIES } from '../api/health.js'
 
 describe('public production health contract', () => {
-  it('describes the authenticated v1.7 Round 2 primary gateway without exposing demo data or secrets', async () => {
+  it('describes the authenticated gateway without exposing demo data or secrets', async () => {
     const response = health.fetch()
     expect(response.status).toBe(200)
     expect(response.headers.get('cache-control')).toBe('no-store')
@@ -33,6 +33,8 @@ describe('public production health contract', () => {
     expect(body.capabilities.postingRefreshReview).toBe('v1.7-round-2')
     expect(body.capabilities.zeroResultDiscoveryRun).toBe(true)
     expect(body.capabilities.explicitDiscoveryRunContext).toBe(true)
+    expect(body.capabilities.stableAccountSession).toBe('v1.8.1')
+    expect(body.capabilities.browserDriveTokenRestoration).toBe(true)
     expect(JSON.stringify(body)).not.toContain('synthetic-demo-only')
     expect(body).not.toHaveProperty('secretsConfigured')
   })
