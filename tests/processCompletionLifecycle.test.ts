@@ -1,7 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import { parseProgressUpdate } from '../src/progressUpdate.js'
 import { createCanonicalProgressChangeSet } from '../src/progressCompletion.js'
-import { actionForProcessEvent } from '../src/processEvents.js'
+import {
+  actionForProcessEvent,
+  overlayProcessEventsOnOpportunities,
+  overlayProcessEventsOnProcesses,
+} from '../src/processEvents.js'
 import type { Action, Opportunity, ProcessEvent } from '../src/model.js'
 
 function opportunity(
@@ -102,14 +106,16 @@ describe('completion ChangeSet canonicalization', () => {
       now,
     )
 
-    expect(changeSet.operations).toHaveLength(1)
-    expect(changeSet.operations[0]).toMatchObject({
+    expect(changeSet).toBeDefined()
+    expect(changeSet!.operations).toHaveLength(1)
+    expect(changeSet!.operations[0]).toMatchObject({
+      id: expect.stringMatching(/^progress:/),
       kind: 'set_action_status',
       actionId: 'event-action:jd-assessment',
       expectedStatus: 'todo',
       status: 'done',
     })
-    expect(changeSet.operations.some((item) => item.kind === 'progress_update')).toBe(false)
+    expect(changeSet!.operations.some((item) => item.kind === 'progress_update')).toBe(false)
   })
 
   it('keeps historical completed-event backfill when no prior event exists', () => {
@@ -117,21 +123,39 @@ describe('completion ChangeSet canonicalization', () => {
     const plan = parseProgressUpdate('JDS技术产品经理测评完成了。', [jd], now)
     const changeSet = createCanonicalProgressChangeSet(plan.executable, [], [], now)
 
-    expect(changeSet.operations[0]).toMatchObject({ kind: 'progress_update' })
+    expect(changeSet).toBeDefined()
+    expect(changeSet!.operations[0]).toMatchObject({ kind: 'progress_update' })
   })
 
-  it('is idempotent when the existing event action is already done', () => {
+  it('suppresses an already-recorded completion instead of creating audit noise', () => {
     const jd = opportunity('JD-PM', '京东', '技术产品经理', 'assessment')
     const existingEvent = event('jd-assessment', jd, 'assessment_invite')
     const existingAction: Action = { ...actionForProcessEvent(existingEvent)!, status: 'done' }
     const plan = parseProgressUpdate('JDS技术产品经理测评已完成。', [jd], now)
     const changeSet = createCanonicalProgressChangeSet(plan.executable, [existingEvent], [existingAction], now)
 
-    expect(changeSet.operations[0]).toMatchObject({
-      kind: 'set_action_status',
-      actionId: 'event-action:jd-assessment',
-      expectedStatus: 'done',
-      status: 'done',
+    expect(changeSet).toBeUndefined()
+  })
+})
+
+describe('completed-stage projection', () => {
+  it('projects one completed assessment state consistently into Opportunity and Pipeline views', () => {
+    const jd = opportunity('JD-PM', '京东', '技术产品经理', 'screening')
+    const existingEvent = event('jd-assessment', jd, 'assessment_invite')
+    const doneAction: Action = { ...actionForProcessEvent(existingEvent)!, status: 'done' }
+
+    const opportunities = overlayProcessEventsOnOpportunities([jd], [existingEvent], [], [doneAction])
+    const processes = overlayProcessEventsOnProcesses([], opportunities, [existingEvent], [doneAction])
+
+    expect(opportunities[0]).toMatchObject({
+      processStage: 'assessment',
+      currentStageLabel: '测评完成 · 等待结果',
+      effectiveProcessEventId: 'jd-assessment',
+    })
+    expect(processes[0]).toMatchObject({
+      stage: 'assessment',
+      stageLabel: '测评完成 · 等待结果',
+      currentAction: undefined,
     })
   })
 })
