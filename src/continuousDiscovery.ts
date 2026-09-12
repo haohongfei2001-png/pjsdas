@@ -89,7 +89,7 @@ function buildRefreshQueue(opportunities: Opportunity[], inbox: DiscoveryInboxIt
   const targets: DiscoveryRefreshTarget[] = []
   for (const item of knownJobPostings(opportunities, inbox)) {
     if (item.inboxStatus === 'dismissed' || item.inboxStatus === 'promoted') continue
-    if (item.posting.postingStatus === 'closed') continue
+    if (item.posting.postingStatus === 'closed' || item.posting.supersededByPostingId) continue
     const freshness = jobPostingFreshness(item.posting, now)
     if (freshness === 'fresh' || freshness === 'closed') continue
     const normalizedFreshness = freshness === 'aging' || freshness === 'stale' ? freshness : 'unknown'
