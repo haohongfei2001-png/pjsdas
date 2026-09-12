@@ -25,6 +25,8 @@ export const PUBLIC_HEALTH_CAPABILITIES = {
   postingRefreshReview: 'v1.7-round-2',
   zeroResultDiscoveryRun: true,
   explicitDiscoveryRunContext: true,
+  stableAccountSession: 'v1.8.1',
+  browserDriveTokenRestoration: true,
 } as const
 
 export default {
