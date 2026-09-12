@@ -1,0 +1,28 @@
+name: PJSDAS Production Self-Test
+
+on:
+  workflow_dispatch:
+  workflow_run:
+    workflows: ["Deploy PJSDAS to GitHub Pages"]
+    types: [completed]
+
+permissions:
+  contents: read
+
+jobs:
+  self-test:
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Production read-only self-test
+        env:
+          PJSDAS_PRODUCTION_BASE_URL: https://pjsdas-remote-alpha.vercel.app
+          PJSDAS_SELF_TEST_ACCESS_TOKEN: ${{ secrets.PJSDAS_SELF_TEST_ACCESS_TOKEN }}
+        run: npm run self-test:production
