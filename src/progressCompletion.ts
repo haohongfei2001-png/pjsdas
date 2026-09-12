@@ -23,7 +23,7 @@ function completionStatusOperation(action: Action): ChangeSetOperation {
   return {
     id: `action:${action.id}:done`,
     kind: 'set_action_status',
-    summary: action.status === 'done' ? `已完成｜${action.title}` : `完成｜${action.title}`,
+    summary: `完成｜${action.title}`,
     actionId: action.id,
     expectedStatus: action.status,
     status: 'done',
@@ -35,6 +35,11 @@ function completionStatusOperation(action: Action): ChangeSetOperation {
  * exists as a Process Event. In that case the correct mutation is to complete
  * the existing event Action, not create a second synthetic assessment event.
  *
+ * If the matching Action is already done, the completion statement is a true
+ * no-op and is removed from the ChangeSet. If that leaves no mutations at all,
+ * no ChangeSet is created. This prevents duplicate history/audit noise when the
+ * user repeats an already-recorded completion.
+ *
  * If no matching visible Action exists, the original progress operation is kept
  * so historical backfill still works for events that were never recorded before.
  */
@@ -43,10 +48,11 @@ export function createCanonicalProgressChangeSet(
   events: ProcessEvent[],
   actions: Action[],
   now = new Date(),
-): ChangeSetRecord {
+): ChangeSetRecord | undefined {
   const changeSet = createProgressChangeSet(operations, now)
   const actionsById = new Map(actions.map((action) => [action.id, action]))
   const replacements = new Map<string, ChangeSetOperation>()
+  const noOps = new Set<string>()
 
   for (const operation of operations) {
     if (operation.kind !== 'process_event' ||
@@ -60,12 +66,24 @@ export function createCanonicalProgressChangeSet(
     const existingAction = actionsById.get(generated.id)
     if (!existingAction) continue
 
-    replacements.set(`progress:${operation.id}`, completionStatusOperation(existingAction))
+    const progressId = `progress:${operation.id}`
+    if (existingAction.status === 'done') {
+      noOps.add(progressId)
+      continue
+    }
+    replacements.set(progressId, completionStatusOperation(existingAction))
   }
 
-  if (replacements.size === 0) return changeSet
+  const canonicalOperations = changeSet.operations
+    .filter((operation) => !noOps.has(operation.id))
+    .map((operation) => replacements.get(operation.id) ?? operation)
+
+  if (canonicalOperations.length === 0) return undefined
+  if (replacements.size === 0 && noOps.size === 0) return changeSet
+
   return {
     ...changeSet,
-    operations: changeSet.operations.map((operation) => replacements.get(operation.id) ?? operation),
+    title: `自然语言更新 · ${canonicalOperations.length} 项`,
+    operations: canonicalOperations,
   }
 }
