@@ -21,19 +21,17 @@ function monitorArgs(runId = 'run-1') {
     sourceId: 'monitor-core',
     startedAt: '2026-09-13T00:00:00.000Z',
     completedAt: '2026-09-13T00:05:00.000Z',
+    sourcePolicy: {
+      version: 1 as const,
+      enabled: true,
+      label: 'Test monitor',
+      cadenceMinutes: 1440,
+      freshnessSlaMinutes: 2160,
+    },
     observations: [{
-      sourceRecordId: 'job-123',
-      company: 'Example',
-      role: 'AI Product Manager',
-      sourceUrl: 'https://careers.example.com/job/123',
-      sourceTitle: 'AI Product Manager',
-      rationale: 'Explicitly matches the configured direction.',
-      roleType: 'core',
-      opportunityValue: 80,
-      fitScore: 78,
-      fitConfidence: 'high',
-      opportunityValueConfidence: 'high',
-      postingStatus: 'open',
+      sourceRecordId: 'job-123', company: 'Example', role: 'AI Product Manager', sourceUrl: 'https://careers.example.com/job/123',
+      sourceTitle: 'AI Product Manager', rationale: 'Explicitly matches the configured direction.', roleType: 'core',
+      opportunityValue: 80, fitScore: 78, fitConfidence: 'high', opportunityValueConfidence: 'high', postingStatus: 'open',
     }],
   }
 }
@@ -42,16 +40,10 @@ class WritableSource implements WorkspaceSource {
   snapshot: PJSDASSnapshot = initialSnapshot()
   version = 5
   writes: WorkspaceWriteInput[] = []
-
-  async read(): Promise<GatewayWorkspace> {
-    return { snapshot: this.snapshot, context: { workspaceVersion: `drive:${this.version}`, now: new Date('2026-09-13T00:10:00.000Z') } }
-  }
-
+  async read(): Promise<GatewayWorkspace> { return { snapshot: this.snapshot, context: { workspaceVersion: `drive:${this.version}`, now: new Date('2026-09-13T00:10:00.000Z') } } }
   async write(input: WorkspaceWriteInput): Promise<GatewayWorkspace> {
     expect(input.expectedWorkspaceVersion).toBe(`drive:${this.version}`)
-    this.writes.push(input)
-    this.snapshot = input.snapshot
-    this.version += 1
+    this.writes.push(input); this.snapshot = input.snapshot; this.version += 1
     return { snapshot: this.snapshot, context: { workspaceVersion: `drive:${this.version}`, now: new Date('2026-09-13T00:10:00.000Z') } }
   }
 }
@@ -65,17 +57,10 @@ function textError(result: Awaited<ReturnType<typeof invokeTrustedIngestion>>) {
 describe('trusted ingestion MCP boundary', () => {
   it('writes a monitor run once and treats exact run retry as idempotent', async () => {
     const source = new WritableSource()
-
     const first = await invokeTrustedIngestion(source, 'ingest_discovery_run', monitorArgs())
     expect(first.isError).not.toBe(true)
     expect(source.writes).toHaveLength(1)
-    expect(first.structuredContent).toMatchObject({
-      workspaceVersion: 'drive:6',
-      alreadyApplied: false,
-      allInputsAccounted: true,
-      unresolvedCount: 0,
-    })
-
+    expect(first.structuredContent).toMatchObject({ workspaceVersion: 'drive:6', alreadyApplied: false, allInputsAccounted: true, unresolvedCount: 0 })
     const second = await invokeTrustedIngestion(source, 'ingest_discovery_run', monitorArgs())
     expect(second.isError).not.toBe(true)
     expect(source.writes).toHaveLength(1)
@@ -83,12 +68,7 @@ describe('trusted ingestion MCP boundary', () => {
   })
 
   it('fails closed when trusted ingestion is invoked on a read-only source', async () => {
-    const source: WorkspaceSource = {
-      async read() {
-        return { snapshot: initialSnapshot(), context: { workspaceVersion: 'file:1' } }
-      },
-    }
-
+    const source: WorkspaceSource = { async read() { return { snapshot: initialSnapshot(), context: { workspaceVersion: 'file:1' } } } }
     const result = await invokeTrustedIngestion(source, 'ingest_discovery_run', monitorArgs('run-readonly'))
     expect(result.isError).toBe(true)
     expect(textError(result).code).toBe('WORKSPACE_READ_ONLY')
@@ -97,19 +77,10 @@ describe('trusted ingestion MCP boundary', () => {
   it('exposes durable reconciliation without claiming global coverage when configured sources are missing', async () => {
     const source = new WritableSource()
     await invokeTrustedIngestion(source, 'ingest_discovery_run', monitorArgs())
-
     const result = await invokeCoverageStatus(source)
     expect(result.isError).not.toBe(true)
     expect(result.structuredContent).toMatchObject({
-      coverage: {
-        allCaughtUp: false,
-        sourceCount: 1,
-        expectedSourceCount: 5,
-        missingSourceCount: 5,
-        totalReceived: 1,
-        totalAccounted: 1,
-        unresolvedCount: 0,
-      },
+      coverage: { allCaughtUp: false, sourceCount: 1, expectedSourceCount: 6, missingSourceCount: 5, totalReceived: 1, totalAccounted: 1, unresolvedCount: 0 },
     })
   })
 })
