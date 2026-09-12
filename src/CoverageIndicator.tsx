@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { getAllTimelineRecords } from './db.js'
 import {
-  PJSDAS_EXPECTED_INGESTION_SOURCES,
+  expectedSourcesFromRegistry,
   summarizeCoverage,
   type CoverageSummary,
 } from './ingestion.js'
@@ -22,6 +22,13 @@ function formatTime(value?: string) {
   return new Intl.DateTimeFormat('zh-CN', {
     month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false,
   }).format(date)
+}
+
+function formatCadence(minutes?: number) {
+  if (!minutes) return ''
+  if (minutes % 1440 === 0) return `${minutes / 1440}天`
+  if (minutes % 60 === 0) return `${minutes / 60}小时`
+  return `${minutes}分钟`
 }
 
 function outcomeText(outcomes: CoverageSummary['sources'][number]['outcomes']) {
@@ -63,10 +70,10 @@ export default function CoverageIndicator() {
     }
   }, [])
 
-  const coverage = useMemo(() => summarizeCoverage(timeline, {
-    now,
-    expectedSources: PJSDAS_EXPECTED_INGESTION_SOURCES,
-  }), [timeline, now])
+  const coverage = useMemo(() => {
+    const expectedSources = expectedSourcesFromRegistry(timeline)
+    return summarizeCoverage(timeline, { now, expectedSources })
+  }, [timeline, now])
   const hasRuns = coverage.sourceCount > 0
   const status = error ? 'error' : coverage.allCaughtUp ? 'ok' : 'attention'
   const label = error
@@ -85,13 +92,7 @@ export default function CoverageIndicator() {
 
   return (
     <div className={`coverage-indicator ${status}`}>
-      <button
-        className="coverage-pill"
-        type="button"
-        onClick={() => setOpen((value) => !value)}
-        aria-expanded={open}
-        aria-label="查看自动摄入覆盖状态"
-      >
+      <button className="coverage-pill" type="button" onClick={() => setOpen((value) => !value)} aria-expanded={open} aria-label="查看自动摄入覆盖状态">
         <span className="coverage-dot" aria-hidden="true" />
         <span>{label}</span>
         {hasRuns ? <small>{coverage.totalAccounted}/{coverage.totalReceived}</small> : null}
@@ -102,7 +103,7 @@ export default function CoverageIndicator() {
           <header>
             <div>
               <div className="eyebrow">COVERAGE</div>
-              <h2>{coverage.allCaughtUp ? '预期来源都按时运行，且每条输入都有去处' : '自动摄入对账'}</h2>
+              <h2>{coverage.allCaughtUp ? '已启用来源都按时运行，且每条输入都有去处' : '自动摄入对账'}</h2>
             </div>
             <button type="button" onClick={() => setOpen(false)} aria-label="关闭">×</button>
           </header>
@@ -111,19 +112,19 @@ export default function CoverageIndicator() {
             <>
               <div className="coverage-summary">
                 <div><small>最近完成</small><strong>{formatTime(coverage.latestCompletedAt)}</strong></div>
-                <div><small>来源覆盖</small><strong>{coverage.sourceCount}/{coverage.expectedSourceCount || coverage.sourceCount}</strong></div>
+                <div><small>来源覆盖</small><strong>{coverage.sourceCount}/{coverage.expectedSourceCount}</strong></div>
                 <div><small>已接收 / 对账</small><strong>{coverage.totalReceived}/{coverage.totalAccounted}</strong></div>
                 <div><small>异常</small><strong>{coverage.unresolvedCount + coverage.missingSourceCount + coverage.staleSourceCount}</strong></div>
               </div>
 
               {coverage.missingSources.length ? (
                 <div className="coverage-exceptions">
-                  <h3>尚未完成过摄入的预期来源</h3>
+                  <h3>尚未完成过摄入的已启用来源</h3>
                   {coverage.missingSources.map((source) => (
                     <article key={`missing:${source.sourceKind}:${source.sourceId}`}>
                       <strong>{sourceLabel(source.sourceKind, source.sourceId, source.label)}</strong>
                       <p>这个来源尚没有可验证的完成 run，因此 Coverage 不会显示绿色。</p>
-                      <small>要求至少每 {source.maxAgeHours} 小时完成一次</small>
+                      <small>{source.cadenceMinutes ? `计划每 ${formatCadence(source.cadenceMinutes)}` : ''}{source.maxAgeHours ? ` · SLA ${source.maxAgeHours}h` : ''}</small>
                     </article>
                   ))}
                 </div>
@@ -139,7 +140,7 @@ export default function CoverageIndicator() {
                     <span className={source.balanced && source.unresolvedCount === 0 && !source.stale ? 'good' : 'warn'}>
                       {source.accountedCount}/{source.receivedCount}
                     </span>
-                    <p>{outcomeText(source.outcomes) || '本轮 0 条输入'}{source.maxAgeHours ? ` · SLA ${source.maxAgeHours}h` : ''}</p>
+                    <p>{outcomeText(source.outcomes) || '本轮 0 条输入'}{source.cadenceMinutes ? ` · 每 ${formatCadence(source.cadenceMinutes)}` : ''}{source.maxAgeHours ? ` · SLA ${source.maxAgeHours}h` : ''}</p>
                   </article>
                 ))}
               </div>
@@ -156,10 +157,10 @@ export default function CoverageIndicator() {
                   ))}
                 </div>
               ) : coverage.allCaughtUp ? (
-                <p className="coverage-success">✓ 4 个岗位 Monitor 与 Gmail 都在 SLA 内完成，最新 run 守恒，且没有待解析输入。</p>
+                <p className="coverage-success">✓ 当前 {coverage.expectedSourceCount} 个已启用来源都在各自 SLA 内完成，最新 run 守恒，且没有待解析输入。</p>
               ) : null}
 
-              <p className="coverage-footnote">Coverage 证明的是“已配置来源按期运行，且进入 PJSDAS 的记录没有静默丢失”，不是“互联网上不存在尚未被任何监控发现的岗位”。</p>
+              <p className="coverage-footnote">Coverage 证明的是“当前已启用来源按期运行，且进入 PJSDAS 的记录没有静默丢失”，不是“互联网上不存在尚未被任何监控发现的岗位”。</p>
             </>
           )}
         </section>
