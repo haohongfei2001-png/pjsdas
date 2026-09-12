@@ -82,7 +82,11 @@ function meaningfulMatchTerm(value: string) {
 function textContainsTerm(text: string, term: string) {
   const haystack = compact(text)
   const needle = compact(term)
-  return meaningfulMatchTerm(term) && Boolean(haystack && needle && (haystack.includes(needle) || needle.includes(haystack)))
+  // Deterministic matching is intentionally one-way: a specific requirement
+  // such as “产品分析” may match “产品分析专项准备”, but a generic Prep title
+  // such as “分析” must not match the more specific requirement by reverse
+  // substring containment.
+  return meaningfulMatchTerm(term) && Boolean(haystack && needle && haystack.includes(needle))
 }
 
 function futureIso(values: Array<string | undefined>, now: Date) {
