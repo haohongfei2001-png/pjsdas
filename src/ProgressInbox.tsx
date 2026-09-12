@@ -6,10 +6,12 @@ import {
   getAllProcessEvents,
   savePendingChangeSet,
 } from './db.js'
+import { getAllDiscoveryInboxItems } from './discoveryInboxStore.js'
 import { getAllActionsForMutationBaseline } from './mutationBaselines.js'
 import {
   parseProgressUpdate,
   progressOperationSummary,
+  type CanonicalJobReference,
   type ProgressUpdatePlan,
 } from './progressUpdate.js'
 import { createCanonicalProgressChangeSet } from './progressCompletion.js'
@@ -48,23 +50,31 @@ export default function ProgressInbox({ onChanged }: ProgressInboxProps) {
     setMessage('')
     setError('')
     if (!text.trim()) {
-      setError('先输入最近的求职历程或接下来安排。')
+      setError('先输入最近的历程、岗位进展或其他待办。')
       return
     }
     setBusy(true)
     try {
-      const [current, processEvents, actions] = await Promise.all([
+      const [current, processEvents, actions, discoveryInbox] = await Promise.all([
         getAllOpportunities(),
         getAllProcessEvents(),
         getAllActionsForMutationBaseline(),
+        getAllDiscoveryInboxItems(),
       ])
       setOpportunities(current)
-      if (current.length === 0) {
-        setError('还没有岗位基线，请先导入一次秋招投递表。之后即可只用自然语言维护。')
-        return
-      }
       if (changeSet?.status === 'pending') await discardChangeSet(changeSet.id)
-      const nextPlan = parseProgressUpdate(text, current, new Date())
+
+      const canonicalReferences: CanonicalJobReference[] = discoveryInbox
+        .filter((item) => item.status !== 'dismissed')
+        .map((item) => ({
+          opportunityId: item.promotedOpportunityId ?? item.candidateOpportunityId,
+          company: item.company,
+          role: item.role,
+          sourceBacked: true,
+          sourceLabel: item.sourceUrl,
+        }))
+
+      const nextPlan = parseProgressUpdate(text, current, new Date(), canonicalReferences)
       const canonical = nextPlan.executable.length > 0
         ? createCanonicalProgressChangeSet(nextPlan.executable, processEvents, actions)
         : undefined
@@ -118,7 +128,7 @@ export default function ProgressInbox({ onChanged }: ProgressInboxProps) {
   return (
     <>
       <button className="progress-inbox-trigger" type="button" onClick={show}>
-        更新求职进展
+        更新进展 / 事项
       </button>
       {open ? (
         <div className="progress-inbox-backdrop" onMouseDown={() => { void close() }}>
@@ -126,9 +136,9 @@ export default function ProgressInbox({ onChanged }: ProgressInboxProps) {
             <header className="progress-inbox-header">
               <div>
                 <div className="eyebrow">NATURAL LANGUAGE UPDATE</div>
-                <h2>把历程和安排直接告诉 PJSDAS</h2>
+                <h2>把岗位进展和其他事项直接告诉 PJSDAS</h2>
                 <p>
-                  可以一次粘贴多天记录。系统先生成持久化 ChangeSet，只有你确认后才修改业务数据；ChangeSet 只保存规范化修改，原始输入默认不保存。
+                  岗位输入只作为别名：系统优先使用已有 Opportunity 或官网/来源候选中的统一岗位名，避免少字、简称或错字生成第二个岗位。普通事项会进入普通待办，不会硬套成公司或岗位。
                 </p>
               </div>
               <button type="button" className="progress-inbox-close" onClick={() => { void close() }} aria-label="关闭">×</button>
@@ -139,11 +149,11 @@ export default function ProgressInbox({ onChanged }: ProgressInboxProps) {
               rows={10}
               value={text}
               onChange={(event) => setText(event.target.value)}
-              placeholder={'例如：\n9月10日，投递某公司AI产品经理。收到在线测评，48小时完成。\n9月11日，某公司测评已完成。\n9月22日，某公司产品经理10点面试。'}
+              placeholder={'例如：\n投递小鹏 AI产品经理。\n小鹏测试。\n待办：修改论文图表。\n9月22日，小鹏产品经理10点面试。'}
             />
 
             <div className="progress-inbox-toolbar">
-              <small>Excel 只作为初始基线；确认后的本地更新优先于以后重新导入的旧表。</small>
+              <small>新岗位需要已有岗位或官网/来源候选提供 canonical 名称；手输简称不会直接新建第二个岗位。</small>
               <button className="primary-button" type="button" onClick={parse} disabled={busy}>{busy ? '处理中…' : '解析并生成 ChangeSet'}</button>
             </div>
 
@@ -206,6 +216,8 @@ export default function ProgressInbox({ onChanged }: ProgressInboxProps) {
                             <small>当前状态已经包含这条进展 · 不重复写入</small>
                           ) : canonicalActionCompletion ? (
                             <small>将已有流程 Action 标记为完成 · 不重复创建测评/笔试/面试事件</small>
+                          ) : operation.kind === 'manual_action' ? (
+                            <small>普通事项 · 不关联公司或岗位</small>
                           ) : (
                             <small>{confidenceLabel[operation.confidence]}</small>
                           )}
@@ -217,12 +229,12 @@ export default function ProgressInbox({ onChanged }: ProgressInboxProps) {
 
                 {plan.unresolved.length > 0 ? (
                   <div className="progress-message warning">
-                    只有黄色“待确认”项不会自动写入。可以补全公司或岗位后重新解析；其他明确修改仍可先确认。
+                    黄色项不会写入，也不会进入 Today。岗位歧义需要已有/官网来源支持的统一岗位名；普通事项可以用“待办：……”明确标记。
                   </div>
                 ) : null}
 
                 <div className="progress-confirm-row">
-                  <small>确认后严格按上方最终 ChangeSet 操作更新 Opportunities / Pipeline / Process Events / Actions；应用结果进入 Timeline，并立即重算 Today。</small>
+                  <small>确认后只应用上方明确修改；无法安全归类的项保持未写入，不会因为复核占据 Today。</small>
                   <button
                     className="primary-button"
                     type="button"
