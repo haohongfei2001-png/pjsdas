@@ -15,6 +15,16 @@
         "deadline": "2026-09-12T23:59:00+08:00",
         "opportunityValue": 88,
         "fitScore": 76,
+        "detail": {
+          "discovery": {
+            "sourceUrl": "https://careers.example.com/jobs/ai-product-manager",
+            "sourceTitle": "AI 产品经理",
+            "rationale": "MCP demo source-backed canonical job",
+            "discoveredAt": "2026-09-10T08:00:00+08:00",
+            "fitConfidence": "high",
+            "opportunityValueConfidence": "high"
+          }
+        },
         "importedAt": "2026-09-10T08:00:00+08:00"
       },
       {
@@ -27,6 +37,16 @@
         "early": false,
         "opportunityValue": 84,
         "fitScore": 72,
+        "detail": {
+          "discovery": {
+            "sourceUrl": "https://careers.example.com/jobs/strategy-trainee",
+            "sourceTitle": "战略规划培训生",
+            "rationale": "MCP demo source-backed canonical job",
+            "discoveredAt": "2026-09-08T08:00:00+08:00",
+            "fitConfidence": "high",
+            "opportunityValueConfidence": "high"
+          }
+        },
         "importedAt": "2026-09-08T08:00:00+08:00"
       }
     ],
