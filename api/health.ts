@@ -33,6 +33,12 @@ export const PUBLIC_HEALTH_CAPABILITIES = {
   trustedMonitorIngestion: true,
   trustedGmailIngestion: true,
   optimisticDriveWriteGuard: true,
+  dynamicSourceRegistry: true,
+  coverageFreshnessSla: true,
+  workspaceIntegrityAudit: true,
+  ingestionDryRunReplay: true,
+  sourceHealthHistory: true,
+  productionSelfTest: true,
 } as const
 
 export default {
