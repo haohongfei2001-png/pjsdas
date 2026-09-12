@@ -1,7 +1,7 @@
 import { jobSourceHost } from './jobPosting.js'
 import type { ChangeSetRecord } from './changeSet.js'
 
-export type DiscoveryRunMode = 'full' | 'incremental' | 'refresh'
+export type DiscoveryRunMode = 'ad_hoc' | 'full' | 'incremental' | 'refresh'
 
 export interface DiscoveryRunRecord {
   version: 1
@@ -95,7 +95,7 @@ export function createDiscoveryRunRecord(input: {
   const record: DiscoveryRunRecord = {
     version: 1,
     id: runId(input.completedAt, input.workspaceVersion),
-    mode: context.mode ?? input.defaultMode ?? 'full',
+    mode: context.mode ?? input.defaultMode ?? 'ad_hoc',
     startedAt,
     completedAt: input.completedAt,
     profileUpdatedAt: input.profileUpdatedAt,
@@ -120,7 +120,7 @@ export function validateDiscoveryRunRecord(value: unknown): string[] {
   const run = value as DiscoveryRunRecord
   if (run.version !== 1) errors.push('Discovery Run version 必须为 1。')
   if (!run.id?.trim() || run.id.length > 160) errors.push('Discovery Run ID 无效。')
-  if (!(['full', 'incremental', 'refresh'] as DiscoveryRunMode[]).includes(run.mode)) errors.push('Discovery Run mode 无效。')
+  if (!(['ad_hoc', 'full', 'incremental', 'refresh'] as DiscoveryRunMode[]).includes(run.mode)) errors.push('Discovery Run mode 无效。')
   if (!validIso(run.startedAt) || !validIso(run.completedAt)) errors.push('Discovery Run 时间字段无效。')
   else if (new Date(run.startedAt).getTime() > new Date(run.completedAt).getTime()) errors.push('Discovery Run startedAt 不能晚于 completedAt。')
   if (run.profileUpdatedAt !== undefined && !validIso(run.profileUpdatedAt)) errors.push('Discovery Run profileUpdatedAt 无效。')
