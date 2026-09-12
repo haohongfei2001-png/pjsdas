@@ -94,7 +94,7 @@ describe('trusted ingestion MCP boundary', () => {
     expect(textError(result).code).toBe('WORKSPACE_READ_ONLY')
   })
 
-  it('exposes durable reconciliation through get_coverage_status', async () => {
+  it('exposes durable reconciliation without claiming global coverage when configured sources are missing', async () => {
     const source = new WritableSource()
     await invokeTrustedIngestion(source, 'ingest_discovery_run', monitorArgs())
 
@@ -102,8 +102,10 @@ describe('trusted ingestion MCP boundary', () => {
     expect(result.isError).not.toBe(true)
     expect(result.structuredContent).toMatchObject({
       coverage: {
-        allCaughtUp: true,
+        allCaughtUp: false,
         sourceCount: 1,
+        expectedSourceCount: 5,
+        missingSourceCount: 5,
         totalReceived: 1,
         totalAccounted: 1,
         unresolvedCount: 0,
