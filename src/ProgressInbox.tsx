@@ -1,10 +1,18 @@
 import { useState } from 'react'
-import { applyChangeSet, discardChangeSet, getAllOpportunities, stageProgressChangeSet } from './db.js'
+import {
+  applyChangeSet,
+  discardChangeSet,
+  getAllActions,
+  getAllOpportunities,
+  getAllProcessEvents,
+  savePendingChangeSet,
+} from './db.js'
 import {
   parseProgressUpdate,
   progressOperationSummary,
   type ProgressUpdatePlan,
 } from './progressUpdate.js'
+import { createCanonicalProgressChangeSet } from './progressCompletion.js'
 import type { Opportunity } from './model.js'
 import type { ChangeSetRecord } from './changeSet.js'
 import './progressInbox.css'
@@ -33,7 +41,10 @@ export default function ProgressInbox({ onChanged }: ProgressInboxProps) {
     setOpen(true)
     setMessage('')
     setError('')
-    if (opportunities.length === 0) setOpportunities(await getAllOpportunities())
+    // Always refresh the parser context when opening. Keeping an old opportunity
+    // array here can route a new assessment/interview to a stale role after the
+    // workspace changed elsewhere.
+    setOpportunities(await getAllOpportunities())
   }
 
   async function parse() {
@@ -45,11 +56,12 @@ export default function ProgressInbox({ onChanged }: ProgressInboxProps) {
     }
     setBusy(true)
     try {
-      let current = opportunities
-      if (current.length === 0) {
-        current = await getAllOpportunities()
-        setOpportunities(current)
-      }
+      const [current, processEvents, actions] = await Promise.all([
+        getAllOpportunities(),
+        getAllProcessEvents(),
+        getAllActions(),
+      ])
+      setOpportunities(current)
       if (current.length === 0) {
         setError('还没有岗位基线，请先导入一次秋招投递表。之后即可只用自然语言维护。')
         return
@@ -57,7 +69,11 @@ export default function ProgressInbox({ onChanged }: ProgressInboxProps) {
       if (changeSet?.status === 'pending') await discardChangeSet(changeSet.id)
       const nextPlan = parseProgressUpdate(text, current, new Date())
       const nextChangeSet = nextPlan.executable.length > 0
-        ? await stageProgressChangeSet(nextPlan.executable)
+        ? await savePendingChangeSet(createCanonicalProgressChangeSet(
+            nextPlan.executable,
+            processEvents,
+            actions,
+          ))
         : null
       setPlan(nextPlan)
       setChangeSet(nextChangeSet)
@@ -122,7 +138,7 @@ export default function ProgressInbox({ onChanged }: ProgressInboxProps) {
               rows={10}
               value={text}
               onChange={(event) => setText(event.target.value)}
-              placeholder={'例如：\n9月10日，投递某公司AI产品经理。收到在线测评，48小时完成。\n9月11日，准备投递某公司产品经理和PMO经理。\n9月22日，某公司产品经理10点面试。'}
+              placeholder={'例如：\n9月10日，投递某公司AI产品经理。收到在线测评，48小时完成。\n9月11日，某公司测评已完成。\n9月22日，某公司产品经理10点面试。'}
             />
 
             <div className="progress-inbox-toolbar">
