@@ -190,9 +190,11 @@ export function overlayProcessEventsOnOpportunities(
   opportunities: Opportunity[],
   events: ProcessEvent[],
   processes: ProcessRecord[] = [],
+  actions: Action[] = [],
 ): Opportunity[] {
   const { latestStage } = latestEventMaps(events)
   const baseline = baselineProgressByOpportunity(processes)
+  const actionsById = new Map(actions.map((item) => [item.id, item]))
 
   return opportunities.map((opportunity): Opportunity => {
     const event = latestStage.get(opportunity.id)
@@ -204,7 +206,7 @@ export function overlayProcessEventsOnOpportunities(
     return {
       ...opportunity,
       processStage: stage,
-      currentStageLabel: processEventStageLabel(event),
+      currentStageLabel: projectedStageLabel(event, actionsById),
       effectiveProcessEventId: event.id,
       effectiveProcessEventAt: event.occurredAt,
     }
