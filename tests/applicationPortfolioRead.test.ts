@@ -24,7 +24,11 @@ const source: WorkspaceSource = {
             { ...alpha, id: 'opp-two', applicationGroupId: 'GROUP-TEST', role: '战略规划', fitScore: 82, opportunityValue: 87, roleType: 'reach' },
             { ...alpha, id: 'opp-three', applicationGroupId: 'GROUP-TEST', role: '产品运营', fitScore: 42, opportunityValue: 50, roleType: 'practice' },
           ],
+          processes: [],
+          processEvents: [],
+          actions: [],
           applicationGroups: [{ id: 'GROUP-TEST', company: '示例科技', total: 2, used: 0, remaining: 2 }],
+          timeline: [],
         },
       },
     }
