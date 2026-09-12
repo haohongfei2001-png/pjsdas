@@ -102,6 +102,7 @@ function withDiscoveryRun(
   now: Date,
   discoveryReview?: McpDiscoveryReview,
 ) {
+  if (changeSet.discoveryRun) return changeSet
   if (!discoveryReview) return changeSet
   const sourceUrls = changeSet.operations.flatMap((operation) =>
     operation.kind === 'add_discovered_opportunity'
