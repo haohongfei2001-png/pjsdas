@@ -85,10 +85,8 @@ export function AiAccessProvider({ children }: { children: ReactNode }) {
       window.sessionStorage.removeItem(PENDING_KEY)
       clearCallbackUrl()
       setMessage(email ? `AI 读取授权已连接：${email}` : 'AI 读取授权已连接。')
-      // The provider refresh token has already been encrypted server-side. Keep no
-      // long-lived Supabase/Google linking session in the PJSDAS browser tab.
-      const supabase = await loadSupabase()
-      await supabase.auth.signOut({ scope: 'local' })
+      // The same durable Supabase session is now the PJSDAS account session.
+      // Do not sign it out after saving the encrypted Google refresh token.
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : String(caught))
     } finally {
@@ -98,8 +96,6 @@ export function AiAccessProvider({ children }: { children: ReactNode }) {
   }
 
   useEffect(() => {
-    // Supabase is an authorization-only dependency. Ordinary PJSDAS sessions do
-    // not need to download or initialize it until an OAuth round-trip is active.
     if (!hasPendingGoogleLink()) return
 
     let active = true
