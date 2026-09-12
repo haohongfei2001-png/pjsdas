@@ -102,6 +102,7 @@ export default function OpportunityDetailDrawer({
   const recentTimeline = [...timeline]
     .sort((a, b) => b.occurredAt.localeCompare(a.occurredAt))
     .slice(0, 6)
+  const effectiveStageText = process?.stageLabel || opportunity.currentStageLabel || stageLabel(opportunity.processStage, zh)
 
   useEffect(() => {
     const handler = (event: KeyboardEvent) => { if (event.key === 'Escape') onClose() }
@@ -119,7 +120,7 @@ export default function OpportunityDetailDrawer({
             <h2>{opportunity.role}</h2>
             <div className="opportunity-detail-header-badges">
               <span>{roleLabels[opportunity.roleType][zh ? 0 : 1]}</span>
-              <span>{stageLabel(opportunity.processStage, zh)}</span>
+              <span>{effectiveStageText}</span>
               {opportunity.early ? <span>{zh ? '提前批 / 早期窗口' : 'Early window'}</span> : null}
             </div>
           </div>
@@ -129,7 +130,7 @@ export default function OpportunityDetailDrawer({
         <section className="opportunity-detail-score-grid" aria-label={zh ? '核心判断' : 'Core assessment'}>
           <div><small>FIT</small><b>{Math.round(opportunity.fitScore)}</b></div>
           <div><small>{zh ? '机会价值' : 'VALUE'}</small><b>{Math.round(opportunity.opportunityValue)}</b></div>
-          <div><small>{zh ? '当前阶段' : 'STAGE'}</small><strong>{opportunity.currentStageLabel || stageLabel(opportunity.processStage, zh)}</strong></div>
+          <div><small>{zh ? '当前阶段' : 'STAGE'}</small><strong>{effectiveStageText}</strong></div>
           <div><small>{zh ? '截止' : 'DEADLINE'}</small><strong>{formatDate(opportunity.deadline, zh)}</strong></div>
         </section>
 
