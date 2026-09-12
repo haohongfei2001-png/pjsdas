@@ -56,7 +56,7 @@ describe('v1.6 Round 2 Prep Graph', () => {
     }
     const [enriched] = enrichPrepActionsWithGraph([action], graph)
     expect(enriched.leverage).toBeGreaterThan(40)
-    expect(enriched.dueAt).toBe('2026-09-14T15:59:00.000Z')
+    expect(new Date(enriched.dueAt!).toISOString()).toBe('2026-09-14T15:59:00.000Z')
     expect(prepGraphReasonFromAction(enriched)).toContain('覆盖1岗')
   })
 
