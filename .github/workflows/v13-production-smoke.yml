@@ -10,7 +10,7 @@ on:
       expected_version:
         description: Expected authenticated gateway version
         required: true
-        default: 1.6.0-alpha.1
+        default: 1.6.0-alpha.2
 
 jobs:
   smoke:
