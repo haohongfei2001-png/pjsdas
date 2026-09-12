@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { parseProgressUpdate } from '../src/progressUpdate.js'
+import { parseProgressUpdate, type CanonicalJobReference } from '../src/progressUpdate.js'
 import type { Opportunity } from '../src/model.js'
 
 function opportunity(id: string, company: string, role: string): Opportunity {
@@ -36,13 +36,22 @@ describe('natural-language opportunity identity guard', () => {
     })
   })
 
-  it('reuses the unique high-confidence role when formatting or suffix text differs', () => {
+  it('reuses the canonical existing role when suffix text differs', () => {
     const existing = opportunity('example-ai-pm', 'Example Tech', 'AI 产品经理（数据平台）')
     const plan = parseProgressUpdate('投递 Example Tech AI产品经理。', [existing], now)
     const upsert = plan.operations.find((item) => item.kind === 'upsert_opportunity')
 
     expect(plan.unresolved).toHaveLength(0)
     expect(upsert).toMatchObject({ opportunityId: 'example-ai-pm', company: 'Example Tech', role: 'AI 产品经理（数据平台）' })
+  })
+
+  it('tolerates one missing character when the canonical existing role is unique', () => {
+    const existing = opportunity('strategy', '甲公司', '战略分析师')
+    const plan = parseProgressUpdate('投递 甲公司战略分析。', [existing], now)
+    const upsert = plan.operations.find((item) => item.kind === 'upsert_opportunity')
+
+    expect(plan.unresolved).toHaveLength(0)
+    expect(upsert).toMatchObject({ opportunityId: 'strategy', role: '战略分析师' })
   })
 
   it('does not accept the old parser first-match behavior when one company has multiple equally similar roles', () => {
@@ -54,17 +63,37 @@ describe('natural-language opportunity identity guard', () => {
 
     expect(plan.executable).toHaveLength(0)
     expect(plan.unresolved).toHaveLength(1)
-    expect(plan.unresolved[0].reason).toContain('多个高度相似')
-    expect(plan.unresolved[0].candidates?.map((item) => item.id).sort()).toEqual(['commercial', 'growth'])
+    expect(plan.unresolved[0]?.reason).toContain('多个高度相似')
+    expect(plan.unresolved[0]?.candidates?.map((item) => item.id).sort()).toEqual(['commercial', 'growth'])
   })
 
-  it('keeps a genuinely different role as a new opportunity', () => {
+  it('does not create a genuinely new manually typed role without a canonical source reference', () => {
     const existing = opportunity('strategy', '甲公司', '战略分析')
     const plan = parseProgressUpdate('投递 甲公司产品经理。', [existing], now)
+
+    expect(plan.executable).toHaveLength(0)
+    expect(plan.unresolved).toHaveLength(1)
+    expect(plan.unresolved[0]?.reason).toContain('官网来源支持的统一岗位名')
+  })
+
+  it('converts a shorthand manual role to the source-backed canonical role name', () => {
+    const references: CanonicalJobReference[] = [{
+      opportunityId: 'candidate-ai-pm',
+      company: '甲公司',
+      role: 'AI产品经理培训生',
+      sourceBacked: true,
+      sourceLabel: 'https://careers.example.com/ai-pm',
+    }]
+    const plan = parseProgressUpdate('投递 甲公司AI产品经理。', [], now, references)
     const upsert = plan.operations.find((item) => item.kind === 'upsert_opportunity')
 
     expect(plan.unresolved).toHaveLength(0)
-    expect(upsert?.kind).toBe('upsert_opportunity')
-    if (upsert?.kind === 'upsert_opportunity') expect(upsert.opportunityId).not.toBe(existing.id)
+    expect(upsert).toMatchObject({
+      kind: 'upsert_opportunity',
+      opportunityId: 'candidate-ai-pm',
+      company: '甲公司',
+      role: 'AI产品经理培训生',
+      confidence: 'high',
+    })
   })
 })
