@@ -9,12 +9,13 @@ import {
   type ReactNode,
 } from 'react'
 import {
+  completePendingGoogleLink,
   getCloudSession,
   signInWithGoogle,
   signOutCloud,
+  subscribeCloudSession,
   type CloudSession,
 } from './cloudClient.js'
-import { readCloudConfig } from './cloudConfig.js'
 import {
   getAccountCheckpoint,
   getCloudDeviceState,
@@ -51,28 +52,78 @@ interface CloudContextValue {
 const CloudContext = createContext<CloudContextValue | null>(null)
 
 export function CloudProvider({ children }: { children: ReactNode }) {
-  const configured = Boolean(readCloudConfig())
+  const configured = true
   const [session, setSession] = useState<CloudSession | null>(null)
-  const [loading, setLoading] = useState(false)
+  const [loading, setLoading] = useState(true)
   const [syncing, setSyncing] = useState(false)
   const [device, setDevice] = useState(() => getCloudDeviceState())
   const [checkpoint, setCheckpoint] = useState<AccountSyncCheckpoint>({})
   const [outcome, setOutcome] = useState<CloudSyncOutcome>()
   const [error, setError] = useState<string>()
   const busyRef = useRef(false)
+  const linkingRef = useRef(false)
 
   const refreshState = useCallback((userId?: string) => {
     setDevice(getCloudDeviceState())
     setCheckpoint(userId ? getAccountCheckpoint(userId) : {})
   }, [])
 
+  const applySession = useCallback((next: CloudSession | null) => {
+    setSession(next)
+    refreshState(next?.user.id)
+  }, [refreshState])
+
+  const finishPendingLink = useCallback(async () => {
+    if (linkingRef.current) return
+    linkingRef.current = true
+    try {
+      await completePendingGoogleLink()
+      setError(undefined)
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : String(caught))
+    } finally {
+      linkingRef.current = false
+    }
+  }, [])
+
+  useEffect(() => {
+    let active = true
+    let unsubscribe: (() => void) | undefined
+
+    void getCloudSession()
+      .then(async (next) => {
+        if (!active) return
+        applySession(next)
+        if (next) await finishPendingLink()
+      })
+      .catch((caught) => {
+        if (active) setError(caught instanceof Error ? caught.message : String(caught))
+      })
+      .finally(() => {
+        if (active) setLoading(false)
+      })
+
+    void subscribeCloudSession((next) => {
+      if (!active) return
+      applySession(next)
+      if (next) void finishPendingLink()
+    }).then((cleanup) => {
+      if (!active) cleanup()
+      else unsubscribe = cleanup
+    }).catch((caught) => {
+      if (active) setError(caught instanceof Error ? caught.message : String(caught))
+    })
+
+    return () => {
+      active = false
+      unsubscribe?.()
+    }
+  }, [applySession, finishPendingLink])
+
   const clearExpiredSessionIfNeeded = useCallback(async () => {
     const current = await getCloudSession()
-    if (!current) {
-      setSession(null)
-      refreshState()
-    }
-  }, [refreshState])
+    if (!current) applySession(null)
+  }, [applySession])
 
   const syncNow = useCallback(async () => {
     const userId = session?.user.id
@@ -99,7 +150,7 @@ export function CloudProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     const userId = session?.user.id
-    if (!configured || !userId || !device.autoSync || checkpoint.conflict) return
+    if (loading || !configured || !userId || !device.autoSync || checkpoint.conflict) return
     const ownerMismatch = Boolean(device.workspaceOwnerUserId && device.workspaceOwnerUserId !== userId)
     if (ownerMismatch) return
 
@@ -112,7 +163,7 @@ export function CloudProvider({ children }: { children: ReactNode }) {
       window.clearInterval(interval)
       window.removeEventListener('focus', focus)
     }
-  }, [configured, session?.user.id, device.autoSync, device.workspaceOwnerUserId, checkpoint.conflict, syncNow])
+  }, [loading, configured, session?.user.id, device.autoSync, device.workspaceOwnerUserId, checkpoint.conflict, syncNow])
 
   const runResolution = useCallback(async (kind: 'keep' | 'cloud' | 'rebind') => {
     const userId = session?.user.id
@@ -142,21 +193,17 @@ export function CloudProvider({ children }: { children: ReactNode }) {
   }, [session?.user.id, refreshState, clearExpiredSessionIfNeeded])
 
   const signIn = useCallback(async () => {
-    if (!configured || busyRef.current) return
+    if (busyRef.current) return
     setLoading(true)
     setError(undefined)
     try {
-      const next = await signInWithGoogle()
-      setSession(next)
-      setOutcome(undefined)
-      refreshState(next.user.id)
+      await signInWithGoogle()
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : String(caught))
-      throw caught
-    } finally {
       setLoading(false)
+      throw caught
     }
-  }, [configured, refreshState])
+  }, [])
 
   const value = useMemo<CloudContextValue>(() => ({
     configured,
@@ -170,10 +217,10 @@ export function CloudProvider({ children }: { children: ReactNode }) {
     signIn,
     signOut: async () => {
       await signOutCloud()
-      setSession(null)
+      applySession(null)
       setOutcome(undefined)
       setError(undefined)
-      refreshState()
+      setLoading(false)
     },
     syncNow,
     keepLocal: () => runResolution('keep'),
@@ -183,7 +230,7 @@ export function CloudProvider({ children }: { children: ReactNode }) {
       setCloudAutoSync(enabled)
       refreshState(session?.user.id)
     },
-  }), [configured, session, loading, syncing, device, checkpoint, outcome, error, signIn, syncNow, runResolution, refreshState])
+  }), [configured, session, loading, syncing, device, checkpoint, outcome, error, signIn, syncNow, runResolution, refreshState, applySession])
 
   return <CloudContext.Provider value={value}>{children}</CloudContext.Provider>
 }
