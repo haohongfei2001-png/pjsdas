@@ -1,6 +1,7 @@
 import { StrictMode, useEffect, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import App from './AppV8.js'
+import CoverageIndicator from './CoverageIndicator.js'
 import FixedEventGuard from './FixedEventGuard.js'
 import { UiLanguageProvider } from './uiLanguage.js'
 import { CloudProvider } from './cloud/CloudContext.js'
@@ -24,6 +25,7 @@ function Root() {
     <>
       <App key={revision} />
       <FixedEventGuard key={`fixed-${revision}`} onChanged={refresh} />
+      <CoverageIndicator key={`coverage-${revision}`} />
     </>
   )
 }
