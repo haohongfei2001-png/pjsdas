@@ -12,19 +12,20 @@ describe('v1.8 Round 4 usability friction removal', () => {
     expect(app).not.toContain('updateActionStatus(')
   })
 
-  it('adds a non-persistent start path for an empty workspace', () => {
+  it('adds a non-persistent start path for an empty workspace without creating a review inbox', () => {
     expect(app).toContain('workspaceEmpty')
     expect(app).toContain('GettingStartedCard')
-    expect(app).toContain("onStart('review')")
-    expect(app).toContain("onStart('settings')")
+    expect(app).toContain("setSurface('settings')")
+    expect(app).not.toContain("onStart('review')")
     expect(app).not.toContain('onboardingCompleted')
   })
 
-  it('chooses Decide context from real workspace state until the user explicitly chooses', () => {
-    expect(app).toContain('getAllDiscoveryInboxItems')
+  it('chooses Decide context from active opportunities/process state rather than review backlog', () => {
     expect(app).toContain('decideTabExplicit')
-    expect(app).toContain("discoveryReviewCount > 0 ? 'review'")
+    expect(app).toContain("setDecideTab(hasPipeline ? 'pipeline' : 'opportunities')")
     expect(app).toContain("setDecideTabExplicit(true)")
+    expect(app).not.toContain('discoveryReviewCount')
+    expect(app).not.toContain('getAllDiscoveryInboxItems')
     expect(main.indexOf("import './usabilityFriction.css'")).toBeGreaterThan(main.indexOf("import './visualPolish.css'"))
   })
 })
