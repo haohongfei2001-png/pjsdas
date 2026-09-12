@@ -1,5 +1,6 @@
 import type { CallToolResult } from '@modelcontextprotocol/server'
 import * as z from 'zod/v4'
+import { getApplicationPortfolio } from '../src/ai/applicationPortfolioRead.js'
 import { getOpportunityAssessment } from '../src/ai/assessmentRead.js'
 import {
   BridgeReadError,
@@ -19,6 +20,7 @@ export const READ_TOOL_NAMES = [
   'get_today_plan',
   'list_opportunities',
   'get_opportunity_assessment',
+  'get_application_portfolio',
   'get_pipeline',
   'get_decision_rules',
   'get_discovery_context',
@@ -63,6 +65,12 @@ export const listOpportunitiesSchema = z.object({
 
 export const getOpportunityAssessmentSchema = z.object({
   opportunityId: z.string().trim().min(1),
+})
+
+export const getApplicationPortfolioSchema = z.object({
+  groupId: z.string().trim().min(1).optional(),
+  company: z.string().trim().min(1).optional(),
+  limit: z.number().int().min(1).max(20).optional(),
 })
 
 export const getPipelineSchema = z.object({
@@ -162,6 +170,8 @@ export async function invokeReadTool(
         }
         return success({ meta: readMeta(context), ...getOpportunityAssessment(snapshot, parsed) })
       }
+      case 'get_application_portfolio':
+        return success(getApplicationPortfolio(snapshot, getApplicationPortfolioSchema.parse(args), context))
       case 'get_pipeline':
         return success(getPipeline(snapshot, getPipelineSchema.parse(args), context))
       case 'get_decision_rules': {
@@ -172,6 +182,8 @@ export async function invokeReadTool(
           ...output,
           fitComponentWeights: { ...rules.fitComponentWeights! },
           opportunityValueComponentWeights: { ...rules.opportunityValueComponentWeights! },
+          portfolioWeights: { ...rules.portfolioWeights! },
+          portfolioMinimumCandidateScore: rules.portfolioMinimumCandidateScore,
         })
       }
       case 'get_discovery_context':

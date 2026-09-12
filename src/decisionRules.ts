@@ -28,6 +28,16 @@ export interface OpportunityValueComponentWeights {
   locationValue: number
 }
 
+export interface PortfolioDecisionWeights {
+  opportunityValue: number
+  fit: number
+  rolePriority: number
+  deadline: number
+  applicationEfficiency: number
+  evidenceConfidence: number
+  overlapPenalty: number
+}
+
 export interface DecisionRules {
   key: 'current'
   version: 1
@@ -45,6 +55,8 @@ export interface DecisionRules {
   weights: DecisionWeights
   fitComponentWeights?: FitComponentWeights
   opportunityValueComponentWeights?: OpportunityValueComponentWeights
+  portfolioWeights?: PortfolioDecisionWeights
+  portfolioMinimumCandidateScore?: number
   updatedAt: string
 }
 
@@ -67,6 +79,18 @@ export const DEFAULT_OPPORTUNITY_VALUE_COMPONENT_WEIGHTS: OpportunityValueCompon
   industryGrowth: 12,
   locationValue: 12,
 }
+
+export const DEFAULT_PORTFOLIO_DECISION_WEIGHTS: PortfolioDecisionWeights = {
+  opportunityValue: 28,
+  fit: 28,
+  rolePriority: 14,
+  deadline: 8,
+  applicationEfficiency: 10,
+  evidenceConfidence: 12,
+  overlapPenalty: 18,
+}
+
+export const DEFAULT_PORTFOLIO_MINIMUM_CANDIDATE_SCORE = 62
 
 export const DEFAULT_DECISION_RULES: DecisionRules = {
   key: 'current',
@@ -93,6 +117,8 @@ export const DEFAULT_DECISION_RULES: DecisionRules = {
   },
   fitComponentWeights: { ...DEFAULT_FIT_COMPONENT_WEIGHTS },
   opportunityValueComponentWeights: { ...DEFAULT_OPPORTUNITY_VALUE_COMPONENT_WEIGHTS },
+  portfolioWeights: { ...DEFAULT_PORTFOLIO_DECISION_WEIGHTS },
+  portfolioMinimumCandidateScore: DEFAULT_PORTFOLIO_MINIMUM_CANDIDATE_SCORE,
   updatedAt: '1970-01-01T00:00:00.000Z',
 }
 
@@ -102,6 +128,14 @@ export function resolvedFitComponentWeights(rules?: Pick<DecisionRules, 'fitComp
 
 export function resolvedOpportunityValueComponentWeights(rules?: Pick<DecisionRules, 'opportunityValueComponentWeights'>) {
   return { ...DEFAULT_OPPORTUNITY_VALUE_COMPONENT_WEIGHTS, ...(rules?.opportunityValueComponentWeights ?? {}) }
+}
+
+export function resolvedPortfolioDecisionWeights(rules?: Pick<DecisionRules, 'portfolioWeights'>) {
+  return { ...DEFAULT_PORTFOLIO_DECISION_WEIGHTS, ...(rules?.portfolioWeights ?? {}) }
+}
+
+export function resolvedPortfolioMinimumCandidateScore(rules?: Pick<DecisionRules, 'portfolioMinimumCandidateScore'>) {
+  return rules?.portfolioMinimumCandidateScore ?? DEFAULT_PORTFOLIO_MINIMUM_CANDIDATE_SCORE
 }
 
 export function cloneDecisionRules(rules: DecisionRules = DEFAULT_DECISION_RULES): DecisionRules {
@@ -122,6 +156,8 @@ export function cloneDecisionRules(rules: DecisionRules = DEFAULT_DECISION_RULES
     weights: { ...rules.weights },
     fitComponentWeights: resolvedFitComponentWeights(rules),
     opportunityValueComponentWeights: resolvedOpportunityValueComponentWeights(rules),
+    portfolioWeights: resolvedPortfolioDecisionWeights(rules),
+    portfolioMinimumCandidateScore: resolvedPortfolioMinimumCandidateScore(rules),
     updatedAt: rules.updatedAt,
   }
 }
@@ -161,6 +197,7 @@ export function validateDecisionRules(rules: DecisionRules): string[] {
   integerRange('高风险阈值', rules.riskHighHours, 1, 336)
   integerRange('临近阈值', rules.riskNearHours, 1, 504)
   integerRange('需准备阈值', rules.riskWatchHours, 1, 720)
+  integerRange('组合决策最低候选分', resolvedPortfolioMinimumCandidateScore(rules), 0, 100)
 
   if (!(rules.riskCriticalHours <= rules.riskHighHours &&
     rules.riskHighHours <= rules.riskNearHours &&
@@ -171,5 +208,6 @@ export function validateDecisionRules(rules: DecisionRules): string[] {
   validateWeightMap('高级排序权重', rules.weights, errors)
   validateWeightMap('匹配度组件权重', resolvedFitComponentWeights(rules), errors)
   validateWeightMap('机会价值组件权重', resolvedOpportunityValueComponentWeights(rules), errors)
+  validateWeightMap('申请组合决策权重', resolvedPortfolioDecisionWeights(rules), errors)
   return errors
 }

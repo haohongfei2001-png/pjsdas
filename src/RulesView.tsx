@@ -8,6 +8,7 @@ import {
   type DecisionWeights,
   type FitComponentWeights,
   type OpportunityValueComponentWeights,
+  type PortfolioDecisionWeights,
 } from './decisionRules.js'
 import { useUiLanguage } from './uiLanguage.js'
 import './rules.css'
@@ -19,7 +20,7 @@ type Props = {
 
 type NumericRuleKey = Exclude<
   keyof DecisionRules,
-  'key' | 'version' | 'weights' | 'fitComponentWeights' | 'opportunityValueComponentWeights' | 'updatedAt'
+  'key' | 'version' | 'weights' | 'fitComponentWeights' | 'opportunityValueComponentWeights' | 'portfolioWeights' | 'updatedAt'
 >
 
 const weightKeys: Array<keyof DecisionWeights> = [
@@ -30,6 +31,9 @@ const fitComponentWeightKeys: Array<keyof FitComponentWeights> = [
 ]
 const opportunityComponentWeightKeys: Array<keyof OpportunityValueComponentWeights> = [
   'companyQuality', 'roleGrowth', 'compensation', 'careerOptionality', 'brandValue', 'industryGrowth', 'locationValue',
+]
+const portfolioWeightKeys: Array<keyof PortfolioDecisionWeights> = [
+  'opportunityValue', 'fit', 'rolePriority', 'deadline', 'applicationEfficiency', 'evidenceConfidence', 'overlapPenalty',
 ]
 
 export default function RulesView({ rules, onChanged }: Props) {
@@ -79,6 +83,16 @@ export default function RulesView({ rules, onChanged }: Props) {
     setMessage('')
   }
 
+  const setPortfolioWeight = (key: keyof PortfolioDecisionWeights, value: string) => {
+    const parsed = Number(value)
+    if (!Number.isFinite(parsed)) return
+    setDraft((current) => ({
+      ...current,
+      portfolioWeights: { ...current.portfolioWeights!, [key]: parsed },
+    }))
+    setMessage('')
+  }
+
   async function save() {
     if (errors.length) return
     setBusy(true)
@@ -87,8 +101,8 @@ export default function RulesView({ rules, onChanged }: Props) {
       await onChanged()
       setMessage(changeSet
         ? (zh
-            ? `ChangeSet ${changeSet.id} 已应用。新岗位评估会使用新的组件权重；已保存的历史岗位分数不会被静默改写。`
-            : `ChangeSet ${changeSet.id} applied. New assessments use the new component weights; stored historical scores are not silently rewritten.`)
+            ? `ChangeSet ${changeSet.id} 已应用。后续岗位评估与申请组合决策会使用新规则；历史岗位分数不会被静默改写。`
+            : `ChangeSet ${changeSet.id} applied. Future assessments and portfolio decisions use the new rules; stored historical scores are not silently rewritten.`)
         : (zh ? '规则没有变化。' : 'No rule changes.'))
     } finally {
       setBusy(false)
@@ -135,24 +149,33 @@ export default function RulesView({ rules, onChanged }: Props) {
     industryGrowth: ['行业成长', 'Industry growth'],
     locationValue: ['地点价值', 'Location value'],
   }
+  const portfolioWeightLabels: Record<keyof PortfolioDecisionWeights, [string, string]> = {
+    opportunityValue: ['岗位机会价值', 'Opportunity value'],
+    fit: ['岗位匹配度', 'Fit'],
+    rolePriority: ['核心/冲刺/保底角色', 'Role priority'],
+    deadline: ['截止压力', 'Deadline pressure'],
+    applicationEfficiency: ['投递效率', 'Application efficiency'],
+    evidenceConfidence: ['评估证据置信度', 'Evidence confidence'],
+    overlapPenalty: ['组合重叠惩罚', 'Overlap penalty'],
+  }
 
   return (
     <section className="rules-page">
       <header className="page-header">
         <div>
-          <div className="eyebrow">DECISION RULES · V1.5</div>
+          <div className="eyebrow">DECISION RULES · V1.6</div>
           <h1>{zh ? '决策规则' : 'Decision Rules'}</h1>
           <p>{zh
-            ? '这些规则驱动 Today 排序，也决定新岗位的匹配度与机会价值如何由分项评估聚合。组件权重是显式策略；修改它不会静默重写已经保存的历史岗位分数。'
-            : 'These rules drive Today ranking and define how new opportunity assessments aggregate component scores into Fit and Opportunity Value. Component weights are explicit policy; editing them does not silently rewrite stored historical scores.'}</p>
+            ? '这些规则驱动 Today 排序、岗位分项聚合和申请组合决策。所有权重都是显式策略；修改不会自动提交申请，也不会静默重写已经保存的历史岗位分数。'
+            : 'These rules drive Today ranking, component aggregation, and application portfolio decisions. All weights are explicit policy; edits never submit applications or silently rewrite stored historical opportunity scores.'}</p>
         </div>
       </header>
 
       <div className="rules-summary-grid">
         <RuleSummary label={zh ? '硬截止保护' : 'Deadline protection'} value={`${draft.hardDeadlineHorizonHours}h`} />
-        <RuleSummary label={zh ? '近期节点' : 'Upcoming horizon'} value={`${draft.upcomingHorizonDays}${zh ? '天' : 'd'}`} />
         <RuleSummary label={zh ? '匹配度分项' : 'Fit components'} value={`${fitComponentWeightKeys.length}`} />
         <RuleSummary label={zh ? '机会价值分项' : 'Value components'} value={`${opportunityComponentWeightKeys.length}`} />
+        <RuleSummary label={zh ? '组合最低候选线' : 'Portfolio minimum'} value={`${draft.portfolioMinimumCandidateScore ?? '—'}`} />
       </div>
 
       <div className="rules-grid">
@@ -214,6 +237,20 @@ export default function RulesView({ rules, onChanged }: Props) {
             {opportunityComponentWeightKeys.map((key) => (
               <RuleField key={key} label={opportunityComponentLabels[key][zh ? 0 : 1]} value={draft.opportunityValueComponentWeights![key]} unit="w" min={0} max={100} step={1} onChange={(v) => setOpportunityComponentWeight(key, v)} />
             ))}
+          </div>
+        </details>
+
+        <details className="rules-card advanced-rules" open>
+          <summary>
+            <div><span className="eyebrow">APPLICATION PORTFOLIO</span><strong>{zh ? '申请组合决策策略' : 'Application portfolio policy'}</strong></div>
+            <span>{zh ? '组合决策' : 'Portfolio'}</span>
+          </summary>
+          <p>{zh ? '“剩余名额”只是上限。候选基础效用低于最低线时不会因为还有空位就被推荐；高度相似岗位同时入选时还会产生组合重叠惩罚。' : 'Remaining quota is only a ceiling. Candidates below the minimum utility are not recommended just because slots remain, and highly similar selections incur an overlap penalty.'}</p>
+          <div className="weight-grid">
+            {portfolioWeightKeys.map((key) => (
+              <RuleField key={key} label={portfolioWeightLabels[key][zh ? 0 : 1]} value={draft.portfolioWeights![key]} unit="w" min={0} max={100} step={1} onChange={(v) => setPortfolioWeight(key, v)} />
+            ))}
+            <RuleField label={zh ? '最低候选分' : 'Minimum candidate score'} value={draft.portfolioMinimumCandidateScore ?? 62} unit="/100" min={0} max={100} step={1} onChange={(v) => setNumber('portfolioMinimumCandidateScore', v)} />
           </div>
         </details>
       </div>
