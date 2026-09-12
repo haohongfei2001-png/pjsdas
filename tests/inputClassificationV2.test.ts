@@ -1,10 +1,13 @@
 import { describe, expect, it } from 'vitest'
+import { createJobPostingEvidence } from '../src/jobPosting.js'
 import { parseProgressUpdate } from '../src/progressUpdate.js'
 import type { Opportunity } from '../src/model.js'
 
 const now = new Date(2026, 8, 13, 10, 0, 0)
 
 function opportunity(id: string, company: string, role: string, stage: Opportunity['processStage'] = 'screening'): Opportunity {
+  const observedAt = '2026-09-10T00:00:00.000Z'
+  const sourceUrl = `https://careers.example.com/${id}`
   return {
     id,
     company,
@@ -17,15 +20,16 @@ function opportunity(id: string, company: string, role: string, stage: Opportuni
     fitScore: 70,
     detail: {
       discovery: {
-        sourceUrl: `https://careers.example.com/${id}`,
+        sourceUrl,
         sourceTitle: role,
         rationale: 'test source',
-        discoveredAt: '2026-09-10T00:00:00.000Z',
+        discoveredAt: observedAt,
         fitConfidence: 'high',
         opportunityValueConfidence: 'high',
+        posting: createJobPostingEvidence({ company, role, sourceUrl, sourceTitle: role, observedAt }),
       },
     },
-    importedAt: '2026-09-10T00:00:00.000Z',
+    importedAt: observedAt,
   }
 }
 
