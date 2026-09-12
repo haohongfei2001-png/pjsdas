@@ -41,9 +41,6 @@ export default function ProgressInbox({ onChanged }: ProgressInboxProps) {
     setOpen(true)
     setMessage('')
     setError('')
-    // Always refresh the parser context when opening. Keeping an old opportunity
-    // array here can route a new assessment/interview to a stale role after the
-    // workspace changed elsewhere.
     setOpportunities(await getAllOpportunities())
   }
 
@@ -68,15 +65,15 @@ export default function ProgressInbox({ onChanged }: ProgressInboxProps) {
       }
       if (changeSet?.status === 'pending') await discardChangeSet(changeSet.id)
       const nextPlan = parseProgressUpdate(text, current, new Date())
-      const nextChangeSet = nextPlan.executable.length > 0
-        ? await savePendingChangeSet(createCanonicalProgressChangeSet(
-            nextPlan.executable,
-            processEvents,
-            actions,
-          ))
-        : null
+      const canonical = nextPlan.executable.length > 0
+        ? createCanonicalProgressChangeSet(nextPlan.executable, processEvents, actions)
+        : undefined
+      const nextChangeSet = canonical ? await savePendingChangeSet(canonical) : null
       setPlan(nextPlan)
       setChangeSet(nextChangeSet)
+      if (nextPlan.executable.length > 0 && !canonical) {
+        setMessage('识别到的进展已经是当前工作区状态，无需重复写入或生成 ChangeSet。')
+      }
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : '无法生成 ChangeSet。')
     } finally {
@@ -92,7 +89,7 @@ export default function ProgressInbox({ onChanged }: ProgressInboxProps) {
   }
 
   async function confirm() {
-    if (!plan || !changeSet || plan.executable.length === 0) return
+    if (!plan || !changeSet || changeSet.operations.length === 0) return
     setBusy(true)
     setError('')
     setMessage('')
@@ -115,9 +112,7 @@ export default function ProgressInbox({ onChanged }: ProgressInboxProps) {
   }
 
   function canonicalOperationFor(operationId: string) {
-    if (!plan || !changeSet) return undefined
-    const executableIndex = plan.executable.findIndex((item) => item.id === operationId)
-    return executableIndex >= 0 ? changeSet.operations[executableIndex] : undefined
+    return changeSet?.operations.find((item) => item.id === `progress:${operationId}`)
   }
 
   return (
@@ -160,20 +155,24 @@ export default function ProgressInbox({ onChanged }: ProgressInboxProps) {
                 <div className="progress-plan-heading">
                   <div>
                     <div className="eyebrow">CHANGESET · {changeSet?.id ?? 'NO WRITABLE CHANGE'}</div>
-                    <h3>准备执行 {changeSet?.operations.length ?? plan.executable.length} 项修改</h3>
+                    <h3>准备执行 {changeSet?.operations.length ?? 0} 项修改</h3>
                   </div>
                   <span>
                     {plan.unresolved.length > 0
                       ? `${plan.unresolved.length} 条待确认${plan.ignored.length ? ` · ${plan.ignored.length} 条无需写入` : ''}`
                       : plan.ignored.length > 0
                         ? `${plan.ignored.length} 条无需写入`
-                        : '可直接确认'}
+                        : changeSet
+                          ? '可直接确认'
+                          : '状态已是最新'}
                   </span>
                 </div>
 
                 <div className="progress-operation-list">
                   {plan.operations.map((operation) => {
                     const canonical = canonicalOperationFor(operation.id)
+                    const executable = operation.kind !== 'unresolved' && operation.kind !== 'ignored'
+                    const noOp = executable && !canonical && Boolean(changeSet || plan.executable.length > 0)
                     const canonicalActionCompletion = canonical?.kind === 'set_action_status' && canonical.status === 'done'
                     const stateClass = operation.kind === 'unresolved'
                       ? ' unresolved'
@@ -184,13 +183,15 @@ export default function ProgressInbox({ onChanged }: ProgressInboxProps) {
                       ? '?'
                       : operation.kind === 'ignored'
                         ? '·'
-                        : canonicalActionCompletion
-                          ? '✓'
-                          : operation.kind === 'close_opportunity'
-                            ? '−'
-                            : operation.kind === 'rename_opportunity'
-                              ? '→'
-                              : '+'
+                        : noOp
+                          ? '='
+                          : canonicalActionCompletion
+                            ? '✓'
+                            : operation.kind === 'close_opportunity'
+                              ? '−'
+                              : operation.kind === 'rename_opportunity'
+                                ? '→'
+                                : '+'
                     return (
                       <article key={operation.id} className={`progress-operation${stateClass}`}>
                         <div className="progress-operation-mark">{mark}</div>
@@ -201,6 +202,8 @@ export default function ProgressInbox({ onChanged }: ProgressInboxProps) {
                             <small>可能对应：{operation.candidates.map((item) => item.label).join('；')}</small>
                           ) : operation.kind === 'ignored' ? (
                             <small>已识别为背景记录 · 不修改岗位数据库</small>
+                          ) : noOp ? (
+                            <small>当前状态已经包含这条进展 · 不重复写入</small>
                           ) : canonicalActionCompletion ? (
                             <small>将已有流程 Action 标记为完成 · 不重复创建测评/笔试/面试事件</small>
                           ) : (
@@ -224,9 +227,9 @@ export default function ProgressInbox({ onChanged }: ProgressInboxProps) {
                     className="primary-button"
                     type="button"
                     onClick={confirm}
-                    disabled={busy || !changeSet || plan.executable.length === 0}
+                    disabled={busy || !changeSet || changeSet.operations.length === 0}
                   >
-                    {busy ? '应用中…' : `确认并应用 ChangeSet · ${changeSet?.operations.length ?? plan.executable.length} 项`}
+                    {busy ? '应用中…' : changeSet ? `确认并应用 ChangeSet · ${changeSet.operations.length} 项` : '无需应用'}
                   </button>
                 </div>
               </div>
