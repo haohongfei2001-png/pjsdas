@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { createDefaultDecisionRules } from '../src/decisionRules.js'
 import { createDefaultDiscoveryProfile } from '../src/discoveryProfile.js'
+import { createJobPostingEvidence } from '../src/jobPosting.js'
 import { createSnapshot } from '../src/snapshot.js'
 import { auditWorkspaceIntegrity } from '../src/workspaceIntegrity.js'
 import type { Opportunity, ProcessEvent, Action } from '../src/model.js'
@@ -51,18 +52,31 @@ describe('workspace integrity audit', () => {
   })
 
   it('reports highly similar opportunities and shared canonical posting URLs without auto-merging them', () => {
+    const postingA = createJobPostingEvidence({
+      company: 'Example',
+      role: 'AI产品经理',
+      sourceUrl: 'https://jobs.example.com/123',
+      sourceTitle: 'AI产品经理',
+      observedAt: '2026-09-13T00:00:00.000Z',
+      postingStatus: 'open',
+    })
+    const postingB = createJobPostingEvidence({
+      company: 'Example',
+      role: 'AI 产品经理',
+      sourceUrl: 'https://jobs.example.com/123?utm_source=x',
+      sourceTitle: 'AI 产品经理',
+      observedAt: '2026-09-13T00:00:00.000Z',
+      postingStatus: 'open',
+    })
     const a = opportunity({
       id: 'op-a', role: 'AI产品经理',
-      detail: { discovery: { sourceUrl: 'https://jobs.example.com/123', sourceTitle: 'AI产品经理', rationale: 'x', discoveredAt: '2026-09-13T00:00:00.000Z', fitConfidence: 'high', opportunityValueConfidence: 'high', posting: {
-        id: 'posting-a', fingerprint: 'fp-a', sourceUrl: 'https://jobs.example.com/123', canonicalSourceUrl: 'https://jobs.example.com/123', sourceHost: 'jobs.example.com', sourceTitle: 'AI产品经理', postingStatus: 'open', firstSeenAt: '2026-09-13T00:00:00.000Z', lastVerifiedAt: '2026-09-13T00:00:00.000Z',
-      } } },
+      detail: { discovery: { sourceUrl: postingA.sourceUrl, sourceTitle: postingA.sourceTitle, rationale: 'x', discoveredAt: '2026-09-13T00:00:00.000Z', fitConfidence: 'high', opportunityValueConfidence: 'high', posting: postingA } },
     })
     const b = opportunity({
       id: 'op-b', role: 'AI 产品经理',
-      detail: { discovery: { sourceUrl: 'https://jobs.example.com/123?utm_source=x', sourceTitle: 'AI 产品经理', rationale: 'x', discoveredAt: '2026-09-13T00:00:00.000Z', fitConfidence: 'high', opportunityValueConfidence: 'high', posting: {
-        id: 'posting-b', fingerprint: 'fp-b', sourceUrl: 'https://jobs.example.com/123?utm_source=x', canonicalSourceUrl: 'https://jobs.example.com/123', sourceHost: 'jobs.example.com', sourceTitle: 'AI 产品经理', postingStatus: 'open', firstSeenAt: '2026-09-13T00:00:00.000Z', lastVerifiedAt: '2026-09-13T00:00:00.000Z',
-      } } },
+      detail: { discovery: { sourceUrl: postingB.sourceUrl, sourceTitle: postingB.sourceTitle, rationale: 'x', discoveredAt: '2026-09-13T00:00:00.000Z', fitConfidence: 'high', opportunityValueConfidence: 'high', posting: postingB } },
     })
+    expect(postingA.canonicalSourceUrl).toBe(postingB.canonicalSourceUrl)
     const result = auditWorkspaceIntegrity(snapshot([a, b]), new Date('2026-09-13T02:00:00.000Z'))
     expect(result.issues.some((item) => item.code === 'duplicate_opportunity')).toBe(true)
     expect(result.issues.some((item) => item.code === 'duplicate_posting_source')).toBe(true)
