@@ -4,8 +4,11 @@ import {
   applyGmailIngestion,
   applyMonitorIngestion,
   type GmailIngestionRunInput,
+  type GmailMessageObservation,
   type MonitorIngestionRunInput,
 } from '../src/autonomousIngestion.js'
+import { jobRoleSimilarity, normalizeJobCompany } from '../src/jobPosting.js'
+import type { Opportunity } from '../src/model.js'
 import { requireWritableWorkspaceSource, WorkspaceSourceError, type WorkspaceSource } from './workspaceSource.js'
 
 const isoString = z.string().min(1).refine((value) => !Number.isNaN(new Date(value).getTime()), 'Must be a valid ISO/date timestamp.')
@@ -95,6 +98,88 @@ function failure(caught: unknown): CallToolResult {
   )
 }
 
+function appendResolutionNote(message: GmailMessageObservation, note: string): GmailMessageObservation {
+  const notes = [message.notes?.trim(), note].filter(Boolean).join('；')
+  return { ...message, notes: notes.slice(0, 800) }
+}
+
+function companyKey(value: string) {
+  return normalizeJobCompany(value)
+    .replace(/(?:校园招聘|校园|校招|招聘)$/g, '')
+    .trim()
+}
+
+function activeOpportunity(opportunity: Opportunity) {
+  return opportunity.processStage !== 'closed'
+}
+
+/**
+ * Re-check Gmail entity resolution at the trusted-write boundary.
+ *
+ * The upstream automation may extract a company/role from mail, but it is not
+ * allowed to pick an arbitrary Opportunity when more than one existing role is
+ * plausible. Missing roles can be filled only when the company has exactly one
+ * active Opportunity. Otherwise confidence is downgraded and the ingestion
+ * engine will preserve the message as unresolved instead of guessing.
+ */
+export function normalizeGmailMessagesForWorkspace(
+  messages: GmailMessageObservation[],
+  opportunities: Opportunity[],
+): GmailMessageObservation[] {
+  return messages.map((message) => {
+    if (message.classification !== 'recruiting' || message.confidence !== 'high' || !message.company?.trim()) {
+      return message
+    }
+
+    const key = companyKey(message.company)
+    const companyMatches = opportunities.filter((opportunity) => companyKey(opportunity.company) === key)
+    const active = companyMatches.filter(activeOpportunity)
+    const pool = active.length ? active : companyMatches
+
+    if (!message.role?.trim()) {
+      if (pool.length === 1) {
+        const target = pool[0]!
+        return appendResolutionNote({
+          ...message,
+          company: target.company,
+          role: target.role,
+        }, 'Gmail 网关按该公司唯一活跃 Opportunity 自动关联。')
+      }
+      if (pool.length > 1) {
+        return appendResolutionNote({ ...message, confidence: 'medium' }, '同一公司存在多个活跃 Opportunity，邮件未明确岗位；自动关联已停止。')
+      }
+      return message
+    }
+
+    const scored = pool
+      .map((opportunity) => ({ opportunity, score: jobRoleSimilarity(message.role!, opportunity.role) }))
+      .filter((item) => item.score >= 0.84)
+      .sort((a, b) => b.score - a.score || a.opportunity.id.localeCompare(b.opportunity.id))
+
+    if (scored.length === 0) return message
+    if (scored.length === 1) {
+      const target = scored[0]!.opportunity
+      return {
+        ...message,
+        company: target.company,
+        role: target.role,
+      }
+    }
+
+    const best = scored[0]!
+    const second = scored[1]!
+    if (best.score >= 0.94 && best.score - second.score >= 0.12) {
+      return {
+        ...message,
+        company: best.opportunity.company,
+        role: best.opportunity.role,
+      }
+    }
+
+    return appendResolutionNote({ ...message, confidence: 'medium' }, '存在多个高度相似的同公司岗位；Gmail 自动关联已停止，保留为 unresolved。')
+  })
+}
+
 async function persistResult(
   source: WorkspaceSource,
   workspaceVersion: string | undefined,
@@ -149,7 +234,11 @@ export async function invokeTrustedIngestion(
       return success(outputFor(persisted.workspaceVersion, persisted.result))
     }
 
-    const input = ingestGmailRunSchema.parse(args) as GmailIngestionRunInput
+    const parsed = ingestGmailRunSchema.parse(args) as GmailIngestionRunInput
+    const input: GmailIngestionRunInput = {
+      ...parsed,
+      messages: normalizeGmailMessagesForWorkspace(parsed.messages, workspace.snapshot.data.opportunities),
+    }
     const result = applyGmailIngestion(workspace.snapshot, input)
     const persisted = await persistResult(
       source,
