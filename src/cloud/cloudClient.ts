@@ -1,7 +1,10 @@
-import { GOOGLE_OAUTH_SCOPES, readCloudConfig } from './cloudConfig.js'
+import type { Session, User } from '@supabase/supabase-js'
 
 export interface CloudUser {
+  /** Stable Google subject retained for backward-compatible local workspace ownership. */
   id: string
+  /** Supabase account UUID used by the authenticated backend. */
+  accountId: string
   email?: string
   user_metadata: {
     full_name?: string
@@ -14,173 +17,201 @@ export interface CloudSession {
   expiresAt: number
 }
 
-type GoogleTokenResponse = {
-  access_token?: string
-  expires_in?: number | string
-  scope?: string
-  token_type?: string
-  error?: string
-  error_description?: string
+const DRIVE_APPDATA_SCOPE = 'https://www.googleapis.com/auth/drive.appdata'
+const ACCOUNT_LINK_PENDING_KEY = 'pjsdas-account-google-link-pending'
+const LINK_ENDPOINT = 'https://pjsdas-remote-alpha-haohongfei2001-8529.vercel.app/api/google-link'
+const ACCESS_TOKEN_ENDPOINT = 'https://pjsdas-remote-alpha-haohongfei2001-8529.vercel.app/api/google-access-token'
+
+let googleAccessToken: string | undefined
+let googleAccessTokenExpiresAt = 0
+
+async function loadSupabase() {
+  return (await import('../aiAccess/supabaseClient.js')).pjsdasSupabase
 }
 
-type GoogleTokenClient = {
-  requestAccessToken: (overrideConfig?: { prompt?: string; hint?: string }) => void
+function googleSubject(user: User) {
+  const metadata = user.user_metadata as Record<string, unknown> | undefined
+  const direct = typeof metadata?.sub === 'string' ? metadata.sub.trim() : ''
+  if (direct) return direct
+
+  const googleIdentity = user.identities?.find((identity) => identity.provider === 'google')
+  const identityData = googleIdentity?.identity_data as Record<string, unknown> | undefined
+  const identitySub = typeof identityData?.sub === 'string' ? identityData.sub.trim() : ''
+  if (identitySub) return identitySub
+
+  return user.id
 }
 
-type GoogleOauth = {
-  initTokenClient: (config: {
-    client_id: string
-    scope: string
-    include_granted_scopes?: boolean
-    callback: (response: GoogleTokenResponse) => void
-    error_callback?: (error: unknown) => void
-  }) => GoogleTokenClient
-  revoke?: (token: string, done?: () => void) => void
-}
+function toCloudSession(session: Session): CloudSession {
+  const metadata = session.user.user_metadata as Record<string, unknown> | undefined
+  const fullName = typeof metadata?.full_name === 'string'
+    ? metadata.full_name
+    : typeof metadata?.name === 'string'
+      ? metadata.name
+      : undefined
+  const avatarUrl = typeof metadata?.avatar_url === 'string'
+    ? metadata.avatar_url
+    : typeof metadata?.picture === 'string'
+      ? metadata.picture
+      : undefined
 
-type GoogleWindow = Window & {
-  google?: {
-    accounts?: {
-      oauth2?: GoogleOauth
-    }
+  return {
+    user: {
+      id: googleSubject(session.user),
+      accountId: session.user.id,
+      email: session.user.email,
+      user_metadata: { full_name: fullName, avatar_url: avatarUrl },
+    },
+    expiresAt: (session.expires_at ?? Math.floor(Date.now() / 1000) + 3600) * 1000,
   }
 }
 
-type UserInfo = {
-  sub?: string
-  email?: string
-  name?: string
-  picture?: string
-}
-
-let gisPromise: Promise<GoogleOauth> | undefined
-let accessToken: string | undefined
-let session: CloudSession | null = null
-
-function oauthFromWindow() {
+function redirectUrl() {
   if (typeof window === 'undefined') return undefined
-  return (window as GoogleWindow).google?.accounts?.oauth2
+  const url = new URL(window.location.href)
+  url.search = ''
+  url.hash = ''
+  url.searchParams.set('pjsdas_account_login', '1')
+  return url.toString()
 }
 
-function loadGoogleIdentityServices(): Promise<GoogleOauth> {
-  const existing = oauthFromWindow()
-  if (existing) return Promise.resolve(existing)
-  if (gisPromise) return gisPromise
+function hasPendingGoogleLink() {
+  if (typeof window === 'undefined') return false
+  return window.localStorage.getItem(ACCOUNT_LINK_PENDING_KEY) === '1'
+    || new URL(window.location.href).searchParams.get('pjsdas_account_login') === '1'
+}
 
-  gisPromise = new Promise((resolve, reject) => {
-    if (typeof document === 'undefined') {
-      reject(new Error('Google 登录只能在浏览器中使用。'))
-      return
+function clearCallbackUrl() {
+  if (typeof window === 'undefined') return
+  const url = new URL(window.location.href)
+  let changed = false
+  for (const key of ['code', 'sb_flow_id', 'pjsdas_account_login']) {
+    if (url.searchParams.has(key)) {
+      url.searchParams.delete(key)
+      changed = true
     }
+  }
+  if (changed) window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`)
+}
 
-    const finish = () => {
-      const oauth = oauthFromWindow()
-      if (oauth) resolve(oauth)
-      else reject(new Error('Google Identity Services 已加载，但 OAuth 客户端不可用。'))
-    }
+async function persistGoogleDriveBinding(session: Session) {
+  if (!session.provider_token || !session.provider_refresh_token) {
+    throw new Error('Google 没有返回持续授权。请重新登录并在 Google 授权页确认允许 Drive appData 访问。')
+  }
 
-    const current = document.querySelector<HTMLScriptElement>('script[data-pjsdas-google-identity]')
-    if (current) {
-      current.addEventListener('load', finish, { once: true })
-      current.addEventListener('error', () => reject(new Error('无法加载 Google Identity Services。')), { once: true })
-      return
-    }
-
-    const script = document.createElement('script')
-    script.src = 'https://accounts.google.com/gsi/client'
-    script.async = true
-    script.defer = true
-    script.dataset.pjsdasGoogleIdentity = 'true'
-    script.addEventListener('load', finish, { once: true })
-    script.addEventListener('error', () => reject(new Error('无法加载 Google Identity Services。')), { once: true })
-    document.head.appendChild(script)
+  const response = await fetch(LINK_ENDPOINT, {
+    method: 'POST',
+    headers: {
+      authorization: `Bearer ${session.access_token}`,
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify({
+      providerToken: session.provider_token,
+      providerRefreshToken: session.provider_refresh_token,
+    }),
   })
-
-  return gisPromise
-}
-
-function clearMemorySession() {
-  accessToken = undefined
-  session = null
+  const data = await response.json().catch(() => ({})) as { message?: string; googleEmail?: string }
+  if (!response.ok) throw new Error(data.message || `Google Drive connection failed (HTTP ${response.status}).`)
+  return data.googleEmail
 }
 
 export function invalidateCloudSession() {
-  clearMemorySession()
-}
-
-export function getCloudAccessToken() {
-  if (!accessToken || !session || Date.now() >= session.expiresAt - 30_000) {
-    clearMemorySession()
-    throw new Error('Google Drive 授权已过期，请重新连接 Google 账号。')
-  }
-  return accessToken
+  googleAccessToken = undefined
+  googleAccessTokenExpiresAt = 0
 }
 
 export async function getCloudSession(): Promise<CloudSession | null> {
-  if (!session || !accessToken || Date.now() >= session.expiresAt - 30_000) {
-    clearMemorySession()
-    return null
-  }
-  return session
+  const supabase = await loadSupabase()
+  const { data, error } = await supabase.auth.getSession()
+  if (error) throw error
+  return data.session ? toCloudSession(data.session) : null
 }
 
-async function fetchUserInfo(token: string): Promise<CloudUser> {
-  const response = await fetch('https://openidconnect.googleapis.com/v1/userinfo', {
-    headers: { Authorization: `Bearer ${token}` },
+export async function subscribeCloudSession(listener: (session: CloudSession | null) => void) {
+  const supabase = await loadSupabase()
+  const { data } = supabase.auth.onAuthStateChange((_event, session) => {
+    listener(session ? toCloudSession(session) : null)
   })
-  if (!response.ok) throw new Error(`读取 Google 账号信息失败（HTTP ${response.status}）。`)
-  const data = await response.json() as UserInfo
-  if (!data.sub) throw new Error('Google 账号缺少稳定用户标识。')
-  return {
-    id: data.sub,
-    email: data.email,
-    user_metadata: {
-      full_name: data.name,
-      avatar_url: data.picture,
-    },
-  }
+  return () => data.subscription.unsubscribe()
 }
 
-export async function signInWithGoogle(): Promise<CloudSession> {
-  const config = readCloudConfig()
-  if (!config) throw new Error('Google Drive 同步尚未配置。')
-  const oauth = await loadGoogleIdentityServices()
+export async function completePendingGoogleLink() {
+  if (!hasPendingGoogleLink()) return undefined
+  const supabase = await loadSupabase()
+  const { data, error } = await supabase.auth.getSession()
+  if (error) throw error
+  if (!data.session) return undefined
 
-  const token = await new Promise<{ accessToken: string; expiresInSeconds: number }>((resolve, reject) => {
-    const client = oauth.initTokenClient({
-      client_id: config.clientId,
-      scope: GOOGLE_OAUTH_SCOPES,
-      include_granted_scopes: true,
-      callback: (response) => {
-        if (response.error || !response.access_token) {
-          reject(new Error(response.error_description || response.error || 'Google 授权失败。'))
-          return
-        }
-        const expires = Number(response.expires_in ?? 3600)
-        resolve({ accessToken: response.access_token, expiresInSeconds: Number.isFinite(expires) ? expires : 3600 })
+  const email = await persistGoogleDriveBinding(data.session)
+  window.localStorage.removeItem(ACCOUNT_LINK_PENDING_KEY)
+  clearCallbackUrl()
+  invalidateCloudSession()
+  return email
+}
+
+export async function signInWithGoogle() {
+  if (typeof window === 'undefined') return
+  const supabase = await loadSupabase()
+  window.localStorage.setItem(ACCOUNT_LINK_PENDING_KEY, '1')
+  try {
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: {
+        redirectTo: redirectUrl(),
+        scopes: `openid email profile ${DRIVE_APPDATA_SCOPE}`,
+        queryParams: {
+          access_type: 'offline',
+          prompt: 'consent',
+          include_granted_scopes: 'true',
+        },
       },
-      error_callback: () => reject(new Error('Google 授权窗口被关闭或无法打开。')),
     })
-    client.requestAccessToken()
-  })
-
-  const user = await fetchUserInfo(token.accessToken)
-  accessToken = token.accessToken
-  session = {
-    user,
-    expiresAt: Date.now() + token.expiresInSeconds * 1000,
+    if (error) throw error
+  } catch (caught) {
+    window.localStorage.removeItem(ACCOUNT_LINK_PENDING_KEY)
+    throw caught
   }
-  return session
 }
 
 export async function signOutCloud() {
-  const token = accessToken
-  clearMemorySession()
-  if (!token) return
-  try {
-    const oauth = await loadGoogleIdentityServices()
-    if (oauth.revoke) await new Promise<void>((resolve) => oauth.revoke?.(token, resolve))
-  } catch {
-    // Local sign-out is sufficient if the Google script is unavailable.
+  invalidateCloudSession()
+  if (typeof window !== 'undefined') window.localStorage.removeItem(ACCOUNT_LINK_PENDING_KEY)
+  const supabase = await loadSupabase()
+  const { error } = await supabase.auth.signOut({ scope: 'local' })
+  if (error) throw error
+}
+
+async function accountAccessToken() {
+  const supabase = await loadSupabase()
+  const { data, error } = await supabase.auth.getSession()
+  if (error) throw error
+  if (!data.session) throw new Error('PJSDAS 账号未登录。请先使用 Google 登录 PJSDAS。')
+  return data.session.access_token
+}
+
+export async function getCloudAccessToken() {
+  if (googleAccessToken && Date.now() < googleAccessTokenExpiresAt - 60_000) return googleAccessToken
+
+  const response = await fetch(ACCESS_TOKEN_ENDPOINT, {
+    method: 'POST',
+    headers: {
+      authorization: `Bearer ${await accountAccessToken()}`,
+      'content-type': 'application/json',
+    },
+  })
+  const data = await response.json().catch(() => ({})) as {
+    accessToken?: string
+    expiresInSeconds?: number
+    message?: string
+    code?: string
   }
+  if (!response.ok || !data.accessToken) {
+    if (response.status === 401) invalidateCloudSession()
+    throw new Error(data.message || `无法恢复 Google Drive 授权（HTTP ${response.status}）。`)
+  }
+
+  const expiresInSeconds = Number.isFinite(data.expiresInSeconds) ? Math.max(60, Number(data.expiresInSeconds)) : 3000
+  googleAccessToken = data.accessToken
+  googleAccessTokenExpiresAt = Date.now() + expiresInSeconds * 1000
+  return googleAccessToken
 }
