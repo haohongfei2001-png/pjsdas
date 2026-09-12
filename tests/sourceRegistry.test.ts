@@ -66,6 +66,22 @@ describe('run-backed ingestion Source Registry', () => {
     expect(coverage.missingSources.some((item) => item.sourceId === 'monitor:key-changes')).toBe(false)
   })
 
+  it('treats an explicitly empty enabled registry as no active coverage instead of falling back to historical runs', () => {
+    const snapshot = run(emptySnapshot(), 'monitor:key-changes', '2026-09-13T10:00:00.000Z')
+    const coverage = summarizeCoverage(snapshot.data.timeline, {
+      now: new Date('2026-09-13T10:30:00.000Z'),
+      expectedSources: [],
+    })
+    expect(coverage).toMatchObject({
+      allCaughtUp: false,
+      sourceCount: 0,
+      expectedSourceCount: 0,
+      totalReceived: 0,
+      totalAccounted: 0,
+      unresolvedCount: 0,
+    })
+  })
+
   it('requires an explicit policy at the trusted boundary for a brand-new source, then persists it when supplied', () => {
     expect(() => resolveSourcePolicy('gpt_monitor', 'monitor:new-source')).toThrow(/sourcePolicy/)
     const snapshot = run(emptySnapshot(), 'monitor:new-source', '2026-09-13T10:00:00.000Z', {
