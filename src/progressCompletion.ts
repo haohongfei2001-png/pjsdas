@@ -19,9 +19,11 @@ function latestMatchingEvent(
     .sort((a, b) => b.occurredAt.localeCompare(a.occurredAt) || b.updatedAt.localeCompare(a.updatedAt))[0]
 }
 
-function completionStatusOperation(action: Action): ChangeSetOperation {
+function completionStatusOperation(action: Action, operationId: string): ChangeSetOperation {
   return {
-    id: `action:${action.id}:done`,
+    // Preserve the original progress operation identity so the review surface can
+    // show the exact canonical mutation for the corresponding parsed statement.
+    id: `progress:${operationId}`,
     kind: 'set_action_status',
     summary: `完成｜${action.title}`,
     actionId: action.id,
@@ -71,7 +73,7 @@ export function createCanonicalProgressChangeSet(
       noOps.add(progressId)
       continue
     }
-    replacements.set(progressId, completionStatusOperation(existingAction))
+    replacements.set(progressId, completionStatusOperation(existingAction, operation.id))
   }
 
   const canonicalOperations = changeSet.operations
