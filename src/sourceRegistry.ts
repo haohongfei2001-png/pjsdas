@@ -23,51 +23,11 @@ export type IngestionRunWithPolicy = IngestionRunSummary & {
 }
 
 export const PJSDAS_BOOTSTRAP_SOURCE_REGISTRY: RegisteredIngestionSource[] = [
-  {
-    sourceKind: 'gpt_monitor',
-    sourceId: 'monitor:urgent-campus',
-    enabled: true,
-    label: '秋招紧迫岗位检查',
-    cadenceMinutes: 24 * 60,
-    freshnessSlaMinutes: 36 * 60,
-    policySource: 'bootstrap',
-  },
-  {
-    sourceKind: 'gpt_monitor',
-    sourceId: 'monitor:state-foreign-2027',
-    enabled: true,
-    label: '央国企外企27届秋招',
-    cadenceMinutes: 24 * 60,
-    freshnessSlaMinutes: 36 * 60,
-    policySource: 'bootstrap',
-  },
-  {
-    sourceKind: 'gpt_monitor',
-    sourceId: 'monitor:middle-layer',
-    enabled: true,
-    label: '高匹配中间层校招岗位',
-    cadenceMinutes: 24 * 60,
-    freshnessSlaMinutes: 36 * 60,
-    policySource: 'bootstrap',
-  },
-  {
-    sourceKind: 'gpt_monitor',
-    sourceId: 'monitor:key-changes',
-    enabled: true,
-    label: '秋招岗位关键变化',
-    cadenceMinutes: 24 * 60,
-    freshnessSlaMinutes: 36 * 60,
-    policySource: 'bootstrap',
-  },
-  {
-    sourceKind: 'gmail',
-    sourceId: 'gmail:primary',
-    enabled: true,
-    label: '招聘邮件自动摄入',
-    cadenceMinutes: 60,
-    freshnessSlaMinutes: 120,
-    policySource: 'bootstrap',
-  },
+  { sourceKind: 'gpt_monitor', sourceId: 'monitor:urgent-campus', enabled: true, label: '秋招紧迫岗位检查', cadenceMinutes: 1440, freshnessSlaMinutes: 2160, policySource: 'bootstrap' },
+  { sourceKind: 'gpt_monitor', sourceId: 'monitor:state-foreign-2027', enabled: true, label: '央国企外企27届秋招', cadenceMinutes: 1440, freshnessSlaMinutes: 2160, policySource: 'bootstrap' },
+  { sourceKind: 'gpt_monitor', sourceId: 'monitor:middle-layer', enabled: true, label: '高匹配中间层校招岗位', cadenceMinutes: 1440, freshnessSlaMinutes: 2160, policySource: 'bootstrap' },
+  { sourceKind: 'gpt_monitor', sourceId: 'monitor:key-changes', enabled: true, label: '秋招岗位关键变化', cadenceMinutes: 1440, freshnessSlaMinutes: 2160, policySource: 'bootstrap' },
+  { sourceKind: 'gmail', sourceId: 'gmail:primary', enabled: true, label: '招聘邮件自动摄入', cadenceMinutes: 60, freshnessSlaMinutes: 120, policySource: 'bootstrap' },
 ]
 
 function sourceKey(sourceKind: IngestionSourceKind, sourceId: string) {
@@ -95,27 +55,21 @@ export function normalizeSourcePolicy(policy: IngestionSourcePolicy): IngestionS
 }
 
 export function bootstrapPolicyFor(sourceKind: IngestionSourceKind, sourceId: string) {
-  const found = PJSDAS_BOOTSTRAP_SOURCE_REGISTRY.find((item) =>
-    item.sourceKind === sourceKind && item.sourceId === sourceId,
-  )
+  const found = PJSDAS_BOOTSTRAP_SOURCE_REGISTRY.find((item) => item.sourceKind === sourceKind && item.sourceId === sourceId)
   if (!found) return undefined
-  return normalizeSourcePolicy({
-    version: 1,
-    enabled: found.enabled,
-    label: found.label,
-    cadenceMinutes: found.cadenceMinutes,
-    freshnessSlaMinutes: found.freshnessSlaMinutes,
-  })
+  return normalizeSourcePolicy({ version: 1, enabled: found.enabled, label: found.label, cadenceMinutes: found.cadenceMinutes, freshnessSlaMinutes: found.freshnessSlaMinutes })
 }
 
-export function resolveSourcePolicy(
-  sourceKind: IngestionSourceKind,
-  sourceId: string,
-  explicit?: IngestionSourcePolicy,
-) {
+/** Pure/internal path: persist a policy when known, but do not reject synthetic/internal sources. */
+export function sourcePolicyForRun(sourceKind: IngestionSourceKind, sourceId: string, explicit?: IngestionSourcePolicy) {
   if (explicit) return normalizeSourcePolicy(explicit)
-  const bootstrap = bootstrapPolicyFor(sourceKind, sourceId)
-  if (bootstrap) return bootstrap
+  return bootstrapPolicyFor(sourceKind, sourceId)
+}
+
+/** Trusted external-write boundary: every non-bootstrap source must declare its policy explicitly. */
+export function resolveSourcePolicy(sourceKind: IngestionSourceKind, sourceId: string, explicit?: IngestionSourcePolicy) {
+  const policy = sourcePolicyForRun(sourceKind, sourceId, explicit)
+  if (policy) return policy
   throw new Error(`Trusted ingestion source ${sourceKind}:${sourceId} requires an explicit sourcePolicy.`)
 }
 
@@ -134,10 +88,7 @@ export function latestRunsBySource(timeline: TimelineRecord[] | undefined) {
 
 export function effectiveSourceRegistry(timeline: TimelineRecord[] | undefined) {
   const registry = new Map<string, RegisteredIngestionSource>()
-  for (const source of PJSDAS_BOOTSTRAP_SOURCE_REGISTRY) {
-    registry.set(sourceKey(source.sourceKind, source.sourceId), { ...source })
-  }
-
+  for (const source of PJSDAS_BOOTSTRAP_SOURCE_REGISTRY) registry.set(sourceKey(source.sourceKind, source.sourceId), { ...source })
   for (const run of latestRunsBySource(timeline).values()) {
     if (!run.sourcePolicy) continue
     const policy = normalizeSourcePolicy(run.sourcePolicy)
@@ -151,9 +102,7 @@ export function effectiveSourceRegistry(timeline: TimelineRecord[] | undefined) 
       policySource: 'run',
     })
   }
-
-  return [...registry.values()]
-    .sort((a, b) => a.sourceKind.localeCompare(b.sourceKind) || a.sourceId.localeCompare(b.sourceId))
+  return [...registry.values()].sort((a, b) => a.sourceKind.localeCompare(b.sourceKind) || a.sourceId.localeCompare(b.sourceId))
 }
 
 export function enabledSourceRegistry(timeline: TimelineRecord[] | undefined) {
