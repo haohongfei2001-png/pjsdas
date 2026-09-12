@@ -25,26 +25,54 @@ export interface IngestionLedgerInput {
   sourceRef?: string
 }
 
+export interface ExpectedIngestionSource {
+  sourceKind: IngestionSourceKind
+  sourceId: string
+  maxAgeHours: number
+  label?: string
+}
+
+export const PJSDAS_EXPECTED_INGESTION_SOURCES: ExpectedIngestionSource[] = [
+  { sourceKind: 'gpt_monitor', sourceId: 'monitor:urgent-campus', maxAgeHours: 36, label: '秋招紧迫岗位检查' },
+  { sourceKind: 'gpt_monitor', sourceId: 'monitor:state-foreign-2027', maxAgeHours: 36, label: '央国企外企27届秋招' },
+  { sourceKind: 'gpt_monitor', sourceId: 'monitor:middle-layer', maxAgeHours: 36, label: '高匹配中间层校招岗位' },
+  { sourceKind: 'gpt_monitor', sourceId: 'monitor:key-changes', maxAgeHours: 36, label: '秋招岗位关键变化' },
+  { sourceKind: 'gmail', sourceId: 'gmail:primary', maxAgeHours: 2, label: '招聘邮件自动摄入' },
+]
+
 export interface CoverageSourceSummary {
   sourceKind: IngestionSourceKind
   sourceId: string
+  label?: string
   lastCompletedAt: string
   receivedCount: number
   accountedCount: number
   unresolvedCount: number
   outcomes: Partial<Record<IngestionOutcome, number>>
   balanced: boolean
+  maxAgeHours?: number
+  ageHours?: number
+  stale: boolean
 }
 
 export interface CoverageSummary {
   allCaughtUp: boolean
   sourceCount: number
+  expectedSourceCount: number
   latestCompletedAt?: string
   totalReceived: number
   totalAccounted: number
   unresolvedCount: number
+  staleSourceCount: number
+  missingSourceCount: number
   sources: CoverageSourceSummary[]
+  missingSources: ExpectedIngestionSource[]
   exceptions: TimelineRecord[]
+}
+
+export interface CoverageOptions {
+  now?: Date
+  expectedSources?: ExpectedIngestionSource[]
 }
 
 export function stableIngestionHash(value: string) {
@@ -190,7 +218,11 @@ function latestRecordStates(timeline: TimelineRecord[]) {
   return [...bySourceRecord.values()]
 }
 
-export function summarizeCoverage(timeline: TimelineRecord[] | undefined): CoverageSummary {
+function sourceKey(sourceKind: IngestionSourceKind, sourceId: string) {
+  return `${sourceKind}|${sourceId}`
+}
+
+export function summarizeCoverage(timeline: TimelineRecord[] | undefined, options: CoverageOptions = {}): CoverageSummary {
   const records = timeline ?? []
   const runs = records
     .filter((item): item is TimelineRecord & { ingestionRun: IngestionRunSummary } => Boolean(item.ingestionRun))
@@ -199,9 +231,14 @@ export function summarizeCoverage(timeline: TimelineRecord[] | undefined): Cover
   const latestBySource = new Map<string, IngestionRunSummary>()
   for (const record of runs) {
     const run = record.ingestionRun
-    const key = `${run.sourceKind}|${run.sourceId}`
+    const key = sourceKey(run.sourceKind, run.sourceId)
     if (!latestBySource.has(key)) latestBySource.set(key, run)
   }
+
+  const expected = options.expectedSources ?? []
+  const expectedByKey = new Map(expected.map((item) => [sourceKey(item.sourceKind, item.sourceId), item]))
+  const missingSources = expected.filter((item) => !latestBySource.has(sourceKey(item.sourceKind, item.sourceId)))
+  const nowMs = options.now?.getTime()
 
   const latestRecords = latestRecordStates(records)
   const unresolved = latestRecords.filter((item) => item.ingestion?.outcome === 'unresolved')
@@ -210,28 +247,48 @@ export function summarizeCoverage(timeline: TimelineRecord[] | undefined): Cover
       item.ingestion?.sourceKind === run.sourceKind && item.ingestion?.sourceId === run.sourceId,
     ).length
     const outcomeTotal = Object.values(run.outcomes).reduce((sum, value) => sum + (value ?? 0), 0)
+    const policy = expectedByKey.get(sourceKey(run.sourceKind, run.sourceId))
+    const completedMs = new Date(run.completedAt).getTime()
+    const ageHours = nowMs !== undefined && Number.isFinite(nowMs) && Number.isFinite(completedMs)
+      ? Math.max(0, (nowMs - completedMs) / 3_600_000)
+      : undefined
+    const stale = Boolean(policy && ageHours !== undefined && ageHours > policy.maxAgeHours)
     return {
       sourceKind: run.sourceKind,
       sourceId: run.sourceId,
+      label: policy?.label,
       lastCompletedAt: run.completedAt,
       receivedCount: run.receivedCount,
       accountedCount: run.accountedCount,
       unresolvedCount: sourceUnresolved,
       outcomes: { ...run.outcomes },
       balanced: run.receivedCount === run.accountedCount && run.accountedCount === outcomeTotal,
+      maxAgeHours: policy?.maxAgeHours,
+      ageHours,
+      stale,
     }
   }).sort((a, b) => b.lastCompletedAt.localeCompare(a.lastCompletedAt))
 
   const totalReceived = sourceSummaries.reduce((sum, item) => sum + item.receivedCount, 0)
   const totalAccounted = sourceSummaries.reduce((sum, item) => sum + item.accountedCount, 0)
+  const staleSourceCount = sourceSummaries.filter((item) => item.stale).length
+  const allExpectedPresent = missingSources.length === 0
   return {
-    allCaughtUp: sourceSummaries.length > 0 && sourceSummaries.every((item) => item.balanced) && unresolved.length === 0,
+    allCaughtUp:
+      sourceSummaries.length > 0 &&
+      sourceSummaries.every((item) => item.balanced && !item.stale) &&
+      unresolved.length === 0 &&
+      allExpectedPresent,
     sourceCount: sourceSummaries.length,
+    expectedSourceCount: expected.length,
     latestCompletedAt: sourceSummaries[0]?.lastCompletedAt,
     totalReceived,
     totalAccounted,
     unresolvedCount: unresolved.length,
+    staleSourceCount,
+    missingSourceCount: missingSources.length,
     sources: sourceSummaries,
+    missingSources,
     exceptions: unresolved.sort((a, b) => b.recordedAt.localeCompare(a.recordedAt)),
   }
 }

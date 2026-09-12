@@ -1,6 +1,9 @@
 import type { CallToolResult } from '@modelcontextprotocol/server'
 import * as z from 'zod/v4'
-import { summarizeCoverage } from '../src/ingestion.js'
+import {
+  PJSDAS_EXPECTED_INGESTION_SOURCES,
+  summarizeCoverage,
+} from '../src/ingestion.js'
 import { WorkspaceSourceError, type WorkspaceSource } from './workspaceSource.js'
 
 export const getCoverageStatusSchema = z.object({})
@@ -25,21 +28,27 @@ function failure(caught: unknown): CallToolResult {
 export async function invokeCoverageStatus(source: WorkspaceSource): Promise<CallToolResult> {
   try {
     const { snapshot, context } = await source.read()
-    const coverage = summarizeCoverage(snapshot.data.timeline)
+    const generatedAt = context.now ?? new Date()
+    const coverage = summarizeCoverage(snapshot.data.timeline, {
+      now: generatedAt,
+      expectedSources: PJSDAS_EXPECTED_INGESTION_SOURCES,
+    })
     return success({
       meta: {
         workspaceVersion: context.workspaceVersion,
-        generatedAt: (context.now ?? new Date()).toISOString(),
+        generatedAt: generatedAt.toISOString(),
         source: 'pjsdas',
       },
       coverage,
       assurance: coverage.allCaughtUp
-        ? 'Every input in each source latest completed ingestion run is accounted for and there are no unresolved source records.'
-        : coverage.sourceCount === 0
-          ? 'No autonomous ingestion source has completed a durable run yet.'
-          : coverage.unresolvedCount > 0
-            ? `${coverage.unresolvedCount} source record(s) are explicitly unresolved; none are silently dropped.`
-            : 'At least one source latest run is not balanced; inspect source summaries before relying on coverage.',
+        ? 'All configured ingestion sources have completed within their SLA; each latest run is balanced and no source record remains unresolved.'
+        : coverage.missingSourceCount > 0
+          ? `${coverage.missingSourceCount} configured ingestion source(s) have no completed durable run yet.`
+          : coverage.staleSourceCount > 0
+            ? `${coverage.staleSourceCount} configured ingestion source(s) are outside their freshness SLA; Coverage is not green even if their last run was balanced.`
+            : coverage.unresolvedCount > 0
+              ? `${coverage.unresolvedCount} source record(s) are explicitly unresolved; none are silently dropped.`
+              : 'At least one latest source run is not balanced; inspect source summaries before relying on coverage.',
     })
   } catch (caught) {
     return failure(caught)
