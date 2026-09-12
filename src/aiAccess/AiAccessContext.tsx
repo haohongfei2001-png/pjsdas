@@ -1,6 +1,5 @@
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from 'react'
 import type { Session } from '@supabase/supabase-js'
-import { pjsdasSupabase } from './supabaseClient.js'
 
 const PENDING_KEY = 'pjsdas-ai-google-link-pending'
 const LINK_ENDPOINT = 'https://pjsdas-remote-alpha-haohongfei2001-8529.vercel.app/api/google-link'
@@ -14,6 +13,10 @@ type AiAccessState = {
 }
 
 const AiAccessContext = createContext<AiAccessState | null>(null)
+
+async function loadSupabase() {
+  return (await import('./supabaseClient.js')).pjsdasSupabase
+}
 
 function redirectUrl() {
   if (typeof window === 'undefined') return undefined
@@ -35,6 +38,12 @@ function clearCallbackUrl() {
     }
   }
   if (changed) window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`)
+}
+
+function hasPendingGoogleLink() {
+  if (typeof window === 'undefined') return false
+  return window.sessionStorage.getItem(PENDING_KEY) === '1'
+    || new URL(window.location.href).searchParams.get('pjsdas_ai_link') === '1'
 }
 
 async function persistGoogleLink(session: Session) {
@@ -66,9 +75,7 @@ export function AiAccessProvider({ children }: { children: ReactNode }) {
   const completing = useRef(false)
 
   async function completeIfPending(session: Session | null) {
-    if (!session || typeof window === 'undefined') return
-    const pending = window.sessionStorage.getItem(PENDING_KEY) === '1' || new URL(window.location.href).searchParams.get('pjsdas_ai_link') === '1'
-    if (!pending || completing.current) return
+    if (!session || !hasPendingGoogleLink() || completing.current) return
 
     completing.current = true
     setBusy(true)
@@ -80,7 +87,8 @@ export function AiAccessProvider({ children }: { children: ReactNode }) {
       setMessage(email ? `AI 读取授权已连接：${email}` : 'AI 读取授权已连接。')
       // The provider refresh token has already been encrypted server-side. Keep no
       // long-lived Supabase/Google linking session in the PJSDAS browser tab.
-      await pjsdasSupabase.auth.signOut({ scope: 'local' })
+      const supabase = await loadSupabase()
+      await supabase.auth.signOut({ scope: 'local' })
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : String(caught))
     } finally {
@@ -90,18 +98,30 @@ export function AiAccessProvider({ children }: { children: ReactNode }) {
   }
 
   useEffect(() => {
+    // Supabase is an authorization-only dependency. Ordinary PJSDAS sessions do
+    // not need to download or initialize it until an OAuth round-trip is active.
+    if (!hasPendingGoogleLink()) return
+
     let active = true
-    void pjsdasSupabase.auth.getSession().then(({ data }) => {
+    let unsubscribe: (() => void) | undefined
+
+    void loadSupabase().then(async (supabase) => {
+      if (!active) return
+      const { data } = await supabase.auth.getSession()
       if (active) void completeIfPending(data.session)
+      const listener = supabase.auth.onAuthStateChange((_event, session) => {
+        window.setTimeout(() => {
+          if (active) void completeIfPending(session)
+        }, 0)
+      })
+      unsubscribe = () => listener.data.subscription.unsubscribe()
+    }).catch((caught) => {
+      if (active) setError(caught instanceof Error ? caught.message : String(caught))
     })
-    const { data } = pjsdasSupabase.auth.onAuthStateChange((_event, session) => {
-      window.setTimeout(() => {
-        if (active) void completeIfPending(session)
-      }, 0)
-    })
+
     return () => {
       active = false
-      data.subscription.unsubscribe()
+      unsubscribe?.()
     }
   }, [])
 
@@ -112,7 +132,8 @@ export function AiAccessProvider({ children }: { children: ReactNode }) {
     setError('')
     window.sessionStorage.setItem(PENDING_KEY, '1')
     try {
-      const { error: signInError } = await pjsdasSupabase.auth.signInWithOAuth({
+      const supabase = await loadSupabase()
+      const { error: signInError } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
           redirectTo: redirectUrl(),
