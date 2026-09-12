@@ -2,18 +2,28 @@
 
 This contract supplements `V1_9_PRE_RELEASE_HARDENING.md`. It records the user-facing semantics added before the v1.9 production release candidate is merged.
 
-## 1. Passive review must not occupy Today
+## 1. Passive maintenance must not become a primary user surface
 
-Pipeline follow-up/review state is useful as background state, but it is not primary work.
+PJSDAS may keep internal follow-up, freshness, silence-risk, source-health, and reconciliation state when that state is useful for automation or audit. The user should not have to maintain PJSDAS itself as a recurring job-search task.
 
 Rules:
 
 - `follow_up` Actions are excluded from Today ranking and Today time planning.
-- Review/follow-up state may remain in Pipeline and history for traceability.
-- A review reminder must not displace applications, recruiter events, preparation, or explicit user tasks.
-- No data is deleted merely to hide review noise.
+- Decide contains only the real decision objects the user acts on: `Opportunities` and `Pipeline`; passive review is not a Decide tab.
+- Discovery Inbox / review backlog size does not choose the user's Decide context and is not surfaced as a primary counter.
+- Pipeline does not display `nextCheckAt`, “next review”, or review-status copy, and visible Pipeline ordering is based on recruiting stage and real progress rather than review need.
+- Empty-workspace onboarding does not route the user into a review queue; it routes to Settings for discovery preferences/import while trusted ingestion supplies eligible opportunities.
+- Background uncertainty, freshness and reconciliation state may remain available to Coverage, integrity/audit tooling and system logic without becoming a user task.
+- A background state should enter Today only when it resolves into a concrete real-world action the user actually needs to perform.
+- No underlying audit/history data is deleted merely to keep maintenance out of the foreground.
 
-This deliberately changes the older contract that allowed a small daily quota of follow-up items in Today.
+The intended attention model is therefore:
+
+`source/monitor state -> system reconciliation -> canonical workspace fact -> real user action (only when needed)`
+
+not:
+
+`source/monitor state -> review queue -> user maintains the database`.
 
 ## 2. Manual role text is an alias, never canonical job identity
 
@@ -92,33 +102,37 @@ This separation is intentional:
 - Job Posting identity: which stored/source-backed title is authoritative?
 - ChangeSet: what mutation is actually proposed/applied?
 
-The browser input UI reads Discovery Inbox source candidates and supplies them as canonical references. Existing Opportunities are recognized as canonical references only while their current title remains bound to the stored Job Posting identity. The UI remains on the canonical ChangeSet mutation path.
+The browser progress-input path may still read Discovery Inbox source candidates as canonical references for safe identity resolution even though Discovery Inbox is no longer a primary user-facing Decide surface. Existing Opportunities are recognized as canonical references only while their current title remains bound to the stored Job Posting identity. The UI remains on the canonical ChangeSet mutation path.
 
 ## 6. Performance
 
-The richer Input Policy initially pushed the initial JS bundle above the existing <500 kB release-hardening baseline. `ProgressInbox` was therefore split into a thin lazy wrapper plus `ProgressInboxHeavy` rather than accepting the regression.
+The richer Input Policy remains deferred behind `ProgressInboxHeavy`. Removing primary Discovery Inbox / Continuous Discovery rendering from `AppV8` also reduces the eager application graph without deleting their underlying data or lower-level modules.
 
 Validated build:
 
 - `CoverageIndicatorHeavy`: 17.92 kB / 6.39 kB gzip
-- `ProgressInboxHeavy`: 30.23 kB / 11.24 kB gzip
-- initial main JS: 475.16 kB / 145.93 kB gzip
+- `ProgressInboxHeavy`: 30.23 kB / 11.23 kB gzip
+- initial main JS: 468.97 kB / 144.35 kB gzip
 - no Vite >500 kB warning
+- 175 modules transformed
 
 ## 7. Validation
 
-Latest validated code candidate before this documentation commit:
+Latest fully validated release-candidate head before this documentation commit:
 
-- code head: `f6bb9b4d34b3466753da47763b90ccd11f4088a8`
-- CI #641: success
+- code head: `09d4b2ab108b4e23f81347e28b13e288e062fffa`
+- CI #648: success
 - dependency audit: 0 vulnerabilities
-- 90 test files / 376 tests passed
+- 91 test files / 378 tests passed
 - TypeScript + Vite production build: passed
-- 183 modules transformed
+- 175 modules transformed
 
 Dedicated regressions include:
 
-- review/follow-up absent from Today;
+- `follow_up` absent from Today;
+- no review tab/count/backlog-driven routing in primary Decide UX;
+- no “next review” field or review-risk ordering in visible Pipeline;
+- empty-workspace onboarding does not route into a review queue;
 - role typo / missing-character canonicalization for source-backed jobs;
 - source-backed shorthand -> canonical source role name;
 - unsourced legacy Opportunity cannot define a canonical title, even on exact text match;
