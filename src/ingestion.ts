@@ -202,6 +202,7 @@ export function summarizeCoverage(timeline: TimelineRecord[] | undefined, option
     if (!latestBySource.has(key)) latestBySource.set(key, run)
   }
 
+  const globalMode = options.expectedSources !== undefined
   const expected = options.expectedSources ?? []
   const expectedByKey = new Map(expected.map((item) => [sourceKey(item.sourceKind, item.sourceId), item]))
   const missingSources = expected.filter((item) => !latestBySource.has(sourceKey(item.sourceKind, item.sourceId)))
@@ -209,7 +210,7 @@ export function summarizeCoverage(timeline: TimelineRecord[] | undefined, option
 
   const latestRecords = latestRecordStates(records)
   const allUnresolved = latestRecords.filter((item) => item.ingestion?.outcome === 'unresolved')
-  const unresolved = expected.length > 0
+  const unresolved = globalMode
     ? allUnresolved.filter((item) => item.ingestion && expectedByKey.has(sourceKey(item.ingestion.sourceKind, item.ingestion.sourceId)))
     : allUnresolved
 
@@ -229,12 +230,18 @@ export function summarizeCoverage(timeline: TimelineRecord[] | undefined, option
     }
   }).sort((a, b) => b.lastCompletedAt.localeCompare(a.lastCompletedAt))
 
-  const relevantSources = expected.length > 0 ? sourceSummaries.filter((item) => expectedByKey.has(sourceKey(item.sourceKind, item.sourceId))) : sourceSummaries
+  const relevantSources = globalMode
+    ? sourceSummaries.filter((item) => expectedByKey.has(sourceKey(item.sourceKind, item.sourceId)))
+    : sourceSummaries
   const totalReceived = relevantSources.reduce((sum, item) => sum + item.receivedCount, 0)
   const totalAccounted = relevantSources.reduce((sum, item) => sum + item.accountedCount, 0)
   const staleSourceCount = relevantSources.filter((item) => item.stale).length
   return {
-    allCaughtUp: relevantSources.length > 0 && relevantSources.every((item) => item.balanced && !item.stale) && unresolved.length === 0 && missingSources.length === 0,
+    allCaughtUp:
+      relevantSources.length > 0 &&
+      relevantSources.every((item) => item.balanced && !item.stale) &&
+      unresolved.length === 0 &&
+      missingSources.length === 0,
     sourceCount: relevantSources.length,
     expectedSourceCount: expected.length,
     latestCompletedAt: relevantSources[0]?.lastCompletedAt,
