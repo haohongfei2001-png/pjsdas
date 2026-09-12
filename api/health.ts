@@ -18,6 +18,10 @@ export const PUBLIC_HEALTH_CAPABILITIES = {
   prepGraph: 'v1.6-round-2',
   prepGraphRead: true,
   prepGraphTodayProjection: true,
+  continuousDiscovery: 'v1.7',
+  discoveryRunLedger: true,
+  incrementalDiscoveryContext: true,
+  postingRefreshQueue: true,
 } as const
 
 export default {

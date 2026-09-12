@@ -1,5 +1,5 @@
 const base = (process.env.PJSDAS_BASE_URL || process.argv[2] || 'https://pjsdas-remote-alpha.vercel.app').replace(/\/+$/, '')
-const expectedVersion = process.env.PJSDAS_EXPECTED_VERSION || '1.6.0-alpha.2'
+const expectedVersion = process.env.PJSDAS_EXPECTED_VERSION || '1.7.0-alpha.1'
 const expectedResource = (process.env.PJSDAS_EXPECTED_RESOURCE || `${base}/api/mcp`).replace(/\/+$/, '')
 const githubPagesOrigin = 'https://haohongfei2001-png.github.io'
 
@@ -46,6 +46,10 @@ async function main() {
   assert(health.body?.capabilities?.prepGraph === 'v1.6-round-2', 'Prep Graph capability is not advertised')
   assert(health.body?.capabilities?.prepGraphRead === true, 'Prep Graph read capability is not advertised')
   assert(health.body?.capabilities?.prepGraphTodayProjection === true, 'Prep Graph Today projection is not advertised')
+  assert(health.body?.capabilities?.continuousDiscovery === 'v1.7', 'Continuous Discovery capability is not advertised')
+  assert(health.body?.capabilities?.discoveryRunLedger === true, 'Discovery Run ledger capability is not advertised')
+  assert(health.body?.capabilities?.incrementalDiscoveryContext === true, 'incremental discovery context is not advertised')
+  assert(health.body?.capabilities?.postingRefreshQueue === true, 'posting refresh queue is not advertised')
   console.log('✓ health/version/capabilities')
 
   const unauth = await fetchJson('/api/mcp', {
@@ -83,13 +87,13 @@ async function main() {
       origin: githubPagesOrigin,
       'content-type': 'application/json',
     },
-    body: JSON.stringify({ token: 'invalid.v1.6-round2-smoke-token' }),
+    body: JSON.stringify({ token: 'invalid.v1.7-smoke-token' }),
   })
   assert(invalidProposal.response.status === 400, `invalid proposal expected 400, got ${invalidProposal.response.status}`)
   assert(invalidProposal.body?.code === 'PROPOSAL_INVALID', `invalid proposal code expected PROPOSAL_INVALID, got ${invalidProposal.body?.code}`)
   console.log('✓ signed proposal verifier rejects invalid capability tokens')
 
-  console.log('PJSDAS v1.6 Round 2 public production contract passed.')
+  console.log('PJSDAS v1.7 Continuous Discovery public production contract passed.')
 }
 
 main().catch((error) => {

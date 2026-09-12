@@ -8,7 +8,7 @@ import {
 } from './supabaseProject.js'
 import { WorkspaceSourceError, type WorkspaceSource } from './workspaceSource.js'
 
-export const AUTHENTICATED_GATEWAY_VERSION = '1.6.0-alpha.2' as const
+export const AUTHENTICATED_GATEWAY_VERSION = '1.7.0-alpha.1' as const
 export const AUTHENTICATED_MCP_RESOURCE = 'https://pjsdas-remote-alpha.vercel.app/api/mcp'
 export const AUTHORIZATION_SERVER = `${PJSDAS_SUPABASE_URL}/auth/v1`
 export const PROTECTED_RESOURCE_METADATA_URL = 'https://pjsdas-remote-alpha.vercel.app/.well-known/oauth-protected-resource'
@@ -61,17 +61,14 @@ function lazyDriveSource(request: Request): WorkspaceSource {
 }
 
 /**
- * Authenticated v1.6 Round 2 runtime for real PJSDAS data.
+ * Authenticated v1.7 runtime for real PJSDAS data.
  *
- * Read tools resolve the user's validated Google Drive appDataFolder workspace
- * after Supabase OAuth. Discovery and component assessment remain source-backed
- * and review-only for mutation. Application Portfolio handles explicit shared
- * quota choices. Prep Graph adds a deterministic read/projection layer from
- * structured requirements, explicit gaps, Prep.triggeredBy, Process.prepPack,
- * and active process stages to reusable Prep nodes. Only explicit or exact
- * matches form graph edges; fuzzy semantic guesses never raise Today priority.
- * Existing Prep Actions may receive a runtime leverage/urgency boost, but stored
- * Action history is never rewritten and waiting Prep is never auto-activated.
+ * Existing source-backed discovery remains review-only. Continuous Discovery
+ * records signed/reviewed discovery runs inside the existing ChangeSet audit
+ * stream, then exposes an incremental baseline, source-coverage history, and a
+ * deterministic posting-refresh queue through get_discovery_context. PJSDAS
+ * still does not crawl or apply in the background. Application Portfolio and
+ * Prep Graph remain deterministic read/projection layers over the same workspace.
  */
 export async function authenticatedRemoteMcpFetch(request: Request) {
   try {

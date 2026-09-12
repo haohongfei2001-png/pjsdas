@@ -14,6 +14,7 @@ import {
   listOpportunities,
 } from '../src/ai/readLayer.js'
 import { enrichOpportunityListWithFacts } from '../src/ai/richOpportunityRead.js'
+import { buildContinuousDiscoverySummary } from '../src/continuousDiscovery.js'
 import { decisionRulesForSnapshot } from '../src/decisionRules.js'
 import { WorkspaceSourceError, type WorkspaceSource } from './workspaceSource.js'
 
@@ -204,9 +205,46 @@ export async function invokeReadTool(
           portfolioMinimumCandidateScore: rules.portfolioMinimumCandidateScore,
         })
       }
-      case 'get_discovery_context':
+      case 'get_discovery_context': {
         getDiscoveryContextSchema.parse(args)
-        return success(getDiscoveryContext(snapshot, context))
+        const output = getDiscoveryContext(snapshot, context)
+        const continuousDiscovery = buildContinuousDiscoverySummary({
+          changeSets: snapshot.data.changeSets ?? [],
+          opportunities: snapshot.data.opportunities,
+          inbox: snapshot.data.discoveryInbox ?? [],
+          now: context.now ?? new Date(),
+        })
+        return success({
+          ...output,
+          continuousDiscovery: {
+            runCount: continuousDiscovery.runCount,
+            lastRun: continuousDiscovery.lastRun ? {
+              runId: continuousDiscovery.lastRun.id,
+              mode: continuousDiscovery.lastRun.mode,
+              completedAt: continuousDiscovery.lastRun.completedAt,
+              outcome: continuousDiscovery.lastRun.outcome,
+              receivedCount: continuousDiscovery.lastRun.receivedCount,
+              reviewCandidateCount: continuousDiscovery.lastRun.reviewCandidateCount,
+              selectedCount: continuousDiscovery.lastRun.selectedCount,
+            } : undefined,
+            suggestedMode: continuousDiscovery.suggestedMode,
+            incrementalSince: continuousDiscovery.incrementalSince,
+            recentQueries: continuousDiscovery.recentQueries,
+            sourceCoverage: continuousDiscovery.sourceCoverage.slice(0, 12),
+            refreshQueue: continuousDiscovery.refreshQueue.slice(0, 20),
+            totals: continuousDiscovery.totals,
+            instructions: [
+              continuousDiscovery.incrementalSince
+                ? `For normal discovery, prefer new or materially updated postings since ${continuousDiscovery.incrementalSince}; do not re-search the full historical space without a reason.`
+                : 'No durable Discovery Run baseline exists yet; begin with a bounded full discovery pass.',
+              continuousDiscovery.refreshQueue.length
+                ? 'Refresh stale/aging/unknown posting URLs separately from new-job discovery. Treat refresh as verification, not as a reason to create duplicate Opportunities.'
+                : 'No posting refresh is currently prioritized.',
+              'Discovery Run history is derived from signed, reviewed ChangeSets. Do not claim an ad-hoc web search was recorded unless PJSDAS returns it here.',
+            ],
+          },
+        })
+      }
       case 'explain_priority':
         return success(explainPriority(snapshot, explainPrioritySchema.parse(args), context))
       case 'get_recent_timeline':

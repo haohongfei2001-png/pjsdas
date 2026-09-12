@@ -1,4 +1,5 @@
 import { assertChangeSetValid, type ChangeSetRecord } from '../changeSet.js'
+import { createDiscoveryRunRecord, validateDiscoveryRunRecord } from '../discoveryRun.js'
 
 export const MCP_PROPOSAL_VERSION = 1 as const
 export const MCP_PROPOSAL_FRAGMENT_KEY = 'pjsdas-proposal'
@@ -89,25 +90,59 @@ function validateDiscoveryReview(value: unknown): asserts value is McpDiscoveryR
   }
 }
 
+function validateDiscoveryRunMetadata(changeSet: ChangeSetRecord) {
+  if (!changeSet.discoveryRun) return
+  const errors = validateDiscoveryRunRecord(changeSet.discoveryRun)
+  if (errors.length) throw new Error(`PJSDAS Discovery Run metadata is invalid: ${errors[0]}`)
+}
+
+function withDiscoveryRun(
+  changeSet: ChangeSetRecord,
+  workspaceVersion: string | undefined,
+  now: Date,
+  discoveryReview?: McpDiscoveryReview,
+) {
+  if (!discoveryReview) return changeSet
+  const sourceUrls = changeSet.operations.flatMap((operation) =>
+    operation.kind === 'add_discovered_opportunity'
+      ? [operation.opportunity.detail?.discovery?.sourceUrl].filter((value): value is string => Boolean(value))
+      : []
+  )
+  if (!sourceUrls.length) return changeSet
+  return {
+    ...changeSet,
+    discoveryRun: createDiscoveryRunRecord({
+      screening: discoveryReview,
+      candidateSourceUrls: sourceUrls,
+      workspaceVersion,
+      defaultMode: 'ad_hoc',
+      completedAt: now.toISOString(),
+    }),
+  }
+}
+
 export function createMcpProposalEnvelope(
   changeSet: ChangeSetRecord,
   workspaceVersion?: string,
   now = new Date(),
   discoveryReview?: McpDiscoveryReview,
 ): McpProposalEnvelope {
-  assertChangeSetValid(changeSet)
+  const enrichedChangeSet = withDiscoveryRun(changeSet, workspaceVersion, now, discoveryReview)
+  assertChangeSetValid(enrichedChangeSet)
+  validateDiscoveryRunMetadata(enrichedChangeSet)
   if (discoveryReview) validateDiscoveryReview(discoveryReview)
   return {
     version: MCP_PROPOSAL_VERSION,
     workspaceVersion,
     expiresAt: new Date(now.getTime() + MCP_PROPOSAL_TTL_MS).toISOString(),
-    changeSet,
+    changeSet: enrichedChangeSet,
     discoveryReview,
   }
 }
 
 export function encodeMcpProposal(envelope: McpProposalEnvelope) {
   assertChangeSetValid(envelope.changeSet)
+  validateDiscoveryRunMetadata(envelope.changeSet)
   if (envelope.version !== MCP_PROPOSAL_VERSION) throw new Error('Unsupported PJSDAS proposal version.')
   if (!validIso(envelope.expiresAt)) throw new Error('PJSDAS proposal expiry is invalid.')
   if (envelope.discoveryReview) validateDiscoveryReview(envelope.discoveryReview)
@@ -131,6 +166,7 @@ export function decodeMcpProposal(encoded: string): McpProposalEnvelope {
   if (!validIso(parsed.expiresAt)) throw new Error('PJSDAS proposal expiry is invalid.')
   if (parsed.discoveryReview !== undefined) validateDiscoveryReview(parsed.discoveryReview)
   assertChangeSetValid(parsed.changeSet)
+  validateDiscoveryRunMetadata(parsed.changeSet as ChangeSetRecord)
   return parsed as unknown as McpProposalEnvelope
 }
 
