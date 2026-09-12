@@ -41,6 +41,7 @@ const current = [
 
 const canonical: CanonicalJobReference[] = [
   { opportunityId: 'official-b-strategy', company: '乙公司', role: '战略分析', sourceBacked: true },
+  { opportunityId: 'official-b-ai-fullstack', company: '乙公司', role: 'AI全栈产品研发培训生', sourceBacked: true },
   { opportunityId: 'official-c-pmo', company: '丙公司', role: 'PMO经理', sourceBacked: true },
   { opportunityId: 'official-nova-rd-pm', company: 'NOVA', role: '新品研发项目管理管培生', sourceBacked: true },
   { opportunityId: 'official-star-ai-pm', company: '星河云', role: 'AI产品经理', sourceBacked: true },
