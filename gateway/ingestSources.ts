@@ -98,7 +98,7 @@ export function normalizeGmailMessagesForWorkspace<T extends HardenedGmailMessag
 }
 
 function findRun(snapshot: Awaited<ReturnType<WorkspaceSource['read']>>['snapshot'], sourceKind: 'gpt_monitor' | 'gmail', sourceId: string, runId: string) {
-  return snapshot.data.timeline.find((item) => item.ingestionRun?.sourceKind === sourceKind && item.ingestionRun.sourceId === sourceId && item.ingestionRun.runId === runId)?.ingestionRun
+  return (snapshot.data.timeline ?? []).find((item) => item.ingestionRun?.sourceKind === sourceKind && item.ingestionRun.sourceId === sourceId && item.ingestionRun.runId === runId)?.ingestionRun
 }
 
 function snapshotForReplay(snapshot: Awaited<ReturnType<WorkspaceSource['read']>>['snapshot'], sourceKind: 'gpt_monitor' | 'gmail', sourceId: string, replayOfRunId?: string) {
