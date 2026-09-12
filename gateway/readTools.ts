@@ -2,6 +2,7 @@ import type { CallToolResult } from '@modelcontextprotocol/server'
 import * as z from 'zod/v4'
 import { getApplicationPortfolio } from '../src/ai/applicationPortfolioRead.js'
 import { getOpportunityAssessment } from '../src/ai/assessmentRead.js'
+import { readPrepGraph } from '../src/ai/prepGraphRead.js'
 import {
   BridgeReadError,
   explainPriority,
@@ -21,6 +22,7 @@ export const READ_TOOL_NAMES = [
   'list_opportunities',
   'get_opportunity_assessment',
   'get_application_portfolio',
+  'get_prep_graph',
   'get_pipeline',
   'get_decision_rules',
   'get_discovery_context',
@@ -71,6 +73,12 @@ export const getApplicationPortfolioSchema = z.object({
   groupId: z.string().trim().min(1).optional(),
   company: z.string().trim().min(1).optional(),
   limit: z.number().int().min(1).max(20).optional(),
+})
+
+export const getPrepGraphSchema = z.object({
+  prepId: z.string().trim().min(1).optional(),
+  opportunityId: z.string().trim().min(1).optional(),
+  limit: z.number().int().min(1).max(50).optional(),
 })
 
 export const getPipelineSchema = z.object({
@@ -172,6 +180,16 @@ export async function invokeReadTool(
       }
       case 'get_application_portfolio':
         return success(getApplicationPortfolio(snapshot, getApplicationPortfolioSchema.parse(args), context))
+      case 'get_prep_graph': {
+        const parsed = getPrepGraphSchema.parse(args)
+        if (parsed.prepId && !snapshot.data.prep.some((item) => item.id === parsed.prepId)) {
+          return toolError('NOT_FOUND', `Prep ${parsed.prepId} was not found.`, false)
+        }
+        if (parsed.opportunityId && !snapshot.data.opportunities.some((item) => item.id === parsed.opportunityId)) {
+          return toolError('NOT_FOUND', `Opportunity ${parsed.opportunityId} was not found.`, false)
+        }
+        return success({ meta: readMeta(context), ...readPrepGraph(snapshot, parsed, context.now ?? new Date()) })
+      }
       case 'get_pipeline':
         return success(getPipeline(snapshot, getPipelineSchema.parse(args), context))
       case 'get_decision_rules': {

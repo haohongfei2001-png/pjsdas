@@ -17,12 +17,13 @@ function jsonFrom(result: Awaited<ReturnType<typeof invokeReadTool>>) {
 }
 
 describe('PJSDAS MCP gateway alpha', () => {
-  it('exposes the bounded v1.6 Round 1 read-only tool set', () => {
+  it('exposes the bounded v1.6 Round 2 read-only tool set', () => {
     expect(READ_TOOL_NAMES).toEqual([
       'get_today_plan',
       'list_opportunities',
       'get_opportunity_assessment',
       'get_application_portfolio',
+      'get_prep_graph',
       'get_pipeline',
       'get_decision_rules',
       'get_discovery_context',
@@ -40,6 +41,7 @@ describe('PJSDAS MCP gateway alpha', () => {
     ['list_opportunities', { limit: 10 }],
     ['get_opportunity_assessment', { opportunityId: 'opp-alpha' }],
     ['get_application_portfolio', { limit: 10 }],
+    ['get_prep_graph', { limit: 10 }],
     ['get_pipeline', { attentionOnly: true }],
     ['get_decision_rules', {}],
     ['get_discovery_context', {}],

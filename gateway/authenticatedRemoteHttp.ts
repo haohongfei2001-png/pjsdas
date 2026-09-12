@@ -8,7 +8,7 @@ import {
 } from './supabaseProject.js'
 import { WorkspaceSourceError, type WorkspaceSource } from './workspaceSource.js'
 
-export const AUTHENTICATED_GATEWAY_VERSION = '1.6.0-alpha.1' as const
+export const AUTHENTICATED_GATEWAY_VERSION = '1.6.0-alpha.2' as const
 export const AUTHENTICATED_MCP_RESOURCE = 'https://pjsdas-remote-alpha.vercel.app/api/mcp'
 export const AUTHORIZATION_SERVER = `${PJSDAS_SUPABASE_URL}/auth/v1`
 export const PROTECTED_RESOURCE_METADATA_URL = 'https://pjsdas-remote-alpha.vercel.app/.well-known/oauth-protected-resource'
@@ -61,16 +61,17 @@ function lazyDriveSource(request: Request): WorkspaceSource {
 }
 
 /**
- * Authenticated v1.6 Round 1 runtime for real PJSDAS data.
+ * Authenticated v1.6 Round 2 runtime for real PJSDAS data.
  *
  * Read tools resolve the user's validated Google Drive appDataFolder workspace
- * after Supabase OAuth. Discovery still happens outside PJSDAS through the AI
- * client's public-web capabilities. Source-backed candidates retain Rich
- * Opportunity facts and component assessments. PJSDAS also owns a deterministic
- * Application Portfolio layer for explicit shared-quota Application Groups:
- * capacity is a ceiling rather than a fill target, weak candidates are not
- * promoted merely to consume slots, and highly redundant selections are
- * penalized. The portfolio tool is read-only and never submits applications.
+ * after Supabase OAuth. Discovery and component assessment remain source-backed
+ * and review-only for mutation. Application Portfolio handles explicit shared
+ * quota choices. Prep Graph adds a deterministic read/projection layer from
+ * structured requirements, explicit gaps, Prep.triggeredBy, Process.prepPack,
+ * and active process stages to reusable Prep nodes. Only explicit or exact
+ * matches form graph edges; fuzzy semantic guesses never raise Today priority.
+ * Existing Prep Actions may receive a runtime leverage/urgency boost, but stored
+ * Action history is never rewritten and waiting Prep is never auto-activated.
  */
 export async function authenticatedRemoteMcpFetch(request: Request) {
   try {
