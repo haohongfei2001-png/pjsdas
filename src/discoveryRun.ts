@@ -165,7 +165,9 @@ export function discoveryRunsFromChangeSets(
   return changeSets.flatMap((changeSet) => {
     const run = discoveryRunFromChangeSet(changeSet)
     if (!run) return []
-    const operationCount = changeSet.operations.filter((operation) => operation.kind === 'add_discovered_opportunity').length
+    const operationCount = changeSet.operations.filter((operation) =>
+      operation.kind === 'add_discovered_opportunity' || operation.kind === 'refresh_job_posting'
+    ).length
     const outcome: StoredDiscoveryRun['outcome'] = changeSet.status === 'applied'
       ? 'applied'
       : changeSet.status === 'failed'
