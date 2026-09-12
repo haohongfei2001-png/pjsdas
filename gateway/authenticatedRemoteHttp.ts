@@ -8,7 +8,7 @@ import {
 } from './supabaseProject.js'
 import { WorkspaceSourceError, type WorkspaceSource } from './workspaceSource.js'
 
-export const AUTHENTICATED_GATEWAY_VERSION = '1.5.0-alpha.2' as const
+export const AUTHENTICATED_GATEWAY_VERSION = '1.6.0-alpha.1' as const
 export const AUTHENTICATED_MCP_RESOURCE = 'https://pjsdas-remote-alpha.vercel.app/api/mcp'
 export const AUTHORIZATION_SERVER = `${PJSDAS_SUPABASE_URL}/auth/v1`
 export const PROTECTED_RESOURCE_METADATA_URL = 'https://pjsdas-remote-alpha.vercel.app/.well-known/oauth-protected-resource'
@@ -61,15 +61,16 @@ function lazyDriveSource(request: Request): WorkspaceSource {
 }
 
 /**
- * Authenticated v1.5 Round 2 runtime for real PJSDAS data.
+ * Authenticated v1.6 Round 1 runtime for real PJSDAS data.
  *
  * Read tools resolve the user's validated Google Drive appDataFolder workspace
  * after Supabase OAuth. Discovery still happens outside PJSDAS through the AI
- * client's public-web capabilities. New source-backed candidates may carry
- * bounded Rich Opportunity facts and a bounded Fit / Opportunity Value
- * component assessment. PJSDAS owns component weights, aggregate derivation,
- * validation, signed review, and final ChangeSet semantics. Historical stored
- * aggregates are never silently rewritten when component weights change.
+ * client's public-web capabilities. Source-backed candidates retain Rich
+ * Opportunity facts and component assessments. PJSDAS also owns a deterministic
+ * Application Portfolio layer for explicit shared-quota Application Groups:
+ * capacity is a ceiling rather than a fill target, weak candidates are not
+ * promoted merely to consume slots, and highly redundant selections are
+ * penalized. The portfolio tool is read-only and never submits applications.
  */
 export async function authenticatedRemoteMcpFetch(request: Request) {
   try {
