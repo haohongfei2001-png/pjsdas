@@ -1,5 +1,5 @@
 const base = (process.env.PJSDAS_BASE_URL || process.argv[2] || 'https://pjsdas-remote-alpha.vercel.app').replace(/\/+$/, '')
-const expectedVersion = process.env.PJSDAS_EXPECTED_VERSION || '1.7.0-alpha.1'
+const expectedVersion = process.env.PJSDAS_EXPECTED_VERSION || '1.7.0-alpha.2'
 const expectedResource = (process.env.PJSDAS_EXPECTED_RESOURCE || `${base}/api/mcp`).replace(/\/+$/, '')
 const githubPagesOrigin = 'https://haohongfei2001-png.github.io'
 
@@ -50,6 +50,9 @@ async function main() {
   assert(health.body?.capabilities?.discoveryRunLedger === true, 'Discovery Run ledger capability is not advertised')
   assert(health.body?.capabilities?.incrementalDiscoveryContext === true, 'incremental discovery context is not advertised')
   assert(health.body?.capabilities?.postingRefreshQueue === true, 'posting refresh queue is not advertised')
+  assert(health.body?.capabilities?.postingRefreshReview === 'v1.7-round-2', 'posting refresh review capability is not advertised')
+  assert(health.body?.capabilities?.zeroResultDiscoveryRun === true, 'zero-result Discovery Run capability is not advertised')
+  assert(health.body?.capabilities?.explicitDiscoveryRunContext === true, 'explicit Discovery Run context capability is not advertised')
   console.log('✓ health/version/capabilities')
 
   const unauth = await fetchJson('/api/mcp', {
@@ -87,13 +90,13 @@ async function main() {
       origin: githubPagesOrigin,
       'content-type': 'application/json',
     },
-    body: JSON.stringify({ token: 'invalid.v1.7-smoke-token' }),
+    body: JSON.stringify({ token: 'invalid.v1.7-round2-smoke-token' }),
   })
   assert(invalidProposal.response.status === 400, `invalid proposal expected 400, got ${invalidProposal.response.status}`)
   assert(invalidProposal.body?.code === 'PROPOSAL_INVALID', `invalid proposal code expected PROPOSAL_INVALID, got ${invalidProposal.body?.code}`)
   console.log('✓ signed proposal verifier rejects invalid capability tokens')
 
-  console.log('PJSDAS v1.7 Continuous Discovery public production contract passed.')
+  console.log('PJSDAS v1.7 Round 2 Discovery Refresh Protocol public production contract passed.')
 }
 
 main().catch((error) => {

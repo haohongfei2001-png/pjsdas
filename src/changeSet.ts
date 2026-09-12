@@ -5,6 +5,7 @@ import { validateOpportunityFacts } from './richOpportunity.js'
 import type {
   Action,
   ActionStatus,
+  JobPostingStatus,
   Opportunity,
   OpportunityAssessment,
   OpportunityFacts,
@@ -57,6 +58,28 @@ export type ChangeSetOperation =
       kind: 'add_discovered_opportunity'
       summary: string
       opportunity: Opportunity
+    }
+  | {
+      id: string
+      kind: 'refresh_job_posting'
+      summary: string
+      ownerKind: 'opportunity' | 'inbox'
+      ownerId: string
+      expectedPostingId: string
+      expectedCanonicalSourceUrl: string
+      sourceUrl: string
+      sourceTitle: string
+      postingStatus: JobPostingStatus
+      observedAt: string
+      location?: string
+      deadline?: string
+      compensationText?: string
+    }
+  | {
+      id: string
+      kind: 'record_discovery_run'
+      summary: string
+      runId: string
     }
 
 export interface ChangeSetRecord {
@@ -270,6 +293,20 @@ function validateDiscoveredOpportunity(raw: Record<string, unknown>, operationId
   }
 }
 
+function validatePostingRefresh(raw: Record<string, unknown>, operationId: string, errors: string[]) {
+  if (!['opportunity', 'inbox'].includes(String(raw.ownerKind))) errors.push(`ChangeSet operation ${operationId} 的 posting ownerKind 无效。`)
+  if (typeof raw.ownerId !== 'string' || !raw.ownerId.trim() || raw.ownerId.length > 240) errors.push(`ChangeSet operation ${operationId} 的 posting ownerId 无效。`)
+  if (typeof raw.expectedPostingId !== 'string' || !raw.expectedPostingId.trim() || raw.expectedPostingId.length > 240) errors.push(`ChangeSet operation ${operationId} 的 expectedPostingId 无效。`)
+  if (!validPublicHttpUrl(raw.expectedCanonicalSourceUrl)) errors.push(`ChangeSet operation ${operationId} 的 expectedCanonicalSourceUrl 无效。`)
+  if (!validPublicHttpUrl(raw.sourceUrl)) errors.push(`ChangeSet operation ${operationId} 的刷新来源 URL 无效。`)
+  if (typeof raw.sourceTitle !== 'string' || !raw.sourceTitle.trim() || raw.sourceTitle.length > 300) errors.push(`ChangeSet operation ${operationId} 的刷新来源标题无效。`)
+  if (!['open', 'closed', 'unknown'].includes(String(raw.postingStatus))) errors.push(`ChangeSet operation ${operationId} 的 postingStatus 无效。`)
+  if (!validIso(raw.observedAt)) errors.push(`ChangeSet operation ${operationId} 的 observedAt 无效。`)
+  if (raw.deadline !== undefined && !validIso(raw.deadline)) errors.push(`ChangeSet operation ${operationId} 的刷新 deadline 无效。`)
+  if (raw.location !== undefined && (typeof raw.location !== 'string' || !raw.location.trim() || raw.location.length > 240)) errors.push(`ChangeSet operation ${operationId} 的刷新 location 无效。`)
+  if (raw.compensationText !== undefined && (typeof raw.compensationText !== 'string' || !raw.compensationText.trim() || raw.compensationText.length > 500)) errors.push(`ChangeSet operation ${operationId} 的刷新 compensationText 无效。`)
+}
+
 export function validateChangeSet(value: unknown): string[] {
   const errors: string[] = []
   if (!isObject(value)) return ['ChangeSet 必须是对象。']
@@ -292,8 +329,16 @@ export function validateChangeSet(value: unknown): string[] {
   }
 
   const discoveryOperationCount = value.operations.filter((item) => isObject(item) && item.kind === 'add_discovered_opportunity').length
+  const refreshOperationCount = value.operations.filter((item) => isObject(item) && item.kind === 'refresh_job_posting').length
+  const recordRunOperationCount = value.operations.filter((item) => isObject(item) && item.kind === 'record_discovery_run').length
   if (discoveryOperationCount > 0 && discoveryOperationCount !== value.operations.length) {
     errors.push('岗位发现 ChangeSet 不能与其他修改类型混合，请拆分审阅。')
+  }
+  if (refreshOperationCount > 0 && refreshOperationCount !== value.operations.length) {
+    errors.push('岗位来源刷新 ChangeSet 不能与其他修改类型混合，请拆分审阅。')
+  }
+  if (recordRunOperationCount > 0 && recordRunOperationCount !== value.operations.length) {
+    errors.push('Discovery Run 记录 ChangeSet 不能与其他修改类型混合，请拆分审阅。')
   }
 
   for (const raw of value.operations) {
@@ -322,6 +367,10 @@ export function validateChangeSet(value: unknown): string[] {
       if (!['todo', 'doing', 'done', 'skipped'].includes(String(raw.expectedStatus)) || !['todo', 'doing', 'done', 'skipped'].includes(String(raw.status))) errors.push(`ChangeSet operation ${raw.id} 的 Action 状态无效。`)
     } else if (raw.kind === 'add_discovered_opportunity') {
       validateDiscoveredOpportunity(raw, raw.id, errors)
+    } else if (raw.kind === 'refresh_job_posting') {
+      validatePostingRefresh(raw, raw.id, errors)
+    } else if (raw.kind === 'record_discovery_run') {
+      if (typeof raw.runId !== 'string' || !raw.runId.trim() || raw.runId.length > 180) errors.push(`ChangeSet operation ${raw.id} 的 Discovery Run ID 无效。`)
     } else {
       errors.push(`ChangeSet operation ${raw.id} kind 无效。`)
     }

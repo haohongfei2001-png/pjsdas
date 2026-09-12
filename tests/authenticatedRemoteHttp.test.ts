@@ -65,7 +65,7 @@ describe('authenticated remote MCP', () => {
     expect(text).toContain('get_today_plan')
     expect(text).toContain('get_decision_rules')
     expect(text).toContain('propose_changes')
-    expect(text).toContain('does not change the workspace')
+    expect(text).toContain('Nothing changes until explicit Apply in PJSDAS')
     expect(fetchImpl).toHaveBeenCalledTimes(1)
     expect(String(vi.mocked(fetchImpl).mock.calls[0]?.[0])).toContain('/auth/v1/user')
   })

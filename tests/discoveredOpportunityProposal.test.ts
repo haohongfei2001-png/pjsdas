@@ -64,6 +64,13 @@ const candidate = {
   discoveredAt: '2026-09-11T11:25:00+08:00',
 }
 
+async function signedEnvelope(result: Awaited<ReturnType<typeof invokeProposeChanges>>) {
+  const data = resultJson(result)
+  const token = encodedProposalFromHash(new URL(String(data.reviewUrl)).hash)
+  if (!token) throw new Error('Expected signed proposal token')
+  return verifySignedProposalToken(token, signingKey, new Date('2026-09-11T11:31:00+08:00'))
+}
+
 describe('v1.3 discovered opportunity proposals', () => {
   it('creates a signed review-only ChangeSet with durable source evidence', async () => {
     const result = await invokeProposeChanges(source(), {
@@ -82,10 +89,7 @@ describe('v1.3 discovered opportunity proposals', () => {
       discoveryScreening: { received: 1, accepted: 1, duplicateCount: 0, rejectedCount: 0, deferredCount: 0 },
     })
 
-    const url = new URL(String(data.reviewUrl))
-    const token = encodedProposalFromHash(url.hash)
-    expect(token).toBeTruthy()
-    const envelope = await verifySignedProposalToken(token!, signingKey, new Date('2026-09-11T11:31:00+08:00'))
+    const envelope = await signedEnvelope(result)
     expect(envelope.changeSet.operations[0]).toMatchObject({
       kind: 'add_discovered_opportunity',
       opportunity: {
@@ -115,7 +119,7 @@ describe('v1.3 discovered opportunity proposals', () => {
     expect(resultJson(result)).toMatchObject({ code: 'DISCOVERY_PROFILE_REQUIRED', retryable: false })
   })
 
-  it('drops an exact or highly similar company+role duplicate already present in PJSDAS', async () => {
+  it('records a duplicate-only search as a review-only zero-result Discovery Run', async () => {
     const result = await invokeProposeChanges(source(), {
       discoveredOpportunities: [{
         ...candidate,
@@ -123,9 +127,26 @@ describe('v1.3 discovered opportunity proposals', () => {
         role: '产品经理（AI方向）',
         sourceUrl: 'https://careers.example.com/jobs/duplicate',
       }],
+      discoveryRunContext: {
+        mode: 'incremental',
+        queries: ['AI 产品经理 2027'],
+        searchedSourceHosts: ['careers.example.com'],
+      },
     }, { signingKey })
-    expect(result.isError).toBe(true)
-    expect(resultJson(result)).toMatchObject({ code: 'NO_CHANGES', retryable: false })
+    expect(result.isError).not.toBe(true)
+    const data = resultJson(result)
+    expect(data.discoveryScreening).toMatchObject({ received: 1, accepted: 0, duplicateCount: 1 })
+    const envelope = await signedEnvelope(result)
+    expect(envelope.changeSet.operations).toHaveLength(1)
+    expect(envelope.changeSet.operations[0].kind).toBe('record_discovery_run')
+    expect(envelope.changeSet.discoveryRun).toMatchObject({
+      mode: 'incremental',
+      queries: ['AI 产品经理 2027'],
+      searchedSourceHosts: ['careers.example.com'],
+      receivedCount: 1,
+      reviewCandidateCount: 0,
+      duplicateCount: 1,
+    })
   })
 
   it('keeps soft profile mismatches visible as review warnings', async () => {
@@ -139,9 +160,7 @@ describe('v1.3 discovered opportunity proposals', () => {
       }],
     }, { signingKey })
     expect(result.isError).not.toBe(true)
-    const data = resultJson(result)
-    const token = encodedProposalFromHash(new URL(String(data.reviewUrl)).hash)!
-    const envelope = await verifySignedProposalToken(token, signingKey, new Date('2026-09-11T11:31:00+08:00'))
+    const envelope = await signedEnvelope(result)
     const operation = envelope.changeSet.operations[0]
     expect(operation.kind).toBe('add_discovered_opportunity')
     if (operation.kind === 'add_discovered_opportunity') {
@@ -149,18 +168,23 @@ describe('v1.3 discovered opportunity proposals', () => {
     }
   })
 
-  it('rejects expired and explicitly excluded discovered jobs before signing a ChangeSet', async () => {
+  it('records expired and explicitly excluded search results without creating Opportunities', async () => {
     const expired = await invokeProposeChanges(source(), {
       discoveredOpportunities: [{ ...candidate, deadline: '2026-09-10T23:59:00+08:00' }],
     }, { signingKey })
-    expect(expired.isError).toBe(true)
-    expect(resultJson(expired)).toMatchObject({ code: 'DISCOVERY_NO_ELIGIBLE_CANDIDATES', retryable: false })
+    expect(expired.isError).not.toBe(true)
+    const expiredEnvelope = await signedEnvelope(expired)
+    expect(expiredEnvelope.changeSet.operations[0].kind).toBe('record_discovery_run')
+    expect(expiredEnvelope.changeSet.discoveryRun).toMatchObject({ receivedCount: 1, reviewCandidateCount: 0, filteredCount: 1 })
 
     const excluded = await invokeProposeChanges(source(), {
       discoveredOpportunities: [{ ...candidate, sourceEvidenceText: '2027 届校招，北京，纯销售岗位。' }],
     }, { signingKey })
-    expect(excluded.isError).toBe(true)
-    expect(String(resultJson(excluded).message)).toContain('纯销售')
+    expect(excluded.isError).not.toBe(true)
+    const excludedData = resultJson(excluded)
+    expect(excludedData.rejectedCandidates[0].reasons.join(' ')).toContain('纯销售')
+    const excludedEnvelope = await signedEnvelope(excluded)
+    expect(excludedEnvelope.changeSet.operations[0].kind).toBe('record_discovery_run')
   })
 
   it('caps the review batch after quality ranking instead of sending every search hit to the user', async () => {

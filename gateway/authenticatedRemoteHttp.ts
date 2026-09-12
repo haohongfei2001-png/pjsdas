@@ -8,7 +8,7 @@ import {
 } from './supabaseProject.js'
 import { WorkspaceSourceError, type WorkspaceSource } from './workspaceSource.js'
 
-export const AUTHENTICATED_GATEWAY_VERSION = '1.7.0-alpha.1' as const
+export const AUTHENTICATED_GATEWAY_VERSION = '1.7.0-alpha.2' as const
 export const AUTHENTICATED_MCP_RESOURCE = 'https://pjsdas-remote-alpha.vercel.app/api/mcp'
 export const AUTHORIZATION_SERVER = `${PJSDAS_SUPABASE_URL}/auth/v1`
 export const PROTECTED_RESOURCE_METADATA_URL = 'https://pjsdas-remote-alpha.vercel.app/.well-known/oauth-protected-resource'
@@ -61,14 +61,14 @@ function lazyDriveSource(request: Request): WorkspaceSource {
 }
 
 /**
- * Authenticated v1.7 runtime for real PJSDAS data.
+ * Authenticated v1.7 Round 2 runtime for real PJSDAS data.
  *
- * Existing source-backed discovery remains review-only. Continuous Discovery
- * records signed/reviewed discovery runs inside the existing ChangeSet audit
- * stream, then exposes an incremental baseline, source-coverage history, and a
- * deterministic posting-refresh queue through get_discovery_context. PJSDAS
- * still does not crawl or apply in the background. Application Portfolio and
- * Prep Graph remain deterministic read/projection layers over the same workspace.
+ * Continuous Discovery remains review-only. New discovery passes can retain an
+ * explicit run context, including zero-eligible runs, inside signed ChangeSets.
+ * Stale posting refreshes are bound to an exact owner + posting id + canonical
+ * public source and only update source evidence after explicit local Apply. A
+ * closed public posting never implicitly closes the Opportunity/Process. PJSDAS
+ * still performs no background crawl or autonomous mutation.
  */
 export async function authenticatedRemoteMcpFetch(request: Request) {
   try {

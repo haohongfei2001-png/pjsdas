@@ -14,6 +14,8 @@ export interface DiscoverySourceCoverage {
 export interface DiscoveryRefreshTarget {
   ownerKind: 'opportunity' | 'inbox'
   ownerId: string
+  postingId: string
+  canonicalSourceUrl: string
   company: string
   role: string
   sourceUrl: string
@@ -99,6 +101,8 @@ function buildRefreshQueue(opportunities: Opportunity[], inbox: DiscoveryInboxIt
     targets.push({
       ownerKind: item.ownerKind,
       ownerId: item.ownerId,
+      postingId: item.posting.id,
+      canonicalSourceUrl: item.posting.canonicalSourceUrl,
       company: item.company,
       role: item.role,
       sourceUrl: item.posting.sourceUrl,
