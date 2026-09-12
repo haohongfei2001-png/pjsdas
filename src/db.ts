@@ -734,6 +734,10 @@ export async function applyChangeSet(id: string) {
         throw new Error('岗位发现 ChangeSet 必须作为独立批次应用。')
       }
 
+      if (operation.kind === 'refresh_job_posting' || operation.kind === 'record_discovery_run') {
+        throw new Error('岗位来源刷新 / Discovery Run 记录必须通过已签名的 MCP 审阅应用路径执行。')
+      }
+
       const action = await db.get('actions', operation.actionId) ?? (await getAllActions()).find((item) => item.id === operation.actionId)
       if (!action) throw new Error(`Action ${operation.actionId} 已不存在。`)
       if (action.status === operation.status) continue
