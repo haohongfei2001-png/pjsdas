@@ -45,6 +45,8 @@ export function createPjsdasMcpServer(
     'Read tools never change PJSDAS state.',
     'For job discovery, first call get_discovery_context. Treat its Discovery Profile as the durable user-controlled search preference source; do not silently invent or rewrite durable preferences from chat history.',
     'When get_discovery_context returns continuousDiscovery, use incrementalSince as the normal lower bound for new or materially updated postings, and treat refreshQueue as separate source-verification work. Do not repeat a full historical search without a reason, and do not claim a search was recorded unless PJSDAS returns it in the durable run state.',
+    'For refreshQueue work, preserve ownerKind, ownerId, postingId and canonicalSourceUrl exactly. Verify that same public source and propose the result through postingRefreshes; never match a refresh target only by company or role name. A newly found canonical URL is a new/re-posted source and must go through normal discovery instead of overwriting an existing posting.',
+    'A public posting becoming closed does not by itself close the PJSDAS Opportunity or recruitment Process. Posting refresh updates source evidence only; Opportunity lifecycle remains a separate explicit decision/state transition.',
     'PJSDAS itself does not crawl the web. If the user asks for current job opportunities, use ChatGPT web search/browsing outside PJSDAS, preserve public source URLs, and keep unknown job facts unknown rather than fabricating them.',
     'When a public source explicitly supports them, submit bounded structured Rich Opportunity facts such as responsibilities, requirements, education, majors, experience, skills, languages, department/business unit, recruitment batch, application method, and compensation evidence. Do not convert model inference into source facts.',
     'For new web-discovered jobs, prefer bounded component assessments over opaque aggregate ratings. PJSDAS derives Fit and Opportunity Value totals from explicit component scores, confidence, rationale, and user-controlled component weights.',
@@ -59,6 +61,8 @@ export function createPjsdasMcpServer(
       'Never tell the user that a proposed change was applied. State clearly that the user must open the returned reviewUrl and explicitly Apply or Discard it in PJSDAS.',
       'For action status changes, read current actions first and use exact action IDs. For ambiguous updates, ask the user to clarify rather than guessing.',
       'For web-discovered jobs, submit only source-backed candidates through discoveredOpportunities. Do not mix discovery candidates with unrelated updates in the same ChangeSet.',
+      'When a discovery pass produces zero eligible jobs, PJSDAS can return a review-only record_discovery_run proposal. Explain that applying it records the search/run only and creates no Opportunity or Action.',
+      'For refreshQueue verification, use postingRefreshes as a separate review batch. Copy the exact refresh identity from get_discovery_context, report only source-backed status/deadline/location/compensation evidence, and never treat the proposal as already applied.',
       'Rich Opportunity facts are evidence fields, not ratings. Component assessment is the preferred rating path; legacy aggregate score fields remain compatibility input only.',
     )
   } else {
@@ -73,7 +77,7 @@ export function createPjsdasMcpServer(
   }
 
   const server = new McpServer(
-    { name: 'pjsdas', version: options.version ?? '1.7.0-alpha.1' },
+    { name: 'pjsdas', version: options.version ?? '1.7.0-alpha.2' },
     { instructions: instructions.join(' ') },
   )
 
@@ -157,7 +161,7 @@ export function createPjsdasMcpServer(
     'get_discovery_context',
     {
       title: 'Get PJSDAS continuous job-discovery context',
-      description: 'Read the explicit user-controlled Discovery Profile, active decision weights, existing/inbox identities, durable Discovery Run history, incremental baseline, source coverage, and posting-refresh queue before searching public job sources. PJSDAS does not search the web or mutate state in this tool.',
+      description: 'Read the explicit user-controlled Discovery Profile, active decision weights, existing/inbox identities, durable Discovery Run history, incremental baseline, source coverage, and exact posting-refresh queue before searching public job sources. PJSDAS does not search the web or mutate state in this tool.',
       inputSchema: getDiscoveryContextSchema,
       annotations: readOnlyAnnotations,
     },
@@ -192,7 +196,7 @@ export function createPjsdasMcpServer(
       'propose_changes',
       {
         title: 'Propose PJSDAS changes for review',
-        description: 'Create a signed, review-only PJSDAS ChangeSet. Supports natural-language progress, exact action-status changes, explicit Decision Rules patches, or a separate batch of source-backed discoveredOpportunities. Discovery proposals participate in the v1.7 durable Discovery Run audit stream after entering the existing review flow. New discovery candidates should use bounded component assessments; legacy aggregate scores remain accepted for compatibility. This does not change the workspace. Return reviewUrl for explicit Apply/Discard in PJSDAS.',
+        description: 'Create a signed, review-only PJSDAS ChangeSet. Supports natural-language progress, exact action-status changes, explicit Decision Rules patches, a separate batch of source-backed discoveredOpportunities, or a separate batch of exact postingRefreshes. Zero-eligible discovery passes can produce a record-only Discovery Run proposal. Nothing changes until explicit Apply in PJSDAS.',
         inputSchema: proposeChangesSchema,
         annotations: proposalAnnotations,
       },
