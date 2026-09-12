@@ -159,6 +159,7 @@ function resolveExistingOpportunity(
   if (candidates.length === 1) return { kind: 'match' as const, ...candidates[0] }
 
   const [best, second] = candidates
+  if (best.score === 1 && second.score < 1) return { kind: 'match' as const, ...best }
   if (best.score >= 0.92 && best.score - second.score >= 0.12) {
     return { kind: 'match' as const, ...best }
   }
@@ -168,19 +169,19 @@ function resolveExistingOpportunity(
 /**
  * Final identity guard for user-entered opportunities.
  *
- * Earlier parser versions already catch exact/substring matches. This layer is
- * deliberately narrower than generic fuzzy matching: it only reuses an
- * existing Opportunity when company identity agrees and the role match is
- * unique/high-confidence. Ambiguity is surfaced instead of silently creating
- * another logical job or merging two distinct roles.
+ * Earlier parser versions already catch many exact/substring matches, but those
+ * parsers can also choose the first substring match when one company has several
+ * similar roles. Re-evaluate every upsert here. Reuse an existing Opportunity
+ * only when company identity agrees and the role match is unique/high-confidence.
+ * Ambiguity is surfaced instead of silently creating another logical job or
+ * merging two distinct roles.
  */
 function repairOpportunityIdentities(
   plan: ProgressUpdatePlan,
   currentOpportunities: Opportunity[],
 ): ProgressUpdatePlan {
-  const currentIds = new Set(currentOpportunities.map((item) => item.id))
   const operations: ProgressOperation[] = plan.operations.map((operation) => {
-    if (operation.kind !== 'upsert_opportunity' || currentIds.has(operation.opportunityId)) return operation
+    if (operation.kind !== 'upsert_opportunity') return operation
 
     const resolved = resolveExistingOpportunity(operation.company, operation.role, currentOpportunities)
     if (resolved.kind === 'none') return operation
