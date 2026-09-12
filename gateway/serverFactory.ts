@@ -1,6 +1,7 @@
 import { McpServer } from '@modelcontextprotocol/server'
 import {
   explainPrioritySchema,
+  getApplicationPortfolioSchema,
   getOpportunityAssessmentSchema,
   getPipelineSchema,
   getRecentTimelineSchema,
@@ -46,6 +47,7 @@ export function createPjsdasMcpServer(
     'When a public source explicitly supports them, submit bounded structured Rich Opportunity facts such as responsibilities, requirements, education, majors, experience, skills, languages, department/business unit, recruitment batch, application method, and compensation evidence. Do not convert model inference into source facts.',
     'For new web-discovered jobs, prefer bounded component assessments over opaque aggregate ratings. PJSDAS derives Fit and Opportunity Value totals from explicit component scores, confidence, rationale, and user-controlled component weights.',
     'Use get_opportunity_assessment when the user asks why a stored Fit or Opportunity Value score exists, or how current component weights would project the saved assessment. Do not claim current-rule projection silently rewrites historical stored scores.',
+    'Use get_application_portfolio when the user asks which roles to choose inside an explicit Application Group with shared quota or preference constraints. Capacity is a maximum, not a target: never recommend weak roles merely to fill every available slot.',
   ]
 
   if (proposalMode === 'review-link') {
@@ -68,7 +70,7 @@ export function createPjsdasMcpServer(
   }
 
   const server = new McpServer(
-    { name: 'pjsdas', version: options.version ?? '1.5.0-alpha.2' },
+    { name: 'pjsdas', version: options.version ?? '1.6.0-alpha.1' },
     { instructions: instructions.join(' ') },
   )
 
@@ -106,6 +108,17 @@ export function createPjsdasMcpServer(
   )
 
   server.registerTool(
+    'get_application_portfolio',
+    {
+      title: 'Get PJSDAS application portfolio decision',
+      description: 'Read deterministic portfolio recommendations for explicit Application Groups with shared application quotas. Returns recommended and not-recommended roles, capacity status, component scores, overlap effects, and warnings. Capacity is treated as a maximum; this tool never submits applications or changes priorities.',
+      inputSchema: getApplicationPortfolioSchema,
+      annotations: readOnlyAnnotations,
+    },
+    async (args) => invokeReadTool(source, 'get_application_portfolio', args),
+  )
+
+  server.registerTool(
     'get_pipeline',
     {
       title: 'Get PJSDAS pipeline',
@@ -120,7 +133,7 @@ export function createPjsdasMcpServer(
     'get_decision_rules',
     {
       title: 'Get PJSDAS decision rules',
-      description: 'Read the explicit user-controlled rules that govern PJSDAS planning, risk thresholds, ranking weights, and component-assessment weights.',
+      description: 'Read the explicit user-controlled rules that govern PJSDAS planning, risk thresholds, ranking weights, component-assessment weights, and application-portfolio policy.',
       annotations: readOnlyAnnotations,
     },
     async () => invokeReadTool(source, 'get_decision_rules', {}),
