@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import { applyGmailIngestion, applyMonitorIngestion, type MonitorJobObservation } from '../src/autonomousIngestion.js'
+import {
+  applyGmailIngestionHardened,
+  applyMonitorIngestionHardened,
+} from '../src/ingestionHardening.js'
 import { createDefaultDecisionRules } from '../src/decisionRules.js'
 import { createDefaultDiscoveryProfile } from '../src/discoveryProfile.js'
 import { summarizeCoverage } from '../src/ingestion.js'
@@ -66,7 +70,7 @@ describe('v1.9 pre-release ingestion hardening', () => {
       opportunity('p2', '示例科技', '技术产品经理'),
     ])
 
-    const result = applyMonitorIngestion(snapshot, {
+    const result = applyMonitorIngestionHardened(snapshot, {
       runId: 'ambiguous-monitor-run',
       sourceId: 'monitor:hardening',
       startedAt: '2026-09-13T00:55:00.000Z',
@@ -80,14 +84,14 @@ describe('v1.9 pre-release ingestion hardening', () => {
   })
 
   it('treats tracking-only URL variants as the same posting instead of creating another logical job', () => {
-    const first = applyMonitorIngestion(baseSnapshot(), {
+    const first = applyMonitorIngestionHardened(baseSnapshot(), {
       runId: 'tracking-run-a',
       sourceId: 'monitor:a',
       startedAt: '2026-09-13T01:00:00.000Z',
       completedAt: '2026-09-13T01:05:00.000Z',
       observations: [monitorObservation()],
     })
-    const second = applyMonitorIngestion(first.snapshot, {
+    const second = applyMonitorIngestionHardened(first.snapshot, {
       runId: 'tracking-run-b',
       sourceId: 'monitor:b',
       startedAt: '2026-09-13T02:00:00.000Z',
@@ -122,7 +126,7 @@ describe('v1.9 pre-release ingestion hardening', () => {
     expect(normalized[0]?.confidence).toBe('medium')
     expect(normalized[0]?.role).toBeUndefined()
 
-    const result = applyGmailIngestion(baseSnapshot(opportunities), {
+    const result = applyGmailIngestionHardened(baseSnapshot(opportunities), {
       runId: 'gmail-ambiguous-role',
       sourceId: 'gmail:primary',
       startedAt: '2026-09-13T03:00:00.000Z',
@@ -146,11 +150,11 @@ describe('v1.9 pre-release ingestion hardening', () => {
       dueAt: '2026-09-15T15:59:59.000Z',
       timingMode: 'deadline' as const,
     }
-    const first = applyGmailIngestion(baseSnapshot([existing]), {
+    const first = applyGmailIngestionHardened(baseSnapshot([existing]), {
       runId: 'gmail-original', sourceId: 'gmail:primary',
       startedAt: '2026-09-10T03:00:00.000Z', completedAt: '2026-09-10T03:05:00.000Z', messages: [message],
     })
-    const catchUp = applyGmailIngestion(first.snapshot, {
+    const catchUp = applyGmailIngestionHardened(first.snapshot, {
       runId: 'gmail-seven-day-catchup', sourceId: 'gmail:primary',
       startedAt: '2026-09-13T03:00:00.000Z', completedAt: '2026-09-13T03:05:00.000Z', messages: [message],
     })
@@ -158,6 +162,61 @@ describe('v1.9 pre-release ingestion hardening', () => {
     expect(catchUp.snapshot.data.processEvents).toHaveLength(1)
     expect(catchUp.snapshot.data.actions).toHaveLength(1)
     expect(catchUp.run.outcomes.duplicate).toBe(1)
+  })
+
+  it('reconciles invitation -> reschedule -> completion into one logical Gmail process event and one completed action', () => {
+    const existing = opportunity('jd-pm', '京东', '技术产品经理')
+    const invited = applyGmailIngestionHardened(baseSnapshot([existing]), {
+      runId: 'gmail-invite', sourceId: 'gmail:primary',
+      startedAt: '2026-09-13T05:00:00.000Z', completedAt: '2026-09-13T05:05:00.000Z',
+      messages: [{
+        sourceRecordId: 'gmail-invite-msg', receivedAt: '2026-09-13T05:01:00.000Z',
+        classification: 'recruiting', confidence: 'high', company: '京东', role: '技术产品经理',
+        eventType: 'assessment_invite', eventKey: 'jd-tech-pm-assessment-2026-fall', eventState: 'scheduled',
+        dueAt: '2026-09-15T15:59:59.000Z', timingMode: 'deadline',
+      }],
+    })
+    const rescheduled = applyGmailIngestionHardened(invited.snapshot, {
+      runId: 'gmail-reschedule', sourceId: 'gmail:primary',
+      startedAt: '2026-09-13T06:00:00.000Z', completedAt: '2026-09-13T06:05:00.000Z',
+      messages: [{
+        sourceRecordId: 'gmail-reschedule-msg', receivedAt: '2026-09-13T06:01:00.000Z',
+        classification: 'recruiting', confidence: 'high', company: '京东', role: '技术产品经理',
+        eventType: 'assessment_invite', eventKey: 'jd-tech-pm-assessment-2026-fall', eventState: 'rescheduled',
+        dueAt: '2026-09-17T15:59:59.000Z', timingMode: 'deadline',
+      }],
+    })
+    const completed = applyGmailIngestionHardened(rescheduled.snapshot, {
+      runId: 'gmail-complete', sourceId: 'gmail:primary',
+      startedAt: '2026-09-13T07:00:00.000Z', completedAt: '2026-09-13T07:05:00.000Z',
+      messages: [{
+        sourceRecordId: 'gmail-complete-msg', receivedAt: '2026-09-13T07:01:00.000Z',
+        classification: 'recruiting', confidence: 'high', company: '京东', role: '技术产品经理',
+        eventType: 'assessment_invite', eventKey: 'jd-tech-pm-assessment-2026-fall', eventState: 'completed',
+      }],
+    })
+
+    expect(completed.snapshot.data.processEvents).toHaveLength(1)
+    expect(completed.snapshot.data.processEvents[0]?.dueAt).toBe('2026-09-17T15:59:59.000Z')
+    expect(completed.snapshot.data.actions).toHaveLength(1)
+    expect(completed.snapshot.data.actions[0]?.status).toBe('done')
+    expect(completed.run.outcomes.updated).toBe(1)
+  })
+
+  it('downgrades an event update without eventKey instead of creating a second process event', () => {
+    const existing = opportunity('jd-pm', '京东', '技术产品经理')
+    const result = applyGmailIngestionHardened(baseSnapshot([existing]), {
+      runId: 'gmail-update-without-key', sourceId: 'gmail:primary',
+      startedAt: '2026-09-13T08:00:00.000Z', completedAt: '2026-09-13T08:05:00.000Z',
+      messages: [{
+        sourceRecordId: 'gmail-update-no-key', receivedAt: '2026-09-13T08:01:00.000Z',
+        classification: 'recruiting', confidence: 'high', company: '京东', role: '技术产品经理',
+        eventType: 'assessment_invite', eventState: 'rescheduled', dueAt: '2026-09-18T15:59:59.000Z',
+      }],
+    })
+
+    expect(result.snapshot.data.processEvents).toHaveLength(0)
+    expect(result.run.outcomes.unresolved).toBe(1)
   })
 
   it('never reports All caught up for an explicitly unresolved source record', () => {
