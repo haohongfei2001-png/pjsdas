@@ -1,14 +1,12 @@
 import type { CallToolResult } from '@modelcontextprotocol/server'
 import * as z from 'zod/v4'
-import type {
-  GmailMessageObservation,
-  MonitorIngestionRunInput,
-} from '../src/autonomousIngestion.js'
+import type { GmailMessageObservation } from '../src/autonomousIngestion.js'
 import {
   applyGmailIngestionHardened,
   applyMonitorIngestionHardened,
   type HardenedGmailIngestionRunInput,
   type HardenedGmailMessageObservation,
+  type HardenedMonitorIngestionRunInput,
 } from '../src/ingestionHardening.js'
 import { jobRoleSimilarity, normalizeJobCompany } from '../src/jobPosting.js'
 import type { Opportunity } from '../src/model.js'
@@ -22,12 +20,20 @@ const processEventTypeSchema = z.enum(['assessment_invite', 'written_test_invite
 const processStageSchema = z.enum(['not_applied', 'screening', 'assessment', 'written_test', 'interview', 'offer', 'waiting_release', 'closed'])
 const timingModeSchema = z.enum(['deadline', 'fixed'])
 const eventStateSchema = z.enum(['scheduled', 'rescheduled', 'completed', 'cancelled'])
+const sourcePolicySchema = z.object({
+  version: z.literal(1),
+  enabled: z.boolean(),
+  label: z.string().trim().min(1).max(160).optional(),
+  cadenceMinutes: z.number().int().min(15).max(60 * 24 * 30),
+  freshnessSlaMinutes: z.number().int().min(15).max(60 * 24 * 30),
+})
 
 export const ingestDiscoveryRunSchema = z.object({
   runId: z.string().trim().min(1).max(180),
   sourceId: z.string().trim().min(1).max(180),
   startedAt: isoString,
   completedAt: isoString,
+  sourcePolicy: sourcePolicySchema.optional(),
   observations: z.array(z.object({
     sourceRecordId: z.string().trim().min(1).max(500),
     company: z.string().trim().min(1).max(200),
@@ -54,6 +60,7 @@ export const ingestGmailRunSchema = z.object({
   startedAt: isoString,
   completedAt: isoString,
   cursor: z.string().trim().max(500).optional(),
+  sourcePolicy: sourcePolicySchema.optional(),
   messages: z.array(z.object({
     sourceRecordId: z.string().trim().min(1).max(500),
     receivedAt: isoString,
@@ -119,15 +126,6 @@ function activeOpportunity(opportunity: Opportunity) {
   return opportunity.processStage !== 'closed'
 }
 
-/**
- * Re-check Gmail entity resolution at the trusted-write boundary.
- *
- * The upstream automation may extract a company/role from mail, but it is not
- * allowed to pick an arbitrary Opportunity when more than one existing role is
- * plausible. Missing roles can be filled only when the company has exactly one
- * active Opportunity. Otherwise confidence is downgraded and the ingestion
- * engine will preserve the message as unresolved instead of guessing.
- */
 export function normalizeGmailMessagesForWorkspace<T extends HardenedGmailMessageObservation>(
   messages: T[],
   opportunities: Opportunity[],
@@ -229,7 +227,7 @@ export async function invokeTrustedIngestion(
   try {
     const workspace = await source.read()
     if (name === 'ingest_discovery_run') {
-      const input = ingestDiscoveryRunSchema.parse(args) as MonitorIngestionRunInput
+      const input = ingestDiscoveryRunSchema.parse(args) as HardenedMonitorIngestionRunInput
       const result = applyMonitorIngestionHardened(workspace.snapshot, input)
       const persisted = await persistResult(
         source,
