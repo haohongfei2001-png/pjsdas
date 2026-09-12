@@ -6,7 +6,7 @@ import {
   type UnresolvedOperation,
 } from './progressUpdateV4.js'
 import { detectNotificationType, matchNotificationOpportunity } from './notificationParser.js'
-import { jobRoleSimilarity, normalizeJobCompany, normalizeJobRole } from './jobPosting.js'
+import { jobIdentityKey, jobRoleSimilarity, normalizeJobCompany, normalizeJobRole } from './jobPosting.js'
 import {
   defaultMinutesForProcessEvent,
   defaultTimingModeForProcessEvent,
@@ -206,13 +206,21 @@ function resolveReferences(company: string, role: string, references: CanonicalJ
 }
 
 function workspaceReferences(currentOpportunities: Opportunity[]): CanonicalJobReference[] {
-  return currentOpportunities.map((opportunity) => ({
-    opportunityId: opportunity.id,
-    company: opportunity.company,
-    role: opportunity.role,
-    sourceBacked: Boolean(opportunity.detail?.discovery?.sourceUrl),
-    sourceLabel: opportunity.detail?.discovery?.sourceUrl ? 'workspace-source' : 'workspace',
-  }))
+  return currentOpportunities.map((opportunity) => {
+    const discovery = opportunity.detail?.discovery
+    const posting = discovery?.posting
+    const expectedPostingIdentity = posting
+      ? jobIdentityKey(opportunity.company, opportunity.role, discovery?.location)
+      : undefined
+    const postingBacksCurrentTitle = Boolean(posting && posting.identityKey === expectedPostingIdentity)
+    return {
+      opportunityId: opportunity.id,
+      company: opportunity.company,
+      role: opportunity.role,
+      sourceBacked: postingBacksCurrentTitle,
+      sourceLabel: postingBacksCurrentTitle ? posting?.canonicalSourceUrl ?? posting?.sourceUrl : 'workspace',
+    }
+  })
 }
 
 function identityUnresolved(
@@ -278,7 +286,7 @@ function repairOpportunityIdentities(
     if (existing.kind === 'match') {
       return identityUnresolved(
         operation,
-        '检测到相似的历史 Opportunity，但它没有官网/来源证据，不能继续充当 canonical 岗位名。请先用岗位发现或官网来源确认统一岗位名；确认后会沿用原 Opportunity ID，而不是创建第二个岗位。',
+        '检测到相似的历史 Opportunity，但当前岗位名没有被同一 Job Posting identity 证明，不能继续充当 canonical 岗位名。请先用岗位发现或官网来源确认统一岗位名；确认后会沿用原 Opportunity ID，而不是创建第二个岗位。',
         [existing],
       )
     }
