@@ -5,6 +5,12 @@ import type {
   IngestionSourceKind,
   TimelineRecord,
 } from './model.js'
+import {
+  PJSDAS_BOOTSTRAP_SOURCE_REGISTRY,
+  enabledSourceRegistry,
+  type IngestionSourcePolicy,
+  type IngestionRunWithPolicy,
+} from './sourceRegistry.js'
 
 export interface IngestionLedgerInput {
   sourceKind: IngestionSourceKind
@@ -30,15 +36,27 @@ export interface ExpectedIngestionSource {
   sourceId: string
   maxAgeHours: number
   label?: string
+  cadenceMinutes?: number
+  freshnessSlaMinutes?: number
+  policySource?: 'bootstrap' | 'run'
 }
 
-export const PJSDAS_EXPECTED_INGESTION_SOURCES: ExpectedIngestionSource[] = [
-  { sourceKind: 'gpt_monitor', sourceId: 'monitor:urgent-campus', maxAgeHours: 36, label: '秋招紧迫岗位检查' },
-  { sourceKind: 'gpt_monitor', sourceId: 'monitor:state-foreign-2027', maxAgeHours: 36, label: '央国企外企27届秋招' },
-  { sourceKind: 'gpt_monitor', sourceId: 'monitor:middle-layer', maxAgeHours: 36, label: '高匹配中间层校招岗位' },
-  { sourceKind: 'gpt_monitor', sourceId: 'monitor:key-changes', maxAgeHours: 36, label: '秋招岗位关键变化' },
-  { sourceKind: 'gmail', sourceId: 'gmail:primary', maxAgeHours: 2, label: '招聘邮件自动摄入' },
-]
+/**
+ * Compatibility/bootstrap view only. Coverage itself now derives the effective
+ * registry from the latest durable ingestion-run sourcePolicy records.
+ */
+export const PJSDAS_EXPECTED_INGESTION_SOURCES: ExpectedIngestionSource[] =
+  PJSDAS_BOOTSTRAP_SOURCE_REGISTRY
+    .filter((item) => item.enabled)
+    .map((item) => ({
+      sourceKind: item.sourceKind,
+      sourceId: item.sourceId,
+      maxAgeHours: item.freshnessSlaMinutes / 60,
+      label: item.label,
+      cadenceMinutes: item.cadenceMinutes,
+      freshnessSlaMinutes: item.freshnessSlaMinutes,
+      policySource: item.policySource,
+    }))
 
 export interface CoverageSourceSummary {
   sourceKind: IngestionSourceKind
@@ -51,6 +69,9 @@ export interface CoverageSourceSummary {
   outcomes: Partial<Record<IngestionOutcome, number>>
   balanced: boolean
   maxAgeHours?: number
+  cadenceMinutes?: number
+  freshnessSlaMinutes?: number
+  policySource?: 'bootstrap' | 'run'
   ageHours?: number
   stale: boolean
 }
@@ -72,6 +93,7 @@ export interface CoverageSummary {
 
 export interface CoverageOptions {
   now?: Date
+  /** Legacy/test override. Production callers should let Coverage derive registry from Timeline. */
   expectedSources?: ExpectedIngestionSource[]
 }
 
@@ -154,7 +176,8 @@ export function buildIngestionRunSummary(input: {
   completedAt: string
   records: TimelineRecord[]
   cursor?: string
-}): IngestionRunSummary {
+  sourcePolicy?: IngestionSourcePolicy
+}): IngestionRunWithPolicy {
   const records = input.records.filter((item) => item.ingestion?.runId === input.runId)
   const outcomes: Partial<Record<IngestionOutcome, number>> = {}
   for (const record of records) {
@@ -172,6 +195,7 @@ export function buildIngestionRunSummary(input: {
     accountedCount: records.length,
     outcomes,
     cursor: input.cursor,
+    sourcePolicy: input.sourcePolicy,
   }
 }
 
@@ -222,6 +246,18 @@ function sourceKey(sourceKind: IngestionSourceKind, sourceId: string) {
   return `${sourceKind}|${sourceId}`
 }
 
+function registryExpectedSources(records: TimelineRecord[]): ExpectedIngestionSource[] {
+  return enabledSourceRegistry(records).map((item) => ({
+    sourceKind: item.sourceKind,
+    sourceId: item.sourceId,
+    maxAgeHours: item.freshnessSlaMinutes / 60,
+    label: item.label,
+    cadenceMinutes: item.cadenceMinutes,
+    freshnessSlaMinutes: item.freshnessSlaMinutes,
+    policySource: item.policySource,
+  }))
+}
+
 export function summarizeCoverage(timeline: TimelineRecord[] | undefined, options: CoverageOptions = {}): CoverageSummary {
   const records = timeline ?? []
   const runs = records
@@ -235,7 +271,7 @@ export function summarizeCoverage(timeline: TimelineRecord[] | undefined, option
     if (!latestBySource.has(key)) latestBySource.set(key, run)
   }
 
-  const expected = options.expectedSources ?? []
+  const expected = options.expectedSources ?? registryExpectedSources(records)
   const expectedByKey = new Map(expected.map((item) => [sourceKey(item.sourceKind, item.sourceId), item]))
   const missingSources = expected.filter((item) => !latestBySource.has(sourceKey(item.sourceKind, item.sourceId)))
   const nowMs = options.now?.getTime()
@@ -264,6 +300,9 @@ export function summarizeCoverage(timeline: TimelineRecord[] | undefined, option
       outcomes: { ...run.outcomes },
       balanced: run.receivedCount === run.accountedCount && run.accountedCount === outcomeTotal,
       maxAgeHours: policy?.maxAgeHours,
+      cadenceMinutes: policy?.cadenceMinutes,
+      freshnessSlaMinutes: policy?.freshnessSlaMinutes,
+      policySource: policy?.policySource,
       ageHours,
       stale,
     }
@@ -275,8 +314,10 @@ export function summarizeCoverage(timeline: TimelineRecord[] | undefined, option
   const allExpectedPresent = missingSources.length === 0
   return {
     allCaughtUp:
+      expected.length > 0 &&
       sourceSummaries.length > 0 &&
-      sourceSummaries.every((item) => item.balanced && !item.stale) &&
+      sourceSummaries.filter((item) => expectedByKey.has(sourceKey(item.sourceKind, item.sourceId)))
+        .every((item) => item.balanced && !item.stale) &&
       unresolved.length === 0 &&
       allExpectedPresent,
     sourceCount: sourceSummaries.length,
