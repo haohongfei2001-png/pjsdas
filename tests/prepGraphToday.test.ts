@@ -60,7 +60,8 @@ describe('v1.6 Round 2 Today Prep Graph projection', () => {
     expect(ranked[0].action.leverage).toBeGreaterThan(original.leverage)
     expect(ranked[0].action.sourceLabel).toContain('Prep Graph')
     expect(ranked[0].reasons.join(' ')).toContain('覆盖1岗')
-    expect(original).toMatchObject({ leverage: 30, delayCost: 20, sourceLabel: '准备中心', dueAt: undefined })
+    expect(original).toMatchObject({ leverage: 30, delayCost: 20, sourceLabel: '准备中心' })
+    expect(original).not.toHaveProperty('dueAt')
   })
 
   it('does not make an unlinked Prep claim that it is reusable across roles', () => {
