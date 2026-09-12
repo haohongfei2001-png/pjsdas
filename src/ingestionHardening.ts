@@ -20,10 +20,15 @@ import {
   normalizeJobRole,
 } from './jobPosting.js'
 import { actionForProcessEvent } from './processEvents.js'
+import { resolveSourcePolicy, type IngestionSourcePolicy } from './sourceRegistry.js'
 import { validateSnapshot, type PJSDASSnapshot } from './snapshot.js'
 import type { Opportunity, TimelineRecord } from './model.js'
 
 export type GmailEventState = 'scheduled' | 'rescheduled' | 'completed' | 'cancelled'
+
+export type HardenedMonitorIngestionRunInput = MonitorIngestionRunInput & {
+  sourcePolicy?: IngestionSourcePolicy
+}
 
 export type HardenedGmailMessageObservation = GmailMessageObservation & {
   /**
@@ -37,6 +42,11 @@ export type HardenedGmailMessageObservation = GmailMessageObservation & {
 
 export type HardenedGmailIngestionRunInput = Omit<GmailIngestionRunInput, 'messages'> & {
   messages: HardenedGmailMessageObservation[]
+  sourcePolicy?: IngestionSourcePolicy
+}
+
+type HardenedRunIdentity = Pick<MonitorIngestionRunInput, 'runId' | 'sourceId' | 'startedAt' | 'completedAt'> & {
+  sourcePolicy?: IngestionSourcePolicy
 }
 
 function monitorMatches(observation: MonitorJobObservation, opportunities: Opportunity[]) {
@@ -78,7 +88,7 @@ function monitorFingerprint(observation: MonitorJobObservation) {
 
 function replaceRunTimeline(
   snapshot: PJSDASSnapshot,
-  input: Pick<MonitorIngestionRunInput, 'runId' | 'sourceId' | 'startedAt' | 'completedAt'>,
+  input: HardenedRunIdentity,
   sourceKind: 'gpt_monitor' | 'gmail',
   records: TimelineRecord[],
   cursor?: string,
@@ -88,6 +98,7 @@ function replaceRunTimeline(
     item.ingestionRun.sourceKind === sourceKind &&
     item.ingestionRun.sourceId === input.sourceId
   ))
+  const sourcePolicy = resolveSourcePolicy(sourceKind, input.sourceId, input.sourcePolicy)
   const run = buildIngestionRunSummary({
     runId: input.runId,
     sourceKind,
@@ -96,23 +107,43 @@ function replaceRunTimeline(
     completedAt: input.completedAt,
     records,
     cursor,
+    sourcePolicy,
   })
   timeline.push(createIngestionRunTimeline(run))
   snapshot.data.timeline = timeline
   return run
 }
 
+function attachRunPolicy(
+  result: AutonomousIngestionResult,
+  input: HardenedRunIdentity,
+  sourceKind: 'gpt_monitor' | 'gmail',
+  cursor?: string,
+): AutonomousIngestionResult {
+  if (result.alreadyApplied) return result
+  const next = structuredClone(result.snapshot)
+  const run = replaceRunTimeline(next, input, sourceKind, result.records, cursor)
+  next.exportedAt = input.completedAt
+  validateSnapshot(next)
+  return { ...result, snapshot: next, run }
+}
+
 export function applyMonitorIngestionHardened(
   snapshot: PJSDASSnapshot,
-  input: MonitorIngestionRunInput,
+  input: HardenedMonitorIngestionRunInput,
 ): AutonomousIngestionResult {
-  const ambiguous = input.observations.filter((item) => monitorObservationIsAmbiguous(item, snapshot.data.opportunities))
-  if (ambiguous.length === 0) return applyMonitorIngestion(snapshot, input)
+  const sourcePolicy = resolveSourcePolicy('gpt_monitor', input.sourceId, input.sourcePolicy)
+  const normalizedInput: HardenedMonitorIngestionRunInput = { ...input, sourcePolicy }
+  const ambiguous = normalizedInput.observations.filter((item) => monitorObservationIsAmbiguous(item, snapshot.data.opportunities))
+  if (ambiguous.length === 0) {
+    const base = applyMonitorIngestion(snapshot, normalizedInput)
+    return attachRunPolicy(base, normalizedInput, 'gpt_monitor')
+  }
 
   const ambiguousIds = new Set(ambiguous.map((item) => item.sourceRecordId))
   const base = applyMonitorIngestion(snapshot, {
-    ...input,
-    observations: input.observations.filter((item) => !ambiguousIds.has(item.sourceRecordId)),
+    ...normalizedInput,
+    observations: normalizedInput.observations.filter((item) => !ambiguousIds.has(item.sourceRecordId)),
   })
   if (base.alreadyApplied) return base
 
@@ -123,20 +154,20 @@ export function applyMonitorIngestionHardened(
   for (const observation of ambiguous) {
     const previous = alreadyIngested(snapshot.data.timeline, {
       sourceKind: 'gpt_monitor',
-      sourceId: input.sourceId,
+      sourceId: normalizedInput.sourceId,
       sourceRecordId: observation.sourceRecordId,
     })
     const duplicate = previous?.ingestion?.outcome && previous.ingestion.outcome !== 'unresolved'
     const record = createIngestionLedgerTimeline({
       sourceKind: 'gpt_monitor',
-      sourceId: input.sourceId,
+      sourceId: normalizedInput.sourceId,
       sourceRecordId: observation.sourceRecordId,
-      runId: input.runId,
+      runId: normalizedInput.runId,
       recordType: 'job_observation',
       outcome: duplicate ? 'duplicate' : 'unresolved',
       fingerprint: monitorFingerprint(observation),
-      receivedAt: observation.discoveredAt ?? input.completedAt,
-      accountedAt: input.completedAt,
+      receivedAt: observation.discoveredAt ?? normalizedInput.completedAt,
+      accountedAt: normalizedInput.completedAt,
       reason: duplicate
         ? `来源记录 ${observation.sourceRecordId} 已在先前 run 对账。`
         : '同一公司存在多个高度相似的现有 Opportunity；为避免错误归并，本次自动摄入停止并保留为 unresolved。',
@@ -149,8 +180,8 @@ export function applyMonitorIngestionHardened(
     timeline.push(record)
   }
 
-  const run = replaceRunTimeline(next, input, 'gpt_monitor', records)
-  next.exportedAt = input.completedAt
+  const run = replaceRunTimeline(next, normalizedInput, 'gpt_monitor', records)
+  next.exportedAt = normalizedInput.completedAt
   validateSnapshot(next)
   return { ...base, snapshot: next, run, records }
 }
@@ -279,8 +310,10 @@ export function applyGmailIngestionHardened(
   snapshot: PJSDASSnapshot,
   input: HardenedGmailIngestionRunInput,
 ): AutonomousIngestionResult {
+  const sourcePolicy = resolveSourcePolicy('gmail', input.sourceId, input.sourcePolicy)
   const normalized: HardenedGmailIngestionRunInput = {
     ...input,
+    sourcePolicy,
     messages: input.messages.map((message) => {
       if (message.eventState && message.eventState !== 'scheduled' && !message.eventKey?.trim()) {
         return {
