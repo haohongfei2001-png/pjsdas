@@ -27,7 +27,7 @@ jobs:
           node-version: 22
           cache: npm
 
-      - name: Wait for matching v1.9 production backend
+      - name: Wait for matching hardened v1.9 production backend
         shell: bash
         run: |
           set -euo pipefail
@@ -51,20 +51,26 @@ jobs:
                     capabilities.coverageStatusRead === true &&
                     capabilities.trustedMonitorIngestion === true &&
                     capabilities.trustedGmailIngestion === true &&
-                    capabilities.stableAccountSession === "v1.8.1";
+                    capabilities.stableAccountSession === "v1.8.1" &&
+                    capabilities.dynamicSourceRegistry === true &&
+                    capabilities.coverageFreshnessSla === true &&
+                    capabilities.workspaceIntegrityAudit === true &&
+                    capabilities.ingestionDryRunReplay === true &&
+                    capabilities.sourceHealthHistory === true &&
+                    capabilities.productionSelfTest === true;
                   process.exit(ready ? 0 : 1);
                 } catch {
                   process.exit(1);
                 }
               });
             '; then
-              echo "PJSDAS v1.9 production backend is ready."
+              echo "PJSDAS hardened v1.9 production backend is ready."
               exit 0
             fi
             sleep 15
           done
 
-          echo "PJSDAS v1.9 production backend did not become ready; refusing to publish a frontend that depends on it." >&2
+          echo "PJSDAS hardened v1.9 production backend did not become ready; refusing to publish a frontend that depends on it." >&2
           exit 1
 
       - run: npm ci
