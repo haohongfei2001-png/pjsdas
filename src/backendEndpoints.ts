@@ -26,19 +26,27 @@ export function readBackendOrigins() {
 
 async function healthy(origin: string, fetchImpl: typeof fetch) {
   const controller = new AbortController()
-  const timer = window.setTimeout(() => controller.abort(), HEALTH_TIMEOUT_MS)
+  const timer = globalThis.setTimeout(() => controller.abort(), HEALTH_TIMEOUT_MS)
   try {
     const response = await fetchImpl(`${origin}/api/health`, {
       headers: { accept: 'application/json' },
       signal: controller.signal,
     })
     if (!response.ok) return false
-    const body = await response.json().catch(() => undefined) as { status?: string; version?: string } | undefined
-    return body?.status === 'ok' && body.version === '1.9.0-alpha.1'
+    const body = await response.json().catch(() => undefined) as {
+      status?: string
+      version?: string
+      mode?: string
+      capabilities?: { deploymentPortability?: boolean }
+    } | undefined
+    return body?.status === 'ok'
+      && body.version === '1.9.0-alpha.1'
+      && body.mode === 'google-drive-trusted-ingestion'
+      && body.capabilities?.deploymentPortability === true
   } catch {
     return false
   } finally {
-    window.clearTimeout(timer)
+    globalThis.clearTimeout(timer)
   }
 }
 
