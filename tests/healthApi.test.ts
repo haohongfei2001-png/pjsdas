@@ -3,9 +3,10 @@ import health, { PUBLIC_HEALTH_CAPABILITIES } from '../api/health.js'
 
 describe('public production health contract', () => {
   it('describes the authenticated v1.9 trusted-ingestion gateway without exposing demo data or secrets', async () => {
-    const response = health.fetch()
+    const response = health.fetch(new Request('https://standby.example/api/health'))
     expect(response.status).toBe(200)
     expect(response.headers.get('cache-control')).toBe('no-store')
+    expect(response.headers.get('access-control-allow-origin')).toBe('*')
 
     const body = await response.json() as Record<string, any>
     expect(body).toMatchObject({
@@ -13,7 +14,7 @@ describe('public production health contract', () => {
       version: '1.9.0-alpha.1',
       mode: 'google-drive-trusted-ingestion',
       auth: 'supabase-oauth-2.1',
-      resource: 'https://pjsdas-remote-alpha.vercel.app/api/mcp',
+      resource: 'https://standby.example/api/mcp',
       capabilities: PUBLIC_HEALTH_CAPABILITIES,
       status: 'ok',
     })
@@ -41,6 +42,7 @@ describe('public production health contract', () => {
     expect(body.capabilities.trustedMonitorIngestion).toBe(true)
     expect(body.capabilities.trustedGmailIngestion).toBe(true)
     expect(body.capabilities.optimisticDriveWriteGuard).toBe(true)
+    expect(body.capabilities.deploymentPortability).toBe(true)
     expect(JSON.stringify(body)).not.toContain('synthetic-demo-only')
     expect(body).not.toHaveProperty('secretsConfigured')
   })
