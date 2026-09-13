@@ -1,4 +1,5 @@
 import type { Session, User } from '@supabase/supabase-js'
+import { fetchBackend } from '../backendEndpoints.js'
 
 export interface CloudUser {
   /** Stable Google subject retained for backward-compatible local workspace ownership. */
@@ -19,8 +20,6 @@ export interface CloudSession {
 
 const DRIVE_APPDATA_SCOPE = 'https://www.googleapis.com/auth/drive.appdata'
 const ACCOUNT_LINK_PENDING_KEY = 'pjsdas-account-google-link-pending'
-const LINK_ENDPOINT = 'https://pjsdas-remote-alpha-haohongfei2001-8529.vercel.app/api/google-link'
-const ACCESS_TOKEN_ENDPOINT = 'https://pjsdas-remote-alpha-haohongfei2001-8529.vercel.app/api/google-access-token'
 
 let googleAccessToken: string | undefined
 let googleAccessTokenExpiresAt = 0
@@ -99,7 +98,7 @@ async function persistGoogleDriveBinding(session: Session) {
     throw new Error('Google 没有返回持续授权。请重新登录并在 Google 授权页确认允许 Drive appData 访问。')
   }
 
-  const response = await fetch(LINK_ENDPOINT, {
+  const response = await fetchBackend('/api/google-link', {
     method: 'POST',
     headers: {
       authorization: `Bearer ${session.access_token}`,
@@ -192,7 +191,7 @@ async function accountAccessToken() {
 export async function getCloudAccessToken() {
   if (googleAccessToken && Date.now() < googleAccessTokenExpiresAt - 60_000) return googleAccessToken
 
-  const response = await fetch(ACCESS_TOKEN_ENDPOINT, {
+  const response = await fetchBackend('/api/google-access-token', {
     method: 'POST',
     headers: {
       authorization: `Bearer ${await accountAccessToken()}`,
