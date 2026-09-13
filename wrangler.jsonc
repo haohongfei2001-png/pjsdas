@@ -1,0 +1,10 @@
+{
+  "$schema": "https://json.schemastore.org/wrangler.json",
+  "name": "pjsdas-remote-standby",
+  "main": "cloudflare/worker.ts",
+  "compatibility_date": "2026-09-13",
+  "workers_dev": true,
+  "observability": {
+    "enabled": true
+  }
+}
