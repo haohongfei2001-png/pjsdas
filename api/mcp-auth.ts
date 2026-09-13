@@ -1,4 +1,4 @@
-import { protectedResourceMetadataUrl } from '../gateway/authenticatedRemoteHttp.js'
+import { backendUrl } from '../gateway/backendOrigin.js'
 
 function hasBearerToken(request: Request) {
   const value = request.headers.get('authorization')?.trim() ?? ''
@@ -15,7 +15,7 @@ function unauthorized(request: Request) {
     headers: {
       'cache-control': 'no-store',
       'content-type': 'application/json; charset=utf-8',
-      'WWW-Authenticate': `Bearer resource_metadata="${protectedResourceMetadataUrl(request)}"`,
+      'WWW-Authenticate': `Bearer resource_metadata="${backendUrl('/.well-known/oauth-protected-resource', request)}"`,
     },
   })
 }
