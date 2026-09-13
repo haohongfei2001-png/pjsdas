@@ -24,6 +24,7 @@ const REQUIRED_CAPABILITIES: Record<string, unknown> = {
   ingestionDryRunReplay: true,
   sourceHealthHistory: true,
   productionSelfTest: true,
+  deploymentPortability: true,
 }
 
 function check(name: string, condition: boolean, detail: string): ProductionSelfTestCheck {
@@ -63,6 +64,7 @@ export async function runProductionSelfTest(options: {
     checks.push(check('health.http', response.status === 200, `HTTP ${response.status}`))
     checks.push(check('health.version', payload?.version === '1.9.0-alpha.1', `version=${String(payload?.version)}`))
     checks.push(check('health.mode', payload?.mode === 'google-drive-trusted-ingestion', `mode=${String(payload?.mode)}`))
+    checks.push(check('health.resource-origin', typeof payload?.resource === 'string' && payload.resource.startsWith(`${baseUrl}/`), `resource=${String(payload?.resource)}`))
     const capabilities = payload?.capabilities ?? {}
     for (const [key, expected] of Object.entries(REQUIRED_CAPABILITIES)) {
       checks.push(check(`health.capability.${key}`, capabilities[key] === expected, `${key}=${String(capabilities[key])}`))
@@ -85,6 +87,7 @@ export async function runProductionSelfTest(options: {
   try {
     const response = await fetchImpl(mcpToolsRequest(baseUrl))
     checks.push(check('mcp.unauthorized', response.status === 401, `HTTP ${response.status}; anonymous tools/list must be rejected`))
+    checks.push(check('mcp.metadata-origin', response.headers.get('www-authenticate')?.includes(`${baseUrl}/.well-known/oauth-protected-resource`) === true, response.headers.get('www-authenticate') ?? 'missing'))
   } catch (caught) {
     checks.push(check('mcp.unauthorized.fetch', false, caught instanceof Error ? caught.message : String(caught)))
   }
