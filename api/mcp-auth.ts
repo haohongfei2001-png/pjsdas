@@ -1,11 +1,11 @@
-const PROTECTED_RESOURCE_METADATA_URL = 'https://pjsdas-remote-alpha.vercel.app/.well-known/oauth-protected-resource'
+import { protectedResourceMetadataUrl } from '../gateway/authenticatedRemoteHttp.js'
 
 function hasBearerToken(request: Request) {
   const value = request.headers.get('authorization')?.trim() ?? ''
   return /^Bearer\s+\S+/i.test(value)
 }
 
-function unauthorized() {
+function unauthorized(request: Request) {
   return new Response(JSON.stringify({
     code: 'AUTH_REQUIRED',
     message: 'PJSDAS authentication is required.',
@@ -15,7 +15,7 @@ function unauthorized() {
     headers: {
       'cache-control': 'no-store',
       'content-type': 'application/json; charset=utf-8',
-      'WWW-Authenticate': `Bearer resource_metadata="${PROTECTED_RESOURCE_METADATA_URL}"`,
+      'WWW-Authenticate': `Bearer resource_metadata="${protectedResourceMetadataUrl(request)}"`,
     },
   })
 }
@@ -25,7 +25,7 @@ export default {
     // Keep the OAuth challenge at the outermost serverless boundary. This lets
     // MCP clients discover authorization without loading any real-data modules,
     // and guarantees unauthenticated requests fail closed before Drive code runs.
-    if (!hasBearerToken(request)) return unauthorized()
+    if (!hasBearerToken(request)) return unauthorized(request)
 
     try {
       const { authenticatedRemoteMcpFetch } = await import('../gateway/authenticatedRemoteHttp.js')
