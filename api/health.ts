@@ -1,6 +1,6 @@
+import { backendUrl } from '../gateway/backendOrigin.js'
 import {
   AUTHENTICATED_GATEWAY_VERSION,
-  AUTHENTICATED_MCP_RESOURCE,
 } from '../gateway/authenticatedRemoteHttp.js'
 
 export const PUBLIC_HEALTH_CAPABILITIES = {
@@ -39,21 +39,23 @@ export const PUBLIC_HEALTH_CAPABILITIES = {
   ingestionDryRunReplay: true,
   sourceHealthHistory: true,
   productionSelfTest: true,
+  deploymentPortability: true,
 } as const
 
 export default {
-  fetch() {
+  fetch(request?: Request) {
     return new Response(JSON.stringify({
       service: 'pjsdas-authenticated-mcp',
       version: AUTHENTICATED_GATEWAY_VERSION,
       mode: 'google-drive-trusted-ingestion',
       auth: 'supabase-oauth-2.1',
-      resource: AUTHENTICATED_MCP_RESOURCE,
+      resource: backendUrl('/api/mcp', request),
       capabilities: PUBLIC_HEALTH_CAPABILITIES,
       status: 'ok',
     }), {
       status: 200,
       headers: {
+        'access-control-allow-origin': '*',
         'cache-control': 'no-store',
         'content-type': 'application/json; charset=utf-8',
       },

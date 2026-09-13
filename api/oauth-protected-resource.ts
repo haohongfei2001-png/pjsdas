@@ -1,10 +1,12 @@
-const AUTHENTICATED_MCP_RESOURCE = 'https://pjsdas-remote-alpha.vercel.app/api/mcp'
-const AUTHORIZATION_SERVER = 'https://yyrzwpoxlxpafdlbkdtg.supabase.co/auth/v1'
+import { backendUrl } from '../gateway/backendOrigin.js'
+import { PJSDAS_SUPABASE_URL } from '../gateway/supabaseProject.js'
+
+const AUTHORIZATION_SERVER = `${PJSDAS_SUPABASE_URL}/auth/v1`
 
 export default {
-  fetch() {
+  fetch(request?: Request) {
     return new Response(JSON.stringify({
-      resource: AUTHENTICATED_MCP_RESOURCE,
+      resource: backendUrl('/api/mcp', request),
       resource_name: 'PJSDAS read-only job-search data',
       authorization_servers: [AUTHORIZATION_SERVER],
       bearer_methods_supported: ['header'],

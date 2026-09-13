@@ -23,6 +23,6 @@ jobs:
       - run: npm ci
       - name: Production read-only self-test
         env:
-          PJSDAS_PRODUCTION_BASE_URL: https://pjsdas-remote-alpha.vercel.app
+          PJSDAS_PRODUCTION_BASE_URLS: ${{ vars.PJSDAS_BACKEND_ORIGINS || 'https://pjsdas-remote-alpha.vercel.app' }}
           PJSDAS_SELF_TEST_ACCESS_TOKEN: ${{ secrets.PJSDAS_SELF_TEST_ACCESS_TOKEN }}
         run: npm run self-test:production
