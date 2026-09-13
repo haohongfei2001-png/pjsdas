@@ -1,5 +1,6 @@
 import { createMcpHandler } from '@modelcontextprotocol/server'
 import { createAuthenticatedDriveWorkspaceSource } from './authenticatedDriveSource.js'
+import { backendUrl } from './backendOrigin.js'
 import { createPjsdasMcpServer } from './serverFactory.js'
 import { createSupabaseIdentityResolver } from './supabaseIdentity.js'
 import {
@@ -13,9 +14,17 @@ import {
 } from './workspaceSource.js'
 
 export const AUTHENTICATED_GATEWAY_VERSION = '1.9.0-alpha.1' as const
-export const AUTHENTICATED_MCP_RESOURCE = 'https://pjsdas-remote-alpha.vercel.app/api/mcp'
+export const AUTHENTICATED_MCP_RESOURCE = backendUrl('/api/mcp')
 export const AUTHORIZATION_SERVER = `${PJSDAS_SUPABASE_URL}/auth/v1`
-export const PROTECTED_RESOURCE_METADATA_URL = 'https://pjsdas-remote-alpha.vercel.app/.well-known/oauth-protected-resource'
+export const PROTECTED_RESOURCE_METADATA_URL = backendUrl('/.well-known/oauth-protected-resource')
+
+export function authenticatedMcpResource(request?: Request) {
+  return backendUrl('/api/mcp', request)
+}
+
+export function protectedResourceMetadataUrl(request?: Request) {
+  return backendUrl('/.well-known/oauth-protected-resource', request)
+}
 
 function env(name: string) {
   const value = process.env[name]?.trim()
@@ -23,20 +32,20 @@ function env(name: string) {
   return value
 }
 
-function unauthorized(message = 'PJSDAS authentication is required.') {
+function unauthorized(request: Request, message = 'PJSDAS authentication is required.') {
   return new Response(JSON.stringify({ code: 'AUTH_REQUIRED', message, retryable: false }), {
     status: 401,
     headers: {
       'cache-control': 'no-store',
       'content-type': 'application/json; charset=utf-8',
-      'WWW-Authenticate': `Bearer resource_metadata="${PROTECTED_RESOURCE_METADATA_URL}"`,
+      'WWW-Authenticate': `Bearer resource_metadata="${protectedResourceMetadataUrl(request)}"`,
     },
   })
 }
 
-function serviceError(caught: unknown) {
+function serviceError(caught: unknown, request: Request) {
   if (caught instanceof WorkspaceSourceError) {
-    if (caught.code === 'AUTH_REQUIRED' || caught.code === 'AUTH_INVALID') return unauthorized(caught.message)
+    if (caught.code === 'AUTH_REQUIRED' || caught.code === 'AUTH_INVALID') return unauthorized(request, caught.message)
     const conflict = caught.code === 'WORKSPACE_CONFLICT'
     return new Response(JSON.stringify({ code: caught.code, message: caught.message, retryable: caught.retryable }), {
       status: conflict ? 409 : caught.retryable ? 503 : 500,
@@ -103,6 +112,6 @@ export async function authenticatedRemoteMcpFetch(request: Request) {
     )
     return handler.fetch(request)
   } catch (caught) {
-    return serviceError(caught)
+    return serviceError(caught, request)
   }
 }
