@@ -1,8 +1,8 @@
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from 'react'
 import type { Session } from '@supabase/supabase-js'
+import { fetchBackend } from '../backendEndpoints.js'
 
 const PENDING_KEY = 'pjsdas-ai-google-link-pending'
-const LINK_ENDPOINT = 'https://pjsdas-remote-alpha-haohongfei2001-8529.vercel.app/api/google-link'
 const DRIVE_APPDATA_SCOPE = 'https://www.googleapis.com/auth/drive.appdata'
 
 type AiAccessState = {
@@ -51,7 +51,7 @@ async function persistGoogleLink(session: Session) {
     throw new Error('Google 没有返回持续授权。请重新连接并在 Google 授权页确认允许访问。')
   }
 
-  const response = await fetch(LINK_ENDPOINT, {
+  const response = await fetchBackend('/api/google-link', {
     method: 'POST',
     headers: {
       authorization: `Bearer ${session.access_token}`,
