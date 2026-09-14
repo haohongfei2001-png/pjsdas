@@ -1,0 +1,20 @@
+import { createAutomationSettingsHandler } from '../gateway/automationSettingsHandler.js'
+import {
+  PJSDAS_SUPABASE_PUBLISHABLE_KEY,
+  PJSDAS_SUPABASE_URL,
+} from '../gateway/supabaseProject.js'
+
+const handler = createAutomationSettingsHandler({
+  supabaseUrl: PJSDAS_SUPABASE_URL,
+  supabasePublishableKey: PJSDAS_SUPABASE_PUBLISHABLE_KEY,
+  allowedOrigins: [
+    'https://haohongfei2001-png.github.io',
+    'http://localhost:5173',
+  ],
+})
+
+export default {
+  fetch(request: Request) {
+    return handler(request)
+  },
+}

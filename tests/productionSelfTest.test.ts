@@ -25,6 +25,9 @@ function health() {
       coverageStatusRead: true,
       trustedMonitorIngestion: true,
       trustedGmailIngestion: true,
+      backgroundGmailAutomation: 'v1',
+      gmailReadOnlyIncrementalSync: true,
+      automationVaultScheduler: true,
       optimisticDriveWriteGuard: true,
       dynamicSourceRegistry: true,
       coverageFreshnessSla: true,
@@ -51,13 +54,15 @@ function publicFetch(payload = health()) {
     const url = input instanceof Request ? input.url : String(input)
     if (url.endsWith('/api/health')) return Response.json(payload)
     if (url.endsWith('/api/google-access-token')) return Response.json({ code: 'AUTH_REQUIRED' }, { status: 401 })
+    if (url.endsWith('/api/automation-settings')) return Response.json({ code: 'AUTH_REQUIRED' }, { status: 401 })
+    if (url.endsWith('/api/automation-gmail')) return Response.json({ code: 'AUTOMATION_AUTH_REQUIRED' }, { status: 401 })
     if (url.endsWith('/api/mcp')) return unauthorizedMcp()
     return new Response('not found', { status: 404 })
   }) as unknown as typeof fetch
 }
 
 describe('production self-test', () => {
-  it('passes the release contract without a test account when health proves the deployed MCP tool surface', async () => {
+  it('passes the release contract without a test account when health proves the deployed MCP and automation surfaces', async () => {
     const result = await runProductionSelfTest({ baseUrl: BASE_URL, fetchImpl: publicFetch() })
     expect(result.ok).toBe(true)
     expect(result.checks.find((item) => item.name === 'health.resource-origin')?.status).toBe('pass')
@@ -65,6 +70,8 @@ describe('production self-test', () => {
     for (const tool of REQUIRED_TOOLS) {
       expect(result.checks.find((item) => item.name === `health.authenticated-mcp-tool.${tool}`)?.status).toBe('pass')
     }
+    expect(result.checks.find((item) => item.name === 'gmail-automation.settings-unauthorized')?.status).toBe('pass')
+    expect(result.checks.find((item) => item.name === 'gmail-automation.worker-unauthorized')?.status).toBe('pass')
     expect(result.checks.find((item) => item.name === 'mcp.metadata-origin')?.status).toBe('pass')
     expect(result.checks.find((item) => item.name === 'mcp.authenticated.tools')?.status).toBe('skipped')
   })
@@ -92,6 +99,8 @@ describe('production self-test', () => {
       const request = input instanceof Request ? input : new Request(String(input))
       if (request.url.endsWith('/api/health')) return Response.json(health())
       if (request.url.endsWith('/api/google-access-token')) return Response.json({ code: 'AUTH_REQUIRED' }, { status: 401 })
+      if (request.url.endsWith('/api/automation-settings')) return Response.json({ code: 'AUTH_REQUIRED' }, { status: 401 })
+      if (request.url.endsWith('/api/automation-gmail')) return Response.json({ code: 'AUTOMATION_AUTH_REQUIRED' }, { status: 401 })
       if (request.url.endsWith('/api/mcp') && !request.headers.get('authorization')) return unauthorizedMcp()
       if (request.url.endsWith('/api/mcp')) return new Response(`data: ${JSON.stringify({ tools: REQUIRED_TOOLS.map((name) => ({ name })) })}`, { status: 200, headers: { 'content-type': 'text/event-stream' } })
       return new Response('not found', { status: 404 })
@@ -111,6 +120,21 @@ describe('production self-test', () => {
     expect(result.ok).toBe(false)
     expect(result.checks.find((item) => item.name === 'health.version')?.status).toBe('fail')
     expect(result.checks.find((item) => item.name === 'health.capability.workspaceIntegrityAudit')?.status).toBe('fail')
+  })
+
+  it('fails closed when a Gmail automation endpoint is missing from production', async () => {
+    const fetchImpl = vi.fn(async (input: RequestInfo | URL | Request) => {
+      const url = input instanceof Request ? input.url : String(input)
+      if (url.endsWith('/api/health')) return Response.json(health())
+      if (url.endsWith('/api/google-access-token')) return Response.json({ code: 'AUTH_REQUIRED' }, { status: 401 })
+      if (url.endsWith('/api/automation-settings')) return new Response('not found', { status: 404 })
+      if (url.endsWith('/api/automation-gmail')) return Response.json({ code: 'AUTOMATION_AUTH_REQUIRED' }, { status: 401 })
+      if (url.endsWith('/api/mcp')) return unauthorizedMcp()
+      return new Response('not found', { status: 404 })
+    }) as unknown as typeof fetch
+    const result = await runProductionSelfTest({ baseUrl: BASE_URL, fetchImpl })
+    expect(result.ok).toBe(false)
+    expect(result.checks.find((item) => item.name === 'gmail-automation.settings-unauthorized')?.status).toBe('fail')
   })
 
   it('fails closed when the backend health contract belongs to a different git commit', async () => {

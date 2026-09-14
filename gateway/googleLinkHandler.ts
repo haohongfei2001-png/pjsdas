@@ -187,7 +187,7 @@ export function createGoogleLinkHandler(config: GoogleLinkHandlerConfig) {
       return json(200, {
         status: 'connected',
         googleEmail: google.email ?? identity.email ?? null,
-        scopes: [DRIVE_APPDATA_SCOPE],
+        scopes: google.scopes,
       }, origin, config.allowedOrigins)
     } catch (caught) {
       const error = safeMessage(caught)

@@ -22,6 +22,9 @@ const REQUIRED_CAPABILITIES: Record<string, unknown> = {
   coverageStatusRead: true,
   trustedMonitorIngestion: true,
   trustedGmailIngestion: true,
+  backgroundGmailAutomation: 'v1',
+  gmailReadOnlyIncrementalSync: true,
+  automationVaultScheduler: true,
   optimisticDriveWriteGuard: true,
   dynamicSourceRegistry: true,
   coverageFreshnessSla: true,
@@ -114,6 +117,22 @@ export async function runProductionSelfTest(options: {
     checks.push(check('google-access-token.unauthorized', response.status === 401, `HTTP ${response.status}; unauthenticated restore must be rejected`))
   } catch (caught) {
     checks.push(check('google-access-token.fetch', false, caught instanceof Error ? caught.message : String(caught)))
+  }
+
+  try {
+    const response = await fetchImpl(`${baseUrl}/api/automation-settings`, {
+      headers: { origin: 'https://haohongfei2001-png.github.io' },
+    })
+    checks.push(check('gmail-automation.settings-unauthorized', response.status === 401, `HTTP ${response.status}; user automation settings must require PJSDAS authentication`))
+  } catch (caught) {
+    checks.push(check('gmail-automation.settings-fetch', false, caught instanceof Error ? caught.message : String(caught)))
+  }
+
+  try {
+    const response = await fetchImpl(`${baseUrl}/api/automation-gmail`, { method: 'POST' })
+    checks.push(check('gmail-automation.worker-unauthorized', response.status === 401, `HTTP ${response.status}; background worker must require the Vault scheduler token`))
+  } catch (caught) {
+    checks.push(check('gmail-automation.worker-fetch', false, caught instanceof Error ? caught.message : String(caught)))
   }
 
   try {
