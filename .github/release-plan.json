@@ -1,7 +1,7 @@
 {
-  "publicVersion": "1.0.0",
-  "tag": "v1.0.0",
+  "publicVersion": "1.0.1",
+  "tag": "v1.0.1",
   "engineeringMilestone": "v1.10",
-  "releaseNotes": "docs/releases/V1_0_0.md",
-  "publishOnProductionSuccess": false
+  "releaseNotes": "docs/releases/V1_0_1.md",
+  "publishOnProductionSuccess": true
 }
