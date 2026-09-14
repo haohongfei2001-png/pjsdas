@@ -42,11 +42,13 @@ The database scheduler is enabled only after the exact merged backend commit has
 
 ## Search/model provider
 
-The worker calls Vercel AI Gateway using the deployment identity when Vercel OIDC is available. `AI_GATEWAY_API_KEY` is supported as a deployment-owner fallback for environments that do not provide OIDC to the function. End users never supply a model/search key.
+The worker calls Vercel AI Gateway with a deployment-owned credential. An explicitly configured `AI_GATEWAY_API_KEY` takes precedence when an operator intentionally provides one. Otherwise the Vercel Function resolves its project OIDC credential at request time with `@vercel/oidc` `getVercelOidcToken()`. This avoids depending on `VERCEL_OIDC_TOKEN` being exposed as a static system environment variable and avoids giving end users any search/model API key.
+
+The OIDC token is resolved only when a probe or at least one opted-in binding actually needs model work. An inbound HTTP header cannot supply or override deployment identity.
 
 The default model is `perplexity/sonar`, selected because a request performs current public-web search. `PJSDAS_DISCOVERY_MODEL` may replace the deployment-wide model without changing user workspaces or the ingestion contract.
 
-If the deployment has neither a usable OIDC token nor an AI Gateway API key, the worker fails closed with `DISCOVERY_MODEL_AUTH_REQUIRED`. It must not synthesize a run or pretend Coverage is fresh.
+If the deployment has neither a usable project OIDC token nor an AI Gateway API key, the worker fails closed with `DISCOVERY_MODEL_AUTH_REQUIRED`. It must not synthesize a run or pretend Coverage is fresh.
 
 ## Bounded data sent to the search model
 
