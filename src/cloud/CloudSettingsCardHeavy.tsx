@@ -43,7 +43,7 @@ export default function CloudSettingsCard() {
       <section className="cloud-settings-card">
         <div className="cloud-settings-heading">
           <div>
-            <div className="eyebrow">PJSDAS ACCOUNT & DRIVE · V1.9</div>
+            <div className="eyebrow">PJSDAS ACCOUNT & DRIVE</div>
             <h2>{zh ? 'PJSDAS 账号与 Google Drive 同步' : 'PJSDAS account & Google Drive sync'}</h2>
             <p>{zh
               ? 'Google 登录是稳定的 PJSDAS 身份层，会跨刷新和浏览器重开保持。IndexedDB 仍是即时工作区；Google Drive 隐藏 appDataFolder 是你的云端副本，也是 GPT Monitor / Gmail 自动摄入与本机之间的同步桥梁。'

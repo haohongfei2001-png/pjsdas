@@ -12,6 +12,7 @@ import './styles.css'
 import './designSystem.css'
 import './visualPolish.css'
 import './usabilityFriction.css'
+import './productTruth.css'
 
 function Root() {
   const [revision, setRevision] = useState(0)
