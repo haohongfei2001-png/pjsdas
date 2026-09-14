@@ -222,7 +222,7 @@ function throwModelError(caught: unknown): never {
     if (message.includes('allowlist') || message.includes('not allowed') || message.includes('restriction')) {
       throw new WorkspaceSourceError('DISCOVERY_MODEL_RESTRICTED', 'Vercel AI Gateway team restrictions block the selected discovery model or provider.', false)
     }
-    throw new WorkspaceSourceError('DISCOVERY_MODEL_FORBIDDEN', 'Vercel AI Gateway denied this project's discovery-model request.', false)
+    throw new WorkspaceSourceError('DISCOVERY_MODEL_FORBIDDEN', "Vercel AI Gateway denied this project's discovery-model request.", false)
   }
   if (status === 429 || (typeof status === 'number' && status >= 500)) {
     throw new WorkspaceSourceError('DISCOVERY_MODEL_UNAVAILABLE', `Vercel AI Gateway is temporarily unavailable${status ? ` (HTTP ${status})` : ''}.`, true)
