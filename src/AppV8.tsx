@@ -20,9 +20,11 @@ import {
   rankActions,
 } from './decisionV3.js'
 import { parsePJSDASWorkbook } from './importExcelV2.js'
+import { prepPriorityRank, presentPrepPriority, presentPrepSourceState } from './prepSemantics.js'
 import { presentRankingReasons } from './rankingReasonPresentation.js'
 import { presentStageLabel } from './stagePresentation.js'
-import { formatTimeRemaining, timeRisk, upcomingNodes } from './timeRisk.js'
+import { timeRisk, upcomingNodes } from './timeRisk.js'
+import { presentTimeRemaining, presentTimeRiskLevel } from './timeRiskPresentation.js'
 import { currentUiLanguage, useUiLanguage } from './uiLanguage.js'
 import { DEFAULT_DECISION_RULES, type DecisionRules } from './decisionRules.js'
 import RulesView from './RulesView.js'
@@ -415,7 +417,7 @@ function OpportunityTable({ opportunities, groups, onOpenOpportunity }: { opport
       <div className="surface-filter-row"><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={zh ? '搜索公司或岗位' : 'Search company or role'} /><select value={scope} onChange={(event) => setScope(event.target.value as 'active' | 'all' | 'closed')}><option value="active">{zh ? '活跃' : 'Active'}</option><option value="closed">{zh ? '已结束' : 'Closed'}</option><option value="all">{zh ? '全部' : 'All'}</option></select></div>
       {filtered.length ? (
         <>
-          <div className="surface-table-wrap surface-opportunity-desktop"><table><thead><tr><th>{zh ? '公司' : 'Company'}</th><th>{zh ? '岗位' : 'Role'}</th><th>{zh ? '定位' : 'Role type'}</th><th>{zh ? '时机' : 'Timing'}</th><th>Fit</th><th>{zh ? '机会价值' : 'Value'}</th><th>{zh ? '截止' : 'Deadline'}</th><th>{zh ? '申请组' : 'Group'}</th></tr></thead><tbody>{filtered.map((item) => <tr className="surface-opportunity-row" key={item.id}><td><strong>{item.company}</strong></td><td><button className="surface-link-button" onClick={() => onOpenOpportunity(item.id)}>{item.role}</button></td><td>{roleLabels[item.roleType][zh ? 0 : 1]}</td><td><PriorityBadge value={computePriority(item, now)} /></td><td>{item.fitScore}</td><td>{item.opportunityValue}</td><td>{item.deadline ? formatDateOnly(item.deadline) : '—'}</td><td>{item.applicationGroupId ?? '—'}</td></tr>)}</tbody></table></div>
+          <div className="surface-table-wrap surface-opportunity-desktop"><table><thead><tr><th>{zh ? '公司' : 'Company'}</th><th>{zh ? '岗位' : 'Role'}</th><th>{zh ? '定位' : 'Role type'}</th><th>{zh ? '时机' : 'Timing'}</th><th>Fit</th><th>{zh ? '机会价值' : 'Value'}</th><th>{zh ? '截止' : 'Deadline'}</th><th>{zh ? '申请组' : 'Group'}</th></tr></thead><tbody>{filtered.map((item) => <tr className="surface-opportunity-row" key={item.id}><td><strong>{item.company}</strong></td><td><button className="surface-link-button" onClick={() => onOpenOpportunity(item.id)}>{item.role}</button></td><td>{roleLabels[item.roleType][zh ? 0 : 1]}</td><td><PriorityBadge value={computePriority(item, now)} zh={zh} /></td><td>{item.fitScore}</td><td>{item.opportunityValue}</td><td>{item.deadline ? formatDateOnly(item.deadline) : '—'}</td><td>{item.applicationGroupId ?? '—'}</td></tr>)}</tbody></table></div>
           <div className="surface-opportunity-mobile-list">{filtered.map((item) => <button type="button" key={`mobile:${item.id}`} onClick={() => onOpenOpportunity(item.id)}><div><strong>{item.company}</strong><span>{item.role}</span></div><div><span>{roleLabels[item.roleType][zh ? 0 : 1]}</span><span>Fit {Math.round(item.fitScore)}</span><span>{zh ? '价值' : 'Value'} {Math.round(item.opportunityValue)}</span></div><small>{item.deadline ? `${zh ? '截止' : 'Deadline'} ${formatDateOnly(item.deadline)}` : presentStageLabel(item.processStage, item.currentStageLabel, lang)}</small></button>)}</div>
         </>
       ) : <EmptyState title={opportunities.length ? (zh ? '没有符合筛选的岗位' : 'No matching opportunities') : (zh ? '机会池还是空的' : 'Opportunity pool is empty')} text={opportunities.length ? (zh ? '调整搜索或筛选条件。' : 'Adjust search or filters.') : (zh ? '符合规则且身份明确的岗位会自动进入这里；也可以在 Settings 配置岗位发现或导入已有岗位。' : 'Eligible, confidently identified jobs appear here automatically. You can also configure discovery or import existing opportunities in Settings.')} />}
@@ -445,7 +447,7 @@ function PipelinePanel({ processes, opportunities, onOpenOpportunity }: { proces
       {sorted.length ? <div className="surface-pipeline-grid">{sorted.map((item) => {
         const opportunityId = opportunityIdFor(item)
         return <article className="surface-pipeline-card" key={item.id}><div><strong>{item.company}</strong><h3>{item.role}</h3></div><span className="surface-stage">{presentStageLabel(item.stage, item.stageLabel, lang)}</span><dl><div><dt>{zh ? '最近进展' : 'Last progress'}</dt><dd>{item.lastProgressAt ? formatDateOnly(item.lastProgressAt) : '—'}</dd></div></dl><div className="surface-pipeline-footer">{opportunityId ? <button className="text-button" onClick={() => onOpenOpportunity(opportunityId)}>{zh ? '岗位详情' : 'Details'}</button> : null}</div></article>
-      })}</div> : <EmptyState title={zh ? '暂无在途流程' : 'No pipeline yet'} text={zh ? '收到测评、笔试或面试通知后，从 Today 的“快速记录”录入真实流程事件。' : 'After a real assessment, written test, or interview notice arrives, record it from Today → Quick capture.'} />}
+      })}</div> : <EmptyState title={zh ? '暂无在途流程' : 'No pipeline yet'} text={zh ? '收到测评、笔试或面试通知后，从 Today 的“快速记录”录入真实流程事件。' : 'After a real assessment, written test, or interview notice arrives, record it from Today → Quick capture.'} />
     </section>
   )
 }
@@ -453,13 +455,12 @@ function PipelinePanel({ processes, opportunities, onOpenOpportunity }: { proces
 function PrepareSurface({ prep }: { prep: Prep[] }) {
   const { lang } = useUiLanguage()
   const zh = lang === 'zh'
-  const order = ['最高', '高', '中高', '中', '低']
-  const sorted = [...prep].sort((a, b) => order.indexOf(a.priorityLabel ?? '低') - order.indexOf(b.priorityLabel ?? '低'))
+  const sorted = [...prep].sort((a, b) => prepPriorityRank(a.priorityLabel) - prepPriorityRank(b.priorityLabel) || a.title.localeCompare(b.title))
   return (
     <section className="surface-page">
       <SurfaceHeader eyebrow="PREPARE" title={zh ? '把准备时间花在能覆盖更多机会的地方' : 'Spend preparation time where it helps more opportunities'} text={zh ? 'Prep Graph 是解释层，Prep 列表是实际准备资产；两者现在属于同一个工作面。' : 'Prep Graph explains leverage while the Prep list remains the actual preparation inventory.'} />
       <div className="surface-tool-strip"><div><strong>{zh ? '准备图谱' : 'Prep Graph'}</strong><span>{zh ? '查看一个准备任务覆盖哪些岗位、命中哪些真实缺口。' : 'See which opportunities a prep item supports and which real needs it covers.'}</span></div><div className="surface-tool-row"><PrepGraphDock /></div></div>
-      <section className="surface-panel"><div className="surface-panel-head"><div><div className="eyebrow">PREP INVENTORY</div><h2>{zh ? '准备资产' : 'Preparation inventory'}</h2></div><span>{prep.length}</span></div>{sorted.length ? <div className="surface-prep-grid">{sorted.map((item) => <article key={item.id}><div><span>{item.priorityLabel ?? '—'}</span><span>{item.sourceStatus ?? '—'}</span></div><h3>{item.title}</h3><p>{item.minimumOutput ?? (zh ? '暂无最小产出定义' : 'No minimum output defined')}</p><small>{formatMinutes(item.estimatedMinutes)} · {item.triggeredBy ?? (zh ? '无显式触发条件' : 'No explicit trigger')}</small></article>)}</div> : <EmptyState title={zh ? '暂无准备任务' : 'No preparation items'} text={zh ? '准备资产不是为了填满列表；只有明确可复用的准备才值得长期保留。' : 'The Prep inventory is not a checklist to fill; keep reusable preparation with a clear purpose.'} />}</section>
+      <section className="surface-panel"><div className="surface-panel-head"><div><div className="eyebrow">PREP INVENTORY</div><h2>{zh ? '准备资产' : 'Preparation inventory'}</h2></div><span>{prep.length}</span></div>{sorted.length ? <div className="surface-prep-grid">{sorted.map((item) => <article key={item.id}><div><span>{presentPrepPriority(item.priorityLabel, zh)}</span><span>{presentPrepSourceState(item.sourceStatus, zh)}</span></div><h3>{item.title}</h3><p>{item.minimumOutput ?? (zh ? '暂无最小产出定义' : 'No minimum output defined')}</p><small>{formatMinutes(item.estimatedMinutes)} · {item.triggeredBy ?? (zh ? '无显式触发条件' : 'No explicit trigger')}</small></article>)}</div> : <EmptyState title={zh ? '暂无准备任务' : 'No preparation items'} text={zh ? '准备资产不是为了填满列表；只有明确可复用的准备才值得长期保留。' : 'The Prep inventory is not a checklist to fill; keep reusable preparation with a clear purpose.'} />}</section>
     </section>
   )
 }
@@ -537,13 +538,20 @@ function EmptyState({ title, text }: { title: string; text: string }) {
 }
 
 function TimeRiskBadge({ action, now, rules, compact = false }: { action: Action; now: Date; rules: DecisionRules; compact?: boolean }) {
+  const { lang } = useUiLanguage()
+  const zh = lang === 'zh'
   if (!action.dueAt) return null
   const risk = timeRisk(action.dueAt, now, rules)
-  return <div className={`deadline-countdown risk-${risk.level}${compact ? ' compact' : ''}`}><strong>{formatTimeRemaining(action.dueAt, now)}</strong><span>{risk.label}</span></div>
+  return <div className={`deadline-countdown risk-${risk.level}${compact ? ' compact' : ''}`}><strong>{presentTimeRemaining(action.dueAt, now, zh)}</strong><span>{presentTimeRiskLevel(risk.level, zh)}</span></div>
 }
 
-function PriorityBadge({ value }: { value: ReturnType<typeof computePriority> }) {
-  return <span className={`priority-badge priority-${value}`}>{value === 'expired' ? 'Expired' : value === 'none' ? 'Pipeline' : value}</span>
+function PriorityBadge({ value, zh }: { value: ReturnType<typeof computePriority>; zh: boolean }) {
+  const label = value === 'expired'
+    ? (zh ? '已过期' : 'Expired')
+    : value === 'none'
+      ? (zh ? '流程中' : 'Pipeline')
+      : value
+  return <span className={`priority-badge priority-${value}`}>{label}</span>
 }
 
 function formatDateTime(iso: string) {
