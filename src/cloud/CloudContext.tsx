@@ -130,6 +130,9 @@ export function CloudProvider({ children }: { children: ReactNode }) {
     if (!configured || !userId || busyRef.current) return undefined
     busyRef.current = true
     setSyncing(true)
+    // A previous successful sync must not remain visible while a new attempt is
+    // running or after that new attempt fails.
+    setOutcome(undefined)
     setError(undefined)
     try {
       const result = await runCloudSync(userId)
@@ -170,6 +173,7 @@ export function CloudProvider({ children }: { children: ReactNode }) {
     if (!userId || busyRef.current) return undefined
     busyRef.current = true
     setSyncing(true)
+    setOutcome(undefined)
     setError(undefined)
     try {
       const result = kind === 'keep'
@@ -195,6 +199,7 @@ export function CloudProvider({ children }: { children: ReactNode }) {
   const signIn = useCallback(async () => {
     if (busyRef.current) return
     setLoading(true)
+    setOutcome(undefined)
     setError(undefined)
     try {
       await signInWithGoogle()
