@@ -2,6 +2,10 @@ import { backendUrl } from '../gateway/backendOrigin.js'
 import {
   AUTHENTICATED_GATEWAY_VERSION,
 } from '../gateway/authenticatedRemoteHttp.js'
+import {
+  AUTHENTICATED_MCP_RELEASE_REQUIRED_TOOLS,
+  AUTHENTICATED_MCP_TOOL_SURFACE_VERSION,
+} from '../gateway/mcpToolSurface.js'
 import { backendReleaseCommit, type ReleaseIdentityEnvironment } from '../gateway/releaseIdentity.js'
 
 export const PUBLIC_HEALTH_CAPABILITIES = {
@@ -42,6 +46,7 @@ export const PUBLIC_HEALTH_CAPABILITIES = {
   productionSelfTest: true,
   deploymentPortability: true,
   releaseIdentityBinding: true,
+  authenticatedMcpToolSurface: true,
 } as const
 
 export default {
@@ -54,6 +59,10 @@ export default {
       resource: backendUrl('/api/mcp', request),
       release: {
         commitSha: backendReleaseCommit(releaseEnvironment) ?? null,
+      },
+      authenticatedMcp: {
+        toolSurfaceVersion: AUTHENTICATED_MCP_TOOL_SURFACE_VERSION,
+        releaseRequiredTools: AUTHENTICATED_MCP_RELEASE_REQUIRED_TOOLS,
       },
       capabilities: PUBLIC_HEALTH_CAPABILITIES,
       status: 'ok',
