@@ -10,14 +10,21 @@ function json(data: unknown, status = 200) {
   })
 }
 
-function createHandler(fetchImpl: typeof fetch, aiGatewayApiKey?: string) {
+function createHandler(
+  fetchImpl: typeof fetch,
+  options: {
+    aiGatewayApiKey?: string
+    aiGatewayTokenProvider?: () => Promise<string | undefined>
+  } = {},
+) {
   return createDiscoveryAutomationHandler({
     supabaseUrl: 'https://example.supabase.co',
     supabasePublishableKey: 'sb_publishable_test',
     tokenEncryptionKey: Buffer.alloc(32, 9).toString('base64url'),
     googleClientId: 'google-client',
     googleClientSecret: 'google-secret',
-    aiGatewayApiKey,
+    aiGatewayApiKey: options.aiGatewayApiKey,
+    aiGatewayTokenProvider: options.aiGatewayTokenProvider,
     fetchImpl,
   })
 }
@@ -31,8 +38,9 @@ describe('server-owned discovery automation endpoint', () => {
     expect(fetchImpl).not.toHaveBeenCalled()
   })
 
-  it('validates the Vault worker token and succeeds cleanly when no opted-in Google binding exists', async () => {
+  it('validates the Vault worker token and does not resolve model auth when no opted-in binding is due for work', async () => {
     const calls: string[] = []
+    const tokenProvider = vi.fn(async () => 'must-not-be-used')
     const fetchImpl = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input)
       calls.push(url)
@@ -40,12 +48,13 @@ describe('server-owned discovery automation endpoint', () => {
       return json({ error: 'unexpected' }, 500)
     }) as unknown as typeof fetch
 
-    const response = await createHandler(fetchImpl)(new Request('https://gateway.example/api/automation-discovery', {
+    const response = await createHandler(fetchImpl, { aiGatewayTokenProvider: tokenProvider })(new Request('https://gateway.example/api/automation-discovery', {
       headers: { authorization: 'Bearer vault-worker-token' },
     }))
     expect(response.status).toBe(200)
     await expect(response.json()).resolves.toMatchObject({ processedUsers: 0, successfulUsers: 0, failedUsers: 0 })
     expect(calls).toEqual([`https://example.supabase.co${CLAIM_RPC}`])
+    expect(tokenProvider).not.toHaveBeenCalled()
   })
 
   it('maps a rejected Vault token to 401 without leaking authorization-store internals', async () => {
@@ -57,8 +66,9 @@ describe('server-owned discovery automation endpoint', () => {
     await expect(response.json()).resolves.toMatchObject({ code: 'AUTOMATION_AUTH_REQUIRED' })
   })
 
-  it('uses the deployment-supplied OIDC/API-key credential for an authenticated zero-observation AI Gateway probe', async () => {
+  it('resolves the Vercel OIDC credential asynchronously for an authenticated AI Gateway probe', async () => {
     const authHeaders: string[] = []
+    const tokenProvider = vi.fn(async () => 'vercel-oidc-token')
     const fetchImpl = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input)
       if (url.endsWith(CLAIM_RPC)) return json([])
@@ -69,12 +79,37 @@ describe('server-owned discovery automation endpoint', () => {
       return json({ error: 'unexpected' }, 500)
     }) as unknown as typeof fetch
 
-    const response = await createHandler(fetchImpl, 'vercel-oidc-token')(new Request('https://gateway.example/api/automation-discovery?probe=1', {
+    const response = await createHandler(fetchImpl, { aiGatewayTokenProvider: tokenProvider })(new Request('https://gateway.example/api/automation-discovery?probe=1', {
       headers: { authorization: 'Bearer vault-worker-token' },
     }))
     expect(response.status).toBe(200)
     await expect(response.json()).resolves.toMatchObject({ probe: true, ok: true, model: 'perplexity/sonar' })
+    expect(tokenProvider).toHaveBeenCalledTimes(1)
     expect(authHeaders).toEqual(['Bearer vercel-oidc-token'])
+  })
+
+  it('prefers an explicit deployment-owner AI Gateway key over dynamic OIDC resolution', async () => {
+    const authHeaders: string[] = []
+    const tokenProvider = vi.fn(async () => 'oidc-should-not-be-used')
+    const fetchImpl = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      if (url.endsWith(CLAIM_RPC)) return json([])
+      if (url === 'https://ai-gateway.vercel.sh/v1/chat/completions') {
+        authHeaders.push(new Headers(init?.headers).get('authorization') ?? '')
+        return json({ choices: [{ message: { content: '{"observations":[]}' } }] })
+      }
+      return json({ error: 'unexpected' }, 500)
+    }) as unknown as typeof fetch
+
+    const response = await createHandler(fetchImpl, {
+      aiGatewayApiKey: 'deployment-api-key',
+      aiGatewayTokenProvider: tokenProvider,
+    })(new Request('https://gateway.example/api/automation-discovery?probe=1', {
+      headers: { authorization: 'Bearer vault-worker-token' },
+    }))
+    expect(response.status).toBe(200)
+    expect(tokenProvider).not.toHaveBeenCalled()
+    expect(authHeaders).toEqual(['Bearer deployment-api-key'])
   })
 
   it('does not trust an inbound OIDC-looking header as the deployment credential', async () => {
@@ -90,6 +125,23 @@ describe('server-owned discovery automation endpoint', () => {
     }))
     expect(response.status).toBe(503)
     await expect(response.json()).resolves.toMatchObject({ code: 'DISCOVERY_MODEL_AUTH_REQUIRED' })
+  })
+
+  it('fails closed when dynamic OIDC resolution itself fails', async () => {
+    const fetchImpl = vi.fn(async (input: RequestInfo | URL) => {
+      if (String(input).endsWith(CLAIM_RPC)) return json([])
+      return json({ error: 'unexpected' }, 500)
+    }) as unknown as typeof fetch
+    const response = await createHandler(fetchImpl, {
+      aiGatewayTokenProvider: async () => { throw new Error('OIDC unavailable') },
+    })(new Request('https://gateway.example/api/automation-discovery?probe=1', {
+      headers: { authorization: 'Bearer vault-worker-token' },
+    }))
+    expect(response.status).toBe(503)
+    await expect(response.json()).resolves.toMatchObject({
+      code: 'DISCOVERY_MODEL_AUTH_REQUIRED',
+      retryable: true,
+    })
   })
 
   it('fails closed when there are opted-in user bindings but no AI Gateway deployment credential', async () => {
