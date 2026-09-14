@@ -1,22 +1,24 @@
-export type DiscoveryQualityReasonCode =
-  | 'posting_closed'
-  | 'deadline_expired'
-  | 'role_type_not_allowed'
-  | 'fit_below_minimum'
-  | 'opportunity_value_below_minimum'
-  | 'exclusion_match'
-  | 'strict_location_missing'
-  | 'strict_location_mismatch'
-  | 'compensation_below_minimum'
-  | 'existing_opportunity_source_duplicate'
-  | 'recently_dismissed_inbox'
-  | 'active_inbox_same_source'
-  | 'active_inbox_cross_source'
-  | 'recent_user_rejection'
-  | 'existing_opportunity_duplicate'
-  | 'batch_duplicate'
-  | 'review_batch_limit'
+export const DISCOVERY_QUALITY_REASON_CODES = [
+  'posting_closed',
+  'deadline_expired',
+  'role_type_not_allowed',
+  'fit_below_minimum',
+  'opportunity_value_below_minimum',
+  'exclusion_match',
+  'strict_location_missing',
+  'strict_location_mismatch',
+  'compensation_below_minimum',
+  'existing_opportunity_source_duplicate',
+  'recently_dismissed_inbox',
+  'active_inbox_same_source',
+  'active_inbox_cross_source',
+  'recent_user_rejection',
+  'existing_opportunity_duplicate',
+  'batch_duplicate',
+  'review_batch_limit',
+] as const
 
+export type DiscoveryQualityReasonCode = typeof DISCOVERY_QUALITY_REASON_CODES[number]
 export type DiscoveryQualityReasonParam = string | number | boolean
 
 export interface DiscoveryQualityReasonDetail {
