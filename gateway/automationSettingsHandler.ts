@@ -18,6 +18,10 @@ interface AutomationRow {
   gmail_last_checked_at?: string | null
   gmail_last_success_at?: string | null
   gmail_last_error?: string | null
+  discovery_automation_enabled?: boolean | null
+  discovery_last_checked_at?: string | null
+  discovery_last_success_at?: string | null
+  discovery_last_error?: string | null
 }
 
 function corsHeaders(origin: string | null, allowedOrigins: string[]) {
@@ -48,6 +52,10 @@ function statusForRow(row: AutomationRow) {
     gmailLastCheckedAt: row.gmail_last_checked_at ?? null,
     gmailLastSuccessAt: row.gmail_last_success_at ?? null,
     gmailLastError: row.gmail_last_error ?? null,
+    discoveryEnabled: Boolean(row.discovery_automation_enabled),
+    discoveryLastCheckedAt: row.discovery_last_checked_at ?? null,
+    discoveryLastSuccessAt: row.discovery_last_success_at ?? null,
+    discoveryLastError: row.discovery_last_error ?? null,
   }
 }
 
@@ -62,7 +70,20 @@ export function createAutomationSettingsHandler(config: AutomationSettingsHandle
 
   async function readRow(userId: string, accessToken: string) {
     const params = new URLSearchParams({
-      select: 'user_id,google_email,granted_scopes,gmail_automation_enabled,gmail_history_id,gmail_last_checked_at,gmail_last_success_at,gmail_last_error',
+      select: [
+        'user_id',
+        'google_email',
+        'granted_scopes',
+        'gmail_automation_enabled',
+        'gmail_history_id',
+        'gmail_last_checked_at',
+        'gmail_last_success_at',
+        'gmail_last_error',
+        'discovery_automation_enabled',
+        'discovery_last_checked_at',
+        'discovery_last_success_at',
+        'discovery_last_error',
+      ].join(','),
       user_id: `eq.${userId}`,
       revoked_at: 'is.null',
       limit: '1',
@@ -80,7 +101,7 @@ export function createAutomationSettingsHandler(config: AutomationSettingsHandle
     const rows = await response.json().catch(() => undefined) as AutomationRow[] | undefined
     if (!rows) throw new WorkspaceSourceError('AUTH_INVALID', 'PJSDAS automation settings returned invalid data.', false)
     const row = rows[0]
-    if (!row) throw new WorkspaceSourceError('GOOGLE_CONNECTION_REQUIRED', 'Connect Google to PJSDAS before enabling Gmail automation.', false)
+    if (!row) throw new WorkspaceSourceError('GOOGLE_CONNECTION_REQUIRED', 'Connect Google to PJSDAS before enabling background automation.', false)
     return row
   }
 
@@ -102,12 +123,21 @@ export function createAutomationSettingsHandler(config: AutomationSettingsHandle
       const current = await readRow(identity.userId, accessToken)
       if (request.method === 'GET') return json(200, statusForRow(current), origin, config.allowedOrigins)
 
-      const body = await request.json().catch(() => undefined) as { gmailEnabled?: unknown } | undefined
-      if (typeof body?.gmailEnabled !== 'boolean') {
+      const body = await request.json().catch(() => undefined) as { gmailEnabled?: unknown; discoveryEnabled?: unknown } | undefined
+      const gmailProvided = Boolean(body && Object.prototype.hasOwnProperty.call(body, 'gmailEnabled'))
+      const discoveryProvided = Boolean(body && Object.prototype.hasOwnProperty.call(body, 'discoveryEnabled'))
+      if (!gmailProvided && !discoveryProvided) {
+        return json(400, { code: 'INVALID_ARGUMENT', message: 'Provide gmailEnabled or discoveryEnabled.' }, origin, config.allowedOrigins)
+      }
+      if (gmailProvided && typeof body?.gmailEnabled !== 'boolean') {
         return json(400, { code: 'INVALID_ARGUMENT', message: 'gmailEnabled must be a boolean.' }, origin, config.allowedOrigins)
       }
+      if (discoveryProvided && typeof body?.discoveryEnabled !== 'boolean') {
+        return json(400, { code: 'INVALID_ARGUMENT', message: 'discoveryEnabled must be a boolean.' }, origin, config.allowedOrigins)
+      }
+
       const scopes = current.granted_scopes ?? []
-      if (body.gmailEnabled && !scopes.includes(GMAIL_READONLY_SCOPE)) {
+      if (gmailProvided && body?.gmailEnabled === true && !scopes.includes(GMAIL_READONLY_SCOPE)) {
         return json(409, {
           code: 'GOOGLE_GMAIL_SCOPE_REQUIRED',
           message: 'Gmail read-only permission is required before recruiting-email automation can be enabled.',
@@ -115,14 +145,19 @@ export function createAutomationSettingsHandler(config: AutomationSettingsHandle
       }
 
       const params = new URLSearchParams({ user_id: `eq.${identity.userId}` })
-      const patch: Record<string, unknown> = {
-        gmail_automation_enabled: body.gmailEnabled,
-        updated_at: new Date().toISOString(),
+      const patch: Record<string, unknown> = { updated_at: new Date().toISOString() }
+      if (gmailProvided) {
+        patch.gmail_automation_enabled = body!.gmailEnabled
+        if (body!.gmailEnabled === true) {
+          patch.gmail_history_id = null
+          patch.gmail_last_error = null
+        }
       }
-      if (body.gmailEnabled) {
-        patch.gmail_history_id = null
-        patch.gmail_last_error = null
+      if (discoveryProvided) {
+        patch.discovery_automation_enabled = body!.discoveryEnabled
+        if (body!.discoveryEnabled === true) patch.discovery_last_error = null
       }
+
       let response: Response
       try {
         response = await fetchImpl(`${baseUrl}/rest/v1/google_drive_connections?${params.toString()}`, {
@@ -141,9 +176,19 @@ export function createAutomationSettingsHandler(config: AutomationSettingsHandle
       if (response.status === 401 || response.status === 403) throw new WorkspaceSourceError('AUTH_INVALID', 'PJSDAS authentication is invalid or expired.', false)
       if (!response.ok) throw new WorkspaceSourceError('AUTH_UNAVAILABLE', `PJSDAS automation settings update failed (HTTP ${response.status}).`, true)
 
-      return json(200, {
-        ...statusForRow({ ...current, gmail_automation_enabled: body.gmailEnabled, gmail_history_id: body.gmailEnabled ? null : current.gmail_history_id, gmail_last_error: body.gmailEnabled ? null : current.gmail_last_error }),
-      }, origin, config.allowedOrigins)
+      const updated: AutomationRow = { ...current }
+      if (gmailProvided) {
+        updated.gmail_automation_enabled = body!.gmailEnabled as boolean
+        if (body!.gmailEnabled === true) {
+          updated.gmail_history_id = null
+          updated.gmail_last_error = null
+        }
+      }
+      if (discoveryProvided) {
+        updated.discovery_automation_enabled = body!.discoveryEnabled as boolean
+        if (body!.discoveryEnabled === true) updated.discovery_last_error = null
+      }
+      return json(200, statusForRow(updated), origin, config.allowedOrigins)
     } catch (caught) {
       const error = caught instanceof WorkspaceSourceError
         ? { code: caught.code, message: caught.message, retryable: caught.retryable }

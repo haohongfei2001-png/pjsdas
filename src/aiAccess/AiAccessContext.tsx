@@ -18,6 +18,10 @@ export interface GmailAutomationStatus {
   gmailLastCheckedAt: string | null
   gmailLastSuccessAt: string | null
   gmailLastError: string | null
+  discoveryEnabled: boolean
+  discoveryLastCheckedAt: string | null
+  discoveryLastSuccessAt: string | null
+  discoveryLastError: string | null
 }
 
 type AiAccessState = {
@@ -28,6 +32,7 @@ type AiAccessState = {
   beginGoogleDriveLink: () => Promise<void>
   beginGmailAutomationLink: () => Promise<void>
   setGmailAutomationEnabled: (enabled: boolean) => Promise<void>
+  setDiscoveryAutomationEnabled: (enabled: boolean) => Promise<void>
   refreshGmailAutomationStatus: () => Promise<void>
 }
 
@@ -117,23 +122,47 @@ async function readAutomationStatus(session: Session) {
   const response = await fetchBackend('/api/automation-settings', {
     headers: { authorization: `Bearer ${session.access_token}` },
   })
-  const data = await response.json().catch(() => ({})) as GmailAutomationStatus & { message?: string }
+  const data = await response.json().catch(() => ({})) as Partial<GmailAutomationStatus> & { message?: string }
   if (!response.ok) throw new Error(data.message || `Automation settings failed (HTTP ${response.status}).`)
-  return data
+  return {
+    googleEmail: data.googleEmail ?? null,
+    gmailScopeGranted: Boolean(data.gmailScopeGranted),
+    gmailEnabled: Boolean(data.gmailEnabled),
+    gmailHistoryIdPresent: Boolean(data.gmailHistoryIdPresent),
+    gmailLastCheckedAt: data.gmailLastCheckedAt ?? null,
+    gmailLastSuccessAt: data.gmailLastSuccessAt ?? null,
+    gmailLastError: data.gmailLastError ?? null,
+    discoveryEnabled: Boolean(data.discoveryEnabled),
+    discoveryLastCheckedAt: data.discoveryLastCheckedAt ?? null,
+    discoveryLastSuccessAt: data.discoveryLastSuccessAt ?? null,
+    discoveryLastError: data.discoveryLastError ?? null,
+  } satisfies GmailAutomationStatus
 }
 
-async function writeAutomationStatus(session: Session, enabled: boolean) {
+async function writeAutomationStatus(session: Session, patch: { gmailEnabled?: boolean; discoveryEnabled?: boolean }) {
   const response = await fetchBackend('/api/automation-settings', {
     method: 'POST',
     headers: {
       authorization: `Bearer ${session.access_token}`,
       'content-type': 'application/json',
     },
-    body: JSON.stringify({ gmailEnabled: enabled }),
+    body: JSON.stringify(patch),
   })
-  const data = await response.json().catch(() => ({})) as GmailAutomationStatus & { message?: string }
+  const data = await response.json().catch(() => ({})) as Partial<GmailAutomationStatus> & { message?: string }
   if (!response.ok) throw new Error(data.message || `Automation settings update failed (HTTP ${response.status}).`)
-  return data
+  return {
+    googleEmail: data.googleEmail ?? null,
+    gmailScopeGranted: Boolean(data.gmailScopeGranted),
+    gmailEnabled: Boolean(data.gmailEnabled),
+    gmailHistoryIdPresent: Boolean(data.gmailHistoryIdPresent),
+    gmailLastCheckedAt: data.gmailLastCheckedAt ?? null,
+    gmailLastSuccessAt: data.gmailLastSuccessAt ?? null,
+    gmailLastError: data.gmailLastError ?? null,
+    discoveryEnabled: Boolean(data.discoveryEnabled),
+    discoveryLastCheckedAt: data.discoveryLastCheckedAt ?? null,
+    discoveryLastSuccessAt: data.discoveryLastSuccessAt ?? null,
+    discoveryLastError: data.discoveryLastError ?? null,
+  } satisfies GmailAutomationStatus
 }
 
 export function AiAccessProvider({ children }: { children: ReactNode }) {
@@ -169,7 +198,7 @@ export function AiAccessProvider({ children }: { children: ReactNode }) {
     try {
       const linked = await persistGoogleLink(session)
       if (mode === 'gmail') {
-        setGmailAutomation(await writeAutomationStatus(session, true))
+        setGmailAutomation(await writeAutomationStatus(session, { gmailEnabled: true }))
       } else {
         await refreshStatusForSession(session)
       }
@@ -257,6 +286,14 @@ export function AiAccessProvider({ children }: { children: ReactNode }) {
     return beginGoogleLink('gmail')
   }
 
+  async function requireSession() {
+    const supabase = await loadSupabase()
+    const { data, error: sessionError } = await supabase.auth.getSession()
+    if (sessionError) throw sessionError
+    if (!data.session) throw new Error(lang === 'zh' ? '请先使用 Google 登录 PJSDAS。' : 'Sign in to PJSDAS with Google first.')
+    return data.session
+  }
+
   async function setGmailAutomationEnabled(enabled: boolean) {
     if (enabled && !gmailAutomation?.gmailScopeGranted) {
       await beginGmailAutomationLink()
@@ -265,11 +302,19 @@ export function AiAccessProvider({ children }: { children: ReactNode }) {
     setBusy(true)
     setError('')
     try {
-      const supabase = await loadSupabase()
-      const { data, error: sessionError } = await supabase.auth.getSession()
-      if (sessionError) throw sessionError
-      if (!data.session) throw new Error(lang === 'zh' ? '请先使用 Google 登录 PJSDAS。' : 'Sign in to PJSDAS with Google first.')
-      setGmailAutomation(await writeAutomationStatus(data.session, enabled))
+      setGmailAutomation(await writeAutomationStatus(await requireSession(), { gmailEnabled: enabled }))
+    } catch (caught) {
+      setError(aiAccessErrorMessage(caught, lang))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function setDiscoveryAutomationEnabled(enabled: boolean) {
+    setBusy(true)
+    setError('')
+    try {
+      setGmailAutomation(await writeAutomationStatus(await requireSession(), { discoveryEnabled: enabled }))
     } catch (caught) {
       setError(aiAccessErrorMessage(caught, lang))
     } finally {
@@ -298,6 +343,7 @@ export function AiAccessProvider({ children }: { children: ReactNode }) {
       beginGoogleDriveLink,
       beginGmailAutomationLink,
       setGmailAutomationEnabled,
+      setDiscoveryAutomationEnabled,
       refreshGmailAutomationStatus,
     }}>
       {children}
