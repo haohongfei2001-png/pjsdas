@@ -53,7 +53,7 @@ test('Prep Graph keeps source facts but localizes system status and link explana
   await expect(page.getByText('PREP GRAPH', { exact: true })).toBeVisible()
   await expect(page.getByText(/V1\.6/)).toHaveCount(0)
   await expect(page.getByText('Waiting', { exact: true })).toBeVisible()
-  await expect(page.getByText('SQL readiness', { exact: true })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'SQL readiness' })).toBeVisible()
 
   await page.getByText('See 1 deterministic links', { exact: true }).click()
   await expect(page.getByText('This Prep explicitly names the opportunity or its application group as a trigger.', { exact: true })).toBeVisible()
