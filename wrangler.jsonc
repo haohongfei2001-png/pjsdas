@@ -10,7 +10,6 @@
   "secrets": {
     "required": [
       "PJSDAS_TOKEN_ENCRYPTION_KEY",
-      "PJSDAS_GOOGLE_CLIENT_ID",
       "PJSDAS_GOOGLE_CLIENT_SECRET",
       "AI_GATEWAY_API_KEY"
     ]
