@@ -114,7 +114,7 @@ test('primary navigation, language, and quick-capture surfaces stay coherent in 
 
   await page.getByRole('button', { name: '+ Record process event' }).click()
   await expect(page.getByRole('heading', { name: 'Record a real recruiting event' })).toBeVisible()
-  await expect(page.getByText('Assessment invitation')).toBeVisible()
+  await expect(page.locator('.event-form select').first().locator('option[value="assessment_invite"]')).toHaveText('Assessment invitation')
   await page.getByRole('button', { name: 'Close' }).click()
 
   await page.getByRole('button', { name: 'Update progress / task' }).click()
