@@ -116,7 +116,7 @@ export function createAutomationConnectionStore(options: AutomationConnectionSto
         refresh_token_ciphertext?: string
         granted_scopes?: string[] | null
         discovery_last_checked_at?: string | null
-      }>>('pjsdas_claim_discovery_automation_bindings', { worker_token: workerToken })
+      }>>('pjsdas_claim_enabled_discovery_automation_bindings', { worker_token: workerToken })
 
       return rows.flatMap((row) => {
         if (!row.user_id || !row.google_subject || !row.refresh_token_ciphertext) return []
