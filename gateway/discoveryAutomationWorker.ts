@@ -236,14 +236,6 @@ function throwModelError(caught: unknown): never {
     throw new WorkspaceSourceError('DISCOVERY_MODEL_CREDITS_REQUIRED', 'Vercel AI Gateway has no positive credit balance for background discovery.', false)
   }
   if (status === 403) {
-    if (details.type === 'forbidden') {
-      const ruleSuffix = details.ruleId ? ` (routing rule ${details.ruleId})` : ''
-      throw new WorkspaceSourceError(
-        'DISCOVERY_MODEL_POLICY_FORBIDDEN',
-        `Vercel AI Gateway routing policy denied the discovery-model request${ruleSuffix}.`,
-        false,
-      )
-    }
     if (details.type === 'customer_verification_required') {
       throw new WorkspaceSourceError('DISCOVERY_MODEL_CUSTOMER_VERIFICATION_REQUIRED', 'Vercel AI Gateway requires team payment-method verification before background discovery can use Gateway credits.', false)
     }
@@ -252,6 +244,14 @@ function throwModelError(caught: unknown): never {
     }
     if (details.type === 'no_providers_available' || message.includes('allowlist') || message.includes('not allowed') || message.includes('restriction') || message.includes('restricted access')) {
       throw new WorkspaceSourceError('DISCOVERY_MODEL_RESTRICTED', 'Vercel AI Gateway team restrictions block the selected discovery model or provider.', false)
+    }
+    if (details.type === 'forbidden') {
+      const ruleSuffix = details.ruleId ? ` (routing rule ${details.ruleId})` : ''
+      throw new WorkspaceSourceError(
+        'DISCOVERY_MODEL_POLICY_FORBIDDEN',
+        `Vercel AI Gateway routing policy denied the discovery-model request${ruleSuffix}.`,
+        false,
+      )
     }
     throw new WorkspaceSourceError('DISCOVERY_MODEL_FORBIDDEN', "Vercel AI Gateway denied this project's discovery-model request.", false)
   }
