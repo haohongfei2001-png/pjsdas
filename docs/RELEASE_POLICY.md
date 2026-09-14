@@ -1,6 +1,6 @@
 # PJSDAS Release and Version Policy
 
-PJSDAS distinguishes product releases, engineering milestones, runtime compatibility versions, and deployed build identity. These identifiers serve different purposes and must not be mechanically forced to match.
+PJSDAS distinguishes product releases, engineering milestones, runtime compatibility versions, deployed build identity, and GitHub platform release immutability. These identifiers and controls serve different purposes and must not be mechanically forced to match.
 
 ## Public product version
 
@@ -9,7 +9,7 @@ The first formal public product release is `v1.0.0`.
 From this release onward:
 
 - the public product version follows Semantic Versioning;
-- `package.json` must carry the same numeric version as the public product release;
+- `package.json` must carry the same numeric version as the public product release when a release plan is armed;
 - the Git tag is `v<package version>`;
 - the GitHub Release title uses the same public product version;
 - a public release is created only from a commit that has completed the production release chain.
@@ -28,7 +28,7 @@ The authoritative identity of a deployed frontend/backend pair is the exact Git 
 
 The backend exposes this through `/api/health.release.commitSha`. GitHub Pages refuses to publish unless a configured production backend advertises the exact same SHA and the required capability/tool-surface contract.
 
-A version number identifies a release line. The commit SHA identifies the exact deployed build.
+A version number identifies a release line. The commit SHA identifies the exact deployed build. `main` may advance after a formal release; the release tag continues to identify the verified release commit.
 
 ## Release gate
 
@@ -42,9 +42,9 @@ A public release may be created only after the same commit has passed, in order:
 6. GitHub Pages build and deployment;
 7. post-deploy Production Self-Test.
 
-The GitHub Release workflow is triggered by a successful Production Self-Test. It reads `.github/release-plan.json`, verifies that the plan matches `package.json`, and creates the immutable tag/release for the verified commit. Re-running the workflow is idempotent when the release already exists.
+The GitHub Release workflow is triggered by a successful Production Self-Test. It reads `.github/release-plan.json`, verifies that the armed plan matches `package.json`, and creates a version-pinned Git tag and GitHub Release for the verified commit. Re-running the workflow is idempotent when the release already exists, and an existing orphan tag is never moved or reused.
 
-## Release plan
+## Release plan lifecycle
 
 `.github/release-plan.json` is the explicit publication intent for the next formal release.
 
@@ -56,7 +56,23 @@ A release plan contains:
 - `releaseNotes`;
 - `publishOnProductionSuccess`.
 
-Before starting a later public release, update the package version, release plan, release notes, and associated regression expectations together. Do not reuse an existing release tag for a different commit.
+`publishOnProductionSuccess` is an arming switch:
+
+- set it to `true` only when the listed version is intentionally ready to publish after the production chain passes;
+- after that release is successfully published and verified, set it back to `false` so ordinary post-release development does not repeatedly enter release-publication logic;
+- before a later public release, update the package version, release plan, release notes, and associated regression expectations together, then re-arm publication.
+
+Do not reuse an existing release tag for a different commit.
+
+## GitHub platform release immutability
+
+GitHub's repository-level **Immutable Releases** setting is a separate supply-chain control. When enabled before publication, GitHub locks the published release assets and associated tag and creates a release attestation.
+
+PJSDAS `v1.0.0` was published before that repository setting was enabled, so GitHub reports the release as `immutable=false`. GitHub applies release immutability only to future releases; this does not change the verified commit identity, release tag target, deployment state, or product correctness of `v1.0.0`.
+
+Platform-level immutability is therefore not inferred from the PJSDAS release workflow. The workflow's refusal to move or reuse a tag is an application-level safety rule, not a substitute for GitHub's Immutable Releases feature.
+
+Before a future public release, repository-level immutability may be enabled as an additional non-functional supply-chain protection. If enabled, verify the published release reports `immutable=true` and has the expected release attestation.
 
 ## Current mapping
 
@@ -64,9 +80,10 @@ For the first formal release:
 
 | Identifier | Meaning | Value |
 | --- | --- | --- |
-| Public product version | User-facing immutable release | `v1.0.0` |
+| Public product version | User-facing verified release | `v1.0.0` |
 | `package.json` | Application package version | `1.0.0` |
-| Git tag | Immutable source release marker | `v1.0.0` |
+| Git tag | Version-pinned source release marker | `v1.0.0` |
 | Engineering milestone | Current internal development/hardening stream | `v1.10` |
 | Authenticated gateway runtime | MCP runtime compatibility contract | `1.9.0-alpha.1` |
 | Production build identity | Exact deployed frontend/backend revision | Git commit SHA |
+| GitHub platform immutability for v1.0.0 | Repository feature was not enabled before publication | `false` |
