@@ -4,7 +4,7 @@ import App from './AppV8.js'
 import CoverageIndicator from './CoverageIndicator.js'
 import FixedEventGuard from './FixedEventGuard.js'
 import { UiLanguageProvider } from './uiLanguage.js'
-import { CloudProvider } from './cloud/CloudContext.js'
+import { CloudProvider, useCloud } from './cloud/CloudContext.js'
 import { AiAccessProvider } from './aiAccess/AiAccessContext.js'
 import McpProposalReview from './aiAccess/McpProposalReview.js'
 import OAuthConsentPage from './aiAccess/OAuthConsentPage.js'
@@ -31,6 +31,12 @@ function Root() {
   )
 }
 
+function CloudReadyMcpProposalReview() {
+  const cloud = useCloud()
+  if (cloud.loading) return null
+  return <McpProposalReview />
+}
+
 function Entry() {
   const authorizationId = typeof window !== 'undefined'
     ? new URL(window.location.href).searchParams.get('authorization_id')
@@ -41,7 +47,7 @@ function Entry() {
   return (
     <CloudProvider>
       <AiAccessProvider>
-        <McpProposalReview />
+        <CloudReadyMcpProposalReview />
         <Root />
       </AiAccessProvider>
     </CloudProvider>
