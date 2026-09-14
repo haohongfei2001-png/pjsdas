@@ -13,6 +13,10 @@ import {
   processEventLabels,
   processEventStageLabel,
 } from './processEvents.js'
+import {
+  localProcessEventDateTimeValue,
+  occurredAtWhenOpeningProcessEventDraft,
+} from './processEventDraft.js'
 import { useUiLanguage, type UiLanguage } from './uiLanguage.js'
 import type {
   ActionTimingMode,
@@ -54,11 +58,6 @@ function stageLabel(event: ProcessEvent, lang: UiLanguage) {
   return lang === 'zh' ? processEventStageLabel(event) : processEventStageLabelsEn[event.type]
 }
 
-function localDateTimeValue(date = new Date()) {
-  const offset = date.getTimezoneOffset() * 60_000
-  return new Date(date.getTime() - offset).toISOString().slice(0, 16)
-}
-
 function toIso(value: string) {
   if (!value) return undefined
   const date = new Date(value)
@@ -82,7 +81,8 @@ export default function ProcessEventDock({ onChanged }: ProcessEventDockProps) {
   const [opportunityText, setOpportunityText] = useState('')
   const [type, setType] = useState<ProcessEventType>('assessment_invite')
   const [timingMode, setTimingMode] = useState<ActionTimingMode>('deadline')
-  const [occurredAt, setOccurredAt] = useState(localDateTimeValue())
+  const [occurredAt, setOccurredAt] = useState(localProcessEventDateTimeValue())
+  const [occurredAtTouched, setOccurredAtTouched] = useState(false)
   const [dueAt, setDueAt] = useState('')
   const [estimatedMinutes, setEstimatedMinutes] = useState(
     defaultMinutesForProcessEvent('assessment_invite'),
@@ -121,6 +121,11 @@ export default function ProcessEventDock({ onChanged }: ProcessEventDockProps) {
 
   async function show() {
     setError('')
+    setOccurredAt((current) => occurredAtWhenOpeningProcessEventDraft(
+      current,
+      occurredAtTouched,
+      new Date(),
+    ))
     await reloadLocal()
     setOpen(true)
   }
@@ -174,7 +179,8 @@ export default function ProcessEventDock({ onChanged }: ProcessEventDockProps) {
       setOpportunityText('')
       setDueAt('')
       setNotes('')
-      setOccurredAt(localDateTimeValue())
+      setOccurredAt(localProcessEventDateTimeValue())
+      setOccurredAtTouched(false)
       onChanged?.()
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : (zh ? '保存流程事件失败。' : 'Could not save the process event.'))
@@ -288,7 +294,14 @@ export default function ProcessEventDock({ onChanged }: ProcessEventDockProps) {
                 <div className="event-form-grid">
                   <label>
                     <span>{zh ? '收到通知时间' : 'Notification received'}</span>
-                    <input type="datetime-local" value={occurredAt} onChange={(event) => setOccurredAt(event.target.value)} />
+                    <input
+                      type="datetime-local"
+                      value={occurredAt}
+                      onChange={(event) => {
+                        setOccurredAt(event.target.value)
+                        setOccurredAtTouched(true)
+                      }}
+                    />
                   </label>
                   <label>
                     <span>
