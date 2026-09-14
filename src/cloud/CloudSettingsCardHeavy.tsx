@@ -131,7 +131,7 @@ export default function CloudSettingsCard() {
               </label>
               <div>
                 <button disabled={cloud.syncing || mismatch || Boolean(conflict)} onClick={() => { void run(async () => cloud.syncNow()) }}>{cloud.syncing ? (zh ? '同步中…' : 'Syncing…') : (zh ? '立即同步' : 'Sync now')}</button>
-                <button onClick={() => { void run(cloud.signOut) }}>{zh ? '退出 PJSDAS' : 'Sign out of PJSDAS'}</button>
+                <button disabled={cloud.syncing || cloud.loading} onClick={() => { void run(cloud.signOut) }}>{zh ? '退出 PJSDAS' : 'Sign out of PJSDAS'}</button>
               </div>
             </div>
             {outcomeLabel ? <div className="cloud-result">{outcomeLabel}</div> : null}
