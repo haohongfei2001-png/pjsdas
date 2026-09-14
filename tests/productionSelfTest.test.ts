@@ -51,12 +51,24 @@ function publicFetch(payload = health()) {
 }
 
 describe('production self-test', () => {
-  it('passes public health and unauthorized safety checks while explicitly skipping auth tool discovery without a token', async () => {
+  it('passes public health and unauthorized safety checks while explicitly skipping auth tool discovery without a token in non-release mode', async () => {
     const result = await runProductionSelfTest({ baseUrl: BASE_URL, fetchImpl: publicFetch() })
     expect(result.ok).toBe(true)
     expect(result.checks.find((item) => item.name === 'health.resource-origin')?.status).toBe('pass')
     expect(result.checks.find((item) => item.name === 'mcp.metadata-origin')?.status).toBe('pass')
     expect(result.checks.find((item) => item.name === 'mcp.authenticated.tools')?.status).toBe('skipped')
+  })
+
+  it('fails closed without a token when authenticated tool discovery is required for release', async () => {
+    const result = await runProductionSelfTest({
+      baseUrl: BASE_URL,
+      requireAuthenticatedTools: true,
+      fetchImpl: publicFetch(),
+    })
+    expect(result.ok).toBe(false)
+    expect(result.checks.find((item) => item.name === 'mcp.authenticated.tools')).toMatchObject({
+      status: 'fail',
+    })
   })
 
   it('verifies the hardened authenticated tool surface when a test token is supplied', async () => {
@@ -68,7 +80,12 @@ describe('production self-test', () => {
       if (request.url.endsWith('/api/mcp')) return new Response('data: {"tools":[{"name":"get_coverage_status"},{"name":"get_workspace_integrity"},{"name":"ingest_discovery_run"},{"name":"ingest_gmail_run"}]}', { status: 200, headers: { 'content-type': 'text/event-stream' } })
       return new Response('not found', { status: 404 })
     }) as unknown as typeof fetch
-    const result = await runProductionSelfTest({ baseUrl: BASE_URL, accessToken: 'token', fetchImpl })
+    const result = await runProductionSelfTest({
+      baseUrl: BASE_URL,
+      accessToken: 'token',
+      requireAuthenticatedTools: true,
+      fetchImpl,
+    })
     expect(result.ok).toBe(true)
     for (const tool of ['get_coverage_status', 'get_workspace_integrity', 'ingest_discovery_run', 'ingest_gmail_run']) {
       expect(result.checks.find((item) => item.name === `mcp.tool.${tool}`)?.status).toBe('pass')
