@@ -49,6 +49,16 @@ jobs:
                   try {
                     const health = JSON.parse(raw);
                     const capabilities = health.capabilities ?? {};
+                    const authenticatedMcp = health.authenticatedMcp ?? {};
+                    const requiredTools = Array.isArray(authenticatedMcp.releaseRequiredTools)
+                      ? authenticatedMcp.releaseRequiredTools
+                      : [];
+                    const releaseToolsReady = [
+                      "get_coverage_status",
+                      "get_workspace_integrity",
+                      "ingest_discovery_run",
+                      "ingest_gmail_run",
+                    ].every(tool => requiredTools.includes(tool));
                     const ready =
                       health.status === "ok" &&
                       health.version === "1.9.0-alpha.1" &&
@@ -67,14 +77,17 @@ jobs:
                       capabilities.sourceHealthHistory === true &&
                       capabilities.productionSelfTest === true &&
                       capabilities.deploymentPortability === true &&
-                      capabilities.releaseIdentityBinding === true;
+                      capabilities.releaseIdentityBinding === true &&
+                      capabilities.authenticatedMcpToolSurface === true &&
+                      authenticatedMcp.toolSurfaceVersion === "v1" &&
+                      releaseToolsReady;
                     process.exit(ready ? 0 : 1);
                   } catch {
                     process.exit(1);
                   }
                 });
               '; then
-                echo "PJSDAS backend at ${origin} matches commit ${GITHUB_SHA}."
+                echo "PJSDAS backend at ${origin} matches commit ${GITHUB_SHA} and advertises the required authenticated MCP tool surface."
                 echo "PJSDAS_ACTIVE_BACKEND_ORIGIN=${origin}" >> "$GITHUB_ENV"
                 exit 0
               fi
@@ -82,19 +95,15 @@ jobs:
             sleep 15
           done
 
-          echo "No configured PJSDAS backend matched commit ${GITHUB_SHA}; refusing to publish a frontend against a different backend build." >&2
+          echo "No configured PJSDAS backend matched commit ${GITHUB_SHA} with the required MCP release surface; refusing to publish." >&2
           exit 1
 
       - run: npm ci
 
-      - name: Verify authenticated production MCP before Pages publication
+      - name: Verify production contract before Pages publication
         env:
           PJSDAS_PRODUCTION_BASE_URLS: ${{ vars.PJSDAS_BACKEND_ORIGINS || 'https://pjsdas-remote-alpha.vercel.app' }}
           PJSDAS_EXPECTED_COMMIT_SHA: ${{ github.sha }}
-          PJSDAS_SELF_TEST_ACCESS_TOKEN: ${{ secrets.PJSDAS_SELF_TEST_ACCESS_TOKEN }}
-          PJSDAS_SELF_TEST_EMAIL: ${{ secrets.PJSDAS_SELF_TEST_EMAIL }}
-          PJSDAS_SELF_TEST_PASSWORD: ${{ secrets.PJSDAS_SELF_TEST_PASSWORD }}
-          PJSDAS_REQUIRE_AUTHENTICATED_SELF_TEST: 'true'
         run: npm run self-test:production
 
       - run: npm run build
