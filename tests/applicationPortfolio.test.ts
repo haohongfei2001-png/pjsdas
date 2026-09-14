@@ -14,7 +14,7 @@ function opportunity(
     id,
     company: '示例科技',
     role,
-    currentStageLabel: '待投',
+    currentStageLabel: '待投递',
     processStage: 'not_applied',
     roleType: 'core',
     early: false,
@@ -38,7 +38,16 @@ function group(overrides: Partial<ApplicationGroup> = {}): ApplicationGroup {
   }
 }
 
-describe('v1.6 Round 1 application portfolio decision engine', () => {
+describe('application portfolio decision engine', () => {
+  it('uses canonical process state rather than Chinese presentation text to decide pending eligibility', () => {
+    const result = buildApplicationPortfolioDecision(group({ remaining: 1 }), [
+      opportunity('pending', 'AI 产品经理', 90, 92, { currentStageLabel: '待投递' }),
+    ], cloneDecisionRules(DEFAULT_DECISION_RULES), new Date('2026-09-12T08:00:00+08:00'))
+
+    expect(result.recommended.map((item) => item.opportunityId)).toEqual(['pending'])
+    expect(result.notRecommended).toHaveLength(0)
+  })
+
   it('treats capacity as a maximum and does not fill weak slots merely because they exist', () => {
     const rules = cloneDecisionRules(DEFAULT_DECISION_RULES)
     const result = buildApplicationPortfolioDecision(group(), [
@@ -64,6 +73,7 @@ describe('v1.6 Round 1 application portfolio decision engine', () => {
     const redundant = result.notRecommended.find((item) => item.opportunityId === 'redundant')
     expect(redundant?.disposition).toBe('overlap')
     expect(redundant?.maxSimilarityToRecommended).toBe(1)
+    expect(redundant?.reasons.some((reason) => reason.code === 'high_overlap')).toBe(true)
   })
 
   it('fails closed to ranking-only output when remaining capacity cannot be determined', () => {
@@ -77,7 +87,7 @@ describe('v1.6 Round 1 application portfolio decision engine', () => {
     expect(result.capacity).toBeUndefined()
     expect(result.recommended).toHaveLength(0)
     expect(result.notRecommended[0].baseScore).toBeGreaterThanOrEqual(result.notRecommended[1].baseScore)
-    expect(result.warnings.join(' ')).toContain('不猜测可投数量')
+    expect(result.warnings.some((warning) => warning.code === 'capacity_unknown')).toBe(true)
   })
 
   it('respects locked groups and never proposes replacement selections', () => {
@@ -88,7 +98,8 @@ describe('v1.6 Round 1 application portfolio decision engine', () => {
 
     expect(result.status).toBe('locked')
     expect(result.recommended).toHaveLength(0)
-    expect(result.warnings.join(' ')).toContain('已锁定')
+    expect(result.warnings.some((warning) => warning.code === 'group_locked')).toBe(true)
+    expect(result.warnings.some((warning) => warning.code === 'current_order_context')).toBe(true)
   })
 
   it('excludes already-submitted or expired roles from portfolio selection', () => {
