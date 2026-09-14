@@ -27,6 +27,21 @@ Initial scenarios cover:
 
 The fourth scenario exposed and fixes a real pre-v1.10 defect: the integrity scanner checked for the nonexistent status `in_progress` instead of the actual PJSDAS `ActionStatus` value `doing`.
 
+## Release identity binding
+
+High-speed automated development also requires the frontend release gate to distinguish an old healthy backend from the backend built from the commit being released.
+
+The v1.10 release identity slice therefore adds:
+
+- backend commit identity in `/api/health`;
+- automatic Vercel identity from `VERCEL_GIT_COMMIT_SHA`;
+- provider-neutral `PJSDAS_RELEASE_COMMIT_SHA` for standby providers;
+- exact `health.release.commitSha === GITHUB_SHA` enforcement before GitHub Pages publication;
+- Production Self-Test binding to the exact commit that triggered the successful Pages workflow;
+- Cloudflare adapter propagation of the same release-identity contract.
+
+A backend with the right version string and capabilities but the wrong commit must fail closed and cannot unlock a newer frontend.
+
 ## Development rule
 
 A bug discovered in production or product use should become a regression scenario whenever it can be reproduced deterministically. The same defect class should not require the user to discover it twice.
