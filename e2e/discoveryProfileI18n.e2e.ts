@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test'
 
-test('Job discovery preferences are fully bilingual and persist through the real Settings flow', async ({ page }) => {
+test('Job discovery preferences are bilingual, persist, and never show stale save success after edits', async ({ page }) => {
   await page.goto('/')
   await expect(page.getByRole('heading', { name: '今天只处理下一步' })).toBeVisible()
 
@@ -38,6 +38,10 @@ test('Job discovery preferences are fully bilingual and persist through the real
     })
   })
   expect(stored).toEqual(['AI Product Manager', 'Business Analysis'])
+
+  await targetRoles.fill('AI Product Manager\nBusiness Analysis\nStrategy')
+  await expect(card.locator('.notice.success')).toHaveCount(0)
+  await expect(card.locator('.notice.error')).toHaveCount(0)
 
   await page.reload()
   await expect(page.getByRole('heading', { name: 'Only the next moves for today' })).toBeVisible()
