@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { fetchBackend } from '../backendEndpoints.js'
 import { discardChangeSet, savePendingChangeSet } from '../db.js'
 import { saveDiscoveryInboxFromChangeSet } from '../discoveryInboxStore.js'
 import {
@@ -20,8 +21,6 @@ import OpportunityAssessmentSummary from '../OpportunityAssessmentSummary.js'
 import RichOpportunityFactsSummary from '../RichOpportunityFactsSummary.js'
 import { useUiLanguage } from '../uiLanguage.js'
 import './mcpProposalReview.css'
-
-const VERIFY_ENDPOINT = 'https://pjsdas-remote-alpha.vercel.app/api/proposal-verify'
 
 function clearProposalHash() {
   if (typeof window === 'undefined') return
@@ -76,7 +75,7 @@ export default function McpProposalReview() {
     }
 
     let active = true
-    void fetch(VERIFY_ENDPOINT, {
+    void fetchBackend('/api/proposal-verify', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ token }),
@@ -96,8 +95,8 @@ export default function McpProposalReview() {
           const ownerId = cloud.device.workspaceOwnerUserId
           if (!ownerId) {
             throw new Error(zh
-              ? '这条提议来自 Google Drive，但当前浏览器还没有可验证的 PJSDAS 云端基线。请先在“导入与设置”连接并同步 Google Drive，再让 ChatGPT 重新生成提议。'
-              : 'This proposal came from Google Drive, but this browser has no verifiable PJSDAS cloud baseline. Connect and sync Google Drive in Import & Settings, then ask ChatGPT for a fresh proposal.')
+              ? '这条提议来自 Google Drive，但当前浏览器还没有可验证的 PJSDAS 云端基线。请先在“设置”连接并同步 Google Drive，再让 ChatGPT 重新生成提议。'
+              : 'This proposal came from Google Drive, but this browser has no verifiable PJSDAS cloud baseline. Connect and sync Google Drive in Settings, then ask ChatGPT for a fresh proposal.')
           }
           const checkpoint = getAccountCheckpoint(ownerId)
           if (!checkpoint.lastSyncedVersion || proposedVersion !== checkpoint.lastSyncedVersion) {
@@ -196,13 +195,13 @@ export default function McpProposalReview() {
             : `${selectionNote} ChangeSet applied and Google Drive sync was requested${feedbackNote}`)
         } catch {
           setResult(zh
-            ? `${selectionNote} ChangeSet 已应用到本机；Google Drive 同步未完成，请稍后在“导入与设置”中同步${feedbackNote}`
-            : `${selectionNote} ChangeSet applied locally; Google Drive sync did not complete. Sync later in Import & Settings${feedbackNote}`)
+            ? `${selectionNote} ChangeSet 已应用到本机；Google Drive 同步未完成，请稍后在“设置”中同步${feedbackNote}`
+            : `${selectionNote} ChangeSet applied locally; Google Drive sync did not complete. Sync later in Settings${feedbackNote}`)
         }
       } else {
         setResult(zh
-          ? `${selectionNote} ChangeSet 已应用到本机。Google Drive 当前未连接；请在“导入与设置”连接并同步，之后 ChatGPT 才能读取到新状态${feedbackNote}`
-          : `${selectionNote} ChangeSet applied locally. Connect and sync Google Drive in Import & Settings before ChatGPT can read the new state${feedbackNote}`)
+          ? `${selectionNote} ChangeSet 已应用到本机。Google Drive 当前未连接；请在“设置”连接并同步，之后 ChatGPT 才能读取到新状态${feedbackNote}`
+          : `${selectionNote} ChangeSet applied locally. Connect and sync Google Drive in Settings before ChatGPT can read the new state${feedbackNote}`)
       }
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : String(caught))
@@ -278,7 +277,7 @@ export default function McpProposalReview() {
   return (
     <div className="mcp-proposal-backdrop" role="dialog" aria-modal="true" aria-label={zh ? 'ChatGPT 修改提议' : 'ChatGPT change proposal'}>
       <section className={`mcp-proposal-card ${discoveryOperations.length ? 'discovery-review' : ''}`}>
-        <div className="mcp-proposal-eyebrow">CHATGPT · CHANGESET · {discoveryOperations.length ? 'V1.5 · COMPONENT ASSESSMENT' : 'V1.2'}</div>
+        <div className="mcp-proposal-eyebrow">CHATGPT · CHANGESET · {discoveryOperations.length ? 'JOB DISCOVERY REVIEW' : 'PROPOSAL REVIEW'}</div>
         <h2>{discoveryOperations.length ? (zh ? '逐岗位审阅发现结果' : 'Review discovered jobs') : (zh ? '审阅 ChatGPT 提议' : 'Review ChatGPT proposal')}</h2>
 
         {verifying ? <p className="mcp-proposal-safety">{zh ? '正在验证提议签名、有效期与本机工作区基线…' : 'Verifying proposal signature, expiry, and local workspace baseline…'}</p> : null}
