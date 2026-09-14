@@ -49,13 +49,12 @@ test('Prep Graph keeps source facts but localizes system status and link explana
   await page.getByRole('button', { name: 'EN' }).first().click()
   await page.getByRole('button', { name: 'Prep Graph' }).click()
 
-  const dialog = page.getByRole('heading', { name: 'Preparation leverage graph' }).locator('..').locator('..')
   await expect(page.getByRole('heading', { name: 'Preparation leverage graph' })).toBeVisible()
   await expect(page.getByText('PREP GRAPH', { exact: true })).toBeVisible()
   await expect(page.getByText(/V1\.6/)).toHaveCount(0)
   await expect(page.getByText('Waiting', { exact: true })).toBeVisible()
+  await expect(page.getByText('SQL readiness', { exact: true })).toBeVisible()
 
   await page.getByText('See 1 deterministic links', { exact: true }).click()
   await expect(page.getByText('This Prep explicitly names the opportunity or its application group as a trigger.', { exact: true })).toBeVisible()
-  await expect(dialog).toContainText('SQL readiness')
 })
