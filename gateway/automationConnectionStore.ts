@@ -14,44 +14,52 @@ export interface GmailAutomationBinding {
 
 export interface AutomationConnectionStoreOptions {
   supabaseUrl: string
-  serviceRoleKey: string
+  supabasePublishableKey: string
+  workerToken: string
   fetchImpl?: typeof fetch
 }
 
-function requiredSecret(value: string, name: string) {
+function required(value: string, name: string) {
   const trimmed = value.trim()
-  if (!trimmed) throw new WorkspaceSourceError('INVALID_SOURCE_CONFIG', `${name} is not configured.`, false)
+  if (!trimmed) throw new WorkspaceSourceError('AUTOMATION_AUTH_REQUIRED', `${name} is required.`, false)
   return trimmed
 }
 
 export function createAutomationConnectionStore(options: AutomationConnectionStoreOptions) {
   const baseUrl = options.supabaseUrl.replace(/\/+$/, '')
-  const serviceRoleKey = requiredSecret(options.serviceRoleKey, 'PJSDAS Supabase service-role key')
+  const publishableKey = required(options.supabasePublishableKey, 'PJSDAS Supabase publishable key')
+  const workerToken = required(options.workerToken, 'PJSDAS automation worker token')
   const fetchImpl = options.fetchImpl ?? fetch
   const headers = {
-    Authorization: `Bearer ${serviceRoleKey}`,
-    apikey: serviceRoleKey,
+    apikey: publishableKey,
     'content-type': 'application/json',
+  }
+
+  async function rpc<T>(name: string, body: Record<string, unknown>): Promise<T> {
+    let response: Response
+    try {
+      response = await fetchImpl(`${baseUrl}/rest/v1/rpc/${name}`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(body),
+      })
+    } catch {
+      throw new WorkspaceSourceError('AUTH_UNAVAILABLE', 'PJSDAS automation authorization store is temporarily unavailable.', true)
+    }
+    if (response.status === 401 || response.status === 403) {
+      throw new WorkspaceSourceError('AUTOMATION_AUTH_REQUIRED', 'PJSDAS automation worker authorization is invalid.', false)
+    }
+    if (!response.ok) {
+      throw new WorkspaceSourceError('AUTH_UNAVAILABLE', `PJSDAS automation authorization store failed (HTTP ${response.status}).`, true)
+    }
+    const data = await response.json().catch(() => undefined) as T | undefined
+    if (data === undefined) throw new WorkspaceSourceError('AUTH_INVALID', 'PJSDAS automation authorization store returned invalid data.', false)
+    return data
   }
 
   return {
     async listEnabledGmailBindings(): Promise<GmailAutomationBinding[]> {
-      const params = new URLSearchParams({
-        select: 'user_id,google_subject,google_email,refresh_token_ciphertext,granted_scopes,gmail_history_id,gmail_last_checked_at',
-        gmail_automation_enabled: 'eq.true',
-        revoked_at: 'is.null',
-        order: 'updated_at.asc',
-      })
-      let response: Response
-      try {
-        response = await fetchImpl(`${baseUrl}/rest/v1/google_drive_connections?${params.toString()}`, { headers })
-      } catch {
-        throw new WorkspaceSourceError('AUTH_UNAVAILABLE', 'PJSDAS automation authorization store is temporarily unavailable.', true)
-      }
-      if (!response.ok) {
-        throw new WorkspaceSourceError('AUTH_UNAVAILABLE', `PJSDAS automation authorization store failed (HTTP ${response.status}).`, true)
-      }
-      const rows = await response.json().catch(() => undefined) as Array<{
+      const rows = await rpc<Array<{
         user_id?: string
         google_subject?: string
         google_email?: string | null
@@ -59,8 +67,8 @@ export function createAutomationConnectionStore(options: AutomationConnectionSto
         granted_scopes?: string[] | null
         gmail_history_id?: string | null
         gmail_last_checked_at?: string | null
-      }> | undefined
-      if (!rows) throw new WorkspaceSourceError('AUTH_INVALID', 'PJSDAS automation authorization store returned invalid data.', false)
+      }>>('pjsdas_claim_gmail_automation_bindings', { worker_token: workerToken })
+
       return rows.flatMap((row) => {
         if (!row.user_id || !row.google_subject || !row.refresh_token_ciphertext) return []
         return [{
@@ -81,24 +89,16 @@ export function createAutomationConnectionStore(options: AutomationConnectionSto
       successAt?: string
       lastError?: string | null
     }) {
-      const body: Record<string, string | null> = {}
-      if ('historyId' in patch) body.gmail_history_id = patch.historyId ?? null
-      if (patch.checkedAt) body.gmail_last_checked_at = patch.checkedAt
-      if (patch.successAt) body.gmail_last_success_at = patch.successAt
-      if ('lastError' in patch) body.gmail_last_error = patch.lastError ?? null
-      body.updated_at = patch.checkedAt ?? new Date().toISOString()
-      const params = new URLSearchParams({ user_id: `eq.${userId}` })
-      let response: Response
-      try {
-        response = await fetchImpl(`${baseUrl}/rest/v1/google_drive_connections?${params.toString()}`, {
-          method: 'PATCH', headers: { ...headers, Prefer: 'return=minimal' }, body: JSON.stringify(body),
-        })
-      } catch {
-        throw new WorkspaceSourceError('AUTH_UNAVAILABLE', 'PJSDAS automation state could not be saved.', true)
-      }
-      if (!response.ok) {
-        throw new WorkspaceSourceError('AUTH_UNAVAILABLE', `PJSDAS automation state update failed (HTTP ${response.status}).`, true)
-      }
+      await rpc<null>('pjsdas_update_gmail_automation_state', {
+        worker_token: workerToken,
+        target_user_id: userId,
+        next_history_id: 'historyId' in patch ? patch.historyId ?? null : null,
+        checked_at: patch.checkedAt ?? null,
+        success_at: patch.successAt ?? null,
+        last_error: 'lastError' in patch ? patch.lastError ?? null : null,
+        set_history_id: 'historyId' in patch,
+        set_last_error: 'lastError' in patch,
+      })
     },
   }
 }
