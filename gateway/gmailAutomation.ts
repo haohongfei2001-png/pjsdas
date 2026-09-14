@@ -10,7 +10,7 @@ import { createDriveWorkspaceSource } from './driveWorkspaceSource.js'
 import { refreshGoogleAccessToken } from './googleOAuthTokens.js'
 import { decryptSecret } from './tokenCrypto.js'
 import { GMAIL_READONLY_SCOPE, type GmailAutomationBinding } from './automationConnectionStore.js'
-import { WorkspaceSourceError } from './workspaceSource.js'
+import { requireWritableWorkspaceSource, WorkspaceSourceError } from './workspaceSource.js'
 
 const GMAIL_API = 'https://gmail.googleapis.com/gmail/v1/users/me'
 const GMAIL_SOURCE_ID = 'gmail:primary'
@@ -342,7 +342,8 @@ export async function runGmailAutomationForBinding(options: {
 
   let workspaceVersion = workspace.context.workspaceVersion
   if (!result.alreadyApplied) {
-    const written = await source.write({
+    const writable = requireWritableWorkspaceSource(source)
+    const written = await writable.write({
       snapshot: result.snapshot,
       expectedWorkspaceVersion: workspace.context.workspaceVersion,
       updatedByDevice: 'gmail-automation-worker',
