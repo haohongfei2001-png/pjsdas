@@ -1,0 +1,85 @@
+name: Publish verified PJSDAS release
+
+on:
+  workflow_run:
+    workflows: ["PJSDAS Production Self-Test"]
+    types: [completed]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    env:
+      RELEASE_SHA: ${{ github.event.workflow_run.head_sha }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          fetch-depth: 0
+
+      - name: Load release plan
+        id: plan
+        shell: bash
+        run: |
+          node <<'NODE' >> "$GITHUB_OUTPUT"
+          const fs = require('node:fs')
+          const plan = JSON.parse(fs.readFileSync('.github/release-plan.json', 'utf8'))
+          for (const key of ['publicVersion', 'tag', 'releaseNotes']) {
+            if (typeof plan[key] !== 'string' || !plan[key].trim()) {
+              throw new Error(`release plan is missing ${key}`)
+            }
+          }
+          console.log(`publish=${plan.publishOnProductionSuccess === true ? 'true' : 'false'}`)
+          console.log(`version=${plan.publicVersion}`)
+          console.log(`tag=${plan.tag}`)
+          console.log(`notes=${plan.releaseNotes}`)
+          NODE
+
+      - name: Verify release version contract
+        if: ${{ steps.plan.outputs.publish == 'true' }}
+        env:
+          PUBLIC_VERSION: ${{ steps.plan.outputs.version }}
+          RELEASE_TAG: ${{ steps.plan.outputs.tag }}
+          RELEASE_NOTES: ${{ steps.plan.outputs.notes }}
+        run: |
+          node <<'NODE'
+          const fs = require('node:fs')
+          const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'))
+          const version = process.env.PUBLIC_VERSION
+          const tag = process.env.RELEASE_TAG
+          const notes = process.env.RELEASE_NOTES
+          if (pkg.version !== version) throw new Error(`package version ${pkg.version} does not match release ${version}`)
+          if (tag !== `v${version}`) throw new Error(`release tag ${tag} must equal v${version}`)
+          if (!fs.existsSync(notes)) throw new Error(`release notes not found: ${notes}`)
+          NODE
+
+      - name: Create immutable GitHub Release
+        if: ${{ steps.plan.outputs.publish == 'true' }}
+        env:
+          RELEASE_TAG: ${{ steps.plan.outputs.tag }}
+          RELEASE_NOTES: ${{ steps.plan.outputs.notes }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "Release ${RELEASE_TAG} already exists; publication is idempotently complete."
+            exit 0
+          fi
+
+          if git ls-remote --exit-code --tags origin "refs/tags/${RELEASE_TAG}" >/dev/null 2>&1; then
+            echo "Tag ${RELEASE_TAG} already exists without a GitHub Release; refusing to move or reuse it." >&2
+            exit 1
+          fi
+
+          gh release create "$RELEASE_TAG" \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$RELEASE_SHA" \
+            --title "PJSDAS ${RELEASE_TAG}" \
+            --notes-file "$RELEASE_NOTES"
+
+          gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY"
