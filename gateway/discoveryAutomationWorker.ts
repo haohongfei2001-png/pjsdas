@@ -194,7 +194,11 @@ function gatewayErrorDetails(caught: unknown) {
   const nested = root.error && typeof root.error === 'object' ? root.error as Record<string, unknown> : root
   return {
     type: typeof nested.type === 'string' ? nested.type : undefined,
-    message: typeof nested.message === 'string' ? nested.message : undefined,
+    message: typeof nested.message === 'string'
+      ? nested.message
+      : typeof root.error === 'string'
+        ? root.error
+        : undefined,
   }
 }
 
@@ -219,7 +223,7 @@ function throwModelError(caught: unknown): never {
     if (message.includes('free tier')) {
       throw new WorkspaceSourceError('DISCOVERY_MODEL_CREDITS_REQUIRED', 'The selected discovery model is not available on the current Vercel AI Gateway free tier.', false)
     }
-    if (message.includes('allowlist') || message.includes('not allowed') || message.includes('restriction')) {
+    if (details.type === 'no_providers_available' || message.includes('allowlist') || message.includes('not allowed') || message.includes('restriction') || message.includes('restricted access')) {
       throw new WorkspaceSourceError('DISCOVERY_MODEL_RESTRICTED', 'Vercel AI Gateway team restrictions block the selected discovery model or provider.', false)
     }
     throw new WorkspaceSourceError('DISCOVERY_MODEL_FORBIDDEN', "Vercel AI Gateway denied this project's discovery-model request.", false)

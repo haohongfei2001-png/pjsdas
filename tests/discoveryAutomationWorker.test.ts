@@ -191,6 +191,29 @@ describe('server-owned discovery worker model boundary', () => {
     })
   })
 
+  it('classifies the official top-level no_providers_available Gateway shape as a team restriction', async () => {
+    const snapshot = await demoSnapshot()
+    await expect(discoverSourceRun(snapshot, sourceRun(), {
+      executionRules: [],
+      now: new Date('2026-09-15T01:00:00.000Z'),
+      ai: {
+        generateTextImpl: async () => {
+          throw {
+            statusCode: 403,
+            responseBody: JSON.stringify({
+              error: 'Your team has restricted access to this model. Contact the owner of the account for more details.',
+              type: 'no_providers_available',
+              statusCode: 403,
+            }),
+          }
+        },
+      },
+    })).rejects.toMatchObject({
+      code: 'DISCOVERY_MODEL_RESTRICTED',
+      retryable: false,
+    })
+  })
+
   it('distinguishes a free-tier model restriction from project authentication failure', async () => {
     const snapshot = await demoSnapshot()
     await expect(discoverSourceRun(snapshot, sourceRun(), {
