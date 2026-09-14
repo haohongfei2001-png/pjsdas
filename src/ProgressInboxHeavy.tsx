@@ -35,6 +35,7 @@ export default function ProgressInboxHeavy({ onChanged }: ProgressInboxProps) {
   const zh = lang === 'zh'
   const [open, setOpen] = useState(false)
   const [text, setText] = useState('')
+  const [parsedText, setParsedText] = useState<string | null>(null)
   const [opportunities, setOpportunities] = useState<Opportunity[]>([])
   const [plan, setPlan] = useState<ProgressUpdatePlan | null>(null)
   const [changeSet, setChangeSet] = useState<ChangeSetRecord | null>(null)
@@ -49,6 +50,23 @@ export default function ProgressInboxHeavy({ onChanged }: ProgressInboxProps) {
     setOpportunities(await getAllOpportunities())
   }
 
+  function editText(nextText: string) {
+    setText(nextText)
+    setError('')
+    if (plan || parsedText !== null) {
+      // A ChangeSet is a proposal for one exact source text. Once the user edits
+      // that text, the old preview must not remain confirmable. Keep the pending
+      // record reference only so parse()/close() can discard it durably.
+      setPlan(null)
+      setParsedText(null)
+      setMessage(zh
+        ? '输入已变化；旧预览已失效，请重新解析。'
+        : 'The input changed. The old preview is stale; parse again before applying.')
+      return
+    }
+    setMessage('')
+  }
+
   async function parse() {
     setMessage('')
     setError('')
@@ -58,6 +76,7 @@ export default function ProgressInboxHeavy({ onChanged }: ProgressInboxProps) {
     }
     setBusy(true)
     try {
+      const sourceText = text
       const [current, processEvents, actions, discoveryInbox] = await Promise.all([
         getAllOpportunities(),
         getAllProcessEvents(),
@@ -65,7 +84,12 @@ export default function ProgressInboxHeavy({ onChanged }: ProgressInboxProps) {
         getAllDiscoveryInboxItems(),
       ])
       setOpportunities(current)
-      if (changeSet?.status === 'pending') await discardChangeSet(changeSet.id)
+      if (changeSet?.status === 'pending') {
+        await discardChangeSet(changeSet.id)
+        setChangeSet(null)
+      }
+      setPlan(null)
+      setParsedText(null)
 
       const canonicalReferences: CanonicalJobReference[] = discoveryInbox
         .filter((item) => item.status !== 'dismissed')
@@ -77,13 +101,14 @@ export default function ProgressInboxHeavy({ onChanged }: ProgressInboxProps) {
           sourceLabel: item.sourceUrl,
         }))
 
-      const nextPlan = parseProgressUpdate(text, current, new Date(), canonicalReferences)
+      const nextPlan = parseProgressUpdate(sourceText, current, new Date(), canonicalReferences)
       const canonical = nextPlan.executable.length > 0
         ? createCanonicalProgressChangeSet(nextPlan.executable, processEvents, actions)
         : undefined
       const nextChangeSet = canonical ? await savePendingChangeSet(canonical) : null
       setPlan(nextPlan)
       setChangeSet(nextChangeSet)
+      setParsedText(sourceText)
       if (nextPlan.executable.length > 0 && !canonical) {
         setMessage(zh
           ? '识别到的进展已经是当前工作区状态，无需重复写入或生成 ChangeSet。'
@@ -99,12 +124,21 @@ export default function ProgressInboxHeavy({ onChanged }: ProgressInboxProps) {
   async function close() {
     if (changeSet?.status === 'pending') await discardChangeSet(changeSet.id)
     setPlan(null)
+    setParsedText(null)
     setChangeSet(null)
     setOpen(false)
   }
 
   async function confirm() {
     if (!plan || !changeSet || changeSet.operations.length === 0) return
+    if (parsedText === null || parsedText !== text) {
+      setPlan(null)
+      setParsedText(null)
+      setError(zh
+        ? '输入已变化，旧 ChangeSet 不会应用。请重新解析当前文本。'
+        : 'The input changed, so the old ChangeSet will not be applied. Parse the current text again.')
+      return
+    }
     setBusy(true)
     setError('')
     setMessage('')
@@ -117,6 +151,7 @@ export default function ProgressInboxHeavy({ onChanged }: ProgressInboxProps) {
         ? `ChangeSet ${applied.id} 已应用 ${applied.operations.length} 项修改${notes.length ? `；${notes.join('，')}。` : '。'}`
         : `ChangeSet ${applied.id} applied ${applied.operations.length} change(s)${notes.length ? `; ${notes.join('; ')}.` : '.'}`)
       setText('')
+      setParsedText(null)
       setPlan(null)
       setChangeSet(null)
       setOpportunities(await getAllOpportunities())
@@ -155,7 +190,8 @@ export default function ProgressInboxHeavy({ onChanged }: ProgressInboxProps) {
               className="progress-inbox-textarea"
               rows={10}
               value={text}
-              onChange={(event) => setText(event.target.value)}
+              disabled={busy}
+              onChange={(event) => editText(event.target.value)}
               placeholder={zh
                 ? '例如：\n投递小鹏 AI产品经理。\n小鹏测试。\n待办：修改论文图表。\n9月22日，小鹏产品经理10点面试。'
                 : 'The natural-language parser currently accepts Chinese recruiting updates, for example:\n投递小鹏 AI产品经理。\n小鹏测试。\n待办：修改论文图表。\n9月22日，小鹏产品经理10点面试。'}
