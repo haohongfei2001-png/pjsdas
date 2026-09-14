@@ -26,8 +26,13 @@ describe('AI Access status presentation', () => {
     expect(source).toContain('function clearPendingGoogleLinkState()')
     expect(source).toContain('window.sessionStorage.removeItem(PENDING_KEY)')
     expect(source).toContain('clearCallbackUrl()')
-    expect(source).toContain('const email = await persistGoogleLink(session)\n      clearPendingGoogleLinkState()')
-    expect(source).toContain('} catch (caught) {\n      clearPendingGoogleLinkState()\n      setError(aiAccessErrorMessage(caught, lang))')
+
+    const persistIndex = source.indexOf('await persistGoogleLink(session)')
+    expect(persistIndex).toBeGreaterThan(-1)
+    const successClearIndex = source.indexOf('clearPendingGoogleLinkState()', persistIndex)
+    expect(successClearIndex).toBeGreaterThan(persistIndex)
+
+    expect(source).toMatch(/catch \(caught\) \{\n\s+clearPendingGoogleLinkState\(\)\n\s+setError\(aiAccessErrorMessage\(caught, lang\)\)/)
     expect(source).toContain('clearPendingGoogleLinkState()\n        setError(aiAccessErrorMessage(caught, lang))')
   })
 })
