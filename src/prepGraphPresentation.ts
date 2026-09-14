@@ -1,4 +1,5 @@
 import type { PrepGraphLink, PrepOpportunityNeed } from './prepGraph.js'
+import { presentPrepSourceState } from './prepSemantics.js'
 
 function matchedNeed(link: PrepGraphLink, needs: PrepOpportunityNeed[]) {
   for (const id of link.matchedNeedIds) {
@@ -37,12 +38,4 @@ export function presentPrepGraphLinkExplanation(
   }
 }
 
-export function presentPrepSourceStatus(value: string | undefined, zh: boolean) {
-  if (!value) return zh ? '状态未知' : 'Unknown status'
-  const normalized = value.trim().toLocaleLowerCase()
-  if (normalized === '等待触发' || normalized === 'waiting') return zh ? '等待触发' : 'Waiting'
-  if (normalized === 'active' || normalized === '已激活' || normalized === '进行中') return zh ? '进行中' : 'Active'
-  if (normalized === 'done' || normalized === 'completed' || normalized === '已完成') return zh ? '已完成' : 'Completed'
-  if (normalized === 'paused' || normalized === '暂停') return zh ? '暂停' : 'Paused'
-  return value
-}
+export const presentPrepSourceStatus = presentPrepSourceState
