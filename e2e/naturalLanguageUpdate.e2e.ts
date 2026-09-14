@@ -122,6 +122,38 @@ test('explicit non-job task goes through ChangeSet, enters Today, and survives r
   await expect(page.getByRole('heading', { name: '修改论文图表' })).toBeVisible()
 })
 
+test('editing parsed text invalidates the old ChangeSet and only applies the re-parsed input', async ({ page }) => {
+  await page.goto('/')
+  await expect(page.getByRole('heading', { name: '今天只处理下一步' })).toBeVisible()
+  await openNaturalLanguageUpdate(page)
+
+  const input = page.locator('.progress-inbox-textarea')
+  await input.fill('待办：旧任务。')
+  await page.getByRole('button', { name: '解析并生成 ChangeSet' }).click()
+  await expect(page.getByRole('heading', { name: '准备执行 1 项修改' })).toBeVisible()
+  await expect(page.locator('.progress-operation-list')).toContainText('旧任务')
+
+  await input.fill('待办：新任务。')
+  await expect(page.getByRole('heading', { name: '准备执行 1 项修改' })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: '确认并应用 ChangeSet · 1 项' })).toHaveCount(0)
+  await expect(page.locator('.progress-message.success')).toContainText('旧预览已失效')
+
+  await page.getByRole('button', { name: '解析并生成 ChangeSet' }).click()
+  await expect(page.getByRole('heading', { name: '准备执行 1 项修改' })).toBeVisible()
+  await expect(page.locator('.progress-operation-list')).toContainText('新任务')
+  await expect(page.locator('.progress-operation-list')).not.toContainText('旧任务')
+
+  await page.getByRole('button', { name: '确认并应用 ChangeSet · 1 项' }).click()
+  await expect(page.locator('.progress-message.success')).toContainText('已应用 1 项修改')
+  await page.getByRole('button', { name: '关闭' }).click()
+
+  const state = await readMutationState(page)
+  expect(state.actions.filter((item) => item.title === '旧任务')).toHaveLength(0)
+  expect(state.actions.filter((item) => item.title === '新任务')).toHaveLength(1)
+  expect(state.changeSets.filter((item) => item.status === 'discarded')).toHaveLength(1)
+  expect(state.changeSets.filter((item) => item.status === 'applied')).toHaveLength(1)
+})
+
 test('source-backed alias application updates the canonical job in place instead of creating a duplicate', async ({ page }) => {
   const canonical = sourceBackedOpportunity('alias-ai-pm', '别名科技', 'AI产品经理（数据平台）')
   await seedOpportunities(page, [canonical])
