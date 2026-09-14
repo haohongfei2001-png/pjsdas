@@ -10,6 +10,7 @@ const pages = readFileSync(new URL('../.github/workflows/deploy-pages.yml', impo
 const selfTest = readFileSync(new URL('../.github/workflows/production-self-test.yml', import.meta.url), 'utf8')
 const vercel = readFileSync(new URL('../vercel.json', import.meta.url), 'utf8')
 const wrangler = readFileSync(new URL('../wrangler.jsonc', import.meta.url), 'utf8')
+const RELEASE_SHA = '1234567890abcdef1234567890abcdef12345678'
 
 describe('deployment portability', () => {
   it('derives public backend URLs from the request origin without provider-specific code', () => {
@@ -18,13 +19,18 @@ describe('deployment portability', () => {
     expect(backendUrl('/api/mcp', request, '')).toBe('https://standby.example/api/mcp')
   })
 
-  it('serves the same health and OAuth contract through the Cloudflare adapter', async () => {
-    const health = await routeCloudflareRequest(new Request('https://standby.example/api/health'))
+  it('serves the same health, release identity and OAuth contract through the Cloudflare adapter', async () => {
+    const health = await routeCloudflareRequest(
+      new Request('https://standby.example/api/health'),
+      { PJSDAS_RELEASE_COMMIT_SHA: RELEASE_SHA },
+    )
     expect(health.status).toBe(200)
     await expect(health.json()).resolves.toMatchObject({
       status: 'ok',
       version: '1.9.0-alpha.1',
       resource: 'https://standby.example/api/mcp',
+      release: { commitSha: RELEASE_SHA },
+      capabilities: { releaseIdentityBinding: true },
     })
 
     const metadata = await routeCloudflareRequest(new Request('https://standby.example/.well-known/oauth-protected-resource'))
@@ -40,7 +46,7 @@ describe('deployment portability', () => {
     expect(anonymousMcp.headers.get('www-authenticate')).toContain('https://standby.example/.well-known/oauth-protected-resource')
   })
 
-  it('keeps provider selection outside business clients and release policy', () => {
+  it('keeps provider selection outside business clients and binds release verification to the deployed commit', () => {
     expect(client).toContain('VITE_PJSDAS_BACKEND_ORIGINS')
     expect(client).toContain('/api/health')
     expect(cloudClient).toContain("fetchBackend('/api/google-link'")
@@ -49,7 +55,10 @@ describe('deployment portability', () => {
     expect(cloudClient).not.toContain('vercel.app')
     expect(aiAccess).not.toContain('vercel.app')
     expect(pages).toContain('PJSDAS_BACKEND_ORIGINS')
+    expect(pages).toContain('health.release?.commitSha === process.env.GITHUB_SHA')
     expect(selfTest).toContain('PJSDAS_PRODUCTION_BASE_URLS')
+    expect(selfTest).toContain('PJSDAS_EXPECTED_COMMIT_SHA')
+    expect(selfTest).toContain('github.event.workflow_run.head_sha || github.sha')
     expect(vercel).toContain('"main": true')
     expect(wrangler).toContain('pjsdas-remote-standby')
     expect(wrangler).toContain('cloudflare/worker.ts')

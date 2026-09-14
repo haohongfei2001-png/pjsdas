@@ -28,13 +28,13 @@ jobs:
           node-version: 22
           cache: npm
 
-      - name: Wait for matching hardened v1.9 production backend
+      - name: Wait for exact matching hardened v1.9 production backend
         shell: bash
         run: |
           set -euo pipefail
           IFS=',' read -ra configured_origins <<< "$PJSDAS_BACKEND_ORIGINS"
           for attempt in $(seq 1 40); do
-            echo "Backend release gate attempt ${attempt}/40"
+            echo "Backend release gate attempt ${attempt}/40 for commit ${GITHUB_SHA}"
             for raw_origin in "${configured_origins[@]}"; do
               origin="$(printf '%s' "$raw_origin" | xargs)"
               [ -n "$origin" ] || continue
@@ -53,6 +53,7 @@ jobs:
                       health.status === "ok" &&
                       health.version === "1.9.0-alpha.1" &&
                       health.mode === "google-drive-trusted-ingestion" &&
+                      health.release?.commitSha === process.env.GITHUB_SHA &&
                       capabilities.autonomousIngestion === "v1.9" &&
                       capabilities.ingestionReconciliationLedger === true &&
                       capabilities.coverageStatusRead === true &&
@@ -65,14 +66,15 @@ jobs:
                       capabilities.ingestionDryRunReplay === true &&
                       capabilities.sourceHealthHistory === true &&
                       capabilities.productionSelfTest === true &&
-                      capabilities.deploymentPortability === true;
+                      capabilities.deploymentPortability === true &&
+                      capabilities.releaseIdentityBinding === true;
                     process.exit(ready ? 0 : 1);
                   } catch {
                     process.exit(1);
                   }
                 });
               '; then
-                echo "PJSDAS hardened v1.9 backend is ready at ${origin}."
+                echo "PJSDAS backend at ${origin} matches commit ${GITHUB_SHA}."
                 echo "PJSDAS_ACTIVE_BACKEND_ORIGIN=${origin}" >> "$GITHUB_ENV"
                 exit 0
               fi
@@ -80,7 +82,7 @@ jobs:
             sleep 15
           done
 
-          echo "No configured PJSDAS backend became ready; refusing to publish a frontend that depends on it." >&2
+          echo "No configured PJSDAS backend matched commit ${GITHUB_SHA}; refusing to publish a frontend against a different backend build." >&2
           exit 1
 
       - run: npm ci

@@ -1,9 +1,14 @@
 import { describe, expect, it } from 'vitest'
 import health, { PUBLIC_HEALTH_CAPABILITIES } from '../api/health.js'
 
+const RELEASE_SHA = '1234567890abcdef1234567890abcdef12345678'
+
 describe('public production health contract', () => {
   it('describes the authenticated v1.9 trusted-ingestion gateway without exposing demo data or secrets', async () => {
-    const response = health.fetch(new Request('https://standby.example/api/health'))
+    const response = health.fetch(
+      new Request('https://standby.example/api/health'),
+      { PJSDAS_RELEASE_COMMIT_SHA: RELEASE_SHA },
+    )
     expect(response.status).toBe(200)
     expect(response.headers.get('cache-control')).toBe('no-store')
     expect(response.headers.get('access-control-allow-origin')).toBe('*')
@@ -15,6 +20,7 @@ describe('public production health contract', () => {
       mode: 'google-drive-trusted-ingestion',
       auth: 'supabase-oauth-2.1',
       resource: 'https://standby.example/api/mcp',
+      release: { commitSha: RELEASE_SHA },
       capabilities: PUBLIC_HEALTH_CAPABILITIES,
       status: 'ok',
     })
@@ -43,6 +49,7 @@ describe('public production health contract', () => {
     expect(body.capabilities.trustedGmailIngestion).toBe(true)
     expect(body.capabilities.optimisticDriveWriteGuard).toBe(true)
     expect(body.capabilities.deploymentPortability).toBe(true)
+    expect(body.capabilities.releaseIdentityBinding).toBe(true)
     expect(JSON.stringify(body)).not.toContain('synthetic-demo-only')
     expect(body).not.toHaveProperty('secretsConfigured')
   })

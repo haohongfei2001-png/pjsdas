@@ -6,13 +6,13 @@ import mcp from '../api/mcp.js'
 import mcpAuth from '../api/mcp-auth.js'
 import oauthProtectedResource from '../api/oauth-protected-resource.js'
 import proposalVerify from '../api/proposal-verify.js'
+import type { ReleaseIdentityEnvironment } from '../gateway/releaseIdentity.js'
 
 type FetchHandler = { fetch(request: Request): Response | Promise<Response> }
 
 const ROUTES = new Map<string, FetchHandler>([
   ['/api/google-access-token', googleAccessToken],
   ['/api/google-link', googleLink],
-  ['/api/health', health],
   ['/api/health-auth', healthAuth],
   ['/api/mcp', mcp],
   ['/api/mcp-auth', mcpAuth],
@@ -22,8 +22,10 @@ const ROUTES = new Map<string, FetchHandler>([
   ['/.well-known/oauth-protected-resource/api/mcp-auth', oauthProtectedResource],
 ])
 
-export async function routeCloudflareRequest(request: Request) {
+export async function routeCloudflareRequest(request: Request, environment?: ReleaseIdentityEnvironment) {
   const path = new URL(request.url).pathname.replace(/\/$/, '') || '/'
+  if (path === '/api/health') return health.fetch(request, environment)
+
   const handler = ROUTES.get(path)
   if (!handler) {
     return new Response(JSON.stringify({
@@ -41,7 +43,7 @@ export async function routeCloudflareRequest(request: Request) {
 }
 
 export default {
-  fetch(request: Request) {
-    return routeCloudflareRequest(request)
+  fetch(request: Request, environment?: ReleaseIdentityEnvironment) {
+    return routeCloudflareRequest(request, environment)
   },
 }

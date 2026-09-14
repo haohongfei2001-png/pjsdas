@@ -6,10 +6,11 @@ const rawOrigins = (process.env.PJSDAS_PRODUCTION_BASE_URLS ?? process.env.PJSDA
   .map((value) => value.trim().replace(/\/$/, ''))
   .filter(Boolean)
 const accessToken = process.env.PJSDAS_SELF_TEST_ACCESS_TOKEN?.trim() || undefined
+const expectedCommitSha = process.env.PJSDAS_EXPECTED_COMMIT_SHA?.trim() || undefined
 
 const results = []
 for (const baseUrl of rawOrigins) {
-  const result = await runProductionSelfTest({ baseUrl, accessToken })
+  const result = await runProductionSelfTest({ baseUrl, accessToken, expectedCommitSha })
   results.push(result)
   console.log(JSON.stringify(result, null, 2))
   if (result.ok) break
