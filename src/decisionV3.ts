@@ -1,10 +1,20 @@
 export * from './decisionCoreV3.js'
 
-import { rankActions as rankActionsCore } from './decisionCoreV3.js'
+import { computePriority as computePriorityCore, rankActions as rankActionsCore } from './decisionCoreV3.js'
 import { isUnresolvedPastProcessEvent } from './fixedEventGuardLogic.js'
 import { buildPrepGraph, enrichPrepActionsWithGraph, prepGraphReasonFromAction } from './prepGraph.js'
 import type { Action, Opportunity, Prep } from './model.js'
 import { DEFAULT_DECISION_RULES, type DecisionRules } from './decisionRules.js'
+
+/**
+ * Product-facing priority must follow canonical process state, not a localized
+ * presentation label. The legacy core helper still understands the old “待投”
+ * label, so normalize only the transient projection passed to it.
+ */
+export function computePriority(opportunity: Opportunity, now = new Date()) {
+  if (opportunity.processStage !== 'not_applied') return 'none' as const
+  return computePriorityCore({ ...opportunity, currentStageLabel: '待投' }, now)
+}
 
 function isNaturalLanguageScheduledAssessment(action: Action) {
   if (!action.processEventId || action.processStage !== 'assessment' || !action.dueAt) return false
