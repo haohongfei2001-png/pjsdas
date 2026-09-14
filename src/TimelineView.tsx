@@ -126,7 +126,7 @@ export default function TimelineView({ records, changeSets, onApplyChangeSet, on
     <section className="timeline-page">
       <header className="page-header">
         <div>
-          <div className="eyebrow">TIMELINE · V0.9</div>
+          <div className="eyebrow">TIMELINE</div>
           <h1>{zh ? '求职历程' : 'Timeline'}</h1>
           <p>{zh
             ? '已经发生的投递、流程节点、行动完成、规则修改和数据迁移都进入同一条可追溯时间线。Timeline 记录事实，不承担 Today 的任务排序。'
