@@ -32,10 +32,6 @@ function bearer(request: Request) {
   return match?.[1]?.trim() ?? ''
 }
 
-function aiGatewayToken(request: Request, configured?: string) {
-  return configured?.trim() || request.headers.get('x-vercel-oidc-token')?.trim() || ''
-}
-
 function errorBody(caught: unknown) {
   if (caught instanceof WorkspaceSourceError) {
     return { code: caught.code, message: caught.message, retryable: caught.retryable }
@@ -81,7 +77,10 @@ export function createDiscoveryAutomationHandler(config: DiscoveryAutomationHand
       return json(status, error)
     }
 
-    const modelToken = aiGatewayToken(request, config.aiGatewayApiKey)
+    // The API route supplies AI_GATEWAY_API_KEY when explicitly configured,
+    // otherwise VERCEL_OIDC_TOKEN. Do not trust an inbound request header as a
+    // Vercel deployment identity.
+    const modelToken = config.aiGatewayApiKey?.trim() ?? ''
     if (probe) {
       try {
         const result = await probeDiscoveryAiGateway({
