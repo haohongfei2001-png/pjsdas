@@ -182,9 +182,10 @@ function fitScore(value: unknown) {
 
 function processStage(value: unknown): ProcessStage {
   const raw = text(value)
-  if (raw === '待投') return 'not_applied'
+  const normalized = raw.toLocaleLowerCase().replace(/[\s_/-]+/g, '')
+  if (['待投', '待投递', '未投递', '尚未投递', 'notapplied'].includes(normalized)) return 'not_applied'
   if (raw.includes('待释放')) return 'waiting_release'
-  if (raw.includes('Offer') || raw.includes('录用')) return 'offer'
+  if (normalized.includes('offer') || raw.includes('录用')) return 'offer'
   if (raw.includes('面试') || raw.includes('AI面') || raw.includes('试讲')) return 'interview'
   if (raw.includes('笔试')) return 'written_test'
   if (raw.includes('测评') || raw.includes('综合测评')) return 'assessment'
@@ -251,13 +252,14 @@ export async function parsePJSDASWorkbook(file: File): Promise<ImportBundle> {
     if (!id) return []
     const detail = detailById.get(id)
     const role = roleType(row['机会角色'])
+    const stageLabel = text(row['当前阶段']) || '待投'
 
     return [{
       id,
       company: text(row['公司']),
       role: text(row['具体岗位']),
-      currentStageLabel: text(row['当前阶段']) || '待投',
-      processStage: processStage(row['当前阶段']),
+      currentStageLabel: stageLabel,
+      processStage: processStage(stageLabel),
       roleType: role,
       early: text(row['抢先']) === '是',
       deadline: excelDate(row['截止/保守节点'], true),
@@ -313,7 +315,7 @@ export async function parsePJSDASWorkbook(file: File): Promise<ImportBundle> {
   const groupById = new Map(applicationGroups.map((group) => [group.id, group]))
   const actionablePending = opportunities.filter(
     (opportunity) =>
-      opportunity.currentStageLabel === '待投' &&
+      opportunity.processStage === 'not_applied' &&
       (!opportunity.deadline || new Date(opportunity.deadline).getTime() >= now.getTime()),
   )
 
@@ -511,7 +513,7 @@ export async function parsePJSDASWorkbook(file: File): Promise<ImportBundle> {
       filename: file.name,
       importedAt,
       opportunities: opportunities.length,
-      pending: opportunities.filter((item) => item.currentStageLabel === '待投').length,
+      pending: opportunities.filter((item) => item.processStage === 'not_applied').length,
       processes: processes.length,
       prep: prep.length,
       applicationGroups: applicationGroups.length,
