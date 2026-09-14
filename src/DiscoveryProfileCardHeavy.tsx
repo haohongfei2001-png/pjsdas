@@ -114,7 +114,6 @@ export default function DiscoveryProfileCard() {
       setMustHave(lines(next.mustHave))
       setMustNotHave(lines(next.mustNotHave))
       setStrengths(lines(next.strengths))
-      window.dispatchEvent(new Event('pjsdas:workspace-replaced'))
       if (cloud.session && !cloud.checkpoint.conflict) {
         try {
           await cloud.syncNow()
