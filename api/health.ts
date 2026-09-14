@@ -2,6 +2,7 @@ import { backendUrl } from '../gateway/backendOrigin.js'
 import {
   AUTHENTICATED_GATEWAY_VERSION,
 } from '../gateway/authenticatedRemoteHttp.js'
+import { backendReleaseCommit, type ReleaseIdentityEnvironment } from '../gateway/releaseIdentity.js'
 
 export const PUBLIC_HEALTH_CAPABILITIES = {
   discoveryContext: true,
@@ -40,16 +41,20 @@ export const PUBLIC_HEALTH_CAPABILITIES = {
   sourceHealthHistory: true,
   productionSelfTest: true,
   deploymentPortability: true,
+  releaseIdentityBinding: true,
 } as const
 
 export default {
-  fetch(request?: Request) {
+  fetch(request?: Request, releaseEnvironment?: ReleaseIdentityEnvironment) {
     return new Response(JSON.stringify({
       service: 'pjsdas-authenticated-mcp',
       version: AUTHENTICATED_GATEWAY_VERSION,
       mode: 'google-drive-trusted-ingestion',
       auth: 'supabase-oauth-2.1',
       resource: backendUrl('/api/mcp', request),
+      release: {
+        commitSha: backendReleaseCommit(releaseEnvironment) ?? null,
+      },
       capabilities: PUBLIC_HEALTH_CAPABILITIES,
       status: 'ok',
     }), {
