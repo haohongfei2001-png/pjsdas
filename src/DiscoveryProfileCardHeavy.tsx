@@ -94,6 +94,21 @@ export default function DiscoveryProfileCard() {
   const historySummary = useMemo(() => discoveryFeedbackSummary(history), [history])
   const recentHistory = history.slice(0, 8)
 
+  function clearFeedback() {
+    setMessage('')
+    setError('')
+  }
+
+  function editText(setter: (value: string) => void, value: string) {
+    setter(value)
+    clearFeedback()
+  }
+
+  function updateProfile(patch: Partial<DiscoveryProfile>) {
+    setProfile((current) => current ? { ...current, ...patch } : current)
+    clearFeedback()
+  }
+
   async function save() {
     if (!profile) return
     setBusy(true)
@@ -134,8 +149,7 @@ export default function DiscoveryProfileCard() {
   function toggleRoleType(value: OpportunityRole) {
     if (!profile) return
     const current = profile.preferredRoleTypes ?? []
-    setProfile({
-      ...profile,
+    updateProfile({
       preferredRoleTypes: current.includes(value)
         ? current.filter((item) => item !== value)
         : [...current, value],
@@ -162,23 +176,23 @@ export default function DiscoveryProfileCard() {
       <div className="discovery-profile-grid">
         <label>
           <span>{zh ? '目标岗位 / 搜索词' : 'Target roles / search queries'}</span>
-          <textarea value={targetRoles} onChange={(event) => setTargetRoles(event.target.value)} placeholder={zh ? '例如：AI 产品经理\n商业分析\n项目管理' : 'For example:\nAI Product Manager\nBusiness Analysis\nProgram Management'} />
+          <textarea value={targetRoles} onChange={(event) => editText(setTargetRoles, event.target.value)} placeholder={zh ? '例如：AI 产品经理\n商业分析\n项目管理' : 'For example:\nAI Product Manager\nBusiness Analysis\nProgram Management'} />
         </label>
         <label>
           <span>{zh ? '可接受地点' : 'Preferred locations'}</span>
-          <textarea value={locations} onChange={(event) => setLocations(event.target.value)} placeholder={zh ? '例如：北京\n上海\n深圳' : 'For example:\nBeijing\nShanghai\nShenzhen'} />
+          <textarea value={locations} onChange={(event) => editText(setLocations, event.target.value)} placeholder={zh ? '例如：北京\n上海\n深圳' : 'For example:\nBeijing\nShanghai\nShenzhen'} />
         </label>
         <label>
           <span>{zh ? '必须满足' : 'Must have'}</span>
-          <textarea value={mustHave} onChange={(event) => setMustHave(event.target.value)} placeholder={zh ? '每行一条硬要求；未从来源确认时会显示警告' : 'One hard requirement per line; unverified source facts stay explicit.'} />
+          <textarea value={mustHave} onChange={(event) => editText(setMustHave, event.target.value)} placeholder={zh ? '每行一条硬要求；未从来源确认时会显示警告' : 'One hard requirement per line; unverified source facts stay explicit.'} />
         </label>
         <label>
           <span>{zh ? '明确排除' : 'Exclude'}</span>
-          <textarea value={mustNotHave} onChange={(event) => setMustNotHave(event.target.value)} placeholder={zh ? '每行一条；来源明确命中时不进入 ChangeSet' : 'One exclusion per line; confirmed matches are filtered before ChangeSet review.'} />
+          <textarea value={mustNotHave} onChange={(event) => editText(setMustNotHave, event.target.value)} placeholder={zh ? '每行一条；来源明确命中时不进入 ChangeSet' : 'One exclusion per line; confirmed matches are filtered before ChangeSet review.'} />
         </label>
         <label>
           <span>{zh ? '可用于判断匹配度的个人优势' : 'Strengths used for fit assessment'}</span>
-          <textarea value={strengths} onChange={(event) => setStrengths(event.target.value)} placeholder={zh ? '只写你希望长期用于岗位发现的事实或能力' : 'Include only facts or strengths you want reused in ongoing discovery.'} />
+          <textarea value={strengths} onChange={(event) => editText(setStrengths, event.target.value)} placeholder={zh ? '只写你希望长期用于岗位发现的事实或能力' : 'Include only facts or strengths you want reused in ongoing discovery.'} />
         </label>
         <label>
           <span>{zh ? '最低年薪（万元，可空）' : 'Minimum annual compensation (10k CNY, optional)'}</span>
@@ -188,8 +202,7 @@ export default function DiscoveryProfileCard() {
             max="1000"
             step="1"
             value={profile.minimumAnnualCompensationWan ?? ''}
-            onChange={(event) => setProfile({
-              ...profile,
+            onChange={(event) => updateProfile({
               minimumAnnualCompensationWan: event.target.value === '' ? undefined : Number(event.target.value),
             })}
           />
@@ -215,7 +228,7 @@ export default function DiscoveryProfileCard() {
           <span>{zh ? '地点约束' : 'Location policy'}</span>
           <select
             value={profile.locationPolicy ?? 'prefer'}
-            onChange={(event) => setProfile({ ...profile, locationPolicy: event.target.value as 'prefer' | 'strict' })}
+            onChange={(event) => updateProfile({ locationPolicy: event.target.value as 'prefer' | 'strict' })}
           >
             <option value="prefer">{zh ? '偏好：不匹配时保留并警告' : 'Prefer: keep mismatches and flag them'}</option>
             <option value="strict">{zh ? '严格：不匹配或地点未知时拦截' : 'Strict: block mismatches or unknown locations'}</option>
@@ -229,7 +242,7 @@ export default function DiscoveryProfileCard() {
             max="12"
             step="1"
             value={profile.maxReviewCandidates ?? 6}
-            onChange={(event) => setProfile({ ...profile, maxReviewCandidates: Number(event.target.value) })}
+            onChange={(event) => updateProfile({ maxReviewCandidates: Number(event.target.value) })}
           />
         </label>
         <label>
@@ -240,7 +253,7 @@ export default function DiscoveryProfileCard() {
             max="100"
             step="1"
             value={profile.minimumFitScore ?? ''}
-            onChange={(event) => setProfile({ ...profile, minimumFitScore: event.target.value === '' ? undefined : Number(event.target.value) })}
+            onChange={(event) => updateProfile({ minimumFitScore: event.target.value === '' ? undefined : Number(event.target.value) })}
           />
         </label>
         <label>
@@ -251,16 +264,16 @@ export default function DiscoveryProfileCard() {
             max="100"
             step="1"
             value={profile.minimumOpportunityValue ?? ''}
-            onChange={(event) => setProfile({ ...profile, minimumOpportunityValue: event.target.value === '' ? undefined : Number(event.target.value) })}
+            onChange={(event) => updateProfile({ minimumOpportunityValue: event.target.value === '' ? undefined : Number(event.target.value) })}
           />
         </label>
         <label className="wide">
           <span>{zh ? '地点规则 / 例外' : 'Location rules / exceptions'}</span>
-          <textarea value={profile.locationNotes} onChange={(event) => setProfile({ ...profile, locationNotes: event.target.value })} placeholder={zh ? '例如：通常按某个地域范围；特定城市例外可接受。严格模式只执行上面的地点列表，复杂例外仍需人工确认。' : 'For example: use a normal geographic range, with explicit city exceptions. Strict mode enforces the list above; complex exceptions remain explicit.'} />
+          <textarea value={profile.locationNotes} onChange={(event) => updateProfile({ locationNotes: event.target.value })} placeholder={zh ? '例如：通常按某个地域范围；特定城市例外可接受。严格模式只执行上面的地点列表，复杂例外仍需人工确认。' : 'For example: use a normal geographic range, with explicit city exceptions. Strict mode enforces the list above; complex exceptions remain explicit.'} />
         </label>
         <label className="wide">
           <span>{zh ? '其他发现说明' : 'Other discovery instructions'}</span>
-          <textarea value={profile.notes} onChange={(event) => setProfile({ ...profile, notes: event.target.value })} placeholder={zh ? '只放长期有效、希望 ChatGPT 每次找岗位都遵守的说明。' : 'Keep only durable instructions you want every discovery run to follow.'} />
+          <textarea value={profile.notes} onChange={(event) => updateProfile({ notes: event.target.value })} placeholder={zh ? '只放长期有效、希望 ChatGPT 每次找岗位都遵守的说明。' : 'Keep only durable instructions you want every discovery run to follow.'} />
         </label>
       </div>
 
