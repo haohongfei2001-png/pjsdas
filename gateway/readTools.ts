@@ -16,6 +16,8 @@ import {
 import { enrichOpportunityListWithFacts } from '../src/ai/richOpportunityRead.js'
 import { buildContinuousDiscoverySummary } from '../src/continuousDiscovery.js'
 import { decisionRulesForSnapshot } from '../src/decisionRules.js'
+import { buildDiscoveryAutomationPlan } from '../src/discoveryAutomation.js'
+import { enabledSourceRegistry } from '../src/sourceRegistry.js'
 import { WorkspaceSourceError, type WorkspaceSource } from './workspaceSource.js'
 
 export const READ_TOOL_NAMES = [
@@ -214,8 +216,14 @@ export async function invokeReadTool(
           inbox: snapshot.data.discoveryInbox ?? [],
           now: context.now ?? new Date(),
         })
+        const automationPlan = buildDiscoveryAutomationPlan({
+          profile: output.profile,
+          continuousDiscovery,
+          sources: enabledSourceRegistry(snapshot.data.timeline),
+        })
         return success({
           ...output,
+          automationPlan,
           continuousDiscovery: {
             runCount: continuousDiscovery.runCount,
             lastRun: continuousDiscovery.lastRun ? {

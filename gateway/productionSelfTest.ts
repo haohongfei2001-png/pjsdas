@@ -18,6 +18,7 @@ export interface ProductionSelfTestResult {
 const REQUIRED_CAPABILITIES: Record<string, unknown> = {
   stableAccountSession: 'v1.8.1',
   autonomousIngestion: 'v1.9',
+  discoveryAutomationPlan: 'v1',
   ingestionReconciliationLedger: true,
   coverageStatusRead: true,
   trustedMonitorIngestion: true,

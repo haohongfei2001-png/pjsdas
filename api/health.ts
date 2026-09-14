@@ -26,6 +26,7 @@ export const PUBLIC_HEALTH_CAPABILITIES = {
   continuousDiscovery: 'v1.7',
   discoveryRunLedger: true,
   incrementalDiscoveryContext: true,
+  discoveryAutomationPlan: 'v1',
   postingRefreshQueue: true,
   postingRefreshReview: 'v1.7-round-2',
   zeroResultDiscoveryRun: true,

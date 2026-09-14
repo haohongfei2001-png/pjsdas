@@ -36,6 +36,7 @@ describe('public production health contract', () => {
     expect(body.capabilities.continuousDiscovery).toBe('v1.7')
     expect(body.capabilities.discoveryRunLedger).toBe(true)
     expect(body.capabilities.incrementalDiscoveryContext).toBe(true)
+    expect(body.capabilities.discoveryAutomationPlan).toBe('v1')
     expect(body.capabilities.postingRefreshQueue).toBe(true)
     expect(body.capabilities.postingRefreshReview).toBe('v1.7-round-2')
     expect(body.capabilities.zeroResultDiscoveryRun).toBe(true)
