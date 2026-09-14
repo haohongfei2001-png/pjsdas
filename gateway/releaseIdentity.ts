@@ -1,3 +1,5 @@
+import { GENERATED_RELEASE_COMMIT_SHA } from './generatedReleaseIdentity.js'
+
 export interface ReleaseIdentityEnvironment {
   PJSDAS_RELEASE_COMMIT_SHA?: string
   VERCEL_GIT_COMMIT_SHA?: string
@@ -12,9 +14,9 @@ function normalizedSha(value: string | undefined) {
 /**
  * Resolve the source commit represented by this backend deployment.
  *
- * Vercel exposes VERCEL_GIT_COMMIT_SHA automatically. A provider-neutral
- * PJSDAS_RELEASE_COMMIT_SHA override is available for standby providers such
- * as Cloudflare so the release gate never has to infer deployment identity.
+ * Runtime provider metadata is preferred when available. Production builds
+ * also embed the checkout commit into generatedReleaseIdentity.ts so release
+ * identity does not depend on a provider dashboard setting being enabled.
  */
 export function backendReleaseCommit(environment?: ReleaseIdentityEnvironment) {
   const runtimeEnvironment = environment ?? (
@@ -23,4 +25,5 @@ export function backendReleaseCommit(environment?: ReleaseIdentityEnvironment) {
   return normalizedSha(runtimeEnvironment.PJSDAS_RELEASE_COMMIT_SHA)
     ?? normalizedSha(runtimeEnvironment.VERCEL_GIT_COMMIT_SHA)
     ?? normalizedSha(runtimeEnvironment.WORKERS_CI_COMMIT_SHA)
+    ?? normalizedSha(GENERATED_RELEASE_COMMIT_SHA)
 }
