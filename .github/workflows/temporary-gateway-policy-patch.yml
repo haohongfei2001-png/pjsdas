@@ -1,0 +1,29 @@
+name: Temporary Gateway policy patch
+
+on:
+  push:
+    branches:
+      - fix/discovery-gateway-policy-rule
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: ${{ github.actor != 'github-actions[bot]' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: fix/discovery-gateway-policy-rule
+      - name: Apply staged patch
+        run: python3 scripts/temporary_gateway_policy_patch.py
+      - name: Commit patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add gateway/discoveryAutomationWorker.ts tests/discoveryAutomationWorker.test.ts
+          git commit -m "fix: expose bounded Gateway routing-policy diagnostics"
+          git push origin HEAD:fix/discovery-gateway-policy-rule
