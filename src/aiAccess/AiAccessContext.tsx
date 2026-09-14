@@ -5,13 +5,30 @@ import { useUiLanguage, type UiLanguage } from '../uiLanguage.js'
 
 const PENDING_KEY = 'pjsdas-ai-google-link-pending'
 const DRIVE_APPDATA_SCOPE = 'https://www.googleapis.com/auth/drive.appdata'
+const GMAIL_READONLY_SCOPE = 'https://www.googleapis.com/auth/gmail.readonly'
 const OFFLINE_AUTH_MISSING = 'AI_ACCESS_GOOGLE_OFFLINE_AUTH_MISSING'
+
+type GoogleLinkMode = 'drive' | 'gmail'
+
+export interface GmailAutomationStatus {
+  googleEmail: string | null
+  gmailScopeGranted: boolean
+  gmailEnabled: boolean
+  gmailHistoryIdPresent: boolean
+  gmailLastCheckedAt: string | null
+  gmailLastSuccessAt: string | null
+  gmailLastError: string | null
+}
 
 type AiAccessState = {
   busy: boolean
   message: string
   error: string
+  gmailAutomation: GmailAutomationStatus | null
   beginGoogleDriveLink: () => Promise<void>
+  beginGmailAutomationLink: () => Promise<void>
+  setGmailAutomationEnabled: (enabled: boolean) => Promise<void>
+  refreshGmailAutomationStatus: () => Promise<void>
 }
 
 const AiAccessContext = createContext<AiAccessState | null>(null)
@@ -35,12 +52,12 @@ async function loadSupabase() {
   return (await import('./supabaseClient.js')).pjsdasSupabase
 }
 
-function redirectUrl() {
+function redirectUrl(mode: GoogleLinkMode) {
   if (typeof window === 'undefined') return undefined
   const url = new URL(window.location.href)
   url.search = ''
   url.hash = ''
-  url.searchParams.set('pjsdas_ai_link', '1')
+  url.searchParams.set('pjsdas_ai_link', mode)
   return url.toString()
 }
 
@@ -63,10 +80,15 @@ function clearPendingGoogleLinkState() {
   clearCallbackUrl()
 }
 
-function hasPendingGoogleLink() {
-  if (typeof window === 'undefined') return false
-  return window.sessionStorage.getItem(PENDING_KEY) === '1'
-    || new URL(window.location.href).searchParams.get('pjsdas_ai_link') === '1'
+function pendingGoogleLinkMode(): GoogleLinkMode | undefined {
+  if (typeof window === 'undefined') return undefined
+  const stored = window.sessionStorage.getItem(PENDING_KEY)
+  if (stored === 'gmail') return 'gmail'
+  if (stored === 'drive' || stored === '1') return 'drive'
+  const param = new URL(window.location.href).searchParams.get('pjsdas_ai_link')
+  if (param === 'gmail') return 'gmail'
+  if (param === 'drive' || param === '1') return 'drive'
+  return undefined
 }
 
 async function persistGoogleLink(session: Session) {
@@ -86,29 +108,73 @@ async function persistGoogleLink(session: Session) {
     }),
   })
 
-  const data = await response.json().catch(() => ({})) as { message?: string; googleEmail?: string }
+  const data = await response.json().catch(() => ({})) as { message?: string; googleEmail?: string; scopes?: string[] }
   if (!response.ok) throw new Error(data.message || `AI access setup failed (HTTP ${response.status}).`)
-  return data.googleEmail
+  return data
+}
+
+async function readAutomationStatus(session: Session) {
+  const response = await fetchBackend('/api/automation-settings', {
+    headers: { authorization: `Bearer ${session.access_token}` },
+  })
+  const data = await response.json().catch(() => ({})) as GmailAutomationStatus & { message?: string }
+  if (!response.ok) throw new Error(data.message || `Automation settings failed (HTTP ${response.status}).`)
+  return data
+}
+
+async function writeAutomationStatus(session: Session, enabled: boolean) {
+  const response = await fetchBackend('/api/automation-settings', {
+    method: 'POST',
+    headers: {
+      authorization: `Bearer ${session.access_token}`,
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify({ gmailEnabled: enabled }),
+  })
+  const data = await response.json().catch(() => ({})) as GmailAutomationStatus & { message?: string }
+  if (!response.ok) throw new Error(data.message || `Automation settings update failed (HTTP ${response.status}).`)
+  return data
 }
 
 export function AiAccessProvider({ children }: { children: ReactNode }) {
   const { lang } = useUiLanguage()
   const [busy, setBusy] = useState(false)
   const [connectedEmail, setConnectedEmail] = useState<string | null>(null)
+  const [gmailAutomation, setGmailAutomation] = useState<GmailAutomationStatus | null>(null)
   const [error, setError] = useState('')
   const completing = useRef(false)
   const message = connectedEmail === null ? '' : aiAccessConnectedMessage(connectedEmail || undefined, lang)
 
+  async function refreshStatusForSession(session: Session | null) {
+    if (!session) {
+      setGmailAutomation(null)
+      return
+    }
+    try {
+      setGmailAutomation(await readAutomationStatus(session))
+    } catch (caught) {
+      const raw = caught instanceof Error ? caught.message : String(caught)
+      if (!/Connect Google|Google.*before enabling|HTTP 400/i.test(raw)) throw caught
+      setGmailAutomation(null)
+    }
+  }
+
   async function completeIfPending(session: Session | null) {
-    if (!session || !hasPendingGoogleLink() || completing.current) return
+    const mode = pendingGoogleLinkMode()
+    if (!session || !mode || completing.current) return
 
     completing.current = true
     setBusy(true)
     setError('')
     try {
-      const email = await persistGoogleLink(session)
+      const linked = await persistGoogleLink(session)
+      if (mode === 'gmail') {
+        setGmailAutomation(await writeAutomationStatus(session, true))
+      } else {
+        await refreshStatusForSession(session)
+      }
       clearPendingGoogleLinkState()
-      setConnectedEmail(email ?? '')
+      setConnectedEmail(linked.googleEmail ?? '')
       // The same durable Supabase session is now the PJSDAS account session.
       // Do not sign it out after saving the encrypted Google refresh token.
     } catch (caught) {
@@ -121,18 +187,21 @@ export function AiAccessProvider({ children }: { children: ReactNode }) {
   }
 
   useEffect(() => {
-    if (!hasPendingGoogleLink()) return
-
     let active = true
     let unsubscribe: (() => void) | undefined
 
     void loadSupabase().then(async (supabase) => {
       if (!active) return
       const { data } = await supabase.auth.getSession()
-      if (active) void completeIfPending(data.session)
+      if (active) {
+        if (pendingGoogleLinkMode()) void completeIfPending(data.session)
+        else void refreshStatusForSession(data.session).catch((caught) => setError(aiAccessErrorMessage(caught, lang)))
+      }
       const listener = supabase.auth.onAuthStateChange((_event, session) => {
         window.setTimeout(() => {
-          if (active) void completeIfPending(session)
+          if (!active) return
+          if (pendingGoogleLinkMode()) void completeIfPending(session)
+          else void refreshStatusForSession(session).catch((caught) => setError(aiAccessErrorMessage(caught, lang)))
         }, 0)
       })
       unsubscribe = () => listener.data.subscription.unsubscribe()
@@ -149,19 +218,22 @@ export function AiAccessProvider({ children }: { children: ReactNode }) {
     }
   }, [])
 
-  async function beginGoogleDriveLink() {
+  async function beginGoogleLink(mode: GoogleLinkMode) {
     if (typeof window === 'undefined') return
     setBusy(true)
     setConnectedEmail(null)
     setError('')
-    window.sessionStorage.setItem(PENDING_KEY, '1')
+    window.sessionStorage.setItem(PENDING_KEY, mode)
     try {
       const supabase = await loadSupabase()
+      const scopes = mode === 'gmail'
+        ? `openid email profile ${DRIVE_APPDATA_SCOPE} ${GMAIL_READONLY_SCOPE}`
+        : `openid email profile ${DRIVE_APPDATA_SCOPE}`
       const { error: signInError } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
-          redirectTo: redirectUrl(),
-          scopes: `openid email profile ${DRIVE_APPDATA_SCOPE}`,
+          redirectTo: redirectUrl(mode),
+          scopes,
           queryParams: {
             access_type: 'offline',
             prompt: 'consent',
@@ -177,8 +249,57 @@ export function AiAccessProvider({ children }: { children: ReactNode }) {
     }
   }
 
+  async function beginGoogleDriveLink() {
+    return beginGoogleLink('drive')
+  }
+
+  async function beginGmailAutomationLink() {
+    return beginGoogleLink('gmail')
+  }
+
+  async function setGmailAutomationEnabled(enabled: boolean) {
+    if (enabled && !gmailAutomation?.gmailScopeGranted) {
+      await beginGmailAutomationLink()
+      return
+    }
+    setBusy(true)
+    setError('')
+    try {
+      const supabase = await loadSupabase()
+      const { data, error: sessionError } = await supabase.auth.getSession()
+      if (sessionError) throw sessionError
+      if (!data.session) throw new Error(lang === 'zh' ? '请先使用 Google 登录 PJSDAS。' : 'Sign in to PJSDAS with Google first.')
+      setGmailAutomation(await writeAutomationStatus(data.session, enabled))
+    } catch (caught) {
+      setError(aiAccessErrorMessage(caught, lang))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function refreshGmailAutomationStatus() {
+    setError('')
+    try {
+      const supabase = await loadSupabase()
+      const { data, error: sessionError } = await supabase.auth.getSession()
+      if (sessionError) throw sessionError
+      await refreshStatusForSession(data.session)
+    } catch (caught) {
+      setError(aiAccessErrorMessage(caught, lang))
+    }
+  }
+
   return (
-    <AiAccessContext.Provider value={{ busy, message, error, beginGoogleDriveLink }}>
+    <AiAccessContext.Provider value={{
+      busy,
+      message,
+      error,
+      gmailAutomation,
+      beginGoogleDriveLink,
+      beginGmailAutomationLink,
+      setGmailAutomationEnabled,
+      refreshGmailAutomationStatus,
+    }}>
       {children}
     </AiAccessContext.Provider>
   )
