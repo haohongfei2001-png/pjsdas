@@ -12,6 +12,7 @@ import {
   listOpportunitiesSchema,
 } from './readTools.js'
 import { getCoverageStatusSchema, invokeCoverageStatus } from './coverageTool.js'
+import { getWorkspaceIntegritySchema, invokeWorkspaceIntegrity } from './workspaceIntegrityTool.js'
 import {
   ingestDiscoveryRunSchema,
   ingestGmailRunSchema,
@@ -67,7 +68,8 @@ export function createPjsdasMcpServer(
     'Use get_opportunity_assessment when the user asks why a stored Fit or Opportunity Value score exists.',
     'Use get_application_portfolio when the user asks which roles to choose inside an explicit Application Group. Capacity is a maximum, not a target.',
     'Use get_prep_graph when the user asks what preparation has the highest leverage or which current gaps are uncovered.',
-    'Use get_coverage_status when the user asks whether automated sources missed anything. A green coverage result means every input in each latest completed ingestion run is accounted for; it does not claim that the entire public internet contains no other jobs.',
+    'Use get_coverage_status when the user asks whether automated sources missed anything. A green result means every currently enabled Source Registry entry is fresh, balanced, and has no unresolved input; it does not claim that the public internet contains no other jobs.',
+    'Use get_workspace_integrity when the user asks whether the PJSDAS workspace itself is structurally healthy. This audit is read-only and never repairs or deletes data.',
   ]
 
   if (trustedIngestionMode === 'enabled') {
@@ -77,6 +79,8 @@ export function createPjsdasMcpServer(
       'Use ingest_gmail_run only after Gmail messages have been classified and reduced to bounded structured facts. Never submit raw mailbox contents as notes. Low-confidence or ambiguous messages must be submitted with low/medium confidence so PJSDAS records them as unresolved instead of guessing.',
       'Every submitted source record must be accounted for as created, merged, updated, duplicate, filtered, ignored, or unresolved. Never silently omit an inconvenient result from the ingestion batch.',
       'Trusted ingestion may add or merge factual opportunities and process events, but it must not silently change Decision Rules, durable user preferences, rejection decisions, or delete data.',
+      'Use dryRun=true on either ingestion tool to simulate outcomes without writing. replayOfRunId is permitted only with dryRun=true and compares a fresh simulation with the historical run while preserving the workspace.',
+      'A new trusted source that is not in the bootstrap registry must provide sourcePolicy with enabled state, cadence, and freshness SLA. Existing sources persist their current policy on every run.',
     )
   }
 
@@ -109,162 +113,99 @@ export function createPjsdasMcpServer(
     { instructions: instructions.join(' ') },
   )
 
-  server.registerTool(
-    'get_today_plan',
-    {
-      title: 'Get PJSDAS today plan',
-      description: 'Read the deterministic PJSDAS action plan for a day and optional available-time budget. Existing Prep Actions may receive runtime leverage/urgency boosts without rewriting stored records.',
-      inputSchema: getTodayPlanSchema,
-      annotations: readOnlyAnnotations,
-    },
-    async (args) => invokeReadTool(source, 'get_today_plan', args),
-  )
+  server.registerTool('get_today_plan', {
+    title: 'Get PJSDAS today plan',
+    description: 'Read the deterministic PJSDAS action plan for a day and optional available-time budget. Existing Prep Actions may receive runtime leverage/urgency boosts without rewriting stored records.',
+    inputSchema: getTodayPlanSchema, annotations: readOnlyAnnotations,
+  }, async (args) => invokeReadTool(source, 'get_today_plan', args))
 
-  server.registerTool(
-    'list_opportunities',
-    {
-      title: 'List PJSDAS opportunities',
-      description: 'Query the PJSDAS opportunity pool with bounded filters such as stage, company, role type, query text, or deadline. Rich facts are optional and bounded.',
-      inputSchema: listOpportunitiesSchema,
-      annotations: readOnlyAnnotations,
-    },
-    async (args) => invokeReadTool(source, 'list_opportunities', args),
-  )
+  server.registerTool('list_opportunities', {
+    title: 'List PJSDAS opportunities',
+    description: 'Query the PJSDAS opportunity pool with bounded filters such as stage, company, role type, query text, or deadline. Rich facts are optional and bounded.',
+    inputSchema: listOpportunitiesSchema, annotations: readOnlyAnnotations,
+  }, async (args) => invokeReadTool(source, 'list_opportunities', args))
 
-  server.registerTool(
-    'get_opportunity_assessment',
-    {
-      title: 'Get PJSDAS opportunity assessment',
-      description: 'Read a single Opportunity component assessment, stored aggregate scores, and current-rules projection without rewriting history.',
-      inputSchema: getOpportunityAssessmentSchema,
-      annotations: readOnlyAnnotations,
-    },
-    async (args) => invokeReadTool(source, 'get_opportunity_assessment', args),
-  )
+  server.registerTool('get_opportunity_assessment', {
+    title: 'Get PJSDAS opportunity assessment',
+    description: 'Read a single Opportunity component assessment, stored aggregate scores, and current-rules projection without rewriting history.',
+    inputSchema: getOpportunityAssessmentSchema, annotations: readOnlyAnnotations,
+  }, async (args) => invokeReadTool(source, 'get_opportunity_assessment', args))
 
-  server.registerTool(
-    'get_application_portfolio',
-    {
-      title: 'Get PJSDAS application portfolio decision',
-      description: 'Read deterministic portfolio recommendations for explicit Application Groups with shared application quotas. Capacity is treated as a maximum.',
-      inputSchema: getApplicationPortfolioSchema,
-      annotations: readOnlyAnnotations,
-    },
-    async (args) => invokeReadTool(source, 'get_application_portfolio', args),
-  )
+  server.registerTool('get_application_portfolio', {
+    title: 'Get PJSDAS application portfolio decision',
+    description: 'Read deterministic portfolio recommendations for explicit Application Groups with shared application quotas. Capacity is treated as a maximum.',
+    inputSchema: getApplicationPortfolioSchema, annotations: readOnlyAnnotations,
+  }, async (args) => invokeReadTool(source, 'get_application_portfolio', args))
 
-  server.registerTool(
-    'get_prep_graph',
-    {
-      title: 'Get PJSDAS Prep Graph',
-      description: 'Read deterministic links from Prep to current opportunities, structured requirements/gaps, and process-prep needs.',
-      inputSchema: getPrepGraphSchema,
-      annotations: readOnlyAnnotations,
-    },
-    async (args) => invokeReadTool(source, 'get_prep_graph', args),
-  )
+  server.registerTool('get_prep_graph', {
+    title: 'Get PJSDAS Prep Graph',
+    description: 'Read deterministic links from Prep to current opportunities, structured requirements/gaps, and process-prep needs.',
+    inputSchema: getPrepGraphSchema, annotations: readOnlyAnnotations,
+  }, async (args) => invokeReadTool(source, 'get_prep_graph', args))
 
-  server.registerTool(
-    'get_pipeline',
-    {
-      title: 'Get PJSDAS pipeline',
-      description: 'Read effective recruiting-process state, upcoming process events, and items needing attention.',
-      inputSchema: getPipelineSchema,
-      annotations: readOnlyAnnotations,
-    },
-    async (args) => invokeReadTool(source, 'get_pipeline', args),
-  )
+  server.registerTool('get_pipeline', {
+    title: 'Get PJSDAS pipeline',
+    description: 'Read effective recruiting-process state, upcoming process events, and items needing attention.',
+    inputSchema: getPipelineSchema, annotations: readOnlyAnnotations,
+  }, async (args) => invokeReadTool(source, 'get_pipeline', args))
 
-  server.registerTool(
-    'get_decision_rules',
-    {
-      title: 'Get PJSDAS decision rules',
-      description: 'Read the explicit user-controlled rules that govern planning, risk thresholds, ranking weights, component-assessment weights, and portfolio policy.',
-      annotations: readOnlyAnnotations,
-    },
-    async () => invokeReadTool(source, 'get_decision_rules', {}),
-  )
+  server.registerTool('get_decision_rules', {
+    title: 'Get PJSDAS decision rules',
+    description: 'Read the explicit user-controlled rules that govern planning, risk thresholds, ranking weights, component-assessment weights, and portfolio policy.',
+    annotations: readOnlyAnnotations,
+  }, async () => invokeReadTool(source, 'get_decision_rules', {}))
 
-  server.registerTool(
-    'get_discovery_context',
-    {
-      title: 'Get PJSDAS continuous job-discovery context',
-      description: 'Read the Discovery Profile, active weights, existing/inbox identities, Discovery Run history, incremental baseline, source coverage, and posting-refresh queue.',
-      inputSchema: getDiscoveryContextSchema,
-      annotations: readOnlyAnnotations,
-    },
-    async (args) => invokeReadTool(source, 'get_discovery_context', args),
-  )
+  server.registerTool('get_discovery_context', {
+    title: 'Get PJSDAS continuous job-discovery context',
+    description: 'Read the Discovery Profile, active weights, existing/inbox identities, Discovery Run history, incremental baseline, source coverage, and posting-refresh queue.',
+    inputSchema: getDiscoveryContextSchema, annotations: readOnlyAnnotations,
+  }, async (args) => invokeReadTool(source, 'get_discovery_context', args))
 
-  server.registerTool(
-    'get_coverage_status',
-    {
-      title: 'Get PJSDAS autonomous-ingestion coverage',
-      description: 'Read reconciliation status for trusted ingestion sources. Reports whether every input in each source latest completed run is durably accounted for and lists explicit unresolved exceptions.',
-      inputSchema: getCoverageStatusSchema,
-      annotations: readOnlyAnnotations,
-    },
-    async () => invokeCoverageStatus(source),
-  )
+  server.registerTool('get_coverage_status', {
+    title: 'Get PJSDAS autonomous-ingestion coverage',
+    description: 'Read dynamic Source Registry coverage, reconciliation status, freshness SLA, source health, and recent run history for trusted ingestion.',
+    inputSchema: getCoverageStatusSchema, annotations: readOnlyAnnotations,
+  }, async () => invokeCoverageStatus(source))
 
-  server.registerTool(
-    'explain_priority',
-    {
-      title: 'Explain PJSDAS priority',
-      description: 'Explain an action or opportunity using deterministic Today-ranking components and active guardrails.',
-      inputSchema: explainPrioritySchema,
-      annotations: readOnlyAnnotations,
-    },
-    async (args) => invokeReadTool(source, 'explain_priority', args),
-  )
+  server.registerTool('get_workspace_integrity', {
+    title: 'Audit PJSDAS workspace integrity',
+    description: 'Read-only structural audit for duplicate opportunities/postings, orphan events/actions, missing process actions, closed-process active tasks, and expired not-applied opportunities. Never repairs data.',
+    inputSchema: getWorkspaceIntegritySchema, annotations: readOnlyAnnotations,
+  }, async () => invokeWorkspaceIntegrity(source))
 
-  server.registerTool(
-    'get_recent_timeline',
-    {
-      title: 'Get PJSDAS recent timeline',
-      description: 'Read bounded factual PJSDAS history, optionally filtered by time, category, company, or opportunity.',
-      inputSchema: getRecentTimelineSchema,
-      annotations: readOnlyAnnotations,
-    },
-    async (args) => invokeReadTool(source, 'get_recent_timeline', args),
-  )
+  server.registerTool('explain_priority', {
+    title: 'Explain PJSDAS priority',
+    description: 'Explain an action or opportunity using deterministic Today-ranking components and active guardrails.',
+    inputSchema: explainPrioritySchema, annotations: readOnlyAnnotations,
+  }, async (args) => invokeReadTool(source, 'explain_priority', args))
+
+  server.registerTool('get_recent_timeline', {
+    title: 'Get PJSDAS recent timeline',
+    description: 'Read bounded factual PJSDAS history, optionally filtered by time, category, company, or opportunity.',
+    inputSchema: getRecentTimelineSchema, annotations: readOnlyAnnotations,
+  }, async (args) => invokeReadTool(source, 'get_recent_timeline', args))
 
   if (trustedIngestionMode === 'enabled') {
-    server.registerTool(
-      'ingest_discovery_run',
-      {
-        title: 'Autonomously ingest a trusted job-monitor run',
-        description: 'Auto-apply one completed trusted monitoring batch. Each submitted source record is durably accounted for; new jobs are created, known jobs are merged, hard-filtered/duplicate/unresolved records remain auditable, and workspace conflicts fail closed.',
-        inputSchema: ingestDiscoveryRunSchema,
-        annotations: trustedIngestionAnnotations,
-      },
-      async (args) => invokeTrustedIngestion(source, 'ingest_discovery_run', args),
-    )
+    server.registerTool('ingest_discovery_run', {
+      title: 'Autonomously ingest a trusted job-monitor run',
+      description: 'Auto-apply or dry-run one completed trusted monitoring batch. Each submitted source record is accounted for; identity ambiguity fails closed; workspace conflicts fail closed.',
+      inputSchema: ingestDiscoveryRunSchema, annotations: trustedIngestionAnnotations,
+    }, async (args) => invokeTrustedIngestion(source, 'ingest_discovery_run', args))
 
-    server.registerTool(
-      'ingest_gmail_run',
-      {
-        title: 'Autonomously ingest structured Gmail recruitment facts',
-        description: 'Auto-apply one bounded Gmail ingestion batch after classification/extraction. High-confidence facts may create/update opportunities and process events; low-confidence facts are explicitly unresolved rather than guessed.',
-        inputSchema: ingestGmailRunSchema,
-        annotations: trustedIngestionAnnotations,
-      },
-      async (args) => invokeTrustedIngestion(source, 'ingest_gmail_run', args),
-    )
+    server.registerTool('ingest_gmail_run', {
+      title: 'Autonomously ingest structured Gmail recruitment facts',
+      description: 'Auto-apply or dry-run one bounded Gmail ingestion batch after classification/extraction. High-confidence facts may create/update opportunities and logical process events; ambiguous facts remain unresolved.',
+      inputSchema: ingestGmailRunSchema, annotations: trustedIngestionAnnotations,
+    }, async (args) => invokeTrustedIngestion(source, 'ingest_gmail_run', args))
   }
 
   if (proposalMode === 'review-link') {
     if (!options.proposalSigningKey?.trim()) throw new Error('PJSDAS proposal signing key is not configured.')
-    server.registerTool(
-      'propose_changes',
-      {
-        title: 'Propose PJSDAS changes for review',
-        description: 'Create a signed, review-only PJSDAS ChangeSet for changes outside the narrow trusted factual-ingestion boundary. Nothing changes until explicit Apply in PJSDAS.',
-        inputSchema: proposeChangesSchema,
-        annotations: proposalAnnotations,
-      },
-      async (args) => invokeProposeChanges(source, args, { signingKey: options.proposalSigningKey! }),
-    )
+    server.registerTool('propose_changes', {
+      title: 'Propose PJSDAS changes for review',
+      description: 'Create a signed, review-only PJSDAS ChangeSet for changes outside the narrow trusted factual-ingestion boundary. Nothing changes until explicit Apply in PJSDAS.',
+      inputSchema: proposeChangesSchema, annotations: proposalAnnotations,
+    }, async (args) => invokeProposeChanges(source, args, { signingKey: options.proposalSigningKey! }))
   }
 
   return server

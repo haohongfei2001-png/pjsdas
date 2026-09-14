@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 
 const progressInbox = readFileSync(new URL('../src/ProgressInbox.tsx', import.meta.url), 'utf8')
+const progressInboxHeavy = readFileSync(new URL('../src/ProgressInboxHeavy.tsx', import.meta.url), 'utf8')
 const notificationPaste = readFileSync(new URL('../src/NotificationPasteDock.tsx', import.meta.url), 'utf8')
 const processDock = readFileSync(new URL('../src/ProcessEventDock.tsx', import.meta.url), 'utf8')
 const readLayer = readFileSync(new URL('../src/ai/readLayer.ts', import.meta.url), 'utf8')
@@ -14,11 +15,12 @@ function position(source: string, needle: string) {
 }
 
 describe('process lifecycle correctness contract', () => {
-  it('keeps natural-language completion on the canonical ChangeSet path with unsuppressed mutation baselines', () => {
-    expect(progressInbox).toContain('getAllActionsForMutationBaseline')
-    expect(progressInbox).toContain('createCanonicalProgressChangeSet')
-    expect(progressInbox).toContain('savePendingChangeSet(canonical)')
-    expect(progressInbox).toContain('不重复创建测评/笔试/面试事件')
+  it('keeps natural-language completion on the canonical ChangeSet path behind the lazy ProgressInbox surface', () => {
+    expect(progressInbox).toContain("lazy(() => import('./ProgressInboxHeavy.js'))")
+    expect(progressInboxHeavy).toContain('getAllActionsForMutationBaseline')
+    expect(progressInboxHeavy).toContain('createCanonicalProgressChangeSet')
+    expect(progressInboxHeavy).toContain('savePendingChangeSet(canonical)')
+    expect(progressInboxHeavy).toContain('不重复创建测评/笔试/面试事件')
   })
 
   it('keeps every manual process-notification entry point on ChangeSet and fresh-workspace reads', () => {

@@ -23,11 +23,7 @@ async function decodedFrom(result: Awaited<ReturnType<typeof invokeProposeChange
   const url = new URL(String(data.reviewUrl))
   const token = encodedProposalFromHash(url.hash)
   if (!token) throw new Error('Expected signed proposal fragment')
-  return verifySignedProposalToken(
-    token,
-    SIGNING_KEY,
-    new Date('2026-09-11T10:31:00+08:00'),
-  )
+  return verifySignedProposalToken(token, SIGNING_KEY, new Date('2026-09-11T10:31:00+08:00'))
 }
 
 function propose(input: Parameters<typeof invokeProposeChanges>[1]) {
@@ -35,10 +31,8 @@ function propose(input: Parameters<typeof invokeProposeChanges>[1]) {
 }
 
 describe('propose_changes', () => {
-  it('turns a progress statement into a pending MCP ChangeSet without storing raw source text', async () => {
-    const result = await propose({
-      progressText: '9月11日，投递NOVA AI产品经理培训生。',
-    })
+  it('turns a progress statement for an existing canonical job into a pending MCP ChangeSet without storing raw source text', async () => {
+    const result = await propose({ progressText: '9月11日，投递示例科技AI产品经理。' })
     expect(result.isError).not.toBe(true)
     const data = jsonFrom(result)
     expect(data).toMatchObject({ status: 'proposal_created', applied: false, workspaceVersion: 'drive:6' })
@@ -48,6 +42,12 @@ describe('propose_changes', () => {
     expect(proposal.changeSet.status).toBe('pending')
     expect(proposal.changeSet.operations.some((item) => item.kind === 'progress_update')).toBe(true)
     expect(JSON.stringify(proposal.changeSet)).not.toContain('sourceText')
+  })
+
+  it('fails closed when progress text introduces a new role with no source-backed canonical job', async () => {
+    const result = await propose({ progressText: '9月11日，投递NOVA AI产品经理培训生。' })
+    expect(result.isError).toBe(true)
+    expect(jsonFrom(result)).toMatchObject({ code: 'PROPOSAL_NEEDS_CLARIFICATION', retryable: false })
   })
 
   it('proposes an exact action completion with optimistic expected status', async () => {

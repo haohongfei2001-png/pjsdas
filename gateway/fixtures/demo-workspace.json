@@ -15,6 +15,29 @@
         "deadline": "2026-09-12T23:59:00+08:00",
         "opportunityValue": 88,
         "fitScore": 76,
+        "detail": {
+          "discovery": {
+            "sourceUrl": "https://careers.example.com/jobs/ai-product-manager",
+            "sourceTitle": "AI 产品经理",
+            "rationale": "MCP demo source-backed canonical job",
+            "discoveredAt": "2026-09-10T08:00:00+08:00",
+            "fitConfidence": "high",
+            "opportunityValueConfidence": "high",
+            "posting": {
+              "id": "posting:9jra4u",
+              "identityKey": "示例科技|ai产品经理",
+              "sourceUrl": "https://careers.example.com/jobs/ai-product-manager",
+              "canonicalSourceUrl": "https://careers.example.com/jobs/ai-product-manager",
+              "sourceHost": "careers.example.com",
+              "sourceTitle": "AI 产品经理",
+              "postingStatus": "unknown",
+              "firstSeenAt": "2026-09-10T08:00:00+08:00",
+              "lastSeenAt": "2026-09-10T08:00:00+08:00",
+              "lastVerifiedAt": "2026-09-10T08:00:00+08:00",
+              "fingerprint": "87fatu"
+            }
+          }
+        },
         "importedAt": "2026-09-10T08:00:00+08:00"
       },
       {
@@ -27,6 +50,29 @@
         "early": false,
         "opportunityValue": 84,
         "fitScore": 72,
+        "detail": {
+          "discovery": {
+            "sourceUrl": "https://careers.example.com/jobs/strategy-trainee",
+            "sourceTitle": "战略规划培训生",
+            "rationale": "MCP demo source-backed canonical job",
+            "discoveredAt": "2026-09-08T08:00:00+08:00",
+            "fitConfidence": "high",
+            "opportunityValueConfidence": "high",
+            "posting": {
+              "id": "posting:1ki82b4",
+              "identityKey": "示例汽车|战略规划培训生",
+              "sourceUrl": "https://careers.example.com/jobs/strategy-trainee",
+              "canonicalSourceUrl": "https://careers.example.com/jobs/strategy-trainee",
+              "sourceHost": "careers.example.com",
+              "sourceTitle": "战略规划培训生",
+              "postingStatus": "unknown",
+              "firstSeenAt": "2026-09-08T08:00:00+08:00",
+              "lastSeenAt": "2026-09-08T08:00:00+08:00",
+              "lastVerifiedAt": "2026-09-08T08:00:00+08:00",
+              "fingerprint": "vttjx8"
+            }
+          }
+        },
         "importedAt": "2026-09-08T08:00:00+08:00"
       }
     ],

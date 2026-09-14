@@ -12,11 +12,12 @@ describe('v1.8 product surface consolidation', () => {
     expect(app).not.toContain("type Surface = 'rules'")
   })
 
-  it('moves discovery, opportunities and pipeline into one Decide context', () => {
-    expect(app).toContain("type DecideTab = 'review' | 'opportunities' | 'pipeline'")
-    expect(app).toContain('<ContinuousDiscoveryDock />')
+  it('keeps Decide focused on actual opportunities and active recruiting flow', () => {
+    expect(app).toContain("type DecideTab = 'opportunities' | 'pipeline'")
     expect(app).toContain('<ApplicationPortfolioDock />')
-    expect(app).toContain('<DiscoveryInboxView />')
+    expect(app).not.toContain('<DiscoveryInboxView />')
+    expect(app).not.toContain('<ContinuousDiscoveryDock />')
+    expect(app).not.toContain("onTabChange('review')")
   })
 
   it('keeps specialist tools contextual instead of globally mounted', () => {

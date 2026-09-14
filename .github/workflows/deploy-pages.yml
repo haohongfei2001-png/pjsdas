@@ -19,7 +19,8 @@ jobs:
     runs-on: ubuntu-latest
     env:
       VITE_GOOGLE_CLIENT_ID: ${{ vars.VITE_GOOGLE_CLIENT_ID }}
-      PJSDAS_BACKEND_HEALTH_URL: https://pjsdas-remote-alpha.vercel.app/api/health
+      PJSDAS_BACKEND_ORIGINS: ${{ vars.PJSDAS_BACKEND_ORIGINS || 'https://pjsdas-remote-alpha.vercel.app' }}
+      VITE_PJSDAS_BACKEND_ORIGINS: ${{ vars.PJSDAS_BACKEND_ORIGINS || 'https://pjsdas-remote-alpha.vercel.app' }}
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -27,44 +28,59 @@ jobs:
           node-version: 22
           cache: npm
 
-      - name: Wait for matching v1.9 production backend
+      - name: Wait for matching hardened v1.9 production backend
         shell: bash
         run: |
           set -euo pipefail
+          IFS=',' read -ra configured_origins <<< "$PJSDAS_BACKEND_ORIGINS"
           for attempt in $(seq 1 40); do
             echo "Backend release gate attempt ${attempt}/40"
-            body="$(curl -fsS --max-time 10 "$PJSDAS_BACKEND_HEALTH_URL" 2>/dev/null || true)"
-            if [ -n "$body" ] && printf '%s' "$body" | node -e '
-              let raw = "";
-              process.stdin.setEncoding("utf8");
-              process.stdin.on("data", chunk => raw += chunk);
-              process.stdin.on("end", () => {
-                try {
-                  const health = JSON.parse(raw);
-                  const capabilities = health.capabilities ?? {};
-                  const ready =
-                    health.status === "ok" &&
-                    health.version === "1.9.0-alpha.1" &&
-                    health.mode === "google-drive-trusted-ingestion" &&
-                    capabilities.autonomousIngestion === "v1.9" &&
-                    capabilities.ingestionReconciliationLedger === true &&
-                    capabilities.coverageStatusRead === true &&
-                    capabilities.trustedMonitorIngestion === true &&
-                    capabilities.trustedGmailIngestion === true &&
-                    capabilities.stableAccountSession === "v1.8.1";
-                  process.exit(ready ? 0 : 1);
-                } catch {
-                  process.exit(1);
-                }
-              });
-            '; then
-              echo "PJSDAS v1.9 production backend is ready."
-              exit 0
-            fi
+            for raw_origin in "${configured_origins[@]}"; do
+              origin="$(printf '%s' "$raw_origin" | xargs)"
+              [ -n "$origin" ] || continue
+              origin="${origin%/}"
+              echo "Checking ${origin}"
+              body="$(curl -fsS --max-time 10 "${origin}/api/health" 2>/dev/null || true)"
+              if [ -n "$body" ] && printf '%s' "$body" | node -e '
+                let raw = "";
+                process.stdin.setEncoding("utf8");
+                process.stdin.on("data", chunk => raw += chunk);
+                process.stdin.on("end", () => {
+                  try {
+                    const health = JSON.parse(raw);
+                    const capabilities = health.capabilities ?? {};
+                    const ready =
+                      health.status === "ok" &&
+                      health.version === "1.9.0-alpha.1" &&
+                      health.mode === "google-drive-trusted-ingestion" &&
+                      capabilities.autonomousIngestion === "v1.9" &&
+                      capabilities.ingestionReconciliationLedger === true &&
+                      capabilities.coverageStatusRead === true &&
+                      capabilities.trustedMonitorIngestion === true &&
+                      capabilities.trustedGmailIngestion === true &&
+                      capabilities.stableAccountSession === "v1.8.1" &&
+                      capabilities.dynamicSourceRegistry === true &&
+                      capabilities.coverageFreshnessSla === true &&
+                      capabilities.workspaceIntegrityAudit === true &&
+                      capabilities.ingestionDryRunReplay === true &&
+                      capabilities.sourceHealthHistory === true &&
+                      capabilities.productionSelfTest === true &&
+                      capabilities.deploymentPortability === true;
+                    process.exit(ready ? 0 : 1);
+                  } catch {
+                    process.exit(1);
+                  }
+                });
+              '; then
+                echo "PJSDAS hardened v1.9 backend is ready at ${origin}."
+                echo "PJSDAS_ACTIVE_BACKEND_ORIGIN=${origin}" >> "$GITHUB_ENV"
+                exit 0
+              fi
+            done
             sleep 15
           done
 
-          echo "PJSDAS v1.9 production backend did not become ready; refusing to publish a frontend that depends on it." >&2
+          echo "No configured PJSDAS backend became ready; refusing to publish a frontend that depends on it." >&2
           exit 1
 
       - run: npm ci

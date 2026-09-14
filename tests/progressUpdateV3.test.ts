@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { parseProgressUpdate } from '../src/progressUpdate.js'
+import { createJobPostingEvidence } from '../src/jobPosting.js'
+import { parseProgressUpdate, type CanonicalJobReference } from '../src/progressUpdate.js'
 import type { Opportunity } from '../src/model.js'
 
 function opportunity(
@@ -8,6 +9,8 @@ function opportunity(
   role: string,
   stage: Opportunity['processStage'] = 'screening',
 ): Opportunity {
+  const observedAt = '2026-09-01T00:00:00.000Z'
+  const sourceUrl = `https://careers.example.com/${id}`
   return {
     id,
     company,
@@ -18,19 +21,32 @@ function opportunity(
     early: false,
     opportunityValue: 90,
     fitScore: 70,
-    importedAt: '2026-09-01T00:00:00.000Z',
+    detail: {
+      discovery: {
+        sourceUrl,
+        sourceTitle: role,
+        rationale: 'test source',
+        discoveredAt: observedAt,
+        fitConfidence: 'high',
+        opportunityValueConfidence: 'high',
+        posting: createJobPostingEvidence({ company, role, sourceUrl, sourceTitle: role, observedAt }),
+      },
+    },
+    importedAt: observedAt,
   }
 }
 
 const now = new Date(2026, 8, 10, 20, 0, 0)
 
 describe('progress v3 correction layer', () => {
-  it('does not confuse a short brand with a longer company sharing its prefix', () => {
+  it('does not confuse a short brand with a longer company sharing its prefix when the new job has a canonical source', () => {
     const current = [opportunity('BOE-PM', '京东方 BOE', '产品经理', 'not_applied')]
-    const plan = parseProgressUpdate('9月10日，投递京东技术产品经理。', current, now)
+    const references: CanonicalJobReference[] = [{ opportunityId: 'JD-TECH-PM', company: '京东', role: '技术产品经理', sourceBacked: true }]
+    const plan = parseProgressUpdate('9月10日，投递京东技术产品经理。', current, now, references)
     const submitted = plan.operations.find((item) => item.kind === 'upsert_opportunity')
     expect(submitted).toMatchObject({
       kind: 'upsert_opportunity',
+      opportunityId: 'JD-TECH-PM',
       company: '京东',
       role: '技术产品经理',
       mode: 'submitted',
@@ -47,9 +63,7 @@ describe('progress v3 correction layer', () => {
       current,
       now,
     )
-    const event = plan.operations.find(
-      (item) => item.kind === 'process_event' && item.eventType === 'assessment_invite',
-    )
+    const event = plan.operations.find((item) => item.kind === 'process_event' && item.eventType === 'assessment_invite')
     expect(event).toMatchObject({ kind: 'process_event', opportunityId: 'D-STRATEGY' })
   })
 
@@ -59,9 +73,7 @@ describe('progress v3 correction layer', () => {
       opportunity('E-PLAN', '戊公司', '生产计划工程师'),
     ]
     const plan = parseProgressUpdate('9月22日，戊公司产学研合作工程师10点面试。', current, now)
-    const event = plan.operations.find(
-      (item) => item.kind === 'process_event' && item.eventType === 'interview_invite',
-    )
+    const event = plan.operations.find((item) => item.kind === 'process_event' && item.eventType === 'interview_invite')
     expect(event).toMatchObject({ kind: 'process_event', opportunityId: 'E-RD' })
     if (event?.kind === 'process_event') {
       expect(new Date(event.dueAt!).getDate()).toBe(22)
@@ -69,19 +81,17 @@ describe('progress v3 correction layer', () => {
     }
   })
 
-  it('turns an unknown historical company+role closure into a local closed opportunity sequence', () => {
-    const plan = parseProgressUpdate(
-      '9月6日，NOVA（27届 ASP）AI产品经理培训生流程终止。',
-      [],
-      now,
-    )
+  it('turns an unknown historical company+role closure into a closed sequence only with a source-backed canonical job', () => {
+    const references: CanonicalJobReference[] = [{
+      opportunityId: 'NOVA-AI-PM',
+      company: 'NOVA',
+      role: 'AI产品经理培训生',
+      sourceBacked: true,
+    }]
+    const plan = parseProgressUpdate('9月6日，NOVA（27届 ASP）AI产品经理培训生流程终止。', [], now, references)
     expect(plan.unresolved).toHaveLength(0)
-    expect(plan.operations.some((item) =>
-      item.kind === 'upsert_opportunity' && item.company === 'NOVA' && item.role === 'AI产品经理培训生'
-    )).toBe(true)
-    expect(plan.operations.some((item) =>
-      item.kind === 'close_opportunity' && item.company === 'NOVA' && item.role === 'AI产品经理培训生'
-    )).toBe(true)
+    expect(plan.operations.some((item) => item.kind === 'upsert_opportunity' && item.opportunityId === 'NOVA-AI-PM')).toBe(true)
+    expect(plan.operations.some((item) => item.kind === 'close_opportunity' && item.opportunityId === 'NOVA-AI-PM')).toBe(true)
   })
 
   it('does not force a company-only old closure into manual repair', () => {
@@ -93,9 +103,6 @@ describe('progress v3 correction layer', () => {
   it('turns a dated standalone administrative task into a manual action', () => {
     const current = [opportunity('A', '甲公司', '产品经理')]
     const plan = parseProgressUpdate('9月11日，2027届毕业生源信息校对。', current, now)
-    expect(plan.operations[0]).toMatchObject({
-      kind: 'manual_action',
-      title: '2027届毕业生源信息校对',
-    })
+    expect(plan.operations[0]).toMatchObject({ kind: 'manual_action', title: '2027届毕业生源信息校对' })
   })
 })
