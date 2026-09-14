@@ -10,14 +10,9 @@ const handler = createDiscoveryAutomationHandler({
   tokenEncryptionKey: process.env.PJSDAS_TOKEN_ENCRYPTION_KEY ?? '',
   googleClientId: process.env.PJSDAS_GOOGLE_CLIENT_ID ?? '',
   googleClientSecret: process.env.PJSDAS_GOOGLE_CLIENT_SECRET ?? '',
-  // An explicitly configured deployment-owner API key takes precedence.
-  // Otherwise resolve the project OIDC token at request time so PJSDAS does
-  // not depend on VERCEL_OIDC_TOKEN being exposed as a static system env var.
-  aiGatewayApiKey: process.env.AI_GATEWAY_API_KEY,
-  aiGatewayTokenProvider: async () => {
-    const { getVercelOidcToken } = await import('@vercel/oidc')
-    return getVercelOidcToken()
-  },
+  // A plain provider/model string is intentionally used here. On Vercel the
+  // AI SDK routes it through AI Gateway and owns project OIDC authentication;
+  // AI_GATEWAY_API_KEY remains an operator-level fallback understood by the SDK.
   aiGatewayModel: process.env.PJSDAS_DISCOVERY_MODEL ?? 'perplexity/sonar',
 })
 
