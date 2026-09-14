@@ -73,6 +73,20 @@ The current seeded layer checks 64 reproducible seeds and combines:
 
 A failure message includes the seed and run identity so an Agent can replay the exact sequence without asking the user to reproduce the defect manually. Seeded stress is deliberately dependency-free and deterministic in CI; it is not probabilistic production telemetry.
 
+## Drive boundary fault injection
+
+The reliability suite now also tests failure semantics at the durable Drive workspace boundary using an optimistic-version fault-injection source rather than requiring a human to reproduce sync races.
+
+The fault layer covers:
+
+- a browser/cloud race after the autonomous writer has read its baseline: the stale writer must receive `WORKSPACE_CONFLICT`, must not overwrite the concurrent user change, and may succeed only after rereading the latest workspace;
+- a network failure before commit: retry must create durable state exactly once, with no partial run or Opportunity left behind by the failed attempt;
+- acknowledgement loss after a successful commit: retry of the same durable `runId` must detect the already-applied run and perform no second write;
+- two autonomous writers that read the same Drive version concurrently: exactly one write may win, the other must fail closed, and a retry from the new baseline must preserve both logical changes instead of producing last-write-wins loss;
+- replay after later workspace changes: replay remains dry-run-only and cannot mutate the current snapshot, workspace version, or durable-write count.
+
+These tests exercise the protocol contract shared by trusted ingestion and Drive optimistic concurrency. Transport uncertainty may cause a retryable error, but it must never create silent overwrite, duplicate durable ingestion, or destructive replay.
+
 ## Development rule
 
 A bug discovered in production or product use should become a regression scenario whenever it can be reproduced deterministically. The same defect class should not require the user to discover it twice.
@@ -80,8 +94,7 @@ A bug discovered in production or product use should become a regression scenari
 Future slices should extend this layer with:
 
 - larger fixture-based workspace histories;
-- replay / concurrent-write scenarios across the Drive boundary;
-- broader browser-level E2E for critical authenticated and recovery journeys;
+- broader browser-level E2E for authenticated sync, backup/restore, Process Event and recovery journeys;
 - production anomaly checks that stay silent when healthy and surface only actionable failures.
 
 This is reliability infrastructure, not a new user-facing review queue. System maintenance must remain background work unless a concrete user decision is required.
