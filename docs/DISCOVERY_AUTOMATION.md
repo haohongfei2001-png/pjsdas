@@ -31,7 +31,7 @@ User enables Background job discovery once
   -> decrypt stored Google refresh token on the server
   -> read the canonical PJSDAS Drive workspace
   -> build the deterministic discovery automation plan
-  -> Vercel AI Gateway live-web search
+  -> Vercel AI SDK -> AI Gateway live-web search
   -> strict bounded observation schema
   -> existing hardened monitor-ingestion core
   -> optimistic Drive write
@@ -42,13 +42,11 @@ The database scheduler is enabled only after the exact merged backend commit has
 
 ## Search/model provider
 
-The worker calls Vercel AI Gateway with a deployment-owned credential. An explicitly configured `AI_GATEWAY_API_KEY` takes precedence when an operator intentionally provides one. Otherwise the Vercel Function resolves its project OIDC credential at request time with `@vercel/oidc` `getVercelOidcToken()`. This avoids depending on `VERCEL_OIDC_TOKEN` being exposed as a static system environment variable and avoids giving end users any search/model API key.
+The worker uses the Vercel AI SDK with a plain provider/model string. On Vercel this routes through AI Gateway and lets the platform SDK own project OIDC authentication. PJSDAS does **not** obtain a project OIDC token and replay it as a raw REST API key. The Gateway's `AI_GATEWAY_API_KEY` environment variable remains an operator-level fallback for environments where an explicit key is intentionally configured; end users never supply a model/search key.
 
-The OIDC token is resolved only when a probe or at least one opted-in binding actually needs model work. An inbound HTTP header cannot supply or override deployment identity.
+The default model is `perplexity/sonar`, selected because the model performs current public-web search. `PJSDAS_DISCOVERY_MODEL` may replace the deployment-wide model without changing user workspaces or the ingestion contract.
 
-The default model is `perplexity/sonar`, selected because a request performs current public-web search. `PJSDAS_DISCOVERY_MODEL` may replace the deployment-wide model without changing user workspaces or the ingestion contract.
-
-If the deployment has neither a usable project OIDC token nor an AI Gateway API key, the worker fails closed with `DISCOVERY_MODEL_AUTH_REQUIRED`. It must not synthesize a run or pretend Coverage is fresh.
+The worker does not trust inbound HTTP headers as model identity. AI SDK/Gateway authentication failure remains fail-closed: PJSDAS must not synthesize a run or pretend Coverage is fresh.
 
 ## Bounded data sent to the search model
 
