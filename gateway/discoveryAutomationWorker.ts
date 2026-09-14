@@ -178,14 +178,51 @@ function modelStatusCode(caught: unknown) {
   return typeof responseStatus === 'number' ? responseStatus : undefined
 }
 
+function gatewayErrorDetails(caught: unknown) {
+  if (!caught || typeof caught !== 'object') return { type: undefined, message: undefined }
+  const candidate = caught as { responseBody?: unknown; data?: unknown }
+  let payload: unknown = candidate.data
+  if (typeof candidate.responseBody === 'string') {
+    try {
+      payload = JSON.parse(candidate.responseBody) as unknown
+    } catch {
+      // Non-JSON provider bodies are intentionally not surfaced.
+    }
+  }
+  if (!payload || typeof payload !== 'object') return { type: undefined, message: undefined }
+  const root = payload as Record<string, unknown>
+  const nested = root.error && typeof root.error === 'object' ? root.error as Record<string, unknown> : root
+  return {
+    type: typeof nested.type === 'string' ? nested.type : undefined,
+    message: typeof nested.message === 'string' ? nested.message : undefined,
+  }
+}
+
 function throwModelError(caught: unknown): never {
   if (caught instanceof WorkspaceSourceError) throw caught
   const status = modelStatusCode(caught)
-  if (status === 401 || status === 403) {
+  const details = gatewayErrorDetails(caught)
+  const message = details.message?.toLocaleLowerCase() ?? ''
+  if (status === 401) {
     throw new WorkspaceSourceError('DISCOVERY_MODEL_AUTH_REQUIRED', 'Vercel AI Gateway rejected discovery-worker authentication.', false)
   }
   if (status === 402) {
-    throw new WorkspaceSourceError('DISCOVERY_MODEL_CREDITS_REQUIRED', 'Vercel AI Gateway credits are unavailable for background discovery.', false)
+    if (details.type === 'quota_for_entity_exceeded') {
+      throw new WorkspaceSourceError('DISCOVERY_MODEL_QUOTA_EXCEEDED', 'A Vercel AI Gateway budget or quota blocks background discovery.', false)
+    }
+    throw new WorkspaceSourceError('DISCOVERY_MODEL_CREDITS_REQUIRED', 'Vercel AI Gateway has no positive credit balance for background discovery.', false)
+  }
+  if (status === 403) {
+    if (details.type === 'customer_verification_required') {
+      throw new WorkspaceSourceError('DISCOVERY_MODEL_CUSTOMER_VERIFICATION_REQUIRED', 'Vercel AI Gateway requires team payment-method verification before background discovery can use Gateway credits.', false)
+    }
+    if (message.includes('free tier')) {
+      throw new WorkspaceSourceError('DISCOVERY_MODEL_CREDITS_REQUIRED', 'The selected discovery model is not available on the current Vercel AI Gateway free tier.', false)
+    }
+    if (message.includes('allowlist') || message.includes('not allowed') || message.includes('restriction')) {
+      throw new WorkspaceSourceError('DISCOVERY_MODEL_RESTRICTED', 'Vercel AI Gateway team restrictions block the selected discovery model or provider.', false)
+    }
+    throw new WorkspaceSourceError('DISCOVERY_MODEL_FORBIDDEN', "Vercel AI Gateway denied this project's discovery-model request.", false)
   }
   if (status === 429 || (typeof status === 'number' && status >= 500)) {
     throw new WorkspaceSourceError('DISCOVERY_MODEL_UNAVAILABLE', `Vercel AI Gateway is temporarily unavailable${status ? ` (HTTP ${status})` : ''}.`, true)

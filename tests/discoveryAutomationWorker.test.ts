@@ -142,4 +142,76 @@ describe('server-owned discovery worker model boundary', () => {
       message: expect.not.stringContaining('provider-private-detail'),
     })
   })
+
+  it('distinguishes Vercel customer verification from authentication failure', async () => {
+    const snapshot = await demoSnapshot()
+    await expect(discoverSourceRun(snapshot, sourceRun(), {
+      executionRules: [],
+      now: new Date('2026-09-15T01:00:00.000Z'),
+      ai: {
+        generateTextImpl: async () => {
+          throw {
+            statusCode: 403,
+            responseBody: JSON.stringify({
+              error: {
+                type: 'customer_verification_required',
+                message: 'Payment method verification required.',
+              },
+            }),
+          }
+        },
+      },
+    })).rejects.toMatchObject({
+      code: 'DISCOVERY_MODEL_CUSTOMER_VERIFICATION_REQUIRED',
+      retryable: false,
+    })
+  })
+
+  it('distinguishes Gateway budget quota from missing credits', async () => {
+    const snapshot = await demoSnapshot()
+    await expect(discoverSourceRun(snapshot, sourceRun(), {
+      executionRules: [],
+      now: new Date('2026-09-15T01:00:00.000Z'),
+      ai: {
+        generateTextImpl: async () => {
+          throw {
+            statusCode: 402,
+            data: {
+              error: {
+                type: 'quota_for_entity_exceeded',
+                message: 'Project budget reached.',
+              },
+            },
+          }
+        },
+      },
+    })).rejects.toMatchObject({
+      code: 'DISCOVERY_MODEL_QUOTA_EXCEEDED',
+      retryable: false,
+    })
+  })
+
+  it('distinguishes a free-tier model restriction from project authentication failure', async () => {
+    const snapshot = await demoSnapshot()
+    await expect(discoverSourceRun(snapshot, sourceRun(), {
+      executionRules: [],
+      now: new Date('2026-09-15T01:00:00.000Z'),
+      ai: {
+        generateTextImpl: async () => {
+          throw {
+            statusCode: 403,
+            responseBody: JSON.stringify({
+              error: {
+                type: 'forbidden',
+                message: 'This model is unavailable on the free tier.',
+              },
+            }),
+          }
+        },
+      },
+    })).rejects.toMatchObject({
+      code: 'DISCOVERY_MODEL_CREDITS_REQUIRED',
+      retryable: false,
+    })
+  })
 })
