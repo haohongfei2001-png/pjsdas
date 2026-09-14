@@ -1,0 +1,39 @@
+name: Temporary OIDC lockfile generator
+
+on:
+  push:
+    branches: [fix/discovery-dynamic-oidc]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: temporary-oidc-lockfile
+  cancel-in-progress: true
+
+jobs:
+  generate:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: fix/discovery-dynamic-oidc
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm install @vercel/oidc@3.8.7 --save
+      - name: Commit generated package metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git diff --quiet -- package.json package-lock.json; then
+            echo "No package metadata changes to commit."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add package.json package-lock.json
+          git commit -m "chore: add Vercel OIDC runtime dependency"
+          git push origin HEAD:fix/discovery-dynamic-oidc
