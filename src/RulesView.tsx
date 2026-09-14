@@ -163,7 +163,7 @@ export default function RulesView({ rules, onChanged }: Props) {
     <section className="rules-page">
       <header className="page-header">
         <div>
-          <div className="eyebrow">DECISION RULES · V1.6</div>
+          <div className="eyebrow">DECISION POLICY</div>
           <h1>{zh ? '决策规则' : 'Decision Rules'}</h1>
           <p>{zh
             ? '这些规则驱动 Today 排序、岗位分项聚合和申请组合决策。所有权重都是显式策略；修改不会自动提交申请，也不会静默重写已经保存的历史岗位分数。'
