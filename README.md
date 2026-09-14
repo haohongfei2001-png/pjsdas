@@ -13,7 +13,9 @@ PJSDAS is a local-first, AI-native job-search decision and action workspace. It 
 
 The public product release uses Semantic Versioning. Historical `v1.9` / `v1.10` labels in design and hardening documents are engineering milestones, not earlier public releases. The authenticated MCP gateway runtime is versioned independently and currently remains `1.9.0-alpha.1`.
 
-See [`docs/RELEASE_POLICY.md`](docs/RELEASE_POLICY.md) for the permanent mapping between product version, package version, Git tag, gateway runtime, and exact deployed commit identity.
+The `v1.0.0` Git tag identifies its production-verified release commit. `main` may continue to advance after that release without changing what `v1.0.0` means.
+
+See [`docs/RELEASE_POLICY.md`](docs/RELEASE_POLICY.md) for the permanent mapping between product version, package version, Git tag, gateway runtime, exact deployed commit identity, and GitHub platform release immutability.
 
 ## Product surface
 
@@ -143,7 +145,9 @@ A formal public release is created only after the exact same commit has passed:
 6. GitHub Pages deployment;
 7. post-deploy Production Self-Test.
 
-A successful Production Self-Test triggers the release publisher. The publisher reads `.github/release-plan.json` and creates the immutable Git tag and GitHub Release for that verified commit.
+When `.github/release-plan.json` is explicitly armed, a successful Production Self-Test triggers the release publisher. The publisher creates a version-pinned Git tag and GitHub Release for the verified commit and refuses to move or reuse an existing tag. After a release is published, the plan is disarmed until the next intentional public release.
+
+GitHub's platform-level **Immutable Releases** feature is a separate repository setting. It was not enabled before `v1.0.0`, so the v1.0.0 release is verified and version-pinned by PJSDAS policy but is not GitHub-platform-immutable. Future release immutability is tracked as optional supply-chain hardening rather than a product-development blocker.
 
 ## Development
 
