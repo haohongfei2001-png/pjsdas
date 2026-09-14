@@ -19,3 +19,16 @@ jobs:
         run: npm audit --audit-level=high
       - run: npm test
       - run: npm run build
+      - name: Cloudflare standby bundle gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          secrets_file="$RUNNER_TEMP/pjsdas-cloudflare-ci-secrets.json"
+          printf '%s' '{"PJSDAS_TOKEN_ENCRYPTION_KEY":"ci-only-placeholder","PJSDAS_GOOGLE_CLIENT_SECRET":"ci-only-placeholder","AI_GATEWAY_API_KEY":"ci-only-placeholder"}' > "$secrets_file"
+          npx --yes wrangler@4 deploy \
+            --dry-run \
+            --outdir "$RUNNER_TEMP/pjsdas-cloudflare-worker" \
+            --secrets-file "$secrets_file" \
+            --var "WORKERS_CI_COMMIT_SHA:${GITHUB_SHA}" \
+            --var "PJSDAS_GOOGLE_CLIENT_ID:ci-only.apps.googleusercontent.com"
+          rm -f "$secrets_file"
