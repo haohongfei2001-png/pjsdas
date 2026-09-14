@@ -58,7 +58,7 @@ jobs:
           if (!fs.existsSync(notes)) throw new Error(`release notes not found: ${notes}`)
           NODE
 
-      - name: Create immutable GitHub Release
+      - name: Create version-pinned GitHub Release
         if: ${{ steps.plan.outputs.publish == 'true' }}
         env:
           RELEASE_TAG: ${{ steps.plan.outputs.tag }}
