@@ -30,6 +30,7 @@ import {
   runCloudSync,
   type CloudSyncOutcome,
 } from './cloudSync.js'
+import { assertCloudSignOutAllowed } from './cloudOperationGuard.js'
 
 interface CloudContextValue {
   configured: boolean
@@ -210,6 +211,19 @@ export function CloudProvider({ children }: { children: ReactNode }) {
     }
   }, [])
 
+  const signOut = useCallback(async () => {
+    assertCloudSignOutAllowed({
+      busy: busyRef.current,
+      linking: linkingRef.current,
+      loading,
+    })
+    await signOutCloud()
+    applySession(null)
+    setOutcome(undefined)
+    setError(undefined)
+    setLoading(false)
+  }, [loading, applySession])
+
   const value = useMemo<CloudContextValue>(() => ({
     configured,
     session,
@@ -220,13 +234,7 @@ export function CloudProvider({ children }: { children: ReactNode }) {
     outcome,
     error,
     signIn,
-    signOut: async () => {
-      await signOutCloud()
-      applySession(null)
-      setOutcome(undefined)
-      setError(undefined)
-      setLoading(false)
-    },
+    signOut,
     syncNow,
     keepLocal: () => runResolution('keep'),
     useCloud: () => runResolution('cloud'),
@@ -235,7 +243,7 @@ export function CloudProvider({ children }: { children: ReactNode }) {
       setCloudAutoSync(enabled)
       refreshState(session?.user.id)
     },
-  }), [configured, session, loading, syncing, device, checkpoint, outcome, error, signIn, syncNow, runResolution, refreshState, applySession])
+  }), [configured, session, loading, syncing, device, checkpoint, outcome, error, signIn, signOut, syncNow, runResolution, refreshState])
 
   return <CloudContext.Provider value={value}>{children}</CloudContext.Provider>
 }
