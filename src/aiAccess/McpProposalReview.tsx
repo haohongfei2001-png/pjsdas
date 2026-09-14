@@ -9,9 +9,11 @@ import {
   type DiscoveryRejectionSelection,
 } from '../discoveryFeedback.js'
 import { saveDiscoveryFeedbackRecords } from '../discoveryFeedbackStore.js'
+import { presentDiscoveryQualityReason } from '../discoveryQualityReason.js'
 import {
   encodedProposalFromHash,
   removeProposalFromUrl,
+  type McpDiscoveryReviewItem,
   type McpProposalEnvelope,
 } from '../ai/mcpProposal.js'
 import { applyMcpChangeSetWithBaseline, assertMcpChangeSetBaseline } from '../ai/mcpProposalApply.js'
@@ -52,6 +54,16 @@ function confidenceLabel(value: string, zh: boolean) {
 
 function defaultRejectionSelections(ids: string[]) {
   return Object.fromEntries(ids.map((id) => [id, { code: 'not_interested' }])) as Record<string, DiscoveryRejectionSelection>
+}
+
+function reviewReason(item: McpDiscoveryReviewItem, zh: boolean) {
+  if (item.reasonDetail) return presentDiscoveryQualityReason(item.reasonDetail, zh)
+  return item.reason ?? ''
+}
+
+function reviewReasons(item: McpDiscoveryReviewItem, zh: boolean) {
+  if (item.reasonDetails?.length) return item.reasonDetails.map((detail) => presentDiscoveryQualityReason(detail, zh))
+  return item.reasons ?? []
 }
 
 export default function McpProposalReview() {
@@ -310,9 +322,9 @@ export default function McpProposalReview() {
                       <details>
                         <summary>{zh ? '查看没有进入审阅区的岗位' : 'See jobs that did not enter review'}</summary>
                         <div className="mcp-discovery-screening-list">
-                          {proposal.discoveryReview.skippedDuplicates.map((item) => <p key={`dup:${item.company}:${item.role}`}><b>{item.company}｜{item.role}</b> · {item.reason}</p>)}
-                          {proposal.discoveryReview.rejectedCandidates.map((item) => <p key={`reject:${item.company}:${item.role}`}><b>{item.company}｜{item.role}</b> · {item.reasons?.join('；')}</p>)}
-                          {proposal.discoveryReview.deferredCandidates.map((item) => <p key={`defer:${item.company}:${item.role}`}><b>{item.company}｜{item.role}</b> · {item.reason}</p>)}
+                          {proposal.discoveryReview.skippedDuplicates.map((item) => <p key={`dup:${item.company}:${item.role}`}><b>{item.company}｜{item.role}</b> · {reviewReason(item, zh)}</p>)}
+                          {proposal.discoveryReview.rejectedCandidates.map((item) => <p key={`reject:${item.company}:${item.role}`}><b>{item.company}｜{item.role}</b> · {reviewReasons(item, zh).join(zh ? '；' : ' · ')}</p>)}
+                          {proposal.discoveryReview.deferredCandidates.map((item) => <p key={`defer:${item.company}:${item.role}`}><b>{item.company}｜{item.role}</b> · {reviewReason(item, zh)}</p>)}
                         </div>
                       </details>
                     ) : null}
