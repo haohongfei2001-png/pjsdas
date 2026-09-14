@@ -19,6 +19,9 @@ const REQUIRED_CAPABILITIES: Record<string, unknown> = {
   stableAccountSession: 'v1.8.1',
   autonomousIngestion: 'v1.9',
   discoveryAutomationPlan: 'v1',
+  backgroundDiscoveryAutomation: 'v1',
+  discoveryAiGateway: 'vercel-ai-gateway',
+  discoveryWorkerVaultAuth: true,
   ingestionReconciliationLedger: true,
   coverageStatusRead: true,
   trustedMonitorIngestion: true,
@@ -134,6 +137,13 @@ export async function runProductionSelfTest(options: {
     checks.push(check('gmail-automation.worker-unauthorized', response.status === 401, `HTTP ${response.status}; background worker must require the Vault scheduler token`))
   } catch (caught) {
     checks.push(check('gmail-automation.worker-fetch', false, caught instanceof Error ? caught.message : String(caught)))
+  }
+
+  try {
+    const response = await fetchImpl(`${baseUrl}/api/automation-discovery`, { method: 'POST' })
+    checks.push(check('discovery-automation.worker-unauthorized', response.status === 401, `HTTP ${response.status}; server-owned discovery worker must require the Vault scheduler token`))
+  } catch (caught) {
+    checks.push(check('discovery-automation.worker-fetch', false, caught instanceof Error ? caught.message : String(caught)))
   }
 
   try {
