@@ -36,6 +36,24 @@ export type PortfolioCandidateDisposition =
   | 'not_pending'
   | 'not_selected'
 
+export type PortfolioCandidateReason =
+  | { code: 'high_opportunity_value' }
+  | { code: 'high_fit' }
+  | { code: 'core_role' }
+  | { code: 'low_application_cost' }
+  | { code: 'near_deadline' }
+  | { code: 'low_evidence_confidence' }
+  | { code: 'high_overlap'; similarityPercent: number }
+  | { code: 'capacity_marginal' }
+  | { code: 'no_marginal_value' }
+
+export type PortfolioWarning =
+  | { code: 'capacity_fields_inconsistent'; total: number; used: number; derived: number; remaining: number }
+  | { code: 'current_order_context' }
+  | { code: 'group_locked' }
+  | { code: 'capacity_unknown' }
+  | { code: 'optimization_capped'; cap: number; candidateCount: number }
+
 export interface PortfolioCandidateComponents {
   opportunityValue: number
   fit: number
@@ -58,7 +76,7 @@ export interface PortfolioCandidateDecision {
   deadline?: string
   estimatedMinutes?: number
   maxSimilarityToRecommended?: number
-  reasons: string[]
+  reasons: PortfolioCandidateReason[]
 }
 
 export interface ApplicationPortfolioDecision {
@@ -76,7 +94,7 @@ export interface ApplicationPortfolioDecision {
   objectiveScore?: number
   sourceRule?: string
   currentOrder?: string
-  warnings: string[]
+  warnings: PortfolioWarning[]
   generatedAt: string
 }
 
@@ -149,15 +167,21 @@ function capacityFor(group: ApplicationGroup) {
   return undefined
 }
 
-function capacityWarnings(group: ApplicationGroup) {
-  const warnings: string[] = []
+function capacityWarnings(group: ApplicationGroup): PortfolioWarning[] {
+  const warnings: PortfolioWarning[] = []
   if (group.total !== undefined && group.used !== undefined && group.remaining !== undefined) {
     const derived = group.total - group.used
     if (Math.abs(derived - group.remaining) > 0.001) {
-      warnings.push(`申请组名额字段不一致：总名额 ${group.total} - 已用 ${group.used} = ${derived}，但“剩余”记录为 ${group.remaining}；组合决策优先采用显式剩余值。`)
+      warnings.push({
+        code: 'capacity_fields_inconsistent',
+        total: group.total,
+        used: group.used,
+        derived,
+        remaining: group.remaining,
+      })
     }
   }
-  if (group.currentOrder) warnings.push('“当前排序/首选”是历史自由文本上下文，不作为隐藏硬约束；如需固定某个志愿，请先把申请组标记为锁定或更新结构化规则。')
+  if (group.currentOrder) warnings.push({ code: 'current_order_context' })
   return warnings
 }
 
@@ -175,15 +199,17 @@ function candidateDecision(opportunity: Opportunity, rules: DecisionRules, now: 
   }
   const baseScore = weightedBaseScore(components, weights)
   const deadlineExpired = Boolean(projected.deadline && new Date(projected.deadline).getTime() < now.getTime())
-  const pending = projected.processStage === 'not_applied' && projected.currentStageLabel === '待投'
-  const reasons: string[] = []
+  // Eligibility is a domain-state decision. Human presentation labels such as
+  // “待投” / “待投递” must never decide whether a role is still pending.
+  const pending = projected.processStage === 'not_applied'
+  const reasons: PortfolioCandidateReason[] = []
 
-  if (projected.opportunityValue >= 85) reasons.push('机会价值高')
-  if (projected.fitScore >= 75) reasons.push('匹配度较高')
-  if (projected.roleType === 'core') reasons.push('核心机会')
-  if (components.applicationEfficiency !== undefined && components.applicationEfficiency >= 75) reasons.push('投递成本较低')
-  if (components.deadline !== undefined && components.deadline >= 78) reasons.push('截止窗口较近')
-  if (components.evidenceConfidence !== undefined && components.evidenceConfidence < 55) reasons.push('评估证据置信度偏低')
+  if (projected.opportunityValue >= 85) reasons.push({ code: 'high_opportunity_value' })
+  if (projected.fitScore >= 75) reasons.push({ code: 'high_fit' })
+  if (projected.roleType === 'core') reasons.push({ code: 'core_role' })
+  if (components.applicationEfficiency !== undefined && components.applicationEfficiency >= 75) reasons.push({ code: 'low_application_cost' })
+  if (components.deadline !== undefined && components.deadline >= 78) reasons.push({ code: 'near_deadline' })
+  if (components.evidenceConfidence !== undefined && components.evidenceConfidence < 55) reasons.push({ code: 'low_evidence_confidence' })
 
   let disposition: PortfolioCandidateDisposition = 'not_selected'
   if (deadlineExpired) disposition = 'expired'
@@ -280,17 +306,18 @@ function classifyNotSelected(
   if (!candidate.eligible) return candidate
   const similarities = recommended.map((item) => jobRoleSimilarity(candidate.role, item.role))
   const maxSimilarity = similarities.length ? Math.max(...similarities) : 0
+  const similarityPercent = Math.round(maxSimilarity * 100)
   const recommendedFull = capacity !== undefined && recommended.length >= capacity
   const highOverlap = maxSimilarity >= 0.72
   return {
     ...candidate,
-    maxSimilarityToRecommended: Math.round(maxSimilarity * 100) / 100,
+    maxSimilarityToRecommended: similarityPercent / 100,
     disposition: highOverlap ? 'overlap' as const : recommendedFull ? 'capacity' as const : 'not_selected' as const,
     reasons: [
       ...candidate.reasons,
-      ...(highOverlap ? [`与已推荐岗位高度重叠（相似度 ${Math.round(maxSimilarity * 100)}%）`] : []),
-      ...(recommendedFull && !highOverlap ? ['名额有限，组合边际价值低于已推荐岗位'] : []),
-      ...(!recommendedFull && !highOverlap ? ['加入后没有提高当前组合的净边际价值'] : []),
+      ...(highOverlap ? [{ code: 'high_overlap' as const, similarityPercent }] : []),
+      ...(recommendedFull && !highOverlap ? [{ code: 'capacity_marginal' as const }] : []),
+      ...(!recommendedFull && !highOverlap ? [{ code: 'no_marginal_value' as const }] : []),
     ],
   }
 }
@@ -346,7 +373,7 @@ export function buildApplicationPortfolioDecision(
       notRecommended: evaluated,
       sourceRule: group.rule,
       currentOrder: group.currentOrder,
-      warnings: [...warnings, '申请组已锁定；PJSDAS 不会给出替换志愿建议。'],
+      warnings: [...warnings, { code: 'group_locked' }],
       generatedAt,
     }
   }
@@ -365,7 +392,7 @@ export function buildApplicationPortfolioDecision(
       notRecommended: evaluated.sort((a, b) => b.baseScore - a.baseScore),
       sourceRule: group.rule,
       currentOrder: group.currentOrder,
-      warnings: [...warnings, '剩余申请名额无法从结构化字段确定；PJSDAS 只提供候选排序，不猜测可投数量。'],
+      warnings: [...warnings, { code: 'capacity_unknown' }],
       generatedAt,
     }
   }
@@ -392,7 +419,11 @@ export function buildApplicationPortfolioDecision(
 
   const optimized = actionable.slice(0, MAX_OPTIMIZED_CANDIDATES)
   if (actionable.length > optimized.length) {
-    warnings.push(`候选超过 ${MAX_OPTIMIZED_CANDIDATES} 个；组合优化只对基础分最高的 ${MAX_OPTIMIZED_CANDIDATES} 个执行，其他候选保留在未推荐列表。`)
+    warnings.push({
+      code: 'optimization_capped',
+      cap: MAX_OPTIMIZED_CANDIDATES,
+      candidateCount: actionable.length,
+    })
   }
   const result = bestSelection(optimized, capacity, minimumScore, weights)
   const recommendedIds = new Set(result.selection.map((item) => item.opportunityId))
