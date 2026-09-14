@@ -17,4 +17,8 @@ test('shell hides stale version copy and Decide uses the actual two-tab layout',
   expect(first).not.toBeNull()
   expect(second).not.toBeNull()
   expect(Math.abs(first!.width - second!.width)).toBeLessThan(2)
+
+  await page.getByRole('button', { name: /设置/ }).click()
+  await expect(page.getByText('PJSDAS ACCOUNT & DRIVE', { exact: true })).toBeVisible()
+  await expect(page.getByText(/V1\.9/)).toHaveCount(0)
 })
