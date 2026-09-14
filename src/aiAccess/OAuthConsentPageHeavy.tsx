@@ -125,9 +125,12 @@ export default function OAuthConsentPage() {
     <main style={{ minHeight: '100vh', display: 'grid', placeItems: 'center', padding: 24, background: '#f2ead7', color: '#292720' }}>
       <section style={{ width: 'min(620px, 100%)', background: '#fffaf0', border: '1px solid rgba(41,39,32,.16)', borderRadius: 24, padding: 32, boxShadow: '0 20px 60px rgba(41,39,32,.08)' }}>
         <div style={{ fontSize: 12, letterSpacing: '.12em', fontWeight: 700, opacity: .58 }}>PJSDAS · CHATGPT ACCESS</div>
-        <h1 style={{ margin: '10px 0 8px', fontSize: 30 }}>授权 ChatGPT 读取 PJSDAS</h1>
+        <h1 style={{ margin: '10px 0 8px', fontSize: 30 }}>授权 ChatGPT 访问 PJSDAS</h1>
         <p style={{ lineHeight: 1.7, opacity: .78 }}>
-          此授权仅用于 v1.1 的只读工具。ChatGPT 可以读取你的 Today、岗位、Pipeline、Decision Rules 与 Timeline；不能修改、删除或提交任何 PJSDAS 数据。
+          ChatGPT 可以读取你的 Today、岗位、Pipeline、Decision Rules 与 Timeline。对于受信任的 Monitor / Gmail 摄入，它还可以提交受限、来源支撑的事实，由 PJSDAS 在身份解析、幂等、审计记账与精确工作区版本冲突保护下自动写入。
+        </p>
+        <p style={{ lineHeight: 1.7, opacity: .78 }}>
+          这类自动摄入不能静默修改 Decision Rules、持久偏好、拒绝决定，也不能删除数据；除此之外的修改仍必须通过可审阅的 ChangeSet 明确应用。
         </p>
 
         {loading ? <p>正在检查授权状态…</p> : null}
@@ -153,11 +156,11 @@ export default function OAuthConsentPage() {
               {(scopes.length ? scopes : ['email']).map((scope) => <li key={scope}>{scopeLabel(scope)}</li>)}
             </ul>
             <p style={{ fontSize: 13, opacity: .68, lineHeight: 1.6 }}>
-              Google Drive 的 appDataFolder 授权由 PJSDAS 网站单独建立并加密保存；本页不会把 Google refresh token 交给 ChatGPT。
+              Google Drive 的 appDataFolder 授权由 PJSDAS 网站单独建立并加密保存；本页不会把 Google refresh token 交给 ChatGPT。PJSDAS 自己执行并约束所有持久化写入。
             </p>
             <div style={{ display: 'flex', gap: 10, marginTop: 24 }}>
               <button disabled={working} onClick={() => { void decide('approve') }} style={{ padding: '12px 18px', border: 0, borderRadius: 12, background: '#292720', color: '#fff', cursor: 'pointer' }}>
-                {working ? '处理中…' : '允许只读访问'}
+                {working ? '处理中…' : '允许此访问'}
               </button>
               <button disabled={working} onClick={() => { void decide('deny') }} style={{ padding: '12px 18px', border: '1px solid rgba(41,39,32,.22)', borderRadius: 12, background: 'transparent', color: '#292720', cursor: 'pointer' }}>
                 拒绝
