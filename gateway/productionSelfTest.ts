@@ -25,6 +25,7 @@ const REQUIRED_CAPABILITIES: Record<string, unknown> = {
   sourceHealthHistory: true,
   productionSelfTest: true,
   deploymentPortability: true,
+  releaseIdentityBinding: true,
 }
 
 function check(name: string, condition: boolean, detail: string): ProductionSelfTestCheck {
@@ -52,10 +53,12 @@ function mcpToolsRequest(baseUrl: string, token?: string) {
 export async function runProductionSelfTest(options: {
   baseUrl: string
   accessToken?: string
+  expectedCommitSha?: string
   fetchImpl?: typeof fetch
 }): Promise<ProductionSelfTestResult> {
   const fetchImpl = options.fetchImpl ?? fetch
   const baseUrl = options.baseUrl.replace(/\/$/, '')
+  const expectedCommitSha = options.expectedCommitSha?.trim().toLowerCase()
   const checks: ProductionSelfTestCheck[] = []
 
   try {
@@ -65,6 +68,14 @@ export async function runProductionSelfTest(options: {
     checks.push(check('health.version', payload?.version === '1.9.0-alpha.1', `version=${String(payload?.version)}`))
     checks.push(check('health.mode', payload?.mode === 'google-drive-trusted-ingestion', `mode=${String(payload?.mode)}`))
     checks.push(check('health.resource-origin', typeof payload?.resource === 'string' && payload.resource.startsWith(`${baseUrl}/`), `resource=${String(payload?.resource)}`))
+    if (expectedCommitSha) {
+      const actualCommitSha = typeof payload?.release?.commitSha === 'string' ? payload.release.commitSha.toLowerCase() : undefined
+      checks.push(check(
+        'health.release-commit',
+        actualCommitSha === expectedCommitSha,
+        `commitSha=${String(actualCommitSha)}; expected=${expectedCommitSha}`,
+      ))
+    }
     const capabilities = payload?.capabilities ?? {}
     for (const [key, expected] of Object.entries(REQUIRED_CAPABILITIES)) {
       checks.push(check(`health.capability.${key}`, capabilities[key] === expected, `${key}=${String(capabilities[key])}`))
