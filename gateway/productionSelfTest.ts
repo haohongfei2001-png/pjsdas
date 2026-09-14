@@ -1,3 +1,8 @@
+import {
+  AUTHENTICATED_MCP_RELEASE_REQUIRED_TOOLS,
+  AUTHENTICATED_MCP_TOOL_SURFACE_VERSION,
+} from './mcpToolSurface.js'
+
 export interface ProductionSelfTestCheck {
   name: string
   status: 'pass' | 'fail' | 'skipped'
@@ -26,6 +31,7 @@ const REQUIRED_CAPABILITIES: Record<string, unknown> = {
   productionSelfTest: true,
   deploymentPortability: true,
   releaseIdentityBinding: true,
+  authenticatedMcpToolSurface: true,
 }
 
 function check(name: string, condition: boolean, detail: string): ProductionSelfTestCheck {
@@ -81,6 +87,20 @@ export async function runProductionSelfTest(options: {
     for (const [key, expected] of Object.entries(REQUIRED_CAPABILITIES)) {
       checks.push(check(`health.capability.${key}`, capabilities[key] === expected, `${key}=${String(capabilities[key])}`))
     }
+    const authenticatedMcp = payload?.authenticatedMcp ?? {}
+    checks.push(check(
+      'health.authenticated-mcp-tool-surface-version',
+      authenticatedMcp.toolSurfaceVersion === AUTHENTICATED_MCP_TOOL_SURFACE_VERSION,
+      `toolSurfaceVersion=${String(authenticatedMcp.toolSurfaceVersion)}`,
+    ))
+    const releaseRequiredTools = Array.isArray(authenticatedMcp.releaseRequiredTools) ? authenticatedMcp.releaseRequiredTools : []
+    for (const tool of AUTHENTICATED_MCP_RELEASE_REQUIRED_TOOLS) {
+      checks.push(check(
+        `health.authenticated-mcp-tool.${tool}`,
+        releaseRequiredTools.includes(tool),
+        releaseRequiredTools.includes(tool) ? 'present' : 'missing',
+      ))
+    }
   } catch (caught) {
     checks.push(check('health.fetch', false, caught instanceof Error ? caught.message : String(caught)))
   }
@@ -109,7 +129,7 @@ export async function runProductionSelfTest(options: {
       const response = await fetchImpl(mcpToolsRequest(baseUrl, options.accessToken.trim()))
       const text = await textOf(response)
       checks.push(check('mcp.authenticated.http', response.status === 200, `HTTP ${response.status}`))
-      for (const tool of ['get_coverage_status', 'get_workspace_integrity', 'ingest_discovery_run', 'ingest_gmail_run']) {
+      for (const tool of AUTHENTICATED_MCP_RELEASE_REQUIRED_TOOLS) {
         checks.push(check(`mcp.tool.${tool}`, text.includes(tool), text.includes(tool) ? 'present' : 'missing'))
       }
     } catch (caught) {
@@ -119,10 +139,10 @@ export async function runProductionSelfTest(options: {
     checks.push(check(
       'mcp.authenticated.tools',
       false,
-      'PJSDAS_SELF_TEST_ACCESS_TOKEN not supplied; release verification requires authenticated MCP tool discovery.',
+      'PJSDAS_SELF_TEST_ACCESS_TOKEN not supplied; strict live-auth verification requires authenticated MCP tool discovery.',
     ))
   } else {
-    checks.push({ name: 'mcp.authenticated.tools', status: 'skipped', detail: 'PJSDAS_SELF_TEST_ACCESS_TOKEN not supplied; authenticated tool-list verification is deferred.' })
+    checks.push({ name: 'mcp.authenticated.tools', status: 'skipped', detail: 'Live authenticated tool-list verification is optional; deployed release tool surface is verified through /api/health.' })
   }
 
   return {
