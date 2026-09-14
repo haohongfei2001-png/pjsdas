@@ -54,6 +54,7 @@ export async function runProductionSelfTest(options: {
   baseUrl: string
   accessToken?: string
   expectedCommitSha?: string
+  requireAuthenticatedTools?: boolean
   fetchImpl?: typeof fetch
 }): Promise<ProductionSelfTestResult> {
   const fetchImpl = options.fetchImpl ?? fetch
@@ -114,6 +115,12 @@ export async function runProductionSelfTest(options: {
     } catch (caught) {
       checks.push(check('mcp.authenticated.fetch', false, caught instanceof Error ? caught.message : String(caught)))
     }
+  } else if (options.requireAuthenticatedTools) {
+    checks.push(check(
+      'mcp.authenticated.tools',
+      false,
+      'PJSDAS_SELF_TEST_ACCESS_TOKEN not supplied; release verification requires authenticated MCP tool discovery.',
+    ))
   } else {
     checks.push({ name: 'mcp.authenticated.tools', status: 'skipped', detail: 'PJSDAS_SELF_TEST_ACCESS_TOKEN not supplied; authenticated tool-list verification is deferred.' })
   }
