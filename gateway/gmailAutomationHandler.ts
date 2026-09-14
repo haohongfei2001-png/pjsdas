@@ -4,11 +4,10 @@ import { WorkspaceSourceError } from './workspaceSource.js'
 
 export interface GmailAutomationHandlerConfig {
   supabaseUrl: string
-  serviceRoleKey: string
+  supabasePublishableKey: string
   tokenEncryptionKey: string
   googleClientId: string
   googleClientSecret: string
-  automationSecret: string
   fetchImpl?: typeof fetch
   now?: () => Date
 }
@@ -45,24 +44,21 @@ function compactError(caught: unknown) {
 }
 
 export function createGmailAutomationHandler(config: GmailAutomationHandlerConfig) {
-  const expectedSecret = config.automationSecret.trim()
-  const store = createAutomationConnectionStore({
-    supabaseUrl: config.supabaseUrl,
-    serviceRoleKey: config.serviceRoleKey,
-    fetchImpl: config.fetchImpl,
-  })
-
   return async function handleGmailAutomation(request: Request) {
     if (request.method !== 'GET' && request.method !== 'POST') {
       return json(405, { code: 'METHOD_NOT_ALLOWED', message: 'Use GET or POST.' })
     }
-    if (!expectedSecret) {
-      return json(503, { code: 'AUTOMATION_NOT_CONFIGURED', message: 'PJSDAS automation secret is not configured.' })
-    }
-    if (bearer(request) !== expectedSecret) {
+    const workerToken = bearer(request)
+    if (!workerToken) {
       return json(401, { code: 'AUTOMATION_AUTH_REQUIRED', message: 'PJSDAS automation authorization is required.' })
     }
 
+    const store = createAutomationConnectionStore({
+      supabaseUrl: config.supabaseUrl,
+      supabasePublishableKey: config.supabasePublishableKey,
+      workerToken,
+      fetchImpl: config.fetchImpl,
+    })
     const url = new URL(request.url)
     const requestedUserId = url.searchParams.get('userId')?.trim()
     let bindings
@@ -70,7 +66,8 @@ export function createGmailAutomationHandler(config: GmailAutomationHandlerConfi
       bindings = await store.listEnabledGmailBindings()
     } catch (caught) {
       const error = errorBody(caught)
-      return json(error.retryable ? 503 : 500, error)
+      const status = error.code === 'AUTOMATION_AUTH_REQUIRED' ? 401 : error.retryable ? 503 : 500
+      return json(status, error)
     }
     if (requestedUserId) bindings = bindings.filter((item) => item.userId === requestedUserId)
 
