@@ -1,4 +1,8 @@
 import { assertChangeSetValid, type ChangeSetRecord } from '../changeSet.js'
+import {
+  DISCOVERY_QUALITY_REASON_CODES,
+  type DiscoveryQualityReasonDetail,
+} from '../discoveryQualityReason.js'
 import { createDiscoveryRunRecord, validateDiscoveryRunRecord } from '../discoveryRun.js'
 
 export const MCP_PROPOSAL_VERSION = 1 as const
@@ -11,6 +15,8 @@ export interface McpDiscoveryReviewItem {
   role: string
   reason?: string
   reasons?: string[]
+  reasonDetail?: DiscoveryQualityReasonDetail
+  reasonDetails?: DiscoveryQualityReasonDetail[]
   qualityScore?: number
 }
 
@@ -68,6 +74,15 @@ function validIso(value: unknown) {
   return typeof value === 'string' && !Number.isNaN(new Date(value).getTime())
 }
 
+function validDiscoveryReasonDetail(value: unknown): value is DiscoveryQualityReasonDetail {
+  if (!isObject(value) || typeof value.code !== 'string' || !DISCOVERY_QUALITY_REASON_CODES.includes(value.code as DiscoveryQualityReasonDetail['code'])) return false
+  if (value.params === undefined) return true
+  if (!isObject(value.params) || Object.keys(value.params).length > 20) return false
+  return Object.values(value.params).every((param) =>
+    typeof param === 'string' || typeof param === 'number' || typeof param === 'boolean'
+  )
+}
+
 function validateDiscoveryReview(value: unknown): asserts value is McpDiscoveryReview {
   if (!isObject(value)) throw new Error('PJSDAS discovery review metadata is invalid.')
   for (const key of ['received', 'accepted', 'duplicateCount', 'rejectedCount', 'deferredCount'] as const) {
@@ -85,6 +100,8 @@ function validateDiscoveryReview(value: unknown): asserts value is McpDiscoveryR
       }
       if (item.reason !== undefined && (typeof item.reason !== 'string' || item.reason.length > 1000)) throw new Error('PJSDAS discovery review reason is invalid.')
       if (item.reasons !== undefined && (!Array.isArray(item.reasons) || item.reasons.length > 10 || item.reasons.some((reason) => typeof reason !== 'string' || reason.length > 1000))) throw new Error('PJSDAS discovery review reasons are invalid.')
+      if (item.reasonDetail !== undefined && !validDiscoveryReasonDetail(item.reasonDetail)) throw new Error('PJSDAS discovery review reason detail is invalid.')
+      if (item.reasonDetails !== undefined && (!Array.isArray(item.reasonDetails) || item.reasonDetails.length > 10 || item.reasonDetails.some((reason) => !validDiscoveryReasonDetail(reason)))) throw new Error('PJSDAS discovery review reason details are invalid.')
       if (item.qualityScore !== undefined && (typeof item.qualityScore !== 'number' || item.qualityScore < 0 || item.qualityScore > 100)) throw new Error('PJSDAS discovery review quality score is invalid.')
     }
   }

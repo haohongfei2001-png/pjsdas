@@ -1,6 +1,10 @@
 import type { DecisionWeights } from './decisionRules.js'
 import { discoveryProfileForSnapshot, type DiscoveryProfile } from './discoveryProfile.js'
 import {
+  presentDiscoveryQualityReason,
+  type DiscoveryQualityReasonDetail,
+} from './discoveryQualityReason.js'
+import {
   createJobPostingEvidence,
   jobPostingFreshness,
   jobRoleSimilarity,
@@ -47,9 +51,9 @@ export interface ScreenedDiscoveryCandidate<T extends DiscoveryCandidateForQuali
 export interface DiscoveryScreeningResult<T extends DiscoveryCandidateForQuality = DiscoveryCandidateForQuality> {
   received: number
   accepted: ScreenedDiscoveryCandidate<T>[]
-  skippedDuplicates: Array<{ company: string; role: string; reason: string }>
-  rejectedCandidates: Array<{ company: string; role: string; reasons: string[] }>
-  deferredCandidates: Array<{ company: string; role: string; qualityScore: number; reason: string }>
+  skippedDuplicates: Array<{ company: string; role: string; reason: string; reasonDetail?: DiscoveryQualityReasonDetail }>
+  rejectedCandidates: Array<{ company: string; role: string; reasons: string[]; reasonDetails?: DiscoveryQualityReasonDetail[] }>
+  deferredCandidates: Array<{ company: string; role: string; qualityScore: number; reason: string; reasonDetail?: DiscoveryQualityReasonDetail }>
 }
 
 function compact(value: string) {
@@ -146,34 +150,39 @@ export function evaluateDiscoveryCandidate(
 ) {
   const profile = discoveryProfileForSnapshot(rawProfile)
   const hardRejectReasons: string[] = []
+  const hardRejectDetails: DiscoveryQualityReasonDetail[] = []
   const warnings: string[] = []
   const evidence = candidateEvidence(candidate)
+  const reject = (detail: DiscoveryQualityReasonDetail) => {
+    hardRejectDetails.push(detail)
+    hardRejectReasons.push(presentDiscoveryQualityReason(detail, true))
+  }
 
   if (candidate.postingStatus === 'closed') {
-    hardRejectReasons.push('公开来源明确显示岗位已关闭。')
+    reject({ code: 'posting_closed' })
   } else if (!candidate.postingStatus || candidate.postingStatus === 'unknown') {
     warnings.push('公开来源没有明确验证岗位仍开放。')
   }
 
   if (candidate.deadline && deadlineInstant(candidate.deadline) < now.getTime()) {
-    hardRejectReasons.push(`岗位截止时间 ${candidate.deadline} 已过去。`)
+    reject({ code: 'deadline_expired', params: { deadline: candidate.deadline } })
   }
 
   const preferredRoleTypes = profile.preferredRoleTypes ?? []
   if (preferredRoleTypes.length > 0 && !preferredRoleTypes.includes(candidate.roleType)) {
-    hardRejectReasons.push(`岗位类型 ${candidate.roleType} 不在显式允许类型中。`)
+    reject({ code: 'role_type_not_allowed', params: { roleType: candidate.roleType } })
   }
 
   if (profile.minimumFitScore !== undefined && candidate.fitScore < profile.minimumFitScore) {
-    hardRejectReasons.push(`匹配度 ${candidate.fitScore} 低于显式门槛 ${profile.minimumFitScore}。`)
+    reject({ code: 'fit_below_minimum', params: { score: candidate.fitScore, minimum: profile.minimumFitScore } })
   }
   if (profile.minimumOpportunityValue !== undefined && candidate.opportunityValue < profile.minimumOpportunityValue) {
-    hardRejectReasons.push(`机会价值 ${candidate.opportunityValue} 低于显式门槛 ${profile.minimumOpportunityValue}。`)
+    reject({ code: 'opportunity_value_below_minimum', params: { score: candidate.opportunityValue, minimum: profile.minimumOpportunityValue } })
   }
 
   for (const exclusion of profile.mustNotHave) {
     if (literalRulePresent(exclusion, evidence)) {
-      hardRejectReasons.push(`来源证据命中明确排除条件“${exclusion}”。`)
+      reject({ code: 'exclusion_match', params: { rule: exclusion } })
     }
   }
 
@@ -186,10 +195,10 @@ export function evaluateDiscoveryCandidate(
   if (profile.preferredLocations.length > 0) {
     const strict = (profile.locationPolicy ?? 'prefer') === 'strict'
     if (!candidate.location) {
-      if (strict) hardRejectReasons.push('地点为严格约束，但公开来源没有明确岗位地点。')
+      if (strict) reject({ code: 'strict_location_missing' })
       else warnings.push('来源没有明确岗位地点，无法验证地点偏好。')
     } else if (!locationMatches(profile, candidate.location)) {
-      if (strict) hardRejectReasons.push(`岗位地点“${candidate.location}”不符合严格地点约束。`)
+      if (strict) reject({ code: 'strict_location_mismatch', params: { location: candidate.location } })
       else warnings.push(`岗位地点“${candidate.location}”不在显式偏好列表中；请结合地点例外规则人工确认。`)
     }
   }
@@ -198,13 +207,17 @@ export function evaluateDiscoveryCandidate(
     if (candidate.annualCompensationMinWan === undefined) {
       warnings.push(`来源没有可结构化验证的最低年薪，无法确认 ${profile.minimumAnnualCompensationWan} 万元薪资门槛。`)
     } else if (candidate.annualCompensationMinWan < profile.minimumAnnualCompensationWan) {
-      hardRejectReasons.push(`来源可验证最低年薪 ${candidate.annualCompensationMinWan} 万元，低于显式门槛 ${profile.minimumAnnualCompensationWan} 万元。`)
+      reject({
+        code: 'compensation_below_minimum',
+        params: { actual: candidate.annualCompensationMinWan, minimum: profile.minimumAnnualCompensationWan },
+      })
     }
   }
 
   return {
     accepted: hardRejectReasons.length === 0,
     hardRejectReasons,
+    hardRejectDetails,
     warnings: warnings.slice(0, 10),
     qualityScore: discoveryQualityScore(candidate, weights),
   }
@@ -255,10 +268,19 @@ export function screenDiscoveryCandidates<T extends DiscoveryCandidateForQuality
     const postingState = postingRefreshWarnings(candidate, existing, inbox, now)
     const opportunityPosting = postingState.logicalMatches.find((entry) => entry.ownerKind === 'opportunity')
     if (opportunityPosting) {
+      const reasonDetail: DiscoveryQualityReasonDetail = {
+        code: 'existing_opportunity_source_duplicate',
+        params: {
+          company: opportunityPosting.company,
+          role: opportunityPosting.role,
+          sourceHost: opportunityPosting.posting.sourceHost,
+        },
+      }
       skippedDuplicates.push({
         company: candidate.company,
         role: candidate.role,
-        reason: `PJSDAS 已存在相同或高度相似岗位“${opportunityPosting.company}｜${opportunityPosting.role}”；公开来源 ${opportunityPosting.posting.sourceHost} 已归属于正式 Opportunity。`,
+        reason: presentDiscoveryQualityReason(reasonDetail, true),
+        reasonDetail,
       })
       continue
     }
@@ -269,10 +291,15 @@ export function screenDiscoveryCandidates<T extends DiscoveryCandidateForQuality
       return now.getTime() - new Date(entry.ownerUpdatedAt).getTime() <= 120 * 24 * 60 * 60 * 1000
     })
     if (recentlyDismissed) {
+      const reasonDetail: DiscoveryQualityReasonDetail = {
+        code: 'recently_dismissed_inbox',
+        params: { company: recentlyDismissed.company, role: recentlyDismissed.role },
+      }
       rejectedCandidates.push({
         company: candidate.company,
         role: candidate.role,
-        reasons: [`发现箱中高度相似岗位“${recentlyDismissed.company}｜${recentlyDismissed.role}”最近已被明确拒绝。`],
+        reasons: [presentDiscoveryQualityReason(reasonDetail, true)],
+        reasonDetails: [reasonDetail],
       })
       continue
     }
@@ -284,12 +311,20 @@ export function screenDiscoveryCandidates<T extends DiscoveryCandidateForQuality
     })
     if (freshActive) {
       const sameSource = freshActive.posting.canonicalSourceUrl === postingState.incomingPosting.canonicalSourceUrl
+      const reasonDetail: DiscoveryQualityReasonDetail = sameSource
+        ? {
+            code: 'active_inbox_same_source',
+            params: { status: freshActive.inboxStatus ?? 'unknown', lastVerifiedAt: freshActive.posting.lastVerifiedAt },
+          }
+        : {
+            code: 'active_inbox_cross_source',
+            params: { status: freshActive.inboxStatus ?? 'unknown', sourceHost: freshActive.posting.sourceHost },
+          }
       skippedDuplicates.push({
         company: candidate.company,
         role: candidate.role,
-        reason: sameSource
-          ? `同一招聘来源已经在发现箱（${freshActive.inboxStatus}），最近验证于 ${freshActive.posting.lastVerifiedAt}。`
-          : `高度相似岗位已经在发现箱（${freshActive.inboxStatus}），且已有近期公开来源 ${freshActive.posting.sourceHost}；本次跨来源结果不重复进入审阅。`,
+        reason: presentDiscoveryQualityReason(reasonDetail, true),
+        reasonDetail,
       })
       continue
     }
@@ -303,30 +338,45 @@ export function screenDiscoveryCandidates<T extends DiscoveryCandidateForQuality
 
     const latestFeedback = latestExplicitFeedbackForCandidate(timeline, candidate, now)
     if (latestFeedback?.discoveryDecision === 'rejected') {
+      const reasonDetail: DiscoveryQualityReasonDetail = {
+        code: 'recent_user_rejection',
+        params: { company: latestFeedback.company ?? '', role: latestFeedback.role ?? '' },
+      }
       rejectedCandidates.push({
         company: candidate.company,
         role: candidate.role,
-        reasons: [`用户在最近 120 天已明确拒绝高度相似岗位“${latestFeedback.company}｜${latestFeedback.role}”。`],
+        reasons: [presentDiscoveryQualityReason(reasonDetail, true)],
+        reasonDetails: [reasonDetail],
       })
       continue
     }
 
     const duplicate = findSimilarOpportunity(candidate, existing)
     if (duplicate) {
+      const reasonDetail: DiscoveryQualityReasonDetail = {
+        code: 'existing_opportunity_duplicate',
+        params: { company: duplicate.company, role: duplicate.role },
+      }
       skippedDuplicates.push({
         company: candidate.company,
         role: candidate.role,
-        reason: `PJSDAS 已存在相同或高度相似岗位“${duplicate.company}｜${duplicate.role}”。`,
+        reason: presentDiscoveryQualityReason(reasonDetail, true),
+        reasonDetail,
       })
       continue
     }
 
     const batchDuplicate = eligible.find((item) => similarCandidate(item.candidate, candidate))
     if (batchDuplicate) {
+      const reasonDetail: DiscoveryQualityReasonDetail = {
+        code: 'batch_duplicate',
+        params: { company: batchDuplicate.candidate.company, role: batchDuplicate.candidate.role },
+      }
       skippedDuplicates.push({
         company: candidate.company,
         role: candidate.role,
-        reason: `本次候选中已存在高度相似岗位“${batchDuplicate.candidate.company}｜${batchDuplicate.candidate.role}”。`,
+        reason: presentDiscoveryQualityReason(reasonDetail, true),
+        reasonDetail,
       })
       continue
     }
@@ -337,6 +387,7 @@ export function screenDiscoveryCandidates<T extends DiscoveryCandidateForQuality
         company: candidate.company,
         role: candidate.role,
         reasons: evaluated.hardRejectReasons,
+        reasonDetails: evaluated.hardRejectDetails,
       })
       continue
     }
@@ -358,12 +409,19 @@ export function screenDiscoveryCandidates<T extends DiscoveryCandidateForQuality
 
   const maxReviewCandidates = Math.max(1, Math.min(12, profile.maxReviewCandidates ?? 6))
   const accepted = eligible.slice(0, maxReviewCandidates)
-  const deferredCandidates = eligible.slice(maxReviewCandidates).map((item) => ({
-    company: item.candidate.company,
-    role: item.candidate.role,
-    qualityScore: item.qualityScore,
-    reason: `超过单批审阅上限 ${maxReviewCandidates}，按发现质量得分暂缓。`,
-  }))
+  const deferredCandidates = eligible.slice(maxReviewCandidates).map((item) => {
+    const reasonDetail: DiscoveryQualityReasonDetail = {
+      code: 'review_batch_limit',
+      params: { limit: maxReviewCandidates },
+    }
+    return {
+      company: item.candidate.company,
+      role: item.candidate.role,
+      qualityScore: item.qualityScore,
+      reason: presentDiscoveryQualityReason(reasonDetail, true),
+      reasonDetail,
+    }
+  })
 
   return {
     received: candidates.length,
