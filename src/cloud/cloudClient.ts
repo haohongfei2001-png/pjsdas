@@ -1,5 +1,11 @@
 import type { Session, User } from '@supabase/supabase-js'
 import { fetchBackend } from '../backendEndpoints.js'
+import { currentUiLanguage } from '../uiLanguage.js'
+import {
+  driveAccessTokenRecoveryMessage,
+  missingDurableDriveAuthorizationMessage,
+  signedOutCloudAccountMessage,
+} from './cloudClientPresentation.js'
 
 export interface CloudUser {
   /** Stable Google subject retained for backward-compatible local workspace ownership. */
@@ -95,7 +101,7 @@ function clearCallbackUrl() {
 
 async function persistGoogleDriveBinding(session: Session) {
   if (!session.provider_token || !session.provider_refresh_token) {
-    throw new Error('Google 没有返回持续授权。请重新登录并在 Google 授权页确认允许 Drive appData 访问。')
+    throw new Error(missingDurableDriveAuthorizationMessage(currentUiLanguage()))
   }
 
   const response = await fetchBackend('/api/google-link', {
@@ -184,7 +190,7 @@ async function accountAccessToken() {
   const supabase = await loadSupabase()
   const { data, error } = await supabase.auth.getSession()
   if (error) throw error
-  if (!data.session) throw new Error('PJSDAS 账号未登录。请先使用 Google 登录 PJSDAS。')
+  if (!data.session) throw new Error(signedOutCloudAccountMessage(currentUiLanguage()))
   return data.session.access_token
 }
 
@@ -206,7 +212,7 @@ export async function getCloudAccessToken() {
   }
   if (!response.ok || !data.accessToken) {
     if (response.status === 401) invalidateCloudSession()
-    throw new Error(data.message || `无法恢复 Google Drive 授权（HTTP ${response.status}）。`)
+    throw new Error(data.message || driveAccessTokenRecoveryMessage(currentUiLanguage(), response.status))
   }
 
   const expiresInSeconds = Number.isFinite(data.expiresInSeconds) ? Math.max(60, Number(data.expiresInSeconds)) : 3000
