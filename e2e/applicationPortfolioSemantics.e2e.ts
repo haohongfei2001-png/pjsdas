@@ -24,7 +24,7 @@ const group = {
   remaining: 1,
 }
 
-test('portfolio uses canonical pending state and presents recommendation reasons in English', async ({ page }) => {
+test('canonical pending state drives visible priority and portfolio selection regardless of stored label', async ({ page }) => {
   await page.goto('/')
   await expect(page.getByRole('heading', { name: '今天只处理下一步' })).toBeVisible()
 
@@ -49,8 +49,13 @@ test('portfolio uses canonical pending state and presents recommendation reasons
   await page.reload()
   await page.getByRole('button', { name: 'EN' }).first().click()
   await page.getByRole('button', { name: 'Decide Choose' }).click()
-  await page.getByRole('button', { name: 'Portfolio' }).click()
 
+  const row = page.locator('.surface-opportunity-row').filter({ hasText: opportunity.company })
+  await expect(row).toBeVisible()
+  await expect(row).toContainText('P2')
+  await expect(row).not.toContainText('Pipeline')
+
+  await page.getByRole('button', { name: 'Portfolio' }).click()
   const dialog = page.locator('.portfolio-dialog')
   await expect(dialog.getByRole('heading', { name: 'Application portfolio decisions' })).toBeVisible()
   await expect(dialog).toContainText('Recommended portfolio · 1')
