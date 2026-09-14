@@ -20,6 +20,7 @@ import {
   rankActions,
 } from './decisionV3.js'
 import { parsePJSDASWorkbook } from './importExcelV2.js'
+import { presentRankingReasons } from './rankingReasonPresentation.js'
 import { presentStageLabel } from './stagePresentation.js'
 import { formatTimeRemaining, timeRisk, upcomingNodes } from './timeRisk.js'
 import { currentUiLanguage, useUiLanguage } from './uiLanguage.js'
@@ -310,7 +311,7 @@ function TodaySurface({ ranked, now, opportunities, groups, rules, workspaceEmpt
           <div className="surface-focus-main">
             <div>
               <h2>{top.action.title}</h2>
-              <p>{top.reasons.join(' · ') || (zh ? '当前最高优先级行动' : 'Current highest-priority action')}</p>
+              <p>{presentRankingReasons(top.reasons, zh).join(' · ') || (zh ? '当前最高优先级行动' : 'Current highest-priority action')}</p>
               {top.action.dueAt ? <TimeRiskBadge action={top.action} now={now} rules={rules} /> : null}
             </div>
             <div className="surface-focus-actions">
@@ -333,10 +334,11 @@ function TodaySurface({ ranked, now, opportunities, groups, rules, workspaceEmpt
                 {plan.planned.map((item, index) => {
                   const opportunity = item.action.opportunityId ? opportunityMap.get(item.action.opportunityId) : undefined
                   const group = item.action.applicationGroupId ? groupMap.get(item.action.applicationGroupId) : undefined
+                  const presentedReasons = presentRankingReasons(item.reasons, zh).join(' · ')
                   return (
                     <article className="surface-action-row" key={item.action.id}>
                       <span className="surface-rank">{index + 1}</span>
-                      <div><strong>{item.action.title}</strong><small>{opportunity ? `${roleLabels[opportunity.roleType][zh ? 0 : 1]} · ${item.reasons.join(' · ')}` : group ? group.rule ?? group.id : item.reasons.join(' · ')}</small></div>
+                      <div><strong>{item.action.title}</strong><small>{opportunity ? `${roleLabels[opportunity.roleType][zh ? 0 : 1]} · ${presentedReasons}` : group ? group.rule ?? group.id : presentedReasons}</small></div>
                       <div className="surface-action-controls">
                         {opportunity ? <button className="text-button" onClick={() => onOpenOpportunity(opportunity.id)}>{zh ? '详情' : 'Details'}</button> : null}
                         <button className="text-button" onClick={() => { void onMark(item.action.id, 'done') }}>{zh ? '完成' : 'Done'}</button>
