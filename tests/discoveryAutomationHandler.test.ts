@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from 'vitest'
 import { createDiscoveryAutomationHandler } from '../gateway/discoveryAutomationHandler.js'
 
+const CLAIM_RPC = '/rest/v1/rpc/pjsdas_claim_enabled_discovery_automation_bindings'
+
 function json(data: unknown, status = 200) {
   return new Response(JSON.stringify(data), {
     status,
@@ -28,12 +30,12 @@ describe('server-owned discovery automation endpoint', () => {
     expect(fetchImpl).not.toHaveBeenCalled()
   })
 
-  it('validates the Vault worker token and succeeds cleanly when no Google user binding exists', async () => {
+  it('validates the Vault worker token and succeeds cleanly when no opted-in Google binding exists', async () => {
     const calls: string[] = []
     const fetchImpl = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input)
       calls.push(url)
-      if (url.endsWith('/rest/v1/rpc/pjsdas_claim_discovery_automation_bindings')) return json([])
+      if (url.endsWith(CLAIM_RPC)) return json([])
       return json({ error: 'unexpected' }, 500)
     }) as unknown as typeof fetch
 
@@ -42,7 +44,7 @@ describe('server-owned discovery automation endpoint', () => {
     }))
     expect(response.status).toBe(200)
     await expect(response.json()).resolves.toMatchObject({ processedUsers: 0, successfulUsers: 0, failedUsers: 0 })
-    expect(calls).toEqual(['https://example.supabase.co/rest/v1/rpc/pjsdas_claim_discovery_automation_bindings'])
+    expect(calls).toEqual([`https://example.supabase.co${CLAIM_RPC}`])
   })
 
   it('maps a rejected Vault token to 401 without leaking authorization-store internals', async () => {
@@ -58,7 +60,7 @@ describe('server-owned discovery automation endpoint', () => {
     const authHeaders: string[] = []
     const fetchImpl = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input)
-      if (url.endsWith('/rest/v1/rpc/pjsdas_claim_discovery_automation_bindings')) return json([])
+      if (url.endsWith(CLAIM_RPC)) return json([])
       if (url === 'https://ai-gateway.vercel.sh/v1/chat/completions') {
         authHeaders.push(new Headers(init?.headers).get('authorization') ?? '')
         return json({ choices: [{ message: { content: '{"observations":[]}' } }] })
@@ -77,10 +79,10 @@ describe('server-owned discovery automation endpoint', () => {
     expect(authHeaders).toEqual(['Bearer vercel-oidc-token'])
   })
 
-  it('fails closed when there are enabled user bindings but no AI Gateway deployment credential', async () => {
+  it('fails closed when there are opted-in user bindings but no AI Gateway deployment credential', async () => {
     const fetchImpl = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input)
-      if (url.endsWith('/rest/v1/rpc/pjsdas_claim_discovery_automation_bindings')) {
+      if (url.endsWith(CLAIM_RPC)) {
         return json([{
           user_id: '00000000-0000-0000-0000-000000000001',
           google_subject: 'google-subject',
