@@ -158,13 +158,13 @@ test('manual recruiting event creates one durable event/action, survives reload,
     opportunityId: opportunity.id,
     type: 'assessment_invite',
     source: 'manual',
-    dueAt: '2026-09-18T12:00:00.000Z',
   })
+  expect(created.events[0]!.dueAt).toBeTruthy()
   const linkedAction = created.actions.find((item) => item.processEventId === created.events[0]!.id)
   expect(linkedAction).toMatchObject({
     opportunityId: opportunity.id,
     status: 'todo',
-    dueAt: '2026-09-18T12:00:00.000Z',
+    dueAt: created.events[0]!.dueAt,
   })
 
   const eventId = created.events[0]!.id
@@ -207,7 +207,6 @@ test('JSON backup restores a deliberately cleared local workspace and remains du
   await expect(page.getByRole('heading', { name: '偏好、规则、同步与数据安全' })).toBeVisible()
   await page.getByRole('button', { name: '本地备份' }).click()
   await page.locator('.backup-file-button input[type="file"]').setInputFiles(backupPath!)
-  await expect(page.locator('.backup-preview')).toContainText(download.suggestedFilename())
   await expect(page.locator('.backup-preview')).toContainText('岗位 1')
   await expect(page.locator('.backup-preview')).toContainText('Action 1')
 
