@@ -87,10 +87,10 @@ function lazyDriveSource(request: Request): WorkspaceSource {
  * Authenticated v1.9 runtime for the user's real PJSDAS Drive workspace.
  *
  * Read tools remain side-effect free. Review-only ChangeSets remain the path for
- * policy, preference, ambiguous and destructive changes. The only autonomous
- * mutations exposed here are bounded trusted-source ingestion batches
- * (GPT-monitor and structured Gmail facts). Those writes are idempotent,
- * reconciliation-accounted, and guarded by exact Drive workspace versions.
+ * policy, preference, ambiguous and destructive changes. Autonomous trusted
+ * ingestion is exposed only to validated Supabase OAuth client sessions carrying
+ * an OAuth client_id claim. Ordinary first-party PJSDAS sessions remain
+ * read/propose-only even if their bearer token is otherwise valid.
  */
 export async function authenticatedRemoteMcpFetch(request: Request) {
   try {
@@ -98,15 +98,16 @@ export async function authenticatedRemoteMcpFetch(request: Request) {
       supabaseUrl: PJSDAS_SUPABASE_URL,
       publishableKey: PJSDAS_SUPABASE_PUBLISHABLE_KEY,
     })
-    await resolveIdentity(request)
+    const { identity } = await resolveIdentity(request)
+    const trustedIngestionEnabled = Boolean(identity.oauthClientId)
 
     const source = lazyDriveSource(request)
     const handler = createMcpHandler(
       () => createPjsdasMcpServer(source, {
         version: AUTHENTICATED_GATEWAY_VERSION,
-        dataMode: 'google-drive',
+        dataMode: trustedIngestionEnabled ? 'google-drive' : 'google-drive-readonly',
         proposalMode: 'review-link',
-        trustedIngestionMode: 'enabled',
+        trustedIngestionMode: trustedIngestionEnabled ? 'enabled' : 'disabled',
         proposalSigningKey: env('PJSDAS_TOKEN_ENCRYPTION_KEY'),
       }),
     )

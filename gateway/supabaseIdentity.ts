@@ -3,6 +3,7 @@ import { WorkspaceSourceError } from './workspaceSource.js'
 export interface PjsdasIdentity {
   userId: string
   email?: string
+  oauthClientId?: string
 }
 
 export interface SupabaseIdentityOptions {
@@ -18,6 +19,31 @@ function bearerToken(request: Request) {
     throw new WorkspaceSourceError('AUTH_REQUIRED', 'PJSDAS authentication is required.', false)
   }
   return match[1].trim()
+}
+
+function decodeJwtPayload(accessToken: string): Record<string, unknown> | undefined {
+  const encodedPayload = accessToken.split('.')[1]
+  if (!encodedPayload) return undefined
+  try {
+    const normalized = encodedPayload.replace(/-/g, '+').replace(/_/g, '/')
+    const padded = normalized.padEnd(Math.ceil(normalized.length / 4) * 4, '=')
+    const bytes = Uint8Array.from(atob(padded), (character) => character.charCodeAt(0))
+    const parsed = JSON.parse(new TextDecoder().decode(bytes)) as unknown
+    return typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)
+      ? parsed as Record<string, unknown>
+      : undefined
+  } catch {
+    return undefined
+  }
+}
+
+export function oauthClientIdFromValidatedAccessToken(accessToken: string) {
+  const value = decodeJwtPayload(accessToken)?.client_id
+  if (typeof value !== 'string') return undefined
+  const clientId = value.trim().toLocaleLowerCase()
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(clientId)
+    ? clientId
+    : undefined
 }
 
 export function createSupabaseIdentityResolver(options: SupabaseIdentityOptions) {
@@ -53,8 +79,13 @@ export function createSupabaseIdentityResolver(options: SupabaseIdentityOptions)
     }
     if (!data.id) throw new WorkspaceSourceError('AUTH_INVALID', 'PJSDAS identity response has no user id.', false)
 
+    // Supabase has already validated the bearer token above. Only after that
+    // verification may the OAuth-specific client_id claim influence capability
+    // selection. Ordinary PJSDAS sessions do not carry this claim.
+    const oauthClientId = oauthClientIdFromValidatedAccessToken(accessToken)
+
     return {
-      identity: { userId: data.id, email: data.email },
+      identity: { userId: data.id, email: data.email, oauthClientId },
       accessToken,
     }
   }
