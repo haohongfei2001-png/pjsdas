@@ -25,7 +25,7 @@ function encoded(text: string) {
   return Buffer.from(text, 'utf8').toString('base64url')
 }
 
-function gmailMessage(text: string, overrides: Record<string, unknown> = {}) {
+function gmailMessage(text: string, overrides: Record<string, unknown> = {}, subject = text) {
   return {
     id: 'msg-1',
     threadId: 'thread-1',
@@ -34,7 +34,7 @@ function gmailMessage(text: string, overrides: Record<string, unknown> = {}) {
     payload: {
       mimeType: 'text/plain',
       headers: [
-        { name: 'Subject', value: text },
+        { name: 'Subject', value: subject },
         { name: 'From', value: 'campus@example.com' },
       ],
       body: { data: encoded(text) },
@@ -52,9 +52,10 @@ function json(data: unknown, status = 200) {
 
 describe('Gmail background automation', () => {
   it('turns a high-confidence interview mail into bounded structured facts without retaining raw body text', () => {
-    const raw = '京东 AI产品经理 面试通知：请于2026年9月16日 14:30参加视频面试。'
+    const bodyOnlyMarker = 'BODY_ONLY_MARKER_7f31'
+    const raw = `京东 AI产品经理 面试通知：请于2026年9月16日 14:30参加视频面试。${bodyOnlyMarker}`
     const observation = gmailObservationFromMessage(
-      gmailMessage(raw),
+      gmailMessage(raw, {}, '京东 AI产品经理 面试通知'),
       [opportunity('jd-ai-pm', '京东', 'AI产品经理')],
       new Date('2026-09-15T01:00:00+08:00'),
     )
@@ -68,9 +69,10 @@ describe('Gmail background automation', () => {
       eventType: 'interview_invite',
       timingMode: 'fixed',
       stage: 'interview',
+      subject: '京东 AI产品经理 面试通知',
     })
     expect(observation?.dueAt).toBeTruthy()
-    expect(JSON.stringify(observation)).not.toContain(raw)
+    expect(JSON.stringify(observation)).not.toContain(bodyOnlyMarker)
   })
 
   it('downgrades a fixed-time recruiting event when the mail omits the actual time instead of guessing', () => {
