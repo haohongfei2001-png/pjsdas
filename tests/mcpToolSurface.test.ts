@@ -22,7 +22,10 @@ describe('authenticated MCP release tool surface', () => {
     }
   })
 
-  it('enables the trusted-ingestion registrations in the authenticated production runtime', () => {
-    expect(authenticatedRuntime).toContain("trustedIngestionMode: 'enabled'")
+  it('gates trusted-ingestion registrations on validated OAuth client identity', () => {
+    expect(authenticatedRuntime).toContain('const trustedIngestionEnabled = Boolean(identity.oauthClientId)')
+    expect(authenticatedRuntime).toContain("dataMode: trustedIngestionEnabled ? 'google-drive' : 'google-drive-readonly'")
+    expect(authenticatedRuntime).toContain("trustedIngestionMode: trustedIngestionEnabled ? 'enabled' : 'disabled'")
+    expect(authenticatedRuntime).not.toContain("trustedIngestionMode: 'enabled'")
   })
 })
