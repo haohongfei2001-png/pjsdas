@@ -99,7 +99,7 @@ test('critical local-first action flow survives completion, undo, and browser re
   expect(persistedStatus).toBe('todo')
 })
 
-test('primary navigation and language preference survive real browser interaction', async ({ page }) => {
+test('primary navigation, language, and quick-capture surfaces stay coherent in English', async ({ page }) => {
   await seedLocalWorkspace(page)
 
   await page.getByRole('button', { name: /决策/ }).click()
@@ -111,6 +111,16 @@ test('primary navigation and language preference survive real browser interactio
 
   await page.getByRole('button', { name: /Today/ }).click()
   await expect(page.getByRole('heading', { name: 'Only the next moves for today' })).toBeVisible()
+
+  await page.getByRole('button', { name: '+ Record process event' }).click()
+  await expect(page.getByRole('heading', { name: 'Record a real recruiting event' })).toBeVisible()
+  await expect(page.locator('.event-form select').first().locator('option[value="assessment_invite"]')).toHaveText('Assessment invitation')
+  await page.getByRole('button', { name: 'Close' }).click()
+
+  await page.getByRole('button', { name: 'Update progress / task' }).click()
+  await expect(page.getByRole('heading', { name: 'Tell PJSDAS about recruiting progress or another task' })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Parse and generate ChangeSet' })).toBeVisible()
+  await page.getByRole('button', { name: 'Close' }).click()
 
   await page.reload()
   await expect(page.getByRole('heading', { name: 'Only the next moves for today' })).toBeVisible()

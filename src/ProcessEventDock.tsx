@@ -13,6 +13,7 @@ import {
   processEventLabels,
   processEventStageLabel,
 } from './processEvents.js'
+import { useUiLanguage, type UiLanguage } from './uiLanguage.js'
 import type {
   ActionTimingMode,
   Opportunity,
@@ -23,6 +24,34 @@ import './processEvents.css'
 
 interface ProcessEventDockProps {
   onChanged?: () => void
+}
+
+const processEventLabelsEn: Record<ProcessEventType, string> = {
+  assessment_invite: 'Assessment invitation',
+  written_test_invite: 'Written-test invitation',
+  interview_invite: 'Interview invitation',
+  offer: 'Offer',
+  rejection: 'Process closed / rejection',
+  status_update: 'Process status update',
+  other: 'Other progress',
+}
+
+const processEventStageLabelsEn: Record<ProcessEventType, string> = {
+  assessment_invite: 'Assessment',
+  written_test_invite: 'Written test',
+  interview_invite: 'Interview',
+  offer: 'Offer',
+  rejection: 'Process closed',
+  status_update: 'Status update',
+  other: 'Other progress',
+}
+
+function eventLabel(type: ProcessEventType, lang: UiLanguage) {
+  return lang === 'zh' ? processEventLabels[type] : processEventLabelsEn[type]
+}
+
+function stageLabel(event: ProcessEvent, lang: UiLanguage) {
+  return lang === 'zh' ? processEventStageLabel(event) : processEventStageLabelsEn[event.type]
 }
 
 function localDateTimeValue(date = new Date()) {
@@ -45,6 +74,8 @@ function effectiveTimingMode(event: ProcessEvent) {
 }
 
 export default function ProcessEventDock({ onChanged }: ProcessEventDockProps) {
+  const { lang } = useUiLanguage()
+  const zh = lang === 'zh'
   const [open, setOpen] = useState(false)
   const [opportunities, setOpportunities] = useState<Opportunity[]>([])
   const [events, setEvents] = useState<ProcessEvent[]>([])
@@ -104,21 +135,25 @@ export default function ProcessEventDock({ onChanged }: ProcessEventDockProps) {
     const latestByLabel = new Map(latestOpportunities.map((item) => [opportunityLabel(item), item]))
     const opportunity = latestByLabel.get(opportunityText)
     if (!opportunity) {
-      setError('当前工作区已变化，请从最新岗位列表重新选择公司与岗位。')
+      setError(zh
+        ? '当前工作区已变化，请从最新岗位列表重新选择公司与岗位。'
+        : 'The workspace changed. Select the company and role again from the latest opportunity list.')
       return
     }
     const occurredIso = toIso(occurredAt)
     if (!occurredIso) {
-      setError('通知时间无效。')
+      setError(zh ? '通知时间无效。' : 'The notification time is invalid.')
       return
     }
     if (actionable && !dueAt) {
-      setError('测评、笔试和面试通知必须填写真实截止或固定发生时间，避免制造无期限任务。')
+      setError(zh
+        ? '测评、笔试和面试通知必须填写真实截止或固定发生时间，避免制造无期限任务。'
+        : 'Assessment, written-test, and interview events require a real deadline or fixed time so PJSDAS does not create an open-ended task.')
       return
     }
     const dueIso = toIso(dueAt)
     if (dueAt && !dueIso) {
-      setError('截止或固定发生时间无效。')
+      setError(zh ? '截止或固定发生时间无效。' : 'The deadline or fixed event time is invalid.')
       return
     }
 
@@ -142,7 +177,7 @@ export default function ProcessEventDock({ onChanged }: ProcessEventDockProps) {
       setOccurredAt(localDateTimeValue())
       onChanged?.()
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : '保存流程事件失败。')
+      setError(caught instanceof Error ? caught.message : (zh ? '保存流程事件失败。' : 'Could not save the process event.'))
     } finally {
       setBusy(false)
     }
@@ -156,7 +191,7 @@ export default function ProcessEventDock({ onChanged }: ProcessEventDockProps) {
       await reloadLocal()
       onChanged?.()
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : '删除流程事件失败。')
+      setError(caught instanceof Error ? caught.message : (zh ? '删除流程事件失败。' : 'Could not delete the process event.'))
     } finally {
       setBusy(false)
     }
@@ -165,7 +200,7 @@ export default function ProcessEventDock({ onChanged }: ProcessEventDockProps) {
   return (
     <>
       <button className="event-dock-trigger" type="button" onClick={() => { void show() }}>
-        + 记录流程通知
+        {zh ? '+ 记录流程通知' : '+ Record process event'}
       </button>
 
       {open ? (
@@ -174,25 +209,29 @@ export default function ProcessEventDock({ onChanged }: ProcessEventDockProps) {
             <div className="event-dock-header">
               <div>
                 <div className="eyebrow">PROCESS EVENT</div>
-                <h2>记录真实流程通知</h2>
-                <p>只记录实际收到的通知。测评、笔试、面试会自动生成 Today 行动。</p>
+                <h2>{zh ? '记录真实流程通知' : 'Record a real recruiting event'}</h2>
+                <p>{zh
+                  ? '只记录实际收到的通知。测评、笔试、面试会自动生成 Today 行动。'
+                  : 'Record only events you actually received. Assessments, written tests, and interviews automatically create Today actions.'}</p>
               </div>
-              <button className="event-close" type="button" onClick={() => setOpen(false)} aria-label="关闭">
+              <button className="event-close" type="button" onClick={() => setOpen(false)} aria-label={zh ? '关闭' : 'Close'}>
                 ×
               </button>
             </div>
 
             {opportunities.length === 0 ? (
-              <div className="event-empty">先在 Import & Settings 导入秋招投递表。</div>
+              <div className="event-empty">{zh
+                ? '机会池还没有岗位。可在 Settings 配置岗位发现，或导入已有求职数据。'
+                : 'The opportunity pool is empty. Configure discovery in Settings or import existing job-search data.'}</div>
             ) : (
               <form className="event-form" onSubmit={submit}>
                 <label>
-                  <span>岗位</span>
+                  <span>{zh ? '岗位' : 'Opportunity'}</span>
                   <input
                     list="process-event-opportunities"
                     value={opportunityText}
                     onChange={(event) => setOpportunityText(event.target.value)}
-                    placeholder="输入公司名后从列表选择"
+                    placeholder={zh ? '输入公司名后从列表选择' : 'Type a company, then select from the list'}
                   />
                   <datalist id="process-event-opportunities">
                     {opportunities.map((item) => (
@@ -203,15 +242,15 @@ export default function ProcessEventDock({ onChanged }: ProcessEventDockProps) {
 
                 <div className="event-form-grid">
                   <label>
-                    <span>事件</span>
+                    <span>{zh ? '事件' : 'Event'}</span>
                     <select value={type} onChange={(event) => setType(event.target.value as ProcessEventType)}>
-                      {Object.entries(processEventLabels).map(([value, label]) => (
-                        <option key={value} value={value}>{label}</option>
+                      {(Object.keys(processEventLabels) as ProcessEventType[]).map((value) => (
+                        <option key={value} value={value}>{eventLabel(value, lang)}</option>
                       ))}
                     </select>
                   </label>
                   <label>
-                    <span>预计耗时</span>
+                    <span>{zh ? '预计耗时' : 'Estimated time'}</span>
                     <div className="event-number-row">
                       <input
                         type="number"
@@ -220,53 +259,55 @@ export default function ProcessEventDock({ onChanged }: ProcessEventDockProps) {
                         value={estimatedMinutes}
                         onChange={(event) => setEstimatedMinutes(Number(event.target.value))}
                       />
-                      <small>分钟</small>
+                      <small>{zh ? '分钟' : 'min'}</small>
                     </div>
                   </label>
                 </div>
 
                 {actionable ? (
                   <label>
-                    <span>时间性质</span>
+                    <span>{zh ? '时间性质' : 'Timing'}</span>
                     <select
                       value={interview ? 'fixed' : timingMode}
                       disabled={interview}
                       onChange={(event) => setTimingMode(event.target.value as ActionTimingMode)}
                     >
-                      <option value="deadline">截止时间｜可提前完成</option>
-                      <option value="fixed">固定时间｜只能到点进行</option>
+                      <option value="deadline">{zh ? '截止时间｜可提前完成' : 'Deadline | can be completed early'}</option>
+                      <option value="fixed">{zh ? '固定时间｜只能到点进行' : 'Fixed time | occurs at that time'}</option>
                     </select>
                     <small className="event-field-help">
                       {interview
-                        ? '面试按固定时间处理，不会被当成今天可以提前完成的任务。'
+                        ? (zh ? '面试按固定时间处理，不会被当成今天可以提前完成的任务。' : 'Interviews are fixed-time events and are never treated as tasks that can be completed early today.')
                         : timingMode === 'deadline'
-                          ? '例如：明晚 23:59 前完成测评。PJSDAS 可以把它提前安排到今天。'
-                          : '例如：明天 19:00 统一笔试。PJSDAS 只在发生当天占用时间预算。'}
+                          ? (zh ? '例如：明晚 23:59 前完成测评。PJSDAS 可以把它提前安排到今天。' : 'Example: complete an assessment by 23:59 tomorrow. PJSDAS may schedule it earlier today.')
+                          : (zh ? '例如：明天 19:00 统一笔试。PJSDAS 只在发生当天占用时间预算。' : 'Example: a written test at 19:00 tomorrow. It consumes time budget only on the day it occurs.')}
                     </small>
                   </label>
                 ) : null}
 
                 <div className="event-form-grid">
                   <label>
-                    <span>收到通知时间</span>
+                    <span>{zh ? '收到通知时间' : 'Notification received'}</span>
                     <input type="datetime-local" value={occurredAt} onChange={(event) => setOccurredAt(event.target.value)} />
                   </label>
                   <label>
                     <span>
                       {actionable
-                        ? (interview || timingMode === 'fixed' ? '固定开始时间 *' : '截止时间 *')
-                        : '关联时间（可选）'}
+                        ? (interview || timingMode === 'fixed'
+                            ? (zh ? '固定开始时间 *' : 'Fixed start time *')
+                            : (zh ? '截止时间 *' : 'Deadline *'))
+                        : (zh ? '关联时间（可选）' : 'Related time (optional)')}
                     </span>
                     <input type="datetime-local" value={dueAt} onChange={(event) => setDueAt(event.target.value)} />
                   </label>
                 </div>
 
                 <label>
-                  <span>备注（可选）</span>
+                  <span>{zh ? '备注（可选）' : 'Notes (optional)'}</span>
                   <textarea
                     value={notes}
                     onChange={(event) => setNotes(event.target.value)}
-                    placeholder="例如：邮件要求摄像头、面试平台、需要准备的材料"
+                    placeholder={zh ? '例如：邮件要求摄像头、面试平台、需要准备的材料' : 'For example: camera requirement, interview platform, or materials to prepare'}
                     rows={3}
                   />
                 </label>
@@ -276,11 +317,15 @@ export default function ProcessEventDock({ onChanged }: ProcessEventDockProps) {
                 <div className="event-form-footer">
                   <small>
                     {actionable
-                      ? '保存后会生成真实流程 Action；截止任务进入可提前安排的时间计划，固定事件只在发生当天占用预算。'
-                      : '此类事件只更新事实时间线，不自动制造 Action。'}
+                      ? (zh
+                          ? '保存后会生成真实流程 Action；截止任务进入可提前安排的时间计划，固定事件只在发生当天占用预算。'
+                          : 'Saving creates a real process Action. Deadline tasks may be scheduled early; fixed events consume time only on the day they occur.')
+                      : (zh
+                          ? '此类事件只更新事实时间线，不自动制造 Action。'
+                          : 'This event updates factual history only and does not create an Action.')}
                   </small>
                   <button className="primary-button" type="submit" disabled={busy}>
-                    {busy ? '保存中…' : '保存事件'}
+                    {busy ? (zh ? '保存中…' : 'Saving…') : (zh ? '保存事件' : 'Save event')}
                   </button>
                 </div>
               </form>
@@ -290,13 +335,13 @@ export default function ProcessEventDock({ onChanged }: ProcessEventDockProps) {
               <div className="event-history-title">
                 <div>
                   <div className="eyebrow">LOCAL TIMELINE</div>
-                  <strong>最近流程事件</strong>
+                  <strong>{zh ? '最近流程事件' : 'Recent process events'}</strong>
                 </div>
-                <span>{events.length} 条</span>
+                <span>{events.length} {zh ? '条' : events.length === 1 ? 'event' : 'events'}</span>
               </div>
 
               {events.length === 0 ? (
-                <div className="event-empty">还没有手动记录的流程事件。</div>
+                <div className="event-empty">{zh ? '还没有手动记录的流程事件。' : 'No manually recorded process events yet.'}</div>
               ) : (
                 <div className="event-history-list">
                   {events.slice(0, 10).map((item) => {
@@ -304,14 +349,14 @@ export default function ProcessEventDock({ onChanged }: ProcessEventDockProps) {
                     return (
                       <article className="event-history-item" key={item.id}>
                         <div>
-                          <strong>{item.company}｜{processEventLabels[item.type]}</strong>
+                          <strong>{item.company}｜{eventLabel(item.type, lang)}</strong>
                           <p>{item.role}</p>
                           <small>
-                            {processEventStageLabel(item)} · 收到 {formatDateTime(item.occurredAt)}
-                            {item.dueAt ? ` · ${mode === 'fixed' ? '固定' : '截止'} ${formatDateTime(item.dueAt)}` : ''}
+                            {stageLabel(item, lang)} · {zh ? '收到' : 'received'} {formatDateTime(item.occurredAt, lang)}
+                            {item.dueAt ? ` · ${mode === 'fixed' ? (zh ? '固定' : 'fixed') : (zh ? '截止' : 'deadline')} ${formatDateTime(item.dueAt, lang)}` : ''}
                           </small>
                         </div>
-                        <button type="button" disabled={busy} onClick={() => remove(item.id)}>删除</button>
+                        <button type="button" disabled={busy} onClick={() => remove(item.id)}>{zh ? '删除' : 'Delete'}</button>
                       </article>
                     )
                   })}
@@ -325,8 +370,8 @@ export default function ProcessEventDock({ onChanged }: ProcessEventDockProps) {
   )
 }
 
-function formatDateTime(iso: string) {
-  return new Intl.DateTimeFormat('zh-CN', {
+function formatDateTime(iso: string, lang: UiLanguage) {
+  return new Intl.DateTimeFormat(lang === 'zh' ? 'zh-CN' : 'en-GB', {
     month: 'numeric',
     day: 'numeric',
     hour: '2-digit',

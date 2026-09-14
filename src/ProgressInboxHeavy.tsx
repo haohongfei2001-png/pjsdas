@@ -10,11 +10,12 @@ import { getAllDiscoveryInboxItems } from './discoveryInboxStore.js'
 import { getAllActionsForMutationBaseline } from './mutationBaselines.js'
 import {
   parseProgressUpdate,
-  progressOperationSummary,
   type CanonicalJobReference,
   type ProgressUpdatePlan,
 } from './progressUpdate.js'
+import { progressOperationSummaryForLanguage } from './progressOperationPresentation.js'
 import { createCanonicalProgressChangeSet } from './progressCompletion.js'
+import { useUiLanguage } from './uiLanguage.js'
 import type { Opportunity } from './model.js'
 import type { ChangeSetRecord } from './changeSet.js'
 import './progressInbox.css'
@@ -24,12 +25,14 @@ interface ProgressInboxProps {
 }
 
 const confidenceLabel = {
-  high: '高置信度',
-  medium: '需留意',
-  low: '待确认',
+  high: ['高置信度', 'High confidence'],
+  medium: ['需留意', 'Review suggested'],
+  low: ['待确认', 'Needs confirmation'],
 } as const
 
 export default function ProgressInboxHeavy({ onChanged }: ProgressInboxProps) {
+  const { lang } = useUiLanguage()
+  const zh = lang === 'zh'
   const [open, setOpen] = useState(false)
   const [text, setText] = useState('')
   const [opportunities, setOpportunities] = useState<Opportunity[]>([])
@@ -50,7 +53,7 @@ export default function ProgressInboxHeavy({ onChanged }: ProgressInboxProps) {
     setMessage('')
     setError('')
     if (!text.trim()) {
-      setError('先输入最近的历程、岗位进展或其他待办。')
+      setError(zh ? '先输入最近的历程、岗位进展或其他待办。' : 'Enter a recent recruiting update or another task first.')
       return
     }
     setBusy(true)
@@ -82,10 +85,12 @@ export default function ProgressInboxHeavy({ onChanged }: ProgressInboxProps) {
       setPlan(nextPlan)
       setChangeSet(nextChangeSet)
       if (nextPlan.executable.length > 0 && !canonical) {
-        setMessage('识别到的进展已经是当前工作区状态，无需重复写入或生成 ChangeSet。')
+        setMessage(zh
+          ? '识别到的进展已经是当前工作区状态，无需重复写入或生成 ChangeSet。'
+          : 'The recognized progress is already reflected in the workspace. No duplicate ChangeSet is needed.')
       }
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : '无法生成 ChangeSet。')
+      setError(caught instanceof Error ? caught.message : (zh ? '无法生成 ChangeSet。' : 'Could not generate a ChangeSet.'))
     } finally {
       setBusy(false)
     }
@@ -106,16 +111,18 @@ export default function ProgressInboxHeavy({ onChanged }: ProgressInboxProps) {
     try {
       const applied = await applyChangeSet(changeSet.id)
       const notes: string[] = []
-      if (plan.unresolved.length > 0) notes.push(`${plan.unresolved.length} 条歧义未写入`)
-      if (plan.ignored.length > 0) notes.push(`${plan.ignored.length} 条背景记录无需写入`)
-      setMessage(`ChangeSet ${applied.id} 已应用 ${applied.operations.length} 项修改${notes.length ? `；${notes.join('，')}。` : '。'}`)
+      if (plan.unresolved.length > 0) notes.push(zh ? `${plan.unresolved.length} 条歧义未写入` : `${plan.unresolved.length} ambiguous item(s) not written`)
+      if (plan.ignored.length > 0) notes.push(zh ? `${plan.ignored.length} 条背景记录无需写入` : `${plan.ignored.length} background item(s) ignored`)
+      setMessage(zh
+        ? `ChangeSet ${applied.id} 已应用 ${applied.operations.length} 项修改${notes.length ? `；${notes.join('，')}。` : '。'}`
+        : `ChangeSet ${applied.id} applied ${applied.operations.length} change(s)${notes.length ? `; ${notes.join('; ')}.` : '.'}`)
       setText('')
       setPlan(null)
       setChangeSet(null)
       setOpportunities(await getAllOpportunities())
       onChanged?.()
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : '更新失败。')
+      setError(caught instanceof Error ? caught.message : (zh ? '更新失败。' : 'Update failed.'))
     } finally {
       setBusy(false)
     }
@@ -128,7 +135,7 @@ export default function ProgressInboxHeavy({ onChanged }: ProgressInboxProps) {
   return (
     <>
       <button className="progress-inbox-trigger" type="button" onClick={show}>
-        更新进展 / 事项
+        {zh ? '更新进展 / 事项' : 'Update progress / task'}
       </button>
       {open ? (
         <div className="progress-inbox-backdrop" onMouseDown={() => { void close() }}>
@@ -136,12 +143,12 @@ export default function ProgressInboxHeavy({ onChanged }: ProgressInboxProps) {
             <header className="progress-inbox-header">
               <div>
                 <div className="eyebrow">NATURAL LANGUAGE UPDATE</div>
-                <h2>把岗位进展和其他事项直接告诉 PJSDAS</h2>
-                <p>
-                  岗位输入只作为别名：系统优先使用已有 Opportunity 或官网/来源候选中的统一岗位名，避免少字、简称或错字生成第二个岗位。普通事项会进入普通待办，不会硬套成公司或岗位。
-                </p>
+                <h2>{zh ? '把岗位进展和其他事项直接告诉 PJSDAS' : 'Tell PJSDAS about recruiting progress or another task'}</h2>
+                <p>{zh
+                  ? '岗位输入只作为别名：系统优先使用已有 Opportunity 或官网/来源候选中的统一岗位名，避免少字、简称或错字生成第二个岗位。普通事项会进入普通待办，不会硬套成公司或岗位。'
+                  : 'Typed job names are aliases only. PJSDAS prefers canonical names from existing Opportunities or source-backed candidates so abbreviations and typos do not create duplicate jobs. General tasks remain general tasks.'}</p>
               </div>
-              <button type="button" className="progress-inbox-close" onClick={() => { void close() }} aria-label="关闭">×</button>
+              <button type="button" className="progress-inbox-close" onClick={() => { void close() }} aria-label={zh ? '关闭' : 'Close'}>×</button>
             </header>
 
             <textarea
@@ -149,12 +156,16 @@ export default function ProgressInboxHeavy({ onChanged }: ProgressInboxProps) {
               rows={10}
               value={text}
               onChange={(event) => setText(event.target.value)}
-              placeholder={'例如：\n投递小鹏 AI产品经理。\n小鹏测试。\n待办：修改论文图表。\n9月22日，小鹏产品经理10点面试。'}
+              placeholder={zh
+                ? '例如：\n投递小鹏 AI产品经理。\n小鹏测试。\n待办：修改论文图表。\n9月22日，小鹏产品经理10点面试。'
+                : 'The natural-language parser currently accepts Chinese recruiting updates, for example:\n投递小鹏 AI产品经理。\n小鹏测试。\n待办：修改论文图表。\n9月22日，小鹏产品经理10点面试。'}
             />
 
             <div className="progress-inbox-toolbar">
-              <small>新岗位需要已有岗位或官网/来源候选提供 canonical 名称；手输简称不会直接新建第二个岗位。</small>
-              <button className="primary-button" type="button" onClick={parse} disabled={busy}>{busy ? '处理中…' : '解析并生成 ChangeSet'}</button>
+              <small>{zh
+                ? '新岗位需要已有岗位或官网/来源候选提供 canonical 名称；手输简称不会直接新建第二个岗位。'
+                : 'A new job needs a canonical name backed by an existing job or source candidate. A typed abbreviation cannot silently create a second job.'}</small>
+              <button className="primary-button" type="button" onClick={parse} disabled={busy}>{busy ? (zh ? '处理中…' : 'Processing…') : (zh ? '解析并生成 ChangeSet' : 'Parse and generate ChangeSet')}</button>
             </div>
 
             {error ? <div className="progress-message error">{error}</div> : null}
@@ -165,16 +176,18 @@ export default function ProgressInboxHeavy({ onChanged }: ProgressInboxProps) {
                 <div className="progress-plan-heading">
                   <div>
                     <div className="eyebrow">CHANGESET · {changeSet?.id ?? 'NO WRITABLE CHANGE'}</div>
-                    <h3>准备执行 {changeSet?.operations.length ?? 0} 项修改</h3>
+                    <h3>{zh ? `准备执行 ${changeSet?.operations.length ?? 0} 项修改` : `${changeSet?.operations.length ?? 0} change(s) ready`}</h3>
                   </div>
                   <span>
                     {plan.unresolved.length > 0
-                      ? `${plan.unresolved.length} 条待确认${plan.ignored.length ? ` · ${plan.ignored.length} 条无需写入` : ''}`
+                      ? (zh
+                          ? `${plan.unresolved.length} 条待确认${plan.ignored.length ? ` · ${plan.ignored.length} 条无需写入` : ''}`
+                          : `${plan.unresolved.length} need confirmation${plan.ignored.length ? ` · ${plan.ignored.length} ignored` : ''}`)
                       : plan.ignored.length > 0
-                        ? `${plan.ignored.length} 条无需写入`
+                        ? (zh ? `${plan.ignored.length} 条无需写入` : `${plan.ignored.length} ignored`)
                         : changeSet
-                          ? '可直接确认'
-                          : '状态已是最新'}
+                          ? (zh ? '可直接确认' : 'Ready to confirm')
+                          : (zh ? '状态已是最新' : 'Already up to date')}
                   </span>
                 </div>
 
@@ -206,20 +219,20 @@ export default function ProgressInboxHeavy({ onChanged }: ProgressInboxProps) {
                       <article key={operation.id} className={`progress-operation${stateClass}`}>
                         <div className="progress-operation-mark">{mark}</div>
                         <div>
-                          <strong>{canonicalActionCompletion ? canonical.summary : progressOperationSummary(operation)}</strong>
+                          <strong>{progressOperationSummaryForLanguage(operation, lang)}</strong>
                           <p>{operation.sourceText}</p>
                           {operation.kind === 'unresolved' && operation.candidates?.length ? (
-                            <small>可能对应：{operation.candidates.map((item) => item.label).join('；')}</small>
+                            <small>{zh ? '可能对应：' : 'Possible matches: '}{operation.candidates.map((item) => item.label).join(zh ? '；' : '; ')}</small>
                           ) : operation.kind === 'ignored' ? (
-                            <small>已识别为背景记录 · 不修改岗位数据库</small>
+                            <small>{zh ? '已识别为背景记录 · 不修改岗位数据库' : 'Recognized as background context · no workspace mutation'}</small>
                           ) : noOp ? (
-                            <small>当前状态已经包含这条进展 · 不重复写入</small>
+                            <small>{zh ? '当前状态已经包含这条进展 · 不重复写入' : 'The workspace already contains this progress · no duplicate write'}</small>
                           ) : canonicalActionCompletion ? (
-                            <small>将已有流程 Action 标记为完成 · 不重复创建测评/笔试/面试事件</small>
+                            <small>{zh ? '将已有流程 Action 标记为完成 · 不重复创建测评/笔试/面试事件' : 'Complete the existing process Action · do not create a duplicate assessment/test/interview event'}</small>
                           ) : operation.kind === 'manual_action' ? (
-                            <small>普通事项 · 不关联公司或岗位</small>
+                            <small>{zh ? '普通事项 · 不关联公司或岗位' : 'General task · not forced onto a company or role'}</small>
                           ) : (
-                            <small>{confidenceLabel[operation.confidence]}</small>
+                            <small>{confidenceLabel[operation.confidence][zh ? 0 : 1]}</small>
                           )}
                         </div>
                       </article>
@@ -229,19 +242,27 @@ export default function ProgressInboxHeavy({ onChanged }: ProgressInboxProps) {
 
                 {plan.unresolved.length > 0 ? (
                   <div className="progress-message warning">
-                    黄色项不会写入，也不会进入 Today。岗位歧义需要已有/官网来源支持的统一岗位名；普通事项可以用“待办：……”明确标记。
+                    {zh
+                      ? '黄色项不会写入，也不会进入 Today。岗位歧义需要已有/官网来源支持的统一岗位名；普通事项可以用“待办：……”明确标记。'
+                      : 'Unresolved items are not written and do not enter Today. Ambiguous jobs require a canonical source-backed role; general tasks can be marked explicitly with “待办：…”.'}
                   </div>
                 ) : null}
 
                 <div className="progress-confirm-row">
-                  <small>确认后只应用上方明确修改；无法安全归类的项保持未写入，不会因为复核占据 Today。</small>
+                  <small>{zh
+                    ? '确认后只应用上方明确修改；无法安全归类的项保持未写入，不会因为复核占据 Today。'
+                    : 'Confirmation applies only the explicit changes above. Items that cannot be classified safely remain unwritten and never occupy Today as review work.'}</small>
                   <button
                     className="primary-button"
                     type="button"
                     onClick={confirm}
                     disabled={busy || !changeSet || changeSet.operations.length === 0}
                   >
-                    {busy ? '应用中…' : changeSet ? `确认并应用 ChangeSet · ${changeSet.operations.length} 项` : '无需应用'}
+                    {busy
+                      ? (zh ? '应用中…' : 'Applying…')
+                      : changeSet
+                        ? (zh ? `确认并应用 ChangeSet · ${changeSet.operations.length} 项` : `Confirm and apply ChangeSet · ${changeSet.operations.length}`)
+                        : (zh ? '无需应用' : 'No change to apply')}
                   </button>
                 </div>
               </div>
