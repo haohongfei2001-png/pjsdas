@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { buildAllApplicationPortfolioDecisions, type ApplicationPortfolioDecision, type PortfolioCandidateDecision } from './applicationPortfolio.js'
+import { portfolioReasonText, portfolioWarningText } from './applicationPortfolioPresentation.js'
 import { getAllApplicationGroups, getAllOpportunities, getDecisionRules } from './db.js'
 import { useUiLanguage } from './uiLanguage.js'
 import './applicationPortfolio.css'
@@ -61,7 +62,7 @@ function CandidateCard({ candidate, zh }: { candidate: PortfolioCandidateDecisio
       </div>
       <div className="portfolio-candidate-reason">
         <strong>{dispositionLabel(candidate, zh)}</strong>
-        {candidate.reasons.length ? <span>{candidate.reasons.join(' · ')}</span> : null}
+        {candidate.reasons.length ? <span>{candidate.reasons.map((reason) => portfolioReasonText(reason, zh)).join(' · ')}</span> : null}
       </div>
     </article>
   )
@@ -113,7 +114,7 @@ export default function ApplicationPortfolioDock() {
           <section className="portfolio-dialog" onMouseDown={(event) => event.stopPropagation()}>
             <header className="portfolio-header">
               <div>
-                <div className="eyebrow">APPLICATION PORTFOLIO · V1.6</div>
+                <div className="eyebrow">APPLICATION PORTFOLIO</div>
                 <h2>{zh ? '申请组合决策' : 'Application portfolio decisions'}</h2>
                 <p>{zh
                   ? '把“最多可投几个”视为上限，而不是必须填满的目标。PJSDAS 比较组内岗位的价值、匹配、角色、截止、投递成本与证据置信度，并惩罚高度重复的组合。'
@@ -191,7 +192,7 @@ export default function ApplicationPortfolioDock() {
                   ) : null}
 
                   {decision.warnings.length ? (
-                    <div className="portfolio-warnings">{decision.warnings.map((warning) => <span key={warning}>{warning}</span>)}</div>
+                    <div className="portfolio-warnings">{decision.warnings.map((warning, index) => <span key={`${warning.code}:${index}`}>{portfolioWarningText(warning, zh)}</span>)}</div>
                   ) : null}
                 </article>
               ))}
