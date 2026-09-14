@@ -1,7 +1,7 @@
 import type { Session, User } from '@supabase/supabase-js'
 import { fetchBackend } from '../backendEndpoints.js'
-import { currentUiLanguage } from '../uiLanguage.js'
 import {
+  currentCloudUiLanguage,
   driveAccessTokenRecoveryMessage,
   missingDurableDriveAuthorizationMessage,
   signedOutCloudAccountMessage,
@@ -101,7 +101,7 @@ function clearCallbackUrl() {
 
 async function persistGoogleDriveBinding(session: Session) {
   if (!session.provider_token || !session.provider_refresh_token) {
-    throw new Error(missingDurableDriveAuthorizationMessage(currentUiLanguage()))
+    throw new Error(missingDurableDriveAuthorizationMessage(currentCloudUiLanguage()))
   }
 
   const response = await fetchBackend('/api/google-link', {
@@ -190,7 +190,7 @@ async function accountAccessToken() {
   const supabase = await loadSupabase()
   const { data, error } = await supabase.auth.getSession()
   if (error) throw error
-  if (!data.session) throw new Error(signedOutCloudAccountMessage(currentUiLanguage()))
+  if (!data.session) throw new Error(signedOutCloudAccountMessage(currentCloudUiLanguage()))
   return data.session.access_token
 }
 
@@ -212,7 +212,7 @@ export async function getCloudAccessToken() {
   }
   if (!response.ok || !data.accessToken) {
     if (response.status === 401) invalidateCloudSession()
-    throw new Error(data.message || driveAccessTokenRecoveryMessage(currentUiLanguage(), response.status))
+    throw new Error(data.message || driveAccessTokenRecoveryMessage(currentCloudUiLanguage(), response.status))
   }
 
   const expiresInSeconds = Number.isFinite(data.expiresInSeconds) ? Math.max(60, Number(data.expiresInSeconds)) : 3000
