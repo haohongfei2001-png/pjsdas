@@ -40,6 +40,8 @@ test('Job discovery preferences are fully bilingual and persist through the real
   expect(stored).toEqual(['AI Product Manager', 'Business Analysis'])
 
   await page.reload()
+  await expect(page.getByRole('heading', { name: 'Only the next moves for today' })).toBeVisible()
+  await page.getByRole('button', { name: 'Settings Rules & data' }).click()
   await expect(page.getByRole('heading', { name: 'Preferences, rules, sync, and data safety' })).toBeVisible()
   await expect(page.locator('.discovery-profile-card textarea').first()).toHaveValue('AI Product Manager\nBusiness Analysis')
 })
