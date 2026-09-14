@@ -2,6 +2,7 @@ import { useEffect } from 'react'
 import { jobPostingFreshness } from './jobPosting.js'
 import OpportunityAssessmentSummary from './OpportunityAssessmentSummary.js'
 import RichOpportunityFactsSummary from './RichOpportunityFactsSummary.js'
+import { presentStageLabel } from './stagePresentation.js'
 import { useUiLanguage } from './uiLanguage.js'
 import type {
   Action,
@@ -33,18 +34,15 @@ const roleLabels: Record<Opportunity['roleType'], [string, string]> = {
   practice: ['练手', 'Practice'],
 }
 
-function stageLabel(stage: Opportunity['processStage'], zh: boolean) {
-  const labels: Record<Opportunity['processStage'], [string, string]> = {
-    not_applied: ['待投递', 'Not applied'],
-    screening: ['筛选中', 'Screening'],
-    assessment: ['测评', 'Assessment'],
-    written_test: ['笔试', 'Written test'],
-    interview: ['面试', 'Interview'],
-    offer: ['Offer', 'Offer'],
-    waiting_release: ['等待开放', 'Waiting release'],
-    closed: ['已结束', 'Closed'],
-  }
-  return labels[stage][zh ? 0 : 1]
+const actionStatusLabels: Record<Action['status'], [string, string]> = {
+  todo: ['待办', 'To do'],
+  doing: ['进行中', 'In progress'],
+  done: ['已完成', 'Done'],
+  skipped: ['已跳过', 'Skipped'],
+}
+
+function actionStatusLabel(status: Action['status'], zh: boolean) {
+  return actionStatusLabels[status][zh ? 0 : 1]
 }
 
 function freshnessLabel(posting: JobPostingEvidence, zh: boolean) {
@@ -102,7 +100,9 @@ export default function OpportunityDetailDrawer({
   const recentTimeline = [...timeline]
     .sort((a, b) => b.occurredAt.localeCompare(a.occurredAt))
     .slice(0, 6)
-  const effectiveStageText = process?.stageLabel || opportunity.currentStageLabel || stageLabel(opportunity.processStage, zh)
+  const effectiveStage = process?.stage ?? opportunity.processStage
+  const storedStageLabel = process?.stageLabel ?? opportunity.currentStageLabel
+  const effectiveStageText = presentStageLabel(effectiveStage, storedStageLabel, lang)
 
   useEffect(() => {
     const handler = (event: KeyboardEvent) => { if (event.key === 'Escape') onClose() }
@@ -179,7 +179,7 @@ export default function OpportunityDetailDrawer({
         <details className="opportunity-detail-section" open={Boolean(process || relevantActions.length)}>
           <summary>{zh ? '流程与待办' : 'Pipeline & actions'}</summary>
           <div className="opportunity-detail-process-grid">
-            <div><small>{zh ? '流程阶段' : 'Process stage'}</small><strong>{process?.stageLabel ?? opportunity.currentStageLabel}</strong></div>
+            <div><small>{zh ? '流程阶段' : 'Process stage'}</small><strong>{effectiveStageText}</strong></div>
             <div><small>{zh ? '最近进展' : 'Last progress'}</small><strong>{formatDate(process?.lastProgressAt, zh)}</strong></div>
             <div><small>{zh ? '下次复核' : 'Next check'}</small><strong>{formatDate(process?.nextCheckAt, zh)}</strong></div>
             <div><small>{zh ? '准备包' : 'Prep pack'}</small><strong>{process?.prepPack ?? (zh ? '未指定' : 'Not specified')}</strong></div>
@@ -189,7 +189,7 @@ export default function OpportunityDetailDrawer({
               {relevantActions.map((action) => (
                 <article key={action.id}>
                   <div><strong>{action.title}</strong><small>{action.dueAt ? formatDate(action.dueAt, zh) : (zh ? '无明确时间' : 'No dated node')}</small></div>
-                  <span>{action.status}</span>
+                  <span>{actionStatusLabel(action.status, zh)}</span>
                 </article>
               ))}
             </div>
