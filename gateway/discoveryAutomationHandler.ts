@@ -12,6 +12,7 @@ export interface DiscoveryAutomationHandlerConfig {
   googleClientId: string
   googleClientSecret: string
   aiGatewayApiKey?: string
+  aiGatewayTokenProvider?: () => Promise<string | undefined>
   aiGatewayModel?: string
   fetchImpl?: typeof fetch
   now?: () => Date
@@ -48,6 +49,22 @@ function compactError(caught: unknown) {
   return `${error.code}: ${error.message}`.slice(0, 1200)
 }
 
+async function resolveAiGatewayToken(config: DiscoveryAutomationHandlerConfig) {
+  const configured = config.aiGatewayApiKey?.trim()
+  if (configured) return configured
+  if (!config.aiGatewayTokenProvider) return ''
+
+  try {
+    return (await config.aiGatewayTokenProvider())?.trim() ?? ''
+  } catch {
+    throw new WorkspaceSourceError(
+      'DISCOVERY_MODEL_AUTH_REQUIRED',
+      'Vercel AI Gateway authentication is unavailable for the discovery worker.',
+      true,
+    )
+  }
+}
+
 export function createDiscoveryAutomationHandler(config: DiscoveryAutomationHandlerConfig) {
   return async function handleDiscoveryAutomation(request: Request) {
     if (request.method !== 'GET' && request.method !== 'POST') {
@@ -77,10 +94,18 @@ export function createDiscoveryAutomationHandler(config: DiscoveryAutomationHand
       return json(status, error)
     }
 
-    // The API route supplies AI_GATEWAY_API_KEY when explicitly configured,
-    // otherwise VERCEL_OIDC_TOKEN. Do not trust an inbound request header as a
-    // Vercel deployment identity.
-    const modelToken = config.aiGatewayApiKey?.trim() ?? ''
+    if (requestedUserId) bindings = bindings.filter((item) => item.userId === requestedUserId)
+
+    let modelToken = ''
+    if (probe || bindings.length > 0) {
+      try {
+        modelToken = await resolveAiGatewayToken(config)
+      } catch (caught) {
+        const error = errorBody(caught)
+        return json(error.retryable ? 503 : 500, error)
+      }
+    }
+
     if (probe) {
       try {
         const result = await probeDiscoveryAiGateway({
@@ -95,7 +120,6 @@ export function createDiscoveryAutomationHandler(config: DiscoveryAutomationHand
       }
     }
 
-    if (requestedUserId) bindings = bindings.filter((item) => item.userId === requestedUserId)
     if (bindings.length > 0 && !modelToken) {
       return json(503, {
         code: 'DISCOVERY_MODEL_AUTH_REQUIRED',
