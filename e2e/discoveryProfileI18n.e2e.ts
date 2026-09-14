@@ -4,7 +4,7 @@ test('Job discovery preferences are fully bilingual and persist through the real
   await page.goto('/')
   await expect(page.getByRole('heading', { name: '今天只处理下一步' })).toBeVisible()
 
-  await page.getByRole('button', { name: /设置/ }).click()
+  await page.getByRole('button', { name: '设置 规则与数据' }).click()
   await page.getByRole('button', { name: 'EN' }).first().click()
   await expect(page.getByRole('heading', { name: 'Preferences, rules, sync, and data safety' })).toBeVisible()
 
