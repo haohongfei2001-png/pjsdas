@@ -59,7 +59,7 @@ function expired(deadline: string | undefined, now: Date) {
 }
 
 function activeStatus(status: string) {
-  return status === 'todo' || status === 'in_progress'
+  return status === 'todo' || status === 'doing'
 }
 
 function scoreFor(issues: WorkspaceIntegrityIssue[]) {
