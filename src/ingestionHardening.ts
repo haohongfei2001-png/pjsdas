@@ -164,6 +164,15 @@ function attachRunPolicy(result: AutonomousIngestionResult, input: HardenedRunId
 export function applyMonitorIngestionHardened(snapshot: PJSDASSnapshot, input: HardenedMonitorIngestionRunInput): AutonomousIngestionResult {
   const sourcePolicy = sourcePolicyForRun('gpt_monitor', input.sourceId, input.sourcePolicy)
   const normalizedInput: HardenedMonitorIngestionRunInput = { ...input, sourcePolicy }
+
+  // Preserve run-level idempotency before creating a temporary re-evaluation view.
+  const completedRun = (snapshot.data.timeline ?? []).some((item) =>
+    item.ingestionRun?.sourceKind === 'gpt_monitor' &&
+    item.ingestionRun.sourceId === normalizedInput.sourceId &&
+    item.ingestionRun.runId === normalizedInput.runId,
+  )
+  if (completedRun) return applyMonitorIngestion(snapshot, normalizedInput)
+
   const ambiguous = normalizedInput.observations.filter((item) => monitorObservationIsAmbiguous(item, snapshot.data.opportunities))
   const ambiguousIds = new Set(ambiguous.map((item) => item.sourceRecordId))
 
@@ -178,31 +187,64 @@ export function applyMonitorIngestionHardened(snapshot: PJSDASSnapshot, input: H
     return Boolean(findSimilarOpportunity(observation, snapshot.data.opportunities))
   })
   const existingIds = new Set(existingRefreshes.map((item) => item.sourceRecordId))
+  const baseObservations = normalizedInput.observations.filter((item) => !ambiguousIds.has(item.sourceRecordId) && !existingIds.has(item.sourceRecordId))
 
-  if (ambiguous.length === 0 && existingRefreshes.length === 0) {
+  // A stable sourceRecordId identifies a posting, not an immutable observation.
+  // If its source fingerprint changes in a later run, re-evaluate it instead of
+  // permanently treating the posting as duplicate. Historical ledger rows are
+  // restored after the current run is evaluated.
+  const changedPriorIds = new Set<string>()
+  for (const observation of baseObservations) {
+    const previous = alreadyIngested(snapshot.data.timeline, {
+      sourceKind: 'gpt_monitor', sourceId: normalizedInput.sourceId, sourceRecordId: observation.sourceRecordId,
+    })
+    if (previous?.ingestion?.outcome && previous.ingestion.outcome !== 'unresolved' && previous.ingestion.fingerprint !== monitorFingerprint(observation)) {
+      changedPriorIds.add(observation.sourceRecordId)
+    }
+  }
+  const historicalRecords = (snapshot.data.timeline ?? []).filter((item) =>
+    item.ingestion?.sourceKind === 'gpt_monitor' &&
+    item.ingestion.sourceId === normalizedInput.sourceId &&
+    changedPriorIds.has(item.ingestion.sourceRecordId),
+  )
+  const workingSnapshot = structuredClone(snapshot)
+  if (historicalRecords.length) {
+    const removedIds = new Set(historicalRecords.map((item) => item.id))
+    workingSnapshot.data.timeline = (workingSnapshot.data.timeline ?? []).filter((item) => !removedIds.has(item.id))
+  }
+
+  if (ambiguous.length === 0 && existingRefreshes.length === 0 && historicalRecords.length === 0) {
     const base = applyMonitorIngestion(snapshot, normalizedInput)
     return attachRunPolicy(base, normalizedInput, 'gpt_monitor')
   }
 
-  const base = applyMonitorIngestion(snapshot, {
+  const base = applyMonitorIngestion(workingSnapshot, {
     ...normalizedInput,
-    observations: normalizedInput.observations.filter((item) => !ambiguousIds.has(item.sourceRecordId) && !existingIds.has(item.sourceRecordId)),
+    observations: baseObservations,
   })
   if (base.alreadyApplied) return base
 
   const next = structuredClone(base.snapshot)
   const timeline = next.data.timeline ?? []
+  for (const historical of historicalRecords) {
+    if (!timeline.some((item) => item.id === historical.id)) timeline.push(historical)
+  }
   const records = [...base.records]
   const touched = new Set(base.touchedOpportunityIds)
 
   for (const observation of existingRefreshes) {
     const receivedAt = observation.discoveredAt ?? normalizedInput.completedAt
+    const currentFingerprint = monitorFingerprint(observation)
     const previous = alreadyIngested(snapshot.data.timeline, {
       sourceKind: 'gpt_monitor', sourceId: normalizedInput.sourceId, sourceRecordId: observation.sourceRecordId,
     })
-    const duplicate = previous?.ingestion?.outcome && previous.ingestion.outcome !== 'unresolved'
+    const duplicate = Boolean(
+      previous?.ingestion?.outcome &&
+      previous.ingestion.outcome !== 'unresolved' &&
+      previous.ingestion.fingerprint === currentFingerprint,
+    )
     let outcome: 'merged' | 'duplicate' | 'unresolved' = duplicate ? 'duplicate' : 'unresolved'
-    let reason = duplicate ? `来源记录 ${observation.sourceRecordId} 已在先前 run 对账。` : undefined
+    let reason = duplicate ? `来源记录 ${observation.sourceRecordId} 的当前事实已在先前 run 对账。` : undefined
     let opportunityId = duplicate ? previous?.ingestion?.opportunityId : undefined
 
     if (!duplicate) {
@@ -225,7 +267,7 @@ export function applyMonitorIngestionHardened(snapshot: PJSDASSnapshot, input: H
     const record = createIngestionLedgerTimeline({
       sourceKind: 'gpt_monitor', sourceId: normalizedInput.sourceId, sourceRecordId: observation.sourceRecordId,
       runId: normalizedInput.runId, recordType: 'job_observation', outcome,
-      fingerprint: monitorFingerprint(observation), receivedAt, accountedAt: normalizedInput.completedAt,
+      fingerprint: currentFingerprint, receivedAt, accountedAt: normalizedInput.completedAt,
       reason, opportunityId,
       company: observation.company, role: observation.role, sourceRef: observation.sourceUrl,
     })
@@ -234,13 +276,18 @@ export function applyMonitorIngestionHardened(snapshot: PJSDASSnapshot, input: H
   }
 
   for (const observation of ambiguous) {
+    const currentFingerprint = monitorFingerprint(observation)
     const previous = alreadyIngested(snapshot.data.timeline, { sourceKind: 'gpt_monitor', sourceId: normalizedInput.sourceId, sourceRecordId: observation.sourceRecordId })
-    const duplicate = previous?.ingestion?.outcome && previous.ingestion.outcome !== 'unresolved'
+    const duplicate = Boolean(
+      previous?.ingestion?.outcome &&
+      previous.ingestion.outcome !== 'unresolved' &&
+      previous.ingestion.fingerprint === currentFingerprint,
+    )
     const record = createIngestionLedgerTimeline({
       sourceKind: 'gpt_monitor', sourceId: normalizedInput.sourceId, sourceRecordId: observation.sourceRecordId,
       runId: normalizedInput.runId, recordType: 'job_observation', outcome: duplicate ? 'duplicate' : 'unresolved',
-      fingerprint: monitorFingerprint(observation), receivedAt: observation.discoveredAt ?? normalizedInput.completedAt, accountedAt: normalizedInput.completedAt,
-      reason: duplicate ? `来源记录 ${observation.sourceRecordId} 已在先前 run 对账。` : '同一公司存在多个高度相似的现有 Opportunity；为避免错误归并，本次自动摄入停止并保留为 unresolved。',
+      fingerprint: currentFingerprint, receivedAt: observation.discoveredAt ?? normalizedInput.completedAt, accountedAt: normalizedInput.completedAt,
+      reason: duplicate ? `来源记录 ${observation.sourceRecordId} 的当前事实已在先前 run 对账。` : '同一公司存在多个高度相似的现有 Opportunity；为避免错误归并，本次自动摄入停止并保留为 unresolved。',
       opportunityId: duplicate ? previous?.ingestion?.opportunityId : undefined,
       company: observation.company, role: observation.role, sourceRef: observation.sourceUrl,
     })
