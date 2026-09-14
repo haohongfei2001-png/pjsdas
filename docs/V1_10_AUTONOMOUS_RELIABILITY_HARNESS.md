@@ -34,13 +34,27 @@ High-speed automated development also requires the frontend release gate to dist
 The v1.10 release identity slice therefore adds:
 
 - backend commit identity in `/api/health`;
-- automatic Vercel identity from `VERCEL_GIT_COMMIT_SHA`;
+- runtime provider identity when available;
 - provider-neutral `PJSDAS_RELEASE_COMMIT_SHA` for standby providers;
+- build-time embedding of the checked-out Git commit before TypeScript/Vite compilation;
 - exact `health.release.commitSha === GITHUB_SHA` enforcement before GitHub Pages publication;
 - Production Self-Test binding to the exact commit that triggered the successful Pages workflow;
 - Cloudflare adapter propagation of the same release-identity contract.
 
-A backend with the right version string and capabilities but the wrong commit must fail closed and cannot unlock a newer frontend.
+The first production attempt intentionally failed closed: Vercel deployed the correct code and advertised `releaseIdentityBinding=true`, but the project did not expose `VERCEL_GIT_COMMIT_SHA` to the runtime, so `/api/health` returned `release.commitSha=null` and Pages refused to publish. The follow-up hardening embeds the checkout SHA at build time so release correctness no longer depends on a provider-dashboard environment toggle.
+
+A backend with the right version string and capabilities but the wrong or missing commit must fail closed and cannot unlock a newer frontend.
+
+## Adversarial ingestion matrix
+
+The next reliability slice exercises ordering and retry behavior rather than only one happy path. It covers:
+
+- tracking-only URL variants arriving in opposite source order;
+- exact ingestion-run retry idempotency;
+- repeated Gmail source records across different runs;
+- invitation -> reschedule -> completion lifecycle convergence.
+
+The invariant is that transport/order/retry noise may change audit evidence, but must not duplicate or corrupt canonical Opportunities, Process Events, or Actions.
 
 ## Development rule
 
@@ -49,7 +63,7 @@ A bug discovered in production or product use should become a regression scenari
 Future slices should extend this layer with:
 
 - larger fixture-based workspace histories;
-- adversarial ingestion matrices;
+- broader adversarial ingestion matrices;
 - replay / concurrent-write scenarios;
 - browser-level E2E for critical user journeys;
 - production anomaly checks that stay silent when healthy and surface only actionable failures.
