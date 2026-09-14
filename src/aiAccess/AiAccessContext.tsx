@@ -1,9 +1,11 @@
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from 'react'
 import type { Session } from '@supabase/supabase-js'
 import { fetchBackend } from '../backendEndpoints.js'
+import { useUiLanguage, type UiLanguage } from '../uiLanguage.js'
 
 const PENDING_KEY = 'pjsdas-ai-google-link-pending'
 const DRIVE_APPDATA_SCOPE = 'https://www.googleapis.com/auth/drive.appdata'
+const OFFLINE_AUTH_MISSING = 'AI_ACCESS_GOOGLE_OFFLINE_AUTH_MISSING'
 
 type AiAccessState = {
   busy: boolean
@@ -13,6 +15,21 @@ type AiAccessState = {
 }
 
 const AiAccessContext = createContext<AiAccessState | null>(null)
+
+export function aiAccessConnectedMessage(email: string | undefined, lang: UiLanguage) {
+  if (lang === 'zh') return email ? `AI 读取授权已连接：${email}` : 'AI 读取授权已连接。'
+  return email ? `AI read access connected: ${email}` : 'AI read access connected.'
+}
+
+export function aiAccessErrorMessage(caught: unknown, lang: UiLanguage) {
+  const raw = caught instanceof Error ? caught.message : String(caught)
+  if (raw === OFFLINE_AUTH_MISSING) {
+    return lang === 'zh'
+      ? 'Google 没有返回持续授权。请重新连接，并在 Google 授权页确认允许访问。'
+      : 'Google did not return durable authorization. Reconnect and confirm access on the Google consent screen.'
+  }
+  return raw
+}
 
 async function loadSupabase() {
   return (await import('./supabaseClient.js')).pjsdasSupabase
@@ -48,7 +65,7 @@ function hasPendingGoogleLink() {
 
 async function persistGoogleLink(session: Session) {
   if (!session.provider_token || !session.provider_refresh_token) {
-    throw new Error('Google 没有返回持续授权。请重新连接并在 Google 授权页确认允许访问。')
+    throw new Error(OFFLINE_AUTH_MISSING)
   }
 
   const response = await fetchBackend('/api/google-link', {
@@ -69,10 +86,12 @@ async function persistGoogleLink(session: Session) {
 }
 
 export function AiAccessProvider({ children }: { children: ReactNode }) {
+  const { lang } = useUiLanguage()
   const [busy, setBusy] = useState(false)
-  const [message, setMessage] = useState('')
+  const [connectedEmail, setConnectedEmail] = useState<string | null>(null)
   const [error, setError] = useState('')
   const completing = useRef(false)
+  const message = connectedEmail === null ? '' : aiAccessConnectedMessage(connectedEmail || undefined, lang)
 
   async function completeIfPending(session: Session | null) {
     if (!session || !hasPendingGoogleLink() || completing.current) return
@@ -84,11 +103,11 @@ export function AiAccessProvider({ children }: { children: ReactNode }) {
       const email = await persistGoogleLink(session)
       window.sessionStorage.removeItem(PENDING_KEY)
       clearCallbackUrl()
-      setMessage(email ? `AI 读取授权已连接：${email}` : 'AI 读取授权已连接。')
+      setConnectedEmail(email ?? '')
       // The same durable Supabase session is now the PJSDAS account session.
       // Do not sign it out after saving the encrypted Google refresh token.
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : String(caught))
+      setError(aiAccessErrorMessage(caught, lang))
     } finally {
       setBusy(false)
       completing.current = false
@@ -112,7 +131,7 @@ export function AiAccessProvider({ children }: { children: ReactNode }) {
       })
       unsubscribe = () => listener.data.subscription.unsubscribe()
     }).catch((caught) => {
-      if (active) setError(caught instanceof Error ? caught.message : String(caught))
+      if (active) setError(aiAccessErrorMessage(caught, lang))
     })
 
     return () => {
@@ -124,7 +143,7 @@ export function AiAccessProvider({ children }: { children: ReactNode }) {
   async function beginGoogleDriveLink() {
     if (typeof window === 'undefined') return
     setBusy(true)
-    setMessage('')
+    setConnectedEmail(null)
     setError('')
     window.sessionStorage.setItem(PENDING_KEY, '1')
     try {
@@ -144,7 +163,7 @@ export function AiAccessProvider({ children }: { children: ReactNode }) {
       if (signInError) throw signInError
     } catch (caught) {
       window.sessionStorage.removeItem(PENDING_KEY)
-      setError(caught instanceof Error ? caught.message : String(caught))
+      setError(aiAccessErrorMessage(caught, lang))
       setBusy(false)
     }
   }
