@@ -21,6 +21,7 @@ function health() {
     capabilities: {
       stableAccountSession: 'v1.8.1',
       autonomousIngestion: 'v1.9',
+      discoveryAutomationPlan: 'v1',
       ingestionReconciliationLedger: true,
       coverageStatusRead: true,
       trustedMonitorIngestion: true,
@@ -66,6 +67,7 @@ describe('production self-test', () => {
     const result = await runProductionSelfTest({ baseUrl: BASE_URL, fetchImpl: publicFetch() })
     expect(result.ok).toBe(true)
     expect(result.checks.find((item) => item.name === 'health.resource-origin')?.status).toBe('pass')
+    expect(result.checks.find((item) => item.name === 'health.capability.discoveryAutomationPlan')?.status).toBe('pass')
     expect(result.checks.find((item) => item.name === 'health.authenticated-mcp-tool-surface-version')?.status).toBe('pass')
     for (const tool of REQUIRED_TOOLS) {
       expect(result.checks.find((item) => item.name === `health.authenticated-mcp-tool.${tool}`)?.status).toBe('pass')
@@ -82,6 +84,14 @@ describe('production self-test', () => {
     const result = await runProductionSelfTest({ baseUrl: BASE_URL, fetchImpl: publicFetch(bad) })
     expect(result.ok).toBe(false)
     expect(result.checks.find((item) => item.name === 'health.authenticated-mcp-tool.ingest_gmail_run')?.status).toBe('fail')
+  })
+
+  it('fails closed when the discovery automation capability is missing', async () => {
+    const bad = health() as any
+    delete bad.capabilities.discoveryAutomationPlan
+    const result = await runProductionSelfTest({ baseUrl: BASE_URL, fetchImpl: publicFetch(bad) })
+    expect(result.ok).toBe(false)
+    expect(result.checks.find((item) => item.name === 'health.capability.discoveryAutomationPlan')?.status).toBe('fail')
   })
 
   it('keeps optional strict live-auth verification available when explicitly requested', async () => {
