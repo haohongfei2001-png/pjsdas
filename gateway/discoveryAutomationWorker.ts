@@ -22,7 +22,6 @@ import { decryptSecret } from './tokenCrypto.js'
 import type { DiscoveryAutomationBinding } from './automationConnectionStore.js'
 import { requireWritableWorkspaceSource, WorkspaceSourceError, type WorkspaceSource } from './workspaceSource.js'
 
-const AI_GATEWAY_URL = 'https://ai-gateway.vercel.sh/v1/chat/completions'
 const DEFAULT_MODEL = 'perplexity/sonar'
 const MAX_EXISTING_IDENTITIES = 100
 const MAX_RECENT_REJECTIONS = 40
@@ -64,14 +63,19 @@ const discoveryResponseSchema = z.object({
   }
 })
 
-interface AiGatewayChatResponse {
-  choices?: Array<{ message?: { content?: string | null } }>
+export interface DiscoveryGenerateTextInput {
+  model: string
+  system: string
+  prompt: string
+  temperature: number
+  maxOutputTokens: number
 }
 
+export type DiscoveryGenerateText = (input: DiscoveryGenerateTextInput) => Promise<{ text: string }>
+
 export interface DiscoveryAiOptions {
-  token: string
   model?: string
-  fetchImpl?: typeof fetch
+  generateTextImpl?: DiscoveryGenerateText
 }
 
 export interface DiscoveryAutomationRunResult {
@@ -166,46 +170,52 @@ function buildPrompt(snapshot: PJSDASSnapshot, sourceRun: DiscoveryAutomationSou
   ].join('\n\n')
 }
 
-async function aiGatewayText(prompt: string, options: DiscoveryAiOptions) {
-  const token = options.token.trim()
-  if (!token) throw new WorkspaceSourceError('DISCOVERY_MODEL_AUTH_REQUIRED', 'Vercel AI Gateway authentication is unavailable for the discovery worker.', true)
-  const fetchImpl = options.fetchImpl ?? fetch
-  let response: Response
-  try {
-    response = await fetchImpl(AI_GATEWAY_URL, {
-      method: 'POST',
-      headers: {
-        authorization: `Bearer ${token}`,
-        'content-type': 'application/json',
-        accept: 'application/json',
-      },
-      body: JSON.stringify({
-        model: options.model?.trim() || DEFAULT_MODEL,
-        temperature: 0.1,
-        max_tokens: 5_000,
-        messages: [
-          { role: 'system', content: 'You perform citation-grounded public job discovery and obey strict JSON output contracts.' },
-          { role: 'user', content: prompt },
-        ],
-      }),
-    })
-  } catch {
-    throw new WorkspaceSourceError('DISCOVERY_MODEL_UNAVAILABLE', 'Vercel AI Gateway is temporarily unavailable.', true)
-  }
-  if (response.status === 401 || response.status === 403) {
+function modelStatusCode(caught: unknown) {
+  if (!caught || typeof caught !== 'object') return undefined
+  const direct = (caught as { statusCode?: unknown }).statusCode
+  if (typeof direct === 'number') return direct
+  const responseStatus = (caught as { response?: { status?: unknown } }).response?.status
+  return typeof responseStatus === 'number' ? responseStatus : undefined
+}
+
+function throwModelError(caught: unknown): never {
+  if (caught instanceof WorkspaceSourceError) throw caught
+  const status = modelStatusCode(caught)
+  if (status === 401 || status === 403) {
     throw new WorkspaceSourceError('DISCOVERY_MODEL_AUTH_REQUIRED', 'Vercel AI Gateway rejected discovery-worker authentication.', false)
   }
-  if (response.status === 402) {
+  if (status === 402) {
     throw new WorkspaceSourceError('DISCOVERY_MODEL_CREDITS_REQUIRED', 'Vercel AI Gateway credits are unavailable for background discovery.', false)
   }
-  if (response.status === 429 || response.status >= 500) {
-    throw new WorkspaceSourceError('DISCOVERY_MODEL_UNAVAILABLE', `Vercel AI Gateway is temporarily unavailable (HTTP ${response.status}).`, true)
+  if (status === 429 || (typeof status === 'number' && status >= 500)) {
+    throw new WorkspaceSourceError('DISCOVERY_MODEL_UNAVAILABLE', `Vercel AI Gateway is temporarily unavailable${status ? ` (HTTP ${status})` : ''}.`, true)
   }
-  if (!response.ok) {
-    throw new WorkspaceSourceError('DISCOVERY_MODEL_FAILED', `Vercel AI Gateway discovery request failed (HTTP ${response.status}).`, false)
+  if (typeof status === 'number') {
+    throw new WorkspaceSourceError('DISCOVERY_MODEL_FAILED', `Vercel AI Gateway discovery request failed (HTTP ${status}).`, false)
   }
-  const payload = await response.json().catch(() => undefined) as AiGatewayChatResponse | undefined
-  const content = payload?.choices?.[0]?.message?.content?.trim()
+  throw new WorkspaceSourceError('DISCOVERY_MODEL_UNAVAILABLE', 'Vercel AI Gateway is temporarily unavailable.', true)
+}
+
+async function defaultGenerateText(input: DiscoveryGenerateTextInput) {
+  const { generateText } = await import('ai')
+  return generateText(input)
+}
+
+async function aiGatewayText(prompt: string, options: DiscoveryAiOptions) {
+  const generate = options.generateTextImpl ?? defaultGenerateText
+  let content = ''
+  try {
+    const result = await generate({
+      model: options.model?.trim() || DEFAULT_MODEL,
+      system: 'You perform citation-grounded public job discovery and obey strict JSON output contracts.',
+      prompt,
+      temperature: 0.1,
+      maxOutputTokens: 5_000,
+    })
+    content = result.text?.trim() ?? ''
+  } catch (caught) {
+    throwModelError(caught)
+  }
   if (!content) throw new WorkspaceSourceError('DISCOVERY_MODEL_INVALID', 'Discovery model returned no usable content.', true)
   return content
 }
@@ -281,8 +291,8 @@ export async function runDiscoveryAutomationForBinding(options: {
   tokenEncryptionKey: string
   googleClientId: string
   googleClientSecret: string
-  aiGatewayToken: string
   aiGatewayModel?: string
+  generateTextImpl?: DiscoveryGenerateText
   fetchImpl?: typeof fetch
   now?: () => Date
   force?: boolean
@@ -342,9 +352,8 @@ export async function runDiscoveryAutomationForBinding(options: {
       incrementalSince: plan.incrementalSince,
       now,
       ai: {
-        token: options.aiGatewayToken,
         model: options.aiGatewayModel,
-        fetchImpl,
+        generateTextImpl: options.generateTextImpl,
       },
     }),
   })))
