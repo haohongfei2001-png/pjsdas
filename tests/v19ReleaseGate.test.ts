@@ -4,9 +4,9 @@ import { describe, expect, it } from 'vitest'
 const workflow = readFileSync(new URL('../.github/workflows/deploy-pages.yml', import.meta.url), 'utf8')
 const health = readFileSync(new URL('../api/health.ts', import.meta.url), 'utf8')
 
-describe('v1.9 backend-first release gate', () => {
-  it('refuses to publish GitHub Pages until one configured backend advertises the exact matching hardened build', () => {
-    expect(workflow).toContain('Wait for exact matching hardened v1.9 production backend')
+describe('backend-first release gate', () => {
+  it('refuses to publish GitHub Pages until the exact backend build and authenticated MCP surface are verified', () => {
+    expect(workflow).toContain('Wait for exact matching production backend')
     expect(workflow).toContain('PJSDAS_BACKEND_ORIGINS')
     expect(workflow).toContain('${origin}/api/health')
     expect(workflow).toContain('health.version === "1.9.0-alpha.1"')
@@ -20,6 +20,12 @@ describe('v1.9 backend-first release gate', () => {
       expect(workflow).toContain(`capabilities.${capability} === true`)
     }
     expect(workflow).toContain('No configured PJSDAS backend matched commit ${GITHUB_SHA}')
+    expect(workflow).toContain('Verify authenticated production MCP before Pages publication')
+    expect(workflow).toContain("PJSDAS_REQUIRE_AUTHENTICATED_SELF_TEST: 'true'")
+    expect(workflow).toContain('PJSDAS_SELF_TEST_EMAIL: ${{ secrets.PJSDAS_SELF_TEST_EMAIL }}')
+    expect(workflow).toContain('PJSDAS_SELF_TEST_PASSWORD: ${{ secrets.PJSDAS_SELF_TEST_PASSWORD }}')
+    expect(workflow.indexOf('Verify authenticated production MCP before Pages publication'))
+      .toBeLessThan(workflow.indexOf('uses: actions/upload-pages-artifact@v3'))
   })
 
   it('keeps the public health contract aligned with the hardened release gate', () => {
