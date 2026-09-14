@@ -23,6 +23,24 @@ export default function LocalBackupDock({ onChanged }: LocalBackupDockProps) {
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
 
+  function clearTransientState() {
+    setPreview(null)
+    setPreviewName('')
+    setMessage('')
+    setError('')
+  }
+
+  function openDock() {
+    clearTransientState()
+    setOpen(true)
+  }
+
+  function closeDock() {
+    if (busy) return
+    clearTransientState()
+    setOpen(false)
+  }
+
   async function exportBackup() {
     setBusy(true)
     setMessage('')
@@ -88,12 +106,12 @@ export default function LocalBackupDock({ onChanged }: LocalBackupDockProps) {
 
   return (
     <>
-      <button className="backup-dock-trigger" type="button" onClick={() => setOpen(true)}>
+      <button className="backup-dock-trigger" type="button" onClick={openDock}>
         {zh ? '本地备份' : 'Local backup'}
       </button>
 
       {open ? (
-        <div className="backup-backdrop" onMouseDown={() => setOpen(false)}>
+        <div className="backup-backdrop" onMouseDown={closeDock}>
           <section className="backup-dialog" onMouseDown={(event) => event.stopPropagation()}>
             <div className="backup-header">
               <div>
@@ -103,7 +121,7 @@ export default function LocalBackupDock({ onChanged }: LocalBackupDockProps) {
                   ? '备份文件只下载到本地，不上传到 GitHub。恢复会先校验快照，再替换当前浏览器工作区；若已启用云同步，后续仍受同步冲突保护。'
                   : 'Backup files are downloaded locally and never uploaded to GitHub. Restore validates the snapshot before replacing this browser workspace; if cloud sync is enabled, later synchronization still uses conflict protection.'}</p>
               </div>
-              <button className="backup-close" type="button" onClick={() => setOpen(false)} aria-label={zh ? '关闭' : 'Close'}>×</button>
+              <button className="backup-close" type="button" disabled={busy} onClick={closeDock} aria-label={zh ? '关闭' : 'Close'}>×</button>
             </div>
 
             <div className="backup-actions-grid">
