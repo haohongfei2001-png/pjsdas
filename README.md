@@ -8,12 +8,12 @@ PJSDAS is a local-first, AI-native job-search decision and action workspace. It 
 
 ## Release status
 
-**Current formal release: `v1.0.0`**  
+**Current formal release: `v1.0.1`**  
 **Current engineering milestone: `v1.10`**
 
 The public product release uses Semantic Versioning. Historical `v1.9` / `v1.10` labels in design and hardening documents are engineering milestones, not earlier public releases. The authenticated MCP gateway runtime is versioned independently and currently remains `1.9.0-alpha.1`.
 
-The `v1.0.0` Git tag identifies its production-verified release commit. `main` may continue to advance after that release without changing what `v1.0.0` means.
+The `v1.0.1` Git tag identifies its production-verified release commit. Earlier release tags, including `v1.0.0`, remain pinned to their original verified commits as `main` continues to advance.
 
 See [`docs/RELEASE_POLICY.md`](docs/RELEASE_POLICY.md) for the permanent mapping between product version, package version, Git tag, gateway runtime, exact deployed commit identity, and GitHub platform release immutability.
 

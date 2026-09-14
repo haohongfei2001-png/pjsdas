@@ -72,18 +72,19 @@ PJSDAS `v1.0.0` was published before that repository setting was enabled, so Git
 
 Platform-level immutability is therefore not inferred from the PJSDAS release workflow. The workflow's refusal to move or reuse a tag is an application-level safety rule, not a substitute for GitHub's Immutable Releases feature.
 
-Before a future public release, repository-level immutability may be enabled as an additional non-functional supply-chain protection. If enabled, verify the published release reports `immutable=true` and has the expected release attestation.
+For `v1.0.1` and later releases, repository-level release immutability should be enabled before publication. After publication, verify the release reports `immutable=true` and has the expected release attestation.
 
 ## Current mapping
 
-For the first formal release:
+For the `v1.0.1` patch release candidate:
 
 | Identifier | Meaning | Value |
 | --- | --- | --- |
-| Public product version | User-facing verified release | `v1.0.0` |
-| `package.json` | Application package version | `1.0.0` |
-| Git tag | Version-pinned source release marker | `v1.0.0` |
+| Public product version | User-facing verified release | `v1.0.1` |
+| `package.json` | Application package version | `1.0.1` |
+| Git tag | Version-pinned source release marker | `v1.0.1` |
 | Engineering milestone | Current internal development/hardening stream | `v1.10` |
 | Authenticated gateway runtime | MCP runtime compatibility contract | `1.9.0-alpha.1` |
 | Production build identity | Exact deployed frontend/backend revision | Git commit SHA |
-| GitHub platform immutability for v1.0.0 | Repository feature was not enabled before publication | `false` |
+| GitHub platform immutability for v1.0.0 | Historical release published before repository immutability was enabled | `false` |
+| GitHub platform immutability for v1.0.1 | Required repository-level publication gate | verify `immutable=true` after publication |
