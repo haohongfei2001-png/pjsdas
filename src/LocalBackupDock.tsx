@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { exportLocalSnapshot, restoreLocalSnapshot } from './db.js'
 import { parseSnapshotText, type PJSDASSnapshot } from './snapshot.js'
+import { useUiLanguage, type UiLanguage } from './uiLanguage.js'
 import './localBackup.css'
 
 interface LocalBackupDockProps {
@@ -13,6 +14,8 @@ function backupFilename(date = new Date()) {
 }
 
 export default function LocalBackupDock({ onChanged }: LocalBackupDockProps) {
+  const { lang } = useUiLanguage()
+  const zh = lang === 'zh'
   const [open, setOpen] = useState(false)
   const [preview, setPreview] = useState<PJSDASSnapshot | null>(null)
   const [previewName, setPreviewName] = useState('')
@@ -35,9 +38,11 @@ export default function LocalBackupDock({ onChanged }: LocalBackupDockProps) {
       anchor.click()
       anchor.remove()
       URL.revokeObjectURL(url)
-      setMessage(`已导出：${snapshot.data.opportunities.length} 个岗位、${snapshot.data.processEvents.length} 条流程事件、${snapshot.data.timeline?.length ?? 0} 条历程、${snapshot.data.actions.length} 个 Action。`)
+      setMessage(zh
+        ? `已导出：${snapshot.data.opportunities.length} 个岗位、${snapshot.data.processEvents.length} 条流程事件、${snapshot.data.timeline?.length ?? 0} 条历程、${snapshot.data.actions.length} 个 Action。`
+        : `Exported: ${snapshot.data.opportunities.length} opportunities, ${snapshot.data.processEvents.length} process events, ${snapshot.data.timeline?.length ?? 0} timeline records, and ${snapshot.data.actions.length} actions.`)
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : '导出备份失败。')
+      setError(caught instanceof Error ? caught.message : (zh ? '导出备份失败。' : 'Could not export the backup.'))
     } finally {
       setBusy(false)
     }
@@ -55,7 +60,7 @@ export default function LocalBackupDock({ onChanged }: LocalBackupDockProps) {
     } catch (caught) {
       setPreview(null)
       setPreviewName('')
-      setError(caught instanceof Error ? caught.message : '无法读取备份。')
+      setError(caught instanceof Error ? caught.message : (zh ? '无法读取备份。' : 'Could not read this backup.'))
     } finally {
       setBusy(false)
     }
@@ -68,12 +73,14 @@ export default function LocalBackupDock({ onChanged }: LocalBackupDockProps) {
     setMessage('')
     try {
       await restoreLocalSnapshot(preview)
-      setMessage(`已恢复 ${previewName || '本地备份'}。当前浏览器工作区已被该快照替换。`)
+      setMessage(zh
+        ? `已恢复 ${previewName || '本地备份'}。当前浏览器工作区已被该快照替换。`
+        : `Restored ${previewName || 'local backup'}. The current browser workspace has been replaced by this snapshot.`)
       setPreview(null)
       setPreviewName('')
       onChanged?.()
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : '恢复备份失败。')
+      setError(caught instanceof Error ? caught.message : (zh ? '恢复备份失败。' : 'Could not restore the backup.'))
     } finally {
       setBusy(false)
     }
@@ -82,7 +89,7 @@ export default function LocalBackupDock({ onChanged }: LocalBackupDockProps) {
   return (
     <>
       <button className="backup-dock-trigger" type="button" onClick={() => setOpen(true)}>
-        本地备份
+        {zh ? '本地备份' : 'Local backup'}
       </button>
 
       {open ? (
@@ -91,28 +98,34 @@ export default function LocalBackupDock({ onChanged }: LocalBackupDockProps) {
             <div className="backup-header">
               <div>
                 <div className="eyebrow">LOCAL DATA SAFETY</div>
-                <h2>备份与恢复</h2>
-                <p>Process Event、Action 完成状态和 Excel 导入基线都只存在当前浏览器。备份文件不会上传到 GitHub。</p>
+                <h2>{zh ? '备份与恢复' : 'Backup & restore'}</h2>
+                <p>{zh
+                  ? '备份文件只下载到本地，不上传到 GitHub。恢复会先校验快照，再替换当前浏览器工作区；若已启用云同步，后续仍受同步冲突保护。'
+                  : 'Backup files are downloaded locally and never uploaded to GitHub. Restore validates the snapshot before replacing this browser workspace; if cloud sync is enabled, later synchronization still uses conflict protection.'}</p>
               </div>
-              <button className="backup-close" type="button" onClick={() => setOpen(false)} aria-label="关闭">×</button>
+              <button className="backup-close" type="button" onClick={() => setOpen(false)} aria-label={zh ? '关闭' : 'Close'}>×</button>
             </div>
 
             <div className="backup-actions-grid">
               <article>
                 <div className="eyebrow">EXPORT</div>
-                <h3>导出完整本地快照</h3>
-                <p>适合在清理浏览器数据、换电脑或大版本升级前保存。</p>
+                <h3>{zh ? '导出完整本地快照' : 'Export a complete local snapshot'}</h3>
+                <p>{zh
+                  ? '适合在清理浏览器数据、换电脑或大版本升级前保存。'
+                  : 'Useful before clearing browser data, moving devices, or making a major upgrade.'}</p>
                 <button className="primary-button" type="button" disabled={busy} onClick={exportBackup}>
-                  {busy ? '处理中…' : '导出 JSON 备份'}
+                  {busy ? (zh ? '处理中…' : 'Processing…') : (zh ? '导出 JSON 备份' : 'Export JSON backup')}
                 </button>
               </article>
 
               <article>
                 <div className="eyebrow">RESTORE</div>
-                <h3>从快照恢复</h3>
-                <p>先解析和校验；只有再次确认后才会替换当前浏览器的 PJSDAS 数据。</p>
+                <h3>{zh ? '从快照恢复' : 'Restore from a snapshot'}</h3>
+                <p>{zh
+                  ? '先解析和校验；只有再次确认后才会替换当前浏览器的 PJSDAS 数据。'
+                  : 'PJSDAS parses and validates the file first. Your browser workspace changes only after explicit confirmation.'}</p>
                 <label className="backup-file-button">
-                  {busy ? '处理中…' : '选择备份文件'}
+                  {busy ? (zh ? '处理中…' : 'Processing…') : (zh ? '选择备份文件' : 'Choose backup file')}
                   <input type="file" accept="application/json,.json" disabled={busy} onChange={(event) => readBackup(event.target.files?.[0])} />
                 </label>
               </article>
@@ -126,22 +139,24 @@ export default function LocalBackupDock({ onChanged }: LocalBackupDockProps) {
                 <div>
                   <div className="eyebrow">RESTORE PREVIEW</div>
                   <strong>{previewName}</strong>
-                  <p>导出于 {formatDateTime(preview.exportedAt)}</p>
+                  <p>{zh ? '导出于' : 'Exported'} {formatDateTime(preview.exportedAt, lang)}</p>
                 </div>
                 <div className="backup-counts">
-                  <span>岗位 <strong>{preview.data.opportunities.length}</strong></span>
-                  <span>流程 <strong>{preview.data.processes.length}</strong></span>
-                  <span>事件 <strong>{preview.data.processEvents.length}</strong></span>
-                  <span>Action <strong>{preview.data.actions.length}</strong></span>
+                  <span>{zh ? '岗位' : 'Opportunities'} <strong>{preview.data.opportunities.length}</strong></span>
+                  <span>{zh ? '流程' : 'Processes'} <strong>{preview.data.processes.length}</strong></span>
+                  <span>{zh ? '事件' : 'Events'} <strong>{preview.data.processEvents.length}</strong></span>
+                  <span>{zh ? 'Action' : 'Actions'} <strong>{preview.data.actions.length}</strong></span>
                   <span>Prep <strong>{preview.data.prep.length}</strong></span>
-                  <span>申请组 <strong>{preview.data.applicationGroups.length}</strong></span>
+                  <span>{zh ? '申请组' : 'Application groups'} <strong>{preview.data.applicationGroups.length}</strong></span>
                   <span>ChangeSet <strong>{preview.data.changeSets?.length ?? 0}</strong></span>
-                  <span>历程 <strong>{preview.data.timeline?.length ?? 0}</strong></span>
+                  <span>{zh ? '历程' : 'Timeline'} <strong>{preview.data.timeline?.length ?? 0}</strong></span>
                 </div>
                 <div className="backup-danger">
-                  <strong>恢复会替换当前本地工作区。</strong>
-                  <span>当前数据不会与备份合并。需要保留时请先导出当前快照。</span>
-                  <button type="button" disabled={busy} onClick={confirmRestore}>确认恢复</button>
+                  <strong>{zh ? '恢复会替换当前本地工作区。' : 'Restore replaces the current local workspace.'}</strong>
+                  <span>{zh
+                    ? '当前数据不会与备份合并。需要保留当前状态时，请先导出；同步冲突不会在这里被静默解决。'
+                    : 'Current data is not merged with the backup. Export it first if you need to keep it; sync conflicts are never silently resolved here.'}</span>
+                  <button type="button" disabled={busy} onClick={confirmRestore}>{zh ? '确认恢复' : 'Confirm restore'}</button>
                 </div>
               </div>
             ) : null}
@@ -152,8 +167,8 @@ export default function LocalBackupDock({ onChanged }: LocalBackupDockProps) {
   )
 }
 
-function formatDateTime(iso: string) {
-  return new Intl.DateTimeFormat('zh-CN', {
+function formatDateTime(iso: string, lang: UiLanguage) {
+  return new Intl.DateTimeFormat(lang === 'zh' ? 'zh-CN' : 'en-US', {
     year: 'numeric',
     month: 'numeric',
     day: 'numeric',
