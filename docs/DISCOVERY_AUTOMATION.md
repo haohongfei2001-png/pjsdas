@@ -6,7 +6,9 @@ Status: v1 implementation contract.
 
 PJSDAS can run recurring public-web job discovery without requiring ChatGPT Tasks or a per-user search/model API key.
 
-Activation is derived from the user's connected Google/Drive workspace plus a configured Discovery Profile. The durable Discovery Profile and Decision Rules remain user-controlled. Background discovery never edits those preferences, never decides that the user has rejected an Opportunity, never deletes objects, and never changes a recruiting Process merely because a public posting opens or closes.
+Background discovery is **explicit opt-in**. Connecting Google, opening PJSDAS, or configuring a Discovery Profile does not by itself authorize server-owned public-web/model processing. The user enables **Background job discovery** once in Settings and may turn it off at any time. Only connections with `discovery_automation_enabled = true` are claimable by the worker.
+
+The durable Discovery Profile and Decision Rules remain user-controlled. Background discovery never edits those preferences, never decides that the user has rejected an Opportunity, never deletes objects, and never changes a recruiting Process merely because a public posting opens or closes.
 
 The Source Registry remains the cadence authority. The four bootstrap monitor identities are:
 
@@ -20,10 +22,12 @@ Each currently has a 24-hour cadence and 36-hour freshness SLA. The scheduler ma
 ## Runtime architecture
 
 ```text
-Supabase pg_cron
+User enables Background job discovery once
+  -> discovery_automation_enabled = true
+  -> Supabase pg_cron
   -> Vault-generated discovery worker token
   -> POST /api/automation-discovery
-  -> claim active Google/Drive bindings through a token-validating SECURITY DEFINER RPC
+  -> claim only opted-in Google/Drive bindings
   -> decrypt stored Google refresh token on the server
   -> read the canonical PJSDAS Drive workspace
   -> build the deterministic discovery automation plan
@@ -81,6 +85,7 @@ A stable sourceRecordId identifies the posting across runs. The same sourceRecor
 
 ## Failure semantics
 
+- discovery opt-in disabled -> binding is not exposed to the worker at all.
 - AI Gateway auth unavailable -> fail closed; no fake run.
 - model/search unavailable -> fail closed; retry on the next scheduler wake.
 - malformed model output -> fail closed; no partial write.
@@ -93,17 +98,20 @@ Every submitted observation is accounted as created, merged, updated, duplicate,
 
 ## Database security boundary
 
-`pjsdas_claim_discovery_automation_bindings` and `pjsdas_update_discovery_automation_state` are SECURITY DEFINER RPCs because the worker needs to operate while the browser is closed. They validate an independent random worker token held in Supabase Vault before returning or changing any binding state.
+The original `pjsdas_claim_discovery_automation_bindings` SECURITY DEFINER function owns the independent Vault-token validation and is now an internal implementation detail: direct `anon` and `authenticated` EXECUTE permissions are revoked.
 
-The RPCs are not intended for normal signed-in user sessions; `authenticated` EXECUTE permission is explicitly revoked. The anonymous PostgREST role can reach the RPC endpoint only because the Vercel worker cannot present an end-user session; possession of the independent Vault token is required by the function body before any privileged operation occurs.
+The scheduler-facing `pjsdas_claim_enabled_discovery_automation_bindings` wrapper calls that token-validating internal function and then returns only rows whose `discovery_automation_enabled` flag is true. The normal signed-in `authenticated` role cannot execute the wrapper. The anonymous PostgREST role may reach the wrapper only because the Vercel worker has no end-user browser session; the independent Vault worker token must still pass the inner validation before any privileged row can be returned.
+
+`pjsdas_update_discovery_automation_state` likewise validates the independent worker token before updating bounded check/success/error telemetry. It does not change user opt-in.
 
 ## Deployment checklist
 
-1. Apply the additive discovery-worker migrations. Do not schedule the cron yet.
-2. Merge only a CI + Chromium green candidate.
-3. Verify the exact merge SHA is running on Vercel.
-4. Let the backend-first Pages gate and Production Self-Test pass for the same SHA.
-5. Run an authenticated scheduler-token AI Gateway probe; require HTTP 200 and the strict zero-observation JSON contract.
-6. Run one bounded real server-owned discovery execution and verify balanced ingestion / optimistic Drive write.
-7. Schedule the production cron. A 6-hour wake interval is sufficient while Source Registry cadence remains 24 hours.
-8. Disable legacy ChatGPT monitor tasks only after the server-owned path has succeeded end to end.
+1. Apply the additive discovery-worker and explicit-opt-in migrations. Do not schedule the cron yet.
+2. Confirm the intended user explicitly enabled Background job discovery; do not infer consent from Google connection or Discovery Profile state.
+3. Merge only a CI + Chromium green candidate.
+4. Verify the exact merge SHA is running on Vercel.
+5. Let the backend-first Pages gate and Production Self-Test pass for the same SHA.
+6. Run an authenticated scheduler-token AI Gateway probe; require HTTP 200 and the strict zero-observation JSON contract.
+7. Run one bounded real server-owned discovery execution and verify balanced ingestion / optimistic Drive write.
+8. Schedule the production cron. A 6-hour wake interval is sufficient while Source Registry cadence remains 24 hours.
+9. Disable legacy ChatGPT monitor tasks only after the server-owned path has succeeded end to end.
