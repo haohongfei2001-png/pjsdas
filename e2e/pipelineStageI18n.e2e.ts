@@ -1,0 +1,86 @@
+import { expect, test } from '@playwright/test'
+
+const opportunity = {
+  id: 'e2e-pipeline-i18n-opportunity',
+  company: '流程测试科技',
+  role: 'AI产品经理',
+  currentStageLabel: '筛选中',
+  processStage: 'screening',
+  roleType: 'core',
+  early: false,
+  opportunityValue: 86,
+  fitScore: 82,
+  locallyManaged: true,
+  importedAt: '2026-09-14T00:00:00.000Z',
+}
+
+const process = {
+  id: 'e2e-pipeline-i18n-process',
+  opportunityId: opportunity.id,
+  company: opportunity.company,
+  role: opportunity.role,
+  stage: 'screening',
+  stageLabel: '筛选中',
+  lastProgressAt: '2026-09-14T00:00:00.000Z',
+  locallyManaged: true,
+}
+
+async function seed(page: import('@playwright/test').Page) {
+  await page.goto('/')
+  await expect(page.getByRole('heading', { name: '今天只处理下一步' })).toBeVisible()
+  await page.evaluate(async ({ opportunity, process }) => {
+    await new Promise<void>((resolve, reject) => {
+      const request = indexedDB.open('pjsdas', 8)
+      request.onerror = () => reject(request.error)
+      request.onsuccess = () => {
+        const db = request.result
+        const transaction = db.transaction(['opportunities', 'processes'], 'readwrite')
+        transaction.onerror = () => reject(transaction.error)
+        transaction.oncomplete = () => {
+          db.close()
+          resolve()
+        }
+        transaction.objectStore('opportunities').put(opportunity)
+        transaction.objectStore('processes').put(process)
+      }
+    })
+  }, { opportunity, process })
+  await page.reload()
+}
+
+test('Pipeline and mobile opportunity cards localize canonical stored stages without mutating them', async ({ page }) => {
+  await seed(page)
+  await page.getByRole('button', { name: 'EN' }).first().click()
+  await page.getByRole('button', { name: /Decide/ }).click()
+  await page.getByRole('button', { name: /Pipeline/ }).click()
+
+  await expect(page.locator('.surface-stage')).toHaveText('Screening')
+  await expect(page.getByText('筛选中', { exact: true })).toHaveCount(0)
+
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.getByRole('button', { name: /Opportunities/ }).click()
+  const mobileCard = page.locator('.surface-opportunity-mobile-list button').filter({ hasText: opportunity.company })
+  await expect(mobileCard).toBeVisible()
+  await expect(mobileCard.locator('small')).toHaveText('Screening')
+
+  const stored = await page.evaluate(async () => {
+    return new Promise<{ opportunityStage?: string; processStage?: string }>((resolve, reject) => {
+      const request = indexedDB.open('pjsdas', 8)
+      request.onerror = () => reject(request.error)
+      request.onsuccess = () => {
+        const db = request.result
+        const transaction = db.transaction(['opportunities', 'processes'], 'readonly')
+        const opportunityRequest = transaction.objectStore('opportunities').get('e2e-pipeline-i18n-opportunity')
+        const processRequest = transaction.objectStore('processes').get('e2e-pipeline-i18n-process')
+        transaction.onerror = () => reject(transaction.error)
+        transaction.oncomplete = () => {
+          const opportunityStage = opportunityRequest.result?.currentStageLabel
+          const processStage = processRequest.result?.stageLabel
+          db.close()
+          resolve({ opportunityStage, processStage })
+        }
+      }
+    })
+  })
+  expect(stored).toEqual({ opportunityStage: '筛选中', processStage: '筛选中' })
+})
