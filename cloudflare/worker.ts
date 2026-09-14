@@ -1,3 +1,6 @@
+import automationDiscovery from '../api/automation-discovery.js'
+import automationGmail from '../api/automation-gmail.js'
+import automationSettings from '../api/automation-settings.js'
 import googleAccessToken from '../api/google-access-token.js'
 import googleLink from '../api/google-link.js'
 import health from '../api/health.js'
@@ -11,6 +14,9 @@ import type { ReleaseIdentityEnvironment } from '../gateway/releaseIdentity.js'
 type FetchHandler = { fetch(request: Request): Response | Promise<Response> }
 
 const ROUTES = new Map<string, FetchHandler>([
+  ['/api/automation-discovery', automationDiscovery],
+  ['/api/automation-gmail', automationGmail],
+  ['/api/automation-settings', automationSettings],
   ['/api/google-access-token', googleAccessToken],
   ['/api/google-link', googleLink],
   ['/api/health-auth', healthAuth],
