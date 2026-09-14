@@ -57,6 +57,12 @@ function clearCallbackUrl() {
   if (changed) window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`)
 }
 
+function clearPendingGoogleLinkState() {
+  if (typeof window === 'undefined') return
+  window.sessionStorage.removeItem(PENDING_KEY)
+  clearCallbackUrl()
+}
+
 function hasPendingGoogleLink() {
   if (typeof window === 'undefined') return false
   return window.sessionStorage.getItem(PENDING_KEY) === '1'
@@ -101,12 +107,12 @@ export function AiAccessProvider({ children }: { children: ReactNode }) {
     setError('')
     try {
       const email = await persistGoogleLink(session)
-      window.sessionStorage.removeItem(PENDING_KEY)
-      clearCallbackUrl()
+      clearPendingGoogleLinkState()
       setConnectedEmail(email ?? '')
       // The same durable Supabase session is now the PJSDAS account session.
       // Do not sign it out after saving the encrypted Google refresh token.
     } catch (caught) {
+      clearPendingGoogleLinkState()
       setError(aiAccessErrorMessage(caught, lang))
     } finally {
       setBusy(false)
@@ -131,7 +137,10 @@ export function AiAccessProvider({ children }: { children: ReactNode }) {
       })
       unsubscribe = () => listener.data.subscription.unsubscribe()
     }).catch((caught) => {
-      if (active) setError(aiAccessErrorMessage(caught, lang))
+      if (active) {
+        clearPendingGoogleLinkState()
+        setError(aiAccessErrorMessage(caught, lang))
+      }
     })
 
     return () => {
@@ -162,7 +171,7 @@ export function AiAccessProvider({ children }: { children: ReactNode }) {
       })
       if (signInError) throw signInError
     } catch (caught) {
-      window.sessionStorage.removeItem(PENDING_KEY)
+      clearPendingGoogleLinkState()
       setError(aiAccessErrorMessage(caught, lang))
       setBusy(false)
     }
