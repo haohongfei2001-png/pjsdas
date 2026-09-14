@@ -1,6 +1,7 @@
 import type { ProcessEventType } from './model.js'
 import type { ProgressOperation } from './progressUpdate.js'
-import type { UiLanguage } from './uiLanguage.js'
+
+type PresentationLanguage = 'zh' | 'en'
 
 const eventLabelsEn: Record<ProcessEventType, string> = {
   assessment_invite: 'Assessment',
@@ -12,7 +13,7 @@ const eventLabelsEn: Record<ProcessEventType, string> = {
   other: 'Other progress',
 }
 
-export function progressOperationSummaryForLanguage(operation: ProgressOperation, lang: UiLanguage) {
+export function progressOperationSummaryForLanguage(operation: ProgressOperation, lang: PresentationLanguage) {
   if (lang === 'zh') {
     switch (operation.kind) {
       case 'upsert_opportunity':
