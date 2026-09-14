@@ -2,9 +2,16 @@
   "$schema": "https://json.schemastore.org/wrangler.json",
   "name": "pjsdas-remote-standby",
   "main": "cloudflare/worker.ts",
-  "compatibility_date": "2026-09-13",
+  "compatibility_date": "2026-09-15",
   "workers_dev": true,
   "observability": {
     "enabled": true
+  },
+  "secrets": {
+    "required": [
+      "PJSDAS_TOKEN_ENCRYPTION_KEY",
+      "PJSDAS_GOOGLE_CLIENT_SECRET",
+      "AI_GATEWAY_API_KEY"
+    ]
   }
 }
