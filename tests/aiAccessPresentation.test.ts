@@ -1,5 +1,8 @@
+import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import { aiAccessConnectedMessage, aiAccessErrorMessage } from '../src/aiAccess/AiAccessContext.js'
+
+const source = readFileSync(new URL('../src/aiAccess/AiAccessContext.tsx', import.meta.url), 'utf8')
 
 describe('AI Access status presentation', () => {
   it('localizes a successful durable Google link and preserves the account identity', () => {
@@ -17,5 +20,14 @@ describe('AI Access status presentation', () => {
     const error = new Error('Provider temporarily unavailable')
     expect(aiAccessErrorMessage(error, 'en')).toBe('Provider temporarily unavailable')
     expect(aiAccessErrorMessage(error, 'zh')).toBe('Provider temporarily unavailable')
+  })
+
+  it('terminates one-time OAuth callback state after success or failure instead of retrying stale intent', () => {
+    expect(source).toContain('function clearPendingGoogleLinkState()')
+    expect(source).toContain('window.sessionStorage.removeItem(PENDING_KEY)')
+    expect(source).toContain('clearCallbackUrl()')
+    expect(source).toContain('const email = await persistGoogleLink(session)\n      clearPendingGoogleLinkState()')
+    expect(source).toContain('} catch (caught) {\n      clearPendingGoogleLinkState()\n      setError(aiAccessErrorMessage(caught, lang))')
+    expect(source).toContain('clearPendingGoogleLinkState()\n        setError(aiAccessErrorMessage(caught, lang))')
   })
 })
