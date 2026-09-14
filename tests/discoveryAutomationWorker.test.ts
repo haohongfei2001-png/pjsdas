@@ -191,6 +191,29 @@ describe('server-owned discovery worker model boundary', () => {
     })
   })
 
+  it('classifies AI SDK GatewayForbiddenError metadata as a routing-policy denial', async () => {
+    const snapshot = await demoSnapshot()
+    await expect(discoverSourceRun(snapshot, sourceRun(), {
+      executionRules: [],
+      now: new Date('2026-09-15T01:00:00.000Z'),
+      ai: {
+        generateTextImpl: async () => {
+          throw {
+            name: 'GatewayForbiddenError',
+            statusCode: 403,
+            type: 'forbidden',
+            ruleId: 'rule_test_123',
+            message: 'Forbidden by routing policy',
+          }
+        },
+      },
+    })).rejects.toMatchObject({
+      code: 'DISCOVERY_MODEL_POLICY_FORBIDDEN',
+      retryable: false,
+      message: expect.stringContaining('rule_test_123'),
+    })
+  })
+
   it('classifies the official top-level no_providers_available Gateway shape as a team restriction', async () => {
     const snapshot = await demoSnapshot()
     await expect(discoverSourceRun(snapshot, sourceRun(), {
