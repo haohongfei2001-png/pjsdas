@@ -10,17 +10,26 @@ permissions:
 
 jobs:
   patch:
-    if: ${{ github.actor != 'github-actions[bot]' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
         with:
           ref: fix/discovery-gateway-policy-rule
       - name: Apply staged patch
-        run: python3 scripts/temporary_gateway_policy_patch.py
+        shell: bash
+        run: |
+          if [ "$GITHUB_ACTOR" = "github-actions[bot]" ]; then
+            echo "Bot push; nothing to do."
+            exit 0
+          fi
+          python3 scripts/temporary_gateway_policy_patch.py
       - name: Commit patch
         shell: bash
         run: |
+          if [ "$GITHUB_ACTOR" = "github-actions[bot]" ]; then
+            echo "Bot push; nothing to commit."
+            exit 0
+          fi
           set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
