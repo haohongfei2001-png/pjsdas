@@ -56,6 +56,23 @@ The next reliability slice exercises ordering and retry behavior rather than onl
 
 The invariant is that transport/order/retry noise may change audit evidence, but must not duplicate or corrupt canonical Opportunities, Process Events, or Actions.
 
+## Seeded state-machine stress
+
+The harness also runs deterministic pseudo-random scenario sequences. Each seed varies discovery order and transport noise while preserving the causal semantics of a recruiting lifecycle.
+
+The current seeded layer checks 64 reproducible seeds and combines:
+
+- same logical posting arriving through tracking-only URL variants;
+- same role at an explicitly different location;
+- a distinct same-company role;
+- exact completed-run retry after unrelated mutations;
+- Monitor noise interleaved with recruiting events;
+- repeated Gmail durable source records in later runs;
+- invitation -> reschedule -> completion convergence;
+- ingestion-run conservation and Workspace Integrity after every complete scenario.
+
+A failure message includes the seed and run identity so an Agent can replay the exact sequence without asking the user to reproduce the defect manually. Seeded stress is deliberately dependency-free and deterministic in CI; it is not probabilistic production telemetry.
+
 ## Development rule
 
 A bug discovered in production or product use should become a regression scenario whenever it can be reproduced deterministically. The same defect class should not require the user to discover it twice.
@@ -63,9 +80,8 @@ A bug discovered in production or product use should become a regression scenari
 Future slices should extend this layer with:
 
 - larger fixture-based workspace histories;
-- broader adversarial ingestion matrices;
-- replay / concurrent-write scenarios;
-- browser-level E2E for critical user journeys;
+- replay / concurrent-write scenarios across the Drive boundary;
+- broader browser-level E2E for critical authenticated and recovery journeys;
 - production anomaly checks that stay silent when healthy and surface only actionable failures.
 
 This is reliability infrastructure, not a new user-facing review queue. System maintenance must remain background work unless a concrete user decision is required.
