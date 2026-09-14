@@ -4,7 +4,7 @@ test('AI Access settings describe current read-only and ChangeSet semantics with
   await page.goto('/')
   await expect(page.getByRole('heading', { name: '今天只处理下一步' })).toBeVisible()
 
-  await page.getByRole('button', { name: /设置/ }).click()
+  await page.getByRole('button', { name: '设置 规则与数据' }).click()
   await page.getByRole('button', { name: 'EN' }).first().click()
 
   const card = page.locator('.cloud-settings-card').filter({ hasText: 'CHATGPT · AI ACCESS' })
