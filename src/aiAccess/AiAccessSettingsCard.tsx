@@ -20,8 +20,8 @@ export default function AiAccessSettingsCard() {
           <div className="eyebrow">CHATGPT · AI ACCESS</div>
           <h2>{zh ? '连接 PJSDAS AI 与后台自动化' : 'Connect PJSDAS AI and background automation'}</h2>
           <p>{zh
-            ? 'Google Drive appDataFolder 仍是 PJSDAS 的私有云工作区。AI 读取和后台自动摄入都只能通过受限接口写入来源支撑的事实；Decision Rules、持久偏好、删除、主动放弃岗位等用户决策不会被静默修改。'
-            : 'Google Drive appDataFolder remains the private PJSDAS cloud workspace. AI access and background ingestion may only write bounded source-backed facts through validated interfaces; user decisions such as Decision Rules, durable preferences, deletions, and abandoning an opportunity are never changed silently.'}</p>
+            ? 'Google Drive appDataFolder 仍是 PJSDAS 的私有云工作区。AI 读取和受信任的 Monitor / Gmail 摄入都只能通过受限接口写入来源支撑的事实；Decision Rules、持久偏好、删除、主动放弃岗位等用户决策不会被静默修改，仍必须走可审阅的 ChangeSet。'
+            : 'Google Drive appDataFolder remains the private PJSDAS cloud workspace. AI reads and trusted Monitor/Gmail ingestion may only write bounded source-backed facts through validated interfaces; user decisions such as Decision Rules, durable preferences, deletions, and abandoning an opportunity still require a reviewable ChangeSet.'}</p>
         </div>
         <span className={`cloud-state ${ai.error ? 'warning' : ai.message || gmail?.gmailEnabled ? 'online' : ''}`}>
           {ai.error ? (zh ? '需要处理' : 'Needs attention') : ai.message || gmail?.gmailEnabled ? (zh ? '已连接' : 'Connected') : (zh ? '未连接' : 'Not connected')}
