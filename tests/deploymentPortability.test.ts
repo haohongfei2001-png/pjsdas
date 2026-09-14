@@ -9,6 +9,7 @@ const aiAccess = readFileSync(new URL('../src/aiAccess/AiAccessContext.tsx', imp
 const proposalReview = readFileSync(new URL('../src/aiAccess/McpProposalReview.tsx', import.meta.url), 'utf8')
 const pages = readFileSync(new URL('../.github/workflows/deploy-pages.yml', import.meta.url), 'utf8')
 const selfTest = readFileSync(new URL('../.github/workflows/production-self-test.yml', import.meta.url), 'utf8')
+const cloudflareWorker = readFileSync(new URL('../cloudflare/worker.ts', import.meta.url), 'utf8')
 const vercel = readFileSync(new URL('../vercel.json', import.meta.url), 'utf8')
 const wrangler = readFileSync(new URL('../wrangler.jsonc', import.meta.url), 'utf8')
 const RELEASE_SHA = '1234567890abcdef1234567890abcdef12345678'
@@ -45,6 +46,14 @@ describe('deployment portability', () => {
     }))
     expect(anonymousMcp.status).toBe(401)
     expect(anonymousMcp.headers.get('www-authenticate')).toContain('https://standby.example/.well-known/oauth-protected-resource')
+  })
+
+  it('keeps the Cloudflare standby route surface aligned with current background automation APIs', () => {
+    expect(cloudflareWorker).toContain("'/api/automation-discovery'")
+    expect(cloudflareWorker).toContain("'/api/automation-gmail'")
+    expect(cloudflareWorker).toContain("'/api/automation-settings'")
+    expect(cloudflareWorker).toContain("'/api/google-link'")
+    expect(cloudflareWorker).toContain("'/api/mcp'")
   })
 
   it('keeps provider selection outside business clients and binds release verification to the deployed commit', () => {
