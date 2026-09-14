@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { getAllOpportunities, getAllPrep, getAllProcesses } from './db.js'
 import { buildPrepGraph, type PrepGraph, type PrepGraphNode, type PrepOpportunityNeed } from './prepGraph.js'
+import { presentPrepGraphLinkExplanation, presentPrepSourceStatus } from './prepGraphPresentation.js'
 import { useUiLanguage } from './uiLanguage.js'
 import './prepGraph.css'
 
@@ -45,7 +46,7 @@ function NodeCard({ node, graph, zh }: { node: PrepGraphNode; graph: PrepGraph; 
       <div className="prep-graph-node-head">
         <div>
           <strong>{node.title}</strong>
-          <span>{node.sourceStatus ?? (zh ? '状态未知' : 'Unknown status')}</span>
+          <span>{presentPrepSourceStatus(node.sourceStatus, zh)}</span>
         </div>
         <div className="prep-graph-leverage"><b>{node.leverageScore}</b><small>{zh ? '图谱杠杆' : 'graph leverage'}</small></div>
       </div>
@@ -71,7 +72,7 @@ function NodeCard({ node, graph, zh }: { node: PrepGraphNode; graph: PrepGraph; 
               <div className="prep-graph-link" key={`${node.prepId}:${link.opportunityId}`}>
                 <span>{opportunityById.get(link.opportunityId) ?? link.opportunityId}</span>
                 <b>{sourceLabel(link.source, zh)} · {link.confidence === 'high' ? (zh ? '高置信' : 'high') : (zh ? '中置信' : 'medium')}</b>
-                <small>{link.explanation}</small>
+                <small>{presentPrepGraphLinkExplanation(link, graph.needs, zh)}</small>
               </div>
             ))}
           </div>
@@ -125,7 +126,7 @@ export default function PrepGraphDock() {
           <section className="prep-graph-dialog" onMouseDown={(event) => event.stopPropagation()}>
             <header className="prep-graph-header">
               <div>
-                <div className="eyebrow">PREP GRAPH · V1.6</div>
+                <div className="eyebrow">PREP GRAPH</div>
                 <h2>{zh ? '准备任务杠杆图谱' : 'Preparation leverage graph'}</h2>
                 <p>{zh
                   ? '把岗位的结构化要求、显式能力缺口和当前流程节点连接到 Prep。只有显式关系或确定性精确匹配会进入图；模糊语义不会静默提高 Today 优先级。'
