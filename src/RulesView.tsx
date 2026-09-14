@@ -42,25 +42,35 @@ export default function RulesView({ rules, onChanged }: Props) {
   const normalizedRules = useMemo(() => cloneDecisionRules(rules), [rules])
   const [draft, setDraft] = useState(() => cloneDecisionRules(rules))
   const [message, setMessage] = useState('')
+  const [operationError, setOperationError] = useState('')
   const [busy, setBusy] = useState(false)
 
-  useEffect(() => setDraft(cloneDecisionRules(rules)), [rules])
+  useEffect(() => {
+    setDraft(cloneDecisionRules(rules))
+    setMessage('')
+    setOperationError('')
+  }, [rules])
 
   const errors = useMemo(() => validateDecisionRules(draft), [draft])
   const dirty = JSON.stringify({ ...draft, updatedAt: '' }) !== JSON.stringify({ ...normalizedRules, updatedAt: '' })
+
+  function clearFeedback() {
+    setMessage('')
+    setOperationError('')
+  }
 
   const setNumber = (key: NumericRuleKey, value: string) => {
     const parsed = Number(value)
     if (!Number.isFinite(parsed)) return
     setDraft((current) => ({ ...current, [key]: parsed }))
-    setMessage('')
+    clearFeedback()
   }
 
   const setWeight = (key: keyof DecisionWeights, value: string) => {
     const parsed = Number(value)
     if (!Number.isFinite(parsed)) return
     setDraft((current) => ({ ...current, weights: { ...current.weights, [key]: parsed } }))
-    setMessage('')
+    clearFeedback()
   }
 
   const setFitComponentWeight = (key: keyof FitComponentWeights, value: string) => {
@@ -70,7 +80,7 @@ export default function RulesView({ rules, onChanged }: Props) {
       ...current,
       fitComponentWeights: { ...current.fitComponentWeights!, [key]: parsed },
     }))
-    setMessage('')
+    clearFeedback()
   }
 
   const setOpportunityComponentWeight = (key: keyof OpportunityValueComponentWeights, value: string) => {
@@ -80,7 +90,7 @@ export default function RulesView({ rules, onChanged }: Props) {
       ...current,
       opportunityValueComponentWeights: { ...current.opportunityValueComponentWeights!, [key]: parsed },
     }))
-    setMessage('')
+    clearFeedback()
   }
 
   const setPortfolioWeight = (key: keyof PortfolioDecisionWeights, value: string) => {
@@ -90,12 +100,13 @@ export default function RulesView({ rules, onChanged }: Props) {
       ...current,
       portfolioWeights: { ...current.portfolioWeights!, [key]: parsed },
     }))
-    setMessage('')
+    clearFeedback()
   }
 
   async function save() {
     if (errors.length) return
     setBusy(true)
+    clearFeedback()
     try {
       const changeSet = await applyDecisionRulesChangeSet(draft, 'save')
       await onChanged()
@@ -104,6 +115,10 @@ export default function RulesView({ rules, onChanged }: Props) {
             ? `ChangeSet ${changeSet.id} 已应用。后续岗位评估与申请组合决策会使用新规则；历史岗位分数不会被静默改写。`
             : `ChangeSet ${changeSet.id} applied. Future assessments and portfolio decisions use the new rules; stored historical scores are not silently rewritten.`)
         : (zh ? '规则没有变化。' : 'No rule changes.'))
+    } catch (caught) {
+      setOperationError(caught instanceof Error
+        ? caught.message
+        : (zh ? '保存决策规则失败，当前草稿仍保留。' : 'Could not save Decision Rules. The current draft is still preserved.'))
     } finally {
       setBusy(false)
     }
@@ -111,12 +126,17 @@ export default function RulesView({ rules, onChanged }: Props) {
 
   async function reset() {
     setBusy(true)
+    clearFeedback()
     try {
       const changeSet = await applyDecisionRulesChangeSet(DEFAULT_DECISION_RULES, 'reset')
       await onChanged()
       setMessage(changeSet
         ? (zh ? `ChangeSet ${changeSet.id} 已应用，已恢复 PJSDAS 推荐规则。` : `ChangeSet ${changeSet.id} applied. Recommended rules restored.`)
         : (zh ? '当前已经是推荐规则。' : 'Recommended rules are already active.'))
+    } catch (caught) {
+      setOperationError(caught instanceof Error
+        ? caught.message
+        : (zh ? '恢复推荐规则失败，当前规则未被确认替换。' : 'Could not restore recommended rules. The current rules were not confirmed as replaced.'))
     } finally {
       setBusy(false)
     }
@@ -256,7 +276,8 @@ export default function RulesView({ rules, onChanged }: Props) {
       </div>
 
       {errors.length > 0 ? <div className="rules-error">{errors.map((item) => <div key={item}>{item}</div>)}</div> : null}
-      {message ? <div className="rules-message">{message}</div> : null}
+      {operationError ? <div className="rules-error" role="alert">{operationError}</div> : null}
+      {message ? <div className="rules-message" role="status">{message}</div> : null}
 
       <div className="rules-footer">
         <div>
