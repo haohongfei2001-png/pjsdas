@@ -10,6 +10,7 @@ import type {
   ProcessStage,
   TimelineRecord,
 } from './model.js'
+import { isWaitingPrepStatus, prepPriorityWeights } from './prepSemantics.js'
 import { timelineFromImportedHistory } from './timeline.js'
 
 const MAIN_SHEET = '投递总表'
@@ -195,11 +196,7 @@ function processStage(value: unknown): ProcessStage {
 }
 
 function prepPriority(priority: string) {
-  if (priority === '最高') return { leverage: 96, delayCost: 78 }
-  if (priority === '高') return { leverage: 88, delayCost: 64 }
-  if (priority === '中高') return { leverage: 80, delayCost: 52 }
-  if (priority === '中') return { leverage: 68, delayCost: 40 }
-  return { leverage: 45, delayCost: 24 }
+  return prepPriorityWeights(priority)
 }
 
 function findOpportunityId(opportunities: Opportunity[], company: string, role: string) {
@@ -445,7 +442,7 @@ export async function parsePJSDASWorkbook(file: File): Promise<ImportBundle> {
     const recentNodeAt = excelDate(row['最近节点'], true)
     const id = `prep:${title}`
 
-    if (sourceStatus !== '等待触发') {
+    if (!isWaitingPrepStatus(sourceStatus)) {
       const priority = prepPriority(priorityLabel ?? '')
       actions.push({
         id: `prep-action:${title}`,
