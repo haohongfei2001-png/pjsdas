@@ -1,0 +1,41 @@
+name: Temporary AI SDK lockfile generator
+
+on:
+  push:
+    branches: [fix/discovery-ai-sdk-gateway]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: temporary-ai-sdk-lockfile
+  cancel-in-progress: true
+
+jobs:
+  generate:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: fix/discovery-ai-sdk-gateway
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - run: |
+          npm uninstall @vercel/oidc --save
+          npm install ai@7.0.99 --save
+      - name: Commit generated package metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git diff --quiet -- package.json package-lock.json; then
+            echo "No package metadata changes to commit."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add package.json package-lock.json
+          git commit -m "chore: use Vercel AI SDK for discovery gateway"
+          git push origin HEAD:fix/discovery-ai-sdk-gateway
