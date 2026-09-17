@@ -10,10 +10,11 @@ const authenticatedRuntime = readFileSync(new URL('../gateway/authenticatedRemot
 
 describe('authenticated MCP release tool surface', () => {
   it('uses a stable versioned contract and registers every release-required tool in the real server factory', () => {
-    expect(AUTHENTICATED_MCP_TOOL_SURFACE_VERSION).toBe('v1')
+    expect(AUTHENTICATED_MCP_TOOL_SURFACE_VERSION).toBe('v2')
     expect(AUTHENTICATED_MCP_RELEASE_REQUIRED_TOOLS).toEqual([
       'get_coverage_status',
       'get_workspace_integrity',
+      'add_opportunities',
       'ingest_discovery_run',
       'ingest_gmail_run',
     ])
@@ -22,9 +23,10 @@ describe('authenticated MCP release tool surface', () => {
     }
   })
 
-  it('gates trusted-ingestion registrations on validated OAuth client identity', () => {
+  it('enables the narrow explicit-user write for every authenticated session while keeping trusted ingestion OAuth-gated', () => {
     expect(authenticatedRuntime).toContain('const trustedIngestionEnabled = Boolean(identity.oauthClientId)')
-    expect(authenticatedRuntime).toContain("dataMode: trustedIngestionEnabled ? 'google-drive' : 'google-drive-readonly'")
+    expect(authenticatedRuntime).toContain("dataMode: 'google-drive'")
+    expect(authenticatedRuntime).toContain("explicitUserWriteMode: 'enabled'")
     expect(authenticatedRuntime).toContain("trustedIngestionMode: trustedIngestionEnabled ? 'enabled' : 'disabled'")
     expect(authenticatedRuntime).not.toContain("trustedIngestionMode: 'enabled'")
   })
