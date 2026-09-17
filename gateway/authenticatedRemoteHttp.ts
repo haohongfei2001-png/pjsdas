@@ -13,7 +13,7 @@ import {
   type WorkspaceWriteInput,
 } from './workspaceSource.js'
 
-export const AUTHENTICATED_GATEWAY_VERSION = '1.9.0-alpha.2' as const
+export const AUTHENTICATED_GATEWAY_VERSION = '1.9.0-alpha.1' as const
 export const AUTHENTICATED_MCP_RESOURCE = backendUrl('/api/mcp')
 export const AUTHORIZATION_SERVER = `${PJSDAS_SUPABASE_URL}/auth/v1`
 export const PROTECTED_RESOURCE_METADATA_URL = backendUrl('/.well-known/oauth-protected-resource')
