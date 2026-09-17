@@ -13,7 +13,7 @@ import {
   type WorkspaceWriteInput,
 } from './workspaceSource.js'
 
-export const AUTHENTICATED_GATEWAY_VERSION = '1.9.0-alpha.1' as const
+export const AUTHENTICATED_GATEWAY_VERSION = '1.9.0-alpha.2' as const
 export const AUTHENTICATED_MCP_RESOURCE = backendUrl('/api/mcp')
 export const AUTHORIZATION_SERVER = `${PJSDAS_SUPABASE_URL}/auth/v1`
 export const PROTECTED_RESOURCE_METADATA_URL = backendUrl('/.well-known/oauth-protected-resource')
@@ -86,11 +86,11 @@ function lazyDriveSource(request: Request): WorkspaceSource {
 /**
  * Authenticated v1.9 runtime for the user's real PJSDAS Drive workspace.
  *
- * Read tools remain side-effect free. Review-only ChangeSets remain the path for
- * policy, preference, ambiguous and destructive changes. Autonomous trusted
- * ingestion is exposed only to validated Supabase OAuth client sessions carrying
- * an OAuth client_id claim. Ordinary first-party PJSDAS sessions remain
- * read/propose-only even if their bearer token is otherwise valid.
+ * Read tools remain side-effect free. Every authenticated user may perform the
+ * narrow additive add_opportunities write after an explicit current user command.
+ * Review-only ChangeSets remain the path for policy, preference, ambiguous and
+ * destructive changes. Autonomous trusted ingestion remains restricted to
+ * validated Supabase OAuth client sessions carrying an OAuth client_id claim.
  */
 export async function authenticatedRemoteMcpFetch(request: Request) {
   try {
@@ -105,9 +105,10 @@ export async function authenticatedRemoteMcpFetch(request: Request) {
     const handler = createMcpHandler(
       () => createPjsdasMcpServer(source, {
         version: AUTHENTICATED_GATEWAY_VERSION,
-        dataMode: trustedIngestionEnabled ? 'google-drive' : 'google-drive-readonly',
+        dataMode: 'google-drive',
         proposalMode: 'review-link',
         trustedIngestionMode: trustedIngestionEnabled ? 'enabled' : 'disabled',
+        explicitUserWriteMode: 'enabled',
         proposalSigningKey: env('PJSDAS_TOKEN_ENCRYPTION_KEY'),
       }),
     )
