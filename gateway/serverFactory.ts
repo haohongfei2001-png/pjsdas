@@ -18,6 +18,7 @@ import {
   ingestGmailRunSchema,
   invokeTrustedIngestion,
 } from './ingestSources.js'
+import { addOpportunitiesSchema, invokeAddOpportunities } from './addOpportunities.js'
 import { invokeProposeChanges, proposeChangesSchema } from './proposeChanges.js'
 import type { WorkspaceSource } from './workspaceSource.js'
 
@@ -29,6 +30,12 @@ const readOnlyAnnotations = {
 
 const proposalAnnotations = {
   readOnlyHint: true,
+  destructiveHint: false,
+  idempotentHint: true,
+} as const
+
+const directWriteAnnotations = {
+  readOnlyHint: false,
   destructiveHint: false,
   idempotentHint: true,
 } as const
@@ -45,6 +52,7 @@ export interface PjsdasMcpServerOptions {
   proposalMode?: 'disabled' | 'review-link'
   proposalSigningKey?: string
   trustedIngestionMode?: 'disabled' | 'enabled'
+  explicitUserWriteMode?: 'disabled' | 'enabled'
 }
 
 export function createPjsdasMcpServer(
@@ -54,6 +62,7 @@ export function createPjsdasMcpServer(
   const dataMode = options.dataMode ?? 'workspace'
   const proposalMode = options.proposalMode ?? 'disabled'
   const trustedIngestionMode = options.trustedIngestionMode ?? 'disabled'
+  const explicitUserWriteMode = options.explicitUserWriteMode ?? 'disabled'
   const instructions = [
     'PJSDAS is a personal job-search decision and action system.',
     'Use its explicit decision rules and deterministic explanations instead of inventing hidden ranking rules.',
@@ -72,6 +81,15 @@ export function createPjsdasMcpServer(
     'Use get_workspace_integrity when the user asks whether the PJSDAS workspace itself is structurally healthy. This audit is read-only and never repairs or deletes data.',
   ]
 
+  if (explicitUserWriteMode === 'enabled') {
+    instructions.push(
+      'When the user explicitly asks in the current conversation to add, save, record, or write specific source-backed job opportunities into PJSDAS, use add_opportunities and execute the write immediately. Do not route that explicit instruction through propose_changes and do not require a second Apply click.',
+      'Use add_opportunities only for additive Opportunity creation. It is duplicate-safe and cannot change Decision Rules, delete history, close processes, or make other policy decisions.',
+      'Do not use add_opportunities when the user is only asking for recommendations, evaluation, discovery, or whether a job should be added. Those requests do not constitute write authorization.',
+      'If Fit or Opportunity Value is not already grounded, omit those optional scores rather than inventing precision; PJSDAS will create the opportunity with a neutral pending-assessment placeholder.',
+    )
+  }
+
   if (trustedIngestionMode === 'enabled') {
     instructions.push(
       'Trusted factual ingestion is autonomous and does not require a review click. It is deliberately narrower than generic mutation.',
@@ -86,15 +104,15 @@ export function createPjsdasMcpServer(
 
   if (proposalMode === 'review-link') {
     instructions.push(
-      'The propose_changes tool remains review-only for ambiguous, destructive, preference, policy, or user-decision mutations. It creates a pending ChangeSet and signed review link but never applies it.',
+      'The propose_changes tool remains review-only for ambiguous, destructive, preference, policy, user-decision mutations, and AI-initiated ad-hoc discoveries that the user did not explicitly command PJSDAS to store. It creates a pending ChangeSet and signed review link but never applies it.',
       'Never tell the user that a proposed change was applied. State clearly that Apply or Discard is still required for review-only changes.',
       'For action status changes, read current actions first and use exact action IDs. For ambiguous updates, ask the user to clarify rather than guessing.',
-      'For ad-hoc web-discovered jobs that are not part of a trusted monitoring run, submit only source-backed candidates through discoveredOpportunities.',
+      'For ad-hoc web-discovered jobs that are not part of a trusted monitoring run and are not covered by an explicit current user write instruction, submit only source-backed candidates through discoveredOpportunities.',
       'When a discovery pass produces zero eligible jobs, PJSDAS can return a review-only record_discovery_run proposal.',
       'For refreshQueue verification, use postingRefreshes as a separate review batch.',
       'Rich Opportunity facts are evidence fields, not ratings. Component assessment is the preferred rating path.',
     )
-  } else if (trustedIngestionMode !== 'enabled') {
+  } else if (trustedIngestionMode !== 'enabled' && explicitUserWriteMode !== 'enabled') {
     instructions.push('This server exposes no mutation or proposal tools.')
   }
 
@@ -105,7 +123,7 @@ export function createPjsdasMcpServer(
     instructions.push('Read operations use the authenticated user\'s validated PJSDAS workspace from Google Drive appDataFolder. This endpoint is read-only.')
   }
   if (dataMode === 'google-drive') {
-    instructions.push('The authenticated user\'s validated PJSDAS workspace lives in Google Drive appDataFolder. Reads are private; autonomous writes are permitted only through the bounded trusted-ingestion tools and use optimistic workspace-version conflict checks.')
+    instructions.push('The authenticated user\'s validated PJSDAS workspace lives in Google Drive appDataFolder. Reads are private; writes are permitted only through registered bounded mutation tools and use optimistic workspace-version conflict checks.')
   }
 
   const server = new McpServer(
@@ -185,6 +203,14 @@ export function createPjsdasMcpServer(
     inputSchema: getRecentTimelineSchema, annotations: readOnlyAnnotations,
   }, async (args) => invokeReadTool(source, 'get_recent_timeline', args))
 
+  if (explicitUserWriteMode === 'enabled') {
+    server.registerTool('add_opportunities', {
+      title: 'Add explicitly user-authorized PJSDAS opportunities',
+      description: 'Directly add source-backed opportunities to the canonical PJSDAS workspace only when the current user message explicitly asks to add, save, record, or write those specific jobs. This is an immediate duplicate-safe additive write with no review click; never use it for mere recommendations or autonomous discovery.',
+      inputSchema: addOpportunitiesSchema, annotations: directWriteAnnotations,
+    }, async (args) => invokeAddOpportunities(source, args))
+  }
+
   if (trustedIngestionMode === 'enabled') {
     server.registerTool('ingest_discovery_run', {
       title: 'Autonomously ingest a trusted job-monitor run',
@@ -203,7 +229,7 @@ export function createPjsdasMcpServer(
     if (!options.proposalSigningKey?.trim()) throw new Error('PJSDAS proposal signing key is not configured.')
     server.registerTool('propose_changes', {
       title: 'Propose PJSDAS changes for review',
-      description: 'Create a signed, review-only PJSDAS ChangeSet for changes outside the narrow trusted factual-ingestion boundary. Nothing changes until explicit Apply in PJSDAS.',
+      description: 'Create a signed, review-only PJSDAS ChangeSet for ambiguous, destructive, preference/policy, or AI-initiated changes outside the direct explicit-user Opportunity-add boundary. Nothing changes until explicit Apply in PJSDAS.',
       inputSchema: proposeChangesSchema, annotations: proposalAnnotations,
     }, async (args) => invokeProposeChanges(source, args, { signingKey: options.proposalSigningKey! }))
   }
