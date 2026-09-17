@@ -4,7 +4,7 @@ import { runProductionSelfTest } from '../gateway/productionSelfTest.js'
 const BASE_URL = 'https://example.test'
 const METADATA_URL = `${BASE_URL}/.well-known/oauth-protected-resource`
 const RELEASE_SHA = '1234567890abcdef1234567890abcdef12345678'
-const REQUIRED_TOOLS = ['get_coverage_status', 'get_workspace_integrity', 'ingest_discovery_run', 'ingest_gmail_run']
+const REQUIRED_TOOLS = ['get_coverage_status', 'get_workspace_integrity', 'add_opportunities', 'ingest_discovery_run', 'ingest_gmail_run']
 
 function health() {
   return {
@@ -14,7 +14,7 @@ function health() {
     resource: `${BASE_URL}/api/mcp`,
     release: { commitSha: RELEASE_SHA },
     authenticatedMcp: {
-      toolSurfaceVersion: 'v1',
+      toolSurfaceVersion: 'v2',
       releaseRequiredTools: REQUIRED_TOOLS,
     },
     status: 'ok',

@@ -35,8 +35,8 @@ afterEach(() => {
   vi.unstubAllEnvs()
 })
 
-describe('OAuth trusted-ingestion capability boundary', () => {
-  it('keeps ordinary authenticated PJSDAS sessions read/propose-only', async () => {
+describe('authenticated write capability boundary', () => {
+  it('gives ordinary authenticated PJSDAS sessions the bounded explicit-user add tool but not autonomous trusted ingestion', async () => {
     vi.stubEnv('PJSDAS_TOKEN_ENCRYPTION_KEY', 'test-proposal-signing-secret')
     const fetchImpl = vi.fn(async (input: RequestInfo | URL) => {
       if (String(input).endsWith('/auth/v1/user')) return json({ id: 'user-a', email: 'a@gmail.com' })
@@ -49,11 +49,12 @@ describe('OAuth trusted-ingestion capability boundary', () => {
     const text = await responseText(response)
     expect(text).toContain('get_today_plan')
     expect(text).toContain('propose_changes')
+    expect(text).toContain('add_opportunities')
     expect(text).not.toContain('ingest_discovery_run')
     expect(text).not.toContain('ingest_gmail_run')
   })
 
-  it('exposes bounded trusted ingestion to a Supabase-validated OAuth client session', async () => {
+  it('exposes both explicit-user writes and bounded trusted ingestion to a Supabase-validated OAuth client session', async () => {
     vi.stubEnv('PJSDAS_TOKEN_ENCRYPTION_KEY', 'test-proposal-signing-secret')
     const oauthToken = jwt({
       sub: 'user-a',
@@ -69,12 +70,13 @@ describe('OAuth trusted-ingestion capability boundary', () => {
     const response = await authenticatedRemoteMcpFetch(mcpRequest(oauthToken))
     expect(response.status).toBe(200)
     const text = await responseText(response)
+    expect(text).toContain('add_opportunities')
     expect(text).toContain('ingest_discovery_run')
     expect(text).toContain('ingest_gmail_run')
     expect(oauthClientIdFromValidatedAccessToken(oauthToken)).toBe('1af5d928-7c67-4330-9521-e8886794fd14')
   })
 
-  it('cannot gain trusted-ingestion capability from an OAuth-looking token that Supabase rejects', async () => {
+  it('cannot gain any authenticated write capability from a token that Supabase rejects', async () => {
     vi.stubEnv('PJSDAS_TOKEN_ENCRYPTION_KEY', 'test-proposal-signing-secret')
     const forged = jwt({
       sub: 'attacker',
@@ -90,6 +92,7 @@ describe('OAuth trusted-ingestion capability boundary', () => {
     expect(response.status).toBe(401)
     const text = await response.text()
     expect(text).toContain('AUTH_REQUIRED')
+    expect(text).not.toContain('add_opportunities')
     expect(text).not.toContain('ingest_discovery_run')
   })
 })
