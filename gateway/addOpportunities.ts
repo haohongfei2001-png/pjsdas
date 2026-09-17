@@ -68,7 +68,7 @@ function buildOpportunity(candidate: AddOpportunityCandidate, now: Date): Opport
   })
   const identity = jobIdentityKey(candidate.company, candidate.role, candidate.location)
   const id = `user-opportunity:${stableIngestionHash(`${identity}|${posting.canonicalSourceUrl}`)}`
-  const hasAssessment = candidate.opportunityValue !== undefined || candidate.fitScore !== undefined
+  const hasAssessment = candidate.opportunityValue !== undefined && candidate.fitScore !== undefined
 
   return {
     id,
@@ -174,7 +174,7 @@ export async function invokeAddOpportunities(source: WorkspaceSource, rawArgs: u
     const duplicates: Array<{ opportunityId: string; company: string; role: string; existingCompany: string; existingRole: string }> = []
 
     for (const candidate of args.opportunities) {
-      const existing = findSimilarOpportunity(candidate, next.data.opportunities.filter((item) => item.processStage !== 'closed'))
+      const existing = findSimilarOpportunity(candidate, next.data.opportunities)
       if (existing) {
         duplicates.push({
           opportunityId: existing.id,
