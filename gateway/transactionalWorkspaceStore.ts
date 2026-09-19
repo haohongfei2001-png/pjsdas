@@ -1,0 +1,192 @@
+import { validateSnapshot, type PJSDASSnapshot } from '../src/snapshot.js'
+import { WorkspaceSourceError } from './workspaceSource.js'
+
+export type MutationPrincipalKind = 'first_party_web' | 'delegated_mcp' | 'automation'
+
+export interface ConnectedWorkspaceRecord {
+  workspaceId: string
+  userId: string
+  snapshot: PJSDASSnapshot
+  revision: number
+  schemaVersion: number
+}
+
+export interface ConnectedCommitInput {
+  userId: string
+  commandId: string
+  operation: string
+  payloadHash: string
+  expectedRevision: number
+  snapshot: PJSDASSnapshot
+  schemaVersion: number
+  principalKind: MutationPrincipalKind
+  clientId?: string
+  provenance?: Record<string, unknown>
+  effectiveTime?: string
+}
+
+export interface ConnectedCommitResult {
+  outcome: 'COMMITTED' | 'ALREADY_APPLIED' | 'CONFLICT'
+  workspaceId: string
+  revision: number
+  snapshot: PJSDASSnapshot
+  receipt: Record<string, unknown>
+}
+
+export interface TransactionalWorkspaceStoreOptions {
+  supabaseUrl: string
+  serviceRoleKey: string
+  fetchImpl?: typeof fetch
+}
+
+function authHeaders(serviceRoleKey: string) {
+  return {
+    Authorization: `Bearer ${serviceRoleKey}`,
+    apikey: serviceRoleKey,
+    'content-type': 'application/json',
+  }
+}
+
+function requireServiceRoleKey(value: string) {
+  const key = value.trim()
+  if (!key) throw new WorkspaceSourceError('INVALID_SOURCE_CONFIG', 'PJSDAS transactional workspace service credential is not configured.', false)
+  return key
+}
+
+function validRevision(value: unknown): value is number {
+  return typeof value === 'number' && Number.isInteger(value) && value >= 0
+}
+
+function parseWorkspaceRow(row: Record<string, unknown>, userId: string): ConnectedWorkspaceRecord {
+  if (row.user_id !== userId || typeof row.id !== 'string' || !validRevision(row.revision) || typeof row.schema_version !== 'number') {
+    throw new WorkspaceSourceError('WORKSPACE_INVALID', 'PJSDAS transactional workspace metadata is invalid.', false)
+  }
+  validateSnapshot(row.snapshot)
+  return {
+    workspaceId: row.id,
+    userId,
+    snapshot: row.snapshot,
+    revision: row.revision,
+    schemaVersion: row.schema_version,
+  }
+}
+
+export function createTransactionalWorkspaceStore(options: TransactionalWorkspaceStoreOptions) {
+  const baseUrl = options.supabaseUrl.replace(/\/+$/, '')
+  const serviceRoleKey = requireServiceRoleKey(options.serviceRoleKey)
+  const fetchImpl = options.fetchImpl ?? fetch
+
+  async function request(path: string, init: RequestInit = {}) {
+    let response: Response
+    try {
+      response = await fetchImpl(`${baseUrl}${path}`, {
+        ...init,
+        headers: { ...authHeaders(serviceRoleKey), ...(init.headers ?? {}) },
+      })
+    } catch {
+      throw new WorkspaceSourceError('WORKSPACE_UNAVAILABLE', 'PJSDAS transactional workspace is temporarily unavailable.', true)
+    }
+    return response
+  }
+
+  return {
+    async readForUser(userId: string): Promise<ConnectedWorkspaceRecord | null> {
+      const params = new URLSearchParams({
+        select: 'id,user_id,snapshot,revision,schema_version',
+        user_id: `eq.${userId}`,
+        limit: '1',
+      })
+      const response = await request(`/rest/v1/pjsdas_workspaces?${params.toString()}`, { method: 'GET' })
+      if (!response.ok) {
+        throw new WorkspaceSourceError('WORKSPACE_UNAVAILABLE', `PJSDAS workspace read failed (HTTP ${response.status}).`, response.status >= 500 || response.status === 429)
+      }
+      const rows = await response.json().catch(() => undefined) as Record<string, unknown>[] | undefined
+      if (!rows) throw new WorkspaceSourceError('WORKSPACE_INVALID', 'PJSDAS workspace read returned invalid JSON.', false)
+      return rows[0] ? parseWorkspaceRow(rows[0], userId) : null
+    },
+
+    async bootstrapForUser(input: {
+      userId: string
+      snapshot: PJSDASSnapshot
+      schemaVersion: number
+      sourceFingerprint?: string
+      migratedFrom?: string
+    }): Promise<ConnectedWorkspaceRecord> {
+      validateSnapshot(input.snapshot)
+      const response = await request('/rest/v1/rpc/pjsdas_bootstrap_workspace', {
+        method: 'POST',
+        body: JSON.stringify({
+          target_user_id: input.userId,
+          initial_snapshot: input.snapshot,
+          initial_schema_version: input.schemaVersion,
+          initial_source_fingerprint: input.sourceFingerprint ?? null,
+          initial_migrated_from: input.migratedFrom ?? null,
+        }),
+      })
+      if (!response.ok) {
+        throw new WorkspaceSourceError('WORKSPACE_MIGRATION_FAILED', `PJSDAS workspace bootstrap failed (HTTP ${response.status}).`, response.status >= 500 || response.status === 429)
+      }
+      const rows = await response.json().catch(() => undefined) as Array<Record<string, unknown>> | undefined
+      const row = rows?.[0]
+      if (!row || typeof row.workspace_id !== 'string' || !validRevision(row.revision)) {
+        throw new WorkspaceSourceError('WORKSPACE_INVALID', 'PJSDAS workspace bootstrap returned invalid metadata.', false)
+      }
+      validateSnapshot(row.snapshot)
+      return {
+        workspaceId: row.workspace_id,
+        userId: input.userId,
+        snapshot: row.snapshot,
+        revision: row.revision,
+        schemaVersion: input.schemaVersion,
+      }
+    },
+
+    async commitForUser(input: ConnectedCommitInput): Promise<ConnectedCommitResult> {
+      validateSnapshot(input.snapshot)
+      const response = await request('/rest/v1/rpc/pjsdas_commit_workspace', {
+        method: 'POST',
+        body: JSON.stringify({
+          target_user_id: input.userId,
+          target_command_id: input.commandId,
+          target_operation: input.operation,
+          target_payload_hash: input.payloadHash,
+          target_expected_revision: input.expectedRevision,
+          target_snapshot: input.snapshot,
+          target_schema_version: input.schemaVersion,
+          target_principal_kind: input.principalKind,
+          target_client_id: input.clientId ?? null,
+          target_provenance: input.provenance ?? {},
+          target_effective_time: input.effectiveTime ?? null,
+        }),
+      })
+      if (!response.ok) {
+        const body = await response.json().catch(() => ({})) as { message?: string; details?: string }
+        const duplicateCommand = response.status === 409 || body.message?.includes('different payload') || body.details?.includes('different payload')
+        throw new WorkspaceSourceError(
+          duplicateCommand ? 'COMMAND_ID_REUSED' : 'WORKSPACE_COMMIT_FAILED',
+          duplicateCommand ? 'PJSDAS command id was reused with a different payload.' : `PJSDAS workspace commit failed (HTTP ${response.status}).`,
+          !duplicateCommand && (response.status >= 500 || response.status === 429),
+        )
+      }
+
+      const rows = await response.json().catch(() => undefined) as Array<Record<string, unknown>> | undefined
+      const row = rows?.[0]
+      if (
+        !row
+        || !['COMMITTED', 'ALREADY_APPLIED', 'CONFLICT'].includes(String(row.outcome))
+        || typeof row.workspace_id !== 'string'
+        || !validRevision(row.revision)
+      ) {
+        throw new WorkspaceSourceError('WORKSPACE_INVALID', 'PJSDAS commit returned invalid metadata.', false)
+      }
+      validateSnapshot(row.snapshot)
+      return {
+        outcome: row.outcome as ConnectedCommitResult['outcome'],
+        workspaceId: row.workspace_id,
+        revision: row.revision,
+        snapshot: row.snapshot,
+        receipt: typeof row.receipt === 'object' && row.receipt !== null ? row.receipt as Record<string, unknown> : {},
+      }
+    },
+  }
+}
