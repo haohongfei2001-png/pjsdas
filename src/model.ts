@@ -292,6 +292,8 @@ export interface OpportunityDiscoveryEvidence {
   compensationText?: string
   rationale: string
   discoveredAt: string
+  sourceVerification?: 'verified' | 'unverified'
+  sourceVerifiedAt?: string
   fitConfidence: DiscoveryConfidence
   opportunityValueConfidence: DiscoveryConfidence
   profileWarnings?: string[]
