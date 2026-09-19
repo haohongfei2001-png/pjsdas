@@ -84,6 +84,43 @@ describe('AI-operated mutation kernel foundation', () => {
     expect(calls[1]?.body.target_payload_hash).toMatch(/^[0-9a-f]{64}$/)
   })
 
+  it('returns ALREADY_APPLIED when a lost-response retry carries the old revision', async () => {
+    const initial = snapshot()
+    const fetchImpl = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.includes('/rest/v1/pjsdas_workspaces?')) {
+        return json([{ id: 'ws-1', user_id: 'user-a', snapshot: initial, revision: 4, schema_version: 1 }])
+      }
+      if (url.includes('/rest/v1/pjsdas_command_ledger?')) {
+        const payloadHash = await hashMutationPayload('Test', { value: 1 })
+        return json([{
+          command_id: 'cmd-retry',
+          operation: 'Test',
+          payload_hash: payloadHash,
+          resulting_revision: 4,
+          status: 'COMMITTED',
+          receipt: { commandId: 'cmd-retry', status: 'COMMITTED', revision: 4 },
+          compensation: null,
+        }])
+      }
+      return json({ error: 'unexpected' }, 500)
+    }) as unknown as typeof fetch
+    const kernel = createMutationKernel({
+      supabaseUrl: 'https://example.supabase.co',
+      serviceRoleKey: 'service-role-secret',
+      fetchImpl,
+    })
+
+    const result = await kernel.execute(
+      { kind: 'first_party_web', userId: 'user-a' },
+      { commandId: 'cmd-retry', operation: 'Test', payload: { value: 1 }, expectedRevision: 3 },
+      (current) => current,
+    )
+
+    expect(result).toMatchObject({ outcome: 'ALREADY_APPLIED', revision: 4 })
+    expect(fetchImpl).toHaveBeenCalledTimes(2)
+  })
+
   it('returns conflict before mutation when the requested revision is stale', async () => {
     const fetchImpl = vi.fn(async () => json([{
       id: 'ws-1',
