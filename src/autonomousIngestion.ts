@@ -147,6 +147,7 @@ function monitorOpportunityId(observation: MonitorJobObservation) {
 }
 
 function createMonitorOpportunity(observation: MonitorJobObservation, observedAt: string): Opportunity {
+  const sourceVerifiedAt = observation.sourceVerifiedAt ?? observedAt
   const posting = createJobPostingEvidence({
     company: observation.company,
     role: observation.role,
@@ -156,7 +157,7 @@ function createMonitorOpportunity(observation: MonitorJobObservation, observedAt
     deadline: observation.deadline,
     compensationText: observation.compensationText,
     postingStatus: observation.postingStatus ?? 'unknown',
-    observedAt,
+    observedAt: sourceVerifiedAt,
   })
   return {
     id: monitorOpportunityId(observation),
@@ -184,6 +185,8 @@ function createMonitorOpportunity(observation: MonitorJobObservation, observedAt
         compensationText: observation.compensationText,
         rationale: observation.rationale,
         discoveredAt: observedAt,
+        sourceVerification: observation.sourceVerification,
+        sourceVerifiedAt: observation.sourceVerifiedAt,
         fitConfidence: observation.fitConfidence,
         opportunityValueConfidence: observation.opportunityValueConfidence,
         posting,
@@ -193,6 +196,7 @@ function createMonitorOpportunity(observation: MonitorJobObservation, observedAt
 }
 
 function mergeMonitorObservation(existing: Opportunity, observation: MonitorJobObservation, observedAt: string) {
+  const sourceVerifiedAt = observation.sourceVerifiedAt ?? observedAt
   const incoming = createJobPostingEvidence({
     company: observation.company,
     role: observation.role,
@@ -202,7 +206,7 @@ function mergeMonitorObservation(existing: Opportunity, observation: MonitorJobO
     deadline: observation.deadline,
     compensationText: observation.compensationText,
     postingStatus: observation.postingStatus ?? 'unknown',
-    observedAt,
+    observedAt: sourceVerifiedAt,
   })
   const discovery = existing.detail?.discovery
   const current = discovery?.posting
@@ -223,6 +227,8 @@ function mergeMonitorObservation(existing: Opportunity, observation: MonitorJobO
         compensationText: observation.compensationText ?? discovery?.compensationText,
         rationale: discovery?.rationale ?? observation.rationale,
         discoveredAt: discovery?.discoveredAt ?? observedAt,
+        sourceVerification: observation.sourceVerification ?? discovery?.sourceVerification,
+        sourceVerifiedAt: observation.sourceVerifiedAt ?? discovery?.sourceVerifiedAt,
         fitConfidence: discovery?.fitConfidence ?? observation.fitConfidence,
         opportunityValueConfidence: discovery?.opportunityValueConfidence ?? observation.opportunityValueConfidence,
         profileWarnings: discovery?.profileWarnings,
