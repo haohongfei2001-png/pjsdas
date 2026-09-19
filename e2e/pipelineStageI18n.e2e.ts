@@ -51,6 +51,7 @@ async function seed(page: import('@playwright/test').Page) {
 test('Pipeline and mobile opportunity cards localize canonical stored stages without mutating them', async ({ page }) => {
   await seed(page)
   await page.getByRole('button', { name: 'EN', exact: true }).click()
+  await page.locator('.surface-nav').getByRole('button', { name: /Opportunities/ }).click()
   await page.locator('.surface-context-tabs button').filter({ hasText: 'Opportunities' }).click()
   await page.locator('.surface-context-tabs button').filter({ hasText: 'Pipeline' }).click()
 
