@@ -112,6 +112,71 @@ describe('AI-operated mutation kernel foundation', () => {
     expect(fetchImpl).toHaveBeenCalledTimes(1)
   })
 
+  it('prepares automatic undo only when the target command is still the latest revision', async () => {
+    const fetchImpl = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.includes('/rest/v1/pjsdas_workspaces?')) {
+        return json([{ id: 'ws-1', user_id: 'user-a', snapshot: snapshot(), revision: 4, schema_version: 1 }])
+      }
+      if (url.includes('/rest/v1/pjsdas_command_ledger?')) {
+        return json([{
+          command_id: 'cmd-4',
+          operation: 'CompleteAction',
+          payload_hash: 'abc',
+          resulting_revision: 4,
+          status: 'COMMITTED',
+          receipt: { commandId: 'cmd-4', status: 'COMMITTED' },
+          compensation: { operation: 'SetActionStatus', payload: { actionId: 'a-1', status: 'todo' } },
+        }])
+      }
+      return json({ error: 'unexpected' }, 500)
+    }) as unknown as typeof fetch
+    const kernel = createMutationKernel({
+      supabaseUrl: 'https://example.supabase.co',
+      serviceRoleKey: 'service-role-secret',
+      fetchImpl,
+    })
+
+    await expect(kernel.prepareUndo({ kind: 'first_party_web', userId: 'user-a' }, 'cmd-4')).resolves.toMatchObject({
+      outcome: 'READY',
+      expectedRevision: 4,
+      compensation: { operation: 'SetActionStatus' },
+    })
+  })
+
+  it('refuses automatic undo after later dependent revisions exist', async () => {
+    const fetchImpl = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.includes('/rest/v1/pjsdas_workspaces?')) {
+        return json([{ id: 'ws-1', user_id: 'user-a', snapshot: snapshot(), revision: 6, schema_version: 1 }])
+      }
+      if (url.includes('/rest/v1/pjsdas_command_ledger?')) {
+        return json([{
+          command_id: 'cmd-4',
+          operation: 'CompleteAction',
+          payload_hash: 'abc',
+          resulting_revision: 4,
+          status: 'COMMITTED',
+          receipt: {},
+          compensation: { operation: 'SetActionStatus', payload: { actionId: 'a-1', status: 'todo' } },
+        }])
+      }
+      return json({ error: 'unexpected' }, 500)
+    }) as unknown as typeof fetch
+    const kernel = createMutationKernel({
+      supabaseUrl: 'https://example.supabase.co',
+      serviceRoleKey: 'service-role-secret',
+      fetchImpl,
+    })
+
+    await expect(kernel.prepareUndo({ kind: 'first_party_web', userId: 'user-a' }, 'cmd-4')).resolves.toMatchObject({
+      outcome: 'NEEDS_CONFIRMATION',
+      reason: 'DEPENDENT_CHANGES',
+      targetRevision: 4,
+      currentRevision: 6,
+    })
+  })
+
   it('requires delegated commands to carry a concrete client identity', async () => {
     const fetchImpl = vi.fn() as unknown as typeof fetch
     const kernel = createMutationKernel({
