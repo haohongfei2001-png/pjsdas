@@ -11,6 +11,7 @@ export interface ConnectedWorkspaceHandlerConfig {
   serviceRoleKey: string
   allowedOrigins: string[]
   fetchImpl?: typeof fetch
+  authorizeIdentity?: (identity: import('./supabaseIdentity.js').PjsdasIdentity) => Promise<void>
 }
 
 function corsHeaders(origin: string | null, allowedOrigins: string[]) {
@@ -74,6 +75,7 @@ export function createConnectedWorkspaceHandler(config: ConnectedWorkspaceHandle
 
     try {
       const { identity } = await resolveIdentity(request)
+      await config.authorizeIdentity?.(identity)
       if (identity.oauthClientId) {
         throw new WorkspaceSourceError('AUTH_FORBIDDEN', 'Delegated OAuth clients cannot call the first-party connected workspace endpoint.', false)
       }
@@ -190,7 +192,7 @@ export function createConnectedWorkspaceHandler(config: ConnectedWorkspaceHandle
     } catch (caught) {
       const error = safeError(caught)
       const status = error.code === 'AUTH_REQUIRED' || error.code === 'AUTH_INVALID' ? 401
-        : error.code === 'AUTH_FORBIDDEN' || error.code === 'ORIGIN_NOT_ALLOWED' ? 403
+        : error.code === 'AUTH_FORBIDDEN' || error.code === 'ORIGIN_NOT_ALLOWED' || error.code === 'AUDIENCE_ACCESS_REQUIRED' || error.code === 'AUDIENCE_IDENTITY_MISMATCH' ? 403
           : error.code === 'WORKSPACE_CONFLICT' ? 409
             : error.code === 'WORKSPACE_MIGRATION_REQUIRED' || error.code === 'CONFIRMATION_REQUIRED' ? 409
               : error.retryable ? 503
