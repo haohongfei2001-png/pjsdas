@@ -188,7 +188,7 @@ begin
 
     outcome := 'ALREADY_APPLIED';
     workspace_id := existing_command.workspace_id;
-    revision := existing_command.resulting_revision;
+    revision := current_workspace.revision;
     snapshot := current_workspace.snapshot;
     receipt := existing_command.receipt;
     return next;
