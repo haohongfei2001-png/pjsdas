@@ -7,6 +7,7 @@ export interface AutomationSettingsHandlerConfig {
   supabasePublishableKey: string
   allowedOrigins: string[]
   fetchImpl?: typeof fetch
+  authorizeIdentity?: (identity: import('./supabaseIdentity.js').PjsdasIdentity) => Promise<void>
 }
 
 interface AutomationRow {
@@ -128,6 +129,7 @@ export function createAutomationSettingsHandler(config: AutomationSettingsHandle
 
     try {
       const { identity, accessToken } = await resolveIdentity(request)
+      await config.authorizeIdentity?.(identity)
       const current = await readRow(identity.userId, accessToken)
       if (request.method === 'GET') return json(200, statusForRow(current), origin, config.allowedOrigins)
 
