@@ -56,7 +56,8 @@ async function seedWorkspace(page: Page) {
 
 async function openBackup(page: Page) {
   await page.getByRole('button', { name: /设置/ }).click()
-  await expect(page.getByRole('heading', { name: '偏好、规则、同步与数据安全' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: '连接、自动化和长期控制' })).toBeVisible()
+  await page.locator('details.settings-group').filter({ hasText: '数据与恢复' }).locator('summary').click()
   await page.getByRole('button', { name: '本地备份' }).click()
   await expect(page.getByRole('heading', { name: '备份与恢复' })).toBeVisible()
 }
