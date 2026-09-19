@@ -1,5 +1,6 @@
 import { createMcpHandler } from '@modelcontextprotocol/server'
 import { createAuthenticatedDriveWorkspaceSource } from './authenticatedDriveSource.js'
+import { createTransactionalWorkspaceSource } from './transactionalWorkspaceSource.js'
 import { createAuthorizationGrantStore, grantAllows, type AuthorizationGrant } from './authorizationGrantStore.js'
 import { backendUrl } from './backendOrigin.js'
 import { createPjsdasMcpServer } from './serverFactory.js'
@@ -123,11 +124,21 @@ export async function authenticatedRemoteMcpFetch(request: Request) {
       }
     }
 
-    const source = lazyDriveSource(request)
+    const transactionalAuthority = process.env.PJSDAS_CONNECTED_AUTHORITY?.trim() === 'transactional'
+    const source = transactionalAuthority
+      ? createTransactionalWorkspaceSource({
+          userId: identity.userId,
+          supabaseUrl: PJSDAS_SUPABASE_URL,
+          serviceRoleKey: env('PJSDAS_SUPABASE_SERVICE_ROLE_KEY'),
+          principalKind: identity.oauthClientId ? 'delegated_mcp' : 'first_party_web',
+          clientId: identity.oauthClientId,
+          timezone: 'Asia/Shanghai',
+        })
+      : lazyDriveSource(request)
     const handler = createMcpHandler(
       () => createPjsdasMcpServer(source, {
         version: AUTHENTICATED_GATEWAY_VERSION,
-        dataMode: 'google-drive',
+        dataMode: transactionalAuthority ? 'transactional' : 'google-drive',
         proposalMode: 'review-link',
         trustedIngestionMode: trustedIngestionEnabled ? 'enabled' : 'disabled',
         trustedIngestionCapabilities: {
