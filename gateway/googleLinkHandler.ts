@@ -115,7 +115,7 @@ export function createGoogleLinkHandler(config: GoogleLinkHandlerConfig) {
     const origin = request.headers.get('origin')
 
     if (request.method === 'OPTIONS') {
-      const allowed = !origin || config.allowedOrigins.includes(origin)
+      const allowed = Boolean(origin && config.allowedOrigins.includes(origin))
       return new Response(null, {
         status: allowed ? 204 : 403,
         headers: corsHeaders(origin, config.allowedOrigins),
@@ -126,8 +126,8 @@ export function createGoogleLinkHandler(config: GoogleLinkHandlerConfig) {
       return json(405, { code: 'METHOD_NOT_ALLOWED', message: 'Use POST.' }, origin, config.allowedOrigins)
     }
 
-    if (origin && !config.allowedOrigins.includes(origin)) {
-      return json(403, { code: 'ORIGIN_NOT_ALLOWED', message: 'This origin is not allowed to link Google Drive.' }, origin, config.allowedOrigins)
+    if (!origin || !config.allowedOrigins.includes(origin)) {
+      return json(403, { code: 'ORIGIN_NOT_ALLOWED', message: 'Google Drive linking is available only to an approved first-party PJSDAS browser origin.' }, origin, config.allowedOrigins)
     }
 
     try {
