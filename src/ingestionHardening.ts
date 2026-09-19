@@ -88,6 +88,7 @@ function validIso(value: string) {
 }
 
 function mergeExistingMonitorObservation(existing: Opportunity, observation: MonitorJobObservation, observedAt: string) {
+  const sourceVerifiedAt = observation.sourceVerifiedAt ?? observedAt
   const incoming = createJobPostingEvidence({
     company: observation.company,
     role: observation.role,
@@ -97,7 +98,7 @@ function mergeExistingMonitorObservation(existing: Opportunity, observation: Mon
     deadline: observation.deadline,
     compensationText: observation.compensationText,
     postingStatus: observation.postingStatus ?? 'unknown',
-    observedAt,
+    observedAt: sourceVerifiedAt,
   })
   const discovery = existing.detail?.discovery
   const current = discovery?.posting
@@ -120,6 +121,8 @@ function mergeExistingMonitorObservation(existing: Opportunity, observation: Mon
         compensationText: observation.compensationText ?? discovery?.compensationText,
         rationale: discovery?.rationale ?? observation.rationale,
         discoveredAt: discovery?.discoveredAt ?? observedAt,
+        sourceVerification: observation.sourceVerification ?? discovery?.sourceVerification,
+        sourceVerifiedAt: observation.sourceVerifiedAt ?? discovery?.sourceVerifiedAt,
         fitConfidence: discovery?.fitConfidence ?? observation.fitConfidence,
         opportunityValueConfidence: discovery?.opportunityValueConfidence ?? observation.opportunityValueConfidence,
         profileWarnings: discovery?.profileWarnings,
