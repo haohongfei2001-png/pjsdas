@@ -19,6 +19,12 @@ describe('public production health contract', () => {
       version: '1.9.0-alpha.1',
       mode: 'google-drive-trusted-ingestion',
       workspaceAuthority: 'google-drive',
+      topology: {
+        canonicalWebOrigin: null,
+        canonicalApiOrigin: null,
+        legacyWebOrigins: ['https://haohongfei2001-png.github.io'],
+        audienceMode: 'legacy',
+      },
       auth: 'supabase-oauth-2.1',
       resource: 'https://standby.example/api/mcp',
       release: { commitSha: RELEASE_SHA },
@@ -67,6 +73,9 @@ describe('public production health contract', () => {
     expect(body.capabilities.gmailCompleteConsumption).toBe('v1')
     expect(body.capabilities.discoverySourceVerification).toBe('v1')
     expect(body.capabilities.discoveryFactAssessmentSeparation).toBe(true)
+    expect(body.capabilities.canonicalOriginPolicy).toBe('v1')
+    expect(body.capabilities.controlledAudience).toBe('v1')
+    expect(body.capabilities.connectedOriginMigration).toBe('v1')
     expect(body.authenticatedMcp.toolSurfaceVersion).toBe('v3')
     expect(body.authenticatedMcp.releaseRequiredTools).not.toContain('apply_user_command')
     expect(JSON.stringify(body)).not.toContain('synthetic-demo-only')
