@@ -76,7 +76,7 @@ export function createTransactionalWorkspaceSource(options: TransactionalWorkspa
       const writer = input.updatedByDevice?.trim() || options.sourceId || options.principalKind
       const result = await store.commitForUser({
         userId: options.userId,
-        commandId: `snapshot-write:${writer}:${fingerprint}`,
+        commandId: `snapshot-write:${writer}:${expectedRevision}:${fingerprint}`,
         operation: 'SnapshotWrite',
         payloadHash: fingerprint,
         expectedRevision,
