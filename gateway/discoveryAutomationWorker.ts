@@ -17,9 +17,11 @@ import {
 } from '../src/sourceRegistry.js'
 import type { PJSDASSnapshot } from '../src/snapshot.js'
 import { createDriveWorkspaceSource } from './driveWorkspaceSource.js'
+import { createTransactionalWorkspaceSource } from './transactionalWorkspaceSource.js'
 import { refreshGoogleAccessToken } from './googleOAuthTokens.js'
 import { decryptSecret } from './tokenCrypto.js'
 import type { DiscoveryAutomationBinding } from './automationConnectionStore.js'
+import { PJSDAS_SUPABASE_URL } from './supabaseProject.js'
 import { requireWritableWorkspaceSource, WorkspaceSourceError, type WorkspaceSource } from './workspaceSource.js'
 
 const DEFAULT_MODEL = 'perplexity/sonar'
@@ -368,17 +370,31 @@ export async function runDiscoveryAutomationForBinding(options: {
   const fetchImpl = options.fetchImpl ?? fetch
   const now = options.now?.() ?? new Date()
   const checkedAt = now.toISOString()
-  const refreshToken = await decryptSecret(options.binding.refreshTokenCiphertext, options.tokenEncryptionKey)
-  const accessToken = await refreshGoogleAccessToken(refreshToken, {
-    clientId: options.googleClientId,
-    clientSecret: options.googleClientSecret,
-    fetchImpl,
-  })
-  const source = createDriveWorkspaceSource({
-    getAccessToken: () => accessToken,
-    fetchImpl,
-    timezone: 'Asia/Shanghai',
-  })
+  const transactionalAuthority = process.env.PJSDAS_CONNECTED_AUTHORITY?.trim() === 'transactional'
+  let source: WorkspaceSource
+  if (transactionalAuthority) {
+    source = createTransactionalWorkspaceSource({
+      userId: options.binding.userId,
+      supabaseUrl: PJSDAS_SUPABASE_URL,
+      serviceRoleKey: process.env.PJSDAS_SUPABASE_SERVICE_ROLE_KEY ?? '',
+      principalKind: 'automation',
+      sourceId: 'discovery:server',
+      timezone: 'Asia/Shanghai',
+      fetchImpl,
+    })
+  } else {
+    const refreshToken = await decryptSecret(options.binding.refreshTokenCiphertext, options.tokenEncryptionKey)
+    const accessToken = await refreshGoogleAccessToken(refreshToken, {
+      clientId: options.googleClientId,
+      clientSecret: options.googleClientSecret,
+      fetchImpl,
+    })
+    source = createDriveWorkspaceSource({
+      getAccessToken: () => accessToken,
+      fetchImpl,
+      timezone: 'Asia/Shanghai',
+    })
+  }
   const initial = await source.read()
   const profile = discoveryProfileForSnapshot(initial.snapshot.data.discoveryProfile)
   if (!isDiscoveryProfileConfigured(profile)) {
