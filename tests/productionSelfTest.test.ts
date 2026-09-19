@@ -13,6 +13,12 @@ function health() {
     version: '1.9.0-alpha.1',
     mode: 'google-drive-trusted-ingestion',
     workspaceAuthority: 'google-drive',
+    topology: {
+      canonicalWebOrigin: null,
+      canonicalApiOrigin: null,
+      legacyWebOrigins: ['https://haohongfei2001-png.github.io'],
+      audienceMode: 'legacy',
+    },
     resource: `${BASE_URL}/api/mcp`,
     release: { commitSha: RELEASE_SHA },
     authenticatedMcp: {
@@ -53,6 +59,9 @@ function health() {
       gmailCompleteConsumption: 'v1',
       discoverySourceVerification: 'v1',
       discoveryFactAssessmentSeparation: true,
+      canonicalOriginPolicy: 'v1',
+      controlledAudience: 'v1',
+      connectedOriginMigration: 'v1',
     },
   }
 }
@@ -94,6 +103,46 @@ describe('production self-test', () => {
     expect(result.checks.find((item) => item.name === 'discovery-automation.worker-unauthorized')?.status).toBe('pass')
     expect(result.checks.find((item) => item.name === 'mcp.metadata-origin')?.status).toBe('pass')
     expect(result.checks.find((item) => item.name === 'mcp.authenticated.tools')?.status).toBe('skipped')
+  })
+
+  it('validates configured canonical topology and audience mode independently of the fallback host', async () => {
+    const canonicalApi = 'https://api.pjsdas.example'
+    const canonicalWeb = 'https://pjsdas.example'
+    const payload = health() as any
+    payload.topology = {
+      canonicalWebOrigin: canonicalWeb,
+      canonicalApiOrigin: canonicalApi,
+      legacyWebOrigins: ['https://haohongfei2001-png.github.io'],
+      audienceMode: 'allowlist',
+    }
+    payload.resource = `${canonicalApi}/api/mcp`
+
+    const fetchImpl = vi.fn(async (input: RequestInfo | URL | Request) => {
+      const request = input instanceof Request ? input : new Request(String(input))
+      if (request.url.endsWith('/api/health')) return Response.json(payload)
+      if (request.url.endsWith('/api/google-access-token')) return Response.json({ code: 'AUTH_REQUIRED' }, { status: 401 })
+      if (request.url.endsWith('/api/automation-settings')) return Response.json({ code: 'AUTH_REQUIRED' }, { status: 401 })
+      if (request.url.endsWith('/api/automation-gmail')) return Response.json({ code: 'AUTOMATION_AUTH_REQUIRED' }, { status: 401 })
+      if (request.url.endsWith('/api/automation-discovery')) return Response.json({ code: 'AUTOMATION_AUTH_REQUIRED' }, { status: 401 })
+      if (request.url.endsWith('/api/mcp')) return Response.json({ code: 'AUTH_REQUIRED' }, {
+        status: 401,
+        headers: { 'WWW-Authenticate': `Bearer resource_metadata="${canonicalApi}/.well-known/oauth-protected-resource"` },
+      })
+      return new Response('not found', { status: 404 })
+    }) as unknown as typeof fetch
+
+    const result = await runProductionSelfTest({
+      baseUrl: BASE_URL,
+      expectedAudienceMode: 'allowlist',
+      expectedCanonicalWebOrigin: canonicalWeb,
+      expectedCanonicalApiOrigin: canonicalApi,
+      fetchImpl,
+    })
+    expect(result.ok).toBe(true)
+    expect(result.checks.find((item) => item.name === 'health.audience-mode')?.status).toBe('pass')
+    expect(result.checks.find((item) => item.name === 'health.canonical-web-origin')?.status).toBe('pass')
+    expect(result.checks.find((item) => item.name === 'health.canonical-api-origin')?.status).toBe('pass')
+    expect(result.checks.find((item) => item.name === 'mcp.metadata-origin')?.status).toBe('pass')
   })
 
   it('accepts transactional mode only when the caller explicitly expects it', async () => {
