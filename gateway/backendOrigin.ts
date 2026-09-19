@@ -10,7 +10,8 @@ function normalizeOrigin(value: string) {
 
 function configuredPublicOrigin() {
   if (typeof process === 'undefined') return undefined
-  const value = process.env.PJSDAS_PUBLIC_BACKEND_ORIGIN?.trim()
+  const value = process.env.PJSDAS_CANONICAL_API_ORIGIN?.trim()
+    || process.env.PJSDAS_PUBLIC_BACKEND_ORIGIN?.trim()
   return value || undefined
 }
 
