@@ -1,6 +1,6 @@
 import {
-  AUTHENTICATED_MCP_RELEASE_REQUIRED_TOOLS,
   AUTHENTICATED_MCP_TOOL_SURFACE_VERSION,
+  authenticatedMcpReleaseRequiredTools,
 } from './mcpToolSurface.js'
 
 export interface ProductionSelfTestCheck {
@@ -87,6 +87,7 @@ export async function runProductionSelfTest(options: {
   const expectedMode = expectedWorkspaceAuthority === 'transactional'
     ? 'transactional-connected'
     : 'google-drive-trusted-ingestion'
+  const expectedMcpTools = authenticatedMcpReleaseRequiredTools(expectedWorkspaceAuthority)
   const checks: ProductionSelfTestCheck[] = []
 
   try {
@@ -116,7 +117,7 @@ export async function runProductionSelfTest(options: {
       `toolSurfaceVersion=${String(authenticatedMcp.toolSurfaceVersion)}`,
     ))
     const releaseRequiredTools = Array.isArray(authenticatedMcp.releaseRequiredTools) ? authenticatedMcp.releaseRequiredTools : []
-    for (const tool of AUTHENTICATED_MCP_RELEASE_REQUIRED_TOOLS) {
+    for (const tool of expectedMcpTools {
       checks.push(check(
         `health.authenticated-mcp-tool.${tool}`,
         releaseRequiredTools.includes(tool),
@@ -174,7 +175,7 @@ export async function runProductionSelfTest(options: {
       const response = await fetchImpl(mcpToolsRequest(baseUrl, options.accessToken.trim()))
       const text = await textOf(response)
       checks.push(check('mcp.authenticated.http', response.status === 200, `HTTP ${response.status}`))
-      for (const tool of AUTHENTICATED_MCP_RELEASE_REQUIRED_TOOLS) {
+      for (const tool of expectedMcpTools {
         checks.push(check(`mcp.tool.${tool}`, text.includes(tool), text.includes(tool) ? 'present' : 'missing'))
       }
     } catch (caught) {
