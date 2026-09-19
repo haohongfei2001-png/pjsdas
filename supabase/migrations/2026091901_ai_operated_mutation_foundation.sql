@@ -164,6 +164,18 @@ begin
     raise exception 'PJSDAS commit arguments are incomplete.' using errcode = '22023';
   end if;
 
+  -- Serialize every commit for one workspace before consulting the command
+  -- ledger. This makes a simultaneous retry of the same command observe the
+  -- first committed receipt instead of racing into a false revision conflict.
+  select * into current_workspace
+  from public.pjsdas_workspaces
+  where user_id = target_user_id
+  for update;
+
+  if not found then
+    raise exception 'PJSDAS connected workspace does not exist.' using errcode = 'P0001';
+  end if;
+
   select * into existing_command
   from public.pjsdas_command_ledger
   where user_id = target_user_id
@@ -174,10 +186,6 @@ begin
       raise exception 'PJSDAS command id was reused with a different payload.' using errcode = '23505';
     end if;
 
-    select * into current_workspace
-    from public.pjsdas_workspaces
-    where id = existing_command.workspace_id;
-
     outcome := 'ALREADY_APPLIED';
     workspace_id := existing_command.workspace_id;
     revision := existing_command.resulting_revision;
@@ -185,15 +193,6 @@ begin
     receipt := existing_command.receipt;
     return next;
     return;
-  end if;
-
-  select * into current_workspace
-  from public.pjsdas_workspaces
-  where user_id = target_user_id
-  for update;
-
-  if not found then
-    raise exception 'PJSDAS connected workspace does not exist.' using errcode = 'P0001';
   end if;
 
   if target_expected_revision is null or current_workspace.revision <> target_expected_revision then
