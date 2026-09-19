@@ -57,6 +57,7 @@ export interface GmailAutomationFetchResult {
   continuation?: GmailAutomationContinuation
   coverageComplete: boolean
   usedFallbackScan: boolean
+  recoveryGapReason?: string
 }
 
 export interface GmailAutomationRunResult {
@@ -65,6 +66,7 @@ export interface GmailAutomationRunResult {
   nextHistoryId?: string
   continuation?: GmailAutomationContinuation
   coverageComplete: boolean
+  recoveryGapDetected: boolean
   receivedCount: number
   accountedCount: number
   unresolvedCount: number
@@ -272,6 +274,7 @@ export async function fetchGmailAutomationBatch(options: {
   let nextPageToken: string | undefined
   let pendingHistoryId: string
   let usedFallbackScan = false
+  let recoveryGapReason: string | undefined
 
   const fallbackPage = async (pageToken?: string, pending = currentHistoryId) => {
     const page = await initialMessagePage(fetchImpl, options.accessToken, pageToken)
@@ -287,22 +290,24 @@ export async function fetchGmailAutomationBatch(options: {
   } else if (previous?.mode === 'history' && options.startHistoryId) {
     const page = await historyMessagePage(fetchImpl, options.accessToken, options.startHistoryId, previous.pageToken)
     if (page.expired) {
+      recoveryGapReason = `Gmail history cursor ${options.startHistoryId} expired before PJSDAS could prove complete consumption; bounded recent recovery cannot prove older mailbox coverage.`
       await fallbackPage(undefined, currentHistoryId)
     } else {
       mode = 'history'
       ids = page.ids
       nextPageToken = page.nextPageToken
-      pendingHistoryId = page.historyId ?? previous.pendingHistoryId
+      pendingHistoryId = previous.pendingHistoryId
     }
   } else if (options.startHistoryId) {
     const page = await historyMessagePage(fetchImpl, options.accessToken, options.startHistoryId)
     if (page.expired) {
+      recoveryGapReason = `Gmail history cursor ${options.startHistoryId} expired before PJSDAS could prove complete consumption; bounded recent recovery cannot prove older mailbox coverage.`
       await fallbackPage(undefined, currentHistoryId)
     } else {
       mode = 'history'
       ids = page.ids
       nextPageToken = page.nextPageToken
-      pendingHistoryId = page.historyId ?? currentHistoryId
+      pendingHistoryId = currentHistoryId
     }
   } else {
     await fallbackPage(undefined, currentHistoryId)
@@ -319,7 +324,18 @@ export async function fetchGmailAutomationBatch(options: {
     continuation: bounded.continuation,
     coverageComplete: bounded.coverageComplete,
     usedFallbackScan,
+    recoveryGapReason,
   }
+}
+
+function stableCoverageGapId(startHistoryId: string, checkedAt: string) {
+  const value = `${startHistoryId}|${checkedAt.slice(0, 10)}`
+  let hash = 2166136261
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= value.charCodeAt(index)
+    hash = Math.imul(hash, 16777619)
+  }
+  return (hash >>> 0).toString(36)
 }
 
 function requiresTiming(type: ProcessEventType | undefined) {
@@ -439,6 +455,16 @@ export async function runGmailAutomationForBinding(options: {
   const messages = batch.messages
     .map((message) => gmailObservationFromMessage(message, workspace.snapshot.data.opportunities, now))
     .filter((message): message is HardenedGmailMessageObservation => Boolean(message))
+  if (batch.recoveryGapReason) {
+    messages.unshift({
+      sourceRecordId: `coverage-gap:${stableCoverageGapId(options.binding.gmailHistoryId ?? 'initial', checkedAt)}`,
+      receivedAt: checkedAt,
+      classification: 'recruiting',
+      confidence: 'low',
+      subject: 'PJSDAS Gmail coverage gap',
+      notes: batch.recoveryGapReason.slice(0, 800),
+    })
+  }
   const result = applyGmailIngestionHardened(workspace.snapshot, {
     runId: `gmail:auto:${checkedAt}`,
     sourceId: GMAIL_SOURCE_ID,
@@ -466,6 +492,7 @@ export async function runGmailAutomationForBinding(options: {
     nextHistoryId: batch.nextHistoryId,
     continuation: batch.continuation,
     coverageComplete: batch.coverageComplete,
+    recoveryGapDetected: Boolean(batch.recoveryGapReason),
     receivedCount: result.run.receivedCount,
     accountedCount: result.run.accountedCount,
     unresolvedCount: result.run.outcomes.unresolved ?? 0,
