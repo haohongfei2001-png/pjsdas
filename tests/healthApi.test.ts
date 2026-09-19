@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import health, { PUBLIC_HEALTH_CAPABILITIES } from '../api/health.js'
+import health, { currentWorkspaceAuthority, PUBLIC_HEALTH_CAPABILITIES } from '../api/health.js'
 
 const RELEASE_SHA = '1234567890abcdef1234567890abcdef12345678'
 
@@ -18,6 +18,7 @@ describe('public production health contract', () => {
       service: 'pjsdas-authenticated-mcp',
       version: '1.9.0-alpha.1',
       mode: 'google-drive-trusted-ingestion',
+      workspaceAuthority: 'google-drive',
       auth: 'supabase-oauth-2.1',
       resource: 'https://standby.example/api/mcp',
       release: { commitSha: RELEASE_SHA },
@@ -64,5 +65,16 @@ describe('public production health contract', () => {
     expect(JSON.stringify(body)).not.toContain('synthetic-demo-only')
     expect(JSON.stringify(body)).not.toContain('AI_GATEWAY_API_KEY')
     expect(body).not.toHaveProperty('secretsConfigured')
+  })
+
+  it('derives transactional health mode only from the explicit authority setting', () => {
+    expect(currentWorkspaceAuthority({})).toEqual({
+      authority: 'google-drive',
+      mode: 'google-drive-trusted-ingestion',
+    })
+    expect(currentWorkspaceAuthority({ PJSDAS_CONNECTED_AUTHORITY: 'transactional' })).toEqual({
+      authority: 'transactional',
+      mode: 'transactional-connected',
+    })
   })
 })
