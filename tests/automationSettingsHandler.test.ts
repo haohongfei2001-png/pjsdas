@@ -118,6 +118,10 @@ describe('automation settings API', () => {
     expect(writes[0]?.body).toMatchObject({
       gmail_automation_enabled: true,
       gmail_history_id: null,
+      gmail_sync_mode: null,
+      gmail_page_token: null,
+      gmail_pending_history_id: null,
+      gmail_pending_message_ids: [],
       gmail_last_error: null,
     })
     expect(writes[0]?.body).not.toHaveProperty('discovery_automation_enabled')
