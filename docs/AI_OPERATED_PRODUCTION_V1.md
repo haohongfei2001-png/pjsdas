@@ -141,7 +141,14 @@ Not in scope:
      unconsumed pages/ids and records expired-history coverage gaps;
    - Discovery candidates require independent server-side source verification before
      source facts can create/refresh Opportunities; unverified candidates remain unresolved.
-4. Round 3 — Web Console Product Redesign
+4. Round 3 — Web Console Product Redesign — **complete**
+   - primary IA is Today / Opportunities / Attention / Activity / Settings;
+   - Pipeline and Prepare are contextual views inside Opportunities;
+   - Today is action/status-first, with manual capture retained only as fallback;
+   - Attention centralizes governed ChangeSets and unresolved source exceptions;
+   - Activity is audit-only and contains no Apply/Discard workflow;
+   - Settings is a layered low-frequency control surface;
+   - unassessed opportunities render as unknown rather than fake neutral scores.
 5. Round 4 — Production / Domain / Audience Integration
 6. Round 5 — Release Candidate Hardening & Verification
 7. Round 6 — Personal Canary → Controlled Launch
