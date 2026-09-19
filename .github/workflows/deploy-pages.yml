@@ -210,6 +210,7 @@ jobs:
                       "get_coverage_status",
                       "get_workspace_integrity",
                       "add_opportunities",
+                      "apply_user_command",
                       "ingest_discovery_run",
                       "ingest_gmail_run",
                     ].every(tool => requiredTools.includes(tool));
@@ -240,7 +241,7 @@ jobs:
                       capabilities.trustedIngestionGrantModel === "v1" &&
                       capabilities.transactionalWorkspaceFoundation === "v1" &&
                       capabilities.mutationCommandLedger === true &&
-                      authenticatedMcp.toolSurfaceVersion === "v2" &&
+                      authenticatedMcp.toolSurfaceVersion === "v3" &&
                       releaseToolsReady;
                     process.exit(ready ? 0 : 1);
                   } catch {
