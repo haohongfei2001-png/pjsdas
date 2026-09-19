@@ -7,12 +7,9 @@ import {
   getAllProcesses,
   getDecisionRules,
   getAllTimelineRecords,
-  getAllChangeSets,
   getLastImport,
   replaceImportedData,
   applyActionStatusChangeSet,
-  applyChangeSet,
-  discardChangeSet,
 } from './db.js'
 import {
   buildTimePlan,
@@ -30,7 +27,6 @@ import TimelineView from './TimelineView.js'
 import CloudSettingsCard from './cloud/CloudSettingsCard.js'
 import DiscoveryProfileCard from './DiscoveryProfileCard.js'
 import DiscoveryInboxView from './DiscoveryInboxView.js'
-import type { ChangeSetRecord } from './changeSet.js'
 import type {
   Action,
   ApplicationGroup,
@@ -74,14 +70,13 @@ function AppV5() {
   const [prep, setPrep] = useState<Prep[]>([])
   const [groups, setGroups] = useState<ApplicationGroup[]>([])
   const [timeline, setTimeline] = useState<TimelineRecord[]>([])
-  const [changeSets, setChangeSets] = useState<ChangeSetRecord[]>([])
   const [rules, setRules] = useState<DecisionRules>(() => ({ ...DEFAULT_DECISION_RULES, weights: { ...DEFAULT_DECISION_RULES.weights } }))
   const [lastImport, setLastImport] = useState<ImportMeta | undefined>()
   const [loading, setLoading] = useState(true)
   const [now, setNow] = useState(() => new Date())
 
   async function reload() {
-    const [nextOpportunities, nextActions, nextProcesses, nextPrep, nextGroups, nextRules, nextTimeline, nextChangeSets, nextImport] =
+    const [nextOpportunities, nextActions, nextProcesses, nextPrep, nextGroups, nextRules, nextTimeline, nextImport] =
       await Promise.all([
         getAllOpportunities(),
         getAllActions(),
@@ -90,7 +85,6 @@ function AppV5() {
         getAllApplicationGroups(),
         getDecisionRules(),
         getAllTimelineRecords(),
-        getAllChangeSets(),
         getLastImport(),
       ])
     setOpportunities(nextOpportunities)
@@ -100,7 +94,6 @@ function AppV5() {
     setGroups(nextGroups)
     setRules(nextRules)
     setTimeline(nextTimeline)
-    setChangeSets(nextChangeSets)
     setLastImport(nextImport)
   }
 
@@ -120,15 +113,7 @@ function AppV5() {
     await reload()
   }
 
-  async function applyPendingChangeSet(id: string) {
-    await applyChangeSet(id)
-    await reload()
-  }
 
-  async function discardPendingChangeSet(id: string) {
-    await discardChangeSet(id)
-    await reload()
-  }
 
   return (
     <div className="app-shell">
@@ -179,7 +164,7 @@ function AppV5() {
         ) : null}
         {!loading && page === 'pipeline' ? <PipelineView processes={processes} /> : null}
         {!loading && page === 'prep' ? <PrepView prep={prep} /> : null}
-        {!loading && page === 'timeline' ? <TimelineView records={timeline} changeSets={changeSets} onApplyChangeSet={applyPendingChangeSet} onDiscardChangeSet={discardPendingChangeSet} /> : null}
+        {!loading && page === 'timeline' ? <TimelineView records={timeline} /> : null}
         {!loading && page === 'rules' ? <RulesView rules={rules} onChanged={reload} /> : null}
         {!loading && page === 'settings' ? (
           <SettingsView lastImport={lastImport} onImported={reload} />
