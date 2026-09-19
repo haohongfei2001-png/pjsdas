@@ -79,6 +79,7 @@ function monitorFingerprint(observation: MonitorJobObservation) {
     observation.deadline ?? '',
     observation.compensationText ?? '',
     observation.postingStatus ?? 'unknown',
+    observation.sourceVerification ?? 'unverified',
   ]))
 }
 
@@ -173,7 +174,12 @@ export function applyMonitorIngestionHardened(snapshot: PJSDASSnapshot, input: H
   )
   if (completedRun) return applyMonitorIngestion(snapshot, normalizedInput)
 
-  const ambiguous = normalizedInput.observations.filter((item) => monitorObservationIsAmbiguous(item, snapshot.data.opportunities))
+  const unverified = normalizedInput.observations.filter((item) => item.sourceVerification !== 'verified')
+  const unverifiedIds = new Set(unverified.map((item) => item.sourceRecordId))
+  const ambiguous = normalizedInput.observations.filter((item) =>
+    !unverifiedIds.has(item.sourceRecordId) &&
+    monitorObservationIsAmbiguous(item, snapshot.data.opportunities),
+  )
   const ambiguousIds = new Set(ambiguous.map((item) => item.sourceRecordId))
 
   // Discovery quality gates decide whether a NEW Opportunity may be created.
@@ -182,12 +188,16 @@ export function applyMonitorIngestionHardened(snapshot: PJSDASSnapshot, input: H
   // This never changes the user's recruiting process stage.
   const existingRefreshes = normalizedInput.observations.filter((observation) => {
     const receivedAt = observation.discoveredAt ?? normalizedInput.completedAt
-    if (ambiguousIds.has(observation.sourceRecordId)) return false
+    if (unverifiedIds.has(observation.sourceRecordId) || ambiguousIds.has(observation.sourceRecordId)) return false
     if (!observation.sourceRecordId.trim() || !observation.company.trim() || !observation.role.trim() || !validIso(receivedAt)) return false
     return Boolean(findSimilarOpportunity(observation, snapshot.data.opportunities))
   })
   const existingIds = new Set(existingRefreshes.map((item) => item.sourceRecordId))
-  const baseObservations = normalizedInput.observations.filter((item) => !ambiguousIds.has(item.sourceRecordId) && !existingIds.has(item.sourceRecordId))
+  const baseObservations = normalizedInput.observations.filter((item) =>
+    !unverifiedIds.has(item.sourceRecordId) &&
+    !ambiguousIds.has(item.sourceRecordId) &&
+    !existingIds.has(item.sourceRecordId),
+  )
 
   // A stable sourceRecordId identifies a posting, not an immutable observation.
   // If its source fingerprint changes in a later run, re-evaluate it instead of
@@ -213,7 +223,7 @@ export function applyMonitorIngestionHardened(snapshot: PJSDASSnapshot, input: H
     workingSnapshot.data.timeline = (workingSnapshot.data.timeline ?? []).filter((item) => !removedIds.has(item.id))
   }
 
-  if (ambiguous.length === 0 && existingRefreshes.length === 0 && historicalRecords.length === 0) {
+  if (unverified.length === 0 && ambiguous.length === 0 && existingRefreshes.length === 0 && historicalRecords.length === 0) {
     const base = applyMonitorIngestion(snapshot, normalizedInput)
     return attachRunPolicy(base, normalizedInput, 'gpt_monitor')
   }
@@ -270,6 +280,35 @@ export function applyMonitorIngestionHardened(snapshot: PJSDASSnapshot, input: H
       fingerprint: currentFingerprint, receivedAt, accountedAt: normalizedInput.completedAt,
       reason, opportunityId,
       company: observation.company, role: observation.role, sourceRef: observation.sourceUrl,
+    })
+    records.push(record)
+    timeline.push(record)
+  }
+
+  for (const observation of unverified) {
+    const currentFingerprint = monitorFingerprint(observation)
+    const previous = alreadyIngested(snapshot.data.timeline, {
+      sourceKind: 'gpt_monitor',
+      sourceId: normalizedInput.sourceId,
+      sourceRecordId: observation.sourceRecordId,
+    })
+    const record = createIngestionLedgerTimeline({
+      sourceKind: 'gpt_monitor',
+      sourceId: normalizedInput.sourceId,
+      sourceRecordId: observation.sourceRecordId,
+      runId: normalizedInput.runId,
+      recordType: 'job_observation',
+      outcome: 'unresolved',
+      fingerprint: currentFingerprint,
+      receivedAt: observation.discoveredAt ?? normalizedInput.completedAt,
+      accountedAt: normalizedInput.completedAt,
+      reason: observation.sourceVerificationReason?.trim()
+        ? `公开来源尚未通过独立核验：${observation.sourceVerificationReason.trim().slice(0, 500)}`
+        : '公开来源尚未通过独立核验；模型输出不会自动升级为 PJSDAS 来源事实。',
+      opportunityId: previous?.ingestion?.opportunityId,
+      company: observation.company,
+      role: observation.role,
+      sourceRef: observation.sourceUrl,
     })
     records.push(record)
     timeline.push(record)
