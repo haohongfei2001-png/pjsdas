@@ -130,7 +130,7 @@ async function readCoreState(page: Page) {
 }
 
 async function openBackup(page: Page) {
-  await page.getByRole('button', { name: /设置/ }).click()
+  await page.locator('.surface-nav').getByRole('button', { name: /设置/ }).click()
   await expect(page.getByRole('heading', { name: '连接、自动化和长期控制' })).toBeVisible()
   await page.locator('details.settings-group').filter({ hasText: '数据与恢复' }).locator('summary').click()
   await page.getByRole('button', { name: '本地备份' }).click()
@@ -220,7 +220,7 @@ test('JSON backup restores a deliberately cleared local workspace and remains du
   expect(restored.actionIds).toContain(action.id)
 
   await page.locator('.backup-dialog').getByRole('button', { name: '关闭' }).click()
-  await page.getByRole('button', { name: /今天/ }).click()
+  await page.locator('.surface-nav').getByRole('button', { name: /今天/ }).click()
   await expect(page.getByRole('heading', { name: action.title })).toBeVisible()
 
   await page.reload()
@@ -245,6 +245,6 @@ test('invalid backup is rejected before restore and leaves the current workspace
   expect(state.actionIds).toContain(action.id)
 
   await page.locator('.backup-dialog').getByRole('button', { name: '关闭' }).click()
-  await page.getByRole('button', { name: /今天/ }).click()
+  await page.locator('.surface-nav').getByRole('button', { name: /今天/ }).click()
   await expect(page.getByRole('heading', { name: action.title })).toBeVisible()
 })
