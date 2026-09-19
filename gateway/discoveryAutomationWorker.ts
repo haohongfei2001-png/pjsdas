@@ -11,6 +11,7 @@ import {
   isDiscoveryProfileConfigured,
 } from '../src/discoveryProfile.js'
 import { applyMonitorIngestionHardened } from '../src/ingestionHardening.js'
+import { stableIngestionHash } from '../src/ingestion.js'
 import {
   effectiveSourceRegistry,
   type IngestionSourcePolicy,
@@ -377,9 +378,11 @@ export async function verifyDiscoverySourceObservation(
     }
 
     const verifiedAt = now.toISOString()
+    const canonicalSource = fetched.url.toString()
     return {
       ...observation,
-      sourceUrl: fetched.url.toString(),
+      sourceRecordId: `verified:${stableIngestionHash(`${canonicalSource}|${observation.company}|${observation.role}`)}`,
+      sourceUrl: canonicalSource,
       sourceTitle: title ?? `${fetched.url.hostname}${fetched.url.pathname}`.slice(0, 400),
       location: literalFactPresent(evidence, observation.location) ? observation.location : undefined,
       deadline: deadlineEvidencePresent(evidence, observation.deadline) ? observation.deadline : undefined,
@@ -387,6 +390,7 @@ export async function verifyDiscoverySourceObservation(
       postingStatus: observation.postingStatus === 'closed' && closedPostingEvidence(evidence)
         ? 'closed' as const
         : 'unknown' as const,
+      discoveredAt: verifiedAt,
       sourceVerification: 'verified' as const,
       sourceVerifiedAt: verifiedAt,
       sourceVerificationReason: undefined,
