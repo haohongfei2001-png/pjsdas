@@ -4,12 +4,14 @@ import {
   PJSDAS_SUPABASE_URL,
 } from '../gateway/supabaseProject.js'
 import { firstPartyWebOrigins } from '../gateway/productionTopology.js'
+import { createConfiguredAudienceAccessGuard } from '../gateway/audienceAccess.js'
 
 const handler = createConnectedWorkspaceHandler({
   supabaseUrl: PJSDAS_SUPABASE_URL,
   supabasePublishableKey: PJSDAS_SUPABASE_PUBLISHABLE_KEY,
   serviceRoleKey: process.env.PJSDAS_SUPABASE_SERVICE_ROLE_KEY ?? '',
   allowedOrigins: firstPartyWebOrigins(),
+  authorizeIdentity: createConfiguredAudienceAccessGuard({ supabaseUrl: PJSDAS_SUPABASE_URL }),
 })
 
 export default {
