@@ -38,7 +38,7 @@ describe('server-owned discovery worker model boundary', () => {
     const snapshot = await demoSnapshot()
     const seen: DiscoveryGenerateTextInput[] = []
     const generateTextImpl = generator(JSON.stringify({ observations: [{
-      sourceRecordId: 'job-123',
+      sourceRecordId: expect.stringMatching(/^verified:/),
       company: 'Example AI',
       role: 'AI Product Manager',
       sourceUrl: 'https://careers.example.com/jobs/123',
