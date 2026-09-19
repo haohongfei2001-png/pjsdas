@@ -25,9 +25,10 @@ describe('backend-first release gate', () => {
     expect(workflow).toContain('capabilities.discoverySourceVerification === "v1"')
     expect(workflow).toContain('capabilities.discoveryFactAssessmentSeparation === true')
     expect(workflow).toContain('authenticatedMcp.toolSurfaceVersion === "v3"')
-    for (const tool of ['get_coverage_status', 'get_workspace_integrity', 'add_opportunities', 'apply_user_command', 'ingest_discovery_run', 'ingest_gmail_run']) {
+    for (const tool of ['get_coverage_status', 'get_workspace_integrity', 'add_opportunities', 'ingest_discovery_run', 'ingest_gmail_run']) {
       expect(workflow).toContain(`"${tool}"`)
     }
+    expect(workflow).toContain('expectedAuthority === "transactional" ? ["apply_user_command"] : []')
     expect(workflow).toContain('Verify production contract before Pages publication')
     expect(workflow).not.toContain('PJSDAS_SELF_TEST_EMAIL')
     expect(workflow).not.toContain('PJSDAS_SELF_TEST_PASSWORD')
