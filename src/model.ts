@@ -22,6 +22,9 @@ export type ActionTimingMode = 'deadline' | 'fixed'
 export type ActionKind = 'apply' | 'follow_up' | 'prep' | 'group_decision' | 'manual'
 export type ActionStatus = 'todo' | 'doing' | 'done' | 'skipped'
 export type PriorityLevel = 'P0' | 'P1' | 'P2' | 'expired' | 'none'
+export type OpportunityParticipationStatus = 'active' | 'abandoned'
+export type OpportunityAssessmentStatus = 'unassessed' | 'provisional' | 'assessed' | 'legacy'
+export type DatePrecision = 'date' | 'datetime'
 export type DiscoveryConfidence = 'high' | 'medium' | 'low'
 export type DiscoveryReviewDecision = 'accepted' | 'rejected' | 'filtered' | 'duplicate' | 'deferred'
 export type DiscoveryRejectionReason =
@@ -269,6 +272,8 @@ export interface TimelineRecord {
   actionId?: string
   processEventId?: string
   changeSetId?: string
+  commandId?: string
+  commandOperation?: string
   company?: string
   role?: string
   sourceRef?: string
@@ -294,6 +299,16 @@ export interface OpportunityDiscoveryEvidence {
   postingHistory?: JobPostingEvidence[]
 }
 
+export interface OpportunityUserFacts {
+  provenance: 'user_asserted'
+  updatedAt: string
+  location?: string
+  compensationText?: string
+  applicationUrl?: string
+  deadline?: string
+  deadlinePrecision?: DatePrecision
+}
+
 export interface OpportunityDetail {
   backgroundTag?: string
   coreOutput?: string
@@ -313,6 +328,7 @@ export interface OpportunityDetail {
   facts?: OpportunityFacts
   assessment?: OpportunityAssessment
   discovery?: OpportunityDiscoveryEvidence
+  userFacts?: OpportunityUserFacts
 }
 
 export interface Opportunity {
@@ -322,8 +338,12 @@ export interface Opportunity {
   currentStageLabel: string
   processStage: ProcessStage
   roleType: OpportunityRole
+  participationStatus?: OpportunityParticipationStatus
+  abandonedAt?: string
+  assessmentStatus?: OpportunityAssessmentStatus
   early: boolean
   deadline?: string
+  deadlinePrecision?: DatePrecision
   sourcePriority?: string
   offerProbability?: string
   salaryReference?: string
@@ -368,6 +388,7 @@ export interface ProcessEvent {
   type: ProcessEventType
   occurredAt: string
   dueAt?: string
+  duePrecision?: DatePrecision
   timingMode?: ActionTimingMode
   estimatedMinutes?: number
   notes?: string
@@ -386,6 +407,7 @@ export interface Action {
   processEventId?: string
   processStage?: ProcessStage
   dueAt?: string
+  duePrecision?: DatePrecision
   timingMode?: ActionTimingMode
   estimatedMinutes: number
   leverage: number
