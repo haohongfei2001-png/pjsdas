@@ -60,7 +60,25 @@ export function createMutationKernel(options: TransactionalWorkspaceStoreOptions
 
       const current = await store.readForUser(principal.userId)
       if (!current) throw new WorkspaceSourceError('WORKSPACE_NOT_FOUND', 'PJSDAS connected workspace has not been migrated yet.', false)
+      const payloadHash = await hashMutationPayload(command.operation, command.payload)
+
+      // A network retry normally carries the old expected revision because the
+      // original response was lost. Resolve the command receipt before calling
+      // that a conflict, so a committed retry becomes ALREADY_APPLIED.
       if (current.revision !== command.expectedRevision) {
+        const existing = await store.readCommandForUser(principal.userId, command.commandId)
+        if (existing) {
+          if (existing.payloadHash !== payloadHash) {
+            throw new WorkspaceSourceError('COMMAND_ID_REUSED', 'PJSDAS command id was reused with a different payload.', false)
+          }
+          return {
+            outcome: 'ALREADY_APPLIED',
+            workspaceId: current.workspaceId,
+            revision: existing.resultingRevision,
+            snapshot: current.snapshot,
+            receipt: existing.receipt,
+          }
+        }
         return {
           outcome: 'CONFLICT',
           workspaceId: current.workspaceId,
@@ -77,7 +95,6 @@ export function createMutationKernel(options: TransactionalWorkspaceStoreOptions
 
       const next = await apply(structuredClone(current.snapshot), command.payload)
       validateSnapshot(next)
-      const payloadHash = await hashMutationPayload(command.operation, command.payload)
 
       return store.commitForUser({
         userId: principal.userId,
