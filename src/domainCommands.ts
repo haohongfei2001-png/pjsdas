@@ -7,7 +7,6 @@ import type {
   DatePrecision,
   Opportunity,
   OpportunityRole,
-  PJSDASSnapshot as _Never,
   ProcessEvent,
   ProcessEventType,
   ProcessRecord,
