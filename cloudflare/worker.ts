@@ -1,4 +1,3 @@
-import access from '../api/access.js'
 import automationDiscovery from '../api/automation-discovery.js'
 import automationGmail from '../api/automation-gmail.js'
 import automationSettings from '../api/automation-settings.js'
@@ -16,7 +15,7 @@ import type { ReleaseIdentityEnvironment } from '../gateway/releaseIdentity.js'
 type FetchHandler = { fetch(request: Request): Response | Promise<Response> }
 
 const ROUTES = new Map<string, FetchHandler>([
-  ['/api/access', access],
+  ['/api/access', healthAuth],
   ['/api/automation-discovery', automationDiscovery],
   ['/api/automation-gmail', automationGmail],
   ['/api/automation-settings', automationSettings],
