@@ -48,7 +48,7 @@ const trustedIngestionAnnotations = {
 
 export interface PjsdasMcpServerOptions {
   version?: string
-  dataMode?: 'workspace' | 'demo' | 'google-drive-readonly' | 'google-drive'
+  dataMode?: 'workspace' | 'demo' | 'google-drive-readonly' | 'google-drive' | 'transactional'
   proposalMode?: 'disabled' | 'review-link'
   proposalSigningKey?: string
   trustedIngestionMode?: 'disabled' | 'enabled'
@@ -128,6 +128,9 @@ export function createPjsdasMcpServer(
   }
   if (dataMode === 'google-drive') {
     instructions.push('The authenticated user\'s validated PJSDAS workspace lives in Google Drive appDataFolder. Reads are private; writes are permitted only through registered bounded mutation tools and use optimistic workspace-version conflict checks.')
+  }
+  if (dataMode === 'transactional') {
+    instructions.push('Connected-mode reads and writes use the server-authoritative transactional PJSDAS workspace. Every write is revision-checked, command-ledgered, and fail-closed on conflict.')
   }
 
   const server = new McpServer(
