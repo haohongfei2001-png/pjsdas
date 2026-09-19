@@ -177,6 +177,7 @@ test('manual recruiting event creates one durable event/action, survives reload,
   expect(afterReload.events.map((item) => item.id)).toContain(eventId)
   expect(afterReload.actions.some((item) => item.processEventId === eventId)).toBe(true)
 
+  await page.locator('.today-manual-fallback > summary').click()
   await page.getByRole('button', { name: '+ 记录流程通知' }).click()
   const persistedHistoryItem = page.locator('.event-history-item').filter({ hasText: opportunity.company })
   await expect(persistedHistoryItem).toHaveCount(1)
