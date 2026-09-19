@@ -241,6 +241,11 @@ jobs:
                       capabilities.trustedIngestionGrantModel === "v1" &&
                       capabilities.transactionalWorkspaceFoundation === "v1" &&
                       capabilities.mutationCommandLedger === true &&
+                      capabilities.explicitUserCommands === "v1" &&
+                      capabilities.opportunityParticipationState === "v1" &&
+                      capabilities.gmailCompleteConsumption === "v1" &&
+                      capabilities.discoverySourceVerification === "v1" &&
+                      capabilities.discoveryFactAssessmentSeparation === true &&
                       authenticatedMcp.toolSurfaceVersion === "v3" &&
                       releaseToolsReady;
                     process.exit(ready ? 0 : 1);
