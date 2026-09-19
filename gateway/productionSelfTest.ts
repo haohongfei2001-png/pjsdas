@@ -39,6 +39,10 @@ const REQUIRED_CAPABILITIES: Record<string, unknown> = {
   deploymentPortability: true,
   releaseIdentityBinding: true,
   authenticatedMcpToolSurface: true,
+  delegatedCredentialIsolation: true,
+  trustedIngestionGrantModel: 'v1',
+  transactionalWorkspaceFoundation: 'v1',
+  mutationCommandLedger: true,
 }
 
 function check(name: string, condition: boolean, detail: string): ProductionSelfTestCheck {
@@ -67,12 +71,17 @@ export async function runProductionSelfTest(options: {
   baseUrl: string
   accessToken?: string
   expectedCommitSha?: string
+  expectedWorkspaceAuthority?: 'google-drive' | 'transactional'
   requireAuthenticatedTools?: boolean
   fetchImpl?: typeof fetch
 }): Promise<ProductionSelfTestResult> {
   const fetchImpl = options.fetchImpl ?? fetch
   const baseUrl = options.baseUrl.replace(/\/$/, '')
   const expectedCommitSha = options.expectedCommitSha?.trim().toLowerCase()
+  const expectedWorkspaceAuthority = options.expectedWorkspaceAuthority ?? 'google-drive'
+  const expectedMode = expectedWorkspaceAuthority === 'transactional'
+    ? 'transactional-connected'
+    : 'google-drive-trusted-ingestion'
   const checks: ProductionSelfTestCheck[] = []
 
   try {
@@ -80,7 +89,8 @@ export async function runProductionSelfTest(options: {
     const payload = response.ok ? await response.json() as Record<string, any> : undefined
     checks.push(check('health.http', response.status === 200, `HTTP ${response.status}`))
     checks.push(check('health.version', payload?.version === '1.9.0-alpha.1', `version=${String(payload?.version)}`))
-    checks.push(check('health.mode', payload?.mode === 'google-drive-trusted-ingestion', `mode=${String(payload?.mode)}`))
+    checks.push(check('health.mode', payload?.mode === expectedMode, `mode=${String(payload?.mode)}; expected=${expectedMode}`))
+    checks.push(check('health.workspace-authority', payload?.workspaceAuthority === expectedWorkspaceAuthority, `workspaceAuthority=${String(payload?.workspaceAuthority)}; expected=${expectedWorkspaceAuthority}`))
     checks.push(check('health.resource-origin', typeof payload?.resource === 'string' && payload.resource.startsWith(`${baseUrl}/`), `resource=${String(payload?.resource)}`))
     if (expectedCommitSha) {
       const actualCommitSha = typeof payload?.release?.commitSha === 'string' ? payload.release.commitSha.toLowerCase() : undefined
