@@ -52,6 +52,7 @@ export interface PjsdasMcpServerOptions {
   proposalMode?: 'disabled' | 'review-link'
   proposalSigningKey?: string
   trustedIngestionMode?: 'disabled' | 'enabled'
+  trustedIngestionAuthorizer?: (name: 'ingest_discovery_run' | 'ingest_gmail_run', sourceId: string) => Promise<void>
   explicitUserWriteMode?: 'disabled' | 'enabled'
 }
 
@@ -216,13 +217,13 @@ export function createPjsdasMcpServer(
       title: 'Autonomously ingest a trusted job-monitor run',
       description: 'Auto-apply or dry-run one completed trusted monitoring batch. Each submitted source record is accounted for; identity ambiguity fails closed; workspace conflicts fail closed.',
       inputSchema: ingestDiscoveryRunSchema, annotations: trustedIngestionAnnotations,
-    }, async (args) => invokeTrustedIngestion(source, 'ingest_discovery_run', args))
+    }, async (args) => invokeTrustedIngestion(source, 'ingest_discovery_run', args, { authorize: options.trustedIngestionAuthorizer }))
 
     server.registerTool('ingest_gmail_run', {
       title: 'Autonomously ingest structured Gmail recruitment facts',
       description: 'Auto-apply or dry-run one bounded Gmail ingestion batch after classification/extraction. High-confidence facts may create/update opportunities and logical process events; ambiguous facts remain unresolved.',
       inputSchema: ingestGmailRunSchema, annotations: trustedIngestionAnnotations,
-    }, async (args) => invokeTrustedIngestion(source, 'ingest_gmail_run', args))
+    }, async (args) => invokeTrustedIngestion(source, 'ingest_gmail_run', args, { authorize: options.trustedIngestionAuthorizer }))
   }
 
   if (proposalMode === 'review-link') {
