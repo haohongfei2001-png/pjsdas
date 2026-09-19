@@ -13,6 +13,11 @@ const accessToken = await resolveProductionSelfTestAccessToken({
 })
 const expectedCommitSha = process.env.PJSDAS_EXPECTED_COMMIT_SHA?.trim() || undefined
 const requireAuthenticatedTools = process.env.PJSDAS_REQUIRE_AUTHENTICATED_SELF_TEST?.trim().toLowerCase() === 'true'
+const expectedWorkspaceAuthority = (
+  process.env.PJSDAS_EXPECTED_WORKSPACE_AUTHORITY
+  ?? process.env.PJSDAS_CONNECTED_AUTHORITY
+  ?? 'google-drive'
+).trim() === 'transactional' ? 'transactional' as const : 'google-drive' as const
 
 const results = []
 for (const baseUrl of rawOrigins) {
@@ -20,6 +25,7 @@ for (const baseUrl of rawOrigins) {
     baseUrl,
     accessToken,
     expectedCommitSha,
+    expectedWorkspaceAuthority,
     requireAuthenticatedTools,
   })
   results.push(result)
