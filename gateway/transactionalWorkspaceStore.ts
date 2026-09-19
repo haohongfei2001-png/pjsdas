@@ -89,9 +89,11 @@ export function createTransactionalWorkspaceStore(options: TransactionalWorkspac
   async function request(path: string, init: RequestInit = {}) {
     let response: Response
     try {
+      const headers = new Headers(init.headers)
+      for (const [name, value] of Object.entries(authHeaders(serviceRoleKey))) headers.set(name, value)
       response = await fetchImpl(`${baseUrl}${path}`, {
         ...init,
-        headers: { ...authHeaders(serviceRoleKey), ...(init.headers ?? {}) },
+        headers,
       })
     } catch {
       throw new WorkspaceSourceError('WORKSPACE_UNAVAILABLE', 'PJSDAS transactional workspace is temporarily unavailable.', true)
