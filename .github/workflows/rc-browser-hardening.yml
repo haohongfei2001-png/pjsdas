@@ -1,0 +1,53 @@
+name: PJSDAS RC Browser Hardening
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  rc-browser:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - project: chromium
+            browser: chromium
+            suite: "e2e/activeSurfacePresentation.e2e.ts e2e/localWorkspace.e2e.ts e2e/recoveryAndProcess.e2e.ts e2e/timelineProductTruth.e2e.ts e2e/rcHardening.e2e.ts"
+          - project: firefox
+            browser: firefox
+            suite: "e2e/activeSurfacePresentation.e2e.ts e2e/localWorkspace.e2e.ts e2e/recoveryAndProcess.e2e.ts e2e/timelineProductTruth.e2e.ts e2e/rcHardening.e2e.ts"
+          - project: webkit
+            browser: webkit
+            suite: "e2e/activeSurfacePresentation.e2e.ts e2e/localWorkspace.e2e.ts e2e/recoveryAndProcess.e2e.ts e2e/timelineProductTruth.e2e.ts e2e/rcHardening.e2e.ts"
+          - project: mobile-chromium
+            browser: chromium
+            suite: "e2e/rcHardening.e2e.ts"
+
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Install Playwright test runner
+        run: npm install --no-save --package-lock=false @playwright/test@1.63.0
+      - name: Install browser
+        run: npx playwright install --with-deps ${{ matrix.browser }}
+      - name: Run RC browser hardening
+        run: npx playwright test --config=playwright.config.mts --project=${{ matrix.project }} ${{ matrix.suite }}
+      - name: Upload RC browser evidence
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v5
+        with:
+          name: rc-playwright-${{ matrix.project }}
+          path: |
+            playwright-report/
+            test-results/
+          if-no-files-found: ignore
+          retention-days: 14
