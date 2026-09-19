@@ -7,10 +7,12 @@ import {
 import { bootstrapPolicyFor } from '../src/sourceRegistry.js'
 import type { Opportunity, ProcessEventType } from '../src/model.js'
 import { createDriveWorkspaceSource } from './driveWorkspaceSource.js'
+import { createTransactionalWorkspaceSource } from './transactionalWorkspaceSource.js'
 import { refreshGoogleAccessToken } from './googleOAuthTokens.js'
 import { decryptSecret } from './tokenCrypto.js'
 import { GMAIL_READONLY_SCOPE, type GmailAutomationBinding } from './automationConnectionStore.js'
 import { requireWritableWorkspaceSource, WorkspaceSourceError } from './workspaceSource.js'
+import { PJSDAS_SUPABASE_URL } from './supabaseProject.js'
 
 const GMAIL_API = 'https://gmail.googleapis.com/gmail/v1/users/me'
 const GMAIL_SOURCE_ID = 'gmail:primary'
@@ -316,11 +318,22 @@ export async function runGmailAutomationForBinding(options: {
     clientSecret: options.googleClientSecret,
     fetchImpl,
   })
-  const source = createDriveWorkspaceSource({
-    getAccessToken: () => accessToken,
-    fetchImpl,
-    timezone: 'Asia/Shanghai',
-  })
+  const transactionalAuthority = process.env.PJSDAS_CONNECTED_AUTHORITY?.trim() === 'transactional'
+  const source = transactionalAuthority
+    ? createTransactionalWorkspaceSource({
+        userId: options.binding.userId,
+        supabaseUrl: PJSDAS_SUPABASE_URL,
+        serviceRoleKey: process.env.PJSDAS_SUPABASE_SERVICE_ROLE_KEY ?? '',
+        principalKind: 'automation',
+        sourceId: GMAIL_SOURCE_ID,
+        timezone: 'Asia/Shanghai',
+        fetchImpl,
+      })
+    : createDriveWorkspaceSource({
+        getAccessToken: () => accessToken,
+        fetchImpl,
+        timezone: 'Asia/Shanghai',
+      })
   const workspace = await source.read()
   const batch = await fetchGmailAutomationBatch({
     accessToken,

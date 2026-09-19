@@ -54,14 +54,26 @@ export const PUBLIC_HEALTH_CAPABILITIES = {
   deploymentPortability: true,
   releaseIdentityBinding: true,
   authenticatedMcpToolSurface: true,
+  delegatedCredentialIsolation: true,
+  trustedIngestionGrantModel: 'v1',
+  transactionalWorkspaceFoundation: 'v1',
+  mutationCommandLedger: true,
 } as const
+
+export function currentWorkspaceAuthority(environment: Record<string, string | undefined> = process.env) {
+  return environment.PJSDAS_CONNECTED_AUTHORITY?.trim() === 'transactional'
+    ? { authority: 'transactional' as const, mode: 'transactional-connected' as const }
+    : { authority: 'google-drive' as const, mode: 'google-drive-trusted-ingestion' as const }
+}
 
 export default {
   fetch(request?: Request, releaseEnvironment?: ReleaseIdentityEnvironment) {
+    const workspace = currentWorkspaceAuthority()
     return new Response(JSON.stringify({
       service: 'pjsdas-authenticated-mcp',
       version: AUTHENTICATED_GATEWAY_VERSION,
-      mode: 'google-drive-trusted-ingestion',
+      mode: workspace.mode,
+      workspaceAuthority: workspace.authority,
       auth: 'supabase-oauth-2.1',
       resource: backendUrl('/api/mcp', request),
       release: {

@@ -48,10 +48,12 @@ const trustedIngestionAnnotations = {
 
 export interface PjsdasMcpServerOptions {
   version?: string
-  dataMode?: 'workspace' | 'demo' | 'google-drive-readonly' | 'google-drive'
+  dataMode?: 'workspace' | 'demo' | 'google-drive-readonly' | 'google-drive' | 'transactional'
   proposalMode?: 'disabled' | 'review-link'
   proposalSigningKey?: string
   trustedIngestionMode?: 'disabled' | 'enabled'
+  trustedIngestionCapabilities?: { discovery: boolean; gmail: boolean }
+  trustedIngestionAuthorizer?: (name: 'ingest_discovery_run' | 'ingest_gmail_run', sourceId: string) => Promise<void>
   explicitUserWriteMode?: 'disabled' | 'enabled'
 }
 
@@ -62,6 +64,8 @@ export function createPjsdasMcpServer(
   const dataMode = options.dataMode ?? 'workspace'
   const proposalMode = options.proposalMode ?? 'disabled'
   const trustedIngestionMode = options.trustedIngestionMode ?? 'disabled'
+  const trustedDiscoveryEnabled = trustedIngestionMode === 'enabled' && (options.trustedIngestionCapabilities?.discovery ?? true)
+  const trustedGmailEnabled = trustedIngestionMode === 'enabled' && (options.trustedIngestionCapabilities?.gmail ?? true)
   const explicitUserWriteMode = options.explicitUserWriteMode ?? 'disabled'
   const instructions = [
     'PJSDAS is a personal job-search decision and action system.',
@@ -90,7 +94,7 @@ export function createPjsdasMcpServer(
     )
   }
 
-  if (trustedIngestionMode === 'enabled') {
+  if (trustedDiscoveryEnabled || trustedGmailEnabled) {
     instructions.push(
       'Trusted factual ingestion is autonomous and does not require a review click. It is deliberately narrower than generic mutation.',
       'Use ingest_discovery_run only for a bounded completed GPT/ChatGPT monitoring run with stable sourceRecordId values and source-backed public URLs. The tool performs identity resolution, quality gates, duplicate merging, accounting, and fail-closed workspace-version checks itself.',
@@ -112,7 +116,7 @@ export function createPjsdasMcpServer(
       'For refreshQueue verification, use postingRefreshes as a separate review batch.',
       'Rich Opportunity facts are evidence fields, not ratings. Component assessment is the preferred rating path.',
     )
-  } else if (trustedIngestionMode !== 'enabled' && explicitUserWriteMode !== 'enabled') {
+  } else if (!trustedDiscoveryEnabled && !trustedGmailEnabled && explicitUserWriteMode !== 'enabled') {
     instructions.push('This server exposes no mutation or proposal tools.')
   }
 
@@ -124,6 +128,9 @@ export function createPjsdasMcpServer(
   }
   if (dataMode === 'google-drive') {
     instructions.push('The authenticated user\'s validated PJSDAS workspace lives in Google Drive appDataFolder. Reads are private; writes are permitted only through registered bounded mutation tools and use optimistic workspace-version conflict checks.')
+  }
+  if (dataMode === 'transactional') {
+    instructions.push('Connected-mode reads and writes use the server-authoritative transactional PJSDAS workspace. Every write is revision-checked, command-ledgered, and fail-closed on conflict.')
   }
 
   const server = new McpServer(
@@ -211,18 +218,20 @@ export function createPjsdasMcpServer(
     }, async (args) => invokeAddOpportunities(source, args))
   }
 
-  if (trustedIngestionMode === 'enabled') {
+  if (trustedDiscoveryEnabled) {
     server.registerTool('ingest_discovery_run', {
       title: 'Autonomously ingest a trusted job-monitor run',
       description: 'Auto-apply or dry-run one completed trusted monitoring batch. Each submitted source record is accounted for; identity ambiguity fails closed; workspace conflicts fail closed.',
       inputSchema: ingestDiscoveryRunSchema, annotations: trustedIngestionAnnotations,
-    }, async (args) => invokeTrustedIngestion(source, 'ingest_discovery_run', args))
+    }, async (args) => invokeTrustedIngestion(source, 'ingest_discovery_run', args, { authorize: options.trustedIngestionAuthorizer }))
+  }
 
+  if (trustedGmailEnabled) {
     server.registerTool('ingest_gmail_run', {
       title: 'Autonomously ingest structured Gmail recruitment facts',
       description: 'Auto-apply or dry-run one bounded Gmail ingestion batch after classification/extraction. High-confidence facts may create/update opportunities and logical process events; ambiguous facts remain unresolved.',
       inputSchema: ingestGmailRunSchema, annotations: trustedIngestionAnnotations,
-    }, async (args) => invokeTrustedIngestion(source, 'ingest_gmail_run', args))
+    }, async (args) => invokeTrustedIngestion(source, 'ingest_gmail_run', args, { authorize: options.trustedIngestionAuthorizer }))
   }
 
   if (proposalMode === 'review-link') {

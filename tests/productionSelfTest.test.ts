@@ -11,6 +11,7 @@ function health() {
     service: 'pjsdas-authenticated-mcp',
     version: '1.9.0-alpha.1',
     mode: 'google-drive-trusted-ingestion',
+    workspaceAuthority: 'google-drive',
     resource: `${BASE_URL}/api/mcp`,
     release: { commitSha: RELEASE_SHA },
     authenticatedMcp: {
@@ -42,6 +43,10 @@ function health() {
       deploymentPortability: true,
       releaseIdentityBinding: true,
       authenticatedMcpToolSurface: true,
+      delegatedCredentialIsolation: true,
+      trustedIngestionGrantModel: 'v1',
+      transactionalWorkspaceFoundation: 'v1',
+      mutationCommandLedger: true,
     },
   }
 }
@@ -71,6 +76,7 @@ describe('production self-test', () => {
     const result = await runProductionSelfTest({ baseUrl: BASE_URL, fetchImpl: publicFetch() })
     expect(result.ok).toBe(true)
     expect(result.checks.find((item) => item.name === 'health.resource-origin')?.status).toBe('pass')
+    expect(result.checks.find((item) => item.name === 'health.workspace-authority')?.status).toBe('pass')
     expect(result.checks.find((item) => item.name === 'health.capability.discoveryAutomationPlan')?.status).toBe('pass')
     expect(result.checks.find((item) => item.name === 'health.capability.backgroundDiscoveryAutomation')?.status).toBe('pass')
     expect(result.checks.find((item) => item.name === 'health.authenticated-mcp-tool-surface-version')?.status).toBe('pass')
@@ -82,6 +88,25 @@ describe('production self-test', () => {
     expect(result.checks.find((item) => item.name === 'discovery-automation.worker-unauthorized')?.status).toBe('pass')
     expect(result.checks.find((item) => item.name === 'mcp.metadata-origin')?.status).toBe('pass')
     expect(result.checks.find((item) => item.name === 'mcp.authenticated.tools')?.status).toBe('skipped')
+  })
+
+  it('accepts transactional mode only when the caller explicitly expects it', async () => {
+    const transactional = health() as any
+    transactional.mode = 'transactional-connected'
+    transactional.workspaceAuthority = 'transactional'
+    const matching = await runProductionSelfTest({
+      baseUrl: BASE_URL,
+      expectedWorkspaceAuthority: 'transactional',
+      fetchImpl: publicFetch(transactional),
+    })
+    expect(matching.ok).toBe(true)
+
+    const mismatched = await runProductionSelfTest({
+      baseUrl: BASE_URL,
+      fetchImpl: publicFetch(transactional),
+    })
+    expect(mismatched.ok).toBe(false)
+    expect(mismatched.checks.find((item) => item.name === 'health.workspace-authority')?.status).toBe('fail')
   })
 
   it('fails closed when the deployed health contract omits a required authenticated MCP tool', async () => {

@@ -1,6 +1,12 @@
 import type { PJSDASSnapshot } from '../snapshot.js'
 import { getCloudAccessToken, invalidateCloudSession } from './cloudClient.js'
 import {
+  connectedWorkspaceAuthorityEnabled,
+  createConnectedRemoteWorkspace,
+  fetchConnectedRemoteWorkspace,
+  updateConnectedRemoteWorkspace,
+} from './connectedWorkspaceRepository.js'
+import {
   DRIVE_WORKSPACE_FILENAME,
   createDriveWorkspaceEnvelope,
   parseDriveWorkspaceEnvelope,
@@ -86,7 +92,7 @@ async function downloadEnvelope(fileId: string) {
   return parseDriveWorkspaceEnvelope(await response.json())
 }
 
-export async function fetchRemoteWorkspace(_userId: string): Promise<RemoteWorkspaceRow | null> {
+async function fetchDriveRemoteWorkspace(_userId: string): Promise<RemoteWorkspaceRow | null> {
   const files = await listWorkspaceFiles()
   const file = files[0]
   if (!file?.id) return null
@@ -105,7 +111,7 @@ export async function fetchRemoteWorkspace(_userId: string): Promise<RemoteWorks
   }
 }
 
-export async function createRemoteWorkspace(input: {
+async function createDriveRemoteWorkspace(input: {
   userId: string
   fingerprint: string
   snapshot: PJSDASSnapshot
@@ -156,7 +162,7 @@ export async function createRemoteWorkspace(input: {
   }
 }
 
-export async function updateRemoteWorkspace(input: {
+async function updateDriveRemoteWorkspace(input: {
   userId: string
   fileId: string
   expectedVersion: string
@@ -190,4 +196,39 @@ export async function updateRemoteWorkspace(input: {
     updatedByDevice: envelope.updatedByDevice,
     updatedAt: meta.modifiedTime,
   }
+}
+
+
+export async function fetchRemoteWorkspace(userId: string): Promise<RemoteWorkspaceRow | null> {
+  if (connectedWorkspaceAuthorityEnabled()) return fetchConnectedRemoteWorkspace()
+  return fetchDriveRemoteWorkspace(userId)
+}
+
+export async function createRemoteWorkspace(input: {
+  userId: string
+  fingerprint: string
+  snapshot: PJSDASSnapshot
+  deviceId: string
+}): Promise<RemoteWorkspaceRow | null> {
+  if (connectedWorkspaceAuthorityEnabled()) return createConnectedRemoteWorkspace()
+  return createDriveRemoteWorkspace(input)
+}
+
+export async function updateRemoteWorkspace(input: {
+  userId: string
+  fileId: string
+  expectedVersion: string
+  fingerprint: string
+  snapshot: PJSDASSnapshot
+  deviceId: string
+}): Promise<RemoteWorkspaceRow | null> {
+  if (connectedWorkspaceAuthorityEnabled()) {
+    return updateConnectedRemoteWorkspace({
+      expectedVersion: input.expectedVersion,
+      fingerprint: input.fingerprint,
+      snapshot: input.snapshot,
+      deviceId: input.deviceId,
+    })
+  }
+  return updateDriveRemoteWorkspace(input)
 }

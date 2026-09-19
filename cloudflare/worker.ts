@@ -9,6 +9,7 @@ import mcp from '../api/mcp.js'
 import mcpAuth from '../api/mcp-auth.js'
 import oauthProtectedResource from '../api/oauth-protected-resource.js'
 import proposalVerify from '../api/proposal-verify.js'
+import workspace from '../api/workspace.js'
 import type { ReleaseIdentityEnvironment } from '../gateway/releaseIdentity.js'
 
 type FetchHandler = { fetch(request: Request): Response | Promise<Response> }
@@ -24,6 +25,7 @@ const ROUTES = new Map<string, FetchHandler>([
   ['/api/mcp-auth', mcpAuth],
   ['/api/oauth-protected-resource', oauthProtectedResource],
   ['/api/proposal-verify', proposalVerify],
+  ['/api/workspace', workspace],
   ['/.well-known/oauth-protected-resource', oauthProtectedResource],
   ['/.well-known/oauth-protected-resource/api/mcp-auth', oauthProtectedResource],
 ])

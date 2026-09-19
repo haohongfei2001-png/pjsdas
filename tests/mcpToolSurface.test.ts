@@ -23,11 +23,13 @@ describe('authenticated MCP release tool surface', () => {
     }
   })
 
-  it('enables the narrow explicit-user write for every authenticated session while keeping trusted ingestion OAuth-gated', () => {
-    expect(authenticatedRuntime).toContain('const trustedIngestionEnabled = Boolean(identity.oauthClientId)')
-    expect(authenticatedRuntime).toContain("dataMode: 'google-drive'")
+  it('keeps explicit-user writes available while requiring source-scoped grants for trusted ingestion', () => {
+    expect(authenticatedRuntime).toContain('createAuthorizationGrantStore')
+    expect(authenticatedRuntime).toContain('grantAllows(grants, name, sourceId)')
+    expect(authenticatedRuntime).toContain("dataMode: transactionalAuthority ? 'transactional' : 'google-drive'")
+    expect(authenticatedRuntime).toContain("PJSDAS_CONNECTED_AUTHORITY")
     expect(authenticatedRuntime).toContain("explicitUserWriteMode: 'enabled'")
-    expect(authenticatedRuntime).toContain("trustedIngestionMode: trustedIngestionEnabled ? 'enabled' : 'disabled'")
-    expect(authenticatedRuntime).not.toContain("trustedIngestionMode: 'enabled'")
+    expect(authenticatedRuntime).toContain('trustedIngestionCapabilities')
+    expect(authenticatedRuntime).not.toContain('Boolean(identity.oauthClientId)')
   })
 })

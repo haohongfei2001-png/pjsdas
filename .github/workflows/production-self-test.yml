@@ -16,6 +16,7 @@ jobs:
     timeout-minutes: 5
     env:
       PJSDAS_EXPECTED_COMMIT_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
+      PJSDAS_EXPECTED_WORKSPACE_AUTHORITY: ${{ vars.PJSDAS_CONNECTED_AUTHORITY || 'google-drive' }}
     steps:
       - uses: actions/checkout@v7
         with:

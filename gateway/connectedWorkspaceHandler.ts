@@ -1,0 +1,201 @@
+import { fingerprintWorkspace } from '../src/cloud/workspaceFingerprint.js'
+import { validateSnapshot, type PJSDASSnapshot } from '../src/snapshot.js'
+import { createMutationKernel } from './mutationKernel.js'
+import { createSupabaseIdentityResolver } from './supabaseIdentity.js'
+import { createTransactionalWorkspaceStore } from './transactionalWorkspaceStore.js'
+import { WorkspaceSourceError } from './workspaceSource.js'
+
+export interface ConnectedWorkspaceHandlerConfig {
+  supabaseUrl: string
+  supabasePublishableKey: string
+  serviceRoleKey: string
+  allowedOrigins: string[]
+  fetchImpl?: typeof fetch
+}
+
+function corsHeaders(origin: string | null, allowedOrigins: string[]) {
+  const headers = new Headers({
+    'cache-control': 'no-store',
+    'content-type': 'application/json; charset=utf-8',
+    vary: 'Origin',
+  })
+  if (origin && allowedOrigins.includes(origin)) {
+    headers.set('access-control-allow-origin', origin)
+    headers.set('access-control-allow-headers', 'authorization, content-type')
+    headers.set('access-control-allow-methods', 'GET, POST, OPTIONS')
+  }
+  return headers
+}
+
+function json(status: number, body: unknown, origin: string | null, allowedOrigins: string[]) {
+  return new Response(JSON.stringify(body), { status, headers: corsHeaders(origin, allowedOrigins) })
+}
+
+function safeError(caught: unknown) {
+  if (caught instanceof WorkspaceSourceError) return caught
+  return new WorkspaceSourceError(
+    'CONNECTED_WORKSPACE_FAILED',
+    caught instanceof Error ? caught.message : 'PJSDAS connected workspace request failed.',
+    false,
+  )
+}
+
+function parseBody<T>(raw: unknown): T {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+    throw new WorkspaceSourceError('INVALID_ARGUMENT', 'PJSDAS connected workspace request body is invalid.', false)
+  }
+  return raw as T
+}
+
+export function createConnectedWorkspaceHandler(config: ConnectedWorkspaceHandlerConfig) {
+  const fetchImpl = config.fetchImpl ?? fetch
+  const resolveIdentity = createSupabaseIdentityResolver({
+    supabaseUrl: config.supabaseUrl,
+    publishableKey: config.supabasePublishableKey,
+    fetchImpl,
+  })
+  return async function handleConnectedWorkspace(request: Request) {
+    const origin = request.headers.get('origin')
+    if (request.method === 'OPTIONS') {
+      const allowed = Boolean(origin && config.allowedOrigins.includes(origin))
+      return new Response(null, {
+        status: allowed ? 204 : 403,
+        headers: corsHeaders(origin, config.allowedOrigins),
+      })
+    }
+
+    if (!origin || !config.allowedOrigins.includes(origin)) {
+      return json(403, {
+        code: 'ORIGIN_NOT_ALLOWED',
+        message: 'Connected workspace access is available only to an approved first-party PJSDAS browser origin.',
+        retryable: false,
+      }, origin, config.allowedOrigins)
+    }
+
+    try {
+      const { identity } = await resolveIdentity(request)
+      if (identity.oauthClientId) {
+        throw new WorkspaceSourceError('AUTH_FORBIDDEN', 'Delegated OAuth clients cannot call the first-party connected workspace endpoint.', false)
+      }
+      const store = createTransactionalWorkspaceStore({
+        supabaseUrl: config.supabaseUrl,
+        serviceRoleKey: config.serviceRoleKey,
+        fetchImpl,
+      })
+      const kernel = createMutationKernel({
+        supabaseUrl: config.supabaseUrl,
+        serviceRoleKey: config.serviceRoleKey,
+        fetchImpl,
+      })
+
+      if (request.method === 'GET') {
+        const workspace = await store.readForUser(identity.userId)
+        if (!workspace) {
+          throw new WorkspaceSourceError(
+            'WORKSPACE_MIGRATION_REQUIRED',
+            'This account has not explicitly migrated a workspace to connected mode.',
+            false,
+          )
+        }
+        return json(200, {
+          workspaceId: workspace.workspaceId,
+          workspaceVersion: `txn:${workspace.revision}`,
+          revision: workspace.revision,
+          schemaVersion: workspace.schemaVersion,
+          snapshot: workspace.snapshot,
+        }, origin, config.allowedOrigins)
+      }
+
+      if (request.method !== 'POST') {
+        return json(405, { code: 'METHOD_NOT_ALLOWED', message: 'Use GET, POST, or OPTIONS.' }, origin, config.allowedOrigins)
+      }
+
+      const body = parseBody<{
+        action?: string
+        confirmMigration?: boolean
+        snapshot?: unknown
+        sourceFingerprint?: string
+        migratedFrom?: string
+        commandId?: string
+        expectedRevision?: number
+      }>(await request.json().catch(() => undefined))
+
+      if (body.action === 'bootstrap') {
+        if (body.confirmMigration !== true) {
+          throw new WorkspaceSourceError('CONFIRMATION_REQUIRED', 'Connected-mode migration requires explicit confirmation.', false)
+        }
+        validateSnapshot(body.snapshot)
+        const snapshot = body.snapshot as PJSDASSnapshot
+        const computedFingerprint = await fingerprintWorkspace(snapshot)
+        if (body.sourceFingerprint && body.sourceFingerprint !== computedFingerprint) {
+          throw new WorkspaceSourceError('WORKSPACE_INVALID', 'Migration fingerprint does not match the supplied snapshot.', false)
+        }
+        const migratedFrom = body.migratedFrom?.trim() || 'explicit-first-party-migration'
+        const workspace = await store.bootstrapForUser({
+          userId: identity.userId,
+          snapshot,
+          schemaVersion: snapshot.version,
+          sourceFingerprint: computedFingerprint,
+          migratedFrom,
+        })
+        const resultingFingerprint = await fingerprintWorkspace(workspace.snapshot)
+        if (resultingFingerprint !== computedFingerprint) {
+          throw new WorkspaceSourceError(
+            'WORKSPACE_CONFLICT',
+            'A different connected workspace already exists for this account. PJSDAS will not overwrite it during migration.',
+            false,
+          )
+        }
+        return json(200, {
+          outcome: 'MIGRATED_OR_ALREADY_MATCHED',
+          workspaceId: workspace.workspaceId,
+          workspaceVersion: `txn:${workspace.revision}`,
+          revision: workspace.revision,
+          schemaVersion: workspace.schemaVersion,
+          snapshot: workspace.snapshot,
+        }, origin, config.allowedOrigins)
+      }
+
+      if (body.action === 'commit') {
+        if (!body.commandId?.trim() || !Number.isInteger(body.expectedRevision)) {
+          throw new WorkspaceSourceError('INVALID_ARGUMENT', 'Connected commit requires commandId and expectedRevision.', false)
+        }
+        validateSnapshot(body.snapshot)
+        const nextSnapshot = body.snapshot as PJSDASSnapshot
+        const fingerprint = await fingerprintWorkspace(nextSnapshot)
+        const result = await kernel.execute(
+          { kind: 'first_party_web', userId: identity.userId },
+          {
+            commandId: body.commandId,
+            operation: 'SyncLocalSnapshot',
+            payload: { fingerprint },
+            expectedRevision: body.expectedRevision!,
+            provenance: { channel: 'first-party-web-sync' },
+          },
+          () => nextSnapshot,
+        )
+        const status = result.outcome === 'CONFLICT' ? 409 : 200
+        return json(status, {
+          outcome: result.outcome,
+          workspaceId: result.workspaceId,
+          workspaceVersion: `txn:${result.revision}`,
+          revision: result.revision,
+          schemaVersion: nextSnapshot.version,
+          snapshot: result.snapshot,
+          receipt: result.receipt,
+        }, origin, config.allowedOrigins)
+      }
+
+      throw new WorkspaceSourceError('INVALID_ARGUMENT', 'Unknown connected workspace action.', false)
+    } catch (caught) {
+      const error = safeError(caught)
+      const status = error.code === 'AUTH_REQUIRED' || error.code === 'AUTH_INVALID' ? 401
+        : error.code === 'AUTH_FORBIDDEN' || error.code === 'ORIGIN_NOT_ALLOWED' ? 403
+          : error.code === 'WORKSPACE_CONFLICT' ? 409
+            : error.code === 'WORKSPACE_MIGRATION_REQUIRED' || error.code === 'CONFIRMATION_REQUIRED' ? 409
+              : error.retryable ? 503
+                : 400
+      return json(status, { code: error.code, message: error.message, retryable: error.retryable }, origin, config.allowedOrigins)
+    }
+  }
+}

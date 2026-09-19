@@ -10,11 +10,17 @@ describe('backend-first release gate', () => {
     expect(workflow).toContain('PJSDAS_BACKEND_ORIGINS')
     expect(workflow).toContain('${origin}/api/health')
     expect(workflow).toContain('health.version === "1.9.0-alpha.1"')
-    expect(workflow).toContain('health.mode === "google-drive-trusted-ingestion"')
+    expect(workflow).toContain('const expectedMode = expectedAuthority === "transactional" ? "transactional-connected" : "google-drive-trusted-ingestion"')
+    expect(workflow).toContain('health.mode === expectedMode')
+    expect(workflow).toContain('health.workspaceAuthority === expectedAuthority')
     expect(workflow).toContain('health.release?.commitSha === process.env.GITHUB_SHA')
     expect(workflow).toContain('capabilities.authenticatedMcpToolSurface === true')
-    expect(workflow).toContain('authenticatedMcp.toolSurfaceVersion === "v1"')
-    for (const tool of ['get_coverage_status', 'get_workspace_integrity', 'ingest_discovery_run', 'ingest_gmail_run']) {
+    expect(workflow).toContain('capabilities.delegatedCredentialIsolation === true')
+    expect(workflow).toContain('capabilities.trustedIngestionGrantModel === "v1"')
+    expect(workflow).toContain('capabilities.transactionalWorkspaceFoundation === "v1"')
+    expect(workflow).toContain('capabilities.mutationCommandLedger === true')
+    expect(workflow).toContain('authenticatedMcp.toolSurfaceVersion === "v2"')
+    for (const tool of ['get_coverage_status', 'get_workspace_integrity', 'add_opportunities', 'ingest_discovery_run', 'ingest_gmail_run']) {
       expect(workflow).toContain(`"${tool}"`)
     }
     expect(workflow).toContain('Verify production contract before Pages publication')

@@ -1,6 +1,11 @@
 # PJSDAS AI Bridge Design
 
-Status: **architecture proposal for v1.1+**
+> **Historical design note.** The unconditional mutation/storage rules in this document
+> are superseded by [AI_OPERATED_PRODUCTION_V1.md](AI_OPERATED_PRODUCTION_V1.md).
+> Keep this file for the evolution of the read/MCP architecture; do not use it to override
+> the current P1–P4 mutation model or connected-state authority.
+
+Status: **historical architecture proposal for the original v1.1+ bridge**
 
 This document defines how PJSDAS should connect to ChatGPT and other MCP-capable AI clients without turning PJSDAS into another chat product or giving an AI unrestricted access to the user's job-search state.
 
