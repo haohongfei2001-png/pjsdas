@@ -47,7 +47,7 @@ describe('backend-first release gate', () => {
     expect(health).toContain('releaseIdentityBinding: true')
     expect(health).toContain('authenticatedMcpToolSurface: true')
     expect(health).toContain('toolSurfaceVersion: AUTHENTICATED_MCP_TOOL_SURFACE_VERSION')
-    expect(health).toContain('releaseRequiredTools: AUTHENTICATED_MCP_RELEASE_REQUIRED_TOOLS')
+    expect(health).toContain('releaseRequiredTools: authenticatedMcpReleaseRequiredTools(workspace.authority)')
     expect(health).toContain('commitSha: backendReleaseCommit(releaseEnvironment) ?? null')
   })
 })
