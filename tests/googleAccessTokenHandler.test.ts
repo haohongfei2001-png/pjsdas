@@ -12,6 +12,11 @@ function json(data: unknown, status = 200) {
 const KEY = Buffer.alloc(32, 19).toString('base64url')
 const ORIGIN = 'https://haohongfei2001-png.github.io'
 
+function jwt(payload: Record<string, unknown>) {
+  const encode = (value: unknown) => Buffer.from(JSON.stringify(value)).toString('base64url')
+  return `${encode({ alg: 'RS256', typ: 'JWT' })}.${encode(payload)}.test-signature`
+}
+
 function request(origin = ORIGIN, token = 'pjsdas-session-token') {
   return new Request('https://gateway.example/api/google-access-token', {
     method: 'POST',
@@ -95,6 +100,50 @@ describe('stable account Google access token handler', () => {
     expect(response.status).toBe(409)
     await expect(response.json()).resolves.toMatchObject({ code: 'GOOGLE_CONNECTION_REQUIRED' })
     expect(fetchImpl).toHaveBeenCalledTimes(2)
+  })
+
+  it('rejects delegated OAuth sessions before reading Google connection state', async () => {
+    const oauthToken = jwt({
+      sub: 'user-a',
+      client_id: '1af5d928-7c67-4330-9521-e8886794fd14',
+    })
+    const fetchImpl = vi.fn(async (input: RequestInfo | URL) => {
+      if (String(input).endsWith('/auth/v1/user')) return json({ id: 'user-a', email: 'a@gmail.com' })
+      return json({ error: 'must not read binding' }, 500)
+    }) as unknown as typeof fetch
+    const handler = createGoogleAccessTokenHandler({
+      supabaseUrl: 'https://example.supabase.co',
+      supabasePublishableKey: 'publishable-key',
+      tokenEncryptionKey: KEY,
+      googleClientId: 'google-client-id',
+      googleClientSecret: 'google-client-secret',
+      allowedOrigins: [ORIGIN],
+      fetchImpl,
+    })
+
+    const response = await handler(request(ORIGIN, oauthToken))
+    expect(response.status).toBe(403)
+    await expect(response.json()).resolves.toMatchObject({ code: 'AUTH_FORBIDDEN' })
+    expect(fetchImpl).toHaveBeenCalledTimes(1)
+  })
+
+  it('rejects requests without a first-party browser origin before touching auth services', async () => {
+    const fetchImpl = vi.fn() as unknown as typeof fetch
+    const handler = createGoogleAccessTokenHandler({
+      supabaseUrl: 'https://example.supabase.co',
+      supabasePublishableKey: 'publishable-key',
+      tokenEncryptionKey: KEY,
+      googleClientId: 'google-client-id',
+      googleClientSecret: 'google-client-secret',
+      allowedOrigins: [ORIGIN],
+      fetchImpl,
+    })
+    const response = await handler(new Request('https://gateway.example/api/google-access-token', {
+      method: 'POST',
+      headers: { authorization: 'Bearer pjsdas-session-token' },
+    }))
+    expect(response.status).toBe(403)
+    expect(fetchImpl).not.toHaveBeenCalled()
   })
 
   it('rejects disallowed origins before touching auth services', async () => {
