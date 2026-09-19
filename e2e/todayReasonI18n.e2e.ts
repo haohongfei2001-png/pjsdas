@@ -56,7 +56,7 @@ test('Today priority explanations follow UI language immediately without changin
   await expect(focus.getByRole('heading', { name: 'Prepare application' })).toBeVisible()
   await expect(focus.locator('p')).toHaveText('核心机会 · 早投有收益 · 现实成功率较高')
 
-  await page.getByRole('button', { name: 'EN' }).first().click()
+  await page.getByRole('button', { name: 'EN', exact: true }).click()
   await expect(page.getByRole('heading', { name: 'Only the next moves for today' })).toBeVisible()
   await expect(focus.getByRole('heading', { name: 'Prepare application' })).toBeVisible()
   await expect(focus.locator('p')).toHaveText('Core opportunity · Early-application advantage · Strong fit')
