@@ -76,7 +76,7 @@ export async function updateConnectedRemoteWorkspace(input: {
     method: 'POST',
     body: JSON.stringify({
       action: 'commit',
-      commandId: `web-sync:${input.deviceId}:${input.fingerprint}`,
+      commandId: `web-sync:${input.deviceId}:${match[1]}:${input.fingerprint}`,
       expectedRevision: Number(match[1]),
       snapshot: input.snapshot,
     }),
