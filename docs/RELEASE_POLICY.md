@@ -30,6 +30,12 @@ unless it is enabled. After publication, the workflow verifies both `prerelease=
 A prerelease candidate is intended for owner canary / controlled verification. It is not the
 stable `v1.1.0` product release.
 
+Publication also requires the repository Actions secret `PJSDAS_RELEASE_ADMIN_TOKEN`.
+It must be a narrowly scoped GitHub token that can **read repository Administration
+settings** so the workflow can verify default-branch protection and Immutable Releases
+before using the normal workflow `GITHUB_TOKEN` to create the tag/Release. The admin
+token is not used for source writes or release creation.
+
 ## Gateway runtime version
 
 The authenticated MCP gateway has its own runtime / compatibility version. At the `v1.0.0` product release this remains `1.9.0-alpha.1`.
