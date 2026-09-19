@@ -69,11 +69,17 @@ jobs:
 
       - name: Verify protected default branch
         if: ${{ steps.plan.outputs.publish == 'true' }}
+        env:
+          ADMIN_TOKEN: ${{ secrets.PJSDAS_RELEASE_ADMIN_TOKEN }}
         shell: bash
         run: |
           set -euo pipefail
-          default_branch="$(gh api "repos/$GITHUB_REPOSITORY" --jq .default_branch)"
-          protected="$(gh api "repos/$GITHUB_REPOSITORY/branches/$default_branch" --jq .protected)"
+          if [ -z "${ADMIN_TOKEN:-}" ]; then
+            echo "PJSDAS_RELEASE_ADMIN_TOKEN is required to verify repository administration gates before publication." >&2
+            exit 1
+          fi
+          default_branch="$(GH_TOKEN="$ADMIN_TOKEN" gh api "repos/$GITHUB_REPOSITORY" --jq .default_branch)"
+          protected="$(GH_TOKEN="$ADMIN_TOKEN" gh api "repos/$GITHUB_REPOSITORY/branches/$default_branch" --jq .protected)"
           if [ "$protected" != "true" ]; then
             echo "Default branch $default_branch is not protected; refusing release publication." >&2
             exit 1
@@ -81,13 +87,19 @@ jobs:
 
       - name: Verify immutable releases are enabled
         if: ${{ steps.plan.outputs.publish == 'true' }}
+        env:
+          ADMIN_TOKEN: ${{ secrets.PJSDAS_RELEASE_ADMIN_TOKEN }}
         shell: bash
         run: |
           set -euo pipefail
+          if [ -z "${ADMIN_TOKEN:-}" ]; then
+            echo "PJSDAS_RELEASE_ADMIN_TOKEN is required to verify repository immutable-release settings before publication." >&2
+            exit 1
+          fi
           tmp="$(mktemp)"
           status="$(curl -sS -o "$tmp" -w '%{http_code}' \
             -H "Accept: application/vnd.github+json" \
-            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Authorization: Bearer $ADMIN_TOKEN" \
             -H "X-GitHub-Api-Version: 2026-03-10" \
             "https://api.github.com/repos/$GITHUB_REPOSITORY/immutable-releases")"
           if [ "$status" != "200" ]; then
