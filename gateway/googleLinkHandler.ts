@@ -10,7 +10,7 @@ export interface GoogleLinkHandlerConfig {
   tokenEncryptionKey: string
   allowedOrigins: string[]
   fetchImpl?: typeof fetch
-  authorizeIdentity?: (identity: import('./supabaseIdentity.js').PjsdasIdentity) => Promise<void>
+  authorizeIdentity?: (identity: import('./supabaseIdentity.js').PjsdasIdentity) => Promise<unknown>
 }
 
 type GoogleLinkRequestBody = {
