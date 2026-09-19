@@ -18,7 +18,17 @@ export const MCP_TOOL_NAMES = {
   proposeChanges: 'propose_changes',
 } as const
 
-export const AUTHENTICATED_MCP_RELEASE_REQUIRED_TOOLS = [
+export type WorkspaceAuthority = 'google-drive' | 'transactional'
+
+export const AUTHENTICATED_MCP_BASE_RELEASE_REQUIRED_TOOLS = [
+  MCP_TOOL_NAMES.coverageStatus,
+  MCP_TOOL_NAMES.workspaceIntegrity,
+  MCP_TOOL_NAMES.explicitOpportunityWrite,
+  MCP_TOOL_NAMES.discoveryIngestion,
+  MCP_TOOL_NAMES.gmailIngestion,
+] as const
+
+export const AUTHENTICATED_MCP_TRANSACTIONAL_RELEASE_REQUIRED_TOOLS = [
   MCP_TOOL_NAMES.coverageStatus,
   MCP_TOOL_NAMES.workspaceIntegrity,
   MCP_TOOL_NAMES.explicitOpportunityWrite,
@@ -26,5 +36,11 @@ export const AUTHENTICATED_MCP_RELEASE_REQUIRED_TOOLS = [
   MCP_TOOL_NAMES.discoveryIngestion,
   MCP_TOOL_NAMES.gmailIngestion,
 ] as const
+
+export function authenticatedMcpReleaseRequiredTools(authority: WorkspaceAuthority) {
+  return authority === 'transactional'
+    ? [...AUTHENTICATED_MCP_TRANSACTIONAL_RELEASE_REQUIRED_TOOLS]
+    : [...AUTHENTICATED_MCP_BASE_RELEASE_REQUIRED_TOOLS]
+}
 
 export const AUTHENTICATED_MCP_TOOL_SURFACE_VERSION = 'v3' as const
