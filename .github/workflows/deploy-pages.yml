@@ -199,6 +199,7 @@ jobs:
                     const releaseToolsReady = [
                       "get_coverage_status",
                       "get_workspace_integrity",
+                      "add_opportunities",
                       "ingest_discovery_run",
                       "ingest_gmail_run",
                     ].every(tool => requiredTools.includes(tool));
@@ -222,7 +223,7 @@ jobs:
                       capabilities.deploymentPortability === true &&
                       capabilities.releaseIdentityBinding === true &&
                       capabilities.authenticatedMcpToolSurface === true &&
-                      authenticatedMcp.toolSurfaceVersion === "v1" &&
+                      authenticatedMcp.toolSurfaceVersion === "v2" &&
                       releaseToolsReady;
                     process.exit(ready ? 0 : 1);
                   } catch {
