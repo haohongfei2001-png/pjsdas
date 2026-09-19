@@ -51,6 +51,17 @@ function discoveryArgs(input: {
   }
 }
 
+
+const verifiedSource = async (observation: any) => ({
+  ...observation,
+  sourceVerification: 'verified' as const,
+  sourceVerifiedAt: '2026-09-14T08:04:00.000Z',
+})
+
+function invokeVerified(source: WorkspaceSource, args: unknown) {
+  return invokeVerified(source, args, { sourceVerifier: verifiedSource })
+}
+
 function resultPayload(result: Awaited<ReturnType<typeof invokeTrustedIngestion>>) {
   return result.structuredContent as Record<string, any>
 }
@@ -210,14 +221,14 @@ describe('v1.10 Drive / sync / replay fault injection', () => {
     const source = new FaultInjectingDriveSource('stale-before-write-once')
     const args = discoveryArgs({ runId: 'race-run', sourceRecordId: 'race-job' })
 
-    const raced = await invokeTrustedIngestion(source, 'ingest_discovery_run', args)
+    const raced = await invokeVerified(source, args)
     expect(raced.isError).toBe(true)
     expect(errorPayload(raced)).toMatchObject({ code: 'WORKSPACE_CONFLICT', retryable: true })
     expect(source.committedWrites).toBe(0)
     expect(source.snapshot.data.opportunities).toHaveLength(0)
     expect(source.snapshot.data.actions.map((item) => item.id)).toContain('concurrent-browser-action')
 
-    const retried = await invokeTrustedIngestion(source, 'ingest_discovery_run', args)
+    const retried = await invokeVerified(source, args)
     expect(retried.isError).not.toBe(true)
     expect(source.committedWrites).toBe(1)
     expect(source.snapshot.data.opportunities).toHaveLength(1)
@@ -231,7 +242,7 @@ describe('v1.10 Drive / sync / replay fault injection', () => {
     const source = new FaultInjectingDriveSource('fail-before-commit-once')
     const args = discoveryArgs({ runId: 'precommit-run', sourceRecordId: 'precommit-job' })
 
-    const failed = await invokeTrustedIngestion(source, 'ingest_discovery_run', args)
+    const failed = await invokeVerified(source, args)
     expect(failed.isError).toBe(true)
     expect(errorPayload(failed)).toMatchObject({ code: 'GOOGLE_DRIVE_UNAVAILABLE', retryable: true })
     expect(source.version).toBe(1)
@@ -239,7 +250,7 @@ describe('v1.10 Drive / sync / replay fault injection', () => {
     expect(source.snapshot.data.opportunities).toHaveLength(0)
     expect(durableRunIds(source.snapshot)).toEqual([])
 
-    const retried = await invokeTrustedIngestion(source, 'ingest_discovery_run', args)
+    const retried = await invokeVerified(source, args)
     expect(retried.isError).not.toBe(true)
     expect(source.version).toBe(2)
     expect(source.committedWrites).toBe(1)
@@ -252,7 +263,7 @@ describe('v1.10 Drive / sync / replay fault injection', () => {
     const source = new FaultInjectingDriveSource('commit-then-fail-once')
     const args = discoveryArgs({ runId: 'lost-ack-run', sourceRecordId: 'lost-ack-job' })
 
-    const uncertain = await invokeTrustedIngestion(source, 'ingest_discovery_run', args)
+    const uncertain = await invokeVerified(source, args)
     expect(uncertain.isError).toBe(true)
     expect(errorPayload(uncertain)).toMatchObject({ code: 'GOOGLE_DRIVE_UNAVAILABLE', retryable: true })
     expect(source.version).toBe(2)
@@ -260,7 +271,7 @@ describe('v1.10 Drive / sync / replay fault injection', () => {
     expect(source.snapshot.data.opportunities).toHaveLength(1)
     expect(durableRunIds(source.snapshot)).toEqual(['lost-ack-run'])
 
-    const retried = await invokeTrustedIngestion(source, 'ingest_discovery_run', args)
+    const retried = await invokeVerified(source, args)
     expect(retried.isError).not.toBe(true)
     expect(resultPayload(retried)).toMatchObject({ alreadyApplied: true, workspaceVersion: 'drive:2' })
     expect(source.writeAttempts).toBe(1)
@@ -276,8 +287,8 @@ describe('v1.10 Drive / sync / replay fault injection', () => {
     const secondArgs = discoveryArgs({ runId: 'parallel-strategy', sourceRecordId: 'parallel-strategy', role: '战略分析' })
 
     const results = await Promise.all([
-      invokeTrustedIngestion(source, 'ingest_discovery_run', firstArgs),
-      invokeTrustedIngestion(source, 'ingest_discovery_run', secondArgs),
+      invokeVerified(source, firstArgs),
+      invokeVerified(source, secondArgs),
     ])
 
     const errors = results.map((result, index) => ({ result, index })).filter(({ result }) => result.isError)
@@ -289,7 +300,7 @@ describe('v1.10 Drive / sync / replay fault injection', () => {
     expect(source.snapshot.data.opportunities).toHaveLength(1)
 
     const failedArgs = errors[0]!.index === 0 ? firstArgs : secondArgs
-    const retry = await invokeTrustedIngestion(source, 'ingest_discovery_run', failedArgs)
+    const retry = await invokeVerified(source, failedArgs)
     expect(retry.isError).not.toBe(true)
     expect(source.committedWrites).toBe(2)
     expect(source.snapshot.data.opportunities).toHaveLength(2)
@@ -304,13 +315,13 @@ describe('v1.10 Drive / sync / replay fault injection', () => {
     const original = discoveryArgs({ runId: 'replay-original', sourceRecordId: 'replay-job-a', role: 'AI产品经理' })
     const later = discoveryArgs({ runId: 'replay-later', sourceRecordId: 'replay-job-b', role: '商业分析' })
 
-    expect((await invokeTrustedIngestion(source, 'ingest_discovery_run', original)).isError).not.toBe(true)
-    expect((await invokeTrustedIngestion(source, 'ingest_discovery_run', later)).isError).not.toBe(true)
+    expect((await invokeVerified(source, original)).isError).not.toBe(true)
+    expect((await invokeVerified(source, later)).isError).not.toBe(true)
 
     const before = JSON.stringify(source.snapshot)
     const beforeVersion = source.version
     const beforeWrites = source.committedWrites
-    const replay = await invokeTrustedIngestion(source, 'ingest_discovery_run', discoveryArgs({
+    const replay = await invokeVerified(source, discoveryArgs({
       runId: 'replay-preview',
       sourceRecordId: 'replay-job-a',
       role: 'AI产品经理',
