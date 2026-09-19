@@ -186,7 +186,7 @@ export async function signOutCloud() {
   if (error) throw error
 }
 
-async function accountAccessToken() {
+export async function getAccountAccessToken() {
   const supabase = await loadSupabase()
   const { data, error } = await supabase.auth.getSession()
   if (error) throw error
@@ -200,7 +200,7 @@ export async function getCloudAccessToken() {
   const response = await fetchBackend('/api/google-access-token', {
     method: 'POST',
     headers: {
-      authorization: `Bearer ${await accountAccessToken()}`,
+      authorization: `Bearer ${await getAccountAccessToken()}`,
       'content-type': 'application/json',
     },
   })
