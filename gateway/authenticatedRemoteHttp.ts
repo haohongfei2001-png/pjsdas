@@ -1,5 +1,6 @@
 import { createMcpHandler } from '@modelcontextprotocol/server'
 import { createAuthenticatedDriveWorkspaceSource } from './authenticatedDriveSource.js'
+import { createAuthorizationGrantStore, grantAllows, type AuthorizationGrant } from './authorizationGrantStore.js'
 import { backendUrl } from './backendOrigin.js'
 import { createPjsdasMcpServer } from './serverFactory.js'
 import { createSupabaseIdentityResolver } from './supabaseIdentity.js'
@@ -47,8 +48,9 @@ function serviceError(caught: unknown, request: Request) {
   if (caught instanceof WorkspaceSourceError) {
     if (caught.code === 'AUTH_REQUIRED' || caught.code === 'AUTH_INVALID') return unauthorized(request, caught.message)
     const conflict = caught.code === 'WORKSPACE_CONFLICT'
+    const forbidden = caught.code === 'AUTH_FORBIDDEN'
     return new Response(JSON.stringify({ code: caught.code, message: caught.message, retryable: caught.retryable }), {
-      status: conflict ? 409 : caught.retryable ? 503 : 500,
+      status: forbidden ? 403 : conflict ? 409 : caught.retryable ? 503 : 500,
       headers: { 'cache-control': 'no-store', 'content-type': 'application/json; charset=utf-8' },
     })
   }
@@ -89,8 +91,9 @@ function lazyDriveSource(request: Request): WorkspaceSource {
  * Read tools remain side-effect free. Every authenticated user may perform the
  * narrow additive add_opportunities write after an explicit current user command.
  * Review-only ChangeSets remain the path for policy, preference, ambiguous and
- * destructive changes. Autonomous trusted ingestion remains restricted to
- * validated Supabase OAuth client sessions carrying an OAuth client_id claim.
+ * destructive changes. Autonomous trusted ingestion requires an explicit,
+ * source-scoped authorization grant for the validated delegated OAuth client.
+ * An OAuth client_id identifies the client; it is not itself an authorization.
  */
 export async function authenticatedRemoteMcpFetch(request: Request) {
   try {
@@ -98,8 +101,25 @@ export async function authenticatedRemoteMcpFetch(request: Request) {
       supabaseUrl: PJSDAS_SUPABASE_URL,
       publishableKey: PJSDAS_SUPABASE_PUBLISHABLE_KEY,
     })
-    const { identity } = await resolveIdentity(request)
-    const trustedIngestionEnabled = Boolean(identity.oauthClientId)
+    const { identity, accessToken } = await resolveIdentity(request)
+    let grants: AuthorizationGrant[] = []
+    if (identity.oauthClientId) {
+      const grantStore = createAuthorizationGrantStore({
+        supabaseUrl: PJSDAS_SUPABASE_URL,
+        publishableKey: PJSDAS_SUPABASE_PUBLISHABLE_KEY,
+      })
+      grants = await grantStore.listActiveForClient(identity.userId, identity.oauthClientId, accessToken)
+    }
+    const trustedIngestionEnabled = grants.length > 0
+    const authorizeTrustedIngestion = async (name: 'ingest_discovery_run' | 'ingest_gmail_run', sourceId: string) => {
+      if (!identity.oauthClientId || !grantAllows(grants, name, sourceId)) {
+        throw new WorkspaceSourceError(
+          'AUTH_FORBIDDEN',
+          `This delegated client is not authorized for ${name} on source ${sourceId}.`,
+          false,
+        )
+      }
+    }
 
     const source = lazyDriveSource(request)
     const handler = createMcpHandler(
@@ -108,6 +128,7 @@ export async function authenticatedRemoteMcpFetch(request: Request) {
         dataMode: 'google-drive',
         proposalMode: 'review-link',
         trustedIngestionMode: trustedIngestionEnabled ? 'enabled' : 'disabled',
+        trustedIngestionAuthorizer: authorizeTrustedIngestion,
         explicitUserWriteMode: 'enabled',
         proposalSigningKey: env('PJSDAS_TOKEN_ENCRYPTION_KEY'),
       }),
