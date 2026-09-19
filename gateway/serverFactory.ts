@@ -52,6 +52,7 @@ export interface PjsdasMcpServerOptions {
   proposalMode?: 'disabled' | 'review-link'
   proposalSigningKey?: string
   trustedIngestionMode?: 'disabled' | 'enabled'
+  trustedIngestionCapabilities?: { discovery: boolean; gmail: boolean }
   trustedIngestionAuthorizer?: (name: 'ingest_discovery_run' | 'ingest_gmail_run', sourceId: string) => Promise<void>
   explicitUserWriteMode?: 'disabled' | 'enabled'
 }
@@ -63,6 +64,8 @@ export function createPjsdasMcpServer(
   const dataMode = options.dataMode ?? 'workspace'
   const proposalMode = options.proposalMode ?? 'disabled'
   const trustedIngestionMode = options.trustedIngestionMode ?? 'disabled'
+  const trustedDiscoveryEnabled = trustedIngestionMode === 'enabled' && (options.trustedIngestionCapabilities?.discovery ?? true)
+  const trustedGmailEnabled = trustedIngestionMode === 'enabled' && (options.trustedIngestionCapabilities?.gmail ?? true)
   const explicitUserWriteMode = options.explicitUserWriteMode ?? 'disabled'
   const instructions = [
     'PJSDAS is a personal job-search decision and action system.',
@@ -91,7 +94,7 @@ export function createPjsdasMcpServer(
     )
   }
 
-  if (trustedIngestionMode === 'enabled') {
+  if (trustedDiscoveryEnabled || trustedGmailEnabled) {
     instructions.push(
       'Trusted factual ingestion is autonomous and does not require a review click. It is deliberately narrower than generic mutation.',
       'Use ingest_discovery_run only for a bounded completed GPT/ChatGPT monitoring run with stable sourceRecordId values and source-backed public URLs. The tool performs identity resolution, quality gates, duplicate merging, accounting, and fail-closed workspace-version checks itself.',
@@ -113,7 +116,7 @@ export function createPjsdasMcpServer(
       'For refreshQueue verification, use postingRefreshes as a separate review batch.',
       'Rich Opportunity facts are evidence fields, not ratings. Component assessment is the preferred rating path.',
     )
-  } else if (trustedIngestionMode !== 'enabled' && explicitUserWriteMode !== 'enabled') {
+  } else if (!trustedDiscoveryEnabled && !trustedGmailEnabled && explicitUserWriteMode !== 'enabled') {
     instructions.push('This server exposes no mutation or proposal tools.')
   }
 
@@ -212,7 +215,7 @@ export function createPjsdasMcpServer(
     }, async (args) => invokeAddOpportunities(source, args))
   }
 
-  if (trustedIngestionMode === 'enabled') {
+  if (trustedDiscoveryEnabled) {
     server.registerTool('ingest_discovery_run', {
       title: 'Autonomously ingest a trusted job-monitor run',
       description: 'Auto-apply or dry-run one completed trusted monitoring batch. Each submitted source record is accounted for; identity ambiguity fails closed; workspace conflicts fail closed.',
