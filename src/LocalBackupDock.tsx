@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { exportLocalSnapshot, restoreLocalSnapshot } from './db.js'
 import { parseSnapshotText, type PJSDASSnapshot } from './snapshot.js'
+import { parseOriginMigrationRecoveryText } from './cloud/originMigrationRecovery.js'
 import { useUiLanguage, type UiLanguage } from './uiLanguage.js'
 import './localBackup.css'
 
@@ -19,6 +20,7 @@ export default function LocalBackupDock({ onChanged }: LocalBackupDockProps) {
   const [open, setOpen] = useState(false)
   const [preview, setPreview] = useState<PJSDASSnapshot | null>(null)
   const [previewName, setPreviewName] = useState('')
+  const [previewSource, setPreviewSource] = useState<'snapshot' | 'migration-recovery'>('snapshot')
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
@@ -26,6 +28,7 @@ export default function LocalBackupDock({ onChanged }: LocalBackupDockProps) {
   function clearTransientState() {
     setPreview(null)
     setPreviewName('')
+    setPreviewSource('snapshot')
     setMessage('')
     setError('')
   }
@@ -72,12 +75,22 @@ export default function LocalBackupDock({ onChanged }: LocalBackupDockProps) {
     setMessage('')
     setError('')
     try {
-      const snapshot = parseSnapshotText(await file.text())
-      setPreview(snapshot)
-      setPreviewName(file.name)
+      const text = await file.text()
+      try {
+        const snapshot = parseSnapshotText(text)
+        setPreview(snapshot)
+        setPreviewName(file.name)
+        setPreviewSource('snapshot')
+      } catch {
+        const recovery = await parseOriginMigrationRecoveryText(text)
+        setPreview(recovery.recoverySnapshot)
+        setPreviewName(file.name)
+        setPreviewSource('migration-recovery')
+      }
     } catch (caught) {
       setPreview(null)
       setPreviewName('')
+      setPreviewSource('snapshot')
       setError(caught instanceof Error ? caught.message : (zh ? '无法读取备份。' : 'Could not read this backup.'))
     } finally {
       setBusy(false)
@@ -157,6 +170,9 @@ export default function LocalBackupDock({ onChanged }: LocalBackupDockProps) {
                 <div>
                   <div className="eyebrow">RESTORE PREVIEW</div>
                   <strong>{previewName}</strong>
+                  <p>{previewSource === 'migration-recovery'
+                    ? (zh ? '已验证域名迁移恢复包中的选定快照' : 'Verified selected snapshot from a domain-migration recovery bundle')
+                    : (zh ? '普通本地快照' : 'Standard local snapshot')}</p>
                   <p>{zh ? '导出于' : 'Exported'} {formatDateTime(preview.exportedAt, lang)}</p>
                 </div>
                 <div className="backup-counts">
