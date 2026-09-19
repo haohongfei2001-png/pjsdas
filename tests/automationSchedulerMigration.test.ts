@@ -7,16 +7,20 @@ const migration = readFileSync(
 )
 
 describe('production automation scheduler activation', () => {
-  it('requires HTTPS backend origin and both independent Vault tokens', () => {
+  it('fails closed unless HTTPS backend origin and both Vault tokens already exist', () => {
     expect(migration).toContain("name = 'pjsdas_automation_backend_origin'")
     expect(migration).toContain("decrypted_secret ~ '^https://'")
     expect(migration).toContain("name = 'pjsdas_gmail_automation_worker_token'")
     expect(migration).toContain("name = 'pjsdas_discovery_automation_worker_token'")
+    expect(migration).toContain('raise exception')
+    expect(migration).not.toContain("vault.create_secret(")
   })
 
   it('schedules Gmail and Discovery through pg_cron + pg_net without embedding secrets', () => {
     expect(migration).toContain("'pjsdas-gmail-automation-hourly'")
     expect(migration).toContain("'pjsdas-discovery-automation-hourly'")
+    expect(migration).toContain("'5 * * * *'")
+    expect(migration).toContain("'15 * * * *'")
     expect(migration).toContain("'/api/automation-gmail'")
     expect(migration).toContain("'/api/automation-discovery'")
     expect(migration).toContain('net.http_post')
