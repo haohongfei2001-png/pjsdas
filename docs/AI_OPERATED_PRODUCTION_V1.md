@@ -154,5 +154,6 @@ Not in scope:
 7. Round 6 — Personal Canary → Controlled Launch
 
 Do not activate the new P1 direct-write surface until connected authority is transactional.
-Round 3 may redesign the Web console but must consume the same Domain Command/state
-contracts instead of creating a second mutation model.
+Round 3 is complete. Future Web work must preserve the same Domain Command/state contracts
+instead of creating a second mutation model. Round 4 owns formal domain, production topology,
+audience/allowlist, and connected-authority activation planning.
