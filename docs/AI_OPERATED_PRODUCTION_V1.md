@@ -130,13 +130,22 @@ Not in scope:
 ## Development sequence
 
 1. Round 0 — Product / AI / State Contract Freeze — **complete**
-2. Round 1 — Secure Mutation Foundation — authorization isolation, transactional
-   workspace/CAS, command idempotency, receipts, safe undo, migration foundation
-3. Round 2 — AI Operations & Autonomous Sources
+2. Round 1 — Secure Mutation Foundation — **complete** — authorization isolation,
+   transactional workspace/CAS, command idempotency, receipts, safe undo, migration foundation
+3. Round 2 — AI Operations & Autonomous Sources — **complete**
+   - bounded P1 Domain Commands with exact target ids and P2 clarification behavior;
+   - P1 command tool remains activation-gated to transactional authority;
+   - user abandonment is separate from recruiting-process closure;
+   - unassessed/provisional/assessed states replace fake neutral-score semantics;
+   - Gmail complete-consumption continuation prevents watermark advancement past
+     unconsumed pages/ids and records expired-history coverage gaps;
+   - Discovery candidates require independent server-side source verification before
+     source facts can create/refresh Opportunities; unverified candidates remain unresolved.
 4. Round 3 — Web Console Product Redesign
 5. Round 4 — Production / Domain / Audience Integration
 6. Round 5 — Release Candidate Hardening & Verification
 7. Round 6 — Personal Canary → Controlled Launch
 
-Do not expand the P1 direct-write surface or begin the Web redesign before Round 1 is
-closed with its required tests and migration evidence.
+Do not activate the new P1 direct-write surface until connected authority is transactional.
+Round 3 may redesign the Web console but must consume the same Domain Command/state
+contracts instead of creating a second mutation model.
