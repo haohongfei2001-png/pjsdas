@@ -4,8 +4,8 @@ test('AI Access settings disclose bounded trusted automation and user-controlled
   await page.goto('/')
   await expect(page.getByRole('heading', { name: '今天只处理下一步' })).toBeVisible()
 
-  await page.getByRole('button', { name: /设置/ }).click()
-  await page.getByRole('button', { name: 'EN' }).first().click()
+  await page.locator('.surface-nav').getByRole('button', { name: /设置/ }).click()
+  await page.getByRole('button', { name: 'EN', exact: true }).click()
 
   const card = page.locator('.cloud-settings-card').filter({ hasText: 'CHATGPT · AI ACCESS' })
   await expect(card).toBeVisible()
