@@ -6,8 +6,8 @@ test('local backup follows the interface language and states the sync boundary a
 
   await page.getByRole('button', { name: 'EN' }).first().click()
   await page.getByRole('button', { name: /Settings/ }).click()
-  await expect(page.getByRole('heading', { name: 'Preferences, rules, sync, and data safety' })).toBeVisible()
-
+  await expect(page.getByRole('heading', { name: 'Connections, automation, and durable control' })).toBeVisible()
+  await page.locator('details.settings-group').filter({ hasText: 'Data & recovery' }).locator('summary').click()
   await page.getByRole('button', { name: 'Local backup' }).click()
   await expect(page.getByRole('heading', { name: 'Backup & restore' })).toBeVisible()
   await expect(page.getByText(/never uploaded to GitHub/)).toBeVisible()
