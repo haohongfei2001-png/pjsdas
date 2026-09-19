@@ -8,6 +8,10 @@
   },
   "rewrites": [
     {
+      "source": "/api/access",
+      "destination": "/api/health-auth?mode=access"
+    },
+    {
       "source": "/.well-known/oauth-protected-resource",
       "destination": "/api/oauth-protected-resource"
     },

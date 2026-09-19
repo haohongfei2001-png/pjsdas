@@ -49,7 +49,7 @@ describe('deployment portability', () => {
   })
 
   it('keeps the Cloudflare standby route surface aligned with current background automation APIs', () => {
-    expect(cloudflareWorker).toContain("'/api/access'")
+    expect(cloudflareWorker).toContain("['/api/access', healthAuth]")
     expect(cloudflareWorker).toContain("'/api/automation-discovery'")
     expect(cloudflareWorker).toContain("'/api/automation-gmail'")
     expect(cloudflareWorker).toContain("'/api/automation-settings'")
@@ -85,6 +85,8 @@ describe('deployment portability', () => {
     expect(selfTest).toContain('PJSDAS_EXPECTED_CANONICAL_API_ORIGIN')
     expect(selfTest).toContain('github.event.workflow_run.head_sha || github.sha')
     expect(vercel).toContain('"main": true')
+    expect(vercel).toContain('"/api/access"')
+    expect(vercel).toContain('"/api/health-auth?mode=access"')
     expect(wrangler).toContain('pjsdas-remote-standby')
     expect(wrangler).toContain('cloudflare/worker.ts')
   })
