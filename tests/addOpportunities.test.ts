@@ -83,6 +83,7 @@ describe('explicit user-authorized opportunity writes', () => {
       opportunityValue: 50,
       fitScore: 50,
       sourcePriority: 'ChatGPT 明确写入 · 待补评估',
+      assessmentStatus: 'unassessed',
       locallyManaged: true,
     })
     expect(opportunity.detail?.discovery?.posting?.canonicalSourceUrl).toBe('https://careers.example.com/jobs/ai-pm')
