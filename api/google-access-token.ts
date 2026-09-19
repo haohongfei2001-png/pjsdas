@@ -4,6 +4,7 @@ import {
   PJSDAS_SUPABASE_URL,
 } from '../gateway/supabaseProject.js'
 import { firstPartyWebOrigins } from '../gateway/productionTopology.js'
+import { createConfiguredAudienceAccessGuard } from '../gateway/audienceAccess.js'
 
 const handler = createGoogleAccessTokenHandler({
   supabaseUrl: PJSDAS_SUPABASE_URL,
@@ -12,6 +13,7 @@ const handler = createGoogleAccessTokenHandler({
   googleClientId: process.env.PJSDAS_GOOGLE_CLIENT_ID ?? '',
   googleClientSecret: process.env.PJSDAS_GOOGLE_CLIENT_SECRET ?? '',
   allowedOrigins: firstPartyWebOrigins(),
+  authorizeIdentity: createConfiguredAudienceAccessGuard({ supabaseUrl: PJSDAS_SUPABASE_URL }),
 })
 
 export default {
