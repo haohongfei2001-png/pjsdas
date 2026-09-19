@@ -43,6 +43,11 @@ const REQUIRED_CAPABILITIES: Record<string, unknown> = {
   trustedIngestionGrantModel: 'v1',
   transactionalWorkspaceFoundation: 'v1',
   mutationCommandLedger: true,
+  explicitUserCommands: 'v1',
+  opportunityParticipationState: 'v1',
+  gmailCompleteConsumption: 'v1',
+  discoverySourceVerification: 'v1',
+  discoveryFactAssessmentSeparation: true,
 }
 
 function check(name: string, condition: boolean, detail: string): ProductionSelfTestCheck {
