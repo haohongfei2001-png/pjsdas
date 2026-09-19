@@ -111,7 +111,7 @@ describe('Gmail background automation', () => {
     const fetchImpl = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input)
       calls.push(url)
-      if (url.endsWith('/profile')) return json({ historyId: '200' })
+      if (url.endsWith('/profile')) return json({ historyId: '205' })
       if (url.includes('/history?')) return json({
         historyId: '205',
         history: [{ messagesAdded: [{ message: { id: 'msg-205' } }] }],
@@ -152,6 +152,7 @@ describe('Gmail background automation', () => {
     })
 
     expect(result.usedFallbackScan).toBe(true)
+    expect(result.recoveryGapReason).toContain('cannot prove older mailbox coverage')
     expect(result.coverageComplete).toBe(true)
     expect(result.nextHistoryId).toBe('300')
     expect(result.messages.map((item) => item.id)).toEqual(['recent-1'])
@@ -162,14 +163,14 @@ describe('Gmail background automation', () => {
     const fetchImpl = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input)
       calls.push(url)
-      if (url.endsWith('/profile')) return json({ historyId: '300' })
+      if (url.endsWith('/profile')) return json({ historyId: '305' })
       if (url.includes('/history?') && !url.includes('pageToken=')) return json({
-        historyId: '305',
+        historyId: '310',
         nextPageToken: 'page-2',
         history: [{ messagesAdded: [{ message: { id: 'msg-1' } }] }],
       })
       if (url.includes('/history?') && url.includes('pageToken=page-2')) return json({
-        historyId: '305',
+        historyId: '315',
         history: [{ messagesAdded: [{ message: { id: 'msg-2' } }] }],
       })
       if (url.includes('/messages/msg-1?')) return json({ id: 'msg-1', internalDate: '1', payload: { headers: [] } })
@@ -215,7 +216,7 @@ describe('Gmail background automation', () => {
     const ids = Array.from({ length: 105 }, (_, index) => `msg-${index + 1}`)
     const fetchImpl = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input)
-      if (url.endsWith('/profile')) return json({ historyId: '400' })
+      if (url.endsWith('/profile')) return json({ historyId: '405' })
       if (url.includes('/history?')) return json({
         historyId: '405',
         history: [{
