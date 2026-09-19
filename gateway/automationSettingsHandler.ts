@@ -156,6 +156,10 @@ export function createAutomationSettingsHandler(config: AutomationSettingsHandle
       const patch: Record<string, unknown> = { updated_at: new Date().toISOString() }
       if (gmailProvided) {
         patch.gmail_automation_enabled = body!.gmailEnabled
+        patch.gmail_sync_mode = null
+        patch.gmail_page_token = null
+        patch.gmail_pending_history_id = null
+        patch.gmail_pending_message_ids = []
         if (body!.gmailEnabled === true) {
           patch.gmail_history_id = null
           patch.gmail_last_error = null
@@ -187,6 +191,10 @@ export function createAutomationSettingsHandler(config: AutomationSettingsHandle
       const updated: AutomationRow = { ...current }
       if (gmailProvided) {
         updated.gmail_automation_enabled = body!.gmailEnabled as boolean
+        updated.gmail_sync_mode = null
+        updated.gmail_page_token = null
+        updated.gmail_pending_history_id = null
+        updated.gmail_pending_message_ids = []
         if (body!.gmailEnabled === true) {
           updated.gmail_history_id = null
           updated.gmail_last_error = null
