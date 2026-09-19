@@ -428,7 +428,9 @@ function OpportunityTable({ opportunities, groups, onOpenOpportunity }: { opport
   const filtered = useMemo(() => {
     const needle = query.trim().toLocaleLowerCase()
     return [...opportunities]
-      .filter((item) => scope === 'all' || (scope === 'closed' ? (item.processStage === 'closed' || item.participationStatus === 'abandoned') : (item.processStage !== 'closed' && item.participationStatus !== 'abandoned'))
+      .filter((item) => scope === 'all' || (scope === 'closed'
+        ? (item.processStage === 'closed' || item.participationStatus === 'abandoned')
+        : (item.processStage !== 'closed' && item.participationStatus !== 'abandoned')))
       .filter((item) => !needle || `${item.company} ${item.role}`.toLocaleLowerCase().includes(needle))
       .sort((a, b) => (a.order ?? 9999) - (b.order ?? 9999))
   }, [opportunities, query, scope])
