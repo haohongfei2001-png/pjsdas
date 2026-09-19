@@ -9,11 +9,23 @@ export interface GatewayWorkspace {
   context: BridgeReadContext
 }
 
+export interface WorkspaceWriteCommand {
+  commandId: string
+  operation: string
+  payload: unknown
+  payloadHash?: string
+  compensation?: Record<string, unknown>
+  provenance?: Record<string, unknown>
+  effectiveTime?: string
+}
+
 export interface WorkspaceWriteInput {
   snapshot: PJSDASSnapshot
   /** Exact read baseline. Autonomous writers must fail closed if the workspace moved. */
   expectedWorkspaceVersion?: string
   updatedByDevice?: string
+  /** Optional semantic command identity for transactional audit/idempotency. */
+  command?: WorkspaceWriteCommand
 }
 
 export interface WorkspaceSource {
