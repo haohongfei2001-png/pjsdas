@@ -5,7 +5,7 @@ test('Decision Rules uses durable product terminology instead of a development-v
   await expect(page.getByRole('heading', { name: '今天只处理下一步' })).toBeVisible()
 
   await page.locator('.surface-nav').getByRole('button', { name: /设置/ }).click()
-  await page.locator('details.settings-group').filter({ hasText: '决策规则' }).locator('summary').click()
+  await page.locator('details.settings-group > summary').filter({ hasText: '决策规则' }).click()
   const rules = page.locator('.rules-page')
   await expect(rules.getByRole('heading', { name: '决策规则' })).toBeVisible()
   await expect(rules.getByText('DECISION POLICY', { exact: true })).toBeVisible()
