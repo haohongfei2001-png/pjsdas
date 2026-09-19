@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs'
+import { readFileSync, readdirSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 
 const raw = readFileSync(new URL('../vercel.json', import.meta.url), 'utf8')
@@ -13,6 +13,19 @@ describe('Vercel deployment policy', () => {
       '*': false,
       main: true,
     })
+  })
+
+  it('keeps direct Vercel Functions within the Hobby deployment ceiling', () => {
+    const functions = readdirSync(new URL('../api/', import.meta.url))
+      .filter((name) => /\.(?:ts|js)$/.test(name))
+    expect(functions).toHaveLength(12)
+    expect(functions).not.toContain('access.ts')
+    expect(config.rewrites).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        source: '/api/access',
+        destination: '/api/health-auth?mode=access',
+      }),
+    ]))
   })
 
   it('preserves the OAuth protected-resource rewrites', () => {
