@@ -56,6 +56,7 @@ export interface PjsdasMcpServerOptions {
   trustedIngestionCapabilities?: { discovery: boolean; gmail: boolean }
   trustedIngestionAuthorizer?: (name: 'ingest_discovery_run' | 'ingest_gmail_run', sourceId: string) => Promise<void>
   explicitUserWriteMode?: 'disabled' | 'enabled'
+  explicitUserCommandMode?: 'disabled' | 'enabled'
 }
 
 export function createPjsdasMcpServer(
@@ -68,6 +69,7 @@ export function createPjsdasMcpServer(
   const trustedDiscoveryEnabled = trustedIngestionMode === 'enabled' && (options.trustedIngestionCapabilities?.discovery ?? true)
   const trustedGmailEnabled = trustedIngestionMode === 'enabled' && (options.trustedIngestionCapabilities?.gmail ?? true)
   const explicitUserWriteMode = options.explicitUserWriteMode ?? 'disabled'
+  const explicitUserCommandMode = options.explicitUserCommandMode ?? 'disabled'
   const instructions = [
     'PJSDAS is a personal job-search decision and action system.',
     'Use its explicit decision rules and deterministic explanations instead of inventing hidden ranking rules.',
@@ -92,6 +94,11 @@ export function createPjsdasMcpServer(
       'Use add_opportunities only for additive Opportunity creation. It is duplicate-safe and cannot change Decision Rules, delete history, close processes, or make other policy decisions.',
       'Do not use add_opportunities when the user is only asking for recommendations, evaluation, discovery, or whether a job should be added. Those requests do not constitute write authorization.',
       'If Fit or Opportunity Value is not already grounded, omit those optional scores rather than inventing precision; PJSDAS will mark the opportunity unassessed even if internal ranking needs fallback values.',
+    )
+  }
+
+  if (explicitUserCommandMode === 'enabled') {
+    instructions.push(
       'For an explicit current-user progress command on an existing unique target, use apply_user_command. Read the relevant opportunity/action first and pass its exact stable id. Do not guess an id or use a fuzzy company-only target.',
       'P1 examples include: record an application submission; record a recruiting event; set an explicit deadline; complete/start/skip/restore an Action; abandon one Opportunity without closing the recruiting process; correct a bounded user-asserted fact; change one Opportunity roleType; add one manual Action.',
       'If the user intent is explicit but the target or a required parameter is ambiguous, ask only for that missing detail in the current conversation. Do not route ordinary P2 ambiguity through propose_changes.',
@@ -121,7 +128,7 @@ export function createPjsdasMcpServer(
       'For refreshQueue verification, use postingRefreshes as a separate review batch.',
       'Rich Opportunity facts are evidence fields, not ratings. Component assessment is the preferred rating path.',
     )
-  } else if (!trustedDiscoveryEnabled && !trustedGmailEnabled && explicitUserWriteMode !== 'enabled') {
+  } else if (!trustedDiscoveryEnabled && !trustedGmailEnabled && explicitUserWriteMode !== 'enabled' && explicitUserCommandMode !== 'enabled') {
     instructions.push('This server exposes no mutation or proposal tools.')
   }
 
@@ -222,6 +229,9 @@ export function createPjsdasMcpServer(
       inputSchema: addOpportunitiesSchema, annotations: directWriteAnnotations,
     }, async (args) => invokeAddOpportunities(source, args))
 
+  }
+
+  if (explicitUserCommandMode === 'enabled') {
     server.registerTool('apply_user_command', {
       title: 'Apply one explicit PJSDAS user command',
       description: 'Directly commit one bounded, explicit, low-risk user command against an exact PJSDAS target. Ambiguous targets must be clarified in the AI conversation before calling this tool; governed/high-impact changes remain review-only.',
