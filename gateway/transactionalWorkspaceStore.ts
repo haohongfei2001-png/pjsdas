@@ -22,7 +22,17 @@ export interface ConnectedCommitInput {
   principalKind: MutationPrincipalKind
   clientId?: string
   provenance?: Record<string, unknown>
+  compensation?: Record<string, unknown>
   effectiveTime?: string
+}
+
+export interface ConnectedCommandRecord {
+  commandId: string
+  operation: string
+  payloadHash: string
+  resultingRevision: number
+  receipt: Record<string, unknown>
+  compensation?: Record<string, unknown>
 }
 
 export interface ConnectedCommitResult {
@@ -105,6 +115,39 @@ export function createTransactionalWorkspaceStore(options: TransactionalWorkspac
       return rows[0] ? parseWorkspaceRow(rows[0], userId) : null
     },
 
+    async readCommandForUser(userId: string, commandId: string): Promise<ConnectedCommandRecord | null> {
+      const params = new URLSearchParams({
+        select: 'command_id,operation,payload_hash,resulting_revision,receipt,compensation,status',
+        user_id: `eq.${userId}`,
+        command_id: `eq.${commandId}`,
+        status: 'eq.COMMITTED',
+        limit: '1',
+      })
+      const response = await request(`/rest/v1/pjsdas_command_ledger?${params.toString()}`, { method: 'GET' })
+      if (!response.ok) {
+        throw new WorkspaceSourceError('WORKSPACE_UNAVAILABLE', `PJSDAS command receipt read failed (HTTP ${response.status}).`, response.status >= 500 || response.status === 429)
+      }
+      const rows = await response.json().catch(() => undefined) as Record<string, unknown>[] | undefined
+      const row = rows?.[0]
+      if (!row) return null
+      if (
+        typeof row.command_id !== 'string'
+        || typeof row.operation !== 'string'
+        || typeof row.payload_hash !== 'string'
+        || !validRevision(row.resulting_revision)
+      ) {
+        throw new WorkspaceSourceError('WORKSPACE_INVALID', 'PJSDAS command receipt metadata is invalid.', false)
+      }
+      return {
+        commandId: row.command_id,
+        operation: row.operation,
+        payloadHash: row.payload_hash,
+        resultingRevision: row.resulting_revision,
+        receipt: typeof row.receipt === 'object' && row.receipt !== null ? row.receipt as Record<string, unknown> : {},
+        compensation: typeof row.compensation === 'object' && row.compensation !== null ? row.compensation as Record<string, unknown> : undefined,
+      }
+    },
+
     async bootstrapForUser(input: {
       userId: string
       snapshot: PJSDASSnapshot
@@ -156,6 +199,7 @@ export function createTransactionalWorkspaceStore(options: TransactionalWorkspac
           target_principal_kind: input.principalKind,
           target_client_id: input.clientId ?? null,
           target_provenance: input.provenance ?? {},
+          target_compensation: input.compensation ?? null,
           target_effective_time: input.effectiveTime ?? null,
         }),
       })
