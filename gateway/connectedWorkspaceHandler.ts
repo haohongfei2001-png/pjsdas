@@ -11,7 +11,7 @@ export interface ConnectedWorkspaceHandlerConfig {
   serviceRoleKey: string
   allowedOrigins: string[]
   fetchImpl?: typeof fetch
-  authorizeIdentity?: (identity: import('./supabaseIdentity.js').PjsdasIdentity) => Promise<void>
+  authorizeIdentity?: (identity: import('./supabaseIdentity.js').PjsdasIdentity) => Promise<unknown>
 }
 
 function corsHeaders(origin: string | null, allowedOrigins: string[]) {
