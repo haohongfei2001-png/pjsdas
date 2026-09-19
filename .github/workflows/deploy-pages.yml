@@ -206,15 +206,16 @@ jobs:
                     const requiredTools = Array.isArray(authenticatedMcp.releaseRequiredTools)
                       ? authenticatedMcp.releaseRequiredTools
                       : [];
-                    const releaseToolsReady = [
+                    const expectedAuthority = process.env.PJSDAS_EXPECTED_WORKSPACE_AUTHORITY === "transactional" ? "transactional" : "google-drive";
+                    const expectedTools = [
                       "get_coverage_status",
                       "get_workspace_integrity",
                       "add_opportunities",
-                      "apply_user_command",
+                      ...(expectedAuthority === "transactional" ? ["apply_user_command"] : []),
                       "ingest_discovery_run",
                       "ingest_gmail_run",
-                    ].every(tool => requiredTools.includes(tool));
-                    const expectedAuthority = process.env.PJSDAS_EXPECTED_WORKSPACE_AUTHORITY === "transactional" ? "transactional" : "google-drive";
+                    ];
+                    const releaseToolsReady = expectedTools.every(tool => requiredTools.includes(tool));
                     const expectedMode = expectedAuthority === "transactional" ? "transactional-connected" : "google-drive-trusted-ingestion";
                     const ready =
                       health.status === "ok" &&
