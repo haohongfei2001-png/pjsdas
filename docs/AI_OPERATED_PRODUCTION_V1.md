@@ -149,11 +149,25 @@ Not in scope:
    - Activity is audit-only and contains no Apply/Discard workflow;
    - Settings is a layered low-frequency control surface;
    - unassessed opportunities render as unknown rather than fake neutral scores.
-5. Round 4 — Production / Domain / Audience Integration
+5. Round 4 — Production / Domain / Audience Integration — **complete**
+   - canonical Web/API origins and legacy browser origins are centralized deployment inputs;
+   - first-party browser APIs share one strict approved-origin policy;
+   - controlled-production owner/beta audience grants exist and are server-owned;
+   - allowlist mode is default-off, while legacy mode preserves current production behavior;
+   - canonical API metadata can remain stable while Vercel / Cloudflare serve as fallback backends;
+   - old-origin Local/Drive state can be explicitly inspected, recovery-exported, bootstrapped into
+     the transactional workspace, and fingerprint-verified before any domain cutover;
+   - Local/Drive divergence or an existing non-matching connected workspace fails closed;
+   - deployment gates and post-deploy self-test verify workspace authority, audience mode,
+     canonical topology, exact commit identity, and Round 4 capability markers;
+   - exact personal-domain values, DNS records, hosting custom-domain attachment, and external
+     OAuth redirect/origin configuration remain deployment inputs and were not guessed in source.
 6. Round 5 — Release Candidate Hardening & Verification
 7. Round 6 — Personal Canary → Controlled Launch
 
 Do not activate the new P1 direct-write surface until connected authority is transactional.
 Round 3 is complete. Future Web work must preserve the same Domain Command/state contracts
-instead of creating a second mutation model. Round 4 owns formal domain, production topology,
-audience/allowlist, and connected-authority activation planning.
+instead of creating a second mutation model. Round 4 is complete at the source/schema/topology layer. Exact domain attachment remains an
+external deployment input because no trustworthy canonical personal-domain value was discoverable
+from the repository or current deployment metadata. Round 5 now owns release-candidate hardening,
+full gate verification, migration/cutover rehearsal, and explicit go/no-go evidence before canary.
