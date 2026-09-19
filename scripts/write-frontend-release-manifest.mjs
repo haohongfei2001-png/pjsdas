@@ -29,7 +29,9 @@ function artifactDigest(dist) {
 }
 
 const root = process.cwd()
-const dist = resolve(root, 'dist')
+const dist = process.env.PJSDAS_RELEASE_MANIFEST_DIST
+  ? resolve(root, process.env.PJSDAS_RELEASE_MANIFEST_DIST)
+  : resolve(root, 'dist')
 const metadata = resolveReleaseMetadata(root)
 const commitSha = resolveCommitSha(process.env)
 
