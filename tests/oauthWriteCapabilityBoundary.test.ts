@@ -54,7 +54,7 @@ describe('authenticated write capability boundary', () => {
     expect(text).not.toContain('ingest_gmail_run')
   })
 
-  it('exposes both explicit-user writes and bounded trusted ingestion to a Supabase-validated OAuth client session', async () => {
+  it('does not trust a Supabase-validated OAuth client unless an explicit grant exists', async () => {
     vi.stubEnv('PJSDAS_TOKEN_ENCRYPTION_KEY', 'test-proposal-signing-secret')
     const oauthToken = jwt({
       sub: 'user-a',
@@ -62,7 +62,36 @@ describe('authenticated write capability boundary', () => {
       session_id: '4962aabb-4001-4c4a-a242-385f03bdbfb4',
     })
     const fetchImpl = vi.fn(async (input: RequestInfo | URL) => {
-      if (String(input).endsWith('/auth/v1/user')) return json({ id: 'user-a', email: 'a@gmail.com' })
+      const url = String(input)
+      if (url.endsWith('/auth/v1/user')) return json({ id: 'user-a', email: 'a@gmail.com' })
+      if (url.includes('/rest/v1/pjsdas_authorization_grants?')) return json([])
+      return json({ error: 'unexpected outbound request' }, 500)
+    }) as unknown as typeof fetch
+    vi.stubGlobal('fetch', fetchImpl)
+
+    const response = await authenticatedRemoteMcpFetch(mcpRequest(oauthToken))
+    expect(response.status).toBe(200)
+    const text = await responseText(response)
+    expect(text).toContain('add_opportunities')
+    expect(text).not.toContain('ingest_discovery_run')
+    expect(text).not.toContain('ingest_gmail_run')
+    expect(oauthClientIdFromValidatedAccessToken(oauthToken)).toBe('1af5d928-7c67-4330-9521-e8886794fd14')
+  })
+
+  it('exposes only trusted-ingestion capabilities that were explicitly granted', async () => {
+    vi.stubEnv('PJSDAS_TOKEN_ENCRYPTION_KEY', 'test-proposal-signing-secret')
+    const clientId = '1af5d928-7c67-4330-9521-e8886794fd14'
+    const oauthToken = jwt({ sub: 'user-a', client_id: clientId })
+    const fetchImpl = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.endsWith('/auth/v1/user')) return json({ id: 'user-a', email: 'a@gmail.com' })
+      if (url.includes('/rest/v1/pjsdas_authorization_grants?')) return json([{
+        user_id: 'user-a',
+        client_id: clientId,
+        source_id: 'monitor:urgent-campus',
+        capability: 'ingest_discovery_run',
+        revoked_at: null,
+      }])
       return json({ error: 'unexpected outbound request' }, 500)
     }) as unknown as typeof fetch
     vi.stubGlobal('fetch', fetchImpl)
@@ -72,8 +101,7 @@ describe('authenticated write capability boundary', () => {
     const text = await responseText(response)
     expect(text).toContain('add_opportunities')
     expect(text).toContain('ingest_discovery_run')
-    expect(text).toContain('ingest_gmail_run')
-    expect(oauthClientIdFromValidatedAccessToken(oauthToken)).toBe('1af5d928-7c67-4330-9521-e8886794fd14')
+    expect(text).not.toContain('ingest_gmail_run')
   })
 
   it('cannot gain any authenticated write capability from a token that Supabase rejects', async () => {
