@@ -76,7 +76,7 @@ export function createPjsdasMcpServer(
     'When get_discovery_context returns continuousDiscovery, use incrementalSince as the normal lower bound for new or materially updated postings, and treat refreshQueue as separate source-verification work. Do not repeat a full historical search without a reason.',
     'For refreshQueue work, preserve ownerKind, ownerId, postingId and canonicalSourceUrl exactly. A newly found canonical URL is a new/re-posted source and must go through normal discovery instead of overwriting an existing posting.',
     'A public posting becoming closed does not by itself close the PJSDAS Opportunity or recruitment Process. Posting lifecycle and recruiting lifecycle are separate facts.',
-    'PJSDAS itself does not crawl the web. If the user asks for current job opportunities, use ChatGPT web search/browsing outside PJSDAS, preserve public source URLs, and keep unknown job facts unknown rather than fabricating them.',
+    'Interactive MCP tools do not perform arbitrary job-web discovery. If the user asks for current jobs in ChatGPT, use ChatGPT web search/browsing and preserve public source URLs. Separately, PJSDAS background Discovery may discover candidates and independently fetch their source URLs before any source fact is trusted.',
     'When a public source explicitly supports them, submit bounded structured job facts. Do not convert model inference into source facts.',
     'For new web-discovered jobs, prefer bounded component assessments over opaque aggregate ratings. PJSDAS derives Fit and Opportunity Value totals from explicit components and user-controlled weights.',
     'Use get_opportunity_assessment when the user asks why a stored Fit or Opportunity Value score exists.',
@@ -102,7 +102,7 @@ export function createPjsdasMcpServer(
   if (trustedDiscoveryEnabled || trustedGmailEnabled) {
     instructions.push(
       'Trusted factual ingestion is autonomous and does not require a review click. It is deliberately narrower than generic mutation.',
-      'Use ingest_discovery_run only for a bounded completed GPT/ChatGPT monitoring run with stable sourceRecordId values and source-backed public URLs. The tool performs identity resolution, quality gates, duplicate merging, accounting, and fail-closed workspace-version checks itself.',
+      'Use ingest_discovery_run only for a bounded completed GPT/ChatGPT monitoring run with public source URLs. PJSDAS independently fetches and verifies submitted source URLs before any Discovery fact may create or refresh an Opportunity; unverified candidates remain explicit unresolved records.',
       'Use ingest_gmail_run only after Gmail messages have been classified and reduced to bounded structured facts. Never submit raw mailbox contents as notes. Low-confidence or ambiguous messages must be submitted with low/medium confidence so PJSDAS records them as unresolved instead of guessing.',
       'Every submitted source record must be accounted for as created, merged, updated, duplicate, filtered, ignored, or unresolved. Never silently omit an inconvenient result from the ingestion batch.',
       'Trusted ingestion may add or merge factual opportunities and process events, but it must not silently change Decision Rules, durable user preferences, rejection decisions, or delete data.',
