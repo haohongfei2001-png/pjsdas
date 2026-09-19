@@ -122,13 +122,20 @@ describe('AI-operated mutation kernel foundation', () => {
   })
 
   it('returns conflict before mutation when the requested revision is stale', async () => {
-    const fetchImpl = vi.fn(async () => json([{
-      id: 'ws-1',
-      user_id: 'user-a',
-      snapshot: snapshot(),
-      revision: 8,
-      schema_version: 1,
-    }])) as unknown as typeof fetch
+    const fetchImpl = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.includes('/rest/v1/pjsdas_workspaces?')) {
+        return json([{
+          id: 'ws-1',
+          user_id: 'user-a',
+          snapshot: snapshot(),
+          revision: 8,
+          schema_version: 1,
+        }])
+      }
+      if (url.includes('/rest/v1/pjsdas_command_ledger?')) return json([])
+      return json({ error: 'unexpected' }, 500)
+    }) as unknown as typeof fetch
     const kernel = createMutationKernel({
       supabaseUrl: 'https://example.supabase.co',
       serviceRoleKey: 'service-role-secret',
@@ -146,7 +153,7 @@ describe('AI-operated mutation kernel foundation', () => {
       revision: 8,
       receipt: { expectedRevision: 7, actualRevision: 8 },
     })
-    expect(fetchImpl).toHaveBeenCalledTimes(1)
+    expect(fetchImpl).toHaveBeenCalledTimes(2)
   })
 
   it('prepares automatic undo only when the target command is still the latest revision', async () => {
