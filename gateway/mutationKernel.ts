@@ -74,7 +74,7 @@ export function createMutationKernel(options: TransactionalWorkspaceStoreOptions
           return {
             outcome: 'ALREADY_APPLIED',
             workspaceId: current.workspaceId,
-            revision: existing.resultingRevision,
+            revision: current.revision,
             snapshot: current.snapshot,
             receipt: existing.receipt,
           }
