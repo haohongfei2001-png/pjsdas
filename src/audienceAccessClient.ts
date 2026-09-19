@@ -1,0 +1,23 @@
+import { fetchBackend } from './backendEndpoints.js'
+import { getAccountAccessToken } from './cloud/cloudClient.js'
+
+export interface AudienceStatus {
+  authenticated: boolean
+  allowed: boolean
+  mode: 'legacy' | 'allowlist'
+  role: 'owner' | 'beta' | 'legacy' | null
+  email?: string | null
+  reason?: string
+}
+
+export async function fetchAudienceStatus(): Promise<AudienceStatus> {
+  const response = await fetchBackend('/api/access', {
+    method: 'GET',
+    headers: { authorization: `Bearer ${await getAccountAccessToken()}` },
+  })
+  const body = await response.json().catch(() => undefined) as AudienceStatus | { message?: string } | undefined
+  if (!response.ok) {
+    throw new Error(body && 'message' in body && body.message ? body.message : `PJSDAS audience status failed (HTTP ${response.status}).`)
+  }
+  return body as AudienceStatus
+}
