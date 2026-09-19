@@ -18,7 +18,7 @@ describe('v1.8 Round 2 interaction and detail experience', () => {
   })
 
   it('keeps cross-surface navigation explicit at the app layer', () => {
-    expect(app).toContain("const [decideTab, setDecideTab] = useState<DecideTab>('opportunities')")
+    expect(app).toContain("const [opportunityTab, setOpportunityTab] = useState<OpportunityTab>('opportunities')")
     expect(app).toContain("if (destination === 'opportunities')")
     expect(app).toContain("if (destination === 'pipeline')")
     expect(app).toContain("if (destination === 'prepare')")
