@@ -117,7 +117,7 @@ export async function runProductionSelfTest(options: {
       `toolSurfaceVersion=${String(authenticatedMcp.toolSurfaceVersion)}`,
     ))
     const releaseRequiredTools = Array.isArray(authenticatedMcp.releaseRequiredTools) ? authenticatedMcp.releaseRequiredTools : []
-    for (const tool of expectedMcpTools {
+    for (const tool of expectedMcpTools) {
       checks.push(check(
         `health.authenticated-mcp-tool.${tool}`,
         releaseRequiredTools.includes(tool),
@@ -175,7 +175,7 @@ export async function runProductionSelfTest(options: {
       const response = await fetchImpl(mcpToolsRequest(baseUrl, options.accessToken.trim()))
       const text = await textOf(response)
       checks.push(check('mcp.authenticated.http', response.status === 200, `HTTP ${response.status}`))
-      for (const tool of expectedMcpTools {
+      for (const tool of expectedMcpTools) {
         checks.push(check(`mcp.tool.${tool}`, text.includes(tool), text.includes(tool) ? 'present' : 'missing'))
       }
     } catch (caught) {
