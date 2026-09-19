@@ -2,6 +2,7 @@ import { DEFAULT_BACKEND_ORIGIN } from '../gateway/backendOrigin.js'
 import { runProductionSelfTest } from '../gateway/productionSelfTest.js'
 import { resolveProductionSelfTestAccessToken } from '../gateway/productionSelfTestAuth.js'
 import { resolveProductionBaseUrls } from '../gateway/productionBaseUrls.js'
+import { resolveReleaseMetadata } from './release-metadata.mjs'
 
 const canonicalApiOrigin = process.env.PJSDAS_EXPECTED_CANONICAL_API_ORIGIN?.trim().replace(/\/$/, '') || undefined
 const configuredOrigins = process.env.PJSDAS_PRODUCTION_BASE_URLS ?? process.env.PJSDAS_PRODUCTION_BASE_URL ?? DEFAULT_BACKEND_ORIGIN
@@ -15,6 +16,8 @@ const accessToken = await resolveProductionSelfTestAccessToken({
   password: process.env.PJSDAS_SELF_TEST_PASSWORD,
 })
 const expectedCommitSha = process.env.PJSDAS_EXPECTED_COMMIT_SHA?.trim() || undefined
+const releaseMetadata = resolveReleaseMetadata()
+const productionWebUrl = process.env.PJSDAS_PRODUCTION_WEB_URL?.trim().replace(/\/$/, '') || undefined
 const requireAuthenticatedTools = process.env.PJSDAS_REQUIRE_AUTHENTICATED_SELF_TEST?.trim().toLowerCase() === 'true'
 const expectedAudienceMode = process.env.PJSDAS_EXPECTED_AUDIENCE_MODE?.trim() === 'allowlist' ? 'allowlist' as const : 'legacy' as const
 const expectedCanonicalWebOrigin = process.env.PJSDAS_EXPECTED_CANONICAL_WEB_ORIGIN?.trim() || undefined
@@ -35,6 +38,13 @@ for (const baseUrl of rawOrigins) {
     expectedAudienceMode,
     expectedCanonicalWebOrigin,
     expectedCanonicalApiOrigin,
+    expectedProductVersion: releaseMetadata.productVersion,
+    expectedReleaseChannel: releaseMetadata.releaseChannel,
+    expectedMcpContractHash: releaseMetadata.mcpContractHash,
+    expectedMigrationSetHash: releaseMetadata.migrationSetHash,
+    expectedSnapshotSchema: releaseMetadata.snapshotSchema,
+    expectedSnapshotVersion: releaseMetadata.snapshotVersion,
+    webUrl: productionWebUrl,
     requireAuthenticatedTools,
   })
   results.push(result)
