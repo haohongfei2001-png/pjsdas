@@ -44,16 +44,27 @@ interface GmailHistoryList {
   history?: Array<{ messagesAdded?: Array<{ message?: { id?: string } }> }>
 }
 
+export interface GmailAutomationContinuation {
+  mode: 'history' | 'fallback'
+  pageToken?: string
+  pendingHistoryId: string
+  pendingMessageIds: string[]
+}
+
 export interface GmailAutomationFetchResult {
   messages: GmailMessage[]
-  nextHistoryId: string
+  nextHistoryId?: string
+  continuation?: GmailAutomationContinuation
+  coverageComplete: boolean
   usedFallbackScan: boolean
 }
 
 export interface GmailAutomationRunResult {
   userId: string
   checkedAt: string
-  nextHistoryId: string
+  nextHistoryId?: string
+  continuation?: GmailAutomationContinuation
+  coverageComplete: boolean
   receivedCount: number
   accountedCount: number
   unresolvedCount: number
@@ -145,49 +156,76 @@ async function gmailProfile(fetchImpl: typeof fetch, accessToken: string) {
   return profile.historyId
 }
 
-async function initialMessageIds(fetchImpl: typeof fetch, accessToken: string) {
-  const ids: string[] = []
-  let pageToken: string | undefined
-  while (ids.length < MAX_MESSAGES_PER_RUN) {
-    const params = new URLSearchParams({
-      maxResults: String(Math.min(100, MAX_MESSAGES_PER_RUN - ids.length)),
-      q: `newer_than:${INITIAL_LOOKBACK_DAYS}d -in:spam -in:trash`,
-      labelIds: 'INBOX',
-    })
-    if (pageToken) params.set('pageToken', pageToken)
-    const payload = await gmailJson<GmailMessageList>(fetchImpl, accessToken, `/messages?${params.toString()}`)
-    for (const item of payload.messages ?? []) if (item.id) ids.push(item.id)
-    pageToken = payload.nextPageToken
-    if (!pageToken) break
-  }
-  return [...new Set(ids)].slice(0, MAX_MESSAGES_PER_RUN)
+async function initialMessagePage(
+  fetchImpl: typeof fetch,
+  accessToken: string,
+  pageToken?: string,
+) {
+  const params = new URLSearchParams({
+    maxResults: String(MAX_MESSAGES_PER_RUN),
+    q: `newer_than:${INITIAL_LOOKBACK_DAYS}d -in:spam -in:trash`,
+    labelIds: 'INBOX',
+  })
+  if (pageToken) params.set('pageToken', pageToken)
+  const payload = await gmailJson<GmailMessageList>(fetchImpl, accessToken, `/messages?${params.toString()}`)
+  const ids = [...new Set((payload.messages ?? []).flatMap((item) => item.id ? [item.id] : []))]
+  return { ids, nextPageToken: payload.nextPageToken }
 }
 
-async function historyMessageIds(fetchImpl: typeof fetch, accessToken: string, startHistoryId: string) {
-  const ids: string[] = []
-  let pageToken: string | undefined
-  let latestHistoryId: string | undefined
-  while (ids.length < MAX_MESSAGES_PER_RUN) {
-    const params = new URLSearchParams({
-      startHistoryId,
-      historyTypes: 'messageAdded',
-      labelId: 'INBOX',
-      maxResults: '100',
-    })
-    if (pageToken) params.set('pageToken', pageToken)
-    const response = await gmailFetch(fetchImpl, accessToken, `/history?${params.toString()}`)
-    if (response.status === 404) return { expired: true as const, ids: [], historyId: undefined }
-    if (!response.ok) throw new WorkspaceSourceError('GMAIL_REQUEST_FAILED', `Gmail history request failed (HTTP ${response.status}).`, false)
-    const payload = await response.json().catch(() => undefined) as GmailHistoryList | undefined
-    if (!payload) throw new WorkspaceSourceError('GMAIL_RESPONSE_INVALID', 'Gmail history response was invalid.', true)
-    latestHistoryId = payload.historyId ?? latestHistoryId
-    for (const history of payload.history ?? []) {
-      for (const added of history.messagesAdded ?? []) if (added.message?.id) ids.push(added.message.id)
-    }
-    pageToken = payload.nextPageToken
-    if (!pageToken || ids.length >= MAX_MESSAGES_PER_RUN) break
+async function historyMessagePage(
+  fetchImpl: typeof fetch,
+  accessToken: string,
+  startHistoryId: string,
+  pageToken?: string,
+) {
+  const params = new URLSearchParams({
+    startHistoryId,
+    historyTypes: 'messageAdded',
+    labelId: 'INBOX',
+    maxResults: '100',
+  })
+  if (pageToken) params.set('pageToken', pageToken)
+  const response = await gmailFetch(fetchImpl, accessToken, `/history?${params.toString()}`)
+  if (response.status === 404) {
+    return { expired: true as const, ids: [], historyId: undefined, nextPageToken: undefined }
   }
-  return { expired: false as const, ids: [...new Set(ids)].slice(0, MAX_MESSAGES_PER_RUN), historyId: latestHistoryId }
+  if (!response.ok) throw new WorkspaceSourceError('GMAIL_REQUEST_FAILED', `Gmail history request failed (HTTP ${response.status}).`, false)
+  const payload = await response.json().catch(() => undefined) as GmailHistoryList | undefined
+  if (!payload) throw new WorkspaceSourceError('GMAIL_RESPONSE_INVALID', 'Gmail history response was invalid.', true)
+  const ids: string[] = []
+  for (const history of payload.history ?? []) {
+    for (const added of history.messagesAdded ?? []) if (added.message?.id) ids.push(added.message.id)
+  }
+  return {
+    expired: false as const,
+    ids: [...new Set(ids)],
+    historyId: payload.historyId,
+    nextPageToken: payload.nextPageToken,
+  }
+}
+
+function boundedPage(
+  ids: string[],
+  input: {
+    mode: GmailAutomationContinuation['mode']
+    pageToken?: string
+    pendingHistoryId: string
+  },
+) {
+  const selected = ids.slice(0, MAX_MESSAGES_PER_RUN)
+  const pendingMessageIds = ids.slice(MAX_MESSAGES_PER_RUN)
+  const coverageComplete = pendingMessageIds.length === 0 && !input.pageToken
+  return {
+    selected,
+    coverageComplete,
+    nextHistoryId: coverageComplete ? input.pendingHistoryId : undefined,
+    continuation: coverageComplete ? undefined : {
+      mode: input.mode,
+      pageToken: input.pageToken,
+      pendingHistoryId: input.pendingHistoryId,
+      pendingMessageIds,
+    } satisfies GmailAutomationContinuation,
+  }
 }
 
 async function fetchMessages(fetchImpl: typeof fetch, accessToken: string, ids: string[]) {
@@ -207,29 +245,81 @@ async function fetchMessages(fetchImpl: typeof fetch, accessToken: string, ids: 
 export async function fetchGmailAutomationBatch(options: {
   accessToken: string
   startHistoryId?: string
+  continuation?: GmailAutomationContinuation
   fetchImpl?: typeof fetch
 }): Promise<GmailAutomationFetchResult> {
   const fetchImpl = options.fetchImpl ?? fetch
   const currentHistoryId = await gmailProfile(fetchImpl, options.accessToken)
-  let ids: string[]
-  let usedFallbackScan = false
-  let nextHistoryId = currentHistoryId
+  const previous = options.continuation
 
-  if (options.startHistoryId) {
-    const history = await historyMessageIds(fetchImpl, options.accessToken, options.startHistoryId)
-    if (history.expired) {
-      usedFallbackScan = true
-      ids = await initialMessageIds(fetchImpl, options.accessToken)
-    } else {
-      ids = history.ids
-      nextHistoryId = history.historyId ?? currentHistoryId
+  if (previous?.pendingMessageIds.length) {
+    const bounded = boundedPage(previous.pendingMessageIds, {
+      mode: previous.mode,
+      pageToken: previous.pageToken,
+      pendingHistoryId: previous.pendingHistoryId,
+    })
+    return {
+      messages: await fetchMessages(fetchImpl, options.accessToken, bounded.selected),
+      nextHistoryId: bounded.nextHistoryId,
+      continuation: bounded.continuation,
+      coverageComplete: bounded.coverageComplete,
+      usedFallbackScan: previous.mode === 'fallback',
     }
-  } else {
-    usedFallbackScan = true
-    ids = await initialMessageIds(fetchImpl, options.accessToken)
   }
 
-  return { messages: await fetchMessages(fetchImpl, options.accessToken, ids), nextHistoryId, usedFallbackScan }
+  let mode: GmailAutomationContinuation['mode']
+  let ids: string[]
+  let nextPageToken: string | undefined
+  let pendingHistoryId: string
+  let usedFallbackScan = false
+
+  const fallbackPage = async (pageToken?: string, pending = currentHistoryId) => {
+    const page = await initialMessagePage(fetchImpl, options.accessToken, pageToken)
+    mode = 'fallback'
+    ids = page.ids
+    nextPageToken = page.nextPageToken
+    pendingHistoryId = pending
+    usedFallbackScan = true
+  }
+
+  if (previous?.mode === 'fallback') {
+    await fallbackPage(previous.pageToken, previous.pendingHistoryId)
+  } else if (previous?.mode === 'history' && options.startHistoryId) {
+    const page = await historyMessagePage(fetchImpl, options.accessToken, options.startHistoryId, previous.pageToken)
+    if (page.expired) {
+      await fallbackPage(undefined, currentHistoryId)
+    } else {
+      mode = 'history'
+      ids = page.ids
+      nextPageToken = page.nextPageToken
+      pendingHistoryId = page.historyId ?? previous.pendingHistoryId
+    }
+  } else if (options.startHistoryId) {
+    const page = await historyMessagePage(fetchImpl, options.accessToken, options.startHistoryId)
+    if (page.expired) {
+      await fallbackPage(undefined, currentHistoryId)
+    } else {
+      mode = 'history'
+      ids = page.ids
+      nextPageToken = page.nextPageToken
+      pendingHistoryId = page.historyId ?? currentHistoryId
+    }
+  } else {
+    await fallbackPage(undefined, currentHistoryId)
+  }
+
+  const bounded = boundedPage(ids!, {
+    mode: mode!,
+    pageToken: nextPageToken,
+    pendingHistoryId: pendingHistoryId!,
+  })
+  return {
+    messages: await fetchMessages(fetchImpl, options.accessToken, bounded.selected),
+    nextHistoryId: bounded.nextHistoryId,
+    continuation: bounded.continuation,
+    coverageComplete: bounded.coverageComplete,
+    usedFallbackScan,
+  }
 }
 
 function requiresTiming(type: ProcessEventType | undefined) {
@@ -338,6 +428,12 @@ export async function runGmailAutomationForBinding(options: {
   const batch = await fetchGmailAutomationBatch({
     accessToken,
     startHistoryId: options.binding.gmailHistoryId,
+    continuation: options.binding.gmailSyncMode && options.binding.gmailPendingHistoryId ? {
+      mode: options.binding.gmailSyncMode,
+      pageToken: options.binding.gmailPageToken,
+      pendingHistoryId: options.binding.gmailPendingHistoryId,
+      pendingMessageIds: options.binding.gmailPendingMessageIds,
+    } : undefined,
     fetchImpl,
   })
   const messages = batch.messages
@@ -348,7 +444,7 @@ export async function runGmailAutomationForBinding(options: {
     sourceId: GMAIL_SOURCE_ID,
     startedAt: checkedAt,
     completedAt: checkedAt,
-    cursor: batch.nextHistoryId,
+    cursor: batch.coverageComplete ? batch.nextHistoryId : undefined,
     sourcePolicy: bootstrapPolicyFor('gmail', GMAIL_SOURCE_ID),
     messages,
   })
@@ -368,6 +464,8 @@ export async function runGmailAutomationForBinding(options: {
     userId: options.binding.userId,
     checkedAt,
     nextHistoryId: batch.nextHistoryId,
+    continuation: batch.continuation,
+    coverageComplete: batch.coverageComplete,
     receivedCount: result.run.receivedCount,
     accountedCount: result.run.accountedCount,
     unresolvedCount: result.run.outcomes.unresolved ?? 0,
