@@ -26,7 +26,8 @@ describe('authenticated MCP release tool surface', () => {
   it('keeps explicit-user writes available while requiring source-scoped grants for trusted ingestion', () => {
     expect(authenticatedRuntime).toContain('createAuthorizationGrantStore')
     expect(authenticatedRuntime).toContain('grantAllows(grants, name, sourceId)')
-    expect(authenticatedRuntime).toContain("dataMode: 'google-drive'")
+    expect(authenticatedRuntime).toContain("dataMode: transactionalAuthority ? 'transactional' : 'google-drive'")
+    expect(authenticatedRuntime).toContain("PJSDAS_CONNECTED_AUTHORITY")
     expect(authenticatedRuntime).toContain("explicitUserWriteMode: 'enabled'")
     expect(authenticatedRuntime).toContain('trustedIngestionCapabilities')
     expect(authenticatedRuntime).not.toContain('Boolean(identity.oauthClientId)')
