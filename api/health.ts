@@ -54,6 +54,10 @@ export const PUBLIC_HEALTH_CAPABILITIES = {
   deploymentPortability: true,
   releaseIdentityBinding: true,
   authenticatedMcpToolSurface: true,
+  delegatedCredentialIsolation: true,
+  trustedIngestionGrantModel: 'v1',
+  transactionalWorkspaceFoundation: 'v1',
+  mutationCommandLedger: true,
 } as const
 
 export default {
