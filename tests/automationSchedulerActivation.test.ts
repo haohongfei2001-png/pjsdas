@@ -12,7 +12,7 @@ describe('Round 5 automation scheduler activation', () => {
     expect(migration).toContain("vault.decrypted_secrets")
     expect(migration).toContain("pjsdas_gmail_automation_worker_token")
     expect(migration).toContain("pjsdas_discovery_automation_worker_token")
-    expect(migration).not.toContain("Authorization', 'Bearer ")
+    expect(migration).toContain("'Authorization', 'Bearer ' || (")
   })
 
   it('schedules staggered hourly Gmail and Discovery workers', () => {
