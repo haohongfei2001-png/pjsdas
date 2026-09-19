@@ -116,11 +116,11 @@ export function createAutomationSettingsHandler(config: AutomationSettingsHandle
   return async function handleAutomationSettings(request: Request) {
     const origin = request.headers.get('origin')
     if (request.method === 'OPTIONS') {
-      const allowed = !origin || config.allowedOrigins.includes(origin)
+      const allowed = Boolean(origin && config.allowedOrigins.includes(origin))
       return new Response(null, { status: allowed ? 204 : 403, headers: corsHeaders(origin, config.allowedOrigins) })
     }
-    if (origin && !config.allowedOrigins.includes(origin)) {
-      return json(403, { code: 'ORIGIN_NOT_ALLOWED', message: 'This origin is not allowed to update automation settings.' }, origin, config.allowedOrigins)
+    if (!origin || !config.allowedOrigins.includes(origin)) {
+      return json(403, { code: 'ORIGIN_NOT_ALLOWED', message: 'Automation settings are available only to an approved first-party PJSDAS browser origin.' }, origin, config.allowedOrigins)
     }
     if (request.method !== 'GET' && request.method !== 'POST') {
       return json(405, { code: 'METHOD_NOT_ALLOWED', message: 'Use GET or POST.' }, origin, config.allowedOrigins)
