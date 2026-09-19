@@ -131,7 +131,8 @@ async function readCoreState(page: Page) {
 
 async function openBackup(page: Page) {
   await page.getByRole('button', { name: /设置/ }).click()
-  await expect(page.getByRole('heading', { name: '偏好、规则、同步与数据安全' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: '连接、自动化和长期控制' })).toBeVisible()
+  await page.locator('details.settings-group').filter({ hasText: '数据与恢复' }).locator('summary').click()
   await page.getByRole('button', { name: '本地备份' }).click()
   await expect(page.getByRole('heading', { name: '备份与恢复' })).toBeVisible()
 }
@@ -139,6 +140,7 @@ async function openBackup(page: Page) {
 test('manual recruiting event creates one durable event/action, survives reload, and deletes cleanly', async ({ page }) => {
   await seedWorkspace(page)
 
+  await page.locator('.today-manual-fallback > summary').click()
   await page.getByRole('button', { name: '+ 记录流程通知' }).click()
   await expect(page.getByRole('heading', { name: '记录真实流程通知' })).toBeVisible()
 
@@ -204,7 +206,8 @@ test('JSON backup restores a deliberately cleared local workspace and remains du
   await expect(page.getByRole('heading', { name: '先让工作区有第一批真实机会' })).toBeVisible()
 
   await page.getByRole('button', { name: '打开设置' }).click()
-  await expect(page.getByRole('heading', { name: '偏好、规则、同步与数据安全' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: '连接、自动化和长期控制' })).toBeVisible()
+  await page.locator('details.settings-group').filter({ hasText: '数据与恢复' }).locator('summary').click()
   await page.getByRole('button', { name: '本地备份' }).click()
   await page.locator('.backup-file-button input[type="file"]').setInputFiles(backupPath!)
   await expect(page.locator('.backup-preview')).toContainText('岗位 1')
