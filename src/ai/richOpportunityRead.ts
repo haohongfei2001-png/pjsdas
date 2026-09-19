@@ -15,6 +15,9 @@ export function enrichOpportunityListWithFacts<
         factCompleteness: opportunityFactsCompleteness(facts),
         factsAvailable: Boolean(facts),
         facts: includeFacts ? cloneOpportunityFacts(facts) : undefined,
+        userFacts: includeFacts && opportunity?.detail?.userFacts
+          ? structuredClone(opportunity.detail.userFacts)
+          : undefined,
       }
     }),
   }
