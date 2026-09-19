@@ -1,9 +1,29 @@
+import { createAudienceStatusHandler } from '../gateway/audienceStatusHandler.js'
+import { firstPartyWebOrigins } from '../gateway/productionTopology.js'
+import {
+  PJSDAS_SUPABASE_PUBLISHABLE_KEY,
+  PJSDAS_SUPABASE_URL,
+} from '../gateway/supabaseProject.js'
+
+const audienceHandler = createAudienceStatusHandler({
+  supabaseUrl: PJSDAS_SUPABASE_URL,
+  supabasePublishableKey: PJSDAS_SUPABASE_PUBLISHABLE_KEY,
+  allowedOrigins: firstPartyWebOrigins(),
+})
+
 function configured(name: string) {
   return Boolean(process.env[name]?.trim())
 }
 
+function audienceRequest(request: Request) {
+  const url = new URL(request.url)
+  return url.pathname.replace(/\/$/, '') === '/api/access' || url.searchParams.get('mode') === 'access'
+}
+
 export default {
-  fetch() {
+  fetch(request: Request) {
+    if (audienceRequest(request)) return audienceHandler(request)
+
     const secretsConfigured = {
       tokenEncryptionKey: configured('PJSDAS_TOKEN_ENCRYPTION_KEY'),
       googleClientId: configured('PJSDAS_GOOGLE_CLIENT_ID'),
