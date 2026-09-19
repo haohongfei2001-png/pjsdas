@@ -20,6 +20,7 @@ export interface MutationCommand<TPayload = unknown> {
   payload: TPayload
   expectedRevision: number
   provenance?: Record<string, unknown>
+  compensation?: { operation: string; payload: unknown }
   effectiveTime?: string
 }
 
@@ -92,8 +93,43 @@ export function createMutationKernel(options: TransactionalWorkspaceStoreOptions
           ...(command.provenance ?? {}),
           ...(principal.sourceId ? { sourceId: principal.sourceId } : {}),
         },
+        compensation: command.compensation ? {
+          operation: command.compensation.operation,
+          payload: command.compensation.payload,
+        } : undefined,
         effectiveTime: command.effectiveTime,
       })
+    },
+
+    async prepareUndo(principal: MutationPrincipal, targetCommandId: string) {
+      const current = await store.readForUser(principal.userId)
+      if (!current) throw new WorkspaceSourceError('WORKSPACE_NOT_FOUND', 'PJSDAS connected workspace has not been migrated yet.', false)
+      const target = await store.readCommandForUser(principal.userId, targetCommandId)
+      if (!target) {
+        return { outcome: 'NEEDS_CONFIRMATION' as const, reason: 'COMMAND_NOT_FOUND' as const }
+      }
+      if (!target.compensation) {
+        return {
+          outcome: 'NEEDS_CONFIRMATION' as const,
+          reason: 'NO_COMPENSATION' as const,
+          targetRevision: target.resultingRevision,
+          currentRevision: current.revision,
+        }
+      }
+      if (target.resultingRevision !== current.revision) {
+        return {
+          outcome: 'NEEDS_CONFIRMATION' as const,
+          reason: 'DEPENDENT_CHANGES' as const,
+          targetRevision: target.resultingRevision,
+          currentRevision: current.revision,
+        }
+      }
+      return {
+        outcome: 'READY' as const,
+        expectedRevision: current.revision,
+        compensation: target.compensation,
+        targetCommandId,
+      }
     },
   }
 }
