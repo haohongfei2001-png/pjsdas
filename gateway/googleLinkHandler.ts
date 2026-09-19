@@ -10,6 +10,7 @@ export interface GoogleLinkHandlerConfig {
   tokenEncryptionKey: string
   allowedOrigins: string[]
   fetchImpl?: typeof fetch
+  authorizeIdentity?: (identity: import('./supabaseIdentity.js').PjsdasIdentity) => Promise<void>
 }
 
 type GoogleLinkRequestBody = {
@@ -136,6 +137,7 @@ export function createGoogleLinkHandler(config: GoogleLinkHandlerConfig) {
       }
 
       const { identity, accessToken } = await resolveIdentity(request)
+      await config.authorizeIdentity?.(identity)
       const { providerToken, providerRefreshToken } = await parseBody(request)
       const google = await inspectGoogleToken(fetchImpl, providerToken)
 
@@ -192,7 +194,7 @@ export function createGoogleLinkHandler(config: GoogleLinkHandlerConfig) {
     } catch (caught) {
       const error = safeMessage(caught)
       const status = error.code === 'AUTH_REQUIRED' || error.code === 'AUTH_INVALID' ? 401
-        : error.code === 'ORIGIN_NOT_ALLOWED' ? 403
+        : error.code === 'ORIGIN_NOT_ALLOWED' || error.code === 'AUDIENCE_ACCESS_REQUIRED' || error.code === 'AUDIENCE_IDENTITY_MISMATCH' ? 403
           : error.retryable ? 503
             : 400
       return json(status, error, origin, config.allowedOrigins)
