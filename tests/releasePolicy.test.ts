@@ -37,6 +37,8 @@ describe('formal release policy', () => {
     expect(workflow).toContain('contents: write')
     expect(workflow).toContain('gh release create')
     expect(workflow).toContain('--prerelease')
+    expect(workflow).toContain('/branches/$default_branch')
+    expect(workflow).toContain('is not protected; refusing release publication')
     expect(workflow).toContain('/immutable-releases')
     expect(workflow).toContain('published release is not immutable')
     expect(workflow).toContain('refusing to move or reuse it')
