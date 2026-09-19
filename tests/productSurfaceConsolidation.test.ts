@@ -4,26 +4,30 @@ import { describe, expect, it } from 'vitest'
 const app = readFileSync(new URL('../src/AppV8.tsx', import.meta.url), 'utf8')
 const entry = readFileSync(new URL('../src/main.tsx', import.meta.url), 'utf8')
 
-describe('v1.8 product surface consolidation', () => {
-  it('keeps exactly five user-goal primary surfaces', () => {
-    expect(app).toContain("type Surface = 'today' | 'decide' | 'prepare' | 'history' | 'settings'")
-    expect(app).not.toContain("type Surface = 'discovery'")
-    expect(app).not.toContain("type Surface = 'pipeline'")
-    expect(app).not.toContain("type Surface = 'rules'")
+describe('AI-operated Web console information architecture', () => {
+  it('keeps exactly five primary surfaces around work, exceptions, and audit', () => {
+    expect(app).toContain("type Surface = 'today' | 'opportunities' | 'attention' | 'activity' | 'settings'")
+    expect(app).not.toContain("type Surface = 'decide'")
+    expect(app).not.toContain("type Surface = 'prepare'")
+    expect(app).not.toContain("type Surface = 'history'")
   })
 
-  it('keeps Decide focused on actual opportunities and active recruiting flow', () => {
-    expect(app).toContain("type DecideTab = 'opportunities' | 'pipeline'")
+  it('keeps opportunity, pipeline, and preparation as one contextual working set', () => {
+    expect(app).toContain("type OpportunityTab = 'opportunities' | 'pipeline' | 'prepare'")
     expect(app).toContain('<ApplicationPortfolioDock />')
-    expect(app).not.toContain('<DiscoveryInboxView />')
-    expect(app).not.toContain('<ContinuousDiscoveryDock />')
-    expect(app).not.toContain("onTabChange('review')")
+    expect(app).toContain('<PrepGraphDock />')
+    expect(app).toContain("onTabChange('prepare')")
+  })
+
+  it('separates intervention from audit instead of mixing ChangeSet review into Activity', () => {
+    expect(app).toContain('<AttentionView timeline={timeline} changeSets={changeSets}')
+    expect(app).toContain('<TimelineView records={timeline} />')
+    expect(app).not.toContain('HistorySurface')
   })
 
   it('keeps specialist tools contextual instead of globally mounted', () => {
     expect(entry).toContain("import App from './AppV8.js'")
     expect(entry).not.toContain('ApplicationPortfolioDock')
-    expect(entry).not.toContain('ContinuousDiscoveryDock')
     expect(entry).not.toContain('PrepGraphDock')
     expect(entry).not.toContain('ProgressInbox')
     expect(entry).not.toContain('ProcessEventDock')
