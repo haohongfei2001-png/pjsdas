@@ -83,9 +83,10 @@ export function createGmailAutomationHandler(config: GmailAutomationHandlerConfi
           now: config.now,
         })
         await store.updateGmailRunState(binding.userId, {
-          historyId: run.nextHistoryId,
+          ...(run.coverageComplete && run.nextHistoryId ? { historyId: run.nextHistoryId } : {}),
+          continuation: run.coverageComplete ? null : run.continuation,
           checkedAt: run.checkedAt,
-          successAt: run.checkedAt,
+          ...(run.coverageComplete ? { successAt: run.checkedAt } : {}),
           lastError: null,
         })
         results.push({ status: 'success', ...run })

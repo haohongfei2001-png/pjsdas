@@ -111,6 +111,8 @@ export interface ListOpportunitiesOutput {
     applicationDeadline?: string
     opportunityValue: number
     fitScore: number
+    assessmentStatus: string
+    participationStatus: string
     applicationGroupId?: string
     locallyManaged: boolean
   }>
@@ -499,6 +501,8 @@ export function listOpportunities(
       applicationDeadline: item.deadline,
       opportunityValue: item.opportunityValue,
       fitScore: item.fitScore,
+      assessmentStatus: item.assessmentStatus ?? (item.detail?.assessment ? 'assessed' : 'legacy'),
+      participationStatus: item.participationStatus ?? 'active',
       applicationGroupId: item.applicationGroupId,
       locallyManaged: Boolean(item.locallyManaged),
     })),
@@ -650,6 +654,7 @@ export function getDiscoveryContext(
       stage: item.processStage,
       roleType: item.roleType,
       deadline: item.deadline,
+      participationStatus: item.participationStatus ?? 'active',
     })),
     recentlyClosed: recentlyClosed.map((item) => ({
       opportunityId: item.id,

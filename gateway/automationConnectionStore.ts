@@ -13,6 +13,10 @@ interface GoogleAutomationBinding {
 export interface GmailAutomationBinding extends GoogleAutomationBinding {
   gmailHistoryId?: string
   gmailLastCheckedAt?: string
+  gmailSyncMode?: 'history' | 'fallback'
+  gmailPageToken?: string
+  gmailPendingHistoryId?: string
+  gmailPendingMessageIds: string[]
 }
 
 export interface DiscoveryAutomationBinding extends GoogleAutomationBinding {
@@ -74,7 +78,11 @@ export function createAutomationConnectionStore(options: AutomationConnectionSto
         granted_scopes?: string[] | null
         gmail_history_id?: string | null
         gmail_last_checked_at?: string | null
-      }>>('pjsdas_claim_gmail_automation_bindings', { worker_token: workerToken })
+        gmail_sync_mode?: 'history' | 'fallback' | null
+        gmail_page_token?: string | null
+        gmail_pending_history_id?: string | null
+        gmail_pending_message_ids?: string[] | null
+      }>>('pjsdas_claim_gmail_automation_bindings_v2', { worker_token: workerToken })
 
       return rows.flatMap((row) => {
         if (!row.user_id || !row.google_subject || !row.refresh_token_ciphertext) return []
@@ -86,24 +94,40 @@ export function createAutomationConnectionStore(options: AutomationConnectionSto
           grantedScopes: row.granted_scopes ?? [],
           gmailHistoryId: row.gmail_history_id ?? undefined,
           gmailLastCheckedAt: row.gmail_last_checked_at ?? undefined,
+          gmailSyncMode: row.gmail_sync_mode ?? undefined,
+          gmailPageToken: row.gmail_page_token ?? undefined,
+          gmailPendingHistoryId: row.gmail_pending_history_id ?? undefined,
+          gmailPendingMessageIds: row.gmail_pending_message_ids ?? [],
         }]
       })
     },
 
     async updateGmailRunState(userId: string, patch: {
       historyId?: string | null
+      continuation?: {
+        mode: 'history' | 'fallback'
+        pageToken?: string
+        pendingHistoryId: string
+        pendingMessageIds: string[]
+      } | null
       checkedAt?: string
       successAt?: string
       lastError?: string | null
     }) {
-      await rpc<null>('pjsdas_update_gmail_automation_state', {
+      await rpc<null>('pjsdas_update_gmail_automation_state_v2', {
         worker_token: workerToken,
         target_user_id: userId,
         next_history_id: 'historyId' in patch ? patch.historyId ?? null : null,
+        next_sync_mode: patch.continuation?.mode ?? null,
+        next_page_token: patch.continuation?.pageToken ?? null,
+        next_pending_history_id: patch.continuation?.pendingHistoryId ?? null,
+        next_pending_message_ids: patch.continuation?.pendingMessageIds ?? null,
         checked_at: patch.checkedAt ?? null,
         success_at: patch.successAt ?? null,
         last_error: 'lastError' in patch ? patch.lastError ?? null : null,
         set_history_id: 'historyId' in patch,
+        set_continuation: Boolean(patch.continuation),
+        clear_continuation: patch.continuation === null,
         set_last_error: 'lastError' in patch,
       })
     },

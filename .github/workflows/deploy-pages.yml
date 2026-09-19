@@ -206,14 +206,16 @@ jobs:
                     const requiredTools = Array.isArray(authenticatedMcp.releaseRequiredTools)
                       ? authenticatedMcp.releaseRequiredTools
                       : [];
-                    const releaseToolsReady = [
+                    const expectedAuthority = process.env.PJSDAS_EXPECTED_WORKSPACE_AUTHORITY === "transactional" ? "transactional" : "google-drive";
+                    const expectedTools = [
                       "get_coverage_status",
                       "get_workspace_integrity",
                       "add_opportunities",
+                      ...(expectedAuthority === "transactional" ? ["apply_user_command"] : []),
                       "ingest_discovery_run",
                       "ingest_gmail_run",
-                    ].every(tool => requiredTools.includes(tool));
-                    const expectedAuthority = process.env.PJSDAS_EXPECTED_WORKSPACE_AUTHORITY === "transactional" ? "transactional" : "google-drive";
+                    ];
+                    const releaseToolsReady = expectedTools.every(tool => requiredTools.includes(tool));
                     const expectedMode = expectedAuthority === "transactional" ? "transactional-connected" : "google-drive-trusted-ingestion";
                     const ready =
                       health.status === "ok" &&
@@ -240,7 +242,12 @@ jobs:
                       capabilities.trustedIngestionGrantModel === "v1" &&
                       capabilities.transactionalWorkspaceFoundation === "v1" &&
                       capabilities.mutationCommandLedger === true &&
-                      authenticatedMcp.toolSurfaceVersion === "v2" &&
+                      capabilities.explicitUserCommands === "v1" &&
+                      capabilities.opportunityParticipationState === "v1" &&
+                      capabilities.gmailCompleteConsumption === "v1" &&
+                      capabilities.discoverySourceVerification === "v1" &&
+                      capabilities.discoveryFactAssessmentSeparation === true &&
+                      authenticatedMcp.toolSurfaceVersion === "v3" &&
                       releaseToolsReady;
                     process.exit(ready ? 0 : 1);
                   } catch {

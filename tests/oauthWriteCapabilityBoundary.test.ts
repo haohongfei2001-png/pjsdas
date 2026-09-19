@@ -50,6 +50,7 @@ describe('authenticated write capability boundary', () => {
     expect(text).toContain('get_today_plan')
     expect(text).toContain('propose_changes')
     expect(text).toContain('add_opportunities')
+    expect(text).not.toContain('apply_user_command')
     expect(text).not.toContain('ingest_discovery_run')
     expect(text).not.toContain('ingest_gmail_run')
   })
@@ -73,6 +74,7 @@ describe('authenticated write capability boundary', () => {
     expect(response.status).toBe(200)
     const text = await responseText(response)
     expect(text).toContain('add_opportunities')
+    expect(text).not.toContain('apply_user_command')
     expect(text).not.toContain('ingest_discovery_run')
     expect(text).not.toContain('ingest_gmail_run')
     expect(oauthClientIdFromValidatedAccessToken(oauthToken)).toBe('1af5d928-7c67-4330-9521-e8886794fd14')
@@ -101,6 +103,25 @@ describe('authenticated write capability boundary', () => {
     const text = await responseText(response)
     expect(text).toContain('add_opportunities')
     expect(text).toContain('ingest_discovery_run')
+    expect(text).not.toContain('ingest_gmail_run')
+  })
+
+  it('exposes the bounded P1 command tool only after transactional authority is activated', async () => {
+    vi.stubEnv('PJSDAS_TOKEN_ENCRYPTION_KEY', 'test-proposal-signing-secret')
+    vi.stubEnv('PJSDAS_CONNECTED_AUTHORITY', 'transactional')
+    vi.stubEnv('PJSDAS_SUPABASE_SERVICE_ROLE_KEY', 'service-role-test')
+    const fetchImpl = vi.fn(async (input: RequestInfo | URL) => {
+      if (String(input).endsWith('/auth/v1/user')) return json({ id: 'user-a', email: 'a@gmail.com' })
+      return json({ error: 'unexpected outbound request' }, 500)
+    }) as unknown as typeof fetch
+    vi.stubGlobal('fetch', fetchImpl)
+
+    const response = await authenticatedRemoteMcpFetch(mcpRequest('ordinary-first-party-session-token'))
+    expect(response.status).toBe(200)
+    const text = await responseText(response)
+    expect(text).toContain('add_opportunities')
+    expect(text).toContain('apply_user_command')
+    expect(text).not.toContain('ingest_discovery_run')
     expect(text).not.toContain('ingest_gmail_run')
   })
 

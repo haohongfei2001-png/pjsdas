@@ -23,6 +23,8 @@ import { decryptSecret } from './tokenCrypto.js'
 import type { DiscoveryAutomationBinding } from './automationConnectionStore.js'
 import { PJSDAS_SUPABASE_URL } from './supabaseProject.js'
 import { requireWritableWorkspaceSource, WorkspaceSourceError, type WorkspaceSource } from './workspaceSource.js'
+import { verifyDiscoverySourceObservation } from './discoverySourceVerifier.js'
+export { verifyDiscoverySourceObservation } from './discoverySourceVerifier.js'
 
 const DEFAULT_MODEL = 'perplexity/sonar'
 const MAX_EXISTING_IDENTITIES = 100
@@ -51,6 +53,8 @@ const observationSchema = z.object({
   postingStatus: postingStatusSchema.optional(),
   discoveredAt: isoString.optional(),
 }).strict()
+
+export type DiscoveryModelObservation = z.infer<typeof observationSchema>
 
 const discoveryResponseSchema = z.object({
   observations: z.array(observationSchema).max(25),
@@ -295,6 +299,7 @@ export async function discoverSourceRun(snapshot: PJSDASSnapshot, sourceRun: Dis
   incrementalSince?: string
   now: Date
   ai: DiscoveryAiOptions
+  fetchImpl?: typeof fetch
 }) {
   const content = await aiGatewayText(buildPrompt(snapshot, sourceRun, input.executionRules, input.incrementalSince, input.now), input.ai)
   const parsed = discoveryResponseSchema.safeParse(parseJsonObject(content))
@@ -304,7 +309,9 @@ export async function discoverSourceRun(snapshot: PJSDASSnapshot, sourceRun: Dis
   if (parsed.data.observations.length > sourceRun.maxObservations) {
     throw new WorkspaceSourceError('DISCOVERY_MODEL_INVALID', `Discovery model returned more than ${sourceRun.maxObservations} observations.`, true)
   }
-  return parsed.data.observations
+  return Promise.all(parsed.data.observations.map((observation) =>
+    verifyDiscoverySourceObservation(observation, { fetchImpl: input.fetchImpl, now: input.now }),
+  ))
 }
 
 function buildPlan(snapshot: PJSDASSnapshot, now: Date) {
@@ -439,6 +446,7 @@ export async function runDiscoveryAutomationForBinding(options: {
         model: options.aiGatewayModel,
         generateTextImpl: options.generateTextImpl,
       },
+      fetchImpl,
     }),
   })))
 

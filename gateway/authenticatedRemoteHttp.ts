@@ -147,6 +147,7 @@ export async function authenticatedRemoteMcpFetch(request: Request) {
         },
         trustedIngestionAuthorizer: authorizeTrustedIngestion,
         explicitUserWriteMode: 'enabled',
+        explicitUserCommandMode: transactionalAuthority ? 'enabled' : 'disabled',
         proposalSigningKey: env('PJSDAS_TOKEN_ENCRYPTION_KEY'),
       }),
     )

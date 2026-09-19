@@ -51,6 +51,9 @@ export interface MonitorJobObservation {
   opportunityValueConfidence: DiscoveryConfidence
   postingStatus?: JobPostingStatus
   discoveredAt?: string
+  sourceVerification?: 'verified' | 'unverified'
+  sourceVerifiedAt?: string
+  sourceVerificationReason?: string
 }
 
 export interface MonitorIngestionRunInput {
@@ -144,6 +147,7 @@ function monitorOpportunityId(observation: MonitorJobObservation) {
 }
 
 function createMonitorOpportunity(observation: MonitorJobObservation, observedAt: string): Opportunity {
+  const sourceVerifiedAt = observation.sourceVerifiedAt ?? observedAt
   const posting = createJobPostingEvidence({
     company: observation.company,
     role: observation.role,
@@ -153,7 +157,7 @@ function createMonitorOpportunity(observation: MonitorJobObservation, observedAt
     deadline: observation.deadline,
     compensationText: observation.compensationText,
     postingStatus: observation.postingStatus ?? 'unknown',
-    observedAt,
+    observedAt: sourceVerifiedAt,
   })
   return {
     id: monitorOpportunityId(observation),
@@ -162,6 +166,7 @@ function createMonitorOpportunity(observation: MonitorJobObservation, observedAt
     currentStageLabel: '待投',
     processStage: 'not_applied',
     roleType: observation.roleType,
+    assessmentStatus: 'provisional',
     early: false,
     deadline: observation.deadline,
     sourcePriority: 'GPT Monitor 自动摄入',
@@ -180,6 +185,8 @@ function createMonitorOpportunity(observation: MonitorJobObservation, observedAt
         compensationText: observation.compensationText,
         rationale: observation.rationale,
         discoveredAt: observedAt,
+        sourceVerification: observation.sourceVerification,
+        sourceVerifiedAt: observation.sourceVerifiedAt,
         fitConfidence: observation.fitConfidence,
         opportunityValueConfidence: observation.opportunityValueConfidence,
         posting,
@@ -189,6 +196,7 @@ function createMonitorOpportunity(observation: MonitorJobObservation, observedAt
 }
 
 function mergeMonitorObservation(existing: Opportunity, observation: MonitorJobObservation, observedAt: string) {
+  const sourceVerifiedAt = observation.sourceVerifiedAt ?? observedAt
   const incoming = createJobPostingEvidence({
     company: observation.company,
     role: observation.role,
@@ -198,7 +206,7 @@ function mergeMonitorObservation(existing: Opportunity, observation: MonitorJobO
     deadline: observation.deadline,
     compensationText: observation.compensationText,
     postingStatus: observation.postingStatus ?? 'unknown',
-    observedAt,
+    observedAt: sourceVerifiedAt,
   })
   const discovery = existing.detail?.discovery
   const current = discovery?.posting
@@ -219,6 +227,8 @@ function mergeMonitorObservation(existing: Opportunity, observation: MonitorJobO
         compensationText: observation.compensationText ?? discovery?.compensationText,
         rationale: discovery?.rationale ?? observation.rationale,
         discoveredAt: discovery?.discoveredAt ?? observedAt,
+        sourceVerification: observation.sourceVerification ?? discovery?.sourceVerification,
+        sourceVerifiedAt: observation.sourceVerifiedAt ?? discovery?.sourceVerifiedAt,
         fitConfidence: discovery?.fitConfidence ?? observation.fitConfidence,
         opportunityValueConfidence: discovery?.opportunityValueConfidence ?? observation.opportunityValueConfidence,
         profileWarnings: discovery?.profileWarnings,
@@ -239,6 +249,7 @@ function monitorFingerprint(observation: MonitorJobObservation) {
     observation.deadline ?? '',
     observation.compensationText ?? '',
     observation.postingStatus ?? 'unknown',
+    observation.sourceVerification ?? 'unverified',
   ]))
 }
 
@@ -419,6 +430,7 @@ function createGmailShellOpportunity(message: GmailMessageObservation): Opportun
     currentStageLabel: message.stageLabel?.trim() || stageLabel(stage),
     processStage: stage,
     roleType: message.roleType ?? 'core',
+    assessmentStatus: message.opportunityValue !== undefined && message.fitScore !== undefined ? 'provisional' : 'unassessed',
     early: false,
     sourcePriority: 'Gmail 自动摄入 · 待补评估',
     nextActionLabel: stage === 'closed' ? '流程已结束' : '根据邮件进展继续流程',

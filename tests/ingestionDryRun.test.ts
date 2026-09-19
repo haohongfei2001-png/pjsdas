@@ -39,6 +39,13 @@ class Writable implements WorkspaceSource {
   }
 }
 
+
+const verifiedSource = async (observation: any) => ({
+  ...observation,
+  sourceVerification: 'verified' as const,
+  sourceVerifiedAt: '2026-09-13T00:04:00.000Z',
+})
+
 function structured(result: Awaited<ReturnType<typeof invokeTrustedIngestion>>) {
   return result.structuredContent as Record<string, any>
 }
@@ -47,7 +54,7 @@ describe('trusted ingestion dry-run and replay', () => {
   it('simulates a run without writing or mutating the source workspace', async () => {
     const source = new Writable()
     const before = JSON.stringify(source.snapshot)
-    const result = await invokeTrustedIngestion(source, 'ingest_discovery_run', args('dry-1', { dryRun: true }))
+    const result = await invokeTrustedIngestion(source, 'ingest_discovery_run', args('dry-1', { dryRun: true }), { sourceVerifier: verifiedSource })
     expect(result.isError).not.toBe(true)
     expect(source.writes).toHaveLength(0)
     expect(JSON.stringify(source.snapshot)).toBe(before)
@@ -58,21 +65,21 @@ describe('trusted ingestion dry-run and replay', () => {
   it('allows dry-run on a read-only source because no mutation is attempted', async () => {
     const snapshot = initialSnapshot()
     const source: WorkspaceSource = { async read() { return { snapshot, context: { workspaceVersion: 'file:1' } } } }
-    const result = await invokeTrustedIngestion(source, 'ingest_discovery_run', args('dry-readonly', { dryRun: true }))
+    const result = await invokeTrustedIngestion(source, 'ingest_discovery_run', args('dry-readonly', { dryRun: true }), { sourceVerifier: verifiedSource })
     expect(result.isError).not.toBe(true)
     expect(structured(result).dryRun).toBe(true)
   })
 
   it('replays a prior run against current state, compares outcomes, and still performs zero writes', async () => {
     const source = new Writable()
-    const applied = await invokeTrustedIngestion(source, 'ingest_discovery_run', args('original'))
+    const applied = await invokeTrustedIngestion(source, 'ingest_discovery_run', args('original'), { sourceVerifier: verifiedSource })
     expect(applied.isError).not.toBe(true)
     expect(source.writes).toHaveLength(1)
 
     const replay = await invokeTrustedIngestion(source, 'ingest_discovery_run', args('replay-attempt', {
       dryRun: true,
       replayOfRunId: 'original',
-    }))
+    }), { sourceVerifier: verifiedSource })
     expect(replay.isError).not.toBe(true)
     expect(source.writes).toHaveLength(1)
     expect(structured(replay).replay).toMatchObject({ replayOfRunId: 'original', baselineFound: true })
@@ -82,7 +89,7 @@ describe('trusted ingestion dry-run and replay', () => {
 
   it('rejects replay without dryRun so historical debugging can never mutate state', async () => {
     const source = new Writable()
-    const result = await invokeTrustedIngestion(source, 'ingest_discovery_run', args('bad-replay', { replayOfRunId: 'anything' }))
+    const result = await invokeTrustedIngestion(source, 'ingest_discovery_run', args('bad-replay', { replayOfRunId: 'anything' }), { sourceVerifier: verifiedSource })
     expect(result.isError).toBe(true)
     expect(source.writes).toHaveLength(0)
   })

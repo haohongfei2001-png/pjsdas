@@ -1,6 +1,6 @@
 import type { CallToolResult } from '@modelcontextprotocol/server'
 import * as z from 'zod/v4'
-import type { GmailMessageObservation } from '../src/autonomousIngestion.js'
+import type { GmailMessageObservation, MonitorJobObservation } from '../src/autonomousIngestion.js'
 import {
   applyGmailIngestionHardened,
   applyMonitorIngestionHardened,
@@ -12,6 +12,7 @@ import { jobRoleSimilarity, normalizeJobCompany } from '../src/jobPosting.js'
 import type { IngestionRunSummary, Opportunity } from '../src/model.js'
 import { resolveSourcePolicy } from '../src/sourceRegistry.js'
 import { requireWritableWorkspaceSource, WorkspaceSourceError, type WorkspaceSource } from './workspaceSource.js'
+import { verifyDiscoverySourceObservation } from './discoverySourceVerifier.js'
 
 const isoString = z.string().min(1).refine((value) => !Number.isNaN(new Date(value).getTime()), 'Must be a valid ISO/date timestamp.')
 const confidenceSchema = z.enum(['high', 'medium', 'low'])
@@ -152,19 +153,33 @@ export async function invokeTrustedIngestion(
   source: WorkspaceSource,
   name: TrustedIngestionToolName,
   args: unknown,
-  options: { authorize?: (name: TrustedIngestionToolName, sourceId: string) => Promise<void> } = {},
+  options: {
+    authorize?: (name: TrustedIngestionToolName, sourceId: string) => Promise<void>
+    fetchImpl?: typeof fetch
+    sourceVerifier?: (observation: MonitorJobObservation) => Promise<MonitorJobObservation>
+  } = {},
 ): Promise<CallToolResult> {
   try {
     if (name === 'ingest_discovery_run') {
       const parsed = ingestDiscoveryRunSchema.parse(args) as HardenedMonitorIngestionRunInput & SimulationArgs
       await options.authorize?.(name, parsed.sourceId)
+      const verifyObservation = options.sourceVerifier ?? ((observation: MonitorJobObservation) =>
+        verifyDiscoverySourceObservation(observation, {
+          fetchImpl: options.fetchImpl,
+          now: new Date(parsed.completedAt),
+        }))
+      const verifiedObservations = await Promise.all(parsed.observations.map((observation) => verifyObservation(observation)))
       const workspace = await source.read()
       if (parsed.replayOfRunId && !parsed.dryRun) return toolError('INVALID_ARGUMENT', 'replayOfRunId is dry-run only.', false)
       if (!parsed.dryRun) requireWritableWorkspaceSource(source)
       const baseline = parsed.replayOfRunId ? findRun(workspace.snapshot, 'gpt_monitor', parsed.sourceId, parsed.replayOfRunId) : undefined
       if (parsed.replayOfRunId && !baseline) return toolError('REPLAY_BASELINE_NOT_FOUND', `Run ${parsed.replayOfRunId} was not found for ${parsed.sourceId}.`, false)
       const simulationSnapshot = snapshotForReplay(workspace.snapshot, 'gpt_monitor', parsed.sourceId, parsed.replayOfRunId)
-      const input: HardenedMonitorIngestionRunInput = { ...parsed, sourcePolicy: resolveSourcePolicy('gpt_monitor', parsed.sourceId, parsed.sourcePolicy) }
+      const input: HardenedMonitorIngestionRunInput = {
+        ...parsed,
+        observations: verifiedObservations,
+        sourcePolicy: resolveSourcePolicy('gpt_monitor', parsed.sourceId, parsed.sourcePolicy),
+      }
       const result = applyMonitorIngestionHardened(simulationSnapshot, input)
       if (parsed.dryRun) return success(outputFor(workspace.context.workspaceVersion, result, parsed, baseline))
       const persisted = await persistResult(source, workspace.context.workspaceVersion, `gpt-monitor:${input.sourceId}`, result)

@@ -19,6 +19,7 @@ import {
   invokeTrustedIngestion,
 } from './ingestSources.js'
 import { addOpportunitiesSchema, invokeAddOpportunities } from './addOpportunities.js'
+import { applyUserCommandSchema, invokeApplyUserCommand } from './userCommands.js'
 import { invokeProposeChanges, proposeChangesSchema } from './proposeChanges.js'
 import type { WorkspaceSource } from './workspaceSource.js'
 
@@ -55,6 +56,7 @@ export interface PjsdasMcpServerOptions {
   trustedIngestionCapabilities?: { discovery: boolean; gmail: boolean }
   trustedIngestionAuthorizer?: (name: 'ingest_discovery_run' | 'ingest_gmail_run', sourceId: string) => Promise<void>
   explicitUserWriteMode?: 'disabled' | 'enabled'
+  explicitUserCommandMode?: 'disabled' | 'enabled'
 }
 
 export function createPjsdasMcpServer(
@@ -67,6 +69,7 @@ export function createPjsdasMcpServer(
   const trustedDiscoveryEnabled = trustedIngestionMode === 'enabled' && (options.trustedIngestionCapabilities?.discovery ?? true)
   const trustedGmailEnabled = trustedIngestionMode === 'enabled' && (options.trustedIngestionCapabilities?.gmail ?? true)
   const explicitUserWriteMode = options.explicitUserWriteMode ?? 'disabled'
+  const explicitUserCommandMode = options.explicitUserCommandMode ?? 'disabled'
   const instructions = [
     'PJSDAS is a personal job-search decision and action system.',
     'Use its explicit decision rules and deterministic explanations instead of inventing hidden ranking rules.',
@@ -75,7 +78,7 @@ export function createPjsdasMcpServer(
     'When get_discovery_context returns continuousDiscovery, use incrementalSince as the normal lower bound for new or materially updated postings, and treat refreshQueue as separate source-verification work. Do not repeat a full historical search without a reason.',
     'For refreshQueue work, preserve ownerKind, ownerId, postingId and canonicalSourceUrl exactly. A newly found canonical URL is a new/re-posted source and must go through normal discovery instead of overwriting an existing posting.',
     'A public posting becoming closed does not by itself close the PJSDAS Opportunity or recruitment Process. Posting lifecycle and recruiting lifecycle are separate facts.',
-    'PJSDAS itself does not crawl the web. If the user asks for current job opportunities, use ChatGPT web search/browsing outside PJSDAS, preserve public source URLs, and keep unknown job facts unknown rather than fabricating them.',
+    'Interactive MCP tools do not perform arbitrary job-web discovery. If the user asks for current jobs in ChatGPT, use ChatGPT web search/browsing and preserve public source URLs. Separately, PJSDAS background Discovery may discover candidates and independently fetch their source URLs before any source fact is trusted.',
     'When a public source explicitly supports them, submit bounded structured job facts. Do not convert model inference into source facts.',
     'For new web-discovered jobs, prefer bounded component assessments over opaque aggregate ratings. PJSDAS derives Fit and Opportunity Value totals from explicit components and user-controlled weights.',
     'Use get_opportunity_assessment when the user asks why a stored Fit or Opportunity Value score exists.',
@@ -90,14 +93,23 @@ export function createPjsdasMcpServer(
       'When the user explicitly asks in the current conversation to add, save, record, or write specific source-backed job opportunities into PJSDAS, use add_opportunities and execute the write immediately. Do not route that explicit instruction through propose_changes and do not require a second Apply click.',
       'Use add_opportunities only for additive Opportunity creation. It is duplicate-safe and cannot change Decision Rules, delete history, close processes, or make other policy decisions.',
       'Do not use add_opportunities when the user is only asking for recommendations, evaluation, discovery, or whether a job should be added. Those requests do not constitute write authorization.',
-      'If Fit or Opportunity Value is not already grounded, omit those optional scores rather than inventing precision; PJSDAS will create the opportunity with a neutral pending-assessment placeholder.',
+      'If Fit or Opportunity Value is not already grounded, omit those optional scores rather than inventing precision; PJSDAS will mark the opportunity unassessed even if internal ranking needs fallback values.',
+    )
+  }
+
+  if (explicitUserCommandMode === 'enabled') {
+    instructions.push(
+      'For an explicit current-user progress command on an existing unique target, use apply_user_command. Read the relevant opportunity/action first and pass its exact stable id. Do not guess an id or use a fuzzy company-only target.',
+      'P1 examples include: record an application submission; record a recruiting event; set an explicit deadline; complete/start/skip/restore an Action; abandon one Opportunity without closing the recruiting process; correct a bounded user-asserted fact; change one Opportunity roleType; add one manual Action.',
+      'If the user intent is explicit but the target or a required parameter is ambiguous, ask only for that missing detail in the current conversation. Do not route ordinary P2 ambiguity through propose_changes.',
+      'Never use apply_user_command for bulk operations, identity merge/rename, Decision Rules, workspace conflict override, restore/migration, authorization changes, or external consequences such as applying, withdrawing, sending mail, or accepting an Offer.',
     )
   }
 
   if (trustedDiscoveryEnabled || trustedGmailEnabled) {
     instructions.push(
       'Trusted factual ingestion is autonomous and does not require a review click. It is deliberately narrower than generic mutation.',
-      'Use ingest_discovery_run only for a bounded completed GPT/ChatGPT monitoring run with stable sourceRecordId values and source-backed public URLs. The tool performs identity resolution, quality gates, duplicate merging, accounting, and fail-closed workspace-version checks itself.',
+      'Use ingest_discovery_run only for a bounded completed GPT/ChatGPT monitoring run with public source URLs. PJSDAS independently fetches and verifies submitted source URLs before any Discovery fact may create or refresh an Opportunity; unverified candidates remain explicit unresolved records.',
       'Use ingest_gmail_run only after Gmail messages have been classified and reduced to bounded structured facts. Never submit raw mailbox contents as notes. Low-confidence or ambiguous messages must be submitted with low/medium confidence so PJSDAS records them as unresolved instead of guessing.',
       'Every submitted source record must be accounted for as created, merged, updated, duplicate, filtered, ignored, or unresolved. Never silently omit an inconvenient result from the ingestion batch.',
       'Trusted ingestion may add or merge factual opportunities and process events, but it must not silently change Decision Rules, durable user preferences, rejection decisions, or delete data.',
@@ -116,7 +128,7 @@ export function createPjsdasMcpServer(
       'For refreshQueue verification, use postingRefreshes as a separate review batch.',
       'Rich Opportunity facts are evidence fields, not ratings. Component assessment is the preferred rating path.',
     )
-  } else if (!trustedDiscoveryEnabled && !trustedGmailEnabled && explicitUserWriteMode !== 'enabled') {
+  } else if (!trustedDiscoveryEnabled && !trustedGmailEnabled && explicitUserWriteMode !== 'enabled' && explicitUserCommandMode !== 'enabled') {
     instructions.push('This server exposes no mutation or proposal tools.')
   }
 
@@ -216,6 +228,15 @@ export function createPjsdasMcpServer(
       description: 'Directly add source-backed opportunities to the canonical PJSDAS workspace only when the current user message explicitly asks to add, save, record, or write those specific jobs. This is an immediate duplicate-safe additive write with no review click; never use it for mere recommendations or autonomous discovery.',
       inputSchema: addOpportunitiesSchema, annotations: directWriteAnnotations,
     }, async (args) => invokeAddOpportunities(source, args))
+
+  }
+
+  if (explicitUserCommandMode === 'enabled') {
+    server.registerTool('apply_user_command', {
+      title: 'Apply one explicit PJSDAS user command',
+      description: 'Directly commit one bounded, explicit, low-risk user command against an exact PJSDAS target. Ambiguous targets must be clarified in the AI conversation before calling this tool; governed/high-impact changes remain review-only.',
+      inputSchema: applyUserCommandSchema, annotations: directWriteAnnotations,
+    }, async (args) => invokeApplyUserCommand(source, args))
   }
 
   if (trustedDiscoveryEnabled) {

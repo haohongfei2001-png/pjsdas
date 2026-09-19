@@ -15,6 +15,10 @@ interface AutomationRow {
   granted_scopes?: string[] | null
   gmail_automation_enabled?: boolean | null
   gmail_history_id?: string | null
+  gmail_sync_mode?: string | null
+  gmail_page_token?: string | null
+  gmail_pending_history_id?: string | null
+  gmail_pending_message_ids?: string[] | null
   gmail_last_checked_at?: string | null
   gmail_last_success_at?: string | null
   gmail_last_error?: string | null
@@ -76,6 +80,10 @@ export function createAutomationSettingsHandler(config: AutomationSettingsHandle
         'granted_scopes',
         'gmail_automation_enabled',
         'gmail_history_id',
+        'gmail_sync_mode',
+        'gmail_page_token',
+        'gmail_pending_history_id',
+        'gmail_pending_message_ids',
         'gmail_last_checked_at',
         'gmail_last_success_at',
         'gmail_last_error',
@@ -148,6 +156,10 @@ export function createAutomationSettingsHandler(config: AutomationSettingsHandle
       const patch: Record<string, unknown> = { updated_at: new Date().toISOString() }
       if (gmailProvided) {
         patch.gmail_automation_enabled = body!.gmailEnabled
+        patch.gmail_sync_mode = null
+        patch.gmail_page_token = null
+        patch.gmail_pending_history_id = null
+        patch.gmail_pending_message_ids = []
         if (body!.gmailEnabled === true) {
           patch.gmail_history_id = null
           patch.gmail_last_error = null
@@ -179,6 +191,10 @@ export function createAutomationSettingsHandler(config: AutomationSettingsHandle
       const updated: AutomationRow = { ...current }
       if (gmailProvided) {
         updated.gmail_automation_enabled = body!.gmailEnabled as boolean
+        updated.gmail_sync_mode = null
+        updated.gmail_page_token = null
+        updated.gmail_pending_history_id = null
+        updated.gmail_pending_message_ids = []
         if (body!.gmailEnabled === true) {
           updated.gmail_history_id = null
           updated.gmail_last_error = null

@@ -3,8 +3,8 @@ import {
   AUTHENTICATED_GATEWAY_VERSION,
 } from '../gateway/authenticatedRemoteHttp.js'
 import {
-  AUTHENTICATED_MCP_RELEASE_REQUIRED_TOOLS,
   AUTHENTICATED_MCP_TOOL_SURFACE_VERSION,
+  authenticatedMcpReleaseRequiredTools,
 } from '../gateway/mcpToolSurface.js'
 import { backendReleaseCommit, type ReleaseIdentityEnvironment } from '../gateway/releaseIdentity.js'
 
@@ -58,6 +58,11 @@ export const PUBLIC_HEALTH_CAPABILITIES = {
   trustedIngestionGrantModel: 'v1',
   transactionalWorkspaceFoundation: 'v1',
   mutationCommandLedger: true,
+  explicitUserCommands: 'v1',
+  opportunityParticipationState: 'v1',
+  gmailCompleteConsumption: 'v1',
+  discoverySourceVerification: 'v1',
+  discoveryFactAssessmentSeparation: true,
 } as const
 
 export function currentWorkspaceAuthority(environment: Record<string, string | undefined> = process.env) {
@@ -81,7 +86,7 @@ export default {
       },
       authenticatedMcp: {
         toolSurfaceVersion: AUTHENTICATED_MCP_TOOL_SURFACE_VERSION,
-        releaseRequiredTools: AUTHENTICATED_MCP_RELEASE_REQUIRED_TOOLS,
+        releaseRequiredTools: authenticatedMcpReleaseRequiredTools(workspace.authority),
       },
       capabilities: PUBLIC_HEALTH_CAPABILITIES,
       status: 'ok',

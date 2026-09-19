@@ -92,6 +92,7 @@ export default function OpportunityDetailDrawer({
   const { lang } = useUiLanguage()
   const zh = lang === 'zh'
   const discovery = opportunity.detail?.discovery
+  const userFacts = opportunity.detail?.userFacts
   const posting = discovery?.posting
   const postingHistory = discovery?.postingHistory ?? []
   const relevantActions = actions
@@ -128,8 +129,8 @@ export default function OpportunityDetailDrawer({
         </header>
 
         <section className="opportunity-detail-score-grid" aria-label={zh ? '核心判断' : 'Core assessment'}>
-          <div><small>FIT</small><b>{Math.round(opportunity.fitScore)}</b></div>
-          <div><small>{zh ? '机会价值' : 'VALUE'}</small><b>{Math.round(opportunity.opportunityValue)}</b></div>
+          <div><small>FIT</small><b>{opportunity.assessmentStatus === 'unassessed' ? (zh ? '未评估' : 'Unassessed') : Math.round(opportunity.fitScore)}</b></div>
+          <div><small>{zh ? '机会价值' : 'VALUE'}</small><b>{opportunity.assessmentStatus === 'unassessed' ? (zh ? '未评估' : 'Unassessed') : Math.round(opportunity.opportunityValue)}</b></div>
           <div><small>{zh ? '当前阶段' : 'STAGE'}</small><strong>{effectiveStageText}</strong></div>
           <div><small>{zh ? '截止' : 'DEADLINE'}</small><strong>{formatDate(opportunity.deadline, zh)}</strong></div>
         </section>
@@ -148,8 +149,8 @@ export default function OpportunityDetailDrawer({
         </section>
 
         <section className="opportunity-detail-overview">
-          <div><small>{zh ? '地点' : 'Location'}</small><strong>{discovery?.location ?? opportunity.detail?.facts?.identity.locations?.join(' · ') ?? (zh ? '未明确' : 'Unknown')}</strong></div>
-          <div><small>{zh ? '薪资' : 'Compensation'}</small><strong>{discovery?.compensationText ?? opportunity.salaryReference ?? opportunity.detail?.facts?.compensation.raw ?? (zh ? '未明确' : 'Unknown')}</strong></div>
+          <div><small>{zh ? '地点' : 'Location'}</small><strong>{userFacts?.location ?? discovery?.location ?? opportunity.detail?.facts?.identity.locations?.join(' · ') ?? (zh ? '未明确' : 'Unknown')}</strong></div>
+          <div><small>{zh ? '薪资' : 'Compensation'}</small><strong>{userFacts?.compensationText ?? discovery?.compensationText ?? opportunity.salaryReference ?? opportunity.detail?.facts?.compensation.raw ?? (zh ? '未明确' : 'Unknown')}</strong></div>
           <div><small>{zh ? '申请组' : 'Application group'}</small><strong>{applicationGroup?.id ?? opportunity.applicationGroupId ?? '—'}</strong></div>
           <div><small>{zh ? '成功率' : 'Offer probability'}</small><strong>{opportunity.offerProbability ?? (zh ? '未知' : 'Unknown')}</strong></div>
         </section>
@@ -223,7 +224,7 @@ export default function OpportunityDetailDrawer({
 
         <footer className="opportunity-detail-footer">
           <button type="button" onClick={() => onNavigate('today')}>{zh ? '回到 Today' : 'Back to Today'}</button>
-          {opportunity.detail?.facts?.application.applicationUrl ? <a href={opportunity.detail.facts.application.applicationUrl} target="_blank" rel="noreferrer">{zh ? '打开投递页面' : 'Open application page'}</a> : discovery?.sourceUrl ? <a href={discovery.sourceUrl} target="_blank" rel="noreferrer">{zh ? '打开招聘来源' : 'Open source'}</a> : null}
+          {userFacts?.applicationUrl ? <a href={userFacts.applicationUrl} target="_blank" rel="noreferrer">{zh ? '打开用户确认链接' : 'Open confirmed link'}</a> : opportunity.detail?.facts?.application.applicationUrl ? <a href={opportunity.detail.facts.application.applicationUrl} target="_blank" rel="noreferrer">{zh ? '打开投递页面' : 'Open application page'}</a> : discovery?.sourceUrl ? <a href={discovery.sourceUrl} target="_blank" rel="noreferrer">{zh ? '打开招聘来源' : 'Open source'}</a> : null}
         </footer>
       </aside>
     </div>

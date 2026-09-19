@@ -2,6 +2,7 @@ import { readFile } from 'node:fs/promises'
 import { describe, expect, it, vi } from 'vitest'
 import {
   discoverSourceRun,
+  verifyDiscoverySourceObservation,
   type DiscoveryGenerateText,
   type DiscoveryGenerateTextInput,
 } from '../gateway/discoveryAutomationWorker.js'
@@ -58,10 +59,22 @@ describe('server-owned discovery worker model boundary', () => {
       incrementalSince: '2026-09-14T01:00:00.000Z',
       now: new Date('2026-09-15T01:00:00.000Z'),
       ai: { generateTextImpl },
+      fetchImpl: vi.fn(async () => new Response(
+        '<html><head><title>AI Product Manager - Example AI</title></head><body>Example AI AI Product Manager 2027 Campus Beijing</body></html>',
+        { status: 200, headers: { 'content-type': 'text/html' } },
+      )) as unknown as typeof fetch,
     })
 
     expect(observations).toHaveLength(1)
-    expect(observations[0]).toMatchObject({ sourceRecordId: 'job-123', company: 'Example AI', fitScore: 80 })
+    expect(observations[0]).toMatchObject({
+      sourceRecordId: expect.stringMatching(/^verified:/),
+      company: 'Example AI',
+      fitScore: 80,
+      sourceVerification: 'verified',
+      sourceTitle: 'AI Product Manager - Example AI',
+      postingStatus: 'unknown',
+      location: 'Beijing',
+    })
     expect(seen).toHaveLength(1)
     expect(seen[0]).toMatchObject({
       model: 'perplexity/sonar',
@@ -260,4 +273,96 @@ describe('server-owned discovery worker model boundary', () => {
       retryable: false,
     })
   })
+  it('marks a model citation unverified when the fetched page does not corroborate company and role', async () => {
+    const observation = await verifyDiscoverySourceObservation({
+      sourceRecordId: 'job-mismatch',
+      company: 'Example AI',
+      role: 'AI Product Manager',
+      sourceUrl: 'https://careers.example.com/jobs/123',
+      sourceTitle: 'Model supplied title',
+      location: 'Beijing',
+      deadline: '2026-10-10',
+      compensationText: '300k RMB',
+      rationale: 'Model says this is the job.',
+      roleType: 'core',
+      opportunityValue: 88,
+      fitScore: 90,
+      fitConfidence: 'high',
+      opportunityValueConfidence: 'high',
+      postingStatus: 'open',
+    }, {
+      now: new Date('2026-09-19T00:00:00.000Z'),
+      fetchImpl: vi.fn(async () => new Response(
+        '<html><head><title>Completely Different Employer</title></head><body>Software Engineer opening</body></html>',
+        { status: 200, headers: { 'content-type': 'text/html' } },
+      )) as unknown as typeof fetch,
+    })
+
+    expect(observation).toMatchObject({
+      sourceVerification: 'unverified',
+      sourceVerificationReason: expect.stringContaining('corroborate'),
+    })
+  })
+
+  it('rejects redirects to private/local source destinations instead of following them', async () => {
+    const fetchImpl = vi.fn(async () => new Response(null, {
+      status: 302,
+      headers: { location: 'http://127.0.0.1/internal' },
+    })) as unknown as typeof fetch
+
+    const observation = await verifyDiscoverySourceObservation({
+      sourceRecordId: 'job-redirect',
+      company: 'Example AI',
+      role: 'AI Product Manager',
+      sourceUrl: 'https://careers.example.com/jobs/redirect',
+      sourceTitle: 'Example',
+      rationale: 'Example',
+      roleType: 'core',
+      opportunityValue: 70,
+      fitScore: 70,
+      fitConfidence: 'medium',
+      opportunityValueConfidence: 'medium',
+    }, { fetchImpl })
+
+    expect(observation).toMatchObject({
+      sourceVerification: 'unverified',
+      sourceVerificationReason: expect.stringContaining('DISCOVERY_SOURCE_INVALID'),
+    })
+    expect(fetchImpl).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps model-derived optional facts unknown unless the fetched source literally supports them', async () => {
+    const observation = await verifyDiscoverySourceObservation({
+      sourceRecordId: 'job-facts',
+      company: 'Example AI',
+      role: 'AI Product Manager',
+      sourceUrl: 'https://careers.example.com/jobs/123',
+      sourceTitle: 'Model title',
+      location: 'Shanghai',
+      deadline: '2026-10-10',
+      compensationText: '300k RMB',
+      rationale: 'Model assessment.',
+      roleType: 'core',
+      opportunityValue: 80,
+      fitScore: 80,
+      fitConfidence: 'medium',
+      opportunityValueConfidence: 'medium',
+      postingStatus: 'open',
+    }, {
+      now: new Date('2026-09-19T00:00:00.000Z'),
+      fetchImpl: vi.fn(async () => new Response(
+        '<html><head><title>Example AI - AI Product Manager</title></head><body>Example AI is hiring an AI Product Manager in Beijing.</body></html>',
+        { status: 200, headers: { 'content-type': 'text/html' } },
+      )) as unknown as typeof fetch,
+    })
+
+    expect(observation).toMatchObject({
+      sourceVerification: 'verified',
+      postingStatus: 'unknown',
+    })
+    expect(observation.location).toBeUndefined()
+    expect(observation.deadline).toBeUndefined()
+    expect(observation.compensationText).toBeUndefined()
+  })
+
 })

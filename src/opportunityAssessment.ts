@@ -164,6 +164,7 @@ export function projectOpportunityAssessment(opportunity: Opportunity, rules: De
   const scored = scoreOpportunityAssessment(assessment, rules)
   return {
     ...opportunity,
+    assessmentStatus: 'assessed',
     fitScore: scored.fit.score,
     opportunityValue: scored.opportunityValue.score,
     detail: {

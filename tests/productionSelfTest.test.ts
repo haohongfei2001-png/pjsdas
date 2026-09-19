@@ -4,7 +4,8 @@ import { runProductionSelfTest } from '../gateway/productionSelfTest.js'
 const BASE_URL = 'https://example.test'
 const METADATA_URL = `${BASE_URL}/.well-known/oauth-protected-resource`
 const RELEASE_SHA = '1234567890abcdef1234567890abcdef12345678'
-const REQUIRED_TOOLS = ['get_coverage_status', 'get_workspace_integrity', 'add_opportunities', 'ingest_discovery_run', 'ingest_gmail_run']
+const DRIVE_REQUIRED_TOOLS = ['get_coverage_status', 'get_workspace_integrity', 'add_opportunities', 'ingest_discovery_run', 'ingest_gmail_run']
+const TRANSACTIONAL_REQUIRED_TOOLS = ['get_coverage_status', 'get_workspace_integrity', 'add_opportunities', 'apply_user_command', 'ingest_discovery_run', 'ingest_gmail_run']
 
 function health() {
   return {
@@ -15,8 +16,8 @@ function health() {
     resource: `${BASE_URL}/api/mcp`,
     release: { commitSha: RELEASE_SHA },
     authenticatedMcp: {
-      toolSurfaceVersion: 'v2',
-      releaseRequiredTools: REQUIRED_TOOLS,
+      toolSurfaceVersion: 'v3',
+      releaseRequiredTools: DRIVE_REQUIRED_TOOLS,
     },
     status: 'ok',
     capabilities: {
@@ -47,6 +48,11 @@ function health() {
       trustedIngestionGrantModel: 'v1',
       transactionalWorkspaceFoundation: 'v1',
       mutationCommandLedger: true,
+      explicitUserCommands: 'v1',
+      opportunityParticipationState: 'v1',
+      gmailCompleteConsumption: 'v1',
+      discoverySourceVerification: 'v1',
+      discoveryFactAssessmentSeparation: true,
     },
   }
 }
@@ -80,7 +86,7 @@ describe('production self-test', () => {
     expect(result.checks.find((item) => item.name === 'health.capability.discoveryAutomationPlan')?.status).toBe('pass')
     expect(result.checks.find((item) => item.name === 'health.capability.backgroundDiscoveryAutomation')?.status).toBe('pass')
     expect(result.checks.find((item) => item.name === 'health.authenticated-mcp-tool-surface-version')?.status).toBe('pass')
-    for (const tool of REQUIRED_TOOLS) {
+    for (const tool of DRIVE_REQUIRED_TOOLS) {
       expect(result.checks.find((item) => item.name === `health.authenticated-mcp-tool.${tool}`)?.status).toBe('pass')
     }
     expect(result.checks.find((item) => item.name === 'gmail-automation.settings-unauthorized')?.status).toBe('pass')
@@ -94,6 +100,7 @@ describe('production self-test', () => {
     const transactional = health() as any
     transactional.mode = 'transactional-connected'
     transactional.workspaceAuthority = 'transactional'
+    transactional.authenticatedMcp.releaseRequiredTools = TRANSACTIONAL_REQUIRED_TOOLS
     const matching = await runProductionSelfTest({
       baseUrl: BASE_URL,
       expectedWorkspaceAuthority: 'transactional',
@@ -111,7 +118,7 @@ describe('production self-test', () => {
 
   it('fails closed when the deployed health contract omits a required authenticated MCP tool', async () => {
     const bad = health() as any
-    bad.authenticatedMcp.releaseRequiredTools = REQUIRED_TOOLS.filter((tool) => tool !== 'ingest_gmail_run')
+    bad.authenticatedMcp.releaseRequiredTools = DRIVE_REQUIRED_TOOLS.filter((tool) => tool !== 'ingest_gmail_run')
     const result = await runProductionSelfTest({ baseUrl: BASE_URL, fetchImpl: publicFetch(bad) })
     expect(result.ok).toBe(false)
     expect(result.checks.find((item) => item.name === 'health.authenticated-mcp-tool.ingest_gmail_run')?.status).toBe('fail')
@@ -144,12 +151,12 @@ describe('production self-test', () => {
       if (request.url.endsWith('/api/automation-gmail')) return Response.json({ code: 'AUTOMATION_AUTH_REQUIRED' }, { status: 401 })
       if (request.url.endsWith('/api/automation-discovery')) return Response.json({ code: 'AUTOMATION_AUTH_REQUIRED' }, { status: 401 })
       if (request.url.endsWith('/api/mcp') && !request.headers.get('authorization')) return unauthorizedMcp()
-      if (request.url.endsWith('/api/mcp')) return new Response(`data: ${JSON.stringify({ tools: REQUIRED_TOOLS.map((name) => ({ name })) })}`, { status: 200, headers: { 'content-type': 'text/event-stream' } })
+      if (request.url.endsWith('/api/mcp')) return new Response(`data: ${JSON.stringify({ tools: DRIVE_REQUIRED_TOOLS.map((name) => ({ name })) })}`, { status: 200, headers: { 'content-type': 'text/event-stream' } })
       return new Response('not found', { status: 404 })
     }) as unknown as typeof fetch
     const result = await runProductionSelfTest({ baseUrl: BASE_URL, accessToken: 'token', fetchImpl })
     expect(result.ok).toBe(true)
-    for (const tool of REQUIRED_TOOLS) {
+    for (const tool of DRIVE_REQUIRED_TOOLS) {
       expect(result.checks.find((item) => item.name === `mcp.tool.${tool}`)?.status).toBe('pass')
     }
   })

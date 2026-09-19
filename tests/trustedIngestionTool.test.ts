@@ -48,6 +48,13 @@ class WritableSource implements WorkspaceSource {
   }
 }
 
+
+const verifiedSource = async (observation: any) => ({
+  ...observation,
+  sourceVerification: 'verified' as const,
+  sourceVerifiedAt: '2026-09-13T00:04:00.000Z',
+})
+
 function textError(result: Awaited<ReturnType<typeof invokeTrustedIngestion>>) {
   const first = result.content[0]
   if (!first || first.type !== 'text') return {}
@@ -57,11 +64,11 @@ function textError(result: Awaited<ReturnType<typeof invokeTrustedIngestion>>) {
 describe('trusted ingestion MCP boundary', () => {
   it('writes a monitor run once and treats exact run retry as idempotent', async () => {
     const source = new WritableSource()
-    const first = await invokeTrustedIngestion(source, 'ingest_discovery_run', monitorArgs())
+    const first = await invokeTrustedIngestion(source, 'ingest_discovery_run', monitorArgs(), { sourceVerifier: verifiedSource })
     expect(first.isError).not.toBe(true)
     expect(source.writes).toHaveLength(1)
     expect(first.structuredContent).toMatchObject({ workspaceVersion: 'drive:6', alreadyApplied: false, allInputsAccounted: true, unresolvedCount: 0 })
-    const second = await invokeTrustedIngestion(source, 'ingest_discovery_run', monitorArgs())
+    const second = await invokeTrustedIngestion(source, 'ingest_discovery_run', monitorArgs(), { sourceVerifier: verifiedSource })
     expect(second.isError).not.toBe(true)
     expect(source.writes).toHaveLength(1)
     expect(second.structuredContent).toMatchObject({ alreadyApplied: true, allInputsAccounted: true })
@@ -69,14 +76,14 @@ describe('trusted ingestion MCP boundary', () => {
 
   it('fails closed when trusted ingestion is invoked on a read-only source', async () => {
     const source: WorkspaceSource = { async read() { return { snapshot: initialSnapshot(), context: { workspaceVersion: 'file:1' } } } }
-    const result = await invokeTrustedIngestion(source, 'ingest_discovery_run', monitorArgs('run-readonly'))
+    const result = await invokeTrustedIngestion(source, 'ingest_discovery_run', monitorArgs('run-readonly'), { sourceVerifier: verifiedSource })
     expect(result.isError).toBe(true)
     expect(textError(result).code).toBe('WORKSPACE_READ_ONLY')
   })
 
   it('exposes durable reconciliation without claiming global coverage when configured sources are missing', async () => {
     const source = new WritableSource()
-    await invokeTrustedIngestion(source, 'ingest_discovery_run', monitorArgs())
+    await invokeTrustedIngestion(source, 'ingest_discovery_run', monitorArgs(), { sourceVerifier: verifiedSource })
     const result = await invokeCoverageStatus(source)
     expect(result.isError).not.toBe(true)
     expect(result.structuredContent).toMatchObject({

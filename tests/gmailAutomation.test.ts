@@ -111,7 +111,7 @@ describe('Gmail background automation', () => {
     const fetchImpl = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input)
       calls.push(url)
-      if (url.endsWith('/profile')) return json({ historyId: '200' })
+      if (url.endsWith('/profile')) return json({ historyId: '205' })
       if (url.includes('/history?')) return json({
         historyId: '205',
         history: [{ messagesAdded: [{ message: { id: 'msg-205' } }] }],
@@ -127,6 +127,7 @@ describe('Gmail background automation', () => {
     })
 
     expect(result.usedFallbackScan).toBe(false)
+    expect(result.coverageComplete).toBe(true)
     expect(result.nextHistoryId).toBe('205')
     expect(result.messages.map((item) => item.id)).toEqual(['msg-205'])
     expect(calls.some((url) => url.includes('startHistoryId=199'))).toBe(true)
@@ -151,8 +152,105 @@ describe('Gmail background automation', () => {
     })
 
     expect(result.usedFallbackScan).toBe(true)
+    expect(result.recoveryGapReason).toContain('cannot prove older mailbox coverage')
+    expect(result.coverageComplete).toBe(true)
     expect(result.nextHistoryId).toBe('300')
     expect(result.messages.map((item) => item.id)).toEqual(['recent-1'])
     expect(calls.some((url) => url.includes('newer_than%3A7d'))).toBe(true)
   })
+  it('does not advance the durable history watermark until every Gmail history page is consumed', async () => {
+    const calls: string[] = []
+    const fetchImpl = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      calls.push(url)
+      if (url.endsWith('/profile')) return json({ historyId: '305' })
+      if (url.includes('/history?') && !url.includes('pageToken=')) return json({
+        historyId: '310',
+        nextPageToken: 'page-2',
+        history: [{ messagesAdded: [{ message: { id: 'msg-1' } }] }],
+      })
+      if (url.includes('/history?') && url.includes('pageToken=page-2')) return json({
+        historyId: '315',
+        history: [{ messagesAdded: [{ message: { id: 'msg-2' } }] }],
+      })
+      if (url.includes('/messages/msg-1?')) return json({ id: 'msg-1', internalDate: '1', payload: { headers: [] } })
+      if (url.includes('/messages/msg-2?')) return json({ id: 'msg-2', internalDate: '2', payload: { headers: [] } })
+      return json({ error: 'unexpected' }, 500)
+    }) as unknown as typeof fetch
+
+    const first = await fetchGmailAutomationBatch({
+      accessToken: 'google-access',
+      startHistoryId: '299',
+      fetchImpl,
+    })
+    expect(first).toMatchObject({
+      coverageComplete: false,
+      usedFallbackScan: false,
+      nextHistoryId: undefined,
+      continuation: {
+        mode: 'history',
+        pageToken: 'page-2',
+        pendingHistoryId: '305',
+        pendingMessageIds: [],
+      },
+    })
+    expect(first.messages.map((item) => item.id)).toEqual(['msg-1'])
+
+    const second = await fetchGmailAutomationBatch({
+      accessToken: 'google-access',
+      startHistoryId: '299',
+      continuation: first.continuation,
+      fetchImpl,
+    })
+    expect(second).toMatchObject({
+      coverageComplete: true,
+      usedFallbackScan: false,
+      nextHistoryId: '305',
+      continuation: undefined,
+    })
+    expect(second.messages.map((item) => item.id)).toEqual(['msg-2'])
+    expect(calls.some((url) => url.includes('pageToken=page-2'))).toBe(true)
+  })
+
+  it('persists message ids beyond the per-run budget instead of skipping them', async () => {
+    const ids = Array.from({ length: 105 }, (_, index) => `msg-${index + 1}`)
+    const fetchImpl = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.endsWith('/profile')) return json({ historyId: '405' })
+      if (url.includes('/history?')) return json({
+        historyId: '405',
+        history: [{
+          messagesAdded: ids.map((id) => ({ message: { id } })),
+        }],
+      })
+      const messageId = /\/messages\/([^?]+)\?/.exec(url)?.[1]
+      if (messageId) return json({ id: messageId, internalDate: '1', payload: { headers: [] } })
+      return json({ error: 'unexpected' }, 500)
+    }) as unknown as typeof fetch
+
+    const first = await fetchGmailAutomationBatch({
+      accessToken: 'google-access',
+      startHistoryId: '399',
+      fetchImpl,
+    })
+    expect(first.coverageComplete).toBe(false)
+    expect(first.messages).toHaveLength(100)
+    expect(first.nextHistoryId).toBeUndefined()
+    expect(first.continuation).toMatchObject({
+      mode: 'history',
+      pendingHistoryId: '405',
+      pendingMessageIds: ids.slice(100),
+    })
+
+    const second = await fetchGmailAutomationBatch({
+      accessToken: 'google-access',
+      startHistoryId: '399',
+      continuation: first.continuation,
+      fetchImpl,
+    })
+    expect(second.coverageComplete).toBe(true)
+    expect(second.nextHistoryId).toBe('405')
+    expect(second.messages.map((item) => item.id)).toEqual(ids.slice(100))
+  })
+
 })
