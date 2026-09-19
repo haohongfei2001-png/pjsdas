@@ -59,7 +59,7 @@ const verifiedSource = async (observation: any) => ({
 })
 
 function invokeVerified(source: WorkspaceSource, args: unknown) {
-  return invokeVerified(source, args, { sourceVerifier: verifiedSource })
+  return invokeTrustedIngestion(source, 'ingest_discovery_run', args, { sourceVerifier: verifiedSource })
 }
 
 function resultPayload(result: Awaited<ReturnType<typeof invokeTrustedIngestion>>) {
