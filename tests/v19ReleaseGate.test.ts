@@ -19,6 +19,11 @@ describe('backend-first release gate', () => {
     expect(workflow).toContain('capabilities.trustedIngestionGrantModel === "v1"')
     expect(workflow).toContain('capabilities.transactionalWorkspaceFoundation === "v1"')
     expect(workflow).toContain('capabilities.mutationCommandLedger === true')
+    expect(workflow).toContain('capabilities.explicitUserCommands === "v1"')
+    expect(workflow).toContain('capabilities.opportunityParticipationState === "v1"')
+    expect(workflow).toContain('capabilities.gmailCompleteConsumption === "v1"')
+    expect(workflow).toContain('capabilities.discoverySourceVerification === "v1"')
+    expect(workflow).toContain('capabilities.discoveryFactAssessmentSeparation === true')
     expect(workflow).toContain('authenticatedMcp.toolSurfaceVersion === "v3"')
     for (const tool of ['get_coverage_status', 'get_workspace_integrity', 'add_opportunities', 'apply_user_command', 'ingest_discovery_run', 'ingest_gmail_run']) {
       expect(workflow).toContain(`"${tool}"`)
