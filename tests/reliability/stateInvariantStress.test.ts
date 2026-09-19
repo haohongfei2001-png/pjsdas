@@ -36,6 +36,8 @@ function observation(input: {
     fitConfidence: 'high',
     opportunityValueConfidence: 'high',
     postingStatus: 'open',
+    sourceVerification: 'verified',
+    sourceVerifiedAt: '2026-09-14T08:00:00.000Z',
     discoveredAt: '2026-09-14T08:00:00.000Z',
   }
 }
