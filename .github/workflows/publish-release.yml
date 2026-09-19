@@ -29,7 +29,7 @@ jobs:
           node <<'NODE' >> "$GITHUB_OUTPUT"
           const fs = require('node:fs')
           const plan = JSON.parse(fs.readFileSync('.github/release-plan.json', 'utf8'))
-          for (const key of ['publicVersion', 'tag', 'releaseNotes']) {
+          for (const key of ['publicVersion', 'tag', 'releaseNotes', 'releaseChannel']) {
             if (typeof plan[key] !== 'string' || !plan[key].trim()) {
               throw new Error(`release plan is missing ${key}`)
             }
@@ -37,7 +37,11 @@ jobs:
           console.log(`publish=${plan.publishOnProductionSuccess === true ? 'true' : 'false'}`)
           console.log(`version=${plan.publicVersion}`)
           console.log(`tag=${plan.tag}`)
+          if (!['prerelease', 'stable'].includes(plan.releaseChannel)) {
+            throw new Error('releaseChannel must be prerelease or stable')
+          }
           console.log(`notes=${plan.releaseNotes}`)
+          console.log(`channel=${plan.releaseChannel}`)
           NODE
 
       - name: Verify release version contract
@@ -46,6 +50,7 @@ jobs:
           PUBLIC_VERSION: ${{ steps.plan.outputs.version }}
           RELEASE_TAG: ${{ steps.plan.outputs.tag }}
           RELEASE_NOTES: ${{ steps.plan.outputs.notes }}
+          RELEASE_CHANNEL: ${{ steps.plan.outputs.channel }}
         run: |
           node <<'NODE'
           const fs = require('node:fs')
@@ -53,16 +58,68 @@ jobs:
           const version = process.env.PUBLIC_VERSION
           const tag = process.env.RELEASE_TAG
           const notes = process.env.RELEASE_NOTES
+          const channel = process.env.RELEASE_CHANNEL
           if (pkg.version !== version) throw new Error(`package version ${pkg.version} does not match release ${version}`)
           if (tag !== `v${version}`) throw new Error(`release tag ${tag} must equal v${version}`)
           if (!fs.existsSync(notes)) throw new Error(`release notes not found: ${notes}`)
+          const isPrereleaseVersion = version.includes('-')
+          if (channel === 'prerelease' && !isPrereleaseVersion) throw new Error('prerelease channel requires a SemVer prerelease version')
+          if (channel === 'stable' && isPrereleaseVersion) throw new Error('stable channel cannot publish a SemVer prerelease version')
           NODE
+
+      - name: Verify protected default branch
+        if: ${{ steps.plan.outputs.publish == 'true' }}
+        env:
+          ADMIN_TOKEN: ${{ secrets.PJSDAS_RELEASE_ADMIN_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -z "${ADMIN_TOKEN:-}" ]; then
+            echo "PJSDAS_RELEASE_ADMIN_TOKEN is required to verify repository administration gates before publication." >&2
+            exit 1
+          fi
+          default_branch="$(GH_TOKEN="$ADMIN_TOKEN" gh api "repos/$GITHUB_REPOSITORY" --jq .default_branch)"
+          protected="$(GH_TOKEN="$ADMIN_TOKEN" gh api "repos/$GITHUB_REPOSITORY/branches/$default_branch" --jq .protected)"
+          if [ "$protected" != "true" ]; then
+            echo "Default branch $default_branch is not protected; refusing release publication." >&2
+            exit 1
+          fi
+
+      - name: Verify immutable releases are enabled
+        if: ${{ steps.plan.outputs.publish == 'true' }}
+        env:
+          ADMIN_TOKEN: ${{ secrets.PJSDAS_RELEASE_ADMIN_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -z "${ADMIN_TOKEN:-}" ]; then
+            echo "PJSDAS_RELEASE_ADMIN_TOKEN is required to verify repository immutable-release settings before publication." >&2
+            exit 1
+          fi
+          tmp="$(mktemp)"
+          status="$(curl -sS -o "$tmp" -w '%{http_code}' \
+            -H "Accept: application/vnd.github+json" \
+            -H "Authorization: Bearer $ADMIN_TOKEN" \
+            -H "X-GitHub-Api-Version: 2026-03-10" \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/immutable-releases")"
+          if [ "$status" != "200" ]; then
+            echo "GitHub immutable releases are not enabled or cannot be verified (HTTP $status); refusing publication." >&2
+            cat "$tmp" >&2 || true
+            exit 1
+          fi
+          node -e '
+            const fs = require("node:fs")
+            const payload = JSON.parse(fs.readFileSync(process.argv[1], "utf8"))
+            if (payload.enabled !== true) throw new Error("immutable releases are not enabled")
+          ' "$tmp"
+          rm -f "$tmp"
 
       - name: Create version-pinned GitHub Release
         if: ${{ steps.plan.outputs.publish == 'true' }}
         env:
           RELEASE_TAG: ${{ steps.plan.outputs.tag }}
           RELEASE_NOTES: ${{ steps.plan.outputs.notes }}
+          RELEASE_CHANNEL: ${{ steps.plan.outputs.channel }}
         shell: bash
         run: |
           set -euo pipefail
@@ -76,10 +133,26 @@ jobs:
             exit 1
           fi
 
+          extra_args=()
+          if [ "$RELEASE_CHANNEL" = "prerelease" ]; then
+            extra_args+=(--prerelease)
+          fi
+
           gh release create "$RELEASE_TAG" \
             --repo "$GITHUB_REPOSITORY" \
             --target "$RELEASE_SHA" \
             --title "PJSDAS ${RELEASE_TAG}" \
-            --notes-file "$RELEASE_NOTES"
+            --notes-file "$RELEASE_NOTES" \
+            "${extra_args[@]}"
+
+          release_json="$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$RELEASE_TAG")"
+          RELEASE_CHANNEL="$RELEASE_CHANNEL" node -e '
+            const release = JSON.parse(process.argv[1])
+            const channel = process.env.RELEASE_CHANNEL
+            if (release.immutable !== true) throw new Error("published release is not immutable")
+            if ((channel === "prerelease") !== (release.prerelease === true)) {
+              throw new Error("published release channel does not match release plan")
+            }
+          ' "$release_json"
 
           gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY"

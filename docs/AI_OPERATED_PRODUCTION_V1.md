@@ -162,12 +162,30 @@ Not in scope:
      canonical topology, exact commit identity, and Round 4 capability markers;
    - exact personal-domain values, DNS records, hosting custom-domain attachment, and external
      OAuth redirect/origin configuration remain deployment inputs and were not guessed in source.
-6. Round 5 — Release Candidate Hardening & Verification
+6. Round 5 — Release Candidate Hardening & Verification — **complete**
+   - product/package/release-plan identity is staged as `v1.1.0-rc.1`, prerelease channel,
+     with publication explicitly disarmed;
+   - backend health binds product version, commit SHA, MCP contract hash, migration-set hash,
+     and snapshot compatibility;
+   - frontend builds emit a SHA-256 artifact manifest and post-deploy self-test reconciles
+     frontend/backend candidate identity;
+   - GitHub release workflow understands prerelease publication and refuses to publish unless
+     the default branch is protected and GitHub Immutable Releases can be verified enabled;
+   - RC browser hardening passes Chromium, Firefox, WebKit, and mobile Chromium;
+   - real production Supabase rehearsal passes bootstrap/non-overwrite/CAS/idempotency/conflict/
+     command-id mismatch/allowlist checks inside a rolled-back synthetic transaction;
+   - origin migration recovery bundles round-trip and reject fingerprint tampering;
+   - production Gmail/Discovery pg_cron jobs are active and Vault-backed; Gmail has produced a
+     real HTTP 200 empty run while no users are opted in;
+   - current RC publication decision remains **NO-GO** because `main.protected=false` and the
+     repository Immutable Releases setting cannot be verified with the available GitHub scope.
 7. Round 6 — Personal Canary → Controlled Launch
 
 Do not activate the new P1 direct-write surface until connected authority is transactional.
 Round 3 is complete. Future Web work must preserve the same Domain Command/state contracts
 instead of creating a second mutation model. Round 4 is complete at the source/schema/topology layer. Exact domain attachment remains an
 external deployment input because no trustworthy canonical personal-domain value was discoverable
-from the repository or current deployment metadata. Round 5 now owns release-candidate hardening,
-full gate verification, migration/cutover rehearsal, and explicit go/no-go evidence before canary.
+from the repository or current deployment metadata. Round 5 is complete as a hardening/verification round. Its explicit result is
+**IMPLEMENTATION READY / PUBLICATION NO-GO** until repository-level supply-chain blockers are fixed.
+Round 6 must not start owner-canary migration/authority cutover from an unprotected or unverifiable
+release candidate. The exact blocker/evidence matrix is in `docs/RC_1_1_0_READINESS.md`.

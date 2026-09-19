@@ -38,7 +38,14 @@ describe('build-embedded release identity', () => {
       ...process.env,
       PJSDAS_RELEASE_COMMIT_SHA: expected.toUpperCase(),
     })
-    expect(source).toContain(`GENERATED_RELEASE_COMMIT_SHA = '${expected}'`)
+    expect(source).toContain(`GENERATED_RELEASE_COMMIT_SHA: string | undefined = "${expected}"`)
+    expect(source).toContain('GENERATED_PRODUCT_VERSION = "1.1.0-rc.1"')
+    expect(source).toContain('GENERATED_RELEASE_CHANNEL = "prerelease"')
+    expect(source).toMatch(/GENERATED_MCP_CONTRACT_HASH = "sha256:[0-9a-f]{64}"/)
+    expect(source).toMatch(/GENERATED_MIGRATION_SET_HASH = "sha256:[0-9a-f]{64}"/)
+    expect(source).toContain('2026091903_controlled_audience.sql')
+    expect(source).toContain('GENERATED_SNAPSHOT_SCHEMA = "pjsdas-local-snapshot"')
+    expect(source).toContain('GENERATED_SNAPSHOT_VERSION = 1')
   })
 
   it('falls back to the checked-out git HEAD when provider Git metadata is unavailable', () => {
@@ -53,6 +60,6 @@ describe('build-embedded release identity', () => {
     }).trim().toLowerCase()
 
     const source = runGenerator(tempOutput(), environment)
-    expect(source).toContain(`GENERATED_RELEASE_COMMIT_SHA = '${expected}'`)
+    expect(source).toContain(`GENERATED_RELEASE_COMMIT_SHA: string | undefined = "${expected}"`)
   })
 })

@@ -8,6 +8,7 @@ const plan = JSON.parse(readFileSync(new URL('../.github/release-plan.json', imp
   tag: string
   engineeringMilestone: string
   releaseNotes: string
+  releaseChannel: 'prerelease' | 'stable'
   publishOnProductionSuccess: boolean
 }
 const workflow = readFileSync(new URL('../.github/workflows/publish-release.yml', import.meta.url), 'utf8')
@@ -17,9 +18,10 @@ const readme = readFileSync(new URL('../README.md', import.meta.url), 'utf8')
 describe('formal release policy', () => {
   it('keeps release-plan metadata aligned with the package and durable release invariants', () => {
     expect(plan.publicVersion).toBe(pkg.version)
-    expect(plan.publicVersion).toMatch(/^\d+\.\d+\.\d+$/)
+    expect(plan.publicVersion).toMatch(/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/)
     expect(plan.tag).toBe(`v${pkg.version}`)
-    expect(plan.engineeringMilestone).toBe('v1.10')
+    expect(plan.releaseChannel).toBe(pkg.version.includes('-') ? 'prerelease' : 'stable')
+    expect(plan.engineeringMilestone).toContain('Round 5')
     expect(typeof plan.publishOnProductionSuccess).toBe('boolean')
     expect(existsSync(new URL(`../${plan.releaseNotes}`, import.meta.url))).toBe(true)
   })
@@ -34,6 +36,12 @@ describe('formal release policy', () => {
     expect(workflow).toContain('permissions:')
     expect(workflow).toContain('contents: write')
     expect(workflow).toContain('gh release create')
+    expect(workflow).toContain('--prerelease')
+    expect(workflow).toContain('PJSDAS_RELEASE_ADMIN_TOKEN')
+    expect(workflow).toContain('/branches/$default_branch')
+    expect(workflow).toContain('is not protected; refusing release publication')
+    expect(workflow).toContain('/immutable-releases')
+    expect(workflow).toContain('published release is not immutable')
     expect(workflow).toContain('refusing to move or reuse it')
   })
 
@@ -45,6 +53,7 @@ describe('formal release policy', () => {
     expect(policy).toContain('Git commit SHA')
     expect(policy).toContain('GitHub platform release immutability')
     expect(policy).toContain('immutable=false')
+    expect(policy).toContain('Release candidate')
     expect(policy).not.toContain('creates the immutable tag/release')
     expect(readme).toContain('version-pinned Git tag and GitHub Release')
     expect(readme).toContain('not GitHub-platform-immutable')

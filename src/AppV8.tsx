@@ -530,6 +530,7 @@ function SettingsSurface({ lastImport, rules, onChanged }: { lastImport?: Import
   return (
     <section className="surface-page settings-surface">
       <SurfaceHeader eyebrow="SETTINGS" title={zh ? '连接、自动化和长期控制' : 'Connections, automation, and durable control'} text={zh ? '设置是低频控制面。默认只展开连接状态，其余规则、偏好和恢复工具按需查看。' : 'Settings is a low-frequency control surface. Connection state stays visible; preferences, policy, and recovery expand only when needed.'} />
+      <div className="settings-mobile-language" aria-label={zh ? '移动端界面语言' : 'Mobile interface language'}><LanguageSwitch /></div>
 
       <details className="settings-group" open>
         <summary><div><strong>{zh ? '连接与自动化' : 'Connections & automation'}</strong><span>{zh ? '账户、云同步和后台来源' : 'Account, cloud sync, and background sources'}</span></div></summary>

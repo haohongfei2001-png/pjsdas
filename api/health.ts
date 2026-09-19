@@ -6,7 +6,7 @@ import {
   AUTHENTICATED_MCP_TOOL_SURFACE_VERSION,
   authenticatedMcpReleaseRequiredTools,
 } from '../gateway/mcpToolSurface.js'
-import { backendReleaseCommit, type ReleaseIdentityEnvironment } from '../gateway/releaseIdentity.js'
+import { backendReleaseCommit, backendReleaseContract, type ReleaseIdentityEnvironment } from '../gateway/releaseIdentity.js'
 import { publicProductionTopology } from '../gateway/productionTopology.js'
 
 export const PUBLIC_HEALTH_CAPABILITIES = {
@@ -67,6 +67,7 @@ export const PUBLIC_HEALTH_CAPABILITIES = {
   canonicalOriginPolicy: 'v1',
   controlledAudience: 'v1',
   connectedOriginMigration: 'v1',
+  releaseCandidateManifest: 'v1',
 } as const
 
 export function currentWorkspaceAuthority(environment: Record<string, string | undefined> = process.env) {
@@ -79,6 +80,7 @@ export default {
   fetch(request?: Request, releaseEnvironment?: ReleaseIdentityEnvironment) {
     const workspace = currentWorkspaceAuthority()
     const topology = publicProductionTopology()
+    const releaseContract = backendReleaseContract()
     return new Response(JSON.stringify({
       service: 'pjsdas-authenticated-mcp',
       version: AUTHENTICATED_GATEWAY_VERSION,
@@ -89,6 +91,7 @@ export default {
       resource: backendUrl('/api/mcp', request),
       release: {
         commitSha: backendReleaseCommit(releaseEnvironment) ?? null,
+        ...releaseContract,
       },
       authenticatedMcp: {
         toolSurfaceVersion: AUTHENTICATED_MCP_TOOL_SURFACE_VERSION,

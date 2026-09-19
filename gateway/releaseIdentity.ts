@@ -1,4 +1,13 @@
-import { GENERATED_RELEASE_COMMIT_SHA } from './generatedReleaseIdentity.js'
+import {
+  GENERATED_MCP_CONTRACT_HASH,
+  GENERATED_MIGRATION_SET,
+  GENERATED_MIGRATION_SET_HASH,
+  GENERATED_PRODUCT_VERSION,
+  GENERATED_RELEASE_CHANNEL,
+  GENERATED_RELEASE_COMMIT_SHA,
+  GENERATED_SNAPSHOT_SCHEMA,
+  GENERATED_SNAPSHOT_VERSION,
+} from './generatedReleaseIdentity.js'
 
 export interface ReleaseIdentityEnvironment {
   PJSDAS_RELEASE_COMMIT_SHA?: string
@@ -26,4 +35,19 @@ export function backendReleaseCommit(environment?: ReleaseIdentityEnvironment) {
     ?? normalizedSha(runtimeEnvironment.VERCEL_GIT_COMMIT_SHA)
     ?? normalizedSha(runtimeEnvironment.WORKERS_CI_COMMIT_SHA)
     ?? normalizedSha(GENERATED_RELEASE_COMMIT_SHA)
+}
+
+
+export function backendReleaseContract() {
+  return {
+    productVersion: GENERATED_PRODUCT_VERSION,
+    releaseChannel: GENERATED_RELEASE_CHANNEL,
+    mcpContractHash: GENERATED_MCP_CONTRACT_HASH,
+    migrationSet: [...GENERATED_MIGRATION_SET],
+    migrationSetHash: GENERATED_MIGRATION_SET_HASH,
+    schemaCompatibility: {
+      snapshotSchema: GENERATED_SNAPSHOT_SCHEMA,
+      snapshotVersion: GENERATED_SNAPSHOT_VERSION,
+    },
+  }
 }

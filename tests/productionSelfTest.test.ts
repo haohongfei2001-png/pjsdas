@@ -20,7 +20,17 @@ function health() {
       audienceMode: 'legacy',
     },
     resource: `${BASE_URL}/api/mcp`,
-    release: { commitSha: RELEASE_SHA },
+    release: {
+      commitSha: RELEASE_SHA,
+      productVersion: '1.1.0-rc.1',
+      releaseChannel: 'prerelease',
+      mcpContractHash: 'sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+      migrationSetHash: 'sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+      schemaCompatibility: {
+        snapshotSchema: 'pjsdas-local-snapshot',
+        snapshotVersion: 1,
+      },
+    },
     authenticatedMcp: {
       toolSurfaceVersion: 'v3',
       releaseRequiredTools: DRIVE_REQUIRED_TOOLS,
@@ -62,6 +72,7 @@ function health() {
       canonicalOriginPolicy: 'v1',
       controlledAudience: 'v1',
       connectedOriginMigration: 'v1',
+      releaseCandidateManifest: 'v1',
     },
   }
 }
@@ -143,6 +154,45 @@ describe('production self-test', () => {
     expect(result.checks.find((item) => item.name === 'health.canonical-web-origin')?.status).toBe('pass')
     expect(result.checks.find((item) => item.name === 'health.canonical-api-origin')?.status).toBe('pass')
     expect(result.checks.find((item) => item.name === 'mcp.metadata-origin')?.status).toBe('pass')
+  })
+
+  it('matches deployed frontend artifact identity to the backend RC contract', async () => {
+    const webUrl = 'https://web.example/pjsdas'
+    const fetchImpl = vi.fn(async (input: RequestInfo | URL | Request) => {
+      const request = input instanceof Request ? input : new Request(String(input))
+      if (request.url === `${webUrl}/release-manifest.json`) {
+        return Response.json({
+          schema: 'pjsdas-release-manifest',
+          version: 1,
+          productVersion: '1.1.0-rc.1',
+          releaseChannel: 'prerelease',
+          commitSha: RELEASE_SHA,
+          frontendArtifactDigest: 'sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc',
+          mcpContractHash: 'sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+          migrationSetHash: 'sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+          topology: { connectedAuthority: 'google-drive' },
+        })
+      }
+      return publicFetch()(request)
+    }) as unknown as typeof fetch
+
+    const result = await runProductionSelfTest({
+      baseUrl: BASE_URL,
+      webUrl,
+      expectedCommitSha: RELEASE_SHA,
+      expectedProductVersion: '1.1.0-rc.1',
+      expectedReleaseChannel: 'prerelease',
+      expectedMcpContractHash: 'sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+      expectedMigrationSetHash: 'sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+      expectedSnapshotSchema: 'pjsdas-local-snapshot',
+      expectedSnapshotVersion: 1,
+      fetchImpl,
+    })
+    expect(result.ok).toBe(true)
+    expect(result.checks.find((item) => item.name === 'health.release-product-version')?.status).toBe('pass')
+    expect(result.checks.find((item) => item.name === 'frontend-manifest.artifact-digest')?.status).toBe('pass')
+    expect(result.checks.find((item) => item.name === 'frontend-manifest.commit')?.status).toBe('pass')
+    expect(result.checks.find((item) => item.name === 'frontend-manifest.mcp-contract')?.status).toBe('pass')
   })
 
   it('accepts transactional mode only when the caller explicitly expects it', async () => {

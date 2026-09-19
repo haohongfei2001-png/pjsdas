@@ -4,6 +4,7 @@ import { bootstrapConnectedWorkspace, fetchConnectedRemoteWorkspace } from './co
 import { planConnectedMigration, type ConnectedMigrationPlan } from './connectedMigration.js'
 import { fetchLegacyDriveWorkspaceForMigration } from './cloudRepository.js'
 import { fingerprintWorkspace } from './workspaceFingerprint.js'
+import { createOriginMigrationRecoveryBundle } from './originMigrationRecovery.js'
 
 export type ConnectedMigrationInspection =
   | {
@@ -86,16 +87,14 @@ export async function inspectConnectedMigration(userId: string): Promise<Connect
 function downloadRecoveryBundle(input: ConnectedMigrationInspection & { status: 'ready' | 'already_migrated' }) {
   if (typeof window === 'undefined' || input.status === 'already_migrated') return
   const createdAt = new Date().toISOString()
-  const body = {
-    schema: 'pjsdas-origin-migration-recovery',
-    version: 1,
+  const body = createOriginMigrationRecoveryBundle({
     createdAt,
     origin: window.location.origin,
     selectedSource: input.plan.source,
     selectedFingerprint: input.plan.fingerprint,
     local: input.local,
-    drive: input.drive ?? null,
-  }
+    drive: input.drive,
+  })
   const blob = new Blob([JSON.stringify(body, null, 2)], { type: 'application/json' })
   const url = URL.createObjectURL(blob)
   const anchor = document.createElement('a')

@@ -32,4 +32,5 @@ jobs:
       - name: Production read-only self-test
         env:
           PJSDAS_PRODUCTION_BASE_URLS: ${{ vars.PJSDAS_BACKEND_ORIGINS || 'https://pjsdas-remote-alpha.vercel.app' }}
+          PJSDAS_PRODUCTION_WEB_URL: ${{ vars.PJSDAS_CANONICAL_WEB_ORIGIN || 'https://haohongfei2001-png.github.io/pjsdas' }}
         run: npm run self-test:production

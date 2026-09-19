@@ -51,6 +51,7 @@ const REQUIRED_CAPABILITIES: Record<string, unknown> = {
   canonicalOriginPolicy: 'v1',
   controlledAudience: 'v1',
   connectedOriginMigration: 'v1',
+  releaseCandidateManifest: 'v1',
 }
 
 function check(name: string, condition: boolean, detail: string): ProductionSelfTestCheck {
@@ -83,6 +84,13 @@ export async function runProductionSelfTest(options: {
   expectedAudienceMode?: 'legacy' | 'allowlist'
   expectedCanonicalWebOrigin?: string
   expectedCanonicalApiOrigin?: string
+  expectedProductVersion?: string
+  expectedReleaseChannel?: 'prerelease' | 'stable'
+  expectedMcpContractHash?: string
+  expectedMigrationSetHash?: string
+  expectedSnapshotSchema?: string
+  expectedSnapshotVersion?: number
+  webUrl?: string
   firstPartyTestOrigin?: string
   requireAuthenticatedTools?: boolean
   fetchImpl?: typeof fetch
@@ -94,6 +102,13 @@ export async function runProductionSelfTest(options: {
   const expectedAudienceMode = options.expectedAudienceMode ?? 'legacy'
   const expectedCanonicalWebOrigin = options.expectedCanonicalWebOrigin?.replace(/\/$/, '')
   const expectedCanonicalApiOrigin = options.expectedCanonicalApiOrigin?.replace(/\/$/, '')
+  const expectedProductVersion = options.expectedProductVersion?.trim()
+  const expectedReleaseChannel = options.expectedReleaseChannel
+  const expectedMcpContractHash = options.expectedMcpContractHash?.trim()
+  const expectedMigrationSetHash = options.expectedMigrationSetHash?.trim()
+  const expectedSnapshotSchema = options.expectedSnapshotSchema?.trim()
+  const expectedSnapshotVersion = options.expectedSnapshotVersion
+  const webUrl = options.webUrl?.replace(/\/$/, '')
   const firstPartyTestOrigin = options.firstPartyTestOrigin?.replace(/\/$/, '')
     ?? expectedCanonicalWebOrigin
     ?? 'https://haohongfei2001-png.github.io'
@@ -125,6 +140,48 @@ export async function runProductionSelfTest(options: {
         'health.release-commit',
         actualCommitSha === expectedCommitSha,
         `commitSha=${String(actualCommitSha)}; expected=${expectedCommitSha}`,
+      ))
+    }
+    if (expectedProductVersion) {
+      checks.push(check(
+        'health.release-product-version',
+        payload?.release?.productVersion === expectedProductVersion,
+        `productVersion=${String(payload?.release?.productVersion)}; expected=${expectedProductVersion}`,
+      ))
+    }
+    if (expectedReleaseChannel) {
+      checks.push(check(
+        'health.release-channel',
+        payload?.release?.releaseChannel === expectedReleaseChannel,
+        `releaseChannel=${String(payload?.release?.releaseChannel)}; expected=${expectedReleaseChannel}`,
+      ))
+    }
+    if (expectedMcpContractHash) {
+      checks.push(check(
+        'health.release-mcp-contract',
+        payload?.release?.mcpContractHash === expectedMcpContractHash,
+        `mcpContractHash=${String(payload?.release?.mcpContractHash)}; expected=${expectedMcpContractHash}`,
+      ))
+    }
+    if (expectedMigrationSetHash) {
+      checks.push(check(
+        'health.release-migration-set',
+        payload?.release?.migrationSetHash === expectedMigrationSetHash,
+        `migrationSetHash=${String(payload?.release?.migrationSetHash)}; expected=${expectedMigrationSetHash}`,
+      ))
+    }
+    if (expectedSnapshotSchema) {
+      checks.push(check(
+        'health.release-snapshot-schema',
+        payload?.release?.schemaCompatibility?.snapshotSchema === expectedSnapshotSchema,
+        `snapshotSchema=${String(payload?.release?.schemaCompatibility?.snapshotSchema)}; expected=${expectedSnapshotSchema}`,
+      ))
+    }
+    if (expectedSnapshotVersion !== undefined) {
+      checks.push(check(
+        'health.release-snapshot-version',
+        payload?.release?.schemaCompatibility?.snapshotVersion === expectedSnapshotVersion,
+        `snapshotVersion=${String(payload?.release?.schemaCompatibility?.snapshotVersion)}; expected=${expectedSnapshotVersion}`,
       ))
     }
     const capabilities = payload?.capabilities ?? {}
@@ -210,6 +267,35 @@ export async function runProductionSelfTest(options: {
     ))
   } else {
     checks.push({ name: 'mcp.authenticated.tools', status: 'skipped', detail: 'Live authenticated tool-list verification is optional; deployed release tool surface is verified through /api/health.' })
+  }
+
+  if (webUrl) {
+    try {
+      const response = await fetchImpl(`${webUrl}/release-manifest.json`, { headers: { accept: 'application/json' } })
+      const manifest = response.ok ? await response.json() as Record<string, any> : undefined
+      checks.push(check('frontend-manifest.http', response.status === 200, `HTTP ${response.status}`))
+      checks.push(check('frontend-manifest.schema', manifest?.schema === 'pjsdas-release-manifest' && manifest?.version === 1, `schema=${String(manifest?.schema)}; version=${String(manifest?.version)}`))
+      checks.push(check('frontend-manifest.artifact-digest', /^sha256:[0-9a-f]{64}$/i.test(String(manifest?.frontendArtifactDigest ?? '')), `frontendArtifactDigest=${String(manifest?.frontendArtifactDigest)}`))
+      if (expectedCommitSha) {
+        checks.push(check('frontend-manifest.commit', String(manifest?.commitSha ?? '').toLowerCase() === expectedCommitSha, `commitSha=${String(manifest?.commitSha)}; expected=${expectedCommitSha}`))
+      }
+      if (expectedProductVersion) {
+        checks.push(check('frontend-manifest.product-version', manifest?.productVersion === expectedProductVersion, `productVersion=${String(manifest?.productVersion)}; expected=${expectedProductVersion}`))
+      }
+      if (expectedMcpContractHash) {
+        checks.push(check('frontend-manifest.mcp-contract', manifest?.mcpContractHash === expectedMcpContractHash, `mcpContractHash=${String(manifest?.mcpContractHash)}; expected=${expectedMcpContractHash}`))
+      }
+      if (expectedMigrationSetHash) {
+        checks.push(check('frontend-manifest.migration-set', manifest?.migrationSetHash === expectedMigrationSetHash, `migrationSetHash=${String(manifest?.migrationSetHash)}; expected=${expectedMigrationSetHash}`))
+      }
+      checks.push(check(
+        'frontend-manifest.authority',
+        manifest?.topology?.connectedAuthority === expectedWorkspaceAuthority,
+        `connectedAuthority=${String(manifest?.topology?.connectedAuthority)}; expected=${expectedWorkspaceAuthority}`,
+      ))
+    } catch (caught) {
+      checks.push(check('frontend-manifest.fetch', false, caught instanceof Error ? caught.message : String(caught)))
+    }
   }
 
   return {
