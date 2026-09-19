@@ -47,8 +47,8 @@ test('canonical pending state drives visible priority and portfolio selection re
   }, { opportunity, group })
 
   await page.reload()
-  await page.getByRole('button', { name: 'EN' }).first().click()
-  await page.getByRole('button', { name: 'Decide Choose' }).click()
+  await page.getByRole('button', { name: 'EN', exact: true }).click()
+  await page.locator('.surface-nav').getByRole('button', { name: /Opportunities/ }).click()
 
   const row = page.locator('.surface-opportunity-row').filter({ hasText: opportunity.company })
   await expect(row).toBeVisible()

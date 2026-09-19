@@ -4,9 +4,10 @@ test('Job discovery preferences are bilingual, persist, and never show stale sav
   await page.goto('/')
   await expect(page.getByRole('heading', { name: '今天只处理下一步' })).toBeVisible()
 
-  await page.getByRole('button', { name: '设置 规则与数据' }).click()
-  await page.getByRole('button', { name: 'EN' }).first().click()
-  await expect(page.getByRole('heading', { name: 'Preferences, rules, sync, and data safety' })).toBeVisible()
+  await page.locator('.surface-nav').getByRole('button', { name: /设置/ }).click()
+  await page.getByRole('button', { name: 'EN', exact: true }).click()
+  await expect(page.getByRole('heading', { name: 'Connections, automation, and durable control' })).toBeVisible()
+  await page.locator('details.settings-group').filter({ hasText: 'Discovery preferences' }).locator('summary').click()
 
   const card = page.locator('.discovery-profile-card')
   await expect(card.getByRole('heading', { name: 'Job discovery preferences' })).toBeVisible()
@@ -45,7 +46,8 @@ test('Job discovery preferences are bilingual, persist, and never show stale sav
 
   await page.reload()
   await expect(page.getByRole('heading', { name: 'Only the next moves for today' })).toBeVisible()
-  await page.getByRole('button', { name: 'Settings Rules & data' }).click()
-  await expect(page.getByRole('heading', { name: 'Preferences, rules, sync, and data safety' })).toBeVisible()
+  await page.locator('.surface-nav').getByRole('button', { name: /Settings/ }).click()
+  await expect(page.getByRole('heading', { name: 'Connections, automation, and durable control' })).toBeVisible()
+  await page.locator('details.settings-group').filter({ hasText: 'Discovery preferences' }).locator('summary').click()
   await expect(page.locator('.discovery-profile-card textarea').first()).toHaveValue('AI Product Manager\nBusiness Analysis')
 })

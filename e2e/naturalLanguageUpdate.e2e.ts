@@ -59,6 +59,10 @@ async function seedOpportunities(page: Page, opportunities: ReturnType<typeof so
 }
 
 async function openNaturalLanguageUpdate(page: Page) {
+  const fallback = page.locator('.today-manual-fallback')
+  if (!await fallback.evaluate((element) => (element as HTMLDetailsElement).open)) {
+    await fallback.locator('summary').click()
+  }
   await page.getByRole('button', { name: '更新进展 / 事项' }).click()
   await expect(page.getByRole('heading', { name: '把岗位进展和其他事项直接告诉 PJSDAS' })).toBeVisible()
 }
@@ -179,7 +183,8 @@ test('source-backed alias application updates the canonical job in place instead
   expect(state.processes).toHaveLength(1)
   expect(state.processes[0]).toMatchObject({ opportunityId: canonical.id, stage: 'screening' })
 
-  await page.getByRole('button', { name: /决策/ }).click()
+  await page.getByRole('button', { name: /机会/ }).click()
+  await page.locator('.surface-context-tabs button').filter({ hasText: '在途流程' }).click()
   await expect(page.getByRole('heading', { name: '在途招聘流程' })).toBeVisible()
   await expect(page.getByText('别名科技')).toBeVisible()
   await expect(page.getByText('AI产品经理（数据平台）')).toBeVisible()

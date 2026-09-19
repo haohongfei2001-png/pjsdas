@@ -4,7 +4,7 @@ test('Coverage and Integrity surface follows the global English interface langua
   await page.goto('/')
   await expect(page.getByRole('heading', { name: '今天只处理下一步' })).toBeVisible()
 
-  await page.getByRole('button', { name: 'EN' }).first().click()
+  await page.getByRole('button', { name: 'EN', exact: true }).click()
   await expect(page.locator('html')).toHaveAttribute('lang', 'en')
 
   const healthButton = page.getByRole('button', { name: 'View ingestion coverage and workspace health' })

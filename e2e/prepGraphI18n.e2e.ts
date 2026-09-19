@@ -45,8 +45,9 @@ test('Prep Graph keeps source facts but localizes system status and link explana
   })
 
   await page.reload()
-  await page.getByRole('button', { name: '准备 练什么' }).click()
-  await page.getByRole('button', { name: 'EN' }).first().click()
+  await page.locator('.surface-nav').getByRole('button', { name: /机会/ }).click()
+  await page.locator('.surface-context-tabs button').filter({ hasText: '准备' }).click()
+  await page.getByRole('button', { name: 'EN', exact: true }).click()
   await page.getByRole('button', { name: 'Prep Graph' }).click()
 
   const dialog = page.locator('.prep-graph-dialog')

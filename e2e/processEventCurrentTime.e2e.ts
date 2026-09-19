@@ -70,6 +70,7 @@ test('process-event notification default refreshes on open but preserves an expl
       .__setPjsdasTestNow('2026-09-14T13:45:00.000Z')
   })
 
+  await page.locator('.today-manual-fallback > summary').click()
   await page.getByRole('button', { name: '+ 记录流程通知' }).click()
   await expect(page.getByRole('heading', { name: '记录真实流程通知' })).toBeVisible()
 

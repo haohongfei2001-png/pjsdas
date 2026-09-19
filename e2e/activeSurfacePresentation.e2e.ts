@@ -63,14 +63,15 @@ test('active Today and Prepare surfaces localize system semantics without changi
   await expect(countdown.locator('strong')).toContainText('剩')
   await expect(countdown.locator('span')).toHaveText('高风险')
 
-  await page.getByRole('button', { name: 'EN' }).first().click()
+  await page.getByRole('button', { name: 'EN', exact: true }).click()
   await expect(page.getByRole('heading', { name: 'Only the next moves for today' })).toBeVisible()
   await expect(countdown.locator('strong')).toHaveText(/\d+ hr(?: \d+ min)? left/)
   await expect(countdown.locator('span')).toHaveText('High risk')
   await expect(countdown).not.toContainText('剩')
 
-  await page.getByRole('button', { name: 'Prepare Prepare' }).click()
-  await expect(page.getByRole('heading', { name: 'Spend preparation time where it helps more opportunities' })).toBeVisible()
+  await page.locator('.surface-nav').getByRole('button', { name: /Opportunities/ }).click()
+  await page.locator('.surface-context-tabs button').filter({ hasText: 'Prepare' }).click()
+  await expect(page.getByRole('heading', { name: 'Preparation inventory' })).toBeVisible()
 
   const cards = page.locator('.surface-prep-grid article')
   await expect(cards).toHaveCount(2)

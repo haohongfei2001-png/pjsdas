@@ -63,7 +63,7 @@ test('empty local workspace routes directly into setup instead of a maintenance 
   await expect(page.getByRole('heading', { name: '先让工作区有第一批真实机会' })).toBeVisible()
 
   await page.getByRole('button', { name: '打开设置' }).click()
-  await expect(page.getByRole('heading', { name: '偏好、规则、同步与数据安全' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: '连接、自动化和长期控制' })).toBeVisible()
 })
 
 test('critical local-first action flow survives completion, undo, and browser reload', async ({ page }) => {
@@ -102,16 +102,17 @@ test('critical local-first action flow survives completion, undo, and browser re
 test('primary navigation, language, and quick-capture surfaces stay coherent in English', async ({ page }) => {
   await seedLocalWorkspace(page)
 
-  await page.getByRole('button', { name: /决策/ }).click()
-  await expect(page.getByRole('heading', { name: '决定哪些机会值得占用你的时间' })).toBeVisible()
+  await page.locator('.surface-nav').getByRole('button', { name: /机会/ }).click()
+  await expect(page.getByRole('heading', { name: '机会、流程和准备在同一个工作面' })).toBeVisible()
   await expect(page.getByRole('button', { name: 'AI产品经理' })).toBeVisible()
 
-  await page.getByRole('button', { name: 'EN' }).first().click()
-  await expect(page.getByRole('heading', { name: 'Decide which opportunities deserve your time' })).toBeVisible()
+  await page.getByRole('button', { name: 'EN', exact: true }).click()
+  await expect(page.getByRole('heading', { name: 'Opportunities, pipeline, and preparation in one workspace' })).toBeVisible()
 
-  await page.getByRole('button', { name: /Today/ }).click()
+  await page.locator('.surface-nav').getByRole('button', { name: /Today/ }).click()
   await expect(page.getByRole('heading', { name: 'Only the next moves for today' })).toBeVisible()
 
+  await page.locator('.today-manual-fallback > summary').click()
   await page.getByRole('button', { name: '+ Record process event' }).click()
   await expect(page.getByRole('heading', { name: 'Record a real recruiting event' })).toBeVisible()
   await expect(page.locator('.event-form select').first().locator('option[value="assessment_invite"]')).toHaveText('Assessment invitation')

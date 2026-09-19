@@ -54,7 +54,7 @@ test('past recruiting-event guard follows English UI and completion still resolv
   await page.goto('/')
   await expect(page.getByRole('heading', { name: '今天只处理下一步' })).toBeVisible()
   await seedPastEvent(page)
-  await page.getByRole('button', { name: 'EN' }).first().click()
+  await page.getByRole('button', { name: 'EN', exact: true }).click()
 
   const guard = page.getByRole('alert', { name: 'Past recruiting event needs confirmation' })
   await expect(guard).toBeVisible()

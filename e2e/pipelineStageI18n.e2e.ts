@@ -50,15 +50,16 @@ async function seed(page: import('@playwright/test').Page) {
 
 test('Pipeline and mobile opportunity cards localize canonical stored stages without mutating them', async ({ page }) => {
   await seed(page)
-  await page.getByRole('button', { name: 'EN' }).first().click()
-  await page.getByRole('button', { name: /Decide/ }).click()
-  await page.getByRole('button', { name: /Pipeline/ }).click()
+  await page.getByRole('button', { name: 'EN', exact: true }).click()
+  await page.locator('.surface-nav').getByRole('button', { name: /Opportunities/ }).click()
+  await page.locator('.surface-context-tabs button').filter({ hasText: 'Opportunities' }).click()
+  await page.locator('.surface-context-tabs button').filter({ hasText: 'Pipeline' }).click()
 
   await expect(page.locator('.surface-stage')).toHaveText('Screening')
   await expect(page.getByText('筛选中', { exact: true })).toHaveCount(0)
 
   await page.setViewportSize({ width: 390, height: 844 })
-  await page.getByRole('button', { name: /Opportunities/ }).click()
+  await page.locator('.surface-context-tabs button').filter({ hasText: 'Opportunities' }).click()
   const mobileCard = page.locator('.surface-opportunity-mobile-list button').filter({ hasText: opportunity.company })
   await expect(mobileCard).toBeVisible()
   await expect(mobileCard.locator('small')).toHaveText('Screening')

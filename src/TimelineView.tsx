@@ -1,7 +1,5 @@
 import { useMemo, useState } from 'react'
 import type { TimelineCategory, TimelineRecord, TimelineSource } from './model.js'
-import type { ChangeSetRecord, ChangeSetSource, ChangeSetStatus } from './changeSet.js'
-import { assertMcpChangeSetBaseline } from './ai/mcpProposalApply.js'
 import { useUiLanguage } from './uiLanguage.js'
 import './timeline.css'
 
@@ -13,7 +11,7 @@ const categoryLabels: Record<TimelineCategory, [string, string]> = {
   process: ['流程', 'Process'],
   action: ['行动', 'Action'],
   rules: ['规则', 'Rules'],
-  change: ['变更集', 'ChangeSet'],
+  change: ['变更', 'Change'],
   data: ['数据', 'Data'],
   note: ['记录', 'Note'],
 }
@@ -25,26 +23,10 @@ const sourceLabels: Record<TimelineSource, [string, string]> = {
   user_action: ['用户操作', 'User action'],
   rules: ['规则设置', 'Rules'],
   backup: ['本地备份', 'Backup'],
-  system: ['系统回填', 'System'],
-  changeset: ['ChangeSet', 'ChangeSet'],
-  automation: ['自动摄入', 'Automation'],
+  system: ['系统', 'System'],
+  changeset: ['受治理变更', 'Governed change'],
+  automation: ['自动化', 'Automation'],
   gmail: ['Gmail', 'Gmail'],
-}
-
-const changeSetSourceLabels: Record<ChangeSetSource, [string, string]> = {
-  natural_language: ['自然语言', 'Natural language'],
-  rules: ['规则设置', 'Rules'],
-  process_event: ['流程通知', 'Process event'],
-  user_action: ['用户操作', 'User action'],
-  api: ['API', 'API'],
-  mcp: ['MCP', 'MCP'],
-}
-
-const changeSetStatusLabels: Record<ChangeSetStatus, [string, string]> = {
-  pending: ['待确认', 'Pending'],
-  applied: ['已应用', 'Applied'],
-  discarded: ['已放弃', 'Discarded'],
-  failed: ['失败', 'Failed'],
 }
 
 function dayKey(iso: string) {
@@ -70,45 +52,31 @@ function changeValue(value: unknown) {
   return String(value)
 }
 
-export default function TimelineView({ records, changeSets, onApplyChangeSet, onDiscardChangeSet }: { records: TimelineRecord[]; changeSets: ChangeSetRecord[]; onApplyChangeSet: (id: string) => Promise<void>; onDiscardChangeSet: (id: string) => Promise<void> }) {
+export default function TimelineView({ records }: { records: TimelineRecord[] }) {
   const { lang } = useUiLanguage()
   const zh = lang === 'zh'
   const [query, setQuery] = useState('')
   const [category, setCategory] = useState<'all' | TimelineCategory>('all')
   const [source, setSource] = useState<'all' | TimelineSource>('all')
-  const [busyChangeSetId, setBusyChangeSetId] = useState<string | null>(null)
-  const [changeSetError, setChangeSetError] = useState('')
-
-  async function resolveChangeSet(id: string, action: 'apply' | 'discard') {
-    setBusyChangeSetId(id)
-    setChangeSetError('')
-    try {
-      const changeSet = changeSets.find((item) => item.id === id)
-      if (action === 'apply') {
-        if (changeSet?.source === 'mcp') await assertMcpChangeSetBaseline(changeSet)
-        await onApplyChangeSet(id)
-      } else {
-        await onDiscardChangeSet(id)
-      }
-    } catch (caught) {
-      setChangeSetError(caught instanceof Error ? caught.message : String(caught))
-    } finally {
-      setBusyChangeSetId(null)
-    }
-  }
 
   const filtered = useMemo(() => {
     const needle = query.trim().toLowerCase()
-    return records.filter((item) => {
-      if (category !== 'all' && item.category !== category) return false
-      if (source !== 'all' && item.source !== source) return false
-      if (!needle) return true
-      return [item.title, item.detail, item.company, item.role, item.sourceRef]
-        .filter(Boolean)
-        .join(' ')
-        .toLowerCase()
-        .includes(needle)
-    })
+    return [...records]
+      .sort((a, b) => b.recordedAt.localeCompare(a.recordedAt))
+      .filter((item) => {
+        if (category !== 'all' && item.category !== category) return false
+        if (source !== 'all' && item.source !== source) return false
+        if (!needle) return true
+        return [
+          item.title,
+          item.detail,
+          item.company,
+          item.role,
+          item.sourceRef,
+          item.commandId,
+          item.commandOperation,
+        ].filter(Boolean).join(' ').toLowerCase().includes(needle)
+      })
   }, [records, query, category, source])
 
   const groups = useMemo(() => {
@@ -122,61 +90,20 @@ export default function TimelineView({ records, changeSets, onApplyChangeSet, on
     return result
   }, [filtered])
 
-  return (
-    <section className="timeline-page">
-      <header className="page-header">
-        <div>
-          <div className="eyebrow">TIMELINE</div>
-          <h1>{zh ? '求职历程' : 'Timeline'}</h1>
-          <p>{zh
-            ? '已经发生的投递、流程节点、行动完成、规则修改和数据迁移都进入同一条可追溯时间线。Timeline 记录事实，不承担 Today 的任务排序。'
-            : 'Applications, process events, completed actions, rule changes and data migrations share one traceable timeline. Timeline records facts; Today decides what to do next.'}</p>
-        </div>
-      </header>
+  const automationCount = records.filter((item) => item.source === 'automation' || item.source === 'gmail').length
+  const commandCount = records.filter((item) => Boolean(item.commandId)).length
 
+  return (
+    <section className="timeline-page activity-page">
       <div className="timeline-summary">
-        <div><span>{zh ? '全部记录' : 'All records'}</span><strong>{records.length}</strong></div>
+        <div><span>{zh ? '全部活动' : 'All activity'}</span><strong>{records.length}</strong></div>
+        <div><span>{zh ? '用户 / AI 命令' : 'User / AI commands'}</span><strong>{commandCount}</strong></div>
+        <div><span>{zh ? '自动化记录' : 'Automation records'}</span><strong>{automationCount}</strong></div>
         <div><span>{zh ? '流程事件' : 'Process events'}</span><strong>{records.filter((item) => item.category === 'process').length}</strong></div>
-        <div><span>{zh ? '机会 / 投递' : 'Opportunity / apply'}</span><strong>{records.filter((item) => item.category === 'opportunity').length}</strong></div>
-        <div><span>ChangeSet</span><strong>{changeSets.filter((item) => item.status === 'applied').length}</strong></div>
       </div>
 
-      <details className="changeset-ledger">
-        <summary>
-          <div><span className="eyebrow">CHANGESET LEDGER</span><strong>{zh ? '变更集账本' : 'ChangeSet ledger'}</strong></div>
-          <span>{changeSets.filter((item) => item.status === 'pending').length} {zh ? '条待确认' : 'pending'} · {changeSets.length} {zh ? '条记录' : 'records'}</span>
-        </summary>
-        <p>{zh ? '这里保存规范化修改和应用状态，不保存自然语言更新的完整原文。API / MCP 使用同一种协议；MCP 提议从账本应用时也会重新核对工作区基线。' : 'This ledger stores normalized changes and application status, not the full raw text of natural-language updates. API / MCP use the same protocol; MCP proposals re-check their workspace baseline before ledger Apply.'}</p>
-        {changeSetError ? <div className="changeset-empty">{changeSetError}</div> : null}
-        {changeSets.length === 0 ? <div className="changeset-empty">{zh ? '还没有 ChangeSet。' : 'No ChangeSets yet.'}</div> : (
-          <div className="changeset-list">
-            {changeSets.slice(0, 8).map((item) => (
-              <article className={`changeset-item status-${item.status}`} key={item.id}>
-                <div className="changeset-item-copy">
-                  <strong>{item.title}</strong>
-                  <small>{item.id} · {changeSetSourceLabels[item.source][zh ? 0 : 1]} · {item.operations.length} {zh ? '项' : 'ops'}</small>
-                  <div className="changeset-operation-preview">
-                    {item.operations.slice(0, 5).map((operation) => <span key={operation.id}>{operation.summary}</span>)}
-                    {item.operations.length > 5 ? <span>+{item.operations.length - 5}</span> : null}
-                  </div>
-                </div>
-                <div className="changeset-item-state">
-                  <span>{changeSetStatusLabels[item.status][zh ? 0 : 1]}</span>
-                  {item.status === 'pending' ? (
-                    <div className="changeset-item-actions">
-                      <button disabled={busyChangeSetId === item.id} onClick={() => { void resolveChangeSet(item.id, 'discard') }}>{zh ? '放弃' : 'Discard'}</button>
-                      <button className="apply" disabled={busyChangeSetId === item.id} onClick={() => { void resolveChangeSet(item.id, 'apply') }}>{busyChangeSetId === item.id ? '…' : (zh ? '应用' : 'Apply')}</button>
-                    </div>
-                  ) : null}
-                </div>
-              </article>
-            ))}
-          </div>
-        )}
-      </details>
-
       <div className="timeline-toolbar">
-        <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={zh ? '搜索公司、岗位或事件' : 'Search company, role or event'} />
+        <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={zh ? '搜索公司、岗位、命令或事件' : 'Search company, role, command, or event'} />
         <select value={category} onChange={(event) => setCategory(event.target.value as 'all' | TimelineCategory)}>
           <option value="all">{zh ? '全部类型' : 'All types'}</option>
           {categories.map((item) => <option value={item} key={item}>{categoryLabels[item][zh ? 0 : 1]}</option>)}
@@ -189,7 +116,7 @@ export default function TimelineView({ records, changeSets, onApplyChangeSet, on
       </div>
 
       {filtered.length === 0 ? (
-        <div className="empty-card"><strong>{zh ? '没有匹配的历程记录' : 'No matching timeline records'}</strong><p>{zh ? '调整搜索或筛选条件。' : 'Adjust search or filters.'}</p></div>
+        <div className="empty-card"><strong>{zh ? '没有匹配的活动记录' : 'No matching activity'}</strong><p>{zh ? '调整搜索或筛选条件。' : 'Adjust search or filters.'}</p></div>
       ) : (
         <div className="timeline-groups">
           {groups.map((group) => (
@@ -204,7 +131,7 @@ export default function TimelineView({ records, changeSets, onApplyChangeSet, on
                         <span className="timeline-category">{categoryLabels[item.category][zh ? 0 : 1]}</span>
                         <span>{sourceLabels[item.source][zh ? 0 : 1]}</span>
                         <span>{formatTime(item.occurredAt, zh)}</span>
-                        {item.changeSetId ? <span>{item.changeSetId}</span> : null}
+                        {item.commandOperation ? <span>{item.commandOperation}</span> : null}
                       </div>
                       <h3>{item.title}</h3>
                       {(item.company || item.role) ? <p className="timeline-entity">{[item.company, item.role].filter(Boolean).join('｜')}</p> : null}
@@ -217,6 +144,7 @@ export default function TimelineView({ records, changeSets, onApplyChangeSet, on
                           ))}
                         </div>
                       ) : null}
+                      {item.commandId ? <small className="activity-command-id">{item.commandId}</small> : null}
                     </div>
                   </article>
                 ))}
