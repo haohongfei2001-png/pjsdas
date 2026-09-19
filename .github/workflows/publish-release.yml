@@ -67,6 +67,18 @@ jobs:
           if (channel === 'stable' && isPrereleaseVersion) throw new Error('stable channel cannot publish a SemVer prerelease version')
           NODE
 
+      - name: Verify protected default branch
+        if: ${{ steps.plan.outputs.publish == 'true' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          default_branch="$(gh api "repos/$GITHUB_REPOSITORY" --jq .default_branch)"
+          protected="$(gh api "repos/$GITHUB_REPOSITORY/branches/$default_branch" --jq .protected)"
+          if [ "$protected" != "true" ]; then
+            echo "Default branch $default_branch is not protected; refusing release publication." >&2
+            exit 1
+          fi
+
       - name: Verify immutable releases are enabled
         if: ${{ steps.plan.outputs.publish == 'true' }}
         shell: bash
