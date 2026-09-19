@@ -16,6 +16,20 @@ From this release onward:
 
 `v1.9`, `v1.10`, and similar labels already present in historical design and hardening documents are engineering milestones. They describe implementation rounds and product-development workstreams; they are not retroactively reinterpreted as public SemVer releases.
 
+## Release candidate channel
+
+A release candidate uses normal Semantic Versioning prerelease syntax, for example
+`1.1.0-rc.1`, and must set `releaseChannel: "prerelease"` in the release plan.
+
+Release-candidate publication follows the same exact-SHA production chain as a stable release,
+but GitHub must mark the resulting Release as a **prerelease**. Before any tag or Release is
+created, the workflow checks the repository immutable-releases setting and refuses publication
+unless it is enabled. After publication, the workflow verifies both `prerelease=true` and
+`immutable=true` on the created Release.
+
+A prerelease candidate is intended for owner canary / controlled verification. It is not the
+stable `v1.1.0` product release.
+
 ## Gateway runtime version
 
 The authenticated MCP gateway has its own runtime / compatibility version. At the `v1.0.0` product release this remains `1.9.0-alpha.1`.
@@ -76,14 +90,15 @@ For `v1.0.1` and later releases, repository-level release immutability should be
 
 ## Current mapping
 
-For the `v1.0.1` patch release candidate:
+For the `v1.1.0-rc.1` release candidate:
 
 | Identifier | Meaning | Value |
 | --- | --- | --- |
-| Public product version | User-facing verified release | `v1.0.1` |
-| `package.json` | Application package version | `1.0.1` |
-| Git tag | Version-pinned source release marker | `v1.0.1` |
-| Engineering milestone | Current internal development/hardening stream | `v1.10` |
+| Public product version | Owner-canary release candidate | `v1.1.0-rc.1` |
+| `package.json` | Application package version | `1.1.0-rc.1` |
+| Git tag | Version-pinned source release marker | `v1.1.0-rc.1` |
+| Release channel | GitHub release classification | `prerelease` |
+| Engineering milestone | Current internal development/hardening stream | `PJSDAS-AI-OPERATED-PRODUCTION-v1 / Round 5` |
 | Authenticated gateway runtime | MCP runtime compatibility contract | `1.9.0-alpha.1` |
 | Production build identity | Exact deployed frontend/backend revision | Git commit SHA |
 | GitHub platform immutability for v1.0.0 | Historical release published before repository immutability was enabled | `false` |
