@@ -64,6 +64,12 @@ revoke all on table public.pjsdas_command_ledger from anon, authenticated;
 revoke insert, update, delete on table public.pjsdas_authorization_grants from anon, authenticated;
 grant select on table public.pjsdas_authorization_grants to authenticated;
 
+-- Server-owned connected state must not depend on project-level default grants.
+grant select, insert, update, delete on table public.pjsdas_workspaces to service_role;
+grant select, insert, update, delete on table public.pjsdas_command_ledger to service_role;
+grant usage, select on sequence public.pjsdas_command_ledger_id_seq to service_role;
+grant select, insert, update, delete on table public.pjsdas_authorization_grants to service_role;
+
 drop policy if exists pjsdas_authorization_grants_select_own on public.pjsdas_authorization_grants;
 create policy pjsdas_authorization_grants_select_own
   on public.pjsdas_authorization_grants
