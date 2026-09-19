@@ -68,10 +68,8 @@ function unsafeIpv6(host: string) {
   if (value === '::' || value === '::1') return true
   if (/^(?:fc|fd)/.test(value)) return true
   if (/^fe[89ab]/.test(value)) return true
-  if (value.startsWith('::ffff:')) {
-    const mapped = value.slice('::ffff:'.length)
-    return unsafeIpv4(mapped)
-  }
+  if (value.startsWith('::ffff:')) return true
+  if (value.startsWith('2001:db8:')) return true
   return false
 }
 
@@ -94,6 +92,9 @@ export function assertPublicDiscoverySourceUrl(raw: string) {
     host === 'localhost' ||
     host.endsWith('.localhost') ||
     host.endsWith('.local') ||
+    host.endsWith('.internal') ||
+    host.endsWith('.lan') ||
+    (!host.includes('.') && !host.includes(':')) ||
     unsafeIpv4(host) ||
     unsafeIpv6(host)
   ) {
@@ -243,7 +244,7 @@ function closedPostingEvidence(evidence: string) {
 }
 
 export async function verifyDiscoverySourceObservation(
-  observation: DiscoveryModelObservation,
+  observation: MonitorJobObservation,
   options: { fetchImpl?: typeof fetch; now?: Date } = {},
 ) {
   const fetchImpl = options.fetchImpl ?? fetch
