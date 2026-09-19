@@ -26,3 +26,11 @@
 .cloud-error { margin-top:10px; border-radius:10px; padding:9px 11px; background:#f6e8e2; color:#8e4e3f; font-size:11.5px; }
 .cloud-security-note { display:block; margin-top:14px; color:#9a948c; font-size:10.5px; line-height:1.5; }
 @media (max-width:760px) { .cloud-settings-heading,.cloud-auth-row,.cloud-controls { align-items:stretch; flex-direction:column; } .cloud-account-row { grid-template-columns:1fr; } .cloud-controls > div { width:100%; } .cloud-controls button { flex:1; } }
+
+.cloud-audience-state{display:flex;align-items:center;justify-content:space-between;gap:16px;margin:12px 0;padding:11px 13px;border-radius:12px}
+.cloud-audience-state>div{display:grid;gap:3px}
+.cloud-audience-state strong{font-size:12px}
+.cloud-audience-state span{font-size:11.5px;color:var(--text-soft)}
+.cloud-audience-state small{font-size:10px;text-transform:uppercase;letter-spacing:.08em}
+.cloud-audience-state.allowed{background:rgba(34,197,94,.06);border:1px solid rgba(34,197,94,.16)}
+.cloud-audience-state.blocked{background:rgba(245,158,11,.065);border:1px solid rgba(217,119,6,.18)}

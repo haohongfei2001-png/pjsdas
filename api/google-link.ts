@@ -3,15 +3,15 @@ import {
   PJSDAS_SUPABASE_PUBLISHABLE_KEY,
   PJSDAS_SUPABASE_URL,
 } from '../gateway/supabaseProject.js'
+import { firstPartyWebOrigins } from '../gateway/productionTopology.js'
+import { createConfiguredAudienceAccessGuard } from '../gateway/audienceAccess.js'
 
 const handler = createGoogleLinkHandler({
   supabaseUrl: PJSDAS_SUPABASE_URL,
   supabasePublishableKey: PJSDAS_SUPABASE_PUBLISHABLE_KEY,
   tokenEncryptionKey: process.env.PJSDAS_TOKEN_ENCRYPTION_KEY ?? '',
-  allowedOrigins: [
-    'https://haohongfei2001-png.github.io',
-    'http://localhost:5173',
-  ],
+  allowedOrigins: firstPartyWebOrigins(),
+  authorizeIdentity: createConfiguredAudienceAccessGuard({ supabaseUrl: PJSDAS_SUPABASE_URL }),
 })
 
 export default {

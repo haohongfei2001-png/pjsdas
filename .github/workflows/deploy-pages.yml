@@ -28,6 +28,10 @@ jobs:
       AI_GATEWAY_API_KEY: ${{ secrets.AI_GATEWAY_API_KEY }}
       PJSDAS_GOOGLE_CLIENT_ID: ${{ vars.VITE_GOOGLE_CLIENT_ID }}
       PJSDAS_CONNECTED_AUTHORITY: ${{ vars.PJSDAS_CONNECTED_AUTHORITY || 'google-drive' }}
+      PJSDAS_AUDIENCE_MODE: ${{ vars.PJSDAS_AUDIENCE_MODE || 'legacy' }}
+      PJSDAS_CANONICAL_WEB_ORIGIN: ${{ vars.PJSDAS_CANONICAL_WEB_ORIGIN }}
+      PJSDAS_CANONICAL_API_ORIGIN: ${{ vars.PJSDAS_CANONICAL_API_ORIGIN }}
+      PJSDAS_LEGACY_WEB_ORIGINS: ${{ vars.PJSDAS_LEGACY_WEB_ORIGINS || 'https://haohongfei2001-png.github.io' }}
       PJSDAS_SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.PJSDAS_SUPABASE_SERVICE_ROLE_KEY }}
     steps:
       - name: Detect configured Cloudflare standby
@@ -48,8 +52,8 @@ jobs:
               missing=1
             fi
           done
-          if [ "${PJSDAS_CONNECTED_AUTHORITY:-google-drive}" = "transactional" ] && [ -z "${PJSDAS_SUPABASE_SERVICE_ROLE_KEY:-}" ]; then
-            echo "Cloudflare standby transactional authority requires PJSDAS_SUPABASE_SERVICE_ROLE_KEY."
+          if { [ "${PJSDAS_CONNECTED_AUTHORITY:-google-drive}" = "transactional" ] || [ "${PJSDAS_AUDIENCE_MODE:-legacy}" = "allowlist" ]; } && [ -z "${PJSDAS_SUPABASE_SERVICE_ROLE_KEY:-}" ]; then
+            echo "Cloudflare standby transactional authority / allowlist mode requires PJSDAS_SUPABASE_SERVICE_ROLE_KEY."
             missing=1
           fi
           if [ "$missing" -eq 0 ]; then
@@ -84,7 +88,7 @@ jobs:
             'PJSDAS_GOOGLE_CLIENT_SECRET',
             'AI_GATEWAY_API_KEY',
           ]
-          if (process.env.PJSDAS_CONNECTED_AUTHORITY === 'transactional') required.push('PJSDAS_SUPABASE_SERVICE_ROLE_KEY')
+          if (process.env.PJSDAS_CONNECTED_AUTHORITY === 'transactional' || process.env.PJSDAS_AUDIENCE_MODE === 'allowlist') required.push('PJSDAS_SUPABASE_SERVICE_ROLE_KEY')
           const payload = Object.fromEntries(required.map(name => [name, process.env[name]]))
           fs.writeFileSync('.cloudflare-secrets.json', JSON.stringify(payload), { mode: 0o600 })
           NODE
@@ -100,7 +104,11 @@ jobs:
             --secrets-file .cloudflare-secrets.json \
             --var "WORKERS_CI_COMMIT_SHA:${GITHUB_SHA}" \
             --var "PJSDAS_GOOGLE_CLIENT_ID:${PJSDAS_GOOGLE_CLIENT_ID}" \
-            --var "PJSDAS_CONNECTED_AUTHORITY:${PJSDAS_CONNECTED_AUTHORITY}"
+            --var "PJSDAS_CONNECTED_AUTHORITY:${PJSDAS_CONNECTED_AUTHORITY}" \
+            --var "PJSDAS_AUDIENCE_MODE:${PJSDAS_AUDIENCE_MODE}" \
+            --var "PJSDAS_CANONICAL_WEB_ORIGIN:${PJSDAS_CANONICAL_WEB_ORIGIN}" \
+            --var "PJSDAS_CANONICAL_API_ORIGIN:${PJSDAS_CANONICAL_API_ORIGIN}" \
+            --var "PJSDAS_LEGACY_WEB_ORIGINS:${PJSDAS_LEGACY_WEB_ORIGINS}"
 
       - name: Resolve and verify Cloudflare standby origin
         id: standby-origin
@@ -157,7 +165,13 @@ jobs:
     env:
       VITE_GOOGLE_CLIENT_ID: ${{ vars.VITE_GOOGLE_CLIENT_ID }}
       PJSDAS_EXPECTED_WORKSPACE_AUTHORITY: ${{ vars.PJSDAS_CONNECTED_AUTHORITY || 'google-drive' }}
+      PJSDAS_EXPECTED_AUDIENCE_MODE: ${{ vars.PJSDAS_AUDIENCE_MODE || 'legacy' }}
+      PJSDAS_EXPECTED_CANONICAL_WEB_ORIGIN: ${{ vars.PJSDAS_CANONICAL_WEB_ORIGIN }}
+      PJSDAS_EXPECTED_CANONICAL_API_ORIGIN: ${{ vars.PJSDAS_CANONICAL_API_ORIGIN }}
       VITE_PJSDAS_CONNECTED_AUTHORITY: ${{ vars.PJSDAS_CONNECTED_AUTHORITY || 'google-drive' }}
+      VITE_PJSDAS_CANONICAL_WEB_ORIGIN: ${{ vars.PJSDAS_CANONICAL_WEB_ORIGIN }}
+      VITE_PJSDAS_CANONICAL_API_ORIGIN: ${{ vars.PJSDAS_CANONICAL_API_ORIGIN }}
+      VITE_PJSDAS_LEGACY_WEB_ORIGINS: ${{ vars.PJSDAS_LEGACY_WEB_ORIGINS || 'https://haohongfei2001-png.github.io' }}
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -169,10 +183,15 @@ jobs:
         shell: bash
         env:
           CONFIGURED_BACKENDS: ${{ vars.PJSDAS_BACKEND_ORIGINS || 'https://pjsdas-remote-alpha.vercel.app' }}
+          CANONICAL_API_ORIGIN: ${{ vars.PJSDAS_CANONICAL_API_ORIGIN }}
           CLOUDFLARE_STANDBY_ORIGIN: ${{ needs.standby.outputs.origin }}
         run: |
           set -euo pipefail
           origins="$CONFIGURED_BACKENDS"
+          canonical="${CANONICAL_API_ORIGIN%/}"
+          if [ -n "$canonical" ] && ! printf ',%s,' ",${origins}," | grep -Fq ",${canonical},"; then
+            origins="${canonical},${origins}"
+          fi
           standby="${CLOUDFLARE_STANDBY_ORIGIN%/}"
           if [ -n "$standby" ] && ! printf ',%s,' ",${origins}," | grep -Fq ",${standby},"; then
             origins="${origins},${standby}"
@@ -207,6 +226,14 @@ jobs:
                       ? authenticatedMcp.releaseRequiredTools
                       : [];
                     const expectedAuthority = process.env.PJSDAS_EXPECTED_WORKSPACE_AUTHORITY === "transactional" ? "transactional" : "google-drive";
+                    const expectedAudience = process.env.PJSDAS_EXPECTED_AUDIENCE_MODE === "allowlist" ? "allowlist" : "legacy";
+                    const topology = health.topology ?? {};
+                    const expectedWeb = (process.env.PJSDAS_EXPECTED_CANONICAL_WEB_ORIGIN || "").replace(/\/$/, "");
+                    const expectedApi = (process.env.PJSDAS_EXPECTED_CANONICAL_API_ORIGIN || "").replace(/\/$/, "");
+                    const topologyReady =
+                      topology.audienceMode === expectedAudience &&
+                      (!expectedWeb || topology.canonicalWebOrigin === expectedWeb) &&
+                      (!expectedApi || topology.canonicalApiOrigin === expectedApi);
                     const expectedTools = [
                       "get_coverage_status",
                       "get_workspace_integrity",
@@ -247,6 +274,10 @@ jobs:
                       capabilities.gmailCompleteConsumption === "v1" &&
                       capabilities.discoverySourceVerification === "v1" &&
                       capabilities.discoveryFactAssessmentSeparation === true &&
+                      capabilities.canonicalOriginPolicy === "v1" &&
+                      capabilities.controlledAudience === "v1" &&
+                      capabilities.connectedOriginMigration === "v1" &&
+                      topologyReady &&
                       authenticatedMcp.toolSurfaceVersion === "v3" &&
                       releaseToolsReady;
                     process.exit(ready ? 0 : 1);

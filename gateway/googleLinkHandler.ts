@@ -10,6 +10,7 @@ export interface GoogleLinkHandlerConfig {
   tokenEncryptionKey: string
   allowedOrigins: string[]
   fetchImpl?: typeof fetch
+  authorizeIdentity?: (identity: import('./supabaseIdentity.js').PjsdasIdentity) => Promise<unknown>
 }
 
 type GoogleLinkRequestBody = {
@@ -115,7 +116,7 @@ export function createGoogleLinkHandler(config: GoogleLinkHandlerConfig) {
     const origin = request.headers.get('origin')
 
     if (request.method === 'OPTIONS') {
-      const allowed = !origin || config.allowedOrigins.includes(origin)
+      const allowed = Boolean(origin && config.allowedOrigins.includes(origin))
       return new Response(null, {
         status: allowed ? 204 : 403,
         headers: corsHeaders(origin, config.allowedOrigins),
@@ -126,8 +127,8 @@ export function createGoogleLinkHandler(config: GoogleLinkHandlerConfig) {
       return json(405, { code: 'METHOD_NOT_ALLOWED', message: 'Use POST.' }, origin, config.allowedOrigins)
     }
 
-    if (origin && !config.allowedOrigins.includes(origin)) {
-      return json(403, { code: 'ORIGIN_NOT_ALLOWED', message: 'This origin is not allowed to link Google Drive.' }, origin, config.allowedOrigins)
+    if (!origin || !config.allowedOrigins.includes(origin)) {
+      return json(403, { code: 'ORIGIN_NOT_ALLOWED', message: 'Google Drive linking is available only to an approved first-party PJSDAS browser origin.' }, origin, config.allowedOrigins)
     }
 
     try {
@@ -136,6 +137,7 @@ export function createGoogleLinkHandler(config: GoogleLinkHandlerConfig) {
       }
 
       const { identity, accessToken } = await resolveIdentity(request)
+      await config.authorizeIdentity?.(identity)
       const { providerToken, providerRefreshToken } = await parseBody(request)
       const google = await inspectGoogleToken(fetchImpl, providerToken)
 
@@ -192,7 +194,7 @@ export function createGoogleLinkHandler(config: GoogleLinkHandlerConfig) {
     } catch (caught) {
       const error = safeMessage(caught)
       const status = error.code === 'AUTH_REQUIRED' || error.code === 'AUTH_INVALID' ? 401
-        : error.code === 'ORIGIN_NOT_ALLOWED' ? 403
+        : error.code === 'ORIGIN_NOT_ALLOWED' || error.code === 'AUDIENCE_ACCESS_REQUIRED' || error.code === 'AUDIENCE_IDENTITY_MISMATCH' ? 403
           : error.retryable ? 503
             : 400
       return json(status, error, origin, config.allowedOrigins)

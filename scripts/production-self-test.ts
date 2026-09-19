@@ -2,8 +2,9 @@ import { DEFAULT_BACKEND_ORIGIN } from '../gateway/backendOrigin.js'
 import { runProductionSelfTest } from '../gateway/productionSelfTest.js'
 import { resolveProductionSelfTestAccessToken } from '../gateway/productionSelfTestAuth.js'
 
-const rawOrigins = (process.env.PJSDAS_PRODUCTION_BASE_URLS ?? process.env.PJSDAS_PRODUCTION_BASE_URL ?? DEFAULT_BACKEND_ORIGIN)
-  .split(',')
+const canonicalApiOrigin = process.env.PJSDAS_EXPECTED_CANONICAL_API_ORIGIN?.trim().replace(/\/$/, '') || undefined
+const configuredOrigins = (process.env.PJSDAS_PRODUCTION_BASE_URLS ?? process.env.PJSDAS_PRODUCTION_BASE_URL ?? DEFAULT_BACKEND_ORIGIN)
+const rawOrigins = [canonicalApiOrigin, ...configuredOrigins.split(',')]
   .map((value) => value.trim().replace(/\/$/, ''))
   .filter(Boolean)
 const accessToken = await resolveProductionSelfTestAccessToken({
@@ -13,6 +14,9 @@ const accessToken = await resolveProductionSelfTestAccessToken({
 })
 const expectedCommitSha = process.env.PJSDAS_EXPECTED_COMMIT_SHA?.trim() || undefined
 const requireAuthenticatedTools = process.env.PJSDAS_REQUIRE_AUTHENTICATED_SELF_TEST?.trim().toLowerCase() === 'true'
+const expectedAudienceMode = process.env.PJSDAS_EXPECTED_AUDIENCE_MODE?.trim() === 'allowlist' ? 'allowlist' as const : 'legacy' as const
+const expectedCanonicalWebOrigin = process.env.PJSDAS_EXPECTED_CANONICAL_WEB_ORIGIN?.trim() || undefined
+const expectedCanonicalApiOrigin = canonicalApiOrigin
 const expectedWorkspaceAuthority = (
   process.env.PJSDAS_EXPECTED_WORKSPACE_AUTHORITY
   ?? process.env.PJSDAS_CONNECTED_AUTHORITY
@@ -26,6 +30,9 @@ for (const baseUrl of rawOrigins) {
     accessToken,
     expectedCommitSha,
     expectedWorkspaceAuthority,
+    expectedAudienceMode,
+    expectedCanonicalWebOrigin,
+    expectedCanonicalApiOrigin,
     requireAuthenticatedTools,
   })
   results.push(result)

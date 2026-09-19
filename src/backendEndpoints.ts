@@ -14,7 +14,13 @@ function normalizeOrigin(value: string) {
 export function readBackendOrigins() {
   const env = import.meta.env as Record<string, string | undefined>
   const raw = (env.VITE_PJSDAS_BACKEND_ORIGINS ?? env.VITE_PJSDAS_BACKEND_ORIGIN ?? '').trim()
-  const values = raw ? raw.split(',') : DEFAULT_BACKEND_ORIGINS
+  const configured = raw ? raw.split(',') : []
+  const canonicalApi = (env.VITE_PJSDAS_CANONICAL_API_ORIGIN ?? '').trim()
+  const values = canonicalApi
+    ? [canonicalApi, ...configured, ...DEFAULT_BACKEND_ORIGINS]
+    : configured.length
+      ? configured
+      : DEFAULT_BACKEND_ORIGINS
   const unique = new Set<string>()
   for (const value of values) {
     const trimmed = value.trim()

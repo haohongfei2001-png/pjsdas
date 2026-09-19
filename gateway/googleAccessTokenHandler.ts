@@ -12,6 +12,7 @@ export interface GoogleAccessTokenHandlerConfig {
   googleClientSecret: string
   allowedOrigins: string[]
   fetchImpl?: typeof fetch
+  authorizeIdentity?: (identity: import('./supabaseIdentity.js').PjsdasIdentity) => Promise<unknown>
 }
 
 function corsHeaders(origin: string | null, allowedOrigins: string[]) {
@@ -83,6 +84,7 @@ export function createGoogleAccessTokenHandler(config: GoogleAccessTokenHandlerC
       }
 
       const { identity, accessToken: pjsdasAccessToken } = await resolveIdentity(request)
+      await config.authorizeIdentity?.(identity)
       if (identity.oauthClientId) {
         throw new WorkspaceSourceError('AUTH_FORBIDDEN', 'Delegated OAuth clients cannot obtain Google provider access tokens.', false)
       }
@@ -102,7 +104,7 @@ export function createGoogleAccessTokenHandler(config: GoogleAccessTokenHandlerC
     } catch (caught) {
       const error = safeError(caught)
       const status = error.code === 'AUTH_REQUIRED' || error.code === 'AUTH_INVALID' ? 401
-        : error.code === 'ORIGIN_NOT_ALLOWED' || error.code === 'AUTH_FORBIDDEN' ? 403
+        : error.code === 'ORIGIN_NOT_ALLOWED' || error.code === 'AUTH_FORBIDDEN' || error.code === 'AUDIENCE_ACCESS_REQUIRED' || error.code === 'AUDIENCE_IDENTITY_MISMATCH' ? 403
           : error.code === 'GOOGLE_CONNECTION_REQUIRED' || error.code === 'GOOGLE_AUTH_EXPIRED' ? 409
             : error.retryable ? 503
               : 400

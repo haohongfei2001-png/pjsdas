@@ -38,6 +38,8 @@ import PrepGraphDock from './PrepGraphDock.js'
 import ProgressInbox from './ProgressInbox.js'
 import ProcessEventDock from './ProcessEventDock.js'
 import LocalBackupDock from './LocalBackupDock.js'
+import ConnectedMigrationCard from './cloud/ConnectedMigrationCard.js'
+import OriginTransitionNotice from './OriginTransitionNotice.js'
 import OpportunityDetailDrawer, { type OpportunityDetailDestination } from './OpportunityDetailDrawer.js'
 import type { ChangeSetRecord } from './changeSet.js'
 import type {
@@ -247,6 +249,7 @@ export default function AppV8() {
       </aside>
 
       <main className="main-panel surface-main">
+        <OriginTransitionNotice onOpenSettings={() => setSurface('settings')} />
         {loading ? <div className="empty-card">{zh ? '正在读取本地工作区…' : 'Loading local workspace…'}</div> : null}
         {!loading && surface === 'today' ? (
           <TodaySurface ranked={ranked} now={now} opportunities={opportunities} groups={groups} rules={rules} timeline={timeline} attentionCount={attentionCount} workspaceEmpty={workspaceEmpty} onStart={navigateFromStart} onOpenAttention={() => setSurface('attention')} onMark={markAction} onChanged={reload} onOpenOpportunity={setSelectedOpportunityId} />
@@ -546,6 +549,7 @@ function SettingsSurface({ lastImport, rules, onChanged }: { lastImport?: Import
       <details className="settings-group">
         <summary><div><strong>{zh ? '数据与恢复' : 'Data & recovery'}</strong><span>{zh ? '备份、导入和恢复路径' : 'Backup, import, and recovery paths'}</span></div></summary>
         <div className="settings-group-body">
+          <ConnectedMigrationCard />
           <div className="settings-inline-tool"><div><strong>{zh ? '本地快照' : 'Local snapshot'}</strong><p>{zh ? '大版本调整、换设备或清理浏览器前导出完整快照。' : 'Export a full snapshot before major upgrades, device changes, or browser cleanup.'}</p></div><LocalBackupDock onChanged={() => { void onChanged() }} /></div>
           <div className="surface-import-card"><div><strong>{zh ? 'Excel 初始化 / 恢复' : 'Excel initialization / recovery'}</strong><p>{zh ? 'Excel 已不是日常数据源，只在初始化、历史迁移或恢复时使用。' : 'Excel is no longer the daily source of truth; use it for initialization, migration, or recovery.'}</p></div><label className="file-button">{busy ? (zh ? '处理中…' : 'Processing…') : (zh ? '选择工作簿' : 'Choose workbook')}<input type="file" accept=".xlsx,.xls" disabled={busy} onChange={(event) => { void readWorkbook(event.target.files?.[0]) }} /></label></div>
           {error ? <div className="notice error">{error}</div> : null}

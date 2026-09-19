@@ -48,6 +48,9 @@ const REQUIRED_CAPABILITIES: Record<string, unknown> = {
   gmailCompleteConsumption: 'v1',
   discoverySourceVerification: 'v1',
   discoveryFactAssessmentSeparation: true,
+  canonicalOriginPolicy: 'v1',
+  controlledAudience: 'v1',
+  connectedOriginMigration: 'v1',
 }
 
 function check(name: string, condition: boolean, detail: string): ProductionSelfTestCheck {
@@ -77,6 +80,10 @@ export async function runProductionSelfTest(options: {
   accessToken?: string
   expectedCommitSha?: string
   expectedWorkspaceAuthority?: 'google-drive' | 'transactional'
+  expectedAudienceMode?: 'legacy' | 'allowlist'
+  expectedCanonicalWebOrigin?: string
+  expectedCanonicalApiOrigin?: string
+  firstPartyTestOrigin?: string
   requireAuthenticatedTools?: boolean
   fetchImpl?: typeof fetch
 }): Promise<ProductionSelfTestResult> {
@@ -84,6 +91,13 @@ export async function runProductionSelfTest(options: {
   const baseUrl = options.baseUrl.replace(/\/$/, '')
   const expectedCommitSha = options.expectedCommitSha?.trim().toLowerCase()
   const expectedWorkspaceAuthority = options.expectedWorkspaceAuthority ?? 'google-drive'
+  const expectedAudienceMode = options.expectedAudienceMode ?? 'legacy'
+  const expectedCanonicalWebOrigin = options.expectedCanonicalWebOrigin?.replace(/\/$/, '')
+  const expectedCanonicalApiOrigin = options.expectedCanonicalApiOrigin?.replace(/\/$/, '')
+  const firstPartyTestOrigin = options.firstPartyTestOrigin?.replace(/\/$/, '')
+    ?? expectedCanonicalWebOrigin
+    ?? 'https://haohongfei2001-png.github.io'
+  const expectedResourceOrigin = expectedCanonicalApiOrigin ?? baseUrl
   const expectedMode = expectedWorkspaceAuthority === 'transactional'
     ? 'transactional-connected'
     : 'google-drive-trusted-ingestion'
@@ -97,7 +111,14 @@ export async function runProductionSelfTest(options: {
     checks.push(check('health.version', payload?.version === '1.9.0-alpha.1', `version=${String(payload?.version)}`))
     checks.push(check('health.mode', payload?.mode === expectedMode, `mode=${String(payload?.mode)}; expected=${expectedMode}`))
     checks.push(check('health.workspace-authority', payload?.workspaceAuthority === expectedWorkspaceAuthority, `workspaceAuthority=${String(payload?.workspaceAuthority)}; expected=${expectedWorkspaceAuthority}`))
-    checks.push(check('health.resource-origin', typeof payload?.resource === 'string' && payload.resource.startsWith(`${baseUrl}/`), `resource=${String(payload?.resource)}`))
+    checks.push(check('health.audience-mode', payload?.topology?.audienceMode === expectedAudienceMode, `audienceMode=${String(payload?.topology?.audienceMode)}; expected=${expectedAudienceMode}`))
+    if (expectedCanonicalWebOrigin) {
+      checks.push(check('health.canonical-web-origin', payload?.topology?.canonicalWebOrigin === expectedCanonicalWebOrigin, `canonicalWebOrigin=${String(payload?.topology?.canonicalWebOrigin)}; expected=${expectedCanonicalWebOrigin}`))
+    }
+    if (expectedCanonicalApiOrigin) {
+      checks.push(check('health.canonical-api-origin', payload?.topology?.canonicalApiOrigin === expectedCanonicalApiOrigin, `canonicalApiOrigin=${String(payload?.topology?.canonicalApiOrigin)}; expected=${expectedCanonicalApiOrigin}`))
+    }
+    checks.push(check('health.resource-origin', typeof payload?.resource === 'string' && payload.resource.startsWith(`${expectedResourceOrigin}/`), `resource=${String(payload?.resource)}; expectedOrigin=${expectedResourceOrigin}`))
     if (expectedCommitSha) {
       const actualCommitSha = typeof payload?.release?.commitSha === 'string' ? payload.release.commitSha.toLowerCase() : undefined
       checks.push(check(
@@ -131,7 +152,7 @@ export async function runProductionSelfTest(options: {
   try {
     const response = await fetchImpl(`${baseUrl}/api/google-access-token`, {
       method: 'POST',
-      headers: { 'content-type': 'application/json', origin: 'https://haohongfei2001-png.github.io' },
+      headers: { 'content-type': 'application/json', origin: firstPartyTestOrigin },
       body: '{}',
     })
     checks.push(check('google-access-token.unauthorized', response.status === 401, `HTTP ${response.status}; unauthenticated restore must be rejected`))
@@ -141,7 +162,7 @@ export async function runProductionSelfTest(options: {
 
   try {
     const response = await fetchImpl(`${baseUrl}/api/automation-settings`, {
-      headers: { origin: 'https://haohongfei2001-png.github.io' },
+      headers: { origin: firstPartyTestOrigin },
     })
     checks.push(check('gmail-automation.settings-unauthorized', response.status === 401, `HTTP ${response.status}; user automation settings must require PJSDAS authentication`))
   } catch (caught) {
@@ -165,7 +186,7 @@ export async function runProductionSelfTest(options: {
   try {
     const response = await fetchImpl(mcpToolsRequest(baseUrl))
     checks.push(check('mcp.unauthorized', response.status === 401, `HTTP ${response.status}; anonymous tools/list must be rejected`))
-    checks.push(check('mcp.metadata-origin', response.headers.get('www-authenticate')?.includes(`${baseUrl}/.well-known/oauth-protected-resource`) === true, response.headers.get('www-authenticate') ?? 'missing'))
+    checks.push(check('mcp.metadata-origin', response.headers.get('www-authenticate')?.includes(`${expectedResourceOrigin}/.well-known/oauth-protected-resource`) === true, response.headers.get('www-authenticate') ?? 'missing'))
   } catch (caught) {
     checks.push(check('mcp.unauthorized.fetch', false, caught instanceof Error ? caught.message : String(caught)))
   }

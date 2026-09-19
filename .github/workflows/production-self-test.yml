@@ -17,6 +17,9 @@ jobs:
     env:
       PJSDAS_EXPECTED_COMMIT_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
       PJSDAS_EXPECTED_WORKSPACE_AUTHORITY: ${{ vars.PJSDAS_CONNECTED_AUTHORITY || 'google-drive' }}
+      PJSDAS_EXPECTED_AUDIENCE_MODE: ${{ vars.PJSDAS_AUDIENCE_MODE || 'legacy' }}
+      PJSDAS_EXPECTED_CANONICAL_WEB_ORIGIN: ${{ vars.PJSDAS_CANONICAL_WEB_ORIGIN }}
+      PJSDAS_EXPECTED_CANONICAL_API_ORIGIN: ${{ vars.PJSDAS_CANONICAL_API_ORIGIN }}
     steps:
       - uses: actions/checkout@v7
         with:

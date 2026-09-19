@@ -92,7 +92,7 @@ async function downloadEnvelope(fileId: string) {
   return parseDriveWorkspaceEnvelope(await response.json())
 }
 
-async function fetchDriveRemoteWorkspace(_userId: string): Promise<RemoteWorkspaceRow | null> {
+export async function fetchLegacyDriveWorkspaceForMigration(_userId: string): Promise<RemoteWorkspaceRow | null> {
   const files = await listWorkspaceFiles()
   const file = files[0]
   if (!file?.id) return null
@@ -201,7 +201,7 @@ async function updateDriveRemoteWorkspace(input: {
 
 export async function fetchRemoteWorkspace(userId: string): Promise<RemoteWorkspaceRow | null> {
   if (connectedWorkspaceAuthorityEnabled()) return fetchConnectedRemoteWorkspace()
-  return fetchDriveRemoteWorkspace(userId)
+  return fetchLegacyDriveWorkspaceForMigration(userId)
 }
 
 export async function createRemoteWorkspace(input: {

@@ -21,19 +21,19 @@ See [`docs/RELEASE_POLICY.md`](docs/RELEASE_POLICY.md) for the permanent mapping
 
 PJSDAS is organized around user goals rather than maintenance queues:
 
-- **Today** — execute concrete next moves under time, deadline, and leverage constraints.
-- **Decide** — evaluate **Opportunities** and inspect the real recruiting **Pipeline**.
-- **Prepare** — manage reusable preparation and Prep Graph leverage.
-- **History** — inspect factual Timeline and ChangeSet audit history.
-- **Settings** — account/sync, Discovery Profile, Decision Rules, backup/recovery, AI access, and language.
+- **Today** — execute concrete next moves and see the next hard node.
+- **Opportunities** — evaluate opportunities, inspect Pipeline, and open contextual Prep/Prep Graph.
+- **Attention** — only conflicts, governed changes, and source exceptions that genuinely require the user.
+- **Activity** — read-only audit of facts, commands, automation, and provenance.
+- **Settings** — account/automation, Discovery Profile, Decision Rules, connected migration, backup/recovery, and language.
 
-Background freshness, reconciliation, source health, unresolved inputs, and integrity state remain in Coverage/audit surfaces unless they resolve into something the user actually needs to do.
+Manual progress/process capture remains available as a fallback, but routine fact capture is expected to move through AI or trusted automation.
 
 ## Product architecture
 
 PJSDAS follows one boundary throughout the system:
 
-> **AI may read, explain, interpret, and propose. PJSDAS owns durable state, policy, identity, validation, reconciliation, and mutation semantics.**
+> **AI may read, explain, interpret, and execute bounded explicit commands. PJSDAS owns authorization, durable state, policy, identity, validation, reconciliation, and mutation semantics.**
 
 Core durable concepts include:
 
@@ -51,17 +51,18 @@ PJSDAS is deterministic after interpretation. AI may provide bounded assessments
 
 ## Job discovery and trusted ingestion
 
-PJSDAS itself does not crawl the public web. An AI client can search public sources, then submit bounded source-backed facts into PJSDAS.
+Interactive MCP tools do not perform arbitrary job-web discovery. Background Discovery may find candidates, but PJSDAS independently fetches and verifies each submitted public source URL before source facts can create or refresh an Opportunity.
 
 ```text
 Discovery Profile
 → AI public-web search / trusted monitor
-→ source-backed candidate facts
+→ candidate evidence
+→ independent source fetch / verification
 → identity + quality gate
 → canonical Opportunity / source update / filtered / duplicate / unresolved
 → Ingestion Ledger + Coverage
-→ Google Drive workspace
-→ local IndexedDB sync
+→ current connected authority
+→ local IndexedDB cache / working copy
 ```
 
 Trusted Monitor and recruiting Gmail ingestion are intentionally narrow:
@@ -73,16 +74,18 @@ Trusted Monitor and recruiting Gmail ingestion are intentionally narrow:
 - Drive writes require exact workspace-version conflict protection;
 - trusted ingestion cannot silently change Decision Rules, durable preferences, destructive state, or ambiguous identity.
 
-Generic AI write intent remains review-only through signed ChangeSets.
+Explicit, exact-target, low-risk P1 commands are represented as bounded Domain Commands. Ambiguous P2 intent is clarified in the AI conversation. Governed P3 changes remain review/approval operations, and P4 automation requires explicit source/client capability grants.
 
-## Local-first storage and sync
+## Storage and sync
 
-- **IndexedDB** is the immediate browser workspace and day-to-day source of truth.
-- **Google Drive `appDataFolder`** provides an optional private synchronization and remote-ingestion bridge.
-- **Supabase Auth** provides stable account/session identity and encrypted Google refresh-token binding; it is not the job-search database.
-- Workspace snapshots are validated before restore or remote replacement.
-- SHA-256 workspace fingerprints participate in conflict and proposal-baseline checks.
-- Divergent local/Drive histories fail closed instead of silently using last-write-wins.
+PJSDAS supports two explicit authority modes:
+
+- **Local mode** — IndexedDB is authoritative and remote AI/background writers are not the durable state owner.
+- **Connected mode** — a transactional Supabase/PostgreSQL workspace is authoritative; IndexedDB is the local working copy/offline cache and Google Drive is backup/export/portability storage.
+
+The current production deployment remains on the legacy Drive authority until the owner workspace is explicitly migrated and production activation flags are switched together.
+
+Workspace snapshots are validated before restore or migration. SHA-256 fingerprints participate in conflict detection and migration verification. Divergent non-empty Local/Drive states fail closed rather than using last-write-wins.
 
 Older spreadsheets are initialization/recovery material, not the live source of truth.
 
@@ -100,7 +103,8 @@ The authenticated MCP gateway exposes bounded semantic reads and narrowly scoped
 - Discovery Context;
 - Coverage / source health;
 - Workspace Integrity;
-- bounded trusted Monitor and Gmail ingestion.
+- bounded trusted Monitor and Gmail ingestion;
+- bounded explicit user Domain Commands after transactional authority activation.
 
 The production auth boundary rejects anonymous MCP access. The release health contract also exposes a versioned release-tool surface so production can verify that required MCP capabilities are present without requiring a QA account or test secrets.
 
@@ -166,3 +170,5 @@ Main implementation and architecture references include:
 - [`docs/V1_9_INPUT_SEMANTICS_HARDENING.md`](docs/V1_9_INPUT_SEMANTICS_HARDENING.md)
 - [`docs/AI_BRIDGE_DESIGN.md`](docs/AI_BRIDGE_DESIGN.md)
 - [`docs/RELEASE_POLICY.md`](docs/RELEASE_POLICY.md)
+- [`docs/AI_OPERATED_PRODUCTION_V1.md`](docs/AI_OPERATED_PRODUCTION_V1.md)
+- [`docs/PRODUCTION_TOPOLOGY_V1.md`](docs/PRODUCTION_TOPOLOGY_V1.md)

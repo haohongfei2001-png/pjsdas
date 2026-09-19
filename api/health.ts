@@ -7,6 +7,7 @@ import {
   authenticatedMcpReleaseRequiredTools,
 } from '../gateway/mcpToolSurface.js'
 import { backendReleaseCommit, type ReleaseIdentityEnvironment } from '../gateway/releaseIdentity.js'
+import { publicProductionTopology } from '../gateway/productionTopology.js'
 
 export const PUBLIC_HEALTH_CAPABILITIES = {
   discoveryContext: true,
@@ -63,6 +64,9 @@ export const PUBLIC_HEALTH_CAPABILITIES = {
   gmailCompleteConsumption: 'v1',
   discoverySourceVerification: 'v1',
   discoveryFactAssessmentSeparation: true,
+  canonicalOriginPolicy: 'v1',
+  controlledAudience: 'v1',
+  connectedOriginMigration: 'v1',
 } as const
 
 export function currentWorkspaceAuthority(environment: Record<string, string | undefined> = process.env) {
@@ -74,11 +78,13 @@ export function currentWorkspaceAuthority(environment: Record<string, string | u
 export default {
   fetch(request?: Request, releaseEnvironment?: ReleaseIdentityEnvironment) {
     const workspace = currentWorkspaceAuthority()
+    const topology = publicProductionTopology()
     return new Response(JSON.stringify({
       service: 'pjsdas-authenticated-mcp',
       version: AUTHENTICATED_GATEWAY_VERSION,
       mode: workspace.mode,
       workspaceAuthority: workspace.authority,
+      topology,
       auth: 'supabase-oauth-2.1',
       resource: backendUrl('/api/mcp', request),
       release: {

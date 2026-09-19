@@ -1,7 +1,9 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useUiLanguage } from '../uiLanguage.js'
 import { useCloud } from './CloudContext.js'
+import { connectedWorkspaceAuthorityEnabled } from './connectedWorkspaceRepository.js'
 import AiAccessSettingsCard from '../aiAccess/AiAccessSettingsCard.js'
+import { fetchAudienceStatus, type AudienceStatus } from '../audienceAccessClient.js'
 import './cloudSettings.css'
 
 function formatTime(iso: string | undefined, zh: boolean) {
@@ -16,9 +18,24 @@ export default function CloudSettingsCard() {
   const zh = lang === 'zh'
   const cloud = useCloud()
   const [localError, setLocalError] = useState('')
+  const [audience, setAudience] = useState<AudienceStatus>()
   const user = cloud.session?.user
   const mismatch = Boolean(user && cloud.device.workspaceOwnerUserId && cloud.device.workspaceOwnerUserId !== user.id)
   const conflict = cloud.checkpoint.conflict
+  const transactional = connectedWorkspaceAuthorityEnabled()
+  const remoteLabel = transactional ? (zh ? 'Connected workspace' : 'Connected workspace') : 'Google Drive'
+
+  useEffect(() => {
+    let active = true
+    if (!user) {
+      setAudience(undefined)
+      return () => { active = false }
+    }
+    void fetchAudienceStatus()
+      .then((value) => { if (active) setAudience(value) })
+      .catch(() => { if (active) setAudience(undefined) })
+    return () => { active = false }
+  }, [user?.accountId])
 
   async function run(action: () => Promise<unknown>) {
     setLocalError('')
@@ -31,9 +48,9 @@ export default function CloudSettingsCard() {
 
   const outcomeLabel = !cloud.outcome
     ? ''
-    : cloud.outcome.kind === 'created' ? (zh ? '已在你的 Google Drive 建立 PJSDAS 工作区' : 'PJSDAS workspace created in your Google Drive')
-      : cloud.outcome.kind === 'pushed' ? (zh ? '本地修改已同步到 Google Drive' : 'Local changes synced to Google Drive')
-        : cloud.outcome.kind === 'pulled' ? (zh ? '已从 Google Drive 拉取修改' : 'Changes downloaded from Google Drive')
+    : cloud.outcome.kind === 'created' ? (transactional ? (zh ? '已建立 transactional connected workspace' : 'Transactional connected workspace created') : (zh ? '已在你的 Google Drive 建立 PJSDAS 工作区' : 'PJSDAS workspace created in your Google Drive'))
+      : cloud.outcome.kind === 'pushed' ? (zh ? `本地修改已同步到 ${remoteLabel}` : `Local changes synced to ${remoteLabel}`)
+        : cloud.outcome.kind === 'pulled' ? (zh ? `已从 ${remoteLabel} 拉取修改` : `Changes downloaded from ${remoteLabel}`)
           : cloud.outcome.kind === 'conflict' ? (zh ? '检测到同步冲突' : 'Sync conflict detected')
             : cloud.outcome.kind === 'account_mismatch' ? (zh ? 'PJSDAS 账号与本地工作区不匹配' : 'PJSDAS account does not match local workspace')
               : (zh ? '已同步' : 'Synced')
@@ -44,10 +61,14 @@ export default function CloudSettingsCard() {
         <div className="cloud-settings-heading">
           <div>
             <div className="eyebrow">PJSDAS ACCOUNT & DRIVE</div>
-            <h2>{zh ? 'PJSDAS 账号与 Google Drive 同步' : 'PJSDAS account & Google Drive sync'}</h2>
-            <p>{zh
-              ? 'Google 登录是稳定的 PJSDAS 身份层，会跨刷新和浏览器重开保持。IndexedDB 仍是即时工作区；Google Drive 隐藏 appDataFolder 是你的云端副本，也是 GPT Monitor / Gmail 自动摄入与本机之间的同步桥梁。'
-              : 'Google sign-in is the durable PJSDAS identity layer and survives refreshes and browser restarts. IndexedDB remains the immediate workspace; the hidden Drive appDataFolder is your cloud copy and the bridge between autonomous GPT/Gmail ingestion and this device.'}</p>
+            <h2>{transactional ? (zh ? 'PJSDAS 账号与 Connected Workspace' : 'PJSDAS account & connected workspace') : (zh ? 'PJSDAS 账号与 Google Drive 同步' : 'PJSDAS account & Google Drive sync')}</h2>
+            <p>{transactional
+              ? (zh
+                  ? 'Connected mode 下，transactional workspace 是持久状态权威；IndexedDB 是当前浏览器的工作副本 / 缓存，Google Drive 保留为备份、导出与可携带副本。'
+                  : 'In connected mode, the transactional workspace is the durable authority; IndexedDB is this browser’s working copy/cache and Google Drive remains backup/export/portability storage.')
+              : (zh
+                  ? 'Google 登录是稳定的 PJSDAS 身份层。当前生产仍使用 Drive authority：IndexedDB 是即时工作区，Google Drive 隐藏 appDataFolder 是云端副本与自动摄入同步桥梁。'
+                  : 'Google sign-in is the durable PJSDAS identity layer. Current production still uses Drive authority: IndexedDB is the immediate workspace and the hidden Drive appDataFolder is the cloud copy / autonomous-ingestion bridge.')}</p>
           </div>
           <span className={`cloud-state ${conflict || mismatch ? 'warning' : user ? 'online' : ''}`}>
             {mismatch
@@ -76,6 +97,13 @@ export default function CloudSettingsCard() {
           </div>
         ) : (
           <>
+            {audience ? (
+              <div className={`cloud-audience-state ${audience.allowed ? 'allowed' : 'blocked'}`}>
+                <div><strong>{audience.mode === 'allowlist' ? (zh ? 'Controlled production' : 'Controlled production') : (zh ? 'Legacy access mode' : 'Legacy access mode')}</strong><span>{audience.allowed ? (zh ? '当前账号已获准使用 connected 能力。' : 'This account is authorized for connected capabilities.') : (zh ? '当前账号不在 controlled-production allowlist；本地模式仍可使用。' : 'This account is not in the controlled-production allowlist; local mode remains available.')}</span></div>
+                <small>{audience.role ?? '—'}</small>
+              </div>
+            ) : null}
+
             <div className="cloud-account-row">
               <div>
                 <span>{zh ? 'PJSDAS 账号' : 'PJSDAS account'}</span>
@@ -85,12 +113,12 @@ export default function CloudSettingsCard() {
               <div>
                 <span>{zh ? '最后同步' : 'Last sync'}</span>
                 <strong>{formatTime(cloud.checkpoint.lastSyncedAt, zh)}</strong>
-                <small>{cloud.checkpoint.lastSyncedVersion ? `Drive version ${cloud.checkpoint.lastSyncedVersion}` : '—'}</small>
+                <small>{cloud.checkpoint.lastSyncedVersion ? `${transactional ? 'Connected revision' : 'Drive version'} ${cloud.checkpoint.lastSyncedVersion}` : '—'}</small>
               </div>
               <div>
                 <span>{zh ? '当前工作区' : 'Workspace'}</span>
                 <strong>{zh ? '本机 IndexedDB' : 'Local IndexedDB'}</strong>
-                <small>{cloud.device.deviceId.slice(0, 8)} · local-first</small>
+                <small>{cloud.device.deviceId.slice(0, 8)} · {transactional ? 'local cache' : 'local-first'}</small>
               </div>
             </div>
 

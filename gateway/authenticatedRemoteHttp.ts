@@ -2,6 +2,7 @@ import { createMcpHandler } from '@modelcontextprotocol/server'
 import { createAuthenticatedDriveWorkspaceSource } from './authenticatedDriveSource.js'
 import { createTransactionalWorkspaceSource } from './transactionalWorkspaceSource.js'
 import { createAuthorizationGrantStore, grantAllows, type AuthorizationGrant } from './authorizationGrantStore.js'
+import { createConfiguredAudienceAccessGuard } from './audienceAccess.js'
 import { backendUrl } from './backendOrigin.js'
 import { createPjsdasMcpServer } from './serverFactory.js'
 import { createSupabaseIdentityResolver } from './supabaseIdentity.js'
@@ -49,7 +50,7 @@ function serviceError(caught: unknown, request: Request) {
   if (caught instanceof WorkspaceSourceError) {
     if (caught.code === 'AUTH_REQUIRED' || caught.code === 'AUTH_INVALID') return unauthorized(request, caught.message)
     const conflict = caught.code === 'WORKSPACE_CONFLICT'
-    const forbidden = caught.code === 'AUTH_FORBIDDEN'
+    const forbidden = caught.code === 'AUTH_FORBIDDEN' || caught.code === 'AUDIENCE_ACCESS_REQUIRED' || caught.code === 'AUDIENCE_IDENTITY_MISMATCH'
     return new Response(JSON.stringify({ code: caught.code, message: caught.message, retryable: caught.retryable }), {
       status: forbidden ? 403 : conflict ? 409 : caught.retryable ? 503 : 500,
       headers: { 'cache-control': 'no-store', 'content-type': 'application/json; charset=utf-8' },
@@ -103,6 +104,7 @@ export async function authenticatedRemoteMcpFetch(request: Request) {
       publishableKey: PJSDAS_SUPABASE_PUBLISHABLE_KEY,
     })
     const { identity, accessToken } = await resolveIdentity(request)
+    await createConfiguredAudienceAccessGuard({ supabaseUrl: PJSDAS_SUPABASE_URL })(identity)
     let grants: AuthorizationGrant[] = []
     if (identity.oauthClientId) {
       const grantStore = createAuthorizationGrantStore({
