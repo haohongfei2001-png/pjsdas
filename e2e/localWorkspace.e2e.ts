@@ -102,14 +102,14 @@ test('critical local-first action flow survives completion, undo, and browser re
 test('primary navigation, language, and quick-capture surfaces stay coherent in English', async ({ page }) => {
   await seedLocalWorkspace(page)
 
-  await page.getByRole('button', { name: /机会/ }).click()
+  await page.locator('.surface-nav').getByRole('button', { name: /机会/ }).click()
   await expect(page.getByRole('heading', { name: '机会、流程和准备在同一个工作面' })).toBeVisible()
   await expect(page.getByRole('button', { name: 'AI产品经理' })).toBeVisible()
 
-  await page.getByRole('button', { name: 'EN' }).first().click()
+  await page.getByRole('button', { name: 'EN', exact: true }).click()
   await expect(page.getByRole('heading', { name: 'Opportunities, pipeline, and preparation in one workspace' })).toBeVisible()
 
-  await page.getByRole('button', { name: /Today/ }).click()
+  await page.locator('.surface-nav').getByRole('button', { name: /Today/ }).click()
   await expect(page.getByRole('heading', { name: 'Only the next moves for today' })).toBeVisible()
 
   await page.locator('.today-manual-fallback > summary').click()
