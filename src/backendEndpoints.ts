@@ -24,6 +24,13 @@ export function readBackendOrigins() {
   return unique.size ? [...unique] : [...DEFAULT_BACKEND_ORIGINS]
 }
 
+export function expectedBackendMode() {
+  const env = import.meta.env as Record<string, string | undefined>
+  return env.VITE_PJSDAS_CONNECTED_AUTHORITY?.trim() === 'transactional'
+    ? { authority: 'transactional', mode: 'transactional-connected' }
+    : { authority: 'google-drive', mode: 'google-drive-trusted-ingestion' }
+}
+
 async function healthy(origin: string, fetchImpl: typeof fetch) {
   const controller = new AbortController()
   const timer = globalThis.setTimeout(() => controller.abort(), HEALTH_TIMEOUT_MS)
@@ -37,11 +44,14 @@ async function healthy(origin: string, fetchImpl: typeof fetch) {
       status?: string
       version?: string
       mode?: string
+      workspaceAuthority?: string
       capabilities?: { deploymentPortability?: boolean }
     } | undefined
+    const expected = expectedBackendMode()
     return body?.status === 'ok'
       && body.version === '1.9.0-alpha.1'
-      && body.mode === 'google-drive-trusted-ingestion'
+      && body.mode === expected.mode
+      && body.workspaceAuthority === expected.authority
       && body.capabilities?.deploymentPortability === true
   } catch {
     return false
