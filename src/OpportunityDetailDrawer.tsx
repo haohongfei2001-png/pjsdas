@@ -128,8 +128,8 @@ export default function OpportunityDetailDrawer({
         </header>
 
         <section className="opportunity-detail-score-grid" aria-label={zh ? '核心判断' : 'Core assessment'}>
-          <div><small>FIT</small><b>{Math.round(opportunity.fitScore)}</b></div>
-          <div><small>{zh ? '机会价值' : 'VALUE'}</small><b>{Math.round(opportunity.opportunityValue)}</b></div>
+          <div><small>FIT</small><b>{opportunity.assessmentStatus === 'unassessed' ? (zh ? '未评估' : 'Unassessed') : Math.round(opportunity.fitScore)}</b></div>
+          <div><small>{zh ? '机会价值' : 'VALUE'}</small><b>{opportunity.assessmentStatus === 'unassessed' ? (zh ? '未评估' : 'Unassessed') : Math.round(opportunity.opportunityValue)}</b></div>
           <div><small>{zh ? '当前阶段' : 'STAGE'}</small><strong>{effectiveStageText}</strong></div>
           <div><small>{zh ? '截止' : 'DEADLINE'}</small><strong>{formatDate(opportunity.deadline, zh)}</strong></div>
         </section>
