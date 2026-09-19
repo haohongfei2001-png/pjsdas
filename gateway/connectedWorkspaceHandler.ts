@@ -151,6 +151,7 @@ export function createConnectedWorkspaceHandler(config: ConnectedWorkspaceHandle
           workspaceId: workspace.workspaceId,
           workspaceVersion: `txn:${workspace.revision}`,
           revision: workspace.revision,
+          schemaVersion: workspace.schemaVersion,
           snapshot: workspace.snapshot,
         }, origin, config.allowedOrigins)
       }
@@ -179,6 +180,7 @@ export function createConnectedWorkspaceHandler(config: ConnectedWorkspaceHandle
           workspaceId: result.workspaceId,
           workspaceVersion: `txn:${result.revision}`,
           revision: result.revision,
+          schemaVersion: nextSnapshot.version,
           snapshot: result.snapshot,
           receipt: result.receipt,
         }, origin, config.allowedOrigins)
