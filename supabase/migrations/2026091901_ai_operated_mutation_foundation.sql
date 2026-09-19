@@ -28,6 +28,7 @@ create table if not exists public.pjsdas_command_ledger (
   principal_kind text not null,
   client_id text,
   provenance jsonb not null default '{}'::jsonb,
+  compensation jsonb,
   effective_time timestamptz,
   status text not null check (status in ('COMMITTED', 'FAILED')),
   resulting_revision bigint,
@@ -134,6 +135,7 @@ create or replace function public.pjsdas_commit_workspace(
   target_principal_kind text,
   target_client_id text default null,
   target_provenance jsonb default '{}'::jsonb,
+  target_compensation jsonb default null,
   target_effective_time timestamptz default null
 )
 returns table (
@@ -214,7 +216,8 @@ begin
     'commandId', target_command_id,
     'status', 'COMMITTED',
     'operation', target_operation,
-    'revision', next_revision
+    'revision', next_revision,
+    'undoAvailable', target_compensation is not null
   );
 
   update public.pjsdas_workspaces
@@ -235,6 +238,7 @@ begin
     principal_kind,
     client_id,
     provenance,
+    compensation,
     effective_time,
     status,
     resulting_revision,
@@ -251,6 +255,7 @@ begin
     target_principal_kind,
     target_client_id,
     coalesce(target_provenance, '{}'::jsonb),
+    target_compensation,
     target_effective_time,
     'COMMITTED',
     next_revision,
@@ -268,6 +273,6 @@ end
 $$;
 
 revoke all on function public.pjsdas_bootstrap_workspace(uuid, jsonb, integer, text, text) from public, anon, authenticated;
-revoke all on function public.pjsdas_commit_workspace(uuid, text, text, text, bigint, jsonb, integer, text, text, jsonb, timestamptz) from public, anon, authenticated;
+revoke all on function public.pjsdas_commit_workspace(uuid, text, text, text, bigint, jsonb, integer, text, text, jsonb, jsonb, timestamptz) from public, anon, authenticated;
 grant execute on function public.pjsdas_bootstrap_workspace(uuid, jsonb, integer, text, text) to service_role;
-grant execute on function public.pjsdas_commit_workspace(uuid, text, text, text, bigint, jsonb, integer, text, text, jsonb, timestamptz) to service_role;
+grant execute on function public.pjsdas_commit_workspace(uuid, text, text, text, bigint, jsonb, integer, text, text, jsonb, jsonb, timestamptz) to service_role;
