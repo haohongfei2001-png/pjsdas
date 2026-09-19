@@ -54,17 +54,6 @@ export function createConnectedWorkspaceHandler(config: ConnectedWorkspaceHandle
     publishableKey: config.supabasePublishableKey,
     fetchImpl,
   })
-  const store = createTransactionalWorkspaceStore({
-    supabaseUrl: config.supabaseUrl,
-    serviceRoleKey: config.serviceRoleKey,
-    fetchImpl,
-  })
-  const kernel = createMutationKernel({
-    supabaseUrl: config.supabaseUrl,
-    serviceRoleKey: config.serviceRoleKey,
-    fetchImpl,
-  })
-
   return async function handleConnectedWorkspace(request: Request) {
     const origin = request.headers.get('origin')
     if (request.method === 'OPTIONS') {
@@ -88,6 +77,16 @@ export function createConnectedWorkspaceHandler(config: ConnectedWorkspaceHandle
       if (identity.oauthClientId) {
         throw new WorkspaceSourceError('AUTH_FORBIDDEN', 'Delegated OAuth clients cannot call the first-party connected workspace endpoint.', false)
       }
+      const store = createTransactionalWorkspaceStore({
+        supabaseUrl: config.supabaseUrl,
+        serviceRoleKey: config.serviceRoleKey,
+        fetchImpl,
+      })
+      const kernel = createMutationKernel({
+        supabaseUrl: config.supabaseUrl,
+        serviceRoleKey: config.serviceRoleKey,
+        fetchImpl,
+      })
 
       if (request.method === 'GET') {
         const workspace = await store.readForUser(identity.userId)
