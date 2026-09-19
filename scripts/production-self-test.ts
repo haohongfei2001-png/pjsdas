@@ -1,12 +1,14 @@
 import { DEFAULT_BACKEND_ORIGIN } from '../gateway/backendOrigin.js'
 import { runProductionSelfTest } from '../gateway/productionSelfTest.js'
 import { resolveProductionSelfTestAccessToken } from '../gateway/productionSelfTestAuth.js'
+import { resolveProductionBaseUrls } from '../gateway/productionBaseUrls.js'
 
 const canonicalApiOrigin = process.env.PJSDAS_EXPECTED_CANONICAL_API_ORIGIN?.trim().replace(/\/$/, '') || undefined
-const configuredOrigins = (process.env.PJSDAS_PRODUCTION_BASE_URLS ?? process.env.PJSDAS_PRODUCTION_BASE_URL ?? DEFAULT_BACKEND_ORIGIN)
-const rawOrigins = [canonicalApiOrigin, ...configuredOrigins.split(',')]
-  .map((value) => value.trim().replace(/\/$/, ''))
-  .filter(Boolean)
+const configuredOrigins = process.env.PJSDAS_PRODUCTION_BASE_URLS ?? process.env.PJSDAS_PRODUCTION_BASE_URL ?? DEFAULT_BACKEND_ORIGIN
+const rawOrigins = resolveProductionBaseUrls({
+  canonicalApiOrigin,
+  configuredOrigins,
+})
 const accessToken = await resolveProductionSelfTestAccessToken({
   accessToken: process.env.PJSDAS_SELF_TEST_ACCESS_TOKEN,
   email: process.env.PJSDAS_SELF_TEST_EMAIL,
