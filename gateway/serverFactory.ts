@@ -19,6 +19,7 @@ import {
   invokeTrustedIngestion,
 } from './ingestSources.js'
 import { addOpportunitiesSchema, invokeAddOpportunities } from './addOpportunities.js'
+import { applyUserCommandSchema, invokeApplyUserCommand } from './userCommands.js'
 import { invokeProposeChanges, proposeChangesSchema } from './proposeChanges.js'
 import type { WorkspaceSource } from './workspaceSource.js'
 
@@ -90,7 +91,11 @@ export function createPjsdasMcpServer(
       'When the user explicitly asks in the current conversation to add, save, record, or write specific source-backed job opportunities into PJSDAS, use add_opportunities and execute the write immediately. Do not route that explicit instruction through propose_changes and do not require a second Apply click.',
       'Use add_opportunities only for additive Opportunity creation. It is duplicate-safe and cannot change Decision Rules, delete history, close processes, or make other policy decisions.',
       'Do not use add_opportunities when the user is only asking for recommendations, evaluation, discovery, or whether a job should be added. Those requests do not constitute write authorization.',
-      'If Fit or Opportunity Value is not already grounded, omit those optional scores rather than inventing precision; PJSDAS will create the opportunity with a neutral pending-assessment placeholder.',
+      'If Fit or Opportunity Value is not already grounded, omit those optional scores rather than inventing precision; PJSDAS will mark the opportunity unassessed even if internal ranking needs fallback values.',
+      'For an explicit current-user progress command on an existing unique target, use apply_user_command. Read the relevant opportunity/action first and pass its exact stable id. Do not guess an id or use a fuzzy company-only target.',
+      'P1 examples include: record an application submission; record a recruiting event; set an explicit deadline; complete/start/skip/restore an Action; abandon one Opportunity without closing the recruiting process; correct a bounded user-asserted fact; change one Opportunity roleType; add one manual Action.',
+      'If the user intent is explicit but the target or a required parameter is ambiguous, ask only for that missing detail in the current conversation. Do not route ordinary P2 ambiguity through propose_changes.',
+      'Never use apply_user_command for bulk operations, identity merge/rename, Decision Rules, workspace conflict override, restore/migration, authorization changes, or external consequences such as applying, withdrawing, sending mail, or accepting an Offer.',
     )
   }
 
@@ -216,6 +221,12 @@ export function createPjsdasMcpServer(
       description: 'Directly add source-backed opportunities to the canonical PJSDAS workspace only when the current user message explicitly asks to add, save, record, or write those specific jobs. This is an immediate duplicate-safe additive write with no review click; never use it for mere recommendations or autonomous discovery.',
       inputSchema: addOpportunitiesSchema, annotations: directWriteAnnotations,
     }, async (args) => invokeAddOpportunities(source, args))
+
+    server.registerTool('apply_user_command', {
+      title: 'Apply one explicit PJSDAS user command',
+      description: 'Directly commit one bounded, explicit, low-risk user command against an exact PJSDAS target. Ambiguous targets must be clarified in the AI conversation before calling this tool; governed/high-impact changes remain review-only.',
+      inputSchema: applyUserCommandSchema, annotations: directWriteAnnotations,
+    }, async (args) => invokeApplyUserCommand(source, args))
   }
 
   if (trustedDiscoveryEnabled) {
