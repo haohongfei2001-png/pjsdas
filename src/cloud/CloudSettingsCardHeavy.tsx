@@ -1,7 +1,8 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useUiLanguage } from '../uiLanguage.js'
 import { useCloud } from './CloudContext.js'
 import AiAccessSettingsCard from '../aiAccess/AiAccessSettingsCard.js'
+import { fetchAudienceStatus, type AudienceStatus } from '../audienceAccessClient.js'
 import './cloudSettings.css'
 
 function formatTime(iso: string | undefined, zh: boolean) {
@@ -16,9 +17,22 @@ export default function CloudSettingsCard() {
   const zh = lang === 'zh'
   const cloud = useCloud()
   const [localError, setLocalError] = useState('')
+  const [audience, setAudience] = useState<AudienceStatus>()
   const user = cloud.session?.user
   const mismatch = Boolean(user && cloud.device.workspaceOwnerUserId && cloud.device.workspaceOwnerUserId !== user.id)
   const conflict = cloud.checkpoint.conflict
+
+  useEffect(() => {
+    let active = true
+    if (!user) {
+      setAudience(undefined)
+      return () => { active = false }
+    }
+    void fetchAudienceStatus()
+      .then((value) => { if (active) setAudience(value) })
+      .catch(() => { if (active) setAudience(undefined) })
+    return () => { active = false }
+  }, [user?.accountId])
 
   async function run(action: () => Promise<unknown>) {
     setLocalError('')
@@ -76,6 +90,13 @@ export default function CloudSettingsCard() {
           </div>
         ) : (
           <>
+            {audience ? (
+              <div className={`cloud-audience-state ${audience.allowed ? 'allowed' : 'blocked'}`}>
+                <div><strong>{audience.mode === 'allowlist' ? (zh ? 'Controlled production' : 'Controlled production') : (zh ? 'Legacy access mode' : 'Legacy access mode')}</strong><span>{audience.allowed ? (zh ? '当前账号已获准使用 connected 能力。' : 'This account is authorized for connected capabilities.') : (zh ? '当前账号不在 controlled-production allowlist；本地模式仍可使用。' : 'This account is not in the controlled-production allowlist; local mode remains available.')}</span></div>
+                <small>{audience.role ?? '—'}</small>
+              </div>
+            ) : null}
+
             <div className="cloud-account-row">
               <div>
                 <span>{zh ? 'PJSDAS 账号' : 'PJSDAS account'}</span>
