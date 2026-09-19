@@ -53,6 +53,7 @@ import type {
 import './timeplan.css'
 import './surfaceConsolidation.css'
 import './interactionDetail.css'
+import './webConsole.css'
 
 type Surface = 'today' | 'opportunities' | 'attention' | 'activity' | 'settings'
 type OpportunityTab = 'opportunities' | 'pipeline' | 'prepare'
@@ -234,7 +235,7 @@ export default function AppV8() {
             return (
               <button key={item} className={surface === item ? 'nav-item active surface-nav-item' : 'nav-item surface-nav-item'} onClick={() => setSurface(item)}>
                 <span>{zh ? label.zh : label.en}</span>
-                <small>{zh ? label.hintZh : label.hintEn}</small>
+                <small>{item === 'attention' ? `${attentionCount} ${zh ? '项' : 'items'}` : (zh ? label.hintZh : label.hintEn)}</small>
               </button>
             )
           })}
@@ -248,7 +249,7 @@ export default function AppV8() {
       <main className="main-panel surface-main">
         {loading ? <div className="empty-card">{zh ? '正在读取本地工作区…' : 'Loading local workspace…'}</div> : null}
         {!loading && surface === 'today' ? (
-          <TodaySurface ranked={ranked} now={now} opportunities={opportunities} groups={groups} rules={rules} timeline={timeline} attentionCount={attentionCount} workspaceEmpty={workspaceEmpty} onStart={navigateFromStart} onMark={markAction} onChanged={reload} onOpenOpportunity={setSelectedOpportunityId} />
+          <TodaySurface ranked={ranked} now={now} opportunities={opportunities} groups={groups} rules={rules} timeline={timeline} attentionCount={attentionCount} workspaceEmpty={workspaceEmpty} onStart={navigateFromStart} onOpenAttention={() => setSurface('attention')} onMark={markAction} onChanged={reload} onOpenOpportunity={setSelectedOpportunityId} />
         ) : null}
         {!loading && surface === 'opportunities' ? (
           <OpportunitiesSurface opportunities={opportunities} groups={groups} processes={processes} prep={prep} tab={opportunityTab} onTabChange={chooseOpportunityTab} onOpenOpportunity={setSelectedOpportunityId} />
@@ -285,7 +286,7 @@ export default function AppV8() {
   )
 }
 
-function TodaySurface({ ranked, now, opportunities, groups, rules, timeline, attentionCount, workspaceEmpty, onStart, onMark, onChanged, onOpenOpportunity }: {
+function TodaySurface({ ranked, now, opportunities, groups, rules, timeline, attentionCount, workspaceEmpty, onStart, onOpenAttention, onMark, onChanged, onOpenOpportunity }: {
   ranked: ReturnType<typeof rankActions>
   now: Date
   opportunities: Opportunity[]
@@ -295,6 +296,7 @@ function TodaySurface({ ranked, now, opportunities, groups, rules, timeline, att
   attentionCount: number
   workspaceEmpty: boolean
   onStart: () => void
+  onOpenAttention: () => void
   onMark: (id: string, status: Action['status']) => Promise<void>
   onChanged: () => Promise<void>
   onOpenOpportunity: (id: string) => void
@@ -308,14 +310,14 @@ function TodaySurface({ ranked, now, opportunities, groups, rules, timeline, att
   const top = plan.planned[0]
   const upcoming = upcomingNodes(ranked, now, rules.upcomingHorizonDays, rules.upcomingNodeLimit).slice(0, 5)
   const nextHardNode = upcoming.find((item) => Boolean(item.action.dueAt))
-  const latestActivity = timeline[0]?.recordedAt
+  const latestActivity = [...timeline].sort((a, b) => b.recordedAt.localeCompare(a.recordedAt))[0]?.recordedAt
 
   return (
     <section className="surface-page today-surface">
       <SurfaceHeader eyebrow={`TODAY · ${formatDateOnly(now.toISOString())}`} title={zh ? '今天只处理下一步' : 'Only the next moves for today'} text={zh ? '默认只呈现现在值得做的事；日常事实优先由 AI / 自动化记录，Web 保留完整手工 fallback。' : 'The default view shows only what deserves attention now. AI and automation handle routine capture; the Web remains a complete manual fallback.'} />
       <div className="today-status-strip" aria-label={zh ? '工作区状态' : 'Workspace status'}>
         <div><span>{zh ? '下一硬节点' : 'Next hard node'}</span><strong>{nextHardNode?.action.dueAt ? formatDateTime(nextHardNode.action.dueAt) : (zh ? '暂无' : 'None')}</strong></div>
-        <button className={attentionCount ? 'attention-hot' : ''} type="button" onClick={() => window.dispatchEvent(new CustomEvent('pjsdas:navigate-attention'))}><span>Attention</span><strong>{attentionCount}</strong></button>
+        <button className={attentionCount ? 'attention-hot' : ''} type="button" onClick={onOpenAttention}><span>Attention</span><strong>{attentionCount}</strong></button>
         <div><span>{zh ? '最近活动' : 'Latest activity'}</span><strong>{latestActivity ? formatDateTime(latestActivity) : (zh ? '暂无' : 'None')}</strong></div>
       </div>
 
@@ -336,7 +338,7 @@ function TodaySurface({ ranked, now, opportunities, groups, rules, timeline, att
         </article>
       ) : workspaceEmpty ? (
         <GettingStartedCard onStart={onStart} />
-      ) : <EmptyState title={zh ? '今天没有可执行行动' : 'No executable action today'} text={zh ? '如果刚收到邮件或完成了投递，用“快速记录”更新工作区。' : 'If something just changed, use Quick capture to update the workspace.'} />}
+      ) : <EmptyState title={zh ? '今天没有可执行行动' : 'No executable action today'} text={zh ? '如果 AI / 自动化没有记录刚发生的变化，可以展开页面底部的手工 fallback。' : 'If AI or automation did not capture a recent change, open the manual fallback at the bottom of the page.'} />}
 
       {!workspaceEmpty ? (
         <div className="surface-two-column">
@@ -467,7 +469,7 @@ function PipelinePanel({ processes, opportunities, onOpenOpportunity }: { proces
       {sorted.length ? <div className="surface-pipeline-grid">{sorted.map((item) => {
         const opportunityId = opportunityIdFor(item)
         return <article className="surface-pipeline-card" key={item.id}><div><strong>{item.company}</strong><h3>{item.role}</h3></div><span className="surface-stage">{presentStageLabel(item.stage, item.stageLabel, lang)}</span><dl><div><dt>{zh ? '最近进展' : 'Last progress'}</dt><dd>{item.lastProgressAt ? formatDateOnly(item.lastProgressAt) : '—'}</dd></div></dl><div className="surface-pipeline-footer">{opportunityId ? <button className="text-button" onClick={() => onOpenOpportunity(opportunityId)}>{zh ? '岗位详情' : 'Details'}</button> : null}</div></article>
-      })}</div> : <EmptyState title={zh ? '暂无在途流程' : 'No pipeline yet'} text={zh ? '收到测评、笔试或面试通知后，从 Today 的“快速记录”录入真实流程事件。' : 'After a real assessment, written test, or interview notice arrives, record it from Today → Quick capture.'} />}
+      })}</div> : <EmptyState title={zh ? '暂无在途流程' : 'No pipeline yet'} text={zh ? '流程通知通常由 AI / Gmail 自动进入；必要时使用 Today 底部的手工 fallback。' : 'Process notices normally arrive through AI or Gmail. Use Today’s manual fallback only when needed.'} />}
     </section>
   )
 }
@@ -522,19 +524,39 @@ function SettingsSurface({ lastImport, rules, onChanged }: { lastImport?: Import
 
   return (
     <section className="surface-page settings-surface">
-      <SurfaceHeader eyebrow="SETTINGS" title={zh ? '偏好、规则、同步与数据安全' : 'Preferences, rules, sync, and data safety'} text={zh ? '低频配置集中在这里；它们影响决策，但不应该长期占据产品主导航。' : 'Lower-frequency configuration lives here. It governs decisions without occupying primary navigation.'} />
-      <div className="surface-tool-strip"><div><strong>{zh ? '数据安全' : 'Data safety'}</strong><span>{zh ? '大版本调整、换设备或清理浏览器前，可以导出完整本地快照。' : 'Export a complete local snapshot before major upgrades, device changes, or browser cleanup.'}</span></div><div className="surface-tool-row"><LocalBackupDock onChanged={() => { void onChanged() }} /></div></div>
-      <section className="surface-settings-section"><div className="surface-section-label">ACCOUNT & DISCOVERY</div><CloudSettingsCard /><DiscoveryProfileCard /></section>
-      <section className="surface-settings-section"><div className="surface-section-label">DECISION POLICY</div><RulesView rules={rules} onChanged={onChanged} /></section>
-      <section className="surface-settings-section">
-        <div className="surface-section-label">IMPORT & RECOVERY</div>
-        <div className="surface-import-card"><div><strong>{zh ? 'Excel 初始化 / 恢复' : 'Excel initialization / recovery'}</strong><p>{zh ? 'Excel 已不是日常数据源，只在初始化、历史迁移或恢复时使用。' : 'Excel is no longer the daily source of truth; use it for initialization, migration, or recovery.'}</p></div><label className="file-button">{busy ? (zh ? '处理中…' : 'Processing…') : (zh ? '选择工作簿' : 'Choose workbook')}<input type="file" accept=".xlsx,.xls" disabled={busy} onChange={(event) => { void readWorkbook(event.target.files?.[0]) }} /></label></div>
-        {error ? <div className="notice error">{error}</div> : null}
-        {message ? <div className="notice success">{message}</div> : null}
-        {preview ? <div className="surface-import-preview"><div><strong>{preview.summary.filename}</strong><span>{preview.summary.opportunities} {zh ? '岗位' : 'opportunities'} · {preview.summary.actions} Actions</span></div><button className="primary-button" disabled={busy} onClick={() => { void commitImport() }}>{zh ? '确认导入' : 'Confirm import'}</button></div> : null}
-        {lastImport ? <p className="surface-footnote">{zh ? '最近导入' : 'Last import'}：{lastImport.filename} · {formatDateTime(lastImport.importedAt)}</p> : null}
-      </section>
-      <section className="surface-settings-section"><div className="surface-section-label">INTERFACE</div><div className="surface-language-card"><div><strong>{zh ? '界面语言' : 'Interface language'}</strong><p>{zh ? '语言只影响界面显示，不改变工作区数据。' : 'Language affects presentation only, not workspace data.'}</p></div><LanguageSwitch /></div></section>
+      <SurfaceHeader eyebrow="SETTINGS" title={zh ? '连接、自动化和长期控制' : 'Connections, automation, and durable control'} text={zh ? '设置是低频控制面。默认只展开连接状态，其余规则、偏好和恢复工具按需查看。' : 'Settings is a low-frequency control surface. Connection state stays visible; preferences, policy, and recovery expand only when needed.'} />
+
+      <details className="settings-group" open>
+        <summary><div><strong>{zh ? '连接与自动化' : 'Connections & automation'}</strong><span>{zh ? '账户、云同步和后台来源' : 'Account, cloud sync, and background sources'}</span></div></summary>
+        <div className="settings-group-body"><CloudSettingsCard /></div>
+      </details>
+
+      <details className="settings-group">
+        <summary><div><strong>{zh ? '岗位发现偏好' : 'Discovery preferences'}</strong><span>{zh ? '长期搜索边界，不是日常操作' : 'Durable discovery boundaries, not daily work'}</span></div></summary>
+        <div className="settings-group-body"><DiscoveryProfileCard /></div>
+      </details>
+
+      <details className="settings-group">
+        <summary><div><strong>{zh ? '决策规则' : 'Decision policy'}</strong><span>{zh ? '确定性排序和风险阈值' : 'Deterministic ranking and guardrails'}</span></div></summary>
+        <div className="settings-group-body"><RulesView rules={rules} onChanged={onChanged} /></div>
+      </details>
+
+      <details className="settings-group">
+        <summary><div><strong>{zh ? '数据与恢复' : 'Data & recovery'}</strong><span>{zh ? '备份、导入和恢复路径' : 'Backup, import, and recovery paths'}</span></div></summary>
+        <div className="settings-group-body">
+          <div className="settings-inline-tool"><div><strong>{zh ? '本地快照' : 'Local snapshot'}</strong><p>{zh ? '大版本调整、换设备或清理浏览器前导出完整快照。' : 'Export a full snapshot before major upgrades, device changes, or browser cleanup.'}</p></div><LocalBackupDock onChanged={() => { void onChanged() }} /></div>
+          <div className="surface-import-card"><div><strong>{zh ? 'Excel 初始化 / 恢复' : 'Excel initialization / recovery'}</strong><p>{zh ? 'Excel 已不是日常数据源，只在初始化、历史迁移或恢复时使用。' : 'Excel is no longer the daily source of truth; use it for initialization, migration, or recovery.'}</p></div><label className="file-button">{busy ? (zh ? '处理中…' : 'Processing…') : (zh ? '选择工作簿' : 'Choose workbook')}<input type="file" accept=".xlsx,.xls" disabled={busy} onChange={(event) => { void readWorkbook(event.target.files?.[0]) }} /></label></div>
+          {error ? <div className="notice error">{error}</div> : null}
+          {message ? <div className="notice success">{message}</div> : null}
+          {preview ? <div className="surface-import-preview"><div><strong>{preview.summary.filename}</strong><span>{preview.summary.opportunities} {zh ? '岗位' : 'opportunities'} · {preview.summary.actions} Actions</span></div><button className="primary-button" disabled={busy} onClick={() => { void commitImport() }}>{zh ? '确认导入' : 'Confirm import'}</button></div> : null}
+          {lastImport ? <p className="surface-footnote">{zh ? '最近导入' : 'Last import'}：{lastImport.filename} · {formatDateTime(lastImport.importedAt)}</p> : null}
+        </div>
+      </details>
+
+      <details className="settings-group">
+        <summary><div><strong>{zh ? '界面' : 'Interface'}</strong><span>{zh ? '显示层，不改变业务数据' : 'Presentation only; business data is unchanged'}</span></div></summary>
+        <div className="settings-group-body"><div className="surface-language-card"><div><strong>{zh ? '界面语言' : 'Interface language'}</strong><p>{zh ? '语言只影响界面显示，不改变工作区数据。' : 'Language affects presentation only, not workspace data.'}</p></div><LanguageSwitch /></div></div>
+      </details>
     </section>
   )
 }
