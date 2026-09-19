@@ -1,7 +1,6 @@
 name: PJSDAS RC Browser Hardening
 
 on:
-  pull_request:
   workflow_dispatch:
 
 permissions:
