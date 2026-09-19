@@ -63,7 +63,7 @@ export function createGoogleAccessTokenHandler(config: GoogleAccessTokenHandlerC
     const origin = request.headers.get('origin')
 
     if (request.method === 'OPTIONS') {
-      const allowed = !origin || config.allowedOrigins.includes(origin)
+      const allowed = Boolean(origin && config.allowedOrigins.includes(origin))
       return new Response(null, {
         status: allowed ? 204 : 403,
         headers: corsHeaders(origin, config.allowedOrigins),
@@ -73,8 +73,8 @@ export function createGoogleAccessTokenHandler(config: GoogleAccessTokenHandlerC
     if (request.method !== 'POST') {
       return json(405, { code: 'METHOD_NOT_ALLOWED', message: 'Use POST.' }, origin, config.allowedOrigins)
     }
-    if (origin && !config.allowedOrigins.includes(origin)) {
-      return json(403, { code: 'ORIGIN_NOT_ALLOWED', message: 'This origin is not allowed to restore Google Drive access.' }, origin, config.allowedOrigins)
+    if (!origin || !config.allowedOrigins.includes(origin)) {
+      return json(403, { code: 'ORIGIN_NOT_ALLOWED', message: 'Google credential restoration is available only to an approved first-party browser origin.' }, origin, config.allowedOrigins)
     }
 
     try {
@@ -83,6 +83,9 @@ export function createGoogleAccessTokenHandler(config: GoogleAccessTokenHandlerC
       }
 
       const { identity, accessToken: pjsdasAccessToken } = await resolveIdentity(request)
+      if (identity.oauthClientId) {
+        throw new WorkspaceSourceError('AUTH_FORBIDDEN', 'Delegated OAuth clients cannot obtain Google provider access tokens.', false)
+      }
       const binding = await connections.readForUser(identity.userId, pjsdasAccessToken)
       const refreshToken = await decryptSecret(binding.refreshTokenCiphertext, config.tokenEncryptionKey)
       const accessToken = await refreshGoogleAccessToken(refreshToken, {
@@ -99,7 +102,7 @@ export function createGoogleAccessTokenHandler(config: GoogleAccessTokenHandlerC
     } catch (caught) {
       const error = safeError(caught)
       const status = error.code === 'AUTH_REQUIRED' || error.code === 'AUTH_INVALID' ? 401
-        : error.code === 'ORIGIN_NOT_ALLOWED' ? 403
+        : error.code === 'ORIGIN_NOT_ALLOWED' || error.code === 'AUTH_FORBIDDEN' ? 403
           : error.code === 'GOOGLE_CONNECTION_REQUIRED' || error.code === 'GOOGLE_AUTH_EXPIRED' ? 409
             : error.retryable ? 503
               : 400
