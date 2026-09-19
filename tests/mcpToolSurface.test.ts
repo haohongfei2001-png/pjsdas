@@ -10,11 +10,12 @@ const authenticatedRuntime = readFileSync(new URL('../gateway/authenticatedRemot
 
 describe('authenticated MCP release tool surface', () => {
   it('uses a stable versioned contract and registers every release-required tool in the real server factory', () => {
-    expect(AUTHENTICATED_MCP_TOOL_SURFACE_VERSION).toBe('v2')
+    expect(AUTHENTICATED_MCP_TOOL_SURFACE_VERSION).toBe('v3')
     expect(AUTHENTICATED_MCP_RELEASE_REQUIRED_TOOLS).toEqual([
       'get_coverage_status',
       'get_workspace_integrity',
       'add_opportunities',
+      'apply_user_command',
       'ingest_discovery_run',
       'ingest_gmail_run',
     ])
