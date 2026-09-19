@@ -93,6 +93,10 @@ jobs:
           fs.writeFileSync('.cloudflare-secrets.json', JSON.stringify(payload), { mode: 0o600 })
           NODE
 
+      - name: Bind standby release candidate identity
+        if: steps.standby-config.outputs.configured == 'true'
+        run: WORKERS_CI_COMMIT_SHA="$GITHUB_SHA" node scripts/write-release-identity.mjs
+
       - name: Deploy exact-SHA Cloudflare standby
         if: steps.standby-config.outputs.configured == 'true'
         env:
@@ -179,6 +183,20 @@ jobs:
           node-version: 22
           cache: npm
 
+      - name: Resolve release candidate contract
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE' >> "$GITHUB_ENV"
+          import { resolveReleaseMetadata } from './scripts/release-metadata.mjs'
+          const metadata = resolveReleaseMetadata()
+          console.log(`PJSDAS_EXPECTED_PRODUCT_VERSION=${metadata.productVersion}`)
+          console.log(`PJSDAS_EXPECTED_RELEASE_CHANNEL=${metadata.releaseChannel}`)
+          console.log(`PJSDAS_EXPECTED_MCP_CONTRACT_HASH=${metadata.mcpContractHash}`)
+          console.log(`PJSDAS_EXPECTED_MIGRATION_SET_HASH=${metadata.migrationSetHash}`)
+          console.log(`PJSDAS_EXPECTED_SNAPSHOT_SCHEMA=${metadata.snapshotSchema}`)
+          console.log(`PJSDAS_EXPECTED_SNAPSHOT_VERSION=${metadata.snapshotVersion}`)
+          NODE
+
       - name: Resolve ordered production backend origins
         shell: bash
         env:
@@ -250,6 +268,12 @@ jobs:
                       health.mode === expectedMode &&
                       health.workspaceAuthority === expectedAuthority &&
                       health.release?.commitSha === process.env.GITHUB_SHA &&
+                      health.release?.productVersion === process.env.PJSDAS_EXPECTED_PRODUCT_VERSION &&
+                      health.release?.releaseChannel === process.env.PJSDAS_EXPECTED_RELEASE_CHANNEL &&
+                      health.release?.mcpContractHash === process.env.PJSDAS_EXPECTED_MCP_CONTRACT_HASH &&
+                      health.release?.migrationSetHash === process.env.PJSDAS_EXPECTED_MIGRATION_SET_HASH &&
+                      health.release?.schemaCompatibility?.snapshotSchema === process.env.PJSDAS_EXPECTED_SNAPSHOT_SCHEMA &&
+                      String(health.release?.schemaCompatibility?.snapshotVersion) === process.env.PJSDAS_EXPECTED_SNAPSHOT_VERSION &&
                       capabilities.autonomousIngestion === "v1.9" &&
                       capabilities.ingestionReconciliationLedger === true &&
                       capabilities.coverageStatusRead === true &&
@@ -277,6 +301,7 @@ jobs:
                       capabilities.canonicalOriginPolicy === "v1" &&
                       capabilities.controlledAudience === "v1" &&
                       capabilities.connectedOriginMigration === "v1" &&
+                      capabilities.releaseCandidateManifest === "v1" &&
                       topologyReady &&
                       authenticatedMcp.toolSurfaceVersion === "v3" &&
                       releaseToolsReady;
@@ -308,6 +333,28 @@ jobs:
           npm run self-test:production
 
       - run: npm run build
+
+      - name: Verify frontend release manifest before upload
+        shell: bash
+        run: |
+          node <<'NODE'
+          const fs = require('node:fs')
+          const manifest = JSON.parse(fs.readFileSync('dist/release-manifest.json', 'utf8'))
+          const expected = {
+            commitSha: process.env.GITHUB_SHA,
+            productVersion: process.env.PJSDAS_EXPECTED_PRODUCT_VERSION,
+            releaseChannel: process.env.PJSDAS_EXPECTED_RELEASE_CHANNEL,
+            mcpContractHash: process.env.PJSDAS_EXPECTED_MCP_CONTRACT_HASH,
+            migrationSetHash: process.env.PJSDAS_EXPECTED_MIGRATION_SET_HASH,
+          }
+          for (const [key, value] of Object.entries(expected)) {
+            if (manifest[key] !== value) throw new Error(`frontend release manifest ${key}=${manifest[key]} expected=${value}`)
+          }
+          if (!/^sha256:[0-9a-f]{64}$/i.test(manifest.frontendArtifactDigest ?? '')) {
+            throw new Error('frontend artifact digest is missing or invalid')
+          }
+          NODE
+
       - uses: actions/configure-pages@v5
         with:
           enablement: true
