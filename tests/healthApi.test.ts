@@ -67,6 +67,8 @@ describe('public production health contract', () => {
     expect(body.capabilities.gmailCompleteConsumption).toBe('v1')
     expect(body.capabilities.discoverySourceVerification).toBe('v1')
     expect(body.capabilities.discoveryFactAssessmentSeparation).toBe(true)
+    expect(body.authenticatedMcp.toolSurfaceVersion).toBe('v3')
+    expect(body.authenticatedMcp.releaseRequiredTools).not.toContain('apply_user_command')
     expect(JSON.stringify(body)).not.toContain('synthetic-demo-only')
     expect(JSON.stringify(body)).not.toContain('AI_GATEWAY_API_KEY')
     expect(body).not.toHaveProperty('secretsConfigured')
