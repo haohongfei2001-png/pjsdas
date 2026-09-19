@@ -58,6 +58,8 @@ function monitorObservation(overrides: Partial<MonitorJobObservation> = {}): Mon
     fitConfidence: 'high',
     opportunityValueConfidence: 'high',
     postingStatus: 'open',
+    sourceVerification: 'verified',
+    sourceVerifiedAt: '2026-09-13T01:00:00.000Z',
     discoveredAt: '2026-09-13T01:00:00.000Z',
     ...overrides,
   }
