@@ -3,14 +3,12 @@ import {
   PJSDAS_SUPABASE_PUBLISHABLE_KEY,
   PJSDAS_SUPABASE_URL,
 } from '../gateway/supabaseProject.js'
+import { firstPartyWebOrigins } from '../gateway/productionTopology.js'
 
 const handler = createAutomationSettingsHandler({
   supabaseUrl: PJSDAS_SUPABASE_URL,
   supabasePublishableKey: PJSDAS_SUPABASE_PUBLISHABLE_KEY,
-  allowedOrigins: [
-    'https://haohongfei2001-png.github.io',
-    'http://localhost:5173',
-  ],
+  allowedOrigins: firstPartyWebOrigins(),
 })
 
 export default {
