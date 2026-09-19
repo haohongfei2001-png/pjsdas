@@ -4,7 +4,7 @@ test('Decision Rules save failure stays visible and never leaves a stale success
   await page.goto('/')
   await expect(page.getByRole('heading', { name: '今天只处理下一步' })).toBeVisible()
 
-  await page.getByRole('button', { name: /设置/ }).click()
+  await page.locator('.surface-nav').getByRole('button', { name: /设置/ }).click()
   await page.locator('details.settings-group').filter({ hasText: '决策规则' }).locator('summary').click()
   await expect(page.getByRole('heading', { name: '决策规则' })).toBeVisible()
 
