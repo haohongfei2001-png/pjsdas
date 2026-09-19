@@ -1,7 +1,8 @@
 {
-  "publicVersion": "1.0.1",
-  "tag": "v1.0.1",
-  "engineeringMilestone": "v1.10",
-  "releaseNotes": "docs/releases/V1_0_1.md",
+  "publicVersion": "1.1.0-rc.1",
+  "tag": "v1.1.0-rc.1",
+  "releaseChannel": "prerelease",
+  "engineeringMilestone": "PJSDAS-AI-OPERATED-PRODUCTION-v1 / Round 5",
+  "releaseNotes": "docs/releases/V1_1_0_RC_1.md",
   "publishOnProductionSuccess": false
 }
