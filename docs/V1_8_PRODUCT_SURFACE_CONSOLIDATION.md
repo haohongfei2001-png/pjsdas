@@ -1,3 +1,5 @@
+> **Historical v1.8 design note.** The primary Web information architecture in this document has been superseded by `docs/AI_OPERATED_PRODUCTION_V1.md` Round 3. Current primary surfaces are **Today / Opportunities / Attention / Activity / Settings**. Preserve this file only as implementation history; do not use it to restore Decide / Prepare / History as first-level surfaces.
+
 # v1.8 — Product Surface Consolidation
 
 ## Goal
