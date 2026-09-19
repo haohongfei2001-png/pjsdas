@@ -51,6 +51,9 @@ export interface MonitorJobObservation {
   opportunityValueConfidence: DiscoveryConfidence
   postingStatus?: JobPostingStatus
   discoveredAt?: string
+  sourceVerification?: 'verified' | 'unverified'
+  sourceVerifiedAt?: string
+  sourceVerificationReason?: string
 }
 
 export interface MonitorIngestionRunInput {
@@ -240,6 +243,7 @@ function monitorFingerprint(observation: MonitorJobObservation) {
     observation.deadline ?? '',
     observation.compensationText ?? '',
     observation.postingStatus ?? 'unknown',
+    observation.sourceVerification ?? 'unverified',
   ]))
 }
 
