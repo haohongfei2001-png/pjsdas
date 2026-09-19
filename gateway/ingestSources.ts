@@ -148,11 +148,17 @@ function outputFor(workspaceVersion: string | undefined, result: ReturnType<type
   }
 }
 
-export async function invokeTrustedIngestion(source: WorkspaceSource, name: TrustedIngestionToolName, args: unknown): Promise<CallToolResult> {
+export async function invokeTrustedIngestion(
+  source: WorkspaceSource,
+  name: TrustedIngestionToolName,
+  args: unknown,
+  options: { authorize?: (name: TrustedIngestionToolName, sourceId: string) => Promise<void> } = {},
+): Promise<CallToolResult> {
   try {
-    const workspace = await source.read()
     if (name === 'ingest_discovery_run') {
       const parsed = ingestDiscoveryRunSchema.parse(args) as HardenedMonitorIngestionRunInput & SimulationArgs
+      await options.authorize?.(name, parsed.sourceId)
+      const workspace = await source.read()
       if (parsed.replayOfRunId && !parsed.dryRun) return toolError('INVALID_ARGUMENT', 'replayOfRunId is dry-run only.', false)
       if (!parsed.dryRun) requireWritableWorkspaceSource(source)
       const baseline = parsed.replayOfRunId ? findRun(workspace.snapshot, 'gpt_monitor', parsed.sourceId, parsed.replayOfRunId) : undefined
@@ -166,6 +172,8 @@ export async function invokeTrustedIngestion(source: WorkspaceSource, name: Trus
     }
 
     const parsed = ingestGmailRunSchema.parse(args) as HardenedGmailIngestionRunInput & SimulationArgs
+    await options.authorize?.(name, parsed.sourceId)
+    const workspace = await source.read()
     if (parsed.replayOfRunId && !parsed.dryRun) return toolError('INVALID_ARGUMENT', 'replayOfRunId is dry-run only.', false)
     if (!parsed.dryRun) requireWritableWorkspaceSource(source)
     const baseline = parsed.replayOfRunId ? findRun(workspace.snapshot, 'gmail', parsed.sourceId, parsed.replayOfRunId) : undefined
