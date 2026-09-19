@@ -77,6 +77,7 @@ function buildOpportunity(candidate: AddOpportunityCandidate, now: Date): Opport
     currentStageLabel: '待投',
     processStage: 'not_applied',
     roleType: candidate.roleType,
+    assessmentStatus: hasAssessment ? 'provisional' : 'unassessed',
     early: false,
     deadline: candidate.deadline,
     sourcePriority: hasAssessment ? 'ChatGPT 明确写入' : 'ChatGPT 明确写入 · 待补评估',
