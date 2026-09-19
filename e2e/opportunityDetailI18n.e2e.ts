@@ -51,7 +51,7 @@ test('opportunity detail localizes canonical stage and action status without cha
   }, { opportunity, action })
 
   await page.reload()
-  await page.getByRole('button', { name: /决策/ }).click()
+  await page.getByRole('button', { name: /机会/ }).click()
   await page.getByRole('button', { name: 'EN' }).first().click()
   await page.getByRole('button', { name: opportunity.role, exact: true }).click()
 
