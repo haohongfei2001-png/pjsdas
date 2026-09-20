@@ -185,15 +185,16 @@ Not in scope:
    - `v1.1.0-rc.1` is published as an immutable prerelease from exact commit
      `59d32530b7b649debd70e1a640ea2b69bb1de492`; publication is now **DISARMED** for
      subsequent Round 6 pushes.
-7. Round 6 — Personal Canary → Controlled Launch
+7. Round 6 — Personal Canary → Controlled Launch — **complete**
 
 Do not activate the new P1 direct-write surface until connected authority is transactional.
 Round 3 is complete. Future Web work must preserve the same Domain Command/state contracts
 instead of creating a second mutation model. Round 4 is complete at the source/schema/topology layer. Round 5 is complete and its immutable
 `v1.1.0-rc.1` prerelease is published; its current result is
 **RC PUBLISHED / PLATFORM GATES CONFIGURED / PUBLICATION DISARMED**.
-Round 6 has migrated and fingerprint-verified the owner workspace, activated transactional
-authority, enabled owner-only allowlist mode, and resolved the canonical Web/API origin to
-`https://todayaction.com`. Canonical-domain controlled-launch verification is tracked in
-`docs/ROUND_6_CANARY.md`, while the release gate/evidence matrix remains in
-`docs/RC_1_1_0_READINESS.md`.
+Round 6 is complete: the owner workspace was migrated and fingerprint-verified, transactional
+authority and owner-only allowlist mode are active, `https://todayaction.com` is the canonical
+Web/API origin, the canonical browser pulled the real connected workspace without an extra server
+write, and the exact-SHA production chain passed. The owner-canary / controlled-launch evidence is
+in `docs/ROUND_6_CANARY.md`. The final public `v1.1.0` release remains a separate explicit owner
+publication decision; the release publication switch is disarmed.

@@ -65,6 +65,16 @@ These endpoints require a real approved browser `Origin`; requests with no Origi
 not gain first-party credential or settings capabilities merely because they carry a
 valid bearer token.
 
+### Same-origin sensitive reads
+
+The canonical Web and API share `https://todayaction.com`. Browsers can omit the
+`Origin` header on same-origin GET requests, so sensitive browser reads that depend on
+the first-party Origin gate use POST `action=read` semantics. This preserves the strict
+Origin requirement rather than weakening it for origin-less requests.
+
+Canonical Web clients use POST reads for workspace, audience status, and automation status.
+Legacy cross-origin GET compatibility may remain server-side during migration.
+
 A canonical origin and legacy origins may coexist during migration. CORS is still not
 authorization: identity, audience authorization, and operation-level authorization are
 separate gates.
