@@ -24,11 +24,15 @@ describe('backend-first release gate', () => {
     expect(workflow).toContain('capabilities.gmailCompleteConsumption === "v1"')
     expect(workflow).toContain('capabilities.discoverySourceVerification === "v1"')
     expect(workflow).toContain('capabilities.discoveryFactAssessmentSeparation === true')
-    expect(workflow).toContain('authenticatedMcp.toolSurfaceVersion === "v3"')
+    expect(workflow).toContain('authenticatedMcp.toolSurfaceVersion === "v4"')
     for (const tool of ['get_coverage_status', 'get_workspace_integrity', 'add_opportunities', 'ingest_discovery_run', 'ingest_gmail_run']) {
       expect(workflow).toContain(`"${tool}"`)
     }
-    expect(workflow).toContain('expectedAuthority === "transactional" ? ["apply_user_command"] : []')
+    expect(workflow).toContain('expectedAuthority === "transactional" ? [')
+    expect(workflow).toContain('"apply_user_command"')
+    expect(workflow).toContain('"semantic_intake"')
+    expect(workflow).toContain('"resolve_semantic_decision"')
+    expect(workflow).toContain('"undo_semantic_command"')
     expect(workflow).toContain('Verify production contract before Pages publication')
     expect(workflow).not.toContain('PJSDAS_SELF_TEST_EMAIL')
     expect(workflow).not.toContain('PJSDAS_SELF_TEST_PASSWORD')

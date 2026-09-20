@@ -124,7 +124,7 @@ describe('first-party connected workspace endpoint', () => {
       workspaceId: 'ws-1',
       workspaceVersion: 'txn:5',
       revision: 5,
-      schemaVersion: 2,
+      schemaVersion: 3,
       snapshot: upgradeSnapshotToLatest(current),
     })
   })

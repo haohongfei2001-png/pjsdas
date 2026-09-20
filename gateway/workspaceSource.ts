@@ -28,10 +28,27 @@ export interface WorkspaceWriteInput {
   command?: WorkspaceWriteCommand
 }
 
+export type WorkspacePreparedUndo =
+  | {
+      outcome: 'READY'
+      targetCommandId: string
+      expectedWorkspaceVersion: string
+      snapshot: PJSDASSnapshot
+      compensation: Record<string, unknown>
+    }
+  | {
+      outcome: 'NEEDS_CONFIRMATION'
+      reason: 'COMMAND_NOT_FOUND' | 'NO_COMPENSATION' | 'DEPENDENT_CHANGES'
+      targetRevision?: number
+      currentRevision?: number
+    }
+
 export interface WorkspaceSource {
   read(): Promise<GatewayWorkspace>
   /** Optional: only authenticated durable sources expose autonomous writes. */
   write?(input: WorkspaceWriteInput): Promise<GatewayWorkspace>
+  /** Transactional sources can prepare safe latest-revision compensation without exposing ledger internals. */
+  prepareUndo?(targetCommandId: string): Promise<WorkspacePreparedUndo>
 }
 
 export function requireWritableWorkspaceSource(source: WorkspaceSource) {

@@ -4,7 +4,7 @@ import { useUiLanguage } from './uiLanguage.js'
 import './timeline.css'
 
 const categories: TimelineCategory[] = ['opportunity', 'process', 'action', 'rules', 'change', 'data', 'note']
-const sources: TimelineSource[] = ['excel', 'natural_language', 'process_event', 'user_action', 'rules', 'backup', 'system', 'changeset', 'automation', 'gmail']
+const sources: TimelineSource[] = ['excel', 'natural_language', 'process_event', 'user_action', 'rules', 'backup', 'system', 'changeset', 'automation', 'gmail', 'paia', 'mcp', 'iphone']
 
 const categoryLabels: Record<TimelineCategory, [string, string]> = {
   opportunity: ['机会', 'Opportunity'],
@@ -27,6 +27,9 @@ const sourceLabels: Record<TimelineSource, [string, string]> = {
   changeset: ['受治理变更', 'Governed change'],
   automation: ['自动化', 'Automation'],
   gmail: ['Gmail', 'Gmail'],
+  paia: ['PAIA 输入', 'PAIA input'],
+  mcp: ['ChatGPT / MCP', 'ChatGPT / MCP'],
+  iphone: ['iPhone 输入', 'iPhone input'],
 }
 
 function dayKey(iso: string) {

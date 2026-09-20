@@ -52,6 +52,7 @@ import type { ExecutableProgressOperation, ProgressOperation } from './progressU
 import type {
   Action,
   ApplicationGroup,
+  DecisionRequest,
   ImportBundle,
   ImportMeta,
   DiscoveryInboxItem,
@@ -61,6 +62,7 @@ import type {
   ProcessRecord,
   ScheduleNode,
   ScheduleNodeState,
+  SemanticIntakeReceipt,
   TimelineCategory,
   TimelineRecord,
 } from './model.js'
@@ -81,6 +83,16 @@ interface PJSDASDatabase extends DBSchema {
     key: string
     value: ScheduleNode
     indexes: { 'by-opportunity': string; 'by-occurrence': string; 'by-state': ScheduleNodeState }
+  }
+  decisionRequests: {
+    key: string
+    value: DecisionRequest
+    indexes: { 'by-state': string; 'by-updated-at': string }
+  }
+  semanticReceipts: {
+    key: string
+    value: SemanticIntakeReceipt
+    indexes: { 'by-input-id': string; 'by-updated-at': string }
   }
   actions: {
     key: string
@@ -110,6 +122,8 @@ const DATA_STORES = [
   'processes',
   'processEvents',
   'scheduleNodes',
+  'decisionRequests',
+  'semanticReceipts',
   'actions',
   'prep',
   'applicationGroups',
@@ -121,7 +135,7 @@ const DATA_STORES = [
   'meta',
 ] as const
 
-export const dbPromise = openDB<PJSDASDatabase>('pjsdas', 9, {
+export const dbPromise = openDB<PJSDASDatabase>('pjsdas', 10, {
   upgrade(db) {
     if (!db.objectStoreNames.contains('opportunities')) {
       db.createObjectStore('opportunities', { keyPath: 'id' })
@@ -139,6 +153,16 @@ export const dbPromise = openDB<PJSDASDatabase>('pjsdas', 9, {
       store.createIndex('by-opportunity', 'opportunityId')
       store.createIndex('by-occurrence', 'occurrenceId')
       store.createIndex('by-state', 'state')
+    }
+    if (!db.objectStoreNames.contains('decisionRequests')) {
+      const store = db.createObjectStore('decisionRequests', { keyPath: 'id' })
+      store.createIndex('by-state', 'state')
+      store.createIndex('by-updated-at', 'updatedAt')
+    }
+    if (!db.objectStoreNames.contains('semanticReceipts')) {
+      const store = db.createObjectStore('semanticReceipts', { keyPath: 'id' })
+      store.createIndex('by-input-id', 'inputId')
+      store.createIndex('by-updated-at', 'updatedAt')
     }
     if (!db.objectStoreNames.contains('actions')) {
       const store = db.createObjectStore('actions', { keyPath: 'id' })
@@ -248,6 +272,16 @@ export async function getAllScheduleNodes(now = new Date()) {
     ...node,
     state: effectiveScheduleNodeState(node, now),
   }))
+}
+
+export async function getAllDecisionRequests() {
+  const records = await (await dbPromise).getAll('decisionRequests')
+  return records.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+}
+
+export async function getAllSemanticReceipts() {
+  const records = await (await dbPromise).getAll('semanticReceipts')
+  return records.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
 }
 
 export async function getAllPrep() {
@@ -866,12 +900,14 @@ export async function exportLocalSnapshot() {
   const db = await dbPromise
   await ensureTimelineBackfill(db)
   await ensureLocalScheduleBackfill(db)
-  const [opportunities, processes, processEvents, scheduleNodes, actions, prep, applicationGroups, decisionRules, discoveryProfile, discoveryInbox, timeline, changeSets, meta] =
+  const [opportunities, processes, processEvents, scheduleNodes, decisionRequests, semanticReceipts, actions, prep, applicationGroups, decisionRules, discoveryProfile, discoveryInbox, timeline, changeSets, meta] =
     await Promise.all([
       db.getAll('opportunities'),
       db.getAll('processes'),
       db.getAll('processEvents'),
       db.getAll('scheduleNodes'),
+      db.getAll('decisionRequests'),
+      db.getAll('semanticReceipts'),
       db.getAll('actions'),
       db.getAll('prep'),
       db.getAll('applicationGroups'),
@@ -888,6 +924,8 @@ export async function exportLocalSnapshot() {
     processes,
     processEvents,
     scheduleNodes,
+    decisionRequests,
+    semanticReceipts,
     actions,
     prep,
     applicationGroups,
@@ -912,6 +950,8 @@ export async function replaceLocalSnapshotFromCloud(snapshot: PJSDASSnapshot) {
   for (const item of latest.data.processes) await tx.objectStore('processes').put(item)
   for (const item of latest.data.processEvents) await tx.objectStore('processEvents').put(item)
   for (const item of latest.data.scheduleNodes ?? []) await tx.objectStore('scheduleNodes').put(item)
+  for (const item of latest.data.decisionRequests ?? []) await tx.objectStore('decisionRequests').put(item)
+  for (const item of latest.data.semanticReceipts ?? []) await tx.objectStore('semanticReceipts').put(item)
   for (const item of latest.data.actions) await tx.objectStore('actions').put(item)
   for (const item of latest.data.prep) await tx.objectStore('prep').put(item)
   for (const item of latest.data.applicationGroups) await tx.objectStore('applicationGroups').put(item)
@@ -937,6 +977,8 @@ export async function restoreLocalSnapshot(snapshot: PJSDASSnapshot) {
   for (const item of latest.data.processes) await tx.objectStore('processes').put(item)
   for (const item of latest.data.processEvents) await tx.objectStore('processEvents').put(item)
   for (const item of latest.data.scheduleNodes ?? []) await tx.objectStore('scheduleNodes').put(item)
+  for (const item of latest.data.decisionRequests ?? []) await tx.objectStore('decisionRequests').put(item)
+  for (const item of latest.data.semanticReceipts ?? []) await tx.objectStore('semanticReceipts').put(item)
   for (const item of latest.data.actions) await tx.objectStore('actions').put(item)
   for (const item of latest.data.prep) await tx.objectStore('prep').put(item)
   for (const item of latest.data.applicationGroups) await tx.objectStore('applicationGroups').put(item)

@@ -36,7 +36,7 @@ async function seedWorkspace(page: Page) {
 
   await page.evaluate(async ({ opportunity, action }) => {
     await new Promise<void>((resolve, reject) => {
-      const request = indexedDB.open('pjsdas', 9)
+      const request = indexedDB.open('pjsdas', 10)
       request.onerror = () => reject(request.error)
       request.onsuccess = () => {
         const db = request.result
@@ -59,7 +59,7 @@ async function seedWorkspace(page: Page) {
 async function clearCoreWorkspace(page: Page) {
   await page.evaluate(async () => {
     await new Promise<void>((resolve, reject) => {
-      const request = indexedDB.open('pjsdas', 9)
+      const request = indexedDB.open('pjsdas', 10)
       request.onerror = () => reject(request.error)
       request.onsuccess = () => {
         const db = request.result
@@ -85,7 +85,7 @@ async function readProcessState(page: Page) {
       events: Array<{ id: string; opportunityId?: string; type: string; source: string; dueAt?: string }>
       actions: Array<{ id: string; opportunityId?: string; processEventId?: string; status: string; dueAt?: string }>
     }>((resolve, reject) => {
-      const request = indexedDB.open('pjsdas', 9)
+      const request = indexedDB.open('pjsdas', 10)
       request.onerror = () => reject(request.error)
       request.onsuccess = () => {
         const db = request.result
@@ -107,7 +107,7 @@ async function readProcessState(page: Page) {
 async function readCoreState(page: Page) {
   return page.evaluate(async () => {
     return new Promise<{ opportunityIds: string[]; actionIds: string[] }>((resolve, reject) => {
-      const request = indexedDB.open('pjsdas', 9)
+      const request = indexedDB.open('pjsdas', 10)
       request.onerror = () => reject(request.error)
       request.onsuccess = () => {
         const db = request.result

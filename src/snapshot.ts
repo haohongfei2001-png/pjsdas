@@ -1,6 +1,7 @@
 import type {
   Action,
   ApplicationGroup,
+  DecisionRequest,
   DiscoveryInboxItem,
   ImportMeta,
   IngestionLedgerEntry,
@@ -11,6 +12,7 @@ import type {
   ProcessEvent,
   ProcessRecord,
   ScheduleNode,
+  SemanticIntakeReceipt,
   TimelineRecord,
 } from './model.js'
 import { validateDecisionRules, type DecisionRules } from './decisionRules.js'
@@ -23,7 +25,8 @@ import { validateOpportunityFacts } from './richOpportunity.js'
 import { ensureScheduleContractInPlace, validateScheduleNode } from './scheduleNodes.js'
 
 export const SNAPSHOT_SCHEMA = 'pjsdas-local-snapshot' as const
-export const SNAPSHOT_VERSION = 2 as const
+export const SNAPSHOT_VERSION = 3 as const
+export const PREVIOUS_SNAPSHOT_VERSION = 2 as const
 export const LEGACY_SNAPSHOT_VERSION = 1 as const
 
 export interface SnapshotData {
@@ -32,6 +35,8 @@ export interface SnapshotData {
   processEvents: ProcessEvent[]
   actions: Action[]
   scheduleNodes?: ScheduleNode[]
+  decisionRequests?: DecisionRequest[]
+  semanticReceipts?: SemanticIntakeReceipt[]
   prep: Prep[]
   applicationGroups: ApplicationGroup[]
   decisionRules?: DecisionRules
@@ -44,7 +49,7 @@ export interface SnapshotData {
 
 export interface PJSDASSnapshot {
   schema: typeof SNAPSHOT_SCHEMA
-  version: typeof LEGACY_SNAPSHOT_VERSION | typeof SNAPSHOT_VERSION
+  version: typeof LEGACY_SNAPSHOT_VERSION | typeof PREVIOUS_SNAPSHOT_VERSION | typeof SNAPSHOT_VERSION
   exportedAt: string
   data: SnapshotData
 }
@@ -123,6 +128,8 @@ function validateIngestionRun(run: IngestionRunSummary, timelineId: string) {
 export function createSnapshot(data: SnapshotData, exportedAt = new Date().toISOString()): PJSDASSnapshot {
   const normalized = structuredClone(data)
   ensureScheduleContractInPlace(normalized)
+  normalized.decisionRequests ??= []
+  normalized.semanticReceipts ??= []
   const snapshot: PJSDASSnapshot = {
     schema: SNAPSHOT_SCHEMA,
     version: SNAPSHOT_VERSION,
@@ -136,6 +143,8 @@ export function createSnapshot(data: SnapshotData, exportedAt = new Date().toISO
 export function upgradeSnapshotToLatest(snapshot: PJSDASSnapshot): PJSDASSnapshot {
   const next = structuredClone(snapshot)
   ensureScheduleContractInPlace(next.data)
+  next.data.decisionRequests ??= []
+  next.data.semanticReceipts ??= []
   next.version = SNAPSHOT_VERSION
   validateSnapshot(next)
   return next
@@ -144,7 +153,11 @@ export function upgradeSnapshotToLatest(snapshot: PJSDASSnapshot): PJSDASSnapsho
 export function validateSnapshot(value: unknown): asserts value is PJSDASSnapshot {
   if (!isObject(value)) throw new Error('备份损坏：根对象无效。')
   if (value.schema !== SNAPSHOT_SCHEMA) throw new Error('这不是 PJSDAS 本地备份。')
-  if (value.version !== LEGACY_SNAPSHOT_VERSION && value.version !== SNAPSHOT_VERSION) {
+  if (
+    value.version !== LEGACY_SNAPSHOT_VERSION
+    && value.version !== PREVIOUS_SNAPSHOT_VERSION
+    && value.version !== SNAPSHOT_VERSION
+  ) {
     throw new Error(`不支持的备份版本：${String(value.version)}。当前支持 v${LEGACY_SNAPSHOT_VERSION}–v${SNAPSHOT_VERSION}。`)
   }
   assertIsoDate(value.exportedAt, 'exportedAt')
@@ -156,8 +169,13 @@ export function validateSnapshot(value: unknown): asserts value is PJSDASSnapsho
   assertArray(data.processEvents, 'processEvents')
   assertArray(data.actions, 'actions')
   if (data.scheduleNodes !== undefined) assertArray(data.scheduleNodes, 'scheduleNodes')
-  if (value.version === SNAPSHOT_VERSION && data.scheduleNodes === undefined) {
-    throw new Error('备份损坏：v2 缺少 scheduleNodes。')
+  if (data.decisionRequests !== undefined) assertArray(data.decisionRequests, 'decisionRequests')
+  if (data.semanticReceipts !== undefined) assertArray(data.semanticReceipts, 'semanticReceipts')
+  if (value.version >= PREVIOUS_SNAPSHOT_VERSION && data.scheduleNodes === undefined) {
+    throw new Error('备份损坏：v2+ 缺少 scheduleNodes。')
+  }
+  if (value.version === SNAPSHOT_VERSION && (data.decisionRequests === undefined || data.semanticReceipts === undefined)) {
+    throw new Error('备份损坏：v3 缺少 DecisionRequest / SemanticReceipt 数据。')
   }
   assertArray(data.prep, 'prep')
   assertArray(data.applicationGroups, 'applicationGroups')
@@ -180,6 +198,8 @@ export function validateSnapshot(value: unknown): asserts value is PJSDASSnapsho
   const eventIds = assertUniqueIds(data.processEvents, 'Process Event')
   const actionIds = assertUniqueIds(data.actions, 'Action')
   const scheduleNodeIds = data.scheduleNodes ? assertUniqueIds(data.scheduleNodes, 'Schedule Node') : new Set<string>()
+  const decisionRequestIds = data.decisionRequests ? assertUniqueIds(data.decisionRequests, 'Decision Request') : new Set<string>()
+  const semanticReceiptIds = data.semanticReceipts ? assertUniqueIds(data.semanticReceipts, 'Semantic Receipt') : new Set<string>()
   const prepIds = assertUniqueIds(data.prep, 'Prep')
   const groupIds = assertUniqueIds(data.applicationGroups, 'Application Group')
   if (data.discoveryInbox) assertUniqueIds(data.discoveryInbox, 'Discovery Inbox')
@@ -188,6 +208,8 @@ export function validateSnapshot(value: unknown): asserts value is PJSDASSnapsho
   void actionIds
   void prepIds
   void scheduleNodeIds
+  void decisionRequestIds
+  void semanticReceiptIds
 
   for (const raw of data.discoveryInbox ?? []) {
     const item = raw as DiscoveryInboxItem
@@ -232,7 +254,7 @@ export function validateSnapshot(value: unknown): asserts value is PJSDASSnapsho
     if (process.opportunityId && !opportunityIds.has(process.opportunityId)) {
       throw new Error(`备份损坏：流程 ${process.id} 引用了不存在的岗位 ${process.opportunityId}。`)
     }
-    if (value.version === SNAPSHOT_VERSION) {
+    if (value.version >= PREVIOUS_SNAPSHOT_VERSION) {
       if (!process.progress || !processProgress.has(process.progress)) throw new Error(`备份损坏：流程 ${process.id} 缺少正交 progress。`)
       if (!process.result || !processResults.has(process.result)) throw new Error(`备份损坏：流程 ${process.id} 缺少正交 result。`)
       if (!process.participationState || !processParticipation.has(process.participationState)) throw new Error(`备份损坏：流程 ${process.id} 缺少 participationState。`)
@@ -266,9 +288,52 @@ export function validateSnapshot(value: unknown): asserts value is PJSDASSnapsho
     }
   }
 
+  if (data.decisionRequests) {
+    const states = new Set(['open', 'answered', 'auto_resolved', 'superseded', 'expired'])
+    const reasons = new Set(['ambiguous_target', 'ambiguous_occurrence', 'low_confidence', 'material_conflict', 'shared_governance', 'external_consequence', 'missing_required_field', 'target_abandoned'])
+    for (const raw of data.decisionRequests) {
+      const request = raw as DecisionRequest
+      if (!request.question?.trim() || !states.has(request.state) || !reasons.has(request.reason)) {
+        throw new Error(`备份损坏：DecisionRequest ${request.id} 基础字段无效。`)
+      }
+      if (!Array.isArray(request.choices) || request.choices.length < 2 || request.choices.length > 4) {
+        throw new Error(`备份损坏：DecisionRequest ${request.id} 必须包含 2–4 个选项。`)
+      }
+      const choiceIds = new Set<string>()
+      for (const choice of request.choices) {
+        if (!choice.id?.trim() || !choice.label?.trim() || !choice.consequence?.trim() || choiceIds.has(choice.id)) {
+          throw new Error(`备份损坏：DecisionRequest ${request.id} 选项无效。`)
+        }
+        choiceIds.add(choice.id)
+      }
+      if (request.payloadBinding?.contractVersion !== 1 || !request.payloadBinding.inputId?.trim() || !request.payloadBinding.candidateId?.trim()) {
+        throw new Error(`备份损坏：DecisionRequest ${request.id} payload binding 无效。`)
+      }
+      assertIsoDate(request.createdAt, `DecisionRequest ${request.id} createdAt`)
+      assertIsoDate(request.updatedAt, `DecisionRequest ${request.id} updatedAt`)
+      if (request.expiresAt) assertIsoDate(request.expiresAt, `DecisionRequest ${request.id} expiresAt`)
+      if (request.answeredAt) assertIsoDate(request.answeredAt, `DecisionRequest ${request.id} answeredAt`)
+    }
+  }
+
+  if (data.semanticReceipts) {
+    const statuses = new Set(['committed', 'decision_required', 'no_write', 'undone'])
+    const inputIds = new Set<string>()
+    for (const raw of data.semanticReceipts) {
+      const receipt = raw as SemanticIntakeReceipt
+      if (!receipt.inputId?.trim() || !receipt.sourceId?.trim() || !receipt.sourceRecordId?.trim() || !statuses.has(receipt.status)) {
+        throw new Error(`备份损坏：SemanticReceipt ${receipt.id} 基础字段无效。`)
+      }
+      if (inputIds.has(receipt.inputId)) throw new Error(`备份损坏：SemanticReceipt inputId 重复（${receipt.inputId}）。`)
+      inputIds.add(receipt.inputId)
+      assertIsoDate(receipt.createdAt, `SemanticReceipt ${receipt.id} createdAt`)
+      assertIsoDate(receipt.updatedAt, `SemanticReceipt ${receipt.id} updatedAt`)
+    }
+  }
+
   if (data.timeline) {
     const categories = new Set(['opportunity', 'process', 'action', 'rules', 'change', 'data', 'note'])
-    const sources = new Set(['excel', 'natural_language', 'process_event', 'user_action', 'rules', 'backup', 'system', 'changeset', 'automation', 'gmail'])
+    const sources = new Set(['excel', 'natural_language', 'process_event', 'user_action', 'rules', 'backup', 'system', 'changeset', 'automation', 'gmail', 'paia', 'mcp', 'iphone'])
     for (const raw of data.timeline) {
       const item = raw as TimelineRecord
       if (!item.title?.trim() || !categories.has(item.category) || !sources.has(item.source)) {

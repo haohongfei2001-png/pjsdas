@@ -256,7 +256,12 @@ jobs:
                       "get_coverage_status",
                       "get_workspace_integrity",
                       "add_opportunities",
-                      ...(expectedAuthority === "transactional" ? ["apply_user_command"] : []),
+                      ...(expectedAuthority === "transactional" ? [
+                        "apply_user_command",
+                        "semantic_intake",
+                        "resolve_semantic_decision",
+                        "undo_semantic_command",
+                      ] : []),
                       "ingest_discovery_run",
                       "ingest_gmail_run",
                     ];
@@ -294,6 +299,10 @@ jobs:
                       capabilities.transactionalWorkspaceFoundation === "v1" &&
                       capabilities.mutationCommandLedger === true &&
                       capabilities.explicitUserCommands === "v1" &&
+                      capabilities.semanticIntakeContract === "v1" &&
+                      capabilities.decisionRequests === "v1" &&
+                      capabilities.semanticCompensatingUndo === "v1" &&
+                      capabilities.semanticServerWritePolicy === "v1" &&
                       capabilities.opportunityParticipationState === "v1" &&
                       capabilities.gmailCompleteConsumption === "v1" &&
                       capabilities.discoverySourceVerification === "v1" &&
@@ -303,7 +312,7 @@ jobs:
                       capabilities.connectedOriginMigration === "v1" &&
                       capabilities.releaseCandidateManifest === "v1" &&
                       topologyReady &&
-                      authenticatedMcp.toolSurfaceVersion === "v3" &&
+                      authenticatedMcp.toolSurfaceVersion === "v4" &&
                       releaseToolsReady;
                     process.exit(ready ? 0 : 1);
                   } catch {

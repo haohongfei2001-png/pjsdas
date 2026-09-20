@@ -20,6 +20,14 @@ import {
 } from './ingestSources.js'
 import { addOpportunitiesSchema, invokeAddOpportunities } from './addOpportunities.js'
 import { applyUserCommandSchema, invokeApplyUserCommand } from './userCommands.js'
+import {
+  invokeResolveSemanticDecision,
+  invokeSemanticIntake,
+  invokeSemanticUndo,
+  resolveSemanticDecisionSchema,
+  semanticIntakeSchema,
+  undoSemanticCommandSchema,
+} from './semanticIntake.js'
 import { invokeProposeChanges, proposeChangesSchema } from './proposeChanges.js'
 import type { WorkspaceSource } from './workspaceSource.js'
 
@@ -57,6 +65,8 @@ export interface PjsdasMcpServerOptions {
   trustedIngestionAuthorizer?: (name: 'ingest_discovery_run' | 'ingest_gmail_run', sourceId: string) => Promise<void>
   explicitUserWriteMode?: 'disabled' | 'enabled'
   explicitUserCommandMode?: 'disabled' | 'enabled'
+  semanticIntakeMode?: 'disabled' | 'enabled'
+  semanticIntakeAuthorizer?: (source: import('../src/model.js').SemanticIntakeSourceRef) => Promise<void>
 }
 
 export function createPjsdasMcpServer(
@@ -70,6 +80,7 @@ export function createPjsdasMcpServer(
   const trustedGmailEnabled = trustedIngestionMode === 'enabled' && (options.trustedIngestionCapabilities?.gmail ?? true)
   const explicitUserWriteMode = options.explicitUserWriteMode ?? 'disabled'
   const explicitUserCommandMode = options.explicitUserCommandMode ?? 'disabled'
+  const semanticIntakeMode = options.semanticIntakeMode ?? 'disabled'
   const instructions = [
     'PJSDAS is a personal job-search decision and action system.',
     'Use its explicit decision rules and deterministic explanations instead of inventing hidden ranking rules.',
@@ -106,6 +117,18 @@ export function createPjsdasMcpServer(
     )
   }
 
+  if (semanticIntakeMode === 'enabled') {
+    instructions.push(
+      'Use semantic_intake as the primary write path for current factual statements and current user intents. Supply a source-neutral structured candidate; PJSDAS resolves stable Opportunity/occurrence identity and enforces write policy on the server.',
+      'Do not treat questions, quotes, examples, hypotheticals, or rewrite requests as facts. Mark statementMode truthfully; non-assertive modes produce NO_WRITE.',
+      'Do not guess among same-company roles or multiple interview/test occurrences. Semantic Intake creates a durable DecisionRequest with bounded choices when identity or occurrence is ambiguous.',
+      'High-confidence, uniquely resolved, compensatable internal facts may commit without a second confirmation. Explicit internal abandonment follows the owner policy but shared application-group governance still requires a DecisionRequest.',
+      'Semantic Intake never authorizes external applications, withdrawals, recruiting email, or Offer acceptance/rejection. External-consequence requests fail closed into a human decision.',
+      'Use resolve_semantic_decision only for an open DecisionRequest and one of its exact choice ids. Use undo_semantic_command only for a latest-revision Semantic Intake command whose receipt says Undo is available.',
+      'apply_user_command remains a lower-level compatibility tool for exact-id bounded commands; new source adapters must target Semantic Intake instead of inventing parallel domain transitions.',
+    )
+  }
+
   if (trustedDiscoveryEnabled || trustedGmailEnabled) {
     instructions.push(
       'Trusted factual ingestion is autonomous and does not require a review click. It is deliberately narrower than generic mutation.',
@@ -128,7 +151,7 @@ export function createPjsdasMcpServer(
       'For refreshQueue verification, use postingRefreshes as a separate review batch.',
       'Rich Opportunity facts are evidence fields, not ratings. Component assessment is the preferred rating path.',
     )
-  } else if (!trustedDiscoveryEnabled && !trustedGmailEnabled && explicitUserWriteMode !== 'enabled' && explicitUserCommandMode !== 'enabled') {
+  } else if (!trustedDiscoveryEnabled && !trustedGmailEnabled && explicitUserWriteMode !== 'enabled' && explicitUserCommandMode !== 'enabled' && semanticIntakeMode !== 'enabled') {
     instructions.push('This server exposes no mutation or proposal tools.')
   }
 
@@ -237,6 +260,26 @@ export function createPjsdasMcpServer(
       description: 'Directly commit one bounded, explicit, low-risk user command against an exact PJSDAS target. Ambiguous targets must be clarified in the AI conversation before calling this tool; governed/high-impact changes remain review-only.',
       inputSchema: applyUserCommandSchema, annotations: directWriteAnnotations,
     }, async (args) => invokeApplyUserCommand(source, args))
+  }
+
+  if (semanticIntakeMode === 'enabled') {
+    server.registerTool('semantic_intake', {
+      title: 'Apply PJSDAS Semantic Intake',
+      description: 'Normalize one current source observation into bounded internal PJSDAS facts/intents. Unique high-confidence compensatable facts may commit atomically; ambiguity creates DecisionRequest; non-assertive text produces NO_WRITE; external consequences are never executed.',
+      inputSchema: semanticIntakeSchema, annotations: directWriteAnnotations,
+    }, async (args) => invokeSemanticIntake(source, args, { authorize: options.semanticIntakeAuthorizer }))
+
+    server.registerTool('resolve_semantic_decision', {
+      title: 'Resolve one PJSDAS DecisionRequest',
+      description: 'Answer one open Semantic Intake DecisionRequest using an exact offered choice id. The shared domain/write policy is re-run against current state before commit.',
+      inputSchema: resolveSemanticDecisionSchema, annotations: directWriteAnnotations,
+    }, async (args) => invokeResolveSemanticDecision(source, args))
+
+    server.registerTool('undo_semantic_command', {
+      title: 'Undo latest PJSDAS Semantic Intake command',
+      description: 'Apply a field/object-level compensation for a latest-revision Semantic Intake command. It never restores a whole stale snapshot and refuses automatic Undo after dependent revisions.',
+      inputSchema: undoSemanticCommandSchema, annotations: directWriteAnnotations,
+    }, async (args) => invokeSemanticUndo(source, args))
   }
 
   if (trustedDiscoveryEnabled) {
