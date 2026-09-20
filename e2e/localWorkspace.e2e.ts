@@ -107,7 +107,7 @@ test('primary navigation, language, and quick-capture surfaces stay coherent in 
   await expect(page.getByRole('button', { name: 'AI产品经理' })).toBeVisible()
 
   await page.locator('.surface-nav').getByRole('button', { name: /设置|Settings/ }).click()
-  const interfaceGroup = page.locator('details.settings-group').filter({ hasText: /界面|Interface/ })
+  const interfaceGroup = page.locator('details.settings-group > summary').filter({ hasText: /界面.*显示层|Interface.*Presentation/ }).locator('..')
   await interfaceGroup.locator('summary').click()
   await interfaceGroup.getByRole('button', { name: 'EN', exact: true }).click()
   await page.locator('.surface-nav').getByRole('button', { name: /Opportunities/ }).click()
