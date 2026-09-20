@@ -1,6 +1,6 @@
 # PJSDAS v1.1.0-rc.1 — Round 5 Readiness
 
-Status: **IMPLEMENTATION READY / PUBLICATION NO-GO**
+Status: **IMPLEMENTATION READY / PLATFORM GATES CONFIGURED / PUBLICATION DISARMED**
 
 Package: **PJSDAS-AI-OPERATED-PRODUCTION-v1 / Round 5**
 
@@ -127,32 +127,51 @@ Round 5 does not silently perform owner-canary actions:
 
 These are Round 6 canary/cutover actions, not Round 5 hardening shortcuts.
 
-## BLOCKER — default branch protection
+## PASS — default branch protection
 
-GitHub currently reports:
+GitHub now reports:
 
-`main.protected = false`
+`main.protected = true`
 
-Repository Rulesets are empty.
+A classic protection rule applies to `main`. Force pushes and branch deletion remain disabled.
+The release workflow keeps its authenticated preflight and will still refuse publication if this
+platform state regresses.
 
-RC publication is **NO-GO** until the default branch is protected. The release workflow now performs
-an authenticated preflight and refuses publication if the default branch is not protected.
+## PASS / FINAL WORKFLOW PREFLIGHT PENDING — GitHub Immutable Releases
 
-## BLOCKER / UNKNOWN — GitHub Immutable Releases
+Repository-level **Release immutability** is enabled in GitHub Settings and remained enabled after
+page reload.
 
-Existing `v1.0.1` reports `immutable=false`, but that release predates the intended future
-immutability policy and does not prove the current repository setting.
+The repository Actions secret `PJSDAS_RELEASE_ADMIN_TOKEN` is configured. Its backing fine-grained
+token is scoped only to the `pjsdas` repository with repository **Administration: Read-only**
+plus GitHub-required Metadata read access.
 
-The connected GitHub App does not have repository Administration scope, and the public REST endpoint
-requires authentication, so the current repository immutable-releases setting cannot be truthfully
-verified from this execution context.
+Existing `v1.0.0` / `v1.0.1` releases still report `immutable=false` because they predate this
+repository setting. They are historical evidence only.
 
-RC publication is **NO-GO** until the authenticated release workflow confirms the immutable-releases
-setting is enabled. The workflow checks this before creating any tag or Release and verifies the
-created Release returns both:
+The final authenticated API preflight intentionally remains inside the armed publication workflow.
+Before creating any tag or Release, that workflow must verify the repository immutable-releases
+setting is enabled; after creation it must verify both:
 
 - `prerelease=true`;
 - `immutable=true`.
+
+## PASS — exact-SHA production chain
+
+Current production candidate identity:
+
+`main@73943120cc4d32b547f00824b1ed112216dc3e05`
+
+For that exact SHA, GitHub Actions reports:
+
+- CI — success;
+- Browser E2E — success;
+- Deploy PJSDAS to GitHub Pages — success;
+- PJSDAS Production Self-Test — success.
+
+The downstream Publish workflow also completed successfully, but because
+`publishOnProductionSuccess=false`, every publication-only step remained safely skipped.
+No `v1.1.0-rc.1` tag or GitHub Release exists yet.
 
 ## DEFERRED TO CANARY / CONTROLLED LAUNCH — canonical domain
 
@@ -166,19 +185,21 @@ domain values.
 
 ## Publication decision
 
-**v1.1.0-rc.1 publication remains DISARMED.**
+**v1.1.0-rc.1 publication remains DISARMED, but the candidate is now eligible for an explicit arm decision.**
 
-`.github/release-plan.json` must keep `publishOnProductionSuccess=false` until the two supply-chain
-blockers above are independently PASS.
+`.github/release-plan.json` remains `publishOnProductionSuccess=false` by design. The previous
+repository-level supply-chain blockers have been configured, and the current exact-SHA production
+chain is green. Keeping the switch off now represents owner publication intent, not an unresolved
+technical blocker.
 
-Once those blockers are resolved, publication may be armed without weakening any code/data gate.
-The release workflow then requires:
+When the owner explicitly arms publication, the release workflow must still fail closed unless all
+of the following remain true:
 
 1. successful exact-SHA production chain;
 2. protected default branch;
-3. Immutable Releases enabled;
+3. authenticated Immutable Releases preflight returns enabled;
 4. matching package/release-plan/tag/channel;
-5. immutable GitHub prerelease creation.
+5. created GitHub prerelease reports `prerelease=true` and `immutable=true`.
 
-Round 6 starts only from that verified candidate or from the exact same verified commit after the
-platform blockers are resolved.
+Round 6 owner-canary migration / authority cutover must not start before that explicit publication
+decision and release preflight have completed.
