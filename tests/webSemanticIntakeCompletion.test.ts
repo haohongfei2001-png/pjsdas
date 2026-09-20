@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { applySemanticIntake } from '../src/semanticIntake.js'
-import { buildWebSemanticInterpretation } from '../src/webSemanticIntake.js'
+import { buildWebSemanticInterpretation } from '../src/webSemanticInterpretation.js'
 import { createSnapshot } from '../src/snapshot.js'
 import type { Opportunity, ProcessEvent, SemanticIntakeObservation } from '../src/model.js'
 
