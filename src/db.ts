@@ -975,10 +975,12 @@ export async function replaceImportedData(bundle: ImportBundle) {
   assertImportBundleSafe(bundle)
 
   const db = await dbPromise
-  const [previousActions, previousOpportunities, previousProcesses] = await Promise.all([
+  const [previousActions, previousOpportunities, previousProcesses, processEvents, previousScheduleNodes] = await Promise.all([
     db.getAll('actions'),
     db.getAll('opportunities'),
     db.getAll('processes'),
+    db.getAll('processEvents'),
+    db.getAll('scheduleNodes'),
   ])
   const localOpportunityIds = new Set(
     previousOpportunities.filter((item) => item.locallyManaged).map((item) => item.id),
@@ -986,15 +988,33 @@ export async function replaceImportedData(bundle: ImportBundle) {
   const mergedActions = mergeActionsForReimport(bundle.actions, previousActions, localOpportunityIds)
   const opportunities = mergeLocallyManagedOpportunities(bundle.opportunities, previousOpportunities)
   const processes = mergeLocallyManagedProcesses(bundle.processes, previousProcesses, localOpportunityIds)
+  const scheduleNodes = previousScheduleNodes.filter((node) =>
+    node.state === 'completed'
+    || node.state === 'cancelled'
+    || node.state === 'superseded'
+    || !node.opportunityId
+    || localOpportunityIds.has(node.opportunityId)
+    || node.temporal.resolutionBasis !== 'legacy_projection'
+  )
+  const contract = {
+    opportunities,
+    processes,
+    processEvents,
+    actions: mergedActions,
+    prep: bundle.prep,
+    scheduleNodes,
+  }
+  ensureScheduleContractInPlace(contract)
 
   const tx = db.transaction(
-    ['opportunities', 'processes', 'actions', 'prep', 'applicationGroups', 'timeline', 'meta'],
+    ['opportunities', 'processes', 'scheduleNodes', 'actions', 'prep', 'applicationGroups', 'timeline', 'meta'],
     'readwrite',
   )
 
   await Promise.all([
     tx.objectStore('opportunities').clear(),
     tx.objectStore('processes').clear(),
+    tx.objectStore('scheduleNodes').clear(),
     tx.objectStore('actions').clear(),
     tx.objectStore('prep').clear(),
     tx.objectStore('applicationGroups').clear(),
@@ -1002,7 +1022,8 @@ export async function replaceImportedData(bundle: ImportBundle) {
   ])
 
   for (const item of opportunities) await tx.objectStore('opportunities').put(item)
-  for (const item of processes) await tx.objectStore('processes').put(item)
+  for (const item of contract.processes) await tx.objectStore('processes').put(item)
+  for (const item of contract.scheduleNodes ?? []) await tx.objectStore('scheduleNodes').put(item)
   for (const item of mergedActions) await tx.objectStore('actions').put(item)
   for (const item of bundle.prep) await tx.objectStore('prep').put(item)
   for (const item of bundle.applicationGroups) await tx.objectStore('applicationGroups').put(item)

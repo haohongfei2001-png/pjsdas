@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { createTransactionalWorkspaceSource } from '../gateway/transactionalWorkspaceSource.js'
-import type { PJSDASSnapshot } from '../src/snapshot.js'
+import { upgradeSnapshotToLatest, type PJSDASSnapshot } from '../src/snapshot.js'
 
 function snapshot(exportedAt = '2026-09-19T00:00:00.000Z'): PJSDASSnapshot {
   return {
@@ -63,7 +63,7 @@ describe('transactional workspace source', () => {
       updatedByDevice: 'gmail-ingestion:gmail:primary',
     })).resolves.toMatchObject({
       context: { workspaceVersion: 'txn:8' },
-      snapshot: next,
+      snapshot: upgradeSnapshotToLatest(next),
     })
   })
 

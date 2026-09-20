@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { createConnectedWorkspaceHandler } from '../gateway/connectedWorkspaceHandler.js'
-import type { PJSDASSnapshot } from '../src/snapshot.js'
+import { upgradeSnapshotToLatest, type PJSDASSnapshot } from '../src/snapshot.js'
 
 const ORIGIN = 'https://haohongfei2001-png.github.io'
 
@@ -124,7 +124,8 @@ describe('first-party connected workspace endpoint', () => {
       workspaceId: 'ws-1',
       workspaceVersion: 'txn:5',
       revision: 5,
-      snapshot: current,
+      schemaVersion: 2,
+      snapshot: upgradeSnapshotToLatest(current),
     })
   })
 })
