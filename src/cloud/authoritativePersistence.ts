@@ -3,7 +3,7 @@ import type { CloudSyncOutcome } from './cloudSync.js'
 export type SyncNow = () => Promise<CloudSyncOutcome | undefined>
 
 function sleep(ms: number) {
-  return new Promise<void>((resolve) => window.setTimeout(resolve, ms))
+  return new Promise<void>((resolve) => globalThis.setTimeout(resolve, ms))
 }
 
 export async function ensureAuthoritativePersistence(
