@@ -36,6 +36,13 @@ Canonical production origin: `https://todayaction.com`
 - audience mode remains `allowlist`;
 - public signup and beta grants remain closed.
 
+## Canonical Web base-path remediation
+
+- the legacy GitHub Pages build keeps `/pjsdas/` as its Vite base;
+- the canonical Vercel Web build uses the origin root `/`;
+- a regression test locks both deployment-base behaviors;
+- the root-domain shell must load JS/CSS from `/assets/`, not from the legacy `/pjsdas/assets/` path.
+
 ## Current cutover
 
 1. deploy one new exact SHA with the canonical Web/API origin bound in backend and frontend;
