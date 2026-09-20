@@ -2,16 +2,17 @@ import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 
 const app = readFileSync(new URL('../src/AppV8.tsx', import.meta.url), 'utf8')
+const capture = readFileSync(new URL('../src/TellPjsdasCapture.tsx', import.meta.url), 'utf8')
 
-describe('AI-operated Web console friction rules', () => {
-  it('keeps action completion reversible through the existing status ChangeSet path', () => {
+describe('UU-04 Web friction rules', () => {
+  it('keeps action completion reversible through the existing bounded status path', () => {
     expect(app).toContain('lastCompletedAction')
     expect(app).toContain("applyActionStatusChangeSet(item.id, item.previousStatus)")
     expect(app).toContain('action-undo-toast')
     expect(app).not.toContain('updateActionStatus(')
   })
 
-  it('removes manual capture from Today and keeps it available in Settings', () => {
+  it('replaces daily manual capture with global Tell PJSDAS and keeps only recovery tooling in Settings', () => {
     const todayStart = app.indexOf('function TodaySurface')
     const todayEnd = app.indexOf('function OpportunitiesSurface')
     const settingsStart = app.indexOf('function SettingsSurface')
@@ -21,14 +22,18 @@ describe('AI-operated Web console friction rules', () => {
     expect(today).not.toContain('ProgressInbox')
     expect(today).not.toContain('ProcessEventDock')
     expect(today).not.toContain('today-manual-fallback')
-    expect(settings).toContain('ProgressInbox')
+    expect(app).toContain('<TellPjsdasCapture')
+    expect(app).not.toContain('ProgressInbox')
     expect(settings).toContain('ProcessEventDock')
-    expect(settings).toContain("zh ? '手工记录' : 'Manual capture'")
+    expect(settings).toContain("zh ? '流程恢复工具' : 'Process recovery'")
+    expect(capture).toContain('submitWebSemanticCapture')
+    expect(capture).not.toContain('ChangeSet')
   })
 
-  it('keeps first-level navigation decision-oriented and moves Activity under Settings', () => {
-    expect(app).toContain("const primarySurfaces: Surface[] = ['today', 'opportunities', 'attention', 'settings']")
-    expect(app).toContain("onOpenActivity={() => setSurface('activity')}")
+  it('keeps first-level navigation to two daily destinations and moves History/Settings to low-frequency routes', () => {
+    expect(app).toContain("const primarySurfaces: PrimarySurface[] = ['today', 'opportunities']")
+    expect(app).toContain("navigate('/settings')")
+    expect(app).toContain("onOpenActivity={() => navigate('/history')}")
     expect(app).toContain("zh ? '历史与审计' : 'History & audit'")
   })
 
@@ -42,7 +47,7 @@ describe('AI-operated Web console friction rules', () => {
   it('keeps an empty workspace start path without persistent onboarding state', () => {
     expect(app).toContain('workspaceEmpty')
     expect(app).toContain('GettingStartedCard')
-    expect(app).toContain("setSurface('settings')")
+    expect(app).toContain("navigate('/settings')")
     expect(app).not.toContain('onboardingCompleted')
   })
 })

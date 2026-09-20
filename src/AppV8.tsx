@@ -779,7 +779,7 @@ function PipelinePanel({ processes, opportunities, onOpenOpportunity }: { proces
       {sorted.length ? <div className="surface-pipeline-grid">{sorted.map((item) => {
         const opportunityId = opportunityIdFor(item)
         return <article className="surface-pipeline-card" key={item.id}><div><strong>{item.company}</strong><h3>{item.role}</h3></div><span className="surface-stage">{presentStageLabel(item.stage, item.stageLabel, lang)}</span><dl><div><dt>{zh ? '最近进展' : 'Last progress'}</dt><dd>{item.lastProgressAt ? formatDateOnly(item.lastProgressAt) : '—'}</dd></div></dl><div className="surface-pipeline-footer">{opportunityId ? <button className="text-button" onClick={() => onOpenOpportunity(opportunityId)}>{zh ? '岗位详情' : 'Details'}</button> : null}</div></article>
-      })}</div> : <EmptyState title={zh ? '暂无在途流程' : 'No pipeline yet'} text={zh ? '流程通知通常由 AI / Gmail 自动进入；必要时使用 Today 底部的手工 fallback。' : 'Process notices normally arrive through AI or Gmail. Use Today’s manual fallback only when needed.'} />}
+      })}</div> : <EmptyState title={zh ? '暂无在途流程' : 'No pipeline yet'} text={zh ? '流程通知通常由 AI / Gmail 自动进入；日常补充请使用“告诉 PJSDAS”，只有恢复异常流程时才进入 Settings。' : 'Process notices normally arrive through AI or Gmail. Use Tell PJSDAS for normal capture and Settings only for exceptional process recovery.'} />}
     </section>
   )
 }

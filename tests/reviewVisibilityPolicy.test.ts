@@ -2,23 +2,26 @@ import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 
 const app = readFileSync(new URL('../src/AppV8.tsx', import.meta.url), 'utf8')
-const attention = readFileSync(new URL('../src/AttentionView.tsx', import.meta.url), 'utf8')
+const decisions = readFileSync(new URL('../src/DecisionRequestsView.tsx', import.meta.url), 'utf8')
 const timeline = readFileSync(new URL('../src/TimelineView.tsx', import.meta.url), 'utf8')
 
-describe('primary-surface attention policy', () => {
-  it('uses Attention as the explicit exception surface without reintroducing a Discovery review tab', () => {
-    expect(app).toContain("'attention'")
-    expect(app).toContain("type OpportunityTab = 'opportunities' | 'pipeline' | 'prepare'")
+describe('UU-04 decision visibility policy', () => {
+  it('shows Decisions only when durable DecisionRequests exist', () => {
+    expect(app).toContain("'decisions'")
+    expect(app).toContain("openDecisionCount > 0")
+    expect(app).toContain("navigate('/decisions')")
     expect(app).not.toContain("'review' | 'opportunities'")
-    expect(attention).toContain("item.status === 'pending' || item.status === 'failed'")
-    expect(attention).toContain('coverage.exceptions')
+    expect(decisions).toContain("item.state === 'open'")
+    expect(decisions).toContain('request.choices.map')
+    expect(decisions).toContain('resolveWebDecision')
+    expect(decisions).not.toContain('ChangeSet')
   })
 
-  it('keeps Apply/Discard out of Activity', () => {
+  it('keeps governed ChangeSet internals out of the daily Decisions and History surfaces', () => {
     expect(timeline).not.toContain('onApplyChangeSet')
     expect(timeline).not.toContain('onDiscardChangeSet')
     expect(timeline).not.toContain('changeset-ledger')
-    expect(attention).toContain("void resolve(item, 'apply')")
-    expect(attention).toContain("void resolve(item, 'discard')")
+    expect(decisions).not.toContain('onApplyChangeSet')
+    expect(decisions).not.toContain('onDiscardChangeSet')
   })
 })

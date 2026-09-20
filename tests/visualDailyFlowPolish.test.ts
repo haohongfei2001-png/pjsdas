@@ -3,39 +3,38 @@ import { describe, expect, it } from 'vitest'
 
 const entry = readFileSync(new URL('../src/main.tsx', import.meta.url), 'utf8')
 const app = readFileSync(new URL('../src/AppV8.tsx', import.meta.url), 'utf8')
-const css = readFileSync(new URL('../src/webConsole.css', import.meta.url), 'utf8')
-const polish = readFileSync(new URL('../src/visualPolish.css', import.meta.url), 'utf8')
+const css = readFileSync(new URL('../src/ultimateWeb.css', import.meta.url), 'utf8')
 
-describe('AI-operated console visual hierarchy', () => {
-  it('keeps the existing design-system/polish layers and adds the console layer', () => {
+describe('UU-04 final Web visual hierarchy', () => {
+  it('keeps the established design-system layers and adds the Ultimate Web layer', () => {
     expect(entry).toContain("import './designSystem.css'")
     expect(entry).toContain("import './visualPolish.css'")
-    expect(app).toContain("import './webConsole.css'")
+    expect(app).toContain("import './ultimateWeb.css'")
   })
 
-  it('makes Today decision-first instead of status-first', () => {
-    expect(app).toContain('decision-today-header')
-    expect(app).toContain('decision-hero')
-    expect(app).toContain('decision-next-section')
+  it('makes Today action-and-agenda first instead of status-first', () => {
+    expect(app).toContain('ultimate-today-header')
+    expect(app).toContain('ultimate-next-action')
+    expect(app).toContain('ultimate-agenda')
+    expect(app).toContain('ultimate-next-list-section')
     expect(app).not.toContain('today-status-strip')
     expect(app).not.toContain('today-manual-fallback')
-    expect(css).toContain('.decision-today-header')
-    expect(css).toContain('.decision-hero')
-    expect(css).toContain('.decision-next-section')
-    expect(css).not.toContain('.today-status-strip')
-    expect(css).not.toContain('.today-manual-fallback')
+    expect(css).toContain('.ultimate-today-layout')
+    expect(css).toContain('grid-template-areas:"primary agenda" "next agenda"')
   })
 
-  it('keeps mobile navigation aligned with the four decision surfaces', () => {
-    expect(app).toContain("const primarySurfaces: Surface[] = ['today', 'opportunities', 'attention', 'settings']")
-    expect(css).toContain('grid-template-columns:repeat(4,minmax(0,1fr))')
-    expect(css).toContain('backdrop-filter:blur(24px) saturate(140%)')
+  it('keeps iPhone navigation to Today / Opportunities with Tell PJSDAS above the tabs', () => {
+    expect(app).toContain("const primarySurfaces: PrimarySurface[] = ['today', 'opportunities']")
+    expect(css).toContain('grid-template-columns:repeat(2,minmax(0,1fr))')
+    expect(css).toContain('.ultimate-mobile-capture')
+    expect(css).toContain('bottom:calc(78px + env(safe-area-inset-bottom))')
+    expect(css).toContain('grid-template-areas:"primary" "agenda" "next"')
   })
 
-  it('keeps keyboard, reduced-motion, and mobile affordances from the existing polish layer', () => {
-    expect(polish).toContain(':focus-visible')
-    expect(polish).toContain('@media(prefers-reduced-motion:reduce)')
-    expect(polish).toContain('.surface-nav-item{min-height:48px}')
-    expect(css).toContain('@media(max-width:760px)')
+  it('provides visible focus, reduced motion and touch-sized primary controls', () => {
+    expect(css).toContain(':focus-visible')
+    expect(css).toContain('@media(prefers-reduced-motion:reduce)')
+    expect(css).toContain('min-height:44px')
+    expect(css).toContain('touch-action:manipulation')
   })
 })
