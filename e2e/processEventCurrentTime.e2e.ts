@@ -62,7 +62,7 @@ test('process-event notification default refreshes on open but preserves an expl
   })
 
   await page.goto('/')
-  await expect(page.getByRole('heading', { name: '今天只处理下一步' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: '今天', exact: true })).toBeVisible()
   await seedOpportunity(page)
 
   await page.evaluate(() => {
@@ -70,7 +70,9 @@ test('process-event notification default refreshes on open but preserves an expl
       .__setPjsdasTestNow('2026-09-14T13:45:00.000Z')
   })
 
-  await page.locator('.today-manual-fallback > summary').click()
+  await page.locator('.surface-nav').getByRole('button', { name: /设置/ }).click()
+  const dataRecovery = page.locator('details.settings-group').filter({ hasText: '数据与恢复' })
+  await dataRecovery.locator('summary').click()
   await page.getByRole('button', { name: '+ 记录流程通知' }).click()
   await expect(page.getByRole('heading', { name: '记录真实流程通知' })).toBeVisible()
 

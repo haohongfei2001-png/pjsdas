@@ -2,9 +2,12 @@ import { expect, test } from '@playwright/test'
 
 test('Coverage and Integrity surface follows the global English interface language', async ({ page }) => {
   await page.goto('/')
-  await expect(page.getByRole('heading', { name: '今天只处理下一步' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: '今天', exact: true })).toBeVisible()
 
-  await page.getByRole('button', { name: 'EN', exact: true }).click()
+  await page.locator('.surface-nav').getByRole('button', { name: /设置|Settings/ }).click()
+  const interfaceGroup = page.locator('details.settings-group > summary').filter({ hasText: /界面.*显示层|Interface.*Presentation/ }).locator('..')
+  await interfaceGroup.locator('summary').click()
+  await interfaceGroup.getByRole('button', { name: 'EN', exact: true }).click()
   await expect(page.locator('html')).toHaveAttribute('lang', 'en')
 
   const healthButton = page.getByRole('button', { name: 'View ingestion coverage and workspace health' })
