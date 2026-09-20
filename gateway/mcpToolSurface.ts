@@ -34,6 +34,7 @@ export const AUTHENTICATED_MCP_BASE_RELEASE_REQUIRED_TOOLS = [
 ] as const
 
 export const AUTHENTICATED_MCP_TRANSACTIONAL_RELEASE_REQUIRED_TOOLS = [
+  MCP_TOOL_NAMES.todayBrief,
   MCP_TOOL_NAMES.coverageStatus,
   MCP_TOOL_NAMES.workspaceIntegrity,
   MCP_TOOL_NAMES.explicitOpportunityWrite,

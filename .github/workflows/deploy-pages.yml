@@ -253,6 +253,7 @@ jobs:
                       (!expectedWeb || topology.canonicalWebOrigin === expectedWeb) &&
                       (!expectedApi || topology.canonicalApiOrigin === expectedApi);
                     const expectedTools = [
+                      "get_today_brief",
                       "get_coverage_status",
                       "get_workspace_integrity",
                       "add_opportunities",
@@ -303,6 +304,9 @@ jobs:
                       capabilities.decisionRequests === "v1" &&
                       capabilities.semanticCompensatingUndo === "v1" &&
                       capabilities.semanticServerWritePolicy === "v1" &&
+                      capabilities.todayBriefReadModel === "v1" &&
+                      capabilities.todayAgendaReadModel === "v1" &&
+                      capabilities.latestStartPlanning === "v1" &&
                       capabilities.opportunityParticipationState === "v1" &&
                       capabilities.gmailCompleteConsumption === "v1" &&
                       capabilities.discoverySourceVerification === "v1" &&

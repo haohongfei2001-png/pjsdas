@@ -53,7 +53,15 @@ describe('PJSDAS MCP gateway alpha', () => {
     const result = await invokeReadTool(source, name, args)
     expect(result.isError).not.toBe(true)
     const data = jsonFrom(result)
-    expect(data.meta).toMatchObject({ source: 'pjsdas', workspaceVersion: 'demo-v1', timezone: 'Asia/Shanghai' })
+    if (name === 'get_today_brief') {
+      expect(data).toMatchObject({
+        contractVersion: 1,
+        workspaceRevision: 'demo-v1',
+        displayTimezone: 'Asia/Shanghai',
+      })
+    } else {
+      expect(data.meta).toMatchObject({ source: 'pjsdas', workspaceVersion: 'demo-v1', timezone: 'Asia/Shanghai' })
+    }
   })
 
   it('returns the shared revision-bound TodayBrief contract', async () => {

@@ -503,7 +503,7 @@ function activeDecisionRequests(snapshot: PJSDASSnapshot, now: Date): DecisionRe
 
 function relevantDecisions(
   snapshot: PJSDASSnapshot,
-  actionIds: Set<string>,
+  opportunityIds: Set<string>,
   agendaNodeIds: Set<string>,
   now: Date,
 ): TodayBriefDecisionRequest[] {
@@ -512,11 +512,11 @@ function relevantDecisions(
     .sort((a, b) => {
       const aRelevant = a.affectedObjects.some((item) =>
         (item.type === 'schedule_node' && agendaNodeIds.has(item.id))
-        || (item.type === 'opportunity' && [...actionIds].some((actionId) => actionId.includes(item.id))),
+        || (item.type === 'opportunity' && opportunityIds.has(item.id)),
       )
       const bRelevant = b.affectedObjects.some((item) =>
         (item.type === 'schedule_node' && agendaNodeIds.has(item.id))
-        || (item.type === 'opportunity' && [...actionIds].some((actionId) => actionId.includes(item.id))),
+        || (item.type === 'opportunity' && opportunityIds.has(item.id)),
       )
       const aExpiry = a.expiresAt ? new Date(a.expiresAt).getTime() : Number.POSITIVE_INFINITY
       const bExpiry = b.expiresAt ? new Date(b.expiresAt).getTime() : Number.POSITIVE_INFINITY
@@ -588,6 +588,15 @@ export function buildTodayBrief(
         || a.action.id.localeCompare(b.action.id)
     })
 
+  const planIds = new Set(plan.planned.map((item) => item.action.id))
+  const protectedOutsidePlan = protectedRanked.filter((item) => !planIds.has(item.action.id))
+  const protectedOutsidePlanMinutes = protectedOutsidePlan.reduce(
+    (sum, item) => sum + item.action.estimatedMinutes,
+    0,
+  )
+  const effectivePlannedMinutes = plan.totalMinutes + protectedOutsidePlanMinutes
+  const effectiveOverBudgetMinutes = Math.max(0, effectivePlannedMinutes - Math.round(availableMinutes))
+
   const ordered: RankedAction[] = []
   const seen = new Set<string>()
   for (const item of [...protectedRanked, ...plan.planned]) {
@@ -607,9 +616,11 @@ export function buildTodayBrief(
     agendaHorizonDays,
   )
   const agendaNodes = agendaGroups.flatMap((group) => group.nodes)
-  const actionIds = new Set(visibleActions.map((item) => item.actionId))
+  const opportunityIds = new Set(
+    visibleActions.flatMap((item) => item.opportunityId ? [item.opportunityId] : []),
+  )
   const agendaNodeIds = new Set(agendaNodes.map((item) => item.nodeId))
-  const decisions = relevantDecisions(snapshot, actionIds, agendaNodeIds, context.now)
+  const decisions = relevantDecisions(snapshot, opportunityIds, agendaNodeIds, context.now)
 
   const coverage = summarizeCoverage(snapshot.data.timeline, {
     now: context.now,
@@ -643,22 +654,28 @@ export function buildTodayBrief(
       coverage.exceptions.map((item) => item.id).slice(0, 12),
     ))
   }
-  if (plan.overBudgetMinutes > 0) {
+  if (effectiveOverBudgetMinutes > 0) {
     warnings.push(warning(
       'capacity_conflict',
       'critical',
       'Today contains more protected work than the available-time budget.',
-      `Protected work exceeds the budget by ${plan.overBudgetMinutes} minute(s).`,
-      visibleActions.filter((item) => item.protectedByLatestStart).map((item) => item.actionId),
+      `Protected work exceeds the budget by ${effectiveOverBudgetMinutes} minute(s).`,
+      protectedRanked.map((item) => item.action.id),
     ))
   }
-  if (plan.nearDeadlineUnplanned.length > 0) {
+  const protectedUnplanned = [
+    ...plan.nearDeadlineUnplanned,
+    ...protectedOutsidePlan,
+  ].filter((item, index, items) =>
+    items.findIndex((candidate) => candidate.action.id === item.action.id) === index,
+  )
+  if (protectedUnplanned.length > 0) {
     warnings.push(warning(
       'hard_deadline_unplanned',
       'critical',
-      'A near hard deadline is not covered by the current plan.',
-      `${plan.nearDeadlineUnplanned.length} protected deadline action(s) do not fit the current plan.`,
-      plan.nearDeadlineUnplanned.map((item) => item.action.id),
+      'A protected hard deadline is not covered by the current plan.',
+      `${protectedUnplanned.length} protected deadline action(s) do not fit the current plan.`,
+      protectedUnplanned.map((item) => item.action.id),
     ))
   }
   const missingTargets = visibleActions.filter((item) =>
@@ -684,7 +701,7 @@ export function buildTodayBrief(
       updatedAt: rules.updatedAt,
     },
     availableMinutes: Math.round(availableMinutes),
-    plannedMinutes: plan.totalMinutes,
+    plannedMinutes: effectivePlannedMinutes,
     nextAction: visibleActions[0],
     nextActions: visibleActions.slice(1),
     agendaGroups,
@@ -693,7 +710,7 @@ export function buildTodayBrief(
     internalDiagnostics: {
       rankedActionCount: ranked.length,
       protectedActionIds: protectedRanked.map((item) => item.action.id),
-      nearDeadlineUnplannedActionIds: plan.nearDeadlineUnplanned.map((item) => item.action.id),
+      nearDeadlineUnplannedActionIds: protectedUnplanned.map((item) => item.action.id),
       agendaNodeCount: agendaNodes.length,
       openDecisionRequestCount: activeDecisionRequests(snapshot, context.now).length,
       coverage: {
