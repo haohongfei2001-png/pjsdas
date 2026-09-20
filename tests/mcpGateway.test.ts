@@ -19,6 +19,7 @@ function jsonFrom(result: Awaited<ReturnType<typeof invokeReadTool>>) {
 describe('PJSDAS MCP gateway alpha', () => {
   it('exposes the bounded v1.6 Round 2 read-only tool set', () => {
     expect(READ_TOOL_NAMES).toEqual([
+      'get_today_brief',
       'get_today_plan',
       'list_opportunities',
       'get_opportunity_assessment',
@@ -37,6 +38,7 @@ describe('PJSDAS MCP gateway alpha', () => {
   })
 
   it.each([
+    ['get_today_brief', { availableMinutes: 180, agendaHorizonDays: 7 }],
     ['get_today_plan', { availableMinutes: 180 }],
     ['list_opportunities', { limit: 10 }],
     ['get_opportunity_assessment', { opportunityId: 'opp-alpha' }],
@@ -52,6 +54,22 @@ describe('PJSDAS MCP gateway alpha', () => {
     expect(result.isError).not.toBe(true)
     const data = jsonFrom(result)
     expect(data.meta).toMatchObject({ source: 'pjsdas', workspaceVersion: 'demo-v1', timezone: 'Asia/Shanghai' })
+  })
+
+  it('returns the shared revision-bound TodayBrief contract', async () => {
+    const result = await invokeReadTool(source, 'get_today_brief', { availableMinutes: 180, agendaHorizonDays: 7 })
+    expect(result.isError).not.toBe(true)
+    const data = jsonFrom(result)
+    expect(data).toMatchObject({
+      contractVersion: 1,
+      workspaceRevision: 'demo-v1',
+      displayTimezone: 'Asia/Shanghai',
+      availableMinutes: 180,
+    })
+    expect(Array.isArray(data.nextActions)).toBe(true)
+    expect(Array.isArray(data.agendaGroups)).toBe(true)
+    expect(Array.isArray(data.relevantDecisionRequests)).toBe(true)
+    expect(Array.isArray(data.materialCoverageWarnings)).toBe(true)
   })
 
   it('returns component and portfolio policy through get_decision_rules', async () => {
