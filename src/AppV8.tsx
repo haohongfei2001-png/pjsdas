@@ -291,109 +291,278 @@ export default function AppV8() {
   )
 }
 
-function TodaySurface({ ranked, now, opportunities, rules, attentionCount, workspaceEmpty, onStart, onOpenAttention, onMark, onOpenOpportunity }: {
-  ranked: ReturnType<typeof rankActions>
+function TodaySurface({
+  brief,
+  now,
+  budgetMinutes,
+  agendaExpanded,
+  workspaceEmpty,
+  onBudgetChange,
+  onStart,
+  onOpenDecisions,
+  onOpenAgenda,
+  onExecute,
+  onMark,
+  onOpenOpportunity,
+}: {
+  brief: TodayBriefModel
   now: Date
-  opportunities: Opportunity[]
-  rules: DecisionRules
-  attentionCount: number
+  budgetMinutes: number
+  agendaExpanded: boolean
   workspaceEmpty: boolean
+  onBudgetChange: (minutes: number) => void
   onStart: () => void
-  onOpenAttention: () => void
+  onOpenDecisions: () => void
+  onOpenAgenda: () => void
+  onExecute: (item: TodayBriefAction) => Promise<void>
   onMark: (id: string, status: Action['status']) => Promise<void>
   onOpenOpportunity: (id: string) => void
 }) {
   const { lang } = useUiLanguage()
   const zh = lang === 'zh'
-  const [budgetMinutes, setBudgetMinutes] = useState(180)
-  const plan = buildTimePlan(ranked, budgetMinutes, now, rules)
-  const opportunityMap = new Map(opportunities.map((item) => [item.id, item]))
-  const top = plan.planned[0]
-  const next = plan.planned.slice(1, 5)
+  const primary = brief.nextAction
+  const criticalWarnings = brief.materialCoverageWarnings.filter((item) => item.severity === 'critical')
+  const coverageWarnings = brief.materialCoverageWarnings.filter((item) => item.severity !== 'critical')
 
-  function decisionReason(item: (typeof plan.planned)[number]) {
-    return presentRankingReasons(item.reasons, zh).join(' · ')
-      || (zh ? '当前优先级最高' : 'Highest current priority')
+  function reasonText(item: TodayBriefAction) {
+    return item.whyNow.length
+      ? item.whyNow.join(' · ')
+      : (zh ? '当前最值得处理' : 'Highest-value next move')
+  }
+
+  function primaryLabel(item: TodayBriefAction) {
+    if (item.execution.operation === 'open_application') {
+      return item.execution.externalUrl
+        ? (zh ? '打开申请' : 'Open application')
+        : (zh ? '查看岗位' : 'View opportunity')
+    }
+    if (item.execution.operation === 'start_prep') return zh ? '开始准备' : 'Start prep'
+    if (item.execution.operation === 'open_process') return zh ? '查看流程' : 'Open process'
+    if (item.execution.operation === 'open_group_decision') return zh ? '比较机会' : 'Compare opportunities'
+    return zh ? '开始' : 'Start'
+  }
+
+  function actionTiming(item: TodayBriefAction) {
+    const timing = item.timing
+    if (!timing) return undefined
+    if (timing.precision === 'date' && timing.date) {
+      return (zh ? '日期：' : 'Date: ') + timing.date
+    }
+    if (timing.startAt) {
+      return (zh ? '开始：' : 'Starts: ') + formatBriefDateTime(timing.startAt, zh)
+    }
+    if (timing.deadlineAt) {
+      return (zh ? '截止：' : 'Deadline: ') + formatBriefDateTime(timing.deadlineAt, zh)
+    }
+    return undefined
   }
 
   return (
-    <section className="surface-page today-surface decision-today">
-      <header className="decision-today-header">
+    <section className="surface-page ultimate-today">
+      <header className="ultimate-today-header">
         <div>
           <div className="eyebrow">{formatDateOnly(now.toISOString())}</div>
           <h1>{zh ? '今天' : 'Today'}</h1>
+          <p>{zh ? '只看现在最值得做的事，以及接下来不能错过的时间节点。' : 'Only what is worth doing now and the recruiting nodes you cannot afford to miss.'}</p>
         </div>
-        {attentionCount > 0 ? (
-          <button className="decision-attention-pill" type="button" onClick={onOpenAttention}>
+        {brief.relevantDecisionRequests.length > 0 ? (
+          <button className="ultimate-decision-entry" type="button" onClick={onOpenDecisions}>
             <span>{zh ? '需要你决定' : 'Needs your decision'}</span>
-            <strong>{attentionCount}</strong>
+            <strong>{brief.relevantDecisionRequests.length}</strong>
           </button>
         ) : null}
       </header>
 
-      {top ? (
-        <article className="decision-hero">
-          <div className="decision-kicker">{zh ? '下一步' : 'Next'}</div>
-          <h2>{top.action.title}</h2>
-          <p className="decision-why">{decisionReason(top)}</p>
-          <div className="decision-meta">
-            {top.action.dueAt ? <TimeRiskBadge action={top.action} now={now} rules={rules} /> : null}
-            <span className="decision-duration">{formatMinutes(top.action.estimatedMinutes)}</span>
-          </div>
-          <div className="decision-actions">
-            <button className="primary-button" onClick={() => { void onMark(top.action.id, 'done') }}>{zh ? '完成' : 'Done'}</button>
-            {top.action.opportunityId ? <button className="secondary-button" onClick={() => onOpenOpportunity(top.action.opportunityId!)}>{zh ? '查看岗位' : 'View job'}</button> : null}
-          </div>
-        </article>
-      ) : workspaceEmpty ? (
-        <GettingStartedCard onStart={onStart} />
-      ) : (
-        <div className="decision-clear-state">
-          <strong>{zh ? '现在没有必须处理的行动' : 'Nothing requires action right now'}</strong>
-          <span>{zh ? '没有硬截止、冲突或待完成动作时，Today 保持为空。' : 'Today stays quiet when there is no deadline, conflict, or executable action.'}</span>
+      {criticalWarnings.length ? (
+        <div className="ultimate-critical-stack" role="status">
+          {criticalWarnings.map((item) => (
+            <div className="ultimate-critical-warning" key={item.code}>
+              <strong>{item.title}</strong>
+              <span>{item.detail}</span>
+            </div>
+          ))}
         </div>
-      )}
+      ) : null}
 
-      {!workspaceEmpty && next.length ? (
-        <section className="decision-next-section">
-          <div className="decision-section-head">
-            <h2>{zh ? '接下来' : 'Next up'}</h2>
+      <div className="ultimate-today-layout">
+        <div className="ultimate-primary-slot">
+          {primary ? (
+            <article className="ultimate-next-action">
+              <div className="decision-kicker">{zh ? '下一步' : 'Next action'}</div>
+              {primary.company ? <div className="ultimate-action-context">{primary.company}{primary.role ? ' · ' + primary.role : ''}</div> : null}
+              <h2>{primary.title}</h2>
+              <p className="decision-why">{reasonText(primary)}</p>
+              <div className="ultimate-action-meta">
+                {actionTiming(primary) ? <span>{actionTiming(primary)}</span> : null}
+                <span>{zh ? '预计 ' : 'Est. '}{formatMinutes(primary.estimatedMinutes)}</span>
+                {primary.protectedByLatestStart ? <strong>{zh ? '已进入最迟开工保护' : 'Latest-start protected'}</strong> : null}
+              </div>
+              <div className="decision-actions">
+                <button className="primary-button" type="button" onClick={() => { void onExecute(primary) }}>
+                  {primaryLabel(primary)}
+                </button>
+                <button className="secondary-button" type="button" onClick={() => { void onMark(primary.actionId, 'done') }}>
+                  {zh ? '标记完成' : 'Mark done'}
+                </button>
+                {primary.opportunityId ? (
+                  <button className="text-button" type="button" onClick={() => onOpenOpportunity(primary.opportunityId!)}>
+                    {zh ? '岗位详情' : 'Opportunity'}
+                  </button>
+                ) : null}
+              </div>
+            </article>
+          ) : workspaceEmpty ? (
+            <GettingStartedCard onStart={onStart} />
+          ) : (
+            <div className="ultimate-quiet-state ultimate-primary-quiet">
+              <strong>{zh ? '现在没有必须处理的行动' : 'Nothing requires action right now'}</strong>
+              <span>{zh ? '未来节点仍会保留在右侧日程，不需要为了填满 Today 制造任务。' : 'Future recruiting nodes remain visible in the agenda; PJSDAS does not invent work just to fill Today.'}</span>
+            </div>
+          )}
+        </div>
+
+        <aside className="ultimate-agenda" aria-label={zh ? '近期招聘日程' : 'Upcoming recruiting agenda'}>
+          <div className="ultimate-section-head">
+            <div>
+              <span className="eyebrow">AGENDA</span>
+              <h2>{agendaExpanded ? (zh ? '未来 30 天' : 'Next 30 days') : (zh ? '近期节点' : 'Upcoming')}</h2>
+            </div>
+            <button className="text-button" type="button" onClick={onOpenAgenda}>
+              {agendaExpanded ? (zh ? '收起' : 'Summary') : (zh ? '全部日程' : 'All schedule')}
+            </button>
+          </div>
+
+          {brief.agendaGroups.length ? (
+            <div className="ultimate-agenda-groups">
+              {brief.agendaGroups.map((group) => (
+                <section className={'ultimate-agenda-group relation-' + group.relation} key={group.key}>
+                  <h3>{agendaGroupTitle(group.relation, group.date, zh)}</h3>
+                  <div>
+                    {group.nodes.map((node) => (
+                      <button
+                        className={'ultimate-agenda-node' + (node.requiresResolution ? ' unresolved' : '')}
+                        type="button"
+                        key={node.nodeId}
+                        onClick={() => { if (node.opportunityId) onOpenOpportunity(node.opportunityId) }}
+                      >
+                        <span className="ultimate-agenda-time">{agendaNodeTime(node, zh)}</span>
+                        <span className="ultimate-agenda-copy">
+                          <strong>{agendaNodeLabel(node.kind, zh)}</strong>
+                          <small>{[node.company, node.role].filter(Boolean).join(' · ') || (zh ? '招聘节点' : 'Recruiting node')}</small>
+                        </span>
+                        <span className="ultimate-agenda-state">
+                          {node.requiresResolution
+                            ? (zh ? '待确认' : 'Resolve')
+                            : node.within48Hours
+                              ? (zh ? '48h 内' : '<48h')
+                              : ''}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                </section>
+              ))}
+            </div>
+          ) : (
+            <div className="ultimate-agenda-empty">
+              <strong>{zh ? '近期没有招聘时间节点' : 'No recruiting nodes coming up'}</strong>
+              <span>{zh ? '这里不会显示普通日历事件。' : 'General calendar events do not appear here.'}</span>
+            </div>
+          )}
+        </aside>
+
+        <section className="ultimate-next-list-section">
+          <div className="ultimate-section-head">
+            <div>
+              <span className="eyebrow">NEXT UP</span>
+              <h2>{zh ? '接下来' : 'Next up'}</h2>
+            </div>
             <div className="decision-budget" role="group" aria-label={zh ? '今日可用时间' : 'Available time today'}>
               {[60, 180, 360].map((value) => (
-                <button key={value} type="button" className={budgetMinutes === value ? 'active' : ''} onClick={() => setBudgetMinutes(value)}>{formatMinutes(value)}</button>
+                <button key={value} type="button" className={budgetMinutes === value ? 'active' : ''} onClick={() => onBudgetChange(value)}>
+                  {formatMinutes(value)}
+                </button>
               ))}
             </div>
           </div>
-          <div className="decision-next-list">
-            {next.map((item, index) => {
-              const opportunity = item.action.opportunityId ? opportunityMap.get(item.action.opportunityId) : undefined
-              return (
-                <article className="decision-next-row" key={item.action.id}>
-                  <span className="decision-order">{index + 2}</span>
-                  <button className="decision-next-copy" type="button" onClick={() => { if (opportunity) onOpenOpportunity(opportunity.id) }}>
-                    <strong>{item.action.title}</strong>
-                    <small>{decisionReason(item)}</small>
-                  </button>
-                  <div className="decision-next-meta">
-                    {item.action.dueAt ? <TimeRiskBadge action={item.action} now={now} rules={rules} compact /> : null}
-                    <span>{formatMinutes(item.action.estimatedMinutes)}</span>
-                  </div>
-                  <button className="decision-done-button" type="button" onClick={() => { void onMark(item.action.id, 'done') }}>{zh ? '完成' : 'Done'}</button>
-                </article>
-              )
-            })}
-          </div>
-        </section>
-      ) : null}
 
-      {!workspaceEmpty && plan.overrunReason ? (
-        <button className="decision-capacity-warning" type="button" onClick={onOpenAttention}>
-          <span>{zh ? '今天的硬约束超过当前可用时间' : 'Hard constraints exceed today’s available time'}</span>
-          <strong>{zh ? '查看需要决定的事' : 'Review decisions'}</strong>
-        </button>
+          {brief.nextActions.length ? (
+            <div className="ultimate-next-list">
+              {brief.nextActions.map((item, index) => (
+                <article className="ultimate-next-row" key={item.actionId}>
+                  <span className="decision-order">{index + 2}</span>
+                  <button className="ultimate-next-copy" type="button" onClick={() => { void onExecute(item) }}>
+                    <strong>{item.title}</strong>
+                    <small>{reasonText(item)}</small>
+                  </button>
+                  <div className="ultimate-next-meta">
+                    {actionTiming(item) ? <span>{actionTiming(item)}</span> : null}
+                    <span>{formatMinutes(item.estimatedMinutes)}</span>
+                  </div>
+                  <button className="decision-done-button" type="button" onClick={() => { void onMark(item.actionId, 'done') }}>
+                    {zh ? '完成' : 'Done'}
+                  </button>
+                </article>
+              ))}
+            </div>
+          ) : (
+            <p className="ultimate-section-empty">{zh ? '没有第二优先级任务。' : 'No secondary action needs your time.'}</p>
+          )}
+        </section>
+      </div>
+
+      {coverageWarnings.length ? (
+        <details className="ultimate-coverage-details">
+          <summary>{zh ? '数据覆盖提示' : 'Coverage notes'} · {coverageWarnings.length}</summary>
+          <div>
+            {coverageWarnings.map((item) => (
+              <p key={item.code}><strong>{item.title}</strong><span>{item.detail}</span></p>
+            ))}
+          </div>
+        </details>
       ) : null}
     </section>
   )
+}
+
+function agendaGroupTitle(relation: 'unresolved' | 'today' | 'tomorrow' | 'later', date: string | undefined, zh: boolean) {
+  if (relation === 'unresolved') return zh ? '已过时间 · 待确认' : 'Past · needs resolution'
+  if (relation === 'today') return zh ? '今天' : 'Today'
+  if (relation === 'tomorrow') return zh ? '明天' : 'Tomorrow'
+  return date ?? (zh ? '之后' : 'Later')
+}
+
+function agendaNodeLabel(kind: TodayBriefAgendaNode['kind'], zh: boolean) {
+  const labels: Record<TodayBriefAgendaNode['kind'], [string, string]> = {
+    interview: ['面试', 'Interview'],
+    written_test: ['笔试', 'Written test'],
+    assessment: ['测评', 'Assessment'],
+    application_deadline: ['申请截止', 'Application deadline'],
+    follow_up: ['复核', 'Follow-up'],
+    prep_trigger: ['准备节点', 'Prep trigger'],
+  }
+  return labels[kind][zh ? 0 : 1]
+}
+
+function agendaNodeTime(node: TodayBriefAgendaNode, zh: boolean) {
+  const temporal = node.temporal
+  if (temporal.precision === 'date' && temporal.date) return temporal.date
+  if (temporal.startAt) return formatBriefDateTime(temporal.startAt, zh)
+  if (temporal.deadlineAt) return (zh ? '截止 ' : 'By ') + formatBriefDateTime(temporal.deadlineAt, zh)
+  if (temporal.endAt) return formatBriefDateTime(temporal.endAt, zh)
+  return zh ? '时间待定' : 'Time TBD'
+}
+
+function formatBriefDateTime(value: string, zh: boolean) {
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return value
+  return new Intl.DateTimeFormat(zh ? 'zh-CN' : 'en-GB', {
+    month: 'numeric',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).format(date)
 }
 
 function OpportunitiesSurface({ opportunities, groups, processes, prep, tab, onTabChange, onOpenOpportunity }: {
