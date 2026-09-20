@@ -4,6 +4,7 @@ import type {
   ProcessEventType,
   ScheduleNodeKind,
   SemanticCandidate,
+  SemanticCandidateBase,
   SemanticStatementMode,
 } from './model.js'
 import type { PJSDASSnapshot } from './snapshot.js'
@@ -49,7 +50,11 @@ function occurrenceKind(type: ProcessEventType): ScheduleNodeKind | undefined {
   return undefined
 }
 
-function candidateBase(id: string, sourceText: string, level: 'high' | 'medium' | 'low') {
+function candidateBase(
+  id: string,
+  sourceText: string,
+  level: 'high' | 'medium' | 'low',
+): SemanticCandidateBase {
   return {
     id,
     objectConfidence: level,
@@ -57,7 +62,7 @@ function candidateBase(id: string, sourceText: string, level: 'high' | 'medium' 
     temporalConfidence: level,
     evidenceRefs: ['web-input:' + stableHash(sourceText)],
     sourceVersionRefs: [],
-  } as const
+  }
 }
 
 function operationCandidate(operation: ReturnType<typeof parseProgressUpdate>['executable'][number]): SemanticCandidate | undefined {
