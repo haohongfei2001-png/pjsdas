@@ -83,7 +83,7 @@ PJSDAS supports two explicit authority modes:
 - **Local mode** — IndexedDB is authoritative and remote AI/background writers are not the durable state owner.
 - **Connected mode** — a transactional Supabase/PostgreSQL workspace is authoritative; IndexedDB is the local working copy/offline cache and Google Drive is backup/export/portability storage.
 
-The current production deployment remains on the legacy Drive authority until the owner workspace is explicitly migrated and production activation flags are switched together.
+The current owner-controlled production deployment is already on the transactional Supabase/PostgreSQL workspace authority with owner-only allowlist access. `https://todayaction.com` is the canonical Web/API origin. Google Drive is backup/export/portability storage, and the legacy GitHub Pages origin remains a bounded migration/recovery origin.
 
 Workspace snapshots are validated before restore or migration. SHA-256 fingerprints participate in conflict detection and migration verification. Divergent non-empty Local/Drive states fail closed rather than using last-write-wins.
 
@@ -172,3 +172,13 @@ Main implementation and architecture references include:
 - [`docs/RELEASE_POLICY.md`](docs/RELEASE_POLICY.md)
 - [`docs/AI_OPERATED_PRODUCTION_V1.md`](docs/AI_OPERATED_PRODUCTION_V1.md)
 - [`docs/PRODUCTION_TOPOLOGY_V1.md`](docs/PRODUCTION_TOPOLOGY_V1.md)
+
+
+## Ultimate Usability development line
+
+The next major product/usability package is registered under
+[`docs/ultimate-usability-v1/README.md`](docs/ultimate-usability-v1/README.md).
+
+Its frozen design refines the product toward a Today-first, automation-heavy, Mac/iPhone-coherent
+experience while preserving the transactional authority, audit, idempotency, CAS, provenance, and
+external-action safety boundaries defined by the AI-operated production architecture.
