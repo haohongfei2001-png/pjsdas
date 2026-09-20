@@ -182,17 +182,18 @@ Not in scope:
    - pre-closure exact-SHA candidate `main@73943120cc4d32b547f00824b1ed112216dc3e05`
      passed CI, Browser E2E, GitHub Pages deployment, and Production Self-Test; any later closure
      commit must pass the same exact-SHA chain before publication;
-   - publication is now explicitly **ARMED** for `v1.1.0-rc.1` by owner decision; the arm commit
-     must pass its own exact-SHA production chain, and the release workflow must still re-verify
-     branch protection and Immutable Releases before creating the prerelease.
+   - `v1.1.0-rc.1` is published as an immutable prerelease from exact commit
+     `59d32530b7b649debd70e1a640ea2b69bb1de492`; publication is now **DISARMED** for
+     subsequent Round 6 pushes.
 7. Round 6 — Personal Canary → Controlled Launch
 
 Do not activate the new P1 direct-write surface until connected authority is transactional.
 Round 3 is complete. Future Web work must preserve the same Domain Command/state contracts
-instead of creating a second mutation model. Round 4 is complete at the source/schema/topology layer. Exact domain attachment remains an
-external deployment input because no trustworthy canonical personal-domain value was discoverable
-from the repository or current deployment metadata. Round 5 is complete as a hardening/verification round. Its current result is
-**IMPLEMENTATION READY / PLATFORM GATES CONFIGURED / PUBLICATION ARMED**.
-Round 6 must not start owner-canary migration/authority cutover before the armed RC publication
-workflow and its authenticated release preflight complete successfully. The current gate/evidence matrix is in
+instead of creating a second mutation model. Round 4 is complete at the source/schema/topology layer. Round 5 is complete and its immutable
+`v1.1.0-rc.1` prerelease is published; its current result is
+**RC PUBLISHED / PLATFORM GATES CONFIGURED / PUBLICATION DISARMED**.
+Round 6 has migrated and fingerprint-verified the owner workspace, activated transactional
+authority, enabled owner-only allowlist mode, and resolved the canonical Web/API origin to
+`https://todayaction.com`. Canonical-domain controlled-launch verification is tracked in
+`docs/ROUND_6_CANARY.md`, while the release gate/evidence matrix remains in
 `docs/RC_1_1_0_READINESS.md`.

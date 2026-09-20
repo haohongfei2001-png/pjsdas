@@ -38,6 +38,17 @@ The existing GitHub Pages origin
 `https://haohongfei2001-png.github.io` remains the default legacy origin until
 deployment configuration says otherwise.
 
+## Current Round 6 deployment input
+
+The controlled-launch deployment now resolves both canonical identities to the same Vercel origin:
+
+- canonical Web origin: `https://todayaction.com`;
+- canonical API origin: `https://todayaction.com`;
+- `www.todayaction.com` permanently redirects to the apex domain;
+- legacy browser origin remains `https://haohongfei2001-png.github.io` during migration/recovery.
+
+These values are deployment configuration, not hard-coded application defaults.
+
 ## Origin security contract
 
 All first-party browser endpoints use one shared allow-origin policy.

@@ -1,6 +1,6 @@
 # PJSDAS v1.1.0-rc.1 — Round 5 Readiness
 
-Status: **IMPLEMENTATION READY / PLATFORM GATES CONFIGURED / PUBLICATION ARMED**
+Status: **RC PUBLISHED / PLATFORM GATES CONFIGURED / PUBLICATION DISARMED**
 
 Package: **PJSDAS-AI-OPERATED-PRODUCTION-v1 / Round 5**
 
@@ -10,9 +10,9 @@ code/data readiness from repository/platform publication controls.
 ## Candidate identity
 
 - product version: `1.1.0-rc.1`
-- Git tag when armed: `v1.1.0-rc.1`
+- published Git tag: `v1.1.0-rc.1`
 - release channel: `prerelease`
-- publication switch: **ON**
+- publication switch: **OFF (post-publication)**
 - authenticated MCP runtime: independent compatibility version
 - exact deployment identity: Git commit SHA
 
@@ -113,7 +113,7 @@ Supabase also reports leaked-password protection disabled. Current PJSDAS applic
 no password sign-in path and the current auth population uses Google OAuth only, so this is not an
 RC blocker while password authentication remains unused.
 
-## NOT ACTIVATED — owner/data cutover
+## NOT ACTIVATED DURING ROUND 5 — owner/data cutover
 
 Round 5 does not silently perform owner-canary actions:
 
@@ -125,7 +125,7 @@ Round 5 does not silently perform owner-canary actions:
 - the P1 `apply_user_command` tool therefore remains hidden in production;
 - exact canonical personal-domain values remain unset.
 
-These are Round 6 canary/cutover actions, not Round 5 hardening shortcuts.
+These were Round 6 canary/cutover actions, not Round 5 hardening shortcuts. Round 6 subsequently migrated and fingerprint-verified the owner workspace, activated transactional authority, created the owner grant, and enabled owner-only allowlist mode.
 
 ## PASS — default branch protection
 
@@ -137,7 +137,7 @@ A classic protection rule applies to `main`. Force pushes and branch deletion re
 The release workflow keeps its authenticated preflight and will still refuse publication if this
 platform state regresses.
 
-## PASS / FINAL WORKFLOW PREFLIGHT PENDING — GitHub Immutable Releases
+## PASS — GitHub Immutable Releases
 
 Repository-level **Release immutability** is enabled in GitHub Settings and remained enabled after
 page reload.
@@ -158,51 +158,37 @@ setting is enabled; after creation it must verify both:
 
 ## PASS — exact-SHA production-chain evidence
 
-Reference pre-closure candidate:
+The armed publication commit was:
 
-`main@73943120cc4d32b547f00824b1ed112216dc3e05`
+`main@59d32530b7b649debd70e1a640ea2b69bb1de492`
 
-For that exact SHA, GitHub Actions reported:
+For that exact SHA, CI, Browser E2E, GitHub Pages deployment, Production Self-Test,
+default-branch protection preflight, and Immutable Releases preflight all passed.
 
-- CI — success;
-- Browser E2E — success;
-- Deploy PJSDAS to GitHub Pages — success;
-- PJSDAS Production Self-Test — success.
+GitHub then created `v1.1.0-rc.1` as an immutable prerelease with
+`prerelease=true` and `immutable=true`, targeting that exact commit.
 
-The downstream Publish workflow also completed successfully, but because
-`publishOnProductionSuccess=false`, every publication-only step remained safely skipped.
-No `v1.1.0-rc.1` tag or GitHub Release exists yet.
+Later Round 6 commits advance `main` for canary and controlled-launch work. They do not move or
+rewrite the immutable RC tag.
 
-This SHA is evidence for the release architecture, not a permanently hard-coded publication target.
-Any later closure commit advances `main`; an armed publication must therefore use the final
-`main` SHA and pass the same exact-SHA production chain again.
+## RESOLVED IN ROUND 6 — canonical domain
 
-## DEFERRED TO CANARY / CONTROLLED LAUNCH — canonical domain
+Round 6 resolved the production origin to `https://todayaction.com`.
 
-No trustworthy canonical personal-domain value is present in current repository/deployment metadata.
-Round 5 therefore does not invent one.
-
-The release candidate may be built and verified on the current legacy Web/fallback backend topology.
-Canonical domain attachment, external OAuth-origin/redirect updates, owner migration, authority
-cutover, and allowlist activation are controlled canary/launch operations using the actual chosen
-domain values.
+- Vercel Production serves the Web app and API on the same canonical origin;
+- `www.todayaction.com` permanently redirects to the apex domain;
+- the legacy GitHub Pages origin remains allowed during migration/recovery;
+- Supabase Auth Site URL is `https://todayaction.com` and the redirect allowlist retains both
+  the legacy GitHub Pages callback and `https://todayaction.com/**`.
 
 ## Publication decision
 
-**v1.1.0-rc.1 publication is ARMED by explicit owner decision.**
+**v1.1.0-rc.1 is PUBLISHED and publication is now DISARMED for subsequent main pushes.**
 
-`.github/release-plan.json` is now `publishOnProductionSuccess=true`. This does not bypass any
-release gate: the arm commit must pass its own exact-SHA CI / browser / Pages / Production Self-Test
-chain, after which the release workflow must re-verify branch protection and Immutable Releases
-before creating the prerelease.
+The immutable prerelease already exists and is bound to
+`59d32530b7b649debd70e1a640ea2b69bb1de492`.
+`.github/release-plan.json` is returned to `publishOnProductionSuccess=false` so Round 6
+canary/domain commits cannot accidentally publish or move another release.
 
-The armed release workflow must still fail closed unless all of the following remain true:
-
-1. successful exact-SHA production chain;
-2. protected default branch;
-3. authenticated Immutable Releases preflight returns enabled;
-4. matching package/release-plan/tag/channel;
-5. created GitHub prerelease reports `prerelease=true` and `immutable=true`.
-
-Round 6 owner-canary migration / authority cutover must not start before that explicit publication
-decision and release preflight have completed.
+Any future release publication must explicitly re-arm the plan and pass the same fail-closed
+branch-protection, immutable-release, exact-SHA, version, tag, and channel checks.

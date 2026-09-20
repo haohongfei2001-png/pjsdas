@@ -1,25 +1,44 @@
 # PJSDAS Round 6 — Owner Canary
 
-Status: **IN PROGRESS — OWNER-ONLY ALLOWLIST CUTOVER**
+Status: **IN PROGRESS — CANONICAL DOMAIN CUTOVER**
 
-Baseline release: `v1.1.0-rc.1`
+Baseline release: `v1.1.0-rc.1` (immutable prerelease)
 
-Current state:
-- legacy Web origin remains the migration/canary entry point;
-- Local and Google Drive snapshots reconciled with identical fingerprint `47995dbb6b02…`;
-- migration recovery bundle was downloaded and validated;
-- owner transactional workspace was created and fingerprint-verified;
-- owner access grant is active;
-- legacy browser auto-sync remains frozen;
-- transactional authority passed exact-SHA production self-test and owner write/idempotency canary;
-- Vercel Production and GitHub Pages build configuration are both set to `transactional`;
-- controlled audience is now configured as `allowlist` with the owner grant already present.
+Canonical production origin: `https://todayaction.com`
 
-Current cutover:
-1. deploy one exact commit to backend and Web with `transactional + allowlist`;
-2. require backend health and Pages production gate to agree on that exact SHA;
-3. require Production Self-Test to pass;
-4. verify the owner account retains connected Web access under allowlist mode;
-5. keep public signup and beta access closed until later controlled-launch decisions.
+## Verified owner-canary state
 
-Canonical-domain activation is still separate and is not performed by this document.
+- Local and Google Drive migration inputs reconciled with identical fingerprint `47995dbb6b02…`;
+- the migration recovery bundle was downloaded and validated;
+- the owner transactional workspace was created and fingerprint-verified;
+- the owner access grant is active;
+- transactional authority passed exact-SHA Production Self-Test;
+- a same-snapshot real owner commit advanced the transactional revision once;
+- retrying the same command returned `ALREADY_APPLIED` and did not duplicate the ledger row;
+- owner-only allowlist mode passed exact-SHA CI, Browser E2E, Pages deployment, and Production Self-Test;
+- the owner Web session remained authorized under allowlist mode;
+- the legacy GitHub Pages origin remains available during controlled migration/recovery.
+
+## Canonical-domain configuration
+
+- Vercel Production is attached to `todayaction.com`;
+- `www.todayaction.com` is configured as a permanent redirect to the apex domain;
+- DNSPod authoritative records point the apex to Vercel and `www` to the Vercel DNS target;
+- Supabase Auth Site URL is `https://todayaction.com`;
+- Supabase Auth redirect allowlist contains both the legacy GitHub Pages callback and
+  `https://todayaction.com/**`;
+- Vercel and GitHub deployment variables declare canonical Web/API origin as
+  `https://todayaction.com`;
+- connected authority remains `transactional`;
+- audience mode remains `allowlist`;
+- public signup and beta grants remain closed.
+
+## Current cutover
+
+1. deploy one new exact SHA with the canonical Web/API origin bound in backend and frontend;
+2. require backend health and the frontend release manifest to report the same canonical origin;
+3. require CI, Browser E2E, Pages deployment, and Production Self-Test to pass;
+4. verify `https://todayaction.com` serves the PJSDAS Web app and owner connected access;
+5. keep the old GitHub Pages origin as a bounded legacy/recovery origin until post-cutover confidence is established.
+
+Round 6 is not complete until the canonical-domain exact-SHA chain and owner verification pass.
