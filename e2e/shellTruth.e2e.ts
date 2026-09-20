@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test'
 
-test('shell hides stale version copy and Opportunities uses the three-context layout', async ({ page }) => {
+test('shell hides stale version copy and Opportunities uses the decision-first two-context layout', async ({ page }) => {
   await page.goto('/')
   await expect(page.getByRole('heading', { name: '今天', exact: true })).toBeVisible()
 
@@ -9,10 +9,13 @@ test('shell hides stale version copy and Opportunities uses the three-context la
   await expect(page.locator('.surface-sidebar-footer')).toContainText('Today · Opportunities')
 
   await page.getByRole('button', { name: /机会/ }).click()
-  await expect(page.getByRole('heading', { name: '机会、流程和准备在同一个工作面' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: '哪些在推进，哪些值得继续投入' })).toBeVisible()
 
   const tabs = page.locator('.surface-context-tabs button')
-  await expect(tabs).toHaveCount(3)
+  await expect(tabs).toHaveCount(2)
+  await expect(page.getByRole('button', { name: /推进中/ })).toBeVisible()
+  await expect(page.getByRole('button', { name: /值得推进/ })).toBeVisible()
+
   const first = await tabs.nth(0).boundingBox()
   const second = await tabs.nth(1).boundingBox()
   expect(first).not.toBeNull()

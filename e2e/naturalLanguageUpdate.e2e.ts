@@ -152,9 +152,9 @@ test('source-backed alias application updates the canonical job in place instead
   expect(state.changeSets).toHaveLength(0)
 
   await page.locator('.surface-nav').getByRole('button', { name: /机会/ }).click()
-  await page.locator('.surface-context-tabs button').filter({ hasText: '在途流程' }).click()
-  await expect(page.getByText('别名科技')).toBeVisible()
-  await expect(page.getByText('AI产品经理（数据平台）')).toBeVisible()
+  const row = page.locator('.opportunity-decision-row').filter({ hasText: '别名科技' })
+  await expect(row).toBeVisible()
+  await expect(row).toContainText('AI产品经理（数据平台）')
 })
 
 test('ambiguous same-company role input creates DecisionRequest instead of guessing or exposing ChangeSet', async ({ page }) => {

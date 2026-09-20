@@ -57,6 +57,7 @@ test('opportunity detail localizes canonical stage and action status without cha
   await interfaceGroup.locator('summary').click()
   await interfaceGroup.getByRole('button', { name: 'EN', exact: true }).click()
   await page.locator('.surface-nav').getByRole('button', { name: /Opportunities/ }).click()
+  await page.getByRole('button', { name: /Worth Pursuing/ }).click()
   await page.locator('.opportunity-decision-row').filter({ hasText: opportunity.company }).click()
 
   const dialog = page.getByRole('dialog', { name: 'Opportunity details' })

@@ -91,7 +91,7 @@ test('primary navigation, language, recovery, and global Tell PJSDAS stay cohere
   await seedLocalWorkspace(page)
 
   await page.locator('.surface-nav').getByRole('button', { name: /机会/ }).click()
-  await expect(page.getByRole('heading', { name: '机会、流程和准备在同一个工作面' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: '哪些在推进，哪些值得继续投入' })).toBeVisible()
 
   await page.locator('.ultimate-toolbar').getByRole('button', { name: /设置|Settings/ }).click()
   const interfaceGroup = page.locator('details.settings-group > summary').filter({ hasText: /界面.*显示层|Interface.*Presentation/ }).locator('..')
@@ -99,7 +99,7 @@ test('primary navigation, language, recovery, and global Tell PJSDAS stay cohere
   await interfaceGroup.getByRole('button', { name: 'EN', exact: true }).click()
 
   await page.locator('.surface-nav').getByRole('button', { name: /Opportunities/ }).click()
-  await expect(page.getByRole('heading', { name: 'Opportunities, pipeline, and preparation in one workspace' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'What is moving, and what is worth pursuing' })).toBeVisible()
   await page.locator('.surface-nav').getByRole('button', { name: /Today/ }).click()
   await expect(page.locator('.ultimate-today-header').getByRole('heading', { name: 'Today', exact: true })).toBeVisible()
 

@@ -20,8 +20,10 @@ const group = {
   id: 'E2E-PORTFOLIO-GROUP',
   company: '组合测试科技',
   total: 1,
-  used: 0,
-  remaining: 1,
+  used: 1,
+  remaining: 0,
+  locked: true,
+  rule: 'Only one role may be active.',
 }
 
 test('canonical pending state drives visible priority and portfolio selection regardless of stored label', async ({ page }) => {
@@ -53,18 +55,11 @@ test('canonical pending state drives visible priority and portfolio selection re
   await interfaceGroup.getByRole('button', { name: 'EN', exact: true }).click()
   await page.locator('.surface-nav').getByRole('button', { name: /Opportunities/ }).click()
 
-  const row = page.locator('.surface-opportunity-row').filter({ hasText: opportunity.company })
+  await page.getByRole('button', { name: /Worth Pursuing/ }).click()
+  const row = page.locator('.opportunity-decision-row').filter({ hasText: opportunity.company })
   await expect(row).toBeVisible()
-  await expect(row).toContainText('P2')
-  await expect(row).not.toContainText('Pipeline')
-
-  await page.getByRole('button', { name: 'Portfolio' }).click()
-  const dialog = page.locator('.portfolio-dialog')
-  await expect(dialog.getByRole('heading', { name: 'Application portfolio decisions' })).toBeVisible()
-  await expect(dialog).toContainText('Recommended portfolio · 1')
-  await expect(dialog).toContainText('High opportunity value')
-  await expect(dialog).toContainText('Strong fit')
-  await expect(dialog).toContainText('Core opportunity')
-  await expect(dialog).not.toContainText('机会价值高')
-  await expect(dialog).not.toContainText('V1.6')
+  await expect(row).toContainText('Shared application quota applies')
+  await expect(row).not.toContainText('P2')
+  await expect(row).not.toContainText('94')
+  await expect(page.getByRole('button', { name: 'Portfolio' })).toHaveCount(0)
 })
