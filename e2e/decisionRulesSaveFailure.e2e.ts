@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test'
 
 test('Decision Rules save failure stays visible and never leaves a stale success state', async ({ page }) => {
   await page.goto('/')
-  await expect(page.getByRole('heading', { name: '今天只处理下一步' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: '今天', exact: true })).toBeVisible()
 
   await page.locator('.surface-nav').getByRole('button', { name: /设置/ }).click()
   await page.locator('details.settings-group > summary').filter({ hasText: '决策规则' }).click()

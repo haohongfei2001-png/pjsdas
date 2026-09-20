@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test'
 
 test('active Today and Prepare surfaces localize system semantics without changing stored facts', async ({ page }) => {
   await page.goto('/')
-  await expect(page.getByRole('heading', { name: '今天只处理下一步' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: '今天', exact: true })).toBeVisible()
 
   await page.evaluate(async () => {
     const now = Date.now()
@@ -59,12 +59,16 @@ test('active Today and Prepare surfaces localize system semantics without changi
   })
 
   await page.reload()
-  const countdown = page.locator('.surface-focus-card .deadline-countdown')
+  const countdown = page.locator('.decision-hero .deadline-countdown')
   await expect(countdown.locator('strong')).toContainText('剩')
   await expect(countdown.locator('span')).toHaveText('高风险')
 
-  await page.getByRole('button', { name: 'EN', exact: true }).click()
-  await expect(page.getByRole('heading', { name: 'Only the next moves for today' })).toBeVisible()
+  await page.locator('.surface-nav').getByRole('button', { name: /设置|Settings/ }).click()
+  const interfaceGroup = page.locator('details.settings-group').filter({ hasText: /界面|Interface/ })
+  await interfaceGroup.locator('summary').click()
+  await interfaceGroup.getByRole('button', { name: 'EN', exact: true }).click()
+  await page.locator('.surface-nav').getByRole('button', { name: /Today/ }).click()
+  await expect(page.getByRole('heading', { name: 'Today', exact: true })).toBeVisible()
   await expect(countdown.locator('strong')).toHaveText(/\d+ hr(?: \d+ min)? left/)
   await expect(countdown.locator('span')).toHaveText('High risk')
   await expect(countdown).not.toContainText('剩')

@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test'
 
 test('Prep Graph keeps source facts but localizes system status and link explanations', async ({ page }) => {
   await page.goto('/')
-  await expect(page.getByRole('heading', { name: '今天只处理下一步' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: '今天', exact: true })).toBeVisible()
 
   await page.evaluate(async () => {
     const opportunity = {
@@ -47,7 +47,12 @@ test('Prep Graph keeps source facts but localizes system status and link explana
   await page.reload()
   await page.locator('.surface-nav').getByRole('button', { name: /机会/ }).click()
   await page.locator('.surface-context-tabs button').filter({ hasText: '准备' }).click()
-  await page.getByRole('button', { name: 'EN', exact: true }).click()
+  await page.locator('.surface-nav').getByRole('button', { name: /设置|Settings/ }).click()
+  const interfaceGroup = page.locator('details.settings-group').filter({ hasText: /界面|Interface/ })
+  await interfaceGroup.locator('summary').click()
+  await interfaceGroup.getByRole('button', { name: 'EN', exact: true }).click()
+  await page.locator('.surface-nav').getByRole('button', { name: /Opportunities/ }).click()
+  await page.locator('.surface-context-tabs button').filter({ hasText: 'Prepare' }).click()
   await page.getByRole('button', { name: 'Prep Graph' }).click()
 
   const dialog = page.locator('.prep-graph-dialog')

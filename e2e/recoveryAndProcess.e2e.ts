@@ -32,7 +32,7 @@ const action = {
 
 async function seedWorkspace(page: Page) {
   await page.goto('/')
-  await expect(page.getByRole('heading', { name: '今天只处理下一步' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: '今天', exact: true })).toBeVisible()
 
   await page.evaluate(async ({ opportunity, action }) => {
     await new Promise<void>((resolve, reject) => {
@@ -140,7 +140,8 @@ async function openBackup(page: Page) {
 test('manual recruiting event creates one durable event/action, survives reload, and deletes cleanly', async ({ page }) => {
   await seedWorkspace(page)
 
-  await page.locator('.today-manual-fallback > summary').click()
+  await page.locator('.surface-nav').getByRole('button', { name: /设置|Settings/ }).click()
+  await page.locator('details.settings-group').filter({ hasText: /数据与恢复|Data & recovery/ }).locator('summary').click()
   await page.getByRole('button', { name: '+ 记录流程通知' }).click()
   await expect(page.getByRole('heading', { name: '记录真实流程通知' })).toBeVisible()
 
@@ -177,7 +178,8 @@ test('manual recruiting event creates one durable event/action, survives reload,
   expect(afterReload.events.map((item) => item.id)).toContain(eventId)
   expect(afterReload.actions.some((item) => item.processEventId === eventId)).toBe(true)
 
-  await page.locator('.today-manual-fallback > summary').click()
+  await page.locator('.surface-nav').getByRole('button', { name: /设置|Settings/ }).click()
+  await page.locator('details.settings-group').filter({ hasText: /数据与恢复|Data & recovery/ }).locator('summary').click()
   await page.getByRole('button', { name: '+ 记录流程通知' }).click()
   const persistedHistoryItem = page.locator('.event-history-item').filter({ hasText: opportunity.company })
   await expect(persistedHistoryItem).toHaveCount(1)

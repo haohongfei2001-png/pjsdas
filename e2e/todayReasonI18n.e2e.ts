@@ -31,7 +31,7 @@ const action = {
 
 test('Today priority explanations follow UI language immediately without changing the ranked action', async ({ page }) => {
   await page.goto('/')
-  await expect(page.getByRole('heading', { name: '今天只处理下一步' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: '今天', exact: true })).toBeVisible()
 
   await page.evaluate(async ({ opportunity, action }) => {
     await new Promise<void>((resolve, reject) => {
@@ -52,16 +52,18 @@ test('Today priority explanations follow UI language immediately without changin
   }, { opportunity, action })
 
   await page.reload()
-  const focus = page.locator('.surface-focus-card')
+  const focus = page.locator('.decision-hero')
   await expect(focus.getByRole('heading', { name: 'Prepare application' })).toBeVisible()
   await expect(focus.locator('p')).toHaveText('核心机会 · 早投有收益 · 现实成功率较高')
 
-  await page.getByRole('button', { name: 'EN', exact: true }).click()
-  await expect(page.getByRole('heading', { name: 'Only the next moves for today' })).toBeVisible()
+  await page.locator('.surface-nav').getByRole('button', { name: /设置|Settings/ }).click()
+  const interfaceGroup = page.locator('details.settings-group').filter({ hasText: /界面|Interface/ })
+  await interfaceGroup.locator('summary').click()
+  await interfaceGroup.getByRole('button', { name: 'EN', exact: true }).click()
+  await page.locator('.surface-nav').getByRole('button', { name: /Today/ }).click()
+  await expect(page.getByRole('heading', { name: 'Today', exact: true })).toBeVisible()
   await expect(focus.getByRole('heading', { name: 'Prepare application' })).toBeVisible()
   await expect(focus.locator('p')).toHaveText('Core opportunity · Early-application advantage · Strong fit')
   await expect(page.getByText('核心机会', { exact: true })).toHaveCount(0)
 
-  const row = page.locator('.surface-action-row').filter({ hasText: 'Prepare application' })
-  await expect(row.locator('small')).toContainText('Core · Core opportunity · Early-application advantage · Strong fit')
 })

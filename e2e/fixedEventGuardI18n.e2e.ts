@@ -52,9 +52,13 @@ async function seedPastEvent(page: Page) {
 
 test('past recruiting-event guard follows English UI and completion still resolves the generated action', async ({ page }) => {
   await page.goto('/')
-  await expect(page.getByRole('heading', { name: '今天只处理下一步' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: '今天', exact: true })).toBeVisible()
   await seedPastEvent(page)
-  await page.getByRole('button', { name: 'EN', exact: true }).click()
+  await page.locator('.surface-nav').getByRole('button', { name: /设置|Settings/ }).click()
+  const interfaceGroup = page.locator('details.settings-group').filter({ hasText: /界面|Interface/ })
+  await interfaceGroup.locator('summary').click()
+  await interfaceGroup.getByRole('button', { name: 'EN', exact: true }).click()
+  await page.locator('.surface-nav').getByRole('button', { name: /Today/ }).click()
 
   const guard = page.getByRole('alert', { name: 'Past recruiting event needs confirmation' })
   await expect(guard).toBeVisible()
@@ -68,7 +72,7 @@ test('past recruiting-event guard follows English UI and completion still resolv
 
 test('past recruiting-event guard stays unresolved and surfaces persistence failure', async ({ page }) => {
   await page.goto('/')
-  await expect(page.getByRole('heading', { name: '今天只处理下一步' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: '今天', exact: true })).toBeVisible()
   await seedPastEvent(page)
 
   const guard = page.getByRole('alert', { name: '过期流程节点待确认' })

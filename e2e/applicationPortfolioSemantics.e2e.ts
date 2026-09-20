@@ -26,7 +26,7 @@ const group = {
 
 test('canonical pending state drives visible priority and portfolio selection regardless of stored label', async ({ page }) => {
   await page.goto('/')
-  await expect(page.getByRole('heading', { name: '今天只处理下一步' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: '今天', exact: true })).toBeVisible()
 
   await page.evaluate(async ({ opportunity, group }) => {
     await new Promise<void>((resolve, reject) => {
@@ -47,7 +47,10 @@ test('canonical pending state drives visible priority and portfolio selection re
   }, { opportunity, group })
 
   await page.reload()
-  await page.getByRole('button', { name: 'EN', exact: true }).click()
+  await page.locator('.surface-nav').getByRole('button', { name: /设置|Settings/ }).click()
+  const interfaceGroup = page.locator('details.settings-group').filter({ hasText: /界面|Interface/ })
+  await interfaceGroup.locator('summary').click()
+  await interfaceGroup.getByRole('button', { name: 'EN', exact: true }).click()
   await page.locator('.surface-nav').getByRole('button', { name: /Opportunities/ }).click()
 
   const row = page.locator('.surface-opportunity-row').filter({ hasText: opportunity.company })

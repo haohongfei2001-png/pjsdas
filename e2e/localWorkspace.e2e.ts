@@ -32,7 +32,7 @@ const action = {
 
 async function seedLocalWorkspace(page: Page) {
   await page.goto('/')
-  await expect(page.getByRole('heading', { name: '今天只处理下一步' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: '今天', exact: true })).toBeVisible()
 
   await page.evaluate(async ({ opportunity, action }) => {
     await new Promise<void>((resolve, reject) => {
@@ -59,7 +59,7 @@ async function seedLocalWorkspace(page: Page) {
 test('empty local workspace routes directly into setup instead of a maintenance queue', async ({ page }) => {
   await page.goto('/')
 
-  await expect(page.getByRole('heading', { name: '今天只处理下一步' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: '今天', exact: true })).toBeVisible()
   await expect(page.getByRole('heading', { name: '先让工作区有第一批真实机会' })).toBeVisible()
 
   await page.getByRole('button', { name: '打开设置' }).click()
@@ -69,7 +69,7 @@ test('empty local workspace routes directly into setup instead of a maintenance 
 test('critical local-first action flow survives completion, undo, and browser reload', async ({ page }) => {
   await seedLocalWorkspace(page)
 
-  await expect(page.getByText('START HERE')).toBeVisible()
+  await expect(page.locator('.decision-kicker')).toHaveText('下一步')
   await page.getByRole('button', { name: '完成' }).first().click()
   await expect(page.getByRole('status')).toContainText('已标记完成')
   await expect(page.getByRole('heading', { name: '提交矩阵科技 AI 产品经理申请' })).toHaveCount(0)
@@ -106,13 +106,19 @@ test('primary navigation, language, and quick-capture surfaces stay coherent in 
   await expect(page.getByRole('heading', { name: '机会、流程和准备在同一个工作面' })).toBeVisible()
   await expect(page.getByRole('button', { name: 'AI产品经理' })).toBeVisible()
 
-  await page.getByRole('button', { name: 'EN', exact: true }).click()
+  await page.locator('.surface-nav').getByRole('button', { name: /设置|Settings/ }).click()
+  const interfaceGroup = page.locator('details.settings-group').filter({ hasText: /界面|Interface/ })
+  await interfaceGroup.locator('summary').click()
+  await interfaceGroup.getByRole('button', { name: 'EN', exact: true }).click()
+  await page.locator('.surface-nav').getByRole('button', { name: /Opportunities/ }).click()
   await expect(page.getByRole('heading', { name: 'Opportunities, pipeline, and preparation in one workspace' })).toBeVisible()
 
   await page.locator('.surface-nav').getByRole('button', { name: /Today/ }).click()
-  await expect(page.getByRole('heading', { name: 'Only the next moves for today' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Today', exact: true })).toBeVisible()
 
-  await page.locator('.today-manual-fallback > summary').click()
+  await page.locator('.surface-nav').getByRole('button', { name: /Settings/ }).click()
+  const dataRecovery = page.locator('details.settings-group').filter({ hasText: 'Data & recovery' })
+  await dataRecovery.locator('summary').click()
   await page.getByRole('button', { name: '+ Record process event' }).click()
   await expect(page.getByRole('heading', { name: 'Record a real recruiting event' })).toBeVisible()
   await expect(page.locator('.event-form select').first().locator('option[value="assessment_invite"]')).toHaveText('Assessment invitation')
@@ -124,6 +130,6 @@ test('primary navigation, language, and quick-capture surfaces stay coherent in 
   await page.getByRole('button', { name: 'Close' }).click()
 
   await page.reload()
-  await expect(page.getByRole('heading', { name: 'Only the next moves for today' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Today', exact: true })).toBeVisible()
   await expect(page.locator('html')).toHaveAttribute('lang', 'en')
 })

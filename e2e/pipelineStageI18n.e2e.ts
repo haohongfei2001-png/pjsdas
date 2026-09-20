@@ -27,7 +27,7 @@ const process = {
 
 async function seed(page: import('@playwright/test').Page) {
   await page.goto('/')
-  await expect(page.getByRole('heading', { name: '今天只处理下一步' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: '今天', exact: true })).toBeVisible()
   await page.evaluate(async ({ opportunity, process }) => {
     await new Promise<void>((resolve, reject) => {
       const request = indexedDB.open('pjsdas', 8)
@@ -50,7 +50,10 @@ async function seed(page: import('@playwright/test').Page) {
 
 test('Pipeline and mobile opportunity cards localize canonical stored stages without mutating them', async ({ page }) => {
   await seed(page)
-  await page.getByRole('button', { name: 'EN', exact: true }).click()
+  await page.locator('.surface-nav').getByRole('button', { name: /设置|Settings/ }).click()
+  const interfaceGroup = page.locator('details.settings-group').filter({ hasText: /界面|Interface/ })
+  await interfaceGroup.locator('summary').click()
+  await interfaceGroup.getByRole('button', { name: 'EN', exact: true }).click()
   await page.locator('.surface-nav').getByRole('button', { name: /Opportunities/ }).click()
   await page.locator('.surface-context-tabs button').filter({ hasText: 'Opportunities' }).click()
   await page.locator('.surface-context-tabs button').filter({ hasText: 'Pipeline' }).click()

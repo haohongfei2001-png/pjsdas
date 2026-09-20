@@ -38,7 +38,7 @@ function sourceBackedOpportunity(id: string, company: string, role: string) {
 
 async function seedOpportunities(page: Page, opportunities: ReturnType<typeof sourceBackedOpportunity>[]) {
   await page.goto('/')
-  await expect(page.getByRole('heading', { name: '今天只处理下一步' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: '今天', exact: true })).toBeVisible()
   await page.evaluate(async (items) => {
     await new Promise<void>((resolve, reject) => {
       const request = indexedDB.open('pjsdas', 8)
@@ -59,12 +59,13 @@ async function seedOpportunities(page: Page, opportunities: ReturnType<typeof so
 }
 
 async function openNaturalLanguageUpdate(page: Page) {
-  const fallback = page.locator('.today-manual-fallback')
-  if (!await fallback.evaluate((element) => (element as HTMLDetailsElement).open)) {
-    await fallback.locator('summary').click()
+  await page.locator('.surface-nav').getByRole('button', { name: /设置|Settings/ }).click()
+  const dataRecovery = page.locator('details.settings-group').filter({ hasText: /数据与恢复|Data & recovery/ })
+  if (!await dataRecovery.evaluate((element) => (element as HTMLDetailsElement).open)) {
+    await dataRecovery.locator('summary').click()
   }
-  await page.getByRole('button', { name: '更新进展 / 事项' }).click()
-  await expect(page.getByRole('heading', { name: '把岗位进展和其他事项直接告诉 PJSDAS' })).toBeVisible()
+  await page.getByRole('button', { name: /更新进展 \/ 事项|Update progress \/ task/ }).click()
+  await expect(page.getByRole('heading', { name: /把岗位进展和其他事项直接告诉 PJSDAS|Tell PJSDAS about recruiting progress or another task/ })).toBeVisible()
 }
 
 async function readMutationState(page: Page) {
@@ -101,7 +102,7 @@ async function readMutationState(page: Page) {
 
 test('explicit non-job task goes through ChangeSet, enters Today, and survives reload', async ({ page }) => {
   await page.goto('/')
-  await expect(page.getByRole('heading', { name: '今天只处理下一步' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: '今天', exact: true })).toBeVisible()
   await openNaturalLanguageUpdate(page)
 
   await page.locator('.progress-inbox-textarea').fill('待办：修改论文图表。')
@@ -113,6 +114,7 @@ test('explicit non-job task goes through ChangeSet, enters Today, and survives r
   await page.getByRole('button', { name: '确认并应用 ChangeSet · 1 项' }).click()
   await expect(page.locator('.progress-message.success')).toContainText('已应用 1 项修改')
   await page.getByRole('button', { name: '关闭' }).click()
+  await page.locator('.surface-nav').getByRole('button', { name: /今天|Today/ }).click()
 
   await expect(page.getByRole('heading', { name: '修改论文图表' })).toBeVisible()
   const state = await readMutationState(page)
@@ -128,7 +130,7 @@ test('explicit non-job task goes through ChangeSet, enters Today, and survives r
 
 test('editing parsed text invalidates the old ChangeSet and only applies the re-parsed input', async ({ page }) => {
   await page.goto('/')
-  await expect(page.getByRole('heading', { name: '今天只处理下一步' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: '今天', exact: true })).toBeVisible()
   await openNaturalLanguageUpdate(page)
 
   const input = page.locator('.progress-inbox-textarea')

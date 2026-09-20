@@ -9,9 +9,9 @@ test('RC shell keeps primary navigation keyboard-accessible and horizontally sta
   await expect(nav).toBeVisible()
 
   const navButtons = nav.getByRole('button')
-  await expect(navButtons).toHaveCount(5)
+  await expect(navButtons).toHaveCount(4)
 
-  for (let index = 0; index < 5; index += 1) {
+  for (let index = 0; index < 4; index += 1) {
     const button = navButtons.nth(index)
     await expect(button).toBeVisible()
     const accessibleText = await button.evaluate((node) =>
@@ -36,18 +36,24 @@ test('RC shell keeps primary navigation keyboard-accessible and horizontally sta
   await page.keyboard.press('Enter')
   await expect(dataRecovery.locator('..')).toHaveAttribute('open', '')
 
-  await page.getByRole('button', { name: 'EN', exact: true }).click()
+  await page.locator('.surface-nav').getByRole('button', { name: /设置|Settings/ }).click()
+  const interfaceGroup = page.locator('details.settings-group').filter({ hasText: /界面|Interface/ })
+  await interfaceGroup.locator('summary').click()
+  await interfaceGroup.getByRole('button', { name: 'EN', exact: true }).click()
   await expect(page.getByRole('heading', { name: 'Connections, automation, and durable control' })).toBeVisible()
 })
 
-test('RC Attention and Activity remain distinct at narrow viewport', async ({ page }) => {
+test('RC Attention stays primary while Activity remains reachable from Settings at narrow viewport', async ({ page }) => {
   await page.goto('/')
   const nav = page.locator('.surface-nav')
 
   await nav.getByRole('button', { name: /Attention/ }).click()
   await expect(page.getByRole('heading', { name: /这里只放真正需要你决定的事|Only the exceptions that genuinely need you/ })).toBeVisible()
 
-  await nav.getByRole('button', { name: /活动|Activity/ }).click()
+  await nav.getByRole('button', { name: /设置|Settings/ }).click()
+  const historyGroup = page.locator('details.settings-group').filter({ hasText: /历史与审计|History & audit/ })
+  await historyGroup.locator('summary').click()
+  await historyGroup.getByRole('button', { name: /查看活动记录|Open activity history/ }).click()
   await expect(page.getByRole('heading', { name: /系统和你都做了什么|What you and PJSDAS have done/ })).toBeVisible()
   await expect(page.locator('.activity-page')).toBeVisible()
 
