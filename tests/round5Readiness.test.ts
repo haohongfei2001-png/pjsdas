@@ -29,10 +29,11 @@ describe('Round 5 RC readiness contract', () => {
     expect(plan.publishOnProductionSuccess).toBe(false)
   })
 
-  it('records platform blockers without weakening the publication workflow', () => {
-    expect(readiness).toContain('IMPLEMENTATION READY / PUBLICATION NO-GO')
-    expect(readiness).toContain('main.protected = false')
-    expect(readiness).toContain('Immutable Releases')
+  it('records configured platform gates without weakening the publication workflow', () => {
+    expect(readiness).toContain('IMPLEMENTATION READY / PLATFORM GATES CONFIGURED / PUBLICATION DISARMED')
+    expect(readiness).toContain('main.protected = true')
+    expect(readiness).toContain('PJSDAS_RELEASE_ADMIN_TOKEN')
+    expect(readiness).toContain('Release immutability')
     expect(publishWorkflow).toContain('Default branch $default_branch is not protected')
     expect(publishWorkflow).toContain('/immutable-releases')
     expect(publishWorkflow).toContain('--prerelease')
