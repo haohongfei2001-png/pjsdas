@@ -119,6 +119,7 @@ export function actionForProcessEvent(event: ProcessEvent): Action | undefined {
     processEventId: event.id,
     processStage: stage,
     dueAt: event.dueAt,
+    duePrecision: event.duePrecision,
     timingMode: event.timingMode ?? defaultTimingModeForProcessEvent(event.type),
     estimatedMinutes: event.estimatedMinutes ?? defaultMinutesForProcessEvent(event.type),
     leverage: leverage[event.type] ?? 88,

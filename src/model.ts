@@ -25,6 +25,82 @@ export type PriorityLevel = 'P0' | 'P1' | 'P2' | 'expired' | 'none'
 export type OpportunityParticipationStatus = 'active' | 'abandoned'
 export type OpportunityAssessmentStatus = 'unassessed' | 'provisional' | 'assessed' | 'legacy'
 export type DatePrecision = 'date' | 'datetime'
+
+export type ProcessStageProgress =
+  | 'not_started'
+  | 'action_required'
+  | 'scheduled'
+  | 'in_progress'
+  | 'completed'
+  | 'waiting_result'
+
+export type ProcessResult = 'pending' | 'advanced' | 'rejected' | 'offer' | 'closed_other'
+export type ProcessParticipationState = 'active' | 'abandoned'
+
+export type ScheduleNodeKind =
+  | 'interview'
+  | 'written_test'
+  | 'assessment'
+  | 'application_deadline'
+  | 'follow_up'
+  | 'prep_trigger'
+
+export type ScheduleNodeState =
+  | 'scheduled'
+  | 'in_progress'
+  | 'completed'
+  | 'cancelled'
+  | 'superseded'
+  | 'elapsed_unresolved'
+
+export type ScheduleTemporalShape =
+  | 'fixed_range'
+  | 'deadline'
+  | 'availability_window'
+  | 'date_only'
+  | 'estimated_date'
+
+export type ScheduleConstraintKind = 'employer_hard' | 'user_plan' | 'system_suggestion'
+export type ScheduleResolutionBasis = 'source_explicit' | 'user_explicit' | 'legacy_projection' | 'system_estimate'
+export type ScheduleEstimateProvenance = 'source' | 'user' | 'system_default' | 'legacy_projection'
+
+export interface ScheduleNodeTemporal {
+  shape: ScheduleTemporalShape
+  precision: DatePrecision
+  timezone: string
+  startAt?: string
+  endAt?: string
+  deadlineAt?: string
+  date?: string
+  rawExpression?: string
+  resolutionBasis: ScheduleResolutionBasis
+  legacyProjectionAt?: string
+}
+
+export interface ScheduleNode {
+  id: string
+  occurrenceId: string
+  version: number
+  opportunityId?: string
+  processId?: string
+  processEventId?: string
+  kind: ScheduleNodeKind
+  state: ScheduleNodeState
+  temporal: ScheduleNodeTemporal
+  constraintKind: ScheduleConstraintKind
+  estimatedMinutes?: number
+  estimateProvenance?: ScheduleEstimateProvenance
+  evidenceRefs: string[]
+  sourceVersionRefs: string[]
+  relatedActionIds: string[]
+  relatedPrepIds: string[]
+  supersedesNodeId?: string
+  supersededByNodeId?: string
+  completedAt?: string
+  cancelledAt?: string
+  createdAt: string
+  updatedAt: string
+}
 export type DiscoveryConfidence = 'high' | 'medium' | 'low'
 export type DiscoveryReviewDecision = 'accepted' | 'rejected' | 'filtered' | 'duplicate' | 'deferred'
 export type DiscoveryRejectionReason =
@@ -370,6 +446,9 @@ export interface ProcessRecord {
   role: string
   stage: ProcessStage
   stageLabel: string
+  progress?: ProcessStageProgress
+  result?: ProcessResult
+  participationState?: ProcessParticipationState
   lastProgressAt?: string
   reviewThresholdDays?: number
   nextCheckAt?: string

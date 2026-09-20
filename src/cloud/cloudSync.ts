@@ -1,5 +1,5 @@
 import { exportLocalSnapshot, replaceLocalSnapshotFromCloud } from '../db.js'
-import { validateSnapshot } from '../snapshot.js'
+import { LEGACY_SNAPSHOT_VERSION, SNAPSHOT_VERSION, validateSnapshot } from '../snapshot.js'
 import {
   bindLocalWorkspaceToUser,
   getAccountCheckpoint,
@@ -31,7 +31,9 @@ export interface CloudSyncOutcome {
 }
 
 async function verifyRemote(row: RemoteWorkspaceRow) {
-  if (row.schemaVersion !== 1) throw new Error(`不支持 Google Drive 工作区 schema v${row.schemaVersion}。`)
+  if (![LEGACY_SNAPSHOT_VERSION, SNAPSHOT_VERSION].includes(row.schemaVersion as 1 | 2)) {
+    throw new Error(`不支持的工作区 schema v${row.schemaVersion}。`)
+  }
   validateSnapshot(row.snapshot)
   const fingerprint = await fingerprintWorkspace(row.snapshot)
   if (fingerprint !== row.fingerprint) throw new Error('Google Drive 工作区指纹校验失败，已停止同步。')

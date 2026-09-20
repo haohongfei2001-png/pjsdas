@@ -1,4 +1,10 @@
-import { actionForProcessEvent, defaultMinutesForProcessEvent, defaultTimingModeForProcessEvent } from './processEvents.js'
+import {
+  actionForProcessEvent,
+  defaultMinutesForProcessEvent,
+  defaultTimingModeForProcessEvent,
+  processEventStageLabel,
+  stageForProcessEvent,
+} from './processEvents.js'
 import { timelineFromActionStatus, timelineFromProcessEvent } from './timeline.js'
 import type {
   Action,
@@ -13,7 +19,12 @@ import type {
   TimelineRecord,
 } from './model.js'
 import type { PJSDASSnapshot } from './snapshot.js'
-import { validateSnapshot } from './snapshot.js'
+import { upgradeSnapshotToLatest, validateSnapshot } from './snapshot.js'
+import {
+  ensureScheduleContractInPlace,
+  setApplicationDeadlineScheduleNode,
+  syncScheduleNodeForActionStatus,
+} from './scheduleNodes.js'
 
 export type UserFactField = 'location' | 'compensationText' | 'applicationUrl'
 
@@ -137,6 +148,9 @@ function upsertProcess(next: PJSDASSnapshot, target: Opportunity, occurredAt: st
       role: target.role,
       stage: 'screening',
       stageLabel: '筛选中',
+      progress: 'waiting_result',
+      result: 'pending',
+      participationState: 'active',
       lastProgressAt: occurredAt,
       nextCheckAt: undefined,
       silenceRisk: undefined,
@@ -152,10 +166,54 @@ function upsertProcess(next: PJSDASSnapshot, target: Opportunity, occurredAt: st
     role: target.role,
     stage: 'screening',
     stageLabel: '筛选中',
+    progress: 'waiting_result',
+    result: 'pending',
+    participationState: 'active',
     lastProgressAt: occurredAt,
     locallyManaged: true,
   }
   next.data.processes.push(process)
+}
+
+function finalizeSnapshot(next: PJSDASSnapshot, timestamp: string) {
+  ensureScheduleContractInPlace(next.data)
+  next.exportedAt = timestamp
+  validateSnapshot(next)
+}
+
+function upsertProcessAtEventStage(next: PJSDASSnapshot, target: Opportunity, event: ProcessEvent) {
+  const stage = stageForProcessEvent(event.type)
+  if (!stage) return
+  const stageLabel = processEventStageLabel(event)
+  target.processStage = stage
+  target.currentStageLabel = stageLabel
+  target.effectiveProcessEventId = event.id
+  target.effectiveProcessEventAt = event.occurredAt
+  target.locallyManaged = true
+  const existing = next.data.processes.find((item) => item.opportunityId === target.id)
+  if (existing) {
+    existing.company = target.company
+    existing.role = target.role
+    existing.stage = stage
+    existing.stageLabel = stageLabel
+    existing.lastProgressAt = event.occurredAt
+    existing.effectiveProcessEventId = event.id
+    existing.effectiveProcessEventAt = event.occurredAt
+    existing.locallyManaged = true
+    return
+  }
+  next.data.processes.push({
+    id: `local-process:${target.id}`,
+    opportunityId: target.id,
+    company: target.company,
+    role: target.role,
+    stage,
+    stageLabel,
+    lastProgressAt: event.occurredAt,
+    effectiveProcessEventId: event.id,
+    effectiveProcessEventAt: event.occurredAt,
+    locallyManaged: true,
+  })
 }
 
 function ensureUserFacts(target: Opportunity, timestamp: string) {
@@ -182,7 +240,7 @@ export function applyUserDomainCommand(
     return { status: 'ALREADY_APPLIED', snapshot, summary: `Command ${command.commandId} is already recorded.` }
   }
 
-  const next = structuredClone(snapshot)
+  const next = upgradeSnapshotToLatest(snapshot)
   const timestamp = nowIso(now)
 
   if (command.kind === 'record_application_submission') {
@@ -209,6 +267,7 @@ export function applyUserDomainCommand(
     if (apply && (apply.status === 'todo' || apply.status === 'doing')) {
       apply.status = 'done'
       apply.updatedAt = occurredAt
+      syncScheduleNodeForActionStatus(next.data, apply.id, 'done', occurredAt)
     }
     upsertProcess(next, target, occurredAt)
     appendTimeline(next, commandTimeline(command, occurredAt, {
@@ -217,8 +276,7 @@ export function applyUserDomainCommand(
       opportunity: target,
       changes: { stage: { before: beforeStage, after: 'screening' } },
     }), command)
-    next.exportedAt = timestamp
-    validateSnapshot(next)
+    finalizeSnapshot(next, timestamp)
     return {
       status: 'APPLIED',
       snapshot: next,
@@ -261,12 +319,12 @@ export function applyUserDomainCommand(
     next.data.processEvents.push(event)
     const generated = actionForProcessEvent(event)
     if (generated) next.data.actions.push({ ...generated, duePrecision: command.duePrecision })
+    upsertProcessAtEventStage(next, target, event)
     appendTimeline(next, {
       ...timelineFromProcessEvent(event, 'user_action', timestamp),
       id: `timeline:command:${stableHash(command.commandId)}`,
     }, command)
-    next.exportedAt = timestamp
-    validateSnapshot(next)
+    finalizeSnapshot(next, timestamp)
     return {
       status: 'APPLIED',
       snapshot: next,
@@ -292,13 +350,13 @@ export function applyUserDomainCommand(
       apply.timingMode = 'deadline'
       apply.updatedAt = timestamp
     }
+    setApplicationDeadlineScheduleNode(next.data, target.id, command.deadline, command.precision, timestamp)
     appendTimeline(next, commandTimeline(command, timestamp, {
       title: '更新投递截止时间',
       opportunity: target,
       changes: { deadline: { before: before.deadline ?? null, after: command.deadline } },
     }), command)
-    next.exportedAt = timestamp
-    validateSnapshot(next)
+    finalizeSnapshot(next, timestamp)
     return {
       status: 'APPLIED',
       snapshot: next,
@@ -316,12 +374,12 @@ export function applyUserDomainCommand(
     }
     target.status = command.status
     target.updatedAt = timestamp
+    syncScheduleNodeForActionStatus(next.data, target.id, command.status, timestamp)
     appendTimeline(next, {
       ...timelineFromActionStatus(target, before, command.status, timestamp),
       id: `timeline:command:${stableHash(command.commandId)}`,
     }, command)
-    next.exportedAt = timestamp
-    validateSnapshot(next)
+    finalizeSnapshot(next, timestamp)
     return {
       status: 'APPLIED',
       snapshot: next,
@@ -356,8 +414,7 @@ export function applyUserDomainCommand(
       detail: '这是用户参与决定，不改变招聘方流程事实，也不删除历史。',
       changes: { participationStatus: { before, after: 'abandoned' } },
     }), command)
-    next.exportedAt = timestamp
-    validateSnapshot(next)
+    finalizeSnapshot(next, timestamp)
     return {
       status: 'APPLIED',
       snapshot: next,
@@ -383,8 +440,7 @@ export function applyUserDomainCommand(
       detail: `${command.field}: ${value}`,
       changes: { [`userFacts.${command.field}`]: { before: before ?? null, after: value } },
     }), command)
-    next.exportedAt = timestamp
-    validateSnapshot(next)
+    finalizeSnapshot(next, timestamp)
     return {
       status: 'APPLIED',
       snapshot: next,
@@ -406,8 +462,7 @@ export function applyUserDomainCommand(
       opportunity: target,
       changes: { roleType: { before, after: command.roleType } },
     }), command)
-    next.exportedAt = timestamp
-    validateSnapshot(next)
+    finalizeSnapshot(next, timestamp)
     return {
       status: 'APPLIED',
       snapshot: next,

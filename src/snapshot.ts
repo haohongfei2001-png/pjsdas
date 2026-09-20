@@ -10,6 +10,7 @@ import type {
   Prep,
   ProcessEvent,
   ProcessRecord,
+  ScheduleNode,
   TimelineRecord,
 } from './model.js'
 import { validateDecisionRules, type DecisionRules } from './decisionRules.js'
@@ -19,15 +20,18 @@ import { validateDiscoveryInboxItem } from './discoveryInbox.js'
 import { validateJobPostingEvidence } from './jobPosting.js'
 import { validateOpportunityAssessment } from './opportunityAssessment.js'
 import { validateOpportunityFacts } from './richOpportunity.js'
+import { ensureScheduleContractInPlace, validateScheduleNode } from './scheduleNodes.js'
 
 export const SNAPSHOT_SCHEMA = 'pjsdas-local-snapshot' as const
-export const SNAPSHOT_VERSION = 1 as const
+export const SNAPSHOT_VERSION = 2 as const
+export const LEGACY_SNAPSHOT_VERSION = 1 as const
 
 export interface SnapshotData {
   opportunities: Opportunity[]
   processes: ProcessRecord[]
   processEvents: ProcessEvent[]
   actions: Action[]
+  scheduleNodes?: ScheduleNode[]
   prep: Prep[]
   applicationGroups: ApplicationGroup[]
   decisionRules?: DecisionRules
@@ -40,7 +44,7 @@ export interface SnapshotData {
 
 export interface PJSDASSnapshot {
   schema: typeof SNAPSHOT_SCHEMA
-  version: typeof SNAPSHOT_VERSION
+  version: typeof LEGACY_SNAPSHOT_VERSION | typeof SNAPSHOT_VERSION
   exportedAt: string
   data: SnapshotData
 }
@@ -117,21 +121,31 @@ function validateIngestionRun(run: IngestionRunSummary, timelineId: string) {
 }
 
 export function createSnapshot(data: SnapshotData, exportedAt = new Date().toISOString()): PJSDASSnapshot {
+  const normalized = structuredClone(data)
+  ensureScheduleContractInPlace(normalized)
   const snapshot: PJSDASSnapshot = {
     schema: SNAPSHOT_SCHEMA,
     version: SNAPSHOT_VERSION,
     exportedAt,
-    data,
+    data: normalized,
   }
   validateSnapshot(snapshot)
   return snapshot
 }
 
+export function upgradeSnapshotToLatest(snapshot: PJSDASSnapshot): PJSDASSnapshot {
+  const next = structuredClone(snapshot)
+  ensureScheduleContractInPlace(next.data)
+  next.version = SNAPSHOT_VERSION
+  validateSnapshot(next)
+  return next
+}
+
 export function validateSnapshot(value: unknown): asserts value is PJSDASSnapshot {
   if (!isObject(value)) throw new Error('备份损坏：根对象无效。')
   if (value.schema !== SNAPSHOT_SCHEMA) throw new Error('这不是 PJSDAS 本地备份。')
-  if (value.version !== SNAPSHOT_VERSION) {
-    throw new Error(`不支持的备份版本：${String(value.version)}。当前仅支持 v${SNAPSHOT_VERSION}。`)
+  if (value.version !== LEGACY_SNAPSHOT_VERSION && value.version !== SNAPSHOT_VERSION) {
+    throw new Error(`不支持的备份版本：${String(value.version)}。当前支持 v${LEGACY_SNAPSHOT_VERSION}–v${SNAPSHOT_VERSION}。`)
   }
   assertIsoDate(value.exportedAt, 'exportedAt')
   if (!isObject(value.data)) throw new Error('备份损坏：缺少 data。')
@@ -141,6 +155,10 @@ export function validateSnapshot(value: unknown): asserts value is PJSDASSnapsho
   assertArray(data.processes, 'processes')
   assertArray(data.processEvents, 'processEvents')
   assertArray(data.actions, 'actions')
+  if (data.scheduleNodes !== undefined) assertArray(data.scheduleNodes, 'scheduleNodes')
+  if (value.version === SNAPSHOT_VERSION && data.scheduleNodes === undefined) {
+    throw new Error('备份损坏：v2 缺少 scheduleNodes。')
+  }
   assertArray(data.prep, 'prep')
   assertArray(data.applicationGroups, 'applicationGroups')
   if (data.discoveryInbox !== undefined) assertArray(data.discoveryInbox, 'discoveryInbox')
@@ -161,14 +179,15 @@ export function validateSnapshot(value: unknown): asserts value is PJSDASSnapsho
   const processIds = assertUniqueIds(data.processes, 'Process')
   const eventIds = assertUniqueIds(data.processEvents, 'Process Event')
   const actionIds = assertUniqueIds(data.actions, 'Action')
+  const scheduleNodeIds = data.scheduleNodes ? assertUniqueIds(data.scheduleNodes, 'Schedule Node') : new Set<string>()
   const prepIds = assertUniqueIds(data.prep, 'Prep')
   const groupIds = assertUniqueIds(data.applicationGroups, 'Application Group')
   if (data.discoveryInbox) assertUniqueIds(data.discoveryInbox, 'Discovery Inbox')
   if (data.timeline) assertUniqueIds(data.timeline, 'Timeline')
   if (data.changeSets) assertUniqueIds(data.changeSets, 'ChangeSet')
-  void processIds
   void actionIds
   void prepIds
+  void scheduleNodeIds
 
   for (const raw of data.discoveryInbox ?? []) {
     const item = raw as DiscoveryInboxItem
@@ -205,10 +224,18 @@ export function validateSnapshot(value: unknown): asserts value is PJSDASSnapsho
     }
   }
 
+  const processProgress = new Set(['not_started', 'action_required', 'scheduled', 'in_progress', 'completed', 'waiting_result'])
+  const processResults = new Set(['pending', 'advanced', 'rejected', 'offer', 'closed_other'])
+  const processParticipation = new Set(['active', 'abandoned'])
   for (const raw of data.processes) {
     const process = raw as ProcessRecord
     if (process.opportunityId && !opportunityIds.has(process.opportunityId)) {
       throw new Error(`备份损坏：流程 ${process.id} 引用了不存在的岗位 ${process.opportunityId}。`)
+    }
+    if (value.version === SNAPSHOT_VERSION) {
+      if (!process.progress || !processProgress.has(process.progress)) throw new Error(`备份损坏：流程 ${process.id} 缺少正交 progress。`)
+      if (!process.result || !processResults.has(process.result)) throw new Error(`备份损坏：流程 ${process.id} 缺少正交 result。`)
+      if (!process.participationState || !processParticipation.has(process.participationState)) throw new Error(`备份损坏：流程 ${process.id} 缺少 participationState。`)
     }
   }
 
@@ -219,6 +246,24 @@ export function validateSnapshot(value: unknown): asserts value is PJSDASSnapsho
     }
     assertIsoDate(event.occurredAt, `流程事件 ${event.id} 的 occurredAt`)
     if (event.dueAt) assertIsoDate(event.dueAt, `流程事件 ${event.id} 的 dueAt`)
+  }
+
+  if (data.scheduleNodes) {
+    const occurrenceVersions = new Set<string>()
+    for (const raw of data.scheduleNodes) {
+      const node = raw as ScheduleNode
+      const errors = validateScheduleNode(node)
+      if (errors.length) throw new Error(`备份损坏：ScheduleNode ${node.id} 无效（${errors[0]}）`)
+      const occurrenceVersion = `${node.occurrenceId}@${node.version}`
+      if (occurrenceVersions.has(occurrenceVersion)) throw new Error(`备份损坏：ScheduleNode occurrence/version 重复（${occurrenceVersion}）。`)
+      occurrenceVersions.add(occurrenceVersion)
+      if (node.processId && !processIds.has(node.processId) && node.state !== 'cancelled' && node.state !== 'superseded') {
+        throw new Error(`备份损坏：ScheduleNode ${node.id} 引用了不存在的流程 ${node.processId}。`)
+      }
+      if (node.processEventId && !eventIds.has(node.processEventId) && node.state !== 'cancelled' && node.state !== 'superseded') {
+        throw new Error(`备份损坏：ScheduleNode ${node.id} 引用了不存在的流程事件 ${node.processEventId}。`)
+      }
+    }
   }
 
   if (data.timeline) {
@@ -277,5 +322,5 @@ export function parseSnapshotText(text: string): PJSDASSnapshot {
     throw new Error('无法解析备份文件：JSON 格式无效。')
   }
   validateSnapshot(parsed)
-  return parsed
+  return upgradeSnapshotToLatest(parsed)
 }

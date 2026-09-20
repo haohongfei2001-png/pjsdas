@@ -44,7 +44,7 @@ describe('frontend release candidate manifest', () => {
       topology: { connectedAuthority: 'google-drive' },
       schemaCompatibility: {
         snapshotSchema: 'pjsdas-local-snapshot',
-        snapshotVersion: 1,
+        snapshotVersion: 2,
       },
     })
     expect(manifest.frontendArtifactDigest).toMatch(/^sha256:[0-9a-f]{64}$/)

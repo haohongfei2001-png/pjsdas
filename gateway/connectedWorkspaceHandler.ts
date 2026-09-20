@@ -1,5 +1,5 @@
 import { fingerprintWorkspace } from '../src/cloud/workspaceFingerprint.js'
-import { validateSnapshot, type PJSDASSnapshot } from '../src/snapshot.js'
+import { upgradeSnapshotToLatest, validateSnapshot, type PJSDASSnapshot } from '../src/snapshot.js'
 import { createMutationKernel } from './mutationKernel.js'
 import { createSupabaseIdentityResolver } from './supabaseIdentity.js'
 import { createTransactionalWorkspaceStore } from './transactionalWorkspaceStore.js'
@@ -131,7 +131,7 @@ export function createConnectedWorkspaceHandler(config: ConnectedWorkspaceHandle
           throw new WorkspaceSourceError('CONFIRMATION_REQUIRED', 'Connected-mode migration requires explicit confirmation.', false)
         }
         validateSnapshot(body.snapshot)
-        const snapshot = body.snapshot as PJSDASSnapshot
+        const snapshot = upgradeSnapshotToLatest(body.snapshot as PJSDASSnapshot)
         const computedFingerprint = await fingerprintWorkspace(snapshot)
         if (body.sourceFingerprint && body.sourceFingerprint !== computedFingerprint) {
           throw new WorkspaceSourceError('WORKSPACE_INVALID', 'Migration fingerprint does not match the supplied snapshot.', false)
@@ -167,7 +167,7 @@ export function createConnectedWorkspaceHandler(config: ConnectedWorkspaceHandle
           throw new WorkspaceSourceError('INVALID_ARGUMENT', 'Connected commit requires commandId and expectedRevision.', false)
         }
         validateSnapshot(body.snapshot)
-        const nextSnapshot = body.snapshot as PJSDASSnapshot
+        const nextSnapshot = upgradeSnapshotToLatest(body.snapshot as PJSDASSnapshot)
         const fingerprint = await fingerprintWorkspace(nextSnapshot)
         const result = await kernel.execute(
           { kind: 'first_party_web', userId: identity.userId },
