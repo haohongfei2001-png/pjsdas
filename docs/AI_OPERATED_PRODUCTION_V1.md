@@ -177,15 +177,21 @@ Not in scope:
    - origin migration recovery bundles round-trip and reject fingerprint tampering;
    - production Gmail/Discovery pg_cron jobs are active and Vault-backed; Gmail has produced a
      real HTTP 200 empty run while no users are opted in;
-   - current RC publication decision remains **NO-GO** because `main.protected=false` and the
-     repository Immutable Releases setting cannot be verified with the available GitHub scope.
+   - repository supply-chain prerequisites are now configured: `main.protected=true`,
+     Release immutability is enabled, and the read-only release-admin Actions secret exists;
+   - current exact-SHA production candidate `main@73943120cc4d32b547f00824b1ed112216dc3e05`
+     passed CI, Browser E2E, GitHub Pages deployment, and Production Self-Test;
+   - publication remains intentionally **DISARMED** until the owner explicitly arms
+     `v1.1.0-rc.1`; the armed workflow must still re-verify branch protection and Immutable
+     Releases before creating the prerelease.
 7. Round 6 — Personal Canary → Controlled Launch
 
 Do not activate the new P1 direct-write surface until connected authority is transactional.
 Round 3 is complete. Future Web work must preserve the same Domain Command/state contracts
 instead of creating a second mutation model. Round 4 is complete at the source/schema/topology layer. Exact domain attachment remains an
 external deployment input because no trustworthy canonical personal-domain value was discoverable
-from the repository or current deployment metadata. Round 5 is complete as a hardening/verification round. Its explicit result is
-**IMPLEMENTATION READY / PUBLICATION NO-GO** until repository-level supply-chain blockers are fixed.
-Round 6 must not start owner-canary migration/authority cutover from an unprotected or unverifiable
-release candidate. The exact blocker/evidence matrix is in `docs/RC_1_1_0_READINESS.md`.
+from the repository or current deployment metadata. Round 5 is complete as a hardening/verification round. Its current result is
+**IMPLEMENTATION READY / PLATFORM GATES CONFIGURED / PUBLICATION DISARMED**.
+Round 6 must not start owner-canary migration/authority cutover before the explicit RC publication
+decision and its authenticated release preflight complete. The current gate/evidence matrix is in
+`docs/RC_1_1_0_READINESS.md`.
