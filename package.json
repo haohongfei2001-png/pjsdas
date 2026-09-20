@@ -11,7 +11,7 @@
     "preview": "vite preview",
     "mcp": "tsx gateway/mcpServer.ts",
     "self-test:production": "tsx scripts/production-self-test.ts",
-    "postbuild": "node scripts/write-frontend-release-manifest.mjs"
+    "postbuild": "node scripts/write-spa-fallback.mjs && node scripts/write-frontend-release-manifest.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/server": "^2.0.0",

@@ -5,6 +5,8 @@ import {
   type LocalSemanticUndoToken,
 } from './webSemanticIntake.js'
 import { useUiLanguage } from './uiLanguage.js'
+import { useCloud } from './cloud/CloudContext.js'
+import { ensureAuthoritativePersistence } from './cloud/authoritativePersistence.js'
 import './ultimateWeb.css'
 
 interface TellPjsdasCaptureProps {
@@ -21,6 +23,7 @@ export default function TellPjsdasCapture({
   onOpenDecisions,
 }: TellPjsdasCaptureProps) {
   const { lang } = useUiLanguage()
+  const cloud = useCloud()
   const zh = lang === 'zh'
   const [text, setText] = useState('')
   const [busy, setBusy] = useState(false)
@@ -57,6 +60,9 @@ export default function TellPjsdasCapture({
     setUnresolvedCount(0)
     try {
       const result = await submitWebSemanticCapture(text)
+      if ((result.status === 'APPLIED' || result.status === 'DECISION_REQUIRED') && cloud.session) {
+        await ensureAuthoritativePersistence(true, cloud.syncNow)
+      }
       setUndo(result.undo)
       setDecisionCount(result.decisionRequestIds.length)
       setUnresolvedCount(result.unresolved.length)
@@ -89,6 +95,7 @@ export default function TellPjsdasCapture({
     setError('')
     try {
       await undoWebSemanticChange(undo)
+      if (cloud.session) await ensureAuthoritativePersistence(true, cloud.syncNow)
       setUndo(undefined)
       setMessage(zh ? '刚才的写入已撤销。' : 'The last write was undone.')
       await onChanged()

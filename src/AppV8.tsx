@@ -13,6 +13,8 @@ import { DEFAULT_DECISION_RULES, type DecisionRules } from './decisionRules.js'
 import RulesView from './RulesView.js'
 import TimelineView from './TimelineView.js'
 import CloudSettingsCard from './cloud/CloudSettingsCard.js'
+import { useCloud } from './cloud/CloudContext.js'
+import { ensureAuthoritativePersistence } from './cloud/authoritativePersistence.js'
 import DiscoveryProfileCard from './DiscoveryProfileCard.js'
 import ApplicationPortfolioDock from './ApplicationPortfolioDock.js'
 import PrepGraphDock from './PrepGraphDock.js'
@@ -116,6 +118,7 @@ function LanguageSwitch() {
 
 export default function AppV8() {
   const { lang } = useUiLanguage()
+  const cloud = useCloud()
   const zh = lang === 'zh'
   const [route, setRoute] = useState<RouteState>(() => routeFromPath())
   const [captureReturnPath, setCaptureReturnPath] = useState('/today')
@@ -241,11 +244,23 @@ export default function AppV8() {
 
   async function markAction(id: string, status: Action['status']) {
     const before = actions.find((item) => item.id === id)
-    await applyActionStatusChangeSet(id, status)
-    await reload()
-    if (status === 'done' && before && before.status !== 'done') {
-      setLastCompletedAction({ id: before.id, title: before.title, previousStatus: before.status })
-    } else if (lastCompletedAction?.id === id) setLastCompletedAction(null)
+    if (!before) return
+    try {
+      await applyActionStatusChangeSet(id, status)
+      if (cloud.session) await ensureAuthoritativePersistence(true, cloud.syncNow)
+      await reload()
+      if (status === 'done' && before.status !== 'done') {
+        setLastCompletedAction({ id: before.id, title: before.title, previousStatus: before.status })
+      } else if (lastCompletedAction?.id === id) setLastCompletedAction(null)
+    } catch (caught) {
+      await reload()
+      setLastCompletedAction({
+        id: before.id,
+        title: before.title,
+        previousStatus: before.status,
+        error: caught instanceof Error ? caught.message : String(caught),
+      })
+    }
   }
 
   async function undoLastCompletion() {
@@ -253,6 +268,7 @@ export default function AppV8() {
     if (!item) return
     try {
       await applyActionStatusChangeSet(item.id, item.previousStatus)
+      if (cloud.session) await ensureAuthoritativePersistence(true, cloud.syncNow)
       await reload()
       setLastCompletedAction(null)
     } catch (caught) {
