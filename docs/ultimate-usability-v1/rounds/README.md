@@ -4,8 +4,8 @@
 |---|---|---|
 | UU-00 | Register/revalidate frozen design | COMPLETE |
 | UU-01 | Time / ScheduleNode model | COMPLETE |
-| UU-02 | Unified intake / write policy | READY — NOT STARTED |
-| UU-03 | TodayBrief / agenda | NOT_READY |
+| UU-02 | Unified intake / write policy | COMPLETE |
+| UU-03 | TodayBrief / agenda | READY — NOT STARTED |
 | UU-04 | Final Web shell / Today | NOT_READY |
 | UU-05 | Opportunities / detail | NOT_READY |
 | UU-06 | Gmail / Discovery | NOT_READY |
