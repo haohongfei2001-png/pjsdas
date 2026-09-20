@@ -232,7 +232,11 @@ export function buildWebSemanticInterpretation(
   const mode = webStatementMode(text)
   const plan = parseProgressUpdate(text, opportunities, now, references)
   const explicitCompletion = explicitCompletionCandidate(text, mode, plan, opportunities, baseline)
-  let executableCandidates = plan.executable
+  const explicitKind = explicitCompletion?.target?.occurrenceKind
+  const executableOperations = explicitCompletion && explicitKind
+    ? plan.executable.filter((operation) => explicitCompletionKind(operation.sourceText, mode) !== explicitKind)
+    : plan.executable
+  let executableCandidates = executableOperations
     .map(operationCandidate)
     .filter((item): item is SemanticCandidate => Boolean(item))
 
