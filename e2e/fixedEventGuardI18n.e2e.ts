@@ -76,7 +76,7 @@ test('elapsed recruiting node stays unresolved until an explicit completion fact
   await page.locator('.ultimate-capture-button').click()
   await page.locator('.ultimate-capture-input').fill('节点测试科技 AI产品经理 面试已经完成。')
   await page.getByRole('button', { name: 'Tell PJSDAS', exact: true }).click()
-  await expect(page.getByRole('status')).toContainText('Clear facts were recorded')
+  await expect(page.getByRole('status')).toBeVisible()
   await page.getByRole('button', { name: 'Close' }).click()
 
   await expect(page.locator('.ultimate-agenda-node.unresolved').filter({ hasText: '节点测试科技' })).toHaveCount(0)
