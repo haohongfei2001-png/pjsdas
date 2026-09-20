@@ -4,12 +4,13 @@ import { describe, expect, it } from 'vitest'
 const app = readFileSync(new URL('../src/AppV8.tsx', import.meta.url), 'utf8')
 const entry = readFileSync(new URL('../src/main.tsx', import.meta.url), 'utf8')
 
-describe('AI-operated Web console information architecture', () => {
-  it('keeps exactly five primary surfaces around work, exceptions, and audit', () => {
-    expect(app).toContain("type Surface = 'today' | 'opportunities' | 'attention' | 'activity' | 'settings'")
-    expect(app).not.toContain("type Surface = 'decide'")
-    expect(app).not.toContain("type Surface = 'prepare'")
-    expect(app).not.toContain("type Surface = 'history'")
+describe('UU-04 Web information architecture', () => {
+  it('keeps only Today and Opportunities as persistent daily destinations', () => {
+    expect(app).toContain("type Surface = 'today' | 'opportunities' | 'decisions' | 'history' | 'settings'")
+    expect(app).toContain("type PrimarySurface = 'today' | 'opportunities'")
+    expect(app).toContain("const primarySurfaces: PrimarySurface[] = ['today', 'opportunities']")
+    expect(app).not.toContain("const primarySurfaces: PrimarySurface[] = ['today', 'opportunities',")
+    expect(app).not.toContain("type Surface = 'today' | 'opportunities' | 'attention'")
   })
 
   it('keeps opportunity, pipeline, and preparation as one contextual working set', () => {
@@ -19,19 +20,24 @@ describe('AI-operated Web console information architecture', () => {
     expect(app).toContain("onTabChange('prepare')")
   })
 
-  it('separates intervention from audit instead of mixing ChangeSet review into Activity', () => {
-    expect(app).toContain('<AttentionView timeline={timeline} changeSets={changeSets}')
+  it('uses DecisionRequest as the conditional intervention surface and History as audit only', () => {
+    expect(app).toContain("<DecisionRequestsView requests={decisionRequests}")
+    expect(app).toContain("openDecisionCount > 0")
+    expect(app).toContain("navigate('/decisions')")
     expect(app).toContain('<TimelineView records={timeline} />')
-    expect(app).not.toContain('HistorySurface')
+    expect(app).not.toContain('<AttentionView')
   })
 
-  it('keeps specialist tools contextual instead of globally mounted', () => {
+  it('keeps specialist health/recovery tools out of the global daily shell', () => {
     expect(entry).toContain("import App from './AppV8.js'")
     expect(entry).not.toContain('ApplicationPortfolioDock')
     expect(entry).not.toContain('PrepGraphDock')
     expect(entry).not.toContain('ProgressInbox')
     expect(entry).not.toContain('ProcessEventDock')
     expect(entry).not.toContain('LocalBackupDock')
-    expect(entry).toContain('FixedEventGuard')
+    expect(entry).not.toContain('FixedEventGuard')
+    expect(entry).not.toContain('CoverageIndicator')
+    expect(entry).toContain('return <App />')
+    expect(entry).not.toContain('key={revision}')
   })
 })

@@ -1,47 +1,37 @@
 import { useEffect, useMemo, useState } from 'react'
 import {
   applyActionStatusChangeSet,
-  applyChangeSet,
-  discardChangeSet,
-  getAllActions,
-  getAllApplicationGroups,
-  getAllChangeSets,
-  getAllOpportunities,
-  getAllPrep,
-  getAllProcesses,
-  getAllTimelineRecords,
-  getDecisionRules,
-  getLastImport,
+  exportLocalSnapshot,
   replaceImportedData,
 } from './db.js'
-import {
-  buildTimePlan,
-  computePriority,
-  rankActions,
-} from './decisionV3.js'
+import { computePriority } from './decisionV3.js'
 import { parsePJSDASWorkbook } from './importExcelV2.js'
 import { prepPriorityRank, presentPrepPriority, presentPrepSourceState } from './prepSemantics.js'
-import { presentRankingReasons } from './rankingReasonPresentation.js'
 import { presentStageLabel } from './stagePresentation.js'
-import { timeRisk } from './timeRisk.js'
-import { presentTimeRemaining, presentTimeRiskLevel } from './timeRiskPresentation.js'
+import { presentRankingReasons } from './rankingReasonPresentation.js'
 import { currentUiLanguage, useUiLanguage } from './uiLanguage.js'
 import { DEFAULT_DECISION_RULES, type DecisionRules } from './decisionRules.js'
 import RulesView from './RulesView.js'
 import TimelineView from './TimelineView.js'
-import AttentionView from './AttentionView.js'
-import { summarizeCoverage } from './ingestion.js'
 import CloudSettingsCard from './cloud/CloudSettingsCard.js'
+import { useCloud } from './cloud/CloudContext.js'
+import { ensureAuthoritativePersistence } from './cloud/authoritativePersistence.js'
 import DiscoveryProfileCard from './DiscoveryProfileCard.js'
 import ApplicationPortfolioDock from './ApplicationPortfolioDock.js'
 import PrepGraphDock from './PrepGraphDock.js'
-import ProgressInbox from './ProgressInbox.js'
 import ProcessEventDock from './ProcessEventDock.js'
 import LocalBackupDock from './LocalBackupDock.js'
 import ConnectedMigrationCard from './cloud/ConnectedMigrationCard.js'
 import OriginTransitionNotice from './OriginTransitionNotice.js'
 import OpportunityDetailDrawer, { type OpportunityDetailDestination } from './OpportunityDetailDrawer.js'
-import type { ChangeSetRecord } from './changeSet.js'
+import TellPjsdasCapture from './TellPjsdasCapture.js'
+import DecisionRequestsView from './DecisionRequestsView.js'
+import {
+  buildTodayBrief,
+  type TodayBrief as TodayBriefModel,
+  type TodayBriefAction,
+  type TodayBriefAgendaNode,
+} from './todayBrief.js'
 import type {
   Action,
   ApplicationGroup,
@@ -52,24 +42,32 @@ import type {
   ProcessRecord,
   TimelineRecord,
 } from './model.js'
+import type { PJSDASSnapshot } from './snapshot.js'
 import './timeplan.css'
 import './surfaceConsolidation.css'
 import './interactionDetail.css'
 import './webConsole.css'
+import './ultimateWeb.css'
 
-type Surface = 'today' | 'opportunities' | 'attention' | 'activity' | 'settings'
+type Surface = 'today' | 'opportunities' | 'decisions' | 'history' | 'settings'
+type PrimarySurface = 'today' | 'opportunities'
 type OpportunityTab = 'opportunities' | 'pipeline' | 'prepare'
 type CompletionFeedback = { id: string; title: string; previousStatus: Action['status']; error?: string }
-
-const surfaceLabels: Record<Surface, { zh: string; en: string; hintZh: string; hintEn: string }> = {
-  today: { zh: '今天', en: 'Today', hintZh: '下一步', hintEn: 'Next' },
-  opportunities: { zh: '机会', en: 'Opportunities', hintZh: '岗位与流程', hintEn: 'Jobs' },
-  attention: { zh: 'Attention', en: 'Attention', hintZh: '需要我', hintEn: 'Needs me' },
-  activity: { zh: '活动', en: 'Activity', hintZh: '历史与审计', hintEn: 'History' },
-  settings: { zh: '设置', en: 'Settings', hintZh: '控制与数据', hintEn: 'Control' },
+type RouteState = {
+  surface: Surface
+  capture: boolean
+  agendaExpanded: boolean
+  opportunityId?: string
 }
 
-const primarySurfaces: Surface[] = ['today', 'opportunities', 'attention', 'settings']
+const APP_BASE = import.meta.env.BASE_URL === '/' ? '' : import.meta.env.BASE_URL.replace(/\/$/, '')
+
+const surfaceLabels: Record<PrimarySurface, { zh: string; en: string; hintZh: string; hintEn: string }> = {
+  today: { zh: '今天', en: 'Today', hintZh: '下一步', hintEn: 'Next' },
+  opportunities: { zh: '机会', en: 'Opportunities', hintZh: '岗位与流程', hintEn: 'Jobs' },
+}
+
+const primarySurfaces: PrimarySurface[] = ['today', 'opportunities']
 
 const roleLabels: Record<Opportunity['roleType'], [string, string]> = {
   core: ['核心', 'Core'],
@@ -77,6 +75,36 @@ const roleLabels: Record<Opportunity['roleType'], [string, string]> = {
   reach: ['冲刺', 'Reach'],
   lottery: ['彩票', 'Long shot'],
   practice: ['练手', 'Practice'],
+}
+
+function semanticPath(pathname = window.location.pathname) {
+  if (APP_BASE && pathname.startsWith(APP_BASE)) return pathname.slice(APP_BASE.length) || '/'
+  return pathname || '/'
+}
+
+function browserPath(path: string) {
+  return `${APP_BASE}${path}` || '/'
+}
+
+function routeFromPath(pathname = semanticPath()): RouteState {
+  const path = pathname.replace(/\/+$/, '') || '/'
+  if (path === '/capture') return { surface: 'today', capture: true, agendaExpanded: false }
+  if (path === '/decisions') return { surface: 'decisions', capture: false, agendaExpanded: false }
+  if (path === '/settings') return { surface: 'settings', capture: false, agendaExpanded: false }
+  if (path === '/history') return { surface: 'history', capture: false, agendaExpanded: false }
+  if (path === '/today/agenda') return { surface: 'today', capture: false, agendaExpanded: true }
+  if (path === '/today' || path === '/') return { surface: 'today', capture: false, agendaExpanded: false }
+  if (path === '/opportunities') return { surface: 'opportunities', capture: false, agendaExpanded: false }
+  const match = path.match(/^\/opportunities\/([^/]+)$/)
+  if (match?.[1]) {
+    return {
+      surface: 'opportunities',
+      capture: false,
+      agendaExpanded: false,
+      opportunityId: decodeURIComponent(match[1]),
+    }
+  }
+  return { surface: 'today', capture: false, agendaExpanded: false }
 }
 
 function LanguageSwitch() {
@@ -91,64 +119,114 @@ function LanguageSwitch() {
 
 export default function AppV8() {
   const { lang } = useUiLanguage()
+  const cloud = useCloud()
   const zh = lang === 'zh'
-  const [surface, setSurface] = useState<Surface>('today')
+  const [route, setRoute] = useState<RouteState>(() => routeFromPath())
+  const [captureReturnPath, setCaptureReturnPath] = useState('/today')
   const [opportunityTab, setOpportunityTab] = useState<OpportunityTab>('opportunities')
   const [opportunityTabExplicit, setOpportunityTabExplicit] = useState(false)
-  const [selectedOpportunityId, setSelectedOpportunityId] = useState<string>()
   const [lastCompletedAction, setLastCompletedAction] = useState<CompletionFeedback | null>(null)
+  const [snapshot, setSnapshot] = useState<PJSDASSnapshot>()
   const [opportunities, setOpportunities] = useState<Opportunity[]>([])
   const [actions, setActions] = useState<Action[]>([])
   const [processes, setProcesses] = useState<ProcessRecord[]>([])
   const [prep, setPrep] = useState<Prep[]>([])
   const [groups, setGroups] = useState<ApplicationGroup[]>([])
   const [timeline, setTimeline] = useState<TimelineRecord[]>([])
-  const [changeSets, setChangeSets] = useState<ChangeSetRecord[]>([])
   const [rules, setRules] = useState<DecisionRules>(() => ({ ...DEFAULT_DECISION_RULES, weights: { ...DEFAULT_DECISION_RULES.weights } }))
   const [lastImport, setLastImport] = useState<ImportMeta | undefined>()
   const [loading, setLoading] = useState(true)
   const [now, setNow] = useState(() => new Date())
+  const [budgetMinutes, setBudgetMinutes] = useState(180)
+
+  const surface = route.surface
+  const selectedOpportunityId = route.opportunityId
+  const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
 
   async function reload() {
-    const [nextOpportunities, nextActions, nextProcesses, nextPrep, nextGroups, nextRules, nextTimeline, nextChangeSets, nextImport] = await Promise.all([
-      getAllOpportunities(), getAllActions(), getAllProcesses(), getAllPrep(), getAllApplicationGroups(),
-      getDecisionRules(), getAllTimelineRecords(), getAllChangeSets(), getLastImport(),
-    ])
-    setOpportunities(nextOpportunities)
-    setActions(nextActions)
-    setProcesses(nextProcesses)
-    setPrep(nextPrep)
-    setGroups(nextGroups)
-    setRules(nextRules)
-    setTimeline(nextTimeline)
-    setChangeSets(nextChangeSets)
-    setLastImport(nextImport)
+    const next = await exportLocalSnapshot()
+    setSnapshot(next)
+    setOpportunities(next.data.opportunities)
+    setActions(next.data.actions)
+    setProcesses(next.data.processes)
+    setPrep(next.data.prep)
+    setGroups(next.data.applicationGroups)
+    setRules(next.data.decisionRules ?? DEFAULT_DECISION_RULES)
+    setTimeline(next.data.timeline ?? [])
+    setLastImport(next.data.meta)
   }
 
-  useEffect(() => { void reload().finally(() => setLoading(false)) }, [])
+  function navigate(path: string, replace = false) {
+    const destination = browserPath(path)
+    if (replace) window.history.replaceState(null, '', destination)
+    else window.history.pushState(null, '', destination)
+    setRoute(routeFromPath(path))
+  }
+
+  function openCapture() {
+    const current = semanticPath()
+    setCaptureReturnPath(current === '/capture' ? '/today' : current)
+    navigate('/capture')
+  }
+
+  function closeCapture() {
+    navigate(captureReturnPath || '/today', true)
+  }
+
+  useEffect(() => {
+    if (semanticPath() === '/') {
+      window.history.replaceState(null, '', browserPath('/today'))
+      setRoute(routeFromPath('/today'))
+    }
+    void reload().finally(() => setLoading(false))
+  }, [])
+
   useEffect(() => {
     const timer = window.setInterval(() => setNow(new Date()), 60_000)
     const refresh = () => { void reload() }
+    const pop = () => setRoute(routeFromPath())
+    const keyboard = (event: KeyboardEvent) => {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
+        event.preventDefault()
+        openCapture()
+      }
+    }
     window.addEventListener('pjsdas:workspace-replaced', refresh)
+    window.addEventListener('popstate', pop)
+    window.addEventListener('keydown', keyboard)
     return () => {
       window.clearInterval(timer)
       window.removeEventListener('pjsdas:workspace-replaced', refresh)
+      window.removeEventListener('popstate', pop)
+      window.removeEventListener('keydown', keyboard)
     }
-  }, [])
+  }, [route])
+
   useEffect(() => {
     if (!lastCompletedAction) return
     const timer = window.setTimeout(() => setLastCompletedAction(null), 8_000)
     return () => window.clearTimeout(timer)
   }, [lastCompletedAction])
+
   useEffect(() => {
     if (loading || opportunityTabExplicit) return
     const hasPipeline = processes.some((item) => ['screening', 'assessment', 'written_test', 'interview', 'offer'].includes(item.stage))
     setOpportunityTab(hasPipeline ? 'pipeline' : 'opportunities')
   }, [loading, opportunityTabExplicit, processes])
 
-  const ranked = useMemo(() => rankActions(actions, opportunities, now, rules), [actions, opportunities, now, rules])
-  const attentionCoverage = useMemo(() => summarizeCoverage(timeline), [timeline])
-  const attentionCount = changeSets.filter((item) => item.status === 'pending' || item.status === 'failed').length + attentionCoverage.exceptions.length
+  const todayBrief = useMemo<TodayBriefModel | undefined>(() => {
+    if (!snapshot) return undefined
+    return buildTodayBrief(
+      snapshot,
+      { availableMinutes: budgetMinutes, agendaHorizonDays: route.agendaExpanded ? 30 : 7 },
+      { now, timezone, workspaceVersion: `web:${snapshot.exportedAt}` },
+    )
+  }, [snapshot, budgetMinutes, route.agendaExpanded, now, timezone])
+
+  const decisionRequests = snapshot?.data.decisionRequests ?? []
+  const openDecisionCount = decisionRequests.filter((item) =>
+    item.state === 'open' && (!item.expiresAt || new Date(item.expiresAt).getTime() >= now.getTime()),
+  ).length
   const workspaceEmpty = opportunities.length === 0 && actions.length === 0 && processes.length === 0 && prep.length === 0
   const selectedOpportunity = selectedOpportunityId ? opportunities.find((item) => item.id === selectedOpportunityId) : undefined
   const selectedProcess = selectedOpportunity
@@ -167,11 +245,23 @@ export default function AppV8() {
 
   async function markAction(id: string, status: Action['status']) {
     const before = actions.find((item) => item.id === id)
-    await applyActionStatusChangeSet(id, status)
-    await reload()
-    if (status === 'done' && before && before.status !== 'done') {
-      setLastCompletedAction({ id: before.id, title: before.title, previousStatus: before.status })
-    } else if (lastCompletedAction?.id === id) setLastCompletedAction(null)
+    if (!before) return
+    try {
+      await applyActionStatusChangeSet(id, status)
+      if (cloud.session) await ensureAuthoritativePersistence(true, cloud.syncNow)
+      await reload()
+      if (status === 'done' && before.status !== 'done') {
+        setLastCompletedAction({ id: before.id, title: before.title, previousStatus: before.status })
+      } else if (lastCompletedAction?.id === id) setLastCompletedAction(null)
+    } catch (caught) {
+      await reload()
+      setLastCompletedAction({
+        id: before.id,
+        title: before.title,
+        previousStatus: before.status,
+        error: caught instanceof Error ? caught.message : String(caught),
+      })
+    }
   }
 
   async function undoLastCompletion() {
@@ -179,21 +269,12 @@ export default function AppV8() {
     if (!item) return
     try {
       await applyActionStatusChangeSet(item.id, item.previousStatus)
+      if (cloud.session) await ensureAuthoritativePersistence(true, cloud.syncNow)
       await reload()
       setLastCompletedAction(null)
     } catch (caught) {
       setLastCompletedAction({ ...item, error: caught instanceof Error ? caught.message : String(caught) })
     }
-  }
-
-  async function applyPendingChangeSet(id: string) {
-    await applyChangeSet(id)
-    await reload()
-  }
-
-  async function discardPendingChangeSet(id: string) {
-    await discardChangeSet(id)
-    await reload()
   }
 
   function chooseOpportunityTab(tab: OpportunityTab) {
@@ -202,69 +283,136 @@ export default function AppV8() {
   }
 
   function navigateFromStart() {
-    setSurface('settings')
+    navigate('/settings')
+  }
+
+  function openOpportunity(id: string) {
+    navigate('/opportunities/' + encodeURIComponent(id))
+  }
+
+  async function executeTodayAction(item: TodayBriefAction) {
+    if (item.execution.externalUrl) {
+      window.open(item.execution.externalUrl, '_blank', 'noopener,noreferrer')
+      return
+    }
+    if (item.execution.operation === 'start_prep') {
+      setOpportunityTabExplicit(true)
+      setOpportunityTab('prepare')
+      navigate('/opportunities')
+      return
+    }
+    if (item.execution.operation === 'open_group_decision') {
+      setOpportunityTabExplicit(true)
+      setOpportunityTab('opportunities')
+      navigate('/opportunities')
+      return
+    }
+    if (item.opportunityId) {
+      openOpportunity(item.opportunityId)
+      return
+    }
+    await markAction(item.actionId, 'doing')
   }
 
   function navigateFromDetail(destination: OpportunityDetailDestination) {
-    if (destination === 'today') setSurface('today')
+    if (destination === 'today') navigate('/today')
     if (destination === 'prepare') {
-      setSurface('opportunities')
       setOpportunityTabExplicit(true)
       setOpportunityTab('prepare')
+      navigate('/opportunities')
     }
     if (destination === 'opportunities') {
-      setSurface('opportunities')
       setOpportunityTabExplicit(true)
       setOpportunityTab('opportunities')
+      navigate('/opportunities')
     }
     if (destination === 'pipeline') {
-      setSurface('opportunities')
       setOpportunityTabExplicit(true)
       setOpportunityTab('pipeline')
+      navigate('/opportunities')
     }
-    setSelectedOpportunityId(undefined)
   }
 
   return (
-    <div className="app-shell surface-shell">
-      <aside className="sidebar surface-sidebar">
+    <div className="app-shell surface-shell ultimate-shell">
+      <aside className="sidebar surface-sidebar ultimate-sidebar">
         <div className="brand">
           <span className="brand-mark">P</span>
-          <div><strong>PJSDAS</strong><small>{zh ? '个人求职决策工作台' : 'Personal job-search workspace'}</small></div>
+          <div><strong>PJSDAS</strong><small>{zh ? '求职行动系统' : 'Job-search action system'}</small></div>
         </div>
 
-        <nav className="surface-nav" aria-label={zh ? '主导航' : 'Primary navigation'}>
+        <nav className="surface-nav ultimate-primary-nav" aria-label={zh ? '主导航' : 'Primary navigation'}>
           {primarySurfaces.map((item) => {
             const label = surfaceLabels[item]
             return (
-              <button key={item} className={surface === item ? 'nav-item active surface-nav-item' : 'nav-item surface-nav-item'} onClick={() => setSurface(item)}>
+              <button
+                key={item}
+                className={surface === item ? 'nav-item active surface-nav-item' : 'nav-item surface-nav-item'}
+                onClick={() => navigate(item === 'today' ? '/today' : '/opportunities')}
+              >
                 <span>{zh ? label.zh : label.en}</span>
-                <small>{item === 'attention' ? `${attentionCount} ${zh ? '项' : 'items'}` : (zh ? label.hintZh : label.hintEn)}</small>
+                <small>{zh ? label.hintZh : label.hintEn}</small>
               </button>
             )
           })}
         </nav>
 
-        <div className="surface-sidebar-footer">
-          <span>{zh ? '决策优先' : 'Decision first'}</span>
-        </div>
+        <div className="surface-sidebar-footer"><span>Today · Opportunities</span></div>
       </aside>
 
-      <main className="main-panel surface-main">
-        <OriginTransitionNotice onOpenSettings={() => setSurface('settings')} />
-        {loading ? <div className="empty-card">{zh ? '正在读取本地工作区…' : 'Loading local workspace…'}</div> : null}
-        {!loading && surface === 'today' ? (
-          <TodaySurface ranked={ranked} now={now} opportunities={opportunities} rules={rules} attentionCount={attentionCount} workspaceEmpty={workspaceEmpty} onStart={navigateFromStart} onOpenAttention={() => setSurface('attention')} onMark={markAction} onOpenOpportunity={setSelectedOpportunityId} />
+      <main className="main-panel surface-main ultimate-main">
+        <header className="ultimate-toolbar" aria-label={zh ? '全局工具栏' : 'Global toolbar'}>
+          <button className="ultimate-capture-button" type="button" onClick={openCapture}>
+            <span>＋</span><strong>{zh ? '告诉 PJSDAS' : 'Tell PJSDAS'}</strong><kbd>⌘K</kbd>
+          </button>
+          <div className="ultimate-toolbar-actions">
+            {openDecisionCount > 0 ? (
+              <button className={surface === 'decisions' ? 'active' : ''} type="button" onClick={() => navigate('/decisions')}>
+                {zh ? '需要你决定' : 'Needs your decision'} <strong>{openDecisionCount}</strong>
+              </button>
+            ) : null}
+            <button className={surface === 'settings' ? 'active' : ''} type="button" onClick={() => navigate('/settings')}>
+              {zh ? '设置' : 'Settings'}
+            </button>
+          </div>
+        </header>
+
+        {surface === 'settings' ? <OriginTransitionNotice onOpenSettings={() => navigate('/settings')} /> : null}
+        {loading ? <div className="empty-card">{zh ? '正在读取工作区…' : 'Loading workspace…'}</div> : null}
+
+        {!loading && surface === 'today' && todayBrief ? (
+          <TodaySurface
+            brief={todayBrief}
+            now={now}
+            budgetMinutes={budgetMinutes}
+            agendaExpanded={route.agendaExpanded}
+            workspaceEmpty={workspaceEmpty}
+            onBudgetChange={setBudgetMinutes}
+            onStart={navigateFromStart}
+            onOpenDecisions={() => navigate('/decisions')}
+            onOpenAgenda={() => navigate(route.agendaExpanded ? '/today' : '/today/agenda')}
+            onExecute={executeTodayAction}
+            onMark={markAction}
+            onOpenOpportunity={openOpportunity}
+          />
         ) : null}
+
         {!loading && surface === 'opportunities' ? (
-          <OpportunitiesSurface opportunities={opportunities} groups={groups} processes={processes} prep={prep} tab={opportunityTab} onTabChange={chooseOpportunityTab} onOpenOpportunity={setSelectedOpportunityId} />
+          <OpportunitiesSurface opportunities={opportunities} groups={groups} processes={processes} prep={prep} tab={opportunityTab} onTabChange={chooseOpportunityTab} onOpenOpportunity={openOpportunity} />
         ) : null}
-        {!loading && surface === 'attention' ? (
-          <AttentionSurface timeline={timeline} changeSets={changeSets} onApply={applyPendingChangeSet} onDiscard={discardPendingChangeSet} />
-        ) : null}
-        {!loading && surface === 'activity' ? <ActivitySurface timeline={timeline} /> : null}
-        {!loading && surface === 'settings' ? <SettingsSurface lastImport={lastImport} rules={rules} onChanged={reload} onOpenActivity={() => setSurface('activity')} /> : null}
+        {!loading && surface === 'decisions' ? <DecisionRequestsView requests={decisionRequests} onChanged={reload} /> : null}
+        {!loading && surface === 'history' ? <ActivitySurface timeline={timeline} /> : null}
+        {!loading && surface === 'settings' ? <SettingsSurface lastImport={lastImport} rules={rules} onChanged={reload} onOpenActivity={() => navigate('/history')} /> : null}
       </main>
+
+      <button className="ultimate-mobile-capture" type="button" onClick={openCapture}>＋ {zh ? '告诉 PJSDAS' : 'Tell PJSDAS'}</button>
+
+      <TellPjsdasCapture
+        open={route.capture}
+        onClose={closeCapture}
+        onChanged={reload}
+        onOpenDecisions={() => navigate('/decisions')}
+      />
 
       {selectedOpportunity ? (
         <OpportunityDetailDrawer
@@ -273,7 +421,7 @@ export default function AppV8() {
           actions={selectedActions}
           applicationGroup={selectedGroup}
           timeline={selectedTimeline}
-          onClose={() => setSelectedOpportunityId(undefined)}
+          onClose={() => navigate('/opportunities')}
           onNavigate={navigateFromDetail}
         />
       ) : null}
@@ -291,109 +439,278 @@ export default function AppV8() {
   )
 }
 
-function TodaySurface({ ranked, now, opportunities, rules, attentionCount, workspaceEmpty, onStart, onOpenAttention, onMark, onOpenOpportunity }: {
-  ranked: ReturnType<typeof rankActions>
+function TodaySurface({
+  brief,
+  now,
+  budgetMinutes,
+  agendaExpanded,
+  workspaceEmpty,
+  onBudgetChange,
+  onStart,
+  onOpenDecisions,
+  onOpenAgenda,
+  onExecute,
+  onMark,
+  onOpenOpportunity,
+}: {
+  brief: TodayBriefModel
   now: Date
-  opportunities: Opportunity[]
-  rules: DecisionRules
-  attentionCount: number
+  budgetMinutes: number
+  agendaExpanded: boolean
   workspaceEmpty: boolean
+  onBudgetChange: (minutes: number) => void
   onStart: () => void
-  onOpenAttention: () => void
+  onOpenDecisions: () => void
+  onOpenAgenda: () => void
+  onExecute: (item: TodayBriefAction) => Promise<void>
   onMark: (id: string, status: Action['status']) => Promise<void>
   onOpenOpportunity: (id: string) => void
 }) {
   const { lang } = useUiLanguage()
   const zh = lang === 'zh'
-  const [budgetMinutes, setBudgetMinutes] = useState(180)
-  const plan = buildTimePlan(ranked, budgetMinutes, now, rules)
-  const opportunityMap = new Map(opportunities.map((item) => [item.id, item]))
-  const top = plan.planned[0]
-  const next = plan.planned.slice(1, 5)
+  const primary = brief.nextAction
+  const criticalWarnings = brief.materialCoverageWarnings.filter((item) => item.severity === 'critical')
+  const coverageWarnings = brief.materialCoverageWarnings.filter((item) => item.severity !== 'critical')
 
-  function decisionReason(item: (typeof plan.planned)[number]) {
-    return presentRankingReasons(item.reasons, zh).join(' · ')
-      || (zh ? '当前优先级最高' : 'Highest current priority')
+  function reasonText(item: TodayBriefAction) {
+    return item.whyNow.length
+      ? presentRankingReasons(item.whyNow, zh).join(' · ')
+      : (zh ? '当前最值得处理' : 'Highest-value next move')
+  }
+
+  function primaryLabel(item: TodayBriefAction) {
+    if (item.execution.operation === 'open_application') {
+      return item.execution.externalUrl
+        ? (zh ? '打开申请' : 'Open application')
+        : (zh ? '查看岗位' : 'View opportunity')
+    }
+    if (item.execution.operation === 'start_prep') return zh ? '开始准备' : 'Start prep'
+    if (item.execution.operation === 'open_process') return zh ? '查看流程' : 'Open process'
+    if (item.execution.operation === 'open_group_decision') return zh ? '比较机会' : 'Compare opportunities'
+    return zh ? '开始' : 'Start'
+  }
+
+  function actionTiming(item: TodayBriefAction) {
+    const timing = item.timing
+    if (!timing) return undefined
+    if (timing.precision === 'date' && timing.date) {
+      return (zh ? '日期：' : 'Date: ') + timing.date
+    }
+    if (timing.startAt) {
+      return (zh ? '开始：' : 'Starts: ') + formatBriefDateTime(timing.startAt, zh)
+    }
+    if (timing.deadlineAt) {
+      return (zh ? '截止：' : 'Deadline: ') + formatBriefDateTime(timing.deadlineAt, zh)
+    }
+    return undefined
   }
 
   return (
-    <section className="surface-page today-surface decision-today">
-      <header className="decision-today-header">
+    <section className="surface-page ultimate-today">
+      <header className="ultimate-today-header">
         <div>
           <div className="eyebrow">{formatDateOnly(now.toISOString())}</div>
           <h1>{zh ? '今天' : 'Today'}</h1>
+          <p>{zh ? '只看现在最值得做的事，以及接下来不能错过的时间节点。' : 'Only what is worth doing now and the recruiting nodes you cannot afford to miss.'}</p>
         </div>
-        {attentionCount > 0 ? (
-          <button className="decision-attention-pill" type="button" onClick={onOpenAttention}>
+        {brief.relevantDecisionRequests.length > 0 ? (
+          <button className="ultimate-decision-entry" type="button" onClick={onOpenDecisions}>
             <span>{zh ? '需要你决定' : 'Needs your decision'}</span>
-            <strong>{attentionCount}</strong>
+            <strong>{brief.relevantDecisionRequests.length}</strong>
           </button>
         ) : null}
       </header>
 
-      {top ? (
-        <article className="decision-hero">
-          <div className="decision-kicker">{zh ? '下一步' : 'Next'}</div>
-          <h2>{top.action.title}</h2>
-          <p className="decision-why">{decisionReason(top)}</p>
-          <div className="decision-meta">
-            {top.action.dueAt ? <TimeRiskBadge action={top.action} now={now} rules={rules} /> : null}
-            <span className="decision-duration">{formatMinutes(top.action.estimatedMinutes)}</span>
-          </div>
-          <div className="decision-actions">
-            <button className="primary-button" onClick={() => { void onMark(top.action.id, 'done') }}>{zh ? '完成' : 'Done'}</button>
-            {top.action.opportunityId ? <button className="secondary-button" onClick={() => onOpenOpportunity(top.action.opportunityId!)}>{zh ? '查看岗位' : 'View job'}</button> : null}
-          </div>
-        </article>
-      ) : workspaceEmpty ? (
-        <GettingStartedCard onStart={onStart} />
-      ) : (
-        <div className="decision-clear-state">
-          <strong>{zh ? '现在没有必须处理的行动' : 'Nothing requires action right now'}</strong>
-          <span>{zh ? '没有硬截止、冲突或待完成动作时，Today 保持为空。' : 'Today stays quiet when there is no deadline, conflict, or executable action.'}</span>
+      {criticalWarnings.length ? (
+        <div className="ultimate-critical-stack" role="status">
+          {criticalWarnings.map((item) => (
+            <div className="ultimate-critical-warning" key={item.code}>
+              <strong>{item.title}</strong>
+              <span>{item.detail}</span>
+            </div>
+          ))}
         </div>
-      )}
+      ) : null}
 
-      {!workspaceEmpty && next.length ? (
-        <section className="decision-next-section">
-          <div className="decision-section-head">
-            <h2>{zh ? '接下来' : 'Next up'}</h2>
+      <div className="ultimate-today-layout">
+        <div className="ultimate-primary-slot">
+          {primary ? (
+            <article className="ultimate-next-action">
+              <div className="decision-kicker">{zh ? '下一步' : 'Next action'}</div>
+              {primary.company ? <div className="ultimate-action-context">{primary.company}{primary.role ? ' · ' + primary.role : ''}</div> : null}
+              <h2>{primary.title}</h2>
+              <p className="decision-why">{reasonText(primary)}</p>
+              <div className="ultimate-action-meta">
+                {actionTiming(primary) ? <span>{actionTiming(primary)}</span> : null}
+                <span>{zh ? '预计 ' : 'Est. '}{formatMinutes(primary.estimatedMinutes)}</span>
+                {primary.protectedByLatestStart ? <strong>{zh ? '已进入最迟开工保护' : 'Latest-start protected'}</strong> : null}
+              </div>
+              <div className="decision-actions">
+                <button className="primary-button" type="button" onClick={() => { void onExecute(primary) }}>
+                  {primaryLabel(primary)}
+                </button>
+                <button className="secondary-button" type="button" onClick={() => { void onMark(primary.actionId, 'done') }}>
+                  {zh ? '标记完成' : 'Mark done'}
+                </button>
+                {primary.opportunityId ? (
+                  <button className="text-button" type="button" onClick={() => onOpenOpportunity(primary.opportunityId!)}>
+                    {zh ? '岗位详情' : 'Opportunity'}
+                  </button>
+                ) : null}
+              </div>
+            </article>
+          ) : workspaceEmpty ? (
+            <GettingStartedCard onStart={onStart} />
+          ) : (
+            <div className="ultimate-quiet-state ultimate-primary-quiet">
+              <strong>{zh ? '现在没有必须处理的行动' : 'Nothing requires action right now'}</strong>
+              <span>{zh ? '未来节点仍会保留在右侧日程，不需要为了填满 Today 制造任务。' : 'Future recruiting nodes remain visible in the agenda; PJSDAS does not invent work just to fill Today.'}</span>
+            </div>
+          )}
+        </div>
+
+        <aside className="ultimate-agenda" aria-label={zh ? '近期招聘日程' : 'Upcoming recruiting agenda'}>
+          <div className="ultimate-section-head">
+            <div>
+              <span className="eyebrow">AGENDA</span>
+              <h2>{agendaExpanded ? (zh ? '未来 30 天' : 'Next 30 days') : (zh ? '近期节点' : 'Upcoming')}</h2>
+            </div>
+            <button className="text-button" type="button" onClick={onOpenAgenda}>
+              {agendaExpanded ? (zh ? '收起' : 'Summary') : (zh ? '全部日程' : 'All schedule')}
+            </button>
+          </div>
+
+          {brief.agendaGroups.length ? (
+            <div className="ultimate-agenda-groups">
+              {brief.agendaGroups.map((group) => (
+                <section className={'ultimate-agenda-group relation-' + group.relation} key={group.key}>
+                  <h3>{agendaGroupTitle(group.relation, group.date, zh)}</h3>
+                  <div>
+                    {group.nodes.map((node) => (
+                      <button
+                        className={'ultimate-agenda-node' + (node.requiresResolution ? ' unresolved' : '')}
+                        type="button"
+                        key={node.nodeId}
+                        onClick={() => { if (node.opportunityId) onOpenOpportunity(node.opportunityId) }}
+                      >
+                        <span className="ultimate-agenda-time">{agendaNodeTime(node, zh)}</span>
+                        <span className="ultimate-agenda-copy">
+                          <strong>{agendaNodeLabel(node.kind, zh)}</strong>
+                          <small>{[node.company, node.role].filter(Boolean).join(' · ') || (zh ? '招聘节点' : 'Recruiting node')}</small>
+                        </span>
+                        <span className="ultimate-agenda-state">
+                          {node.requiresResolution
+                            ? (zh ? '待确认' : 'Resolve')
+                            : node.within48Hours
+                              ? (zh ? '48h 内' : '<48h')
+                              : ''}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                </section>
+              ))}
+            </div>
+          ) : (
+            <div className="ultimate-agenda-empty">
+              <strong>{zh ? '近期没有招聘时间节点' : 'No recruiting nodes coming up'}</strong>
+              <span>{zh ? '这里不会显示普通日历事件。' : 'General calendar events do not appear here.'}</span>
+            </div>
+          )}
+        </aside>
+
+        <section className="ultimate-next-list-section">
+          <div className="ultimate-section-head">
+            <div>
+              <span className="eyebrow">NEXT UP</span>
+              <h2>{zh ? '接下来' : 'Next up'}</h2>
+            </div>
             <div className="decision-budget" role="group" aria-label={zh ? '今日可用时间' : 'Available time today'}>
               {[60, 180, 360].map((value) => (
-                <button key={value} type="button" className={budgetMinutes === value ? 'active' : ''} onClick={() => setBudgetMinutes(value)}>{formatMinutes(value)}</button>
+                <button key={value} type="button" className={budgetMinutes === value ? 'active' : ''} onClick={() => onBudgetChange(value)}>
+                  {formatMinutes(value)}
+                </button>
               ))}
             </div>
           </div>
-          <div className="decision-next-list">
-            {next.map((item, index) => {
-              const opportunity = item.action.opportunityId ? opportunityMap.get(item.action.opportunityId) : undefined
-              return (
-                <article className="decision-next-row" key={item.action.id}>
-                  <span className="decision-order">{index + 2}</span>
-                  <button className="decision-next-copy" type="button" onClick={() => { if (opportunity) onOpenOpportunity(opportunity.id) }}>
-                    <strong>{item.action.title}</strong>
-                    <small>{decisionReason(item)}</small>
-                  </button>
-                  <div className="decision-next-meta">
-                    {item.action.dueAt ? <TimeRiskBadge action={item.action} now={now} rules={rules} compact /> : null}
-                    <span>{formatMinutes(item.action.estimatedMinutes)}</span>
-                  </div>
-                  <button className="decision-done-button" type="button" onClick={() => { void onMark(item.action.id, 'done') }}>{zh ? '完成' : 'Done'}</button>
-                </article>
-              )
-            })}
-          </div>
-        </section>
-      ) : null}
 
-      {!workspaceEmpty && plan.overrunReason ? (
-        <button className="decision-capacity-warning" type="button" onClick={onOpenAttention}>
-          <span>{zh ? '今天的硬约束超过当前可用时间' : 'Hard constraints exceed today’s available time'}</span>
-          <strong>{zh ? '查看需要决定的事' : 'Review decisions'}</strong>
-        </button>
+          {brief.nextActions.length ? (
+            <div className="ultimate-next-list">
+              {brief.nextActions.map((item, index) => (
+                <article className="ultimate-next-row" key={item.actionId}>
+                  <span className="decision-order">{index + 2}</span>
+                  <button className="ultimate-next-copy" type="button" onClick={() => { void onExecute(item) }}>
+                    <strong>{item.title}</strong>
+                    <small>{reasonText(item)}</small>
+                  </button>
+                  <div className="ultimate-next-meta">
+                    {actionTiming(item) ? <span>{actionTiming(item)}</span> : null}
+                    <span>{formatMinutes(item.estimatedMinutes)}</span>
+                  </div>
+                  <button className="decision-done-button" type="button" onClick={() => { void onMark(item.actionId, 'done') }}>
+                    {zh ? '完成' : 'Done'}
+                  </button>
+                </article>
+              ))}
+            </div>
+          ) : (
+            <p className="ultimate-section-empty">{zh ? '没有第二优先级任务。' : 'No secondary action needs your time.'}</p>
+          )}
+        </section>
+      </div>
+
+      {coverageWarnings.length ? (
+        <details className="ultimate-coverage-details">
+          <summary>{zh ? '数据覆盖提示' : 'Coverage notes'} · {coverageWarnings.length}</summary>
+          <div>
+            {coverageWarnings.map((item) => (
+              <p key={item.code}><strong>{item.title}</strong><span>{item.detail}</span></p>
+            ))}
+          </div>
+        </details>
       ) : null}
     </section>
   )
+}
+
+function agendaGroupTitle(relation: 'unresolved' | 'today' | 'tomorrow' | 'later', date: string | undefined, zh: boolean) {
+  if (relation === 'unresolved') return zh ? '已过时间 · 待确认' : 'Past · needs resolution'
+  if (relation === 'today') return zh ? '今天' : 'Today'
+  if (relation === 'tomorrow') return zh ? '明天' : 'Tomorrow'
+  return date ?? (zh ? '之后' : 'Later')
+}
+
+function agendaNodeLabel(kind: TodayBriefAgendaNode['kind'], zh: boolean) {
+  const labels: Record<TodayBriefAgendaNode['kind'], [string, string]> = {
+    interview: ['面试', 'Interview'],
+    written_test: ['笔试', 'Written test'],
+    assessment: ['测评', 'Assessment'],
+    application_deadline: ['申请截止', 'Application deadline'],
+    follow_up: ['复核', 'Follow-up'],
+    prep_trigger: ['准备节点', 'Prep trigger'],
+  }
+  return labels[kind][zh ? 0 : 1]
+}
+
+function agendaNodeTime(node: TodayBriefAgendaNode, zh: boolean) {
+  const temporal = node.temporal
+  if (temporal.precision === 'date' && temporal.date) return temporal.date
+  if (temporal.startAt) return formatBriefDateTime(temporal.startAt, zh)
+  if (temporal.deadlineAt) return (zh ? '截止 ' : 'By ') + formatBriefDateTime(temporal.deadlineAt, zh)
+  if (temporal.endAt) return formatBriefDateTime(temporal.endAt, zh)
+  return zh ? '时间待定' : 'Time TBD'
+}
+
+function formatBriefDateTime(value: string, zh: boolean) {
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return value
+  return new Intl.DateTimeFormat(zh ? 'zh-CN' : 'en-GB', {
+    month: 'numeric',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).format(date)
 }
 
 function OpportunitiesSurface({ opportunities, groups, processes, prep, tab, onTabChange, onOpenOpportunity }: {
@@ -479,7 +796,7 @@ function PipelinePanel({ processes, opportunities, onOpenOpportunity }: { proces
       {sorted.length ? <div className="surface-pipeline-grid">{sorted.map((item) => {
         const opportunityId = opportunityIdFor(item)
         return <article className="surface-pipeline-card" key={item.id}><div><strong>{item.company}</strong><h3>{item.role}</h3></div><span className="surface-stage">{presentStageLabel(item.stage, item.stageLabel, lang)}</span><dl><div><dt>{zh ? '最近进展' : 'Last progress'}</dt><dd>{item.lastProgressAt ? formatDateOnly(item.lastProgressAt) : '—'}</dd></div></dl><div className="surface-pipeline-footer">{opportunityId ? <button className="text-button" onClick={() => onOpenOpportunity(opportunityId)}>{zh ? '岗位详情' : 'Details'}</button> : null}</div></article>
-      })}</div> : <EmptyState title={zh ? '暂无在途流程' : 'No pipeline yet'} text={zh ? '流程通知通常由 AI / Gmail 自动进入；必要时使用 Today 底部的手工 fallback。' : 'Process notices normally arrive through AI or Gmail. Use Today’s manual fallback only when needed.'} />}
+      })}</div> : <EmptyState title={zh ? '暂无在途流程' : 'No pipeline yet'} text={zh ? '流程通知通常由 AI / Gmail 自动进入；日常补充请使用“告诉 PJSDAS”，只有恢复异常流程时才进入 Settings。' : 'Process notices normally arrive through AI or Gmail. Use Tell PJSDAS for normal capture and Settings only for exceptional process recovery.'} />}
     </section>
   )
 }
@@ -496,16 +813,10 @@ function PreparePanel({ prep }: { prep: Prep[] }) {
   )
 }
 
-function AttentionSurface({ timeline, changeSets, onApply, onDiscard }: { timeline: TimelineRecord[]; changeSets: ChangeSetRecord[]; onApply: (id: string) => Promise<void>; onDiscard: (id: string) => Promise<void> }) {
-  const { lang } = useUiLanguage()
-  const zh = lang === 'zh'
-  return <section className="surface-page"><SurfaceHeader eyebrow="ATTENTION" title={zh ? '这里只放真正需要你决定的事' : 'Only the exceptions that genuinely need you'} text={zh ? '普通同步、自动摄入和确定性更新不会来打扰你。冲突、待确认变更和无法安全解析的来源才进入这里。' : 'Routine sync, ingestion, and deterministic updates stay silent. Only conflicts, governed changes, and unresolved source evidence enter Attention.'} /><AttentionView timeline={timeline} changeSets={changeSets} onApplyChangeSet={onApply} onDiscardChangeSet={onDiscard} /></section>
-}
-
 function ActivitySurface({ timeline }: { timeline: TimelineRecord[] }) {
   const { lang } = useUiLanguage()
   const zh = lang === 'zh'
-  return <section className="surface-page"><SurfaceHeader eyebrow="ACTIVITY" title={zh ? '系统和你都做了什么' : 'What you and PJSDAS have done'} text={zh ? 'Activity 是审计面：保留事实、命令、自动化和来源痕迹；待你决定的事项已经移到 Attention。' : 'Activity is the audit surface for facts, commands, automation, and provenance. Anything requiring your decision lives in Attention instead.'} /><TimelineView records={timeline} /></section>
+  return <section className="surface-page"><SurfaceHeader eyebrow="HISTORY" title={zh ? '历史与审计' : 'History & audit'} text={zh ? '这里只保留发生过什么。日常行动和需要你决定的事分别留在 Today 与 Decisions。' : 'This is the audit trail only. Daily action stays in Today and genuine decisions stay in Decisions.'} /><TimelineView records={timeline} /></section>
 }
 
 function SettingsSurface({ lastImport, rules, onChanged, onOpenActivity }: { lastImport?: ImportMeta; rules: DecisionRules; onChanged: () => Promise<void>; onOpenActivity: () => void }) {
@@ -556,7 +867,7 @@ function SettingsSurface({ lastImport, rules, onChanged, onOpenActivity }: { las
         <summary><div><strong>{zh ? '数据与恢复' : 'Data & recovery'}</strong><span>{zh ? '备份、导入和恢复路径' : 'Backup, import, and recovery paths'}</span></div></summary>
         <div className="settings-group-body">
           <ConnectedMigrationCard />
-          <div className="settings-inline-tool"><div><strong>{zh ? '手工记录' : 'Manual capture'}</strong><p>{zh ? '仅在 AI / 自动化无法直接记录事实时使用。' : 'Use only when AI or automation cannot capture the fact directly.'}</p></div><div className="surface-tool-row"><ProgressInbox onChanged={() => { void onChanged() }} /><ProcessEventDock onChanged={() => { void onChanged() }} /></div></div>
+          <div className="settings-inline-tool"><div><strong>{zh ? '流程恢复工具' : 'Process recovery'}</strong><p>{zh ? '日常输入请使用全局“告诉 PJSDAS”。这里只有自动化无法恢复时才使用的低频流程工具。' : 'Use global Tell PJSDAS for normal input. This low-frequency tool is only for process recovery when automation cannot repair the state.'}</p></div><div className="surface-tool-row"><ProcessEventDock onChanged={() => { void onChanged() }} /></div></div>
           <div className="settings-inline-tool"><div><strong>{zh ? '本地快照' : 'Local snapshot'}</strong><p>{zh ? '大版本调整、换设备或清理浏览器前导出完整快照。' : 'Export a full snapshot before major upgrades, device changes, or browser cleanup.'}</p></div><LocalBackupDock onChanged={() => { void onChanged() }} /></div>
           <div className="surface-import-card"><div><strong>{zh ? 'Excel 初始化 / 恢复' : 'Excel initialization / recovery'}</strong><p>{zh ? 'Excel 已不是日常数据源，只在初始化、历史迁移或恢复时使用。' : 'Excel is no longer the daily source of truth; use it for initialization, migration, or recovery.'}</p></div><label className="file-button">{busy ? (zh ? '处理中…' : 'Processing…') : (zh ? '选择工作簿' : 'Choose workbook')}<input type="file" accept=".xlsx,.xls" disabled={busy} onChange={(event) => { void readWorkbook(event.target.files?.[0]) }} /></label></div>
           {error ? <div className="notice error">{error}</div> : null}
@@ -600,14 +911,6 @@ function GettingStartedCard({ onStart }: { onStart: () => void }) {
 
 function EmptyState({ title, text }: { title: string; text: string }) {
   return <div className="empty-card"><strong>{title}</strong><p>{text}</p></div>
-}
-
-function TimeRiskBadge({ action, now, rules, compact = false }: { action: Action; now: Date; rules: DecisionRules; compact?: boolean }) {
-  const { lang } = useUiLanguage()
-  const zh = lang === 'zh'
-  if (!action.dueAt) return null
-  const risk = timeRisk(action.dueAt, now, rules)
-  return <div className={`deadline-countdown risk-${risk.level}${compact ? ' compact' : ''}`}><strong>{presentTimeRemaining(action.dueAt, now, zh)}</strong><span>{presentTimeRiskLevel(risk.level, zh)}</span></div>
 }
 
 function PriorityBadge({ value, zh }: { value: ReturnType<typeof computePriority>; zh: boolean }) {

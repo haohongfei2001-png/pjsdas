@@ -4,11 +4,11 @@ test('local backup follows the interface language and states the sync boundary a
   await page.goto('/')
   await expect(page.getByRole('heading', { name: '今天', exact: true })).toBeVisible()
 
-  await page.locator('.surface-nav').getByRole('button', { name: /设置|Settings/ }).click()
+  await page.locator('.ultimate-toolbar').getByRole('button', { name: /设置|Settings/ }).click()
   const interfaceGroup = page.locator('details.settings-group > summary').filter({ hasText: /界面.*显示层|Interface.*Presentation/ }).locator('..')
   await interfaceGroup.locator('summary').click()
   await interfaceGroup.getByRole('button', { name: 'EN', exact: true }).click()
-  await page.locator('.surface-nav').getByRole('button', { name: /Settings/ }).click()
+  await page.locator('.ultimate-toolbar').getByRole('button', { name: /Settings/ }).click()
   await expect(page.getByRole('heading', { name: 'Connections, automation, and durable control' })).toBeVisible()
   await page.locator('details.settings-group').filter({ hasText: 'Data & recovery' }).locator('summary').click()
   await page.getByRole('button', { name: 'Local backup' }).click()

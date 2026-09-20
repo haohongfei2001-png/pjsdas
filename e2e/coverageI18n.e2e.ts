@@ -1,26 +1,19 @@
 import { expect, test } from '@playwright/test'
 
-test('Coverage and Integrity surface follows the global English interface language', async ({ page }) => {
+test('material coverage follows the global English language inside Today instead of a daily health popup', async ({ page }) => {
   await page.goto('/')
-  await expect(page.getByRole('heading', { name: '今天', exact: true })).toBeVisible()
+  await expect(page.locator('.ultimate-coverage-details > summary')).toContainText('数据覆盖提示')
+  await expect(page.getByRole('button', { name: 'View ingestion coverage and workspace health' })).toHaveCount(0)
 
-  await page.locator('.surface-nav').getByRole('button', { name: /设置|Settings/ }).click()
+  await page.locator('.ultimate-toolbar').getByRole('button', { name: /设置|Settings/ }).click()
   const interfaceGroup = page.locator('details.settings-group > summary').filter({ hasText: /界面.*显示层|Interface.*Presentation/ }).locator('..')
   await interfaceGroup.locator('summary').click()
   await interfaceGroup.getByRole('button', { name: 'EN', exact: true }).click()
-  await expect(page.locator('html')).toHaveAttribute('lang', 'en')
+  await page.locator('.surface-nav').getByRole('button', { name: /Today/ }).click()
 
-  const healthButton = page.getByRole('button', { name: 'View ingestion coverage and workspace health' })
-  await expect(healthButton).toBeVisible()
-  await healthButton.click()
-
-  const dialog = page.getByRole('dialog', { name: 'Ingestion coverage and workspace health' })
-  await expect(dialog).toBeVisible()
-  await expect(dialog.getByText('Source coverage', { exact: true })).toBeVisible()
-  await expect(dialog.getByText('Received / accounted', { exact: true })).toBeVisible()
-  await expect(dialog.getByText('Workspace health', { exact: true })).toBeVisible()
-  await expect(dialog.getByRole('button', { name: 'Close' })).toBeVisible()
-
-  await expect(dialog.getByText('来源覆盖', { exact: true })).toHaveCount(0)
-  await expect(dialog.getByText('工作区健康', { exact: true })).toHaveCount(0)
+  const coverage = page.locator('.ultimate-coverage-details')
+  await expect(coverage.locator('summary')).toContainText('Coverage notes')
+  await coverage.locator('summary').click()
+  await expect(coverage).toContainText('Some automated sources have no completed coverage record.')
+  await expect(page.getByText('数据覆盖提示', { exact: false })).toHaveCount(0)
 })

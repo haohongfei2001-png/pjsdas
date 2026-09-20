@@ -18,6 +18,38 @@
     {
       "source": "/.well-known/oauth-protected-resource/api/mcp-auth",
       "destination": "/api/oauth-protected-resource"
+    },
+    {
+      "source": "/today",
+      "destination": "/"
+    },
+    {
+      "source": "/today/agenda",
+      "destination": "/"
+    },
+    {
+      "source": "/opportunities",
+      "destination": "/"
+    },
+    {
+      "source": "/opportunities/:id",
+      "destination": "/"
+    },
+    {
+      "source": "/capture",
+      "destination": "/"
+    },
+    {
+      "source": "/decisions",
+      "destination": "/"
+    },
+    {
+      "source": "/settings",
+      "destination": "/"
+    },
+    {
+      "source": "/history",
+      "destination": "/"
     }
   ]
 }
