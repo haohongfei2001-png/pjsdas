@@ -179,8 +179,9 @@ Not in scope:
      real HTTP 200 empty run while no users are opted in;
    - repository supply-chain prerequisites are now configured: `main.protected=true`,
      Release immutability is enabled, and the read-only release-admin Actions secret exists;
-   - current exact-SHA production candidate `main@73943120cc4d32b547f00824b1ed112216dc3e05`
-     passed CI, Browser E2E, GitHub Pages deployment, and Production Self-Test;
+   - pre-closure exact-SHA candidate `main@73943120cc4d32b547f00824b1ed112216dc3e05`
+     passed CI, Browser E2E, GitHub Pages deployment, and Production Self-Test; any later closure
+     commit must pass the same exact-SHA chain before publication;
    - publication remains intentionally **DISARMED** until the owner explicitly arms
      `v1.1.0-rc.1`; the armed workflow must still re-verify branch protection and Immutable
      Releases before creating the prerelease.
