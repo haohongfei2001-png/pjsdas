@@ -347,6 +347,8 @@ export interface TimelineRecord {
   opportunityId?: string
   actionId?: string
   processEventId?: string
+  scheduleNodeId?: string
+  decisionRequestId?: string
   changeSetId?: string
   commandId?: string
   commandOperation?: string

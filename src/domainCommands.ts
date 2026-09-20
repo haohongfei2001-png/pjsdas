@@ -16,13 +16,18 @@ import type {
   ProcessEvent,
   ProcessEventType,
   ProcessRecord,
+  ScheduleNode,
+  ScheduleNodeTemporal,
   TimelineRecord,
 } from './model.js'
 import type { PJSDASSnapshot } from './snapshot.js'
 import { upgradeSnapshotToLatest, validateSnapshot } from './snapshot.js'
 import {
   ensureScheduleContractInPlace,
+  latestScheduleOccurrence,
+  projectScheduleNodesToLegacyInPlace,
   setApplicationDeadlineScheduleNode,
+  supersedeScheduleOccurrence,
   syncScheduleNodeForActionStatus,
 } from './scheduleNodes.js'
 
@@ -41,8 +46,18 @@ export type UserDomainCommand =
       timingMode?: ActionTimingMode
       estimatedMinutes?: number
       notes?: string
+      source?: ProcessEvent['source']
     }
   | { commandId: string; kind: 'set_deadline'; opportunityId: string; deadline: string; precision: DatePrecision }
+  | { commandId: string; kind: 'complete_occurrence'; occurrenceId: string; occurredAt?: string }
+  | {
+      commandId: string
+      kind: 'reschedule_occurrence'
+      occurrenceId: string
+      temporal: ScheduleNodeTemporal
+      evidenceRefs?: string[]
+      sourceVersionRefs?: string[]
+    }
   | { commandId: string; kind: 'set_action_status'; actionId: string; status: ActionStatus }
   | { commandId: string; kind: 'abandon_opportunity'; opportunityId: string; occurredAt?: string }
   | { commandId: string; kind: 'correct_opportunity_fact'; opportunityId: string; field: UserFactField; value: string }
@@ -216,6 +231,43 @@ function upsertProcessAtEventStage(next: PJSDASSnapshot, target: Opportunity, ev
   })
 }
 
+function stageLabelFor(stage: ProcessRecord['stage']) {
+  const labels: Record<ProcessRecord['stage'], string> = {
+    not_applied: '待投',
+    screening: '筛选中',
+    assessment: '测评',
+    written_test: '笔试',
+    interview: '面试',
+    offer: 'Offer',
+    waiting_release: '待开放',
+    closed: '流程结束',
+  }
+  return labels[stage]
+}
+
+function activeScheduleNode(next: PJSDASSnapshot, occurrenceId: string) {
+  return latestScheduleOccurrence(next.data.scheduleNodes ?? [], occurrenceId)
+}
+
+function restoreProcessSnapshots(next: PJSDASSnapshot, states: Array<{
+  id: string
+  stage: ProcessRecord['stage']
+  stageLabel: string
+  progress?: ProcessRecord['progress']
+  result?: ProcessRecord['result']
+  participationState?: ProcessRecord['participationState']
+}>) {
+  for (const state of states) {
+    const process = next.data.processes.find((item) => item.id === state.id)
+    if (!process) continue
+    process.stage = state.stage
+    process.stageLabel = state.stageLabel
+    process.progress = state.progress
+    process.result = state.result
+    process.participationState = state.participationState
+  }
+}
+
 function ensureUserFacts(target: Opportunity, timestamp: string) {
   const existing = target.detail?.userFacts
   target.detail = {
@@ -312,7 +364,7 @@ export function applyUserDomainCommand(
       timingMode: command.timingMode ?? defaultTimingModeForProcessEvent(command.eventType),
       estimatedMinutes: command.estimatedMinutes ?? defaultMinutesForProcessEvent(command.eventType),
       notes: command.notes?.trim() || undefined,
-      source: 'manual',
+      source: command.source ?? 'manual',
       createdAt: timestamp,
       updatedAt: timestamp,
     }
@@ -330,6 +382,165 @@ export function applyUserDomainCommand(
       snapshot: next,
       summary: `Recorded ${command.eventType} for ${target.company}｜${target.role}.`,
       compensation: { operation: 'delete_process_event', payload: { eventId } },
+    }
+  }
+
+  if (command.kind === 'complete_occurrence') {
+    const node = activeScheduleNode(next, command.occurrenceId)
+    if (!node) throw new Error(`Schedule occurrence ${command.occurrenceId} was not found.`)
+    if (node.state === 'completed') {
+      return { status: 'ALREADY_APPLIED', snapshot, summary: `Schedule occurrence ${command.occurrenceId} is already completed.` }
+    }
+    if (node.state === 'cancelled' || node.state === 'superseded') {
+      return {
+        status: 'NEEDS_CONFIRMATION',
+        snapshot,
+        reason: 'OCCURRENCE_NOT_ACTIVE',
+        summary: 'This schedule occurrence is no longer active; confirm the intended occurrence before completing it.',
+      }
+    }
+    const occurredAt = command.occurredAt ?? timestamp
+    assertIso(occurredAt, 'occurredAt')
+    const beforeNode = structuredClone(node)
+    const actionStates = node.relatedActionIds.flatMap((id) => {
+      const item = next.data.actions.find((action) => action.id === id)
+      return item ? [{ id: item.id, status: item.status, updatedAt: item.updatedAt }] : []
+    })
+    const affectedProcesses = next.data.processes.filter((process) =>
+      (node.processId && process.id === node.processId)
+      || (node.opportunityId && process.opportunityId === node.opportunityId),
+    )
+    const processStates = affectedProcesses.map((process) => ({
+      id: process.id,
+      stage: process.stage,
+      stageLabel: process.stageLabel,
+      progress: process.progress,
+      result: process.result,
+      participationState: process.participationState,
+    }))
+
+    node.state = 'completed'
+    node.completedAt = occurredAt
+    node.updatedAt = occurredAt
+    for (const actionId of node.relatedActionIds) {
+      const item = next.data.actions.find((action) => action.id === actionId)
+      if (!item || item.status === 'done') continue
+      item.status = 'done'
+      item.updatedAt = occurredAt
+    }
+    for (const process of affectedProcesses) {
+      if (node.kind === 'assessment' || node.kind === 'written_test' || node.kind === 'interview') {
+        process.progress = 'waiting_result'
+        process.result ??= 'pending'
+        process.currentAction = undefined
+        process.lastProgressAt = occurredAt
+      }
+    }
+    projectScheduleNodesToLegacyInPlace(next.data)
+    appendTimeline(next, {
+      id: `timeline:command:${stableHash(command.commandId)}`,
+      kind: 'semantic_intake_applied',
+      category: 'process',
+      source: 'user_action',
+      occurredAt,
+      recordedAt: timestamp,
+      title: '完成招聘节点',
+      detail: `${node.kind} · ${node.occurrenceId}`,
+      opportunityId: node.opportunityId,
+      scheduleNodeId: node.id,
+    }, command)
+    finalizeSnapshot(next, timestamp)
+    return {
+      status: 'APPLIED',
+      snapshot: next,
+      summary: `Completed schedule occurrence ${node.occurrenceId}.`,
+      compensation: {
+        operation: 'restore_occurrence_completion',
+        payload: {
+          occurrenceId: node.occurrenceId,
+          node: beforeNode,
+          actionStates,
+          processStates,
+        },
+      },
+    }
+  }
+
+  if (command.kind === 'reschedule_occurrence') {
+    const current = activeScheduleNode(next, command.occurrenceId)
+    if (!current) throw new Error(`Schedule occurrence ${command.occurrenceId} was not found.`)
+    if (current.state === 'completed' || current.state === 'cancelled') {
+      return {
+        status: 'NEEDS_CONFIRMATION',
+        snapshot,
+        reason: 'OCCURRENCE_NOT_ACTIVE',
+        summary: 'This occurrence is already completed or cancelled; confirm before creating another occurrence.',
+      }
+    }
+    const previousNode = structuredClone(current)
+    const affectedProcesses = next.data.processes.filter((process) =>
+      (current.processId && process.id === current.processId)
+      || (current.opportunityId && process.opportunityId === current.opportunityId),
+    )
+    const processStates = affectedProcesses.map((process) => ({
+      id: process.id,
+      stage: process.stage,
+      stageLabel: process.stageLabel,
+      progress: process.progress,
+      result: process.result,
+      participationState: process.participationState,
+    }))
+    const replacement = supersedeScheduleOccurrence(next.data.scheduleNodes ?? [], {
+      occurrenceId: current.occurrenceId,
+      opportunityId: current.opportunityId,
+      processId: current.processId,
+      processEventId: current.processEventId,
+      kind: current.kind,
+      state: 'scheduled',
+      temporal: structuredClone(command.temporal),
+      constraintKind: current.constraintKind,
+      estimatedMinutes: current.estimatedMinutes,
+      estimateProvenance: current.estimateProvenance,
+      evidenceRefs: [...new Set([...current.evidenceRefs, ...(command.evidenceRefs ?? [])])],
+      sourceVersionRefs: [...new Set([...current.sourceVersionRefs, ...(command.sourceVersionRefs ?? [])])],
+      relatedActionIds: [...current.relatedActionIds],
+      relatedPrepIds: [...current.relatedPrepIds],
+      completedAt: undefined,
+      cancelledAt: undefined,
+      createdAt: current.createdAt,
+      updatedAt: timestamp,
+    })
+    for (const process of affectedProcesses) {
+      process.progress = 'scheduled'
+      process.currentAction = process.currentAction
+      process.lastProgressAt = timestamp
+    }
+    projectScheduleNodesToLegacyInPlace(next.data)
+    appendTimeline(next, {
+      id: `timeline:command:${stableHash(command.commandId)}`,
+      kind: 'semantic_intake_applied',
+      category: 'process',
+      source: 'user_action',
+      occurredAt: timestamp,
+      recordedAt: timestamp,
+      title: '更新招聘节点时间',
+      detail: `${replacement.kind} · ${replacement.occurrenceId}`,
+      opportunityId: replacement.opportunityId,
+      scheduleNodeId: replacement.id,
+    }, command)
+    finalizeSnapshot(next, timestamp)
+    return {
+      status: 'APPLIED',
+      snapshot: next,
+      summary: `Rescheduled occurrence ${replacement.occurrenceId}.`,
+      compensation: {
+        operation: 'restore_occurrence_supersession',
+        payload: {
+          previousNode,
+          newNodeId: replacement.id,
+          processStates,
+        },
+      },
     }
   }
 
@@ -506,3 +717,130 @@ export function applyUserDomainCommand(
     compensation: { operation: 'remove_manual_action', payload: { actionId } },
   }
 }
+
+export interface DomainCompensation {
+  operation: string
+  payload: any
+}
+
+export function applyDomainCompensation(
+  snapshot: PJSDASSnapshot,
+  compensation: DomainCompensation,
+  now = new Date(),
+): PJSDASSnapshot {
+  const next = upgradeSnapshotToLatest(snapshot)
+  const timestamp = nowIso(now)
+  const payload = compensation.payload ?? {}
+
+  if (compensation.operation === 'set_action_status') {
+    const target = next.data.actions.find((item) => item.id === payload.actionId)
+    if (target) {
+      target.status = payload.status
+      target.updatedAt = timestamp
+      syncScheduleNodeForActionStatus(next.data, target.id, target.status, timestamp)
+    }
+  } else if (compensation.operation === 'delete_process_event') {
+    next.data.processEvents = next.data.processEvents.filter((item) => item.id !== payload.eventId)
+    next.data.actions = next.data.actions.filter((item) => item.processEventId !== payload.eventId)
+    for (const node of next.data.scheduleNodes ?? []) {
+      if (node.processEventId === payload.eventId && node.state !== 'superseded') {
+        node.state = 'cancelled'
+        node.cancelledAt = timestamp
+        node.updatedAt = timestamp
+      }
+    }
+  } else if (compensation.operation === 'restore_deadline') {
+    const target = next.data.opportunities.find((item) => item.id === payload.opportunityId)
+    if (target) {
+      if (payload.deadline) {
+        setApplicationDeadlineScheduleNode(next.data, target.id, payload.deadline, payload.deadlinePrecision ?? 'datetime', timestamp)
+      } else {
+        const current = latestScheduleOccurrence(next.data.scheduleNodes ?? [], `application-deadline:${target.id}`)
+        if (current && current.state !== 'superseded') {
+          current.state = 'cancelled'
+          current.cancelledAt = timestamp
+          current.updatedAt = timestamp
+        }
+        target.deadline = undefined
+        target.deadlinePrecision = undefined
+        const apply = next.data.actions.find((item) => item.id === `apply:${target.id}`)
+        if (apply) {
+          apply.dueAt = undefined
+          apply.duePrecision = undefined
+          apply.timingMode = undefined
+        }
+      }
+    }
+  } else if (compensation.operation === 'restore_participation') {
+    const target = next.data.opportunities.find((item) => item.id === payload.opportunityId)
+    if (target) {
+      target.participationStatus = payload.participationStatus
+      target.abandonedAt = payload.participationStatus === 'abandoned' ? target.abandonedAt ?? timestamp : undefined
+    }
+    for (const state of payload.actionStates ?? []) {
+      const action = next.data.actions.find((item) => item.id === state.actionId)
+      if (action) {
+        action.status = state.status
+        action.updatedAt = timestamp
+        syncScheduleNodeForActionStatus(next.data, action.id, action.status, timestamp)
+      }
+    }
+  } else if (compensation.operation === 'restore_application_submission') {
+    const target = next.data.opportunities.find((item) => item.id === payload.opportunityId)
+    if (target) {
+      target.processStage = payload.processStage
+      target.currentStageLabel = stageLabelFor(payload.processStage)
+      const process = next.data.processes.find((item) => item.opportunityId === target.id)
+      if (process) {
+        process.stage = payload.processStage
+        process.stageLabel = stageLabelFor(payload.processStage)
+        process.progress = payload.processStage === 'not_applied' ? 'not_started' : process.progress
+      }
+    }
+    if (payload.actionId && payload.actionStatus) {
+      const action = next.data.actions.find((item) => item.id === payload.actionId)
+      if (action) {
+        action.status = payload.actionStatus
+        action.updatedAt = timestamp
+        syncScheduleNodeForActionStatus(next.data, action.id, action.status, timestamp)
+      }
+    }
+  } else if (compensation.operation === 'remove_manual_action') {
+    next.data.actions = next.data.actions.filter((item) => item.id !== payload.actionId)
+    for (const node of next.data.scheduleNodes ?? []) {
+      if (node.relatedActionIds.includes(payload.actionId) && node.state !== 'superseded') {
+        node.state = 'cancelled'
+        node.cancelledAt = timestamp
+        node.updatedAt = timestamp
+      }
+    }
+  } else if (compensation.operation === 'restore_occurrence_completion') {
+    const current = latestScheduleOccurrence(next.data.scheduleNodes ?? [], payload.occurrenceId)
+    if (current && payload.node) Object.assign(current, structuredClone(payload.node))
+    for (const state of payload.actionStates ?? []) {
+      const action = next.data.actions.find((item) => item.id === state.id)
+      if (action) {
+        action.status = state.status
+        action.updatedAt = state.updatedAt ?? timestamp
+      }
+    }
+    restoreProcessSnapshots(next, payload.processStates ?? [])
+  } else if (compensation.operation === 'restore_occurrence_supersession') {
+    next.data.scheduleNodes = (next.data.scheduleNodes ?? []).filter((item) => item.id !== payload.newNodeId)
+    if (payload.previousNode) {
+      const index = (next.data.scheduleNodes ?? []).findIndex((item) => item.id === payload.previousNode.id)
+      if (index >= 0) next.data.scheduleNodes![index] = structuredClone(payload.previousNode)
+      else next.data.scheduleNodes!.push(structuredClone(payload.previousNode))
+    }
+    restoreProcessSnapshots(next, payload.processStates ?? [])
+  } else {
+    throw new Error(`Unsupported domain compensation operation: ${compensation.operation}`)
+  }
+
+  ensureScheduleContractInPlace(next.data)
+  projectScheduleNodesToLegacyInPlace(next.data)
+  next.exportedAt = timestamp
+  validateSnapshot(next)
+  return next
+}
+

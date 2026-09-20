@@ -133,6 +133,10 @@ function latestByVersion(nodes: ScheduleNode[], occurrenceId: string) {
     .sort((a, b) => b.version - a.version)[0]
 }
 
+export function latestScheduleOccurrence(nodes: ScheduleNode[], occurrenceId: string) {
+  return latestByVersion(nodes, occurrenceId)
+}
+
 function nextNodeId(occurrenceId: string, version: number) {
   return `schedule:${occurrenceId}:v${version}`
 }

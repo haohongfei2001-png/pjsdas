@@ -13,6 +13,9 @@ export const MCP_TOOL_NAMES = {
   recentTimeline: 'get_recent_timeline',
   explicitOpportunityWrite: 'add_opportunities',
   explicitUserCommand: 'apply_user_command',
+  semanticIntake: 'semantic_intake',
+  semanticDecision: 'resolve_semantic_decision',
+  semanticUndo: 'undo_semantic_command',
   discoveryIngestion: 'ingest_discovery_run',
   gmailIngestion: 'ingest_gmail_run',
   proposeChanges: 'propose_changes',
@@ -33,6 +36,9 @@ export const AUTHENTICATED_MCP_TRANSACTIONAL_RELEASE_REQUIRED_TOOLS = [
   MCP_TOOL_NAMES.workspaceIntegrity,
   MCP_TOOL_NAMES.explicitOpportunityWrite,
   MCP_TOOL_NAMES.explicitUserCommand,
+  MCP_TOOL_NAMES.semanticIntake,
+  MCP_TOOL_NAMES.semanticDecision,
+  MCP_TOOL_NAMES.semanticUndo,
   MCP_TOOL_NAMES.discoveryIngestion,
   MCP_TOOL_NAMES.gmailIngestion,
 ] as const
@@ -43,4 +49,4 @@ export function authenticatedMcpReleaseRequiredTools(authority: WorkspaceAuthori
     : [...AUTHENTICATED_MCP_BASE_RELEASE_REQUIRED_TOOLS]
 }
 
-export const AUTHENTICATED_MCP_TOOL_SURFACE_VERSION = 'v3' as const
+export const AUTHENTICATED_MCP_TOOL_SURFACE_VERSION = 'v4' as const

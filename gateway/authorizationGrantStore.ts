@@ -1,6 +1,6 @@
 import { WorkspaceSourceError } from './workspaceSource.js'
 
-export type TrustedIngestionCapability = 'ingest_discovery_run' | 'ingest_gmail_run'
+export type TrustedIngestionCapability = 'ingest_discovery_run' | 'ingest_gmail_run' | 'semantic_intake'
 
 export interface AuthorizationGrant {
   userId: string
@@ -64,13 +64,13 @@ export function createAuthorizationGrantStore(options: AuthorizationGrantStoreOp
           row.user_id !== userId
           || row.client_id !== clientId
           || !row.source_id
-          || (row.capability !== 'ingest_discovery_run' && row.capability !== 'ingest_gmail_run')
+          || !['ingest_discovery_run', 'ingest_gmail_run', 'semantic_intake'].includes(row.capability)
         ) return []
         return [{
           userId,
           clientId,
           sourceId: row.source_id,
-          capability: row.capability,
+          capability: row.capability as TrustedIngestionCapability,
         }]
       })
     },

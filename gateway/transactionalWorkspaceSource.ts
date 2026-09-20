@@ -112,5 +112,41 @@ export function createTransactionalWorkspaceSource(options: TransactionalWorkspa
         },
       }
     },
+
+    async prepareUndo(targetCommandId: string) {
+      const current = await store.readForUser(options.userId)
+      if (!current) {
+        throw new WorkspaceSourceError(
+          'WORKSPACE_MIGRATION_REQUIRED',
+          'PJSDAS connected workspace has not been explicitly migrated yet.',
+          false,
+        )
+      }
+      const target = await store.readCommandForUser(options.userId, targetCommandId)
+      if (!target) return { outcome: 'NEEDS_CONFIRMATION' as const, reason: 'COMMAND_NOT_FOUND' as const }
+      if (!target.compensation) {
+        return {
+          outcome: 'NEEDS_CONFIRMATION' as const,
+          reason: 'NO_COMPENSATION' as const,
+          targetRevision: target.resultingRevision,
+          currentRevision: current.revision,
+        }
+      }
+      if (target.resultingRevision !== current.revision) {
+        return {
+          outcome: 'NEEDS_CONFIRMATION' as const,
+          reason: 'DEPENDENT_CHANGES' as const,
+          targetRevision: target.resultingRevision,
+          currentRevision: current.revision,
+        }
+      }
+      return {
+        outcome: 'READY' as const,
+        targetCommandId,
+        expectedWorkspaceVersion: `txn:${current.revision}`,
+        snapshot: current.snapshot,
+        compensation: target.compensation,
+      }
+    },
   }
 }

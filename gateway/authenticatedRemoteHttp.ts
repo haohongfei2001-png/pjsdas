@@ -5,6 +5,7 @@ import { createAuthorizationGrantStore, grantAllows, type AuthorizationGrant } f
 import { createConfiguredAudienceAccessGuard } from './audienceAccess.js'
 import { backendUrl } from './backendOrigin.js'
 import { createPjsdasMcpServer } from './serverFactory.js'
+import type { SemanticIntakeSourceRef } from '../src/model.js'
 import { createSupabaseIdentityResolver } from './supabaseIdentity.js'
 import {
   PJSDAS_SUPABASE_PUBLISHABLE_KEY,
@@ -125,6 +126,17 @@ export async function authenticatedRemoteMcpFetch(request: Request) {
         )
       }
     }
+    const authorizeSemanticIntake = async (sourceRef: SemanticIntakeSourceRef) => {
+      if (sourceRef.kind === 'mcp') return
+      if (sourceRef.kind === 'web' && !identity.oauthClientId) return
+      if (!identity.oauthClientId || !grantAllows(grants, 'semantic_intake', sourceRef.sourceId)) {
+        throw new WorkspaceSourceError(
+          'AUTH_FORBIDDEN',
+          `This principal is not authorized for semantic_intake on source ${sourceRef.sourceId}.`,
+          false,
+        )
+      }
+    }
 
     const transactionalAuthority = process.env.PJSDAS_CONNECTED_AUTHORITY?.trim() === 'transactional'
     const source = transactionalAuthority
@@ -150,6 +162,8 @@ export async function authenticatedRemoteMcpFetch(request: Request) {
         trustedIngestionAuthorizer: authorizeTrustedIngestion,
         explicitUserWriteMode: 'enabled',
         explicitUserCommandMode: transactionalAuthority ? 'enabled' : 'disabled',
+        semanticIntakeMode: transactionalAuthority ? 'enabled' : 'disabled',
+        semanticIntakeAuthorizer: authorizeSemanticIntake,
         proposalSigningKey: env('PJSDAS_TOKEN_ENCRYPTION_KEY'),
       }),
     )
