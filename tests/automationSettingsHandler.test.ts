@@ -54,7 +54,7 @@ describe('automation settings API', () => {
       return json({ error: 'unexpected' }, 500)
     }) as unknown as typeof fetch
 
-    const response = await handler(fetchImpl)(request('GET'))
+    const response = await handler(fetchImpl)(request('POST', { action: 'read' }))
     expect(response.status).toBe(200)
     await expect(response.json()).resolves.toEqual({
       googleEmail: 'a@gmail.com',

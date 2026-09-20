@@ -120,7 +120,12 @@ async function persistGoogleLink(session: Session) {
 
 async function readAutomationStatus(session: Session) {
   const response = await fetchBackend('/api/automation-settings', {
-    headers: { authorization: `Bearer ${session.access_token}` },
+    method: 'POST',
+    headers: {
+      authorization: `Bearer ${session.access_token}`,
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify({ action: 'read' }),
   })
   const data = await response.json().catch(() => ({})) as Partial<GmailAutomationStatus> & { message?: string }
   if (!response.ok) throw new Error(data.message || `Automation settings failed (HTTP ${response.status}).`)

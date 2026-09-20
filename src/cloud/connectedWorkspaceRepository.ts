@@ -57,7 +57,10 @@ async function parseWorkspaceResponse(response: Response): Promise<ConnectedRemo
 }
 
 export async function fetchConnectedRemoteWorkspace(): Promise<ConnectedRemoteWorkspaceRow> {
-  return parseWorkspaceResponse(await request('/api/workspace', { method: 'GET' }))
+  return parseWorkspaceResponse(await request('/api/workspace', {
+    method: 'POST',
+    body: JSON.stringify({ action: 'read' }),
+  }))
 }
 
 export async function createConnectedRemoteWorkspace(): Promise<never> {

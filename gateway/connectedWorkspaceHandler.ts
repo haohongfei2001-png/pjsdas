@@ -90,7 +90,7 @@ export function createConnectedWorkspaceHandler(config: ConnectedWorkspaceHandle
         fetchImpl,
       })
 
-      if (request.method === 'GET') {
+      const readWorkspace = async () => {
         const workspace = await store.readForUser(identity.userId)
         if (!workspace) {
           throw new WorkspaceSourceError(
@@ -108,6 +108,8 @@ export function createConnectedWorkspaceHandler(config: ConnectedWorkspaceHandle
         }, origin, config.allowedOrigins)
       }
 
+      if (request.method === 'GET') return readWorkspace()
+
       if (request.method !== 'POST') {
         return json(405, { code: 'METHOD_NOT_ALLOWED', message: 'Use GET, POST, or OPTIONS.' }, origin, config.allowedOrigins)
       }
@@ -121,6 +123,8 @@ export function createConnectedWorkspaceHandler(config: ConnectedWorkspaceHandle
         commandId?: string
         expectedRevision?: number
       }>(await request.json().catch(() => undefined))
+
+      if (body.action === 'read') return readWorkspace()
 
       if (body.action === 'bootstrap') {
         if (body.confirmMigration !== true) {

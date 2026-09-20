@@ -45,12 +45,24 @@ export function createAudienceStatusHandler(config: AudienceStatusHandlerConfig)
       const allowed = Boolean(origin && config.allowedOrigins.includes(origin))
       return new Response(null, { status: allowed ? 204 : 403, headers: headers(origin, config.allowedOrigins) })
     }
-    if (request.method !== 'GET') return json(405, { code: 'METHOD_NOT_ALLOWED', message: 'Use GET.' }, origin, config.allowedOrigins)
+    if (request.method !== 'GET' && request.method !== 'POST') {
+      return json(405, { code: 'METHOD_NOT_ALLOWED', message: 'Use GET or POST.' }, origin, config.allowedOrigins)
+    }
     if (!origin || !config.allowedOrigins.includes(origin)) {
       return json(403, { code: 'ORIGIN_NOT_ALLOWED', message: 'Audience status is available only to an approved first-party PJSDAS browser origin.' }, origin, config.allowedOrigins)
     }
 
     try {
+      if (request.method === 'POST') {
+        const body = await request.json().catch(() => undefined) as { action?: unknown } | undefined
+        if (body?.action !== 'read') {
+          return json(400, {
+            code: 'INVALID_ARGUMENT',
+            message: 'Audience status POST requests require action=read.',
+          }, origin, config.allowedOrigins)
+        }
+      }
+
       const { identity } = await resolveIdentity(request)
       try {
         const result = await guard(identity)

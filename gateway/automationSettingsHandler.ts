@@ -133,7 +133,13 @@ export function createAutomationSettingsHandler(config: AutomationSettingsHandle
       const current = await readRow(identity.userId, accessToken)
       if (request.method === 'GET') return json(200, statusForRow(current), origin, config.allowedOrigins)
 
-      const body = await request.json().catch(() => undefined) as { gmailEnabled?: unknown; discoveryEnabled?: unknown } | undefined
+      const body = await request.json().catch(() => undefined) as {
+        action?: unknown
+        gmailEnabled?: unknown
+        discoveryEnabled?: unknown
+      } | undefined
+      if (body?.action === 'read') return json(200, statusForRow(current), origin, config.allowedOrigins)
+
       const gmailProvided = Boolean(body && Object.prototype.hasOwnProperty.call(body, 'gmailEnabled'))
       const discoveryProvided = Boolean(body && Object.prototype.hasOwnProperty.call(body, 'discoveryEnabled'))
       if (!gmailProvided && !discoveryProvided) {

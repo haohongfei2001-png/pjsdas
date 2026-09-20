@@ -81,6 +81,25 @@ describe('first-party connected workspace endpoint', () => {
     expect(fetchImpl).toHaveBeenCalledTimes(1)
   })
 
+  it('keeps origin-less reads fail closed before touching auth services', async () => {
+    const fetchImpl = vi.fn() as unknown as typeof fetch
+    const handler = createConnectedWorkspaceHandler({
+      supabaseUrl: 'https://example.supabase.co',
+      supabasePublishableKey: 'publishable',
+      serviceRoleKey: 'service-role',
+      allowedOrigins: [ORIGIN],
+      fetchImpl,
+    })
+
+    const response = await handler(new Request('https://api.example/api/workspace', {
+      method: 'GET',
+      headers: { authorization: 'Bearer ordinary-token' },
+    }))
+    expect(response.status).toBe(403)
+    await expect(response.json()).resolves.toMatchObject({ code: 'ORIGIN_NOT_ALLOWED' })
+    expect(fetchImpl).not.toHaveBeenCalled()
+  })
+
   it('reads an existing transactional workspace for a first-party browser', async () => {
     const current = snapshot()
     const fetchImpl = vi.fn(async (input: RequestInfo | URL) => {
@@ -99,7 +118,7 @@ describe('first-party connected workspace endpoint', () => {
       fetchImpl,
     })
 
-    const response = await handler(request('GET', 'ordinary-token'))
+    const response = await handler(request('POST', 'ordinary-token', { action: 'read' }))
     expect(response.status).toBe(200)
     await expect(response.json()).resolves.toMatchObject({
       workspaceId: 'ws-1',
