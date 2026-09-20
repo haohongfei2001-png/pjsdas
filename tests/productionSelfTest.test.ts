@@ -5,7 +5,7 @@ const BASE_URL = 'https://example.test'
 const METADATA_URL = `${BASE_URL}/.well-known/oauth-protected-resource`
 const RELEASE_SHA = '1234567890abcdef1234567890abcdef12345678'
 const DRIVE_REQUIRED_TOOLS = ['get_today_brief', 'get_opportunity_detail', 'get_coverage_status', 'get_workspace_integrity', 'add_opportunities', 'ingest_discovery_run', 'ingest_gmail_run']
-const TRANSACTIONAL_REQUIRED_TOOLS = ['get_today_brief', 'get_coverage_status', 'get_workspace_integrity', 'add_opportunities', 'apply_user_command', 'semantic_intake', 'resolve_semantic_decision', 'undo_semantic_command', 'ingest_discovery_run', 'ingest_gmail_run']
+const TRANSACTIONAL_REQUIRED_TOOLS = ['get_today_brief', 'get_opportunity_detail', 'get_coverage_status', 'get_workspace_integrity', 'add_opportunities', 'apply_user_command', 'semantic_intake', 'resolve_semantic_decision', 'undo_semantic_command', 'ingest_discovery_run', 'ingest_gmail_run']
 
 function health() {
   return {
