@@ -101,7 +101,7 @@ test('primary navigation, language, recovery, and global Tell PJSDAS stay cohere
   await page.locator('.surface-nav').getByRole('button', { name: /Opportunities/ }).click()
   await expect(page.getByRole('heading', { name: 'Opportunities, pipeline, and preparation in one workspace' })).toBeVisible()
   await page.locator('.surface-nav').getByRole('button', { name: /Today/ }).click()
-  await expect(page.getByRole('heading', { name: 'Today', exact: true })).toBeVisible()
+  await expect(page.locator('.ultimate-today-header').getByRole('heading', { name: 'Today', exact: true })).toBeVisible()
 
   await page.locator('.ultimate-toolbar').getByRole('button', { name: /Settings/ }).click()
   const dataRecovery = page.locator('details.settings-group').filter({ hasText: 'Data & recovery' })
@@ -117,6 +117,6 @@ test('primary navigation, language, recovery, and global Tell PJSDAS stay cohere
 
   await page.locator('.surface-nav').getByRole('button', { name: /Today/ }).click()
   await page.reload()
-  await expect(page.getByRole('heading', { name: 'Today', exact: true })).toBeVisible()
+  await expect(page.locator('.ultimate-today-header').getByRole('heading', { name: 'Today', exact: true })).toBeVisible()
   await expect(page.locator('html')).toHaveAttribute('lang', 'en')
 })

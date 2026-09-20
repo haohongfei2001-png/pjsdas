@@ -206,9 +206,12 @@ test('JSON backup restores a deliberately cleared local workspace and remains du
   await page.locator('.backup-dialog').getByRole('button', { name: '关闭' }).click()
   await clearCoreWorkspace(page)
   await page.reload()
+  await expect(page).toHaveURL(/\/settings$/)
+  await expect(page.getByRole('heading', { name: '连接、自动化和长期控制' })).toBeVisible()
+  await page.locator('.surface-nav').getByRole('button', { name: /今天/ }).click()
   await expect(page.getByRole('heading', { name: '先让工作区有第一批真实机会' })).toBeVisible()
 
-  await page.getByRole('button', { name: '打开设置' }).click()
+  await page.locator('.ultimate-toolbar').getByRole('button', { name: /设置/ }).click()
   await expect(page.getByRole('heading', { name: '连接、自动化和长期控制' })).toBeVisible()
   await page.locator('details.settings-group').filter({ hasText: '数据与恢复' }).locator('summary').click()
   await page.getByRole('button', { name: '本地备份' }).click()

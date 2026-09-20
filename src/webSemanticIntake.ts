@@ -95,8 +95,9 @@ function operationCandidate(operation: ReturnType<typeof parseProgressUpdate>['e
     if (operation.completed) {
       const kind = occurrenceKind(operation.eventType)
       if (!kind) return undefined
+      const completedBase = candidateBase(operation.id, operation.sourceText, 'high')
       return {
-        ...base,
+        ...completedBase,
         kind: 'occurrence_completed',
         target: {
           opportunityId: operation.opportunityId,
