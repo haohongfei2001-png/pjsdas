@@ -23,7 +23,7 @@ import { parsePJSDASWorkbook } from './importExcelV2.js'
 import { prepPriorityRank, presentPrepPriority, presentPrepSourceState } from './prepSemantics.js'
 import { presentRankingReasons } from './rankingReasonPresentation.js'
 import { presentStageLabel } from './stagePresentation.js'
-import { timeRisk, upcomingNodes } from './timeRisk.js'
+import { timeRisk } from './timeRisk.js'
 import { presentTimeRemaining, presentTimeRiskLevel } from './timeRiskPresentation.js'
 import { currentUiLanguage, useUiLanguage } from './uiLanguage.js'
 import { DEFAULT_DECISION_RULES, type DecisionRules } from './decisionRules.js'
@@ -65,9 +65,11 @@ const surfaceLabels: Record<Surface, { zh: string; en: string; hintZh: string; h
   today: { zh: '今天', en: 'Today', hintZh: '下一步', hintEn: 'Next' },
   opportunities: { zh: '机会', en: 'Opportunities', hintZh: '岗位与流程', hintEn: 'Jobs' },
   attention: { zh: 'Attention', en: 'Attention', hintZh: '需要我', hintEn: 'Needs me' },
-  activity: { zh: '活动', en: 'Activity', hintZh: '发生了什么', hintEn: 'Audit' },
+  activity: { zh: '活动', en: 'Activity', hintZh: '历史与审计', hintEn: 'History' },
   settings: { zh: '设置', en: 'Settings', hintZh: '控制与数据', hintEn: 'Control' },
 }
+
+const primarySurfaces: Surface[] = ['today', 'opportunities', 'attention', 'settings']
 
 const roleLabels: Record<Opportunity['roleType'], [string, string]> = {
   core: ['核心', 'Core'],
@@ -232,7 +234,7 @@ export default function AppV8() {
         </div>
 
         <nav className="surface-nav" aria-label={zh ? '主导航' : 'Primary navigation'}>
-          {(Object.keys(surfaceLabels) as Surface[]).map((item) => {
+          {primarySurfaces.map((item) => {
             const label = surfaceLabels[item]
             return (
               <button key={item} className={surface === item ? 'nav-item active surface-nav-item' : 'nav-item surface-nav-item'} onClick={() => setSurface(item)}>
@@ -243,16 +245,16 @@ export default function AppV8() {
           })}
         </nav>
 
-        <div className="surface-sidebar-principle"><strong>{zh ? '一个问题' : 'One question'}</strong><span>{zh ? '我现在应该做什么？' : 'What should I do next?'}</span></div>
-        <div className="language-switch-wrap"><span className="language-switch-label">{zh ? '界面语言' : 'Language'}</span><LanguageSwitch /></div>
-        <div className="sidebar-note"><span>Local-first</span>{lastImport ? <span>{zh ? '最近导入' : 'Last import'} {formatDateTime(lastImport.importedAt)}</span> : null}</div>
+        <div className="surface-sidebar-footer">
+          <span>{zh ? '决策优先' : 'Decision first'}</span>
+        </div>
       </aside>
 
       <main className="main-panel surface-main">
         <OriginTransitionNotice onOpenSettings={() => setSurface('settings')} />
         {loading ? <div className="empty-card">{zh ? '正在读取本地工作区…' : 'Loading local workspace…'}</div> : null}
         {!loading && surface === 'today' ? (
-          <TodaySurface ranked={ranked} now={now} opportunities={opportunities} groups={groups} rules={rules} timeline={timeline} attentionCount={attentionCount} workspaceEmpty={workspaceEmpty} onStart={navigateFromStart} onOpenAttention={() => setSurface('attention')} onMark={markAction} onChanged={reload} onOpenOpportunity={setSelectedOpportunityId} />
+          <TodaySurface ranked={ranked} now={now} opportunities={opportunities} rules={rules} attentionCount={attentionCount} workspaceEmpty={workspaceEmpty} onStart={navigateFromStart} onOpenAttention={() => setSurface('attention')} onMark={markAction} onOpenOpportunity={setSelectedOpportunityId} />
         ) : null}
         {!loading && surface === 'opportunities' ? (
           <OpportunitiesSurface opportunities={opportunities} groups={groups} processes={processes} prep={prep} tab={opportunityTab} onTabChange={chooseOpportunityTab} onOpenOpportunity={setSelectedOpportunityId} />
@@ -261,7 +263,7 @@ export default function AppV8() {
           <AttentionSurface timeline={timeline} changeSets={changeSets} onApply={applyPendingChangeSet} onDiscard={discardPendingChangeSet} />
         ) : null}
         {!loading && surface === 'activity' ? <ActivitySurface timeline={timeline} /> : null}
-        {!loading && surface === 'settings' ? <SettingsSurface lastImport={lastImport} rules={rules} onChanged={reload} /> : null}
+        {!loading && surface === 'settings' ? <SettingsSurface lastImport={lastImport} rules={rules} onChanged={reload} onOpenActivity={() => setSurface('activity')} /> : null}
       </main>
 
       {selectedOpportunity ? (
@@ -289,19 +291,16 @@ export default function AppV8() {
   )
 }
 
-function TodaySurface({ ranked, now, opportunities, groups, rules, timeline, attentionCount, workspaceEmpty, onStart, onOpenAttention, onMark, onChanged, onOpenOpportunity }: {
+function TodaySurface({ ranked, now, opportunities, rules, attentionCount, workspaceEmpty, onStart, onOpenAttention, onMark, onOpenOpportunity }: {
   ranked: ReturnType<typeof rankActions>
   now: Date
   opportunities: Opportunity[]
-  groups: ApplicationGroup[]
   rules: DecisionRules
-  timeline: TimelineRecord[]
   attentionCount: number
   workspaceEmpty: boolean
   onStart: () => void
   onOpenAttention: () => void
   onMark: (id: string, status: Action['status']) => Promise<void>
-  onChanged: () => Promise<void>
   onOpenOpportunity: (id: string) => void
 }) {
   const { lang } = useUiLanguage()
@@ -309,84 +308,90 @@ function TodaySurface({ ranked, now, opportunities, groups, rules, timeline, att
   const [budgetMinutes, setBudgetMinutes] = useState(180)
   const plan = buildTimePlan(ranked, budgetMinutes, now, rules)
   const opportunityMap = new Map(opportunities.map((item) => [item.id, item]))
-  const groupMap = new Map(groups.map((item) => [item.id, item]))
   const top = plan.planned[0]
-  const upcoming = upcomingNodes(ranked, now, rules.upcomingHorizonDays, rules.upcomingNodeLimit).slice(0, 5)
-  const nextHardNode = upcoming.find((item) => Boolean(item.action.dueAt))
-  const latestActivity = [...timeline].sort((a, b) => b.recordedAt.localeCompare(a.recordedAt))[0]?.recordedAt
+  const next = plan.planned.slice(1, 5)
+
+  function decisionReason(item: (typeof plan.planned)[number]) {
+    return presentRankingReasons(item.reasons, zh).join(' · ')
+      || (zh ? '当前优先级最高' : 'Highest current priority')
+  }
 
   return (
-    <section className="surface-page today-surface">
-      <SurfaceHeader eyebrow={`TODAY · ${formatDateOnly(now.toISOString())}`} title={zh ? '今天只处理下一步' : 'Only the next moves for today'} text={zh ? '默认只呈现现在值得做的事；日常事实优先由 AI / 自动化记录，Web 保留完整手工 fallback。' : 'The default view shows only what deserves attention now. AI and automation handle routine capture; the Web remains a complete manual fallback.'} />
-      <div className="today-status-strip" aria-label={zh ? '工作区状态' : 'Workspace status'}>
-        <div><span>{zh ? '下一硬节点' : 'Next hard node'}</span><strong>{nextHardNode?.action.dueAt ? formatDateTime(nextHardNode.action.dueAt) : (zh ? '暂无' : 'None')}</strong></div>
-        <button className={attentionCount ? 'attention-hot' : ''} type="button" onClick={onOpenAttention}><span>Attention</span><strong>{attentionCount}</strong></button>
-        <div><span>{zh ? '最近活动' : 'Latest activity'}</span><strong>{latestActivity ? formatDateTime(latestActivity) : (zh ? '暂无' : 'None')}</strong></div>
-      </div>
+    <section className="surface-page today-surface decision-today">
+      <header className="decision-today-header">
+        <div>
+          <div className="eyebrow">{formatDateOnly(now.toISOString())}</div>
+          <h1>{zh ? '今天' : 'Today'}</h1>
+        </div>
+        {attentionCount > 0 ? (
+          <button className="decision-attention-pill" type="button" onClick={onOpenAttention}>
+            <span>{zh ? '需要你决定' : 'Needs your decision'}</span>
+            <strong>{attentionCount}</strong>
+          </button>
+        ) : null}
+      </header>
 
       {top ? (
-        <article className="surface-focus-card">
-          <div className="eyebrow">START HERE</div>
-          <div className="surface-focus-main">
-            <div>
-              <h2>{top.action.title}</h2>
-              <p>{presentRankingReasons(top.reasons, zh).join(' · ') || (zh ? '当前最高优先级行动' : 'Current highest-priority action')}</p>
-              {top.action.dueAt ? <TimeRiskBadge action={top.action} now={now} rules={rules} /> : null}
-            </div>
-            <div className="surface-focus-actions">
-              {top.action.opportunityId ? <button className="secondary-button" onClick={() => onOpenOpportunity(top.action.opportunityId!)}>{zh ? '岗位详情' : 'Details'}</button> : null}
-              <button className="primary-button" onClick={() => { void onMark(top.action.id, 'done') }}>{zh ? '完成' : 'Done'}</button>
-            </div>
+        <article className="decision-hero">
+          <div className="decision-kicker">{zh ? '下一步' : 'Next'}</div>
+          <h2>{top.action.title}</h2>
+          <p className="decision-why">{decisionReason(top)}</p>
+          <div className="decision-meta">
+            {top.action.dueAt ? <TimeRiskBadge action={top.action} now={now} rules={rules} /> : null}
+            <span className="decision-duration">{formatMinutes(top.action.estimatedMinutes)}</span>
+          </div>
+          <div className="decision-actions">
+            <button className="primary-button" onClick={() => { void onMark(top.action.id, 'done') }}>{zh ? '完成' : 'Done'}</button>
+            {top.action.opportunityId ? <button className="secondary-button" onClick={() => onOpenOpportunity(top.action.opportunityId!)}>{zh ? '查看岗位' : 'View job'}</button> : null}
           </div>
         </article>
       ) : workspaceEmpty ? (
         <GettingStartedCard onStart={onStart} />
-      ) : <EmptyState title={zh ? '今天没有可执行行动' : 'No executable action today'} text={zh ? '如果 AI / 自动化没有记录刚发生的变化，可以展开页面底部的手工 fallback。' : 'If AI or automation did not capture a recent change, open the manual fallback at the bottom of the page.'} />}
-
-      {!workspaceEmpty ? (
-        <div className="surface-two-column">
-          <section className="surface-panel">
-            <div className="surface-panel-head"><div><div className="eyebrow">TIME-BOXED PLAN</div><h2>{zh ? '今日行动' : 'Today plan'}</h2></div><span>{formatMinutes(plan.totalMinutes)} / {formatMinutes(plan.budgetMinutes)}</span></div>
-            <div className="budget-options compact-budget-options">{[60, 180, 360].map((value) => <button key={value} className={budgetMinutes === value ? 'budget-chip active' : 'budget-chip'} onClick={() => setBudgetMinutes(value)}>{formatMinutes(value)}</button>)}</div>
-            {plan.planned.length ? (
-              <div className="surface-action-list">
-                {plan.planned.map((item, index) => {
-                  const opportunity = item.action.opportunityId ? opportunityMap.get(item.action.opportunityId) : undefined
-                  const group = item.action.applicationGroupId ? groupMap.get(item.action.applicationGroupId) : undefined
-                  const presentedReasons = presentRankingReasons(item.reasons, zh).join(' · ')
-                  return (
-                    <article className="surface-action-row" key={item.action.id}>
-                      <span className="surface-rank">{index + 1}</span>
-                      <div><strong>{item.action.title}</strong><small>{opportunity ? `${roleLabels[opportunity.roleType][zh ? 0 : 1]} · ${presentedReasons}` : group ? group.rule ?? group.id : presentedReasons}</small></div>
-                      <div className="surface-action-controls">
-                        {opportunity ? <button className="text-button" onClick={() => onOpenOpportunity(opportunity.id)}>{zh ? '详情' : 'Details'}</button> : null}
-                        <button className="text-button" onClick={() => { void onMark(item.action.id, 'done') }}>{zh ? '完成' : 'Done'}</button>
-                      </div>
-                    </article>
-                  )
-                })}
-              </div>
-            ) : <p className="surface-muted">{zh ? '当前预算内没有可执行任务。' : 'No executable task fits the current budget.'}</p>}
-          </section>
-
-          <section className="surface-panel">
-            <div className="surface-panel-head"><div><div className="eyebrow">UPCOMING</div><h2>{zh ? '近期节点' : 'Upcoming nodes'}</h2></div><span>{upcoming.length}</span></div>
-            {upcoming.length ? <div className="surface-upcoming-list">{upcoming.map((item) => (
-              <article key={item.action.id}>
-                <div><strong>{item.action.title}</strong><small>{item.action.dueAt ? formatDateTime(item.action.dueAt) : '—'}</small></div>
-                <div className="surface-upcoming-actions">{item.action.opportunityId ? <button className="text-button" onClick={() => onOpenOpportunity(item.action.opportunityId!)}>{zh ? '岗位' : 'Job'}</button> : null}{item.action.dueAt ? <TimeRiskBadge action={item.action} now={now} rules={rules} compact /> : null}</div>
-              </article>
-            ))}</div> : <p className="surface-muted">{zh ? '近期没有已知固定节点或硬截止。' : 'No known fixed event or hard deadline is near.'}</p>}
-          </section>
+      ) : (
+        <div className="decision-clear-state">
+          <strong>{zh ? '现在没有必须处理的行动' : 'Nothing requires action right now'}</strong>
+          <span>{zh ? '没有硬截止、冲突或待完成动作时，Today 保持为空。' : 'Today stays quiet when there is no deadline, conflict, or executable action.'}</span>
         </div>
+      )}
+
+      {!workspaceEmpty && next.length ? (
+        <section className="decision-next-section">
+          <div className="decision-section-head">
+            <h2>{zh ? '接下来' : 'Next up'}</h2>
+            <div className="decision-budget" role="group" aria-label={zh ? '今日可用时间' : 'Available time today'}>
+              {[60, 180, 360].map((value) => (
+                <button key={value} type="button" className={budgetMinutes === value ? 'active' : ''} onClick={() => setBudgetMinutes(value)}>{formatMinutes(value)}</button>
+              ))}
+            </div>
+          </div>
+          <div className="decision-next-list">
+            {next.map((item, index) => {
+              const opportunity = item.action.opportunityId ? opportunityMap.get(item.action.opportunityId) : undefined
+              return (
+                <article className="decision-next-row" key={item.action.id}>
+                  <span className="decision-order">{index + 2}</span>
+                  <button className="decision-next-copy" type="button" onClick={() => { if (opportunity) onOpenOpportunity(opportunity.id) }}>
+                    <strong>{item.action.title}</strong>
+                    <small>{decisionReason(item)}</small>
+                  </button>
+                  <div className="decision-next-meta">
+                    {item.action.dueAt ? <TimeRiskBadge action={item.action} now={now} rules={rules} compact /> : null}
+                    <span>{formatMinutes(item.action.estimatedMinutes)}</span>
+                  </div>
+                  <button className="decision-done-button" type="button" onClick={() => { void onMark(item.action.id, 'done') }}>{zh ? '完成' : 'Done'}</button>
+                </article>
+              )
+            })}
+          </div>
+        </section>
       ) : null}
 
-      {!workspaceEmpty && plan.overrunReason ? <div className="surface-warning">{zh ? '当前可用时间不足以完整覆盖已知硬约束；PJSDAS 保留这些任务，不会为了让计划看起来可完成而隐藏它们。' : 'Current available time cannot cover every known hard constraint. PJSDAS keeps those tasks visible rather than pretending the plan fits.'}</div> : null}
-
-      <details className="today-manual-fallback">
-        <summary><div><strong>{zh ? '手工记录 fallback' : 'Manual capture fallback'}</strong><span>{zh ? '只有 AI / 自动化无法直接记录时再打开' : 'Use only when AI or automation cannot capture the change directly'}</span></div></summary>
-        <div className="surface-tool-row"><ProgressInbox onChanged={() => { void onChanged() }} /><ProcessEventDock onChanged={() => { void onChanged() }} /></div>
-      </details>
+      {!workspaceEmpty && plan.overrunReason ? (
+        <button className="decision-capacity-warning" type="button" onClick={onOpenAttention}>
+          <span>{zh ? '今天的硬约束超过当前可用时间' : 'Hard constraints exceed today’s available time'}</span>
+          <strong>{zh ? '查看需要决定的事' : 'Review decisions'}</strong>
+        </button>
+      ) : null}
     </section>
   )
 }
@@ -503,7 +508,7 @@ function ActivitySurface({ timeline }: { timeline: TimelineRecord[] }) {
   return <section className="surface-page"><SurfaceHeader eyebrow="ACTIVITY" title={zh ? '系统和你都做了什么' : 'What you and PJSDAS have done'} text={zh ? 'Activity 是审计面：保留事实、命令、自动化和来源痕迹；待你决定的事项已经移到 Attention。' : 'Activity is the audit surface for facts, commands, automation, and provenance. Anything requiring your decision lives in Attention instead.'} /><TimelineView records={timeline} /></section>
 }
 
-function SettingsSurface({ lastImport, rules, onChanged }: { lastImport?: ImportMeta; rules: DecisionRules; onChanged: () => Promise<void> }) {
+function SettingsSurface({ lastImport, rules, onChanged, onOpenActivity }: { lastImport?: ImportMeta; rules: DecisionRules; onChanged: () => Promise<void>; onOpenActivity: () => void }) {
   const { lang } = useUiLanguage()
   const zh = lang === 'zh'
   const [preview, setPreview] = useState<ImportBundle | null>(null)
@@ -551,6 +556,7 @@ function SettingsSurface({ lastImport, rules, onChanged }: { lastImport?: Import
         <summary><div><strong>{zh ? '数据与恢复' : 'Data & recovery'}</strong><span>{zh ? '备份、导入和恢复路径' : 'Backup, import, and recovery paths'}</span></div></summary>
         <div className="settings-group-body">
           <ConnectedMigrationCard />
+          <div className="settings-inline-tool"><div><strong>{zh ? '手工记录' : 'Manual capture'}</strong><p>{zh ? '仅在 AI / 自动化无法直接记录事实时使用。' : 'Use only when AI or automation cannot capture the fact directly.'}</p></div><div className="surface-tool-row"><ProgressInbox onChanged={() => { void onChanged() }} /><ProcessEventDock onChanged={() => { void onChanged() }} /></div></div>
           <div className="settings-inline-tool"><div><strong>{zh ? '本地快照' : 'Local snapshot'}</strong><p>{zh ? '大版本调整、换设备或清理浏览器前导出完整快照。' : 'Export a full snapshot before major upgrades, device changes, or browser cleanup.'}</p></div><LocalBackupDock onChanged={() => { void onChanged() }} /></div>
           <div className="surface-import-card"><div><strong>{zh ? 'Excel 初始化 / 恢复' : 'Excel initialization / recovery'}</strong><p>{zh ? 'Excel 已不是日常数据源，只在初始化、历史迁移或恢复时使用。' : 'Excel is no longer the daily source of truth; use it for initialization, migration, or recovery.'}</p></div><label className="file-button">{busy ? (zh ? '处理中…' : 'Processing…') : (zh ? '选择工作簿' : 'Choose workbook')}<input type="file" accept=".xlsx,.xls" disabled={busy} onChange={(event) => { void readWorkbook(event.target.files?.[0]) }} /></label></div>
           {error ? <div className="notice error">{error}</div> : null}
@@ -558,6 +564,11 @@ function SettingsSurface({ lastImport, rules, onChanged }: { lastImport?: Import
           {preview ? <div className="surface-import-preview"><div><strong>{preview.summary.filename}</strong><span>{preview.summary.opportunities} {zh ? '岗位' : 'opportunities'} · {preview.summary.actions} Actions</span></div><button className="primary-button" disabled={busy} onClick={() => { void commitImport() }}>{zh ? '确认导入' : 'Confirm import'}</button></div> : null}
           {lastImport ? <p className="surface-footnote">{zh ? '最近导入' : 'Last import'}：{lastImport.filename} · {formatDateTime(lastImport.importedAt)}</p> : null}
         </div>
+      </details>
+
+      <details className="settings-group">
+        <summary><div><strong>{zh ? '历史与审计' : 'History & audit'}</strong><span>{zh ? '发生过什么，不占用日常决策界面' : 'What happened, outside the daily decision surface'}</span></div></summary>
+        <div className="settings-group-body"><button className="settings-secondary-link" type="button" onClick={onOpenActivity}>{zh ? '查看活动记录' : 'Open activity history'}</button></div>
       </details>
 
       <details className="settings-group">
