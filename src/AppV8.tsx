@@ -875,15 +875,6 @@ function EmptyState({ title, text }: { title: string; text: string }) {
   return <div className="empty-card"><strong>{title}</strong><p>{text}</p></div>
 }
 
-function PriorityBadge({ value, zh }: { value: ReturnType<typeof computePriority>; zh: boolean }) {
-  const label = value === 'expired'
-    ? (zh ? '已过期' : 'Expired')
-    : value === 'none'
-      ? (zh ? '流程中' : 'Pipeline')
-      : value
-  return <span className={`priority-badge priority-${value}`}>{label}</span>
-}
-
 function formatDateTime(iso: string) {
   return new Intl.DateTimeFormat(currentUiLanguage() === 'zh' ? 'zh-CN' : 'en-GB', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date(iso))
 }
