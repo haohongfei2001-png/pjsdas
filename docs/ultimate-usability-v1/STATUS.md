@@ -12,8 +12,8 @@ Product origin: `https://todayaction.com`
 | UU-00 | **COMPLETE — DESIGN REGISTERED** | Docs-only registration/revalidation; no business code/data/config change |
 | UU-01 | **COMPLETE** | ScheduleNode / occurrence / temporal semantics implemented and production-verified |
 | UU-02 | **COMPLETE** | Unified Semantic Intake / DecisionRequest / Undo policy implemented and production-verified |
-| UU-03 | **READY — NOT STARTED** | UU-02 dependency satisfied; shared TodayBrief/agenda read model is next |
-| UU-04 | NOT_READY | Depends on UU-03 |
+| UU-03 | **COMPLETE** | Revision-bound TodayBrief / agenda / latest-start read model implemented and production-verified |
+| UU-04 | **READY — NOT STARTED** | UU-03 dependency satisfied; final Web shell / Today UI is next |
 | UU-05 | NOT_READY | Depends on UU-04 |
 | UU-06 | NOT_READY | Depends on UU-05 / shared intake |
 | UU-07 | NOT_READY | Depends on shared intake/read models |
@@ -176,25 +176,90 @@ DecisionRequest, external-withdrawal fail-closed behavior, occurrence reschedule
 source-version replay idempotency, field-level compensation, DecisionRequest resolution, server-side
 source authorization, no raw-input ledger persistence, and dependent-revision Undo refusal.
 
-## Next authorized work
-
-UU-03 is **READY but NOT STARTED**.
-
-A later execution may handle UU-03 only under the one-round protocol: re-read remote `main`,
-canonical status, frozen blueprint/amendments, shared read contracts, and `rounds/UU-03.md`.
-This UU-02 execution stops before any TodayBrief / agenda implementation.
-
 ## UU-02 scope boundary
 
-UU-02 did change the semantic mutation contract, Snapshot/local persistence schemas, authenticated
+UU-02 changed the semantic mutation contract, Snapshot/local persistence schemas, authenticated
 MCP tool surface, server authorization/write policy and one additive production authorization
-constraint. It did **not**:
+constraint. It did **not** implement TodayBrief / agenda planning, silently grant new source
+permissions, perform external recruiting actions, bulk-rewrite the production workspace, change
+release publication policy, or publish a new GitHub Release.
 
-- implement TodayBrief / agenda planning (UU-03);
-- grant PAIA, Gmail or any delegated client the new capability automatically;
-- enable a new Gmail/PAIA/browser/iPhone permission;
-- perform any external job application, withdrawal, recruiting email or Offer action;
-- bulk-rewrite the real production workspace;
+## UU-03 closure
+
+UU-03 implementation is complete on `main@dc098d15dca20f9552d50ffee5f285d68077c6e0` (PR #98).
+
+### Implemented contract
+
+- one platform-neutral `TodayBrief` is now the canonical daily read contract for Web, MCP and
+  future native iPhone clients;
+- the contract is revision-bound and explicitly carries workspace revision, evaluation time,
+  display timezone and Decision Rules version/update time;
+- it returns one primary `nextAction`, at most three `nextActions`, recruiting `agendaGroups`,
+  relevant open `DecisionRequest` objects, material coverage warnings and hidden-by-default
+  diagnostics;
+- fixed-time interviews/tests are protected from becoming an early “start now” action while still
+  appearing prominently in agenda;
+- Agenda is ScheduleNode-backed, deduped by stable occurrence/version identity, defaults to seven
+  calendar days and preserves fixed range / deadline / window / date-only semantics;
+- date-only deadlines stay date-only. TodayBrief never fabricates a 23:59 or other clock time;
+- past nodes without completion evidence project as `elapsed_unresolved` recovery items, never as
+  completed facts;
+- hard-deadline actions use `latestStart = boundary - estimatedDuration`; a long action can become
+  protected before its raw deadline enters the legacy 48-hour window;
+- protected latest-start work that does not fit the available-time budget generates explicit
+  capacity / unplanned-hard-deadline warnings instead of being silently dropped;
+- executability is explicit. Application actions expose a real external target only when a verified
+  application URL exists; otherwise the contract reports context-only and never equates opening a
+  page with applying;
+- DecisionRequests are included only when open/unexpired and are ordered toward objects relevant to
+  visible actions/agenda;
+- source coverage gaps, stale sources and unresolved source records are summarized as material
+  warnings, not converted into fake user decisions;
+- recommendations are deterministic for the same snapshot revision, clock, timezone, rules and
+  available-time input;
+- authenticated MCP tool surface is now v5 and exposes `get_today_brief` as a release-required
+  read tool under both Drive and transactional authorities;
+- legacy `get_today_plan` remains available as a compatibility read, but it is no longer the
+  canonical forward daily contract.
+
+### Verification evidence
+
+PR head `f7eb3922cb897e712f125a22be35f9f4ebb1c672`:
+
+- CI run `35514869367`: success;
+- Chromium run `35514869371`: success.
+
+Merged implementation `dc098d15dca20f9552d50ffee5f285d68077c6e0`:
+
+- CI run `35514965754`: success, including 637 tests, TypeScript/build and bundle gate;
+- Chromium run `35514965802`: success;
+- exact-SHA backend + Pages/deploy run `35514965767`: success;
+- Production Self-Test run `35515043484`: success;
+- release workflow run `35515057084`: success with publication still disarmed.
+
+UU-03 golden coverage includes revision/timezone binding, fixed-event protection, quiet Today with
+future-only fixed events, date-only precision, latest-start protection beyond the raw deadline
+window, capacity conflict visibility, elapsed-unresolved recovery, DecisionRequest relevance and
+expiration, material source-coverage warnings, seven-calendar-day agenda bounds, deterministic
+repeatability and sparse next actions.
+
+## Next authorized work
+
+UU-04 is **READY but NOT STARTED**.
+
+A later execution may handle UU-04 only under the one-round protocol: re-read remote `main`,
+canonical status, frozen blueprint/amendments, the shared TodayBrief contract, and
+`rounds/UU-04.md`. This UU-03 execution stops before final Web shell / Today UI implementation.
+
+## UU-03 scope boundary
+
+UU-03 changed read-model logic, authenticated MCP read surface and release/self-test gates only. It
+did **not**:
+
+- replace the current Web Today UI or navigation shell (UU-04);
+- change Snapshot/database schemas;
+- mutate production workspace data;
+- add or grant source permissions;
+- perform any external recruiting action;
 - change release publication policy;
 - publish a new GitHub Release.
-
