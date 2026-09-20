@@ -24,7 +24,7 @@ describe('backend-first release gate', () => {
     expect(workflow).toContain('capabilities.gmailCompleteConsumption === "v1"')
     expect(workflow).toContain('capabilities.discoverySourceVerification === "v1"')
     expect(workflow).toContain('capabilities.discoveryFactAssessmentSeparation === true')
-    expect(workflow).toContain('authenticatedMcp.toolSurfaceVersion === "v3"')
+    expect(workflow).toContain('authenticatedMcp.toolSurfaceVersion === "v4"')
     for (const tool of ['get_coverage_status', 'get_workspace_integrity', 'add_opportunities', 'ingest_discovery_run', 'ingest_gmail_run']) {
       expect(workflow).toContain(`"${tool}"`)
     }

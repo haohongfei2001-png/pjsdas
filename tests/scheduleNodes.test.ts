@@ -172,7 +172,7 @@ describe('UU-01 ScheduleNode contract', () => {
     })
     const migrated = upgradeSnapshotToLatest(legacy)
     const node = migrated.data.scheduleNodes?.find((item) => item.kind === 'application_deadline')
-    expect(migrated.version).toBe(2)
+    expect(migrated.version).toBe(3)
     expect(node?.temporal).toMatchObject({
       shape: 'date_only',
       precision: 'date',
@@ -278,13 +278,13 @@ describe('UU-01 ScheduleNode contract', () => {
     })
   })
 
-  it('round-trips v1 history into v2 without losing timeline or event identity', () => {
+  it('round-trips v1 history into the latest snapshot without losing timeline or event identity', () => {
     const written = event('roundtrip', '2026-09-12T02:00:00.000Z')
     const restored = parseSnapshotText(JSON.stringify(legacySnapshot({
       events: [written],
       actions: [actionFor(written.id, written.dueAt!)],
     })))
-    expect(restored.version).toBe(2)
+    expect(restored.version).toBe(3)
     expect(restored.data.timeline?.map((item) => item.id)).toContain('timeline-history-1')
     expect(restored.data.processEvents[0]?.id).toBe('roundtrip')
     expect(restored.data.scheduleNodes?.some((item) => item.processEventId === 'roundtrip')).toBe(true)

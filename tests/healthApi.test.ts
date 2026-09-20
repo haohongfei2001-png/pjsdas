@@ -76,7 +76,7 @@ describe('public production health contract', () => {
     expect(body.capabilities.canonicalOriginPolicy).toBe('v1')
     expect(body.capabilities.controlledAudience).toBe('v1')
     expect(body.capabilities.connectedOriginMigration).toBe('v1')
-    expect(body.authenticatedMcp.toolSurfaceVersion).toBe('v3')
+    expect(body.authenticatedMcp.toolSurfaceVersion).toBe('v4')
     expect(body.authenticatedMcp.releaseRequiredTools).not.toContain('apply_user_command')
     expect(JSON.stringify(body)).not.toContain('synthetic-demo-only')
     expect(JSON.stringify(body)).not.toContain('AI_GATEWAY_API_KEY')
