@@ -14,6 +14,7 @@ import {
   listOpportunities,
 } from '../src/ai/readLayer.js'
 import { enrichOpportunityListWithFacts } from '../src/ai/richOpportunityRead.js'
+import { buildTodayBrief } from '../src/todayBrief.js'
 import { buildContinuousDiscoverySummary } from '../src/continuousDiscovery.js'
 import { decisionRulesForSnapshot } from '../src/decisionRules.js'
 import { buildDiscoveryAutomationPlan } from '../src/discoveryAutomation.js'
@@ -21,6 +22,7 @@ import { enabledSourceRegistry } from '../src/sourceRegistry.js'
 import { WorkspaceSourceError, type WorkspaceSource } from './workspaceSource.js'
 
 export const READ_TOOL_NAMES = [
+  'get_today_brief',
   'get_today_plan',
   'list_opportunities',
   'get_opportunity_assessment',
@@ -48,6 +50,11 @@ export const processStageSchema = z.enum([
 
 export const opportunityRoleSchema = z.enum(['core', 'backup', 'reach', 'lottery', 'practice'])
 export const timelineCategorySchema = z.enum(['opportunity', 'process', 'action', 'rules', 'change', 'data', 'note'])
+
+export const getTodayBriefSchema = z.object({
+  availableMinutes: z.number().min(30).max(1440).optional(),
+  agendaHorizonDays: z.number().int().min(1).max(30).optional(),
+})
 
 export const getTodayPlanSchema = z.object({
   date: z.string().optional(),
@@ -156,6 +163,8 @@ export async function invokeReadTool(
     const { snapshot, context } = await source.read()
 
     switch (name) {
+      case 'get_today_brief':
+        return success(buildTodayBrief(snapshot, getTodayBriefSchema.parse(args), context))
       case 'get_today_plan':
         return success(getTodayPlan(snapshot, getTodayPlanSchema.parse(args), context))
       case 'list_opportunities': {

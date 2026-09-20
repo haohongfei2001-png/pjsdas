@@ -312,7 +312,7 @@ jobs:
                       capabilities.connectedOriginMigration === "v1" &&
                       capabilities.releaseCandidateManifest === "v1" &&
                       topologyReady &&
-                      authenticatedMcp.toolSurfaceVersion === "v4" &&
+                      authenticatedMcp.toolSurfaceVersion === "v5" &&
                       releaseToolsReady;
                     process.exit(ready ? 0 : 1);
                   } catch {

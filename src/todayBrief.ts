@@ -416,9 +416,14 @@ function agendaNode(
   node: ScheduleNode,
   opportunities: Map<string, Opportunity>,
   now: Date,
+  timezone: string,
 ): TodayBriefAgendaNode {
   const opportunity = node.opportunityId ? opportunities.get(node.opportunityId) : undefined
   const boundary = temporalBoundaryMs(node.temporal)
+  const today = localDateKey(now, timezone)
+  const nodeDate = temporalDateKey(node.temporal, timezone)
+  const dateOnlyWithin48Hours = boundary === undefined
+    && Boolean(nodeDate && nodeDate >= today && nodeDate <= addCalendarDays(today, 2))
   return {
     nodeId: node.id,
     occurrenceId: node.occurrenceId,
@@ -431,7 +436,8 @@ function agendaNode(
     temporal: structuredClone(node.temporal),
     constraintKind: node.constraintKind,
     relatedActionIds: [...node.relatedActionIds],
-    within48Hours: boundary !== undefined && boundary >= now.getTime() && boundary - now.getTime() <= 48 * HOUR,
+    within48Hours: (boundary !== undefined && boundary >= now.getTime() && boundary - now.getTime() <= 48 * HOUR)
+      || dateOnlyWithin48Hours,
     requiresResolution: effectiveScheduleNodeState(node, now) === 'elapsed_unresolved',
   }
 }
@@ -444,10 +450,10 @@ function buildAgendaGroups(
   horizonDays: number,
 ): TodayBriefAgendaGroup[] {
   const today = localDateKey(now, timezone)
-  const horizonDate = addCalendarDays(today, horizonDays)
+  const horizonDate = addCalendarDays(today, horizonDays - 1)
   const latest = latestByOccurrence(nodes)
     .filter((node) => node.state !== 'cancelled' && node.state !== 'superseded' && node.state !== 'completed')
-    .map((node) => agendaNode(node, opportunities, now))
+    .map((node) => agendaNode(node, opportunities, now, timezone))
 
   const unresolved = latest
     .filter((node) => node.state === 'elapsed_unresolved')
