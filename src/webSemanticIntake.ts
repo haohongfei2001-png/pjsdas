@@ -47,13 +47,25 @@ function statementMode(text: string): SemanticStatementMode {
   const trimmed = text.trim()
   if (/(改写|润色|翻译|重写|rewrite|translate)/i.test(trimmed)) return 'rewrite_request'
   if (/^(?:如果|假如|假设|比如|例如|举例|hypothetical|for example)/i.test(trimmed)) return 'hypothetical'
-  if (/[?？]s*$/.test(trimmed) || /^(?:是否|是不是|要不要|该不该|怎么|如何|为什么|what|should|how|why)/i.test(trimmed)) return 'question'
-  if (/^(?:引用|原话|quote)s*[:：]/i.test(trimmed)) return 'quote'
+  if (/[?？]\s*$/.test(trimmed) || /^(?:是否|是不是|要不要|该不该|怎么|如何|为什么|what|should|how|why)\b/i.test(trimmed)) return 'question'
+  if (/^(?:引用|原话|quote)\s*[:：]/i.test(trimmed)) return 'quote'
   return 'assertion'
 }
 
 function hasExplicitClock(text: string) {
-  return /d{1,2}:d{2}|d{1,2}s*(?:点|时)(?:d{1,2}s*分)?/i.test(text)
+  return /\b\d{1,2}:\d{2}\b|\d{1,2}\s*(?:点|时)(?:\d{1,2}\s*分)?/i.test(text)
+}
+
+function explicitCompletionKind(text: string, mode: SemanticStatementMode): ScheduleNodeKind | undefined {
+  if (mode !== 'assertion' && mode !== 'current_intent') return undefined
+  const trimmed = text.trim()
+  if (/(?:完成时间|完成日期|完成期限|完成要求|截止|最晚|请|需要|需|待).{0,12}(?:面试|笔试|测评)/.test(trimmed)) return undefined
+  const patterns: Array<[ScheduleNodeKind, RegExp]> = [
+    ['interview', /(?:面试|一面|二面|三面|终面|AI面|业务面|HR面).{0,8}(?:已经|已|刚刚?|刚)?(?:完成(?:了)?|结束(?:了)?|面完(?:了)?|完毕)|(?:完成(?:了)?|结束(?:了)?|面完(?:了)?).{0,8}(?:面试|一面|二面|三面|终面|AI面|业务面|HR面)/i],
+    ['written_test', /(?:笔试|考试).{0,8}(?:已经|已|刚刚?|刚)?(?:完成(?:了)?|做完(?:了)?|考完(?:了)?|结束(?:了)?|完毕)|(?:完成(?:了)?|做完(?:了)?|考完(?:了)?).{0,8}(?:笔试|考试)/i],
+    ['assessment', /(?:测评|在线测试|性格测试).{0,8}(?:已经|已|刚刚?|刚)?(?:完成(?:了)?|做完(?:了)?|结束(?:了)?|完毕)|(?:完成(?:了)?|做完(?:了)?).{0,8}(?:测评|在线测试|性格测试)/i],
+  ]
+  return patterns.find(([, pattern]) => pattern.test(trimmed))?.[0]
 }
 
 function occurrenceKind(type: ProcessEventType): ScheduleNodeKind | undefined {
@@ -196,6 +208,88 @@ function unresolvedCandidate(
   return undefined
 }
 
+function operationOpportunityIds(plan: ReturnType<typeof parseProgressUpdate>) {
+  const ids = new Set<string>()
+  for (const operation of plan.operations) {
+    if ('opportunityId' in operation && typeof operation.opportunityId === 'string') ids.add(operation.opportunityId)
+    if (operation.kind === 'unresolved') {
+      for (const candidate of operation.candidates ?? []) ids.add(candidate.id)
+    }
+  }
+  return [...ids]
+}
+
+function explicitCompletionCandidate(
+  text: string,
+  mode: SemanticStatementMode,
+  plan: ReturnType<typeof parseProgressUpdate>,
+  opportunities: Awaited<ReturnType<typeof getAllOpportunities>>,
+  baseline: Awaited<ReturnType<typeof exportLocalSnapshot>>,
+): SemanticCandidate | undefined {
+  const kind = explicitCompletionKind(text, mode)
+  if (!kind) return undefined
+
+  const ids = operationOpportunityIds(plan)
+  const exactMentions = opportunities
+    .filter((item) => text.includes(item.company) && text.includes(item.role))
+    .map((item) => item.id)
+  const candidateIds = [...new Set([...ids, ...exactMentions])]
+  const activeNodes = [...(baseline.data.scheduleNodes ?? [])]
+    .filter((node) => node.kind === kind)
+    .filter((node) => node.state !== 'completed' && node.state !== 'cancelled' && node.state !== 'superseded')
+  const latestByOccurrence = new Map<string, typeof activeNodes[number]>()
+  for (const node of activeNodes) {
+    const current = latestByOccurrence.get(node.occurrenceId)
+    if (!current || node.version > current.version) latestByOccurrence.set(node.occurrenceId, node)
+  }
+  let nodes = [...latestByOccurrence.values()]
+  if (candidateIds.length === 1) nodes = nodes.filter((node) => node.opportunityId === candidateIds[0])
+
+  const target = candidateIds.length === 1
+    ? { opportunityId: candidateIds[0], occurrenceKind: kind }
+    : nodes.length === 1
+      ? { occurrenceId: nodes[0]!.occurrenceId, occurrenceKind: kind }
+      : { occurrenceKind: kind }
+
+  return {
+    ...candidateBase('explicit-completion:' + stableHash(text), text, 'high'),
+    kind: 'occurrence_completed',
+    target,
+    occurredAt: plan.operations[0]?.occurredAt,
+  }
+}
+
+export function buildWebSemanticInterpretation(
+  text: string,
+  opportunities: Awaited<ReturnType<typeof getAllOpportunities>>,
+  baseline: Awaited<ReturnType<typeof exportLocalSnapshot>>,
+  references: CanonicalJobReference[],
+  now = new Date(),
+) {
+  const mode = statementMode(text)
+  const plan = parseProgressUpdate(text, opportunities, now, references)
+  const explicitCompletion = explicitCompletionCandidate(text, mode, plan, opportunities, baseline)
+  let executableCandidates = plan.executable
+    .map(operationCandidate)
+    .filter((item): item is SemanticCandidate => Boolean(item))
+  if (explicitCompletion) {
+    executableCandidates = executableCandidates.filter((item) => item.kind !== 'process_event' && item.kind !== 'occurrence_completed')
+    executableCandidates.unshift(explicitCompletion)
+  }
+  const convertedUnresolved = plan.unresolved
+    .map((item) => ({ operation: item, candidate: unresolvedCandidate(item, opportunities) }))
+  const candidates = [
+    ...executableCandidates,
+    ...convertedUnresolved.flatMap((item) => item.candidate ? [item.candidate] : []),
+  ]
+  return {
+    mode,
+    candidates: interpretation.candidates,
+    unresolved: convertedUnresolved.filter((item) => !item.candidate).map((item) => item.operation.reason),
+    ignored: plan.ignored.map((item) => item.reason),
+  }
+}
+
 async function canonicalReferences(): Promise<CanonicalJobReference[]> {
   const items = await getAllDiscoveryInboxItems()
   return items
@@ -236,16 +330,7 @@ export async function submitWebSemanticCapture(
     exportLocalSnapshot(),
   ])
   const baselineFingerprint = await fingerprintWorkspace(baseline)
-  const plan = parseProgressUpdate(trimmed, opportunities, now, references)
-  const executableCandidates = plan.executable
-    .map(operationCandidate)
-    .filter((item): item is SemanticCandidate => Boolean(item))
-  const convertedUnresolved = plan.unresolved
-    .map((item) => ({ operation: item, candidate: unresolvedCandidate(item, opportunities) }))
-  const candidates = [
-    ...executableCandidates,
-    ...convertedUnresolved.flatMap((item) => item.candidate ? [item.candidate] : []),
-  ]
+  const interpretation = buildWebSemanticInterpretation(trimmed, opportunities, baseline, references, now)
   const recordId = `capture:${now.getTime()}:${stableHash(trimmed)}`
   const observation: SemanticIntakeObservation = {
     contractVersion: 1,
@@ -259,7 +344,7 @@ export async function submitWebSemanticCapture(
       assertedAt: now.toISOString(),
       timezone,
     },
-    statementMode: statementMode(trimmed),
+    statementMode: interpretation.mode,
     originalText: trimmed,
     contextRefs: [],
     candidates,
@@ -270,10 +355,8 @@ export async function submitWebSemanticCapture(
     workspaceRevision: `local:${baselineFingerprint}`,
     now,
   })
-  const unresolved = convertedUnresolved
-    .filter((item) => !item.candidate)
-    .map((item) => item.operation.reason)
-  const ignored = plan.ignored.map((item) => item.reason)
+  const unresolved = interpretation.unresolved
+  const ignored = interpretation.ignored
 
   if (!result.changed) {
     return {
