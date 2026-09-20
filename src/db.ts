@@ -8,7 +8,14 @@ import {
   suppressSupersededActions,
 } from './processEvents.js'
 import { mergeActionsForReimport } from './reimportState.js'
-import { createSnapshot, validateSnapshot, type PJSDASSnapshot } from './snapshot.js'
+import { createSnapshot, upgradeSnapshotToLatest, validateSnapshot, type PJSDASSnapshot } from './snapshot.js'
+import {
+  cancelScheduleNodeForProcessEvent,
+  effectiveScheduleNodeState,
+  ensureScheduleContractInPlace,
+  scheduleNodeForProcessEvent,
+  syncScheduleNodeForActionStatus,
+} from './scheduleNodes.js'
 import { createDefaultDecisionRules, decisionRulesForSnapshot, validateDecisionRules, type DecisionRules } from './decisionRules.js'
 import {
   createDefaultDiscoveryProfile,
@@ -51,6 +58,8 @@ import type {
   Prep,
   ProcessEvent,
   ProcessRecord,
+  ScheduleNode,
+  ScheduleNodeState,
   TimelineCategory,
   TimelineRecord,
 } from './model.js'
@@ -66,6 +75,11 @@ interface PJSDASDatabase extends DBSchema {
     key: string
     value: ProcessEvent
     indexes: { 'by-opportunity': string }
+  }
+  scheduleNodes: {
+    key: string
+    value: ScheduleNode
+    indexes: { 'by-opportunity': string; 'by-occurrence': string; 'by-state': ScheduleNodeState }
   }
   actions: {
     key: string
@@ -94,6 +108,7 @@ const DATA_STORES = [
   'opportunities',
   'processes',
   'processEvents',
+  'scheduleNodes',
   'actions',
   'prep',
   'applicationGroups',
@@ -105,7 +120,7 @@ const DATA_STORES = [
   'meta',
 ] as const
 
-export const dbPromise = openDB<PJSDASDatabase>('pjsdas', 8, {
+export const dbPromise = openDB<PJSDASDatabase>('pjsdas', 9, {
   upgrade(db) {
     if (!db.objectStoreNames.contains('opportunities')) {
       db.createObjectStore('opportunities', { keyPath: 'id' })
@@ -117,6 +132,12 @@ export const dbPromise = openDB<PJSDASDatabase>('pjsdas', 8, {
     if (!db.objectStoreNames.contains('processEvents')) {
       const store = db.createObjectStore('processEvents', { keyPath: 'id' })
       store.createIndex('by-opportunity', 'opportunityId')
+    }
+    if (!db.objectStoreNames.contains('scheduleNodes')) {
+      const store = db.createObjectStore('scheduleNodes', { keyPath: 'id' })
+      store.createIndex('by-opportunity', 'opportunityId')
+      store.createIndex('by-occurrence', 'occurrenceId')
+      store.createIndex('by-state', 'state')
     }
     if (!db.objectStoreNames.contains('actions')) {
       const store = db.createObjectStore('actions', { keyPath: 'id' })
@@ -195,6 +216,14 @@ export async function getAllProcesses() {
 
 export async function getAllProcessEvents() {
   return (await dbPromise).getAll('processEvents')
+}
+
+export async function getAllScheduleNodes(now = new Date()) {
+  const nodes = await (await dbPromise).getAll('scheduleNodes')
+  return nodes.map((node) => ({
+    ...node,
+    state: effectiveScheduleNodeState(node, now),
+  }))
 }
 
 export async function getAllPrep() {
@@ -309,32 +338,73 @@ export async function updateActionStatus(id: string, status: Action['status']) {
   const action = stored ?? (await getAllActions()).find((item) => item.id === id)
   if (!action || action.status === status) return
   const now = new Date().toISOString()
-  const tx = db.transaction(['actions', 'timeline'], 'readwrite')
-  await tx.objectStore('actions').put({ ...action, status, updatedAt: now })
+  const [opportunities, processes, processEvents, actions, prep, scheduleNodes] = await Promise.all([
+    db.getAll('opportunities'),
+    db.getAll('processes'),
+    db.getAll('processEvents'),
+    db.getAll('actions'),
+    db.getAll('prep'),
+    db.getAll('scheduleNodes'),
+  ])
+  const nextAction = { ...action, status, updatedAt: now }
+  const nextActions = actions.some((item) => item.id === id)
+    ? actions.map((item) => item.id === id ? nextAction : item)
+    : [...actions, nextAction]
+  const contract = { opportunities, processes, processEvents, actions: nextActions, prep, scheduleNodes }
+  syncScheduleNodeForActionStatus(contract, id, status, now)
+
+  const tx = db.transaction(['actions', 'scheduleNodes', 'processes', 'timeline'], 'readwrite')
+  await tx.objectStore('actions').put(nextAction)
+  for (const node of contract.scheduleNodes ?? []) await tx.objectStore('scheduleNodes').put(node)
+  for (const process of contract.processes) await tx.objectStore('processes').put(process)
   await tx.objectStore('timeline').put(timelineFromActionStatus(action, action.status, status, now))
   await tx.done
 }
-
 export async function addProcessEvent(event: ProcessEvent) {
   const db = await dbPromise
-  const tx = db.transaction(['processEvents', 'actions', 'timeline'], 'readwrite')
-  await tx.objectStore('processEvents').put(event)
+  const [processes] = await Promise.all([db.getAll('processes')])
   const action = actionForProcessEvent(event)
+  const process = processes.find((item) => item.opportunityId === event.opportunityId)
+  const node = scheduleNodeForProcessEvent(event, action, process)
+  const stores = node
+    ? ['processEvents', 'scheduleNodes', 'actions', 'timeline'] as const
+    : ['processEvents', 'actions', 'timeline'] as const
+  const tx = db.transaction(stores, 'readwrite')
+  await tx.objectStore('processEvents').put(event)
   if (action) await tx.objectStore('actions').put(action)
+  if (node) await tx.objectStore('scheduleNodes').put(node)
   await tx.objectStore('timeline').put(timelineFromProcessEvent(event))
   await tx.done
 }
 
 export async function deleteProcessEvent(id: string) {
   const db = await dbPromise
-  const tx = db.transaction(['processEvents', 'actions', 'timeline'], 'readwrite')
-  const event = await tx.objectStore('processEvents').get(id)
+  const event = await db.get('processEvents', id)
+  const now = new Date().toISOString()
+  const nodes = await db.getAll('scheduleNodes')
+  if (event) {
+    const contract = {
+      opportunities: await db.getAll('opportunities'),
+      processes: await db.getAll('processes'),
+      processEvents: await db.getAll('processEvents'),
+      actions: await db.getAll('actions'),
+      prep: await db.getAll('prep'),
+      scheduleNodes: nodes,
+    }
+    cancelScheduleNodeForProcessEvent(contract, id, now)
+    const tx = db.transaction(['processEvents', 'scheduleNodes', 'actions', 'timeline'], 'readwrite')
+    await tx.objectStore('processEvents').delete(id)
+    await tx.objectStore('actions').delete(`event-action:${id}`)
+    for (const node of contract.scheduleNodes ?? []) await tx.objectStore('scheduleNodes').put(node)
+    await tx.objectStore('timeline').put(timelineFromDeletedProcessEvent(event))
+    await tx.done
+    return
+  }
+  const tx = db.transaction(['processEvents', 'actions'], 'readwrite')
   await tx.objectStore('processEvents').delete(id)
   await tx.objectStore('actions').delete(`event-action:${id}`)
-  if (event) await tx.objectStore('timeline').put(timelineFromDeletedProcessEvent(event))
   await tx.done
 }
-
 function defaultLocalOpportunity(
   operation: Extract<ProgressOperation, { kind: 'upsert_opportunity' }>,
 ): Opportunity {
@@ -771,11 +841,12 @@ export async function applyChangeSet(id: string) {
 export async function exportLocalSnapshot() {
   const db = await dbPromise
   await ensureTimelineBackfill(db)
-  const [opportunities, processes, processEvents, actions, prep, applicationGroups, decisionRules, discoveryProfile, discoveryInbox, timeline, changeSets, meta] =
+  const [opportunities, processes, processEvents, scheduleNodes, actions, prep, applicationGroups, decisionRules, discoveryProfile, discoveryInbox, timeline, changeSets, meta] =
     await Promise.all([
       db.getAll('opportunities'),
       db.getAll('processes'),
       db.getAll('processEvents'),
+      db.getAll('scheduleNodes'),
       db.getAll('actions'),
       db.getAll('prep'),
       db.getAll('applicationGroups'),
@@ -791,6 +862,7 @@ export async function exportLocalSnapshot() {
     opportunities,
     processes,
     processEvents,
+    scheduleNodes,
     actions,
     prep,
     applicationGroups,
@@ -805,28 +877,31 @@ export async function exportLocalSnapshot() {
 
 export async function replaceLocalSnapshotFromCloud(snapshot: PJSDASSnapshot) {
   validateSnapshot(snapshot)
+  const latest = upgradeSnapshotToLatest(snapshot)
 
   const db = await dbPromise
   const tx = db.transaction([...DATA_STORES], 'readwrite')
   await Promise.all(DATA_STORES.map((storeName) => tx.objectStore(storeName).clear()))
 
-  for (const item of snapshot.data.opportunities) await tx.objectStore('opportunities').put(item)
-  for (const item of snapshot.data.processes) await tx.objectStore('processes').put(item)
-  for (const item of snapshot.data.processEvents) await tx.objectStore('processEvents').put(item)
-  for (const item of snapshot.data.actions) await tx.objectStore('actions').put(item)
-  for (const item of snapshot.data.prep) await tx.objectStore('prep').put(item)
-  for (const item of snapshot.data.applicationGroups) await tx.objectStore('applicationGroups').put(item)
-  await tx.objectStore('decisionRules').put(snapshot.data.decisionRules ?? createDefaultDecisionRules())
-  if (snapshot.data.discoveryProfile) await tx.objectStore('discoveryProfiles').put(snapshot.data.discoveryProfile)
-  for (const item of snapshot.data.discoveryInbox ?? []) await tx.objectStore('discoveryInbox').put(item)
-  for (const item of snapshot.data.timeline ?? []) await tx.objectStore('timeline').put(item)
-  for (const item of snapshot.data.changeSets ?? []) await tx.objectStore('changeSets').put(item)
-  if (snapshot.data.meta) await tx.objectStore('meta').put(snapshot.data.meta)
+  for (const item of latest.data.opportunities) await tx.objectStore('opportunities').put(item)
+  for (const item of latest.data.processes) await tx.objectStore('processes').put(item)
+  for (const item of latest.data.processEvents) await tx.objectStore('processEvents').put(item)
+  for (const item of latest.data.scheduleNodes ?? []) await tx.objectStore('scheduleNodes').put(item)
+  for (const item of latest.data.actions) await tx.objectStore('actions').put(item)
+  for (const item of latest.data.prep) await tx.objectStore('prep').put(item)
+  for (const item of latest.data.applicationGroups) await tx.objectStore('applicationGroups').put(item)
+  await tx.objectStore('decisionRules').put(latest.data.decisionRules ?? createDefaultDecisionRules())
+  if (latest.data.discoveryProfile) await tx.objectStore('discoveryProfiles').put(latest.data.discoveryProfile)
+  for (const item of latest.data.discoveryInbox ?? []) await tx.objectStore('discoveryInbox').put(item)
+  for (const item of latest.data.timeline ?? []) await tx.objectStore('timeline').put(item)
+  for (const item of latest.data.changeSets ?? []) await tx.objectStore('changeSets').put(item)
+  if (latest.data.meta) await tx.objectStore('meta').put(latest.data.meta)
   await tx.done
 }
 
 export async function restoreLocalSnapshot(snapshot: PJSDASSnapshot) {
   validateSnapshot(snapshot)
+  const latest = upgradeSnapshotToLatest(snapshot)
 
   const db = await dbPromise
   const tx = db.transaction([...DATA_STORES], 'readwrite')
@@ -837,15 +912,15 @@ export async function restoreLocalSnapshot(snapshot: PJSDASSnapshot) {
   for (const item of snapshot.data.processes) await tx.objectStore('processes').put(item)
   for (const item of snapshot.data.processEvents) await tx.objectStore('processEvents').put(item)
   for (const item of snapshot.data.actions) await tx.objectStore('actions').put(item)
-  for (const item of snapshot.data.prep) await tx.objectStore('prep').put(item)
-  for (const item of snapshot.data.applicationGroups) await tx.objectStore('applicationGroups').put(item)
-  await tx.objectStore('decisionRules').put(snapshot.data.decisionRules ?? createDefaultDecisionRules())
-  if (snapshot.data.discoveryProfile) await tx.objectStore('discoveryProfiles').put(snapshot.data.discoveryProfile)
-  for (const item of snapshot.data.discoveryInbox ?? []) await tx.objectStore('discoveryInbox').put(item)
-  for (const item of snapshot.data.timeline ?? []) await tx.objectStore('timeline').put(item)
-  for (const item of snapshot.data.changeSets ?? []) await tx.objectStore('changeSets').put(item)
-  await tx.objectStore('timeline').put(timelineFromRestore(snapshot.exportedAt))
-  if (snapshot.data.meta) await tx.objectStore('meta').put(snapshot.data.meta)
+  for (const item of latest.data.prep) await tx.objectStore('prep').put(item)
+  for (const item of latest.data.applicationGroups) await tx.objectStore('applicationGroups').put(item)
+  await tx.objectStore('decisionRules').put(latest.data.decisionRules ?? createDefaultDecisionRules())
+  if (latest.data.discoveryProfile) await tx.objectStore('discoveryProfiles').put(latest.data.discoveryProfile)
+  for (const item of latest.data.discoveryInbox ?? []) await tx.objectStore('discoveryInbox').put(item)
+  for (const item of latest.data.timeline ?? []) await tx.objectStore('timeline').put(item)
+  for (const item of latest.data.changeSets ?? []) await tx.objectStore('changeSets').put(item)
+  await tx.objectStore('timeline').put(timelineFromRestore(latest.exportedAt))
+  if (latest.data.meta) await tx.objectStore('meta').put(latest.data.meta)
   await tx.done
 }
 
