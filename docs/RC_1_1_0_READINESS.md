@@ -156,13 +156,13 @@ setting is enabled; after creation it must verify both:
 - `prerelease=true`;
 - `immutable=true`.
 
-## PASS — exact-SHA production chain
+## PASS — exact-SHA production-chain evidence
 
-Current production candidate identity:
+Reference pre-closure candidate:
 
 `main@73943120cc4d32b547f00824b1ed112216dc3e05`
 
-For that exact SHA, GitHub Actions reports:
+For that exact SHA, GitHub Actions reported:
 
 - CI — success;
 - Browser E2E — success;
@@ -172,6 +172,10 @@ For that exact SHA, GitHub Actions reports:
 The downstream Publish workflow also completed successfully, but because
 `publishOnProductionSuccess=false`, every publication-only step remained safely skipped.
 No `v1.1.0-rc.1` tag or GitHub Release exists yet.
+
+This SHA is evidence for the release architecture, not a permanently hard-coded publication target.
+Any later closure commit advances `main`; an armed publication must therefore use the final
+`main` SHA and pass the same exact-SHA production chain again.
 
 ## DEFERRED TO CANARY / CONTROLLED LAUNCH — canonical domain
 
