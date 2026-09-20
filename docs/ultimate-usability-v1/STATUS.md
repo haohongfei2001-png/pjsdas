@@ -10,7 +10,7 @@ Product origin: `https://todayaction.com`
 | Round | State | Notes |
 |---|---|---|
 | UU-00 | **COMPLETE — DESIGN REGISTERED** | Docs-only registration/revalidation; no business code/data/config change |
-| UU-01 | **BLOCKED — BASELINE BROWSER E2E MUST BE CLOSED FIRST** | Do not start schema/model implementation while required browser suite is red |
+| UU-01 | **READY** | Baseline Browser E2E closure complete; implementation not started |
 | UU-02 | NOT_READY | Depends on UU-01 |
 | UU-03 | NOT_READY | Depends on UU-02 |
 | UU-04 | NOT_READY | Depends on UU-03 |
@@ -42,45 +42,41 @@ The release plan is currently **DISARMED**:
 Root `README.md` still said production remained on legacy Drive authority. UU-00 corrects this
 documentation only; it does not migrate or switch data again.
 
-### Baseline browser blocker found
+### Baseline browser blocker — CLOSED
 
-For `main@bf0643eda139125868a9c697b81ff5ac5288a4f4`:
+The registration baseline `main@bf0643eda139125868a9c697b81ff5ac5288a4f4` had 30 failing Chromium
+journeys in run `35496146452` after the decision-first UI change.
 
-- CI: success;
-- GitHub Pages: success;
-- Production Self-Test: success;
-- Publish workflow: success/disarmed;
-- **Browser E2E: failure** — run `35496146452`.
+Bounded closure evidence:
 
-The failure is not treated as a transient environment issue. The suite reports 30 failing Chromium
-journeys after the recent decision-first UI change. Example:
+- PR #95 changed Browser E2E journey expectations only; no business source, schema, data, config,
+  permission, or release-policy change was made.
+- all 30 failures were audited. The failures were historical UI journey assumptions: the retired
+  Today heading/surface structure, the old five-item primary navigation, and the previous locations
+  of Activity, manual capture, and the language switch. No separate business-code regression was
+  identified in this bounded audit.
+- PR head `3394ced2c4aa6dfd06e8fbf4fcadb7068b830b06`: `ci-build` and Chromium passed.
+- merged main `0d621c122457321657fa8f560768117d5e5fb0f6`:
+  - `ci-build` run `35503041344`: success;
+  - Chromium run `35503041342`: success;
+  - GitHub Pages / deploy run `35503041331`: success;
+  - Production Self-Test run `35503119103`: success;
+  - release workflow run `35503130027`: success and publication remains disarmed.
 
-- `e2e/todayReasonI18n.e2e.ts` still expects heading “今天只处理下一步”, which the new Today no
-  longer renders.
-
-Other failed journeys also encode historical surface assumptions.
-
-UU-00 is not authorized to modify tests or business code, so this debt is recorded as the blocker
-between UU-00 and UU-01.
+This closes the pre-UU-01 baseline blocker.
 
 ## Next authorized work
 
-The next implementation round is **not yet READY**.
+UU-01 is **READY but NOT STARTED**.
 
-Before UU-01, execute a bounded baseline-closure task that:
-
-1. audits the 30 Browser E2E failures;
-2. updates only stale UI journey expectations where the new behavior is already the intended
-   product behavior;
-3. identifies any genuine regressions separately;
-4. restores required Browser E2E green on current main;
-5. does not begin UU-01 domain/schema implementation.
-
-After that closure is green and committed, update this file to mark UU-01 READY.
+The next implementation execution may handle UU-01 only, under the package one-round protocol.
+It must re-read remote `main`, this status, the frozen blueprint/amendments, and
+`rounds/UU-01.md` before changing domain/schema code. Do not skip ahead to later rounds.
 
 ## Scope evidence
 
-UU-00 changed documentation only. It did not:
+UU-00 plus the bounded baseline closure changed documentation and Browser E2E tests only. They did
+not:
 
 - modify business source code;
 - alter schemas/database/config;
