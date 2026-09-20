@@ -15,6 +15,7 @@ import {
 } from '../src/ai/readLayer.js'
 import { enrichOpportunityListWithFacts } from '../src/ai/richOpportunityRead.js'
 import { buildTodayBrief } from '../src/todayBrief.js'
+import { getOpportunityDecisionRead } from '../src/opportunityDecisionRead.js'
 import { buildContinuousDiscoverySummary } from '../src/continuousDiscovery.js'
 import { decisionRulesForSnapshot } from '../src/decisionRules.js'
 import { buildDiscoveryAutomationPlan } from '../src/discoveryAutomation.js'
@@ -25,6 +26,7 @@ export const READ_TOOL_NAMES = [
   'get_today_brief',
   'get_today_plan',
   'list_opportunities',
+  'get_opportunity_detail',
   'get_opportunity_assessment',
   'get_application_portfolio',
   'get_prep_graph',
@@ -73,6 +75,10 @@ export const listOpportunitiesSchema = z.object({
   if (value.includeFacts && value.limit !== undefined && value.limit > 20) {
     context.addIssue({ code: 'custom', message: 'limit must be at most 20 when includeFacts is true.' })
   }
+})
+
+export const getOpportunityDetailSchema = z.object({
+  opportunityId: z.string().trim().min(1),
 })
 
 export const getOpportunityAssessmentSchema = z.object({
@@ -182,6 +188,12 @@ export async function invokeReadTool(
           listOpportunities(snapshot, readInput, context),
           Boolean(parsed.includeFacts),
         ))
+      }
+      case 'get_opportunity_detail': {
+        const parsed = getOpportunityDetailSchema.parse(args)
+        const read = getOpportunityDecisionRead(snapshot, parsed.opportunityId, context)
+        if (!read) return toolError('NOT_FOUND', `Opportunity ${parsed.opportunityId} was not found.`, false)
+        return success(read)
       }
       case 'get_opportunity_assessment': {
         const parsed = getOpportunityAssessmentSchema.parse(args)

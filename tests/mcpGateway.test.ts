@@ -22,6 +22,7 @@ describe('PJSDAS MCP gateway alpha', () => {
       'get_today_brief',
       'get_today_plan',
       'list_opportunities',
+      'get_opportunity_detail',
       'get_opportunity_assessment',
       'get_application_portfolio',
       'get_prep_graph',
@@ -41,6 +42,7 @@ describe('PJSDAS MCP gateway alpha', () => {
     ['get_today_brief', { availableMinutes: 180, agendaHorizonDays: 7 }],
     ['get_today_plan', { availableMinutes: 180 }],
     ['list_opportunities', { limit: 10 }],
+    ['get_opportunity_detail', { opportunityId: 'opp-alpha' }],
     ['get_opportunity_assessment', { opportunityId: 'opp-alpha' }],
     ['get_application_portfolio', { limit: 10 }],
     ['get_prep_graph', { limit: 10 }],
@@ -53,7 +55,7 @@ describe('PJSDAS MCP gateway alpha', () => {
     const result = await invokeReadTool(source, name, args)
     expect(result.isError).not.toBe(true)
     const data = jsonFrom(result)
-    if (name === 'get_today_brief') {
+    if (name === 'get_today_brief' || name === 'get_opportunity_detail') {
       expect(data).toMatchObject({
         contractVersion: 1,
         workspaceRevision: 'demo-v1',

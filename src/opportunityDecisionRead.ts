@@ -106,6 +106,7 @@ export interface OpportunityDecisionListRead {
   displayTimezone: string
   inProgress: OpportunityDecisionRead[]
   worthPursuing: OpportunityDecisionRead[]
+  all: OpportunityDecisionRead[]
   endedCount: number
 }
 
@@ -406,6 +407,10 @@ export function buildOpportunityDecisionList(
     displayTimezone: ctx.timezone,
     inProgress: items.filter((item) => item.bucket === 'in_progress').sort(sort),
     worthPursuing: items.filter((item) => item.bucket === 'worth_pursuing').sort(sort),
+    all: [...items].sort((a, b) => {
+      const bucketOrder: Record<OpportunityDecisionBucket, number> = { in_progress: 0, worth_pursuing: 1, ended: 2 }
+      return bucketOrder[a.bucket] - bucketOrder[b.bucket] || sort(a, b)
+    }),
     endedCount: items.filter((item) => item.bucket === 'ended').length,
   }
 }
