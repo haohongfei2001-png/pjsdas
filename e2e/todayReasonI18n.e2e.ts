@@ -35,7 +35,7 @@ test('Today priority explanations follow UI language immediately without changin
 
   await page.evaluate(async ({ opportunity, action }) => {
     await new Promise<void>((resolve, reject) => {
-      const request = indexedDB.open('pjsdas', 9)
+      const request = indexedDB.open('pjsdas', 10)
       request.onerror = () => reject(request.error)
       request.onsuccess = () => {
         const db = request.result

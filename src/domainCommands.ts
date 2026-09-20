@@ -34,7 +34,7 @@ import {
 export type UserFactField = 'location' | 'compensationText' | 'applicationUrl'
 
 export type UserDomainCommand =
-  | { commandId: string; kind: 'record_application_submission'; opportunityId: string; occurredAt?: string }
+  | { commandId: string; kind: 'record_application_submission'; opportunityId: string; occurredAt?: string; reactivateConfirmed?: boolean }
   | {
       commandId: string
       kind: 'record_process_event'
@@ -298,7 +298,7 @@ export function applyUserDomainCommand(
   if (command.kind === 'record_application_submission') {
     const target = opportunity(next, command.opportunityId)
     if (!target) throw new Error(`Opportunity ${command.opportunityId} was not found.`)
-    if (target.participationStatus === 'abandoned') {
+    if (target.participationStatus === 'abandoned' && !command.reactivateConfirmed) {
       return {
         status: 'NEEDS_CONFIRMATION',
         snapshot,

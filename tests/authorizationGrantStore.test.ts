@@ -16,6 +16,12 @@ describe('delegated authorization grant store', () => {
       },
       {
         user_id: 'user-a',
+        client_id: 'client-a',
+        source_id: 'paia:owner-input',
+        capability: 'semantic_intake',
+      },
+      {
+        user_id: 'user-a',
         client_id: 'other-client',
         source_id: 'monitor:urgent-campus',
         capability: 'ingest_discovery_run',
@@ -28,14 +34,23 @@ describe('delegated authorization grant store', () => {
     })
 
     const grants = await store.listActiveForClient('user-a', 'client-a', 'user-token')
-    expect(grants).toEqual([{
-      userId: 'user-a',
-      clientId: 'client-a',
-      sourceId: 'gmail:primary',
-      capability: 'ingest_gmail_run',
-    }])
+    expect(grants).toEqual([
+      {
+        userId: 'user-a',
+        clientId: 'client-a',
+        sourceId: 'gmail:primary',
+        capability: 'ingest_gmail_run',
+      },
+      {
+        userId: 'user-a',
+        clientId: 'client-a',
+        sourceId: 'paia:owner-input',
+        capability: 'semantic_intake',
+      },
+    ])
     expect(grantAllows(grants, 'ingest_gmail_run', 'gmail:primary')).toBe(true)
     expect(grantAllows(grants, 'ingest_gmail_run', 'gmail:secondary')).toBe(false)
     expect(grantAllows(grants, 'ingest_discovery_run', 'gmail:primary')).toBe(false)
+    expect(grantAllows(grants, 'semantic_intake', 'paia:owner-input')).toBe(true)
   })
 })

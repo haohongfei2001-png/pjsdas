@@ -30,7 +30,7 @@ async function seed(page: import('@playwright/test').Page) {
   await expect(page.getByRole('heading', { name: '今天', exact: true })).toBeVisible()
   await page.evaluate(async ({ opportunity, process }) => {
     await new Promise<void>((resolve, reject) => {
-      const request = indexedDB.open('pjsdas', 9)
+      const request = indexedDB.open('pjsdas', 10)
       request.onerror = () => reject(request.error)
       request.onsuccess = () => {
         const db = request.result
@@ -69,7 +69,7 @@ test('Pipeline and mobile opportunity cards localize canonical stored stages wit
 
   const stored = await page.evaluate(async () => {
     return new Promise<{ opportunityStage?: string; processStage?: string }>((resolve, reject) => {
-      const request = indexedDB.open('pjsdas', 9)
+      const request = indexedDB.open('pjsdas', 10)
       request.onerror = () => reject(request.error)
       request.onsuccess = () => {
         const db = request.result

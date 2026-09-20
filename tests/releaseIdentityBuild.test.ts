@@ -45,7 +45,7 @@ describe('build-embedded release identity', () => {
     expect(source).toMatch(/GENERATED_MIGRATION_SET_HASH = "sha256:[0-9a-f]{64}"/)
     expect(source).toContain('2026091903_controlled_audience.sql')
     expect(source).toContain('GENERATED_SNAPSHOT_SCHEMA = "pjsdas-local-snapshot"')
-    expect(source).toContain('GENERATED_SNAPSHOT_VERSION = 2')
+    expect(source).toContain('GENERATED_SNAPSHOT_VERSION = 3')
   })
 
   it('falls back to the checked-out git HEAD when provider Git metadata is unavailable', () => {

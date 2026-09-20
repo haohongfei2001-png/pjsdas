@@ -41,7 +41,7 @@ async function seedOpportunities(page: Page, opportunities: ReturnType<typeof so
   await expect(page.getByRole('heading', { name: '今天', exact: true })).toBeVisible()
   await page.evaluate(async (items) => {
     await new Promise<void>((resolve, reject) => {
-      const request = indexedDB.open('pjsdas', 9)
+      const request = indexedDB.open('pjsdas', 10)
       request.onerror = () => reject(request.error)
       request.onsuccess = () => {
         const db = request.result
@@ -76,7 +76,7 @@ async function readMutationState(page: Page) {
       actions: Array<{ id: string; title: string; opportunityId?: string; status: string }>
       changeSets: Array<{ id: string; status: string; operations: unknown[] }>
     }>((resolve, reject) => {
-      const request = indexedDB.open('pjsdas', 9)
+      const request = indexedDB.open('pjsdas', 10)
       request.onerror = () => reject(request.error)
       request.onsuccess = () => {
         const db = request.result

@@ -5,7 +5,7 @@ const BASE_URL = 'https://example.test'
 const METADATA_URL = `${BASE_URL}/.well-known/oauth-protected-resource`
 const RELEASE_SHA = '1234567890abcdef1234567890abcdef12345678'
 const DRIVE_REQUIRED_TOOLS = ['get_coverage_status', 'get_workspace_integrity', 'add_opportunities', 'ingest_discovery_run', 'ingest_gmail_run']
-const TRANSACTIONAL_REQUIRED_TOOLS = ['get_coverage_status', 'get_workspace_integrity', 'add_opportunities', 'apply_user_command', 'ingest_discovery_run', 'ingest_gmail_run']
+const TRANSACTIONAL_REQUIRED_TOOLS = ['get_coverage_status', 'get_workspace_integrity', 'add_opportunities', 'apply_user_command', 'semantic_intake', 'resolve_semantic_decision', 'undo_semantic_command', 'ingest_discovery_run', 'ingest_gmail_run']
 
 function health() {
   return {
@@ -28,11 +28,11 @@ function health() {
       migrationSetHash: 'sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
       schemaCompatibility: {
         snapshotSchema: 'pjsdas-local-snapshot',
-        snapshotVersion: 1,
+        snapshotVersion: 3,
       },
     },
     authenticatedMcp: {
-      toolSurfaceVersion: 'v3',
+      toolSurfaceVersion: 'v4',
       releaseRequiredTools: DRIVE_REQUIRED_TOOLS,
     },
     status: 'ok',
@@ -65,6 +65,10 @@ function health() {
       transactionalWorkspaceFoundation: 'v1',
       mutationCommandLedger: true,
       explicitUserCommands: 'v1',
+      semanticIntakeContract: 'v1',
+      decisionRequests: 'v1',
+      semanticCompensatingUndo: 'v1',
+      semanticServerWritePolicy: 'v1',
       opportunityParticipationState: 'v1',
       gmailCompleteConsumption: 'v1',
       discoverySourceVerification: 'v1',
@@ -185,7 +189,7 @@ describe('production self-test', () => {
       expectedMcpContractHash: 'sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
       expectedMigrationSetHash: 'sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
       expectedSnapshotSchema: 'pjsdas-local-snapshot',
-      expectedSnapshotVersion: 1,
+      expectedSnapshotVersion: 3,
       fetchImpl,
     })
     expect(result.ok).toBe(true)

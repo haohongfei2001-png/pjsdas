@@ -29,6 +29,7 @@ export interface SemanticBatchCompensation {
     domainCompensations: DomainCompensation[]
     decisionRequestIds: string[]
     receiptIds: string[]
+    restoreDecisionRequests?: DecisionRequest[]
   }
 }
 
@@ -355,7 +356,12 @@ function toDomainCommand(
 ): UserDomainCommand {
   const commandId = `semantic:${observation.inputId}:${candidate.id}`
   if (candidate.kind === 'application_submitted') {
-    return { commandId, kind: 'record_application_submission', opportunityId: opportunity!.id, occurredAt: candidate.occurredAt }
+    return {
+      commandId,
+      kind: 'record_application_submission',
+      opportunityId: opportunity!.id,
+      occurredAt: candidate.occurredAt,
+    }
   }
   if (candidate.kind === 'process_event') {
     return {
@@ -544,6 +550,7 @@ function applyCandidate(
   }
 
   const command = toDomainCommand(observation, candidate, opportunity, occurrence)
+  if (command.kind === 'record_application_submission' && resolution?.confirm) command.reactivateConfirmed = true
   const result = applyUserDomainCommand(snapshot, command, now)
   if (result.status === 'NEEDS_CONFIRMATION') {
     return {
@@ -813,7 +820,12 @@ export function resolveSemanticDecision(
       summary: choice.consequence,
       compensation: {
         operation: 'semantic_batch',
-        payload: { domainCompensations: [], decisionRequestIds: [previousRequest.id], receiptIds: [] },
+        payload: {
+          domainCompensations: [],
+          decisionRequestIds: [],
+          receiptIds: [],
+          restoreDecisionRequests: [previousRequest],
+        },
       },
     }
   }
@@ -872,6 +884,7 @@ export function resolveSemanticDecision(
         domainCompensations: applied.status === 'applied' && applied.compensation ? [applied.compensation] : [],
         decisionRequestIds: [previousRequest.id],
         receiptIds: [resolutionReceipt.id],
+        restoreDecisionRequests: [previousRequest],
       },
     },
   }
@@ -893,6 +906,11 @@ export function applySemanticCompensation(
       request.state = 'superseded'
       request.updatedAt = timestamp
     }
+  }
+  for (const previous of compensation.payload.restoreDecisionRequests ?? []) {
+    const index = (next.data.decisionRequests ?? []).findIndex((item) => item.id === previous.id)
+    if (index >= 0) next.data.decisionRequests![index] = structuredClone(previous)
+    else next.data.decisionRequests!.push(structuredClone(previous))
   }
   for (const id of compensation.payload.receiptIds) {
     const item = (next.data.semanticReceipts ?? []).find((receipt) => receipt.id === id)

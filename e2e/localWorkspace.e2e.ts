@@ -36,7 +36,7 @@ async function seedLocalWorkspace(page: Page) {
 
   await page.evaluate(async ({ opportunity, action }) => {
     await new Promise<void>((resolve, reject) => {
-      const request = indexedDB.open('pjsdas', 9)
+      const request = indexedDB.open('pjsdas', 10)
       request.onerror = () => reject(request.error)
       request.onsuccess = () => {
         const db = request.result
@@ -82,7 +82,7 @@ test('critical local-first action flow survives completion, undo, and browser re
 
   const persistedStatus = await page.evaluate(async () => {
     return new Promise<string | undefined>((resolve, reject) => {
-      const request = indexedDB.open('pjsdas', 9)
+      const request = indexedDB.open('pjsdas', 10)
       request.onerror = () => reject(request.error)
       request.onsuccess = () => {
         const db = request.result
