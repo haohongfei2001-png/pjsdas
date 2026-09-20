@@ -101,6 +101,174 @@ export interface ScheduleNode {
   createdAt: string
   updatedAt: string
 }
+export type SemanticIntakeSourceKind = 'web' | 'paia' | 'gmail' | 'mcp' | 'iphone'
+export type SemanticStatementMode =
+  | 'assertion'
+  | 'current_intent'
+  | 'question'
+  | 'quote'
+  | 'example'
+  | 'hypothetical'
+  | 'rewrite_request'
+
+export type SemanticConfidence = 'high' | 'medium' | 'low'
+
+export interface SemanticIntakeSourceRef {
+  kind: SemanticIntakeSourceKind
+  sourceId: string
+  sourceRecordId: string
+  sourceVersion?: string
+  observedAt: string
+  assertedAt?: string
+  timezone: string
+  authorizationGrantId?: string
+}
+
+export interface SemanticTargetRef {
+  opportunityId?: string
+  company?: string
+  role?: string
+  occurrenceId?: string
+  scheduleNodeId?: string
+  occurrenceKind?: ScheduleNodeKind
+}
+
+export interface SemanticCandidateBase {
+  id: string
+  target?: SemanticTargetRef
+  objectConfidence: SemanticConfidence
+  eventConfidence: SemanticConfidence
+  temporalConfidence?: SemanticConfidence
+  evidenceRefs: string[]
+  sourceVersionRefs: string[]
+}
+
+export type SemanticCandidate =
+  | (SemanticCandidateBase & {
+      kind: 'application_submitted'
+      occurredAt?: string
+    })
+  | (SemanticCandidateBase & {
+      kind: 'process_event'
+      eventType: ProcessEventType
+      occurredAt?: string
+      dueAt?: string
+      duePrecision?: DatePrecision
+      timingMode?: ActionTimingMode
+      estimatedMinutes?: number
+      notes?: string
+    })
+  | (SemanticCandidateBase & {
+      kind: 'opportunity_deadline'
+      deadline: string
+      precision: DatePrecision
+    })
+  | (SemanticCandidateBase & {
+      kind: 'occurrence_completed'
+      occurredAt?: string
+    })
+  | (SemanticCandidateBase & {
+      kind: 'occurrence_rescheduled'
+      temporal: ScheduleNodeTemporal
+    })
+  | (SemanticCandidateBase & {
+      kind: 'abandon_opportunity'
+      occurredAt?: string
+    })
+  | (SemanticCandidateBase & {
+      kind: 'manual_action'
+      title: string
+      dueAt?: string
+      duePrecision?: DatePrecision
+      estimatedMinutes?: number
+    })
+  | (SemanticCandidateBase & {
+      kind: 'external_withdrawal'
+    })
+
+export interface SemanticIntakeObservation {
+  contractVersion: 1
+  inputId: string
+  source: SemanticIntakeSourceRef
+  statementMode: SemanticStatementMode
+  originalText?: string
+  originalTextFingerprint?: string
+  contextRefs?: string[]
+  candidates: SemanticCandidate[]
+}
+
+export type DecisionRequestReason =
+  | 'ambiguous_target'
+  | 'ambiguous_occurrence'
+  | 'low_confidence'
+  | 'material_conflict'
+  | 'shared_governance'
+  | 'external_consequence'
+  | 'missing_required_field'
+  | 'target_abandoned'
+
+export type DecisionRequestState = 'open' | 'answered' | 'auto_resolved' | 'superseded' | 'expired'
+
+export interface SemanticResolutionTarget {
+  opportunityId?: string
+  occurrenceId?: string
+  confirm?: boolean
+  dismiss?: boolean
+}
+
+export interface DecisionRequestChoice {
+  id: string
+  label: string
+  consequence: string
+  resolution?: SemanticResolutionTarget
+}
+
+export interface DecisionRequestPayloadBinding {
+  contractVersion: 1
+  inputId: string
+  candidateId: string
+  source: SemanticIntakeSourceRef
+  statementMode: SemanticStatementMode
+  candidate: SemanticCandidate
+}
+
+export interface DecisionRequest {
+  id: string
+  reason: DecisionRequestReason
+  affectedObjects: Array<{ type: 'opportunity' | 'schedule_node' | 'application_group' | 'source'; id: string }>
+  question: string
+  choices: DecisionRequestChoice[]
+  recommendedChoiceId?: string
+  recommendationBasis?: string
+  evidenceRefs: string[]
+  payloadBinding: DecisionRequestPayloadBinding
+  expiresAt?: string
+  state: DecisionRequestState
+  answerChoiceId?: string
+  answeredAt?: string
+  createdAt: string
+  updatedAt: string
+}
+
+export type SemanticReceiptStatus = 'committed' | 'decision_required' | 'no_write' | 'undone'
+
+export interface SemanticIntakeReceipt {
+  id: string
+  inputId: string
+  sourceKind: SemanticIntakeSourceKind
+  sourceId: string
+  sourceRecordId: string
+  sourceVersion?: string
+  commandId?: string
+  status: SemanticReceiptStatus
+  summary: string
+  affectedObjects: Array<{ type: 'opportunity' | 'schedule_node' | 'action' | 'process' | 'decision_request'; id: string }>
+  decisionRequestIds: string[]
+  undoAvailable: boolean
+  createdAt: string
+  updatedAt: string
+}
+
 export type DiscoveryConfidence = 'high' | 'medium' | 'low'
 export type DiscoveryReviewDecision = 'accepted' | 'rejected' | 'filtered' | 'duplicate' | 'deferred'
 export type DiscoveryRejectionReason =
@@ -307,6 +475,9 @@ export type TimelineSource =
   | 'changeset'
   | 'automation'
   | 'gmail'
+  | 'paia'
+  | 'mcp'
+  | 'iphone'
 export type TimelineKind =
   | 'history_imported'
   | 'opportunity_added'
@@ -330,6 +501,10 @@ export type TimelineKind =
   | 'discovery_deferred'
   | 'ingestion_recorded'
   | 'ingestion_run_completed'
+  | 'semantic_intake_applied'
+  | 'decision_requested'
+  | 'decision_resolved'
+  | 'semantic_undo_applied'
 export type TimelineChangeValue = string | number | boolean | null
 export interface TimelineFieldChange {
   before?: TimelineChangeValue

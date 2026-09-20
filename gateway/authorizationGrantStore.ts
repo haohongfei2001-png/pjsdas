@@ -64,6 +64,7 @@ export function createAuthorizationGrantStore(options: AuthorizationGrantStoreOp
           row.user_id !== userId
           || row.client_id !== clientId
           || !row.source_id
+          || typeof row.capability !== 'string'
           || !['ingest_discovery_run', 'ingest_gmail_run', 'semantic_intake'].includes(row.capability)
         ) return []
         return [{
