@@ -896,14 +896,6 @@ function EmptyState({ title, text }: { title: string; text: string }) {
   return <div className="empty-card"><strong>{title}</strong><p>{text}</p></div>
 }
 
-function TimeRiskBadge({ action, now, rules, compact = false }: { action: Action; now: Date; rules: DecisionRules; compact?: boolean }) {
-  const { lang } = useUiLanguage()
-  const zh = lang === 'zh'
-  if (!action.dueAt) return null
-  const risk = timeRisk(action.dueAt, now, rules)
-  return <div className={`deadline-countdown risk-${risk.level}${compact ? ' compact' : ''}`}><strong>{presentTimeRemaining(action.dueAt, now, zh)}</strong><span>{presentTimeRiskLevel(risk.level, zh)}</span></div>
-}
-
 function PriorityBadge({ value, zh }: { value: ReturnType<typeof computePriority>; zh: boolean }) {
   const label = value === 'expired'
     ? (zh ? '已过期' : 'Expired')
