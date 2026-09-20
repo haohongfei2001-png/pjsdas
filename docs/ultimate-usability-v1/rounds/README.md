@@ -3,8 +3,8 @@
 | Round | Purpose | Current state |
 |---|---|---|
 | UU-00 | Register/revalidate frozen design | COMPLETE |
-| UU-01 | Time / ScheduleNode model | READY |
-| UU-02 | Unified intake / write policy | NOT_READY |
+| UU-01 | Time / ScheduleNode model | COMPLETE |
+| UU-02 | Unified intake / write policy | READY — NOT STARTED |
 | UU-03 | TodayBrief / agenda | NOT_READY |
 | UU-04 | Final Web shell / Today | NOT_READY |
 | UU-05 | Opportunities / detail | NOT_READY |
