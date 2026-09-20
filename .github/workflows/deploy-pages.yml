@@ -254,6 +254,7 @@ jobs:
                       (!expectedApi || topology.canonicalApiOrigin === expectedApi);
                     const expectedTools = [
                       "get_today_brief",
+                      "get_opportunity_detail",
                       "get_coverage_status",
                       "get_workspace_integrity",
                       "add_opportunities",
@@ -306,6 +307,8 @@ jobs:
                       capabilities.semanticServerWritePolicy === "v1" &&
                       capabilities.todayBriefReadModel === "v1" &&
                       capabilities.todayAgendaReadModel === "v1" &&
+                      capabilities.opportunityDecisionReadModel === "v1" &&
+                      capabilities.opportunityConclusionDetail === "v1" &&
                       capabilities.latestStartPlanning === "v1" &&
                       capabilities.opportunityParticipationState === "v1" &&
                       capabilities.gmailCompleteConsumption === "v1" &&
@@ -316,7 +319,7 @@ jobs:
                       capabilities.connectedOriginMigration === "v1" &&
                       capabilities.releaseCandidateManifest === "v1" &&
                       topologyReady &&
-                      authenticatedMcp.toolSurfaceVersion === "v5" &&
+                      authenticatedMcp.toolSurfaceVersion === "v6" &&
                       releaseToolsReady;
                     process.exit(ready ? 0 : 1);
                   } catch {

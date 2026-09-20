@@ -11,10 +11,11 @@ const serverFactory = readFileSync(new URL('../gateway/serverFactory.ts', import
 const authenticatedRuntime = readFileSync(new URL('../gateway/authenticatedRemoteHttp.ts', import.meta.url), 'utf8')
 
 describe('authenticated MCP release tool surface', () => {
-  it('uses a stable v5 contract while exposing P1 commands only for transactional authority', () => {
-    expect(AUTHENTICATED_MCP_TOOL_SURFACE_VERSION).toBe('v5')
+  it('uses a stable v6 contract while exposing P1 commands only for transactional authority', () => {
+    expect(AUTHENTICATED_MCP_TOOL_SURFACE_VERSION).toBe('v6')
     expect(AUTHENTICATED_MCP_BASE_RELEASE_REQUIRED_TOOLS).toEqual([
       'get_today_brief',
+      'get_opportunity_detail',
       'get_coverage_status',
       'get_workspace_integrity',
       'add_opportunities',
@@ -23,6 +24,7 @@ describe('authenticated MCP release tool surface', () => {
     ])
     expect(AUTHENTICATED_MCP_TRANSACTIONAL_RELEASE_REQUIRED_TOOLS).toEqual([
       'get_today_brief',
+      'get_opportunity_detail',
       'get_coverage_status',
       'get_workspace_integrity',
       'add_opportunities',
@@ -35,7 +37,9 @@ describe('authenticated MCP release tool surface', () => {
     ])
     expect(authenticatedMcpReleaseRequiredTools('google-drive')).not.toContain('apply_user_command')
     expect(authenticatedMcpReleaseRequiredTools('google-drive')).toContain('get_today_brief')
+    expect(authenticatedMcpReleaseRequiredTools('google-drive')).toContain('get_opportunity_detail')
     expect(authenticatedMcpReleaseRequiredTools('transactional')).toContain('get_today_brief')
+    expect(authenticatedMcpReleaseRequiredTools('transactional')).toContain('get_opportunity_detail')
     expect(authenticatedMcpReleaseRequiredTools('transactional')).toContain('apply_user_command')
     expect(authenticatedMcpReleaseRequiredTools('transactional')).toContain('semantic_intake')
     expect(authenticatedMcpReleaseRequiredTools('transactional')).toContain('resolve_semantic_decision')

@@ -2,6 +2,7 @@ export const MCP_TOOL_NAMES = {
   todayBrief: 'get_today_brief',
   todayPlan: 'get_today_plan',
   opportunities: 'list_opportunities',
+  opportunityDetail: 'get_opportunity_detail',
   opportunityAssessment: 'get_opportunity_assessment',
   applicationPortfolio: 'get_application_portfolio',
   prepGraph: 'get_prep_graph',
@@ -26,6 +27,7 @@ export type WorkspaceAuthority = 'google-drive' | 'transactional'
 
 export const AUTHENTICATED_MCP_BASE_RELEASE_REQUIRED_TOOLS = [
   MCP_TOOL_NAMES.todayBrief,
+  MCP_TOOL_NAMES.opportunityDetail,
   MCP_TOOL_NAMES.coverageStatus,
   MCP_TOOL_NAMES.workspaceIntegrity,
   MCP_TOOL_NAMES.explicitOpportunityWrite,
@@ -35,6 +37,7 @@ export const AUTHENTICATED_MCP_BASE_RELEASE_REQUIRED_TOOLS = [
 
 export const AUTHENTICATED_MCP_TRANSACTIONAL_RELEASE_REQUIRED_TOOLS = [
   MCP_TOOL_NAMES.todayBrief,
+  MCP_TOOL_NAMES.opportunityDetail,
   MCP_TOOL_NAMES.coverageStatus,
   MCP_TOOL_NAMES.workspaceIntegrity,
   MCP_TOOL_NAMES.explicitOpportunityWrite,
@@ -52,4 +55,4 @@ export function authenticatedMcpReleaseRequiredTools(authority: WorkspaceAuthori
     : [...AUTHENTICATED_MCP_BASE_RELEASE_REQUIRED_TOOLS]
 }
 
-export const AUTHENTICATED_MCP_TOOL_SURFACE_VERSION = 'v5' as const
+export const AUTHENTICATED_MCP_TOOL_SURFACE_VERSION = 'v6' as const

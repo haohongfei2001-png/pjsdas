@@ -24,8 +24,8 @@ describe('backend-first release gate', () => {
     expect(workflow).toContain('capabilities.gmailCompleteConsumption === "v1"')
     expect(workflow).toContain('capabilities.discoverySourceVerification === "v1"')
     expect(workflow).toContain('capabilities.discoveryFactAssessmentSeparation === true')
-    expect(workflow).toContain('authenticatedMcp.toolSurfaceVersion === "v5"')
-    for (const tool of ['get_today_brief', 'get_coverage_status', 'get_workspace_integrity', 'add_opportunities', 'ingest_discovery_run', 'ingest_gmail_run']) {
+    expect(workflow).toContain('authenticatedMcp.toolSurfaceVersion === "v6"')
+    for (const tool of ['get_today_brief', 'get_opportunity_detail', 'get_coverage_status', 'get_workspace_integrity', 'add_opportunities', 'ingest_discovery_run', 'ingest_gmail_run']) {
       expect(workflow).toContain(`"${tool}"`)
     }
     expect(workflow).toContain('expectedAuthority === "transactional" ? [')
@@ -52,6 +52,8 @@ describe('backend-first release gate', () => {
     expect(health).toContain('authenticatedMcpToolSurface: true')
     expect(health).toContain("todayBriefReadModel: 'v1'")
     expect(health).toContain("todayAgendaReadModel: 'v1'")
+    expect(health).toContain("opportunityDecisionReadModel: 'v1'")
+    expect(health).toContain("opportunityConclusionDetail: 'v1'")
     expect(health).toContain("latestStartPlanning: 'v1'")
     expect(health).toContain('toolSurfaceVersion: AUTHENTICATED_MCP_TOOL_SURFACE_VERSION')
     expect(health).toContain('releaseRequiredTools: authenticatedMcpReleaseRequiredTools(workspace.authority)')
