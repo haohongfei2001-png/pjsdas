@@ -1,4 +1,4 @@
-import { validateSnapshot, type PJSDASSnapshot } from '../src/snapshot.js'
+import { upgradeSnapshotToLatest, validateSnapshot, type PJSDASSnapshot } from '../src/snapshot.js'
 import { WorkspaceSourceError } from './workspaceSource.js'
 
 export type MutationPrincipalKind = 'first_party_web' | 'delegated_mcp' | 'automation'
@@ -72,12 +72,13 @@ function parseWorkspaceRow(row: Record<string, unknown>, userId: string): Connec
     throw new WorkspaceSourceError('WORKSPACE_INVALID', 'PJSDAS transactional workspace metadata is invalid.', false)
   }
   validateSnapshot(row.snapshot)
+  const snapshot = upgradeSnapshotToLatest(row.snapshot)
   return {
     workspaceId: row.id,
     userId,
-    snapshot: row.snapshot,
+    snapshot,
     revision: row.revision,
-    schemaVersion: row.schema_version,
+    schemaVersion: snapshot.version,
   }
 }
 
@@ -158,12 +159,13 @@ export function createTransactionalWorkspaceStore(options: TransactionalWorkspac
       migratedFrom?: string
     }): Promise<ConnectedWorkspaceRecord> {
       validateSnapshot(input.snapshot)
+      const snapshot = upgradeSnapshotToLatest(input.snapshot)
       const response = await request('/rest/v1/rpc/pjsdas_bootstrap_workspace', {
         method: 'POST',
         body: JSON.stringify({
           target_user_id: input.userId,
-          initial_snapshot: input.snapshot,
-          initial_schema_version: input.schemaVersion,
+          initial_snapshot: snapshot,
+          initial_schema_version: snapshot.version,
           initial_source_fingerprint: input.sourceFingerprint ?? null,
           initial_migrated_from: input.migratedFrom ?? null,
         }),
@@ -182,12 +184,13 @@ export function createTransactionalWorkspaceStore(options: TransactionalWorkspac
         userId: input.userId,
         snapshot: row.snapshot,
         revision: row.revision,
-        schemaVersion: input.schemaVersion,
+        schemaVersion: snapshot.version,
       }
     },
 
     async commitForUser(input: ConnectedCommitInput): Promise<ConnectedCommitResult> {
       validateSnapshot(input.snapshot)
+      const snapshot = upgradeSnapshotToLatest(input.snapshot)
       const response = await request('/rest/v1/rpc/pjsdas_commit_workspace', {
         method: 'POST',
         body: JSON.stringify({
@@ -196,8 +199,8 @@ export function createTransactionalWorkspaceStore(options: TransactionalWorkspac
           target_operation: input.operation,
           target_payload_hash: input.payloadHash,
           target_expected_revision: input.expectedRevision,
-          target_snapshot: input.snapshot,
-          target_schema_version: input.schemaVersion,
+          target_snapshot: snapshot,
+          target_schema_version: snapshot.version,
           target_principal_kind: input.principalKind,
           target_client_id: input.clientId ?? null,
           target_provenance: input.provenance ?? {},

@@ -1,4 +1,10 @@
-import { actionForProcessEvent, defaultMinutesForProcessEvent, defaultTimingModeForProcessEvent } from './processEvents.js'
+import {
+  actionForProcessEvent,
+  defaultMinutesForProcessEvent,
+  defaultTimingModeForProcessEvent,
+  processEventStageLabel,
+  stageForProcessEvent,
+} from './processEvents.js'
 import { timelineFromActionStatus, timelineFromProcessEvent } from './timeline.js'
 import type {
   Action,
@@ -175,6 +181,41 @@ function finalizeSnapshot(next: PJSDASSnapshot, timestamp: string) {
   validateSnapshot(next)
 }
 
+function upsertProcessAtEventStage(next: PJSDASSnapshot, target: Opportunity, event: ProcessEvent) {
+  const stage = stageForProcessEvent(event.type)
+  if (!stage) return
+  const stageLabel = processEventStageLabel(event)
+  target.processStage = stage
+  target.currentStageLabel = stageLabel
+  target.effectiveProcessEventId = event.id
+  target.effectiveProcessEventAt = event.occurredAt
+  target.locallyManaged = true
+  const existing = next.data.processes.find((item) => item.opportunityId === target.id)
+  if (existing) {
+    existing.company = target.company
+    existing.role = target.role
+    existing.stage = stage
+    existing.stageLabel = stageLabel
+    existing.lastProgressAt = event.occurredAt
+    existing.effectiveProcessEventId = event.id
+    existing.effectiveProcessEventAt = event.occurredAt
+    existing.locallyManaged = true
+    return
+  }
+  next.data.processes.push({
+    id: `local-process:${target.id}`,
+    opportunityId: target.id,
+    company: target.company,
+    role: target.role,
+    stage,
+    stageLabel,
+    lastProgressAt: event.occurredAt,
+    effectiveProcessEventId: event.id,
+    effectiveProcessEventAt: event.occurredAt,
+    locallyManaged: true,
+  })
+}
+
 function ensureUserFacts(target: Opportunity, timestamp: string) {
   const existing = target.detail?.userFacts
   target.detail = {
@@ -278,6 +319,7 @@ export function applyUserDomainCommand(
     next.data.processEvents.push(event)
     const generated = actionForProcessEvent(event)
     if (generated) next.data.actions.push({ ...generated, duePrecision: command.duePrecision })
+    upsertProcessAtEventStage(next, target, event)
     appendTimeline(next, {
       ...timelineFromProcessEvent(event, 'user_action', timestamp),
       id: `timeline:command:${stableHash(command.commandId)}`,

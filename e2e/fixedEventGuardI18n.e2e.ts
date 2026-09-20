@@ -32,7 +32,7 @@ const processEvent = {
 async function seedPastEvent(page: Page) {
   await page.evaluate(async ({ opportunity, processEvent }) => {
     await new Promise<void>((resolve, reject) => {
-      const request = indexedDB.open('pjsdas', 8)
+      const request = indexedDB.open('pjsdas', 9)
       request.onerror = () => reject(request.error)
       request.onsuccess = () => {
         const db = request.result

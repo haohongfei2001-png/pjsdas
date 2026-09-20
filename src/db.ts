@@ -13,6 +13,7 @@ import {
   cancelScheduleNodeForProcessEvent,
   effectiveScheduleNodeState,
   ensureScheduleContractInPlace,
+  normalizeProcessSemantics,
   scheduleNodeForProcessEvent,
   syncScheduleNodeForActionStatus,
 } from './scheduleNodes.js'
@@ -211,16 +212,39 @@ export async function getAllProcesses() {
     db.getAll('processEvents'),
     db.getAll('actions'),
   ])
-  return overlayProcessEventsOnProcesses(processes, opportunities, events, actions)
+  const overlaid = overlayProcessEventsOnProcesses(processes, opportunities, events, actions)
+  return normalizeProcessSemantics(overlaid, opportunities, events, actions)
 }
 
 export async function getAllProcessEvents() {
   return (await dbPromise).getAll('processEvents')
 }
 
+async function ensureLocalScheduleBackfill(db: Awaited<typeof dbPromise>) {
+  const [opportunities, processes, processEvents, actions, prep, scheduleNodes] = await Promise.all([
+    db.getAll('opportunities'),
+    db.getAll('processes'),
+    db.getAll('processEvents'),
+    db.getAll('actions'),
+    db.getAll('prep'),
+    db.getAll('scheduleNodes'),
+  ])
+  const contract = { opportunities, processes, processEvents, actions, prep, scheduleNodes }
+  const beforeNodeCount = scheduleNodes.length
+  const beforeProcesses = JSON.stringify(processes)
+  ensureScheduleContractInPlace(contract)
+  if (contract.scheduleNodes!.length !== beforeNodeCount || JSON.stringify(contract.processes) !== beforeProcesses) {
+    const tx = db.transaction(['scheduleNodes', 'processes'], 'readwrite')
+    for (const node of contract.scheduleNodes ?? []) await tx.objectStore('scheduleNodes').put(node)
+    for (const process of contract.processes) await tx.objectStore('processes').put(process)
+    await tx.done
+  }
+  return contract
+}
+
 export async function getAllScheduleNodes(now = new Date()) {
-  const nodes = await (await dbPromise).getAll('scheduleNodes')
-  return nodes.map((node) => ({
+  const contract = await ensureLocalScheduleBackfill(await dbPromise)
+  return (contract.scheduleNodes ?? []).map((node) => ({
     ...node,
     state: effectiveScheduleNodeState(node, now),
   }))
@@ -841,6 +865,7 @@ export async function applyChangeSet(id: string) {
 export async function exportLocalSnapshot() {
   const db = await dbPromise
   await ensureTimelineBackfill(db)
+  await ensureLocalScheduleBackfill(db)
   const [opportunities, processes, processEvents, scheduleNodes, actions, prep, applicationGroups, decisionRules, discoveryProfile, discoveryInbox, timeline, changeSets, meta] =
     await Promise.all([
       db.getAll('opportunities'),
@@ -908,10 +933,11 @@ export async function restoreLocalSnapshot(snapshot: PJSDASSnapshot) {
 
   await Promise.all(DATA_STORES.map((storeName) => tx.objectStore(storeName).clear()))
 
-  for (const item of snapshot.data.opportunities) await tx.objectStore('opportunities').put(item)
-  for (const item of snapshot.data.processes) await tx.objectStore('processes').put(item)
-  for (const item of snapshot.data.processEvents) await tx.objectStore('processEvents').put(item)
-  for (const item of snapshot.data.actions) await tx.objectStore('actions').put(item)
+  for (const item of latest.data.opportunities) await tx.objectStore('opportunities').put(item)
+  for (const item of latest.data.processes) await tx.objectStore('processes').put(item)
+  for (const item of latest.data.processEvents) await tx.objectStore('processEvents').put(item)
+  for (const item of latest.data.scheduleNodes ?? []) await tx.objectStore('scheduleNodes').put(item)
+  for (const item of latest.data.actions) await tx.objectStore('actions').put(item)
   for (const item of latest.data.prep) await tx.objectStore('prep').put(item)
   for (const item of latest.data.applicationGroups) await tx.objectStore('applicationGroups').put(item)
   await tx.objectStore('decisionRules').put(latest.data.decisionRules ?? createDefaultDecisionRules())
