@@ -13,11 +13,13 @@ describe('UU-04 Web information architecture', () => {
     expect(app).not.toContain("type Surface = 'today' | 'opportunities' | 'attention'")
   })
 
-  it('keeps opportunity, pipeline, and preparation as one contextual working set', () => {
-    expect(app).toContain("type OpportunityTab = 'opportunities' | 'pipeline' | 'prepare'")
-    expect(app).toContain('<ApplicationPortfolioDock />')
+  it('keeps opportunity decisions and preparation in one contextual working set without a separate Pipeline module', () => {
+    expect(app).toContain("type OpportunityTab = 'opportunities' | 'prepare'")
+    expect(app).toContain('<OpportunityDecisionList')
     expect(app).toContain('<PrepGraphDock />')
     expect(app).toContain("onTabChange('prepare')")
+    expect(app).not.toContain("type OpportunityTab = 'opportunities' | 'pipeline' | 'prepare'")
+    expect(app).not.toContain('<ApplicationPortfolioDock />')
   })
 
   it('uses DecisionRequest as the conditional intervention surface and History as audit only', () => {
