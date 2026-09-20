@@ -1,6 +1,6 @@
 # PJSDAS v1.1.0-rc.1 — Round 5 Readiness
 
-Status: **IMPLEMENTATION READY / PLATFORM GATES CONFIGURED / PUBLICATION DISARMED**
+Status: **IMPLEMENTATION READY / PLATFORM GATES CONFIGURED / PUBLICATION ARMED**
 
 Package: **PJSDAS-AI-OPERATED-PRODUCTION-v1 / Round 5**
 
@@ -12,7 +12,7 @@ code/data readiness from repository/platform publication controls.
 - product version: `1.1.0-rc.1`
 - Git tag when armed: `v1.1.0-rc.1`
 - release channel: `prerelease`
-- publication switch: **OFF**
+- publication switch: **ON**
 - authenticated MCP runtime: independent compatibility version
 - exact deployment identity: Git commit SHA
 
@@ -189,15 +189,14 @@ domain values.
 
 ## Publication decision
 
-**v1.1.0-rc.1 publication remains DISARMED, but the candidate is now eligible for an explicit arm decision.**
+**v1.1.0-rc.1 publication is ARMED by explicit owner decision.**
 
-`.github/release-plan.json` remains `publishOnProductionSuccess=false` by design. The previous
-repository-level supply-chain blockers have been configured, and the current exact-SHA production
-chain is green. Keeping the switch off now represents owner publication intent, not an unresolved
-technical blocker.
+`.github/release-plan.json` is now `publishOnProductionSuccess=true`. This does not bypass any
+release gate: the arm commit must pass its own exact-SHA CI / browser / Pages / Production Self-Test
+chain, after which the release workflow must re-verify branch protection and Immutable Releases
+before creating the prerelease.
 
-When the owner explicitly arms publication, the release workflow must still fail closed unless all
-of the following remain true:
+The armed release workflow must still fail closed unless all of the following remain true:
 
 1. successful exact-SHA production chain;
 2. protected default branch;

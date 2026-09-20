@@ -22,15 +22,15 @@ const publishWorkflow = readFileSync(
 )
 
 describe('Round 5 RC readiness contract', () => {
-  it('stages rc.1 as a disarmed prerelease', () => {
+  it('arms rc.1 as a guarded prerelease', () => {
     expect(plan.publicVersion).toBe('1.1.0-rc.1')
     expect(plan.tag).toBe('v1.1.0-rc.1')
     expect(plan.releaseChannel).toBe('prerelease')
-    expect(plan.publishOnProductionSuccess).toBe(false)
+    expect(plan.publishOnProductionSuccess).toBe(true)
   })
 
   it('records configured platform gates without weakening the publication workflow', () => {
-    expect(readiness).toContain('IMPLEMENTATION READY / PLATFORM GATES CONFIGURED / PUBLICATION DISARMED')
+    expect(readiness).toContain('IMPLEMENTATION READY / PLATFORM GATES CONFIGURED / PUBLICATION ARMED')
     expect(readiness).toContain('main.protected = true')
     expect(readiness).toContain('PJSDAS_RELEASE_ADMIN_TOKEN')
     expect(readiness).toContain('Release immutability')

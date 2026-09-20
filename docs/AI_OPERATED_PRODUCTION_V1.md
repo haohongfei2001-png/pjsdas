@@ -182,9 +182,9 @@ Not in scope:
    - pre-closure exact-SHA candidate `main@73943120cc4d32b547f00824b1ed112216dc3e05`
      passed CI, Browser E2E, GitHub Pages deployment, and Production Self-Test; any later closure
      commit must pass the same exact-SHA chain before publication;
-   - publication remains intentionally **DISARMED** until the owner explicitly arms
-     `v1.1.0-rc.1`; the armed workflow must still re-verify branch protection and Immutable
-     Releases before creating the prerelease.
+   - publication is now explicitly **ARMED** for `v1.1.0-rc.1` by owner decision; the arm commit
+     must pass its own exact-SHA production chain, and the release workflow must still re-verify
+     branch protection and Immutable Releases before creating the prerelease.
 7. Round 6 — Personal Canary → Controlled Launch
 
 Do not activate the new P1 direct-write surface until connected authority is transactional.
@@ -192,7 +192,7 @@ Round 3 is complete. Future Web work must preserve the same Domain Command/state
 instead of creating a second mutation model. Round 4 is complete at the source/schema/topology layer. Exact domain attachment remains an
 external deployment input because no trustworthy canonical personal-domain value was discoverable
 from the repository or current deployment metadata. Round 5 is complete as a hardening/verification round. Its current result is
-**IMPLEMENTATION READY / PLATFORM GATES CONFIGURED / PUBLICATION DISARMED**.
-Round 6 must not start owner-canary migration/authority cutover before the explicit RC publication
-decision and its authenticated release preflight complete. The current gate/evidence matrix is in
+**IMPLEMENTATION READY / PLATFORM GATES CONFIGURED / PUBLICATION ARMED**.
+Round 6 must not start owner-canary migration/authority cutover before the armed RC publication
+workflow and its authenticated release preflight complete successfully. The current gate/evidence matrix is in
 `docs/RC_1_1_0_READINESS.md`.
