@@ -148,6 +148,53 @@ function operationCandidate(operation: ReturnType<typeof parseProgressUpdate>['e
   return undefined
 }
 
+function unresolvedCandidate(
+  operation: ReturnType<typeof parseProgressUpdate>['unresolved'][number],
+  opportunities: Awaited<ReturnType<typeof getAllOpportunities>>,
+): SemanticCandidate | undefined {
+  const ids = operation.candidates?.map((item) => item.id) ?? []
+  const matched = ids
+    .map((id) => opportunities.find((item) => item.id === id))
+    .filter((item): item is NonNullable<typeof item> => Boolean(item))
+  if (matched.length < 2) return undefined
+  const companies = [...new Set(matched.map((item) => item.company))]
+  if (companies.length !== 1) return undefined
+
+  const base = candidateBase(`semantic-${operation.id}`, operation.sourceText, 'high')
+  const target = { company: companies[0] }
+  if (/(?:不投|放弃|不考虑|不继续|退出)/.test(operation.sourceText)) {
+    return { ...base, kind: 'abandon_opportunity', target, occurredAt: operation.occurredAt }
+  }
+  if (/(?:投递|已投|申请)/.test(operation.sourceText)) {
+    return { ...base, kind: 'application_submitted', target, occurredAt: operation.occurredAt }
+  }
+  if (/(?:笔试).*(?:完成|做完|结束)|(?:完成|做完|结束).*(?:笔试)/.test(operation.sourceText)) {
+    return {
+      ...base,
+      kind: 'occurrence_completed',
+      target: { ...target, occurrenceKind: 'written_test' },
+      occurredAt: operation.occurredAt,
+    }
+  }
+  if (/(?:面试).*(?:完成|结束)|(?:完成|结束).*(?:面试)/.test(operation.sourceText)) {
+    return {
+      ...base,
+      kind: 'occurrence_completed',
+      target: { ...target, occurrenceKind: 'interview' },
+      occurredAt: operation.occurredAt,
+    }
+  }
+  if (/(?:测评).*(?:完成|做完|结束)|(?:完成|做完|结束).*(?:测评)/.test(operation.sourceText)) {
+    return {
+      ...base,
+      kind: 'occurrence_completed',
+      target: { ...target, occurrenceKind: 'assessment' },
+      occurredAt: operation.occurredAt,
+    }
+  }
+  return undefined
+}
+
 async function canonicalReferences(): Promise<CanonicalJobReference[]> {
   const items = await getAllDiscoveryInboxItems()
   return items
@@ -189,9 +236,15 @@ export async function submitWebSemanticCapture(
   ])
   const baselineFingerprint = await fingerprintWorkspace(baseline)
   const plan = parseProgressUpdate(trimmed, opportunities, now, references)
-  const candidates = plan.executable
+  const executableCandidates = plan.executable
     .map(operationCandidate)
     .filter((item): item is SemanticCandidate => Boolean(item))
+  const convertedUnresolved = plan.unresolved
+    .map((item) => ({ operation: item, candidate: unresolvedCandidate(item, opportunities) }))
+  const candidates = [
+    ...executableCandidates,
+    ...convertedUnresolved.flatMap((item) => item.candidate ? [item.candidate] : []),
+  ]
   const recordId = `capture:${now.getTime()}:${stableHash(trimmed)}`
   const observation: SemanticIntakeObservation = {
     contractVersion: 1,
@@ -216,7 +269,9 @@ export async function submitWebSemanticCapture(
     workspaceRevision: `local:${baselineFingerprint}`,
     now,
   })
-  const unresolved = plan.unresolved.map((item) => item.reason)
+  const unresolved = convertedUnresolved
+    .filter((item) => !item.candidate)
+    .map((item) => item.operation.reason)
   const ignored = plan.ignored.map((item) => item.reason)
 
   if (!result.changed) {

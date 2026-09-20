@@ -6,7 +6,7 @@ test('shell hides stale version copy and Opportunities uses the three-context la
 
   await expect(page.getByText('Local-first · v1.8')).toHaveCount(0)
   await expect(page.locator('.sidebar-note')).toHaveCount(0)
-  await expect(page.locator('.surface-sidebar-footer')).toContainText('决策优先')
+  await expect(page.locator('.surface-sidebar-footer')).toContainText('Today · Opportunities')
 
   await page.getByRole('button', { name: /机会/ }).click()
   await expect(page.getByRole('heading', { name: '机会、流程和准备在同一个工作面' })).toBeVisible()
@@ -19,7 +19,7 @@ test('shell hides stale version copy and Opportunities uses the three-context la
   expect(second).not.toBeNull()
   expect(Math.abs(first!.width - second!.width)).toBeLessThan(2)
 
-  await page.getByRole('button', { name: /设置/ }).click()
+  await page.locator('.ultimate-toolbar').getByRole('button', { name: /设置/ }).click()
   await expect(page.getByRole('heading', { name: '连接、自动化和长期控制' })).toBeVisible()
   await expect(page.getByText('PJSDAS ACCOUNT & DRIVE', { exact: true })).toBeVisible()
   await expect(page.getByText(/V1\.9/)).toHaveCount(0)

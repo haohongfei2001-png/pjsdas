@@ -130,7 +130,7 @@ async function readCoreState(page: Page) {
 }
 
 async function openBackup(page: Page) {
-  await page.locator('.surface-nav').getByRole('button', { name: /设置/ }).click()
+  await page.locator('.ultimate-toolbar').getByRole('button', { name: /设置/ }).click()
   await expect(page.getByRole('heading', { name: '连接、自动化和长期控制' })).toBeVisible()
   await page.locator('details.settings-group').filter({ hasText: '数据与恢复' }).locator('summary').click()
   await page.getByRole('button', { name: '本地备份' }).click()
@@ -140,7 +140,7 @@ async function openBackup(page: Page) {
 test('manual recruiting event creates one durable event/action, survives reload, and deletes cleanly', async ({ page }) => {
   await seedWorkspace(page)
 
-  await page.locator('.surface-nav').getByRole('button', { name: /设置|Settings/ }).click()
+  await page.locator('.ultimate-toolbar').getByRole('button', { name: /设置|Settings/ }).click()
   await page.locator('details.settings-group').filter({ hasText: /数据与恢复|Data & recovery/ }).locator('summary').click()
   await page.getByRole('button', { name: '+ 记录流程通知' }).click()
   await expect(page.getByRole('heading', { name: '记录真实流程通知' })).toBeVisible()
@@ -178,7 +178,7 @@ test('manual recruiting event creates one durable event/action, survives reload,
   expect(afterReload.events.map((item) => item.id)).toContain(eventId)
   expect(afterReload.actions.some((item) => item.processEventId === eventId)).toBe(true)
 
-  await page.locator('.surface-nav').getByRole('button', { name: /设置|Settings/ }).click()
+  await page.locator('.ultimate-toolbar').getByRole('button', { name: /设置|Settings/ }).click()
   await page.locator('details.settings-group').filter({ hasText: /数据与恢复|Data & recovery/ }).locator('summary').click()
   await page.getByRole('button', { name: '+ 记录流程通知' }).click()
   const persistedHistoryItem = page.locator('.event-history-item').filter({ hasText: opportunity.company })

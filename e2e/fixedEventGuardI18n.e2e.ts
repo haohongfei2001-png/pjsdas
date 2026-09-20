@@ -22,6 +22,7 @@ const processEvent = {
   type: 'interview_invite',
   occurredAt: '2026-09-01T00:00:00.000Z',
   dueAt: '2026-09-02T10:00:00.000Z',
+  duePrecision: 'datetime',
   timingMode: 'fixed',
   estimatedMinutes: 60,
   source: 'manual',
@@ -50,48 +51,46 @@ async function seedPastEvent(page: Page) {
   await page.reload()
 }
 
-test('past recruiting-event guard follows English UI and completion still resolves the generated action', async ({ page }) => {
+async function openCapture(page: Page) {
+  await page.locator('.ultimate-capture-button').click()
+  await expect(page.getByRole('heading', { name: '直接告诉 PJSDAS' })).toBeVisible()
+}
+
+test('elapsed recruiting node stays unresolved until an explicit completion fact resolves it', async ({ page }) => {
   await page.goto('/')
-  await expect(page.getByRole('heading', { name: '今天', exact: true })).toBeVisible()
   await seedPastEvent(page)
-  await page.locator('.surface-nav').getByRole('button', { name: /设置|Settings/ }).click()
+
+  const unresolved = page.locator('.ultimate-agenda-node.unresolved').filter({ hasText: '节点测试科技' })
+  await expect(unresolved).toBeVisible()
+  await expect(unresolved).toContainText('面试')
+  await expect(unresolved).toContainText('待确认')
+
+  await page.locator('.ultimate-toolbar').getByRole('button', { name: /设置|Settings/ }).click()
   const interfaceGroup = page.locator('details.settings-group > summary').filter({ hasText: /界面.*显示层|Interface.*Presentation/ }).locator('..')
   await interfaceGroup.locator('summary').click()
   await interfaceGroup.getByRole('button', { name: 'EN', exact: true }).click()
   await page.locator('.surface-nav').getByRole('button', { name: /Today/ }).click()
+  await expect(page.getByRole('heading', { name: 'Past · needs resolution' })).toBeVisible()
+  await expect(page.locator('.ultimate-agenda-node.unresolved').filter({ hasText: 'Resolve' })).toBeVisible()
 
-  const guard = page.getByRole('alert', { name: 'Past recruiting event needs confirmation' })
-  await expect(guard).toBeVisible()
-  await expect(guard).toContainText('has passed')
-  await expect(guard.getByRole('button', { name: 'Confirm completed' })).toBeVisible()
-  await expect(guard).not.toContainText('已经过期')
+  await page.locator('.ultimate-capture-button').click()
+  await page.locator('.ultimate-capture-input').fill('节点测试科技 AI产品经理 面试已经完成。')
+  await page.getByRole('button', { name: 'Tell PJSDAS', exact: true }).click()
+  await expect(page.getByRole('status')).toContainText('Clear facts were recorded')
+  await page.getByRole('button', { name: 'Close' }).click()
 
-  await guard.getByRole('button', { name: 'Confirm completed' }).click()
-  await expect(guard).toHaveCount(0)
+  await expect(page.locator('.ultimate-agenda-node.unresolved').filter({ hasText: '节点测试科技' })).toHaveCount(0)
 })
 
-test('past recruiting-event guard stays unresolved and surfaces persistence failure', async ({ page }) => {
+test('a question about an elapsed event remains read-only and does not complete it', async ({ page }) => {
   await page.goto('/')
-  await expect(page.getByRole('heading', { name: '今天', exact: true })).toBeVisible()
   await seedPastEvent(page)
 
-  const guard = page.getByRole('alert', { name: '过期流程节点待确认' })
-  await expect(guard).toBeVisible()
+  await openCapture(page)
+  await page.locator('.ultimate-capture-input').fill('节点测试科技 AI产品经理 面试完成了吗？')
+  await page.getByRole('button', { name: '告诉 PJSDAS', exact: true }).click()
+  await expect(page.getByRole('status')).toContainText('没有被当作当前事实写入')
+  await page.getByRole('button', { name: '关闭' }).click()
 
-  await page.evaluate(() => {
-    const original = IDBDatabase.prototype.transaction
-    IDBDatabase.prototype.transaction = function (storeNames, mode, options) {
-      const names = typeof storeNames === 'string' ? [storeNames] : Array.from(storeNames)
-      if (mode === 'readwrite' && names.includes('changeSets')) {
-        throw new DOMException('Injected fixed-event completion failure', 'QuotaExceededError')
-      }
-      return original.call(this, storeNames, mode, options)
-    }
-  })
-
-  await guard.getByRole('button', { name: '确认已完成' }).click()
-
-  await expect(guard).toBeVisible()
-  await expect(guard.locator('.fixed-guard-error')).toContainText('Injected fixed-event completion failure')
-  await expect(guard.getByRole('button', { name: '确认已完成' })).toBeEnabled()
+  await expect(page.locator('.ultimate-agenda-node.unresolved').filter({ hasText: '节点测试科技' })).toBeVisible()
 })

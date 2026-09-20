@@ -8,6 +8,7 @@ import { computePriority } from './decisionV3.js'
 import { parsePJSDASWorkbook } from './importExcelV2.js'
 import { prepPriorityRank, presentPrepPriority, presentPrepSourceState } from './prepSemantics.js'
 import { presentStageLabel } from './stagePresentation.js'
+import { presentRankingReasons } from './rankingReasonPresentation.js'
 import { currentUiLanguage, useUiLanguage } from './uiLanguage.js'
 import { DEFAULT_DECISION_RULES, type DecisionRules } from './decisionRules.js'
 import RulesView from './RulesView.js'
@@ -473,7 +474,7 @@ function TodaySurface({
 
   function reasonText(item: TodayBriefAction) {
     return item.whyNow.length
-      ? item.whyNow.join(' · ')
+      ? presentRankingReasons(item.whyNow, zh).join(' · ')
       : (zh ? '当前最值得处理' : 'Highest-value next move')
   }
 

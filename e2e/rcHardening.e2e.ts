@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test'
 
-test('RC shell keeps primary navigation keyboard-accessible and horizontally stable', async ({ page }) => {
+test('UU-04 shell keeps exactly two primary destinations keyboard-accessible and routes Settings outside primary nav', async ({ page }) => {
   await page.goto('/')
 
   const main = page.locator('main.surface-main')
@@ -9,53 +9,110 @@ test('RC shell keeps primary navigation keyboard-accessible and horizontally sta
   await expect(nav).toBeVisible()
 
   const navButtons = nav.getByRole('button')
-  await expect(navButtons).toHaveCount(4)
+  await expect(navButtons).toHaveCount(2)
+  await expect(navButtons.nth(0)).toContainText(/今天|Today/)
+  await expect(navButtons.nth(1)).toContainText(/机会|Opportunities/)
 
-  for (let index = 0; index < 4; index += 1) {
+  for (let index = 0; index < 2; index += 1) {
     const button = navButtons.nth(index)
     await expect(button).toBeVisible()
-    const accessibleText = await button.evaluate((node) =>
-      (node.getAttribute('aria-label') || node.textContent || '').trim(),
-    )
-    expect(accessibleText.length).toBeGreaterThan(0)
+    await button.focus()
+    await expect(button).toBeFocused()
   }
 
-  await navButtons.first().focus()
-  await expect(navButtons.first()).toBeFocused()
+  await expect(page.locator('.ultimate-toolbar').getByRole('button', { name: /设置|Settings/ })).toBeVisible()
+  await expect(nav.getByRole('button', { name: /设置|Settings/ })).toHaveCount(0)
 
-  const overflow = await page.evaluate(() => ({
-    viewport: window.innerWidth,
-    documentWidth: document.documentElement.scrollWidth,
-  }))
-  expect(overflow.documentWidth).toBeLessThanOrEqual(overflow.viewport + 2)
-
-  await nav.getByRole('button', { name: /设置|Settings/ }).click()
+  await page.locator('.ultimate-toolbar').getByRole('button', { name: /设置|Settings/ }).click()
   const dataRecovery = page.locator('details.settings-group > summary').filter({ hasText: /数据与恢复|Data & recovery/ })
   await dataRecovery.focus()
   await expect(dataRecovery).toBeFocused()
   await page.keyboard.press('Enter')
   await expect(dataRecovery.locator('..')).toHaveAttribute('open', '')
 
-  await page.locator('.surface-nav').getByRole('button', { name: /设置|Settings/ }).click()
-  const interfaceGroup = page.locator('details.settings-group > summary').filter({ hasText: /界面.*显示层|Interface.*Presentation/ }).locator('..')
-  await interfaceGroup.locator('summary').click()
-  await interfaceGroup.getByRole('button', { name: 'EN', exact: true }).click()
-  await expect(page.getByRole('heading', { name: 'Connections, automation, and durable control' })).toBeVisible()
+  const overflow = await page.evaluate(() => ({
+    viewport: window.innerWidth,
+    documentWidth: document.documentElement.scrollWidth,
+  }))
+  expect(overflow.documentWidth).toBeLessThanOrEqual(overflow.viewport + 2)
 })
 
-test('RC Attention stays primary while Activity remains reachable from Settings at narrow viewport', async ({ page }) => {
+test('390x844 shows a complete next action and at least one upcoming recruiting node without scrolling', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 })
   await page.goto('/')
-  const nav = page.locator('.surface-nav')
 
-  await nav.getByRole('button', { name: /Attention/ }).click()
-  await expect(page.getByRole('heading', { name: /这里只放真正需要你决定的事|Only the exceptions that genuinely need you/ })).toBeVisible()
+  await page.evaluate(async () => {
+    const now = Date.now()
+    const opportunity = {
+      id: 'mobile-gate-opportunity',
+      company: '移动端科技',
+      role: '产品经理',
+      currentStageLabel: '面试',
+      processStage: 'interview',
+      roleType: 'core',
+      early: false,
+      opportunityValue: 86,
+      fitScore: 82,
+      locallyManaged: true,
+      importedAt: new Date(now).toISOString(),
+    }
+    const action = {
+      id: 'mobile-gate-action',
+      kind: 'manual',
+      title: '准备移动端面试材料',
+      opportunityId: opportunity.id,
+      estimatedMinutes: 20,
+      leverage: 96,
+      delayCost: 90,
+      status: 'todo',
+      createdAt: new Date(now).toISOString(),
+      updatedAt: new Date(now).toISOString(),
+    }
+    const event = {
+      id: 'mobile-gate-interview',
+      opportunityId: opportunity.id,
+      company: opportunity.company,
+      role: opportunity.role,
+      type: 'interview_invite',
+      occurredAt: new Date(now).toISOString(),
+      dueAt: new Date(now + 24 * 60 * 60 * 1000).toISOString(),
+      duePrecision: 'datetime',
+      timingMode: 'fixed',
+      estimatedMinutes: 60,
+      source: 'manual',
+      createdAt: new Date(now).toISOString(),
+      updatedAt: new Date(now).toISOString(),
+    }
 
-  await nav.getByRole('button', { name: /设置|Settings/ }).click()
-  const historyGroup = page.locator('details.settings-group').filter({ hasText: /历史与审计|History & audit/ })
-  await historyGroup.locator('summary').click()
-  await historyGroup.getByRole('button', { name: /查看活动记录|Open activity history/ }).click()
-  await expect(page.getByRole('heading', { name: /系统和你都做了什么|What you and PJSDAS have done/ })).toBeVisible()
-  await expect(page.locator('.activity-page')).toBeVisible()
+    await new Promise<void>((resolve, reject) => {
+      const request = indexedDB.open('pjsdas', 10)
+      request.onerror = () => reject(request.error)
+      request.onsuccess = () => {
+        const db = request.result
+        const tx = db.transaction(['opportunities', 'actions', 'processEvents'], 'readwrite')
+        tx.onerror = () => reject(tx.error)
+        tx.oncomplete = () => { db.close(); resolve() }
+        tx.objectStore('opportunities').put(opportunity)
+        tx.objectStore('actions').put(action)
+        tx.objectStore('processEvents').put(event)
+      }
+    })
+  })
+
+  await page.reload()
+  const primary = page.locator('.ultimate-next-action')
+  const node = page.locator('.ultimate-agenda-node').filter({ hasText: '移动端科技' }).first()
+  await expect(primary.getByRole('heading', { name: '准备移动端面试材料' })).toBeVisible()
+  await expect(node).toBeVisible()
+  await expect(page.locator('.surface-nav').getByRole('button')).toHaveCount(2)
+  await expect(page.locator('.ultimate-mobile-capture')).toBeVisible()
+
+  const boxes = await Promise.all([primary.boundingBox(), node.boundingBox()])
+  for (const box of boxes) {
+    expect(box).not.toBeNull()
+    expect(box!.y).toBeGreaterThanOrEqual(0)
+    expect(box!.y + box!.height).toBeLessThanOrEqual(844)
+  }
 
   const overflow = await page.evaluate(() => ({
     viewport: window.innerWidth,

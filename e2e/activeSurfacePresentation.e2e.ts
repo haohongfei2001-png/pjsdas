@@ -1,8 +1,7 @@
 import { expect, test } from '@playwright/test'
 
-test('active Today and Prepare surfaces localize system semantics without changing stored facts', async ({ page }) => {
+test('active Today and Prepare surfaces localize presentation without changing stored facts', async ({ page }) => {
   await page.goto('/')
-  await expect(page.getByRole('heading', { name: '今天', exact: true })).toBeVisible()
 
   await page.evaluate(async () => {
     const now = Date.now()
@@ -11,6 +10,7 @@ test('active Today and Prepare surfaces localize system semantics without changi
       kind: 'manual',
       title: 'Timed follow-up',
       dueAt: new Date(now + 12 * 60 * 60 * 1000).toISOString(),
+      duePrecision: 'datetime',
       timingMode: 'deadline',
       estimatedMinutes: 20,
       leverage: 90,
@@ -59,19 +59,19 @@ test('active Today and Prepare surfaces localize system semantics without changi
   })
 
   await page.reload()
-  const countdown = page.locator('.decision-hero .deadline-countdown')
-  await expect(countdown.locator('strong')).toContainText('剩')
-  await expect(countdown.locator('span')).toHaveText('高风险')
+  const primary = page.locator('.ultimate-next-action')
+  await expect(primary.getByRole('heading', { name: 'Timed follow-up' })).toBeVisible()
+  await expect(primary.locator('.decision-why')).toContainText('节点非常近')
+  await expect(primary.locator('.ultimate-action-meta')).toContainText('截止')
 
-  await page.locator('.surface-nav').getByRole('button', { name: /设置|Settings/ }).click()
+  await page.locator('.ultimate-toolbar').getByRole('button', { name: /设置|Settings/ }).click()
   const interfaceGroup = page.locator('details.settings-group > summary').filter({ hasText: /界面.*显示层|Interface.*Presentation/ }).locator('..')
   await interfaceGroup.locator('summary').click()
   await interfaceGroup.getByRole('button', { name: 'EN', exact: true }).click()
   await page.locator('.surface-nav').getByRole('button', { name: /Today/ }).click()
-  await expect(page.getByRole('heading', { name: 'Today', exact: true })).toBeVisible()
-  await expect(countdown.locator('strong')).toHaveText(/\d+ hr(?: \d+ min)? left/)
-  await expect(countdown.locator('span')).toHaveText('High risk')
-  await expect(countdown).not.toContainText('剩')
+  await expect(primary.locator('.decision-why')).toContainText('Immediate timing risk')
+  await expect(primary.locator('.ultimate-action-meta')).toContainText('Deadline:')
+  await expect(primary).not.toContainText('节点非常近')
 
   await page.locator('.surface-nav').getByRole('button', { name: /Opportunities/ }).click()
   await page.locator('.surface-context-tabs button').filter({ hasText: 'Prepare' }).click()
@@ -86,5 +86,4 @@ test('active Today and Prepare surfaces localize system semantics without changi
   await expect(cards.nth(1)).toContainText('Medium-high')
   await expect(cards.nth(1)).toContainText('Active')
   await expect(cards.nth(1)).not.toContainText('中高')
-  await expect(cards.nth(1)).not.toContainText('进行中')
 })

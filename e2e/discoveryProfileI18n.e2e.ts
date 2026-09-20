@@ -4,8 +4,8 @@ test('Job discovery preferences are bilingual, persist, and never show stale sav
   await page.goto('/')
   await expect(page.getByRole('heading', { name: '今天', exact: true })).toBeVisible()
 
-  await page.locator('.surface-nav').getByRole('button', { name: /设置/ }).click()
-  await page.locator('.surface-nav').getByRole('button', { name: /设置|Settings/ }).click()
+  await page.locator('.ultimate-toolbar').getByRole('button', { name: /设置/ }).click()
+  await page.locator('.ultimate-toolbar').getByRole('button', { name: /设置|Settings/ }).click()
   const interfaceGroup = page.locator('details.settings-group > summary').filter({ hasText: /界面.*显示层|Interface.*Presentation/ }).locator('..')
   await interfaceGroup.locator('summary').click()
   await interfaceGroup.getByRole('button', { name: 'EN', exact: true }).click()
@@ -49,7 +49,7 @@ test('Job discovery preferences are bilingual, persist, and never show stale sav
 
   await page.reload()
   await expect(page.getByRole('heading', { name: 'Today', exact: true })).toBeVisible()
-  await page.locator('.surface-nav').getByRole('button', { name: /Settings/ }).click()
+  await page.locator('.ultimate-toolbar').getByRole('button', { name: /Settings/ }).click()
   await expect(page.getByRole('heading', { name: 'Connections, automation, and durable control' })).toBeVisible()
   await page.locator('details.settings-group').filter({ hasText: 'Discovery preferences' }).locator('summary').click()
   await expect(page.locator('.discovery-profile-card textarea').first()).toHaveValue('AI Product Manager\nBusiness Analysis')
