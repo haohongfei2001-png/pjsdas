@@ -1,8 +1,6 @@
-import { StrictMode, useEffect, useState } from 'react'
+import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import App from './AppV8.js'
-import CoverageIndicator from './CoverageIndicator.js'
-import FixedEventGuard from './FixedEventGuard.js'
 import { UiLanguageProvider } from './uiLanguage.js'
 import { CloudProvider, useCloud } from './cloud/CloudContext.js'
 import { AiAccessProvider } from './aiAccess/AiAccessContext.js'
@@ -15,20 +13,7 @@ import './usabilityFriction.css'
 import './productTruth.css'
 
 function Root() {
-  const [revision, setRevision] = useState(0)
-  const refresh = () => setRevision((value) => value + 1)
-  useEffect(() => {
-    const handleWorkspaceReplace = () => setRevision((value) => value + 1)
-    window.addEventListener('pjsdas:workspace-replaced', handleWorkspaceReplace)
-    return () => window.removeEventListener('pjsdas:workspace-replaced', handleWorkspaceReplace)
-  }, [])
-  return (
-    <>
-      <App key={revision} />
-      <FixedEventGuard key={`fixed-${revision}`} onChanged={refresh} />
-      <CoverageIndicator key={`coverage-${revision}`} />
-    </>
-  )
+  return <App />
 }
 
 function CloudReadyMcpProposalReview() {

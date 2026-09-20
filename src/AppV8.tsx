@@ -1,47 +1,34 @@
 import { useEffect, useMemo, useState } from 'react'
 import {
   applyActionStatusChangeSet,
-  applyChangeSet,
-  discardChangeSet,
-  getAllActions,
-  getAllApplicationGroups,
-  getAllChangeSets,
-  getAllOpportunities,
-  getAllPrep,
-  getAllProcesses,
-  getAllTimelineRecords,
-  getDecisionRules,
-  getLastImport,
+  exportLocalSnapshot,
   replaceImportedData,
 } from './db.js'
-import {
-  buildTimePlan,
-  computePriority,
-  rankActions,
-} from './decisionV3.js'
+import { computePriority } from './decisionV3.js'
 import { parsePJSDASWorkbook } from './importExcelV2.js'
 import { prepPriorityRank, presentPrepPriority, presentPrepSourceState } from './prepSemantics.js'
-import { presentRankingReasons } from './rankingReasonPresentation.js'
 import { presentStageLabel } from './stagePresentation.js'
-import { timeRisk } from './timeRisk.js'
-import { presentTimeRemaining, presentTimeRiskLevel } from './timeRiskPresentation.js'
 import { currentUiLanguage, useUiLanguage } from './uiLanguage.js'
 import { DEFAULT_DECISION_RULES, type DecisionRules } from './decisionRules.js'
 import RulesView from './RulesView.js'
 import TimelineView from './TimelineView.js'
-import AttentionView from './AttentionView.js'
-import { summarizeCoverage } from './ingestion.js'
 import CloudSettingsCard from './cloud/CloudSettingsCard.js'
 import DiscoveryProfileCard from './DiscoveryProfileCard.js'
 import ApplicationPortfolioDock from './ApplicationPortfolioDock.js'
 import PrepGraphDock from './PrepGraphDock.js'
-import ProgressInbox from './ProgressInbox.js'
 import ProcessEventDock from './ProcessEventDock.js'
 import LocalBackupDock from './LocalBackupDock.js'
 import ConnectedMigrationCard from './cloud/ConnectedMigrationCard.js'
 import OriginTransitionNotice from './OriginTransitionNotice.js'
 import OpportunityDetailDrawer, { type OpportunityDetailDestination } from './OpportunityDetailDrawer.js'
-import type { ChangeSetRecord } from './changeSet.js'
+import TellPjsdasCapture from './TellPjsdasCapture.js'
+import DecisionRequestsView from './DecisionRequestsView.js'
+import {
+  buildTodayBrief,
+  type TodayBrief as TodayBriefModel,
+  type TodayBriefAction,
+  type TodayBriefAgendaNode,
+} from './todayBrief.js'
 import type {
   Action,
   ApplicationGroup,
@@ -52,24 +39,32 @@ import type {
   ProcessRecord,
   TimelineRecord,
 } from './model.js'
+import type { PJSDASSnapshot } from './snapshot.js'
 import './timeplan.css'
 import './surfaceConsolidation.css'
 import './interactionDetail.css'
 import './webConsole.css'
+import './ultimateWeb.css'
 
-type Surface = 'today' | 'opportunities' | 'attention' | 'activity' | 'settings'
+type Surface = 'today' | 'opportunities' | 'decisions' | 'history' | 'settings'
+type PrimarySurface = 'today' | 'opportunities'
 type OpportunityTab = 'opportunities' | 'pipeline' | 'prepare'
 type CompletionFeedback = { id: string; title: string; previousStatus: Action['status']; error?: string }
-
-const surfaceLabels: Record<Surface, { zh: string; en: string; hintZh: string; hintEn: string }> = {
-  today: { zh: '今天', en: 'Today', hintZh: '下一步', hintEn: 'Next' },
-  opportunities: { zh: '机会', en: 'Opportunities', hintZh: '岗位与流程', hintEn: 'Jobs' },
-  attention: { zh: 'Attention', en: 'Attention', hintZh: '需要我', hintEn: 'Needs me' },
-  activity: { zh: '活动', en: 'Activity', hintZh: '历史与审计', hintEn: 'History' },
-  settings: { zh: '设置', en: 'Settings', hintZh: '控制与数据', hintEn: 'Control' },
+type RouteState = {
+  surface: Surface
+  capture: boolean
+  agendaExpanded: boolean
+  opportunityId?: string
 }
 
-const primarySurfaces: Surface[] = ['today', 'opportunities', 'attention', 'settings']
+const APP_BASE = import.meta.env.BASE_URL === '/' ? '' : import.meta.env.BASE_URL.replace(/\/$/, '')
+
+const surfaceLabels: Record<PrimarySurface, { zh: string; en: string; hintZh: string; hintEn: string }> = {
+  today: { zh: '今天', en: 'Today', hintZh: '下一步', hintEn: 'Next' },
+  opportunities: { zh: '机会', en: 'Opportunities', hintZh: '岗位与流程', hintEn: 'Jobs' },
+}
+
+const primarySurfaces: PrimarySurface[] = ['today', 'opportunities']
 
 const roleLabels: Record<Opportunity['roleType'], [string, string]> = {
   core: ['核心', 'Core'],
@@ -77,6 +72,36 @@ const roleLabels: Record<Opportunity['roleType'], [string, string]> = {
   reach: ['冲刺', 'Reach'],
   lottery: ['彩票', 'Long shot'],
   practice: ['练手', 'Practice'],
+}
+
+function semanticPath(pathname = window.location.pathname) {
+  if (APP_BASE && pathname.startsWith(APP_BASE)) return pathname.slice(APP_BASE.length) || '/'
+  return pathname || '/'
+}
+
+function browserPath(path: string) {
+  return `${APP_BASE}${path}` || '/'
+}
+
+function routeFromPath(pathname = semanticPath()): RouteState {
+  const path = pathname.replace(/\/+$/, '') || '/'
+  if (path === '/capture') return { surface: 'today', capture: true, agendaExpanded: false }
+  if (path === '/decisions') return { surface: 'decisions', capture: false, agendaExpanded: false }
+  if (path === '/settings') return { surface: 'settings', capture: false, agendaExpanded: false }
+  if (path === '/history') return { surface: 'history', capture: false, agendaExpanded: false }
+  if (path === '/today/agenda') return { surface: 'today', capture: false, agendaExpanded: true }
+  if (path === '/today' || path === '/') return { surface: 'today', capture: false, agendaExpanded: false }
+  if (path === '/opportunities') return { surface: 'opportunities', capture: false, agendaExpanded: false }
+  const match = path.match(/^\/opportunities\/([^/]+)$/)
+  if (match?.[1]) {
+    return {
+      surface: 'opportunities',
+      capture: false,
+      agendaExpanded: false,
+      opportunityId: decodeURIComponent(match[1]),
+    }
+  }
+  return { surface: 'today', capture: false, agendaExpanded: false }
 }
 
 function LanguageSwitch() {
@@ -92,63 +117,112 @@ function LanguageSwitch() {
 export default function AppV8() {
   const { lang } = useUiLanguage()
   const zh = lang === 'zh'
-  const [surface, setSurface] = useState<Surface>('today')
+  const [route, setRoute] = useState<RouteState>(() => routeFromPath())
+  const [captureReturnPath, setCaptureReturnPath] = useState('/today')
   const [opportunityTab, setOpportunityTab] = useState<OpportunityTab>('opportunities')
   const [opportunityTabExplicit, setOpportunityTabExplicit] = useState(false)
-  const [selectedOpportunityId, setSelectedOpportunityId] = useState<string>()
   const [lastCompletedAction, setLastCompletedAction] = useState<CompletionFeedback | null>(null)
+  const [snapshot, setSnapshot] = useState<PJSDASSnapshot>()
   const [opportunities, setOpportunities] = useState<Opportunity[]>([])
   const [actions, setActions] = useState<Action[]>([])
   const [processes, setProcesses] = useState<ProcessRecord[]>([])
   const [prep, setPrep] = useState<Prep[]>([])
   const [groups, setGroups] = useState<ApplicationGroup[]>([])
   const [timeline, setTimeline] = useState<TimelineRecord[]>([])
-  const [changeSets, setChangeSets] = useState<ChangeSetRecord[]>([])
   const [rules, setRules] = useState<DecisionRules>(() => ({ ...DEFAULT_DECISION_RULES, weights: { ...DEFAULT_DECISION_RULES.weights } }))
   const [lastImport, setLastImport] = useState<ImportMeta | undefined>()
   const [loading, setLoading] = useState(true)
   const [now, setNow] = useState(() => new Date())
+  const [budgetMinutes, setBudgetMinutes] = useState(180)
+
+  const surface = route.surface
+  const selectedOpportunityId = route.opportunityId
+  const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
 
   async function reload() {
-    const [nextOpportunities, nextActions, nextProcesses, nextPrep, nextGroups, nextRules, nextTimeline, nextChangeSets, nextImport] = await Promise.all([
-      getAllOpportunities(), getAllActions(), getAllProcesses(), getAllPrep(), getAllApplicationGroups(),
-      getDecisionRules(), getAllTimelineRecords(), getAllChangeSets(), getLastImport(),
-    ])
-    setOpportunities(nextOpportunities)
-    setActions(nextActions)
-    setProcesses(nextProcesses)
-    setPrep(nextPrep)
-    setGroups(nextGroups)
-    setRules(nextRules)
-    setTimeline(nextTimeline)
-    setChangeSets(nextChangeSets)
-    setLastImport(nextImport)
+    const next = await exportLocalSnapshot()
+    setSnapshot(next)
+    setOpportunities(next.data.opportunities)
+    setActions(next.data.actions)
+    setProcesses(next.data.processes)
+    setPrep(next.data.prep)
+    setGroups(next.data.applicationGroups)
+    setRules(next.data.decisionRules ?? DEFAULT_DECISION_RULES)
+    setTimeline(next.data.timeline ?? [])
+    setLastImport(next.data.meta)
   }
 
-  useEffect(() => { void reload().finally(() => setLoading(false)) }, [])
+  function navigate(path: string, replace = false) {
+    const destination = browserPath(path)
+    if (replace) window.history.replaceState(null, '', destination)
+    else window.history.pushState(null, '', destination)
+    setRoute(routeFromPath(path))
+  }
+
+  function openCapture() {
+    const current = semanticPath()
+    setCaptureReturnPath(current === '/capture' ? '/today' : current)
+    navigate('/capture')
+  }
+
+  function closeCapture() {
+    navigate(captureReturnPath || '/today', true)
+  }
+
+  useEffect(() => {
+    if (semanticPath() === '/') {
+      window.history.replaceState(null, '', browserPath('/today'))
+      setRoute(routeFromPath('/today'))
+    }
+    void reload().finally(() => setLoading(false))
+  }, [])
+
   useEffect(() => {
     const timer = window.setInterval(() => setNow(new Date()), 60_000)
     const refresh = () => { void reload() }
+    const pop = () => setRoute(routeFromPath())
+    const keyboard = (event: KeyboardEvent) => {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
+        event.preventDefault()
+        openCapture()
+      }
+    }
     window.addEventListener('pjsdas:workspace-replaced', refresh)
+    window.addEventListener('popstate', pop)
+    window.addEventListener('keydown', keyboard)
     return () => {
       window.clearInterval(timer)
       window.removeEventListener('pjsdas:workspace-replaced', refresh)
+      window.removeEventListener('popstate', pop)
+      window.removeEventListener('keydown', keyboard)
     }
-  }, [])
+  }, [route])
+
   useEffect(() => {
     if (!lastCompletedAction) return
     const timer = window.setTimeout(() => setLastCompletedAction(null), 8_000)
     return () => window.clearTimeout(timer)
   }, [lastCompletedAction])
+
   useEffect(() => {
     if (loading || opportunityTabExplicit) return
     const hasPipeline = processes.some((item) => ['screening', 'assessment', 'written_test', 'interview', 'offer'].includes(item.stage))
     setOpportunityTab(hasPipeline ? 'pipeline' : 'opportunities')
   }, [loading, opportunityTabExplicit, processes])
 
-  const ranked = useMemo(() => rankActions(actions, opportunities, now, rules), [actions, opportunities, now, rules])
-  const attentionCoverage = useMemo(() => summarizeCoverage(timeline), [timeline])
-  const attentionCount = changeSets.filter((item) => item.status === 'pending' || item.status === 'failed').length + attentionCoverage.exceptions.length
+  const todayBrief = useMemo<TodayBriefModel | undefined>(() => {
+    if (!snapshot) return undefined
+    return buildTodayBrief(
+      snapshot,
+      { availableMinutes: budgetMinutes, agendaHorizonDays: route.agendaExpanded ? 30 : 7 },
+      { now, timezone, workspaceVersion: `web:${snapshot.exportedAt}` },
+    )
+  }, [snapshot, budgetMinutes, route.agendaExpanded, now, timezone])
+
+  const decisionRequests = snapshot?.data.decisionRequests ?? []
+  const openDecisionCount = decisionRequests.filter((item) =>
+    item.state === 'open' && (!item.expiresAt || new Date(item.expiresAt).getTime() >= now.getTime()),
+  ).length
   const workspaceEmpty = opportunities.length === 0 && actions.length === 0 && processes.length === 0 && prep.length === 0
   const selectedOpportunity = selectedOpportunityId ? opportunities.find((item) => item.id === selectedOpportunityId) : undefined
   const selectedProcess = selectedOpportunity
@@ -186,85 +260,142 @@ export default function AppV8() {
     }
   }
 
-  async function applyPendingChangeSet(id: string) {
-    await applyChangeSet(id)
-    await reload()
-  }
-
-  async function discardPendingChangeSet(id: string) {
-    await discardChangeSet(id)
-    await reload()
-  }
-
   function chooseOpportunityTab(tab: OpportunityTab) {
     setOpportunityTabExplicit(true)
     setOpportunityTab(tab)
   }
 
   function navigateFromStart() {
-    setSurface('settings')
+    navigate('/settings')
+  }
+
+  function openOpportunity(id: string) {
+    navigate('/opportunities/' + encodeURIComponent(id))
+  }
+
+  async function executeTodayAction(item: TodayBriefAction) {
+    if (item.execution.externalUrl) {
+      window.open(item.execution.externalUrl, '_blank', 'noopener,noreferrer')
+      return
+    }
+    if (item.execution.operation === 'start_prep') {
+      setOpportunityTabExplicit(true)
+      setOpportunityTab('prepare')
+      navigate('/opportunities')
+      return
+    }
+    if (item.execution.operation === 'open_group_decision') {
+      setOpportunityTabExplicit(true)
+      setOpportunityTab('opportunities')
+      navigate('/opportunities')
+      return
+    }
+    if (item.opportunityId) {
+      openOpportunity(item.opportunityId)
+      return
+    }
+    await markAction(item.actionId, 'doing')
   }
 
   function navigateFromDetail(destination: OpportunityDetailDestination) {
-    if (destination === 'today') setSurface('today')
+    if (destination === 'today') navigate('/today')
     if (destination === 'prepare') {
-      setSurface('opportunities')
       setOpportunityTabExplicit(true)
       setOpportunityTab('prepare')
+      navigate('/opportunities')
     }
     if (destination === 'opportunities') {
-      setSurface('opportunities')
       setOpportunityTabExplicit(true)
       setOpportunityTab('opportunities')
+      navigate('/opportunities')
     }
     if (destination === 'pipeline') {
-      setSurface('opportunities')
       setOpportunityTabExplicit(true)
       setOpportunityTab('pipeline')
+      navigate('/opportunities')
     }
-    setSelectedOpportunityId(undefined)
   }
 
   return (
-    <div className="app-shell surface-shell">
-      <aside className="sidebar surface-sidebar">
+    <div className="app-shell surface-shell ultimate-shell">
+      <aside className="sidebar surface-sidebar ultimate-sidebar">
         <div className="brand">
           <span className="brand-mark">P</span>
-          <div><strong>PJSDAS</strong><small>{zh ? '个人求职决策工作台' : 'Personal job-search workspace'}</small></div>
+          <div><strong>PJSDAS</strong><small>{zh ? '求职行动系统' : 'Job-search action system'}</small></div>
         </div>
 
-        <nav className="surface-nav" aria-label={zh ? '主导航' : 'Primary navigation'}>
+        <nav className="surface-nav ultimate-primary-nav" aria-label={zh ? '主导航' : 'Primary navigation'}>
           {primarySurfaces.map((item) => {
             const label = surfaceLabels[item]
             return (
-              <button key={item} className={surface === item ? 'nav-item active surface-nav-item' : 'nav-item surface-nav-item'} onClick={() => setSurface(item)}>
+              <button
+                key={item}
+                className={surface === item ? 'nav-item active surface-nav-item' : 'nav-item surface-nav-item'}
+                onClick={() => navigate(item === 'today' ? '/today' : '/opportunities')}
+              >
                 <span>{zh ? label.zh : label.en}</span>
-                <small>{item === 'attention' ? `${attentionCount} ${zh ? '项' : 'items'}` : (zh ? label.hintZh : label.hintEn)}</small>
+                <small>{zh ? label.hintZh : label.hintEn}</small>
               </button>
             )
           })}
         </nav>
 
-        <div className="surface-sidebar-footer">
-          <span>{zh ? '决策优先' : 'Decision first'}</span>
-        </div>
+        <div className="surface-sidebar-footer"><span>Today · Opportunities</span></div>
       </aside>
 
-      <main className="main-panel surface-main">
-        <OriginTransitionNotice onOpenSettings={() => setSurface('settings')} />
-        {loading ? <div className="empty-card">{zh ? '正在读取本地工作区…' : 'Loading local workspace…'}</div> : null}
-        {!loading && surface === 'today' ? (
-          <TodaySurface ranked={ranked} now={now} opportunities={opportunities} rules={rules} attentionCount={attentionCount} workspaceEmpty={workspaceEmpty} onStart={navigateFromStart} onOpenAttention={() => setSurface('attention')} onMark={markAction} onOpenOpportunity={setSelectedOpportunityId} />
+      <main className="main-panel surface-main ultimate-main">
+        <header className="ultimate-toolbar" aria-label={zh ? '全局工具栏' : 'Global toolbar'}>
+          <button className="ultimate-capture-button" type="button" onClick={openCapture}>
+            <span>＋</span><strong>{zh ? '告诉 PJSDAS' : 'Tell PJSDAS'}</strong><kbd>⌘K</kbd>
+          </button>
+          <div className="ultimate-toolbar-actions">
+            {openDecisionCount > 0 ? (
+              <button className={surface === 'decisions' ? 'active' : ''} type="button" onClick={() => navigate('/decisions')}>
+                {zh ? '需要你决定' : 'Needs your decision'} <strong>{openDecisionCount}</strong>
+              </button>
+            ) : null}
+            <button className={surface === 'settings' ? 'active' : ''} type="button" onClick={() => navigate('/settings')}>
+              {zh ? '设置' : 'Settings'}
+            </button>
+          </div>
+        </header>
+
+        {surface === 'settings' ? <OriginTransitionNotice onOpenSettings={() => navigate('/settings')} /> : null}
+        {loading ? <div className="empty-card">{zh ? '正在读取工作区…' : 'Loading workspace…'}</div> : null}
+
+        {!loading && surface === 'today' && todayBrief ? (
+          <TodaySurface
+            brief={todayBrief}
+            now={now}
+            budgetMinutes={budgetMinutes}
+            agendaExpanded={route.agendaExpanded}
+            workspaceEmpty={workspaceEmpty}
+            onBudgetChange={setBudgetMinutes}
+            onStart={navigateFromStart}
+            onOpenDecisions={() => navigate('/decisions')}
+            onOpenAgenda={() => navigate(route.agendaExpanded ? '/today' : '/today/agenda')}
+            onExecute={executeTodayAction}
+            onMark={markAction}
+            onOpenOpportunity={openOpportunity}
+          />
         ) : null}
+
         {!loading && surface === 'opportunities' ? (
-          <OpportunitiesSurface opportunities={opportunities} groups={groups} processes={processes} prep={prep} tab={opportunityTab} onTabChange={chooseOpportunityTab} onOpenOpportunity={setSelectedOpportunityId} />
+          <OpportunitiesSurface opportunities={opportunities} groups={groups} processes={processes} prep={prep} tab={opportunityTab} onTabChange={chooseOpportunityTab} onOpenOpportunity={openOpportunity} />
         ) : null}
-        {!loading && surface === 'attention' ? (
-          <AttentionSurface timeline={timeline} changeSets={changeSets} onApply={applyPendingChangeSet} onDiscard={discardPendingChangeSet} />
-        ) : null}
-        {!loading && surface === 'activity' ? <ActivitySurface timeline={timeline} /> : null}
-        {!loading && surface === 'settings' ? <SettingsSurface lastImport={lastImport} rules={rules} onChanged={reload} onOpenActivity={() => setSurface('activity')} /> : null}
+        {!loading && surface === 'decisions' ? <DecisionRequestsView requests={decisionRequests} onChanged={reload} /> : null}
+        {!loading && surface === 'history' ? <ActivitySurface timeline={timeline} /> : null}
+        {!loading && surface === 'settings' ? <SettingsSurface lastImport={lastImport} rules={rules} onChanged={reload} onOpenActivity={() => navigate('/history')} /> : null}
       </main>
+
+      <button className="ultimate-mobile-capture" type="button" onClick={openCapture}>＋ {zh ? '告诉 PJSDAS' : 'Tell PJSDAS'}</button>
+
+      <TellPjsdasCapture
+        open={route.capture}
+        onClose={closeCapture}
+        onChanged={reload}
+        onOpenDecisions={() => navigate('/decisions')}
+      />
 
       {selectedOpportunity ? (
         <OpportunityDetailDrawer
@@ -273,7 +404,7 @@ export default function AppV8() {
           actions={selectedActions}
           applicationGroup={selectedGroup}
           timeline={selectedTimeline}
-          onClose={() => setSelectedOpportunityId(undefined)}
+          onClose={() => navigate('/opportunities')}
           onNavigate={navigateFromDetail}
         />
       ) : null}
@@ -665,16 +796,10 @@ function PreparePanel({ prep }: { prep: Prep[] }) {
   )
 }
 
-function AttentionSurface({ timeline, changeSets, onApply, onDiscard }: { timeline: TimelineRecord[]; changeSets: ChangeSetRecord[]; onApply: (id: string) => Promise<void>; onDiscard: (id: string) => Promise<void> }) {
-  const { lang } = useUiLanguage()
-  const zh = lang === 'zh'
-  return <section className="surface-page"><SurfaceHeader eyebrow="ATTENTION" title={zh ? '这里只放真正需要你决定的事' : 'Only the exceptions that genuinely need you'} text={zh ? '普通同步、自动摄入和确定性更新不会来打扰你。冲突、待确认变更和无法安全解析的来源才进入这里。' : 'Routine sync, ingestion, and deterministic updates stay silent. Only conflicts, governed changes, and unresolved source evidence enter Attention.'} /><AttentionView timeline={timeline} changeSets={changeSets} onApplyChangeSet={onApply} onDiscardChangeSet={onDiscard} /></section>
-}
-
 function ActivitySurface({ timeline }: { timeline: TimelineRecord[] }) {
   const { lang } = useUiLanguage()
   const zh = lang === 'zh'
-  return <section className="surface-page"><SurfaceHeader eyebrow="ACTIVITY" title={zh ? '系统和你都做了什么' : 'What you and PJSDAS have done'} text={zh ? 'Activity 是审计面：保留事实、命令、自动化和来源痕迹；待你决定的事项已经移到 Attention。' : 'Activity is the audit surface for facts, commands, automation, and provenance. Anything requiring your decision lives in Attention instead.'} /><TimelineView records={timeline} /></section>
+  return <section className="surface-page"><SurfaceHeader eyebrow="HISTORY" title={zh ? '历史与审计' : 'History & audit'} text={zh ? '这里只保留发生过什么。日常行动和需要你决定的事分别留在 Today 与 Decisions。' : 'This is the audit trail only. Daily action stays in Today and genuine decisions stay in Decisions.'} /><TimelineView records={timeline} /></section>
 }
 
 function SettingsSurface({ lastImport, rules, onChanged, onOpenActivity }: { lastImport?: ImportMeta; rules: DecisionRules; onChanged: () => Promise<void>; onOpenActivity: () => void }) {
@@ -725,7 +850,7 @@ function SettingsSurface({ lastImport, rules, onChanged, onOpenActivity }: { las
         <summary><div><strong>{zh ? '数据与恢复' : 'Data & recovery'}</strong><span>{zh ? '备份、导入和恢复路径' : 'Backup, import, and recovery paths'}</span></div></summary>
         <div className="settings-group-body">
           <ConnectedMigrationCard />
-          <div className="settings-inline-tool"><div><strong>{zh ? '手工记录' : 'Manual capture'}</strong><p>{zh ? '仅在 AI / 自动化无法直接记录事实时使用。' : 'Use only when AI or automation cannot capture the fact directly.'}</p></div><div className="surface-tool-row"><ProgressInbox onChanged={() => { void onChanged() }} /><ProcessEventDock onChanged={() => { void onChanged() }} /></div></div>
+          <div className="settings-inline-tool"><div><strong>{zh ? '流程恢复工具' : 'Process recovery'}</strong><p>{zh ? '日常输入请使用全局“告诉 PJSDAS”。这里只有自动化无法恢复时才使用的低频流程工具。' : 'Use global Tell PJSDAS for normal input. This low-frequency tool is only for process recovery when automation cannot repair the state.'}</p></div><div className="surface-tool-row"><ProcessEventDock onChanged={() => { void onChanged() }} /></div></div>
           <div className="settings-inline-tool"><div><strong>{zh ? '本地快照' : 'Local snapshot'}</strong><p>{zh ? '大版本调整、换设备或清理浏览器前导出完整快照。' : 'Export a full snapshot before major upgrades, device changes, or browser cleanup.'}</p></div><LocalBackupDock onChanged={() => { void onChanged() }} /></div>
           <div className="surface-import-card"><div><strong>{zh ? 'Excel 初始化 / 恢复' : 'Excel initialization / recovery'}</strong><p>{zh ? 'Excel 已不是日常数据源，只在初始化、历史迁移或恢复时使用。' : 'Excel is no longer the daily source of truth; use it for initialization, migration, or recovery.'}</p></div><label className="file-button">{busy ? (zh ? '处理中…' : 'Processing…') : (zh ? '选择工作簿' : 'Choose workbook')}<input type="file" accept=".xlsx,.xls" disabled={busy} onChange={(event) => { void readWorkbook(event.target.files?.[0]) }} /></label></div>
           {error ? <div className="notice error">{error}</div> : null}
