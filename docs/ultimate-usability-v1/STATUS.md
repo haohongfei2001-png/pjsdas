@@ -13,8 +13,8 @@ Product origin: `https://todayaction.com`
 | UU-01 | **COMPLETE** | ScheduleNode / occurrence / temporal semantics implemented and production-verified |
 | UU-02 | **COMPLETE** | Unified Semantic Intake / DecisionRequest / Undo policy implemented and production-verified |
 | UU-03 | **COMPLETE** | Revision-bound TodayBrief / agenda / latest-start read model implemented and production-verified |
-| UU-04 | **READY — NOT STARTED** | UU-03 dependency satisfied; final Web shell / Today UI is next |
-| UU-05 | NOT_READY | Depends on UU-04 |
+| UU-04 | **COMPLETE** | Final two-destination Web shell / Today implemented and production-verified |
+| UU-05 | **READY — NOT STARTED** | UU-04 dependency satisfied; Opportunities / conclusion-first detail is next |
 | UU-06 | NOT_READY | Depends on UU-05 / shared intake |
 | UU-07 | NOT_READY | Depends on shared intake/read models |
 | UU-08 | NOT_READY | Depends on platform-neutral contracts |
@@ -243,14 +243,6 @@ window, capacity conflict visibility, elapsed-unresolved recovery, DecisionReque
 expiration, material source-coverage warnings, seven-calendar-day agenda bounds, deterministic
 repeatability and sparse next actions.
 
-## Next authorized work
-
-UU-04 is **READY but NOT STARTED**.
-
-A later execution may handle UU-04 only under the one-round protocol: re-read remote `main`,
-canonical status, frozen blueprint/amendments, the shared TodayBrief contract, and
-`rounds/UU-04.md`. This UU-03 execution stops before final Web shell / Today UI implementation.
-
 ## UU-03 scope boundary
 
 UU-03 changed read-model logic, authenticated MCP read surface and release/self-test gates only. It
@@ -261,5 +253,97 @@ did **not**:
 - mutate production workspace data;
 - add or grant source permissions;
 - perform any external recruiting action;
+- change release publication policy;
+- publish a new GitHub Release.
+
+## UU-04 closure
+
+UU-04 implementation is complete on `main@669a169ac88b852175aa1c1bf9a0699aaba4b09b` (PR #99).
+
+### Implemented contract
+
+- persistent daily navigation now contains only **Today** and **Opportunities**;
+- Settings and History are low-frequency semantic routes, and the Decisions entry appears only while
+  one or more open, unexpired `DecisionRequest` objects exist;
+- all frozen semantic Web routes are implemented:
+  `/today`, `/today/agenda`, `/opportunities`, `/opportunities/:id`, `/capture`,
+  `/decisions`, `/settings`, and `/history`;
+- Vercel rewrites support direct refresh of those semantic routes; the Pages build emits a
+  `404.html` SPA fallback before frontend artifact hashing so bounded legacy/recovery hosting can
+  deep-link to the same routes;
+- Web Today projects the canonical UU-03 `TodayBrief` directly instead of recomputing a parallel
+  ranking/time-plan model in the UI;
+- wide Web Today uses the frozen action + agenda composition; responsive/mobile Today uses the
+  frozen primary action → agenda → next-actions order;
+- the 390×844 browser gate verifies that a complete next action and at least one upcoming recruiting
+  node are visible without scrolling, with only Today / Opportunities in the bottom navigation and
+  Tell PJSDAS above those tabs;
+- global **Tell PJSDAS** replaces the old daily ProgressInbox / ChangeSet interaction model. Web
+  text is parsed into the source-neutral UU-02 Semantic Intake contract; questions/quotes/
+  hypotheticals/rewrite requests remain no-write;
+- ambiguous same-company role input creates a durable `DecisionRequest` instead of guessing or
+  exposing a ChangeSet queue;
+- explicit unique recruiting completion is normalized to `occurrence_completed`; completion of an
+  elapsed interview/test closes the canonical ScheduleNode occurrence while question-form input
+  remains read-only;
+- pure Web semantic interpretation was separated from browser persistence so interpretation remains
+  platform-neutral/testable and can be reused by future native clients;
+- Decisions renders the durable DecisionRequest question/choices/consequences contract and resolves
+  through UU-02 semantics; ordinary source health/coverage is not turned into a fake decision;
+- material coverage warnings are folded into Today and hidden by default when non-critical; the
+  former globally mounted Coverage and FixedEventGuard surfaces are no longer daily UI;
+- background workspace replacement reloads data without remounting the entire App, preserving route,
+  capture/navigation context, input drafts, selection and normal interaction continuity;
+- in connected mode, Tell PJSDAS writes, DecisionRequest answers, action completion and their Undo
+  flows do not show a success receipt until authoritative sync returns a successful
+  pushed/synced/created outcome. Conflict, account mismatch or remote overwrite fails closed;
+- UI wording keeps product concepts human-facing: Today, Opportunities, Tell PJSDAS, schedule,
+  needs your decision, Settings and History;
+- focus-visible treatment, Reduce Motion handling, safe-area-aware mobile controls and ≥44px primary
+  interaction targets are part of the final Web layer;
+- no Snapshot/database schema migration, source permission grant, production workspace rewrite or
+  external recruiting action was introduced in this round.
+
+### Verification evidence
+
+PR head `ca2a79aa719efa66ac456a5797cf6947f0d00d96`:
+
+- CI run `35519924783`: success, including 651 tests, TypeScript/build and bundle gate;
+- Chromium run `35519924777`: success.
+
+Merged implementation `669a169ac88b852175aa1c1bf9a0699aaba4b09b`:
+
+- CI run `35520028185`: success;
+- Chromium run `35520028153`: success;
+- exact-SHA backend + Pages/deploy run `35520028132`: success;
+- Production Self-Test run `35520114833`: success;
+- release workflow run `35520131496`: success with publication still disarmed and release-creation
+  steps skipped.
+
+UU-04 browser/golden coverage includes two-destination navigation, semantic routes, direct route
+hosting fallbacks, TodayBrief-only projection, context-preserving refresh, global Tell PJSDAS,
+no-write questions, source-backed alias application, same-company ambiguity → DecisionRequest,
+elapsed-occurrence completion, bilingual Today reasons, Settings/History relocation, authoritative
+persistence receipts, recovery tooling, no horizontal overflow, and the 390×844 first-screen gate.
+
+## Next authorized work
+
+UU-05 is **READY but NOT STARTED**.
+
+A later execution may handle UU-05 only under the one-round protocol: re-read remote `main`,
+canonical status, frozen blueprint/amendments, TodayBrief/semantic-route contracts, and
+`rounds/UU-05.md`. This UU-04 execution stops before Opportunities / detail redesign.
+
+## UU-04 scope boundary
+
+UU-04 changed Web information architecture, routing/hosting fallbacks, Today presentation, Web
+Semantic Intake adaptation, DecisionRequest presentation, browser persistence receipts and UX
+verification only. It did **not**:
+
+- implement UU-05 In Progress / Worth Pursuing opportunity-list redesign or conclusion-first detail;
+- change Snapshot/database schemas;
+- add or grant Gmail / PAIA / other source permissions;
+- perform job applications, withdrawals, recruiting email or Offer actions;
+- bulk-rewrite production workspace data;
 - change release publication policy;
 - publish a new GitHub Release.

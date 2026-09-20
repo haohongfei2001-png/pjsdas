@@ -6,8 +6,8 @@
 | UU-01 | Time / ScheduleNode model | COMPLETE |
 | UU-02 | Unified intake / write policy | COMPLETE |
 | UU-03 | TodayBrief / agenda | COMPLETE |
-| UU-04 | Final Web shell / Today | READY — NOT STARTED |
-| UU-05 | Opportunities / detail | NOT_READY |
+| UU-04 | Final Web shell / Today | COMPLETE |
+| UU-05 | Opportunities / detail | READY — NOT STARTED |
 | UU-06 | Gmail / Discovery | NOT_READY |
 | UU-07 | ChatGPT / PAIA / reminders | NOT_READY |
 | UU-08 | Native iPhone | NOT_READY |
