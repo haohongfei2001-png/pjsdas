@@ -7,6 +7,7 @@ import {
   getPrepGraphSchema,
   getRecentTimelineSchema,
   getDiscoveryContextSchema,
+  getTodayBriefSchema,
   getTodayPlanSchema,
   invokeReadTool,
   listOpportunitiesSchema,
@@ -85,6 +86,7 @@ export function createPjsdasMcpServer(
     'PJSDAS is a personal job-search decision and action system.',
     'Use its explicit decision rules and deterministic explanations instead of inventing hidden ranking rules.',
     'Read tools never change PJSDAS state.',
+    'Use get_today_brief as the canonical daily read contract for Web/MCP/iPhone-equivalent planning. It is revision-bound and already combines next action, sparse next actions, recruiting agenda, DecisionRequests, and material coverage warnings. get_today_plan remains a compatibility read for older clients.',
     'For job discovery, first call get_discovery_context. Treat its Discovery Profile as the durable user-controlled search preference source; do not silently invent or rewrite durable preferences from chat history.',
     'When get_discovery_context returns continuousDiscovery, use incrementalSince as the normal lower bound for new or materially updated postings, and treat refreshQueue as separate source-verification work. Do not repeat a full historical search without a reason.',
     'For refreshQueue work, preserve ownerKind, ownerId, postingId and canonicalSourceUrl exactly. A newly found canonical URL is a new/re-posted source and must go through normal discovery instead of overwriting an existing posting.',
@@ -172,6 +174,12 @@ export function createPjsdasMcpServer(
     { name: 'pjsdas', version: options.version ?? '1.9.0-alpha.1' },
     { instructions: instructions.join(' ') },
   )
+
+  server.registerTool('get_today_brief', {
+    title: 'Get PJSDAS Today brief',
+    description: 'Read the canonical revision-bound daily decision contract: one next action, sparse next actions, recruiting agenda, relevant DecisionRequests, material coverage warnings, executability and latest-start protection.',
+    inputSchema: getTodayBriefSchema, annotations: readOnlyAnnotations,
+  }, async (args) => invokeReadTool(source, 'get_today_brief', args))
 
   server.registerTool('get_today_plan', {
     title: 'Get PJSDAS today plan',

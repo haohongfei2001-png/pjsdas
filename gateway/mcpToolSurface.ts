@@ -1,4 +1,5 @@
 export const MCP_TOOL_NAMES = {
+  todayBrief: 'get_today_brief',
   todayPlan: 'get_today_plan',
   opportunities: 'list_opportunities',
   opportunityAssessment: 'get_opportunity_assessment',
@@ -24,6 +25,7 @@ export const MCP_TOOL_NAMES = {
 export type WorkspaceAuthority = 'google-drive' | 'transactional'
 
 export const AUTHENTICATED_MCP_BASE_RELEASE_REQUIRED_TOOLS = [
+  MCP_TOOL_NAMES.todayBrief,
   MCP_TOOL_NAMES.coverageStatus,
   MCP_TOOL_NAMES.workspaceIntegrity,
   MCP_TOOL_NAMES.explicitOpportunityWrite,
@@ -32,6 +34,7 @@ export const AUTHENTICATED_MCP_BASE_RELEASE_REQUIRED_TOOLS = [
 ] as const
 
 export const AUTHENTICATED_MCP_TRANSACTIONAL_RELEASE_REQUIRED_TOOLS = [
+  MCP_TOOL_NAMES.todayBrief,
   MCP_TOOL_NAMES.coverageStatus,
   MCP_TOOL_NAMES.workspaceIntegrity,
   MCP_TOOL_NAMES.explicitOpportunityWrite,
@@ -49,4 +52,4 @@ export function authenticatedMcpReleaseRequiredTools(authority: WorkspaceAuthori
     : [...AUTHENTICATED_MCP_BASE_RELEASE_REQUIRED_TOOLS]
 }
 
-export const AUTHENTICATED_MCP_TOOL_SURFACE_VERSION = 'v4' as const
+export const AUTHENTICATED_MCP_TOOL_SURFACE_VERSION = 'v5' as const
