@@ -29,6 +29,8 @@ Canonical production origin: `https://todayaction.com`
   `https://todayaction.com/**`;
 - Vercel and GitHub deployment variables declare canonical Web/API origin as
   `https://todayaction.com`;
+- canonical URL deployment values were revalidated as strict ASCII after correcting an
+  initial full-width punctuation entry before the final redeploy;
 - connected authority remains `transactional`;
 - audience mode remains `allowlist`;
 - public signup and beta grants remain closed.
