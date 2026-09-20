@@ -13,12 +13,23 @@ describe('AI-operated console visual hierarchy', () => {
     expect(app).toContain("import './webConsole.css'")
   })
 
-  it('makes Today status/action first and manual capture explicitly secondary', () => {
-    expect(app).toContain('today-status-strip')
-    expect(app).toContain('surface-focus-card')
-    expect(app).toContain('today-manual-fallback')
-    expect(css).toContain('.today-status-strip')
-    expect(css).toContain('.today-manual-fallback')
+  it('makes Today decision-first instead of status-first', () => {
+    expect(app).toContain('decision-today-header')
+    expect(app).toContain('decision-hero')
+    expect(app).toContain('decision-next-section')
+    expect(app).not.toContain('today-status-strip')
+    expect(app).not.toContain('today-manual-fallback')
+    expect(css).toContain('.decision-today-header')
+    expect(css).toContain('.decision-hero')
+    expect(css).toContain('.decision-next-section')
+    expect(css).not.toContain('.today-status-strip')
+    expect(css).not.toContain('.today-manual-fallback')
+  })
+
+  it('keeps mobile navigation aligned with the four decision surfaces', () => {
+    expect(app).toContain("const primarySurfaces: Surface[] = ['today', 'opportunities', 'attention', 'settings']")
+    expect(css).toContain('grid-template-columns:repeat(4,minmax(0,1fr))')
+    expect(css).toContain('backdrop-filter:blur(24px) saturate(140%)')
   })
 
   it('keeps keyboard, reduced-motion, and mobile affordances from the existing polish layer', () => {

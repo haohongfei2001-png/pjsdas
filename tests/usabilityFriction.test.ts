@@ -11,11 +11,25 @@ describe('AI-operated Web console friction rules', () => {
     expect(app).not.toContain('updateActionStatus(')
   })
 
-  it('keeps manual capture as a fallback instead of the primary Today control', () => {
-    expect(app).toContain('today-manual-fallback')
-    expect(app).toContain('ProgressInbox')
-    expect(app).toContain('ProcessEventDock')
-    expect(app.indexOf('surface-focus-card')).toBeLessThan(app.indexOf('today-manual-fallback'))
+  it('removes manual capture from Today and keeps it available in Settings', () => {
+    const todayStart = app.indexOf('function TodaySurface')
+    const todayEnd = app.indexOf('function OpportunitiesSurface')
+    const settingsStart = app.indexOf('function SettingsSurface')
+    const today = app.slice(todayStart, todayEnd)
+    const settings = app.slice(settingsStart)
+
+    expect(today).not.toContain('ProgressInbox')
+    expect(today).not.toContain('ProcessEventDock')
+    expect(today).not.toContain('today-manual-fallback')
+    expect(settings).toContain('ProgressInbox')
+    expect(settings).toContain('ProcessEventDock')
+    expect(settings).toContain("zh ? '手工记录' : 'Manual capture'")
+  })
+
+  it('keeps first-level navigation decision-oriented and moves Activity under Settings', () => {
+    expect(app).toContain("const primarySurfaces: Surface[] = ['today', 'opportunities', 'attention', 'settings']")
+    expect(app).toContain("onOpenActivity={() => setSurface('activity')}")
+    expect(app).toContain("zh ? '历史与审计' : 'History & audit'")
   })
 
   it('chooses Opportunities context from active recruiting state without creating a review tab', () => {
