@@ -3,17 +3,18 @@ import { createGmailPushHandler } from '../gateway/gmailPushHandler.js'
 
 const AUDIENCE = 'https://todayaction.com/api/gmail-push'
 const PUSH_SA = 'pjsdas-gmail-push@example.iam.gserviceaccount.com'
+const SUBSCRIPTION = 'projects/example/subscriptions/pjsdas-gmail-events-production'
 
 function json(value: unknown, status = 200) {
   return new Response(JSON.stringify(value), { status, headers: { 'content-type': 'application/json' } })
 }
 
-function pushRequest(payload: unknown, token = 'google-oidc-token') {
+function pushRequest(payload: unknown, token = 'header.payload.signature', subscription = SUBSCRIPTION) {
   const data = Buffer.from(JSON.stringify(payload)).toString('base64')
   return new Request(AUDIENCE, {
     method: 'POST',
     headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
-    body: JSON.stringify({ message: { data, messageId: 'pubsub-1' }, subscription: 'sub' }),
+    body: JSON.stringify({ message: { data, messageId: 'pubsub-1' }, subscription }),
   })
 }
 
@@ -34,6 +35,7 @@ function handler(fetchImpl: typeof fetch) {
     supabaseServiceRoleKey: 'service-role-test',
     expectedAudience: AUDIENCE,
     expectedServiceAccountEmail: PUSH_SA,
+    expectedSubscription: SUBSCRIPTION,
     fetchImpl,
   })
 }
@@ -67,6 +69,17 @@ describe('authenticated Gmail Pub/Sub push', () => {
     const fetchImpl = vi.fn(async () => json(claims({ aud: 'https://wrong.example/push' }))) as unknown as typeof fetch
     const response = await handler(fetchImpl)(pushRequest({ emailAddress: 'a@example.com', historyId: '1' }))
     expect(response.status).toBe(401)
+    expect(fetchImpl).toHaveBeenCalledTimes(1)
+  })
+
+  it('rejects an authenticated push from a different subscription', async () => {
+    const fetchImpl = vi.fn(async () => json(claims())) as unknown as typeof fetch
+    const response = await handler(fetchImpl)(pushRequest(
+      { emailAddress: 'a@example.com', historyId: '1' },
+      'header.payload.signature',
+      'projects/example/subscriptions/other',
+    ))
+    expect(response.status).toBe(403)
     expect(fetchImpl).toHaveBeenCalledTimes(1)
   })
 
