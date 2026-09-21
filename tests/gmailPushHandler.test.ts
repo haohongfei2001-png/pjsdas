@@ -65,6 +65,16 @@ describe('authenticated Gmail Pub/Sub push', () => {
     })
   })
 
+  it('rejects a non-JWT bearer locally before token verification', async () => {
+    const fetchImpl = vi.fn() as unknown as typeof fetch
+    const response = await handler(fetchImpl)(pushRequest(
+      { emailAddress: 'a@example.com', historyId: '1' },
+      'not-a-jwt',
+    ))
+    expect(response.status).toBe(401)
+    expect(fetchImpl).not.toHaveBeenCalled()
+  })
+
   it('rejects a token with the wrong audience before any Supabase call', async () => {
     const fetchImpl = vi.fn(async () => json(claims({ aud: 'https://wrong.example/push' }))) as unknown as typeof fetch
     const response = await handler(fetchImpl)(pushRequest({ emailAddress: 'a@example.com', historyId: '1' }))
