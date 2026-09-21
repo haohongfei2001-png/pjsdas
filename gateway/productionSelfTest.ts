@@ -50,6 +50,8 @@ const REQUIRED_CAPABILITIES: Record<string, unknown> = {
   semanticServerWritePolicy: 'v1',
   todayBriefReadModel: 'v1',
   todayAgendaReadModel: 'v1',
+  opportunityDecisionReadModel: 'v1',
+  opportunityConclusionDetail: 'v1',
   latestStartPlanning: 'v1',
   opportunityParticipationState: 'v1',
   gmailCompleteConsumption: 'v1',

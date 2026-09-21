@@ -57,14 +57,18 @@ test('opportunity detail localizes canonical stage and action status without cha
   await interfaceGroup.locator('summary').click()
   await interfaceGroup.getByRole('button', { name: 'EN', exact: true }).click()
   await page.locator('.surface-nav').getByRole('button', { name: /Opportunities/ }).click()
-  await page.getByRole('button', { name: opportunity.role, exact: true }).click()
+  await page.getByRole('button', { name: /Worth Pursuing/ }).click()
+  await page.locator('.opportunity-decision-row').filter({ hasText: opportunity.company }).click()
 
   const dialog = page.getByRole('dialog', { name: 'Opportunity details' })
   await expect(dialog).toBeVisible()
   await expect(dialog.getByText('Not applied', { exact: true }).first()).toBeVisible()
+  await expect(dialog.locator('.opportunity-detail-conclusion')).toContainText('Worth pursuing')
+  await dialog.getByText('Preparation & related actions', { exact: true }).click()
   await expect(dialog.getByText('To do', { exact: true })).toBeVisible()
   await expect(dialog.getByText('待投递', { exact: true })).toHaveCount(0)
   await expect(dialog.getByText('todo', { exact: true })).toHaveCount(0)
+  await expect(dialog.locator('.opportunity-detail-score-grid')).toHaveCount(0)
 
   const stored = await page.evaluate(async () => {
     return new Promise<{ stage?: string; status?: string }>((resolve, reject) => {

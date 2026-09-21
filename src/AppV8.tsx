@@ -4,7 +4,6 @@ import {
   exportLocalSnapshot,
   replaceImportedData,
 } from './db.js'
-import { computePriority } from './decisionV3.js'
 import { parsePJSDASWorkbook } from './importExcelV2.js'
 import { prepPriorityRank, presentPrepPriority, presentPrepSourceState } from './prepSemantics.js'
 import { presentStageLabel } from './stagePresentation.js'
@@ -17,13 +16,18 @@ import CloudSettingsCard from './cloud/CloudSettingsCard.js'
 import { useCloud } from './cloud/CloudContext.js'
 import { ensureAuthoritativePersistence } from './cloud/authoritativePersistence.js'
 import DiscoveryProfileCard from './DiscoveryProfileCard.js'
-import ApplicationPortfolioDock from './ApplicationPortfolioDock.js'
 import PrepGraphDock from './PrepGraphDock.js'
 import ProcessEventDock from './ProcessEventDock.js'
 import LocalBackupDock from './LocalBackupDock.js'
 import ConnectedMigrationCard from './cloud/ConnectedMigrationCard.js'
 import OriginTransitionNotice from './OriginTransitionNotice.js'
 import OpportunityDetailDrawer, { type OpportunityDetailDestination } from './OpportunityDetailDrawer.js'
+import OpportunityDecisionList from './OpportunityDecisionList.js'
+import {
+  buildOpportunityDecisionList,
+  getOpportunityDecisionRead,
+  type OpportunityDecisionListRead,
+} from './opportunityDecisionRead.js'
 import TellPjsdasCapture from './TellPjsdasCapture.js'
 import DecisionRequestsView from './DecisionRequestsView.js'
 import {
@@ -48,10 +52,11 @@ import './surfaceConsolidation.css'
 import './interactionDetail.css'
 import './webConsole.css'
 import './ultimateWeb.css'
+import './opportunityDecision.css'
 
 type Surface = 'today' | 'opportunities' | 'decisions' | 'history' | 'settings'
 type PrimarySurface = 'today' | 'opportunities'
-type OpportunityTab = 'opportunities' | 'pipeline' | 'prepare'
+type OpportunityTab = 'opportunities' | 'prepare'
 type CompletionFeedback = { id: string; title: string; previousStatus: Action['status']; error?: string }
 type RouteState = {
   surface: Surface
@@ -68,14 +73,6 @@ const surfaceLabels: Record<PrimarySurface, { zh: string; en: string; hintZh: st
 }
 
 const primarySurfaces: PrimarySurface[] = ['today', 'opportunities']
-
-const roleLabels: Record<Opportunity['roleType'], [string, string]> = {
-  core: ['核心', 'Core'],
-  backup: ['保底', 'Backup'],
-  reach: ['冲刺', 'Reach'],
-  lottery: ['彩票', 'Long shot'],
-  practice: ['练手', 'Practice'],
-}
 
 function semanticPath(pathname = window.location.pathname) {
   if (APP_BASE && pathname.startsWith(APP_BASE)) return pathname.slice(APP_BASE.length) || '/'
@@ -208,11 +205,7 @@ export default function AppV8() {
     return () => window.clearTimeout(timer)
   }, [lastCompletedAction])
 
-  useEffect(() => {
-    if (loading || opportunityTabExplicit) return
-    const hasPipeline = processes.some((item) => ['screening', 'assessment', 'written_test', 'interview', 'offer'].includes(item.stage))
-    setOpportunityTab(hasPipeline ? 'pipeline' : 'opportunities')
-  }, [loading, opportunityTabExplicit, processes])
+
 
   const todayBrief = useMemo<TodayBriefModel | undefined>(() => {
     if (!snapshot) return undefined
@@ -222,6 +215,16 @@ export default function AppV8() {
       { now, timezone, workspaceVersion: `web:${snapshot.exportedAt}` },
     )
   }, [snapshot, budgetMinutes, route.agendaExpanded, now, timezone])
+
+  const opportunityDecisionList = useMemo<OpportunityDecisionListRead | undefined>(() => {
+    if (!snapshot) return undefined
+    return buildOpportunityDecisionList(snapshot, {
+      now,
+      timezone,
+      workspaceVersion: `web:${snapshot.exportedAt}`,
+    })
+  }, [snapshot, now, timezone])
+
 
   const decisionRequests = snapshot?.data.decisionRequests ?? []
   const openDecisionCount = decisionRequests.filter((item) =>
@@ -242,6 +245,14 @@ export default function AppV8() {
   const selectedTimeline = selectedOpportunity
     ? timeline.filter((item) => item.opportunityId === selectedOpportunity.id || (item.company === selectedOpportunity.company && item.role === selectedOpportunity.role))
     : []
+  const selectedOpportunityDecision = selectedOpportunity && snapshot
+    ? getOpportunityDecisionRead(snapshot, selectedOpportunity.id, {
+        now,
+        timezone,
+        workspaceVersion: `web:${snapshot.exportedAt}`,
+      })
+    : undefined
+
 
   async function markAction(id: string, status: Action['status']) {
     const before = actions.find((item) => item.id === id)
@@ -326,11 +337,6 @@ export default function AppV8() {
       setOpportunityTab('opportunities')
       navigate('/opportunities')
     }
-    if (destination === 'pipeline') {
-      setOpportunityTabExplicit(true)
-      setOpportunityTab('pipeline')
-      navigate('/opportunities')
-    }
   }
 
   return (
@@ -397,8 +403,8 @@ export default function AppV8() {
           />
         ) : null}
 
-        {!loading && surface === 'opportunities' ? (
-          <OpportunitiesSurface opportunities={opportunities} groups={groups} processes={processes} prep={prep} tab={opportunityTab} onTabChange={chooseOpportunityTab} onOpenOpportunity={openOpportunity} />
+        {!loading && surface === 'opportunities' && opportunityDecisionList ? (
+          <OpportunitiesSurface read={opportunityDecisionList} prep={prep} tab={opportunityTab} onTabChange={chooseOpportunityTab} onOpenOpportunity={openOpportunity} />
         ) : null}
         {!loading && surface === 'decisions' ? <DecisionRequestsView requests={decisionRequests} onChanged={reload} /> : null}
         {!loading && surface === 'history' ? <ActivitySurface timeline={timeline} /> : null}
@@ -417,6 +423,7 @@ export default function AppV8() {
       {selectedOpportunity ? (
         <OpportunityDetailDrawer
           opportunity={selectedOpportunity}
+          decision={selectedOpportunityDecision}
           process={selectedProcess}
           actions={selectedActions}
           applicationGroup={selectedGroup}
@@ -713,10 +720,14 @@ function formatBriefDateTime(value: string, zh: boolean) {
   }).format(date)
 }
 
-function OpportunitiesSurface({ opportunities, groups, processes, prep, tab, onTabChange, onOpenOpportunity }: {
-  opportunities: Opportunity[]
-  groups: ApplicationGroup[]
-  processes: ProcessRecord[]
+function OpportunitiesSurface({
+  read,
+  prep,
+  tab,
+  onTabChange,
+  onOpenOpportunity,
+}: {
+  read: OpportunityDecisionListRead
   prep: Prep[]
   tab: OpportunityTab
   onTabChange: (tab: OpportunityTab) => void
@@ -724,79 +735,30 @@ function OpportunitiesSurface({ opportunities, groups, processes, prep, tab, onT
 }) {
   const { lang } = useUiLanguage()
   const zh = lang === 'zh'
-  const active = opportunities.filter((item) => item.processStage === 'not_applied' || item.processStage === 'waiting_release').length
-  const inPipeline = opportunities.filter((item) => ['screening', 'assessment', 'written_test', 'interview', 'offer'].includes(item.processStage)).length
 
   return (
     <section className="surface-page opportunities-surface">
-      <SurfaceHeader eyebrow="OPPORTUNITIES" title={zh ? '机会、流程和准备在同一个工作面' : 'Opportunities, pipeline, and preparation in one workspace'} text={zh ? '这里承载“值不值得投、推进到哪里、为它准备什么”。后台发现与来源核验不会再制造新的维护队列。' : 'This surface answers what is worth pursuing, where it stands, and what preparation supports it. Background discovery and verification do not create another maintenance queue.'} />
+      <SurfaceHeader
+        eyebrow="OPPORTUNITIES"
+        title={zh ? '哪些在推进，哪些值得继续投入' : 'What is moving, and what is worth pursuing'}
+        text={zh
+          ? '默认只看当前决策相关的机会。阶段、下一步、最近节点和关键理由放在同一行；评分、来源计数和配额细节按需展开。'
+          : 'The default view stays focused on current decisions. Stage, next move, nearest node, and material reasons sit on one row; scores, source counts, and quota details stay progressive.'}
+      />
 
       <div className="surface-context-tabs" role="tablist">
-        <button className={tab === 'opportunities' ? 'active' : ''} onClick={() => onTabChange('opportunities')}><span>{zh ? '机会池' : 'Opportunities'}</span><small>{active} {zh ? '活跃' : 'active'}</small></button>
-        <button className={tab === 'pipeline' ? 'active' : ''} onClick={() => onTabChange('pipeline')}><span>{zh ? '在途流程' : 'Pipeline'}</span><small>{inPipeline} {zh ? '在途' : 'in progress'}</small></button>
-        <button className={tab === 'prepare' ? 'active' : ''} onClick={() => onTabChange('prepare')}><span>{zh ? '准备' : 'Prepare'}</span><small>{prep.length} {zh ? '资产' : 'items'}</small></button>
+        <button className={tab === 'opportunities' ? 'active' : ''} onClick={() => onTabChange('opportunities')}>
+          <span>{zh ? '机会' : 'Opportunities'}</span>
+          <small>{read.inProgress.length + read.worthPursuing.length} {zh ? '当前相关' : 'current'}</small>
+        </button>
+        <button className={tab === 'prepare' ? 'active' : ''} onClick={() => onTabChange('prepare')}>
+          <span>{zh ? '准备' : 'Prepare'}</span>
+          <small>{prep.length} {zh ? '资产' : 'items'}</small>
+        </button>
       </div>
 
-      {tab === 'opportunities' ? <><div className="surface-tool-strip"><div><strong>{zh ? '组合决策' : 'Portfolio decision'}</strong><span>{zh ? '有共享投递名额时，比较整个组合，不为了凑名额推荐弱岗位。' : 'When roles share an application quota, compare the portfolio rather than filling slots.'}</span></div><div className="surface-tool-row"><ApplicationPortfolioDock /></div></div><OpportunityTable opportunities={opportunities} groups={groups} onOpenOpportunity={onOpenOpportunity} /></> : null}
-      {tab === 'pipeline' ? <PipelinePanel processes={processes} opportunities={opportunities} onOpenOpportunity={onOpenOpportunity} /> : null}
+      {tab === 'opportunities' ? <OpportunityDecisionList read={read} onOpenOpportunity={onOpenOpportunity} /> : null}
       {tab === 'prepare' ? <PreparePanel prep={prep} /> : null}
-    </section>
-  )
-}
-
-function OpportunityTable({ opportunities, groups, onOpenOpportunity }: { opportunities: Opportunity[]; groups: ApplicationGroup[]; onOpenOpportunity: (id: string) => void }) {
-  const { lang } = useUiLanguage()
-  const zh = lang === 'zh'
-  const [query, setQuery] = useState('')
-  const [scope, setScope] = useState<'active' | 'all' | 'closed'>('active')
-  const now = new Date()
-  const filtered = useMemo(() => {
-    const needle = query.trim().toLocaleLowerCase()
-    return [...opportunities]
-      .filter((item) => scope === 'all' || (scope === 'closed'
-        ? (item.processStage === 'closed' || item.participationStatus === 'abandoned')
-        : (item.processStage !== 'closed' && item.participationStatus !== 'abandoned')))
-      .filter((item) => !needle || `${item.company} ${item.role}`.toLocaleLowerCase().includes(needle))
-      .sort((a, b) => (a.order ?? 9999) - (b.order ?? 9999))
-  }, [opportunities, query, scope])
-
-  return (
-    <section className="surface-panel surface-table-panel">
-      <div className="surface-panel-head"><div><div className="eyebrow">OPPORTUNITY POOL</div><h2>{zh ? '正式机会池' : 'Opportunity pool'}</h2></div><span>{filtered.length} / {opportunities.length}</span></div>
-      <div className="surface-filter-row"><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={zh ? '搜索公司或岗位' : 'Search company or role'} /><select value={scope} onChange={(event) => setScope(event.target.value as 'active' | 'all' | 'closed')}><option value="active">{zh ? '活跃' : 'Active'}</option><option value="closed">{zh ? '已结束' : 'Closed'}</option><option value="all">{zh ? '全部' : 'All'}</option></select></div>
-      {filtered.length ? (
-        <>
-          <div className="surface-table-wrap surface-opportunity-desktop"><table><thead><tr><th>{zh ? '公司' : 'Company'}</th><th>{zh ? '岗位' : 'Role'}</th><th>{zh ? '定位' : 'Role type'}</th><th>{zh ? '时机' : 'Timing'}</th><th>Fit</th><th>{zh ? '机会价值' : 'Value'}</th><th>{zh ? '截止' : 'Deadline'}</th><th>{zh ? '申请组' : 'Group'}</th></tr></thead><tbody>{filtered.map((item) => <tr className="surface-opportunity-row" key={item.id}><td><strong>{item.company}</strong></td><td><button className="surface-link-button" onClick={() => onOpenOpportunity(item.id)}>{item.role}</button></td><td>{roleLabels[item.roleType][zh ? 0 : 1]}</td><td><PriorityBadge value={computePriority(item, now)} zh={zh} /></td><td>{item.assessmentStatus === 'unassessed' ? (zh ? '未评估' : 'Unassessed') : Math.round(item.fitScore)}</td><td>{item.assessmentStatus === 'unassessed' ? (zh ? '未评估' : 'Unassessed') : Math.round(item.opportunityValue)}</td><td>{item.deadline ? formatDateOnly(item.deadline) : '—'}</td><td>{item.applicationGroupId ?? '—'}</td></tr>)}</tbody></table></div>
-          <div className="surface-opportunity-mobile-list">{filtered.map((item) => <button type="button" key={`mobile:${item.id}`} onClick={() => onOpenOpportunity(item.id)}><div><strong>{item.company}</strong><span>{item.role}</span></div><div><span>{roleLabels[item.roleType][zh ? 0 : 1]}</span><span>{item.assessmentStatus === 'unassessed' ? (zh ? '未评估' : 'Unassessed') : `Fit ${Math.round(item.fitScore)}`}</span><span>{item.assessmentStatus === 'unassessed' ? (zh ? '待评估' : 'Pending assessment') : `${zh ? '价值' : 'Value'} ${Math.round(item.opportunityValue)}`}</span></div><small>{item.deadline ? `${zh ? '截止' : 'Deadline'} ${formatDateOnly(item.deadline)}` : presentStageLabel(item.processStage, item.currentStageLabel, lang)}</small></button>)}</div>
-        </>
-      ) : <EmptyState title={opportunities.length ? (zh ? '没有符合筛选的岗位' : 'No matching opportunities') : (zh ? '机会池还是空的' : 'Opportunity pool is empty')} text={opportunities.length ? (zh ? '调整搜索或筛选条件。' : 'Adjust search or filters.') : (zh ? '符合规则且身份明确的岗位会自动进入这里；也可以在 Settings 配置岗位发现或导入已有岗位。' : 'Eligible, confidently identified jobs appear here automatically. You can also configure discovery or import existing opportunities in Settings.')} />}
-      {groups.length ? <p className="surface-footnote">{zh ? `当前有 ${groups.length} 个共享申请组。组合决策只对显式关联到同一 Application Group 的岗位生效。` : `${groups.length} shared Application Groups are present. Portfolio decisions only apply to roles explicitly linked to the same group.`}</p> : null}
-    </section>
-  )
-}
-
-function PipelinePanel({ processes, opportunities, onOpenOpportunity }: { processes: ProcessRecord[]; opportunities: Opportunity[]; onOpenOpportunity: (id: string) => void }) {
-  const { lang } = useUiLanguage()
-  const zh = lang === 'zh'
-  const stageOrder: Record<ProcessRecord['stage'], number> = {
-    offer: 0,
-    interview: 1,
-    written_test: 2,
-    assessment: 3,
-    screening: 4,
-    waiting_release: 5,
-    not_applied: 6,
-    closed: 7,
-  }
-  const sorted = [...processes].sort((a, b) => stageOrder[a.stage] - stageOrder[b.stage] || (b.lastProgressAt ?? '').localeCompare(a.lastProgressAt ?? '') || a.company.localeCompare(b.company))
-  const opportunityIdFor = (process: ProcessRecord) => process.opportunityId ?? opportunities.find((item) => item.company === process.company && item.role === process.role)?.id
-  return (
-    <section className="surface-panel">
-      <div className="surface-panel-head"><div><div className="eyebrow">PIPELINE</div><h2>{zh ? '在途招聘流程' : 'Recruiting pipeline'}</h2></div><span>{processes.length}</span></div>
-      {sorted.length ? <div className="surface-pipeline-grid">{sorted.map((item) => {
-        const opportunityId = opportunityIdFor(item)
-        return <article className="surface-pipeline-card" key={item.id}><div><strong>{item.company}</strong><h3>{item.role}</h3></div><span className="surface-stage">{presentStageLabel(item.stage, item.stageLabel, lang)}</span><dl><div><dt>{zh ? '最近进展' : 'Last progress'}</dt><dd>{item.lastProgressAt ? formatDateOnly(item.lastProgressAt) : '—'}</dd></div></dl><div className="surface-pipeline-footer">{opportunityId ? <button className="text-button" onClick={() => onOpenOpportunity(opportunityId)}>{zh ? '岗位详情' : 'Details'}</button> : null}</div></article>
-      })}</div> : <EmptyState title={zh ? '暂无在途流程' : 'No pipeline yet'} text={zh ? '流程通知通常由 AI / Gmail 自动进入；日常补充请使用“告诉 PJSDAS”，只有恢复异常流程时才进入 Settings。' : 'Process notices normally arrive through AI or Gmail. Use Tell PJSDAS for normal capture and Settings only for exceptional process recovery.'} />}
     </section>
   )
 }
@@ -911,15 +873,6 @@ function GettingStartedCard({ onStart }: { onStart: () => void }) {
 
 function EmptyState({ title, text }: { title: string; text: string }) {
   return <div className="empty-card"><strong>{title}</strong><p>{text}</p></div>
-}
-
-function PriorityBadge({ value, zh }: { value: ReturnType<typeof computePriority>; zh: boolean }) {
-  const label = value === 'expired'
-    ? (zh ? '已过期' : 'Expired')
-    : value === 'none'
-      ? (zh ? '流程中' : 'Pipeline')
-      : value
-  return <span className={`priority-badge priority-${value}`}>{label}</span>
 }
 
 function formatDateTime(iso: string) {

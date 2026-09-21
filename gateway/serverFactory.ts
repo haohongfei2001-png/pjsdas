@@ -3,6 +3,7 @@ import {
   explainPrioritySchema,
   getApplicationPortfolioSchema,
   getOpportunityAssessmentSchema,
+  getOpportunityDetailSchema,
   getPipelineSchema,
   getPrepGraphSchema,
   getRecentTimelineSchema,
@@ -94,7 +95,7 @@ export function createPjsdasMcpServer(
     'Interactive MCP tools do not perform arbitrary job-web discovery. If the user asks for current jobs in ChatGPT, use ChatGPT web search/browsing and preserve public source URLs. Separately, PJSDAS background Discovery may discover candidates and independently fetch their source URLs before any source fact is trusted.',
     'When a public source explicitly supports them, submit bounded structured job facts. Do not convert model inference into source facts.',
     'For new web-discovered jobs, prefer bounded component assessments over opaque aggregate ratings. PJSDAS derives Fit and Opportunity Value totals from explicit components and user-controlled weights.',
-    'Use get_opportunity_assessment when the user asks why a stored Fit or Opportunity Value score exists.',
+    'Use get_opportunity_detail as the canonical opportunity decision read: conclusion, material reasons/risks, current process state, next operation, and nearest ScheduleNode. Use get_opportunity_assessment only when the user explicitly asks why a stored Fit or Opportunity Value score exists.',
     'Use get_application_portfolio when the user asks which roles to choose inside an explicit Application Group. Capacity is a maximum, not a target.',
     'Use get_prep_graph when the user asks what preparation has the highest leverage or which current gaps are uncovered.',
     'Use get_coverage_status when the user asks whether automated sources missed anything. A green result means every currently enabled Source Registry entry is fresh, balanced, and has no unresolved input; it does not claim that the public internet contains no other jobs.',
@@ -192,6 +193,12 @@ export function createPjsdasMcpServer(
     description: 'Query the PJSDAS opportunity pool with bounded filters such as stage, company, role type, query text, or deadline. Rich facts are optional and bounded.',
     inputSchema: listOpportunitiesSchema, annotations: readOnlyAnnotations,
   }, async (args) => invokeReadTool(source, 'list_opportunities', args))
+
+  server.registerTool('get_opportunity_detail', {
+    title: 'Get PJSDAS opportunity detail decision',
+    description: 'Read one platform-neutral conclusion-first Opportunity decision: conclusion, material reasons/risks, process state, next operation, nearest ScheduleNode, and progressive-detail references.',
+    inputSchema: getOpportunityDetailSchema, annotations: readOnlyAnnotations,
+  }, async (args) => invokeReadTool(source, 'get_opportunity_detail', args))
 
   server.registerTool('get_opportunity_assessment', {
     title: 'Get PJSDAS opportunity assessment',

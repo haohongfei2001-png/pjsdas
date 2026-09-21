@@ -37,11 +37,12 @@ describe('UU-04 Web friction rules', () => {
     expect(app).toContain("zh ? '历史与审计' : 'History & audit'")
   })
 
-  it('chooses Opportunities context from active recruiting state without creating a review tab', () => {
-    expect(app).toContain('opportunityTabExplicit')
-    expect(app).toContain("setOpportunityTab(hasPipeline ? 'pipeline' : 'opportunities')")
+  it('keeps Opportunities decision-first without creating Pipeline or Review maintenance tabs', () => {
+    expect(app).toContain("type OpportunityTab = 'opportunities' | 'prepare'")
+    expect(app).toContain('OpportunityDecisionList')
     expect(app).toContain("setOpportunityTabExplicit(true)")
     expect(app).not.toContain("'review' | 'opportunities'")
+    expect(app).not.toContain("'pipeline' | 'prepare'")
   })
 
   it('keeps an empty workspace start path without persistent onboarding state', () => {

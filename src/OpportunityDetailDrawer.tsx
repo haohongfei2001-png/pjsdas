@@ -1,6 +1,8 @@
 import { useEffect } from 'react'
 import { jobPostingFreshness } from './jobPosting.js'
 import OpportunityAssessmentSummary from './OpportunityAssessmentSummary.js'
+import OpportunityDecisionSummary from './OpportunityDecisionSummary.js'
+import type { OpportunityDecisionRead } from './opportunityDecisionRead.js'
 import RichOpportunityFactsSummary from './RichOpportunityFactsSummary.js'
 import { presentStageLabel } from './stagePresentation.js'
 import { useUiLanguage } from './uiLanguage.js'
@@ -14,24 +16,17 @@ import type {
 } from './model.js'
 import './opportunityDetail.css'
 
-export type OpportunityDetailDestination = 'today' | 'opportunities' | 'pipeline' | 'prepare'
+export type OpportunityDetailDestination = 'today' | 'opportunities' | 'prepare'
 
 interface OpportunityDetailDrawerProps {
   opportunity: Opportunity
+  decision?: OpportunityDecisionRead
   process?: ProcessRecord
   actions: Action[]
   applicationGroup?: ApplicationGroup
   timeline: TimelineRecord[]
   onClose: () => void
   onNavigate: (destination: OpportunityDetailDestination) => void
-}
-
-const roleLabels: Record<Opportunity['roleType'], [string, string]> = {
-  core: ['核心', 'Core'],
-  backup: ['保底', 'Backup'],
-  reach: ['冲刺', 'Reach'],
-  lottery: ['彩票', 'Long shot'],
-  practice: ['练手', 'Practice'],
 }
 
 const actionStatusLabels: Record<Action['status'], [string, string]> = {
@@ -82,6 +77,7 @@ function SourceRow({ posting, zh }: { posting: JobPostingEvidence; zh: boolean }
 
 export default function OpportunityDetailDrawer({
   opportunity,
+  decision,
   process,
   actions,
   applicationGroup,
@@ -116,101 +112,77 @@ export default function OpportunityDetailDrawer({
       <aside className="opportunity-detail-drawer" role="dialog" aria-modal="true" aria-label={zh ? '岗位详情' : 'Opportunity details'} onMouseDown={(event) => event.stopPropagation()}>
         <header className="opportunity-detail-header">
           <div>
-            <div className="eyebrow">OPPORTUNITY · {opportunity.id}</div>
+            <div className="eyebrow">OPPORTUNITY</div>
             <strong className="opportunity-detail-company">{opportunity.company}</strong>
             <h2>{opportunity.role}</h2>
             <div className="opportunity-detail-header-badges">
-              <span>{roleLabels[opportunity.roleType][zh ? 0 : 1]}</span>
               <span>{effectiveStageText}</span>
-              {opportunity.early ? <span>{zh ? '提前批 / 早期窗口' : 'Early window'}</span> : null}
+              {opportunity.early ? <span>{zh ? '早期窗口' : 'Early window'}</span> : null}
             </div>
           </div>
           <button className="opportunity-detail-close" type="button" onClick={onClose} aria-label={zh ? '关闭' : 'Close'}>×</button>
         </header>
 
-        <section className="opportunity-detail-score-grid" aria-label={zh ? '核心判断' : 'Core assessment'}>
-          <div><small>FIT</small><b>{opportunity.assessmentStatus === 'unassessed' ? (zh ? '未评估' : 'Unassessed') : Math.round(opportunity.fitScore)}</b></div>
-          <div><small>{zh ? '机会价值' : 'VALUE'}</small><b>{opportunity.assessmentStatus === 'unassessed' ? (zh ? '未评估' : 'Unassessed') : Math.round(opportunity.opportunityValue)}</b></div>
-          <div><small>{zh ? '当前阶段' : 'STAGE'}</small><strong>{effectiveStageText}</strong></div>
-          <div><small>{zh ? '截止' : 'DEADLINE'}</small><strong>{formatDate(opportunity.deadline, zh)}</strong></div>
-        </section>
+        {decision ? <OpportunityDecisionSummary decision={decision} process={process} onNavigate={onNavigate} /> : null}
 
-        <section className="opportunity-detail-next-step">
-          <div>
-            <div className="eyebrow">NEXT DECISION</div>
-            <h3>{opportunity.nextActionLabel ?? (zh ? '根据当前状态继续判断下一步' : 'Decide the next move from current state')}</h3>
-            <p>{discovery?.rationale ?? opportunity.detail?.jdSummary ?? (zh ? '该岗位目前没有额外决策说明。' : 'No additional decision rationale is stored for this opportunity.')}</p>
-          </div>
-          <div className="opportunity-detail-nav-actions">
-            <button type="button" onClick={() => onNavigate('opportunities')}>{zh ? '回到机会池' : 'Opportunity pool'}</button>
-            {process || opportunity.processStage !== 'not_applied' ? <button type="button" onClick={() => onNavigate('pipeline')}>{zh ? '查看流程' : 'View pipeline'}</button> : null}
-            <button type="button" onClick={() => onNavigate('prepare')}>{zh ? '查看准备' : 'View prep'}</button>
-          </div>
-        </section>
+        <div className="opportunity-detail-progressive">
+          <RichOpportunityFactsSummary facts={opportunity.detail?.facts} zh={zh} />
 
-        <section className="opportunity-detail-overview">
-          <div><small>{zh ? '地点' : 'Location'}</small><strong>{userFacts?.location ?? discovery?.location ?? opportunity.detail?.facts?.identity.locations?.join(' · ') ?? (zh ? '未明确' : 'Unknown')}</strong></div>
-          <div><small>{zh ? '薪资' : 'Compensation'}</small><strong>{userFacts?.compensationText ?? discovery?.compensationText ?? opportunity.salaryReference ?? opportunity.detail?.facts?.compensation.raw ?? (zh ? '未明确' : 'Unknown')}</strong></div>
-          <div><small>{zh ? '申请组' : 'Application group'}</small><strong>{applicationGroup?.id ?? opportunity.applicationGroupId ?? '—'}</strong></div>
-          <div><small>{zh ? '成功率' : 'Offer probability'}</small><strong>{opportunity.offerProbability ?? (zh ? '未知' : 'Unknown')}</strong></div>
-        </section>
+          {applicationGroup ? (
+            <details className="opportunity-detail-section">
+              <summary>{zh ? '申请约束' : 'Application constraints'}</summary>
+              <div className="opportunity-detail-prose">
+                <p>{applicationGroup.rule ?? (zh ? '该组没有额外规则说明。' : 'No additional rule is stored for this group.')}</p>
+                {applicationGroup.remaining !== undefined ? <span>{zh ? '剩余名额' : 'Remaining capacity'}：{applicationGroup.remaining}</span> : null}
+                {applicationGroup.currentOrder ? <span>{zh ? '当前顺序' : 'Current order'}：{applicationGroup.currentOrder}</span> : null}
+              </div>
+            </details>
+          ) : null}
 
-        {applicationGroup ? (
           <details className="opportunity-detail-section">
-            <summary>{zh ? '申请组约束' : 'Application-group constraints'}</summary>
-            <div className="opportunity-detail-prose">
-              <p>{applicationGroup.rule ?? (zh ? '该组没有额外规则说明。' : 'No additional rule is stored for this group.')}</p>
-              <span>{zh ? '名额' : 'Capacity'}：{applicationGroup.used ?? '?'} / {applicationGroup.total ?? '?'}</span>
-              {applicationGroup.remaining !== undefined ? <span>{zh ? '剩余' : 'Remaining'}：{applicationGroup.remaining}</span> : null}
-              {applicationGroup.currentOrder ? <span>{zh ? '当前顺序' : 'Current order'}：{applicationGroup.currentOrder}</span> : null}
+            <summary>{zh ? '准备与相关待办' : 'Preparation & related actions'}</summary>
+            <div className="opportunity-detail-process-grid">
+              <div><small>{zh ? '最近进展' : 'Last progress'}</small><strong>{formatDate(process?.lastProgressAt, zh)}</strong></div>
+              <div><small>{zh ? '下次复核' : 'Next check'}</small><strong>{formatDate(process?.nextCheckAt, zh)}</strong></div>
+              <div><small>{zh ? '准备包' : 'Prep pack'}</small><strong>{process?.prepPack ?? (zh ? '未指定' : 'Not specified')}</strong></div>
             </div>
+            {relevantActions.length ? (
+              <div className="opportunity-detail-action-list">
+                {relevantActions.map((action) => (
+                  <article key={action.id}>
+                    <div><strong>{action.title}</strong><small>{action.dueAt ? formatDate(action.dueAt, zh) : (zh ? '无明确时间' : 'No dated node')}</small></div>
+                    <span>{actionStatusLabel(action.status, zh)}</span>
+                  </article>
+                ))}
+              </div>
+            ) : <p className="opportunity-detail-muted">{zh ? '当前没有未完成的岗位级待办。' : 'No unfinished opportunity-level action.'}</p>}
+            <button className="text-button" type="button" onClick={() => onNavigate('prepare')}>{zh ? '查看全部准备' : 'Open preparation'}</button>
           </details>
-        ) : null}
 
-        <RichOpportunityFactsSummary facts={opportunity.detail?.facts} zh={zh} />
-        <OpportunityAssessmentSummary
-          assessment={opportunity.detail?.assessment}
-          fitScore={opportunity.fitScore}
-          opportunityValue={opportunity.opportunityValue}
-          fitConfidence={discovery?.fitConfidence}
-          opportunityValueConfidence={discovery?.opportunityValueConfidence}
-          zh={zh}
-        />
+          {(posting || postingHistory.length) ? (
+            <details className="opportunity-detail-section">
+              <summary>{zh ? '来源证据' : 'Source evidence'}</summary>
+              <div className="opportunity-detail-source-list">
+                {posting ? <SourceRow posting={posting} zh={zh} /> : null}
+                {postingHistory.map((item) => <SourceRow key={item.id} posting={item} zh={zh} />)}
+              </div>
+              <p className="opportunity-detail-muted">{zh ? '来源生命周期与招聘流程状态分离；招聘页面关闭不会自动关闭机会。' : 'Source lifecycle is separate from recruiting lifecycle; a closed posting never automatically closes the opportunity.'}</p>
+            </details>
+          ) : null}
 
-        <details className="opportunity-detail-section" open={Boolean(process || relevantActions.length)}>
-          <summary>{zh ? '流程与待办' : 'Pipeline & actions'}</summary>
-          <div className="opportunity-detail-process-grid">
-            <div><small>{zh ? '流程阶段' : 'Process stage'}</small><strong>{effectiveStageText}</strong></div>
-            <div><small>{zh ? '最近进展' : 'Last progress'}</small><strong>{formatDate(process?.lastProgressAt, zh)}</strong></div>
-            <div><small>{zh ? '下次复核' : 'Next check'}</small><strong>{formatDate(process?.nextCheckAt, zh)}</strong></div>
-            <div><small>{zh ? '准备包' : 'Prep pack'}</small><strong>{process?.prepPack ?? (zh ? '未指定' : 'Not specified')}</strong></div>
-          </div>
-          {relevantActions.length ? (
-            <div className="opportunity-detail-action-list">
-              {relevantActions.map((action) => (
-                <article key={action.id}>
-                  <div><strong>{action.title}</strong><small>{action.dueAt ? formatDate(action.dueAt, zh) : (zh ? '无明确时间' : 'No dated node')}</small></div>
-                  <span>{actionStatusLabel(action.status, zh)}</span>
-                </article>
-              ))}
-            </div>
-          ) : <p className="opportunity-detail-muted">{zh ? '当前没有未完成的岗位级 Action。' : 'No unfinished opportunity-level Action.'}</p>}
-        </details>
-
-        {(posting || postingHistory.length) ? (
-          <details className="opportunity-detail-section">
-            <summary>{zh ? '公开来源与新鲜度' : 'Public sources & freshness'}</summary>
-            <div className="opportunity-detail-source-list">
-              {posting ? <SourceRow posting={posting} zh={zh} /> : null}
-              {postingHistory.map((item) => <SourceRow key={item.id} posting={item} zh={zh} />)}
-            </div>
-            <p className="opportunity-detail-muted">{zh ? '来源状态与求职流程状态分离；招聘页面关闭不会自动关闭 Opportunity。' : 'Source lifecycle is separate from recruiting lifecycle; a closed posting never automatically closes the Opportunity.'}</p>
-          </details>
-        ) : null}
+          <OpportunityAssessmentSummary
+            assessment={opportunity.detail?.assessment}
+            fitScore={opportunity.fitScore}
+            opportunityValue={opportunity.opportunityValue}
+            fitConfidence={discovery?.fitConfidence}
+            opportunityValueConfidence={discovery?.opportunityValueConfidence}
+            zh={zh}
+          />
+        </div>
 
         {recentTimeline.length ? (
           <details className="opportunity-detail-section">
-            <summary>{zh ? '最近历史' : 'Recent history'}</summary>
+            <summary>{zh ? '完整历史' : 'Full history'}</summary>
             <div className="opportunity-detail-timeline">
               {recentTimeline.map((record) => (
                 <article key={record.id}>

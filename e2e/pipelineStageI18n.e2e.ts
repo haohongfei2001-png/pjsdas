@@ -48,24 +48,21 @@ async function seed(page: import('@playwright/test').Page) {
   await page.reload()
 }
 
-test('Pipeline and mobile opportunity cards localize canonical stored stages without mutating them', async ({ page }) => {
+test('In Progress decision rows localize canonical stored stages on desktop and mobile without mutating them', async ({ page }) => {
   await seed(page)
   await page.locator('.ultimate-toolbar').getByRole('button', { name: /设置|Settings/ }).click()
   const interfaceGroup = page.locator('details.settings-group > summary').filter({ hasText: /界面.*显示层|Interface.*Presentation/ }).locator('..')
   await interfaceGroup.locator('summary').click()
   await interfaceGroup.getByRole('button', { name: 'EN', exact: true }).click()
   await page.locator('.surface-nav').getByRole('button', { name: /Opportunities/ }).click()
-  await page.locator('.surface-context-tabs button').filter({ hasText: 'Opportunities' }).click()
-  await page.locator('.surface-context-tabs button').filter({ hasText: 'Pipeline' }).click()
-
-  await expect(page.locator('.surface-stage')).toHaveText('Screening')
+  const row = page.locator('.opportunity-decision-row').filter({ hasText: opportunity.company })
+  await expect(row).toBeVisible()
+  await expect(row).toContainText('Screening')
   await expect(page.getByText('筛选中', { exact: true })).toHaveCount(0)
 
   await page.setViewportSize({ width: 390, height: 844 })
-  await page.locator('.surface-context-tabs button').filter({ hasText: 'Opportunities' }).click()
-  const mobileCard = page.locator('.surface-opportunity-mobile-list button').filter({ hasText: opportunity.company })
-  await expect(mobileCard).toBeVisible()
-  await expect(mobileCard.locator('small')).toHaveText('Screening')
+  await expect(row).toBeVisible()
+  await expect(row).toContainText('Screening')
 
   const stored = await page.evaluate(async () => {
     return new Promise<{ opportunityStage?: string; processStage?: string }>((resolve, reject) => {
