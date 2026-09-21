@@ -36,11 +36,28 @@ function handler(fetchImpl: typeof fetch) {
     expectedAudience: AUDIENCE,
     expectedServiceAccountEmail: PUSH_SA,
     expectedSubscription: SUBSCRIPTION,
+    executionControlsEnabled: true,
     fetchImpl,
   })
 }
 
 describe('authenticated Gmail Pub/Sub push', () => {
+  it('fails closed before token verification when fenced execution is disabled', async () => {
+    const fetchImpl = vi.fn() as unknown as typeof fetch
+    const response = await createGmailPushHandler({
+      supabaseUrl: 'https://example.supabase.co',
+      supabasePublishableKey: 'sb_publishable_test',
+      supabaseServiceRoleKey: 'service-role-test',
+      expectedAudience: AUDIENCE,
+      expectedServiceAccountEmail: PUSH_SA,
+      expectedSubscription: SUBSCRIPTION,
+      executionControlsEnabled: false,
+      fetchImpl,
+    })(pushRequest({ emailAddress: 'a@example.com', historyId: '1' }))
+    expect(response.status).toBe(503)
+    expect(fetchImpl).not.toHaveBeenCalled()
+  })
+
   it('validates Google OIDC then enqueues the existing worker without interpreting message content', async () => {
     const calls: Array<{ url: string; body?: Record<string, unknown>; auth: string | null }> = []
     const fetchImpl = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
