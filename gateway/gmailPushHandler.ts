@@ -60,6 +60,9 @@ async function verifyGoogleOidc(
   } catch {
     throw new WorkspaceSourceError('GMAIL_PUSH_AUTH_UNAVAILABLE', 'Google push authentication is temporarily unavailable.', true)
   }
+  if (response.status === 429 || response.status >= 500) {
+    throw new WorkspaceSourceError('GMAIL_PUSH_AUTH_UNAVAILABLE', 'Google push authentication is temporarily unavailable.', true)
+  }
   if (!response.ok) {
     throw new WorkspaceSourceError('GMAIL_PUSH_AUTH_INVALID', 'Gmail push authentication failed.', false)
   }
