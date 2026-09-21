@@ -38,6 +38,7 @@ export type UserDomainCommand =
   | {
       commandId: string
       kind: 'record_process_event'
+      temporal?: ScheduleNodeTemporal
       opportunityId: string
       eventType: ProcessEventType
       occurredAt?: string
@@ -46,10 +47,13 @@ export type UserDomainCommand =
       timingMode?: ActionTimingMode
       estimatedMinutes?: number
       notes?: string
+      location?: string
+      joinUrl?: string
       source?: ProcessEvent['source']
     }
   | { commandId: string; kind: 'set_deadline'; opportunityId: string; deadline: string; precision: DatePrecision }
   | { commandId: string; kind: 'complete_occurrence'; occurrenceId: string; occurredAt?: string }
+  | { commandId: string; kind: 'cancel_occurrence'; occurrenceId: string; occurredAt?: string }
   | {
       commandId: string
       kind: 'reschedule_occurrence'
@@ -350,7 +354,14 @@ export function applyUserDomainCommand(
     if (!target) throw new Error(`Opportunity ${command.opportunityId} was not found.`)
     const occurredAt = command.occurredAt ?? timestamp
     assertIso(occurredAt, 'occurredAt')
-    if (command.dueAt) assertIso(command.dueAt, 'dueAt')
+    const effectiveDueAt = command.temporal?.startAt ?? command.temporal?.deadlineAt ?? command.temporal?.date ?? command.dueAt
+    if (command.temporal && !['assessment_invite', 'written_test_invite', 'interview_invite'].includes(command.eventType)) throw new Error('Explicit process temporal requires a schedule-bearing event.')
+    if (effectiveDueAt) assertIso(effectiveDueAt, 'dueAt')
+    if (command.location && command.location.length > 200) throw new Error('Location exceeds the bounded field length.')
+    if (command.joinUrl) {
+      const url = new URL(command.joinUrl)
+      if (url.protocol !== 'https:' || url.username || url.password || command.joinUrl.length > 500) throw new Error('Join URL must be a bounded HTTPS reference.')
+    }
     const eventId = `user-event:${stableHash(command.commandId)}`
     const event: ProcessEvent = {
       id: eventId,
@@ -358,12 +369,16 @@ export function applyUserDomainCommand(
       company: target.company,
       role: target.role,
       type: command.eventType,
+      temporal: command.temporal ? structuredClone(command.temporal) : undefined,
       occurredAt,
-      dueAt: command.dueAt,
-      duePrecision: command.duePrecision,
+      dueAt: effectiveDueAt,
+      duePrecision: command.temporal?.precision ?? command.duePrecision,
       timingMode: command.timingMode ?? defaultTimingModeForProcessEvent(command.eventType),
       estimatedMinutes: command.estimatedMinutes ?? defaultMinutesForProcessEvent(command.eventType),
-      notes: command.notes?.trim() || undefined,
+      location: command.location?.trim() || undefined,
+      joinUrl: command.joinUrl?.trim() || undefined,
+      notes: [command.notes?.trim(), command.location ? `地点：${command.location}` : undefined,
+        command.joinUrl ? `邮件链接（未验证）：${command.joinUrl}` : undefined].filter(Boolean).join('；') || undefined,
       source: command.source ?? 'manual',
       createdAt: timestamp,
       updatedAt: timestamp,
@@ -385,13 +400,14 @@ export function applyUserDomainCommand(
     }
   }
 
-  if (command.kind === 'complete_occurrence') {
+  if (command.kind === 'complete_occurrence' || command.kind === 'cancel_occurrence') {
+    const cancelled = command.kind === 'cancel_occurrence'
     const node = activeScheduleNode(next, command.occurrenceId)
     if (!node) throw new Error(`Schedule occurrence ${command.occurrenceId} was not found.`)
-    if (node.state === 'completed') {
-      return { status: 'ALREADY_APPLIED', snapshot, summary: `Schedule occurrence ${command.occurrenceId} is already completed.` }
+    if (node.state === (cancelled ? 'cancelled' : 'completed')) {
+      return { status: 'ALREADY_APPLIED', snapshot, summary: `Schedule occurrence ${command.occurrenceId} is already ${cancelled ? 'cancelled' : 'completed'}.` }
     }
-    if (node.state === 'cancelled' || node.state === 'superseded') {
+    if (node.state === 'cancelled' || node.state === 'completed' || node.state === 'superseded') {
       return {
         status: 'NEEDS_CONFIRMATION',
         snapshot,
@@ -419,17 +435,17 @@ export function applyUserDomainCommand(
       participationState: process.participationState,
     }))
 
-    node.state = 'completed'
-    node.completedAt = occurredAt
+    node.state = cancelled ? 'cancelled' : 'completed'
+    node.completedAt = cancelled ? undefined : occurredAt
     node.updatedAt = occurredAt
     for (const actionId of node.relatedActionIds) {
       const item = next.data.actions.find((action) => action.id === actionId)
       if (!item || item.status === 'done') continue
-      item.status = 'done'
+      item.status = cancelled ? 'skipped' : 'done'
       item.updatedAt = occurredAt
     }
     for (const process of affectedProcesses) {
-      if (node.kind === 'assessment' || node.kind === 'written_test' || node.kind === 'interview') {
+      if (!cancelled && (node.kind === 'assessment' || node.kind === 'written_test' || node.kind === 'interview')) {
         process.progress = 'waiting_result'
         process.result ??= 'pending'
         process.currentAction = undefined
@@ -444,7 +460,7 @@ export function applyUserDomainCommand(
       source: 'user_action',
       occurredAt,
       recordedAt: timestamp,
-      title: '完成招聘节点',
+      title: cancelled ? '取消招聘节点' : '完成招聘节点',
       detail: `${node.kind} · ${node.occurrenceId}`,
       opportunityId: node.opportunityId,
       scheduleNodeId: node.id,
@@ -453,7 +469,7 @@ export function applyUserDomainCommand(
     return {
       status: 'APPLIED',
       snapshot: next,
-      summary: `Completed schedule occurrence ${node.occurrenceId}.`,
+      summary: `${cancelled ? 'Cancelled' : 'Completed'} schedule occurrence ${node.occurrenceId}.`,
       compensation: {
         operation: 'restore_occurrence_completion',
         payload: {

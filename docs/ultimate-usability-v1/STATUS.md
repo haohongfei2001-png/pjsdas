@@ -15,7 +15,7 @@ Product origin: `https://todayaction.com`
 | UU-03 | **COMPLETE** | Revision-bound TodayBrief / agenda / latest-start read model implemented and production-verified |
 | UU-04 | **COMPLETE** | Final two-destination Web shell / Today implemented and production-verified |
 | UU-05 | **COMPLETE** | Shared opportunity decisions / conclusion-first detail and date-only regression closed on main; production verified |
-| UU-06 | **READY — NOT STARTED** | UU-05/shared intake dependencies satisfied; separate execution required |
+| UU-06 | **IN_PROGRESS** | Independent execution UU06-20260921-aem01; manager/uu06-aem-20260921; baseline bb1cabf |
 | UU-07 | NOT_READY | Depends on shared intake/read models |
 | UU-08 | NOT_READY | Depends on platform-neutral contracts |
 | UU-09 | NOT_READY | Final canary/release |
@@ -328,9 +328,17 @@ persistence receipts, recovery tooling, no horizontal overflow, and the 390×844
 
 ## Next authorized work
 
-UU-05 is COMPLETE; UU-06 is **READY but NOT STARTED**. A separate execution
-must re-read remote main, canonical status, frozen blueprint/amendments and
-`rounds/UU-06.md`. This closure execution does not begin UU-06.
+UU-05 is COMPLETE. UU-06 is **IN_PROGRESS** in the independent execution
+`UU06-20260921-aem01` on `manager/uu06-aem-20260921`; the earlier UU-05 closure's
+stop boundary applies to that historical execution. The current execution has
+re-read the remote baseline and project authority; see `rounds/UU-06.md`.
+
+Next: finish exact-candidate checks and manager-controlled deployment/verification
+for the consent-bound intake and dormant execution protection. The default-NULL
+consent schema is applied (production version `20260921053337`), with zero enabled
+bindings and zero expanded grants verified by the manager. Controls schema remains
+unapplied; its flag and cron remain unchanged. Live p95/compensation SLOs are not
+certified, so UU-06 is not COMPLETE and this execution does not start UU-07.
 
 ## UU-04 scope boundary
 
@@ -374,6 +382,7 @@ Exact merged implementation `d4b163b06902ae9b43123b98ec470b958c4c190e`:
   `d4b163b06902ae9b43123b98ec470b958c4c190e` and contract/migration digests match.
 - Release workflow `35547757705`: success with final publication still disarmed.
 
-This closure commit changes documentation only. No workspace-data migration,
-permission expansion or final release publication. UU-06 is READY but is not
-started in this execution.
+Historical UU-05 closure boundary: that closure commit changed documentation only,
+with no workspace-data migration, permission expansion or final release publication.
+UU-06 was READY and was not started by that execution. The current independent
+UU-06 execution is tracked above; the historical receipts remain unchanged.

@@ -156,7 +156,8 @@ describe('Gmail background automation', () => {
     expect(result.coverageComplete).toBe(true)
     expect(result.nextHistoryId).toBe('300')
     expect(result.messages.map((item) => item.id)).toEqual(['recent-1'])
-    expect(calls.some((url) => url.includes('newer_than%3A7d'))).toBe(true)
+    expect(calls.some((url) => new URL(url).searchParams.get('q') === 'newer_than:7d -in:spam -in:trash')).toBe(true)
+    expect(calls.filter((url) => url.includes('/messages?')).every((url) => new URL(url).searchParams.get('labelIds') === 'INBOX')).toBe(true)
   })
   it('does not advance the durable history watermark until every Gmail history page is consumed', async () => {
     const calls: string[] = []
@@ -251,6 +252,40 @@ describe('Gmail background automation', () => {
     expect(second.coverageComplete).toBe(true)
     expect(second.nextHistoryId).toBe('405')
     expect(second.messages.map((item) => item.id)).toEqual(ids.slice(100))
+  })
+  it('keeps a 90-day archive-inclusive backfill query fixed across continuation runs', async () => {
+    const calls: string[] = []
+    const fetchImpl = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input); calls.push(url)
+      if (url.endsWith('/profile')) return json({ historyId: '500' })
+      if (url.includes('/messages?')) return new URL(url).searchParams.has('pageToken')
+        ? json({ messages: [{ id: 'archived-2' }] })
+        : json({ messages: [{ id: 'archived-1' }], nextPageToken: 'provider-page-2' })
+      const id = /\/messages\/([^?]+)\?/.exec(url)?.[1]
+      return json({ id, labelIds: [], internalDate: '1' })
+    }) as unknown as typeof fetch
+    const first = await fetchGmailAutomationBatch({ accessToken: 'test', coverage: 'uu06', fetchImpl, now: new Date('2026-09-21T00:00:00Z') })
+    const second = await fetchGmailAutomationBatch({ accessToken: 'test', coverage: 'uu06', fetchImpl, continuation: first.continuation, now: new Date('2026-09-23T00:00:00Z') })
+    const pages = calls.filter((url) => url.includes('/messages?')).map((url) => new URL(url))
+    expect(pages[0]!.searchParams.get('q')).toBe(`after:${Date.parse('2026-06-23T00:00:00Z') / 1000} -in:spam -in:trash`)
+    expect(pages[1]!.searchParams.get('q')).toBe(pages[0]!.searchParams.get('q'))
+    expect(pages.every((url) => !url.searchParams.has('labelIds'))).toBe(true)
+    expect(pages[1]!.searchParams.get('pageToken')).toBe('provider-page-2')
+    expect(first.nextHistoryId).toBeUndefined()
+    expect(second.nextHistoryId).toBe('500')
+    expect(second.messages[0]?.id).toBe('archived-2')
+  })
+  it('history includes newly archived recruiting messages without an INBOX label filter', async () => {
+    const calls: string[] = []
+    const fetchImpl = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input); calls.push(url)
+      if (url.endsWith('/profile')) return json({ historyId: '502' })
+      if (url.includes('/history?')) return json({ historyId: '502', history: [{ messagesAdded: [{ message: { id: 'archive' } }] }] })
+      return json({ id: 'archive', labelIds: [], internalDate: '1' })
+    }) as unknown as typeof fetch
+    const batch = await fetchGmailAutomationBatch({ accessToken: 'test', coverage: 'uu06', startHistoryId: '500', fetchImpl })
+    expect(batch.messages.map((message) => message.id)).toEqual(['archive'])
+    expect(calls.filter((url) => url.includes('/history?')).every((url) => !new URL(url).searchParams.has('labelId'))).toBe(true)
   })
 
 })

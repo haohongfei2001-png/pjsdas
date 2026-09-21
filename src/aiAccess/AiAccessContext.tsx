@@ -4,6 +4,7 @@ import { fetchBackend } from '../backendEndpoints.js'
 import { useUiLanguage, type UiLanguage } from '../uiLanguage.js'
 
 const PENDING_KEY = 'pjsdas-ai-google-link-pending'
+const PENDING_CONSENT_KEY = 'pjsdas-ai-gmail-intake-consent-version'
 const DRIVE_APPDATA_SCOPE = 'https://www.googleapis.com/auth/drive.appdata'
 const GMAIL_READONLY_SCOPE = 'https://www.googleapis.com/auth/gmail.readonly'
 const OFFLINE_AUTH_MISSING = 'AI_ACCESS_GOOGLE_OFFLINE_AUTH_MISSING'
@@ -82,7 +83,12 @@ function clearCallbackUrl() {
 function clearPendingGoogleLinkState() {
   if (typeof window === 'undefined') return
   window.sessionStorage.removeItem(PENDING_KEY)
+  window.sessionStorage.removeItem(PENDING_CONSENT_KEY)
   clearCallbackUrl()
+}
+
+export function gmailConsentForPending(storedMode: string | null, storedConsent: string | null): 'uu06-v1' | undefined {
+  return storedMode === 'gmail' && storedConsent === 'uu06-v1' ? 'uu06-v1' : undefined
 }
 
 function pendingGoogleLinkMode(): GoogleLinkMode | undefined {
@@ -144,7 +150,7 @@ async function readAutomationStatus(session: Session) {
   } satisfies GmailAutomationStatus
 }
 
-async function writeAutomationStatus(session: Session, patch: { gmailEnabled?: boolean; discoveryEnabled?: boolean }) {
+async function writeAutomationStatus(session: Session, patch: { gmailEnabled?: boolean; discoveryEnabled?: boolean; gmailIntakeConsentVersion?: 'uu06-v1' }) {
   const response = await fetchBackend('/api/automation-settings', {
     method: 'POST',
     headers: {
@@ -195,6 +201,7 @@ export function AiAccessProvider({ children }: { children: ReactNode }) {
 
   async function completeIfPending(session: Session | null) {
     const mode = pendingGoogleLinkMode()
+    const consent = typeof window === 'undefined' ? undefined : gmailConsentForPending(window.sessionStorage.getItem(PENDING_KEY), window.sessionStorage.getItem(PENDING_CONSENT_KEY))
     if (!session || !mode || completing.current) return
 
     completing.current = true
@@ -203,7 +210,7 @@ export function AiAccessProvider({ children }: { children: ReactNode }) {
     try {
       const linked = await persistGoogleLink(session)
       if (mode === 'gmail') {
-        setGmailAutomation(await writeAutomationStatus(session, { gmailEnabled: true }))
+        setGmailAutomation(await writeAutomationStatus(session, { gmailEnabled: true, ...(consent ? { gmailIntakeConsentVersion: consent } : {}) }))
       } else {
         await refreshStatusForSession(session)
       }
@@ -252,12 +259,14 @@ export function AiAccessProvider({ children }: { children: ReactNode }) {
     }
   }, [])
 
-  async function beginGoogleLink(mode: GoogleLinkMode) {
+  async function beginGoogleLink(mode: GoogleLinkMode, consent?: 'uu06-v1') {
     if (typeof window === 'undefined') return
     setBusy(true)
     setConnectedEmail(null)
     setError('')
     window.sessionStorage.setItem(PENDING_KEY, mode)
+    if (mode === 'gmail' && consent === 'uu06-v1') window.sessionStorage.setItem(PENDING_CONSENT_KEY, consent)
+    else window.sessionStorage.removeItem(PENDING_CONSENT_KEY)
     try {
       const supabase = await loadSupabase()
       const scopes = mode === 'gmail'
@@ -288,7 +297,7 @@ export function AiAccessProvider({ children }: { children: ReactNode }) {
   }
 
   async function beginGmailAutomationLink() {
-    return beginGoogleLink('gmail')
+    return beginGoogleLink('gmail', 'uu06-v1')
   }
 
   async function requireSession() {
@@ -307,7 +316,7 @@ export function AiAccessProvider({ children }: { children: ReactNode }) {
     setBusy(true)
     setError('')
     try {
-      setGmailAutomation(await writeAutomationStatus(await requireSession(), { gmailEnabled: enabled }))
+      setGmailAutomation(await writeAutomationStatus(await requireSession(), { gmailEnabled: enabled, ...(enabled ? { gmailIntakeConsentVersion: 'uu06-v1' as const } : {}) }))
     } catch (caught) {
       setError(aiAccessErrorMessage(caught, lang))
     } finally {

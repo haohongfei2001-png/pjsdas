@@ -1,3 +1,4 @@
+import { runControlledGmailExecutions } from './gmailControlledExecution.js'
 import { createAutomationConnectionStore } from './automationConnectionStore.js'
 import { runGmailAutomationForBinding } from './gmailAutomation.js'
 import { WorkspaceSourceError } from './workspaceSource.js'
@@ -10,6 +11,8 @@ export interface GmailAutomationHandlerConfig {
   googleClientSecret: string
   fetchImpl?: typeof fetch
   now?: () => Date
+  executionControlsEnabled?: boolean
+  executionBudgetMs?: number
 }
 
 function json(status: number, body: unknown) {
@@ -51,6 +54,16 @@ export function createGmailAutomationHandler(config: GmailAutomationHandlerConfi
     const workerToken = bearer(request)
     if (!workerToken) {
       return json(401, { code: 'AUTOMATION_AUTH_REQUIRED', message: 'PJSDAS automation authorization is required.' })
+    }
+
+    if (config.executionControlsEnabled === true) {
+      try {
+        const result = await runControlledGmailExecutions(config, workerToken, new URL(request.url).searchParams.get('userId')?.trim())
+        return json(result.failedUsers ? 207 : 200, result)
+      } catch (caught) {
+        const error = errorBody(caught)
+        return json(error.code === 'AUTOMATION_AUTH_REQUIRED' ? 401 : 503, { code: error.code, retryable: error.retryable })
+      }
     }
 
     const store = createAutomationConnectionStore({

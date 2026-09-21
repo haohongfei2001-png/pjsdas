@@ -199,7 +199,7 @@ export function scheduleNodeForProcessEvent(
     processEventId: event.id,
     kind,
     state: scheduleStateForAction(action, true),
-    temporal: legacyTemporal(
+    temporal: event.temporal ? structuredClone(event.temporal) : legacyTemporal(
       event.dueAt,
       event.duePrecision,
       event.timingMode,
