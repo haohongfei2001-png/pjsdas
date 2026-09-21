@@ -23,12 +23,18 @@ function request(method: 'GET' | 'POST', body?: unknown) {
   })
 }
 
-function handler(fetchImpl: typeof fetch) {
+function handler(fetchImpl: typeof fetch, gmailExecutionControlsEnabled = true) {
   return createAutomationSettingsHandler({
     supabaseUrl: 'https://example.supabase.co',
     supabasePublishableKey: 'publishable-key',
     allowedOrigins: [ORIGIN],
     fetchImpl,
+    gmailExecutionControlsEnabled,
+    registerGmailWatchImpl: async () => ({
+      historyId: 'watch-123',
+      expiresAt: '2026-09-25T00:00:00.000Z',
+      renewedAt: '2026-09-21T00:00:00.000Z',
+    }),
   })
 }
 
@@ -128,6 +134,30 @@ describe('automation settings API', () => {
     expect(writes[0]?.body).not.toHaveProperty('discovery_automation_enabled')
   })
 
+  it('fails explicit UU06 Gmail enable closed until execution controls are active', async () => {
+    const fetchImpl = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      if (url.endsWith('/auth/v1/user')) return json({ id: 'user-a', email: 'a@gmail.com' })
+      if (url.includes('/rest/v1/google_drive_connections?') && (!init?.method || init.method === 'GET')) {
+        return json([{
+          user_id: 'user-a',
+          refresh_token_ciphertext: 'cipher',
+          granted_scopes: [GMAIL_SCOPE],
+          gmail_automation_enabled: false,
+        }])
+      }
+      return json({ error: 'must not write' }, 500)
+    }) as unknown as typeof fetch
+
+    const response = await handler(fetchImpl, false)(request('POST', {
+      gmailEnabled: true,
+      gmailIntakeConsentVersion: 'uu06-v1',
+    }))
+    expect(response.status).toBe(503)
+    await expect(response.json()).resolves.toMatchObject({ code: 'GMAIL_EXECUTION_CONTROLS_REQUIRED' })
+    expect(fetchImpl).toHaveBeenCalledTimes(2)
+  })
+
   it('enables background discovery without requesting Gmail scope and clears only discovery error state', async () => {
     const writes: Array<Record<string, unknown>> = []
     const fetchImpl = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -179,7 +209,11 @@ describe('automation settings API', () => {
     const writes: Array<Record<string, unknown>> = []
     const fetchImpl = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       if (String(input).endsWith('/auth/v1/user')) return json({ id: 'user-a' })
-      if (init?.method !== 'PATCH') return json([{ user_id: 'user-a', granted_scopes: [GMAIL_SCOPE] }])
+      if (init?.method !== 'PATCH') return json([{
+        user_id: 'user-a',
+        refresh_token_ciphertext: 'test-cipher',
+        granted_scopes: [GMAIL_SCOPE],
+      }])
       const body = JSON.parse(String(init.body)); writes.push(body)
       if (missing && 'gmail_intake_consent_version' in body) return json({ code: 'PGRST204', message: 'Missing gmail_intake_consent_version' }, 400)
       return new Response(null, { status: 204 })

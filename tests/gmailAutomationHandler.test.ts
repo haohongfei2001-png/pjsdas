@@ -34,7 +34,7 @@ describe('Gmail automation worker endpoint', () => {
       const url = String(input)
       const body = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>
       calls.push({ url, body, apikey: new Headers(init?.headers).get('apikey') })
-      if (url.endsWith('/rest/v1/rpc/pjsdas_claim_gmail_automation_bindings_v3')) return json([])
+      if (url.endsWith('/rest/v1/rpc/pjsdas_claim_gmail_automation_bindings_v4')) return json([])
       return json({ error: 'unexpected' }, 500)
     }) as unknown as typeof fetch
 

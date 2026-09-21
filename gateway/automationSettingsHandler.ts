@@ -1,4 +1,5 @@
 import { GMAIL_READONLY_SCOPE } from './automationConnectionStore.js'
+import { registerGmailWatch, type GmailWatchResult } from './gmailWatch.js'
 import { createSupabaseIdentityResolver } from './supabaseIdentity.js'
 import { WorkspaceSourceError } from './workspaceSource.js'
 
@@ -7,12 +8,20 @@ export interface AutomationSettingsHandlerConfig {
   supabasePublishableKey: string
   allowedOrigins: string[]
   fetchImpl?: typeof fetch
+  tokenEncryptionKey?: string
+  googleClientId?: string
+  googleClientSecret?: string
+  gmailPushTopicName?: string
+  gmailExecutionControlsEnabled?: boolean
+  registerGmailWatchImpl?: typeof registerGmailWatch
+  now?: () => Date
   authorizeIdentity?: (identity: import('./supabaseIdentity.js').PjsdasIdentity) => Promise<unknown>
 }
 
 interface AutomationRow {
   user_id?: string
   google_email?: string | null
+  refresh_token_ciphertext?: string | null
   granted_scopes?: string[] | null
   gmail_automation_enabled?: boolean | null
   gmail_history_id?: string | null
@@ -78,6 +87,7 @@ export function createAutomationSettingsHandler(config: AutomationSettingsHandle
       select: [
         'user_id',
         'google_email',
+        'refresh_token_ciphertext',
         'granted_scopes',
         'gmail_automation_enabled',
         'gmail_history_id',
@@ -164,6 +174,28 @@ export function createAutomationSettingsHandler(config: AutomationSettingsHandle
         }, origin, config.allowedOrigins)
       }
 
+      let gmailWatch: GmailWatchResult | undefined
+      if (gmailProvided && body?.gmailEnabled === true && body.gmailIntakeConsentVersion === 'uu06-v1') {
+        if (config.gmailExecutionControlsEnabled !== true) {
+          return json(503, {
+            code: 'GMAIL_EXECUTION_CONTROLS_REQUIRED',
+            message: 'Gmail push intake is not activated until fenced execution controls are enabled.',
+          }, origin, config.allowedOrigins)
+        }
+        if (!current.refresh_token_ciphertext) {
+          throw new WorkspaceSourceError('AUTH_INVALID', 'Stored Google authorization is incomplete.', false)
+        }
+        gmailWatch = await (config.registerGmailWatchImpl ?? registerGmailWatch)({
+          refreshTokenCiphertext: current.refresh_token_ciphertext,
+          tokenEncryptionKey: config.tokenEncryptionKey ?? '',
+          googleClientId: config.googleClientId ?? '',
+          googleClientSecret: config.googleClientSecret ?? '',
+          topicName: config.gmailPushTopicName ?? '',
+          fetchImpl,
+          now: config.now,
+        })
+      }
+
       const params = new URLSearchParams({ user_id: `eq.${identity.userId}` })
       const patch: Record<string, unknown> = { updated_at: new Date().toISOString() }
       if (gmailProvided) {
@@ -176,6 +208,12 @@ export function createAutomationSettingsHandler(config: AutomationSettingsHandle
         if (body!.gmailEnabled === true) {
           patch.gmail_history_id = null
           patch.gmail_last_error = null
+        }
+        if (gmailWatch) {
+          patch.gmail_watch_history_id = gmailWatch.historyId
+          patch.gmail_watch_expires_at = gmailWatch.expiresAt
+          patch.gmail_watch_last_renewed_at = gmailWatch.renewedAt
+          patch.gmail_watch_last_error = null
         }
       }
       if (discoveryProvided) {
@@ -238,7 +276,9 @@ export function createAutomationSettingsHandler(config: AutomationSettingsHandle
       const error = caught instanceof WorkspaceSourceError
         ? { code: caught.code, message: caught.message, retryable: caught.retryable }
         : { code: 'AUTOMATION_SETTINGS_FAILED', message: caught instanceof Error ? caught.message : 'PJSDAS automation settings failed.', retryable: false }
-      const status = error.code === 'AUTH_REQUIRED' || error.code === 'AUTH_INVALID' ? 401 : error.retryable ? 503 : 400
+      const status = error.code === 'AUTH_REQUIRED' || error.code === 'AUTH_INVALID' ? 401
+        : error.code === 'GMAIL_PUSH_NOT_CONFIGURED' ? 503
+        : error.retryable ? 503 : 400
       return json(status, error, origin, config.allowedOrigins)
     }
   }

@@ -15,7 +15,7 @@ Product origin: `https://todayaction.com`
 | UU-03 | **COMPLETE** | Revision-bound TodayBrief / agenda / latest-start read model implemented and production-verified |
 | UU-04 | **COMPLETE** | Final two-destination Web shell / Today implemented and production-verified |
 | UU-05 | **COMPLETE** | Shared opportunity decisions / conclusion-first detail and date-only regression closed on main; production verified |
-| UU-06 | **IN_PROGRESS** | Independent execution UU06-20260921-aem01; deployed intake + idle scheduler main@107795a; live SLO not certified |
+| UU-06 | **IN_PROGRESS** | Intake + idle scheduler deployed at runtime 107795a; owner-authorized Push/10m compensation candidate PR #104 is NOT_DEPLOYED; live SLO not certified |
 | UU-07 | NOT_READY | Depends on shared intake/read models |
 | UU-08 | NOT_READY | Depends on platform-neutral contracts |
 | UU-09 | NOT_READY | Final canary/release |
@@ -344,9 +344,11 @@ NULL-consent users. Gmail cadence remains `5 * * * *`; Discovery is unchanged.
 The execution-control flag remains default-off/unactivated. Prior 072b intake evidence
 remains [historical deployment evidence](evidence/UU-06-runtime-072b2fe.md).
 
-Next: resolve actual usage/capacity headroom and safe activation prerequisites within
-existing authority, then obtain timing evidence only from legitimately opted-in live
-workload. The linked Supabase organization plan is verified **free**, but actual
+Next: complete the owner-authorized Gmail Push candidate review/deployment path,
+verify the existing Google Cloud project's billing boundary without any paid upgrade,
+configure only the minimum Pub/Sub topic/subscription/IAM, and obtain timing evidence
+only from a legitimately opted-in live workload. Candidate PR #104 remains NOT_DEPLOYED
+until its gates and deployment ordering complete. The linked Supabase organization plan is verified **free**, but actual
 usage/quota and other backend cost headroom remain unknown. Hourly polling does not
 meet p95 <2-minute / <=15-minute compensation requirements; zero live opt-in means
 there is no certified workload. This checkpoint does not complete UU-06 or its

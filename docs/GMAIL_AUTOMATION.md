@@ -66,32 +66,22 @@ The production order is deliberately fail-closed:
 6. Production Self-Test must confirm `/api/automation-settings` and `/api/automation-gmail` exist and reject unauthenticated requests.
 7. Only then enable the scheduler.
 
-The currently intended cadence is once per hour at minute 7:
+The original production scheduler was hourly. UU-06 replaces that as the
+normal-delivery design with authenticated Gmail Push plus a bounded compensation
+poll. See [GMAIL_PUSH.md](GMAIL_PUSH.md).
 
-```sql
-select cron.schedule(
-  'pjsdas-gmail-automation-hourly',
-  '7 * * * *',
-  $cron$
-  select net.http_post(
-    url := 'https://pjsdas-remote-alpha.vercel.app/api/automation-gmail',
-    body := '{}'::jsonb,
-    headers := jsonb_build_object(
-      'Content-Type', 'application/json',
-      'Authorization', 'Bearer ' || (
-        select decrypted_secret
-        from vault.decrypted_secrets
-        where name = 'pjsdas_gmail_automation_worker_token'
-        limit 1
-      )
-    ),
-    timeout_milliseconds := 50000
-  );
-  $cron$
-);
-```
+The compensation scheduler remains a call to the same existing
+`/api/automation-gmail` worker and preserves its Vault bearer identity, history
+cursor, idempotency and workspace mutation path. Its target cadence is ten
+minutes, which is below the frozen <=15 minute lost-push recovery ceiling.
 
-Never enable this cron before the matching worker endpoint is live and production-verified.
+A separate daily worker renews Gmail `users.watch` registrations. Push/watch
+infrastructure must not be represented as live until the matching backend,
+database migration, Google Cloud topic/subscription/IAM and real canary are all
+verified.
+
+Never enable or accelerate a scheduler before the matching worker endpoint is
+live and production-verified.
 
 ## Operational signals
 

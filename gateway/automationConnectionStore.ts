@@ -19,6 +19,10 @@ export interface GmailAutomationBinding extends GoogleAutomationBinding {
   gmailPageToken?: string
   gmailPendingHistoryId?: string
   gmailPendingMessageIds: string[]
+  gmailWatchHistoryId?: string
+  gmailWatchExpiresAt?: string
+  gmailWatchLastRenewedAt?: string
+  gmailWatchLastError?: string
 }
 
 type GmailBindingRow = {
@@ -28,6 +32,8 @@ type GmailBindingRow = {
   gmail_sync_mode?: 'history' | 'fallback' | null; gmail_page_token?: string | null;
   gmail_pending_history_id?: string | null; gmail_pending_message_ids?: string[] | null;
   gmail_intake_consent_version?: string | null;
+  gmail_watch_history_id?: string | null; gmail_watch_expires_at?: string | null;
+  gmail_watch_last_renewed_at?: string | null; gmail_watch_last_error?: string | null;
 }
 
 export interface DiscoveryAutomationBinding extends GoogleAutomationBinding {
@@ -62,6 +68,10 @@ function gmailBinding(row: GmailBindingRow): GmailAutomationBinding[] {
     gmailPageToken: row.gmail_page_token ?? undefined,
     gmailPendingHistoryId: row.gmail_pending_history_id ?? undefined,
     gmailPendingMessageIds: row.gmail_pending_message_ids ?? [],
+    gmailWatchHistoryId: row.gmail_watch_history_id ?? undefined,
+    gmailWatchExpiresAt: row.gmail_watch_expires_at ?? undefined,
+    gmailWatchLastRenewedAt: row.gmail_watch_last_renewed_at ?? undefined,
+    gmailWatchLastError: row.gmail_watch_last_error ?? undefined,
   }]
 }
 
@@ -107,12 +117,17 @@ export function createAutomationConnectionStore(options: AutomationConnectionSto
     async listEnabledGmailBindings(): Promise<GmailAutomationBinding[]> {
       let rows: GmailBindingRow[]
       try {
-        rows = await rpc<GmailBindingRow[]>('pjsdas_claim_gmail_automation_bindings_v3', { worker_token: workerToken })
+        rows = await rpc<GmailBindingRow[]>('pjsdas_claim_gmail_automation_bindings_v4', { worker_token: workerToken })
       } catch (error) {
         if (!(error instanceof WorkspaceSourceError) || error.code !== 'AUTOMATION_RPC_NOT_DEPLOYED') throw error
-        rows = await rpc<GmailBindingRow[]>('pjsdas_claim_gmail_automation_bindings_v2', { worker_token: workerToken })
-        // Older database contract cannot prove expanded consent.
-        rows = rows.map((row) => ({ ...row, gmail_intake_consent_version: null }))
+        try {
+          rows = await rpc<GmailBindingRow[]>('pjsdas_claim_gmail_automation_bindings_v3', { worker_token: workerToken })
+        } catch (legacyError) {
+          if (!(legacyError instanceof WorkspaceSourceError) || legacyError.code !== 'AUTOMATION_RPC_NOT_DEPLOYED') throw legacyError
+          rows = await rpc<GmailBindingRow[]>('pjsdas_claim_gmail_automation_bindings_v2', { worker_token: workerToken })
+          // Older database contract cannot prove expanded consent.
+          rows = rows.map((row) => ({ ...row, gmail_intake_consent_version: null }))
+        }
       }
 
       return rows.flatMap(gmailBinding)
@@ -144,6 +159,25 @@ export function createAutomationConnectionStore(options: AutomationConnectionSto
         set_history_id: 'historyId' in patch,
         set_continuation: Boolean(patch.continuation),
         clear_continuation: patch.continuation === null,
+        set_last_error: 'lastError' in patch,
+      })
+    },
+
+    async updateGmailWatchState(userId: string, patch: {
+      historyId?: string | null
+      expiresAt?: string | null
+      renewedAt?: string | null
+      lastError?: string | null
+    }) {
+      await rpc<null>('pjsdas_update_gmail_watch_state', {
+        worker_token: workerToken,
+        target_user_id: userId,
+        watch_history_id: patch.historyId ?? null,
+        watch_expires_at: patch.expiresAt ?? null,
+        renewed_at: patch.renewedAt ?? null,
+        last_error: patch.lastError ?? null,
+        set_watch: Boolean(patch.historyId && patch.expiresAt && patch.renewedAt),
+        clear_watch: patch.historyId === null || patch.expiresAt === null,
         set_last_error: 'lastError' in patch,
       })
     },
