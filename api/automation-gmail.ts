@@ -31,6 +31,7 @@ const pushHandler = createGmailPushHandler({
   expectedAudience: process.env.PJSDAS_GMAIL_PUSH_AUDIENCE ?? '',
   expectedServiceAccountEmail: process.env.PJSDAS_GMAIL_PUSH_SERVICE_ACCOUNT_EMAIL ?? '',
   expectedSubscription: process.env.PJSDAS_GMAIL_PUBSUB_SUBSCRIPTION ?? '',
+  executionControlsEnabled: process.env.PJSDAS_GMAIL_EXECUTION_CONTROLS === 'true',
 })
 
 export const gmailAutomationApi = { fetch: automationHandler }
