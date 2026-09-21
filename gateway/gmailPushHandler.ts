@@ -28,6 +28,10 @@ function bearer(request: Request) {
   return match?.[1]?.trim() ?? ''
 }
 
+function looksLikeJwt(token: string) {
+  return token.length <= 8192 && /^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(token)
+}
+
 function decodeBase64Json(value: string): GmailPushNotification | undefined {
   try {
     const normalized = value.replace(/-/g, '+').replace(/_/g, '/')
@@ -123,7 +127,9 @@ export function createGmailPushHandler(config: GmailPushHandlerConfig) {
     }
 
     const token = bearer(request)
-    if (!token) return new Response(null, { status: 401, headers: { 'cache-control': 'no-store' } })
+    if (!token || !looksLikeJwt(token)) {
+      return new Response(null, { status: 401, headers: { 'cache-control': 'no-store' } })
+    }
 
     try {
       await verifyGoogleOidc(token, config, fetchImpl)
