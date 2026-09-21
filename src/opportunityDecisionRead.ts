@@ -161,8 +161,15 @@ function localDateKey(date: Date, timezone: string) {
   return `${values.year}-${values.month}-${values.day}`
 }
 
+function nodeState(node: ScheduleNode, now: Date, timezone: string) {
+  const temporal = node.temporal
+  const contextual = temporal.timezone === 'floating-date' || temporal.timezone === 'source-offset'
+  return effectiveScheduleNodeState(contextual
+    ? { ...node, temporal: { ...temporal, timezone } } : node, now)
+}
+
 function nodeSortKey(node: ScheduleNode, now: Date, timezone: string) {
-  const state = effectiveScheduleNodeState(node, now)
+  const state = nodeState(node, now, timezone)
   if (state === 'elapsed_unresolved') return -1
   const temporal = node.temporal
   if ((temporal.shape === 'date_only' || temporal.shape === 'estimated_date') && temporal.date) {
@@ -187,7 +194,7 @@ function nearestNodeFor(
     .filter((item) => item.state !== 'completed')
     .sort((a, b) => nodeSortKey(a, now, timezone) - nodeSortKey(b, now, timezone) || a.id.localeCompare(b.id))[0]
   if (!node) return undefined
-  const state = effectiveScheduleNodeState(node, now)
+  const state = nodeState(node, now, timezone)
   return {
     nodeId: node.id,
     occurrenceId: node.occurrenceId,
@@ -234,30 +241,36 @@ function actionRead(ranked: RankedAction | undefined, opportunity: Opportunity):
   }
 }
 
-function deadlineNear(opportunity: Opportunity, now: Date) {
-  if (!opportunity.deadline) return false
-  const delta = new Date(opportunity.deadline).getTime() - now.getTime()
-  return delta >= 0 && delta <= 72 * HOUR
+function deadlineDelta(opportunityId: string, nodes: ScheduleNode[], now: Date, timezone: string) {
+  const node = latestNodes(nodes).find((item) =>
+    item.opportunityId === opportunityId && item.kind === 'application_deadline',
+  )
+  if (!node || node.state === 'completed') return undefined
+  const temporal = node.temporal
+  if (temporal.shape === 'date_only' || temporal.shape === 'estimated_date') {
+    if (!temporal.date) return undefined
+    const zone = ['floating-date', 'source-offset'].includes(temporal.timezone)
+      ? timezone : temporal.timezone
+    const today = localDateKey(now, zone)
+    // Compare calendar days without inventing a deadline time for date-only input.
+    return (Date.parse(`${temporal.date}T12:00:00Z`) - Date.parse(`${today}T12:00:00Z`))
+  }
+  const boundary = temporal.deadlineAt ?? temporal.endAt ?? temporal.startAt
+  return boundary ? Date.parse(boundary) - now.getTime() : undefined
 }
 
-function isExpiredUnapplied(opportunity: Opportunity, now: Date) {
-  return opportunity.processStage === 'not_applied'
-    && Boolean(opportunity.deadline)
-    && new Date(opportunity.deadline!).getTime() < now.getTime()
-}
-
-function bucket(opportunity: Opportunity, now: Date): OpportunityDecisionBucket {
+function bucket(opportunity: Opportunity, expired: boolean): OpportunityDecisionBucket {
   if (opportunity.participationStatus === 'abandoned') return 'ended'
   if (opportunity.processStage === 'closed') return 'ended'
-  if (isExpiredUnapplied(opportunity, now)) return 'ended'
+  if (opportunity.processStage === 'not_applied' && expired) return 'ended'
   if (['screening', 'assessment', 'written_test', 'interview', 'offer'].includes(opportunity.processStage)) return 'in_progress'
   return 'worth_pursuing'
 }
 
-function conclusion(opportunity: Opportunity, now: Date): OpportunityConclusionKind {
+function conclusion(opportunity: Opportunity, expired: boolean): OpportunityConclusionKind {
   if (opportunity.participationStatus === 'abandoned') return 'not_pursuing'
   if (opportunity.processStage === 'closed') return 'process_ended'
-  if (isExpiredUnapplied(opportunity, now)) return 'application_window_closed'
+  if (opportunity.processStage === 'not_applied' && expired) return 'application_window_closed'
   if (opportunity.processStage === 'offer') return 'review_offer'
   if (['screening', 'assessment', 'written_test', 'interview'].includes(opportunity.processStage)) return 'continue_process'
   if (opportunity.processStage === 'waiting_release') return 'wait_for_opening'
@@ -275,14 +288,14 @@ function reasonsFor(input: {
   group?: ApplicationGroup
   nearestNode?: OpportunityDecisionNode
   sourceFreshness?: ReturnType<typeof jobPostingFreshness>
-  now: Date
+  deadlineNear: boolean
 }) {
   const reasons: OpportunityDecisionReason[] = []
   const push = (code: OpportunityDecisionReasonCode, tone: OpportunityDecisionReason['tone']) => {
     if (!reasons.some((item) => item.code === code)) reasons.push({ code, tone })
   }
 
-  const { opportunity, group, nearestNode, sourceFreshness: freshness, now } = input
+  const { opportunity, group, nearestNode, sourceFreshness: freshness, deadlineNear } = input
   if (opportunity.participationStatus === 'abandoned') push('user_not_pursuing', 'info')
   else if (opportunity.processStage === 'closed') push('process_closed', 'info')
   else if (opportunity.processStage === 'offer') push('offer_received', 'reason')
@@ -291,7 +304,7 @@ function reasonsFor(input: {
   else if (opportunity.roleType === 'core') push('core_opportunity', 'reason')
 
   if (opportunity.early) push('early_window', 'reason')
-  if (deadlineNear(opportunity, now)) push('deadline_near', 'risk')
+  if (deadlineNear) push('deadline_near', 'risk')
   if (group && (group.locked || group.remaining === 0)) push('shared_application_constraint', 'risk')
   if (freshness === 'stale' || freshness === 'aging' || freshness === 'unknown') push('source_needs_refresh', 'risk')
   if (freshness === 'closed') push('source_closed', 'risk')
@@ -329,6 +342,7 @@ export function getOpportunityDecisionRead(
   const group = groupFor(opportunity, snapshot.data.applicationGroups)
   const nearestNode = nearestNodeFor(opportunity.id, snapshot.data.scheduleNodes ?? [], ctx.now, ctx.timezone)
   const freshness = sourceFreshness(opportunity, ctx.now)
+  const delta = deadlineDelta(opportunity.id, snapshot.data.scheduleNodes ?? [], ctx.now, ctx.timezone)
   const ranked = rankedActionsByOpportunity(snapshot, ctx.now).get(opportunity.id)
 
   return {
@@ -339,9 +353,9 @@ export function getOpportunityDecisionRead(
     opportunityId: opportunity.id,
     company: opportunity.company,
     role: opportunity.role,
-    bucket: bucket(opportunity, ctx.now),
-    conclusion: conclusion(opportunity, ctx.now),
-    reasons: reasonsFor({ opportunity, process, group, nearestNode, sourceFreshness: freshness, now: ctx.now }),
+    bucket: bucket(opportunity, delta !== undefined && delta < 0),
+    conclusion: conclusion(opportunity, delta !== undefined && delta < 0),
+    reasons: reasonsFor({ opportunity, process, group, nearestNode, sourceFreshness: freshness, deadlineNear: delta !== undefined && delta >= 0 && delta <= 72 * HOUR }),
     process: {
       stage: process?.stage ?? opportunity.processStage,
       progress: process?.progress,
@@ -367,6 +381,7 @@ export function buildOpportunityDecisionList(
     const group = groupFor(opportunity, snapshot.data.applicationGroups)
     const nearestNode = nearestNodeFor(opportunity.id, snapshot.data.scheduleNodes ?? [], ctx.now, ctx.timezone)
     const freshness = sourceFreshness(opportunity, ctx.now)
+    const delta = deadlineDelta(opportunity.id, snapshot.data.scheduleNodes ?? [], ctx.now, ctx.timezone)
     const read: OpportunityDecisionRead = {
       contractVersion: 1,
       workspaceRevision: ctx.workspaceVersion ?? `snapshot:${rawSnapshot.exportedAt}`,
@@ -375,9 +390,9 @@ export function buildOpportunityDecisionList(
       opportunityId: opportunity.id,
       company: opportunity.company,
       role: opportunity.role,
-      bucket: bucket(opportunity, ctx.now),
-      conclusion: conclusion(opportunity, ctx.now),
-      reasons: reasonsFor({ opportunity, process, group, nearestNode, sourceFreshness: freshness, now: ctx.now }),
+      bucket: bucket(opportunity, delta !== undefined && delta < 0),
+      conclusion: conclusion(opportunity, delta !== undefined && delta < 0),
+      reasons: reasonsFor({ opportunity, process, group, nearestNode, sourceFreshness: freshness, deadlineNear: delta !== undefined && delta >= 0 && delta <= 72 * HOUR }),
       process: {
         stage: process?.stage ?? opportunity.processStage,
         progress: process?.progress,

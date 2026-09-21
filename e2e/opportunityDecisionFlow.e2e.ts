@@ -137,3 +137,44 @@ test('UU-05 Opportunities centers In Progress / Worth Pursuing and opens conclus
   expect(order[1]).toBeLessThan(order[2])
   expect(order[2]).toBeLessThan(order[3])
 })
+
+for (const fixture of [
+  { timezone: 'Asia/Shanghai', now: '2026-09-21T04:00:00Z' },
+  { timezone: 'America/Los_Angeles', now: '2026-09-22T00:30:00Z' },
+]) {
+  test.describe(`date-only deadline in ${fixture.timezone}`, () => {
+    test.use({ timezoneId: fixture.timezone })
+    test('keeps today visible and the detail conclusion open', async ({ page }) => {
+      await page.clock.setFixedTime(new Date(fixture.now))
+      await page.goto('/')
+      await page.evaluate(async () => {
+        await new Promise<void>((resolve, reject) => {
+          const request = indexedDB.open('pjsdas', 10)
+          request.onerror = () => reject(request.error)
+          request.onsuccess = () => {
+            const db = request.result
+            const tx = db.transaction(['opportunities'], 'readwrite')
+            tx.onerror = () => reject(tx.error)
+            tx.oncomplete = () => { db.close(); resolve() }
+            tx.objectStore('opportunities').put({
+              id: 'uu05-date-only', company: 'Calendar Fixture', role: 'Date-only role',
+              currentStageLabel: '待投递', processStage: 'not_applied', roleType: 'core',
+              participationStatus: 'active', early: false,
+              deadline: '2026-09-21', deadlinePrecision: 'date',
+              opportunityValue: 80, fitScore: 80, importedAt: '2026-09-01T00:00:00Z',
+            })
+          }
+        })
+      })
+      await page.reload()
+      await page.locator('.surface-nav').getByRole('button', { name: /机会|Opportunities/ }).click()
+      await page.getByRole('button', { name: /值得推进|Worth Pursuing/ }).click()
+      const row = page.locator('.opportunity-decision-row').filter({ hasText: 'Calendar Fixture' })
+      await expect(row).toBeVisible()
+      await row.click()
+      const dialog = page.getByRole('dialog', { name: /岗位详情|Opportunity details/ })
+      await expect(dialog.locator('.opportunity-detail-conclusion')).toContainText(/值得继续考虑|Worth pursuing/)
+      await expect(dialog.locator('.opportunity-detail-conclusion')).not.toContainText(/已截止|closed/i)
+    })
+  })
+}

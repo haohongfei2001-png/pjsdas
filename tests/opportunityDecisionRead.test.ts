@@ -154,3 +154,46 @@ describe('UU-05 Opportunity decision read model', () => {
     expect(buildOpportunityDecisionList(source, context)).toEqual(buildOpportunityDecisionList(source, context))
   })
 })
+
+describe('UU-05 deadline precision regression', () => {
+  it.each([
+    ['2026-09-20', '2026-09-21T04:00:00Z', 'Asia/Shanghai', true],
+    ['2026-09-21', '2026-09-21T04:00:00Z', 'Asia/Shanghai', false],
+    ['2026-09-22', '2026-09-21T04:00:00Z', 'Asia/Shanghai', false],
+    ['2026-09-21', '2026-09-21T23:30:00Z', 'America/Los_Angeles', false],
+    ['2026-09-21', '2026-09-22T00:30:00Z', 'America/Los_Angeles', false],
+    ['2026-09-21', '2026-09-22T07:00:00Z', 'America/Los_Angeles', true],
+    ['2026-09-21', '2026-09-21T15:59:59Z', 'Asia/Shanghai', false],
+    ['2026-09-21', '2026-09-21T16:00:00Z', 'Asia/Shanghai', true],
+  ])('date-only %s at %s in %s preserves the whole calendar day', (deadline, instant, timezone, expired) => {
+    const opp = opportunity('date-role', 'not_applied', { deadline, deadlinePrecision: 'date' })
+    const source = snapshot({ opportunities: [opp] })
+    const ctx = { now: new Date(instant), timezone }
+    const detail = getOpportunityDecisionRead(source, opp.id, ctx)!
+    const list = buildOpportunityDecisionList(source, ctx)
+    expect(detail.bucket).toBe(expired ? 'ended' : 'worth_pursuing')
+    expect(detail.conclusion).toBe(expired ? 'application_window_closed' : 'worth_pursuing')
+    expect(detail.nearestNode?.state).toBe(expired ? 'elapsed_unresolved' : 'scheduled')
+    expect(list.all[0]).toEqual(detail)
+    expect(list.worthPursuing).toHaveLength(expired ? 0 : 1)
+    expect(detail.reasons.some((reason) => reason.code === 'deadline_near')).toBe(!expired)
+  })
+
+  it.each([
+    ['2026-09-21T03:59:59Z', false],
+    ['2026-09-21T04:00:00Z', false],
+    ['2026-09-21T04:00:01Z', true],
+  ])('datetime expiry retains its exact instant at %s', (instant, expired) => {
+    const opp = opportunity('timed-role', 'not_applied', {
+      deadline: '2026-09-21T12:00:00+08:00', deadlinePrecision: 'datetime',
+    })
+    const source = snapshot({ opportunities: [opp] })
+    for (const timezone of ['Asia/Shanghai', 'America/Los_Angeles']) {
+      const ctx = { now: new Date(instant), timezone }
+      const detail = getOpportunityDecisionRead(source, opp.id, ctx)!
+      expect(detail.bucket).toBe(expired ? 'ended' : 'worth_pursuing')
+      expect(buildOpportunityDecisionList(source, ctx).all[0]).toEqual(detail)
+      expect(detail.reasons.some((reason) => reason.code === 'deadline_near')).toBe(!expired)
+    }
+  })
+})
