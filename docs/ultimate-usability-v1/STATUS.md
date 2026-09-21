@@ -15,7 +15,7 @@ Product origin: `https://todayaction.com`
 | UU-03 | **COMPLETE** | Revision-bound TodayBrief / agenda / latest-start read model implemented and production-verified |
 | UU-04 | **COMPLETE** | Final two-destination Web shell / Today implemented and production-verified |
 | UU-05 | **COMPLETE** | Shared opportunity decisions / conclusion-first detail and date-only regression closed on main; production verified |
-| UU-06 | **IN_PROGRESS** | Independent execution UU06-20260921-aem01; manager/uu06-aem-20260921; baseline bb1cabf |
+| UU-06 | **IN_PROGRESS** | Independent execution UU06-20260921-aem01; deployed increment main@072b2fe; live SLO not certified |
 | UU-07 | NOT_READY | Depends on shared intake/read models |
 | UU-08 | NOT_READY | Depends on platform-neutral contracts |
 | UU-09 | NOT_READY | Final canary/release |
@@ -333,12 +333,21 @@ UU-05 is COMPLETE. UU-06 is **IN_PROGRESS** in the independent execution
 stop boundary applies to that historical execution. The current execution has
 re-read the remote baseline and project authority; see `rounds/UU-06.md`.
 
-Next: finish exact-candidate checks and manager-controlled deployment/verification
-for the consent-bound intake and dormant execution protection. The default-NULL
-consent schema is applied (production version `20260921053337`), with zero enabled
-bindings and zero expanded grants verified by the manager. Controls schema remains
-unapplied; its flag and cron remain unchanged. Live p95/compensation SLOs are not
-certified, so UU-06 is not COMPLETE and this execution does not start UU-07.
+The implementation publication checkpoint is deployed and verified at runtime
+`072b2feffdac8b72bc93b1e9701bdc8577b6eea0`: 717/717 tests, 35/35 browser journeys,
+deploy and production self-test passed. See
+[evidence](evidence/UU-06-runtime-072b2fe.md). Both default-NULL consent schema
+(`20260921053337`) and execution-controls schema (`20260921055432`) are applied;
+manager readback confirmed zero enabled bindings, expanded grants and execution rows.
+The execution-control flag remains default-off/unactivated and cron is unchanged.
+
+Next: resolve actual usage/capacity headroom and safe activation prerequisites within
+existing authority, then obtain timing evidence only from legitimately opted-in live
+workload. The linked Supabase organization plan is verified **free**, but actual
+usage/quota and other backend cost headroom remain unknown. Hourly polling does not
+meet p95 <2-minute / <=15-minute compensation requirements; zero live opt-in means
+there is no certified workload. This checkpoint does not complete UU-06 or its
+execution, and this execution does not start UU-07.
 
 ## UU-04 scope boundary
 

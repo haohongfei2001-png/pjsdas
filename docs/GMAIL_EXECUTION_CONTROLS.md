@@ -1,14 +1,17 @@
-# Gmail execution controls — dormant candidate
+# Gmail execution controls — deployed, default-off
 
-This UU06 increment does not change cron, enable any binding, apply a migration,
-create credentials or certify live latency. `PJSDAS_GMAIL_EXECUTION_CONTROLS`
-is absent/false by default. Existing disabled behavior uses the previous endpoint path.
+Runtime `072b2feffdac8b72bc93b1e9701bdc8577b6eea0` and both prerequisite schemas
+are deployed. This UU06 increment does not change cron, enable any binding, create
+credentials or certify live latency. `PJSDAS_GMAIL_EXECUTION_CONTROLS` remains
+default-off/unactivated; its disabled behavior uses the previous endpoint path.
+See [exact-main deployment evidence](ultimate-usability-v1/evidence/UU-06-runtime-072b2fe.md).
 
 ## Controlled path
 
-The manager has applied only the default-NULL consent migration (production version
-`20260921053337`), confirming zero enabled bindings and zero expanded grants.
-The unapplied execution-controls migration adds
+The manager applied the default-NULL consent migration (production version
+`20260921053337`) and execution-controls migration (`20260921055432`). Readback
+confirmed zero enabled bindings, zero expanded grants and zero execution rows.
+The deployed execution-controls schema provides
 an RLS-protected table with no direct anon/authenticated privileges. The existing
 Vault-validated worker identity may call three bounded RPCs: begin, assert, finish.
 Every empty/wrong token is rejected. There is no credential or source-scope expansion.
@@ -61,10 +64,13 @@ Production currently has zero enabled Gmail bindings, so no live target was cert
 
 ## Activation and rollback dependency
 
-Schema-first deployment and exact candidate CI/browser checks are prerequisites.
-The manager controls migration/main/deployment. Drain old invocations before enabling
-the flag for the deployed worker; this increment does not enable it or alter the
-hourly schedule. Cron cadence/plan/quota headroom remains separately unverified.
+Schema-first deployment and exact-main CI/browser/deploy/self-test have passed at
+072b2fe. The manager controls any subsequent activation. Drain old invocations before
+enabling the flag for the deployed worker; this increment does not enable it or alter
+the hourly schedule. The manager verified the linked Supabase organization plan as
+**free** without retaining billing details. Actual usage/quota headroom and other
+backend cost headroom remain unknown; the plan label does not certify capacity for
+a higher cadence.
 
 After a binding has been fenced, simply switching the flag off is not a functional
 legacy rollback: old state updates fail closed. Prefer disabling processing while
