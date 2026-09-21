@@ -12,6 +12,7 @@ export interface AutomationSettingsHandlerConfig {
   googleClientId?: string
   googleClientSecret?: string
   gmailPushTopicName?: string
+  registerGmailWatchImpl?: typeof registerGmailWatch
   now?: () => Date
   authorizeIdentity?: (identity: import('./supabaseIdentity.js').PjsdasIdentity) => Promise<unknown>
 }
@@ -177,7 +178,7 @@ export function createAutomationSettingsHandler(config: AutomationSettingsHandle
         if (!current.refresh_token_ciphertext) {
           throw new WorkspaceSourceError('AUTH_INVALID', 'Stored Google authorization is incomplete.', false)
         }
-        gmailWatch = await registerGmailWatch({
+        gmailWatch = await (config.registerGmailWatchImpl ?? registerGmailWatch)({
           refreshTokenCiphertext: current.refresh_token_ciphertext,
           tokenEncryptionKey: config.tokenEncryptionKey ?? '',
           googleClientId: config.googleClientId ?? '',
