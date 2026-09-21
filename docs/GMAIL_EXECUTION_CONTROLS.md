@@ -1,10 +1,12 @@
 # Gmail execution controls — deployed, default-off
 
-Runtime `072b2feffdac8b72bc93b1e9701bdc8577b6eea0` and both prerequisite schemas
-are deployed. This UU06 increment does not change cron, enable any binding, create
-credentials or certify live latency. `PJSDAS_GMAIL_EXECUTION_CONTROLS` remains
+Current runtime `107795acbb17dbbd17ea9e5f1963c39d39a91957` and both prerequisite
+schemas are deployed. The subsequent idle-scheduler migration `20260921065934`
+adds an eligibility precondition to the existing Gmail cron command while preserving
+hourly cadence and Discovery. See [idle-scheduler evidence](GMAIL_IDLE_SCHEDULER.md).
+These changes enable no binding, create no credential and certify no live latency. `PJSDAS_GMAIL_EXECUTION_CONTROLS` remains
 default-off/unactivated; its disabled behavior uses the previous endpoint path.
-See [exact-main deployment evidence](ultimate-usability-v1/evidence/UU-06-runtime-072b2fe.md).
+See [prior intake deployment evidence](ultimate-usability-v1/evidence/UU-06-runtime-072b2fe.md).
 
 ## Controlled path
 
@@ -64,8 +66,8 @@ Production currently has zero enabled Gmail bindings, so no live target was cert
 
 ## Activation and rollback dependency
 
-Schema-first deployment and exact-main CI/browser/deploy/self-test have passed at
-072b2fe. The manager controls any subsequent activation. Drain old invocations before
+Schema-first deployment and exact-main CI/browser/deploy/self-test passed for the
+initial 072b2fe increment; the later 107795a idle-scheduler evidence is linked above. The manager controls any subsequent activation. Drain old invocations before
 enabling the flag for the deployed worker; this increment does not enable it or alter
 the hourly schedule. The manager verified the linked Supabase organization plan as
 **free** without retaining billing details. Actual usage/quota headroom and other

@@ -15,7 +15,7 @@ Product origin: `https://todayaction.com`
 | UU-03 | **COMPLETE** | Revision-bound TodayBrief / agenda / latest-start read model implemented and production-verified |
 | UU-04 | **COMPLETE** | Final two-destination Web shell / Today implemented and production-verified |
 | UU-05 | **COMPLETE** | Shared opportunity decisions / conclusion-first detail and date-only regression closed on main; production verified |
-| UU-06 | **IN_PROGRESS** | Independent execution UU06-20260921-aem01; deployed increment main@072b2fe; live SLO not certified |
+| UU-06 | **IN_PROGRESS** | Independent execution UU06-20260921-aem01; deployed intake + idle scheduler main@107795a; live SLO not certified |
 | UU-07 | NOT_READY | Depends on shared intake/read models |
 | UU-08 | NOT_READY | Depends on platform-neutral contracts |
 | UU-09 | NOT_READY | Final canary/release |
@@ -329,17 +329,20 @@ persistence receipts, recovery tooling, no horizontal overflow, and the 390×844
 ## Next authorized work
 
 UU-05 is COMPLETE. UU-06 is **IN_PROGRESS** in the independent execution
-`UU06-20260921-aem01` on `manager/uu06-aem-20260921`; the earlier UU-05 closure's
+`UU06-20260921-aem01` (intake PR #102 and idle-scheduler PR #103 merged); the earlier UU-05 closure's
 stop boundary applies to that historical execution. The current execution has
 re-read the remote baseline and project authority; see `rounds/UU-06.md`.
 
-The implementation publication checkpoint is deployed and verified at runtime
-`072b2feffdac8b72bc93b1e9701bdc8577b6eea0`: 717/717 tests, 35/35 browser journeys,
-deploy and production self-test passed. See
-[evidence](evidence/UU-06-runtime-072b2fe.md). Both default-NULL consent schema
-(`20260921053337`) and execution-controls schema (`20260921055432`) are applied;
-manager readback confirmed zero enabled bindings, expanded grants and execution rows.
-The execution-control flag remains default-off/unactivated and cron is unchanged.
+The intake/control implementation and idle-scheduler correction are deployed at
+runtime `107795acbb17dbbd17ea9e5f1963c39d39a91957`; exact-main verification is
+recorded in [idle-scheduler evidence](../GMAIL_IDLE_SCHEDULER.md).
+Consent schema `20260921053337`, execution-controls schema `20260921055432` and
+idle-scheduler migration `20260921065934` are applied. Manager readback confirmed
+zero enabled bindings, expanded grants and execution rows. The Gmail command now
+skips HTTP enqueue unless an enabled non-revoked binding exists, including legacy
+NULL-consent users. Gmail cadence remains `5 * * * *`; Discovery is unchanged.
+The execution-control flag remains default-off/unactivated. Prior 072b intake evidence
+remains [historical deployment evidence](evidence/UU-06-runtime-072b2fe.md).
 
 Next: resolve actual usage/capacity headroom and safe activation prerequisites within
 existing authority, then obtain timing evidence only from legitimately opted-in live
