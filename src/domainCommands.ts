@@ -38,6 +38,7 @@ export type UserDomainCommand =
   | {
       commandId: string
       kind: 'record_process_event'
+      temporal?: ScheduleNodeTemporal
       opportunityId: string
       eventType: ProcessEventType
       occurredAt?: string
@@ -353,7 +354,9 @@ export function applyUserDomainCommand(
     if (!target) throw new Error(`Opportunity ${command.opportunityId} was not found.`)
     const occurredAt = command.occurredAt ?? timestamp
     assertIso(occurredAt, 'occurredAt')
-    if (command.dueAt) assertIso(command.dueAt, 'dueAt')
+    const effectiveDueAt = command.temporal?.startAt ?? command.temporal?.deadlineAt ?? command.temporal?.date ?? command.dueAt
+    if (command.temporal && !['assessment_invite', 'written_test_invite', 'interview_invite'].includes(command.eventType)) throw new Error('Explicit process temporal requires a schedule-bearing event.')
+    if (effectiveDueAt) assertIso(effectiveDueAt, 'dueAt')
     if (command.location && command.location.length > 200) throw new Error('Location exceeds the bounded field length.')
     if (command.joinUrl) {
       const url = new URL(command.joinUrl)
@@ -366,9 +369,10 @@ export function applyUserDomainCommand(
       company: target.company,
       role: target.role,
       type: command.eventType,
+      temporal: command.temporal ? structuredClone(command.temporal) : undefined,
       occurredAt,
-      dueAt: command.dueAt,
-      duePrecision: command.duePrecision,
+      dueAt: effectiveDueAt,
+      duePrecision: command.temporal?.precision ?? command.duePrecision,
       timingMode: command.timingMode ?? defaultTimingModeForProcessEvent(command.eventType),
       estimatedMinutes: command.estimatedMinutes ?? defaultMinutesForProcessEvent(command.eventType),
       location: command.location?.trim() || undefined,
@@ -401,7 +405,7 @@ export function applyUserDomainCommand(
     const node = activeScheduleNode(next, command.occurrenceId)
     if (!node) throw new Error(`Schedule occurrence ${command.occurrenceId} was not found.`)
     if (node.state === (cancelled ? 'cancelled' : 'completed')) {
-      return { status: 'ALREADY_APPLIED', snapshot, summary: `Schedule occurrence ${command.occurrenceId} is already completed.` }
+      return { status: 'ALREADY_APPLIED', snapshot, summary: `Schedule occurrence ${command.occurrenceId} is already ${cancelled ? 'cancelled' : 'completed'}.` }
     }
     if (node.state === 'cancelled' || node.state === 'completed' || node.state === 'superseded') {
       return {

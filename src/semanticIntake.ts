@@ -369,6 +369,7 @@ function toDomainCommand(
       kind: 'record_process_event',
       opportunityId: opportunity!.id,
       eventType: candidate.eventType,
+      temporal: candidate.temporal,
       occurredAt: candidate.occurredAt,
       dueAt: candidate.dueAt,
       duePrecision: candidate.duePrecision,
@@ -559,7 +560,13 @@ function applyCandidate(
       const event = snapshot.data.processEvents.find((item) => item.id === existing.processEventId)
       const sameTime = event?.dueAt === candidate.dueAt || Boolean(event?.dueAt && candidate.dueAt
         && Date.parse(event.dueAt) === Date.parse(candidate.dueAt))
-      if (event?.opportunityId === opportunity?.id && event?.type === candidate.eventType && sameTime) {
+      const sameTemporal = !candidate.temporal || (existing.temporal.shape === candidate.temporal.shape
+        && existing.temporal.precision === candidate.temporal.precision
+        && (['startAt', 'endAt', 'deadlineAt', 'date'] as const).every((key) => {
+          const previous = existing.temporal[key]; const next = candidate.temporal![key]
+          return previous === next || Boolean(previous && next && Date.parse(previous) === Date.parse(next))
+        }))
+      if (event?.opportunityId === opportunity?.id && event?.type === candidate.eventType && sameTime && sameTemporal) {
         return { status: 'already', snapshot, summary: 'The same source occurrence is already recorded.',
           affected: [{ type: 'schedule_node', id: existing.id }] }
       }

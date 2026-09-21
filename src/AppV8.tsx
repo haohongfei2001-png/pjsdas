@@ -702,6 +702,9 @@ function agendaNodeLabel(kind: TodayBriefAgendaNode['kind'], zh: boolean) {
 function agendaNodeTime(node: TodayBriefAgendaNode, zh: boolean) {
   const temporal = node.temporal
   if (temporal.precision === 'date' && temporal.date) return temporal.date
+  if (temporal.shape === 'availability_window' && temporal.startAt && temporal.endAt) {
+    return (zh ? '可参加 ' : 'Available ') + formatBriefDateTime(temporal.startAt, zh) + ' – ' + formatBriefDateTime(temporal.endAt, zh)
+  }
   if (temporal.startAt) return formatBriefDateTime(temporal.startAt, zh)
   if (temporal.deadlineAt) return (zh ? '截止 ' : 'By ') + formatBriefDateTime(temporal.deadlineAt, zh)
   if (temporal.endAt) return formatBriefDateTime(temporal.endAt, zh)

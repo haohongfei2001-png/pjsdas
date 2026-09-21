@@ -68,7 +68,7 @@ export default function AiAccessSettingsCard() {
           <strong>{zh ? '招聘邮件自动跟踪' : 'Automatic recruiting-email tracking'}</strong>
           <p>{zh
             ? '点击启用即同意：以 Gmail 只读权限回补最近90天邮件（含已归档、不含垃圾箱/垃圾邮件），以后定期读取新增招聘邮件，并保存必要的公司、岗位、招聘进展、时间、地点与会议链接。原始正文不保存，附件和链接页面不读取；不发送或修改邮件。已有连接不会自动扩大范围，关闭后重新启用才采用上述范围。'
-            : 'By enabling, you consent to read-only backfill of the last 90 days, including archived mail and excluding spam/trash, followed by periodic checks for new recruiting mail. PJSDAS stores necessary recruiting facts, times, locations and meeting links, but no raw bodies; it does not read attachments or linked pages, or send/change mail. Existing connections keep their previous scope until disabled and explicitly enabled again.'}</p>
+            : 'By enabling Gmail read-only access, you consent to backfill of the last 90 days, including archived mail and excluding spam/trash, followed by periodic checks for new recruiting mail. PJSDAS stores necessary recruiting facts, times, locations and meeting links, but no raw bodies. Raw email bodies are never persisted in PJSDAS; ambiguous messages remain unresolved. It does not read attachments or linked pages, or send/change mail. Existing connections keep their previous scope until disabled and explicitly enabled again.'}</p>
           {automation?.gmailLastSuccessAt ? <small className="cloud-security-note">
             {zh ? `最近成功检查：${new Date(automation.gmailLastSuccessAt).toLocaleString()}` : `Last successful check: ${new Date(automation.gmailLastSuccessAt).toLocaleString()}`}
           </small> : null}

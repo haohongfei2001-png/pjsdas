@@ -57,6 +57,7 @@ const candidate = z.discriminatedUnion('kind', [
   z.object({
     ...baseCandidate,
     kind: z.literal('process_event'),
+    temporal: temporal.optional(),
     eventType: processEventType,
     occurredAt: isoString.optional(),
     dueAt: isoString.optional(),

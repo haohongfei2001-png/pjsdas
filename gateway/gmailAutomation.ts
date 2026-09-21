@@ -1,3 +1,4 @@
+import { resolveSourceTemporal } from '../src/sourceTemporal.js'
 import { parseRecruitingNotification } from '../src/notificationParser.js'
 import { stageForProcessEvent } from '../src/processEvents.js'
 import {
@@ -455,11 +456,16 @@ export function gmailSemanticRecordFromMessage(
     return parsed.type && parsed.type !== 'other' && parsed.confidence.type !== 'low'
   })
   if (!bodyHasEvent && subjectType) pieces.splice(0, pieces.length, text)
+  const timedContextTypes = [...new Set(pieces.map((piece) => parseRecruitingNotification(piece, opportunities, new Date(legacy.receivedAt)).type)
+    .filter((type) => type && requiresTiming(type)))]
+  const deadlineContextType = timedContextTypes.length === 1 ? timedContextTypes[0] : undefined
   const candidates: SemanticCandidate[] = []
   for (const [index, piece] of pieces.slice(0, 20).entries()) {
     const parsed = parseRecruitingNotification(piece, opportunities, new Date(legacy.receivedAt))
     const selected = parsed.opportunity ?? whole.opportunity
-    const eventType = parsed.type && parsed.type !== 'other' ? parsed.type : !bodyHasEvent ? subjectType : undefined
+    const submissionDeadline = /(?:提交|交卷|submission|submit).{0,12}(?:截止|最晚|deadline|by)|(?:截止|deadline).{0,12}(?:提交|交卷|submission|submit)/i.test(piece)
+    const eventType = submissionDeadline && deadlineContextType ? deadlineContextType
+      : parsed.type && parsed.type !== 'other' ? parsed.type : !bodyHasEvent ? subjectType : undefined
     const eventConfidence = eventType === parsed.type ? parsed.confidence.type : 'high' as const
     const application = /(?:投递|申请).{0,12}(?:成功|已收到)|(?:application).{0,20}(?:received|submitted|confirmed)/i.test(piece)
     if (!application && (!eventType || eventConfidence === 'low')) continue
@@ -485,27 +491,12 @@ export function gmailSemanticRecordFromMessage(
       candidates.push({ ...base, kind: 'occurrence_completed', target: { ...base.target, occurrenceKind }, occurredAt: legacy.receivedAt })
       continue
     }
-    // The existing owner source timezone is Asia/Shanghai. Only explicit full dates
-    // are automatic; relative/yearless/ambiguous timezone text stays a decision.
-    const date = piece.match(/(20\d{2})[年\/-](\d{1,2})[月\/-](\d{1,2})日?/)
-    const clock = piece.match(/(?:^|\s|日)(\d{1,2})[:：](\d{2})(?:\D|$)/)
-    let dueAt: string | undefined
-    let duePrecision: 'date' | 'datetime' | undefined
-    if (date) {
-      const day = `${date[1]}-${date[2]!.padStart(2, '0')}-${date[3]!.padStart(2, '0')}`
-      const calendarDate = new Date(`${day}T00:00:00Z`)
-      const calendarDayValid = !Number.isNaN(calendarDate.getTime()) && calendarDate.toISOString().slice(0, 10) === day
-      const multipleDates = [...piece.matchAll(/20\d{2}[年\/-]\d{1,2}[月\/-]\d{1,2}/g)].length > 1
-      const explicitZone = /(?:UTC|GMT|Z\b|[+-]\d{2}:?\d{2}|美国|欧洲|伦敦)/i.test(piece)
-      if (clock && !explicitZone && calendarDayValid && !multipleDates) {
-        const candidate = `${day}T${clock[1]!.padStart(2, '0')}:${clock[2]}:00+08:00`
-        if (!Number.isNaN(Date.parse(candidate)) && Number(clock[1]) < 24 && Number(clock[2]) < 60) {
-          dueAt = candidate; duePrecision = 'datetime'
-        }
-      } else if (!clock && parsed.timingMode === 'deadline' && calendarDayValid && !multipleDates) {
-        dueAt = day; duePrecision = 'date'
-      }
-    }
+    const originalTimestamp = message.internalDate && Number.isFinite(Number(message.internalDate))
+      ? legacy.receivedAt : header(message.payload, 'date')
+    const temporal = resolveSourceTemporal(piece, { receivedAt: originalTimestamp,
+      timezone: 'Asia/Shanghai', mode: submissionDeadline ? 'deadline' : parsed.timingMode })
+    const dueAt = temporal?.startAt ?? temporal?.deadlineAt ?? temporal?.date
+    const duePrecision = temporal?.precision
     if (occurrenceKind && /改期|改为|调整为|reschedul/i.test(piece)) {
       if (dueAt && duePrecision === 'datetime') {
         candidates.push({ ...base, kind: 'occurrence_rescheduled', temporal: {
@@ -523,9 +514,9 @@ export function gmailSemanticRecordFromMessage(
     candidates.push({
       ...base, kind: 'process_event', eventType: eventType!, occurredAt: legacy.receivedAt,
       target: { ...base.target, ...(message.threadId && dueAt ? {
-        occurrenceId: `gmail:primary:thread:${message.threadId}:${selected?.id ?? 'unresolved'}:${eventType}:${dueAt}`,
+        occurrenceId: `gmail:primary:thread:${message.threadId}:${selected?.id ?? 'unresolved'}:${eventType}:${temporal?.shape ?? 'unknown'}:${dueAt}`,
       } : {}) },
-      dueAt, duePrecision, timingMode: parsed.timingMode, estimatedMinutes: parsed.estimatedMinutes, location, joinUrl,
+      temporal, dueAt, duePrecision, timingMode: submissionDeadline ? 'deadline' : parsed.timingMode, estimatedMinutes: parsed.estimatedMinutes, location, joinUrl,
       temporalConfidence: occurrenceKind ? (dueAt ? 'high' : 'low') : undefined,
     })
   }

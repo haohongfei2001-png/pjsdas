@@ -150,6 +150,7 @@ export type SemanticCandidate =
     })
   | (SemanticCandidateBase & {
       kind: 'process_event'
+      temporal?: ScheduleNodeTemporal
       eventType: ProcessEventType
       occurredAt?: string
       dueAt?: string
@@ -645,6 +646,7 @@ export interface ProcessRecord {
 }
 
 export interface ProcessEvent {
+  temporal?: ScheduleNodeTemporal
   id: string
   opportunityId: string
   company: string
