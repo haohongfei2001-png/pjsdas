@@ -10,6 +10,7 @@ export interface GmailWatchHandlerConfig {
   googleClientSecret: string
   topicName: string
   fetchImpl?: typeof fetch
+  registerGmailWatchImpl?: typeof registerGmailWatch
   now?: () => Date
 }
 
@@ -55,7 +56,7 @@ export function createGmailWatchHandler(config: GmailWatchHandlerConfig) {
       let failedUsers = 0
       for (const binding of bindings) {
         try {
-          const watch = await registerGmailWatch({
+          const watch = await (config.registerGmailWatchImpl ?? registerGmailWatch)({
             refreshTokenCiphertext: binding.refreshTokenCiphertext,
             tokenEncryptionKey: config.tokenEncryptionKey,
             googleClientId: config.googleClientId,
