@@ -14,8 +14,8 @@ Product origin: `https://todayaction.com`
 | UU-02 | **COMPLETE** | Unified Semantic Intake / DecisionRequest / Undo policy implemented and production-verified |
 | UU-03 | **COMPLETE** | Revision-bound TodayBrief / agenda / latest-start read model implemented and production-verified |
 | UU-04 | **COMPLETE** | Final two-destination Web shell / Today implemented and production-verified |
-| UU-05 | **READY — NOT STARTED** | UU-04 dependency satisfied; Opportunities / conclusion-first detail is next |
-| UU-06 | NOT_READY | Depends on UU-05 / shared intake |
+| UU-05 | **COMPLETE** | Shared opportunity decisions / conclusion-first detail and date-only regression closed on main; production verified |
+| UU-06 | **READY — NOT STARTED** | UU-05/shared intake dependencies satisfied; separate execution required |
 | UU-07 | NOT_READY | Depends on shared intake/read models |
 | UU-08 | NOT_READY | Depends on platform-neutral contracts |
 | UU-09 | NOT_READY | Final canary/release |
@@ -347,3 +347,35 @@ verification only. It did **not**:
 - bulk-rewrite production workspace data;
 - change release publication policy;
 - publish a new GitHub Release.
+
+## UU-05 closure — 2026-09-21
+
+Implementation is complete on `main@d4b163b06902ae9b43123b98ec470b958c4c190e`
+([PR101](https://github.com/haohongfei2001-png/pjsdas/pull/101)). The stale-active
+PR100 implementation was preserved and continued from exact head `346c62f` on
+an isolated manager branch; PR100 was closed as superseded, without rewriting it.
+
+Delivered the shared Opportunities list/detail read model and conclusion-first
+UI. Date-only/estimated deadlines retain their calendar day in the applicable
+timezone; exact datetime deadlines retain instant-based expiry. Nearest-node
+state and list/detail conclusions agree. No date-only clock time is fabricated.
+
+New regression reproduced 4 failures on the old implementation. Corrected code
+passes 673 unit tests, build and three targeted headless journeys including
+Shanghai and Los Angeles boundaries. Two older browser fixtures had expired at
+the real 2026-09-20/21 rollover; their declared clock is now fixed, with all
+original assertions retained and all six related journeys passing.
+
+PR head `437fa1900cfd6f688d9142863d56a85f7f4ea3a5`: CI and full Chromium success.
+Exact merged implementation `d4b163b06902ae9b43123b98ec470b958c4c190e`:
+
+- CI run `35547668102`: success.
+- Full Chromium run `35547668091`: success.
+- Exact-SHA backend / standby / Pages / deploy run `35547668135`: success.
+- Production Self-Test run `35547741487`: success; frontend manifest commit equals
+  `d4b163b06902ae9b43123b98ec470b958c4c190e` and contract/migration digests match.
+- Release workflow `35547757705`: success with final publication still disarmed.
+
+This closure commit changes documentation only. No workspace-data migration,
+permission expansion or final release publication. UU-06 is READY but is not
+started in this execution.
