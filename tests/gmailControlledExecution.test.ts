@@ -12,7 +12,7 @@ function harness(options: { coalesce?: boolean; assertValid?: boolean; budgetMs?
   const fetchImpl: typeof fetch = async (input, init) => {
     const rpc = String(input).split('/').at(-1)!; const data = JSON.parse(String(init?.body ?? '{}'))
     writes.push({ rpc, data })
-    if (rpc === 'pjsdas_claim_gmail_automation_bindings_v3') return json([row, { ...row, user_id: 'later' }])
+    if (rpc === 'pjsdas_claim_gmail_automation_bindings_v4') return json([row, { ...row, user_id: 'later' }])
     if (rpc === 'pjsdas_begin_gmail_execution') return options.missingClaim ? json({ code: 'PGRST202' },404) : json(options.coalesce ? null : { ...row, gmail_history_id: 'fresh', user_id: data.target_user_id })
     if (rpc === 'pjsdas_assert_gmail_execution') return json(options.assertValid ?? true)
     if (rpc === 'pjsdas_finish_gmail_execution') {
