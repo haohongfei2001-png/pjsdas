@@ -19,6 +19,7 @@ export interface GmailPushHandlerConfig {
   supabaseServiceRoleKey: string
   expectedAudience: string
   expectedServiceAccountEmail: string
+  expectedSubscription: string
   fetchImpl?: typeof fetch
 }
 
@@ -48,7 +49,7 @@ async function verifyGoogleOidc(
   config: GmailPushHandlerConfig,
   fetchImpl: typeof fetch,
 ) {
-  if (!config.expectedAudience.trim() || !config.expectedServiceAccountEmail.trim()) {
+  if (!config.expectedAudience.trim() || !config.expectedServiceAccountEmail.trim() || !config.expectedSubscription.trim()) {
     throw new WorkspaceSourceError('GMAIL_PUSH_NOT_CONFIGURED', 'PJSDAS Gmail push authentication is not configured.', false)
   }
 
@@ -127,6 +128,9 @@ export function createGmailPushHandler(config: GmailPushHandlerConfig) {
     try {
       await verifyGoogleOidc(token, config, fetchImpl)
       const envelope = await request.json().catch(() => undefined) as PubSubEnvelope | undefined
+      if (envelope?.subscription !== config.expectedSubscription) {
+        return new Response(null, { status: 403, headers: { 'cache-control': 'no-store' } })
+      }
       const notification = envelope?.message?.data ? decodeBase64Json(envelope.message.data) : undefined
       const emailAddress = notification?.emailAddress?.trim().toLowerCase() ?? ''
       const historyId = notification?.historyId?.trim() ?? ''
