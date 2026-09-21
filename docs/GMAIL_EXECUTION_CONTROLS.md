@@ -6,10 +6,15 @@ is absent/false by default. Existing disabled behavior uses the previous endpoin
 
 ## Controlled path
 
-After the additive consent migration, the unapplied execution-controls migration adds
+The manager has applied only the default-NULL consent migration (production version
+`20260921053337`), confirming zero enabled bindings and zero expanded grants.
+The unapplied execution-controls migration adds
 an RLS-protected table with no direct anon/authenticated privileges. The existing
 Vault-validated worker identity may call three bounded RPCs: begin, assert, finish.
 Every empty/wrong token is rejected. There is no credential or source-scope expansion.
+Legacy v1 retains its production owner/service_role-only EXECUTE ACL; this migration
+explicitly revokes PUBLIC/anon/authenticated access rather than reopening the old
+entry point. V2 retains its existing token-gated anon compatibility.
 
 Begin locks one enabled non-revoked connection, grants a 60-second UUID lease, and
 returns a fresh binding including its existing consent/cursor. A concurrent invocation

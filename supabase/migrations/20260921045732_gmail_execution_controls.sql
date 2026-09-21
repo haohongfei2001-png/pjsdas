@@ -262,11 +262,9 @@ begin
 end
 $$;
 
+-- Production v1 is restricted to its owner/service_role. Preserve that ACL;
+-- CREATE OR REPLACE retains existing service_role privileges, and must not
+-- reopen this retired entry point to browser roles while adding its fence.
 revoke all on function public.pjsdas_update_gmail_automation_state(
   text, uuid, text, timestamptz, timestamptz, text, boolean, boolean
-) from public;
-grant execute on function public.pjsdas_update_gmail_automation_state(
-  text, uuid, text, timestamptz, timestamptz, text, boolean, boolean
-) to anon;
-
-revoke execute on function public.pjsdas_update_gmail_automation_state(text,uuid,text,timestamptz,timestamptz,text,boolean,boolean) from authenticated;
+) from public, anon, authenticated;
