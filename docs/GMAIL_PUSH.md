@@ -69,7 +69,8 @@ Pub/Sub must use authenticated push with a dedicated user-managed service accoun
 - token signature/validity through Google's token verification endpoint;
 - exact audience;
 - exact service-account email;
-- verified email claim.
+- verified email claim;
+- exact Pub/Sub subscription resource name.
 
 Environment variables are server-only:
 
@@ -77,6 +78,7 @@ Environment variables are server-only:
 PJSDAS_GMAIL_PUBSUB_TOPIC
 PJSDAS_GMAIL_PUSH_AUDIENCE
 PJSDAS_GMAIL_PUSH_SERVICE_ACCOUNT_EMAIL
+PJSDAS_GMAIL_PUBSUB_SUBSCRIPTION
 ~~~
 
 The push endpoint uses the already-required server-only Supabase service-role credential only to call one narrow RPC. That RPC can enqueue the existing Gmail worker for exactly one eligible email binding. It cannot read mail, write workspace truth, change consent, or grant permissions.
