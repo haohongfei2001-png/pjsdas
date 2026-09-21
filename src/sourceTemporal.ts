@@ -9,7 +9,8 @@ export function resolveSourceTemporal(text: string, options: {
   const received = new Date(options.receivedAt)
   if (Number.isNaN(received.getTime())) return undefined
   // An unparsed source timezone or offset must not silently become the configured zone.
-  if (/(?:UTC|GMT|[+-]\d{2}:?\d{2}|美国|欧洲|伦敦|\b(?:PST|PDT|EST|EDT|CST|BST)\b)/i.test(text)) return undefined
+  if (/(?:UTC|GMT|[+-]\d{2}:?\d{2}|\d{2}:\d{2}(?::\d{2})?Z\b|\b[A-Za-z_]+\/[A-Za-z_]+(?:\/[A-Za-z_]+)?\b|美国|欧洲|伦敦|\b(?:PST|PDT|EST|EDT|CST|BST|CET|CEST|JST|KST|IST)\b)/i.test(text)) return undefined
+  if (/\d{1,2}:\d{2}(?::\d{2})?\s+[A-Z]{3,5}\b/.test(text)) return undefined
   let parts: Record<string, string>
   try {
     parts = Object.fromEntries(new Intl.DateTimeFormat('en-CA', { timeZone: options.timezone,
@@ -48,7 +49,7 @@ export function resolveSourceTemporal(text: string, options: {
     let offset = /大后天/.test(expression) ? 3 : /后天|day after tomorrow/.test(expression) ? 2 : /明天|tomorrow/.test(expression) ? 1 : 0
     if (/周|^(?:this|next) /.test(expression)) {
       const weekdays = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday']
-      const weekday = expression.includes('周') ? '一二三四五六日天'.indexOf(expression.slice(-1)) % 7
+      const weekday = expression.includes('周') ? Math.min('一二三四五六日天'.indexOf(expression.slice(-1)), 6)
         : weekdays.findIndex((name) => expression.endsWith(name))
       const mondayOffset = (originalDay.getUTCDay() + 6) % 7
       offset = weekday - mondayOffset + (/下周|^next /.test(expression) ? 7 : 0)

@@ -428,13 +428,19 @@ export function gmailSemanticRecordFromMessage(
   opportunities: Opportunity[],
   now = new Date(),
 ): GmailSemanticRecord | undefined {
-  const legacy = gmailObservationFromMessage(message, opportunities, now)
-  if (!legacy) return undefined
+  const originalHeaderTime = Date.parse(header(message.payload, 'date'))
+  const originalInternalTime = message.internalDate ? Number(message.internalDate) : NaN
+  const originalTime = Number.isFinite(originalInternalTime) && !Number.isNaN(new Date(originalInternalTime).getTime())
+    ? originalInternalTime : originalHeaderTime
+  const originalReceivedAt = Number.isFinite(originalTime) ? new Date(originalTime).toISOString() : undefined
+  const prior = gmailObservationFromMessage(message, opportunities, now)
+  if (!prior) return undefined
+  const legacy = { ...prior, receivedAt: originalReceivedAt ?? prior.receivedAt }
   const excluded = message.labelIds?.some((label) => label === 'SPAM' || label === 'TRASH')
   const body = excluded ? '' : messageBodyText(message.payload)
   const subject = excluded ? '' : header(message.payload, 'subject')
   const text = excluded ? '' : body || subject || cleanText(message.snippet)
-  const gaps: string[] = []
+  const gaps: string[] = originalReceivedAt ? [] : ['Original message timestamp is unavailable; automatic facts require clarification.']
   const visit = (part: GmailPart | undefined) => {
     if (!part) return
     if (part.filename) gaps.push('Attachment content is NOT_SUPPORTED; inspect the original mail if it contains material details.')
@@ -466,15 +472,15 @@ export function gmailSemanticRecordFromMessage(
     const submissionDeadline = /(?:提交|交卷|submission|submit).{0,12}(?:截止|最晚|deadline|by)|(?:截止|deadline).{0,12}(?:提交|交卷|submission|submit)/i.test(piece)
     const eventType = submissionDeadline && deadlineContextType ? deadlineContextType
       : parsed.type && parsed.type !== 'other' ? parsed.type : !bodyHasEvent ? subjectType : undefined
-    const eventConfidence = eventType === parsed.type ? parsed.confidence.type : 'high' as const
+    const eventConfidence = !originalReceivedAt ? 'low' as const : eventType === parsed.type ? parsed.confidence.type : 'high' as const
     const application = /(?:投递|申请).{0,12}(?:成功|已收到)|(?:application).{0,20}(?:received|submitted|confirmed)/i.test(piece)
-    if (!application && (!eventType || eventConfidence === 'low')) continue
+    if (!application && (!eventType || parsed.confidence.type === 'low' && eventType === parsed.type)) continue
     const evidenceRef = `gmail:primary:${message.id}:fragment:${index}`
     const base = {
       id: `fragment:${index}`,
       target: selected ? { opportunityId: selected.id } : undefined,
       objectConfidence: selected ? (parsed.opportunity ? parsed.confidence.opportunity : whole.confidence.opportunity) : 'low' as const,
-      eventConfidence: application ? 'high' as const : eventConfidence,
+      eventConfidence: !originalReceivedAt ? 'low' as const : application ? 'high' as const : eventConfidence,
       evidenceRefs: [evidenceRef], sourceVersionRefs: [`${message.id}:uu06-v1`],
     }
     if (application) {
@@ -491,17 +497,14 @@ export function gmailSemanticRecordFromMessage(
       candidates.push({ ...base, kind: 'occurrence_completed', target: { ...base.target, occurrenceKind }, occurredAt: legacy.receivedAt })
       continue
     }
-    const originalTimestamp = message.internalDate && Number.isFinite(Number(message.internalDate))
-      ? legacy.receivedAt : header(message.payload, 'date')
+    const originalTimestamp = originalReceivedAt ?? ''
     const temporal = resolveSourceTemporal(piece, { receivedAt: originalTimestamp,
       timezone: 'Asia/Shanghai', mode: submissionDeadline ? 'deadline' : parsed.timingMode })
     const dueAt = temporal?.startAt ?? temporal?.deadlineAt ?? temporal?.date
     const duePrecision = temporal?.precision
     if (occurrenceKind && /改期|改为|调整为|reschedul/i.test(piece)) {
-      if (dueAt && duePrecision === 'datetime') {
-        candidates.push({ ...base, kind: 'occurrence_rescheduled', temporal: {
-          shape: 'fixed_range', startAt: dueAt, resolutionBasis: 'source_explicit', precision: 'datetime', timezone: 'Asia/Shanghai',
-        }, temporalConfidence: 'high', target: { ...base.target, occurrenceKind } })
+      if (temporal) {
+        candidates.push({ ...base, kind: 'occurrence_rescheduled', temporal, temporalConfidence: 'high', target: { ...base.target, occurrenceKind } })
       } else gaps.push('Reschedule lacks an unambiguous full date/time; the existing occurrence was preserved.')
       continue
     }

@@ -46,8 +46,19 @@ describe('UU06 shared Gmail intake', () => {
     const replay = gmailSemanticRecordFromMessage(mail, snapshot().data.opportunities, new Date('2026-10-10T00:00:00Z'))!
     expect(first.observation.candidates).toEqual(replay.observation.candidates)
     expect(first.observation.candidates[0]).toMatchObject({ dueAt: '2026-09-22T14:30:00+08:00', temporal: { timezone: 'Asia/Shanghai', rawExpression: '明天 14:30' } })
+    const headerMail = { ...mail, internalDate: undefined, payload: { ...mail.payload,
+      headers: [...mail.payload.headers, { name: 'Date', value: 'Sun, 20 Sep 2026 23:55:00 +0000' }] } }
+    const headerFirst = gmailSemanticRecordFromMessage(headerMail, snapshot().data.opportunities, now)!
+    const headerReplay = gmailSemanticRecordFromMessage(headerMail, snapshot().data.opportunities, new Date('2026-10-10T00:00:00Z'))!
+    expect(headerFirst.observation.candidates).toEqual(headerReplay.observation.candidates)
+    expect(headerReplay.observation.source.assertedAt).toBe('2026-09-20T23:55:00.000Z')
     const missingTimestamp = { ...mail, internalDate: undefined }
     expect(gmailSemanticRecordFromMessage(missingTimestamp, snapshot().data.opportunities, now)?.observation.candidates[0]).toMatchObject({ temporalConfidence: 'low' })
+    const noDateApplication = { ...message('京东 AI产品经理 申请已收到'), internalDate: undefined }
+    const applicationRecord = gmailSemanticRecordFromMessage(noDateApplication, snapshot().data.opportunities, now)!
+    const guarded = applyGmailSemanticBatch(snapshot(), { runId: 'missing-date', sourceId: 'gmail:primary', checkedAt: now.toISOString(), authorized: true, records: [applicationRecord] })
+    expect(guarded.snapshot.data.decisionRequests).toHaveLength(1)
+    expect(guarded.snapshot.data.opportunities[0]?.appliedAt).toBeUndefined()
   })
   it('preserves test availability window and submission deadline as distinct shared schedule shapes', () => {
     const text = '京东 AI产品经理 笔试开放窗口2026年9月24日 09:00至2026年9月25日 17:00；提交截止2026年9月25日 18:00'
@@ -57,6 +68,8 @@ describe('UU06 shared Gmail intake', () => {
     expect(first.snapshot.data.scheduleNodes?.[0]?.temporal).toMatchObject({ startAt: '2026-09-24T09:00:00+08:00', endAt: '2026-09-25T17:00:00+08:00' })
     expect(first.snapshot.data.scheduleNodes?.[1]?.temporal.deadlineAt).toBe('2026-09-25T18:00:00+08:00')
     validateSnapshot(first.snapshot)
+    const reschedule = gmailSemanticRecordFromMessage(message('京东 AI产品经理 笔试开放窗口改期为2026年9月26日 09:00至2026年9月27日 17:00'), snapshot().data.opportunities, now)!
+    expect(reschedule.observation.candidates[0]).toMatchObject({ kind: 'occurrence_rescheduled', temporal: { shape: 'availability_window', endAt: '2026-09-27T17:00:00+08:00' } })
     const replay = run(first.snapshot, text, 'window2')
     expect(replay.snapshot.data.scheduleNodes).toHaveLength(2)
     const changedWindow = run(first.snapshot, text.replace('17:00', '16:00'), 'window3')
@@ -67,7 +80,7 @@ describe('UU06 shared Gmail intake', () => {
     expect(undone.data.scheduleNodes?.filter((node) => node.state !== 'cancelled')).toHaveLength(0)
   })
   it('rejects normalized invalid calendar dates and ambiguous multi-date fragments', () => {
-    for (const text of ['京东 AI产品经理 面试通知2026年2月30日 14:30', '京东 AI产品经理 面试通知2026年9月25日 14:30或2026年9月26日 14:30']) {
+    for (const text of ['京东 AI产品经理 面试通知2026年2月30日 14:30', '京东 AI产品经理 面试通知2026-09-22T14:30:00Z', '京东 AI产品经理 面试通知2026-09-22 14:30 Asia/Tokyo', '京东 AI产品经理 面试通知2026年9月25日 14:30或2026年9月26日 14:30']) {
       const result = run(snapshot(), text)
       expect(result.snapshot.data.processEvents).toHaveLength(0)
       expect(result.snapshot.data.decisionRequests).toHaveLength(1)
