@@ -157,13 +157,14 @@ Push is the normal low-latency wake path. Compensation remains the correctness/r
 1. Candidate CI / build / browser / review passes.
 2. Apply only the additive watch-state schema migration.
 3. Deploy backend endpoints and server environment configuration.
-4. Verify endpoints fail closed before any mailbox is enabled.
-5. Apply the compensation/watch-renewal scheduler migration.
-6. Create/verify the bounded Google Cloud topic, IAM and authenticated push subscription.
-7. Explicitly enable the owner's Gmail binding with UU06 consent; this registers the watch.
-8. Run a bounded real canary with synthetic recruiting emails.
-9. Measure source-to-commit latency and compensation recovery using existing bounded metrics.
-10. Only after the UU06 acceptance evidence passes may canonical status become COMPLETE. Do not start UU-07.
+4. Drain any old Gmail invocation and explicitly activate PJSDAS_GMAIL_EXECUTION_CONTROLS=true; both new UU06 consent and Push fail closed while this remains false.
+5. Verify worker/push endpoints fail closed before any mailbox is enabled.
+6. Apply the compensation/watch-renewal scheduler migration.
+7. Create/verify the bounded Google Cloud topic, IAM and authenticated push subscription.
+8. Explicitly enable the owner's Gmail binding with UU06 consent; this registers the watch.
+9. Run a bounded real canary with synthetic recruiting emails.
+10. Measure source-to-commit latency and compensation recovery using existing bounded metrics.
+11. Only after the UU06 acceptance evidence passes may canonical status become COMPLETE. Do not start UU-07.
 
 ## Required live canary evidence
 
