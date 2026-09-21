@@ -6,10 +6,11 @@ do $migration$
 declare
   gmail_job cron.job%rowtype;
 begin
+  -- The migration role can SELECT cron.job and execute cron.alter_job, but
+  -- has no direct UPDATE privilege on cron.job. Do not require a row lock.
   select * into strict gmail_job
   from cron.job
-  where jobname = 'pjsdas-gmail-automation-hourly'
-  for update;
+  where jobname = 'pjsdas-gmail-automation-hourly';
 
   if gmail_job.schedule is distinct from '5 * * * *' then
     raise exception 'Unexpected Gmail scheduler cadence; refusing to overwrite it.';

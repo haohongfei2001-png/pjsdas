@@ -47,7 +47,27 @@ opt-in/revocation racing a scheduler statement is bounded by its database snapsh
 the existing worker rechecks authorization when claiming bindings. No claim of
 transactional cancellation of an already-enqueued HTTP request is made.
 
-Independent review and exact-candidate CI remain required before manager publication.
+The original candidate `9f09e3df69af73b89db1655a1fc7cb2a7b31e23e` passed local
+SQL review and exact remote CI/browser. Its production apply attempt then failed with
+SQLSTATE `42501`, permission denied on `cron.job` at `SELECT ... FOR UPDATE`.
+The manager verified that the migration did not enter history and both original job
+command digests/schedules remained unchanged. This was a real database privilege
+error, not an automatic approval rejection, and is preserved as failed evidence.
+
+Production metadata permits the migration role to SELECT `cron.job` and EXECUTE
+`cron.alter_job`, but not directly UPDATE the table. The correction removes only the
+unnecessary `FOR UPDATE`; strict single-job lookup and cadence checks remain, and the
+supported command-only API is still the only write path. No privileges are granted.
+The manager also verified the actual C API using an unchanged-command transaction
+(`BEGIN` → existing command through `cron.alter_job` → `ROLLBACK`): it succeeded
+without committing any configuration change. No command or Vault value was output.
+The SQL harness now runs migration statements as a non-superuser role with exactly
+SELECT-only catalog rights and API EXECUTE. It first proves the old lock fails without
+changes, then proves the correction and safety cases pass. The synthetic API stub
+uses a restricted SECURITY DEFINER to emulate the C extension's permitted internal
+write path; production `cron.alter_job` is a C function, not SECURITY DEFINER. This
+fixture does not claim to test pg_cron's C implementation or replace real apply checks.
+Independent review and exact-candidate CI remain required for the corrected SHA.
 There is still zero live opt-in in the last manager readback, the execution-control
 flag remains off, cadence remains hourly, and actual usage/cost headroom is unknown.
 This candidate does not certify Gmail p95/compensation or start UU07.
