@@ -31,6 +31,8 @@ const action = {
 }
 
 async function seedLocalWorkspace(page: Page) {
+  // This fixture represents an open application window, independent of the runner's date.
+  await page.clock.setFixedTime(new Date('2026-09-18T08:00:00.000Z'))
   await page.goto('/')
   await page.evaluate(async ({ opportunity, action }) => {
     await new Promise<void>((resolve, reject) => {

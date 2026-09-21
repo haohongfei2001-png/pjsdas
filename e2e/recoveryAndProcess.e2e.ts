@@ -31,6 +31,8 @@ const action = {
 }
 
 async function seedWorkspace(page: Page) {
+  // Keep recovery journeys within the fixture's explicitly open application window.
+  await page.clock.setFixedTime(new Date('2026-09-18T08:00:00.000Z'))
   await page.goto('/')
   await expect(page.getByRole('heading', { name: '今天', exact: true })).toBeVisible()
 
