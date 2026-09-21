@@ -8,6 +8,14 @@
   },
   "rewrites": [
     {
+      "source": "/api/automation-gmail-watch",
+      "destination": "/api/automation-gmail?__pjsdas_gmail_route=watch"
+    },
+    {
+      "source": "/api/gmail-push",
+      "destination": "/api/automation-gmail?__pjsdas_gmail_route=push"
+    },
+    {
       "source": "/api/access",
       "destination": "/api/health-auth?mode=access"
     },
