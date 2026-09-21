@@ -15,7 +15,7 @@ Product origin: `https://todayaction.com`
 | UU-03 | **COMPLETE** | Revision-bound TodayBrief / agenda / latest-start read model implemented and production-verified |
 | UU-04 | **COMPLETE** | Final two-destination Web shell / Today implemented and production-verified |
 | UU-05 | **COMPLETE** | Shared opportunity decisions / conclusion-first detail and date-only regression closed on main; production verified |
-| UU-06 | **IN_PROGRESS** | Intake + idle scheduler deployed at runtime 107795a; owner-authorized Push/10m compensation candidate PR #104 is NOT_DEPLOYED; live SLO not certified |
+| UU-06 | **IN_PROGRESS** | Push runtime merged/deployed at main@0fcfdef; watch schema production migration 20260921120615 applied; Push/GCP/env activation NOT_CONFIGURED, Gmail cron still hourly, live SLO not certified |
 | UU-07 | NOT_READY | Depends on shared intake/read models |
 | UU-08 | NOT_READY | Depends on platform-neutral contracts |
 | UU-09 | NOT_READY | Final canary/release |

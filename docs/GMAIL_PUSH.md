@@ -1,10 +1,10 @@
 # UU06 Gmail Push — candidate architecture and activation runbook
 
-State: **CANDIDATE / NOT DEPLOYED**
+State: **RUNTIME + WATCH SCHEMA DEPLOYED / PUSH NOT CONFIGURED**
 Round: UU-06 only.
 Owner authorization: 2026-09-21, bounded to Gmail API official push + Cloud Pub/Sub + minimum IAM + compensation sync no slower than 15 minutes.
 
-This document does not certify live push, enable a mailbox, create a Google Cloud resource, expand Gmail scopes, or start UU-07.
+PR #104 is merged at runtime `0fcfdefef81e528ae43aabdb980508a9490a43e1`, and additive production migration `20260921120615` / `gmail_push_watch_state` is applied. Push is still not configured or activated: no Google Cloud Pub/Sub resource has been created through this execution, no mailbox is enabled, the Gmail cron remains hourly, and the execution-control flag has not been activated. This does not certify live push, expand Gmail scopes, or start UU-07.
 
 ## Frozen boundary
 
