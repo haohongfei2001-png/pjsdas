@@ -14,6 +14,7 @@ const handler = createAutomationSettingsHandler({
   googleClientId: process.env.PJSDAS_GOOGLE_CLIENT_ID ?? '',
   googleClientSecret: process.env.PJSDAS_GOOGLE_CLIENT_SECRET ?? '',
   gmailPushTopicName: process.env.PJSDAS_GMAIL_PUBSUB_TOPIC ?? '',
+  gmailExecutionControlsEnabled: process.env.PJSDAS_GMAIL_EXECUTION_CONTROLS === 'true',
   authorizeIdentity: createConfiguredAudienceAccessGuard({ supabaseUrl: PJSDAS_SUPABASE_URL }),
 })
 
