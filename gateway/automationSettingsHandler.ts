@@ -12,6 +12,7 @@ export interface AutomationSettingsHandlerConfig {
   googleClientId?: string
   googleClientSecret?: string
   gmailPushTopicName?: string
+  gmailExecutionControlsEnabled?: boolean
   registerGmailWatchImpl?: typeof registerGmailWatch
   now?: () => Date
   authorizeIdentity?: (identity: import('./supabaseIdentity.js').PjsdasIdentity) => Promise<unknown>
@@ -175,6 +176,12 @@ export function createAutomationSettingsHandler(config: AutomationSettingsHandle
 
       let gmailWatch: GmailWatchResult | undefined
       if (gmailProvided && body?.gmailEnabled === true && body.gmailIntakeConsentVersion === 'uu06-v1') {
+        if (config.gmailExecutionControlsEnabled !== true) {
+          return json(503, {
+            code: 'GMAIL_EXECUTION_CONTROLS_REQUIRED',
+            message: 'Gmail push intake is not activated until fenced execution controls are enabled.',
+          }, origin, config.allowedOrigins)
+        }
         if (!current.refresh_token_ciphertext) {
           throw new WorkspaceSourceError('AUTH_INVALID', 'Stored Google authorization is incomplete.', false)
         }
