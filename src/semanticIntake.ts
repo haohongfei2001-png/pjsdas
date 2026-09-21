@@ -375,14 +375,16 @@ function toDomainCommand(
       timingMode: candidate.timingMode,
       estimatedMinutes: candidate.estimatedMinutes,
       notes: candidate.notes,
+      location: candidate.location,
+      joinUrl: candidate.joinUrl,
       source: sourceForProcessEvent(observation.source.kind),
     }
   }
   if (candidate.kind === 'opportunity_deadline') {
     return { commandId, kind: 'set_deadline', opportunityId: opportunity!.id, deadline: candidate.deadline, precision: candidate.precision }
   }
-  if (candidate.kind === 'occurrence_completed') {
-    return { commandId, kind: 'complete_occurrence', occurrenceId: occurrence!.occurrenceId, occurredAt: candidate.occurredAt }
+  if (candidate.kind === 'occurrence_completed' || candidate.kind === 'occurrence_cancelled') {
+    return { commandId, kind: candidate.kind === 'occurrence_cancelled' ? 'cancel_occurrence' : 'complete_occurrence', occurrenceId: occurrence!.occurrenceId, occurredAt: candidate.occurredAt }
   }
   if (candidate.kind === 'occurrence_rescheduled') {
     return {
@@ -442,6 +444,7 @@ function applyCandidate(
   const candidate = resolvedTarget(originalCandidate, resolution)
   const opportunityNeeded = candidate.kind !== 'manual_action'
     && candidate.kind !== 'occurrence_completed'
+    && candidate.kind !== 'occurrence_cancelled'
     && candidate.kind !== 'occurrence_rescheduled'
   let opportunity: Opportunity | undefined
 
@@ -474,7 +477,7 @@ function applyCandidate(
   }
 
   let occurrence: ScheduleNode | undefined
-  if (candidate.kind === 'occurrence_completed' || candidate.kind === 'occurrence_rescheduled') {
+  if (candidate.kind === 'occurrence_completed' || candidate.kind === 'occurrence_cancelled' || candidate.kind === 'occurrence_rescheduled') {
     const resolved = occurrenceResolution(snapshot, candidate, opportunity)
     if (resolved.status === 'ambiguous') {
       return {
@@ -549,6 +552,44 @@ function applyCandidate(
     }
   }
 
+  if (candidate.kind === 'process_event' && candidate.target?.occurrenceId) {
+    const sourceNode = (snapshot.data.scheduleNodes ?? []).find((node) => node.evidenceRefs.includes(`source-occurrence:${candidate.target!.occurrenceId}`))
+    const existing = latestScheduleOccurrence(snapshot.data.scheduleNodes ?? [], sourceNode?.occurrenceId ?? candidate.target.occurrenceId)
+    if (existing) {
+      const event = snapshot.data.processEvents.find((item) => item.id === existing.processEventId)
+      const sameTime = event?.dueAt === candidate.dueAt || Boolean(event?.dueAt && candidate.dueAt
+        && Date.parse(event.dueAt) === Date.parse(candidate.dueAt))
+      if (event?.opportunityId === opportunity?.id && event?.type === candidate.eventType && sameTime) {
+        return { status: 'already', snapshot, summary: 'The same source occurrence is already recorded.',
+          affected: [{ type: 'schedule_node', id: existing.id }] }
+      }
+      return { status: 'decision', snapshot, reason: 'material_conflict',
+        summary: 'The source occurrence conflicts with an existing event; use an explicit reschedule or clarify the occurrence.',
+        choices: [
+          { id: 'ignore', label: 'Keep the existing occurrence', consequence: 'No schedule is replaced.', resolution: { dismiss: true } },
+          { id: 'clarify', label: 'Clarify the change', consequence: 'Provide the intended occurrence and corrected time.', resolution: { dismiss: true } },
+        ], affected: [{ type: 'schedule_node', id: existing.id }] }
+    }
+  }
+
+  // An old observation is evidence, not authority to overwrite a later process
+  // fact. Preserve it as a material conflict so an explicit correction can still
+  // be confirmed; never silently discard it or apply last-arrival-wins.
+  const assertedAt = 'occurredAt' in candidate ? candidate.occurredAt ?? observation.source.assertedAt : observation.source.assertedAt
+  const process = opportunity ? snapshot.data.processes.find((item) => item.opportunityId === opportunity!.id) : undefined
+  const currentFactAt = [opportunity?.effectiveProcessEventAt, process?.effectiveProcessEventAt, process?.lastProgressAt]
+    .filter((value): value is string => Boolean(value && iso(value)))
+    .sort((a, b) => Date.parse(b) - Date.parse(a))[0]
+  const updatesProgress = ['application_submitted', 'process_event', 'occurrence_completed', 'occurrence_cancelled', 'occurrence_rescheduled'].includes(candidate.kind)
+  if (updatesProgress && observation.statementMode === 'assertion' && assertedAt && currentFactAt
+    && Date.parse(assertedAt) < Date.parse(currentFactAt) && !resolution?.confirm) {
+    return {
+      status: 'decision', snapshot, reason: 'material_conflict',
+      summary: 'This observation predates a newer process fact. Confirm only if it is an intentional correction.',
+      choices: confirmChoices(), affected,
+    }
+  }
+
   const command = toDomainCommand(observation, candidate, opportunity, occurrence)
   if (command.kind === 'record_application_submission' && resolution?.confirm) command.reactivateConfirmed = true
   const result = applyUserDomainCommand(snapshot, command, now)
@@ -568,6 +609,14 @@ function applyCandidate(
       snapshot: result.snapshot,
       summary: result.summary,
       affected: affectedFromDomain(command, opportunity, occurrence),
+    }
+  }
+  if (candidate.kind === 'process_event' && candidate.target?.occurrenceId) {
+    const newEvent = result.snapshot.data.processEvents.find((event) => !snapshot.data.processEvents.some((prior) => prior.id === event.id))
+    const node = (result.snapshot.data.scheduleNodes ?? []).find((item) => item.processEventId === newEvent?.id)
+    if (node) {
+      node.evidenceRefs = [...new Set([...node.evidenceRefs, `source-occurrence:${candidate.target.occurrenceId}`, ...candidateEvidence(observation, candidate)])]
+      node.sourceVersionRefs = [...new Set([...node.sourceVersionRefs, ...candidateSourceVersions(observation, candidate)])]
     }
   }
   retagCommandTimeline(result.snapshot, command.commandId, observation)

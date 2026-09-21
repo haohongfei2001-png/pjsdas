@@ -136,6 +136,7 @@ export function createAutomationSettingsHandler(config: AutomationSettingsHandle
       const body = await request.json().catch(() => undefined) as {
         action?: unknown
         gmailEnabled?: unknown
+        gmailIntakeConsentVersion?: unknown
         discoveryEnabled?: unknown
       } | undefined
       if (body?.action === 'read') return json(200, statusForRow(current), origin, config.allowedOrigins)
@@ -152,6 +153,9 @@ export function createAutomationSettingsHandler(config: AutomationSettingsHandle
         return json(400, { code: 'INVALID_ARGUMENT', message: 'discoveryEnabled must be a boolean.' }, origin, config.allowedOrigins)
       }
 
+      if (body?.gmailIntakeConsentVersion !== undefined && body.gmailIntakeConsentVersion !== 'uu06-v1') {
+        return json(400, { code: 'INVALID_ARGUMENT', message: 'Unknown Gmail intake consent version.' }, origin, config.allowedOrigins)
+      }
       const scopes = current.granted_scopes ?? []
       if (gmailProvided && body?.gmailEnabled === true && !scopes.includes(GMAIL_READONLY_SCOPE)) {
         return json(409, {
@@ -164,6 +168,7 @@ export function createAutomationSettingsHandler(config: AutomationSettingsHandle
       const patch: Record<string, unknown> = { updated_at: new Date().toISOString() }
       if (gmailProvided) {
         patch.gmail_automation_enabled = body!.gmailEnabled
+        patch.gmail_intake_consent_version = body!.gmailEnabled === true && body!.gmailIntakeConsentVersion === 'uu06-v1' ? 'uu06-v1' : null
         patch.gmail_sync_mode = null
         patch.gmail_page_token = null
         patch.gmail_pending_history_id = null
@@ -192,6 +197,22 @@ export function createAutomationSettingsHandler(config: AutomationSettingsHandle
         })
       } catch {
         throw new WorkspaceSourceError('AUTH_UNAVAILABLE', 'PJSDAS automation settings could not be updated.', true)
+      }
+      if (!response.ok && gmailProvided) {
+        const failure = await response.clone().json().catch(() => ({})) as { code?: string; message?: string }
+        const missingConsentColumn = (failure.code === 'PGRST204' || failure.code === '42703')
+          && Boolean(failure.message?.includes('gmail_intake_consent_version'))
+        if (missingConsentColumn && patch.gmail_intake_consent_version === null) {
+          // Pre-migration legacy enable/disable remains usable; compatibility must
+          // never convert an expanded-consent request into an implicit legacy grant.
+          const legacyPatch = { ...patch }; delete legacyPatch.gmail_intake_consent_version
+          response = await fetchImpl(`${baseUrl}/rest/v1/google_drive_connections?${params.toString()}`, {
+            method: 'PATCH', headers: { Authorization: `Bearer ${accessToken}`, apikey: config.supabasePublishableKey,
+              'content-type': 'application/json', Prefer: 'return=minimal' }, body: JSON.stringify(legacyPatch),
+          })
+        } else if (missingConsentColumn) {
+          return json(409, { code: 'GMAIL_INTAKE_NOT_DEPLOYED', message: 'The expanded recruiting-email intake is not deployed yet. No expanded consent was saved.' }, origin, config.allowedOrigins)
+        }
       }
       if (response.status === 401 || response.status === 403) throw new WorkspaceSourceError('AUTH_INVALID', 'PJSDAS authentication is invalid or expired.', false)
       if (!response.ok) throw new WorkspaceSourceError('AUTH_UNAVAILABLE', `PJSDAS automation settings update failed (HTTP ${response.status}).`, true)

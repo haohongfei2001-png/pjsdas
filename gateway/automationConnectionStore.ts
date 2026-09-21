@@ -11,6 +11,7 @@ interface GoogleAutomationBinding {
 }
 
 export interface GmailAutomationBinding extends GoogleAutomationBinding {
+  gmailIntakeConsentVersion?: 'uu06-v1'
   gmailHistoryId?: string
   gmailLastCheckedAt?: string
   gmailSyncMode?: 'history' | 'fallback'
@@ -60,6 +61,12 @@ export function createAutomationConnectionStore(options: AutomationConnectionSto
     if (response.status === 401 || response.status === 403) {
       throw new WorkspaceSourceError('AUTOMATION_AUTH_REQUIRED', 'PJSDAS automation worker authorization is invalid.', false)
     }
+    if (response.status === 404) {
+      const failure = await response.clone().json().catch(() => ({})) as { code?: string }
+      if (failure.code === 'PGRST202' || failure.code === '42883') {
+        throw new WorkspaceSourceError('AUTOMATION_RPC_NOT_DEPLOYED', 'The requested automation contract is not deployed.', false)
+      }
+    }
     if (!response.ok) {
       throw new WorkspaceSourceError('AUTH_UNAVAILABLE', `PJSDAS automation authorization store failed (HTTP ${response.status}).`, true)
     }
@@ -70,24 +77,29 @@ export function createAutomationConnectionStore(options: AutomationConnectionSto
 
   return {
     async listEnabledGmailBindings(): Promise<GmailAutomationBinding[]> {
-      const rows = await rpc<Array<{
-        user_id?: string
-        google_subject?: string
-        google_email?: string | null
-        refresh_token_ciphertext?: string
-        granted_scopes?: string[] | null
-        gmail_history_id?: string | null
-        gmail_last_checked_at?: string | null
-        gmail_sync_mode?: 'history' | 'fallback' | null
-        gmail_page_token?: string | null
-        gmail_pending_history_id?: string | null
-        gmail_pending_message_ids?: string[] | null
-      }>>('pjsdas_claim_gmail_automation_bindings_v2', { worker_token: workerToken })
+      type Row = {
+        user_id?: string; google_subject?: string; google_email?: string | null;
+        refresh_token_ciphertext?: string; granted_scopes?: string[] | null;
+        gmail_history_id?: string | null; gmail_last_checked_at?: string | null;
+        gmail_sync_mode?: 'history' | 'fallback' | null; gmail_page_token?: string | null;
+        gmail_pending_history_id?: string | null; gmail_pending_message_ids?: string[] | null;
+        gmail_intake_consent_version?: string | null;
+      }
+      let rows: Row[]
+      try {
+        rows = await rpc<Row[]>('pjsdas_claim_gmail_automation_bindings_v3', { worker_token: workerToken })
+      } catch (error) {
+        if (!(error instanceof WorkspaceSourceError) || error.code !== 'AUTOMATION_RPC_NOT_DEPLOYED') throw error
+        rows = await rpc<Row[]>('pjsdas_claim_gmail_automation_bindings_v2', { worker_token: workerToken })
+        // Older database contract cannot prove expanded consent.
+        rows = rows.map((row) => ({ ...row, gmail_intake_consent_version: null }))
+      }
 
       return rows.flatMap((row) => {
         if (!row.user_id || !row.google_subject || !row.refresh_token_ciphertext) return []
         return [{
           userId: row.user_id,
+          gmailIntakeConsentVersion: row.gmail_intake_consent_version === 'uu06-v1' ? 'uu06-v1' as const : undefined,
           googleSubject: row.google_subject,
           googleEmail: row.google_email ?? undefined,
           refreshTokenCiphertext: row.refresh_token_ciphertext,

@@ -117,6 +117,7 @@ describe('automation settings API', () => {
     expect(writes[0]?.url).toContain('user_id=eq.user-a')
     expect(writes[0]?.body).toMatchObject({
       gmail_automation_enabled: true,
+      gmail_intake_consent_version: null,
       gmail_history_id: null,
       gmail_sync_mode: null,
       gmail_page_token: null,
@@ -169,4 +170,26 @@ describe('automation settings API', () => {
     expect(response.status).toBe(400)
     await expect(response.json()).resolves.toMatchObject({ code: 'INVALID_ARGUMENT' })
   })
+  it.each([
+    { version: undefined, missing: true, status: 200, patches: 2 },
+    { version: 'uu06-v1', missing: true, status: 409, patches: 1 },
+    { version: 'uu06-v1', missing: false, status: 200, patches: 1 },
+    { version: 'future-v2', missing: false, status: 400, patches: 0 },
+  ])('persists only explicit supported consent and fails safely before migration: $version / missing=$missing', async ({ version, missing, status, patches }) => {
+    const writes: Array<Record<string, unknown>> = []
+    const fetchImpl = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input).endsWith('/auth/v1/user')) return json({ id: 'user-a' })
+      if (init?.method !== 'PATCH') return json([{ user_id: 'user-a', granted_scopes: [GMAIL_SCOPE] }])
+      const body = JSON.parse(String(init.body)); writes.push(body)
+      if (missing && 'gmail_intake_consent_version' in body) return json({ code: 'PGRST204', message: 'Missing gmail_intake_consent_version' }, 400)
+      return new Response(null, { status: 204 })
+    }) as unknown as typeof fetch
+    const response = await handler(fetchImpl)(request('POST', { gmailEnabled: true, gmailIntakeConsentVersion: version }))
+    expect(response.status).toBe(status)
+    expect(writes).toHaveLength(patches)
+    if (patches) expect(writes[0]?.gmail_intake_consent_version).toBe(version ?? null)
+    if (patches === 2) expect(writes[1]).not.toHaveProperty('gmail_intake_consent_version')
+    if (status === 409) await expect(response.json()).resolves.toMatchObject({ code: 'GMAIL_INTAKE_NOT_DEPLOYED' })
+  })
+
 })

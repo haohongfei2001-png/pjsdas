@@ -36,3 +36,17 @@ describe('AI Access status presentation', () => {
     expect(source).toContain('clearPendingGoogleLinkState()\n        setError(aiAccessErrorMessage(caught, lang))')
   })
 })
+
+import { gmailConsentForPending } from '../src/aiAccess/AiAccessContext.js'
+
+describe('UU06 pending consent across OAuth upgrades', () => {
+  it('does not upgrade old or URL-only Gmail pending intent', () => {
+    expect(gmailConsentForPending('gmail', null)).toBeUndefined()
+    expect(gmailConsentForPending(null, 'uu06-v1')).toBeUndefined()
+    expect(gmailConsentForPending('drive', 'uu06-v1')).toBeUndefined()
+  })
+  it('consumes only the version captured at the new explicit Gmail enable interaction', () => {
+    expect(gmailConsentForPending('gmail', 'uu06-v1')).toBe('uu06-v1')
+    expect(gmailConsentForPending('gmail', 'unknown')).toBeUndefined()
+  })
+})

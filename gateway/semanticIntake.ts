@@ -64,6 +64,8 @@ const candidate = z.discriminatedUnion('kind', [
     timingMode: timingMode.optional(),
     estimatedMinutes: z.number().int().min(5).max(720).optional(),
     notes: z.string().trim().max(800).optional(),
+    location: z.string().trim().max(200).optional(),
+    joinUrl: z.string().trim().max(500).url().refine((value) => new URL(value).protocol === 'https:').optional(),
   }).strict(),
   z.object({
     ...baseCandidate,
@@ -71,7 +73,7 @@ const candidate = z.discriminatedUnion('kind', [
     deadline: z.string().trim().min(1).max(100),
     precision,
   }).strict(),
-  z.object({ ...baseCandidate, kind: z.literal('occurrence_completed'), occurredAt: isoString.optional() }).strict(),
+  z.object({ ...baseCandidate, kind: z.enum(['occurrence_completed', 'occurrence_cancelled']), occurredAt: isoString.optional() }).strict(),
   z.object({ ...baseCandidate, kind: z.literal('occurrence_rescheduled'), temporal }).strict(),
   z.object({ ...baseCandidate, kind: z.literal('abandon_opportunity'), occurredAt: isoString.optional() }).strict(),
   z.object({

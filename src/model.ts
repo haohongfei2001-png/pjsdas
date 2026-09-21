@@ -157,6 +157,8 @@ export type SemanticCandidate =
       timingMode?: ActionTimingMode
       estimatedMinutes?: number
       notes?: string
+      location?: string
+      joinUrl?: string
     })
   | (SemanticCandidateBase & {
       kind: 'opportunity_deadline'
@@ -165,6 +167,10 @@ export type SemanticCandidate =
     })
   | (SemanticCandidateBase & {
       kind: 'occurrence_completed'
+      occurredAt?: string
+    })
+  | (SemanticCandidateBase & {
+      kind: 'occurrence_cancelled'
       occurredAt?: string
     })
   | (SemanticCandidateBase & {
@@ -650,6 +656,8 @@ export interface ProcessEvent {
   timingMode?: ActionTimingMode
   estimatedMinutes?: number
   notes?: string
+  location?: string
+  joinUrl?: string
   source: 'manual' | 'email' | 'other'
   createdAt: string
   updatedAt: string
