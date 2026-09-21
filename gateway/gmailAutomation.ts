@@ -1,3 +1,4 @@
+import { aggregateHistoryLag, type GmailExecutionMetrics } from './gmailExecutionMetrics.js'
 import { resolveSourceTemporal } from '../src/sourceTemporal.js'
 import { parseRecruitingNotification } from '../src/notificationParser.js'
 import { stageForProcessEvent } from '../src/processEvents.js'
@@ -6,7 +7,7 @@ import {
   type HardenedGmailMessageObservation,
 } from '../src/ingestionHardening.js'
 import { bootstrapPolicyFor } from '../src/sourceRegistry.js'
-import { stableIngestionHash } from '../src/ingestion.js'
+import { alreadyIngested, stableIngestionHash } from '../src/ingestion.js'
 import { applyGmailSemanticBatch, type GmailSemanticRecord } from '../src/gmailSemanticIntake.js'
 import type { Opportunity, ProcessEventType, SemanticCandidate } from '../src/model.js'
 import { createDriveWorkspaceSource } from './driveWorkspaceSource.js'
@@ -65,6 +66,7 @@ export interface GmailAutomationFetchResult {
 }
 
 export interface GmailAutomationRunResult {
+  metrics?: GmailExecutionMetrics
   userId: string
   checkedAt: string
   nextHistoryId?: string
@@ -555,6 +557,7 @@ export async function runGmailAutomationForBinding(options: {
   googleClientSecret: string
   fetchImpl?: typeof fetch
   now?: () => Date
+  execution?: { beforeWorkspaceWrite: () => Promise<void> }
 }): Promise<GmailAutomationRunResult> {
   if (options.binding.gmailIntakeConsentVersion !== 'uu06-v1') return runLegacyGmailAutomationForBinding(options)
   const fetchImpl = options.fetchImpl ?? fetch
@@ -633,6 +636,7 @@ export async function runGmailAutomationForBinding(options: {
 
   let workspaceVersion = workspace.context.workspaceVersion
   if (!result.alreadyApplied) {
+    await options.execution?.beforeWorkspaceWrite()
     const writable = requireWritableWorkspaceSource(source)
     const written = await writable.write({
       snapshot: result.snapshot,
@@ -661,6 +665,8 @@ export async function runGmailAutomationForBinding(options: {
     alreadyApplied: result.alreadyApplied,
     workspaceVersion,
     usedFallbackScan: batch.usedFallbackScan,
+    ...(options.execution ? { metrics: executionMetrics(options.binding, batch, workspace.snapshot.data.timeline ?? [],
+      (options.now?.() ?? new Date()).getTime(), result.run.accountedCount, result.run.outcomes.unresolved ?? 0) } : {}),
   }
 }
 
@@ -671,6 +677,7 @@ async function runLegacyGmailAutomationForBinding(options: {
   googleClientSecret: string
   fetchImpl?: typeof fetch
   now?: () => Date
+  execution?: { beforeWorkspaceWrite: () => Promise<void> }
 }): Promise<GmailAutomationRunResult> {
   const fetchImpl = options.fetchImpl ?? fetch
   const now = options.now?.() ?? new Date()
@@ -738,6 +745,7 @@ async function runLegacyGmailAutomationForBinding(options: {
 
   let workspaceVersion = workspace.context.workspaceVersion
   if (!result.alreadyApplied) {
+    await options.execution?.beforeWorkspaceWrite()
     const writable = requireWritableWorkspaceSource(source)
     const written = await writable.write({
       snapshot: result.snapshot,
@@ -760,5 +768,18 @@ async function runLegacyGmailAutomationForBinding(options: {
     alreadyApplied: result.alreadyApplied,
     workspaceVersion,
     usedFallbackScan: batch.usedFallbackScan,
+    ...(options.execution ? { metrics: executionMetrics(options.binding, batch, workspace.snapshot.data.timeline ?? [],
+      (options.now?.() ?? new Date()).getTime(), result.run.accountedCount, result.run.outcomes.unresolved ?? 0) } : {}),
   }
+}
+
+function executionMetrics(binding: GmailAutomationBinding, batch: GmailAutomationFetchResult,
+  timeline: import('../src/model.js').TimelineRecord[], committedAt: number, accounted: number, unresolved: number): GmailExecutionMetrics {
+  const mode = batch.usedFallbackScan ? binding.gmailHistoryId ? 'history_recovery' : 'initial_backfill' : 'history'
+  const receivedTimes = mode === 'history' ? batch.messages.filter((message) => message.id
+    && !alreadyIngested(timeline, { sourceKind: 'gmail', sourceId: GMAIL_SOURCE_ID, sourceRecordId: message.id }))
+    .map((message) => message.internalDate ? Number(message.internalDate) : Date.parse(header(message.payload, 'date'))) : []
+  return { status: 'completed', mode, receivedCount: batch.messages.length,
+    accountedCount: Math.min(accounted, batch.messages.length), unresolvedCount: Math.min(unresolved, batch.messages.length),
+    ...(mode === 'history' ? { historyLag: aggregateHistoryLag(receivedTimes, committedAt) } : {}) }
 }

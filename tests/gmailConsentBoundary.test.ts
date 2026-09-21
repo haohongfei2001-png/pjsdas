@@ -20,21 +20,36 @@ beforeEach(() => {
   state.snapshot = snapshot
   state.write.mockReset().mockResolvedValue({ context: { workspaceVersion: 'test-v2' } })
 })
-async function worker(consent?: 'uu06-v1', extra: Record<string, unknown> = {}) {
+async function worker(consent?: 'uu06-v1', extra: Record<string, unknown> = {}, observe = false, validHistory = false) {
   const calls: URL[] = []
   const fetchImpl = vi.fn(async (input: RequestInfo | URL) => {
     const url = new URL(String(input)); calls.push(url)
     if (url.pathname.endsWith('/profile')) return json({ historyId: '900' })
-    if (url.pathname.endsWith('/history')) return json({ code: 'expired' }, 404)
+    if (url.pathname.endsWith('/history')) return validHistory ? json({ history: [{ messagesAdded: [{ message: { id: 'mail', labelIds: ['INBOX'] } }] }], historyId: '900' }) : json({ code: 'expired' }, 404)
     if (url.pathname.endsWith('/messages')) return json({ messages: [{ id: 'mail' }] })
     return json({ id: 'mail', threadId: 'thread', internalDate: String(now.getTime()), payload: { mimeType: 'text/plain',
       body: { data: Buffer.from('京东 AI产品经理 面试通知2026年9月25日 14:30；地点：会议室A；会议链接：https://meet.example.com/room').toString('base64url') } } })
   }) as unknown as typeof fetch
-  await runGmailAutomationForBinding({ binding: { userId: 'synthetic', googleSubject: 'synthetic-subject', refreshTokenCiphertext: 'fixture', grantedScopes: [GMAIL_READONLY_SCOPE], gmailPendingMessageIds: [], gmailIntakeConsentVersion: consent, ...extra },
-    tokenEncryptionKey: 'fixture', googleClientId: 'fixture', googleClientSecret: 'fixture', fetchImpl, now: () => now })
-  return { calls, snapshot: state.write.mock.calls[0]![0].snapshot as PJSDASSnapshot }
+  const run = await runGmailAutomationForBinding({ binding: { userId: 'synthetic', googleSubject: 'synthetic-subject', refreshTokenCiphertext: 'fixture', grantedScopes: [GMAIL_READONLY_SCOPE], gmailPendingMessageIds: [], gmailIntakeConsentVersion: consent, ...extra },
+    tokenEncryptionKey: 'fixture', googleClientId: 'fixture', googleClientSecret: 'fixture', fetchImpl, now: () => now, ...(observe ? { execution: { beforeWorkspaceWrite: async () => {} } } : {}) })
+  return { calls, run, snapshot: state.write.mock.calls[0]![0].snapshot as PJSDASSnapshot }
 }
 describe('UU06 explicit source consent boundary', () => {
+  it('collects history latency only for newly consumed source messages and separates backfill', async () => {
+    const first = await worker('uu06-v1', { gmailHistoryId: 'old' }, true, true)
+    expect(first.run.metrics).toMatchObject({ mode: 'history', historyLag: { count: 1, maxMs: 0 } })
+    state.snapshot = first.snapshot
+    const replay = await worker('uu06-v1', { gmailHistoryId: 'old' }, true, true)
+    expect(replay.run.metrics?.historyLag?.count).toBe(0)
+    const backfill = await worker('uu06-v1', {}, true)
+    expect(backfill.run.metrics?.mode).toBe('initial_backfill')
+    expect(backfill.run.metrics).not.toHaveProperty('historyLag')
+    const recovery = await worker('uu06-v1', { gmailHistoryId: 'expired' }, true)
+    expect(recovery.run.metrics?.mode).toBe('history_recovery')
+    expect(recovery.run.metrics).not.toHaveProperty('historyLag')
+    const dormant = await worker('uu06-v1')
+    expect(dormant.run.metrics).toBeUndefined()
+  })
   it('old enabled binding with no history remains 7-day INBOX and legacy extraction', async () => {
     const result = await worker()
     const query = result.calls.find((url) => url.pathname.endsWith('/messages'))!

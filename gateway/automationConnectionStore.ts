@@ -1,3 +1,4 @@
+import type { GmailExecutionMetrics } from './gmailExecutionMetrics.js'
 import { WorkspaceSourceError } from './workspaceSource.js'
 
 export const GMAIL_READONLY_SCOPE = 'https://www.googleapis.com/auth/gmail.readonly'
@@ -20,6 +21,15 @@ export interface GmailAutomationBinding extends GoogleAutomationBinding {
   gmailPendingMessageIds: string[]
 }
 
+type GmailBindingRow = {
+  user_id?: string; google_subject?: string; google_email?: string | null;
+  refresh_token_ciphertext?: string; granted_scopes?: string[] | null;
+  gmail_history_id?: string | null; gmail_last_checked_at?: string | null;
+  gmail_sync_mode?: 'history' | 'fallback' | null; gmail_page_token?: string | null;
+  gmail_pending_history_id?: string | null; gmail_pending_message_ids?: string[] | null;
+  gmail_intake_consent_version?: string | null;
+}
+
 export interface DiscoveryAutomationBinding extends GoogleAutomationBinding {
   discoveryLastCheckedAt?: string
 }
@@ -35,6 +45,24 @@ function required(value: string, name: string) {
   const trimmed = value.trim()
   if (!trimmed) throw new WorkspaceSourceError('AUTOMATION_AUTH_REQUIRED', `${name} is required.`, false)
   return trimmed
+}
+
+function gmailBinding(row: GmailBindingRow): GmailAutomationBinding[] {
+  if (!row.user_id || !row.google_subject || !row.refresh_token_ciphertext) return []
+  return [{
+    userId: row.user_id,
+    gmailIntakeConsentVersion: row.gmail_intake_consent_version === 'uu06-v1' ? 'uu06-v1' as const : undefined,
+    googleSubject: row.google_subject,
+    googleEmail: row.google_email ?? undefined,
+    refreshTokenCiphertext: row.refresh_token_ciphertext,
+    grantedScopes: row.granted_scopes ?? [],
+    gmailHistoryId: row.gmail_history_id ?? undefined,
+    gmailLastCheckedAt: row.gmail_last_checked_at ?? undefined,
+    gmailSyncMode: row.gmail_sync_mode ?? undefined,
+    gmailPageToken: row.gmail_page_token ?? undefined,
+    gmailPendingHistoryId: row.gmail_pending_history_id ?? undefined,
+    gmailPendingMessageIds: row.gmail_pending_message_ids ?? [],
+  }]
 }
 
 export function createAutomationConnectionStore(options: AutomationConnectionStoreOptions) {
@@ -77,41 +105,17 @@ export function createAutomationConnectionStore(options: AutomationConnectionSto
 
   return {
     async listEnabledGmailBindings(): Promise<GmailAutomationBinding[]> {
-      type Row = {
-        user_id?: string; google_subject?: string; google_email?: string | null;
-        refresh_token_ciphertext?: string; granted_scopes?: string[] | null;
-        gmail_history_id?: string | null; gmail_last_checked_at?: string | null;
-        gmail_sync_mode?: 'history' | 'fallback' | null; gmail_page_token?: string | null;
-        gmail_pending_history_id?: string | null; gmail_pending_message_ids?: string[] | null;
-        gmail_intake_consent_version?: string | null;
-      }
-      let rows: Row[]
+      let rows: GmailBindingRow[]
       try {
-        rows = await rpc<Row[]>('pjsdas_claim_gmail_automation_bindings_v3', { worker_token: workerToken })
+        rows = await rpc<GmailBindingRow[]>('pjsdas_claim_gmail_automation_bindings_v3', { worker_token: workerToken })
       } catch (error) {
         if (!(error instanceof WorkspaceSourceError) || error.code !== 'AUTOMATION_RPC_NOT_DEPLOYED') throw error
-        rows = await rpc<Row[]>('pjsdas_claim_gmail_automation_bindings_v2', { worker_token: workerToken })
+        rows = await rpc<GmailBindingRow[]>('pjsdas_claim_gmail_automation_bindings_v2', { worker_token: workerToken })
         // Older database contract cannot prove expanded consent.
         rows = rows.map((row) => ({ ...row, gmail_intake_consent_version: null }))
       }
 
-      return rows.flatMap((row) => {
-        if (!row.user_id || !row.google_subject || !row.refresh_token_ciphertext) return []
-        return [{
-          userId: row.user_id,
-          gmailIntakeConsentVersion: row.gmail_intake_consent_version === 'uu06-v1' ? 'uu06-v1' as const : undefined,
-          googleSubject: row.google_subject,
-          googleEmail: row.google_email ?? undefined,
-          refreshTokenCiphertext: row.refresh_token_ciphertext,
-          grantedScopes: row.granted_scopes ?? [],
-          gmailHistoryId: row.gmail_history_id ?? undefined,
-          gmailLastCheckedAt: row.gmail_last_checked_at ?? undefined,
-          gmailSyncMode: row.gmail_sync_mode ?? undefined,
-          gmailPageToken: row.gmail_page_token ?? undefined,
-          gmailPendingHistoryId: row.gmail_pending_history_id ?? undefined,
-          gmailPendingMessageIds: row.gmail_pending_message_ids ?? [],
-        }]
-      })
+      return rows.flatMap(gmailBinding)
     },
 
     async updateGmailRunState(userId: string, patch: {
@@ -142,6 +146,25 @@ export function createAutomationConnectionStore(options: AutomationConnectionSto
         clear_continuation: patch.continuation === null,
         set_last_error: 'lastError' in patch,
       })
+    },
+
+    async beginGmailExecution(userId: string, executionToken: string): Promise<GmailAutomationBinding | undefined> {
+      const row = await rpc<GmailBindingRow | null>('pjsdas_begin_gmail_execution', {
+        worker_token: workerToken, target_user_id: userId, execution_token: executionToken, ttl_seconds: 60,
+      })
+      return row ? gmailBinding(row)[0] : undefined
+    },
+    async assertGmailExecution(userId: string, executionToken: string) {
+      const valid = await rpc<boolean>('pjsdas_assert_gmail_execution', {
+        worker_token: workerToken, target_user_id: userId, execution_token: executionToken,
+      })
+      if (!valid) throw new WorkspaceSourceError('LEASE_LOST', 'Gmail execution lease is no longer valid.', true)
+    },
+    async finishGmailExecution(userId: string, executionToken: string, patch: Record<string, unknown>, metrics: GmailExecutionMetrics) {
+      const finished = await rpc<boolean>('pjsdas_finish_gmail_execution', {
+        worker_token: workerToken, target_user_id: userId, execution_token: executionToken, state_patch: patch, metrics,
+      })
+      if (!finished) throw new WorkspaceSourceError('LEASE_LOST', 'Gmail execution lease is no longer valid.', true)
     },
 
     async listDiscoveryBindings(): Promise<DiscoveryAutomationBinding[]> {
