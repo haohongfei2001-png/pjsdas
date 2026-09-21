@@ -328,11 +328,9 @@ persistence receipts, recovery tooling, no horizontal overflow, and the 390×844
 
 ## Next authorized work
 
-UU-05 is **READY but NOT STARTED**.
-
-A later execution may handle UU-05 only under the one-round protocol: re-read remote `main`,
-canonical status, frozen blueprint/amendments, TodayBrief/semantic-route contracts, and
-`rounds/UU-05.md`. This UU-04 execution stops before Opportunities / detail redesign.
+UU-05 is COMPLETE; UU-06 is **READY but NOT STARTED**. A separate execution
+must re-read remote main, canonical status, frozen blueprint/amendments and
+`rounds/UU-06.md`. This closure execution does not begin UU-06.
 
 ## UU-04 scope boundary
 
