@@ -29,6 +29,7 @@ function handler(fetchImpl: typeof fetch) {
     supabasePublishableKey: 'publishable-key',
     allowedOrigins: [ORIGIN],
     fetchImpl,
+    gmailExecutionControlsEnabled: true,
     registerGmailWatchImpl: async () => ({
       historyId: 'watch-123',
       expiresAt: '2026-09-25T00:00:00.000Z',
