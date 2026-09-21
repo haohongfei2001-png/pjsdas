@@ -29,6 +29,11 @@ function handler(fetchImpl: typeof fetch) {
     supabasePublishableKey: 'publishable-key',
     allowedOrigins: [ORIGIN],
     fetchImpl,
+    registerGmailWatchImpl: async () => ({
+      historyId: 'watch-123',
+      expiresAt: '2026-09-25T00:00:00.000Z',
+      renewedAt: '2026-09-21T00:00:00.000Z',
+    }),
   })
 }
 
@@ -179,7 +184,11 @@ describe('automation settings API', () => {
     const writes: Array<Record<string, unknown>> = []
     const fetchImpl = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       if (String(input).endsWith('/auth/v1/user')) return json({ id: 'user-a' })
-      if (init?.method !== 'PATCH') return json([{ user_id: 'user-a', granted_scopes: [GMAIL_SCOPE] }])
+      if (init?.method !== 'PATCH') return json([{
+        user_id: 'user-a',
+        refresh_token_ciphertext: 'test-cipher',
+        granted_scopes: [GMAIL_SCOPE],
+      }])
       const body = JSON.parse(String(init.body)); writes.push(body)
       if (missing && 'gmail_intake_consent_version' in body) return json({ code: 'PGRST204', message: 'Missing gmail_intake_consent_version' }, 400)
       return new Response(null, { status: 204 })
