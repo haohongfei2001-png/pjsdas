@@ -1,8 +1,6 @@
 import automationDiscovery from '../api/automation-discovery.js'
-import automationGmail from '../api/automation-gmail.js'
-import automationGmailWatch from '../api/automation-gmail-watch.js'
+import automationGmail, { gmailPushApi, gmailWatchApi } from '../api/automation-gmail.js'
 import automationSettings from '../api/automation-settings.js'
-import gmailPush from '../api/gmail-push.js'
 import googleAccessToken from '../api/google-access-token.js'
 import googleLink from '../api/google-link.js'
 import health from '../api/health.js'
@@ -20,9 +18,9 @@ const ROUTES = new Map<string, FetchHandler>([
   ['/api/access', healthAuth],
   ['/api/automation-discovery', automationDiscovery],
   ['/api/automation-gmail', automationGmail],
-  ['/api/automation-gmail-watch', automationGmailWatch],
+  ['/api/automation-gmail-watch', gmailWatchApi],
   ['/api/automation-settings', automationSettings],
-  ['/api/gmail-push', gmailPush],
+  ['/api/gmail-push', gmailPushApi],
   ['/api/google-access-token', googleAccessToken],
   ['/api/google-link', googleLink],
   ['/api/health-auth', healthAuth],
