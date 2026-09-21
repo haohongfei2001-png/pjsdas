@@ -25,6 +25,14 @@ describe('Vercel deployment policy', () => {
         source: '/api/access',
         destination: '/api/health-auth?mode=access',
       }),
+      expect.objectContaining({
+        source: '/api/gmail-push',
+        destination: '/api/automation-gmail?__pjsdas_gmail_route=push',
+      }),
+      expect.objectContaining({
+        source: '/api/automation-gmail-watch',
+        destination: '/api/automation-gmail?__pjsdas_gmail_route=watch',
+      }),
     ]))
   })
 
