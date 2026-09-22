@@ -254,4 +254,200 @@ describe('CGR-01 authoritative command executor', () => {
     expect(h.ledger).toHaveLength(2)
     expect(h.state().current.data.actions.find((item) => item.id === 'action-1')?.status).toBe('doing')
   })
+
+  it('executes occurrence completion and reschedule against the authoritative schedule identity', async () => {
+    const completeHarness = harness()
+    completeHarness.state().current.data.scheduleNodes = [{
+      id: 'schedule:occurrence-1:v1',
+      occurrenceId: 'occurrence-1',
+      version: 1,
+      opportunityId: 'opp-1',
+      kind: 'interview',
+      state: 'scheduled',
+      temporal: {
+        shape: 'fixed_range',
+        precision: 'datetime',
+        timezone: 'Asia/Taipei',
+        startAt: '2026-09-24T02:00:00.000Z',
+        endAt: '2026-09-24T03:00:00.000Z',
+        resolutionBasis: 'user_explicit',
+      },
+      constraintKind: 'employer_hard',
+      evidenceRefs: [],
+      sourceVersionRefs: [],
+      relatedActionIds: ['action-1'],
+      relatedPrepIds: [],
+      createdAt: '2026-09-23T00:00:00.000Z',
+      updatedAt: '2026-09-23T00:00:00.000Z',
+    }]
+    const completed = await completeHarness.executor.execute(completeHarness.principal, {
+      commandId: 'cmd-occurrence-complete-0001',
+      baseRevision: 1,
+      command: {
+        type: 'domain',
+        value: {
+          commandId: 'cmd-occurrence-complete-0001',
+          kind: 'complete_occurrence',
+          occurrenceId: 'occurrence-1',
+          occurredAt: '2026-09-24T03:05:00.000Z',
+        },
+      },
+    })
+    expect(completed).toMatchObject({
+      outcome: 'COMMITTED',
+      receipt: {
+        affectedObjects: expect.arrayContaining([
+          { type: 'schedule_occurrence', id: 'occurrence-1' },
+          { type: 'action', id: 'action-1' },
+        ]),
+      },
+    })
+    expect(completeHarness.state().current.data.scheduleNodes?.find((node) => node.occurrenceId === 'occurrence-1')).toMatchObject({
+      state: 'completed',
+      completedAt: '2026-09-24T03:05:00.000Z',
+    })
+    expect(completeHarness.state().current.data.actions.find((item) => item.id === 'action-1')?.status).toBe('done')
+
+    const rescheduleHarness = harness()
+    rescheduleHarness.state().current.data.scheduleNodes = [{
+      id: 'schedule:occurrence-2:v1',
+      occurrenceId: 'occurrence-2',
+      version: 1,
+      opportunityId: 'opp-2',
+      kind: 'interview',
+      state: 'scheduled',
+      temporal: {
+        shape: 'fixed_range',
+        precision: 'datetime',
+        timezone: 'Asia/Taipei',
+        startAt: '2026-09-25T02:00:00.000Z',
+        endAt: '2026-09-25T03:00:00.000Z',
+        resolutionBasis: 'source_explicit',
+      },
+      constraintKind: 'employer_hard',
+      evidenceRefs: ['old-mail'],
+      sourceVersionRefs: ['mail-v1'],
+      relatedActionIds: ['action-2'],
+      relatedPrepIds: [],
+      createdAt: '2026-09-23T00:00:00.000Z',
+      updatedAt: '2026-09-23T00:00:00.000Z',
+    }]
+    const rescheduled = await rescheduleHarness.executor.execute(rescheduleHarness.principal, {
+      commandId: 'cmd-occurrence-reschedule-0001',
+      baseRevision: 1,
+      command: {
+        type: 'domain',
+        value: {
+          commandId: 'cmd-occurrence-reschedule-0001',
+          kind: 'reschedule_occurrence',
+          occurrenceId: 'occurrence-2',
+          temporal: {
+            shape: 'fixed_range',
+            precision: 'datetime',
+            timezone: 'Asia/Taipei',
+            startAt: '2026-09-26T06:00:00.000Z',
+            endAt: '2026-09-26T07:00:00.000Z',
+            resolutionBasis: 'source_explicit',
+          },
+          evidenceRefs: ['reschedule-mail'],
+          sourceVersionRefs: ['mail-v2'],
+        },
+      },
+    })
+    expect(rescheduled.outcome).toBe('COMMITTED')
+    const versions = rescheduleHarness.state().current.data.scheduleNodes?.filter((node) => node.occurrenceId === 'occurrence-2') ?? []
+    expect(versions).toHaveLength(2)
+    expect(versions.find((node) => node.version === 1)).toMatchObject({ state: 'superseded' })
+    expect(versions.find((node) => node.version === 2)).toMatchObject({
+      state: 'scheduled',
+      temporal: { startAt: '2026-09-26T06:00:00.000Z' },
+      evidenceRefs: expect.arrayContaining(['old-mail', 'reschedule-mail']),
+      sourceVersionRefs: expect.arrayContaining(['mail-v1', 'mail-v2']),
+    })
+  })
+
+  it('executes Web Semantic Intake and resolves its DecisionRequest on the server', async () => {
+    const h = harness()
+    const observation = {
+      contractVersion: 1 as const,
+      inputId: 'semantic-web-0001',
+      source: {
+        kind: 'web' as const,
+        sourceId: 'tell-pjsdas',
+        sourceRecordId: 'capture-0001',
+        sourceVersion: 'v1',
+        observedAt: '2026-09-23T01:00:00.000Z',
+        assertedAt: '2026-09-23T01:00:00.000Z',
+        timezone: 'Asia/Taipei',
+      },
+      statementMode: 'assertion' as const,
+      candidates: [{
+        id: 'candidate-manual-0001',
+        kind: 'manual_action' as const,
+        title: 'Prepare a concise interview answer',
+        target: { opportunityId: 'opp-1' },
+        objectConfidence: 'low' as const,
+        eventConfidence: 'high' as const,
+        evidenceRefs: [],
+        sourceVersionRefs: [],
+      }],
+    }
+    const pending = await h.executor.execute(h.principal, {
+      commandId: 'cmd-semantic-web-0001',
+      baseRevision: 1,
+      command: { type: 'semantic_intake', value: observation },
+    })
+    expect(pending).toMatchObject({
+      outcome: 'COMMITTED',
+      result: { status: 'DECISION_REQUIRED' },
+    })
+    const request = h.state().current.data.decisionRequests?.[0]
+    expect(request).toMatchObject({ state: 'open', reason: 'low_confidence' })
+    const confirm = request?.choices.find((choice) => choice.resolution?.confirm)
+    expect(confirm).toBeDefined()
+
+    const resolved = await h.executor.execute(h.principal, {
+      commandId: 'cmd-decision-web-0001',
+      baseRevision: 2,
+      command: {
+        type: 'resolve_semantic_decision',
+        value: { requestId: request!.id, choiceId: confirm!.id },
+      },
+    })
+    expect(resolved).toMatchObject({
+      outcome: 'COMMITTED',
+      result: { status: 'APPLIED' },
+    })
+    expect(h.state().current.data.decisionRequests?.find((item) => item.id === request!.id)).toMatchObject({
+      state: 'answered',
+      answerChoiceId: confirm!.id,
+    })
+    expect(h.state().current.data.actions.some((item) => item.title === 'Prepare a concise interview answer')).toBe(true)
+  })
+
+  it('keeps first-party Web Semantic Intake source authorization fail closed', async () => {
+    const h = harness()
+    await expect(h.executor.execute(h.principal, {
+      commandId: 'cmd-semantic-mcp-0001',
+      baseRevision: 1,
+      command: {
+        type: 'semantic_intake',
+        value: {
+          contractVersion: 1,
+          inputId: 'semantic-mcp-0001',
+          source: {
+            kind: 'mcp',
+            sourceId: 'chatgpt',
+            sourceRecordId: 'message-1',
+            observedAt: '2026-09-23T01:00:00.000Z',
+            timezone: 'Asia/Taipei',
+          },
+          statementMode: 'assertion',
+          candidates: [],
+        },
+      },
+    })).rejects.toMatchObject({ code: 'AUTH_FORBIDDEN' })
+    expect(h.ledger).toHaveLength(0)
+  })
+
 })
