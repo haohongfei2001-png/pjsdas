@@ -59,5 +59,10 @@
       "source": "/history",
       "destination": "/"
     }
-  ]
+  ],
+  "functions": {
+    "api/automation-gmail.ts": {
+      "maxDuration": 30
+    }
+  }
 }
