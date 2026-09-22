@@ -118,18 +118,6 @@ export function createPjsdasMcpServer(
     'Use list_reminder_intents to inspect PJSDAS reminder policy. ScheduleNode is business-time truth; ReminderIntent is notification policy; external task/calendar objects are delivery mappings only.',
   ]
 
-  server.registerTool('get_external_capabilities', {
-    title: 'Get PJSDAS external delivery capabilities',
-    description: 'Read the truthful runtime capability state for external reminder delivery adapters such as ChatGPT Tasks or Google Calendar. Availability is never inferred from host-product features.',
-    inputSchema: getExternalCapabilitiesSchema, annotations: readOnlyAnnotations,
-  }, async (args) => invokeExternalCapabilities(args, externalCapabilities))
-
-  server.registerTool('list_reminder_intents', {
-    title: 'List PJSDAS reminder intents',
-    description: 'Read bounded ReminderIntent policy and delivery/outbox state. ScheduleNode remains recruiting-time truth and external objects remain delivery mappings only.',
-    inputSchema: listReminderIntentsSchema, annotations: readOnlyAnnotations,
-  }, async (args) => invokeListReminderIntents(source, args))
-
   if (explicitUserWriteMode === 'enabled') {
     instructions.push(
       'When the user explicitly asks in the current conversation to add, save, record, or write specific source-backed job opportunities into PJSDAS, use add_opportunities and execute the write immediately. Do not route that explicit instruction through propose_changes and do not require a second Apply click.',
@@ -207,6 +195,18 @@ export function createPjsdasMcpServer(
     { name: 'pjsdas', version: options.version ?? '1.10.0-alpha.1' },
     { instructions: instructions.join(' ') },
   )
+
+  server.registerTool('get_external_capabilities', {
+    title: 'Get PJSDAS external delivery capabilities',
+    description: 'Read the truthful runtime capability state for external reminder delivery adapters such as ChatGPT Tasks or Google Calendar. Availability is never inferred from host-product features.',
+    inputSchema: getExternalCapabilitiesSchema, annotations: readOnlyAnnotations,
+  }, async (args) => invokeExternalCapabilities(args, externalCapabilities))
+
+  server.registerTool('list_reminder_intents', {
+    title: 'List PJSDAS reminder intents',
+    description: 'Read bounded ReminderIntent policy and delivery/outbox state. ScheduleNode remains recruiting-time truth and external objects remain delivery mappings only.',
+    inputSchema: listReminderIntentsSchema, annotations: readOnlyAnnotations,
+  }, async (args) => invokeListReminderIntents(source, args))
 
   server.registerTool('get_today_brief', {
     title: 'Get PJSDAS Today brief',
