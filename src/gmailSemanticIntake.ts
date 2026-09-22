@@ -23,6 +23,7 @@ export function applyGmailSemanticBatch(snapshot: PJSDASSnapshot, input: {
   if (!input.authorized) throw new Error('Gmail source is not authorized for writes.')
   let working = structuredClone(snapshot)
   const records: TimelineRecord[] = []
+  let persistedSourceRecords = 0
   const compensation: SemanticBatchCompensation = {
     operation: 'semantic_batch', payload: { domainCompensations: [], decisionRequestIds: [], receiptIds: [] },
   }
@@ -58,13 +59,19 @@ export function applyGmailSemanticBatch(snapshot: PJSDASSnapshot, input: {
       sourceRef: `gmail:${sourceRecordId}`,
     })
     records.push(entry)
-    working.data.timeline = [...(working.data.timeline ?? []), entry]
+    if (!prior) {
+      working.data.timeline = [...(working.data.timeline ?? []), entry]
+      persistedSourceRecords += 1
+    }
   }
   const run = buildIngestionRunSummary({
     runId: input.runId, sourceKind: 'gmail', sourceId: input.sourceId,
     startedAt: input.checkedAt, completedAt: input.checkedAt, cursor: input.cursor,
     records, sourcePolicy: bootstrapPolicyFor('gmail', input.sourceId),
   })
+  if (input.records.length > 0 && persistedSourceRecords === 0) {
+    return { snapshot, run, compensation, alreadyApplied: true }
+  }
   working.data.timeline = [...(working.data.timeline ?? []), createIngestionRunTimeline(run)]
   working.exportedAt = input.checkedAt
   return { snapshot: working, run, compensation, alreadyApplied: false }
