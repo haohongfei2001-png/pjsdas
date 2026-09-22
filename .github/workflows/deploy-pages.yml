@@ -257,12 +257,15 @@ jobs:
                       "get_opportunity_detail",
                       "get_coverage_status",
                       "get_workspace_integrity",
+                      "list_reminder_intents",
+                      "get_external_capabilities",
                       "add_opportunities",
                       ...(expectedAuthority === "transactional" ? [
                         "apply_user_command",
                         "semantic_intake",
                         "resolve_semantic_decision",
                         "undo_semantic_command",
+                        "ingest_paia_input",
                       ] : []),
                       "ingest_discovery_run",
                       "ingest_gmail_run",
@@ -271,7 +274,7 @@ jobs:
                     const expectedMode = expectedAuthority === "transactional" ? "transactional-connected" : "google-drive-trusted-ingestion";
                     const ready =
                       health.status === "ok" &&
-                      health.version === "1.9.0-alpha.1" &&
+                      health.version === "1.10.0-alpha.1" &&
                       health.mode === expectedMode &&
                       health.workspaceAuthority === expectedAuthority &&
                       health.release?.commitSha === process.env.GITHUB_SHA &&
@@ -305,6 +308,10 @@ jobs:
                       capabilities.decisionRequests === "v1" &&
                       capabilities.semanticCompensatingUndo === "v1" &&
                       capabilities.semanticServerWritePolicy === "v1" &&
+                      capabilities.paiaOwnerIntake === "v1" &&
+                      capabilities.reminderIntent === "v1" &&
+                      capabilities.externalReminderCapabilityTruth === "v1" &&
+                      capabilities.crossSourceSemanticDedupe === "v1" &&
                       capabilities.todayBriefReadModel === "v1" &&
                       capabilities.todayAgendaReadModel === "v1" &&
                       capabilities.opportunityDecisionReadModel === "v1" &&
@@ -319,7 +326,7 @@ jobs:
                       capabilities.connectedOriginMigration === "v1" &&
                       capabilities.releaseCandidateManifest === "v1" &&
                       topologyReady &&
-                      authenticatedMcp.toolSurfaceVersion === "v6" &&
+                      authenticatedMcp.toolSurfaceVersion === "v7" &&
                       releaseToolsReady;
                     process.exit(ready ? 0 : 1);
                   } catch {
