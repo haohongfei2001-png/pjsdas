@@ -20,6 +20,7 @@ export interface GmailPushHandlerConfig {
   expectedAudience: string
   expectedServiceAccountEmail: string
   expectedSubscription: string
+  deliveryMode?: 'polling' | 'push'
   executionControlsEnabled: boolean
   fetchImpl?: typeof fetch
 }
@@ -125,6 +126,10 @@ export function createGmailPushHandler(config: GmailPushHandlerConfig) {
   return async function handleGmailPush(request: Request) {
     if (request.method !== 'POST') {
       return new Response(null, { status: 405, headers: { allow: 'POST', 'cache-control': 'no-store' } })
+    }
+
+    if ((config.deliveryMode ?? 'polling') !== 'push') {
+      return new Response(null, { status: 503, headers: { 'cache-control': 'no-store' } })
     }
 
     if (!config.executionControlsEnabled) {
