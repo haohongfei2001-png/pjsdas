@@ -23,14 +23,25 @@ import {
 import { addOpportunitiesSchema, invokeAddOpportunities } from './addOpportunities.js'
 import { applyUserCommandSchema, invokeApplyUserCommand } from './userCommands.js'
 import {
+  invokePaiaIntake,
   invokeResolveSemanticDecision,
   invokeSemanticIntake,
   invokeSemanticUndo,
+  paiaIntakeSchema,
   resolveSemanticDecisionSchema,
   semanticIntakeSchema,
   undoSemanticCommandSchema,
 } from './semanticIntake.js'
 import { invokeProposeChanges, proposeChangesSchema } from './proposeChanges.js'
+import {
+  capabilityStateMap,
+  defaultExternalCapabilityProbes,
+  getExternalCapabilitiesSchema,
+  invokeExternalCapabilities,
+  invokeListReminderIntents,
+  listReminderIntentsSchema,
+} from './reminderTools.js'
+import type { ExternalCapabilityProbe } from '../src/reminders.js'
 import type { WorkspaceSource } from './workspaceSource.js'
 
 const readOnlyAnnotations = {
@@ -69,6 +80,7 @@ export interface PjsdasMcpServerOptions {
   explicitUserCommandMode?: 'disabled' | 'enabled'
   semanticIntakeMode?: 'disabled' | 'enabled'
   semanticIntakeAuthorizer?: (source: import('../src/model.js').SemanticIntakeSourceRef) => Promise<void>
+  externalCapabilities?: ExternalCapabilityProbe[]
 }
 
 export function createPjsdasMcpServer(
@@ -83,6 +95,8 @@ export function createPjsdasMcpServer(
   const explicitUserWriteMode = options.explicitUserWriteMode ?? 'disabled'
   const explicitUserCommandMode = options.explicitUserCommandMode ?? 'disabled'
   const semanticIntakeMode = options.semanticIntakeMode ?? 'disabled'
+  const externalCapabilities = options.externalCapabilities ?? defaultExternalCapabilityProbes()
+  const externalCapabilityStates = capabilityStateMap(externalCapabilities)
   const instructions = [
     'PJSDAS is a personal job-search decision and action system.',
     'Use its explicit decision rules and deterministic explanations instead of inventing hidden ranking rules.',
@@ -100,7 +114,21 @@ export function createPjsdasMcpServer(
     'Use get_prep_graph when the user asks what preparation has the highest leverage or which current gaps are uncovered.',
     'Use get_coverage_status when the user asks whether automated sources missed anything. A green result means every currently enabled Source Registry entry is fresh, balanced, and has no unresolved input; it does not claim that the public internet contains no other jobs.',
     'Use get_workspace_integrity when the user asks whether the PJSDAS workspace itself is structurally healthy. This audit is read-only and never repairs or deletes data.',
+    'Use get_external_capabilities before assuming an external Task or Calendar delivery channel exists. Host-side ChatGPT features are not callable merely because they exist in the host product.',
+    'Use list_reminder_intents to inspect PJSDAS reminder policy. ScheduleNode is business-time truth; ReminderIntent is notification policy; external task/calendar objects are delivery mappings only.',
   ]
+
+  server.registerTool('get_external_capabilities', {
+    title: 'Get PJSDAS external delivery capabilities',
+    description: 'Read the truthful runtime capability state for external reminder delivery adapters such as ChatGPT Tasks or Google Calendar. Availability is never inferred from host-product features.',
+    inputSchema: getExternalCapabilitiesSchema, annotations: readOnlyAnnotations,
+  }, async (args) => invokeExternalCapabilities(args, externalCapabilities))
+
+  server.registerTool('list_reminder_intents', {
+    title: 'List PJSDAS reminder intents',
+    description: 'Read bounded ReminderIntent policy and delivery/outbox state. ScheduleNode remains recruiting-time truth and external objects remain delivery mappings only.',
+    inputSchema: listReminderIntentsSchema, annotations: readOnlyAnnotations,
+  }, async (args) => invokeListReminderIntents(source, args))
 
   if (explicitUserWriteMode === 'enabled') {
     instructions.push(
@@ -129,6 +157,10 @@ export function createPjsdasMcpServer(
       'Semantic Intake never authorizes external applications, withdrawals, recruiting email, or Offer acceptance/rejection. External-consequence requests fail closed into a human decision.',
       'Use resolve_semantic_decision only for an open DecisionRequest and one of its exact choice ids. Use undo_semantic_command only for a latest-revision Semantic Intake command whose receipt says Undo is available.',
       'apply_user_command remains a lower-level compatibility tool for exact-id bounded commands; new source adapters must target Semantic Intake instead of inventing parallel domain transitions.',
+      'For the current ChatGPT conversation, semantic_intake is the canonical source-neutral write contract. Use source.kind=mcp and a stable current-chat source identity; do not route current statements through a PAIA-only adapter.',
+      'Use ingest_paia_input only for an authenticated PAIA owner-input source. PAIA may supply bounded context but cannot bypass source-scoped authorization or Semantic Intake policy, and raw owner text is not persisted in the command ledger.',
+      'Reminder requests are Semantic Intake candidates. One ScheduleNode/version/purpose has one ReminderIntent delivery owner. Never interpret task/calendar delivery lifecycle as recruiting completion.',
+      'When an external reminder owner is requested, trust only get_external_capabilities/runtime capability state. Unsupported external delivery is recorded truthfully; do not silently pretend an external task or calendar object exists.',
     )
   }
 
@@ -282,7 +314,19 @@ export function createPjsdasMcpServer(
       title: 'Apply PJSDAS Semantic Intake',
       description: 'Normalize one current source observation into bounded internal PJSDAS facts/intents. Unique high-confidence compensatable facts may commit atomically; ambiguity creates DecisionRequest; non-assertive text produces NO_WRITE; external consequences are never executed.',
       inputSchema: semanticIntakeSchema, annotations: directWriteAnnotations,
-    }, async (args) => invokeSemanticIntake(source, args, { authorize: options.semanticIntakeAuthorizer }))
+    }, async (args) => invokeSemanticIntake(source, args, {
+      authorize: options.semanticIntakeAuthorizer,
+      externalCapabilities: externalCapabilityStates,
+    }))
+
+    server.registerTool('ingest_paia_input', {
+      title: 'Ingest one authorized PAIA owner input',
+      description: 'Adapt one authenticated PAIA owner-input record into the shared Semantic Intake contract. It never creates a parallel mutation path and requires normal source-scoped semantic_intake authorization.',
+      inputSchema: paiaIntakeSchema, annotations: directWriteAnnotations,
+    }, async (args) => invokePaiaIntake(source, args, {
+      authorize: options.semanticIntakeAuthorizer,
+      externalCapabilities: externalCapabilityStates,
+    }))
 
     server.registerTool('resolve_semantic_decision', {
       title: 'Resolve one PJSDAS DecisionRequest',
