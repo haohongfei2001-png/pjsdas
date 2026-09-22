@@ -17,6 +17,7 @@ import {
   type CloudSession,
 } from './cloudClient.js'
 import {
+  clearLocalWorkspaceBinding,
   getAccountCheckpoint,
   getCloudDeviceState,
   setCloudAutoSync,
@@ -31,6 +32,9 @@ import {
   type CloudSyncOutcome,
 } from './cloudSync.js'
 import { assertCloudSignOutAllowed } from './cloudOperationGuard.js'
+import { connectedWorkspaceAuthorityEnabled } from './connectedWorkspaceRepository.js'
+import { clearLocalWorkspaceCache } from '../db.js'
+import { replayAccountPendingOperations } from './authoritativeCommandClient.js'
 
 interface CloudContextValue {
   configured: boolean
@@ -74,6 +78,23 @@ export function CloudProvider({ children }: { children: ReactNode }) {
     refreshState(next?.user.id)
   }, [refreshState])
 
+  const adoptSession = useCallback(async (next: CloudSession | null) => {
+    if (connectedWorkspaceAuthorityEnabled()) {
+      const owner = getCloudDeviceState().workspaceOwnerUserId
+      const nextUserId = next?.user.id
+      if (owner && owner !== nextUserId) {
+        await clearLocalWorkspaceCache()
+        clearLocalWorkspaceBinding()
+      }
+    }
+    applySession(next)
+    if (next && connectedWorkspaceAuthorityEnabled()) {
+      await replayAccountPendingOperations(next.user.id).catch((caught) => {
+        setError(caught instanceof Error ? caught.message : String(caught))
+      })
+    }
+  }, [applySession])
+
   const finishPendingLink = useCallback(async () => {
     if (linkingRef.current) return
     linkingRef.current = true
@@ -94,7 +115,7 @@ export function CloudProvider({ children }: { children: ReactNode }) {
     void getCloudSession()
       .then(async (next) => {
         if (!active) return
-        applySession(next)
+        await adoptSession(next)
         if (next) await finishPendingLink()
       })
       .catch((caught) => {
@@ -106,7 +127,7 @@ export function CloudProvider({ children }: { children: ReactNode }) {
 
     void subscribeCloudSession((next) => {
       if (!active) return
-      applySession(next)
+      void adoptSession(next)
       if (next) void finishPendingLink()
     }).then((cleanup) => {
       if (!active) cleanup()
@@ -119,12 +140,12 @@ export function CloudProvider({ children }: { children: ReactNode }) {
       active = false
       unsubscribe?.()
     }
-  }, [applySession, finishPendingLink])
+  }, [adoptSession, finishPendingLink])
 
   const clearExpiredSessionIfNeeded = useCallback(async () => {
     const current = await getCloudSession()
-    if (!current) applySession(null)
-  }, [applySession])
+    if (!current) await adoptSession(null)
+  }, [adoptSession])
 
   const syncNow = useCallback(async () => {
     const userId = session?.user.id
@@ -218,6 +239,10 @@ export function CloudProvider({ children }: { children: ReactNode }) {
       loading,
     })
     await signOutCloud()
+    if (connectedWorkspaceAuthorityEnabled()) {
+      await clearLocalWorkspaceCache()
+      clearLocalWorkspaceBinding()
+    }
     applySession(null)
     setOutcome(undefined)
     setError(undefined)
