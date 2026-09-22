@@ -21,7 +21,7 @@ for (const fixture of [
   await page.goto('/')
   await page.evaluate(async (data) => {
     await new Promise<void>((resolve, reject) => {
-      const request = indexedDB.open('pjsdas', 10)
+      const request = indexedDB.open('pjsdas', 11)
       request.onerror = () => reject(request.error)
       request.onsuccess = () => {
         const db = request.result
@@ -48,7 +48,7 @@ for (const fixture of [
   await page.reload()
   await expect(page.locator('.ultimate-agenda-node')).toHaveCount(2)
   const stored = await page.evaluate(async () => new Promise<{ events: number; receipts: number }>((resolve, reject) => {
-    const request = indexedDB.open('pjsdas', 10)
+    const request = indexedDB.open('pjsdas', 11)
     request.onerror = () => reject(request.error)
     request.onsuccess = () => {
       const db = request.result
