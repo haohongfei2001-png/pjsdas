@@ -332,7 +332,7 @@ export function createPjsdasMcpServer(
       title: 'Resolve one PJSDAS DecisionRequest',
       description: 'Answer one open Semantic Intake DecisionRequest using an exact offered choice id. The shared domain/write policy is re-run against current state before commit.',
       inputSchema: resolveSemanticDecisionSchema, annotations: directWriteAnnotations,
-    }, async (args) => invokeResolveSemanticDecision(source, args))
+    }, async (args) => invokeResolveSemanticDecision(source, args, { externalCapabilities: externalCapabilityStates }))
 
     server.registerTool('undo_semantic_command', {
       title: 'Undo latest PJSDAS Semantic Intake command',
