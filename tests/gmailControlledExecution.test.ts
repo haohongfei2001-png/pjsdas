@@ -59,6 +59,19 @@ describe('opt-in controlled Gmail worker', () => {
     expect(finish.data.state_patch).toEqual({})
     expect(finish.data.metrics).toMatchObject({ status: 'error', errorCode: 'LEASE_LOST' })
   })
+  it('uses the reserved tail budget to finalize a successful run after the work timer expires', async () => {
+    state.run.mockImplementation(async (options) => {
+      await options.execution.beforeWorkspaceWrite()
+      await new Promise((resolve) => setTimeout(resolve, 85))
+      return result
+    })
+    const h = harness({ budgetMs: 100 })
+    const response = await h.invoke()
+    expect(response.status).toBe(200)
+    const finish = h.writes.find((item) => item.rpc === 'pjsdas_finish_gmail_execution')!
+    expect(finish.data.state_patch).toMatchObject({ historyId: 'committed', continuation: null })
+    expect(finish.data.metrics).toMatchObject({ status: 'completed' })
+  })
   it('budget aborts pending I/O, preserves cursor, and defers remaining bindings', async () => {
     state.run.mockImplementation(async (options) => { await options.fetchImpl('https://example.invalid/slow'); return result })
     const h = harness({ budgetMs: 100 }); const started = Date.now(); const response = await h.invoke(true)
