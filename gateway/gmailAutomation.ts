@@ -612,6 +612,44 @@ export async function runGmailAutomationForBinding(options: {
     clientSecret: options.googleClientSecret,
     fetchImpl,
   })
+  const batch = await fetchGmailAutomationBatch({
+    accessToken,
+    startHistoryId: options.binding.gmailHistoryId,
+    continuation: options.binding.gmailSyncMode && options.binding.gmailPendingHistoryId ? {
+      mode: options.binding.gmailSyncMode,
+      pageToken: options.binding.gmailPageToken,
+      pendingHistoryId: options.binding.gmailPendingHistoryId,
+      pendingMessageIds: options.binding.gmailPendingMessageIds,
+    } : undefined,
+    fetchImpl, now, coverage: 'uu06',
+  })
+
+  if (canFinalizeEmptyGmailHistoryWithoutWorkspace(options.binding.gmailHistoryId, batch)) {
+    return {
+      userId: options.binding.userId,
+      checkedAt,
+      nextHistoryId: batch.nextHistoryId,
+      continuation: batch.continuation,
+      coverageComplete: batch.coverageComplete,
+      recoveryGapDetected: false,
+      receivedCount: 0,
+      accountedCount: 0,
+      unresolvedCount: 0,
+      alreadyApplied: true,
+      usedFallbackScan: false,
+      ...(options.execution ? {
+        metrics: {
+          status: 'completed',
+          mode: 'history',
+          receivedCount: 0,
+          accountedCount: 0,
+          unresolvedCount: 0,
+          historyLag: aggregateHistoryLag([], (options.now?.() ?? new Date()).getTime()),
+        } satisfies GmailExecutionMetrics,
+      } : {}),
+    }
+  }
+
   const transactionalAuthority = process.env.PJSDAS_CONNECTED_AUTHORITY?.trim() === 'transactional'
   const source = transactionalAuthority
     ? createTransactionalWorkspaceSource({
@@ -632,17 +670,6 @@ export async function runGmailAutomationForBinding(options: {
   const backfillComplete = (workspace.snapshot.data.timeline ?? []).some((item) =>
     item.ingestion?.sourceKind === 'gmail' && item.ingestion.sourceId === GMAIL_SOURCE_ID
     && item.ingestion.sourceRecordId === 'coverage-boundary:uu06-90-days')
-  const batch = await fetchGmailAutomationBatch({
-    accessToken,
-    startHistoryId: options.binding.gmailHistoryId,
-    continuation: options.binding.gmailSyncMode && options.binding.gmailPendingHistoryId ? {
-      mode: options.binding.gmailSyncMode,
-      pageToken: options.binding.gmailPageToken,
-      pendingHistoryId: options.binding.gmailPendingHistoryId,
-      pendingMessageIds: options.binding.gmailPendingMessageIds,
-    } : undefined,
-    fetchImpl, now, coverage: 'uu06',
-  })
   const records = batch.messages
     .map((message) => gmailSemanticRecordFromMessage(message, workspace.snapshot.data.opportunities, now))
     .filter((record): record is GmailSemanticRecord => Boolean(record))
@@ -810,6 +837,13 @@ async function runLegacyGmailAutomationForBinding(options: {
     ...(options.execution ? { metrics: executionMetrics(options.binding, batch, workspace.snapshot.data.timeline ?? [],
       (options.now?.() ?? new Date()).getTime(), result.run.accountedCount, result.run.outcomes.unresolved ?? 0) } : {}),
   }
+}
+
+export function canFinalizeEmptyGmailHistoryWithoutWorkspace(
+  startHistoryId: string | undefined,
+  batch: GmailAutomationFetchResult,
+) {
+  return Boolean(startHistoryId && !batch.usedFallbackScan && !batch.recoveryGapReason && batch.messages.length === 0)
 }
 
 function executionMetrics(binding: GmailAutomationBinding, batch: GmailAutomationFetchResult,
