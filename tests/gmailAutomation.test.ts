@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import {
   fetchGmailAutomationBatch,
   gmailObservationFromMessage,
+  UU06_MAX_MESSAGES_PER_RUN,
 } from '../gateway/gmailAutomation.js'
 import type { Opportunity } from '../src/model.js'
 
@@ -268,6 +269,7 @@ describe('Gmail background automation', () => {
     const second = await fetchGmailAutomationBatch({ accessToken: 'test', coverage: 'uu06', fetchImpl, continuation: first.continuation, now: new Date('2026-09-23T00:00:00Z') })
     const pages = calls.filter((url) => url.includes('/messages?')).map((url) => new URL(url))
     expect(pages[0]!.searchParams.get('q')).toBe(`after:${Date.parse('2026-06-23T00:00:00Z') / 1000} -in:spam -in:trash`)
+    expect(pages.every((url) => url.searchParams.get('maxResults') === String(UU06_MAX_MESSAGES_PER_RUN))).toBe(true)
     expect(pages[1]!.searchParams.get('q')).toBe(pages[0]!.searchParams.get('q'))
     expect(pages.every((url) => !url.searchParams.has('labelIds'))).toBe(true)
     expect(pages[1]!.searchParams.get('pageToken')).toBe('provider-page-2')
@@ -285,7 +287,9 @@ describe('Gmail background automation', () => {
     }) as unknown as typeof fetch
     const batch = await fetchGmailAutomationBatch({ accessToken: 'test', coverage: 'uu06', startHistoryId: '500', fetchImpl })
     expect(batch.messages.map((message) => message.id)).toEqual(['archive'])
-    expect(calls.filter((url) => url.includes('/history?')).every((url) => !new URL(url).searchParams.has('labelId'))).toBe(true)
+    const historyCalls = calls.filter((url) => url.includes('/history?')).map((url) => new URL(url))
+    expect(historyCalls.every((url) => !url.searchParams.has('labelId'))).toBe(true)
+    expect(historyCalls.every((url) => url.searchParams.get('maxResults') === String(UU06_MAX_MESSAGES_PER_RUN))).toBe(true)
   })
 
   it('classifies a disabled Gmail API without exposing provider error text', async () => {
