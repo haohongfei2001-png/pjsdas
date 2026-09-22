@@ -8,6 +8,7 @@ import {
 import { useUiLanguage } from './uiLanguage.js'
 import { useCloud } from './cloud/CloudContext.js'
 import { ensureAuthoritativePersistence } from './cloud/authoritativePersistence.js'
+import { connectedWorkspaceAuthorityEnabled } from './cloud/connectedWorkspaceRepository.js'
 import './ultimateWeb.css'
 
 export default function DecisionRequestsView({
@@ -37,8 +38,8 @@ export default function DecisionRequestsView({
     setBusyId(request.id)
     setError('')
     try {
-      const result = await resolveWebDecision(request.id, choiceId)
-      if (result.changed && cloud.session) await ensureAuthoritativePersistence(true, cloud.syncNow)
+      const result = await resolveWebDecision(request.id, choiceId, { accountKey: cloud.session?.user.id })
+      if (result.changed && cloud.session && !connectedWorkspaceAuthorityEnabled()) await ensureAuthoritativePersistence(true, cloud.syncNow)
       setReceipt({
         text: result.status === 'DISMISSED'
           ? (zh ? '已记录你的选择，没有执行额外写入。' : 'Your choice was recorded without an additional write.')
@@ -59,7 +60,7 @@ export default function DecisionRequestsView({
     setError('')
     try {
       await undoWebSemanticChange(receipt.undo)
-      if (cloud.session) await ensureAuthoritativePersistence(true, cloud.syncNow)
+      if (cloud.session && !connectedWorkspaceAuthorityEnabled()) await ensureAuthoritativePersistence(true, cloud.syncNow)
       setReceipt({ text: zh ? '刚才的决定已撤销。' : 'The last decision was undone.' })
       await onChanged()
     } catch (caught) {
