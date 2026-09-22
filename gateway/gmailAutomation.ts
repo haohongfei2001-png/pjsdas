@@ -20,8 +20,9 @@ import { PJSDAS_SUPABASE_URL } from './supabaseProject.js'
 
 const GMAIL_API = 'https://gmail.googleapis.com/gmail/v1/users/me'
 const GMAIL_SOURCE_ID = 'gmail:primary'
+const GMAIL_PROVIDER_PAGE_SIZE = 100
 const LEGACY_MAX_MESSAGES_PER_RUN = 100
-export const UU06_MAX_MESSAGES_PER_RUN = 40
+export const UU06_MAX_MESSAGES_PER_RUN = 20
 export const INITIAL_LOOKBACK_DAYS = 90
 
 interface GmailHeader { name?: string; value?: string }
@@ -219,7 +220,7 @@ async function initialMessagePage(
     providerPageToken = decoded.token
   }
   const params = new URLSearchParams({
-    maxResults: String(expanded ? UU06_MAX_MESSAGES_PER_RUN : LEGACY_MAX_MESSAGES_PER_RUN),
+    maxResults: String(GMAIL_PROVIDER_PAGE_SIZE),
     q: expanded ? query : 'newer_than:7d -in:spam -in:trash',
     ...(!expanded ? { labelIds: 'INBOX' } : {}),
   })
@@ -240,7 +241,7 @@ async function historyMessagePage(
     startHistoryId,
     historyTypes: 'messageAdded',
     ...(!expanded ? { labelId: 'INBOX' } : {}),
-    maxResults: String(expanded ? UU06_MAX_MESSAGES_PER_RUN : LEGACY_MAX_MESSAGES_PER_RUN),
+    maxResults: String(GMAIL_PROVIDER_PAGE_SIZE),
   })
   if (pageToken) params.set('pageToken', pageToken)
   const response = await gmailFetch(fetchImpl, accessToken, `/history?${params.toString()}`)
