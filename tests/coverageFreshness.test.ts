@@ -49,7 +49,7 @@ function addAllSources(completedAt = '2026-09-13T10:00:00.000Z') {
 describe('Coverage freshness and configured-source completeness', () => {
   it('does not show green when configured sources have never completed a run', () => {
     const coverage = summarizeCoverage(emptySnapshot().data.timeline, {
-      now: new Date('2026-09-13T10:30:00.000Z'),
+      now: new Date('2026-09-13T10:15:00.000Z'),
       expectedSources: PJSDAS_EXPECTED_INGESTION_SOURCES,
     })
     expect(coverage.allCaughtUp).toBe(false)
@@ -59,7 +59,7 @@ describe('Coverage freshness and configured-source completeness', () => {
   it('shows green when every configured source has a balanced fresh run and no unresolved records', () => {
     const snapshot = addAllSources()
     const coverage = summarizeCoverage(snapshot.data.timeline, {
-      now: new Date('2026-09-13T10:30:00.000Z'),
+      now: new Date('2026-09-13T10:15:00.000Z'),
       expectedSources: PJSDAS_EXPECTED_INGESTION_SOURCES,
     })
     expect(coverage.allCaughtUp).toBe(true)
@@ -68,10 +68,10 @@ describe('Coverage freshness and configured-source completeness', () => {
     expect(coverage.sourceCount).toBe(PJSDAS_EXPECTED_INGESTION_SOURCES.length)
   })
 
-  it('turns Coverage non-green when Gmail misses its two-hour freshness SLA even though the last run was balanced', () => {
+  it('turns Coverage non-green when Gmail misses its 20-minute freshness SLA even though the last run was balanced', () => {
     const snapshot = addAllSources('2026-09-13T10:00:00.000Z')
     const coverage = summarizeCoverage(snapshot.data.timeline, {
-      now: new Date('2026-09-13T12:01:00.000Z'),
+      now: new Date('2026-09-13T10:21:00.000Z'),
       expectedSources: PJSDAS_EXPECTED_INGESTION_SOURCES,
     })
     expect(coverage.allCaughtUp).toBe(false)
