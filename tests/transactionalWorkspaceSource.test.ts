@@ -31,7 +31,7 @@ describe('transactional workspace source', () => {
       if (url.includes('/rest/v1/pjsdas_workspaces?')) {
         return json([{ id: 'ws-1', user_id: 'user-a', snapshot: current, revision: 7, schema_version: 1 }])
       }
-      if (url.endsWith('/rest/v1/rpc/pjsdas_commit_workspace')) {
+      if (url.endsWith('/rest/v1/rpc/pjsdas_commit_workspace_v2')) {
         const body = JSON.parse(String(init?.body))
         return json([{
           outcome: 'COMMITTED',
@@ -76,7 +76,7 @@ describe('transactional workspace source', () => {
       if (url.includes('/rest/v1/pjsdas_workspaces?')) {
         return json([{ id: 'ws-1', user_id: 'user-a', snapshot: current, revision: 7, schema_version: 1 }])
       }
-      if (url.endsWith('/rest/v1/rpc/pjsdas_commit_workspace')) {
+      if (url.endsWith('/rest/v1/rpc/pjsdas_commit_workspace_v2')) {
         const body = JSON.parse(String(init?.body))
         bodies.push(body)
         return json([{
