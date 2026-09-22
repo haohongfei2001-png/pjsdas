@@ -36,7 +36,7 @@ async function seedLocalWorkspace(page: Page) {
   await page.goto('/')
   await page.evaluate(async ({ opportunity, action }) => {
     await new Promise<void>((resolve, reject) => {
-      const request = indexedDB.open('pjsdas', 10)
+      const request = indexedDB.open('pjsdas', 11)
       request.onerror = () => reject(request.error)
       request.onsuccess = () => {
         const db = request.result
@@ -76,7 +76,7 @@ test('critical local-first action flow survives completion, undo, and browser re
   await expect(page.getByRole('heading', { name: '提交矩阵科技 AI 产品经理申请' })).toBeVisible()
 
   const persistedStatus = await page.evaluate(async () => new Promise<string | undefined>((resolve, reject) => {
-    const request = indexedDB.open('pjsdas', 10)
+    const request = indexedDB.open('pjsdas', 11)
     request.onerror = () => reject(request.error)
     request.onsuccess = () => {
       const db = request.result
