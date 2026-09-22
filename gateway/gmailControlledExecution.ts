@@ -6,7 +6,7 @@ import { WorkspaceSourceError } from './workspaceSource.js'
 
 /** Opt-in only. Total budget includes claim, source work, commit and bounded cleanup. */
 export async function runControlledGmailExecutions(config: GmailAutomationHandlerConfig, workerToken: string, requestedUserId?: string) {
-  const limitMs = Math.max(50, Math.min(config.executionBudgetMs ?? 15_000, 15_000))
+  const limitMs = Math.max(50, Math.min(config.executionBudgetMs ?? 25_000, 25_000))
   const started = performance.now()
   const reserveMs = Math.min(1000, limitMs / 5)
   const workLimitMs = limitMs - reserveMs
