@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import {
+  invokePaiaIntake,
   invokeResolveSemanticDecision,
   invokeSemanticIntake,
   invokeSemanticUndo,
@@ -185,6 +186,43 @@ describe('UU-02 Semantic Intake gateway', () => {
         throw new Error('not authorized')
       },
     })
+    expect(result.isError).toBe(true)
+    expect(read).not.toHaveBeenCalled()
+    expect(source.writes).toHaveLength(0)
+  })
+
+  it('adapts authorized PAIA owner input through the same Semantic Intake ledger without persisting raw owner text', async () => {
+    const source = new TransactionalSource()
+    const authorize = vi.fn(async () => undefined)
+    const result = await invokePaiaIntake(source, args({
+      inputId: 'paia-owner-input-0001',
+      source: {
+        kind: 'paia',
+        sourceId: 'paia:owner-input',
+        sourceRecordId: 'archive-input-1',
+        sourceVersion: 'capture-v1',
+        observedAt: '2026-09-20T10:00:00.000Z',
+        assertedAt: '2026-09-20T10:00:00.000Z',
+        timezone: 'Asia/Shanghai',
+      },
+      originalText: 'PAIA_RAW_OWNER_TEXT_SHOULD_NOT_PERSIST',
+    }), { authorize })
+
+    expect(result.isError).not.toBe(true)
+    expect(authorize).toHaveBeenCalledTimes(1)
+    expect(source.writes).toHaveLength(1)
+    expect(source.writes[0]?.command?.provenance).toMatchObject({
+      sourceKind: 'paia',
+      sourceId: 'paia:owner-input',
+      sourceRecordId: 'archive-input-1',
+    })
+    expect(JSON.stringify(source.writes[0]?.command?.payload)).not.toContain('PAIA_RAW_OWNER_TEXT_SHOULD_NOT_PERSIST')
+  })
+
+  it('rejects non-PAIA payloads at the PAIA adapter boundary before workspace access', async () => {
+    const source = new TransactionalSource()
+    const read = vi.spyOn(source, 'read')
+    const result = await invokePaiaIntake(source, args())
     expect(result.isError).toBe(true)
     expect(read).not.toHaveBeenCalled()
     expect(source.writes).toHaveLength(0)
