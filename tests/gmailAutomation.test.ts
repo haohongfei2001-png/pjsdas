@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import {
   fetchGmailAutomationBatch,
   gmailObservationFromMessage,
+  canFinalizeEmptyGmailHistoryWithoutWorkspace,
   UU06_MAX_MESSAGES_PER_RUN,
 } from '../gateway/gmailAutomation.js'
 import type { Opportunity } from '../src/model.js'
@@ -105,6 +106,26 @@ describe('Gmail background automation', () => {
       sourceRecordId: 'msg-1',
     })
     expect(observation?.eventType).toBeUndefined()
+  })
+
+  it('skips workspace I/O only for an empty incremental history batch', () => {
+    const emptyHistory = {
+      messages: [],
+      nextHistoryId: '205',
+      coverageComplete: true,
+      usedFallbackScan: false,
+    }
+    expect(canFinalizeEmptyGmailHistoryWithoutWorkspace('199', emptyHistory)).toBe(true)
+    expect(canFinalizeEmptyGmailHistoryWithoutWorkspace(undefined, emptyHistory)).toBe(false)
+    expect(canFinalizeEmptyGmailHistoryWithoutWorkspace('199', { ...emptyHistory, usedFallbackScan: true })).toBe(false)
+    expect(canFinalizeEmptyGmailHistoryWithoutWorkspace('199', {
+      ...emptyHistory,
+      recoveryGapReason: 'expired cursor',
+    })).toBe(false)
+    expect(canFinalizeEmptyGmailHistoryWithoutWorkspace('199', {
+      ...emptyHistory,
+      messages: [{ id: 'new-message' }],
+    })).toBe(false)
   })
 
   it('uses Gmail history for incremental checks and advances to the returned history cursor', async () => {
