@@ -30,7 +30,7 @@ async function seed(page: import('@playwright/test').Page) {
   await expect(page.getByRole('heading', { name: '今天', exact: true })).toBeVisible()
   await page.evaluate(async ({ opportunity, process }) => {
     await new Promise<void>((resolve, reject) => {
-      const request = indexedDB.open('pjsdas', 10)
+      const request = indexedDB.open('pjsdas', 11)
       request.onerror = () => reject(request.error)
       request.onsuccess = () => {
         const db = request.result
@@ -66,7 +66,7 @@ test('In Progress decision rows localize canonical stored stages on desktop and 
 
   const stored = await page.evaluate(async () => {
     return new Promise<{ opportunityStage?: string; processStage?: string }>((resolve, reject) => {
-      const request = indexedDB.open('pjsdas', 10)
+      const request = indexedDB.open('pjsdas', 11)
       request.onerror = () => reject(request.error)
       request.onsuccess = () => {
         const db = request.result
