@@ -14,11 +14,24 @@ import { fingerprintWorkspace } from './cloud/workspaceFingerprint.js'
 import { type CanonicalJobReference } from './progressUpdate.js'
 import { buildWebSemanticInterpretation } from './webSemanticInterpretation.js'
 import type { SemanticIntakeObservation } from './model.js'
+import { connectedWorkspaceAuthorityEnabled } from './cloud/connectedWorkspaceRepository.js'
+import {
+  createConnectedCommandId,
+  executeConnectedBusinessCommand,
+  undoConnectedBusinessCommand,
+} from './cloud/authoritativeCommandClient.js'
 
-export interface LocalSemanticUndoToken {
-  workspaceFingerprint: string
-  compensation: SemanticBatchCompensation
-}
+export type LocalSemanticUndoToken =
+  | {
+      kind?: 'local'
+      workspaceFingerprint: string
+      compensation: SemanticBatchCompensation
+    }
+  | {
+      kind: 'connected'
+      accountKey: string
+      targetCommandId: string
+    }
 
 export interface WebSemanticCaptureResult {
   status: 'APPLIED' | 'DECISION_REQUIRED' | 'NO_WRITE' | 'ALREADY_APPLIED'
@@ -69,7 +82,7 @@ async function optimisticReplace(
 
 export async function submitWebSemanticCapture(
   text: string,
-  options: { now?: Date; timezone?: string } = {},
+  options: { now?: Date; timezone?: string; accountKey?: string } = {},
 ): Promise<WebSemanticCaptureResult> {
   const trimmed = text.trim()
   if (!trimmed) throw new Error('请输入要告诉 PJSDAS 的内容。')
@@ -99,6 +112,31 @@ export async function submitWebSemanticCapture(
     originalText: trimmed,
     contextRefs: [],
     candidates: interpretation.candidates,
+  }
+
+  if (options.accountKey && connectedWorkspaceAuthorityEnabled()) {
+    const commandId = createConnectedCommandId('web-semantic')
+    const authoritative = await executeConnectedBusinessCommand(options.accountKey, {
+      type: 'semantic_intake',
+      value: observation,
+    }, { commandId })
+    if (authoritative.outcome === 'CONFLICT') {
+      throw new Error(authoritative.conflict?.message ?? 'Semantic Intake conflicted with newer authoritative state.')
+    }
+    const status = String(authoritative.result?.status ?? (authoritative.outcome === 'ALREADY_APPLIED' ? 'ALREADY_APPLIED' : 'NO_WRITE')) as WebSemanticCaptureResult['status']
+    const decisionRequestIds = Array.isArray(authoritative.result?.decisionRequestIds)
+      ? authoritative.result!.decisionRequestIds.filter((value): value is string => typeof value === 'string')
+      : []
+    return {
+      status,
+      summary: typeof authoritative.result?.summary === 'string' ? authoritative.result.summary : 'PJSDAS processed the authoritative update.',
+      unresolved: interpretation.unresolved,
+      ignored: interpretation.ignored,
+      decisionRequestIds,
+      undo: authoritative.receipt?.undoAvailable === true
+        ? { kind: 'connected', accountKey: options.accountKey, targetCommandId: commandId }
+        : undefined,
+    }
   }
 
   const result = applySemanticIntake(baseline, observation, {
@@ -134,9 +172,28 @@ export async function submitWebSemanticCapture(
 export async function resolveWebDecision(
   requestId: string,
   choiceId: string,
-  options: { now?: Date } = {},
+  options: { now?: Date; accountKey?: string } = {},
 ) {
   const now = options.now ?? new Date()
+  if (options.accountKey && connectedWorkspaceAuthorityEnabled()) {
+    const commandId = createConnectedCommandId('web-decision')
+    const authoritative = await executeConnectedBusinessCommand(options.accountKey, {
+      type: 'resolve_semantic_decision',
+      value: { requestId, choiceId },
+    }, { commandId })
+    if (authoritative.outcome === 'CONFLICT') {
+      throw new Error(authoritative.conflict?.message ?? 'Decision resolution conflicted with newer authoritative state.')
+    }
+    return {
+      status: String(authoritative.result?.status ?? 'ALREADY_RESOLVED'),
+      changed: authoritative.outcome === 'COMMITTED',
+      snapshot: authoritative.snapshot,
+      summary: typeof authoritative.result?.summary === 'string' ? authoritative.result.summary : 'Decision handled.',
+      undo: authoritative.receipt?.undoAvailable === true
+        ? { kind: 'connected' as const, accountKey: options.accountKey, targetCommandId: commandId }
+        : undefined,
+    }
+  }
   const baseline = await exportLocalSnapshot()
   const baselineFingerprint = await fingerprintWorkspace(baseline)
   const result = resolveSemanticDecision(baseline, requestId, choiceId, now)
@@ -152,6 +209,13 @@ export async function resolveWebDecision(
 }
 
 export async function undoWebSemanticChange(token: LocalSemanticUndoToken, now = new Date()) {
+  if (token.kind === 'connected') {
+    const result = await undoConnectedBusinessCommand(token.accountKey, token.targetCommandId)
+    if (result.outcome === 'CONFLICT') {
+      throw new Error(result.conflict?.message ?? 'Undo conflicted with a dependent authoritative update.')
+    }
+    return result
+  }
   const baseline = await exportLocalSnapshot()
   const baselineFingerprint = await fingerprintWorkspace(baseline)
   if (baselineFingerprint !== token.workspaceFingerprint) {
