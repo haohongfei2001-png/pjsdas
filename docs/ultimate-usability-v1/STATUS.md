@@ -16,8 +16,8 @@ Product origin: `https://todayaction.com`
 | UU-04 | **COMPLETE** | Final two-destination Web shell / Today implemented and production-verified |
 | UU-05 | **COMPLETE** | Shared opportunity decisions / conclusion-first detail and date-only regression closed on main; production verified |
 | UU-06 | **COMPLETE** | OA-06 10-minute Gmail polling production-verified: explicit uu06-v1 consent, 90-day archive-inclusive backfill complete, durable history cursor established, replay no-write safety verified, final live canary passed on main@a0dd190 |
-| UU-07 | **IN_PROGRESS** | Authorized 2026-09-22; implementing PAIA/current-chat shared intake, ReminderIntent/outbox, truthful external capability probing, cross-source dedupe and single delivery ownership; UU-08 remains locked |
-| UU-08 | NOT_READY | Depends on platform-neutral contracts |
+| UU-07 | **COMPLETE** | Shared PAIA/current-chat intake, ReminderIntent/outbox, cross-source dedupe and truthful external capabilities; exact-main CI/browser/deploy/production self-test passed at 01665c8 |
+| UU-08 | **READY — NOT_STARTED** | UU-07 dependency closed; owner explicitly limits this execution to UU-07 |
 | UU-09 | NOT_READY | Final canary/release |
 
 ## Revalidation findings
@@ -326,7 +326,7 @@ no-write questions, source-backed alias application, same-company ambiguity → 
 elapsed-occurrence completion, bilingual Today reasons, Settings/History relocation, authoritative
 persistence receipts, recovery tooling, no horizontal overflow, and the 390×844 first-screen gate.
 
-## Next authorized work
+## Historical UU-06 handoff
 
 UU-06 is **COMPLETE**. Final runtime:
 `main@a0dd19046cb4615af07c3d5ffe571bff314431b2`.
@@ -411,3 +411,13 @@ exact-main publication gates green. Historical failures and duplicate audit rows
 retained. No release publication, paid upgrade, Billing/PubSub activation, broader
 OAuth scope, or external recruiting action was authorized.
 
+
+## UU-07 closure
+
+UU-07 is **COMPLETE**. Certified runtime main: `01665c8b817c2a7c592d5bf1b9f19c9a1db69cf0`.
+
+CI `35760141776`, Browser `35760141848`, deployment `35760141869`, Production Self-Test `35760338441`, and disarmed release workflow `35760368847` all succeeded on that exact commit. See [closure evidence](evidence/UU-07-closure-01665c8.md).
+
+External Tasks/Calendar remain truthfully unsupported; a concrete PAIA client is not silently granted access or activated. No claim of live end-to-end PAIA background ingestion is made by this contract closure.
+
+UU-08 is READY but **NOT_STARTED**. The owner explicitly authorized UU-07 closure only. Stop; no UU-08/UU-09 work or release publication.
