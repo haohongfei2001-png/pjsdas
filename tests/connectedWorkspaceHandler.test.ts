@@ -128,4 +128,142 @@ describe('first-party connected workspace endpoint', () => {
       snapshot: upgradeSnapshotToLatest(current),
     })
   })
+
+  it('executes a covered first-party Web action as a server command without receiving a client snapshot', async () => {
+    const current = upgradeSnapshotToLatest(snapshot())
+    current.data.actions.push({
+      id: 'action-1',
+      kind: 'manual',
+      title: 'Internal task',
+      estimatedMinutes: 10,
+      leverage: 50,
+      delayCost: 50,
+      status: 'todo',
+      createdAt: '2026-09-23T00:00:00.000Z',
+      updatedAt: '2026-09-23T00:00:00.000Z',
+    })
+    const rpcBodies: any[] = []
+    const fetchImpl = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      if (url.endsWith('/auth/v1/user')) return json({ id: 'user-a' })
+      if (url.includes('/rest/v1/pjsdas_workspaces?')) {
+        return json([{ id: 'ws-1', user_id: 'user-a', snapshot: current, revision: 7, schema_version: current.version }])
+      }
+      if (url.includes('/rest/v1/pjsdas_command_ledger?')) return json([])
+      if (url.endsWith('/rest/v1/rpc/pjsdas_commit_workspace_v2')) {
+        const body = JSON.parse(String(init?.body))
+        rpcBodies.push(body)
+        return json([{
+          outcome: 'COMMITTED',
+          workspace_id: 'ws-1',
+          revision: 8,
+          snapshot: body.target_snapshot,
+          receipt: {
+            ...body.target_receipt_context,
+            commandId: body.target_command_id,
+            receiptId: `command-receipt:${body.target_command_id}`,
+            status: 'COMMITTED',
+            revision: 8,
+            undoAvailable: true,
+          },
+        }])
+      }
+      return json({ error: 'unexpected' }, 500)
+    }) as unknown as typeof fetch
+    const handler = createConnectedWorkspaceHandler({
+      supabaseUrl: 'https://example.supabase.co',
+      supabasePublishableKey: 'publishable',
+      serviceRoleKey: 'service-role',
+      allowedOrigins: [ORIGIN],
+      fetchImpl,
+    })
+
+    const commandId = 'web-action:test-0001'
+    const response = await handler(request('POST', 'ordinary-token', {
+      action: 'command',
+      commandId,
+      baseRevision: 7,
+      command: {
+        type: 'domain',
+        value: { commandId, kind: 'set_action_status', actionId: 'action-1', status: 'done' },
+      },
+    }))
+
+    expect(response.status).toBe(200)
+    await expect(response.json()).resolves.toMatchObject({
+      outcome: 'COMMITTED',
+      revision: 8,
+      receipt: {
+        receiptId: 'command-receipt:web-action:test-0001',
+        affectedObjects: [{ type: 'action', id: 'action-1' }],
+      },
+      snapshot: { data: { actions: [{ id: 'action-1', status: 'done' }] } },
+    })
+    expect(rpcBodies).toHaveLength(1)
+    expect(rpcBodies[0]).toMatchObject({
+      target_command_id: commandId,
+      target_operation: 'domain:set_action_status',
+      target_expected_revision: 7,
+      target_principal_kind: 'first_party_web',
+    })
+  })
+
+  it('rejects a stale legacy snapshot before it can overwrite newer authoritative fields', async () => {
+    const authoritative = upgradeSnapshotToLatest(snapshot())
+    authoritative.data.opportunities.push({
+      id: 'opp-new',
+      company: 'Newer Co',
+      role: 'Authoritative Role',
+      stage: '准备申请',
+      source: 'Server',
+      sourceType: 'Other',
+      nextStep: 'Keep',
+      urgency: 80,
+      opportunityValue: 80,
+      fitScore: 80,
+      assessmentStatus: 'unassessed',
+      locallyManaged: true,
+      importedAt: '2026-09-23T00:00:00.000Z',
+    })
+    let rpcCalled = false
+    const fetchImpl = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.endsWith('/auth/v1/user')) return json({ id: 'user-a' })
+      if (url.includes('/rest/v1/pjsdas_workspaces?')) {
+        return json([{ id: 'ws-1', user_id: 'user-a', snapshot: authoritative, revision: 9, schema_version: authoritative.version }])
+      }
+      if (url.includes('/rest/v1/pjsdas_command_ledger?')) return json([])
+      if (url.includes('/rest/v1/rpc/')) {
+        rpcCalled = true
+        return json({ error: 'must not commit' }, 500)
+      }
+      return json({ error: 'unexpected' }, 500)
+    }) as unknown as typeof fetch
+    const handler = createConnectedWorkspaceHandler({
+      supabaseUrl: 'https://example.supabase.co',
+      supabasePublishableKey: 'publishable',
+      serviceRoleKey: 'service-role',
+      allowedOrigins: [ORIGIN],
+      fetchImpl,
+    })
+
+    const staleClient = upgradeSnapshotToLatest(snapshot())
+    const response = await handler(request('POST', 'ordinary-token', {
+      action: 'commit',
+      commandId: 'legacy-snapshot-0001',
+      expectedRevision: 8,
+      snapshotPurpose: 'compatibility',
+      snapshot: staleClient,
+    }))
+
+    expect(response.status).toBe(409)
+    const payload = await response.json()
+    expect(payload).toMatchObject({
+      outcome: 'CONFLICT',
+      revision: 9,
+      snapshot: { data: { opportunities: [{ id: 'opp-new', role: 'Authoritative Role' }] } },
+    })
+    expect(rpcCalled).toBe(false)
+  })
+
 })
