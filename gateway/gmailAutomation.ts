@@ -624,7 +624,7 @@ export async function runGmailAutomationForBinding(options: {
     fetchImpl, now, coverage: 'uu06',
   })
 
-  if (options.binding.gmailHistoryId && !batch.usedFallbackScan && !batch.recoveryGapReason && batch.messages.length === 0) {
+  if (canFinalizeEmptyGmailHistoryWithoutWorkspace(options.binding.gmailHistoryId, batch)) {
     return {
       userId: options.binding.userId,
       checkedAt,
@@ -837,6 +837,13 @@ async function runLegacyGmailAutomationForBinding(options: {
     ...(options.execution ? { metrics: executionMetrics(options.binding, batch, workspace.snapshot.data.timeline ?? [],
       (options.now?.() ?? new Date()).getTime(), result.run.accountedCount, result.run.outcomes.unresolved ?? 0) } : {}),
   }
+}
+
+export function canFinalizeEmptyGmailHistoryWithoutWorkspace(
+  startHistoryId: string | undefined,
+  batch: GmailAutomationFetchResult,
+) {
+  return Boolean(startHistoryId && !batch.usedFallbackScan && !batch.recoveryGapReason && batch.messages.length === 0)
 }
 
 function executionMetrics(binding: GmailAutomationBinding, batch: GmailAutomationFetchResult,
