@@ -105,3 +105,11 @@ to `*/10 * * * *`; Discovery is unchanged and no watch-renewal job exists.
 The scheduler remains idle when no enabled Gmail binding exists. At deployment
 readback there were zero enabled Gmail bindings and zero `uu06-v1` consent rows,
 so no mailbox was read merely by changing the cadence.
+
+
+## Natural cadence verification — 2026-09-22
+
+Production pg_cron executed the Gmail job successfully at 09:10 UTC and again at
+09:20 UTC after the OA-06 cadence migration. Both returned `0 rows`, which is
+expected because no Gmail binding is enabled yet. This proves the 10-minute scheduler
+is naturally active while preserving the idle no-mailbox-work behavior.
