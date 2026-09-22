@@ -14,7 +14,8 @@ const handler = createAutomationSettingsHandler({
   googleClientId: process.env.PJSDAS_GOOGLE_CLIENT_ID ?? '',
   googleClientSecret: process.env.PJSDAS_GOOGLE_CLIENT_SECRET ?? '',
   gmailPushTopicName: process.env.PJSDAS_GMAIL_PUBSUB_TOPIC ?? '',
-  gmailExecutionControlsEnabled: process.env.PJSDAS_GMAIL_EXECUTION_CONTROLS === 'true',
+  gmailDeliveryMode: process.env.PJSDAS_GMAIL_DELIVERY_MODE?.trim() === 'push' ? 'push' : 'polling',
+  gmailExecutionControlsEnabled: process.env.PJSDAS_GMAIL_EXECUTION_CONTROLS !== 'false',
   authorizeIdentity: createConfiguredAudienceAccessGuard({ supabaseUrl: PJSDAS_SUPABASE_URL }),
 })
 
