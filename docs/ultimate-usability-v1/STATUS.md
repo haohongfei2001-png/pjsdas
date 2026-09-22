@@ -16,7 +16,7 @@ Product origin: `https://todayaction.com`
 | UU-04 | **COMPLETE** | Final two-destination Web shell / Today implemented and production-verified |
 | UU-05 | **COMPLETE** | Shared opportunity decisions / conclusion-first detail and date-only regression closed on main; production verified |
 | UU-06 | **COMPLETE** | OA-06 10-minute Gmail polling production-verified: explicit uu06-v1 consent, 90-day archive-inclusive backfill complete, durable history cursor established, replay no-write safety verified, final live canary passed on main@a0dd190 |
-| UU-07 | **READY — NOT_STARTED** | UU-06 dependency closed; no execution authority implied |
+| UU-07 | **IN_PROGRESS** | Authorized 2026-09-22; implementing PAIA/current-chat shared intake, ReminderIntent/outbox, truthful external capability probing, cross-source dedupe and single delivery ownership; UU-08 remains locked |
 | UU-08 | NOT_READY | Depends on platform-neutral contracts |
 | UU-09 | NOT_READY | Final canary/release |
 
