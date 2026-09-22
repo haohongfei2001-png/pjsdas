@@ -1,4 +1,4 @@
-# Gmail execution controls — deployed, default-off
+# Gmail execution controls — deployed; OA-06 owner runtime defaults on
 
 Current runtime `107795acbb17dbbd17ea9e5f1963c39d39a91957` and both prerequisite
 schemas are deployed. The subsequent idle-scheduler migration `20260921065934`
