@@ -86,6 +86,34 @@ describe('UU06 shared Gmail intake', () => {
       expect(result.snapshot.data.decisionRequests).toHaveLength(1)
     }
   })
+  it('treats a previously consumed Gmail source record as a no-write replay across a new run id', () => {
+    const base = snapshot()
+    const record = gmailSemanticRecordFromMessage(message(invitation, 'stable-source-id'), base.data.opportunities, now)!
+    const first = applyGmailSemanticBatch(base, {
+      runId: 'run:first',
+      sourceId: 'gmail:primary',
+      checkedAt: now.toISOString(),
+      authorized: true,
+      records: [record],
+    })
+    const beforeTimeline = first.snapshot.data.timeline?.length ?? 0
+    const replay = applyGmailSemanticBatch(first.snapshot, {
+      runId: 'run:retry',
+      sourceId: 'gmail:primary',
+      checkedAt: new Date('2026-09-21T00:10:00Z').toISOString(),
+      authorized: true,
+      records: [record],
+    })
+    expect(replay.alreadyApplied).toBe(true)
+    expect(replay.snapshot).toBe(first.snapshot)
+    expect(replay.snapshot.data.timeline).toHaveLength(beforeTimeline)
+    expect(replay.run).toMatchObject({
+      receivedCount: 1,
+      accountedCount: 1,
+      outcomes: { duplicate: 1 },
+    })
+  })
+
   it('replay and a new message for the same thread occurrence do not duplicate events', () => {
     const first = run(snapshot(), invitation)
     const replay = run(first.snapshot, invitation)
