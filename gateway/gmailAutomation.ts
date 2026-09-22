@@ -133,6 +133,42 @@ function messageBodyText(part: GmailPart | undefined): string {
   return (plain.length ? plain : html).join('\n').replace(/\u0000/g, '').trim().slice(0, 12_000)
 }
 
+type GoogleApiErrorPayload = {
+  error?: {
+    errors?: Array<{ reason?: string }>
+    details?: Array<{ reason?: string }>
+    status?: string
+  }
+}
+
+async function gmailForbiddenError(response: Response) {
+  const payload = await response.clone().json().catch(() => undefined) as GoogleApiErrorPayload | undefined
+  const reasons = new Set([
+    ...(payload?.error?.errors ?? []).flatMap((item) => item.reason ? [item.reason] : []),
+    ...(payload?.error?.details ?? []).flatMap((item) => item.reason ? [item.reason] : []),
+  ])
+
+  if (reasons.has('accessNotConfigured') || reasons.has('SERVICE_DISABLED')) {
+    return new WorkspaceSourceError(
+      'GOOGLE_GMAIL_API_DISABLED',
+      'The Gmail API is not enabled for the Google Cloud project used by PJSDAS.',
+      false,
+    )
+  }
+  if (reasons.has('insufficientPermissions') || reasons.has('ACCESS_TOKEN_SCOPE_INSUFFICIENT')) {
+    return new WorkspaceSourceError(
+      'GOOGLE_GMAIL_SCOPE_MISSING',
+      'The stored Google authorization does not grant Gmail read-only access. Reconnect Google and enable recruiting-email tracking.',
+      false,
+    )
+  }
+  if (['dailyLimitExceeded', 'rateLimitExceeded', 'userRateLimitExceeded', 'quotaExceeded', 'RESOURCE_EXHAUSTED']
+    .some((reason) => reasons.has(reason))) {
+    return new WorkspaceSourceError('GMAIL_UNAVAILABLE', 'Gmail API quota is temporarily unavailable.', true)
+  }
+  return new WorkspaceSourceError('GOOGLE_GMAIL_FORBIDDEN', 'Google denied Gmail read access for PJSDAS.', false)
+}
+
 async function gmailFetch(fetchImpl: typeof fetch, accessToken: string, path: string) {
   let response: Response
   try {
@@ -143,7 +179,7 @@ async function gmailFetch(fetchImpl: typeof fetch, accessToken: string, path: st
     throw new WorkspaceSourceError('GMAIL_UNAVAILABLE', 'Gmail is temporarily unavailable.', true)
   }
   if (response.status === 401) throw new WorkspaceSourceError('GOOGLE_AUTH_EXPIRED', 'Google authorization is no longer valid. Reconnect Google to PJSDAS.', false)
-  if (response.status === 403) throw new WorkspaceSourceError('GOOGLE_GMAIL_FORBIDDEN', 'Google denied Gmail read access for PJSDAS.', false)
+  if (response.status === 403) throw await gmailForbiddenError(response)
   if (response.status === 429 || response.status >= 500) throw new WorkspaceSourceError('GMAIL_UNAVAILABLE', `Gmail is temporarily unavailable (HTTP ${response.status}).`, true)
   return response
 }
