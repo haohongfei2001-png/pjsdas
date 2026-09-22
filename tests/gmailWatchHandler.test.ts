@@ -53,6 +53,7 @@ describe('Gmail watch renewal worker', () => {
       googleClientId: 'unused',
       googleClientSecret: 'unused',
       topicName: 'projects/test/topics/gmail',
+      deliveryMode: 'push',
       fetchImpl,
       registerGmailWatchImpl,
     })(request())
@@ -81,6 +82,7 @@ describe('Gmail watch renewal worker', () => {
       googleClientId: 'unused',
       googleClientSecret: 'unused',
       topicName: 'projects/test/topics/gmail',
+      deliveryMode: 'push',
       fetchImpl,
     })(new Request('https://gateway.example/api/automation-gmail-watch', { method: 'POST' }))
     expect(response.status).toBe(401)
