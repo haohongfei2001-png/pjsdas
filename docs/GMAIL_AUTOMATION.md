@@ -94,3 +94,14 @@ The error field is bounded operational telemetry and must never contain raw emai
 ## External prerequisite
 
 The Google Cloud project used by PJSDAS must have the Gmail API enabled. Public distribution of Gmail read-only access is also subject to Google's restricted-scope verification requirements. This infrastructure does not weaken or bypass those provider requirements.
+
+
+## OA-06 production state — 2026-09-22
+
+The owner deployment runs the existing Gmail history worker every 10 minutes.
+Production migration `20260922090002` changed only the Gmail scheduler cadence
+to `*/10 * * * *`; Discovery is unchanged and no watch-renewal job exists.
+
+The scheduler remains idle when no enabled Gmail binding exists. At deployment
+readback there were zero enabled Gmail bindings and zero `uu06-v1` consent rows,
+so no mailbox was read merely by changing the cadence.
