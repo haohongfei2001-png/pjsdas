@@ -15,8 +15,8 @@ Product origin: `https://todayaction.com`
 | UU-03 | **COMPLETE** | Revision-bound TodayBrief / agenda / latest-start read model implemented and production-verified |
 | UU-04 | **COMPLETE** | Final two-destination Web shell / Today implemented and production-verified |
 | UU-05 | **COMPLETE** | Shared opportunity decisions / conclusion-first detail and date-only regression closed on main; production verified |
-| UU-06 | **IN_PROGRESS** | OA-06 polling runtime deployed; natural production cron executions at 09:10/09:20 UTC succeeded on */10; Push/watch dormant, zero Gmail opt-in; live mailbox canary pending |
-| UU-07 | NOT_READY | Depends on shared intake/read models |
+| UU-06 | **COMPLETE** | OA-06 10-minute Gmail polling production-verified: explicit uu06-v1 consent, 90-day archive-inclusive backfill complete, durable history cursor established, replay no-write safety verified, final live canary passed on main@a0dd190 |
+| UU-07 | **READY — NOT_STARTED** | UU-06 dependency closed; no execution authority implied |
 | UU-08 | NOT_READY | Depends on platform-neutral contracts |
 | UU-09 | NOT_READY | Final canary/release |
 
@@ -328,30 +328,31 @@ persistence receipts, recovery tooling, no horizontal overflow, and the 390×844
 
 ## Next authorized work
 
-UU-05 is COMPLETE. UU-06 is **IN_PROGRESS** in the independent execution
-`UU06-20260921-aem01` (intake PR #102 and idle-scheduler PR #103 merged); the earlier UU-05 closure's
-stop boundary applies to that historical execution. The current execution has
-re-read the remote baseline and project authority; see `rounds/UU-06.md`.
+UU-06 is **COMPLETE**. Final runtime:
+`main@a0dd19046cb4615af07c3d5ffe571bff314431b2`.
 
-The intake/control implementation and idle-scheduler correction are deployed at
-runtime `107795acbb17dbbd17ea9e5f1963c39d39a91957`; exact-main verification is
-recorded in [idle-scheduler evidence](../GMAIL_IDLE_SCHEDULER.md).
-Consent schema `20260921053337`, execution-controls schema `20260921055432` and
-idle-scheduler migration `20260921065934` are applied. Manager readback confirmed
-zero enabled bindings, expanded grants and execution rows. The Gmail command now
-skips HTTP enqueue unless an enabled non-revoked binding exists, including legacy
-NULL-consent users. Gmail cadence remains `5 * * * *`; Discovery is unchanged.
-The execution-control flag remains default-off/unactivated. Prior 072b intake evidence
-remains [historical deployment evidence](evidence/UU-06-runtime-072b2fe.md).
+Final exact-main gates all passed: CI `35740220581`, Browser E2E
+`35740220572`, Deploy `35740220575`, Production Self-Test `35740607006`,
+and disarmed Release workflow `35740642068`; Vercel commit status is SUCCESS.
 
-Next: obtain one explicit first-party owner Gmail intake opt-in from Settings, then
-run the bounded live scheduled-intake canary and close UU-06 only if scheduled
-processing, dedupe, stale-event protection and Today projection pass. Push/PubSub/
-Billing remain outside the owner release gate. The linked Supabase organization plan is verified **free**, but actual
-usage/quota and other backend cost headroom remain unknown. Hourly polling does not
-meet p95 <2-minute / <=15-minute compensation requirements; zero live opt-in means
-there is no certified workload. This checkpoint does not complete UU-06 or its
-execution, and this execution does not start UU-07.
+Production owner Gmail is enabled under explicit `uu06-v1` consent. The bounded
+90-day archive-inclusive initial backfill is complete, the durable history cursor is
+established, continuation state is clear, and natural job 15 remains `*/10 * * * *`.
+The final 14:30 UTC production canary passed with mode `history`, 4 received /
+4 accounted / 0 unresolved, HTTP 200, 9.120-second execution, and no current Gmail
+error. Replay accounting showed 2 duplicate + 2 ignored records while only 2 source
+ledger rows were persisted, proving replay duplicates are no-write under the final
+runtime.
+
+Gmail-owned shared Semantic Intake receipts exist in production and reference shared
+ScheduleNode / Opportunity objects. Release publication remains DISARMED. Gmail
+remains `gmail.readonly`; Push/PubSub/Billing remain outside the owner release path.
+
+Closure evidence:
+[evidence/UU-06-closure-a0dd190.md](evidence/UU-06-closure-a0dd190.md).
+
+UU-07 is now **READY — NOT_STARTED** under the frozen round order. Do not start UU-07
+without a new execution instruction.
 
 ## UU-04 scope boundary
 
@@ -399,3 +400,14 @@ Historical UU-05 closure boundary: that closure commit changed documentation onl
 with no workspace-data migration, permission expansion or final release publication.
 UU-06 was READY and was not started by that execution. The current independent
 UU-06 execution is tracked above; the historical receipts remain unchanged.
+
+## UU-06 closure — 2026-09-22
+
+UU-06 completed on `main@a0dd19046cb4615af07c3d5ffe571bff314431b2`.
+The owner-mode OA-06 polling contract is production-verified with explicit consent,
+complete 90-day backfill, durable Gmail history cursor, bounded 10-minute incremental
+processing, source-idempotent replay, shared Semantic Intake projection, and all
+exact-main publication gates green. Historical failures and duplicate audit rows are
+retained. No release publication, paid upgrade, Billing/PubSub activation, broader
+OAuth scope, or external recruiting action was authorized.
+
