@@ -1,3 +1,4 @@
+import { AUTHENTICATED_GATEWAY_VERSION } from './authenticatedRemoteHttp.js'
 import {
   AUTHENTICATED_MCP_TOOL_SURFACE_VERSION,
   authenticatedMcpReleaseRequiredTools,
@@ -48,6 +49,10 @@ const REQUIRED_CAPABILITIES: Record<string, unknown> = {
   decisionRequests: 'v1',
   semanticCompensatingUndo: 'v1',
   semanticServerWritePolicy: 'v1',
+  paiaOwnerIntake: 'v1',
+  reminderIntent: 'v1',
+  externalReminderCapabilityTruth: 'v1',
+  crossSourceSemanticDedupe: 'v1',
   todayBriefReadModel: 'v1',
   todayAgendaReadModel: 'v1',
   opportunityDecisionReadModel: 'v1',
@@ -132,7 +137,7 @@ export async function runProductionSelfTest(options: {
     const response = await fetchImpl(`${baseUrl}/api/health`, { headers: { accept: 'application/json' } })
     const payload = response.ok ? await response.json() as Record<string, any> : undefined
     checks.push(check('health.http', response.status === 200, `HTTP ${response.status}`))
-    checks.push(check('health.version', payload?.version === '1.9.0-alpha.1', `version=${String(payload?.version)}`))
+    checks.push(check('health.version', payload?.version === AUTHENTICATED_GATEWAY_VERSION, `version=${String(payload?.version)}; expected=${AUTHENTICATED_GATEWAY_VERSION}`))
     checks.push(check('health.mode', payload?.mode === expectedMode, `mode=${String(payload?.mode)}; expected=${expectedMode}`))
     checks.push(check('health.workspace-authority', payload?.workspaceAuthority === expectedWorkspaceAuthority, `workspaceAuthority=${String(payload?.workspaceAuthority)}; expected=${expectedWorkspaceAuthority}`))
     checks.push(check('health.audience-mode', payload?.topology?.audienceMode === expectedAudienceMode, `audienceMode=${String(payload?.topology?.audienceMode)}; expected=${expectedAudienceMode}`))

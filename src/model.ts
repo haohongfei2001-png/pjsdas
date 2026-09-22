@@ -101,6 +101,54 @@ export interface ScheduleNode {
   createdAt: string
   updatedAt: string
 }
+export type ExternalCapabilityId = 'chatgpt_tasks' | 'google_calendar'
+export type ExternalCapabilityState = 'available' | 'not_authorized' | 'unsupported'
+export type ReminderPurpose = 'upcoming' | 'deadline' | 'prep' | 'follow_up' | 'custom'
+export type ReminderDeliveryOwner = 'pjsdas' | 'external_task' | 'external_calendar'
+export type ReminderChannel = 'in_product' | 'task' | 'calendar'
+export type ReminderIntentState = 'active' | 'paused' | 'cancelled' | 'unsupported'
+export type ReminderOutboxState = 'pending' | 'succeeded' | 'failed' | 'unsupported' | 'cancelled'
+export type ReminderOutboxOperation = 'upsert' | 'cancel'
+
+export interface ReminderExternalLink {
+  capability: ExternalCapabilityId
+  externalId?: string
+  externalUrl?: string
+  state: 'unmapped' | 'mapped' | 'cancelled' | 'failed'
+  lastReceiptAt?: string
+  lastErrorCode?: string
+}
+
+export interface ReminderIntent {
+  id: string
+  scheduleNodeId: string
+  scheduleNodeVersion: number
+  purpose: ReminderPurpose
+  triggerAt: string
+  deliveryOwner: ReminderDeliveryOwner
+  channel: ReminderChannel
+  capability?: ExternalCapabilityId
+  state: ReminderIntentState
+  dedupeKey: string
+  externalLink?: ReminderExternalLink
+  createdAt: string
+  updatedAt: string
+}
+
+export interface ReminderOutboxRecord {
+  id: string
+  reminderIntentId: string
+  operation: ReminderOutboxOperation
+  capability: ExternalCapabilityId
+  state: ReminderOutboxState
+  attemptCount: number
+  nextAttemptAt?: string
+  payloadFingerprint: string
+  receiptCode?: string
+  createdAt: string
+  updatedAt: string
+}
+
 export type SemanticIntakeSourceKind = 'web' | 'paia' | 'gmail' | 'mcp' | 'iphone'
 export type SemanticStatementMode =
   | 'assertion'
@@ -131,6 +179,7 @@ export interface SemanticTargetRef {
   occurrenceId?: string
   scheduleNodeId?: string
   occurrenceKind?: ScheduleNodeKind
+  reminderIntentId?: string
 }
 
 export interface SemanticCandidateBase {
@@ -190,6 +239,18 @@ export type SemanticCandidate =
       estimatedMinutes?: number
     })
   | (SemanticCandidateBase & {
+      kind: 'reminder_intent'
+      purpose: ReminderPurpose
+      triggerAt?: string
+      offsetMinutesBefore?: number
+      deliveryOwner?: ReminderDeliveryOwner
+      channel?: ReminderChannel
+    })
+  | (SemanticCandidateBase & {
+      kind: 'reminder_cancelled'
+      purpose?: ReminderPurpose
+    })
+  | (SemanticCandidateBase & {
       kind: 'external_withdrawal'
     })
 
@@ -219,6 +280,7 @@ export type DecisionRequestState = 'open' | 'answered' | 'auto_resolved' | 'supe
 export interface SemanticResolutionTarget {
   opportunityId?: string
   occurrenceId?: string
+  reminderIntentId?: string
   confirm?: boolean
   dismiss?: boolean
 }
@@ -242,7 +304,7 @@ export interface DecisionRequestPayloadBinding {
 export interface DecisionRequest {
   id: string
   reason: DecisionRequestReason
-  affectedObjects: Array<{ type: 'opportunity' | 'schedule_node' | 'application_group' | 'source'; id: string }>
+  affectedObjects: Array<{ type: 'opportunity' | 'schedule_node' | 'application_group' | 'source' | 'reminder_intent'; id: string }>
   question: string
   choices: DecisionRequestChoice[]
   recommendedChoiceId?: string
@@ -269,8 +331,9 @@ export interface SemanticIntakeReceipt {
   commandId?: string
   status: SemanticReceiptStatus
   summary: string
-  affectedObjects: Array<{ type: 'opportunity' | 'schedule_node' | 'action' | 'process' | 'decision_request'; id: string }>
+  affectedObjects: Array<{ type: 'opportunity' | 'schedule_node' | 'action' | 'process' | 'decision_request' | 'reminder_intent'; id: string }>
   decisionRequestIds: string[]
+  factKeys?: string[]
   undoAvailable: boolean
   createdAt: string
   updatedAt: string
@@ -531,6 +594,7 @@ export interface TimelineRecord {
   processEventId?: string
   scheduleNodeId?: string
   decisionRequestId?: string
+  reminderIntentId?: string
   changeSetId?: string
   commandId?: string
   commandOperation?: string

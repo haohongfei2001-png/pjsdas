@@ -46,7 +46,7 @@ describe('formal release policy', () => {
   })
 
   it('keeps gateway runtime compatibility independent and does not pretend workflow safety equals GitHub platform immutability', () => {
-    expect(AUTHENTICATED_GATEWAY_VERSION).toBe('1.9.0-alpha.1')
+    expect(AUTHENTICATED_GATEWAY_VERSION).toBe('1.10.0-alpha.1')
     expect(AUTHENTICATED_GATEWAY_VERSION).not.toBe(pkg.version)
     expect(policy).toContain('engineering milestones')
     expect(policy).toContain('Gateway runtime version')

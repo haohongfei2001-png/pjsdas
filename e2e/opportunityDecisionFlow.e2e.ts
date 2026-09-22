@@ -80,7 +80,7 @@ test('UU-05 Opportunities centers In Progress / Worth Pursuing and opens conclus
     ]
 
     await new Promise<void>((resolve, reject) => {
-      const request = indexedDB.open('pjsdas', 10)
+      const request = indexedDB.open('pjsdas', 11)
       request.onerror = () => reject(request.error)
       request.onsuccess = () => {
         const db = request.result
@@ -149,7 +149,7 @@ for (const fixture of [
       await page.goto('/')
       await page.evaluate(async () => {
         await new Promise<void>((resolve, reject) => {
-          const request = indexedDB.open('pjsdas', 10)
+          const request = indexedDB.open('pjsdas', 11)
           request.onerror = () => reject(request.error)
           request.onsuccess = () => {
             const db = request.result

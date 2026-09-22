@@ -5,6 +5,7 @@ import { createAuthorizationGrantStore, grantAllows, type AuthorizationGrant } f
 import { createConfiguredAudienceAccessGuard } from './audienceAccess.js'
 import { backendUrl } from './backendOrigin.js'
 import { createPjsdasMcpServer } from './serverFactory.js'
+import { defaultExternalCapabilityProbes } from './reminderTools.js'
 import type { SemanticIntakeSourceRef } from '../src/model.js'
 import { createSupabaseIdentityResolver } from './supabaseIdentity.js'
 import {
@@ -17,7 +18,7 @@ import {
   type WorkspaceWriteInput,
 } from './workspaceSource.js'
 
-export const AUTHENTICATED_GATEWAY_VERSION = '1.9.0-alpha.1' as const
+export const AUTHENTICATED_GATEWAY_VERSION = '1.10.0-alpha.1' as const
 export const AUTHENTICATED_MCP_RESOURCE = backendUrl('/api/mcp')
 export const AUTHORIZATION_SERVER = `${PJSDAS_SUPABASE_URL}/auth/v1`
 export const PROTECTED_RESOURCE_METADATA_URL = backendUrl('/.well-known/oauth-protected-resource')
@@ -139,6 +140,7 @@ export async function authenticatedRemoteMcpFetch(request: Request) {
     }
 
     const transactionalAuthority = process.env.PJSDAS_CONNECTED_AUTHORITY?.trim() === 'transactional'
+    const externalCapabilities = defaultExternalCapabilityProbes()
     const source = transactionalAuthority
       ? createTransactionalWorkspaceSource({
           userId: identity.userId,
@@ -164,6 +166,7 @@ export async function authenticatedRemoteMcpFetch(request: Request) {
         explicitUserCommandMode: transactionalAuthority ? 'enabled' : 'disabled',
         semanticIntakeMode: transactionalAuthority ? 'enabled' : 'disabled',
         semanticIntakeAuthorizer: authorizeSemanticIntake,
+        externalCapabilities,
         proposalSigningKey: env('PJSDAS_TOKEN_ENCRYPTION_KEY'),
       }),
     )

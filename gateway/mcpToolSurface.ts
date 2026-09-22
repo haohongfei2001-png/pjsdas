@@ -18,6 +18,9 @@ export const MCP_TOOL_NAMES = {
   semanticIntake: 'semantic_intake',
   semanticDecision: 'resolve_semantic_decision',
   semanticUndo: 'undo_semantic_command',
+  reminderIntents: 'list_reminder_intents',
+  externalCapabilities: 'get_external_capabilities',
+  paiaIntake: 'ingest_paia_input',
   discoveryIngestion: 'ingest_discovery_run',
   gmailIngestion: 'ingest_gmail_run',
   proposeChanges: 'propose_changes',
@@ -30,6 +33,8 @@ export const AUTHENTICATED_MCP_BASE_RELEASE_REQUIRED_TOOLS = [
   MCP_TOOL_NAMES.opportunityDetail,
   MCP_TOOL_NAMES.coverageStatus,
   MCP_TOOL_NAMES.workspaceIntegrity,
+  MCP_TOOL_NAMES.reminderIntents,
+  MCP_TOOL_NAMES.externalCapabilities,
   MCP_TOOL_NAMES.explicitOpportunityWrite,
   MCP_TOOL_NAMES.discoveryIngestion,
   MCP_TOOL_NAMES.gmailIngestion,
@@ -45,6 +50,9 @@ export const AUTHENTICATED_MCP_TRANSACTIONAL_RELEASE_REQUIRED_TOOLS = [
   MCP_TOOL_NAMES.semanticIntake,
   MCP_TOOL_NAMES.semanticDecision,
   MCP_TOOL_NAMES.semanticUndo,
+  MCP_TOOL_NAMES.reminderIntents,
+  MCP_TOOL_NAMES.externalCapabilities,
+  MCP_TOOL_NAMES.paiaIntake,
   MCP_TOOL_NAMES.discoveryIngestion,
   MCP_TOOL_NAMES.gmailIngestion,
 ] as const
@@ -55,4 +63,4 @@ export function authenticatedMcpReleaseRequiredTools(authority: WorkspaceAuthori
     : [...AUTHENTICATED_MCP_BASE_RELEASE_REQUIRED_TOOLS]
 }
 
-export const AUTHENTICATED_MCP_TOOL_SURFACE_VERSION = 'v6' as const
+export const AUTHENTICATED_MCP_TOOL_SURFACE_VERSION = 'v7' as const

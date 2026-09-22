@@ -19,9 +19,14 @@ import type {
   ScheduleNode,
   ScheduleNodeTemporal,
   TimelineRecord,
+  ReminderChannel,
+  ReminderDeliveryOwner,
+  ReminderPurpose,
+  ExternalCapabilityState,
 } from './model.js'
 import type { PJSDASSnapshot } from './snapshot.js'
 import { upgradeSnapshotToLatest, validateSnapshot } from './snapshot.js'
+import { buildReminderIntent, reminderCapabilityForOwner, reminderDedupeKey, resolveReminderTrigger } from './reminders.js'
 import {
   ensureScheduleContractInPlace,
   latestScheduleOccurrence,
@@ -66,6 +71,18 @@ export type UserDomainCommand =
   | { commandId: string; kind: 'abandon_opportunity'; opportunityId: string; occurredAt?: string }
   | { commandId: string; kind: 'correct_opportunity_fact'; opportunityId: string; field: UserFactField; value: string }
   | { commandId: string; kind: 'set_opportunity_preference'; opportunityId: string; roleType: OpportunityRole }
+  | {
+      commandId: string
+      kind: 'upsert_reminder_intent'
+      scheduleNodeId: string
+      purpose: ReminderPurpose
+      triggerAt?: string
+      offsetMinutesBefore?: number
+      deliveryOwner?: ReminderDeliveryOwner
+      channel?: ReminderChannel
+      capabilityStates?: Partial<Record<'chatgpt_tasks' | 'google_calendar', ExternalCapabilityState>>
+    }
+  | { commandId: string; kind: 'cancel_reminder_intent'; reminderIntentId: string }
   | {
       commandId: string
       kind: 'add_manual_action'
@@ -615,6 +632,142 @@ export function applyUserDomainCommand(
     }
   }
 
+  if (command.kind === 'upsert_reminder_intent') {
+    const node = (next.data.scheduleNodes ?? []).find((item) => item.id === command.scheduleNodeId)
+    if (!node) throw new Error(`ScheduleNode ${command.scheduleNodeId} was not found.`)
+    if (['completed', 'cancelled', 'superseded'].includes(node.state)) {
+      return {
+        status: 'NEEDS_CONFIRMATION',
+        snapshot,
+        reason: 'REMINDER_TARGET_INACTIVE',
+        summary: 'The reminder target is no longer an active schedule node.',
+      }
+    }
+    const triggerAt = resolveReminderTrigger(node, {
+      triggerAt: command.triggerAt,
+      offsetMinutesBefore: command.offsetMinutesBefore,
+      purpose: command.purpose,
+    })
+    const dedupeKey = reminderDedupeKey(node, command.purpose)
+    const previous = next.data.reminderIntents?.find((item) => item.dedupeKey === dedupeKey)
+    const previousReminder = previous ? structuredClone(previous) : undefined
+    const previousOutbox = (next.data.reminderOutbox ?? [])
+      .filter((item) => item.reminderIntentId === previous?.id)
+      .map((item) => structuredClone(item))
+    const built = buildReminderIntent({
+      node,
+      purpose: command.purpose,
+      triggerAt,
+      deliveryOwner: command.deliveryOwner,
+      channel: command.channel,
+      capabilityStates: command.capabilityStates,
+      existing: previous,
+      now: timestamp,
+    })
+    if (previous
+      && previous.triggerAt === built.reminder.triggerAt
+      && previous.deliveryOwner === built.reminder.deliveryOwner
+      && previous.channel === built.reminder.channel
+      && previous.state === built.reminder.state
+      && previous.capability === built.reminder.capability) {
+      return { status: 'ALREADY_APPLIED', snapshot, summary: 'The same reminder intent is already recorded.' }
+    }
+    next.data.reminderIntents = [
+      ...(next.data.reminderIntents ?? []).filter((item) => item.id !== built.reminder.id),
+      built.reminder,
+    ]
+    next.data.reminderOutbox = (next.data.reminderOutbox ?? []).filter((item) => item.reminderIntentId !== built.reminder.id)
+    if (built.outbox) next.data.reminderOutbox.push(built.outbox)
+    appendTimeline(next, {
+      id: `timeline:command:${stableHash(command.commandId)}`,
+      kind: 'semantic_intake_applied',
+      category: 'action',
+      source: 'user_action',
+      occurredAt: timestamp,
+      recordedAt: timestamp,
+      title: built.reminder.state === 'unsupported' ? '提醒已记录，但外部渠道不可用' : '提醒已记录',
+      detail: `${built.reminder.purpose} · ${built.reminder.triggerAt} · owner=${built.reminder.deliveryOwner}`,
+      opportunityId: node.opportunityId,
+      scheduleNodeId: node.id,
+      reminderIntentId: built.reminder.id,
+    }, command)
+    finalizeSnapshot(next, timestamp)
+    return {
+      status: 'APPLIED',
+      snapshot: next,
+      summary: built.reminder.state === 'unsupported'
+        ? `Reminder intent recorded, but ${built.reminder.capability} is not currently available to PJSDAS.`
+        : 'Reminder intent recorded with one delivery owner.',
+      compensation: {
+        operation: 'restore_reminder_intent',
+        payload: { reminderIntentId: built.reminder.id, previousReminder, previousOutbox },
+      },
+    }
+  }
+
+  if (command.kind === 'cancel_reminder_intent') {
+    const target = next.data.reminderIntents?.find((item) => item.id === command.reminderIntentId)
+    if (!target) throw new Error(`ReminderIntent ${command.reminderIntentId} was not found.`)
+    if (target.state === 'cancelled') {
+      return { status: 'ALREADY_APPLIED', snapshot, summary: 'The reminder intent is already cancelled.' }
+    }
+    const previousReminder = structuredClone(target)
+    const previousOutbox = (next.data.reminderOutbox ?? [])
+      .filter((item) => item.reminderIntentId === target.id)
+      .map((item) => structuredClone(item))
+    target.state = 'cancelled'
+    target.updatedAt = timestamp
+    if (target.externalLink) {
+      target.externalLink.state = 'cancelled'
+      target.externalLink.lastReceiptAt = undefined
+    }
+    next.data.reminderOutbox = (next.data.reminderOutbox ?? []).filter((item) => item.reminderIntentId !== target.id)
+    const capability = reminderCapabilityForOwner(target.deliveryOwner)
+    if (capability) {
+      const capabilityState = command.kind === 'cancel_reminder_intent'
+        ? (target.externalLink?.lastErrorCode?.startsWith('CAPABILITY_')
+          ? target.externalLink.lastErrorCode.slice('CAPABILITY_'.length).toLowerCase()
+          : undefined)
+        : undefined
+      next.data.reminderOutbox.push({
+        id: `reminder-outbox:${stableHash(`${target.id}|cancel|${timestamp}`)}`,
+        reminderIntentId: target.id,
+        operation: 'cancel',
+        capability,
+        state: capabilityState === 'unsupported' || capabilityState === 'not_authorized' ? 'unsupported' : 'pending',
+        attemptCount: 0,
+        payloadFingerprint: stableHash(`${target.id}|cancel|${capability}`),
+        receiptCode: capabilityState === 'unsupported' || capabilityState === 'not_authorized'
+          ? `CAPABILITY_${capabilityState.toUpperCase()}`
+          : undefined,
+        createdAt: timestamp,
+        updatedAt: timestamp,
+      })
+    }
+    appendTimeline(next, {
+      id: `timeline:command:${stableHash(command.commandId)}`,
+      kind: 'semantic_intake_applied',
+      category: 'action',
+      source: 'user_action',
+      occurredAt: timestamp,
+      recordedAt: timestamp,
+      title: '提醒已取消',
+      detail: target.purpose,
+      scheduleNodeId: target.scheduleNodeId,
+      reminderIntentId: target.id,
+    }, command)
+    finalizeSnapshot(next, timestamp)
+    return {
+      status: 'APPLIED',
+      snapshot: next,
+      summary: 'Reminder intent cancelled; this does not complete or cancel the recruiting schedule node.',
+      compensation: {
+        operation: 'restore_reminder_intent',
+        payload: { reminderIntentId: target.id, previousReminder, previousOutbox },
+      },
+    }
+  }
+
   if (command.kind === 'abandon_opportunity') {
     const target = opportunity(next, command.opportunityId)
     if (!target) throw new Error(`Opportunity ${command.opportunityId} was not found.`)
@@ -830,6 +983,11 @@ export function applyDomainCompensation(
         node.updatedAt = timestamp
       }
     }
+  } else if (compensation.operation === 'restore_reminder_intent') {
+    next.data.reminderIntents = (next.data.reminderIntents ?? []).filter((item) => item.id !== payload.reminderIntentId)
+    if (payload.previousReminder) next.data.reminderIntents.push(structuredClone(payload.previousReminder))
+    next.data.reminderOutbox = (next.data.reminderOutbox ?? []).filter((item) => item.reminderIntentId !== payload.reminderIntentId)
+    for (const record of payload.previousOutbox ?? []) next.data.reminderOutbox!.push(structuredClone(record))
   } else if (compensation.operation === 'restore_occurrence_completion') {
     const current = latestScheduleOccurrence(next.data.scheduleNodes ?? [], payload.occurrenceId)
     if (current && payload.node) Object.assign(current, structuredClone(payload.node))

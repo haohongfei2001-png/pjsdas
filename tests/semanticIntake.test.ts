@@ -305,6 +305,108 @@ describe('UU-02 source-neutral Semantic Intake', () => {
     expect(replay.snapshot.data.semanticReceipts).toHaveLength(1)
   })
 
+  it('creates one ReminderIntent from a ScheduleNode and keeps PJSDAS as the single internal delivery owner', () => {
+    const result = applySemanticIntake(
+      snapshot(),
+      observation([candidate('reminder_intent', {
+        target: { opportunityId: 'opp-1', occurrenceKind: 'written_test' },
+        purpose: 'upcoming',
+        offsetMinutesBefore: 30,
+        deliveryOwner: 'pjsdas',
+        channel: 'in_product',
+      })], {
+        inputId: 'semantic-reminder-0001',
+        statementMode: 'current_intent',
+      }),
+      { authorized: true, now: new Date('2026-09-20T10:00:00.000Z') },
+    )
+    expect(result.status).toBe('APPLIED')
+    expect(result.snapshot.data.reminderIntents).toHaveLength(1)
+    expect(result.snapshot.data.reminderIntents?.[0]).toMatchObject({
+      purpose: 'upcoming',
+      triggerAt: '2026-09-22T01:30:00.000Z',
+      deliveryOwner: 'pjsdas',
+      channel: 'in_product',
+      state: 'active',
+    })
+    expect(result.snapshot.data.reminderOutbox).toEqual([])
+    expect(result.receipt?.affectedObjects.some((item) => item.type === 'reminder_intent')).toBe(true)
+  })
+
+  it('records unsupported external reminder delivery truthfully instead of pretending a Task exists', () => {
+    const result = applySemanticIntake(
+      snapshot(),
+      observation([candidate('reminder_intent', {
+        target: { opportunityId: 'opp-1', occurrenceKind: 'written_test' },
+        purpose: 'prep',
+        offsetMinutesBefore: 120,
+        deliveryOwner: 'external_task',
+        channel: 'task',
+      })], {
+        inputId: 'semantic-reminder-0002',
+        statementMode: 'current_intent',
+      }),
+      {
+        authorized: true,
+        now: new Date('2026-09-20T10:00:00.000Z'),
+        externalCapabilities: { chatgpt_tasks: 'unsupported', google_calendar: 'unsupported' },
+      },
+    )
+    expect(result.status).toBe('APPLIED')
+    expect(result.snapshot.data.reminderIntents?.[0]).toMatchObject({
+      deliveryOwner: 'external_task',
+      capability: 'chatgpt_tasks',
+      state: 'unsupported',
+      externalLink: { capability: 'chatgpt_tasks', state: 'failed', lastErrorCode: 'CAPABILITY_UNSUPPORTED' },
+    })
+    expect(result.snapshot.data.reminderOutbox?.[0]).toMatchObject({
+      capability: 'chatgpt_tasks',
+      state: 'unsupported',
+      receiptCode: 'CAPABILITY_UNSUPPORTED',
+    })
+  })
+
+  it('deduplicates the same semantic fact across current-chat MCP and PAIA while retaining both source receipts', () => {
+    const first = applySemanticIntake(
+      snapshot(),
+      observation([candidate('abandon_opportunity')], {
+        inputId: 'semantic-cross-source-mcp',
+        source: {
+          kind: 'mcp',
+          sourceId: 'chatgpt-current',
+          sourceRecordId: 'message-cross-1',
+          sourceVersion: 'v1',
+          observedAt: '2026-09-20T10:00:00.000Z',
+          assertedAt: '2026-09-20T10:00:00.000Z',
+          timezone: 'Asia/Shanghai',
+        },
+      }),
+      { authorized: true, now: new Date('2026-09-20T10:00:00.000Z') },
+    )
+    const second = applySemanticIntake(
+      first.snapshot,
+      observation([candidate('abandon_opportunity')], {
+        inputId: 'semantic-cross-source-paia',
+        source: {
+          kind: 'paia',
+          sourceId: 'paia:owner-input',
+          sourceRecordId: 'input-cross-1',
+          sourceVersion: 'v1',
+          observedAt: '2026-09-20T10:01:00.000Z',
+          assertedAt: '2026-09-20T10:00:00.000Z',
+          timezone: 'Asia/Shanghai',
+        },
+      }),
+      { authorized: true, now: new Date('2026-09-20T10:01:00.000Z') },
+    )
+    expect(second.status).toBe('APPLIED')
+    expect(second.snapshot.data.semanticReceipts).toHaveLength(2)
+    expect(second.snapshot.data.semanticReceipts?.every((receipt) => receipt.factKeys?.length === 1)).toBe(true)
+    expect(second.snapshot.data.timeline?.filter((item) => item.commandOperation === 'abandon_opportunity')).toHaveLength(1)
+    expect(second.snapshot.data.opportunities[0]).toMatchObject({ participationStatus: 'abandoned' })
+    expect(second.receipt?.undoAvailable).toBe(false)
+  })
+
   it('compensates a latest semantic completion at field/object level', () => {
     const applied = applySemanticIntake(
       snapshot(),

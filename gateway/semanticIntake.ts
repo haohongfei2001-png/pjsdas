@@ -6,7 +6,7 @@ import {
   resolveSemanticDecision,
   type SemanticBatchCompensation,
 } from '../src/semanticIntake.js'
-import type { SemanticIntakeObservation, SemanticIntakeSourceRef } from '../src/model.js'
+import type { ExternalCapabilityId, ExternalCapabilityState, SemanticIntakeObservation, SemanticIntakeSourceRef } from '../src/model.js'
 import { requireWritableWorkspaceSource, WorkspaceSourceError, type WorkspaceSource } from './workspaceSource.js'
 
 const isoString = z.string().trim().min(1).max(100).refine(
@@ -27,6 +27,7 @@ const target = z.object({
   occurrenceId: z.string().trim().min(1).max(320).optional(),
   scheduleNodeId: z.string().trim().min(1).max(320).optional(),
   occurrenceKind: scheduleKind.optional(),
+  reminderIntentId: z.string().trim().min(1).max(320).optional(),
 }).strict()
 
 const temporal = z.object({
@@ -85,6 +86,20 @@ const candidate = z.discriminatedUnion('kind', [
     duePrecision: precision.optional(),
     estimatedMinutes: z.number().int().min(5).max(720).optional(),
   }).strict(),
+  z.object({
+    ...baseCandidate,
+    kind: z.literal('reminder_intent'),
+    purpose: z.enum(['upcoming', 'deadline', 'prep', 'follow_up', 'custom']),
+    triggerAt: isoString.optional(),
+    offsetMinutesBefore: z.number().int().min(0).max(43200).optional(),
+    deliveryOwner: z.enum(['pjsdas', 'external_task', 'external_calendar']).optional(),
+    channel: z.enum(['in_product', 'task', 'calendar']).optional(),
+  }).strict(),
+  z.object({
+    ...baseCandidate,
+    kind: z.literal('reminder_cancelled'),
+    purpose: z.enum(['upcoming', 'deadline', 'prep', 'follow_up', 'custom']).optional(),
+  }).strict(),
   z.object({ ...baseCandidate, kind: z.literal('external_withdrawal') }).strict(),
 ])
 
@@ -109,6 +124,15 @@ export const semanticIntakeSchema = z.object({
   contextRefs: z.array(z.string().trim().min(1).max(500)).max(20).optional(),
   candidates: z.array(candidate).max(12),
 }).strict()
+
+export const paiaIntakeSchema = semanticIntakeSchema.superRefine((value, context) => {
+  if (value.source.kind !== 'paia') {
+    context.addIssue({ code: 'custom', path: ['source', 'kind'], message: 'PAIA intake requires source.kind=paia.' })
+  }
+  if (!value.source.sourceId.startsWith('paia:')) {
+    context.addIssue({ code: 'custom', path: ['source', 'sourceId'], message: 'PAIA sourceId must use the paia: namespace.' })
+  }
+})
 
 export const resolveSemanticDecisionSchema = z.object({
   requestId: z.string().trim().min(1).max(240),
@@ -163,6 +187,7 @@ export async function invokeSemanticIntake(
   rawArgs: unknown,
   options: {
     authorize?: (source: SemanticIntakeSourceRef) => Promise<void>
+    externalCapabilities?: Partial<Record<ExternalCapabilityId, ExternalCapabilityState>>
   } = {},
 ): Promise<CallToolResult> {
   try {
@@ -173,6 +198,7 @@ export async function invokeSemanticIntake(
       authorized: true,
       workspaceRevision: workspace.context.workspaceVersion,
       now: workspace.context.now,
+      externalCapabilities: options.externalCapabilities,
     })
 
     if (!evaluated.changed) {
@@ -226,9 +252,28 @@ export async function invokeSemanticIntake(
   }
 }
 
+export async function invokePaiaIntake(
+  workspaceSource: WorkspaceSource,
+  rawArgs: unknown,
+  options: {
+    authorize?: (source: SemanticIntakeSourceRef) => Promise<void>
+    externalCapabilities?: Partial<Record<ExternalCapabilityId, ExternalCapabilityState>>
+  } = {},
+): Promise<CallToolResult> {
+  try {
+    const parsed = paiaIntakeSchema.parse(rawArgs)
+    return invokeSemanticIntake(workspaceSource, parsed, options)
+  } catch (caught) {
+    return failure(caught)
+  }
+}
+
 export async function invokeResolveSemanticDecision(
   workspaceSource: WorkspaceSource,
   rawArgs: unknown,
+  options: {
+    externalCapabilities?: Partial<Record<ExternalCapabilityId, ExternalCapabilityState>>
+  } = {},
 ): Promise<CallToolResult> {
   try {
     const parsed = resolveSemanticDecisionSchema.parse(rawArgs)
@@ -238,6 +283,7 @@ export async function invokeResolveSemanticDecision(
       parsed.requestId,
       parsed.choiceId,
       workspace.context.now,
+      { externalCapabilities: options.externalCapabilities },
     )
     if (!evaluated.changed) {
       return success({

@@ -4,7 +4,7 @@ import health, { currentWorkspaceAuthority, PUBLIC_HEALTH_CAPABILITIES } from '.
 const RELEASE_SHA = '1234567890abcdef1234567890abcdef12345678'
 
 describe('public production health contract', () => {
-  it('describes the authenticated v1.9 trusted-ingestion gateway without exposing demo data or secrets', async () => {
+  it('describes the authenticated v1.10 UU-07 integration gateway without exposing demo data or secrets', async () => {
     const response = health.fetch(
       new Request('https://standby.example/api/health'),
       { PJSDAS_RELEASE_COMMIT_SHA: RELEASE_SHA },
@@ -16,7 +16,7 @@ describe('public production health contract', () => {
     const body = await response.json() as Record<string, any>
     expect(body).toMatchObject({
       service: 'pjsdas-authenticated-mcp',
-      version: '1.9.0-alpha.1',
+      version: '1.10.0-alpha.1',
       mode: 'google-drive-trusted-ingestion',
       workspaceAuthority: 'google-drive',
       topology: {
@@ -82,7 +82,7 @@ describe('public production health contract', () => {
     expect(body.capabilities.canonicalOriginPolicy).toBe('v1')
     expect(body.capabilities.controlledAudience).toBe('v1')
     expect(body.capabilities.connectedOriginMigration).toBe('v1')
-    expect(body.authenticatedMcp.toolSurfaceVersion).toBe('v6')
+    expect(body.authenticatedMcp.toolSurfaceVersion).toBe('v7')
     expect(body.authenticatedMcp.releaseRequiredTools).toContain('get_today_brief')
     expect(body.authenticatedMcp.releaseRequiredTools).toContain('get_opportunity_detail')
     expect(body.authenticatedMcp.releaseRequiredTools).not.toContain('apply_user_command')

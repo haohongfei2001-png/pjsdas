@@ -85,7 +85,7 @@ test('390x844 shows a complete next action and at least one upcoming recruiting 
     }
 
     await new Promise<void>((resolve, reject) => {
-      const request = indexedDB.open('pjsdas', 10)
+      const request = indexedDB.open('pjsdas', 11)
       request.onerror = () => reject(request.error)
       request.onsuccess = () => {
         const db = request.result

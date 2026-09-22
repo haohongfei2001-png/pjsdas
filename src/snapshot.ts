@@ -13,6 +13,8 @@ import type {
   ProcessRecord,
   ScheduleNode,
   SemanticIntakeReceipt,
+  ReminderIntent,
+  ReminderOutboxRecord,
   TimelineRecord,
 } from './model.js'
 import { validateDecisionRules, type DecisionRules } from './decisionRules.js'
@@ -23,10 +25,12 @@ import { validateJobPostingEvidence } from './jobPosting.js'
 import { validateOpportunityAssessment } from './opportunityAssessment.js'
 import { validateOpportunityFacts } from './richOpportunity.js'
 import { ensureScheduleContractInPlace, validateScheduleNode } from './scheduleNodes.js'
+import { validateReminderIntent, validateReminderOutbox } from './reminders.js'
 
 export const SNAPSHOT_SCHEMA = 'pjsdas-local-snapshot' as const
-export const SNAPSHOT_VERSION = 3 as const
-export const PREVIOUS_SNAPSHOT_VERSION = 2 as const
+export const SNAPSHOT_VERSION = 4 as const
+export const PREVIOUS_SNAPSHOT_VERSION = 3 as const
+export const SCHEDULE_SNAPSHOT_VERSION = 2 as const
 export const LEGACY_SNAPSHOT_VERSION = 1 as const
 
 export interface SnapshotData {
@@ -37,6 +41,8 @@ export interface SnapshotData {
   scheduleNodes?: ScheduleNode[]
   decisionRequests?: DecisionRequest[]
   semanticReceipts?: SemanticIntakeReceipt[]
+  reminderIntents?: ReminderIntent[]
+  reminderOutbox?: ReminderOutboxRecord[]
   prep: Prep[]
   applicationGroups: ApplicationGroup[]
   decisionRules?: DecisionRules
@@ -49,7 +55,7 @@ export interface SnapshotData {
 
 export interface PJSDASSnapshot {
   schema: typeof SNAPSHOT_SCHEMA
-  version: typeof LEGACY_SNAPSHOT_VERSION | typeof PREVIOUS_SNAPSHOT_VERSION | typeof SNAPSHOT_VERSION
+  version: typeof LEGACY_SNAPSHOT_VERSION | typeof SCHEDULE_SNAPSHOT_VERSION | typeof PREVIOUS_SNAPSHOT_VERSION | typeof SNAPSHOT_VERSION
   exportedAt: string
   data: SnapshotData
 }
@@ -130,6 +136,8 @@ export function createSnapshot(data: SnapshotData, exportedAt = new Date().toISO
   ensureScheduleContractInPlace(normalized)
   normalized.decisionRequests ??= []
   normalized.semanticReceipts ??= []
+  normalized.reminderIntents ??= []
+  normalized.reminderOutbox ??= []
   const snapshot: PJSDASSnapshot = {
     schema: SNAPSHOT_SCHEMA,
     version: SNAPSHOT_VERSION,
@@ -145,6 +153,8 @@ export function upgradeSnapshotToLatest(snapshot: PJSDASSnapshot): PJSDASSnapsho
   ensureScheduleContractInPlace(next.data)
   next.data.decisionRequests ??= []
   next.data.semanticReceipts ??= []
+  next.data.reminderIntents ??= []
+  next.data.reminderOutbox ??= []
   next.version = SNAPSHOT_VERSION
   validateSnapshot(next)
   return next
@@ -155,6 +165,7 @@ export function validateSnapshot(value: unknown): asserts value is PJSDASSnapsho
   if (value.schema !== SNAPSHOT_SCHEMA) throw new Error('这不是 PJSDAS 本地备份。')
   if (
     value.version !== LEGACY_SNAPSHOT_VERSION
+    && value.version !== SCHEDULE_SNAPSHOT_VERSION
     && value.version !== PREVIOUS_SNAPSHOT_VERSION
     && value.version !== SNAPSHOT_VERSION
   ) {
@@ -171,11 +182,16 @@ export function validateSnapshot(value: unknown): asserts value is PJSDASSnapsho
   if (data.scheduleNodes !== undefined) assertArray(data.scheduleNodes, 'scheduleNodes')
   if (data.decisionRequests !== undefined) assertArray(data.decisionRequests, 'decisionRequests')
   if (data.semanticReceipts !== undefined) assertArray(data.semanticReceipts, 'semanticReceipts')
-  if (value.version >= PREVIOUS_SNAPSHOT_VERSION && data.scheduleNodes === undefined) {
+  if (data.reminderIntents !== undefined) assertArray(data.reminderIntents, 'reminderIntents')
+  if (data.reminderOutbox !== undefined) assertArray(data.reminderOutbox, 'reminderOutbox')
+  if (value.version >= SCHEDULE_SNAPSHOT_VERSION && data.scheduleNodes === undefined) {
     throw new Error('备份损坏：v2+ 缺少 scheduleNodes。')
   }
-  if (value.version === SNAPSHOT_VERSION && (data.decisionRequests === undefined || data.semanticReceipts === undefined)) {
-    throw new Error('备份损坏：v3 缺少 DecisionRequest / SemanticReceipt 数据。')
+  if (value.version >= PREVIOUS_SNAPSHOT_VERSION && (data.decisionRequests === undefined || data.semanticReceipts === undefined)) {
+    throw new Error('备份损坏：v3+ 缺少 DecisionRequest / SemanticReceipt 数据。')
+  }
+  if (value.version === SNAPSHOT_VERSION && (data.reminderIntents === undefined || data.reminderOutbox === undefined)) {
+    throw new Error('备份损坏：v4 缺少 ReminderIntent / reminderOutbox 数据。')
   }
   assertArray(data.prep, 'prep')
   assertArray(data.applicationGroups, 'applicationGroups')
@@ -200,6 +216,8 @@ export function validateSnapshot(value: unknown): asserts value is PJSDASSnapsho
   const scheduleNodeIds = data.scheduleNodes ? assertUniqueIds(data.scheduleNodes, 'Schedule Node') : new Set<string>()
   const decisionRequestIds = data.decisionRequests ? assertUniqueIds(data.decisionRequests, 'Decision Request') : new Set<string>()
   const semanticReceiptIds = data.semanticReceipts ? assertUniqueIds(data.semanticReceipts, 'Semantic Receipt') : new Set<string>()
+  const reminderIntentIds = data.reminderIntents ? assertUniqueIds(data.reminderIntents, 'Reminder Intent') : new Set<string>()
+  const reminderOutboxIds = data.reminderOutbox ? assertUniqueIds(data.reminderOutbox, 'Reminder Outbox') : new Set<string>()
   const prepIds = assertUniqueIds(data.prep, 'Prep')
   const groupIds = assertUniqueIds(data.applicationGroups, 'Application Group')
   if (data.discoveryInbox) assertUniqueIds(data.discoveryInbox, 'Discovery Inbox')
@@ -210,6 +228,7 @@ export function validateSnapshot(value: unknown): asserts value is PJSDASSnapsho
   void scheduleNodeIds
   void decisionRequestIds
   void semanticReceiptIds
+  void reminderOutboxIds
 
   for (const raw of data.discoveryInbox ?? []) {
     const item = raw as DiscoveryInboxItem
@@ -254,7 +273,7 @@ export function validateSnapshot(value: unknown): asserts value is PJSDASSnapsho
     if (process.opportunityId && !opportunityIds.has(process.opportunityId)) {
       throw new Error(`备份损坏：流程 ${process.id} 引用了不存在的岗位 ${process.opportunityId}。`)
     }
-    if (value.version >= PREVIOUS_SNAPSHOT_VERSION) {
+    if (value.version >= SCHEDULE_SNAPSHOT_VERSION) {
       if (!process.progress || !processProgress.has(process.progress)) throw new Error(`备份损坏：流程 ${process.id} 缺少正交 progress。`)
       if (!process.result || !processResults.has(process.result)) throw new Error(`备份损坏：流程 ${process.id} 缺少正交 result。`)
       if (!process.participationState || !processParticipation.has(process.participationState)) throw new Error(`备份损坏：流程 ${process.id} 缺少 participationState。`)
@@ -285,6 +304,25 @@ export function validateSnapshot(value: unknown): asserts value is PJSDASSnapsho
       if (node.processEventId && !eventIds.has(node.processEventId) && node.state !== 'cancelled' && node.state !== 'superseded') {
         throw new Error(`备份损坏：ScheduleNode ${node.id} 引用了不存在的流程事件 ${node.processEventId}。`)
       }
+    }
+  }
+
+  if (data.reminderIntents) {
+    const dedupeKeys = new Set<string>()
+    for (const raw of data.reminderIntents) {
+      const reminder = raw as ReminderIntent
+      const errors = validateReminderIntent(reminder, scheduleNodeIds)
+      if (errors.length) throw new Error(`备份损坏：ReminderIntent ${reminder.id} 无效（${errors[0]}）`)
+      if (dedupeKeys.has(reminder.dedupeKey)) throw new Error(`备份损坏：ReminderIntent dedupeKey 重复（${reminder.dedupeKey}）。`)
+      dedupeKeys.add(reminder.dedupeKey)
+    }
+  }
+
+  if (data.reminderOutbox) {
+    for (const raw of data.reminderOutbox) {
+      const record = raw as ReminderOutboxRecord
+      const errors = validateReminderOutbox(record, reminderIntentIds)
+      if (errors.length) throw new Error(`备份损坏：ReminderOutbox ${record.id} 无效（${errors[0]}）`)
     }
   }
 

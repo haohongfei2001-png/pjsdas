@@ -1,5 +1,5 @@
 import { exportLocalSnapshot, replaceLocalSnapshotFromCloud } from '../db.js'
-import { LEGACY_SNAPSHOT_VERSION, PREVIOUS_SNAPSHOT_VERSION, SNAPSHOT_VERSION, validateSnapshot } from '../snapshot.js'
+import { LEGACY_SNAPSHOT_VERSION, PREVIOUS_SNAPSHOT_VERSION, SCHEDULE_SNAPSHOT_VERSION, SNAPSHOT_VERSION, validateSnapshot } from '../snapshot.js'
 import {
   bindLocalWorkspaceToUser,
   getAccountCheckpoint,
@@ -31,7 +31,7 @@ export interface CloudSyncOutcome {
 }
 
 async function verifyRemote(row: RemoteWorkspaceRow) {
-  if (![LEGACY_SNAPSHOT_VERSION, PREVIOUS_SNAPSHOT_VERSION, SNAPSHOT_VERSION].includes(row.schemaVersion as 1 | 2 | 3)) {
+  if (![LEGACY_SNAPSHOT_VERSION, SCHEDULE_SNAPSHOT_VERSION, PREVIOUS_SNAPSHOT_VERSION, SNAPSHOT_VERSION].includes(row.schemaVersion as 1 | 2 | 3 | 4)) {
     throw new Error(`不支持的工作区 schema v${row.schemaVersion}。`)
   }
   validateSnapshot(row.snapshot)

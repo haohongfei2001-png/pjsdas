@@ -40,7 +40,7 @@ async function seedOpportunities(page: Page, opportunities: ReturnType<typeof so
   await page.goto('/')
   await page.evaluate(async (items) => {
     await new Promise<void>((resolve, reject) => {
-      const request = indexedDB.open('pjsdas', 10)
+      const request = indexedDB.open('pjsdas', 11)
       request.onerror = () => reject(request.error)
       request.onsuccess = () => {
         const db = request.result
@@ -68,7 +68,7 @@ async function readMutationState(page: Page) {
     semanticReceipts: Array<{ id: string; status: string }>
     changeSets: Array<{ id: string; status: string; operations: unknown[] }>
   }>((resolve, reject) => {
-    const request = indexedDB.open('pjsdas', 10)
+    const request = indexedDB.open('pjsdas', 11)
     request.onerror = () => reject(request.error)
     request.onsuccess = () => {
       const db = request.result

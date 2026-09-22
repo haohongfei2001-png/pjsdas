@@ -4,13 +4,13 @@ import { runProductionSelfTest } from '../gateway/productionSelfTest.js'
 const BASE_URL = 'https://example.test'
 const METADATA_URL = `${BASE_URL}/.well-known/oauth-protected-resource`
 const RELEASE_SHA = '1234567890abcdef1234567890abcdef12345678'
-const DRIVE_REQUIRED_TOOLS = ['get_today_brief', 'get_opportunity_detail', 'get_coverage_status', 'get_workspace_integrity', 'add_opportunities', 'ingest_discovery_run', 'ingest_gmail_run']
-const TRANSACTIONAL_REQUIRED_TOOLS = ['get_today_brief', 'get_opportunity_detail', 'get_coverage_status', 'get_workspace_integrity', 'add_opportunities', 'apply_user_command', 'semantic_intake', 'resolve_semantic_decision', 'undo_semantic_command', 'ingest_discovery_run', 'ingest_gmail_run']
+const DRIVE_REQUIRED_TOOLS = ['get_today_brief', 'get_opportunity_detail', 'get_coverage_status', 'get_workspace_integrity', 'list_reminder_intents', 'get_external_capabilities', 'add_opportunities', 'ingest_discovery_run', 'ingest_gmail_run']
+const TRANSACTIONAL_REQUIRED_TOOLS = ['get_today_brief', 'get_opportunity_detail', 'get_coverage_status', 'get_workspace_integrity', 'add_opportunities', 'apply_user_command', 'semantic_intake', 'resolve_semantic_decision', 'undo_semantic_command', 'list_reminder_intents', 'get_external_capabilities', 'ingest_paia_input', 'ingest_discovery_run', 'ingest_gmail_run']
 
 function health() {
   return {
     service: 'pjsdas-authenticated-mcp',
-    version: '1.9.0-alpha.1',
+    version: '1.10.0-alpha.1',
     mode: 'google-drive-trusted-ingestion',
     workspaceAuthority: 'google-drive',
     topology: {
@@ -28,11 +28,11 @@ function health() {
       migrationSetHash: 'sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
       schemaCompatibility: {
         snapshotSchema: 'pjsdas-local-snapshot',
-        snapshotVersion: 3,
+        snapshotVersion: 4,
       },
     },
     authenticatedMcp: {
-      toolSurfaceVersion: 'v6',
+      toolSurfaceVersion: 'v7',
       releaseRequiredTools: DRIVE_REQUIRED_TOOLS,
     },
     status: 'ok',
@@ -69,6 +69,10 @@ function health() {
       decisionRequests: 'v1',
       semanticCompensatingUndo: 'v1',
       semanticServerWritePolicy: 'v1',
+      paiaOwnerIntake: 'v1',
+      reminderIntent: 'v1',
+      externalReminderCapabilityTruth: 'v1',
+      crossSourceSemanticDedupe: 'v1',
       todayBriefReadModel: 'v1',
       todayAgendaReadModel: 'v1',
       opportunityDecisionReadModel: 'v1',
@@ -194,7 +198,7 @@ describe('production self-test', () => {
       expectedMcpContractHash: 'sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
       expectedMigrationSetHash: 'sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
       expectedSnapshotSchema: 'pjsdas-local-snapshot',
-      expectedSnapshotVersion: 3,
+      expectedSnapshotVersion: 4,
       fetchImpl,
     })
     expect(result.ok).toBe(true)
