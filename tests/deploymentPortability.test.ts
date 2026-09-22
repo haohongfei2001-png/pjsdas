@@ -29,7 +29,7 @@ describe('deployment portability', () => {
     expect(health.status).toBe(200)
     await expect(health.json()).resolves.toMatchObject({
       status: 'ok',
-      version: '1.9.0-alpha.1',
+      version: '1.10.0-alpha.1',
       resource: 'https://standby.example/api/mcp',
       release: { commitSha: RELEASE_SHA },
       capabilities: { releaseIdentityBinding: true },
