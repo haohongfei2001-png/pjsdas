@@ -15,7 +15,7 @@ Product origin: `https://todayaction.com`
 | UU-03 | **COMPLETE** | Revision-bound TodayBrief / agenda / latest-start read model implemented and production-verified |
 | UU-04 | **COMPLETE** | Final two-destination Web shell / Today implemented and production-verified |
 | UU-05 | **COMPLETE** | Shared opportunity decisions / conclusion-first detail and date-only regression closed on main; production verified |
-| UU-06 | **IN_PROGRESS** | Push runtime merged/deployed at main@0fcfdef; watch schema production migration 20260921120615 applied; Push/GCP/env activation NOT_CONFIGURED, Gmail cron still hourly, live SLO not certified |
+| UU-06 | **IN_PROGRESS** | Owner selected 10-minute polling production mode (OA-06); Push remains dormant optional infrastructure; polling candidate not yet deployed, Gmail cron still hourly, live polling canary pending |
 | UU-07 | NOT_READY | Depends on shared intake/read models |
 | UU-08 | NOT_READY | Depends on platform-neutral contracts |
 | UU-09 | NOT_READY | Final canary/release |
@@ -344,11 +344,10 @@ NULL-consent users. Gmail cadence remains `5 * * * *`; Discovery is unchanged.
 The execution-control flag remains default-off/unactivated. Prior 072b intake evidence
 remains [historical deployment evidence](evidence/UU-06-runtime-072b2fe.md).
 
-Next: complete the owner-authorized Gmail Push candidate review/deployment path,
-verify the existing Google Cloud project's billing boundary without any paid upgrade,
-configure only the minimum Pub/Sub topic/subscription/IAM, and obtain timing evidence
-only from a legitimately opted-in live workload. Candidate PR #104 remains NOT_DEPLOYED
-until its gates and deployment ordering complete. The linked Supabase organization plan is verified **free**, but actual
+Next: deploy OA-06 polling-only owner mode, activate fenced execution by default,
+apply the 10-minute Gmail scheduler migration, then obtain live evidence only after
+the owner completes the explicit first-party Gmail intake opt-in. Push/PubSub/Billing
+are not UU-06 acceptance dependencies for the owner deployment. The linked Supabase organization plan is verified **free**, but actual
 usage/quota and other backend cost headroom remain unknown. Hourly polling does not
 meet p95 <2-minute / <=15-minute compensation requirements; zero live opt-in means
 there is no certified workload. This checkpoint does not complete UU-06 or its
