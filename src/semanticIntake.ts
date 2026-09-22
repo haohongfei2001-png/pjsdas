@@ -415,6 +415,7 @@ function resolvedTarget(candidate: SemanticCandidate, resolution?: SemanticResol
       ...(candidate.target ?? {}),
       ...(resolution.opportunityId ? { opportunityId: resolution.opportunityId } : {}),
       ...(resolution.occurrenceId ? { occurrenceId: resolution.occurrenceId } : {}),
+      ...(resolution.reminderIntentId ? { reminderIntentId: resolution.reminderIntentId } : {}),
     },
     ...(resolution.confirm ? {
       objectConfidence: 'high' as SemanticConfidence,
@@ -584,6 +585,20 @@ function applyCandidate(
     opportunity = resolved.opportunity
   }
 
+  if (candidate.kind === 'reminder_intent' && candidate.triggerAt === undefined && candidate.offsetMinutesBefore === undefined) {
+    return {
+      status: 'decision',
+      snapshot,
+      reason: 'missing_required_field',
+      summary: 'Reminder intent needs an exact trigger time or an offset from a datetime ScheduleNode.',
+      choices: [
+        { id: 'ignore', label: 'Do not create reminder', consequence: 'Keep reminder state unchanged.', resolution: { dismiss: true } },
+        { id: 'clarify', label: 'Clarify reminder timing', consequence: 'Provide an exact time or offset.', resolution: { dismiss: true } },
+      ],
+      affected: [{ type: 'source', id: sourceEvidence(observation) }],
+    }
+  }
+
   let occurrence: ScheduleNode | undefined
   if (candidate.kind === 'occurrence_completed' || candidate.kind === 'occurrence_cancelled' || candidate.kind === 'occurrence_rescheduled' || candidate.kind === 'reminder_intent') {
     const resolved = occurrenceResolution(snapshot, candidate, opportunity)
@@ -616,10 +631,25 @@ function applyCandidate(
       : undefined
   }
 
+  if (candidate.kind === 'reminder_intent' && candidate.offsetMinutesBefore !== undefined && occurrence?.temporal.precision !== 'datetime') {
+    return {
+      status: 'decision',
+      snapshot,
+      reason: 'missing_required_field',
+      summary: 'A relative reminder offset requires an exact datetime ScheduleNode; PJSDAS will not invent a clock time.',
+      choices: [
+        { id: 'ignore', label: 'Do not create reminder', consequence: 'Keep reminder state unchanged.', resolution: { dismiss: true } },
+        { id: 'clarify', label: 'Provide exact reminder time', consequence: 'Use an explicit datetime reminder trigger.', resolution: { dismiss: true } },
+      ],
+      affected: occurrence ? [{ type: 'schedule_node', id: occurrence.id }] : [{ type: 'source', id: sourceEvidence(observation) }],
+    }
+  }
+
   let reminderIntent: ReminderIntent | undefined
   if (candidate.kind === 'reminder_cancelled') {
-    const direct = candidate.target?.reminderIntentId
-      ? (snapshot.data.reminderIntents ?? []).find((item) => item.id === candidate.target!.reminderIntentId)
+    const requestedReminderId = resolution?.reminderIntentId ?? candidate.target?.reminderIntentId
+    const direct = requestedReminderId
+      ? (snapshot.data.reminderIntents ?? []).find((item) => item.id === requestedReminderId)
       : undefined
     let matches = direct ? [direct] : (snapshot.data.reminderIntents ?? []).filter((item) =>
       item.state !== 'cancelled'
@@ -636,11 +666,18 @@ function applyCandidate(
         snapshot,
         reason: 'missing_required_field',
         summary: matches.length > 1 ? 'Several reminder intents match this cancellation.' : 'No active reminder intent matches this cancellation.',
-        choices: [
-          { id: 'ignore', label: 'Do not cancel', consequence: 'Keep reminder state unchanged.', resolution: { dismiss: true } },
-          { id: 'clarify', label: 'Clarify the reminder', consequence: 'Provide the exact reminder intent.', resolution: { dismiss: true } },
-        ],
-        affected: matches.slice(0, 4).map((item) => ({ type: 'source' as const, id: item.id })),
+        choices: matches.length > 1
+          ? matches.slice(0, 4).map((item) => ({
+              id: `reminder:${item.id}`,
+              label: `${item.purpose} · ${item.triggerAt}`,
+              consequence: 'Only this ReminderIntent will be cancelled; the ScheduleNode remains unchanged.',
+              resolution: { reminderIntentId: item.id },
+            }))
+          : [
+              { id: 'ignore', label: 'Do not cancel', consequence: 'Keep reminder state unchanged.', resolution: { dismiss: true } },
+              { id: 'clarify', label: 'Clarify the reminder', consequence: 'Provide the exact reminder intent.', resolution: { dismiss: true } },
+            ],
+        affected: matches.slice(0, 4).map((item) => ({ type: 'reminder_intent' as const, id: item.id })),
       }
     }
     reminderIntent = matches[0]
@@ -983,6 +1020,7 @@ export function resolveSemanticDecision(
   requestId: string,
   choiceId: string,
   now = new Date(),
+  policy: Pick<SemanticWritePolicyContext, 'externalCapabilities'> = {},
 ): SemanticDecisionResult {
   const base = upgradeSnapshotToLatest(snapshot)
   const request = (base.data.decisionRequests ?? []).find((item) => item.id === requestId)
@@ -1044,7 +1082,7 @@ export function resolveSemanticDecision(
     statementMode: request.payloadBinding.statementMode,
     candidates: [resolvedTarget(request.payloadBinding.candidate, choice.resolution)],
   }
-  const applied = applyCandidate(base, observation, observation.candidates[0]!, now, choice.resolution)
+  const applied = applyCandidate(base, observation, observation.candidates[0]!, now, choice.resolution, policy.externalCapabilities ?? {})
   if (applied.status === 'decision') {
     request.state = 'open'
     request.answerChoiceId = undefined
