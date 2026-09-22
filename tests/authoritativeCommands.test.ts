@@ -158,7 +158,7 @@ function harness() {
   }
 }
 
-function statusCommand(commandId: string, actionId: string, status: 'todo' | 'in_progress' | 'done') {
+function statusCommand(commandId: string, actionId: string, status: 'todo' | 'doing' | 'done') {
   return {
     commandId,
     command: {
@@ -203,7 +203,7 @@ describe('CGR-01 authoritative command executor', () => {
   it('fails closed with concrete object conflict when the same object changed', async () => {
     const h = harness()
     await h.executor.execute(h.principal, { ...statusCommand('cmd-action-0001', 'action-1', 'done'), baseRevision: 1 })
-    const conflict = await h.executor.execute(h.principal, { ...statusCommand('cmd-action-0002', 'action-1', 'in_progress'), baseRevision: 1 })
+    const conflict = await h.executor.execute(h.principal, { ...statusCommand('cmd-action-0002', 'action-1', 'doing'), baseRevision: 1 })
     expect(conflict).toMatchObject({
       outcome: 'CONFLICT',
       revision: 2,
@@ -238,7 +238,7 @@ describe('CGR-01 authoritative command executor', () => {
   it('refuses Undo when a later mutation depends on the same object', async () => {
     const h = harness()
     await h.executor.execute(h.principal, { ...statusCommand('cmd-action-0001', 'action-1', 'done'), baseRevision: 1 })
-    await h.executor.execute(h.principal, { ...statusCommand('cmd-action-0002', 'action-1', 'in_progress'), baseRevision: 2 })
+    await h.executor.execute(h.principal, { ...statusCommand('cmd-action-0002', 'action-1', 'doing'), baseRevision: 2 })
     const undone = await h.executor.undo(h.principal, {
       commandId: 'cmd-undo-0001',
       targetCommandId: 'cmd-action-0001',
@@ -252,6 +252,6 @@ describe('CGR-01 authoritative command executor', () => {
       },
     })
     expect(h.ledger).toHaveLength(2)
-    expect(h.state().current.data.actions.find((item) => item.id === 'action-1')?.status).toBe('in_progress')
+    expect(h.state().current.data.actions.find((item) => item.id === 'action-1')?.status).toBe('doing')
   })
 })
