@@ -63,6 +63,8 @@ import type {
   ScheduleNode,
   ScheduleNodeState,
   SemanticIntakeReceipt,
+  ReminderIntent,
+  ReminderOutboxRecord,
   TimelineCategory,
   TimelineRecord,
 } from './model.js'
@@ -94,6 +96,16 @@ interface PJSDASDatabase extends DBSchema {
     value: SemanticIntakeReceipt
     indexes: { 'by-input-id': string; 'by-updated-at': string }
   }
+  reminderIntents: {
+    key: string
+    value: ReminderIntent
+    indexes: { 'by-schedule-node': string; 'by-state': string; 'by-dedupe-key': string }
+  }
+  reminderOutbox: {
+    key: string
+    value: ReminderOutboxRecord
+    indexes: { 'by-intent': string; 'by-state': string }
+  }
   actions: {
     key: string
     value: Action
@@ -124,6 +136,8 @@ const DATA_STORES = [
   'scheduleNodes',
   'decisionRequests',
   'semanticReceipts',
+  'reminderIntents',
+  'reminderOutbox',
   'actions',
   'prep',
   'applicationGroups',
@@ -135,7 +149,7 @@ const DATA_STORES = [
   'meta',
 ] as const
 
-export const dbPromise = openDB<PJSDASDatabase>('pjsdas', 10, {
+export const dbPromise = openDB<PJSDASDatabase>('pjsdas', 11, {
   upgrade(db) {
     if (!db.objectStoreNames.contains('opportunities')) {
       db.createObjectStore('opportunities', { keyPath: 'id' })
@@ -163,6 +177,17 @@ export const dbPromise = openDB<PJSDASDatabase>('pjsdas', 10, {
       const store = db.createObjectStore('semanticReceipts', { keyPath: 'id' })
       store.createIndex('by-input-id', 'inputId')
       store.createIndex('by-updated-at', 'updatedAt')
+    }
+    if (!db.objectStoreNames.contains('reminderIntents')) {
+      const store = db.createObjectStore('reminderIntents', { keyPath: 'id' })
+      store.createIndex('by-schedule-node', 'scheduleNodeId')
+      store.createIndex('by-state', 'state')
+      store.createIndex('by-dedupe-key', 'dedupeKey', { unique: true })
+    }
+    if (!db.objectStoreNames.contains('reminderOutbox')) {
+      const store = db.createObjectStore('reminderOutbox', { keyPath: 'id' })
+      store.createIndex('by-intent', 'reminderIntentId')
+      store.createIndex('by-state', 'state')
     }
     if (!db.objectStoreNames.contains('actions')) {
       const store = db.createObjectStore('actions', { keyPath: 'id' })
@@ -281,6 +306,16 @@ export async function getAllDecisionRequests() {
 
 export async function getAllSemanticReceipts() {
   const records = await (await dbPromise).getAll('semanticReceipts')
+  return records.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+}
+
+export async function getAllReminderIntents() {
+  const records = await (await dbPromise).getAll('reminderIntents')
+  return records.sort((a, b) => a.triggerAt.localeCompare(b.triggerAt) || a.id.localeCompare(b.id))
+}
+
+export async function getAllReminderOutbox() {
+  const records = await (await dbPromise).getAll('reminderOutbox')
   return records.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
 }
 
@@ -900,7 +935,7 @@ export async function exportLocalSnapshot() {
   const db = await dbPromise
   await ensureTimelineBackfill(db)
   await ensureLocalScheduleBackfill(db)
-  const [opportunities, processes, processEvents, scheduleNodes, decisionRequests, semanticReceipts, actions, prep, applicationGroups, decisionRules, discoveryProfile, discoveryInbox, timeline, changeSets, meta] =
+  const [opportunities, processes, processEvents, scheduleNodes, decisionRequests, semanticReceipts, reminderIntents, reminderOutbox, actions, prep, applicationGroups, decisionRules, discoveryProfile, discoveryInbox, timeline, changeSets, meta] =
     await Promise.all([
       db.getAll('opportunities'),
       db.getAll('processes'),
@@ -908,6 +943,8 @@ export async function exportLocalSnapshot() {
       db.getAll('scheduleNodes'),
       db.getAll('decisionRequests'),
       db.getAll('semanticReceipts'),
+      db.getAll('reminderIntents'),
+      db.getAll('reminderOutbox'),
       db.getAll('actions'),
       db.getAll('prep'),
       db.getAll('applicationGroups'),
@@ -926,6 +963,8 @@ export async function exportLocalSnapshot() {
     scheduleNodes,
     decisionRequests,
     semanticReceipts,
+    reminderIntents,
+    reminderOutbox,
     actions,
     prep,
     applicationGroups,
@@ -952,6 +991,8 @@ export async function replaceLocalSnapshotFromCloud(snapshot: PJSDASSnapshot) {
   for (const item of latest.data.scheduleNodes ?? []) await tx.objectStore('scheduleNodes').put(item)
   for (const item of latest.data.decisionRequests ?? []) await tx.objectStore('decisionRequests').put(item)
   for (const item of latest.data.semanticReceipts ?? []) await tx.objectStore('semanticReceipts').put(item)
+  for (const item of latest.data.reminderIntents ?? []) await tx.objectStore('reminderIntents').put(item)
+  for (const item of latest.data.reminderOutbox ?? []) await tx.objectStore('reminderOutbox').put(item)
   for (const item of latest.data.actions) await tx.objectStore('actions').put(item)
   for (const item of latest.data.prep) await tx.objectStore('prep').put(item)
   for (const item of latest.data.applicationGroups) await tx.objectStore('applicationGroups').put(item)
@@ -979,6 +1020,8 @@ export async function restoreLocalSnapshot(snapshot: PJSDASSnapshot) {
   for (const item of latest.data.scheduleNodes ?? []) await tx.objectStore('scheduleNodes').put(item)
   for (const item of latest.data.decisionRequests ?? []) await tx.objectStore('decisionRequests').put(item)
   for (const item of latest.data.semanticReceipts ?? []) await tx.objectStore('semanticReceipts').put(item)
+  for (const item of latest.data.reminderIntents ?? []) await tx.objectStore('reminderIntents').put(item)
+  for (const item of latest.data.reminderOutbox ?? []) await tx.objectStore('reminderOutbox').put(item)
   for (const item of latest.data.actions) await tx.objectStore('actions').put(item)
   for (const item of latest.data.prep) await tx.objectStore('prep').put(item)
   for (const item of latest.data.applicationGroups) await tx.objectStore('applicationGroups').put(item)
