@@ -35,6 +35,7 @@ import { assertCloudSignOutAllowed } from './cloudOperationGuard.js'
 import { connectedWorkspaceAuthorityEnabled } from './connectedWorkspaceRepository.js'
 import { clearLocalWorkspaceCache } from '../db.js'
 import { replayAccountPendingOperations } from './authoritativeCommandClient.js'
+import { enforceConnectedAccountCacheBoundary } from './accountCacheBoundary.js'
 
 interface CloudContextValue {
   configured: boolean
@@ -82,10 +83,12 @@ export function CloudProvider({ children }: { children: ReactNode }) {
     if (connectedWorkspaceAuthorityEnabled()) {
       const owner = getCloudDeviceState().workspaceOwnerUserId
       const nextUserId = next?.user.id
-      if (owner && owner !== nextUserId) {
-        await clearLocalWorkspaceCache()
-        clearLocalWorkspaceBinding()
-      }
+      await enforceConnectedAccountCacheBoundary(
+        owner,
+        nextUserId,
+        clearLocalWorkspaceCache,
+        clearLocalWorkspaceBinding,
+      )
     }
     applySession(next)
     if (next && connectedWorkspaceAuthorityEnabled()) {
