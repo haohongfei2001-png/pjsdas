@@ -593,6 +593,7 @@ export interface TimelineRecord {
   processEventId?: string
   scheduleNodeId?: string
   decisionRequestId?: string
+  reminderIntentId?: string
   changeSetId?: string
   commandId?: string
   commandOperation?: string
