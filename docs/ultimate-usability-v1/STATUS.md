@@ -1,5 +1,7 @@
 # PJSDAS Ultimate Usability v1 — Canonical Status
 
+> Execution handoff — 2026-09-23: product development after UU-07 is governed by docs/consumer-grade-refoundation-v1/. UU-08 and UU-09 are not authorized execution targets while that package is active. Completed UU rounds remain historical implementation/evidence, and preserved invariants remain binding where the new package says so.
+
 Package: `PJSDAS-ULTIMATE-USABILITY-v1`  
 Blueprint version: `1.0`  
 Last revalidated baseline before registration: `main@bf0643eda139125868a9c697b81ff5ac5288a4f4`  
@@ -17,8 +19,8 @@ Product origin: `https://todayaction.com`
 | UU-05 | **COMPLETE** | Shared opportunity decisions / conclusion-first detail and date-only regression closed on main; production verified |
 | UU-06 | **COMPLETE** | OA-06 10-minute Gmail polling production-verified: explicit uu06-v1 consent, 90-day archive-inclusive backfill complete, durable history cursor established, replay no-write safety verified, final live canary passed on main@a0dd190 |
 | UU-07 | **COMPLETE** | Shared PAIA/current-chat intake, ReminderIntent/outbox, cross-source dedupe and truthful external capabilities; exact-main CI/browser/deploy/production self-test passed at 01665c8 |
-| UU-08 | **READY — NOT_STARTED** | UU-07 dependency closed; owner explicitly limits this execution to UU-07 |
-| UU-09 | NOT_READY | Final canary/release |
+| UU-08 | **HOLD — NOT_AUTHORIZED** | Superseded as the next execution path by PJSDAS-CONSUMER-GRADE-REFOUNDATION-v1; do not start without a later explicit owner reactivation after CGR-05 |
+| UU-09 | **HOLD — NOT_AUTHORIZED** | Historical Ultimate Usability release round; CGR-05 owns consumer-grade certification. Publication remains a separate owner decision |
 
 ## Revalidation findings
 
@@ -420,4 +422,22 @@ CI `35760141776`, Browser `35760141848`, deployment `35760141869`, Production Se
 
 External Tasks/Calendar remain truthfully unsupported; a concrete PAIA client is not silently granted access or activated. No claim of live end-to-end PAIA background ingestion is made by this contract closure.
 
-UU-08 is READY but **NOT_STARTED**. The owner explicitly authorized UU-07 closure only. Stop; no UU-08/UU-09 work or release publication.
+UU-08 remains **NOT_STARTED** and is now **PAUSED — SUPERSEDED FOR EXECUTION ORDER** by `PJSDAS-CONSUMER-GRADE-REFOUNDATION-v1`. Do not start UU-08/UU-09. Reconsideration requires CGR-05 completion plus a new owner authorization; release publication remains separate.
+
+
+## Consumer-Grade Refoundation handoff — 2026-09-23
+
+The owner registered `PJSDAS-CONSUMER-GRADE-REFOUNDATION-v1` after a design-intent and
+consumer-grade implementation audit.
+
+This does not invalidate completed UU-00 through UU-07 domain/transactional evidence. It changes
+forward execution order because historical completion/testing does not by itself prove the overall
+consumer product baseline.
+
+Canonical forward package: `docs/consumer-grade-refoundation-v1/`.
+
+- CGR-00: COMPLETE — DESIGN REGISTERED.
+- CGR-01: READY — NOT_STARTED; requires a new explicit execution instruction.
+- UU-08 / UU-09: PAUSED for execution order; do not auto-start.
+- No runtime, schema, permission, production-data or release-publication change is authorized by this
+  registration.
