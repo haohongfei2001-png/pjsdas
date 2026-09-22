@@ -19,6 +19,7 @@ import {
   executeConnectedBusinessCommand,
   listAccountPendingOperations,
   readAccountDraft,
+  replayAccountPendingOperations,
   saveAccountDraft,
 } from '../src/cloud/authoritativeCommandClient.js'
 import { upgradeSnapshotToLatest, type PJSDASSnapshot } from '../src/snapshot.js'
@@ -136,11 +137,9 @@ describe('CGR-01 account-scoped connected command client', () => {
       { commandId, status: 'unknown' },
     ])
 
-    const recovered = await executeConnectedBusinessCommand('account-a', command, {
-      commandId,
-      baseRevision: 7,
-    })
-    expect(recovered).toMatchObject({
+    const replayed = await replayAccountPendingOperations('account-a')
+    expect(replayed).toHaveLength(1)
+    expect(replayed[0]).toMatchObject({
       outcome: 'ALREADY_APPLIED',
       revision: 8,
       receipt: { receiptId: 'command-receipt:web-action:lost-0001' },
