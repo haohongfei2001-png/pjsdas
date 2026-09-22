@@ -66,19 +66,15 @@ The production order is deliberately fail-closed:
 6. Production Self-Test must confirm `/api/automation-settings` and `/api/automation-gmail` exist and reject unauthenticated requests.
 7. Only then enable the scheduler.
 
-The original production scheduler was hourly. UU-06 replaces that as the
-normal-delivery design with authenticated Gmail Push plus a bounded compensation
-poll. See [GMAIL_PUSH.md](GMAIL_PUSH.md).
+The original production scheduler was hourly. OA-06 selects a 10-minute scheduled
+incremental history poll as the owner deployment's normal production delivery mode.
+Authenticated Gmail Push remains optional dormant infrastructure; see
+[GMAIL_PUSH.md](GMAIL_PUSH.md).
 
-The compensation scheduler remains a call to the same existing
-`/api/automation-gmail` worker and preserves its Vault bearer identity, history
-cursor, idempotency and workspace mutation path. Its target cadence is ten
-minutes, which is below the frozen <=15 minute lost-push recovery ceiling.
-
-A separate daily worker renews Gmail `users.watch` registrations. Push/watch
-infrastructure must not be represented as live until the matching backend,
-database migration, Google Cloud topic/subscription/IAM and real canary are all
-verified.
+The production scheduler calls the same existing `/api/automation-gmail` worker
+and preserves its Vault bearer identity, history cursor, idempotency and workspace
+mutation path. Its target cadence is ten minutes. No daily users.watch renewal is
+scheduled in owner polling mode.
 
 Never enable or accelerate a scheduler before the matching worker endpoint is
 live and production-verified.

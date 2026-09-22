@@ -96,3 +96,30 @@ Daily UI must not require the user to understand those names. Default product vo
 - schedule / next action;
 - needs your decision;
 - history/settings only when needed.
+
+
+## OA-06 — Owner Gmail production delivery is 10-minute polling
+
+For the owner deployment, the Ultimate Usability v1 production Gmail delivery mode is
+**scheduled incremental Gmail history polling every 10 minutes**.
+
+This overrides the base blueprint's push-first target only for the owner deployment and
+for UU-06 release gating.
+
+Constraints:
+
+- Gmail OAuth remains `gmail.readonly`;
+- explicit `uu06-v1` consent is still required before the 90-day archive-inclusive
+  first-use backfill and structured recruiting extraction are enabled;
+- the existing history cursor, complete-consumption continuation, Semantic Intake,
+  lease/fencing, CAS, idempotency and receipts remain authoritative;
+- the production scheduler interval is 10 minutes;
+- no Google Cloud Billing account, Pub/Sub topic/subscription, push service account or
+  push IAM configuration is required for Ultimate Usability v1 acceptance;
+- the already-implemented Gmail Push path remains dormant optional infrastructure and
+  must fail closed unless a later owner decision explicitly selects Push mode;
+- the prior normal-path p95 <2 minute / lost-push <=15 minute gate does not apply to
+  this owner deployment. The owner acceptance gate is truthful 10-minute scheduled
+  incremental intake plus bounded live evidence that normal scheduled processing works
+  without duplicate, stale-regression or coverage failures;
+- this amendment does not authorize UU-07 or any external recruiting action.

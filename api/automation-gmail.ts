@@ -6,13 +6,15 @@ import {
   PJSDAS_SUPABASE_URL,
 } from '../gateway/supabaseProject.js'
 
+const gmailDeliveryMode = process.env.PJSDAS_GMAIL_DELIVERY_MODE?.trim() === 'push' ? 'push' as const : 'polling' as const
+
 const automationHandler = createGmailAutomationHandler({
   supabaseUrl: PJSDAS_SUPABASE_URL,
   supabasePublishableKey: PJSDAS_SUPABASE_PUBLISHABLE_KEY,
   tokenEncryptionKey: process.env.PJSDAS_TOKEN_ENCRYPTION_KEY ?? '',
   googleClientId: process.env.PJSDAS_GOOGLE_CLIENT_ID ?? '',
   googleClientSecret: process.env.PJSDAS_GOOGLE_CLIENT_SECRET ?? '',
-  executionControlsEnabled: process.env.PJSDAS_GMAIL_EXECUTION_CONTROLS === 'true',
+  executionControlsEnabled: process.env.PJSDAS_GMAIL_EXECUTION_CONTROLS !== 'false',
 })
 
 const watchHandler = createGmailWatchHandler({
@@ -22,6 +24,7 @@ const watchHandler = createGmailWatchHandler({
   googleClientId: process.env.PJSDAS_GOOGLE_CLIENT_ID ?? '',
   googleClientSecret: process.env.PJSDAS_GOOGLE_CLIENT_SECRET ?? '',
   topicName: process.env.PJSDAS_GMAIL_PUBSUB_TOPIC ?? '',
+  deliveryMode: gmailDeliveryMode,
 })
 
 const pushHandler = createGmailPushHandler({
@@ -31,7 +34,8 @@ const pushHandler = createGmailPushHandler({
   expectedAudience: process.env.PJSDAS_GMAIL_PUSH_AUDIENCE ?? '',
   expectedServiceAccountEmail: process.env.PJSDAS_GMAIL_PUSH_SERVICE_ACCOUNT_EMAIL ?? '',
   expectedSubscription: process.env.PJSDAS_GMAIL_PUBSUB_SUBSCRIPTION ?? '',
-  executionControlsEnabled: process.env.PJSDAS_GMAIL_EXECUTION_CONTROLS === 'true',
+  deliveryMode: gmailDeliveryMode,
+  executionControlsEnabled: process.env.PJSDAS_GMAIL_EXECUTION_CONTROLS !== 'false',
 })
 
 export const gmailAutomationApi = { fetch: automationHandler }

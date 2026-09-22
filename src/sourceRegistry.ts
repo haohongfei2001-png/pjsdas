@@ -27,7 +27,7 @@ export const PJSDAS_BOOTSTRAP_SOURCE_REGISTRY: RegisteredIngestionSource[] = [
   { sourceKind: 'gpt_monitor', sourceId: 'monitor:state-foreign-2027', enabled: true, label: '央国企外企27届秋招', cadenceMinutes: 1440, freshnessSlaMinutes: 2160, policySource: 'bootstrap' },
   { sourceKind: 'gpt_monitor', sourceId: 'monitor:middle-layer', enabled: true, label: '高匹配中间层校招岗位', cadenceMinutes: 1440, freshnessSlaMinutes: 2160, policySource: 'bootstrap' },
   { sourceKind: 'gpt_monitor', sourceId: 'monitor:key-changes', enabled: true, label: '秋招岗位关键变化', cadenceMinutes: 1440, freshnessSlaMinutes: 2160, policySource: 'bootstrap' },
-  { sourceKind: 'gmail', sourceId: 'gmail:primary', enabled: true, label: '招聘邮件自动摄入', cadenceMinutes: 60, freshnessSlaMinutes: 120, policySource: 'bootstrap' },
+  { sourceKind: 'gmail', sourceId: 'gmail:primary', enabled: true, label: '招聘邮件自动摄入', cadenceMinutes: 10, freshnessSlaMinutes: 20, policySource: 'bootstrap' },
 ]
 
 function sourceKey(sourceKind: IngestionSourceKind, sourceId: string) {
@@ -35,7 +35,7 @@ function sourceKey(sourceKind: IngestionSourceKind, sourceId: string) {
 }
 
 function validMinutes(value: number) {
-  return Number.isInteger(value) && value >= 15 && value <= 60 * 24 * 30
+  return Number.isInteger(value) && value >= 10 && value <= 60 * 24 * 30
 }
 
 export function normalizeSourcePolicy(policy: IngestionSourcePolicy): IngestionSourcePolicy {

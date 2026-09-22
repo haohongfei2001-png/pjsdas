@@ -43,7 +43,7 @@ describe('run-backed ingestion Source Registry', () => {
   it('bootstraps legacy production sources before any policy-bearing run exists', () => {
     const registry = effectiveSourceRegistry([])
     expect(registry.filter((item) => item.enabled)).toHaveLength(5)
-    expect(registry.find((item) => item.sourceId === 'gmail:primary')?.freshnessSlaMinutes).toBe(120)
+    expect(registry.find((item) => item.sourceId === 'gmail:primary')).toMatchObject({ cadenceMinutes: 10, freshnessSlaMinutes: 20 })
   })
 
   it('persists a changed cadence/SLA in the latest ingestion run and production Coverage uses it', () => {
