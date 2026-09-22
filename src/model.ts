@@ -303,7 +303,7 @@ export interface DecisionRequestPayloadBinding {
 export interface DecisionRequest {
   id: string
   reason: DecisionRequestReason
-  affectedObjects: Array<{ type: 'opportunity' | 'schedule_node' | 'application_group' | 'source'; id: string }>
+  affectedObjects: Array<{ type: 'opportunity' | 'schedule_node' | 'application_group' | 'source' | 'reminder_intent'; id: string }>
   question: string
   choices: DecisionRequestChoice[]
   recommendedChoiceId?: string
