@@ -15,10 +15,21 @@ Product origin: `https://todayaction.com`
 | UU-03 | **COMPLETE** | Revision-bound TodayBrief / agenda / latest-start read model implemented and production-verified |
 | UU-04 | **COMPLETE** | Final two-destination Web shell / Today implemented and production-verified |
 | UU-05 | **COMPLETE** | Shared opportunity decisions / conclusion-first detail and date-only regression closed on main; production verified |
-| UU-06 | **IN_PROGRESS** | OA-06 polling runtime deployed; natural production cron executions at 09:10/09:20 UTC succeeded on */10; Push/watch dormant, zero Gmail opt-in; live mailbox canary pending |
+| UU-06 | **IN_PROGRESS** | Gmail API enabled; owner re-established uu06-v1 consent; PR #110 runtime main@42dd02d uses 40-message expanded slices; exact-main gates passed; 10:40 live 90-day backfill page succeeded 40/40 in 11.699s with continuation pending |
 | UU-07 | NOT_READY | Depends on shared intake/read models |
 | UU-08 | NOT_READY | Depends on platform-neutral contracts |
 | UU-09 | NOT_READY | Final canary/release |
+
+## Latest UU-06 production checkpoint — 2026-09-22
+
+- Owner deployment remains OA-06: Gmail polling every 10 minutes; Push/PubSub/Billing remain out of the release path.
+- Google Cloud project `pjsdas` now has Gmail API enabled; no Billing, Pub/Sub, IAM or OAuth-scope expansion was made.
+- The owner explicitly re-enabled recruiting-email tracking, restoring `gmail_intake_consent_version=uu06-v1`.
+- The first expanded 90-day run at 10:30 UTC hit the existing 15-second bounded execution ceiling and failed closed with `BUDGET_EXHAUSTED`; no cursor/continuation advanced.
+- PR #110 keeps the 15-second ceiling and slices only expanded UU-06 Gmail pages from 100 to 40 messages; legacy behavior remains 100.
+- Merged runtime `42dd02d22f0494ec1594a91ab56936842cf80d14` passed exact-main CI, Browser E2E, Deploy, Production Self-Test and disarmed Release workflow.
+- Natural 10:40 UTC production processing then succeeded: 40 received, 40 accounted, 8 unresolved, 11.699s duration. A fallback page token and pending history identity are persisted, so the bounded 90-day backfill is progressing without advancing the final history watermark early.
+- UU-06 remains **IN_PROGRESS** until the bounded backfill reaches a durable history cursor and subsequent incremental/deduplication/Today projection checks pass. UU-07 remains NOT_READY.
 
 ## Revalidation findings
 
