@@ -4,6 +4,9 @@ import type {
   DecisionRequest,
   DecisionRequestChoice,
   DecisionRequestReason,
+  ExternalCapabilityId,
+  ExternalCapabilityState,
+  ReminderIntent,
   Opportunity,
   ScheduleNode,
   SemanticCandidate,
@@ -15,12 +18,14 @@ import type {
   TimelineRecord,
 } from './model.js'
 import { latestScheduleOccurrence } from './scheduleNodes.js'
+import { reminderDedupeKey, resolveReminderTrigger } from './reminders.js'
 import { upgradeSnapshotToLatest, validateSnapshot, type PJSDASSnapshot } from './snapshot.js'
 
 export interface SemanticWritePolicyContext {
   authorized: boolean
   workspaceRevision?: string
   now?: Date
+  externalCapabilities?: Partial<Record<ExternalCapabilityId, ExternalCapabilityState>>
 }
 
 export interface SemanticBatchCompensation {
@@ -121,6 +126,77 @@ function existingReceipt(snapshot: PJSDASSnapshot, observation: SemanticIntakeOb
       && item.sourceRecordId === observation.source.sourceRecordId
       && (item.sourceVersion ?? '') === (observation.source.sourceVersion ?? '')
     ),
+  )
+}
+
+function normalInstant(value: string | undefined) {
+  if (!value) return ''
+  const time = Date.parse(value)
+  return Number.isFinite(time) ? new Date(time).toISOString() : value
+}
+
+export function semanticCandidateFactKey(snapshot: PJSDASSnapshot, candidate: SemanticCandidate) {
+  const resolvedOpportunity = candidate.target ? opportunityResolution(snapshot, candidate) : undefined
+  const opportunityId = resolvedOpportunity?.status === 'unique' ? resolvedOpportunity.opportunity.id : candidate.target?.opportunityId ?? ''
+  const resolvedOccurrence = candidate.target ? occurrenceResolution(snapshot, candidate,
+    resolvedOpportunity?.status === 'unique' ? resolvedOpportunity.opportunity : undefined) : undefined
+  const node = resolvedOccurrence?.status === 'unique' ? resolvedOccurrence.node : undefined
+  const occurrenceId = node?.occurrenceId ?? candidate.target?.occurrenceId ?? ''
+
+  if (candidate.kind === 'application_submitted') return `application_submitted|opp:${opportunityId}`
+  if (candidate.kind === 'opportunity_deadline') return `opportunity_deadline|opp:${opportunityId}|${candidate.precision}|${normalInstant(candidate.deadline)}`
+  if (candidate.kind === 'abandon_opportunity') return `abandon_opportunity|opp:${opportunityId}`
+  if (candidate.kind === 'occurrence_completed' || candidate.kind === 'occurrence_cancelled') {
+    return `${candidate.kind}|occurrence:${occurrenceId}`
+  }
+  if (candidate.kind === 'occurrence_rescheduled') {
+    return `occurrence_rescheduled|occurrence:${occurrenceId}|${JSON.stringify([
+      candidate.temporal.shape,
+      candidate.temporal.precision,
+      normalInstant(candidate.temporal.startAt),
+      normalInstant(candidate.temporal.endAt),
+      normalInstant(candidate.temporal.deadlineAt),
+      candidate.temporal.date ?? '',
+    ])}`
+  }
+  if (candidate.kind === 'process_event') {
+    return `process_event|opp:${opportunityId}|${candidate.eventType}|${JSON.stringify([
+      candidate.temporal?.shape ?? '',
+      candidate.temporal?.precision ?? candidate.duePrecision ?? '',
+      normalInstant(candidate.temporal?.startAt ?? candidate.dueAt),
+      normalInstant(candidate.temporal?.endAt),
+      normalInstant(candidate.temporal?.deadlineAt),
+      candidate.temporal?.date ?? '',
+    ])}`
+  }
+  if (candidate.kind === 'manual_action') {
+    return `manual_action|${candidate.title.trim().toLowerCase()}|${normalInstant(candidate.dueAt)}`
+  }
+  if (candidate.kind === 'reminder_intent') {
+    if (!node) return undefined
+    let trigger = ''
+    try {
+      trigger = resolveReminderTrigger(node, {
+        triggerAt: candidate.triggerAt,
+        offsetMinutesBefore: candidate.offsetMinutesBefore,
+        purpose: candidate.purpose,
+      })
+    } catch {
+      trigger = candidate.triggerAt ?? `offset:${candidate.offsetMinutesBefore ?? ''}`
+    }
+    return `reminder_intent|${reminderDedupeKey(node, candidate.purpose)}|${trigger}|${candidate.deliveryOwner ?? 'pjsdas'}`
+  }
+  if (candidate.kind === 'reminder_cancelled') {
+    return `reminder_cancelled|${candidate.target?.reminderIntentId ?? ''}|${occurrenceId}|${candidate.purpose ?? ''}`
+  }
+  if (candidate.kind === 'external_withdrawal') return `external_withdrawal|opp:${opportunityId}`
+  return undefined
+}
+
+function existingFactReceipt(snapshot: PJSDASSnapshot, factKey: string | undefined) {
+  if (!factKey) return undefined
+  return (snapshot.data.semanticReceipts ?? []).find((item) =>
+    item.status === 'committed' && item.factKeys?.includes(factKey),
   )
 }
 
@@ -296,7 +372,7 @@ function confidenceDecision(
   const low = candidate.objectConfidence !== 'high'
     || candidate.eventConfidence !== 'high'
     || (
-      ['opportunity_deadline', 'occurrence_rescheduled', 'process_event'].includes(candidate.kind)
+      ['opportunity_deadline', 'occurrence_rescheduled', 'process_event', 'reminder_intent'].includes(candidate.kind)
       && candidate.temporalConfidence !== undefined
       && candidate.temporalConfidence !== 'high'
     )
@@ -353,6 +429,8 @@ function toDomainCommand(
   candidate: SemanticCandidate,
   opportunity?: Opportunity,
   occurrence?: ScheduleNode,
+  reminderIntent?: ReminderIntent,
+  externalCapabilities: Partial<Record<ExternalCapabilityId, ExternalCapabilityState>> = {},
 ): UserDomainCommand {
   const commandId = `semantic:${observation.inputId}:${candidate.id}`
   if (candidate.kind === 'application_submitted') {
@@ -410,14 +488,40 @@ function toDomainCommand(
       estimatedMinutes: candidate.estimatedMinutes,
     }
   }
+  if (candidate.kind === 'reminder_intent') {
+    return {
+      commandId,
+      kind: 'upsert_reminder_intent',
+      scheduleNodeId: occurrence!.id,
+      purpose: candidate.purpose,
+      triggerAt: candidate.triggerAt,
+      offsetMinutesBefore: candidate.offsetMinutesBefore,
+      deliveryOwner: candidate.deliveryOwner,
+      channel: candidate.channel,
+      capabilityStates: externalCapabilities,
+    }
+  }
+  if (candidate.kind === 'reminder_cancelled') {
+    return {
+      commandId,
+      kind: 'cancel_reminder_intent',
+      reminderIntentId: reminderIntent!.id,
+    }
+  }
   throw new Error(`Candidate ${candidate.kind} does not map to an internal domain command.`)
 }
 
-function affectedFromDomain(command: UserDomainCommand, opportunity?: Opportunity, occurrence?: ScheduleNode): SemanticIntakeReceipt['affectedObjects'] {
+function affectedFromDomain(command: UserDomainCommand, opportunity?: Opportunity, occurrence?: ScheduleNode, snapshot?: PJSDASSnapshot): SemanticIntakeReceipt['affectedObjects'] {
   const affected: SemanticIntakeReceipt['affectedObjects'] = []
   if (opportunity) affected.push({ type: 'opportunity', id: opportunity.id })
   if (occurrence) affected.push({ type: 'schedule_node', id: occurrence.id })
   if (command.kind === 'set_action_status') affected.push({ type: 'action', id: command.actionId })
+  if (command.kind === 'upsert_reminder_intent' && snapshot) {
+    const reminder = (snapshot.data.reminderIntents ?? []).find((item) =>
+      item.scheduleNodeId === command.scheduleNodeId && item.purpose === command.purpose)
+    if (reminder) affected.push({ type: 'reminder_intent', id: reminder.id })
+  }
+  if (command.kind === 'cancel_reminder_intent') affected.push({ type: 'reminder_intent', id: command.reminderIntentId })
   return affected
 }
 
@@ -441,9 +545,12 @@ function applyCandidate(
   originalCandidate: SemanticCandidate,
   now: Date,
   resolution?: SemanticResolutionTarget,
+  externalCapabilities: Partial<Record<ExternalCapabilityId, ExternalCapabilityState>> = {},
 ): CandidateApplyResult {
   const candidate = resolvedTarget(originalCandidate, resolution)
   const opportunityNeeded = candidate.kind !== 'manual_action'
+    && candidate.kind !== 'reminder_intent'
+    && candidate.kind !== 'reminder_cancelled'
     && candidate.kind !== 'occurrence_completed'
     && candidate.kind !== 'occurrence_cancelled'
     && candidate.kind !== 'occurrence_rescheduled'
@@ -478,7 +585,7 @@ function applyCandidate(
   }
 
   let occurrence: ScheduleNode | undefined
-  if (candidate.kind === 'occurrence_completed' || candidate.kind === 'occurrence_cancelled' || candidate.kind === 'occurrence_rescheduled') {
+  if (candidate.kind === 'occurrence_completed' || candidate.kind === 'occurrence_cancelled' || candidate.kind === 'occurrence_rescheduled' || candidate.kind === 'reminder_intent') {
     const resolved = occurrenceResolution(snapshot, candidate, opportunity)
     if (resolved.status === 'ambiguous') {
       return {
@@ -509,9 +616,40 @@ function applyCandidate(
       : undefined
   }
 
+  let reminderIntent: ReminderIntent | undefined
+  if (candidate.kind === 'reminder_cancelled') {
+    const direct = candidate.target?.reminderIntentId
+      ? (snapshot.data.reminderIntents ?? []).find((item) => item.id === candidate.target!.reminderIntentId)
+      : undefined
+    let matches = direct ? [direct] : (snapshot.data.reminderIntents ?? []).filter((item) =>
+      item.state !== 'cancelled'
+      && (!candidate.purpose || item.purpose === candidate.purpose)
+      && (!candidate.target?.scheduleNodeId || item.scheduleNodeId === candidate.target.scheduleNodeId),
+    )
+    if (candidate.target?.occurrenceId) {
+      const occurrence = latestScheduleOccurrence(snapshot.data.scheduleNodes ?? [], candidate.target.occurrenceId)
+      if (occurrence) matches = matches.filter((item) => item.scheduleNodeId === occurrence.id)
+    }
+    if (matches.length !== 1) {
+      return {
+        status: 'decision',
+        snapshot,
+        reason: 'missing_required_field',
+        summary: matches.length > 1 ? 'Several reminder intents match this cancellation.' : 'No active reminder intent matches this cancellation.',
+        choices: [
+          { id: 'ignore', label: 'Do not cancel', consequence: 'Keep reminder state unchanged.', resolution: { dismiss: true } },
+          { id: 'clarify', label: 'Clarify the reminder', consequence: 'Provide the exact reminder intent.', resolution: { dismiss: true } },
+        ],
+        affected: matches.slice(0, 4).map((item) => ({ type: 'source' as const, id: item.id })),
+      }
+    }
+    reminderIntent = matches[0]
+  }
+
   const affected: DecisionRequest['affectedObjects'] = [
     ...(opportunity ? [{ type: 'opportunity' as const, id: opportunity.id }] : []),
     ...(occurrence ? [{ type: 'schedule_node' as const, id: occurrence.id }] : []),
+    ...(reminderIntent ? [{ type: 'reminder_intent' as const, id: reminderIntent.id }] : []),
   ]
   const confidence = confidenceDecision(observation, candidate, now.toISOString(), affected)
   if (confidence && !resolution?.confirm) {
@@ -597,7 +735,7 @@ function applyCandidate(
     }
   }
 
-  const command = toDomainCommand(observation, candidate, opportunity, occurrence)
+  const command = toDomainCommand(observation, candidate, opportunity, occurrence, reminderIntent, externalCapabilities)
   if (command.kind === 'record_application_submission' && resolution?.confirm) command.reactivateConfirmed = true
   const result = applyUserDomainCommand(snapshot, command, now)
   if (result.status === 'NEEDS_CONFIRMATION') {
@@ -615,7 +753,7 @@ function applyCandidate(
       status: 'already',
       snapshot: result.snapshot,
       summary: result.summary,
-      affected: affectedFromDomain(command, opportunity, occurrence),
+      affected: affectedFromDomain(command, opportunity, occurrence, result.snapshot),
     }
   }
   if (candidate.kind === 'process_event' && candidate.target?.occurrenceId) {
@@ -632,7 +770,7 @@ function applyCandidate(
     snapshot: result.snapshot,
     compensation: result.compensation,
     summary: result.summary,
-    affected: affectedFromDomain(command, opportunity, occurrence),
+    affected: affectedFromDomain(command, opportunity, occurrence, result.snapshot),
   }
 }
 
@@ -642,6 +780,7 @@ function receipt(input: {
   summary: string
   affectedObjects: SemanticIntakeReceipt['affectedObjects']
   decisionRequestIds: string[]
+  factKeys?: string[]
   undoAvailable: boolean
   now: string
   commandId?: string
@@ -658,6 +797,7 @@ function receipt(input: {
     summary: input.summary,
     affectedObjects: input.affectedObjects,
     decisionRequestIds: input.decisionRequestIds,
+    factKeys: input.factKeys?.length ? [...new Set(input.factKeys)] : undefined,
     undoAvailable: input.undoAvailable,
     createdAt: input.now,
     updatedAt: input.now,
@@ -747,9 +887,18 @@ export function applySemanticIntake(
   const domainCompensations: DomainCompensation[] = []
   const affectedObjects: SemanticIntakeReceipt['affectedObjects'] = []
   const summaries: string[] = []
+  const factKeys: string[] = []
 
   for (const candidate of observation.candidates) {
-    const applied = applyCandidate(working, observation, candidate, now)
+    const factKey = semanticCandidateFactKey(working, candidate)
+    const priorFact = existingFactReceipt(working, factKey)
+    if (priorFact && priorFact.sourceId !== observation.source.sourceId) {
+      summaries.push('Cross-source fact already recorded; source receipt retained without a second business mutation.')
+      affectedObjects.push(...priorFact.affectedObjects)
+      if (factKey) factKeys.push(factKey)
+      continue
+    }
+    const applied = applyCandidate(working, observation, candidate, now, undefined, policy.externalCapabilities ?? {})
     if (applied.status === 'decision') {
       const request = createDecisionRequest({
         observation,
@@ -767,6 +916,7 @@ export function applySemanticIntake(
     }
     working = applied.snapshot
     summaries.push(applied.summary)
+    if (factKey) factKeys.push(factKey)
     affectedObjects.push(...applied.affected)
     if (applied.status === 'applied' && applied.compensation) domainCompensations.push(applied.compensation)
   }
@@ -783,6 +933,7 @@ export function applySemanticIntake(
     summary,
     affectedObjects: [...new Map(affectedObjects.map((item) => [`${item.type}:${item.id}`, item])).values()],
     decisionRequestIds: decisions.map((item) => item.id),
+    factKeys,
     undoAvailable: domainCompensations.length > 0 || decisions.length > 0,
     now: timestamp,
     commandId: `semantic-intake:${observation.inputId}`,
@@ -909,6 +1060,7 @@ export function resolveSemanticDecision(
     summary: applied.summary,
     affectedObjects: applied.affected,
     decisionRequestIds: [request.id],
+    factKeys: [semanticCandidateFactKey(base, observation.candidates[0]!)].filter((item): item is string => Boolean(item)),
     undoAvailable: applied.status === 'applied' && Boolean(applied.compensation),
     now: timestamp,
     commandId: `semantic-decision:${request.id}:${choice.id}`,
