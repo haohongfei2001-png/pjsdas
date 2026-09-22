@@ -280,6 +280,7 @@ export type DecisionRequestState = 'open' | 'answered' | 'auto_resolved' | 'supe
 export interface SemanticResolutionTarget {
   opportunityId?: string
   occurrenceId?: string
+  reminderIntentId?: string
   confirm?: boolean
   dismiss?: boolean
 }
