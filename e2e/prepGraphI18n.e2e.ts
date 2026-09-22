@@ -28,7 +28,7 @@ test('Prep Graph keeps source facts but localizes system status and link explana
     }
 
     await new Promise<void>((resolve, reject) => {
-      const request = indexedDB.open('pjsdas', 10)
+      const request = indexedDB.open('pjsdas', 11)
       request.onerror = () => reject(request.error)
       request.onsuccess = () => {
         const db = request.result
