@@ -47,12 +47,29 @@ export async function runControlledGmailExecutions(config: GmailAutomationHandle
             ensureBudget(); await store.assertGmailExecution(binding.userId, executionToken); ensureBudget()
           } },
         })
-        ensureBudget()
-        await store.finishGmailExecution(binding.userId, executionToken, {
-          ...(run.coverageComplete && run.nextHistoryId ? { historyId: run.nextHistoryId } : {}),
-          continuation: run.coverageComplete ? null : run.continuation,
-          ...(run.coverageComplete ? { successAt: run.checkedAt } : {}),
-        }, run.metrics ?? { status: 'completed', mode: 'unknown' })
+        if (remaining() <= 1) {
+          throw new WorkspaceSourceError('BUDGET_EXHAUSTED', 'Gmail execution budget exhausted before finalization.', true)
+        }
+        const finishController = new AbortController()
+        const finishTimer = setTimeout(() => finishController.abort(), Math.max(1, remaining()))
+        const finishFetch: typeof fetch = (input, init) => {
+          const priorSignal = init?.signal ?? (input instanceof Request ? input.signal : undefined)
+          return rawFetch(input, {
+            ...init,
+            signal: priorSignal ? AbortSignal.any([finishController.signal, priorSignal]) : finishController.signal,
+          })
+        }
+        try {
+          await createAutomationConnectionStore({ ...storeOptions, fetchImpl: finishFetch }).finishGmailExecution(
+            binding.userId, executionToken, {
+              ...(run.coverageComplete && run.nextHistoryId ? { historyId: run.nextHistoryId } : {}),
+              continuation: run.coverageComplete ? null : run.continuation,
+              ...(run.coverageComplete ? { successAt: run.checkedAt } : {}),
+            }, run.metrics ?? { status: 'completed', mode: 'unknown' },
+          )
+        } finally {
+          clearTimeout(finishTimer)
+        }
         results.push({ status: 'success' })
       } catch (caught) {
         const code = controller.signal.aborted ? 'BUDGET_EXHAUSTED'
