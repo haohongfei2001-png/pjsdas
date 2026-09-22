@@ -75,6 +75,22 @@ describe('PJSDAS local snapshot', () => {
     expect(restored.data.actions[0].status).toBe('todo')
   })
 
+  it('creates v4 reminder arrays and upgrades a valid v3 snapshot without inventing reminders', () => {
+    const current = createSnapshot(data(), '2026-09-10T05:00:00.000Z')
+    expect(current.version).toBe(4)
+    expect(current.data.reminderIntents).toEqual([])
+    expect(current.data.reminderOutbox).toEqual([])
+
+    const legacyV3 = structuredClone(current) as any
+    legacyV3.version = 3
+    delete legacyV3.data.reminderIntents
+    delete legacyV3.data.reminderOutbox
+    const restored = parseSnapshotText(JSON.stringify(legacyV3))
+    expect(restored.version).toBe(4)
+    expect(restored.data.reminderIntents).toEqual([])
+    expect(restored.data.reminderOutbox).toEqual([])
+  })
+
   it('rejects unsupported versions before restore', () => {
     const snapshot = createSnapshot(data(), '2026-09-10T05:00:00.000Z')
     const broken = { ...snapshot, version: 99 }
