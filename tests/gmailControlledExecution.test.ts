@@ -62,10 +62,10 @@ describe('opt-in controlled Gmail worker', () => {
   it('uses the reserved tail budget to finalize a successful run after the work timer expires', async () => {
     state.run.mockImplementation(async (options) => {
       await options.execution.beforeWorkspaceWrite()
-      await new Promise((resolve) => setTimeout(resolve, 85))
+      await new Promise((resolve) => setTimeout(resolve, 170))
       return result
     })
-    const h = harness({ budgetMs: 100 })
+    const h = harness({ budgetMs: 200 })
     const response = await h.invoke()
     expect(response.status).toBe(200)
     const finish = h.writes.find((item) => item.rpc === 'pjsdas_finish_gmail_execution')!
