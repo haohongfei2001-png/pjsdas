@@ -12,6 +12,7 @@ export interface AutomationSettingsHandlerConfig {
   googleClientId?: string
   googleClientSecret?: string
   gmailPushTopicName?: string
+  gmailDeliveryMode?: 'polling' | 'push'
   gmailExecutionControlsEnabled?: boolean
   registerGmailWatchImpl?: typeof registerGmailWatch
   now?: () => Date
@@ -179,21 +180,23 @@ export function createAutomationSettingsHandler(config: AutomationSettingsHandle
         if (config.gmailExecutionControlsEnabled !== true) {
           return json(503, {
             code: 'GMAIL_EXECUTION_CONTROLS_REQUIRED',
-            message: 'Gmail push intake is not activated until fenced execution controls are enabled.',
+            message: 'Gmail intake is not activated until fenced execution controls are enabled.',
           }, origin, config.allowedOrigins)
         }
-        if (!current.refresh_token_ciphertext) {
-          throw new WorkspaceSourceError('AUTH_INVALID', 'Stored Google authorization is incomplete.', false)
+        if ((config.gmailDeliveryMode ?? 'polling') === 'push') {
+          if (!current.refresh_token_ciphertext) {
+            throw new WorkspaceSourceError('AUTH_INVALID', 'Stored Google authorization is incomplete.', false)
+          }
+          gmailWatch = await (config.registerGmailWatchImpl ?? registerGmailWatch)({
+            refreshTokenCiphertext: current.refresh_token_ciphertext,
+            tokenEncryptionKey: config.tokenEncryptionKey ?? '',
+            googleClientId: config.googleClientId ?? '',
+            googleClientSecret: config.googleClientSecret ?? '',
+            topicName: config.gmailPushTopicName ?? '',
+            fetchImpl,
+            now: config.now,
+          })
         }
-        gmailWatch = await (config.registerGmailWatchImpl ?? registerGmailWatch)({
-          refreshTokenCiphertext: current.refresh_token_ciphertext,
-          tokenEncryptionKey: config.tokenEncryptionKey ?? '',
-          googleClientId: config.googleClientId ?? '',
-          googleClientSecret: config.googleClientSecret ?? '',
-          topicName: config.gmailPushTopicName ?? '',
-          fetchImpl,
-          now: config.now,
-        })
       }
 
       const params = new URLSearchParams({ user_id: `eq.${identity.userId}` })
@@ -213,6 +216,11 @@ export function createAutomationSettingsHandler(config: AutomationSettingsHandle
           patch.gmail_watch_history_id = gmailWatch.historyId
           patch.gmail_watch_expires_at = gmailWatch.expiresAt
           patch.gmail_watch_last_renewed_at = gmailWatch.renewedAt
+          patch.gmail_watch_last_error = null
+        } else if ((config.gmailDeliveryMode ?? 'polling') === 'polling') {
+          patch.gmail_watch_history_id = null
+          patch.gmail_watch_expires_at = null
+          patch.gmail_watch_last_renewed_at = null
           patch.gmail_watch_last_error = null
         }
       }
