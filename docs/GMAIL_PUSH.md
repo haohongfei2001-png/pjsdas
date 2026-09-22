@@ -1,10 +1,10 @@
 # UU06 Gmail Push — candidate architecture and activation runbook
 
-State: **RUNTIME + WATCH SCHEMA DEPLOYED / PUSH NOT CONFIGURED**
+State: **DORMANT OPTIONAL INFRASTRUCTURE / NOT OWNER RELEASE GATE**
 Round: UU-06 only.
 Owner authorization: 2026-09-21, bounded to Gmail API official push + Cloud Pub/Sub + minimum IAM + compensation sync no slower than 15 minutes.
 
-PR #104 is merged at runtime `0fcfdefef81e528ae43aabdb980508a9490a43e1`, and additive production migration `20260921120615` / `gmail_push_watch_state` is applied. Push is still not configured or activated: no Google Cloud Pub/Sub resource has been created through this execution, no mailbox is enabled, the Gmail cron remains hourly, and the execution-control flag has not been activated. This does not certify live push, expand Gmail scopes, or start UU-07.
+PR #104 and the additive watch-state schema remain deployed, but OA-06 selects 10-minute polling for the owner release. No Google Cloud Pub/Sub/Billing resource is required or configured. Push/watch routes must remain fail-closed in polling mode and are retained only as optional future infrastructure. This does not expand Gmail scopes or start UU-07.
 
 ## Frozen boundary
 
@@ -178,3 +178,12 @@ At minimum:
 - reschedule/cancel/completion still use existing stable occurrence and Semantic Intake semantics;
 - disable/revoke stops both watch renewal and push enqueue;
 - no raw email body, token, push JWT or personal message content appears in public evidence.
+
+
+## OA-06 owner release mode
+
+For the current owner deployment, this Push path is not an Ultimate Usability v1
+acceptance dependency. The production path is the existing Gmail history worker on a
+10-minute scheduler. A future owner decision may reactivate this document's Push
+runbook, but that decision must separately address Cloud Billing, Pub/Sub and production
+environment configuration. Until then Push and users.watch stay dormant.
