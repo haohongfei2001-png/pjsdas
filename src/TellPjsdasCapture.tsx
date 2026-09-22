@@ -41,10 +41,12 @@ export default function TellPjsdasCapture({
   const textareaRef = useRef<HTMLTextAreaElement | null>(null)
 
   useEffect(() => {
+    if (!open || !cloud.session || !connectedWorkspaceAuthorityEnabled()) return
+    setText(readAccountDraft(cloud.session.user.id, 'tell-pjsdas'))
+  }, [open, cloud.session?.user.id])
+
+  useEffect(() => {
     if (!open) return
-    if (cloud.session && connectedWorkspaceAuthorityEnabled()) {
-      setText(readAccountDraft(cloud.session.user.id, 'tell-pjsdas'))
-    }
     const id = window.setTimeout(() => textareaRef.current?.focus(), 0)
     const key = (event: KeyboardEvent) => {
       if (event.key === 'Escape') onClose()
@@ -58,7 +60,7 @@ export default function TellPjsdasCapture({
       window.clearTimeout(id)
       window.removeEventListener('keydown', key)
     }
-  }, [open, cloud.session?.user.id])
+  }, [open, text])
 
   async function submit() {
     if (!text.trim() || busy) return
@@ -147,7 +149,11 @@ export default function TellPjsdasCapture({
           value={text}
           disabled={busy}
           onChange={(event) => {
-            setText(event.target.value)
+            const value = event.target.value
+            setText(value)
+            if (cloud.session && connectedWorkspaceAuthorityEnabled()) {
+              saveAccountDraft(cloud.session.user.id, 'tell-pjsdas', value)
+            }
             setMessage('')
             setError('')
           }}
