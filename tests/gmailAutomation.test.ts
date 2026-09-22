@@ -288,4 +288,48 @@ describe('Gmail background automation', () => {
     expect(calls.filter((url) => url.includes('/history?')).every((url) => !new URL(url).searchParams.has('labelId'))).toBe(true)
   })
 
+  it('classifies a disabled Gmail API without exposing provider error text', async () => {
+    const fetchImpl = vi.fn(async () => json({
+      error: {
+        code: 403,
+        message: 'Gmail API has not been used in project SECRET_PROJECT',
+        errors: [{ reason: 'accessNotConfigured' }],
+      },
+    }, 403)) as unknown as typeof fetch
+
+    await expect(fetchGmailAutomationBatch({ accessToken: 'test', fetchImpl }))
+      .rejects.toMatchObject({
+        code: 'GOOGLE_GMAIL_API_DISABLED',
+        message: 'The Gmail API is not enabled for the Google Cloud project used by PJSDAS.',
+        retryable: false,
+      })
+  })
+
+  it('classifies an access token with insufficient Gmail scope as reconnect-required', async () => {
+    const fetchImpl = vi.fn(async () => json({
+      error: { errors: [{ reason: 'insufficientPermissions' }] },
+    }, 403)) as unknown as typeof fetch
+
+    await expect(fetchGmailAutomationBatch({ accessToken: 'test', fetchImpl }))
+      .rejects.toMatchObject({ code: 'GOOGLE_GMAIL_SCOPE_MISSING', retryable: false })
+  })
+
+  it('treats Gmail 403 quota reasons as retryable instead of revoking authorization', async () => {
+    const fetchImpl = vi.fn(async () => json({
+      error: { errors: [{ reason: 'userRateLimitExceeded' }] },
+    }, 403)) as unknown as typeof fetch
+
+    await expect(fetchGmailAutomationBatch({ accessToken: 'test', fetchImpl }))
+      .rejects.toMatchObject({ code: 'GMAIL_UNAVAILABLE', retryable: true })
+  })
+
+  it('keeps unknown Gmail 403 reasons fail-closed as forbidden', async () => {
+    const fetchImpl = vi.fn(async () => json({
+      error: { errors: [{ reason: 'someFutureReason' }] },
+    }, 403)) as unknown as typeof fetch
+
+    await expect(fetchGmailAutomationBatch({ accessToken: 'test', fetchImpl }))
+      .rejects.toMatchObject({ code: 'GOOGLE_GMAIL_FORBIDDEN', retryable: false })
+  })
+
 })
