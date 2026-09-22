@@ -204,7 +204,7 @@ export function createPjsdasMcpServer(
   }
 
   const server = new McpServer(
-    { name: 'pjsdas', version: options.version ?? '1.9.0-alpha.1' },
+    { name: 'pjsdas', version: options.version ?? '1.10.0-alpha.1' },
     { instructions: instructions.join(' ') },
   )
 
