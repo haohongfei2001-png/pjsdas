@@ -47,7 +47,7 @@ export async function runControlledGmailExecutions(config: GmailAutomationHandle
             ensureBudget(); await store.assertGmailExecution(binding.userId, executionToken); ensureBudget()
           } },
         })
-        if (remaining() <= 50) {
+        if (remaining() <= 1) {
           throw new WorkspaceSourceError('BUDGET_EXHAUSTED', 'Gmail execution budget exhausted before finalization.', true)
         }
         const finishController = new AbortController()
