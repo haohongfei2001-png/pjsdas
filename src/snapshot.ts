@@ -136,6 +136,8 @@ export function createSnapshot(data: SnapshotData, exportedAt = new Date().toISO
   ensureScheduleContractInPlace(normalized)
   normalized.decisionRequests ??= []
   normalized.semanticReceipts ??= []
+  normalized.reminderIntents ??= []
+  normalized.reminderOutbox ??= []
   const snapshot: PJSDASSnapshot = {
     schema: SNAPSHOT_SCHEMA,
     version: SNAPSHOT_VERSION,
