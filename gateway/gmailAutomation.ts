@@ -20,7 +20,8 @@ import { PJSDAS_SUPABASE_URL } from './supabaseProject.js'
 
 const GMAIL_API = 'https://gmail.googleapis.com/gmail/v1/users/me'
 const GMAIL_SOURCE_ID = 'gmail:primary'
-const MAX_MESSAGES_PER_RUN = 100
+const LEGACY_MAX_MESSAGES_PER_RUN = 100
+export const UU06_MAX_MESSAGES_PER_RUN = 40
 export const INITIAL_LOOKBACK_DAYS = 90
 
 interface GmailHeader { name?: string; value?: string }
@@ -218,7 +219,7 @@ async function initialMessagePage(
     providerPageToken = decoded.token
   }
   const params = new URLSearchParams({
-    maxResults: String(MAX_MESSAGES_PER_RUN),
+    maxResults: String(expanded ? UU06_MAX_MESSAGES_PER_RUN : LEGACY_MAX_MESSAGES_PER_RUN),
     q: expanded ? query : 'newer_than:7d -in:spam -in:trash',
     ...(!expanded ? { labelIds: 'INBOX' } : {}),
   })
@@ -239,7 +240,7 @@ async function historyMessagePage(
     startHistoryId,
     historyTypes: 'messageAdded',
     ...(!expanded ? { labelId: 'INBOX' } : {}),
-    maxResults: '100',
+    maxResults: String(expanded ? UU06_MAX_MESSAGES_PER_RUN : LEGACY_MAX_MESSAGES_PER_RUN),
   })
   if (pageToken) params.set('pageToken', pageToken)
   const response = await gmailFetch(fetchImpl, accessToken, `/history?${params.toString()}`)
@@ -268,9 +269,10 @@ function boundedPage(
     pageToken?: string
     pendingHistoryId: string
   },
+  limit = LEGACY_MAX_MESSAGES_PER_RUN,
 ) {
-  const selected = ids.slice(0, MAX_MESSAGES_PER_RUN)
-  const pendingMessageIds = ids.slice(MAX_MESSAGES_PER_RUN)
+  const selected = ids.slice(0, limit)
+  const pendingMessageIds = ids.slice(limit)
   const coverageComplete = pendingMessageIds.length === 0 && !input.pageToken
   return {
     selected,
@@ -316,7 +318,7 @@ export async function fetchGmailAutomationBatch(options: {
       mode: previous.mode,
       pageToken: previous.pageToken,
       pendingHistoryId: previous.pendingHistoryId,
-    })
+    }, options.coverage === 'uu06' ? UU06_MAX_MESSAGES_PER_RUN : LEGACY_MAX_MESSAGES_PER_RUN)
     return {
       messages: await fetchMessages(fetchImpl, options.accessToken, bounded.selected),
       nextHistoryId: bounded.nextHistoryId,
@@ -374,7 +376,7 @@ export async function fetchGmailAutomationBatch(options: {
     mode: mode!,
     pageToken: nextPageToken,
     pendingHistoryId: pendingHistoryId!,
-  })
+  }, options.coverage === 'uu06' ? UU06_MAX_MESSAGES_PER_RUN : LEGACY_MAX_MESSAGES_PER_RUN)
   return {
     messages: await fetchMessages(fetchImpl, options.accessToken, bounded.selected),
     nextHistoryId: bounded.nextHistoryId,
