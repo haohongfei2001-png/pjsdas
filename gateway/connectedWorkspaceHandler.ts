@@ -1,6 +1,7 @@
 import { fingerprintWorkspace } from '../src/cloud/workspaceFingerprint.js'
 import { upgradeSnapshotToLatest, validateSnapshot, type PJSDASSnapshot } from '../src/snapshot.js'
 import { createMutationKernel } from './mutationKernel.js'
+import { createAuthoritativeCommandExecutor } from './authoritativeCommands.js'
 import { createSupabaseIdentityResolver } from './supabaseIdentity.js'
 import { createTransactionalWorkspaceStore } from './transactionalWorkspaceStore.js'
 import { WorkspaceSourceError } from './workspaceSource.js'
@@ -89,6 +90,12 @@ export function createConnectedWorkspaceHandler(config: ConnectedWorkspaceHandle
         serviceRoleKey: config.serviceRoleKey,
         fetchImpl,
       })
+      const commands = createAuthoritativeCommandExecutor({
+        supabaseUrl: config.supabaseUrl,
+        serviceRoleKey: config.serviceRoleKey,
+        fetchImpl,
+      })
+      const principal = { kind: 'first_party_web' as const, userId: identity.userId }
 
       const readWorkspace = async () => {
         const workspace = await store.readForUser(identity.userId)
@@ -121,7 +128,11 @@ export function createConnectedWorkspaceHandler(config: ConnectedWorkspaceHandle
         sourceFingerprint?: string
         migratedFrom?: string
         commandId?: string
+        targetCommandId?: string
         expectedRevision?: number
+        baseRevision?: number
+        command?: unknown
+        snapshotPurpose?: 'legacy_uncovered_web' | 'migration_recovery' | 'compatibility'
       }>(await request.json().catch(() => undefined))
 
       if (body.action === 'read') return readWorkspace()
@@ -162,6 +173,43 @@ export function createConnectedWorkspaceHandler(config: ConnectedWorkspaceHandle
         }, origin, config.allowedOrigins)
       }
 
+      if (body.action === 'command') {
+        const result = await commands.execute(principal, {
+          commandId: body.commandId,
+          baseRevision: body.baseRevision,
+          command: body.command,
+        })
+        return json(result.outcome === 'CONFLICT' ? 409 : 200, {
+          ...result,
+          workspaceVersion: `txn:${result.revision}`,
+          schemaVersion: result.snapshot.version,
+        }, origin, config.allowedOrigins)
+      }
+
+      if (body.action === 'receipt') {
+        if (!body.commandId?.trim()) {
+          throw new WorkspaceSourceError('INVALID_ARGUMENT', 'Receipt lookup requires commandId.', false)
+        }
+        const result = await commands.lookup(principal, body.commandId)
+        return json(200, {
+          ...result,
+          workspaceVersion: `txn:${result.revision}`,
+          schemaVersion: result.snapshot.version,
+        }, origin, config.allowedOrigins)
+      }
+
+      if (body.action === 'undo') {
+        const result = await commands.undo(principal, {
+          commandId: body.commandId,
+          targetCommandId: body.targetCommandId,
+        })
+        return json(result.outcome === 'CONFLICT' ? 409 : 200, {
+          ...result,
+          workspaceVersion: `txn:${result.revision}`,
+          schemaVersion: result.snapshot.version,
+        }, origin, config.allowedOrigins)
+      }
+
       if (body.action === 'commit') {
         if (!body.commandId?.trim() || !Number.isInteger(body.expectedRevision)) {
           throw new WorkspaceSourceError('INVALID_ARGUMENT', 'Connected commit requires commandId and expectedRevision.', false)
@@ -176,7 +224,10 @@ export function createConnectedWorkspaceHandler(config: ConnectedWorkspaceHandle
             operation: 'SyncLocalSnapshot',
             payload: { fingerprint },
             expectedRevision: body.expectedRevision!,
-            provenance: { channel: 'first-party-web-sync' },
+            provenance: {
+              channel: 'first-party-web-sync',
+              snapshotPurpose: body.snapshotPurpose ?? 'legacy-client-compatibility',
+            },
           },
           () => nextSnapshot,
         )
