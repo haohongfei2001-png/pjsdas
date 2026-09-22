@@ -271,6 +271,9 @@ export async function invokePaiaIntake(
 export async function invokeResolveSemanticDecision(
   workspaceSource: WorkspaceSource,
   rawArgs: unknown,
+  options: {
+    externalCapabilities?: Partial<Record<ExternalCapabilityId, ExternalCapabilityState>>
+  } = {},
 ): Promise<CallToolResult> {
   try {
     const parsed = resolveSemanticDecisionSchema.parse(rawArgs)
@@ -280,6 +283,7 @@ export async function invokeResolveSemanticDecision(
       parsed.requestId,
       parsed.choiceId,
       workspace.context.now,
+      { externalCapabilities: options.externalCapabilities },
     )
     if (!evaluated.changed) {
       return success({
