@@ -42,7 +42,7 @@ test('active Today and Prepare surfaces localize presentation without changing s
     ]
 
     await new Promise<void>((resolve, reject) => {
-      const request = indexedDB.open('pjsdas', 10)
+      const request = indexedDB.open('pjsdas', 11)
       request.onerror = () => reject(request.error)
       request.onsuccess = () => {
         const db = request.result
