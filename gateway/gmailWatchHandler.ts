@@ -9,6 +9,7 @@ export interface GmailWatchHandlerConfig {
   googleClientId: string
   googleClientSecret: string
   topicName: string
+  deliveryMode?: 'polling' | 'push'
   fetchImpl?: typeof fetch
   registerGmailWatchImpl?: typeof registerGmailWatch
   now?: () => Date
@@ -37,6 +38,9 @@ export function createGmailWatchHandler(config: GmailWatchHandlerConfig) {
   return async function handleGmailWatch(request: Request) {
     if (request.method !== 'POST') {
       return json(405, { code: 'METHOD_NOT_ALLOWED', message: 'Use POST.' })
+    }
+    if ((config.deliveryMode ?? 'polling') !== 'push') {
+      return json(503, { code: 'GMAIL_PUSH_DORMANT', message: 'Gmail Push is dormant in polling delivery mode.' })
     }
     const workerToken = bearer(request)
     if (!workerToken) {
