@@ -37,6 +37,12 @@ test('CGR-03 dense mixed-language workspace keeps search, identity, and return f
   await page.keyboard.press('Escape')
   await expect(rows.first()).toBeFocused()
   await expect(search).toHaveValue('CGR03-239')
+  await page.setViewportSize({ width: 390, height: 844 })
+  await expect(rows.first()).toBeVisible()
+  await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 2)).toBe(true)
+  await rows.first().click()
+  await expect(page.getByRole('dialog', { name: /岗位详情|Opportunity details/ })).toBeVisible()
+  await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 2)).toBe(true)
 })
 
 test('UU-05 Opportunities centers In Progress / Worth Pursuing and opens conclusion-first detail', async ({ page }) => {
