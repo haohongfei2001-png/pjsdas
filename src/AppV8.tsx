@@ -74,6 +74,9 @@ type RouteState = {
 }
 
 const APP_BASE = import.meta.env.BASE_URL === '/' ? '' : import.meta.env.BASE_URL.replace(/\/$/, '')
+// Deployment rollback disables the new Today/capture write surface while the
+// authoritative read model and receipts stay intact. No old snapshot writer is revived.
+const CGR02_TODAY_READ_ONLY = import.meta.env.VITE_PJSDAS_CGR02_READ_ONLY === 'true'
 
 const surfaceLabels: Record<PrimarySurface, { zh: string; en: string; hintZh: string; hintEn: string }> = {
   today: { zh: '今天', en: 'Today', hintZh: '下一步', hintEn: 'Next' },
@@ -164,6 +167,10 @@ export default function AppV8() {
   }
 
   function openCapture() {
+    if (CGR02_TODAY_READ_ONLY) {
+      navigate('/today')
+      return
+    }
     const current = semanticPath()
     setCaptureContextOpportunityId(route.opportunityId)
     setCaptureReturnPath(current === '/capture' || current === '/today/capture' ? '/today' : current)
@@ -185,9 +192,10 @@ export default function AppV8() {
     if (path === '/') {
       window.history.replaceState(null, '', browserPath('/today'))
       setRoute(routeFromPath('/today'))
-    } else if (path === '/capture') {
-      window.history.replaceState(null, '', browserPath('/today/capture'))
-      setRoute(routeFromPath('/today/capture'))
+    } else if (path === '/capture' || (CGR02_TODAY_READ_ONLY && path === '/today/capture')) {
+      const safePath = CGR02_TODAY_READ_ONLY ? '/today' : '/today/capture'
+      window.history.replaceState(null, '', browserPath(safePath))
+      setRoute(routeFromPath(safePath))
     }
     void reload().finally(() => setLoading(false))
   }, [])
@@ -480,7 +488,8 @@ export default function AppV8() {
 
       <main className="main-panel surface-main ultimate-main cgr-main">
         <header className="ultimate-toolbar cgr-toolbar" aria-label={zh ? '全局工具栏' : 'Global toolbar'}>
-          <button className="ultimate-capture-button cgr-global-capture" type="button" onClick={openCapture}>
+          <button className="ultimate-capture-button cgr-global-capture" type="button" onClick={openCapture}
+            disabled={CGR02_TODAY_READ_ONLY} title={CGR02_TODAY_READ_ONLY ? (zh ? 'Today 暂时只读' : 'Today is temporarily read-only') : undefined}>
             <span>＋</span><strong>{zh ? '告诉 PJSDAS' : 'Tell PJSDAS'}</strong><kbd>⌘K</kbd>
           </button>
           <div className="ultimate-toolbar-actions">
@@ -501,6 +510,7 @@ export default function AppV8() {
         {!loading && surface === 'today' && todayBrief ? (
           <TodayFeature
             brief={todayBrief}
+            readOnly={CGR02_TODAY_READ_ONLY}
             now={now}
             budgetMinutes={budgetMinutes}
             agendaExpanded={route.agendaExpanded}
@@ -525,10 +535,10 @@ export default function AppV8() {
         {!loading && surface === 'settings' ? <SettingsSurface lastImport={lastImport} rules={rules} onChanged={reload} onOpenActivity={() => navigate('/history')} /> : null}
       </main>
 
-      <button className="ultimate-mobile-capture" type="button" onClick={openCapture}>＋ {zh ? '告诉 PJSDAS' : 'Tell PJSDAS'}</button>
+      <button className="ultimate-mobile-capture" type="button" onClick={openCapture} disabled={CGR02_TODAY_READ_ONLY}>＋ {zh ? '告诉 PJSDAS' : 'Tell PJSDAS'}</button>
 
       <TellPjsdasCapture
-        open={route.capture}
+        open={!CGR02_TODAY_READ_ONLY && route.capture}
         onClose={closeCapture}
         onChanged={reload}
         onOpenDecisions={() => navigate('/decisions')}

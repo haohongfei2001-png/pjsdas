@@ -6,6 +6,7 @@ on:
     paths:
       - 'src/TellPjsdasCapture.tsx'
       - 'e2e/cgr02TodayVoiceOver.voiceover.ts'
+      - 'e2e/support/cgr02Journey.ts'
       - 'e2e/cgr02TodayVerticalSlice.e2e.ts'
       - 'e2e/cgr02TodayVerticalSlice.e2e.ts-snapshots/offline-draft-chromium-*.png'
       - 'playwright.voiceover.config.mts'

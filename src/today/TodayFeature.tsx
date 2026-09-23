@@ -21,6 +21,7 @@ export interface TodayFreshnessView {
 
 interface TodayFeatureProps {
   brief: TodayBrief
+  readOnly?: boolean
   now: Date
   budgetMinutes: number
   agendaExpanded: boolean
@@ -145,6 +146,7 @@ function recentChangeState(item: TodayBriefRecentChange, zh: boolean) {
 
 export default function TodayFeature({
   brief,
+  readOnly = false,
   now,
   budgetMinutes,
   agendaExpanded,
@@ -179,6 +181,10 @@ export default function TodayFeature({
 
   return (
     <section className="cgr-today" data-testid="cgr02-today">
+      {readOnly ? <div className="cgr-critical-warning" role="alert">
+        <strong>{zh ? 'Today 暂时只读' : 'Today is temporarily read-only'}</strong>
+        <span>{zh ? '当前仍可查看已确认的状态；新增、完成和捕获已暂停。已有记录和回执不会被回退。' : 'You can still review confirmed state. Capture and action changes are paused; existing records and receipts remain intact.'}</span>
+      </div> : null}
       <header className="cgr-today-header">
         <div>
           <div className="cgr-kicker">{formatDateOnly(now.toISOString(), zh)}</div>
@@ -241,8 +247,8 @@ export default function TodayFeature({
                 {primary.protectedByLatestStart ? <strong>{zh ? '已进入最迟开工保护' : 'Latest-start protected'}</strong> : null}
               </div>
               <div className="cgr-action-controls">
-                <button className="cgr-primary-button" type="button" onClick={() => { void onExecute(primary) }}>{primaryLabel(primary, zh)}</button>
-                <button className="cgr-secondary-button" type="button" onClick={() => { void onMark(primary.actionId, 'done') }}>{zh ? '标记完成' : 'Mark done'}</button>
+                {!readOnly ? <button className="cgr-primary-button" type="button" onClick={() => { void onExecute(primary) }}>{primaryLabel(primary, zh)}</button> : null}
+                {!readOnly ? <button className="cgr-secondary-button" type="button" onClick={() => { void onMark(primary.actionId, 'done') }}>{zh ? '标记完成' : 'Mark done'}</button> : null}
                 {primary.opportunityId ? (
                   <button className="cgr-text-button" type="button" onClick={() => onOpenOpportunity(primary.opportunityId!)}>{zh ? '岗位详情' : 'Opportunity'}</button>
                 ) : null}
@@ -313,14 +319,15 @@ export default function TodayFeature({
                 {brief.nextActions.map((item, index) => (
                   <article className="cgr-next-row" key={item.actionId}>
                     <span className="cgr-order">{index + 2}</span>
-                    <button className="cgr-next-copy" type="button" onClick={() => { void onExecute(item) }}>
-                      <strong>{item.title}</strong><small>{reasonText(item)}</small>
-                    </button>
+                    {readOnly ? <div className="cgr-next-copy"><strong>{item.title}</strong><small>{reasonText(item)}</small></div>
+                      : <button className="cgr-next-copy" type="button" onClick={() => { void onExecute(item) }}>
+                        <strong>{item.title}</strong><small>{reasonText(item)}</small>
+                      </button>}
                     <div className="cgr-next-meta">
                       {actionTiming(item, zh) ? <span>{actionTiming(item, zh)}</span> : null}
                       <span>{formatMinutes(item.estimatedMinutes, zh)}</span>
                     </div>
-                    <button className="cgr-done-button" type="button" onClick={() => { void onMark(item.actionId, 'done') }}>{zh ? '完成' : 'Done'}</button>
+                    {!readOnly ? <button className="cgr-done-button" type="button" onClick={() => { void onMark(item.actionId, 'done') }}>{zh ? '完成' : 'Done'}</button> : null}
                   </article>
                 ))}
               </div>
