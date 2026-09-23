@@ -81,6 +81,13 @@ export const PUBLIC_HEALTH_CAPABILITIES = {
   controlledAudience: 'v1',
   connectedOriginMigration: 'v1',
   releaseCandidateManifest: 'v1',
+  authoritativeBusinessCommands: 'cgr-01',
+  durableCommandReceipts: 'cgr-01',
+  commandReceiptRecovery: true,
+  objectAwareCommandConflicts: true,
+  dependencyAwareCommandUndo: 'cgr-01',
+  accountScopedCommandClient: true,
+  boundedSnapshotCompatibility: 'cgr-01',
 } as const
 
 export function currentWorkspaceAuthority(environment: Record<string, string | undefined> = process.env) {

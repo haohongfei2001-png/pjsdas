@@ -81,6 +81,7 @@ export async function updateConnectedRemoteWorkspace(input: {
       action: 'commit',
       commandId: `web-sync:${input.deviceId}:${match[1]}:${input.fingerprint}`,
       expectedRevision: Number(match[1]),
+      snapshotPurpose: 'legacy_uncovered_web',
       snapshot: input.snapshot,
     }),
   })

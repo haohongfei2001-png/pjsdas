@@ -1,6 +1,8 @@
 import { fingerprintWorkspace } from '../src/cloud/workspaceFingerprint.js'
 import { upgradeSnapshotToLatest, validateSnapshot, type PJSDASSnapshot } from '../src/snapshot.js'
-import { createMutationKernel } from './mutationKernel.js'
+import { hashMutationPayload } from './mutationKernel.js'
+import { createAuthoritativeCommandExecutor } from './authoritativeCommands.js'
+import { diffCommandObjects, readModelInvalidation } from './commandObjects.js'
 import { createSupabaseIdentityResolver } from './supabaseIdentity.js'
 import { createTransactionalWorkspaceStore } from './transactionalWorkspaceStore.js'
 import { WorkspaceSourceError } from './workspaceSource.js'
@@ -84,11 +86,12 @@ export function createConnectedWorkspaceHandler(config: ConnectedWorkspaceHandle
         serviceRoleKey: config.serviceRoleKey,
         fetchImpl,
       })
-      const kernel = createMutationKernel({
+      const commands = createAuthoritativeCommandExecutor({
         supabaseUrl: config.supabaseUrl,
         serviceRoleKey: config.serviceRoleKey,
         fetchImpl,
       })
+      const principal = { kind: 'first_party_web' as const, userId: identity.userId }
 
       const readWorkspace = async () => {
         const workspace = await store.readForUser(identity.userId)
@@ -121,7 +124,11 @@ export function createConnectedWorkspaceHandler(config: ConnectedWorkspaceHandle
         sourceFingerprint?: string
         migratedFrom?: string
         commandId?: string
+        targetCommandId?: string
         expectedRevision?: number
+        baseRevision?: number
+        command?: unknown
+        snapshotPurpose?: 'legacy_uncovered_web' | 'migration_recovery' | 'compatibility'
       }>(await request.json().catch(() => undefined))
 
       if (body.action === 'read') return readWorkspace()
@@ -162,24 +169,99 @@ export function createConnectedWorkspaceHandler(config: ConnectedWorkspaceHandle
         }, origin, config.allowedOrigins)
       }
 
+      if (body.action === 'command') {
+        const result = await commands.execute(principal, {
+          commandId: body.commandId,
+          baseRevision: body.baseRevision,
+          command: body.command,
+        })
+        return json(result.outcome === 'CONFLICT' ? 409 : 200, {
+          ...result,
+          workspaceVersion: `txn:${result.revision}`,
+          schemaVersion: result.snapshot.version,
+        }, origin, config.allowedOrigins)
+      }
+
+      if (body.action === 'receipt') {
+        if (!body.commandId?.trim()) {
+          throw new WorkspaceSourceError('INVALID_ARGUMENT', 'Receipt lookup requires commandId.', false)
+        }
+        const result = await commands.lookup(principal, body.commandId)
+        return json(200, {
+          ...result,
+          workspaceVersion: `txn:${result.revision}`,
+          schemaVersion: result.snapshot.version,
+        }, origin, config.allowedOrigins)
+      }
+
+      if (body.action === 'undo') {
+        const result = await commands.undo(principal, {
+          commandId: body.commandId,
+          targetCommandId: body.targetCommandId,
+        })
+        return json(result.outcome === 'CONFLICT' ? 409 : 200, {
+          ...result,
+          workspaceVersion: `txn:${result.revision}`,
+          schemaVersion: result.snapshot.version,
+        }, origin, config.allowedOrigins)
+      }
+
       if (body.action === 'commit') {
+        if (!['legacy_uncovered_web', 'migration_recovery', 'compatibility'].includes(body.snapshotPurpose ?? '')) {
+          throw new WorkspaceSourceError(
+            'SNAPSHOT_COMPATIBILITY_REQUIRED',
+            'Whole-snapshot connected writes are restricted to explicitly declared legacy, migration/recovery, or compatibility flows.',
+            false,
+          )
+        }
         if (!body.commandId?.trim() || !Number.isInteger(body.expectedRevision)) {
           throw new WorkspaceSourceError('INVALID_ARGUMENT', 'Connected commit requires commandId and expectedRevision.', false)
         }
         validateSnapshot(body.snapshot)
         const nextSnapshot = upgradeSnapshotToLatest(body.snapshot as PJSDASSnapshot)
         const fingerprint = await fingerprintWorkspace(nextSnapshot)
-        const result = await kernel.execute(
-          { kind: 'first_party_web', userId: identity.userId },
-          {
-            commandId: body.commandId,
-            operation: 'SyncLocalSnapshot',
-            payload: { fingerprint },
-            expectedRevision: body.expectedRevision!,
-            provenance: { channel: 'first-party-web-sync' },
+        const current = await store.readForUser(identity.userId)
+        if (!current) {
+          throw new WorkspaceSourceError(
+            'WORKSPACE_MIGRATION_REQUIRED',
+            'This account has not explicitly migrated a workspace to connected mode.',
+            false,
+          )
+        }
+        const affectedObjects = diffCommandObjects(current.snapshot, nextSnapshot)
+        const timestamp = new Date().toISOString()
+        const result = await store.commitAuthoritativeForUser({
+          userId: identity.userId,
+          commandId: body.commandId,
+          operation: 'SyncLocalSnapshot',
+          payloadHash: await hashMutationPayload('SyncLocalSnapshot', {
+            fingerprint,
+            snapshotPurpose: body.snapshotPurpose,
+          }),
+          expectedRevision: body.expectedRevision!,
+          snapshot: nextSnapshot,
+          schemaVersion: nextSnapshot.version,
+          principalKind: 'first_party_web',
+          provenance: {
+            channel: 'first-party-web-sync',
+            snapshotPurpose: body.snapshotPurpose,
           },
-          () => nextSnapshot,
-        )
+          receiptContext: {
+            contractVersion: 2,
+            commandType: 'snapshot_compatibility',
+            snapshotPurpose: body.snapshotPurpose,
+            affectedObjects,
+            undoDependencyObjects: affectedObjects,
+            readModelInvalidation: readModelInvalidation(affectedObjects),
+            lifecycle: {
+              receivedAt: timestamp,
+              validatedAt: timestamp,
+              baseRevision: body.expectedRevision,
+              authoritativeRevisionBeforeCommit: current.revision,
+              rebased: false,
+            },
+          },
+        })
         const status = result.outcome === 'CONFLICT' ? 409 : 200
         return json(status, {
           outcome: result.outcome,

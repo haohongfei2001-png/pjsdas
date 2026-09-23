@@ -1,5 +1,6 @@
 import { fingerprintWorkspace } from '../src/cloud/workspaceFingerprint.js'
 import { hashMutationPayload } from './mutationKernel.js'
+import { diffCommandObjects, readModelInvalidation } from './commandObjects.js'
 import {
   createTransactionalWorkspaceStore,
   type MutationPrincipalKind,
@@ -78,7 +79,9 @@ export function createTransactionalWorkspaceSource(options: TransactionalWorkspa
       const semanticCommand = input.command
       const payloadHash = semanticCommand?.payloadHash
         ?? (semanticCommand ? await hashMutationPayload(semanticCommand.operation, semanticCommand.payload) : fingerprint)
-      const result = await store.commitForUser({
+      const affectedObjects = diffCommandObjects(workspace.snapshot, input.snapshot)
+      const timestamp = now().toISOString()
+      const result = await store.commitAuthoritativeForUser({
         userId: options.userId,
         commandId: semanticCommand?.commandId ?? `snapshot-write:${writer}:${expectedRevision}:${fingerprint}`,
         operation: semanticCommand?.operation ?? 'SnapshotWrite',
@@ -95,6 +98,20 @@ export function createTransactionalWorkspaceSource(options: TransactionalWorkspa
         },
         compensation: semanticCommand?.compensation,
         effectiveTime: semanticCommand?.effectiveTime ?? input.snapshot.exportedAt,
+        receiptContext: {
+          contractVersion: 2,
+          commandType: semanticCommand ? 'workspace_source_semantic' : 'workspace_source_compatibility',
+          affectedObjects,
+          undoDependencyObjects: affectedObjects,
+          readModelInvalidation: readModelInvalidation(affectedObjects),
+          lifecycle: {
+            receivedAt: timestamp,
+            validatedAt: timestamp,
+            baseRevision: expectedRevision,
+            authoritativeRevisionBeforeCommit: expectedRevision,
+            rebased: false,
+          },
+        },
       })
       if (result.outcome === 'CONFLICT') {
         throw new WorkspaceSourceError(

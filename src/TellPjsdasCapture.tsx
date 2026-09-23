@@ -7,6 +7,12 @@ import {
 import { useUiLanguage } from './uiLanguage.js'
 import { useCloud } from './cloud/CloudContext.js'
 import { ensureAuthoritativePersistence } from './cloud/authoritativePersistence.js'
+import { connectedWorkspaceAuthorityEnabled } from './cloud/connectedWorkspaceRepository.js'
+import {
+  clearAccountDraft,
+  readAccountDraft,
+  saveAccountDraft,
+} from './cloud/authoritativeCommandClient.js'
 import './ultimateWeb.css'
 
 interface TellPjsdasCaptureProps {
@@ -35,6 +41,11 @@ export default function TellPjsdasCapture({
   const textareaRef = useRef<HTMLTextAreaElement | null>(null)
 
   useEffect(() => {
+    if (!open || !cloud.session || !connectedWorkspaceAuthorityEnabled()) return
+    setText(readAccountDraft(cloud.session.user.id, 'tell-pjsdas'))
+  }, [open, cloud.session?.user.id])
+
+  useEffect(() => {
     if (!open) return
     const id = window.setTimeout(() => textareaRef.current?.focus(), 0)
     const key = (event: KeyboardEvent) => {
@@ -59,8 +70,8 @@ export default function TellPjsdasCapture({
     setDecisionCount(0)
     setUnresolvedCount(0)
     try {
-      const result = await submitWebSemanticCapture(text)
-      if ((result.status === 'APPLIED' || result.status === 'DECISION_REQUIRED') && cloud.session) {
+      const result = await submitWebSemanticCapture(text, { accountKey: cloud.session?.user.id })
+      if ((result.status === 'APPLIED' || result.status === 'DECISION_REQUIRED') && cloud.session && !connectedWorkspaceAuthorityEnabled()) {
         await ensureAuthoritativePersistence(true, cloud.syncNow)
       }
       setUndo(result.undo)
@@ -79,7 +90,10 @@ export default function TellPjsdasCapture({
           result.unresolved.length ? (zh ? `${result.unresolved.length} 个片段仍不够明确，未写入。` : `${result.unresolved.length} fragment(s) remain ambiguous and were not written.`) : '',
         ].filter(Boolean)
         setMessage(parts.join(' '))
-        if (result.status === 'APPLIED') setText('')
+        if (result.status === 'APPLIED') {
+          setText('')
+          if (cloud.session && connectedWorkspaceAuthorityEnabled()) clearAccountDraft(cloud.session.user.id, 'tell-pjsdas')
+        }
         await onChanged()
       }
     } catch (caught) {
@@ -95,7 +109,7 @@ export default function TellPjsdasCapture({
     setError('')
     try {
       await undoWebSemanticChange(undo)
-      if (cloud.session) await ensureAuthoritativePersistence(true, cloud.syncNow)
+      if (cloud.session && !connectedWorkspaceAuthorityEnabled()) await ensureAuthoritativePersistence(true, cloud.syncNow)
       setUndo(undefined)
       setMessage(zh ? '刚才的写入已撤销。' : 'The last write was undone.')
       await onChanged()
@@ -135,7 +149,11 @@ export default function TellPjsdasCapture({
           value={text}
           disabled={busy}
           onChange={(event) => {
-            setText(event.target.value)
+            const value = event.target.value
+            setText(value)
+            if (cloud.session && connectedWorkspaceAuthorityEnabled()) {
+              saveAccountDraft(cloud.session.user.id, 'tell-pjsdas', value)
+            }
             setMessage('')
             setError('')
           }}

@@ -13,6 +13,19 @@ const roleType = z.enum(['core', 'backup', 'reach', 'lottery', 'practice'])
 const actionStatus = z.enum(['todo', 'doing', 'done', 'skipped'])
 const processEventType = z.enum(['assessment_invite', 'written_test_invite', 'interview_invite', 'offer', 'rejection', 'status_update', 'other'])
 const timingMode = z.enum(['deadline', 'fixed'])
+const dateOnly = z.string().regex(/^\d{4}-\d{2}-\d{2}$/)
+const scheduleTemporal = z.object({
+  shape: z.enum(['fixed_range', 'deadline', 'availability_window', 'date_only', 'estimated_date']),
+  precision,
+  timezone: z.string().trim().min(1).max(120),
+  startAt: isoString.optional(),
+  endAt: isoString.optional(),
+  deadlineAt: isoString.optional(),
+  date: dateOnly.optional(),
+  rawExpression: z.string().trim().max(500).optional(),
+  resolutionBasis: z.enum(['source_explicit', 'user_explicit', 'legacy_projection', 'system_estimate']),
+  legacyProjectionAt: z.string().trim().max(100).optional(),
+}).strict()
 
 export const applyUserCommandSchema = z.discriminatedUnion('kind', [
   z.object({ commandId, kind: z.literal('record_application_submission'), opportunityId, occurredAt: isoString.optional() }).strict(),
@@ -29,6 +42,16 @@ export const applyUserCommandSchema = z.discriminatedUnion('kind', [
     notes: z.string().trim().max(800).optional(),
   }).strict(),
   z.object({ commandId, kind: z.literal('set_deadline'), opportunityId, deadline: isoString, precision }).strict(),
+  z.object({ commandId, kind: z.literal('complete_occurrence'), occurrenceId: z.string().trim().min(1).max(320), occurredAt: isoString.optional() }).strict(),
+  z.object({ commandId, kind: z.literal('cancel_occurrence'), occurrenceId: z.string().trim().min(1).max(320), occurredAt: isoString.optional() }).strict(),
+  z.object({
+    commandId,
+    kind: z.literal('reschedule_occurrence'),
+    occurrenceId: z.string().trim().min(1).max(320),
+    temporal: scheduleTemporal,
+    evidenceRefs: z.array(z.string().trim().min(1).max(1000)).max(20).optional(),
+    sourceVersionRefs: z.array(z.string().trim().min(1).max(1000)).max(20).optional(),
+  }).strict(),
   z.object({ commandId, kind: z.literal('set_action_status'), actionId, status: actionStatus }).strict(),
   z.object({ commandId, kind: z.literal('abandon_opportunity'), opportunityId, occurredAt: isoString.optional() }).strict(),
   z.object({

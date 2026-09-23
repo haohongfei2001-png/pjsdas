@@ -2,6 +2,9 @@ import { useEffect, useMemo, useState } from 'react'
 import { applyActionStatusChangeSet, getAllActions } from './db.js'
 import { isUnresolvedPastProcessEvent } from './fixedEventGuardLogic.js'
 import { useUiLanguage } from './uiLanguage.js'
+import { useCloud } from './cloud/CloudContext.js'
+import { connectedWorkspaceAuthorityEnabled } from './cloud/connectedWorkspaceRepository.js'
+import { createConnectedCommandId, executeConnectedBusinessCommand } from './cloud/authoritativeCommandClient.js'
 import type { Action } from './model.js'
 import './fixedEventGuard.css'
 
@@ -11,6 +14,7 @@ interface FixedEventGuardProps {
 
 export default function FixedEventGuard({ onChanged }: FixedEventGuardProps) {
   const { lang } = useUiLanguage()
+  const cloud = useCloud()
   const zh = lang === 'zh'
   const [actions, setActions] = useState<Action[]>([])
   const [now, setNow] = useState(() => new Date())
@@ -47,7 +51,16 @@ export default function FixedEventGuard({ onChanged }: FixedEventGuardProps) {
     setBusy(true)
     setError('')
     try {
-      await applyActionStatusChangeSet(current.id, 'done')
+      if (cloud.session && connectedWorkspaceAuthorityEnabled()) {
+        const commandId = createConnectedCommandId('web-fixed-event')
+        const result = await executeConnectedBusinessCommand(cloud.session.user.id, {
+          type: 'domain',
+          value: { commandId, kind: 'set_action_status', actionId: current.id, status: 'done' },
+        }, { commandId })
+        if (result.outcome === 'CONFLICT') throw new Error(result.conflict?.message ?? 'This event changed in another authoritative source.')
+      } else {
+        await applyActionStatusChangeSet(current.id, 'done')
+      }
       await reload()
       onChanged?.()
     } catch (caught) {

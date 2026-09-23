@@ -15,6 +15,12 @@ import TimelineView from './TimelineView.js'
 import CloudSettingsCard from './cloud/CloudSettingsCard.js'
 import { useCloud } from './cloud/CloudContext.js'
 import { ensureAuthoritativePersistence } from './cloud/authoritativePersistence.js'
+import { connectedWorkspaceAuthorityEnabled } from './cloud/connectedWorkspaceRepository.js'
+import {
+  createConnectedCommandId,
+  executeConnectedBusinessCommand,
+  undoConnectedBusinessCommand,
+} from './cloud/authoritativeCommandClient.js'
 import DiscoveryProfileCard from './DiscoveryProfileCard.js'
 import PrepGraphDock from './PrepGraphDock.js'
 import ProcessEventDock from './ProcessEventDock.js'
@@ -57,7 +63,7 @@ import './opportunityDecision.css'
 type Surface = 'today' | 'opportunities' | 'decisions' | 'history' | 'settings'
 type PrimarySurface = 'today' | 'opportunities'
 type OpportunityTab = 'opportunities' | 'prepare'
-type CompletionFeedback = { id: string; title: string; previousStatus: Action['status']; error?: string }
+type CompletionFeedback = { id: string; title: string; previousStatus: Action['status']; commandId?: string; error?: string }
 type RouteState = {
   surface: Surface
   capture: boolean
@@ -257,12 +263,32 @@ export default function AppV8() {
   async function markAction(id: string, status: Action['status']) {
     const before = actions.find((item) => item.id === id)
     if (!before) return
+    let authoritativeCommandId: string | undefined
     try {
-      await applyActionStatusChangeSet(id, status)
-      if (cloud.session) await ensureAuthoritativePersistence(true, cloud.syncNow)
+      if (cloud.session && connectedWorkspaceAuthorityEnabled()) {
+        authoritativeCommandId = createConnectedCommandId('web-action')
+        const result = await executeConnectedBusinessCommand(cloud.session.user.id, {
+          type: 'domain',
+          value: {
+            commandId: authoritativeCommandId,
+            kind: 'set_action_status',
+            actionId: id,
+            status,
+          },
+        }, { commandId: authoritativeCommandId })
+        if (result.outcome === 'CONFLICT') throw new Error(result.conflict?.message ?? 'Action update conflicted with newer authoritative state.')
+      } else {
+        await applyActionStatusChangeSet(id, status)
+        if (cloud.session) await ensureAuthoritativePersistence(true, cloud.syncNow)
+      }
       await reload()
       if (status === 'done' && before.status !== 'done') {
-        setLastCompletedAction({ id: before.id, title: before.title, previousStatus: before.status })
+        setLastCompletedAction({
+          id: before.id,
+          title: before.title,
+          previousStatus: before.status,
+          commandId: authoritativeCommandId,
+        })
       } else if (lastCompletedAction?.id === id) setLastCompletedAction(null)
     } catch (caught) {
       await reload()
@@ -270,6 +296,7 @@ export default function AppV8() {
         id: before.id,
         title: before.title,
         previousStatus: before.status,
+        commandId: authoritativeCommandId,
         error: caught instanceof Error ? caught.message : String(caught),
       })
     }
@@ -279,8 +306,13 @@ export default function AppV8() {
     const item = lastCompletedAction
     if (!item) return
     try {
-      await applyActionStatusChangeSet(item.id, item.previousStatus)
-      if (cloud.session) await ensureAuthoritativePersistence(true, cloud.syncNow)
+      if (cloud.session && connectedWorkspaceAuthorityEnabled() && item.commandId) {
+        const result = await undoConnectedBusinessCommand(cloud.session.user.id, item.commandId)
+        if (result.outcome === 'CONFLICT') throw new Error(result.conflict?.message ?? 'Undo conflicted with a dependent authoritative update.')
+      } else {
+        await applyActionStatusChangeSet(item.id, item.previousStatus)
+        if (cloud.session) await ensureAuthoritativePersistence(true, cloud.syncNow)
+      }
       await reload()
       setLastCompletedAction(null)
     } catch (caught) {

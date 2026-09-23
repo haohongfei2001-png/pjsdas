@@ -81,6 +81,12 @@ export function patchAccountCheckpoint(userId: string, patch: Partial<AccountSyn
   return writeRaw(state)
 }
 
+export function clearLocalWorkspaceBinding() {
+  const state = readRaw()
+  delete state.workspaceOwnerUserId
+  return writeRaw(state)
+}
+
 export function bindLocalWorkspaceToUser(userId: string, resetCheckpoint = false) {
   const state = readRaw()
   state.workspaceOwnerUserId = userId
