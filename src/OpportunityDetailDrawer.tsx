@@ -26,6 +26,7 @@ interface OpportunityDetailDrawerProps {
   applicationGroup?: ApplicationGroup
   timeline: TimelineRecord[]
   onClose: () => void
+  onCapture: () => void
   onNavigate: (destination: OpportunityDetailDestination) => void
 }
 
@@ -83,6 +84,7 @@ export default function OpportunityDetailDrawer({
   applicationGroup,
   timeline,
   onClose,
+  onCapture,
   onNavigate,
 }: OpportunityDetailDrawerProps) {
   const { lang } = useUiLanguage()
@@ -196,6 +198,7 @@ export default function OpportunityDetailDrawer({
 
         <footer className="opportunity-detail-footer">
           <button type="button" onClick={() => onNavigate('today')}>{zh ? '回到 Today' : 'Back to Today'}</button>
+          <button className="cgr-context-capture" type="button" onClick={onCapture}>{zh ? '告诉 PJSDAS' : 'Tell PJSDAS'}</button>
           {userFacts?.applicationUrl ? <a href={userFacts.applicationUrl} target="_blank" rel="noreferrer">{zh ? '打开用户确认链接' : 'Open confirmed link'}</a> : opportunity.detail?.facts?.application.applicationUrl ? <a href={opportunity.detail.facts.application.applicationUrl} target="_blank" rel="noreferrer">{zh ? '打开投递页面' : 'Open application page'}</a> : discovery?.sourceUrl ? <a href={discovery.sourceUrl} target="_blank" rel="noreferrer">{zh ? '打开招聘来源' : 'Open source'}</a> : null}
         </footer>
       </aside>

@@ -5,7 +5,7 @@ import {
   getAccountCheckpoint,
   patchAccountCheckpoint,
 } from './syncState.js'
-import { fingerprintWorkspace, workspaceIsEffectivelyEmpty } from './workspaceFingerprint.js'
+import { equivalentReadProjection, fingerprintWorkspace, workspaceIsEffectivelyEmpty } from './workspaceFingerprint.js'
 
 export const TODAY_AUTHORITATIVE_REFRESH_INTERVAL_MS = 15_000
 
@@ -24,11 +24,13 @@ export interface AuthoritativeReadFreshness {
   changed: boolean
 }
 
-function markFresh(accountKey: string, version: string, fingerprint: string, observedAt: string) {
+function markFresh(accountKey: string, version: string, fingerprint: string, projectionFingerprint: string, observedAt: string) {
   bindLocalWorkspaceToUser(accountKey)
   patchAccountCheckpoint(accountKey, {
     lastSyncedVersion: version,
     lastSyncedFingerprint: fingerprint,
+    lastReadProjectionFingerprint: projectionFingerprint,
+    lastReadProjectionSourceFingerprint: fingerprint,
     lastSyncedAt: observedAt,
     conflict: undefined,
     lastError: undefined,
@@ -48,7 +50,7 @@ export async function refreshConnectedAuthoritativeCache(
   const observedAt = new Date().toISOString()
 
   if (remote.fingerprint === localFingerprint) {
-    markFresh(accountKey, remote.version, remote.fingerprint, observedAt)
+    markFresh(accountKey, remote.version, remote.fingerprint, localFingerprint, observedAt)
     return {
       state: 'current',
       workspaceVersion: remote.version,
@@ -69,10 +71,17 @@ export async function refreshConnectedAuthoritativeCache(
       }
     }
   } else {
-    const localChanged = localFingerprint !== checkpoint.lastSyncedFingerprint
+    const projectedBaseline = checkpoint.lastReadProjectionSourceFingerprint === checkpoint.lastSyncedFingerprint
+      ? checkpoint.lastReadProjectionFingerprint
+      : undefined
+    const localChanged = localFingerprint !== (projectedBaseline ?? checkpoint.lastSyncedFingerprint)
     const remoteChanged = remote.version !== checkpoint.lastSyncedVersion
       || remote.fingerprint !== checkpoint.lastSyncedFingerprint
     if (localChanged) {
+      if (!remoteChanged && !projectedBaseline && equivalentReadProjection(local, remote.snapshot)) {
+        markFresh(accountKey, remote.version, remote.fingerprint, localFingerprint, observedAt)
+        return { state: 'current', workspaceVersion: remote.version, observedAt, latencyMs: Date.now() - startedAt, changed: false }
+      }
       return {
         state: remoteChanged ? 'diverged' : 'local_changes_pending',
         workspaceVersion: remote.version,
@@ -84,7 +93,8 @@ export async function refreshConnectedAuthoritativeCache(
   }
 
   await replaceLocalSnapshotFromCloud(remote.snapshot)
-  markFresh(accountKey, remote.version, remote.fingerprint, observedAt)
+  const projectedFingerprint = await fingerprintWorkspace(await exportLocalSnapshot())
+  markFresh(accountKey, remote.version, remote.fingerprint, projectedFingerprint, observedAt)
   if (typeof window !== 'undefined') {
     window.dispatchEvent(new CustomEvent('pjsdas:workspace-replaced', {
       detail: { source: 'authoritative-read-refresh', workspaceVersion: remote.version },

@@ -53,14 +53,14 @@ async function seedPastEvent(page: Page) {
 
 async function openCapture(page: Page) {
   await page.locator('.ultimate-capture-button').click()
-  await expect(page.getByRole('heading', { name: '直接告诉 PJSDAS' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: '告诉 PJSDAS' })).toBeVisible()
 }
 
 test('elapsed recruiting node stays unresolved until an explicit completion fact resolves it', async ({ page }) => {
   await page.goto('/')
   await seedPastEvent(page)
 
-  const unresolved = page.locator('.ultimate-agenda-node.unresolved').filter({ hasText: '节点测试科技' })
+  const unresolved = page.locator('.cgr-agenda-node.unresolved').filter({ hasText: '节点测试科技' })
   await expect(unresolved).toBeVisible()
   await expect(unresolved).toContainText('面试')
   await expect(unresolved).toContainText('待确认')
@@ -71,15 +71,15 @@ test('elapsed recruiting node stays unresolved until an explicit completion fact
   await interfaceGroup.getByRole('button', { name: 'EN', exact: true }).click()
   await page.locator('.surface-nav').getByRole('button', { name: /Today/ }).click()
   await expect(page.getByRole('heading', { name: 'Past · needs resolution' })).toBeVisible()
-  await expect(page.locator('.ultimate-agenda-node.unresolved').filter({ hasText: 'Resolve' })).toBeVisible()
+  await expect(page.locator('.cgr-agenda-node.unresolved').filter({ hasText: 'Resolve' })).toBeVisible()
 
   await page.locator('.ultimate-capture-button').click()
-  await page.locator('.ultimate-capture-input').fill('节点测试科技 AI产品经理 面试已经完成。')
-  await page.getByRole('button', { name: 'Tell PJSDAS', exact: true }).click()
+  await page.locator('.cgr-capture-input').fill('节点测试科技 AI产品经理 面试已经完成。')
+  await page.getByRole('button', { name: 'Confirm and save' }).click()
   await expect(page.getByRole('status')).toBeVisible()
   await page.getByRole('button', { name: 'Close' }).click()
 
-  await expect(page.locator('.ultimate-agenda-node.unresolved').filter({ hasText: '节点测试科技' })).toHaveCount(0)
+  await expect(page.locator('.cgr-agenda-node.unresolved').filter({ hasText: '节点测试科技' })).toHaveCount(0)
 })
 
 test('a question about an elapsed event remains read-only and does not complete it', async ({ page }) => {
@@ -87,10 +87,10 @@ test('a question about an elapsed event remains read-only and does not complete 
   await seedPastEvent(page)
 
   await openCapture(page)
-  await page.locator('.ultimate-capture-input').fill('节点测试科技 AI产品经理 面试完成了吗？')
-  await page.getByRole('button', { name: '告诉 PJSDAS', exact: true }).click()
+  await page.locator('.cgr-capture-input').fill('节点测试科技 AI产品经理 面试完成了吗？')
+  await page.getByRole('button', { name: '确认并保存' }).click()
   await expect(page.getByRole('status')).toContainText('没有被当作当前事实写入')
   await page.getByRole('button', { name: '关闭' }).click()
 
-  await expect(page.locator('.ultimate-agenda-node.unresolved').filter({ hasText: '节点测试科技' })).toBeVisible()
+  await expect(page.locator('.cgr-agenda-node.unresolved').filter({ hasText: '节点测试科技' })).toBeVisible()
 })

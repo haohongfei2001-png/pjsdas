@@ -26,6 +26,26 @@ export async function fingerprintWorkspace(snapshot: PJSDASSnapshot) {
   return [...new Uint8Array(digest)].map((value) => value.toString(16).padStart(2, '0')).join('')
 }
 
+// Local cache hydration materializes default rules and system timeline rows.
+// Compare those projections without treating an actual user edit as equivalent.
+export function equivalentReadProjection(local: PJSDASSnapshot, remote: PJSDASSnapshot) {
+  const normalized = (snapshot: PJSDASSnapshot) => {
+    const data: Record<string, unknown> = { ...snapshot.data }
+    if (rulesAreDefault(snapshot)) delete data.decisionRules
+    for (const [key, value] of Object.entries(data)) {
+      if (Array.isArray(value)) {
+        const rows = key === 'timeline'
+          ? value.filter((row) => row?.kind !== 'baseline_backfill')
+          : value
+        if (rows.length) data[key] = rows
+        else delete data[key]
+      }
+    }
+    return JSON.stringify(canonical(data))
+  }
+  return normalized(local) === normalized(remote)
+}
+
 function rulesAreDefault(snapshot: PJSDASSnapshot) {
   const rules = snapshot.data.decisionRules
   if (!rules) return true

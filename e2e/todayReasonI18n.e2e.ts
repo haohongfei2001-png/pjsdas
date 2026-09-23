@@ -50,9 +50,9 @@ test('Today priority explanations follow UI language without changing the TodayB
   }, { opportunity, action })
   await page.reload()
 
-  const focus = page.locator('.ultimate-next-action')
+  const focus = page.locator('.cgr-primary-action')
   await expect(focus.getByRole('heading', { name: 'Prepare application' })).toBeVisible()
-  await expect(focus.locator('.decision-why')).toHaveText('核心机会 · 早投有收益 · 现实成功率较高')
+  await expect(focus.locator('.cgr-action-reason')).toHaveText('核心机会 · 早投有收益 · 现实成功率较高')
 
   await page.locator('.ultimate-toolbar').getByRole('button', { name: /设置|Settings/ }).click()
   const interfaceGroup = page.locator('details.settings-group > summary').filter({ hasText: /界面.*显示层|Interface.*Presentation/ }).locator('..')
@@ -61,6 +61,6 @@ test('Today priority explanations follow UI language without changing the TodayB
   await page.locator('.surface-nav').getByRole('button', { name: /Today/ }).click()
 
   await expect(focus.getByRole('heading', { name: 'Prepare application' })).toBeVisible()
-  await expect(focus.locator('.decision-why')).toHaveText('Core opportunity · Early-application advantage · Strong fit')
+  await expect(focus.locator('.cgr-action-reason')).toHaveText('Core opportunity · Early-application advantage · Strong fit')
   await expect(page.getByText('核心机会', { exact: true })).toHaveCount(0)
 })

@@ -171,6 +171,11 @@ export default function AppV8() {
 
   function closeCapture() {
     navigate(captureReturnPath || '/today', true)
+    if (captureContextOpportunityId) {
+      window.requestAnimationFrame(() => {
+        document.querySelector<HTMLButtonElement>('.opportunity-detail-drawer .cgr-context-capture')?.focus()
+      })
+    }
     setCaptureContextOpportunityId(undefined)
   }
 
@@ -537,6 +542,7 @@ export default function AppV8() {
           applicationGroup={selectedGroup}
           timeline={selectedTimeline}
           onClose={() => navigate('/opportunities')}
+          onCapture={openCapture}
           onNavigate={navigateFromDetail}
         />
       ) : null}

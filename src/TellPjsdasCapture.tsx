@@ -238,13 +238,16 @@ export default function TellPjsdasCapture({
       setStableCommandId(undefined)
       if (result.status === 'NO_WRITE') {
         setMessage(zh
-          ? '没有写入：这段内容被判断为只读信息、问题、引用或缺少可确认事实。'
+          ? '没有被当作当前事实写入：这段内容是问题、引用，或缺少可确认事实。'
           : 'Nothing was written: this was read-only, a question/quote, or did not contain a confirmable fact.')
       } else if (result.status === 'ALREADY_APPLIED') {
         setMessage(zh ? '服务器确认这条来源已经处理过，没有重复写入。' : 'The server confirmed this source was already handled; no duplicate was created.')
       } else {
+        const summary = /^\d+ bounded update\(s\) committed\.$/.test(result.summary.trim())
+          ? (zh ? '已记录明确事实。' : 'Confirmed facts recorded.')
+          : result.summary
         const parts = [
-          result.summary,
+          summary,
           result.decisionRequestIds.length ? (zh ? `${result.decisionRequestIds.length} 项需要你决定。` : `${result.decisionRequestIds.length} item(s) need your decision.`) : '',
           result.unresolved.length ? (zh ? `${result.unresolved.length} 个片段仍不够明确，未写入。` : `${result.unresolved.length} fragment(s) remain ambiguous and were not written.`) : '',
         ].filter(Boolean)

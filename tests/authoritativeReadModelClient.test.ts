@@ -16,6 +16,7 @@ vi.mock('../src/cloud/syncState.js', () => ({
 }))
 
 vi.mock('../src/cloud/workspaceFingerprint.js', () => ({
+  equivalentReadProjection: vi.fn(),
   fingerprintWorkspace: vi.fn(),
   workspaceIsEffectivelyEmpty: vi.fn(),
 }))
@@ -27,7 +28,7 @@ import {
   getAccountCheckpoint,
   patchAccountCheckpoint,
 } from '../src/cloud/syncState.js'
-import { fingerprintWorkspace, workspaceIsEffectivelyEmpty } from '../src/cloud/workspaceFingerprint.js'
+import { equivalentReadProjection, fingerprintWorkspace, workspaceIsEffectivelyEmpty } from '../src/cloud/workspaceFingerprint.js'
 import {
   refreshConnectedAuthoritativeCache,
   TODAY_AUTHORITATIVE_REFRESH_INTERVAL_MS,
@@ -73,6 +74,7 @@ describe('CGR-02 authoritative Today read freshness', () => {
       lastSyncedFingerprint: 'local-fp',
     })
     vi.mocked(workspaceIsEffectivelyEmpty).mockReturnValue(false)
+    vi.mocked(equivalentReadProjection).mockReturnValue(false)
     vi.mocked(fingerprintWorkspace).mockImplementation(async (value: any) =>
       value?.marker === 'remote' ? 'remote-fp' : 'local-fp')
   })
@@ -89,6 +91,8 @@ describe('CGR-02 authoritative Today read freshness', () => {
     expect(patchAccountCheckpoint).toHaveBeenCalledWith('account-a', expect.objectContaining({
       lastSyncedVersion: 'txn:8',
       lastSyncedFingerprint: 'remote-fp',
+      lastReadProjectionFingerprint: 'local-fp',
+      lastReadProjectionSourceFingerprint: 'remote-fp',
     }))
     expect(window.dispatchEvent).toHaveBeenCalledTimes(1)
   })
@@ -107,6 +111,32 @@ describe('CGR-02 authoritative Today read freshness', () => {
     expect(result).toMatchObject({ state: 'diverged', changed: false })
     expect(replaceLocalSnapshotFromCloud).not.toHaveBeenCalled()
     expect(patchAccountCheckpoint).not.toHaveBeenCalled()
+  })
+
+  it('refreshes a projected cache when only the remote revision changes', async () => {
+    vi.mocked(getAccountCheckpoint).mockReturnValue({
+      lastSyncedVersion: 'txn:7',
+      lastSyncedFingerprint: 'remote-old-fp',
+      lastReadProjectionFingerprint: 'local-fp',
+      lastReadProjectionSourceFingerprint: 'remote-old-fp',
+    })
+    const result = await refreshConnectedAuthoritativeCache('account-a')
+    expect(result.state).toBe('updated')
+    expect(replaceLocalSnapshotFromCloud).toHaveBeenCalledWith(remoteSnapshot)
+  })
+
+  it('adopts a legacy checkpoint only when local projection is equivalent', async () => {
+    vi.mocked(getAccountCheckpoint).mockReturnValue({
+      lastSyncedVersion: 'txn:8',
+      lastSyncedFingerprint: 'remote-fp',
+    })
+    vi.mocked(equivalentReadProjection).mockReturnValue(true)
+    const result = await refreshConnectedAuthoritativeCache('account-a')
+    expect(result.state).toBe('current')
+    expect(replaceLocalSnapshotFromCloud).not.toHaveBeenCalled()
+    expect(patchAccountCheckpoint).toHaveBeenCalledWith('account-a', expect.objectContaining({
+      lastReadProjectionFingerprint: 'local-fp',
+    }))
   })
 
   it('does not adopt remote state over an unbound non-empty local workspace', async () => {

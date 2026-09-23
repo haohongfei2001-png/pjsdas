@@ -211,7 +211,7 @@ test('JSON backup restores a deliberately cleared local workspace and remains du
   await expect(page).toHaveURL(/\/settings$/)
   await expect(page.getByRole('heading', { name: '连接、自动化和长期控制' })).toBeVisible()
   await page.locator('.surface-nav').getByRole('button', { name: /今天/ }).click()
-  await expect(page.getByRole('heading', { name: '先让工作区有第一批真实机会' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: '先让 PJSDAS 知道你的求职现状' })).toBeVisible()
 
   await page.locator('.ultimate-toolbar').getByRole('button', { name: /设置/ }).click()
   await expect(page.getByRole('heading', { name: '连接、自动化和长期控制' })).toBeVisible()

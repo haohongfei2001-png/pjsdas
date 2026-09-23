@@ -5,6 +5,7 @@ vi.mock('../src/cloud/cloudClient.js', () => ({
 }))
 
 vi.mock('../src/db.js', () => ({
+  exportLocalSnapshot: vi.fn(async () => snapshot()),
   replaceLocalSnapshotFromCloud: vi.fn(async () => undefined),
 }))
 

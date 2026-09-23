@@ -100,8 +100,8 @@ test('390x844 shows a complete next action and at least one upcoming recruiting 
   })
 
   await page.reload()
-  const primary = page.locator('.ultimate-next-action')
-  const node = page.locator('.ultimate-agenda-node').filter({ hasText: '移动端科技' }).first()
+  const primary = page.locator('.cgr-primary-action')
+  const node = page.locator('.cgr-agenda-node').filter({ hasText: '移动端科技' }).first()
   await expect(primary.getByRole('heading', { name: '准备移动端面试材料' })).toBeVisible()
   await expect(node).toBeVisible()
   await expect(page.locator('.surface-nav').getByRole('button')).toHaveCount(2)

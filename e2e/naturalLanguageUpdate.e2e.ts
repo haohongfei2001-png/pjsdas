@@ -56,7 +56,7 @@ async function seedOpportunities(page: Page, opportunities: ReturnType<typeof so
 
 async function openCapture(page: Page) {
   await page.locator('.ultimate-capture-button').click()
-  await expect(page.getByRole('heading', { name: '直接告诉 PJSDAS' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: '告诉 PJSDAS' })).toBeVisible()
 }
 
 async function readMutationState(page: Page) {
@@ -99,8 +99,8 @@ test('explicit non-job task enters Today through Semantic Intake without ChangeS
   await page.goto('/')
   await openCapture(page)
 
-  await page.locator('.ultimate-capture-input').fill('待办：修改论文图表。')
-  await page.getByRole('button', { name: '告诉 PJSDAS', exact: true }).click()
+  await page.locator('.cgr-capture-input').fill('待办：修改论文图表。')
+  await page.getByRole('button', { name: '确认并保存' }).click()
   await expect(page.getByRole('status')).toContainText('已记录明确事实')
   await page.getByRole('button', { name: '关闭' }).click()
 
@@ -118,8 +118,8 @@ test('questions and rewrite requests remain read-only', async ({ page }) => {
   await page.goto('/')
   await openCapture(page)
 
-  await page.locator('.ultimate-capture-input').fill('这个岗位我该不该投？')
-  await page.getByRole('button', { name: '告诉 PJSDAS', exact: true }).click()
+  await page.locator('.cgr-capture-input').fill('这个岗位我该不该投？')
+  await page.getByRole('button', { name: '确认并保存' }).click()
   await expect(page.getByRole('status')).toContainText('没有被当作当前事实写入')
   await page.getByRole('button', { name: '关闭' }).click()
 
@@ -134,8 +134,8 @@ test('source-backed alias application updates the canonical job in place instead
   await seedOpportunities(page, [canonical])
   await openCapture(page)
 
-  await page.locator('.ultimate-capture-input').fill('投递 别名科技 AI产品经理。')
-  await page.getByRole('button', { name: '告诉 PJSDAS', exact: true }).click()
+  await page.locator('.cgr-capture-input').fill('投递 别名科技 AI产品经理。')
+  await page.getByRole('button', { name: '确认并保存' }).click()
   await expect(page.getByRole('status')).toContainText('已记录明确事实')
   await page.getByRole('button', { name: '关闭' }).click()
 
@@ -165,8 +165,8 @@ test('ambiguous same-company role input creates DecisionRequest instead of guess
   await seedOpportunities(page, jobs)
   await openCapture(page)
 
-  await page.locator('.ultimate-capture-input').fill('投递 歧义科技产品经理。')
-  await page.getByRole('button', { name: '告诉 PJSDAS', exact: true }).click()
+  await page.locator('.cgr-capture-input').fill('投递 歧义科技产品经理。')
+  await page.getByRole('button', { name: '确认并保存' }).click()
   await expect(page.getByRole('status')).toContainText('1 项需要你决定')
   await page.getByRole('button', { name: '去决定' }).click()
 

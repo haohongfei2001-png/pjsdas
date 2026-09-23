@@ -2,7 +2,7 @@ import type { UserDomainCommand } from '../domainCommands.js'
 import type { SemanticIntakeObservation } from '../model.js'
 import { validateSnapshot, type PJSDASSnapshot } from '../snapshot.js'
 import { fetchBackend } from '../backendEndpoints.js'
-import { replaceLocalSnapshotFromCloud } from '../db.js'
+import { exportLocalSnapshot, replaceLocalSnapshotFromCloud } from '../db.js'
 import { getAccountAccessToken } from './cloudClient.js'
 import { getAccountCheckpoint, patchAccountCheckpoint } from './syncState.js'
 import { fingerprintWorkspace } from './workspaceFingerprint.js'
@@ -168,9 +168,12 @@ async function currentRevision() {
 async function projectAuthoritativeResult(accountKey: string, result: ConnectedCommandResponse) {
   await replaceLocalSnapshotFromCloud(result.snapshot)
   const fingerprint = await fingerprintWorkspace(result.snapshot)
+  const projectedFingerprint = await fingerprintWorkspace(await exportLocalSnapshot())
   patchAccountCheckpoint(accountKey, {
     lastSyncedVersion: result.workspaceVersion ?? `txn:${result.revision}`,
     lastSyncedFingerprint: fingerprint,
+    lastReadProjectionFingerprint: projectedFingerprint,
+    lastReadProjectionSourceFingerprint: fingerprint,
     lastSyncedAt: new Date().toISOString(),
     conflict: undefined,
     lastError: undefined,

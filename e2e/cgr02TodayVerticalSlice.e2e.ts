@@ -283,7 +283,7 @@ test('CGR-02 golden journey: understand -> authoritative save -> cross-client vi
 
   await pageA.getByRole('button', { name: '岗位详情' }).click()
   await expect(pageA).toHaveURL(/\/pjsdas\/opportunities\/A-opp-1$/)
-  const opener = pageA.locator('.cgr-global-capture')
+  const opener = pageA.locator('.opportunity-detail-drawer .cgr-context-capture')
   await opener.click()
   await expect(pageA).toHaveURL(/\/pjsdas\/today\/capture$/)
   await expect(pageA.getByText('当前上下文：A公司 · 产品经理')).toBeVisible()
@@ -296,7 +296,7 @@ test('CGR-02 golden journey: understand -> authoritative save -> cross-client vi
 
   await pageA.getByRole('button', { name: '确认并保存' }).click()
   await expect(pageA.getByText('已保存')).toBeVisible()
-  await expect(pageA.getByText(/已记录：整理面试材料/)).toBeVisible()
+  await expect(pageA.getByRole('status').getByText(/已记录：整理面试材料/)).toBeVisible()
 
   const semanticCommand = state.commandBodies.find((body) => body.action === 'command')
   expect(semanticCommand.command.value.contextRefs).toEqual(['opportunity:A-opp-1'])
@@ -304,12 +304,12 @@ test('CGR-02 golden journey: understand -> authoritative save -> cross-client vi
 
   // Today is the route behind the capture sheet, so the authoritative projection updates
   // immediately without a navigation/reload even while the saved receipt remains available.
-  await expect(pageA.getByRole('heading', { name: '整理面试材料' })).toHaveCount(1)
+  await expect(pageA.locator('.cgr-recent-section').getByText('已记录：整理面试材料')).toHaveCount(1)
   await expect(pageA.getByText('PJSDAS 刚处理的变化')).toHaveCount(1)
 
   const propagatedAt = Date.now()
   await pageB.evaluate(() => window.dispatchEvent(new Event('focus')))
-  await expect(pageB.getByRole('heading', { name: '整理面试材料' })).toBeVisible({ timeout: 15_000 })
+  await expect(pageB.locator('.cgr-recent-section').getByText('已记录：整理面试材料')).toBeVisible({ timeout: 15_000 })
   const propagationMs = Date.now() - propagatedAt
   expect(propagationMs).toBeLessThan(15_000)
 
@@ -329,7 +329,7 @@ test('CGR-02 golden journey: understand -> authoritative save -> cross-client vi
 
   await pageA.getByRole('button', { name: '关闭' }).click()
   await expect(opener).toBeFocused()
-  await pageA.locator('.surface-nav').getByRole('button', { name: /今天|Today/ }).click()
+  await pageA.locator('.opportunity-detail-drawer').getByRole('button', { name: /回到 Today|Back to Today/ }).click()
   await mkdir(VISUAL_DIR, { recursive: true })
   await pageA.screenshot({ path: `${VISUAL_DIR}/normal-desktop.png`, fullPage: true })
 
