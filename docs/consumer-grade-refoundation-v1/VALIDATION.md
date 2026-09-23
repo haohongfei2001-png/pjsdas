@@ -128,7 +128,7 @@ Use three levels:
 
 If the only missing level-3 evidence is unavailable because of an external deployment quota, provider rate limit, or equivalent environment capacity, record `PRODUCTION_PENDING_EXTERNAL`. Do not call it PASS and do not delete the pending evidence.
 
-Under the bounded overlap rule in EXECUTION_PROTOCOL.md, the next frozen CGR phase may proceed with engineering while the earlier phase waits for external production capacity, with a maximum lead of one phase.
+Under the current continuous-engineering rule in EXECUTION_PROTOCOL.md, dependency-safe engineering may continue through the remaining frozen CGR phases while external-only production evidence is pending. There is no arbitrary one-phase lead limit. CGR-05 and the package remain uncertified until every applicable deferred production gate passes.
 
 When deployment capacity returns, prefer the newest stable integrated exact SHA that contains the pending phases. One deployment may certify multiple pending phases, but each phase's own previously frozen production journey must actually run and be recorded separately against that SHA.
 

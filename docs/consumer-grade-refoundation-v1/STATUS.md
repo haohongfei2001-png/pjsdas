@@ -11,7 +11,7 @@ Product origin: https://todayaction.com
 Status: ACTIVE — CGR-03/CGR-04 ENGINEERING_COMPLETE / PRODUCTION_PENDING_EXTERNAL
 Current production-pending phases: CGR-03, CGR-04
 Last completed phase: CGR-02
-Current engineering phase: CGR-05 READY — dependency-safe engineering
+Current engineering phase: CGR-05 IN_PROGRESS on sole branch `manager/cgr05-consumer-cert-20260924`
 Automatic continuation: ENABLED through dependency-safe CGR-05 engineering under EXECUTION_PROTOCOL.md; deferred production gates remain mandatory for final closure
 
 ## Phase state
@@ -23,7 +23,7 @@ Automatic continuation: ENABLED through dependency-safe CGR-05 engineering under
 | CGR-02 | COMPLETE / PASS | Today Vertical Slice production command canary, exact-main engineering and cleanup passed at runtime `408faba1b34f31614dba8c5ec84b656c8dca9866`; see `receipts/CGR-02.md` |
 | CGR-03 | ENGINEERING_COMPLETE / PRODUCTION_PENDING_EXTERNAL | PRs #127/#131 integrated; exact-main engineering checks passed; production browser canary awaits an exact deployed runtime |
 | CGR-04 | ENGINEERING_COMPLETE / PRODUCTION_PENDING_EXTERNAL | PR #133 integrated at runtime main `0acf71aca95708cd46cc9f50011e62a3a6ca23cf`; exact-main CI, Browser E2E and VoiceOver passed; current-live source canaries remain pending; see `receipts/CGR-04-ENGINEERING.md` |
-| CGR-05 | READY — CONTINUOUS ENGINEERING | May start automatically under the frozen contract; cannot close until all applicable deferred production evidence passes |
+| CGR-05 | IN_PROGRESS — CONTINUOUS ENGINEERING | Sole writer `manager/cgr05-consumer-cert-20260924`, started from main `66fa75d0755fbaad5da6a6e0ee94900305262f08`; cannot close until all applicable deferred production evidence passes |
 
 ## Ultimate Usability handoff
 
