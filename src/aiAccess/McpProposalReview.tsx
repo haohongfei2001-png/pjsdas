@@ -238,6 +238,20 @@ export default function McpProposalReview() {
         setResult(zh ? '已审阅的岗位来源更新已保存到账号工作区。' : 'Reviewed source refresh was saved to the account workspace.')
         return
       }
+      if (connectedWorkspaceAuthorityEnabled() && cloud.session && proposal.changeSet.operations.length > 0 &&
+        proposal.changeSet.operations.every((operation) => operation.kind === 'progress_update')) {
+        if (cloud.checkpoint.conflict) throw new Error('账号工作区存在冲突；请先处理，再重新生成提议。')
+        if (!signedToken) throw new Error('已验证的签名提议不可用；请重新打开提议。')
+        const result = await executeConnectedBusinessCommand(cloud.session.user.id, {
+          type: 'mcp_apply_progress', value: { token: signedToken },
+        }, { commandId: createConnectedCommandId('mcp-apply-progress') })
+        if (result.outcome !== 'COMMITTED' && result.outcome !== 'ALREADY_APPLIED') {
+          throw new Error(result.conflict?.message ?? '进展更新未写入账号工作区。')
+        }
+        announceWorkspaceChange()
+        setResult(zh ? '已审阅的进展更新已保存到账号工作区。' : 'Reviewed progress updates were saved to the account workspace.')
+        return
+      }
       await savePendingChangeSet(reviewedChangeSet)
       await applyMcpChangeSetWithBaseline(reviewedChangeSet)
 

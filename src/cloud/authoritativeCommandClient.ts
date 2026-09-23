@@ -21,6 +21,7 @@ export type ConnectedBusinessCommand =
   | { type: 'mcp_apply_actions'; value: { token: string } }
   | { type: 'mcp_apply_rules'; value: { token: string } }
   | { type: 'mcp_apply_source_refresh'; value: { token: string } }
+  | { type: 'mcp_apply_progress'; value: { token: string } }
   | { type: 'mcp_discard'; value: {
       token: string
       rejectionSelections: Record<string, { code: 'location' | 'compensation' | 'role_direction' | 'company_value' | 'requirements' | 'already_have_better' | 'not_interested' | 'other'; note?: string }>
