@@ -25,13 +25,22 @@ For post-UU-07 product sequencing, consumer experience, connected Web mutation a
 
 UU-08 and UU-09 are HOLD — NOT_AUTHORIZED unless the owner later explicitly reactivates them after CGR-05.
 
-## One-phase execution
+## One-phase execution and bounded certification overlap
 
-One execution handles only the current authorized CGR phase.
+One engineering execution normally handles only the current authorized CGR phase.
 
-Do not start a later CGR phase, start UU-08/UU-09, add a new CGR phase, broaden external permissions/actions, publish a release, or modify real production data outside the phase contract.
+Do not start UU-08/UU-09, add a new CGR phase, broaden external permissions/actions, publish a release, or modify real production data outside the frozen CGR contracts.
 
-A phase completion does not authorize the next phase automatically.
+The owner has authorized one bounded throughput exception for the fixed CGR-00 through CGR-05 sequence:
+
+- when CGR-N has finished implementation plus all non-production engineering gates and the **only** remaining blocker is external deployment/production-certification availability such as a provider quota or rate limit, record `ENGINEERING_COMPLETE / PRODUCTION_PENDING_EXTERNAL`;
+- this is not `COMPLETE`, is not a production PASS, and does not waive any frozen production exit criterion;
+- the engineering-stable phase may be integrated to `main` after required CI/browser/security and exact-main engineering checks, while its production certification remains pending;
+- CGR-(N+1) may then begin engineering work without waiting for the external quota window, provided it is already part of the frozen six-phase plan and introduces no new owner gate;
+- at most **one phase** may be ahead of the earliest production-pending phase. If CGR-(N+1) also reaches engineering completion, do not start CGR-(N+2) until the earlier pending production gate is resolved;
+- if a delayed production canary reveals an implementation/product defect rather than an external-environment failure, stop forward engineering and repair the earliest affected pending phase before continuing.
+
+This standing exception authorizes only the bounded one-phase-ahead engineering continuation described above. It does not authorize publication, new permissions, new costs, consequential external actions, or a seventh CGR phase.
 
 ## CGR-00 restriction
 
@@ -119,7 +128,11 @@ After merge:
 
 Publication remains separate from implementation completion unless the phase explicitly includes and the owner authorizes publication.
 
-Existing exact-SHA, authorization, security, and production gates may be strengthened but not weakened to make CGR pass.
+Deployment for certification is also separate from publication. Do not deploy every inner-loop candidate. When external deployment capacity is limited, prefer one stable exact integrated SHA and use that deployment to run the frozen production acceptance journeys for every pending phase whose code is contained in that SHA.
+
+A single deployment may support multiple phase receipts only when each phase's own frozen canary/journey is actually executed and recorded against that same exact deployed SHA. Historical candidate deployments are not required merely to recreate chronology.
+
+Existing exact-SHA, authorization, security, data-integrity and production gates may be strengthened but not weakened to make CGR pass. A quota/rate-limit result is `PRODUCTION_PENDING_EXTERNAL`, never PASS.
 
 ## Sensitive-data discipline
 

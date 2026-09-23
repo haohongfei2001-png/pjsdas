@@ -115,3 +115,24 @@ Do not narrow the fixture until a test passes, silently change the metric denomi
 ## Completion evidence format
 
 Every phase receipt/report includes user-visible outcome, exact main SHA, changed architectural boundary, preserved invariants, journey evidence, degraded/failure evidence, visual/responsive/accessibility evidence as applicable, production/canary evidence as applicable, retired legacy paths, remaining known limitations, and release/permission/cost state.
+
+## Validation cadence and production-certification scheduling
+
+The evidence hierarchy above is a completion standard, not an instruction to rerun every expensive layer after every small fix.
+
+Use three levels:
+
+1. **Inner loop / candidate** — targeted tests, affected regressions and bounded browser checks for the changed behavior. Do not deploy every candidate.
+2. **Engineering phase gate** — implementation complete, required CI, Browser E2E, applicable visual/responsive/accessibility/failure evidence, security/integrity checks, and no known engineering blocker. A phase at this point may be recorded as `ENGINEERING_COMPLETE`.
+3. **Production certification gate** — deploy an exact integrated SHA and execute the phase's frozen production canary/journey, cross-client/receipt/Undo or source evidence as applicable. Only after this and every other exact exit criterion pass may the phase be `COMPLETE`.
+
+If the only missing level-3 evidence is unavailable because of an external deployment quota, provider rate limit, or equivalent environment capacity, record `PRODUCTION_PENDING_EXTERNAL`. Do not call it PASS and do not delete the pending evidence.
+
+Under the bounded overlap rule in EXECUTION_PROTOCOL.md, the next frozen CGR phase may proceed with engineering while the earlier phase waits for external production capacity, with a maximum lead of one phase.
+
+When deployment capacity returns, prefer the newest stable integrated exact SHA that contains the pending phases. One deployment may certify multiple pending phases, but each phase's own previously frozen production journey must actually run and be recorded separately against that SHA.
+
+Publication is not part of routine certification. A certification deployment does not imply a public release, and package publication remains separately authorized.
+
+Security, privacy, data-integrity, destructive-action, rollback and real production failures are not deferrable for throughput. If a delayed canary exposes a real product defect, it supersedes forward scheduling and must be repaired before further phase expansion.
+
