@@ -117,7 +117,7 @@ test('explicit non-job task enters Today through Semantic Intake without ChangeS
 test('a quoted old thread cannot create a second action beside the current Web update', async ({ page }) => {
   await page.goto('/')
   await openCapture(page)
-  await page.locator('.cgr-capture-input').fill('待办：修改论文图表。\n> 待办：整理旧材料。')
+  await page.locator('.cgr-capture-input').fill('待办：修改论文图表。\n-----Original Message-----\n待办：整理旧材料。')
   await page.getByRole('button', { name: '确认并保存' }).click()
   await expect(page.getByRole('status')).toContainText('已记录明确事实')
   await page.getByRole('button', { name: '关闭' }).click()

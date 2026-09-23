@@ -52,6 +52,8 @@ describe('UU-04 Web Semantic Intake completion normalization', () => {
     '节点测试科技 AI产品经理 面试完成了。\n> 节点测试科技 AI产品经理 面试改到明天14:00',
     '节点测试科技 AI产品经理 面试完成了。\n引用：节点测试科技 AI产品经理 明天14:00面试',
     '节点测试科技 AI产品经理 面试完成了。 引用：节点测试科技 AI产品经理 明天14:00面试',
+    '节点测试科技 AI产品经理 面试完成了。\nOn Tue, Sep 20, recruiter wrote:\n节点测试科技 AI产品经理 明天14:00面试',
+    '节点测试科技 AI产品经理 面试完成了。\n-----Original Message-----\n节点测试科技 AI产品经理 明天14:00面试',
   ])('does not turn a quoted old thread into a second current event: %s', (text) => {
     const { opportunity, snapshot } = fixture()
     const interpretation = buildWebSemanticInterpretation(text, [opportunity], snapshot, [], NOW)
@@ -66,6 +68,19 @@ describe('UU-04 Web Semantic Intake completion normalization', () => {
     const { opportunity, snapshot } = fixture()
     const interpretation = buildWebSemanticInterpretation('“节点测试科技 AI产品经理 明天14:00面试”', [opportunity], snapshot, [], NOW)
     expect(interpretation).toMatchObject({ mode: 'quote', candidates: [] })
+  })
+
+  it.each([
+    'On Tue, Sep 20, recruiter wrote:',
+    '-----Original Message-----',
+  ])('keeps a current application separate from a quoted email thread beginning %s', (boundary) => {
+    const { opportunity, snapshot } = fixture()
+    const interpretation = buildWebSemanticInterpretation(
+      `节点测试科技 AI产品经理 已投递成功。\n${boundary}\n节点测试科技 AI产品经理 明天14:00面试`,
+      [opportunity], snapshot, [], NOW,
+    )
+    expect(interpretation.candidates.length).toBeGreaterThan(0)
+    expect(interpretation.candidates.some((candidate) => candidate.kind === 'process_event' && candidate.eventType === 'interview_invite')).toBe(false)
   })
 
   it('preserves a quoted role name inside a current assertion', () => {

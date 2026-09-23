@@ -32,10 +32,19 @@ export function webStatementMode(text: string): SemanticStatementMode {
 // Only explicit quote boundaries are removed; quoted role names inside a
 // current statement remain available for identity resolution.
 function withoutQuotedContext(text: string) {
-  return text.split(/\r?\n/).map((line) => {
-    if (/^\s*>/.test(line)) return ''
-    return line.replace(/(?:^|\s)(?:引用|原话|quote)\s*[:：].*$/i, '')
-  }).join('\n').trim()
+  const current: string[] = []
+  for (const line of text.split(/\r?\n/)) {
+    // Email quote headers often precede unprefixed old content. Once a clear
+    // boundary appears, later lines cannot safely be treated as current facts.
+    if (/^\s*(?:>|[- ]*Original Message[- ]*|[- ]*Forwarded message[- ]*|On .+ wrote:|转发邮件|原始邮件|引用\s*[:：]|原话\s*[:：]|quote\s*[:：])/i.test(line)) break
+    const inlineQuote = /(?:^|\s)(?:引用|原话|quote)\s*[:：]/i.exec(line)
+    if (inlineQuote) {
+      current.push(line.slice(0, inlineQuote.index))
+      break
+    }
+    current.push(line)
+  }
+  return current.join('\n').trim()
 }
 
 function hasExplicitClock(text: string) {
