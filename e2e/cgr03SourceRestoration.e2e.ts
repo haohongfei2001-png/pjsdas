@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test'
 import { prepareJourney } from './support/cgr02Journey.js'
 
-test('CGR-03 broken Gmail source explains stale data and offers explicit read-only reauthorization', async ({ page }) => {
+test('CGR-03 broken Gmail source explains stale data and offers explicit read-only reauthorization', async ({ page }, testInfo) => {
   await prepareJourney(page)
   await page.route('**/api/automation-settings', (route) => route.fulfill({
     status: 200,
@@ -25,6 +25,7 @@ test('CGR-03 broken Gmail source explains stale data and offers explicit read-on
   await expect(card).toContainText('最近一次邮件检查失败，已有资料仍可查看')
   await expect(card).toContainText('重新授权会再次请求上方说明的 90 天 Gmail 只读范围')
   await expect(card.getByRole('button', { name: '查看并重新授权 Gmail' })).toBeVisible()
+  await page.screenshot({ path: testInfo.outputPath('cgr03-settings-degraded-source.png'), fullPage: true })
   await card.getByRole('button', { name: '查看并重新授权 Gmail' }).click()
   await expect.poll(() => authorizationUrl).toContain('/auth/v1/authorize')
   expect(new URL(authorizationUrl).searchParams.get('scopes')).toContain('gmail.readonly')

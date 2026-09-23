@@ -70,7 +70,7 @@ test('CGR-03 dense mixed-language workspace keeps search, identity, and return f
   await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 2)).toBe(true)
 })
 
-test('UU-05 Opportunities centers In Progress / Worth Pursuing and opens conclusion-first detail', async ({ page }) => {
+test('UU-05 Opportunities centers In Progress / Worth Pursuing and opens conclusion-first detail', async ({ page }, testInfo) => {
   await page.goto('/')
   await page.evaluate(async () => {
     const now = Date.now()
@@ -190,11 +190,13 @@ test('UU-05 Opportunities centers In Progress / Worth Pursuing and opens conclus
   const endedRow = rows.filter({ hasText: '结束科技' })
   await expect(endedRow).toBeVisible()
   await expect(endedRow).not.toContainText('过期的结束流程待办')
+  await page.screenshot({ path: testInfo.outputPath('cgr03-ended-list.png'), fullPage: true })
   await endedRow.click()
   const endedDetail = page.getByRole('dialog', { name: /岗位详情|Opportunity details/ })
   await endedDetail.locator('.opportunity-detail-section').filter({ hasText: /准备与相关待办|Preparation & related actions/ }).locator('summary').click()
   await expect(endedDetail).toContainText('旧待办不会继续推荐；原记录仍保留')
   await expect(endedDetail.getByRole('button', { name: /标记完成|Mark done/ })).toHaveCount(0)
+  await page.screenshot({ path: testInfo.outputPath('cgr03-ended-detail.png'), fullPage: true })
   await page.keyboard.press('Escape')
   await expect(rows.filter({ hasText: '值得科技' })).toHaveCount(0)
 
