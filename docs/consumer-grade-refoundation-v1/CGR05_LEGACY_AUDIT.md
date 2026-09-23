@@ -29,3 +29,9 @@ Production architecture certification remains pending exact deployment under `DE
 ## First bounded safety change
 
 Background timer/focus/online refresh in transactional mode now reads and reconciles without silently choosing `push_local` for a whole-workspace commit. When it finds local changes that still depend on a legacy writer, it reports `local_pending` and preserves the local data and checkpoint. Explicit existing sync after a supported legacy mutation remains available until that consumer is converted. The connected passive/explicit boundary has a focused test; this is a containment step, not retirement of `legacy_uncovered_web`.
+
+## Receipt integrity while retiring legacy writes
+
+Connected compatibility commits now enumerate Discovery Inbox items, Discovery Profile, ChangeSets, timeline entries and import metadata in `affectedObjects`. Previously these fields were omitted from the object diff, so a whole-snapshot write touching only those fields could carry an empty affected-object list. The focused receipt-scope regression verifies that a Discovery Inbox change and Profile change are visible to later object-level overlap checks. The existing first-party command test now expects its timeline entry to appear beside the changed Action. This fixes receipt accounting; it does not authorize broad snapshot writes as a final architecture.
+
+Discovery Inbox/Profile/MCP proposal save paths now require `ensureAuthoritativePersistence` before showing requested cloud persistence. A conflict, pulled replacement, busy sync or unknown result cannot be mislabeled as successful remote save. The remaining `legacy_uncovered_web` call still needs retirement. Adding new first-party typed commands must preserve the separate MCP permission boundary: the shared `applyUserCommandSchema` also defines an MCP callable surface, so migrating a Web-only mutation by broadening that schema without a separate authorization check would be a permission expansion.
