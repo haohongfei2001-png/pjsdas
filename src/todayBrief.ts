@@ -105,6 +105,16 @@ export interface TodayBriefDecisionRequest {
   expiresAt?: string
 }
 
+export interface TodayBriefRecentChange {
+  id: string
+  status: 'committed' | 'decision_required' | 'undone'
+  summary: string
+  updatedAt: string
+  affectedObjectCount: number
+  decisionRequestCount: number
+  undoAvailable: boolean
+}
+
 export interface TodayBriefCoverageWarning {
   code:
     | 'coverage_missing_sources'
@@ -134,6 +144,7 @@ export interface TodayBrief {
   nextActions: TodayBriefAction[]
   agendaGroups: TodayBriefAgendaGroup[]
   relevantDecisionRequests: TodayBriefDecisionRequest[]
+  recentChanges: TodayBriefRecentChange[]
   materialCoverageWarnings: TodayBriefCoverageWarning[]
   internalDiagnostics: {
     rankedActionCount: number
@@ -536,6 +547,22 @@ function relevantDecisions(
     }))
 }
 
+function recentSemanticChanges(snapshot: PJSDASSnapshot): TodayBriefRecentChange[] {
+  return (snapshot.data.semanticReceipts ?? [])
+    .filter((item) => item.status === 'committed' || item.status === 'decision_required' || item.status === 'undone')
+    .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt) || b.id.localeCompare(a.id))
+    .slice(0, 3)
+    .map((item) => ({
+      id: item.id,
+      status: item.status as TodayBriefRecentChange['status'],
+      summary: item.summary,
+      updatedAt: item.updatedAt,
+      affectedObjectCount: item.affectedObjects.length,
+      decisionRequestCount: item.decisionRequestIds.length,
+      undoAvailable: item.undoAvailable,
+    }))
+}
+
 function warning(
   code: TodayBriefCoverageWarning['code'],
   severity: TodayBriefCoverageWarning['severity'],
@@ -706,6 +733,7 @@ export function buildTodayBrief(
     nextActions: visibleActions.slice(1),
     agendaGroups,
     relevantDecisionRequests: decisions,
+    recentChanges: recentSemanticChanges(snapshot),
     materialCoverageWarnings: warnings,
     internalDiagnostics: {
       rankedActionCount: ranked.length,

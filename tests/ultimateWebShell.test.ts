@@ -3,7 +3,9 @@ import { describe, expect, it } from 'vitest'
 
 const app = readFileSync(new URL('../src/AppV8.tsx', import.meta.url), 'utf8')
 const entry = readFileSync(new URL('../src/main.tsx', import.meta.url), 'utf8')
-const css = readFileSync(new URL('../src/ultimateWeb.css', import.meta.url), 'utf8')
+const legacyCss = readFileSync(new URL('../src/ultimateWeb.css', import.meta.url), 'utf8')
+const today = readFileSync(new URL('../src/today/TodayFeature.tsx', import.meta.url), 'utf8')
+const todayCss = readFileSync(new URL('../src/today/today.css', import.meta.url), 'utf8')
 const capture = readFileSync(new URL('../src/TellPjsdasCapture.tsx', import.meta.url), 'utf8')
 const adapter = readFileSync(new URL('../src/webSemanticIntake.ts', import.meta.url), 'utf8')
 
@@ -15,6 +17,7 @@ describe('UU-04 final Web shell contract', () => {
       '/opportunities',
       '/opportunities/',
       '/capture',
+      '/today/capture',
       '/decisions',
       '/settings',
       '/history',
@@ -27,8 +30,9 @@ describe('UU-04 final Web shell contract', () => {
   it('projects Web Today from the canonical TodayBrief instead of recomputing a parallel daily model', () => {
     expect(app).toContain('buildTodayBrief(')
     expect(app).toContain('brief={todayBrief}')
-    expect(app).toContain('brief.nextAction')
-    expect(app).toContain('brief.agendaGroups')
+    expect(today).toContain('brief.nextAction')
+    expect(today).toContain('brief.agendaGroups')
+    expect(today).toContain('brief.recentChanges')
     expect(app).not.toContain('const ranked = useMemo(() => rankActions')
     expect(app).not.toContain('const plan = buildTimePlan')
   })
@@ -52,13 +56,15 @@ describe('UU-04 final Web shell contract', () => {
     expect(app).not.toContain('ProgressInbox')
   })
 
-  it('meets the 390x844 mobile information-order gate structurally', () => {
-    expect(css).toContain('@media(max-width:430px)')
-    expect(css).toContain('grid-template-areas:"primary" "agenda" "next"')
-    expect(css).toContain('grid-template-columns:repeat(2,minmax(0,1fr))')
-    expect(css).toContain('bottom:calc(78px + env(safe-area-inset-bottom))')
-    expect(app.indexOf('ultimate-primary-slot')).toBeLessThan(app.indexOf('ultimate-agenda'))
-    expect(app.indexOf('ultimate-agenda')).toBeLessThan(app.indexOf('ultimate-next-list-section'))
+  it('keeps the migrated Today hierarchy responsive without reviving the old daily surface', () => {
+    expect(todayCss).toContain('@media (max-width: 640px)')
+    expect(todayCss).toContain('.cgr-primary-action')
+    expect(todayCss).toContain('.cgr-agenda')
+    expect(todayCss).toContain('.cgr-next-section')
+    expect(today.indexOf('cgr-primary-action')).toBeLessThan(today.indexOf('cgr-next-section'))
+    expect(today.indexOf('cgr-primary-action')).toBeLessThan(today.indexOf('cgr-agenda'))
+    expect(legacyCss).toContain('.ultimate-mobile-capture')
+    expect(app).not.toContain('function TodaySurface(')
   })
 
   it('keeps Decisions conditional and low-frequency controls outside primary navigation', () => {

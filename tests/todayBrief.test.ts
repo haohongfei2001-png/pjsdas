@@ -5,6 +5,7 @@ import type {
   Opportunity,
   ProcessEvent,
   ProcessRecord,
+  SemanticIntakeReceipt,
 } from '../src/model.js'
 import { createDefaultDecisionRules } from '../src/decisionRules.js'
 import { createSnapshot, type PJSDASSnapshot } from '../src/snapshot.js'
@@ -106,6 +107,7 @@ function snapshot(input: {
   events?: ProcessEvent[]
   actions?: Action[]
   decisions?: DecisionRequest[]
+  receipts?: SemanticIntakeReceipt[]
 } = {}): PJSDASSnapshot {
   return createSnapshot({
     opportunities: input.opportunities ?? [],
@@ -116,7 +118,7 @@ function snapshot(input: {
     applicationGroups: [],
     decisionRules: createDefaultDecisionRules('2026-09-19T12:00:00.000Z'),
     decisionRequests: input.decisions ?? [],
-    semanticReceipts: [],
+    semanticReceipts: input.receipts ?? [],
     timeline: [],
     changeSets: [],
   }, '2026-09-20T11:59:00.000Z')
@@ -322,6 +324,40 @@ describe('UU-03 TodayBrief read model', () => {
     const brief = buildTodayBrief(source, {}, { now: NOW, timezone: TZ })
     expect(brief.relevantDecisionRequests.map((item) => item.id)).toContain('decision-1')
     expect(brief.relevantDecisionRequests.map((item) => item.id)).not.toContain('decision-expired')
+  })
+
+  it('projects at most three meaningful semantic receipts newest-first without exposing no-write noise', () => {
+    const receipt = (id: string, status: SemanticIntakeReceipt['status'], updatedAt: string): SemanticIntakeReceipt => ({
+      id,
+      inputId: `input:${id}`,
+      sourceKind: 'web',
+      sourceId: 'todayaction-web',
+      sourceRecordId: `record:${id}`,
+      status,
+      summary: `summary ${id}`,
+      affectedObjects: status === 'no_write' ? [] : [{ type: 'action', id: `action:${id}` }],
+      decisionRequestIds: status === 'decision_required' ? [`decision:${id}`] : [],
+      undoAvailable: status === 'committed',
+      createdAt: updatedAt,
+      updatedAt,
+    })
+    const brief = buildTodayBrief(snapshot({
+      receipts: [
+        receipt('old', 'committed', '2026-09-20T08:00:00.000Z'),
+        receipt('decision', 'decision_required', '2026-09-20T09:00:00.000Z'),
+        receipt('noise', 'no_write', '2026-09-20T12:00:00.000Z'),
+        receipt('undone', 'undone', '2026-09-20T10:00:00.000Z'),
+        receipt('new', 'committed', '2026-09-20T11:00:00.000Z'),
+      ],
+    }), {}, { now: NOW, timezone: TZ })
+
+    expect(brief.recentChanges.map((item) => item.id)).toEqual(['new', 'undone', 'decision'])
+    expect(brief.recentChanges.find((item) => item.id === 'new')).toMatchObject({
+      affectedObjectCount: 1,
+      decisionRequestCount: 0,
+      undoAvailable: true,
+    })
+    expect(brief.recentChanges.some((item) => item.id === 'noise')).toBe(false)
   })
 
   it('reports material source-coverage gaps without turning them into DecisionRequests', () => {

@@ -59,18 +59,18 @@ test('active Today and Prepare surfaces localize presentation without changing s
   })
 
   await page.reload()
-  const primary = page.locator('.ultimate-next-action')
+  const primary = page.locator('.cgr-primary-action')
   await expect(primary.getByRole('heading', { name: 'Timed follow-up' })).toBeVisible()
-  await expect(primary.locator('.decision-why')).toContainText('节点非常近')
-  await expect(primary.locator('.ultimate-action-meta')).toContainText('截止')
+  await expect(primary.locator('.cgr-action-reason')).toContainText('节点非常近')
+  await expect(primary.locator('.cgr-action-meta')).toContainText('截止')
 
   await page.locator('.ultimate-toolbar').getByRole('button', { name: /设置|Settings/ }).click()
   const interfaceGroup = page.locator('details.settings-group > summary').filter({ hasText: /界面.*显示层|Interface.*Presentation/ }).locator('..')
   await interfaceGroup.locator('summary').click()
   await interfaceGroup.getByRole('button', { name: 'EN', exact: true }).click()
   await page.locator('.surface-nav').getByRole('button', { name: /Today/ }).click()
-  await expect(primary.locator('.decision-why')).toContainText('Immediate timing risk')
-  await expect(primary.locator('.ultimate-action-meta')).toContainText('Deadline:')
+  await expect(primary.locator('.cgr-action-reason')).toContainText('Immediate timing risk')
+  await expect(primary.locator('.cgr-action-meta')).toContainText('Deadline:')
   await expect(primary).not.toContainText('节点非常近')
 
   await page.locator('.surface-nav').getByRole('button', { name: /Opportunities/ }).click()

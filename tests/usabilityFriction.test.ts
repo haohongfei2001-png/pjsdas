@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 
 const app = readFileSync(new URL('../src/AppV8.tsx', import.meta.url), 'utf8')
 const capture = readFileSync(new URL('../src/TellPjsdasCapture.tsx', import.meta.url), 'utf8')
+const today = readFileSync(new URL('../src/today/TodayFeature.tsx', import.meta.url), 'utf8')
 
 describe('UU-04 Web friction rules', () => {
   it('keeps action completion reversible through the existing bounded status path', () => {
@@ -13,15 +14,13 @@ describe('UU-04 Web friction rules', () => {
   })
 
   it('replaces daily manual capture with global Tell PJSDAS and keeps only recovery tooling in Settings', () => {
-    const todayStart = app.indexOf('function TodaySurface')
-    const todayEnd = app.indexOf('function OpportunitiesSurface')
     const settingsStart = app.indexOf('function SettingsSurface')
-    const today = app.slice(todayStart, todayEnd)
     const settings = app.slice(settingsStart)
 
     expect(today).not.toContain('ProgressInbox')
     expect(today).not.toContain('ProcessEventDock')
     expect(today).not.toContain('today-manual-fallback')
+    expect(app).not.toContain('function TodaySurface')
     expect(app).toContain('<TellPjsdasCapture')
     expect(app).not.toContain('ProgressInbox')
     expect(settings).toContain('ProcessEventDock')
@@ -47,7 +46,8 @@ describe('UU-04 Web friction rules', () => {
 
   it('keeps an empty workspace start path without persistent onboarding state', () => {
     expect(app).toContain('workspaceEmpty')
-    expect(app).toContain('GettingStartedCard')
+    expect(today).toContain('workspaceEmpty')
+    expect(today).toContain("zh ? '先让 PJSDAS 知道你的求职现状'")
     expect(app).toContain("navigate('/settings')")
     expect(app).not.toContain('onboardingCompleted')
   })

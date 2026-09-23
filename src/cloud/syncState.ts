@@ -9,6 +9,8 @@ export interface CloudConflictState {
 export interface AccountSyncCheckpoint {
   lastSyncedVersion?: string
   lastSyncedFingerprint?: string
+  lastReadProjectionFingerprint?: string
+  lastReadProjectionSourceFingerprint?: string
   lastSyncedAt?: string
   lastError?: string
   conflict?: CloudConflictState

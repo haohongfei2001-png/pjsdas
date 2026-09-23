@@ -2,7 +2,7 @@ import type { UserDomainCommand } from '../domainCommands.js'
 import type { SemanticIntakeObservation } from '../model.js'
 import { validateSnapshot, type PJSDASSnapshot } from '../snapshot.js'
 import { fetchBackend } from '../backendEndpoints.js'
-import { replaceLocalSnapshotFromCloud } from '../db.js'
+import { exportLocalSnapshot, replaceLocalSnapshotFromCloud } from '../db.js'
 import { getAccountAccessToken } from './cloudClient.js'
 import { getAccountCheckpoint, patchAccountCheckpoint } from './syncState.js'
 import { fingerprintWorkspace } from './workspaceFingerprint.js'
@@ -93,6 +93,26 @@ export function listAccountPendingOperations(accountKey: string) {
   return readPending(accountKey)
 }
 
+export function discardAccountPendingOperation(accountKey: string, commandId: string) {
+  removePending(accountKey, commandId)
+}
+
+export function findAccountPendingSemanticOperation(accountKey: string, originalText?: string) {
+  const match = readPending(accountKey)
+    .filter((item) =>
+      item.action === 'command'
+      && item.command?.type === 'semantic_intake'
+      && (!originalText || item.command.value.originalText === originalText))
+    .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0]
+  if (!match || match.command?.type !== 'semantic_intake') return undefined
+  return {
+    commandId: match.commandId,
+    status: match.status,
+    originalText: match.command.value.originalText,
+    lastError: match.lastError,
+  }
+}
+
 export function saveAccountDraft(accountKey: string, name: string, value: string) {
   storage()?.setItem(draftKey(accountKey, name), value)
 }
@@ -148,9 +168,12 @@ async function currentRevision() {
 async function projectAuthoritativeResult(accountKey: string, result: ConnectedCommandResponse) {
   await replaceLocalSnapshotFromCloud(result.snapshot)
   const fingerprint = await fingerprintWorkspace(result.snapshot)
+  const projectedFingerprint = await fingerprintWorkspace(await exportLocalSnapshot())
   patchAccountCheckpoint(accountKey, {
     lastSyncedVersion: result.workspaceVersion ?? `txn:${result.revision}`,
     lastSyncedFingerprint: fingerprint,
+    lastReadProjectionFingerprint: projectedFingerprint,
+    lastReadProjectionSourceFingerprint: fingerprint,
     lastSyncedAt: new Date().toISOString(),
     conflict: undefined,
     lastError: undefined,
@@ -290,6 +313,22 @@ export async function executeConnectedBusinessCommand(
   return submitPending(accountKey, pending)
 }
 
+export async function confirmConnectedCommand(accountKey: string, commandId: string): Promise<ConnectedCommandResponse> {
+  try {
+    const recovered = await lookupConnectedCommandReceipt(accountKey, commandId)
+    if (recovered) {
+      removePending(accountKey, commandId)
+      return recovered
+    }
+  } catch (caught) {
+    const detail = caught instanceof Error ? caught.message : String(caught)
+    throw new Error(`UNKNOWN_COMMAND_OUTCOME: receipt lookup failed for ${commandId}: ${detail}`)
+  }
+  const existing = readPending(accountKey).find((item) => item.commandId === commandId)
+  if (existing) return submitPending(accountKey, existing)
+  throw new Error(`UNKNOWN_COMMAND_OUTCOME: original command ${commandId} is unavailable; no new command was sent.`)
+}
+
 export async function undoConnectedBusinessCommand(
   accountKey: string,
   targetCommandId: string,
@@ -318,10 +357,23 @@ export async function replayAccountPendingOperations(accountKey: string) {
     const recovered = await lookupConnectedCommandReceipt(accountKey, pending.commandId)
     if (recovered) {
       removePending(accountKey, pending.commandId)
+      clearRecoveredSemanticDraft(accountKey, pending, recovered)
       results.push(recovered)
       continue
     }
-    results.push(await submitPending(accountKey, pending))
+    const result = await submitPending(accountKey, pending)
+    clearRecoveredSemanticDraft(accountKey, pending, result)
+    results.push(result)
   }
   return results
+}
+
+function clearRecoveredSemanticDraft(accountKey: string, pending: PendingCommand, result: ConnectedCommandResponse) {
+  if (pending.action !== 'command' || pending.command?.type !== 'semantic_intake') return
+  if (result.outcome !== 'COMMITTED' && result.outcome !== 'ALREADY_APPLIED') return
+  if (result.result?.status !== 'APPLIED' && result.result?.status !== 'ALREADY_APPLIED') return
+  const originalText = pending.command.value.originalText
+  if (readAccountDraft(accountKey, 'tell-pjsdas') === originalText) {
+    clearAccountDraft(accountKey, 'tell-pjsdas')
+  }
 }

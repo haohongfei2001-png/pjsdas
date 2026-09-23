@@ -437,7 +437,7 @@ test('account A sign-out then account B never displays or replays A cache drafts
   await expect(page.getByRole('heading', { name: 'A第一任务' })).toBeVisible()
 
   await page.locator('.ultimate-capture-button').click()
-  await page.locator('.ultimate-capture-input').fill('A 的私有草稿')
+  await page.locator('.cgr-capture-input').fill('A 的私有草稿')
   await page.getByRole('button', { name: '关闭' }).click()
   await page.evaluate(() => {
     window.localStorage.setItem('pjsdas-cgr01-pending:account-a', JSON.stringify([{
@@ -468,7 +468,7 @@ test('account A sign-out then account B never displays or replays A cache drafts
   await expect(page.getByRole('heading', { name: 'B第一任务' })).toBeVisible()
   await expect(page.getByRole('heading', { name: 'A第一任务' })).toHaveCount(0)
   await page.locator('.ultimate-capture-button').click()
-  await expect(page.locator('.ultimate-capture-input')).toHaveValue('')
+  await expect(page.locator('.cgr-capture-input')).toHaveValue('')
   expect(bBodies.some((body) => body.commandId === 'web-action:A-pending')).toBe(false)
   expect(bBodies.some((body) => ['commit', 'command', 'undo'].includes(body.action))).toBe(false)
 })

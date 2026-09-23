@@ -88,6 +88,12 @@ export const PUBLIC_HEALTH_CAPABILITIES = {
   dependencyAwareCommandUndo: 'cgr-01',
   accountScopedCommandClient: true,
   boundedSnapshotCompatibility: 'cgr-01',
+  todayAuthoritativeReadFreshness: 'cgr-02',
+  todayCrossClientRefreshTargetMs: 15_000,
+  tellPjsdasExplicitUnderstanding: true,
+  tellPjsdasAuthoritativeSaveState: 'cgr-02',
+  todayRecentAuthoritativeChanges: true,
+  canonicalCaptureRoute: '/today/capture',
 } as const
 
 export function currentWorkspaceAuthority(environment: Record<string, string | undefined> = process.env) {

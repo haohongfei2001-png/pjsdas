@@ -1,0 +1,40 @@
+name: CGR-02 Read-only Rollback
+
+on:
+  push:
+    branches: [main, manager/cgr02-today-vertical-slice-20260923]
+    paths:
+      - 'src/AppV8.tsx'
+      - 'src/today/TodayFeature.tsx'
+      - 'e2e/cgr02ReadOnly.rollback.ts'
+      - 'e2e/support/cgr02Journey.ts'
+      - 'playwright.rollback.config.mts'
+      - '.github/workflows/cgr02-read-only-rollback.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  rollback:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm install --no-save --package-lock=false @playwright/test@1.63.0
+      - run: npx playwright install --with-deps chromium
+      - name: Run isolated read-only fallback journey
+        run: npx playwright test --config=playwright.rollback.config.mts
+      - name: Upload rollback failure evidence
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cgr02-rollback-failure
+          path: test-results/
+          if-no-files-found: ignore
+          retention-days: 7

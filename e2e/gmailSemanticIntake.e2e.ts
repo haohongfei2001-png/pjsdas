@@ -37,16 +37,16 @@ for (const fixture of [
     })
   }, result.snapshot.data)
   await page.reload()
-  await expect(page.locator('.ultimate-agenda-node')).toHaveCount(2)
-  await expect(page.locator('.ultimate-agenda')).toContainText('京东')
-  await expect(page.locator('.ultimate-agenda')).toContainText('AI产品经理')
+  await expect(page.locator('.cgr-agenda-node')).toHaveCount(2)
+  await expect(page.locator('.cgr-agenda')).toContainText('京东')
+  await expect(page.locator('.cgr-agenda')).toContainText('AI产品经理')
   if (fixture.title === 'window and deadline') {
-    await expect(page.locator('.ultimate-agenda')).toContainText('可参加')
-    await expect(page.locator('.ultimate-agenda')).toContainText('截止')
-    await expect(page.locator('.ultimate-agenda-time').filter({ hasText: '可参加' })).toContainText('–')
+    await expect(page.locator('.cgr-agenda')).toContainText('可参加')
+    await expect(page.locator('.cgr-agenda')).toContainText('截止')
+    await expect(page.locator('.cgr-agenda-time').filter({ hasText: '可参加' })).toContainText('–')
   }
   await page.reload()
-  await expect(page.locator('.ultimate-agenda-node')).toHaveCount(2)
+  await expect(page.locator('.cgr-agenda-node')).toHaveCount(2)
   const stored = await page.evaluate(async () => new Promise<{ events: number; receipts: number }>((resolve, reject) => {
     const request = indexedDB.open('pjsdas', 11)
     request.onerror = () => reject(request.error)

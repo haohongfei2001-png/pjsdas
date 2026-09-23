@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test'
 
 test('material coverage follows the global English language inside Today instead of a daily health popup', async ({ page }) => {
   await page.goto('/')
-  await expect(page.locator('.ultimate-coverage-details > summary')).toContainText('数据覆盖提示')
+  await expect(page.locator('.cgr-coverage-details > summary')).toContainText('数据覆盖提示')
   await expect(page.getByRole('button', { name: 'View ingestion coverage and workspace health' })).toHaveCount(0)
 
   await page.locator('.ultimate-toolbar').getByRole('button', { name: /设置|Settings/ }).click()
@@ -11,7 +11,7 @@ test('material coverage follows the global English language inside Today instead
   await interfaceGroup.getByRole('button', { name: 'EN', exact: true }).click()
   await page.locator('.surface-nav').getByRole('button', { name: /Today/ }).click()
 
-  const coverage = page.locator('.ultimate-coverage-details')
+  const coverage = page.locator('.cgr-coverage-details')
   await expect(coverage.locator('summary')).toContainText('Coverage notes')
   await coverage.locator('summary').click()
   await expect(coverage).toContainText('Some automated sources have no completed coverage record.')

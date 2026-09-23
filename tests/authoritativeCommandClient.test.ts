@@ -5,6 +5,7 @@ vi.mock('../src/cloud/cloudClient.js', () => ({
 }))
 
 vi.mock('../src/db.js', () => ({
+  exportLocalSnapshot: vi.fn(async () => snapshot()),
   replaceLocalSnapshotFromCloud: vi.fn(async () => undefined),
 }))
 
@@ -16,7 +17,9 @@ import { fetchBackend } from '../src/backendEndpoints.js'
 import { replaceLocalSnapshotFromCloud } from '../src/db.js'
 import {
   clearAccountDraft,
+  discardAccountPendingOperation,
   executeConnectedBusinessCommand,
+  findAccountPendingSemanticOperation,
   listAccountPendingOperations,
   readAccountDraft,
   replayAccountPendingOperations,
@@ -97,6 +100,65 @@ describe('CGR-01 account-scoped connected command client', () => {
     clearAccountDraft('account-a', 'tell-pjsdas')
     expect(readAccountDraft('account-a', 'tell-pjsdas')).toBe('')
     expect(readAccountDraft('account-b', 'tell-pjsdas')).toBe('B draft')
+  })
+
+  it('retires a known conflicted pending operation only when the user intentionally edits into a new intent', async () => {
+    vi.mocked(fetchBackend).mockResolvedValue(response({
+      outcome: 'CONFLICT',
+      revision: 4,
+      workspaceVersion: 'txn:4',
+      schemaVersion: 4,
+      snapshot: snapshot(),
+      conflict: {
+        kind: 'OBJECT_CONFLICT',
+        message: 'same object changed',
+        objects: [{ type: 'action', id: 'action-a' }],
+      },
+    }, 409))
+
+    const commandId = 'web-action:conflict-retire'
+    await executeConnectedBusinessCommand('account-a', {
+      type: 'domain',
+      value: { commandId, kind: 'set_action_status', actionId: 'action-a', status: 'done' },
+    }, { commandId, baseRevision: 3 })
+
+    expect(listAccountPendingOperations('account-a')).toMatchObject([{ commandId, status: 'conflict' }])
+    discardAccountPendingOperation('account-a', commandId)
+    expect(listAccountPendingOperations('account-a')).toEqual([])
+  })
+
+  it('restores the same semantic command identity for an unknown capture after close or reload', async () => {
+    const commandId = 'web-semantic:unknown-reopen'
+    const command = {
+      type: 'semantic_intake' as const,
+      value: {
+        contractVersion: 1 as const,
+        inputId: 'web:capture-1',
+        source: {
+          kind: 'web' as const,
+          sourceId: 'todayaction-web',
+          sourceRecordId: 'capture-1',
+          observedAt: '2026-09-23T00:00:00.000Z',
+          timezone: 'Asia/Shanghai',
+        },
+        statementMode: 'assertion' as const,
+        originalText: '事项：整理面试材料',
+        contextRefs: [],
+        candidates: [],
+      },
+    }
+    vi.mocked(fetchBackend)
+      .mockRejectedValueOnce(new Error('transport lost'))
+      .mockRejectedValueOnce(new Error('receipt lookup lost'))
+
+    await expect(executeConnectedBusinessCommand('account-a', command, { commandId, baseRevision: 7 }))
+      .rejects.toThrow(/UNKNOWN_COMMAND_OUTCOME/)
+
+    expect(findAccountPendingSemanticOperation('account-a', '事项：整理面试材料')).toMatchObject({
+      commandId,
+      status: 'unknown',
+      originalText: '事项：整理面试材料',
+    })
   })
 
   it('recovers a lost response by receipt identity without sending a duplicate command', async () => {

@@ -55,7 +55,7 @@ async function seedLocalWorkspace(page: Page) {
 test('empty local workspace routes directly into setup instead of a maintenance queue', async ({ page }) => {
   await page.goto('/')
   await expect(page.getByRole('heading', { name: '今天', exact: true })).toBeVisible()
-  await expect(page.getByRole('heading', { name: '先让工作区有第一批真实机会' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: '先让 PJSDAS 知道你的求职现状' })).toBeVisible()
   await page.getByRole('button', { name: '打开设置' }).click()
   await expect(page.getByRole('heading', { name: '连接、自动化和长期控制' })).toBeVisible()
   await expect(page).toHaveURL(/\/settings$/)
@@ -64,7 +64,7 @@ test('empty local workspace routes directly into setup instead of a maintenance 
 test('critical local-first action flow survives completion, undo, and browser reload', async ({ page }) => {
   await seedLocalWorkspace(page)
 
-  await expect(page.locator('.decision-kicker')).toHaveText('下一步')
+  await expect(page.locator('.cgr-primary-action .cgr-kicker')).toHaveText('下一步')
   await page.getByRole('button', { name: '标记完成' }).click()
   await expect(page.getByRole('status')).toContainText('已标记完成')
   await expect(page.getByRole('heading', { name: '提交矩阵科技 AI 产品经理申请' })).toHaveCount(0)
@@ -103,7 +103,7 @@ test('primary navigation, language, recovery, and global Tell PJSDAS stay cohere
   await page.locator('.surface-nav').getByRole('button', { name: /Opportunities/ }).click()
   await expect(page.getByRole('heading', { name: 'What is moving, and what is worth pursuing' })).toBeVisible()
   await page.locator('.surface-nav').getByRole('button', { name: /Today/ }).click()
-  await expect(page.locator('.ultimate-today-header').getByRole('heading', { name: 'Today', exact: true })).toBeVisible()
+  await expect(page.locator('.cgr-today-header').getByRole('heading', { name: 'Today', exact: true })).toBeVisible()
 
   await page.locator('.ultimate-toolbar').getByRole('button', { name: /Settings/ }).click()
   const dataRecovery = page.locator('details.settings-group').filter({ hasText: 'Data & recovery' })
@@ -113,12 +113,12 @@ test('primary navigation, language, recovery, and global Tell PJSDAS stay cohere
   await page.getByRole('button', { name: 'Close' }).click()
 
   await page.locator('.ultimate-capture-button').click()
-  await expect(page.getByRole('heading', { name: 'Tell PJSDAS directly' })).toBeVisible()
-  await expect(page.locator('.ultimate-capture-input')).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Tell PJSDAS', exact: true })).toBeVisible()
+  await expect(page.locator('.cgr-capture-input')).toBeVisible()
   await page.getByRole('button', { name: 'Close' }).click()
 
   await page.locator('.surface-nav').getByRole('button', { name: /Today/ }).click()
   await page.reload()
-  await expect(page.locator('.ultimate-today-header').getByRole('heading', { name: 'Today', exact: true })).toBeVisible()
+  await expect(page.locator('.cgr-today-header').getByRole('heading', { name: 'Today', exact: true })).toBeVisible()
   await expect(page.locator('html')).toHaveAttribute('lang', 'en')
 })
