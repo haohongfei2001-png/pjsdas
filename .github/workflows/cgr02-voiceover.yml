@@ -6,6 +6,8 @@ on:
     paths:
       - 'src/TellPjsdasCapture.tsx'
       - 'e2e/cgr02TodayVoiceOver.voiceover.ts'
+      - 'e2e/cgr02TodayVerticalSlice.e2e.ts'
+      - 'e2e/cgr02TodayVerticalSlice.e2e.ts-snapshots/offline-draft-chromium-*.png'
       - 'playwright.voiceover.config.mts'
       - '.github/workflows/cgr02-voiceover.yml'
   workflow_dispatch:
@@ -14,6 +16,28 @@ permissions:
   contents: read
 
 jobs:
+  visual-macos:
+    runs-on: macos-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm install --no-save --package-lock=false @playwright/test@1.63.0
+      - run: npx playwright install chromium
+      - name: Check settled offline-draft visual baseline
+        run: npx playwright test --config=playwright.config.mts --project=chromium -g 'offline capture remains account-scoped'
+      - name: Upload visual evidence
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: cgr02-offline-draft-macos
+          path: test-results/
+          if-no-files-found: ignore
+          retention-days: 7
   voiceover:
     runs-on: macos-latest
     timeout-minutes: 25

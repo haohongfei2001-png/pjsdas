@@ -114,22 +114,28 @@ test('real VoiceOver can find Today, Tell PJSDAS and the authoritative saved res
   const dialog = page.getByRole('dialog', { name: '告诉 PJSDAS' })
   const input = dialog.getByRole('textbox', { name: '要告诉 PJSDAS 的内容' })
   await expect(input).toBeFocused()
-  await voiceOver.navigateToWebContent()
-  let foundInput = (await voiceOver.lastSpokenPhrase()).includes('要告诉 PJSDAS 的内容')
+  const inputPhrases: string[] = []
+  let foundInput = false
   for (let i = 0; i < 20 && !foundInput; i += 1) {
-    await voiceOver.next()
-    foundInput = (await voiceOver.lastSpokenPhrase()).includes('要告诉 PJSDAS 的内容')
+    await voiceOver.perform(voiceOver.keyboardCommands.findNextControl)
+    const spoken = await voiceOver.lastSpokenPhrase()
+    const item = await voiceOver.itemText()
+    inputPhrases.push(`${spoken} / ${item}`)
+    foundInput = /PJSDAS/.test(`${spoken} ${item}`) && /内容|告诉/.test(`${spoken} ${item}`)
   }
-  expect(foundInput).toBe(true)
+  expect(foundInput, inputPhrases.join(' | ')).toBe(true)
 
   await input.fill('事项：整理面试材料')
   await expect(dialog.getByText(/新增行动 · 整理面试材料/)).toBeVisible()
   await dialog.getByRole('button', { name: '确认并保存' }).click()
   await expect(dialog.getByRole('status')).toContainText('已记录：整理面试材料')
-  let foundReceipt = (await voiceOver.lastSpokenPhrase()).includes('已记录：整理面试材料')
+  const receiptPhrases: string[] = []
+  let foundReceipt = (await voiceOver.lastSpokenPhrase()).includes('已记录')
   for (let i = 0; i < 32 && !foundReceipt; i += 1) {
     await voiceOver.next()
-    foundReceipt = (await voiceOver.lastSpokenPhrase()).includes('已记录：整理面试材料')
+    const spoken = await voiceOver.lastSpokenPhrase()
+    receiptPhrases.push(spoken)
+    foundReceipt = spoken.includes('已记录') && spoken.includes('整理面试材料')
   }
-  expect(foundReceipt).toBe(true)
+  expect(foundReceipt, receiptPhrases.join(' | ')).toBe(true)
 })

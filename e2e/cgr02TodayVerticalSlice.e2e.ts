@@ -495,6 +495,10 @@ test('offline capture remains account-scoped draft only and legacy capture route
   await page.getByRole('button', { name: '确认并保存' }).click()
   await expect(page.getByText('仅草稿')).toBeVisible()
   await expect(page.getByText(/还没有写入 PJSDAS/)).toBeVisible()
+  // Capture the settled interpretation, not a race between the loading state
+  // and the local offline parser. The draft-only assertion remains separate.
+  await expect(page.getByText('PJSDAS 理解为')).toBeVisible()
+  await expect(page.getByText(/新增行动 · 离线整理材料/)).toBeVisible()
   await mkdir(VISUAL_DIR, { recursive: true })
   await reviewedScreenshot(page, 'offline-draft.png')
   expect(state.commandBodies.filter((body) => body.action === 'command')).toHaveLength(0)
