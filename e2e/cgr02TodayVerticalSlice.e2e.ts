@@ -302,11 +302,10 @@ test('CGR-02 golden journey: understand -> authoritative save -> cross-client vi
   expect(semanticCommand.command.value.contextRefs).toEqual(['opportunity:A-opp-1'])
   expect(semanticCommand).not.toHaveProperty('snapshot')
 
-  await pageA.getByRole('button', { name: '关闭' }).click()
-  await expect(opener).toBeFocused()
-  await pageA.locator('.surface-nav').getByRole('button', { name: /今天|Today/ }).click()
-  await expect(pageA.getByRole('heading', { name: '整理面试材料' })).toBeVisible()
-  await expect(pageA.getByText('PJSDAS 刚处理的变化')).toBeVisible()
+  // Today is the route behind the capture sheet, so the authoritative projection updates
+  // immediately without a navigation/reload even while the saved receipt remains available.
+  await expect(pageA.getByRole('heading', { name: '整理面试材料' })).toHaveCount(1)
+  await expect(pageA.getByText('PJSDAS 刚处理的变化')).toHaveCount(1)
 
   const propagatedAt = Date.now()
   await pageB.evaluate(() => window.dispatchEvent(new Event('focus')))
@@ -321,13 +320,6 @@ test('CGR-02 golden journey: understand -> authoritative save -> cross-client vi
   }
   state.revision += 1
 
-  await pageA.locator('.cgr-global-capture').click()
-  await input.fill('事项：整理面试材料')
-  // The previous saved receipt is still the Undo target in this dialog instance only if
-  // the capture remained open. Re-open creates a fresh capture state, so use the Today
-  // receipt journey through a fresh matching command and compensate it below.
-  await pageA.getByRole('button', { name: '确认并保存' }).click()
-  await expect(pageA.getByText('已保存')).toBeVisible()
   await pageA.getByRole('button', { name: '撤销' }).click()
   await expect(pageA.getByText(/其他后续更新保持不变/)).toBeVisible()
 
@@ -335,9 +327,10 @@ test('CGR-02 golden journey: understand -> authoritative save -> cross-client vi
   expect(finalActions.find((item) => item.id === 'A-action-2')?.status).toBe('done')
   expect(finalActions.find((item) => item.id === 'capture-action')).toBeUndefined()
 
-  await mkdir(VISUAL_DIR, { recursive: true })
   await pageA.getByRole('button', { name: '关闭' }).click()
+  await expect(opener).toBeFocused()
   await pageA.locator('.surface-nav').getByRole('button', { name: /今天|Today/ }).click()
+  await mkdir(VISUAL_DIR, { recursive: true })
   await pageA.screenshot({ path: `${VISUAL_DIR}/normal-desktop.png`, fullPage: true })
 
   await contextA.close()
