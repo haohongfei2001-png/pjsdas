@@ -5,6 +5,12 @@ import { upgradeSnapshotToLatest, type PJSDASSnapshot } from '../src/snapshot.js
 const AUTH_KEY = 'sb-yyrzwpoxlxpafdlbkdtg-auth-token'
 const BACKEND = 'https://pjsdas-remote-alpha.vercel.app'
 const VISUAL_DIR = 'test-results/cgr02-visual'
+const VISUAL_TIME = new Date('2026-09-23T08:00:00.000Z')
+
+test.beforeEach(async ({ page }) => {
+  // Screenshot copy and relative dates must remain stable across CI days.
+  await page.clock.setFixedTime(VISUAL_TIME)
+})
 
 function session(accountKey: string, token: string) {
   return {
@@ -141,6 +147,7 @@ function installServer(page: Page, state: State, options: {
   loseFirstSemanticResponse?: boolean
   loseFirstReceiptLookup?: boolean
   delaySemanticMs?: number
+  holdRead?: Promise<void>
 } = {}) {
   let lostCommand = false
   let lostReceipt = false
@@ -153,6 +160,7 @@ function installServer(page: Page, state: State, options: {
     const body = request.postDataJSON() as any
 
     if (body.action === 'read') {
+      if (options.holdRead) await options.holdRead
       if (state.failReads) return cors(route, { code: 'TEMPORARY_UNAVAILABLE' }, 503)
       return cors(route, {
         workspaceId: 'ws-a',
@@ -277,6 +285,8 @@ test('CGR-02 golden journey: understand -> authoritative save -> cross-client vi
   await seedSession(contextB)
   const pageA = await contextA.newPage()
   const pageB = await contextB.newPage()
+  await pageA.clock.setFixedTime(VISUAL_TIME)
+  await pageB.clock.setFixedTime(VISUAL_TIME)
   await installServer(pageA, state)
   await installServer(pageB, state)
 
@@ -459,6 +469,55 @@ test('Today remains operable at phone width and large text without horizontal cl
   await expect(page.getByRole('button', { name: '完成' }).first()).toBeInViewport()
   await mkdir(VISUAL_DIR, { recursive: true })
   await page.screenshot({ path: `${VISUAL_DIR}/phone-large-text.png`, fullPage: true })
+})
+
+test('dense desktop Today keeps the primary action and agenda readable', async ({ page }) => {
+  await seedSession(page.context())
+  const state: State = { revision: 52, snapshot: workspace(), receipts: new Map(), commandBodies: [] }
+  state.snapshot.data.actions.push(...Array.from({ length: 14 }, (_, index) =>
+    action(`dense-${index}`, `第 ${index + 1} 项：准备跨团队评审与面试材料`, index % 2 ? 'A-opp-1' : 'A-opp-2', 65 - index)))
+  await installServer(page, state)
+  await page.goto('/pjsdas/today')
+  await expect(page.locator('.cgr-primary-action')).toBeVisible()
+  await expect(page.locator('.cgr-agenda')).toBeVisible()
+  await expect(page.locator('.cgr-next-section')).toBeVisible()
+  const width = await page.locator('[data-testid="cgr02-today"]').evaluate((node) => ({
+    scrollWidth: node.scrollWidth, clientWidth: node.clientWidth,
+  }))
+  expect(width.scrollWidth).toBeLessThanOrEqual(width.clientWidth + 1)
+  await mkdir(VISUAL_DIR, { recursive: true })
+  await page.screenshot({ path: `${VISUAL_DIR}/dense-desktop.png`, fullPage: true })
+})
+
+test('first load and unavailable read show distinct truthful states', async ({ page, browser }) => {
+  await seedSession(page.context())
+  const state: State = { revision: 53, snapshot: workspace(), receipts: new Map(), commandBodies: [] }
+  let releaseRead: () => void = () => {}
+  const holdRead = new Promise<void>((resolve) => { releaseRead = resolve })
+  await installServer(page, state, { holdRead })
+  await page.goto('/pjsdas/today')
+  await expect(page.getByRole('heading', { name: 'A第一任务' })).toHaveCount(0)
+  await expect(page.getByText('正在确认服务器里的最新 Today')).toBeVisible()
+  await expect(page.getByText('先让 PJSDAS 知道你的求职现状')).toHaveCount(0)
+  await expect(page.getByText('近期没有招聘时间节点')).toHaveCount(0)
+  await expect(page.locator('.cgr-next-section')).toHaveCount(0)
+  await mkdir(VISUAL_DIR, { recursive: true })
+  await page.screenshot({ path: `${VISUAL_DIR}/loading.png` })
+  releaseRead()
+  await expect(page.getByRole('heading', { name: 'A第一任务' })).toBeVisible()
+
+  const errorContext = await browser.newContext()
+  await seedSession(errorContext)
+  const errorPage = await errorContext.newPage()
+  await errorPage.clock.setFixedTime(VISUAL_TIME)
+  state.failReads = true
+  await installServer(errorPage, state)
+  await errorPage.goto('/pjsdas/today')
+  await expect(errorPage.getByText('暂时无法确认 Today')).toBeVisible()
+  await expect(errorPage.getByText('先让 PJSDAS 知道你的求职现状')).toHaveCount(0)
+  await expect(errorPage.getByText('近期没有招聘时间节点')).toHaveCount(0)
+  await errorPage.screenshot({ path: `${VISUAL_DIR}/read-error.png` })
+  await errorContext.close()
 })
 
 test('pending authoritative save is visibly pending until its receipt arrives', async ({ page }) => {

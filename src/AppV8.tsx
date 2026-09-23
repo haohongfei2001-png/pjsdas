@@ -15,6 +15,7 @@ import CloudSettingsCard from './cloud/CloudSettingsCard.js'
 import { useCloud } from './cloud/CloudContext.js'
 import { ensureAuthoritativePersistence } from './cloud/authoritativePersistence.js'
 import { connectedWorkspaceAuthorityEnabled } from './cloud/connectedWorkspaceRepository.js'
+import { getAccountCheckpoint } from './cloud/syncState.js'
 import {
   refreshConnectedAuthoritativeCache,
   TODAY_AUTHORITATIVE_REFRESH_INTERVAL_MS,
@@ -226,7 +227,7 @@ export default function AppV8() {
       running = true
       setTodayFreshness((current) => ({
         ...current,
-        state: initial && !snapshot ? 'initial' : 'refreshing',
+        state: workspaceEmpty && (initial || current.state === 'unavailable') ? 'initial' : 'refreshing',
       }))
       try {
         const result = await refreshConnectedAuthoritativeCache(accountKey)
@@ -252,9 +253,10 @@ export default function AppV8() {
         }
       } catch (caught) {
         if (!active) return
+        const hasVerifiedCache = Boolean(getAccountCheckpoint(accountKey).lastSyncedVersion)
         setTodayFreshness({
-          state: 'cached',
-          detail: caught instanceof Error ? caught.message : String(caught),
+          state: hasVerifiedCache ? 'cached' : 'unavailable',
+          detail: 'Authoritative refresh is unavailable; no new state was applied.',
         })
       } finally {
         running = false
@@ -503,9 +505,10 @@ export default function AppV8() {
             budgetMinutes={budgetMinutes}
             agendaExpanded={route.agendaExpanded}
             workspaceEmpty={workspaceEmpty}
-            freshness={cloud.loading && workspaceEmpty ? { state: 'initial' } : todayFreshness}
+            freshness={workspaceEmpty && (cloud.loading || (connectedWorkspaceAuthorityEnabled() && cloud.session?.user.id && todayFreshness.state === 'local')) ? { state: 'initial' } : todayFreshness}
             onBudgetChange={setBudgetMinutes}
             onStart={navigateFromStart}
+            onRetry={() => window.dispatchEvent(new Event('focus'))}
             onOpenDecisions={() => navigate('/decisions')}
             onOpenAgenda={() => navigate(route.agendaExpanded ? '/today' : '/today/agenda')}
             onExecute={executeTodayAction}

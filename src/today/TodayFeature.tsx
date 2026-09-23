@@ -9,7 +9,7 @@ import type {
 } from '../todayBrief.js'
 import './today.css'
 
-export type TodayFreshnessState = 'local' | 'initial' | 'refreshing' | 'current' | 'updated' | 'cached' | 'blocked'
+export type TodayFreshnessState = 'local' | 'initial' | 'refreshing' | 'current' | 'updated' | 'cached' | 'blocked' | 'unavailable'
 
 export interface TodayFreshnessView {
   state: TodayFreshnessState
@@ -27,6 +27,7 @@ interface TodayFeatureProps {
   freshness: TodayFreshnessView
   onBudgetChange: (minutes: number) => void
   onStart: () => void
+  onRetry: () => void
   onOpenDecisions: () => void
   onOpenAgenda: () => void
   onExecute: (item: TodayBriefAction) => Promise<void>
@@ -121,6 +122,7 @@ function freshnessCopy(freshness: TodayFreshnessView, zh: boolean) {
     return { label: (zh ? '已是最新' : 'Up to date') + suffix, tone: 'good' }
   }
   if (freshness.state === 'blocked') return { label: zh ? '本机有未合并变化' : 'Local changes need attention', tone: 'warning' }
+  if (freshness.state === 'unavailable') return { label: zh ? '暂时无法读取' : 'Read unavailable', tone: 'warning' }
   return { label: zh ? '使用缓存 · 暂时无法刷新' : 'Cached · refresh unavailable', tone: 'warning' }
 }
 
@@ -149,6 +151,7 @@ export default function TodayFeature({
   freshness,
   onBudgetChange,
   onStart,
+  onRetry,
   onOpenDecisions,
   onOpenAgenda,
   onExecute,
@@ -162,6 +165,7 @@ export default function TodayFeature({
   const coverageWarnings = brief.materialCoverageWarnings.filter((item) => item.severity !== 'critical')
   const fresh = freshnessCopy(freshness, zh)
   const awaitingServer = freshness.state === 'initial' && workspaceEmpty
+  const unavailable = freshness.state === 'unavailable' && workspaceEmpty
 
   function reasonText(item: TodayBriefAction) {
     return item.whyNow.length
@@ -199,14 +203,20 @@ export default function TodayFeature({
         </div>
       ) : null}
 
-      <div className="cgr-today-grid">
+      {awaitingServer ? (
+        <div className="cgr-today-loading" role="status" aria-live="polite">
+          <span className="cgr-loading-mark" aria-hidden="true" />
+          <div><strong>{zh ? '正在确认服务器里的最新 Today' : 'Checking your latest Today'}</strong><small>{zh ? '不会先闪现“没有任务”的空状态。' : 'PJSDAS will not flash a false empty state first.'}</small></div>
+        </div>
+      ) : unavailable ? (
+        <div className="cgr-quiet-card" role="alert">
+          <strong>{zh ? '暂时无法确认 Today' : 'Today is unavailable right now'}</strong>
+          <span>{zh ? '服务器暂时无法连接，此设备也没有已验证的 Today 缓存。请检查连接后重试。' : 'The server cannot be reached and this device has no verified Today cache. Check the connection and try again.'}</span>
+          <button className="cgr-primary-button" type="button" onClick={onRetry}>{zh ? '重试读取' : 'Retry read'}</button>
+        </div>
+      ) : <div className="cgr-today-grid">
         <main className="cgr-focus-column">
-          {awaitingServer ? (
-            <div className="cgr-today-loading" role="status" aria-live="polite">
-              <span className="cgr-loading-mark" aria-hidden="true" />
-              <div><strong>{zh ? '正在确认服务器里的最新 Today' : 'Checking your latest Today'}</strong><small>{zh ? '不会先闪现“没有任务”的空状态。' : 'PJSDAS will not flash a false empty state first.'}</small></div>
-            </div>
-          ) : primary ? (
+          {primary ? (
             <article className="cgr-primary-action">
               <div className="cgr-kicker">{zh ? '下一步' : 'NEXT ACTION'}</div>
               {primary.company ? <div className="cgr-action-context">{primary.company}{primary.role ? ' · ' + primary.role : ''}</div> : null}
@@ -318,7 +328,7 @@ export default function TodayFeature({
             </section>
           ) : null}
         </div>
-      </div>
+      </div>}
 
       {coverageWarnings.length ? (
         <details className="cgr-coverage-details">
