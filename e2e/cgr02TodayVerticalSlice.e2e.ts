@@ -576,6 +576,64 @@ test('connected Today keeps a fixed interview, date-only deadline and elapsed un
   await expect(agenda.locator('.cgr-agenda-node').filter({ hasText: '申请截止' }).locator('.cgr-agenda-time')).toHaveText('2026-09-25')
 })
 
+test('long action text and dense recruiting schedule remain operable at phone width', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 })
+  await seedSession(page.context())
+  const state: State = { revision: 55, snapshot: workspace(), receipts: new Map(), commandBodies: [] }
+  state.snapshot.data.actions[0].title = '整理跨团队面试反馈、岗位要求与个人案例，确认每一项具体证据和下一步行动。'.repeat(5)
+  state.snapshot.data.processEvents.push(...Array.from({ length: 12 }, (_, index) => ({
+    id: `cgr02-dense-interview-${index}`,
+    opportunityId: index % 2 ? 'A-opp-1' : 'A-opp-2',
+    company: index % 2 ? 'A公司' : '第二公司',
+    role: index % 2 ? '产品经理' : '策略产品',
+    type: 'interview_invite' as const,
+    occurredAt: '2026-09-22T00:00:00.000Z',
+    dueAt: new Date(Date.parse('2026-09-24T01:00:00.000Z') + index * 60 * 60 * 1000).toISOString(),
+    duePrecision: 'datetime' as const,
+    timingMode: 'fixed' as const,
+    estimatedMinutes: 60,
+    source: 'manual' as const,
+    createdAt: '2026-09-22T00:00:00.000Z',
+    updatedAt: '2026-09-22T00:00:00.000Z',
+  })))
+  await installServer(page, state)
+  await page.goto('/pjsdas/today')
+  await expect(page.locator('.cgr-primary-action')).toContainText('整理跨团队面试反馈')
+  const showFull = page.getByRole('button', { name: '展开完整任务' })
+  await expect(showFull).toBeVisible()
+  await expect(page.locator('.cgr-action-controls .cgr-primary-button')).toBeInViewport()
+  await showFull.click()
+  await expect(page.getByRole('button', { name: '收起完整任务' })).toHaveAttribute('aria-expanded', 'true')
+  await expect(page.locator('#cgr-primary-title')).not.toHaveClass(/cgr-title-collapsed/)
+  await page.getByRole('button', { name: '收起完整任务' }).click()
+  await expect(page.locator('#cgr-primary-title')).toHaveClass(/cgr-title-collapsed/)
+  await page.locator('.cgr-agenda').getByRole('button', { name: '全部日程' }).click()
+  await expect(page.locator('.cgr-agenda-node')).toHaveCount(12)
+  const widths = await page.locator('[data-testid="cgr02-today"]').evaluate((node) => ({
+    page: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+    surface: node.scrollWidth - node.clientWidth,
+  }))
+  expect(widths.page).toBeLessThanOrEqual(1)
+  expect(widths.surface).toBeLessThanOrEqual(1)
+  const firstAgenda = page.locator('.cgr-agenda-node').first()
+  await firstAgenda.scrollIntoViewIfNeeded()
+  await expect(firstAgenda).toBeInViewport()
+  await firstAgenda.focus()
+  await expect(firstAgenda).toBeFocused()
+  await mkdir(VISUAL_DIR, { recursive: true })
+  await page.screenshot({ path: `${VISUAL_DIR}/long-text-dense-phone.png`, fullPage: true, animations: 'disabled' })
+  await page.setViewportSize({ width: 320, height: 640 })
+  await page.evaluate(() => { document.documentElement.style.fontSize = '200%' })
+  const narrowWidths = await page.locator('[data-testid="cgr02-today"]').evaluate((node) => ({
+    page: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+    surface: node.scrollWidth - node.clientWidth,
+  }))
+  expect(narrowWidths.page).toBeLessThanOrEqual(1)
+  expect(narrowWidths.surface).toBeLessThanOrEqual(1)
+  await page.locator('.cgr-action-controls .cgr-primary-button').scrollIntoViewIfNeeded()
+  await expect(page.locator('.cgr-action-controls .cgr-primary-button')).toBeInViewport()
+})
+
 test('first load and unavailable read show distinct truthful states', async ({ page, browser }) => {
   await seedSession(page.context())
   const state: State = { revision: 53, snapshot: workspace(), receipts: new Map(), commandBodies: [] }

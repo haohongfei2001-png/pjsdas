@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { useUiLanguage } from '../uiLanguage.js'
 import { presentRankingReasons } from '../rankingReasonPresentation.js'
 import type { Action } from '../model.js'
@@ -159,8 +160,11 @@ export default function TodayFeature({
   onOpenOpportunity,
 }: TodayFeatureProps) {
   const { lang } = useUiLanguage()
+  const [expandedActionId, setExpandedActionId] = useState<string | null>(null)
   const zh = lang === 'zh'
   const primary = brief.nextAction
+  const longPrimaryTitle = primary ? Array.from(primary.title).length > 80 : false
+  const primaryTitleExpanded = primary ? expandedActionId === primary.actionId : false
   const criticalWarnings = brief.materialCoverageWarnings.filter((item) => item.severity === 'critical')
   const coverageWarnings = brief.materialCoverageWarnings.filter((item) => item.severity !== 'critical')
   const fresh = freshnessCopy(freshness, zh)
@@ -220,7 +224,16 @@ export default function TodayFeature({
             <article className="cgr-primary-action">
               <div className="cgr-kicker">{zh ? '下一步' : 'NEXT ACTION'}</div>
               {primary.company ? <div className="cgr-action-context">{primary.company}{primary.role ? ' · ' + primary.role : ''}</div> : null}
-              <h2>{primary.title}</h2>
+              <h2 id="cgr-primary-title" className={longPrimaryTitle && !primaryTitleExpanded ? 'cgr-title-collapsed' : undefined}>{primary.title}</h2>
+              {longPrimaryTitle ? (
+                <button
+                  className="cgr-text-button cgr-title-toggle"
+                  type="button"
+                  aria-controls="cgr-primary-title"
+                  aria-expanded={primaryTitleExpanded}
+                  onClick={() => setExpandedActionId(primaryTitleExpanded ? null : primary.actionId)}
+                >{primaryTitleExpanded ? (zh ? '收起完整任务' : 'Collapse full action') : (zh ? '展开完整任务' : 'Show full action')}</button>
+              ) : null}
               <p className="cgr-action-reason">{reasonText(primary)}</p>
               <div className="cgr-action-meta">
                 {actionTiming(primary, zh) ? <span>{actionTiming(primary, zh)}</span> : null}

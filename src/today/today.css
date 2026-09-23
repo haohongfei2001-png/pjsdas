@@ -118,6 +118,13 @@
   letter-spacing: -.045em;
   overflow-wrap: anywhere;
 }
+.cgr-primary-action h2.cgr-title-collapsed {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 4;
+  overflow: hidden;
+}
+.cgr-title-toggle { align-self: flex-start; margin: 0 0 10px; }
 .cgr-action-reason { max-width: 720px; margin: 0; color: var(--cgr-text-secondary); font-size: 12px; line-height: 1.6; }
 .cgr-action-meta { display: flex; flex-wrap: wrap; gap: 7px 14px; margin-top: 15px; color: var(--cgr-text-tertiary); font-size: 10px; }
 .cgr-action-meta strong { color: var(--cgr-warning); }
