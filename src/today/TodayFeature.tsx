@@ -330,7 +330,7 @@ export default function TodayFeature({
         </div>
       </div>}
 
-      {coverageWarnings.length ? (
+      {!awaitingServer && !unavailable && coverageWarnings.length ? (
         <details className="cgr-coverage-details">
           <summary>{zh ? '数据覆盖提示' : 'Coverage notes'} · {coverageWarnings.length}</summary>
           <div>{coverageWarnings.map((item) => <p key={item.code}><strong>{item.title}</strong><span>{item.detail}</span></p>)}</div>
