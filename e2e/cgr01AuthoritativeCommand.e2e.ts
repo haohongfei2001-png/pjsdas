@@ -472,3 +472,51 @@ test('account A sign-out then account B never displays or replays A cache drafts
   expect(bBodies.some((body) => body.commandId === 'web-action:A-pending')).toBe(false)
   expect(bBodies.some((body) => ['commit', 'command', 'undo'].includes(body.action))).toBe(false)
 })
+
+test('CGR-05 background connected refresh leaves local legacy changes pending without whole-snapshot commit', async ({ page }) => {
+  await seedInitialSession(page, 'account-a', 'token-a')
+  const state: AccountState = { revision: 7, snapshot: workspace('A'), receipts: new Map() }
+  let reads = 0
+  let commits = 0
+  await page.route(`${BACKEND}/**`, async (route) => {
+    const request = route.request()
+    const url = new URL(request.url())
+    if (request.method() === 'OPTIONS') return cors(route, {}, 204)
+    if (url.pathname === '/api/health') return cors(route, health())
+    if (url.pathname !== '/api/workspace') return cors(route, { code: 'NOT_FOUND' }, 404)
+    const body = request.postDataJSON() as { action?: string }
+    if (body.action === 'read') {
+      reads += 1
+      return cors(route, { workspaceId: 'ws-a', workspaceVersion: `txn:${state.revision}`,
+        revision: state.revision, schemaVersion: state.snapshot.version, snapshot: state.snapshot })
+    }
+    if (body.action === 'commit') commits += 1
+    return cors(route, { code: 'UNEXPECTED_WRITE', action: body.action }, 409)
+  })
+
+  await page.goto('/')
+  await expect(page.getByRole('heading', { name: 'A第一任务' })).toBeVisible()
+  await expect.poll(() => page.evaluate(() => {
+    const raw = window.localStorage.getItem('pjsdas-google-drive-sync-state-v2')
+    return raw ? (JSON.parse(raw) as { accounts?: Record<string, { lastSyncedVersion?: string }> }).accounts?.['account-a']?.lastSyncedVersion : undefined
+  })).toBe('txn:7')
+
+  await page.evaluate(async () => new Promise<void>((resolve, reject) => {
+    const request = indexedDB.open('pjsdas', 11)
+    request.onerror = () => reject(request.error)
+    request.onsuccess = () => {
+      const db = request.result
+      const tx = db.transaction('actions', 'readwrite')
+      const store = tx.objectStore('actions')
+      const get = store.get('A-action-1')
+      get.onsuccess = () => store.put({ ...get.result, title: '本地待处理修改' })
+      tx.onerror = () => reject(tx.error)
+      tx.oncomplete = () => { db.close(); resolve() }
+    }
+  }))
+  const priorReads = reads
+  await page.evaluate(() => window.dispatchEvent(new Event('online')))
+  await expect.poll(() => reads).toBeGreaterThan(priorReads)
+  expect(commits).toBe(0)
+  expect((await readIndexedActions(page)).find((item) => item.id === 'A-action-1')?.title).toBe('本地待处理修改')
+})
