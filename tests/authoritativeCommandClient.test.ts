@@ -150,7 +150,7 @@ describe('CGR-01 account-scoped connected command client', () => {
       .mockRejectedValueOnce(new Error('transport lost'))
       .mockRejectedValueOnce(new Error('receipt lookup lost'))
 
-    await expect(executeConnectedBusinessCommand('account-a', command, { commandId }))
+    await expect(executeConnectedBusinessCommand('account-a', command, { commandId, baseRevision: 7 }))
       .rejects.toThrow(/UNKNOWN_COMMAND_OUTCOME/)
 
     expect(findAccountPendingSemanticOperation('account-a', '事项：整理面试材料')).toMatchObject({
