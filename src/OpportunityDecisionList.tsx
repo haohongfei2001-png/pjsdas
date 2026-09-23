@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useMemo } from 'react'
 import { presentRankingReasons } from './rankingReasonPresentation.js'
 import { presentStageLabel } from './stagePresentation.js'
 import { useUiLanguage } from './uiLanguage.js'
@@ -9,7 +9,7 @@ import type {
 } from './opportunityDecisionRead.js'
 import './opportunityDecision.css'
 
-type View = 'in_progress' | 'worth_pursuing' | 'all' | 'ended'
+export type OpportunityListView = 'in_progress' | 'worth_pursuing' | 'all' | 'ended'
 
 const reasonLabels: Record<OpportunityDecisionReasonCode, [string, string]> = {
   active_recruiting_process: ['招聘流程正在推进', 'Recruiting process is active'],
@@ -66,14 +66,20 @@ function reasons(item: OpportunityDecisionRead, zh: boolean) {
 export default function OpportunityDecisionList({
   read,
   onOpenOpportunity,
+  view,
+  onViewChange,
+  query,
+  onQueryChange,
 }: {
   read: OpportunityDecisionListRead
   onOpenOpportunity: (id: string) => void
+  view: OpportunityListView
+  onViewChange: (view: OpportunityListView) => void
+  query: string
+  onQueryChange: (query: string) => void
 }) {
   const { lang } = useUiLanguage()
   const zh = lang === 'zh'
-  const [view, setView] = useState<View>('in_progress')
-  const [query, setQuery] = useState('')
 
   const source = view === 'in_progress'
     ? read.inProgress
@@ -91,19 +97,19 @@ export default function OpportunityDecisionList({
   return (
     <section className="opportunity-decision-list">
       <div className="opportunity-decision-toolbar">
-        <div className="opportunity-decision-primary-tabs" role="tablist" aria-label={zh ? '机会视图' : 'Opportunity views'}>
-          <button className={view === 'in_progress' ? 'active' : ''} type="button" onClick={() => setView('in_progress')}>
+        <div className="opportunity-decision-primary-tabs" role="group" aria-label={zh ? '机会视图' : 'Opportunity views'}>
+          <button className={view === 'in_progress' ? 'active' : ''} aria-pressed={view === 'in_progress'} type="button" onClick={() => onViewChange('in_progress')}>
             <span>{zh ? '推进中' : 'In Progress'}</span>
             <strong>{read.inProgress.length}</strong>
           </button>
-          <button className={view === 'worth_pursuing' ? 'active' : ''} type="button" onClick={() => setView('worth_pursuing')}>
+          <button className={view === 'worth_pursuing' ? 'active' : ''} aria-pressed={view === 'worth_pursuing'} type="button" onClick={() => onViewChange('worth_pursuing')}>
             <span>{zh ? '值得推进' : 'Worth Pursuing'}</span>
             <strong>{read.worthPursuing.length}</strong>
           </button>
         </div>
         <div className="opportunity-decision-filter">
-          <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={zh ? '搜索公司或岗位' : 'Search company or role'} />
-          <select value={view} onChange={(event) => setView(event.target.value as View)}>
+          <input value={query} onChange={(event) => onQueryChange(event.target.value)} aria-label={zh ? '搜索公司或岗位' : 'Search company or role'} placeholder={zh ? '搜索公司或岗位' : 'Search company or role'} />
+          <select value={view} onChange={(event) => onViewChange(event.target.value as OpportunityListView)} aria-label={zh ? '筛选机会状态' : 'Filter opportunity state'}>
             <option value="in_progress">{zh ? '推进中' : 'In Progress'}</option>
             <option value="worth_pursuing">{zh ? '值得推进' : 'Worth Pursuing'}</option>
             <option value="ended">{zh ? '已结束 / 不再推进' : 'Ended / not pursuing'}</option>
@@ -118,7 +124,8 @@ export default function OpportunityDecisionList({
             const itemReasons = reasons(item, zh)
             const nearest = nodeLabel(item, zh)
             return (
-              <button className="opportunity-decision-row" type="button" key={item.opportunityId} onClick={() => onOpenOpportunity(item.opportunityId)}>
+              <button className="opportunity-decision-row" type="button" key={item.opportunityId}
+                data-opportunity-id={item.opportunityId} onClick={() => onOpenOpportunity(item.opportunityId)}>
                 <div className="opportunity-decision-identity">
                   <strong>{item.company}</strong>
                   <span>{item.role}</span>

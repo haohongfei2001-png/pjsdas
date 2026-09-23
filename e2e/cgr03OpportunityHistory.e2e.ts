@@ -30,7 +30,8 @@ test('CGR-03 opportunity detail labels recent history honestly and reaches the o
       }
     })
   })
-  await page.goto('/opportunities')
+  await page.reload()
+  await page.locator('.surface-nav').getByRole('button', {name:/机会|Opportunities/}).click()
   await page.getByRole('button', {name:/合成历史科技/}).click()
   const detail = page.getByRole('dialog', {name:/岗位详情|Opportunity details/})
   await expect(detail).toBeVisible()

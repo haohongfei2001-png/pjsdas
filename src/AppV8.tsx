@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   applyActionStatusChangeSet,
   exportLocalSnapshot,
@@ -32,7 +32,7 @@ import LocalBackupDock from './LocalBackupDock.js'
 import ConnectedMigrationCard from './cloud/ConnectedMigrationCard.js'
 import OriginTransitionNotice from './OriginTransitionNotice.js'
 import OpportunityDetailDrawer, { type OpportunityDetailDestination } from './OpportunityDetailDrawer.js'
-import OpportunityDecisionList from './OpportunityDecisionList.js'
+import OpportunityDecisionList, { type OpportunityListView } from './OpportunityDecisionList.js'
 import {
   buildOpportunityDecisionList,
   getOpportunityDecisionRead,
@@ -135,6 +135,9 @@ export default function AppV8() {
   const [todayFreshness, setTodayFreshness] = useState<TodayFreshnessView>({ state: 'local' })
   const [opportunityTab, setOpportunityTab] = useState<OpportunityTab>('opportunities')
   const [opportunityTabExplicit, setOpportunityTabExplicit] = useState(false)
+  const [opportunityView, setOpportunityView] = useState<OpportunityListView>('in_progress')
+  const [opportunityQuery, setOpportunityQuery] = useState('')
+  const lastSelectedOpportunityId = useRef<string | undefined>(undefined)
   const [lastCompletedAction, setLastCompletedAction] = useState<CompletionFeedback | null>(null)
   const [snapshot, setSnapshot] = useState<PJSDASSnapshot>()
   const [loading, setLoading] = useState(true)
@@ -153,6 +156,18 @@ export default function AppV8() {
   const surface = route.surface
   const selectedOpportunityId = route.opportunityId
   const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
+
+  useEffect(() => {
+    const previous = lastSelectedOpportunityId.current
+    lastSelectedOpportunityId.current = selectedOpportunityId
+    if (!previous || selectedOpportunityId || surface !== 'opportunities') return
+    const frame = window.requestAnimationFrame(() => {
+      const opener = [...document.querySelectorAll<HTMLButtonElement>('.opportunity-decision-row')]
+        .find((button) => button.dataset.opportunityId === previous)
+      opener?.focus()
+    })
+    return () => window.cancelAnimationFrame(frame)
+  }, [selectedOpportunityId, surface])
 
   async function reload() {
     const next = await exportLocalSnapshot()
@@ -528,7 +543,9 @@ export default function AppV8() {
         ) : null}
 
         {!loading && surface === 'opportunities' && opportunityDecisionList ? (
-          <OpportunitiesSurface read={opportunityDecisionList} prep={prep} tab={opportunityTab} onTabChange={chooseOpportunityTab} onOpenOpportunity={openOpportunity} />
+          <OpportunitiesSurface read={opportunityDecisionList} prep={prep} tab={opportunityTab} onTabChange={chooseOpportunityTab}
+            view={opportunityView} onViewChange={setOpportunityView} query={opportunityQuery} onQueryChange={setOpportunityQuery}
+            onOpenOpportunity={openOpportunity} />
         ) : null}
         {!loading && surface === 'decisions' ? <DecisionRequestsView requests={decisionRequests} onChanged={reload} /> : null}
         {!loading && surface === 'history' ? <ActivitySurface timeline={timeline} /> : null}
@@ -554,7 +571,7 @@ export default function AppV8() {
           actions={selectedActions}
           applicationGroup={selectedGroup}
           timeline={selectedTimeline}
-          onClose={() => navigate('/opportunities')}
+          onClose={() => navigate('/opportunities', true)}
           onCapture={openCapture}
           onNavigate={navigateFromDetail}
         />
@@ -578,12 +595,20 @@ function OpportunitiesSurface({
   prep,
   tab,
   onTabChange,
+  view,
+  onViewChange,
+  query,
+  onQueryChange,
   onOpenOpportunity,
 }: {
   read: OpportunityDecisionListRead
   prep: Prep[]
   tab: OpportunityTab
   onTabChange: (tab: OpportunityTab) => void
+  view: OpportunityListView
+  onViewChange: (view: OpportunityListView) => void
+  query: string
+  onQueryChange: (query: string) => void
   onOpenOpportunity: (id: string) => void
 }) {
   const { lang } = useUiLanguage()
@@ -610,7 +635,8 @@ function OpportunitiesSurface({
         </button>
       </div>
 
-      {tab === 'opportunities' ? <OpportunityDecisionList read={read} onOpenOpportunity={onOpenOpportunity} /> : null}
+      {tab === 'opportunities' ? <OpportunityDecisionList read={read} view={view} onViewChange={onViewChange}
+        query={query} onQueryChange={onQueryChange} onOpenOpportunity={onOpenOpportunity} /> : null}
       {tab === 'prepare' ? <PreparePanel prep={prep} /> : null}
     </section>
   )

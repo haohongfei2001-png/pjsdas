@@ -136,6 +136,19 @@ test('UU-05 Opportunities centers In Progress / Worth Pursuing and opens conclus
   expect(order[0]).toBeLessThan(order[1])
   expect(order[1]).toBeLessThan(order[2])
   expect(order[2]).toBeLessThan(order[3])
+
+  await dialog.getByRole('button', { name: /关闭|Close/ }).click()
+  await expect(worthRow).toBeFocused()
+  const search = page.getByRole('textbox', { name: /搜索公司或岗位|Search company or role/ })
+  await search.fill('值得')
+  await page.locator('.surface-nav').getByRole('button', { name: /今天|Today/ }).click()
+  await page.goBack()
+  await expect(search).toHaveValue('值得')
+  await expect(page.locator('.opportunity-decision-filter select')).toHaveValue('worth_pursuing')
+  await expect(worthRow).toBeVisible()
+  await worthRow.click()
+  await page.goBack()
+  await expect(worthRow).toBeFocused()
 })
 
 for (const fixture of [
