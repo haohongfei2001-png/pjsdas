@@ -152,7 +152,7 @@ export async function submitWebSemanticCapture(
           value: observation,
         }, { commandId })
     if (authoritative.outcome === 'CONFLICT') {
-      throw new Error(authoritative.conflict?.message ?? 'Semantic Intake conflicted with newer authoritative state.')
+      throw new Error(`CONFLICT: ${authoritative.conflict?.message ?? 'Semantic Intake conflicted with newer authoritative state.'}`)
     }
     const status = String(authoritative.result?.status ?? (authoritative.outcome === 'ALREADY_APPLIED' ? 'ALREADY_APPLIED' : 'NO_WRITE')) as WebSemanticCaptureResult['status']
     const decisionRequestIds = Array.isArray(authoritative.result?.decisionRequestIds)

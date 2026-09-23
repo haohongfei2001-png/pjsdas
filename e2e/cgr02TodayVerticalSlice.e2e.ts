@@ -155,6 +155,7 @@ function installServer(page: Page, state: State, options: {
   holdSemantic?: Promise<void>
   holdRead?: Promise<void>
   expireSemantic?: boolean
+  conflictSemantic?: boolean
 } = {}) {
   let lostCommand = false
   let lostReceipt = false
@@ -190,6 +191,19 @@ function installServer(page: Page, state: State, options: {
     if (body.action === 'command' && body.command?.type === 'semantic_intake') {
       state.commandBodies.push(body)
       if (options.expireSemantic) return cors(route, { code: 'SESSION_EXPIRED' }, 401)
+      if (options.conflictSemantic) {
+        state.revision += 1
+        state.snapshot.data.actions[0].title = 'A第一任务（另一客户端更新）'
+        return cors(route, responseFor(state, {
+          outcome: 'CONFLICT',
+          conflict: {
+            kind: 'OBJECT_CONFLICT',
+            message: '同一行动已被另一客户端更新；请核对最新事实。',
+            objects: [{ type: 'action', id: 'A-action-1' }],
+            interveningCommandIds: ['other-client-action-update'],
+          },
+        }), 409)
+      }
       if (options.holdSemantic) await options.holdSemantic
       const commandId = String(body.commandId)
       if (!state.receipts.has(commandId)) {
@@ -470,6 +484,24 @@ test('expired session rejects a connected save before execution and preserves th
   await expect(input).toHaveValue('事项：整理面试材料')
   expect(state.commandBodies.filter((body) => body.action === 'command')).toHaveLength(1)
   expect(state.snapshot.data.actions.some((item) => item.title === '整理面试材料')).toBe(false)
+  expect(state.receipts.size).toBe(0)
+})
+
+test('same-object conflict refreshes connected Today and keeps the unsaved statement for review', async ({ page }) => {
+  await seedSession(page.context())
+  const state: State = { revision: 42, snapshot: workspace(), receipts: new Map(), commandBodies: [] }
+  await installServer(page, state, { conflictSemantic: true })
+  await page.goto('/pjsdas/today/capture')
+  await expect(page.getByRole('heading', { name: 'A第一任务' })).toBeVisible()
+  const input = page.locator('.cgr-capture-input')
+  await input.fill('事项：整理面试材料')
+  await expect(page.getByText('PJSDAS 理解为')).toBeVisible()
+  await page.getByRole('button', { name: '确认并保存' }).click()
+  await expect(page.getByRole('alert')).toContainText('发现具体事实冲突')
+  await expect(page.getByRole('alert')).toContainText('请先核对最新事实')
+  await expect(input).toHaveValue('事项：整理面试材料')
+  await expect(page.getByRole('heading', { name: 'A第一任务（另一客户端更新）' })).toBeVisible()
+  expect(state.commandBodies.filter((body) => body.action === 'command')).toHaveLength(1)
   expect(state.receipts.size).toBe(0)
 })
 
