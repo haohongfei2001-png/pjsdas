@@ -140,6 +140,7 @@ function responseFor(state: State, extra: Record<string, unknown> = {}) {
 function installServer(page: Page, state: State, options: {
   loseFirstSemanticResponse?: boolean
   loseFirstReceiptLookup?: boolean
+  delaySemanticMs?: number
 } = {}) {
   let lostCommand = false
   let lostReceipt = false
@@ -173,6 +174,7 @@ function installServer(page: Page, state: State, options: {
 
     if (body.action === 'command' && body.command?.type === 'semantic_intake') {
       state.commandBodies.push(body)
+      if (options.delaySemanticMs) await new Promise((resolve) => setTimeout(resolve, options.delaySemanticMs))
       const commandId = String(body.commandId)
       if (!state.receipts.has(commandId)) {
         const candidate = body.command?.value?.candidates?.find((item: any) => item.kind === 'manual_action')
@@ -351,7 +353,12 @@ test('unknown semantic save keeps one stable command identity and recovers by re
   await page.getByRole('button', { name: '确认并保存' }).click()
 
   await expect(page.getByRole('alert')).toContainText('保存结果暂时未知')
+  await expect(page.getByRole('alert')).toContainText('确认保存状态')
+  await expect(page.getByRole('alert')).not.toContainText(/UNKNOWN_COMMAND_OUTCOME|commandId|Failed to fetch/)
+  await expect(page.getByText('正在理解…')).toHaveCount(0)
   await expect(page.locator('.cgr-capture-input')).toBeDisabled()
+  await mkdir(VISUAL_DIR, { recursive: true })
+  await page.screenshot({ path: `${VISUAL_DIR}/unknown-save.png` })
   const firstCommand = state.commandBodies.find((body) => body.action === 'command')
   expect(firstCommand).toBeTruthy()
   expect(state.commandBodies.filter((body) => body.action === 'command')).toHaveLength(1)
@@ -379,6 +386,8 @@ test('offline capture remains account-scoped draft only and legacy capture route
   await page.getByRole('button', { name: '确认并保存' }).click()
   await expect(page.getByText('仅草稿')).toBeVisible()
   await expect(page.getByText(/还没有写入 PJSDAS/)).toBeVisible()
+  await mkdir(VISUAL_DIR, { recursive: true })
+  await page.screenshot({ path: `${VISUAL_DIR}/offline-draft.png` })
   expect(state.commandBodies.filter((body) => body.action === 'command')).toHaveLength(0)
   const draft = await page.evaluate(() => window.localStorage.getItem('pjsdas-cgr01-draft:account-a:tell-pjsdas'))
   expect(draft).toBe('事项：离线整理材料')
@@ -410,6 +419,23 @@ test('Today remains operable at phone width and large text without horizontal cl
   await expect(page.getByRole('button', { name: '完成' }).first()).toBeInViewport()
   await mkdir(VISUAL_DIR, { recursive: true })
   await page.screenshot({ path: `${VISUAL_DIR}/phone-large-text.png`, fullPage: true })
+})
+
+test('pending authoritative save is visibly pending until its receipt arrives', async ({ page }) => {
+  await seedSession(page.context())
+  const state: State = { revision: 55, snapshot: workspace(), receipts: new Map(), commandBodies: [] }
+  await installServer(page, state, { delaySemanticMs: 1_200 })
+
+  await page.goto('/pjsdas/today')
+  await page.locator('.cgr-global-capture').click()
+  await page.locator('.cgr-capture-input').fill('事项：整理面试材料')
+  await expect(page.getByText(/新增行动 · 整理面试材料/)).toBeVisible()
+  await page.getByRole('button', { name: '确认并保存' }).click()
+  await expect(page.getByText('正在保存')).toBeVisible()
+  await expect(page.getByText('已保存')).toHaveCount(0)
+  await mkdir(VISUAL_DIR, { recursive: true })
+  await page.screenshot({ path: `${VISUAL_DIR}/pending-save.png` })
+  await expect(page.getByText('已保存')).toBeVisible()
 })
 
 test('cached Today stays useful when authoritative refresh fails', async ({ page }) => {

@@ -84,6 +84,21 @@ function modeExplanation(preview: WebSemanticCapturePreview, zh: boolean) {
   return labels[preview.mode]?.[zh ? 0 : 1]
 }
 
+function saveErrorCopy(state: CaptureSaveState, zh: boolean) {
+  if (state === 'unknown') return zh
+    ? '可能已经保存。请先点“确认保存状态”；确认前不要重复提交。'
+    : 'This may already be saved. Check the save status before submitting again.'
+  if (state === 'reauth') return zh
+    ? '重新登录后点“重新确认”，PJSDAS 会先核对原操作的结果。'
+    : 'Sign in again, then retry confirmation. PJSDAS will check the original operation first.'
+  if (state === 'conflict') return zh
+    ? '请先核对最新事实，再决定是否重新提交。输入内容仍在这里。'
+    : 'Review the latest facts before submitting again. Your input remains here.'
+  return zh
+    ? '输入内容仍在这里。请检查连接后重试。'
+    : 'Your input remains here. Check the connection and try again.'
+}
+
 export default function TellPjsdasCapture({
   open,
   onClose,
@@ -142,6 +157,7 @@ export default function TellPjsdasCapture({
 
   useEffect(() => {
     if (!open || !text.trim() || busy) {
+      setPreviewBusy(false)
       if (!text.trim()) setPreview(undefined)
       return
     }
@@ -415,7 +431,7 @@ export default function TellPjsdasCapture({
                 : saveState === 'conflict'
                   ? (zh ? '发现具体事实冲突' : 'A concrete fact conflict was found')
                   : (zh ? '没有完成保存' : 'Save did not complete')}</strong>
-            <span>{error}</span>
+            <span>{saveErrorCopy(saveState, zh)}</span>
           </div>
         ) : null}
       </section>
