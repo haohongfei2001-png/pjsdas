@@ -363,18 +363,37 @@ test('unknown semantic save keeps one stable command identity and recovers by re
   expect(firstCommand).toBeTruthy()
   expect(state.commandBodies.filter((body) => body.action === 'command')).toHaveLength(1)
 
-  await page.getByRole('button', { name: '关闭' }).click()
-  await page.locator('.cgr-global-capture').click()
-  await expect(page.getByRole('alert')).toContainText('保存结果暂时未知')
-  await expect(page.locator('.cgr-capture-input')).toBeDisabled()
   // Another recovery path may have resolved and cleared the pending record
   // while this dialog still remembers the original command identity.
   await page.evaluate(() => window.localStorage.removeItem('pjsdas-cgr01-pending:account-a'))
   await page.getByRole('button', { name: '确认保存状态' }).click()
   await expect(page.getByText('已保存')).toBeVisible()
-  expect(state.commandBodies.filter((body) => body.action === 'command')).toHaveLength(1)
+  const sentCommands = state.commandBodies.filter((body) => body.action === 'command')
+  expect(sentCommands.every((body) => body.commandId === firstCommand.commandId
+    && body.command.value.inputId === firstCommand.command.value.inputId)).toBe(true)
+  expect(state.snapshot.data.actions.filter((item) => item.id === 'capture-action')).toHaveLength(1)
   const pending = await page.evaluate(() => window.localStorage.getItem('pjsdas-cgr01-pending:account-a'))
   expect(pending).toBeNull()
+})
+
+test('background receipt recovery removes only the matching committed draft', async ({ page }) => {
+  await seedSession(page.context())
+  const state: State = { revision: 35, snapshot: workspace(), receipts: new Map(), commandBodies: [] }
+  await installServer(page, state, { loseFirstSemanticResponse: true, loseFirstReceiptLookup: true })
+
+  await page.goto('/pjsdas/today')
+  await page.locator('.cgr-global-capture').click()
+  await page.locator('.cgr-capture-input').fill('事项：整理面试材料')
+  await page.getByRole('button', { name: '确认并保存' }).click()
+  await expect(page.getByRole('alert')).toContainText('保存结果暂时未知')
+  await page.reload()
+  await expect(page.locator('.cgr-recent-section').getByText('已记录：整理面试材料')).toBeVisible()
+  await expect.poll(() => page.evaluate(() => window.localStorage.getItem('pjsdas-cgr01-pending:account-a'))).toBeNull()
+  expect(await page.evaluate(() => window.localStorage.getItem('pjsdas-cgr01-draft:account-a:tell-pjsdas'))).toBeNull()
+  await page.getByRole('button', { name: '关闭' }).click()
+  await page.locator('.cgr-global-capture').click()
+  await expect(page.locator('.cgr-capture-input')).toBeEmpty()
+  expect(state.commandBodies.filter((body) => body.action === 'command')).toHaveLength(1)
 })
 
 test('offline capture remains account-scoped draft only and legacy capture route redirects canonically', async ({ page, context }) => {

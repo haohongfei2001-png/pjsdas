@@ -357,10 +357,23 @@ export async function replayAccountPendingOperations(accountKey: string) {
     const recovered = await lookupConnectedCommandReceipt(accountKey, pending.commandId)
     if (recovered) {
       removePending(accountKey, pending.commandId)
+      clearRecoveredSemanticDraft(accountKey, pending, recovered)
       results.push(recovered)
       continue
     }
-    results.push(await submitPending(accountKey, pending))
+    const result = await submitPending(accountKey, pending)
+    clearRecoveredSemanticDraft(accountKey, pending, result)
+    results.push(result)
   }
   return results
+}
+
+function clearRecoveredSemanticDraft(accountKey: string, pending: PendingCommand, result: ConnectedCommandResponse) {
+  if (pending.action !== 'command' || pending.command?.type !== 'semantic_intake') return
+  if (result.outcome !== 'COMMITTED' && result.outcome !== 'ALREADY_APPLIED') return
+  if (result.result?.status !== 'APPLIED' && result.result?.status !== 'ALREADY_APPLIED') return
+  const originalText = pending.command.value.originalText
+  if (readAccountDraft(accountKey, 'tell-pjsdas') === originalText) {
+    clearAccountDraft(accountKey, 'tell-pjsdas')
+  }
 }
