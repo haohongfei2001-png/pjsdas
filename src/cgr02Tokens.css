@@ -85,6 +85,7 @@
 
 @media (max-width: 760px) {
   .cgr-main { padding-top: 14px !important; }
+  .cgr-main.surface-main { padding-bottom: calc(182px + env(safe-area-inset-bottom)) !important; }
 }
 
 @media (prefers-reduced-motion: reduce) {
