@@ -18,6 +18,7 @@ import { applyDiscoveryProfileCommand } from '../src/discoveryProfileCommand.js'
 import { applyDiscoveryPromotionCommand } from '../src/discoveryPromotionCommand.js'
 import { applyMcpInboxSaveCommand } from '../src/mcpInboxCommand.js'
 import { applyMcpDiscoveryCommand } from '../src/mcpDiscoveryApplyCommand.js'
+import { applyMcpActionStatusCommand } from '../src/mcpActionStatusCommand.js'
 import { discoveryInboxIdentity, discoveryInboxItemsFromChangeSet } from '../src/discoveryInbox.js'
 import type { McpProposalEnvelope } from '../src/ai/mcpProposal.js'
 import { fingerprintWorkspace } from '../src/cloud/workspaceFingerprint.js'
@@ -70,6 +71,7 @@ export const authoritativeBusinessCommandSchema = z.object({
     z.object({ type: z.literal('discovery_profile'), value: discoveryProfileSchema }).strict(),
     z.object({ type: z.literal('discovery_promotion'), value: z.object({ inboxItemId: z.string().trim().min(1).max(240) }).strict() }).strict(),
     z.object({ type: z.literal('mcp_save_inbox'), value: z.object({ token: z.string().min(1).max(32_000) }).strict() }).strict(),
+    z.object({ type: z.literal('mcp_apply_actions'), value: z.object({ token: z.string().min(1).max(32_000) }).strict() }).strict(),
     z.object({ type: z.literal('mcp_apply_discovery'), value: z.object({
       token: z.string().min(1).max(32_000),
       selectedOperationIds: z.array(z.string().min(1).max(240)).min(1).max(24),
@@ -111,7 +113,7 @@ export interface AuthoritativeCommandExecution {
 }
 
 function resultPayload(command: AuthoritativeBusinessCommand['command'], evaluated: any) {
-  if (command.type === 'domain' || command.type === 'discovery_status' || command.type === 'discovery_profile' || command.type === 'discovery_promotion' || command.type === 'mcp_save_inbox' || command.type === 'mcp_apply_discovery') {
+  if (command.type === 'domain' || command.type === 'discovery_status' || command.type === 'discovery_profile' || command.type === 'discovery_promotion' || command.type === 'mcp_save_inbox' || command.type === 'mcp_apply_discovery' || command.type === 'mcp_apply_actions') {
     return {
       type: command.type,
       status: evaluated.status,
@@ -162,6 +164,14 @@ function intentObjects(command: AuthoritativeBusinessCommand['command'], snapsho
         .flatMap((item) => item.kind === 'add_discovered_opportunity' ? [
           { type: 'opportunity', id: item.opportunity.id }, { type: 'action', id: `apply:${item.opportunity.id}` },
         ] : []),
+    ]
+  }
+  if (command.type === 'mcp_apply_actions') {
+    if (!proposal) throw new Error('Verified MCP proposal is required.')
+    return [
+      { type: 'change_set', id: proposal.changeSet.id },
+      ...proposal.changeSet.operations.filter((item) => item.kind === 'set_action_status')
+        .map((item) => ({ type: 'action', id: item.actionId })),
     ]
   }
   if (command.type === 'discovery_status') return [{ type: 'discovery_inbox', id: command.value.inboxItemId }]
@@ -222,6 +232,13 @@ function semanticCompensation(value: Record<string, unknown>): SemanticBatchComp
 }
 
 function applyCompensation(snapshot: PJSDASSnapshot, compensation: Record<string, unknown>, now: Date) {
+  if (compensation.operation === 'mcp_action_status_batch') {
+    const previous = (compensation.payload as { previous?: Array<{ actionId: string; status: string }> } | undefined)?.previous
+    if (!Array.isArray(previous) || !previous.length) throw new Error('MCP Action compensation is invalid.')
+    return [...previous].reverse().reduce((current, item) => applyDomainCompensation(current, {
+      operation: 'set_action_status', payload: item,
+    } as DomainCompensation, now), snapshot)
+  }
   const semantic = semanticCompensation(compensation)
   if (semantic) return applySemanticCompensation(snapshot, semantic, now)
   return applyDomainCompensation(snapshot, compensation as unknown as DomainCompensation, now)
@@ -263,12 +280,12 @@ export function createAuthoritativeCommandExecutor(options: TransactionalWorkspa
     if (principal.kind === 'first_party_web' && parsed.command.type === 'semantic_intake' && parsed.command.value.source.kind !== 'web') {
       throw new WorkspaceSourceError('AUTH_FORBIDDEN', 'First-party Web Semantic Intake may write only web-origin observations.', false)
     }
-    if (['discovery_status','discovery_profile','discovery_promotion','mcp_save_inbox','mcp_apply_discovery'].includes(parsed.command.type) && principal.kind !== 'first_party_web') {
+    if (['discovery_status','discovery_profile','discovery_promotion','mcp_save_inbox','mcp_apply_discovery','mcp_apply_actions'].includes(parsed.command.type) && principal.kind !== 'first_party_web') {
       throw new WorkspaceSourceError('AUTH_FORBIDDEN', 'Discovery review commands are restricted to the first-party Web client.', false)
     }
 
     let proposal: McpProposalEnvelope | undefined
-    if (parsed.command.type === 'mcp_save_inbox' || parsed.command.type === 'mcp_apply_discovery') {
+    if (parsed.command.type === 'mcp_save_inbox' || parsed.command.type === 'mcp_apply_discovery' || parsed.command.type === 'mcp_apply_actions') {
       const signingKey = process.env.PJSDAS_TOKEN_ENCRYPTION_KEY?.trim() ?? ''
       if (!signingKey) throw new WorkspaceSourceError('PROPOSAL_VERIFY_UNAVAILABLE', 'Signed proposal verification is unavailable.', false)
       proposal = await verifySignedProposalToken(parsed.command.value.token, signingKey)
@@ -334,6 +351,8 @@ export function createAuthoritativeCommandExecutor(options: TransactionalWorkspa
         evaluated = applyMcpInboxSaveCommand(current.snapshot, proposal!, now)
       } else if (parsed.command.type === 'mcp_apply_discovery') {
         evaluated = applyMcpDiscoveryCommand(current.snapshot, proposal!, parsed.command.value.selectedOperationIds, parsed.command.value.rejectionSelections, now)
+      } else if (parsed.command.type === 'mcp_apply_actions') {
+        evaluated = applyMcpActionStatusCommand(current.snapshot, proposal!, now)
       } else if (parsed.command.type === 'semantic_intake') {
         evaluated = applySemanticIntake(current.snapshot, parsed.command.value as SemanticIntakeObservation, {
           authorized: true,
