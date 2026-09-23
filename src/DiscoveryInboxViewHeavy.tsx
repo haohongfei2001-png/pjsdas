@@ -12,6 +12,7 @@ import {
   updateDiscoveryInboxStatus,
 } from './discoveryInboxStore.js'
 import { useCloud } from './cloud/CloudContext.js'
+import { ensureAuthoritativePersistence } from './cloud/authoritativePersistence.js'
 import OpportunityAssessmentSummary from './OpportunityAssessmentSummary.js'
 import RichOpportunityFactsSummary from './RichOpportunityFactsSummary.js'
 import { useUiLanguage } from './uiLanguage.js'
@@ -98,7 +99,7 @@ export default function DiscoveryInboxView() {
     window.dispatchEvent(new Event('pjsdas:workspace-replaced'))
     if (cloud.session && !cloud.checkpoint.conflict) {
       try {
-        await cloud.syncNow()
+        await ensureAuthoritativePersistence(true, cloud.syncNow)
         setMessage(`${success}${zh ? '，并已请求同步到 Google Drive。' : '; Google Drive sync requested.'}`)
       } catch {
         setMessage(`${success}${zh ? '；Google Drive 暂未同步。' : '; Google Drive sync did not complete.'}`)

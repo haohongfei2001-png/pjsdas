@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { getAllTimelineRecords, getDiscoveryProfile, saveDiscoveryProfile } from './db.js'
 import { useCloud } from './cloud/CloudContext.js'
+import { ensureAuthoritativePersistence } from './cloud/authoritativePersistence.js'
 import { discoveryFeedbackSummary } from './discoveryFeedback.js'
 import { useUiLanguage } from './uiLanguage.js'
 import type { DiscoveryProfile } from './discoveryProfile.js'
@@ -131,7 +132,7 @@ export default function DiscoveryProfileCard() {
       setStrengths(lines(next.strengths))
       if (cloud.session && !cloud.checkpoint.conflict) {
         try {
-          await cloud.syncNow()
+          await ensureAuthoritativePersistence(true, cloud.syncNow)
           setMessage(zh ? '岗位发现偏好已保存并请求同步到 Google Drive。' : 'Job-discovery preferences saved and Google Drive sync requested.')
         } catch {
           setMessage(zh ? '岗位发现偏好已保存到本机；Google Drive 暂未同步。' : 'Job-discovery preferences saved locally; Google Drive sync did not complete.')

@@ -18,6 +18,7 @@ import {
 } from '../ai/mcpProposal.js'
 import { applyMcpChangeSetWithBaseline, assertMcpChangeSetBaseline } from '../ai/mcpProposalApply.js'
 import { useCloud } from '../cloud/CloudContext.js'
+import { ensureAuthoritativePersistence } from '../cloud/authoritativePersistence.js'
 import { getAccountCheckpoint } from '../cloud/syncState.js'
 import OpportunityAssessmentSummary from '../OpportunityAssessmentSummary.js'
 import RichOpportunityFactsSummary from '../RichOpportunityFactsSummary.js'
@@ -201,7 +202,7 @@ export default function McpProposalReview() {
 
       if (cloud.session && !cloud.checkpoint.conflict) {
         try {
-          await cloud.syncNow()
+          await ensureAuthoritativePersistence(true, cloud.syncNow)
           setResult(zh
             ? `${selectionNote} ChangeSet 已应用，并已请求同步到 Google Drive${feedbackNote}`
             : `${selectionNote} ChangeSet applied and Google Drive sync was requested${feedbackNote}`)
@@ -234,7 +235,7 @@ export default function McpProposalReview() {
       announceWorkspaceChange()
       if (cloud.session && !cloud.checkpoint.conflict) {
         try {
-          await cloud.syncNow()
+          await ensureAuthoritativePersistence(true, cloud.syncNow)
           setResult(zh ? `已保存 ${saved} 个岗位到发现箱，没有加入 Opportunities；已请求同步到 Google Drive。` : `Saved ${saved} jobs to Discovery Inbox without adding Opportunities; Google Drive sync was requested.`)
         } catch {
           setResult(zh ? `已保存 ${saved} 个岗位到本机发现箱，没有加入 Opportunities；Google Drive 暂未同步。` : `Saved ${saved} jobs to the local Discovery Inbox without adding Opportunities; Google Drive sync did not complete.`)
