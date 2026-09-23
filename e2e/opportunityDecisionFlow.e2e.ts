@@ -54,6 +54,14 @@ test('CGR-03 dense mixed-language workspace keeps search, identity, and return f
   await expect(page.getByRole('dialog', { name: /岗位详情|Opportunity details/ })).toBeVisible()
   await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 2)).toBe(true)
   await page.screenshot({ path: testInfo.outputPath('cgr03-long-detail-320.png'), fullPage: true })
+  await page.addStyleTag({ content: 'html { font-size: 200% !important; }' })
+  await expect(page.getByRole('dialog', { name: /岗位详情|Opportunity details/ })).toBeVisible()
+  await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 2)).toBe(true)
+  await page.screenshot({ path: testInfo.outputPath('cgr03-long-detail-large-text-320.png'), fullPage: true })
+  await page.keyboard.press('Escape')
+  await expect(rows.first()).toBeFocused()
+  await expect(search).toBeVisible()
+  await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 2)).toBe(true)
 })
 
 test('UU-05 Opportunities centers In Progress / Worth Pursuing and opens conclusion-first detail', async ({ page }) => {
