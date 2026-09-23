@@ -110,7 +110,7 @@ export async function previewWebSemanticCapture(
 
 export async function submitWebSemanticCapture(
   text: string,
-  options: { now?: Date; timezone?: string; accountKey?: string; commandId?: string } = {},
+  options: { now?: Date; timezone?: string; accountKey?: string; commandId?: string; contextRefs?: string[] } = {},
 ): Promise<WebSemanticCaptureResult> {
   const trimmed = text.trim()
   if (!trimmed) throw new Error('请输入要告诉 PJSDAS 的内容。')
@@ -138,7 +138,7 @@ export async function submitWebSemanticCapture(
     },
     statementMode: interpretation.mode,
     originalText: trimmed,
-    contextRefs: [],
+    contextRefs: [...(options.contextRefs ?? [])],
     candidates: interpretation.candidates,
   }
 
