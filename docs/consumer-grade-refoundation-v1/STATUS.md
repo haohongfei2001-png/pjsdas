@@ -8,10 +8,11 @@ Product origin: https://todayaction.com
 
 ## Package state
 
-Status: ACTIVE — CGR-01 COMPLETE
-Current completed phase: CGR-01
-Next eligible phase: CGR-02 — READY — NOT_STARTED
-Automatic continuation: PROHIBITED
+Status: ACTIVE — CGR-02 IN_PROGRESS
+Current executing phase: CGR-02
+Last completed phase: CGR-01
+Next eligible phase: none until CGR-02 closure
+Automatic continuation beyond CGR-02: PROHIBITED
 
 ## Phase state
 
@@ -19,7 +20,7 @@ Automatic continuation: PROHIBITED
 |---|---|---|
 | CGR-00 | COMPLETE — CONTRACT & SCOPE REGISTERED | Docs-only design convergence, architecture/validation/migration contracts, six-phase plan, and execution handoff; no runtime implementation |
 | CGR-01 | COMPLETE — AUTHORITATIVE COMMAND FOUNDATION | Typed server commands, durable receipts, object-aware conflict/Undo, account-scoped cache/pending recovery, bounded snapshot compatibility, production migration/canary and exact-main gates complete |
-| CGR-02 | READY — NOT_STARTED | Today Vertical Slice; eligible only after new explicit owner authorization |
+| CGR-02 | IN_PROGRESS | Today Vertical Slice; explicitly authorized by owner on 2026-09-23; execution/validation active |
 | CGR-03 | NOT_READY | Depends on CGR-02 closure |
 | CGR-04 | NOT_READY | Depends on CGR-03 closure |
 | CGR-05 | NOT_READY | Depends on CGR-04 closure; no new features allowed |
@@ -55,7 +56,7 @@ CGR-01 moved the CGR-02 prerequisite connected-Web mutation families to typed au
 
 Closure evidence: `docs/consumer-grade-refoundation-v1/receipts/CGR-01.md`.
 
-No CGR-02 implementation has started. UU-08/UU-09 remain on hold. Release publication remains a separate owner decision.
+CGR-02 is in progress under the current owner instruction. CGR-03 has not started. UU-08/UU-09 remain on hold. Release publication remains a separate owner decision.
 
 ## Registration result
 
