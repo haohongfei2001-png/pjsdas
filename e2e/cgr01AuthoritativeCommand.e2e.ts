@@ -384,7 +384,7 @@ test('account A sign-out then account B never displays or replays A cache drafts
   await page.evaluate(({ key, value }) => {
     window.localStorage.setItem(key, JSON.stringify(value))
   }, { key: AUTH_KEY, value: session('account-b', 'token-b') })
-  await page.reload()
+  await page.goto('/today')
 
   await expect(page.getByRole('heading', { name: 'B第一任务' })).toBeVisible()
   await expect(page.getByRole('heading', { name: 'A第一任务' })).toHaveCount(0)
