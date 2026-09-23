@@ -77,7 +77,12 @@ export default function DiscoveryInboxView() {
     setReasons((current) => Object.fromEntries(next.map((item) => [item.id, current[item.id] ?? item.rejectionReason ?? 'not_interested'])))
   }
 
-  useEffect(() => { void reload() }, [])
+  useEffect(() => {
+    const onWorkspaceReplaced = () => { void reload() }
+    window.addEventListener('pjsdas:workspace-replaced', onWorkspaceReplaced)
+    void reload()
+    return () => window.removeEventListener('pjsdas:workspace-replaced', onWorkspaceReplaced)
+  }, [])
 
   const counts = useMemo(() => {
     const result: Record<DiscoveryInboxStatus, number> = { new: 0, seen: 0, later: 0, dismissed: 0, promoted: 0 }
