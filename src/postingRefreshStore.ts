@@ -30,6 +30,9 @@ export async function applyMcpDiscoveryExtensionChangeSet(changeSet: ChangeSetRe
   if (supportedCount !== changeSet.operations.length) {
     throw new Error('岗位来源刷新 / Discovery Run 记录必须作为独立 ChangeSet 应用。')
   }
+  if (refreshOperations.length > 0 && runRecordOperations.length > 0) {
+    throw new Error('岗位来源刷新和 Discovery Run 记录必须分别审阅，不能在同一 ChangeSet 中部分应用。')
+  }
   if (changeSet.status === 'applied') return changeSet
   if (changeSet.status !== 'pending') throw new Error(`ChangeSet ${changeSet.id} 当前状态为 ${changeSet.status}，不能应用。`)
 
