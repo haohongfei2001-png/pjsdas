@@ -15,6 +15,8 @@ import type { PJSDASSnapshot } from '../src/snapshot.js'
 import type { SemanticIntakeObservation } from '../src/model.js'
 import { applyDiscoveryStatusCommand } from '../src/discoveryStatusCommand.js'
 import { applyDiscoveryProfileCommand } from '../src/discoveryProfileCommand.js'
+import { applyDiscoveryPromotionCommand } from '../src/discoveryPromotionCommand.js'
+import { findSimilarOpportunity } from '../src/discoveryQuality.js'
 import { applyUserCommandSchema } from './userCommands.js'
 import { semanticIntakeSchema, resolveSemanticDecisionSchema } from './semanticIntake.js'
 import { hashMutationPayload, type MutationPrincipal } from './mutationKernel.js'
@@ -60,6 +62,7 @@ export const authoritativeBusinessCommandSchema = z.object({
     z.object({ type: z.literal('semantic_intake'), value: semanticIntakeSchema }).strict(),
     z.object({ type: z.literal('resolve_semantic_decision'), value: resolveSemanticDecisionSchema }).strict(),
     z.object({ type: z.literal('discovery_profile'), value: discoveryProfileSchema }).strict(),
+    z.object({ type: z.literal('discovery_promotion'), value: z.object({ inboxItemId: z.string().trim().min(1).max(240) }).strict() }).strict(),
     z.object({ type: z.literal('discovery_status'), value: z.object({
       inboxItemId: z.string().trim().min(1).max(240),
       status: z.enum(['new', 'seen', 'later', 'dismissed']),
@@ -93,7 +96,7 @@ export interface AuthoritativeCommandExecution {
 }
 
 function resultPayload(command: AuthoritativeBusinessCommand['command'], evaluated: any) {
-  if (command.type === 'domain' || command.type === 'discovery_status' || command.type === 'discovery_profile') {
+  if (command.type === 'domain' || command.type === 'discovery_status' || command.type === 'discovery_profile' || command.type === 'discovery_promotion') {
     return {
       type: command.type,
       status: evaluated.status,
@@ -126,6 +129,16 @@ function intentObjects(command: AuthoritativeBusinessCommand['command'], snapsho
   if (command.type === 'domain') return domainIntentObjects(command.value as UserDomainCommand, snapshot)
   if (command.type === 'discovery_status') return [{ type: 'discovery_inbox', id: command.value.inboxItemId }]
   if (command.type === 'discovery_profile') return [{ type: 'discovery_profile', id: 'current' }]
+  if (command.type === 'discovery_promotion') {
+    const item = (snapshot.data.discoveryInbox ?? []).find((candidate) => candidate.id === command.value.inboxItemId)
+    const existing = item && (snapshot.data.opportunities.find((row) => row.id === item.candidateOpportunityId)
+      ?? findSimilarOpportunity({ company: item.company, role: item.role }, snapshot.data.opportunities))
+    return [
+      { type: 'discovery_inbox', id: command.value.inboxItemId },
+      ...(item ? [{ type: 'opportunity', id: item.candidateOpportunityId }, { type: 'action', id: `apply:${item.candidateOpportunityId}` }] : []),
+      ...(existing && existing.id !== item?.candidateOpportunityId ? [{ type: 'opportunity', id: existing.id }] : []),
+    ]
+  }
   if (command.type === 'semantic_intake') return semanticIntentObjects(command.value as SemanticIntakeObservation, snapshot)
   return decisionIntentObjects(command.value.requestId, snapshot)
 }
@@ -213,8 +226,8 @@ export function createAuthoritativeCommandExecutor(options: TransactionalWorkspa
     if (principal.kind === 'first_party_web' && parsed.command.type === 'semantic_intake' && parsed.command.value.source.kind !== 'web') {
       throw new WorkspaceSourceError('AUTH_FORBIDDEN', 'First-party Web Semantic Intake may write only web-origin observations.', false)
     }
-    if (['discovery_status','discovery_profile'].includes(parsed.command.type) && principal.kind !== 'first_party_web') {
-      throw new WorkspaceSourceError('AUTH_FORBIDDEN', 'Discovery Inbox status commands are restricted to the first-party Web client.', false)
+    if (['discovery_status','discovery_profile','discovery_promotion'].includes(parsed.command.type) && principal.kind !== 'first_party_web') {
+      throw new WorkspaceSourceError('AUTH_FORBIDDEN', 'Discovery review commands are restricted to the first-party Web client.', false)
     }
 
     const operation = operationFor(parsed.command)
@@ -262,6 +275,8 @@ export function createAuthoritativeCommandExecutor(options: TransactionalWorkspa
         evaluated = applyDiscoveryStatusCommand(current.snapshot, parsed.command.value, now)
       } else if (parsed.command.type === 'discovery_profile') {
         evaluated = applyDiscoveryProfileCommand(current.snapshot, parsed.command.value, now)
+      } else if (parsed.command.type === 'discovery_promotion') {
+        evaluated = applyDiscoveryPromotionCommand(current.snapshot, parsed.command.value, now)
       } else if (parsed.command.type === 'semantic_intake') {
         evaluated = applySemanticIntake(current.snapshot, parsed.command.value as SemanticIntakeObservation, {
           authorized: true,

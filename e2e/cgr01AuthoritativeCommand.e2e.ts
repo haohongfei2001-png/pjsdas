@@ -1,5 +1,6 @@
 import { expect, test, type Page, type Route } from '@playwright/test'
 import { upgradeSnapshotToLatest, type PJSDASSnapshot } from '../src/snapshot.js'
+import { applyDiscoveryPromotionCommand } from '../src/discoveryPromotionCommand.js'
 
 const AUTH_KEY = 'sb-yyrzwpoxlxpafdlbkdtg-auth-token'
 const BACKEND = 'https://pjsdas-remote-alpha.vercel.app'
@@ -521,7 +522,7 @@ test('CGR-05 background connected refresh leaves local legacy changes pending wi
   expect((await readIndexedActions(page)).find((item) => item.id === 'A-action-1')?.title).toBe('本地待处理修改')
 })
 
-test('CGR-05 Discovery status and Profile use scoped first-party commands across clients', async ({ browser }) => {
+test('CGR-05 Discovery status, Profile and promotion use scoped first-party commands', async ({ browser }) => {
   test.setTimeout(60000)
   const state: AccountState = { revision: 7, snapshot: workspace('A'), receipts: new Map() }
   state.snapshot.data.discoveryInbox = [{
@@ -563,6 +564,8 @@ test('CGR-05 Discovery status and Profile use scoped first-party commands across
           }
         } else if (command?.type === 'discovery_profile' && command.value?.key === 'current') {
           state.snapshot.data.discoveryProfile = command.value
+        } else if (command?.type === 'discovery_promotion' && command.value?.inboxItemId === 'inbox:cgr05-job') {
+          state.snapshot = applyDiscoveryPromotionCommand(state.snapshot, command.value).snapshot
         } else return cors(route, { code: 'UNEXPECTED_COMMAND' }, 400)
         state.revision += 1
         const receipt = {
@@ -570,7 +573,9 @@ test('CGR-05 Discovery status and Profile use scoped first-party commands across
           status: 'COMMITTED', revision: state.revision,
           affectedObjects: command.type === 'discovery_profile'
             ? [{ type: 'discovery_profile', id: 'current' }]
-            : [{ type: 'discovery_inbox', id: 'inbox:cgr05-job' }],
+            : command.type === 'discovery_promotion'
+              ? [{ type: 'discovery_inbox', id: 'inbox:cgr05-job' }, { type: 'opportunity', id: 'cgr05-job' }]
+              : [{ type: 'discovery_inbox', id: 'inbox:cgr05-job' }],
           result: { type: command.type, status: 'APPLIED', summary: 'Saved first-party Discovery data.' },
         }
         state.receipts.set(body.commandId, receipt)
@@ -637,6 +642,19 @@ test('CGR-05 Discovery status and Profile use scoped first-party commands across
     await pageB.goto('/pjsdas/settings')
     await pageB.locator('details.settings-group').filter({ hasText: '岗位发现偏好' }).locator('summary').click()
     await expect(pageB.locator('.discovery-profile-card textarea').first()).toHaveValue('合成产品设计师')
+
+    await pageA.goto('/pjsdas/opportunities')
+    await pageA.locator('.surface-context-tabs').getByRole('button', { name: /发现箱/ }).click()
+    const promoted = pageA.locator('.discovery-inbox-item').filter({ hasText: '合成公司' })
+    await promoted.getByRole('button', { name: '加入 Opportunities' }).click()
+    const confirmation = pageA.getByRole('dialog', { name: '加入机会池预览' })
+    await expect(confirmation).toBeVisible()
+    await confirmation.getByRole('button', { name: '确认加入 Opportunities' }).click()
+    await expect(promoted).toHaveClass(/status-promoted/)
+    expect(commandBodies).toHaveLength(3)
+    expect(commandBodies[2].command).toMatchObject({ type: 'discovery_promotion', value: { inboxItemId: 'inbox:cgr05-job' } })
+    expect(snapshotCommits).toBe(0)
+    expect(state.snapshot.data.opportunities.some((opportunity) => opportunity.id === 'cgr05-job')).toBe(true)
   } finally {
     await first.close()
     await second.close()

@@ -15,6 +15,7 @@ export type ConnectedBusinessCommand =
   | { type: 'resolve_semantic_decision'; value: { requestId: string; choiceId: string } }
   | { type: 'discovery_status'; value: DiscoveryStatusCommand }
   | { type: 'discovery_profile'; value: DiscoveryProfile }
+  | { type: 'discovery_promotion'; value: { inboxItemId: string } }
 
 export interface ConnectedCommandResponse {
   outcome: 'COMMITTED' | 'ALREADY_APPLIED' | 'NO_WRITE' | 'CONFLICT'

@@ -183,10 +183,21 @@ export default function DiscoveryInboxView() {
     setError('')
     setMessage('')
     try {
-      await promoteDiscoveryInboxItem(item.id)
+      if (connectedWorkspaceAuthorityEnabled() && cloud.session) {
+        const result = await executeConnectedBusinessCommand(cloud.session.user.id, {
+          type: 'discovery_promotion', value: { inboxItemId: item.id },
+        }, { commandId: createConnectedCommandId('discovery-promotion') })
+        if (result.outcome !== 'COMMITTED' && result.outcome !== 'ALREADY_APPLIED') {
+          throw new Error(result.conflict?.message ?? '岗位未加入账号工作区。')
+        }
+        await reload()
+        setMessage(zh ? '岗位已加入账号 Opportunities。' : 'Job added to account Opportunities.')
+      } else {
+        await promoteDiscoveryInboxItem(item.id)
+        await syncAfterMutation(zh ? '岗位已加入 Opportunities' : 'Job added to Opportunities')
+      }
       setPromotePreview(null)
       setSelectedIds((current) => current.filter((id) => id !== item.id))
-      await syncAfterMutation(zh ? '岗位已加入 Opportunities' : 'Job added to Opportunities')
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : String(caught))
     } finally { setBusyId('') }

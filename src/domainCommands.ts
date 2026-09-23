@@ -908,6 +908,18 @@ export function applyDomainCompensation(
       target.updatedAt = timestamp
       syncScheduleNodeForActionStatus(next.data, target.id, target.status, timestamp)
     }
+  } else if (compensation.operation === 'restore_discovery_promotion') {
+    const target = (next.data.discoveryInbox ?? []).find((item) => item.id === payload.inboxItemId)
+    if (target) {
+      target.status = payload.status
+      target.rejectionReason = payload.rejectionReason
+      target.promotedOpportunityId = payload.promotedOpportunityId
+      target.updatedAt = timestamp
+    }
+    next.data.timeline = (next.data.timeline ?? []).filter((item) => !(payload.timelineIds ?? []).includes(item.id))
+    if (payload.createdOpportunityId) next.data.opportunities = next.data.opportunities.filter((item) => item.id !== payload.createdOpportunityId)
+    if (payload.createdActionId) next.data.actions = next.data.actions.filter((item) => item.id !== payload.createdActionId)
+    if (payload.createdChangeSetId) next.data.changeSets = (next.data.changeSets ?? []).filter((item) => item.id !== payload.createdChangeSetId)
   } else if (compensation.operation === 'restore_discovery_profile') {
     next.data.discoveryProfile = payload.profile
   } else if (compensation.operation === 'restore_discovery_status') {
