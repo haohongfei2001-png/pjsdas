@@ -25,5 +25,7 @@ test('shell hides stale version copy and Opportunities uses the decision-first t
   await page.locator('.ultimate-toolbar').getByRole('button', { name: /设置/ }).click()
   await expect(page.getByRole('heading', { name: '连接、自动化和长期控制' })).toBeVisible()
   await expect(page.getByText('ACCOUNT & CONNECTION', { exact: true })).toBeVisible()
+  await expect(page.locator('.cloud-connection-impact')).toContainText('其他设备看不到这些修改')
+  await expect(page.locator('.cloud-settings-card')).not.toContainText(/Controlled production|Legacy access mode|Local IndexedDB|Connected revision/)
   await expect(page.getByText(/V1\.9/)).toHaveCount(0)
 })

@@ -92,11 +92,11 @@ test('CGR-03 detail completion uses the shared action command and updates the pe
   await page.locator('.surface-nav').getByRole('button', { name: /机会|Opportunities/ }).click()
   await page.getByRole('button', { name: /合成行动科技/ }).click()
   const detail = page.getByRole('dialog', { name: /岗位详情|Opportunity details/ })
-  const preparation = detail.locator('.opportunity-detail-section').filter({ hasText: '准备合成面试' })
+  const preparation = detail.locator('.opportunity-detail-section').filter({ has: page.locator('.opportunity-detail-action-list article', { hasText: '准备合成面试' }) })
   await preparation.locator('summary').click()
   await preparation.getByRole('button', { name: /标记完成|Mark done/ }).click()
   await expect(page.locator('.action-undo-toast')).toContainText('准备合成面试')
-  await expect(preparation).toHaveCount(0)
+  await expect(detail.locator('.opportunity-detail-action-list article', { hasText: '准备合成面试' })).toHaveCount(0)
   await expect.poll(async () => page.evaluate(async () => {
     const request = indexedDB.open('pjsdas', 11)
     return new Promise<string | undefined>((resolve, reject) => {
