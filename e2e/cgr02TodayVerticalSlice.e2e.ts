@@ -497,6 +497,32 @@ test('dense desktop Today keeps the primary action and agenda readable', async (
   await reviewedScreenshot(page, 'dense-desktop.png', true)
 })
 
+test('connected Today keeps a fixed interview, date-only deadline and elapsed unresolved node distinct', async ({ page }) => {
+  await seedSession(page.context())
+  const state: State = { revision: 54, snapshot: workspace(), receipts: new Map(), commandBodies: [] }
+  state.snapshot.data.opportunities[0].deadline = '2026-09-25'
+  state.snapshot.data.opportunities[0].deadlinePrecision = 'date'
+  const base = {
+    opportunityId: 'A-opp-1', company: 'A公司', role: '产品经理',
+    occurredAt: '2026-09-22T00:00:00.000Z', timingMode: 'fixed' as const,
+    estimatedMinutes: 60, source: 'manual' as const,
+    createdAt: '2026-09-22T00:00:00.000Z', updatedAt: '2026-09-22T00:00:00.000Z',
+  }
+  state.snapshot.data.processEvents.push(
+    { ...base, id: 'cgr02-upcoming-interview', type: 'interview_invite', dueAt: '2026-09-24T04:00:00.000Z', duePrecision: 'datetime' },
+    { ...base, id: 'cgr02-elapsed-interview', type: 'interview_invite', dueAt: '2026-09-21T04:00:00.000Z', duePrecision: 'datetime' },
+  )
+  await installServer(page, state)
+  await page.goto('/pjsdas/today')
+  await expect(page.getByRole('heading', { name: 'A第一任务' })).toBeVisible()
+  const agenda = page.locator('.cgr-agenda')
+  await expect(agenda.locator('.cgr-agenda-node').filter({ hasText: '面试' })).toHaveCount(2)
+  await expect(agenda.locator('.cgr-agenda-node').filter({ hasText: '申请截止' })).toHaveCount(1)
+  await expect(agenda.locator('.cgr-agenda-node.unresolved')).toHaveCount(1)
+  await expect(agenda.locator('.cgr-agenda-node.unresolved')).toContainText('待确认')
+  await expect(agenda.locator('.cgr-agenda-node').filter({ hasText: '申请截止' }).locator('.cgr-agenda-time')).toHaveText('2026-09-25')
+})
+
 test('first load and unavailable read show distinct truthful states', async ({ page, browser }) => {
   await seedSession(page.context())
   const state: State = { revision: 53, snapshot: workspace(), receipts: new Map(), commandBodies: [] }
