@@ -208,6 +208,38 @@ describe('first-party connected workspace endpoint', () => {
     })
   })
 
+  it('rejects whole-snapshot Web writes that do not declare a bounded compatibility purpose', async () => {
+    const current = upgradeSnapshotToLatest(snapshot())
+    let rpcCalled = false
+    const fetchImpl = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.endsWith('/auth/v1/user')) return json({ id: 'user-a' })
+      if (url.includes('/rest/v1/rpc/')) {
+        rpcCalled = true
+        return json({ error: 'must not commit' }, 500)
+      }
+      return json({ error: 'unexpected' }, 500)
+    }) as unknown as typeof fetch
+    const handler = createConnectedWorkspaceHandler({
+      supabaseUrl: 'https://example.supabase.co',
+      supabasePublishableKey: 'publishable',
+      serviceRoleKey: 'service-role',
+      allowedOrigins: [ORIGIN],
+      fetchImpl,
+    })
+
+    const response = await handler(request('POST', 'ordinary-token', {
+      action: 'commit',
+      commandId: 'legacy-snapshot-no-purpose',
+      expectedRevision: 1,
+      snapshot: current,
+    }))
+
+    expect(response.status).toBe(400)
+    await expect(response.json()).resolves.toMatchObject({ code: 'SNAPSHOT_COMPATIBILITY_REQUIRED' })
+    expect(rpcCalled).toBe(false)
+  })
+
   it('rejects a stale legacy snapshot before it can overwrite newer authoritative fields', async () => {
     const authoritative = upgradeSnapshotToLatest(snapshot())
     authoritative.data.opportunities.push({
