@@ -7,7 +7,6 @@ import {
 import { parsePJSDASWorkbook } from './importExcelV2.js'
 import { prepPriorityRank, presentPrepPriority, presentPrepSourceState } from './prepSemantics.js'
 import { presentStageLabel } from './stagePresentation.js'
-import { presentRankingReasons } from './rankingReasonPresentation.js'
 import { currentUiLanguage, useUiLanguage } from './uiLanguage.js'
 import { DEFAULT_DECISION_RULES, type DecisionRules } from './decisionRules.js'
 import RulesView from './RulesView.js'
@@ -16,6 +15,10 @@ import CloudSettingsCard from './cloud/CloudSettingsCard.js'
 import { useCloud } from './cloud/CloudContext.js'
 import { ensureAuthoritativePersistence } from './cloud/authoritativePersistence.js'
 import { connectedWorkspaceAuthorityEnabled } from './cloud/connectedWorkspaceRepository.js'
+import {
+  refreshConnectedAuthoritativeCache,
+  TODAY_AUTHORITATIVE_REFRESH_INTERVAL_MS,
+} from './cloud/authoritativeReadModelClient.js'
 import {
   createConnectedCommandId,
   executeConnectedBusinessCommand,
@@ -35,12 +38,12 @@ import {
   type OpportunityDecisionListRead,
 } from './opportunityDecisionRead.js'
 import TellPjsdasCapture from './TellPjsdasCapture.js'
+import TodayFeature, { type TodayFreshnessView } from './today/TodayFeature.js'
 import DecisionRequestsView from './DecisionRequestsView.js'
 import {
   buildTodayBrief,
   type TodayBrief as TodayBriefModel,
   type TodayBriefAction,
-  type TodayBriefAgendaNode,
 } from './todayBrief.js'
 import type {
   Action,
@@ -59,6 +62,7 @@ import './interactionDetail.css'
 import './webConsole.css'
 import './ultimateWeb.css'
 import './opportunityDecision.css'
+import './cgr02Tokens.css'
 
 type Surface = 'today' | 'opportunities' | 'decisions' | 'history' | 'settings'
 type PrimarySurface = 'today' | 'opportunities'
@@ -91,7 +95,7 @@ function browserPath(path: string) {
 
 function routeFromPath(pathname = semanticPath()): RouteState {
   const path = pathname.replace(/\/+$/, '') || '/'
-  if (path === '/capture') return { surface: 'today', capture: true, agendaExpanded: false }
+  if (path === '/capture' || path === '/today/capture') return { surface: 'today', capture: true, agendaExpanded: false }
   if (path === '/decisions') return { surface: 'decisions', capture: false, agendaExpanded: false }
   if (path === '/settings') return { surface: 'settings', capture: false, agendaExpanded: false }
   if (path === '/history') return { surface: 'history', capture: false, agendaExpanded: false }
@@ -126,6 +130,8 @@ export default function AppV8() {
   const zh = lang === 'zh'
   const [route, setRoute] = useState<RouteState>(() => routeFromPath())
   const [captureReturnPath, setCaptureReturnPath] = useState('/today')
+  const [captureContextOpportunityId, setCaptureContextOpportunityId] = useState<string>()
+  const [todayFreshness, setTodayFreshness] = useState<TodayFreshnessView>({ state: 'local' })
   const [opportunityTab, setOpportunityTab] = useState<OpportunityTab>('opportunities')
   const [opportunityTabExplicit, setOpportunityTabExplicit] = useState(false)
   const [lastCompletedAction, setLastCompletedAction] = useState<CompletionFeedback | null>(null)
@@ -168,18 +174,24 @@ export default function AppV8() {
 
   function openCapture() {
     const current = semanticPath()
-    setCaptureReturnPath(current === '/capture' ? '/today' : current)
-    navigate('/capture')
+    setCaptureContextOpportunityId(route.opportunityId)
+    setCaptureReturnPath(current === '/capture' || current === '/today/capture' ? '/today' : current)
+    navigate('/today/capture')
   }
 
   function closeCapture() {
     navigate(captureReturnPath || '/today', true)
+    setCaptureContextOpportunityId(undefined)
   }
 
   useEffect(() => {
-    if (semanticPath() === '/') {
+    const path = semanticPath()
+    if (path === '/') {
       window.history.replaceState(null, '', browserPath('/today'))
       setRoute(routeFromPath('/today'))
+    } else if (path === '/capture') {
+      window.history.replaceState(null, '', browserPath('/today/capture'))
+      setRoute(routeFromPath('/today/capture'))
     }
     void reload().finally(() => setLoading(false))
   }, [])
@@ -204,6 +216,74 @@ export default function AppV8() {
       window.removeEventListener('keydown', keyboard)
     }
   }, [route])
+
+  useEffect(() => {
+    const accountKey = cloud.session?.user.id
+    if (surface !== 'today' || !accountKey || !connectedWorkspaceAuthorityEnabled()) {
+      setTodayFreshness({ state: 'local' })
+      return
+    }
+
+    let active = true
+    let running = false
+    const refresh = async (initial = false) => {
+      if (running) return
+      running = true
+      setTodayFreshness((current) => ({
+        ...current,
+        state: initial && !snapshot ? 'initial' : 'refreshing',
+      }))
+      try {
+        const result = await refreshConnectedAuthoritativeCache(accountKey)
+        if (!active) return
+        if (result.state === 'current' || result.state === 'updated') {
+          setTodayFreshness({
+            state: result.state,
+            observedAt: result.observedAt,
+            latencyMs: result.latencyMs,
+          })
+          if (result.changed) await reload()
+        } else {
+          setTodayFreshness({
+            state: 'blocked',
+            observedAt: result.observedAt,
+            latencyMs: result.latencyMs,
+            detail: result.state === 'diverged'
+              ? 'Authoritative state changed while this client also has local changes; PJSDAS did not overwrite either side.'
+              : result.state === 'local_changes_pending'
+                ? 'This client has local changes that have not been projected to authoritative state.'
+                : 'A non-empty local workspace has not yet been safely bound to this account.',
+          })
+        }
+      } catch (caught) {
+        if (!active) return
+        setTodayFreshness({
+          state: 'cached',
+          detail: caught instanceof Error ? caught.message : String(caught),
+        })
+      } finally {
+        running = false
+      }
+    }
+
+    void refresh(true)
+    const interval = window.setInterval(() => { void refresh() }, TODAY_AUTHORITATIVE_REFRESH_INTERVAL_MS)
+    const focus = () => { void refresh() }
+    const online = () => { void refresh() }
+    const visible = () => {
+      if (document.visibilityState === 'visible') void refresh()
+    }
+    window.addEventListener('focus', focus)
+    window.addEventListener('online', online)
+    document.addEventListener('visibilitychange', visible)
+    return () => {
+      active = false
+      window.clearInterval(interval)
+      window.removeEventListener('focus', focus)
+      window.removeEventListener('online', online)
+      document.removeEventListener('visibilitychange', visible)
+    }
+  }, [cloud.session?.user.id, surface])
 
   useEffect(() => {
     if (!lastCompletedAction) return
@@ -238,6 +318,9 @@ export default function AppV8() {
   ).length
   const workspaceEmpty = opportunities.length === 0 && actions.length === 0 && processes.length === 0 && prep.length === 0
   const selectedOpportunity = selectedOpportunityId ? opportunities.find((item) => item.id === selectedOpportunityId) : undefined
+  const captureOpportunity = captureContextOpportunityId
+    ? opportunities.find((item) => item.id === captureContextOpportunityId)
+    : undefined
   const selectedProcess = selectedOpportunity
     ? processes.find((item) => item.opportunityId === selectedOpportunity.id)
       ?? processes.find((item) => item.company === selectedOpportunity.company && item.role === selectedOpportunity.role)
@@ -372,8 +455,8 @@ export default function AppV8() {
   }
 
   return (
-    <div className="app-shell surface-shell ultimate-shell">
-      <aside className="sidebar surface-sidebar ultimate-sidebar">
+    <div className="app-shell surface-shell ultimate-shell cgr-shell cgr-app-shell">
+      <aside className="sidebar surface-sidebar ultimate-sidebar cgr-sidebar">
         <div className="brand">
           <span className="brand-mark">P</span>
           <div><strong>PJSDAS</strong><small>{zh ? '求职行动系统' : 'Job-search action system'}</small></div>
@@ -398,9 +481,9 @@ export default function AppV8() {
         <div className="surface-sidebar-footer"><span>Today · Opportunities</span></div>
       </aside>
 
-      <main className="main-panel surface-main ultimate-main">
-        <header className="ultimate-toolbar" aria-label={zh ? '全局工具栏' : 'Global toolbar'}>
-          <button className="ultimate-capture-button" type="button" onClick={openCapture}>
+      <main className="main-panel surface-main ultimate-main cgr-main">
+        <header className="ultimate-toolbar cgr-toolbar" aria-label={zh ? '全局工具栏' : 'Global toolbar'}>
+          <button className="ultimate-capture-button cgr-global-capture" type="button" onClick={openCapture}>
             <span>＋</span><strong>{zh ? '告诉 PJSDAS' : 'Tell PJSDAS'}</strong><kbd>⌘K</kbd>
           </button>
           <div className="ultimate-toolbar-actions">
@@ -419,12 +502,13 @@ export default function AppV8() {
         {loading ? <div className="empty-card">{zh ? '正在读取工作区…' : 'Loading workspace…'}</div> : null}
 
         {!loading && surface === 'today' && todayBrief ? (
-          <TodaySurface
+          <TodayFeature
             brief={todayBrief}
             now={now}
             budgetMinutes={budgetMinutes}
             agendaExpanded={route.agendaExpanded}
             workspaceEmpty={workspaceEmpty}
+            freshness={cloud.loading && workspaceEmpty ? { state: 'initial' } : todayFreshness}
             onBudgetChange={setBudgetMinutes}
             onStart={navigateFromStart}
             onOpenDecisions={() => navigate('/decisions')}
@@ -450,6 +534,8 @@ export default function AppV8() {
         onClose={closeCapture}
         onChanged={reload}
         onOpenDecisions={() => navigate('/decisions')}
+        contextLabel={captureOpportunity ? `${captureOpportunity.company} · ${captureOpportunity.role}` : undefined}
+        contextRefs={captureOpportunity ? [`opportunity:${captureOpportunity.id}`] : []}
       />
 
       {selectedOpportunity ? (
@@ -476,283 +562,6 @@ export default function AppV8() {
       ) : null}
     </div>
   )
-}
-
-function TodaySurface({
-  brief,
-  now,
-  budgetMinutes,
-  agendaExpanded,
-  workspaceEmpty,
-  onBudgetChange,
-  onStart,
-  onOpenDecisions,
-  onOpenAgenda,
-  onExecute,
-  onMark,
-  onOpenOpportunity,
-}: {
-  brief: TodayBriefModel
-  now: Date
-  budgetMinutes: number
-  agendaExpanded: boolean
-  workspaceEmpty: boolean
-  onBudgetChange: (minutes: number) => void
-  onStart: () => void
-  onOpenDecisions: () => void
-  onOpenAgenda: () => void
-  onExecute: (item: TodayBriefAction) => Promise<void>
-  onMark: (id: string, status: Action['status']) => Promise<void>
-  onOpenOpportunity: (id: string) => void
-}) {
-  const { lang } = useUiLanguage()
-  const zh = lang === 'zh'
-  const primary = brief.nextAction
-  const criticalWarnings = brief.materialCoverageWarnings.filter((item) => item.severity === 'critical')
-  const coverageWarnings = brief.materialCoverageWarnings.filter((item) => item.severity !== 'critical')
-
-  function reasonText(item: TodayBriefAction) {
-    return item.whyNow.length
-      ? presentRankingReasons(item.whyNow, zh).join(' · ')
-      : (zh ? '当前最值得处理' : 'Highest-value next move')
-  }
-
-  function primaryLabel(item: TodayBriefAction) {
-    if (item.execution.operation === 'open_application') {
-      return item.execution.externalUrl
-        ? (zh ? '打开申请' : 'Open application')
-        : (zh ? '查看岗位' : 'View opportunity')
-    }
-    if (item.execution.operation === 'start_prep') return zh ? '开始准备' : 'Start prep'
-    if (item.execution.operation === 'open_process') return zh ? '查看流程' : 'Open process'
-    if (item.execution.operation === 'open_group_decision') return zh ? '比较机会' : 'Compare opportunities'
-    return zh ? '开始' : 'Start'
-  }
-
-  function actionTiming(item: TodayBriefAction) {
-    const timing = item.timing
-    if (!timing) return undefined
-    if (timing.precision === 'date' && timing.date) {
-      return (zh ? '日期：' : 'Date: ') + timing.date
-    }
-    if (timing.startAt) {
-      return (zh ? '开始：' : 'Starts: ') + formatBriefDateTime(timing.startAt, zh)
-    }
-    if (timing.deadlineAt) {
-      return (zh ? '截止：' : 'Deadline: ') + formatBriefDateTime(timing.deadlineAt, zh)
-    }
-    return undefined
-  }
-
-  return (
-    <section className="surface-page ultimate-today">
-      <header className="ultimate-today-header">
-        <div>
-          <div className="eyebrow">{formatDateOnly(now.toISOString())}</div>
-          <h1>{zh ? '今天' : 'Today'}</h1>
-          <p>{zh ? '只看现在最值得做的事，以及接下来不能错过的时间节点。' : 'Only what is worth doing now and the recruiting nodes you cannot afford to miss.'}</p>
-        </div>
-        {brief.relevantDecisionRequests.length > 0 ? (
-          <button className="ultimate-decision-entry" type="button" onClick={onOpenDecisions}>
-            <span>{zh ? '需要你决定' : 'Needs your decision'}</span>
-            <strong>{brief.relevantDecisionRequests.length}</strong>
-          </button>
-        ) : null}
-      </header>
-
-      {criticalWarnings.length ? (
-        <div className="ultimate-critical-stack" role="status">
-          {criticalWarnings.map((item) => (
-            <div className="ultimate-critical-warning" key={item.code}>
-              <strong>{item.title}</strong>
-              <span>{item.detail}</span>
-            </div>
-          ))}
-        </div>
-      ) : null}
-
-      <div className="ultimate-today-layout">
-        <div className="ultimate-primary-slot">
-          {primary ? (
-            <article className="ultimate-next-action">
-              <div className="decision-kicker">{zh ? '下一步' : 'Next action'}</div>
-              {primary.company ? <div className="ultimate-action-context">{primary.company}{primary.role ? ' · ' + primary.role : ''}</div> : null}
-              <h2>{primary.title}</h2>
-              <p className="decision-why">{reasonText(primary)}</p>
-              <div className="ultimate-action-meta">
-                {actionTiming(primary) ? <span>{actionTiming(primary)}</span> : null}
-                <span>{zh ? '预计 ' : 'Est. '}{formatMinutes(primary.estimatedMinutes)}</span>
-                {primary.protectedByLatestStart ? <strong>{zh ? '已进入最迟开工保护' : 'Latest-start protected'}</strong> : null}
-              </div>
-              <div className="decision-actions">
-                <button className="primary-button" type="button" onClick={() => { void onExecute(primary) }}>
-                  {primaryLabel(primary)}
-                </button>
-                <button className="secondary-button" type="button" onClick={() => { void onMark(primary.actionId, 'done') }}>
-                  {zh ? '标记完成' : 'Mark done'}
-                </button>
-                {primary.opportunityId ? (
-                  <button className="text-button" type="button" onClick={() => onOpenOpportunity(primary.opportunityId!)}>
-                    {zh ? '岗位详情' : 'Opportunity'}
-                  </button>
-                ) : null}
-              </div>
-            </article>
-          ) : workspaceEmpty ? (
-            <GettingStartedCard onStart={onStart} />
-          ) : (
-            <div className="ultimate-quiet-state ultimate-primary-quiet">
-              <strong>{zh ? '现在没有必须处理的行动' : 'Nothing requires action right now'}</strong>
-              <span>{zh ? '未来节点仍会保留在右侧日程，不需要为了填满 Today 制造任务。' : 'Future recruiting nodes remain visible in the agenda; PJSDAS does not invent work just to fill Today.'}</span>
-            </div>
-          )}
-        </div>
-
-        <aside className="ultimate-agenda" aria-label={zh ? '近期招聘日程' : 'Upcoming recruiting agenda'}>
-          <div className="ultimate-section-head">
-            <div>
-              <span className="eyebrow">AGENDA</span>
-              <h2>{agendaExpanded ? (zh ? '未来 30 天' : 'Next 30 days') : (zh ? '近期节点' : 'Upcoming')}</h2>
-            </div>
-            <button className="text-button" type="button" onClick={onOpenAgenda}>
-              {agendaExpanded ? (zh ? '收起' : 'Summary') : (zh ? '全部日程' : 'All schedule')}
-            </button>
-          </div>
-
-          {brief.agendaGroups.length ? (
-            <div className="ultimate-agenda-groups">
-              {brief.agendaGroups.map((group) => (
-                <section className={'ultimate-agenda-group relation-' + group.relation} key={group.key}>
-                  <h3>{agendaGroupTitle(group.relation, group.date, zh)}</h3>
-                  <div>
-                    {group.nodes.map((node) => (
-                      <button
-                        className={'ultimate-agenda-node' + (node.requiresResolution ? ' unresolved' : '')}
-                        type="button"
-                        key={node.nodeId}
-                        onClick={() => { if (node.opportunityId) onOpenOpportunity(node.opportunityId) }}
-                      >
-                        <span className="ultimate-agenda-time">{agendaNodeTime(node, zh)}</span>
-                        <span className="ultimate-agenda-copy">
-                          <strong>{agendaNodeLabel(node.kind, zh)}</strong>
-                          <small>{[node.company, node.role].filter(Boolean).join(' · ') || (zh ? '招聘节点' : 'Recruiting node')}</small>
-                        </span>
-                        <span className="ultimate-agenda-state">
-                          {node.requiresResolution
-                            ? (zh ? '待确认' : 'Resolve')
-                            : node.within48Hours
-                              ? (zh ? '48h 内' : '<48h')
-                              : ''}
-                        </span>
-                      </button>
-                    ))}
-                  </div>
-                </section>
-              ))}
-            </div>
-          ) : (
-            <div className="ultimate-agenda-empty">
-              <strong>{zh ? '近期没有招聘时间节点' : 'No recruiting nodes coming up'}</strong>
-              <span>{zh ? '这里不会显示普通日历事件。' : 'General calendar events do not appear here.'}</span>
-            </div>
-          )}
-        </aside>
-
-        <section className="ultimate-next-list-section">
-          <div className="ultimate-section-head">
-            <div>
-              <span className="eyebrow">NEXT UP</span>
-              <h2>{zh ? '接下来' : 'Next up'}</h2>
-            </div>
-            <div className="decision-budget" role="group" aria-label={zh ? '今日可用时间' : 'Available time today'}>
-              {[60, 180, 360].map((value) => (
-                <button key={value} type="button" className={budgetMinutes === value ? 'active' : ''} onClick={() => onBudgetChange(value)}>
-                  {formatMinutes(value)}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {brief.nextActions.length ? (
-            <div className="ultimate-next-list">
-              {brief.nextActions.map((item, index) => (
-                <article className="ultimate-next-row" key={item.actionId}>
-                  <span className="decision-order">{index + 2}</span>
-                  <button className="ultimate-next-copy" type="button" onClick={() => { void onExecute(item) }}>
-                    <strong>{item.title}</strong>
-                    <small>{reasonText(item)}</small>
-                  </button>
-                  <div className="ultimate-next-meta">
-                    {actionTiming(item) ? <span>{actionTiming(item)}</span> : null}
-                    <span>{formatMinutes(item.estimatedMinutes)}</span>
-                  </div>
-                  <button className="decision-done-button" type="button" onClick={() => { void onMark(item.actionId, 'done') }}>
-                    {zh ? '完成' : 'Done'}
-                  </button>
-                </article>
-              ))}
-            </div>
-          ) : (
-            <p className="ultimate-section-empty">{zh ? '没有第二优先级任务。' : 'No secondary action needs your time.'}</p>
-          )}
-        </section>
-      </div>
-
-      {coverageWarnings.length ? (
-        <details className="ultimate-coverage-details">
-          <summary>{zh ? '数据覆盖提示' : 'Coverage notes'} · {coverageWarnings.length}</summary>
-          <div>
-            {coverageWarnings.map((item) => (
-              <p key={item.code}><strong>{item.title}</strong><span>{item.detail}</span></p>
-            ))}
-          </div>
-        </details>
-      ) : null}
-    </section>
-  )
-}
-
-function agendaGroupTitle(relation: 'unresolved' | 'today' | 'tomorrow' | 'later', date: string | undefined, zh: boolean) {
-  if (relation === 'unresolved') return zh ? '已过时间 · 待确认' : 'Past · needs resolution'
-  if (relation === 'today') return zh ? '今天' : 'Today'
-  if (relation === 'tomorrow') return zh ? '明天' : 'Tomorrow'
-  return date ?? (zh ? '之后' : 'Later')
-}
-
-function agendaNodeLabel(kind: TodayBriefAgendaNode['kind'], zh: boolean) {
-  const labels: Record<TodayBriefAgendaNode['kind'], [string, string]> = {
-    interview: ['面试', 'Interview'],
-    written_test: ['笔试', 'Written test'],
-    assessment: ['测评', 'Assessment'],
-    application_deadline: ['申请截止', 'Application deadline'],
-    follow_up: ['复核', 'Follow-up'],
-    prep_trigger: ['准备节点', 'Prep trigger'],
-  }
-  return labels[kind][zh ? 0 : 1]
-}
-
-function agendaNodeTime(node: TodayBriefAgendaNode, zh: boolean) {
-  const temporal = node.temporal
-  if (temporal.precision === 'date' && temporal.date) return temporal.date
-  if (temporal.shape === 'availability_window' && temporal.startAt && temporal.endAt) {
-    return (zh ? '可参加 ' : 'Available ') + formatBriefDateTime(temporal.startAt, zh) + ' – ' + formatBriefDateTime(temporal.endAt, zh)
-  }
-  if (temporal.startAt) return formatBriefDateTime(temporal.startAt, zh)
-  if (temporal.deadlineAt) return (zh ? '截止 ' : 'By ') + formatBriefDateTime(temporal.deadlineAt, zh)
-  if (temporal.endAt) return formatBriefDateTime(temporal.endAt, zh)
-  return zh ? '时间待定' : 'Time TBD'
-}
-
-function formatBriefDateTime(value: string, zh: boolean) {
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return value
-  return new Intl.DateTimeFormat(zh ? 'zh-CN' : 'en-GB', {
-    month: 'numeric',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false,
-  }).format(date)
 }
 
 function OpportunitiesSurface({
@@ -889,21 +698,6 @@ function SettingsSurface({ lastImport, rules, onChanged, onOpenActivity }: { las
 
 function SurfaceHeader({ eyebrow, title, text }: { eyebrow: string; title: string; text: string }) {
   return <header className="surface-header"><div className="eyebrow">{eyebrow}</div><h1>{title}</h1><p>{text}</p></header>
-}
-
-function GettingStartedCard({ onStart }: { onStart: () => void }) {
-  const { lang } = useUiLanguage()
-  const zh = lang === 'zh'
-  return (
-    <article className="usability-start-card">
-      <div className="eyebrow">START PJSDAS</div>
-      <h2>{zh ? '先让工作区有第一批真实机会' : 'Start with real opportunities'}</h2>
-      <p>{zh ? '当前工作区还是空的。先在 Settings 配置岗位发现偏好，或导入已有求职表；符合规则且身份明确的岗位会直接进入机会池，不需要你维护额外的系统队列。' : 'The workspace is empty. Configure discovery preferences or import an existing job-search workbook in Settings. Eligible, confidently identified jobs enter the opportunity pool without creating another maintenance queue.'}</p>
-      <div className="usability-start-actions">
-        <button className="primary-button" type="button" onClick={onStart}>{zh ? '打开设置' : 'Open settings'}</button>
-      </div>
-    </article>
-  )
 }
 
 function EmptyState({ title, text }: { title: string; text: string }) {
