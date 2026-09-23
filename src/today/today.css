@@ -253,7 +253,7 @@
 
 @media (max-width: 980px) {
   .cgr-today-grid { grid-template-columns: 1fr; }
-  .cgr-agenda { position: static; order: -1; border-left: 0; border-bottom: 1px solid var(--cgr-border); padding: 0 0 24px; }
+  .cgr-agenda { position: static; border-left: 0; border-top: 1px solid var(--cgr-border); padding: 24px 0 0; }
 }
 
 @media (max-width: 640px) {

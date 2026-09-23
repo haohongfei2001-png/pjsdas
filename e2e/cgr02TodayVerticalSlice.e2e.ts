@@ -392,6 +392,9 @@ test('Today remains operable at phone width and large text without horizontal cl
   await page.goto('/pjsdas/today')
   await page.evaluate(() => { document.documentElement.style.fontSize = '125%' })
   await expect(page.getByRole('heading', { name: 'A第一任务' })).toBeVisible()
+  const firstActionTop = await page.locator('.cgr-primary-action').evaluate((node) => node.getBoundingClientRect().top)
+  const agendaTop = await page.locator('.cgr-agenda').evaluate((node) => node.getBoundingClientRect().top)
+  expect(firstActionTop).toBeLessThan(agendaTop)
   const metrics = await page.locator('[data-testid="cgr02-today"]').evaluate((node) => ({
     scrollWidth: node.scrollWidth,
     clientWidth: node.clientWidth,
@@ -401,6 +404,8 @@ test('Today remains operable at phone width and large text without horizontal cl
   await expect(primary).toBeInViewport()
   await primary.focus()
   await expect(primary).toBeFocused()
+  await page.locator('.cgr-next-section').scrollIntoViewIfNeeded()
+  await expect(page.getByRole('button', { name: '完成' }).first()).toBeInViewport()
   await mkdir(VISUAL_DIR, { recursive: true })
   await page.screenshot({ path: `${VISUAL_DIR}/phone-large-text.png`, fullPage: true })
 })
