@@ -18,6 +18,7 @@ import {
   clearAccountDraft,
   discardAccountPendingOperation,
   executeConnectedBusinessCommand,
+  findAccountPendingSemanticOperation,
   listAccountPendingOperations,
   readAccountDraft,
   replayAccountPendingOperations,
@@ -123,6 +124,40 @@ describe('CGR-01 account-scoped connected command client', () => {
     expect(listAccountPendingOperations('account-a')).toMatchObject([{ commandId, status: 'conflict' }])
     discardAccountPendingOperation('account-a', commandId)
     expect(listAccountPendingOperations('account-a')).toEqual([])
+  })
+
+  it('restores the same semantic command identity for an unknown capture after close or reload', async () => {
+    const commandId = 'web-semantic:unknown-reopen'
+    const command = {
+      type: 'semantic_intake' as const,
+      value: {
+        contractVersion: 1 as const,
+        inputId: 'web:capture-1',
+        source: {
+          kind: 'web' as const,
+          sourceId: 'todayaction-web',
+          sourceRecordId: 'capture-1',
+          observedAt: '2026-09-23T00:00:00.000Z',
+          timezone: 'Asia/Shanghai',
+        },
+        statementMode: 'assertion' as const,
+        originalText: '事项：整理面试材料',
+        contextRefs: [],
+        candidates: [],
+      },
+    }
+    vi.mocked(fetchBackend)
+      .mockRejectedValueOnce(new Error('transport lost'))
+      .mockRejectedValueOnce(new Error('receipt lookup lost'))
+
+    await expect(executeConnectedBusinessCommand('account-a', command, { commandId }))
+      .rejects.toThrow(/UNKNOWN_COMMAND_OUTCOME/)
+
+    expect(findAccountPendingSemanticOperation('account-a', '事项：整理面试材料')).toMatchObject({
+      commandId,
+      status: 'unknown',
+      originalText: '事项：整理面试材料',
+    })
   })
 
   it('recovers a lost response by receipt identity without sending a duplicate command', async () => {
