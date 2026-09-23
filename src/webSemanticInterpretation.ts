@@ -23,8 +23,30 @@ export function webStatementMode(text: string): SemanticStatementMode {
   if (/(改写|润色|翻译|重写|rewrite|translate)/i.test(trimmed)) return 'rewrite_request'
   if (/^(?:如果|假如|假设|比如|例如|举例|hypothetical|for example)/i.test(trimmed)) return 'hypothetical'
   if (/[?？]\s*$/.test(trimmed) || /^(?:是否|是不是|要不要|该不该|怎么|如何|为什么|what|should|how|why)\b/i.test(trimmed)) return 'question'
-  if (/^(?:引用|原话|quote)\s*[:：]/i.test(trimmed)) return 'quote'
+  if (/^(?:引用|原话|quote)\s*[:：]/i.test(trimmed)
+    || (/^“[^\n]*”$/.test(trimmed) || /^"[^\n]*"$/.test(trimmed))) return 'quote'
   return 'assertion'
+}
+
+// Quoted email/thread context is evidence, not a second current assertion.
+// Only explicit quote boundaries are removed; quoted role names inside a
+// current statement remain available for identity resolution.
+function withoutQuotedContext(text: string) {
+  const current: string[] = []
+  let excluded = false
+  for (const line of text.split(/\r?\n/)) {
+    // Email quote headers often precede unprefixed old content. Once a clear
+    // boundary appears, later lines cannot safely be treated as current facts.
+    if (/^\s*(?:>|[- ]*Original Message[- ]*|[- ]*Forwarded message[- ]*|On .+ wrote:|转发邮件|原始邮件|引用\s*[:：]|原话\s*[:：]|quote\s*[:：])/i.test(line)) { excluded = true; break }
+    const inlineQuote = /(?:^|\s)(?:引用|原话|quote)\s*[:：]/i.exec(line)
+    if (inlineQuote) {
+      current.push(line.slice(0, inlineQuote.index))
+      excluded = true
+      break
+    }
+    current.push(line)
+  }
+  return { text: current.join('\n').trim(), excluded }
 }
 
 function hasExplicitClock(text: string) {
@@ -139,6 +161,15 @@ function unresolvedCandidate(
   operation: ReturnType<typeof parseProgressUpdate>['unresolved'][number],
   opportunities: Opportunity[],
 ): SemanticCandidate | undefined {
+  if (/(?:已投递成功|投递成功|申请已提交|申请成功)/.test(operation.sourceText)) {
+    const exact = opportunities.filter((item) => operation.sourceText.includes(item.company) && operation.sourceText.includes(item.role))
+    if (exact.length === 1) return {
+      ...candidateBase('semantic-' + operation.id, operation.sourceText, 'high'),
+      kind: 'application_submitted',
+      target: { opportunityId: exact[0]!.id, company: exact[0]!.company, role: exact[0]!.role },
+      occurredAt: operation.occurredAt,
+    }
+  }
   const ids = operation.candidates?.map((item) => item.id) ?? []
   const matched = ids
     .map((id) => opportunities.find((item) => item.id === id))
@@ -235,8 +266,12 @@ export function buildWebSemanticInterpretation(
   now = new Date(),
 ) {
   const mode = webStatementMode(text)
-  const plan = parseProgressUpdate(text, opportunities, now, references)
-  const explicitCompletion = explicitCompletionCandidate(text, mode, plan, opportunities, baseline)
+  if (mode !== 'assertion' && mode !== 'current_intent') {
+    return { mode, candidates: [], unresolved: [], ignored: [] }
+  }
+  const current = withoutQuotedContext(text)
+  const plan = parseProgressUpdate(current.text, opportunities, now, references)
+  const explicitCompletion = explicitCompletionCandidate(current.text, mode, plan, opportunities, baseline)
   const explicitKind = explicitCompletion?.target?.occurrenceKind
   const executableOperations = explicitCompletion && explicitKind
     ? plan.executable.filter((operation) => explicitCompletionKind(operation.sourceText, mode) !== explicitKind)
@@ -261,6 +296,6 @@ export function buildWebSemanticInterpretation(
     mode,
     candidates,
     unresolved: convertedUnresolved.filter((item) => !item.candidate).map((item) => item.operation.reason),
-    ignored: plan.ignored.map((item) => item.reason),
+    ignored: [...plan.ignored.map((item) => item.reason), ...(current.excluded ? ['Quoted thread context was excluded from current facts.'] : [])],
   }
 }

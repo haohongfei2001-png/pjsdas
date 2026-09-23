@@ -1,5 +1,6 @@
 import { useAiAccess } from './AiAccessContext.js'
 import { useUiLanguage } from '../uiLanguage.js'
+import GmailIntakeStatus from './GmailIntakeStatus.js'
 import '../cloud/cloudSettings.css'
 
 export default function AiAccessSettingsCard() {
@@ -74,6 +75,7 @@ export default function AiAccessSettingsCard() {
             {zh ? `最近成功检查：${new Date(automation.gmailLastSuccessAt).toLocaleString()}` : `Last successful check: ${new Date(automation.gmailLastSuccessAt).toLocaleString()}`}
           </small> : null}
           {automation?.gmailEnabled && automation.gmailLastError ? <div className="cloud-connection-impact warning" role="status"><strong>{zh ? '新邮件进展可能未同步' : 'New email progress may be missing'}</strong><span>{zh ? '最近一次邮件检查失败，已有资料仍可查看。重新授权会再次请求上方说明的 90 天 Gmail 只读范围；请先查看 Google 同意页面。' : 'The latest email check failed; saved data remains available. Reauthorizing requests the 90-day Gmail read-only scope described above again; review the Google consent screen first.'}</span><details><summary>{zh ? '错误详情' : 'Error details'}</summary>{automation.gmailLastError}</details><button type="button" disabled={ai.busy} onClick={() => { void ai.beginGmailAutomationLink() }}>{zh ? '查看并重新授权 Gmail' : 'Review and reauthorize Gmail'}</button></div> : null}
+          <GmailIntakeStatus zh={zh} enabled={Boolean(automation?.gmailEnabled)} lastSuccessAt={automation?.gmailLastSuccessAt ?? undefined} lastError={automation?.gmailLastError ?? undefined} />
         </div>
         <button
           className="primary-button"

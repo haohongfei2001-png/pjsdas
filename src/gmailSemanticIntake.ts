@@ -1,4 +1,4 @@
-import type { SemanticIntakeObservation, TimelineRecord } from './model.js'
+import type { IngestionIssueKind, SemanticIntakeObservation, TimelineRecord } from './model.js'
 import type { PJSDASSnapshot } from './snapshot.js'
 import { applySemanticIntake, type SemanticBatchCompensation } from './semanticIntake.js'
 import { alreadyIngested, buildIngestionRunSummary, createIngestionLedgerTimeline, createIngestionRunTimeline, stableIngestionHash } from './ingestion.js'
@@ -8,6 +8,8 @@ export interface GmailSemanticRecord {
   observation: SemanticIntakeObservation
   receivedAt: string
   gaps: string[]
+  capabilityBoundaries?: string[]
+  issueKinds?: IngestionIssueKind[]
 }
 
 /** Source accounting surrounds the shared policy; this adapter never changes business state itself. */
@@ -49,6 +51,11 @@ export function applyGmailSemanticBatch(snapshot: PJSDASSnapshot, input: {
       }
     }
     const unresolved = record.gaps.length > 0 || Boolean(result?.decisionRequests.length) || prior?.ingestion?.outcome === 'unresolved'
+    const issueKinds = [...new Set([
+      ...(record.issueKinds ?? []),
+      ...(result?.decisionRequests.length ? ['business_ambiguity' as const] : []),
+      ...(prior?.ingestion?.issueKinds ?? []),
+    ])]
     const entry = createIngestionLedgerTimeline({
       sourceKind: 'gmail', sourceId: input.sourceId, sourceRecordId,
       runId: input.runId, recordType: 'recruiting_message',
@@ -56,6 +63,8 @@ export function applyGmailSemanticBatch(snapshot: PJSDASSnapshot, input: {
       fingerprint: observation.originalTextFingerprint ?? stableIngestionHash(sourceRecordId),
       receivedAt: record.receivedAt, accountedAt: input.checkedAt,
       reason: record.gaps.length ? record.gaps.join(' ') : result?.summary ?? prior?.ingestion?.reason ?? 'Previously consumed Gmail source record; no business replay.',
+      capabilityBoundaries: record.capabilityBoundaries ?? prior?.ingestion?.capabilityBoundaries,
+      issueKinds: unresolved ? issueKinds : undefined,
       sourceRef: `gmail:${sourceRecordId}`,
     })
     records.push(entry)

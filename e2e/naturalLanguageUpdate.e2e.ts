@@ -63,6 +63,7 @@ async function readMutationState(page: Page) {
   return page.evaluate(async () => new Promise<{
     opportunities: Array<{ id: string; company: string; role: string; processStage: string }>
     processes: Array<{ id: string; opportunityId?: string; company: string; role: string; stage: string }>
+    processEvents: Array<{ id: string; eventType: string }>
     actions: Array<{ id: string; title: string; opportunityId?: string; status: string }>
     decisionRequests: Array<{ id: string; state: string; question: string }>
     semanticReceipts: Array<{ id: string; status: string }>
@@ -72,9 +73,10 @@ async function readMutationState(page: Page) {
     request.onerror = () => reject(request.error)
     request.onsuccess = () => {
       const db = request.result
-      const tx = db.transaction(['opportunities', 'processes', 'actions', 'decisionRequests', 'semanticReceipts', 'changeSets'], 'readonly')
+      const tx = db.transaction(['opportunities', 'processes', 'processEvents', 'actions', 'decisionRequests', 'semanticReceipts', 'changeSets'], 'readonly')
       const opportunities = tx.objectStore('opportunities').getAll()
       const processes = tx.objectStore('processes').getAll()
+      const processEvents = tx.objectStore('processEvents').getAll()
       const actions = tx.objectStore('actions').getAll()
       const decisions = tx.objectStore('decisionRequests').getAll()
       const receipts = tx.objectStore('semanticReceipts').getAll()
@@ -85,6 +87,7 @@ async function readMutationState(page: Page) {
         resolve({
           opportunities: opportunities.result,
           processes: processes.result,
+          processEvents: processEvents.result,
           actions: actions.result,
           decisionRequests: decisions.result,
           semanticReceipts: receipts.result,
@@ -112,6 +115,36 @@ test('explicit non-job task enters Today through Semantic Intake without ChangeS
 
   await page.reload()
   await expect(page.getByRole('heading', { name: '修改论文图表' })).toBeVisible()
+})
+
+test('a quoted old thread cannot create a second action beside the current Web update', async ({ page }) => {
+  await page.goto('/')
+  await openCapture(page)
+  await page.locator('.cgr-capture-input').fill('待办：修改论文图表。\n-----Original Message-----\n待办：整理旧材料。')
+  await expect(page.locator('.cgr-understanding-body')).toContainText('引用的旧消息')
+  await page.getByRole('button', { name: '确认并保存' }).click()
+  await expect(page.getByRole('status')).toContainText('已记录明确事实')
+  await expect(page.getByRole('status')).toContainText('未作为当前事实处理')
+  await page.getByRole('button', { name: '关闭' }).click()
+  const state = await readMutationState(page)
+  expect(state.actions.map((item) => item.title)).toEqual(['修改论文图表'])
+  expect(state.changeSets).toHaveLength(0)
+})
+
+test('narrow and enlarged-text capture exposes mixed current/quoted feedback without horizontal clipping', async ({ page }, testInfo) => {
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.goto('/')
+  await page.evaluate(() => { document.documentElement.style.fontSize = '20px' })
+  await page.locator('.ultimate-mobile-capture').click()
+  const dialog = page.getByRole('dialog', { name: '告诉 PJSDAS' })
+  await dialog.getByRole('textbox', { name: '要告诉 PJSDAS 的内容' })
+    .fill('待办：修改论文图表。\n-----Original Message-----\n待办：整理旧材料。')
+  await expect(dialog.locator('.cgr-understanding-body')).toContainText('引用的旧消息')
+  await expect(dialog.getByRole('button', { name: '确认并保存' })).toBeVisible()
+  expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(2)
+  await testInfo.attach('cgr04-narrow-mixed-intake', { body: await page.screenshot(), contentType: 'image/png' })
+  await dialog.getByRole('button', { name: '确认并保存' }).click()
+  await expect(dialog.getByRole('status')).toContainText('未作为当前事实处理')
 })
 
 test('questions and rewrite requests remain read-only', async ({ page }) => {
@@ -155,6 +188,24 @@ test('source-backed alias application updates the canonical job in place instead
   const row = page.locator('.opportunity-decision-row').filter({ hasText: '别名科技' })
   await expect(row).toBeVisible()
   await expect(row).toContainText('AI产品经理（数据平台）')
+})
+
+test('a company name containing 测试 does not turn a submitted application into an assessment invite', async ({ page }) => {
+  const canonical = sourceBackedOpportunity('testing-company-ai-pm', '节点测试科技', 'AI产品经理')
+  await seedOpportunities(page, [canonical])
+  await openCapture(page)
+
+  await page.locator('.cgr-capture-input').fill('节点测试科技 AI产品经理 已投递成功。')
+  await page.getByRole('button', { name: '确认并保存' }).click()
+  await expect(page.getByRole('status')).toContainText('已记录明确事实')
+  await page.getByRole('button', { name: '关闭' }).click()
+
+  const state = await readMutationState(page)
+  expect(state.opportunities).toHaveLength(1)
+  expect(state.opportunities[0]).toMatchObject({ id: canonical.id, processStage: 'screening' })
+  expect(state.processes).toHaveLength(1)
+  expect(state.processEvents).toHaveLength(0)
+  expect(state.decisionRequests).toHaveLength(0)
 })
 
 test('ambiguous same-company role input creates DecisionRequest instead of guessing or exposing ChangeSet', async ({ page }) => {

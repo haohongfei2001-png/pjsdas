@@ -1,6 +1,6 @@
 # CGR-04 — Natural Intake & Automation Closure
 
-State: READY — BOUNDED ENGINEERING OVERLAP; CGR-03 PRODUCTION_PENDING_EXTERNAL
+State: IN_PROGRESS — CONTINUOUS ENGINEERING; CGR-03 PRODUCTION_PENDING_EXTERNAL
 
 ## User-visible outcome
 
@@ -105,9 +105,10 @@ Use per-source/per-event interpreter kill switches. Continue safe observation in
 - dedupe/provenance remain intact;
 - user-facing capability claims match production evidence;
 - obsolete source-specific interpretation/status paths are retired;
-- required production canaries pass;
+- required production canaries pass for final CGR-04 COMPLETE;
+- if production canaries alone are externally unavailable, record `ENGINEERING_COMPLETE / PRODUCTION_PENDING_EXTERNAL` instead of COMPLETE and release the CGR-04 writer;
 - no new privacy/cost/permission boundary was crossed without owner approval;
-- STATUS.md marks CGR-04 COMPLETE and CGR-05 READY, without starting CGR-05.
+- after engineering closure, STATUS.md makes CGR-05 engineering eligible and the manager starts it automatically under the continuous-execution protocol; CGR-04 final COMPLETE remains pending until its production evidence passes.
 
 ## Owner decision points
 
