@@ -90,6 +90,19 @@ describe('UU-04 Web Semantic Intake completion normalization', () => {
     expect(interpretation.candidates).toMatchObject([{ kind: 'occurrence_completed' }])
   })
 
+  it('does not mistake a company name containing 测试 for an assessment invitation in a submitted application', () => {
+    const { opportunity, snapshot } = fixture()
+    const interpretation = buildWebSemanticInterpretation('节点测试科技 AI产品经理 已投递成功。', [opportunity], snapshot, [], NOW)
+    expect(interpretation.candidates).toMatchObject([{ kind: 'application_submitted', target: { opportunityId: opportunity.id } }])
+    expect(interpretation.candidates).toHaveLength(1)
+  })
+
+  it('still recognizes an explicit assessment shorthand outside that company name', () => {
+    const { opportunity, snapshot } = fixture()
+    const interpretation = buildWebSemanticInterpretation('节点测试科技 AI产品经理 测试通知。', [opportunity], snapshot, [], NOW)
+    expect(interpretation.candidates).toMatchObject([{ kind: 'process_event', eventType: 'assessment_invite' }])
+  })
+
   it('normalizes an explicit unique interview completion into occurrence_completed and closes the elapsed node', () => {
     const { opportunity, snapshot } = fixture()
     const text = '节点测试科技 AI产品经理 面试已经完成。'

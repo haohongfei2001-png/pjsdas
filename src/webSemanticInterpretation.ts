@@ -161,6 +161,15 @@ function unresolvedCandidate(
   operation: ReturnType<typeof parseProgressUpdate>['unresolved'][number],
   opportunities: Opportunity[],
 ): SemanticCandidate | undefined {
+  if (/(?:已投递成功|投递成功|申请已提交|申请成功)/.test(operation.sourceText)) {
+    const exact = opportunities.filter((item) => operation.sourceText.includes(item.company) && operation.sourceText.includes(item.role))
+    if (exact.length === 1) return {
+      ...candidateBase('semantic-' + operation.id, operation.sourceText, 'high'),
+      kind: 'application_submitted',
+      target: { opportunityId: exact[0]!.id, company: exact[0]!.company, role: exact[0]!.role },
+      occurredAt: operation.occurredAt,
+    }
+  }
   const ids = operation.candidates?.map((item) => item.id) ?? []
   const matched = ids
     .map((id) => opportunities.find((item) => item.id === id))

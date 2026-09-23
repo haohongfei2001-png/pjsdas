@@ -424,7 +424,12 @@ function repairCompanyTestShorthand(plan: ProgressUpdatePlan, currentOpportuniti
   const recentByCompany = new Map<string, string>()
   const operations: ProgressOperation[] = []
   for (const operation of plan.operations) {
-    if (operation.kind !== 'unresolved' || !/测试/.test(operation.sourceText)) {
+    const identityText = mentionedCompanyOpportunities(operation.sourceText, virtual)
+      .reduce((text, opportunity) => text.replaceAll(opportunity.company, '').replaceAll(opportunity.role, ''), operation.sourceText)
+    // A company or role containing “测试” is an identity, not an assessment
+    // assertion. Application receipts also cannot imply an assessment invite.
+    if (operation.kind !== 'unresolved' || !/测试/.test(identityText)
+      || /(?:已投递|投递成功|申请已提交|申请成功)/.test(operation.sourceText)) {
       operations.push(operation)
       rememberOpportunity(recentByCompany, virtual, operation)
       continue

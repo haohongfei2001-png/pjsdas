@@ -63,6 +63,7 @@ async function readMutationState(page: Page) {
   return page.evaluate(async () => new Promise<{
     opportunities: Array<{ id: string; company: string; role: string; processStage: string }>
     processes: Array<{ id: string; opportunityId?: string; company: string; role: string; stage: string }>
+    processEvents: Array<{ id: string; eventType: string }>
     actions: Array<{ id: string; title: string; opportunityId?: string; status: string }>
     decisionRequests: Array<{ id: string; state: string; question: string }>
     semanticReceipts: Array<{ id: string; status: string }>
@@ -72,9 +73,10 @@ async function readMutationState(page: Page) {
     request.onerror = () => reject(request.error)
     request.onsuccess = () => {
       const db = request.result
-      const tx = db.transaction(['opportunities', 'processes', 'actions', 'decisionRequests', 'semanticReceipts', 'changeSets'], 'readonly')
+      const tx = db.transaction(['opportunities', 'processes', 'processEvents', 'actions', 'decisionRequests', 'semanticReceipts', 'changeSets'], 'readonly')
       const opportunities = tx.objectStore('opportunities').getAll()
       const processes = tx.objectStore('processes').getAll()
+      const processEvents = tx.objectStore('processEvents').getAll()
       const actions = tx.objectStore('actions').getAll()
       const decisions = tx.objectStore('decisionRequests').getAll()
       const receipts = tx.objectStore('semanticReceipts').getAll()
@@ -85,6 +87,7 @@ async function readMutationState(page: Page) {
         resolve({
           opportunities: opportunities.result,
           processes: processes.result,
+          processEvents: processEvents.result,
           actions: actions.result,
           decisionRequests: decisions.result,
           semanticReceipts: receipts.result,
@@ -169,6 +172,24 @@ test('source-backed alias application updates the canonical job in place instead
   const row = page.locator('.opportunity-decision-row').filter({ hasText: '别名科技' })
   await expect(row).toBeVisible()
   await expect(row).toContainText('AI产品经理（数据平台）')
+})
+
+test('a company name containing 测试 does not turn a submitted application into an assessment invite', async ({ page }) => {
+  const canonical = sourceBackedOpportunity('testing-company-ai-pm', '节点测试科技', 'AI产品经理')
+  await seedOpportunities(page, [canonical])
+  await openCapture(page)
+
+  await page.locator('.cgr-capture-input').fill('节点测试科技 AI产品经理 已投递成功。')
+  await page.getByRole('button', { name: '确认并保存' }).click()
+  await expect(page.getByRole('status')).toContainText('已记录明确事实')
+  await page.getByRole('button', { name: '关闭' }).click()
+
+  const state = await readMutationState(page)
+  expect(state.opportunities).toHaveLength(1)
+  expect(state.opportunities[0]).toMatchObject({ id: canonical.id, processStage: 'screening' })
+  expect(state.processes).toHaveLength(1)
+  expect(state.processEvents).toHaveLength(0)
+  expect(state.decisionRequests).toHaveLength(0)
 })
 
 test('ambiguous same-company role input creates DecisionRequest instead of guessing or exposing ChangeSet', async ({ page }) => {
