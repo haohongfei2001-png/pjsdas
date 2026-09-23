@@ -85,6 +85,8 @@ export async function runCloudSync(userId: string, options: { passive?: boolean 
     const decision = decideSyncAction({
       checkpoint,
       localFingerprint,
+      localProjectionBaselineFingerprint: checkpoint.lastReadProjectionSourceFingerprint === checkpoint.lastSyncedFingerprint
+        ? checkpoint.lastReadProjectionFingerprint : undefined,
       localEmpty: workspaceIsEffectivelyEmpty(local),
       remote: remote ? { version: remote.version, fingerprint: remote.fingerprint } : null,
     })
@@ -137,6 +139,10 @@ export async function runCloudSync(userId: string, options: { passive?: boolean 
     if (decision === 'pull_remote') {
       await replaceLocalSnapshotFromCloud(remote.snapshot)
       markSynced(userId, remote)
+      patchAccountCheckpoint(userId, {
+        lastReadProjectionSourceFingerprint: remote.fingerprint,
+        lastReadProjectionFingerprint: await fingerprintWorkspace(await exportLocalSnapshot()),
+      })
       if (typeof window !== 'undefined') window.dispatchEvent(new Event('pjsdas:workspace-replaced'))
       return { kind: 'pulled', version: remote.version, remoteUpdatedAt: remote.updatedAt }
     }

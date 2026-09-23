@@ -19,6 +19,7 @@ export type SyncDecision =
 export function decideSyncAction(input: {
   checkpoint: SyncCheckpointInput
   localFingerprint: string
+  localProjectionBaselineFingerprint?: string
   localEmpty: boolean
   remote: RemoteWorkspaceVersion | null
 }): SyncDecision {
@@ -30,7 +31,7 @@ export function decideSyncAction(input: {
     return localEmpty ? 'pull_remote' : 'conflict'
   }
 
-  const localChanged = localFingerprint !== checkpoint.lastSyncedFingerprint
+  const localChanged = localFingerprint !== (input.localProjectionBaselineFingerprint ?? checkpoint.lastSyncedFingerprint)
   const remoteChanged = remote.version !== checkpoint.lastSyncedVersion ||
     remote.fingerprint !== checkpoint.lastSyncedFingerprint
 

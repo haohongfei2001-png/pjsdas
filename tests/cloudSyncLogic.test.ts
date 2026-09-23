@@ -41,6 +41,26 @@ describe('local-first Google Drive sync decisions', () => {
     })).toBe('conflict')
   })
 
+  it('pulls a newer remote command after a verified local read projection', () => {
+    expect(decideSyncAction({
+      checkpoint: { lastSyncedVersion: '8', lastSyncedFingerprint: 'remote-8' },
+      localFingerprint: 'projected-8',
+      localProjectionBaselineFingerprint: 'projected-8',
+      localEmpty: false,
+      remote: { version: '9', fingerprint: 'remote-9' },
+    })).toBe('pull_remote')
+  })
+
+  it('still rejects a local edit plus newer remote command after projection', () => {
+    expect(decideSyncAction({
+      checkpoint: { lastSyncedVersion: '8', lastSyncedFingerprint: 'remote-8' },
+      localFingerprint: 'local-edited-after-projection',
+      localProjectionBaselineFingerprint: 'projected-8',
+      localEmpty: false,
+      remote: { version: '9', fingerprint: 'remote-9' },
+    })).toBe('conflict')
+  })
+
   it('adopts an equal Drive fingerprint without rewriting either side', () => {
     expect(decideSyncAction({ checkpoint: {}, localFingerprint: 'same', localEmpty: false, remote: { version: '8', fingerprint: 'same' } })).toBe('adopt_equal')
   })
