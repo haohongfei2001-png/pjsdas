@@ -135,7 +135,7 @@ test('narrow and enlarged-text capture exposes mixed current/quoted feedback wit
   await page.setViewportSize({ width: 390, height: 844 })
   await page.goto('/')
   await page.evaluate(() => { document.documentElement.style.fontSize = '20px' })
-  await openCapture(page)
+  await page.locator('.ultimate-mobile-capture').click()
   const dialog = page.getByRole('dialog', { name: '告诉 PJSDAS' })
   await dialog.getByRole('textbox', { name: '要告诉 PJSDAS 的内容' })
     .fill('待办：修改论文图表。\n-----Original Message-----\n待办：整理旧材料。')
