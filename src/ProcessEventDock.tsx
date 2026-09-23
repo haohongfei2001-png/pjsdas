@@ -379,7 +379,7 @@ export default function ProcessEventDock({ onChanged }: ProcessEventDockProps) {
             <div className="event-history">
               <div className="event-history-title">
                 <div>
-                  <div className="eyebrow">LOCAL TIMELINE</div>
+                  <div className="eyebrow">PROCESS HISTORY</div>
                   <strong>{zh ? '最近流程事件' : 'Recent process events'}</strong>
                 </div>
                 <span>{events.length} {zh ? '条' : events.length === 1 ? 'event' : 'events'}</span>

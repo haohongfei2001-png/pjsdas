@@ -1,6 +1,8 @@
 import { expect, test, type Page, type Route } from '@playwright/test'
 import { upgradeSnapshotToLatest, type PJSDASSnapshot } from '../src/snapshot.js'
 import { applyDiscoveryPromotionCommand } from '../src/discoveryPromotionCommand.js'
+import { applyUserDomainCommand } from '../src/domainCommands.js'
+import { applyProcessEventDeleteCommand } from '../src/processEventDeleteCommand.js'
 
 const AUTH_KEY = 'sb-yyrzwpoxlxpafdlbkdtg-auth-token'
 const BACKEND = 'https://pjsdas-remote-alpha.vercel.app'
@@ -655,6 +657,104 @@ test('CGR-05 Discovery status, Profile and promotion use scoped first-party comm
     expect(commandBodies[2].command).toMatchObject({ type: 'discovery_promotion', value: { inboxItemId: 'inbox:cgr05-job' } })
     expect(snapshotCommits).toBe(0)
     expect(state.snapshot.data.opportunities.some((opportunity) => opportunity.id === 'cgr05-job')).toBe(true)
+  } finally {
+    await first.close()
+    await second.close()
+  }
+})
+
+test('CGR-05 process recovery creates and deletes one account event across clients without snapshot writes', async ({ browser }) => {
+  test.setTimeout(60000)
+  const state: AccountState = { revision: 7, snapshot: workspace('A'), receipts: new Map() }
+  const commands: Array<Record<string, any>> = []
+  let snapshotCommits = 0
+  async function install(page: Page) {
+    await seedInitialSession(page, 'account-a', 'token-a')
+    await page.route(`${BACKEND}/**`, async (route) => {
+      const request = route.request()
+      const url = new URL(request.url())
+      if (request.method() === 'OPTIONS') return cors(route, {}, 204)
+      if (url.pathname === '/api/health') return cors(route, health())
+      if (url.pathname !== '/api/workspace') return cors(route, { code: 'NOT_FOUND' }, 404)
+      const body = request.postDataJSON() as Record<string, any>
+      if (body.action === 'read') return cors(route, {
+        workspaceId: 'ws-a', workspaceVersion: `txn:${state.revision}`, revision: state.revision,
+        schemaVersion: state.snapshot.version, snapshot: state.snapshot,
+      })
+      if (body.action === 'commit') {
+        snapshotCommits += 1
+        return cors(route, { code: 'SNAPSHOT_WRITE_FORBIDDEN' }, 400)
+      }
+      if (body.action === 'command') {
+        commands.push(body)
+        const command = body.command
+        if (command?.type === 'domain' && command.value?.kind === 'record_process_event') {
+          const applied = applyUserDomainCommand(state.snapshot, command.value)
+          if (applied.status !== 'APPLIED') return cors(route, { code: 'EVENT_NOT_APPLIED' }, 400)
+          state.snapshot = applied.snapshot
+        } else if (command?.type === 'process_event_delete') {
+          state.snapshot = applyProcessEventDeleteCommand(state.snapshot, command.value.eventId).snapshot
+        } else return cors(route, { code: 'UNEXPECTED_COMMAND' }, 400)
+        state.revision += 1
+        const receipt = { commandId: body.commandId, receiptId: `command-receipt:${body.commandId}`,
+          status: 'COMMITTED', revision: state.revision, result: { type: command.type, status: 'APPLIED' } }
+        state.receipts.set(body.commandId, receipt)
+        return cors(route, { outcome: 'COMMITTED', revision: state.revision,
+          workspaceVersion: `txn:${state.revision}`, schemaVersion: state.snapshot.version,
+          snapshot: state.snapshot, receipt })
+      }
+      if (body.action === 'receipt') {
+        const receipt = state.receipts.get(body.commandId)
+        return cors(route, { found: Boolean(receipt), revision: state.revision,
+          workspaceVersion: `txn:${state.revision}`, schemaVersion: state.snapshot.version,
+          snapshot: state.snapshot, receipt })
+      }
+      return cors(route, { code: 'UNEXPECTED_ACTION' }, 400)
+    })
+  }
+  async function openDock(page: Page) {
+    await page.goto('/pjsdas/settings')
+    await page.locator('details.settings-group').filter({ hasText: '数据与恢复' }).locator('summary').click()
+    await page.getByRole('button', { name: '+ 记录流程通知' }).click()
+    return page.locator('.event-dock')
+  }
+  const first = await browser.newContext()
+  const second = await browser.newContext()
+  try {
+    const pageA = await first.newPage()
+    const pageB = await second.newPage()
+    await install(pageA)
+    await install(pageB)
+    const dockA = await openDock(pageA)
+    await dockA.locator('input[list="process-event-opportunities"]').fill('A公司｜A产品经理 [A-opp-1]')
+    await dockA.locator('select').first().selectOption('other')
+    await dockA.getByRole('button', { name: '保存事件' }).click()
+    await expect(dockA.locator('.event-history-item')).toHaveCount(1)
+    expect(commands).toHaveLength(1)
+    expect(commands[0].command).toMatchObject({ type: 'domain', value: {
+      kind: 'record_process_event', opportunityId: 'A-opp-1', eventType: 'other',
+    } })
+    expect(commands[0]).not.toHaveProperty('snapshot')
+
+    const dockB = await openDock(pageB)
+    await expect(dockB.locator('.event-history-item')).toHaveCount(1)
+    await dockA.locator('.event-history-item').getByRole('button', { name: '删除' }).click()
+    await expect(dockA.locator('.event-history-item')).toHaveCount(0)
+    expect(commands).toHaveLength(2)
+    expect(commands[1].command).toMatchObject({ type: 'process_event_delete' })
+    await pageB.evaluate(() => window.dispatchEvent(new Event('online')))
+    await expect.poll(() => pageB.evaluate(async () => new Promise<number>((resolve, reject) => {
+      const request = indexedDB.open('pjsdas', 11)
+      request.onerror = () => reject(request.error)
+      request.onsuccess = () => {
+        const db = request.result
+        const tx = db.transaction('processEvents', 'readonly')
+        const get = tx.objectStore('processEvents').getAll()
+        get.onerror = () => reject(get.error)
+        get.onsuccess = () => { db.close(); resolve(get.result.length) }
+      }
+    }))).toBe(0)
+    expect(snapshotCommits).toBe(0)
   } finally {
     await first.close()
     await second.close()
