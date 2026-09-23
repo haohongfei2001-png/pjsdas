@@ -124,6 +124,7 @@ interface State {
   snapshot: PJSDASSnapshot
   receipts: Map<string, Record<string, unknown>>
   commandBodies: any[]
+  failReads?: boolean
 }
 
 function responseFor(state: State, extra: Record<string, unknown> = {}) {
@@ -151,6 +152,7 @@ function installServer(page: Page, state: State, options: {
     const body = request.postDataJSON() as any
 
     if (body.action === 'read') {
+      if (state.failReads) return cors(route, { code: 'TEMPORARY_UNAVAILABLE' }, 503)
       return cors(route, {
         workspaceId: 'ws-a',
         ...responseFor(state),
@@ -408,4 +410,65 @@ test('Today remains operable at phone width and large text without horizontal cl
   await expect(page.getByRole('button', { name: '完成' }).first()).toBeInViewport()
   await mkdir(VISUAL_DIR, { recursive: true })
   await page.screenshot({ path: `${VISUAL_DIR}/phone-large-text.png`, fullPage: true })
+})
+
+test('cached Today stays useful when authoritative refresh fails', async ({ page }) => {
+  await seedSession(page.context())
+  const state: State = { revision: 60, snapshot: workspace(), receipts: new Map(), commandBodies: [] }
+  await installServer(page, state)
+
+  await page.goto('/pjsdas/today')
+  await expect(page.getByRole('heading', { name: 'A第一任务' })).toBeVisible()
+  state.failReads = true
+  await page.evaluate(() => window.dispatchEvent(new Event('focus')))
+  await expect(page.getByText('使用缓存 · 暂时无法刷新')).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'A第一任务' })).toBeVisible()
+  await expect(page.getByRole('button', { name: '开始' }).first()).toBeEnabled()
+  await mkdir(VISUAL_DIR, { recursive: true })
+  await page.screenshot({ path: `${VISUAL_DIR}/cached-refresh-failure.png` })
+})
+
+test('quiet Today and a real DecisionRequest remain legible without invented actions', async ({ page }) => {
+  await seedSession(page.context())
+  const state: State = { revision: 70, snapshot: workspace(), receipts: new Map(), commandBodies: [] }
+  state.snapshot.data.actions = []
+  await installServer(page, state)
+
+  await page.goto('/pjsdas/today')
+  await expect(page.getByText('现在没有必须处理的行动')).toBeVisible()
+  await expect(page.locator('.cgr-primary-action')).toHaveCount(0)
+  await mkdir(VISUAL_DIR, { recursive: true })
+  await page.screenshot({ path: `${VISUAL_DIR}/quiet-today.png` })
+
+  const now = new Date().toISOString()
+  state.snapshot.data.decisionRequests = [{
+    id: 'decision-a',
+    reason: 'ambiguous_target',
+    affectedObjects: [{ type: 'opportunity', id: 'A-opp-1' }],
+    question: '这条更新属于哪个岗位？',
+    choices: [
+      { id: 'choose-a', label: 'A公司 · 产品经理', consequence: '只更新这个岗位' },
+      { id: 'choose-b', label: '第二公司 · 策略产品', consequence: '只更新另一个岗位' },
+    ],
+    evidenceRefs: ['test-evidence-a'],
+    payloadBinding: {
+      contractVersion: 1,
+      inputId: 'input-a',
+      candidateId: 'candidate-a',
+      source: { kind: 'web', sourceId: 'web-a', sourceRecordId: 'input-a', observedAt: now, timezone: 'Asia/Shanghai' },
+      statementMode: 'assertion',
+      candidate: {
+        id: 'candidate-a', kind: 'manual_action', title: '确认岗位',
+        objectConfidence: 'low', eventConfidence: 'high', evidenceRefs: ['test-evidence-a'], sourceVersionRefs: [],
+      },
+    },
+    state: 'open',
+    createdAt: now,
+    updatedAt: now,
+  }]
+  state.revision += 1
+  await page.evaluate(() => window.dispatchEvent(new Event('focus')))
+  await expect(page.locator('.cgr-decision-entry')).toBeVisible()
+  await expect(page.getByText('现在没有必须处理的行动')).toBeVisible()
+  await page.screenshot({ path: `${VISUAL_DIR}/decision-required.png` })
 })
