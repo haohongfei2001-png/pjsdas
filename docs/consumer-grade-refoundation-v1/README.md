@@ -22,7 +22,7 @@ After this registration:
 2. Preserved security, data-integrity, transaction, provenance, source-identity, authorization, and exact-SHA release invariants remain binding.
 3. This package supersedes the Ultimate Usability roadmap for future product sequencing, Web experience, connected mutation architecture, automation closure, migration/retirement, and consumer-grade validation where they conflict.
 4. UU-08 and UU-09 are HOLD — NOT_AUTHORIZED while this package is active.
-5. CGR-00 is docs-only. CGR-01 is the only next eligible phase and is READY — NOT_STARTED after CGR-00 closes.
+5. CGR-00 and CGR-01 are complete. CGR-02 is READY — NOT_STARTED and requires a new explicit owner authorization before implementation.
 6. No phase auto-starts the next phase.
 
 ## Preserved foundation
@@ -52,6 +52,7 @@ Historical completion does not protect implementation that blocks the target exp
 - EXECUTION_PROTOCOL.md
 - STATUS.md
 - phases/CGR-00.md through phases/CGR-05.md
+- receipts/CGR-01.md and later phase closure receipts
 
 ## Completion doctrine
 

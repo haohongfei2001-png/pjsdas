@@ -8,9 +8,9 @@ Product origin: https://todayaction.com
 
 ## Package state
 
-Status: ACTIVE — DESIGN/PLAN REGISTERED
-Current completed phase: CGR-00
-Next eligible phase: CGR-01 — READY — NOT_STARTED
+Status: ACTIVE — CGR-01 COMPLETE
+Current completed phase: CGR-01
+Next eligible phase: CGR-02 — READY — NOT_STARTED
 Automatic continuation: PROHIBITED
 
 ## Phase state
@@ -18,8 +18,8 @@ Automatic continuation: PROHIBITED
 | Phase | State | Notes |
 |---|---|---|
 | CGR-00 | COMPLETE — CONTRACT & SCOPE REGISTERED | Docs-only design convergence, architecture/validation/migration contracts, six-phase plan, and execution handoff; no runtime implementation |
-| CGR-01 | READY — NOT_STARTED | Authoritative Command Foundation; must receive a later explicit execution authorization |
-| CGR-02 | NOT_READY | Depends on CGR-01 closure |
+| CGR-01 | COMPLETE — AUTHORITATIVE COMMAND FOUNDATION | Typed server commands, durable receipts, object-aware conflict/Undo, account-scoped cache/pending recovery, bounded snapshot compatibility, production migration/canary and exact-main gates complete |
+| CGR-02 | READY — NOT_STARTED | Today Vertical Slice; eligible only after new explicit owner authorization |
 | CGR-03 | NOT_READY | Depends on CGR-02 closure |
 | CGR-04 | NOT_READY | Depends on CGR-03 closure |
 | CGR-05 | NOT_READY | Depends on CGR-04 closure; no new features allowed |
@@ -47,11 +47,15 @@ The following are frozen as preserved foundations unless a future CGR phase demo
 - Gmail cursor / lease / continuation / replay protection;
 - exact-SHA release / authorization / security gates.
 
-## Registration scope
+## CGR-01 closure
 
-CGR-00 authorizes documentation only.
+Functional integration main: `0b295f15d2eb74b2cc240bad47a02137cb5749ac`.
 
-It does not authorize runtime source changes, database/schema/data changes, permission changes, automation schedule changes, production workspace mutation, new paid services, external recruiting actions, release publication, or CGR-01 implementation.
+CGR-01 moved the CGR-02 prerequisite connected-Web mutation families to typed authoritative server commands with durable receipt recovery, object/dependency-aware conflict and Undo, account-bound cache/draft/pending behavior, and explicit bounded snapshot compatibility. Production Supabase migration `20260923033356 cgr01_authoritative_commands` is applied. Exact-main CI, Browser E2E, Vercel, Pages, Production Self-Test, and publication-disarmed release gate all passed.
+
+Closure evidence: `docs/consumer-grade-refoundation-v1/receipts/CGR-01.md`.
+
+No CGR-02 implementation has started. UU-08/UU-09 remain on hold. Release publication remains a separate owner decision.
 
 ## Registration result
 

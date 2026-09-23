@@ -1,6 +1,6 @@
 # CGR-02 — Today Vertical Slice
 
-State: NOT_READY
+State: READY — NOT_STARTED
 
 ## User-visible outcome
 
