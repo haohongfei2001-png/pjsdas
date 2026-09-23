@@ -1,0 +1,47 @@
+name: CGR-03 Production Browser Canary
+
+on:
+  workflow_dispatch:
+    inputs:
+      expected_sha:
+        description: Exact integrated main SHA deployed to both production frontend and API
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  canary:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    environment: production-certification
+    env:
+      PJSDAS_CGR03_CANARY_ORIGIN: ${{ vars.PJSDAS_CANONICAL_API_ORIGIN || 'https://todayaction.com' }}
+      PJSDAS_EXPECTED_COMMIT_SHA: ${{ inputs.expected_sha }}
+      PJSDAS_SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.PJSDAS_SUPABASE_SERVICE_ROLE_KEY }}
+    steps:
+      - name: Require exact checked-out main and test identity credential
+        shell: bash
+        run: |
+          if [[ ! "$PJSDAS_EXPECTED_COMMIT_SHA" =~ ^[0-9a-f]{40}$ ]] || [[ "$PJSDAS_EXPECTED_COMMIT_SHA" != "$GITHUB_SHA" ]]; then
+            echo 'Expected SHA must equal this main workflow commit.' >&2
+            exit 1
+          fi
+          if [[ -z "$PJSDAS_SUPABASE_SERVICE_ROLE_KEY" ]]; then
+            echo 'Synthetic identity server credential is unavailable.' >&2
+            exit 1
+          fi
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - name: Check synthetic fixture without network
+        run: ./node_modules/.bin/tsx scripts/cgr03-production-browser-canary.ts --plan
+      - name: Verify exact production journeys in headless Chromium
+        run: ./node_modules/.bin/tsx scripts/cgr03-production-browser-canary.ts --execute
