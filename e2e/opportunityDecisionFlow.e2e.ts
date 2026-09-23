@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test'
 
-test('CGR-03 dense mixed-language workspace keeps search, identity, and return focus', async ({ page }) => {
+test('CGR-03 dense mixed-language workspace keeps search, identity, and return focus', async ({ page }, testInfo) => {
   await page.goto('/')
   await page.evaluate(async () => {
     const importedAt = new Date(Date.now() - 86400000).toISOString()
@@ -40,9 +40,20 @@ test('CGR-03 dense mixed-language workspace keeps search, identity, and return f
   await page.setViewportSize({ width: 390, height: 844 })
   await expect(rows.first()).toBeVisible()
   await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 2)).toBe(true)
+  await page.screenshot({ path: testInfo.outputPath('cgr03-dense-phone-390.png'), fullPage: true })
   await rows.first().click()
   await expect(page.getByRole('dialog', { name: /岗位详情|Opportunity details/ })).toBeVisible()
   await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 2)).toBe(true)
+  await page.screenshot({ path: testInfo.outputPath('cgr03-long-detail-390.png'), fullPage: true })
+  await page.keyboard.press('Escape')
+  await page.setViewportSize({ width: 320, height: 640 })
+  await expect(rows.first()).toBeVisible()
+  await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 2)).toBe(true)
+  await page.screenshot({ path: testInfo.outputPath('cgr03-dense-narrow-320.png'), fullPage: true })
+  await rows.first().click()
+  await expect(page.getByRole('dialog', { name: /岗位详情|Opportunity details/ })).toBeVisible()
+  await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 2)).toBe(true)
+  await page.screenshot({ path: testInfo.outputPath('cgr03-long-detail-320.png'), fullPage: true })
 })
 
 test('UU-05 Opportunities centers In Progress / Worth Pursuing and opens conclusion-first detail', async ({ page }) => {
