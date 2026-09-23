@@ -126,7 +126,7 @@ export default function TellPjsdasCapture({
     setPreview(undefined)
     setMessage('')
     setError(resumable?.lastError ?? '')
-    setSaveState(resumable?.status === 'unknown' ? 'unknown' : resumable ? 'reauth' : 'idle')
+    setSaveState(resumable?.status === 'unknown' ? 'unknown' : resumable?.status === 'conflict' ? 'conflict' : resumable ? 'reauth' : 'idle')
     setDecisionCount(0)
     setUnresolvedCount(0)
     setUndo(undefined)
