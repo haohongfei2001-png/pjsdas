@@ -89,7 +89,7 @@ function workspaceReply(data: Record<string, unknown>): WorkspaceReply {
 async function workspace(origin: string, auth: AuthSession, body: Record<string, unknown>) {
   return workspaceReply(await json(`${origin}/api/workspace`, {
     method: 'POST',
-    headers: { authorization: `Bearer ${auth.token}`, 'content-type': 'application/json' },
+    headers: { authorization: `Bearer ${auth.token}`, 'content-type': 'application/json', origin },
     body: JSON.stringify(body),
   }))
 }

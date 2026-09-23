@@ -1,6 +1,6 @@
 # CGR-02 — Today Vertical Slice
 
-State: IN_PROGRESS
+State: COMPLETE — final production evidence in `../receipts/CGR-02.md`
 
 ## User-visible outcome
 
