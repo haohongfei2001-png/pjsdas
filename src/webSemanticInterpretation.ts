@@ -33,18 +33,20 @@ export function webStatementMode(text: string): SemanticStatementMode {
 // current statement remain available for identity resolution.
 function withoutQuotedContext(text: string) {
   const current: string[] = []
+  let excluded = false
   for (const line of text.split(/\r?\n/)) {
     // Email quote headers often precede unprefixed old content. Once a clear
     // boundary appears, later lines cannot safely be treated as current facts.
-    if (/^\s*(?:>|[- ]*Original Message[- ]*|[- ]*Forwarded message[- ]*|On .+ wrote:|转发邮件|原始邮件|引用\s*[:：]|原话\s*[:：]|quote\s*[:：])/i.test(line)) break
+    if (/^\s*(?:>|[- ]*Original Message[- ]*|[- ]*Forwarded message[- ]*|On .+ wrote:|转发邮件|原始邮件|引用\s*[:：]|原话\s*[:：]|quote\s*[:：])/i.test(line)) { excluded = true; break }
     const inlineQuote = /(?:^|\s)(?:引用|原话|quote)\s*[:：]/i.exec(line)
     if (inlineQuote) {
       current.push(line.slice(0, inlineQuote.index))
+      excluded = true
       break
     }
     current.push(line)
   }
-  return current.join('\n').trim()
+  return { text: current.join('\n').trim(), excluded }
 }
 
 function hasExplicitClock(text: string) {
@@ -258,9 +260,9 @@ export function buildWebSemanticInterpretation(
   if (mode !== 'assertion' && mode !== 'current_intent') {
     return { mode, candidates: [], unresolved: [], ignored: [] }
   }
-  const currentText = withoutQuotedContext(text)
-  const plan = parseProgressUpdate(currentText, opportunities, now, references)
-  const explicitCompletion = explicitCompletionCandidate(currentText, mode, plan, opportunities, baseline)
+  const current = withoutQuotedContext(text)
+  const plan = parseProgressUpdate(current.text, opportunities, now, references)
+  const explicitCompletion = explicitCompletionCandidate(current.text, mode, plan, opportunities, baseline)
   const explicitKind = explicitCompletion?.target?.occurrenceKind
   const executableOperations = explicitCompletion && explicitKind
     ? plan.executable.filter((operation) => explicitCompletionKind(operation.sourceText, mode) !== explicitKind)
@@ -285,6 +287,6 @@ export function buildWebSemanticInterpretation(
     mode,
     candidates,
     unresolved: convertedUnresolved.filter((item) => !item.candidate).map((item) => item.operation.reason),
-    ignored: plan.ignored.map((item) => item.reason),
+    ignored: [...plan.ignored.map((item) => item.reason), ...(current.excluded ? ['Quoted thread context was excluded from current facts.'] : [])],
   }
 }

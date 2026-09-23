@@ -81,6 +81,7 @@ describe('UU-04 Web Semantic Intake completion normalization', () => {
     )
     expect(interpretation.candidates.length).toBeGreaterThan(0)
     expect(interpretation.candidates.some((candidate) => candidate.kind === 'process_event' && candidate.eventType === 'interview_invite')).toBe(false)
+    expect(interpretation.ignored).toContain('Quoted thread context was excluded from current facts.')
   })
 
   it('preserves a quoted role name inside a current assertion', () => {

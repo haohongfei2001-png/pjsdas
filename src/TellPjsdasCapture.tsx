@@ -267,6 +267,7 @@ export default function TellPjsdasCapture({
           summary,
           result.decisionRequestIds.length ? (zh ? `${result.decisionRequestIds.length} 项需要你决定。` : `${result.decisionRequestIds.length} item(s) need your decision.`) : '',
           result.unresolved.length ? (zh ? `${result.unresolved.length} 个片段仍不够明确，未写入。` : `${result.unresolved.length} fragment(s) remain ambiguous and were not written.`) : '',
+          result.ignored.length ? (zh ? `${result.ignored.length} 个片段未作为当前事实处理。` : `${result.ignored.length} fragment(s) were not treated as current facts.`) : '',
         ].filter(Boolean)
         setMessage(parts.join(' '))
         if (result.status === 'APPLIED') {
@@ -388,6 +389,9 @@ export default function TellPjsdasCapture({
                 ) : null}
                 {preview.unresolved.length ? (
                   <p className="cgr-understanding-warning">{zh ? `${preview.unresolved.length} 个片段仍需更明确的公司、岗位或招聘节点。` : `${preview.unresolved.length} fragment(s) still need a clearer company, role, or recruiting event.`}</p>
+                ) : null}
+                {preview.ignored.length ? (
+                  <p className="cgr-understanding-note">{zh ? `${preview.ignored.length} 个片段未作为当前事实处理（如引用的旧消息）。` : `${preview.ignored.length} fragment(s) were not treated as current facts (such as quoted history).`}</p>
                 ) : null}
               </div>
             ) : null}
