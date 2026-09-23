@@ -11,7 +11,7 @@ Product origin: https://todayaction.com
 Status: ACTIVE — CGR-02 ENGINEERING_COMPLETE / PRODUCTION_PENDING_EXTERNAL
 Current production-pending phase: CGR-02
 Last completed phase: CGR-01
-Next eligible engineering phase: CGR-03, bounded to one phase ahead under EXECUTION_PROTOCOL.md; no CGR-02 production PASS is implied
+Current engineering phase: CGR-03 IN_PROGRESS, bounded to one phase ahead under EXECUTION_PROTOCOL.md; no CGR-02 production PASS is implied
 Automatic continuation beyond CGR-03: PROHIBITED until the CGR-02 production gate is resolved
 
 ## Phase state
@@ -21,7 +21,7 @@ Automatic continuation beyond CGR-03: PROHIBITED until the CGR-02 production gat
 | CGR-00 | COMPLETE — CONTRACT & SCOPE REGISTERED | Docs-only design convergence, architecture/validation/migration contracts, six-phase plan, and execution handoff; no runtime implementation |
 | CGR-01 | COMPLETE — AUTHORITATIVE COMMAND FOUNDATION | Typed server commands, durable receipts, object-aware conflict/Undo, account-scoped cache/pending recovery, bounded snapshot compatibility, production migration/canary and exact-main gates complete |
 | CGR-02 | ENGINEERING_COMPLETE / PRODUCTION_PENDING_EXTERNAL | Today Vertical Slice integrated at `cb98205edaaf5c71b99a33cb751310b3226657f2`; frozen production canary still required |
-| CGR-03 | ENGINEERING_READY — BOUNDED OVERLAP | Frozen next phase may proceed at most one phase ahead; CGR-02 production gate stays open |
+| CGR-03 | IN_PROGRESS — BOUNDED OVERLAP | Opportunity Workspace engineering on the sole CGR-03 writer branch; CGR-02 production gate stays open |
 | CGR-04 | NOT_READY | Depends on CGR-03 closure |
 | CGR-05 | NOT_READY | Depends on CGR-04 closure; no new features allowed |
 
@@ -56,7 +56,7 @@ CGR-01 moved the CGR-02 prerequisite connected-Web mutation families to typed au
 
 Closure evidence: `docs/consumer-grade-refoundation-v1/receipts/CGR-01.md`.
 
-CGR-02 engineering is integrated and its exact-main non-production gates are green. The production command canary has not run: Vercel rate-limited the exact integrated SHA, and an approved two-session test identity is not yet available. See `receipts/CGR-02-ENGINEERING.md`. CGR-02 is not COMPLETE. CGR-03 has not started; its bounded engineering overlap is eligible under the current main execution protocol. UU-08/UU-09 remain on hold. Release publication remains a separate owner decision.
+CGR-02 engineering is integrated and its exact-main non-production gates are green. The production command canary has not run: Vercel rate-limited the exact integrated SHA. The owner authorized a dedicated synthetic test account, and the manual one-time account workflow was merged at `bf35f5bec0436e6c958a4894ee53fbf58ee0771e`; it creates no account until the exact deployed SHA passes preflight. No production canary PASS is implied. See `receipts/CGR-02-ENGINEERING.md`. CGR-02 is not COMPLETE. CGR-03 engineering is active in draft PR #127 on the sole bounded-overlap writer branch under the current main execution protocol. UU-08/UU-09 remain on hold. Release publication remains a separate owner decision.
 
 ## Registration result
 
