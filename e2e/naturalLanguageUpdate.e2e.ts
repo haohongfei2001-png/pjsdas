@@ -114,6 +114,18 @@ test('explicit non-job task enters Today through Semantic Intake without ChangeS
   await expect(page.getByRole('heading', { name: '修改论文图表' })).toBeVisible()
 })
 
+test('a quoted old thread cannot create a second action beside the current Web update', async ({ page }) => {
+  await page.goto('/')
+  await openCapture(page)
+  await page.locator('.cgr-capture-input').fill('待办：修改论文图表。\n> 待办：整理旧材料。')
+  await page.getByRole('button', { name: '确认并保存' }).click()
+  await expect(page.getByRole('status')).toContainText('已记录明确事实')
+  await page.getByRole('button', { name: '关闭' }).click()
+  const state = await readMutationState(page)
+  expect(state.actions.map((item) => item.title)).toEqual(['修改论文图表'])
+  expect(state.changeSets).toHaveLength(0)
+})
+
 test('questions and rewrite requests remain read-only', async ({ page }) => {
   await page.goto('/')
   await openCapture(page)

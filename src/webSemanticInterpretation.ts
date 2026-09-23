@@ -23,8 +23,19 @@ export function webStatementMode(text: string): SemanticStatementMode {
   if (/(改写|润色|翻译|重写|rewrite|translate)/i.test(trimmed)) return 'rewrite_request'
   if (/^(?:如果|假如|假设|比如|例如|举例|hypothetical|for example)/i.test(trimmed)) return 'hypothetical'
   if (/[?？]\s*$/.test(trimmed) || /^(?:是否|是不是|要不要|该不该|怎么|如何|为什么|what|should|how|why)\b/i.test(trimmed)) return 'question'
-  if (/^(?:引用|原话|quote)\s*[:：]/i.test(trimmed)) return 'quote'
+  if (/^(?:引用|原话|quote)\s*[:：]/i.test(trimmed)
+    || (/^“[^\n]*”$/.test(trimmed) || /^"[^\n]*"$/.test(trimmed))) return 'quote'
   return 'assertion'
+}
+
+// Quoted email/thread context is evidence, not a second current assertion.
+// Only explicit quote boundaries are removed; quoted role names inside a
+// current statement remain available for identity resolution.
+function withoutQuotedContext(text: string) {
+  return text.split(/\r?\n/).map((line) => {
+    if (/^\s*>/.test(line)) return ''
+    return line.replace(/(?:^|\s)(?:引用|原话|quote)\s*[:：].*$/i, '')
+  }).join('\n').trim()
 }
 
 function hasExplicitClock(text: string) {
@@ -235,8 +246,12 @@ export function buildWebSemanticInterpretation(
   now = new Date(),
 ) {
   const mode = webStatementMode(text)
-  const plan = parseProgressUpdate(text, opportunities, now, references)
-  const explicitCompletion = explicitCompletionCandidate(text, mode, plan, opportunities, baseline)
+  if (mode !== 'assertion' && mode !== 'current_intent') {
+    return { mode, candidates: [], unresolved: [], ignored: [] }
+  }
+  const currentText = withoutQuotedContext(text)
+  const plan = parseProgressUpdate(currentText, opportunities, now, references)
+  const explicitCompletion = explicitCompletionCandidate(currentText, mode, plan, opportunities, baseline)
   const explicitKind = explicitCompletion?.target?.occurrenceKind
   const executableOperations = explicitCompletion && explicitKind
     ? plan.executable.filter((operation) => explicitCompletionKind(operation.sourceText, mode) !== explicitKind)
