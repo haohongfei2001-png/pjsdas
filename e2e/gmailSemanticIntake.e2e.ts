@@ -111,3 +111,29 @@ test('Gmail settings separates a normal attachment boundary from an interpretati
   await status.getByText('查看未读取的内容边界').click()
   await expect(status).toContainText('附件内容尚未读取')
 })
+
+test('a completed Gmail intake run reports interpretation failure without guessing a write', async ({ page }) => {
+  const now = new Date('2026-09-21T00:00:00Z')
+  const base: PJSDASSnapshot = { schema: 'pjsdas-local-snapshot', version: 1, exportedAt: now.toISOString(), data: {
+    opportunities: [{ id: 'gmail-failure-opportunity', company: '京东', role: 'AI产品经理', currentStageLabel: '筛选中', processStage: 'screening', roleType: 'core', early: false, opportunityValue: 80, fitScore: 80, locallyManaged: true, importedAt: '2026-09-01T00:00:00Z' }],
+    processes: [], processEvents: [], actions: [], prep: [], applicationGroups: [], timeline: [],
+  } }
+  // Gmail supplied a recruiting message but neither internalDate nor Date header.
+  // The interpreter cannot place the fact in time and must leave it unresolved.
+  const record = gmailSemanticRecordFromMessage({ id: 'undated-mail', payload: {
+    mimeType: 'text/plain', body: { data: Buffer.from('京东 AI产品经理 面试通知，请于2026年9月25日 14:30参加视频面试').toString('base64url') },
+  } }, base.data.opportunities, now)!
+  expect(record.issueKinds).toContain('interpretation_failure')
+  const result = applyGmailSemanticBatch(base, { runId: 'undated-browser', sourceId: 'gmail:primary', checkedAt: now.toISOString(), authorized: true, records: [record] })
+  expect(result.run).toMatchObject({ receivedCount: 1, accountedCount: 1, outcomes: { unresolved: 1 } })
+  expect(result.snapshot.data.processEvents).toHaveLength(0)
+  await page.clock.install({ time: now })
+  await page.goto('/')
+  await seedSnapshot(page, result.snapshot.data)
+  await page.reload()
+  await page.locator('.ultimate-toolbar').getByRole('button', { name: /设置|Settings/ }).click()
+  const status = page.getByLabel('Gmail 来源结果')
+  await expect(status).toContainText('解释失败 1')
+  await expect(status).toContainText('业务歧义 0')
+  await expect(status).toContainText('正常能力边界 0')
+})
