@@ -3,6 +3,8 @@ import { gmailSemanticRecordFromMessage } from '../gateway/gmailAutomation.js'
 import { applyGmailSemanticBatch } from '../src/gmailSemanticIntake.js'
 import { applySemanticCompensation, applySemanticIntake, resolveSemanticDecision } from '../src/semanticIntake.js'
 import { validateSnapshot, type PJSDASSnapshot } from '../src/snapshot.js'
+import { summarizeCoverage } from '../src/ingestion.js'
+import { summarizeSourceHealth } from '../src/sourceHealth.js'
 
 const now = new Date('2026-09-21T00:00:00Z')
 function snapshot(): PJSDASSnapshot {
@@ -172,12 +174,19 @@ describe('UU06 shared Gmail intake', () => {
     const mail = message(invitation + '；详情 https://example.com/private')
     Object.assign(mail.payload, { parts: [{ filename: 'details.pdf', mimeType: 'application/pdf', body: { data: 'secret' } }] })
     const record = gmailSemanticRecordFromMessage(mail, snapshot().data.opportunities, now)!
-    expect(record.gaps.join(' ')).toContain('Attachment')
-    expect(record.gaps.join(' ')).toContain('Linked pages')
+    expect(record.gaps).toEqual([])
+    expect(record.capabilityBoundaries?.join(' ')).toContain('Attachment')
+    expect(record.capabilityBoundaries?.join(' ')).toContain('Linked pages')
     const result = applyGmailSemanticBatch(snapshot(), { runId: 'gap', sourceId: 'gmail:primary', checkedAt: now.toISOString(), authorized: true, records: [record] })
-    expect(result.run.outcomes.unresolved).toBe(1)
+    expect(result.run.outcomes.updated).toBe(1)
     expect(result.snapshot.data.processEvents[0]?.joinUrl).toBe('https://example.com/private')
     expect(JSON.stringify(result.snapshot)).not.toContain('secret')
+    validateSnapshot(result.snapshot)
+    const coverage = summarizeCoverage(result.snapshot.data.timeline)
+    expect(coverage).toMatchObject({ allCaughtUp: true, unresolvedCount: 0, capabilityBoundaryCount: 1 })
+    expect(coverage.exceptions).toHaveLength(0)
+    expect(coverage.capabilityBoundaries[0]?.ingestion?.capabilityBoundaries).toHaveLength(2)
+    expect(summarizeSourceHealth(result.snapshot.data.timeline, now).find((source) => source.sourceId === 'gmail:primary')?.state).toBe('healthy')
   })
   it('preserves separate-line location and HTTPS meeting references as bounded fields without fetching them', () => {
     const result = run(snapshot(), invitation + '\n地点：会议室A\n会议链接：https://meet.example.com/room-12')

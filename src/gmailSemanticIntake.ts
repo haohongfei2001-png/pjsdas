@@ -8,6 +8,7 @@ export interface GmailSemanticRecord {
   observation: SemanticIntakeObservation
   receivedAt: string
   gaps: string[]
+  capabilityBoundaries?: string[]
 }
 
 /** Source accounting surrounds the shared policy; this adapter never changes business state itself. */
@@ -56,6 +57,7 @@ export function applyGmailSemanticBatch(snapshot: PJSDASSnapshot, input: {
       fingerprint: observation.originalTextFingerprint ?? stableIngestionHash(sourceRecordId),
       receivedAt: record.receivedAt, accountedAt: input.checkedAt,
       reason: record.gaps.length ? record.gaps.join(' ') : result?.summary ?? prior?.ingestion?.reason ?? 'Previously consumed Gmail source record; no business replay.',
+      capabilityBoundaries: record.capabilityBoundaries ?? prior?.ingestion?.capabilityBoundaries,
       sourceRef: `gmail:${sourceRecordId}`,
     })
     records.push(entry)

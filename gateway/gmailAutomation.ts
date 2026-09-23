@@ -482,13 +482,14 @@ export function gmailSemanticRecordFromMessage(
   const subject = excluded ? '' : header(message.payload, 'subject')
   const text = excluded ? '' : body || subject || cleanText(message.snippet)
   const gaps: string[] = originalReceivedAt ? [] : ['Original message timestamp is unavailable; automatic facts require clarification.']
+  const capabilityBoundaries: string[] = []
   const visit = (part: GmailPart | undefined) => {
     if (!part) return
-    if (part.filename) gaps.push('Attachment content is NOT_SUPPORTED; inspect the original mail if it contains material details.')
+    if (part.filename) capabilityBoundaries.push('Attachment content is NOT_SUPPORTED; inspect the original mail if it contains material details.')
     for (const child of part.parts ?? []) visit(child)
   }
   if (!excluded) visit(message.payload)
-  if (/https?:\/\//i.test(text)) gaps.push('Linked pages are NOT_SUPPORTED; no link is opened or treated as verified source content.')
+  if (/https?:\/\//i.test(text)) capabilityBoundaries.push('Linked pages are NOT_SUPPORTED; no link is opened or treated as verified source content.')
   if (body.length >= 12_000) gaps.push('Message exceeds the bounded body limit; remaining content was not interpreted.')
   const quoted = /(?:^|\n)\s*>|(?:转发邮件|原始邮件|Original Message|On .+ wrote:|示例|假设|假如|hypothetical|for example)/i.test(text)
   if (quoted) gaps.push('Quoted/forwarded context requires clarification; no automatic facts were written.')
@@ -579,6 +580,7 @@ export function gmailSemanticRecordFromMessage(
   return {
     receivedAt: legacy.receivedAt,
     gaps: !excluded && (legacy.classification === 'recruiting' || candidates.length) ? [...new Set(gaps)] : [],
+    capabilityBoundaries: !excluded && (legacy.classification === 'recruiting' || candidates.length) ? [...new Set(capabilityBoundaries)] : [],
     observation: {
       contractVersion: 1, inputId: `gmail:${message.id}:uu06-v1`,
       source: { kind: 'gmail', sourceId: GMAIL_SOURCE_ID, sourceRecordId: message.id!,

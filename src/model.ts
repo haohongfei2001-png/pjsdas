@@ -515,6 +515,8 @@ export interface IngestionLedgerEntry {
   receivedAt: string
   accountedAt: string
   reason?: string
+  /** Known source capability limits; these do not imply a failed business interpretation. */
+  capabilityBoundaries?: string[]
   opportunityId?: string
   processEventId?: string
   actionId?: string

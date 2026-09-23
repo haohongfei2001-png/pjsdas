@@ -185,7 +185,7 @@ export default function CoverageIndicatorHeavy() {
                         <small>{formatTime(source.lastCompletedAt, zh)}{source.stale ? (zh ? ' · 已过期' : ' · stale') : ''}</small>
                       </div>
                       <span className={source.balanced && source.unresolvedCount === 0 && !source.stale ? 'good' : 'warn'}>{source.accountedCount}/{source.receivedCount}</span>
-                      <p>{outcomeText(source.outcomes, zh) || (zh ? '本轮 0 条输入' : '0 inputs in this run')}{source.cadenceMinutes ? (zh ? ` · 每 ${formatCadence(source.cadenceMinutes, zh)}` : ` · every ${formatCadence(source.cadenceMinutes, zh)}`) : ''}{source.maxAgeHours ? ` · SLA ${source.maxAgeHours}h` : ''}</p>
+                      <p>{outcomeText(source.outcomes, zh) || (zh ? '本轮 0 条输入' : '0 inputs in this run')}{source.capabilityBoundaryCount ? (zh ? ` · ${source.capabilityBoundaryCount} 条能力边界` : ` · ${source.capabilityBoundaryCount} capability limit(s)`) : ''}{source.cadenceMinutes ? (zh ? ` · 每 ${formatCadence(source.cadenceMinutes, zh)}` : ` · every ${formatCadence(source.cadenceMinutes, zh)}`) : ''}{source.maxAgeHours ? ` · SLA ${source.maxAgeHours}h` : ''}</p>
                       {health ? <small>{zh
                         ? `24h ${health.runCount24h} 次 · 7天健康 ${health.healthyRunCount7d}/${health.runCount7d} · 连续健康 ${health.consecutiveHealthyRuns} · 下次预计 ${formatTime(health.nextExpectedBy, zh)}`
                         : `24h ${health.runCount24h} runs · 7d healthy ${health.healthyRunCount7d}/${health.runCount7d} · ${health.consecutiveHealthyRuns} healthy in a row · next expected ${formatTime(health.nextExpectedBy, zh)}`}</small> : null}
@@ -209,6 +209,20 @@ export default function CoverageIndicatorHeavy() {
                 <p className="coverage-success">{zh
                   ? `✓ 当前 ${coverage.expectedSourceCount} 个已启用来源都在各自 SLA 内完成，最新 run 守恒，且没有待解析输入。`
                   : `✓ All ${coverage.expectedSourceCount} enabled sources are within SLA, the latest runs reconcile, and there are no unresolved inputs.`}</p>
+              ) : null}
+
+              {coverage.capabilityBoundaries.length ? (
+                <div className="coverage-exceptions">
+                  <h3>{zh ? '当前能力边界' : 'Current capability limits'}</h3>
+                  <p>{zh ? '这些来源记录已单独对账；此处提示尚不读取的内容，不计为待处理解析异常。' : 'These source records are accounted for separately. Unsupported content is shown here and is not counted as a parsing exception.'}</p>
+                  {coverage.capabilityBoundaries.slice(0, 8).map((record) => (
+                    <article key={`boundary:${record.id}`}>
+                      <strong>{record.company && record.role ? `${record.company}｜${record.role}` : record.sourceRef ?? record.title}</strong>
+                      <p>{record.ingestion?.capabilityBoundaries?.join(' ')}</p>
+                      <small>{record.ingestion?.sourceKind} · {record.ingestion?.sourceRecordId}</small>
+                    </article>
+                  ))}
+                </div>
               ) : null}
 
               <p className="coverage-footnote">{zh
