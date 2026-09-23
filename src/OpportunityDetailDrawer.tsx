@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { jobPostingFreshness } from './jobPosting.js'
 import OpportunityAssessmentSummary from './OpportunityAssessmentSummary.js'
 import OpportunityDecisionSummary from './OpportunityDecisionSummary.js'
@@ -93,12 +93,15 @@ export default function OpportunityDetailDrawer({
   const userFacts = opportunity.detail?.userFacts
   const posting = discovery?.posting
   const postingHistory = discovery?.postingHistory ?? []
+  const [visibleTimelineCount, setVisibleTimelineCount] = useState(6)
+  useEffect(() => setVisibleTimelineCount(6), [opportunity.id])
   const relevantActions = actions
     .filter((item) => item.status !== 'done' && item.status !== 'skipped')
     .sort((a, b) => (a.dueAt ?? '9999').localeCompare(b.dueAt ?? '9999'))
-  const recentTimeline = [...timeline]
+  const orderedTimeline = [...timeline]
     .sort((a, b) => b.occurredAt.localeCompare(a.occurredAt))
-    .slice(0, 6)
+  const visibleTimeline = orderedTimeline.slice(0, visibleTimelineCount)
+  const completeTimeline = visibleTimeline.length === orderedTimeline.length
   const effectiveStage = process?.stage ?? opportunity.processStage
   const storedStageLabel = process?.stageLabel ?? opportunity.currentStageLabel
   const effectiveStageText = presentStageLabel(effectiveStage, storedStageLabel, lang)
@@ -182,16 +185,22 @@ export default function OpportunityDetailDrawer({
           />
         </div>
 
-        {recentTimeline.length ? (
+        {orderedTimeline.length ? (
           <details className="opportunity-detail-section">
-            <summary>{zh ? '完整历史' : 'Full history'}</summary>
+            <summary>{completeTimeline
+              ? (zh ? '完整历史' : 'Full history')
+              : (zh ? `最近历史 · ${visibleTimeline.length}/${orderedTimeline.length} 条` : `Recent history · ${visibleTimeline.length} of ${orderedTimeline.length}`)}</summary>
             <div className="opportunity-detail-timeline">
-              {recentTimeline.map((record) => (
+              {visibleTimeline.map((record) => (
                 <article key={record.id}>
                   <time>{formatDate(record.occurredAt, zh)}</time>
                   <div><strong>{record.title}</strong>{record.detail ? <p>{record.detail}</p> : null}</div>
                 </article>
               ))}
+              {!completeTimeline ? <button className="opportunity-detail-more-history" type="button"
+                onClick={() => setVisibleTimelineCount((count) => Math.min(count + 20, orderedTimeline.length))}>
+                {zh ? `显示更早记录（剩余 ${orderedTimeline.length - visibleTimeline.length} 条）` : `Show earlier records (${orderedTimeline.length - visibleTimeline.length} remaining)`}
+              </button> : null}
             </div>
           </details>
         ) : null}
