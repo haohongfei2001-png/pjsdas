@@ -9,7 +9,7 @@ const VISUAL_TIME = new Date('2026-09-23T08:00:00.000Z')
 
 async function reviewedScreenshot(page: Page, name: string, fullPage = false) {
   await mkdir(VISUAL_DIR, { recursive: true })
-  const screenshot = await page.screenshot({ path: `${VISUAL_DIR}/${name}`, fullPage })
+  const screenshot = await page.screenshot({ path: `${VISUAL_DIR}/${name}`, fullPage, animations: 'disabled' })
   expect(screenshot).toMatchSnapshot(name)
 }
 
