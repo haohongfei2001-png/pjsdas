@@ -109,8 +109,10 @@ export default function OpportunityDetailDrawer({
   const dialogRef = useRef<HTMLElement>(null)
   const closeButtonRef = useRef<HTMLButtonElement>(null)
   useEffect(() => setVisibleTimelineCount(6), [opportunity.id])
+  const ended = opportunity.processStage === 'closed' || opportunity.participationStatus === 'abandoned'
+  const hasRetainedStaleActions = ended && actions.some((item) => item.status === 'todo' || item.status === 'doing')
   const relevantActions = actions
-    .filter((item) => item.status !== 'done' && item.status !== 'skipped')
+    .filter((item) => !ended && (item.status === 'todo' || item.status === 'doing'))
     .sort((a, b) => (a.dueAt ?? '9999').localeCompare(b.dueAt ?? '9999'))
   const orderedTimeline = [...timeline]
     .sort((a, b) => b.occurredAt.localeCompare(a.occurredAt))
@@ -209,7 +211,9 @@ export default function OpportunityDetailDrawer({
                   </article>
                 ))}
               </div>
-            ) : <p className="opportunity-detail-muted">{zh ? '当前没有未完成的岗位级待办。' : 'No unfinished opportunity-level action.'}</p>}
+            ) : <p className="opportunity-detail-muted">{hasRetainedStaleActions
+              ? (zh ? '流程已结束，旧待办不会继续推荐；原记录仍保留。' : 'This process has ended. Old actions are no longer recommended; their records remain available.')
+              : (zh ? '当前没有未完成的岗位级待办。' : 'No unfinished opportunity-level action.')}</p>}
             <button className="text-button" type="button" onClick={() => onNavigate('prepare')}>{zh ? '查看全部准备' : 'Open preparation'}</button>
           </details>
 

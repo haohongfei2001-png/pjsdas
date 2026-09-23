@@ -141,6 +141,13 @@ test('UU-05 Opportunities centers In Progress / Worth Pursuing and opens conclus
         createdAt: new Date(now - 86400000).toISOString(),
         updatedAt: new Date(now - 86400000).toISOString(),
       },
+      {
+        id: 'uu05-ended-stale-action', kind: 'apply', title: '过期的结束流程待办',
+        opportunityId: 'uu05-ended', processStage: 'closed', estimatedMinutes: 20,
+        leverage: 70, delayCost: 70, status: 'todo',
+        createdAt: new Date(now - 86400000).toISOString(),
+        updatedAt: new Date(now - 86400000).toISOString(),
+      },
     ]
 
     await new Promise<void>((resolve, reject) => {
@@ -174,7 +181,15 @@ test('UU-05 Opportunities centers In Progress / Worth Pursuing and opens conclus
   await expect(worthRow).toContainText(/申请截止|Application deadline/)
 
   await page.locator('.opportunity-decision-filter select').selectOption('ended')
-  await expect(rows.filter({ hasText: '结束科技' })).toBeVisible()
+  const endedRow = rows.filter({ hasText: '结束科技' })
+  await expect(endedRow).toBeVisible()
+  await expect(endedRow).not.toContainText('过期的结束流程待办')
+  await endedRow.click()
+  const endedDetail = page.getByRole('dialog', { name: /岗位详情|Opportunity details/ })
+  await endedDetail.locator('.opportunity-detail-section').filter({ hasText: /准备与相关待办|Preparation & related actions/ }).locator('summary').click()
+  await expect(endedDetail).toContainText('旧待办不会继续推荐；原记录仍保留')
+  await expect(endedDetail.getByRole('button', { name: /标记完成|Mark done/ })).toHaveCount(0)
+  await page.keyboard.press('Escape')
   await expect(rows.filter({ hasText: '值得科技' })).toHaveCount(0)
 
   await page.locator('.opportunity-decision-filter select').selectOption('worth_pursuing')
