@@ -8,7 +8,7 @@ import { parsePJSDASWorkbook } from './importExcelV2.js'
 import { prepPriorityRank, presentPrepPriority, presentPrepSourceState } from './prepSemantics.js'
 import { presentStageLabel } from './stagePresentation.js'
 import { currentUiLanguage, useUiLanguage } from './uiLanguage.js'
-import { DEFAULT_DECISION_RULES } from './decisionRules.js'
+import { DEFAULT_DECISION_RULES, type DecisionRules } from './decisionRules.js'
 import RulesView from './RulesView.js'
 import TimelineView from './TimelineView.js'
 import CloudSettingsCard from './cloud/CloudSettingsCard.js'
@@ -48,6 +48,9 @@ import {
 import type {
   Action,
   ImportBundle,
+  ImportMeta,
+  Prep,
+  TimelineRecord,
 } from './model.js'
 import type { PJSDASSnapshot } from './snapshot.js'
 import './timeplan.css'
