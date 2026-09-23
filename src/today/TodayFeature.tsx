@@ -239,6 +239,41 @@ export default function TodayFeature({
             </div>
           )}
 
+        </main>
+
+        <aside className="cgr-agenda" aria-label={zh ? '近期招聘日程' : 'Upcoming recruiting agenda'}>
+          <div className="cgr-section-head">
+            <div><div className="cgr-kicker">AGENDA</div><h2>{agendaExpanded ? (zh ? '未来 30 天' : 'Next 30 days') : (zh ? '近期节点' : 'Upcoming')}</h2></div>
+            <button className="cgr-text-button" type="button" onClick={onOpenAgenda}>{agendaExpanded ? (zh ? '收起' : 'Summary') : (zh ? '全部日程' : 'All schedule')}</button>
+          </div>
+          {brief.agendaGroups.length ? (
+            <div className="cgr-agenda-groups">
+              {brief.agendaGroups.map((group) => (
+                <section className={`cgr-agenda-group relation-${group.relation}`} key={group.key}>
+                  <h3>{agendaGroupTitle(group.relation, group.date, zh)}</h3>
+                  <div>
+                    {group.nodes.map((node) => (
+                      <button
+                        className={`cgr-agenda-node${node.requiresResolution ? ' unresolved' : ''}`}
+                        type="button"
+                        key={node.nodeId}
+                        onClick={() => { if (node.opportunityId) onOpenOpportunity(node.opportunityId) }}
+                      >
+                        <span className="cgr-agenda-time">{agendaNodeTime(node, zh)}</span>
+                        <span className="cgr-agenda-copy"><strong>{agendaNodeLabel(node.kind, zh)}</strong><small>{[node.company, node.role].filter(Boolean).join(' · ') || (zh ? '招聘节点' : 'Recruiting node')}</small></span>
+                        <span className="cgr-agenda-state">{node.requiresResolution ? (zh ? '待确认' : 'Resolve') : node.within48Hours ? (zh ? '48h 内' : '<48h') : ''}</span>
+                      </button>
+                    ))}
+                  </div>
+                </section>
+              ))}
+            </div>
+          ) : (
+            <div className="cgr-agenda-empty"><strong>{zh ? '近期没有招聘时间节点' : 'No recruiting nodes coming up'}</strong><span>{zh ? '这里不会显示普通日历事件。' : 'General calendar events do not appear here.'}</span></div>
+          )}
+        </aside>
+
+        <div className="cgr-secondary-column">
           <section className="cgr-next-section" aria-labelledby="today-next-up">
             <div className="cgr-section-head">
               <div><div className="cgr-kicker">NEXT UP</div><h2 id="today-next-up">{zh ? '接下来' : 'Next up'}</h2></div>
@@ -282,39 +317,7 @@ export default function TodayFeature({
               </div>
             </section>
           ) : null}
-        </main>
-
-        <aside className="cgr-agenda" aria-label={zh ? '近期招聘日程' : 'Upcoming recruiting agenda'}>
-          <div className="cgr-section-head">
-            <div><div className="cgr-kicker">AGENDA</div><h2>{agendaExpanded ? (zh ? '未来 30 天' : 'Next 30 days') : (zh ? '近期节点' : 'Upcoming')}</h2></div>
-            <button className="cgr-text-button" type="button" onClick={onOpenAgenda}>{agendaExpanded ? (zh ? '收起' : 'Summary') : (zh ? '全部日程' : 'All schedule')}</button>
-          </div>
-          {brief.agendaGroups.length ? (
-            <div className="cgr-agenda-groups">
-              {brief.agendaGroups.map((group) => (
-                <section className={`cgr-agenda-group relation-${group.relation}`} key={group.key}>
-                  <h3>{agendaGroupTitle(group.relation, group.date, zh)}</h3>
-                  <div>
-                    {group.nodes.map((node) => (
-                      <button
-                        className={`cgr-agenda-node${node.requiresResolution ? ' unresolved' : ''}`}
-                        type="button"
-                        key={node.nodeId}
-                        onClick={() => { if (node.opportunityId) onOpenOpportunity(node.opportunityId) }}
-                      >
-                        <span className="cgr-agenda-time">{agendaNodeTime(node, zh)}</span>
-                        <span className="cgr-agenda-copy"><strong>{agendaNodeLabel(node.kind, zh)}</strong><small>{[node.company, node.role].filter(Boolean).join(' · ') || (zh ? '招聘节点' : 'Recruiting node')}</small></span>
-                        <span className="cgr-agenda-state">{node.requiresResolution ? (zh ? '待确认' : 'Resolve') : node.within48Hours ? (zh ? '48h 内' : '<48h') : ''}</span>
-                      </button>
-                    ))}
-                  </div>
-                </section>
-              ))}
-            </div>
-          ) : (
-            <div className="cgr-agenda-empty"><strong>{zh ? '近期没有招聘时间节点' : 'No recruiting nodes coming up'}</strong><span>{zh ? '这里不会显示普通日历事件。' : 'General calendar events do not appear here.'}</span></div>
-          )}
-        </aside>
+        </div>
       </div>
 
       {coverageWarnings.length ? (

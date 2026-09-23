@@ -93,11 +93,13 @@
 .cgr-today-grid {
   display: grid;
   grid-template-columns: minmax(0, 1.55fr) minmax(310px, .78fr);
+  grid-template-areas: "primary agenda" "secondary agenda";
   gap: clamp(28px, 5vw, 64px);
   align-items: start;
 }
 
-.cgr-focus-column { min-width: 0; }
+.cgr-focus-column { grid-area: primary; min-width: 0; }
+.cgr-secondary-column { grid-area: secondary; min-width: 0; }
 .cgr-primary-action {
   min-height: 300px;
   display: flex;
@@ -190,6 +192,7 @@
 .cgr-recent-row > span { flex: 0 0 auto; color: var(--cgr-text-secondary); font-size: 9.5px; }
 
 .cgr-agenda {
+  grid-area: agenda;
   position: sticky;
   top: 82px;
   border-left: 1px solid var(--cgr-border);
@@ -252,7 +255,7 @@
 .cgr-coverage-details p span { text-align: right; }
 
 @media (max-width: 980px) {
-  .cgr-today-grid { grid-template-columns: 1fr; }
+  .cgr-today-grid { grid-template-columns: 1fr; grid-template-areas: "primary" "agenda" "secondary"; }
   .cgr-agenda { position: static; border-left: 0; border-top: 1px solid var(--cgr-border); padding: 24px 0 0; }
 }
 
