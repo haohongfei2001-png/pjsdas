@@ -32,6 +32,8 @@ interface OpportunityDetailDrawerProps {
   onCapture: () => void
   onNavigate: (destination: OpportunityDetailDestination) => void
   onOpenDecision: (id: string) => void
+  onMarkAction: (id: string, status: Action['status']) => Promise<void>
+  readOnly?: boolean
 }
 
 const actionStatusLabels: Record<Action['status'], [string, string]> = {
@@ -93,6 +95,8 @@ export default function OpportunityDetailDrawer({
   onCapture,
   onNavigate,
   onOpenDecision,
+  onMarkAction,
+  readOnly = false,
 }: OpportunityDetailDrawerProps) {
   const { lang } = useUiLanguage()
   const zh = lang === 'zh'
@@ -101,6 +105,7 @@ export default function OpportunityDetailDrawer({
   const posting = discovery?.posting
   const postingHistory = discovery?.postingHistory ?? []
   const [visibleTimelineCount, setVisibleTimelineCount] = useState(6)
+  const [pendingActionId, setPendingActionId] = useState<string>()
   const dialogRef = useRef<HTMLElement>(null)
   const closeButtonRef = useRef<HTMLButtonElement>(null)
   useEffect(() => setVisibleTimelineCount(6), [opportunity.id])
@@ -197,6 +202,10 @@ export default function OpportunityDetailDrawer({
                   <article key={action.id}>
                     <div><strong>{action.title}</strong><small>{action.dueAt ? formatDate(action.dueAt, zh) : (zh ? '无明确时间' : 'No dated node')}</small></div>
                     <span>{actionStatusLabel(action.status, zh)}</span>
+                    {!readOnly ? <button type="button" disabled={Boolean(pendingActionId)} onClick={() => {
+                      setPendingActionId(action.id)
+                      void onMarkAction(action.id, 'done').finally(() => setPendingActionId(undefined))
+                    }}>{pendingActionId === action.id ? (zh ? '正在完成…' : 'Completing…') : (zh ? '标记完成' : 'Mark done')}</button> : null}
                   </article>
                 ))}
               </div>

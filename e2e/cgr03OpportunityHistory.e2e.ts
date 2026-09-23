@@ -60,3 +60,54 @@ test('CGR-03 stale opportunity deep link explains the missing detail and returns
   await expect(page).toHaveURL(/\/opportunities$/)
   await expect(missing).toHaveCount(0)
 })
+
+test('CGR-03 detail completion uses the shared action command and updates the persisted workspace', async ({ page }) => {
+  await page.goto('/')
+  await page.evaluate(async () => {
+    const now = new Date().toISOString()
+    await new Promise<void>((resolve, reject) => {
+      const request = indexedDB.open('pjsdas', 11)
+      request.onerror = () => reject(request.error)
+      request.onsuccess = () => {
+        const db = request.result
+        const tx = db.transaction(['opportunities', 'actions'], 'readwrite')
+        tx.onerror = () => reject(tx.error)
+        tx.oncomplete = () => { db.close(); resolve() }
+        tx.objectStore('opportunities').put({
+          id: 'cgr03-complete-opportunity', company: '合成行动科技', role: '研究员',
+          currentStageLabel: '面试', processStage: 'interview', roleType: 'core',
+          participationStatus: 'active', early: false, opportunityValue: 80,
+          fitScore: 80, importedAt: now,
+        })
+        tx.objectStore('actions').put({
+          id: 'cgr03-complete-action', kind: 'manual', title: '准备合成面试',
+          opportunityId: 'cgr03-complete-opportunity', processStage: 'interview',
+          estimatedMinutes: 30, leverage: 80, delayCost: 80, status: 'todo',
+          createdAt: now, updatedAt: now,
+        })
+      }
+    })
+  })
+  await page.reload()
+  await page.locator('.surface-nav').getByRole('button', { name: /机会|Opportunities/ }).click()
+  await page.getByRole('button', { name: /合成行动科技/ }).click()
+  const detail = page.getByRole('dialog', { name: /岗位详情|Opportunity details/ })
+  const preparation = detail.locator('.opportunity-detail-section').filter({ hasText: '准备合成面试' })
+  await preparation.locator('summary').click()
+  await preparation.getByRole('button', { name: /标记完成|Mark done/ }).click()
+  await expect(page.locator('.action-undo-toast')).toContainText('准备合成面试')
+  await expect(preparation).toHaveCount(0)
+  await expect.poll(async () => page.evaluate(async () => {
+    const request = indexedDB.open('pjsdas', 11)
+    return new Promise<string | undefined>((resolve, reject) => {
+      request.onerror = () => reject(request.error)
+      request.onsuccess = () => {
+        const db = request.result
+        const tx = db.transaction('actions', 'readonly')
+        const get = tx.objectStore('actions').get('cgr03-complete-action')
+        get.onerror = () => reject(get.error)
+        get.onsuccess = () => { db.close(); resolve(get.result?.status) }
+      }
+    })
+  })).toBe('done')
+})

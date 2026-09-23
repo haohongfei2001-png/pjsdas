@@ -611,6 +611,8 @@ export default function AppV8() {
           onCapture={openCapture}
           onNavigate={navigateFromDetail}
           onOpenDecision={(id) => navigate('/decisions/' + encodeURIComponent(id))}
+          onMarkAction={markAction}
+          readOnly={CGR02_TODAY_READ_ONLY}
         />
       ) : null}
 

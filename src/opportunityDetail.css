@@ -4,3 +4,8 @@
 .opportunity-detail-decision-link button{min-height:42px;flex-shrink:0;padding:8px 12px;border:1px solid rgba(53,90,122,.28);border-radius:10px;background:#fff;color:#355a7a;font:inherit;font-size:12px;font-weight:650;cursor:pointer}
 .opportunity-detail-decision-link button:focus-visible{outline:2px solid #355a7a;outline-offset:2px}
 @media(max-width:480px){.opportunity-detail-decision-link{align-items:stretch;flex-direction:column}.opportunity-detail-decision-link button{align-self:flex-start}}
+.opportunity-detail-action-list:not(.opportunity-detail-related-prep) article{flex-wrap:wrap}
+.opportunity-detail-action-list article>div{min-width:0;overflow-wrap:anywhere}
+.opportunity-detail-action-list article>button{min-height:40px;margin-left:auto;padding:7px 11px;border:1px solid rgba(53,90,122,.28);border-radius:10px;background:#fff;color:#355a7a;font:inherit;font-size:12px;font-weight:650;cursor:pointer}
+.opportunity-detail-action-list article>button:focus-visible{outline:2px solid #355a7a;outline-offset:2px}
+.opportunity-detail-action-list article>button:disabled{opacity:.65;cursor:wait}
