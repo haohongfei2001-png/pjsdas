@@ -1,6 +1,6 @@
 # CGR-03 — Opportunity Workspace
 
-State: IN_PROGRESS — BOUNDED ENGINEERING OVERLAP; CGR-02 PRODUCTION_PENDING_EXTERNAL
+State: ENGINEERING_COMPLETE / PRODUCTION_PENDING_EXTERNAL — exact-main engineering passed; CGR-03 production canary open
 
 ## User-visible outcome
 
