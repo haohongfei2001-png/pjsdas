@@ -187,12 +187,29 @@ async function recoverUnknown(accountKey: string, pending: PendingCommand, caugh
       return recovered
     }
   } catch {
-    // Preserve the original unknown-outcome state. A later retry performs the
-    // same receipt lookup before reusing the stable command identity.
+    // Preserve the unknown-outcome state. A later retry performs the same
+    // receipt lookup before reusing the stable command identity.
   }
   const message = caught instanceof Error ? caught.message : String(caught)
-  patchPending(accountKey, pending.commandId, { status: 'unknown', lastError: message })
-  throw caught
+  const unknown = `UNKNOWN_COMMAND_OUTCOME: PJSDAS 尚未确认这次操作是否已提交。已保留 commandId ${pending.commandId}，恢复连接后会先查询 receipt，再以同一 commandId 安全重试；请不要重复创建同一操作。原始错误：${message}`
+  patchPending(accountKey, pending.commandId, { status: 'unknown', lastError: unknown })
+  throw new Error(unknown)
+}
+
+function rejectBeforeExecution(accountKey: string, pending: PendingCommand, response: Response, payload?: Record<string, any>) {
+  const raw = serverError(response, payload)
+  if (response.status === 401) {
+    const message = 'SESSION_EXPIRED_BEFORE_COMMAND: PJSDAS 登录会话已过期；服务端在授权阶段拒绝了本次命令，因此它没有执行。重新登录后会使用同一 commandId 安全重试。'
+    patchPending(accountKey, pending.commandId, { status: 'pending', lastError: message })
+    throw new Error(message)
+  }
+  if (response.status === 403) {
+    const message = `AUTH_REJECTED_BEFORE_COMMAND: 当前身份没有执行这次命令的权限；命令没有提交。原始错误：${raw.message}`
+    patchPending(accountKey, pending.commandId, { status: 'pending', lastError: message })
+    throw new Error(message)
+  }
+  removePending(accountKey, pending.commandId)
+  throw raw
 }
 
 async function submitPending(accountKey: string, pending: PendingCommand): Promise<ConnectedCommandResponse> {
@@ -219,7 +236,12 @@ async function submitPending(accountKey: string, pending: PendingCommand): Promi
       })
       return result
     }
-    if (!response.ok) return recoverUnknown(accountKey, pending, serverError(response, payload))
+    if (!response.ok) {
+      if ([400, 401, 403, 404, 405, 422].includes(response.status)) {
+        return rejectBeforeExecution(accountKey, pending, response, payload)
+      }
+      return recoverUnknown(accountKey, pending, serverError(response, payload))
+    }
 
     const result = parseCommandResponse(payload)
     await projectAuthoritativeResult(accountKey, result)
