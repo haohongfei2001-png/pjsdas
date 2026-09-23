@@ -61,4 +61,4 @@ No CGR-02 implementation has started. UU-08/UU-09 remain on hold. Release public
 
 The package defines reconstructed product responsibility, concrete consumer-grade target experience, technical refoundation boundary, preserve/refactor/replace decisions, fixed CGR-00 through CGR-05 development plan, outcome-based validation model, migration and legacy-retirement rules, execution/owner-decision protocol, and exact contracts for all six phases.
 
-After the registration commit is integrated, re-read remote main and this file. Stop. Do not auto-start CGR-01.
+This registration result is historical CGR-00 evidence. Current phase eligibility and authorization are defined only by the Package state / Phase state sections above and the current owner instruction.
