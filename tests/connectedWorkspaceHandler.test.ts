@@ -237,7 +237,17 @@ describe('first-party connected workspace endpoint', () => {
 
     expect(response.status).toBe(400)
     await expect(response.json()).resolves.toMatchObject({ code: 'SNAPSHOT_COMPATIBILITY_REQUIRED' })
-    expect(rpcCalled).toBe(false)
+    expect(rpcBody).toMatchObject({
+      target_command_id: 'legacy-snapshot-0001',
+      target_expected_revision: 8,
+      target_operation: 'SyncLocalSnapshot',
+      target_receipt_context: {
+        contractVersion: 2,
+        commandType: 'snapshot_compatibility',
+        snapshotPurpose: 'compatibility',
+      },
+    })
+    expect(rpcBody.target_snapshot).not.toEqual(authoritative)
   })
 
   it('rejects a stale legacy snapshot before it can overwrite newer authoritative fields', async () => {
@@ -257,17 +267,27 @@ describe('first-party connected workspace endpoint', () => {
       locallyManaged: true,
       importedAt: '2026-09-23T00:00:00.000Z',
     })
-    let rpcCalled = false
-    const fetchImpl = vi.fn(async (input: RequestInfo | URL) => {
+    let rpcBody: any
+    const fetchImpl = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input)
       if (url.endsWith('/auth/v1/user')) return json({ id: 'user-a' })
       if (url.includes('/rest/v1/pjsdas_workspaces?')) {
         return json([{ id: 'ws-1', user_id: 'user-a', snapshot: authoritative, revision: 9, schema_version: authoritative.version }])
       }
-      if (url.includes('/rest/v1/pjsdas_command_ledger?')) return json([])
-      if (url.includes('/rest/v1/rpc/')) {
-        rpcCalled = true
-        return json({ error: 'must not commit' }, 500)
+      if (url.endsWith('/rest/v1/rpc/pjsdas_commit_workspace_v2')) {
+        rpcBody = JSON.parse(String(init?.body))
+        return json([{
+          outcome: 'CONFLICT',
+          workspace_id: 'ws-1',
+          revision: 9,
+          snapshot: authoritative,
+          receipt: {
+            commandId: rpcBody.target_command_id,
+            status: 'CONFLICT',
+            expectedRevision: 8,
+            actualRevision: 9,
+          },
+        }])
       }
       return json({ error: 'unexpected' }, 500)
     }) as unknown as typeof fetch
