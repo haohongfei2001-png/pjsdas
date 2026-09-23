@@ -564,9 +564,21 @@ export default function AppV8() {
         ) : null}
 
         {!loading && surface === 'opportunities' && opportunityDecisionList ? (
-          <OpportunitiesSurface read={opportunityDecisionList} prep={prep} tab={opportunityTab} onTabChange={chooseOpportunityTab}
-            view={opportunityView} onViewChange={setOpportunityView} query={opportunityQuery} onQueryChange={setOpportunityQuery}
-            onOpenOpportunity={openOpportunity} />
+          <>
+            {selectedOpportunityId && !selectedOpportunity ? (
+              <section className="surface-panel cgr-missing-opportunity" role="status">
+                <h2>{zh ? '无法打开这项机会' : 'This opportunity is unavailable'}</h2>
+                <p>{zh ? '它可能已被删除、合并，或当前连接尚未取得最新资料。请先重试；若仍不可用，可返回机会列表。' : 'It may have been deleted or merged, or this connection may not have the latest data. Retry first, then return to the list if it remains unavailable.'}</p>
+                <div className="surface-tool-row">
+                  <button type="button" onClick={() => { void reload() }}>{zh ? '重新读取' : 'Retry loading'}</button>
+                  <button type="button" onClick={() => navigate('/opportunities', true)}>{zh ? '返回机会列表' : 'Back to opportunities'}</button>
+                </div>
+              </section>
+            ) : null}
+            <OpportunitiesSurface read={opportunityDecisionList} prep={prep} tab={opportunityTab} onTabChange={chooseOpportunityTab}
+              view={opportunityView} onViewChange={setOpportunityView} query={opportunityQuery} onQueryChange={setOpportunityQuery}
+              onOpenOpportunity={openOpportunity} />
+          </>
         ) : null}
         {!loading && surface === 'decisions' ? <DecisionRequestsView requests={decisionRequests} focusRequestId={route.decisionRequestId}
           onShowAll={() => navigate('/decisions')} onChanged={reload} /> : null}

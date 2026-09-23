@@ -48,3 +48,15 @@ test('CGR-03 opportunity detail labels recent history honestly and reaches the o
   await expect(history).toContainText('合成历史记录 33')
   await expect(page).toHaveURL(/\/opportunities\/cgr03-history-opportunity$/)
 })
+
+test('CGR-03 stale opportunity deep link explains the missing detail and returns to the list', async ({ page }) => {
+  await page.goto('/')
+  await page.goto(new URL('opportunities/cgr03-missing', page.url()).toString())
+  const missing = page.getByRole('status').filter({ has: page.getByRole('heading', { name: /无法打开这项机会|This opportunity is unavailable/ }) })
+  await expect(missing).toBeVisible()
+  await missing.getByRole('button', { name: /重新读取|Retry loading/ }).click()
+  await expect(missing).toBeVisible()
+  await missing.getByRole('button', { name: /返回机会列表|Back to opportunities/ }).click()
+  await expect(page).toHaveURL(/\/opportunities$/)
+  await expect(missing).toHaveCount(0)
+})
