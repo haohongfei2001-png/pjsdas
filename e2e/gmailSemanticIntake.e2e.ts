@@ -82,6 +82,6 @@ test('Gmail current reschedule with a quoted old thread shows only the new occur
   await seedSnapshot(page, second.snapshot.data)
   await page.reload()
   await expect(page.locator('.cgr-agenda-node')).toHaveCount(1)
-  await expect(page.locator('.cgr-agenda')).toContainText('9月26日')
-  await expect(page.locator('.cgr-agenda')).not.toContainText('9月25日')
+  await expect(page.locator('.cgr-agenda')).toContainText('2026-09-26')
+  await expect(page.locator('.cgr-agenda')).not.toContainText('2026-09-25')
 })
