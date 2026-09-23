@@ -1,7 +1,8 @@
 import { fingerprintWorkspace } from '../src/cloud/workspaceFingerprint.js'
 import { upgradeSnapshotToLatest, validateSnapshot, type PJSDASSnapshot } from '../src/snapshot.js'
-import { createMutationKernel } from './mutationKernel.js'
+import { hashMutationPayload } from './mutationKernel.js'
 import { createAuthoritativeCommandExecutor } from './authoritativeCommands.js'
+import { diffCommandObjects, readModelInvalidation } from './commandObjects.js'
 import { createSupabaseIdentityResolver } from './supabaseIdentity.js'
 import { createTransactionalWorkspaceStore } from './transactionalWorkspaceStore.js'
 import { WorkspaceSourceError } from './workspaceSource.js'
@@ -81,11 +82,6 @@ export function createConnectedWorkspaceHandler(config: ConnectedWorkspaceHandle
         throw new WorkspaceSourceError('AUTH_FORBIDDEN', 'Delegated OAuth clients cannot call the first-party connected workspace endpoint.', false)
       }
       const store = createTransactionalWorkspaceStore({
-        supabaseUrl: config.supabaseUrl,
-        serviceRoleKey: config.serviceRoleKey,
-        fetchImpl,
-      })
-      const kernel = createMutationKernel({
         supabaseUrl: config.supabaseUrl,
         serviceRoleKey: config.serviceRoleKey,
         fetchImpl,
@@ -224,20 +220,48 @@ export function createConnectedWorkspaceHandler(config: ConnectedWorkspaceHandle
         validateSnapshot(body.snapshot)
         const nextSnapshot = upgradeSnapshotToLatest(body.snapshot as PJSDASSnapshot)
         const fingerprint = await fingerprintWorkspace(nextSnapshot)
-        const result = await kernel.execute(
-          { kind: 'first_party_web', userId: identity.userId },
-          {
-            commandId: body.commandId,
-            operation: 'SyncLocalSnapshot',
-            payload: { fingerprint },
-            expectedRevision: body.expectedRevision!,
-            provenance: {
-              channel: 'first-party-web-sync',
-              snapshotPurpose: body.snapshotPurpose,
+        const current = await store.readForUser(identity.userId)
+        if (!current) {
+          throw new WorkspaceSourceError(
+            'WORKSPACE_MIGRATION_REQUIRED',
+            'This account has not explicitly migrated a workspace to connected mode.',
+            false,
+          )
+        }
+        const affectedObjects = diffCommandObjects(current.snapshot, nextSnapshot)
+        const timestamp = new Date().toISOString()
+        const result = await store.commitAuthoritativeForUser({
+          userId: identity.userId,
+          commandId: body.commandId,
+          operation: 'SyncLocalSnapshot',
+          payloadHash: await hashMutationPayload('SyncLocalSnapshot', {
+            fingerprint,
+            snapshotPurpose: body.snapshotPurpose,
+          }),
+          expectedRevision: body.expectedRevision!,
+          snapshot: nextSnapshot,
+          schemaVersion: nextSnapshot.version,
+          principalKind: 'first_party_web',
+          provenance: {
+            channel: 'first-party-web-sync',
+            snapshotPurpose: body.snapshotPurpose,
+          },
+          receiptContext: {
+            contractVersion: 2,
+            commandType: 'snapshot_compatibility',
+            snapshotPurpose: body.snapshotPurpose,
+            affectedObjects,
+            undoDependencyObjects: affectedObjects,
+            readModelInvalidation: readModelInvalidation(affectedObjects),
+            lifecycle: {
+              receivedAt: timestamp,
+              validatedAt: timestamp,
+              baseRevision: body.expectedRevision,
+              authoritativeRevisionBeforeCommit: current.revision,
+              rebased: false,
             },
           },
-          () => nextSnapshot,
-        )
+        })
         const status = result.outcome === 'CONFLICT' ? 409 : 200
         return json(status, {
           outcome: result.outcome,
