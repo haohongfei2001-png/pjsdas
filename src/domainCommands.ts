@@ -908,6 +908,8 @@ export function applyDomainCompensation(
       target.updatedAt = timestamp
       syncScheduleNodeForActionStatus(next.data, target.id, target.status, timestamp)
     }
+  } else if (compensation.operation === 'restore_discovery_profile') {
+    next.data.discoveryProfile = payload.profile
   } else if (compensation.operation === 'restore_discovery_status') {
     const target = (next.data.discoveryInbox ?? []).find((item) => item.id === payload.inboxItemId)
     if (target) {

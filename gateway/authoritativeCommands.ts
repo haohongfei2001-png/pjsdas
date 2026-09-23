@@ -14,6 +14,7 @@ import {
 import type { PJSDASSnapshot } from '../src/snapshot.js'
 import type { SemanticIntakeObservation } from '../src/model.js'
 import { applyDiscoveryStatusCommand } from '../src/discoveryStatusCommand.js'
+import { applyDiscoveryProfileCommand } from '../src/discoveryProfileCommand.js'
 import { applyUserCommandSchema } from './userCommands.js'
 import { semanticIntakeSchema, resolveSemanticDecisionSchema } from './semanticIntake.js'
 import { hashMutationPayload, type MutationPrincipal } from './mutationKernel.js'
@@ -36,6 +37,20 @@ import {
 
 const commandId = z.string().trim().min(8).max(300)
 const baseRevision = z.number().int().min(0)
+const profileList = z.array(z.string().trim().min(1).max(160)).max(30)
+const discoveryProfileSchema = z.object({
+  key: z.literal('current'), version: z.literal(1),
+  targetRoleQueries: profileList, preferredLocations: profileList,
+  locationNotes: z.string().max(1200),
+  minimumAnnualCompensationWan: z.number().min(0).max(1000).optional(),
+  preferredRoleTypes: z.array(z.enum(['core','backup','reach','lottery','practice'])).max(5).optional(),
+  locationPolicy: z.enum(['prefer','strict']).optional(),
+  minimumFitScore: z.number().min(0).max(100).optional(),
+  minimumOpportunityValue: z.number().min(0).max(100).optional(),
+  maxReviewCandidates: z.number().int().min(1).max(12).optional(),
+  mustHave: profileList, mustNotHave: profileList, strengths: profileList,
+  notes: z.string().max(2400), updatedAt: z.string().max(40),
+}).strict()
 
 export const authoritativeBusinessCommandSchema = z.object({
   commandId,
@@ -44,6 +59,7 @@ export const authoritativeBusinessCommandSchema = z.object({
     z.object({ type: z.literal('domain'), value: applyUserCommandSchema }).strict(),
     z.object({ type: z.literal('semantic_intake'), value: semanticIntakeSchema }).strict(),
     z.object({ type: z.literal('resolve_semantic_decision'), value: resolveSemanticDecisionSchema }).strict(),
+    z.object({ type: z.literal('discovery_profile'), value: discoveryProfileSchema }).strict(),
     z.object({ type: z.literal('discovery_status'), value: z.object({
       inboxItemId: z.string().trim().min(1).max(240),
       status: z.enum(['new', 'seen', 'later', 'dismissed']),
@@ -77,7 +93,7 @@ export interface AuthoritativeCommandExecution {
 }
 
 function resultPayload(command: AuthoritativeBusinessCommand['command'], evaluated: any) {
-  if (command.type === 'domain' || command.type === 'discovery_status') {
+  if (command.type === 'domain' || command.type === 'discovery_status' || command.type === 'discovery_profile') {
     return {
       type: command.type,
       status: evaluated.status,
@@ -109,6 +125,7 @@ function operationFor(command: AuthoritativeBusinessCommand['command']) {
 function intentObjects(command: AuthoritativeBusinessCommand['command'], snapshot: PJSDASSnapshot) {
   if (command.type === 'domain') return domainIntentObjects(command.value as UserDomainCommand, snapshot)
   if (command.type === 'discovery_status') return [{ type: 'discovery_inbox', id: command.value.inboxItemId }]
+  if (command.type === 'discovery_profile') return [{ type: 'discovery_profile', id: 'current' }]
   if (command.type === 'semantic_intake') return semanticIntentObjects(command.value as SemanticIntakeObservation, snapshot)
   return decisionIntentObjects(command.value.requestId, snapshot)
 }
@@ -196,7 +213,7 @@ export function createAuthoritativeCommandExecutor(options: TransactionalWorkspa
     if (principal.kind === 'first_party_web' && parsed.command.type === 'semantic_intake' && parsed.command.value.source.kind !== 'web') {
       throw new WorkspaceSourceError('AUTH_FORBIDDEN', 'First-party Web Semantic Intake may write only web-origin observations.', false)
     }
-    if (parsed.command.type === 'discovery_status' && principal.kind !== 'first_party_web') {
+    if (['discovery_status','discovery_profile'].includes(parsed.command.type) && principal.kind !== 'first_party_web') {
       throw new WorkspaceSourceError('AUTH_FORBIDDEN', 'Discovery Inbox status commands are restricted to the first-party Web client.', false)
     }
 
@@ -243,6 +260,8 @@ export function createAuthoritativeCommandExecutor(options: TransactionalWorkspa
         evaluated = applyUserDomainCommand(current.snapshot, parsed.command.value as UserDomainCommand, now)
       } else if (parsed.command.type === 'discovery_status') {
         evaluated = applyDiscoveryStatusCommand(current.snapshot, parsed.command.value, now)
+      } else if (parsed.command.type === 'discovery_profile') {
+        evaluated = applyDiscoveryProfileCommand(current.snapshot, parsed.command.value, now)
       } else if (parsed.command.type === 'semantic_intake') {
         evaluated = applySemanticIntake(current.snapshot, parsed.command.value as SemanticIntakeObservation, {
           authorized: true,

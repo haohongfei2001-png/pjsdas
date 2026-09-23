@@ -521,7 +521,8 @@ test('CGR-05 background connected refresh leaves local legacy changes pending wi
   expect((await readIndexedActions(page)).find((item) => item.id === 'A-action-1')?.title).toBe('本地待处理修改')
 })
 
-test('CGR-05 Discovery Inbox status uses a scoped command and is visible in a second client', async ({ browser }) => {
+test('CGR-05 Discovery status and Profile use scoped first-party commands across clients', async ({ browser }) => {
+  test.setTimeout(60000)
   const state: AccountState = { revision: 7, snapshot: workspace('A'), receipts: new Map() }
   state.snapshot.data.discoveryInbox = [{
     id: 'inbox:cgr05-job', candidateOpportunityId: 'cgr05-job', company: '合成公司', role: '产品设计师',
@@ -553,21 +554,24 @@ test('CGR-05 Discovery Inbox status uses a scoped command and is visible in a se
       if (body.action === 'command') {
         commandBodies.push(body)
         const command = body.command
-        if (command?.type !== 'discovery_status' || command.value?.inboxItemId !== 'inbox:cgr05-job') {
-          return cors(route, { code: 'UNEXPECTED_COMMAND' }, 400)
-        }
-        const item = state.snapshot.data.discoveryInbox?.[0]
-        if (item) {
-          item.status = command.value.status
-          item.seenAt = new Date().toISOString()
-          item.updatedAt = item.seenAt
-        }
+        if (command?.type === 'discovery_status' && command.value?.inboxItemId === 'inbox:cgr05-job') {
+          const item = state.snapshot.data.discoveryInbox?.[0]
+          if (item) {
+            item.status = command.value.status
+            item.seenAt = new Date().toISOString()
+            item.updatedAt = item.seenAt
+          }
+        } else if (command?.type === 'discovery_profile' && command.value?.key === 'current') {
+          state.snapshot.data.discoveryProfile = command.value
+        } else return cors(route, { code: 'UNEXPECTED_COMMAND' }, 400)
         state.revision += 1
         const receipt = {
           commandId: body.commandId, receiptId: `command-receipt:${body.commandId}`,
           status: 'COMMITTED', revision: state.revision,
-          affectedObjects: [{ type: 'discovery_inbox', id: 'inbox:cgr05-job' }],
-          result: { type: 'discovery_status', status: 'APPLIED', summary: 'Saved Discovery Inbox status.' },
+          affectedObjects: command.type === 'discovery_profile'
+            ? [{ type: 'discovery_profile', id: 'current' }]
+            : [{ type: 'discovery_inbox', id: 'inbox:cgr05-job' }],
+          result: { type: command.type, status: 'APPLIED', summary: 'Saved first-party Discovery data.' },
         }
         state.receipts.set(body.commandId, receipt)
         return cors(route, {
@@ -607,6 +611,32 @@ test('CGR-05 Discovery Inbox status uses a scoped command and is visible in a se
     await pageB.goto('/pjsdas/opportunities')
     await pageB.locator('.surface-context-tabs').getByRole('button', { name: /发现箱/ }).click()
     await expect(pageB.locator('.discovery-inbox-item').filter({ hasText: '合成公司' })).toHaveClass(/status-seen/)
+
+    await pageA.goto('/pjsdas/settings')
+    await pageA.locator('details.settings-group').filter({ hasText: '岗位发现偏好' }).locator('summary').click()
+    const profileCard = pageA.locator('.discovery-profile-card')
+    await profileCard.locator('textarea').first().fill('合成产品设计师')
+    await profileCard.getByRole('button', { name: '保存偏好' }).click()
+    await expect(profileCard.locator('.notice.success')).toContainText('已保存到账号工作区')
+    expect(commandBodies).toHaveLength(2)
+    expect(commandBodies[1].command).toMatchObject({ type: 'discovery_profile', value: { targetRoleQueries: ['合成产品设计师'] } })
+    expect(snapshotCommits).toBe(0)
+
+    await pageB.evaluate(() => window.dispatchEvent(new Event('online')))
+    await expect.poll(() => pageB.evaluate(async () => new Promise<string[]>((resolve, reject) => {
+      const request = indexedDB.open('pjsdas', 11)
+      request.onerror = () => reject(request.error)
+      request.onsuccess = () => {
+        const db = request.result
+        const tx = db.transaction('discoveryProfiles', 'readonly')
+        const get = tx.objectStore('discoveryProfiles').get('current')
+        get.onerror = () => reject(get.error)
+        get.onsuccess = () => { db.close(); resolve(get.result?.targetRoleQueries ?? []) }
+      }
+    }))).toEqual(['合成产品设计师'])
+    await pageB.goto('/pjsdas/settings')
+    await pageB.locator('details.settings-group').filter({ hasText: '岗位发现偏好' }).locator('summary').click()
+    await expect(pageB.locator('.discovery-profile-card textarea').first()).toHaveValue('合成产品设计师')
   } finally {
     await first.close()
     await second.close()

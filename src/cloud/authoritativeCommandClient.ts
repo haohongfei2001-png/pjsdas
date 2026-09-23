@@ -1,5 +1,6 @@
 import type { UserDomainCommand } from '../domainCommands.js'
 import type { DiscoveryStatusCommand } from '../discoveryStatusCommand.js'
+import type { DiscoveryProfile } from '../discoveryProfile.js'
 import type { SemanticIntakeObservation } from '../model.js'
 import { validateSnapshot, type PJSDASSnapshot } from '../snapshot.js'
 import { fetchBackend } from '../backendEndpoints.js'
@@ -13,6 +14,7 @@ export type ConnectedBusinessCommand =
   | { type: 'semantic_intake'; value: SemanticIntakeObservation }
   | { type: 'resolve_semantic_decision'; value: { requestId: string; choiceId: string } }
   | { type: 'discovery_status'; value: DiscoveryStatusCommand }
+  | { type: 'discovery_profile'; value: DiscoveryProfile }
 
 export interface ConnectedCommandResponse {
   outcome: 'COMMITTED' | 'ALREADY_APPLIED' | 'NO_WRITE' | 'CONFLICT'
