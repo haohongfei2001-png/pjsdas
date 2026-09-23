@@ -50,6 +50,12 @@ test('CGR-03 dense mixed-language workspace keeps search, identity, and return f
   await expect(rows.first()).toBeVisible()
   await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 2)).toBe(true)
   await page.screenshot({ path: testInfo.outputPath('cgr03-dense-narrow-320.png'), fullPage: true })
+  await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight))
+  await expect.poll(async () => page.evaluate(() => {
+    const row = document.querySelector('.opportunity-decision-row')?.getBoundingClientRect()
+    const capture = document.querySelector('.ultimate-mobile-capture')?.getBoundingClientRect()
+    return Boolean(row && capture && row.bottom <= capture.top - 4)
+  })).toBe(true)
   await rows.first().click()
   await expect(page.getByRole('dialog', { name: /岗位详情|Opportunity details/ })).toBeVisible()
   await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 2)).toBe(true)

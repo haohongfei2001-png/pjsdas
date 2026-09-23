@@ -87,8 +87,8 @@ export default function AiAccessSettingsCard() {
       {ai.message ? <div className="cloud-result">{ai.message}</div> : null}
       {ai.error ? <div className="cloud-error">{ai.error}</div> : null}
       <small className="cloud-security-note">{zh
-        ? 'Google refresh token 写入前由 PJSDAS 后端使用 AES-GCM 加密。岗位发现与招聘邮件自动化都可在网页关闭时运行；真正写入仍复用 ingestion ledger、身份解析、去重与 optimistic Drive 冲突保护。'
-        : 'Google refresh tokens are AES-GCM encrypted by the PJSDAS backend before storage. Job discovery and recruiting-email automation can continue while the site is closed and still reuse the ingestion ledger, identity resolution, deduplication, and optimistic Drive conflict guard.'}</small>
+        ? 'Google 长期授权信息会加密保存。已授权的来源可在网页关闭后继续运行；新进展仍须经过来源、身份、重复项和冲突检查，才会写入你的工作区。'
+        : 'Long-lived Google authorization is encrypted. Authorized sources can keep working while this page is closed. New progress is checked for source, identity, duplicates, and conflicts before it enters your workspace.'}</small>
     </section>
   )
 }
