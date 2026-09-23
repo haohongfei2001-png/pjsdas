@@ -85,3 +85,29 @@ test('Gmail current reschedule with a quoted old thread shows only the new occur
   await expect(page.locator('.cgr-agenda')).toContainText('2026-09-26')
   await expect(page.locator('.cgr-agenda')).not.toContainText('2026-09-25')
 })
+
+test('Gmail settings separates a normal attachment boundary from an interpretation failure', async ({ page }) => {
+  const now = new Date('2026-09-21T00:00:00Z')
+  const base: PJSDASSnapshot = { schema: 'pjsdas-local-snapshot', version: 1, exportedAt: now.toISOString(), data: {
+    opportunities: [{ id: 'uu06-opportunity', company: '京东', role: 'AI产品经理', currentStageLabel: '筛选中', processStage: 'screening', roleType: 'core', early: false, opportunityValue: 80, fitScore: 80, locallyManaged: true, importedAt: '2026-09-01T00:00:00Z' }],
+    processes: [], processEvents: [], actions: [], prep: [], applicationGroups: [], timeline: [],
+  } }
+  const mail = { id: 'boundary-mail', threadId: 'boundary-thread', internalDate: String(now.getTime()), payload: {
+    mimeType: 'text/plain', body: { data: Buffer.from('京东 AI产品经理 面试通知，请于2026年9月25日 14:30参加视频面试').toString('base64url') },
+    parts: [{ filename: 'private.pdf', mimeType: 'application/pdf', body: { data: 'secret-attachment-content' } }],
+  } }
+  const record = gmailSemanticRecordFromMessage(mail, base.data.opportunities, now)!
+  const result = applyGmailSemanticBatch(base, { runId: 'boundary-browser', sourceId: 'gmail:primary', checkedAt: now.toISOString(), authorized: true, records: [record] })
+  expect(result.run.outcomes.updated).toBe(1)
+  expect(JSON.stringify(result.snapshot)).not.toContain('secret-attachment-content')
+  await page.clock.install({ time: now })
+  await page.goto('/')
+  await seedSnapshot(page, result.snapshot.data)
+  await page.reload()
+  await page.locator('.ultimate-toolbar').getByRole('button', { name: /设置|Settings/ }).click()
+  const status = page.getByLabel('Gmail 来源结果')
+  await expect(status).toContainText('解释失败 0')
+  await expect(status).toContainText('正常能力边界 1')
+  await status.getByText('查看未读取的内容边界').click()
+  await expect(status).toContainText('附件内容尚未读取')
+})

@@ -503,6 +503,8 @@ export type IngestionOutcome =
   | 'ignored'
   | 'unresolved'
 
+export type IngestionIssueKind = 'transport_gap' | 'interpretation_failure' | 'business_ambiguity'
+
 export interface IngestionLedgerEntry {
   version: 1
   sourceKind: IngestionSourceKind
@@ -517,6 +519,8 @@ export interface IngestionLedgerEntry {
   reason?: string
   /** Known source capability limits; these do not imply a failed business interpretation. */
   capabilityBoundaries?: string[]
+  /** Multiple classes may apply to one record; absence on old evidence stays unclassified. */
+  issueKinds?: IngestionIssueKind[]
   opportunityId?: string
   processEventId?: string
   actionId?: string

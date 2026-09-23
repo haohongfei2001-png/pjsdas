@@ -58,9 +58,11 @@ describe('UU06 shared Gmail intake', () => {
     expect(gmailSemanticRecordFromMessage(missingTimestamp, snapshot().data.opportunities, now)?.observation.candidates[0]).toMatchObject({ temporalConfidence: 'low' })
     const noDateApplication = { ...message('京东 AI产品经理 申请已收到'), internalDate: undefined }
     const applicationRecord = gmailSemanticRecordFromMessage(noDateApplication, snapshot().data.opportunities, now)!
+    expect(applicationRecord.issueKinds).toContain('interpretation_failure')
     const guarded = applyGmailSemanticBatch(snapshot(), { runId: 'missing-date', sourceId: 'gmail:primary', checkedAt: now.toISOString(), authorized: true, records: [applicationRecord] })
     expect(guarded.snapshot.data.decisionRequests).toHaveLength(1)
     expect(guarded.snapshot.data.opportunities[0]?.appliedAt).toBeUndefined()
+    expect(summarizeCoverage(guarded.snapshot.data.timeline)).toMatchObject({ interpretationFailureCount: 1, businessAmbiguityCount: 1 })
   })
   it('preserves test availability window and submission deadline as distinct shared schedule shapes', () => {
     const text = '京东 AI产品经理 笔试开放窗口2026年9月24日 09:00至2026年9月25日 17:00；提交截止2026年9月25日 18:00'
@@ -199,6 +201,23 @@ describe('UU06 shared Gmail intake', () => {
     expect(coverage.exceptions).toHaveLength(0)
     expect(coverage.capabilityBoundaries[0]?.ingestion?.capabilityBoundaries).toHaveLength(2)
     expect(summarizeSourceHealth(result.snapshot.data.timeline, now).find((source) => source.sourceId === 'gmail:primary')?.state).toBe('healthy')
+  })
+  it('does not turn the documented 90-day backfill boundary into a permanent actionable failure', () => {
+    const record = gmailSemanticRecordFromMessage(message(invitation, 'coverage-boundary:uu06-90-days'), snapshot().data.opportunities, now)!
+    record.observation.candidates = []
+    record.gaps = []
+    record.capabilityBoundaries = ['Gmail initial backfill covers the previous 90 days; older mail is outside this scope.']
+    const result = applyGmailSemanticBatch(snapshot(), { runId: 'boundary', sourceId: 'gmail:primary', checkedAt: now.toISOString(), authorized: true, records: [record] })
+    expect(result.run.outcomes.ignored).toBe(1)
+    expect(summarizeCoverage(result.snapshot.data.timeline)).toMatchObject({ unresolvedCount: 0, capabilityBoundaryCount: 1, allCaughtUp: true })
+  })
+  it('keeps an expired history cursor as a transport coverage gap, not an interpretation miss', () => {
+    const record = gmailSemanticRecordFromMessage(message(invitation, 'coverage-gap:one'), snapshot().data.opportunities, now)!
+    record.observation.candidates = []
+    record.gaps = ['Gmail history cursor expired before complete consumption could be proven.']
+    record.issueKinds = ['transport_gap']
+    const result = applyGmailSemanticBatch(snapshot(), { runId: 'gap', sourceId: 'gmail:primary', checkedAt: now.toISOString(), authorized: true, records: [record] })
+    expect(summarizeCoverage(result.snapshot.data.timeline)).toMatchObject({ transportGapCount: 1, interpretationFailureCount: 0, businessAmbiguityCount: 0, allCaughtUp: false })
   })
   it('preserves separate-line location and HTTPS meeting references as bounded fields without fetching them', () => {
     const result = run(snapshot(), invitation + '\n地点：会议室A\n会议链接：https://meet.example.com/room-12')

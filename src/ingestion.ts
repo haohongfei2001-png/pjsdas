@@ -1,5 +1,6 @@
 import type {
   IngestionLedgerEntry,
+  IngestionIssueKind,
   IngestionOutcome,
   IngestionRunSummary,
   IngestionSourceKind,
@@ -24,6 +25,7 @@ export interface IngestionLedgerInput {
   accountedAt?: string
   reason?: string
   capabilityBoundaries?: string[]
+  issueKinds?: IngestionIssueKind[]
   opportunityId?: string
   processEventId?: string
   actionId?: string
@@ -55,6 +57,10 @@ export interface CoverageSourceSummary {
   accountedCount: number
   unresolvedCount: number
   capabilityBoundaryCount: number
+  transportGapCount: number
+  interpretationFailureCount: number
+  businessAmbiguityCount: number
+  unclassifiedUnresolvedCount: number
   outcomes: Partial<Record<IngestionOutcome, number>>
   balanced: boolean
   maxAgeHours?: number
@@ -74,6 +80,10 @@ export interface CoverageSummary {
   totalAccounted: number
   unresolvedCount: number
   capabilityBoundaryCount: number
+  transportGapCount: number
+  interpretationFailureCount: number
+  businessAmbiguityCount: number
+  unclassifiedUnresolvedCount: number
   staleSourceCount: number
   missingSourceCount: number
   sources: CoverageSourceSummary[]
@@ -128,6 +138,7 @@ export function createIngestionLedgerTimeline(input: IngestionLedgerInput): Time
     accountedAt,
     reason: input.reason,
     capabilityBoundaries: input.capabilityBoundaries?.length ? [...new Set(input.capabilityBoundaries)] : undefined,
+    issueKinds: input.issueKinds?.length ? [...new Set(input.issueKinds)] : undefined,
     opportunityId: input.opportunityId,
     processEventId: input.processEventId,
     actionId: input.actionId,
@@ -220,10 +231,13 @@ export function summarizeCoverage(timeline: TimelineRecord[] | undefined, option
     : allUnresolved
   const capabilityBoundaries = latestRecords.filter((item) => item.ingestion?.capabilityBoundaries?.length
     && (!globalMode || expectedByKey.has(sourceKey(item.ingestion.sourceKind, item.ingestion.sourceId))))
+  const sourceIssueCount = (items: TimelineRecord[], kind: IngestionIssueKind) => items.filter((item) => item.ingestion?.issueKinds?.includes(kind)).length
+  const unclassifiedCount = (items: TimelineRecord[]) => items.filter((item) => !item.ingestion?.issueKinds?.length).length
 
   const sourceSummaries: CoverageSourceSummary[] = [...latestBySource.values()].map((run) => {
     const sourceUnresolved = unresolved.filter((item) => item.ingestion?.sourceKind === run.sourceKind && item.ingestion?.sourceId === run.sourceId).length
     const sourceBoundaries = capabilityBoundaries.filter((item) => item.ingestion?.sourceKind === run.sourceKind && item.ingestion?.sourceId === run.sourceId).length
+    const sourceIssues = unresolved.filter((item) => item.ingestion?.sourceKind === run.sourceKind && item.ingestion?.sourceId === run.sourceId)
     const outcomeTotal = Object.values(run.outcomes).reduce((sum, value) => sum + (value ?? 0), 0)
     const policy = expectedByKey.get(sourceKey(run.sourceKind, run.sourceId))
     const completedMs = new Date(run.completedAt).getTime()
@@ -232,6 +246,7 @@ export function summarizeCoverage(timeline: TimelineRecord[] | undefined, option
     return {
       sourceKind: run.sourceKind, sourceId: run.sourceId, label: policy?.label, lastCompletedAt: run.completedAt,
       receivedCount: run.receivedCount, accountedCount: run.accountedCount, unresolvedCount: sourceUnresolved, capabilityBoundaryCount: sourceBoundaries,
+      transportGapCount: sourceIssueCount(sourceIssues, 'transport_gap'), interpretationFailureCount: sourceIssueCount(sourceIssues, 'interpretation_failure'), businessAmbiguityCount: sourceIssueCount(sourceIssues, 'business_ambiguity'), unclassifiedUnresolvedCount: unclassifiedCount(sourceIssues),
       outcomes: { ...run.outcomes }, balanced: run.receivedCount === run.accountedCount && run.accountedCount === outcomeTotal,
       maxAgeHours: policy?.maxAgeHours, cadenceMinutes: policy?.cadenceMinutes, freshnessSlaMinutes: policy?.freshnessSlaMinutes, policySource: policy?.policySource,
       ageHours, stale,
@@ -253,7 +268,9 @@ export function summarizeCoverage(timeline: TimelineRecord[] | undefined, option
     sourceCount: relevantSources.length,
     expectedSourceCount: expected.length,
     latestCompletedAt: relevantSources[0]?.lastCompletedAt,
-    totalReceived, totalAccounted, unresolvedCount: unresolved.length, capabilityBoundaryCount: capabilityBoundaries.length, staleSourceCount, missingSourceCount: missingSources.length,
+    totalReceived, totalAccounted, unresolvedCount: unresolved.length, capabilityBoundaryCount: capabilityBoundaries.length,
+    transportGapCount: sourceIssueCount(unresolved, 'transport_gap'), interpretationFailureCount: sourceIssueCount(unresolved, 'interpretation_failure'), businessAmbiguityCount: sourceIssueCount(unresolved, 'business_ambiguity'), unclassifiedUnresolvedCount: unclassifiedCount(unresolved),
+    staleSourceCount, missingSourceCount: missingSources.length,
     sources: relevantSources, missingSources,
     exceptions: unresolved.sort((a, b) => b.recordedAt.localeCompare(a.recordedAt)),
     capabilityBoundaries: capabilityBoundaries.sort((a, b) => b.recordedAt.localeCompare(a.recordedAt)),

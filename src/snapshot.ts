@@ -109,6 +109,10 @@ function validateIngestionEntry(entry: IngestionLedgerEntry, timelineId: string)
     || entry.capabilityBoundaries.some((boundary) => typeof boundary !== 'string' || !boundary.trim() || boundary.length > 300))) {
     throw new Error(`备份损坏：Timeline ${timelineId} 的 ingestion capabilityBoundaries 无效。`)
   }
+  if (entry.issueKinds !== undefined && (!Array.isArray(entry.issueKinds)
+    || entry.issueKinds.some((kind) => kind !== 'transport_gap' && kind !== 'interpretation_failure' && kind !== 'business_ambiguity'))) {
+    throw new Error(`备份损坏：Timeline ${timelineId} 的 ingestion issueKinds 无效。`)
+  }
   assertIsoDate(entry.receivedAt, `Timeline ${timelineId} ingestion.receivedAt`)
   assertIsoDate(entry.accountedAt, `Timeline ${timelineId} ingestion.accountedAt`)
 }

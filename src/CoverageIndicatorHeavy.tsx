@@ -52,6 +52,15 @@ function integritySeverity(value: string, zh: boolean) {
   return value
 }
 
+function issueText(kinds: string[] | undefined, zh: boolean) {
+  if (!kinds?.length) return zh ? '历史未分类异常' : 'Legacy unclassified issue'
+  return kinds.map((kind) => kind === 'transport_gap'
+    ? (zh ? '来源覆盖缺口' : 'Transport coverage gap')
+    : kind === 'interpretation_failure'
+      ? (zh ? '解释失败' : 'Interpretation failure')
+      : (zh ? '业务歧义' : 'Business ambiguity')).join(' · ')
+}
+
 export default function CoverageIndicatorHeavy() {
   const { lang } = useUiLanguage()
   const zh = lang === 'zh'
@@ -105,8 +114,14 @@ export default function CoverageIndicatorHeavy() {
       ? (zh ? `工作区 ${integrity!.criticalCount} 个严重问题` : `${integrity!.criticalCount} critical workspace issue${integrity!.criticalCount === 1 ? '' : 's'}`)
       : coverage.allCaughtUp
         ? (zh ? '状态正常' : 'All caught up')
-        : coverage.unresolvedCount > 0
-          ? (zh ? `${coverage.unresolvedCount} 条待解析` : `${coverage.unresolvedCount} unresolved`)
+        : coverage.transportGapCount > 0
+          ? (zh ? `${coverage.transportGapCount} 条来源覆盖缺口` : `${coverage.transportGapCount} transport coverage gap(s)`)
+          : coverage.interpretationFailureCount > 0
+            ? (zh ? `${coverage.interpretationFailureCount} 条解释失败` : `${coverage.interpretationFailureCount} interpretation failure(s)`)
+            : coverage.businessAmbiguityCount > 0
+              ? (zh ? `${coverage.businessAmbiguityCount} 条业务歧义` : `${coverage.businessAmbiguityCount} business ambiguity item(s)`)
+              : coverage.unclassifiedUnresolvedCount > 0
+                ? (zh ? `${coverage.unclassifiedUnresolvedCount} 条来源异常` : `${coverage.unclassifiedUnresolvedCount} source issue(s)`)
           : coverage.missingSourceCount > 0
             ? (zh ? `${coverage.missingSourceCount} 个来源未覆盖` : `${coverage.missingSourceCount} source${coverage.missingSourceCount === 1 ? '' : 's'} missing`)
             : coverage.staleSourceCount > 0
@@ -184,8 +199,8 @@ export default function CoverageIndicatorHeavy() {
                         <strong>{sourceLabel(source.sourceKind, source.sourceId, source.label)}</strong>
                         <small>{formatTime(source.lastCompletedAt, zh)}{source.stale ? (zh ? ' · 已过期' : ' · stale') : ''}</small>
                       </div>
-                      <span className={source.balanced && source.unresolvedCount === 0 && !source.stale ? 'good' : 'warn'}>{source.accountedCount}/{source.receivedCount}</span>
-                      <p>{outcomeText(source.outcomes, zh) || (zh ? '本轮 0 条输入' : '0 inputs in this run')}{source.capabilityBoundaryCount ? (zh ? ` · ${source.capabilityBoundaryCount} 条能力边界` : ` · ${source.capabilityBoundaryCount} capability limit(s)`) : ''}{source.cadenceMinutes ? (zh ? ` · 每 ${formatCadence(source.cadenceMinutes, zh)}` : ` · every ${formatCadence(source.cadenceMinutes, zh)}`) : ''}{source.maxAgeHours ? ` · SLA ${source.maxAgeHours}h` : ''}</p>
+                      <span className={source.balanced && source.transportGapCount === 0 && !source.stale ? 'good' : 'warn'}>{source.accountedCount}/{source.receivedCount}</span>
+                      <p>{outcomeText(source.outcomes, zh) || (zh ? '本轮 0 条输入' : '0 inputs in this run')}{source.transportGapCount ? (zh ? ` · ${source.transportGapCount} 条覆盖缺口` : ` · ${source.transportGapCount} transport gap(s)`) : ''}{source.interpretationFailureCount ? (zh ? ` · ${source.interpretationFailureCount} 条解释失败` : ` · ${source.interpretationFailureCount} interpretation failure(s)`) : ''}{source.businessAmbiguityCount ? (zh ? ` · ${source.businessAmbiguityCount} 条业务歧义` : ` · ${source.businessAmbiguityCount} business ambiguity item(s)`) : ''}{source.capabilityBoundaryCount ? (zh ? ` · ${source.capabilityBoundaryCount} 条能力边界` : ` · ${source.capabilityBoundaryCount} capability limit(s)`) : ''}{source.cadenceMinutes ? (zh ? ` · 每 ${formatCadence(source.cadenceMinutes, zh)}` : ` · every ${formatCadence(source.cadenceMinutes, zh)}`) : ''}{source.maxAgeHours ? ` · SLA ${source.maxAgeHours}h` : ''}</p>
                       {health ? <small>{zh
                         ? `24h ${health.runCount24h} 次 · 7天健康 ${health.healthyRunCount7d}/${health.runCount7d} · 连续健康 ${health.consecutiveHealthyRuns} · 下次预计 ${formatTime(health.nextExpectedBy, zh)}`
                         : `24h ${health.runCount24h} runs · 7d healthy ${health.healthyRunCount7d}/${health.runCount7d} · ${health.consecutiveHealthyRuns} healthy in a row · next expected ${formatTime(health.nextExpectedBy, zh)}`}</small> : null}
@@ -196,12 +211,12 @@ export default function CoverageIndicatorHeavy() {
 
               {coverage.exceptions.length ? (
                 <div className="coverage-exceptions">
-                  <h3>{zh ? '需要处理的解析异常' : 'Parsing exceptions that need attention'}</h3>
+                  <h3>{zh ? '需要处理的来源异常' : 'Source issues that need attention'}</h3>
                   {coverage.exceptions.slice(0, 8).map((record) => (
                     <article key={record.id}>
                       <strong>{record.company && record.role ? `${record.company}｜${record.role}` : record.sourceRef ?? record.title}</strong>
                       <p>{record.detail ?? (zh ? '来源记录尚未能安全归入工作区。' : 'The source record could not yet be safely reconciled into the workspace.')}</p>
-                      <small>{record.ingestion?.sourceKind} · {record.ingestion?.sourceRecordId}</small>
+                      <small>{issueText(record.ingestion?.issueKinds, zh)} · {record.ingestion?.sourceKind} · {record.ingestion?.sourceRecordId}</small>
                     </article>
                   ))}
                 </div>

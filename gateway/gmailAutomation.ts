@@ -503,7 +503,8 @@ export function gmailSemanticRecordFromMessage(
   const sourceText = excluded ? '' : body || subject || cleanText(message.snippet)
   const current = currentGmailAssertion(sourceText)
   const text = current.text
-  const gaps: string[] = originalReceivedAt ? [] : ['Original message timestamp is unavailable; automatic facts require clarification.']
+  const interpretationGaps: string[] = originalReceivedAt ? [] : ['Original message timestamp is unavailable; automatic facts require clarification.']
+  const businessAmbiguities: string[] = []
   const capabilityBoundaries: string[] = []
   const visit = (part: GmailPart | undefined) => {
     if (!part) return
@@ -512,10 +513,10 @@ export function gmailSemanticRecordFromMessage(
   }
   if (!excluded) visit(message.payload)
   if (/https?:\/\//i.test(text)) capabilityBoundaries.push('Linked pages are NOT_SUPPORTED; no link is opened or treated as verified source content.')
-  if (body.length >= 12_000) gaps.push('Message exceeds the bounded body limit; remaining content was not interpreted.')
+  if (body.length >= 12_000) interpretationGaps.push('Message exceeds the bounded body limit; remaining content was not interpreted.')
   const nonAssertion = !text && current.quoted || /^(?:示例|假设|假如|hypothetical|for example)\b/i.test(text)
   const pieces = text.split(/[；;。\n]+/).map((item) => item.trim()).filter(Boolean)
-  if (pieces.length > 20) gaps.push('Message exceeds the 20-fragment interpretation limit.')
+  if (pieces.length > 20) interpretationGaps.push('Message exceeds the 20-fragment interpretation limit.')
   const whole = parseRecruitingNotification([subject, text].join('\n'), opportunities, new Date(legacy.receivedAt))
   const subjectType = /interview invitation/i.test(subject) ? 'interview_invite'
     : /(?:assessment|test) invitation/i.test(subject) ? 'assessment_invite'
@@ -568,7 +569,7 @@ export function gmailSemanticRecordFromMessage(
     if (occurrenceKind && /改期|改为|调整为|reschedul/i.test(piece)) {
       if (temporal) {
         candidates.push({ ...base, kind: 'occurrence_rescheduled', temporal, temporalConfidence: 'high', target: { ...base.target, occurrenceKind } })
-      } else gaps.push('Reschedule lacks an unambiguous full date/time; the existing occurrence was preserved.')
+      } else businessAmbiguities.push('Reschedule lacks an unambiguous full date/time; the existing occurrence was preserved.')
       continue
     }
     const location = /(?:地点|location|venue)\s*[:：]\s*([^；;。\n]+)/i.exec(piece)?.[1]?.trim().slice(0, 200)
@@ -596,11 +597,15 @@ export function gmailSemanticRecordFromMessage(
     }
   } else if (eventCandidates.length > 1 && /(?:地点|location|venue)\s*[:：]|https:\/\//i.test(text)
     && eventCandidates.some((candidate) => !candidate.location && !candidate.joinUrl)) {
-    gaps.push('Supplementary location/link details could not be uniquely assigned across multiple events.')
+    businessAmbiguities.push('Supplementary location/link details could not be uniquely assigned across multiple events.')
   }
   return {
     receivedAt: legacy.receivedAt,
-    gaps: !excluded && (legacy.classification === 'recruiting' || candidates.length) ? [...new Set(gaps)] : [],
+    gaps: !excluded && (legacy.classification === 'recruiting' || candidates.length) ? [...new Set([...interpretationGaps, ...businessAmbiguities])] : [],
+    issueKinds: !excluded && (legacy.classification === 'recruiting' || candidates.length) ? [
+      ...(interpretationGaps.length ? ['interpretation_failure' as const] : []),
+      ...(businessAmbiguities.length ? ['business_ambiguity' as const] : []),
+    ] : [],
     capabilityBoundaries: !excluded && (legacy.classification === 'recruiting' || candidates.length) ? [...new Set(capabilityBoundaries)] : [],
     observation: {
       contractVersion: 1, inputId: `gmail:${message.id}:uu06-v1`,
@@ -672,7 +677,8 @@ export async function runGmailAutomationForBinding(options: {
   if (!backfillComplete && batch.usedFallbackScan && batch.coverageComplete) {
     records.unshift({
       receivedAt: checkedAt,
-      gaps: ['Gmail initial backfill covers the previous 90 days, including archived mail; older mail and spam/trash are outside this bounded coverage. Push delivery is not configured; periodic history polling remains active.'],
+      gaps: [],
+      capabilityBoundaries: ['Gmail initial backfill covers the previous 90 days, including archived mail; older mail and spam/trash are outside this bounded coverage. Push delivery is not configured; periodic history polling remains active.'],
       observation: { contractVersion: 1, inputId: 'gmail:coverage-boundary:uu06-90-days',
         source: { kind: 'gmail', sourceId: GMAIL_SOURCE_ID, sourceRecordId: 'coverage-boundary:uu06-90-days', observedAt: checkedAt, timezone: 'Asia/Shanghai' },
         statementMode: 'assertion', candidates: [] },
@@ -680,7 +686,7 @@ export async function runGmailAutomationForBinding(options: {
   }
   if (batch.recoveryGapReason) {
     records.unshift({
-      receivedAt: checkedAt, gaps: [batch.recoveryGapReason],
+      receivedAt: checkedAt, gaps: [batch.recoveryGapReason], issueKinds: ['transport_gap'],
       observation: {
         contractVersion: 1, inputId: `gmail:coverage-gap:${stableCoverageGapId(options.binding.gmailHistoryId ?? 'initial', checkedAt)}`,
         source: { kind: 'gmail', sourceId: GMAIL_SOURCE_ID,

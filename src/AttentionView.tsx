@@ -120,7 +120,7 @@ export default function AttentionView({
                 <div>
                   <strong>{item.company && item.role ? [item.company, item.role].join('｜') : item.title}</strong>
                   <p>{item.detail ?? (zh ? '该来源没有足够证据自动落入正式业务状态。' : 'This source did not have enough evidence for an automatic business-state update.')}</p>
-                  <small>{item.ingestion?.sourceKind ?? item.source} · {formatDateTime(item.recordedAt, zh)}</small>
+                  <small>{item.ingestion?.issueKinds?.join(' / ') ?? (zh ? '历史未分类异常' : 'Legacy unclassified issue')} · {item.ingestion?.sourceKind ?? item.source} · {formatDateTime(item.recordedAt, zh)}</small>
                 </div>
                 {item.sourceRef ? <a href={item.sourceRef.startsWith('http') ? item.sourceRef : undefined} target="_blank" rel="noreferrer">{zh ? '查看来源' : 'View source'}</a> : null}
               </article>
