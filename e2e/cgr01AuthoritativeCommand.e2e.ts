@@ -265,6 +265,7 @@ test('connected Web recovers a lost command response and Undo preserves unrelate
 })
 
 test('same-object connected conflict is concrete and refreshes the authoritative cache', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 })
   await seedInitialSession(page, 'account-a', 'token-a')
   const state: AccountState = { revision: 4, snapshot: workspace('A'), receipts: new Map() }
 
@@ -307,8 +308,13 @@ test('same-object connected conflict is concrete and refreshes the authoritative
 
   await page.goto('/')
   await expect(page.getByRole('heading', { name: 'A第一任务' })).toBeVisible()
-  await page.getByRole('button', { name: '标记完成' }).click()
-  await expect(page.getByRole('status')).toContainText('这一个行动已被另一客户端修改')
+  const complete = page.getByRole('button', { name: '标记完成' })
+  await complete.focus()
+  await expect(complete).toBeFocused()
+  await page.keyboard.press('Enter')
+  const conflictStatus = page.getByRole('status')
+  await expect(conflictStatus).toContainText('这一个行动已被另一客户端修改')
+  await expect(conflictStatus).toBeInViewport()
   const actions = await readIndexedActions(page)
   expect(actions.find((item) => item.id === 'A-action-1')?.status).toBe('doing')
   await expect(page.getByText(/本地还是云端|local.*cloud/i)).toHaveCount(0)
