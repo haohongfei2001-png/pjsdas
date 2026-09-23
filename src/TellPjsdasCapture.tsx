@@ -14,6 +14,7 @@ import {
   clearAccountDraft,
   createConnectedCommandId,
   discardAccountPendingOperation,
+  findAccountPendingSemanticOperation,
   readAccountDraft,
   saveAccountDraft,
 } from './cloud/authoritativeCommandClient.js'
@@ -118,15 +119,18 @@ export default function TellPjsdasCapture({
     const initial = cloud.session && connectedWorkspaceAuthorityEnabled()
       ? readAccountDraft(cloud.session.user.id, 'tell-pjsdas')
       : ''
+    const resumable = cloud.session && connectedWorkspaceAuthorityEnabled() && initial
+      ? findAccountPendingSemanticOperation(cloud.session.user.id, initial)
+      : undefined
     setText(initial)
     setPreview(undefined)
     setMessage('')
-    setError('')
-    setSaveState('idle')
+    setError(resumable?.lastError ?? '')
+    setSaveState(resumable?.status === 'unknown' ? 'unknown' : resumable ? 'reauth' : 'idle')
     setDecisionCount(0)
     setUnresolvedCount(0)
     setUndo(undefined)
-    setStableCommandId(undefined)
+    setStableCommandId(resumable?.commandId)
     const id = window.setTimeout(() => textareaRef.current?.focus(), 0)
     return () => {
       window.clearTimeout(id)
