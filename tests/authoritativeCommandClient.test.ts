@@ -131,7 +131,7 @@ describe('CGR-01 account-scoped connected command client', () => {
     await expect(executeConnectedBusinessCommand('account-a', command, {
       commandId,
       baseRevision: 7,
-    })).rejects.toThrow(/transport loss/)
+    })).rejects.toThrow(/UNKNOWN_COMMAND_OUTCOME/)
 
     expect(listAccountPendingOperations('account-a')).toMatchObject([
       { commandId, status: 'unknown' },
@@ -147,5 +147,56 @@ describe('CGR-01 account-scoped connected command client', () => {
     expect(calls).toBe(3)
     expect(listAccountPendingOperations('account-a')).toEqual([])
     expect(replaceLocalSnapshotFromCloud).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps an auth-rejected command pending and safely resumes it after reauthentication', async () => {
+    const commandId = 'web-action:reauth-0001'
+    const command = {
+      type: 'domain' as const,
+      value: { commandId, kind: 'set_action_status' as const, actionId: 'action-a', status: 'done' as const },
+    }
+
+    vi.mocked(fetchBackend).mockResolvedValueOnce(response({
+      code: 'AUTH_REQUIRED',
+      message: 'session expired',
+      retryable: false,
+    }, 401))
+
+    await expect(executeConnectedBusinessCommand('account-a', command, {
+      commandId,
+      baseRevision: 7,
+    })).rejects.toThrow(/SESSION_EXPIRED_BEFORE_COMMAND/)
+
+    expect(listAccountPendingOperations('account-a')).toMatchObject([
+      { commandId, status: 'pending' },
+    ])
+
+    vi.mocked(fetchBackend)
+      .mockResolvedValueOnce(response({
+        found: false,
+        revision: 7,
+        workspaceVersion: 'txn:7',
+        schemaVersion: 4,
+        snapshot: snapshot(),
+      }))
+      .mockResolvedValueOnce(response({
+        outcome: 'COMMITTED',
+        revision: 8,
+        workspaceVersion: 'txn:8',
+        schemaVersion: 4,
+        snapshot: snapshot(),
+        receipt: {
+          commandId,
+          receiptId: `command-receipt:${commandId}`,
+          status: 'COMMITTED',
+          revision: 8,
+          result: { status: 'APPLIED', summary: 'done after reauthentication' },
+        },
+        result: { status: 'APPLIED', summary: 'done after reauthentication' },
+      }))
+
+    const replayed = await replayAccountPendingOperations('account-a')
+    expect(replayed).toMatchObject([{ outcome: 'COMMITTED', revision: 8 }])
+    expect(listAccountPendingOperations('account-a')).toEqual([])
   })
 })
