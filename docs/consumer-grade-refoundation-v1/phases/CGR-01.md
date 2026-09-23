@@ -1,6 +1,6 @@
 # CGR-01 — Authoritative Command Foundation
 
-State: READY — NOT_STARTED
+State: COMPLETE
 
 ## User-visible outcome
 
@@ -111,6 +111,15 @@ Use per-command kill switches or route covered operations to safe read-only/manu
 - all required tests/journeys/failure evidence pass at exact integrated main;
 - STATUS.md marks CGR-01 COMPLETE and CGR-02 READY, without starting CGR-02.
 
+## Closure
+
+Functional integration: `main@0b295f15d2eb74b2cc240bad47a02137cb5749ac`.
+
+Canonical evidence: `../receipts/CGR-01.md`.
+
+All exact exit criteria are satisfied. CGR-02 is READY — NOT_STARTED and was not started by this phase.
+
 ## Owner decision points
+
 
 Only if implementation would require a new paid service, new data processor/privacy boundary, irreversible production migration, permission expansion, or material product-value change. Database/library/component choices do not require owner approval.
