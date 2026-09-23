@@ -120,7 +120,8 @@ describe('first-party connected workspace endpoint', () => {
 
     const response = await handler(request('POST', 'ordinary-token', { action: 'read' }))
     expect(response.status).toBe(200)
-    await expect(response.json()).resolves.toMatchObject({
+    const body = await response.json()
+    expect(body).toMatchObject({
       workspaceId: 'ws-1',
       workspaceVersion: 'txn:5',
       revision: 5,
@@ -190,15 +191,19 @@ describe('first-party connected workspace endpoint', () => {
     }))
 
     expect(response.status).toBe(200)
-    await expect(response.json()).resolves.toMatchObject({
+    const body = await response.json()
+    expect(body).toMatchObject({
       outcome: 'COMMITTED',
       revision: 8,
       receipt: {
         receiptId: 'command-receipt:web-action:test-0001',
-        affectedObjects: [{ type: 'action', id: 'action-1' }],
       },
       snapshot: { data: { actions: [{ id: 'action-1', status: 'done' }] } },
     })
+    expect(body.receipt.affectedObjects).toEqual(expect.arrayContaining([
+      { type: 'action', id: 'action-1' },
+      { type: 'timeline', id: expect.any(String) },
+    ]))
     expect(rpcBodies).toHaveLength(1)
     expect(rpcBodies[0]).toMatchObject({
       target_command_id: commandId,
