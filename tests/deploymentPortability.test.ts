@@ -61,6 +61,7 @@ describe('deployment portability', () => {
   it('keeps provider selection outside business clients and binds release verification to the deployed commit', () => {
     expect(client).toContain('VITE_PJSDAS_BACKEND_ORIGINS')
     expect(client).toContain('/api/health')
+    expect(client).toContain("body.version === '1.10.0-alpha.1'")
     expect(client).toContain('VITE_PJSDAS_CONNECTED_AUTHORITY')
     expect(client).toContain('VITE_PJSDAS_CANONICAL_API_ORIGIN')
     expect(cloudClient).toContain("fetchBackend('/api/google-link'")
