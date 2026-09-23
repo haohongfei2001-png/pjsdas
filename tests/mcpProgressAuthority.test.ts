@@ -45,7 +45,7 @@ describe('CGR-05 signed progress authority', () => {
     expect(result.snapshot.data.timeline?.filter((item) => item.id.startsWith('timeline:progress:'))).toHaveLength(2)
   })
 
-  it('fails closed for a missing referenced Opportunity or mixed operation types', () => {
+  it('fails closed for a missing referenced Opportunity or unsupported operation', () => {
     const before = snapshot()
     const missing = changeSet()
     const event = missing.operations[1]
@@ -54,6 +54,11 @@ describe('CGR-05 signed progress authority', () => {
     const proposal = createMcpProposalEnvelope(missing, 'txn:1', at, undefined, 'account-a')
     expect(() => applyMcpProgressCommand(before, proposal)).toThrow('missing')
     expect(before.data.processEvents).toEqual([])
+    const unsupported = changeSet()
+    const raw = unsupported.operations[0]
+    if (raw.kind !== 'progress_update') throw new Error('Bad fixture')
+    raw.operation.kind = 'unknown_progress_kind' as typeof raw.operation.kind
+    expect(() => applyMcpProgressCommand(before, { ...proposal, changeSet: unsupported })).toThrow('unsupported')
   })
 
   it('denies delegated/cross-account callers and commits one exact-baseline receipt', async () => {

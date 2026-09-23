@@ -36,6 +36,9 @@ export function applyMcpProgressCommand(snapshot: PJSDASSnapshot, proposal: McpP
   for (const item of changeSet.operations) {
     if (item.kind !== 'progress_update') throw new Error('Progress proposal contains another operation type.')
     const operation = restoreProgressOperation(item, changeSet.id)
+    if (!operation.id.trim() || !['upsert_opportunity', 'rename_opportunity', 'close_opportunity', 'process_event', 'manual_action'].includes(operation.kind)) {
+      throw new Error('Progress proposal contains an unsupported operation.')
+    }
     if (ids.has(operation.id)) throw new Error('Progress proposal repeats an operation ID.')
     ids.add(operation.id)
     const before = 'opportunityId' in operation
