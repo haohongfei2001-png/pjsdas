@@ -1,6 +1,6 @@
 # CGR-05 — Consumer-Grade Certification
 
-State: NOT_READY
+State: READY_AFTER_CGR04_ENGINEERING — AUTOMATABLE WORK MAY RUN WITH EARLIER PRODUCTION GATES DEFERRED
 
 ## User-visible outcome
 
@@ -103,6 +103,12 @@ Every major journey is repeated with at least one relevant degraded condition: o
 Use existing per-feature/source kill switches, safe read-only fallback, forward fixes, and compensating commands. Never restore stale workspace snapshots over newer facts.
 
 Certification rollback means the package remains IN_PROGRESS/BLOCKED until the defect is fixed; do not declare COMPLETE and defer a baseline-breaking defect.
+
+## Continuous-entry rule
+
+CGR-05 may begin after CGR-04 reaches engineering closure even if CGR-03/CGR-04 are still `PRODUCTION_PENDING_EXTERNAL`. In that state, run every deterministic, browser, security, accessibility, performance, migration-retirement, long-session, account-isolation and other non-production gate that is logically valid. Record production-dependent journeys as deferred rather than faking or skipping them.
+
+CGR-05 is the final convergence phase: once all automatable work is exhausted, it waits on the remaining entries in `../DEFERRED_FINAL_GATES.md`. It cannot certify a stable consumer-grade baseline until those applicable production gates pass.
 
 ## Exact exit criteria
 
