@@ -77,6 +77,16 @@
   outline-offset: 3px;
 }
 
+.cgr-app-shell { background: var(--cgr-bg); }
+.cgr-sidebar { background: color-mix(in srgb, var(--cgr-bg) 92%, transparent); }
+.cgr-main { min-width: 0; }
+.cgr-toolbar { border-color: var(--cgr-border); }
+.cgr-global-capture { border-color: var(--cgr-border-strong); }
+
+@media (max-width: 760px) {
+  .cgr-main { padding-top: 14px !important; }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .cgr-shell *, .cgr-shell *::before, .cgr-shell *::after {
     animation-duration: .001ms !important;
