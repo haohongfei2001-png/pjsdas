@@ -9,6 +9,7 @@ import { useUiLanguage } from './uiLanguage.js'
 import type {
   Action,
   ApplicationGroup,
+  DecisionRequest,
   JobPostingEvidence,
   Opportunity,
   ProcessRecord,
@@ -23,12 +24,14 @@ interface OpportunityDetailDrawerProps {
   decision?: OpportunityDecisionRead
   process?: ProcessRecord
   actions: Action[]
+  decisionRequests: DecisionRequest[]
   relatedPrep: Array<{ id: string; title: string; reason: string }>
   applicationGroup?: ApplicationGroup
   timeline: TimelineRecord[]
   onClose: () => void
   onCapture: () => void
   onNavigate: (destination: OpportunityDetailDestination) => void
+  onOpenDecision: (id: string) => void
 }
 
 const actionStatusLabels: Record<Action['status'], [string, string]> = {
@@ -82,12 +85,14 @@ export default function OpportunityDetailDrawer({
   decision,
   process,
   actions,
+  decisionRequests,
   relatedPrep,
   applicationGroup,
   timeline,
   onClose,
   onCapture,
   onNavigate,
+  onOpenDecision,
 }: OpportunityDetailDrawerProps) {
   const { lang } = useUiLanguage()
   const zh = lang === 'zh'
@@ -148,6 +153,16 @@ export default function OpportunityDetailDrawer({
         </header>
 
         {decision ? <OpportunityDecisionSummary decision={decision} process={process} onNavigate={onNavigate} /> : null}
+
+        {decisionRequests.length ? (
+          <details className="opportunity-detail-section opportunity-detail-decisions" open>
+            <summary>{zh ? `需要你决定 · ${decisionRequests.length}` : `Needs your decision · ${decisionRequests.length}`}</summary>
+            {decisionRequests.map((request) => <div className="opportunity-detail-decision-link" key={request.id}>
+              <strong>{request.question}</strong>
+              <button type="button" onClick={() => onOpenDecision(request.id)}>{zh ? '处理这项决定' : 'Review this decision'}</button>
+            </div>)}
+          </details>
+        ) : null}
 
         <div className="opportunity-detail-progressive">
           <RichOpportunityFactsSummary facts={opportunity.detail?.facts} zh={zh} />

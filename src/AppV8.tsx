@@ -50,6 +50,7 @@ import {
 } from './todayBrief.js'
 import type {
   Action,
+  DecisionRequest,
   ImportBundle,
   ImportMeta,
   Prep,
@@ -73,6 +74,7 @@ type RouteState = {
   capture: boolean
   agendaExpanded: boolean
   opportunityId?: string
+  decisionRequestId?: string
 }
 
 const APP_BASE = import.meta.env.BASE_URL === '/' ? '' : import.meta.env.BASE_URL.replace(/\/$/, '')
@@ -100,6 +102,8 @@ function routeFromPath(pathname = semanticPath()): RouteState {
   const path = pathname.replace(/\/+$/, '') || '/'
   if (path === '/capture' || path === '/today/capture') return { surface: 'today', capture: true, agendaExpanded: false }
   if (path === '/decisions') return { surface: 'decisions', capture: false, agendaExpanded: false }
+  const decisionMatch = path.match(/^\/decisions\/([^/]+)$/)
+  if (decisionMatch?.[1]) return { surface: 'decisions', capture: false, agendaExpanded: false, decisionRequestId: decodeURIComponent(decisionMatch[1]) }
   if (path === '/settings') return { surface: 'settings', capture: false, agendaExpanded: false }
   if (path === '/history') return { surface: 'history', capture: false, agendaExpanded: false }
   if (path === '/today/agenda') return { surface: 'today', capture: false, agendaExpanded: true }
@@ -340,6 +344,12 @@ export default function AppV8() {
   ).length
   const workspaceEmpty = opportunities.length === 0 && actions.length === 0 && processes.length === 0 && prep.length === 0
   const selectedOpportunity = selectedOpportunityId ? opportunities.find((item) => item.id === selectedOpportunityId) : undefined
+  const selectedDecisionRequests: DecisionRequest[] = selectedOpportunity
+    ? decisionRequests.filter((request) => request.state === 'open' && (
+      request.affectedObjects.some((object) => object.type === 'opportunity' && object.id === selectedOpportunity.id)
+      || request.choices.some((choice) => choice.resolution?.opportunityId === selectedOpportunity.id)
+    ))
+    : []
   const captureOpportunity = captureContextOpportunityId
     ? opportunities.find((item) => item.id === captureContextOpportunityId)
     : undefined
@@ -558,7 +568,8 @@ export default function AppV8() {
             view={opportunityView} onViewChange={setOpportunityView} query={opportunityQuery} onQueryChange={setOpportunityQuery}
             onOpenOpportunity={openOpportunity} />
         ) : null}
-        {!loading && surface === 'decisions' ? <DecisionRequestsView requests={decisionRequests} onChanged={reload} /> : null}
+        {!loading && surface === 'decisions' ? <DecisionRequestsView requests={decisionRequests} focusRequestId={route.decisionRequestId}
+          onShowAll={() => navigate('/decisions')} onChanged={reload} /> : null}
         {!loading && surface === 'history' ? <ActivitySurface timeline={timeline} /> : null}
         {!loading && surface === 'settings' ? <SettingsSurface lastImport={lastImport} rules={rules} onChanged={reload} onOpenActivity={() => navigate('/history')} /> : null}
       </main>
@@ -580,12 +591,14 @@ export default function AppV8() {
           decision={selectedOpportunityDecision}
           process={selectedProcess}
           actions={selectedActions}
+          decisionRequests={selectedDecisionRequests}
           relatedPrep={selectedRelatedPrep}
           applicationGroup={selectedGroup}
           timeline={selectedTimeline}
           onClose={() => navigate('/opportunities', true)}
           onCapture={openCapture}
           onNavigate={navigateFromDetail}
+          onOpenDecision={(id) => navigate('/decisions/' + encodeURIComponent(id))}
         />
       ) : null}
 
