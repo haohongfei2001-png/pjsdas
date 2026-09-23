@@ -13,7 +13,7 @@ import {
 import { fingerprintWorkspace } from './cloud/workspaceFingerprint.js'
 import { type CanonicalJobReference } from './progressUpdate.js'
 import { buildWebSemanticInterpretation } from './webSemanticInterpretation.js'
-import type { SemanticIntakeObservation } from './model.js'
+import type { SemanticCandidate, SemanticIntakeObservation, SemanticStatementMode } from './model.js'
 import { connectedWorkspaceAuthorityEnabled } from './cloud/connectedWorkspaceRepository.js'
 import {
   createConnectedCommandId,
@@ -40,6 +40,13 @@ export interface WebSemanticCaptureResult {
   ignored: string[]
   decisionRequestIds: string[]
   undo?: LocalSemanticUndoToken
+}
+
+export interface WebSemanticCapturePreview {
+  mode: SemanticStatementMode
+  candidates: SemanticCandidate[]
+  unresolved: string[]
+  ignored: string[]
 }
 
 function stableHash(value: string) {
@@ -80,9 +87,30 @@ async function optimisticReplace(
   return committedFingerprint
 }
 
+export async function previewWebSemanticCapture(
+  text: string,
+  options: { now?: Date } = {},
+): Promise<WebSemanticCapturePreview> {
+  const trimmed = text.trim()
+  if (!trimmed) return { mode: 'assertion', candidates: [], unresolved: [], ignored: [] }
+  const now = options.now ?? new Date()
+  const [opportunities, references, baseline] = await Promise.all([
+    getAllOpportunities(),
+    canonicalReferences(),
+    exportLocalSnapshot(),
+  ])
+  const interpretation = buildWebSemanticInterpretation(trimmed, opportunities, baseline, references, now)
+  return {
+    mode: interpretation.mode,
+    candidates: interpretation.candidates,
+    unresolved: interpretation.unresolved,
+    ignored: interpretation.ignored,
+  }
+}
+
 export async function submitWebSemanticCapture(
   text: string,
-  options: { now?: Date; timezone?: string; accountKey?: string } = {},
+  options: { now?: Date; timezone?: string; accountKey?: string; commandId?: string } = {},
 ): Promise<WebSemanticCaptureResult> {
   const trimmed = text.trim()
   if (!trimmed) throw new Error('请输入要告诉 PJSDAS 的内容。')
@@ -115,7 +143,7 @@ export async function submitWebSemanticCapture(
   }
 
   if (options.accountKey && connectedWorkspaceAuthorityEnabled()) {
-    const commandId = createConnectedCommandId('web-semantic')
+    const commandId = options.commandId ?? createConnectedCommandId('web-semantic')
     const authoritative = await executeConnectedBusinessCommand(options.accountKey, {
       type: 'semantic_intake',
       value: observation,
