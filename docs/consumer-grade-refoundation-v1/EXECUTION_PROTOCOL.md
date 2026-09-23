@@ -45,6 +45,8 @@ For the fixed CGR-00 through CGR-05 sequence, the owner authorizes continuous un
 
 The unattended package-level wait point is reached only after all automatable CGR-00..CGR-05 work is exhausted and remaining items are exclusively true owner gates, external-only evidence gates, or safety/integrity dependencies.
 
+If STATUS.md still contains the superseded one-phase-ahead wording while an active phase PR is reconciling it, this continuous-execution section governs sequencing; reconcile STATUS on that active writer before phase closure.
+
 This standing authorization does not permit publication, new permissions, new costs, consequential external actions, or a seventh CGR phase.
 
 ## CGR-00 restriction
