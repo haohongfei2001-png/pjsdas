@@ -154,6 +154,7 @@ function installServer(page: Page, state: State, options: {
   loseFirstReceiptLookup?: boolean
   holdSemantic?: Promise<void>
   holdRead?: Promise<void>
+  expireSemantic?: boolean
 } = {}) {
   let lostCommand = false
   let lostReceipt = false
@@ -188,6 +189,7 @@ function installServer(page: Page, state: State, options: {
 
     if (body.action === 'command' && body.command?.type === 'semantic_intake') {
       state.commandBodies.push(body)
+      if (options.expireSemantic) return cors(route, { code: 'SESSION_EXPIRED' }, 401)
       if (options.holdSemantic) await options.holdSemantic
       const commandId = String(body.commandId)
       if (!state.receipts.has(commandId)) {
@@ -450,6 +452,25 @@ test('offline capture remains account-scoped draft only and legacy capture route
   const draft = await page.evaluate(() => window.localStorage.getItem('pjsdas-cgr01-draft:account-a:tell-pjsdas'))
   expect(draft).toBe('事项：离线整理材料')
   await context.setOffline(false)
+})
+
+test('expired session rejects a connected save before execution and preserves the input', async ({ page }) => {
+  await seedSession(page.context())
+  const state: State = { revision: 41, snapshot: workspace(), receipts: new Map(), commandBodies: [] }
+  await installServer(page, state, { expireSemantic: true })
+  await page.goto('/pjsdas/today/capture')
+  await expect(page.getByRole('heading', { name: 'A第一任务' })).toBeVisible()
+  const input = page.locator('.cgr-capture-input')
+  await input.fill('事项：整理面试材料')
+  await expect(page.getByText('PJSDAS 理解为')).toBeVisible()
+  await expect(page.getByRole('button', { name: '确认并保存' })).toBeEnabled()
+  await page.getByRole('button', { name: '确认并保存' }).click()
+  await expect(page.getByRole('alert')).toContainText('登录会话已过期')
+  await expect(page.getByRole('alert')).toContainText('重新登录后点“重新确认”')
+  await expect(input).toHaveValue('事项：整理面试材料')
+  expect(state.commandBodies.filter((body) => body.action === 'command')).toHaveLength(1)
+  expect(state.snapshot.data.actions.some((item) => item.title === '整理面试材料')).toBe(false)
+  expect(state.receipts.size).toBe(0)
 })
 
 test('Today remains operable at phone width and large text without horizontal clipping', async ({ page }) => {
