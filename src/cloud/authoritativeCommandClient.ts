@@ -16,6 +16,7 @@ export type ConnectedBusinessCommand =
   | { type: 'discovery_status'; value: DiscoveryStatusCommand }
   | { type: 'discovery_profile'; value: DiscoveryProfile }
   | { type: 'discovery_promotion'; value: { inboxItemId: string } }
+  | { type: 'process_event_delete'; value: { eventId: string } }
   | { type: 'mcp_save_inbox'; value: { token: string } }
   | { type: 'mcp_apply_actions'; value: { token: string } }
   | { type: 'mcp_apply_rules'; value: { token: string } }

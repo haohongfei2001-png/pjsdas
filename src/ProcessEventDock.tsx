@@ -214,7 +214,18 @@ export default function ProcessEventDock({ onChanged }: ProcessEventDockProps) {
     setBusy(true)
     setError('')
     try {
-      await applyProcessEventDeleteChangeSet(id)
+      if (cloud.session && connectedWorkspaceAuthorityEnabled()) {
+        if (cloud.checkpoint.conflict) throw new Error('账号工作区存在冲突；请先处理后再删除流程事件。')
+        const commandId = createConnectedCommandId('web-process-delete')
+        const result = await executeConnectedBusinessCommand(cloud.session.user.id, {
+          type: 'process_event_delete', value: { eventId: id },
+        }, { commandId })
+        if (result.outcome !== 'COMMITTED' && result.outcome !== 'ALREADY_APPLIED') {
+          throw new Error(result.conflict?.message ?? '流程事件未从账号工作区删除。')
+        }
+      } else {
+        await applyProcessEventDeleteChangeSet(id)
+      }
       await reloadLocal()
       onChanged?.()
     } catch (caught) {

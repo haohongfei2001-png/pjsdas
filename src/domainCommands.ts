@@ -941,6 +941,22 @@ export function applyDomainCompensation(
         node.updatedAt = timestamp
       }
     }
+  } else if (compensation.operation === 'restore_deleted_process_event') {
+    const event = payload.event as ProcessEvent | undefined
+    if (!event?.id || next.data.processEvents.some((item) => item.id === event.id)) {
+      throw new Error('Deleted process event cannot be restored safely.')
+    }
+    next.data.processEvents.push(structuredClone(event))
+    if (payload.action) {
+      const action = payload.action as Action
+      if (next.data.actions.some((item) => item.id === action.id)) throw new Error('Generated Action already exists.')
+      next.data.actions.push(structuredClone(action))
+    }
+    for (const previous of (payload.scheduleNodes ?? []) as ScheduleNode[]) {
+      const index = (next.data.scheduleNodes ?? []).findIndex((item) => item.id === previous.id)
+      if (index >= 0) next.data.scheduleNodes![index] = structuredClone(previous)
+      else (next.data.scheduleNodes ??= []).push(structuredClone(previous))
+    }
   } else if (compensation.operation === 'restore_deadline') {
     const target = next.data.opportunities.find((item) => item.id === payload.opportunityId)
     if (target) {

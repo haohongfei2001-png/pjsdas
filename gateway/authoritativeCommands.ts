@@ -22,6 +22,7 @@ import { applyMcpDiscoveryCommand } from '../src/mcpDiscoveryApplyCommand.js'
 import { applyMcpActionStatusCommand } from '../src/mcpActionStatusCommand.js'
 import { applyMcpRulesCommand } from '../src/mcpRulesCommand.js'
 import { applyMcpSourceRefreshCommand } from '../src/mcpSourceRefreshCommand.js'
+import { applyProcessEventDeleteCommand } from '../src/processEventDeleteCommand.js'
 import { discoveryInboxIdentity, discoveryInboxItemsFromChangeSet } from '../src/discoveryInbox.js'
 import type { McpProposalEnvelope } from '../src/ai/mcpProposal.js'
 import { fingerprintWorkspace } from '../src/cloud/workspaceFingerprint.js'
@@ -73,6 +74,7 @@ export const authoritativeBusinessCommandSchema = z.object({
     z.object({ type: z.literal('resolve_semantic_decision'), value: resolveSemanticDecisionSchema }).strict(),
     z.object({ type: z.literal('discovery_profile'), value: discoveryProfileSchema }).strict(),
     z.object({ type: z.literal('discovery_promotion'), value: z.object({ inboxItemId: z.string().trim().min(1).max(240) }).strict() }).strict(),
+    z.object({ type: z.literal('process_event_delete'), value: z.object({ eventId: z.string().trim().min(1).max(240) }).strict() }).strict(),
     z.object({ type: z.literal('mcp_save_inbox'), value: z.object({ token: z.string().min(1).max(32_000) }).strict() }).strict(),
     z.object({ type: z.literal('mcp_apply_actions'), value: z.object({ token: z.string().min(1).max(32_000) }).strict() }).strict(),
     z.object({ type: z.literal('mcp_apply_rules'), value: z.object({ token: z.string().min(1).max(32_000) }).strict() }).strict(),
@@ -118,7 +120,7 @@ export interface AuthoritativeCommandExecution {
 }
 
 function resultPayload(command: AuthoritativeBusinessCommand['command'], evaluated: any) {
-  if (command.type === 'domain' || command.type === 'discovery_status' || command.type === 'discovery_profile' || command.type === 'discovery_promotion' || command.type === 'mcp_save_inbox' || command.type === 'mcp_apply_discovery' || command.type === 'mcp_apply_actions' || command.type === 'mcp_apply_rules' || command.type === 'mcp_apply_source_refresh') {
+  if (command.type === 'domain' || command.type === 'discovery_status' || command.type === 'discovery_profile' || command.type === 'discovery_promotion' || command.type === 'process_event_delete' || command.type === 'mcp_save_inbox' || command.type === 'mcp_apply_discovery' || command.type === 'mcp_apply_actions' || command.type === 'mcp_apply_rules' || command.type === 'mcp_apply_source_refresh') {
     return {
       type: command.type,
       status: evaluated.status,
@@ -193,6 +195,15 @@ function intentObjects(command: AuthoritativeBusinessCommand['command'], snapsho
   }
   if (command.type === 'discovery_status') return [{ type: 'discovery_inbox', id: command.value.inboxItemId }]
   if (command.type === 'discovery_profile') return [{ type: 'discovery_profile', id: 'current' }]
+  if (command.type === 'process_event_delete') {
+    const event = snapshot.data.processEvents.find((item) => item.id === command.value.eventId)
+    return [
+      { type: 'process_event', id: command.value.eventId },
+      ...(event ? [{ type: 'opportunity', id: event.opportunityId }, { type: 'action', id: `event-action:${event.id}` }] : []),
+      ...(snapshot.data.scheduleNodes ?? []).filter((node) => node.processEventId === command.value.eventId)
+        .map((node) => ({ type: 'schedule_occurrence', id: node.occurrenceId })),
+    ]
+  }
   if (command.type === 'discovery_promotion') {
     const item = (snapshot.data.discoveryInbox ?? []).find((candidate) => candidate.id === command.value.inboxItemId)
     const existing = item && (snapshot.data.opportunities.find((row) => row.id === item.candidateOpportunityId)
@@ -306,7 +317,7 @@ export function createAuthoritativeCommandExecutor(options: TransactionalWorkspa
     if (principal.kind === 'first_party_web' && parsed.command.type === 'semantic_intake' && parsed.command.value.source.kind !== 'web') {
       throw new WorkspaceSourceError('AUTH_FORBIDDEN', 'First-party Web Semantic Intake may write only web-origin observations.', false)
     }
-    if (['discovery_status','discovery_profile','discovery_promotion','mcp_save_inbox','mcp_apply_discovery','mcp_apply_actions','mcp_apply_rules','mcp_apply_source_refresh'].includes(parsed.command.type) && principal.kind !== 'first_party_web') {
+    if (['discovery_status','discovery_profile','discovery_promotion','process_event_delete','mcp_save_inbox','mcp_apply_discovery','mcp_apply_actions','mcp_apply_rules','mcp_apply_source_refresh'].includes(parsed.command.type) && principal.kind !== 'first_party_web') {
       throw new WorkspaceSourceError('AUTH_FORBIDDEN', 'Discovery review commands are restricted to the first-party Web client.', false)
     }
 
@@ -373,6 +384,8 @@ export function createAuthoritativeCommandExecutor(options: TransactionalWorkspa
         evaluated = applyDiscoveryProfileCommand(current.snapshot, parsed.command.value, now)
       } else if (parsed.command.type === 'discovery_promotion') {
         evaluated = applyDiscoveryPromotionCommand(current.snapshot, parsed.command.value, now)
+      } else if (parsed.command.type === 'process_event_delete') {
+        evaluated = applyProcessEventDeleteCommand(current.snapshot, parsed.command.value.eventId, now)
       } else if (parsed.command.type === 'mcp_save_inbox') {
         evaluated = applyMcpInboxSaveCommand(current.snapshot, proposal!, now)
       } else if (parsed.command.type === 'mcp_apply_discovery') {
@@ -516,6 +529,9 @@ export function createAuthoritativeCommandExecutor(options: TransactionalWorkspa
             reason: 'COMMAND_NOT_FOUND',
           },
         }
+      }
+      if (target.operation === 'process_event_delete' && principal.kind !== 'first_party_web') {
+        throw new WorkspaceSourceError('AUTH_FORBIDDEN', 'Only the first-party Web client can restore a deleted process event.', false)
       }
       if (!target.compensation) {
         return {
