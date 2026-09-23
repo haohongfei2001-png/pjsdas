@@ -198,7 +198,7 @@ async function recoverUnknown(accountKey: string, pending: PendingCommand, caugh
   throw new Error(unknown)
 }
 
-function rejectBeforeExecution(accountKey: string, pending: PendingCommand, response: Response, payload?: Record<string, any>) {
+function rejectBeforeExecution(accountKey: string, pending: PendingCommand, response: Response, payload?: Record<string, any>): never {
   const raw = serverError(response, payload)
   if (response.status === 401) {
     const message = 'SESSION_EXPIRED_BEFORE_COMMAND: PJSDAS 登录会话已过期；服务端在授权阶段拒绝了本次命令，因此它没有执行。重新登录后会使用同一 commandId 安全重试。'
