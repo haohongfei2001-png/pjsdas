@@ -15,6 +15,7 @@ import {
   type RemoteWorkspaceRow,
 } from './cloudRepository.js'
 import { fingerprintWorkspace, workspaceIsEffectivelyEmpty } from './workspaceFingerprint.js'
+import { connectedWorkspaceAuthorityEnabled } from './connectedWorkspaceRepository.js'
 
 export type CloudSyncOutcomeKind =
   | 'created'
@@ -23,6 +24,7 @@ export type CloudSyncOutcomeKind =
   | 'synced'
   | 'conflict'
   | 'account_mismatch'
+  | 'local_pending'
 
 export interface CloudSyncOutcome {
   kind: CloudSyncOutcomeKind
@@ -67,7 +69,7 @@ function markConflict(userId: string, row: RemoteWorkspaceRow) {
   })
 }
 
-export async function runCloudSync(userId: string): Promise<CloudSyncOutcome> {
+export async function runCloudSync(userId: string, options: { passive?: boolean } = {}): Promise<CloudSyncOutcome> {
   const device = getCloudDeviceState()
   if (device.workspaceOwnerUserId && device.workspaceOwnerUserId !== userId) {
     return { kind: 'account_mismatch' }
@@ -108,6 +110,11 @@ export async function runCloudSync(userId: string): Promise<CloudSyncOutcome> {
     if (!remote) throw new Error('同步状态异常：预期存在 Google Drive 工作区。')
 
     if (decision === 'push_local') {
+      // Background refresh may discover local legacy changes, but it must not
+      // silently submit an entire connected workspace as a business write.
+      if (options.passive && connectedWorkspaceAuthorityEnabled()) {
+        return { kind: 'local_pending', version: remote.version, remoteUpdatedAt: remote.updatedAt }
+      }
       const updated = await updateRemoteWorkspace({
         userId,
         fileId: remote.fileId,

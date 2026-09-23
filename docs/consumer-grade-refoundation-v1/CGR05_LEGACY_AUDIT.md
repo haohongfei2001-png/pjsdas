@@ -25,3 +25,7 @@ Already converted daily paths include Today action status/Undo, Tell PJSDAS and 
 For each current consumer, preserve the same user outcome in both local-only and connected modes; verify account/session isolation, unknown-commit receipt lookup, CAS conflict, cross-client visibility, source/provenance and Undo where the operation supports it. Once no supported daily consumer needs `legacy_uncovered_web`, reject that purpose at the client/server boundary and retain only explicit migration/recovery compatibility with a concrete supported caller. Do not replace a failed sync with a false success receipt or restore an old snapshot over newer server facts.
 
 Production architecture certification remains pending exact deployment under `DEFERRED_FINAL_GATES.md`; this audit is code-level evidence only.
+
+## First bounded safety change
+
+Background timer/focus/online refresh in transactional mode now reads and reconciles without silently choosing `push_local` for a whole-workspace commit. When it finds local changes that still depend on a legacy writer, it reports `local_pending` and preserves the local data and checkpoint. Explicit existing sync after a supported legacy mutation remains available until that consumer is converted. The connected passive/explicit boundary has a focused test; this is a containment step, not retirement of `legacy_uncovered_web`.

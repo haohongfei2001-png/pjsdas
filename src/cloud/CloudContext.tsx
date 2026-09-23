@@ -48,7 +48,7 @@ interface CloudContextValue {
   error?: string
   signIn: () => Promise<void>
   signOut: () => Promise<void>
-  syncNow: () => Promise<CloudSyncOutcome | undefined>
+  syncNow: (options?: { passive?: boolean }) => Promise<CloudSyncOutcome | undefined>
   keepLocal: () => Promise<CloudSyncOutcome | undefined>
   useCloud: () => Promise<CloudSyncOutcome | undefined>
   rebindLocal: () => Promise<CloudSyncOutcome | undefined>
@@ -150,7 +150,7 @@ export function CloudProvider({ children }: { children: ReactNode }) {
     if (!current) await adoptSession(null)
   }, [adoptSession])
 
-  const syncNow = useCallback(async () => {
+  const syncNow = useCallback(async (options?: { passive?: boolean }) => {
     const userId = session?.user.id
     if (!configured || !userId || busyRef.current) return undefined
     busyRef.current = true
@@ -163,7 +163,7 @@ export function CloudProvider({ children }: { children: ReactNode }) {
       if (connectedWorkspaceAuthorityEnabled()) {
         await replayAccountPendingOperations(userId)
       }
-      const result = await runCloudSync(userId)
+      const result = await runCloudSync(userId, options)
       setOutcome(result)
       refreshState(userId)
       return result
@@ -185,10 +185,10 @@ export function CloudProvider({ children }: { children: ReactNode }) {
     const ownerMismatch = Boolean(device.workspaceOwnerUserId && device.workspaceOwnerUserId !== userId)
     if (ownerMismatch) return
 
-    const initial = window.setTimeout(() => { void syncNow().catch(() => undefined) }, 700)
-    const interval = window.setInterval(() => { void syncNow().catch(() => undefined) }, 120_000)
-    const focus = () => { void syncNow().catch(() => undefined) }
-    const online = () => { void syncNow().catch(() => undefined) }
+    const initial = window.setTimeout(() => { void syncNow({ passive: true }).catch(() => undefined) }, 700)
+    const interval = window.setInterval(() => { void syncNow({ passive: true }).catch(() => undefined) }, 120_000)
+    const focus = () => { void syncNow({ passive: true }).catch(() => undefined) }
+    const online = () => { void syncNow({ passive: true }).catch(() => undefined) }
     window.addEventListener('focus', focus)
     window.addEventListener('online', online)
     return () => {
