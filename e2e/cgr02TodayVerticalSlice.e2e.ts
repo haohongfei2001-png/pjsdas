@@ -492,7 +492,9 @@ test('offline capture remains account-scoped draft only and legacy capture route
   await expect(page).toHaveURL(/\/pjsdas\/today\/capture$/)
   await context.setOffline(true)
   await page.locator('.cgr-capture-input').fill('事项：离线整理材料')
-  await page.getByRole('button', { name: '确认并保存' }).click()
+  const save = page.getByRole('button', { name: '确认并保存' })
+  await expect(save).toBeEnabled()
+  await save.click()
   await expect(page.getByText('仅草稿')).toBeVisible()
   await expect(page.getByText(/还没有写入 PJSDAS/)).toBeVisible()
   // Capture the settled interpretation, not a race between the loading state

@@ -24,6 +24,6 @@ test('shell hides stale version copy and Opportunities uses the decision-first t
 
   await page.locator('.ultimate-toolbar').getByRole('button', { name: /设置/ }).click()
   await expect(page.getByRole('heading', { name: '连接、自动化和长期控制' })).toBeVisible()
-  await expect(page.getByText('PJSDAS ACCOUNT & DRIVE', { exact: true })).toBeVisible()
+  await expect(page.getByText('ACCOUNT & CONNECTION', { exact: true })).toBeVisible()
   await expect(page.getByText(/V1\.9/)).toHaveCount(0)
 })
