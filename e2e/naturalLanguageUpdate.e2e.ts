@@ -131,6 +131,22 @@ test('a quoted old thread cannot create a second action beside the current Web u
   expect(state.changeSets).toHaveLength(0)
 })
 
+test('narrow and enlarged-text capture exposes mixed current/quoted feedback without horizontal clipping', async ({ page }, testInfo) => {
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.goto('/')
+  await page.evaluate(() => { document.documentElement.style.fontSize = '20px' })
+  await openCapture(page)
+  const dialog = page.getByRole('dialog', { name: '告诉 PJSDAS' })
+  await dialog.getByRole('textbox', { name: '要告诉 PJSDAS 的内容' })
+    .fill('待办：修改论文图表。\n-----Original Message-----\n待办：整理旧材料。')
+  await expect(dialog.locator('.cgr-understanding-body')).toContainText('引用的旧消息')
+  await expect(dialog.getByRole('button', { name: '确认并保存' })).toBeVisible()
+  expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(2)
+  await testInfo.attach('cgr04-narrow-mixed-intake', { body: await page.screenshot(), contentType: 'image/png' })
+  await dialog.getByRole('button', { name: '确认并保存' }).click()
+  await expect(dialog.getByRole('status')).toContainText('未作为当前事实处理')
+})
+
 test('questions and rewrite requests remain read-only', async ({ page }) => {
   await page.goto('/')
   await openCapture(page)
