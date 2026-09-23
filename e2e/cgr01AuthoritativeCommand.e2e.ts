@@ -143,6 +143,77 @@ async function readIndexedActions(page: Page) {
   }))
 }
 
+test('lost response after server commit survives reload and recovers one durable receipt without duplicate mutation', async ({ page }) => {
+  await seedInitialSession(page, 'account-a', 'token-a')
+  const state: AccountState = { revision: 7, snapshot: workspace('A'), receipts: new Map() }
+  let commandCalls = 0
+  let receiptCalls = 0
+
+  await page.route(`${BACKEND}/**`, async (route) => {
+    const request = route.request()
+    const url = new URL(request.url())
+    if (request.method() === 'OPTIONS') return cors(route, {}, 204)
+    if (url.pathname === '/api/health') return cors(route, health())
+    if (url.pathname !== '/api/workspace') return cors(route, { code: 'NOT_FOUND' }, 404)
+
+    const body = request.postDataJSON() as any
+    if (body.action === 'read') {
+      return cors(route, {
+        workspaceId: 'ws-a',
+        workspaceVersion: `txn:${state.revision}`,
+        revision: state.revision,
+        schemaVersion: state.snapshot.version,
+        snapshot: state.snapshot,
+      })
+    }
+    if (body.action === 'command') {
+      commandCalls += 1
+      const target = state.snapshot.data.actions.find((item) => item.id === 'A-action-1')
+      if (target) target.status = 'done'
+      state.revision += 1
+      const receipt = {
+        commandId: body.commandId,
+        receiptId: `command-receipt:${body.commandId}`,
+        status: 'COMMITTED',
+        revision: state.revision,
+        undoAvailable: true,
+        affectedObjects: [{ type: 'action', id: 'A-action-1' }],
+        result: { type: 'domain', status: 'APPLIED', summary: 'Completed A-action-1.' },
+      }
+      state.receipts.set(body.commandId, receipt)
+      return route.abort('failed')
+    }
+    if (body.action === 'receipt') {
+      receiptCalls += 1
+      if (receiptCalls === 1) return route.abort('failed')
+      const receipt = state.receipts.get(body.commandId)
+      return cors(route, {
+        found: Boolean(receipt),
+        revision: state.revision,
+        workspaceVersion: `txn:${state.revision}`,
+        schemaVersion: state.snapshot.version,
+        snapshot: state.snapshot,
+        receipt,
+      })
+    }
+    return cors(route, { code: 'UNEXPECTED_ACTION', action: body.action }, 400)
+  })
+
+  await page.goto('/')
+  await expect(page.getByRole('heading', { name: 'A第一任务' })).toBeVisible()
+  await page.getByRole('button', { name: '标记完成' }).click()
+  await expect(page.getByRole('status')).toContainText('尚未确认这次操作是否已提交')
+  expect(commandCalls).toBe(1)
+  expect(receiptCalls).toBe(1)
+
+  await page.reload()
+  await expect(page.getByRole('heading', { name: 'A第一任务' })).toHaveCount(0)
+  expect(commandCalls).toBe(1)
+  expect(receiptCalls).toBeGreaterThanOrEqual(2)
+  const pending = await page.evaluate(() => window.localStorage.getItem('pjsdas-cgr01-pending:account-a'))
+  expect(pending).toBeNull()
+})
+
 test('connected Web recovers a lost command response and Undo preserves unrelated later state', async ({ page }) => {
   await seedInitialSession(page, 'account-a', 'token-a')
   const state: AccountState = { revision: 7, snapshot: workspace('A'), receipts: new Map() }
