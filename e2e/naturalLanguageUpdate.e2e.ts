@@ -189,10 +189,10 @@ test('ambiguous same-company role input creates DecisionRequest instead of guess
   await expect(detail.locator('.opportunity-detail-decisions')).toContainText(state.decisionRequests[0]!.question)
   await detail.getByRole('button', { name: '处理这项决定' }).click()
   await expect(detail).toHaveCount(0)
-  await expect(page).toHaveURL(new URL(`/decisions/${encodeURIComponent(state.decisionRequests[0]!.id)}`, page.url()).toString())
+  await expect(page).toHaveURL(new RegExp(`/decisions/${encodeURIComponent(state.decisionRequests[0]!.id)}$`))
   await expect(page.getByRole('button', { name: /歧义科技｜产品经理-增长/ })).toBeVisible()
   await page.getByRole('button', { name: /歧义科技｜产品经理-增长/ }).click()
-  await expect(page.getByRole('status')).toContainText('决定已处理')
+  await expect(page.locator('.ultimate-receipt')).toContainText('决定已处理')
 
   const resolved = await readMutationState(page)
   expect(resolved.opportunities).toHaveLength(2)
