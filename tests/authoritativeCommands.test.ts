@@ -185,9 +185,12 @@ describe('CGR-01 authoritative command executor', () => {
     expect(h.state().current.data.actions.find((item) => item.id === 'action-1')?.status).toBe('done')
   })
 
-  it('rebases a stale command when only an unrelated business object changed', async () => {
+  it('rebases a stale first-party command when an automation source changed only an unrelated business object', async () => {
     const h = harness()
-    await h.executor.execute(h.principal, { ...statusCommand('cmd-action-0001', 'action-1', 'done'), baseRevision: 1 })
+    await h.executor.execute(
+      { kind: 'automation', userId: 'user-a', sourceId: 'gmail:primary' },
+      { ...statusCommand('cmd-action-0001', 'action-1', 'done'), baseRevision: 1 },
+    )
     const second = await h.executor.execute(h.principal, { ...statusCommand('cmd-action-0002', 'action-2', 'done'), baseRevision: 1 })
     expect(second).toMatchObject({
       outcome: 'COMMITTED',
