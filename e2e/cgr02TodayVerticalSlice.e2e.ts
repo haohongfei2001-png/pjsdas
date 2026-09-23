@@ -375,6 +375,41 @@ test('CGR-02 golden journey: understand -> authoritative save -> cross-client vi
   await contextB.close()
 })
 
+test('Today capture supports a keyboard-only save with named controls and restored focus', async ({ page }) => {
+  await seedSession(page.context())
+  const state: State = { revision: 25, snapshot: workspace(), receipts: new Map(), commandBodies: [] }
+  await installServer(page, state)
+  await page.goto('/pjsdas/today')
+  await expect(page.getByRole('heading', { name: 'A第一任务' })).toBeVisible()
+
+  const opener = page.locator('.cgr-global-capture')
+  for (let step = 0; step < 30 && !(await opener.evaluate((node) => node === document.activeElement)); step += 1) {
+    await page.keyboard.press('Tab')
+  }
+  await expect(opener).toBeFocused()
+  await page.keyboard.press('Enter')
+
+  const dialog = page.getByRole('dialog', { name: '告诉 PJSDAS' })
+  const input = dialog.getByRole('textbox', { name: '要告诉 PJSDAS 的内容' })
+  await expect(dialog).toBeVisible()
+  await expect(input).toBeFocused()
+  await page.keyboard.press('Shift+Tab')
+  await expect(dialog.getByRole('button', { name: '关闭' })).toBeFocused()
+  await page.keyboard.press('Shift+Tab')
+  await expect(input).toBeFocused()
+
+  await page.keyboard.type('事项：整理面试材料')
+  await expect(dialog.getByText(/新增行动 · 整理面试材料/)).toBeVisible()
+  await page.keyboard.press('Tab')
+  const save = dialog.getByRole('button', { name: '确认并保存' })
+  await expect(save).toBeFocused()
+  await page.keyboard.press('Enter')
+  await expect(dialog.getByRole('status')).toContainText('已记录：整理面试材料')
+  await page.keyboard.press('Escape')
+  await expect(dialog).not.toBeVisible()
+  await expect(opener).toBeFocused()
+})
+
 test('unknown semantic save keeps one stable command identity and recovers by receipt before retry', async ({ page }) => {
   await seedSession(page.context())
   const state: State = { revision: 30, snapshot: workspace(), receipts: new Map(), commandBodies: [] }

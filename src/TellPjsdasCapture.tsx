@@ -354,6 +354,7 @@ export default function TellPjsdasCapture({
         <textarea
           ref={textareaRef}
           className="cgr-capture-input"
+          aria-label={zh ? '要告诉 PJSDAS 的内容' : 'What to tell PJSDAS'}
           rows={5}
           value={text}
           disabled={busy || recoveryLocked}
