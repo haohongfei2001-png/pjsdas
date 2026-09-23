@@ -7,6 +7,10 @@ on:
         description: Exact integrated runtime SHA deployed to the canonical production API
         required: true
         type: string
+      recovery_user_id:
+        description: Optional exact synthetic user UUID to remove only when revoked and free of commands
+        required: false
+        type: string
 
 permissions:
   contents: read
@@ -20,6 +24,7 @@ jobs:
       PJSDAS_CGR02_CANARY_ORIGIN: ${{ vars.PJSDAS_CANONICAL_API_ORIGIN || 'https://pjsdas-remote-alpha.vercel.app' }}
       PJSDAS_EXPECTED_COMMIT_SHA: ${{ inputs.expected_sha }}
       PJSDAS_SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.PJSDAS_SUPABASE_SERVICE_ROLE_KEY }}
+      PJSDAS_CGR02_RECOVERY_USER_ID: ${{ inputs.recovery_user_id }}
     steps:
       - name: Check exact integrated input and server credential
         shell: bash
@@ -40,5 +45,11 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - name: Provision one synthetic account, run exact-production canary, and remove it
-        run: ./node_modules/.bin/tsx scripts/cgr02-provisioned-production-canary.ts --execute
+      - name: Recover verified unused account or run exact-production canary
+        shell: bash
+        run: |
+          if [[ -n "$PJSDAS_CGR02_RECOVERY_USER_ID" ]]; then
+            ./node_modules/.bin/tsx scripts/cgr02-provisioned-production-canary.ts --execute "--recover-user-id=$PJSDAS_CGR02_RECOVERY_USER_ID"
+          else
+            ./node_modules/.bin/tsx scripts/cgr02-provisioned-production-canary.ts --execute
+          fi

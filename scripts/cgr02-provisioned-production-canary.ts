@@ -2,6 +2,7 @@
 import { randomBytes, randomUUID } from 'node:crypto'
 import { createClient } from '@supabase/supabase-js'
 import { PJSDAS_SUPABASE_PUBLISHABLE_KEY, PJSDAS_SUPABASE_URL } from '../gateway/supabaseProject.js'
+import { upgradeSnapshotToLatest } from '../src/snapshot.js'
 
 const requireEnv = (key: string) => {
   const value = process.env[key]?.trim()
@@ -22,12 +23,67 @@ async function preflight() {
   }
 }
 
+const syntheticEmail = /^cgr02-canary-[0-9a-f-]{36}@example\.invalid$/
+
+async function unusedSyntheticAccount(admin: ReturnType<typeof createClient>, userId: string, requireRevoked: boolean) {
+  const identity = await admin.auth.admin.getUserById(userId)
+  if (identity.error || !identity.data.user || !syntheticEmail.test(identity.data.user.email ?? '')
+    || identity.data.user.app_metadata?.purpose !== 'pjsdas-cgr02-synthetic-canary') {
+    throw new Error('Recovery target is not the exact dedicated synthetic canary identity.')
+  }
+  const [grant, ledger, workspace] = await Promise.all([
+    admin.from('pjsdas_access_grants').select('revoked_at').eq('user_id', userId).maybeSingle(),
+    admin.from('pjsdas_command_ledger').select('id', { count: 'exact', head: true }).eq('user_id', userId),
+    admin.from('pjsdas_workspaces').select('revision').eq('user_id', userId).maybeSingle(),
+  ])
+  if (grant.error || ledger.error || workspace.error || ledger.count === null) {
+    throw new Error('Synthetic account receipt inspection failed; account retained.')
+  }
+  if (requireRevoked && !grant.data?.revoked_at) {
+    throw new Error('Synthetic account audience grant is not revoked; account retained.')
+  }
+  return ledger.count === 0 && (!workspace.data || workspace.data.revision === 0)
+}
+
+async function recoverUnusedAccount(userId: string) {
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(userId)) {
+    throw new Error('Recovery requires one exact synthetic user UUID.')
+  }
+  await preflight()
+  const admin = createClient(PJSDAS_SUPABASE_URL, requireEnv('PJSDAS_SUPABASE_SERVICE_ROLE_KEY'),
+    { auth: { persistSession: false, autoRefreshToken: false } })
+  if (!await unusedSyntheticAccount(admin, userId, true)) {
+    throw new Error('Synthetic command receipts or workspace changes exist; account retained for receipt-based recovery.')
+  }
+  const deleted = await admin.auth.admin.deleteUser(userId)
+  if (deleted.error) throw new Error('Verified unused synthetic account deletion failed.')
+  console.log(`Verified unused synthetic canary account ${userId} removed; no command receipt or workspace mutation existed.`)
+}
+
+async function bootstrapEmptyWorkspace(origin: string, token: string) {
+  const snapshot = upgradeSnapshotToLatest({ schema: 'pjsdas-local-snapshot', version: 1,
+    exportedAt: new Date().toISOString(),
+    data: { opportunities: [], processes: [], processEvents: [], actions: [], prep: [], applicationGroups: [], semanticReceipts: [], timeline: [] } })
+  const response = await fetch(`${origin}/api/workspace`, {
+    method: 'POST', redirect: 'error', signal: AbortSignal.timeout(12_000),
+    headers: { origin, authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+    body: JSON.stringify({ action: 'bootstrap', confirmMigration: true, snapshot,
+      migratedFrom: 'cgr02-dedicated-synthetic-empty-workspace' }),
+  })
+  const result = await response.json().catch(() => undefined) as { outcome?: string; revision?: number } | undefined
+  if (!response.ok || result?.outcome !== 'MIGRATED_OR_ALREADY_MATCHED' || result.revision !== 0) {
+    throw new Error(`Synthetic empty workspace initialization failed (HTTP ${response.status}); details withheld.`)
+  }
+}
+
 async function run() {
   if (process.argv.includes('--plan')) {
-    console.log('CGR-02 identity plan valid: exact deployed SHA -> create one random synthetic account -> temporary beta grant -> two separate sessions -> command canary -> revoke grant -> sign out -> delete only the created account. No network or write occurred.')
+    console.log('CGR-02 identity plan valid: exact deployed SHA -> create one random synthetic account -> temporary beta grant -> two sessions -> first-party empty workspace initialization -> command canary -> revoke grant -> sign out -> verified cleanup. No network or write occurred.')
     return
   }
   if (!process.argv.includes('--execute')) throw new Error('Use --plan or --execute; no network or write occurred.')
+  const recoveryArg = process.argv.find((arg) => arg.startsWith('--recover-user-id='))
+  if (recoveryArg) return recoverUnusedAccount(recoveryArg.slice('--recover-user-id='.length))
   await preflight()
   const serviceRoleKey = requireEnv('PJSDAS_SUPABASE_SERVICE_ROLE_KEY')
   const admin = createClient(PJSDAS_SUPABASE_URL, serviceRoleKey, { auth: { persistSession: false, autoRefreshToken: false } })
@@ -67,6 +123,7 @@ async function run() {
     }
     process.env.PJSDAS_CGR02_CANARY_ACCESS_TOKEN_A = tokenA
     process.env.PJSDAS_CGR02_CANARY_ACCESS_TOKEN_B = tokenB
+    await bootstrapEmptyWorkspace(new URL(requireEnv('PJSDAS_CGR02_CANARY_ORIGIN')).origin, tokenA)
     canaryStarted = true
     await import('./cgr02-production-canary.js')
     canaryPassed = true
@@ -91,7 +148,11 @@ async function run() {
       }
       // A failed command canary may need its synthetic workspace retained for
       // receipt-based recovery. Its audience access is revoked meanwhile.
-      const preserveForRecovery = canaryStarted && !canaryPassed && grantRevoked
+      let preserveForRecovery = canaryStarted && !canaryPassed && grantRevoked
+      if (preserveForRecovery) {
+        try { preserveForRecovery = !await unusedSyntheticAccount(admin, userId, true) }
+        catch { cleanupErrors.push('receipt inspection'); preserveForRecovery = true }
+      }
       if (!preserveForRecovery) {
         const deleted = await admin.auth.admin.deleteUser(userId)
         if (deleted.error) cleanupErrors.push('synthetic account deletion')
