@@ -19,7 +19,7 @@ test('CGR-03 broken Gmail source explains stale data and offers explicit read-on
     return route.fulfill({ status: 200, contentType: 'text/plain', body: 'Synthetic consent boundary reached.' })
   })
 
-  await page.goto('/settings')
+  await page.goto('/pjsdas/settings')
   const card = page.locator('.cloud-settings-card').filter({ hasText: 'BACKGROUND SOURCES' })
   await expect(card.getByText('新邮件进展可能未同步')).toBeVisible()
   await expect(card).toContainText('最近一次邮件检查失败，已有资料仍可查看')
