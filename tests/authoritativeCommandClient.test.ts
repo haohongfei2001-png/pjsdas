@@ -16,6 +16,7 @@ import { fetchBackend } from '../src/backendEndpoints.js'
 import { replaceLocalSnapshotFromCloud } from '../src/db.js'
 import {
   clearAccountDraft,
+  discardAccountPendingOperation,
   executeConnectedBusinessCommand,
   listAccountPendingOperations,
   readAccountDraft,
@@ -97,6 +98,31 @@ describe('CGR-01 account-scoped connected command client', () => {
     clearAccountDraft('account-a', 'tell-pjsdas')
     expect(readAccountDraft('account-a', 'tell-pjsdas')).toBe('')
     expect(readAccountDraft('account-b', 'tell-pjsdas')).toBe('B draft')
+  })
+
+  it('retires a known conflicted pending operation only when the user intentionally edits into a new intent', async () => {
+    vi.mocked(fetchBackend).mockResolvedValue(response({
+      outcome: 'CONFLICT',
+      revision: 4,
+      workspaceVersion: 'txn:4',
+      schemaVersion: 4,
+      snapshot: snapshot(),
+      conflict: {
+        kind: 'OBJECT_CONFLICT',
+        message: 'same object changed',
+        objects: [{ type: 'action', id: 'action-a' }],
+      },
+    }, 409))
+
+    const commandId = 'web-action:conflict-retire'
+    await executeConnectedBusinessCommand('account-a', {
+      type: 'domain',
+      value: { commandId, kind: 'set_action_status', actionId: 'action-a', status: 'done' },
+    }, { commandId, baseRevision: 3 })
+
+    expect(listAccountPendingOperations('account-a')).toMatchObject([{ commandId, status: 'conflict' }])
+    discardAccountPendingOperation('account-a', commandId)
+    expect(listAccountPendingOperations('account-a')).toEqual([])
   })
 
   it('recovers a lost response by receipt identity without sending a duplicate command', async () => {
