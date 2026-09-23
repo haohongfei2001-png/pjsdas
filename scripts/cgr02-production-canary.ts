@@ -208,7 +208,4 @@ async function run() {
     cleanup: 'verified', account: 'redacted', content: 'synthetic-only' }))
 }
 
-run().catch((error) => {
-  console.error(error instanceof Error ? error.message : 'CGR-02 canary failed; details withheld.')
-  process.exitCode = 1
-})
+await run()

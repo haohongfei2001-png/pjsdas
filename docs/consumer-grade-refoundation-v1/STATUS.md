@@ -56,7 +56,7 @@ CGR-01 moved the CGR-02 prerequisite connected-Web mutation families to typed au
 
 Closure evidence: `docs/consumer-grade-refoundation-v1/receipts/CGR-01.md`.
 
-CGR-02 engineering is integrated and its exact-main non-production gates are green. The production command canary has not run: Vercel rate-limited the exact integrated SHA, and an approved two-session test identity is not yet available. See `receipts/CGR-02-ENGINEERING.md`. CGR-02 is not COMPLETE. CGR-03 engineering has started on the sole bounded-overlap writer branch under the current main execution protocol. UU-08/UU-09 remain on hold. Release publication remains a separate owner decision.
+CGR-02 engineering is integrated and its exact-main non-production gates are green. The production command canary has not run: Vercel rate-limited the exact integrated SHA. The owner authorized a dedicated synthetic test account, and the manual one-time account workflow was merged at `bf35f5bec0436e6c958a4894ee53fbf58ee0771e`; it creates no account until the exact deployed SHA passes preflight. No production canary PASS is implied. See `receipts/CGR-02-ENGINEERING.md`. CGR-02 is not COMPLETE. CGR-03 engineering is active in draft PR #127 on the sole bounded-overlap writer branch under the current main execution protocol. UU-08/UU-09 remain on hold. Release publication remains a separate owner decision.
 
 ## Registration result
 
