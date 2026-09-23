@@ -102,6 +102,7 @@ export default function TellPjsdasCapture({
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
   const [saveState, setSaveState] = useState<CaptureSaveState>('idle')
+  const [authoritativeSaveConfirmed, setAuthoritativeSaveConfirmed] = useState(false)
   const [decisionCount, setDecisionCount] = useState(0)
   const [unresolvedCount, setUnresolvedCount] = useState(0)
   const [undo, setUndo] = useState<LocalSemanticUndoToken>()
@@ -127,6 +128,7 @@ export default function TellPjsdasCapture({
     setMessage('')
     setError(resumable?.lastError ?? '')
     setSaveState(resumable?.status === 'unknown' ? 'unknown' : resumable?.status === 'conflict' ? 'conflict' : resumable ? 'reauth' : 'idle')
+    setAuthoritativeSaveConfirmed(false)
     setDecisionCount(0)
     setUnresolvedCount(0)
     setUndo(undefined)
@@ -232,6 +234,7 @@ export default function TellPjsdasCapture({
       setDecisionCount(result.decisionRequestIds.length)
       setUnresolvedCount(result.unresolved.length)
       setSaveState('saved')
+      setAuthoritativeSaveConfirmed(result.status === 'APPLIED' || result.status === 'ALREADY_APPLIED')
       setStableCommandId(undefined)
       if (result.status === 'NO_WRITE') {
         setMessage(zh
@@ -274,6 +277,7 @@ export default function TellPjsdasCapture({
       if (cloud.session && !connectedWorkspaceAuthorityEnabled()) await ensureAuthoritativePersistence(true, cloud.syncNow)
       setUndo(undefined)
       setSaveState('saved')
+      setAuthoritativeSaveConfirmed(false)
       setMessage(zh ? '刚才的权威写入已撤销；其他后续更新保持不变。' : 'The authoritative write was undone; unrelated later updates remain intact.')
       await onChanged()
     } catch (caught) {
@@ -296,6 +300,7 @@ export default function TellPjsdasCapture({
     setMessage('')
     setError('')
     setUndo(undefined)
+    setAuthoritativeSaveConfirmed(false)
     if (!recoveryLocked) setSaveState('idle')
   }
 
@@ -381,7 +386,9 @@ export default function TellPjsdasCapture({
         {message ? (
           <div className={`cgr-capture-receipt state-${saveState}`} role="status" aria-live="polite">
             <div>
-              <strong>{saveState === 'offline' ? (zh ? '尚未写入' : 'Not written yet') : (zh ? '处理结果' : 'Result')}</strong>
+              <strong>{saveState === 'offline' ? (zh ? '尚未写入' : 'Not written yet')
+                : authoritativeSaveConfirmed && !text.trim() ? (zh ? '已保存' : 'Saved')
+                  : (zh ? '处理结果' : 'Result')}</strong>
               <span>{message}</span>
             </div>
             <div className="cgr-capture-receipt-actions">
