@@ -97,6 +97,22 @@ export function discardAccountPendingOperation(accountKey: string, commandId: st
   removePending(accountKey, commandId)
 }
 
+export function findAccountPendingSemanticOperation(accountKey: string, originalText?: string) {
+  const match = readPending(accountKey)
+    .filter((item) =>
+      item.action === 'command'
+      && item.command?.type === 'semantic_intake'
+      && (!originalText || item.command.value.originalText === originalText))
+    .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0]
+  if (!match || match.command?.type !== 'semantic_intake') return undefined
+  return {
+    commandId: match.commandId,
+    status: match.status,
+    originalText: match.command.value.originalText,
+    lastError: match.lastError,
+  }
+}
+
 export function saveAccountDraft(accountKey: string, name: string, value: string) {
   storage()?.setItem(draftKey(accountKey, name), value)
 }
