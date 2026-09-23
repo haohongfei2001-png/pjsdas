@@ -334,6 +334,23 @@ export default function McpProposalReview() {
     setBusy(true)
     setError('')
     try {
+      if (connectedWorkspaceAuthorityEnabled() && cloud.session) {
+        if (cloud.checkpoint.conflict) throw new Error('账号工作区存在冲突；请先处理，再重新生成提议。')
+        if (!signedToken) throw new Error('已验证的签名提议不可用；请重新打开提议。')
+        const result = await executeConnectedBusinessCommand(cloud.session.user.id, {
+          type: 'mcp_discard', value: { token: signedToken, rejectionSelections },
+        }, { commandId: createConnectedCommandId('mcp-discard') })
+        if (result.outcome !== 'COMMITTED' && result.outcome !== 'ALREADY_APPLIED') {
+          throw new Error(result.conflict?.message ?? '提议未在账号工作区放弃。')
+        }
+        announceWorkspaceChange()
+        setResult(discoveryOperations.length
+          ? (zh
+              ? '整批岗位已放弃，没有加入 Opportunities；拒绝反馈已记录到账号工作区。'
+              : 'The batch was discarded without adding jobs; rejection feedback was saved to the account workspace.')
+          : (zh ? '这条 ChatGPT 提议已在账号工作区放弃，没有修改求职数据。' : 'Proposal discarded in the account workspace without changing job-search data.'))
+        return
+      }
       await savePendingChangeSet(proposal.changeSet)
       await discardChangeSet(proposal.changeSet.id)
       let feedbackSaved = true

@@ -22,6 +22,7 @@ import { applyMcpDiscoveryCommand } from '../src/mcpDiscoveryApplyCommand.js'
 import { applyMcpActionStatusCommand } from '../src/mcpActionStatusCommand.js'
 import { applyMcpRulesCommand } from '../src/mcpRulesCommand.js'
 import { applyMcpSourceRefreshCommand } from '../src/mcpSourceRefreshCommand.js'
+import { applyMcpDiscardCommand } from '../src/mcpDiscardCommand.js'
 import { applyProcessEventDeleteCommand } from '../src/processEventDeleteCommand.js'
 import { discoveryInboxIdentity, discoveryInboxItemsFromChangeSet } from '../src/discoveryInbox.js'
 import type { McpProposalEnvelope } from '../src/ai/mcpProposal.js'
@@ -79,6 +80,13 @@ export const authoritativeBusinessCommandSchema = z.object({
     z.object({ type: z.literal('mcp_apply_actions'), value: z.object({ token: z.string().min(1).max(32_000) }).strict() }).strict(),
     z.object({ type: z.literal('mcp_apply_rules'), value: z.object({ token: z.string().min(1).max(32_000) }).strict() }).strict(),
     z.object({ type: z.literal('mcp_apply_source_refresh'), value: z.object({ token: z.string().min(1).max(32_000) }).strict() }).strict(),
+    z.object({ type: z.literal('mcp_discard'), value: z.object({
+      token: z.string().min(1).max(32_000),
+      rejectionSelections: z.record(z.string().min(1).max(240), z.object({
+        code: z.enum(['location','compensation','role_direction','company_value','requirements','already_have_better','not_interested','other']),
+        note: z.string().max(1000).optional(),
+      }).strict()),
+    }).strict() }).strict(),
     z.object({ type: z.literal('mcp_apply_discovery'), value: z.object({
       token: z.string().min(1).max(32_000),
       selectedOperationIds: z.array(z.string().min(1).max(240)).min(1).max(24),
@@ -120,7 +128,7 @@ export interface AuthoritativeCommandExecution {
 }
 
 function resultPayload(command: AuthoritativeBusinessCommand['command'], evaluated: any) {
-  if (command.type === 'domain' || command.type === 'discovery_status' || command.type === 'discovery_profile' || command.type === 'discovery_promotion' || command.type === 'process_event_delete' || command.type === 'mcp_save_inbox' || command.type === 'mcp_apply_discovery' || command.type === 'mcp_apply_actions' || command.type === 'mcp_apply_rules' || command.type === 'mcp_apply_source_refresh') {
+  if (command.type === 'domain' || command.type === 'discovery_status' || command.type === 'discovery_profile' || command.type === 'discovery_promotion' || command.type === 'process_event_delete' || command.type === 'mcp_save_inbox' || command.type === 'mcp_apply_discovery' || command.type === 'mcp_apply_actions' || command.type === 'mcp_apply_rules' || command.type === 'mcp_apply_source_refresh' || command.type === 'mcp_discard') {
     return {
       type: command.type,
       status: evaluated.status,
@@ -192,6 +200,10 @@ function intentObjects(command: AuthoritativeBusinessCommand['command'], snapsho
       ...proposal.changeSet.operations.filter((item) => item.kind === 'refresh_job_posting')
         .map((item) => ({ type: item.ownerKind === 'opportunity' ? 'opportunity' : 'discovery_inbox', id: item.ownerId })),
     ]
+  }
+  if (command.type === 'mcp_discard') {
+    if (!proposal) throw new Error('Verified MCP proposal is required.')
+    return [{ type: 'change_set', id: proposal.changeSet.id }]
   }
   if (command.type === 'discovery_status') return [{ type: 'discovery_inbox', id: command.value.inboxItemId }]
   if (command.type === 'discovery_profile') return [{ type: 'discovery_profile', id: 'current' }]
@@ -317,12 +329,12 @@ export function createAuthoritativeCommandExecutor(options: TransactionalWorkspa
     if (principal.kind === 'first_party_web' && parsed.command.type === 'semantic_intake' && parsed.command.value.source.kind !== 'web') {
       throw new WorkspaceSourceError('AUTH_FORBIDDEN', 'First-party Web Semantic Intake may write only web-origin observations.', false)
     }
-    if (['discovery_status','discovery_profile','discovery_promotion','process_event_delete','mcp_save_inbox','mcp_apply_discovery','mcp_apply_actions','mcp_apply_rules','mcp_apply_source_refresh'].includes(parsed.command.type) && principal.kind !== 'first_party_web') {
+    if (['discovery_status','discovery_profile','discovery_promotion','process_event_delete','mcp_save_inbox','mcp_apply_discovery','mcp_apply_actions','mcp_apply_rules','mcp_apply_source_refresh','mcp_discard'].includes(parsed.command.type) && principal.kind !== 'first_party_web') {
       throw new WorkspaceSourceError('AUTH_FORBIDDEN', 'Discovery review commands are restricted to the first-party Web client.', false)
     }
 
     let proposal: McpProposalEnvelope | undefined
-    if (parsed.command.type === 'mcp_save_inbox' || parsed.command.type === 'mcp_apply_discovery' || parsed.command.type === 'mcp_apply_actions' || parsed.command.type === 'mcp_apply_rules' || parsed.command.type === 'mcp_apply_source_refresh') {
+    if (parsed.command.type === 'mcp_save_inbox' || parsed.command.type === 'mcp_apply_discovery' || parsed.command.type === 'mcp_apply_actions' || parsed.command.type === 'mcp_apply_rules' || parsed.command.type === 'mcp_apply_source_refresh' || parsed.command.type === 'mcp_discard') {
       const signingKey = process.env.PJSDAS_TOKEN_ENCRYPTION_KEY?.trim() ?? ''
       if (!signingKey) throw new WorkspaceSourceError('PROPOSAL_VERIFY_UNAVAILABLE', 'Signed proposal verification is unavailable.', false)
       proposal = await verifySignedProposalToken(parsed.command.value.token, signingKey)
@@ -396,6 +408,8 @@ export function createAuthoritativeCommandExecutor(options: TransactionalWorkspa
         evaluated = applyMcpRulesCommand(current.snapshot, proposal!, now)
       } else if (parsed.command.type === 'mcp_apply_source_refresh') {
         evaluated = applyMcpSourceRefreshCommand(current.snapshot, proposal!, now)
+      } else if (parsed.command.type === 'mcp_discard') {
+        evaluated = applyMcpDiscardCommand(current.snapshot, proposal!, parsed.command.value.rejectionSelections, now)
       } else if (parsed.command.type === 'semantic_intake') {
         evaluated = applySemanticIntake(current.snapshot, parsed.command.value as SemanticIntakeObservation, {
           authorized: true,
