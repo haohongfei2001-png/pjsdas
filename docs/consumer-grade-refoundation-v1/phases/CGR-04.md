@@ -1,6 +1,6 @@
 # CGR-04 — Natural Intake & Automation Closure
 
-State: NOT_READY
+State: READY — BOUNDED ENGINEERING OVERLAP; CGR-03 PRODUCTION_PENDING_EXTERNAL
 
 ## User-visible outcome
 
