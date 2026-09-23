@@ -1,6 +1,9 @@
 import { useMemo, useState } from 'react'
 import { applyProcessEventChangeSet, getAllOpportunities } from './db.js'
 import { parseRecruitingNotification } from './notificationParser.js'
+import { useCloud } from './cloud/CloudContext.js'
+import { connectedWorkspaceAuthorityEnabled } from './cloud/connectedWorkspaceRepository.js'
+import { createConnectedCommandId, executeConnectedBusinessCommand } from './cloud/authoritativeCommandClient.js'
 import {
   createProcessEvent,
   defaultMinutesForProcessEvent,
@@ -44,6 +47,7 @@ const confidenceLabels = {
 } as const
 
 export default function NotificationPasteDock({ onChanged }: NotificationPasteDockProps) {
+  const cloud = useCloud()
   const [open, setOpen] = useState(false)
   const [text, setText] = useState('')
   const [opportunities, setOpportunities] = useState<Opportunity[]>([])
@@ -133,8 +137,25 @@ export default function NotificationPasteDock({ onChanged }: NotificationPasteDo
         notes,
         source: 'manual',
       })
-      const applied = await applyProcessEventChangeSet(event)
-      setMessage(`已通过 ChangeSet ${applied.id} 保存流程事件；粘贴的原始通知文本没有写入本地数据库。`)
+      if (cloud.session && connectedWorkspaceAuthorityEnabled()) {
+        if (cloud.checkpoint.conflict) throw new Error('账号工作区存在冲突；请先处理后再记录流程事件。')
+        const commandId = createConnectedCommandId('web-notification-event')
+        const committed = await executeConnectedBusinessCommand(cloud.session.user.id, {
+          type: 'domain', value: {
+            commandId, kind: 'record_process_event', opportunityId: opportunity.id,
+            eventType: event.type, occurredAt: event.occurredAt, dueAt: event.dueAt,
+            timingMode: event.timingMode, estimatedMinutes: event.estimatedMinutes,
+            notes: event.notes, source: event.source,
+          },
+        }, { commandId })
+        if (committed.outcome !== 'COMMITTED' && committed.outcome !== 'ALREADY_APPLIED') {
+          throw new Error(committed.conflict?.message ?? '流程事件未写入账号工作区。')
+        }
+        setMessage('流程事件已写入账号工作区；粘贴的原始通知文本没有写入本地数据库。')
+      } else {
+        const applied = await applyProcessEventChangeSet(event)
+        setMessage(`已通过 ChangeSet ${applied.id} 保存流程事件；粘贴的原始通知文本没有写入本地数据库。`)
+      }
       setResult(null)
       setText('')
       setOpportunityText('')

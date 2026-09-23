@@ -13,6 +13,9 @@ import {
   processEventLabels,
   processEventStageLabel,
 } from './processEvents.js'
+import { useCloud } from './cloud/CloudContext.js'
+import { connectedWorkspaceAuthorityEnabled } from './cloud/connectedWorkspaceRepository.js'
+import { createConnectedCommandId, executeConnectedBusinessCommand } from './cloud/authoritativeCommandClient.js'
 import {
   localProcessEventDateTimeValue,
   occurredAtWhenOpeningProcessEventDraft,
@@ -73,6 +76,7 @@ function effectiveTimingMode(event: ProcessEvent) {
 }
 
 export default function ProcessEventDock({ onChanged }: ProcessEventDockProps) {
+  const cloud = useCloud()
   const { lang } = useUiLanguage()
   const zh = lang === 'zh'
   const [open, setOpen] = useState(false)
@@ -174,7 +178,24 @@ export default function ProcessEventDock({ onChanged }: ProcessEventDockProps) {
         notes,
         source: 'manual',
       })
-      await applyProcessEventChangeSet(processEvent)
+      if (cloud.session && connectedWorkspaceAuthorityEnabled()) {
+        if (cloud.checkpoint.conflict) throw new Error('账号工作区存在冲突；请先处理后再记录流程事件。')
+        const commandId = createConnectedCommandId('web-process-event')
+        const result = await executeConnectedBusinessCommand(cloud.session.user.id, {
+          type: 'domain', value: {
+            commandId, kind: 'record_process_event', opportunityId: opportunity.id,
+            eventType: processEvent.type, occurredAt: processEvent.occurredAt,
+            dueAt: processEvent.dueAt, timingMode: processEvent.timingMode,
+            estimatedMinutes: processEvent.estimatedMinutes, notes: processEvent.notes,
+            source: processEvent.source,
+          },
+        }, { commandId })
+        if (result.outcome !== 'COMMITTED' && result.outcome !== 'ALREADY_APPLIED') {
+          throw new Error(result.conflict?.message ?? '流程事件未写入账号工作区。')
+        }
+      } else {
+        await applyProcessEventChangeSet(processEvent)
+      }
       await reloadLocal()
       setOpportunityText('')
       setDueAt('')

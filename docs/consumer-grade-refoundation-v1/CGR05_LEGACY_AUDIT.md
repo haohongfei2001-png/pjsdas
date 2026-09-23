@@ -17,6 +17,7 @@ Connected Web still has a broad daily whole-snapshot route. `CloudContext.syncNo
 | MCP proposal apply / save to inbox | local ChangeSet/inbox mutation then `cloud.syncNow()` | preserve explicit review and source authorization while moving business mutations to typed commands |
 | Settings manual sync | `cloud.syncNow()` | connected mode should reconcile/read and replay pending typed commands without broad routine writes |
 | Auto-sync on timer/focus/online | `cloud.syncNow()` | connected mode should use authoritative refresh and pending receipt recovery without broad routine writes |
+| Process Event Dock / pasted notification | local ProcessEvent ChangeSet; later manual whole-snapshot sync | connected create should use the existing bounded `record_process_event` domain command; local-only mode retains ChangeSet; delete still needs a scoped authoritative command |
 
 Already converted daily paths include Today action status/Undo, Tell PJSDAS and DecisionRequest in transactional mode. They must remain typed during retirement.
 
@@ -67,3 +68,7 @@ A connected signed proposal containing one Decision Rules replacement now uses o
 ## Signed posting refresh and Discovery Run candidate
 
 Pure posting-refresh proposals and pure Discovery Run record proposals now use one first-party `mcp_apply_source_refresh` command. It verifies the signed account and exact workspace baseline, resolves the expected posting identity and canonical source before updating Opportunity or Inbox evidence, preserves process stage and source history, then commits the reviewed ChangeSet atomically. A zero-candidate Discovery Run records its signed metadata without inventing an Opportunity. Mixed refresh/run batches now fail in both connected and local paths; the previous local path could mark a mixed ChangeSet applied while ignoring its refresh operations. Delegated MCP access remains forbidden. Focused tests cover stale source, mixed-kind failure, zero-candidate Run metadata, account isolation and one authoritative receipt. This remains candidate work until exact-head CI/browser evidence passes; other non-Discovery proposal kinds and manual sync still require retirement.
+
+## Process event creation candidate
+
+The Process Event Dock and pasted-notification flow were additional connected daily consumers of local ChangeSet writes. In transactional connected mode, creation now calls the existing account-bound `record_process_event` domain command before showing success; the server derives event identity, Opportunity relation, Action, schedule and timeline from the authoritative snapshot, and the client projects its committed result. The pasted raw notification remains outside the workspace. Local-only creation keeps the existing ChangeSet path. Event deletion remains local-only and therefore still needs scoped connected migration before whole-snapshot compatibility can retire. This is engineering candidate evidence until exact-head CI/browser and cross-client gates pass.
