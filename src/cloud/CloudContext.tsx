@@ -160,6 +160,9 @@ export function CloudProvider({ children }: { children: ReactNode }) {
     setOutcome(undefined)
     setError(undefined)
     try {
+      if (connectedWorkspaceAuthorityEnabled()) {
+        await replayAccountPendingOperations(userId)
+      }
       const result = await runCloudSync(userId)
       setOutcome(result)
       refreshState(userId)
@@ -185,11 +188,14 @@ export function CloudProvider({ children }: { children: ReactNode }) {
     const initial = window.setTimeout(() => { void syncNow().catch(() => undefined) }, 700)
     const interval = window.setInterval(() => { void syncNow().catch(() => undefined) }, 120_000)
     const focus = () => { void syncNow().catch(() => undefined) }
+    const online = () => { void syncNow().catch(() => undefined) }
     window.addEventListener('focus', focus)
+    window.addEventListener('online', online)
     return () => {
       window.clearTimeout(initial)
       window.clearInterval(interval)
       window.removeEventListener('focus', focus)
+      window.removeEventListener('online', online)
     }
   }, [loading, configured, session?.user.id, device.autoSync, device.workspaceOwnerUserId, checkpoint.conflict, syncNow])
 
