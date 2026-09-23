@@ -237,17 +237,7 @@ describe('first-party connected workspace endpoint', () => {
 
     expect(response.status).toBe(400)
     await expect(response.json()).resolves.toMatchObject({ code: 'SNAPSHOT_COMPATIBILITY_REQUIRED' })
-    expect(rpcBody).toMatchObject({
-      target_command_id: 'legacy-snapshot-0001',
-      target_expected_revision: 8,
-      target_operation: 'SyncLocalSnapshot',
-      target_receipt_context: {
-        contractVersion: 2,
-        commandType: 'snapshot_compatibility',
-        snapshotPurpose: 'compatibility',
-      },
-    })
-    expect(rpcBody.target_snapshot).not.toEqual(authoritative)
+    expect(rpcCalled).toBe(false)
   })
 
   it('rejects a stale legacy snapshot before it can overwrite newer authoritative fields', async () => {
@@ -315,7 +305,17 @@ describe('first-party connected workspace endpoint', () => {
       revision: 9,
       snapshot: { data: { opportunities: [{ id: 'opp-new', role: 'Authoritative Role' }] } },
     })
-    expect(rpcCalled).toBe(false)
+    expect(rpcBody).toMatchObject({
+      target_command_id: 'legacy-snapshot-0001',
+      target_expected_revision: 8,
+      target_operation: 'SyncLocalSnapshot',
+      target_receipt_context: {
+        contractVersion: 2,
+        commandType: 'snapshot_compatibility',
+        snapshotPurpose: 'compatibility',
+      },
+    })
+    expect(rpcBody.target_snapshot).not.toEqual(authoritative)
   })
 
 })
