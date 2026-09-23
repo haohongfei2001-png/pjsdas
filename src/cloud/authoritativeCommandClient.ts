@@ -93,6 +93,10 @@ export function listAccountPendingOperations(accountKey: string) {
   return readPending(accountKey)
 }
 
+export function discardAccountPendingOperation(accountKey: string, commandId: string) {
+  removePending(accountKey, commandId)
+}
+
 export function saveAccountDraft(accountKey: string, name: string, value: string) {
   storage()?.setItem(draftKey(accountKey, name), value)
 }
