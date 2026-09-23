@@ -23,11 +23,12 @@ test('real VoiceOver can find Today, Tell PJSDAS and the authoritative saved res
   const input = dialog.getByRole('textbox', { name: '要告诉 PJSDAS 的内容' })
   await expect(input).toBeFocused()
   const inputPhrases: string[] = []
+  // The dialog focuses the textarea. Align the VoiceOver cursor with that
+  // keyboard focus before checking its actual spoken accessible name.
+  await voiceOver.perform(voiceOver.keyboardCommands.moveCursorToKeyboardFocus)
   let foundInput = false
-  for (let i = 0; i < 12 && !foundInput; i += 1) {
-    // The browser moves focus to the textarea, while VoiceOver may retain its
-    // prior cursor at the later Save control. Search backward through controls.
-    await voiceOver.perform(voiceOver.keyboardCommands.findPreviousControl)
+  for (let i = 0; i < 4 && !foundInput; i += 1) {
+    if (i) await voiceOver.perform(voiceOver.keyboardCommands.findNextControl)
     const spoken = await voiceOver.lastSpokenPhrase()
     const item = await voiceOver.itemText()
     inputPhrases.push(`${spoken} / ${item}`)
