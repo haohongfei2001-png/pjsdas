@@ -211,6 +211,13 @@ export function createConnectedWorkspaceHandler(config: ConnectedWorkspaceHandle
       }
 
       if (body.action === 'commit') {
+        if (!['legacy_uncovered_web', 'migration_recovery', 'compatibility'].includes(body.snapshotPurpose ?? '')) {
+          throw new WorkspaceSourceError(
+            'SNAPSHOT_COMPATIBILITY_REQUIRED',
+            'Whole-snapshot connected writes are restricted to explicitly declared legacy, migration/recovery, or compatibility flows.',
+            false,
+          )
+        }
         if (!body.commandId?.trim() || !Number.isInteger(body.expectedRevision)) {
           throw new WorkspaceSourceError('INVALID_ARGUMENT', 'Connected commit requires commandId and expectedRevision.', false)
         }
@@ -226,7 +233,7 @@ export function createConnectedWorkspaceHandler(config: ConnectedWorkspaceHandle
             expectedRevision: body.expectedRevision!,
             provenance: {
               channel: 'first-party-web-sync',
-              snapshotPurpose: body.snapshotPurpose ?? 'legacy-client-compatibility',
+              snapshotPurpose: body.snapshotPurpose,
             },
           },
           () => nextSnapshot,
