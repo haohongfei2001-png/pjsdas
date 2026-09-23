@@ -55,7 +55,7 @@ async function healthy(origin: string, fetchImpl: typeof fetch) {
     } | undefined
     const expected = expectedBackendMode()
     return body?.status === 'ok'
-      && body.version === '1.9.0-alpha.1'
+      && body.version === '1.10.0-alpha.1'
       && body.mode === expected.mode
       && body.workspaceAuthority === expected.authority
       && body.capabilities?.deploymentPortability === true
