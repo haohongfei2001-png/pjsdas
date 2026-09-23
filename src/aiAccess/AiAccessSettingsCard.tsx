@@ -24,8 +24,8 @@ export default function AiAccessSettingsCard() {
           <div className="eyebrow">BACKGROUND SOURCES</div>
           <h2>{zh ? '后台来源与 AI 连接' : 'Background sources and AI connection'}</h2>
           <p>{zh
-            ? '网页关闭后，已授权的来源仍可带来新的岗位和招聘进展。每项来源都能单独关闭；系统不会替你悄悄改变决策规则、删除资料或放弃岗位。'
-            : 'Authorized sources can bring in new opportunities and recruiting progress while this page is closed. You can turn each source off; they cannot silently change your decision rules, delete data, or abandon an opportunity.'}</p>
+            ? '网页关闭后，已授权的来源仍可带来新的岗位和招聘进展。AI 读取与受信任的岗位发现、招聘邮件摄入只能加入有来源依据的有限事实；修改长期偏好、拒绝决定或删除资料仍需你审阅确认。每项来源都能单独关闭。'
+            : 'Authorized sources can bring in new opportunities and recruiting progress while this page is closed. AI reading and trusted discovery or recruiting-email intake may add only bounded, source-backed facts; changes to durable preferences, rejection decisions, or deletions still require your review. You can turn each source off.'}</p>
         </div>
         <span className={`cloud-state ${ai.error || sourceNeedsAttention ? 'warning' : ai.message || automation?.gmailEnabled || automation?.discoveryEnabled ? 'online' : ''}`}>
           {ai.error || sourceNeedsAttention ? (zh ? '需要处理' : 'Needs attention') : ai.message || automation?.gmailEnabled || automation?.discoveryEnabled ? (zh ? '已连接' : 'Connected') : (zh ? '未连接' : 'Not connected')}

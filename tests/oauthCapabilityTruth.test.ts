@@ -18,8 +18,8 @@ describe('OAuth capability truth', () => {
     expect(consent).not.toContain('此授权仅用于 v1.1 的只读工具')
     expect(consent).not.toContain('允许只读访问')
 
-    expect(settings).toContain('trusted Monitor/Gmail ingestion')
-    expect(settings).toContain('reviewable ChangeSet')
+    expect(settings).toContain('trusted discovery or recruiting-email intake may add only bounded, source-backed facts')
+    expect(settings).toContain('changes to durable preferences, rejection decisions, or deletions still require your review')
     expect(settings).not.toContain('Direct AI access remains read-only')
   })
 
