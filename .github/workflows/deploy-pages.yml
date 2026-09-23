@@ -3,6 +3,9 @@ name: Deploy PJSDAS to GitHub Pages
 on:
   push:
     branches: [main]
+    paths-ignore:
+      - 'docs/**'
+      - '.github/workflows/cgr02-production-canary.yml'
   workflow_dispatch:
 
 permissions:
