@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   applyActionStatusChangeSet,
   exportLocalSnapshot,
@@ -6,6 +6,8 @@ import {
 } from './db.js'
 import { parsePJSDASWorkbook } from './importExcelV2.js'
 import { prepPriorityRank, presentPrepPriority, presentPrepSourceState } from './prepSemantics.js'
+import { buildPrepGraph } from './prepGraph.js'
+import { presentPrepGraphLinkExplanation } from './prepGraphPresentation.js'
 import { presentStageLabel } from './stagePresentation.js'
 import { currentUiLanguage, useUiLanguage } from './uiLanguage.js'
 import { DEFAULT_DECISION_RULES, type DecisionRules } from './decisionRules.js'
@@ -32,7 +34,7 @@ import LocalBackupDock from './LocalBackupDock.js'
 import ConnectedMigrationCard from './cloud/ConnectedMigrationCard.js'
 import OriginTransitionNotice from './OriginTransitionNotice.js'
 import OpportunityDetailDrawer, { type OpportunityDetailDestination } from './OpportunityDetailDrawer.js'
-import OpportunityDecisionList from './OpportunityDecisionList.js'
+import OpportunityDecisionList, { type OpportunityListView } from './OpportunityDecisionList.js'
 import {
   buildOpportunityDecisionList,
   getOpportunityDecisionRead,
@@ -48,6 +50,7 @@ import {
 } from './todayBrief.js'
 import type {
   Action,
+  DecisionRequest,
   ImportBundle,
   ImportMeta,
   Prep,
@@ -71,6 +74,8 @@ type RouteState = {
   capture: boolean
   agendaExpanded: boolean
   opportunityId?: string
+  decisionRequestId?: string
+  returnOpportunityId?: string
 }
 
 const APP_BASE = import.meta.env.BASE_URL === '/' ? '' : import.meta.env.BASE_URL.replace(/\/$/, '')
@@ -94,10 +99,15 @@ function browserPath(path: string) {
   return `${APP_BASE}${path}` || '/'
 }
 
-function routeFromPath(pathname = semanticPath()): RouteState {
-  const path = pathname.replace(/\/+$/, '') || '/'
+function routeFromPath(pathname = semanticPath() + window.location.search): RouteState {
+  const url = new URL(pathname, 'https://pjsdas.invalid')
+  const path = url.pathname.replace(/\/+$/, '') || '/'
   if (path === '/capture' || path === '/today/capture') return { surface: 'today', capture: true, agendaExpanded: false }
   if (path === '/decisions') return { surface: 'decisions', capture: false, agendaExpanded: false }
+  const decisionMatch = path.match(/^\/decisions\/([^/]+)$/)
+  if (decisionMatch?.[1]) return { surface: 'decisions', capture: false, agendaExpanded: false,
+    decisionRequestId: decodeURIComponent(decisionMatch[1]),
+    returnOpportunityId: url.searchParams.get('from') || undefined }
   if (path === '/settings') return { surface: 'settings', capture: false, agendaExpanded: false }
   if (path === '/history') return { surface: 'history', capture: false, agendaExpanded: false }
   if (path === '/today/agenda') return { surface: 'today', capture: false, agendaExpanded: true }
@@ -135,6 +145,9 @@ export default function AppV8() {
   const [todayFreshness, setTodayFreshness] = useState<TodayFreshnessView>({ state: 'local' })
   const [opportunityTab, setOpportunityTab] = useState<OpportunityTab>('opportunities')
   const [opportunityTabExplicit, setOpportunityTabExplicit] = useState(false)
+  const [opportunityView, setOpportunityView] = useState<OpportunityListView>('in_progress')
+  const [opportunityQuery, setOpportunityQuery] = useState('')
+  const lastSelectedOpportunityId = useRef<string | undefined>(undefined)
   const [lastCompletedAction, setLastCompletedAction] = useState<CompletionFeedback | null>(null)
   const [snapshot, setSnapshot] = useState<PJSDASSnapshot>()
   const [loading, setLoading] = useState(true)
@@ -153,6 +166,18 @@ export default function AppV8() {
   const surface = route.surface
   const selectedOpportunityId = route.opportunityId
   const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
+
+  useEffect(() => {
+    const previous = lastSelectedOpportunityId.current
+    lastSelectedOpportunityId.current = selectedOpportunityId
+    if (!previous || selectedOpportunityId || surface !== 'opportunities') return
+    const frame = window.requestAnimationFrame(() => {
+      const opener = [...document.querySelectorAll<HTMLButtonElement>('.opportunity-decision-row')]
+        .find((button) => button.dataset.opportunityId === previous)
+      opener?.focus()
+    })
+    return () => window.cancelAnimationFrame(frame)
+  }, [selectedOpportunityId, surface])
 
   async function reload() {
     const next = await exportLocalSnapshot()
@@ -323,6 +348,12 @@ export default function AppV8() {
   ).length
   const workspaceEmpty = opportunities.length === 0 && actions.length === 0 && processes.length === 0 && prep.length === 0
   const selectedOpportunity = selectedOpportunityId ? opportunities.find((item) => item.id === selectedOpportunityId) : undefined
+  const selectedDecisionRequests: DecisionRequest[] = selectedOpportunity
+    ? decisionRequests.filter((request) => request.state === 'open' && (
+      request.affectedObjects.some((object) => object.type === 'opportunity' && object.id === selectedOpportunity.id)
+      || request.choices.some((choice) => choice.resolution?.opportunityId === selectedOpportunity.id)
+    ))
+    : []
   const captureOpportunity = captureContextOpportunityId
     ? opportunities.find((item) => item.id === captureContextOpportunityId)
     : undefined
@@ -346,6 +377,15 @@ export default function AppV8() {
         workspaceVersion: `web:${snapshot.exportedAt}`,
       })
     : undefined
+  const selectedRelatedPrep = useMemo(() => {
+    if (!snapshot || !selectedOpportunityId) return []
+    const graph = buildPrepGraph(snapshot.data.prep, snapshot.data.opportunities, snapshot.data.processes, now)
+    return graph.nodes.flatMap((node) => {
+      const link = node.links.find((item) => item.opportunityId === selectedOpportunityId)
+      return link ? [{ id: node.prepId, title: node.title,
+        reason: presentPrepGraphLinkExplanation(link, graph.needs, zh) }] : []
+    })
+  }, [snapshot, selectedOpportunityId, now, zh])
 
 
   async function markAction(id: string, status: Action['status']) {
@@ -528,9 +568,26 @@ export default function AppV8() {
         ) : null}
 
         {!loading && surface === 'opportunities' && opportunityDecisionList ? (
-          <OpportunitiesSurface read={opportunityDecisionList} prep={prep} tab={opportunityTab} onTabChange={chooseOpportunityTab} onOpenOpportunity={openOpportunity} />
+          <>
+            {selectedOpportunityId && !selectedOpportunity ? (
+              <section className="surface-panel cgr-missing-opportunity" role="status">
+                <h2>{zh ? '无法打开这项机会' : 'This opportunity is unavailable'}</h2>
+                <p>{zh ? '它可能已被删除、合并，或当前连接尚未取得最新资料。请先重试；若仍不可用，可返回机会列表。' : 'It may have been deleted or merged, or this connection may not have the latest data. Retry first, then return to the list if it remains unavailable.'}</p>
+                <div className="surface-tool-row">
+                  <button type="button" onClick={() => { void reload() }}>{zh ? '重新读取' : 'Retry loading'}</button>
+                  <button type="button" onClick={() => navigate('/opportunities', true)}>{zh ? '返回机会列表' : 'Back to opportunities'}</button>
+                </div>
+              </section>
+            ) : null}
+            <OpportunitiesSurface read={opportunityDecisionList} prep={prep} tab={opportunityTab} onTabChange={chooseOpportunityTab}
+              view={opportunityView} onViewChange={setOpportunityView} query={opportunityQuery} onQueryChange={setOpportunityQuery}
+              onOpenOpportunity={openOpportunity} />
+          </>
         ) : null}
-        {!loading && surface === 'decisions' ? <DecisionRequestsView requests={decisionRequests} onChanged={reload} /> : null}
+        {!loading && surface === 'decisions' ? <DecisionRequestsView requests={decisionRequests} focusRequestId={route.decisionRequestId}
+          onShowAll={() => navigate('/decisions')}
+          onReturnOpportunity={route.returnOpportunityId ? () => navigate('/opportunities/' + encodeURIComponent(route.returnOpportunityId!)) : undefined}
+          onChanged={reload} /> : null}
         {!loading && surface === 'history' ? <ActivitySurface timeline={timeline} /> : null}
         {!loading && surface === 'settings' ? <SettingsSurface lastImport={lastImport} rules={rules} onChanged={reload} onOpenActivity={() => navigate('/history')} /> : null}
       </main>
@@ -552,11 +609,16 @@ export default function AppV8() {
           decision={selectedOpportunityDecision}
           process={selectedProcess}
           actions={selectedActions}
+          decisionRequests={selectedDecisionRequests}
+          relatedPrep={selectedRelatedPrep}
           applicationGroup={selectedGroup}
           timeline={selectedTimeline}
-          onClose={() => navigate('/opportunities')}
+          onClose={() => navigate('/opportunities', true)}
           onCapture={openCapture}
           onNavigate={navigateFromDetail}
+          onOpenDecision={(id) => navigate('/decisions/' + encodeURIComponent(id) + '?from=' + encodeURIComponent(selectedOpportunity.id))}
+          onMarkAction={markAction}
+          readOnly={CGR02_TODAY_READ_ONLY}
         />
       ) : null}
 
@@ -578,12 +640,20 @@ function OpportunitiesSurface({
   prep,
   tab,
   onTabChange,
+  view,
+  onViewChange,
+  query,
+  onQueryChange,
   onOpenOpportunity,
 }: {
   read: OpportunityDecisionListRead
   prep: Prep[]
   tab: OpportunityTab
   onTabChange: (tab: OpportunityTab) => void
+  view: OpportunityListView
+  onViewChange: (view: OpportunityListView) => void
+  query: string
+  onQueryChange: (query: string) => void
   onOpenOpportunity: (id: string) => void
 }) {
   const { lang } = useUiLanguage()
@@ -610,7 +680,8 @@ function OpportunitiesSurface({
         </button>
       </div>
 
-      {tab === 'opportunities' ? <OpportunityDecisionList read={read} onOpenOpportunity={onOpenOpportunity} /> : null}
+      {tab === 'opportunities' ? <OpportunityDecisionList read={read} view={view} onViewChange={onViewChange}
+        query={query} onQueryChange={onQueryChange} onOpenOpportunity={onOpenOpportunity} /> : null}
       {tab === 'prepare' ? <PreparePanel prep={prep} /> : null}
     </section>
   )

@@ -58,6 +58,7 @@ test('empty local workspace routes directly into setup instead of a maintenance 
   await expect(page.getByRole('heading', { name: '先让 PJSDAS 知道你的求职现状' })).toBeVisible()
   await page.getByRole('button', { name: '打开设置' }).click()
   await expect(page.getByRole('heading', { name: '连接、自动化和长期控制' })).toBeVisible()
+  await expect(page.locator('.cloud-connection-impact')).toContainText('当前内容只保存在此设备')
   await expect(page).toHaveURL(/\/settings$/)
 })
 

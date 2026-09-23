@@ -7,6 +7,7 @@ export default function AiAccessSettingsCard() {
   const zh = lang === 'zh'
   const ai = useAiAccess()
   const automation = ai.gmailAutomation
+  const sourceNeedsAttention = Boolean((automation?.gmailEnabled && automation.gmailLastError) || (automation?.discoveryEnabled && automation.discoveryLastError))
   const gmailButton = automation?.gmailEnabled
     ? (zh ? '关闭自动跟踪' : 'Disable tracking')
     : automation?.gmailScopeGranted
@@ -20,23 +21,23 @@ export default function AiAccessSettingsCard() {
     <section className="cloud-settings-card">
       <div className="cloud-settings-heading">
         <div>
-          <div className="eyebrow">CHATGPT · AI ACCESS</div>
-          <h2>{zh ? '连接 PJSDAS AI 与后台自动化' : 'Connect PJSDAS AI and background automation'}</h2>
+          <div className="eyebrow">BACKGROUND SOURCES</div>
+          <h2>{zh ? '后台来源与 AI 连接' : 'Background sources and AI connection'}</h2>
           <p>{zh
-            ? 'Google Drive appDataFolder 仍是 PJSDAS 的私有云工作区。AI 读取和受信任的 Monitor / Gmail 摄入都只能通过受限接口写入来源支撑的事实；Decision Rules、持久偏好、删除、主动放弃岗位等用户决策不会被静默修改，仍必须走可审阅的 ChangeSet。'
-            : 'Google Drive appDataFolder remains the private PJSDAS cloud workspace. AI reads and trusted Monitor/Gmail ingestion may only write bounded source-backed facts through validated interfaces; user decisions such as Decision Rules, durable preferences, deletions, and abandoning an opportunity still require a reviewable ChangeSet.'}</p>
+            ? '网页关闭后，已授权的来源仍可带来新的岗位和招聘进展。AI 读取与受信任的岗位发现、招聘邮件摄入只能加入有来源依据的有限事实；修改长期偏好、拒绝决定或删除资料仍需你审阅确认。每项来源都能单独关闭。'
+            : 'Authorized sources can bring in new opportunities and recruiting progress while this page is closed. AI reading and trusted discovery or recruiting-email intake may add only bounded, source-backed facts; changes to durable preferences, rejection decisions, or deletions still require your review. You can turn each source off.'}</p>
         </div>
-        <span className={`cloud-state ${ai.error ? 'warning' : ai.message || automation?.gmailEnabled || automation?.discoveryEnabled ? 'online' : ''}`}>
-          {ai.error ? (zh ? '需要处理' : 'Needs attention') : ai.message || automation?.gmailEnabled || automation?.discoveryEnabled ? (zh ? '已连接' : 'Connected') : (zh ? '未连接' : 'Not connected')}
+        <span className={`cloud-state ${ai.error || sourceNeedsAttention ? 'warning' : ai.message || automation?.gmailEnabled || automation?.discoveryEnabled ? 'online' : ''}`}>
+          {ai.error || sourceNeedsAttention ? (zh ? '需要处理' : 'Needs attention') : ai.message || automation?.gmailEnabled || automation?.discoveryEnabled ? (zh ? '已连接' : 'Connected') : (zh ? '未连接' : 'Not connected')}
         </span>
       </div>
 
       <div className="cloud-auth-row">
         <div>
-          <strong>{zh ? '连接 AI 访问授权' : 'Connect AI access'}</strong>
+          <strong>{zh ? '连接后台工作区' : 'Connect background workspace'}</strong>
           <p>{zh
-            ? '只申请 Google Drive appDataFolder 权限，用于在网页关闭时读取和同步你的 PJSDAS 工作区；不会申请浏览普通 Google Drive 文件。'
-            : 'Requests only Google Drive appDataFolder access so PJSDAS can read and sync your workspace while the site is closed. Normal Google Drive files are not requested.'}</p>
+            ? '授权后，网页关闭时仍可同步你的 PJSDAS 工作区。只申请 Google Drive 的应用专用文件权限，不会浏览普通 Drive 文件。'
+            : 'This lets PJSDAS sync your workspace while the page is closed. It requests only access to its app-specific Google Drive files, not your normal Drive files.'}</p>
         </div>
         <button className="primary-button" disabled={ai.busy} onClick={() => { void ai.beginGoogleDriveLink() }}>
           {ai.busy ? (zh ? '处理中…' : 'Working…') : (zh ? '使用 Google 连接 AI' : 'Connect AI with Google')}
@@ -47,12 +48,12 @@ export default function AiAccessSettingsCard() {
         <div>
           <strong>{zh ? '后台岗位发现' : 'Background job discovery'}</strong>
           <p>{zh
-            ? '启用后，PJSDAS 会按你的 Discovery Profile、Decision Rules 和增量基线在后台检索公开招聘信息，并通过现有 ingestion ledger 去重、过滤和归并。只向搜索模型发送有界的岗位发现上下文，不发送完整 Drive 工作区、Gmail 正文或无关个人数据；关闭后后台公开网页搜索立即停止。'
-            : 'When enabled, PJSDAS searches current public recruiting information in the background using your Discovery Profile, Decision Rules, and incremental baseline, then reuses the existing ingestion ledger for filtering, deduplication, and merging. Only bounded job-discovery context is sent to the search model—not the full Drive workspace, Gmail bodies, or unrelated personal data. Disabling this stops background public-web search.'}</p>
+            ? '启用后，PJSDAS 按你的岗位偏好和决策规则检索公开招聘信息，避免重复加入。搜索模型只收到有限的岗位发现条件，不会收到完整工作区、Gmail 正文或无关个人资料；关闭后停止后台公开网页搜索。'
+            : 'When enabled, PJSDAS searches public job information using your preferences and decision rules, without adding duplicates. The search model receives only bounded discovery criteria, never your full workspace, Gmail bodies, or unrelated personal data. Turning this off stops background public-web search.'}</p>
           {automation?.discoveryLastSuccessAt ? <small className="cloud-security-note">
             {zh ? `最近成功发现：${new Date(automation.discoveryLastSuccessAt).toLocaleString()}` : `Last successful discovery: ${new Date(automation.discoveryLastSuccessAt).toLocaleString()}`}
           </small> : null}
-          {automation?.discoveryLastError ? <div className="cloud-error">{automation.discoveryLastError}</div> : null}
+          {automation?.discoveryEnabled && automation.discoveryLastError ? <div className="cloud-connection-impact warning" role="status"><strong>{zh ? '新岗位可能延迟出现' : 'New opportunities may be delayed'}</strong><span>{zh ? '最近一次后台发现失败。已保存的岗位仍可用；检查连接状态后再试。' : 'The latest background search failed. Saved opportunities remain available; check the connection before trying again.'}</span><details><summary>{zh ? '错误详情' : 'Error details'}</summary>{automation.discoveryLastError}</details></div> : null}
         </div>
         <button
           className="primary-button"
@@ -72,7 +73,7 @@ export default function AiAccessSettingsCard() {
           {automation?.gmailLastSuccessAt ? <small className="cloud-security-note">
             {zh ? `最近成功检查：${new Date(automation.gmailLastSuccessAt).toLocaleString()}` : `Last successful check: ${new Date(automation.gmailLastSuccessAt).toLocaleString()}`}
           </small> : null}
-          {automation?.gmailLastError ? <div className="cloud-error">{automation.gmailLastError}</div> : null}
+          {automation?.gmailEnabled && automation.gmailLastError ? <div className="cloud-connection-impact warning" role="status"><strong>{zh ? '新邮件进展可能未同步' : 'New email progress may be missing'}</strong><span>{zh ? '最近一次邮件检查失败，已有资料仍可查看。重新授权会再次请求上方说明的 90 天 Gmail 只读范围；请先查看 Google 同意页面。' : 'The latest email check failed; saved data remains available. Reauthorizing requests the 90-day Gmail read-only scope described above again; review the Google consent screen first.'}</span><details><summary>{zh ? '错误详情' : 'Error details'}</summary>{automation.gmailLastError}</details><button type="button" disabled={ai.busy} onClick={() => { void ai.beginGmailAutomationLink() }}>{zh ? '查看并重新授权 Gmail' : 'Review and reauthorize Gmail'}</button></div> : null}
         </div>
         <button
           className="primary-button"
@@ -86,8 +87,8 @@ export default function AiAccessSettingsCard() {
       {ai.message ? <div className="cloud-result">{ai.message}</div> : null}
       {ai.error ? <div className="cloud-error">{ai.error}</div> : null}
       <small className="cloud-security-note">{zh
-        ? 'Google refresh token 写入前由 PJSDAS 后端使用 AES-GCM 加密。岗位发现与招聘邮件自动化都可在网页关闭时运行；真正写入仍复用 ingestion ledger、身份解析、去重与 optimistic Drive 冲突保护。'
-        : 'Google refresh tokens are AES-GCM encrypted by the PJSDAS backend before storage. Job discovery and recruiting-email automation can continue while the site is closed and still reuse the ingestion ledger, identity resolution, deduplication, and optimistic Drive conflict guard.'}</small>
+        ? 'Google 长期授权信息会加密保存。已授权的来源可在网页关闭后继续运行；新进展仍须经过来源、身份、重复项和冲突检查，才会写入你的工作区。'
+        : 'Long-lived Google authorization is encrypted. Authorized sources can keep working while this page is closed. New progress is checked for source, identity, duplicates, and conflicts before it enters your workspace.'}</small>
     </section>
   )
 }

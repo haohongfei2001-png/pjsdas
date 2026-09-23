@@ -13,9 +13,15 @@ import './ultimateWeb.css'
 
 export default function DecisionRequestsView({
   requests,
+  focusRequestId,
+  onShowAll,
+  onReturnOpportunity,
   onChanged,
 }: {
   requests: DecisionRequest[]
+  focusRequestId?: string
+  onShowAll: () => void
+  onReturnOpportunity?: () => void
   onChanged: () => Promise<void>
 }) {
   const { lang } = useUiLanguage()
@@ -32,6 +38,7 @@ export default function DecisionRequestsView({
       const be = b.expiresAt ? new Date(b.expiresAt).getTime() : Number.POSITIVE_INFINITY
       return ae - be || a.createdAt.localeCompare(b.createdAt)
     }), [requests])
+  const visible = focusRequestId ? open.filter((item) => item.id === focusRequestId) : open
 
   async function choose(request: DecisionRequest, choiceId: string) {
     if (busyId) return
@@ -79,6 +86,12 @@ export default function DecisionRequestsView({
           ? '自动化能安全判断的事实不会出现在这里。这里只保留目标歧义、共享名额、外部后果或其他必须由你选择的情况。'
           : 'Facts automation can resolve safely stay out of this view. Only ambiguity, shared constraints, external consequences, or other genuine choices appear here.'}</p>
       </header>
+      {focusRequestId ? <button className="settings-secondary-link" type="button" onClick={onShowAll}>
+        {zh ? '查看所有待决定事项' : 'View all open decisions'}
+      </button> : null}
+      {focusRequestId && onReturnOpportunity ? <button className="settings-secondary-link" type="button" onClick={onReturnOpportunity}>
+        {zh ? '返回刚才的机会' : 'Return to opportunity'}
+      </button> : null}
 
       {receipt ? (
         <div className="ultimate-receipt" role="status" aria-live="polite">
@@ -88,14 +101,18 @@ export default function DecisionRequestsView({
       ) : null}
       {error ? <div className="ultimate-inline-error" role="alert">{error}</div> : null}
 
-      {open.length === 0 ? (
+      {visible.length === 0 ? (
         <div className="ultimate-quiet-state">
-          <strong>{zh ? '现在没有需要你决定的事' : 'Nothing needs your decision right now'}</strong>
-          <span>{zh ? '这就是正常状态。PJSDAS 会继续自动处理明确事实。' : 'That is the normal state. PJSDAS keeps handling clear facts automatically.'}</span>
+          <strong>{focusRequestId
+            ? (zh ? '这项决定已不再待处理' : 'This decision is no longer open')
+            : (zh ? '现在没有需要你决定的事' : 'Nothing needs your decision right now')}</strong>
+          <span>{focusRequestId
+            ? (zh ? '查看所有待决定事项，或返回刚才的机会。' : 'View all open decisions, or return to the opportunity.')
+            : (zh ? '这就是正常状态。PJSDAS 会继续自动处理明确事实。' : 'That is the normal state. PJSDAS keeps handling clear facts automatically.')}</span>
         </div>
       ) : (
         <div className="ultimate-decision-list">
-          {open.map((request) => (
+          {visible.map((request) => (
             <article className="ultimate-decision-card" key={request.id}>
               <div className="ultimate-decision-copy">
                 <span className="ultimate-decision-reason">{zh ? '需要你决定' : 'Needs your decision'}</span>

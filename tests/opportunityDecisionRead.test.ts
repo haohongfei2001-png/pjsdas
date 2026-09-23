@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { buildOpportunityDecisionList, getOpportunityDecisionRead } from '../src/opportunityDecisionRead.js'
+import { rankActions } from '../src/decisionV3.js'
 import { createSnapshot, type PJSDASSnapshot } from '../src/snapshot.js'
 import type { Action, Opportunity, ProcessEvent, ProcessRecord } from '../src/model.js'
 
@@ -145,6 +146,15 @@ describe('UU-05 Opportunity decision read model', () => {
     expect(getOpportunityDecisionRead(source, offer.id, { now: NOW })?.conclusion).toBe('review_offer')
     expect(getOpportunityDecisionRead(source, abandoned.id, { now: NOW })?.conclusion).toBe('not_pursuing')
     expect(getOpportunityDecisionRead(source, closed.id, { now: NOW })?.conclusion).toBe('process_ended')
+  })
+
+  it('keeps a stale action on an ended opportunity out of Today and opportunity detail without deleting its record', () => {
+    const closed = opportunity('closed-stale-role', 'closed')
+    const stale = action('stale-apply', closed.id)
+    const source = snapshot({ opportunities: [closed], actions: [stale] })
+    expect(rankActions(source.data.actions, source.data.opportunities, NOW)).toEqual([])
+    expect(getOpportunityDecisionRead(source, closed.id, { now: NOW })?.nextAction).toBeUndefined()
+    expect(source.data.actions).toContainEqual(stale)
   })
 
   it('is deterministic for the same revision, clock and timezone', () => {

@@ -23,7 +23,21 @@ export default function CloudSettingsCard() {
   const mismatch = Boolean(user && cloud.device.workspaceOwnerUserId && cloud.device.workspaceOwnerUserId !== user.id)
   const conflict = cloud.checkpoint.conflict
   const transactional = connectedWorkspaceAuthorityEnabled()
-  const remoteLabel = transactional ? (zh ? 'Connected workspace' : 'Connected workspace') : 'Google Drive'
+  const remoteLabel = transactional ? (zh ? '账号工作区' : 'account workspace') : 'Google Drive'
+  const connectionError = localError || cloud.error || cloud.checkpoint.lastError
+  const impact = mismatch
+    ? (zh ? '这个浏览器仍保留另一个账号的本地资料。为避免跨账号写入，当前账号不会接收这些修改；请先选择恢复路径。' : 'This browser still holds another account’s local data. Uploads to this account are paused; choose a recovery path first.')
+    : conflict
+      ? (zh ? `本机与${remoteLabel}出现分叉，自动同步已暂停。其他设备可能没有这里的最新修改；请先选择保留哪一份。` : `This device and the ${remoteLabel} diverged, so automatic sync is paused. Other devices may not have these latest changes; choose which copy to keep.`)
+      : connectionError
+        ? (zh ? '最近一次连接或同步失败。已保存在此浏览器的内容仍可查看，其他设备可能暂时没有最新修改；请检查连接后重试。' : 'The latest connection or sync failed. Saved content on this browser remains available; other devices may not have the latest changes. Check the connection and retry.')
+        : !user
+          ? (zh ? '当前内容只保存在此设备。登录并完成连接前，其他设备看不到这些修改。' : 'Current content is on this device only. Other devices cannot see these changes until you sign in and connect.')
+          : audience && !audience.allowed
+            ? (zh ? '此账号尚未获准使用跨设备工作区。本机资料仍可查看和编辑；其他设备不会收到这些修改。' : 'This account does not yet have cross-device workspace access. You can still view and edit local data; other devices will not receive these changes.')
+          : transactional
+            ? (zh ? '已连接账号工作区。此浏览器保留工作副本；若连接中断，请先核对保存结果，再依提示恢复。' : 'Your account workspace is connected. This browser keeps a working copy; if the connection drops, verify the save result before retrying.')
+            : (zh ? '已登录；其他设备以最近一次成功同步的数据为准。' : 'Signed in. Other devices have data from the latest successful sync.')
 
   useEffect(() => {
     let active = true
@@ -48,7 +62,7 @@ export default function CloudSettingsCard() {
 
   const outcomeLabel = !cloud.outcome
     ? ''
-    : cloud.outcome.kind === 'created' ? (transactional ? (zh ? '已建立 transactional connected workspace' : 'Transactional connected workspace created') : (zh ? '已在你的 Google Drive 建立 PJSDAS 工作区' : 'PJSDAS workspace created in your Google Drive'))
+    : cloud.outcome.kind === 'created' ? (zh ? `${remoteLabel}已准备好` : `${remoteLabel} is ready`)
       : cloud.outcome.kind === 'pushed' ? (zh ? `本地修改已同步到 ${remoteLabel}` : `Local changes synced to ${remoteLabel}`)
         : cloud.outcome.kind === 'pulled' ? (zh ? `已从 ${remoteLabel} 拉取修改` : `Changes downloaded from ${remoteLabel}`)
           : cloud.outcome.kind === 'conflict' ? (zh ? '检测到同步冲突' : 'Sync conflict detected')
@@ -60,15 +74,15 @@ export default function CloudSettingsCard() {
       <section className="cloud-settings-card">
         <div className="cloud-settings-heading">
           <div>
-            <div className="eyebrow">PJSDAS ACCOUNT & DRIVE</div>
-            <h2>{transactional ? (zh ? 'PJSDAS 账号与 Connected Workspace' : 'PJSDAS account & connected workspace') : (zh ? 'PJSDAS 账号与 Google Drive 同步' : 'PJSDAS account & Google Drive sync')}</h2>
+            <div className="eyebrow">ACCOUNT & CONNECTION</div>
+            <h2>{zh ? '账号与跨设备数据' : 'Account & cross-device data'}</h2>
             <p>{transactional
               ? (zh
-                  ? 'Connected mode 下，transactional workspace 是持久状态权威；IndexedDB 是当前浏览器的工作副本 / 缓存，Google Drive 保留为备份、导出与可携带副本。'
-                  : 'In connected mode, the transactional workspace is the durable authority; IndexedDB is this browser’s working copy/cache and Google Drive remains backup/export/portability storage.')
+                  ? '账号工作区保存跨设备数据；此浏览器保留工作副本。Google Drive 可用于备份、导出和携带资料。'
+                  : 'Your account workspace keeps cross-device data while this browser holds a working copy. Google Drive remains available for backup and export.')
               : (zh
-                  ? 'Google 登录是稳定的 PJSDAS 身份层。当前生产仍使用 Drive authority：IndexedDB 是即时工作区，Google Drive 隐藏 appDataFolder 是云端副本与自动摄入同步桥梁。'
-                  : 'Google sign-in is the durable PJSDAS identity layer. Current production still uses Drive authority: IndexedDB is the immediate workspace and the hidden Drive appDataFolder is the cloud copy / autonomous-ingestion bridge.')}</p>
+                  ? '此浏览器可保存日常修改，Google Drive 保存同步副本。连接中断时，其他设备可能暂时看不到最新内容。'
+                  : 'This browser saves daily changes and Google Drive holds the synced copy. Other devices may lag while the connection is unavailable.')}</p>
           </div>
           <span className={`cloud-state ${conflict || mismatch ? 'warning' : user ? 'online' : ''}`}>
             {mismatch
@@ -81,6 +95,11 @@ export default function CloudSettingsCard() {
                     ? (zh ? '正在恢复登录…' : 'Restoring session…')
                     : (zh ? '仅本机' : 'Local only')}
           </span>
+        </div>
+
+        <div className={`cloud-connection-impact ${mismatch || conflict || connectionError ? 'warning' : ''}`} role="status">
+          <strong>{zh ? '当前数据可用性' : 'What is available now'}</strong>
+          <span>{impact}</span>
         </div>
 
         {!user ? (
@@ -99,8 +118,7 @@ export default function CloudSettingsCard() {
           <>
             {audience ? (
               <div className={`cloud-audience-state ${audience.allowed ? 'allowed' : 'blocked'}`}>
-                <div><strong>{audience.mode === 'allowlist' ? (zh ? 'Controlled production' : 'Controlled production') : (zh ? 'Legacy access mode' : 'Legacy access mode')}</strong><span>{audience.allowed ? (zh ? '当前账号已获准使用 connected 能力。' : 'This account is authorized for connected capabilities.') : (zh ? '当前账号不在 controlled-production allowlist；本地模式仍可使用。' : 'This account is not in the controlled-production allowlist; local mode remains available.')}</span></div>
-                <small>{audience.role ?? '—'}</small>
+                <div><strong>{audience.allowed ? (zh ? '跨设备功能可用' : 'Cross-device access available') : (zh ? '跨设备功能尚未开通' : 'Cross-device access unavailable')}</strong><span>{audience.allowed ? (zh ? '当前账号可使用跨设备资料。' : 'This account can use its cross-device workspace.') : (zh ? '当前账号仍可使用本机资料；跨设备资料暂不可用。' : 'Local data remains available, but this account cannot use cross-device data yet.')}</span></div>
               </div>
             ) : null}
 
@@ -113,12 +131,12 @@ export default function CloudSettingsCard() {
               <div>
                 <span>{zh ? '最后同步' : 'Last sync'}</span>
                 <strong>{formatTime(cloud.checkpoint.lastSyncedAt, zh)}</strong>
-                <small>{cloud.checkpoint.lastSyncedVersion ? `${transactional ? 'Connected revision' : 'Drive version'} ${cloud.checkpoint.lastSyncedVersion}` : '—'}</small>
+                <small>{cloud.checkpoint.lastSyncedVersion ? (zh ? '此账号已有可核对的保存版本' : 'A saved account version is available') : (zh ? '尚无已确认的同步版本' : 'No confirmed synced version yet')}</small>
               </div>
               <div>
-                <span>{zh ? '当前工作区' : 'Workspace'}</span>
-                <strong>{zh ? '本机 IndexedDB' : 'Local IndexedDB'}</strong>
-                <small>{cloud.device.deviceId.slice(0, 8)} · {transactional ? 'local cache' : 'local-first'}</small>
+                <span>{zh ? '此设备' : 'This device'}</span>
+                <strong>{zh ? '本机资料可用' : 'Local data available'}</strong>
+                <small>{transactional ? (zh ? '账号资料的本机工作副本' : 'Working copy of account data') : (zh ? '本机保存，按连接状态同步' : 'Saved locally and synced when connected')}</small>
               </div>
             </div>
 
@@ -130,24 +148,24 @@ export default function CloudSettingsCard() {
                   : 'The local workspace in this browser is already bound to another Google identity. PJSDAS will not upload that job-search data into the current account automatically.'}</p>
                 <div>
                   <button onClick={() => {
-                    if (window.confirm(zh ? '确认把当前本地工作区重新绑定到这个 PJSDAS 账号？如果该账号已有 Drive 数据，系统会先进入冲突处理，不会直接覆盖。' : 'Rebind the current local workspace to this PJSDAS account? Existing Drive data will trigger conflict handling rather than being overwritten.')) void run(cloud.rebindLocal)
+                    if (window.confirm(zh ? `确认把当前本地工作区重新绑定到这个 PJSDAS 账号？如果该账号已有${remoteLabel}数据，系统会先进入冲突处理，不会直接覆盖。` : `Rebind the current local workspace to this PJSDAS account? Existing ${remoteLabel} data will trigger conflict handling rather than being overwritten.`)) void run(cloud.rebindLocal)
                   }}>{zh ? '绑定当前本地工作区' : 'Bind current local workspace'}</button>
                   <button className="danger" onClick={() => {
-                    if (window.confirm(zh ? '确认用当前账号的 Drive 工作区替换本机工作区？本机尚未同步的修改会丢失。' : 'Replace this device workspace with the current account Drive workspace? Unsynced local changes will be lost.')) void run(cloud.useCloud)
-                  }}>{zh ? '使用此账号的 Drive 数据' : 'Use this account’s Drive data'}</button>
+                    if (window.confirm(zh ? `确认用当前账号的${remoteLabel}替换本机工作区？本机尚未同步的修改会丢失。` : `Replace this device workspace with the current account ${remoteLabel}? Unsynced local changes will be lost.`)) void run(cloud.useCloud)
+                  }}>{zh ? `使用此账号的${remoteLabel}` : `Use this account’s ${remoteLabel}`}</button>
                 </div>
               </div>
             ) : conflict ? (
               <div className="cloud-conflict-box">
-                <strong>{zh ? '本机和 Google Drive 在上次同步后都发生了修改。' : 'Both this device and Google Drive changed after the last sync.'}</strong>
-                <p>{zh ? `Drive version ${conflict.remoteVersion}，更新时间 ${formatTime(conflict.remoteUpdatedAt, zh)}。系统已停止自动同步，没有覆盖任何一方。` : `Drive version ${conflict.remoteVersion}, updated ${formatTime(conflict.remoteUpdatedAt, zh)}. Auto-sync stopped and neither side was overwritten.`}</p>
+                <strong>{zh ? `本机和${remoteLabel}在上次同步后都发生了修改。` : `Both this device and the ${remoteLabel} changed after the last sync.`}</strong>
+                <p>{zh ? `远端版本 ${conflict.remoteVersion}，更新时间 ${formatTime(conflict.remoteUpdatedAt, zh)}。系统已停止自动同步，没有覆盖任何一方。` : `Remote version ${conflict.remoteVersion}, updated ${formatTime(conflict.remoteUpdatedAt, zh)}. Auto-sync stopped and neither side was overwritten.`}</p>
                 <div>
                   <button onClick={() => {
-                    if (window.confirm(zh ? '确认以本机数据为准覆盖 Google Drive 中的 PJSDAS 工作区？' : 'Keep this device and overwrite the PJSDAS workspace in Google Drive?')) void run(cloud.keepLocal)
+                    if (window.confirm(zh ? `确认以本机数据为准覆盖${remoteLabel}？` : `Keep this device and overwrite the ${remoteLabel}?`)) void run(cloud.keepLocal)
                   }}>{zh ? '保留本机' : 'Keep this device'}</button>
                   <button className="danger" onClick={() => {
-                    if (window.confirm(zh ? '确认以 Google Drive 数据为准替换本机？本机未同步修改会丢失。' : 'Use the Google Drive version and replace local data? Unsynced local changes will be lost.')) void run(cloud.useCloud)
-                  }}>{zh ? '使用 Google Drive' : 'Use Google Drive'}</button>
+                    if (window.confirm(zh ? `确认以${remoteLabel}数据为准替换本机？本机未同步修改会丢失。` : `Use the ${remoteLabel} version and replace local data? Unsynced local changes will be lost.`)) void run(cloud.useCloud)
+                  }}>{zh ? `使用${remoteLabel}` : `Use ${remoteLabel}`}</button>
                 </div>
               </div>
             ) : null}
@@ -167,9 +185,13 @@ export default function CloudSettingsCard() {
         )}
 
         {(localError || cloud.error || cloud.checkpoint.lastError) ? <div className="cloud-error">{localError || cloud.error || cloud.checkpoint.lastError}</div> : null}
-        <small className="cloud-security-note">{zh
-          ? 'Supabase 只持久化 PJSDAS 登录会话；Google refresh token 在服务端加密保存。Connected mode 下 IndexedDB 只是当前账号的缓存，退出账号会清除这份缓存以防跨账号显示；权威数据仍保留在 connected workspace。'
-          : 'Supabase persists only the PJSDAS sign-in session; the Google refresh token is encrypted server-side. In connected mode IndexedDB is an account-bound cache, so signing out clears that cache to prevent cross-account display; authoritative data remains in the connected workspace.'}</small>
+        <small className="cloud-security-note">{transactional
+          ? (zh
+              ? 'Google 长期授权凭据在服务端加密保存。退出账号会清除此设备上的账号缓存，避免下一个登录者看到前一个账号的资料；已同步的账号资料仍保留。PJSDAS 只获得应用专用的 Google Drive 文件权限。'
+              : 'Long-lived Google authorization is encrypted on the server. Signing out clears this device’s account cache so the next sign-in cannot see the previous account’s data; already synced account data remains stored. PJSDAS only receives access to its app-specific Google Drive files.')
+          : (zh
+              ? 'Google 长期授权凭据在服务端加密保存。此设备仍会保留本机资料；在共享设备上使用后，请按需要清理浏览器资料。PJSDAS 只获得应用专用的 Google Drive 文件权限。'
+              : 'Long-lived Google authorization is encrypted on the server. Local data remains on this device; clear browser data after use on a shared device when needed. PJSDAS only receives access to its app-specific Google Drive files.')}</small>
       </section>
       <AiAccessSettingsCard />
     </>

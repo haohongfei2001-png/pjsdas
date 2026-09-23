@@ -72,12 +72,12 @@ export function rankActions(actions: Action[], opportunities: Opportunity[], now
   // should repeatedly see in Today. Keep them in Pipeline/history, but do not
   // let them compete with applications, real recruiting events, prep, or manual
   // tasks for the user's primary action surface.
-  const abandoned = new Set(
-    opportunities.filter((item) => item.participationStatus === 'abandoned').map((item) => item.id),
+  const ended = new Set(
+    opportunities.filter((item) => item.participationStatus === 'abandoned' || item.processStage === 'closed').map((item) => item.id),
   )
   const actionable = actions
     .filter((action) => action.kind !== 'follow_up')
-    .filter((action) => !action.opportunityId || !abandoned.has(action.opportunityId))
+    .filter((action) => !action.opportunityId || !ended.has(action.opportunityId))
     .filter((action) => !isUnresolvedPastProcessEvent(action, now))
   const scheduledIds = new Set(
     actionable.filter(isNaturalLanguageScheduledAssessment).map((action) => action.id),

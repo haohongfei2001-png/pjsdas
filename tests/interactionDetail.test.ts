@@ -16,7 +16,8 @@ describe('UU-05 opportunity decision/detail integration', () => {
     expect(app).toContain('<OpportunityDetailDrawer')
     expect(app).not.toContain('function OpportunityTable')
     expect(app).not.toContain('function PipelinePanel')
-    expect(list).toContain("type View = 'in_progress' | 'worth_pursuing' | 'all' | 'ended'")
+    expect(list).toContain("export type OpportunityListView = 'in_progress' | 'worth_pursuing' | 'all' | 'ended'")
+    expect(app).toContain("useState<OpportunityListView>('in_progress')")
     expect(detail).toContain('<OpportunityDecisionSummary')
   })
 
