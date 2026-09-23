@@ -367,6 +367,9 @@ test('unknown semantic save keeps one stable command identity and recovers by re
   await page.locator('.cgr-global-capture').click()
   await expect(page.getByRole('alert')).toContainText('保存结果暂时未知')
   await expect(page.locator('.cgr-capture-input')).toBeDisabled()
+  // Another recovery path may have resolved and cleared the pending record
+  // while this dialog still remembers the original command identity.
+  await page.evaluate(() => window.localStorage.removeItem('pjsdas-cgr01-pending:account-a'))
   await page.getByRole('button', { name: '确认保存状态' }).click()
   await expect(page.getByText('已保存')).toBeVisible()
   expect(state.commandBodies.filter((body) => body.action === 'command')).toHaveLength(1)

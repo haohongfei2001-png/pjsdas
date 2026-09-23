@@ -242,6 +242,7 @@ export default function TellPjsdasCapture({
         accountKey: cloud.session?.user.id,
         commandId,
         contextRefs,
+        confirmExisting: recoveryLocked,
       })
       if ((result.status === 'APPLIED' || result.status === 'DECISION_REQUIRED') && cloud.session && !connectedWorkspaceAuthorityEnabled()) {
         await ensureAuthoritativePersistence(true, cloud.syncNow)

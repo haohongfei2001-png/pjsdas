@@ -16,6 +16,7 @@ import { buildWebSemanticInterpretation } from './webSemanticInterpretation.js'
 import type { SemanticCandidate, SemanticIntakeObservation, SemanticStatementMode } from './model.js'
 import { connectedWorkspaceAuthorityEnabled } from './cloud/connectedWorkspaceRepository.js'
 import {
+  confirmConnectedCommand,
   createConnectedCommandId,
   executeConnectedBusinessCommand,
   undoConnectedBusinessCommand,
@@ -110,7 +111,7 @@ export async function previewWebSemanticCapture(
 
 export async function submitWebSemanticCapture(
   text: string,
-  options: { now?: Date; timezone?: string; accountKey?: string; commandId?: string; contextRefs?: string[] } = {},
+  options: { now?: Date; timezone?: string; accountKey?: string; commandId?: string; contextRefs?: string[]; confirmExisting?: boolean } = {},
 ): Promise<WebSemanticCaptureResult> {
   const trimmed = text.trim()
   if (!trimmed) throw new Error('请输入要告诉 PJSDAS 的内容。')
@@ -144,10 +145,12 @@ export async function submitWebSemanticCapture(
 
   if (options.accountKey && connectedWorkspaceAuthorityEnabled()) {
     const commandId = options.commandId ?? createConnectedCommandId('web-semantic')
-    const authoritative = await executeConnectedBusinessCommand(options.accountKey, {
-      type: 'semantic_intake',
-      value: observation,
-    }, { commandId })
+    const authoritative = options.confirmExisting
+      ? await confirmConnectedCommand(options.accountKey, commandId)
+      : await executeConnectedBusinessCommand(options.accountKey, {
+          type: 'semantic_intake',
+          value: observation,
+        }, { commandId })
     if (authoritative.outcome === 'CONFLICT') {
       throw new Error(authoritative.conflict?.message ?? 'Semantic Intake conflicted with newer authoritative state.')
     }

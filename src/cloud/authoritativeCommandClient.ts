@@ -313,6 +313,22 @@ export async function executeConnectedBusinessCommand(
   return submitPending(accountKey, pending)
 }
 
+export async function confirmConnectedCommand(accountKey: string, commandId: string): Promise<ConnectedCommandResponse> {
+  try {
+    const recovered = await lookupConnectedCommandReceipt(accountKey, commandId)
+    if (recovered) {
+      removePending(accountKey, commandId)
+      return recovered
+    }
+  } catch (caught) {
+    const detail = caught instanceof Error ? caught.message : String(caught)
+    throw new Error(`UNKNOWN_COMMAND_OUTCOME: receipt lookup failed for ${commandId}: ${detail}`)
+  }
+  const existing = readPending(accountKey).find((item) => item.commandId === commandId)
+  if (existing) return submitPending(accountKey, existing)
+  throw new Error(`UNKNOWN_COMMAND_OUTCOME: original command ${commandId} is unavailable; no new command was sent.`)
+}
+
 export async function undoConnectedBusinessCommand(
   accountKey: string,
   targetCommandId: string,
