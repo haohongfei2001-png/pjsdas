@@ -6,6 +6,8 @@ import {
 } from './db.js'
 import { parsePJSDASWorkbook } from './importExcelV2.js'
 import { prepPriorityRank, presentPrepPriority, presentPrepSourceState } from './prepSemantics.js'
+import { buildPrepGraph } from './prepGraph.js'
+import { presentPrepGraphLinkExplanation } from './prepGraphPresentation.js'
 import { presentStageLabel } from './stagePresentation.js'
 import { currentUiLanguage, useUiLanguage } from './uiLanguage.js'
 import { DEFAULT_DECISION_RULES, type DecisionRules } from './decisionRules.js'
@@ -361,6 +363,15 @@ export default function AppV8() {
         workspaceVersion: `web:${snapshot.exportedAt}`,
       })
     : undefined
+  const selectedRelatedPrep = useMemo(() => {
+    if (!snapshot || !selectedOpportunityId) return []
+    const graph = buildPrepGraph(snapshot.data.prep, snapshot.data.opportunities, snapshot.data.processes, now)
+    return graph.nodes.flatMap((node) => {
+      const link = node.links.find((item) => item.opportunityId === selectedOpportunityId)
+      return link ? [{ id: node.prepId, title: node.title,
+        reason: presentPrepGraphLinkExplanation(link, graph.needs, zh) }] : []
+    })
+  }, [snapshot, selectedOpportunityId, now, zh])
 
 
   async function markAction(id: string, status: Action['status']) {
@@ -569,6 +580,7 @@ export default function AppV8() {
           decision={selectedOpportunityDecision}
           process={selectedProcess}
           actions={selectedActions}
+          relatedPrep={selectedRelatedPrep}
           applicationGroup={selectedGroup}
           timeline={selectedTimeline}
           onClose={() => navigate('/opportunities', true)}

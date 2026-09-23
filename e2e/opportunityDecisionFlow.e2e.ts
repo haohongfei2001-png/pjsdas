@@ -118,6 +118,12 @@ test('UU-05 Opportunities centers In Progress / Worth Pursuing and opens conclus
 
   const dialog = page.getByRole('dialog', { name: /岗位详情|Opportunity details/ })
   await expect(dialog).toBeVisible()
+  const closeDetail = dialog.getByRole('button', { name: /关闭|Close/ })
+  await expect(closeDetail).toBeFocused()
+  await page.keyboard.press('Shift+Tab')
+  await expect.poll(() => dialog.locator('.opportunity-detail-footer').evaluate((element) => element.contains(document.activeElement))).toBe(true)
+  await page.keyboard.press('Tab')
+  await expect(closeDetail).toBeFocused()
   await expect(dialog.locator('.opportunity-detail-conclusion')).toContainText(/值得继续考虑|Worth pursuing/)
   await expect(dialog.locator('.opportunity-detail-process-summary')).toContainText(/待投|Not applied/)
   await expect(dialog.locator('.opportunity-detail-primary-operation')).toContainText('提交值得科技产品经理申请')
@@ -137,7 +143,7 @@ test('UU-05 Opportunities centers In Progress / Worth Pursuing and opens conclus
   expect(order[1]).toBeLessThan(order[2])
   expect(order[2]).toBeLessThan(order[3])
 
-  await dialog.getByRole('button', { name: /关闭|Close/ }).click()
+  await page.keyboard.press('Escape')
   await expect(worthRow).toBeFocused()
   const search = page.getByRole('textbox', { name: /搜索公司或岗位|Search company or role/ })
   await search.fill('值得')

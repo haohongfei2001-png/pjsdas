@@ -46,6 +46,13 @@ test('Prep Graph keeps source facts but localizes system status and link explana
 
   await page.reload()
   await page.locator('.surface-nav').getByRole('button', { name: /机会/ }).click()
+  await page.locator('.opportunity-decision-filter select').selectOption('all')
+  await page.locator('.opportunity-decision-row').filter({ hasText: '示例科技' }).click()
+  const opportunityDetail = page.getByRole('dialog', { name: '岗位详情' })
+  await opportunityDetail.getByText('准备与相关待办').click()
+  await expect(opportunityDetail.locator('.opportunity-detail-related-prep')).toContainText('SQL readiness')
+  await expect(opportunityDetail.locator('.opportunity-detail-related-prep')).toContainText('显式指向该岗位')
+  await opportunityDetail.getByRole('button', { name: '关闭' }).click()
   await page.locator('.surface-context-tabs button').filter({ hasText: '准备' }).click()
   await page.locator('.ultimate-toolbar').getByRole('button', { name: /设置|Settings/ }).click()
   const interfaceGroup = page.locator('details.settings-group > summary').filter({ hasText: /界面.*显示层|Interface.*Presentation/ }).locator('..')
