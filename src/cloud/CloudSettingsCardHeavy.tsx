@@ -168,8 +168,8 @@ export default function CloudSettingsCard() {
 
         {(localError || cloud.error || cloud.checkpoint.lastError) ? <div className="cloud-error">{localError || cloud.error || cloud.checkpoint.lastError}</div> : null}
         <small className="cloud-security-note">{zh
-          ? 'Supabase 只持久化 PJSDAS 登录会话；Google refresh token 在服务端加密保存。浏览器只在内存中缓存短期 Drive access token，过期后会用仍有效的 PJSDAS 登录自动恢复。退出账号不会删除本机 IndexedDB 数据。'
-          : 'Supabase persists only the PJSDAS sign-in session; the Google refresh token is encrypted server-side. The browser caches only a short-lived Drive access token in memory and restores it using the active PJSDAS session. Signing out does not delete local IndexedDB data.'}</small>
+          ? 'Supabase 只持久化 PJSDAS 登录会话；Google refresh token 在服务端加密保存。Connected mode 下 IndexedDB 只是当前账号的缓存，退出账号会清除这份缓存以防跨账号显示；权威数据仍保留在 connected workspace。'
+          : 'Supabase persists only the PJSDAS sign-in session; the Google refresh token is encrypted server-side. In connected mode IndexedDB is an account-bound cache, so signing out clears that cache to prevent cross-account display; authoritative data remains in the connected workspace.'}</small>
       </section>
       <AiAccessSettingsCard />
     </>
