@@ -179,6 +179,22 @@ export default function McpProposalReview() {
         ? deriveDiscoveryReviewChangeSet(proposal.changeSet, selectedIds)
         : proposal.changeSet
       await assertMcpChangeSetBaseline(reviewedChangeSet)
+      if (connectedWorkspaceAuthorityEnabled() && cloud.session && discoveryOperations.length === proposal.changeSet.operations.length && discoveryOperations.length) {
+        if (cloud.checkpoint.conflict) throw new Error('账号工作区存在冲突；请先处理，再重新生成提议。')
+        if (!signedToken) throw new Error('已验证的签名提议不可用；请重新打开提议。')
+        const result = await executeConnectedBusinessCommand(cloud.session.user.id, {
+          type: 'mcp_apply_discovery',
+          value: { token: signedToken, selectedOperationIds: [...selectedIds], rejectionSelections },
+        }, { commandId: createConnectedCommandId('mcp-apply-discovery') })
+        if (result.outcome !== 'COMMITTED' && result.outcome !== 'ALREADY_APPLIED') {
+          throw new Error(result.conflict?.message ?? '已审阅岗位未写入账号工作区。')
+        }
+        announceWorkspaceChange()
+        setResult(zh
+          ? `已选择 ${selectedCount}/${discoveryOperations.length} 个岗位，并保存到账号 Opportunities；发现反馈已记录。`
+          : `Selected ${selectedCount}/${discoveryOperations.length} jobs and saved them to account Opportunities; discovery feedback was recorded.`)
+        return
+      }
       await savePendingChangeSet(reviewedChangeSet)
       await applyMcpChangeSetWithBaseline(reviewedChangeSet)
 
