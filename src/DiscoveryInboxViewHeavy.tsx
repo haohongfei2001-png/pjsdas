@@ -13,6 +13,8 @@ import {
 } from './discoveryInboxStore.js'
 import { useCloud } from './cloud/CloudContext.js'
 import { ensureAuthoritativePersistence } from './cloud/authoritativePersistence.js'
+import { connectedWorkspaceAuthorityEnabled } from './cloud/connectedWorkspaceRepository.js'
+import { createConnectedCommandId, executeConnectedBusinessCommand } from './cloud/authoritativeCommandClient.js'
 import OpportunityAssessmentSummary from './OpportunityAssessmentSummary.js'
 import RichOpportunityFactsSummary from './RichOpportunityFactsSummary.js'
 import { useUiLanguage } from './uiLanguage.js'
@@ -107,13 +109,32 @@ export default function DiscoveryInboxView() {
     } else setMessage(success)
   }
 
+  async function commitConnectedStatus(itemId: string, status: Exclude<DiscoveryInboxStatus, 'promoted'>, rejectionReason?: DiscoveryRejectionReason) {
+    const accountKey = cloud.session?.user.id
+    if (!accountKey) throw new Error('当前 PJSDAS 账号会话不可用。')
+    const commandId = createConnectedCommandId('discovery-status')
+    const result = await executeConnectedBusinessCommand(accountKey, {
+      type: 'discovery_status', value: { inboxItemId: itemId, status, rejectionReason },
+    }, { commandId })
+    if (result.outcome !== 'COMMITTED' && result.outcome !== 'ALREADY_APPLIED') {
+      throw new Error(result.conflict?.message ?? '发现箱状态未写入账号工作区。')
+    }
+  }
+
   async function mutate(item: DiscoveryInboxItem, status: DiscoveryInboxStatus) {
     setBusyId(item.id)
     setError('')
     setMessage('')
     try {
-      await updateDiscoveryInboxStatus(item.id, status, status === 'dismissed' ? reasons[item.id] : undefined)
-      await syncAfterMutation(zh ? '发现箱状态已更新' : 'Discovery Inbox updated')
+      if (connectedWorkspaceAuthorityEnabled() && cloud.session) {
+        if (status === 'promoted') throw new Error('加入机会池需要明确的确认操作。')
+        await commitConnectedStatus(item.id, status, status === 'dismissed' ? reasons[item.id] : undefined)
+        await reload()
+        setMessage(zh ? '发现箱状态已保存到账号工作区。' : 'Discovery Inbox status saved to the account workspace.')
+      } else {
+        await updateDiscoveryInboxStatus(item.id, status, status === 'dismissed' ? reasons[item.id] : undefined)
+        await syncAfterMutation(zh ? '发现箱状态已更新' : 'Discovery Inbox updated')
+      }
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : String(caught))
     } finally { setBusyId('') }
@@ -125,17 +146,29 @@ export default function DiscoveryInboxView() {
     setError('')
     setMessage('')
     try {
-      await bulkUpdateDiscoveryInboxStatus(
-        selectedMutable.map((item) => item.id),
-        status,
-        status === 'dismissed' ? bulkReason : undefined,
-      )
+      if (connectedWorkspaceAuthorityEnabled() && cloud.session) {
+        for (const item of selectedMutable) {
+          await commitConnectedStatus(item.id, status, status === 'dismissed' ? bulkReason : undefined)
+        }
+      } else {
+        await bulkUpdateDiscoveryInboxStatus(
+          selectedMutable.map((item) => item.id),
+          status,
+          status === 'dismissed' ? bulkReason : undefined,
+        )
+      }
       setSelectedIds([])
       setCompareOpen(false)
-      await syncAfterMutation(
-        zh ? `已批量更新 ${selectedMutable.length} 个候选` : `Updated ${selectedMutable.length} candidates`,
-      )
+      if (connectedWorkspaceAuthorityEnabled() && cloud.session) {
+        await reload()
+        setMessage(zh ? `已将 ${selectedMutable.length} 个候选状态保存到账号工作区。` : `Saved ${selectedMutable.length} candidate statuses to the account workspace.`)
+      } else {
+        await syncAfterMutation(
+          zh ? `已批量更新 ${selectedMutable.length} 个候选` : `Updated ${selectedMutable.length} candidates`,
+        )
+      }
     } catch (caught) {
+      await reload()
       setError(caught instanceof Error ? caught.message : String(caught))
     } finally { setBusyId('') }
   }

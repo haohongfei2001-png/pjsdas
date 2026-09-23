@@ -11,6 +11,7 @@ import {
   mergeDiscoveryInboxItems,
 } from './discoveryInbox.js'
 import { findSimilarOpportunity } from './discoveryQuality.js'
+import { deriveDiscoveryInboxStatusChange } from './discoveryStatus.js'
 import type { ChangeSetRecord } from './changeSet.js'
 import type {
   DiscoveryInboxItem,
@@ -42,21 +43,14 @@ export async function updateDiscoveryInboxStatus(
   const db = await dbPromise
   const item = await db.get('discoveryInbox', id)
   if (!item) throw new Error(`找不到发现箱条目 ${id}。`)
-  if (item.status === 'promoted' && status !== 'promoted') throw new Error('已加入机会池的发现箱条目不能退回候选状态。')
+  if (status === 'promoted') throw new Error('加入机会池需要明确的确认操作。')
   const now = new Date()
-  const next: DiscoveryInboxItem = {
-    ...item,
-    status,
-    rejectionReason: status === 'dismissed' ? (rejectionReason ?? 'not_interested') : undefined,
-    seenAt: status === 'seen' ? now.toISOString() : item.seenAt,
-    updatedAt: now.toISOString(),
-  }
+  const change = deriveDiscoveryInboxStatusChange(item, status, rejectionReason, now)
+  const next = change.item
   const stores = status === 'dismissed' ? ['discoveryInbox', 'timeline'] as const : ['discoveryInbox'] as const
   const tx = db.transaction(stores, 'readwrite')
   await tx.objectStore('discoveryInbox').put(next)
-  if (status === 'dismissed') {
-    await tx.objectStore('timeline').put(discoveryInboxDecisionTimeline(next, 'rejected', now, next.rejectionReason))
-  }
+  if (change.timeline) await tx.objectStore('timeline').put(change.timeline)
   await tx.done
   return next
 }

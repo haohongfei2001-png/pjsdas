@@ -908,6 +908,15 @@ export function applyDomainCompensation(
       target.updatedAt = timestamp
       syncScheduleNodeForActionStatus(next.data, target.id, target.status, timestamp)
     }
+  } else if (compensation.operation === 'restore_discovery_status') {
+    const target = (next.data.discoveryInbox ?? []).find((item) => item.id === payload.inboxItemId)
+    if (target) {
+      target.status = payload.status
+      target.rejectionReason = payload.rejectionReason
+      target.seenAt = payload.seenAt
+      target.updatedAt = timestamp
+    }
+    if (payload.timelineId) next.data.timeline = (next.data.timeline ?? []).filter((item) => item.id !== payload.timelineId)
   } else if (compensation.operation === 'delete_process_event') {
     next.data.processEvents = next.data.processEvents.filter((item) => item.id !== payload.eventId)
     next.data.actions = next.data.actions.filter((item) => item.processEventId !== payload.eventId)
@@ -1017,4 +1026,3 @@ export function applyDomainCompensation(
   validateSnapshot(next)
   return next
 }
-

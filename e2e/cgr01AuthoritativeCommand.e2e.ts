@@ -520,3 +520,95 @@ test('CGR-05 background connected refresh leaves local legacy changes pending wi
   expect(commits).toBe(0)
   expect((await readIndexedActions(page)).find((item) => item.id === 'A-action-1')?.title).toBe('本地待处理修改')
 })
+
+test('CGR-05 Discovery Inbox status uses a scoped command and is visible in a second client', async ({ browser }) => {
+  const state: AccountState = { revision: 7, snapshot: workspace('A'), receipts: new Map() }
+  state.snapshot.data.discoveryInbox = [{
+    id: 'inbox:cgr05-job', candidateOpportunityId: 'cgr05-job', company: '合成公司', role: '产品设计师',
+    roleType: 'core', sourceUrl: 'https://example.test/job/1', sourceTitle: '产品设计师',
+    rationale: '可核对的招聘来源', opportunityValue: 72, fitScore: 78,
+    fitConfidence: 'medium', opportunityValueConfidence: 'medium', status: 'new',
+    discoveredAt: '2026-09-23T00:00:00.000Z', createdAt: '2026-09-23T00:00:00.000Z', updatedAt: '2026-09-23T00:00:00.000Z',
+  }]
+  const commandBodies: Array<Record<string, any>> = []
+  let snapshotCommits = 0
+
+  async function install(page: Page) {
+    await seedInitialSession(page, 'account-a', 'token-a')
+    await page.route(`${BACKEND}/**`, async (route) => {
+      const request = route.request()
+      const url = new URL(request.url())
+      if (request.method() === 'OPTIONS') return cors(route, {}, 204)
+      if (url.pathname === '/api/health') return cors(route, health())
+      if (url.pathname !== '/api/workspace') return cors(route, { code: 'NOT_FOUND' }, 404)
+      const body = request.postDataJSON() as Record<string, any>
+      if (body.action === 'read') return cors(route, {
+        workspaceId: 'ws-a', workspaceVersion: `txn:${state.revision}`, revision: state.revision,
+        schemaVersion: state.snapshot.version, snapshot: state.snapshot,
+      })
+      if (body.action === 'commit') {
+        snapshotCommits += 1
+        return cors(route, { code: 'SNAPSHOT_WRITE_FORBIDDEN' }, 400)
+      }
+      if (body.action === 'command') {
+        commandBodies.push(body)
+        const command = body.command
+        if (command?.type !== 'discovery_status' || command.value?.inboxItemId !== 'inbox:cgr05-job') {
+          return cors(route, { code: 'UNEXPECTED_COMMAND' }, 400)
+        }
+        const item = state.snapshot.data.discoveryInbox?.[0]
+        if (item) {
+          item.status = command.value.status
+          item.seenAt = new Date().toISOString()
+          item.updatedAt = item.seenAt
+        }
+        state.revision += 1
+        const receipt = {
+          commandId: body.commandId, receiptId: `command-receipt:${body.commandId}`,
+          status: 'COMMITTED', revision: state.revision,
+          affectedObjects: [{ type: 'discovery_inbox', id: 'inbox:cgr05-job' }],
+          result: { type: 'discovery_status', status: 'APPLIED', summary: 'Saved Discovery Inbox status.' },
+        }
+        state.receipts.set(body.commandId, receipt)
+        return cors(route, {
+          outcome: 'COMMITTED', revision: state.revision, workspaceVersion: `txn:${state.revision}`,
+          schemaVersion: state.snapshot.version, snapshot: state.snapshot, receipt,
+        })
+      }
+      if (body.action === 'receipt') {
+        const receipt = state.receipts.get(body.commandId)
+        return cors(route, {
+          found: Boolean(receipt), revision: state.revision, workspaceVersion: `txn:${state.revision}`,
+          schemaVersion: state.snapshot.version, snapshot: state.snapshot, receipt,
+        })
+      }
+      return cors(route, { code: 'UNEXPECTED_ACTION', action: body.action }, 400)
+    })
+  }
+
+  const first = await browser.newContext()
+  const second = await browser.newContext()
+  try {
+    const pageA = await first.newPage()
+    const pageB = await second.newPage()
+    await install(pageA)
+    await install(pageB)
+    await pageA.goto('/opportunities')
+    await pageA.locator('.surface-context-tabs').getByRole('button', { name: /发现箱/ }).click()
+    const itemA = pageA.locator('.discovery-inbox-item').filter({ hasText: '合成公司' })
+    await expect(itemA).toHaveClass(/status-new/)
+    await itemA.getByRole('button', { name: '已看' }).click()
+    await expect(itemA).toHaveClass(/status-seen/)
+    expect(commandBodies).toHaveLength(1)
+    expect(commandBodies[0].command.value).toMatchObject({ inboxItemId: 'inbox:cgr05-job', status: 'seen' })
+    expect(commandBodies[0]).not.toHaveProperty('snapshot')
+    expect(snapshotCommits).toBe(0)
+
+    await pageB.goto('/opportunities')
+    await pageB.locator('.surface-context-tabs').getByRole('button', { name: /发现箱/ }).click()
+    await expect(pageB.locator('.discovery-inbox-item').filter({ hasText: '合成公司' })).toHaveClass(/status-seen/)
+  } finally {
+    await first.close()
+    await second.close()
+  }
+})

@@ -13,6 +13,7 @@ import {
 } from '../src/semanticIntake.js'
 import type { PJSDASSnapshot } from '../src/snapshot.js'
 import type { SemanticIntakeObservation } from '../src/model.js'
+import { applyDiscoveryStatusCommand } from '../src/discoveryStatusCommand.js'
 import { applyUserCommandSchema } from './userCommands.js'
 import { semanticIntakeSchema, resolveSemanticDecisionSchema } from './semanticIntake.js'
 import { hashMutationPayload, type MutationPrincipal } from './mutationKernel.js'
@@ -43,6 +44,11 @@ export const authoritativeBusinessCommandSchema = z.object({
     z.object({ type: z.literal('domain'), value: applyUserCommandSchema }).strict(),
     z.object({ type: z.literal('semantic_intake'), value: semanticIntakeSchema }).strict(),
     z.object({ type: z.literal('resolve_semantic_decision'), value: resolveSemanticDecisionSchema }).strict(),
+    z.object({ type: z.literal('discovery_status'), value: z.object({
+      inboxItemId: z.string().trim().min(1).max(240),
+      status: z.enum(['new', 'seen', 'later', 'dismissed']),
+      rejectionReason: z.enum(['location', 'compensation', 'role_direction', 'company_value', 'requirements', 'already_have_better', 'not_interested', 'other']).optional(),
+    }).strict() }).strict(),
   ]),
 }).strict()
 
@@ -71,7 +77,7 @@ export interface AuthoritativeCommandExecution {
 }
 
 function resultPayload(command: AuthoritativeBusinessCommand['command'], evaluated: any) {
-  if (command.type === 'domain') {
+  if (command.type === 'domain' || command.type === 'discovery_status') {
     return {
       type: command.type,
       status: evaluated.status,
@@ -102,6 +108,7 @@ function operationFor(command: AuthoritativeBusinessCommand['command']) {
 
 function intentObjects(command: AuthoritativeBusinessCommand['command'], snapshot: PJSDASSnapshot) {
   if (command.type === 'domain') return domainIntentObjects(command.value as UserDomainCommand, snapshot)
+  if (command.type === 'discovery_status') return [{ type: 'discovery_inbox', id: command.value.inboxItemId }]
   if (command.type === 'semantic_intake') return semanticIntentObjects(command.value as SemanticIntakeObservation, snapshot)
   return decisionIntentObjects(command.value.requestId, snapshot)
 }
@@ -189,6 +196,9 @@ export function createAuthoritativeCommandExecutor(options: TransactionalWorkspa
     if (principal.kind === 'first_party_web' && parsed.command.type === 'semantic_intake' && parsed.command.value.source.kind !== 'web') {
       throw new WorkspaceSourceError('AUTH_FORBIDDEN', 'First-party Web Semantic Intake may write only web-origin observations.', false)
     }
+    if (parsed.command.type === 'discovery_status' && principal.kind !== 'first_party_web') {
+      throw new WorkspaceSourceError('AUTH_FORBIDDEN', 'Discovery Inbox status commands are restricted to the first-party Web client.', false)
+    }
 
     const operation = operationFor(parsed.command)
     const payloadHash = await hashMutationPayload(operation, parsed.command)
@@ -231,6 +241,8 @@ export function createAuthoritativeCommandExecutor(options: TransactionalWorkspa
       let evaluated: any
       if (parsed.command.type === 'domain') {
         evaluated = applyUserDomainCommand(current.snapshot, parsed.command.value as UserDomainCommand, now)
+      } else if (parsed.command.type === 'discovery_status') {
+        evaluated = applyDiscoveryStatusCommand(current.snapshot, parsed.command.value, now)
       } else if (parsed.command.type === 'semantic_intake') {
         evaluated = applySemanticIntake(current.snapshot, parsed.command.value as SemanticIntakeObservation, {
           authorized: true,

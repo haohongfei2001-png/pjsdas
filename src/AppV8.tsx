@@ -28,6 +28,7 @@ import {
   undoConnectedBusinessCommand,
 } from './cloud/authoritativeCommandClient.js'
 import DiscoveryProfileCard from './DiscoveryProfileCard.js'
+import DiscoveryInboxView from './DiscoveryInboxView.js'
 import PrepGraphDock from './PrepGraphDock.js'
 import ProcessEventDock from './ProcessEventDock.js'
 import LocalBackupDock from './LocalBackupDock.js'
@@ -67,7 +68,7 @@ import './cgr02Tokens.css'
 
 type Surface = 'today' | 'opportunities' | 'decisions' | 'history' | 'settings'
 type PrimarySurface = 'today' | 'opportunities'
-type OpportunityTab = 'opportunities' | 'prepare'
+type OpportunityTab = 'opportunities' | 'prepare' | 'discovery'
 type CompletionFeedback = { id: string; title: string; previousStatus: Action['status']; commandId?: string; error?: string }
 type RouteState = {
   surface: Surface
@@ -678,11 +679,16 @@ function OpportunitiesSurface({
           <span>{zh ? '准备' : 'Prepare'}</span>
           <small>{prep.length} {zh ? '资产' : 'items'}</small>
         </button>
+        <button className={tab === 'discovery' ? 'active' : ''} onClick={() => onTabChange('discovery')}>
+          <span>{zh ? '发现箱' : 'Discovery Inbox'}</span>
+          <small>{zh ? '待审阅候选' : 'Review candidates'}</small>
+        </button>
       </div>
 
       {tab === 'opportunities' ? <OpportunityDecisionList read={read} view={view} onViewChange={onViewChange}
         query={query} onQueryChange={onQueryChange} onOpenOpportunity={onOpenOpportunity} /> : null}
       {tab === 'prepare' ? <PreparePanel prep={prep} /> : null}
+      {tab === 'discovery' ? <DiscoveryInboxView /> : null}
     </section>
   )
 }
