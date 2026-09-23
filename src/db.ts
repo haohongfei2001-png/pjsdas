@@ -982,6 +982,7 @@ export async function clearLocalWorkspaceCache() {
   const tx = db.transaction([...DATA_STORES], 'readwrite')
   await Promise.all(DATA_STORES.map((storeName) => tx.objectStore(storeName).clear()))
   await tx.done
+  if (typeof window !== 'undefined') window.dispatchEvent(new Event('pjsdas:workspace-replaced'))
 }
 
 export async function replaceLocalSnapshotFromCloud(snapshot: PJSDASSnapshot) {
