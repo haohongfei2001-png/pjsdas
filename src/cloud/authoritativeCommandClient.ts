@@ -211,11 +211,13 @@ async function submitPending(accountKey: string, pending: PendingCommand): Promi
         })
 
     if (response.status === 409 && payload?.outcome === 'CONFLICT') {
+      const result = parseCommandResponse(payload)
+      await projectAuthoritativeResult(accountKey, result)
       patchPending(accountKey, pending.commandId, {
         status: 'conflict',
         lastError: payload.conflict?.message ?? 'Authoritative command conflict.',
       })
-      return parseCommandResponse(payload)
+      return result
     }
     if (!response.ok) return recoverUnknown(accountKey, pending, serverError(response, payload))
 
