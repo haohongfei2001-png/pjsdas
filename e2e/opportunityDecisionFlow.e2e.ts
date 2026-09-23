@@ -1,5 +1,44 @@
 import { expect, test } from '@playwright/test'
 
+test('CGR-03 dense mixed-language workspace keeps search, identity, and return focus', async ({ page }) => {
+  await page.goto('/')
+  await page.evaluate(async () => {
+    const importedAt = new Date(Date.now() - 86400000).toISOString()
+    await new Promise<void>((resolve, reject) => {
+      const request = indexedDB.open('pjsdas', 11)
+      request.onerror = () => reject(request.error)
+      request.onsuccess = () => {
+        const db = request.result
+        const tx = db.transaction(['opportunities'], 'readwrite')
+        tx.onerror = () => reject(tx.error)
+        tx.oncomplete = () => { db.close(); resolve() }
+        for (let index = 0; index < 240; index += 1) {
+          tx.objectStore('opportunities').put({
+            id: `cgr03-dense-${index}`, company: `合成公司 CGR03-${index}`,
+            role: index === 239 ? 'Senior Product and Human-Centered Systems Research / 高级产品与认知系统研究岗位' : `Engineer / 研究 ${index}`,
+            currentStageLabel: '面试', processStage: 'interview', roleType: 'core',
+            participationStatus: 'active', early: false, opportunityValue: 80,
+            fitScore: 80, importedAt,
+          })
+        }
+      }
+    })
+  })
+  await page.reload()
+  await page.locator('.surface-nav').getByRole('button', { name: /机会|Opportunities/ }).click()
+  const rows = page.locator('.opportunity-decision-row')
+  await expect(rows).toHaveCount(240)
+  const search = page.getByRole('textbox', { name: /搜索公司或岗位|Search company or role/ })
+  await search.fill('CGR03-239')
+  await expect(rows).toHaveCount(1)
+  await expect(rows.first()).toContainText('高级产品与认知系统研究岗位')
+  await rows.first().click()
+  await expect(page.getByRole('dialog', { name: /岗位详情|Opportunity details/ })).toContainText('CGR03-239')
+  await page.keyboard.press('Escape')
+  await expect(rows.first()).toBeFocused()
+  await expect(search).toHaveValue('CGR03-239')
+})
+
 test('UU-05 Opportunities centers In Progress / Worth Pursuing and opens conclusion-first detail', async ({ page }) => {
   await page.goto('/')
   await page.evaluate(async () => {
