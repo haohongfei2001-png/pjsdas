@@ -125,6 +125,19 @@ describe('CGR-02 authoritative Today read freshness', () => {
     expect(replaceLocalSnapshotFromCloud).toHaveBeenCalledWith(remoteSnapshot)
   })
 
+  it('keeps a verified projected cache current without repeatedly replacing it', async () => {
+    vi.mocked(getAccountCheckpoint).mockReturnValue({
+      lastSyncedVersion: 'txn:8',
+      lastSyncedFingerprint: 'remote-fp',
+      lastReadProjectionFingerprint: 'local-fp',
+      lastReadProjectionSourceFingerprint: 'remote-fp',
+    })
+    const result = await refreshConnectedAuthoritativeCache('account-a')
+    expect(result).toMatchObject({ state: 'current', changed: false, workspaceVersion: 'txn:8' })
+    expect(replaceLocalSnapshotFromCloud).not.toHaveBeenCalled()
+    expect(window.dispatchEvent).not.toHaveBeenCalled()
+  })
+
   it('adopts a legacy checkpoint only when local projection is equivalent', async () => {
     vi.mocked(getAccountCheckpoint).mockReturnValue({
       lastSyncedVersion: 'txn:8',

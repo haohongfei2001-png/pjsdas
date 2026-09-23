@@ -77,6 +77,16 @@ export async function refreshConnectedAuthoritativeCache(
     const localChanged = localFingerprint !== (projectedBaseline ?? checkpoint.lastSyncedFingerprint)
     const remoteChanged = remote.version !== checkpoint.lastSyncedVersion
       || remote.fingerprint !== checkpoint.lastSyncedFingerprint
+    if (!localChanged && !remoteChanged) {
+      markFresh(accountKey, remote.version, remote.fingerprint, localFingerprint, observedAt)
+      return {
+        state: 'current',
+        workspaceVersion: remote.version,
+        observedAt,
+        latencyMs: Date.now() - startedAt,
+        changed: false,
+      }
+    }
     if (localChanged) {
       if (!remoteChanged && !projectedBaseline && equivalentReadProjection(local, remote.snapshot)) {
         markFresh(accountKey, remote.version, remote.fingerprint, localFingerprint, observedAt)

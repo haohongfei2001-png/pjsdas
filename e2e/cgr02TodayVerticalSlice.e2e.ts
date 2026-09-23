@@ -146,7 +146,7 @@ function responseFor(state: State, extra: Record<string, unknown> = {}) {
 function installServer(page: Page, state: State, options: {
   loseFirstSemanticResponse?: boolean
   loseFirstReceiptLookup?: boolean
-  delaySemanticMs?: number
+  holdSemantic?: Promise<void>
   holdRead?: Promise<void>
 } = {}) {
   let lostCommand = false
@@ -182,7 +182,7 @@ function installServer(page: Page, state: State, options: {
 
     if (body.action === 'command' && body.command?.type === 'semantic_intake') {
       state.commandBodies.push(body)
-      if (options.delaySemanticMs) await new Promise((resolve) => setTimeout(resolve, options.delaySemanticMs))
+      if (options.holdSemantic) await options.holdSemantic
       const commandId = String(body.commandId)
       if (!state.receipts.has(commandId)) {
         const candidate = body.command?.value?.candidates?.find((item: any) => item.kind === 'manual_action')
@@ -344,6 +344,9 @@ test('CGR-02 golden journey: understand -> authoritative save -> cross-client vi
   await pageA.getByRole('button', { name: '关闭' }).click()
   await expect(opener).toBeFocused()
   await pageA.locator('.opportunity-detail-drawer').getByRole('button', { name: /回到 Today|Back to Today/ }).click()
+  await expect(pageA.locator('.cgr-freshness')).not.toHaveText('正在刷新')
+  await pageA.evaluate(() => window.dispatchEvent(new Event('focus')))
+  await expect(pageA.locator('.cgr-freshness')).toContainText('已是最新')
   await mkdir(VISUAL_DIR, { recursive: true })
   await pageA.screenshot({ path: `${VISUAL_DIR}/normal-desktop.png`, fullPage: true })
 
@@ -525,7 +528,9 @@ test('first load and unavailable read show distinct truthful states', async ({ p
 test('pending authoritative save is visibly pending until its receipt arrives', async ({ page }) => {
   await seedSession(page.context())
   const state: State = { revision: 55, snapshot: workspace(), receipts: new Map(), commandBodies: [] }
-  await installServer(page, state, { delaySemanticMs: 1_200 })
+  let releaseSemantic: () => void = () => {}
+  const holdSemantic = new Promise<void>((resolve) => { releaseSemantic = resolve })
+  await installServer(page, state, { holdSemantic })
 
   await page.goto('/pjsdas/today')
   await page.locator('.cgr-global-capture').click()
@@ -536,6 +541,7 @@ test('pending authoritative save is visibly pending until its receipt arrives', 
   await expect(page.getByText('已保存')).toHaveCount(0)
   await mkdir(VISUAL_DIR, { recursive: true })
   await page.screenshot({ path: `${VISUAL_DIR}/pending-save.png` })
+  releaseSemantic()
   await expect(page.getByText('已保存')).toBeVisible()
 })
 
