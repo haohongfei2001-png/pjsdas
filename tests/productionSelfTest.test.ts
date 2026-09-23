@@ -93,6 +93,12 @@ function health() {
   dependencyAwareCommandUndo: 'cgr-01',
   accountScopedCommandClient: true,
   boundedSnapshotCompatibility: 'cgr-01',
+      todayAuthoritativeReadFreshness: 'cgr-02',
+      todayCrossClientRefreshTargetMs: 15_000,
+      tellPjsdasExplicitUnderstanding: true,
+      tellPjsdasAuthoritativeSaveState: 'cgr-02',
+      todayRecentAuthoritativeChanges: true,
+      canonicalCaptureRoute: '/today/capture',
     },
   }
 }
