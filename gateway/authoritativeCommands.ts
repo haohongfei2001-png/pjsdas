@@ -16,6 +16,11 @@ import type { SemanticIntakeObservation } from '../src/model.js'
 import { applyDiscoveryStatusCommand } from '../src/discoveryStatusCommand.js'
 import { applyDiscoveryProfileCommand } from '../src/discoveryProfileCommand.js'
 import { applyDiscoveryPromotionCommand } from '../src/discoveryPromotionCommand.js'
+import { applyMcpInboxSaveCommand } from '../src/mcpInboxCommand.js'
+import { discoveryInboxIdentity, discoveryInboxItemsFromChangeSet } from '../src/discoveryInbox.js'
+import type { McpProposalEnvelope } from '../src/ai/mcpProposal.js'
+import { fingerprintWorkspace } from '../src/cloud/workspaceFingerprint.js'
+import { verifySignedProposalToken } from './proposalToken.js'
 import { findSimilarOpportunity } from '../src/discoveryQuality.js'
 import { applyUserCommandSchema } from './userCommands.js'
 import { semanticIntakeSchema, resolveSemanticDecisionSchema } from './semanticIntake.js'
@@ -63,6 +68,7 @@ export const authoritativeBusinessCommandSchema = z.object({
     z.object({ type: z.literal('resolve_semantic_decision'), value: resolveSemanticDecisionSchema }).strict(),
     z.object({ type: z.literal('discovery_profile'), value: discoveryProfileSchema }).strict(),
     z.object({ type: z.literal('discovery_promotion'), value: z.object({ inboxItemId: z.string().trim().min(1).max(240) }).strict() }).strict(),
+    z.object({ type: z.literal('mcp_save_inbox'), value: z.object({ token: z.string().min(1).max(32_000) }).strict() }).strict(),
     z.object({ type: z.literal('discovery_status'), value: z.object({
       inboxItemId: z.string().trim().min(1).max(240),
       status: z.enum(['new', 'seen', 'later', 'dismissed']),
@@ -96,7 +102,7 @@ export interface AuthoritativeCommandExecution {
 }
 
 function resultPayload(command: AuthoritativeBusinessCommand['command'], evaluated: any) {
-  if (command.type === 'domain' || command.type === 'discovery_status' || command.type === 'discovery_profile' || command.type === 'discovery_promotion') {
+  if (command.type === 'domain' || command.type === 'discovery_status' || command.type === 'discovery_profile' || command.type === 'discovery_promotion' || command.type === 'mcp_save_inbox') {
     return {
       type: command.type,
       status: evaluated.status,
@@ -125,8 +131,20 @@ function operationFor(command: AuthoritativeBusinessCommand['command']) {
   return command.type
 }
 
-function intentObjects(command: AuthoritativeBusinessCommand['command'], snapshot: PJSDASSnapshot) {
+function intentObjects(command: AuthoritativeBusinessCommand['command'], snapshot: PJSDASSnapshot, proposal?: McpProposalEnvelope) {
   if (command.type === 'domain') return domainIntentObjects(command.value as UserDomainCommand, snapshot)
+  if (command.type === 'mcp_save_inbox') {
+    if (!proposal) throw new Error('Verified MCP proposal is required.')
+    const incoming = discoveryInboxItemsFromChangeSet(proposal.changeSet)
+    return [
+      { type: 'change_set', id: proposal.changeSet.id },
+      ...incoming.map((item) => {
+        const previous = (snapshot.data.discoveryInbox ?? []).find((saved) =>
+          discoveryInboxIdentity(saved.company, saved.role) === discoveryInboxIdentity(item.company, item.role))
+        return { type: 'discovery_inbox', id: previous?.id ?? item.id }
+      }),
+    ]
+  }
   if (command.type === 'discovery_status') return [{ type: 'discovery_inbox', id: command.value.inboxItemId }]
   if (command.type === 'discovery_profile') return [{ type: 'discovery_profile', id: 'current' }]
   if (command.type === 'discovery_promotion') {
@@ -226,8 +244,18 @@ export function createAuthoritativeCommandExecutor(options: TransactionalWorkspa
     if (principal.kind === 'first_party_web' && parsed.command.type === 'semantic_intake' && parsed.command.value.source.kind !== 'web') {
       throw new WorkspaceSourceError('AUTH_FORBIDDEN', 'First-party Web Semantic Intake may write only web-origin observations.', false)
     }
-    if (['discovery_status','discovery_profile','discovery_promotion'].includes(parsed.command.type) && principal.kind !== 'first_party_web') {
+    if (['discovery_status','discovery_profile','discovery_promotion','mcp_save_inbox'].includes(parsed.command.type) && principal.kind !== 'first_party_web') {
       throw new WorkspaceSourceError('AUTH_FORBIDDEN', 'Discovery review commands are restricted to the first-party Web client.', false)
+    }
+
+    let proposal: McpProposalEnvelope | undefined
+    if (parsed.command.type === 'mcp_save_inbox') {
+      const signingKey = process.env.PJSDAS_TOKEN_ENCRYPTION_KEY?.trim() ?? ''
+      if (!signingKey) throw new WorkspaceSourceError('PROPOSAL_VERIFY_UNAVAILABLE', 'Signed proposal verification is unavailable.', false)
+      proposal = await verifySignedProposalToken(parsed.command.value.token, signingKey)
+      if (!proposal.workspaceOwnerUserId || proposal.workspaceOwnerUserId !== principal.userId || !/^txn:\d+$/.test(proposal.workspaceVersion ?? '')) {
+        throw new WorkspaceSourceError('AUTH_FORBIDDEN', 'The signed proposal belongs to another account or workspace authority.', false)
+      }
     }
 
     const operation = operationFor(parsed.command)
@@ -258,7 +286,13 @@ export function createAuthoritativeCommandExecutor(options: TransactionalWorkspa
         throw new WorkspaceSourceError('INVALID_ARGUMENT', 'Command base revision is newer than the authoritative workspace.', false)
       }
 
-      const intent = intentObjects(parsed.command, current.snapshot)
+      if (proposal) {
+        if (proposal.workspaceVersion !== `txn:${current.revision}` || proposal.changeSet.expectedWorkspaceVersion !== proposal.workspaceVersion ||
+          proposal.changeSet.expectedWorkspaceFingerprint !== await fingerprintWorkspace(current.snapshot)) {
+          throw new WorkspaceSourceError('WORKSPACE_CONFLICT', 'The signed proposal is stale. Refresh and request a new proposal.', false)
+        }
+      }
+      const intent = intentObjects(parsed.command, current.snapshot, proposal)
       if (parsed.baseRevision < current.revision) {
         const intervening = await store.readCommandsAfterRevision(principal.userId, parsed.baseRevision)
         const conflict = conflictFromIntervening(intent, current.snapshot, intervening)
@@ -277,6 +311,8 @@ export function createAuthoritativeCommandExecutor(options: TransactionalWorkspa
         evaluated = applyDiscoveryProfileCommand(current.snapshot, parsed.command.value, now)
       } else if (parsed.command.type === 'discovery_promotion') {
         evaluated = applyDiscoveryPromotionCommand(current.snapshot, parsed.command.value, now)
+      } else if (parsed.command.type === 'mcp_save_inbox') {
+        evaluated = applyMcpInboxSaveCommand(current.snapshot, proposal!, now)
       } else if (parsed.command.type === 'semantic_intake') {
         evaluated = applySemanticIntake(current.snapshot, parsed.command.value as SemanticIntakeObservation, {
           authorized: true,

@@ -57,6 +57,7 @@ export function createTransactionalWorkspaceSource(options: TransactionalWorkspa
           now: now(),
           timezone,
           workspaceVersion: `txn:${workspace.revision}`,
+          workspaceOwnerUserId: options.userId,
         },
       }
     },
@@ -126,6 +127,7 @@ export function createTransactionalWorkspaceSource(options: TransactionalWorkspa
           now: now(),
           timezone,
           workspaceVersion: `txn:${result.revision}`,
+          workspaceOwnerUserId: options.userId,
         },
       }
     },

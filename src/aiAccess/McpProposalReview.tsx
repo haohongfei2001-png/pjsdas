@@ -18,6 +18,8 @@ import {
 } from '../ai/mcpProposal.js'
 import { applyMcpChangeSetWithBaseline, assertMcpChangeSetBaseline } from '../ai/mcpProposalApply.js'
 import { useCloud } from '../cloud/CloudContext.js'
+import { connectedWorkspaceAuthorityEnabled } from '../cloud/connectedWorkspaceRepository.js'
+import { createConnectedCommandId, executeConnectedBusinessCommand } from '../cloud/authoritativeCommandClient.js'
 import { ensureAuthoritativePersistence } from '../cloud/authoritativePersistence.js'
 import { getAccountCheckpoint } from '../cloud/syncState.js'
 import OpportunityAssessmentSummary from '../OpportunityAssessmentSummary.js'
@@ -72,6 +74,7 @@ export default function McpProposalReview() {
   const zh = lang === 'zh'
   const cloud = useCloud()
   const [proposal, setProposal] = useState<McpProposalEnvelope | null>(null)
+  const [signedToken, setSignedToken] = useState('')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const [verifying, setVerifying] = useState(() => typeof window !== 'undefined' && Boolean(encodedProposalFromHash(window.location.hash)))
@@ -125,6 +128,7 @@ export default function McpProposalReview() {
           .map((item) => item.id)
         setSelectedIds(new Set(discoveryIds))
         setRejectionSelections(defaultRejectionSelections(discoveryIds))
+        setSignedToken(token)
         setProposal(verified)
       })
       .catch((caught) => {
@@ -228,6 +232,22 @@ export default function McpProposalReview() {
     setBusy(true)
     setError('')
     try {
+      if (connectedWorkspaceAuthorityEnabled() && cloud.session) {
+        if (cloud.checkpoint.conflict) throw new Error('账号工作区存在冲突；请先处理，再重新生成提议。')
+        if (!signedToken) throw new Error('已验证的签名提议不可用；请重新打开提议。')
+        const result = await executeConnectedBusinessCommand(cloud.session.user.id, {
+          type: 'mcp_save_inbox', value: { token: signedToken },
+        }, { commandId: createConnectedCommandId('mcp-save-inbox') })
+        if (result.outcome !== 'COMMITTED' && result.outcome !== 'ALREADY_APPLIED') {
+          throw new Error(result.conflict?.message ?? '发现箱未写入账号工作区。')
+        }
+        announceWorkspaceChange()
+        const saved = discoveryOperations.length
+        setResult(zh
+          ? `已将 ${saved} 个岗位保存到账号发现箱，没有加入 Opportunities。`
+          : `Saved ${saved} jobs to the account Discovery Inbox without adding Opportunities.`)
+        return
+      }
       await assertMcpChangeSetBaseline(proposal.changeSet)
       const saved = await saveDiscoveryInboxFromChangeSet(proposal.changeSet)
       await savePendingChangeSet(proposal.changeSet)

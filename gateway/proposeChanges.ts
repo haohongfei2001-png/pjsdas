@@ -659,7 +659,7 @@ export async function invokeProposeChanges(
       explicitDiscoveryRun,
     )
     const discoveryReview = discoveryScreening ? discoveryReviewMetadata(discoveryScreening) : undefined
-    const signedToken = await createSignedProposalToken(changeSet, context.workspaceVersion, options.signingKey, now, discoveryReview)
+    const signedToken = await createSignedProposalToken(changeSet, context.workspaceVersion, options.signingKey, now, discoveryReview, context.workspaceOwnerUserId)
     const reviewUrl = buildMcpProposalReviewUrl(signedToken)
 
     return success({

@@ -34,6 +34,7 @@ export interface McpDiscoveryReview {
 export interface McpProposalEnvelope {
   version: typeof MCP_PROPOSAL_VERSION
   workspaceVersion?: string
+  workspaceOwnerUserId?: string
   expiresAt: string
   changeSet: ChangeSetRecord
   discoveryReview?: McpDiscoveryReview
@@ -144,6 +145,7 @@ export function createMcpProposalEnvelope(
   workspaceVersion?: string,
   now = new Date(),
   discoveryReview?: McpDiscoveryReview,
+  workspaceOwnerUserId?: string,
 ): McpProposalEnvelope {
   const enrichedChangeSet = withDiscoveryRun(changeSet, workspaceVersion, now, discoveryReview)
   assertChangeSetValid(enrichedChangeSet)
@@ -152,6 +154,7 @@ export function createMcpProposalEnvelope(
   return {
     version: MCP_PROPOSAL_VERSION,
     workspaceVersion,
+    workspaceOwnerUserId,
     expiresAt: new Date(now.getTime() + MCP_PROPOSAL_TTL_MS).toISOString(),
     changeSet: enrichedChangeSet,
     discoveryReview,
@@ -180,6 +183,9 @@ export function decodeMcpProposal(encoded: string): McpProposalEnvelope {
   }
   if (parsed.workspaceVersion !== undefined && typeof parsed.workspaceVersion !== 'string') {
     throw new Error('PJSDAS proposal workspace version is invalid.')
+  }
+  if (parsed.workspaceOwnerUserId !== undefined && (typeof parsed.workspaceOwnerUserId !== 'string' || !parsed.workspaceOwnerUserId.trim() || parsed.workspaceOwnerUserId.length > 200)) {
+    throw new Error('PJSDAS proposal account binding is invalid.')
   }
   if (!validIso(parsed.expiresAt)) throw new Error('PJSDAS proposal expiry is invalid.')
   if (parsed.discoveryReview !== undefined) validateDiscoveryReview(parsed.discoveryReview)
