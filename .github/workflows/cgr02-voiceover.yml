@@ -1,0 +1,44 @@
+name: CGR-02 VoiceOver
+
+on:
+  push:
+    branches: [main, manager/cgr02-today-vertical-slice-20260923]
+    paths:
+      - 'src/TellPjsdasCapture.tsx'
+      - 'e2e/cgr02TodayVoiceOver.voiceover.ts'
+      - 'playwright.voiceover.config.mts'
+      - '.github/workflows/cgr02-voiceover.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  voiceover:
+    runs-on: macos-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Install bounded screen-reader test dependencies
+        run: npm install --no-save --package-lock=false @playwright/test@1.63.0 @guidepup/playwright@0.19.1 @guidepup/guidepup@0.34.0 @guidepup/setup@0.25.3
+      - name: Install WebKit
+        run: npx playwright install webkit
+      - name: Prepare VoiceOver on CI runner
+        run: |
+          npx @guidepup/setup setup --ci
+          npx @guidepup/setup install
+      - name: Run real VoiceOver Today and capture journey
+        run: npx playwright test --config=playwright.voiceover.config.mts
+      - name: Upload failures
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cgr02-voiceover-failure
+          path: test-results/
+          if-no-files-found: ignore
+          retention-days: 7
