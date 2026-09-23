@@ -593,7 +593,7 @@ test('CGR-05 Discovery Inbox status uses a scoped command and is visible in a se
     const pageB = await second.newPage()
     await install(pageA)
     await install(pageB)
-    await pageA.goto('/opportunities')
+    await pageA.goto('/pjsdas/opportunities')
     await pageA.locator('.surface-context-tabs').getByRole('button', { name: /发现箱/ }).click()
     const itemA = pageA.locator('.discovery-inbox-item').filter({ hasText: '合成公司' })
     await expect(itemA).toHaveClass(/status-new/)
@@ -604,7 +604,7 @@ test('CGR-05 Discovery Inbox status uses a scoped command and is visible in a se
     expect(commandBodies[0]).not.toHaveProperty('snapshot')
     expect(snapshotCommits).toBe(0)
 
-    await pageB.goto('/opportunities')
+    await pageB.goto('/pjsdas/opportunities')
     await pageB.locator('.surface-context-tabs').getByRole('button', { name: /发现箱/ }).click()
     await expect(pageB.locator('.discovery-inbox-item').filter({ hasText: '合成公司' })).toHaveClass(/status-seen/)
   } finally {
