@@ -386,6 +386,8 @@ test('account A sign-out then account B never displays or replays A cache drafts
   await page.locator('.ultimate-toolbar').getByRole('button', { name: /设置|Settings/ }).click()
   await page.getByRole('button', { name: '退出 PJSDAS' }).click()
   await expect.poll(async () => (await readIndexedActions(page)).length).toBe(0)
+  await page.locator('.surface-nav').getByRole('button', { name: /今天|Today/ }).click()
+  await expect(page.getByRole('heading', { name: 'A第一任务' })).toHaveCount(0)
 
   await page.evaluate(({ key, value }) => {
     window.localStorage.setItem(key, JSON.stringify(value))
