@@ -43,12 +43,18 @@
   .opportunity-decision-reasons{justify-content:flex-start}
 }
 @media(max-width:760px){
+  .opportunities-surface,.opportunity-decision-list,.opportunity-decision-rows{grid-template-columns:minmax(0,1fr)}
+  .opportunities-surface,.opportunities-surface .surface-header,.opportunity-decision-list,.opportunity-decision-rows,.opportunity-decision-row{min-width:0;max-width:100%}
+  .opportunities-surface .surface-header h1,.opportunities-surface .surface-header p{overflow-wrap:anywhere}
   .opportunity-decision-toolbar{align-items:stretch;flex-direction:column}
   .opportunity-decision-primary-tabs{display:grid;grid-template-columns:1fr 1fr}
   .opportunity-decision-primary-tabs button{justify-content:center}
-  .opportunity-decision-filter{display:grid;grid-template-columns:minmax(0,1fr) auto}
+  .opportunity-decision-filter{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,auto)}
   .opportunity-decision-filter input{width:100%}
-  .opportunity-decision-row{display:flex;flex-direction:column;align-items:stretch;gap:8px;min-height:0;padding:14px 2px}
+  .opportunity-decision-filter select{max-width:100%}
+  .opportunity-decision-row{display:flex;flex-direction:column;align-items:stretch;gap:8px;min-height:0;width:100%;padding:14px 2px}
+  .opportunity-decision-identity strong,.opportunity-decision-identity span,.opportunity-decision-state strong,.opportunity-decision-state span,.opportunity-decision-next span{min-width:0;overflow-wrap:anywhere}
+  .opportunity-decision-identity span{max-width:100%}
   .opportunity-decision-reasons{justify-content:flex-start}
   .opportunity-detail-process-summary{grid-template-columns:1fr}
   .opportunity-detail-primary-operation{grid-template-columns:1fr}
