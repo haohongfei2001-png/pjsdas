@@ -396,6 +396,24 @@ test('background receipt recovery removes only the matching committed draft', as
   expect(state.commandBodies.filter((body) => body.action === 'command')).toHaveLength(1)
 })
 
+test('background receipt recovery preserves a newer draft from another editing context', async ({ page }) => {
+  await seedSession(page.context())
+  const state: State = { revision: 36, snapshot: workspace(), receipts: new Map(), commandBodies: [] }
+  await installServer(page, state, { loseFirstSemanticResponse: true, loseFirstReceiptLookup: true })
+
+  await page.goto('/pjsdas/today')
+  await page.locator('.cgr-global-capture').click()
+  await page.locator('.cgr-capture-input').fill('事项：整理面试材料')
+  await page.getByRole('button', { name: '确认并保存' }).click()
+  await expect(page.getByRole('alert')).toContainText('保存结果暂时未知')
+  await page.evaluate(() => window.localStorage.setItem('pjsdas-cgr01-draft:account-a:tell-pjsdas', '事项：新的未提交想法'))
+  await page.reload()
+  await expect.poll(() => page.evaluate(() => window.localStorage.getItem('pjsdas-cgr01-pending:account-a'))).toBeNull()
+  expect(await page.evaluate(() => window.localStorage.getItem('pjsdas-cgr01-draft:account-a:tell-pjsdas'))).toBe('事项：新的未提交想法')
+  await expect(page.locator('.cgr-capture-input')).toHaveValue('事项：新的未提交想法')
+  expect(state.commandBodies.filter((body) => body.action === 'command')).toHaveLength(1)
+})
+
 test('offline capture remains account-scoped draft only and legacy capture route redirects canonically', async ({ page, context }) => {
   await seedSession(context)
   const state: State = { revision: 40, snapshot: workspace(), receipts: new Map(), commandBodies: [] }
