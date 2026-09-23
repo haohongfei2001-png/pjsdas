@@ -8,7 +8,7 @@ import { parsePJSDASWorkbook } from './importExcelV2.js'
 import { prepPriorityRank, presentPrepPriority, presentPrepSourceState } from './prepSemantics.js'
 import { presentStageLabel } from './stagePresentation.js'
 import { currentUiLanguage, useUiLanguage } from './uiLanguage.js'
-import { DEFAULT_DECISION_RULES, type DecisionRules } from './decisionRules.js'
+import { DEFAULT_DECISION_RULES } from './decisionRules.js'
 import RulesView from './RulesView.js'
 import TimelineView from './TimelineView.js'
 import CloudSettingsCard from './cloud/CloudSettingsCard.js'
@@ -47,13 +47,7 @@ import {
 } from './todayBrief.js'
 import type {
   Action,
-  ApplicationGroup,
   ImportBundle,
-  ImportMeta,
-  Opportunity,
-  Prep,
-  ProcessRecord,
-  TimelineRecord,
 } from './model.js'
 import type { PJSDASSnapshot } from './snapshot.js'
 import './timeplan.css'
@@ -136,17 +130,18 @@ export default function AppV8() {
   const [opportunityTabExplicit, setOpportunityTabExplicit] = useState(false)
   const [lastCompletedAction, setLastCompletedAction] = useState<CompletionFeedback | null>(null)
   const [snapshot, setSnapshot] = useState<PJSDASSnapshot>()
-  const [opportunities, setOpportunities] = useState<Opportunity[]>([])
-  const [actions, setActions] = useState<Action[]>([])
-  const [processes, setProcesses] = useState<ProcessRecord[]>([])
-  const [prep, setPrep] = useState<Prep[]>([])
-  const [groups, setGroups] = useState<ApplicationGroup[]>([])
-  const [timeline, setTimeline] = useState<TimelineRecord[]>([])
-  const [rules, setRules] = useState<DecisionRules>(() => ({ ...DEFAULT_DECISION_RULES, weights: { ...DEFAULT_DECISION_RULES.weights } }))
-  const [lastImport, setLastImport] = useState<ImportMeta | undefined>()
   const [loading, setLoading] = useState(true)
   const [now, setNow] = useState(() => new Date())
   const [budgetMinutes, setBudgetMinutes] = useState(180)
+
+  const opportunities = snapshot?.data.opportunities ?? []
+  const actions = snapshot?.data.actions ?? []
+  const processes = snapshot?.data.processes ?? []
+  const prep = snapshot?.data.prep ?? []
+  const groups = snapshot?.data.applicationGroups ?? []
+  const timeline = snapshot?.data.timeline ?? []
+  const rules = snapshot?.data.decisionRules ?? DEFAULT_DECISION_RULES
+  const lastImport = snapshot?.data.meta
 
   const surface = route.surface
   const selectedOpportunityId = route.opportunityId
@@ -155,14 +150,6 @@ export default function AppV8() {
   async function reload() {
     const next = await exportLocalSnapshot()
     setSnapshot(next)
-    setOpportunities(next.data.opportunities)
-    setActions(next.data.actions)
-    setProcesses(next.data.processes)
-    setPrep(next.data.prep)
-    setGroups(next.data.applicationGroups)
-    setRules(next.data.decisionRules ?? DEFAULT_DECISION_RULES)
-    setTimeline(next.data.timeline ?? [])
-    setLastImport(next.data.meta)
   }
 
   function navigate(path: string, replace = false) {
