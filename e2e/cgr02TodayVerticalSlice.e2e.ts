@@ -7,6 +7,12 @@ const BACKEND = 'https://pjsdas-remote-alpha.vercel.app'
 const VISUAL_DIR = 'test-results/cgr02-visual'
 const VISUAL_TIME = new Date('2026-09-23T08:00:00.000Z')
 
+async function reviewedScreenshot(page: Page, name: string, fullPage = false) {
+  await mkdir(VISUAL_DIR, { recursive: true })
+  const screenshot = await page.screenshot({ path: `${VISUAL_DIR}/${name}`, fullPage })
+  expect(screenshot).toMatchSnapshot(name)
+}
+
 test.beforeEach(async ({ page }) => {
   // Screenshot copy and relative dates must remain stable across CI days.
   await page.clock.setFixedTime(VISUAL_TIME)
@@ -347,8 +353,7 @@ test('CGR-02 golden journey: understand -> authoritative save -> cross-client vi
   await expect(pageA.locator('.cgr-freshness')).not.toHaveText('正在刷新')
   await pageA.evaluate(() => window.dispatchEvent(new Event('focus')))
   await expect(pageA.locator('.cgr-freshness')).toContainText('已是最新')
-  await mkdir(VISUAL_DIR, { recursive: true })
-  await pageA.screenshot({ path: `${VISUAL_DIR}/normal-desktop.png`, fullPage: true })
+  await reviewedScreenshot(pageA, 'normal-desktop.png', true)
 
   await contextA.close()
   await contextB.close()
@@ -371,7 +376,7 @@ test('unknown semantic save keeps one stable command identity and recovers by re
   await expect(page.getByText('正在理解…')).toHaveCount(0)
   await expect(page.locator('.cgr-capture-input')).toBeDisabled()
   await mkdir(VISUAL_DIR, { recursive: true })
-  await page.screenshot({ path: `${VISUAL_DIR}/unknown-save.png` })
+  await reviewedScreenshot(page, 'unknown-save.png')
   const firstCommand = state.commandBodies.find((body) => body.action === 'command')
   expect(firstCommand).toBeTruthy()
   expect(state.commandBodies.filter((body) => body.action === 'command')).toHaveLength(1)
@@ -440,7 +445,7 @@ test('offline capture remains account-scoped draft only and legacy capture route
   await expect(page.getByText('仅草稿')).toBeVisible()
   await expect(page.getByText(/还没有写入 PJSDAS/)).toBeVisible()
   await mkdir(VISUAL_DIR, { recursive: true })
-  await page.screenshot({ path: `${VISUAL_DIR}/offline-draft.png` })
+  await reviewedScreenshot(page, 'offline-draft.png')
   expect(state.commandBodies.filter((body) => body.action === 'command')).toHaveLength(0)
   const draft = await page.evaluate(() => window.localStorage.getItem('pjsdas-cgr01-draft:account-a:tell-pjsdas'))
   expect(draft).toBe('事项：离线整理材料')
@@ -471,7 +476,7 @@ test('Today remains operable at phone width and large text without horizontal cl
   await page.locator('.cgr-next-section').scrollIntoViewIfNeeded()
   await expect(page.getByRole('button', { name: '完成' }).first()).toBeInViewport()
   await mkdir(VISUAL_DIR, { recursive: true })
-  await page.screenshot({ path: `${VISUAL_DIR}/phone-large-text.png`, fullPage: true })
+  await reviewedScreenshot(page, 'phone-large-text.png', true)
 })
 
 test('dense desktop Today keeps the primary action and agenda readable', async ({ page }) => {
@@ -489,7 +494,7 @@ test('dense desktop Today keeps the primary action and agenda readable', async (
   }))
   expect(width.scrollWidth).toBeLessThanOrEqual(width.clientWidth + 1)
   await mkdir(VISUAL_DIR, { recursive: true })
-  await page.screenshot({ path: `${VISUAL_DIR}/dense-desktop.png`, fullPage: true })
+  await reviewedScreenshot(page, 'dense-desktop.png', true)
 })
 
 test('first load and unavailable read show distinct truthful states', async ({ page, browser }) => {
@@ -506,7 +511,7 @@ test('first load and unavailable read show distinct truthful states', async ({ p
   await expect(page.locator('.cgr-next-section')).toHaveCount(0)
   await expect(page.locator('.cgr-coverage-details')).toHaveCount(0)
   await mkdir(VISUAL_DIR, { recursive: true })
-  await page.screenshot({ path: `${VISUAL_DIR}/loading.png` })
+  await reviewedScreenshot(page, 'loading.png')
   releaseRead()
   await expect(page.getByRole('heading', { name: 'A第一任务' })).toBeVisible()
 
@@ -521,7 +526,7 @@ test('first load and unavailable read show distinct truthful states', async ({ p
   await expect(errorPage.getByText('先让 PJSDAS 知道你的求职现状')).toHaveCount(0)
   await expect(errorPage.getByText('近期没有招聘时间节点')).toHaveCount(0)
   await expect(errorPage.locator('.cgr-coverage-details')).toHaveCount(0)
-  await errorPage.screenshot({ path: `${VISUAL_DIR}/read-error.png` })
+  await reviewedScreenshot(errorPage, 'read-error.png')
   await errorContext.close()
 })
 
@@ -540,7 +545,7 @@ test('pending authoritative save is visibly pending until its receipt arrives', 
   await expect(page.getByText('正在保存')).toBeVisible()
   await expect(page.getByText('已保存')).toHaveCount(0)
   await mkdir(VISUAL_DIR, { recursive: true })
-  await page.screenshot({ path: `${VISUAL_DIR}/pending-save.png` })
+  await reviewedScreenshot(page, 'pending-save.png')
   releaseSemantic()
   await expect(page.getByText('已保存')).toBeVisible()
 })
@@ -558,7 +563,7 @@ test('cached Today stays useful when authoritative refresh fails', async ({ page
   await expect(page.getByRole('heading', { name: 'A第一任务' })).toBeVisible()
   await expect(page.getByRole('button', { name: '开始' }).first()).toBeEnabled()
   await mkdir(VISUAL_DIR, { recursive: true })
-  await page.screenshot({ path: `${VISUAL_DIR}/cached-refresh-failure.png` })
+  await reviewedScreenshot(page, 'cached-refresh-failure.png')
 })
 
 test('quiet Today and a real DecisionRequest remain legible without invented actions', async ({ page }) => {
@@ -571,7 +576,7 @@ test('quiet Today and a real DecisionRequest remain legible without invented act
   await expect(page.getByText('现在没有必须处理的行动')).toBeVisible()
   await expect(page.locator('.cgr-primary-action')).toHaveCount(0)
   await mkdir(VISUAL_DIR, { recursive: true })
-  await page.screenshot({ path: `${VISUAL_DIR}/quiet-today.png` })
+  await reviewedScreenshot(page, 'quiet-today.png')
 
   const now = new Date().toISOString()
   state.snapshot.data.decisionRequests = [{
@@ -603,5 +608,5 @@ test('quiet Today and a real DecisionRequest remain legible without invented act
   await page.evaluate(() => window.dispatchEvent(new Event('focus')))
   await expect(page.locator('.cgr-decision-entry')).toBeVisible()
   await expect(page.getByText('现在没有必须处理的行动')).toBeVisible()
-  await page.screenshot({ path: `${VISUAL_DIR}/decision-required.png` })
+  await reviewedScreenshot(page, 'decision-required.png')
 })
