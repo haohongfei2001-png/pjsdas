@@ -25,22 +25,27 @@ For post-UU-07 product sequencing, consumer experience, connected Web mutation a
 
 UU-08 and UU-09 are HOLD — NOT_AUTHORIZED unless the owner later explicitly reactivates them after CGR-05.
 
-## One-phase execution and bounded certification overlap
+## Continuous engineering and deferred production certification
 
-One engineering execution normally handles only the current authorized CGR phase.
+One active writer still owns one CGR phase/runtime boundary at a time. This prevents conflicting implementation, but it is **not** a package-level stop rule.
 
 Do not start UU-08/UU-09, add a new CGR phase, broaden external permissions/actions, publish a release, or modify real production data outside the frozen CGR contracts.
 
-The owner has authorized one bounded throughput exception for the fixed CGR-00 through CGR-05 sequence:
+For the fixed CGR-00 through CGR-05 sequence, the owner authorizes continuous unattended engineering with separate engineering and production-certification frontiers:
 
 - when CGR-N has finished implementation plus all non-production engineering gates and the **only** remaining blocker is external deployment/production-certification availability such as a provider quota or rate limit, record `ENGINEERING_COMPLETE / PRODUCTION_PENDING_EXTERNAL`;
 - this is not `COMPLETE`, is not a production PASS, and does not waive any frozen production exit criterion;
-- the engineering-stable phase may be integrated to `main` after required CI/browser/security and exact-main engineering checks, while its production certification remains pending;
-- CGR-(N+1) may then begin engineering work without waiting for the external quota window, provided it is already part of the frozen six-phase plan and introduces no new owner gate;
-- at most **one phase** may be ahead of the earliest production-pending phase. If CGR-(N+1) also reaches engineering completion, do not start CGR-(N+2) until the earlier pending production gate is resolved;
-- if a delayed production canary reveals an implementation/product defect rather than an external-environment failure, stop forward engineering and repair the earliest affected pending phase before continuing.
+- record each unresolved obligation in `DEFERRED_FINAL_GATES.md`;
+- the engineering-stable phase may be integrated to `main` after required CI/browser/security and exact-main engineering checks while its production certification remains pending;
+- after releasing that phase writer, automatically begin the next phase already present in the frozen CGR-00..CGR-05 plan when its engineering work does not logically depend on the missing production result and it introduces no owner gate;
+- there is **no arbitrary one-phase lead limit**. Continue through CGR-05's automatable engineering/certification work as dependencies permit;
+- if only part of a later phase requires production evidence, defer that evidence/action and complete the independent engineering, reliability, accessibility, migration-retirement, test, and documentation work;
+- CGR-05 and the package cannot close until all applicable earlier deferred production gates plus CGR-05's own production gates actually pass;
+- if delayed production evidence reveals an implementation/product defect, reopen and repair the earliest affected behavior and revalidate downstream evidence that depended on it. Unrelated independent work need not be discarded or globally stopped.
 
-This standing exception authorizes only the bounded one-phase-ahead engineering continuation described above. It does not authorize publication, new permissions, new costs, consequential external actions, or a seventh CGR phase.
+The unattended package-level wait point is reached only after all automatable CGR-00..CGR-05 work is exhausted and remaining items are exclusively true owner gates, external-only evidence gates, or safety/integrity dependencies.
+
+This standing authorization does not permit publication, new permissions, new costs, consequential external actions, or a seventh CGR phase.
 
 ## CGR-00 restriction
 
