@@ -61,10 +61,14 @@ export default function OpportunityDecisionSummary({
   decision,
   process,
   onNavigate,
+  onCapture,
+  readOnly,
 }: {
   decision: OpportunityDecisionRead
   process?: ProcessRecord
   onNavigate: (destination: OpportunityDetailDestination) => void
+  onCapture: () => void
+  readOnly: boolean
 }) {
   const { lang } = useUiLanguage()
   const zh = lang === 'zh'
@@ -130,6 +134,9 @@ export default function OpportunityDecisionSummary({
             <strong>{nodeLabels[node.kind][zh ? 0 : 1]}{node.requiresResolution ? (zh ? ' · 待确认' : ' · Resolve') : ''}</strong>
             <small>{nodeTimeLabel ?? (zh ? '时间未明确' : 'Time not stated')}</small>
           </div>
+          {!readOnly && (node.kind === 'interview' || node.kind === 'written_test' || node.kind === 'assessment') ? (
+            <button type="button" onClick={onCapture}>{zh ? '更新这个节点' : 'Update this event'}</button>
+          ) : null}
         </section>
       ) : null}
     </>

@@ -157,7 +157,7 @@ export default function OpportunityDetailDrawer({
           <button ref={closeButtonRef} className="opportunity-detail-close" type="button" onClick={onClose} aria-label={zh ? '关闭' : 'Close'}>×</button>
         </header>
 
-        {decision ? <OpportunityDecisionSummary decision={decision} process={process} onNavigate={onNavigate} /> : null}
+        {decision ? <OpportunityDecisionSummary decision={decision} process={process} onNavigate={onNavigate} onCapture={onCapture} readOnly={readOnly} /> : null}
 
         {decisionRequests.length ? (
           <details className="opportunity-detail-section opportunity-detail-decisions" open>
