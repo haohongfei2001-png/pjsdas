@@ -75,6 +75,7 @@ type RouteState = {
   agendaExpanded: boolean
   opportunityId?: string
   decisionRequestId?: string
+  returnOpportunityId?: string
 }
 
 const APP_BASE = import.meta.env.BASE_URL === '/' ? '' : import.meta.env.BASE_URL.replace(/\/$/, '')
@@ -98,12 +99,15 @@ function browserPath(path: string) {
   return `${APP_BASE}${path}` || '/'
 }
 
-function routeFromPath(pathname = semanticPath()): RouteState {
-  const path = pathname.replace(/\/+$/, '') || '/'
+function routeFromPath(pathname = semanticPath() + window.location.search): RouteState {
+  const url = new URL(pathname, 'https://pjsdas.invalid')
+  const path = url.pathname.replace(/\/+$/, '') || '/'
   if (path === '/capture' || path === '/today/capture') return { surface: 'today', capture: true, agendaExpanded: false }
   if (path === '/decisions') return { surface: 'decisions', capture: false, agendaExpanded: false }
   const decisionMatch = path.match(/^\/decisions\/([^/]+)$/)
-  if (decisionMatch?.[1]) return { surface: 'decisions', capture: false, agendaExpanded: false, decisionRequestId: decodeURIComponent(decisionMatch[1]) }
+  if (decisionMatch?.[1]) return { surface: 'decisions', capture: false, agendaExpanded: false,
+    decisionRequestId: decodeURIComponent(decisionMatch[1]),
+    returnOpportunityId: url.searchParams.get('from') || undefined }
   if (path === '/settings') return { surface: 'settings', capture: false, agendaExpanded: false }
   if (path === '/history') return { surface: 'history', capture: false, agendaExpanded: false }
   if (path === '/today/agenda') return { surface: 'today', capture: false, agendaExpanded: true }
@@ -581,7 +585,9 @@ export default function AppV8() {
           </>
         ) : null}
         {!loading && surface === 'decisions' ? <DecisionRequestsView requests={decisionRequests} focusRequestId={route.decisionRequestId}
-          onShowAll={() => navigate('/decisions')} onChanged={reload} /> : null}
+          onShowAll={() => navigate('/decisions')}
+          onReturnOpportunity={route.returnOpportunityId ? () => navigate('/opportunities/' + encodeURIComponent(route.returnOpportunityId!)) : undefined}
+          onChanged={reload} /> : null}
         {!loading && surface === 'history' ? <ActivitySurface timeline={timeline} /> : null}
         {!loading && surface === 'settings' ? <SettingsSurface lastImport={lastImport} rules={rules} onChanged={reload} onOpenActivity={() => navigate('/history')} /> : null}
       </main>
@@ -610,7 +616,7 @@ export default function AppV8() {
           onClose={() => navigate('/opportunities', true)}
           onCapture={openCapture}
           onNavigate={navigateFromDetail}
-          onOpenDecision={(id) => navigate('/decisions/' + encodeURIComponent(id))}
+          onOpenDecision={(id) => navigate('/decisions/' + encodeURIComponent(id) + '?from=' + encodeURIComponent(selectedOpportunity.id))}
           onMarkAction={markAction}
           readOnly={CGR02_TODAY_READ_ONLY}
         />

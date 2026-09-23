@@ -15,11 +15,13 @@ export default function DecisionRequestsView({
   requests,
   focusRequestId,
   onShowAll,
+  onReturnOpportunity,
   onChanged,
 }: {
   requests: DecisionRequest[]
   focusRequestId?: string
   onShowAll: () => void
+  onReturnOpportunity?: () => void
   onChanged: () => Promise<void>
 }) {
   const { lang } = useUiLanguage()
@@ -86,6 +88,9 @@ export default function DecisionRequestsView({
       </header>
       {focusRequestId ? <button className="settings-secondary-link" type="button" onClick={onShowAll}>
         {zh ? '查看所有待决定事项' : 'View all open decisions'}
+      </button> : null}
+      {focusRequestId && onReturnOpportunity ? <button className="settings-secondary-link" type="button" onClick={onReturnOpportunity}>
+        {zh ? '返回刚才的机会' : 'Return to opportunity'}
       </button> : null}
 
       {receipt ? (
