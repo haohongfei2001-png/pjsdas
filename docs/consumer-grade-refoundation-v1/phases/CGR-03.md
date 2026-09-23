@@ -1,6 +1,6 @@
 # CGR-03 — Opportunity Workspace
 
-State: NOT_READY
+State: IN_PROGRESS — BOUNDED ENGINEERING OVERLAP; CGR-02 PRODUCTION_PENDING_EXTERNAL
 
 ## User-visible outcome
 
