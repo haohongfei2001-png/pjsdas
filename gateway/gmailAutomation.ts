@@ -402,6 +402,26 @@ function requiresTiming(type: ProcessEventType | undefined) {
   return Boolean(type && ['assessment_invite', 'written_test_invite', 'interview_invite'].includes(type))
 }
 
+/** Keep only the sender's current body before an explicit quoted-thread boundary. */
+function currentGmailAssertion(raw: string) {
+  const current: string[] = []
+  let quoted = false
+  for (const line of raw.split(/\r?\n/)) {
+    if (/^\s*(?:>|转发邮件|原始邮件|Original Message|On .+ wrote:|引用\s*[:：]|原话\s*[:：]|quote\s*[:：])/i.test(line)) {
+      quoted = true
+      break
+    }
+    const inlineQuote = /\s+(?:引用|原话|quote)\s*[:：]/i.exec(line)
+    if (inlineQuote) {
+      current.push(line.slice(0, inlineQuote.index))
+      quoted = true
+      break
+    }
+    current.push(line)
+  }
+  return { text: current.join('\n').trim(), quoted }
+}
+
 export function gmailObservationFromMessage(
   message: GmailMessage,
   opportunities: Opportunity[],
@@ -480,7 +500,9 @@ export function gmailSemanticRecordFromMessage(
   const excluded = message.labelIds?.some((label) => label === 'SPAM' || label === 'TRASH')
   const body = excluded ? '' : messageBodyText(message.payload)
   const subject = excluded ? '' : header(message.payload, 'subject')
-  const text = excluded ? '' : body || subject || cleanText(message.snippet)
+  const sourceText = excluded ? '' : body || subject || cleanText(message.snippet)
+  const current = currentGmailAssertion(sourceText)
+  const text = current.text
   const gaps: string[] = originalReceivedAt ? [] : ['Original message timestamp is unavailable; automatic facts require clarification.']
   const capabilityBoundaries: string[] = []
   const visit = (part: GmailPart | undefined) => {
@@ -491,8 +513,7 @@ export function gmailSemanticRecordFromMessage(
   if (!excluded) visit(message.payload)
   if (/https?:\/\//i.test(text)) capabilityBoundaries.push('Linked pages are NOT_SUPPORTED; no link is opened or treated as verified source content.')
   if (body.length >= 12_000) gaps.push('Message exceeds the bounded body limit; remaining content was not interpreted.')
-  const quoted = /(?:^|\n)\s*>|(?:转发邮件|原始邮件|Original Message|On .+ wrote:|示例|假设|假如|hypothetical|for example)/i.test(text)
-  if (quoted) gaps.push('Quoted/forwarded context requires clarification; no automatic facts were written.')
+  const nonAssertion = !text && current.quoted || /^(?:示例|假设|假如|hypothetical|for example)\b/i.test(text)
   const pieces = text.split(/[；;。\n]+/).map((item) => item.trim()).filter(Boolean)
   if (pieces.length > 20) gaps.push('Message exceeds the 20-fragment interpretation limit.')
   const whole = parseRecruitingNotification([subject, text].join('\n'), opportunities, new Date(legacy.receivedAt))
@@ -585,8 +606,8 @@ export function gmailSemanticRecordFromMessage(
       contractVersion: 1, inputId: `gmail:${message.id}:uu06-v1`,
       source: { kind: 'gmail', sourceId: GMAIL_SOURCE_ID, sourceRecordId: message.id!,
         sourceVersion: 'uu06-v1', observedAt: now.toISOString(), assertedAt: legacy.receivedAt, timezone: 'Asia/Shanghai' },
-      originalTextFingerprint: `fnv1a:${stableIngestionHash(text)}`,
-      statementMode: quoted ? 'quote' : 'assertion', candidates,
+      originalTextFingerprint: `fnv1a:${stableIngestionHash(sourceText)}`,
+      statementMode: nonAssertion ? 'quote' : 'assertion', candidates,
     },
   }
 }

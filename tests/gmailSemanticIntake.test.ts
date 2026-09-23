@@ -170,6 +170,18 @@ describe('UU06 shared Gmail intake', () => {
     expect(new Set(second.snapshot.data.scheduleNodes?.map((node) => node.occurrenceId)).size).toBe(1)
     expect(second.snapshot.data.scheduleNodes?.map((node) => node.state)).toEqual(['superseded', 'scheduled'])
   })
+  it('applies a current reschedule before a quoted old thread without replaying the old time', () => {
+    const first = run(snapshot(), invitation)
+    const mail = message('京东 AI产品经理 面试改期为2026年9月26日 14:30\n> 京东 AI产品经理 面试通知：请于2026年9月25日 14:30参加视频面试', 'mixed-quote', '2026-09-21T00:00:00Z')
+    const record = gmailSemanticRecordFromMessage(mail, first.snapshot.data.opportunities, now)!
+    expect(record.observation.statementMode).toBe('assertion')
+    expect(record.observation.candidates).toHaveLength(1)
+    expect(record.observation.candidates[0]).toMatchObject({ kind: 'occurrence_rescheduled' })
+    const second = applyGmailSemanticBatch(first.snapshot, { runId: 'mixed-quote', sourceId: 'gmail:primary', checkedAt: now.toISOString(), authorized: true, records: [record] })
+    expect(second.snapshot.data.scheduleNodes?.map((node) => node.state)).toEqual(['superseded', 'scheduled'])
+    expect(second.snapshot.data.scheduleNodes?.[1]?.temporal.startAt).toBe('2026-09-26T14:30:00+08:00')
+    expect(second.run.outcomes.updated).toBe(1)
+  })
   it('unsupported attachments and linked content remain visible without network/permission expansion', () => {
     const mail = message(invitation + '；详情 https://example.com/private')
     Object.assign(mail.payload, { parts: [{ filename: 'details.pdf', mimeType: 'application/pdf', body: { data: 'secret' } }] })
