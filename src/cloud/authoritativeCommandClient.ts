@@ -162,6 +162,8 @@ function serverError(response: Response, payload?: Record<string, any>) {
   return new Error(`${payload?.code ?? 'CONNECTED_COMMAND_FAILED'}: ${payload?.message ?? payload?.conflict?.message ?? `HTTP ${response.status}`}`)
 }
 
+class PreExecutionCommandError extends Error {}
+
 export async function lookupConnectedCommandReceipt(accountKey: string, commandId: string) {
   const { response, payload } = await request({ action: 'receipt', commandId })
   if (!response.ok) throw serverError(response, payload)
@@ -201,15 +203,15 @@ function rejectBeforeExecution(accountKey: string, pending: PendingCommand, resp
   if (response.status === 401) {
     const message = 'SESSION_EXPIRED_BEFORE_COMMAND: PJSDAS 登录会话已过期；服务端在授权阶段拒绝了本次命令，因此它没有执行。重新登录后会使用同一 commandId 安全重试。'
     patchPending(accountKey, pending.commandId, { status: 'pending', lastError: message })
-    throw new Error(message)
+    throw new PreExecutionCommandError(message)
   }
   if (response.status === 403) {
     const message = `AUTH_REJECTED_BEFORE_COMMAND: 当前身份没有执行这次命令的权限；命令没有提交。原始错误：${raw.message}`
     patchPending(accountKey, pending.commandId, { status: 'pending', lastError: message })
-    throw new Error(message)
+    throw new PreExecutionCommandError(message)
   }
   removePending(accountKey, pending.commandId)
-  throw raw
+  throw new PreExecutionCommandError(raw.message)
 }
 
 async function submitPending(accountKey: string, pending: PendingCommand): Promise<ConnectedCommandResponse> {
@@ -248,6 +250,7 @@ async function submitPending(accountKey: string, pending: PendingCommand): Promi
     removePending(accountKey, pending.commandId)
     return result
   } catch (caught) {
+    if (caught instanceof PreExecutionCommandError) throw caught
     return recoverUnknown(accountKey, pending, caught)
   }
 }
