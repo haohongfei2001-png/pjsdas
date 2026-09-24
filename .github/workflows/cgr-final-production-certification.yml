@@ -1,0 +1,108 @@
+name: CGR Final Production Certification
+
+on:
+  workflow_run:
+    workflows: ["Deploy PJSDAS to GitHub Pages"]
+    types: [completed]
+
+permissions:
+  contents: read
+
+jobs:
+  qualify:
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-24.04
+    outputs:
+      run: ${{ steps.gate.outputs.run }}
+      sha: ${{ steps.gate.outputs.sha }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          fetch-depth: 1
+      - id: gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          sha="$(git rev-parse HEAD)"
+          title="$(git log -1 --pretty=%s)"
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+          if [ "$title" = "Run final CGR production certification" ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+            echo "Qualified exact final-certification SHA $sha"
+          else
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            echo "Not the one-shot final-certification commit; no-op."
+          fi
+
+  cgr02:
+    needs: qualify
+    if: ${{ needs.qualify.outputs.run == 'true' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    environment: production-certification
+    env:
+      PJSDAS_CGR02_CANARY_ORIGIN: ${{ vars.PJSDAS_CANONICAL_API_ORIGIN || 'https://pjsdas-remote-alpha.vercel.app' }}
+      PJSDAS_EXPECTED_COMMIT_SHA: ${{ needs.qualify.outputs.sha }}
+      PJSDAS_SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.PJSDAS_SUPABASE_SERVICE_ROLE_KEY }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.qualify.outputs.sha }}
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Verify Today authoritative command/receipt/Undo production path
+        run: ./node_modules/.bin/tsx scripts/cgr02-provisioned-production-canary.ts --execute
+
+  cgr03:
+    needs: qualify
+    if: ${{ needs.qualify.outputs.run == 'true' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    environment: production-certification
+    env:
+      PJSDAS_CGR03_CANARY_ORIGIN: ${{ vars.PJSDAS_CANONICAL_API_ORIGIN || 'https://todayaction.com' }}
+      PJSDAS_EXPECTED_COMMIT_SHA: ${{ needs.qualify.outputs.sha }}
+      PJSDAS_SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.PJSDAS_SUPABASE_SERVICE_ROLE_KEY }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.qualify.outputs.sha }}
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm install --no-save --package-lock=false @playwright/test@1.63.0
+      - run: npx playwright install --with-deps chromium
+      - name: Validate synthetic fixture without network
+        run: ./node_modules/.bin/tsx scripts/cgr03-production-browser-canary.ts --plan
+      - name: Verify Web/list/detail/DecisionRequest/Undo/cross-session production path
+        run: ./node_modules/.bin/tsx scripts/cgr03-production-browser-canary.ts --execute
+
+  cgr04:
+    needs: qualify
+    if: ${{ needs.qualify.outputs.run == 'true' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    environment: production-certification
+    env:
+      PJSDAS_CGR04_CANARY_ORIGIN: ${{ vars.PJSDAS_CANONICAL_API_ORIGIN || 'https://todayaction.com' }}
+      PJSDAS_EXPECTED_COMMIT_SHA: ${{ needs.qualify.outputs.sha }}
+      PJSDAS_SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.PJSDAS_SUPABASE_SERVICE_ROLE_KEY }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.qualify.outputs.sha }}
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Validate bounded MCP fixture without network
+        run: ./node_modules/.bin/tsx scripts/cgr04-production-current-chat-canary.ts --plan
+      - name: Verify current-chat MCP/replay/decision resolution and PAIA no-grant fail-closed boundary
+        run: ./node_modules/.bin/tsx scripts/cgr04-production-current-chat-canary.ts --execute
