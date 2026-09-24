@@ -3,7 +3,6 @@ import { describe, expect, it } from 'vitest'
 
 const progressInbox = readFileSync(new URL('../src/ProgressInbox.tsx', import.meta.url), 'utf8')
 const progressInboxHeavy = readFileSync(new URL('../src/ProgressInboxHeavy.tsx', import.meta.url), 'utf8')
-const notificationPaste = readFileSync(new URL('../src/NotificationPasteDock.tsx', import.meta.url), 'utf8')
 const processDock = readFileSync(new URL('../src/ProcessEventDock.tsx', import.meta.url), 'utf8')
 const readLayer = readFileSync(new URL('../src/ai/readLayer.ts', import.meta.url), 'utf8')
 const processEvents = readFileSync(new URL('../src/processEvents.ts', import.meta.url), 'utf8')
@@ -23,13 +22,11 @@ describe('process lifecycle correctness contract', () => {
     expect(progressInboxHeavy).toContain('不重复创建测评/笔试/面试事件')
   })
 
-  it('keeps every manual process-notification entry point on ChangeSet and fresh-workspace reads', () => {
-    expect(notificationPaste).toContain('applyProcessEventChangeSet(event)')
-    expect(notificationPaste).not.toContain('addProcessEvent(event)')
-    expect(notificationPaste).toContain('const current = await getAllOpportunities()')
-
+  it('keeps the active manual process-notification entry on scoped connected commands and fresh-workspace reads', () => {
     expect(processDock).toContain("window.addEventListener('pjsdas:workspace-replaced', refresh)")
     expect(processDock).toContain('const latestOpportunities = await getAllOpportunities()')
+    expect(processDock).toContain("kind: 'record_process_event'")
+    expect(processDock).toContain('executeConnectedBusinessCommand(cloud.session.user.id')
     expect(processDock).toContain('applyProcessEventChangeSet(processEvent)')
   })
 

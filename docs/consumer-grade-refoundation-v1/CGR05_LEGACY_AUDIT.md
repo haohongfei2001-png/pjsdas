@@ -1,14 +1,14 @@
 # CGR-05 — Connected write authority audit
 
-State: OPEN ENGINEERING AUDIT; no retirement claim yet.
+State: ROUTINE CONNECTED WRITE RETIREMENT CANDIDATE; exact-head CI/browser and production certification remain pending.
 
 Baseline main: `66fa75d0755fbaad5da6a6e0ee94900305262f08`.
 
-## Finding
+## Baseline finding
 
-Connected Web still has a broad daily whole-snapshot route. `CloudContext.syncNow()` calls `runCloudSync()`. In transactional mode, `runCloudSync()` can choose `push_local`, which calls `updateConnectedRemoteWorkspace()` with `snapshotPurpose: legacy_uncovered_web`. The gateway accepts this declared compatibility purpose with expected revision and fingerprint. CAS rejects a newer server revision, but the path remains a second write shape beside typed commands and can submit unrelated local state together. The 120-second auto-sync/focus/online hooks make this a routine path, not a rare migration tool.
+At CGR-05 entry, connected Web still had a broad daily whole-snapshot route. `CloudContext.syncNow()` called `runCloudSync()`, whose `push_local` branch could call `updateConnectedRemoteWorkspace()` with `snapshotPurpose: legacy_uncovered_web`. The gateway accepted this purpose with expected revision and fingerprint. CAS rejected a newer server revision, but the path was still a second write shape beside typed commands and could submit unrelated local state together. The 120-second auto-sync/focus/online hooks made it routine. The retirement candidate and remaining gate appear below.
 
-## Current consumers
+## Consumer inventory at CGR-05 entry
 
 | Consumer | Observed path | Retirement boundary |
 |---|---|---|
@@ -18,7 +18,7 @@ Connected Web still has a broad daily whole-snapshot route. `CloudContext.syncNo
 | Settings manual sync | `cloud.syncNow()` | connected mode should reconcile/read and replay pending typed commands without broad routine writes |
 | Auto-sync on timer/focus/online | `cloud.syncNow()` | connected mode should use authoritative refresh and pending receipt recovery without broad routine writes |
 | Process Event Dock | local ProcessEvent ChangeSet; later manual whole-snapshot sync | connected create now uses the existing bounded `record_process_event` domain command; connected delete uses a first-party scoped command with Undo; local-only mode retains ChangeSet |
-| Notification Paste Dock | unmounted legacy component in the active AppV8 shell | retire or justify as a supported recovery surface before CGR-05 closure; it is not counted as a current daily write consumer |
+| Notification Paste Dock | unmounted legacy component in the active AppV8 shell | source removed in the retirement candidate; the active Process Event Dock retains scoped connected commands and local-only ChangeSet behavior |
 
 Already converted daily paths include Today action status/Undo, Tell PJSDAS and DecisionRequest in transactional mode. They must remain typed during retirement.
 
@@ -72,7 +72,7 @@ Pure posting-refresh proposals and pure Discovery Run record proposals now use o
 
 ## Process event creation candidate
 
-The Process Event Dock was an additional connected consumer of local ChangeSet writes. In transactional connected mode, creation now calls the existing account-bound `record_process_event` domain command before showing success; the server derives event identity, Opportunity relation, Action, schedule and timeline from the authoritative snapshot, and the client projects its committed result. Connected deletion uses a new first-party-only scoped command that removes the selected event and generated Action, cancels its schedule, and records a compensating Undo snapshot. Delegated MCP callers cannot invoke the delete command or its Undo. Local-only creation and deletion retain their existing ChangeSet paths. Focused tests check stale deletion, receipt scope, schedule cancellation, compensation, and delegated denial. A two-client browser journey at `3f80448fe2725b1cd3a0f18151a4f9efbe144af7` passed CI `35933288853` and Browser `35933288642` with zero whole-snapshot commits. `NotificationPasteDock` exists in source but is not imported by the active shell; its attempted migration was withdrawn and it remains an explicit legacy-retirement decision. Other legacy consumers still block whole-snapshot retirement.
+The Process Event Dock was an additional connected consumer of local ChangeSet writes. In transactional connected mode, creation now calls the existing account-bound `record_process_event` domain command before showing success; the server derives event identity, Opportunity relation, Action, schedule and timeline from the authoritative snapshot, and the client projects its committed result. Connected deletion uses a new first-party-only scoped command that removes the selected event and generated Action, cancels its schedule, and records a compensating Undo snapshot. Delegated MCP callers cannot invoke the delete command or its Undo. Local-only creation and deletion retain their existing ChangeSet paths. Focused tests check stale deletion, receipt scope, schedule cancellation, compensation, and delegated denial. A two-client browser journey at `3f80448fe2725b1cd3a0f18151a4f9efbe144af7` passed CI `35933288853` and Browser `35933288642` with zero whole-snapshot commits. The unmounted `NotificationPasteDock` was then removed during the final retirement candidate; the active dock remains the supported manual entry.
 
 ## Signed proposal discard candidate
 
@@ -88,4 +88,4 @@ The signed review issuer can combine progress text, Action status changes and on
 
 ## Routine connected whole-snapshot retirement candidate
 
-All mounted connected Web mutation consumers now route through scoped account commands; local-only Google Drive behavior remains separate. Both timer-driven and manual connected sync report `local_pending` rather than submitting a local workspace snapshot. The gateway rejects the retired `legacy_uncovered_web` and unused `compatibility` snapshot purposes before loading workspace state. The remaining `migration_recovery` purpose has one concrete first-party caller: the user's confirmed “Keep this device” conflict resolution, with an expected-revision compare-and-swap. Connected sign-out checks for unsynced local workspace changes before clearing the account cache, so such an edit cannot be silently erased by that button. Unsupported signed proposal combinations and missing account sessions fail before local fallback mutation. Focused tests verify manual/background no-write behavior, retired purpose rejection, and stale recovery conflict; exact-head CI/browser evidence is pending. This is engineering code evidence, not a production certification claim.
+All mounted connected Web mutation consumers now route through scoped account commands; local-only Google Drive behavior remains separate. Both timer-driven and manual connected sync report `local_pending` rather than submitting a local workspace snapshot. The gateway rejects the retired `legacy_uncovered_web` and unused `compatibility` snapshot purposes before loading workspace state. The remaining `migration_recovery` purpose has one concrete first-party caller: the user's confirmed “Keep this device” conflict resolution, with an expected-revision compare-and-swap. Connected sign-out checks for unsynced local workspace changes before clearing the account cache, so such an edit cannot be silently erased by that button. Unsupported signed proposal combinations and missing account sessions fail before local fallback mutation. Exact head `2fa9607879c56677b0e54a417383dd51f439be99` passed CI `35938071623` and Browser `35938071717`; the follow-up browser journey for manual sync and sign-out passed in isolated headless Chrome and awaits its own exact-head run. This is engineering code evidence, not a production certification claim.

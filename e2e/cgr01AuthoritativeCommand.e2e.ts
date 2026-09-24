@@ -476,7 +476,7 @@ test('account A sign-out then account B never displays or replays A cache drafts
   expect(bBodies.some((body) => ['commit', 'command', 'undo'].includes(body.action))).toBe(false)
 })
 
-test('CGR-05 background connected refresh leaves local legacy changes pending without whole-snapshot commit', async ({ page }) => {
+test('CGR-05 background and manual connected sync preserve pending local changes without whole-snapshot commit', async ({ page }) => {
   await seedInitialSession(page, 'account-a', 'token-a')
   const state: AccountState = { revision: 7, snapshot: workspace('A'), receipts: new Map() }
   let reads = 0
@@ -521,6 +521,13 @@ test('CGR-05 background connected refresh leaves local legacy changes pending wi
   await page.evaluate(() => window.dispatchEvent(new Event('online')))
   await expect.poll(() => reads).toBeGreaterThan(priorReads)
   expect(commits).toBe(0)
+  expect((await readIndexedActions(page)).find((item) => item.id === 'A-action-1')?.title).toBe('本地待处理修改')
+  await page.locator('.ultimate-toolbar').getByRole('button', { name: /设置|Settings/ }).click()
+  await page.getByRole('button', { name: '立即同步' }).click()
+  await expect(page.getByText('本机有未进入账号工作区的修改；同步检查已保留本机数据，未上传整份工作区')).toBeVisible()
+  expect(commits).toBe(0)
+  await page.getByRole('button', { name: '退出 PJSDAS' }).click()
+  await expect(page.getByText(/为避免退出时清除这些资料/)).toBeVisible()
   expect((await readIndexedActions(page)).find((item) => item.id === 'A-action-1')?.title).toBe('本地待处理修改')
 })
 
