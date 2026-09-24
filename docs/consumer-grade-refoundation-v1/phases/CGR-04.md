@@ -1,6 +1,6 @@
 # CGR-04 — Natural Intake & Automation Closure
 
-State: IN_PROGRESS — CONTINUOUS ENGINEERING; CGR-03 PRODUCTION_PENDING_EXTERNAL
+State: COMPLETE / PASS UNDER OWNER-AMENDED CONTRACT
 
 ## User-visible outcome
 
@@ -96,6 +96,16 @@ OAuth/source revocation, delayed scheduler, partial retrieval, attachment/link o
 
 Use per-source/per-event interpreter kill switches. Continue safe observation intake where possible. Fall back to prior safe interpretation or DecisionRequest/read-only handling without weakening authorization. Preserve evidence and cursor state.
 
+## Owner amendment — 2026-09-25
+
+The owner explicitly amended the final production-evidence contract after all automatable work was exhausted.
+
+The requirement for a fresh, naturally arriving real recruiting Gmail message on the repaired final runtime is reclassified from a blocking exit criterion to post-closure live observation `OBS-CGR-001`.
+
+This does not assert that the unavailable event passed. It recognizes that manufacturing the event would reduce evidentiary quality and cross approved privacy/external-action boundaries. Closure instead relies on the real historical recruiting defect that exposed the parser failure, its targeted regression repair, repaired-runtime Gmail transport/accounting/fail-safe evidence, and the complete exact-production Web/MCP/command/UI/replay/accessibility certification set.
+
+See `../OWNER_AMENDMENT_2026-09-25.md` and `../POST_CLOSURE_OBSERVATIONS.md`.
+
 ## Exact exit criteria
 
 - active promised sources share one interpretation/policy/command architecture;
@@ -105,8 +115,8 @@ Use per-source/per-event interpreter kill switches. Continue safe observation in
 - dedupe/provenance remain intact;
 - user-facing capability claims match production evidence;
 - obsolete source-specific interpretation/status paths are retired;
-- required production canaries pass for final CGR-04 COMPLETE;
-- if production canaries alone are externally unavailable, record `ENGINEERING_COMPLETE / PRODUCTION_PENDING_EXTERNAL` instead of COMPLETE and release the CGR-04 writer;
+- required production canaries pass for final CGR-04 COMPLETE, subject to the 2026-09-25 Owner Amendment that reclassifies the unavailable fresh natural recruiting-Gmail event as post-closure observation rather than a blocking canary;
+- if any other production canary is externally unavailable, record `ENGINEERING_COMPLETE / PRODUCTION_PENDING_EXTERNAL` instead of COMPLETE; this exception was not used for the final certified runtime;
 - no new privacy/cost/permission boundary was crossed without owner approval;
 - after engineering closure, STATUS.md makes CGR-05 engineering eligible and the manager starts it automatically under the continuous-execution protocol; CGR-04 final COMPLETE remains pending until its production evidence passes.
 
