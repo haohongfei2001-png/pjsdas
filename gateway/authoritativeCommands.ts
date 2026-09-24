@@ -24,6 +24,7 @@ import { applyMcpRulesCommand } from '../src/mcpRulesCommand.js'
 import { applyMcpSourceRefreshCommand } from '../src/mcpSourceRefreshCommand.js'
 import { applyMcpDiscardCommand } from '../src/mcpDiscardCommand.js'
 import { applyMcpProgressCommand } from '../src/mcpProgressCommand.js'
+import { applyMcpMixedCommand } from '../src/mcpMixedCommand.js'
 import { applyProcessEventDeleteCommand } from '../src/processEventDeleteCommand.js'
 import { discoveryInboxIdentity, discoveryInboxItemsFromChangeSet } from '../src/discoveryInbox.js'
 import type { McpProposalEnvelope } from '../src/ai/mcpProposal.js'
@@ -82,6 +83,7 @@ export const authoritativeBusinessCommandSchema = z.object({
     z.object({ type: z.literal('mcp_apply_rules'), value: z.object({ token: z.string().min(1).max(32_000) }).strict() }).strict(),
     z.object({ type: z.literal('mcp_apply_source_refresh'), value: z.object({ token: z.string().min(1).max(32_000) }).strict() }).strict(),
     z.object({ type: z.literal('mcp_apply_progress'), value: z.object({ token: z.string().min(1).max(32_000) }).strict() }).strict(),
+    z.object({ type: z.literal('mcp_apply_mixed'), value: z.object({ token: z.string().min(1).max(32_000) }).strict() }).strict(),
     z.object({ type: z.literal('mcp_discard'), value: z.object({
       token: z.string().min(1).max(32_000),
       rejectionSelections: z.record(z.string().min(1).max(240), z.object({
@@ -130,7 +132,7 @@ export interface AuthoritativeCommandExecution {
 }
 
 function resultPayload(command: AuthoritativeBusinessCommand['command'], evaluated: any) {
-  if (command.type === 'domain' || command.type === 'discovery_status' || command.type === 'discovery_profile' || command.type === 'discovery_promotion' || command.type === 'process_event_delete' || command.type === 'mcp_save_inbox' || command.type === 'mcp_apply_discovery' || command.type === 'mcp_apply_actions' || command.type === 'mcp_apply_rules' || command.type === 'mcp_apply_source_refresh' || command.type === 'mcp_apply_progress' || command.type === 'mcp_discard') {
+  if (command.type === 'domain' || command.type === 'discovery_status' || command.type === 'discovery_profile' || command.type === 'discovery_promotion' || command.type === 'process_event_delete' || command.type === 'mcp_save_inbox' || command.type === 'mcp_apply_discovery' || command.type === 'mcp_apply_actions' || command.type === 'mcp_apply_rules' || command.type === 'mcp_apply_source_refresh' || command.type === 'mcp_apply_progress' || command.type === 'mcp_apply_mixed' || command.type === 'mcp_discard') {
     return {
       type: command.type,
       status: evaluated.status,
@@ -203,7 +205,7 @@ function intentObjects(command: AuthoritativeBusinessCommand['command'], snapsho
         .map((item) => ({ type: item.ownerKind === 'opportunity' ? 'opportunity' : 'discovery_inbox', id: item.ownerId })),
     ]
   }
-  if (command.type === 'mcp_apply_progress') {
+  if (command.type === 'mcp_apply_progress' || command.type === 'mcp_apply_mixed') {
     if (!proposal) throw new Error('Verified MCP proposal is required.')
     return [
       { type: 'change_set', id: proposal.changeSet.id },
@@ -215,6 +217,9 @@ function intentObjects(command: AuthoritativeBusinessCommand['command'], snapsho
         if (operation.kind === 'process_event') refs.push({ type: 'process_event', id: `progress-event:${operation.id}` })
         return refs
       }),
+      ...(command.type === 'mcp_apply_mixed' ? proposal.changeSet.operations.flatMap((item) =>
+        item.kind === 'set_action_status' ? [{ type: 'action', id: item.actionId }]
+          : item.kind === 'replace_decision_rules' ? [{ type: 'decision_rules', id: 'current' }] : []) : []),
     ]
   }
   if (command.type === 'mcp_discard') {
@@ -345,12 +350,12 @@ export function createAuthoritativeCommandExecutor(options: TransactionalWorkspa
     if (principal.kind === 'first_party_web' && parsed.command.type === 'semantic_intake' && parsed.command.value.source.kind !== 'web') {
       throw new WorkspaceSourceError('AUTH_FORBIDDEN', 'First-party Web Semantic Intake may write only web-origin observations.', false)
     }
-    if (['discovery_status','discovery_profile','discovery_promotion','process_event_delete','mcp_save_inbox','mcp_apply_discovery','mcp_apply_actions','mcp_apply_rules','mcp_apply_source_refresh','mcp_apply_progress','mcp_discard'].includes(parsed.command.type) && principal.kind !== 'first_party_web') {
+    if (['discovery_status','discovery_profile','discovery_promotion','process_event_delete','mcp_save_inbox','mcp_apply_discovery','mcp_apply_actions','mcp_apply_rules','mcp_apply_source_refresh','mcp_apply_progress','mcp_apply_mixed','mcp_discard'].includes(parsed.command.type) && principal.kind !== 'first_party_web') {
       throw new WorkspaceSourceError('AUTH_FORBIDDEN', 'Discovery review commands are restricted to the first-party Web client.', false)
     }
 
     let proposal: McpProposalEnvelope | undefined
-    if (parsed.command.type === 'mcp_save_inbox' || parsed.command.type === 'mcp_apply_discovery' || parsed.command.type === 'mcp_apply_actions' || parsed.command.type === 'mcp_apply_rules' || parsed.command.type === 'mcp_apply_source_refresh' || parsed.command.type === 'mcp_apply_progress' || parsed.command.type === 'mcp_discard') {
+    if (parsed.command.type === 'mcp_save_inbox' || parsed.command.type === 'mcp_apply_discovery' || parsed.command.type === 'mcp_apply_actions' || parsed.command.type === 'mcp_apply_rules' || parsed.command.type === 'mcp_apply_source_refresh' || parsed.command.type === 'mcp_apply_progress' || parsed.command.type === 'mcp_apply_mixed' || parsed.command.type === 'mcp_discard') {
       const signingKey = process.env.PJSDAS_TOKEN_ENCRYPTION_KEY?.trim() ?? ''
       if (!signingKey) throw new WorkspaceSourceError('PROPOSAL_VERIFY_UNAVAILABLE', 'Signed proposal verification is unavailable.', false)
       proposal = await verifySignedProposalToken(parsed.command.value.token, signingKey)
@@ -426,6 +431,8 @@ export function createAuthoritativeCommandExecutor(options: TransactionalWorkspa
         evaluated = applyMcpSourceRefreshCommand(current.snapshot, proposal!, now)
       } else if (parsed.command.type === 'mcp_apply_progress') {
         evaluated = applyMcpProgressCommand(current.snapshot, proposal!, now)
+      } else if (parsed.command.type === 'mcp_apply_mixed') {
+        evaluated = applyMcpMixedCommand(current.snapshot, proposal!, now)
       } else if (parsed.command.type === 'mcp_discard') {
         evaluated = applyMcpDiscardCommand(current.snapshot, proposal!, parsed.command.value.rejectionSelections, now)
       } else if (parsed.command.type === 'semantic_intake') {
