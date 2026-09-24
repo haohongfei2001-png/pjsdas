@@ -55,6 +55,19 @@ CGR-00 is docs-only.
 
 It may register/modify canonical package documentation and the Ultimate Usability execution handoff notice. It must not change runtime source, schema, database state, permissions, deployment configuration, automation schedules, production data, or release publication state.
 
+## Verification cadence for remaining work
+
+For unfinished CGR work, especially CGR-05, validation is risk-based rather than repeated wholesale after every small commit.
+
+- **Inner loop / draft push:** run targeted tests for the changed command/read-model/UI path plus the automatic unit/type gate. Keep privacy, authorization, data-integrity and destructive-action invariants covered whenever the affected code can touch them.
+- **Coherent batch checkpoint:** after a related group of migrations/refactors is complete, run the directly affected browser journeys and fault/recovery checks. Do not rerun dense-workspace, full visual, full accessibility, long-session or every historical journey after each scoped command conversion.
+- **Engineering phase closure:** mark the PR ready and run full CI/build/security plus Browser E2E once on the stable exact head, followed by exact-main integration evidence.
+- **Final CGR-05 convergence:** run dense workspace, long session, account isolation, broad cross-client, accessibility/screen-reader, visual/responsive, degraded/recovery and legacy-retirement closure evidence against the integrated candidate. Production canaries remain a separate final frontier.
+
+A failing safety/integrity regression in an affected path still blocks that path immediately. This cadence only moves broad unrelated coverage later; it does not weaken the final CGR-05 exit criteria.
+
+Already completed CGR phases keep their historical evidence and are not recertified because of this scheduling amendment.
+
 ## Completion standard
 
 The first section of every phase completion report must answer:

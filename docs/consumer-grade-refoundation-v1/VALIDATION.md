@@ -120,15 +120,16 @@ Every phase receipt/report includes user-visible outcome, exact main SHA, change
 
 The evidence hierarchy above is a completion standard, not an instruction to rerun every expensive layer after every small fix.
 
-Use three levels:
+Use four levels for unfinished work:
 
-1. **Inner loop / candidate** — targeted tests, affected regressions and bounded browser checks for the changed behavior. Do not deploy every candidate.
-2. **Engineering phase gate** — implementation complete, required CI, Browser E2E, applicable visual/responsive/accessibility/failure evidence, security/integrity checks, and no known engineering blocker. A phase at this point may be recorded as `ENGINEERING_COMPLETE`.
-3. **Production certification gate** — deploy an exact integrated SHA and execute the phase's frozen production canary/journey, cross-client/receipt/Undo or source evidence as applicable. Only after this and every other exact exit criterion pass may the phase be `COMPLETE`.
+1. **Inner loop / draft** — targeted tests for the changed path plus automatic unit/type checks. Do not run the entire Browser E2E or production build stack after every small commit.
+2. **Coherent batch checkpoint** — directly affected browser journeys, command/oracle checks and relevant failure injection after a related group of changes. Keep the PR draft and continue if these pass.
+3. **Engineering phase gate** — once the phase candidate is stable, run full CI/build/security and Browser E2E once on the exact head, plus the phase-specific visual/responsive/accessibility evidence that is truly needed before integration.
+4. **Final/production certification** — CGR-05 broad dense-workspace, long-session, isolation, accessibility/screen-reader, visual, degraded/recovery and legacy-retirement convergence, followed by exact integrated production canaries when deployment capacity exists.
 
 If the only missing level-3 evidence is unavailable because of an external deployment quota, provider rate limit, or equivalent environment capacity, record `PRODUCTION_PENDING_EXTERNAL`. Do not call it PASS and do not delete the pending evidence.
 
-Under the bounded overlap rule in EXECUTION_PROTOCOL.md, the next frozen CGR phase may proceed with engineering while the earlier phase waits for external production capacity, with a maximum lead of one phase.
+Under the continuous-engineering rule in EXECUTION_PROTOCOL.md, external-only production evidence does not impose an arbitrary phase lead limit. Independent engineering continues while deferred production gates remain explicitly pending.
 
 When deployment capacity returns, prefer the newest stable integrated exact SHA that contains the pending phases. One deployment may certify multiple pending phases, but each phase's own previously frozen production journey must actually run and be recorded separately against that SHA.
 
@@ -136,3 +137,5 @@ Publication is not part of routine certification. A certification deployment doe
 
 Security, privacy, data-integrity, destructive-action, rollback and real production failures are not deferrable for throughput. If a delayed canary exposes a real product defect, it supersedes forward scheduling and must be repaired before further phase expansion.
 
+
+This cadence amendment applies prospectively to unfinished CGR work. Completed phases and their receipts are not reopened. It changes when broad evidence is collected, not what CGR-05 must ultimately prove.
