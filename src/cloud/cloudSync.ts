@@ -7,7 +7,7 @@ import {
   patchAccountCheckpoint,
   type CloudConflictState,
 } from './syncState.js'
-import { decideSyncAction } from './syncLogic.js'
+import { decideSyncAction, localFingerprintHasUnsyncedChanges } from './syncLogic.js'
 import {
   createRemoteWorkspace,
   fetchRemoteWorkspace,
@@ -67,6 +67,12 @@ function markConflict(userId: string, row: RemoteWorkspaceRow) {
     conflict: conflictFromRemote(row),
     lastError: undefined,
   })
+}
+
+export async function hasUnsyncedLocalWorkspace(userId: string) {
+  const checkpoint = getAccountCheckpoint(userId)
+  const localFingerprint = await fingerprintWorkspace(await exportLocalSnapshot())
+  return localFingerprintHasUnsyncedChanges({ checkpoint, localFingerprint })
 }
 
 export async function runCloudSync(userId: string, options: { passive?: boolean } = {}): Promise<CloudSyncOutcome> {
