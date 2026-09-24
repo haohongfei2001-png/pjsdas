@@ -67,7 +67,13 @@ describe('trusted ingestion MCP boundary', () => {
     const first = await invokeTrustedIngestion(source, 'ingest_discovery_run', monitorArgs(), { sourceVerifier: verifiedSource })
     expect(first.isError).not.toBe(true)
     expect(source.writes).toHaveLength(1)
-    expect(first.structuredContent).toMatchObject({ workspaceVersion: 'drive:6', alreadyApplied: false, allInputsAccounted: true, unresolvedCount: 0 })
+    expect(first.structuredContent).toMatchObject({
+      workspaceVersion: 'drive:6',
+      alreadyApplied: false,
+      allInputsAccounted: true,
+      unresolvedCount: 0,
+      run: { producer: 'mcp_trusted_ingestion' },
+    })
     const second = await invokeTrustedIngestion(source, 'ingest_discovery_run', monitorArgs(), { sourceVerifier: verifiedSource })
     expect(second.isError).not.toBe(true)
     expect(source.writes).toHaveLength(1)
