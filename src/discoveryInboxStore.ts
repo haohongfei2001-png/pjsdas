@@ -10,7 +10,7 @@ import {
   discoveryInboxItemsFromChangeSet,
   mergeDiscoveryInboxItems,
 } from './discoveryInbox.js'
-import { findSimilarOpportunity } from './discoveryQuality.js'
+import { resolveOpportunityPostingIdentity } from './jobPosting.js'
 import { deriveDiscoveryInboxStatusChange } from './discoveryStatus.js'
 import type { ChangeSetRecord } from './changeSet.js'
 import type {
@@ -75,8 +75,19 @@ export async function promoteDiscoveryInboxItem(id: string) {
   if (item.status === 'promoted') return item
 
   const opportunities = await getAllOpportunities()
-  const existing = opportunities.find((opportunity) => opportunity.id === item.candidateOpportunityId)
-    ?? findSimilarOpportunity({ company: item.company, role: item.role }, opportunities)
+  const exactId = opportunities.find((opportunity) => opportunity.id === item.candidateOpportunityId)
+  const identity = exactId
+    ? { kind: 'same_posting' as const, opportunity: exactId }
+    : resolveOpportunityPostingIdentity({
+        company: item.company,
+        role: item.role,
+        location: item.location,
+        sourceUrl: item.sourceUrl,
+      }, opportunities)
+  if (identity.kind === 'ambiguous') {
+    throw new Error('发现箱岗位与历史 Opportunity 的 posting identity 不明确；已停止自动归并，请先完成身份核对。')
+  }
+  const existing = identity.kind === 'same_posting' ? identity.opportunity : undefined
   let promotedOpportunityId = existing?.id
   if (!existing) {
     const changeSet = createInboxPromotionChangeSet(item)
