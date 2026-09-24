@@ -123,10 +123,11 @@ export function discoveryInboxItemsFromChangeSet(changeSet: ChangeSetRecord, now
 }
 
 export function mergeDiscoveryInboxItems(existing: DiscoveryInboxItem[], incoming: DiscoveryInboxItem[], now = new Date()) {
-  const byIdentity = new Map(existing.map((item) => [discoveryInboxIdentity(item.company, item.role), item]))
+  const postingKey = (item: DiscoveryInboxItem) => jobPostingForInboxItem(item).id
+  const byIdentity = new Map(existing.map((item) => [postingKey(item), item]))
   const result = [...existing]
   for (const candidate of incoming) {
-    const key = discoveryInboxIdentity(candidate.company, candidate.role)
+    const key = postingKey(candidate)
     const previous = byIdentity.get(key)
     if (!previous) {
       result.push(candidate)
