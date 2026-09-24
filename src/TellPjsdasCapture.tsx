@@ -32,6 +32,15 @@ interface TellPjsdasCaptureProps {
 
 type CaptureSaveState = 'idle' | 'saving' | 'saved' | 'offline' | 'unknown' | 'reauth' | 'conflict' | 'error'
 
+export function shouldInitializeCaptureForSession(
+  initializedUserId: string | null | undefined,
+  nextUserId: string | undefined,
+) {
+  if (initializedUserId === undefined) return true
+  if (!nextUserId) return false
+  return nextUserId !== initializedUserId
+}
+
 function targetLabel(candidate: SemanticCandidate) {
   const target = candidate.target
   if (!target) return ''
@@ -125,18 +134,34 @@ export default function TellPjsdasCapture({
   const textareaRef = useRef<HTMLTextAreaElement | null>(null)
   const sheetRef = useRef<HTMLElement | null>(null)
   const openerRef = useRef<HTMLElement | null>(null)
+  const initializedUserIdRef = useRef<string | null | undefined>(undefined)
 
   const connected = Boolean(cloud.session && connectedWorkspaceAuthorityEnabled())
   const recoveryLocked = saveState === 'unknown' || saveState === 'reauth'
 
   useEffect(() => {
-    if (!open) return
+    if (!open) {
+      initializedUserIdRef.current = undefined
+      return
+    }
     openerRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
-    const initial = cloud.session && connectedWorkspaceAuthorityEnabled()
-      ? readAccountDraft(cloud.session.user.id, 'tell-pjsdas')
+    const id = window.setTimeout(() => textareaRef.current?.focus(), 0)
+    return () => {
+      window.clearTimeout(id)
+      openerRef.current?.focus()
+    }
+  }, [open])
+
+  useEffect(() => {
+    if (!open) return
+    const userId = cloud.session?.user.id
+    if (!shouldInitializeCaptureForSession(initializedUserIdRef.current, userId)) return
+    initializedUserIdRef.current = userId ?? null
+    const initial = userId && connectedWorkspaceAuthorityEnabled()
+      ? readAccountDraft(userId, 'tell-pjsdas')
       : ''
-    const resumable = cloud.session && connectedWorkspaceAuthorityEnabled() && initial
-      ? findAccountPendingSemanticOperation(cloud.session.user.id, initial)
+    const resumable = userId && connectedWorkspaceAuthorityEnabled() && initial
+      ? findAccountPendingSemanticOperation(userId, initial)
       : undefined
     setText(initial)
     setPreview(undefined)
@@ -148,11 +173,6 @@ export default function TellPjsdasCapture({
     setUnresolvedCount(0)
     setUndo(undefined)
     setStableCommandId(resumable?.commandId)
-    const id = window.setTimeout(() => textareaRef.current?.focus(), 0)
-    return () => {
-      window.clearTimeout(id)
-      openerRef.current?.focus()
-    }
   }, [open, cloud.session?.user.id])
 
   useEffect(() => {
