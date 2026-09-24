@@ -403,6 +403,19 @@ function requiresTiming(type: ProcessEventType | undefined) {
 }
 
 /** Keep only the sender's current body before an explicit quoted-thread boundary. */
+function conditionalCompletionDisclaimer(value: string) {
+  return /(?:如|如果|若|if).{0,24}(?:已完成|已经完成|completed).{0,24}(?:请忽略|忽略|ignore)/i.test(value)
+}
+
+function conditionalFutureInterviewReference(value: string) {
+  return /(?:如|如果|若|未按时|未完成).{0,48}(?:无法|不能|才能|方可|进入).{0,24}(?:后续|下一轮)?.{0,10}(?:面试|ai面|业务面|hr面)/i.test(value)
+}
+
+function candidateHasOpportunityIdentity(candidate: SemanticCandidate) {
+  const target = candidate.target
+  return Boolean(target?.opportunityId || target?.company?.trim() || target?.role?.trim())
+}
+
 function currentGmailAssertion(raw: string) {
   const current: string[] = []
   let quoted = false
@@ -531,11 +544,13 @@ export function gmailSemanticRecordFromMessage(
   const deadlineContextType = timedContextTypes.length === 1 ? timedContextTypes[0] : undefined
   const candidates: SemanticCandidate[] = []
   for (const [index, piece] of pieces.slice(0, 20).entries()) {
+    if (conditionalCompletionDisclaimer(piece)) continue
     const parsed = parseRecruitingNotification(piece, opportunities, new Date(legacy.receivedAt))
     const selected = parsed.opportunity ?? whole.opportunity
     const submissionDeadline = /(?:提交|交卷|submission|submit).{0,12}(?:截止|最晚|deadline|by)|(?:截止|deadline).{0,12}(?:提交|交卷|submission|submit)/i.test(piece)
     const eventType = submissionDeadline && deadlineContextType ? deadlineContextType
       : parsed.type && parsed.type !== 'other' ? parsed.type : !bodyHasEvent ? subjectType : undefined
+    if (eventType === 'interview_invite' && conditionalFutureInterviewReference(piece)) continue
     const eventConfidence = !originalReceivedAt ? 'low' as const : eventType === parsed.type ? parsed.confidence.type : 'high' as const
     const application = /(?:投递|申请).{0,12}(?:成功|已收到)|(?:application).{0,20}(?:received|submitted|confirmed)/i.test(piece)
     if (!application && (!eventType || parsed.confidence.type === 'low' && eventType === parsed.type)) continue
@@ -587,6 +602,23 @@ export function gmailSemanticRecordFromMessage(
       temporalConfidence: occurrenceKind ? (dueAt ? 'high' : 'low') : undefined,
     })
   }
+  const highTimedUnresolvedEventTypes = new Set(
+    candidates
+      .filter((candidate) => candidate.kind === 'process_event'
+        && !candidateHasOpportunityIdentity(candidate)
+        && candidate.temporalConfidence === 'high'
+        && Boolean(candidate.temporal || candidate.dueAt))
+      .map((candidate) => candidate.kind === 'process_event' ? candidate.eventType : undefined)
+      .filter((value): value is ProcessEventType => Boolean(value)),
+  )
+  if (highTimedUnresolvedEventTypes.size > 0) {
+    const retained = candidates.filter((candidate) => !(candidate.kind === 'process_event'
+      && !candidateHasOpportunityIdentity(candidate)
+      && highTimedUnresolvedEventTypes.has(candidate.eventType)
+      && candidate.temporalConfidence !== 'high'))
+    candidates.splice(0, candidates.length, ...retained)
+  }
+
   const eventCandidates = candidates.filter((candidate) => candidate.kind === 'process_event')
   if (eventCandidates.length === 1) {
     const candidate = eventCandidates[0]!

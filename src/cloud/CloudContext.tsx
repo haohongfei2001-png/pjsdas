@@ -31,7 +31,7 @@ import {
   runCloudSync,
   type CloudSyncOutcome,
 } from './cloudSync.js'
-import { assertCloudSignOutAllowed } from './cloudOperationGuard.js'
+import { assertCloudSignOutAllowed, assertConnectedSignOutDataSafe } from './cloudOperationGuard.js'
 import { connectedWorkspaceAuthorityEnabled } from './connectedWorkspaceRepository.js'
 import { clearLocalWorkspaceCache } from '../db.js'
 import { replayAccountPendingOperations } from './authoritativeCommandClient.js'
@@ -247,17 +247,27 @@ export function CloudProvider({ children }: { children: ReactNode }) {
       linking: linkingRef.current,
       loading,
     })
+    const connected = connectedWorkspaceAuthorityEnabled()
+    if (connected && session) {
+      assertConnectedSignOutDataSafe({
+        outcomeKind: outcome?.kind,
+        hasConflict: Boolean(checkpoint.conflict),
+        accountMismatch: Boolean(device.workspaceOwnerUserId && device.workspaceOwnerUserId !== session.user.id),
+      })
+    }
     busyRef.current = true
     setSyncing(true)
     try {
-      if (connectedWorkspaceAuthorityEnabled() && session) {
+      if (connected && session) {
         const result = await runCloudSync(session.user.id, { passive: true })
-        if (result.kind === 'local_pending' || result.kind === 'conflict' || result.kind === 'account_mismatch') {
-          throw new Error('本机仍有未进入账号工作区的修改；为避免退出时清除这些资料，请先处理同步或冲突。')
-        }
+        assertConnectedSignOutDataSafe({
+          outcomeKind: result.kind,
+          hasConflict: false,
+          accountMismatch: false,
+        })
       }
       await signOutCloud()
-      if (connectedWorkspaceAuthorityEnabled()) {
+      if (connected) {
         await clearLocalWorkspaceCache()
         clearLocalWorkspaceBinding()
       }
@@ -269,7 +279,7 @@ export function CloudProvider({ children }: { children: ReactNode }) {
       busyRef.current = false
       setSyncing(false)
     }
-  }, [loading, session, applySession])
+  }, [loading, session, outcome?.kind, checkpoint.conflict, device.workspaceOwnerUserId, applySession])
 
   const value = useMemo<CloudContextValue>(() => ({
     configured,
