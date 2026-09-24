@@ -68,6 +68,22 @@ A failing safety/integrity regression in an affected path still blocks that path
 
 Already completed CGR phases keep their historical evidence and are not recertified because of this scheduling amendment.
 
+## Terminal convergence and event-driven resume
+
+Once the CGR engineering frontier has reached CGR-05 integrated/final-convergence state and no new automatable implementation, repair, migration, or evidence preparation is currently actionable, **do not keep Work alive through fixed-interval GitHub polling**.
+
+When the remaining work consists only of already-launched CI/browser/accessibility/long-session jobs, deployment propagation, or frozen production/current-live canaries whose result is not yet available:
+
+- record the exact outstanding run/deployment/canary once;
+- exit the current execution cleanly instead of repeatedly rereading unchanged STATUS, Actions, deployment state, or remote main;
+- resume analysis only when a terminal result/new deployment SHA/actionable failure is presented, or when the owner explicitly resumes the package;
+- a terminal failure that has an engineering remedy reactivates continuous engineering immediately; ordinary diagnosis and repair remain autonomous;
+- a terminal success advances the remaining frozen convergence gates without recreating historical candidate evidence.
+
+This event-driven convergence rule applies only after actionable engineering is exhausted. It must never be used to defer an available repair, migration, test fix, accessibility defect, or required certification action.
+
+After CGR-05/package closure, stop this package. Do not automatically enter UU-08, UU-09, a new CGR phase, or another product-development line without new owner authorization.
+
 ## Completion standard
 
 The first section of every phase completion report must answer:
