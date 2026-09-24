@@ -1,6 +1,6 @@
 # CGR-03 — Opportunity Workspace
 
-State: ENGINEERING_COMPLETE / PRODUCTION_PENDING_EXTERNAL — exact-main engineering passed; CGR-03 production canary open
+State: COMPLETE / PASS — exact-main engineering and CGR-03 production canary passed; see `../receipts/CGR-03.md`
 
 ## User-visible outcome
 
