@@ -1,4 +1,4 @@
-# CGR Final Exact-Production Candidate — Pending One External Gate
+# CGR Final Exact-Production Candidate — Historical Pre-Amendment Receipt
 
 Date: 2026-09-24
 Package: PJSDAS-CONSUMER-GRADE-REFOUNDATION-v1
@@ -49,3 +49,15 @@ Until that happens:
 - CGR-05 remains `ALL_AUTOMATABLE_CERTIFICATION_PASS / WAITING_DFG-CGR-002`;
 - the package remains ACTIVE, not COMPLETE;
 - UU-08, UU-09, new CGR phases and release publication remain unauthorized.
+
+
+## Subsequent owner amendment
+
+On 2026-09-25 the owner explicitly reclassified the unavailable fresh natural recruiting-Gmail event as post-closure observation rather than a blocking exit criterion. This historical candidate receipt remains unchanged in its factual evidence but is superseded for closure state by:
+
+- `../OWNER_AMENDMENT_2026-09-25.md`;
+- `CGR-04.md`;
+- `CGR-05.md`;
+- `CGR-FINAL.md`.
+
+The missing natural event is not retroactively called PASS.
