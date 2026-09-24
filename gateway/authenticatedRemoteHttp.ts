@@ -117,7 +117,6 @@ export async function authenticatedRemoteMcpFetch(request: Request) {
     }
     const discoveryIngestionEnabled = grants.some((grant) => grant.capability === 'ingest_discovery_run')
     const gmailIngestionEnabled = grants.some((grant) => grant.capability === 'ingest_gmail_run')
-    const trustedIngestionEnabled = discoveryIngestionEnabled || gmailIngestionEnabled
     const authorizeTrustedIngestion = async (name: 'ingest_discovery_run' | 'ingest_gmail_run', sourceId: string) => {
       if (!identity.oauthClientId || !grantAllows(grants, name, sourceId)) {
         throw new WorkspaceSourceError(
@@ -156,10 +155,13 @@ export async function authenticatedRemoteMcpFetch(request: Request) {
         version: AUTHENTICATED_GATEWAY_VERSION,
         dataMode: transactionalAuthority ? 'transactional' : 'google-drive',
         proposalMode: 'review-link',
-        trustedIngestionMode: trustedIngestionEnabled ? 'enabled' : 'disabled',
+        // The authenticated production tool directory is release-stable.
+        // Grants authorize calls inside invokeTrustedIngestion; they must never
+        // make an advertised release tool disappear from tools/list/dispatcher.
+        trustedIngestionMode: 'enabled',
         trustedIngestionCapabilities: {
-          discovery: discoveryIngestionEnabled,
-          gmail: gmailIngestionEnabled,
+          discovery: true,
+          gmail: true,
         },
         trustedIngestionAuthorizer: authorizeTrustedIngestion,
         explicitUserWriteMode: 'enabled',
