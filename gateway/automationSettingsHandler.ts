@@ -69,7 +69,11 @@ function statusForRow(row: AutomationRow) {
     gmailLastError: row.gmail_last_error ?? null,
     discoveryEnabled: Boolean(row.discovery_automation_enabled),
     discoveryLastCheckedAt: row.discovery_last_checked_at ?? null,
+    // Backward-compatible legacy name. New consumers should read
+    // discoveryLastCommitAt: this timestamp advances only after at least one
+    // source run is durably committed.
     discoveryLastSuccessAt: row.discovery_last_success_at ?? null,
+    discoveryLastCommitAt: row.discovery_last_success_at ?? null,
     discoveryLastError: row.discovery_last_error ?? null,
   }
 }
