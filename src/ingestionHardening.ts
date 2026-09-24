@@ -40,7 +40,7 @@ export type HardenedGmailIngestionRunInput = Omit<GmailIngestionRunInput, 'messa
   sourcePolicy?: IngestionSourcePolicy
 }
 
-type HardenedRunIdentity = Pick<MonitorIngestionRunInput, 'runId' | 'sourceId' | 'startedAt' | 'completedAt'> & {
+type HardenedRunIdentity = Pick<MonitorIngestionRunInput, 'runId' | 'sourceId' | 'producer' | 'startedAt' | 'completedAt'> & {
   sourcePolicy?: IngestionSourcePolicy
 }
 
@@ -123,6 +123,7 @@ function replaceRunTimeline(snapshot: PJSDASSnapshot, input: HardenedRunIdentity
     runId: input.runId,
     sourceKind,
     sourceId: input.sourceId,
+    producer: input.producer,
     startedAt: input.startedAt,
     completedAt: input.completedAt,
     records,
