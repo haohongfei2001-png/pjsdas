@@ -1,5 +1,8 @@
 import { expect, test, type Page, type Route } from '@playwright/test'
 import { upgradeSnapshotToLatest, type PJSDASSnapshot } from '../src/snapshot.js'
+import { applyDiscoveryPromotionCommand } from '../src/discoveryPromotionCommand.js'
+import { applyUserDomainCommand } from '../src/domainCommands.js'
+import { applyProcessEventDeleteCommand } from '../src/processEventDeleteCommand.js'
 
 const AUTH_KEY = 'sb-yyrzwpoxlxpafdlbkdtg-auth-token'
 const BACKEND = 'https://pjsdas-remote-alpha.vercel.app'
@@ -471,4 +474,296 @@ test('account A sign-out then account B never displays or replays A cache drafts
   await expect(page.locator('.cgr-capture-input')).toHaveValue('')
   expect(bBodies.some((body) => body.commandId === 'web-action:A-pending')).toBe(false)
   expect(bBodies.some((body) => ['commit', 'command', 'undo'].includes(body.action))).toBe(false)
+})
+
+test('CGR-05 background and manual connected sync preserve pending local changes without whole-snapshot commit', async ({ page }) => {
+  await seedInitialSession(page, 'account-a', 'token-a')
+  const state: AccountState = { revision: 7, snapshot: workspace('A'), receipts: new Map() }
+  let reads = 0
+  let commits = 0
+  await page.route(`${BACKEND}/**`, async (route) => {
+    const request = route.request()
+    const url = new URL(request.url())
+    if (request.method() === 'OPTIONS') return cors(route, {}, 204)
+    if (url.pathname === '/api/health') return cors(route, health())
+    if (url.pathname !== '/api/workspace') return cors(route, { code: 'NOT_FOUND' }, 404)
+    const body = request.postDataJSON() as { action?: string }
+    if (body.action === 'read') {
+      reads += 1
+      return cors(route, { workspaceId: 'ws-a', workspaceVersion: `txn:${state.revision}`,
+        revision: state.revision, schemaVersion: state.snapshot.version, snapshot: state.snapshot })
+    }
+    if (body.action === 'commit') commits += 1
+    return cors(route, { code: 'UNEXPECTED_WRITE', action: body.action }, 409)
+  })
+
+  await page.goto('/')
+  await expect(page.getByRole('heading', { name: 'A第一任务' })).toBeVisible()
+  await expect.poll(() => page.evaluate(() => {
+    const raw = window.localStorage.getItem('pjsdas-google-drive-sync-state-v2')
+    return raw ? (JSON.parse(raw) as { accounts?: Record<string, { lastSyncedVersion?: string }> }).accounts?.['account-a']?.lastSyncedVersion : undefined
+  })).toBe('txn:7')
+
+  await page.evaluate(async () => new Promise<void>((resolve, reject) => {
+    const request = indexedDB.open('pjsdas', 11)
+    request.onerror = () => reject(request.error)
+    request.onsuccess = () => {
+      const db = request.result
+      const tx = db.transaction('actions', 'readwrite')
+      const store = tx.objectStore('actions')
+      const get = store.get('A-action-1')
+      get.onsuccess = () => store.put({ ...get.result, title: '本地待处理修改' })
+      tx.onerror = () => reject(tx.error)
+      tx.oncomplete = () => { db.close(); resolve() }
+    }
+  }))
+  const priorReads = reads
+  await page.evaluate(() => window.dispatchEvent(new Event('online')))
+  await expect.poll(() => reads).toBeGreaterThan(priorReads)
+  expect(commits).toBe(0)
+  expect((await readIndexedActions(page)).find((item) => item.id === 'A-action-1')?.title).toBe('本地待处理修改')
+  await page.locator('.ultimate-toolbar').getByRole('button', { name: /设置|Settings/ }).click()
+  await page.getByRole('button', { name: '立即同步' }).click()
+  await expect(page.getByText('本机有未进入账号工作区的修改；同步检查已保留本机数据，未上传整份工作区')).toBeVisible()
+  expect(commits).toBe(0)
+  await page.getByRole('button', { name: '退出 PJSDAS' }).click()
+  await expect(page.getByText(/为避免退出时清除这些资料/)).toBeVisible()
+  expect((await readIndexedActions(page)).find((item) => item.id === 'A-action-1')?.title).toBe('本地待处理修改')
+})
+
+test('CGR-05 Discovery status, Profile and promotion use scoped first-party commands', async ({ browser }) => {
+  test.setTimeout(60000)
+  const state: AccountState = { revision: 7, snapshot: workspace('A'), receipts: new Map() }
+  state.snapshot.data.discoveryInbox = [{
+    id: 'inbox:cgr05-job', candidateOpportunityId: 'cgr05-job', company: '合成公司', role: '产品设计师',
+    roleType: 'core', sourceUrl: 'https://example.test/job/1', sourceTitle: '产品设计师',
+    rationale: '可核对的招聘来源', opportunityValue: 72, fitScore: 78,
+    fitConfidence: 'medium', opportunityValueConfidence: 'medium', status: 'new',
+    discoveredAt: '2026-09-23T00:00:00.000Z', createdAt: '2026-09-23T00:00:00.000Z', updatedAt: '2026-09-23T00:00:00.000Z',
+  }]
+  const commandBodies: Array<Record<string, any>> = []
+  let snapshotCommits = 0
+
+  async function install(page: Page) {
+    await seedInitialSession(page, 'account-a', 'token-a')
+    await page.route(`${BACKEND}/**`, async (route) => {
+      const request = route.request()
+      const url = new URL(request.url())
+      if (request.method() === 'OPTIONS') return cors(route, {}, 204)
+      if (url.pathname === '/api/health') return cors(route, health())
+      if (url.pathname !== '/api/workspace') return cors(route, { code: 'NOT_FOUND' }, 404)
+      const body = request.postDataJSON() as Record<string, any>
+      if (body.action === 'read') return cors(route, {
+        workspaceId: 'ws-a', workspaceVersion: `txn:${state.revision}`, revision: state.revision,
+        schemaVersion: state.snapshot.version, snapshot: state.snapshot,
+      })
+      if (body.action === 'commit') {
+        snapshotCommits += 1
+        return cors(route, { code: 'SNAPSHOT_WRITE_FORBIDDEN' }, 400)
+      }
+      if (body.action === 'command') {
+        commandBodies.push(body)
+        const command = body.command
+        if (command?.type === 'discovery_status' && command.value?.inboxItemId === 'inbox:cgr05-job') {
+          const item = state.snapshot.data.discoveryInbox?.[0]
+          if (item) {
+            item.status = command.value.status
+            item.seenAt = new Date().toISOString()
+            item.updatedAt = item.seenAt
+          }
+        } else if (command?.type === 'discovery_profile' && command.value?.key === 'current') {
+          state.snapshot.data.discoveryProfile = command.value
+        } else if (command?.type === 'discovery_promotion' && command.value?.inboxItemId === 'inbox:cgr05-job') {
+          state.snapshot = applyDiscoveryPromotionCommand(state.snapshot, command.value).snapshot
+        } else return cors(route, { code: 'UNEXPECTED_COMMAND' }, 400)
+        state.revision += 1
+        const receipt = {
+          commandId: body.commandId, receiptId: `command-receipt:${body.commandId}`,
+          status: 'COMMITTED', revision: state.revision,
+          affectedObjects: command.type === 'discovery_profile'
+            ? [{ type: 'discovery_profile', id: 'current' }]
+            : command.type === 'discovery_promotion'
+              ? [{ type: 'discovery_inbox', id: 'inbox:cgr05-job' }, { type: 'opportunity', id: 'cgr05-job' }]
+              : [{ type: 'discovery_inbox', id: 'inbox:cgr05-job' }],
+          result: { type: command.type, status: 'APPLIED', summary: 'Saved first-party Discovery data.' },
+        }
+        state.receipts.set(body.commandId, receipt)
+        return cors(route, {
+          outcome: 'COMMITTED', revision: state.revision, workspaceVersion: `txn:${state.revision}`,
+          schemaVersion: state.snapshot.version, snapshot: state.snapshot, receipt,
+        })
+      }
+      if (body.action === 'receipt') {
+        const receipt = state.receipts.get(body.commandId)
+        return cors(route, {
+          found: Boolean(receipt), revision: state.revision, workspaceVersion: `txn:${state.revision}`,
+          schemaVersion: state.snapshot.version, snapshot: state.snapshot, receipt,
+        })
+      }
+      return cors(route, { code: 'UNEXPECTED_ACTION', action: body.action }, 400)
+    })
+  }
+
+  const first = await browser.newContext()
+  const second = await browser.newContext()
+  try {
+    const pageA = await first.newPage()
+    const pageB = await second.newPage()
+    await install(pageA)
+    await install(pageB)
+    await pageA.goto('/pjsdas/opportunities')
+    await pageA.locator('.surface-context-tabs').getByRole('button', { name: /发现箱/ }).click()
+    const itemA = pageA.locator('.discovery-inbox-item').filter({ hasText: '合成公司' })
+    await expect(itemA).toHaveClass(/status-new/)
+    await itemA.getByRole('button', { name: '已看' }).click()
+    await expect(itemA).toHaveClass(/status-seen/)
+    expect(commandBodies).toHaveLength(1)
+    expect(commandBodies[0].command.value).toMatchObject({ inboxItemId: 'inbox:cgr05-job', status: 'seen' })
+    expect(commandBodies[0]).not.toHaveProperty('snapshot')
+    expect(snapshotCommits).toBe(0)
+
+    await pageB.goto('/pjsdas/opportunities')
+    await pageB.locator('.surface-context-tabs').getByRole('button', { name: /发现箱/ }).click()
+    await expect(pageB.locator('.discovery-inbox-item').filter({ hasText: '合成公司' })).toHaveClass(/status-seen/)
+
+    await pageA.goto('/pjsdas/settings')
+    await pageA.locator('details.settings-group').filter({ hasText: '岗位发现偏好' }).locator('summary').click()
+    const profileCard = pageA.locator('.discovery-profile-card')
+    await profileCard.locator('textarea').first().fill('合成产品设计师')
+    await profileCard.getByRole('button', { name: '保存偏好' }).click()
+    await expect(profileCard.locator('.notice.success')).toContainText('已保存到账号工作区')
+    expect(commandBodies).toHaveLength(2)
+    expect(commandBodies[1].command).toMatchObject({ type: 'discovery_profile', value: { targetRoleQueries: ['合成产品设计师'] } })
+    expect(snapshotCommits).toBe(0)
+
+    await pageB.evaluate(() => window.dispatchEvent(new Event('online')))
+    await expect.poll(() => pageB.evaluate(async () => new Promise<string[]>((resolve, reject) => {
+      const request = indexedDB.open('pjsdas', 11)
+      request.onerror = () => reject(request.error)
+      request.onsuccess = () => {
+        const db = request.result
+        const tx = db.transaction('discoveryProfiles', 'readonly')
+        const get = tx.objectStore('discoveryProfiles').get('current')
+        get.onerror = () => reject(get.error)
+        get.onsuccess = () => { db.close(); resolve(get.result?.targetRoleQueries ?? []) }
+      }
+    }))).toEqual(['合成产品设计师'])
+    await pageB.goto('/pjsdas/settings')
+    await pageB.locator('details.settings-group').filter({ hasText: '岗位发现偏好' }).locator('summary').click()
+    await expect(pageB.locator('.discovery-profile-card textarea').first()).toHaveValue('合成产品设计师')
+
+    await pageA.goto('/pjsdas/opportunities')
+    await pageA.locator('.surface-context-tabs').getByRole('button', { name: /发现箱/ }).click()
+    const promoted = pageA.locator('.discovery-inbox-item').filter({ hasText: '合成公司' })
+    await promoted.getByRole('button', { name: '加入 Opportunities' }).click()
+    const confirmation = pageA.getByRole('dialog', { name: '加入机会池预览' })
+    await expect(confirmation).toBeVisible()
+    await confirmation.getByRole('button', { name: '确认加入 Opportunities' }).click()
+    await expect(promoted).toHaveClass(/status-promoted/)
+    expect(commandBodies).toHaveLength(3)
+    expect(commandBodies[2].command).toMatchObject({ type: 'discovery_promotion', value: { inboxItemId: 'inbox:cgr05-job' } })
+    expect(snapshotCommits).toBe(0)
+    expect(state.snapshot.data.opportunities.some((opportunity) => opportunity.id === 'cgr05-job')).toBe(true)
+  } finally {
+    await first.close()
+    await second.close()
+  }
+})
+
+test('CGR-05 process recovery creates and deletes one account event across clients without snapshot writes', async ({ browser }) => {
+  test.setTimeout(60000)
+  const state: AccountState = { revision: 7, snapshot: workspace('A'), receipts: new Map() }
+  const commands: Array<Record<string, any>> = []
+  let snapshotCommits = 0
+  async function install(page: Page) {
+    await seedInitialSession(page, 'account-a', 'token-a')
+    await page.route(`${BACKEND}/**`, async (route) => {
+      const request = route.request()
+      const url = new URL(request.url())
+      if (request.method() === 'OPTIONS') return cors(route, {}, 204)
+      if (url.pathname === '/api/health') return cors(route, health())
+      if (url.pathname !== '/api/workspace') return cors(route, { code: 'NOT_FOUND' }, 404)
+      const body = request.postDataJSON() as Record<string, any>
+      if (body.action === 'read') return cors(route, {
+        workspaceId: 'ws-a', workspaceVersion: `txn:${state.revision}`, revision: state.revision,
+        schemaVersion: state.snapshot.version, snapshot: state.snapshot,
+      })
+      if (body.action === 'commit') {
+        snapshotCommits += 1
+        return cors(route, { code: 'SNAPSHOT_WRITE_FORBIDDEN' }, 400)
+      }
+      if (body.action === 'command') {
+        commands.push(body)
+        const command = body.command
+        if (command?.type === 'domain' && command.value?.kind === 'record_process_event') {
+          const applied = applyUserDomainCommand(state.snapshot, command.value)
+          if (applied.status !== 'APPLIED') return cors(route, { code: 'EVENT_NOT_APPLIED' }, 400)
+          state.snapshot = applied.snapshot
+        } else if (command?.type === 'process_event_delete') {
+          state.snapshot = applyProcessEventDeleteCommand(state.snapshot, command.value.eventId).snapshot
+        } else return cors(route, { code: 'UNEXPECTED_COMMAND' }, 400)
+        state.revision += 1
+        const receipt = { commandId: body.commandId, receiptId: `command-receipt:${body.commandId}`,
+          status: 'COMMITTED', revision: state.revision, result: { type: command.type, status: 'APPLIED' } }
+        state.receipts.set(body.commandId, receipt)
+        return cors(route, { outcome: 'COMMITTED', revision: state.revision,
+          workspaceVersion: `txn:${state.revision}`, schemaVersion: state.snapshot.version,
+          snapshot: state.snapshot, receipt })
+      }
+      if (body.action === 'receipt') {
+        const receipt = state.receipts.get(body.commandId)
+        return cors(route, { found: Boolean(receipt), revision: state.revision,
+          workspaceVersion: `txn:${state.revision}`, schemaVersion: state.snapshot.version,
+          snapshot: state.snapshot, receipt })
+      }
+      return cors(route, { code: 'UNEXPECTED_ACTION' }, 400)
+    })
+  }
+  async function openDock(page: Page) {
+    await page.goto('/pjsdas/settings')
+    await page.locator('details.settings-group').filter({ hasText: '数据与恢复' }).locator('summary').click()
+    await page.getByRole('button', { name: '+ 记录流程通知' }).click()
+    return page.locator('.event-dock')
+  }
+  const first = await browser.newContext()
+  const second = await browser.newContext()
+  try {
+    const pageA = await first.newPage()
+    const pageB = await second.newPage()
+    await install(pageA)
+    await install(pageB)
+    const dockA = await openDock(pageA)
+    await dockA.locator('input[list="process-event-opportunities"]').fill('A公司｜A产品经理 [A-opp-1]')
+    await dockA.locator('select').first().selectOption('other')
+    await dockA.getByRole('button', { name: '保存事件' }).click()
+    await expect(dockA.locator('.event-history-item')).toHaveCount(1)
+    expect(commands).toHaveLength(1)
+    expect(commands[0].command).toMatchObject({ type: 'domain', value: {
+      kind: 'record_process_event', opportunityId: 'A-opp-1', eventType: 'other',
+    } })
+    expect(commands[0]).not.toHaveProperty('snapshot')
+
+    const dockB = await openDock(pageB)
+    await expect(dockB.locator('.event-history-item')).toHaveCount(1)
+    await dockA.locator('.event-history-item').getByRole('button', { name: '删除' }).click()
+    await expect(dockA.locator('.event-history-item')).toHaveCount(0)
+    expect(commands).toHaveLength(2)
+    expect(commands[1].command).toMatchObject({ type: 'process_event_delete' })
+    await pageB.evaluate(() => window.dispatchEvent(new Event('online')))
+    await expect.poll(() => pageB.evaluate(async () => new Promise<number>((resolve, reject) => {
+      const request = indexedDB.open('pjsdas', 11)
+      request.onerror = () => reject(request.error)
+      request.onsuccess = () => {
+        const db = request.result
+        const tx = db.transaction('processEvents', 'readonly')
+        const get = tx.objectStore('processEvents').getAll()
+        get.onerror = () => reject(get.error)
+        get.onsuccess = () => { db.close(); resolve(get.result.length) }
+      }
+    }))).toBe(0)
+    expect(snapshotCommits).toBe(0)
+  } finally {
+    await first.close()
+    await second.close()
+  }
 })

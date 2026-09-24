@@ -1,0 +1,33 @@
+name: CGR-05 Long Session
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  synthetic-connected-soak:
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm install --no-save --package-lock=false @playwright/test@1.63.0
+      - run: npx playwright install --with-deps chromium
+      - name: Run two-hour connected browser session
+        env:
+          PJSDAS_SOAK_MINUTES: '120'
+        run: npx playwright test --config=playwright.soak.config.mts
+      - name: Upload failure evidence
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cgr05-long-session-failure
+          path: test-results/
+          if-no-files-found: ignore
+          retention-days: 7

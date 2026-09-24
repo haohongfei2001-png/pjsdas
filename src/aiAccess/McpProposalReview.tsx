@@ -18,6 +18,9 @@ import {
 } from '../ai/mcpProposal.js'
 import { applyMcpChangeSetWithBaseline, assertMcpChangeSetBaseline } from '../ai/mcpProposalApply.js'
 import { useCloud } from '../cloud/CloudContext.js'
+import { connectedWorkspaceAuthorityEnabled } from '../cloud/connectedWorkspaceRepository.js'
+import { createConnectedCommandId, executeConnectedBusinessCommand } from '../cloud/authoritativeCommandClient.js'
+import { ensureAuthoritativePersistence } from '../cloud/authoritativePersistence.js'
 import { getAccountCheckpoint } from '../cloud/syncState.js'
 import OpportunityAssessmentSummary from '../OpportunityAssessmentSummary.js'
 import RichOpportunityFactsSummary from '../RichOpportunityFactsSummary.js'
@@ -71,6 +74,7 @@ export default function McpProposalReview() {
   const zh = lang === 'zh'
   const cloud = useCloud()
   const [proposal, setProposal] = useState<McpProposalEnvelope | null>(null)
+  const [signedToken, setSignedToken] = useState('')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const [verifying, setVerifying] = useState(() => typeof window !== 'undefined' && Boolean(encodedProposalFromHash(window.location.hash)))
@@ -117,13 +121,18 @@ export default function McpProposalReview() {
               : `This proposal was based on ${verified.workspaceVersion}, while this device last synced ${checkpoint.lastSyncedVersion ? `drive:${checkpoint.lastSyncedVersion}` : 'an unknown version'}. Sync PJSDAS first, then ask ChatGPT for a fresh proposal.`)
           }
         }
-        await assertMcpChangeSetBaseline(verified.changeSet)
+        if (connectedWorkspaceAuthorityEnabled() && verified.workspaceOwnerUserId &&
+          cloud.session?.user.id !== verified.workspaceOwnerUserId) {
+          throw new Error(zh ? '这条提议属于另一个 PJSDAS 账号。' : 'This proposal belongs to another PJSDAS account.')
+        }
+        await assertMcpChangeSetBaseline(verified.changeSet, connectedWorkspaceAuthorityEnabled() ? cloud.session?.user.id : undefined)
         if (!active) return
         const discoveryIds = verified.changeSet.operations
           .filter((item) => item.kind === 'add_discovered_opportunity')
           .map((item) => item.id)
         setSelectedIds(new Set(discoveryIds))
         setRejectionSelections(defaultRejectionSelections(discoveryIds))
+        setSignedToken(token)
         setProposal(verified)
       })
       .catch((caught) => {
@@ -173,7 +182,101 @@ export default function McpProposalReview() {
       const reviewedChangeSet = discoveryOperations.length
         ? deriveDiscoveryReviewChangeSet(proposal.changeSet, selectedIds)
         : proposal.changeSet
-      await assertMcpChangeSetBaseline(reviewedChangeSet)
+      await assertMcpChangeSetBaseline(reviewedChangeSet, connectedWorkspaceAuthorityEnabled() ? cloud.session?.user.id : undefined)
+      if (connectedWorkspaceAuthorityEnabled() && !cloud.session) {
+        throw new Error('账号会话不可用；提议未应用到本机或账号工作区。请重新登录后再试。')
+      }
+      if (connectedWorkspaceAuthorityEnabled() && cloud.session && discoveryOperations.length === proposal.changeSet.operations.length && discoveryOperations.length) {
+        if (cloud.checkpoint.conflict) throw new Error('账号工作区存在冲突；请先处理，再重新生成提议。')
+        if (!signedToken) throw new Error('已验证的签名提议不可用；请重新打开提议。')
+        const result = await executeConnectedBusinessCommand(cloud.session.user.id, {
+          type: 'mcp_apply_discovery',
+          value: { token: signedToken, selectedOperationIds: [...selectedIds], rejectionSelections },
+        }, { commandId: createConnectedCommandId('mcp-apply-discovery') })
+        if (result.outcome !== 'COMMITTED' && result.outcome !== 'ALREADY_APPLIED') {
+          throw new Error(result.conflict?.message ?? '已审阅岗位未写入账号工作区。')
+        }
+        announceWorkspaceChange()
+        setResult(zh
+          ? `已选择 ${selectedCount}/${discoveryOperations.length} 个岗位，并保存到账号 Opportunities；发现反馈已记录。`
+          : `Selected ${selectedCount}/${discoveryOperations.length} jobs and saved them to account Opportunities; discovery feedback was recorded.`)
+        return
+      }
+      if (connectedWorkspaceAuthorityEnabled() && cloud.session && proposal.changeSet.operations.length > 0 &&
+        proposal.changeSet.operations.every((operation) => operation.kind === 'set_action_status')) {
+        if (cloud.checkpoint.conflict) throw new Error('账号工作区存在冲突；请先处理，再重新生成提议。')
+        if (!signedToken) throw new Error('已验证的签名提议不可用；请重新打开提议。')
+        const result = await executeConnectedBusinessCommand(cloud.session.user.id, {
+          type: 'mcp_apply_actions', value: { token: signedToken },
+        }, { commandId: createConnectedCommandId('mcp-apply-actions') })
+        if (result.outcome !== 'COMMITTED' && result.outcome !== 'ALREADY_APPLIED') {
+          throw new Error(result.conflict?.message ?? '行动状态未写入账号工作区。')
+        }
+        announceWorkspaceChange()
+        setResult(zh ? '已审阅的行动状态已保存到账号工作区。' : 'Reviewed Action statuses were saved to the account workspace.')
+        return
+      }
+      if (connectedWorkspaceAuthorityEnabled() && cloud.session && proposal.changeSet.operations.length === 1 &&
+        proposal.changeSet.operations[0].kind === 'replace_decision_rules') {
+        if (cloud.checkpoint.conflict) throw new Error('账号工作区存在冲突；请先处理，再重新生成提议。')
+        if (!signedToken) throw new Error('已验证的签名提议不可用；请重新打开提议。')
+        const result = await executeConnectedBusinessCommand(cloud.session.user.id, {
+          type: 'mcp_apply_rules', value: { token: signedToken },
+        }, { commandId: createConnectedCommandId('mcp-apply-rules') })
+        if (result.outcome !== 'COMMITTED' && result.outcome !== 'ALREADY_APPLIED') {
+          throw new Error(result.conflict?.message ?? '决策规则未写入账号工作区。')
+        }
+        announceWorkspaceChange()
+        setResult(zh ? '已审阅的决策规则已保存到账号工作区。' : 'Reviewed Decision Rules were saved to the account workspace.')
+        return
+      }
+      if (connectedWorkspaceAuthorityEnabled() && cloud.session && proposal.changeSet.operations.length > 0 &&
+        (proposal.changeSet.operations.every((operation) => operation.kind === 'refresh_job_posting') ||
+          proposal.changeSet.operations.every((operation) => operation.kind === 'record_discovery_run'))) {
+        if (cloud.checkpoint.conflict) throw new Error('账号工作区存在冲突；请先处理，再重新生成提议。')
+        if (!signedToken) throw new Error('已验证的签名提议不可用；请重新打开提议。')
+        const result = await executeConnectedBusinessCommand(cloud.session.user.id, {
+          type: 'mcp_apply_source_refresh', value: { token: signedToken },
+        }, { commandId: createConnectedCommandId('mcp-apply-source-refresh') })
+        if (result.outcome !== 'COMMITTED' && result.outcome !== 'ALREADY_APPLIED') {
+          throw new Error(result.conflict?.message ?? '岗位来源更新未写入账号工作区。')
+        }
+        announceWorkspaceChange()
+        setResult(zh ? '已审阅的岗位来源更新已保存到账号工作区。' : 'Reviewed source refresh was saved to the account workspace.')
+        return
+      }
+      if (connectedWorkspaceAuthorityEnabled() && cloud.session && proposal.changeSet.operations.length > 0 &&
+        proposal.changeSet.operations.every((operation) => operation.kind === 'progress_update')) {
+        if (cloud.checkpoint.conflict) throw new Error('账号工作区存在冲突；请先处理，再重新生成提议。')
+        if (!signedToken) throw new Error('已验证的签名提议不可用；请重新打开提议。')
+        const result = await executeConnectedBusinessCommand(cloud.session.user.id, {
+          type: 'mcp_apply_progress', value: { token: signedToken },
+        }, { commandId: createConnectedCommandId('mcp-apply-progress') })
+        if (result.outcome !== 'COMMITTED' && result.outcome !== 'ALREADY_APPLIED') {
+          throw new Error(result.conflict?.message ?? '进展更新未写入账号工作区。')
+        }
+        announceWorkspaceChange()
+        setResult(zh ? '已审阅的进展更新已保存到账号工作区。' : 'Reviewed progress updates were saved to the account workspace.')
+        return
+      }
+      if (connectedWorkspaceAuthorityEnabled() && cloud.session && proposal.changeSet.operations.length > 0 &&
+        proposal.changeSet.operations.every((operation) =>
+          operation.kind === 'progress_update' || operation.kind === 'set_action_status' || operation.kind === 'replace_decision_rules')) {
+        if (cloud.checkpoint.conflict) throw new Error('账号工作区存在冲突；请先处理，再重新生成提议。')
+        if (!signedToken) throw new Error('已验证的签名提议不可用；请重新打开提议。')
+        const result = await executeConnectedBusinessCommand(cloud.session.user.id, {
+          type: 'mcp_apply_mixed', value: { token: signedToken },
+        }, { commandId: createConnectedCommandId('mcp-apply-mixed') })
+        if (result.outcome !== 'COMMITTED' && result.outcome !== 'ALREADY_APPLIED') {
+          throw new Error(result.conflict?.message ?? '组合修改未写入账号工作区。')
+        }
+        announceWorkspaceChange()
+        setResult(zh ? '已审阅的组合修改已保存到账号工作区。' : 'Reviewed combined changes were saved to the account workspace.')
+        return
+      }
+      if (connectedWorkspaceAuthorityEnabled()) {
+        throw new Error('这条提议包含尚未支持的组合，账号工作区未修改。请让 ChatGPT 分别生成受支持的提议。')
+      }
       await savePendingChangeSet(reviewedChangeSet)
       await applyMcpChangeSetWithBaseline(reviewedChangeSet)
 
@@ -201,7 +304,7 @@ export default function McpProposalReview() {
 
       if (cloud.session && !cloud.checkpoint.conflict) {
         try {
-          await cloud.syncNow()
+          await ensureAuthoritativePersistence(true, cloud.syncNow)
           setResult(zh
             ? `${selectionNote} ChangeSet 已应用，并已请求同步到 Google Drive${feedbackNote}`
             : `${selectionNote} ChangeSet applied and Google Drive sync was requested${feedbackNote}`)
@@ -227,14 +330,33 @@ export default function McpProposalReview() {
     setBusy(true)
     setError('')
     try {
-      await assertMcpChangeSetBaseline(proposal.changeSet)
+      if (connectedWorkspaceAuthorityEnabled() && !cloud.session) {
+        throw new Error('账号会话不可用；发现箱未修改。请重新登录后再试。')
+      }
+      if (connectedWorkspaceAuthorityEnabled() && cloud.session) {
+        if (cloud.checkpoint.conflict) throw new Error('账号工作区存在冲突；请先处理，再重新生成提议。')
+        if (!signedToken) throw new Error('已验证的签名提议不可用；请重新打开提议。')
+        const result = await executeConnectedBusinessCommand(cloud.session.user.id, {
+          type: 'mcp_save_inbox', value: { token: signedToken },
+        }, { commandId: createConnectedCommandId('mcp-save-inbox') })
+        if (result.outcome !== 'COMMITTED' && result.outcome !== 'ALREADY_APPLIED') {
+          throw new Error(result.conflict?.message ?? '发现箱未写入账号工作区。')
+        }
+        announceWorkspaceChange()
+        const saved = discoveryOperations.length
+        setResult(zh
+          ? `已将 ${saved} 个岗位保存到账号发现箱，没有加入 Opportunities。`
+          : `Saved ${saved} jobs to the account Discovery Inbox without adding Opportunities.`)
+        return
+      }
+      await assertMcpChangeSetBaseline(proposal.changeSet, connectedWorkspaceAuthorityEnabled() ? cloud.session?.user.id : undefined)
       const saved = await saveDiscoveryInboxFromChangeSet(proposal.changeSet)
       await savePendingChangeSet(proposal.changeSet)
       await discardChangeSet(proposal.changeSet.id)
       announceWorkspaceChange()
       if (cloud.session && !cloud.checkpoint.conflict) {
         try {
-          await cloud.syncNow()
+          await ensureAuthoritativePersistence(true, cloud.syncNow)
           setResult(zh ? `已保存 ${saved} 个岗位到发现箱，没有加入 Opportunities；已请求同步到 Google Drive。` : `Saved ${saved} jobs to Discovery Inbox without adding Opportunities; Google Drive sync was requested.`)
         } catch {
           setResult(zh ? `已保存 ${saved} 个岗位到本机发现箱，没有加入 Opportunities；Google Drive 暂未同步。` : `Saved ${saved} jobs to the local Discovery Inbox without adding Opportunities; Google Drive sync did not complete.`)
@@ -254,6 +376,26 @@ export default function McpProposalReview() {
     setBusy(true)
     setError('')
     try {
+      if (connectedWorkspaceAuthorityEnabled() && !cloud.session) {
+        throw new Error('账号会话不可用；提议未放弃。请重新登录后再试。')
+      }
+      if (connectedWorkspaceAuthorityEnabled() && cloud.session) {
+        if (cloud.checkpoint.conflict) throw new Error('账号工作区存在冲突；请先处理，再重新生成提议。')
+        if (!signedToken) throw new Error('已验证的签名提议不可用；请重新打开提议。')
+        const result = await executeConnectedBusinessCommand(cloud.session.user.id, {
+          type: 'mcp_discard', value: { token: signedToken, rejectionSelections },
+        }, { commandId: createConnectedCommandId('mcp-discard') })
+        if (result.outcome !== 'COMMITTED' && result.outcome !== 'ALREADY_APPLIED') {
+          throw new Error(result.conflict?.message ?? '提议未在账号工作区放弃。')
+        }
+        announceWorkspaceChange()
+        setResult(discoveryOperations.length
+          ? (zh
+              ? '整批岗位已放弃，没有加入 Opportunities；拒绝反馈已记录到账号工作区。'
+              : 'The batch was discarded without adding jobs; rejection feedback was saved to the account workspace.')
+          : (zh ? '这条 ChatGPT 提议已在账号工作区放弃，没有修改求职数据。' : 'Proposal discarded in the account workspace without changing job-search data.'))
+        return
+      }
       await savePendingChangeSet(proposal.changeSet)
       await discardChangeSet(proposal.changeSet.id)
       let feedbackSaved = true

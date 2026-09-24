@@ -1,4 +1,6 @@
 import type { UserDomainCommand } from '../domainCommands.js'
+import type { DiscoveryStatusCommand } from '../discoveryStatusCommand.js'
+import type { DiscoveryProfile } from '../discoveryProfile.js'
 import type { SemanticIntakeObservation } from '../model.js'
 import { validateSnapshot, type PJSDASSnapshot } from '../snapshot.js'
 import { fetchBackend } from '../backendEndpoints.js'
@@ -11,6 +13,25 @@ export type ConnectedBusinessCommand =
   | { type: 'domain'; value: UserDomainCommand }
   | { type: 'semantic_intake'; value: SemanticIntakeObservation }
   | { type: 'resolve_semantic_decision'; value: { requestId: string; choiceId: string } }
+  | { type: 'discovery_status'; value: DiscoveryStatusCommand }
+  | { type: 'discovery_profile'; value: DiscoveryProfile }
+  | { type: 'discovery_promotion'; value: { inboxItemId: string } }
+  | { type: 'process_event_delete'; value: { eventId: string } }
+  | { type: 'mcp_save_inbox'; value: { token: string } }
+  | { type: 'mcp_apply_actions'; value: { token: string } }
+  | { type: 'mcp_apply_rules'; value: { token: string } }
+  | { type: 'mcp_apply_source_refresh'; value: { token: string } }
+  | { type: 'mcp_apply_progress'; value: { token: string } }
+  | { type: 'mcp_apply_mixed'; value: { token: string } }
+  | { type: 'mcp_discard'; value: {
+      token: string
+      rejectionSelections: Record<string, { code: 'location' | 'compensation' | 'role_direction' | 'company_value' | 'requirements' | 'already_have_better' | 'not_interested' | 'other'; note?: string }>
+    } }
+  | { type: 'mcp_apply_discovery'; value: {
+      token: string
+      selectedOperationIds: string[]
+      rejectionSelections: Record<string, { code: 'location' | 'compensation' | 'role_direction' | 'company_value' | 'requirements' | 'already_have_better' | 'not_interested' | 'other'; note?: string }>
+    } }
 
 export interface ConnectedCommandResponse {
   outcome: 'COMMITTED' | 'ALREADY_APPLIED' | 'NO_WRITE' | 'CONFLICT'

@@ -72,6 +72,7 @@ export async function updateConnectedRemoteWorkspace(input: {
   fingerprint: string
   snapshot: PJSDASSnapshot
   deviceId: string
+  purpose: 'migration_recovery'
 }): Promise<ConnectedRemoteWorkspaceRow | null> {
   const match = /^txn:(\d+)$/.exec(input.expectedVersion)
   if (!match) throw new Error(`WORKSPACE_CONFLICT: invalid transactional workspace version ${input.expectedVersion}.`)
@@ -81,7 +82,7 @@ export async function updateConnectedRemoteWorkspace(input: {
       action: 'commit',
       commandId: `web-sync:${input.deviceId}:${match[1]}:${input.fingerprint}`,
       expectedRevision: Number(match[1]),
-      snapshotPurpose: 'legacy_uncovered_web',
+      snapshotPurpose: input.purpose,
       snapshot: input.snapshot,
     }),
   })

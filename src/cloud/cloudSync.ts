@@ -15,6 +15,7 @@ import {
   type RemoteWorkspaceRow,
 } from './cloudRepository.js'
 import { fingerprintWorkspace, workspaceIsEffectivelyEmpty } from './workspaceFingerprint.js'
+import { connectedWorkspaceAuthorityEnabled } from './connectedWorkspaceRepository.js'
 
 export type CloudSyncOutcomeKind =
   | 'created'
@@ -23,6 +24,7 @@ export type CloudSyncOutcomeKind =
   | 'synced'
   | 'conflict'
   | 'account_mismatch'
+  | 'local_pending'
 
 export interface CloudSyncOutcome {
   kind: CloudSyncOutcomeKind
@@ -67,7 +69,8 @@ function markConflict(userId: string, row: RemoteWorkspaceRow) {
   })
 }
 
-export async function runCloudSync(userId: string): Promise<CloudSyncOutcome> {
+export async function runCloudSync(userId: string, options: { passive?: boolean } = {}): Promise<CloudSyncOutcome> {
+  void options
   const device = getCloudDeviceState()
   if (device.workspaceOwnerUserId && device.workspaceOwnerUserId !== userId) {
     return { kind: 'account_mismatch' }
@@ -83,6 +86,8 @@ export async function runCloudSync(userId: string): Promise<CloudSyncOutcome> {
     const decision = decideSyncAction({
       checkpoint,
       localFingerprint,
+      localProjectionBaselineFingerprint: checkpoint.lastReadProjectionSourceFingerprint === checkpoint.lastSyncedFingerprint
+        ? checkpoint.lastReadProjectionFingerprint : undefined,
       localEmpty: workspaceIsEffectivelyEmpty(local),
       remote: remote ? { version: remote.version, fingerprint: remote.fingerprint } : null,
     })
@@ -108,6 +113,12 @@ export async function runCloudSync(userId: string): Promise<CloudSyncOutcome> {
     if (!remote) throw new Error('同步状态异常：预期存在 Google Drive 工作区。')
 
     if (decision === 'push_local') {
+      // Connected mode has one authoritative write path: scoped commands.
+      // A manual refresh is a read/reconciliation request, not permission to
+      // upload unrelated local changes as one workspace snapshot.
+      if (connectedWorkspaceAuthorityEnabled()) {
+        return { kind: 'local_pending', version: remote.version, remoteUpdatedAt: remote.updatedAt }
+      }
       const updated = await updateRemoteWorkspace({
         userId,
         fileId: remote.fileId,
@@ -130,6 +141,10 @@ export async function runCloudSync(userId: string): Promise<CloudSyncOutcome> {
     if (decision === 'pull_remote') {
       await replaceLocalSnapshotFromCloud(remote.snapshot)
       markSynced(userId, remote)
+      patchAccountCheckpoint(userId, {
+        lastReadProjectionSourceFingerprint: remote.fingerprint,
+        lastReadProjectionFingerprint: await fingerprintWorkspace(await exportLocalSnapshot()),
+      })
       if (typeof window !== 'undefined') window.dispatchEvent(new Event('pjsdas:workspace-replaced'))
       return { kind: 'pulled', version: remote.version, remoteUpdatedAt: remote.updatedAt }
     }
@@ -166,6 +181,7 @@ export async function resolveConflictKeepLocal(userId: string): Promise<CloudSyn
     fingerprint,
     snapshot: local,
     deviceId: device.deviceId,
+    purpose: 'migration_recovery',
   })
   if (!updated) {
     const latest = await fetchRemoteWorkspace(userId)

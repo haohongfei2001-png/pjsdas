@@ -221,13 +221,18 @@ export async function updateRemoteWorkspace(input: {
   fingerprint: string
   snapshot: PJSDASSnapshot
   deviceId: string
+  purpose?: 'migration_recovery'
 }): Promise<RemoteWorkspaceRow | null> {
   if (connectedWorkspaceAuthorityEnabled()) {
+    if (input.purpose !== 'migration_recovery') {
+      throw new Error('CONNECTED_WRITE_REQUIRES_RECOVERY: ordinary connected sync cannot commit a whole workspace.')
+    }
     return updateConnectedRemoteWorkspace({
       expectedVersion: input.expectedVersion,
       fingerprint: input.fingerprint,
       snapshot: input.snapshot,
       deviceId: input.deviceId,
+      purpose: input.purpose,
     })
   }
   return updateDriveRemoteWorkspace(input)

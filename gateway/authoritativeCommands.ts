@@ -11,8 +11,26 @@ import {
   resolveSemanticDecision,
   type SemanticBatchCompensation,
 } from '../src/semanticIntake.js'
-import type { PJSDASSnapshot } from '../src/snapshot.js'
+import { upgradeSnapshotToLatest, validateSnapshot, type PJSDASSnapshot } from '../src/snapshot.js'
+import { decisionRulesForSnapshot, validateDecisionRules, type DecisionRules } from '../src/decisionRules.js'
 import type { SemanticIntakeObservation } from '../src/model.js'
+import { applyDiscoveryStatusCommand } from '../src/discoveryStatusCommand.js'
+import { applyDiscoveryProfileCommand } from '../src/discoveryProfileCommand.js'
+import { applyDiscoveryPromotionCommand } from '../src/discoveryPromotionCommand.js'
+import { applyMcpInboxSaveCommand } from '../src/mcpInboxCommand.js'
+import { applyMcpDiscoveryCommand } from '../src/mcpDiscoveryApplyCommand.js'
+import { applyMcpActionStatusCommand } from '../src/mcpActionStatusCommand.js'
+import { applyMcpRulesCommand } from '../src/mcpRulesCommand.js'
+import { applyMcpSourceRefreshCommand } from '../src/mcpSourceRefreshCommand.js'
+import { applyMcpDiscardCommand } from '../src/mcpDiscardCommand.js'
+import { applyMcpProgressCommand } from '../src/mcpProgressCommand.js'
+import { applyMcpMixedCommand } from '../src/mcpMixedCommand.js'
+import { applyProcessEventDeleteCommand } from '../src/processEventDeleteCommand.js'
+import { discoveryInboxIdentity, discoveryInboxItemsFromChangeSet } from '../src/discoveryInbox.js'
+import type { McpProposalEnvelope } from '../src/ai/mcpProposal.js'
+import { fingerprintWorkspace } from '../src/cloud/workspaceFingerprint.js'
+import { verifySignedProposalToken } from './proposalToken.js'
+import { findSimilarOpportunity } from '../src/discoveryQuality.js'
 import { applyUserCommandSchema } from './userCommands.js'
 import { semanticIntakeSchema, resolveSemanticDecisionSchema } from './semanticIntake.js'
 import { hashMutationPayload, type MutationPrincipal } from './mutationKernel.js'
@@ -35,6 +53,20 @@ import {
 
 const commandId = z.string().trim().min(8).max(300)
 const baseRevision = z.number().int().min(0)
+const profileList = z.array(z.string().trim().min(1).max(160)).max(30)
+const discoveryProfileSchema = z.object({
+  key: z.literal('current'), version: z.literal(1),
+  targetRoleQueries: profileList, preferredLocations: profileList,
+  locationNotes: z.string().max(1200),
+  minimumAnnualCompensationWan: z.number().min(0).max(1000).optional(),
+  preferredRoleTypes: z.array(z.enum(['core','backup','reach','lottery','practice'])).max(5).optional(),
+  locationPolicy: z.enum(['prefer','strict']).optional(),
+  minimumFitScore: z.number().min(0).max(100).optional(),
+  minimumOpportunityValue: z.number().min(0).max(100).optional(),
+  maxReviewCandidates: z.number().int().min(1).max(12).optional(),
+  mustHave: profileList, mustNotHave: profileList, strengths: profileList,
+  notes: z.string().max(2400), updatedAt: z.string().max(40),
+}).strict()
 
 export const authoritativeBusinessCommandSchema = z.object({
   commandId,
@@ -43,6 +75,35 @@ export const authoritativeBusinessCommandSchema = z.object({
     z.object({ type: z.literal('domain'), value: applyUserCommandSchema }).strict(),
     z.object({ type: z.literal('semantic_intake'), value: semanticIntakeSchema }).strict(),
     z.object({ type: z.literal('resolve_semantic_decision'), value: resolveSemanticDecisionSchema }).strict(),
+    z.object({ type: z.literal('discovery_profile'), value: discoveryProfileSchema }).strict(),
+    z.object({ type: z.literal('discovery_promotion'), value: z.object({ inboxItemId: z.string().trim().min(1).max(240) }).strict() }).strict(),
+    z.object({ type: z.literal('process_event_delete'), value: z.object({ eventId: z.string().trim().min(1).max(240) }).strict() }).strict(),
+    z.object({ type: z.literal('mcp_save_inbox'), value: z.object({ token: z.string().min(1).max(32_000) }).strict() }).strict(),
+    z.object({ type: z.literal('mcp_apply_actions'), value: z.object({ token: z.string().min(1).max(32_000) }).strict() }).strict(),
+    z.object({ type: z.literal('mcp_apply_rules'), value: z.object({ token: z.string().min(1).max(32_000) }).strict() }).strict(),
+    z.object({ type: z.literal('mcp_apply_source_refresh'), value: z.object({ token: z.string().min(1).max(32_000) }).strict() }).strict(),
+    z.object({ type: z.literal('mcp_apply_progress'), value: z.object({ token: z.string().min(1).max(32_000) }).strict() }).strict(),
+    z.object({ type: z.literal('mcp_apply_mixed'), value: z.object({ token: z.string().min(1).max(32_000) }).strict() }).strict(),
+    z.object({ type: z.literal('mcp_discard'), value: z.object({
+      token: z.string().min(1).max(32_000),
+      rejectionSelections: z.record(z.string().min(1).max(240), z.object({
+        code: z.enum(['location','compensation','role_direction','company_value','requirements','already_have_better','not_interested','other']),
+        note: z.string().max(1000).optional(),
+      }).strict()),
+    }).strict() }).strict(),
+    z.object({ type: z.literal('mcp_apply_discovery'), value: z.object({
+      token: z.string().min(1).max(32_000),
+      selectedOperationIds: z.array(z.string().min(1).max(240)).min(1).max(24),
+      rejectionSelections: z.record(z.string().min(1).max(240), z.object({
+        code: z.enum(['location','compensation','role_direction','company_value','requirements','already_have_better','not_interested','other']),
+        note: z.string().max(1000).optional(),
+      }).strict()),
+    }).strict() }).strict(),
+    z.object({ type: z.literal('discovery_status'), value: z.object({
+      inboxItemId: z.string().trim().min(1).max(240),
+      status: z.enum(['new', 'seen', 'later', 'dismissed']),
+      rejectionReason: z.enum(['location', 'compensation', 'role_direction', 'company_value', 'requirements', 'already_have_better', 'not_interested', 'other']).optional(),
+    }).strict() }).strict(),
   ]),
 }).strict()
 
@@ -71,7 +132,7 @@ export interface AuthoritativeCommandExecution {
 }
 
 function resultPayload(command: AuthoritativeBusinessCommand['command'], evaluated: any) {
-  if (command.type === 'domain') {
+  if (command.type === 'domain' || command.type === 'discovery_status' || command.type === 'discovery_profile' || command.type === 'discovery_promotion' || command.type === 'process_event_delete' || command.type === 'mcp_save_inbox' || command.type === 'mcp_apply_discovery' || command.type === 'mcp_apply_actions' || command.type === 'mcp_apply_rules' || command.type === 'mcp_apply_source_refresh' || command.type === 'mcp_apply_progress' || command.type === 'mcp_apply_mixed' || command.type === 'mcp_discard') {
     return {
       type: command.type,
       status: evaluated.status,
@@ -100,8 +161,92 @@ function operationFor(command: AuthoritativeBusinessCommand['command']) {
   return command.type
 }
 
-function intentObjects(command: AuthoritativeBusinessCommand['command'], snapshot: PJSDASSnapshot) {
+function intentObjects(command: AuthoritativeBusinessCommand['command'], snapshot: PJSDASSnapshot, proposal?: McpProposalEnvelope) {
   if (command.type === 'domain') return domainIntentObjects(command.value as UserDomainCommand, snapshot)
+  if (command.type === 'mcp_save_inbox') {
+    if (!proposal) throw new Error('Verified MCP proposal is required.')
+    const incoming = discoveryInboxItemsFromChangeSet(proposal.changeSet)
+    return [
+      { type: 'change_set', id: proposal.changeSet.id },
+      ...incoming.map((item) => {
+        const previous = (snapshot.data.discoveryInbox ?? []).find((saved) =>
+          discoveryInboxIdentity(saved.company, saved.role) === discoveryInboxIdentity(item.company, item.role))
+        return { type: 'discovery_inbox', id: previous?.id ?? item.id }
+      }),
+    ]
+  }
+  if (command.type === 'mcp_apply_discovery') {
+    if (!proposal) throw new Error('Verified MCP proposal is required.')
+    return [
+      { type: 'change_set', id: proposal.changeSet.id },
+      ...proposal.changeSet.operations.filter((item) => command.value.selectedOperationIds.includes(item.id) && item.kind === 'add_discovered_opportunity')
+        .flatMap((item) => item.kind === 'add_discovered_opportunity' ? [
+          { type: 'opportunity', id: item.opportunity.id }, { type: 'action', id: `apply:${item.opportunity.id}` },
+        ] : []),
+    ]
+  }
+  if (command.type === 'mcp_apply_actions') {
+    if (!proposal) throw new Error('Verified MCP proposal is required.')
+    return [
+      { type: 'change_set', id: proposal.changeSet.id },
+      ...proposal.changeSet.operations.filter((item) => item.kind === 'set_action_status')
+        .map((item) => ({ type: 'action', id: item.actionId })),
+    ]
+  }
+  if (command.type === 'mcp_apply_rules') {
+    if (!proposal) throw new Error('Verified MCP proposal is required.')
+    return [{ type: 'change_set', id: proposal.changeSet.id }, { type: 'decision_rules', id: 'current' }]
+  }
+  if (command.type === 'mcp_apply_source_refresh') {
+    if (!proposal) throw new Error('Verified MCP proposal is required.')
+    return [
+      { type: 'change_set', id: proposal.changeSet.id },
+      ...proposal.changeSet.operations.filter((item) => item.kind === 'refresh_job_posting')
+        .map((item) => ({ type: item.ownerKind === 'opportunity' ? 'opportunity' : 'discovery_inbox', id: item.ownerId })),
+    ]
+  }
+  if (command.type === 'mcp_apply_progress' || command.type === 'mcp_apply_mixed') {
+    if (!proposal) throw new Error('Verified MCP proposal is required.')
+    return [
+      { type: 'change_set', id: proposal.changeSet.id },
+      ...proposal.changeSet.operations.filter((item) => item.kind === 'progress_update').flatMap((item) => {
+        if (item.kind !== 'progress_update') return []
+        const operation = item.operation
+        if (operation.kind === 'manual_action') return [{ type: 'action', id: `progress-action:${operation.id}` }]
+        const refs = [{ type: 'opportunity', id: operation.opportunityId }]
+        if (operation.kind === 'process_event') refs.push({ type: 'process_event', id: `progress-event:${operation.id}` })
+        return refs
+      }),
+      ...(command.type === 'mcp_apply_mixed' ? proposal.changeSet.operations.flatMap((item) =>
+        item.kind === 'set_action_status' ? [{ type: 'action', id: item.actionId }]
+          : item.kind === 'replace_decision_rules' ? [{ type: 'decision_rules', id: 'current' }] : []) : []),
+    ]
+  }
+  if (command.type === 'mcp_discard') {
+    if (!proposal) throw new Error('Verified MCP proposal is required.')
+    return [{ type: 'change_set', id: proposal.changeSet.id }]
+  }
+  if (command.type === 'discovery_status') return [{ type: 'discovery_inbox', id: command.value.inboxItemId }]
+  if (command.type === 'discovery_profile') return [{ type: 'discovery_profile', id: 'current' }]
+  if (command.type === 'process_event_delete') {
+    const event = snapshot.data.processEvents.find((item) => item.id === command.value.eventId)
+    return [
+      { type: 'process_event', id: command.value.eventId },
+      ...(event ? [{ type: 'opportunity', id: event.opportunityId }, { type: 'action', id: `event-action:${event.id}` }] : []),
+      ...(snapshot.data.scheduleNodes ?? []).filter((node) => node.processEventId === command.value.eventId)
+        .map((node) => ({ type: 'schedule_occurrence', id: node.occurrenceId })),
+    ]
+  }
+  if (command.type === 'discovery_promotion') {
+    const item = (snapshot.data.discoveryInbox ?? []).find((candidate) => candidate.id === command.value.inboxItemId)
+    const existing = item && (snapshot.data.opportunities.find((row) => row.id === item.candidateOpportunityId)
+      ?? findSimilarOpportunity({ company: item.company, role: item.role }, snapshot.data.opportunities))
+    return [
+      { type: 'discovery_inbox', id: command.value.inboxItemId },
+      ...(item ? [{ type: 'opportunity', id: item.candidateOpportunityId }, { type: 'action', id: `apply:${item.candidateOpportunityId}` }] : []),
+      ...(existing && existing.id !== item?.candidateOpportunityId ? [{ type: 'opportunity', id: existing.id }] : []),
+    ]
+  }
   if (command.type === 'semantic_intake') return semanticIntentObjects(command.value as SemanticIntakeObservation, snapshot)
   return decisionIntentObjects(command.value.requestId, snapshot)
 }
@@ -148,6 +293,22 @@ function semanticCompensation(value: Record<string, unknown>): SemanticBatchComp
 }
 
 function applyCompensation(snapshot: PJSDASSnapshot, compensation: Record<string, unknown>, now: Date) {
+  if (compensation.operation === 'mcp_restore_decision_rules') {
+    const before = (compensation.payload as { before?: DecisionRules } | undefined)?.before
+    if (!before || validateDecisionRules(before).length) throw new Error('MCP Rules compensation is invalid.')
+    const next = upgradeSnapshotToLatest(snapshot)
+    next.data.decisionRules = { ...decisionRulesForSnapshot(before), updatedAt: now.toISOString() }
+    next.exportedAt = now.toISOString()
+    validateSnapshot(next)
+    return next
+  }
+  if (compensation.operation === 'mcp_action_status_batch') {
+    const previous = (compensation.payload as { previous?: Array<{ actionId: string; status: string }> } | undefined)?.previous
+    if (!Array.isArray(previous) || !previous.length) throw new Error('MCP Action compensation is invalid.')
+    return [...previous].reverse().reduce((current, item) => applyDomainCompensation(current, {
+      operation: 'set_action_status', payload: item,
+    } as DomainCompensation, now), snapshot)
+  }
   const semantic = semanticCompensation(compensation)
   if (semantic) return applySemanticCompensation(snapshot, semantic, now)
   return applyDomainCompensation(snapshot, compensation as unknown as DomainCompensation, now)
@@ -189,6 +350,19 @@ export function createAuthoritativeCommandExecutor(options: TransactionalWorkspa
     if (principal.kind === 'first_party_web' && parsed.command.type === 'semantic_intake' && parsed.command.value.source.kind !== 'web') {
       throw new WorkspaceSourceError('AUTH_FORBIDDEN', 'First-party Web Semantic Intake may write only web-origin observations.', false)
     }
+    if (['discovery_status','discovery_profile','discovery_promotion','process_event_delete','mcp_save_inbox','mcp_apply_discovery','mcp_apply_actions','mcp_apply_rules','mcp_apply_source_refresh','mcp_apply_progress','mcp_apply_mixed','mcp_discard'].includes(parsed.command.type) && principal.kind !== 'first_party_web') {
+      throw new WorkspaceSourceError('AUTH_FORBIDDEN', 'Discovery review commands are restricted to the first-party Web client.', false)
+    }
+
+    let proposal: McpProposalEnvelope | undefined
+    if (parsed.command.type === 'mcp_save_inbox' || parsed.command.type === 'mcp_apply_discovery' || parsed.command.type === 'mcp_apply_actions' || parsed.command.type === 'mcp_apply_rules' || parsed.command.type === 'mcp_apply_source_refresh' || parsed.command.type === 'mcp_apply_progress' || parsed.command.type === 'mcp_apply_mixed' || parsed.command.type === 'mcp_discard') {
+      const signingKey = process.env.PJSDAS_TOKEN_ENCRYPTION_KEY?.trim() ?? ''
+      if (!signingKey) throw new WorkspaceSourceError('PROPOSAL_VERIFY_UNAVAILABLE', 'Signed proposal verification is unavailable.', false)
+      proposal = await verifySignedProposalToken(parsed.command.value.token, signingKey)
+      if (!proposal.workspaceOwnerUserId || proposal.workspaceOwnerUserId !== principal.userId || !/^txn:\d+$/.test(proposal.workspaceVersion ?? '')) {
+        throw new WorkspaceSourceError('AUTH_FORBIDDEN', 'The signed proposal belongs to another account or workspace authority.', false)
+      }
+    }
 
     const operation = operationFor(parsed.command)
     const payloadHash = await hashMutationPayload(operation, parsed.command)
@@ -218,7 +392,13 @@ export function createAuthoritativeCommandExecutor(options: TransactionalWorkspa
         throw new WorkspaceSourceError('INVALID_ARGUMENT', 'Command base revision is newer than the authoritative workspace.', false)
       }
 
-      const intent = intentObjects(parsed.command, current.snapshot)
+      if (proposal) {
+        if (proposal.workspaceVersion !== `txn:${current.revision}` || proposal.changeSet.expectedWorkspaceVersion !== proposal.workspaceVersion ||
+          proposal.changeSet.expectedWorkspaceFingerprint !== await fingerprintWorkspace(current.snapshot)) {
+          throw new WorkspaceSourceError('WORKSPACE_CONFLICT', 'The signed proposal is stale. Refresh and request a new proposal.', false)
+        }
+      }
+      const intent = intentObjects(parsed.command, current.snapshot, proposal)
       if (parsed.baseRevision < current.revision) {
         const intervening = await store.readCommandsAfterRevision(principal.userId, parsed.baseRevision)
         const conflict = conflictFromIntervening(intent, current.snapshot, intervening)
@@ -231,6 +411,30 @@ export function createAuthoritativeCommandExecutor(options: TransactionalWorkspa
       let evaluated: any
       if (parsed.command.type === 'domain') {
         evaluated = applyUserDomainCommand(current.snapshot, parsed.command.value as UserDomainCommand, now)
+      } else if (parsed.command.type === 'discovery_status') {
+        evaluated = applyDiscoveryStatusCommand(current.snapshot, parsed.command.value, now)
+      } else if (parsed.command.type === 'discovery_profile') {
+        evaluated = applyDiscoveryProfileCommand(current.snapshot, parsed.command.value, now)
+      } else if (parsed.command.type === 'discovery_promotion') {
+        evaluated = applyDiscoveryPromotionCommand(current.snapshot, parsed.command.value, now)
+      } else if (parsed.command.type === 'process_event_delete') {
+        evaluated = applyProcessEventDeleteCommand(current.snapshot, parsed.command.value.eventId, now)
+      } else if (parsed.command.type === 'mcp_save_inbox') {
+        evaluated = applyMcpInboxSaveCommand(current.snapshot, proposal!, now)
+      } else if (parsed.command.type === 'mcp_apply_discovery') {
+        evaluated = applyMcpDiscoveryCommand(current.snapshot, proposal!, parsed.command.value.selectedOperationIds, parsed.command.value.rejectionSelections, now)
+      } else if (parsed.command.type === 'mcp_apply_actions') {
+        evaluated = applyMcpActionStatusCommand(current.snapshot, proposal!, now)
+      } else if (parsed.command.type === 'mcp_apply_rules') {
+        evaluated = applyMcpRulesCommand(current.snapshot, proposal!, now)
+      } else if (parsed.command.type === 'mcp_apply_source_refresh') {
+        evaluated = applyMcpSourceRefreshCommand(current.snapshot, proposal!, now)
+      } else if (parsed.command.type === 'mcp_apply_progress') {
+        evaluated = applyMcpProgressCommand(current.snapshot, proposal!, now)
+      } else if (parsed.command.type === 'mcp_apply_mixed') {
+        evaluated = applyMcpMixedCommand(current.snapshot, proposal!, now)
+      } else if (parsed.command.type === 'mcp_discard') {
+        evaluated = applyMcpDiscardCommand(current.snapshot, proposal!, parsed.command.value.rejectionSelections, now)
       } else if (parsed.command.type === 'semantic_intake') {
         evaluated = applySemanticIntake(current.snapshot, parsed.command.value as SemanticIntakeObservation, {
           authorized: true,
@@ -364,6 +568,9 @@ export function createAuthoritativeCommandExecutor(options: TransactionalWorkspa
             reason: 'COMMAND_NOT_FOUND',
           },
         }
+      }
+      if (target.operation === 'process_event_delete' && principal.kind !== 'first_party_web') {
+        throw new WorkspaceSourceError('AUTH_FORBIDDEN', 'Only the first-party Web client can restore a deleted process event.', false)
       }
       if (!target.compensation) {
         return {

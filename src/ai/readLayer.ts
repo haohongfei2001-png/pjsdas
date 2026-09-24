@@ -36,6 +36,7 @@ export interface BridgeReadContext {
   now?: Date
   timezone?: string
   workspaceVersion?: string
+  workspaceOwnerUserId?: string
   defaultAvailableMinutes?: number
 }
 

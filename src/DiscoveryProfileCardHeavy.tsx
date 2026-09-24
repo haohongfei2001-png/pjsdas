@@ -1,6 +1,9 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { getAllTimelineRecords, getDiscoveryProfile, saveDiscoveryProfile } from './db.js'
 import { useCloud } from './cloud/CloudContext.js'
+import { ensureAuthoritativePersistence } from './cloud/authoritativePersistence.js'
+import { connectedWorkspaceAuthorityEnabled } from './cloud/connectedWorkspaceRepository.js'
+import { createConnectedCommandId, executeConnectedBusinessCommand } from './cloud/authoritativeCommandClient.js'
 import { discoveryFeedbackSummary } from './discoveryFeedback.js'
 import { useUiLanguage } from './uiLanguage.js'
 import type { DiscoveryProfile } from './discoveryProfile.js'
@@ -58,6 +61,7 @@ export default function DiscoveryProfileCard() {
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
+  const dirtyRef = useRef(false)
 
   useEffect(() => {
     let active = true
@@ -83,7 +87,18 @@ export default function DiscoveryProfileCard() {
         .sort((a, b) => b.occurredAt.localeCompare(a.occurredAt) || b.recordedAt.localeCompare(a.recordedAt)))
     })
 
-    const onWorkspaceChanged = () => { void loadHistory() }
+    const onWorkspaceChanged = () => {
+      void loadHistory()
+      if (!dirtyRef.current) void getDiscoveryProfile().then((value) => {
+        if (!active || dirtyRef.current) return
+        setProfile(value)
+        setTargetRoles(lines(value.targetRoleQueries))
+        setLocations(lines(value.preferredLocations))
+        setMustHave(lines(value.mustHave))
+        setMustNotHave(lines(value.mustNotHave))
+        setStrengths(lines(value.strengths))
+      })
+    }
     window.addEventListener('pjsdas:workspace-replaced', onWorkspaceChanged)
     return () => {
       active = false
@@ -100,11 +115,13 @@ export default function DiscoveryProfileCard() {
   }
 
   function editText(setter: (value: string) => void, value: string) {
+    dirtyRef.current = true
     setter(value)
     clearFeedback()
   }
 
   function updateProfile(patch: Partial<DiscoveryProfile>) {
+    dirtyRef.current = true
     setProfile((current) => current ? { ...current, ...patch } : current)
     clearFeedback()
   }
@@ -115,23 +132,38 @@ export default function DiscoveryProfileCard() {
     setMessage('')
     setError('')
     try {
-      const next = await saveDiscoveryProfile({
+      const requested = {
         ...profile,
         targetRoleQueries: parseLines(targetRoles),
         preferredLocations: parseLines(locations),
         mustHave: parseLines(mustHave),
         mustNotHave: parseLines(mustNotHave),
         strengths: parseLines(strengths),
-      })
+      }
+      let next: DiscoveryProfile
+      const connected = connectedWorkspaceAuthorityEnabled() && Boolean(cloud.session)
+      if (connected) {
+        const accountKey = cloud.session!.user.id
+        const result = await executeConnectedBusinessCommand(accountKey, {
+          type: 'discovery_profile', value: requested,
+        }, { commandId: createConnectedCommandId('discovery-profile') })
+        if (result.outcome !== 'COMMITTED' && result.outcome !== 'ALREADY_APPLIED') {
+          throw new Error(result.conflict?.message ?? '岗位发现偏好未写入账号工作区。')
+        }
+        next = await getDiscoveryProfile()
+      } else next = await saveDiscoveryProfile(requested)
       setProfile(next)
       setTargetRoles(lines(next.targetRoleQueries))
       setLocations(lines(next.preferredLocations))
       setMustHave(lines(next.mustHave))
       setMustNotHave(lines(next.mustNotHave))
       setStrengths(lines(next.strengths))
-      if (cloud.session && !cloud.checkpoint.conflict) {
+      dirtyRef.current = false
+      if (connected) {
+        setMessage(zh ? '岗位发现偏好已保存到账号工作区。' : 'Job-discovery preferences saved to the account workspace.')
+      } else if (cloud.session && !cloud.checkpoint.conflict) {
         try {
-          await cloud.syncNow()
+          await ensureAuthoritativePersistence(true, cloud.syncNow)
           setMessage(zh ? '岗位发现偏好已保存并请求同步到 Google Drive。' : 'Job-discovery preferences saved and Google Drive sync requested.')
         } catch {
           setMessage(zh ? '岗位发现偏好已保存到本机；Google Drive 暂未同步。' : 'Job-discovery preferences saved locally; Google Drive sync did not complete.')

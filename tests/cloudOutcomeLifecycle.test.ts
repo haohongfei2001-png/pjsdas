@@ -14,7 +14,7 @@ describe('cloud operation outcome lifecycle', () => {
   it('clears the previous success outcome before a new sync attempt can fail', () => {
     const block = section('const syncNow = useCallback', 'useEffect(() => {\n    const userId = session?.user.id')
     expect(block).toContain('setOutcome(undefined)')
-    expect(block.indexOf('setOutcome(undefined)')).toBeLessThan(block.indexOf('runCloudSync(userId)'))
+    expect(block.indexOf('setOutcome(undefined)')).toBeLessThan(block.indexOf('runCloudSync(userId, options)'))
     expect(block.indexOf('setOutcome(undefined)')).toBeLessThan(block.indexOf('setError(undefined)'))
   })
 

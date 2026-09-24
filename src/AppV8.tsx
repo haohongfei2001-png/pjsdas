@@ -28,6 +28,7 @@ import {
   undoConnectedBusinessCommand,
 } from './cloud/authoritativeCommandClient.js'
 import DiscoveryProfileCard from './DiscoveryProfileCard.js'
+import DiscoveryInboxView from './DiscoveryInboxView.js'
 import PrepGraphDock from './PrepGraphDock.js'
 import ProcessEventDock from './ProcessEventDock.js'
 import LocalBackupDock from './LocalBackupDock.js'
@@ -67,7 +68,7 @@ import './cgr02Tokens.css'
 
 type Surface = 'today' | 'opportunities' | 'decisions' | 'history' | 'settings'
 type PrimarySurface = 'today' | 'opportunities'
-type OpportunityTab = 'opportunities' | 'prepare'
+type OpportunityTab = 'opportunities' | 'prepare' | 'discovery'
 type CompletionFeedback = { id: string; title: string; previousStatus: Action['status']; commandId?: string; error?: string }
 type RouteState = {
   surface: Surface
@@ -214,12 +215,16 @@ export default function AppV8() {
 
   useEffect(() => {
     const path = semanticPath()
+    // The signed MCP review lives in the URL fragment until the review
+    // component verifies it. Keep that fragment through the root redirect.
+    const proposalHash = new URLSearchParams(window.location.hash.replace(/^#/, '')).has('pjsdas-proposal')
+      ? window.location.hash : ''
     if (path === '/') {
-      window.history.replaceState(null, '', browserPath('/today'))
+      window.history.replaceState(null, '', `${browserPath('/today')}${proposalHash}`)
       setRoute(routeFromPath('/today'))
     } else if (path === '/capture' || (CGR02_TODAY_READ_ONLY && path === '/today/capture')) {
       const safePath = CGR02_TODAY_READ_ONLY ? '/today' : '/today/capture'
-      window.history.replaceState(null, '', browserPath(safePath))
+      window.history.replaceState(null, '', `${browserPath(safePath)}${proposalHash}`)
       setRoute(routeFromPath(safePath))
     }
     void reload().finally(() => setLoading(false))
@@ -678,11 +683,16 @@ function OpportunitiesSurface({
           <span>{zh ? '准备' : 'Prepare'}</span>
           <small>{prep.length} {zh ? '资产' : 'items'}</small>
         </button>
+        <button className={tab === 'discovery' ? 'active' : ''} onClick={() => onTabChange('discovery')}>
+          <span>{zh ? '发现箱' : 'Discovery Inbox'}</span>
+          <small>{zh ? '待审阅候选' : 'Review candidates'}</small>
+        </button>
       </div>
 
       {tab === 'opportunities' ? <OpportunityDecisionList read={read} view={view} onViewChange={onViewChange}
         query={query} onQueryChange={onQueryChange} onOpenOpportunity={onOpenOpportunity} /> : null}
       {tab === 'prepare' ? <PreparePanel prep={prep} /> : null}
+      {tab === 'discovery' ? <DiscoveryInboxView /> : null}
     </section>
   )
 }

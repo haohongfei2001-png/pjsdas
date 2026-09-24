@@ -59,9 +59,18 @@ export function diffCommandObjects(before: PJSDASSnapshot, after: PJSDASSnapshot
   addChangedById(refs, 'semantic_receipt', before.data.semanticReceipts ?? [], after.data.semanticReceipts ?? [])
   addChangedById(refs, 'reminder_intent', before.data.reminderIntents ?? [], after.data.reminderIntents ?? [])
   addChangedById(refs, 'reminder_outbox', before.data.reminderOutbox ?? [], after.data.reminderOutbox ?? [])
+  addChangedById(refs, 'discovery_inbox', before.data.discoveryInbox ?? [], after.data.discoveryInbox ?? [])
+  addChangedById(refs, 'change_set', before.data.changeSets ?? [], after.data.changeSets ?? [])
+  addChangedById(refs, 'timeline', before.data.timeline ?? [], after.data.timeline ?? [])
   addChangedScheduleOccurrences(refs, before.data.scheduleNodes ?? [], after.data.scheduleNodes ?? [])
   if (stableJson(before.data.decisionRules) !== stableJson(after.data.decisionRules)) {
     refs.set('decision_rules:current', { type: 'decision_rules', id: 'current' })
+  }
+  if (stableJson(before.data.discoveryProfile) !== stableJson(after.data.discoveryProfile)) {
+    refs.set('discovery_profile:current', { type: 'discovery_profile', id: 'current' })
+  }
+  if (stableJson(before.data.meta) !== stableJson(after.data.meta)) {
+    refs.set('import_meta:current', { type: 'import_meta', id: 'current' })
   }
   return [...refs.values()].sort((a, b) => `${a.type}:${a.id}`.localeCompare(`${b.type}:${b.id}`))
 }

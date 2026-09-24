@@ -36,8 +36,9 @@ export async function createSignedProposalToken(
   secret: string,
   now = new Date(),
   discoveryReview?: McpDiscoveryReview,
+  workspaceOwnerUserId?: string,
 ) {
-  const envelope = createMcpProposalEnvelope(changeSet, workspaceVersion, now, discoveryReview)
+  const envelope = createMcpProposalEnvelope(changeSet, workspaceVersion, now, discoveryReview, workspaceOwnerUserId)
   const encoded = encodeMcpProposal(envelope)
   const key = await signingKey(secret)
   const signature = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(encoded))

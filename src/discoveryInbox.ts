@@ -248,7 +248,7 @@ export function discoveryInboxDecisionTimeline(
     recordedAt: timestamp,
     title: decision === 'accepted' ? '从发现箱加入机会池' : '发现箱标记不感兴趣',
     detail: decision === 'accepted' ? item.rationale : reason,
-    opportunityId: decision === 'accepted' ? item.candidateOpportunityId : undefined,
+    opportunityId: decision === 'accepted' ? item.promotedOpportunityId ?? item.candidateOpportunityId : undefined,
     company: item.company,
     role: item.role,
     sourceRef: item.sourceUrl,
