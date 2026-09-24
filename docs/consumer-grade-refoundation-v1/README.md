@@ -16,14 +16,14 @@ The target is a stable consumer-grade baseline in which the product continuously
 
 ## Execution authority
 
-After this registration:
+Current package state: **COMPLETE — STABLE CONSUMER-GRADE BASELINE**.
 
-1. Completed UU-00 through UU-07 remain historical implementation and evidence.
-2. Preserved security, data-integrity, transaction, provenance, source-identity, authorization, and exact-SHA release invariants remain binding.
-3. This package supersedes the Ultimate Usability roadmap for future product sequencing, Web experience, connected mutation architecture, automation closure, migration/retirement, and consumer-grade validation where they conflict.
-4. UU-08 and UU-09 are HOLD — NOT_AUTHORIZED while this package is active.
-5. CGR-00 and CGR-01 are complete. CGR-02 is READY — NOT_STARTED and requires a new explicit owner authorization before implementation.
-6. No phase auto-starts the next phase.
+1. CGR-00 through CGR-05 are complete. The certified production runtime is `58e9f7f4bd584139ffeb8c17a3ee6c8c15d94c3a`.
+2. Owner Amendment `OWNER_AMENDMENT_2026-09-25.md` reclassifies the unavailable fresh natural recruiting-Gmail event as post-closure observation `OBS-CGR-001`; it is not represented as a passed event.
+3. Preserved security, data-integrity, transaction, provenance, source-identity, authorization, and exact-SHA release invariants remain binding.
+4. Completed UU-00 through UU-07 remain historical implementation and evidence.
+5. UU-08 and UU-09 remain HOLD — NOT_AUTHORIZED. iPhone work, a new CGR phase, and release publication also require new explicit owner authorization.
+6. Package completion stops execution; it does not auto-start the next roadmap.
 
 ## Preserved foundation
 
@@ -52,7 +52,9 @@ Historical completion does not protect implementation that blocks the target exp
 - EXECUTION_PROTOCOL.md
 - STATUS.md
 - phases/CGR-00.md through phases/CGR-05.md
-- receipts/CGR-01.md and later phase closure receipts
+- OWNER_AMENDMENT_2026-09-25.md
+- POST_CLOSURE_OBSERVATIONS.md
+- receipts/CGR-01.md through the final CGR-04/CGR-05 closure receipts
 
 ## Completion doctrine
 
