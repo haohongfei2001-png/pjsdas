@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { decideSyncAction } from '../src/cloud/syncLogic.js'
+import { decideSyncAction, localFingerprintHasUnsyncedChanges } from '../src/cloud/syncLogic.js'
 
 describe('local-first Google Drive sync decisions', () => {
   it('creates Drive workspace when no remote file exists', () => {
@@ -63,5 +63,45 @@ describe('local-first Google Drive sync decisions', () => {
 
   it('adopts an equal Drive fingerprint without rewriting either side', () => {
     expect(decideSyncAction({ checkpoint: {}, localFingerprint: 'same', localEmpty: false, remote: { version: '8', fingerprint: 'same' } })).toBe('adopt_equal')
+  })
+
+
+  it('detects local sign-out risk from the last authoritative fingerprint', () => {
+    expect(localFingerprintHasUnsyncedChanges({
+      checkpoint: { lastSyncedVersion: '7', lastSyncedFingerprint: 'base' },
+      localFingerprint: 'local-edit',
+    })).toBe(true)
+    expect(localFingerprintHasUnsyncedChanges({
+      checkpoint: { lastSyncedVersion: '7', lastSyncedFingerprint: 'base' },
+      localFingerprint: 'base',
+    })).toBe(false)
+  })
+
+  it('uses the hydrated local read projection as the sign-out baseline when it belongs to the synced source', () => {
+    expect(localFingerprintHasUnsyncedChanges({
+      checkpoint: {
+        lastSyncedVersion: '7',
+        lastSyncedFingerprint: 'remote-base',
+        lastReadProjectionSourceFingerprint: 'remote-base',
+        lastReadProjectionFingerprint: 'hydrated-base',
+      },
+      localFingerprint: 'hydrated-base',
+    })).toBe(false)
+    expect(localFingerprintHasUnsyncedChanges({
+      checkpoint: {
+        lastSyncedVersion: '7',
+        lastSyncedFingerprint: 'remote-base',
+        lastReadProjectionSourceFingerprint: 'remote-base',
+        lastReadProjectionFingerprint: 'hydrated-base',
+      },
+      localFingerprint: 'local-edit-after-hydration',
+    })).toBe(true)
+  })
+
+  it('does not invent a local-pending conclusion when no authoritative baseline exists', () => {
+    expect(localFingerprintHasUnsyncedChanges({
+      checkpoint: {},
+      localFingerprint: 'local',
+    })).toBe(false)
   })
 })
