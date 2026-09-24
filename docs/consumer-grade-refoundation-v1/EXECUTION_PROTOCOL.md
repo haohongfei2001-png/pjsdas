@@ -49,6 +49,19 @@ If STATUS.md still contains the superseded one-phase-ahead wording while an acti
 
 This standing authorization does not permit publication, new permissions, new costs, consequential external actions, or a seventh CGR phase.
 
+## Current deployment-batching amendment
+
+For the final CGR-04/CGR-05 convergence, the owner explicitly authorizes deployment batching while provider capacity is constrained:
+
+- continue every production-independent defect repair, test/canary preparation, accessibility/reliability check, retirement audit and evidence reconciliation;
+- do not treat the currently deployed older SHA as certification for runtime fixes that landed later;
+- do not trigger repeated production deployments merely for documentation/test-infrastructure commits;
+- after automatable work is exhausted, select the newest stable exact integrated main SHA as the single final production candidate;
+- deploy that candidate once capacity is available, then run all still-applicable frozen source/core canaries against that same exact SHA;
+- a provider quota remains `PRODUCTION_PENDING_EXTERNAL`; it is not a reason to start UU-08/UU-09 or unrelated features.
+
+This batching amendment changes deployment cadence only. It does not weaken exact-SHA, security, privacy, authorization, source-truth or final production requirements.
+
 ## CGR-00 restriction
 
 CGR-00 is docs-only.
