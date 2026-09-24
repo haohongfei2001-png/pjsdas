@@ -46,7 +46,12 @@ export async function prepareJourney(page: Page) {
     schema: 'pjsdas-local-snapshot', version: 1,
     exportedAt: '2026-09-23T00:00:00.000Z',
     data: {
-      opportunities: [], processes: [], processEvents: [], prep: [], applicationGroups: [],
+      opportunities: [{
+        id: 'voiceover-opportunity', company: '合成机会科技', role: 'AI产品经理',
+        currentStageLabel: '面试', processStage: 'interview', roleType: 'core',
+        participationStatus: 'active', early: false, opportunityValue: 88, fitScore: 86,
+        importedAt: '2026-09-22T00:00:00.000Z',
+      }], processes: [], processEvents: [], prep: [], applicationGroups: [],
       semanticReceipts: [], timeline: [],
       actions: [{
         id: 'voiceover-action', kind: 'manual' as const, title: 'A第一任务',
