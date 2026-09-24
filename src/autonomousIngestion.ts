@@ -25,6 +25,7 @@ import type {
   Action,
   ActionTimingMode,
   DiscoveryConfidence,
+  IngestionProducer,
   IngestionRunSummary,
   JobPostingStatus,
   Opportunity,
@@ -60,6 +61,7 @@ export interface MonitorJobObservation {
 export interface MonitorIngestionRunInput {
   runId: string
   sourceId: string
+  producer?: IngestionProducer
   startedAt: string
   completedAt: string
   observations: MonitorJobObservation[]
@@ -89,6 +91,7 @@ export interface GmailMessageObservation {
 export interface GmailIngestionRunInput {
   runId: string
   sourceId: string
+  producer?: IngestionProducer
   startedAt: string
   completedAt: string
   cursor?: string
