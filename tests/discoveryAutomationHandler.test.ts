@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { createDiscoveryAutomationHandler } from '../gateway/discoveryAutomationHandler.js'
+import { createDiscoveryAutomationHandler, discoveryAutomationTelemetryPatch } from '../gateway/discoveryAutomationHandler.js'
 import type { DiscoveryGenerateText } from '../gateway/discoveryAutomationWorker.js'
 
 const CLAIM_RPC = '/rest/v1/rpc/pjsdas_claim_enabled_discovery_automation_bindings'
@@ -25,6 +25,43 @@ function createHandler(
     fetchImpl,
   })
 }
+
+describe('discovery automation telemetry truth', () => {
+  it('advances durable success only when at least one source run committed', () => {
+    const base = {
+      producer: 'server_scheduler' as const,
+      checkedAt: '2026-09-25T00:00:00.000Z',
+      configured: true,
+      dueSourceCount: 0,
+      completedSourceCount: 0,
+      skippedSourceCount: 0,
+      receivedCount: 0,
+      accountedCount: 0,
+      createdCount: 0,
+      touchedCount: 0,
+      unresolvedCount: 0,
+    }
+
+    expect(discoveryAutomationTelemetryPatch({
+      ...base,
+      state: 'checked_not_due',
+    })).toEqual({
+      checkedAt: base.checkedAt,
+      lastError: null,
+    })
+
+    expect(discoveryAutomationTelemetryPatch({
+      ...base,
+      state: 'committed',
+      dueSourceCount: 1,
+      completedSourceCount: 1,
+    })).toEqual({
+      checkedAt: base.checkedAt,
+      successAt: base.checkedAt,
+      lastError: null,
+    })
+  })
+})
 
 describe('server-owned discovery automation endpoint', () => {
   it('rejects requests without the scheduler Bearer token before touching Supabase or the model', async () => {
