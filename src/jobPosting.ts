@@ -97,6 +97,47 @@ export function logicalJobMatches(
   return leftLocation === rightLocation || leftLocation.includes(rightLocation) || rightLocation.includes(leftLocation)
 }
 
+export type OpportunityPostingIdentityResolution =
+  | { kind: 'same_posting'; opportunity: Opportunity; canonicalSourceUrl: string }
+  | { kind: 'distinct_posting'; canonicalSourceUrl: string }
+  | { kind: 'ambiguous'; opportunities: Opportunity[]; canonicalSourceUrl: string; reason: 'legacy_missing_posting' | 'multiple_same_posting' }
+
+export function resolveOpportunityPostingIdentity(
+  candidate: { company: string; role: string; location?: string; sourceUrl: string },
+  opportunities: Opportunity[],
+): OpportunityPostingIdentityResolution {
+  const canonicalSourceUrl = canonicalizeJobSourceUrl(candidate.sourceUrl)
+  const logical = opportunities.filter((item) => logicalJobMatches(
+    { company: candidate.company, role: candidate.role, location: candidate.location },
+    { company: item.company, role: item.role, location: item.detail?.discovery?.location },
+  ))
+  const samePosting = logical.filter((item) => {
+    const current = item.detail?.discovery?.posting
+    if (current) return current.canonicalSourceUrl === canonicalSourceUrl
+    const sourceUrl = item.detail?.discovery?.sourceUrl
+    return sourceUrl ? canonicalizeJobSourceUrl(sourceUrl) === canonicalSourceUrl : false
+  })
+  if (samePosting.length === 1) return { kind: 'same_posting', opportunity: samePosting[0]!, canonicalSourceUrl }
+  if (samePosting.length > 1) {
+    return { kind: 'ambiguous', opportunities: samePosting, canonicalSourceUrl, reason: 'multiple_same_posting' }
+  }
+
+  // A known different exact posting source is positive evidence that this is a
+  // different posting. Weak title/company/location similarity cannot override it.
+  const legacyMissingPosting = logical.filter((item) => !item.detail?.discovery?.posting && !item.detail?.discovery?.sourceUrl)
+  if (legacyMissingPosting.length > 0) {
+    return { kind: 'ambiguous', opportunities: legacyMissingPosting, canonicalSourceUrl, reason: 'legacy_missing_posting' }
+  }
+  return { kind: 'distinct_posting', canonicalSourceUrl }
+}
+
+export function sameCandidatePosting(
+  a: { company: string; role: string; location?: string; sourceUrl: string },
+  b: { company: string; role: string; location?: string; sourceUrl: string },
+) {
+  return logicalJobMatches(a, b) && canonicalizeJobSourceUrl(a.sourceUrl) === canonicalizeJobSourceUrl(b.sourceUrl)
+}
+
 function isTrackingParam(key: string) {
   const normalized = key.toLocaleLowerCase()
   return normalized.startsWith('utm_') || TRACKING_KEYS.has(normalized)
@@ -218,34 +259,23 @@ export function mergeJobPostingEvidence(
   current: JobPostingEvidence,
   history: JobPostingEvidence[] | undefined,
   incoming: JobPostingEvidence,
-  now = new Date(),
+  _now = new Date(),
 ) {
-  const byId = new Map<string, JobPostingEvidence>()
-  for (const posting of [current, ...(history ?? [])]) byId.set(posting.id, posting)
-  const previousSameSource = byId.get(incoming.id)
-  byId.set(incoming.id, previousSameSource ? mergeSameSource(previousSameSource, incoming) : incoming)
-
-  const records = [...byId.values()]
-  const selected = [...records].sort((a, b) =>
-    b.lastVerifiedAt.localeCompare(a.lastVerifiedAt) || b.lastSeenAt.localeCompare(a.lastSeenAt) || a.id.localeCompare(b.id)
-  )[0]
-
-  if (selected.id === incoming.id && incoming.postingStatus === 'open') {
-    for (const posting of records) {
-      if (posting.id === selected.id) continue
-      const freshness = jobPostingFreshness(posting, now)
-      if (freshness === 'closed' || freshness === 'stale') {
-        byId.set(posting.id, { ...posting, supersededByPostingId: incoming.id })
-      }
+  if (incoming.id === current.id) {
+    return {
+      current: mergeSameSource(current, incoming),
+      history: [...(history ?? [])].slice(0, MAX_POSTING_HISTORY),
     }
   }
 
-  const mergedCurrent = byId.get(selected.id) ?? selected
-  const mergedHistory = [...byId.values()]
-    .filter((posting) => posting.id !== mergedCurrent.id)
-    .sort((a, b) => b.lastVerifiedAt.localeCompare(a.lastVerifiedAt) || a.id.localeCompare(b.id))
-    .slice(0, MAX_POSTING_HISTORY)
-  return { current: mergedCurrent, history: mergedHistory }
+  const historyIndex = (history ?? []).findIndex((posting) => posting.id === incoming.id)
+  if (historyIndex >= 0) {
+    const nextHistory = [...(history ?? [])]
+    nextHistory[historyIndex] = mergeSameSource(nextHistory[historyIndex]!, incoming)
+    return { current, history: nextHistory.slice(0, MAX_POSTING_HISTORY) }
+  }
+
+  throw new Error('Posting identity mismatch: a different canonical posting source requires explicit equivalence/reconciliation evidence before merge.')
 }
 
 export function jobPostingForInboxItem(item: DiscoveryInboxItem): JobPostingEvidence {
