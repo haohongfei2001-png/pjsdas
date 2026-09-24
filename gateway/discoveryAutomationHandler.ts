@@ -3,6 +3,7 @@ import {
   probeDiscoveryAiGateway,
   runDiscoveryAutomationForBinding,
   type DiscoveryGenerateText,
+  type DiscoveryAutomationRunResult,
 } from './discoveryAutomationWorker.js'
 import { WorkspaceSourceError } from './workspaceSource.js'
 
@@ -41,6 +42,14 @@ function errorBody(caught: unknown) {
     code: 'DISCOVERY_AUTOMATION_FAILED',
     message: caught instanceof Error ? caught.message : 'PJSDAS discovery automation failed.',
     retryable: false,
+  }
+}
+
+export function discoveryAutomationTelemetryPatch(run: DiscoveryAutomationRunResult) {
+  return {
+    checkedAt: run.checkedAt,
+    ...(run.completedSourceCount > 0 ? { successAt: run.checkedAt } : {}),
+    lastError: null,
   }
 }
 
@@ -108,11 +117,7 @@ export function createDiscoveryAutomationHandler(config: DiscoveryAutomationHand
           force,
         })
         const durableCommit = run.completedSourceCount > 0
-        await store.updateDiscoveryRunState(binding.userId, {
-          checkedAt: run.checkedAt,
-          ...(durableCommit ? { successAt: run.checkedAt } : {}),
-          lastError: null,
-        })
+        await store.updateDiscoveryRunState(binding.userId, discoveryAutomationTelemetryPatch(run))
         results.push({
           status: run.state,
           producer: run.producer,
@@ -146,6 +151,7 @@ export function createDiscoveryAutomationHandler(config: DiscoveryAutomationHand
     return json(failures > 0 ? 207 : 200, {
       processedUsers: results.length,
       checkedUsers: results.length - failures,
+      successfulUsers: results.length - failures,
       durableCompletedUsers,
       failedUsers: failures,
       results,
