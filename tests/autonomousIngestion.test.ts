@@ -68,11 +68,12 @@ describe('autonomous monitor ingestion', () => {
     expect(summarizeCoverage(result.snapshot.data.timeline).allCaughtUp).toBe(true)
   })
 
-  it('merges a second public source into the existing logical job instead of duplicating it', () => {
+  it('keeps a second exact posting source distinct even when the logical title is highly similar', () => {
     const first = applyMonitorIngestion(baseSnapshot(), {
       ...monitorRun,
       observations: [observation()],
     })
+    const firstId = first.snapshot.data.opportunities[0]!.id
     const second = applyMonitorIngestion(first.snapshot, {
       runId: 'monitor-run-2',
       sourceId: 'monitor-product',
@@ -87,10 +88,12 @@ describe('autonomous monitor ingestion', () => {
       })],
     })
 
-    expect(second.snapshot.data.opportunities).toHaveLength(1)
-    expect(second.run.outcomes.merged).toBe(1)
-    expect(second.snapshot.data.opportunities[0].detail?.discovery?.postingHistory?.length).toBe(1)
-    expect(second.snapshot.data.actions).toHaveLength(1)
+    expect(second.snapshot.data.opportunities).toHaveLength(2)
+    expect(second.run.outcomes.created).toBe(1)
+    expect(second.snapshot.data.actions).toHaveLength(2)
+    const original = second.snapshot.data.opportunities.find((item) => item.id === firstId)!
+    expect(original.detail?.discovery?.posting?.canonicalSourceUrl).toBe('https://careers.example.com/jobs/123')
+    expect(original.detail?.discovery?.postingHistory).toBeUndefined()
   })
 
   it('accounts the same durable source record again as duplicate without creating another job', () => {
