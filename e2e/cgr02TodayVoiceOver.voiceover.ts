@@ -50,3 +50,58 @@ test('real VoiceOver can find Today, Tell PJSDAS and the authoritative saved res
   }
   expect(foundReceipt, receiptPhrases.join(' | ')).toBe(true)
 })
+
+
+test('real VoiceOver identifies Opportunities and Settings primary-route semantics', async ({ page, voiceOver }) => {
+  await prepareJourney(page)
+
+  await page.goto('/pjsdas/opportunities')
+  await expect(page.getByRole('heading', { name: /哪些在推进|哪些值得继续投入|Opportunities/i })).toBeVisible()
+  await expect(page.getByRole('button', { name: /合成机会科技|AI产品经理/ })).toBeVisible()
+
+  await voiceOver.navigateToWebContent()
+  const opportunityPhrases: string[] = []
+  let foundOpportunityContext = false
+  for (let i = 0; i < 32 && !foundOpportunityContext; i += 1) {
+    await voiceOver.next()
+    const spoken = await voiceOver.lastSpokenPhrase()
+    const item = await voiceOver.itemText()
+    opportunityPhrases.push(`${spoken} / ${item}`)
+    foundOpportunityContext = /合成机会科技|AI产品经理|哪些在推进/.test(`${spoken} ${item}`)
+  }
+  expect(foundOpportunityContext, opportunityPhrases.join(' | ')).toBe(true)
+
+  const opportunityButton = page.getByRole('button', { name: /合成机会科技|AI产品经理/ })
+  await opportunityButton.click()
+  const detail = page.getByRole('dialog', { name: /岗位详情|Opportunity details/ })
+  await expect(detail).toBeVisible()
+  await expect(detail).toContainText('合成机会科技')
+  const detailPhrases: string[] = []
+  let foundDetail = false
+  for (let i = 0; i < 36 && !foundDetail; i += 1) {
+    await voiceOver.next()
+    const spoken = await voiceOver.lastSpokenPhrase()
+    const item = await voiceOver.itemText()
+    detailPhrases.push(`${spoken} / ${item}`)
+    foundDetail = /合成机会科技|AI产品经理/.test(`${spoken} ${item}`)
+  }
+  expect(foundDetail, detailPhrases.join(' | ')).toBe(true)
+
+  await page.goto('/pjsdas/settings')
+  const settingsHeading = page.getByRole('heading', { name: /连接、自动化和长期控制|Connections, automation/i })
+  await expect(settingsHeading).toBeVisible()
+  await voiceOver.navigateToWebContent()
+  const settingsPhrases: string[] = []
+  let foundSettings = false
+  for (let i = 0; i < 32 && !foundSettings; i += 1) {
+    await voiceOver.nextHeading()
+    const spoken = await voiceOver.lastSpokenPhrase()
+    const item = await voiceOver.itemText()
+    settingsPhrases.push(`${spoken} / ${item}`)
+    foundSettings = /连接、自动化和长期控制|Connections|automation/i.test(`${spoken} ${item}`)
+  }
+  expect(foundSettings, settingsPhrases.join(' | ')).toBe(true)
+
+  await expect(page.getByRole('button', { name: /立即同步|Sync now/ })).toBeVisible()
+  await expect(page.getByRole('button', { name: /退出 PJSDAS|Sign out/ })).toBeVisible()
+})
