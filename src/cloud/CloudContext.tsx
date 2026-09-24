@@ -68,6 +68,12 @@ export function CloudProvider({ children }: { children: ReactNode }) {
   const [error, setError] = useState<string>()
   const busyRef = useRef(false)
   const linkingRef = useRef(false)
+  const outcomeRef = useRef<CloudSyncOutcome>()
+
+  const publishOutcome = useCallback((next: CloudSyncOutcome | undefined) => {
+    outcomeRef.current = next
+    setOutcome(next)
+  }, [])
 
   const refreshState = useCallback((userId?: string) => {
     setDevice(getCloudDeviceState())
@@ -157,14 +163,14 @@ export function CloudProvider({ children }: { children: ReactNode }) {
     setSyncing(true)
     // A previous successful sync must not remain visible while a new attempt is
     // running or after that new attempt fails.
-    setOutcome(undefined)
+    publishOutcome(undefined)
     setError(undefined)
     try {
       if (connectedWorkspaceAuthorityEnabled()) {
         await replayAccountPendingOperations(userId)
       }
       const result = await runCloudSync(userId, options)
-      setOutcome(result)
+      publishOutcome(result)
       refreshState(userId)
       return result
     } catch (caught) {
@@ -177,7 +183,7 @@ export function CloudProvider({ children }: { children: ReactNode }) {
       busyRef.current = false
       setSyncing(false)
     }
-  }, [configured, session?.user.id, refreshState, clearExpiredSessionIfNeeded])
+  }, [configured, session?.user.id, refreshState, clearExpiredSessionIfNeeded, publishOutcome])
 
   useEffect(() => {
     const userId = session?.user.id
@@ -204,7 +210,7 @@ export function CloudProvider({ children }: { children: ReactNode }) {
     if (!userId || busyRef.current) return undefined
     busyRef.current = true
     setSyncing(true)
-    setOutcome(undefined)
+    publishOutcome(undefined)
     setError(undefined)
     try {
       const result = kind === 'keep'
@@ -212,7 +218,7 @@ export function CloudProvider({ children }: { children: ReactNode }) {
         : kind === 'cloud'
           ? await resolveConflictUseCloud(userId)
           : await rebindCurrentLocalWorkspace(userId)
-      setOutcome(result)
+      publishOutcome(result)
       refreshState(userId)
       return result
     } catch (caught) {
@@ -225,12 +231,12 @@ export function CloudProvider({ children }: { children: ReactNode }) {
       busyRef.current = false
       setSyncing(false)
     }
-  }, [session?.user.id, refreshState, clearExpiredSessionIfNeeded])
+  }, [session?.user.id, refreshState, clearExpiredSessionIfNeeded, publishOutcome])
 
   const signIn = useCallback(async () => {
     if (busyRef.current) return
     setLoading(true)
-    setOutcome(undefined)
+    publishOutcome(undefined)
     setError(undefined)
     try {
       await signInWithGoogle()
@@ -239,7 +245,7 @@ export function CloudProvider({ children }: { children: ReactNode }) {
       setLoading(false)
       throw caught
     }
-  }, [])
+  }, [publishOutcome])
 
   const signOut = useCallback(async () => {
     assertCloudSignOutAllowed({
@@ -250,7 +256,7 @@ export function CloudProvider({ children }: { children: ReactNode }) {
     const connected = connectedWorkspaceAuthorityEnabled()
     if (connected && session) {
       assertConnectedSignOutDataSafe({
-        outcomeKind: outcome?.kind,
+        outcomeKind: outcomeRef.current?.kind,
         hasConflict: Boolean(checkpoint.conflict),
         accountMismatch: Boolean(device.workspaceOwnerUserId && device.workspaceOwnerUserId !== session.user.id),
       })
@@ -272,14 +278,14 @@ export function CloudProvider({ children }: { children: ReactNode }) {
         clearLocalWorkspaceBinding()
       }
       applySession(null)
-      setOutcome(undefined)
+      publishOutcome(undefined)
       setError(undefined)
       setLoading(false)
     } finally {
       busyRef.current = false
       setSyncing(false)
     }
-  }, [loading, session, outcome?.kind, checkpoint.conflict, device.workspaceOwnerUserId, applySession])
+  }, [loading, session, checkpoint.conflict, device.workspaceOwnerUserId, applySession, publishOutcome])
 
   const value = useMemo<CloudContextValue>(() => ({
     configured,
