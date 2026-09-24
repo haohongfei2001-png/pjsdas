@@ -154,7 +154,7 @@ export function createPjsdasMcpServer(
 
   if (trustedDiscoveryEnabled || trustedGmailEnabled) {
     instructions.push(
-      'Trusted factual ingestion is autonomous and does not require a review click. It is deliberately narrower than generic mutation.',
+      'Trusted factual ingestion is autonomous and does not require a review click. It is deliberately narrower than generic mutation. Tool presence does not imply source authorization: calls still require the delegated principal to hold the exact source-scoped grant.',
       'Use ingest_discovery_run only for a bounded completed GPT/ChatGPT monitoring run with public source URLs. PJSDAS independently fetches and verifies submitted source URLs before any Discovery fact may create or refresh an Opportunity; unverified candidates remain explicit unresolved records.',
       'Use ingest_gmail_run only after Gmail messages have been classified and reduced to bounded structured facts. Never submit raw mailbox contents as notes. Low-confidence or ambiguous messages must be submitted with low/medium confidence so PJSDAS records them as unresolved instead of guessing.',
       'Every submitted source record must be accounted for as created, merged, updated, duplicate, filtered, ignored, or unresolved. Never silently omit an inconvenient result from the ingestion batch.',
