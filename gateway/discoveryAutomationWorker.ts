@@ -84,7 +84,16 @@ export interface DiscoveryAiOptions {
   generateTextImpl?: DiscoveryGenerateText
 }
 
+export type DiscoveryAutomationRunState =
+  | 'not_configured'
+  | 'checked_not_due'
+  | 'verified_not_committed'
+  | 'committed'
+  | 'committed_with_exceptions'
+
 export interface DiscoveryAutomationRunResult {
+  state: DiscoveryAutomationRunState
+  producer: 'server_scheduler'
   checkedAt: string
   configured: boolean
   dueSourceCount: number
@@ -406,6 +415,8 @@ export async function runDiscoveryAutomationForBinding(options: {
   const profile = discoveryProfileForSnapshot(initial.snapshot.data.discoveryProfile)
   if (!isDiscoveryProfileConfigured(profile)) {
     return {
+      state: 'not_configured',
+      producer: 'server_scheduler',
       checkedAt,
       configured: false,
       dueSourceCount: 0,
@@ -423,6 +434,8 @@ export async function runDiscoveryAutomationForBinding(options: {
   const dueSources = plan.sourceRuns.filter((item) => sourceIsDue(initial.snapshot, item, now, Boolean(options.force)))
   if (dueSources.length === 0) {
     return {
+      state: 'checked_not_due',
+      producer: 'server_scheduler',
       checkedAt,
       configured: true,
       dueSourceCount: 0,
@@ -472,7 +485,15 @@ export async function runDiscoveryAutomationForBinding(options: {
     unresolvedCount += applied.result.run.outcomes.unresolved ?? 0
   }
 
+  const state: DiscoveryAutomationRunState = completedSourceCount === 0
+    ? 'verified_not_committed'
+    : unresolvedCount > 0
+      ? 'committed_with_exceptions'
+      : 'committed'
+
   return {
+    state,
+    producer: 'server_scheduler',
     checkedAt,
     configured: true,
     dueSourceCount: dueSources.length,
