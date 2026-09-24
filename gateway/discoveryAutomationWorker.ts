@@ -361,6 +361,7 @@ async function applySourceRun(source: WorkspaceSource, sourceRun: DiscoveryAutom
     const result = applyMonitorIngestionHardened(workspace.snapshot, {
       runId,
       sourceId: currentSourceRun.sourceId,
+      producer: 'server_scheduler',
       startedAt: now.toISOString(),
       completedAt: now.toISOString(),
       sourcePolicy: sourcePolicy(currentSourceRun),
