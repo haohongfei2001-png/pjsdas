@@ -836,6 +836,7 @@ async function runLegacyGmailAutomationForBinding(options: {
   const result = applyGmailIngestionHardened(workspace.snapshot, {
     runId: `gmail:auto:${checkedAt}`,
     sourceId: GMAIL_SOURCE_ID,
+    producer: 'server_scheduler',
     startedAt: checkedAt,
     completedAt: checkedAt,
     cursor: batch.coverageComplete ? batch.nextHistoryId : undefined,
