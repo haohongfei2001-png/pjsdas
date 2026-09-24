@@ -91,6 +91,18 @@ export type DiscoveryAutomationRunState =
   | 'committed'
   | 'committed_with_exceptions'
 
+export function classifyDiscoveryAutomationRunState(input: {
+  configured: boolean
+  dueSourceCount: number
+  completedSourceCount: number
+  unresolvedCount: number
+}): DiscoveryAutomationRunState {
+  if (!input.configured) return 'not_configured'
+  if (input.dueSourceCount === 0) return 'checked_not_due'
+  if (input.completedSourceCount === 0) return 'verified_not_committed'
+  return input.unresolvedCount > 0 ? 'committed_with_exceptions' : 'committed'
+}
+
 export interface DiscoveryAutomationRunResult {
   state: DiscoveryAutomationRunState
   producer: 'server_scheduler'
@@ -415,7 +427,7 @@ export async function runDiscoveryAutomationForBinding(options: {
   const profile = discoveryProfileForSnapshot(initial.snapshot.data.discoveryProfile)
   if (!isDiscoveryProfileConfigured(profile)) {
     return {
-      state: 'not_configured',
+      state: classifyDiscoveryAutomationRunState({ configured: false, dueSourceCount: 0, completedSourceCount: 0, unresolvedCount: 0 }),
       producer: 'server_scheduler',
       checkedAt,
       configured: false,
@@ -434,7 +446,7 @@ export async function runDiscoveryAutomationForBinding(options: {
   const dueSources = plan.sourceRuns.filter((item) => sourceIsDue(initial.snapshot, item, now, Boolean(options.force)))
   if (dueSources.length === 0) {
     return {
-      state: 'checked_not_due',
+      state: classifyDiscoveryAutomationRunState({ configured: true, dueSourceCount: 0, completedSourceCount: 0, unresolvedCount: 0 }),
       producer: 'server_scheduler',
       checkedAt,
       configured: true,
@@ -485,11 +497,12 @@ export async function runDiscoveryAutomationForBinding(options: {
     unresolvedCount += applied.result.run.outcomes.unresolved ?? 0
   }
 
-  const state: DiscoveryAutomationRunState = completedSourceCount === 0
-    ? 'verified_not_committed'
-    : unresolvedCount > 0
-      ? 'committed_with_exceptions'
-      : 'committed'
+  const state = classifyDiscoveryAutomationRunState({
+    configured: true,
+    dueSourceCount: dueSources.length,
+    completedSourceCount,
+    unresolvedCount,
+  })
 
   return {
     state,
