@@ -225,6 +225,37 @@ describe('UU-02 source-neutral Semantic Intake', () => {
     },
   )
 
+  it('does not offer unrelated opportunities when an opportunity-required candidate has no identity', () => {
+    const opportunities = [
+      opportunity('opp-a', 'Product Manager', { company: 'Alpha' }),
+      opportunity('opp-b', 'Strategy', { company: 'Beta' }),
+      opportunity('opp-c', 'Research', { company: 'Gamma' }),
+      opportunity('opp-d', 'Operations', { company: 'Delta' }),
+    ]
+    const result = applySemanticIntake(
+      snapshot({ opportunities, processes: [], events: [], actions: [] }),
+      observation([candidate('process_event', {
+        target: {},
+        objectConfidence: 'low',
+        eventConfidence: 'high',
+        temporalConfidence: 'high',
+        eventType: 'written_test_invite',
+        occurredAt: '2026-09-20T10:00:00.000Z',
+        dueAt: '2026-09-24T11:00:00.000Z',
+        duePrecision: 'datetime',
+        timingMode: 'fixed',
+      })]),
+      { authorized: true, now: new Date('2026-09-20T10:00:00.000Z') },
+    )
+
+    expect(result.status).toBe('DECISION_REQUIRED')
+    expect(result.decisionRequests).toHaveLength(1)
+    expect(result.decisionRequests[0]).toMatchObject({ reason: 'missing_required_field' })
+    expect(result.decisionRequests[0]?.choices.map((choice) => choice.id)).toEqual(['ignore', 'clarify'])
+    expect(JSON.stringify(result.decisionRequests[0])).not.toContain('Alpha')
+    expect(JSON.stringify(result.decisionRequests[0])).not.toContain('Beta')
+  })
+
   it('auto-commits explicit unique internal abandonment when no shared governance exists', () => {
     const result = applySemanticIntake(
       snapshot(),
