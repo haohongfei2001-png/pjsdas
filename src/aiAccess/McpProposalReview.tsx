@@ -121,7 +121,11 @@ export default function McpProposalReview() {
               : `This proposal was based on ${verified.workspaceVersion}, while this device last synced ${checkpoint.lastSyncedVersion ? `drive:${checkpoint.lastSyncedVersion}` : 'an unknown version'}. Sync PJSDAS first, then ask ChatGPT for a fresh proposal.`)
           }
         }
-        await assertMcpChangeSetBaseline(verified.changeSet)
+        if (connectedWorkspaceAuthorityEnabled() && verified.workspaceOwnerUserId &&
+          cloud.session?.user.id !== verified.workspaceOwnerUserId) {
+          throw new Error(zh ? '这条提议属于另一个 PJSDAS 账号。' : 'This proposal belongs to another PJSDAS account.')
+        }
+        await assertMcpChangeSetBaseline(verified.changeSet, connectedWorkspaceAuthorityEnabled() ? cloud.session?.user.id : undefined)
         if (!active) return
         const discoveryIds = verified.changeSet.operations
           .filter((item) => item.kind === 'add_discovered_opportunity')
@@ -178,7 +182,7 @@ export default function McpProposalReview() {
       const reviewedChangeSet = discoveryOperations.length
         ? deriveDiscoveryReviewChangeSet(proposal.changeSet, selectedIds)
         : proposal.changeSet
-      await assertMcpChangeSetBaseline(reviewedChangeSet)
+      await assertMcpChangeSetBaseline(reviewedChangeSet, connectedWorkspaceAuthorityEnabled() ? cloud.session?.user.id : undefined)
       if (connectedWorkspaceAuthorityEnabled() && cloud.session && discoveryOperations.length === proposal.changeSet.operations.length && discoveryOperations.length) {
         if (cloud.checkpoint.conflict) throw new Error('账号工作区存在冲突；请先处理，再重新生成提议。')
         if (!signedToken) throw new Error('已验证的签名提议不可用；请重新打开提议。')
@@ -321,7 +325,7 @@ export default function McpProposalReview() {
           : `Saved ${saved} jobs to the account Discovery Inbox without adding Opportunities.`)
         return
       }
-      await assertMcpChangeSetBaseline(proposal.changeSet)
+      await assertMcpChangeSetBaseline(proposal.changeSet, connectedWorkspaceAuthorityEnabled() ? cloud.session?.user.id : undefined)
       const saved = await saveDiscoveryInboxFromChangeSet(proposal.changeSet)
       await savePendingChangeSet(proposal.changeSet)
       await discardChangeSet(proposal.changeSet.id)

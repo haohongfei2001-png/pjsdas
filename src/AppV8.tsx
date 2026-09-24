@@ -215,12 +215,16 @@ export default function AppV8() {
 
   useEffect(() => {
     const path = semanticPath()
+    // The signed MCP review lives in the URL fragment until the review
+    // component verifies it. Keep that fragment through the root redirect.
+    const proposalHash = new URLSearchParams(window.location.hash.replace(/^#/, '')).has('pjsdas-proposal')
+      ? window.location.hash : ''
     if (path === '/') {
-      window.history.replaceState(null, '', browserPath('/today'))
+      window.history.replaceState(null, '', `${browserPath('/today')}${proposalHash}`)
       setRoute(routeFromPath('/today'))
     } else if (path === '/capture' || (CGR02_TODAY_READ_ONLY && path === '/today/capture')) {
       const safePath = CGR02_TODAY_READ_ONLY ? '/today' : '/today/capture'
-      window.history.replaceState(null, '', browserPath(safePath))
+      window.history.replaceState(null, '', `${browserPath(safePath)}${proposalHash}`)
       setRoute(routeFromPath(safePath))
     }
     void reload().finally(() => setLoading(false))
