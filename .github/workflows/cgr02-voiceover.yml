@@ -2,7 +2,7 @@ name: CGR-02 VoiceOver
 
 on:
   push:
-    branches: [main, manager/cgr02-today-vertical-slice-20260923]
+    branches: [main, manager/cgr02-today-vertical-slice-20260923, manager/cgr05-primary-routes-voiceover-20260924]
     paths:
       - 'src/TellPjsdasCapture.tsx'
       - 'e2e/cgr02TodayVoiceOver.voiceover.ts'
