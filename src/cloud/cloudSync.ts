@@ -70,6 +70,7 @@ function markConflict(userId: string, row: RemoteWorkspaceRow) {
 }
 
 export async function runCloudSync(userId: string, options: { passive?: boolean } = {}): Promise<CloudSyncOutcome> {
+  void options
   const device = getCloudDeviceState()
   if (device.workspaceOwnerUserId && device.workspaceOwnerUserId !== userId) {
     return { kind: 'account_mismatch' }
@@ -112,9 +113,10 @@ export async function runCloudSync(userId: string, options: { passive?: boolean 
     if (!remote) throw new Error('同步状态异常：预期存在 Google Drive 工作区。')
 
     if (decision === 'push_local') {
-      // Background refresh may discover local legacy changes, but it must not
-      // silently submit an entire connected workspace as a business write.
-      if (options.passive && connectedWorkspaceAuthorityEnabled()) {
+      // Connected mode has one authoritative write path: scoped commands.
+      // A manual refresh is a read/reconciliation request, not permission to
+      // upload unrelated local changes as one workspace snapshot.
+      if (connectedWorkspaceAuthorityEnabled()) {
         return { kind: 'local_pending', version: remote.version, remoteUpdatedAt: remote.updatedAt }
       }
       const updated = await updateRemoteWorkspace({
@@ -179,6 +181,7 @@ export async function resolveConflictKeepLocal(userId: string): Promise<CloudSyn
     fingerprint,
     snapshot: local,
     deviceId: device.deviceId,
+    purpose: 'migration_recovery',
   })
   if (!updated) {
     const latest = await fetchRemoteWorkspace(userId)

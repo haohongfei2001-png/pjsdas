@@ -247,16 +247,29 @@ export function CloudProvider({ children }: { children: ReactNode }) {
       linking: linkingRef.current,
       loading,
     })
-    await signOutCloud()
-    if (connectedWorkspaceAuthorityEnabled()) {
-      await clearLocalWorkspaceCache()
-      clearLocalWorkspaceBinding()
+    busyRef.current = true
+    setSyncing(true)
+    try {
+      if (connectedWorkspaceAuthorityEnabled() && session) {
+        const result = await runCloudSync(session.user.id, { passive: true })
+        if (result.kind === 'local_pending' || result.kind === 'conflict' || result.kind === 'account_mismatch') {
+          throw new Error('本机仍有未进入账号工作区的修改；为避免退出时清除这些资料，请先处理同步或冲突。')
+        }
+      }
+      await signOutCloud()
+      if (connectedWorkspaceAuthorityEnabled()) {
+        await clearLocalWorkspaceCache()
+        clearLocalWorkspaceBinding()
+      }
+      applySession(null)
+      setOutcome(undefined)
+      setError(undefined)
+      setLoading(false)
+    } finally {
+      busyRef.current = false
+      setSyncing(false)
     }
-    applySession(null)
-    setOutcome(undefined)
-    setError(undefined)
-    setLoading(false)
-  }, [loading, applySession])
+  }, [loading, session, applySession])
 
   const value = useMemo<CloudContextValue>(() => ({
     configured,

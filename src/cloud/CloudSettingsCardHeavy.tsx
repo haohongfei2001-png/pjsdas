@@ -64,7 +64,7 @@ export default function CloudSettingsCard() {
     ? ''
     : cloud.outcome.kind === 'created' ? (zh ? `${remoteLabel}已准备好` : `${remoteLabel} is ready`)
       : cloud.outcome.kind === 'pushed' ? (zh ? `本地修改已同步到 ${remoteLabel}` : `Local changes synced to ${remoteLabel}`)
-        : cloud.outcome.kind === 'local_pending' ? (zh ? '本地还有待处理的修改；后台检查没有上传整份工作区' : 'Local changes are pending; background refresh did not upload the whole workspace')
+        : cloud.outcome.kind === 'local_pending' ? (zh ? '本机有未进入账号工作区的修改；同步检查已保留本机数据，未上传整份工作区' : 'Local changes have not reached the account workspace; sync preserved them without uploading the whole workspace')
         : cloud.outcome.kind === 'pulled' ? (zh ? `已从 ${remoteLabel} 拉取修改` : `Changes downloaded from ${remoteLabel}`)
           : cloud.outcome.kind === 'conflict' ? (zh ? '检测到同步冲突' : 'Sync conflict detected')
             : cloud.outcome.kind === 'account_mismatch' ? (zh ? 'PJSDAS 账号与本地工作区不匹配' : 'PJSDAS account does not match local workspace')

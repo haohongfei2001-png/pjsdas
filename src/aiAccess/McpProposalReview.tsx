@@ -183,6 +183,9 @@ export default function McpProposalReview() {
         ? deriveDiscoveryReviewChangeSet(proposal.changeSet, selectedIds)
         : proposal.changeSet
       await assertMcpChangeSetBaseline(reviewedChangeSet, connectedWorkspaceAuthorityEnabled() ? cloud.session?.user.id : undefined)
+      if (connectedWorkspaceAuthorityEnabled() && !cloud.session) {
+        throw new Error('账号会话不可用；提议未应用到本机或账号工作区。请重新登录后再试。')
+      }
       if (connectedWorkspaceAuthorityEnabled() && cloud.session && discoveryOperations.length === proposal.changeSet.operations.length && discoveryOperations.length) {
         if (cloud.checkpoint.conflict) throw new Error('账号工作区存在冲突；请先处理，再重新生成提议。')
         if (!signedToken) throw new Error('已验证的签名提议不可用；请重新打开提议。')
@@ -271,6 +274,9 @@ export default function McpProposalReview() {
         setResult(zh ? '已审阅的组合修改已保存到账号工作区。' : 'Reviewed combined changes were saved to the account workspace.')
         return
       }
+      if (connectedWorkspaceAuthorityEnabled()) {
+        throw new Error('这条提议包含尚未支持的组合，账号工作区未修改。请让 ChatGPT 分别生成受支持的提议。')
+      }
       await savePendingChangeSet(reviewedChangeSet)
       await applyMcpChangeSetWithBaseline(reviewedChangeSet)
 
@@ -324,6 +330,9 @@ export default function McpProposalReview() {
     setBusy(true)
     setError('')
     try {
+      if (connectedWorkspaceAuthorityEnabled() && !cloud.session) {
+        throw new Error('账号会话不可用；发现箱未修改。请重新登录后再试。')
+      }
       if (connectedWorkspaceAuthorityEnabled() && cloud.session) {
         if (cloud.checkpoint.conflict) throw new Error('账号工作区存在冲突；请先处理，再重新生成提议。')
         if (!signedToken) throw new Error('已验证的签名提议不可用；请重新打开提议。')
@@ -367,6 +376,9 @@ export default function McpProposalReview() {
     setBusy(true)
     setError('')
     try {
+      if (connectedWorkspaceAuthorityEnabled() && !cloud.session) {
+        throw new Error('账号会话不可用；提议未放弃。请重新登录后再试。')
+      }
       if (connectedWorkspaceAuthorityEnabled() && cloud.session) {
         if (cloud.checkpoint.conflict) throw new Error('账号工作区存在冲突；请先处理，再重新生成提议。')
         if (!signedToken) throw new Error('已验证的签名提议不可用；请重新打开提议。')

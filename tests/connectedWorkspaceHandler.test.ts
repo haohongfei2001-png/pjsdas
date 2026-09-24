@@ -299,7 +299,7 @@ describe('first-party connected workspace endpoint', () => {
       action: 'commit',
       commandId: 'legacy-snapshot-0001',
       expectedRevision: 8,
-      snapshotPurpose: 'compatibility',
+      snapshotPurpose: 'migration_recovery',
       snapshot: staleClient,
     }))
 
@@ -317,10 +317,31 @@ describe('first-party connected workspace endpoint', () => {
       target_receipt_context: {
         contractVersion: 2,
         commandType: 'snapshot_compatibility',
-        snapshotPurpose: 'compatibility',
+        snapshotPurpose: 'migration_recovery',
       },
     })
     expect(rpcBody.target_snapshot).not.toEqual(authoritative)
+  })
+
+  it.each(['legacy_uncovered_web', 'compatibility'])('rejects retired whole-snapshot purpose %s before loading workspace state', async (snapshotPurpose) => {
+    const fetchImpl = vi.fn(async (input: RequestInfo | URL) => {
+      if (String(input).endsWith('/auth/v1/user')) return json({ id: 'user-a' })
+      return json({ error: 'workspace must not be touched' }, 500)
+    }) as unknown as typeof fetch
+    const handler = createConnectedWorkspaceHandler({
+      supabaseUrl: 'https://example.supabase.co',
+      supabasePublishableKey: 'publishable',
+      serviceRoleKey: 'service-role',
+      allowedOrigins: [ORIGIN],
+      fetchImpl,
+    })
+    const response = await handler(request('POST', 'ordinary-token', {
+      action: 'commit', commandId: 'retired-snapshot', expectedRevision: 1,
+      snapshotPurpose, snapshot: snapshot(),
+    }))
+    expect(response.status).toBe(400)
+    await expect(response.json()).resolves.toMatchObject({ code: 'SNAPSHOT_COMPATIBILITY_REQUIRED' })
+    expect(fetchImpl).toHaveBeenCalledTimes(1)
   })
 
 })

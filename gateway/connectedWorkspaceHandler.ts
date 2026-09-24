@@ -128,7 +128,7 @@ export function createConnectedWorkspaceHandler(config: ConnectedWorkspaceHandle
         expectedRevision?: number
         baseRevision?: number
         command?: unknown
-        snapshotPurpose?: 'legacy_uncovered_web' | 'migration_recovery' | 'compatibility'
+        snapshotPurpose?: 'migration_recovery'
       }>(await request.json().catch(() => undefined))
 
       if (body.action === 'read') return readWorkspace()
@@ -207,10 +207,10 @@ export function createConnectedWorkspaceHandler(config: ConnectedWorkspaceHandle
       }
 
       if (body.action === 'commit') {
-        if (!['legacy_uncovered_web', 'migration_recovery', 'compatibility'].includes(body.snapshotPurpose ?? '')) {
+        if (body.snapshotPurpose !== 'migration_recovery') {
           throw new WorkspaceSourceError(
             'SNAPSHOT_COMPATIBILITY_REQUIRED',
-            'Whole-snapshot connected writes are restricted to explicitly declared legacy, migration/recovery, or compatibility flows.',
+            'Whole-snapshot connected writes require an explicit migration or recovery flow.',
             false,
           )
         }

@@ -46,15 +46,9 @@ describe('connected passive sync authority', () => {
     fixture.checkpoint.mockReset()
   })
 
-  it('keeps a local change pending instead of uploading a whole snapshot on a background refresh', async () => {
-    expect(await runCloudSync('qa-account', { passive: true })).toMatchObject({ kind: 'local_pending', version: 'txn:7' })
+  it.each([true, false])('keeps a local change pending without whole-snapshot upload (passive=%s)', async (passive) => {
+    expect(await runCloudSync('qa-account', { passive })).toMatchObject({ kind: 'local_pending', version: 'txn:7' })
     expect(fixture.update).not.toHaveBeenCalled()
     expect(fixture.checkpoint).not.toHaveBeenCalledWith('qa-account', expect.objectContaining({ lastSyncedAt: expect.any(String) }))
-  })
-
-  it('preserves the explicit legacy sync path until its supported consumers are migrated', async () => {
-    expect(await runCloudSync('qa-account')).toMatchObject({ kind: 'pushed', version: 'txn:7' })
-    expect(fixture.update).toHaveBeenCalledOnce()
-    expect(fixture.update.mock.calls[0]?.[0]).toMatchObject({ userId: 'qa-account', expectedVersion: 'txn:7' })
   })
 })
