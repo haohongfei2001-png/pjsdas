@@ -1,8 +1,7 @@
 import type { CallToolResult } from '@modelcontextprotocol/server'
 import { z } from 'zod'
-import { findSimilarOpportunity } from '../src/discoveryQuality.js'
 import { stableIngestionHash } from '../src/ingestion.js'
-import { createJobPostingEvidence, jobIdentityKey } from '../src/jobPosting.js'
+import { createJobPostingEvidence, jobIdentityKey, resolveOpportunityPostingIdentity } from '../src/jobPosting.js'
 import type { Action, DiscoveryConfidence, Opportunity, TimelineRecord } from '../src/model.js'
 import { validateSnapshot, type PJSDASSnapshot } from '../src/snapshot.js'
 import {
@@ -173,16 +172,28 @@ export async function invokeAddOpportunities(source: WorkspaceSource, rawArgs: u
     const next = cloneSnapshot(workspace.snapshot)
     const created: Array<{ opportunityId: string; company: string; role: string }> = []
     const duplicates: Array<{ opportunityId: string; company: string; role: string; existingCompany: string; existingRole: string }> = []
+    const ambiguities: Array<{ company: string; role: string; canonicalSourceUrl: string; candidateOpportunityIds: string[]; reason: string }> = []
 
     for (const candidate of args.opportunities) {
-      const existing = findSimilarOpportunity(candidate, next.data.opportunities)
-      if (existing) {
+      const identity = resolveOpportunityPostingIdentity(candidate, next.data.opportunities)
+      if (identity.kind === 'same_posting') {
+        const existing = identity.opportunity
         duplicates.push({
           opportunityId: existing.id,
           company: candidate.company,
           role: candidate.role,
           existingCompany: existing.company,
           existingRole: existing.role,
+        })
+        continue
+      }
+      if (identity.kind === 'ambiguous') {
+        ambiguities.push({
+          company: candidate.company,
+          role: candidate.role,
+          canonicalSourceUrl: identity.canonicalSourceUrl,
+          candidateOpportunityIds: identity.opportunities.map((item) => item.id),
+          reason: identity.reason,
         })
         continue
       }
@@ -196,13 +207,15 @@ export async function invokeAddOpportunities(source: WorkspaceSource, rawArgs: u
 
     if (created.length === 0) {
       return jsonResult({
-        applied: true,
-        reviewRequired: false,
+        applied: duplicates.length > 0 && ambiguities.length === 0,
+        reviewRequired: ambiguities.length > 0,
         workspaceVersion: workspace.context.workspaceVersion,
         createdCount: 0,
         duplicateCount: duplicates.length,
+        ambiguityCount: ambiguities.length,
         created,
         duplicates,
+        ambiguities,
       })
     }
 
@@ -217,12 +230,14 @@ export async function invokeAddOpportunities(source: WorkspaceSource, rawArgs: u
 
     return jsonResult({
       applied: true,
-      reviewRequired: false,
+      reviewRequired: ambiguities.length > 0,
       workspaceVersion: written.context.workspaceVersion,
       createdCount: created.length,
       duplicateCount: duplicates.length,
+      ambiguityCount: ambiguities.length,
       created,
       duplicates,
+      ambiguities,
     })
   } catch (caught) {
     return toolError(caught)
