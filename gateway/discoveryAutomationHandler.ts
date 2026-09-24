@@ -107,13 +107,16 @@ export function createDiscoveryAutomationHandler(config: DiscoveryAutomationHand
           now: config.now,
           force,
         })
+        const durableCommit = run.completedSourceCount > 0
         await store.updateDiscoveryRunState(binding.userId, {
           checkedAt: run.checkedAt,
-          successAt: run.checkedAt,
+          ...(durableCommit ? { successAt: run.checkedAt } : {}),
           lastError: null,
         })
         results.push({
-          status: 'success',
+          status: run.state,
+          producer: run.producer,
+          durableCommit,
           configured: run.configured,
           dueSourceCount: run.dueSourceCount,
           completedSourceCount: run.completedSourceCount,
@@ -134,14 +137,16 @@ export function createDiscoveryAutomationHandler(config: DiscoveryAutomationHand
         } catch {
           // Primary automation failure remains authoritative; telemetry is best-effort.
         }
-        results.push({ status: 'error', ...errorBody(caught) })
+        results.push({ status: 'failed', producer: 'server_scheduler', durableCommit: false, ...errorBody(caught) })
       }
     }
 
-    const failures = results.filter((item) => item.status === 'error').length
+    const failures = results.filter((item) => item.status === 'failed').length
+    const durableCompletedUsers = results.filter((item) => item.durableCommit === true).length
     return json(failures > 0 ? 207 : 200, {
       processedUsers: results.length,
-      successfulUsers: results.length - failures,
+      checkedUsers: results.length - failures,
+      durableCompletedUsers,
       failedUsers: failures,
       results,
     })
