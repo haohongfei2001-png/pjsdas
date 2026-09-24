@@ -526,11 +526,14 @@ export interface IngestionLedgerEntry {
   actionId?: string
 }
 
+export type IngestionProducer = 'server_scheduler' | 'mcp_trusted_ingestion'
+
 export interface IngestionRunSummary {
   version: 1
   runId: string
   sourceKind: IngestionSourceKind
   sourceId: string
+  producer?: IngestionProducer
   startedAt: string
   completedAt: string
   receivedCount: number
