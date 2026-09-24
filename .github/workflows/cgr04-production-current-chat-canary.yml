@@ -7,11 +7,6 @@ on:
         description: Exact integrated main SHA deployed to production frontend and API
         required: true
         type: string
-  push:
-    branches: [manager/cgr04-batched-final-canaries-20260924]
-    paths:
-      - '.github/workflows/cgr04-production-current-chat-canary.yml'
-      - 'scripts/cgr04-production-current-chat-canary.ts'
 
 permissions:
   contents: read
