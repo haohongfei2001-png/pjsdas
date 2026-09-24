@@ -33,7 +33,9 @@ describe('cloud sign-out guard', () => {
     expect(contextSource).toContain('linking: linkingRef.current')
     expect(contextSource).toContain('loading,')
     expect(contextSource).toContain('assertConnectedSignOutDataSafe({')
-    expect(contextSource).toContain('outcomeKind: outcome?.kind')
+    expect(contextSource).toContain('const outcomeRef = useRef<CloudSyncOutcome>()')
+    expect(contextSource).toContain('outcomeRef.current = next')
+    expect(contextSource).toContain('outcomeKind: outcomeRef.current?.kind')
   })
 
   it('disables the visible sign-out action while sync or startup restoration is active', () => {
