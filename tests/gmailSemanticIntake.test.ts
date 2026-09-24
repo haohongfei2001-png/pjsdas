@@ -156,6 +156,9 @@ describe('UU06 shared Gmail intake', () => {
       dueAt: '2026-09-24T19:00:00+08:00',
     })
     expect(record.observation.candidates.some((candidate) => candidate.kind === 'occurrence_completed')).toBe(false)
+    expect(record.observation.candidates.some((candidate) =>
+      candidate.kind === 'process_event' && candidate.eventType === 'interview_invite',
+    )).toBe(false)
 
     const result = applyGmailSemanticBatch(base, {
       runId: 'unknown-company-test',
