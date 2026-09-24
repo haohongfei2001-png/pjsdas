@@ -28,6 +28,7 @@ import {
   rebindCurrentLocalWorkspace,
   resolveConflictKeepLocal,
   resolveConflictUseCloud,
+  hasUnsyncedLocalWorkspace,
   runCloudSync,
   type CloudSyncOutcome,
 } from './cloudSync.js'
@@ -253,6 +254,20 @@ export function CloudProvider({ children }: { children: ReactNode }) {
         outcomeKind: outcome?.kind,
         hasConflict: Boolean(checkpoint.conflict),
         accountMismatch: Boolean(device.workspaceOwnerUserId && device.workspaceOwnerUserId !== session.user.id),
+      })
+      if (await hasUnsyncedLocalWorkspace(session.user.id)) {
+        assertConnectedSignOutDataSafe({
+          outcomeKind: 'local_pending',
+          hasConflict: false,
+          accountMismatch: false,
+        })
+      }
+      // A background sync may have started while the local fingerprint was being read.
+      // Recheck the operation gate before owning the sign-out critical section.
+      assertCloudSignOutAllowed({
+        busy: busyRef.current,
+        linking: linkingRef.current,
+        loading,
       })
     }
     busyRef.current = true
