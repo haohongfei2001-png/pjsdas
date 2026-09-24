@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
-import { assertCloudSignOutAllowed } from '../src/cloud/cloudOperationGuard.js'
+import { assertCloudSignOutAllowed, assertConnectedSignOutDataSafe } from '../src/cloud/cloudOperationGuard.js'
 
 const contextSource = readFileSync(new URL('../src/cloud/CloudContext.tsx', import.meta.url), 'utf8')
 const settingsSource = readFileSync(new URL('../src/cloud/CloudSettingsCardHeavy.tsx', import.meta.url), 'utf8')
@@ -13,11 +13,27 @@ describe('cloud sign-out guard', () => {
     expect(() => assertCloudSignOutAllowed({ busy: false, linking: false, loading: true })).toThrow(/cloud operation is still in progress/i)
   })
 
+  it('blocks sign-out immediately when the latest connected state already proves local data is unsafe to clear', () => {
+    expect(() => assertConnectedSignOutDataSafe({ outcomeKind: 'local_pending', hasConflict: false, accountMismatch: false }))
+      .toThrow(/为避免退出时清除这些资料/)
+    expect(() => assertConnectedSignOutDataSafe({ outcomeKind: 'conflict', hasConflict: false, accountMismatch: false }))
+      .toThrow(/为避免退出时清除这些资料/)
+    expect(() => assertConnectedSignOutDataSafe({ outcomeKind: 'account_mismatch', hasConflict: false, accountMismatch: false }))
+      .toThrow(/为避免退出时清除这些资料/)
+    expect(() => assertConnectedSignOutDataSafe({ outcomeKind: 'synced', hasConflict: true, accountMismatch: false }))
+      .toThrow(/为避免退出时清除这些资料/)
+    expect(() => assertConnectedSignOutDataSafe({ outcomeKind: 'synced', hasConflict: false, accountMismatch: true }))
+      .toThrow(/为避免退出时清除这些资料/)
+    expect(() => assertConnectedSignOutDataSafe({ outcomeKind: 'synced', hasConflict: false, accountMismatch: false })).not.toThrow()
+  })
+
   it('enforces the guard in CloudContext instead of relying only on a disabled button', () => {
     expect(contextSource).toContain('assertCloudSignOutAllowed({')
     expect(contextSource).toContain('busy: busyRef.current')
     expect(contextSource).toContain('linking: linkingRef.current')
     expect(contextSource).toContain('loading,')
+    expect(contextSource).toContain('assertConnectedSignOutDataSafe({')
+    expect(contextSource).toContain('outcomeKind: outcome?.kind')
   })
 
   it('disables the visible sign-out action while sync or startup restoration is active', () => {
