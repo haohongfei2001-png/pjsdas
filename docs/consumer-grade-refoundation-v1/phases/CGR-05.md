@@ -1,6 +1,6 @@
 # CGR-05 — Consumer-Grade Certification
 
-State: READY_AFTER_CGR04_ENGINEERING — AUTOMATABLE WORK MAY RUN WITH EARLIER PRODUCTION GATES DEFERRED
+State: COMPLETE — STABLE CONSUMER-GRADE BASELINE
 
 ## User-visible outcome
 
@@ -109,6 +109,12 @@ Certification rollback means the package remains IN_PROGRESS/BLOCKED until the d
 CGR-05 may begin after CGR-04 reaches engineering closure even if CGR-03/CGR-04 are still `PRODUCTION_PENDING_EXTERNAL`. In that state, run every deterministic, browser, security, accessibility, performance, migration-retirement, long-session, account-isolation and other non-production gate that is logically valid. Record production-dependent journeys as deferred rather than faking or skipping them.
 
 CGR-05 is the final convergence phase: once all automatable work is exhausted, it waits on the remaining entries in `../DEFERRED_FINAL_GATES.md`. It cannot certify a stable consumer-grade baseline until those applicable production gates pass.
+
+## Owner amendment — final convergence
+
+Owner Amendment `../OWNER_AMENDMENT_2026-09-25.md` removes the unavailable fresh natural recruiting-Gmail event from the blocking exit set and preserves it as `OBS-CGR-001`.
+
+All remaining CGR-05 exit criteria are supported by exact-production, deterministic, browser, accessibility, long-session, cross-browser, isolation, recovery and legacy-retirement evidence. The amendment does not certify inactive/unavailable host capabilities and does not authorize release publication or subsequent feature work.
 
 ## Exact exit criteria
 
