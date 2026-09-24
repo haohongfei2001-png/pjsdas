@@ -11,7 +11,7 @@ Product origin: https://todayaction.com
 Status: ACTIVE — CGR-03/CGR-04 ENGINEERING_COMPLETE / PRODUCTION_PENDING_EXTERNAL
 Current production-pending phases: CGR-03, CGR-04
 Last completed phase: CGR-02
-Current engineering phase: CGR-05 IN_PROGRESS on sole branch `manager/cgr05-consumer-cert-20260924`
+Current engineering phase: CGR-05 ENGINEERING_INTEGRATED — final certification in progress
 Automatic continuation: ENABLED through dependency-safe CGR-05 engineering under EXECUTION_PROTOCOL.md; deferred production gates remain mandatory for final closure
 
 ## Phase state
@@ -23,7 +23,7 @@ Automatic continuation: ENABLED through dependency-safe CGR-05 engineering under
 | CGR-02 | COMPLETE / PASS | Today Vertical Slice production command canary, exact-main engineering and cleanup passed at runtime `408faba1b34f31614dba8c5ec84b656c8dca9866`; see `receipts/CGR-02.md` |
 | CGR-03 | ENGINEERING_COMPLETE / PRODUCTION_PENDING_EXTERNAL | PRs #127/#131 integrated; exact-main engineering checks passed; production browser canary awaits an exact deployed runtime |
 | CGR-04 | ENGINEERING_COMPLETE / PRODUCTION_PENDING_EXTERNAL | PR #133 integrated at runtime main `0acf71aca95708cd46cc9f50011e62a3a6ca23cf`; exact-main CI, Browser E2E and VoiceOver passed; current-live source canaries remain pending; see `receipts/CGR-04-ENGINEERING.md` |
-| CGR-05 | IN_PROGRESS — CONTINUOUS ENGINEERING | Sole writer `manager/cgr05-consumer-cert-20260924`, started from main `66fa75d0755fbaad5da6a6e0ee94900305262f08`; cannot close until all applicable deferred production evidence passes |
+| CGR-05 | ENGINEERING_INTEGRATED / FINAL_CERTIFICATION_IN_PROGRESS | PR #137 integrated at main `8d4da747305f97b1d86709bc9d9d138082ccfd4c`; exact-main CI/Browser passed. Two-hour session, broad final convergence and production evidence remain open; integration writer released |
 
 ## Ultimate Usability handoff
 
@@ -59,6 +59,12 @@ Closure evidence: `docs/consumer-grade-refoundation-v1/receipts/CGR-01.md`.
 CGR-02 engineering was integrated at `cb98205edaaf5c71b99a33cb751310b3226657f2` and recorded while external certification was pending in `receipts/CGR-02-ENGINEERING.md`. The owner-authorized dedicated synthetic account canary later passed against exact production runtime `408faba1b34f31614dba8c5ec84b656c8dca9866` with verified two-session command/receipt/Undo and cleanup; final evidence is `receipts/CGR-02.md`. The first failed canary's revoked account had zero commands and unchanged workspace and was removed by guarded recovery before the successful run. CGR-03 engineering integrated through PR #127 and the real VoiceOver repair PR #131 at runtime main `2ebd8358dae4999eb16dbd66393ae2029062385d`. Exact-main CI `35895579807`, Browser E2E `35895579623`, and real VoiceOver/visual run `35895579943` succeeded. The Vercel production deployment status for that SHA is `Deployment rate limited — retry in 24 hours`; `https://todayaction.com` still serves `408faba1b34f31614dba8c5ec84b656c8dca9866`. The frozen CGR-03 production browser canary has not run. See `receipts/CGR-03-ENGINEERING.md`. CGR-03 is not COMPLETE and its production obligation is tracked in `DEFERRED_FINAL_GATES.md`.
 
 The owner has superseded the former one-phase-ahead throughput cap with dependency-safe continuous engineering for the frozen CGR-00..CGR-05 package. CGR-04 engineering merged through PR #133 at `0acf71aca95708cd46cc9f50011e62a3a6ca23cf`; exact-main CI `35909962934`, Browser E2E `35909962931`, and real VoiceOver/visual run `35909963042` succeeded. Its sole writer is released. CGR-04 remains PRODUCTION_PENDING_EXTERNAL, not COMPLETE; its current-live source canaries are tracked in `DEFERRED_FINAL_GATES.md` alongside CGR-03. CGR-05 automatable certification/simplification work is READY and starts without waiting for Vercel. Final CGR-04/CGR-05/package COMPLETE remains impossible until every applicable deferred production canary/evidence item actually passes. UU-08/UU-09 remain on hold and release publication remains a separate owner decision.
+
+## CGR-05 integrated engineering candidate
+
+PR #137 integrated at runtime main `8d4da747305f97b1d86709bc9d9d138082ccfd4c`. Exact-main CI `35942856418` and Browser E2E `35942856408` passed; candidate full CI `35942483468` and Browser E2E `35942511137` passed at `e78b24d523425791e8503eb21aa9d42c1dafe4a8`. The last runtime change before test/docs/policy integration was `119afe53cdaebf3a7abf1bb37f41d62bb85cad8a`; macOS visual and real VoiceOver run `35940801520` passed against that same runtime. A separate two-hour headless connected-session run `35942876277` is in progress on exact main. See `receipts/CGR-05-ENGINEERING-CANDIDATE.md` and `CGR05_LEGACY_AUDIT.md`.
+
+This is an integrated engineering candidate, not CGR-05 COMPLETE. Broad final visual/accessibility, long-session, account-isolation, degraded/reliability and legacy-retirement convergence still requires final evidence. Production API and frontend both served exact runtime `8d4da747305f97b1d86709bc9d9d138082ccfd4c` on 2026-09-24. CGR-03 canary run `35943406168` failed before test identity creation because its workflow lacked `@playwright/test`; no production journey passed. CGR-04/CGR-05 canaries remain pending. No release publication is claimed.
 
 ## Registration result
 
