@@ -132,6 +132,46 @@ describe('UU06 shared Gmail intake', () => {
     expect(result.snapshot.data.scheduleNodes?.[0]?.temporal).toMatchObject({ shape: 'date_only', date: '2026-09-25' })
     expect(JSON.stringify(result.snapshot)).not.toContain('23:59')
   })
+  it('turns an unknown-company test reminder into one source clarification without unrelated choices', () => {
+    const base = snapshot()
+    base.data.opportunities.push(
+      { ...base.data.opportunities[0]!, id: 'alpha', company: 'Alpha', role: 'Strategy' },
+      { ...base.data.opportunities[0]!, id: 'beta', company: 'Beta', role: 'Research' },
+      { ...base.data.opportunities[0]!, id: 'gamma', company: 'Gamma', role: 'Operations' },
+    )
+    const mail = message(
+      '系统显示您尚未参加本次校园招聘的在线笔试。该环节为校招流程的必要步骤，如未按时完成，您将无法进入后续面试。目前笔试仅剩 9月24日（今天）19:00 最后一场，请提前安排时间、准时登录系统作答。如您已完成笔试，请忽略。',
+      'unknown-company-test',
+      '2026-09-24T04:34:30Z',
+    )
+    mail.payload.headers[0]!.value = '南方基金笔试作答提醒'
+    const record = gmailSemanticRecordFromMessage(mail, base.data.opportunities, new Date('2026-09-24T05:00:00Z'))!
+
+    expect(record.observation.candidates).toHaveLength(1)
+    expect(record.observation.candidates[0]).toMatchObject({
+      kind: 'process_event',
+      eventType: 'written_test_invite',
+      objectConfidence: 'low',
+      temporalConfidence: 'high',
+      dueAt: '2026-09-24T19:00:00+08:00',
+    })
+    expect(record.observation.candidates.some((candidate) => candidate.kind === 'occurrence_completed')).toBe(false)
+
+    const result = applyGmailSemanticBatch(base, {
+      runId: 'unknown-company-test',
+      sourceId: 'gmail:primary',
+      checkedAt: '2026-09-24T05:00:00Z',
+      authorized: true,
+      records: [record],
+    })
+    expect(result.snapshot.data.processEvents).toHaveLength(0)
+    expect(result.snapshot.data.decisionRequests).toHaveLength(1)
+    expect(result.snapshot.data.decisionRequests?.[0]).toMatchObject({ reason: 'missing_required_field' })
+    expect(result.snapshot.data.decisionRequests?.[0]?.choices.map((choice) => choice.id)).toEqual(['ignore', 'clarify'])
+    expect(JSON.stringify(result.snapshot.data.decisionRequests?.[0])).not.toContain('京东')
+    expect(JSON.stringify(result.snapshot.data.decisionRequests?.[0])).not.toContain('Alpha')
+  })
+
   it('ambiguous same-company roles produce a decision rather than a guessed write', () => {
     const base = snapshot()
     base.data.opportunities.push({ ...base.data.opportunities[0]!, id: 'jd-2', role: 'AI产品经理' })
