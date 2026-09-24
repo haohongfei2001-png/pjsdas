@@ -7,6 +7,11 @@ on:
         description: Exact integrated main SHA deployed to production frontend and API
         required: true
         type: string
+  push:
+    branches: [manager/cgr04-batched-final-canaries-20260924]
+    paths:
+      - '.github/workflows/cgr04-production-current-chat-canary.yml'
+      - 'scripts/cgr04-production-current-chat-canary.ts'
 
 permissions:
   contents: read
@@ -21,17 +26,6 @@ jobs:
       PJSDAS_EXPECTED_COMMIT_SHA: ${{ inputs.expected_sha }}
       PJSDAS_SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.PJSDAS_SUPABASE_SERVICE_ROLE_KEY }}
     steps:
-      - name: Require exact checked-out main and synthetic identity credential
-        shell: bash
-        run: |
-          if [[ ! "$PJSDAS_EXPECTED_COMMIT_SHA" =~ ^[0-9a-f]{40}$ ]] || [[ "$PJSDAS_EXPECTED_COMMIT_SHA" != "$GITHUB_SHA" ]]; then
-            echo 'Expected SHA must equal this main workflow commit.' >&2
-            exit 1
-          fi
-          if [[ -z "$PJSDAS_SUPABASE_SERVICE_ROLE_KEY" ]]; then
-            echo 'Synthetic identity server credential is unavailable.' >&2
-            exit 1
-          fi
       - uses: actions/checkout@v7
         with:
           ref: ${{ github.sha }}
@@ -42,5 +36,18 @@ jobs:
       - run: npm ci
       - name: Validate bounded synthetic plan without network
         run: ./node_modules/.bin/tsx scripts/cgr04-production-current-chat-canary.ts --plan
+      - name: Require exact checked-out main and synthetic identity credential
+        if: ${{ github.event_name == 'workflow_dispatch' }}
+        shell: bash
+        run: |
+          if [[ ! "$PJSDAS_EXPECTED_COMMIT_SHA" =~ ^[0-9a-f]{40}$ ]] || [[ "$PJSDAS_EXPECTED_COMMIT_SHA" != "$GITHUB_SHA" ]]; then
+            echo 'Expected SHA must equal this main workflow commit.' >&2
+            exit 1
+          fi
+          if [[ -z "$PJSDAS_SUPABASE_SERVICE_ROLE_KEY" ]]; then
+            echo 'Synthetic identity server credential is unavailable.' >&2
+            exit 1
+          fi
       - name: Verify production MCP/current-chat contract and PAIA fail-closed boundary
+        if: ${{ github.event_name == 'workflow_dispatch' }}
         run: ./node_modules/.bin/tsx scripts/cgr04-production-current-chat-canary.ts --execute
