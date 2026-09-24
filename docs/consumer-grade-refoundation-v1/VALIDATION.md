@@ -129,11 +129,25 @@ Use four levels for unfinished work:
 
 If the only missing level-3 evidence is unavailable because of an external deployment quota, provider rate limit, or equivalent environment capacity, record `PRODUCTION_PENDING_EXTERNAL`. Do not call it PASS and do not delete the pending evidence.
 
-Under the continuous-engineering rule in EXECUTION_PROTOCOL.md, external-only production evidence does not impose an arbitrary phase lead limit. Dependency-safe CGR-05 engineering continues while deferred production gates remain explicitly pending. CGR-05 and the package remain uncertified until every applicable deferred production gate passes.
+Under the continuous-engineering rule in EXECUTION_PROTOCOL.md, external-only production evidence does not impose an arbitrary phase lead limit. Dependency-safe CGR-05 engineering continues while deferred production gates remain explicitly pending. Ordinarily CGR-05 and the package remain uncertified until every applicable blocking deferred production gate is resolved; the only exception used in this package is the explicit 2026-09-25 Owner Amendment above, which removed one unavailable natural-event observation from the blocking set without calling it PASS.
 
 When deployment capacity returns, prefer the newest stable integrated exact SHA that contains the pending phases. One deployment may certify multiple pending phases, but each phase's own previously frozen production journey must actually run and be recorded separately against that SHA.
 
 Publication is not part of routine certification. A certification deployment does not imply a public release, and package publication remains separately authorized.
+
+### Narrow owner-amended natural-event rule
+
+Owner Amendment `OWNER_AMENDMENT_2026-09-25.md` applies narrowly to the final unavailable fresh natural recruiting-Gmail event.
+
+A production observation whose validity depends on a naturally occurring external event may be moved to post-closure observation only by explicit owner amendment when:
+
+- all automatable and safely inducible evidence is exhausted;
+- manufacturing the event would weaken validity or cross privacy/permission/external-action boundaries;
+- the material risk already has complementary real-world defect evidence plus targeted regression and final production transport/fail-safe evidence;
+- the missing event is explicitly recorded as **not observed**, not relabeled as PASS;
+- any later material defect is treated as a baseline defect and repaired.
+
+This is not a general waiver for failed, flaky, safety-critical, security, privacy, data-integrity, destructive-action or otherwise reproducible production gates.
 
 Security, privacy, data-integrity, destructive-action, rollback and real production failures are not deferrable for throughput. If a delayed canary exposes a real product defect, it supersedes forward scheduling and must be repaired before further phase expansion.
 

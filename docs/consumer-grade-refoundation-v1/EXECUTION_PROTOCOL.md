@@ -40,7 +40,7 @@ For the fixed CGR-00 through CGR-05 sequence, the owner authorizes continuous un
 - after releasing that phase writer, automatically begin the next phase already present in the frozen CGR-00..CGR-05 plan when its engineering work does not logically depend on the missing production result and it introduces no owner gate;
 - there is **no arbitrary one-phase lead limit**. Continue through CGR-05's automatable engineering/certification work as dependencies permit;
 - if only part of a later phase requires production evidence, defer that evidence/action and complete the independent engineering, reliability, accessibility, migration-retirement, test, and documentation work;
-- CGR-05 and the package cannot close until all applicable earlier deferred production gates plus CGR-05's own production gates actually pass;
+- CGR-05 and the package cannot close until all applicable blocking deferred production gates plus CGR-05's own production gates are resolved. Owner Amendment `OWNER_AMENDMENT_2026-09-25.md` is the sole exception used in this package: it removes one unavailable natural-event observation from the blocking set without relabeling that event PASS;
 - if delayed production evidence reveals an implementation/product defect, reopen and repair the earliest affected behavior and revalidate downstream evidence that depended on it. Unrelated independent work need not be discarded or globally stopped.
 
 The unattended package-level wait point is reached only after all automatable CGR-00..CGR-05 work is exhausted and remaining items are exclusively true owner gates, external-only evidence gates, or safety/integrity dependencies.
@@ -49,7 +49,7 @@ If STATUS.md still contains the superseded one-phase-ahead wording while an acti
 
 This standing authorization does not permit publication, new permissions, new costs, consequential external actions, or a seventh CGR phase.
 
-## Current deployment-batching amendment
+## Historical deployment-batching amendment
 
 For the final CGR-04/CGR-05 convergence, the owner explicitly authorizes deployment batching while provider capacity is constrained:
 
@@ -60,7 +60,15 @@ For the final CGR-04/CGR-05 convergence, the owner explicitly authorizes deploym
 - deploy that candidate once capacity is available, then run all still-applicable frozen source/core canaries against that same exact SHA;
 - a provider quota remains `PRODUCTION_PENDING_EXTERNAL`; it is not a reason to start UU-08/UU-09 or unrelated features.
 
-This batching amendment changes deployment cadence only. It does not weaken exact-SHA, security, privacy, authorization, source-truth or final production requirements.
+This batching amendment changed deployment cadence only. It did not weaken exact-SHA, security, privacy, authorization, source-truth or production requirements.
+
+## Final owner-amended closure
+
+On 2026-09-25 the owner explicitly authorized `OWNER_AMENDMENT_2026-09-25.md`.
+
+That amendment reclassifies the unavailable fresh natural recruiting-Gmail event as post-closure observation `OBS-CGR-001`. It does not call the missing event PASS and does not waive any security/privacy/integrity or reproducible product failure.
+
+All remaining blocking CGR gates passed on certified production runtime `58e9f7f4bd584139ffeb8c17a3ee6c8c15d94c3a`. The package is therefore closed and this protocol's terminal stop rule is now active.
 
 ## CGR-00 restriction
 
