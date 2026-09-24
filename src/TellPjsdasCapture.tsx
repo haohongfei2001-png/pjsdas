@@ -19,6 +19,7 @@ import {
   saveAccountDraft,
 } from './cloud/authoritativeCommandClient.js'
 import type { SemanticCandidate } from './model.js'
+import { shouldInitializeCaptureForSession } from './captureSession.js'
 import './capture/capture.css'
 
 interface TellPjsdasCaptureProps {
@@ -31,15 +32,6 @@ interface TellPjsdasCaptureProps {
 }
 
 type CaptureSaveState = 'idle' | 'saving' | 'saved' | 'offline' | 'unknown' | 'reauth' | 'conflict' | 'error'
-
-export function shouldInitializeCaptureForSession(
-  initializedUserId: string | null | undefined,
-  nextUserId: string | undefined,
-) {
-  if (initializedUserId === undefined) return true
-  if (!nextUserId) return false
-  return nextUserId !== initializedUserId
-}
 
 function targetLabel(candidate: SemanticCandidate) {
   const target = candidate.target
