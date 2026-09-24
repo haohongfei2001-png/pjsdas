@@ -115,8 +115,6 @@ export async function authenticatedRemoteMcpFetch(request: Request) {
       })
       grants = await grantStore.listActiveForClient(identity.userId, identity.oauthClientId, accessToken)
     }
-    const discoveryIngestionEnabled = grants.some((grant) => grant.capability === 'ingest_discovery_run')
-    const gmailIngestionEnabled = grants.some((grant) => grant.capability === 'ingest_gmail_run')
     const authorizeTrustedIngestion = async (name: 'ingest_discovery_run' | 'ingest_gmail_run', sourceId: string) => {
       if (!identity.oauthClientId || !grantAllows(grants, name, sourceId)) {
         throw new WorkspaceSourceError(
