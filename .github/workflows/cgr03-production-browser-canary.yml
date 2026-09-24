@@ -40,6 +40,8 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      - name: Install browser canary test runner
+        run: npm install --no-save --package-lock=false @playwright/test@1.63.0
       - run: npx playwright install --with-deps chromium
       - name: Check synthetic fixture without network
         run: ./node_modules/.bin/tsx scripts/cgr03-production-browser-canary.ts --plan
