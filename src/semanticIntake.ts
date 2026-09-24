@@ -229,6 +229,9 @@ function normalCompany(value: string) {
 function opportunityResolution(snapshot: PJSDASSnapshot, candidate: SemanticCandidate): OpportunityResolution {
   const target = candidate.target
   if (!target) return { status: 'missing', opportunities: [] }
+  if (!target.opportunityId && !target.company?.trim() && !target.role?.trim()) {
+    return { status: 'missing', opportunities: [] }
+  }
   if (target.opportunityId) {
     const exact = snapshot.data.opportunities.find((item) => item.id === target.opportunityId)
     return exact ? { status: 'unique', opportunity: exact } : { status: 'missing', opportunities: [] }
