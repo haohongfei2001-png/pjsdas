@@ -65,11 +65,13 @@ function compact(value: string) {
 export const discoveryRoleSimilarity = jobRoleSimilarity
 
 export function findSimilarOpportunity(
-  candidate: Pick<DiscoveryCandidateForQuality, 'company' | 'role' | 'sourceUrl'> & { location?: string },
+  candidate: Pick<DiscoveryCandidateForQuality, 'company' | 'role'> & { location?: string },
   opportunities: Opportunity[],
 ) {
-  const resolved = resolveOpportunityPostingIdentity(candidate, opportunities)
-  return resolved.kind === 'same_posting' ? resolved.opportunity : undefined
+  return opportunities.find((item) => logicalJobMatches(
+    { company: candidate.company, role: candidate.role, location: candidate.location },
+    { company: item.company, role: item.role, location: item.detail?.discovery?.location },
+  ))
 }
 
 function similarCandidate(
