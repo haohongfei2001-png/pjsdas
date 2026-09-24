@@ -77,15 +77,15 @@ test('real VoiceOver identifies Opportunities and Settings primary-route semanti
   await expect(detail).toBeVisible()
   await expect(detail).toContainText('合成机会科技')
   const detailPhrases: string[] = []
-  let foundDetail = false
-  for (let i = 0; i < 36 && !foundDetail; i += 1) {
+  let foundDetailSemantics = false
+  for (let i = 0; i < 36 && !foundDetailSemantics; i += 1) {
     await voiceOver.next()
     const spoken = await voiceOver.lastSpokenPhrase()
     const item = await voiceOver.itemText()
     detailPhrases.push(`${spoken} / ${item}`)
-    foundDetail = /合成机会科技|AI产品经理/.test(`${spoken} ${item}`)
+    foundDetailSemantics = /结论|继续推进当前流程|阶段|面试|流程结果|准备与相关待办/.test(`${spoken} ${item}`)
   }
-  expect(foundDetail, detailPhrases.join(' | ')).toBe(true)
+  expect(foundDetailSemantics, detailPhrases.join(' | ')).toBe(true)
 
   await page.goto('/pjsdas/settings')
   const settingsHeading = page.getByRole('heading', { name: /连接、自动化和长期控制|Connections, automation/i })
