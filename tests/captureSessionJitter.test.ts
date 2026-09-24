@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { shouldInitializeCaptureForSession } from '../src/TellPjsdasCapture.js'
+import { shouldInitializeCaptureForSession } from '../src/captureSession.js'
 
 describe('Tell PJSDAS capture session initialization', () => {
   it('initializes once when the capture opens before auth settles', () => {
