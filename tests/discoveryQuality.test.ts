@@ -231,7 +231,7 @@ describe('v1.4 discovery quality gate', () => {
     expect(result.accepted[0].warnings.join(' ')).toContain('刷新')
   })
 
-  it('treats a new source for a stale logical job as a possible re-post', () => {
+  it('treats a new source for a stale logical job as a distinct review candidate', () => {
     const stale = inbox('2026-08-01T00:00:00.000Z', 'https://jobs.example.com/old-ai-pm')
     const result = screenDiscoveryCandidates(profile(), [candidate({
       company: '甲公司',
@@ -239,7 +239,7 @@ describe('v1.4 discovery quality gate', () => {
       sourceUrl: 'https://careers.example.com/new-ai-pm?utm_source=search',
     })], [], weights, now, [], [stale])
     expect(result.accepted).toHaveLength(1)
-    expect(result.accepted[0].warnings.join(' ')).toContain('重新发布')
+    expect(result.accepted[0].warnings.join(' ')).toContain('exact posting source 不同')
   })
 
   it('keeps a similar formal Opportunity distinct when its exact posting URL differs', () => {
