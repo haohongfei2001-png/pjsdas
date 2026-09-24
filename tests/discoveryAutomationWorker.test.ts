@@ -1,6 +1,7 @@
 import { readFile } from 'node:fs/promises'
 import { describe, expect, it, vi } from 'vitest'
 import {
+  classifyDiscoveryAutomationRunState,
   discoverSourceRun,
   verifyDiscoverySourceObservation,
   type DiscoveryGenerateText,
@@ -32,6 +33,26 @@ function generator(content: string, seen?: DiscoveryGenerateTextInput[]): Discov
     return { text: content }
   })
 }
+
+describe('discovery automation completion state', () => {
+  it('separates a successful check from durable source completion', () => {
+    expect(classifyDiscoveryAutomationRunState({
+      configured: false, dueSourceCount: 0, completedSourceCount: 0, unresolvedCount: 0,
+    })).toBe('not_configured')
+    expect(classifyDiscoveryAutomationRunState({
+      configured: true, dueSourceCount: 0, completedSourceCount: 0, unresolvedCount: 0,
+    })).toBe('checked_not_due')
+    expect(classifyDiscoveryAutomationRunState({
+      configured: true, dueSourceCount: 2, completedSourceCount: 0, unresolvedCount: 0,
+    })).toBe('verified_not_committed')
+    expect(classifyDiscoveryAutomationRunState({
+      configured: true, dueSourceCount: 2, completedSourceCount: 2, unresolvedCount: 0,
+    })).toBe('committed')
+    expect(classifyDiscoveryAutomationRunState({
+      configured: true, dueSourceCount: 2, completedSourceCount: 2, unresolvedCount: 1,
+    })).toBe('committed_with_exceptions')
+  })
+})
 
 describe('server-owned discovery worker model boundary', () => {
   it('accepts only bounded structured source-backed observations and sends the bounded prompt through AI SDK', async () => {
