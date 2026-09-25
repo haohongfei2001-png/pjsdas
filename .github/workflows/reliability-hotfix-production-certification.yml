@@ -1,0 +1,60 @@
+name: PJSDAS Reliability Hotfix Production Certification
+
+on:
+  workflow_run:
+    workflows: ["Deploy PJSDAS to GitHub Pages"]
+    types: [completed]
+
+permissions:
+  contents: read
+
+jobs:
+  qualify:
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-24.04
+    outputs:
+      run: ${{ steps.gate.outputs.run }}
+      sha: ${{ steps.gate.outputs.sha }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          fetch-depth: 1
+      - id: gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          sha="$(git rev-parse HEAD)"
+          title="$(git log -1 --pretty=%s)"
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+          if [ "$title" = "Run PJSDAS reliability hotfix production certification" ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+            echo "Qualified reliability hotfix exact SHA $sha"
+          else
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            echo "Not the one-shot reliability hotfix certification commit; no-op."
+          fi
+
+  reliability-hotfix:
+    needs: qualify
+    if: ${{ needs.qualify.outputs.run == 'true' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    environment: production-certification
+    env:
+      PJSDAS_RH_CANARY_ORIGIN: ${{ vars.PJSDAS_CANONICAL_API_ORIGIN || 'https://todayaction.com' }}
+      PJSDAS_EXPECTED_COMMIT_SHA: ${{ needs.qualify.outputs.sha }}
+      PJSDAS_SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.PJSDAS_SUPABASE_SERVICE_ROLE_KEY }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.qualify.outputs.sha }}
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Validate synthetic fixture without network
+        run: ./node_modules/.bin/tsx scripts/reliability-hotfix-production-canary.ts --plan
+      - name: Verify MCP exposure and posting identity on exact production
+        run: ./node_modules/.bin/tsx scripts/reliability-hotfix-production-canary.ts --execute
