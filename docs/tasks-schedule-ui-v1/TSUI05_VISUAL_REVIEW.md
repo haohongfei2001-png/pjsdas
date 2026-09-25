@@ -30,4 +30,4 @@
 
 ## 尚待外部证据
 
-真人五秒理解、真实用户设备软键盘、私有生产工作区 canary、独立于实现者的人工集成评审均未取得，标为 DEFERRED。macOS CI 系统 VoiceOver 走查是实际辅助技术自动证据，不冒充真人访谈。新增的云端 Live Visual 工作流仅在 Pages exact release gate 成功后核对线上 frontend manifest SHA，并在真实 Pages 前端用合成工作区渲染今天、岗位库和日程截图；其运行结果待合并后记录。生产 exact frontend/backend 的状态以合并后认证为准；本文件中的合成截图不冒充线上私有工作区截图。
+真人五秒理解、真实用户设备软键盘、私有生产工作区 canary、独立于实现者的人工集成评审均未取得，标为 DEFERRED。macOS CI 系统 VoiceOver 走查是实际辅助技术自动证据，不冒充真人访谈。新增的云端 Live Visual 工作流仅在 Pages exact release gate 成功后核对线上 frontend manifest SHA，并在真实 Pages 前端用合成工作区渲染今天、岗位库和日程截图。工程 exact main `21f247aca2d0801c3df6ad8a99264784098179e0` 的 Pages [36148717592](https://github.com/haohongfei2001-png/pjsdas/actions/runs/36148717592) 因 Vercel 免费构建限流、后端不匹配同 SHA 而失败，未发布、未触发 live 截图；具体见 [TSUI05_RECEIPT.md](TSUI05_RECEIPT.md)。本文件中的合成截图不冒充线上私有工作区截图。

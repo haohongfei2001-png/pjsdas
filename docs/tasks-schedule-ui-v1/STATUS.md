@@ -1,7 +1,7 @@
 # TSUI Canonical Status
 
 Package: `PJSDAS-TASKS-SCHEDULE-UI-v1`  
-Status: **TSUI-05 ENGINEERING_VERIFIED / PR #163 MERGE_PENDING / PRODUCTION_PENDING**  
+Status: **TSUI-05 ENGINEERING_COMPLETE / PRODUCTION_PENDING; PACKAGE STOPPED**  
 Plan: [README.md](README.md) · Acceptance: [ACCEPTANCE.md](ACCEPTANCE.md) · Design: [DESIGN_REFERENCE.md](DESIGN_REFERENCE.md)
 
 ## 授权与边界
@@ -17,7 +17,7 @@ Plan: [README.md](README.md) · Acceptance: [ACCEPTANCE.md](ACCEPTANCE.md) · De
 | TSUI-02 | MERGED / EXACT_MAIN VERIFIED | PR [#155](https://github.com/haohongfei2001-png/pjsdas/pull/155) merged；closure PR [#157](https://github.com/haohongfei2001-png/pjsdas/pull/157) merged；exact main `ec73f433ba6c842d68deba340381b8fb1b547b67` |
 | TSUI-03 | MERGED / EXACT_MAIN VERIFIED | PR [#158](https://github.com/haohongfei2001-png/pjsdas/pull/158)，head `a9125a030cacbe06d89e2c23ff0373c5569dd87f`，main `56aeec3e75628a81de4ad883a56b272817643236`；岗位库、完整详情及入口迁移已收口 |
 | TSUI-04 | MERGED / EXACT_MAIN VERIFIED | PR [#160](https://github.com/haohongfei2001-png/pjsdas/pull/160)，head `fcd0b45b9be44f3caea2a33aacc3ceea788299bb`，merge main `0e01458d23d59b4e483e4e9bf7787ed85fe15009`；完整日程、事件详情、录入与设置已完成工程收口 |
-| TSUI-05 | ENGINEERING_VERIFIED / MERGE_PENDING | 唯一 writer `tsui/05-consumer-certification`、PR [#163](https://github.com/haohongfei2001-png/pjsdas/pull/163)；第三轮实渲、跨浏览器、真实 VoiceOver、压力和旧 UI 退役已通过；生产 exact-live 待 merge |
+| TSUI-05 | MERGED / EXACT_MAIN ENGINEERING_COMPLETE; PRODUCTION_PENDING | PR [#163](https://github.com/haohongfei2001-png/pjsdas/pull/163)，工程 merge main `21f247aca2d0801c3df6ad8a99264784098179e0`；CI/Browser/Matrix/VoiceOver/只读回退 SUCCESS；Vercel 构建限流，Pages 未发布 |
 
 TSUI-01 PR head 的 CI `36108428471`、Browser E2E `36108428457` 为 SUCCESS。merge main 的 CI `36108943632`、Browser E2E `36108943614`、Pages `36108943500` 为 SUCCESS；自动触发的 CGR/Hotfix/production self-test/release workflows 亦成功。这些是 GitHub Actions 工程证据，不冒充真人、设备或生产私有工作区验证。TSUI-01 压力样本结论：沿用权威快照加只读索引，暂无证据要求新服务端分页。
 
@@ -57,4 +57,11 @@ PR [#163](https://github.com/haohongfei2001-png/pjsdas/pull/163) 从 TSUI-04 clo
 
 稳定运行代码 head `a3ca47f25470d21d6b06efb774460f0c7770dc94` 的 CI [36146442448](https://github.com/haohongfei2001-png/pjsdas/actions/runs/36146442448)、Chromium Browser E2E [36146442494](https://github.com/haohongfei2001-png/pjsdas/actions/runs/36146442494)、Firefox/WebKit 与固定性能矩阵 [36146442446](https://github.com/haohongfei2001-png/pjsdas/actions/runs/36146442446)、只读回退 [36146442424](https://github.com/haohongfei2001-png/pjsdas/actions/runs/36146442424)、macOS 15 系统 VoiceOver [36146442442](https://github.com/haohongfei2001-png/pjsdas/actions/runs/36146442442) 均 SUCCESS。七档视口及 390/320 的实际 200% 文字无横向溢出；VoiceOver 3 条包含 Today 任务、权威回执、岗位详情、设置及日程节点与详情。固定 300 岗位/500 行动/130 节点/2000 历史样本：Node 全投影 P95 38.59ms，索引追加 P95 0.02ms；优化生产 Chromium warm route P95 42ms、tab P95 43ms，均低于 150/100ms 工程预算。冷启动网络/解析未纳入 warm 数据，不混称已测。
 
-新增 TSUI-05 Live Visual 工作流在 Pages exact release gate 成功后，先核对线上 release-manifest 的 exact commit SHA，再在真实 Pages 前端以合成工作区截取今天、岗位库、日程。PR 合并、exact-main CI/Browser/Matrix/rollback、Pages/backend 同 SHA、自动生产认证及线上截图的结果均待完成，不提前写 PRODUCTION_VERIFIED。真人五秒理解、真实用户设备软键盘、私有生产工作区 canary、独立人工集成评审均 DEFERRED；不宣称 PRODUCT_ACCEPTED。TSUI-05 后停止本 package。
+新增 TSUI-05 Live Visual 工作流在 Pages exact release gate 成功后，先核对线上 release-manifest 的 exact commit SHA，再在真实 Pages 前端以合成工作区截取今天、岗位库、日程。PR #163 已合并，工程 exact-main 及生产门槛结果见 [TSUI05_RECEIPT.md](TSUI05_RECEIPT.md)。真人五秒理解、真实用户设备软键盘、私有生产工作区 canary、独立人工集成评审均 DEFERRED；不宣称 PRODUCT_ACCEPTED。TSUI-05 后停止本 package。
+
+
+## TSUI-05 exact-main closure 与外部生产阻断
+
+PR #163 exact head `3971cb2e0b56bc9ca967d312c1c4cbe111ac34f7` 合并到 main `21f247aca2d0801c3df6ad8a99264784098179e0`，tree `906444cc560b0a9b0d416d55e096d61b8ba375df` 与 PR head 一致；reference 目录 0 变更。该 main 的 CI [36148717581](https://github.com/haohongfei2001-png/pjsdas/actions/runs/36148717581)、Browser E2E [36148717708](https://github.com/haohongfei2001-png/pjsdas/actions/runs/36148717708)（77 passed）、Firefox/WebKit + 生产构建性能 [36148717688](https://github.com/haohongfei2001-png/pjsdas/actions/runs/36148717688)（10 + 1 passed，warm route P95 42ms、tab P95 43ms）、只读回退 [36148717532](https://github.com/haohongfei2001-png/pjsdas/actions/runs/36148717532)、macOS 15 系统 VoiceOver [36148717814](https://github.com/haohongfei2001-png/pjsdas/actions/runs/36148717814)（3 passed）全部 SUCCESS。
+
+Pages [36148717592](https://github.com/haohongfei2001-png/pjsdas/actions/runs/36148717592) 在 40 次同 SHA 后端检查后 FAILED，deploy job SKIPPED；安全门槛未绕过。该 merge commit 的 GitHub [Vercel 状态](https://api.github.com/repos/haohongfei2001-png/pjsdas/commits/21f247aca2d0801c3df6ad8a99264784098179e0/status) 是 FAILURE，描述为 “Deployment rate limited — retry in 24 hours.”；前一 TSUI-04 closure SHA 同样限流。Cloudflare standby 未配置，不新建账户、秘密或付费升级。因 Pages 未发布，本轮 TSUI-05 Live Visual 不运行；同 SHA live frontend/backend、线上截图、真实私有工作区 canary、前端生产部署回退仍未验证，均保持 PENDING/DEFERRED，不能写 PRODUCTION_VERIFIED。外部限制解除后须先有同 SHA 后端，再重新通过 Pages 门槛与线上核验。此包工程完成并停止，不自动进入其他产品线。
