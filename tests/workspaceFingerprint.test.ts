@@ -80,6 +80,39 @@ describe('cloud workspace fingerprint', () => {
     expect(await fingerprintWorkspace(inbox)).not.toBe(await fingerprintWorkspace(empty))
   })
 
+  it('treats newer server Gmail audit as read-only while preserving business comparison', () => {
+    const local = snapshot('2026-09-11T00:00:00.000Z', 'Example')
+    const remote = structuredClone(local)
+    remote.data.timeline = [{
+      id: 'timeline:ingestion:ignored-1', kind: 'ingestion_recorded', category: 'data', source: 'gmail',
+      occurredAt: '2026-09-25T00:00:00.000Z', recordedAt: '2026-09-25T00:00:00.000Z', title: 'Ignored',
+      ingestion: { version: 1, sourceKind: 'gmail', sourceId: 'gmail', sourceRecordId: 'msg-1', runId: 'run-1',
+        fingerprint: 'msg-fp', recordType: 'recruiting_message', outcome: 'ignored',
+        receivedAt: '2026-09-25T00:00:00.000Z', accountedAt: '2026-09-25T00:00:00.000Z' },
+    } as any, {
+      id: 'timeline:ingestion-run:run-1', kind: 'ingestion_run_completed', category: 'data', source: 'gmail',
+      occurredAt: '2026-09-25T00:00:00.000Z', recordedAt: '2026-09-25T00:00:00.000Z', title: 'Run',
+      ingestionRun: { version: 1, sourceKind: 'gmail', sourceId: 'gmail', runId: 'run-1',
+        startedAt: '2026-09-25T00:00:00.000Z', completedAt: '2026-09-25T00:00:00.000Z',
+        receivedCount: 1, accountedCount: 1, outcomes: { ignored: 1 } },
+    } as any]
+    expect(equivalentReadProjection(local, remote)).toBe(true)
+    local.data.opportunities[0]!.company = 'Edited locally'
+    expect(equivalentReadProjection(local, remote)).toBe(false)
+    local.data.opportunities[0]!.company = 'Example'
+    remote.data.opportunities[0]!.company = 'Changed by server'
+    expect(equivalentReadProjection(local, remote)).toBe(false)
+  })
+
+  it('fails closed for local-only ingestion evidence and local timeline edits', () => {
+    const remote = snapshot('2026-09-11T00:00:00.000Z', 'Example')
+    const local = structuredClone(remote)
+    local.data.timeline = [{ id: 'local-audit', kind: 'ingestion_recorded', ingestion: { outcome: 'ignored' } } as any]
+    expect(equivalentReadProjection(local, remote)).toBe(false)
+    local.data.timeline = [{ id: 'manual-note', kind: 'history_imported', source: 'user_action' } as any]
+    expect(equivalentReadProjection(local, remote)).toBe(false)
+  })
+
   it('matches only equivalent hydrated read projections', () => {
     const remote = snapshot('2026-09-11T00:00:00.000Z', 'Example')
     delete remote.data.decisionRules
