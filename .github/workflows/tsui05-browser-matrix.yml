@@ -41,6 +41,10 @@ jobs:
         run: npx tsx scripts/tsui01-projection-bench.ts
       - name: Run core routes and schedule anchors in Firefox and WebKit
         run: npx playwright test --config=playwright.config.mts --project=firefox --project=webkit e2e/tsui02Today.e2e.ts e2e/tsui03JobLibrary.e2e.ts e2e/tsui04Schedule.e2e.ts
+      - name: Install Chromium for fixed warm UI budget
+        run: npx playwright install chromium
+      - name: Measure 300-job warm route and tab paint budget in Chromium
+        run: npx playwright test --config=playwright.config.mts --project=chromium --workers=1 e2e/tsui05Performance.e2e.ts
       - name: Upload browser evidence
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@v5
