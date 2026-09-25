@@ -196,10 +196,12 @@ test('TSUI-03 Today and Schedule detail links restore their exact opener and old
   await expect(task.locator('.tsui-task-context')).toBeFocused()
 
   await page.locator('.tsui-primary-nav').getByRole('button', { name: /日程|Schedule/ }).click()
-  const node = page.locator('.tsui-schedule-panel .tsui-node-row').filter({ hasText: '上下文公司' })
+  const node = page.locator('.tsui-schedule-panel .tsui-schedule-row').filter({ hasText: '上下文公司' })
   await expect(node).toHaveCount(1)
   await expect(node).toBeVisible()
   await node.click()
+  await expect(page.locator('.tsui-schedule-detail')).toContainText('上下文公司')
+  await page.locator('.tsui-schedule-detail .tsui-schedule-job-link').click()
   await expect(page).toHaveURL(/\/library\/tsui03-context-opp$/)
   await expect(page.locator('.job-detail-back')).toContainText(/返回日程|Back to Schedule/)
   await page.locator('.job-detail-back').click()

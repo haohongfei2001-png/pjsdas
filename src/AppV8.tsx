@@ -24,6 +24,8 @@ import {
 } from './cloud/authoritativeReadModelClient.js'
 import {
   createConnectedCommandId,
+  confirmConnectedCommand,
+  listAccountPendingOperations,
   executeConnectedBusinessCommand,
   undoConnectedBusinessCommand,
 } from './cloud/authoritativeCommandClient.js'
@@ -44,7 +46,7 @@ import {
 import TellPjsdasCapture from './TellPjsdasCapture.js'
 import TodayFeature, { type TodayFreshnessView } from './today/TodayFeature.js'
 import { selectTodayWeb } from './today/todayWebSelector.js'
-import { buildScheduleStream } from './schedule/scheduleStream.js'
+import { buildScheduleStream, type ScheduleEntry } from './schedule/scheduleStream.js'
 import ScheduleFeature from './schedule/ScheduleFeature.js'
 import DecisionRequestsView from './DecisionRequestsView.js'
 import { buildTodayBrief, type TodayBriefAction } from './todayBrief.js'
@@ -55,6 +57,7 @@ import type {
   ImportMeta,
   Prep,
   TimelineRecord,
+  ScheduleNodeTemporal,
 } from './model.js'
 import type { PJSDASSnapshot } from './snapshot.js'
 import './timeplan.css'
@@ -520,6 +523,74 @@ export default function AppV8() {
     await markAction(item.actionId, 'doing')
   }
 
+  async function scheduleOccurrenceCommand(entry: ScheduleEntry, kind: 'complete' | 'cancel' | 'reschedule', date?: string) {
+    const account = cloud.session?.user.id
+    if (!account || !connectedWorkspaceAuthorityEnabled() || CGR02_TODAY_READ_ONLY) {
+      throw new Error(zh ? '连接权威工作区后才能记录这次安排。' : 'Connect the authoritative workspace before updating this occurrence.')
+    }
+    if (!entry.occurrenceId || !entry.node) throw new Error('Schedule occurrence identity is unavailable.')
+    const pending = listAccountPendingOperations(account).find((item) => {
+      const value = item.command?.type === 'domain' ? item.command.value : undefined
+      return item.action === 'command' && value && 'occurrenceId' in value
+        && value.occurrenceId === entry.occurrenceId
+        && ['complete_occurrence', 'cancel_occurrence', 'reschedule_occurrence'].includes(value.kind)
+    })
+    const commandId = pending?.commandId ?? createConnectedCommandId('web-occurrence')
+    function rescheduledTemporal(): ScheduleNodeTemporal {
+      const original = entry.node!.temporal
+      if (original.precision === 'date') {
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(date ?? '')) throw new Error(zh ? '请先选择真实日期。' : 'Choose a real date first.')
+        return { shape: 'date_only', precision: 'date', timezone: 'floating-date',
+          date, resolutionBasis: 'user_explicit' }
+      }
+      const start = date ? new Date(date) : new Date('')
+      if (!Number.isFinite(start.getTime())) throw new Error(zh ? '请先选择真实日期和时间。' : 'Choose a real date and time first.')
+      const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
+      const startAt = start.toISOString()
+      if (original.shape === 'deadline') return {
+        shape: 'deadline', precision: 'datetime', timezone, deadlineAt: startAt, resolutionBasis: 'user_explicit',
+      }
+      const oldStart = original.startAt ? new Date(original.startAt).getTime() : NaN
+      const oldEnd = original.endAt ? new Date(original.endAt).getTime() : NaN
+      const endAt = Number.isFinite(oldStart) && Number.isFinite(oldEnd)
+        ? new Date(start.getTime() + (oldEnd - oldStart)).toISOString() : undefined
+      if (original.shape === 'availability_window' && !endAt) throw new Error('The original window has no valid end; review the source before rescheduling.')
+      return { shape: original.shape === 'availability_window' ? 'availability_window' : 'fixed_range',
+        precision: 'datetime', timezone, startAt, endAt, resolutionBasis: 'user_explicit' }
+    }
+    const command = kind === 'complete'
+      ? { commandId, kind: 'complete_occurrence' as const, occurrenceId: entry.occurrenceId }
+      : kind === 'cancel'
+        ? { commandId, kind: 'cancel_occurrence' as const, occurrenceId: entry.occurrenceId }
+        : { commandId, kind: 'reschedule_occurrence' as const, occurrenceId: entry.occurrenceId,
+          temporal: rescheduledTemporal() }
+    const result = pending
+      ? await confirmConnectedCommand(account, commandId)
+      : await executeConnectedBusinessCommand(account, { type: 'domain', value: command }, { commandId })
+    if (result.outcome === 'CONFLICT') throw new Error(result.conflict?.message ?? 'Schedule change conflicts with newer authoritative state.')
+    await reload()
+    const actualKind = pending?.command?.type === 'domain' ? pending.command.value.kind : command.kind
+    const message = result.outcome === 'NO_WRITE'
+      ? (zh ? '没有写入变化，请核对最新安排。' : 'No change was written; review the latest occurrence.')
+      : result.outcome === 'ALREADY_APPLIED'
+        ? (zh ? '服务器确认原操作已处理，没有重复写入。' : 'The original operation was already applied; no duplicate was written.')
+        : actualKind === 'complete_occurrence' ? (zh ? '已确认完成这次安排。' : 'This occurrence was marked complete.')
+          : actualKind === 'cancel_occurrence' ? (zh ? '已取消这次安排。' : 'This occurrence was cancelled.')
+            : (zh ? '已按确认日期改期。' : 'This occurrence was rescheduled to the confirmed date.')
+    return { outcome: result.outcome, commandId, message }
+  }
+
+  async function undoScheduleOccurrenceCommand(targetCommandId: string) {
+    const account = cloud.session?.user.id
+    if (!account || !connectedWorkspaceAuthorityEnabled()) throw new Error('Authoritative workspace is unavailable.')
+    const pending = listAccountPendingOperations(account).find((item) => item.action === 'undo' && item.targetCommandId === targetCommandId)
+    const result = await undoConnectedBusinessCommand(account, targetCommandId,
+      pending ? { commandId: pending.commandId } : {})
+    if (result.outcome === 'CONFLICT') throw new Error(result.conflict?.message ?? 'Undo conflicts with a dependent update.')
+    if (result.outcome === 'NO_WRITE') throw new Error('Undo did not write a change.')
+    await reload()
+  }
+
   function navigateFromDetail(destination: OpportunityDetailDestination) {
     if (destination === 'today') navigate('/today')
     if (destination === 'schedule') navigate('/schedule')
@@ -577,7 +648,9 @@ export default function AppV8() {
           />
         ) : null}
 
-        {!loading && surface === 'schedule' && scheduleStream ? <ScheduleFeature key={scheduleStream.key} stream={scheduleStream} opportunities={opportunities} onOpenOpportunity={openOpportunity} /> : null}
+        {!loading && surface === 'schedule' && scheduleStream ? <ScheduleFeature stream={scheduleStream} opportunities={opportunities} onOpenOpportunity={openOpportunity}
+          canWrite={Boolean(cloud.session && connectedWorkspaceAuthorityEnabled() && !CGR02_TODAY_READ_ONLY)}
+          onOccurrenceCommand={scheduleOccurrenceCommand} onUndoOccurrenceCommand={undoScheduleOccurrenceCommand} /> : null}
 
         {!loading && surface === 'opportunities' && opportunityDecisionList && !selectedOpportunityId ? (
           <OpportunitiesSurface read={opportunityDecisionList} opportunities={opportunities} prep={prep} tab={opportunityTab} onTabChange={chooseOpportunityTab}
@@ -713,7 +786,7 @@ function SettingsSurface({ lastImport, rules, onChanged, onOpenActivity }: { las
 
   return (
     <section className="surface-page settings-surface">
-      <SurfaceHeader eyebrow="SETTINGS" title={zh ? '连接、自动化和长期控制' : 'Connections, automation, and durable control'} text={zh ? '设置是低频控制面。默认只展开连接状态，其余规则、偏好和恢复工具按需查看。' : 'Settings is a low-frequency control surface. Connection state stays visible; preferences, policy, and recovery expand only when needed.'} />
+      <SurfaceHeader eyebrow="SETTINGS" title={zh ? '设置' : 'Settings'} text={zh ? '连接、偏好与数据管理。' : 'Connections, preferences, and data.'} />
       <div className="settings-mobile-language" aria-label={zh ? '移动端界面语言' : 'Mobile interface language'}><LanguageSwitch /></div>
 
       <details className="settings-group" open>

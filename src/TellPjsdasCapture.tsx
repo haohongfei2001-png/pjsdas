@@ -372,8 +372,8 @@ export default function TellPjsdasCapture({
             <div className="cgr-kicker">TELL PJSDAS</div>
             <h2 id="tell-pjsdas-title">{zh ? '告诉 PJSDAS' : 'Tell PJSDAS'}</h2>
             <p id="tell-pjsdas-description">{zh
-              ? '先告诉你 PJSDAS 理解成了什么，再进行权威保存。真正不明确的部分不会猜。'
-              : 'PJSDAS shows what it understood before authoritative save. Genuinely ambiguous parts are never guessed.'}</p>
+              ? '记录求职进展，确认后保存。'
+              : 'Record an update, then confirm before saving.'}</p>
             {contextLabel ? <span className="cgr-capture-context">{zh ? '当前上下文：' : 'Context: '}{contextLabel}</span> : null}
           </div>
           <button className="cgr-icon-button" type="button" onClick={onClose} aria-label={zh ? '关闭' : 'Close'}>×</button>
@@ -426,7 +426,6 @@ export default function TellPjsdasCapture({
         ) : null}
 
         <div className="cgr-capture-footer">
-          <small>{zh ? '⌘ Enter 提交 · Esc 关闭' : '⌘ Enter to submit · Esc to close'}</small>
           <button className="cgr-primary-button" type="button" disabled={busy || !text.trim()} onClick={() => { void submit() }}>
             {busy ? (zh ? '正在权威保存…' : 'Saving authoritatively…')
               : saveState === 'unknown' ? (zh ? '确认保存状态' : 'Confirm save status')
