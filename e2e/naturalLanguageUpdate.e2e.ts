@@ -55,7 +55,7 @@ async function seedOpportunities(page: Page, opportunities: ReturnType<typeof so
 }
 
 async function openCapture(page: Page) {
-  await page.locator('.ultimate-capture-button').click()
+  await page.locator('.tsui-tell-button').click()
   await expect(page.getByRole('heading', { name: '告诉 PJSDAS' })).toBeVisible()
 }
 
@@ -135,7 +135,7 @@ test('narrow and enlarged-text capture exposes mixed current/quoted feedback wit
   await page.setViewportSize({ width: 390, height: 844 })
   await page.goto('/')
   await page.evaluate(() => { document.documentElement.style.fontSize = '20px' })
-  await page.locator('.ultimate-mobile-capture').click()
+  await page.locator('.tsui-tell-button').click()
   const dialog = page.getByRole('dialog', { name: '告诉 PJSDAS' })
   await dialog.getByRole('textbox', { name: '要告诉 PJSDAS 的内容' })
     .fill('待办：修改论文图表。\n-----Original Message-----\n待办：整理旧材料。')
@@ -184,7 +184,7 @@ test('source-backed alias application updates the canonical job in place instead
   expect(state.processes[0]).toMatchObject({ opportunityId: canonical.id, stage: 'screening' })
   expect(state.changeSets).toHaveLength(0)
 
-  await page.locator('.surface-nav').getByRole('button', { name: /机会/ }).click()
+  await page.locator('.tsui-primary-nav').getByRole('button', { name: /岗位库/ }).click()
   const row = page.locator('.opportunity-decision-row').filter({ hasText: '别名科技' })
   await expect(row).toBeVisible()
   await expect(row).toContainText('AI产品经理（数据平台）')
@@ -233,7 +233,7 @@ test('ambiguous same-company role input creates DecisionRequest instead of guess
   expect(state.decisionRequests).toHaveLength(1)
   expect(state.decisionRequests[0]?.state).toBe('open')
 
-  await page.locator('.surface-nav').getByRole('button', { name: /机会/ }).click()
+  await page.locator('.tsui-primary-nav').getByRole('button', { name: /岗位库/ }).click()
   await page.locator('.opportunity-decision-filter select').selectOption('all')
   await page.locator('.opportunity-decision-row').filter({ hasText: '产品经理-增长' }).click()
   const detail = page.getByRole('dialog', { name: /岗位详情|Opportunity details/ })

@@ -17,8 +17,8 @@ const opportunity = {
 
 const action = {
   id: 'e2e-action',
-  kind: 'apply',
-  title: '提交矩阵科技 AI 产品经理申请',
+  kind: 'manual',
+  title: '准备矩阵科技 AI 产品经理申请材料',
   opportunityId: 'e2e-opportunity',
   estimatedMinutes: 30,
   leverage: 80,
@@ -49,13 +49,13 @@ async function seedLocalWorkspace(page: Page) {
     })
   }, { opportunity, action })
   await page.reload()
-  await expect(page.getByRole('heading', { name: '提交矩阵科技 AI 产品经理申请' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: '准备矩阵科技 AI 产品经理申请材料' })).toBeVisible()
 }
 
 test('empty local workspace routes directly into setup instead of a maintenance queue', async ({ page }) => {
   await page.goto('/')
   await expect(page.getByRole('heading', { name: '今天', exact: true })).toBeVisible()
-  await expect(page.getByRole('heading', { name: '先让 PJSDAS 知道你的求职现状' })).toBeVisible()
+  await expect(page.getByText('先让 PJSDAS 了解你的求职进展')).toBeVisible()
   await page.getByRole('button', { name: '打开设置' }).click()
   await expect(page.getByRole('heading', { name: '连接、自动化和长期控制' })).toBeVisible()
   await expect(page.locator('.cloud-connection-impact')).toContainText('当前内容只保存在此设备')
@@ -65,16 +65,16 @@ test('empty local workspace routes directly into setup instead of a maintenance 
 test('critical local-first action flow survives completion, undo, and browser reload', async ({ page }) => {
   await seedLocalWorkspace(page)
 
-  await expect(page.locator('.cgr-primary-action .cgr-kicker')).toHaveText('下一步')
-  await page.getByRole('button', { name: '标记完成' }).click()
-  await expect(page.getByRole('status')).toContainText('已标记完成')
-  await expect(page.getByRole('heading', { name: '提交矩阵科技 AI 产品经理申请' })).toHaveCount(0)
+  await expect(page.locator('.tsui-task-row')).toHaveCount(1)
+  await page.locator('.tsui-task-row .tsui-done-action').click()
+  await expect(page.getByRole('status')).toContainText('已完成')
+  await expect(page.getByRole('heading', { name: '准备矩阵科技 AI 产品经理申请材料' })).toHaveCount(0)
 
   await page.getByRole('button', { name: '撤销' }).click()
-  await expect(page.getByRole('heading', { name: '提交矩阵科技 AI 产品经理申请' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: '准备矩阵科技 AI 产品经理申请材料' })).toBeVisible()
 
   await page.reload()
-  await expect(page.getByRole('heading', { name: '提交矩阵科技 AI 产品经理申请' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: '准备矩阵科技 AI 产品经理申请材料' })).toBeVisible()
 
   const persistedStatus = await page.evaluate(async () => new Promise<string | undefined>((resolve, reject) => {
     const request = indexedDB.open('pjsdas', 11)
@@ -93,33 +93,33 @@ test('critical local-first action flow survives completion, undo, and browser re
 test('primary navigation, language, recovery, and global Tell PJSDAS stay coherent in English', async ({ page }) => {
   await seedLocalWorkspace(page)
 
-  await page.locator('.surface-nav').getByRole('button', { name: /机会/ }).click()
+  await page.locator('.tsui-primary-nav').getByRole('button', { name: /岗位库/ }).click()
   await expect(page.getByRole('heading', { name: '哪些在推进，哪些值得继续投入' })).toBeVisible()
 
-  await page.locator('.ultimate-toolbar').getByRole('button', { name: /设置|Settings/ }).click()
+  await page.locator('.tsui-topbar').getByRole('button', { name: /设置|Settings/ }).click()
   const interfaceGroup = page.locator('details.settings-group > summary').filter({ hasText: /界面.*显示层|Interface.*Presentation/ }).locator('..')
   await interfaceGroup.locator('summary').click()
   await interfaceGroup.getByRole('button', { name: 'EN', exact: true }).click()
 
-  await page.locator('.surface-nav').getByRole('button', { name: /Opportunities/ }).click()
+  await page.locator('.tsui-primary-nav').getByRole('button', { name: /Jobs/ }).click()
   await expect(page.getByRole('heading', { name: 'What is moving, and what is worth pursuing' })).toBeVisible()
-  await page.locator('.surface-nav').getByRole('button', { name: /Today/ }).click()
-  await expect(page.locator('.cgr-today-header').getByRole('heading', { name: 'Today', exact: true })).toBeVisible()
+  await page.locator('.tsui-primary-nav').getByRole('button', { name: /Today/ }).click()
+  await expect(page.locator('.tsui-page-heading').getByRole('heading', { name: 'Today', exact: true })).toBeVisible()
 
-  await page.locator('.ultimate-toolbar').getByRole('button', { name: /Settings/ }).click()
+  await page.locator('.tsui-topbar').getByRole('button', { name: /Settings/ }).click()
   const dataRecovery = page.locator('details.settings-group').filter({ hasText: 'Data & recovery' })
   await dataRecovery.locator('summary').click()
   await page.getByRole('button', { name: '+ Record process event' }).click()
   await expect(page.getByRole('heading', { name: 'Record a real recruiting event' })).toBeVisible()
   await page.getByRole('button', { name: 'Close' }).click()
 
-  await page.locator('.ultimate-capture-button').click()
+  await page.locator('.tsui-tell-button').click()
   await expect(page.getByRole('heading', { name: 'Tell PJSDAS', exact: true })).toBeVisible()
   await expect(page.locator('.cgr-capture-input')).toBeVisible()
   await page.getByRole('button', { name: 'Close' }).click()
 
-  await page.locator('.surface-nav').getByRole('button', { name: /Today/ }).click()
+  await page.locator('.tsui-primary-nav').getByRole('button', { name: /Today/ }).click()
   await page.reload()
-  await expect(page.locator('.cgr-today-header').getByRole('heading', { name: 'Today', exact: true })).toBeVisible()
+  await expect(page.locator('.tsui-page-heading').getByRole('heading', { name: 'Today', exact: true })).toBeVisible()
   await expect(page.locator('html')).toHaveAttribute('lang', 'en')
 })

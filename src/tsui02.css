@@ -31,7 +31,7 @@
 .tsui-task-row{display:flex;align-items:center;justify-content:space-between;gap:16px;min-height:93px;padding:16px 22px;border-bottom:1px solid #edf0f5}
 .tsui-task-copy{display:flex;min-width:0;flex:1;flex-direction:column;gap:4px}
 .tsui-task-copy small{overflow:hidden;color:#62708b;font-size:12px;text-overflow:ellipsis;white-space:nowrap}
-.tsui-task-copy strong{overflow-wrap:anywhere;color:#1c2741;font-size:15px;font-weight:700;line-height:1.35}
+.tsui-task-copy h3{margin:0;overflow-wrap:anywhere;color:#1c2741;font-size:15px;font-weight:700;line-height:1.35}
 .tsui-task-copy>span{color:#8793aa;font-size:12px}
 .tsui-task-actions{display:flex;flex:0 0 auto;align-items:center;gap:7px}
 .tsui-row-action,.tsui-done-action{min-height:44px;border:1px solid #dce5fa;border-radius:8px;padding:0 11px;background:#edf3ff;color:#3264cf;font-size:12px;font-weight:680;white-space:nowrap}
@@ -69,3 +69,8 @@
 @media(max-width:900px){.tsui-today-grid{grid-template-columns:minmax(0,1.15fr) minmax(310px,1fr)}.tsui-task-row{align-items:flex-start;flex-direction:column}.tsui-task-actions{flex-wrap:wrap}}
 @media(max-width:700px){.cgr-app-shell .tsui-topbar{height:60px;grid-template-columns:auto 1fr auto;padding:0 14px}.tsui-brand strong{display:none}.tsui-primary-nav{justify-content:center;gap:0}.tsui-primary-nav button{min-width:58px;padding:0 8px;font-size:13px}.tsui-primary-nav button.active::after{left:8px;right:8px}.tsui-top-actions{gap:2px}.tsui-tell-button{width:36px;height:36px;min-height:36px;overflow:hidden;padding:0;color:transparent;font-size:0}.tsui-tell-button::before{content:"＋";color:#fff;font-size:21px}.tsui-settings-button{width:35px}.cgr-app-shell .cgr-main.surface-main{padding:20px 14px 60px!important}.tsui-page-heading h1{font-size:26px}.tsui-page-heading span{font-size:12px}.tsui-today-grid{display:block}.tsui-mobile-switch{display:flex;gap:8px;margin-bottom:13px}.tsui-mobile-switch button{flex:1;min-height:41px;border:1px solid #dfe5f0;border-radius:9px;background:#fff;color:#718099;font-size:13px}.tsui-mobile-switch button.active{border-color:#b8caf6;background:#eaf1ff;color:#3264cf;font-weight:700}.tsui-mobile-switch span{margin-left:4px}.tsui-panel.mobile-hidden{display:none}.tsui-node-panel{position:static;height:auto;min-height:0}.tsui-node-scroll{overflow:visible}.tsui-task-panel{min-height:0}.tsui-task-row{min-height:95px}.tsui-unresolved-link{font-size:11px}.tsui-node-time{flex-basis:84px}.tsui-node-row{padding:13px 16px}}
 @media(max-width:360px){.tsui-primary-nav button{min-width:49px;padding:0 5px;font-size:12px}.tsui-settings-button{width:30px}.tsui-task-row{padding:14px 16px}}
+
+.tsui-task-context{align-self:flex-start;min-height:44px;max-width:100%;margin:-8px 0 -8px -9px;border:0;border-radius:6px;padding:0 9px;overflow:hidden;background:transparent;color:#62708b;text-overflow:ellipsis;white-space:nowrap;text-align:left;font-size:12px}
+.tsui-task-context:hover{color:#315ec5;text-decoration:underline}
+
+.tsui-date-heading{position:sticky;top:0;z-index:1;margin:0;padding:11px 22px;border-bottom:1px solid #edf0f5;background:#f8faff;color:#62718d;font-size:12px;font-weight:740;letter-spacing:.01em}

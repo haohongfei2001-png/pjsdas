@@ -1,29 +1,30 @@
 import { expect, test } from '@playwright/test'
 
-test('UU-04 shell keeps exactly two primary destinations keyboard-accessible and routes Settings outside primary nav', async ({ page }) => {
+test('UU-04 shell keeps exactly three primary destinations keyboard-accessible and routes Settings outside primary nav', async ({ page }) => {
   await page.goto('/')
 
   const main = page.locator('main.surface-main')
-  const nav = page.locator('.surface-nav')
+  const nav = page.locator('.tsui-primary-nav')
   await expect(main).toBeVisible()
   await expect(nav).toBeVisible()
 
   const navButtons = nav.getByRole('button')
-  await expect(navButtons).toHaveCount(2)
+  await expect(navButtons).toHaveCount(3)
   await expect(navButtons.nth(0)).toContainText(/今天|Today/)
-  await expect(navButtons.nth(1)).toContainText(/机会|Opportunities/)
+  await expect(navButtons.nth(1)).toContainText(/岗位库|Jobs/)
+  await expect(navButtons.nth(2)).toContainText(/日程|Schedule/)
 
-  for (let index = 0; index < 2; index += 1) {
+  for (let index = 0; index < 3; index += 1) {
     const button = navButtons.nth(index)
     await expect(button).toBeVisible()
     await button.focus()
     await expect(button).toBeFocused()
   }
 
-  await expect(page.locator('.ultimate-toolbar').getByRole('button', { name: /设置|Settings/ })).toBeVisible()
+  await expect(page.locator('.tsui-topbar').getByRole('button', { name: /设置|Settings/ })).toBeVisible()
   await expect(nav.getByRole('button', { name: /设置|Settings/ })).toHaveCount(0)
 
-  await page.locator('.ultimate-toolbar').getByRole('button', { name: /设置|Settings/ }).click()
+  await page.locator('.tsui-topbar').getByRole('button', { name: /设置|Settings/ }).click()
   const dataRecovery = page.locator('details.settings-group > summary').filter({ hasText: /数据与恢复|Data & recovery/ })
   await dataRecovery.focus()
   await expect(dataRecovery).toBeFocused()
@@ -37,7 +38,7 @@ test('UU-04 shell keeps exactly two primary destinations keyboard-accessible and
   expect(overflow.documentWidth).toBeLessThanOrEqual(overflow.viewport + 2)
 })
 
-test('390x844 shows a complete next action and at least one upcoming recruiting node without scrolling', async ({ page }) => {
+test('390x844 switches between the task and upcoming node without horizontal clipping', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 })
   await page.goto('/')
 
@@ -100,19 +101,26 @@ test('390x844 shows a complete next action and at least one upcoming recruiting 
   })
 
   await page.reload()
-  const primary = page.locator('.cgr-primary-action')
-  const node = page.locator('.cgr-agenda-node').filter({ hasText: '移动端科技' }).first()
+  const primary = page.locator('.tsui-task-row').first()
+  const node = page.locator('.tsui-node-row').filter({ hasText: '移动端科技' }).first()
   await expect(primary.getByRole('heading', { name: '准备移动端面试材料' })).toBeVisible()
-  await expect(node).toBeVisible()
-  await expect(page.locator('.surface-nav').getByRole('button')).toHaveCount(2)
-  await expect(page.locator('.ultimate-mobile-capture')).toBeVisible()
+  await expect(page.locator('.tsui-node-panel')).toBeHidden()
+  await expect(page.locator('.tsui-primary-nav').getByRole('button')).toHaveCount(3)
+  await expect(page.locator('.tsui-tell-button')).toBeVisible()
 
-  const boxes = await Promise.all([primary.boundingBox(), node.boundingBox()])
+  const boxes = await Promise.all([primary.boundingBox()])
   for (const box of boxes) {
     expect(box).not.toBeNull()
     expect(box!.y).toBeGreaterThanOrEqual(0)
     expect(box!.y + box!.height).toBeLessThanOrEqual(844)
   }
+
+  await page.getByRole('button', { name: /节点/ }).first().click()
+  await expect(node).toBeVisible()
+  const nodeBox = await node.boundingBox()
+  expect(nodeBox).not.toBeNull()
+  expect(nodeBox!.y).toBeGreaterThanOrEqual(0)
+  expect(nodeBox!.y + nodeBox!.height).toBeLessThanOrEqual(844)
 
   const overflow = await page.evaluate(() => ({
     viewport: window.innerWidth,

@@ -47,7 +47,7 @@ import { selectTodayWeb } from './today/todayWebSelector.js'
 import { buildScheduleStream } from './schedule/scheduleStream.js'
 import ScheduleFeature from './schedule/ScheduleFeature.js'
 import DecisionRequestsView from './DecisionRequestsView.js'
-import { type TodayBriefAction } from './todayBrief.js'
+import { buildTodayBrief, type TodayBriefAction } from './todayBrief.js'
 import type {
   Action,
   DecisionRequest,
@@ -69,7 +69,7 @@ import './tsui02.css'
 type Surface = 'today' | 'opportunities' | 'schedule' | 'decisions' | 'history' | 'settings'
 type PrimarySurface = 'today' | 'opportunities' | 'schedule'
 type OpportunityTab = 'opportunities' | 'prepare' | 'discovery'
-type CompletionFeedback = { id: string; title: string; previousStatus: Action['status']; commandId?: string; error?: string }
+type CompletionFeedback = { id: string; title: string; previousStatus: Action['status']; commandId?: string; outcome: 'done' | 'no_write' | 'error'; error?: string }
 type RouteState = {
   surface: Surface
   capture: boolean
@@ -198,7 +198,7 @@ export default function AppV8() {
       navigate('/today')
       return
     }
-    const current = semanticPath()
+    const current = semanticPath() + window.location.search
     setCaptureContextOpportunityId(route.opportunityId)
     setCaptureReturnPath(current === '/capture' || current === '/today/capture' ? '/today' : current)
     navigate('/today/capture')
@@ -332,6 +332,7 @@ export default function AppV8() {
   const accountKey = cloud.session?.user.id ?? 'local-workspace'
   const workspaceRevision = snapshot ? [cloud.session?.user.id ? getAccountCheckpoint(cloud.session.user.id).lastSyncedVersion ?? 'pending' : 'local', snapshot.exportedAt].join(':') : ''
   const todayWeb = useMemo(() => snapshot ? selectTodayWeb(snapshot, { availableMinutes: budgetMinutes }, { now, timezone, workspaceVersion: workspaceRevision }) : undefined, [snapshot, budgetMinutes, now, timezone, workspaceRevision])
+  const criticalTodayWarnings = useMemo(() => snapshot && surface === 'today' ? buildTodayBrief(snapshot, { availableMinutes: budgetMinutes }, { now, timezone, workspaceVersion: workspaceRevision }).materialCoverageWarnings.filter((item) => item.severity === 'critical' && item.code !== 'capacity_conflict') : [], [snapshot, surface, budgetMinutes, now, timezone, workspaceRevision])
   const scheduleStream = useMemo(() => snapshot ? buildScheduleStream(snapshot, { accountKey, workspaceRevision, timezone, now }) : undefined, [snapshot, accountKey, workspaceRevision, timezone, now])
 
   const opportunityDecisionList = useMemo<OpportunityDecisionListRead | undefined>(() => {
@@ -397,17 +398,22 @@ export default function AppV8() {
     try {
       if (cloud.session && connectedWorkspaceAuthorityEnabled()) {
         authoritativeCommandId = createConnectedCommandId('web-action')
+        const command = before.kind === 'apply' && status === 'done'
+          ? { commandId: authoritativeCommandId, kind: 'record_application_submission' as const, opportunityId: before.opportunityId! }
+          : { commandId: authoritativeCommandId, kind: 'set_action_status' as const, actionId: id, status }
+        if (before.kind === 'apply' && status === 'done' && !before.opportunityId) throw new Error('Application action has no exact opportunity identity.')
         const result = await executeConnectedBusinessCommand(cloud.session.user.id, {
           type: 'domain',
-          value: {
-            commandId: authoritativeCommandId,
-            kind: 'set_action_status',
-            actionId: id,
-            status,
-          },
+          value: command,
         }, { commandId: authoritativeCommandId })
         if (result.outcome === 'CONFLICT') throw new Error(result.conflict?.message ?? 'Action update conflicted with newer authoritative state.')
+        if (result.outcome === 'NO_WRITE') {
+          await reload()
+          setLastCompletedAction({ id: before.id, title: before.title, previousStatus: before.status, outcome: 'no_write' })
+          return
+        }
       } else {
+        if (before.kind === 'apply' && status === 'done') throw new Error('确认投递需要已连接的账户；此操作未写入。')
         await applyActionStatusChangeSet(id, status)
         if (cloud.session) await ensureAuthoritativePersistence(true, cloud.syncNow)
       }
@@ -418,6 +424,7 @@ export default function AppV8() {
           title: before.title,
           previousStatus: before.status,
           commandId: authoritativeCommandId,
+          outcome: 'done',
         })
       } else if (lastCompletedAction?.id === id) setLastCompletedAction(null)
     } catch (caught) {
@@ -428,13 +435,14 @@ export default function AppV8() {
         previousStatus: before.status,
         commandId: authoritativeCommandId,
         error: caught instanceof Error ? caught.message : String(caught),
+        outcome: 'error',
       })
     }
   }
 
   async function undoLastCompletion() {
     const item = lastCompletedAction
-    if (!item) return
+    if (!item || item.outcome !== 'done') return
     try {
       if (cloud.session && connectedWorkspaceAuthorityEnabled() && item.commandId) {
         const result = await undoConnectedBusinessCommand(cloud.session.user.id, item.commandId)
@@ -446,7 +454,7 @@ export default function AppV8() {
       await reload()
       setLastCompletedAction(null)
     } catch (caught) {
-      setLastCompletedAction({ ...item, error: caught instanceof Error ? caught.message : String(caught) })
+      setLastCompletedAction({ ...item, outcome: 'error', error: caught instanceof Error ? caught.message : String(caught) })
     }
   }
 
@@ -524,6 +532,7 @@ export default function AppV8() {
         {!loading && surface === 'today' && todayWeb && scheduleStream ? (
           <TodayFeature
             selection={todayWeb}
+            criticalWarnings={criticalTodayWarnings}
             stream={scheduleStream}
             opportunities={opportunities}
             readOnly={CGR02_TODAY_READ_ONLY}
@@ -535,6 +544,7 @@ export default function AppV8() {
             onOpenDecisions={() => navigate('/decisions')}
             onOpenDecision={(id) => navigate('/decisions/' + encodeURIComponent(id))}
             onOpenAgenda={() => navigate('/schedule')}
+            onOpenUnresolved={() => navigate('/schedule?view=unresolved')}
             onExecute={executeTodayAction}
             onMark={markAction}
             onOpenOpportunity={openOpportunity}
@@ -601,10 +611,10 @@ export default function AppV8() {
       {lastCompletedAction ? (
         <div className="action-undo-toast" role="status" aria-live="polite">
           <div>
-            <strong>{lastCompletedAction.error ? (zh ? '撤销未完成' : 'Undo did not complete') : (zh ? '已标记完成' : 'Marked done')}</strong>
+            <strong>{lastCompletedAction.outcome === 'error' ? (zh ? '操作未确认' : 'Action not confirmed') : lastCompletedAction.outcome === 'no_write' ? (zh ? '没有写入变化' : 'No change written') : (zh ? '已完成' : 'Completed')}</strong>
             <span>{lastCompletedAction.error ?? lastCompletedAction.title}</span>
           </div>
-          <button type="button" onClick={() => { void undoLastCompletion() }}>{zh ? '撤销' : 'Undo'}</button>
+          {lastCompletedAction.outcome === 'done' ? <button type="button" onClick={() => { void undoLastCompletion() }}>{zh ? '撤销' : 'Undo'}</button> : null}
         </div>
       ) : null}
     </div>

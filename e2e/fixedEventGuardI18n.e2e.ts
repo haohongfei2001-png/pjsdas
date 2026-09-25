@@ -52,7 +52,7 @@ async function seedPastEvent(page: Page) {
 }
 
 async function openCapture(page: Page) {
-  await page.locator('.ultimate-capture-button').click()
+  await page.locator('.tsui-tell-button').click()
   await expect(page.getByRole('heading', { name: '告诉 PJSDAS' })).toBeVisible()
 }
 
@@ -60,26 +60,27 @@ test('elapsed recruiting node stays unresolved until an explicit completion fact
   await page.goto('/')
   await seedPastEvent(page)
 
-  const unresolved = page.locator('.cgr-agenda-node.unresolved').filter({ hasText: '节点测试科技' })
+  await page.locator('.tsui-unresolved-link').click()
+  const unresolved = page.locator('.tsui-schedule-panel .tsui-node-row').filter({ hasText: '节点测试科技' })
   await expect(unresolved).toBeVisible()
   await expect(unresolved).toContainText('面试')
   await expect(unresolved).toContainText('待确认')
 
-  await page.locator('.ultimate-toolbar').getByRole('button', { name: /设置|Settings/ }).click()
+  await page.locator('.tsui-topbar').getByRole('button', { name: /设置|Settings/ }).click()
   const interfaceGroup = page.locator('details.settings-group > summary').filter({ hasText: /界面.*显示层|Interface.*Presentation/ }).locator('..')
   await interfaceGroup.locator('summary').click()
   await interfaceGroup.getByRole('button', { name: 'EN', exact: true }).click()
-  await page.locator('.surface-nav').getByRole('button', { name: /Today/ }).click()
-  await expect(page.getByRole('heading', { name: 'Past · needs resolution' })).toBeVisible()
-  await expect(page.locator('.cgr-agenda-node.unresolved').filter({ hasText: 'Resolve' })).toBeVisible()
+  await page.locator('.tsui-primary-nav').getByRole('button', { name: /Schedule/ }).click()
+  await page.getByRole('button', { name: /Unresolved/ }).first().click()
+  await expect(page.locator('.tsui-schedule-panel .tsui-node-row').filter({ hasText: 'Unresolved' })).toBeVisible()
 
-  await page.locator('.ultimate-capture-button').click()
+  await page.locator('.tsui-tell-button').click()
   await page.locator('.cgr-capture-input').fill('节点测试科技 AI产品经理 面试已经完成。')
   await page.getByRole('button', { name: 'Confirm and save' }).click()
   await expect(page.getByRole('status')).toBeVisible()
   await page.getByRole('button', { name: 'Close' }).click()
 
-  await expect(page.locator('.cgr-agenda-node.unresolved').filter({ hasText: '节点测试科技' })).toHaveCount(0)
+  await expect(page.locator('.tsui-schedule-panel .tsui-node-row').filter({ hasText: '节点测试科技' })).toHaveCount(0)
 })
 
 test('a question about an elapsed event remains read-only and does not complete it', async ({ page }) => {
@@ -92,5 +93,6 @@ test('a question about an elapsed event remains read-only and does not complete 
   await expect(page.getByRole('status')).toContainText('没有被当作当前事实写入')
   await page.getByRole('button', { name: '关闭' }).click()
 
-  await expect(page.locator('.cgr-agenda-node.unresolved').filter({ hasText: '节点测试科技' })).toBeVisible()
+  await page.locator('.tsui-unresolved-link').click()
+  await expect(page.locator('.tsui-schedule-panel .tsui-node-row').filter({ hasText: '节点测试科技' })).toBeVisible()
 })

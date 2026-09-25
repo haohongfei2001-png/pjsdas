@@ -31,7 +31,7 @@ test('CGR-03 opportunity detail labels recent history honestly and reaches the o
     })
   })
   await page.reload()
-  await page.locator('.surface-nav').getByRole('button', {name:/机会|Opportunities/}).click()
+  await page.locator('.tsui-primary-nav').getByRole('button', {name:/岗位库|Jobs/}).click()
   await page.getByRole('button', {name:/合成历史科技/}).click()
   const detail = page.getByRole('dialog', {name:/岗位详情|Opportunity details/})
   await expect(detail).toBeVisible()
@@ -46,7 +46,7 @@ test('CGR-03 opportunity detail labels recent history honestly and reaches the o
   await expect(history.locator('article')).toHaveCount(34)
   await expect(history.locator('summary')).toContainText(/完整历史|Full history/)
   await expect(history).toContainText('合成历史记录 33')
-  await expect(page).toHaveURL(/\/opportunities\/cgr03-history-opportunity$/)
+  await expect(page).toHaveURL(/\/library\/cgr03-history-opportunity$/)
 })
 
 test('CGR-03 stale opportunity deep link explains the missing detail and returns to the list', async ({ page }) => {
@@ -57,7 +57,7 @@ test('CGR-03 stale opportunity deep link explains the missing detail and returns
   await missing.getByRole('button', { name: /重新读取|Retry loading/ }).click()
   await expect(missing).toBeVisible()
   await missing.getByRole('button', { name: /返回机会列表|Back to opportunities/ }).click()
-  await expect(page).toHaveURL(/\/opportunities$/)
+  await expect(page).toHaveURL(/\/library$/)
   await expect(missing).toHaveCount(0)
 })
 
@@ -89,7 +89,7 @@ test('CGR-03 detail completion uses the shared action command and updates the pe
     })
   })
   await page.reload()
-  await page.locator('.surface-nav').getByRole('button', { name: /机会|Opportunities/ }).click()
+  await page.locator('.tsui-primary-nav').getByRole('button', { name: /岗位库|Jobs/ }).click()
   await page.getByRole('button', { name: /合成行动科技/ }).click()
   const detail = page.getByRole('dialog', { name: /岗位详情|Opportunity details/ })
   const preparation = detail.locator('.opportunity-detail-section').filter({ has: page.locator('.opportunity-detail-action-list article', { hasText: '准备合成面试' }) })
