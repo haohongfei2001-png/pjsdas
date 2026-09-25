@@ -15,7 +15,7 @@ function group(item: OpportunityDecisionRead, opportunity?: Opportunity): JobFil
 
 function applicationUrl(opportunity?: Opportunity) {
   if (!opportunity || opportunity.processStage !== 'not_applied' || opportunity.participationStatus === 'abandoned') return undefined
-  const value = opportunity.detail?.userFacts?.applicationUrl ?? opportunity.detail?.facts?.application.applicationUrl
+  const value = opportunity.detail?.userFacts?.applicationUrl ?? opportunity.detail?.facts?.application?.applicationUrl
   if (!value) return undefined
   try { const url = new URL(value); return url.protocol === 'https:' || url.protocol === 'http:' ? url.href : undefined } catch { return undefined }
 }

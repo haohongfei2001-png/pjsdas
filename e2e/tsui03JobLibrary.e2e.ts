@@ -1,0 +1,116 @@
+import { mkdir } from 'node:fs/promises'
+import { expect, test, type Page } from '@playwright/test'
+
+async function emitVisual(page: Page, label: string) {
+  const bytes = await page.screenshot({ type: 'jpeg', quality: 52, animations: 'disabled' })
+  const encoded = bytes.toString('base64')
+  console.log(`TSUI03_VISUAL_${label}_BEGIN`)
+  for (let offset = 0; offset < encoded.length; offset += 3000) console.log(`TSUI03_VISUAL_${label}_DATA:${encoded.slice(offset, offset + 3000)}`)
+  console.log(`TSUI03_VISUAL_${label}_END`)
+}
+
+test('TSUI-03 300-job paging, exact posting identity, routed detail and truthful application link', async ({ page, context }) => {
+  await page.goto('/')
+  await page.evaluate(async () => {
+    const createdAt = new Date('2026-09-20T00:00:00.000Z').toISOString()
+    await new Promise<void>((resolve, reject) => {
+      const request = indexedDB.open('pjsdas', 11)
+      request.onerror = () => reject(request.error)
+      request.onsuccess = () => {
+        const db = request.result
+        const tx = db.transaction('opportunities', 'readwrite')
+        tx.onerror = () => reject(tx.error)
+        tx.oncomplete = () => { db.close(); resolve() }
+        for (let index = 0; index < 300; index += 1) tx.objectStore('opportunities').put({
+          id: 'tsui03-bulk-' + index,
+          company: '批量岗位 ' + index,
+          role: 'Product researcher / 产品研究员 ' + index,
+          currentStageLabel: '待投递', processStage: 'not_applied',
+          roleType: 'core', participationStatus: 'active', early: false,
+          opportunityValue: 70, fitScore: 70, importedAt: createdAt,
+        })
+        for (const suffix of ['a', 'b']) tx.objectStore('opportunities').put({
+          id: 'tsui03-posting-' + suffix,
+          company: '同名科技', role: 'Senior Product / 高级产品设计与研究',
+          currentStageLabel: '待投递', processStage: 'not_applied',
+          roleType: 'core', participationStatus: 'active', early: false,
+          opportunityValue: 80, fitScore: 80, importedAt: createdAt,
+          detail: { userFacts: { applicationUrl: 'https://apply.example.test/posting/' + suffix } },
+        })
+      }
+    })
+  })
+  await page.reload()
+  await page.locator('.tsui-primary-nav').getByRole('button', { name: /岗位库|Jobs/ }).click()
+  await expect(page.locator('.tsui-job-row')).toHaveCount(40)
+  await expect(page.locator('.tsui-library-more')).toContainText('40/302')
+  await mkdir('test-results/tsui03', { recursive: true })
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await page.screenshot({ path: 'test-results/tsui03/library-desktop.png', fullPage: true, animations: 'disabled' })
+  await emitVisual(page, 'LIBRARY_DESKTOP')
+  while (await page.locator('.tsui-library-more').count()) await page.locator('.tsui-library-more').click()
+  const ids = await page.locator('.tsui-job-row').evaluateAll((elements) => elements.map((element) => element.getAttribute('data-opportunity-id')))
+  expect(ids).toHaveLength(302)
+  expect(new Set(ids).size).toBe(302)
+
+  const search = page.getByRole('textbox', { name: /搜索公司或岗位|Search company or role/ })
+  await search.fill('同名科技')
+  const rows = page.locator('.tsui-job-row')
+  await expect(rows).toHaveCount(2)
+  await expect(rows.nth(0)).toHaveAttribute('data-opportunity-id', /tsui03-posting-[ab]/)
+  await expect(rows.nth(1)).toHaveAttribute('data-opportunity-id', /tsui03-posting-[ab]/)
+  // The row itself carries the exact opportunity ID; never infer it from company and role.
+  const a = page.locator('.tsui-job-row[data-opportunity-id="tsui03-posting-a"]')
+  const b = page.locator('.tsui-job-row[data-opportunity-id="tsui03-posting-b"]')
+  await expect(a.locator('.tsui-job-apply')).toHaveAttribute('href', 'https://apply.example.test/posting/a')
+  await expect(b.locator('.tsui-job-apply')).toHaveAttribute('href', 'https://apply.example.test/posting/b')
+  await context.route('https://apply.example.test/**', (route) => route.fulfill({ status: 200, contentType: 'text/html', body: '<title>Application destination</title>' }))
+  const popupPromise = page.waitForEvent('popup')
+  await a.locator('.tsui-job-apply').click()
+  const popup = await popupPromise
+  await expect(popup).toHaveURL('https://apply.example.test/posting/a')
+  await popup.close()
+  const stage = await page.evaluate(async () => new Promise<string | undefined>((resolve, reject) => {
+    const request = indexedDB.open('pjsdas', 11)
+    request.onerror = () => reject(request.error)
+    request.onsuccess = () => {
+      const db = request.result
+      const tx = db.transaction('opportunities', 'readonly')
+      const get = tx.objectStore('opportunities').get('tsui03-posting-a')
+      get.onerror = () => reject(get.error)
+      get.onsuccess = () => { db.close(); resolve(get.result?.processStage) }
+    }
+  }))
+  expect(stage).toBe('not_applied')
+
+  await a.locator('.tsui-job-open').click()
+  await expect(page).toHaveURL(/\/library\/tsui03-posting-a$/)
+  const detail = page.locator('.job-detail-page')
+  await expect(detail.getByRole('heading', { name: 'Senior Product / 高级产品设计与研究' })).toBeVisible()
+  await expect(detail.locator('.job-detail-actions a')).toHaveAttribute('href', 'https://apply.example.test/posting/a')
+  await page.screenshot({ path: 'test-results/tsui03/detail-desktop.png', fullPage: true, animations: 'disabled' })
+  await emitVisual(page, 'DETAIL_DESKTOP')
+  await page.locator('.job-detail-back').click()
+  await expect(search).toHaveValue('同名科技')
+  await expect(a.locator('.tsui-job-open')).toBeFocused()
+  await b.locator('.tsui-job-open').click()
+  await expect(page).toHaveURL(/\/library\/tsui03-posting-b$/)
+  await expect(page.locator('.job-detail-actions a')).toHaveAttribute('href', 'https://apply.example.test/posting/b')
+  await page.goBack()
+  await expect(b.locator('.tsui-job-open')).toBeFocused()
+
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.screenshot({ path: 'test-results/tsui03/library-mobile.png', fullPage: true, animations: 'disabled' })
+  await emitVisual(page, 'LIBRARY_MOBILE')
+  await a.locator('.tsui-job-open').click()
+  await page.screenshot({ path: 'test-results/tsui03/detail-mobile.png', fullPage: true, animations: 'disabled' })
+  await emitVisual(page, 'DETAIL_MOBILE')
+  await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1)
+  await page.locator('.job-detail-back').click()
+  await page.setViewportSize({ width: 320, height: 640 })
+  await page.evaluate(() => { document.documentElement.style.fontSize = '200%' })
+  await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1)
+  await a.locator('.tsui-job-open').click()
+  await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1)
+  await page.screenshot({ path: 'test-results/tsui03/detail-large-text-320.png', fullPage: true, animations: 'disabled' })
+})
