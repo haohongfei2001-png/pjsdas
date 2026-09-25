@@ -60,7 +60,6 @@ import type {
   ScheduleNodeTemporal,
 } from './model.js'
 import type { PJSDASSnapshot } from './snapshot.js'
-import './timeplan.css'
 import './surfaceConsolidation.css'
 import './interactionDetail.css'
 import './webConsole.css'

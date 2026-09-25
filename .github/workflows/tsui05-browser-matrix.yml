@@ -1,0 +1,53 @@
+name: TSUI-05 Browser Matrix
+
+on:
+  pull_request:
+    paths:
+      - 'src/**'
+      - 'e2e/**'
+      - 'playwright.config.mts'
+      - 'scripts/tsui01-projection-bench.ts'
+      - '.github/workflows/tsui05-browser-matrix.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'src/**'
+      - 'e2e/**'
+      - 'playwright.config.mts'
+      - 'scripts/tsui01-projection-bench.ts'
+      - '.github/workflows/tsui05-browser-matrix.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  firefox-webkit:
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Install Playwright test runner
+        run: npm install --no-save --package-lock=false @playwright/test@1.63.0
+      - name: Install Firefox and WebKit
+        run: npx playwright install --with-deps firefox webkit
+      - name: Fixed 300-job, 500-action, 130-node, 2000-history projection sample
+        run: npx tsx scripts/tsui01-projection-bench.ts
+      - name: Run core routes and schedule anchors in Firefox and WebKit
+        run: npx playwright test --config=playwright.config.mts --project=firefox --project=webkit e2e/tsui02Today.e2e.ts e2e/tsui03JobLibrary.e2e.ts e2e/tsui04Schedule.e2e.ts
+      - name: Upload browser evidence
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v5
+        with:
+          name: tsui05-browser-matrix
+          path: |
+            playwright-report/
+            test-results/
+          if-no-files-found: ignore
+          retention-days: 7
