@@ -118,6 +118,7 @@ test('TSUI-04 real schedule: today anchor, both directions, unresolved and undat
   await expect(detail).toContainText(/具体时间待定|Exact time TBD/)
   await expect(detail).toContainText(/连接权威工作区|Connect the authoritative workspace/)
   await expect(detail.getByRole('button', { name: /查看岗位详情|View job details/ })).toBeVisible()
+  await expect.poll(() => detail.evaluate((element) => element.getBoundingClientRect().top)).toBeGreaterThanOrEqual(80)
   await page.screenshot({ path: 'test-results/tsui04/event-detail-desktop.png', fullPage: true, animations: 'disabled' })
   await visual(page, 'EVENT_DETAIL_DESKTOP')
   await detail.getByRole('button', { name: /关闭详情|Close details/ }).click()
