@@ -146,6 +146,16 @@ test('TSUI-04 real schedule: today anchor, both directions, unresolved and undat
   await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1)
   await page.setViewportSize({ width: 320, height: 640 })
   await page.evaluate(() => { document.documentElement.style.fontSize = '200%' })
+  const overflowing = await page.evaluate(() => [...document.querySelectorAll<HTMLElement>('body *')]
+    .map((element) => ({ element, box: element.getBoundingClientRect() }))
+    .filter(({ box }) => box.right > innerWidth + 1 || box.left < -1)
+    .slice(0, 24)
+    .map(({ element, box }) => ({ tag: element.tagName, className: typeof element.className === 'string' ? element.className : '',
+      left: Math.round(box.left), right: Math.round(box.right), scrollWidth: element.scrollWidth, clientWidth: element.clientWidth,
+      text: (element.textContent ?? '').trim().slice(0, 50) })))
+  console.log('TSUI05_SCHEDULE_320_OVERFLOW:' + JSON.stringify(overflowing))
+  await page.evaluate(() => window.scrollTo(0, 0))
+  await visual(page, 'SCHEDULE_LARGE_TEXT_320')
   await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1)
   await page.screenshot({ path: 'test-results/tsui04/schedule-large-text-320.png', fullPage: true, animations: 'disabled' })
 
