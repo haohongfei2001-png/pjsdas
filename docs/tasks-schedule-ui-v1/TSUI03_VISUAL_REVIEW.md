@@ -20,6 +20,10 @@
 - 这次截图还发现桌面详情头部继承旧 `justify-content:space-between`，使标记与公司名相距过远。改为靠左排列。随后为视觉夹具补上真实待投递 Action，使“我已投递”按钮在截图出现；打开申请地址仍需维持 Opportunity 阶段和 Action 状态不变。
 - 唯一失败由夹具手工创建的 application deadline 使用了与既有投影不同的 occurrenceId：升级流程把它映射到 Opportunity deadline 后又派生 canonical legacy 节点，因此测试看见两个相同显示名。夹具改为只存 Opportunity date-only deadline，由既有投影生成唯一节点；不修改生产的 occurrence 去重规则。下一 head 必须验证该路径只出现一条。
 
+## Ready 候选
+
+- 候选代码 head `ae5cf9b1b586a70180257bb24b89b95dfc9c87b1` 修复桌面详情头部对齐，补齐待投递 Action 的实渲夹具，并只用 canonical deadline 派生单一节点。该 head 创建时 PR 仍为 draft，因此 Browser E2E 按现有 workflow 条件 skipped；这是未执行，不是 PASS。现已将 PR 转为 ready，下一次同步提交触发完整浏览器闭环。
+
 ## 待补的本轮闭环
 
 - 再渲岗位库桌面、手机与详情桌面/手机，对照 Jobs-Desktop、Jobs-Mobile、Job-Detail。
