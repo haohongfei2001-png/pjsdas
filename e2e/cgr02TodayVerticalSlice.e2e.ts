@@ -319,7 +319,7 @@ test('CGR-02 golden journey: understand -> authoritative save -> cross-client vi
 
   await pageA.locator('.tsui-task-context').first().click()
   await expect(pageA).toHaveURL(/\/pjsdas\/library\/A-opp-1$/)
-  const opener = pageA.locator('.opportunity-detail-drawer .cgr-context-capture')
+  const opener = pageA.locator('.job-detail-actions .job-detail-capture')
   await opener.click()
   await expect(pageA).toHaveURL(/\/pjsdas\/today\/capture$/)
   await expect(pageA.getByText('当前上下文：A公司 · 产品经理')).toBeVisible()

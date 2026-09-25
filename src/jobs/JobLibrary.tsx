@@ -8,13 +8,13 @@ import './jobs.css'
 export type JobFilter = 'all' | 'unapplied' | 'in_progress' | 'ended'
 
 function group(item: OpportunityDecisionRead, opportunity?: Opportunity): JobFilter {
-  if (item.bucket === 'ended' || opportunity?.processStage === 'closed' || opportunity?.participationStatus === 'abandoned') return 'ended'
-  if (opportunity?.processStage === 'not_applied' || opportunity?.processStage === 'waiting_release') return 'unapplied'
+  if (item.bucket === 'ended' || item.process.stage === 'closed' || opportunity?.participationStatus === 'abandoned') return 'ended'
+  if (item.process.stage === 'not_applied' || item.process.stage === 'waiting_release') return 'unapplied'
   return 'in_progress'
 }
 
-function applicationUrl(opportunity?: Opportunity) {
-  if (!opportunity || opportunity.processStage !== 'not_applied' || opportunity.participationStatus === 'abandoned') return undefined
+function applicationUrl(opportunity: Opportunity | undefined, stage: OpportunityDecisionRead['process']['stage']) {
+  if (!opportunity || stage !== 'not_applied' || opportunity.participationStatus === 'abandoned') return undefined
   const value = opportunity.detail?.userFacts?.applicationUrl ?? opportunity.detail?.facts?.application?.applicationUrl
   if (!value) return undefined
   try { const url = new URL(value); return url.protocol === 'https:' || url.protocol === 'http:' ? url.href : undefined } catch { return undefined }
@@ -69,7 +69,7 @@ export default function JobLibrary({ read, opportunities, filter, onFilterChange
     <div className="tsui-library-panel">
       {visible.map((item) => {
         const opportunity = byId.get(item.opportunityId)
-        const url = applicationUrl(opportunity)
+        const url = applicationUrl(opportunity, item.process.stage)
         const ended = group(item, opportunity) === 'ended'
         const deadline = deadlineLabel(opportunity, zh)
         return <article className="tsui-job-row" key={item.opportunityId} data-opportunity-id={item.opportunityId}>

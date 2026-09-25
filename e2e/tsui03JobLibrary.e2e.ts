@@ -53,7 +53,7 @@ test('TSUI-03 300-job paging, exact posting identity, routed detail and truthful
   expect(ids).toHaveLength(302)
   expect(new Set(ids).size).toBe(302)
 
-  const search = page.getByRole('textbox', { name: /搜索公司或岗位|Search company or role/ })
+  const search = page.getByRole('searchbox', { name: /搜索公司或岗位|Search company or role/ })
   await search.fill('同名科技')
   const rows = page.locator('.tsui-job-row')
   await expect(rows).toHaveCount(2)
@@ -113,4 +113,67 @@ test('TSUI-03 300-job paging, exact posting identity, routed detail and truthful
   await a.locator('.tsui-job-open').click()
   await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1)
   await page.screenshot({ path: 'test-results/tsui03/detail-large-text-320.png', fullPage: true, animations: 'disabled' })
+})
+
+test('TSUI-03 Today and Schedule detail links restore their exact opener and old deep links remain readable', async ({ page }) => {
+  await page.goto('/')
+  await page.evaluate(async () => {
+    const now = Date.now()
+    await new Promise<void>((resolve, reject) => {
+      const request = indexedDB.open('pjsdas', 11)
+      request.onerror = () => reject(request.error)
+      request.onsuccess = () => {
+        const db = request.result
+        const tx = db.transaction(['opportunities', 'actions', 'scheduleNodes'], 'readwrite')
+        tx.onerror = () => reject(tx.error)
+        tx.oncomplete = () => { db.close(); resolve() }
+        tx.objectStore('opportunities').put({
+          id: 'tsui03-context-opp', company: '上下文公司', role: 'Researcher',
+          currentStageLabel: '面试', processStage: 'interview',
+          roleType: 'core', participationStatus: 'active', early: false,
+          opportunityValue: 80, fitScore: 80, importedAt: new Date(now - 86400000).toISOString(),
+        })
+        tx.objectStore('actions').put({
+          id: 'tsui03-context-action', kind: 'manual', title: '准备上下文面试',
+          opportunityId: 'tsui03-context-opp', processStage: 'interview',
+          dueAt: new Date(now + 3600000).toISOString(), duePrecision: 'datetime',
+          timingMode: 'deadline', estimatedMinutes: 20, leverage: 90, delayCost: 90,
+          status: 'todo', createdAt: new Date(now - 86400000).toISOString(), updatedAt: new Date(now - 86400000).toISOString(),
+        })
+        tx.objectStore('scheduleNodes').put({
+          id: 'tsui03-context-node', occurrenceId: 'tsui03-context-occurrence', version: 1,
+          opportunityId: 'tsui03-context-opp', kind: 'interview', state: 'scheduled',
+          constraintKind: 'employer_hard',
+          temporal: { shape: 'fixed_range', precision: 'datetime', timezone: 'UTC',
+            startAt: new Date(now + 2 * 86400000).toISOString(),
+            endAt: new Date(now + 2 * 86400000 + 3600000).toISOString(),
+            resolutionBasis: 'user_explicit' },
+          evidenceRefs: [], sourceVersionRefs: [], relatedActionIds: ['tsui03-context-action'], relatedPrepIds: [],
+          createdAt: new Date(now - 86400000).toISOString(), updatedAt: new Date(now - 86400000).toISOString(),
+        })
+      }
+    })
+  })
+  await page.reload()
+  const task = page.locator('.tsui-task-row[data-action-id="tsui03-context-action"]')
+  await expect(task).toBeVisible()
+  await task.locator('.tsui-task-context').click()
+  await expect(page).toHaveURL(/\/library\/tsui03-context-opp$/)
+  await expect(page.locator('.job-detail-back')).toContainText(/返回今天|Back to Today/)
+  await page.locator('.job-detail-back').click()
+  await expect(page).toHaveURL(/\/today$|\/pjsdas\/$|\/$/)
+  await expect(task.locator('.tsui-task-context')).toBeFocused()
+
+  await page.locator('.tsui-primary-nav').getByRole('button', { name: /日程|Schedule/ }).click()
+  const node = page.locator('.tsui-schedule-panel .tsui-node-row').filter({ hasText: '上下文公司' })
+  await expect(node).toBeVisible()
+  await node.click()
+  await expect(page).toHaveURL(/\/library\/tsui03-context-opp$/)
+  await expect(page.locator('.job-detail-back')).toContainText(/返回日程|Back to Schedule/)
+  await page.locator('.job-detail-back').click()
+  await expect(page).toHaveURL(/\/schedule$/)
+  await expect(node).toBeVisible()
+
+  await page.goto('/pjsdas/opportunities/tsui03-context-opp')
+  await expect(page.locator('.job-detail-page')).toContainText('上下文公司')
 })

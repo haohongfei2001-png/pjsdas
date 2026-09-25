@@ -94,7 +94,7 @@ test('primary navigation, language, recovery, and global Tell PJSDAS stay cohere
   await seedLocalWorkspace(page)
 
   await page.locator('.tsui-primary-nav').getByRole('button', { name: /岗位库/ }).click()
-  await expect(page.getByRole('heading', { name: '哪些在推进，哪些值得继续投入' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: '岗位库' })).toBeVisible()
 
   await page.locator('.tsui-topbar').getByRole('button', { name: /设置|Settings/ }).click()
   const interfaceGroup = page.locator('details.settings-group > summary').filter({ hasText: /界面.*显示层|Interface.*Presentation/ }).locator('..')
@@ -102,7 +102,7 @@ test('primary navigation, language, recovery, and global Tell PJSDAS stay cohere
   await interfaceGroup.getByRole('button', { name: 'EN', exact: true }).click()
 
   await page.locator('.tsui-primary-nav').getByRole('button', { name: /Jobs/ }).click()
-  await expect(page.getByRole('heading', { name: 'What is moving, and what is worth pursuing' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Job library' })).toBeVisible()
   await page.locator('.tsui-primary-nav').getByRole('button', { name: /Today/ }).click()
   await expect(page.locator('.tsui-page-heading').getByRole('heading', { name: 'Today', exact: true })).toBeVisible()
 

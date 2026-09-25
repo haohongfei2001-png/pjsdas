@@ -57,7 +57,7 @@ test('Prep Graph keeps source facts but localizes system status and link explana
   await interfaceGroup.locator('summary').click()
   await interfaceGroup.getByRole('button', { name: 'EN', exact: true }).click()
   await page.locator('.tsui-primary-nav').getByRole('button', { name: /Jobs/ }).click()
-  await page.locator('.tsui-library-secondary button').filter({ hasText: 'Prepare' }).click()
+  await page.locator('.tsui-library-secondary button').filter({ hasText: 'Preparation' }).click()
   await page.getByRole('button', { name: 'Prep Graph' }).click()
 
   const dialog = page.locator('.prep-graph-dialog')

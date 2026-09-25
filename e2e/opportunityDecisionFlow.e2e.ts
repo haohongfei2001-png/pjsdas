@@ -29,7 +29,7 @@ test('CGR-03 dense mixed-language workspace keeps search, identity, and return f
   const rows = page.locator('.opportunity-decision-row')
   await expect(rows).toHaveCount(40)
   await expect(page.locator('.tsui-library-more')).toContainText('40/300')
-  const search = page.getByRole('textbox', { name: /搜索公司或岗位|Search company or role/ })
+  const search = page.getByRole('searchbox', { name: /搜索公司或岗位|Search company or role/ })
   await search.fill('CGR03-299')
   await expect(rows).toHaveCount(1)
   await expect(rows.first()).toContainText('高级产品与认知系统研究岗位')
@@ -229,7 +229,7 @@ test('TSUI-03 Jobs shows one filter group and a conclusion-first routed detail',
 
   await page.locator('.job-detail-back').click()
   await expect(worthRow).toBeFocused()
-  const search = page.getByRole('textbox', { name: /搜索公司或岗位|Search company or role/ })
+  const search = page.getByRole('searchbox', { name: /搜索公司或岗位|Search company or role/ })
   await search.fill('值得')
   await page.locator('.tsui-primary-nav').getByRole('button', { name: /今天|Today/ }).click()
   await page.goBack()

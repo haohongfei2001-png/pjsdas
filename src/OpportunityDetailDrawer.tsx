@@ -114,7 +114,9 @@ export default function OpportunityDetailDrawer({
   const dialogRef = useRef<HTMLElement>(null)
   const closeButtonRef = useRef<HTMLButtonElement>(null)
   useEffect(() => setVisibleTimelineCount(6), [opportunity.id])
-  const ended = opportunity.processStage === 'closed' || opportunity.participationStatus === 'abandoned'
+  const effectiveStage = process?.stage ?? opportunity.processStage
+  const ended = effectiveStage === 'closed' || opportunity.participationStatus === 'abandoned'
+  const eligibleToApply = !ended && effectiveStage === 'not_applied'
   const hasRetainedStaleActions = ended && actions.some((item) => item.status === 'todo' || item.status === 'doing')
   const relevantActions = actions
     .filter((item) => !ended && (item.status === 'todo' || item.status === 'doing'))
@@ -123,10 +125,9 @@ export default function OpportunityDetailDrawer({
     .sort((a, b) => b.occurredAt.localeCompare(a.occurredAt))
   const visibleTimeline = orderedTimeline.slice(0, visibleTimelineCount)
   const completeTimeline = visibleTimeline.length === orderedTimeline.length
-  const effectiveStage = process?.stage ?? opportunity.processStage
   const storedStageLabel = process?.stageLabel ?? opportunity.currentStageLabel
   const effectiveStageText = presentStageLabel(effectiveStage, storedStageLabel, lang)
-  const applyAction = !ended ? actions.find((item) => item.kind === 'apply' && (item.status === 'todo' || item.status === 'doing')) : undefined
+  const applyAction = eligibleToApply ? actions.find((item) => item.kind === 'apply' && (item.status === 'todo' || item.status === 'doing')) : undefined
   const applicationCandidate = userFacts?.applicationUrl ?? opportunity.detail?.facts?.application?.applicationUrl
   let confirmedApplicationUrl: string | undefined
   try { if (applicationCandidate) { const url = new URL(applicationCandidate); if (url.protocol === 'https:' || url.protocol === 'http:') confirmedApplicationUrl = url.href } } catch { /* Show the missing-link state. */ }
@@ -173,12 +174,12 @@ export default function OpportunityDetailDrawer({
 
         {asPage ? <div className="job-detail-action-area">
           <div className="job-detail-actions">
-            {!ended && confirmedApplicationUrl ? <a href={confirmedApplicationUrl} target="_blank" rel="noopener noreferrer">{zh ? '打开申请入口 ↗' : 'Open application ↗'}</a> : null}
-            {!ended && applyAction && !readOnly ? <button type="button" disabled={Boolean(pendingActionId)} onClick={() => {
+            {eligibleToApply && confirmedApplicationUrl ? <a href={confirmedApplicationUrl} target="_blank" rel="noopener noreferrer">{zh ? '打开申请入口 ↗' : 'Open application ↗'}</a> : null}
+            {eligibleToApply && applyAction && !readOnly ? <button type="button" disabled={Boolean(pendingActionId)} onClick={() => {
               setPendingActionId(applyAction.id)
               void onMarkAction(applyAction.id, 'done').finally(() => setPendingActionId(undefined))
             }}>{pendingActionId === applyAction.id ? (zh ? '确认中…' : 'Confirming…') : (zh ? '我已投递' : 'I applied')}</button> : null}
-            {!ended && !confirmedApplicationUrl ? <span className="job-detail-no-link">{zh ? '暂无已确认的申请入口' : 'No confirmed application link'}</span> : null}
+            {eligibleToApply && !confirmedApplicationUrl ? <span className="job-detail-no-link">{zh ? '暂无已确认的申请入口' : 'No confirmed application link'}</span> : null}
             <button type="button" className="job-detail-capture" disabled={readOnly} onClick={onCapture}>{zh ? '告诉 PJSDAS' : 'Tell PJSDAS'}</button>
           </div>
           {applicationGroup ? <p className="job-detail-constraint">{applicationGroup.rule ?? (zh ? '此岗位受共享投递名额约束。' : 'This job shares application capacity.')} {applicationGroup.remaining !== undefined ? (zh ? `剩余名额：${applicationGroup.remaining}` : `Remaining: ${applicationGroup.remaining}`) : ''}</p> : null}
@@ -286,7 +287,11 @@ export default function OpportunityDetailDrawer({
         <footer className="opportunity-detail-footer">
           <button type="button" onClick={() => onNavigate('today')}>{zh ? '回到 Today' : 'Back to Today'}</button>
           <button className="cgr-context-capture" type="button" disabled={readOnly} onClick={onCapture}>{zh ? '告诉 PJSDAS' : 'Tell PJSDAS'}</button>
-          {userFacts?.applicationUrl ? <a href={userFacts.applicationUrl} target="_blank" rel="noreferrer">{zh ? '打开用户确认链接' : 'Open confirmed link'}</a> : opportunity.detail?.facts?.application?.applicationUrl ? <a href={opportunity.detail.facts.application.applicationUrl} target="_blank" rel="noreferrer">{zh ? '打开投递页面' : 'Open application page'}</a> : discovery?.sourceUrl ? <a href={discovery.sourceUrl} target="_blank" rel="noreferrer">{zh ? '打开招聘来源' : 'Open source'}</a> : null}
+          {!asPage && !ended && confirmedApplicationUrl
+            ? <a href={confirmedApplicationUrl} target="_blank" rel="noopener noreferrer">{zh ? '打开已确认申请入口' : 'Open confirmed application'}</a>
+            : !asPage && discovery?.sourceUrl
+              ? <a href={discovery.sourceUrl} target="_blank" rel="noreferrer">{zh ? '打开招聘来源' : 'Open source'}</a>
+              : null}
         </footer>
       </Surface>
     </div>
