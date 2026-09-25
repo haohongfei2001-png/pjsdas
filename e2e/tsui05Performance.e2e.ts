@@ -65,6 +65,8 @@ test('TSUI-05 fixed stress fixture meets warm route and tab budget', async ({ pa
       return performance.now() - start
     }, { selector, targetSelector })
   }
+  await page.evaluate(() => { (window as Window & { __TSUI05_PROFILE?: boolean }).__TSUI05_PROFILE = true })
+  page.on('console', (message) => { if (message.text().startsWith('TSUI05_PROFILE_')) console.log(message.text()) })
   const routes: number[] = []
   for (let i = 0; i < 22; i += 1) {
     const today = i % 2 === 0
