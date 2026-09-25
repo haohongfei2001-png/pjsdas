@@ -6,7 +6,7 @@
 @media(max-width:390px){.job-detail-page .opportunity-detail-process-summary{grid-template-columns:1fr}.job-detail-actions>*{max-width:100%}.job-detail-page .opportunity-detail-score-grid,.job-detail-page .opportunity-detail-overview,.job-detail-page .opportunity-detail-process-grid{grid-template-columns:1fr 1fr}}
 
 .job-detail-page,.job-detail-page .job-detail-surface{background:transparent!important;box-shadow:none!important;border:0}
-.job-detail-page .opportunity-detail-header{display:flex;gap:18px}
+.job-detail-page .opportunity-detail-header{display:flex;gap:18px;justify-content:flex-start}
 .job-detail-mark{display:grid;place-items:center;flex:0 0 50px;width:50px;height:50px;border-radius:12px;background:#edf2ff;color:#3c5785;font-size:1rem;font-weight:750}
 .job-detail-page .opportunity-detail-header>div{min-width:0}
 .job-detail-page .opportunity-detail-conclusion .eyebrow{font-size:.75rem}

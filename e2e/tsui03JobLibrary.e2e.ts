@@ -18,7 +18,7 @@ test('TSUI-03 300-job paging, exact posting identity, routed detail and truthful
       request.onerror = () => reject(request.error)
       request.onsuccess = () => {
         const db = request.result
-        const tx = db.transaction('opportunities', 'readwrite')
+        const tx = db.transaction(['opportunities', 'actions'], 'readwrite')
         tx.onerror = () => reject(tx.error)
         tx.oncomplete = () => { db.close(); resolve() }
         for (let index = 0; index < 300; index += 1) tx.objectStore('opportunities').put({
@@ -28,6 +28,12 @@ test('TSUI-03 300-job paging, exact posting identity, routed detail and truthful
           currentStageLabel: '待投递', processStage: 'not_applied',
           roleType: 'core', participationStatus: 'active', early: false,
           opportunityValue: 70, fitScore: 70, importedAt: createdAt,
+        })
+        for (const suffix of ['a', 'b']) tx.objectStore('actions').put({
+          id: 'tsui03-apply-' + suffix, kind: 'apply', title: '提交同名科技申请',
+          opportunityId: 'tsui03-posting-' + suffix, processStage: 'not_applied',
+          estimatedMinutes: 20, leverage: 85, delayCost: 85,
+          status: 'todo', createdAt, updatedAt: createdAt,
         })
         for (const suffix of ['a', 'b']) tx.objectStore('opportunities').put({
           id: 'tsui03-posting-' + suffix,
@@ -46,6 +52,7 @@ test('TSUI-03 300-job paging, exact posting identity, routed detail and truthful
   await expect(page.locator('.tsui-library-more')).toContainText('40/302')
   await mkdir('test-results/tsui03', { recursive: true })
   await page.setViewportSize({ width: 1440, height: 900 })
+  console.log('TSUI03_ENV:' + JSON.stringify(await page.evaluate(() => ({ timezone: Intl.DateTimeFormat().resolvedOptions().timeZone, rootFontPx: getComputedStyle(document.documentElement).fontSize, viewport: [innerWidth, innerHeight] }))))
   await page.screenshot({ path: 'test-results/tsui03/library-desktop.png', fullPage: true, animations: 'disabled' })
   await emitVisual(page, 'LIBRARY_DESKTOP')
   const identityGap = await page.locator('.tsui-job-open').first().evaluate((row) => {
@@ -90,12 +97,25 @@ test('TSUI-03 300-job paging, exact posting identity, routed detail and truthful
     }
   }))
   expect(stage).toBe('not_applied')
+  const actionStatus = await page.evaluate(async () => new Promise<string | undefined>((resolve, reject) => {
+    const request = indexedDB.open('pjsdas', 11)
+    request.onerror = () => reject(request.error)
+    request.onsuccess = () => {
+      const db = request.result
+      const tx = db.transaction('actions', 'readonly')
+      const get = tx.objectStore('actions').get('tsui03-apply-a')
+      get.onerror = () => reject(get.error)
+      get.onsuccess = () => { db.close(); resolve(get.result?.status) }
+    }
+  }))
+  expect(actionStatus).toBe('todo')
 
   await a.locator('.tsui-job-open').click()
   await expect(page).toHaveURL(/\/library\/tsui03-posting-a$/)
   const detail = page.locator('.job-detail-page')
   await expect(detail.getByRole('heading', { name: 'Senior Product / 高级产品设计与研究' })).toBeVisible()
   await expect(detail.locator('.job-detail-actions a')).toHaveAttribute('href', 'https://apply.example.test/posting/a')
+  await expect(detail.getByRole('button', { name: /我已投递|I applied/ })).toBeVisible()
   await page.screenshot({ path: 'test-results/tsui03/detail-desktop.png', fullPage: true, animations: 'disabled' })
   await emitVisual(page, 'DETAIL_DESKTOP')
   const detailStyle = await detail.locator('.job-detail-surface').evaluate((element) => ({
@@ -114,6 +134,8 @@ test('TSUI-03 300-job paging, exact posting identity, routed detail and truthful
   await page.goBack()
   await expect(b.locator('.tsui-job-open')).toBeFocused()
 
+  await search.fill('')
+  await expect(rows).toHaveCount(40)
   await page.setViewportSize({ width: 390, height: 844 })
   await page.screenshot({ path: 'test-results/tsui03/library-mobile.png', fullPage: true, animations: 'disabled' })
   await emitVisual(page, 'LIBRARY_MOBILE')
@@ -123,7 +145,11 @@ test('TSUI-03 300-job paging, exact posting identity, routed detail and truthful
   await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1)
   await page.locator('.job-detail-back').click()
   await page.setViewportSize({ width: 320, height: 640 })
+  const normalFont = await page.evaluate(() => parseFloat(getComputedStyle(document.documentElement).fontSize))
   await page.evaluate(() => { document.documentElement.style.fontSize = '200%' })
+  const enlargedFont = await page.evaluate(() => parseFloat(getComputedStyle(document.documentElement).fontSize))
+  console.log('TSUI03_LARGE_TEXT_FONT:' + JSON.stringify({ normalFont, enlargedFont }))
+  expect(enlargedFont / normalFont).toBeGreaterThan(1.9)
   await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1)
   await a.locator('.tsui-job-open').click()
   await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1)
@@ -139,12 +165,13 @@ test('TSUI-03 Today and Schedule detail links restore their exact opener and old
       request.onerror = () => reject(request.error)
       request.onsuccess = () => {
         const db = request.result
-        const tx = db.transaction(['opportunities', 'actions', 'scheduleNodes'], 'readwrite')
+        const tx = db.transaction(['opportunities', 'actions'], 'readwrite')
         tx.onerror = () => reject(tx.error)
         tx.oncomplete = () => { db.close(); resolve() }
         tx.objectStore('opportunities').put({
           id: 'tsui03-context-opp', company: '上下文公司', role: 'Researcher',
           currentStageLabel: '待投递', processStage: 'not_applied',
+          deadline: new Date(now + 2 * 86400000).toISOString().slice(0, 10), deadlinePrecision: 'date',
           roleType: 'core', participationStatus: 'active', early: false, locallyManaged: true,
           opportunityValue: 80, fitScore: 80, importedAt: new Date(now - 86400000).toISOString(),
         })
@@ -154,16 +181,7 @@ test('TSUI-03 Today and Schedule detail links restore their exact opener and old
           estimatedMinutes: 20, leverage: 90, delayCost: 90,
           status: 'todo', createdAt: new Date(now - 86400000).toISOString(), updatedAt: new Date(now - 86400000).toISOString(),
         })
-        tx.objectStore('scheduleNodes').put({
-          id: 'tsui03-context-node', occurrenceId: 'tsui03-context-occurrence', version: 1,
-          opportunityId: 'tsui03-context-opp', kind: 'application_deadline', state: 'scheduled',
-          constraintKind: 'employer_hard',
-          temporal: { shape: 'date_only', precision: 'date', timezone: 'UTC',
-            date: new Date(now + 2 * 86400000).toISOString().slice(0, 10),
-            resolutionBasis: 'user_explicit' },
-          evidenceRefs: [], sourceVersionRefs: [], relatedActionIds: [], relatedPrepIds: [],
-          createdAt: new Date(now - 86400000).toISOString(), updatedAt: new Date(now - 86400000).toISOString(),
-        })
+
       }
     })
   })
@@ -179,6 +197,7 @@ test('TSUI-03 Today and Schedule detail links restore their exact opener and old
 
   await page.locator('.tsui-primary-nav').getByRole('button', { name: /日程|Schedule/ }).click()
   const node = page.locator('.tsui-schedule-panel .tsui-node-row').filter({ hasText: '上下文公司' })
+  await expect(node).toHaveCount(1)
   await expect(node).toBeVisible()
   await node.click()
   await expect(page).toHaveURL(/\/library\/tsui03-context-opp$/)

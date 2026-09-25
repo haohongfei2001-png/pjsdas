@@ -14,6 +14,12 @@
 - 详情存在旧抽屉遗留的整块白色背景和阴影，文字过小，首屏缺少设计参考的公司标记与相关记录卡。已实施独立页面透明背景、可读字号、公司标记和相关记录/日程入口的修正；需要在下一 head 复渲确认。
 - 手机岗位库可操作、无横向溢出，但两条同名岗位在一张白色容器中显得空疏；网格规则修复后复查对齐和触控目标。
 
+## 第三次实渲与当前修正
+
+- head `03e4dc88b86f65367dc67948cd66d846677b77b3` 的 Browser E2E [36126218325](https://github.com/haohongfei2001-png/pjsdas/actions/runs/36126218325) 有 73 passed / 1 fixture failure。桌面复渲测得标记到公司身份文字的间距在 8–22px 断言内；之前的巨大空隙消失。详情整块旧抽屉背景和阴影已消失，相关记录卡出现；320px/200% 溢出断言通过。截图见该 run 的 playwright-report artifact。
+- 这次截图还发现桌面详情头部继承旧 `justify-content:space-between`，使标记与公司名相距过远。改为靠左排列。随后为视觉夹具补上真实待投递 Action，使“我已投递”按钮在截图出现；打开申请地址仍需维持 Opportunity 阶段和 Action 状态不变。
+- 唯一失败由夹具手工创建的 application deadline 使用了与既有投影不同的 occurrenceId：升级流程把它映射到 Opportunity deadline 后又派生 canonical legacy 节点，因此测试看见两个相同显示名。夹具改为只存 Opportunity date-only deadline，由既有投影生成唯一节点；不修改生产的 occurrence 去重规则。下一 head 必须验证该路径只出现一条。
+
 ## 待补的本轮闭环
 
 - 再渲岗位库桌面、手机与详情桌面/手机，对照 Jobs-Desktop、Jobs-Mobile、Job-Detail。
