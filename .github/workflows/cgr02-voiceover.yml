@@ -44,7 +44,7 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
   voiceover:
-    runs-on: macos-latest
+    runs-on: macos-15
     timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
