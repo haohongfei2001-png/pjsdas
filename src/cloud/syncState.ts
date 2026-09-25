@@ -11,6 +11,7 @@ export interface AccountSyncCheckpoint {
   lastSyncedFingerprint?: string
   lastReadProjectionFingerprint?: string
   lastReadProjectionSourceFingerprint?: string
+  localPendingFingerprint?: string
   lastSyncedAt?: string
   lastError?: string
   conflict?: CloudConflictState
@@ -79,6 +80,7 @@ export function patchAccountCheckpoint(userId: string, patch: Partial<AccountSyn
   const next: AccountSyncCheckpoint = { ...current, ...patch }
   if (patch.conflict === undefined && 'conflict' in patch) delete next.conflict
   if (patch.lastError === undefined && 'lastError' in patch) delete next.lastError
+  if (patch.localPendingFingerprint === undefined && 'localPendingFingerprint' in patch) delete next.localPendingFingerprint
   state.accounts[userId] = next
   return writeRaw(state)
 }
