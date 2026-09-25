@@ -60,6 +60,7 @@ export interface GmailAutomationContinuation {
 
 export interface GmailAutomationFetchResult {
   messages: GmailMessage[]
+  unavailableMessageIds: string[]
   nextHistoryId?: string
   continuation?: GmailAutomationContinuation
   coverageComplete: boolean
@@ -290,16 +291,27 @@ function boundedPage(
 
 async function fetchMessages(fetchImpl: typeof fetch, accessToken: string, ids: string[]) {
   const messages: GmailMessage[] = []
+  const unavailableMessageIds: string[] = []
   for (let index = 0; index < ids.length; index += 5) {
     const batch = ids.slice(index, index + 5)
-    const settled = await Promise.all(batch.map((id) => gmailJson<GmailMessage>(
-      fetchImpl,
-      accessToken,
-      `/messages/${encodeURIComponent(id)}?format=full`,
-    )))
-    messages.push(...settled)
+    const settled = await Promise.all(batch.map(async (id) => {
+      const response = await gmailFetch(fetchImpl, accessToken, `/messages/${encodeURIComponent(id)}?format=full`)
+      if (response.status === 404 || response.status === 410) {
+        return { id, unavailable: true as const }
+      }
+      if (!response.ok) {
+        throw new WorkspaceSourceError('GMAIL_REQUEST_FAILED', `Gmail message fetch failed (HTTP ${response.status}).`, false)
+      }
+      const message = await response.json().catch(() => undefined) as GmailMessage | undefined
+      if (!message) throw new WorkspaceSourceError('GMAIL_RESPONSE_INVALID', 'Gmail returned malformed message JSON.', true)
+      return { message }
+    }))
+    for (const item of settled) {
+      if ('unavailable' in item) unavailableMessageIds.push(item.id)
+      else messages.push(item.message)
+    }
   }
-  return messages
+  return { messages, unavailableMessageIds }
 }
 
 export async function fetchGmailAutomationBatch(options: {
@@ -320,8 +332,10 @@ export async function fetchGmailAutomationBatch(options: {
       pageToken: previous.pageToken,
       pendingHistoryId: previous.pendingHistoryId,
     }, options.coverage === 'uu06' ? UU06_MAX_MESSAGES_PER_RUN : LEGACY_MAX_MESSAGES_PER_RUN)
+    const fetched = await fetchMessages(fetchImpl, options.accessToken, bounded.selected)
     return {
-      messages: await fetchMessages(fetchImpl, options.accessToken, bounded.selected),
+      messages: fetched.messages,
+      unavailableMessageIds: fetched.unavailableMessageIds,
       nextHistoryId: bounded.nextHistoryId,
       continuation: bounded.continuation,
       coverageComplete: bounded.coverageComplete,
@@ -378,8 +392,10 @@ export async function fetchGmailAutomationBatch(options: {
     pageToken: nextPageToken,
     pendingHistoryId: pendingHistoryId!,
   }, options.coverage === 'uu06' ? UU06_MAX_MESSAGES_PER_RUN : LEGACY_MAX_MESSAGES_PER_RUN)
+  const fetched = await fetchMessages(fetchImpl, options.accessToken, bounded.selected)
   return {
-    messages: await fetchMessages(fetchImpl, options.accessToken, bounded.selected),
+    messages: fetched.messages,
+    unavailableMessageIds: fetched.unavailableMessageIds,
     nextHistoryId: bounded.nextHistoryId,
     continuation: bounded.continuation,
     coverageComplete: bounded.coverageComplete,
@@ -706,6 +722,27 @@ export async function runGmailAutomationForBinding(options: {
   const records = batch.messages
     .map((message) => gmailSemanticRecordFromMessage(message, workspace.snapshot.data.opportunities, now))
     .filter((record): record is GmailSemanticRecord => Boolean(record))
+  for (const sourceRecordId of batch.unavailableMessageIds) {
+    records.push({
+      receivedAt: checkedAt,
+      gaps: ['Gmail reported this source record, but its message payload was no longer retrievable when PJSDAS fetched it; no recruiting facts were inferred.'],
+      issueKinds: ['transport_gap'],
+      observation: {
+        contractVersion: 1,
+        inputId: `gmail:${sourceRecordId}:payload-unavailable-v1`,
+        source: {
+          kind: 'gmail',
+          sourceId: GMAIL_SOURCE_ID,
+          sourceRecordId,
+          sourceVersion: 'payload-unavailable-v1',
+          observedAt: checkedAt,
+          timezone: workspace.context.timezone ?? 'Asia/Shanghai',
+        },
+        statementMode: 'assertion',
+        candidates: [],
+      },
+    })
+  }
   if (!backfillComplete && batch.usedFallbackScan && batch.coverageComplete) {
     records.unshift({
       receivedAt: checkedAt,
@@ -823,6 +860,16 @@ async function runLegacyGmailAutomationForBinding(options: {
   const messages = batch.messages
     .map((message) => gmailObservationFromMessage(message, workspace.snapshot.data.opportunities, now))
     .filter((message): message is HardenedGmailMessageObservation => Boolean(message))
+  for (const sourceRecordId of batch.unavailableMessageIds) {
+    messages.push({
+      sourceRecordId,
+      receivedAt: checkedAt,
+      classification: 'recruiting',
+      confidence: 'low',
+      subject: 'PJSDAS Gmail source record unavailable',
+      notes: 'Gmail reported this source record, but its message payload was no longer retrievable when PJSDAS fetched it; no recruiting facts were inferred.',
+    })
+  }
   if (batch.recoveryGapReason) {
     messages.unshift({
       sourceRecordId: `coverage-gap:${stableCoverageGapId(options.binding.gmailHistoryId ?? 'initial', checkedAt)}`,
@@ -880,7 +927,8 @@ function executionMetrics(binding: GmailAutomationBinding, batch: GmailAutomatio
   const receivedTimes = mode === 'history' ? batch.messages.filter((message) => message.id
     && !alreadyIngested(timeline, { sourceKind: 'gmail', sourceId: GMAIL_SOURCE_ID, sourceRecordId: message.id }))
     .map((message) => message.internalDate ? Number(message.internalDate) : Date.parse(header(message.payload, 'date'))) : []
-  return { status: 'completed', mode, receivedCount: batch.messages.length,
-    accountedCount: Math.min(accounted, batch.messages.length), unresolvedCount: Math.min(unresolved, batch.messages.length),
+  const receivedCount = batch.messages.length + batch.unavailableMessageIds.length
+  return { status: 'completed', mode, receivedCount,
+    accountedCount: Math.min(accounted, receivedCount), unresolvedCount: Math.min(unresolved, receivedCount),
     ...(mode === 'history' ? { historyLag: aggregateHistoryLag(receivedTimes, committedAt) } : {}) }
 }
