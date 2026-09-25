@@ -141,7 +141,7 @@ export default function ScheduleFeature({
   const previousKey = useRef(stream.key)
   const listRef = useRef<HTMLDivElement>(null)
   const loader = useRef<HTMLDivElement>(null)
-  const prependAnchor = useRef<{ id: string; top: number }>()
+  const prependAnchor = useRef<{ id: string; top: number } | null>(null)
   const selected = selectedId
     ? [...all, ...stream.sections.undated].find((entry) => entry.id === selectedId)
     : undefined
@@ -163,7 +163,7 @@ export default function ScheduleFeature({
     const row = [...(listRef.current?.querySelectorAll<HTMLElement>('[data-schedule-entry]') ?? [])]
       .find((item) => item.dataset.scheduleEntry === anchor.id)
     if (row) window.scrollBy(0, row.getBoundingClientRect().top - anchor.top)
-    prependAnchor.current = undefined
+    prependAnchor.current = null
   }, [range.start])
 
   useEffect(() => {
