@@ -1,8 +1,16 @@
 import { mkdir } from 'node:fs/promises'
-import { expect, test } from '@playwright/test'
+import { expect, test, type Page } from '@playwright/test'
 
 const NOW = new Date('2026-09-25T04:00:00.000Z')
 const CREATED = '2026-09-20T00:00:00.000Z'
+
+async function emitCloudVisual(page: Page, label: string) {
+  const screenshot = await page.screenshot({ type: 'jpeg', quality: 50, animations: 'disabled' })
+  const encoded = screenshot.toString('base64')
+  console.log(`TSUI_VISUAL_${label}_BEGIN`)
+  for (let offset = 0; offset < encoded.length; offset += 3000) console.log(`TSUI_VISUAL_${label}_DATA:${encoded.slice(offset, offset + 3000)}`)
+  console.log(`TSUI_VISUAL_${label}_END`)
+}
 
 test('TSUI-02 real component: equal Today rows, shared 130-node stream and mobile switch', async ({ page }) => {
   await page.clock.setFixedTime(NOW)
@@ -47,6 +55,7 @@ test('TSUI-02 real component: equal Today rows, shared 130-node stream and mobil
   await mkdir('test-results/tsui02', { recursive: true })
   await page.setViewportSize({ width: 1440, height: 900 })
   await page.screenshot({ path: 'test-results/tsui02/today-desktop.png', fullPage: true, animations: 'disabled' })
+  await emitCloudVisual(page, 'DESKTOP')
   while (await page.locator('.tsui-node-panel .tsui-load-more').count()) {
     await page.locator('.tsui-node-panel .tsui-load-more').click()
   }
@@ -59,6 +68,7 @@ test('TSUI-02 real component: equal Today rows, shared 130-node stream and mobil
   await expect(page.locator('.tsui-task-row')).toHaveCount(8)
   await expect(page.locator('.tsui-node-panel')).toBeHidden()
   await page.screenshot({ path: 'test-results/tsui02/today-mobile.png', fullPage: true, animations: 'disabled' })
+  await emitCloudVisual(page, 'MOBILE')
   await page.getByRole('button', { name: /节点 130/ }).click()
   await expect(page.locator('.tsui-node-panel')).toBeVisible()
   await page.screenshot({ path: 'test-results/tsui02/today-mobile-nodes.png', fullPage: true, animations: 'disabled' })
@@ -67,4 +77,5 @@ test('TSUI-02 real component: equal Today rows, shared 130-node stream and mobil
   await page.evaluate(() => { document.documentElement.style.fontSize = '200%' })
   await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1)
   await page.screenshot({ path: 'test-results/tsui02/today-320-large-text.png', fullPage: true, animations: 'disabled' })
+  await emitCloudVisual(page, 'LARGE_TEXT')
 })
