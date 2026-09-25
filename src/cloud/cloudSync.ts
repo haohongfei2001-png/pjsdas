@@ -57,6 +57,7 @@ function markSynced(userId: string, row: RemoteWorkspaceRow) {
     lastSyncedVersion: row.version,
     lastSyncedFingerprint: row.fingerprint,
     lastSyncedAt: new Date().toISOString(),
+    localPendingFingerprint: undefined,
     conflict: undefined,
     lastError: undefined,
   })
@@ -123,6 +124,10 @@ export async function runCloudSync(userId: string, options: { passive?: boolean 
       // A manual refresh is a read/reconciliation request, not permission to
       // upload unrelated local changes as one workspace snapshot.
       if (connectedWorkspaceAuthorityEnabled()) {
+        patchAccountCheckpoint(userId, {
+          localPendingFingerprint: localFingerprint,
+          lastError: undefined,
+        })
         return { kind: 'local_pending', version: remote.version, remoteUpdatedAt: remote.updatedAt }
       }
       const updated = await updateRemoteWorkspace({
