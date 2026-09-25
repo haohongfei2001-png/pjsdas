@@ -24,8 +24,10 @@
 
 - 候选代码 head `ae5cf9b1b586a70180257bb24b89b95dfc9c87b1` 修复桌面详情头部对齐，补齐待投递 Action 的实渲夹具，并只用 canonical deadline 派生单一节点。该 head 创建时 PR 仍为 draft，因此 Browser E2E 按现有 workflow 条件 skipped；这是未执行，不是 PASS。现已将 PR 转为 ready，下一次同步提交触发完整浏览器闭环。
 
-## 待补的本轮闭环
+## 最终复渲与收口
 
-- 再渲岗位库桌面、手机与详情桌面/手机，对照 Jobs-Desktop、Jobs-Mobile、Job-Detail。
-- 检查 320px、实际 200% 正文字号、长混排与横向溢出，确认公司、职位、时间和动作的顺序与位置。
-- 对记录的具体问题实施修正并再渲。完整工程/命令门槛与 exact-main 结论以 STATUS 为准；真人、设备与真实辅助技术证据仍 deferred，不写 PASS。
+- exact-head `a9125a030cacbe06d89e2c23ff0373c5569dd87f` 的 Browser E2E [36127123251](https://github.com/haohongfei2001-png/pjsdas/actions/runs/36127123251) 74 passed；同一 run 生成真实组件的岗位库桌面/手机与详情桌面/手机四张最终截图。夹具仍为 302 岗位，其中两个同公司同名不同 posting ID 与申请 URL；Chromium、runner UTC、根字号 15px、桌面 1440×900、手机 390×844，并检查 320px 与 200% 字。
+- 桌面岗位库标记到公司身份的实测间距 14px；四张复渲图的公司、职位、时间、动作顺序符合 Jobs-Desktop、Jobs-Mobile、Job-Detail reference。详情旧抽屉白板与阴影已消失，标记和公司左对齐，真实待投递 Action 的“我已投递”可见。
+- 200% 检查中普通正文 14px 增至 32px；320px 无横向溢出。仅存 canonical deadline 派生一条节点；同名岗位及其独立 URL、打开链接不写投递事实、返回焦点/搜索/旧路由均由浏览器断言覆盖。仍有过渡旧 CSS 类待 TSUI-05 清理。
+- PR [#158](https://github.com/haohongfei2001-png/pjsdas/pull/158) 合并 main `56aeec3e75628a81de4ad883a56b272817643236` 后，exact-main CI、Browser、只读回退与 Pages 均成功。真人、真实辅助技术和真实手机软键盘证据保持 deferred。
+
