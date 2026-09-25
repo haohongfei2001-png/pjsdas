@@ -7,17 +7,25 @@ function json(data: unknown, status = 200) {
   return new Response(JSON.stringify(data), { status, headers: { 'content-type': 'application/json' } })
 }
 
-function mcpRequest(method: string, token?: string, path = '/api/mcp-auth') {
+function mcpRequest(
+  method: string,
+  token?: string,
+  path = '/api/mcp-auth',
+  params: Record<string, unknown> = {},
+  toolName?: string,
+) {
   const headers = new Headers({
     'content-type': 'application/json',
     accept: 'application/json, text/event-stream',
     'MCP-Protocol-Version': '2025-06-18',
+    'Mcp-Method': method,
   })
+  if (toolName) headers.set('Mcp-Name', toolName)
   if (token) headers.set('authorization', `Bearer ${token}`)
   return new Request(`https://pjsdas-remote-alpha.vercel.app${path}`, {
     method: 'POST',
     headers,
-    body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params: {} }),
+    body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params }),
   })
 }
 
@@ -65,7 +73,43 @@ describe('authenticated remote MCP', () => {
     expect(text).toContain('get_today_plan')
     expect(text).toContain('get_decision_rules')
     expect(text).toContain('propose_changes')
+    expect(text).toContain('ingest_discovery_run')
+    expect(text).toContain('ingest_gmail_run')
     expect(text).toContain('Nothing changes until explicit Apply in PJSDAS')
+    expect(fetchImpl).toHaveBeenCalledTimes(1)
+    expect(String(vi.mocked(fetchImpl).mock.calls[0]?.[0])).toContain('/auth/v1/user')
+  })
+
+  it('keeps an advertised ingestion tool callable without a grant and fails inside the handler with AUTH_FORBIDDEN', async () => {
+    vi.stubEnv('PJSDAS_TOKEN_ENCRYPTION_KEY', 'test-proposal-signing-secret')
+    const fetchImpl = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.endsWith('/auth/v1/user')) return json({ id: 'user-a', email: 'a@gmail.com' })
+      return json({ error: 'unexpected outbound request' }, 500)
+    }) as unknown as typeof fetch
+    vi.stubGlobal('fetch', fetchImpl)
+
+    const response = await authenticatedRemoteMcpFetch(mcpRequest(
+      'tools/call',
+      'valid-user-token',
+      '/api/mcp',
+      {
+        name: 'ingest_discovery_run',
+        arguments: {
+          runId: 'no-grant-dry-run',
+          sourceId: 'monitor:key-changes',
+          startedAt: '2026-09-24T00:00:00.000Z',
+          completedAt: '2026-09-24T00:01:00.000Z',
+          dryRun: true,
+          observations: [],
+        },
+      },
+      'ingest_discovery_run',
+    ))
+    expect(response.status).toBe(200)
+    const text = await responseText(response)
+    expect(text).toContain('AUTH_FORBIDDEN')
+    expect(text).not.toContain('Tool ingest_discovery_run not found')
     expect(fetchImpl).toHaveBeenCalledTimes(1)
     expect(String(vi.mocked(fetchImpl).mock.calls[0]?.[0])).toContain('/auth/v1/user')
   })

@@ -23,6 +23,7 @@ function addZeroResultMonitor(snapshot: ReturnType<typeof emptySnapshot>, source
     sourceId,
     startedAt: new Date(new Date(completedAt).getTime() - 5 * 60_000).toISOString(),
     completedAt,
+    producer: 'server_scheduler',
     observations: [],
   }).snapshot
 }
@@ -33,6 +34,7 @@ function addZeroResultGmail(snapshot: ReturnType<typeof emptySnapshot>, complete
     sourceId: 'gmail:primary',
     startedAt: new Date(new Date(completedAt).getTime() - 5 * 60_000).toISOString(),
     completedAt,
+    producer: 'server_scheduler',
     messages: [],
   }).snapshot
 }
@@ -66,6 +68,7 @@ describe('Coverage freshness and configured-source completeness', () => {
     expect(coverage.missingSourceCount).toBe(0)
     expect(coverage.staleSourceCount).toBe(0)
     expect(coverage.sourceCount).toBe(PJSDAS_EXPECTED_INGESTION_SOURCES.length)
+    expect(coverage.sources.every((item) => item.producer === 'server_scheduler')).toBe(true)
   })
 
   it('turns Coverage non-green when Gmail misses its 20-minute freshness SLA even though the last run was balanced', () => {

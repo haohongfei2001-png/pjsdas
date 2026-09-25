@@ -7,7 +7,6 @@ import {
   type MonitorIngestionRunInput,
   type MonitorJobObservation,
 } from './autonomousIngestion.js'
-import { findSimilarOpportunity } from './discoveryQuality.js'
 import {
   alreadyIngested,
   buildIngestionRunSummary,
@@ -17,10 +16,8 @@ import {
 } from './ingestion.js'
 import {
   createJobPostingEvidence,
-  jobRoleSimilarity,
-  logicalJobMatches,
   mergeJobPostingEvidence,
-  normalizeJobRole,
+  resolveOpportunityPostingIdentity,
 } from './jobPosting.js'
 import { actionForProcessEvent } from './processEvents.js'
 import { sourcePolicyForRun, type IngestionSourcePolicy } from './sourceRegistry.js'
@@ -43,31 +40,12 @@ export type HardenedGmailIngestionRunInput = Omit<GmailIngestionRunInput, 'messa
   sourcePolicy?: IngestionSourcePolicy
 }
 
-type HardenedRunIdentity = Pick<MonitorIngestionRunInput, 'runId' | 'sourceId' | 'startedAt' | 'completedAt'> & {
+type HardenedRunIdentity = Pick<MonitorIngestionRunInput, 'runId' | 'sourceId' | 'producer' | 'startedAt' | 'completedAt'> & {
   sourcePolicy?: IngestionSourcePolicy
 }
 
-function monitorMatches(observation: MonitorJobObservation, opportunities: Opportunity[]) {
-  return opportunities.filter((item) => logicalJobMatches(
-    { company: observation.company, role: observation.role, location: observation.location },
-    { company: item.company, role: item.role, location: item.detail?.discovery?.location },
-  ))
-}
-
 export function monitorObservationIsAmbiguous(observation: MonitorJobObservation, opportunities: Opportunity[]) {
-  const matches = monitorMatches(observation, opportunities)
-  if (matches.length <= 1) return false
-  const normalizedRole = normalizeJobRole(observation.role)
-  const exact = matches.filter((item) => normalizeJobRole(item.role) === normalizedRole)
-  if (exact.length === 1) return false
-  if (exact.length > 1) return true
-  const scored = matches
-    .map((opportunity) => ({ opportunity, score: jobRoleSimilarity(observation.role, opportunity.role) }))
-    .sort((a, b) => b.score - a.score || a.opportunity.id.localeCompare(b.opportunity.id))
-  const best = scored[0]
-  const second = scored[1]
-  if (!best || !second) return false
-  return !(best.score >= 0.94 && best.score - second.score >= 0.12)
+  return resolveOpportunityPostingIdentity(observation, opportunities).kind === 'ambiguous'
 }
 
 function monitorFingerprint(observation: MonitorJobObservation) {
@@ -145,6 +123,7 @@ function replaceRunTimeline(snapshot: PJSDASSnapshot, input: HardenedRunIdentity
     runId: input.runId,
     sourceKind,
     sourceId: input.sourceId,
+    producer: input.producer,
     startedAt: input.startedAt,
     completedAt: input.completedAt,
     records,
@@ -193,7 +172,7 @@ export function applyMonitorIngestionHardened(snapshot: PJSDASSnapshot, input: H
     const receivedAt = observation.discoveredAt ?? normalizedInput.completedAt
     if (unverifiedIds.has(observation.sourceRecordId) || ambiguousIds.has(observation.sourceRecordId)) return false
     if (!observation.sourceRecordId.trim() || !observation.company.trim() || !observation.role.trim() || !validIso(receivedAt)) return false
-    return Boolean(findSimilarOpportunity(observation, snapshot.data.opportunities))
+    return resolveOpportunityPostingIdentity(observation, snapshot.data.opportunities).kind === 'same_posting'
   })
   const existingIds = new Set(existingRefreshes.map((item) => item.sourceRecordId))
   const baseObservations = normalizedInput.observations.filter((item) =>
@@ -261,10 +240,13 @@ export function applyMonitorIngestionHardened(snapshot: PJSDASSnapshot, input: H
     let opportunityId = duplicate ? previous?.ingestion?.opportunityId : undefined
 
     if (!duplicate) {
-      const existing = findSimilarOpportunity(observation, next.data.opportunities)
-      if (!existing) {
-        reason = '现有逻辑岗位在并发归并期间无法唯一解析；已保留为 unresolved。'
+      const identity = resolveOpportunityPostingIdentity(observation, next.data.opportunities)
+      if (identity.kind !== 'same_posting') {
+        reason = identity.kind === 'ambiguous'
+          ? '现有相似岗位缺少足够 posting identity；已保留为 unresolved。'
+          : 'exact posting identity 在并发归并期间已变化；为避免污染其他岗位，已保留为 unresolved。'
       } else {
+        const existing = identity.opportunity
         const merged = mergeExistingMonitorObservation(existing, observation, receivedAt)
         const index = next.data.opportunities.findIndex((item) => item.id === existing.id)
         next.data.opportunities[index] = merged.opportunity
@@ -272,8 +254,8 @@ export function applyMonitorIngestionHardened(snapshot: PJSDASSnapshot, input: H
         outcome = merged.changed ? 'merged' : 'duplicate'
         if (merged.changed) touched.add(existing.id)
         reason = merged.changed
-          ? '已归并到现有逻辑岗位并更新公开来源事实；岗位页面生命周期不改变用户招聘流程。'
-          : '现有逻辑岗位已包含相同来源事实。'
+          ? '已按相同 exact posting identity 更新公开来源事实；岗位页面生命周期不改变用户招聘流程。'
+          : '相同 exact posting identity 已包含当前来源事实。'
       }
     }
 

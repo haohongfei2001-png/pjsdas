@@ -284,8 +284,9 @@ function opportunityIdentity(company: string, role: string) {
   return `${compactIdentity(company)}|${compactIdentity(role)}`
 }
 
-function discoveredOpportunityId(company: string, role: string) {
-  return `discovery:${stableHash(opportunityIdentity(company, role))}`
+function discoveredOpportunityId(company: string, role: string, sourceUrl: string) {
+  const postingIdentity = canonicalizeJobSourceUrl(sourceUrl)
+  return `discovery:${stableHash(`${opportunityIdentity(company, role)}|${postingIdentity}`)}`
 }
 
 function failure(code: string, message: string, retryable = false): CallToolResult {
@@ -421,7 +422,7 @@ function discoveredOpportunity(
     throw new WorkspaceSourceError('INVALID_ARGUMENT', `Rich Opportunity facts are invalid: ${factErrors[0]}`, false)
   }
   return {
-    id: discoveredOpportunityId(candidate.company, candidate.role),
+    id: discoveredOpportunityId(candidate.company, candidate.role, candidate.sourceUrl),
     company: candidate.company,
     role: candidate.role,
     currentStageLabel: '待投',

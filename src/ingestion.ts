@@ -2,6 +2,7 @@ import type {
   IngestionLedgerEntry,
   IngestionIssueKind,
   IngestionOutcome,
+  IngestionProducer,
   IngestionRunSummary,
   IngestionSourceKind,
   TimelineRecord,
@@ -52,6 +53,7 @@ export interface CoverageSourceSummary {
   sourceKind: IngestionSourceKind
   sourceId: string
   label?: string
+  producer?: IngestionProducer
   lastCompletedAt: string
   receivedCount: number
   accountedCount: number
@@ -158,6 +160,7 @@ export function buildIngestionRunSummary(input: {
   runId: string
   sourceKind: IngestionSourceKind
   sourceId: string
+  producer?: IngestionProducer
   startedAt: string
   completedAt: string
   records: TimelineRecord[]
@@ -170,7 +173,7 @@ export function buildIngestionRunSummary(input: {
     const outcome = record.ingestion!.outcome
     outcomes[outcome] = (outcomes[outcome] ?? 0) + 1
   }
-  return { version: 1, runId: input.runId, sourceKind: input.sourceKind, sourceId: input.sourceId, startedAt: input.startedAt, completedAt: input.completedAt, receivedCount: records.length, accountedCount: records.length, outcomes, cursor: input.cursor, sourcePolicy: input.sourcePolicy }
+  return { version: 1, runId: input.runId, sourceKind: input.sourceKind, sourceId: input.sourceId, producer: input.producer, startedAt: input.startedAt, completedAt: input.completedAt, receivedCount: records.length, accountedCount: records.length, outcomes, cursor: input.cursor, sourcePolicy: input.sourcePolicy }
 }
 
 export function createIngestionRunTimeline(summary: IngestionRunSummary): TimelineRecord {
@@ -244,7 +247,7 @@ export function summarizeCoverage(timeline: TimelineRecord[] | undefined, option
     const ageHours = nowMs !== undefined && Number.isFinite(nowMs) && Number.isFinite(completedMs) ? Math.max(0, (nowMs - completedMs) / 3_600_000) : undefined
     const stale = Boolean(policy && ageHours !== undefined && ageHours > policy.maxAgeHours)
     return {
-      sourceKind: run.sourceKind, sourceId: run.sourceId, label: policy?.label, lastCompletedAt: run.completedAt,
+      sourceKind: run.sourceKind, sourceId: run.sourceId, label: policy?.label, producer: run.producer, lastCompletedAt: run.completedAt,
       receivedCount: run.receivedCount, accountedCount: run.accountedCount, unresolvedCount: sourceUnresolved, capabilityBoundaryCount: sourceBoundaries,
       transportGapCount: sourceIssueCount(sourceIssues, 'transport_gap'), interpretationFailureCount: sourceIssueCount(sourceIssues, 'interpretation_failure'), businessAmbiguityCount: sourceIssueCount(sourceIssues, 'business_ambiguity'), unclassifiedUnresolvedCount: unclassifiedCount(sourceIssues),
       outcomes: { ...run.outcomes }, balanced: run.receivedCount === run.accountedCount && run.accountedCount === outcomeTotal,

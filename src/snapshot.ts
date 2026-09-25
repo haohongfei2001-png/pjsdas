@@ -122,6 +122,9 @@ function validateIngestionRun(run: IngestionRunSummary, timelineId: string) {
   if (!INGESTION_SOURCE_KINDS.has(run.sourceKind) || !run.runId?.trim() || !run.sourceId?.trim()) {
     throw new Error(`备份损坏：Timeline ${timelineId} 的 ingestionRun 身份无效。`)
   }
+  if (run.producer !== undefined && run.producer !== 'server_scheduler' && run.producer !== 'mcp_trusted_ingestion') {
+    throw new Error(`备份损坏：Timeline ${timelineId} 的 ingestionRun producer 无效。`)
+  }
   assertIsoDate(run.startedAt, `Timeline ${timelineId} ingestionRun.startedAt`)
   assertIsoDate(run.completedAt, `Timeline ${timelineId} ingestionRun.completedAt`)
   if (!Number.isInteger(run.receivedCount) || run.receivedCount < 0 || !Number.isInteger(run.accountedCount) || run.accountedCount < 0) {

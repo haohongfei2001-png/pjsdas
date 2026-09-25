@@ -53,7 +53,7 @@ describe('v1.4 Round 3 job posting identity and freshness', () => {
     expect(merged.history).toHaveLength(0)
   })
 
-  it('retains an older stale source when a new source replaces it', () => {
+  it('refuses to infer repost equivalence from title similarity and freshness alone', () => {
     const oldPosting = createJobPostingEvidence({
       company: '候选科技', role: 'AI 产品经理', sourceUrl: 'https://jobs.example.com/old', sourceTitle: 'Old AI PM',
       postingStatus: 'open', observedAt: '2026-08-01T00:00:00.000Z',
@@ -62,9 +62,7 @@ describe('v1.4 Round 3 job posting identity and freshness', () => {
       company: '候选科技', role: 'AI 产品经理', sourceUrl: 'https://careers.example.com/new', sourceTitle: 'New AI PM',
       postingStatus: 'open', observedAt: '2026-09-10T00:00:00.000Z',
     })
-    const merged = mergeJobPostingEvidence(oldPosting, [], newPosting, new Date('2026-09-10T00:00:00.000Z'))
-    expect(merged.current.id).toBe(newPosting.id)
-    expect(merged.history).toHaveLength(1)
-    expect(merged.history[0].supersededByPostingId).toBe(newPosting.id)
+    expect(() => mergeJobPostingEvidence(oldPosting, [], newPosting, new Date('2026-09-10T00:00:00.000Z')))
+      .toThrow(/Posting identity mismatch/)
   })
 })

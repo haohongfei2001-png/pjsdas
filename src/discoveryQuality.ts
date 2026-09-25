@@ -11,6 +11,8 @@ import {
   knownJobPostings,
   logicalJobMatches,
   normalizeJobCompany,
+  resolveOpportunityPostingIdentity,
+  sameCandidatePosting,
 } from './jobPosting.js'
 import type {
   DiscoveryConfidence,
@@ -73,10 +75,10 @@ export function findSimilarOpportunity(
 }
 
 function similarCandidate(
-  a: Pick<DiscoveryCandidateForQuality, 'company' | 'role' | 'location'>,
-  b: Pick<DiscoveryCandidateForQuality, 'company' | 'role' | 'location'>,
+  a: Pick<DiscoveryCandidateForQuality, 'company' | 'role' | 'location' | 'sourceUrl'>,
+  b: Pick<DiscoveryCandidateForQuality, 'company' | 'role' | 'location' | 'sourceUrl'>,
 ) {
-  return logicalJobMatches(a, b)
+  return sameCandidatePosting(a, b)
 }
 
 function latestExplicitFeedbackForCandidate(
@@ -266,7 +268,7 @@ export function screenDiscoveryCandidates<T extends DiscoveryCandidateForQuality
   for (const candidate of candidates) {
     const postingWarnings: string[] = []
     const postingState = postingRefreshWarnings(candidate, existing, inbox, now)
-    const opportunityPosting = postingState.logicalMatches.find((entry) => entry.ownerKind === 'opportunity')
+    const opportunityPosting = postingState.sourceMatches.find((entry) => entry.ownerKind === 'opportunity')
     if (opportunityPosting) {
       const reasonDetail: DiscoveryQualityReasonDetail = {
         code: 'existing_opportunity_source_duplicate',
@@ -284,8 +286,11 @@ export function screenDiscoveryCandidates<T extends DiscoveryCandidateForQuality
       })
       continue
     }
+    if (postingState.logicalMatches.some((entry) => entry.ownerKind === 'opportunity')) {
+      postingWarnings.push('存在公司/标题相似的正式 Opportunity，但 exact posting source 不同；按独立岗位进入审阅，不自动归并。')
+    }
 
-    const inboxMatches = postingState.logicalMatches.filter((entry) => entry.ownerKind === 'inbox')
+    const inboxMatches = postingState.sourceMatches.filter((entry) => entry.ownerKind === 'inbox')
     const recentlyDismissed = inboxMatches.find((entry) => {
       if (entry.inboxStatus !== 'dismissed') return false
       return now.getTime() - new Date(entry.ownerUpdatedAt).getTime() <= 120 * 24 * 60 * 60 * 1000
@@ -310,16 +315,10 @@ export function screenDiscoveryCandidates<T extends DiscoveryCandidateForQuality
       return freshness === 'fresh' || freshness === 'aging'
     })
     if (freshActive) {
-      const sameSource = freshActive.posting.canonicalSourceUrl === postingState.incomingPosting.canonicalSourceUrl
-      const reasonDetail: DiscoveryQualityReasonDetail = sameSource
-        ? {
-            code: 'active_inbox_same_source',
-            params: { status: freshActive.inboxStatus ?? 'unknown', lastVerifiedAt: freshActive.posting.lastVerifiedAt },
-          }
-        : {
-            code: 'active_inbox_cross_source',
-            params: { status: freshActive.inboxStatus ?? 'unknown', sourceHost: freshActive.posting.sourceHost },
-          }
+      const reasonDetail: DiscoveryQualityReasonDetail = {
+        code: 'active_inbox_same_source',
+        params: { status: freshActive.inboxStatus ?? 'unknown', lastVerifiedAt: freshActive.posting.lastVerifiedAt },
+      }
       skippedDuplicates.push({
         company: candidate.company,
         role: candidate.role,
@@ -330,10 +329,9 @@ export function screenDiscoveryCandidates<T extends DiscoveryCandidateForQuality
     }
 
     if (activeInboxMatches.length > 0) {
-      const sameSourceStale = postingState.sourceMatches.find((entry) => entry.ownerKind === 'inbox')
-      postingWarnings.push(sameSourceStale
-        ? '同一公开招聘来源此前已经记录，但来源证据已陈旧；本次候选用于刷新岗位状态与来源事实。'
-        : '发现箱中存在同一逻辑岗位的陈旧来源；本次新来源可能是重新发布或替代发布，请在审阅时确认。')
+      postingWarnings.push('同一 exact posting source 已在发现箱，但来源证据陈旧；本次候选用于刷新来源事实。')
+    } else if (postingState.logicalMatches.some((entry) => entry.ownerKind === 'inbox')) {
+      postingWarnings.push('发现箱中存在公司/标题相似但 exact posting source 不同的岗位；按独立岗位进入审阅。')
     }
 
     const latestFeedback = latestExplicitFeedbackForCandidate(timeline, candidate, now)
@@ -347,21 +345,6 @@ export function screenDiscoveryCandidates<T extends DiscoveryCandidateForQuality
         role: candidate.role,
         reasons: [presentDiscoveryQualityReason(reasonDetail, true)],
         reasonDetails: [reasonDetail],
-      })
-      continue
-    }
-
-    const duplicate = findSimilarOpportunity(candidate, existing)
-    if (duplicate) {
-      const reasonDetail: DiscoveryQualityReasonDetail = {
-        code: 'existing_opportunity_duplicate',
-        params: { company: duplicate.company, role: duplicate.role },
-      }
-      skippedDuplicates.push({
-        company: candidate.company,
-        role: candidate.role,
-        reason: presentDiscoveryQualityReason(reasonDetail, true),
-        reasonDetail,
       })
       continue
     }

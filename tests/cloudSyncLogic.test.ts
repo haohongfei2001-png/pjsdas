@@ -98,6 +98,19 @@ describe('local-first Google Drive sync decisions', () => {
     })).toBe(true)
   })
 
+  it('keeps sign-out blocked when a connected sync already proved this exact local fingerprint is pending', () => {
+    expect(localFingerprintHasUnsyncedChanges({
+      checkpoint: {
+        lastSyncedVersion: 'txn:7',
+        lastSyncedFingerprint: 'local-edit',
+        lastReadProjectionSourceFingerprint: 'local-edit',
+        lastReadProjectionFingerprint: 'local-edit',
+        localPendingFingerprint: 'local-edit',
+      },
+      localFingerprint: 'local-edit',
+    })).toBe(true)
+  })
+
   it('does not invent a local-pending conclusion when no authoritative baseline exists', () => {
     expect(localFingerprintHasUnsyncedChanges({
       checkpoint: {},

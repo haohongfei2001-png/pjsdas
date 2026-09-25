@@ -122,6 +122,55 @@ describe('explicit user-authorized opportunity writes', () => {
     expect(source.snapshot.data.actions).toHaveLength(1)
   })
 
+  it('keeps same-company same-title roles distinct when exact posting URLs differ', async () => {
+    const source = new WritableSource()
+    const first = await invokeAddOpportunities(source, args())
+    expect(first.isError).not.toBe(true)
+
+    const second = await invokeAddOpportunities(source, {
+      opportunities: [{
+        ...args().opportunities[0],
+        sourceUrl: 'https://careers.example.com/jobs/ai-pm-community',
+        sourceTitle: 'AI Product Manager - Community Product',
+      }],
+    })
+
+    expect(second.isError).not.toBe(true)
+    expect(second.structuredContent).toMatchObject({
+      applied: true,
+      reviewRequired: false,
+      createdCount: 1,
+      duplicateCount: 0,
+      ambiguityCount: 0,
+    })
+    expect(source.writes).toHaveLength(2)
+    expect(source.snapshot.data.opportunities).toHaveLength(2)
+    expect(source.snapshot.data.opportunities.map((item) => item.detail?.discovery?.posting?.canonicalSourceUrl).sort()).toEqual([
+      'https://careers.example.com/jobs/ai-pm',
+      'https://careers.example.com/jobs/ai-pm-community',
+    ])
+  })
+
+  it('deduplicates tracking variants of the same exact posting URL', async () => {
+    const source = new WritableSource()
+    await invokeAddOpportunities(source, args())
+    const second = await invokeAddOpportunities(source, {
+      opportunities: [{
+        ...args().opportunities[0],
+        sourceUrl: 'https://careers.example.com/jobs/ai-pm?utm_source=another&ref=campaign',
+      }],
+    })
+    expect(second.structuredContent).toMatchObject({
+      applied: true,
+      reviewRequired: false,
+      createdCount: 0,
+      duplicateCount: 1,
+      ambiguityCount: 0,
+    })
+    expect(source.writes).toHaveLength(1)
+    expect(source.snapshot.data.opportunities).toHaveLength(1)
+  })
+
   it('fails closed on a read-only workspace instead of pretending the explicit write succeeded', async () => {
     const source: WorkspaceSource = {
       async read() {

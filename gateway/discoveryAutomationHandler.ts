@@ -3,6 +3,7 @@ import {
   probeDiscoveryAiGateway,
   runDiscoveryAutomationForBinding,
   type DiscoveryGenerateText,
+  type DiscoveryAutomationRunResult,
 } from './discoveryAutomationWorker.js'
 import { WorkspaceSourceError } from './workspaceSource.js'
 
@@ -41,6 +42,14 @@ function errorBody(caught: unknown) {
     code: 'DISCOVERY_AUTOMATION_FAILED',
     message: caught instanceof Error ? caught.message : 'PJSDAS discovery automation failed.',
     retryable: false,
+  }
+}
+
+export function discoveryAutomationTelemetryPatch(run: DiscoveryAutomationRunResult) {
+  return {
+    checkedAt: run.checkedAt,
+    ...(run.completedSourceCount > 0 ? { successAt: run.checkedAt } : {}),
+    lastError: null,
   }
 }
 
@@ -107,13 +116,12 @@ export function createDiscoveryAutomationHandler(config: DiscoveryAutomationHand
           now: config.now,
           force,
         })
-        await store.updateDiscoveryRunState(binding.userId, {
-          checkedAt: run.checkedAt,
-          successAt: run.checkedAt,
-          lastError: null,
-        })
+        const durableCommit = run.completedSourceCount > 0
+        await store.updateDiscoveryRunState(binding.userId, discoveryAutomationTelemetryPatch(run))
         results.push({
-          status: 'success',
+          status: run.state,
+          producer: run.producer,
+          durableCommit,
           configured: run.configured,
           dueSourceCount: run.dueSourceCount,
           completedSourceCount: run.completedSourceCount,
@@ -134,14 +142,17 @@ export function createDiscoveryAutomationHandler(config: DiscoveryAutomationHand
         } catch {
           // Primary automation failure remains authoritative; telemetry is best-effort.
         }
-        results.push({ status: 'error', ...errorBody(caught) })
+        results.push({ status: 'failed', producer: 'server_scheduler', durableCommit: false, ...errorBody(caught) })
       }
     }
 
-    const failures = results.filter((item) => item.status === 'error').length
+    const failures = results.filter((item) => item.status === 'failed').length
+    const durableCompletedUsers = results.filter((item) => item.durableCommit === true).length
     return json(failures > 0 ? 207 : 200, {
       processedUsers: results.length,
+      checkedUsers: results.length - failures,
       successfulUsers: results.length - failures,
+      durableCompletedUsers,
       failedUsers: failures,
       results,
     })

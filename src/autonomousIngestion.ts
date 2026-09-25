@@ -5,6 +5,7 @@ import {
   createJobPostingEvidence,
   jobIdentityKey,
   mergeJobPostingEvidence,
+  resolveOpportunityPostingIdentity,
 } from './jobPosting.js'
 import {
   alreadyIngested,
@@ -24,6 +25,7 @@ import type {
   Action,
   ActionTimingMode,
   DiscoveryConfidence,
+  IngestionProducer,
   IngestionRunSummary,
   JobPostingStatus,
   Opportunity,
@@ -59,6 +61,7 @@ export interface MonitorJobObservation {
 export interface MonitorIngestionRunInput {
   runId: string
   sourceId: string
+  producer?: IngestionProducer
   startedAt: string
   completedAt: string
   observations: MonitorJobObservation[]
@@ -88,6 +91,7 @@ export interface GmailMessageObservation {
 export interface GmailIngestionRunInput {
   runId: string
   sourceId: string
+  producer?: IngestionProducer
   startedAt: string
   completedAt: string
   cursor?: string
@@ -141,9 +145,9 @@ function applyActionForNewOpportunity(opportunity: Opportunity, observedAt: stri
   }
 }
 
-function monitorOpportunityId(observation: MonitorJobObservation) {
+function monitorOpportunityId(observation: MonitorJobObservation, canonicalSourceUrl: string) {
   const identity = jobIdentityKey(observation.company, observation.role, observation.location)
-  return `auto-opportunity:${stableIngestionHash(identity || `${observation.company}|${observation.role}`)}`
+  return `auto-opportunity:${stableIngestionHash(`${identity || `${observation.company}|${observation.role}`}|${canonicalSourceUrl}`)}`
 }
 
 function createMonitorOpportunity(observation: MonitorJobObservation, observedAt: string): Opportunity {
@@ -160,7 +164,7 @@ function createMonitorOpportunity(observation: MonitorJobObservation, observedAt
     observedAt: sourceVerifiedAt,
   })
   return {
-    id: monitorOpportunityId(observation),
+    id: monitorOpportunityId(observation, posting.canonicalSourceUrl),
     company: observation.company.trim(),
     role: observation.role.trim(),
     currentStageLabel: '待投',
@@ -332,15 +336,18 @@ export function applyMonitorIngestion(
           outcome = 'filtered'
           reason = evaluated.hardRejectReasons.join('；')
         } else {
-          const existing = findSimilarOpportunity(observation, next.data.opportunities)
-          if (existing) {
+          const identity = resolveOpportunityPostingIdentity(observation, next.data.opportunities)
+          if (identity.kind === 'same_posting') {
+            const existing = identity.opportunity
             const merged = mergeMonitorObservation(existing, observation, receivedAt)
             opportunityId = existing.id
             const index = next.data.opportunities.findIndex((item) => item.id === existing.id)
             next.data.opportunities[index] = merged.opportunity
             outcome = merged.changed ? 'merged' : 'duplicate'
             if (merged.changed) touchedOpportunityIds.push(existing.id)
-            reason = merged.changed ? '已归并到现有逻辑岗位并更新来源证据。' : '现有逻辑岗位已包含相同来源事实。'
+            reason = merged.changed ? '已按相同 exact posting identity 更新来源事实。' : '相同 exact posting identity 已包含当前来源事实。'
+          } else if (identity.kind === 'ambiguous') {
+            reason = '存在标题相似但缺少足够 posting identity 的历史 Opportunity；为避免错误归并，本次自动摄入保留为 unresolved。'
           } else {
             const opportunity = createMonitorOpportunity(observation, receivedAt)
             next.data.opportunities.push(opportunity)

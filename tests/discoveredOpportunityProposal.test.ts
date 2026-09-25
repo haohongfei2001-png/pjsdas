@@ -125,7 +125,7 @@ describe('v1.3 discovered opportunity proposals', () => {
         ...candidate,
         company: '示例科技',
         role: '产品经理（AI方向）',
-        sourceUrl: 'https://careers.example.com/jobs/duplicate',
+        sourceUrl: 'https://careers.example.com/jobs/ai-product-manager',
       }],
       discoveryRunContext: {
         mode: 'incremental',

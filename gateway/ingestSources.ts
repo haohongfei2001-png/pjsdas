@@ -177,6 +177,7 @@ export async function invokeTrustedIngestion(
       const simulationSnapshot = snapshotForReplay(workspace.snapshot, 'gpt_monitor', parsed.sourceId, parsed.replayOfRunId)
       const input: HardenedMonitorIngestionRunInput = {
         ...parsed,
+        producer: 'mcp_trusted_ingestion',
         observations: verifiedObservations,
         sourcePolicy: resolveSourcePolicy('gpt_monitor', parsed.sourceId, parsed.sourcePolicy),
       }
@@ -196,6 +197,7 @@ export async function invokeTrustedIngestion(
     const simulationSnapshot = snapshotForReplay(workspace.snapshot, 'gmail', parsed.sourceId, parsed.replayOfRunId)
     const input: HardenedGmailIngestionRunInput = {
       ...parsed,
+      producer: 'mcp_trusted_ingestion',
       sourcePolicy: resolveSourcePolicy('gmail', parsed.sourceId, parsed.sourcePolicy),
       messages: normalizeGmailMessagesForWorkspace(parsed.messages, simulationSnapshot.data.opportunities),
     }

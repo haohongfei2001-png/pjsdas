@@ -73,6 +73,7 @@ describe('automation settings API', () => {
       discoveryEnabled: true,
       discoveryLastCheckedAt: '2026-09-15T01:00:00.000Z',
       discoveryLastSuccessAt: '2026-09-15T01:00:00.000Z',
+      discoveryLastCommitAt: '2026-09-15T01:00:00.000Z',
       discoveryLastError: null,
     })
   })

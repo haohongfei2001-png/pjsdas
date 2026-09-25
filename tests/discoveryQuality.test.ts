@@ -46,7 +46,7 @@ function profile() {
   }
 }
 
-function existing(role = '产品经理（AI方向）'): Opportunity {
+function existing(role = '产品经理（AI方向）', sourceUrl = 'https://careers.example.com/jobs/ai-pm'): Opportunity {
   return {
     id: 'existing-1',
     company: '候选科技',
@@ -58,6 +58,26 @@ function existing(role = '产品经理（AI方向）'): Opportunity {
     opportunityValue: 80,
     fitScore: 70,
     importedAt: '2026-09-01T00:00:00.000Z',
+    detail: {
+      discovery: {
+        sourceUrl,
+        sourceTitle: '候选科技 AI 产品经理',
+        location: '北京',
+        rationale: 'existing',
+        discoveredAt: '2026-09-01T00:00:00.000Z',
+        fitConfidence: 'medium',
+        opportunityValueConfidence: 'medium',
+        posting: createJobPostingEvidence({
+          company: '候选科技',
+          role,
+          sourceUrl,
+          sourceTitle: '候选科技 AI 产品经理',
+          location: '北京',
+          postingStatus: 'open',
+          observedAt: '2026-09-01T00:00:00.000Z',
+        }),
+      },
+    },
   }
 }
 
@@ -211,7 +231,7 @@ describe('v1.4 discovery quality gate', () => {
     expect(result.accepted[0].warnings.join(' ')).toContain('刷新')
   })
 
-  it('treats a new source for a stale logical job as a possible re-post', () => {
+  it('treats a new source for a stale logical job as a distinct review candidate', () => {
     const stale = inbox('2026-08-01T00:00:00.000Z', 'https://jobs.example.com/old-ai-pm')
     const result = screenDiscoveryCandidates(profile(), [candidate({
       company: '甲公司',
@@ -219,7 +239,22 @@ describe('v1.4 discovery quality gate', () => {
       sourceUrl: 'https://careers.example.com/new-ai-pm?utm_source=search',
     })], [], weights, now, [], [stale])
     expect(result.accepted).toHaveLength(1)
-    expect(result.accepted[0].warnings.join(' ')).toContain('重新发布')
+    expect(result.accepted[0].warnings.join(' ')).toContain('exact posting source 不同')
+  })
+
+  it('keeps a similar formal Opportunity distinct when its exact posting URL differs', () => {
+    const result = screenDiscoveryCandidates(profile(), [
+      candidate({
+        company: '候选科技',
+        role: 'AI 产品经理',
+        sourceUrl: 'https://careers.example.com/jobs/ai-pm-community',
+        sourceTitle: '候选科技 AI 产品经理 - 社区产品',
+      }),
+    ], [existing()], weights, now)
+
+    expect(result.skippedDuplicates).toHaveLength(0)
+    expect(result.accepted).toHaveLength(1)
+    expect(result.accepted[0].warnings.join(' ')).toContain('exact posting source 不同')
   })
 
   it('deduplicates against existing similar roles and keeps only the strongest bounded review batch', () => {

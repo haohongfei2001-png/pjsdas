@@ -35,6 +35,7 @@ describe('cloud sign-out guard', () => {
     expect(contextSource).toContain('assertConnectedSignOutDataSafe({')
     expect(contextSource).toContain('outcomeKind: outcome?.kind')
     expect(contextSource).toContain('await hasUnsyncedLocalWorkspace(session.user.id)')
+    expect(contextSource).toContain("outcomeKind: 'local_pending'")
     expect(contextSource.match(/assertCloudSignOutAllowed\(\{/g)?.length).toBeGreaterThanOrEqual(2)
     const signOutStart = contextSource.indexOf('const signOut = useCallback')
     const localDirtyCheck = contextSource.indexOf('await hasUnsyncedLocalWorkspace(session.user.id)', signOutStart)

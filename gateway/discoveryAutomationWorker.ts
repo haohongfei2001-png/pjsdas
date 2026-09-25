@@ -84,7 +84,28 @@ export interface DiscoveryAiOptions {
   generateTextImpl?: DiscoveryGenerateText
 }
 
+export type DiscoveryAutomationRunState =
+  | 'not_configured'
+  | 'checked_not_due'
+  | 'verified_not_committed'
+  | 'committed'
+  | 'committed_with_exceptions'
+
+export function classifyDiscoveryAutomationRunState(input: {
+  configured: boolean
+  dueSourceCount: number
+  completedSourceCount: number
+  unresolvedCount: number
+}): DiscoveryAutomationRunState {
+  if (!input.configured) return 'not_configured'
+  if (input.dueSourceCount === 0) return 'checked_not_due'
+  if (input.completedSourceCount === 0) return 'verified_not_committed'
+  return input.unresolvedCount > 0 ? 'committed_with_exceptions' : 'committed'
+}
+
 export interface DiscoveryAutomationRunResult {
+  state: DiscoveryAutomationRunState
+  producer: 'server_scheduler'
   checkedAt: string
   configured: boolean
   dueSourceCount: number
@@ -340,6 +361,7 @@ async function applySourceRun(source: WorkspaceSource, sourceRun: DiscoveryAutom
     const result = applyMonitorIngestionHardened(workspace.snapshot, {
       runId,
       sourceId: currentSourceRun.sourceId,
+      producer: 'server_scheduler',
       startedAt: now.toISOString(),
       completedAt: now.toISOString(),
       sourcePolicy: sourcePolicy(currentSourceRun),
@@ -406,6 +428,8 @@ export async function runDiscoveryAutomationForBinding(options: {
   const profile = discoveryProfileForSnapshot(initial.snapshot.data.discoveryProfile)
   if (!isDiscoveryProfileConfigured(profile)) {
     return {
+      state: classifyDiscoveryAutomationRunState({ configured: false, dueSourceCount: 0, completedSourceCount: 0, unresolvedCount: 0 }),
+      producer: 'server_scheduler',
       checkedAt,
       configured: false,
       dueSourceCount: 0,
@@ -423,6 +447,8 @@ export async function runDiscoveryAutomationForBinding(options: {
   const dueSources = plan.sourceRuns.filter((item) => sourceIsDue(initial.snapshot, item, now, Boolean(options.force)))
   if (dueSources.length === 0) {
     return {
+      state: classifyDiscoveryAutomationRunState({ configured: true, dueSourceCount: 0, completedSourceCount: 0, unresolvedCount: 0 }),
+      producer: 'server_scheduler',
       checkedAt,
       configured: true,
       dueSourceCount: 0,
@@ -472,7 +498,16 @@ export async function runDiscoveryAutomationForBinding(options: {
     unresolvedCount += applied.result.run.outcomes.unresolved ?? 0
   }
 
+  const state = classifyDiscoveryAutomationRunState({
+    configured: true,
+    dueSourceCount: dueSources.length,
+    completedSourceCount,
+    unresolvedCount,
+  })
+
   return {
+    state,
+    producer: 'server_scheduler',
     checkedAt,
     configured: true,
     dueSourceCount: dueSources.length,

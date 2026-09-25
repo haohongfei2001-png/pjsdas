@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { invokeCoverageStatus } from '../gateway/coverageTool.js'
 import { invokeTrustedIngestion } from '../gateway/ingestSources.js'
-import type { GatewayWorkspace, WorkspaceSource, WorkspaceWriteInput } from '../gateway/workspaceSource.js'
+import { WorkspaceSourceError, type GatewayWorkspace, type WorkspaceSource, type WorkspaceWriteInput } from '../gateway/workspaceSource.js'
 import { createDefaultDecisionRules } from '../src/decisionRules.js'
 import { createDefaultDiscoveryProfile } from '../src/discoveryProfile.js'
 import { createSnapshot, type PJSDASSnapshot } from '../src/snapshot.js'
@@ -67,11 +67,39 @@ describe('trusted ingestion MCP boundary', () => {
     const first = await invokeTrustedIngestion(source, 'ingest_discovery_run', monitorArgs(), { sourceVerifier: verifiedSource })
     expect(first.isError).not.toBe(true)
     expect(source.writes).toHaveLength(1)
-    expect(first.structuredContent).toMatchObject({ workspaceVersion: 'drive:6', alreadyApplied: false, allInputsAccounted: true, unresolvedCount: 0 })
+    expect(first.structuredContent).toMatchObject({
+      workspaceVersion: 'drive:6',
+      alreadyApplied: false,
+      allInputsAccounted: true,
+      unresolvedCount: 0,
+      run: { producer: 'mcp_trusted_ingestion' },
+    })
     const second = await invokeTrustedIngestion(source, 'ingest_discovery_run', monitorArgs(), { sourceVerifier: verifiedSource })
     expect(second.isError).not.toBe(true)
     expect(source.writes).toHaveLength(1)
     expect(second.structuredContent).toMatchObject({ alreadyApplied: true, allInputsAccounted: true })
+  })
+
+  it('checks source-scoped authorization before reading or writing the workspace', async () => {
+    let reads = 0
+    const source: WorkspaceSource = {
+      async read() {
+        reads += 1
+        return { snapshot: initialSnapshot(), context: { workspaceVersion: 'drive:5' } }
+      },
+    }
+    const result = await invokeTrustedIngestion(source, 'ingest_discovery_run', {
+      ...monitorArgs('run-forbidden'),
+      observations: [],
+    }, {
+      authorize: async () => {
+        throw new WorkspaceSourceError('AUTH_FORBIDDEN', 'source grant required', false)
+      },
+      sourceVerifier: verifiedSource,
+    })
+    expect(result.isError).toBe(true)
+    expect(textError(result).code).toBe('AUTH_FORBIDDEN')
+    expect(reads).toBe(0)
   })
 
   it('fails closed when trusted ingestion is invoked on a read-only source', async () => {

@@ -80,6 +80,37 @@ describe('hardened monitor posting refresh semantics', () => {
     expect(second.snapshot.data.opportunities[0].currentStageLabel).toBe('待投')
   })
 
+  it('creates a distinct opportunity instead of mutating a similar role with a different exact posting URL', () => {
+    const first = applyMonitorIngestionHardened(snapshot(), run(
+      'identity-run-1',
+      '2026-09-15T00:10:00.000Z',
+      [observation({ sourceRecordId: 'official-job-123', deadline: '2026-09-30T23:59:00.000Z' })],
+    ))
+    const originalId = first.snapshot.data.opportunities[0]!.id
+    const originalPosting = first.snapshot.data.opportunities[0]!.detail?.discovery?.posting?.canonicalSourceUrl
+
+    const second = applyMonitorIngestionHardened(first.snapshot, run(
+      'identity-run-2',
+      '2026-09-16T00:10:00.000Z',
+      [observation({
+        sourceRecordId: 'official-job-456',
+        sourceUrl: 'https://careers.example.com/jobs/456',
+        sourceTitle: 'AI Product Manager - Community Product',
+        deadline: '2026-10-15T23:59:00.000Z',
+        discoveredAt: '2026-09-16T00:05:00.000Z',
+      })],
+    ))
+
+    expect(second.run.outcomes.created).toBe(1)
+    expect(second.snapshot.data.opportunities).toHaveLength(2)
+    const original = second.snapshot.data.opportunities.find((item) => item.id === originalId)!
+    const added = second.snapshot.data.opportunities.find((item) => item.id !== originalId)!
+    expect(original.detail?.discovery?.posting?.canonicalSourceUrl).toBe(originalPosting)
+    expect(original.deadline).toBe('2026-09-30T23:59:00.000Z')
+    expect(added.detail?.discovery?.posting?.canonicalSourceUrl).toBe('https://careers.example.com/jobs/456')
+    expect(added.deadline).toBe('2026-10-15T23:59:00.000Z')
+  })
+
   it('still treats the same stable source record and unchanged fingerprint as duplicate', () => {
     const first = applyMonitorIngestionHardened(snapshot(), run(
       'refresh-run-1',

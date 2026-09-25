@@ -438,6 +438,13 @@ test('account A sign-out then account B never displays or replays A cache drafts
 
   await page.goto('/')
   await expect(page.getByRole('heading', { name: 'A第一任务' })).toBeVisible()
+  // The initial read can render A before the account's sync checkpoint is
+  // committed. Sign-out during that window correctly refuses to clear the
+  // local cache, so establish the settled account state before this journey.
+  await expect.poll(() => page.evaluate(() => {
+    const raw = window.localStorage.getItem('pjsdas-google-drive-sync-state-v2')
+    return raw ? (JSON.parse(raw) as { accounts?: Record<string, { lastSyncedVersion?: string }> }).accounts?.['account-a']?.lastSyncedVersion : undefined
+  })).toBe('txn:3')
 
   await page.locator('.ultimate-capture-button').click()
   await page.locator('.cgr-capture-input').fill('A 的私有草稿')

@@ -36,7 +36,7 @@ afterEach(() => {
 })
 
 describe('authenticated write capability boundary', () => {
-  it('gives ordinary authenticated PJSDAS sessions the bounded explicit-user add tool but not autonomous trusted ingestion', async () => {
+  it('keeps the release tool directory stable for ordinary authenticated sessions while authorization remains call-scoped', async () => {
     vi.stubEnv('PJSDAS_TOKEN_ENCRYPTION_KEY', 'test-proposal-signing-secret')
     const fetchImpl = vi.fn(async (input: RequestInfo | URL) => {
       if (String(input).endsWith('/auth/v1/user')) return json({ id: 'user-a', email: 'a@gmail.com' })
@@ -51,11 +51,11 @@ describe('authenticated write capability boundary', () => {
     expect(text).toContain('propose_changes')
     expect(text).toContain('add_opportunities')
     expect(text).not.toContain('apply_user_command')
-    expect(text).not.toContain('ingest_discovery_run')
-    expect(text).not.toContain('ingest_gmail_run')
+    expect(text).toContain('ingest_discovery_run')
+    expect(text).toContain('ingest_gmail_run')
   })
 
-  it('does not trust a Supabase-validated OAuth client unless an explicit grant exists', async () => {
+  it('does not remove trusted-ingestion tools from a validated OAuth client when no grant exists', async () => {
     vi.stubEnv('PJSDAS_TOKEN_ENCRYPTION_KEY', 'test-proposal-signing-secret')
     const oauthToken = jwt({
       sub: 'user-a',
@@ -75,12 +75,12 @@ describe('authenticated write capability boundary', () => {
     const text = await responseText(response)
     expect(text).toContain('add_opportunities')
     expect(text).not.toContain('apply_user_command')
-    expect(text).not.toContain('ingest_discovery_run')
-    expect(text).not.toContain('ingest_gmail_run')
+    expect(text).toContain('ingest_discovery_run')
+    expect(text).toContain('ingest_gmail_run')
     expect(oauthClientIdFromValidatedAccessToken(oauthToken)).toBe('1af5d928-7c67-4330-9521-e8886794fd14')
   })
 
-  it('exposes only trusted-ingestion capabilities that were explicitly granted', async () => {
+  it('does not change the advertised tool directory when one trusted-ingestion grant exists', async () => {
     vi.stubEnv('PJSDAS_TOKEN_ENCRYPTION_KEY', 'test-proposal-signing-secret')
     const clientId = '1af5d928-7c67-4330-9521-e8886794fd14'
     const oauthToken = jwt({ sub: 'user-a', client_id: clientId })
@@ -103,7 +103,7 @@ describe('authenticated write capability boundary', () => {
     const text = await responseText(response)
     expect(text).toContain('add_opportunities')
     expect(text).toContain('ingest_discovery_run')
-    expect(text).not.toContain('ingest_gmail_run')
+    expect(text).toContain('ingest_gmail_run')
   })
 
   it('exposes the bounded P1 command tool only after transactional authority is activated', async () => {
@@ -121,8 +121,8 @@ describe('authenticated write capability boundary', () => {
     const text = await responseText(response)
     expect(text).toContain('add_opportunities')
     expect(text).toContain('apply_user_command')
-    expect(text).not.toContain('ingest_discovery_run')
-    expect(text).not.toContain('ingest_gmail_run')
+    expect(text).toContain('ingest_discovery_run')
+    expect(text).toContain('ingest_gmail_run')
   })
 
   it('cannot gain any authenticated write capability from a token that Supabase rejects', async () => {
