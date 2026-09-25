@@ -297,17 +297,17 @@ async function fetchMessages(fetchImpl: typeof fetch, accessToken: string, ids: 
     const settled = await Promise.all(batch.map(async (id) => {
       const response = await gmailFetch(fetchImpl, accessToken, `/messages/${encodeURIComponent(id)}?format=full`)
       if (response.status === 404 || response.status === 410) {
-        return { id, unavailable: true as const }
+        return { kind: 'unavailable' as const, id }
       }
       if (!response.ok) {
         throw new WorkspaceSourceError('GMAIL_REQUEST_FAILED', `Gmail message fetch failed (HTTP ${response.status}).`, false)
       }
       const message = await response.json().catch(() => undefined) as GmailMessage | undefined
       if (!message) throw new WorkspaceSourceError('GMAIL_RESPONSE_INVALID', 'Gmail returned malformed message JSON.', true)
-      return { message }
+      return { kind: 'message' as const, message }
     }))
     for (const item of settled) {
-      if ('unavailable' in item) unavailableMessageIds.push(item.id)
+      if (item.kind === 'unavailable') unavailableMessageIds.push(item.id)
       else messages.push(item.message)
     }
   }
