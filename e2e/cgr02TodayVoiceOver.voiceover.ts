@@ -106,3 +106,39 @@ test('real VoiceOver identifies Opportunities and Settings primary-route semanti
   await expect(page.getByRole('button', { name: /立即同步|Sync now/ })).toBeVisible()
   await expect(page.getByRole('button', { name: /退出 PJSDAS|Sign out/ })).toBeVisible()
 })
+
+
+test('real VoiceOver finds a dated schedule node and its occurrence detail', async ({ page, voiceOver }) => {
+  await prepareJourney(page)
+  await page.goto('/pjsdas/schedule')
+  await expect(page.getByRole('heading', { name: /^(日程|Schedule)$/ })).toBeVisible()
+  const node = page.locator('.tsui-schedule-row').filter({ hasText: '合成机会科技' })
+  await expect(node).toHaveCount(1)
+  await voiceOver.navigateToWebContent()
+  await node.focus()
+  await expect(node).toBeFocused()
+  await voiceOver.perform(voiceOver.keyboardCommands.moveCursorToKeyboardFocus)
+  const nodePhrases: string[] = []
+  for (let i = 0; i < 4; i += 1) {
+    nodePhrases.push((await voiceOver.lastSpokenPhrase()) + ' / ' + (await voiceOver.itemText()))
+    if (nodePhrases.join(' ').includes('合成机会科技') && nodePhrases.join(' ').includes('面试')) break
+    await voiceOver.next()
+  }
+  expect(nodePhrases.join(' ')).toContain('合成机会科技')
+  expect(nodePhrases.join(' ')).toContain('面试')
+
+  await node.click()
+  const detail = page.locator('.tsui-schedule-detail')
+  await expect(detail).toContainText('合成机会科技')
+  await expect(detail).toContainText('2026-10-20')
+  await voiceOver.navigateToWebContent()
+  const detailPhrases: string[] = []
+  let foundDetail = false
+  for (let i = 0; i < 24 && !foundDetail; i += 1) {
+    await voiceOver.nextHeading()
+    const phrase = (await voiceOver.lastSpokenPhrase()) + ' / ' + (await voiceOver.itemText())
+    detailPhrases.push(phrase)
+    foundDetail = phrase.includes('面试')
+  }
+  expect(foundDetail, detailPhrases.join(' | ')).toBe(true)
+})

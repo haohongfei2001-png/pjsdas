@@ -11,6 +11,13 @@ async function reviewedScreenshot(page: Page, name: string, fullPage = false) {
   await mkdir(VISUAL_DIR, { recursive: true })
   const screenshot = await page.screenshot({ path: `${VISUAL_DIR}/${name}`, fullPage, animations: 'disabled' })
   expect(screenshot.byteLength).toBeGreaterThan(1000)
+  const reviewNames = new Set(['quiet-today.png', 'decision-required.png', 'pending-save.png', 'unknown-save.png', 'offline-draft.png', 'conflict-save.png', 'cached-refresh-failure.png', 'single-390-200.png', 'single-320-200.png', 'capture-320-200-top.png', 'capture-320-200.png', 'settings-320-200.png'])
+  if (reviewNames.has(name)) {
+    const encoded = (await page.screenshot({ type: 'jpeg', quality: 46, animations: 'disabled' })).toString('base64')
+    console.log(`TSUI05_VISUAL_${name}_BEGIN`)
+    for (let offset = 0; offset < encoded.length; offset += 3000) console.log(`TSUI05_VISUAL_${name}_DATA:${encoded.slice(offset, offset + 3000)}`)
+    console.log(`TSUI05_VISUAL_${name}_END`)
+  }
 }
 
 test.beforeEach(async ({ page }) => {
@@ -542,6 +549,7 @@ test('same-object conflict refreshes connected Today and keeps the unsaved state
   await expect(page.getByRole('heading', { name: 'A第一任务（另一客户端更新）' })).toBeVisible()
   expect(state.commandBodies.filter((body) => body.action === 'command')).toHaveLength(1)
   expect(state.receipts.size).toBe(0)
+  await reviewedScreenshot(page, 'conflict-save.png')
 })
 
 test('Today remains operable at phone width and large text without horizontal clipping', async ({ page }) => {
@@ -748,6 +756,8 @@ test('quiet Today and a real DecisionRequest remain legible without invented act
   await expect(page.getByText('现在没有必须处理的任务')).toBeVisible()
   await expect(page.locator('.tsui-task-row')).toHaveCount(0)
   await mkdir(VISUAL_DIR, { recursive: true })
+  expect((await page.locator('.tsui-task-panel').boundingBox())!.height).toBeLessThan(300)
+  expect((await page.locator('.tsui-node-panel').boundingBox())!.height).toBeLessThan(300)
   await reviewedScreenshot(page, 'quiet-today.png')
 
   const now = new Date().toISOString()
@@ -780,5 +790,53 @@ test('quiet Today and a real DecisionRequest remain legible without invented act
   await page.evaluate(() => window.dispatchEvent(new Event('focus')))
   await expect(page.locator('.tsui-task-row').filter({ hasText: '这条更新属于哪个岗位？' })).toBeVisible()
   await expect(page.locator('.tsui-task-row')).toHaveCount(1)
+  expect((await page.locator('.tsui-task-panel').boundingBox())!.height).toBeLessThan(300)
   await reviewedScreenshot(page, 'decision-required.png')
+})
+
+test('TSUI-05 single task remains an ordinary row at 390 and 320 with real 200% text', async ({ page }) => {
+  await seedSession(page.context())
+  const state: State = { revision: 81, snapshot: workspace(), receipts: new Map(), commandBodies: [] }
+  state.snapshot.data.actions = [state.snapshot.data.actions[0]!]
+  await installServer(page, state)
+
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.goto('/pjsdas/today')
+  await page.evaluate(() => { document.documentElement.style.fontSize = '200%' })
+  const rootFont = await page.evaluate(() => Number.parseFloat(getComputedStyle(document.documentElement).fontSize))
+  expect(rootFont).toBeGreaterThanOrEqual(30)
+  await expect(page.locator('.tsui-task-row')).toHaveCount(1)
+  await expect(page.locator('.cgr-primary-action')).toHaveCount(0)
+  await expect(page.getByRole('heading', { name: 'A第一任务' })).toBeVisible()
+  const width390 = await page.evaluate(() => document.documentElement.scrollWidth)
+  expect(width390).toBeLessThanOrEqual(391)
+  await reviewedScreenshot(page, 'single-390-200.png', true)
+
+  await page.setViewportSize({ width: 320, height: 640 })
+  const width320 = await page.evaluate(() => document.documentElement.scrollWidth)
+  expect(width320).toBeLessThanOrEqual(321)
+  expect(await page.locator('.tsui-task-context').evaluate((element) => getComputedStyle(element).whiteSpace)).toBe('normal')
+  await reviewedScreenshot(page, 'single-320-200.png', true)
+  await page.locator('.tsui-tell-button').click()
+  const dialog = page.getByRole('dialog', { name: '告诉 PJSDAS' })
+  await expect(dialog).toBeVisible()
+  await expect(dialog.getByRole('textbox', { name: '要告诉 PJSDAS 的内容' })).toBeFocused()
+  const dialogWidth = await page.evaluate(() => document.documentElement.scrollWidth)
+  expect(dialogWidth).toBeLessThanOrEqual(321)
+  await reviewedScreenshot(page, 'capture-320-200-top.png', true)
+  const inputFont = await dialog.locator('.cgr-capture-input').evaluate((element) => Number.parseFloat(getComputedStyle(element).fontSize))
+  const saveButton = dialog.getByRole('button', { name: '确认并保存' })
+  const buttonFont = await saveButton.evaluate((element) => Number.parseFloat(getComputedStyle(element).fontSize))
+  expect(inputFont).toBeGreaterThanOrEqual(29)
+  expect(buttonFont).toBeGreaterThanOrEqual(23)
+  await saveButton.scrollIntoViewIfNeeded()
+  await expect(saveButton).toBeInViewport()
+  await reviewedScreenshot(page, 'capture-320-200.png', true)
+  await dialog.getByRole('button', { name: '关闭' }).click()
+  await page.locator('.tsui-settings-button').click()
+  await expect(page.getByRole('heading', { name: '设置', exact: true })).toBeVisible()
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(321)
+  const settingsFont = await page.locator('.settings-group>summary strong').first().evaluate((element) => Number.parseFloat(getComputedStyle(element).fontSize))
+  expect(settingsFont).toBeGreaterThanOrEqual(28)
+  await reviewedScreenshot(page, 'settings-320-200.png', true)
 })

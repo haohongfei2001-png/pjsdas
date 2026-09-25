@@ -10,7 +10,8 @@ async function emitVisual(page: Page, label: string) {
 }
 
 test('TSUI-03 300-job paging, exact posting identity, routed detail and truthful application link', async ({ page, context }) => {
-  await page.goto('/')
+  await page.goto('./')
+  await expect(page.locator('.tsui-primary-nav')).toBeVisible()
   await page.evaluate(async () => {
     const createdAt = new Date('2026-09-20T00:00:00.000Z').toISOString()
     await new Promise<void>((resolve, reject) => {
@@ -157,7 +158,7 @@ test('TSUI-03 300-job paging, exact posting identity, routed detail and truthful
 })
 
 test('TSUI-03 Today and Schedule detail links restore their exact opener and old deep links remain readable', async ({ page }) => {
-  await page.goto('/')
+  await page.goto('./')
   await page.evaluate(async () => {
     const now = Date.now()
     await new Promise<void>((resolve, reject) => {

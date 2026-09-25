@@ -11,6 +11,7 @@ import {
   protectedByLatestStart,
   resolvedContext,
   type TodayBriefAction,
+  type TodayBriefCoverageWarning,
   type TodayBriefContext,
 } from '../todayBrief.js'
 
@@ -34,6 +35,7 @@ export interface TodayWebSelection {
   decisionCount: number
   overBudgetMinutes: number
   protectedActionIds: string[]
+  criticalWarnings: TodayBriefCoverageWarning[]
 }
 
 function dueToday(item: RankedAction, timezone: string, today: string) {
@@ -114,9 +116,16 @@ export function selectTodayWeb(
       || a.createdAt.localeCompare(b.createdAt)
       || a.id.localeCompare(b.id))
     .map((request) => ({ id: `decision:${request.id}`, deepLink: `/decisions/${encodeURIComponent(request.id)}`, request }))
-  const protectedOutsideMinutes = protectedRanked
-    .filter((item) => !plannedIds.has(item.action.id))
-    .reduce((sum, item) => sum + item.action.estimatedMinutes, 0)
+  const protectedOutsidePlan = protectedRanked.filter((item) => !plannedIds.has(item.action.id))
+  const protectedOutsideMinutes = protectedOutsidePlan.reduce((sum, item) => sum + item.action.estimatedMinutes, 0)
+  const protectedUnplanned = [...plan.nearDeadlineUnplanned, ...protectedOutsidePlan]
+    .filter((item, index, items) => items.findIndex((candidate) => candidate.action.id === item.action.id) === index)
+  const criticalWarnings: TodayBriefCoverageWarning[] = protectedUnplanned.length ? [{
+    code: 'hard_deadline_unplanned', severity: 'critical',
+    title: 'A protected hard deadline is not covered by the current plan.',
+    detail: `${protectedUnplanned.length} protected deadline action(s) do not fit the current plan.`,
+    relatedIds: protectedUnplanned.map((item) => item.action.id),
+  }] : []
 
   return {
     workspaceRevision: context.workspaceVersion ?? `snapshot:${rawSnapshot.exportedAt}`,
@@ -128,5 +137,6 @@ export function selectTodayWeb(
     decisionCount: decisions.length,
     overBudgetMinutes: Math.max(0, plan.totalMinutes + protectedOutsideMinutes - Math.round(availableMinutes)),
     protectedActionIds: protectedRanked.map((item) => item.action.id),
+    criticalWarnings,
   }
 }

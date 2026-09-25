@@ -59,6 +59,7 @@ describe('TSUI-01 complete Web read models', () => {
     expect(web.actionCount).toBe(ids.length)
     const brief = buildTodayBrief(source, { availableMinutes: 180 }, { now: NOW, timezone: TZ })
     expect([brief.nextAction, ...brief.nextActions].filter(Boolean)).toHaveLength(4)
+    expect(web.criticalWarnings).toEqual(brief.materialCoverageWarnings.filter((item) => item.severity === 'critical' && item.code !== 'capacity_conflict'))
   })
 
   it('keeps every future node, ongoing window and unresolved past occurrence', () => {

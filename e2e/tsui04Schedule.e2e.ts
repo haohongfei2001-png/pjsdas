@@ -102,14 +102,22 @@ test('TSUI-04 real schedule: today anchor, both directions, unresolved and undat
   while (await page.locator('.tsui-schedule-more').count()) await page.locator('.tsui-schedule-more').click()
   const early = await page.locator('.tsui-schedule-row').first().getAttribute('data-schedule-entry')
   expect(early).toBe('node:tsui04-past-79')
-  while (await page.locator('.tsui-load-more').count()) await page.locator('.tsui-load-more').click()
+  while (await page.locator('.tsui-load-more').count()) {
+    const more = page.locator('.tsui-load-more')
+    await more.focus()
+    await more.press('Enter')
+  }
   const ids = await page.locator('.tsui-schedule-row').evaluateAll((rows) => rows.map((row) => row.getAttribute('data-schedule-entry')))
   expect(new Set(ids).size).toBe(ids.length)
   expect(ids.length).toBe(211)
 
   await page.locator('.tsui-schedule-tabs').getByRole('button', { name: /已发生|Past/ }).click()
   expect(await page.locator('.tsui-schedule-row').count()).toBeGreaterThan(0)
-  while (await page.locator('.tsui-load-more').count()) await page.locator('.tsui-load-more').click()
+  while (await page.locator('.tsui-load-more').count()) {
+    const more = page.locator('.tsui-load-more')
+    await more.focus()
+    await more.press('Enter')
+  }
   await expect(page.locator('.tsui-schedule-row')).toHaveCount(80)
   await page.locator('.tsui-schedule-tabs').getByRole('button', { name: /接下来|Upcoming/ }).click()
   await page.locator('.tsui-schedule-row').first().click()
@@ -138,6 +146,16 @@ test('TSUI-04 real schedule: today anchor, both directions, unresolved and undat
   await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1)
   await page.setViewportSize({ width: 320, height: 640 })
   await page.evaluate(() => { document.documentElement.style.fontSize = '200%' })
+  const overflowing = await page.evaluate(() => [...document.querySelectorAll<HTMLElement>('body *')]
+    .map((element) => ({ element, box: element.getBoundingClientRect() }))
+    .filter(({ box }) => box.right > innerWidth + 1 || box.left < -1)
+    .slice(0, 24)
+    .map(({ element, box }) => ({ tag: element.tagName, className: typeof element.className === 'string' ? element.className : '',
+      left: Math.round(box.left), right: Math.round(box.right), scrollWidth: element.scrollWidth, clientWidth: element.clientWidth,
+      text: (element.textContent ?? '').trim().slice(0, 50) })))
+  console.log('TSUI05_SCHEDULE_320_OVERFLOW:' + JSON.stringify(overflowing))
+  await page.evaluate(() => window.scrollTo(0, 0))
+  await visual(page, 'SCHEDULE_LARGE_TEXT_320')
   await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1)
   await page.screenshot({ path: 'test-results/tsui04/schedule-large-text-320.png', fullPage: true, animations: 'disabled' })
 
@@ -152,6 +170,24 @@ test('TSUI-04 real schedule: today anchor, both directions, unresolved and undat
   await expect(page.locator('.settings-surface > .surface-header h1')).toHaveText(/设置|Settings/)
   await page.screenshot({ path: 'test-results/tsui04/settings-mobile.png', fullPage: true, animations: 'disabled' })
   await visual(page, 'SETTINGS_MOBILE')
+
+  // Final responsive sweep uses the real ScheduleFeature and the same 211-entry fixture.
+  await page.goto('/pjsdas/schedule')
+  await page.evaluate(() => { document.documentElement.style.fontSize = '100%' })
+  const normalRoot = await page.evaluate(() => parseFloat(getComputedStyle(document.documentElement).fontSize))
+  for (const [width, height] of [[1920, 1080], [1440, 900], [1280, 800], [1024, 768], [768, 1024], [390, 844], [320, 640]]) {
+    await page.setViewportSize({ width, height })
+    await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1)
+    await page.screenshot({ path: `test-results/tsui04/schedule-final-${width}x${height}.png`, fullPage: true, animations: 'disabled' })
+  }
+  await page.evaluate(() => { document.documentElement.style.fontSize = '200%' })
+  const largeRoot = await page.evaluate(() => parseFloat(getComputedStyle(document.documentElement).fontSize))
+  expect(largeRoot / normalRoot).toBeGreaterThanOrEqual(1.95)
+  for (const [width, height] of [[390, 844], [320, 640]]) {
+    await page.setViewportSize({ width, height })
+    await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1)
+    await page.screenshot({ path: `test-results/tsui04/schedule-final-${width}x${height}-200-percent.png`, fullPage: true, animations: 'disabled' })
+  }
 })
 
 

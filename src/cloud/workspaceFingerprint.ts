@@ -26,24 +26,35 @@ export async function fingerprintWorkspace(snapshot: PJSDASSnapshot) {
   return [...new Uint8Array(digest)].map((value) => value.toString(16).padStart(2, '0')).join('')
 }
 
-// Local cache hydration materializes default rules and system timeline rows.
-// Compare those projections without treating an actual user edit as equivalent.
+// Local cache hydration materializes deterministic schedule, rules and system
+// timeline projections. Trusted ingestion also appends server-only audit rows:
+// those may be absent from an older cache without representing a local edit.
+// Keep every local audit row in the comparison so local-only or altered
+// evidence remains fail-closed.
+function serverIngestionAudit(row: NonNullable<PJSDASSnapshot['data']['timeline']>[number]) {
+  return (row.kind === 'ingestion_recorded' && Boolean(row.ingestion))
+    || (row.kind === 'ingestion_run_completed' && Boolean(row.ingestionRun))
+}
+
 export function equivalentReadProjection(local: PJSDASSnapshot, remote: PJSDASSnapshot) {
-  const normalized = (snapshot: PJSDASSnapshot) => {
-    const data: Record<string, unknown> = { ...snapshot.data }
-    if (rulesAreDefault(snapshot)) delete data.decisionRules
+  const localTimelineIds = new Set((local.data.timeline ?? []).map((row) => row.id))
+  const normalized = (snapshot: PJSDASSnapshot, remoteSide: boolean) => {
+    const data = structuredClone(snapshot.data)
+    if (rulesAreDefault({ ...snapshot, data })) delete data.decisionRules
+    const record = data as unknown as Record<string, unknown>
     for (const [key, value] of Object.entries(data)) {
       if (Array.isArray(value)) {
         const rows = key === 'timeline'
-          ? value.filter((row) => row?.kind !== 'baseline_backfill')
+          ? value.filter((row) => row?.kind !== 'baseline_backfill'
+            && (!remoteSide || !serverIngestionAudit(row) || localTimelineIds.has(row.id)))
           : value
-        if (rows.length) data[key] = rows
-        else delete data[key]
+        if (rows.length) record[key] = rows
+        else delete record[key]
       }
     }
     return JSON.stringify(canonical(data))
   }
-  return normalized(local) === normalized(remote)
+  return normalized(local, false) === normalized(remote, true)
 }
 
 function rulesAreDefault(snapshot: PJSDASSnapshot) {

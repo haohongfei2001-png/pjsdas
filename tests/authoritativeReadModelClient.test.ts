@@ -113,6 +113,35 @@ describe('CGR-02 authoritative Today read freshness', () => {
     expect(patchAccountCheckpoint).not.toHaveBeenCalled()
   })
 
+  it('refreshes txn:442 after audit-only remote revision despite raw local cache dirtiness', async () => {
+    vi.mocked(getAccountCheckpoint).mockReturnValue({
+      lastSyncedVersion: 'txn:441',
+      lastSyncedFingerprint: 'remote-441-fp',
+      lastReadProjectionSourceFingerprint: 'remote-441-fp',
+      lastReadProjectionFingerprint: 'projected-441-fp',
+    })
+    vi.mocked(fetchConnectedRemoteWorkspace).mockResolvedValue(remote('txn:442', 'remote-442-fp'))
+    vi.mocked(fingerprintWorkspace).mockImplementation(async (value: any) =>
+      value?.marker === 'remote' ? 'remote-442-fp' : 'hydrated-441-fp')
+    vi.mocked(equivalentReadProjection).mockReturnValue(true)
+    const result = await refreshConnectedAuthoritativeCache('account-a')
+    expect(result).toMatchObject({ state: 'updated', workspaceVersion: 'txn:442', changed: true })
+    expect(replaceLocalSnapshotFromCloud).toHaveBeenCalledWith(remoteSnapshot)
+    expect(patchAccountCheckpoint).toHaveBeenCalledWith('account-a', expect.objectContaining({
+      lastSyncedVersion: 'txn:442', lastReadProjectionSourceFingerprint: 'remote-442-fp',
+    }))
+  })
+
+  it('keeps a genuine local edit fail-closed when server revision also advances', async () => {
+    vi.mocked(fetchConnectedRemoteWorkspace).mockResolvedValue(remote('txn:442', 'remote-442-fp'))
+    vi.mocked(fingerprintWorkspace).mockImplementation(async (value: any) =>
+      value?.marker === 'remote' ? 'remote-442-fp' : 'local-business-edit-fp')
+    vi.mocked(equivalentReadProjection).mockReturnValue(false)
+    const result = await refreshConnectedAuthoritativeCache('account-a')
+    expect(result.state).toBe('diverged')
+    expect(replaceLocalSnapshotFromCloud).not.toHaveBeenCalled()
+  })
+
   it('refreshes a projected cache when only the remote revision changes', async () => {
     vi.mocked(getAccountCheckpoint).mockReturnValue({
       lastSyncedVersion: 'txn:7',
