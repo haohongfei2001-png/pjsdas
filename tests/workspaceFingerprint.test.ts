@@ -104,6 +104,15 @@ describe('cloud workspace fingerprint', () => {
     expect(equivalentReadProjection(local, remote)).toBe(false)
   })
 
+  it('does not normalize away an unsynced legacy deadline edit', () => {
+    const base = snapshot('2026-09-11T00:00:00.000Z', 'Example')
+    base.data.opportunities[0]!.deadline = '2026-10-01'
+    const remote = createSnapshot(base.data)
+    const local = structuredClone(remote)
+    local.data.opportunities[0]!.deadline = '2026-10-02'
+    expect(equivalentReadProjection(local, remote)).toBe(false)
+  })
+
   it('fails closed for local-only ingestion evidence and local timeline edits', () => {
     const remote = snapshot('2026-09-11T00:00:00.000Z', 'Example')
     const local = structuredClone(remote)

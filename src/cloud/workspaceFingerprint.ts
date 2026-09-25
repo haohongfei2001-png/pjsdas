@@ -1,7 +1,6 @@
 import { DEFAULT_DECISION_RULES } from '../decisionRules.js'
 import { DEFAULT_DISCOVERY_PROFILE } from '../discoveryProfile.js'
 import type { PJSDASSnapshot } from '../snapshot.js'
-import { ensureScheduleContractInPlace } from '../scheduleNodes.js'
 
 function canonical(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(canonical)
@@ -41,7 +40,6 @@ export function equivalentReadProjection(local: PJSDASSnapshot, remote: PJSDASSn
   const localTimelineIds = new Set((local.data.timeline ?? []).map((row) => row.id))
   const normalized = (snapshot: PJSDASSnapshot, remoteSide: boolean) => {
     const data = structuredClone(snapshot.data)
-    ensureScheduleContractInPlace(data)
     if (rulesAreDefault({ ...snapshot, data })) delete data.decisionRules
     const record = data as unknown as Record<string, unknown>
     for (const [key, value] of Object.entries(data)) {
