@@ -8,7 +8,7 @@ export default defineConfig({
   timeout: 60_000,
   reporter: [['list'], ['html', { open: 'never' }]],
   use: {
-    baseURL: 'https://haohongfei2001-png.github.io',
+    baseURL: 'https://haohongfei2001-png.github.io/pjsdas/',
     trace: 'retain-on-failure',
     screenshot: 'only-on-failure',
   },
