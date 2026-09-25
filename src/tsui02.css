@@ -166,8 +166,8 @@
 .tsui-schedule-tabs button{min-height:44px;border:0;border-radius:8px;padding:0 16px;background:transparent;color:#647084;font-size:.875rem}
 .tsui-schedule-tabs button.active{border:0;background:#edf2ff;color:#355dd7}
 .tsui-schedule-tabs button span{color:inherit;opacity:.7}
-.tsui-schedule-locator{display:flex;align-items:center;gap:8px}
-.tsui-schedule-locator input,.tsui-schedule-locator button{min-height:44px;border:1px solid #e8ebf0;border-radius:8px;padding:0 12px;background:#fff;color:#202938;font:inherit;font-size:.875rem}
+.tsui-schedule-locator{display:flex;align-items:center;flex-wrap:wrap;gap:8px}
+.tsui-schedule-locator input,.tsui-schedule-locator button{box-sizing:border-box;max-width:100%;min-height:44px;border:1px solid #e8ebf0;border-radius:8px;padding:0 12px;background:#fff;color:#202938;font:inherit;font-size:.875rem}
 .tsui-schedule-context{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px}
 .tsui-schedule-context button{min-height:44px;border:1px solid #e8ebf0;border-radius:8px;padding:0 12px;background:#fff;color:#647084;font-size:.8125rem}
 .tsui-schedule-context button:hover{color:#355dd7}
@@ -198,7 +198,7 @@
 .tsui-schedule-command-buttons,.tsui-schedule-confirm,.tsui-schedule-reschedule{display:flex;align-items:center;flex-wrap:wrap;gap:8px}
 .tsui-schedule-command-buttons button,.tsui-schedule-confirm button,.tsui-schedule-reschedule button,.tsui-schedule-feedback button{min-height:44px;border:1px solid #d7e1f7;border-radius:8px;padding:0 12px;background:#fff;color:#355dd7;font-size:.875rem}
 .tsui-schedule-reschedule label{display:grid;gap:4px;font-size:.8125rem}
-.tsui-schedule-reschedule input{min-height:44px;border:1px solid #e8ebf0;border-radius:8px;padding:0 8px;font:inherit}
+.tsui-schedule-reschedule input{box-sizing:border-box;max-width:100%;min-height:44px;border:1px solid #e8ebf0;border-radius:8px;padding:0 8px;font:inherit}
 .tsui-schedule-reschedule p{width:100%;margin:0;color:#647084;font-size:.8125rem}
 .tsui-schedule-detail details{margin-top:16px;color:#647084;font-size:.8125rem}
 .tsui-schedule-detail li{overflow-wrap:anywhere}

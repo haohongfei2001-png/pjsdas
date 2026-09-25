@@ -614,7 +614,7 @@ test('connected Today keeps a fixed interview, date-only deadline and elapsed un
   await expect(page.locator('.tsui-unresolved-link')).toContainText('1')
   await page.locator('.tsui-unresolved-link').click()
   await expect(page).toHaveURL(/\/schedule\?view=unresolved$/)
-  await expect(page.locator('.tsui-schedule-panel .tsui-node-row')).toHaveCount(1)
+  await expect(page.locator('.tsui-schedule-panel .tsui-schedule-row')).toHaveCount(1)
 })
 
 test('long action text and dense recruiting schedule remain operable at phone width', async ({ page }) => {

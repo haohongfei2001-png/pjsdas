@@ -115,7 +115,8 @@ function initialRange(entries: ScheduleEntry[], view: View, today: string) {
   if (view !== 'all') return { start: 0, end: Math.min(entries.length, 30) }
   const index = entries.findIndex((entry) => (entry.date ?? '9999-12-31') >= today)
   const anchor = index < 0 ? entries.length : index
-  return { start: Math.max(0, anchor - 12), end: Math.min(entries.length, anchor + 24) }
+  if (anchor === entries.length) return { start: Math.max(0, entries.length - 30), end: entries.length }
+  return { start: anchor, end: Math.min(entries.length, anchor + 30) }
 }
 
 export default function ScheduleFeature({
@@ -153,7 +154,7 @@ export default function ScheduleFeature({
     previousKey.current = stream.key
     const anchorId = listRef.current?.querySelector<HTMLElement>('[data-schedule-entry]')?.dataset.scheduleEntry
     const index = anchorId ? entries.findIndex((entry) => entry.id === anchorId) : -1
-    setRange(index >= 0 ? { start: Math.max(0, index - 12), end: Math.min(entries.length, index + 24) }
+    setRange(index >= 0 ? { start: index, end: Math.min(entries.length, index + 30) }
       : initialRange(entries, view, today))
   }, [stream.key, entries, view, today])
 
@@ -197,7 +198,7 @@ export default function ScheduleFeature({
       return
     }
     setView('all')
-    setRange({ start: Math.max(0, index - 2), end: Math.min(all.length, index + 28) })
+    setRange({ start: index, end: Math.min(all.length, index + 30) })
     setSelectedId(undefined)
     window.history.replaceState(null, '', window.location.pathname + window.location.hash)
     window.requestAnimationFrame(() => listRef.current?.scrollIntoView({ block: 'start' }))
