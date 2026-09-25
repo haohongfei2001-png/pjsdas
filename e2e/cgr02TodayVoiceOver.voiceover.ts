@@ -114,8 +114,9 @@ test('real VoiceOver finds a dated schedule node and its occurrence detail', asy
   await expect(page.getByRole('heading', { name: /^(日程|Schedule)$/ })).toBeVisible()
   const node = page.locator('.tsui-schedule-row').filter({ hasText: '合成机会科技' })
   await expect(node).toHaveCount(1)
-  await node.focus()
   await voiceOver.navigateToWebContent()
+  await node.focus()
+  await expect(node).toBeFocused()
   await voiceOver.perform(voiceOver.keyboardCommands.moveCursorToKeyboardFocus)
   const nodePhrases: string[] = []
   for (let i = 0; i < 4; i += 1) {
