@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test'
 
-test('shell hides stale version copy and Opportunities uses the decision-first layout with contextual Discovery Inbox', async ({ page }) => {
+test('shell hides stale version copy and Jobs uses the approved library with secondary destinations', async ({ page }) => {
   await page.goto('/')
   await expect(page.getByRole('heading', { name: '今天', exact: true })).toBeVisible()
 
@@ -9,19 +9,21 @@ test('shell hides stale version copy and Opportunities uses the decision-first l
   await expect(page.locator('.tsui-primary-nav button')).toHaveCount(3)
 
   await page.getByRole('button', { name: /岗位库/ }).click()
-  await expect(page.getByRole('heading', { name: '哪些在推进，哪些值得继续投入' })).toBeVisible()
-
-  const tabs = page.locator('.surface-context-tabs button')
-  await expect(tabs).toHaveCount(3)
-  await expect(page.getByRole('button', { name: /推进中/ })).toBeVisible()
-  await expect(page.getByRole('button', { name: /值得推进/ })).toBeVisible()
-  await expect(page.getByRole('button', { name: /发现箱/ })).toBeVisible()
-
-  const first = await tabs.nth(0).boundingBox()
-  const second = await tabs.nth(1).boundingBox()
+  await expect(page.getByRole('heading', { name: '岗位库' })).toBeVisible()
+  const filters = page.locator('.tsui-library-filters button')
+  await expect(filters).toHaveCount(4)
+  await expect(page.getByRole('button', { name: '全部' })).toHaveAttribute('aria-pressed', 'true')
+  await expect(page.getByRole('button', { name: '待投递' })).toBeVisible()
+  await expect(page.getByRole('button', { name: '推进中' })).toBeVisible()
+  await expect(page.getByRole('button', { name: '已结束' })).toBeVisible()
+  await expect(page.locator('.tsui-library-secondary').getByRole('button', { name: /发现箱/ })).toBeVisible()
+  await expect(page.locator('.tsui-library-secondary').getByRole('button', { name: /准备资产/ })).toBeVisible()
+  const first = await filters.nth(0).boundingBox()
+  const second = await filters.nth(1).boundingBox()
   expect(first).not.toBeNull()
   expect(second).not.toBeNull()
-  expect(Math.abs(first!.width - second!.width)).toBeLessThan(2)
+  expect(first!.height).toBeGreaterThanOrEqual(44)
+  expect(second!.height).toBeGreaterThanOrEqual(44)
 
   await page.locator('.tsui-topbar').getByRole('button', { name: /设置/ }).click()
   await expect(page.getByRole('heading', { name: '连接、自动化和长期控制' })).toBeVisible()

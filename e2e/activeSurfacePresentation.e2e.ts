@@ -74,7 +74,7 @@ test('active Today and Prepare surfaces localize presentation without changing s
   await expect(primary).not.toContainText('截止')
 
   await page.locator('.tsui-primary-nav').getByRole('button', { name: /Jobs/ }).click()
-  await page.locator('.surface-context-tabs button').filter({ hasText: 'Prepare' }).click()
+  await page.locator('.tsui-library-secondary button').filter({ hasText: 'Preparation' }).click()
   await expect(page.getByRole('heading', { name: 'Preparation inventory' })).toBeVisible()
 
   const cards = page.locator('.surface-prep-grid article')

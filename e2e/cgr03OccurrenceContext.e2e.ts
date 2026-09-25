@@ -34,7 +34,7 @@ test('CGR-03 opportunity detail resolves its scheduled interview through context
   await page.reload()
   await page.locator('.tsui-primary-nav').getByRole('button', { name: /岗位库|Jobs/ }).click()
   await page.locator('.opportunity-decision-row').filter({ hasText: '合成访谈公司' }).click()
-  const detail = page.getByRole('dialog', { name: /岗位详情|Opportunity details/ })
+  const detail = page.locator('.job-detail-page')
   await expect(detail.locator('.opportunity-detail-nearest-node')).toContainText(/面试|Interview/)
   await detail.getByRole('button', { name: /更新这个节点|Update this event/ }).click()
   const capture = page.getByRole('dialog', { name: /告诉 PJSDAS|Tell PJSDAS/ })

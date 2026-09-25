@@ -35,7 +35,7 @@ import LocalBackupDock from './LocalBackupDock.js'
 import ConnectedMigrationCard from './cloud/ConnectedMigrationCard.js'
 import OriginTransitionNotice from './OriginTransitionNotice.js'
 import OpportunityDetailDrawer, { type OpportunityDetailDestination } from './OpportunityDetailDrawer.js'
-import OpportunityDecisionList, { type OpportunityListView } from './OpportunityDecisionList.js'
+import JobLibrary, { type JobFilter } from './jobs/JobLibrary.js'
 import {
   buildOpportunityDecisionList,
   getOpportunityDecisionRead,
@@ -147,9 +147,10 @@ export default function AppV8() {
   const [todayFreshness, setTodayFreshness] = useState<TodayFreshnessView>({ state: 'local' })
   const [opportunityTab, setOpportunityTab] = useState<OpportunityTab>('opportunities')
   const [opportunityTabExplicit, setOpportunityTabExplicit] = useState(false)
-  const [opportunityView, setOpportunityView] = useState<OpportunityListView>('in_progress')
+  const [opportunityView, setOpportunityView] = useState<JobFilter>('all')
+  const [jobVisibleCount, setJobVisibleCount] = useState(40)
   const [opportunityQuery, setOpportunityQuery] = useState('')
-  const lastSelectedOpportunityId = useRef<string | undefined>(undefined)
+  const detailOrigin = useRef<{ path: string; scrollY: number; actionId?: string; opportunityId?: string } | null>(null)
   const [lastCompletedAction, setLastCompletedAction] = useState<CompletionFeedback | null>(null)
   const [snapshot, setSnapshot] = useState<PJSDASSnapshot>()
   const [loading, setLoading] = useState(true)
@@ -170,15 +171,10 @@ export default function AppV8() {
   const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
 
   useEffect(() => {
-    const previous = lastSelectedOpportunityId.current
-    lastSelectedOpportunityId.current = selectedOpportunityId
-    if (!previous || selectedOpportunityId || surface !== 'opportunities') return
-    const frame = window.requestAnimationFrame(() => {
-      const opener = [...document.querySelectorAll<HTMLButtonElement>('.opportunity-decision-row')]
-        .find((button) => button.dataset.opportunityId === previous)
-      opener?.focus()
-    })
-    return () => window.cancelAnimationFrame(frame)
+    const origin = detailOrigin.current
+    if (selectedOpportunityId || !origin || origin.path !== semanticPath() + window.location.search) return
+    detailOrigin.current = null
+    restoreDetailOrigin(origin)
   }, [selectedOpportunityId, surface])
 
   async function reload() {
@@ -208,7 +204,7 @@ export default function AppV8() {
     navigate(captureReturnPath || '/today', true)
     if (captureContextOpportunityId) {
       window.requestAnimationFrame(() => {
-        document.querySelector<HTMLButtonElement>('.opportunity-detail-drawer .cgr-context-capture')?.focus()
+        document.querySelector<HTMLButtonElement>('.job-detail-page .job-detail-capture, .opportunity-detail-drawer .cgr-context-capture')?.focus()
       })
     }
     setCaptureContextOpportunityId(undefined)
@@ -362,7 +358,6 @@ export default function AppV8() {
     : undefined
   const selectedProcess = selectedOpportunity
     ? processes.find((item) => item.opportunityId === selectedOpportunity.id)
-      ?? processes.find((item) => item.company === selectedOpportunity.company && item.role === selectedOpportunity.role)
     : undefined
   const selectedGroup = selectedOpportunity?.applicationGroupId
     ? groups.find((item) => item.id === selectedOpportunity.applicationGroupId)
@@ -371,7 +366,7 @@ export default function AppV8() {
     ? actions.filter((item) => item.opportunityId === selectedOpportunity.id)
     : []
   const selectedTimeline = selectedOpportunity
-    ? timeline.filter((item) => item.opportunityId === selectedOpportunity.id || (item.company === selectedOpportunity.company && item.role === selectedOpportunity.role))
+    ? timeline.filter((item) => item.opportunityId === selectedOpportunity.id)
     : []
   const selectedOpportunityDecision = selectedOpportunity && snapshot
     ? getOpportunityDecisionRead(snapshot, selectedOpportunity.id, {
@@ -468,7 +463,37 @@ export default function AppV8() {
   }
 
   function openOpportunity(id: string) {
+    const active = document.activeElement as HTMLElement | null
+    detailOrigin.current = {
+      path: selectedOpportunityId ? '/library' : semanticPath() + window.location.search,
+      scrollY: window.scrollY,
+      actionId: active?.closest<HTMLElement>('[data-action-id]')?.dataset.actionId,
+      opportunityId: active?.closest<HTMLElement>('[data-opportunity-id]')?.dataset.opportunityId,
+    }
     navigate('/library/' + encodeURIComponent(id))
+    window.requestAnimationFrame(() => window.scrollTo(0, 0))
+  }
+
+  function restoreDetailOrigin(origin: { scrollY: number; actionId?: string; opportunityId?: string }) {
+    window.requestAnimationFrame(() => window.requestAnimationFrame(() => {
+      window.scrollTo(0, origin.scrollY)
+      if (origin.actionId) {
+        const row = [...document.querySelectorAll<HTMLElement>('.tsui-task-row[data-action-id]')]
+          .find((element) => element.dataset.actionId === origin.actionId)
+        row?.querySelector<HTMLElement>('.tsui-task-context')?.focus()
+      } else if (origin.opportunityId) {
+        const row = [...document.querySelectorAll<HTMLElement>('.opportunity-decision-row[data-opportunity-id]')]
+          .find((element) => element.dataset.opportunityId === origin.opportunityId)
+        row?.focus()
+      }
+    }))
+  }
+
+  function closeOpportunity() {
+    const origin = detailOrigin.current
+    detailOrigin.current = null
+    navigate(origin?.path ?? '/library', true)
+    if (origin) restoreDetailOrigin(origin)
   }
 
   async function executeTodayAction(item: TodayBriefAction) {
@@ -497,6 +522,7 @@ export default function AppV8() {
 
   function navigateFromDetail(destination: OpportunityDetailDestination) {
     if (destination === 'today') navigate('/today')
+    if (destination === 'schedule') navigate('/schedule')
     if (destination === 'prepare') {
       setOpportunityTabExplicit(true)
       setOpportunityTab('prepare')
@@ -516,7 +542,7 @@ export default function AppV8() {
         <nav className="tsui-primary-nav" aria-label={zh ? '主导航' : 'Primary navigation'}>
           {primarySurfaces.map((item) => {
             const label = surfaceLabels[item]
-            return <button key={item} type="button" className={surface === item ? 'active' : ''} aria-current={surface === item ? 'page' : undefined} onClick={() => navigate(item === 'today' ? '/today' : item === 'schedule' ? '/schedule' : '/library')}>{zh ? label.zh : label.en}</button>
+            return <button key={item} type="button" className={surface === item ? 'active' : ''} aria-current={surface === item ? 'page' : undefined} onClick={() => { if (item === 'opportunities') setOpportunityTab('opportunities'); navigate(item === 'today' ? '/today' : item === 'schedule' ? '/schedule' : '/library') }}>{zh ? label.zh : label.en}</button>
           })}
         </nav>
         <div className="tsui-top-actions">
@@ -553,22 +579,28 @@ export default function AppV8() {
 
         {!loading && surface === 'schedule' && scheduleStream ? <ScheduleFeature key={scheduleStream.key} stream={scheduleStream} opportunities={opportunities} onOpenOpportunity={openOpportunity} /> : null}
 
-        {!loading && surface === 'opportunities' && opportunityDecisionList ? (
-          <>
-            {selectedOpportunityId && !selectedOpportunity ? (
-              <section className="surface-panel cgr-missing-opportunity" role="status">
-                <h2>{zh ? '无法打开这项机会' : 'This opportunity is unavailable'}</h2>
-                <p>{zh ? '它可能已被删除、合并，或当前连接尚未取得最新资料。请先重试；若仍不可用，可返回机会列表。' : 'It may have been deleted or merged, or this connection may not have the latest data. Retry first, then return to the list if it remains unavailable.'}</p>
-                <div className="surface-tool-row">
-                  <button type="button" onClick={() => { void reload() }}>{zh ? '重新读取' : 'Retry loading'}</button>
-                  <button type="button" onClick={() => navigate('/library', true)}>{zh ? '返回机会列表' : 'Back to opportunities'}</button>
-                </div>
-              </section>
-            ) : null}
-            <OpportunitiesSurface read={opportunityDecisionList} prep={prep} tab={opportunityTab} onTabChange={chooseOpportunityTab}
-              view={opportunityView} onViewChange={setOpportunityView} query={opportunityQuery} onQueryChange={setOpportunityQuery}
-              onOpenOpportunity={openOpportunity} />
-          </>
+        {!loading && surface === 'opportunities' && opportunityDecisionList && !selectedOpportunityId ? (
+          <OpportunitiesSurface read={opportunityDecisionList} opportunities={opportunities} prep={prep} tab={opportunityTab} onTabChange={chooseOpportunityTab}
+            view={opportunityView} onViewChange={setOpportunityView} query={opportunityQuery} onQueryChange={setOpportunityQuery}
+            visibleCount={jobVisibleCount} onVisibleCountChange={setJobVisibleCount} onOpenOpportunity={openOpportunity} />
+        ) : null}
+        {!loading && surface === 'opportunities' && selectedOpportunityId && !selectedOpportunity ? (
+          <section className="surface-panel cgr-missing-opportunity" role="status">
+            <h2>{zh ? '无法打开这项岗位' : 'This job is unavailable'}</h2>
+            <p>{zh ? '当前账户没有这项岗位。可重新读取，或返回原来的页面。' : 'This job is unavailable in the current account. Reload or return to the prior page.'}</p>
+            <div className="surface-tool-row"><button type="button" onClick={() => { void reload() }}>{zh ? '重新读取' : 'Retry loading'}</button><button type="button" onClick={closeOpportunity}>{zh ? '返回' : 'Back'}</button></div>
+          </section>
+        ) : null}
+        {!loading && surface === 'opportunities' && selectedOpportunity ? (
+          <OpportunityDetailDrawer asPage
+            returnLabel={detailOrigin.current?.path.startsWith('/today') ? (zh ? '返回今天' : 'Back to Today') : detailOrigin.current?.path.startsWith('/schedule') ? (zh ? '返回日程' : 'Back to Schedule') : (zh ? '返回岗位库' : 'Back to jobs')}
+            opportunity={selectedOpportunity} decision={selectedOpportunityDecision} process={selectedProcess}
+            actions={selectedActions} decisionRequests={selectedDecisionRequests} relatedPrep={selectedRelatedPrep}
+            applicationGroup={selectedGroup} timeline={selectedTimeline} onClose={closeOpportunity}
+            onCapture={openCapture} onNavigate={navigateFromDetail}
+            onOpenDecision={(id) => navigate('/decisions/' + encodeURIComponent(id) + '?from=' + encodeURIComponent(selectedOpportunity.id))}
+            onMarkAction={markAction} readOnly={CGR02_TODAY_READ_ONLY}
+          />
         ) : null}
         {!loading && surface === 'decisions' ? <DecisionRequestsView requests={decisionRequests} focusRequestId={route.decisionRequestId}
           onShowAll={() => navigate('/decisions')}
@@ -589,25 +621,6 @@ export default function AppV8() {
         contextRefs={captureOpportunity ? [`opportunity:${captureOpportunity.id}`] : []}
       />
 
-      {selectedOpportunity ? (
-        <OpportunityDetailDrawer
-          opportunity={selectedOpportunity}
-          decision={selectedOpportunityDecision}
-          process={selectedProcess}
-          actions={selectedActions}
-          decisionRequests={selectedDecisionRequests}
-          relatedPrep={selectedRelatedPrep}
-          applicationGroup={selectedGroup}
-          timeline={selectedTimeline}
-          onClose={() => navigate('/library', true)}
-          onCapture={openCapture}
-          onNavigate={navigateFromDetail}
-          onOpenDecision={(id) => navigate('/decisions/' + encodeURIComponent(id) + '?from=' + encodeURIComponent(selectedOpportunity.id))}
-          onMarkAction={markAction}
-          readOnly={CGR02_TODAY_READ_ONLY}
-        />
-      ) : null}
-
       {lastCompletedAction ? (
         <div className="action-undo-toast" role="status" aria-live="polite">
           <div>
@@ -622,60 +635,38 @@ export default function AppV8() {
 }
 
 function OpportunitiesSurface({
-  read,
-  prep,
-  tab,
-  onTabChange,
-  view,
-  onViewChange,
-  query,
-  onQueryChange,
-  onOpenOpportunity,
+  read, opportunities, prep, tab, onTabChange, view, onViewChange, query, onQueryChange,
+  visibleCount, onVisibleCountChange, onOpenOpportunity,
 }: {
   read: OpportunityDecisionListRead
+  opportunities: PJSDASSnapshot['data']['opportunities']
   prep: Prep[]
   tab: OpportunityTab
   onTabChange: (tab: OpportunityTab) => void
-  view: OpportunityListView
-  onViewChange: (view: OpportunityListView) => void
+  view: JobFilter
+  onViewChange: (view: JobFilter) => void
   query: string
   onQueryChange: (query: string) => void
+  visibleCount: number
+  onVisibleCountChange: (count: number) => void
   onOpenOpportunity: (id: string) => void
 }) {
   const { lang } = useUiLanguage()
   const zh = lang === 'zh'
-
-  return (
-    <section className="surface-page opportunities-surface">
-      <SurfaceHeader
-        eyebrow="OPPORTUNITIES"
-        title={zh ? '哪些在推进，哪些值得继续投入' : 'What is moving, and what is worth pursuing'}
-        text={zh
-          ? '默认只看当前决策相关的机会。阶段、下一步、最近节点和关键理由放在同一行；评分、来源计数和配额细节按需展开。'
-          : 'The default view stays focused on current decisions. Stage, next move, nearest node, and material reasons sit on one row; scores, source counts, and quota details stay progressive.'}
-      />
-
-      <div className="surface-context-tabs" role="tablist">
-        <button className={tab === 'opportunities' ? 'active' : ''} onClick={() => onTabChange('opportunities')}>
-          <span>{zh ? '机会' : 'Opportunities'}</span>
-          <small>{read.inProgress.length + read.worthPursuing.length} {zh ? '当前相关' : 'current'}</small>
-        </button>
-        <button className={tab === 'prepare' ? 'active' : ''} onClick={() => onTabChange('prepare')}>
-          <span>{zh ? '准备' : 'Prepare'}</span>
-          <small>{prep.length} {zh ? '资产' : 'items'}</small>
-        </button>
-        <button className={tab === 'discovery' ? 'active' : ''} onClick={() => onTabChange('discovery')}>
-          <span>{zh ? '发现箱' : 'Discovery Inbox'}</span>
-          <small>{zh ? '待审阅候选' : 'Review candidates'}</small>
-        </button>
+  return <section className="opportunities-surface">
+    {tab === 'opportunities' ? <>
+      <JobLibrary read={read} opportunities={opportunities} filter={view} onFilterChange={onViewChange}
+        query={query} onQueryChange={onQueryChange} visibleCount={visibleCount}
+        onVisibleCountChange={onVisibleCountChange} onOpenOpportunity={onOpenOpportunity} />
+      <div className="tsui-library-secondary">
+        <button type="button" onClick={() => onTabChange('prepare')}>{zh ? '准备资产' : 'Preparation'} · {prep.length}</button>
+        <button type="button" onClick={() => onTabChange('discovery')}>{zh ? '发现箱' : 'Discovery inbox'}</button>
       </div>
-
-      {tab === 'opportunities' ? <OpportunityDecisionList read={read} view={view} onViewChange={onViewChange}
-        query={query} onQueryChange={onQueryChange} onOpenOpportunity={onOpenOpportunity} /> : null}
-      {tab === 'prepare' ? <PreparePanel prep={prep} /> : null}
-      {tab === 'discovery' ? <DiscoveryInboxView /> : null}
-    </section>
-  )
+    </> : <>
+      <button className="tsui-library-back" type="button" onClick={() => onTabChange('opportunities')}>← {zh ? '返回岗位库' : 'Back to jobs'}</button>
+      {tab === 'prepare' ? <PreparePanel prep={prep} /> : <DiscoveryInboxView />}
+    </>}
+  </section>
 }
 
 function PreparePanel({ prep }: { prep: Prep[] }) {
