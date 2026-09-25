@@ -63,6 +63,12 @@ const BUSINESS_KINDS = new Set<TimelineRecord['kind']>([
   'semantic_undo_applied',
 ])
 
+// Legacy IndexedDB backfill records a status seen at upgrade time, not a proven completion instant.
+function syntheticActionBackfill(item: TimelineRecord) {
+  return item.kind === 'action_status_changed' && item.source === 'system'
+    && item.id.startsWith('timeline:backfill-action:')
+}
+
 function validInstant(value: string | undefined) {
   if (!value) return undefined
   const date = new Date(value)
@@ -226,7 +232,7 @@ export function buildScheduleStream(
   }
   const timelineByCommand = new Map<string, ScheduleEntry>()
   for (const item of snapshot.data.timeline ?? []) {
-    if (!BUSINESS_KINDS.has(item.kind)) continue
+    if (!BUSINESS_KINDS.has(item.kind) || syntheticActionBackfill(item)) continue
     if (item.processEventId && representedProcessEventIds.has(item.processEventId) && item.kind === 'process_event_recorded') {
       processEventEntries.get(item.processEventId)?.sourceRefs.push(`timeline:${item.id}`)
       continue
@@ -271,7 +277,8 @@ export function buildScheduleStream(
     sections.history.push(entry)
   }
   const completedActionIds = new Set((snapshot.data.timeline ?? [])
-    .filter((item) => item.kind === 'action_status_changed' && item.actionId && item.changes?.status?.after === 'done')
+    .filter((item) => item.kind === 'action_status_changed' && !syntheticActionBackfill(item)
+      && item.actionId && item.changes?.status?.after === 'done')
     .map((item) => item.actionId!))
   representedCompletedActionIds.forEach((id) => completedActionIds.add(id))
   for (const fact of snapshot.data.timeline ?? []) {

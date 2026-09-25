@@ -9,7 +9,7 @@ test('Job discovery preferences are bilingual, persist, and never show stale sav
   const interfaceGroup = page.locator('details.settings-group > summary').filter({ hasText: /界面.*显示层|Interface.*Presentation/ }).locator('..')
   await interfaceGroup.locator('summary').click()
   await interfaceGroup.getByRole('button', { name: 'EN', exact: true }).click()
-  await expect(page.getByRole('heading', { name: 'Connections, automation, and durable control' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Settings' })).toBeVisible()
   await page.locator('details.settings-group').filter({ hasText: 'Discovery preferences' }).locator('summary').click()
 
   const card = page.locator('.discovery-profile-card')
@@ -49,7 +49,7 @@ test('Job discovery preferences are bilingual, persist, and never show stale sav
 
   await page.reload()
   await expect(page).toHaveURL(/\/settings$/)
-  await expect(page.getByRole('heading', { name: 'Connections, automation, and durable control' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Settings' })).toBeVisible()
   await page.locator('details.settings-group').filter({ hasText: 'Discovery preferences' }).locator('summary').click()
   await expect(page.locator('.discovery-profile-card textarea').first()).toHaveValue('AI Product Manager\nBusiness Analysis')
 })

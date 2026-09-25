@@ -155,3 +155,55 @@
 /* The legacy .main-panel > section content cap must not narrow the new full-width Today composition. */
 .cgr-app-shell .cgr-main.surface-main > .tsui-today,
 .cgr-app-shell .cgr-main.surface-main > .tsui-schedule-page{width:100%;max-width:none;margin:0}
+
+
+/* TSUI-04 schedule: one time-ordered surface with explicit date navigation. */
+.tsui-schedule-page{max-width:1120px}
+.tsui-schedule-page .tsui-page-heading{margin:0 0 18px}
+.tsui-schedule-page .tsui-page-heading h1{font-size:1.625rem;font-weight:700;color:#202938}
+.tsui-schedule-toolbar{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:16px}
+.tsui-schedule-tabs{margin:0;gap:4px}
+.tsui-schedule-tabs button{min-height:44px;border:0;border-radius:8px;padding:0 16px;background:transparent;color:#647084;font-size:.875rem}
+.tsui-schedule-tabs button.active{border:0;background:#edf2ff;color:#355dd7}
+.tsui-schedule-tabs button span{color:inherit;opacity:.7}
+.tsui-schedule-locator{display:flex;align-items:center;flex-wrap:wrap;gap:8px}
+.tsui-schedule-locator input,.tsui-schedule-locator button{box-sizing:border-box;max-width:100%;min-height:44px;border:1px solid #e8ebf0;border-radius:8px;padding:0 12px;background:#fff;color:#202938;font:inherit;font-size:.875rem}
+.tsui-schedule-context{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px}
+.tsui-schedule-context button{min-height:44px;border:1px solid #e8ebf0;border-radius:8px;padding:0 12px;background:#fff;color:#647084;font-size:.8125rem}
+.tsui-schedule-context button:hover{color:#355dd7}
+.tsui-schedule-panel{overflow:hidden;border:1px solid #e8ebf0;border-radius:12px;box-shadow:none}
+.tsui-schedule-date{display:flex;align-items:center;gap:10px;margin:0;padding:12px 24px 2px;background:#fff;color:#202938;font-size:1rem;font-weight:700}
+.tsui-schedule-date.today span{border-radius:5px;padding:3px 7px;background:#edf2ff;color:#355dd7;font-size:.75rem}
+.tsui-schedule-row{display:grid;grid-template-columns:100px minmax(0,1fr) 80px 16px;align-items:center;gap:14px;width:100%;min-height:62px;margin:0;border:0;border-bottom:1px solid #e8ebf0;padding:8px 24px 12px;background:#fff;color:#202938;text-align:left;font:inherit}
+.tsui-schedule-row:hover{background:#f8faff}
+.tsui-schedule-row:focus-visible,.tsui-schedule-tabs button:focus-visible,.tsui-schedule-locator button:focus-visible,.tsui-schedule-locator input:focus-visible,.tsui-schedule-context button:focus-visible{outline:2px solid #355dd7;outline-offset:-2px}
+.tsui-schedule-time{color:#647084;font-size:.8125rem;line-height:1.45}
+.tsui-schedule-copy{display:flex;min-width:0;flex-direction:column;gap:4px}
+.tsui-schedule-copy strong{overflow-wrap:anywhere;font-size:.9375rem;font-weight:650}
+.tsui-schedule-copy small{overflow-wrap:anywhere;color:#647084;font-size:.8125rem}
+.tsui-schedule-state{color:#647084;font-size:.75rem}
+.tsui-schedule-state.state-unresolved{color:#a76134}
+.tsui-schedule-state.state-history{color:#637083}
+.tsui-schedule-more{display:block;width:100%;min-height:48px;border:0;border-bottom:1px solid #e8ebf0;background:#fff;color:#355dd7;font-size:.8125rem}
+.tsui-schedule-detail{scroll-margin-top:90px;margin:0 0 16px;border:1px solid #e8ebf0;border-radius:12px;padding:22px 24px;background:#fff;color:#202938}
+.tsui-schedule-detail-head{display:flex;justify-content:space-between;gap:16px}
+.tsui-schedule-detail-head small{color:#647084;font-size:.8125rem}
+.tsui-schedule-detail-head h2{margin:5px 0 0;font-size:1.0625rem}
+.tsui-schedule-detail-head>button{align-self:flex-start;min-width:44px;min-height:44px;border:0;background:transparent;color:#647084;font-size:1.5rem}
+.tsui-schedule-detail>p{color:#647084;font-size:.875rem}
+.tsui-schedule-warning{color:#a76134!important}
+.tsui-schedule-job-link{min-height:44px;border:0;background:transparent;color:#355dd7;font-size:.875rem}
+.tsui-schedule-commands{margin:18px 0;padding-top:16px;border-top:1px solid #e8ebf0}
+.tsui-schedule-commands h3{margin:0 0 12px;font-size:.9375rem}
+.tsui-schedule-command-buttons,.tsui-schedule-confirm,.tsui-schedule-reschedule{display:flex;align-items:center;flex-wrap:wrap;gap:8px}
+.tsui-schedule-command-buttons button,.tsui-schedule-confirm button,.tsui-schedule-reschedule button,.tsui-schedule-feedback button{min-height:44px;border:1px solid #d7e1f7;border-radius:8px;padding:0 12px;background:#fff;color:#355dd7;font-size:.875rem}
+.tsui-schedule-reschedule label{display:grid;gap:4px;font-size:.8125rem}
+.tsui-schedule-reschedule input{box-sizing:border-box;max-width:100%;min-height:44px;border:1px solid #e8ebf0;border-radius:8px;padding:0 8px;font:inherit}
+.tsui-schedule-reschedule p{width:100%;margin:0;color:#647084;font-size:.8125rem}
+.tsui-schedule-detail details{margin-top:16px;color:#647084;font-size:.8125rem}
+.tsui-schedule-detail li{overflow-wrap:anywhere}
+.tsui-schedule-feedback{display:flex;align-items:center;gap:12px;margin-top:12px;border-radius:8px;padding:12px;background:#edf2ff;color:#202938;font-size:.875rem}
+.tsui-schedule-feedback.error{background:#fff3e7;color:#8a4228}
+@media(max-width:700px){.tsui-schedule-toolbar{align-items:stretch;flex-direction:column}.tsui-schedule-tabs{width:100%}.tsui-schedule-tabs button{flex:1}.tsui-schedule-locator{justify-content:space-between}.tsui-schedule-row{grid-template-columns:1fr auto;gap:4px 10px;padding:14px 16px}.tsui-schedule-time{grid-column:1/-1}.tsui-schedule-copy{grid-column:1}.tsui-schedule-state{grid-column:2;grid-row:2}.tsui-schedule-row>span:last-child{display:none}.tsui-schedule-date{padding:16px 16px 8px}.tsui-schedule-detail{scroll-margin-top:132px;padding:18px 16px}}
+
+.cgr-app-shell .cgr-main.surface-main > .tsui-schedule-page{max-width:1120px;margin:0 auto}

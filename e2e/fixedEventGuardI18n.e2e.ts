@@ -61,7 +61,7 @@ test('elapsed recruiting node stays unresolved until an explicit completion fact
   await seedPastEvent(page)
 
   await page.locator('.tsui-unresolved-link').click()
-  const unresolved = page.locator('.tsui-schedule-panel .tsui-node-row').filter({ hasText: '节点测试科技' })
+  const unresolved = page.locator('.tsui-schedule-panel .tsui-schedule-row').filter({ hasText: '节点测试科技' })
   await expect(unresolved).toBeVisible()
   await expect(unresolved).toContainText('面试')
   await expect(unresolved).toContainText('待确认')
@@ -71,8 +71,8 @@ test('elapsed recruiting node stays unresolved until an explicit completion fact
   await interfaceGroup.locator('summary').click()
   await interfaceGroup.getByRole('button', { name: 'EN', exact: true }).click()
   await page.locator('.tsui-primary-nav').getByRole('button', { name: /Schedule/ }).click()
-  await page.getByRole('button', { name: /Unresolved/ }).first().click()
-  await expect(page.locator('.tsui-schedule-panel .tsui-node-row').filter({ hasText: 'Unresolved' })).toBeVisible()
+  await page.locator('.tsui-schedule-context').getByRole('button', { name: /Past arrangements to confirm/ }).click()
+  await expect(page.locator('.tsui-schedule-panel .tsui-schedule-row').filter({ hasText: 'Unresolved' })).toBeVisible()
 
   await page.locator('.tsui-tell-button').click()
   await page.locator('.cgr-capture-input').fill('节点测试科技 AI产品经理 面试已经完成。')
@@ -80,7 +80,7 @@ test('elapsed recruiting node stays unresolved until an explicit completion fact
   await expect(page.getByRole('status')).toBeVisible()
   await page.getByRole('button', { name: 'Close' }).click()
 
-  await expect(page.locator('.tsui-schedule-panel .tsui-node-row').filter({ hasText: '节点测试科技' })).toHaveCount(0)
+  await expect(page.locator('.tsui-schedule-panel .tsui-schedule-row').filter({ hasText: '节点测试科技' })).toHaveCount(0)
 })
 
 test('a question about an elapsed event remains read-only and does not complete it', async ({ page }) => {
@@ -94,5 +94,5 @@ test('a question about an elapsed event remains read-only and does not complete 
   await page.getByRole('button', { name: '关闭' }).click()
 
   await page.locator('.tsui-unresolved-link').click()
-  await expect(page.locator('.tsui-schedule-panel .tsui-node-row').filter({ hasText: '节点测试科技' })).toBeVisible()
+  await expect(page.locator('.tsui-schedule-panel .tsui-schedule-row').filter({ hasText: '节点测试科技' })).toBeVisible()
 })

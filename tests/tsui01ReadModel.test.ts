@@ -183,4 +183,20 @@ describe('TSUI-01 complete Web read models', () => {
     expect(stream.sections.undated).toEqual([])
     expect(stream.sections.history[0].sourceRefs).toContain('timeline:action-log')
   })
+  it('keeps a legacy completed action undated when its only timestamp is a system backfill', () => {
+    const backfill: TimelineRecord = {
+      id: 'timeline:backfill-action:legacy-done:done',
+      kind: 'action_status_changed', category: 'action', source: 'system',
+      occurredAt: '2026-09-20T00:00:00.000Z',
+      recordedAt: '2026-09-25T03:00:00.000Z',
+      title: 'Legacy done status', actionId: 'legacy-done',
+      changes: { status: { before: 'todo', after: 'done' } },
+    }
+    const stream = buildScheduleStream(snapshot([
+      action('legacy-done', { status: 'done', updatedAt: CREATED }),
+    ], [], [backfill]), { accountKey: 'A', workspaceRevision: 'r1', timezone: TZ, now: NOW })
+    expect(stream.sections.undated.map((entry) => entry.id)).toContain('action:legacy-done')
+    expect(stream.sections.history.some((entry) => entry.id === 'fact:' + backfill.id)).toBe(false)
+  })
+
 })

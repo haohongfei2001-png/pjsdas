@@ -75,7 +75,7 @@ test('TSUI-02 real component: equal Today rows, shared 130-node stream and mobil
   await expect(page.locator('.tsui-node-panel .tsui-node-row')).toHaveCount(130)
   await page.getByRole('button', { name: /日程/ }).first().click()
   await expect(page).toHaveURL(/\/schedule$/)
-  await expect(page.locator('.tsui-schedule-panel .tsui-node-row').first()).toBeVisible()
+  await expect(page.locator('.tsui-schedule-panel .tsui-schedule-row').first()).toBeVisible()
   await page.setViewportSize({ width: 390, height: 844 })
   await page.goto('/pjsdas/today')
   await expect(page.locator('.tsui-task-row')).toHaveCount(8)
