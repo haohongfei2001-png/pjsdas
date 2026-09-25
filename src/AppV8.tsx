@@ -49,7 +49,7 @@ import { selectTodayWeb } from './today/todayWebSelector.js'
 import { buildScheduleStream, type ScheduleEntry } from './schedule/scheduleStream.js'
 import ScheduleFeature from './schedule/ScheduleFeature.js'
 import DecisionRequestsView from './DecisionRequestsView.js'
-import { buildTodayBrief, type TodayBriefAction } from './todayBrief.js'
+import { type TodayBriefAction } from './todayBrief.js'
 import type {
   Action,
   DecisionRequest,
@@ -330,7 +330,7 @@ export default function AppV8() {
   const accountKey = cloud.session?.user.id ?? 'local-workspace'
   const workspaceRevision = snapshot ? [cloud.session?.user.id ? getAccountCheckpoint(cloud.session.user.id).lastSyncedVersion ?? 'pending' : 'local', snapshot.exportedAt].join(':') : ''
   const todayWeb = useMemo(() => snapshot ? selectTodayWeb(snapshot, { availableMinutes: budgetMinutes }, { now, timezone, workspaceVersion: workspaceRevision }) : undefined, [snapshot, budgetMinutes, now, timezone, workspaceRevision])
-  const criticalTodayWarnings = useMemo(() => snapshot && surface === 'today' ? buildTodayBrief(snapshot, { availableMinutes: budgetMinutes }, { now, timezone, workspaceVersion: workspaceRevision }).materialCoverageWarnings.filter((item) => item.severity === 'critical' && item.code !== 'capacity_conflict') : [], [snapshot, surface, budgetMinutes, now, timezone, workspaceRevision])
+  const criticalTodayWarnings = todayWeb?.criticalWarnings ?? []
   const scheduleStream = useMemo(() => snapshot ? buildScheduleStream(snapshot, { accountKey, workspaceRevision, timezone, now }) : undefined, [snapshot, accountKey, workspaceRevision, timezone, now])
 
   const opportunityDecisionList = useMemo<OpportunityDecisionListRead | undefined>(() => {
