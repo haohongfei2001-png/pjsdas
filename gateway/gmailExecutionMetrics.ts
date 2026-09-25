@@ -11,6 +11,11 @@ export interface GmailExecutionMetrics {
   status: 'completed' | 'error'
   mode: GmailRunMode
   errorCode?: string
+  providerOperation?: 'profile' | 'history' | 'list' | 'message_fetch' | 'unknown'
+  providerStatus?: number
+  providerReason?: string
+  failureScope?: 'run' | 'record'
+  recordGapCount?: number
   receivedCount?: number
   accountedCount?: number
   unresolvedCount?: number
