@@ -204,7 +204,7 @@ export default function AppV8() {
     navigate(captureReturnPath || '/today', true)
     if (captureContextOpportunityId) {
       window.requestAnimationFrame(() => {
-        document.querySelector<HTMLButtonElement>('.opportunity-detail-drawer .cgr-context-capture')?.focus()
+        document.querySelector<HTMLButtonElement>('.job-detail-page .job-detail-capture, .opportunity-detail-drawer .cgr-context-capture')?.focus()
       })
     }
     setCaptureContextOpportunityId(undefined)
@@ -522,6 +522,7 @@ export default function AppV8() {
 
   function navigateFromDetail(destination: OpportunityDetailDestination) {
     if (destination === 'today') navigate('/today')
+    if (destination === 'schedule') navigate('/schedule')
     if (destination === 'prepare') {
       setOpportunityTabExplicit(true)
       setOpportunityTab('prepare')
@@ -541,7 +542,7 @@ export default function AppV8() {
         <nav className="tsui-primary-nav" aria-label={zh ? '主导航' : 'Primary navigation'}>
           {primarySurfaces.map((item) => {
             const label = surfaceLabels[item]
-            return <button key={item} type="button" className={surface === item ? 'active' : ''} aria-current={surface === item ? 'page' : undefined} onClick={() => navigate(item === 'today' ? '/today' : item === 'schedule' ? '/schedule' : '/library')}>{zh ? label.zh : label.en}</button>
+            return <button key={item} type="button" className={surface === item ? 'active' : ''} aria-current={surface === item ? 'page' : undefined} onClick={() => { if (item === 'opportunities') setOpportunityTab('opportunities'); navigate(item === 'today' ? '/today' : item === 'schedule' ? '/schedule' : '/library') }}>{zh ? label.zh : label.en}</button>
           })}
         </nav>
         <div className="tsui-top-actions">

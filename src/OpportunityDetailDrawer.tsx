@@ -18,7 +18,7 @@ import type {
 import './opportunityDetail.css'
 import './jobs/jobDetail.css'
 
-export type OpportunityDetailDestination = 'today' | 'opportunities' | 'prepare'
+export type OpportunityDetailDestination = 'today' | 'opportunities' | 'prepare' | 'schedule'
 
 interface OpportunityDetailDrawerProps {
   opportunity: Opportunity
@@ -160,6 +160,7 @@ export default function OpportunityDetailDrawer({
       {asPage ? <button className="job-detail-back" type="button" onClick={onClose}>← {returnLabel ?? (zh ? '返回岗位库' : 'Back to jobs')}</button> : null}
       <Surface ref={dialogRef} className={asPage ? 'opportunity-detail-drawer job-detail-surface' : 'opportunity-detail-drawer'} role={asPage ? undefined : 'dialog'} aria-modal={asPage ? undefined : true} tabIndex={asPage ? undefined : -1} aria-label={zh ? '岗位详情' : 'Opportunity details'} onMouseDown={(event) => event.stopPropagation()}>
         <header className="opportunity-detail-header">
+          {asPage ? <span className="job-detail-mark" aria-hidden="true">{opportunity.company.slice(0, 2)}</span> : null}
           <div>
             <div className="eyebrow">OPPORTUNITY</div>
             <strong className="opportunity-detail-company">{opportunity.company}</strong>
@@ -263,6 +264,12 @@ export default function OpportunityDetailDrawer({
             zh={zh}
           />
         </div>
+
+        {asPage ? <aside className="job-detail-related">
+          <h2>{zh ? '相关记录' : 'Related records'}</h2>
+          <p>{timeline.length ? (zh ? `${timeline.length} 条关联历史可在下方展开查看。` : `${timeline.length} related history records are available below.`) : (zh ? '还没有进展记录' : 'No progress records yet')}</p>
+          <button type="button" onClick={() => onNavigate('schedule')}>{zh ? '查看日程 →' : 'View schedule →'}</button>
+        </aside> : null}
 
         {orderedTimeline.length ? (
           <details className="opportunity-detail-section">

@@ -33,7 +33,7 @@ test('TSUI-03 300-job paging, exact posting identity, routed detail and truthful
           id: 'tsui03-posting-' + suffix,
           company: '同名科技', role: 'Senior Product / 高级产品设计与研究',
           currentStageLabel: '待投递', processStage: 'not_applied',
-          roleType: 'core', participationStatus: 'active', early: false,
+          roleType: 'core', participationStatus: 'active', early: false, locallyManaged: true,
           opportunityValue: 80, fitScore: 80, importedAt: createdAt,
           detail: { userFacts: { applicationUrl: 'https://apply.example.test/posting/' + suffix } },
         })
@@ -48,6 +48,14 @@ test('TSUI-03 300-job paging, exact posting identity, routed detail and truthful
   await page.setViewportSize({ width: 1440, height: 900 })
   await page.screenshot({ path: 'test-results/tsui03/library-desktop.png', fullPage: true, animations: 'disabled' })
   await emitVisual(page, 'LIBRARY_DESKTOP')
+  const identityGap = await page.locator('.tsui-job-open').first().evaluate((row) => {
+    const mark = row.querySelector('.tsui-job-mark')!.getBoundingClientRect()
+    const identity = row.querySelector('.tsui-job-identity')!.getBoundingClientRect()
+    return identity.left - mark.right
+  })
+  console.log('TSUI03_IDENTITY_GAP:' + identityGap)
+  expect(identityGap).toBeGreaterThanOrEqual(8)
+  expect(identityGap).toBeLessThanOrEqual(22)
   while (await page.locator('.tsui-library-more').count()) await page.locator('.tsui-library-more').click()
   const ids = await page.locator('.tsui-job-row').evaluateAll((elements) => elements.map((element) => element.getAttribute('data-opportunity-id')))
   expect(ids).toHaveLength(302)
@@ -90,6 +98,13 @@ test('TSUI-03 300-job paging, exact posting identity, routed detail and truthful
   await expect(detail.locator('.job-detail-actions a')).toHaveAttribute('href', 'https://apply.example.test/posting/a')
   await page.screenshot({ path: 'test-results/tsui03/detail-desktop.png', fullPage: true, animations: 'disabled' })
   await emitVisual(page, 'DETAIL_DESKTOP')
+  const detailStyle = await detail.locator('.job-detail-surface').evaluate((element) => ({
+    background: getComputedStyle(element).backgroundColor,
+    shadow: getComputedStyle(element).boxShadow,
+  }))
+  console.log('TSUI03_DETAIL_STYLE:' + JSON.stringify(detailStyle))
+  expect(detailStyle.shadow).toBe('none')
+  await expect(detail.locator('.job-detail-related')).toContainText(/相关记录|Related records/)
   await page.locator('.job-detail-back').click()
   await expect(search).toHaveValue('同名科技')
   await expect(a.locator('.tsui-job-open')).toBeFocused()
@@ -129,26 +144,24 @@ test('TSUI-03 Today and Schedule detail links restore their exact opener and old
         tx.oncomplete = () => { db.close(); resolve() }
         tx.objectStore('opportunities').put({
           id: 'tsui03-context-opp', company: '上下文公司', role: 'Researcher',
-          currentStageLabel: '面试', processStage: 'interview',
-          roleType: 'core', participationStatus: 'active', early: false,
+          currentStageLabel: '待投递', processStage: 'not_applied',
+          roleType: 'core', participationStatus: 'active', early: false, locallyManaged: true,
           opportunityValue: 80, fitScore: 80, importedAt: new Date(now - 86400000).toISOString(),
         })
         tx.objectStore('actions').put({
-          id: 'tsui03-context-action', kind: 'manual', title: '准备上下文面试',
-          opportunityId: 'tsui03-context-opp', processStage: 'interview',
-          dueAt: new Date(now + 3600000).toISOString(), duePrecision: 'datetime',
-          timingMode: 'deadline', estimatedMinutes: 20, leverage: 90, delayCost: 90,
+          id: 'tsui03-context-action', kind: 'manual', title: '准备上下文申请',
+          opportunityId: 'tsui03-context-opp',
+          estimatedMinutes: 20, leverage: 90, delayCost: 90,
           status: 'todo', createdAt: new Date(now - 86400000).toISOString(), updatedAt: new Date(now - 86400000).toISOString(),
         })
         tx.objectStore('scheduleNodes').put({
           id: 'tsui03-context-node', occurrenceId: 'tsui03-context-occurrence', version: 1,
-          opportunityId: 'tsui03-context-opp', kind: 'interview', state: 'scheduled',
+          opportunityId: 'tsui03-context-opp', kind: 'application_deadline', state: 'scheduled',
           constraintKind: 'employer_hard',
-          temporal: { shape: 'fixed_range', precision: 'datetime', timezone: 'UTC',
-            startAt: new Date(now + 2 * 86400000).toISOString(),
-            endAt: new Date(now + 2 * 86400000 + 3600000).toISOString(),
+          temporal: { shape: 'date_only', precision: 'date', timezone: 'UTC',
+            date: new Date(now + 2 * 86400000).toISOString().slice(0, 10),
             resolutionBasis: 'user_explicit' },
-          evidenceRefs: [], sourceVersionRefs: [], relatedActionIds: ['tsui03-context-action'], relatedPrepIds: [],
+          evidenceRefs: [], sourceVersionRefs: [], relatedActionIds: [], relatedPrepIds: [],
           createdAt: new Date(now - 86400000).toISOString(), updatedAt: new Date(now - 86400000).toISOString(),
         })
       }
