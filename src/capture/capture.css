@@ -29,7 +29,7 @@
 
 .cgr-capture-header h2 {
   margin: 5px 0 7px;
-  font-size: clamp(26px, 4vw, 34px);
+  font-size: clamp(1.625rem, 4vw, 2.125rem);
   line-height: 1.08;
   letter-spacing: -.035em;
 }
@@ -38,7 +38,7 @@
   max-width: 590px;
   margin: 0;
   color: var(--cgr-text-secondary);
-  font-size: 12.5px;
+  font-size: 0.78125rem;
   line-height: 1.6;
 }
 
@@ -49,7 +49,7 @@
   padding: 5px 9px;
   background: var(--cgr-accent-soft);
   color: var(--cgr-accent);
-  font-size: 10.5px;
+  font-size: 0.65625rem;
   font-weight: 680;
 }
 
@@ -64,7 +64,7 @@
   background: rgba(255,255,255,.92);
   color: var(--cgr-text);
   font: inherit;
-  font-size: 15px;
+  font-size: 0.9375rem;
   line-height: 1.62;
 }
 
@@ -91,7 +91,7 @@
 }
 
 .cgr-understanding-head strong {
-  font-size: 11.5px;
+  font-size: 0.71875rem;
 }
 
 .cgr-understanding-head span {
@@ -99,7 +99,7 @@
   padding: 4px 7px;
   background: rgba(111,116,109,.09);
   color: var(--cgr-text-secondary);
-  font-size: 9.5px;
+  font-size: 0.59375rem;
   font-weight: 760;
 }
 
@@ -118,7 +118,7 @@
   margin: 0;
   padding-left: 18px;
   color: var(--cgr-text);
-  font-size: 12px;
+  font-size: 0.75rem;
   line-height: 1.45;
 }
 
@@ -126,7 +126,7 @@
 .cgr-understanding-warning {
   margin: 0;
   color: var(--cgr-text-secondary);
-  font-size: 11px;
+  font-size: 0.6875rem;
   line-height: 1.5;
 }
 
@@ -143,7 +143,7 @@
 .cgr-capture-footer small,
 .cgr-capture-hint {
   color: var(--cgr-text-tertiary);
-  font-size: 10.5px;
+  font-size: 0.65625rem;
 }
 
 .cgr-capture-receipt,
@@ -175,14 +175,14 @@
 .cgr-capture-receipt strong,
 .cgr-capture-error strong {
   display: block;
-  font-size: 11.5px;
+  font-size: 0.71875rem;
 }
 
 .cgr-capture-receipt span,
 .cgr-capture-error span {
   display: block;
   margin-top: 3px;
-  font-size: 10.5px;
+  font-size: 0.65625rem;
   line-height: 1.5;
   overflow-wrap: anywhere;
 }
@@ -201,7 +201,7 @@
   background: rgba(255,255,255,.7);
   color: inherit;
   font: inherit;
-  font-size: 10px;
+  font-size: 0.625rem;
   font-weight: 720;
 }
 
@@ -235,7 +235,7 @@
     padding: 20px 16px calc(20px + env(safe-area-inset-bottom));
   }
 
-  .cgr-capture-header h2 { font-size: 27px; }
+  .cgr-capture-header h2 { font-size: 1.6875rem; }
   .cgr-capture-footer { align-items: stretch; flex-direction: column; }
   .cgr-capture-footer .cgr-primary-button { width: 100%; min-height: 46px; }
   .cgr-capture-footer small { order: 2; text-align: center; }

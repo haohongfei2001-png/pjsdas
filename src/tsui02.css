@@ -204,6 +204,13 @@
 .tsui-schedule-detail li{overflow-wrap:anywhere}
 .tsui-schedule-feedback{display:flex;align-items:center;gap:12px;margin-top:12px;border-radius:8px;padding:12px;background:#edf2ff;color:#202938;font-size:.875rem}
 .tsui-schedule-feedback.error{background:#fff3e7;color:#8a4228}
-@media(max-width:700px){.tsui-schedule-toolbar{align-items:stretch;flex-direction:column}.tsui-schedule-tabs{width:100%}.tsui-schedule-tabs button{flex:1}.tsui-schedule-locator{justify-content:space-between}.tsui-schedule-row{grid-template-columns:1fr auto;gap:4px 10px;padding:14px 16px}.tsui-schedule-time{grid-column:1/-1}.tsui-schedule-copy{grid-column:1}.tsui-schedule-state{grid-column:2;grid-row:2}.tsui-schedule-row>span:last-child{display:none}.tsui-schedule-date{padding:16px 16px 8px}.tsui-schedule-detail{scroll-margin-top:132px;padding:18px 16px}}
+@media(max-width:700px){.tsui-schedule-toolbar{align-items:stretch;flex-direction:column}.tsui-schedule-tabs{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));width:100%;overflow:visible}.tsui-schedule-tabs button{min-width:0;padding:6px 4px;white-space:normal;overflow-wrap:anywhere}.tsui-schedule-tabs button span{display:block;margin-left:0}.tsui-schedule-locator{justify-content:space-between;min-width:0}.tsui-schedule-locator label{flex:1;min-width:0}.tsui-schedule-locator input{width:100%;min-width:0}.tsui-schedule-row{grid-template-columns:1fr auto;gap:4px 10px;padding:14px 16px}.tsui-schedule-time{grid-column:1/-1}.tsui-schedule-copy{grid-column:1}.tsui-schedule-state{grid-column:2;grid-row:2}.tsui-schedule-row>span:last-child{display:none}.tsui-schedule-date{padding:16px 16px 8px}.tsui-schedule-detail{scroll-margin-top:132px;padding:18px 16px}}
 
 .cgr-app-shell .cgr-main.surface-main > .tsui-schedule-page{max-width:1120px;margin:0 auto}
+
+/* TSUI-05: content-sized sparse panels and complete context at large text. */
+.tsui-task-panel.is-sparse{min-height:0}
+.tsui-node-panel.is-empty{position:static;height:auto;min-height:0}
+@media(max-width:700px){.tsui-task-context{height:auto;min-height:44px;margin:0 0 2px -9px;padding:6px 9px;overflow:visible;overflow-wrap:anywhere;text-overflow:clip;white-space:normal;line-height:1.4}}
+
+@media(max-width:360px){.tsui-schedule-locator{align-items:stretch;flex-direction:column}.tsui-schedule-locator label,.tsui-schedule-locator input{display:block;width:100%;min-width:0}.tsui-schedule-locator button{align-self:flex-start}}
