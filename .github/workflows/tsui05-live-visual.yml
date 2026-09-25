@@ -1,0 +1,65 @@
+name: TSUI-05 Live Visual
+
+on:
+  workflow_run:
+    workflows: ['Deploy PJSDAS to GitHub Pages']
+    types: [completed]
+
+permissions:
+  contents: read
+
+jobs:
+  exact-live-visual:
+    if: github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm install --no-save --package-lock=false @playwright/test@1.63.0
+      - run: npx playwright install --with-deps chromium
+      - name: Wait for exact GitHub Pages frontend manifest
+        shell: bash
+        env:
+          EXPECTED_COMMIT: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 20); do
+            body="$(curl -fsS --max-time 15 'https://haohongfei2001-png.github.io/pjsdas/release-manifest.json' 2>/dev/null || true)"
+            if [ -n "$body" ] && printf '%s' "$body" | node -e '
+              let raw = "";
+              process.stdin.setEncoding("utf8");
+              process.stdin.on("data", chunk => raw += chunk);
+              process.stdin.on("end", () => {
+                try {
+                  const release = JSON.parse(raw);
+                  process.exit(release.commitSha === process.env.EXPECTED_COMMIT &&
+                    /^sha256:[0-9a-f]{64}$/i.test(release.frontendArtifactDigest || "") ? 0 : 1);
+                } catch { process.exit(1); }
+              });
+            '; then
+              echo "Exact live frontend manifest matches ${EXPECTED_COMMIT}"
+              exit 0
+            fi
+            sleep 15
+          done
+          echo "Live frontend manifest did not match ${EXPECTED_COMMIT}" >&2
+          exit 1
+      - name: Render real live frontend routes with synthetic non-private fixtures
+        run: npx playwright test --config=playwright.live.config.mts --project=chromium -g 'TSUI-02 real component|TSUI-03 300-job paging|TSUI-04 real schedule'
+      - name: Upload exact-live screenshots and traces
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v5
+        with:
+          name: tsui05-exact-live-visual
+          path: |
+            playwright-report/
+            test-results/
+          if-no-files-found: ignore
+          retention-days: 7
