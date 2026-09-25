@@ -96,7 +96,7 @@ test('TSUI-04 real schedule: today anchor, both directions, unresolved and undat
   await visual(page, 'SCHEDULE_DESKTOP')
 
   await page.locator('.tsui-schedule-locator input').fill('2026-12')
-  await expect(page.locator('.tsui-schedule-row').first()).toContainText('2026')
+  await expect(page.locator('.tsui-schedule-date').first()).toContainText('2026-12')
   await page.locator('.tsui-schedule-locator button').click()
   await expect(page.locator('.tsui-schedule-tabs button.active')).toContainText(/全部|All/)
   while (await page.locator('.tsui-schedule-more').count()) await page.locator('.tsui-schedule-more').click()
