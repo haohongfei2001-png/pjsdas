@@ -16,6 +16,7 @@ import { refreshGoogleAccessToken } from './googleOAuthTokens.js'
 import { decryptSecret } from './tokenCrypto.js'
 import { GMAIL_READONLY_SCOPE, type GmailAutomationBinding } from './automationConnectionStore.js'
 import { requireWritableWorkspaceSource, WorkspaceSourceError } from './workspaceSource.js'
+import { gmailProviderRequestError, type GmailProviderOperation } from './gmailProviderFailure.js'
 import { PJSDAS_SUPABASE_URL } from './supabaseProject.js'
 
 const GMAIL_API = 'https://gmail.googleapis.com/gmail/v1/users/me'
@@ -172,8 +173,17 @@ async function gmailForbiddenError(response: Response) {
   return new WorkspaceSourceError('GOOGLE_GMAIL_FORBIDDEN', 'Google denied Gmail read access for PJSDAS.', false)
 }
 
+function gmailOperation(path: string): GmailProviderOperation {
+  if (path === '/profile') return 'profile'
+  if (path.startsWith('/history?')) return 'history'
+  if (path.startsWith('/messages?')) return 'list'
+  if (path.startsWith('/messages/')) return 'message_fetch'
+  return 'unknown'
+}
+
 async function gmailFetch(fetchImpl: typeof fetch, accessToken: string, path: string) {
   let response: Response
+  const operation = gmailOperation(path)
   try {
     response = await fetchImpl(`${GMAIL_API}${path}`, {
       headers: { Authorization: `Bearer ${accessToken}`, accept: 'application/json' },
@@ -181,15 +191,35 @@ async function gmailFetch(fetchImpl: typeof fetch, accessToken: string, path: st
   } catch {
     throw new WorkspaceSourceError('GMAIL_UNAVAILABLE', 'Gmail is temporarily unavailable.', true)
   }
-  if (response.status === 401) throw new WorkspaceSourceError('GOOGLE_AUTH_EXPIRED', 'Google authorization is no longer valid. Reconnect Google to PJSDAS.', false)
-  if (response.status === 403) throw await gmailForbiddenError(response)
-  if (response.status === 429 || response.status >= 500) throw new WorkspaceSourceError('GMAIL_UNAVAILABLE', `Gmail is temporarily unavailable (HTTP ${response.status}).`, true)
+  if (response.status === 401) {
+    throw await gmailProviderRequestError(
+      response, operation, 'GOOGLE_AUTH_EXPIRED',
+      'Google authorization is no longer valid. Reconnect Google to PJSDAS.', false,
+    )
+  }
+  if (response.status === 403) {
+    const forbidden = await gmailForbiddenError(response)
+    throw await gmailProviderRequestError(
+      response, operation, forbidden.code, forbidden.message, forbidden.retryable,
+    )
+  }
+  if (response.status === 429 || response.status >= 500) {
+    throw await gmailProviderRequestError(
+      response, operation, 'GMAIL_UNAVAILABLE',
+      `Gmail is temporarily unavailable (HTTP ${response.status}).`, true,
+    )
+  }
   return response
 }
 
 async function gmailJson<T>(fetchImpl: typeof fetch, accessToken: string, path: string): Promise<T> {
   const response = await gmailFetch(fetchImpl, accessToken, path)
-  if (!response.ok) throw new WorkspaceSourceError('GMAIL_REQUEST_FAILED', `Gmail request failed (HTTP ${response.status}).`, false)
+  if (!response.ok) {
+    throw await gmailProviderRequestError(
+      response, gmailOperation(path), 'GMAIL_REQUEST_FAILED',
+      `Gmail request failed (HTTP ${response.status}).`, false,
+    )
+  }
   try {
     return await response.json() as T
   } catch {
@@ -249,7 +279,12 @@ async function historyMessagePage(
   if (response.status === 404) {
     return { expired: true as const, ids: [], historyId: undefined, nextPageToken: undefined }
   }
-  if (!response.ok) throw new WorkspaceSourceError('GMAIL_REQUEST_FAILED', `Gmail history request failed (HTTP ${response.status}).`, false)
+  if (!response.ok) {
+    throw await gmailProviderRequestError(
+      response, 'history', 'GMAIL_REQUEST_FAILED',
+      `Gmail history request failed (HTTP ${response.status}).`, false,
+    )
+  }
   const payload = await response.json().catch(() => undefined) as GmailHistoryList | undefined
   if (!payload) throw new WorkspaceSourceError('GMAIL_RESPONSE_INVALID', 'Gmail history response was invalid.', true)
   const ids: string[] = []
@@ -300,7 +335,10 @@ async function fetchMessages(fetchImpl: typeof fetch, accessToken: string, ids: 
         return { kind: 'unavailable' as const, id }
       }
       if (!response.ok) {
-        throw new WorkspaceSourceError('GMAIL_REQUEST_FAILED', `Gmail message fetch failed (HTTP ${response.status}).`, false)
+        throw await gmailProviderRequestError(
+          response, 'message_fetch', 'GMAIL_REQUEST_FAILED',
+          `Gmail message fetch failed (HTTP ${response.status}).`, false,
+        )
       }
       const message = await response.json().catch(() => undefined) as GmailMessage | undefined
       if (!message) throw new WorkspaceSourceError('GMAIL_RESPONSE_INVALID', 'Gmail returned malformed message JSON.', true)
@@ -930,5 +968,6 @@ function executionMetrics(binding: GmailAutomationBinding, batch: GmailAutomatio
   const receivedCount = batch.messages.length + batch.unavailableMessageIds.length
   return { status: 'completed', mode, receivedCount,
     accountedCount: Math.min(accounted, receivedCount), unresolvedCount: Math.min(unresolved, receivedCount),
+    recordGapCount: batch.unavailableMessageIds.length,
     ...(mode === 'history' ? { historyLag: aggregateHistoryLag(receivedTimes, committedAt) } : {}) }
 }
