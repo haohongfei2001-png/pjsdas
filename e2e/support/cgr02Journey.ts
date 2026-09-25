@@ -53,6 +53,15 @@ export async function prepareJourney(page: Page) {
         importedAt: '2026-09-22T00:00:00.000Z',
       }], processes: [], processEvents: [], prep: [], applicationGroups: [],
       semanticReceipts: [], timeline: [],
+      scheduleNodes: [{
+        id: 'voiceover-node', occurrenceId: 'voiceover-occurrence', version: 1,
+        opportunityId: 'voiceover-opportunity', kind: 'interview' as const,
+        state: 'scheduled' as const, constraintKind: 'employer_hard' as const,
+        temporal: { shape: 'date_only' as const, precision: 'date' as const,
+          timezone: 'Asia/Shanghai', date: '2026-10-20', resolutionBasis: 'source_explicit' as const },
+        evidenceRefs: [], sourceVersionRefs: [], relatedActionIds: [], relatedPrepIds: [],
+        createdAt: '2026-09-23T00:00:00.000Z', updatedAt: '2026-09-23T00:00:00.000Z',
+      }],
       actions: [{
         id: 'voiceover-action', kind: 'manual' as const, title: 'A第一任务',
         estimatedMinutes: 20, leverage: 80, delayCost: 80, status: 'todo' as const,

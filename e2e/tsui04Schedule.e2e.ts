@@ -170,6 +170,24 @@ test('TSUI-04 real schedule: today anchor, both directions, unresolved and undat
   await expect(page.locator('.settings-surface > .surface-header h1')).toHaveText(/设置|Settings/)
   await page.screenshot({ path: 'test-results/tsui04/settings-mobile.png', fullPage: true, animations: 'disabled' })
   await visual(page, 'SETTINGS_MOBILE')
+
+  // Final responsive sweep uses the real ScheduleFeature and the same 211-entry fixture.
+  await page.goto('/pjsdas/schedule')
+  await page.evaluate(() => { document.documentElement.style.fontSize = '100%' })
+  const normalRoot = await page.evaluate(() => parseFloat(getComputedStyle(document.documentElement).fontSize))
+  for (const [width, height] of [[1920, 1080], [1440, 900], [1280, 800], [1024, 768], [768, 1024], [390, 844], [320, 640]]) {
+    await page.setViewportSize({ width, height })
+    await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1)
+    await page.screenshot({ path: `test-results/tsui04/schedule-final-${width}x${height}.png`, fullPage: true, animations: 'disabled' })
+  }
+  await page.evaluate(() => { document.documentElement.style.fontSize = '200%' })
+  const largeRoot = await page.evaluate(() => parseFloat(getComputedStyle(document.documentElement).fontSize))
+  expect(largeRoot / normalRoot).toBeGreaterThanOrEqual(1.95)
+  for (const [width, height] of [[390, 844], [320, 640]]) {
+    await page.setViewportSize({ width, height })
+    await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1)
+    await page.screenshot({ path: `test-results/tsui04/schedule-final-${width}x${height}-200-percent.png`, fullPage: true, animations: 'disabled' })
+  }
 })
 
 
