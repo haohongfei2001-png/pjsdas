@@ -1,0 +1,9 @@
+{
+  "design": "Tasks + shared schedule, three-destination navigation",
+  "status": "independent design prototype, not production",
+  "html_sha256": "6e0a8f6b92c92ed885f7fb30e4ba8beb7e8248afdb7c0b1e51bcbe73ccd55636",
+  "browser": "144.0.7559.96",
+  "github_writes_this_revision": false,
+  "real_accounts": false,
+  "runtime_external_actions": false
+}

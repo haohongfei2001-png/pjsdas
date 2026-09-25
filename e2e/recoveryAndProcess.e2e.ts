@@ -132,7 +132,7 @@ async function readCoreState(page: Page) {
 }
 
 async function openBackup(page: Page) {
-  await page.locator('.ultimate-toolbar').getByRole('button', { name: /设置/ }).click()
+  await page.locator('.tsui-topbar').getByRole('button', { name: /设置/ }).click()
   await expect(page.getByRole('heading', { name: '连接、自动化和长期控制' })).toBeVisible()
   await page.locator('details.settings-group').filter({ hasText: '数据与恢复' }).locator('summary').click()
   await page.getByRole('button', { name: '本地备份' }).click()
@@ -142,7 +142,7 @@ async function openBackup(page: Page) {
 test('manual recruiting event creates one durable event/action, survives reload, and deletes cleanly', async ({ page }) => {
   await seedWorkspace(page)
 
-  await page.locator('.ultimate-toolbar').getByRole('button', { name: /设置|Settings/ }).click()
+  await page.locator('.tsui-topbar').getByRole('button', { name: /设置|Settings/ }).click()
   await page.locator('details.settings-group').filter({ hasText: /数据与恢复|Data & recovery/ }).locator('summary').click()
   await page.getByRole('button', { name: '+ 记录流程通知' }).click()
   await expect(page.getByRole('heading', { name: '记录真实流程通知' })).toBeVisible()
@@ -180,7 +180,7 @@ test('manual recruiting event creates one durable event/action, survives reload,
   expect(afterReload.events.map((item) => item.id)).toContain(eventId)
   expect(afterReload.actions.some((item) => item.processEventId === eventId)).toBe(true)
 
-  await page.locator('.ultimate-toolbar').getByRole('button', { name: /设置|Settings/ }).click()
+  await page.locator('.tsui-topbar').getByRole('button', { name: /设置|Settings/ }).click()
   await page.locator('details.settings-group').filter({ hasText: /数据与恢复|Data & recovery/ }).locator('summary').click()
   await page.getByRole('button', { name: '+ 记录流程通知' }).click()
   const persistedHistoryItem = page.locator('.event-history-item').filter({ hasText: opportunity.company })
@@ -210,10 +210,10 @@ test('JSON backup restores a deliberately cleared local workspace and remains du
   await page.reload()
   await expect(page).toHaveURL(/\/settings$/)
   await expect(page.getByRole('heading', { name: '连接、自动化和长期控制' })).toBeVisible()
-  await page.locator('.surface-nav').getByRole('button', { name: /今天/ }).click()
-  await expect(page.getByRole('heading', { name: '先让 PJSDAS 知道你的求职现状' })).toBeVisible()
+  await page.locator('.tsui-primary-nav').getByRole('button', { name: /今天/ }).click()
+  await expect(page.getByText('先让 PJSDAS 了解你的求职进展')).toBeVisible()
 
-  await page.locator('.ultimate-toolbar').getByRole('button', { name: /设置/ }).click()
+  await page.locator('.tsui-topbar').getByRole('button', { name: /设置/ }).click()
   await expect(page.getByRole('heading', { name: '连接、自动化和长期控制' })).toBeVisible()
   await page.locator('details.settings-group').filter({ hasText: '数据与恢复' }).locator('summary').click()
   await page.getByRole('button', { name: '本地备份' }).click()
@@ -228,7 +228,7 @@ test('JSON backup restores a deliberately cleared local workspace and remains du
   expect(restored.actionIds).toContain(action.id)
 
   await page.locator('.backup-dialog').getByRole('button', { name: '关闭' }).click()
-  await page.locator('.surface-nav').getByRole('button', { name: /今天/ }).click()
+  await page.locator('.tsui-primary-nav').getByRole('button', { name: /今天/ }).click()
   await expect(page.getByRole('heading', { name: action.title })).toBeVisible()
 
   await page.reload()
@@ -253,6 +253,6 @@ test('invalid backup is rejected before restore and leaves the current workspace
   expect(state.actionIds).toContain(action.id)
 
   await page.locator('.backup-dialog').getByRole('button', { name: '关闭' }).click()
-  await page.locator('.surface-nav').getByRole('button', { name: /今天/ }).click()
+  await page.locator('.tsui-primary-nav').getByRole('button', { name: /今天/ }).click()
   await expect(page.getByRole('heading', { name: action.title })).toBeVisible()
 })

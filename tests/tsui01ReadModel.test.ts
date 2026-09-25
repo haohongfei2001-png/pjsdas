@@ -147,6 +147,26 @@ describe('TSUI-01 complete Web read models', () => {
     expect(result.actions).toEqual([])
   })
 
+  it('dates completed legacy nodes from exact completion facts without creating duplicate history', () => {
+    const completed = node('action:prep-1', '2026-09-24', {
+      state: 'completed', completedAt: undefined, relatedActionIds: ['prep-1'],
+      temporal: { shape: 'date_only', precision: 'date', timezone: TZ, date: '2026-09-24', resolutionBasis: 'legacy_projection' },
+    })
+    const log: TimelineRecord = {
+      id: 'prep-done', kind: 'action_status_changed', category: 'action', source: 'user_action',
+      occurredAt: '2026-09-24T08:00:00.000Z', recordedAt: '2026-09-25T03:00:00.000Z',
+      title: 'Completed prep', actionId: 'prep-1', changes: { status: { before: 'todo', after: 'done' } },
+    }
+    const stream = buildScheduleStream(snapshot([action('prep-1', { status: 'done' })], [completed], [log]), {
+      accountKey: 'A', workspaceRevision: 'r1', timezone: TZ, now: NOW,
+    })
+    expect(stream.sections.history).toHaveLength(1)
+    expect(stream.sections.history[0].id).toBe('node:action:prep-1:v1')
+    expect(stream.sections.history[0].occurredAt).toBe(log.occurredAt)
+    expect(stream.sections.history[0].sourceRefs).toContain('timeline:prep-done')
+    expect(stream.sections.undated).toHaveLength(0)
+  })
+
   it('links a completed occurrence and its Action log as one primary history item', () => {
     const completed = node('assessment-1', '2026-09-24', {
       state: 'completed', completedAt: '2026-09-24T08:00:00.000Z', relatedActionIds: ['assessment-action'],

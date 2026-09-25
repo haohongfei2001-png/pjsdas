@@ -43,12 +43,11 @@ import {
 } from './opportunityDecisionRead.js'
 import TellPjsdasCapture from './TellPjsdasCapture.js'
 import TodayFeature, { type TodayFreshnessView } from './today/TodayFeature.js'
+import { selectTodayWeb } from './today/todayWebSelector.js'
+import { buildScheduleStream } from './schedule/scheduleStream.js'
+import ScheduleFeature from './schedule/ScheduleFeature.js'
 import DecisionRequestsView from './DecisionRequestsView.js'
-import {
-  buildTodayBrief,
-  type TodayBrief as TodayBriefModel,
-  type TodayBriefAction,
-} from './todayBrief.js'
+import { buildTodayBrief, type TodayBriefAction } from './todayBrief.js'
 import type {
   Action,
   DecisionRequest,
@@ -65,11 +64,12 @@ import './webConsole.css'
 import './ultimateWeb.css'
 import './opportunityDecision.css'
 import './cgr02Tokens.css'
+import './tsui02.css'
 
-type Surface = 'today' | 'opportunities' | 'decisions' | 'history' | 'settings'
-type PrimarySurface = 'today' | 'opportunities'
+type Surface = 'today' | 'opportunities' | 'schedule' | 'decisions' | 'history' | 'settings'
+type PrimarySurface = 'today' | 'opportunities' | 'schedule'
 type OpportunityTab = 'opportunities' | 'prepare' | 'discovery'
-type CompletionFeedback = { id: string; title: string; previousStatus: Action['status']; commandId?: string; error?: string }
+type CompletionFeedback = { id: string; title: string; previousStatus: Action['status']; commandId?: string; outcome: 'done' | 'no_write' | 'error'; error?: string }
 type RouteState = {
   surface: Surface
   capture: boolean
@@ -86,10 +86,11 @@ const CGR02_TODAY_READ_ONLY = import.meta.env.VITE_PJSDAS_CGR02_READ_ONLY === 't
 
 const surfaceLabels: Record<PrimarySurface, { zh: string; en: string; hintZh: string; hintEn: string }> = {
   today: { zh: '今天', en: 'Today', hintZh: '下一步', hintEn: 'Next' },
-  opportunities: { zh: '机会', en: 'Opportunities', hintZh: '岗位与流程', hintEn: 'Jobs' },
+  opportunities: { zh: '岗位库', en: 'Jobs', hintZh: '岗位与流程', hintEn: 'Jobs' },
+  schedule: { zh: '日程', en: 'Schedule', hintZh: '招聘节点', hintEn: 'Schedule' },
 }
 
-const primarySurfaces: PrimarySurface[] = ['today', 'opportunities']
+const primarySurfaces: PrimarySurface[] = ['today', 'opportunities', 'schedule']
 
 function semanticPath(pathname = window.location.pathname) {
   if (APP_BASE && pathname.startsWith(APP_BASE)) return pathname.slice(APP_BASE.length) || '/'
@@ -111,10 +112,10 @@ function routeFromPath(pathname = semanticPath() + window.location.search): Rout
     returnOpportunityId: url.searchParams.get('from') || undefined }
   if (path === '/settings') return { surface: 'settings', capture: false, agendaExpanded: false }
   if (path === '/history') return { surface: 'history', capture: false, agendaExpanded: false }
-  if (path === '/today/agenda') return { surface: 'today', capture: false, agendaExpanded: true }
+  if (path === '/today/agenda' || path === '/schedule') return { surface: 'schedule', capture: false, agendaExpanded: path === '/today/agenda' }
   if (path === '/today' || path === '/') return { surface: 'today', capture: false, agendaExpanded: false }
-  if (path === '/opportunities') return { surface: 'opportunities', capture: false, agendaExpanded: false }
-  const match = path.match(/^\/opportunities\/([^/]+)$/)
+  if (path === '/opportunities' || path === '/library') return { surface: 'opportunities', capture: false, agendaExpanded: false }
+  const match = path.match(/^\/(?:opportunities|library)\/([^/]+)$/)
   if (match?.[1]) {
     return {
       surface: 'opportunities',
@@ -153,7 +154,7 @@ export default function AppV8() {
   const [snapshot, setSnapshot] = useState<PJSDASSnapshot>()
   const [loading, setLoading] = useState(true)
   const [now, setNow] = useState(() => new Date())
-  const [budgetMinutes, setBudgetMinutes] = useState(180)
+  const budgetMinutes = 180
 
   const opportunities = snapshot?.data.opportunities ?? []
   const actions = snapshot?.data.actions ?? []
@@ -197,7 +198,7 @@ export default function AppV8() {
       navigate('/today')
       return
     }
-    const current = semanticPath()
+    const current = semanticPath() + window.location.search
     setCaptureContextOpportunityId(route.opportunityId)
     setCaptureReturnPath(current === '/capture' || current === '/today/capture' ? '/today' : current)
     navigate('/today/capture')
@@ -253,7 +254,7 @@ export default function AppV8() {
 
   useEffect(() => {
     const accountKey = cloud.session?.user.id
-    if (surface !== 'today' || !accountKey || !connectedWorkspaceAuthorityEnabled()) {
+    if ((surface !== 'today' && surface !== 'schedule') || !accountKey || !connectedWorkspaceAuthorityEnabled()) {
       setTodayFreshness({ state: 'local' })
       return
     }
@@ -328,14 +329,11 @@ export default function AppV8() {
 
 
 
-  const todayBrief = useMemo<TodayBriefModel | undefined>(() => {
-    if (!snapshot) return undefined
-    return buildTodayBrief(
-      snapshot,
-      { availableMinutes: budgetMinutes, agendaHorizonDays: route.agendaExpanded ? 30 : 7 },
-      { now, timezone, workspaceVersion: `web:${snapshot.exportedAt}` },
-    )
-  }, [snapshot, budgetMinutes, route.agendaExpanded, now, timezone])
+  const accountKey = cloud.session?.user.id ?? 'local-workspace'
+  const workspaceRevision = snapshot ? [cloud.session?.user.id ? getAccountCheckpoint(cloud.session.user.id).lastSyncedVersion ?? 'pending' : 'local', snapshot.exportedAt].join(':') : ''
+  const todayWeb = useMemo(() => snapshot ? selectTodayWeb(snapshot, { availableMinutes: budgetMinutes }, { now, timezone, workspaceVersion: workspaceRevision }) : undefined, [snapshot, budgetMinutes, now, timezone, workspaceRevision])
+  const criticalTodayWarnings = useMemo(() => snapshot && surface === 'today' ? buildTodayBrief(snapshot, { availableMinutes: budgetMinutes }, { now, timezone, workspaceVersion: workspaceRevision }).materialCoverageWarnings.filter((item) => item.severity === 'critical' && item.code !== 'capacity_conflict') : [], [snapshot, surface, budgetMinutes, now, timezone, workspaceRevision])
+  const scheduleStream = useMemo(() => snapshot ? buildScheduleStream(snapshot, { accountKey, workspaceRevision, timezone, now }) : undefined, [snapshot, accountKey, workspaceRevision, timezone, now])
 
   const opportunityDecisionList = useMemo<OpportunityDecisionListRead | undefined>(() => {
     if (!snapshot) return undefined
@@ -400,17 +398,22 @@ export default function AppV8() {
     try {
       if (cloud.session && connectedWorkspaceAuthorityEnabled()) {
         authoritativeCommandId = createConnectedCommandId('web-action')
+        const command = before.kind === 'apply' && status === 'done'
+          ? { commandId: authoritativeCommandId, kind: 'record_application_submission' as const, opportunityId: before.opportunityId! }
+          : { commandId: authoritativeCommandId, kind: 'set_action_status' as const, actionId: id, status }
+        if (before.kind === 'apply' && status === 'done' && !before.opportunityId) throw new Error('Application action has no exact opportunity identity.')
         const result = await executeConnectedBusinessCommand(cloud.session.user.id, {
           type: 'domain',
-          value: {
-            commandId: authoritativeCommandId,
-            kind: 'set_action_status',
-            actionId: id,
-            status,
-          },
+          value: command,
         }, { commandId: authoritativeCommandId })
         if (result.outcome === 'CONFLICT') throw new Error(result.conflict?.message ?? 'Action update conflicted with newer authoritative state.')
+        if (result.outcome === 'NO_WRITE') {
+          await reload()
+          setLastCompletedAction({ id: before.id, title: before.title, previousStatus: before.status, outcome: 'no_write' })
+          return
+        }
       } else {
+        if (before.kind === 'apply' && status === 'done') throw new Error('确认投递需要已连接的账户；此操作未写入。')
         await applyActionStatusChangeSet(id, status)
         if (cloud.session) await ensureAuthoritativePersistence(true, cloud.syncNow)
       }
@@ -421,6 +424,7 @@ export default function AppV8() {
           title: before.title,
           previousStatus: before.status,
           commandId: authoritativeCommandId,
+          outcome: 'done',
         })
       } else if (lastCompletedAction?.id === id) setLastCompletedAction(null)
     } catch (caught) {
@@ -431,13 +435,14 @@ export default function AppV8() {
         previousStatus: before.status,
         commandId: authoritativeCommandId,
         error: caught instanceof Error ? caught.message : String(caught),
+        outcome: 'error',
       })
     }
   }
 
   async function undoLastCompletion() {
     const item = lastCompletedAction
-    if (!item) return
+    if (!item || item.outcome !== 'done') return
     try {
       if (cloud.session && connectedWorkspaceAuthorityEnabled() && item.commandId) {
         const result = await undoConnectedBusinessCommand(cloud.session.user.id, item.commandId)
@@ -449,7 +454,7 @@ export default function AppV8() {
       await reload()
       setLastCompletedAction(null)
     } catch (caught) {
-      setLastCompletedAction({ ...item, error: caught instanceof Error ? caught.message : String(caught) })
+      setLastCompletedAction({ ...item, outcome: 'error', error: caught instanceof Error ? caught.message : String(caught) })
     }
   }
 
@@ -463,7 +468,7 @@ export default function AppV8() {
   }
 
   function openOpportunity(id: string) {
-    navigate('/opportunities/' + encodeURIComponent(id))
+    navigate('/library/' + encodeURIComponent(id))
   }
 
   async function executeTodayAction(item: TodayBriefAction) {
@@ -474,13 +479,13 @@ export default function AppV8() {
     if (item.execution.operation === 'start_prep') {
       setOpportunityTabExplicit(true)
       setOpportunityTab('prepare')
-      navigate('/opportunities')
+      navigate('/library')
       return
     }
     if (item.execution.operation === 'open_group_decision') {
       setOpportunityTabExplicit(true)
       setOpportunityTab('opportunities')
-      navigate('/opportunities')
+      navigate('/library')
       return
     }
     if (item.opportunityId) {
@@ -495,7 +500,7 @@ export default function AppV8() {
     if (destination === 'prepare') {
       setOpportunityTabExplicit(true)
       setOpportunityTab('prepare')
-      navigate('/opportunities')
+      navigate('/library')
     }
     if (destination === 'opportunities') {
       setOpportunityTabExplicit(true)
@@ -506,71 +511,47 @@ export default function AppV8() {
 
   return (
     <div className="app-shell surface-shell ultimate-shell cgr-shell cgr-app-shell">
-      <aside className="sidebar surface-sidebar ultimate-sidebar cgr-sidebar">
-        <div className="brand">
-          <span className="brand-mark">P</span>
-          <div><strong>PJSDAS</strong><small>{zh ? '求职行动系统' : 'Job-search action system'}</small></div>
-        </div>
-
-        <nav className="surface-nav ultimate-primary-nav" aria-label={zh ? '主导航' : 'Primary navigation'}>
+      <header className="tsui-topbar">
+        <button className="tsui-brand" type="button" onClick={() => navigate('/today')} aria-label="PJSDAS · Today"><span className="tsui-brand-mark">P</span><strong>PJSDAS</strong></button>
+        <nav className="tsui-primary-nav" aria-label={zh ? '主导航' : 'Primary navigation'}>
           {primarySurfaces.map((item) => {
             const label = surfaceLabels[item]
-            return (
-              <button
-                key={item}
-                className={surface === item ? 'nav-item active surface-nav-item' : 'nav-item surface-nav-item'}
-                onClick={() => navigate(item === 'today' ? '/today' : '/opportunities')}
-              >
-                <span>{zh ? label.zh : label.en}</span>
-                <small>{zh ? label.hintZh : label.hintEn}</small>
-              </button>
-            )
+            return <button key={item} type="button" className={surface === item ? 'active' : ''} aria-current={surface === item ? 'page' : undefined} onClick={() => navigate(item === 'today' ? '/today' : item === 'schedule' ? '/schedule' : '/library')}>{zh ? label.zh : label.en}</button>
           })}
         </nav>
-
-        <div className="surface-sidebar-footer"><span>Today · Opportunities</span></div>
-      </aside>
+        <div className="tsui-top-actions">
+          <button className="tsui-tell-button" type="button" onClick={openCapture} disabled={CGR02_TODAY_READ_ONLY}>{zh ? '＋ 告诉 PJSDAS' : '＋ Tell PJSDAS'}</button>
+          <button className="tsui-settings-button" type="button" aria-label={zh ? '设置' : 'Settings'} onClick={() => navigate('/settings')}>⚙</button>
+        </div>
+      </header>
 
       <main className="main-panel surface-main ultimate-main cgr-main">
-        <header className="ultimate-toolbar cgr-toolbar" aria-label={zh ? '全局工具栏' : 'Global toolbar'}>
-          <button className="ultimate-capture-button cgr-global-capture" type="button" onClick={openCapture}
-            disabled={CGR02_TODAY_READ_ONLY} title={CGR02_TODAY_READ_ONLY ? (zh ? 'Today 暂时只读' : 'Today is temporarily read-only') : undefined}>
-            <span>＋</span><strong>{zh ? '告诉 PJSDAS' : 'Tell PJSDAS'}</strong><kbd>⌘K</kbd>
-          </button>
-          <div className="ultimate-toolbar-actions">
-            {openDecisionCount > 0 ? (
-              <button className={surface === 'decisions' ? 'active' : ''} type="button" onClick={() => navigate('/decisions')}>
-                {zh ? '需要你决定' : 'Needs your decision'} <strong>{openDecisionCount}</strong>
-              </button>
-            ) : null}
-            <button className={surface === 'settings' ? 'active' : ''} type="button" onClick={() => navigate('/settings')}>
-              {zh ? '设置' : 'Settings'}
-            </button>
-          </div>
-        </header>
-
         {surface === 'settings' ? <OriginTransitionNotice onOpenSettings={() => navigate('/settings')} /> : null}
         {loading ? <div className="empty-card">{zh ? '正在读取工作区…' : 'Loading workspace…'}</div> : null}
 
-        {!loading && surface === 'today' && todayBrief ? (
+        {!loading && surface === 'today' && todayWeb && scheduleStream ? (
           <TodayFeature
-            brief={todayBrief}
+            selection={todayWeb}
+            criticalWarnings={criticalTodayWarnings}
+            stream={scheduleStream}
+            opportunities={opportunities}
             readOnly={CGR02_TODAY_READ_ONLY}
             now={now}
-            budgetMinutes={budgetMinutes}
-            agendaExpanded={route.agendaExpanded}
             workspaceEmpty={workspaceEmpty}
             freshness={workspaceEmpty && (cloud.loading || (connectedWorkspaceAuthorityEnabled() && cloud.session?.user.id && todayFreshness.state === 'local')) ? { state: 'initial' } : todayFreshness}
-            onBudgetChange={setBudgetMinutes}
             onStart={navigateFromStart}
             onRetry={() => window.dispatchEvent(new Event('focus'))}
             onOpenDecisions={() => navigate('/decisions')}
-            onOpenAgenda={() => navigate(route.agendaExpanded ? '/today' : '/today/agenda')}
+            onOpenDecision={(id) => navigate('/decisions/' + encodeURIComponent(id))}
+            onOpenAgenda={() => navigate('/schedule')}
+            onOpenUnresolved={() => navigate('/schedule?view=unresolved')}
             onExecute={executeTodayAction}
             onMark={markAction}
             onOpenOpportunity={openOpportunity}
           />
         ) : null}
+
+        {!loading && surface === 'schedule' && scheduleStream ? <ScheduleFeature key={scheduleStream.key} stream={scheduleStream} opportunities={opportunities} onOpenOpportunity={openOpportunity} /> : null}
 
         {!loading && surface === 'opportunities' && opportunityDecisionList ? (
           <>
@@ -580,7 +561,7 @@ export default function AppV8() {
                 <p>{zh ? '它可能已被删除、合并，或当前连接尚未取得最新资料。请先重试；若仍不可用，可返回机会列表。' : 'It may have been deleted or merged, or this connection may not have the latest data. Retry first, then return to the list if it remains unavailable.'}</p>
                 <div className="surface-tool-row">
                   <button type="button" onClick={() => { void reload() }}>{zh ? '重新读取' : 'Retry loading'}</button>
-                  <button type="button" onClick={() => navigate('/opportunities', true)}>{zh ? '返回机会列表' : 'Back to opportunities'}</button>
+                  <button type="button" onClick={() => navigate('/library', true)}>{zh ? '返回机会列表' : 'Back to opportunities'}</button>
                 </div>
               </section>
             ) : null}
@@ -591,13 +572,13 @@ export default function AppV8() {
         ) : null}
         {!loading && surface === 'decisions' ? <DecisionRequestsView requests={decisionRequests} focusRequestId={route.decisionRequestId}
           onShowAll={() => navigate('/decisions')}
-          onReturnOpportunity={route.returnOpportunityId ? () => navigate('/opportunities/' + encodeURIComponent(route.returnOpportunityId!)) : undefined}
+          onReturnOpportunity={route.returnOpportunityId ? () => navigate('/library/' + encodeURIComponent(route.returnOpportunityId!)) : undefined}
           onChanged={reload} /> : null}
         {!loading && surface === 'history' ? <ActivitySurface timeline={timeline} /> : null}
         {!loading && surface === 'settings' ? <SettingsSurface lastImport={lastImport} rules={rules} onChanged={reload} onOpenActivity={() => navigate('/history')} /> : null}
       </main>
 
-      <button className="ultimate-mobile-capture" type="button" onClick={openCapture} disabled={CGR02_TODAY_READ_ONLY}>＋ {zh ? '告诉 PJSDAS' : 'Tell PJSDAS'}</button>
+
 
       <TellPjsdasCapture
         open={!CGR02_TODAY_READ_ONLY && route.capture}
@@ -618,7 +599,7 @@ export default function AppV8() {
           relatedPrep={selectedRelatedPrep}
           applicationGroup={selectedGroup}
           timeline={selectedTimeline}
-          onClose={() => navigate('/opportunities', true)}
+          onClose={() => navigate('/library', true)}
           onCapture={openCapture}
           onNavigate={navigateFromDetail}
           onOpenDecision={(id) => navigate('/decisions/' + encodeURIComponent(id) + '?from=' + encodeURIComponent(selectedOpportunity.id))}
@@ -630,10 +611,10 @@ export default function AppV8() {
       {lastCompletedAction ? (
         <div className="action-undo-toast" role="status" aria-live="polite">
           <div>
-            <strong>{lastCompletedAction.error ? (zh ? '撤销未完成' : 'Undo did not complete') : (zh ? '已标记完成' : 'Marked done')}</strong>
+            <strong>{lastCompletedAction.outcome === 'error' ? (zh ? '操作未确认' : 'Action not confirmed') : lastCompletedAction.outcome === 'no_write' ? (zh ? '没有写入变化' : 'No change written') : (zh ? '已完成' : 'Completed')}</strong>
             <span>{lastCompletedAction.error ?? lastCompletedAction.title}</span>
           </div>
-          <button type="button" onClick={() => { void undoLastCompletion() }}>{zh ? '撤销' : 'Undo'}</button>
+          {lastCompletedAction.outcome === 'done' ? <button type="button" onClick={() => { void undoLastCompletion() }}>{zh ? '撤销' : 'Undo'}</button> : null}
         </div>
       ) : null}
     </div>

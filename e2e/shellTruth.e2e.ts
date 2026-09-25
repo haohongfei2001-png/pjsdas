@@ -6,9 +6,9 @@ test('shell hides stale version copy and Opportunities uses the decision-first l
 
   await expect(page.getByText('Local-first · v1.8')).toHaveCount(0)
   await expect(page.locator('.sidebar-note')).toHaveCount(0)
-  await expect(page.locator('.surface-sidebar-footer')).toContainText('Today · Opportunities')
+  await expect(page.locator('.tsui-primary-nav button')).toHaveCount(3)
 
-  await page.getByRole('button', { name: /机会/ }).click()
+  await page.getByRole('button', { name: /岗位库/ }).click()
   await expect(page.getByRole('heading', { name: '哪些在推进，哪些值得继续投入' })).toBeVisible()
 
   const tabs = page.locator('.surface-context-tabs button')
@@ -23,7 +23,7 @@ test('shell hides stale version copy and Opportunities uses the decision-first l
   expect(second).not.toBeNull()
   expect(Math.abs(first!.width - second!.width)).toBeLessThan(2)
 
-  await page.locator('.ultimate-toolbar').getByRole('button', { name: /设置/ }).click()
+  await page.locator('.tsui-topbar').getByRole('button', { name: /设置/ }).click()
   await expect(page.getByRole('heading', { name: '连接、自动化和长期控制' })).toBeVisible()
   await expect(page.getByText('ACCOUNT & CONNECTION', { exact: true })).toBeVisible()
   await expect(page.locator('.cloud-connection-impact')).toContainText('其他设备看不到这些修改')

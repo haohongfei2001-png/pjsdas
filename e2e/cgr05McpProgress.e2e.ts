@@ -97,6 +97,6 @@ test('signed progress review commits one scoped account command and appears on a
     await seedSession(otherPage)
     await otherPage.route(`${BACKEND}/**`, routeBackend)
     await otherPage.goto('/')
-    await expect(otherPage.getByRole('button', { name: /Review synthetic portfolio/ })).toBeVisible()
+    await expect(otherPage.getByRole('heading', { name: /Review synthetic portfolio/ })).toBeVisible()
   } finally { await second.close() }
 })

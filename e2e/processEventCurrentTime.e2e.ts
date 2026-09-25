@@ -70,7 +70,7 @@ test('process-event notification default refreshes on open but preserves an expl
       .__setPjsdasTestNow('2026-09-14T13:45:00.000Z')
   })
 
-  await page.locator('.ultimate-toolbar').getByRole('button', { name: /设置/ }).click()
+  await page.locator('.tsui-topbar').getByRole('button', { name: /设置/ }).click()
   const dataRecovery = page.locator('details.settings-group').filter({ hasText: '数据与恢复' })
   await dataRecovery.locator('summary').click()
   await page.getByRole('button', { name: '+ 记录流程通知' }).click()

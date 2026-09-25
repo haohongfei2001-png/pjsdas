@@ -45,7 +45,7 @@ test('Prep Graph keeps source facts but localizes system status and link explana
   })
 
   await page.reload()
-  await page.locator('.surface-nav').getByRole('button', { name: /机会/ }).click()
+  await page.locator('.tsui-primary-nav').getByRole('button', { name: /岗位库/ }).click()
   await page.locator('.opportunity-decision-filter select').selectOption('all')
   await page.locator('.opportunity-decision-row').filter({ hasText: '示例科技' }).click()
   const opportunityDetail = page.getByRole('dialog', { name: '岗位详情' })
@@ -54,11 +54,11 @@ test('Prep Graph keeps source facts but localizes system status and link explana
   await expect(opportunityDetail.locator('.opportunity-detail-related-prep')).toContainText('显式指向该岗位')
   await opportunityDetail.getByRole('button', { name: '关闭' }).click()
   await page.locator('.surface-context-tabs button').filter({ hasText: '准备' }).click()
-  await page.locator('.ultimate-toolbar').getByRole('button', { name: /设置|Settings/ }).click()
+  await page.locator('.tsui-topbar').getByRole('button', { name: /设置|Settings/ }).click()
   const interfaceGroup = page.locator('details.settings-group > summary').filter({ hasText: /界面.*显示层|Interface.*Presentation/ }).locator('..')
   await interfaceGroup.locator('summary').click()
   await interfaceGroup.getByRole('button', { name: 'EN', exact: true }).click()
-  await page.locator('.surface-nav').getByRole('button', { name: /Opportunities/ }).click()
+  await page.locator('.tsui-primary-nav').getByRole('button', { name: /Jobs/ }).click()
   await page.locator('.surface-context-tabs button').filter({ hasText: 'Prepare' }).click()
   await page.getByRole('button', { name: 'Prep Graph' }).click()
 

@@ -29,7 +29,7 @@ const action = {
   updatedAt: '2026-09-14T00:00:00.000Z',
 }
 
-test('Today priority explanations follow UI language without changing the TodayBrief action', async ({ page }) => {
+test('Today keeps the same exact action identity while labels follow UI language', async ({ page }) => {
   await page.goto('/')
   await page.evaluate(async ({ opportunity, action }) => {
     await new Promise<void>((resolve, reject) => {
@@ -50,17 +50,18 @@ test('Today priority explanations follow UI language without changing the TodayB
   }, { opportunity, action })
   await page.reload()
 
-  const focus = page.locator('.cgr-primary-action')
+  const focus = page.locator('.tsui-task-row[data-action-id="e2e-today-reason-action"]')
   await expect(focus.getByRole('heading', { name: 'Prepare application' })).toBeVisible()
-  await expect(focus.locator('.cgr-action-reason')).toHaveText('核心机会 · 早投有收益 · 现实成功率较高')
+  await expect(focus.locator('.tsui-task-context')).toContainText('Reason Labs')
+  await expect(focus.locator('.tsui-done-action')).toHaveText('我已投递')
 
-  await page.locator('.ultimate-toolbar').getByRole('button', { name: /设置|Settings/ }).click()
+  await page.locator('.tsui-topbar').getByRole('button', { name: /设置|Settings/ }).click()
   const interfaceGroup = page.locator('details.settings-group > summary').filter({ hasText: /界面.*显示层|Interface.*Presentation/ }).locator('..')
   await interfaceGroup.locator('summary').click()
   await interfaceGroup.getByRole('button', { name: 'EN', exact: true }).click()
-  await page.locator('.surface-nav').getByRole('button', { name: /Today/ }).click()
+  await page.locator('.tsui-primary-nav').getByRole('button', { name: /Today/ }).click()
 
   await expect(focus.getByRole('heading', { name: 'Prepare application' })).toBeVisible()
-  await expect(focus.locator('.cgr-action-reason')).toHaveText('Core opportunity · Early-application advantage · Strong fit')
+  await expect(focus.locator('.tsui-done-action')).toHaveText('I applied')
   await expect(page.getByText('核心机会', { exact: true })).toHaveCount(0)
 })

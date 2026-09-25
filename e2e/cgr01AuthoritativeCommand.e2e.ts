@@ -204,7 +204,7 @@ test('lost response after server commit survives reload and recovers one durable
 
   await page.goto('/')
   await expect(page.getByRole('heading', { name: 'A第一任务' })).toBeVisible()
-  await page.getByRole('button', { name: '标记完成' }).click()
+  await page.locator('.tsui-task-row').filter({ has: page.getByRole('heading', { name: 'A第一任务' }) }).getByRole('button', { name: '完成' }).click()
   await expect(page.getByRole('status')).toContainText('尚未确认这次操作是否已提交')
   expect(commandCalls).toBe(1)
   expect(receiptCalls).toBe(1)
@@ -315,8 +315,8 @@ test('connected Web recovers a lost command response and Undo preserves unrelate
   await page.goto('/')
   await expect(page.getByRole('heading', { name: 'A第一任务' })).toBeVisible()
 
-  await page.getByRole('button', { name: '标记完成' }).click()
-  await expect(page.getByRole('status')).toContainText('已标记完成')
+  await page.locator('.tsui-task-row').filter({ has: page.getByRole('heading', { name: 'A第一任务' }) }).getByRole('button', { name: '完成' }).click()
+  await expect(page.getByRole('status')).toContainText('已完成')
   expect(commandBodies).toHaveLength(1)
   expect(commandBodies[0]).toMatchObject({
     action: 'command',
@@ -382,7 +382,7 @@ test('same-object connected conflict is concrete and refreshes the authoritative
 
   await page.goto('/')
   await expect(page.getByRole('heading', { name: 'A第一任务' })).toBeVisible()
-  const complete = page.getByRole('button', { name: '标记完成' })
+  const complete = page.locator('.tsui-task-row').filter({ has: page.getByRole('heading', { name: 'A第一任务' }) }).getByRole('button', { name: '完成' })
   await complete.focus()
   await expect(complete).toBeFocused()
   await page.keyboard.press('Enter')
@@ -446,7 +446,7 @@ test('account A sign-out then account B never displays or replays A cache drafts
     return raw ? (JSON.parse(raw) as { accounts?: Record<string, { lastSyncedVersion?: string }> }).accounts?.['account-a']?.lastSyncedVersion : undefined
   })).toBe('txn:3')
 
-  await page.locator('.ultimate-capture-button').click()
+  await page.locator('.tsui-tell-button').click()
   await page.locator('.cgr-capture-input').fill('A 的私有草稿')
   await page.getByRole('button', { name: '关闭' }).click()
   await page.evaluate(() => {
@@ -464,10 +464,10 @@ test('account A sign-out then account B never displays or replays A cache drafts
     }]))
   })
 
-  await page.locator('.ultimate-toolbar').getByRole('button', { name: /设置|Settings/ }).click()
+  await page.locator('.tsui-topbar').getByRole('button', { name: /设置|Settings/ }).click()
   await page.getByRole('button', { name: '退出 PJSDAS' }).click()
   await expect.poll(async () => (await readIndexedActions(page)).length).toBe(0)
-  await page.locator('.surface-nav').getByRole('button', { name: /今天|Today/ }).click()
+  await page.locator('.tsui-primary-nav').getByRole('button', { name: /今天|Today/ }).click()
   await expect(page.getByRole('heading', { name: 'A第一任务' })).toHaveCount(0)
 
   await page.evaluate(({ key, value }) => {
@@ -477,7 +477,7 @@ test('account A sign-out then account B never displays or replays A cache drafts
 
   await expect(page.getByRole('heading', { name: 'B第一任务' })).toBeVisible()
   await expect(page.getByRole('heading', { name: 'A第一任务' })).toHaveCount(0)
-  await page.locator('.ultimate-capture-button').click()
+  await page.locator('.tsui-tell-button').click()
   await expect(page.locator('.cgr-capture-input')).toHaveValue('')
   expect(bBodies.some((body) => body.commandId === 'web-action:A-pending')).toBe(false)
   expect(bBodies.some((body) => ['commit', 'command', 'undo'].includes(body.action))).toBe(false)
@@ -529,7 +529,7 @@ test('CGR-05 background and manual connected sync preserve pending local changes
   await expect.poll(() => reads).toBeGreaterThan(priorReads)
   expect(commits).toBe(0)
   expect((await readIndexedActions(page)).find((item) => item.id === 'A-action-1')?.title).toBe('本地待处理修改')
-  await page.locator('.ultimate-toolbar').getByRole('button', { name: /设置|Settings/ }).click()
+  await page.locator('.tsui-topbar').getByRole('button', { name: /设置|Settings/ }).click()
   await page.getByRole('button', { name: '立即同步' }).click()
   await expect(page.getByText('本机有未进入账号工作区的修改；同步检查已保留本机数据，未上传整份工作区')).toBeVisible()
   expect(commits).toBe(0)
