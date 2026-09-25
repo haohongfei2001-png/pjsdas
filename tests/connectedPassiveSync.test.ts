@@ -49,6 +49,9 @@ describe('connected passive sync authority', () => {
   it.each([true, false])('keeps a local change pending without whole-snapshot upload (passive=%s)', async (passive) => {
     expect(await runCloudSync('qa-account', { passive })).toMatchObject({ kind: 'local_pending', version: 'txn:7' })
     expect(fixture.update).not.toHaveBeenCalled()
+    expect(fixture.checkpoint).toHaveBeenCalledWith('qa-account', expect.objectContaining({
+      localPendingFingerprint: 'synthetic-digest',
+    }))
     expect(fixture.checkpoint).not.toHaveBeenCalledWith('qa-account', expect.objectContaining({ lastSyncedAt: expect.any(String) }))
   })
 })
