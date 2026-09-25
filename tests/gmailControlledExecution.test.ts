@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createGmailAutomationHandler } from '../gateway/gmailAutomationHandler.js'
 import { aggregateHistoryLag } from '../gateway/gmailExecutionMetrics.js'
+import { GmailProviderRequestError } from '../gateway/gmailProviderFailure.js'
 const state = vi.hoisted(() => ({ run: vi.fn() }))
 vi.mock('../gateway/gmailAutomation.js', () => ({ runGmailAutomationForBinding: state.run }))
 const row = { user_id: 'user', google_subject: 'subject', refresh_token_ciphertext: 'cipher', granted_scopes: [], gmail_history_id: 'list-old' }
@@ -80,6 +81,31 @@ describe('opt-in controlled Gmail worker', () => {
     expect(h.writes.filter((item) => item.rpc === 'pjsdas_finish_gmail_execution').every((item) => Object.keys(item.data.state_patch as object).length === 0)).toBe(true)
     expect(h.writes.find((item) => item.rpc === 'pjsdas_finish_gmail_execution')?.data.metrics).toMatchObject({ errorCode: 'BUDGET_EXHAUSTED' })
   })
+  it('forwards only bounded provider diagnostics to controlled execution telemetry', async () => {
+    state.run.mockRejectedValueOnce(new GmailProviderRequestError({
+      code: 'GMAIL_REQUEST_FAILED',
+      message: 'Gmail message fetch failed (HTTP 400).',
+      retryable: false,
+      operation: 'message_fetch',
+      httpStatus: 400,
+      providerReason: 'FAILED_PRECONDITION',
+    }))
+    const h = harness()
+    const response = await h.invoke()
+    expect(response.status).toBe(207)
+    const finish = h.writes.find((item) => item.rpc === 'pjsdas_finish_gmail_execution')!
+    expect(finish.data.state_patch).toEqual({})
+    expect(finish.data.metrics).toMatchObject({
+      status: 'error',
+      errorCode: 'GMAIL_REQUEST_FAILED',
+      providerOperation: 'message_fetch',
+      providerStatus: 400,
+      providerReason: 'FAILED_PRECONDITION',
+      failureScope: 'run',
+    })
+    expect(JSON.stringify(finish.data.metrics)).not.toContain('Gmail message fetch failed')
+  })
+
   it('uncertain finish never retries through an unfenced update or exposes raw error text', async () => {
     const h = harness({ finishLost: true }); const response = await h.invoke()
     expect(response.status).toBe(207)
