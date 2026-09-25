@@ -16,6 +16,7 @@ import type {
   TimelineRecord,
 } from './model.js'
 import './opportunityDetail.css'
+import './jobs/jobDetail.css'
 
 export type OpportunityDetailDestination = 'today' | 'opportunities' | 'prepare'
 
@@ -34,6 +35,8 @@ interface OpportunityDetailDrawerProps {
   onOpenDecision: (id: string) => void
   onMarkAction: (id: string, status: Action['status']) => Promise<void>
   readOnly?: boolean
+  asPage?: boolean
+  returnLabel?: string
 }
 
 const actionStatusLabels: Record<Action['status'], [string, string]> = {
@@ -97,6 +100,8 @@ export default function OpportunityDetailDrawer({
   onOpenDecision,
   onMarkAction,
   readOnly = false,
+  asPage = false,
+  returnLabel,
 }: OpportunityDetailDrawerProps) {
   const { lang } = useUiLanguage()
   const zh = lang === 'zh'
@@ -121,10 +126,15 @@ export default function OpportunityDetailDrawer({
   const effectiveStage = process?.stage ?? opportunity.processStage
   const storedStageLabel = process?.stageLabel ?? opportunity.currentStageLabel
   const effectiveStageText = presentStageLabel(effectiveStage, storedStageLabel, lang)
+  const applyAction = !ended ? actions.find((item) => item.kind === 'apply' && (item.status === 'todo' || item.status === 'doing')) : undefined
+  const applicationCandidate = userFacts?.applicationUrl ?? opportunity.detail?.facts?.application.applicationUrl
+  let confirmedApplicationUrl: string | undefined
+  try { if (applicationCandidate) { const url = new URL(applicationCandidate); if (url.protocol === 'https:' || url.protocol === 'http:') confirmedApplicationUrl = url.href } } catch { /* Show the missing-link state. */ }
 
-  useEffect(() => { closeButtonRef.current?.focus() }, [opportunity.id])
+  useEffect(() => { if (!asPage) closeButtonRef.current?.focus() }, [opportunity.id, asPage])
 
   useEffect(() => {
+    if (asPage) return
     const handler = (event: KeyboardEvent) => {
       if (event.key === 'Escape') { event.preventDefault(); onClose(); return }
       if (event.key !== 'Tab' || !dialogRef.current) return
@@ -141,23 +151,38 @@ export default function OpportunityDetailDrawer({
     }
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
-  }, [onClose])
+  }, [onClose, asPage])
 
+  const Surface = asPage ? 'article' : 'aside'
   return (
-    <div className="opportunity-detail-backdrop" role="presentation" onMouseDown={onClose}>
-      <aside ref={dialogRef} className="opportunity-detail-drawer" role="dialog" aria-modal="true" tabIndex={-1} aria-label={zh ? '岗位详情' : 'Opportunity details'} onMouseDown={(event) => event.stopPropagation()}>
+    <div className={asPage ? 'job-detail-page' : 'opportunity-detail-backdrop'} role={asPage ? undefined : 'presentation'} onMouseDown={asPage ? undefined : onClose}>
+      {asPage ? <button className="job-detail-back" type="button" onClick={onClose}>← {returnLabel ?? (zh ? '返回岗位库' : 'Back to jobs')}</button> : null}
+      <Surface ref={dialogRef} className={asPage ? 'opportunity-detail-drawer job-detail-surface' : 'opportunity-detail-drawer'} role={asPage ? undefined : 'dialog'} aria-modal={asPage ? undefined : true} tabIndex={asPage ? undefined : -1} aria-label={zh ? '岗位详情' : 'Opportunity details'} onMouseDown={(event) => event.stopPropagation()}>
         <header className="opportunity-detail-header">
           <div>
             <div className="eyebrow">OPPORTUNITY</div>
             <strong className="opportunity-detail-company">{opportunity.company}</strong>
-            <h2>{opportunity.role}</h2>
+            {asPage ? <h1>{opportunity.role}</h1> : <h2>{opportunity.role}</h2>}
             <div className="opportunity-detail-header-badges">
               <span>{effectiveStageText}</span>
               {opportunity.early ? <span>{zh ? '早期窗口' : 'Early window'}</span> : null}
             </div>
           </div>
-          <button ref={closeButtonRef} className="opportunity-detail-close" type="button" onClick={onClose} aria-label={zh ? '关闭' : 'Close'}>×</button>
+          {!asPage ? <button ref={closeButtonRef} className="opportunity-detail-close" type="button" onClick={onClose} aria-label={zh ? '关闭' : 'Close'}>×</button> : null}
         </header>
+
+        {asPage ? <div className="job-detail-action-area">
+          <div className="job-detail-actions">
+            {!ended && confirmedApplicationUrl ? <a href={confirmedApplicationUrl} target="_blank" rel="noopener noreferrer">{zh ? '打开申请入口 ↗' : 'Open application ↗'}</a> : null}
+            {!ended && applyAction && !readOnly ? <button type="button" disabled={Boolean(pendingActionId)} onClick={() => {
+              setPendingActionId(applyAction.id)
+              void onMarkAction(applyAction.id, 'done').finally(() => setPendingActionId(undefined))
+            }}>{pendingActionId === applyAction.id ? (zh ? '确认中…' : 'Confirming…') : (zh ? '我已投递' : 'I applied')}</button> : null}
+            {!ended && !confirmedApplicationUrl ? <span className="job-detail-no-link">{zh ? '暂无已确认的申请入口' : 'No confirmed application link'}</span> : null}
+            <button type="button" className="job-detail-capture" disabled={readOnly} onClick={onCapture}>{zh ? '告诉 PJSDAS' : 'Tell PJSDAS'}</button>
+          </div>
+          {applicationGroup ? <p className="job-detail-constraint">{applicationGroup.rule ?? (zh ? '此岗位受共享投递名额约束。' : 'This job shares application capacity.')} {applicationGroup.remaining !== undefined ? (zh ? `剩余名额：${applicationGroup.remaining}` : `Remaining: ${applicationGroup.remaining}`) : ''}</p> : null}
+        </div> : null}
 
         {decision ? <OpportunityDecisionSummary decision={decision} process={process} onNavigate={onNavigate} onCapture={onCapture} readOnly={readOnly} /> : null}
 
@@ -175,7 +200,7 @@ export default function OpportunityDetailDrawer({
           <RichOpportunityFactsSummary facts={opportunity.detail?.facts} zh={zh} />
 
           {applicationGroup ? (
-            <details className="opportunity-detail-section">
+            <details className="opportunity-detail-section" open={asPage}>
               <summary>{zh ? '申请约束' : 'Application constraints'}</summary>
               <div className="opportunity-detail-prose">
                 <p>{applicationGroup.rule ?? (zh ? '该组没有额外规则说明。' : 'No additional rule is stored for this group.')}</p>
@@ -185,7 +210,7 @@ export default function OpportunityDetailDrawer({
             </details>
           ) : null}
 
-          <details className="opportunity-detail-section">
+          <details className="opportunity-detail-section" open={asPage && (relevantActions.length > 0 || relatedPrep.length > 0)}>
             <summary>{zh ? '准备与相关待办' : 'Preparation & related actions'}</summary>
             <div className="opportunity-detail-process-grid">
               <div><small>{zh ? '最近进展' : 'Last progress'}</small><strong>{formatDate(process?.lastProgressAt, zh)}</strong></div>
@@ -260,10 +285,10 @@ export default function OpportunityDetailDrawer({
 
         <footer className="opportunity-detail-footer">
           <button type="button" onClick={() => onNavigate('today')}>{zh ? '回到 Today' : 'Back to Today'}</button>
-          <button className="cgr-context-capture" type="button" onClick={onCapture}>{zh ? '告诉 PJSDAS' : 'Tell PJSDAS'}</button>
+          <button className="cgr-context-capture" type="button" disabled={readOnly} onClick={onCapture}>{zh ? '告诉 PJSDAS' : 'Tell PJSDAS'}</button>
           {userFacts?.applicationUrl ? <a href={userFacts.applicationUrl} target="_blank" rel="noreferrer">{zh ? '打开用户确认链接' : 'Open confirmed link'}</a> : opportunity.detail?.facts?.application.applicationUrl ? <a href={opportunity.detail.facts.application.applicationUrl} target="_blank" rel="noreferrer">{zh ? '打开投递页面' : 'Open application page'}</a> : discovery?.sourceUrl ? <a href={discovery.sourceUrl} target="_blank" rel="noreferrer">{zh ? '打开招聘来源' : 'Open source'}</a> : null}
         </footer>
-      </aside>
+      </Surface>
     </div>
   )
 }
