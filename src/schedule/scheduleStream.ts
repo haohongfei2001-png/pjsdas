@@ -209,6 +209,21 @@ export function buildScheduleStream(
     representedProcessEventIds.add(event.id)
     processEventEntries.set(event.id, entry)
   }
+  function linkCompletionFact(entry: ScheduleEntry | undefined, fact: TimelineRecord) {
+    if (!entry) return false
+    const when = validInstant(fact.occurredAt)
+    if (!when || when > now) return false
+    if (entry.section === 'undated') {
+      sections.undated = sections.undated.filter((candidate) => candidate !== entry)
+      entry.section = 'history'
+      entry.date = localDateKey(when, context.timezone)
+      entry.occurredAt = fact.occurredAt
+      entry.recordedAt = fact.recordedAt
+      sections.history.push(entry)
+    }
+    entry.sourceRefs.push(`timeline:${fact.id}`)
+    return true
+  }
   const timelineByCommand = new Map<string, ScheduleEntry>()
   for (const item of snapshot.data.timeline ?? []) {
     if (!BUSINESS_KINDS.has(item.kind)) continue
@@ -216,17 +231,17 @@ export function buildScheduleStream(
       processEventEntries.get(item.processEventId)?.sourceRefs.push(`timeline:${item.id}`)
       continue
     }
-    if (item.scheduleNodeId && representedNodeIds.has(item.scheduleNodeId) && item.kind === 'action_status_changed') {
-      nodeEntries.get(item.scheduleNodeId)?.sourceRefs.push(`timeline:${item.id}`)
-      continue
+    if (item.scheduleNodeId && representedNodeIds.has(item.scheduleNodeId) && item.kind === 'action_status_changed' && item.changes?.status?.after === 'done') {
+      if (linkCompletionFact(nodeEntries.get(item.scheduleNodeId), item)) continue
     }
     if (item.kind === 'action_status_changed'
       && item.actionId
       && item.changes?.status?.after === 'done'
       && representedCompletedActionIds.has(item.actionId)) {
-      completedActionEntries.get(item.actionId)?.sourceRefs.push(`timeline:${item.id}`)
-      continue
+      if (linkCompletionFact(completedActionEntries.get(item.actionId), item)) continue
     }
+    if (item.kind === 'application_submitted' && item.opportunityId
+      && linkCompletionFact(completedActionEntries.get(`apply:${item.opportunityId}`), item)) continue
     const when = validInstant(item.occurredAt)
     if (!when || when > now) continue
     // Only exact command/type/object references may collapse log duplicates.

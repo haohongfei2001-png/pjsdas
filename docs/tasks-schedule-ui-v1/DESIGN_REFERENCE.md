@@ -12,7 +12,7 @@
 
 `904cf1b0b48e5b6b14adec518e3a7991014ac81ba8d80b06451a922ae6be4901`
 
-上述文件来自本次计划的用户会话附件，不是GitHub中已经存在的运行文件，也不是上线证明。本次文档登记不声称已将原型二进制/截图提交到仓库；下载交接包附有原始完整设计ZIP。后续执行可从附件/Library按文件名取回并校验摘要，再把必要的合成参考图登记到实施PR的reference目录。不要用会话临时sandbox链接作为GitHub长期依赖，不要上传真实生产截图中的私人工作区内容。
+2026-09-25 已从 owner 上传交接包校验上述两个 SHA-256，并将认可原型、DESIGN.md、VISUAL_REVIEW.md、MANIFEST.json 与 17 张最终截图原样提交至 [reference/](reference/)（TSUI-02 首 commit `28bfcab28141bd91a79f534bef0bc64f645e71a6`）。21 个 Git blob 与附件字节逐一核对；未提交重复 ZIP。后续 TSUI-02～05 以该 immutable 目录为视觉和交互基准，不修改 reference 文件。原型并非运行代码或上线证明；不上传真实生产截图中的私人工作区内容。
 
 读取包内 `DESIGN.md`、`VISUAL_REVIEW.md`、`MANIFEST.json`、最终HTML和 `screenshots/`。源代码和验证脚本只用于理解演示；生产逻辑以当前仓库权威领域层为准。
 
