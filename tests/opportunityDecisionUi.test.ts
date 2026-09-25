@@ -3,17 +3,19 @@ import { describe, expect, it } from 'vitest'
 
 const app = readFileSync(new URL('../src/AppV8.tsx', import.meta.url), 'utf8')
 const read = readFileSync(new URL('../src/opportunityDecisionRead.ts', import.meta.url), 'utf8')
-const list = readFileSync(new URL('../src/OpportunityDecisionList.tsx', import.meta.url), 'utf8')
+const list = readFileSync(new URL('../src/jobs/JobLibrary.tsx', import.meta.url), 'utf8')
 const detail = readFileSync(new URL('../src/OpportunityDetailDrawer.tsx', import.meta.url), 'utf8')
 const server = readFileSync(new URL('../gateway/serverFactory.ts', import.meta.url), 'utf8')
 
 describe('UU-05 frozen opportunity product contract', () => {
-  it('makes In Progress and Worth Pursuing the two primary opportunity questions', () => {
+  it('keeps exact opportunity identity and one truthful job-status filter', () => {
     expect(read).toContain("export type OpportunityDecisionBucket = 'in_progress' | 'worth_pursuing' | 'ended'")
-    expect(list).toContain("zh ? '推进中' : 'In Progress'")
-    expect(list).toContain("zh ? '值得推进' : 'Worth Pursuing'")
-    expect(list).toContain("zh ? '已结束 / 不再推进' : 'Ended / not pursuing'")
-    expect(list).toContain("zh ? '全部机会' : 'All opportunities'")
+    expect(list).toContain("['all', '全部', 'All']")
+    expect(list).toContain("['unapplied', '待投递', 'To apply']")
+    expect(list).toContain("['in_progress', '推进中', 'In progress']")
+    expect(list).toContain("['ended', '已结束', 'Ended']")
+    expect(list).toContain('key={item.opportunityId}')
+    expect(list).toContain('onOpenOpportunity(item.opportunityId)')
   })
 
   it('uses the same ranking semantics as Today for next actions', () => {
