@@ -141,6 +141,8 @@ export default function ScheduleFeature({
   const [feedback, setFeedback] = useState<{ text: string; commandId?: string; error?: boolean }>()
   const previousKey = useRef(stream.key)
   const listRef = useRef<HTMLDivElement>(null)
+  const detailRef = useRef<HTMLElement>(null)
+  const openerId = useRef<string | null>(null)
   const loader = useRef<HTMLDivElement>(null)
   const prependAnchor = useRef<{ id: string; top: number } | null>(null)
   const selected = selectedId
@@ -211,6 +213,7 @@ export default function ScheduleFeature({
   }
 
   function openEntry(entry: ScheduleEntry) {
+    openerId.current = entry.id
     setSelectedId(entry.id)
     setFeedback(undefined)
     setConfirm(undefined)
@@ -219,6 +222,22 @@ export default function ScheduleFeature({
       ? localDateTimeInput(temporal.startAt ?? temporal.deadlineAt ?? '')
       : temporal?.date ?? entry.date ?? '')
   }
+
+  function closeEntry() {
+    setSelectedId(undefined)
+    const opener = openerId.current
+    window.requestAnimationFrame(() => {
+      const row = [...(listRef.current?.querySelectorAll<HTMLElement>('[data-schedule-entry]') ?? [])]
+        .find((item) => item.dataset.scheduleEntry === opener)
+      row?.focus()
+    })
+  }
+
+  useEffect(() => {
+    if (!selectedId) return
+    detailRef.current?.scrollIntoView({ block: 'start' })
+    detailRef.current?.focus()
+  }, [selectedId])
 
   async function runCommand(kind: OccurrenceCommand) {
     if (!selected || !onOccurrenceCommand || pending) return
@@ -270,38 +289,10 @@ export default function ScheduleFeature({
       {stream.counts.undated > 0 ? <button type="button" onClick={() => changeView('undated')}>{zh ? '时间待定' : 'Time TBD'} · {stream.counts.undated}</button> : null}
       {view === 'unresolved' || view === 'undated' ? <button type="button" onClick={() => changeView('all')}>{zh ? '返回全部' : 'Back to all'}</button> : null}
     </div> : null}
-    <div className="tsui-schedule-panel" ref={listRef}>
-      {range.start > 0 ? <button className="tsui-schedule-more" type="button" onClick={loadEarlier}>{zh ? '加载更早记录' : 'Load earlier records'} · {range.start}</button> : null}
-      {shown.length ? shown.map((entry, index) => {
-        const opportunity = entry.opportunityId ? byId.get(entry.opportunityId) : undefined
-        const title = entry.kind === 'node' ? KIND[entry.title]?.[zh ? 0 : 1] ?? entry.title : entry.title
-        const date = entry.date ?? (zh ? '时间待定' : 'Time TBD')
-        const heading = index === 0 || shown[index - 1].date !== entry.date
-        const todayMarker = view === 'all' && entry.date === today && (index === 0 || shown[index - 1].date !== today)
-        return <Fragment key={entry.id}>
-          {heading ? <h2 className={'tsui-schedule-date' + (todayMarker ? ' today' : '')}>{date}{todayMarker ? <span>{zh ? '今天' : 'Today'}</span> : null}</h2> : null}
-          <button className="tsui-schedule-row" data-schedule-entry={entry.id} type="button" onClick={() => openEntry(entry)}>
-            <span className="tsui-schedule-time">{timeLabel(entry, zh)}</span>
-            <span className="tsui-schedule-copy"><strong>{title}</strong><small>{opportunity ? opportunity.company + ' · ' + opportunity.role : zh ? '独立事项' : 'Independent item'}</small></span>
-            <span className={'tsui-schedule-state state-' + entry.section}>{entry.state === 'elapsed_unresolved' ? zh ? '待确认' : 'Unresolved'
-              : entry.state === 'completed' ? zh ? '已完成' : 'Completed'
-                : entry.state === 'cancelled' ? zh ? '已取消' : 'Cancelled'
-                  : entry.state === 'superseded' ? zh ? '已改期' : 'Rescheduled'
-                    : entry.section === 'history' ? zh ? '已发生' : 'Past'
-                : entry.section === 'undated' ? zh ? '时间待定' : 'Time TBD'
-                  : zh ? '接下来' : 'Upcoming'}</span>
-            <span aria-hidden="true">›</span>
-          </button>
-        </Fragment>
-      }) : <p className="tsui-empty">{zh ? '这里暂无有依据的记录。' : 'No recorded items here.'}</p>}
-      <div ref={loader} className="tsui-load-anchor" />
-      {range.end < entries.length ? <button className="tsui-load-more" type="button" onClick={() => setRange((current) => ({ ...current, end: Math.min(entries.length, current.end + 30) }))}>{zh ? '继续加载' : 'Load more'} · {range.end}/{entries.length}</button>
-        : <p className="tsui-end">{zh ? '已显示全部' : 'All items shown'} · {entries.length}</p>}
-    </div>
-    {selected ? <aside className="tsui-schedule-detail" aria-labelledby="tsui-event-title">
+    {selected ? <aside ref={detailRef} tabIndex={-1} className="tsui-schedule-detail" aria-labelledby="tsui-event-title">
       <div className="tsui-schedule-detail-head">
         <div><small>{selected.date ?? (zh ? '时间待定' : 'Time TBD')}</small><h2 id="tsui-event-title">{selected.kind === 'node' ? KIND[selected.title]?.[zh ? 0 : 1] ?? selected.title : selected.title}</h2></div>
-        <button type="button" onClick={() => setSelectedId(undefined)} aria-label={zh ? '关闭详情' : 'Close details'}>×</button>
+        <button type="button" onClick={closeEntry} aria-label={zh ? '关闭详情' : 'Close details'}>×</button>
       </div>
       <p>{timeLabel(selected, zh)}</p>
       {selected.opportunityId && byId.has(selected.opportunityId) ? <p>{byId.get(selected.opportunityId)!.company} · {byId.get(selected.opportunityId)!.role}</p> : null}
@@ -319,5 +310,34 @@ export default function ScheduleFeature({
       {selected.sourceRefs.length > 0 ? <details><summary>{zh ? '来源记录' : 'Source records'}</summary><ul>{selected.sourceRefs.map((ref) => <li key={ref}>{ref}</li>)}</ul></details> : null}
     </aside> : null}
     {feedback ? <div role={feedback.error ? 'alert' : 'status'} className={'tsui-schedule-feedback' + (feedback.error ? ' error' : '')}>{feedback.text}{feedback.commandId && onUndoOccurrenceCommand ? <button type="button" disabled={Boolean(pending)} onClick={() => { void undoCommand(feedback.commandId!) }}>{zh ? '撤销' : 'Undo'}</button> : null}</div> : null}
+    <div className="tsui-schedule-panel" ref={listRef}>
+      {range.start > 0 ? <button className="tsui-schedule-more" type="button" onClick={loadEarlier}>{zh ? '加载更早记录' : 'Load earlier records'} · {range.start}</button> : null}
+      {shown.length ? shown.map((entry, index) => {
+        const opportunity = entry.opportunityId ? byId.get(entry.opportunityId) : undefined
+        const title = entry.kind === 'node' ? KIND[entry.title]?.[zh ? 0 : 1] ?? entry.title : entry.title
+        const date = entry.date ?? (zh ? '时间待定' : 'Time TBD')
+        const heading = index === 0 || shown[index - 1].date !== entry.date
+        const todayMarker = view === 'all' && entry.date === today && (index === 0 || shown[index - 1].date !== today)
+        return <Fragment key={entry.id}>
+          {heading ? <h2 className={'tsui-schedule-date' + (todayMarker ? ' today' : '')}>{date}{todayMarker ? <span>{zh ? '今天' : 'Today'}</span> : null}</h2> : null}
+          <button className="tsui-schedule-row" data-schedule-entry={entry.id} type="button" onClick={() => openEntry(entry)}>
+            <span className="tsui-schedule-time">{entry.node?.temporal.precision === 'date' ? zh ? '具体时间待定' : 'Exact time TBD' : timeLabel(entry, zh)}</span>
+            <span className="tsui-schedule-copy"><strong>{title}</strong><small>{opportunity ? opportunity.company + ' · ' + opportunity.role : zh ? '独立事项' : 'Independent item'}</small></span>
+            <span className={'tsui-schedule-state state-' + entry.section}>{entry.state === 'elapsed_unresolved' ? zh ? '待确认' : 'Unresolved'
+              : entry.state === 'completed' ? zh ? '已完成' : 'Completed'
+                : entry.state === 'cancelled' ? zh ? '已取消' : 'Cancelled'
+                  : entry.state === 'superseded' ? zh ? '已改期' : 'Rescheduled'
+                    : entry.section === 'history' ? zh ? '已发生' : 'Past'
+                : entry.section === 'undated' ? zh ? '时间待定' : 'Time TBD'
+                  : zh ? '接下来' : 'Upcoming'}</span>
+            <span aria-hidden="true">›</span>
+          </button>
+        </Fragment>
+      }) : <p className="tsui-empty">{zh ? '这里暂无有依据的记录。' : 'No recorded items here.'}</p>}
+      <div ref={loader} className="tsui-load-anchor" />
+      {range.end < entries.length ? <button className="tsui-load-more" type="button" onClick={() => setRange((current) => ({ ...current, end: Math.min(entries.length, current.end + 30) }))}>{zh ? '继续加载' : 'Load more'} · {range.end}/{entries.length}</button>
+        : <p className="tsui-end">{zh ? '已显示全部' : 'All items shown'} · {entries.length}</p>}
+    </div>
+
   </section>
 }

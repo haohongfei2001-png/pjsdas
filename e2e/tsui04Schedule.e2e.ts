@@ -89,6 +89,9 @@ test('TSUI-04 real schedule: today anchor, both directions, unresolved and undat
     rootFontPx: getComputedStyle(document.documentElement).fontSize,
     viewport: [innerWidth, innerHeight],
   }))))
+  const scheduleWidth = await page.locator('.tsui-schedule-page').evaluate((element) => element.getBoundingClientRect().width)
+  console.log('TSUI04_SCHEDULE_WIDTH:' + scheduleWidth)
+  expect(scheduleWidth).toBeLessThanOrEqual(1122)
   await page.screenshot({ path: 'test-results/tsui04/schedule-desktop.png', fullPage: true, animations: 'disabled' })
   await visual(page, 'SCHEDULE_DESKTOP')
 
@@ -142,10 +145,12 @@ test('TSUI-04 real schedule: today anchor, both directions, unresolved and undat
   await expect(capture).toBeVisible()
   await expect(capture).not.toContainText('⌘ Enter')
   await page.screenshot({ path: 'test-results/tsui04/capture-mobile.png', fullPage: true, animations: 'disabled' })
+  await visual(page, 'CAPTURE_MOBILE')
   await capture.getByRole('button', { name: /关闭|Close/ }).click()
   await page.locator('.tsui-topbar').getByRole('button', { name: /设置|Settings/ }).click()
-  await expect(page.locator('.settings-surface h1')).toHaveText(/设置|Settings/)
+  await expect(page.locator('.settings-surface > .surface-header h1')).toHaveText(/设置|Settings/)
   await page.screenshot({ path: 'test-results/tsui04/settings-mobile.png', fullPage: true, animations: 'disabled' })
+  await visual(page, 'SETTINGS_MOBILE')
 })
 
 
