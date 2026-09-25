@@ -10,6 +10,14 @@ on:
       - 'e2e/support/cgr02Journey.ts'
       - 'playwright.rollback.config.mts'
       - '.github/workflows/cgr02-read-only-rollback.yml'
+  pull_request:
+    paths:
+      - 'src/AppV8.tsx'
+      - 'src/today/TodayFeature.tsx'
+      - 'e2e/cgr02ReadOnly.rollback.ts'
+      - 'e2e/support/cgr02Journey.ts'
+      - 'playwright.rollback.config.mts'
+      - '.github/workflows/cgr02-read-only-rollback.yml'
   workflow_dispatch:
 
 permissions:
