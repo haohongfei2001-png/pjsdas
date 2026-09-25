@@ -1,6 +1,10 @@
 name: CGR-02 VoiceOver
 
 on:
+  pull_request:
+    paths:
+      - 'e2e/cgr02TodayVoiceOver.voiceover.ts'
+      - '.github/workflows/cgr02-voiceover.yml'
   push:
     branches: [main, manager/cgr02-today-vertical-slice-20260923]
     paths:
