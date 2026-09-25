@@ -528,7 +528,6 @@ export default function AppV8() {
             opportunities={opportunities}
             readOnly={CGR02_TODAY_READ_ONLY}
             now={now}
-            budgetMinutes={budgetMinutes}
             workspaceEmpty={workspaceEmpty}
             freshness={workspaceEmpty && (cloud.loading || (connectedWorkspaceAuthorityEnabled() && cloud.session?.user.id && todayFreshness.state === 'local')) ? { state: 'initial' } : todayFreshness}
             onStart={navigateFromStart}

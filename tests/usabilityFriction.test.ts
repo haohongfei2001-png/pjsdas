@@ -29,8 +29,8 @@ describe('UU-04 Web friction rules', () => {
     expect(capture).not.toContain('ChangeSet')
   })
 
-  it('keeps first-level navigation to two daily destinations and moves History/Settings to low-frequency routes', () => {
-    expect(app).toContain("const primarySurfaces: PrimarySurface[] = ['today', 'opportunities']")
+  it('keeps the three approved destinations and moves History/Settings to low-frequency routes', () => {
+    expect(app).toContain("const primarySurfaces: PrimarySurface[] = ['today', 'opportunities', 'schedule']")
     expect(app).toContain("navigate('/settings')")
     expect(app).toContain("onOpenActivity={() => navigate('/history')}")
     expect(app).toContain("zh ? '历史与审计' : 'History & audit'")
@@ -47,7 +47,7 @@ describe('UU-04 Web friction rules', () => {
   it('keeps an empty workspace start path without persistent onboarding state', () => {
     expect(app).toContain('workspaceEmpty')
     expect(today).toContain('workspaceEmpty')
-    expect(today).toContain("zh ? '先让 PJSDAS 知道你的求职现状'")
+    expect(today).toContain("zh ? '先让 PJSDAS 了解你的求职进展'")
     expect(app).toContain("navigate('/settings')")
     expect(app).not.toContain('onboardingCompleted')
   })

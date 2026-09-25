@@ -6,9 +6,10 @@ const decisions = readFileSync(new URL('../src/DecisionRequestsView.tsx', import
 const timeline = readFileSync(new URL('../src/TimelineView.tsx', import.meta.url), 'utf8')
 
 describe('UU-04 decision visibility policy', () => {
-  it('shows Decisions only when durable DecisionRequests exist', () => {
+  it('shows durable DecisionRequests in Today without adding a primary destination', () => {
     expect(app).toContain("'decisions'")
-    expect(app).toContain("openDecisionCount > 0")
+    expect(app).toContain('onOpenDecision={(id) => navigate')
+    expect(app).toContain("const primarySurfaces: PrimarySurface[] = ['today', 'opportunities', 'schedule']")
     expect(app).toContain("navigate('/decisions')")
     expect(app).not.toContain("'review' | 'opportunities'")
     expect(decisions).toContain("item.state === 'open'")
