@@ -220,13 +220,29 @@ export function rankAction(
   }
 }
 
-export function rankActions(actions: Action[], opportunities: Opportunity[], now = new Date(), rules: DecisionRules = DEFAULT_DECISION_RULES) {
+export function rankActions(
+  actions: Action[],
+  opportunities: Opportunity[],
+  now = new Date(),
+  rules: DecisionRules = DEFAULT_DECISION_RULES,
+  timezone?: string,
+) {
   const opportunityMap = new Map(opportunities.map((item) => [item.id, item]))
+  const today = timezone
+    ? (() => {
+      const parts = new Intl.DateTimeFormat('en-CA', {
+        timeZone: timezone, year: 'numeric', month: '2-digit', day: '2-digit',
+      }).formatToParts(now)
+      const values = Object.fromEntries(parts.map((part) => [part.type, part.value]))
+      return `${values.year}-${values.month}-${values.day}`
+    })()
+    : `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
 
   return actions
     .filter((action) => action.status === 'todo' || action.status === 'doing')
     .filter((action) => {
       if ((action.kind === 'apply' || action.kind === 'group_decision') && action.dueAt) {
+        if (action.duePrecision === 'date') return action.dueAt.slice(0, 10) >= today
         return new Date(action.dueAt).getTime() >= now.getTime()
       }
       if (action.kind === 'follow_up' && action.dueAt) {

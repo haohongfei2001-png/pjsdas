@@ -67,7 +67,10 @@ function projectPrepGraphIntoActions(actions: Action[], opportunities: Opportuni
   return enrichPrepActionsWithGraph(actions, buildPrepGraph(prep, opportunities, [], now))
 }
 
-export function rankActions(actions: Action[], opportunities: Opportunity[], now = new Date(), rules: DecisionRules = DEFAULT_DECISION_RULES) {
+export function rankActions(
+  actions: Action[], opportunities: Opportunity[], now = new Date(),
+  rules: DecisionRules = DEFAULT_DECISION_RULES, timezone?: string,
+) {
   // Follow-up/review reminders are passive observation state, not work the user
   // should repeatedly see in Today. Keep them in Pipeline/history, but do not
   // let them compete with applications, real recruiting events, prep, or manual
@@ -84,7 +87,7 @@ export function rankActions(actions: Action[], opportunities: Opportunity[], now
   )
   const normalized = projectPrepGraphIntoActions(actionable.map(normalizeScheduledAssessment), opportunities, now)
 
-  return rankActionsCore(normalized, opportunities, now, rules).map((item) => {
+  return rankActionsCore(normalized, opportunities, now, rules, timezone).map((item) => {
     const graphReason = prepGraphReasonFromAction(item.action)
     const baseReasons = item.action.kind === 'prep'
       ? item.reasons.filter((reason) => reason !== '可复用于多个岗位')
