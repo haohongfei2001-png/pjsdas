@@ -56,6 +56,19 @@ test('TSUI-02 real component: equal Today rows, shared 130-node stream and mobil
   await page.setViewportSize({ width: 1440, height: 900 })
   await page.screenshot({ path: 'test-results/tsui02/today-desktop.png', fullPage: true, animations: 'disabled' })
   await emitCloudVisual(page, 'DESKTOP')
+  const geometry = await page.evaluate(() => {
+    const main = document.querySelector('.cgr-main')!.getBoundingClientRect()
+    const tasks = document.querySelector('.tsui-task-panel')!.getBoundingClientRect()
+    const nodes = document.querySelector('.tsui-node-panel')!.getBoundingClientRect()
+    return { mainLeft: main.left, taskLeft: tasks.left, taskWidth: tasks.width, nodeWidth: nodes.width, nodeRight: nodes.right }
+  })
+  console.log('TSUI_GEOMETRY_DESKTOP:' + JSON.stringify(geometry))
+  expect(geometry.taskLeft).toBeGreaterThanOrEqual(48)
+  expect(geometry.taskLeft).toBeLessThanOrEqual(72)
+  expect(geometry.nodeRight).toBeGreaterThanOrEqual(1360)
+  expect(geometry.nodeRight).toBeLessThanOrEqual(1392)
+  expect(geometry.taskWidth / geometry.nodeWidth).toBeGreaterThan(1.3)
+  expect(geometry.taskWidth / geometry.nodeWidth).toBeLessThan(1.5)
   while (await page.locator('.tsui-node-panel .tsui-load-more').count()) {
     await page.locator('.tsui-node-panel .tsui-load-more').click()
   }

@@ -56,8 +56,9 @@ export default function TodayFeature({ selection, criticalWarnings, stream, oppo
   const [mobileView, setMobileView] = useState<'tasks' | 'nodes'>('tasks')
   const [pendingId, setPendingId] = useState<string>()
   const [showCompleted, setShowCompleted] = useState(false)
+  const zhDateParts = new Intl.DateTimeFormat('zh-CN', { month: 'numeric', day: 'numeric', timeZone: stream.timezone }).formatToParts(now)
   const date = zh
-    ? `${new Intl.DateTimeFormat('zh-CN', { month: 'numeric', day: 'numeric', timeZone: stream.timezone }).format(now)} · ${new Intl.DateTimeFormat('zh-CN', { weekday: 'short', timeZone: stream.timezone }).format(now)}`
+    ? `${zhDateParts.find((part) => part.type === 'month')?.value ?? ''}月${zhDateParts.find((part) => part.type === 'day')?.value ?? ''}日 · ${new Intl.DateTimeFormat('zh-CN', { weekday: 'short', timeZone: stream.timezone }).format(now)}`
     : new Intl.DateTimeFormat('en-GB', { month: 'short', day: 'numeric', weekday: 'short', timeZone: stream.timezone }).format(now)
   const completedToday = stream.sections.history.filter((item) => item.date === new Intl.DateTimeFormat('sv-SE', { year: 'numeric', month: '2-digit', day: '2-digit', timeZone: stream.timezone }).format(now) && (item.state === 'completed' || item.timeline?.kind === 'action_status_changed'))
   const awaiting = freshness.state === 'initial' && workspaceEmpty
