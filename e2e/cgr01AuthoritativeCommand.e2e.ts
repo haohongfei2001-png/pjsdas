@@ -204,7 +204,7 @@ test('lost response after server commit survives reload and recovers one durable
 
   await page.goto('/')
   await expect(page.getByRole('heading', { name: 'A第一任务' })).toBeVisible()
-  await page.getByRole('button', { name: '完成' }).click()
+  await page.locator('.tsui-task-row').filter({ has: page.getByRole('heading', { name: 'A第一任务' }) }).getByRole('button', { name: '完成' }).click()
   await expect(page.getByRole('status')).toContainText('尚未确认这次操作是否已提交')
   expect(commandCalls).toBe(1)
   expect(receiptCalls).toBe(1)
@@ -315,7 +315,7 @@ test('connected Web recovers a lost command response and Undo preserves unrelate
   await page.goto('/')
   await expect(page.getByRole('heading', { name: 'A第一任务' })).toBeVisible()
 
-  await page.getByRole('button', { name: '完成' }).click()
+  await page.locator('.tsui-task-row').filter({ has: page.getByRole('heading', { name: 'A第一任务' }) }).getByRole('button', { name: '完成' }).click()
   await expect(page.getByRole('status')).toContainText('已完成')
   expect(commandBodies).toHaveLength(1)
   expect(commandBodies[0]).toMatchObject({
@@ -382,7 +382,7 @@ test('same-object connected conflict is concrete and refreshes the authoritative
 
   await page.goto('/')
   await expect(page.getByRole('heading', { name: 'A第一任务' })).toBeVisible()
-  const complete = page.getByRole('button', { name: '完成' })
+  const complete = page.locator('.tsui-task-row').filter({ has: page.getByRole('heading', { name: 'A第一任务' }) }).getByRole('button', { name: '完成' })
   await complete.focus()
   await expect(complete).toBeFocused()
   await page.keyboard.press('Enter')

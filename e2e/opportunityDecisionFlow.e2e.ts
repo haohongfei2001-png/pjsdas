@@ -53,7 +53,8 @@ test('CGR-03 dense mixed-language workspace keeps search, identity, and return f
   await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight))
   await expect.poll(async () => page.evaluate(() => {
     const capture = document.querySelector('.tsui-tell-button')?.getBoundingClientRect()
-    return Boolean(capture && capture.top >= 0 && capture.bottom <= 60)
+    const topbar = document.querySelector('.tsui-topbar')?.getBoundingClientRect()
+    return Boolean(capture && topbar && capture.top >= 0 && capture.bottom <= topbar.bottom + 1)
   })).toBe(true)
   await rows.first().click()
   await expect(page.getByRole('dialog', { name: /岗位详情|Opportunity details/ })).toBeVisible()
