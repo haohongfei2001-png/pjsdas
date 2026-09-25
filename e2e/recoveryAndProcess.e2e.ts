@@ -211,7 +211,7 @@ test('JSON backup restores a deliberately cleared local workspace and remains du
   await expect(page).toHaveURL(/\/settings$/)
   await expect(page.getByRole('heading', { name: '连接、自动化和长期控制' })).toBeVisible()
   await page.locator('.tsui-primary-nav').getByRole('button', { name: /今天/ }).click()
-  await expect(page.getByRole('heading', { name: '先让 PJSDAS 知道你的求职现状' })).toBeVisible()
+  await expect(page.getByText('先让 PJSDAS 了解你的求职进展')).toBeVisible()
 
   await page.locator('.tsui-topbar').getByRole('button', { name: /设置/ }).click()
   await expect(page.getByRole('heading', { name: '连接、自动化和长期控制' })).toBeVisible()
