@@ -134,6 +134,61 @@ describe('Gmail background automation', () => {
     expect(calls.some((url) => url.includes('startHistoryId=199'))).toBe(true)
   })
 
+  it('accounts history ids whose message payload disappeared instead of poisoning every later run', async () => {
+    const fetchImpl = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.endsWith('/profile')) return json({ historyId: '250' })
+      if (url.includes('/history?')) return json({
+        historyId: '250',
+        history: [{
+          messagesAdded: [
+            { message: { id: 'msg-ok-1' } },
+            { message: { id: 'msg-gone' } },
+            { message: { id: 'msg-ok-2' } },
+          ],
+        }],
+      })
+      if (url.includes('/messages/msg-ok-1?')) return json({ id: 'msg-ok-1', internalDate: '1', payload: { headers: [] } })
+      if (url.includes('/messages/msg-gone?')) return json({ error: { status: 'NOT_FOUND' } }, 404)
+      if (url.includes('/messages/msg-ok-2?')) return json({ id: 'msg-ok-2', internalDate: '2', payload: { headers: [] } })
+      return json({ error: 'unexpected' }, 500)
+    }) as unknown as typeof fetch
+
+    const result = await fetchGmailAutomationBatch({
+      accessToken: 'google-access',
+      startHistoryId: '249',
+      fetchImpl,
+    })
+
+    expect(result.coverageComplete).toBe(true)
+    expect(result.nextHistoryId).toBe('250')
+    expect(result.messages.map((item) => item.id)).toEqual(['msg-ok-1', 'msg-ok-2'])
+    expect(result.unavailableMessageIds).toEqual(['msg-gone'])
+  })
+
+  it('keeps non-record-specific Gmail message failures fail-closed', async () => {
+    const fetchImpl = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.endsWith('/profile')) return json({ historyId: '260' })
+      if (url.includes('/history?')) return json({
+        historyId: '260',
+        history: [{ messagesAdded: [{ message: { id: 'msg-bad' } }] }],
+      })
+      if (url.includes('/messages/msg-bad?')) return json({ error: { status: 'FAILED_PRECONDITION' } }, 400)
+      return json({ error: 'unexpected' }, 500)
+    }) as unknown as typeof fetch
+
+    await expect(fetchGmailAutomationBatch({
+      accessToken: 'google-access',
+      startHistoryId: '259',
+      fetchImpl,
+    })).rejects.toMatchObject({
+      code: 'GMAIL_REQUEST_FAILED',
+      message: 'Gmail message fetch failed (HTTP 400).',
+      retryable: false,
+    })
+  })
+
   it('falls back to a bounded recent scan if the Gmail history cursor has expired', async () => {
     const calls: string[] = []
     const fetchImpl = vi.fn(async (input: RequestInfo | URL) => {
