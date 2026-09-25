@@ -133,3 +133,16 @@
   .tsui-done-action{width:auto;min-width:44px;padding:0 10px;font-size:.75rem}
   .tsui-done-action::before{display:none}
 }
+
+/* TSUI-02 visual review: keep the mobile switch as the sole panel heading. */
+@media(max-width:700px){
+  .tsui-task-panel>.tsui-panel-header,.tsui-node-panel>.tsui-panel-header{display:none}
+}
+/* The second action remains keyboard reachable while one action leads each row visually. */
+@media(min-width:361px){
+  .tsui-done-action:not(.tsui-submission-action){width:44px;min-width:44px;padding:0;font-size:0}
+  .tsui-done-action:not(.tsui-submission-action)::before{content:"✓";font-size:1rem}
+}
+@media(max-width:360px){
+  .tsui-today .tsui-page-heading>div{display:flex;flex-direction:column;align-items:flex-start;gap:8px}
+}
