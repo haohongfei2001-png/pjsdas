@@ -1,7 +1,7 @@
 # TSUI-05 Exact-Main Closure Receipt
 
 Package: `PJSDAS-TASKS-SCHEDULE-UI-v1`  
-Disposition: **ENGINEERING_COMPLETE / PRODUCTION_PENDING; PACKAGE STOPPED**  
+Disposition: **ENGINEERING_COMPLETE / LATER EXACT-LIVE TECHNICAL VERIFIED; PRIVATE CANARY DEFERRED; PACKAGE STOPPED**  
 Date: 2026-09-25 (UTC)
 
 ## Immutable source and merge identity
@@ -27,6 +27,13 @@ Fixed synthetic scale: 300 jobs, 500 actions, 130 schedule nodes, 2,000 history 
 
 [Pages exact-main run 36148717592](https://github.com/haohongfei2001-png/pjsdas/actions/runs/36148717592) **FAILED** after 40 checks for an exact-SHA backend; its deploy job was skipped. The merge commit's [Vercel status](https://api.github.com/repos/haohongfei2001-png/pjsdas/commits/21f247aca2d0801c3df6ad8a99264784098179e0/status) was **FAILURE**, description: “Deployment rate limited — retry in 24 hours.” The prior TSUI-04 closure SHA encountered the same limit; the earlier TSUI-04 implementation SHA had deployed successfully. The Pages gate correctly prevented a mismatched release. Cloudflare standby is unconfigured; no alternate account, secret, paid upgrade or bypass was introduced.
 
-Thus the TSUI-05 live visual workflow did not run. Same-SHA live frontend/backend, online screenshots, private production-workspace canary and production frontend rollback remain **PENDING/DEFERRED**. Human five-second comprehension, physical-device soft-keyboard checks and independent human integration review are **DEFERRED**. System VoiceOver automation is real assistive-technology evidence, not a human review. Do not claim `PRODUCTION_VERIFIED` or `PRODUCT_ACCEPTED`.
+At the original implementation SHA, the TSUI-05 live visual workflow did not run. The rate-limited release failure above is retained as historical evidence and is superseded by the later exact-live continuation below.
 
-When the external deployment limit clears, publish an exact-SHA backend first, then rerun the Pages gate and live visual/canary checks against the same SHA. TSUI-05 engineering work is closed; this package stops here and does not advance to another product line.
+
+## Later exact-live continuation after the reliability correction
+
+The owner reported a production Today false-conflict banner while the readable server workspace reached `txn:442`. The full-snapshot `localChanged` path was traced to local read projections plus newer server ingestion audit; the guarded correction still rejects independent local edits. Reliability [PR #166](https://github.com/haohongfei2001-png/pjsdas/pull/166) and live fixture [PR #167](https://github.com/haohongfei2001-png/pjsdas/pull/167) were merged without touching `reference/`. The first exact-live run [36153420227](https://github.com/haohongfei2001-png/pjsdas/actions/runs/36153420227) failed because the JobLibrary fixture opened the GitHub Pages account root rather than `/pjsdas/`; Today and Schedule passed in that run. PR #167 corrected the route and app-readiness check.
+
+Later code main `d0e414deb25fe960be92ec44ab2e68f39df1e6a5` has SUCCESS CI [36154517485](https://github.com/haohongfei2001-png/pjsdas/actions/runs/36154517485), Chromium [36154517475](https://github.com/haohongfei2001-png/pjsdas/actions/runs/36154517475), Firefox/WebKit [36154517483](https://github.com/haohongfei2001-png/pjsdas/actions/runs/36154517483), [Vercel deployment status](https://api.github.com/repos/haohongfei2001-png/pjsdas/commits/d0e414deb25fe960be92ec44ab2e68f39df1e6a5/status), Pages [36154517480](https://github.com/haohongfei2001-png/pjsdas/actions/runs/36154517480) and production self-test [36154693353](https://github.com/haohongfei2001-png/pjsdas/actions/runs/36154693353). The live workflow [36154693318](https://github.com/haohongfei2001-png/pjsdas/actions/runs/36154693318) verified the exact Pages manifest SHA and passed 3/3 synthetic real-frontend Today, JobLibrary and Schedule journeys; [screenshots artifact](https://github.com/haohongfei2001-png/pjsdas/actions/runs/36154693318/artifacts/10872494335). This supports **EXACT-LIVE TECHNICAL VERIFIED** for that later SHA, not the earlier rate-limited implementation SHA.
+
+The owner's current browser cache was not inspected, so clearing that specific banner is not directly proven. Private production-workspace canary, human five-second comprehension, physical-device keyboard, independent human review and actual frontend production rollback remain **DEFERRED**. System VoiceOver automation is real assistive-technology evidence, not a human review. Do not claim `PRODUCT_ACCEPTED`. The package remains stopped after TSUI-05.
