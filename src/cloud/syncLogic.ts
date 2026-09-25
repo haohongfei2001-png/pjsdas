@@ -11,15 +11,19 @@ export interface RemoteWorkspaceVersion {
 export interface LocalProjectionCheckpoint extends SyncCheckpointInput {
   lastReadProjectionFingerprint?: string
   lastReadProjectionSourceFingerprint?: string
+  localPendingFingerprint?: string
 }
 
 export function localFingerprintHasUnsyncedChanges(input: {
   checkpoint: LocalProjectionCheckpoint
   localFingerprint: string
 }) {
+  if (input.checkpoint.localPendingFingerprint
+    && input.localFingerprint === input.checkpoint.localPendingFingerprint) return true
   const baseline = input.checkpoint.lastReadProjectionSourceFingerprint === input.checkpoint.lastSyncedFingerprint
     ? input.checkpoint.lastReadProjectionFingerprint ?? input.checkpoint.lastSyncedFingerprint
     : input.checkpoint.lastSyncedFingerprint
+  if (input.checkpoint.localPendingFingerprint && !baseline) return true
   return Boolean(baseline && input.localFingerprint !== baseline)
 }
 
