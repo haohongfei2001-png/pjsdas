@@ -162,7 +162,7 @@ export interface TodayBrief {
   }
 }
 
-function resolvedContext(context: TodayBriefContext) {
+export function resolvedContext(context: TodayBriefContext) {
   const now = context.now ?? new Date()
   if (Number.isNaN(now.getTime())) throw new Error('TodayBrief clock is invalid.')
   const timezone = context.timezone?.trim()
@@ -181,7 +181,7 @@ function resolvedContext(context: TodayBriefContext) {
   }
 }
 
-function localDateKey(date: Date, timezone: string) {
+export function localDateKey(date: Date, timezone: string) {
   const parts = new Intl.DateTimeFormat('en-CA', {
     timeZone: timezone,
     year: 'numeric',
@@ -221,7 +221,7 @@ function temporalBoundaryMs(temporal: ScheduleNodeTemporal) {
   return undefined
 }
 
-function latestByOccurrence(nodes: ScheduleNode[]) {
+export function latestByOccurrence(nodes: ScheduleNode[]) {
   const latest = new Map<string, ScheduleNode>()
   for (const node of nodes) {
     const current = latest.get(node.occurrenceId)
@@ -234,7 +234,7 @@ function opportunityMap(opportunities: Opportunity[]) {
   return new Map(opportunities.map((item) => [item.id, item]))
 }
 
-function nodeForAction(action: Action, nodes: ScheduleNode[]) {
+export function nodeForAction(action: Action, nodes: ScheduleNode[]) {
   return nodes
     .filter((node) => node.relatedActionIds.includes(action.id))
     .sort((a, b) => {
@@ -352,7 +352,7 @@ function isHardConstraint(action: Action, node: ScheduleNode | undefined) {
   return action.kind === 'apply' || action.kind === 'group_decision' || Boolean(action.processEventId)
 }
 
-function protectedByLatestStart(
+export function protectedByLatestStart(
   action: Action,
   node: ScheduleNode | undefined,
   now: Date,
@@ -373,7 +373,7 @@ function protectedByLatestStart(
   return false
 }
 
-function dueSortValue(action: Action, node: ScheduleNode | undefined) {
+export function dueSortValue(action: Action, node: ScheduleNode | undefined) {
   const latest = latestStartFor(action, node)
   if (latest.latestStartAt) return new Date(latest.latestStartAt).getTime()
   if (latest.latestStartDate) return new Date(`${latest.latestStartDate}T12:00:00.000Z`).getTime()
@@ -385,7 +385,7 @@ function dueSortValue(action: Action, node: ScheduleNode | undefined) {
   return action.dueAt ? new Date(action.dueAt).getTime() : Number.POSITIVE_INFINITY
 }
 
-function actionView(
+export function actionView(
   ranked: RankedAction,
   nodes: ScheduleNode[],
   opportunities: Map<string, Opportunity>,
