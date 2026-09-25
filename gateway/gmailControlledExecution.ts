@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { createAutomationConnectionStore } from './automationConnectionStore.js'
 import { runGmailAutomationForBinding } from './gmailAutomation.js'
+import { gmailFailureMetrics } from './gmailProviderFailure.js'
 import type { GmailAutomationHandlerConfig } from './gmailAutomationHandler.js'
 import { WorkspaceSourceError } from './workspaceSource.js'
 
@@ -74,13 +75,14 @@ export async function runControlledGmailExecutions(config: GmailAutomationHandle
       } catch (caught) {
         const code = controller.signal.aborted ? 'BUDGET_EXHAUSTED'
           : caught instanceof WorkspaceSourceError ? caught.code : 'AUTOMATION_FAILED'
+        const failureMetrics = controller.signal.aborted ? {} : gmailFailureMetrics(caught)
         if (owned && remaining() > 0) {
           const cleanup = new AbortController()
           const cleanupTimer = setTimeout(() => cleanup.abort(), Math.max(1, remaining()))
           const cleanupFetch: typeof fetch = (input, init) => rawFetch(input, { ...init, signal: cleanup.signal })
           try {
             await createAutomationConnectionStore({ ...storeOptions, fetchImpl: cleanupFetch }).finishGmailExecution(
-              listed.userId, executionToken, {}, { status: 'error', mode: 'unknown', errorCode: code })
+              listed.userId, executionToken, {}, { status: 'error', mode: 'unknown', errorCode: code, ...failureMetrics })
           } catch { /* Lease expiration is the fail-closed recovery path. Never fall back to an unfenced state update. */ }
           finally { clearTimeout(cleanupTimer) }
         }
