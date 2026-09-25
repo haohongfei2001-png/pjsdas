@@ -151,3 +151,7 @@
 @media(min-width:701px){
   .cgr-app-shell .cgr-main.surface-main{box-sizing:border-box;width:100%;max-width:1560px!important;padding-left:clamp(20px,4.2vw,60px)!important;padding-right:clamp(20px,4.2vw,60px)!important}
 }
+
+/* The legacy .main-panel > section content cap must not narrow the new full-width Today composition. */
+.cgr-app-shell .cgr-main.surface-main > .tsui-today,
+.cgr-app-shell .cgr-main.surface-main > .tsui-schedule-page{width:100%;max-width:none;margin:0}
