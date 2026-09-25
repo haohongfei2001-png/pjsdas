@@ -234,9 +234,8 @@ test('ambiguous same-company role input creates DecisionRequest instead of guess
   expect(state.decisionRequests[0]?.state).toBe('open')
 
   await page.locator('.tsui-primary-nav').getByRole('button', { name: /岗位库/ }).click()
-  await page.locator('.opportunity-decision-filter select').selectOption('all')
   await page.locator('.opportunity-decision-row').filter({ hasText: '产品经理-增长' }).click()
-  const detail = page.getByRole('dialog', { name: /岗位详情|Opportunity details/ })
+  const detail = page.locator('.job-detail-page')
   await expect(detail.locator('.opportunity-detail-decisions')).toContainText(state.decisionRequests[0]!.question)
   await detail.getByRole('button', { name: '处理这项决定' }).click()
   await expect(detail).toHaveCount(0)
@@ -245,7 +244,7 @@ test('ambiguous same-company role input creates DecisionRequest instead of guess
   await page.getByRole('button', { name: /歧义科技｜产品经理-增长/ }).click()
   await expect(page.locator('.ultimate-receipt')).toContainText('决定已处理')
   await page.getByRole('button', { name: '返回刚才的机会' }).click()
-  await expect(page.getByRole('dialog', { name: /岗位详情|Opportunity details/ })).toContainText('产品经理-增长')
+  await expect(page.locator('.job-detail-page')).toContainText('产品经理-增长')
 
   const resolved = await readMutationState(page)
   expect(resolved.opportunities).toHaveLength(2)

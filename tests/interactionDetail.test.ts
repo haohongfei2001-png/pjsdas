@@ -3,21 +3,21 @@ import { describe, expect, it } from 'vitest'
 
 const app = readFileSync(new URL('../src/AppV8.tsx', import.meta.url), 'utf8')
 const detail = readFileSync(new URL('../src/OpportunityDetailDrawer.tsx', import.meta.url), 'utf8')
-const list = readFileSync(new URL('../src/OpportunityDecisionList.tsx', import.meta.url), 'utf8')
+const list = readFileSync(new URL('../src/jobs/JobLibrary.tsx', import.meta.url), 'utf8')
 const summary = readFileSync(new URL('../src/OpportunityDecisionSummary.tsx', import.meta.url), 'utf8')
-const css = readFileSync(new URL('../src/opportunityDecision.css', import.meta.url), 'utf8')
+const css = readFileSync(new URL('../src/jobs/jobs.css', import.meta.url), 'utf8')
 const ultimateCss = readFileSync(new URL('../src/ultimateWeb.css', import.meta.url), 'utf8')
 
 describe('UU-05 opportunity decision/detail integration', () => {
   it('uses one shared decision read model across list and detail instead of table/pipeline maintenance views', () => {
     expect(app).toContain('buildOpportunityDecisionList')
     expect(app).toContain('getOpportunityDecisionRead')
-    expect(app).toContain('<OpportunityDecisionList')
+    expect(app).toContain('<JobLibrary')
     expect(app).toContain('<OpportunityDetailDrawer')
     expect(app).not.toContain('function OpportunityTable')
     expect(app).not.toContain('function PipelinePanel')
-    expect(list).toContain("export type OpportunityListView = 'in_progress' | 'worth_pursuing' | 'all' | 'ended'")
-    expect(app).toContain("useState<OpportunityListView>('in_progress')")
+    expect(list).toContain("export type JobFilter = 'all' | 'unapplied' | 'in_progress' | 'ended'")
+    expect(app).toContain("useState<JobFilter>('all')")
     expect(detail).toContain('<OpportunityDecisionSummary')
   })
 
@@ -37,15 +37,15 @@ describe('UU-05 opportunity decision/detail integration', () => {
     expect(list).not.toContain('fitScore')
     expect(list).not.toContain('opportunityValue')
     expect(list).not.toContain('applicationGroupId')
-    expect(list).toContain('item.nextAction?.title')
-    expect(list).toContain('item.nearestNode')
+    expect(list).toContain('read.all.filter')
+    expect(list).toContain('data-opportunity-id={item.opportunityId}')
     expect(list).toContain('presentStageLabel')
-    expect(css).toContain('.opportunity-decision-row')
+    expect(css).toContain('.tsui-job-row')
   })
 
-  it('keeps iPhone access on the same two stable destinations and makes decision rows responsive', () => {
+  it('keeps iPhone access on stable destinations and makes job rows responsive', () => {
     expect(ultimateCss).toContain('grid-template-columns:repeat(2,minmax(0,1fr))')
-    expect(css).toContain('@media(max-width:760px)')
-    expect(css).toContain('.opportunity-decision-row{display:flex')
+    expect(css).toContain('@media(max-width:700px)')
+    expect(css).toContain('.tsui-job-row')
   })
 })

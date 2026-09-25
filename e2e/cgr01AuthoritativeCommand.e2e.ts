@@ -619,7 +619,7 @@ test('CGR-05 Discovery status, Profile and promotion use scoped first-party comm
     await install(pageA)
     await install(pageB)
     await pageA.goto('/pjsdas/opportunities')
-    await pageA.locator('.surface-context-tabs').getByRole('button', { name: /发现箱/ }).click()
+    await pageA.locator('.tsui-library-secondary').getByRole('button', { name: /发现箱/ }).click()
     const itemA = pageA.locator('.discovery-inbox-item').filter({ hasText: '合成公司' })
     await expect(itemA).toHaveClass(/status-new/)
     await itemA.getByRole('button', { name: '已看' }).click()
@@ -630,7 +630,7 @@ test('CGR-05 Discovery status, Profile and promotion use scoped first-party comm
     expect(snapshotCommits).toBe(0)
 
     await pageB.goto('/pjsdas/opportunities')
-    await pageB.locator('.surface-context-tabs').getByRole('button', { name: /发现箱/ }).click()
+    await pageB.locator('.tsui-library-secondary').getByRole('button', { name: /发现箱/ }).click()
     await expect(pageB.locator('.discovery-inbox-item').filter({ hasText: '合成公司' })).toHaveClass(/status-seen/)
 
     await pageA.goto('/pjsdas/settings')
@@ -660,7 +660,7 @@ test('CGR-05 Discovery status, Profile and promotion use scoped first-party comm
     await expect(pageB.locator('.discovery-profile-card textarea').first()).toHaveValue('合成产品设计师')
 
     await pageA.goto('/pjsdas/opportunities')
-    await pageA.locator('.surface-context-tabs').getByRole('button', { name: /发现箱/ }).click()
+    await pageA.locator('.tsui-library-secondary').getByRole('button', { name: /发现箱/ }).click()
     const promoted = pageA.locator('.discovery-inbox-item').filter({ hasText: '合成公司' })
     await promoted.getByRole('button', { name: '加入 Opportunities' }).click()
     const confirmation = pageA.getByRole('dialog', { name: '加入机会池预览' })

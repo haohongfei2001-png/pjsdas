@@ -73,7 +73,7 @@ test('real VoiceOver identifies Opportunities and Settings primary-route semanti
 
   const opportunityButton = page.getByRole('button', { name: /合成机会科技|AI产品经理/ })
   await opportunityButton.click()
-  const detail = page.getByRole('dialog', { name: /岗位详情|Opportunity details/ })
+  const detail = page.locator('.job-detail-page')
   await expect(detail).toBeVisible()
   await expect(detail).toContainText('合成机会科技')
   const detailPhrases: string[] = []
