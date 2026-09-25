@@ -32,7 +32,7 @@
 
 .cgr-kicker {
   color: var(--cgr-text-tertiary);
-  font-size: 11px;
+  font-size: .6875rem;
   font-weight: 760;
   letter-spacing: .14em;
 }
@@ -45,7 +45,7 @@
   background: var(--cgr-text);
   color: #fff;
   font: inherit;
-  font-size: 12px;
+  font-size: .75rem;
   font-weight: 720;
 }
 

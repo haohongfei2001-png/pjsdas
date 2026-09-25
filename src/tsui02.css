@@ -207,3 +207,8 @@
 @media(max-width:700px){.tsui-schedule-toolbar{align-items:stretch;flex-direction:column}.tsui-schedule-tabs{width:100%}.tsui-schedule-tabs button{flex:1}.tsui-schedule-locator{justify-content:space-between}.tsui-schedule-row{grid-template-columns:1fr auto;gap:4px 10px;padding:14px 16px}.tsui-schedule-time{grid-column:1/-1}.tsui-schedule-copy{grid-column:1}.tsui-schedule-state{grid-column:2;grid-row:2}.tsui-schedule-row>span:last-child{display:none}.tsui-schedule-date{padding:16px 16px 8px}.tsui-schedule-detail{scroll-margin-top:132px;padding:18px 16px}}
 
 .cgr-app-shell .cgr-main.surface-main > .tsui-schedule-page{max-width:1120px;margin:0 auto}
+
+/* TSUI-05: content-sized sparse panels and complete context at large text. */
+.tsui-task-panel.is-sparse{min-height:0}
+.tsui-node-panel.is-empty{position:static;height:auto;min-height:0}
+@media(max-width:700px){.tsui-task-context{height:auto;min-height:44px;margin:0 0 2px -9px;padding:6px 9px;overflow:visible;overflow-wrap:anywhere;text-overflow:clip;white-space:normal;line-height:1.4}}

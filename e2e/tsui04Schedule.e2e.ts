@@ -102,14 +102,22 @@ test('TSUI-04 real schedule: today anchor, both directions, unresolved and undat
   while (await page.locator('.tsui-schedule-more').count()) await page.locator('.tsui-schedule-more').click()
   const early = await page.locator('.tsui-schedule-row').first().getAttribute('data-schedule-entry')
   expect(early).toBe('node:tsui04-past-79')
-  while (await page.locator('.tsui-load-more').count()) await page.locator('.tsui-load-more').click()
+  while (await page.locator('.tsui-load-more').count()) {
+    const more = page.locator('.tsui-load-more')
+    await more.focus()
+    await more.press('Enter')
+  }
   const ids = await page.locator('.tsui-schedule-row').evaluateAll((rows) => rows.map((row) => row.getAttribute('data-schedule-entry')))
   expect(new Set(ids).size).toBe(ids.length)
   expect(ids.length).toBe(211)
 
   await page.locator('.tsui-schedule-tabs').getByRole('button', { name: /已发生|Past/ }).click()
   expect(await page.locator('.tsui-schedule-row').count()).toBeGreaterThan(0)
-  while (await page.locator('.tsui-load-more').count()) await page.locator('.tsui-load-more').click()
+  while (await page.locator('.tsui-load-more').count()) {
+    const more = page.locator('.tsui-load-more')
+    await more.focus()
+    await more.press('Enter')
+  }
   await expect(page.locator('.tsui-schedule-row')).toHaveCount(80)
   await page.locator('.tsui-schedule-tabs').getByRole('button', { name: /接下来|Upcoming/ }).click()
   await page.locator('.tsui-schedule-row').first().click()

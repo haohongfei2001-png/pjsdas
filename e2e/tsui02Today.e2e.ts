@@ -70,7 +70,9 @@ test('TSUI-02 real component: equal Today rows, shared 130-node stream and mobil
   expect(geometry.taskWidth / geometry.nodeWidth).toBeGreaterThan(1.3)
   expect(geometry.taskWidth / geometry.nodeWidth).toBeLessThan(1.5)
   while (await page.locator('.tsui-node-panel .tsui-load-more').count()) {
-    await page.locator('.tsui-node-panel .tsui-load-more').click()
+    const more = page.locator('.tsui-node-panel .tsui-load-more')
+    await more.focus()
+    await more.press('Enter')
   }
   await expect(page.locator('.tsui-node-panel .tsui-node-row')).toHaveCount(130)
   await page.getByRole('button', { name: /日程/ }).first().click()
