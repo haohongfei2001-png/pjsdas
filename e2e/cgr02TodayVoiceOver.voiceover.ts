@@ -18,7 +18,7 @@ test('real VoiceOver can find Today, Tell PJSDAS and the authoritative saved res
   }
   expect(foundTodayTask).toBe(true)
 
-  await page.locator('.cgr-global-capture').click()
+  await page.locator('.tsui-topbar').getByRole('button', { name: /告诉 PJSDAS|Tell PJSDAS/ }).click()
   const dialog = page.getByRole('dialog', { name: '告诉 PJSDAS' })
   const input = dialog.getByRole('textbox', { name: '要告诉 PJSDAS 的内容' })
   await expect(input).toBeFocused()
@@ -56,7 +56,7 @@ test('real VoiceOver identifies Opportunities and Settings primary-route semanti
   await prepareJourney(page)
 
   await page.goto('/pjsdas/opportunities')
-  await expect(page.getByRole('heading', { name: /哪些在推进|哪些值得继续投入|Opportunities/i })).toBeVisible()
+  await expect(page.getByRole('heading', { name: /岗位库|Job library/i })).toBeVisible()
   await expect(page.getByRole('button', { name: /合成机会科技|AI产品经理/ })).toBeVisible()
 
   await voiceOver.navigateToWebContent()
@@ -76,6 +76,7 @@ test('real VoiceOver identifies Opportunities and Settings primary-route semanti
   const detail = page.locator('.job-detail-page')
   await expect(detail).toBeVisible()
   await expect(detail).toContainText('合成机会科技')
+  await voiceOver.navigateToWebContent()
   const detailPhrases: string[] = []
   let foundDetailSemantics = false
   for (let i = 0; i < 36 && !foundDetailSemantics; i += 1) {
@@ -88,7 +89,7 @@ test('real VoiceOver identifies Opportunities and Settings primary-route semanti
   expect(foundDetailSemantics, detailPhrases.join(' | ')).toBe(true)
 
   await page.goto('/pjsdas/settings')
-  const settingsHeading = page.getByRole('heading', { name: /连接、自动化和长期控制|Connections, automation/i })
+  const settingsHeading = page.getByRole('heading', { name: /^(设置|Settings)$/i })
   await expect(settingsHeading).toBeVisible()
   await voiceOver.navigateToWebContent()
   const settingsPhrases: string[] = []
@@ -98,7 +99,7 @@ test('real VoiceOver identifies Opportunities and Settings primary-route semanti
     const spoken = await voiceOver.lastSpokenPhrase()
     const item = await voiceOver.itemText()
     settingsPhrases.push(`${spoken} / ${item}`)
-    foundSettings = /连接、自动化和长期控制|Connections|automation/i.test(`${spoken} ${item}`)
+    foundSettings = /设置|Settings/i.test(`${spoken} ${item}`)
   }
   expect(foundSettings, settingsPhrases.join(' | ')).toBe(true)
 

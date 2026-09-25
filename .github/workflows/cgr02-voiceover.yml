@@ -1,6 +1,10 @@
 name: CGR-02 VoiceOver
 
 on:
+  pull_request:
+    paths:
+      - 'e2e/cgr02TodayVoiceOver.voiceover.ts'
+      - '.github/workflows/cgr02-voiceover.yml'
   push:
     branches: [main, manager/cgr02-today-vertical-slice-20260923]
     paths:
@@ -40,7 +44,7 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
   voiceover:
-    runs-on: macos-latest
+    runs-on: macos-15
     timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
