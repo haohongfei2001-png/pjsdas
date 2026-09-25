@@ -1,0 +1,24 @@
+name: Gmail #164 production telemetry readback
+
+on:
+  push:
+    branches: [reliability/161-gmail-worker-recovery]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  readback:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    environment: production-certification
+    env:
+      PJSDAS_SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.PJSDAS_SUPABASE_SERVICE_ROLE_KEY }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - name: Read sanitized Gmail execution metadata
+        run: node scripts/gmail-164-production-readback.mjs
