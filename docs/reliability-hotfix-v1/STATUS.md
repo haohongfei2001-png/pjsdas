@@ -21,6 +21,8 @@ Stop only for a new cost/permission/privacy boundary, destructive ambiguous hist
 
 ## Engineering checkpoint
 
-Latest single-writer branch checkpoint: `3a817e920613fea93c58a975ba5560290512351c`.
+Fresh remote checkpoint before the current repair: PR #152 head `90d88d8c35bc9ce5ed318aaf0d2b3af837b7c70b`; main `51d3299ff5c984fc374037d0239b97d76d214f90`.
 
-Draft inner-loop CI run `36041936406`: SUCCESS. RH-01, RH-02 and RH-03 are engineering-complete; production claims remain pending RH-04.
+CI `36091497438`: SUCCESS. Browser `36091497481`: 70 passed, 1 flaky; the account A sign-out / account B isolation journey passed only on retry. Its first-attempt trace shows the sign-out click overlapping initial account sync and a pending-command retry. The journey now waits for A's durable sync checkpoint before exercising sign-out, while retaining the IndexedDB, draft, and cross-account replay assertions. Full clean browser certification is still pending.
+
+The RH-04 production canary plan completed locally without network access. Its execution waits for the exact API and frontend SHA before creating a synthetic identity, and reports PASS only after verifying zero synthetic auth, audience grant, workspace, and ledger residuals. Production certification and delegated ChatGPT-host certification remain pending; current production health and frontend manifest both report main `51d3299ff5c984fc374037d0239b97d76d214f90`.

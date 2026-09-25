@@ -25,20 +25,33 @@ async function preflight() {
   if (origin.protocol !== 'https:' || origin.pathname !== '/' || origin.search || origin.hash || !/^[0-9a-f]{40}$/.test(expectedSha)) {
     throw new Error('Invalid production origin or exact SHA; no synthetic identity was created.')
   }
-  const [health, manifest] = await Promise.all([
-    httpJson(`${origin.origin}/api/health`),
-    httpJson(`${origin.origin}/release-manifest.json`),
-  ])
-  const release = health.release as { commitSha?: string } | undefined
-  const mcp = health.authenticatedMcp as { releaseRequiredTools?: string[] } | undefined
-  const requiredTools = mcp?.releaseRequiredTools ?? []
-  for (const tool of ['add_opportunities', 'ingest_discovery_run', 'ingest_gmail_run']) {
-    if (!requiredTools.includes(tool)) throw new Error(`Production health is missing required tool ${tool}.`)
+  const deadline = Date.now() + 8 * 60_000
+  while (true) {
+    try {
+      const [health, manifest] = await Promise.all([
+        httpJson(`${origin.origin}/api/health`),
+        httpJson(`${origin.origin}/release-manifest.json`),
+      ])
+      const release = health.release as { commitSha?: string } | undefined
+      if (release?.commitSha === expectedSha && manifest.commitSha === expectedSha) {
+        if (health.workspaceAuthority !== 'transactional') {
+          throw new Error('Exact production SHA is not using transactional workspace authority.')
+        }
+        const mcp = health.authenticatedMcp as { releaseRequiredTools?: string[] } | undefined
+        const requiredTools = mcp?.releaseRequiredTools ?? []
+        for (const tool of ['add_opportunities', 'ingest_discovery_run', 'ingest_gmail_run']) {
+          if (!requiredTools.includes(tool)) throw new Error(`Production health is missing required tool ${tool}.`)
+        }
+        return { origin: origin.origin, expectedSha }
+      }
+    } catch (error) {
+      if (Date.now() >= deadline) throw error
+    }
+    if (Date.now() >= deadline) {
+      throw new Error('Production did not serve the exact hotfix SHA before the preflight deadline; no synthetic identity was created.')
+    }
+    await new Promise((resolve) => setTimeout(resolve, 15_000))
   }
-  if (release?.commitSha !== expectedSha || manifest.commitSha !== expectedSha || health.workspaceAuthority !== 'transactional') {
-    throw new Error('Production does not serve the exact transactional hotfix SHA; no synthetic identity was created.')
-  }
-  return { origin: origin.origin, expectedSha }
 }
 
 function requestMeta() {
@@ -252,20 +265,6 @@ async function execute() {
       throw new Error('Production posting identities do not match the two exact canonical URLs.')
     }
 
-    console.log(JSON.stringify({
-      result: 'PASS',
-      exactSha: expectedSha,
-      journeys: [
-        'stable-authenticated-tools-list',
-        'advertised-no-grant-auth-forbidden',
-        'denied-call-no-write',
-        'distinct-posting-identity',
-        'tracking-variant-idempotency',
-      ],
-      content: 'synthetic-only',
-      delegatedHostOAuthCertified: false,
-      serverDiscoveryEnabledForOwnerCertified: false,
-    }))
   } catch (error) {
     failure = error
   } finally {
@@ -282,10 +281,14 @@ async function execute() {
       const deleted = await admin.auth.admin.deleteUser(userId)
       if (deleted.error) cleanupErrors.push('synthetic user deletion')
       if (!deleted.error) {
-        const [workspaceRows, ledgerRows] = await Promise.all([
+        const [identity, grantRows, workspaceRows, ledgerRows] = await Promise.all([
+          admin.auth.admin.getUserById(userId),
+          admin.from('pjsdas_access_grants').select('user_id', { count: 'exact', head: true }).eq('user_id', userId),
           admin.from('pjsdas_workspaces').select('id', { count: 'exact', head: true }).eq('user_id', userId),
           admin.from('pjsdas_command_ledger').select('id', { count: 'exact', head: true }).eq('user_id', userId),
         ])
+        if (identity.data.user || !identity.error) cleanupErrors.push('auth identity cleanup verification')
+        if (grantRows.error || grantRows.count !== 0) cleanupErrors.push('audience grant cleanup verification')
         if (workspaceRows.error || workspaceRows.count !== 0) cleanupErrors.push('workspace cleanup verification')
         if (ledgerRows.error || ledgerRows.count !== 0) cleanupErrors.push('ledger cleanup verification')
       }
@@ -297,6 +300,21 @@ async function execute() {
   }
 
   if (failure) throw failure
+  console.log(JSON.stringify({
+    result: 'PASS',
+    exactSha: expectedSha,
+    journeys: [
+      'stable-authenticated-tools-list',
+      'advertised-no-grant-auth-forbidden',
+      'denied-call-no-write',
+      'distinct-posting-identity',
+      'tracking-variant-idempotency',
+      'synthetic-cleanup-zero-residual',
+    ],
+    content: 'synthetic-only',
+    delegatedHostOAuthCertified: false,
+    serverDiscoveryEnabledForOwnerCertified: false,
+  }))
 }
 
 execute().catch((error: unknown) => {
