@@ -47,6 +47,12 @@ test('TSUI-05 fixed stress fixture meets warm route and tab budget', async ({ pa
   }, CREATED)
   await page.reload()
   await expect(page.locator('.tsui-today')).toBeVisible()
+  console.log('TSUI05_RENDER_COUNTS:' + JSON.stringify(await page.evaluate(() => ({
+    taskRows: document.querySelectorAll('.tsui-task-row').length,
+    nodeRows: document.querySelectorAll('.tsui-node-row').length,
+    taskSwitch: document.querySelector('.tsui-mobile-switch')?.textContent,
+    bodyTextLength: document.body.textContent?.length,
+  }))))
   await page.goto('/pjsdas/schedule')
   await expect(page.locator('.tsui-schedule-page')).toBeVisible()
   await expect(page.locator('.tsui-schedule-row').first()).toBeVisible()
