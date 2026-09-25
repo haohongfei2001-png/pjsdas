@@ -1,4 +1,4 @@
-import { Profiler, useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   applyActionStatusChangeSet,
   exportLocalSnapshot,
@@ -329,9 +329,9 @@ export default function AppV8() {
 
   const accountKey = cloud.session?.user.id ?? 'local-workspace'
   const workspaceRevision = snapshot ? [cloud.session?.user.id ? getAccountCheckpoint(cloud.session.user.id).lastSyncedVersion ?? 'pending' : 'local', snapshot.exportedAt].join(':') : ''
-  const todayWeb = useMemo(() => { const start = performance.now(); const value = snapshot ? selectTodayWeb(snapshot, { availableMinutes: budgetMinutes }, { now, timezone, workspaceVersion: workspaceRevision }) : undefined; if ((window as Window & { __TSUI05_PROFILE?: boolean }).__TSUI05_PROFILE) console.log('TSUI05_PROFILE_SELECT:' + (performance.now() - start).toFixed(2)); return value }, [snapshot, budgetMinutes, now, timezone, workspaceRevision])
+  const todayWeb = useMemo(() => snapshot ? selectTodayWeb(snapshot, { availableMinutes: budgetMinutes }, { now, timezone, workspaceVersion: workspaceRevision }) : undefined, [snapshot, budgetMinutes, now, timezone, workspaceRevision])
   const criticalTodayWarnings = todayWeb?.criticalWarnings ?? []
-  const scheduleStream = useMemo(() => { const start = performance.now(); const value = snapshot ? buildScheduleStream(snapshot, { accountKey, workspaceRevision, timezone, now }) : undefined; if ((window as Window & { __TSUI05_PROFILE?: boolean }).__TSUI05_PROFILE) console.log('TSUI05_PROFILE_SCHEDULE:' + (performance.now() - start).toFixed(2)); return value }, [snapshot, accountKey, workspaceRevision, timezone, now])
+  const scheduleStream = useMemo(() => snapshot ? buildScheduleStream(snapshot, { accountKey, workspaceRevision, timezone, now }) : undefined, [snapshot, accountKey, workspaceRevision, timezone, now])
 
   const opportunityDecisionList = useMemo<OpportunityDecisionListRead | undefined>(() => {
     if (!snapshot) return undefined
@@ -626,7 +626,7 @@ export default function AppV8() {
         {loading ? <div className="empty-card">{zh ? '正在读取工作区…' : 'Loading workspace…'}</div> : null}
 
         {!loading && surface === 'today' && todayWeb && scheduleStream ? (
-          <Profiler id="TSUI05_Today" onRender={(_, phase, actualDuration) => { if ((window as Window & { __TSUI05_PROFILE?: boolean }).__TSUI05_PROFILE) console.log('TSUI05_PROFILE_TODAY:' + phase + ':' + actualDuration.toFixed(2)) }}><TodayFeature
+          <TodayFeature
             selection={todayWeb}
             criticalWarnings={criticalTodayWarnings}
             stream={scheduleStream}
@@ -644,7 +644,7 @@ export default function AppV8() {
             onExecute={executeTodayAction}
             onMark={markAction}
             onOpenOpportunity={openOpportunity}
-          /></Profiler>
+          />
         ) : null}
 
         {!loading && surface === 'schedule' && scheduleStream ? <ScheduleFeature stream={scheduleStream} opportunities={opportunities} onOpenOpportunity={openOpportunity}

@@ -6,6 +6,7 @@ on:
       - 'src/**'
       - 'e2e/**'
       - 'playwright.config.mts'
+      - 'playwright.perf.config.mts'
       - 'scripts/tsui01-projection-bench.ts'
       - '.github/workflows/tsui05-browser-matrix.yml'
   push:
@@ -44,7 +45,7 @@ jobs:
       - name: Install Chromium for fixed warm UI budget
         run: npx playwright install chromium
       - name: Measure 300-job warm route and tab paint budget in Chromium
-        run: npx playwright test --config=playwright.config.mts --project=chromium --workers=1 e2e/tsui05Performance.e2e.ts
+        run: npx playwright test --config=playwright.perf.config.mts --project=chromium --workers=1 e2e/tsui05Performance.perf.ts
       - name: Upload browser evidence
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@v5
