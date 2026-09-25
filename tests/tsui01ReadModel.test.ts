@@ -42,6 +42,10 @@ describe('TSUI-01 complete Web read models', () => {
       dueAt: '2026-09-25T10:00:00.000Z', duePrecision: 'datetime',
       estimatedMinutes: 1000, leverage: 1, delayCost: 1,
     }))
+    actions.push(action('date-only-today', {
+      kind: 'apply', dueAt: '2026-09-25', duePrecision: 'date',
+      estimatedMinutes: 1000, leverage: 1, delayCost: 1,
+    }))
     actions.push(action('future-backlog', { estimatedMinutes: 1000, leverage: 1, delayCost: 1 }))
     const source = snapshot(actions)
     const web = selectTodayWeb(source, { availableMinutes: 180 }, { now: NOW, timezone: TZ, workspaceVersion: 'r1' })
@@ -49,6 +53,7 @@ describe('TSUI-01 complete Web read models', () => {
     expect(ids.length).toBeGreaterThan(4)
     expect(ids).toContain('doing')
     expect(ids).toContain('due-today')
+    expect(ids).toContain('date-only-today')
     expect(ids).not.toContain('future-backlog')
     expect(new Set(ids).size).toBe(ids.length)
     expect(web.actionCount).toBe(ids.length)

@@ -71,7 +71,7 @@ export function selectTodayWeb(
   const rules = decisionRulesForSnapshot(snapshot.data.decisionRules)
   const nodes = latestByOccurrence(snapshot.data.scheduleNodes ?? [])
   const opportunities = new Map(snapshot.data.opportunities.map((item) => [item.id, item]))
-  const ranked = rankActions(snapshot.data.actions, snapshot.data.opportunities, context.now, rules)
+  const ranked = rankActions(snapshot.data.actions, snapshot.data.opportunities, context.now, rules, context.timezone)
   const plan = buildTimePlan(ranked, availableMinutes, context.now, rules)
   const today = localDateKey(context.now, context.timezone)
   const protectedRanked = ranked
