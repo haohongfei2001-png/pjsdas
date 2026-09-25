@@ -283,7 +283,10 @@ export default function ScheduleFeature({
             <span className="tsui-schedule-time">{timeLabel(entry, zh)}</span>
             <span className="tsui-schedule-copy"><strong>{title}</strong><small>{opportunity ? opportunity.company + ' · ' + opportunity.role : zh ? '独立事项' : 'Independent item'}</small></span>
             <span className={'tsui-schedule-state state-' + entry.section}>{entry.state === 'elapsed_unresolved' ? zh ? '待确认' : 'Unresolved'
-              : entry.section === 'history' ? zh ? '已发生' : 'Past'
+              : entry.state === 'completed' ? zh ? '已完成' : 'Completed'
+                : entry.state === 'cancelled' ? zh ? '已取消' : 'Cancelled'
+                  : entry.state === 'superseded' ? zh ? '已改期' : 'Rescheduled'
+                    : entry.section === 'history' ? zh ? '已发生' : 'Past'
                 : entry.section === 'undated' ? zh ? '时间待定' : 'Time TBD'
                   : zh ? '接下来' : 'Upcoming'}</span>
             <span aria-hidden="true">›</span>
