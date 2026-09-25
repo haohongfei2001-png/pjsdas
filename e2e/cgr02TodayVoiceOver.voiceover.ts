@@ -76,6 +76,7 @@ test('real VoiceOver identifies Opportunities and Settings primary-route semanti
   const detail = page.locator('.job-detail-page')
   await expect(detail).toBeVisible()
   await expect(detail).toContainText('合成机会科技')
+  await voiceOver.navigateToWebContent()
   const detailPhrases: string[] = []
   let foundDetailSemantics = false
   for (let i = 0; i < 36 && !foundDetailSemantics; i += 1) {
