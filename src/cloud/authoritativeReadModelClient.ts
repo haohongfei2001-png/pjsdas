@@ -88,16 +88,22 @@ export async function refreshConnectedAuthoritativeCache(
       }
     }
     if (localChanged) {
-      if (!remoteChanged && !projectedBaseline && equivalentReadProjection(local, remote.snapshot)) {
-        markFresh(accountKey, remote.version, remote.fingerprint, localFingerprint, observedAt)
-        return { state: 'current', workspaceVersion: remote.version, observedAt, latencyMs: Date.now() - startedAt, changed: false }
-      }
-      return {
-        state: remoteChanged ? 'diverged' : 'local_changes_pending',
-        workspaceVersion: remote.version,
-        observedAt,
-        latencyMs: Date.now() - startedAt,
-        changed: false,
+      // A full snapshot fingerprint also sees cache hydration and server-only
+      // ingestion audit. Compare the actual local data before declaring a
+      // conflict, including when a newer authoritative revision exists.
+      if (equivalentReadProjection(local, remote.snapshot)) {
+        if (!remoteChanged) {
+          markFresh(accountKey, remote.version, remote.fingerprint, localFingerprint, observedAt)
+          return { state: 'current', workspaceVersion: remote.version, observedAt, latencyMs: Date.now() - startedAt, changed: false }
+        }
+      } else {
+        return {
+          state: remoteChanged ? 'diverged' : 'local_changes_pending',
+          workspaceVersion: remote.version,
+          observedAt,
+          latencyMs: Date.now() - startedAt,
+          changed: false,
+        }
       }
     }
   }

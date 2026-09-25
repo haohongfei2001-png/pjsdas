@@ -14,7 +14,7 @@ import {
   updateRemoteWorkspace,
   type RemoteWorkspaceRow,
 } from './cloudRepository.js'
-import { fingerprintWorkspace, workspaceIsEffectivelyEmpty } from './workspaceFingerprint.js'
+import { equivalentReadProjection, fingerprintWorkspace, workspaceIsEffectivelyEmpty } from './workspaceFingerprint.js'
 import { connectedWorkspaceAuthorityEnabled } from './connectedWorkspaceRepository.js'
 
 export type CloudSyncOutcomeKind =
@@ -98,6 +98,33 @@ export async function runCloudSync(userId: string, options: { passive?: boolean 
       localEmpty: workspaceIsEffectivelyEmpty(local),
       remote: remote ? { version: remote.version, fingerprint: remote.fingerprint } : null,
     })
+
+    // Connected mode is command-authoritative. A stale raw fingerprint can be
+    // caused solely by local hydration plus newer server ingestion audit.
+    // Reconcile only when the local data is a verified read projection of the
+    // current remote; a real local edit still takes the fail-closed path below.
+    if (connectedWorkspaceAuthorityEnabled() && remote
+      && (decision === 'conflict' || decision === 'push_local')
+      && equivalentReadProjection(local, remote.snapshot)) {
+      const remoteChanged = remote.version !== checkpoint.lastSyncedVersion
+        || remote.fingerprint !== checkpoint.lastSyncedFingerprint
+      if (remoteChanged) {
+        await replaceLocalSnapshotFromCloud(remote.snapshot)
+        markSynced(userId, remote)
+        patchAccountCheckpoint(userId, {
+          lastReadProjectionSourceFingerprint: remote.fingerprint,
+          lastReadProjectionFingerprint: await fingerprintWorkspace(await exportLocalSnapshot()),
+        })
+        if (typeof window !== 'undefined') window.dispatchEvent(new Event('pjsdas:workspace-replaced'))
+        return { kind: 'pulled', version: remote.version, remoteUpdatedAt: remote.updatedAt }
+      }
+      markSynced(userId, remote)
+      patchAccountCheckpoint(userId, {
+        lastReadProjectionSourceFingerprint: remote.fingerprint,
+        lastReadProjectionFingerprint: localFingerprint,
+      })
+      return { kind: 'synced', version: remote.version, remoteUpdatedAt: remote.updatedAt }
+    }
 
     if (decision === 'create_remote') {
       const created = await createRemoteWorkspace({
