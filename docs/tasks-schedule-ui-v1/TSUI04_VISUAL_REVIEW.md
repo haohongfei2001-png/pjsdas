@@ -14,6 +14,12 @@
 - head `cfe477979e39ddc29ca4286bfe93faa669dc56d6`，Browser E2E [36131826326](https://github.com/haohongfei2001-png/pjsdas/actions/runs/36131826326) 75 passed / 1 个新测试断言过时：日期只在日期组标题显示后，月份定位断言仍到行内找年份。代码路径已运行到月份定位，实测日程宽度 1120px；CI 与只读回退成功。
 - 实图确认行高和时间辅助更紧凑，但继承的 `margin:0` 使 1120px 内容靠左，右侧留白不对称；用同特异性规则居中。新断言改查日期组，继续检查后续事件详情、录入与设置，不将这轮 75/76 冒充整批通过。
 
-## 待验证
+## 第三轮：合并前实渲
 
-同一修正 head 需再次渲染桌面日程、事件详情、手机日程/录入/设置，检查宽度、密度、焦点与 320px 大字；同时完成 exact-head CI、只读回退和完整浏览器检查。真人理解、真实设备软键盘及独立真实辅助技术证据 deferred，不写 PASS。
+- head `00edf3052c1b75e3b3a31c19cb8875a4b0383cd5` 的 Browser E2E [36132380883](https://github.com/haohongfei2001-png/pjsdas/actions/runs/36132380883) 76 passed，桌面内容实测宽度 1120px 且居中；CI、只读回退亦成功。实际截图检查了桌面日程、事件详情、手机日程、录入、设置和 320px/200% 文字。
+- 详情虽已上移并获焦点，但首次展开后固定顶栏遮住详情标题。最终 head `fcd0b45b9be44f3caea2a33aacc3ceea788299bb` 加入桌面/手机滚动留白及详情顶部视口断言。Browser E2E [36133041027](https://github.com/haohongfei2001-png/pjsdas/actions/runs/36133041027) SUCCESS，75 passed + 1 既有 CGR 用例首跑 flake、重试通过；实际截图确认标题、日期、命令区域从顶栏下完整出现。该截图从真实 AppV8/ScheduleFeature 渲染，非 reference 原型。
+- final main `0e01458d23d59b4e483e4e9bf7787ed85fe15009` Browser E2E [36133481728](https://github.com/haohongfei2001-png/pjsdas/actions/runs/36133481728) 76 passed。视觉基准的圆角、冷白表面、日期分组、低频状态入口和三入口导航保持；手机 390px 及 320px/200% 无横向溢出。截图和测试证据在相应 Actions run 的报告/日志中。
+
+## 剩余证据边界
+
+closure PR #162 的 macOS 15 VoiceOver [36136077591](https://github.com/haohongfei2001-png/pjsdas/actions/runs/36136077591) 真实读屏 2 passed，包含 Today、录入、权威保存回执、岗位详情与设置语义；它是自动辅助技术证据，不是独立真人评审。真人五秒理解、用户真实设备软键盘和私有生产工作区 canary 尚未取得，均 DEFERRED，不写 PASS。TSUI-05 继续覆盖单项/空态、决定、pending/offline/unknown/conflict/refresh failure 与跨浏览器。
