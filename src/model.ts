@@ -70,6 +70,8 @@ export interface ScheduleNodeTemporal {
   timezone: string
   startAt?: string
   endAt?: string
+  /** Explicit source constraint for the latest permissible start/entry time. */
+  latestStartAt?: string
   deadlineAt?: string
   date?: string
   rawExpression?: string
