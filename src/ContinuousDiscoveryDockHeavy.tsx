@@ -94,8 +94,8 @@ export default function ContinuousDiscoveryDock() {
                 <div className="eyebrow">CONTINUOUS DISCOVERY · V1.7</div>
                 <h2>{zh ? '持续岗位发现' : 'Continuous job discovery'}</h2>
                 <p>{zh
-                  ? '这里记录经过签名审阅的发现批次，并把历史转成下一次搜索的增量起点、来源覆盖和岗位状态刷新队列。PJSDAS 仍不在后台爬取网页。'
-                  : 'This workspace records signed, reviewed discovery batches and turns history into an incremental baseline, source coverage, and posting-refresh queue. PJSDAS still does not crawl the web in the background.'}</p>
+                  ? '这里记录经过签名审阅的发现批次，并把历史转成下一次搜索的增量起点、来源覆盖和岗位状态刷新队列。TodayAction 仍不在后台爬取网页。'
+                  : 'This workspace records signed, reviewed discovery batches and turns history into an incremental baseline, source coverage, and posting-refresh queue. TodayAction still does not crawl the web in the background.'}</p>
               </div>
               <button className="discovery-radar-close" type="button" onClick={() => setOpen(false)} aria-label={zh ? '关闭' : 'Close'}>×</button>
             </header>

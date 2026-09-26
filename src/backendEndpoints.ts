@@ -6,7 +6,7 @@ let activeOrigin: string | undefined
 function normalizeOrigin(value: string) {
   const url = new URL(value.trim())
   if (url.protocol !== 'https:' && url.hostname !== 'localhost' && url.hostname !== '127.0.0.1') {
-    throw new Error('PJSDAS backend origin must use HTTPS outside local development.')
+    throw new Error('TodayAction backend origin must use HTTPS outside local development.')
   }
   return url.origin
 }
@@ -77,7 +77,7 @@ export async function resolveBackendOrigin(fetchImpl: typeof fetch = fetch) {
     }
   }
 
-  throw new Error('PJSDAS 后端当前不可用。系统没有找到可用的主后端或备用后端。')
+  throw new Error('TodayAction 后端当前不可用。系统没有找到可用的主后端或备用后端。')
 }
 
 export async function fetchBackend(path: string, init?: RequestInit, fetchImpl: typeof fetch = fetch) {

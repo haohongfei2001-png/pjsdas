@@ -90,8 +90,8 @@ function saveErrorCopy(state: CaptureSaveState, zh: boolean) {
     ? '可能已经保存。请先点“确认保存状态”；确认前不要重复提交。'
     : 'This may already be saved. Check the save status before submitting again.'
   if (state === 'reauth') return zh
-    ? '重新登录后点“重新确认”，PJSDAS 会先核对原操作的结果。'
-    : 'Sign in again, then retry confirmation. PJSDAS will check the original operation first.'
+    ? '重新登录后点“重新确认”，TodayAction 会先核对原操作的结果。'
+    : 'Sign in again, then retry confirmation. TodayAction will check the original operation first.'
   if (state === 'conflict') return zh
     ? '请先核对最新事实，再决定是否重新提交。输入内容仍在这里。'
     : 'Review the latest facts before submitting again. Your input remains here.'
@@ -247,8 +247,8 @@ export default function TellPjsdasCapture({
       setSaveState('offline')
       setError('')
       setMessage(zh
-        ? '当前离线。内容只保存在这个账号的本机草稿中，还没有写入 PJSDAS。'
-        : 'You are offline. This is saved only as this account\'s local draft and has not been written to PJSDAS.')
+        ? '当前离线。内容只保存在这个账号的本机草稿中，还没有写入 TodayAction。'
+        : 'You are offline. This is saved only as this account\'s local draft and has not been written to TodayAction.')
       return
     }
 
@@ -369,8 +369,8 @@ export default function TellPjsdasCapture({
       >
         <header className="cgr-capture-header">
           <div>
-            <div className="cgr-kicker">TELL PJSDAS</div>
-            <h2 id="tell-pjsdas-title">{zh ? '告诉 PJSDAS' : 'Tell PJSDAS'}</h2>
+            <div className="cgr-kicker">TELL TodayAction</div>
+            <h2 id="tell-pjsdas-title">{zh ? '告诉 TodayAction' : 'Tell TodayAction'}</h2>
             <p id="tell-pjsdas-description">{zh
               ? '记录求职进展，确认后保存。'
               : 'Record an update, then confirm before saving.'}</p>
@@ -382,7 +382,7 @@ export default function TellPjsdasCapture({
         <textarea
           ref={textareaRef}
           className="cgr-capture-input"
-          aria-label={zh ? '要告诉 PJSDAS 的内容' : 'What to tell PJSDAS'}
+          aria-label={zh ? '要告诉 TodayAction 的内容' : 'What to tell TodayAction'}
           rows={5}
           value={text}
           disabled={busy || recoveryLocked}
@@ -395,7 +395,7 @@ export default function TellPjsdasCapture({
         {text.trim() ? (
           <section className="cgr-understanding" aria-live="polite" aria-busy={previewBusy}>
             <div className="cgr-understanding-head">
-              <strong>{previewBusy ? (zh ? '正在理解…' : 'Understanding…') : (zh ? 'PJSDAS 理解为' : 'PJSDAS understands')}</strong>
+              <strong>{previewBusy ? (zh ? '正在理解…' : 'Understanding…') : (zh ? 'TodayAction 理解为' : 'TodayAction understands')}</strong>
               <span data-state={saveState}>
                 {saveState === 'saving' ? (zh ? '正在保存' : 'Saving')
                   : saveState === 'saved' ? (zh ? '已保存' : 'Saved')

@@ -41,7 +41,7 @@ function validateToken(token: string) {
   if (!value || /[\r\n]/.test(value)) {
     throw new WorkspaceSourceError(
       'GOOGLE_AUTH_REQUIRED',
-      'PJSDAS needs a valid Google authorization before it can read the workspace.',
+      'TodayAction needs a valid Google authorization before it can read the workspace.',
       false,
     )
   }
@@ -92,7 +92,7 @@ async function driveRequest(
   if (response.status === 401) {
     throw new WorkspaceSourceError(
       'GOOGLE_AUTH_EXPIRED',
-      'Google authorization is no longer valid. Reconnect Google Drive to PJSDAS.',
+      'Google authorization is no longer valid. Reconnect Google Drive to TodayAction.',
       false,
     )
   }
@@ -100,7 +100,7 @@ async function driveRequest(
   if (response.status === 403) {
     throw new WorkspaceSourceError(
       'GOOGLE_AUTH_FORBIDDEN',
-      'Google Drive denied access to the PJSDAS app-data workspace.',
+      'Google Drive denied access to the TodayAction app-data workspace.',
       false,
     )
   }
@@ -141,14 +141,14 @@ async function listWorkspaceFiles(fetchImpl: typeof fetch, token: string) {
   if (files.length === 0) {
     throw new WorkspaceSourceError(
       'WORKSPACE_NOT_FOUND',
-      'No PJSDAS workspace exists in this Google Drive app-data folder yet.',
+      'No TodayAction workspace exists in this Google Drive app-data folder yet.',
       false,
     )
   }
   if (files.length > 1) {
     throw new WorkspaceSourceError(
       'WORKSPACE_DUPLICATE',
-      'Multiple PJSDAS workspace files exist in Google Drive appDataFolder. Reading stopped to avoid selecting the wrong workspace.',
+      'Multiple TodayAction workspace files exist in Google Drive appDataFolder. Reading stopped to avoid selecting the wrong workspace.',
       false,
     )
   }
@@ -206,7 +206,7 @@ async function downloadAndVerifyWorkspace(fetchImpl: typeof fetch, token: string
   try {
     raw = await response.json()
   } catch {
-    throw new WorkspaceSourceError('WORKSPACE_INVALID', 'Google Drive returned malformed PJSDAS workspace JSON.', false)
+    throw new WorkspaceSourceError('WORKSPACE_INVALID', 'Google Drive returned malformed TodayAction workspace JSON.', false)
   }
 
   let envelope
@@ -214,7 +214,7 @@ async function downloadAndVerifyWorkspace(fetchImpl: typeof fetch, token: string
     envelope = parseDriveWorkspaceEnvelope(raw)
     validateSnapshot(envelope.snapshot)
   } catch (caught) {
-    const message = caught instanceof Error ? caught.message : 'PJSDAS workspace validation failed.'
+    const message = caught instanceof Error ? caught.message : 'TodayAction workspace validation failed.'
     throw new WorkspaceSourceError('WORKSPACE_INVALID', message, false)
   }
 
@@ -222,7 +222,7 @@ async function downloadAndVerifyWorkspace(fetchImpl: typeof fetch, token: string
   if (fingerprint !== envelope.fingerprint) {
     throw new WorkspaceSourceError(
       'WORKSPACE_INVALID',
-      'Google Drive workspace fingerprint verification failed. PJSDAS will not expose this data to AI.',
+      'Google Drive workspace fingerprint verification failed. TodayAction will not expose this data to AI.',
       false,
     )
   }
@@ -272,7 +272,7 @@ export function createDriveWorkspaceSource(options: DriveWorkspaceSourceOptions)
       if (input.expectedWorkspaceVersion && input.expectedWorkspaceVersion !== actualVersion) {
         throw new WorkspaceSourceError(
           'WORKSPACE_CONFLICT',
-          `PJSDAS workspace changed since the ingestion baseline (${input.expectedWorkspaceVersion} → ${actualVersion}). Retry from the latest workspace instead of overwriting it.`,
+          `TodayAction workspace changed since the ingestion baseline (${input.expectedWorkspaceVersion} → ${actualVersion}). Retry from the latest workspace instead of overwriting it.`,
           true,
         )
       }
@@ -284,7 +284,7 @@ export function createDriveWorkspaceSource(options: DriveWorkspaceSourceOptions)
       if (input.expectedWorkspaceVersion && input.expectedWorkspaceVersion !== beforeUploadVersion) {
         throw new WorkspaceSourceError(
           'WORKSPACE_CONFLICT',
-          `PJSDAS workspace changed while preparing ingestion (${input.expectedWorkspaceVersion} → ${beforeUploadVersion}).`,
+          `TodayAction workspace changed while preparing ingestion (${input.expectedWorkspaceVersion} → ${beforeUploadVersion}).`,
           true,
         )
       }

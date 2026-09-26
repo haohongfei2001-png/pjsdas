@@ -47,7 +47,7 @@ describe('UU-04 Web friction rules', () => {
   it('keeps an empty workspace start path without persistent onboarding state', () => {
     expect(app).toContain('workspaceEmpty')
     expect(today).toContain('workspaceEmpty')
-    expect(today).toContain("zh ? '先让 PJSDAS 了解你的求职进展'")
+    expect(today).toContain("zh ? '先让 TodayAction 了解你的求职进展'")
     expect(app).toContain("navigate('/settings')")
     expect(app).not.toContain('onboardingCompleted')
   })

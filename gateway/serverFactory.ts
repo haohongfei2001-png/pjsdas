@@ -98,32 +98,32 @@ export function createPjsdasMcpServer(
   const externalCapabilities = options.externalCapabilities ?? defaultExternalCapabilityProbes()
   const externalCapabilityStates = capabilityStateMap(externalCapabilities)
   const instructions = [
-    'PJSDAS is a personal job-search decision and action system.',
+    'TodayAction is a personal job-search decision and action system.',
     'Use its explicit decision rules and deterministic explanations instead of inventing hidden ranking rules.',
-    'Read tools never change PJSDAS state.',
+    'Read tools never change TodayAction state.',
     'Use get_today_brief as the canonical daily read contract for Web/MCP/iPhone-equivalent planning. It is revision-bound and already combines next action, sparse next actions, recruiting agenda, DecisionRequests, and material coverage warnings. get_today_plan remains a compatibility read for older clients.',
     'For job discovery, first call get_discovery_context. Treat its Discovery Profile as the durable user-controlled search preference source; do not silently invent or rewrite durable preferences from chat history.',
     'When get_discovery_context returns continuousDiscovery, use incrementalSince as the normal lower bound for new or materially updated postings, and treat refreshQueue as separate source-verification work. Do not repeat a full historical search without a reason.',
     'For refreshQueue work, preserve ownerKind, ownerId, postingId and canonicalSourceUrl exactly. A newly found canonical URL is a new/re-posted source and must go through normal discovery instead of overwriting an existing posting.',
-    'A public posting becoming closed does not by itself close the PJSDAS Opportunity or recruitment Process. Posting lifecycle and recruiting lifecycle are separate facts.',
-    'Interactive MCP tools do not perform arbitrary job-web discovery. If the user asks for current jobs in ChatGPT, use ChatGPT web search/browsing and preserve public source URLs. Separately, PJSDAS background Discovery may discover candidates and independently fetch their source URLs before any source fact is trusted.',
+    'A public posting becoming closed does not by itself close the TodayAction Opportunity or recruitment Process. Posting lifecycle and recruiting lifecycle are separate facts.',
+    'Interactive MCP tools do not perform arbitrary job-web discovery. If the user asks for current jobs in ChatGPT, use ChatGPT web search/browsing and preserve public source URLs. Separately, TodayAction background Discovery may discover candidates and independently fetch their source URLs before any source fact is trusted.',
     'When a public source explicitly supports them, submit bounded structured job facts. Do not convert model inference into source facts.',
-    'For new web-discovered jobs, prefer bounded component assessments over opaque aggregate ratings. PJSDAS derives Fit and Opportunity Value totals from explicit components and user-controlled weights.',
+    'For new web-discovered jobs, prefer bounded component assessments over opaque aggregate ratings. TodayAction derives Fit and Opportunity Value totals from explicit components and user-controlled weights.',
     'Use get_opportunity_detail as the canonical opportunity decision read: conclusion, material reasons/risks, current process state, next operation, and nearest ScheduleNode. Use get_opportunity_assessment only when the user explicitly asks why a stored Fit or Opportunity Value score exists.',
     'Use get_application_portfolio when the user asks which roles to choose inside an explicit Application Group. Capacity is a maximum, not a target.',
     'Use get_prep_graph when the user asks what preparation has the highest leverage or which current gaps are uncovered.',
     'Use get_coverage_status when the user asks whether automated sources missed anything. A green result means every currently enabled Source Registry entry is fresh, balanced, and has no unresolved input; it does not claim that the public internet contains no other jobs.',
-    'Use get_workspace_integrity when the user asks whether the PJSDAS workspace itself is structurally healthy. This audit is read-only and never repairs or deletes data.',
+    'Use get_workspace_integrity when the user asks whether the TodayAction workspace itself is structurally healthy. This audit is read-only and never repairs or deletes data.',
     'Use get_external_capabilities before assuming an external Task or Calendar delivery channel exists. Host-side ChatGPT features are not callable merely because they exist in the host product.',
-    'Use list_reminder_intents to inspect PJSDAS reminder policy. ScheduleNode is business-time truth; ReminderIntent is notification policy; external task/calendar objects are delivery mappings only.',
+    'Use list_reminder_intents to inspect TodayAction reminder policy. ScheduleNode is business-time truth; ReminderIntent is notification policy; external task/calendar objects are delivery mappings only.',
   ]
 
   if (explicitUserWriteMode === 'enabled') {
     instructions.push(
-      'When the user explicitly asks in the current conversation to add, save, record, or write specific source-backed job opportunities into PJSDAS, use add_opportunities and execute the write immediately. Do not route that explicit instruction through propose_changes and do not require a second Apply click.',
+      'When the user explicitly asks in the current conversation to add, save, record, or write specific source-backed job opportunities into TodayAction, use add_opportunities and execute the write immediately. Do not route that explicit instruction through propose_changes and do not require a second Apply click.',
       'Use add_opportunities only for additive Opportunity creation. It is duplicate-safe and cannot change Decision Rules, delete history, close processes, or make other policy decisions.',
       'Do not use add_opportunities when the user is only asking for recommendations, evaluation, discovery, or whether a job should be added. Those requests do not constitute write authorization.',
-      'If Fit or Opportunity Value is not already grounded, omit those optional scores rather than inventing precision; PJSDAS will mark the opportunity unassessed even if internal ranking needs fallback values.',
+      'If Fit or Opportunity Value is not already grounded, omit those optional scores rather than inventing precision; TodayAction will mark the opportunity unassessed even if internal ranking needs fallback values.',
     )
   }
 
@@ -138,7 +138,7 @@ export function createPjsdasMcpServer(
 
   if (semanticIntakeMode === 'enabled') {
     instructions.push(
-      'Use semantic_intake as the primary write path for current factual statements and current user intents. Supply a source-neutral structured candidate; PJSDAS resolves stable Opportunity/occurrence identity and enforces write policy on the server.',
+      'Use semantic_intake as the primary write path for current factual statements and current user intents. Supply a source-neutral structured candidate; TodayAction resolves stable Opportunity/occurrence identity and enforces write policy on the server.',
       'Do not treat questions, quotes, examples, hypotheticals, or rewrite requests as facts. Mark statementMode truthfully; non-assertive modes produce NO_WRITE.',
       'Do not guess among same-company roles or multiple interview/test occurrences. Semantic Intake creates a durable DecisionRequest with bounded choices when identity or occurrence is ambiguous.',
       'High-confidence, uniquely resolved, compensatable internal facts may commit without a second confirmation. Explicit internal abandonment follows the owner policy but shared application-group governance still requires a DecisionRequest.',
@@ -155,8 +155,8 @@ export function createPjsdasMcpServer(
   if (trustedDiscoveryEnabled || trustedGmailEnabled) {
     instructions.push(
       'Trusted factual ingestion is autonomous and does not require a review click. It is deliberately narrower than generic mutation. Tool presence does not imply source authorization: calls still require the delegated principal to hold the exact source-scoped grant.',
-      'Use ingest_discovery_run only for a bounded completed GPT/ChatGPT monitoring run with public source URLs. PJSDAS independently fetches and verifies submitted source URLs before any Discovery fact may create or refresh an Opportunity; unverified candidates remain explicit unresolved records.',
-      'Use ingest_gmail_run only after Gmail messages have been classified and reduced to bounded structured facts. Never submit raw mailbox contents as notes. Low-confidence or ambiguous messages must be submitted with low/medium confidence so PJSDAS records them as unresolved instead of guessing.',
+      'Use ingest_discovery_run only for a bounded completed GPT/ChatGPT monitoring run with public source URLs. TodayAction independently fetches and verifies submitted source URLs before any Discovery fact may create or refresh an Opportunity; unverified candidates remain explicit unresolved records.',
+      'Use ingest_gmail_run only after Gmail messages have been classified and reduced to bounded structured facts. Never submit raw mailbox contents as notes. Low-confidence or ambiguous messages must be submitted with low/medium confidence so TodayAction records them as unresolved instead of guessing.',
       'Every submitted source record must be accounted for as created, merged, updated, duplicate, filtered, ignored, or unresolved. Never silently omit an inconvenient result from the ingestion batch.',
       'Trusted ingestion may add or merge factual opportunities and process events, but it must not silently change Decision Rules, durable user preferences, rejection decisions, or delete data.',
       'Use dryRun=true on either ingestion tool to simulate outcomes without writing. replayOfRunId is permitted only with dryRun=true and compares a fresh simulation with the historical run while preserving the workspace.',
@@ -166,11 +166,11 @@ export function createPjsdasMcpServer(
 
   if (proposalMode === 'review-link') {
     instructions.push(
-      'The propose_changes tool remains review-only for ambiguous, destructive, preference, policy, user-decision mutations, and AI-initiated ad-hoc discoveries that the user did not explicitly command PJSDAS to store. It creates a pending ChangeSet and signed review link but never applies it.',
+      'The propose_changes tool remains review-only for ambiguous, destructive, preference, policy, user-decision mutations, and AI-initiated ad-hoc discoveries that the user did not explicitly command TodayAction to store. It creates a pending ChangeSet and signed review link but never applies it.',
       'Never tell the user that a proposed change was applied. State clearly that Apply or Discard is still required for review-only changes.',
       'For action status changes, read current actions first and use exact action IDs. For ambiguous updates, ask the user to clarify rather than guessing.',
       'For ad-hoc web-discovered jobs that are not part of a trusted monitoring run and are not covered by an explicit current user write instruction, submit only source-backed candidates through discoveredOpportunities.',
-      'When a discovery pass produces zero eligible jobs, PJSDAS can return a review-only record_discovery_run proposal.',
+      'When a discovery pass produces zero eligible jobs, TodayAction can return a review-only record_discovery_run proposal.',
       'For refreshQueue verification, use postingRefreshes as a separate review batch.',
       'Rich Opportunity facts are evidence fields, not ratings. Component assessment is the preferred rating path.',
     )
@@ -182,13 +182,13 @@ export function createPjsdasMcpServer(
     instructions.push('This endpoint contains synthetic demo data only. Never present demo companies, roles, events, or priorities as the user\'s real job-search state.')
   }
   if (dataMode === 'google-drive-readonly') {
-    instructions.push('Read operations use the authenticated user\'s validated PJSDAS workspace from Google Drive appDataFolder. This endpoint is read-only.')
+    instructions.push('Read operations use the authenticated user\'s validated TodayAction workspace from Google Drive appDataFolder. This endpoint is read-only.')
   }
   if (dataMode === 'google-drive') {
-    instructions.push('The authenticated user\'s validated PJSDAS workspace lives in Google Drive appDataFolder. Reads are private; writes are permitted only through registered bounded mutation tools and use optimistic workspace-version conflict checks.')
+    instructions.push('The authenticated user\'s validated TodayAction workspace lives in Google Drive appDataFolder. Reads are private; writes are permitted only through registered bounded mutation tools and use optimistic workspace-version conflict checks.')
   }
   if (dataMode === 'transactional') {
-    instructions.push('Connected-mode reads and writes use the server-authoritative transactional PJSDAS workspace. Every write is revision-checked, command-ledgered, and fail-closed on conflict.')
+    instructions.push('Connected-mode reads and writes use the server-authoritative transactional TodayAction workspace. Every write is revision-checked, command-ledgered, and fail-closed on conflict.')
   }
 
   const server = new McpServer(
@@ -197,105 +197,105 @@ export function createPjsdasMcpServer(
   )
 
   server.registerTool('get_external_capabilities', {
-    title: 'Get PJSDAS external delivery capabilities',
+    title: 'Get TodayAction external delivery capabilities',
     description: 'Read the truthful runtime capability state for external reminder delivery adapters such as ChatGPT Tasks or Google Calendar. Availability is never inferred from host-product features.',
     inputSchema: getExternalCapabilitiesSchema, annotations: readOnlyAnnotations,
   }, async (args) => invokeExternalCapabilities(args, externalCapabilities))
 
   server.registerTool('list_reminder_intents', {
-    title: 'List PJSDAS reminder intents',
+    title: 'List TodayAction reminder intents',
     description: 'Read bounded ReminderIntent policy and delivery/outbox state. ScheduleNode remains recruiting-time truth and external objects remain delivery mappings only.',
     inputSchema: listReminderIntentsSchema, annotations: readOnlyAnnotations,
   }, async (args) => invokeListReminderIntents(source, args))
 
   server.registerTool('get_today_brief', {
-    title: 'Get PJSDAS Today brief',
+    title: 'Get TodayAction Today brief',
     description: 'Read the canonical revision-bound daily decision contract: one next action, sparse next actions, recruiting agenda, relevant DecisionRequests, material coverage warnings, executability and latest-start protection.',
     inputSchema: getTodayBriefSchema, annotations: readOnlyAnnotations,
   }, async (args) => invokeReadTool(source, 'get_today_brief', args))
 
   server.registerTool('get_today_plan', {
-    title: 'Get PJSDAS today plan',
-    description: 'Read the deterministic PJSDAS action plan for a day and optional available-time budget. Existing Prep Actions may receive runtime leverage/urgency boosts without rewriting stored records.',
+    title: 'Get TodayAction today plan',
+    description: 'Read the deterministic TodayAction action plan for a day and optional available-time budget. Existing Prep Actions may receive runtime leverage/urgency boosts without rewriting stored records.',
     inputSchema: getTodayPlanSchema, annotations: readOnlyAnnotations,
   }, async (args) => invokeReadTool(source, 'get_today_plan', args))
 
   server.registerTool('list_opportunities', {
-    title: 'List PJSDAS opportunities',
-    description: 'Query the PJSDAS opportunity pool with bounded filters such as stage, company, role type, query text, or deadline. Rich facts are optional and bounded.',
+    title: 'List TodayAction opportunities',
+    description: 'Query the TodayAction opportunity pool with bounded filters such as stage, company, role type, query text, or deadline. Rich facts are optional and bounded.',
     inputSchema: listOpportunitiesSchema, annotations: readOnlyAnnotations,
   }, async (args) => invokeReadTool(source, 'list_opportunities', args))
 
   server.registerTool('get_opportunity_detail', {
-    title: 'Get PJSDAS opportunity detail decision',
+    title: 'Get TodayAction opportunity detail decision',
     description: 'Read one platform-neutral conclusion-first Opportunity decision: conclusion, material reasons/risks, process state, next operation, nearest ScheduleNode, and progressive-detail references.',
     inputSchema: getOpportunityDetailSchema, annotations: readOnlyAnnotations,
   }, async (args) => invokeReadTool(source, 'get_opportunity_detail', args))
 
   server.registerTool('get_opportunity_assessment', {
-    title: 'Get PJSDAS opportunity assessment',
+    title: 'Get TodayAction opportunity assessment',
     description: 'Read a single Opportunity component assessment, stored aggregate scores, and current-rules projection without rewriting history.',
     inputSchema: getOpportunityAssessmentSchema, annotations: readOnlyAnnotations,
   }, async (args) => invokeReadTool(source, 'get_opportunity_assessment', args))
 
   server.registerTool('get_application_portfolio', {
-    title: 'Get PJSDAS application portfolio decision',
+    title: 'Get TodayAction application portfolio decision',
     description: 'Read deterministic portfolio recommendations for explicit Application Groups with shared application quotas. Capacity is treated as a maximum.',
     inputSchema: getApplicationPortfolioSchema, annotations: readOnlyAnnotations,
   }, async (args) => invokeReadTool(source, 'get_application_portfolio', args))
 
   server.registerTool('get_prep_graph', {
-    title: 'Get PJSDAS Prep Graph',
+    title: 'Get TodayAction Prep Graph',
     description: 'Read deterministic links from Prep to current opportunities, structured requirements/gaps, and process-prep needs.',
     inputSchema: getPrepGraphSchema, annotations: readOnlyAnnotations,
   }, async (args) => invokeReadTool(source, 'get_prep_graph', args))
 
   server.registerTool('get_pipeline', {
-    title: 'Get PJSDAS pipeline',
+    title: 'Get TodayAction pipeline',
     description: 'Read effective recruiting-process state, upcoming process events, and items needing attention.',
     inputSchema: getPipelineSchema, annotations: readOnlyAnnotations,
   }, async (args) => invokeReadTool(source, 'get_pipeline', args))
 
   server.registerTool('get_decision_rules', {
-    title: 'Get PJSDAS decision rules',
+    title: 'Get TodayAction decision rules',
     description: 'Read the explicit user-controlled rules that govern planning, risk thresholds, ranking weights, component-assessment weights, and portfolio policy.',
     annotations: readOnlyAnnotations,
   }, async () => invokeReadTool(source, 'get_decision_rules', {}))
 
   server.registerTool('get_discovery_context', {
-    title: 'Get PJSDAS continuous job-discovery context',
+    title: 'Get TodayAction continuous job-discovery context',
     description: 'Read the Discovery Profile, active weights, existing/inbox identities, Discovery Run history, incremental baseline, source coverage, and posting-refresh queue.',
     inputSchema: getDiscoveryContextSchema, annotations: readOnlyAnnotations,
   }, async (args) => invokeReadTool(source, 'get_discovery_context', args))
 
   server.registerTool('get_coverage_status', {
-    title: 'Get PJSDAS autonomous-ingestion coverage',
+    title: 'Get TodayAction autonomous-ingestion coverage',
     description: 'Read dynamic Source Registry coverage, reconciliation status, freshness SLA, source health, and recent run history for trusted ingestion.',
     inputSchema: getCoverageStatusSchema, annotations: readOnlyAnnotations,
   }, async () => invokeCoverageStatus(source))
 
   server.registerTool('get_workspace_integrity', {
-    title: 'Audit PJSDAS workspace integrity',
+    title: 'Audit TodayAction workspace integrity',
     description: 'Read-only structural audit for duplicate opportunities/postings, orphan events/actions, missing process actions, closed-process active tasks, and expired not-applied opportunities. Never repairs data.',
     inputSchema: getWorkspaceIntegritySchema, annotations: readOnlyAnnotations,
   }, async () => invokeWorkspaceIntegrity(source))
 
   server.registerTool('explain_priority', {
-    title: 'Explain PJSDAS priority',
+    title: 'Explain TodayAction priority',
     description: 'Explain an action or opportunity using deterministic Today-ranking components and active guardrails.',
     inputSchema: explainPrioritySchema, annotations: readOnlyAnnotations,
   }, async (args) => invokeReadTool(source, 'explain_priority', args))
 
   server.registerTool('get_recent_timeline', {
-    title: 'Get PJSDAS recent timeline',
-    description: 'Read bounded factual PJSDAS history, optionally filtered by time, category, company, or opportunity.',
+    title: 'Get TodayAction recent timeline',
+    description: 'Read bounded factual TodayAction history, optionally filtered by time, category, company, or opportunity.',
     inputSchema: getRecentTimelineSchema, annotations: readOnlyAnnotations,
   }, async (args) => invokeReadTool(source, 'get_recent_timeline', args))
 
   if (explicitUserWriteMode === 'enabled') {
     server.registerTool('add_opportunities', {
-      title: 'Add explicitly user-authorized PJSDAS opportunities',
-      description: 'Directly add source-backed opportunities to the canonical PJSDAS workspace only when the current user message explicitly asks to add, save, record, or write those specific jobs. This is an immediate duplicate-safe additive write with no review click; never use it for mere recommendations or autonomous discovery.',
+      title: 'Add explicitly user-authorized TodayAction opportunities',
+      description: 'Directly add source-backed opportunities to the canonical TodayAction workspace only when the current user message explicitly asks to add, save, record, or write those specific jobs. This is an immediate duplicate-safe additive write with no review click; never use it for mere recommendations or autonomous discovery.',
       inputSchema: addOpportunitiesSchema, annotations: directWriteAnnotations,
     }, async (args) => invokeAddOpportunities(source, args))
 
@@ -303,16 +303,16 @@ export function createPjsdasMcpServer(
 
   if (explicitUserCommandMode === 'enabled') {
     server.registerTool('apply_user_command', {
-      title: 'Apply one explicit PJSDAS user command',
-      description: 'Directly commit one bounded, explicit, low-risk user command against an exact PJSDAS target. Ambiguous targets must be clarified in the AI conversation before calling this tool; governed/high-impact changes remain review-only.',
+      title: 'Apply one explicit TodayAction user command',
+      description: 'Directly commit one bounded, explicit, low-risk user command against an exact TodayAction target. Ambiguous targets must be clarified in the AI conversation before calling this tool; governed/high-impact changes remain review-only.',
       inputSchema: applyUserCommandSchema, annotations: directWriteAnnotations,
     }, async (args) => invokeApplyUserCommand(source, args))
   }
 
   if (semanticIntakeMode === 'enabled') {
     server.registerTool('semantic_intake', {
-      title: 'Apply PJSDAS Semantic Intake',
-      description: 'Normalize one current source observation into bounded internal PJSDAS facts/intents. Unique high-confidence compensatable facts may commit atomically; ambiguity creates DecisionRequest; non-assertive text produces NO_WRITE; external consequences are never executed.',
+      title: 'Apply TodayAction Semantic Intake',
+      description: 'Normalize one current source observation into bounded internal TodayAction facts/intents. Unique high-confidence compensatable facts may commit atomically; ambiguity creates DecisionRequest; non-assertive text produces NO_WRITE; external consequences are never executed.',
       inputSchema: semanticIntakeSchema, annotations: directWriteAnnotations,
     }, async (args) => invokeSemanticIntake(source, args, {
       authorize: options.semanticIntakeAuthorizer,
@@ -329,13 +329,13 @@ export function createPjsdasMcpServer(
     }))
 
     server.registerTool('resolve_semantic_decision', {
-      title: 'Resolve one PJSDAS DecisionRequest',
+      title: 'Resolve one TodayAction DecisionRequest',
       description: 'Answer one open Semantic Intake DecisionRequest using an exact offered choice id. The shared domain/write policy is re-run against current state before commit.',
       inputSchema: resolveSemanticDecisionSchema, annotations: directWriteAnnotations,
     }, async (args) => invokeResolveSemanticDecision(source, args, { externalCapabilities: externalCapabilityStates }))
 
     server.registerTool('undo_semantic_command', {
-      title: 'Undo latest PJSDAS Semantic Intake command',
+      title: 'Undo latest TodayAction Semantic Intake command',
       description: 'Apply a field/object-level compensation for a latest-revision Semantic Intake command. It never restores a whole stale snapshot and refuses automatic Undo after dependent revisions.',
       inputSchema: undoSemanticCommandSchema, annotations: directWriteAnnotations,
     }, async (args) => invokeSemanticUndo(source, args))
@@ -358,10 +358,10 @@ export function createPjsdasMcpServer(
   }
 
   if (proposalMode === 'review-link') {
-    if (!options.proposalSigningKey?.trim()) throw new Error('PJSDAS proposal signing key is not configured.')
+    if (!options.proposalSigningKey?.trim()) throw new Error('TodayAction proposal signing key is not configured.')
     server.registerTool('propose_changes', {
-      title: 'Propose PJSDAS changes for review',
-      description: 'Create a signed, review-only PJSDAS ChangeSet for ambiguous, destructive, preference/policy, or AI-initiated changes outside the direct explicit-user Opportunity-add boundary. Nothing changes until explicit Apply in PJSDAS.',
+      title: 'Propose TodayAction changes for review',
+      description: 'Create a signed, review-only TodayAction ChangeSet for ambiguous, destructive, preference/policy, or AI-initiated changes outside the direct explicit-user Opportunity-add boundary. Nothing changes until explicit Apply in TodayAction.',
       inputSchema: proposeChangesSchema, annotations: proposalAnnotations,
     }, async (args) => invokeProposeChanges(source, args, { signingKey: options.proposalSigningKey! }))
   }

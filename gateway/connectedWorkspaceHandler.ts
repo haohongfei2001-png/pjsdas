@@ -38,14 +38,14 @@ function safeError(caught: unknown) {
   if (caught instanceof WorkspaceSourceError) return caught
   return new WorkspaceSourceError(
     'CONNECTED_WORKSPACE_FAILED',
-    caught instanceof Error ? caught.message : 'PJSDAS connected workspace request failed.',
+    caught instanceof Error ? caught.message : 'TodayAction connected workspace request failed.',
     false,
   )
 }
 
 function parseBody<T>(raw: unknown): T {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
-    throw new WorkspaceSourceError('INVALID_ARGUMENT', 'PJSDAS connected workspace request body is invalid.', false)
+    throw new WorkspaceSourceError('INVALID_ARGUMENT', 'TodayAction connected workspace request body is invalid.', false)
   }
   return raw as T
 }
@@ -70,7 +70,7 @@ export function createConnectedWorkspaceHandler(config: ConnectedWorkspaceHandle
     if (!origin || !config.allowedOrigins.includes(origin)) {
       return json(403, {
         code: 'ORIGIN_NOT_ALLOWED',
-        message: 'Connected workspace access is available only to an approved first-party PJSDAS browser origin.',
+        message: 'Connected workspace access is available only to an approved first-party TodayAction browser origin.',
         retryable: false,
       }, origin, config.allowedOrigins)
     }
@@ -155,7 +155,7 @@ export function createConnectedWorkspaceHandler(config: ConnectedWorkspaceHandle
         if (resultingFingerprint !== computedFingerprint) {
           throw new WorkspaceSourceError(
             'WORKSPACE_CONFLICT',
-            'A different connected workspace already exists for this account. PJSDAS will not overwrite it during migration.',
+            'A different connected workspace already exists for this account. TodayAction will not overwrite it during migration.',
             false,
           )
         }

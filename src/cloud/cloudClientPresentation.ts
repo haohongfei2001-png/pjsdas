@@ -13,8 +13,8 @@ export function missingDurableDriveAuthorizationMessage(lang: CloudUiLanguage) {
 
 export function signedOutCloudAccountMessage(lang: CloudUiLanguage) {
   return lang === 'zh'
-    ? 'PJSDAS 账号未登录。请先使用 Google 登录 PJSDAS。'
-    : 'Your PJSDAS account is not signed in. Sign in to PJSDAS with Google first.'
+    ? 'TodayAction 账号未登录。请先使用 Google 登录 TodayAction。'
+    : 'Your TodayAction account is not signed in. Sign in to TodayAction with Google first.'
 }
 
 export function driveAccessTokenRecoveryMessage(lang: CloudUiLanguage, status: number) {

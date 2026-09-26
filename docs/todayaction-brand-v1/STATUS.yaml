@@ -1,0 +1,62 @@
+package: TODAYACTION-BRAND-UI-v1
+registered_on: '2026-09-26'
+brand_name: TodayAction
+selected_direction: A_three_part_abstract_mark
+status: TA_01_TARGETED_VERIFIED_FULL_GATE_PENDING
+runtime_implementation: IMPLEMENTED_TARGETED_VERIFIED
+production_rebrand: NOT_DEPLOYED
+implementation_writer:
+  pr: 169
+  branch: docs/todayaction-brand-v1
+  phase: TA-01
+  authorization: OWNER_EXPLICIT_SERIAL_HANDOFF_2026_09_26
+baseline:
+  main: 153d8ccb6201e33cd1c9a09a0d7bf84a7cf0f079
+  tree: 8a1d0806c47c8fe13495c463c6358d269785e0dc
+  ci_run: 36159566822
+  ci_result: success
+  browser_run: 36159566451
+  browser_result: success
+existing_writer:
+  pr: 164
+  branch: reliability/161-gmail-worker-recovery
+  head: b67785ebb55b81a5c28e72eff303785a2b41249f
+  state_at_registration: OPEN_WITH_PRODUCTION_GATES
+  current_state: BLOCKED_PARKED_WRITER_RELEASED
+  recovery_gate: SAFE_EXACT_CANDIDATE_PRODUCTION_EQUIVALENT_RUNNER_REQUIRED
+  instructions_from_owner: Keep open; do not retrigger or merge. Resume independently when its gate is available.
+  instructions: Do not alter this branch or approve its private production actions for a rebrand.
+rounds:
+  TA-00: HANDOFF_HASH_VERIFIED
+  TA-01: TARGETED_VERIFIED_FULL_GATE_PENDING
+  TA-02: NOT_STARTED
+  TA-03: NOT_STARTED
+assets:
+  reference: assets/approved-A-reference.webp
+  provenance: assets/SOURCE.json
+  vector_status: CLOUD_EXPORT_BYTE_VERIFIED
+  small_size_status: CLOUD_BROWSER_ORIGINAL_SIZE_VISUALLY_REVIEWED_DEVICE_DEFERRED
+checks:
+  repository_runtime_build: ROOT_AND_LEGACY_BUILDS_PASS
+  live_title_and_favicon: NOT_VERIFIED_FOR_NEW_BRAND
+  targeted_candidate: 50708bc31d904ea560903aa0dcfac3e0dc51e460
+  brand_gate_run: 36222179123
+  root_and_legacy_browser_tests: 6_PASS
+  unit_and_type_run: 36222179131
+  unit_and_type_result: PASS
+  voiceover_run: 36222179156
+  voiceover_result: PASS
+  readonly_rollback_run: 36222179086
+  readonly_rollback_result: PASS
+  stable_head_ci_browser: PENDING
+  real_iphone_installation: DEFERRED
+  external_oauth_branding: DEFERRED
+  trademark_clearance: NOT_PERFORMED
+scope:
+  repository_slug_change: false
+  domain_change: false
+  durable_identity_change: false
+  permission_expansion: false
+  private_gmail_execution: false
+  native_ios_implementation: false
+  general_purpose_domain_rewrite: false

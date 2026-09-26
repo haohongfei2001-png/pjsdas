@@ -29,7 +29,7 @@ export function createAudienceAccessGuard(options: AudienceAccessOptions) {
     if (!serviceRoleKey) {
       throw new WorkspaceSourceError(
         'AUDIENCE_CONFIG_INVALID',
-        'PJSDAS allowlist mode is active but its server audience credential is not configured.',
+        'TodayAction allowlist mode is active but its server audience credential is not configured.',
         false,
       )
     }
@@ -49,12 +49,12 @@ export function createAudienceAccessGuard(options: AudienceAccessOptions) {
         },
       })
     } catch {
-      throw new WorkspaceSourceError('AUDIENCE_UNAVAILABLE', 'PJSDAS audience authorization is temporarily unavailable.', true)
+      throw new WorkspaceSourceError('AUDIENCE_UNAVAILABLE', 'TodayAction audience authorization is temporarily unavailable.', true)
     }
     if (!response.ok) {
       throw new WorkspaceSourceError(
         'AUDIENCE_UNAVAILABLE',
-        `PJSDAS audience authorization failed (HTTP ${response.status}).`,
+        `TodayAction audience authorization failed (HTTP ${response.status}).`,
         response.status >= 500 || response.status === 429,
       )
     }
@@ -71,7 +71,7 @@ export function createAudienceAccessGuard(options: AudienceAccessOptions) {
     ) {
       throw new WorkspaceSourceError(
         'AUDIENCE_ACCESS_REQUIRED',
-        'This PJSDAS account is not in the controlled-production allowlist.',
+        'This TodayAction account is not in the controlled-production allowlist.',
         false,
       )
     }
@@ -82,7 +82,7 @@ export function createAudienceAccessGuard(options: AudienceAccessOptions) {
     ) {
       throw new WorkspaceSourceError(
         'AUDIENCE_IDENTITY_MISMATCH',
-        'The PJSDAS audience grant does not match the authenticated account email.',
+        'The TodayAction audience grant does not match the authenticated account email.',
         false,
       )
     }

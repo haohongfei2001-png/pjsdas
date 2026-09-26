@@ -131,7 +131,7 @@ export default function RulesView({ rules, onChanged }: Props) {
       const changeSet = await applyDecisionRulesChangeSet(DEFAULT_DECISION_RULES, 'reset')
       await onChanged()
       setMessage(changeSet
-        ? (zh ? `ChangeSet ${changeSet.id} 已应用，已恢复 PJSDAS 推荐规则。` : `ChangeSet ${changeSet.id} applied. Recommended rules restored.`)
+        ? (zh ? `ChangeSet ${changeSet.id} 已应用，已恢复 TodayAction 推荐规则。` : `ChangeSet ${changeSet.id} applied. Recommended rules restored.`)
         : (zh ? '当前已经是推荐规则。' : 'Recommended rules are already active.'))
     } catch (caught) {
       setOperationError(caught instanceof Error
@@ -239,7 +239,7 @@ export default function RulesView({ rules, onChanged }: Props) {
             <div><span className="eyebrow">FIT MODEL</span><strong>{zh ? '匹配度组件权重' : 'Fit component weights'}</strong></div>
             <span>{zh ? '评估策略' : 'Assessment policy'}</span>
           </summary>
-          <p>{zh ? 'AI 提交各分项分数、置信度与依据；PJSDAS 只对已提供分项按这些权重重新归一化。缺失项降低覆盖度和置信度，不会被偷偷填成中性分。' : 'AI supplies component score, confidence, and rationale; PJSDAS aggregates only supplied components using these weights. Missing components reduce coverage and confidence rather than being imputed with a neutral score.'}</p>
+          <p>{zh ? 'AI 提交各分项分数、置信度与依据；TodayAction 只对已提供分项按这些权重重新归一化。缺失项降低覆盖度和置信度，不会被偷偷填成中性分。' : 'AI supplies component score, confidence, and rationale; TodayAction aggregates only supplied components using these weights. Missing components reduce coverage and confidence rather than being imputed with a neutral score.'}</p>
           <div className="weight-grid">
             {fitComponentWeightKeys.map((key) => (
               <RuleField key={key} label={fitComponentLabels[key][zh ? 0 : 1]} value={draft.fitComponentWeights![key]} unit="w" min={0} max={100} step={1} onChange={(v) => setFitComponentWeight(key, v)} />

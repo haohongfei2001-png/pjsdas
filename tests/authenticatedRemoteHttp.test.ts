@@ -75,7 +75,7 @@ describe('authenticated remote MCP', () => {
     expect(text).toContain('propose_changes')
     expect(text).toContain('ingest_discovery_run')
     expect(text).toContain('ingest_gmail_run')
-    expect(text).toContain('Nothing changes until explicit Apply in PJSDAS')
+    expect(text).toContain('Nothing changes until explicit Apply in TodayAction')
     expect(fetchImpl).toHaveBeenCalledTimes(1)
     expect(String(vi.mocked(fetchImpl).mock.calls[0]?.[0])).toContain('/auth/v1/user')
   })

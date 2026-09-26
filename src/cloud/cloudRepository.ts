@@ -52,7 +52,7 @@ async function driveFetch(url: string, init: RequestInit = {}) {
   const response = await fetch(url, { ...init, headers })
   if (response.status === 401) {
     invalidateCloudSession()
-    throw new Error('Google Drive 短期授权已失效，PJSDAS 会在下次同步时自动重新获取。')
+    throw new Error('Google Drive 短期授权已失效，TodayAction 会在下次同步时自动重新获取。')
   }
   if (!response.ok) throw new Error(`Google Drive 请求失败：${await errorMessage(response)}`)
   return response
@@ -70,7 +70,7 @@ async function listWorkspaceFiles() {
   const data = await response.json() as DriveFileList
   const files = data.files ?? []
   if (files.length > 1) {
-    throw new Error('Google Drive 的 PJSDAS 隐藏目录中出现了多个工作区文件。为避免覆盖错误数据，同步已停止。')
+    throw new Error('Google Drive 的 TodayAction 隐藏目录中出现了多个工作区文件。为避免覆盖错误数据，同步已停止。')
   }
   return files
 }

@@ -111,7 +111,7 @@ describe('structured discovery quality reasons', () => {
     )
 
     expect(result.skippedDuplicates).toHaveLength(1)
-    expect(result.skippedDuplicates[0].reason).toContain('PJSDAS 已存在相同或高度相似岗位')
+    expect(result.skippedDuplicates[0].reason).toContain('TodayAction 已存在相同或高度相似岗位')
     expect(result.skippedDuplicates[0].reasonDetail).toMatchObject({
       code: 'existing_opportunity_source_duplicate',
       params: { company: 'Example AI', role: 'AI Product Manager', sourceHost: 'jobs.example.com' },

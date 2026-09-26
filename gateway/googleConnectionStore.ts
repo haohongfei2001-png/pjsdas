@@ -35,14 +35,14 @@ export function createGoogleConnectionStore(options: GoogleConnectionStoreOption
           },
         })
       } catch {
-        throw new WorkspaceSourceError('AUTH_UNAVAILABLE', 'PJSDAS authorization store is temporarily unavailable.', true)
+        throw new WorkspaceSourceError('AUTH_UNAVAILABLE', 'TodayAction authorization store is temporarily unavailable.', true)
       }
 
       if (response.status === 401 || response.status === 403) {
-        throw new WorkspaceSourceError('AUTH_INVALID', 'PJSDAS authorization is invalid or expired.', false)
+        throw new WorkspaceSourceError('AUTH_INVALID', 'TodayAction authorization is invalid or expired.', false)
       }
       if (!response.ok) {
-        throw new WorkspaceSourceError('AUTH_UNAVAILABLE', `PJSDAS authorization store failed (HTTP ${response.status}).`, true)
+        throw new WorkspaceSourceError('AUTH_UNAVAILABLE', `TodayAction authorization store failed (HTTP ${response.status}).`, true)
       }
 
       let rows: Array<{
@@ -55,13 +55,13 @@ export function createGoogleConnectionStore(options: GoogleConnectionStoreOption
       try {
         rows = await response.json()
       } catch {
-        throw new WorkspaceSourceError('AUTH_INVALID', 'PJSDAS authorization store returned invalid data.', false)
+        throw new WorkspaceSourceError('AUTH_INVALID', 'TodayAction authorization store returned invalid data.', false)
       }
 
       const row = rows[0]
-      if (!row) throw new WorkspaceSourceError('GOOGLE_CONNECTION_REQUIRED', 'Connect Google Drive to PJSDAS before using real workspace data.', false)
+      if (!row) throw new WorkspaceSourceError('GOOGLE_CONNECTION_REQUIRED', 'Connect Google Drive to TodayAction before using real workspace data.', false)
       if (row.user_id !== userId || !row.google_subject || !row.refresh_token_ciphertext) {
-        throw new WorkspaceSourceError('AUTH_INVALID', 'PJSDAS Google Drive binding is invalid.', false)
+        throw new WorkspaceSourceError('AUTH_INVALID', 'TodayAction Google Drive binding is invalid.', false)
       }
 
       return {

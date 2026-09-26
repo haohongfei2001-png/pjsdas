@@ -10,7 +10,7 @@ export async function refreshGoogleAccessToken(
   refreshToken: string,
   config: GoogleOAuthClientConfig,
 ) {
-  if (!refreshToken) throw new WorkspaceSourceError('GOOGLE_CONNECTION_REQUIRED', 'Google Drive is not connected to PJSDAS.', false)
+  if (!refreshToken) throw new WorkspaceSourceError('GOOGLE_CONNECTION_REQUIRED', 'Google Drive is not connected to TodayAction.', false)
   const fetchImpl = config.fetchImpl ?? fetch
 
   let response: Response
@@ -40,7 +40,7 @@ export async function refreshGoogleAccessToken(
     const expired = response.status === 400 || response.status === 401 || data.error === 'invalid_grant'
     throw new WorkspaceSourceError(
       expired ? 'GOOGLE_AUTH_EXPIRED' : 'GOOGLE_DRIVE_UNAVAILABLE',
-      expired ? 'Google authorization is no longer valid. Reconnect Google Drive to PJSDAS.' : 'Google authorization service could not refresh access.',
+      expired ? 'Google authorization is no longer valid. Reconnect Google Drive to TodayAction.' : 'Google authorization service could not refresh access.',
       !expired,
     )
   }

@@ -93,7 +93,7 @@ function buildOpportunity(candidate: AddOpportunityCandidate, now: Date): Opport
         sourceTitle: candidate.sourceTitle,
         location: candidate.location,
         compensationText: candidate.compensationText,
-        rationale: candidate.rationale ?? '用户已在当前对话中明确要求将该来源岗位写入 PJSDAS。',
+        rationale: candidate.rationale ?? '用户已在当前对话中明确要求将该来源岗位写入 TodayAction。',
         discoveredAt,
         fitConfidence: confidenceFor(candidate.fitScore, candidate.fitConfidence),
         opportunityValueConfidence: confidenceFor(candidate.opportunityValue, candidate.opportunityValueConfidence),
@@ -132,7 +132,7 @@ function timelineRecord(opportunity: Opportunity, now: string): TimelineRecord {
     occurredAt: now,
     recordedAt: now,
     title: `明确写入机会｜${opportunity.company}｜${opportunity.role}`,
-    detail: '用户在当前对话中明确要求 ChatGPT 将该岗位写入 PJSDAS；无需二次 Apply。',
+    detail: '用户在当前对话中明确要求 ChatGPT 将该岗位写入 TodayAction；无需二次 Apply。',
     opportunityId: opportunity.id,
     company: opportunity.company,
     role: opportunity.role,
@@ -158,7 +158,7 @@ function toolError(caught: unknown): CallToolResult {
   }
   return jsonResult({
     code: 'DIRECT_WRITE_FAILED',
-    message: caught instanceof Error ? caught.message : 'PJSDAS explicit user write failed.',
+    message: caught instanceof Error ? caught.message : 'TodayAction explicit user write failed.',
     retryable: false,
   }, true)
 }

@@ -56,8 +56,8 @@ export function presentDiscoveryQualityReason(detail: DiscoveryQualityReasonDeta
         : `The verified minimum annual compensation is ${p('actual')}×10k CNY, below the explicit ${p('minimum')}×10k CNY minimum.`
     case 'existing_opportunity_source_duplicate':
       return zh
-        ? `PJSDAS 已存在相同或高度相似岗位“${p('company')}｜${p('role')}”；公开来源 ${p('sourceHost')} 已归属于正式 Opportunity。`
-        : `PJSDAS already contains the same or a highly similar role “${p('company')} | ${p('role')}”; public source ${p('sourceHost')} already belongs to a formal Opportunity.`
+        ? `TodayAction 已存在相同或高度相似岗位“${p('company')}｜${p('role')}”；公开来源 ${p('sourceHost')} 已归属于正式 Opportunity。`
+        : `TodayAction already contains the same or a highly similar role “${p('company')} | ${p('role')}”; public source ${p('sourceHost')} already belongs to a formal Opportunity.`
     case 'recently_dismissed_inbox':
       return zh
         ? `发现箱中高度相似岗位“${p('company')}｜${p('role')}”最近已被明确拒绝。`
@@ -76,8 +76,8 @@ export function presentDiscoveryQualityReason(detail: DiscoveryQualityReasonDeta
         : `The user explicitly rejected a highly similar role “${p('company')} | ${p('role')}” within the last 120 days.`
     case 'existing_opportunity_duplicate':
       return zh
-        ? `PJSDAS 已存在相同或高度相似岗位“${p('company')}｜${p('role')}”。`
-        : `PJSDAS already contains the same or a highly similar role “${p('company')} | ${p('role')}”.`
+        ? `TodayAction 已存在相同或高度相似岗位“${p('company')}｜${p('role')}”。`
+        : `TodayAction already contains the same or a highly similar role “${p('company')} | ${p('role')}”.`
     case 'batch_duplicate':
       return zh
         ? `本次候选中已存在高度相似岗位“${p('company')}｜${p('role')}”。`

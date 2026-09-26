@@ -1,10 +1,12 @@
-# PJSDAS
+# TodayAction
 
-**Personal Job Search Decision & Action System**
+**TodayAction，原 PJSDAS**
 
-PJSDAS is a local-first, AI-native job-search decision and action workspace. It is not primarily an application tracker. Its purpose is to turn opportunities, recruiting-process changes, deadlines, preparation work, application constraints, trusted source updates, and available time into a small set of explainable next decisions and actions.
+TodayAction currently supports an AI-assisted job-search decision and action workspace, with a longer-term direction toward daily task management. It is not primarily an application tracker. Its purpose is to turn opportunities, recruiting-process changes, deadlines, preparation work, application constraints, trusted source updates, and available time into a small set of explainable next decisions and actions.
 
 > **The system should help answer one question within 30 seconds: _What should I do next for my job search?_**
+
+Internal names such as the `pjsdas` repository, `PJSDAS_*` environment variables, storage keys, schema and MCP protocol identities remain stable for compatibility. Historical receipts and releases retain their original names. The rebrand adds installation metadata; it does not add native iOS or offline capabilities.
 
 ## Release status
 
@@ -19,21 +21,23 @@ See [`docs/RELEASE_POLICY.md`](docs/RELEASE_POLICY.md) for the permanent mapping
 
 ## Product surface
 
-PJSDAS is organized around user goals rather than maintenance queues:
+TodayAction has three primary entries:
 
-- **Today** — execute concrete next moves and see the next hard node.
-- **Opportunities** — evaluate opportunities, inspect Pipeline, and open contextual Prep/Prep Graph.
-- **Attention** — only conflicts, governed changes, and source exceptions that genuinely require the user.
-- **Activity** — read-only audit of facts, commands, automation, and provenance.
+- **Today / 今天** — browse the complete set of daily actions and upcoming recruiting nodes.
+- **Jobs / 岗位库** — browse opportunities, inspect their full context, and open contextual actions.
+- **Schedule / 日程** — browse the complete recruiting-node stream and its exact time/state context.
+
+Decisions, read-only history and the following settings remain contextual secondary surfaces:
+
 - **Settings** — account/automation, Discovery Profile, Decision Rules, connected migration, backup/recovery, and language.
 
 Manual progress/process capture remains available as a fallback, but routine fact capture is expected to move through AI or trusted automation.
 
 ## Product architecture
 
-PJSDAS follows one boundary throughout the system:
+TodayAction follows one boundary throughout the system:
 
-> **AI may read, explain, interpret, and execute bounded explicit commands. PJSDAS owns authorization, durable state, policy, identity, validation, reconciliation, and mutation semantics.**
+> **AI may read, explain, interpret, and execute bounded explicit commands. TodayAction owns authorization, durable state, policy, identity, validation, reconciliation, and mutation semantics.**
 
 Core durable concepts include:
 

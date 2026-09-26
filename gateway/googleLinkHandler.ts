@@ -45,7 +45,7 @@ function safeMessage(caught: unknown) {
   }
   return {
     code: 'GOOGLE_LINK_FAILED',
-    message: caught instanceof Error ? caught.message : 'PJSDAS could not save the Google Drive connection.',
+    message: caught instanceof Error ? caught.message : 'TodayAction could not save the Google Drive connection.',
     retryable: false,
   }
 }
@@ -63,7 +63,7 @@ async function parseBody(request: Request): Promise<Required<GoogleLinkRequestBo
   if (!providerToken || !providerRefreshToken) {
     throw new WorkspaceSourceError(
       'GOOGLE_CONNECTION_REQUIRED',
-      'Google did not return the offline authorization required for PJSDAS AI access. Reconnect and approve access again.',
+      'Google did not return the offline authorization required for TodayAction AI access. Reconnect and approve access again.',
       false,
     )
   }
@@ -96,7 +96,7 @@ async function inspectGoogleToken(fetchImpl: typeof fetch, providerToken: string
   if (!scopes.includes(DRIVE_APPDATA_SCOPE)) {
     throw new WorkspaceSourceError(
       'GOOGLE_SCOPE_MISSING',
-      'Google Drive appDataFolder permission was not granted. PJSDAS will not store this authorization.',
+      'Google Drive appDataFolder permission was not granted. TodayAction will not store this authorization.',
       false,
     )
   }
@@ -128,12 +128,12 @@ export function createGoogleLinkHandler(config: GoogleLinkHandlerConfig) {
     }
 
     if (!origin || !config.allowedOrigins.includes(origin)) {
-      return json(403, { code: 'ORIGIN_NOT_ALLOWED', message: 'Google Drive linking is available only to an approved first-party PJSDAS browser origin.' }, origin, config.allowedOrigins)
+      return json(403, { code: 'ORIGIN_NOT_ALLOWED', message: 'Google Drive linking is available only to an approved first-party TodayAction browser origin.' }, origin, config.allowedOrigins)
     }
 
     try {
       if (!config.tokenEncryptionKey.trim()) {
-        throw new WorkspaceSourceError('INVALID_SOURCE_CONFIG', 'PJSDAS token encryption is not configured.', false)
+        throw new WorkspaceSourceError('INVALID_SOURCE_CONFIG', 'TodayAction token encryption is not configured.', false)
       }
 
       const { identity, accessToken } = await resolveIdentity(request)
@@ -144,7 +144,7 @@ export function createGoogleLinkHandler(config: GoogleLinkHandlerConfig) {
       if (identity.email && google.email && identity.email.toLocaleLowerCase() !== google.email.toLocaleLowerCase()) {
         throw new WorkspaceSourceError(
           'GOOGLE_ACCOUNT_MISMATCH',
-          'The Google Drive authorization does not match the Google account used to sign in to PJSDAS.',
+          'The Google Drive authorization does not match the Google account used to sign in to TodayAction.',
           false,
         )
       }
@@ -176,14 +176,14 @@ export function createGoogleLinkHandler(config: GoogleLinkHandlerConfig) {
           body: JSON.stringify(body),
         })
       } catch {
-        throw new WorkspaceSourceError('AUTH_UNAVAILABLE', 'PJSDAS authorization store is temporarily unavailable.', true)
+        throw new WorkspaceSourceError('AUTH_UNAVAILABLE', 'TodayAction authorization store is temporarily unavailable.', true)
       }
 
       if (response.status === 401 || response.status === 403) {
-        throw new WorkspaceSourceError('AUTH_INVALID', 'PJSDAS authentication is invalid or expired.', false)
+        throw new WorkspaceSourceError('AUTH_INVALID', 'TodayAction authentication is invalid or expired.', false)
       }
       if (!response.ok) {
-        throw new WorkspaceSourceError('AUTH_UNAVAILABLE', `PJSDAS authorization store failed (HTTP ${response.status}).`, true)
+        throw new WorkspaceSourceError('AUTH_UNAVAILABLE', `TodayAction authorization store failed (HTTP ${response.status}).`, true)
       }
 
       return json(200, {

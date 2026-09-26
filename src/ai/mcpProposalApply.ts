@@ -28,7 +28,7 @@ export async function assertMcpChangeSetBaseline(changeSet: ChangeSetRecord, acc
         checkpoint.lastReadProjectionSourceFingerprint === changeSet.expectedWorkspaceFingerprint &&
         checkpoint.lastReadProjectionFingerprint === fingerprint) return
     }
-    throw new Error('PJSDAS 本机工作区在这条 ChatGPT 提议生成后已经发生变化。请先同步，再让 ChatGPT 基于最新状态重新生成提议。')
+    throw new Error('TodayAction 本机工作区在这条 ChatGPT 提议生成后已经发生变化。请先同步，再让 ChatGPT 基于最新状态重新生成提议。')
   }
 }
 

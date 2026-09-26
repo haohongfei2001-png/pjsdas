@@ -1,0 +1,26 @@
+{
+  "package": "TODAYACTION-BRAND-UI-v1",
+  "brand": "TodayAction",
+  "asset_status": "ENGINEERING_TRACE_CANDIDATE_NOT_DEPLOYED",
+  "approved_direction": "A: three detached rounded parts; light top and right structural parts; blue rising diagonal capsule",
+  "original_filename": "0e69cbfd-ab7a-447a-a7b6-d63b11278101(4).png",
+  "original_size": [
+    1536,
+    1024
+  ],
+  "original_sha256": "33c6f1e93bcb6958d2bb0324675f7eaad92f3d152205559436eb54cf5cd9f417",
+  "reference_crop_pixels": [
+    1107,
+    366,
+    1349,
+    607
+  ],
+  "reference_transform": "cropped from original; WebP quality 92; visual reference, not the original bytes; no intentional geometry edits",
+  "reference_sha256": "3916158ffd7f8a21d52715024afb2ff8b95b4d1e78cfd0a58def6bb4a0ea8114",
+  "implementation_note": "SVGs are engineering tracings, not exact original vector source. Compare with reference before use; no runtime files changed.",
+  "trademark_clearance": "NOT_PERFORMED",
+  "rendering_tools": {
+    "cairosvg": "2.8.2",
+    "pillow": "12.3.0"
+  }
+}

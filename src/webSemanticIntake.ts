@@ -114,7 +114,7 @@ export async function submitWebSemanticCapture(
   options: { now?: Date; timezone?: string; accountKey?: string; commandId?: string; contextRefs?: string[]; confirmExisting?: boolean } = {},
 ): Promise<WebSemanticCaptureResult> {
   const trimmed = text.trim()
-  if (!trimmed) throw new Error('请输入要告诉 PJSDAS 的内容。')
+  if (!trimmed) throw new Error('请输入要告诉 TodayAction 的内容。')
   const now = options.now ?? new Date()
   const timezone = options.timezone ?? Intl.DateTimeFormat().resolvedOptions().timeZone ?? 'UTC'
   const [opportunities, references, baseline] = await Promise.all([
@@ -160,7 +160,7 @@ export async function submitWebSemanticCapture(
       : []
     return {
       status,
-      summary: typeof authoritative.result?.summary === 'string' ? authoritative.result.summary : 'PJSDAS processed the authoritative update.',
+      summary: typeof authoritative.result?.summary === 'string' ? authoritative.result.summary : 'TodayAction processed the authoritative update.',
       unresolved: interpretation.unresolved,
       ignored: interpretation.ignored,
       decisionRequestIds,

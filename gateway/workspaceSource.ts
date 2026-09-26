@@ -55,7 +55,7 @@ export function requireWritableWorkspaceSource(source: WorkspaceSource) {
   if (!source.write) {
     throw new WorkspaceSourceError(
       'WORKSPACE_READ_ONLY',
-      'This PJSDAS workspace source is read-only and cannot accept autonomous ingestion.',
+      'This TodayAction workspace source is read-only and cannot accept autonomous ingestion.',
       false,
     )
   }
@@ -107,7 +107,7 @@ export function createFileWorkspaceSource(options: FileWorkspaceSourceOptions = 
         parsed = JSON.parse(await readFile(file, 'utf8'))
       } catch (caught) {
         const message = caught instanceof Error ? caught.message : String(caught)
-        throw new Error(`Unable to read PJSDAS MCP snapshot: ${message}`)
+        throw new Error(`Unable to read TodayAction MCP snapshot: ${message}`)
       }
 
       validateSnapshot(parsed)

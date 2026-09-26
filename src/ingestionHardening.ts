@@ -289,7 +289,7 @@ export function applyMonitorIngestionHardened(snapshot: PJSDASSnapshot, input: H
       accountedAt: normalizedInput.completedAt,
       reason: observation.sourceVerificationReason?.trim()
         ? `公开来源尚未通过独立核验：${observation.sourceVerificationReason.trim().slice(0, 500)}`
-        : '公开来源尚未通过独立核验；模型输出不会自动升级为 PJSDAS 来源事实。',
+        : '公开来源尚未通过独立核验；模型输出不会自动升级为 TodayAction 来源事实。',
       opportunityId: previous?.ingestion?.opportunityId,
       company: observation.company,
       role: observation.role,

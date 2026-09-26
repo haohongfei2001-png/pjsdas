@@ -6,7 +6,7 @@ export interface CloudSignOutGuardState {
 
 export function assertCloudSignOutAllowed(state: CloudSignOutGuardState) {
   if (!state.busy && !state.linking && !state.loading) return
-  throw new Error('A PJSDAS cloud operation is still in progress. Sign out after it finishes.')
+  throw new Error('A TodayAction cloud operation is still in progress. Sign out after it finishes.')
 }
 
 

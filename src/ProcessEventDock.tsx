@@ -157,7 +157,7 @@ export default function ProcessEventDock({ onChanged }: ProcessEventDockProps) {
     if (actionable && !dueAt) {
       setError(zh
         ? '测评、笔试和面试通知必须填写真实截止或固定发生时间，避免制造无期限任务。'
-        : 'Assessment, written-test, and interview events require a real deadline or fixed time so PJSDAS does not create an open-ended task.')
+        : 'Assessment, written-test, and interview events require a real deadline or fixed time so TodayAction does not create an open-ended task.')
       return
     }
     const dueIso = toIso(dueAt)
@@ -317,8 +317,8 @@ export default function ProcessEventDock({ onChanged }: ProcessEventDockProps) {
                       {interview
                         ? (zh ? '面试按固定时间处理，不会被当成今天可以提前完成的任务。' : 'Interviews are fixed-time events and are never treated as tasks that can be completed early today.')
                         : timingMode === 'deadline'
-                          ? (zh ? '例如：明晚 23:59 前完成测评。PJSDAS 可以把它提前安排到今天。' : 'Example: complete an assessment by 23:59 tomorrow. PJSDAS may schedule it earlier today.')
-                          : (zh ? '例如：明天 19:00 统一笔试。PJSDAS 只在发生当天占用时间预算。' : 'Example: a written test at 19:00 tomorrow. It consumes time budget only on the day it occurs.')}
+                          ? (zh ? '例如：明晚 23:59 前完成测评。TodayAction 可以把它提前安排到今天。' : 'Example: complete an assessment by 23:59 tomorrow. TodayAction may schedule it earlier today.')
+                          : (zh ? '例如：明天 19:00 统一笔试。TodayAction 只在发生当天占用时间预算。' : 'Example: a written test at 19:00 tomorrow. It consumes time budget only on the day it occurs.')}
                     </small>
                   </label>
                 ) : null}

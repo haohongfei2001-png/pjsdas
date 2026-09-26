@@ -55,7 +55,7 @@ async function seedLocalWorkspace(page: Page) {
 test('empty local workspace routes directly into setup instead of a maintenance queue', async ({ page }) => {
   await page.goto('/')
   await expect(page.getByRole('heading', { name: '今天', exact: true })).toBeVisible()
-  await expect(page.getByText('先让 PJSDAS 了解你的求职进展')).toBeVisible()
+  await expect(page.getByText('先让 TodayAction 了解你的求职进展')).toBeVisible()
   await page.getByRole('button', { name: '打开设置' }).click()
   await expect(page.getByRole('heading', { name: '设置' })).toBeVisible()
   await expect(page.locator('.cloud-connection-impact')).toContainText('当前内容只保存在此设备')
@@ -90,7 +90,7 @@ test('critical local-first action flow survives completion, undo, and browser re
   expect(persistedStatus).toBe('todo')
 })
 
-test('primary navigation, language, recovery, and global Tell PJSDAS stay coherent in English', async ({ page }) => {
+test('primary navigation, language, recovery, and global Tell TodayAction stay coherent in English', async ({ page }) => {
   await seedLocalWorkspace(page)
 
   await page.locator('.tsui-primary-nav').getByRole('button', { name: /岗位库/ }).click()
@@ -114,7 +114,7 @@ test('primary navigation, language, recovery, and global Tell PJSDAS stay cohere
   await page.getByRole('button', { name: 'Close' }).click()
 
   await page.locator('.tsui-tell-button').click()
-  await expect(page.getByRole('heading', { name: 'Tell PJSDAS', exact: true })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Tell TodayAction', exact: true })).toBeVisible()
   await expect(page.locator('.cgr-capture-input')).toBeVisible()
   await page.getByRole('button', { name: 'Close' }).click()
 

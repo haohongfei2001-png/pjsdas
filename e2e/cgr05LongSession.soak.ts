@@ -22,8 +22,8 @@ test('CGR-05 connected Today survives a real multi-hour browser session', async 
 
     if (!captured && performance.now() - started >= durationMs / 2) {
       await page.locator('.cgr-global-capture').click()
-      const dialog = page.getByRole('dialog', { name: '告诉 PJSDAS' })
-      await dialog.getByRole('textbox', { name: '要告诉 PJSDAS 的内容' }).fill('事项：整理面试材料')
+      const dialog = page.getByRole('dialog', { name: '告诉 TodayAction' })
+      await dialog.getByRole('textbox', { name: '要告诉 TodayAction 的内容' }).fill('事项：整理面试材料')
       await expect(dialog.getByText(/新增行动 · 整理面试材料/)).toBeVisible()
       await dialog.getByRole('button', { name: '确认并保存' }).click()
       await expect(dialog.getByRole('status')).toContainText('已记录：整理面试材料')
