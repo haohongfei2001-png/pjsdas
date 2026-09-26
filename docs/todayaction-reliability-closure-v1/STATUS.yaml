@@ -1,14 +1,14 @@
 package: TODAYACTION-RELIABILITY-CLOSURE-v1
-status: R01_ENGINEERING_COMPLETE_R02_READY
+status: R02_ENGINEERING_VALIDATION
 writer:
-  branch: reliability/r01-production-closure
-  phase: R01_CLOSURE
+  branch: reliability/active-unresolved-v1
+  phase: R02_VALIDATION
 issues:
   R01: 125
   R02: 156
 rounds:
   R01: ENGINEERING_COMPLETE_PRODUCTION_COMPLETE_WITH_UNRESOLVED
-  R02: READY
+  R02: ENGINEERING_VALIDATION
 gmail_recovery_161:
   main: decae2c6136595d2c01f17c8b9dcf76d00cdcbbc
   poison_loop_fixed: true
@@ -44,3 +44,13 @@ production_reconciliation:
     unavailable_payloads: 0
     failed_continuation_runs: 0
   full_reconciliation_claim: false
+
+active_unresolved_r02:
+  issue: 156
+  pull_request: 176
+  receipt: R02-ENGINEERING-RECEIPT.md
+  lifetime_ledger_preserved: true
+  scheduler_migration_applied: false
+  scheduler_default_active: false
+  production_activation: OWNER_AUTHORIZATION_REQUIRED
+  private_workspace_reconciliation_write: OWNER_AUTHORIZATION_REQUIRED

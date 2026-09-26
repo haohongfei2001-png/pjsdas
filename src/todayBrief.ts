@@ -158,6 +158,9 @@ export interface TodayBrief {
       missingSourceCount: number
       staleSourceCount: number
       unresolvedCount: number
+      activeUnresolvedCount: number
+      lifetimeUnresolvedCount: number
+      settledHistoricalUnresolvedCount: number
     }
   }
 }
@@ -680,12 +683,12 @@ export function buildTodayBrief(
       coverage.sources.filter((item) => item.stale).map((item) => `${item.sourceKind}:${item.sourceId}`),
     ))
   }
-  if (coverage.unresolvedCount > 0) {
+  if (coverage.activeUnresolvedCount > 0) {
     warnings.push(warning(
       'coverage_unresolved_inputs',
       'warning',
       'Some source inputs still need resolution.',
-      `${coverage.unresolvedCount} source record(s) remain unresolved.`,
+      `${coverage.activeUnresolvedCount} source record(s) are currently unresolved. Lifetime audit retains ${coverage.lifetimeUnresolvedCount} record(s) that were unresolved when ingested.`,
       coverage.exceptions.map((item) => item.id).slice(0, 12),
     ))
   }
@@ -754,7 +757,10 @@ export function buildTodayBrief(
         expectedSourceCount: coverage.expectedSourceCount,
         missingSourceCount: coverage.missingSourceCount,
         staleSourceCount: coverage.staleSourceCount,
-        unresolvedCount: coverage.unresolvedCount,
+        unresolvedCount: coverage.activeUnresolvedCount,
+        activeUnresolvedCount: coverage.activeUnresolvedCount,
+        lifetimeUnresolvedCount: coverage.lifetimeUnresolvedCount,
+        settledHistoricalUnresolvedCount: coverage.settledHistoricalUnresolvedCount,
       },
     },
   }

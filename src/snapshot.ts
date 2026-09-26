@@ -6,6 +6,7 @@ import type {
   ImportMeta,
   IngestionLedgerEntry,
   IngestionOutcome,
+  IngestionResolutionRecord,
   IngestionRunSummary,
   GmailReconciliationProof,
   Opportunity,
@@ -147,6 +148,47 @@ function validateGmailReconciliationProof(proof: GmailReconciliationProof, timel
   if (settled !== proof.recruitingRelevantCount || proof.recruitingRelevantCount > proof.scannedCount) {
     throw new Error(`备份损坏：Timeline ${timelineId} 的 Gmail reconciliation 未守恒。`)
   }
+}
+
+const INGESTION_RESOLUTION_OUTCOMES = new Set([
+  'resolved', 'superseded', 'ignored', 'duplicate', 'historical_only', 'active_unresolved',
+])
+const INGESTION_RESOLUTION_REASONS = new Set([
+  'later_source_state',
+  'duplicate_fingerprint',
+  'linked_action_settled',
+  'linked_process_terminal',
+  'matching_process_terminal',
+  'explicit_non_actionable',
+  'semantic_receipt_committed',
+  'semantic_receipt_no_write',
+  'semantic_decision_settled',
+  'semantic_decision_open',
+  'live_process_ambiguity',
+  'unlinked_unresolved',
+  'transport_gap_active',
+])
+
+function validateIngestionResolution(record: IngestionResolutionRecord, timelineId: string) {
+  if (record.version !== 1) throw new Error(`备份损坏：Timeline ${timelineId} 的 ingestionResolution 版本无效。`)
+  if (!INGESTION_SOURCE_KINDS.has(record.sourceKind)
+    || !record.sourceId?.trim()
+    || !record.sourceRecordId?.trim()
+    || !record.targetIngestionTimelineId?.trim()
+    || !record.targetFingerprint?.trim()) {
+    throw new Error(`备份损坏：Timeline ${timelineId} 的 ingestionResolution 身份无效。`)
+  }
+  if (!INGESTION_RESOLUTION_OUTCOMES.has(record.outcome)) {
+    throw new Error(`备份损坏：Timeline ${timelineId} 的 ingestionResolution outcome 无效。`)
+  }
+  if (!INGESTION_RESOLUTION_REASONS.has(record.reason)) {
+    throw new Error(`备份损坏：Timeline ${timelineId} 的 ingestionResolution reason 无效。`)
+  }
+  if (!Array.isArray(record.evidenceRefs)
+    || record.evidenceRefs.some((value) => typeof value !== 'string' || !value.trim() || value.length > 300)) {
+    throw new Error(`备份损坏：Timeline ${timelineId} 的 ingestionResolution evidenceRefs 无效。`)
+  }
+  assertIsoDate(record.reconciledAt, `Timeline ${timelineId} ingestionResolution.reconciledAt`)
 }
 
 function validateIngestionRun(run: IngestionRunSummary, timelineId: string) {
@@ -424,12 +466,16 @@ export function validateSnapshot(value: unknown): asserts value is PJSDASSnapsho
       assertIsoDate(item.recordedAt, `Timeline ${item.id} 的 recordedAt`)
       if (item.ingestion) validateIngestionEntry(item.ingestion, item.id)
       if (item.ingestionRun) validateIngestionRun(item.ingestionRun, item.id)
+      if (item.ingestionResolution) validateIngestionResolution(item.ingestionResolution, item.id)
       if (item.gmailReconciliation) validateGmailReconciliationProof(item.gmailReconciliation, item.id)
       if (item.kind === 'ingestion_recorded' && !item.ingestion) {
         throw new Error(`备份损坏：Timeline ${item.id} ingestion_recorded 缺少 ingestion payload。`)
       }
       if (item.kind === 'ingestion_run_completed' && !item.ingestionRun) {
         throw new Error(`备份损坏：Timeline ${item.id} ingestion_run_completed 缺少 ingestionRun payload。`)
+      }
+      if (item.kind === 'ingestion_resolution_recorded' && !item.ingestionResolution) {
+        throw new Error(`备份损坏：Timeline ${item.id} ingestion_resolution_recorded 缺少 ingestionResolution payload。`)
       }
       if (item.kind === 'gmail_reconciliation_completed' && !item.gmailReconciliation) {
         throw new Error(`备份损坏：Timeline ${item.id} gmail_reconciliation_completed 缺少 proof payload。`)

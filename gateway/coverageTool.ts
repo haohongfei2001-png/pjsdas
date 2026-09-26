@@ -29,13 +29,13 @@ export async function invokeCoverageStatus(source: WorkspaceSource): Promise<Cal
       coverage,
       sourceHealth,
       assurance: coverage.allCaughtUp
-        ? `All ${coverage.expectedSourceCount} enabled ingestion sources have completed within their registry SLA; each latest run is balanced and no enabled source record remains unresolved.`
+        ? `All ${coverage.expectedSourceCount} enabled ingestion sources are fresh and balanced with 0 active unresolved records. Lifetime audit retains ${coverage.lifetimeUnresolvedCount} unresolved source record(s), of which ${coverage.settledHistoricalUnresolvedCount} no longer block current Coverage.`
         : coverage.missingSourceCount > 0
           ? `${coverage.missingSourceCount} enabled ingestion source(s) have no completed durable run yet.`
           : coverage.staleSourceCount > 0
             ? `${coverage.staleSourceCount} enabled ingestion source(s) are outside their freshness SLA; Coverage is not green even if their last run was balanced.`
-            : coverage.unresolvedCount > 0
-              ? `${coverage.unresolvedCount} enabled-source record(s) are explicitly unresolved; none are silently dropped.`
+            : coverage.activeUnresolvedCount > 0
+              ? `${coverage.activeUnresolvedCount} enabled-source record(s) remain actively unresolved; lifetime audit contains ${coverage.lifetimeUnresolvedCount} source record(s) that were unresolved at ingestion time.`
               : 'At least one enabled source latest run is not balanced; inspect source summaries before relying on coverage.',
     })
   } catch (caught) {

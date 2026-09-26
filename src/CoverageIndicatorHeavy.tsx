@@ -156,6 +156,8 @@ export default function CoverageIndicatorHeavy() {
                 <div><small>{zh ? '最近完成' : 'Latest completion'}</small><strong>{formatTime(coverage.latestCompletedAt, zh)}</strong></div>
                 <div><small>{zh ? '来源覆盖' : 'Source coverage'}</small><strong>{coverage.sourceCount}/{coverage.expectedSourceCount}</strong></div>
                 <div><small>{zh ? '已接收 / 对账' : 'Received / accounted'}</small><strong>{coverage.totalReceived}/{coverage.totalAccounted}</strong></div>
+                <div><small>{zh ? '当前未解决' : 'Active unresolved'}</small><strong>{coverage.activeUnresolvedCount}</strong></div>
+                <div><small>{zh ? '历史未解决审计' : 'Lifetime unresolved audit'}</small><strong>{coverage.lifetimeUnresolvedCount}</strong></div>
                 <div><small>{zh ? '工作区健康' : 'Workspace health'}</small><strong>{integrity ? `${integrity.score}/100` : '—'}</strong></div>
               </div>
 
@@ -200,7 +202,7 @@ export default function CoverageIndicatorHeavy() {
                         <small>{formatTime(source.lastCompletedAt, zh)}{source.stale ? (zh ? ' · 已过期' : ' · stale') : ''}</small>
                       </div>
                       <span className={source.balanced && source.transportGapCount === 0 && !source.stale ? 'good' : 'warn'}>{source.accountedCount}/{source.receivedCount}</span>
-                      <p>{outcomeText(source.outcomes, zh) || (zh ? '本轮 0 条输入' : '0 inputs in this run')}{source.transportGapCount ? (zh ? ` · ${source.transportGapCount} 条覆盖缺口` : ` · ${source.transportGapCount} transport gap(s)`) : ''}{source.interpretationFailureCount ? (zh ? ` · ${source.interpretationFailureCount} 条解释失败` : ` · ${source.interpretationFailureCount} interpretation failure(s)`) : ''}{source.businessAmbiguityCount ? (zh ? ` · ${source.businessAmbiguityCount} 条业务歧义` : ` · ${source.businessAmbiguityCount} business ambiguity item(s)`) : ''}{source.capabilityBoundaryCount ? (zh ? ` · ${source.capabilityBoundaryCount} 条能力边界` : ` · ${source.capabilityBoundaryCount} capability limit(s)`) : ''}{source.cadenceMinutes ? (zh ? ` · 每 ${formatCadence(source.cadenceMinutes, zh)}` : ` · every ${formatCadence(source.cadenceMinutes, zh)}`) : ''}{source.maxAgeHours ? ` · SLA ${source.maxAgeHours}h` : ''}</p>
+                      <p>{outcomeText(source.outcomes, zh) || (zh ? '本轮 0 条输入' : '0 inputs in this run')}{source.activeUnresolvedCount ? (zh ? ` · 当前未解决 ${source.activeUnresolvedCount}` : ` · active unresolved ${source.activeUnresolvedCount}`) : ''}{source.lifetimeUnresolvedCount ? (zh ? ` · 历史审计 ${source.lifetimeUnresolvedCount}` : ` · lifetime audit ${source.lifetimeUnresolvedCount}`) : ''}{source.transportGapCount ? (zh ? ` · ${source.transportGapCount} 条覆盖缺口` : ` · ${source.transportGapCount} transport gap(s)`) : ''}{source.interpretationFailureCount ? (zh ? ` · ${source.interpretationFailureCount} 条解释失败` : ` · ${source.interpretationFailureCount} interpretation failure(s)`) : ''}{source.businessAmbiguityCount ? (zh ? ` · ${source.businessAmbiguityCount} 条业务歧义` : ` · ${source.businessAmbiguityCount} business ambiguity item(s)`) : ''}{source.capabilityBoundaryCount ? (zh ? ` · ${source.capabilityBoundaryCount} 条能力边界` : ` · ${source.capabilityBoundaryCount} capability limit(s)`) : ''}{source.cadenceMinutes ? (zh ? ` · 每 ${formatCadence(source.cadenceMinutes, zh)}` : ` · every ${formatCadence(source.cadenceMinutes, zh)}`) : ''}{source.maxAgeHours ? ` · SLA ${source.maxAgeHours}h` : ''}</p>
                       {health ? <small>{zh
                         ? `24h ${health.runCount24h} 次 · 7天健康 ${health.healthyRunCount7d}/${health.runCount7d} · 连续健康 ${health.consecutiveHealthyRuns} · 下次预计 ${formatTime(health.nextExpectedBy, zh)}`
                         : `24h ${health.runCount24h} runs · 7d healthy ${health.healthyRunCount7d}/${health.runCount7d} · ${health.consecutiveHealthyRuns} healthy in a row · next expected ${formatTime(health.nextExpectedBy, zh)}`}</small> : null}
@@ -211,7 +213,10 @@ export default function CoverageIndicatorHeavy() {
 
               {coverage.exceptions.length ? (
                 <div className="coverage-exceptions">
-                  <h3>{zh ? '需要处理的来源异常' : 'Source issues that need attention'}</h3>
+                  <h3>{zh ? '当前需要处理的来源异常' : 'Active source issues that need attention'}</h3>
+                  <p>{zh
+                    ? `这里只显示当前仍会阻塞 Coverage 的未解决项。历史上曾 unresolved 的 ${coverage.lifetimeUnresolvedCount} 条来源记录仍保留在审计历史中，其中 ${coverage.settledHistoricalUnresolvedCount} 条已不再阻塞当前状态。`
+                    : `Only currently active unresolved items appear here. Lifetime audit still retains ${coverage.lifetimeUnresolvedCount} source record(s) that were unresolved when ingested; ${coverage.settledHistoricalUnresolvedCount} no longer block current health.`}</p>
                   {coverage.exceptions.slice(0, 8).map((record) => (
                     <article key={record.id}>
                       <strong>{record.company && record.role ? `${record.company}｜${record.role}` : record.sourceRef ?? record.title}</strong>
@@ -222,8 +227,8 @@ export default function CoverageIndicatorHeavy() {
                 </div>
               ) : coverage.allCaughtUp ? (
                 <p className="coverage-success">{zh
-                  ? `✓ 当前 ${coverage.expectedSourceCount} 个已启用来源都在各自 SLA 内完成，最新 run 守恒，且没有待解析输入。`
-                  : `✓ All ${coverage.expectedSourceCount} enabled sources are within SLA, the latest runs reconcile, and there are no unresolved inputs.`}</p>
+                  ? `✓ 当前 ${coverage.expectedSourceCount} 个已启用来源都在各自 SLA 内完成，最新 run 守恒，且没有当前未解决输入。历史审计仍保留 ${coverage.lifetimeUnresolvedCount} 条曾经 unresolved 的来源记录。`
+                  : `✓ All ${coverage.expectedSourceCount} enabled sources are within SLA, the latest runs reconcile, and there are no active unresolved inputs. Lifetime audit still retains ${coverage.lifetimeUnresolvedCount} historically unresolved source record(s).`}</p>
               ) : null}
 
               {coverage.capabilityBoundaries.length ? (
@@ -241,8 +246,8 @@ export default function CoverageIndicatorHeavy() {
               ) : null}
 
               <p className="coverage-footnote">{zh
-                ? 'Coverage 证明的是“当前已启用来源按期运行，且进入 TodayAction 的记录没有静默丢失”；Integrity 检查本地持久化结构。两者都不声称“互联网上不存在尚未被任何监控发现的岗位”。'
-                : 'Coverage means enabled sources are running on schedule and records entering TodayAction are not silently lost. Integrity checks the local durable structure. Neither claims that every job on the internet has been discovered.'}</p>
+                ? 'Coverage 的绿色状态只由当前 active unresolved、来源缺失/过期、transport gap 与 run 守恒决定；历史 unresolved 审计不会单独制造红灯。Integrity 检查本地持久化结构。两者都不声称“互联网上不存在尚未被任何监控发现的岗位”。'
+                : 'Green Coverage is blocked by active unresolved state, missing/stale sources, transport gaps, or unbalanced runs—not by settled historical audit debt alone. Integrity checks local durable structure. Neither claims every job on the internet has been discovered.'}</p>
             </>
           )}
         </section>
