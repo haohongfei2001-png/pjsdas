@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { createAutomationConnectionStore } from './automationConnectionStore.js'
-import { runGmailAutomationForBinding, runGmailReconciliationForBinding } from './gmailAutomation.js'
+import { runGmailAutomationForBinding, runGmailReconciliationForBinding, type GmailReconciliationSummary } from './gmailAutomation.js'
 import { gmailFailureMetrics } from './gmailProviderFailure.js'
 import type { GmailAutomationHandlerConfig } from './gmailAutomationHandler.js'
 import { WorkspaceSourceError } from './workspaceSource.js'
@@ -118,7 +118,7 @@ export async function runControlledGmailReconciliations(config: GmailAutomationH
   }
   const storeOptions = { supabaseUrl: config.supabaseUrl, supabasePublishableKey: config.supabasePublishableKey, workerToken }
   const store = createAutomationConnectionStore({ ...storeOptions, fetchImpl: budgetFetch })
-  const results: Array<{ status: 'success' | 'error'; code?: string; summary?: Record<string, number> }> = []
+  const results: Array<{ status: 'success' | 'error'; code?: string; summary?: GmailReconciliationSummary }> = []
   let coalescedUsers = 0
   let deferredUsers = 0
   try {
