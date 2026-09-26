@@ -8,6 +8,7 @@ import {
 } from '../src/ingestionHardening.js'
 import { bootstrapPolicyFor } from '../src/sourceRegistry.js'
 import { alreadyIngested, stableIngestionHash } from '../src/ingestion.js'
+import { validateSnapshot } from '../src/snapshot.js'
 import { applyGmailSemanticBatch, type GmailSemanticRecord } from '../src/gmailSemanticIntake.js'
 import type {
   GmailReconciliationProof,
@@ -559,8 +560,9 @@ function reconciliationSummary(
   unavailableMessageCount: number,
   now: Date,
 ): GmailReconciliationSummary {
-  const stateCounts = Object.fromEntries(RECONCILIATION_STATES.map((state) => [state, 0]))
-    as Record<GmailReconciliationState, number>
+  const stateCounts = Object.fromEntries(
+    RECONCILIATION_STATES.map((state) => [state, 0]),
+  ) as Record<GmailReconciliationState, number>
   const gmailOpportunityIds = new Set<string>()
   let gmailOnlyCount = 0
   let fixedOrHardWithin7DaysCount = 0
@@ -722,6 +724,7 @@ export async function runGmailReconciliationForBinding(options: {
       gmailReconciliation: proof,
     }]
     result.snapshot.exportedAt = checkedAt
+    validateSnapshot(result.snapshot)
   }
   let workspaceVersion = workspace.context.workspaceVersion
   if (!result.alreadyApplied) {
