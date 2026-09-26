@@ -1,4 +1,5 @@
 import type { GmailExecutionMetrics } from './gmailExecutionMetrics.js'
+import type { GmailReconciliationContinuationState } from './gmailReconciliationState.js'
 import { WorkspaceSourceError } from './workspaceSource.js'
 
 export const GMAIL_READONLY_SCOPE = 'https://www.googleapis.com/auth/gmail.readonly'
@@ -23,6 +24,8 @@ export interface GmailAutomationBinding extends GoogleAutomationBinding {
   gmailWatchExpiresAt?: string
   gmailWatchLastRenewedAt?: string
   gmailWatchLastError?: string
+  gmailReconciliationRequestedAt?: string
+  gmailReconciliationState?: GmailReconciliationContinuationState
 }
 
 type GmailBindingRow = {
@@ -34,6 +37,8 @@ type GmailBindingRow = {
   gmail_intake_consent_version?: string | null;
   gmail_watch_history_id?: string | null; gmail_watch_expires_at?: string | null;
   gmail_watch_last_renewed_at?: string | null; gmail_watch_last_error?: string | null;
+  gmail_reconciliation_requested_at?: string | null;
+  gmail_reconciliation_state?: GmailReconciliationContinuationState | null;
 }
 
 export interface DiscoveryAutomationBinding extends GoogleAutomationBinding {
@@ -72,6 +77,8 @@ function gmailBinding(row: GmailBindingRow): GmailAutomationBinding[] {
     gmailWatchExpiresAt: row.gmail_watch_expires_at ?? undefined,
     gmailWatchLastRenewedAt: row.gmail_watch_last_renewed_at ?? undefined,
     gmailWatchLastError: row.gmail_watch_last_error ?? undefined,
+    gmailReconciliationRequestedAt: row.gmail_reconciliation_requested_at ?? undefined,
+    gmailReconciliationState: row.gmail_reconciliation_state ?? undefined,
   }]
 }
 
@@ -117,16 +124,21 @@ export function createAutomationConnectionStore(options: AutomationConnectionSto
     async listEnabledGmailBindings(): Promise<GmailAutomationBinding[]> {
       let rows: GmailBindingRow[]
       try {
-        rows = await rpc<GmailBindingRow[]>('pjsdas_claim_gmail_automation_bindings_v4', { worker_token: workerToken })
+        rows = await rpc<GmailBindingRow[]>('pjsdas_claim_gmail_automation_bindings_v5', { worker_token: workerToken })
       } catch (error) {
         if (!(error instanceof WorkspaceSourceError) || error.code !== 'AUTOMATION_RPC_NOT_DEPLOYED') throw error
         try {
-          rows = await rpc<GmailBindingRow[]>('pjsdas_claim_gmail_automation_bindings_v3', { worker_token: workerToken })
-        } catch (legacyError) {
-          if (!(legacyError instanceof WorkspaceSourceError) || legacyError.code !== 'AUTOMATION_RPC_NOT_DEPLOYED') throw legacyError
-          rows = await rpc<GmailBindingRow[]>('pjsdas_claim_gmail_automation_bindings_v2', { worker_token: workerToken })
-          // Older database contract cannot prove expanded consent.
-          rows = rows.map((row) => ({ ...row, gmail_intake_consent_version: null }))
+          rows = await rpc<GmailBindingRow[]>('pjsdas_claim_gmail_automation_bindings_v4', { worker_token: workerToken })
+        } catch (v4Error) {
+          if (!(v4Error instanceof WorkspaceSourceError) || v4Error.code !== 'AUTOMATION_RPC_NOT_DEPLOYED') throw v4Error
+          try {
+            rows = await rpc<GmailBindingRow[]>('pjsdas_claim_gmail_automation_bindings_v3', { worker_token: workerToken })
+          } catch (legacyError) {
+            if (!(legacyError instanceof WorkspaceSourceError) || legacyError.code !== 'AUTOMATION_RPC_NOT_DEPLOYED') throw legacyError
+            rows = await rpc<GmailBindingRow[]>('pjsdas_claim_gmail_automation_bindings_v2', { worker_token: workerToken })
+            // Older database contract cannot prove expanded consent.
+            rows = rows.map((row) => ({ ...row, gmail_intake_consent_version: null }))
+          }
         }
       }
 
@@ -199,6 +211,23 @@ export function createAutomationConnectionStore(options: AutomationConnectionSto
         worker_token: workerToken, target_user_id: userId, execution_token: executionToken, state_patch: patch, metrics,
       })
       if (!finished) throw new WorkspaceSourceError('LEASE_LOST', 'Gmail execution lease is no longer valid.', true)
+    },
+
+    async finishGmailReconciliation(userId: string, executionToken: string, patch: {
+      state?: GmailReconciliationContinuationState | null
+      cycleComplete?: boolean
+    }, metrics: GmailExecutionMetrics) {
+      const statePatch: Record<string, unknown> = {}
+      if ('state' in patch) statePatch.state = patch.state ?? null
+      if (patch.cycleComplete !== undefined) statePatch.cycleComplete = patch.cycleComplete
+      const finished = await rpc<boolean>('pjsdas_finish_gmail_reconciliation', {
+        worker_token: workerToken,
+        target_user_id: userId,
+        execution_token: executionToken,
+        state_patch: statePatch,
+        metrics,
+      })
+      if (!finished) throw new WorkspaceSourceError('LEASE_LOST', 'Gmail reconciliation lease is no longer valid.', true)
     },
 
     async listDiscoveryBindings(): Promise<DiscoveryAutomationBinding[]> {

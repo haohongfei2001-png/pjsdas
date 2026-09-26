@@ -19,7 +19,7 @@ describe('Gmail watch renewal worker', () => {
       const rpc = String(input).split('/').at(-1) ?? ''
       const body = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>
       calls.push({ rpc, body })
-      if (rpc === 'pjsdas_claim_gmail_automation_bindings_v4') {
+      if (rpc === 'pjsdas_claim_gmail_automation_bindings_v5') {
         return json([{
           user_id: 'user-a',
           google_subject: 'subject-a',
@@ -62,7 +62,7 @@ describe('Gmail watch renewal worker', () => {
     await expect(response.json()).resolves.toEqual({ eligibleUsers: 1, renewedUsers: 1, failedUsers: 0 })
     expect(registerGmailWatchImpl).toHaveBeenCalledTimes(1)
     expect(calls.map((call) => call.rpc)).toEqual([
-      'pjsdas_claim_gmail_automation_bindings_v4',
+      'pjsdas_claim_gmail_automation_bindings_v5',
       'pjsdas_update_gmail_watch_state',
     ])
     expect(calls[1]?.body).toMatchObject({

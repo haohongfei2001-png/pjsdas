@@ -96,8 +96,14 @@ export async function runControlledGmailExecutions(config: GmailAutomationHandle
 }
 
 
-/** Independent twice-daily safety scan. Uses the same lease as primary ingestion but never mutates its cursor/success/error state. */
-export async function runControlledGmailReconciliations(config: GmailAutomationHandlerConfig, workerToken: string, requestedUserId?: string) {
+/** Independent safety scan. Scheduled starts request a cycle; the offset continuation job
+ * resumes only an already-requested/active cycle. Both paths share the primary Gmail lease. */
+export async function runControlledGmailReconciliations(
+  config: GmailAutomationHandlerConfig,
+  workerToken: string,
+  requestedUserId?: string,
+  forceStart = false,
+) {
   const limitMs = Math.max(50, Math.min(config.executionBudgetMs ?? 25_000, 25_000))
   const started = performance.now()
   const reserveMs = Math.min(1000, limitMs / 5)
@@ -118,20 +124,53 @@ export async function runControlledGmailReconciliations(config: GmailAutomationH
   }
   const storeOptions = { supabaseUrl: config.supabaseUrl, supabasePublishableKey: config.supabasePublishableKey, workerToken }
   const store = createAutomationConnectionStore({ ...storeOptions, fetchImpl: budgetFetch })
-  const results: Array<{ status: 'success' | 'error'; code?: string; summary?: GmailReconciliationSummary }> = []
+  const results: Array<{
+    status: 'success' | 'error'
+    code?: string
+    cycleComplete?: boolean
+    summary?: GmailReconciliationSummary
+  }> = []
   let coalescedUsers = 0
   let deferredUsers = 0
+  let idleUsers = 0
   try {
     let bindings = await store.listEnabledGmailBindings()
     if (requestedUserId) bindings = bindings.filter((binding) => binding.userId === requestedUserId)
+    if (!forceStart) {
+      const eligible = bindings.filter((binding) =>
+        Boolean(binding.gmailReconciliationRequestedAt || binding.gmailReconciliationState))
+      idleUsers += bindings.length - eligible.length
+      bindings = eligible
+    }
     for (const [index, listed] of bindings.entries()) {
-      if (controller.signal.aborted || remaining() <= reserveMs + 50) { deferredUsers = bindings.length - index; break }
+      if (controller.signal.aborted || remaining() <= reserveMs + 50) {
+        deferredUsers = bindings.length - index
+        break
+      }
       const executionToken = randomUUID()
       let owned = false
       try {
         const binding = await store.beginGmailExecution(listed.userId, executionToken)
-        if (!binding) { coalescedUsers += 1; continue }
+        if (!binding) {
+          coalescedUsers += 1
+          continue
+        }
         owned = true
+
+        if (!forceStart
+          && !binding.gmailReconciliationRequestedAt
+          && !binding.gmailReconciliationState) {
+          await store.finishGmailReconciliation(
+            binding.userId,
+            executionToken,
+            {},
+            { status: 'completed', mode: 'reconciliation', receivedCount: 0, accountedCount: 0, unresolvedCount: 0 },
+          )
+          owned = false
+          idleUsers += 1
+          continue
+        }
+
         const run = await runGmailReconciliationForBinding({
           binding,
           tokenEncryptionKey: config.tokenEncryptionKey,
@@ -139,22 +178,41 @@ export async function runControlledGmailReconciliations(config: GmailAutomationH
           googleClientSecret: config.googleClientSecret,
           fetchImpl: budgetFetch,
           now: config.now,
+          forceStart,
           execution: { beforeWorkspaceWrite: async () => {
-            ensureBudget(); await store.assertGmailExecution(binding.userId, executionToken); ensureBudget()
+            ensureBudget()
+            await store.assertGmailExecution(binding.userId, executionToken)
+            ensureBudget()
           } },
         })
-        if (remaining() <= 1) throw new WorkspaceSourceError('BUDGET_EXHAUSTED', 'Gmail reconciliation budget exhausted before finalization.', true)
+        if (remaining() <= 1) {
+          throw new WorkspaceSourceError('BUDGET_EXHAUSTED', 'Gmail reconciliation budget exhausted before finalization.', true)
+        }
         const finishController = new AbortController()
         const finishTimer = setTimeout(() => finishController.abort(), Math.max(1, remaining()))
         const finishFetch: typeof fetch = (input, init) => {
           const priorSignal = init?.signal ?? (input instanceof Request ? input.signal : undefined)
-          return rawFetch(input, { ...init, signal: priorSignal ? AbortSignal.any([finishController.signal, priorSignal]) : finishController.signal })
+          return rawFetch(input, {
+            ...init,
+            signal: priorSignal ? AbortSignal.any([finishController.signal, priorSignal]) : finishController.signal,
+          })
         }
         try {
           await createAutomationConnectionStore({ ...storeOptions, fetchImpl: finishFetch })
-            .finishGmailExecution(binding.userId, executionToken, {}, run.metrics)
-        } finally { clearTimeout(finishTimer) }
-        results.push({ status: 'success', summary: run.summary })
+            .finishGmailReconciliation(
+              binding.userId,
+              executionToken,
+              {
+                state: run.cycleComplete ? null : run.continuation,
+                cycleComplete: run.cycleComplete,
+              },
+              run.metrics,
+            )
+          owned = false
+        } finally {
+          clearTimeout(finishTimer)
+        }
+        results.push({ status: 'success', cycleComplete: run.cycleComplete, summary: run.summary })
       } catch (caught) {
         const code = controller.signal.aborted ? 'BUDGET_EXHAUSTED'
           : caught instanceof WorkspaceSourceError ? caught.code : 'AUTOMATION_FAILED'
@@ -165,17 +223,31 @@ export async function runControlledGmailReconciliations(config: GmailAutomationH
           const cleanupFetch: typeof fetch = (input, init) => rawFetch(input, { ...init, signal: cleanup.signal })
           try {
             await createAutomationConnectionStore({ ...storeOptions, fetchImpl: cleanupFetch })
-              .finishGmailExecution(listed.userId, executionToken, {}, {
-                status: 'error', mode: 'reconciliation', errorCode: code, ...failureMetrics,
-              })
-          } catch { /* Lease expiration is the fail-closed recovery path. */ }
+              .finishGmailReconciliation(
+                listed.userId,
+                executionToken,
+                {},
+                { status: 'error', mode: 'reconciliation', errorCode: code, ...failureMetrics },
+              )
+            owned = false
+          } catch { /* Lease expiry remains the fail-closed recovery path. */ }
           finally { clearTimeout(cleanupTimer) }
         }
         results.push({ status: 'error', code })
       }
     }
     const failedUsers = results.filter((result) => result.status === 'error').length
-    return { processedUsers: results.length, successfulUsers: results.length - failedUsers,
-      failedUsers, coalescedUsers, deferredUsers, results }
-  } finally { clearTimeout(timer) }
+    return {
+      processedUsers: results.length,
+      successfulUsers: results.length - failedUsers,
+      failedUsers,
+      coalescedUsers,
+      deferredUsers,
+      idleUsers,
+      results,
+    }
+  } finally {
+    clearTimeout(timer)
+  }
 }
+
