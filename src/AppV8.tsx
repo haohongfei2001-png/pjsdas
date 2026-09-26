@@ -160,6 +160,19 @@ export default function AppV8() {
   const [loading, setLoading] = useState(true)
   const [now, setNow] = useState(() => new Date())
   const budgetMinutes = 180
+  const topbarRef = useRef<HTMLElement>(null)
+
+  // Presentation-only offset follows wrapping and text size; no workspace state.
+  useEffect(() => {
+    const topbar = topbarRef.current
+    const shell = topbar?.closest<HTMLElement>('.cgr-app-shell')
+    if (!topbar || !shell) return
+    const measure = () => shell.style.setProperty('--ta-header-height', topbar.getBoundingClientRect().height + 'px')
+    measure()
+    const observer = new ResizeObserver(measure)
+    observer.observe(topbar)
+    return () => { observer.disconnect(); shell.style.removeProperty('--ta-header-height') }
+  }, [])
 
   const opportunities = snapshot?.data.opportunities ?? []
   const actions = snapshot?.data.actions ?? []
@@ -613,7 +626,7 @@ export default function AppV8() {
 
   return (
     <div className="app-shell surface-shell ultimate-shell cgr-shell cgr-app-shell">
-      <header className="tsui-topbar">
+      <header ref={topbarRef} className="tsui-topbar">
         <button className="tsui-brand" type="button" onClick={() => navigate('/today')} aria-label={zh ? 'TodayAction，今天' : 'TodayAction, Today'}><BrandMark className="tsui-brand-mark" /><strong>{BRAND_NAME}</strong></button>
         <nav className="tsui-primary-nav" aria-label={zh ? '主导航' : 'Primary navigation'}>
           {primarySurfaces.map((item) => {

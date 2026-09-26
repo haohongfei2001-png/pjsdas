@@ -1,0 +1,15 @@
+.ta-consent{box-sizing:border-box;min-height:100vh;display:grid;place-items:center;padding:24px;background:#f5f6f9;color:#1b2540;font-family:Inter,ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+.ta-consent-panel{box-sizing:border-box;min-width:0;width:min(620px,100%);padding:32px;border:1px solid #e4e8ef;border-radius:16px;background:#fff;box-shadow:0 4px 18px rgba(34,53,88,.035);overflow-wrap:anywhere}
+.ta-consent-brand{display:flex;align-items:center;flex-wrap:wrap;gap:10px;font-size:.8125rem;font-weight:700;color:#283955;letter-spacing:.02em}
+.ta-consent h1{margin:20px 0 12px;font-size:1.625rem;line-height:1.35}
+.ta-consent p{color:#5d6b82;font-size:.9375rem;line-height:1.7}
+.ta-consent-details{padding:16px;border-radius:10px;background:#f5f7fc;line-height:1.65}
+.ta-consent-note{font-size:.8125rem!important;line-height:1.6!important}
+.ta-consent-actions{display:flex;flex-wrap:wrap;gap:10px;margin-top:24px}
+.ta-consent button{box-sizing:border-box;max-width:100%;min-height:44px;padding:10px 18px;border:1px solid #dce3f0;border-radius:9px;color:#283955;font:inherit;line-height:1.45;white-space:normal;overflow-wrap:anywhere;cursor:pointer}
+.ta-consent button.ta-consent-primary{border-color:#3569d5;background:#3569d5;color:#fff}
+.ta-consent-secondary{background:#fff}
+.ta-consent button:disabled{opacity:.55;cursor:default}
+.ta-consent button:focus-visible{outline:3px solid #315ec5;outline-offset:3px}
+.ta-consent-error{margin-top:22px;padding:14px;border-radius:10px;background:#fff0ed;color:#8b2e25;font-size:.875rem;line-height:1.6}
+@media(max-width:640px){.ta-consent{padding:16px}.ta-consent-panel{padding:24px 18px}.ta-consent h1{font-size:1.375rem}}
