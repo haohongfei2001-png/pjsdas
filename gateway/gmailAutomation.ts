@@ -9,7 +9,13 @@ import {
 import { bootstrapPolicyFor } from '../src/sourceRegistry.js'
 import { alreadyIngested, stableIngestionHash } from '../src/ingestion.js'
 import { applyGmailSemanticBatch, type GmailSemanticRecord } from '../src/gmailSemanticIntake.js'
-import type { Opportunity, ProcessEventType, SemanticCandidate } from '../src/model.js'
+import type {
+  GmailReconciliationProof,
+  GmailReconciliationState,
+  Opportunity,
+  ProcessEventType,
+  SemanticCandidate,
+} from '../src/model.js'
 import { createDriveWorkspaceSource } from './driveWorkspaceSource.js'
 import { createTransactionalWorkspaceSource } from './transactionalWorkspaceSource.js'
 import { refreshGoogleAccessToken } from './googleOAuthTokens.js'
@@ -87,16 +93,9 @@ export interface GmailAutomationRunResult {
   usedFallbackScan: boolean
 }
 
-export interface GmailReconciliationSummary {
-  scannedCount: number
-  recruitingRelevantCount: number
+export type GmailReconciliationSummary = Omit<GmailReconciliationProof, 'version'> & {
   actionableCount: number
   unresolvedCount: number
-  gmailOnlyCount: number
-  pjsdasOnlyCount: number
-  fixedOrHardWithin7DaysCount: number
-  liveProcessCount: number
-  unavailableMessageCount: number
 }
 
 export interface GmailReconciliationRunResult {
@@ -521,6 +520,38 @@ function recentLiveProcesses(snapshot: import('../src/snapshot.js').PJSDASSnapsh
   })
 }
 
+const RECONCILIATION_STATES: GmailReconciliationState[] = [
+  'NO_ACTION', 'WAITING', 'ACTION_REQUIRED', 'COMPLETED',
+  'EXPLICITLY_DECLINED', 'CLOSED', 'UNRESOLVED',
+]
+
+export function gmailReconciliationStateForRecord(record: GmailSemanticRecord): GmailReconciliationState | undefined {
+  const relevant = Boolean(record.recruitingRelevant || record.gaps.length || record.observation.candidates.length)
+  if (!relevant) return undefined
+  const candidates = record.observation.candidates
+  const unresolvedTarget = candidates.some((candidate) =>
+    !candidate.target?.opportunityId
+    && !['reminder_cancelled'].includes(candidate.kind))
+  if (record.gaps.length > 0 || unresolvedTarget) return 'UNRESOLVED'
+  if (candidates.some((candidate) => candidate.kind === 'abandon_opportunity' || candidate.kind === 'external_withdrawal')) {
+    return 'EXPLICITLY_DECLINED'
+  }
+  if (candidates.some((candidate) => candidate.kind === 'occurrence_completed')) return 'COMPLETED'
+  if (candidates.some((candidate) => candidate.kind === 'occurrence_cancelled'
+    || candidate.kind === 'process_event' && candidate.eventType === 'rejection')) return 'CLOSED'
+  if (candidates.some((candidate) =>
+    candidate.kind === 'opportunity_deadline'
+      || candidate.kind === 'occurrence_rescheduled'
+      || candidate.kind === 'manual_action'
+      || candidate.kind === 'reminder_intent'
+      || candidate.kind === 'process_event' && ['assessment_invite', 'written_test_invite', 'interview_invite', 'offer'].includes(candidate.eventType))) {
+    return 'ACTION_REQUIRED'
+  }
+  if (candidates.some((candidate) => candidate.kind === 'application_submitted'
+    || candidate.kind === 'process_event' && candidate.eventType === 'status_update')) return 'WAITING'
+  return 'NO_ACTION'
+}
+
 function reconciliationSummary(
   snapshot: import('../src/snapshot.js').PJSDASSnapshot,
   records: GmailSemanticRecord[],
@@ -528,25 +559,22 @@ function reconciliationSummary(
   unavailableMessageCount: number,
   now: Date,
 ): GmailReconciliationSummary {
-  const relevant = records.filter((record) => record.gaps.length > 0 || record.observation.candidates.length > 0)
-  const actionable = relevant.filter((record) => record.observation.candidates.some((candidate) =>
-    candidate.kind === 'process_event' || candidate.kind === 'application_submitted'
-      || candidate.kind === 'occurrence_rescheduled' || candidate.kind === 'occurrence_cancelled'
-      || candidate.kind === 'occurrence_completed'))
+  const stateCounts = Object.fromEntries(RECONCILIATION_STATES.map((state) => [state, 0]))
+    as Record<GmailReconciliationState, number>
   const gmailOpportunityIds = new Set<string>()
   let gmailOnlyCount = 0
   let fixedOrHardWithin7DaysCount = 0
   const horizon = now.getTime() + 7 * 86_400_000
-  let unresolvedCount = 0
-  for (const record of relevant) {
+
+  for (const record of records) {
+    const state = gmailReconciliationStateForRecord(record)
+    if (!state) continue
+    stateCounts[state] += 1
     let hasBoundTarget = false
-    let hasUnresolvedTarget = false
     for (const candidate of record.observation.candidates) {
       if (candidate.target?.opportunityId) {
         hasBoundTarget = true
         gmailOpportunityIds.add(candidate.target.opportunityId)
-      } else if (candidate.kind !== 'application_submitted') {
-        hasUnresolvedTarget = true
       }
       if (candidate.kind === 'process_event') {
         const temporal = candidate.temporal
@@ -559,15 +587,17 @@ function reconciliationSummary(
       }
     }
     if (!hasBoundTarget && record.observation.candidates.length > 0) gmailOnlyCount += 1
-    if (record.gaps.length > 0 || hasUnresolvedTarget) unresolvedCount += 1
   }
+
   const liveProcesses = recentLiveProcesses(snapshot, now)
   const pjsdasOnlyCount = liveProcesses.filter((process) => !process.opportunityId || !gmailOpportunityIds.has(process.opportunityId)).length
+  const recruitingRelevantCount = RECONCILIATION_STATES.reduce((sum, state) => sum + stateCounts[state], 0)
   return {
     scannedCount,
-    recruitingRelevantCount: relevant.length,
-    actionableCount: actionable.length,
-    unresolvedCount,
+    recruitingRelevantCount,
+    stateCounts,
+    actionableCount: stateCounts.ACTION_REQUIRED,
+    unresolvedCount: stateCounts.UNRESOLVED,
     gmailOnlyCount,
     pjsdasOnlyCount,
     fixedOrHardWithin7DaysCount,
@@ -620,6 +650,7 @@ export async function runGmailReconciliationForBinding(options: {
   for (const sourceRecordId of batch.unavailableMessageIds) {
     records.push({
       receivedAt: checkedAt,
+      recruitingRelevant: true,
       gaps: ['Gmail reconciliation found a source record whose payload was unavailable; no recruiting facts were inferred.'],
       issueKinds: ['transport_gap'],
       observation: {
@@ -636,7 +667,7 @@ export async function runGmailReconciliationForBinding(options: {
     })
   }
   const summary = reconciliationSummary(workspace.snapshot, records, batch.scannedCount, batch.unavailableMessageIds.length, now)
-  const runId = `gmail:reconcile:${checkedAt.slice(0, 13)}`
+  const runId = `gmail:reconcile:${checkedAt.slice(0, 16)}`
   const result = applyGmailSemanticBatch(workspace.snapshot, {
     runId,
     sourceId: GMAIL_SOURCE_ID,
@@ -646,6 +677,32 @@ export async function runGmailReconciliationForBinding(options: {
     workspaceRevision: workspace.context.workspaceVersion,
     reconcileExisting: true,
   })
+  if (!result.alreadyApplied) {
+    const proof: GmailReconciliationProof = {
+      version: 1,
+      scannedCount: summary.scannedCount,
+      recruitingRelevantCount: summary.recruitingRelevantCount,
+      stateCounts: summary.stateCounts,
+      gmailOnlyCount: summary.gmailOnlyCount,
+      pjsdasOnlyCount: summary.pjsdasOnlyCount,
+      fixedOrHardWithin7DaysCount: summary.fixedOrHardWithin7DaysCount,
+      liveProcessCount: summary.liveProcessCount,
+      unavailableMessageCount: summary.unavailableMessageCount,
+    }
+    result.snapshot.data.timeline = [...(result.snapshot.data.timeline ?? []), {
+      id: `timeline:gmail-reconciliation:${stableIngestionHash(runId)}`,
+      kind: 'gmail_reconciliation_completed',
+      category: 'data',
+      source: 'gmail',
+      occurredAt: checkedAt,
+      recordedAt: checkedAt,
+      title: `Gmail reconciliation｜${summary.recruitingRelevantCount} recruiting / ${summary.scannedCount} scanned`,
+      detail: `ACTION_REQUIRED:${summary.actionableCount} · UNRESOLVED:${summary.unresolvedCount} · Gmail-only:${summary.gmailOnlyCount} · TodayAction-only:${summary.pjsdasOnlyCount} · hard/fixed≤7d:${summary.fixedOrHardWithin7DaysCount}`,
+      sourceRef: runId,
+      gmailReconciliation: proof,
+    }]
+    result.snapshot.exportedAt = checkedAt
+  }
   let workspaceVersion = workspace.context.workspaceVersion
   if (!result.alreadyApplied) {
     await options.execution?.beforeWorkspaceWrite()
@@ -656,7 +713,7 @@ export async function runGmailReconciliationForBinding(options: {
       command: {
         commandId: runId,
         operation: 'gmail_semantic_intake',
-        payload: { sourceId: GMAIL_SOURCE_ID, reconciliation: true, scannedCount: summary.scannedCount },
+        payload: { sourceId: GMAIL_SOURCE_ID, reconciliation: true, summary },
         provenance: { sourceId: GMAIL_SOURCE_ID, adapterVersion: 'reconciliation-v1' },
         compensation: { ...result.compensation },
         effectiveTime: checkedAt,
@@ -926,6 +983,7 @@ export function gmailSemanticRecordFromMessage(
   }
   return {
     receivedAt: legacy.receivedAt,
+    recruitingRelevant: !excluded && legacy.classification === 'recruiting',
     gaps: !excluded && (legacy.classification === 'recruiting' || candidates.length) ? [...new Set([...interpretationGaps, ...businessAmbiguities])] : [],
     issueKinds: !excluded && (legacy.classification === 'recruiting' || candidates.length) ? [
       ...(interpretationGaps.length ? ['interpretation_failure' as const] : []),
