@@ -7,7 +7,7 @@ export default {
   fetch(request?: Request) {
     return new Response(JSON.stringify({
       resource: backendUrl('/api/mcp', request),
-      resource_name: 'PJSDAS job-search data with bounded trusted ingestion',
+      resource_name: 'TodayAction job-search data with bounded trusted ingestion',
       authorization_servers: [AUTHORIZATION_SERVER],
       bearer_methods_supported: ['header'],
       scopes_supported: ['email', 'profile'],

@@ -2,7 +2,7 @@ import { voiceOverTest as test } from '@guidepup/playwright'
 import { expect } from '@playwright/test'
 import { prepareJourney } from './support/cgr02Journey.js'
 
-test('real VoiceOver can find Today, Tell PJSDAS and the authoritative saved result', async ({ page, voiceOver }) => {
+test('real VoiceOver can find Today, Tell TodayAction and the authoritative saved result', async ({ page, voiceOver }) => {
   await prepareJourney(page)
   await page.goto('/pjsdas/today')
   await expect(page.getByRole('heading', { name: 'A第一任务' })).toBeVisible()
@@ -18,9 +18,9 @@ test('real VoiceOver can find Today, Tell PJSDAS and the authoritative saved res
   }
   expect(foundTodayTask).toBe(true)
 
-  await page.locator('.tsui-topbar').getByRole('button', { name: /告诉 PJSDAS|Tell PJSDAS/ }).click()
-  const dialog = page.getByRole('dialog', { name: '告诉 PJSDAS' })
-  const input = dialog.getByRole('textbox', { name: '要告诉 PJSDAS 的内容' })
+  await page.locator('.tsui-topbar').getByRole('button', { name: /告诉 TodayAction|Tell TodayAction/ }).click()
+  const dialog = page.getByRole('dialog', { name: '告诉 TodayAction' })
+  const input = dialog.getByRole('textbox', { name: '要告诉 TodayAction 的内容' })
   await expect(input).toBeFocused()
   const inputPhrases: string[] = []
   // The dialog focuses the textarea. Align the VoiceOver cursor with that
@@ -32,7 +32,7 @@ test('real VoiceOver can find Today, Tell PJSDAS and the authoritative saved res
     const spoken = await voiceOver.lastSpokenPhrase()
     const item = await voiceOver.itemText()
     inputPhrases.push(`${spoken} / ${item}`)
-    foundInput = /PJSDAS/.test(`${spoken} ${item}`) && /内容|告诉/.test(`${spoken} ${item}`)
+    foundInput = /TodayAction/.test(`${spoken} ${item}`) && /内容|告诉/.test(`${spoken} ${item}`)
   }
   expect(foundInput, inputPhrases.join(' | ')).toBe(true)
 
@@ -104,7 +104,7 @@ test('real VoiceOver identifies Opportunities and Settings primary-route semanti
   expect(foundSettings, settingsPhrases.join(' | ')).toBe(true)
 
   await expect(page.getByRole('button', { name: /立即同步|Sync now/ })).toBeVisible()
-  await expect(page.getByRole('button', { name: /退出 PJSDAS|Sign out/ })).toBeVisible()
+  await expect(page.getByRole('button', { name: /退出 TodayAction|Sign out/ })).toBeVisible()
 })
 
 

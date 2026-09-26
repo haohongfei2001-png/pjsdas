@@ -1,0 +1,66 @@
+{
+  "schema": "todayaction-public-engineering-evidence-v1",
+  "privateData": false,
+  "physicalDeviceCertification": false,
+  "artifactsAreOriginalCloudCaptures": true,
+  "gallery": {
+    "run": 36224876053,
+    "candidate": "57d6a45d66ea7c388ca7ead3ea807edcc105f597",
+    "baseline": "6f4fe9a6528adf40c506cea84695b44b679aa24e",
+    "fixture": "e2e/fixtures/todayWorkspace.ts + validated standalone TSUI node fixtures",
+    "screenshots": [
+      {
+        "path": "docs/todayaction-brand-v1/evidence/before-today-360-200.jpg",
+        "gitBlobSha": "bc55a47657d05f7d6ca41d23423b460c630040c3",
+        "logKey": "TA02_BEFORE_TODAY_360_200",
+        "format": "JPEG native Playwright capture, quality48"
+      },
+      {
+        "path": "docs/todayaction-brand-v1/evidence/after-today-360-200.jpg",
+        "gitBlobSha": "63453f95f511a611a53912570fb5ed60ed8e23d8",
+        "logKey": "TA02_AFTER_TODAY_360_200",
+        "format": "JPEG native Playwright capture, quality48"
+      },
+      {
+        "path": "docs/todayaction-brand-v1/evidence/after-library-390-100.jpg",
+        "gitBlobSha": "1d7eadfd7d6724f0c5a44ae9b50c147b0ff431e4",
+        "logKey": "TA02_AFTER_LIBRARY_390_100",
+        "format": "JPEG native Playwright capture, quality48"
+      },
+      {
+        "path": "docs/todayaction-brand-v1/evidence/after-dense-768-200.jpg",
+        "gitBlobSha": "7ab19426c55bb7f89278bceaec26ffd7bf769720",
+        "logKey": "TA02_AFTER_DENSE_768_200",
+        "format": "JPEG native Playwright capture, quality48"
+      },
+      {
+        "path": "docs/todayaction-brand-v1/evidence/after-today-1440-100.jpg",
+        "gitBlobSha": "5e90dd0b0ba80873690bd4a2897b88455981afba",
+        "logKey": "TA02_AFTER_TODAY_1440_100",
+        "format": "JPEG native Playwright capture, quality48"
+      }
+    ]
+  },
+  "devices": "DEFERRED",
+  "privateWorkspace": "DEFERRED",
+  "providerBrand": "DEFERRED",
+  "legal": "DEFERRED",
+  "production": {
+    "run": 36226173027,
+    "job": 108360537790,
+    "main": "ae5ecfc78b101e581547f1553880d2dbadc1457d",
+    "snapshot": "anonymous read-only release + assets + DOM, no private account",
+    "screenshots": [
+      {
+        "path": "docs/todayaction-brand-v1/evidence/production-mobile.jpg",
+        "gitBlobSha": "9a25cc77b642c89e6ce6d983833a0e68113f1fbd",
+        "logKeys": [
+          "TA_PRODUCTION_CANONICAL",
+          "TA_PRODUCTION_HISTORICAL"
+        ],
+        "note": "Both original captures are byte-identical; one file is retained.",
+        "format": "JPEG native Playwright capture, quality55"
+      }
+    ]
+  }
+}

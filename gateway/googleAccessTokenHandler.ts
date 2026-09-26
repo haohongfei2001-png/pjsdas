@@ -42,7 +42,7 @@ function safeError(caught: unknown) {
   }
   return {
     code: 'GOOGLE_ACCESS_TOKEN_FAILED',
-    message: caught instanceof Error ? caught.message : 'PJSDAS could not restore Google Drive authorization.',
+    message: caught instanceof Error ? caught.message : 'TodayAction could not restore Google Drive authorization.',
     retryable: false,
   }
 }
@@ -80,7 +80,7 @@ export function createGoogleAccessTokenHandler(config: GoogleAccessTokenHandlerC
 
     try {
       if (!config.tokenEncryptionKey.trim() || !config.googleClientId.trim() || !config.googleClientSecret.trim()) {
-        throw new WorkspaceSourceError('INVALID_SOURCE_CONFIG', 'PJSDAS Google authorization is not configured.', false)
+        throw new WorkspaceSourceError('INVALID_SOURCE_CONFIG', 'TodayAction Google authorization is not configured.', false)
       }
 
       const { identity, accessToken: pjsdasAccessToken } = await resolveIdentity(request)

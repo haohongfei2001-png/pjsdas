@@ -17,8 +17,8 @@ describe('Discovery Review reason presentation', () => {
       },
     }
 
-    expect(presentDiscoveryReviewReason(item, true)).toContain('PJSDAS 已存在相同或高度相似岗位')
-    expect(presentDiscoveryReviewReason(item, false)).toContain('PJSDAS already contains the same or a highly similar role')
+    expect(presentDiscoveryReviewReason(item, true)).toContain('TodayAction 已存在相同或高度相似岗位')
+    expect(presentDiscoveryReviewReason(item, false)).toContain('TodayAction already contains the same or a highly similar role')
     expect(presentDiscoveryReviewReason(item, false)).not.toContain('旧中文原因')
   })
 

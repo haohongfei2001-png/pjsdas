@@ -51,7 +51,7 @@ export async function parseOriginMigrationRecoveryText(text: string) {
   }
   const raw = parsed as Partial<OriginMigrationRecoveryBundle>
   if (raw.schema !== 'pjsdas-origin-migration-recovery' || raw.version !== 1) {
-    throw new Error('这不是受支持的 PJSDAS 域名迁移恢复文件。')
+    throw new Error('这不是受支持的 TodayAction 域名迁移恢复文件。')
   }
   if (!raw.createdAt || Number.isNaN(new Date(raw.createdAt).getTime())) {
     throw new Error('迁移恢复文件 createdAt 无效。')

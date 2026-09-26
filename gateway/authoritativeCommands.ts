@@ -281,7 +281,7 @@ function conflictFromIntervening(
   if (!overlaps.size) return undefined
   return {
     kind: 'OBJECT_CONFLICT',
-    message: 'The same business object changed after this command was prepared. PJSDAS kept the newer authoritative state and did not guess which fact should win.',
+    message: 'The same business object changed after this command was prepared. TodayAction kept the newer authoritative state and did not guess which fact should win.',
     objects: [...overlaps.values()],
     interveningCommandIds: conflictingCommands,
   }
@@ -329,7 +329,7 @@ export function createAuthoritativeCommandExecutor(options: TransactionalWorkspa
 
   async function lookup(principal: MutationPrincipal, targetCommandId: string) {
     const current = await store.readForUser(principal.userId)
-    if (!current) throw new WorkspaceSourceError('WORKSPACE_NOT_FOUND', 'PJSDAS connected workspace has not been migrated yet.', false)
+    if (!current) throw new WorkspaceSourceError('WORKSPACE_NOT_FOUND', 'TodayAction connected workspace has not been migrated yet.', false)
     const record = await store.readCommandForUser(principal.userId, targetCommandId)
     return {
       found: Boolean(record),
@@ -370,12 +370,12 @@ export function createAuthoritativeCommandExecutor(options: TransactionalWorkspa
 
     for (let attempt = 0; attempt < 5; attempt += 1) {
       const current = await store.readForUser(principal.userId)
-      if (!current) throw new WorkspaceSourceError('WORKSPACE_NOT_FOUND', 'PJSDAS connected workspace has not been migrated yet.', false)
+      if (!current) throw new WorkspaceSourceError('WORKSPACE_NOT_FOUND', 'TodayAction connected workspace has not been migrated yet.', false)
 
       const existing = await store.readCommandForUser(principal.userId, parsed.commandId)
       if (existing) {
         if (existing.payloadHash !== payloadHash) {
-          throw new WorkspaceSourceError('COMMAND_ID_REUSED', 'PJSDAS command id was reused with a different payload.', false)
+          throw new WorkspaceSourceError('COMMAND_ID_REUSED', 'TodayAction command id was reused with a different payload.', false)
         }
         return {
           outcome: 'ALREADY_APPLIED',
@@ -540,12 +540,12 @@ export function createAuthoritativeCommandExecutor(options: TransactionalWorkspa
 
     for (let attempt = 0; attempt < 5; attempt += 1) {
       const current = await store.readForUser(principal.userId)
-      if (!current) throw new WorkspaceSourceError('WORKSPACE_NOT_FOUND', 'PJSDAS connected workspace has not been migrated yet.', false)
+      if (!current) throw new WorkspaceSourceError('WORKSPACE_NOT_FOUND', 'TodayAction connected workspace has not been migrated yet.', false)
 
       const existingUndo = await store.readCommandForUser(principal.userId, parsed.commandId)
       if (existingUndo) {
         if (existingUndo.payloadHash !== payloadHash) {
-          throw new WorkspaceSourceError('COMMAND_ID_REUSED', 'PJSDAS undo command id was reused with a different target.', false)
+          throw new WorkspaceSourceError('COMMAND_ID_REUSED', 'TodayAction undo command id was reused with a different target.', false)
         }
         return {
           outcome: 'ALREADY_APPLIED',

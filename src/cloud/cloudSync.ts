@@ -235,7 +235,7 @@ export async function resolveConflictKeepLocal(userId: string): Promise<CloudSyn
 
 export async function resolveConflictUseCloud(userId: string): Promise<CloudSyncOutcome> {
   const remoteRaw = await fetchRemoteWorkspace(userId)
-  if (!remoteRaw) throw new Error('这个 Google 账号还没有 PJSDAS Drive 工作区。')
+  if (!remoteRaw) throw new Error('这个 Google 账号还没有 TodayAction Drive 工作区。')
   const remote = await verifyRemote(remoteRaw)
   await replaceLocalSnapshotFromCloud(remote.snapshot)
   bindLocalWorkspaceToUser(userId, true)

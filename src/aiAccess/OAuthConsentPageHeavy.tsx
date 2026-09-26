@@ -1,4 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
+import BrandMark from '../BrandMark.js'
+import './oauthConsent.css'
+import { brandDocumentTitle } from '../brand.js'
 import type { User } from '@supabase/supabase-js'
 import { pjsdasSupabase } from './supabaseClient.js'
 
@@ -16,7 +19,7 @@ function cleanConsentReturnUrl() {
 }
 
 function scopeLabel(scope: string) {
-  if (scope === 'openid') return '确认你的 PJSDAS 身份'
+  if (scope === 'openid') return '确认你的 TodayAction 身份'
   if (scope === 'email') return '读取你的登录邮箱'
   if (scope === 'profile') return '读取基础账户资料'
   if (scope === 'offline_access') return '保持 ChatGPT 授权，无需每小时重新登录'
@@ -33,6 +36,7 @@ type AuthorizationDetails = {
 
 export default function OAuthConsentPage() {
   const authorizationId = useMemo(authIdFromLocation, [])
+  useEffect(() => { document.title = brandDocumentTitle('authorization', 'zh') }, [])
   const [user, setUser] = useState<User | null>(null)
   const [details, setDetails] = useState<AuthorizationDetails | null>(null)
   const [loading, setLoading] = useState(true)
@@ -122,14 +126,14 @@ export default function OAuthConsentPage() {
   const scopes = (details?.scope ?? '').split(/\s+/).filter(Boolean)
 
   return (
-    <main style={{ minHeight: '100vh', display: 'grid', placeItems: 'center', padding: 24, background: '#f2ead7', color: '#292720' }}>
-      <section style={{ width: 'min(620px, 100%)', background: '#fffaf0', border: '1px solid rgba(41,39,32,.16)', borderRadius: 24, padding: 32, boxShadow: '0 20px 60px rgba(41,39,32,.08)' }}>
-        <div style={{ fontSize: 12, letterSpacing: '.12em', fontWeight: 700, opacity: .58 }}>PJSDAS · CHATGPT ACCESS</div>
-        <h1 style={{ margin: '10px 0 8px', fontSize: 30 }}>授权 ChatGPT 访问 PJSDAS</h1>
-        <p style={{ lineHeight: 1.7, opacity: .78 }}>
-          ChatGPT 可以读取你的 Today、岗位、Pipeline、Decision Rules 与 Timeline。对于受信任的 Monitor / Gmail 摄入，它还可以提交受限、来源支撑的事实，由 PJSDAS 在身份解析、幂等、审计记账与精确工作区版本冲突保护下自动写入。
+    <main className="ta-consent">
+      <section className="ta-consent-panel">
+        <div className="ta-consent-brand"><BrandMark size={30} /> TodayAction · CHATGPT ACCESS</div>
+        <h1>授权 ChatGPT 访问 TodayAction</h1>
+        <p>
+          ChatGPT 可以读取你的 Today、岗位、Pipeline、Decision Rules 与 Timeline。对于受信任的 Monitor / Gmail 摄入，它还可以提交受限、来源支撑的事实，由 TodayAction 在身份解析、幂等、审计记账与精确工作区版本冲突保护下自动写入。
         </p>
-        <p style={{ lineHeight: 1.7, opacity: .78 }}>
+        <p>
           这类自动摄入不能静默修改 Decision Rules、持久偏好、拒绝决定，也不能删除数据；除此之外的修改仍必须通过可审阅的 ChangeSet 明确应用。
         </p>
 
@@ -137,16 +141,16 @@ export default function OAuthConsentPage() {
 
         {!loading && !user ? (
           <div style={{ marginTop: 24 }}>
-            <p style={{ lineHeight: 1.65 }}>先使用你绑定 PJSDAS 的 Google 账号登录。这里不会再次申请 Google Drive 权限。</p>
-            <button disabled={working} onClick={() => { void signIn() }} style={{ padding: '12px 18px', border: 0, borderRadius: 12, background: '#292720', color: '#fff', cursor: 'pointer' }}>
-              {working ? '正在前往 Google…' : '使用 Google 登录 PJSDAS'}
+            <p style={{ lineHeight: 1.65 }}>先使用你绑定 TodayAction 的 Google 账号登录。这里不会再次申请 Google Drive 权限。</p>
+            <button disabled={working} onClick={() => { void signIn() }} className="ta-consent-primary">
+              {working ? '正在前往 Google…' : '使用 Google 登录 TodayAction'}
             </button>
           </div>
         ) : null}
 
         {!loading && user && details ? (
           <div style={{ marginTop: 24 }}>
-            <div style={{ padding: 16, borderRadius: 14, background: 'rgba(41,39,32,.05)', lineHeight: 1.65 }}>
+            <div className="ta-consent-details">
               <div><strong>请求方：</strong>{details.client?.name || 'ChatGPT / MCP client'}</div>
               <div><strong>当前账号：</strong>{user.email || user.id}</div>
               {details.redirect_uri ? <div style={{ wordBreak: 'break-all' }}><strong>回跳地址：</strong>{details.redirect_uri}</div> : null}
@@ -155,21 +159,21 @@ export default function OAuthConsentPage() {
             <ul style={{ lineHeight: 1.8, paddingLeft: 22 }}>
               {(scopes.length ? scopes : ['email']).map((scope) => <li key={scope}>{scopeLabel(scope)}</li>)}
             </ul>
-            <p style={{ fontSize: 13, opacity: .68, lineHeight: 1.6 }}>
-              Google Drive 的 appDataFolder 授权由 PJSDAS 网站单独建立并加密保存；本页不会把 Google refresh token 交给 ChatGPT。PJSDAS 自己执行并约束所有持久化写入。
+            <p className="ta-consent-note">
+              Google Drive 的 appDataFolder 授权由 TodayAction 网站单独建立并加密保存；本页不会把 Google refresh token 交给 ChatGPT。TodayAction 自己执行并约束所有持久化写入。
             </p>
-            <div style={{ display: 'flex', gap: 10, marginTop: 24 }}>
-              <button disabled={working} onClick={() => { void decide('approve') }} style={{ padding: '12px 18px', border: 0, borderRadius: 12, background: '#292720', color: '#fff', cursor: 'pointer' }}>
+            <div className="ta-consent-actions">
+              <button disabled={working} onClick={() => { void decide('approve') }} className="ta-consent-primary">
                 {working ? '处理中…' : '允许此访问'}
               </button>
-              <button disabled={working} onClick={() => { void decide('deny') }} style={{ padding: '12px 18px', border: '1px solid rgba(41,39,32,.22)', borderRadius: 12, background: 'transparent', color: '#292720', cursor: 'pointer' }}>
+              <button disabled={working} onClick={() => { void decide('deny') }} className="ta-consent-secondary">
                 拒绝
               </button>
             </div>
           </div>
         ) : null}
 
-        {error ? <div style={{ marginTop: 22, padding: 14, borderRadius: 12, background: '#fff0ed', color: '#8b2e25' }}>{error}</div> : null}
+        {error ? <div className="ta-consent-error" role="alert">{error}</div> : null}
       </section>
     </main>
   )

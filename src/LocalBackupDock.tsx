@@ -153,8 +153,8 @@ export default function LocalBackupDock({ onChanged }: LocalBackupDockProps) {
                 <div className="eyebrow">RESTORE</div>
                 <h3>{zh ? '从快照恢复' : 'Restore from a snapshot'}</h3>
                 <p>{zh
-                  ? '先解析和校验；只有再次确认后才会替换当前浏览器的 PJSDAS 数据。'
-                  : 'PJSDAS parses and validates the file first. Your browser workspace changes only after explicit confirmation.'}</p>
+                  ? '先解析和校验；只有再次确认后才会替换当前浏览器的 TodayAction 数据。'
+                  : 'TodayAction parses and validates the file first. Your browser workspace changes only after explicit confirmation.'}</p>
                 <label className="backup-file-button">
                   {busy ? (zh ? '处理中…' : 'Processing…') : (zh ? '选择备份文件' : 'Choose backup file')}
                   <input type="file" accept="application/json,.json" disabled={busy} onChange={(event) => readBackup(event.target.files?.[0])} />

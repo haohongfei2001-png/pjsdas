@@ -37,14 +37,14 @@ export function createAuthorizationGrantStore(options: AuthorizationGrantStoreOp
           },
         })
       } catch {
-        throw new WorkspaceSourceError('AUTH_UNAVAILABLE', 'PJSDAS authorization grants are temporarily unavailable.', true)
+        throw new WorkspaceSourceError('AUTH_UNAVAILABLE', 'TodayAction authorization grants are temporarily unavailable.', true)
       }
 
       if (response.status === 401 || response.status === 403) {
-        throw new WorkspaceSourceError('AUTH_INVALID', 'PJSDAS delegated authorization is invalid or expired.', false)
+        throw new WorkspaceSourceError('AUTH_INVALID', 'TodayAction delegated authorization is invalid or expired.', false)
       }
       if (!response.ok) {
-        throw new WorkspaceSourceError('AUTH_UNAVAILABLE', `PJSDAS authorization grant lookup failed (HTTP ${response.status}).`, true)
+        throw new WorkspaceSourceError('AUTH_UNAVAILABLE', `TodayAction authorization grant lookup failed (HTTP ${response.status}).`, true)
       }
 
       let rows: Array<{
@@ -56,7 +56,7 @@ export function createAuthorizationGrantStore(options: AuthorizationGrantStoreOp
       try {
         rows = await response.json()
       } catch {
-        throw new WorkspaceSourceError('AUTH_INVALID', 'PJSDAS authorization grant response is invalid.', false)
+        throw new WorkspaceSourceError('AUTH_INVALID', 'TodayAction authorization grant response is invalid.', false)
       }
 
       return rows.flatMap((row) => {

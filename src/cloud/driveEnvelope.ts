@@ -34,9 +34,9 @@ export function createDriveWorkspaceEnvelope(input: {
 }
 
 export function parseDriveWorkspaceEnvelope(value: unknown): DriveWorkspaceEnvelope {
-  if (!isObject(value)) throw new Error('Google Drive 中的 PJSDAS 工作区格式无效。')
+  if (!isObject(value)) throw new Error('Google Drive 中的 TodayAction 工作区格式无效。')
   if (value.schema !== DRIVE_WORKSPACE_SCHEMA || value.version !== DRIVE_WORKSPACE_ENVELOPE_VERSION) {
-    throw new Error('Google Drive 中的 PJSDAS 工作区版本不受支持。')
+    throw new Error('Google Drive 中的 TodayAction 工作区版本不受支持。')
   }
   if (typeof value.fingerprint !== 'string' || !value.fingerprint || typeof value.updatedByDevice !== 'string' || !value.updatedByDevice) {
     throw new Error('Google Drive 工作区缺少同步元数据。')
@@ -44,6 +44,6 @@ export function parseDriveWorkspaceEnvelope(value: unknown): DriveWorkspaceEnvel
   if (typeof value.updatedAt !== 'string' || Number.isNaN(new Date(value.updatedAt).getTime())) {
     throw new Error('Google Drive 工作区更新时间无效。')
   }
-  if (!isObject(value.snapshot)) throw new Error('Google Drive 工作区缺少 PJSDAS Snapshot。')
+  if (!isObject(value.snapshot)) throw new Error('Google Drive 工作区缺少 TodayAction Snapshot。')
   return value as unknown as DriveWorkspaceEnvelope
 }

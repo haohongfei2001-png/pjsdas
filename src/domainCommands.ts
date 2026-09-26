@@ -696,7 +696,7 @@ export function applyUserDomainCommand(
       status: 'APPLIED',
       snapshot: next,
       summary: built.reminder.state === 'unsupported'
-        ? `Reminder intent recorded, but ${built.reminder.capability} is not currently available to PJSDAS.`
+        ? `Reminder intent recorded, but ${built.reminder.capability} is not currently available to TodayAction.`
         : 'Reminder intent recorded with one delivery owner.',
       compensation: {
         operation: 'restore_reminder_intent',

@@ -6,12 +6,14 @@
   "scripts": {
     "dev": "vite",
     "test": "vitest run",
-    "prebuild": "node scripts/write-release-identity.mjs",
+    "prebuild": "node scripts/verify-brand-assets.mjs && node scripts/write-release-identity.mjs",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
     "mcp": "tsx gateway/mcpServer.ts",
     "self-test:production": "tsx scripts/production-self-test.ts",
-    "postbuild": "node scripts/write-spa-fallback.mjs && node scripts/write-frontend-release-manifest.mjs"
+    "postbuild": "node scripts/write-spa-fallback.mjs && node scripts/write-frontend-release-manifest.mjs",
+    "brand:export": "python3 scripts/export-brand-assets.py",
+    "brand:verify": "node scripts/verify-brand-assets.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/server": "^2.0.0",

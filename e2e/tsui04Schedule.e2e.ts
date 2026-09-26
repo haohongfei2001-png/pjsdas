@@ -160,7 +160,7 @@ test('TSUI-04 real schedule: today anchor, both directions, unresolved and undat
   await page.screenshot({ path: 'test-results/tsui04/schedule-large-text-320.png', fullPage: true, animations: 'disabled' })
 
   await page.locator('.tsui-tell-button').click()
-  const capture = page.getByRole('dialog', { name: /告诉 PJSDAS|Tell PJSDAS/ })
+  const capture = page.getByRole('dialog', { name: /告诉 TodayAction|Tell TodayAction/ })
   await expect(capture).toBeVisible()
   await expect(capture).not.toContainText('⌘ Enter')
   await page.screenshot({ path: 'test-results/tsui04/capture-mobile.png', fullPage: true, animations: 'disabled' })

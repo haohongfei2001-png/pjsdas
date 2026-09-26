@@ -108,7 +108,7 @@ export default function DecisionRequestsView({
             : (zh ? '现在没有需要你决定的事' : 'Nothing needs your decision right now')}</strong>
           <span>{focusRequestId
             ? (zh ? '查看所有待决定事项，或返回刚才的机会。' : 'View all open decisions, or return to the opportunity.')
-            : (zh ? '这就是正常状态。PJSDAS 会继续自动处理明确事实。' : 'That is the normal state. PJSDAS keeps handling clear facts automatically.')}</span>
+            : (zh ? '这就是正常状态。TodayAction 会继续自动处理明确事实。' : 'That is the normal state. TodayAction keeps handling clear facts automatically.')}</span>
         </div>
       ) : (
         <div className="ultimate-decision-list">

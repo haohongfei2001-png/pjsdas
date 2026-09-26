@@ -181,7 +181,7 @@ export default function OpportunityDetailDrawer({
               void onMarkAction(applyAction.id, 'done').finally(() => setPendingActionId(undefined))
             }}>{pendingActionId === applyAction.id ? (zh ? '确认中…' : 'Confirming…') : (zh ? '我已投递' : 'I applied')}</button> : null}
             {eligibleToApply && !confirmedApplicationUrl ? <span className="job-detail-no-link">{zh ? '暂无已确认的申请入口' : 'No confirmed application link'}</span> : null}
-            <button type="button" className="job-detail-capture" disabled={readOnly} onClick={onCapture}>{zh ? '告诉 PJSDAS' : 'Tell PJSDAS'}</button>
+            <button type="button" className="job-detail-capture" disabled={readOnly} onClick={onCapture}>{zh ? '告诉 TodayAction' : 'Tell TodayAction'}</button>
           </div>
           {applicationGroup ? <p className="job-detail-constraint">{applicationGroup.rule ?? (zh ? '此岗位受共享投递名额约束。' : 'This job shares application capacity.')} {applicationGroup.remaining !== undefined ? (zh ? `剩余名额：${applicationGroup.remaining}` : `Remaining: ${applicationGroup.remaining}`) : ''}</p> : null}
         </div> : null}
@@ -293,7 +293,7 @@ export default function OpportunityDetailDrawer({
 
         <footer className="opportunity-detail-footer">
           <button type="button" onClick={() => onNavigate('today')}>{zh ? '回到 Today' : 'Back to Today'}</button>
-          <button className="cgr-context-capture" type="button" disabled={readOnly} onClick={onCapture}>{zh ? '告诉 PJSDAS' : 'Tell PJSDAS'}</button>
+          <button className="cgr-context-capture" type="button" disabled={readOnly} onClick={onCapture}>{zh ? '告诉 TodayAction' : 'Tell TodayAction'}</button>
           {!asPage && !ended && confirmedApplicationUrl
             ? <a href={confirmedApplicationUrl} target="_blank" rel="noopener noreferrer">{zh ? '打开已确认申请入口' : 'Open confirmed application'}</a>
             : !asPage && discovery?.sourceUrl

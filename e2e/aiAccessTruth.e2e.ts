@@ -26,7 +26,7 @@ test('AI Access settings disclose bounded trusted automation and user-controlled
 
   await expect(card).toContainText('Automatic recruiting-email tracking')
   await expect(card).toContainText('Gmail read-only access')
-  await expect(card).toContainText('Raw email bodies are never persisted in PJSDAS')
+  await expect(card).toContainText('Raw email bodies are never persisted in TodayAction')
   await expect(card).toContainText('ambiguous messages remain unresolved')
   await expect(card.getByRole('button', { name: 'Authorize Gmail and enable' })).toBeVisible()
   await expect(card).toContainText('Long-lived Google authorization is encrypted')

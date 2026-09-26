@@ -21,7 +21,7 @@ export async function fetchAudienceStatus(): Promise<AudienceStatus> {
   })
   const body = await response.json().catch(() => undefined) as AudienceStatus | { message?: string } | undefined
   if (!response.ok) {
-    throw new Error(body && 'message' in body && body.message ? body.message : `PJSDAS audience status failed (HTTP ${response.status}).`)
+    throw new Error(body && 'message' in body && body.message ? body.message : `TodayAction audience status failed (HTTP ${response.status}).`)
   }
   return body as AudienceStatus
 }

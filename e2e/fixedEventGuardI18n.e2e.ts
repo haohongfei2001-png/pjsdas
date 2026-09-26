@@ -53,7 +53,7 @@ async function seedPastEvent(page: Page) {
 
 async function openCapture(page: Page) {
   await page.locator('.tsui-tell-button').click()
-  await expect(page.getByRole('heading', { name: '告诉 PJSDAS' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: '告诉 TodayAction' })).toBeVisible()
 }
 
 test('elapsed recruiting node stays unresolved until an explicit completion fact resolves it', async ({ page }) => {

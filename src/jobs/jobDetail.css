@@ -22,3 +22,8 @@
 .job-detail-related p{margin:0 0 18px;color:#647084;font-size:.875rem;line-height:1.55}
 .job-detail-related button{min-height:44px;border:0;padding:0;background:transparent;color:#355dd7;font-size:.875rem;font-weight:650}
 @media(max-width:800px){.job-detail-mark{flex-basis:40px;width:40px;height:40px}.job-detail-page .opportunity-detail-header{gap:12px}}
+
+.job-detail-page .opportunity-detail-process-summary>div{min-width:0;overflow-wrap:anywhere}
+.job-detail-page :is(button,a,summary):focus-visible{outline:3px solid #315ec5;outline-offset:3px}
+.job-detail-actions :is(a,button){box-sizing:border-box;max-width:100%;white-space:normal;overflow-wrap:anywhere;padding-block:8px;line-height:1.4}
+.job-detail-page .opportunity-detail-header-badges{flex-wrap:wrap}

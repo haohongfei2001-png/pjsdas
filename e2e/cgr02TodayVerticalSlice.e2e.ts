@@ -1,9 +1,8 @@
 import { mkdir } from 'node:fs/promises'
-import { expect, test, type BrowserContext, type Page, type Route } from '@playwright/test'
+import { expect, test, type Page } from '@playwright/test'
 import { upgradeSnapshotToLatest, type PJSDASSnapshot } from '../src/snapshot.js'
+import { AUTH_KEY, BACKEND, seedSession, workspace, opportunity, action, cors, health } from './fixtures/todayWorkspace.js'
 
-const AUTH_KEY = 'sb-yyrzwpoxlxpafdlbkdtg-auth-token'
-const BACKEND = 'https://pjsdas-remote-alpha.vercel.app'
 const VISUAL_DIR = 'test-results/cgr02-visual'
 const VISUAL_TIME = new Date('2026-09-23T08:00:00.000Z')
 
@@ -24,119 +23,6 @@ test.beforeEach(async ({ page }) => {
   // Screenshot copy and relative dates must remain stable across CI days.
   await page.clock.setFixedTime(VISUAL_TIME)
 })
-
-function session(accountKey: string, token: string) {
-  return {
-    access_token: token,
-    token_type: 'bearer',
-    expires_in: 31_536_000,
-    expires_at: Math.floor(Date.now() / 1000) + 31_536_000,
-    refresh_token: `refresh-${token}`,
-    user: {
-      id: accountKey,
-      aud: 'authenticated',
-      role: 'authenticated',
-      email: `${accountKey}@example.test`,
-      email_confirmed_at: '2026-09-23T00:00:00.000Z',
-      phone: '',
-      confirmed_at: '2026-09-23T00:00:00.000Z',
-      last_sign_in_at: '2026-09-23T00:00:00.000Z',
-      app_metadata: { provider: 'google', providers: ['google'] },
-      user_metadata: { sub: accountKey, full_name: accountKey },
-      identities: [],
-      created_at: '2026-09-23T00:00:00.000Z',
-      updated_at: '2026-09-23T00:00:00.000Z',
-      is_anonymous: false,
-    },
-  }
-}
-
-async function seedSession(context: BrowserContext, accountKey = 'account-a', token = 'token-a') {
-  await context.addInitScript(({ key, value }) => {
-    window.localStorage.setItem(key, JSON.stringify(value))
-  }, { key: AUTH_KEY, value: session(accountKey, token) })
-}
-
-function opportunity(id: string, company: string, role: string) {
-  return {
-    id,
-    company,
-    role,
-    currentStageLabel: '待投递',
-    processStage: 'not_applied' as const,
-    roleType: 'core' as const,
-    participationStatus: 'active' as const,
-    early: false,
-    opportunityValue: 80,
-    fitScore: 80,
-    assessmentStatus: 'unassessed' as const,
-    locallyManaged: true,
-    importedAt: '2026-09-23T00:00:00.000Z',
-  }
-}
-
-function action(id: string, title: string, opportunityId?: string, leverage = 70) {
-  return {
-    id,
-    kind: 'manual' as const,
-    title,
-    opportunityId,
-    estimatedMinutes: 20,
-    leverage,
-    delayCost: leverage,
-    status: 'todo' as const,
-    createdAt: '2026-09-23T00:00:00.000Z',
-    updatedAt: '2026-09-23T00:00:00.000Z',
-  }
-}
-
-function workspace(): PJSDASSnapshot {
-  return upgradeSnapshotToLatest({
-    schema: 'pjsdas-local-snapshot',
-    version: 1,
-    exportedAt: '2026-09-23T00:00:00.000Z',
-    data: {
-      opportunities: [
-        opportunity('A-opp-1', 'A公司', '产品经理'),
-        opportunity('A-opp-2', '第二公司', '策略产品'),
-      ],
-      processes: [],
-      processEvents: [],
-      actions: [
-        action('A-action-1', 'A第一任务', 'A-opp-1', 86),
-        action('A-action-2', 'A第二任务', 'A-opp-2', 60),
-      ],
-      prep: [],
-      applicationGroups: [],
-      semanticReceipts: [],
-      timeline: [],
-    },
-  })
-}
-
-function health() {
-  return {
-    status: 'ok',
-    version: '1.10.0-alpha.1',
-    mode: 'transactional-connected',
-    workspaceAuthority: 'transactional',
-    capabilities: { deploymentPortability: true },
-  }
-}
-
-function cors(route: Route, body: unknown, status = 200) {
-  return route.fulfill({
-    status,
-    headers: {
-      'access-control-allow-origin': '*',
-      'access-control-allow-headers': 'authorization, content-type',
-      'access-control-allow-methods': 'GET, POST, OPTIONS',
-      'cache-control': 'no-store',
-      'content-type': 'application/json',
-    },
-    body: JSON.stringify(body),
-  })
-}
 
 interface State {
   revision: number
@@ -333,7 +219,7 @@ test('CGR-02 golden journey: understand -> authoritative save -> cross-client vi
 
   const input = pageA.locator('.cgr-capture-input')
   await input.fill('事项：整理面试材料')
-  await expect(pageA.getByText('PJSDAS 理解为')).toBeVisible()
+  await expect(pageA.getByText('TodayAction 理解为')).toBeVisible()
   await expect(pageA.getByText(/新增行动 · 整理面试材料/)).toBeVisible()
   await expect(pageA.getByText('尚未保存')).toBeVisible()
 
@@ -394,8 +280,8 @@ test('Today capture supports a keyboard-only save with named controls and restor
   await expect(opener).toBeFocused()
   await page.keyboard.press('Enter')
 
-  const dialog = page.getByRole('dialog', { name: '告诉 PJSDAS' })
-  const input = dialog.getByRole('textbox', { name: '要告诉 PJSDAS 的内容' })
+  const dialog = page.getByRole('dialog', { name: '告诉 TodayAction' })
+  const input = dialog.getByRole('textbox', { name: '要告诉 TodayAction 的内容' })
   await expect(dialog).toBeVisible()
   await expect(input).toBeFocused()
   await page.keyboard.press('Shift+Tab')
@@ -501,10 +387,10 @@ test('offline capture remains account-scoped draft only and legacy capture route
   await expect(save).toBeEnabled()
   await save.click()
   await expect(page.getByText('仅草稿')).toBeVisible()
-  await expect(page.getByText(/还没有写入 PJSDAS/)).toBeVisible()
+  await expect(page.getByText(/还没有写入 TodayAction/)).toBeVisible()
   // Capture the settled interpretation, not a race between the loading state
   // and the local offline parser. The draft-only assertion remains separate.
-  await expect(page.getByText('PJSDAS 理解为')).toBeVisible()
+  await expect(page.getByText('TodayAction 理解为')).toBeVisible()
   await expect(page.getByText(/新增行动 · 离线整理材料/)).toBeVisible()
   await mkdir(VISUAL_DIR, { recursive: true })
   await reviewedScreenshot(page, 'offline-draft.png')
@@ -522,7 +408,7 @@ test('expired session rejects a connected save before execution and preserves th
   await expect(page.getByRole('heading', { name: 'A第一任务' })).toBeVisible()
   const input = page.locator('.cgr-capture-input')
   await input.fill('事项：整理面试材料')
-  await expect(page.getByText('PJSDAS 理解为')).toBeVisible()
+  await expect(page.getByText('TodayAction 理解为')).toBeVisible()
   await expect(page.getByRole('button', { name: '确认并保存' })).toBeEnabled()
   await page.getByRole('button', { name: '确认并保存' }).click()
   await expect(page.getByRole('alert')).toContainText('登录会话已过期')
@@ -541,7 +427,7 @@ test('same-object conflict refreshes connected Today and keeps the unsaved state
   await expect(page.getByRole('heading', { name: 'A第一任务' })).toBeVisible()
   const input = page.locator('.cgr-capture-input')
   await input.fill('事项：整理面试材料')
-  await expect(page.getByText('PJSDAS 理解为')).toBeVisible()
+  await expect(page.getByText('TodayAction 理解为')).toBeVisible()
   await page.getByRole('button', { name: '确认并保存' }).click()
   await expect(page.getByRole('alert')).toContainText('发现具体事实冲突')
   await expect(page.getByRole('alert')).toContainText('请先核对最新事实')
@@ -686,7 +572,7 @@ test('first load and unavailable read show distinct truthful states', async ({ p
   await page.goto('/pjsdas/today')
   await expect(page.getByRole('heading', { name: 'A第一任务' })).toHaveCount(0)
   await expect(page.getByText('正在确认最新状态…')).toBeVisible()
-  await expect(page.getByText('先让 PJSDAS 了解你的求职进展')).toHaveCount(0)
+  await expect(page.getByText('先让 TodayAction 了解你的求职进展')).toHaveCount(0)
   await expect(page.getByText('这里暂无有依据的记录。')).toHaveCount(0)
   await expect(page.locator('.tsui-task-panel')).toHaveCount(0)
   await expect(page.locator('.tsui-inline-notice')).toHaveCount(0)
@@ -703,7 +589,7 @@ test('first load and unavailable read show distinct truthful states', async ({ p
   await installServer(errorPage, state)
   await errorPage.goto('/pjsdas/today')
   await expect(errorPage.getByText('暂时无法确认今天，请重试。')).toBeVisible()
-  await expect(errorPage.getByText('先让 PJSDAS 了解你的求职进展')).toHaveCount(0)
+  await expect(errorPage.getByText('先让 TodayAction 了解你的求职进展')).toHaveCount(0)
   await expect(errorPage.getByText('这里暂无有依据的记录。')).toHaveCount(0)
   await expect(errorPage.locator('.tsui-inline-notice')).toHaveCount(0)
   await reviewedScreenshot(errorPage, 'read-error.png')
@@ -818,9 +704,9 @@ test('TSUI-05 single task remains an ordinary row at 390 and 320 with real 200% 
   expect(await page.locator('.tsui-task-context').evaluate((element) => getComputedStyle(element).whiteSpace)).toBe('normal')
   await reviewedScreenshot(page, 'single-320-200.png', true)
   await page.locator('.tsui-tell-button').click()
-  const dialog = page.getByRole('dialog', { name: '告诉 PJSDAS' })
+  const dialog = page.getByRole('dialog', { name: '告诉 TodayAction' })
   await expect(dialog).toBeVisible()
-  await expect(dialog.getByRole('textbox', { name: '要告诉 PJSDAS 的内容' })).toBeFocused()
+  await expect(dialog.getByRole('textbox', { name: '要告诉 TodayAction 的内容' })).toBeFocused()
   const dialogWidth = await page.evaluate(() => document.documentElement.scrollWidth)
   expect(dialogWidth).toBeLessThanOrEqual(321)
   await reviewedScreenshot(page, 'capture-320-200-top.png', true)

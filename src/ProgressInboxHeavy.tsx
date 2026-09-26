@@ -178,10 +178,10 @@ export default function ProgressInboxHeavy({ onChanged }: ProgressInboxProps) {
             <header className="progress-inbox-header">
               <div>
                 <div className="eyebrow">NATURAL LANGUAGE UPDATE</div>
-                <h2>{zh ? '把岗位进展和其他事项直接告诉 PJSDAS' : 'Tell PJSDAS about recruiting progress or another task'}</h2>
+                <h2>{zh ? '把岗位进展和其他事项直接告诉 TodayAction' : 'Tell TodayAction about recruiting progress or another task'}</h2>
                 <p>{zh
                   ? '岗位输入只作为别名：系统优先使用已有 Opportunity 或官网/来源候选中的统一岗位名，避免少字、简称或错字生成第二个岗位。普通事项会进入普通待办，不会硬套成公司或岗位。'
-                  : 'Typed job names are aliases only. PJSDAS prefers canonical names from existing Opportunities or source-backed candidates so abbreviations and typos do not create duplicate jobs. General tasks remain general tasks.'}</p>
+                  : 'Typed job names are aliases only. TodayAction prefers canonical names from existing Opportunities or source-backed candidates so abbreviations and typos do not create duplicate jobs. General tasks remain general tasks.'}</p>
               </div>
               <button type="button" className="progress-inbox-close" onClick={() => { void close() }} aria-label={zh ? '关闭' : 'Close'}>×</button>
             </header>

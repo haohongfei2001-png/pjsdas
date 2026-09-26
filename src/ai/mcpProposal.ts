@@ -85,25 +85,25 @@ function validDiscoveryReasonDetail(value: unknown): value is DiscoveryQualityRe
 }
 
 function validateDiscoveryReview(value: unknown): asserts value is McpDiscoveryReview {
-  if (!isObject(value)) throw new Error('PJSDAS discovery review metadata is invalid.')
+  if (!isObject(value)) throw new Error('TodayAction discovery review metadata is invalid.')
   for (const key of ['received', 'accepted', 'duplicateCount', 'rejectedCount', 'deferredCount'] as const) {
     const count = value[key]
     if (!Number.isInteger(count) || Number(count) < 0 || Number(count) > 20) {
-      throw new Error(`PJSDAS discovery review ${key} is invalid.`)
+      throw new Error(`TodayAction discovery review ${key} is invalid.`)
     }
   }
   for (const key of ['skippedDuplicates', 'rejectedCandidates', 'deferredCandidates'] as const) {
     const items = value[key]
-    if (!Array.isArray(items) || items.length > 20) throw new Error(`PJSDAS discovery review ${key} is invalid.`)
+    if (!Array.isArray(items) || items.length > 20) throw new Error(`TodayAction discovery review ${key} is invalid.`)
     for (const item of items) {
       if (!isObject(item) || typeof item.company !== 'string' || !item.company.trim() || typeof item.role !== 'string' || !item.role.trim()) {
-        throw new Error(`PJSDAS discovery review ${key} contains an invalid candidate.`)
+        throw new Error(`TodayAction discovery review ${key} contains an invalid candidate.`)
       }
-      if (item.reason !== undefined && (typeof item.reason !== 'string' || item.reason.length > 1000)) throw new Error('PJSDAS discovery review reason is invalid.')
-      if (item.reasons !== undefined && (!Array.isArray(item.reasons) || item.reasons.length > 10 || item.reasons.some((reason) => typeof reason !== 'string' || reason.length > 1000))) throw new Error('PJSDAS discovery review reasons are invalid.')
-      if (item.reasonDetail !== undefined && !validDiscoveryReasonDetail(item.reasonDetail)) throw new Error('PJSDAS discovery review reason detail is invalid.')
-      if (item.reasonDetails !== undefined && (!Array.isArray(item.reasonDetails) || item.reasonDetails.length > 10 || item.reasonDetails.some((reason) => !validDiscoveryReasonDetail(reason)))) throw new Error('PJSDAS discovery review reason details are invalid.')
-      if (item.qualityScore !== undefined && (typeof item.qualityScore !== 'number' || item.qualityScore < 0 || item.qualityScore > 100)) throw new Error('PJSDAS discovery review quality score is invalid.')
+      if (item.reason !== undefined && (typeof item.reason !== 'string' || item.reason.length > 1000)) throw new Error('TodayAction discovery review reason is invalid.')
+      if (item.reasons !== undefined && (!Array.isArray(item.reasons) || item.reasons.length > 10 || item.reasons.some((reason) => typeof reason !== 'string' || reason.length > 1000))) throw new Error('TodayAction discovery review reasons are invalid.')
+      if (item.reasonDetail !== undefined && !validDiscoveryReasonDetail(item.reasonDetail)) throw new Error('TodayAction discovery review reason detail is invalid.')
+      if (item.reasonDetails !== undefined && (!Array.isArray(item.reasonDetails) || item.reasonDetails.length > 10 || item.reasonDetails.some((reason) => !validDiscoveryReasonDetail(reason)))) throw new Error('TodayAction discovery review reason details are invalid.')
+      if (item.qualityScore !== undefined && (typeof item.qualityScore !== 'number' || item.qualityScore < 0 || item.qualityScore > 100)) throw new Error('TodayAction discovery review quality score is invalid.')
     }
   }
 }
@@ -111,7 +111,7 @@ function validateDiscoveryReview(value: unknown): asserts value is McpDiscoveryR
 function validateDiscoveryRunMetadata(changeSet: ChangeSetRecord) {
   if (!changeSet.discoveryRun) return
   const errors = validateDiscoveryRunRecord(changeSet.discoveryRun)
-  if (errors.length) throw new Error(`PJSDAS Discovery Run metadata is invalid: ${errors[0]}`)
+  if (errors.length) throw new Error(`TodayAction Discovery Run metadata is invalid: ${errors[0]}`)
 }
 
 function withDiscoveryRun(
@@ -164,30 +164,30 @@ export function createMcpProposalEnvelope(
 export function encodeMcpProposal(envelope: McpProposalEnvelope) {
   assertChangeSetValid(envelope.changeSet)
   validateDiscoveryRunMetadata(envelope.changeSet)
-  if (envelope.version !== MCP_PROPOSAL_VERSION) throw new Error('Unsupported PJSDAS proposal version.')
-  if (!validIso(envelope.expiresAt)) throw new Error('PJSDAS proposal expiry is invalid.')
+  if (envelope.version !== MCP_PROPOSAL_VERSION) throw new Error('Unsupported TodayAction proposal version.')
+  if (!validIso(envelope.expiresAt)) throw new Error('TodayAction proposal expiry is invalid.')
   if (envelope.discoveryReview) validateDiscoveryReview(envelope.discoveryReview)
   return toBase64Url(JSON.stringify(envelope))
 }
 
 export function decodeMcpProposal(encoded: string): McpProposalEnvelope {
-  if (!encoded || encoded.length > 24_000) throw new Error('PJSDAS proposal link is invalid or too large.')
+  if (!encoded || encoded.length > 24_000) throw new Error('TodayAction proposal link is invalid or too large.')
   let parsed: unknown
   try {
     parsed = JSON.parse(fromBase64Url(encoded))
   } catch {
-    throw new Error('PJSDAS proposal link could not be decoded.')
+    throw new Error('TodayAction proposal link could not be decoded.')
   }
   if (!isObject(parsed) || parsed.version !== MCP_PROPOSAL_VERSION || !('changeSet' in parsed)) {
-    throw new Error('PJSDAS proposal envelope is invalid.')
+    throw new Error('TodayAction proposal envelope is invalid.')
   }
   if (parsed.workspaceVersion !== undefined && typeof parsed.workspaceVersion !== 'string') {
-    throw new Error('PJSDAS proposal workspace version is invalid.')
+    throw new Error('TodayAction proposal workspace version is invalid.')
   }
   if (parsed.workspaceOwnerUserId !== undefined && (typeof parsed.workspaceOwnerUserId !== 'string' || !parsed.workspaceOwnerUserId.trim() || parsed.workspaceOwnerUserId.length > 200)) {
-    throw new Error('PJSDAS proposal account binding is invalid.')
+    throw new Error('TodayAction proposal account binding is invalid.')
   }
-  if (!validIso(parsed.expiresAt)) throw new Error('PJSDAS proposal expiry is invalid.')
+  if (!validIso(parsed.expiresAt)) throw new Error('TodayAction proposal expiry is invalid.')
   if (parsed.discoveryReview !== undefined) validateDiscoveryReview(parsed.discoveryReview)
   assertChangeSetValid(parsed.changeSet)
   validateDiscoveryRunMetadata(parsed.changeSet as ChangeSetRecord)
@@ -198,7 +198,7 @@ export function buildMcpProposalReviewUrl(
   signedToken: string,
   baseUrl = PJSDAS_REVIEW_BASE_URL,
 ) {
-  if (!signedToken || signedToken.length > 32_000) throw new Error('PJSDAS proposal token is invalid or too large.')
+  if (!signedToken || signedToken.length > 32_000) throw new Error('TodayAction proposal token is invalid or too large.')
   return `${baseUrl}#${MCP_PROPOSAL_FRAGMENT_KEY}=${signedToken}`
 }
 

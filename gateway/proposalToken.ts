@@ -25,7 +25,7 @@ function base64UrlToBytes(value: string) {
 }
 
 async function signingKey(secret: string) {
-  if (!secret.trim()) throw new Error('PJSDAS proposal signing key is not configured.')
+  if (!secret.trim()) throw new Error('TodayAction proposal signing key is not configured.')
   const material = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(`${SIGNING_CONTEXT}${secret}`))
   return crypto.subtle.importKey('raw', material, { name: 'HMAC', hash: 'SHA-256' }, false, ['sign', 'verify'])
 }
@@ -50,17 +50,17 @@ export async function verifySignedProposalToken(
   secret: string,
   now = new Date(),
 ): Promise<McpProposalEnvelope> {
-  if (!token || token.length > 32_000) throw new Error('PJSDAS proposal token is invalid or too large.')
+  if (!token || token.length > 32_000) throw new Error('TodayAction proposal token is invalid or too large.')
   const separator = token.lastIndexOf('.')
-  if (separator <= 0 || separator === token.length - 1) throw new Error('PJSDAS proposal token is malformed.')
+  if (separator <= 0 || separator === token.length - 1) throw new Error('TodayAction proposal token is malformed.')
   const encoded = token.slice(0, separator)
   const signature = base64UrlToBytes(token.slice(separator + 1))
   const key = await signingKey(secret)
   const valid = await crypto.subtle.verify('HMAC', key, signature, new TextEncoder().encode(encoded))
-  if (!valid) throw new Error('PJSDAS proposal signature is invalid.')
+  if (!valid) throw new Error('TodayAction proposal signature is invalid.')
 
   const envelope = decodeMcpProposal(encoded)
   const expiresAt = new Date(envelope.expiresAt)
-  if (expiresAt.getTime() <= now.getTime()) throw new Error('PJSDAS proposal link has expired. Ask ChatGPT to create a new proposal.')
+  if (expiresAt.getTime() <= now.getTime()) throw new Error('TodayAction proposal link has expired. Ask ChatGPT to create a new proposal.')
   return envelope
 }

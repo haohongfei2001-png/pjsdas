@@ -1,7 +1,7 @@
-.cgr-app-shell.tsui-shell,.cgr-app-shell{display:block!important;min-height:100vh;background:#f5f6f9!important;color:#1b2540;--cgr-bg:#f5f6f9;--cgr-text:#1b2540;--cgr-accent:#3569d5;font-family:Inter,ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+.cgr-app-shell.tsui-shell,.cgr-app-shell{display:block!important;min-height:100vh;background:#f5f6f9!important;color:#1b2540;--cgr-bg:#f5f6f9;--cgr-text:#1b2540;--cgr-text-secondary:#5d6b82;--cgr-text-tertiary:#5d6b82;--cgr-accent:#3569d5;font-family:Inter,ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
 .cgr-app-shell .tsui-topbar{position:sticky;top:0;z-index:40;display:grid;grid-template-columns:1fr auto 1fr;align-items:center;height:70px;padding:0 clamp(20px,3.6vw,58px);background:#fff;border-bottom:1px solid #e7eaf1}
-.tsui-brand{display:flex;align-items:center;gap:10px;justify-self:start;border:0;background:none;color:#17213b;font-size:0.9375rem;letter-spacing:.01em}
-.tsui-brand-mark{display:grid;place-items:center;width:30px;height:30px;border-radius:9px;background:#3468d4;color:#fff;font-size:1.1875rem;font-weight:800}
+.tsui-brand{display:flex;flex-shrink:0;align-items:center;gap:10px;min-height:44px;justify-self:start;border:0;background:none;color:#17213b;font-size:0.9375rem;letter-spacing:.01em;white-space:nowrap}
+.tsui-brand-mark{display:block;flex:0 0 30px;width:30px;height:30px;object-fit:contain}
 .tsui-primary-nav{display:flex;align-items:center;gap:10px;height:100%}
 .tsui-primary-nav button{position:relative;height:100%;min-width:76px;padding:0 15px;border:0;background:transparent;color:#67718a;font-size:0.875rem;font-weight:650}
 .tsui-primary-nav button.active{color:#315ec5}
@@ -12,32 +12,32 @@
 .cgr-app-shell .cgr-main.surface-main{width:100%;max-width:1540px;min-width:0;margin:0 auto;padding:32px clamp(20px,3.6vw,58px) 80px!important}
 .tsui-today,.tsui-schedule-page{width:100%;margin:0 auto}
 .tsui-page-heading{display:flex;align-items:flex-end;justify-content:space-between;gap:18px;margin:3px 0 24px}
-.tsui-page-heading p{margin:0 0 5px;color:#69758e;font-size:0.8125rem;font-weight:560}
+.tsui-page-heading p{margin:0 0 5px;color:#5d6b82;font-size:0.8125rem;font-weight:560}
 .tsui-page-heading h1{margin:0;color:#19243d;font-size:1.75rem;line-height:1.2;font-weight:760;letter-spacing:-.035em}
-.tsui-page-heading span{display:block;margin-top:7px;color:#78849b;font-size:0.875rem}
-.tsui-unresolved-link{min-height:44px;border:1px solid #dce3f0;border-radius:9px;padding:0 12px;background:#fff;color:#65728c;font-size:0.8125rem}
+.tsui-page-heading span{display:block;margin-top:7px;color:#5d6b82;font-size:0.875rem}
+.tsui-unresolved-link{min-height:44px;border:1px solid #dce3f0;border-radius:9px;padding:0 12px;background:#fff;color:#5d6b82;font-size:0.8125rem}
 .tsui-unresolved-link strong{margin-left:5px;color:#bf7150}
 .tsui-alert,.tsui-status,.tsui-inline-notice{margin:0 0 15px;border:1px solid #ead9c5;border-radius:10px;padding:11px 14px;background:#fff9f1;color:#875d36;font-size:0.8125rem}
 .tsui-status button{margin-left:12px;border:0;background:transparent;color:#315ec5;font-weight:700}
 .tsui-today-grid{display:grid;grid-template-columns:minmax(0,1.38fr) minmax(360px,1fr);gap:20px;align-items:start}
 .tsui-panel,.tsui-schedule-panel{min-width:0;border:1px solid #e6eaf1;border-radius:15px;background:#fff;box-shadow:0 4px 18px rgba(34,53,88,.035)}
 .tsui-task-panel{min-height:610px}
-.tsui-node-panel{position:sticky;top:90px;display:flex;flex-direction:column;height:min(710px,calc(100vh - 116px));min-height:420px}
+.tsui-node-panel{position:sticky;top:calc(var(--ta-header-height,70px) + 20px);display:flex;flex-direction:column;height:min(710px,calc(100vh - var(--ta-header-height,70px) - 46px));min-height:420px}
 .tsui-panel-header{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:80px;padding:17px 22px;border-bottom:1px solid #edf0f5}
 .tsui-panel-header h2{margin:0 0 4px;color:#1e2942;font-size:1.0625rem;letter-spacing:-.018em}
-.tsui-panel-header p{margin:0;color:#8b96a9;font-size:0.75rem}
+.tsui-panel-header p{margin:0;color:#5d6b82;font-size:0.75rem}
 .tsui-panel-header>span{display:grid;place-items:center;min-width:28px;height:28px;border-radius:8px;background:#eef3ff;color:#3468d4;font-size:0.8125rem;font-weight:730}
 .tsui-panel-link{border:0;background:transparent;color:#3569d5;font-size:0.75rem;font-weight:680;white-space:nowrap}
 .tsui-task-row{display:flex;align-items:center;justify-content:space-between;gap:16px;min-height:93px;padding:16px 22px;border-bottom:1px solid #edf0f5}
 .tsui-task-copy{display:flex;min-width:0;flex:1;flex-direction:column;gap:4px}
 .tsui-task-copy small{overflow:hidden;color:#62708b;font-size:0.75rem;text-overflow:ellipsis;white-space:nowrap}
 .tsui-task-copy h3{margin:0;overflow-wrap:anywhere;color:#1c2741;font-size:0.9375rem;font-weight:700;line-height:1.35}
-.tsui-task-copy>span{color:#8793aa;font-size:0.75rem}
+.tsui-task-copy>span{color:#5d6b82;font-size:0.75rem}
 .tsui-task-actions{display:flex;flex:0 0 auto;align-items:center;gap:7px}
 .tsui-row-action,.tsui-done-action{min-height:44px;border:1px solid #dce5fa;border-radius:8px;padding:0 11px;background:#edf3ff;color:#3264cf;font-size:0.75rem;font-weight:680;white-space:nowrap}
 .tsui-done-action{border-color:#e1e6ee;background:#fff;color:#60718c}
 .tsui-row-action:disabled,.tsui-done-action:disabled{opacity:.55;cursor:default}
-.tsui-context-link{border:0;background:transparent;color:#7c8aa4;font-size:0.75rem}
+.tsui-context-link{border:0;background:transparent;color:#5d6b82;font-size:0.75rem}
 .tsui-node-scroll{min-height:0;overflow:auto;overscroll-behavior:contain}
 .tsui-node-row{display:flex;width:100%;align-items:center;gap:13px;min-height:84px;border:0;border-bottom:1px solid #edf0f5;padding:14px 22px;background:#fff;text-align:left;color:#26334e;font:inherit}
 .tsui-node-row:hover:not(:disabled){background:#f8faff}
@@ -45,29 +45,29 @@
 .tsui-node-time{flex:0 0 91px;color:#5472ac;font-size:0.75rem;line-height:1.45}
 .tsui-node-copy{display:flex;min-width:0;flex:1;flex-direction:column;gap:4px}
 .tsui-node-copy strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:0.875rem;font-weight:700}
-.tsui-node-copy small{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#8290a7;font-size:0.75rem}
-.tsui-node-badge{border-radius:7px;padding:4px 6px;background:#fff3e7;color:#a76134;font-size:0.6875rem;white-space:nowrap}
-.tsui-node-arrow{color:#a0abc0;font-size:1.375rem}
-.tsui-empty{display:grid;gap:12px;justify-items:start;padding:28px 22px;color:#7c89a0;font-size:0.8125rem}
+.tsui-node-copy small{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#5d6b82;font-size:0.75rem}
+.tsui-node-badge{border-radius:7px;padding:4px 6px;background:#fff3e7;color:#8f512a;font-size:0.6875rem;white-space:nowrap}
+.tsui-node-arrow{color:#5d6b82;font-size:1.375rem}
+.tsui-empty{display:grid;gap:12px;justify-items:start;padding:28px 22px;color:#5d6b82;font-size:0.8125rem}
 .tsui-empty strong{color:#51617d}
 .tsui-empty button,.tsui-load-more,.tsui-all-decisions{border:0;background:transparent;color:#3569d5;font-size:0.8125rem;font-weight:680}
-.tsui-end{padding:15px 22px;color:#9ba6b8;font-size:0.75rem}
+.tsui-end{padding:15px 22px;color:#5d6b82;font-size:0.75rem}
 .tsui-load-more{display:block;width:100%;min-height:46px}
 .tsui-load-anchor{height:1px}
 .tsui-completed{padding:15px 22px;border-top:1px solid #edf0f5}
 .tsui-completed>button{width:100%;border:0;background:none;text-align:left;color:#65728d;font-size:0.8125rem;font-weight:700}
 .tsui-completed>button span{float:right}
-.tsui-completed>div{padding:8px 0;color:#8692a5;font-size:0.75rem}
+.tsui-completed>div{padding:8px 0;color:#5d6b82;font-size:0.75rem}
 .tsui-all-decisions{padding:16px 22px}
 .tsui-mobile-switch{display:none}
 .tsui-schedule-page{max-width:1180px}
 .tsui-schedule-tabs{display:flex;gap:7px;margin:0 0 18px;overflow:auto}
 .tsui-schedule-tabs button{min-height:39px;border:1px solid #e0e5ee;border-radius:9px;padding:0 13px;background:#fff;color:#61708a;font-size:0.8125rem;white-space:nowrap}
 .tsui-schedule-tabs button.active{border-color:#b6c9f4;background:#eaf1ff;color:#315fc8}
-.tsui-schedule-tabs button span{margin-left:7px;color:#8b98ad}
+.tsui-schedule-tabs button span{margin-left:7px;color:#5d6b82}
 .tsui-schedule-panel .tsui-node-row{min-height:76px}
 @media(max-width:900px){.tsui-today-grid{grid-template-columns:minmax(0,1.15fr) minmax(310px,1fr)}.tsui-task-row{align-items:flex-start;flex-direction:column}.tsui-task-actions{flex-wrap:wrap}}
-@media(max-width:700px){.cgr-app-shell .tsui-topbar{height:60px;grid-template-columns:auto 1fr auto;padding:0 14px}.tsui-brand strong{display:none}.tsui-primary-nav{justify-content:center;gap:0}.tsui-primary-nav button{min-width:58px;padding:0 8px;font-size:0.8125rem}.tsui-primary-nav button.active::after{left:8px;right:8px}.tsui-top-actions{gap:2px}.tsui-tell-button{width:36px;height:36px;min-height:36px;overflow:hidden;padding:0;color:transparent;font-size:0}.tsui-tell-button::before{content:"＋";color:#fff;font-size:1.3125rem}.tsui-settings-button{width:35px}.cgr-app-shell .cgr-main.surface-main{padding:20px 14px 60px!important}.tsui-page-heading h1{font-size:1.625rem}.tsui-page-heading span{font-size:0.75rem}.tsui-today-grid{display:block}.tsui-mobile-switch{display:flex;gap:8px;margin-bottom:13px}.tsui-mobile-switch button{flex:1;min-height:41px;border:1px solid #dfe5f0;border-radius:9px;background:#fff;color:#718099;font-size:0.8125rem}.tsui-mobile-switch button.active{border-color:#b8caf6;background:#eaf1ff;color:#3264cf;font-weight:700}.tsui-mobile-switch span{margin-left:4px}.tsui-panel.mobile-hidden{display:none}.tsui-node-panel{position:static;height:auto;min-height:0}.tsui-node-scroll{overflow:visible}.tsui-task-panel{min-height:0}.tsui-task-row{min-height:95px}.tsui-unresolved-link{font-size:0.6875rem}.tsui-node-time{flex-basis:84px}.tsui-node-row{padding:13px 16px}}
+@media(max-width:700px){.cgr-app-shell .tsui-topbar{height:60px;grid-template-columns:auto 1fr auto;padding:0 14px}.tsui-brand strong{display:none}.tsui-primary-nav{justify-content:center;gap:0}.tsui-primary-nav button{min-width:58px;padding:0 8px;font-size:0.8125rem}.tsui-primary-nav button.active::after{left:8px;right:8px}.tsui-top-actions{gap:2px}.tsui-tell-button{width:36px;height:36px;min-height:36px;overflow:hidden;padding:0;color:transparent;font-size:0}.tsui-tell-button::before{content:"＋";color:#fff;font-size:1.3125rem}.tsui-settings-button{width:35px}.cgr-app-shell .cgr-main.surface-main{padding:20px 14px 60px!important}.tsui-page-heading h1{font-size:1.625rem}.tsui-page-heading span{font-size:0.75rem}.tsui-today-grid{display:block}.tsui-mobile-switch{display:flex;gap:8px;margin-bottom:13px}.tsui-mobile-switch button{flex:1;min-height:41px;border:1px solid #dfe5f0;border-radius:9px;background:#fff;color:#5d6b82;font-size:0.8125rem}.tsui-mobile-switch button.active{border-color:#b8caf6;background:#eaf1ff;color:#3264cf;font-weight:700}.tsui-mobile-switch span{margin-left:4px}.tsui-panel.mobile-hidden{display:none}.tsui-node-panel{position:static;height:auto;min-height:0}.tsui-node-scroll{overflow:visible}.tsui-task-panel{min-height:0}.tsui-task-row{min-height:95px}.tsui-unresolved-link{font-size:0.6875rem}.tsui-node-time{flex-basis:84px}.tsui-node-row{padding:13px 16px}}
 @media(max-width:360px){.tsui-primary-nav button{min-width:49px;padding:0 5px;font-size:0.75rem}.tsui-settings-button{width:30px}.tsui-task-row{padding:14px 16px}}
 
 .tsui-task-context{align-self:flex-start;min-height:44px;max-width:100%;margin:-8px 0 -8px -9px;border:0;border-radius:6px;padding:0 9px;overflow:hidden;background:transparent;color:#62708b;text-overflow:ellipsis;white-space:nowrap;text-align:left;font-size:0.75rem}
@@ -76,7 +76,7 @@
 .tsui-date-heading{position:sticky;top:0;z-index:1;margin:0;padding:11px 22px;border-bottom:1px solid #edf0f5;background:#f8faff;color:#62718d;font-size:0.75rem;font-weight:740;letter-spacing:.01em}
 
 /* Approved reference: navigation sits beside the brand on desktop and forms a second row on phone. */
-.cgr-app-shell .tsui-topbar{display:flex;gap:44px}
+.cgr-app-shell .tsui-topbar{display:flex;flex-wrap:wrap;gap:12px 32px;height:auto;min-height:70px;padding-top:10px;padding-bottom:10px;box-sizing:border-box}
 .tsui-primary-nav{margin-left:0}
 .tsui-primary-nav button{height:44px;min-width:82px;border-radius:9px}
 .tsui-primary-nav button.active{background:#edf2ff}
@@ -89,16 +89,16 @@
 .tsui-today .tsui-page-heading{margin-bottom:22px}
 .tsui-task-panel .tsui-panel-header p,.tsui-node-panel .tsui-panel-header p{display:none}
 .tsui-task-panel .tsui-panel-header,.tsui-node-panel .tsui-panel-header{min-height:64px}
-.tsui-task-panel .tsui-panel-header>span{background:transparent;color:#75829a;min-width:auto;height:auto;font-weight:500}
+.tsui-task-panel .tsui-panel-header>span{background:transparent;color:#5d6b82;min-width:auto;height:auto;font-weight:500}
 @media(max-width:700px){
-  .cgr-app-shell .tsui-topbar{display:grid;grid-template-columns:1fr auto;grid-template-rows:58px 60px;gap:0;height:auto;padding:0 18px}
+  .cgr-app-shell .tsui-topbar{display:flex;flex-wrap:wrap;gap:8px 12px;height:auto;padding:8px 18px 0}
   .tsui-brand{grid-column:1;grid-row:1}
   .tsui-brand strong{display:inline}
-  .tsui-top-actions{grid-column:2;grid-row:1;margin-left:0;gap:7px}
-  .tsui-tell-button{width:auto;height:40px;min-height:40px;overflow:visible;padding:0 13px;color:#fff;font-size:0.8125rem}
+  .tsui-top-actions{margin-left:auto;gap:7px;flex-wrap:wrap;min-width:0}
+  .tsui-tell-button{width:auto;height:auto;min-height:44px;overflow:visible;padding:9px 13px;white-space:normal;overflow-wrap:anywhere;line-height:1.4;color:#fff;font-size:0.8125rem}
   .tsui-tell-button::before{display:none}
-  .tsui-settings-button{width:38px;height:40px}
-  .tsui-primary-nav{grid-column:1/-1;grid-row:2;display:flex;width:100%;height:52px;align-self:start;gap:0;border-top:1px solid #e7eaf1}
+  .tsui-settings-button{flex:0 0 44px;width:44px;height:44px}
+  .tsui-primary-nav{order:3;flex-basis:100%;display:flex;width:100%;height:60px;align-self:start;gap:0;border-top:1px solid #e7eaf1}
   .tsui-primary-nav button{flex:1;height:44px;min-width:0;margin-top:8px;border-radius:8px}
   .tsui-primary-nav button.active{background:#edf2ff}
   .tsui-today .tsui-page-heading{margin:7px 0 20px}
@@ -109,7 +109,7 @@
 .tsui-node-panel>.tsui-unresolved-link{display:flex;align-items:center;justify-content:space-between;width:100%;min-height:44px;border:0;border-bottom:1px solid #f1e5d9;border-radius:0;padding:0 22px;background:#fffaf4;color:#a16738;text-align:left;font-size:0.75rem}
 .tsui-node-panel>.tsui-unresolved-link span{font-size:1.125rem}
 
-.tsui-count{margin-left:8px;color:#78859c;font-size:0.8125rem;font-weight:500}
+.tsui-count{margin-left:8px;color:#5d6b82;font-size:0.8125rem;font-weight:500}
 
 .tsui-task-row::before{content:attr(data-icon);display:grid;place-items:center;flex:0 0 38px;width:38px;height:38px;border-radius:10px;background:#edf2ff;color:#456397;font-size:0.8125rem;font-weight:750}
 .tsui-task-row:nth-child(4n+2)::before{background:#fff4e7;color:#a6763b}
@@ -119,10 +119,10 @@
 @media(max-width:700px){.tsui-task-row{gap:10px}.tsui-task-row::before{flex-basis:36px;width:36px;height:36px}.tsui-task-actions{gap:4px}.tsui-row-action{padding:0 9px}.tsui-done-action{width:44px;overflow:hidden;padding:0;font-size:0}.tsui-done-action::before{content:"✓";font-size:1.125rem}}
 
 @media(max-width:360px){
-  .cgr-app-shell .tsui-topbar{grid-template-columns:1fr;grid-template-rows:minmax(54px,auto) minmax(58px,auto) minmax(64px,auto);padding:0 16px}
+  .cgr-app-shell .tsui-topbar{padding:8px 16px 0}
   .tsui-brand{grid-column:1;grid-row:1}
-  .tsui-top-actions{grid-column:1;grid-row:2;justify-self:stretch;justify-content:space-between}
-  .tsui-tell-button{flex:1;width:auto;max-width:245px;font-size:.75rem}
+  .tsui-top-actions{width:100%;margin-left:0;justify-content:space-between}
+  .tsui-tell-button{flex:1;min-width:0;width:auto;max-width:none;font-size:.8125rem}
   .tsui-primary-nav{grid-column:1;grid-row:3}
   .tsui-primary-nav button{font-size:.875rem}
   .tsui-today .tsui-page-heading>div{display:block}
@@ -182,7 +182,7 @@
 .tsui-schedule-copy strong{overflow-wrap:anywhere;font-size:.9375rem;font-weight:650}
 .tsui-schedule-copy small{overflow-wrap:anywhere;color:#647084;font-size:.8125rem}
 .tsui-schedule-state{color:#647084;font-size:.75rem}
-.tsui-schedule-state.state-unresolved{color:#a76134}
+.tsui-schedule-state.state-unresolved{color:#8f512a}
 .tsui-schedule-state.state-history{color:#637083}
 .tsui-schedule-more{display:block;width:100%;min-height:48px;border:0;border-bottom:1px solid #e8ebf0;background:#fff;color:#355dd7;font-size:.8125rem}
 .tsui-schedule-detail{scroll-margin-top:90px;margin:0 0 16px;border:1px solid #e8ebf0;border-radius:12px;padding:22px 24px;background:#fff;color:#202938}
@@ -191,7 +191,7 @@
 .tsui-schedule-detail-head h2{margin:5px 0 0;font-size:1.0625rem}
 .tsui-schedule-detail-head>button{align-self:flex-start;min-width:44px;min-height:44px;border:0;background:transparent;color:#647084;font-size:1.5rem}
 .tsui-schedule-detail>p{color:#647084;font-size:.875rem}
-.tsui-schedule-warning{color:#a76134!important}
+.tsui-schedule-warning{color:#8f512a!important}
 .tsui-schedule-job-link{min-height:44px;border:0;background:transparent;color:#355dd7;font-size:.875rem}
 .tsui-schedule-commands{margin:18px 0;padding-top:16px;border-top:1px solid #e8ebf0}
 .tsui-schedule-commands h3{margin:0 0 12px;font-size:.9375rem}
@@ -214,3 +214,16 @@
 @media(max-width:700px){.tsui-task-context{height:auto;min-height:44px;margin:0 0 2px -9px;padding:6px 9px;overflow:visible;overflow-wrap:anywhere;text-overflow:clip;white-space:normal;line-height:1.4}}
 
 @media(max-width:360px){.tsui-schedule-locator{align-items:stretch;flex-direction:column}.tsui-schedule-locator label,.tsui-schedule-locator input{display:block;width:100%;min-width:0}.tsui-schedule-locator button{align-self:flex-start}}
+
+/* TA-02: focus remains visible against white panels and clear of the sticky header. */
+.cgr-app-shell :is(button,a,input,textarea,summary):focus-visible{outline:3px solid #315ec5;outline-offset:3px}
+.cgr-app-shell :is(button,a,input,textarea,summary){scroll-margin-block:190px 32px}
+.tsui-top-actions{min-width:0}
+.tsui-brand{line-height:1.35}
+.tsui-alert,.tsui-status,.tsui-inline-notice{overflow-wrap:anywhere;line-height:1.55}
+.tsui-status button,.tsui-empty button,.tsui-panel-link,.tsui-completed>button{min-height:44px}
+.tsui-empty p{margin:0;line-height:1.6}
+@media(max-width:700px){.tsui-top-actions{flex:1 1 190px}.tsui-tell-button{flex:1;min-width:0}.tsui-primary-nav button{height:auto;min-height:44px;white-space:normal;overflow-wrap:anywhere;padding-block:7px}.tsui-primary-nav{height:auto;min-height:60px;padding-bottom:8px}.tsui-task-actions{flex-wrap:wrap}.tsui-page-heading>div{min-width:0}}
+
+.tsui-schedule-detail{scroll-margin-top:calc(var(--ta-header-height,70px) + 20px)}
+.cgr-app-shell :is(button,a,input,textarea,summary){scroll-margin-block:calc(var(--ta-header-height,70px) + 24px) 32px}

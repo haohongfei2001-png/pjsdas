@@ -33,11 +33,11 @@ export function protectedResourceMetadataUrl(request?: Request) {
 
 function env(name: string) {
   const value = process.env[name]?.trim()
-  if (!value) throw new WorkspaceSourceError('INVALID_SOURCE_CONFIG', `PJSDAS server secret ${name} is not configured.`, false)
+  if (!value) throw new WorkspaceSourceError('INVALID_SOURCE_CONFIG', `TodayAction server secret ${name} is not configured.`, false)
   return value
 }
 
-function unauthorized(request: Request, message = 'PJSDAS authentication is required.') {
+function unauthorized(request: Request, message = 'TodayAction authentication is required.') {
   return new Response(JSON.stringify({ code: 'AUTH_REQUIRED', message, retryable: false }), {
     status: 401,
     headers: {
@@ -58,7 +58,7 @@ function serviceError(caught: unknown, request: Request) {
       headers: { 'cache-control': 'no-store', 'content-type': 'application/json; charset=utf-8' },
     })
   }
-  return new Response(JSON.stringify({ code: 'TEMPORARILY_UNAVAILABLE', message: 'PJSDAS authenticated gateway is unavailable.', retryable: true }), {
+  return new Response(JSON.stringify({ code: 'TEMPORARILY_UNAVAILABLE', message: 'TodayAction authenticated gateway is unavailable.', retryable: true }), {
     status: 503,
     headers: { 'cache-control': 'no-store', 'content-type': 'application/json; charset=utf-8' },
   })

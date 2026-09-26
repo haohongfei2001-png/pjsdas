@@ -117,8 +117,8 @@ export default function ApplicationPortfolioDock() {
                 <div className="eyebrow">APPLICATION PORTFOLIO</div>
                 <h2>{zh ? '申请组合决策' : 'Application portfolio decisions'}</h2>
                 <p>{zh
-                  ? '把“最多可投几个”视为上限，而不是必须填满的目标。PJSDAS 比较组内岗位的价值、匹配、角色、截止、投递成本与证据置信度，并惩罚高度重复的组合。'
-                  : 'Capacity is a ceiling, not a fill target. PJSDAS compares value, fit, role priority, deadlines, application cost, evidence confidence, and redundancy inside each explicit Application Group.'}</p>
+                  ? '把“最多可投几个”视为上限，而不是必须填满的目标。TodayAction 比较组内岗位的价值、匹配、角色、截止、投递成本与证据置信度，并惩罚高度重复的组合。'
+                  : 'Capacity is a ceiling, not a fill target. TodayAction compares value, fit, role priority, deadlines, application cost, evidence confidence, and redundancy inside each explicit Application Group.'}</p>
               </div>
               <button className="portfolio-close" type="button" onClick={() => setOpen(false)} aria-label={zh ? '关闭' : 'Close'}>×</button>
             </header>
@@ -133,7 +133,7 @@ export default function ApplicationPortfolioDock() {
             {!loading && decisions.length === 0 ? (
               <div className="portfolio-empty">
                 <strong>{zh ? '当前没有结构化申请组' : 'No structured Application Groups'}</strong>
-                <p>{zh ? '只有明确绑定 applicationGroupId 的岗位才参与组合决策；PJSDAS 不会仅凭“同一家公司”自动猜测名额规则。' : 'Only roles explicitly bound to an applicationGroupId participate. PJSDAS does not infer quota rules from company identity alone.'}</p>
+                <p>{zh ? '只有明确绑定 applicationGroupId 的岗位才参与组合决策；TodayAction 不会仅凭“同一家公司”自动猜测名额规则。' : 'Only roles explicitly bound to an applicationGroupId participate. TodayAction does not infer quota rules from company identity alone.'}</p>
               </div>
             ) : null}
 
@@ -173,7 +173,7 @@ export default function ApplicationPortfolioDock() {
                   ) : (
                     <div className="portfolio-no-pick">
                       {decision.status === 'needs_rule_confirmation'
-                        ? (zh ? '先确认剩余名额，系统不会猜测一个组合。' : 'Confirm remaining quota before PJSDAS chooses a portfolio.')
+                        ? (zh ? '先确认剩余名额，系统不会猜测一个组合。' : 'Confirm remaining quota before TodayAction chooses a portfolio.')
                         : decision.status === 'locked'
                           ? (zh ? '申请组已锁定，不建议替换现有志愿。' : 'The group is locked; no replacement portfolio is proposed.')
                           : decision.status === 'capacity_exhausted'

@@ -49,7 +49,7 @@ export function createAudienceStatusHandler(config: AudienceStatusHandlerConfig)
       return json(405, { code: 'METHOD_NOT_ALLOWED', message: 'Use GET or POST.' }, origin, config.allowedOrigins)
     }
     if (!origin || !config.allowedOrigins.includes(origin)) {
-      return json(403, { code: 'ORIGIN_NOT_ALLOWED', message: 'Audience status is available only to an approved first-party PJSDAS browser origin.' }, origin, config.allowedOrigins)
+      return json(403, { code: 'ORIGIN_NOT_ALLOWED', message: 'Audience status is available only to an approved first-party TodayAction browser origin.' }, origin, config.allowedOrigins)
     }
 
     try {

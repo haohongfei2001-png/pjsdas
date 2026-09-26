@@ -16,7 +16,7 @@ function bearerToken(request: Request) {
   const value = request.headers.get('authorization')?.trim() ?? ''
   const match = /^Bearer\s+(.+)$/i.exec(value)
   if (!match?.[1]?.trim()) {
-    throw new WorkspaceSourceError('AUTH_REQUIRED', 'PJSDAS authentication is required.', false)
+    throw new WorkspaceSourceError('AUTH_REQUIRED', 'TodayAction authentication is required.', false)
   }
   return match[1].trim()
 }
@@ -61,23 +61,23 @@ export function createSupabaseIdentityResolver(options: SupabaseIdentityOptions)
         },
       })
     } catch {
-      throw new WorkspaceSourceError('AUTH_UNAVAILABLE', 'PJSDAS identity service is temporarily unavailable.', true)
+      throw new WorkspaceSourceError('AUTH_UNAVAILABLE', 'TodayAction identity service is temporarily unavailable.', true)
     }
 
     if (response.status === 401 || response.status === 403) {
-      throw new WorkspaceSourceError('AUTH_INVALID', 'PJSDAS authentication is invalid or expired.', false)
+      throw new WorkspaceSourceError('AUTH_INVALID', 'TodayAction authentication is invalid or expired.', false)
     }
     if (!response.ok) {
-      throw new WorkspaceSourceError('AUTH_UNAVAILABLE', `PJSDAS identity service failed (HTTP ${response.status}).`, true)
+      throw new WorkspaceSourceError('AUTH_UNAVAILABLE', `TodayAction identity service failed (HTTP ${response.status}).`, true)
     }
 
     let data: { id?: string; email?: string }
     try {
       data = await response.json() as { id?: string; email?: string }
     } catch {
-      throw new WorkspaceSourceError('AUTH_INVALID', 'PJSDAS identity response is invalid.', false)
+      throw new WorkspaceSourceError('AUTH_INVALID', 'TodayAction identity response is invalid.', false)
     }
-    if (!data.id) throw new WorkspaceSourceError('AUTH_INVALID', 'PJSDAS identity response has no user id.', false)
+    if (!data.id) throw new WorkspaceSourceError('AUTH_INVALID', 'TodayAction identity response has no user id.', false)
 
     // Supabase has already validated the bearer token above. Only after that
     // verification may the OAuth-specific client_id claim influence capability

@@ -63,7 +63,7 @@ function authHeaders(serviceRoleKey: string) {
 
 function requireServiceRoleKey(value: string) {
   const key = value.trim()
-  if (!key) throw new WorkspaceSourceError('INVALID_SOURCE_CONFIG', 'PJSDAS transactional workspace service credential is not configured.', false)
+  if (!key) throw new WorkspaceSourceError('INVALID_SOURCE_CONFIG', 'TodayAction transactional workspace service credential is not configured.', false)
   return key
 }
 
@@ -73,7 +73,7 @@ function validRevision(value: unknown): value is number {
 
 function parseWorkspaceRow(row: Record<string, unknown>, userId: string): ConnectedWorkspaceRecord {
   if (row.user_id !== userId || typeof row.id !== 'string' || !validRevision(row.revision) || typeof row.schema_version !== 'number') {
-    throw new WorkspaceSourceError('WORKSPACE_INVALID', 'PJSDAS transactional workspace metadata is invalid.', false)
+    throw new WorkspaceSourceError('WORKSPACE_INVALID', 'TodayAction transactional workspace metadata is invalid.', false)
   }
   validateSnapshot(row.snapshot)
   const snapshot = upgradeSnapshotToLatest(row.snapshot)
@@ -101,7 +101,7 @@ export function createTransactionalWorkspaceStore(options: TransactionalWorkspac
         headers,
       })
     } catch {
-      throw new WorkspaceSourceError('WORKSPACE_UNAVAILABLE', 'PJSDAS transactional workspace is temporarily unavailable.', true)
+      throw new WorkspaceSourceError('WORKSPACE_UNAVAILABLE', 'TodayAction transactional workspace is temporarily unavailable.', true)
     }
     return response
   }
@@ -115,10 +115,10 @@ export function createTransactionalWorkspaceStore(options: TransactionalWorkspac
       })
       const response = await request(`/rest/v1/pjsdas_workspaces?${params.toString()}`, { method: 'GET' })
       if (!response.ok) {
-        throw new WorkspaceSourceError('WORKSPACE_UNAVAILABLE', `PJSDAS workspace read failed (HTTP ${response.status}).`, response.status >= 500 || response.status === 429)
+        throw new WorkspaceSourceError('WORKSPACE_UNAVAILABLE', `TodayAction workspace read failed (HTTP ${response.status}).`, response.status >= 500 || response.status === 429)
       }
       const rows = await response.json().catch(() => undefined) as Record<string, unknown>[] | undefined
-      if (!rows) throw new WorkspaceSourceError('WORKSPACE_INVALID', 'PJSDAS workspace read returned invalid JSON.', false)
+      if (!rows) throw new WorkspaceSourceError('WORKSPACE_INVALID', 'TodayAction workspace read returned invalid JSON.', false)
       return rows[0] ? parseWorkspaceRow(rows[0], userId) : null
     },
 
@@ -132,7 +132,7 @@ export function createTransactionalWorkspaceStore(options: TransactionalWorkspac
       })
       const response = await request(`/rest/v1/pjsdas_command_ledger?${params.toString()}`, { method: 'GET' })
       if (!response.ok) {
-        throw new WorkspaceSourceError('WORKSPACE_UNAVAILABLE', `PJSDAS command receipt read failed (HTTP ${response.status}).`, response.status >= 500 || response.status === 429)
+        throw new WorkspaceSourceError('WORKSPACE_UNAVAILABLE', `TodayAction command receipt read failed (HTTP ${response.status}).`, response.status >= 500 || response.status === 429)
       }
       const rows = await response.json().catch(() => undefined) as Record<string, unknown>[] | undefined
       const row = rows?.[0]
@@ -143,7 +143,7 @@ export function createTransactionalWorkspaceStore(options: TransactionalWorkspac
         || typeof row.payload_hash !== 'string'
         || !validRevision(row.resulting_revision)
       ) {
-        throw new WorkspaceSourceError('WORKSPACE_INVALID', 'PJSDAS command receipt metadata is invalid.', false)
+        throw new WorkspaceSourceError('WORKSPACE_INVALID', 'TodayAction command receipt metadata is invalid.', false)
       }
       return {
         commandId: row.command_id,
@@ -165,10 +165,10 @@ export function createTransactionalWorkspaceStore(options: TransactionalWorkspac
       })
       const response = await request(`/rest/v1/pjsdas_command_ledger?${params.toString()}`, { method: 'GET' })
       if (!response.ok) {
-        throw new WorkspaceSourceError('WORKSPACE_UNAVAILABLE', `PJSDAS command history read failed (HTTP ${response.status}).`, response.status >= 500 || response.status === 429)
+        throw new WorkspaceSourceError('WORKSPACE_UNAVAILABLE', `TodayAction command history read failed (HTTP ${response.status}).`, response.status >= 500 || response.status === 429)
       }
       const rows = await response.json().catch(() => undefined) as Record<string, unknown>[] | undefined
-      if (!rows) throw new WorkspaceSourceError('WORKSPACE_INVALID', 'PJSDAS command history returned invalid JSON.', false)
+      if (!rows) throw new WorkspaceSourceError('WORKSPACE_INVALID', 'TodayAction command history returned invalid JSON.', false)
       return rows.map((row) => {
         if (
           typeof row.command_id !== 'string'
@@ -176,7 +176,7 @@ export function createTransactionalWorkspaceStore(options: TransactionalWorkspac
           || typeof row.payload_hash !== 'string'
           || !validRevision(row.resulting_revision)
         ) {
-          throw new WorkspaceSourceError('WORKSPACE_INVALID', 'PJSDAS command history metadata is invalid.', false)
+          throw new WorkspaceSourceError('WORKSPACE_INVALID', 'TodayAction command history metadata is invalid.', false)
         }
         return {
           commandId: row.command_id,
@@ -209,12 +209,12 @@ export function createTransactionalWorkspaceStore(options: TransactionalWorkspac
         }),
       })
       if (!response.ok) {
-        throw new WorkspaceSourceError('WORKSPACE_MIGRATION_FAILED', `PJSDAS workspace bootstrap failed (HTTP ${response.status}).`, response.status >= 500 || response.status === 429)
+        throw new WorkspaceSourceError('WORKSPACE_MIGRATION_FAILED', `TodayAction workspace bootstrap failed (HTTP ${response.status}).`, response.status >= 500 || response.status === 429)
       }
       const rows = await response.json().catch(() => undefined) as Array<Record<string, unknown>> | undefined
       const row = rows?.[0]
       if (!row || typeof row.workspace_id !== 'string' || !validRevision(row.revision)) {
-        throw new WorkspaceSourceError('WORKSPACE_INVALID', 'PJSDAS workspace bootstrap returned invalid metadata.', false)
+        throw new WorkspaceSourceError('WORKSPACE_INVALID', 'TodayAction workspace bootstrap returned invalid metadata.', false)
       }
       validateSnapshot(row.snapshot)
       return {
@@ -252,7 +252,7 @@ export function createTransactionalWorkspaceStore(options: TransactionalWorkspac
         const duplicateCommand = response.status === 409 || body.message?.includes('different payload') || body.details?.includes('different payload')
         throw new WorkspaceSourceError(
           duplicateCommand ? 'COMMAND_ID_REUSED' : 'WORKSPACE_COMMIT_FAILED',
-          duplicateCommand ? 'PJSDAS command id was reused with a different payload.' : `PJSDAS authoritative commit failed (HTTP ${response.status}).`,
+          duplicateCommand ? 'TodayAction command id was reused with a different payload.' : `TodayAction authoritative commit failed (HTTP ${response.status}).`,
           !duplicateCommand && (response.status >= 500 || response.status === 429),
         )
       }
@@ -265,7 +265,7 @@ export function createTransactionalWorkspaceStore(options: TransactionalWorkspac
         || typeof row.workspace_id !== 'string'
         || !validRevision(row.revision)
       ) {
-        throw new WorkspaceSourceError('WORKSPACE_INVALID', 'PJSDAS authoritative commit returned invalid metadata.', false)
+        throw new WorkspaceSourceError('WORKSPACE_INVALID', 'TodayAction authoritative commit returned invalid metadata.', false)
       }
       validateSnapshot(row.snapshot)
       return {
@@ -302,7 +302,7 @@ export function createTransactionalWorkspaceStore(options: TransactionalWorkspac
         const duplicateCommand = response.status === 409 || body.message?.includes('different payload') || body.details?.includes('different payload')
         throw new WorkspaceSourceError(
           duplicateCommand ? 'COMMAND_ID_REUSED' : 'WORKSPACE_COMMIT_FAILED',
-          duplicateCommand ? 'PJSDAS command id was reused with a different payload.' : `PJSDAS workspace commit failed (HTTP ${response.status}).`,
+          duplicateCommand ? 'TodayAction command id was reused with a different payload.' : `TodayAction workspace commit failed (HTTP ${response.status}).`,
           !duplicateCommand && (response.status >= 500 || response.status === 429),
         )
       }
@@ -315,7 +315,7 @@ export function createTransactionalWorkspaceStore(options: TransactionalWorkspac
         || typeof row.workspace_id !== 'string'
         || !validRevision(row.revision)
       ) {
-        throw new WorkspaceSourceError('WORKSPACE_INVALID', 'PJSDAS commit returned invalid metadata.', false)
+        throw new WorkspaceSourceError('WORKSPACE_INVALID', 'TodayAction commit returned invalid metadata.', false)
       }
       validateSnapshot(row.snapshot)
       return {

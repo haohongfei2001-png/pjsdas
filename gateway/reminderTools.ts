@@ -16,14 +16,14 @@ export function defaultExternalCapabilityProbes(now = new Date()): ExternalCapab
     {
       id: 'chatgpt_tasks',
       state: 'unsupported',
-      reason: 'The PJSDAS MCP runtime has no authorized ChatGPT Tasks action adapter. Host-side task features are not assumed to be callable.',
+      reason: 'The TodayAction MCP runtime has no authorized ChatGPT Tasks action adapter. Host-side task features are not assumed to be callable.',
       provider: 'ChatGPT',
       probedAt,
     },
     {
       id: 'google_calendar',
       state: 'unsupported',
-      reason: 'The PJSDAS runtime has no authorized Google Calendar write adapter or calendar OAuth scope.',
+      reason: 'The TodayAction runtime has no authorized Google Calendar write adapter or calendar OAuth scope.',
       provider: 'Google Calendar',
       probedAt,
     },
@@ -56,7 +56,7 @@ function failure(caught: unknown): CallToolResult {
   }
   return {
     isError: true,
-    content: [{ type: 'text', text: JSON.stringify({ code: 'TEMPORARILY_UNAVAILABLE', message: 'PJSDAS reminder tools are temporarily unavailable.', retryable: true }) }],
+    content: [{ type: 'text', text: JSON.stringify({ code: 'TEMPORARILY_UNAVAILABLE', message: 'TodayAction reminder tools are temporarily unavailable.', retryable: true }) }],
   }
 }
 
@@ -69,7 +69,7 @@ export async function invokeExternalCapabilities(
     return success({
       generatedAt: new Date().toISOString(),
       capabilities: probes.map((probe) => ({ ...probe })),
-      rule: 'External task/calendar objects are delivery channels only; ScheduleNode and ReminderIntent remain PJSDAS truth.',
+      rule: 'External task/calendar objects are delivery channels only; ScheduleNode and ReminderIntent remain TodayAction truth.',
     })
   } catch (caught) {
     return failure(caught)

@@ -1,0 +1,105 @@
+package: TODAYACTION-BRAND-UI-v1
+registered_on: '2026-09-26'
+brand_name: TodayAction
+selected_direction: A_three_part_abstract_mark
+status: ENGINEERING_COMPLETE_EXTERNAL_DEFERRED
+package_execution: STOP
+implementation_writer: null
+final_documentation_closure:
+  pr: 172
+  runtime_changes: false
+  exact_final_identity: Resolve PR 172 merged_commit_sha and its exact-main readback receipt
+  publication: DISARMED
+registration_baseline:
+  main: 153d8ccb6201e33cd1c9a09a0d7bf84a7cf0f079
+  note: Historical registration snapshot; current evidence follows below
+rounds:
+  TA-00: HANDOFF_HASH_VERIFIED
+  TA-01:
+    status: ENGINEERING_COMPLETE_EXACT_MAIN
+    pr: 169
+    candidate: 8e60faa17dc5422dc09d6f56a75f68e22f54d83f
+    main: 6f4fe9a6528adf40c506cea84695b44b679aa24e
+    tree: 287979780ec3c67c9b0b85bfd212df9dc9678f62
+    receipt: TA-01-RECEIPT.md
+  TA-02:
+    status: ENGINEERING_COMPLETE_EXACT_MAIN
+    pr: 170
+    candidate: 101838c400833ad0dee38710eb6c6ac589207498
+    main: 4b9ca7dd3fa973ee92b0781f62bc5ac8f666f68d
+    tree: 79a466bca107d2ded67ba10070f89bcaa6121721
+    receipt: TA-02-RECEIPT.md
+    review: TA-02-REVIEW.md
+    corrected_matrix_cells_per_phase: 156
+    dense_scroll_measurements_per_phase: 3
+    full_browser_first_pass: 80
+    unit_tests: 872
+    cloud_voiceover: PASS
+  TA-03:
+    status: ENGINEERING_COMPLETE_EXACT_MAIN_EXTERNAL_DEFERRED
+    pr: 171
+    candidate: 8f200a54f73de4c3372a32b8691f587ecb326f7a
+    main: ae5ecfc78b101e581547f1553880d2dbadc1457d
+    tree: 0d7e802230cf75fdef7c4bf0bed82d9c53ba9987
+    receipt: TA-03-RECEIPT.md
+    main_ci: 36226084489
+    main_browser: 36226084444
+    main_browser_result: PASS_80_FIRST_ATTEMPT
+    main_matrix: 36226084480
+    pages: 36226084474
+    production_readonly: 36226173012
+    exact_live_visual: 36226173022
+    anonymous_exact_brand_readback: 36226173027
+certified_production_before_documentation_closure:
+  commit: ae5ecfc78b101e581547f1553880d2dbadc1457d
+  frontend_backend_identity: EXACT_MATCH
+  canonical: https://todayaction.com/
+  historical: https://haohongfei2001-png.github.io/pjsdas/
+  actual_asset_sha_bytes_mime_and_decode: PASS_17_PER_ORIGIN
+  initial_html_metadata_and_routes_reload: PASS_10_ROUTES_PER_ORIGIN
+  manifest_identity: STABLE_ID_SLASH_PER_ORIGIN
+  csp_header: NONE_OBSERVED_ON_TESTED_HTML
+  local_image_load_and_csp_errors: ZERO
+  native_browser_tab_icon_selection: DEFERRED
+  non_read_browser_requests: ZERO
+  private_workspace_or_gmail_actions: NONE
+assets:
+  approved_source_reference: assets/approved-A-reference.webp
+  provenance: assets/SOURCE.json
+  original_png_sha256: 33c6f1e93bcb6958d2bb0324675f7eaad92f3d152205559436eb54cf5cd9f417
+  reference_sha256: 3916158ffd7f8a21d52715024afb2ff8b95b4d1e78cfd0a58def6bb4a0ea8114
+  vector_status: ENGINEERING_TRACE_CLOUD_EXPORT_BYTE_VERIFIED
+  production_manifest: ../../public/brand/ASSET_MANIFEST.json
+  immutable_reference_files: UNCHANGED
+  final_evidence: evidence/PROVENANCE.json
+  production_readback: evidence/production-readback.json
+parked_hotfix:
+  pr: 164
+  branch: reliability/161-gmail-worker-recovery
+  head: b67785ebb55b81a5c28e72eff303785a2b41249f
+  state: OPEN_BLOCKED_PARKED
+  implementation_writer: RELEASED_BY_OWNER
+  safe_exact_candidate_production_equivalent_runner: REQUIRED
+  recovery_invocation_in_brand_package: NONE
+  merge_in_brand_package: NONE
+  changed_hotfix_files_in_brand_package: NONE
+  resume: Separately after its own owner/recovery/deployment gates; not automatically
+deferred:
+  external_gates: EXTERNAL_GATES.md
+  private_workspace_and_true_owner_account: DEFERRED
+  real_gmail_recovery: PARKED_OUTSIDE_BRAND_SCOPE
+  real_iphone_and_existing_install_refresh: DEFERRED
+  physical_human_accessibility: DEFERRED
+  third_party_oauth_connector_and_repository_about: DEFERRED
+  native_ios_or_offline_capability: NOT_IMPLEMENTED
+  legal_trademark_copyright: DEFERRED_NOT_PERFORMED
+scope:
+  repository_slug_change: false
+  domain_change: false
+  durable_identity_change: false
+  permission_expansion: false
+  schema_or_data_migration: false
+  private_gmail_execution: false
+  native_ios_implementation: false
+  general_purpose_domain_rewrite: false
+  further_product_line: STOP

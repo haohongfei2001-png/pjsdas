@@ -118,14 +118,14 @@ export function createAutomationSettingsHandler(config: AutomationSettingsHandle
         headers: { Authorization: `Bearer ${accessToken}`, apikey: config.supabasePublishableKey },
       })
     } catch {
-      throw new WorkspaceSourceError('AUTH_UNAVAILABLE', 'PJSDAS automation settings are temporarily unavailable.', true)
+      throw new WorkspaceSourceError('AUTH_UNAVAILABLE', 'TodayAction automation settings are temporarily unavailable.', true)
     }
-    if (response.status === 401 || response.status === 403) throw new WorkspaceSourceError('AUTH_INVALID', 'PJSDAS authentication is invalid or expired.', false)
-    if (!response.ok) throw new WorkspaceSourceError('AUTH_UNAVAILABLE', `PJSDAS automation settings failed (HTTP ${response.status}).`, true)
+    if (response.status === 401 || response.status === 403) throw new WorkspaceSourceError('AUTH_INVALID', 'TodayAction authentication is invalid or expired.', false)
+    if (!response.ok) throw new WorkspaceSourceError('AUTH_UNAVAILABLE', `TodayAction automation settings failed (HTTP ${response.status}).`, true)
     const rows = await response.json().catch(() => undefined) as AutomationRow[] | undefined
-    if (!rows) throw new WorkspaceSourceError('AUTH_INVALID', 'PJSDAS automation settings returned invalid data.', false)
+    if (!rows) throw new WorkspaceSourceError('AUTH_INVALID', 'TodayAction automation settings returned invalid data.', false)
     const row = rows[0]
-    if (!row) throw new WorkspaceSourceError('GOOGLE_CONNECTION_REQUIRED', 'Connect Google to PJSDAS before enabling background automation.', false)
+    if (!row) throw new WorkspaceSourceError('GOOGLE_CONNECTION_REQUIRED', 'Connect Google to TodayAction before enabling background automation.', false)
     return row
   }
 
@@ -136,7 +136,7 @@ export function createAutomationSettingsHandler(config: AutomationSettingsHandle
       return new Response(null, { status: allowed ? 204 : 403, headers: corsHeaders(origin, config.allowedOrigins) })
     }
     if (!origin || !config.allowedOrigins.includes(origin)) {
-      return json(403, { code: 'ORIGIN_NOT_ALLOWED', message: 'Automation settings are available only to an approved first-party PJSDAS browser origin.' }, origin, config.allowedOrigins)
+      return json(403, { code: 'ORIGIN_NOT_ALLOWED', message: 'Automation settings are available only to an approved first-party TodayAction browser origin.' }, origin, config.allowedOrigins)
     }
     if (request.method !== 'GET' && request.method !== 'POST') {
       return json(405, { code: 'METHOD_NOT_ALLOWED', message: 'Use GET or POST.' }, origin, config.allowedOrigins)
@@ -246,7 +246,7 @@ export function createAutomationSettingsHandler(config: AutomationSettingsHandle
           body: JSON.stringify(patch),
         })
       } catch {
-        throw new WorkspaceSourceError('AUTH_UNAVAILABLE', 'PJSDAS automation settings could not be updated.', true)
+        throw new WorkspaceSourceError('AUTH_UNAVAILABLE', 'TodayAction automation settings could not be updated.', true)
       }
       if (!response.ok && gmailProvided) {
         const failure = await response.clone().json().catch(() => ({})) as { code?: string; message?: string }
@@ -264,8 +264,8 @@ export function createAutomationSettingsHandler(config: AutomationSettingsHandle
           return json(409, { code: 'GMAIL_INTAKE_NOT_DEPLOYED', message: 'The expanded recruiting-email intake is not deployed yet. No expanded consent was saved.' }, origin, config.allowedOrigins)
         }
       }
-      if (response.status === 401 || response.status === 403) throw new WorkspaceSourceError('AUTH_INVALID', 'PJSDAS authentication is invalid or expired.', false)
-      if (!response.ok) throw new WorkspaceSourceError('AUTH_UNAVAILABLE', `PJSDAS automation settings update failed (HTTP ${response.status}).`, true)
+      if (response.status === 401 || response.status === 403) throw new WorkspaceSourceError('AUTH_INVALID', 'TodayAction authentication is invalid or expired.', false)
+      if (!response.ok) throw new WorkspaceSourceError('AUTH_UNAVAILABLE', `TodayAction automation settings update failed (HTTP ${response.status}).`, true)
 
       const updated: AutomationRow = { ...current }
       if (gmailProvided) {
@@ -287,7 +287,7 @@ export function createAutomationSettingsHandler(config: AutomationSettingsHandle
     } catch (caught) {
       const error = caught instanceof WorkspaceSourceError
         ? { code: caught.code, message: caught.message, retryable: caught.retryable }
-        : { code: 'AUTOMATION_SETTINGS_FAILED', message: caught instanceof Error ? caught.message : 'PJSDAS automation settings failed.', retryable: false }
+        : { code: 'AUTOMATION_SETTINGS_FAILED', message: caught instanceof Error ? caught.message : 'TodayAction automation settings failed.', retryable: false }
       const status = error.code === 'AUTH_REQUIRED' || error.code === 'AUTH_INVALID' ? 401
         : error.code === 'GMAIL_PUSH_NOT_CONFIGURED' ? 503
         : error.retryable ? 503 : 400

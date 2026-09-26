@@ -1,0 +1,60 @@
+name: TodayAction Brand Gate
+on:
+  pull_request:
+    paths:
+      - 'src/**'
+      - 'index.html'
+      - 'public/**'
+      - 'scripts/*brand*'
+      - 'e2e/brand.e2e.ts'
+      - 'playwright.brand.config.mts'
+      - '.github/workflows/todayaction-brand.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  brand:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - name: Install pinned offline asset exporter
+        run: python3 -m pip install CairoSVG==2.8.2 Pillow==12.3.0
+      - name: Check deterministic asset exports
+        run: python3 scripts/export-brand-assets.py --check --emit
+      - run: npm ci
+      - run: npm install --no-save --package-lock=false @playwright/test@1.63.0
+      - run: npx playwright install --with-deps chromium
+      - name: Root-path production build and browser readback
+        env:
+          PJSDAS_VITE_BASE: /
+          TA_BRAND_BASE: /
+          VITE_PJSDAS_CONNECTED_AUTHORITY: transactional
+        run: |
+          npm run build
+          npx playwright test --config=playwright.brand.config.mts --project=chromium
+      - name: Historical base production build and browser readback
+        env:
+          PJSDAS_VITE_BASE: /pjsdas/
+          TA_BRAND_BASE: /pjsdas/
+          VITE_PJSDAS_CONNECTED_AUTHORITY: transactional
+        run: |
+          npm run build
+          npx playwright test --config=playwright.brand.config.mts --project=chromium
+      - name: Upload brand evidence
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v5
+        with:
+          name: todayaction-brand-evidence
+          path: |
+            public/brand/ASSET_MANIFEST.json
+            test-results/
+            playwright-report/
+          retention-days: 7

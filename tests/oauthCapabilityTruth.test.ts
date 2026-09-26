@@ -24,7 +24,7 @@ describe('OAuth capability truth', () => {
   })
 
   it('does not advertise the protected MCP resource itself as read-only', () => {
-    expect(protectedResource).toContain("resource_name: 'PJSDAS job-search data with bounded trusted ingestion'")
-    expect(protectedResource).not.toContain("resource_name: 'PJSDAS read-only job-search data'")
+    expect(protectedResource).toContain("resource_name: 'TodayAction job-search data with bounded trusted ingestion'")
+    expect(protectedResource).not.toContain("resource_name: 'TodayAction read-only job-search data'")
   })
 })
