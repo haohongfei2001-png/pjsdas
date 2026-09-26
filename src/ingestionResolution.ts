@@ -7,9 +7,6 @@ import type {
 } from './model.js'
 import { validateSnapshot, type PJSDASSnapshot } from './snapshot.js'
 
-const DAY = 86_400_000
-const HISTORICAL_ONLY_DAYS = 30
-
 function stableHash(value: string) {
   let hash = 2166136261
   for (let index = 0; index < value.length; index += 1) {
@@ -84,6 +81,67 @@ function latestResolutionRecords(records: TimelineRecord[]) {
   return byKey
 }
 
+function semanticReceiptResolution(
+  snapshot: PJSDASSnapshot,
+  ingestion: IngestionLedgerEntry,
+): { outcome: IngestionResolutionOutcome; reason: IngestionResolutionReason; evidenceRefs: string[] } | undefined {
+  const receipts = (snapshot.data.semanticReceipts ?? [])
+    .filter((item) =>
+      item.sourceKind === ingestion.sourceKind
+      && item.sourceId === ingestion.sourceId
+      && item.sourceRecordId === ingestion.sourceRecordId
+      && item.updatedAt >= ingestion.accountedAt)
+    .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+  const receipt = receipts[0]
+  if (!receipt) return undefined
+
+  if (receipt.status === 'committed') {
+    return {
+      outcome: 'resolved',
+      reason: 'semantic_receipt_committed',
+      evidenceRefs: [receipt.id, ...receipt.affectedObjects.map((item) => item.id)],
+    }
+  }
+  if (receipt.status === 'no_write') {
+    return {
+      outcome: 'ignored',
+      reason: 'semantic_receipt_no_write',
+      evidenceRefs: [receipt.id],
+    }
+  }
+  if (receipt.status !== 'decision_required') return undefined
+
+  const requests = receipt.decisionRequestIds
+    .map((id) => (snapshot.data.decisionRequests ?? []).find((item) => item.id === id))
+    .filter((item): item is NonNullable<typeof item> => Boolean(item))
+  if (!requests.length || requests.some((item) => item.state === 'open' || item.state === 'expired')) {
+    return {
+      outcome: 'active_unresolved',
+      reason: 'semantic_decision_open',
+      evidenceRefs: [receipt.id, ...requests.map((item) => item.id)],
+    }
+  }
+  if (requests.every((item) => item.state === 'superseded')) {
+    return {
+      outcome: 'superseded',
+      reason: 'semantic_decision_settled',
+      evidenceRefs: [receipt.id, ...requests.map((item) => item.id)],
+    }
+  }
+  if (requests.every((item) => item.state === 'answered' || item.state === 'auto_resolved' || item.state === 'superseded')) {
+    return {
+      outcome: 'resolved',
+      reason: 'semantic_decision_settled',
+      evidenceRefs: [receipt.id, ...requests.map((item) => item.id)],
+    }
+  }
+  return {
+    outcome: 'active_unresolved',
+    reason: 'semantic_decision_open',
+    evidenceRefs: [receipt.id, ...requests.map((item) => item.id)],
+  }
+}
+
 function matchingOpportunities(snapshot: PJSDASSnapshot, record: TimelineRecord) {
   const company = normalized(record.company)
   const role = normalized(record.role)
@@ -102,6 +160,7 @@ function classifyUnresolved(
   allIngestion: TimelineRecord[],
   now: Date,
 ): { outcome: IngestionResolutionOutcome; reason: IngestionResolutionReason; evidenceRefs: string[] } {
+  void now
   const ingestion = target.ingestion!
   const latestIngestion = latest.ingestion!
 
@@ -124,6 +183,9 @@ function classifyUnresolved(
   if (explicitNonActionableReason(ingestion.reason)) {
     return { outcome: 'ignored', reason: 'explicit_non_actionable', evidenceRefs: [target.id] }
   }
+
+  const semantic = semanticReceiptResolution(snapshot, ingestion)
+  if (semantic) return semantic
 
   const action = ingestion.actionId
     ? snapshot.data.actions.find((item) => item.id === ingestion.actionId)
@@ -195,13 +257,10 @@ function classifyUnresolved(
     return { outcome: 'active_unresolved', reason: 'transport_gap_active', evidenceRefs: [target.id] }
   }
 
-  const received = new Date(ingestion.receivedAt).getTime()
-  const ageDays = Number.isFinite(received) ? Math.max(0, (now.getTime() - received) / DAY) : 0
-  if (ageDays > HISTORICAL_ONLY_DAYS) {
-    return { outcome: 'historical_only', reason: 'historical_unlinked', evidenceRefs: [target.id] }
-  }
-
-  return { outcome: 'active_unresolved', reason: 'recent_unresolved', evidenceRefs: [target.id] }
+  // Age alone is never sufficient to clear an unresolved record. Without a later
+  // canonical fact, terminal process, explicit non-actionable classification, or
+  // settled semantic decision, fail closed and keep it active.
+  return { outcome: 'active_unresolved', reason: 'unlinked_unresolved', evidenceRefs: [target.id] }
 }
 
 function createResolutionTimeline(input: {
