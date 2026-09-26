@@ -121,6 +121,32 @@ describe('ingestion debt reconciliation automation worker', () => {
     })
   })
 
+  it('supports a read-only dry run that previews outcomes without committing the workspace', async () => {
+    const fetchImpl = vi.fn(async () => json([{ user_id: '00000000-0000-0000-0000-000000000001' }])) as unknown as typeof fetch
+    const handler = createIngestionDebtReconciliationHandler({
+      supabaseUrl: 'https://example.supabase.co',
+      supabasePublishableKey: 'publishable',
+      supabaseServiceRoleKey: 'service-role',
+      fetchImpl,
+      now: () => new Date('2026-09-26T12:00:00.000Z'),
+    })
+    const response = await handler(new Request(
+      'https://example.invalid/api/automation-ingestion-reconciliation?dryRun=1',
+      { method: 'POST', headers: { authorization: 'Bearer worker-token' } },
+    ))
+    expect(response.status).toBe(200)
+    expect(state.write).not.toHaveBeenCalled()
+    await expect(response.json()).resolves.toMatchObject({
+      dryRun: true,
+      changedWorkspaces: 1,
+      appendedResolutionCount: 1,
+      results: [{
+        status: 'success',
+        resolutionOutcomeCounts: { ignored: 1 },
+      }],
+    })
+  })
+
   it('maps a rejected worker token to 401 without a workspace read', async () => {
     const fetchImpl = vi.fn(async () => json({ code: '42501' }, 403)) as unknown as typeof fetch
     const handler = createIngestionDebtReconciliationHandler({
