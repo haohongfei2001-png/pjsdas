@@ -138,6 +138,57 @@ describe('R02 active unresolved reconciliation', () => {
     expect(coverage.allCaughtUp).toBe(true)
   })
 
+  it('clears an old unresolved event when its linked action was completed later', () => {
+    const record = createIngestionLedgerTimeline({
+      sourceKind: 'gmail',
+      sourceId: SOURCE_ID,
+      sourceRecordId: 'completed-event',
+      runId: 'run:completed-event',
+      recordType: 'recruiting_message',
+      outcome: 'unresolved',
+      fingerprint: 'fp:completed-event',
+      receivedAt: '2026-09-10T00:00:00.000Z',
+      accountedAt: '2026-09-10T00:00:00.000Z',
+      reason: '1 item(s) need a decision.',
+      processEventId: 'event-1',
+    })
+    const base = snapshot({
+      timeline: [record, zeroRun()],
+      opportunities: [opportunity('opp-event')],
+      processes: [process('opp-event')],
+      processEvents: [{
+        id: 'event-1',
+        opportunityId: 'opp-event',
+        company: 'Example',
+        role: 'AI Product Manager',
+        type: 'interview_invite',
+        occurredAt: '2026-09-10T00:00:00.000Z',
+        source: 'email',
+        createdAt: '2026-09-10T00:00:00.000Z',
+        updatedAt: '2026-09-10T00:00:00.000Z',
+      }],
+      actions: [{
+        id: 'action-event-1',
+        kind: 'follow_up',
+        title: 'Interview follow-up',
+        opportunityId: 'opp-event',
+        processEventId: 'event-1',
+        estimatedMinutes: 10,
+        leverage: 1,
+        delayCost: 1,
+        status: 'done',
+        createdAt: '2026-09-10T00:00:00.000Z',
+        updatedAt: '2026-09-11T00:00:00.000Z',
+      }],
+    })
+    const result = reconcileIngestionDebt(base, NOW)
+    expect(result.appended[0]?.ingestionResolution).toMatchObject({
+      outcome: 'resolved',
+      reason: 'linked_action_settled',
+    })
+    expect(summarizeCoverage(result.snapshot.data.timeline, { now: NOW }).activeUnresolvedCount).toBe(0)
+  })
+
   it('settles an old unresolved record when later Semantic Intake committed the same Gmail source record', () => {
     const record = unresolved({ sourceRecordId: 'semantic-later' })
     const base = snapshot({
