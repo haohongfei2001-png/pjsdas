@@ -3,6 +3,7 @@ import {
   fetchGmailAutomationBatch,
   fetchGmailReconciliationBatch,
   gmailObservationFromMessage,
+  gmailSemanticRecordFromMessage,
   gmailReconciliationStateForRecord,
   UU06_MAX_MESSAGES_PER_RUN,
 } from '../gateway/gmailAutomation.js'
@@ -135,6 +136,31 @@ describe('Gmail background automation', () => {
     expect(result.nextHistoryId).toBe('205')
     expect(result.messages.map((item) => item.id)).toEqual(['msg-205'])
     expect(calls.some((url) => url.includes('startHistoryId=199'))).toBe(true)
+  })
+
+  it('reconciliation preserves the China Orient written-test window and explicit latest entry time', () => {
+    const body = '中国东方资产管理股份有限公司 管理培训生 在线笔试通知：请于2026年9月23日18:00-20:00参加在线笔试，最晚18:20进入考试。'
+    const message = gmailMessage(body, {
+      id: 'china-orient-written-test',
+      internalDate: String(new Date('2026-09-21T20:28:00+08:00').getTime()),
+    }, '中国东方资产管理股份有限公司 管理培训生 在线笔试通知')
+    const record = gmailSemanticRecordFromMessage(
+      message,
+      [opportunity('china-orient-mt', '中国东方资产管理股份有限公司', '管理培训生')],
+      new Date('2026-09-22T08:30:00+08:00'),
+    )
+    const event = record?.observation.candidates.find((candidate) =>
+      candidate.kind === 'process_event' && candidate.eventType === 'written_test_invite')
+    expect(event?.kind).toBe('process_event')
+    if (event?.kind !== 'process_event') throw new Error('Expected written-test process event')
+    expect(event.temporal).toMatchObject({
+      shape: 'availability_window',
+      startAt: '2026-09-23T18:00:00+08:00',
+      endAt: '2026-09-23T20:00:00+08:00',
+      latestStartAt: '2026-09-23T18:20:00+08:00',
+      resolutionBasis: 'source_explicit',
+    })
+    expect(gmailReconciliationStateForRecord(record!)).toBe('ACTION_REQUIRED')
   })
 
   it('reconciliation independently unions all recent and unread messages without a company or recruiting keyword query', async () => {
