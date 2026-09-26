@@ -152,7 +152,7 @@ export async function runControlledGmailReconciliations(config: GmailAutomationH
         }
         try {
           await createAutomationConnectionStore({ ...storeOptions, fetchImpl: finishFetch })
-            .finishGmailReconciliation(binding.userId, executionToken, run.metrics)
+            .finishGmailExecution(binding.userId, executionToken, {}, run.metrics)
         } finally { clearTimeout(finishTimer) }
         results.push({ status: 'success', summary: run.summary })
       } catch (caught) {
@@ -165,7 +165,7 @@ export async function runControlledGmailReconciliations(config: GmailAutomationH
           const cleanupFetch: typeof fetch = (input, init) => rawFetch(input, { ...init, signal: cleanup.signal })
           try {
             await createAutomationConnectionStore({ ...storeOptions, fetchImpl: cleanupFetch })
-              .finishGmailReconciliation(listed.userId, executionToken, {
+              .finishGmailExecution(listed.userId, executionToken, {}, {
                 status: 'error', mode: 'reconciliation', errorCode: code, ...failureMetrics,
               })
           } catch { /* Lease expiration is the fail-closed recovery path. */ }
