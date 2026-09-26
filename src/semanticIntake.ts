@@ -328,7 +328,7 @@ function occurrenceChoices(nodes: ScheduleNode[]): DecisionRequestChoice[] {
 function confirmChoices(): DecisionRequestChoice[] {
   return [
     { id: 'confirm', label: 'Confirm this fact', consequence: 'Commit the bounded internal update.', resolution: { confirm: true } },
-    { id: 'ignore', label: 'Do not record it', consequence: 'Keep the current PJSDAS state unchanged.', resolution: { dismiss: true } },
+    { id: 'ignore', label: 'Do not record it', consequence: 'Keep the current TodayAction state unchanged.', resolution: { dismiss: true } },
   ]
 }
 
@@ -639,7 +639,7 @@ function applyCandidate(
       status: 'decision',
       snapshot,
       reason: 'missing_required_field',
-      summary: 'A relative reminder offset requires an exact datetime ScheduleNode; PJSDAS will not invent a clock time.',
+      summary: 'A relative reminder offset requires an exact datetime ScheduleNode; TodayAction will not invent a clock time.',
       choices: [
         { id: 'ignore', label: 'Do not create reminder', consequence: 'Keep reminder state unchanged.', resolution: { dismiss: true } },
         { id: 'clarify', label: 'Provide exact reminder time', consequence: 'Use an explicit datetime reminder trigger.', resolution: { dismiss: true } },
@@ -722,9 +722,9 @@ function applyCandidate(
       status: 'decision',
       snapshot,
       reason: 'external_consequence',
-      summary: 'PJSDAS will not withdraw an external application automatically.',
+      summary: 'TodayAction will not withdraw an external application automatically.',
       choices: [
-        { id: 'keep', label: 'Keep PJSDAS unchanged', consequence: 'No internal or external change is made.', resolution: { dismiss: true } },
+        { id: 'keep', label: 'Keep TodayAction unchanged', consequence: 'No internal or external change is made.', resolution: { dismiss: true } },
         { id: 'record_internal', label: 'Record only an internal note later', consequence: 'No external withdrawal is performed.', resolution: { dismiss: true } },
       ],
       affected,

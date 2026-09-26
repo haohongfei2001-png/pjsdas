@@ -111,19 +111,19 @@ export default function McpProposalReview() {
           const ownerId = cloud.device.workspaceOwnerUserId
           if (!ownerId) {
             throw new Error(zh
-              ? '这条提议来自 Google Drive，但当前浏览器还没有可验证的 PJSDAS 云端基线。请先在“设置”连接并同步 Google Drive，再让 ChatGPT 重新生成提议。'
-              : 'This proposal came from Google Drive, but this browser has no verifiable PJSDAS cloud baseline. Connect and sync Google Drive in Settings, then ask ChatGPT for a fresh proposal.')
+              ? '这条提议来自 Google Drive，但当前浏览器还没有可验证的 TodayAction 云端基线。请先在“设置”连接并同步 Google Drive，再让 ChatGPT 重新生成提议。'
+              : 'This proposal came from Google Drive, but this browser has no verifiable TodayAction cloud baseline. Connect and sync Google Drive in Settings, then ask ChatGPT for a fresh proposal.')
           }
           const checkpoint = getAccountCheckpoint(ownerId)
           if (!checkpoint.lastSyncedVersion || proposedVersion !== checkpoint.lastSyncedVersion) {
             throw new Error(zh
-              ? `这条提议基于 ${verified.workspaceVersion}，但本机最近同步版本是 ${checkpoint.lastSyncedVersion ? `drive:${checkpoint.lastSyncedVersion}` : '未知'}。请先同步 PJSDAS，再让 ChatGPT 重新生成提议。`
-              : `This proposal was based on ${verified.workspaceVersion}, while this device last synced ${checkpoint.lastSyncedVersion ? `drive:${checkpoint.lastSyncedVersion}` : 'an unknown version'}. Sync PJSDAS first, then ask ChatGPT for a fresh proposal.`)
+              ? `这条提议基于 ${verified.workspaceVersion}，但本机最近同步版本是 ${checkpoint.lastSyncedVersion ? `drive:${checkpoint.lastSyncedVersion}` : '未知'}。请先同步 TodayAction，再让 ChatGPT 重新生成提议。`
+              : `This proposal was based on ${verified.workspaceVersion}, while this device last synced ${checkpoint.lastSyncedVersion ? `drive:${checkpoint.lastSyncedVersion}` : 'an unknown version'}. Sync TodayAction first, then ask ChatGPT for a fresh proposal.`)
           }
         }
         if (connectedWorkspaceAuthorityEnabled() && verified.workspaceOwnerUserId &&
           cloud.session?.user.id !== verified.workspaceOwnerUserId) {
-          throw new Error(zh ? '这条提议属于另一个 PJSDAS 账号。' : 'This proposal belongs to another PJSDAS account.')
+          throw new Error(zh ? '这条提议属于另一个 TodayAction 账号。' : 'This proposal belongs to another TodayAction account.')
         }
         await assertMcpChangeSetBaseline(verified.changeSet, connectedWorkspaceAuthorityEnabled() ? cloud.session?.user.id : undefined)
         if (!active) return
@@ -443,8 +443,8 @@ export default function McpProposalReview() {
                 ? '打开链接没有修改数据。招聘事实与匹配度/机会价值分项评估分层显示；只有勾选并应用的岗位会进入 Opportunities。'
                 : 'Opening this link changed no data. Source-backed job facts and component assessments are shown separately; only selected jobs are added to Opportunities.')
               : (zh
-                ? '打开这条链接没有修改任何 PJSDAS 数据。只有你点击“应用 ChangeSet”后，这些规范化修改才会进入求职数据。'
-                : 'Opening this link changed no PJSDAS data. These normalized edits enter your job-search data only after you click Apply ChangeSet.')}</p>
+                ? '打开这条链接没有修改任何 TodayAction 数据。只有你点击“应用 ChangeSet”后，这些规范化修改才会进入求职数据。'
+                : 'Opening this link changed no TodayAction data. These normalized edits enter your job-search data only after you click Apply ChangeSet.')}</p>
             <div className="mcp-proposal-meta">
               <strong>{proposal.changeSet.title}</strong>
               <span>{proposal.changeSet.id}</span>
@@ -489,7 +489,7 @@ export default function McpProposalReview() {
                         <div className="mcp-discovery-review-choice">
                           <label>
                             <input type="checkbox" checked={selected} onChange={() => toggleDiscovery(operation.id)} />
-                            <span>{selected ? (zh ? '加入 PJSDAS' : 'Add to PJSDAS') : (zh ? '不加入' : 'Do not add')}</span>
+                            <span>{selected ? (zh ? '加入 TodayAction' : 'Add to TodayAction') : (zh ? '不加入' : 'Do not add')}</span>
                           </label>
                         </div>
                         <div className="mcp-discovery-title">

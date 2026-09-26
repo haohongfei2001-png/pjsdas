@@ -62,7 +62,7 @@ function objectiveFor(sourceId: string) {
     case 'monitor:key-changes':
       return 'Verify aging/stale/unknown canonical posting URLs and detect material posting changes or re-posts without conflating posting lifecycle with recruiting-process state.'
     default:
-      return 'Run a bounded source-backed discovery pass that follows the Discovery Profile and PJSDAS ingestion contract.'
+      return 'Run a bounded source-backed discovery pass that follows the Discovery Profile and TodayAction ingestion contract.'
   }
 }
 

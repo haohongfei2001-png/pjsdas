@@ -299,7 +299,7 @@ function readWorkspace(snapshot: PJSDASSnapshot): EffectiveWorkspace {
   } catch (caught) {
     throw new BridgeReadError(
       'WORKSPACE_INVALID',
-      caught instanceof Error ? caught.message : 'PJSDAS workspace validation failed.',
+      caught instanceof Error ? caught.message : 'TodayAction workspace validation failed.',
     )
   }
 
@@ -681,7 +681,7 @@ export function getDiscoveryContext(
     })),
     instructions: [
       'Use the explicit Discovery Profile as durable search preferences; do not silently infer or rewrite it.',
-      'Search public job sources outside PJSDAS, and keep unknown salary, deadline or location fields unknown instead of inventing them.',
+      'Search public job sources outside TodayAction, and keep unknown salary, deadline or location fields unknown instead of inventing them.',
       'Do not rediscover an obviously identical company+role already present in existingOpportunities.',
       'Avoid recentlyRejected roles unless the user explicitly asks to reconsider them; the quality gate also suppresses highly similar recent rejections.',
       'Do not repeatedly surface roles already present in discoveryInbox with new, seen or later status; dismissed inbox items are suppressed for 120 days.',

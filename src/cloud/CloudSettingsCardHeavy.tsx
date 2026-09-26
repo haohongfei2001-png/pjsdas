@@ -67,7 +67,7 @@ export default function CloudSettingsCard() {
         : cloud.outcome.kind === 'local_pending' ? (zh ? '本机有未进入账号工作区的修改；同步检查已保留本机数据，未上传整份工作区' : 'Local changes have not reached the account workspace; sync preserved them without uploading the whole workspace')
         : cloud.outcome.kind === 'pulled' ? (zh ? `已从 ${remoteLabel} 拉取修改` : `Changes downloaded from ${remoteLabel}`)
           : cloud.outcome.kind === 'conflict' ? (zh ? '检测到同步冲突' : 'Sync conflict detected')
-            : cloud.outcome.kind === 'account_mismatch' ? (zh ? 'PJSDAS 账号与本地工作区不匹配' : 'PJSDAS account does not match local workspace')
+            : cloud.outcome.kind === 'account_mismatch' ? (zh ? 'TodayAction 账号与本地工作区不匹配' : 'TodayAction account does not match local workspace')
               : (zh ? '已同步' : 'Synced')
 
   return (
@@ -106,10 +106,10 @@ export default function CloudSettingsCard() {
         {!user ? (
           <div className="cloud-auth-row">
             <div>
-              <strong>{zh ? '使用 Google 登录 PJSDAS' : 'Sign in to PJSDAS with Google'}</strong>
+              <strong>{zh ? '使用 Google 登录 TodayAction' : 'Sign in to TodayAction with Google'}</strong>
               <p>{zh
-                ? '首次登录会申请 openid/profile/email 与 drive.appdata，并建立可持续的 Drive 授权。之后刷新页面或重新打开浏览器，不应要求你再次登录。PJSDAS 不能浏览普通 Google Drive 文件。'
-                : 'The first sign-in requests openid/profile/email plus drive.appdata and creates durable Drive authorization. Refreshing or reopening the browser should not require another sign-in. PJSDAS cannot browse normal Drive files.'}</p>
+                ? '首次登录会申请 openid/profile/email 与 drive.appdata，并建立可持续的 Drive 授权。之后刷新页面或重新打开浏览器，不应要求你再次登录。TodayAction 不能浏览普通 Google Drive 文件。'
+                : 'The first sign-in requests openid/profile/email plus drive.appdata and creates durable Drive authorization. Refreshing or reopening the browser should not require another sign-in. TodayAction cannot browse normal Drive files.'}</p>
             </div>
             <button className="primary-button" disabled={cloud.loading || cloud.syncing} onClick={() => { void run(cloud.signIn) }}>
               {cloud.loading ? (zh ? '正在恢复…' : 'Restoring…') : (zh ? '使用 Google 登录' : 'Sign in with Google')}
@@ -125,7 +125,7 @@ export default function CloudSettingsCard() {
 
             <div className="cloud-account-row">
               <div>
-                <span>{zh ? 'PJSDAS 账号' : 'PJSDAS account'}</span>
+                <span>{zh ? 'TodayAction 账号' : 'TodayAction account'}</span>
                 <strong>{user.user_metadata?.full_name || user.email || user.id}</strong>
                 {user.email ? <small>{user.email}</small> : null}
               </div>
@@ -145,11 +145,11 @@ export default function CloudSettingsCard() {
               <div className="cloud-conflict-box">
                 <strong>{zh ? '为避免跨账号上传，自动同步已暂停。' : 'Auto-sync is paused to prevent cross-account uploads.'}</strong>
                 <p>{zh
-                  ? '这个浏览器里的本地工作区已经绑定过另一个 Google 身份。PJSDAS 不会自动把那份求职数据上传到当前账号。'
-                  : 'The local workspace in this browser is already bound to another Google identity. PJSDAS will not upload that job-search data into the current account automatically.'}</p>
+                  ? '这个浏览器里的本地工作区已经绑定过另一个 Google 身份。TodayAction 不会自动把那份求职数据上传到当前账号。'
+                  : 'The local workspace in this browser is already bound to another Google identity. TodayAction will not upload that job-search data into the current account automatically.'}</p>
                 <div>
                   <button onClick={() => {
-                    if (window.confirm(zh ? `确认把当前本地工作区重新绑定到这个 PJSDAS 账号？如果该账号已有${remoteLabel}数据，系统会先进入冲突处理，不会直接覆盖。` : `Rebind the current local workspace to this PJSDAS account? Existing ${remoteLabel} data will trigger conflict handling rather than being overwritten.`)) void run(cloud.rebindLocal)
+                    if (window.confirm(zh ? `确认把当前本地工作区重新绑定到这个 TodayAction 账号？如果该账号已有${remoteLabel}数据，系统会先进入冲突处理，不会直接覆盖。` : `Rebind the current local workspace to this TodayAction account? Existing ${remoteLabel} data will trigger conflict handling rather than being overwritten.`)) void run(cloud.rebindLocal)
                   }}>{zh ? '绑定当前本地工作区' : 'Bind current local workspace'}</button>
                   <button className="danger" onClick={() => {
                     if (window.confirm(zh ? `确认用当前账号的${remoteLabel}替换本机工作区？本机尚未同步的修改会丢失。` : `Replace this device workspace with the current account ${remoteLabel}? Unsynced local changes will be lost.`)) void run(cloud.useCloud)
@@ -178,7 +178,7 @@ export default function CloudSettingsCard() {
               </label>
               <div>
                 <button disabled={cloud.syncing || mismatch || Boolean(conflict)} onClick={() => { void run(async () => cloud.syncNow()) }}>{cloud.syncing ? (zh ? '同步中…' : 'Syncing…') : (zh ? '立即同步' : 'Sync now')}</button>
-                <button disabled={cloud.syncing || cloud.loading} onClick={() => { void run(cloud.signOut) }}>{zh ? '退出 PJSDAS' : 'Sign out of PJSDAS'}</button>
+                <button disabled={cloud.syncing || cloud.loading} onClick={() => { void run(cloud.signOut) }}>{zh ? '退出 TodayAction' : 'Sign out of TodayAction'}</button>
               </div>
             </div>
             {outcomeLabel ? <div className="cloud-result">{outcomeLabel}</div> : null}
@@ -188,11 +188,11 @@ export default function CloudSettingsCard() {
         {(localError || cloud.error || cloud.checkpoint.lastError) ? <div className="cloud-error">{localError || cloud.error || cloud.checkpoint.lastError}</div> : null}
         <small className="cloud-security-note">{transactional
           ? (zh
-              ? 'Google 长期授权凭据在服务端加密保存。退出账号会清除此设备上的账号缓存，避免下一个登录者看到前一个账号的资料；已同步的账号资料仍保留。PJSDAS 只获得应用专用的 Google Drive 文件权限。'
-              : 'Long-lived Google authorization is encrypted on the server. Signing out clears this device’s account cache so the next sign-in cannot see the previous account’s data; already synced account data remains stored. PJSDAS only receives access to its app-specific Google Drive files.')
+              ? 'Google 长期授权凭据在服务端加密保存。退出账号会清除此设备上的账号缓存，避免下一个登录者看到前一个账号的资料；已同步的账号资料仍保留。TodayAction 只获得应用专用的 Google Drive 文件权限。'
+              : 'Long-lived Google authorization is encrypted on the server. Signing out clears this device’s account cache so the next sign-in cannot see the previous account’s data; already synced account data remains stored. TodayAction only receives access to its app-specific Google Drive files.')
           : (zh
-              ? 'Google 长期授权凭据在服务端加密保存。此设备仍会保留本机资料；在共享设备上使用后，请按需要清理浏览器资料。PJSDAS 只获得应用专用的 Google Drive 文件权限。'
-              : 'Long-lived Google authorization is encrypted on the server. Local data remains on this device; clear browser data after use on a shared device when needed. PJSDAS only receives access to its app-specific Google Drive files.')}</small>
+              ? 'Google 长期授权凭据在服务端加密保存。此设备仍会保留本机资料；在共享设备上使用后，请按需要清理浏览器资料。TodayAction 只获得应用专用的 Google Drive 文件权限。'
+              : 'Long-lived Google authorization is encrypted on the server. Local data remains on this device; clear browser data after use on a shared device when needed. TodayAction only receives access to its app-specific Google Drive files.')}</small>
       </section>
       <AiAccessSettingsCard />
     </>

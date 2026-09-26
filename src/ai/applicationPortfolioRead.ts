@@ -25,7 +25,7 @@ export function getApplicationPortfolio(
   try {
     validateSnapshot(snapshot)
   } catch (caught) {
-    throw new BridgeReadError('WORKSPACE_INVALID', caught instanceof Error ? caught.message : 'PJSDAS workspace validation failed.')
+    throw new BridgeReadError('WORKSPACE_INVALID', caught instanceof Error ? caught.message : 'TodayAction workspace validation failed.')
   }
 
   const context = resolvedContext(bridgeContext)

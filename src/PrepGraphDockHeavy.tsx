@@ -60,7 +60,7 @@ function NodeCard({ node, graph, zh }: { node: PrepGraphNode; graph: PrepGraph; 
       {node.triggerSuggested ? (
         <div className="prep-graph-trigger-note">
           <strong>{zh ? '建议检查是否应触发' : 'Consider activating this prep'}</strong>
-          <span>{zh ? '该 Prep 仍标记为“等待触发”，但当前已存在确定性覆盖关系。PJSDAS 不会自动创建 Action。' : 'This Prep is still waiting, but deterministic coverage now exists. PJSDAS does not create an Action automatically.'}</span>
+          <span>{zh ? '该 Prep 仍标记为“等待触发”，但当前已存在确定性覆盖关系。TodayAction 不会自动创建 Action。' : 'This Prep is still waiting, but deterministic coverage now exists. TodayAction does not create an Action automatically.'}</span>
         </div>
       ) : null}
       <div className="prep-graph-next">{zh ? '最近相关节点' : 'Nearest relevant node'}：{dateLabel(node.nextRelevantAt, zh)}</div>

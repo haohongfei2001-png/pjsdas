@@ -47,7 +47,7 @@ export function createTransactionalWorkspaceSource(options: TransactionalWorkspa
       if (!workspace) {
         throw new WorkspaceSourceError(
           'WORKSPACE_MIGRATION_REQUIRED',
-          'PJSDAS connected workspace has not been explicitly migrated yet.',
+          'TodayAction connected workspace has not been explicitly migrated yet.',
           false,
         )
       }
@@ -67,7 +67,7 @@ export function createTransactionalWorkspaceSource(options: TransactionalWorkspa
       if (!workspace) {
         throw new WorkspaceSourceError(
           'WORKSPACE_MIGRATION_REQUIRED',
-          'PJSDAS connected workspace has not been explicitly migrated yet.',
+          'TodayAction connected workspace has not been explicitly migrated yet.',
           false,
         )
       }
@@ -117,7 +117,7 @@ export function createTransactionalWorkspaceSource(options: TransactionalWorkspa
       if (result.outcome === 'CONFLICT') {
         throw new WorkspaceSourceError(
           'WORKSPACE_CONFLICT',
-          `PJSDAS connected workspace changed since revision ${expectedRevision}; retry from txn:${result.revision}.`,
+          `TodayAction connected workspace changed since revision ${expectedRevision}; retry from txn:${result.revision}.`,
           true,
         )
       }
@@ -137,7 +137,7 @@ export function createTransactionalWorkspaceSource(options: TransactionalWorkspa
       if (!current) {
         throw new WorkspaceSourceError(
           'WORKSPACE_MIGRATION_REQUIRED',
-          'PJSDAS connected workspace has not been explicitly migrated yet.',
+          'TodayAction connected workspace has not been explicitly migrated yet.',
           false,
         )
       }

@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import BrandMark from './BrandMark.js'
+import { BRAND_NAME, brandDocumentTitle } from './brand.js'
 import {
   applyActionStatusChangeSet,
   exportLocalSnapshot,
@@ -173,6 +175,10 @@ export default function AppV8() {
   const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
 
   useEffect(() => {
+    document.title = brandDocumentTitle(route.capture ? 'capture' : surface, lang)
+  }, [surface, route.capture, lang])
+
+  useEffect(() => {
     const origin = detailOrigin.current
     if (selectedOpportunityId || !origin || origin.path !== semanticPath() + window.location.search) return
     detailOrigin.current = null
@@ -282,7 +288,7 @@ export default function AppV8() {
             observedAt: result.observedAt,
             latencyMs: result.latencyMs,
             detail: result.state === 'diverged'
-              ? 'Authoritative state changed while this client also has local changes; PJSDAS did not overwrite either side.'
+              ? 'Authoritative state changed while this client also has local changes; TodayAction did not overwrite either side.'
               : result.state === 'local_changes_pending'
                 ? 'This client has local changes that have not been projected to authoritative state.'
                 : 'A non-empty local workspace has not yet been safely bound to this account.',
@@ -608,7 +614,7 @@ export default function AppV8() {
   return (
     <div className="app-shell surface-shell ultimate-shell cgr-shell cgr-app-shell">
       <header className="tsui-topbar">
-        <button className="tsui-brand" type="button" onClick={() => navigate('/today')} aria-label="PJSDAS · Today"><span className="tsui-brand-mark">P</span><strong>PJSDAS</strong></button>
+        <button className="tsui-brand" type="button" onClick={() => navigate('/today')} aria-label={zh ? 'TodayAction，今天' : 'TodayAction, Today'}><BrandMark className="tsui-brand-mark" /><strong>{BRAND_NAME}</strong></button>
         <nav className="tsui-primary-nav" aria-label={zh ? '主导航' : 'Primary navigation'}>
           {primarySurfaces.map((item) => {
             const label = surfaceLabels[item]
@@ -616,7 +622,7 @@ export default function AppV8() {
           })}
         </nav>
         <div className="tsui-top-actions">
-          <button className="tsui-tell-button" type="button" onClick={openCapture} disabled={CGR02_TODAY_READ_ONLY}>{zh ? '＋ 告诉 PJSDAS' : '＋ Tell PJSDAS'}</button>
+          <button className="tsui-tell-button" type="button" onClick={openCapture} disabled={CGR02_TODAY_READ_ONLY}>{zh ? '＋ 告诉 TodayAction' : '＋ Tell TodayAction'}</button>
           <button className="tsui-settings-button" type="button" aria-label={zh ? '设置' : 'Settings'} onClick={() => navigate('/settings')}>⚙</button>
         </div>
       </header>
@@ -807,7 +813,7 @@ function SettingsSurface({ lastImport, rules, onChanged, onOpenActivity }: { las
         <summary><div><strong>{zh ? '数据与恢复' : 'Data & recovery'}</strong><span>{zh ? '备份、导入和恢复路径' : 'Backup, import, and recovery paths'}</span></div></summary>
         <div className="settings-group-body">
           <ConnectedMigrationCard />
-          <div className="settings-inline-tool"><div><strong>{zh ? '流程恢复工具' : 'Process recovery'}</strong><p>{zh ? '日常输入请使用全局“告诉 PJSDAS”。这里只有自动化无法恢复时才使用的低频流程工具。' : 'Use global Tell PJSDAS for normal input. This low-frequency tool is only for process recovery when automation cannot repair the state.'}</p></div><div className="surface-tool-row"><ProcessEventDock onChanged={() => { void onChanged() }} /></div></div>
+          <div className="settings-inline-tool"><div><strong>{zh ? '流程恢复工具' : 'Process recovery'}</strong><p>{zh ? '日常输入请使用全局“告诉 TodayAction”。这里只有自动化无法恢复时才使用的低频流程工具。' : 'Use global Tell TodayAction for normal input. This low-frequency tool is only for process recovery when automation cannot repair the state.'}</p></div><div className="surface-tool-row"><ProcessEventDock onChanged={() => { void onChanged() }} /></div></div>
           <div className="settings-inline-tool"><div><strong>{zh ? '本地快照' : 'Local snapshot'}</strong><p>{zh ? '大版本调整、换设备或清理浏览器前导出完整快照。' : 'Export a full snapshot before major upgrades, device changes, or browser cleanup.'}</p></div><LocalBackupDock onChanged={() => { void onChanged() }} /></div>
           <div className="surface-import-card"><div><strong>{zh ? 'Excel 初始化 / 恢复' : 'Excel initialization / recovery'}</strong><p>{zh ? 'Excel 已不是日常数据源，只在初始化、历史迁移或恢复时使用。' : 'Excel is no longer the daily source of truth; use it for initialization, migration, or recovery.'}</p></div><label className="file-button">{busy ? (zh ? '处理中…' : 'Processing…') : (zh ? '选择工作簿' : 'Choose workbook')}<input type="file" accept=".xlsx,.xls" disabled={busy} onChange={(event) => { void readWorkbook(event.target.files?.[0]) }} /></label></div>
           {error ? <div className="notice error">{error}</div> : null}

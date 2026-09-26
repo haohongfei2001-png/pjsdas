@@ -116,7 +116,7 @@ export default function DiscoveryInboxView() {
 
   async function commitConnectedStatus(itemId: string, status: Exclude<DiscoveryInboxStatus, 'promoted'>, rejectionReason?: DiscoveryRejectionReason) {
     const accountKey = cloud.session?.user.id
-    if (!accountKey) throw new Error('当前 PJSDAS 账号会话不可用。')
+    if (!accountKey) throw new Error('当前 TodayAction 账号会话不可用。')
     const commandId = createConnectedCommandId('discovery-status')
     const result = await executeConnectedBusinessCommand(accountKey, {
       type: 'discovery_status', value: { inboxItemId: itemId, status, rejectionReason },
@@ -240,7 +240,7 @@ export default function DiscoveryInboxView() {
           </select>
         </label>
         <button onClick={selectVisible}>{zh ? '选择当前列表' : 'Select visible'}</button>
-        <span className="discovery-inbox-sort-note">{zh ? '“建议先看”仅按候选状态、现有匹配度/机会价值与基础信息完整度排序，不改变正式 PJSDAS 优先级。' : 'Review priority uses inbox status, existing fit/opportunity scores, and basic information completeness only. It does not change formal PJSDAS priority.'}</span>
+        <span className="discovery-inbox-sort-note">{zh ? '“建议先看”仅按候选状态、现有匹配度/机会价值与基础信息完整度排序，不改变正式 TodayAction 优先级。' : 'Review priority uses inbox status, existing fit/opportunity scores, and basic information completeness only. It does not change formal TodayAction priority.'}</span>
       </div>
 
       {selectedIds.length ? (

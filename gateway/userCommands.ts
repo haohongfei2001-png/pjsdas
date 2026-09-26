@@ -89,7 +89,7 @@ function errorResult(caught: unknown): CallToolResult {
   }
   return result({
     code: 'USER_COMMAND_FAILED',
-    message: caught instanceof Error ? caught.message : 'PJSDAS user command failed.',
+    message: caught instanceof Error ? caught.message : 'TodayAction user command failed.',
     retryable: false,
   }, true)
 }

@@ -58,6 +58,26 @@
     {
       "source": "/history",
       "destination": "/"
+    },
+    {
+      "source": "/library",
+      "destination": "/"
+    },
+    {
+      "source": "/library/:id",
+      "destination": "/"
+    },
+    {
+      "source": "/schedule",
+      "destination": "/"
+    },
+    {
+      "source": "/today/capture",
+      "destination": "/"
+    },
+    {
+      "source": "/decisions/:id",
+      "destination": "/"
     }
   ],
   "functions": {

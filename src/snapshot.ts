@@ -173,7 +173,7 @@ export function upgradeSnapshotToLatest(snapshot: PJSDASSnapshot): PJSDASSnapsho
 
 export function validateSnapshot(value: unknown): asserts value is PJSDASSnapshot {
   if (!isObject(value)) throw new Error('备份损坏：根对象无效。')
-  if (value.schema !== SNAPSHOT_SCHEMA) throw new Error('这不是 PJSDAS 本地备份。')
+  if (value.schema !== SNAPSHOT_SCHEMA) throw new Error('这不是 TodayAction 本地备份。')
   if (
     value.version !== LEGACY_SNAPSHOT_VERSION
     && value.version !== SCHEDULE_SNAPSHOT_VERSION

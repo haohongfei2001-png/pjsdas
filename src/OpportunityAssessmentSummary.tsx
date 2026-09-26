@@ -59,8 +59,8 @@ export default function OpportunityAssessmentSummary({
       </summary>
       <p className="opportunity-assessment-note">
         {zh
-          ? '这些是评估判断，不是招聘事实。PJSDAS 根据显式组件权重聚合总分；缺失组件不会被填成中性分。'
-          : 'These are assessment judgments, not recruiting facts. PJSDAS aggregates them using explicit component weights; missing components are not given neutral scores.'}
+          ? '这些是评估判断，不是招聘事实。TodayAction 根据显式组件权重聚合总分；缺失组件不会被填成中性分。'
+          : 'These are assessment judgments, not recruiting facts. TodayAction aggregates them using explicit component weights; missing components are not given neutral scores.'}
       </p>
       <div className="opportunity-assessment-axis">
         <div className="opportunity-assessment-axis-head">

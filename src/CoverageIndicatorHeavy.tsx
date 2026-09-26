@@ -241,8 +241,8 @@ export default function CoverageIndicatorHeavy() {
               ) : null}
 
               <p className="coverage-footnote">{zh
-                ? 'Coverage 证明的是“当前已启用来源按期运行，且进入 PJSDAS 的记录没有静默丢失”；Integrity 检查本地持久化结构。两者都不声称“互联网上不存在尚未被任何监控发现的岗位”。'
-                : 'Coverage means enabled sources are running on schedule and records entering PJSDAS are not silently lost. Integrity checks the local durable structure. Neither claims that every job on the internet has been discovered.'}</p>
+                ? 'Coverage 证明的是“当前已启用来源按期运行，且进入 TodayAction 的记录没有静默丢失”；Integrity 检查本地持久化结构。两者都不声称“互联网上不存在尚未被任何监控发现的岗位”。'
+                : 'Coverage means enabled sources are running on schedule and records entering TodayAction are not silently lost. Integrity checks the local durable structure. Neither claims that every job on the internet has been discovered.'}</p>
             </>
           )}
         </section>

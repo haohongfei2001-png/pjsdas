@@ -37,8 +37,8 @@ export default function AiAccessSettingsCard() {
         <div>
           <strong>{zh ? '连接后台工作区' : 'Connect background workspace'}</strong>
           <p>{zh
-            ? '授权后，网页关闭时仍可同步你的 PJSDAS 工作区。只申请 Google Drive 的应用专用文件权限，不会浏览普通 Drive 文件。'
-            : 'This lets PJSDAS sync your workspace while the page is closed. It requests only access to its app-specific Google Drive files, not your normal Drive files.'}</p>
+            ? '授权后，网页关闭时仍可同步你的 TodayAction 工作区。只申请 Google Drive 的应用专用文件权限，不会浏览普通 Drive 文件。'
+            : 'This lets TodayAction sync your workspace while the page is closed. It requests only access to its app-specific Google Drive files, not your normal Drive files.'}</p>
         </div>
         <button className="primary-button" disabled={ai.busy} onClick={() => { void ai.beginGoogleDriveLink() }}>
           {ai.busy ? (zh ? '处理中…' : 'Working…') : (zh ? '使用 Google 连接 AI' : 'Connect AI with Google')}
@@ -49,8 +49,8 @@ export default function AiAccessSettingsCard() {
         <div>
           <strong>{zh ? '后台岗位发现' : 'Background job discovery'}</strong>
           <p>{zh
-            ? '启用后，PJSDAS 按你的岗位偏好和决策规则检索公开招聘信息，避免重复加入。搜索模型只收到有限的岗位发现条件，不会收到完整工作区、Gmail 正文或无关个人资料；关闭后停止后台公开网页搜索。'
-            : 'When enabled, PJSDAS searches public job information using your preferences and decision rules, without adding duplicates. The search model receives only bounded discovery criteria, never your full workspace, Gmail bodies, or unrelated personal data. Turning this off stops background public-web search.'}</p>
+            ? '启用后，TodayAction 按你的岗位偏好和决策规则检索公开招聘信息，避免重复加入。搜索模型只收到有限的岗位发现条件，不会收到完整工作区、Gmail 正文或无关个人资料；关闭后停止后台公开网页搜索。'
+            : 'When enabled, TodayAction searches public job information using your preferences and decision rules, without adding duplicates. The search model receives only bounded discovery criteria, never your full workspace, Gmail bodies, or unrelated personal data. Turning this off stops background public-web search.'}</p>
           {automation?.discoveryLastSuccessAt ? <small className="cloud-security-note">
             {zh ? `最近成功发现：${new Date(automation.discoveryLastSuccessAt).toLocaleString()}` : `Last successful discovery: ${new Date(automation.discoveryLastSuccessAt).toLocaleString()}`}
           </small> : null}
@@ -70,7 +70,7 @@ export default function AiAccessSettingsCard() {
           <strong>{zh ? '招聘邮件自动跟踪' : 'Automatic recruiting-email tracking'}</strong>
           <p>{zh
             ? '点击启用即同意：以 Gmail 只读权限回补最近90天邮件（含已归档、不含垃圾箱/垃圾邮件），以后定期读取新增招聘邮件，并保存必要的公司、岗位、招聘进展、时间、地点与会议链接。原始正文不保存，附件和链接页面不读取；不发送或修改邮件。已有连接不会自动扩大范围，关闭后重新启用才采用上述范围。'
-            : 'By enabling Gmail read-only access, you consent to backfill of the last 90 days, including archived mail and excluding spam/trash, followed by periodic checks for new recruiting mail. PJSDAS stores necessary recruiting facts, times, locations and meeting links, but no raw bodies. Raw email bodies are never persisted in PJSDAS; ambiguous messages remain unresolved. It does not read attachments or linked pages, or send/change mail. Existing connections keep their previous scope until disabled and explicitly enabled again.'}</p>
+            : 'By enabling Gmail read-only access, you consent to backfill of the last 90 days, including archived mail and excluding spam/trash, followed by periodic checks for new recruiting mail. TodayAction stores necessary recruiting facts, times, locations and meeting links, but no raw bodies. Raw email bodies are never persisted in TodayAction; ambiguous messages remain unresolved. It does not read attachments or linked pages, or send/change mail. Existing connections keep their previous scope until disabled and explicitly enabled again.'}</p>
           {automation?.gmailLastSuccessAt ? <small className="cloud-security-note">
             {zh ? `最近成功检查：${new Date(automation.gmailLastSuccessAt).toLocaleString()}` : `Last successful check: ${new Date(automation.gmailLastSuccessAt).toLocaleString()}`}
           </small> : null}

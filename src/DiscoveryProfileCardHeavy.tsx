@@ -197,8 +197,8 @@ export default function DiscoveryProfileCard() {
           <div className="eyebrow">AI JOB DISCOVERY</div>
           <h2>{zh ? '岗位发现偏好' : 'Job discovery preferences'}</h2>
           <p>{zh
-            ? '这是 ChatGPT 长期寻找岗位时使用的显式约束。PJSDAS 不会从聊天记录里静默推断或改写这些偏好。'
-            : 'These are the explicit constraints used for ongoing job discovery. PJSDAS never silently infers or rewrites them from chat history.'}</p>
+            ? '这是 ChatGPT 长期寻找岗位时使用的显式约束。TodayAction 不会从聊天记录里静默推断或改写这些偏好。'
+            : 'These are the explicit constraints used for ongoing job discovery. TodayAction never silently infers or rewrites them from chat history.'}</p>
         </div>
         <button className="primary-button" disabled={busy} onClick={() => { void save() }}>
           {busy ? (zh ? '保存中…' : 'Saving…') : (zh ? '保存偏好' : 'Save preferences')}

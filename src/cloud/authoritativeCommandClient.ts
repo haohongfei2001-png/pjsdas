@@ -237,7 +237,7 @@ async function recoverUnknown(accountKey: string, pending: PendingCommand, caugh
     // receipt lookup before reusing the stable command identity.
   }
   const message = caught instanceof Error ? caught.message : String(caught)
-  const unknown = `UNKNOWN_COMMAND_OUTCOME: PJSDAS 尚未确认这次操作是否已提交。已保留 commandId ${pending.commandId}，恢复连接后会先查询 receipt，再以同一 commandId 安全重试；请不要重复创建同一操作。原始错误：${message}`
+  const unknown = `UNKNOWN_COMMAND_OUTCOME: TodayAction 尚未确认这次操作是否已提交。已保留 commandId ${pending.commandId}，恢复连接后会先查询 receipt，再以同一 commandId 安全重试；请不要重复创建同一操作。原始错误：${message}`
   patchPending(accountKey, pending.commandId, { status: 'unknown', lastError: unknown })
   throw new Error(unknown)
 }
@@ -245,7 +245,7 @@ async function recoverUnknown(accountKey: string, pending: PendingCommand, caugh
 function rejectBeforeExecution(accountKey: string, pending: PendingCommand, response: Response, payload?: Record<string, any>): never {
   const raw = serverError(response, payload)
   if (response.status === 401) {
-    const message = 'SESSION_EXPIRED_BEFORE_COMMAND: PJSDAS 登录会话已过期；服务端在授权阶段拒绝了本次命令，因此它没有执行。重新登录后会使用同一 commandId 安全重试。'
+    const message = 'SESSION_EXPIRED_BEFORE_COMMAND: TodayAction 登录会话已过期；服务端在授权阶段拒绝了本次命令，因此它没有执行。重新登录后会使用同一 commandId 安全重试。'
     patchPending(accountKey, pending.commandId, { status: 'pending', lastError: message })
     throw new PreExecutionCommandError(message)
   }

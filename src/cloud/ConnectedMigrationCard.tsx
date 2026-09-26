@@ -42,8 +42,8 @@ export default function ConnectedMigrationCard() {
   async function migrate() {
     if (!userId || !inspection || inspection.status !== 'ready') return
     const confirmed = window.confirm(zh
-      ? '确认创建 transactional connected workspace？PJSDAS 会先下载一个 migration recovery 文件，然后创建服务端权威副本。此操作不会自动切换当前生产 authority。'
-      : 'Create the transactional connected workspace? PJSDAS first downloads a migration recovery file, then creates the server-authoritative copy. This does not switch the current production authority automatically.')
+      ? '确认创建 transactional connected workspace？TodayAction 会先下载一个 migration recovery 文件，然后创建服务端权威副本。此操作不会自动切换当前生产 authority。'
+      : 'Create the transactional connected workspace? TodayAction first downloads a migration recovery file, then creates the server-authoritative copy. This does not switch the current production authority automatically.')
     if (!confirmed) return
     setBusy(true)
     setError('')
@@ -71,13 +71,13 @@ export default function ConnectedMigrationCard() {
           <h3>{zh ? '域名切换前的数据迁移' : 'Data migration before domain cutover'}</h3>
           <p>{zh
             ? '在旧 origin 仍能读取 IndexedDB 时，把 Local / Drive 安全收敛到 transactional workspace。不同 origin 之间不会尝试直接读取彼此的 IndexedDB。'
-            : 'While the legacy origin can still read its IndexedDB, safely converge Local / Drive into the transactional workspace. PJSDAS never tries to read another origin’s IndexedDB directly.'}</p>
+            : 'While the legacy origin can still read its IndexedDB, safely converge Local / Drive into the transactional workspace. TodayAction never tries to read another origin’s IndexedDB directly.'}</p>
         </div>
         <span className={active ? 'active' : ''}>{active ? (zh ? 'TRANSACTIONAL 已启用' : 'TRANSACTIONAL ACTIVE') : (zh ? '准备阶段' : 'PREPARATION')}</span>
       </div>
 
       {!userId ? (
-        <div className="connected-migration-note">{zh ? '先在“连接与自动化”中登录 PJSDAS，再检查迁移状态。' : 'Sign in to PJSDAS under Connections & automation before checking migration state.'}</div>
+        <div className="connected-migration-note">{zh ? '先在“连接与自动化”中登录 TodayAction，再检查迁移状态。' : 'Sign in to TodayAction under Connections & automation before checking migration state.'}</div>
       ) : (
         <div className="connected-migration-actions">
           <button disabled={busy} onClick={() => { void inspect() }}>{busy ? '…' : (zh ? '检查迁移状态' : 'Check migration state')}</button>

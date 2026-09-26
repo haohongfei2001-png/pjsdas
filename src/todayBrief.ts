@@ -720,7 +720,7 @@ export function buildTodayBrief(
       'execution_target_missing',
       'warning',
       'An application action lacks a verified direct application target.',
-      'PJSDAS can open the opportunity context but must not pretend that opening a page equals applying.',
+      'TodayAction can open the opportunity context but must not pretend that opening a page equals applying.',
       missingTargets.map((item) => item.actionId),
     ))
   }

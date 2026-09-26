@@ -77,8 +77,8 @@ function gmailBinding(row: GmailBindingRow): GmailAutomationBinding[] {
 
 export function createAutomationConnectionStore(options: AutomationConnectionStoreOptions) {
   const baseUrl = options.supabaseUrl.replace(/\/+$/, '')
-  const publishableKey = required(options.supabasePublishableKey, 'PJSDAS Supabase publishable key')
-  const workerToken = required(options.workerToken, 'PJSDAS automation worker token')
+  const publishableKey = required(options.supabasePublishableKey, 'TodayAction Supabase publishable key')
+  const workerToken = required(options.workerToken, 'TodayAction automation worker token')
   const fetchImpl = options.fetchImpl ?? fetch
   const headers = {
     apikey: publishableKey,
@@ -94,10 +94,10 @@ export function createAutomationConnectionStore(options: AutomationConnectionSto
         body: JSON.stringify(body),
       })
     } catch {
-      throw new WorkspaceSourceError('AUTH_UNAVAILABLE', 'PJSDAS automation authorization store is temporarily unavailable.', true)
+      throw new WorkspaceSourceError('AUTH_UNAVAILABLE', 'TodayAction automation authorization store is temporarily unavailable.', true)
     }
     if (response.status === 401 || response.status === 403) {
-      throw new WorkspaceSourceError('AUTOMATION_AUTH_REQUIRED', 'PJSDAS automation worker authorization is invalid.', false)
+      throw new WorkspaceSourceError('AUTOMATION_AUTH_REQUIRED', 'TodayAction automation worker authorization is invalid.', false)
     }
     if (response.status === 404) {
       const failure = await response.clone().json().catch(() => ({})) as { code?: string }
@@ -106,10 +106,10 @@ export function createAutomationConnectionStore(options: AutomationConnectionSto
       }
     }
     if (!response.ok) {
-      throw new WorkspaceSourceError('AUTH_UNAVAILABLE', `PJSDAS automation authorization store failed (HTTP ${response.status}).`, true)
+      throw new WorkspaceSourceError('AUTH_UNAVAILABLE', `TodayAction automation authorization store failed (HTTP ${response.status}).`, true)
     }
     const data = await response.json().catch(() => undefined) as T | undefined
-    if (data === undefined) throw new WorkspaceSourceError('AUTH_INVALID', 'PJSDAS automation authorization store returned invalid data.', false)
+    if (data === undefined) throw new WorkspaceSourceError('AUTH_INVALID', 'TodayAction automation authorization store returned invalid data.', false)
     return data
   }
 

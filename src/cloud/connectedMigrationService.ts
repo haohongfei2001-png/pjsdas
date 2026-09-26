@@ -72,7 +72,7 @@ export async function inspectConnectedMigration(userId: string): Promise<Connect
     }
     return {
       status: 'conflict',
-      reason: 'A connected transactional workspace already exists but does not match the safe Local/Drive migration candidate. PJSDAS will not overwrite it.',
+      reason: 'A connected transactional workspace already exists but does not match the safe Local/Drive migration candidate. TodayAction will not overwrite it.',
       local,
       drive,
       localFingerprint: await fingerprintWorkspace(local),

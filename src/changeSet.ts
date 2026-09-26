@@ -195,7 +195,7 @@ export function createRulesChangeSet(before: DecisionRules, after: DecisionRules
   return baseChangeSet('rules', mode === 'reset' ? '恢复推荐决策规则' : '修改决策规则', [{
     id: 'rules:current',
     kind: 'replace_decision_rules',
-    summary: mode === 'reset' ? '恢复 PJSDAS 推荐规则' : '应用当前规则修改',
+    summary: mode === 'reset' ? '恢复 TodayAction 推荐规则' : '应用当前规则修改',
     expectedUpdatedAt: before.updatedAt,
     mode,
     rules: proposed,

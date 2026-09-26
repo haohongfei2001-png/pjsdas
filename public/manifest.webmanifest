@@ -1,0 +1,32 @@
+{
+  "id": "/",
+  "name": "TodayAction",
+  "short_name": "TodayAction",
+  "description": "清晰掌握今天的求职行动、岗位进展与日程。",
+  "lang": "zh-CN",
+  "start_url": "./today",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#F5F6F9",
+  "theme_color": "#F5F6F9",
+  "icons": [
+    {
+      "src": "brand/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "brand/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "brand/icon-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}

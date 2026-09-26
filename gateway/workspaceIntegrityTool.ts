@@ -12,7 +12,7 @@ function success(output: object): CallToolResult {
 function failure(caught: unknown): CallToolResult {
   const code = caught instanceof WorkspaceSourceError ? caught.code : 'TEMPORARILY_UNAVAILABLE'
   const retryable = caught instanceof WorkspaceSourceError ? caught.retryable : true
-  const message = caught instanceof Error ? caught.message : 'PJSDAS workspace integrity audit is unavailable.'
+  const message = caught instanceof Error ? caught.message : 'TodayAction workspace integrity audit is unavailable.'
   return { isError: true, content: [{ type: 'text', text: JSON.stringify({ code, message, retryable }) }] }
 }
 

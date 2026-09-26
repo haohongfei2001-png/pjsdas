@@ -1,0 +1,79 @@
+{
+  "schema": "todayaction-brand-assets-v1",
+  "direction": "approved-A-three-part",
+  "reference_sha256": "3916158ffd7f8a21d52715024afb2ff8b95b4d1e78cfd0a58def6bb4a0ea8114",
+  "tools": {
+    "cairosvg": "2.8.2",
+    "pillow": "12.3.0"
+  },
+  "assets": {
+    "public/brand/a-app-maskable.svg": {
+      "sha256": "5ec6c525066daee62c5b2306aead2e5305d4d1fc793e4b3e1722dcedb031d401",
+      "bytes": 1233
+    },
+    "public/brand/a-app-master.svg": {
+      "sha256": "a0dc03e01aaa03127ac09c91e425a01ca9987373cab55f26ef94818b76f225c7",
+      "bytes": 1235
+    },
+    "public/brand/a-mark-mono.svg": {
+      "sha256": "ebb0ec95dc8e612982d06448bf1ed491c181bec69eb14cdaa34f8294922aab13",
+      "bytes": 535
+    },
+    "public/brand/a-mark-primary.svg": {
+      "sha256": "9ac467bc0e6414dd62f68a343ca9f5f05ba713e773cab6cfb8be79ce67ced76e",
+      "bytes": 973
+    },
+    "public/brand/a-mark-small.svg": {
+      "sha256": "89daeab693f865b86cb276e918e5a9cb7bfa9fcbabae7421dba95a7155cb8780",
+      "bytes": 535
+    },
+    "public/brand/app-icon-1024.png": {
+      "sha256": "afccbe7b5efdeeb9e1d0d39c07d39d6de0c3de0ad40ae3cc154ca1df4e5477b2",
+      "bytes": 31561
+    },
+    "public/brand/apple-touch-icon.png": {
+      "sha256": "0464d59ae2b383fac2c444c935daa1674df98155916eba2eddd9f3a3264d3fa4",
+      "bytes": 4245
+    },
+    "public/brand/favicon-16.png": {
+      "sha256": "2123cba6b247d215535660cc7e3da3a27f54777a06e0e894fa269604ae2f940f",
+      "bytes": 467
+    },
+    "public/brand/favicon-24.png": {
+      "sha256": "b9494b297741a16b12947156b4a407f03c20f5ad28f4f45e4460377cd74f4a43",
+      "bytes": 652
+    },
+    "public/brand/favicon-32.png": {
+      "sha256": "baf2380cbe1a4c76cef59fcfa8bdead4931b8f9007d5d51d1f2554257dee1576",
+      "bytes": 818
+    },
+    "public/brand/favicon-48.png": {
+      "sha256": "9993f53754fcc3a1c7632c64e486360d4742e03d9fe891cd28b4d73b31295469",
+      "bytes": 1197
+    },
+    "public/brand/favicon.ico": {
+      "sha256": "60336545367a451550e0e7c067fb088907c1716b8a2ce8ffd53f2886f1173ce4",
+      "bytes": 4599
+    },
+    "public/brand/favicon.svg": {
+      "sha256": "89daeab693f865b86cb276e918e5a9cb7bfa9fcbabae7421dba95a7155cb8780",
+      "bytes": 535
+    },
+    "public/brand/icon-192.png": {
+      "sha256": "91251d3a3fc618be3bc1ca95e61ae26f13bbcb11b6e7e405cb1f066571a2d2f8",
+      "bytes": 4422
+    },
+    "public/brand/icon-512.png": {
+      "sha256": "483994d3a0b8b0102b2d6ba3e759ebc3993020f58965d295c06ab6959f8cc4da",
+      "bytes": 13636
+    },
+    "public/brand/icon-maskable-512.png": {
+      "sha256": "6f61249bbbdb1aaa162b6fb7eb9e66de5e44ad9e9dc3c935df3de020b593016b",
+      "bytes": 11549
+    },
+    "public/favicon.ico": {
+      "sha256": "60336545367a451550e0e7c067fb088907c1716b8a2ce8ffd53f2886f1173ce4",
+      "bytes": 4599
+    }
+  }
+}

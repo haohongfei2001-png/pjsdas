@@ -304,7 +304,7 @@ export function AiAccessProvider({ children }: { children: ReactNode }) {
     const supabase = await loadSupabase()
     const { data, error: sessionError } = await supabase.auth.getSession()
     if (sessionError) throw sessionError
-    if (!data.session) throw new Error(lang === 'zh' ? '请先使用 Google 登录 PJSDAS。' : 'Sign in to PJSDAS with Google first.')
+    if (!data.session) throw new Error(lang === 'zh' ? '请先使用 Google 登录 TodayAction。' : 'Sign in to TodayAction with Google first.')
     return data.session
   }
 

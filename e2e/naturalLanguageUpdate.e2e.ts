@@ -56,7 +56,7 @@ async function seedOpportunities(page: Page, opportunities: ReturnType<typeof so
 
 async function openCapture(page: Page) {
   await page.locator('.tsui-tell-button').click()
-  await expect(page.getByRole('heading', { name: '告诉 PJSDAS' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: '告诉 TodayAction' })).toBeVisible()
 }
 
 async function readMutationState(page: Page) {
@@ -136,8 +136,8 @@ test('narrow and enlarged-text capture exposes mixed current/quoted feedback wit
   await page.goto('/')
   await page.evaluate(() => { document.documentElement.style.fontSize = '20px' })
   await page.locator('.tsui-tell-button').click()
-  const dialog = page.getByRole('dialog', { name: '告诉 PJSDAS' })
-  await dialog.getByRole('textbox', { name: '要告诉 PJSDAS 的内容' })
+  const dialog = page.getByRole('dialog', { name: '告诉 TodayAction' })
+  await dialog.getByRole('textbox', { name: '要告诉 TodayAction 的内容' })
     .fill('待办：修改论文图表。\n-----Original Message-----\n待办：整理旧材料。')
   await expect(dialog.locator('.cgr-understanding-body')).toContainText('引用的旧消息')
   await expect(dialog.getByRole('button', { name: '确认并保存' })).toBeVisible()

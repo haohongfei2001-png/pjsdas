@@ -145,7 +145,7 @@ function failure(caught: unknown): CallToolResult {
   }
   return toolError(
     'TEMPORARILY_UNAVAILABLE',
-    caught instanceof Error ? caught.message : 'PJSDAS MCP gateway failed to read the workspace.',
+    caught instanceof Error ? caught.message : 'TodayAction MCP gateway failed to read the workspace.',
     true,
   )
 }
@@ -269,7 +269,7 @@ export async function invokeReadTool(
               continuousDiscovery.refreshQueue.length
                 ? 'Refresh stale/aging/unknown posting URLs separately from new-job discovery. Treat refresh as verification, not as a reason to create duplicate Opportunities.'
                 : 'No posting refresh is currently prioritized.',
-              'Discovery Run history is derived from signed, reviewed ChangeSets. Do not claim an ad-hoc web search was recorded unless PJSDAS returns it here.',
+              'Discovery Run history is derived from signed, reviewed ChangeSets. Do not claim an ad-hoc web search was recorded unless TodayAction returns it here.',
             ],
           },
         })

@@ -496,7 +496,7 @@ export async function invokeProposeChanges(
       if (!isDiscoveryProfileConfigured(profile)) {
         throw new WorkspaceSourceError(
           'DISCOVERY_PROFILE_REQUIRED',
-          'PJSDAS Discovery Profile is empty. Ask the user to configure explicit durable job-discovery preferences in PJSDAS before proposing web-discovered jobs.',
+          'TodayAction Discovery Profile is empty. Ask the user to configure explicit durable job-discovery preferences in TodayAction before proposing web-discovered jobs.',
           false,
         )
       }
@@ -606,7 +606,7 @@ export async function invokeProposeChanges(
         const reasons = parsed.unresolved.slice(0, 3).map((item) => item.reason).join('；')
         throw new WorkspaceSourceError(
           'PROPOSAL_NEEDS_CLARIFICATION',
-          `PJSDAS could not safely normalize every requested update. Ask the user to clarify before proposing changes. ${reasons}`,
+          `TodayAction could not safely normalize every requested update. Ask the user to clarify before proposing changes. ${reasons}`,
           false,
         )
       }
@@ -620,7 +620,7 @@ export async function invokeProposeChanges(
       if (!action) {
         throw new WorkspaceSourceError(
           'NOT_FOUND',
-          `Action ${requested.actionId} does not exist in the current PJSDAS workspace. Read the current plan or pipeline again before proposing this change.`,
+          `Action ${requested.actionId} does not exist in the current TodayAction workspace. Read the current plan or pipeline again before proposing this change.`,
           false,
         )
       }
@@ -637,10 +637,10 @@ export async function invokeProposeChanges(
 
     const normalized = uniqueOperations(operations)
     if (normalized.length === 0) {
-      return failure('NO_CHANGES', 'The requested state already matches PJSDAS, so there is nothing to propose.', false)
+      return failure('NO_CHANGES', 'The requested state already matches TodayAction, so there is nothing to propose.', false)
     }
     if (normalized.length > 24) {
-      return failure('PROPOSAL_TOO_LARGE', 'Split this request into smaller PJSDAS proposals of at most 24 normalized operations.', false)
+      return failure('PROPOSAL_TOO_LARGE', 'Split this request into smaller TodayAction proposals of at most 24 normalized operations.', false)
     }
 
     const expectedWorkspaceFingerprint = await fingerprintWorkspace(snapshot)
@@ -684,17 +684,17 @@ export async function invokeProposeChanges(
       discoveryRun: explicitDiscoveryRun,
       reviewUrl,
       instruction: input.postingRefreshes?.length
-        ? 'No PJSDAS data has changed. Ask the user to open the signed reviewUrl and explicitly Apply or Discard the posting refresh. A closed public posting does not automatically close the Opportunity; PJSDAS only refreshes source evidence.'
+        ? 'No TodayAction data has changed. Ask the user to open the signed reviewUrl and explicitly Apply or Discard the posting refresh. A closed public posting does not automatically close the Opportunity; TodayAction only refreshes source evidence.'
         : discoveryScreening && discoveryScreening.accepted.length === 0
-          ? 'No job passed the quality gate. PJSDAS created a review-only zero-result Discovery Run record so the search itself can be audited. Ask the user to Apply or Discard the run record; no Opportunity will be created.'
-          : 'No PJSDAS job-search data has changed. Ask the user to open the signed reviewUrl within 24 hours and explicitly Apply or Discard the ChangeSet in PJSDAS. Prefer component assessment for new web-discovered opportunities: submit bounded fit and opportunity-value components with score, confidence and rationale; PJSDAS derives the two aggregate scores using explicit Decision Rules. Legacy aggregate score fields remain accepted only for backward compatibility. Source-backed Rich Opportunity facts remain separate from AI assessment, and unknown source facts stay unknown. If PJSDAS reports that the local workspace has changed since this proposal was created, sync first and ask for a fresh proposal.',
+          ? 'No job passed the quality gate. TodayAction created a review-only zero-result Discovery Run record so the search itself can be audited. Ask the user to Apply or Discard the run record; no Opportunity will be created.'
+          : 'No TodayAction job-search data has changed. Ask the user to open the signed reviewUrl within 24 hours and explicitly Apply or Discard the ChangeSet in TodayAction. Prefer component assessment for new web-discovered opportunities: submit bounded fit and opportunity-value components with score, confidence and rationale; TodayAction derives the two aggregate scores using explicit Decision Rules. Legacy aggregate score fields remain accepted only for backward compatibility. Source-backed Rich Opportunity facts remain separate from AI assessment, and unknown source facts stay unknown. If TodayAction reports that the local workspace has changed since this proposal was created, sync first and ask for a fresh proposal.',
     })
   } catch (caught) {
     if (caught instanceof WorkspaceSourceError) return failure(caught.code, caught.message, caught.retryable)
     if (caught instanceof z.ZodError) return failure('INVALID_ARGUMENT', caught.issues[0]?.message ?? 'Invalid proposal arguments.', false)
     return failure(
       'PROPOSAL_FAILED',
-      caught instanceof Error ? caught.message : 'PJSDAS could not create a review proposal.',
+      caught instanceof Error ? caught.message : 'TodayAction could not create a review proposal.',
       false,
     )
   }
