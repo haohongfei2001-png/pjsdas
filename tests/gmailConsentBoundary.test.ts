@@ -88,12 +88,12 @@ describe('UU06 explicit source consent boundary', () => {
     const calls: string[] = []
     const fetchImpl = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input); calls.push(url)
-      if (url.endsWith('bindings_v4') || url.endsWith('bindings_v3')) return json({ code: 'PGRST202' }, 404)
+      if (url.endsWith('bindings_v5') || url.endsWith('bindings_v4') || url.endsWith('bindings_v3')) return json({ code: 'PGRST202' }, 404)
       return json([{ user_id: 'u', google_subject: 'g', refresh_token_ciphertext: 'c', gmail_intake_consent_version: 'uu06-v1' }])
     }) as unknown as typeof fetch
     const store = createAutomationConnectionStore({ supabaseUrl: 'https://example.invalid', supabasePublishableKey: 'test', workerToken: 'test', fetchImpl })
     const bindings = await store.listEnabledGmailBindings()
-    expect(calls).toHaveLength(3)
+    expect(calls).toHaveLength(4)
     expect(bindings[0]?.gmailIntakeConsentVersion).toBeUndefined()
   })
   it('never falls back around an authorization denial', async () => {
