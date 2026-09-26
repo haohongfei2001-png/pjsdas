@@ -31,11 +31,11 @@ function snapshot() {
     completedAt: '2026-09-26T11:55:00.000Z',
     records: [],
     sourcePolicy: {
+      version: 1,
       enabled: true,
       cadenceMinutes: 10,
       freshnessSlaMinutes: 20,
       label: 'Gmail',
-      policySource: 'run',
     },
   }))
   return reconcileIngestionDebt(createSnapshot({
