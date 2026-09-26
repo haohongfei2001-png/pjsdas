@@ -252,6 +252,38 @@ describe('R02 active unresolved reconciliation', () => {
     expect(summarizeCoverage(result.snapshot.data.timeline, { now: NOW }).activeUnresolvedCount).toBe(0)
   })
 
+  it('classifies a replayed source record with a later duplicate outcome without duplicating audit objects', () => {
+    const first = unresolved({
+      sourceRecordId: 'source-replay',
+      receivedAt: '2026-09-20T00:00:00.000Z',
+      fingerprint: 'fp:source-replay',
+    })
+    const later = createIngestionLedgerTimeline({
+      sourceKind: 'gmail',
+      sourceId: SOURCE_ID,
+      sourceRecordId: 'source-replay',
+      runId: 'run:source-replay:later',
+      recordType: 'recruiting_message',
+      outcome: 'duplicate',
+      fingerprint: 'fp:source-replay',
+      receivedAt: '2026-09-20T00:00:00.000Z',
+      accountedAt: '2026-09-25T00:00:00.000Z',
+      reason: 'Already safely accounted.',
+    })
+    const base = snapshot({ timeline: [first, later, zeroRun()] })
+    const reconciled = reconcileIngestionDebt(base, NOW)
+    expect(reconciled.appended).toHaveLength(1)
+    expect(reconciled.appended[0]?.ingestionResolution).toMatchObject({
+      outcome: 'duplicate',
+      reason: 'later_source_state',
+      targetIngestionTimelineId: first.id,
+    })
+    const replay = reconcileIngestionDebt(reconciled.snapshot, new Date('2026-09-26T13:00:00.000Z'))
+    expect(replay.changed).toBe(false)
+    expect(replay.snapshot.data.timeline?.filter((item) =>
+      item.ingestionResolution?.sourceRecordId === 'source-replay')).toHaveLength(1)
+  })
+
   it('is idempotent for replayed reconciliation and never duplicates resolution objects', () => {
     const record = unresolved({
       sourceRecordId: 'stable-replay',
