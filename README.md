@@ -8,6 +8,10 @@ TodayAction currently supports an AI-assisted job-search decision and action wor
 
 Internal names such as the `pjsdas` repository, `PJSDAS_*` environment variables, storage keys, schema and MCP protocol identities remain stable for compatibility. Historical receipts and releases retain their original names. The rebrand adds installation metadata; it does not add native iOS or offline capabilities.
 
+## Brand migration evidence
+
+Current engineering progress and exact deployment receipts are in [the brand STATUS](docs/todayaction-brand-v1/STATUS.yaml). [External/physical-device gates](docs/todayaction-brand-v1/EXTERNAL_GATES.md) are recorded separately; repository assets and headless checks do not certify existing iPhone installations, provider listings or legal clearance.
+
 ## Release status
 
 **Current formal release: `v1.0.1`**  
@@ -51,11 +55,11 @@ Core durable concepts include:
 - **Timeline / ChangeSet** — factual history and normalized review/apply protocol;
 - **Ingestion Ledger / Source Registry / Coverage** — trusted-source accounting and health.
 
-PJSDAS is deterministic after interpretation. AI may provide bounded assessments, but scoring aggregation, identity, policy, reconciliation, and durable writes remain product-owned.
+TodayAction is deterministic after interpretation. AI may provide bounded assessments, but scoring aggregation, identity, policy, reconciliation, and durable writes remain product-owned.
 
 ## Job discovery and trusted ingestion
 
-Interactive MCP tools do not perform arbitrary job-web discovery. Background Discovery may find candidates, but PJSDAS independently fetches and verifies each submitted public source URL before source facts can create or refresh an Opportunity.
+Interactive MCP tools do not perform arbitrary job-web discovery. Background Discovery may find candidates, but TodayAction independently fetches and verifies each submitted public source URL before source facts can create or refresh an Opportunity.
 
 ```text
 Discovery Profile
@@ -82,7 +86,7 @@ Explicit, exact-target, low-risk P1 commands are represented as bounded Domain C
 
 ## Storage and sync
 
-PJSDAS supports two explicit authority modes:
+TodayAction supports two explicit authority modes:
 
 - **Local mode** — IndexedDB is authoritative and remote AI/background writers are not the durable state owner.
 - **Connected mode** — a transactional Supabase/PostgreSQL workspace is authoritative; IndexedDB is the local working copy/offline cache and Google Drive is backup/export/portability storage.

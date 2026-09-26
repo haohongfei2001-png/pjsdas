@@ -115,6 +115,13 @@ Original PNG SHA-256: `33c6f1e93bcb6958d2bb0324675f7eaad92f3d152205559436eb54cf5
 Reference SHA-256: `3916158ffd7f8a21d52715024afb2ff8b95b4d1e78cfd0a58def6bb4a0ea8114`.
 The five production SVG copies preserve the handoff bytes. Immutable design assets under docs remain unchanged. Exported pixel/byte evidence is tracked in `public/brand/ASSET_MANIFEST.json`; the cloud exporter refuses external SVG resources and checks opaque installation icons and the maskable safe circle.
 
-## Gate status
+## Gate evidence and follow-up
 
-Targeted candidate 50708bc31d904ea560903aa0dcfac3e0dc51e460 passed pinned cloud exports and 6 root/legacy built-browser tests. See TA-01-RECEIPT.md for exact evidence. Full stable-head CI/Browser, merge/main and production readback remain pending.
+TA-01 exact candidate `8e60faa17dc5422dc09d6f56a75f68e22f54d83f` merged as `6f4fe9a6528adf40c506cea84695b44b679aa24e`; full CI/browser/root+legacy builds/matrix/VoiceOver/rollback and exact Pages/read-only production/Live Visual passed. See TA-01-RECEIPT.md. One existing local-pending sign-out browser text assertion used the configured retry; no safety assertion was weakened.
+
+TA-02 changes display-only styles and truthful state copy, plus header-height presentation measurement. Shared synthetic fixture extraction is byte-preserving and the existing command/receipt server remains intact. Exact corrected gallery and retained before/after evidence are in TA-02-REVIEW.md. No file in #164's nine-file hotfix diff is changed by either brand batch.
+
+TA-03 uses an anonymous read-only cloud gate for canonical and historical HTML, static asset hashes/MIME/actual decode, public release identity, and route DOM titles/visible/accessibility names. Production PASS is recorded only after actual readback. The current README's three remaining unqualified prose uses in architecture/discovery/storage become TodayAction; the explicit former name, internal environment examples and historical version policy stay intact. Repo About/homepage remains DEFERRED because metadata writes are not exposed, with observed current values recorded in EXTERNAL_GATES.md.
+
+Device, private-workspace, provider/connector control and legal evidence remain DEFERRED. Release publication stays disarmed. No service worker, private authentication, storage purge or new native/offline promise is added.
+

@@ -1,6 +1,6 @@
 # TA-02 interface refinement
 
-Status: TARGETED_CORRECTED_RENDER_PASS / STABLE_GATES_PENDING. Production is not inferred from candidate evidence.
+Status: ENGINEERING_COMPLETE_EXACT_MAIN / EXTERNAL_DEFERRED. See TA-02-RECEIPT.md for actual stable-head, merge and production evidence.
 
 ## Baseline findings and corrective scope
 
@@ -59,3 +59,7 @@ Screenshots were reviewed for Today desktop; long library names and status at mo
 Artifacts: [before/after 315 files](https://github.com/haohongfei2001-png/pjsdas/actions/runs/36224876053/artifacts/10899989277), ZIP SHA-256 `5fed2976cecd87945353a72e52a378bf46706c48bbbd4c6f3362699d695b59db`, retention 14 days.
 [Brand 36224876169](https://github.com/haohongfei2001-png/pjsdas/actions/runs/36224876169), [unit/type 36224876054](https://github.com/haohongfei2001-png/pjsdas/actions/runs/36224876054), [read-only rollback 36224876095](https://github.com/haohongfei2001-png/pjsdas/actions/runs/36224876095) PASS.
 Stable full CI/browser/matrix/affected cloud VoiceOver remain pending on the closure head. Private/physical-device/external/legal evidence remains DEFERRED.
+
+## Exact-main closure
+
+Stable seven gates and exact-main production/read-only/live routes passed. [TA-02-RECEIPT.md](TA-02-RECEIPT.md) records candidate/tree/merge SHA and actual runs. No private or physical-device claim. TA-02 implementation writer released to TA-03.
