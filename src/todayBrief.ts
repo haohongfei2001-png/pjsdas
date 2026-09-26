@@ -265,6 +265,7 @@ function latestStartFor(action: Action, node: ScheduleNode | undefined): Pick<To
     return temporal.date ? { latestStartDate: temporal.date } : {}
   }
 
+  if (temporal.latestStartAt) return { latestStartAt: temporal.latestStartAt }
   const boundary = temporal.shape === 'deadline'
     ? temporal.deadlineAt
     : temporal.shape === 'availability_window'
