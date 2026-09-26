@@ -91,6 +91,46 @@ describe('PJSDAS local snapshot', () => {
     expect(restored.data.reminderOutbox).toEqual([])
   })
 
+  it('accepts a balanced Gmail reconciliation proof and rejects an unbalanced settlement', () => {
+    const snapshot = createSnapshot({
+      ...data(),
+      timeline: [{
+        id: 'timeline:gmail-reconciliation:test',
+        kind: 'gmail_reconciliation_completed',
+        category: 'data',
+        source: 'gmail',
+        occurredAt: '2026-09-10T05:00:00.000Z',
+        recordedAt: '2026-09-10T05:00:00.000Z',
+        title: 'Gmail reconciliation',
+        gmailReconciliation: {
+          version: 1,
+          scannedCount: 4,
+          recruitingRelevantCount: 3,
+          stateCounts: {
+            NO_ACTION: 1,
+            WAITING: 0,
+            ACTION_REQUIRED: 1,
+            COMPLETED: 0,
+            EXPLICITLY_DECLINED: 0,
+            CLOSED: 0,
+            UNRESOLVED: 1,
+          },
+          gmailOnlyCount: 1,
+          pjsdasOnlyCount: 0,
+          fixedOrHardWithin7DaysCount: 1,
+          liveProcessCount: 1,
+          unavailableMessageCount: 0,
+        },
+      }],
+    }, '2026-09-10T05:00:00.000Z')
+    expect(parseSnapshotText(JSON.stringify(snapshot)).data.timeline?.[0].kind)
+      .toBe('gmail_reconciliation_completed')
+
+    const broken = structuredClone(snapshot)
+    broken.data.timeline![0]!.gmailReconciliation!.stateCounts.NO_ACTION = 2
+    expect(() => parseSnapshotText(JSON.stringify(broken))).toThrow(/Gmail reconciliation 未守恒/)
+  })
+
   it('rejects unsupported versions before restore', () => {
     const snapshot = createSnapshot(data(), '2026-09-10T05:00:00.000Z')
     const broken = { ...snapshot, version: 99 }
