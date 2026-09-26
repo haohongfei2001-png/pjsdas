@@ -59,11 +59,12 @@ export function createGmailAutomationHandler(config: GmailAutomationHandlerConfi
     const url = new URL(request.url)
     const requestedUserId = url.searchParams.get('userId')?.trim()
     const reconciliation = url.searchParams.get('mode') === 'reconcile'
+    const forceReconciliationStart = reconciliation && url.searchParams.get('start') === '1'
 
     if (config.executionControlsEnabled === true) {
       try {
         const result = reconciliation
-          ? await runControlledGmailReconciliations(config, workerToken, requestedUserId)
+          ? await runControlledGmailReconciliations(config, workerToken, requestedUserId, forceReconciliationStart)
           : await runControlledGmailExecutions(config, workerToken, requestedUserId)
         return json(result.failedUsers ? 207 : 200, result)
       } catch (caught) {
