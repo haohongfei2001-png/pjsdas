@@ -542,6 +542,27 @@ export interface IngestionRunSummary {
   cursor?: string
 }
 
+export type GmailReconciliationState =
+  | 'NO_ACTION'
+  | 'WAITING'
+  | 'ACTION_REQUIRED'
+  | 'COMPLETED'
+  | 'EXPLICITLY_DECLINED'
+  | 'CLOSED'
+  | 'UNRESOLVED'
+
+export interface GmailReconciliationProof {
+  version: 1
+  scannedCount: number
+  recruitingRelevantCount: number
+  stateCounts: Record<GmailReconciliationState, number>
+  gmailOnlyCount: number
+  pjsdasOnlyCount: number
+  fixedOrHardWithin7DaysCount: number
+  liveProcessCount: number
+  unavailableMessageCount: number
+}
+
 export type TimelineCategory = 'opportunity' | 'process' | 'action' | 'rules' | 'change' | 'data' | 'note'
 export type TimelineSource =
   | 'excel'
@@ -580,6 +601,7 @@ export type TimelineKind =
   | 'discovery_deferred'
   | 'ingestion_recorded'
   | 'ingestion_run_completed'
+  | 'gmail_reconciliation_completed'
   | 'semantic_intake_applied'
   | 'decision_requested'
   | 'decision_resolved'
@@ -615,6 +637,7 @@ export interface TimelineRecord {
   discoveryQualityScore?: number
   ingestion?: IngestionLedgerEntry
   ingestionRun?: IngestionRunSummary
+  gmailReconciliation?: GmailReconciliationProof
   changes?: Record<string, TimelineFieldChange>
 }
 
