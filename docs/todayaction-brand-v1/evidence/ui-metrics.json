@@ -1,0 +1,5762 @@
+{
+  "run": 36224876053,
+  "candidate": "57d6a45d66ea7c388ca7ead3ea807edcc105f597",
+  "metrics": [
+    {
+      "phase": "before",
+      "label": "TODAY",
+      "width": 360,
+      "scale": 100,
+      "issues": [
+        "text contrast .tsui-task-copy>span: 3.10",
+        "text contrast .tsui-task-copy>span: 3.10",
+        "text contrast .tsui-mobile-switch button: 4.00"
+      ],
+      "ratios": [
+        {
+          "selector": ".tsui-task-copy>span",
+          "ratio": 3.0954629169800016
+        },
+        {
+          "selector": ".tsui-task-copy>span",
+          "ratio": 3.0954629169800016
+        },
+        {
+          "selector": ".tsui-task-context",
+          "ratio": 4.988338821763132
+        },
+        {
+          "selector": ".tsui-task-context",
+          "ratio": 4.988338821763132
+        },
+        {
+          "selector": ".tsui-mobile-switch button",
+          "ratio": 4.7997551647128045
+        },
+        {
+          "selector": ".tsui-mobile-switch button",
+          "ratio": 4.000158305493147
+        }
+      ],
+      "rootFont": "16px",
+      "taskIds": [
+        "A-action-1",
+        "A-action-2"
+      ]
+    },
+    {
+      "phase": "before",
+      "label": "TODAY",
+      "width": 360,
+      "scale": 200,
+      "issues": [
+        "capture label overflow",
+        "text contrast .tsui-task-copy>span: 3.10",
+        "text contrast .tsui-task-copy>span: 3.10",
+        "text contrast .tsui-mobile-switch button: 4.00"
+      ],
+      "ratios": [
+        {
+          "selector": ".tsui-task-copy>span",
+          "ratio": 3.0954629169800016
+        },
+        {
+          "selector": ".tsui-task-copy>span",
+          "ratio": 3.0954629169800016
+        },
+        {
+          "selector": ".tsui-task-context",
+          "ratio": 4.988338821763132
+        },
+        {
+          "selector": ".tsui-task-context",
+          "ratio": 4.988338821763132
+        },
+        {
+          "selector": ".tsui-mobile-switch button",
+          "ratio": 4.7997551647128045
+        },
+        {
+          "selector": ".tsui-mobile-switch button",
+          "ratio": 4.000158305493147
+        }
+      ],
+      "rootFont": "32px",
+      "taskIds": [
+        "A-action-1",
+        "A-action-2"
+      ]
+    },
+    {
+      "phase": "before",
+      "label": "TODAY",
+      "width": 390,
+      "scale": 100,
+      "issues": [
+        "text contrast .tsui-task-copy>span: 3.10",
+        "text contrast .tsui-task-copy>span: 3.10",
+        "text contrast .tsui-mobile-switch button: 4.00"
+      ],
+      "ratios": [
+        {
+          "selector": ".tsui-task-copy>span",
+          "ratio": 3.0954629169800016
+        },
+        {
+          "selector": ".tsui-task-copy>span",
+          "ratio": 3.0954629169800016
+        },
+        {
+          "selector": ".tsui-task-context",
+          "ratio": 4.988338821763132
+        },
+        {
+          "selector": ".tsui-task-context",
+          "ratio": 4.988338821763132
+        },
+        {
+          "selector": ".tsui-mobile-switch button",
+          "ratio": 4.7997551647128045
+        },
+        {
+          "selector": ".tsui-mobile-switch button",
+          "ratio": 4.000158305493147
+        }
+      ],
+      "rootFont": "16px",
+      "taskIds": [
+        "A-action-1",
+        "A-action-2"
+      ]
+    },
+    {
+      "phase": "before",
+      "label": "TODAY",
+      "width": 390,
+      "scale": 200,
+      "issues": [
+        "text contrast .tsui-task-copy>span: 3.10",
+        "text contrast .tsui-task-copy>span: 3.10",
+        "text contrast .tsui-mobile-switch button: 4.00"
+      ],
+      "ratios": [
+        {
+          "selector": ".tsui-task-copy>span",
+          "ratio": 3.0954629169800016
+        },
+        {
+          "selector": ".tsui-task-copy>span",
+          "ratio": 3.0954629169800016
+        },
+        {
+          "selector": ".tsui-task-context",
+          "ratio": 4.988338821763132
+        },
+        {
+          "selector": ".tsui-task-context",
+          "ratio": 4.988338821763132
+        },
+        {
+          "selector": ".tsui-mobile-switch button",
+          "ratio": 4.7997551647128045
+        },
+        {
+          "selector": ".tsui-mobile-switch button",
+          "ratio": 4.000158305493147
+        }
+      ],
+      "rootFont": "32px",
+      "taskIds": [
+        "A-action-1",
+        "A-action-2"
+      ]
+    },
+    {
+      "phase": "before",
+      "label": "TODAY",
+      "width": 430,
+      "scale": 100,
+      "issues": [
+        "text contrast .tsui-task-copy>span: 3.10",
+        "text contrast .tsui-task-copy>span: 3.10",
+        "text contrast .tsui-mobile-switch button: 4.00"
+      ],
+      "ratios": [
+        {
+          "selector": ".tsui-task-copy>span",
+          "ratio": 3.0954629169800016
+        },
+        {
+          "selector": ".tsui-task-copy>span",
+          "ratio": 3.0954629169800016
+        },
+        {
+          "selector": ".tsui-task-context",
+          "ratio": 4.988338821763132
+        },
+        {
+          "selector": ".tsui-task-context",
+          "ratio": 4.988338821763132
+        },
+        {
+          "selector": ".tsui-mobile-switch button",
+          "ratio": 4.7997551647128045
+        },
+        {
+          "selector": ".tsui-mobile-switch button",
+          "ratio": 4.000158305493147
+        }
+      ],
+      "rootFont": "16px",
+      "taskIds": [
+        "A-action-1",
+        "A-action-2"
+      ]
+    },
+    {
+      "phase": "before",
+      "label": "TODAY",
+      "width": 430,
+      "scale": 200,
+      "issues": [
+        "text contrast .tsui-task-copy>span: 3.10",
+        "text contrast .tsui-task-copy>span: 3.10",
+        "text contrast .tsui-mobile-switch button: 4.00"
+      ],
+      "ratios": [
+        {
+          "selector": ".tsui-task-copy>span",
+          "ratio": 3.0954629169800016
+        },
+        {
+          "selector": ".tsui-task-copy>span",
+          "ratio": 3.0954629169800016
+        },
+        {
+          "selector": ".tsui-task-context",
+          "ratio": 4.988338821763132
+        },
+        {
+          "selector": ".tsui-task-context",
+          "ratio": 4.988338821763132
+        },
+        {
+          "selector": ".tsui-mobile-switch button",
+          "ratio": 4.7997551647128045
+        },
+        {
+          "selector": ".tsui-mobile-switch button",
+          "ratio": 4.000158305493147
+        }
+      ],
+      "rootFont": "32px",
+      "taskIds": [
+        "A-action-1",
+        "A-action-2"
+      ]
+    },
+    {
+      "phase": "before",
+      "label": "TODAY",
+      "width": 768,
+      "scale": 100,
+      "issues": [
+        "text contrast .tsui-task-copy>span: 3.10",
+        "text contrast .tsui-task-copy>span: 3.10"
+      ],
+      "ratios": [
+        {
+          "selector": ".tsui-task-copy>span",
+          "ratio": 3.0954629169800016
+        },
+        {
+          "selector": ".tsui-task-copy>span",
+          "ratio": 3.0954629169800016
+        },
+        {
+          "selector": ".tsui-task-context",
+          "ratio": 4.988338821763132
+        },
+        {
+          "selector": ".tsui-task-context",
+          "ratio": 4.988338821763132
+        }
+      ],
+      "rootFont": "16px",
+      "taskIds": [
+        "A-action-1",
+        "A-action-2"
+      ]
+    },
+    {
+      "phase": "before",
+      "label": "TODAY",
+      "width": 768,
+      "scale": 200,
+      "issues": [
+        "text contrast .tsui-task-copy>span: 3.10",
+        "text contrast .tsui-task-copy>span: 3.10"
+      ],
+      "ratios": [
+        {
+          "selector": ".tsui-task-copy>span",
+          "ratio": 3.0954629169800016
+        },
+        {
+          "selector": ".tsui-task-copy>span",
+          "ratio": 3.0954629169800016
+        },
+        {
+          "selector": ".tsui-task-context",
+          "ratio": 4.988338821763132
+        },
+        {
+          "selector": ".tsui-task-context",
+          "ratio": 4.988338821763132
+        }
+      ],
+      "rootFont": "32px",
+      "taskIds": [
+        "A-action-1",
+        "A-action-2"
+      ]
+    },
+    {
+      "phase": "before",
+      "label": "TODAY",
+      "width": 1280,
+      "scale": 100,
+      "issues": [
+        "text contrast .tsui-task-copy>span: 3.10",
+        "text contrast .tsui-task-copy>span: 3.10"
+      ],
+      "ratios": [
+        {
+          "selector": ".tsui-task-copy>span",
+          "ratio": 3.0954629169800016
+        },
+        {
+          "selector": ".tsui-task-copy>span",
+          "ratio": 3.0954629169800016
+        },
+        {
+          "selector": ".tsui-task-context",
+          "ratio": 4.988338821763132
+        },
+        {
+          "selector": ".tsui-task-context",
+          "ratio": 4.988338821763132
+        }
+      ],
+      "rootFont": "16px",
+      "taskIds": [
+        "A-action-1",
+        "A-action-2"
+      ]
+    },
+    {
+      "phase": "before",
+      "label": "TODAY",
+      "width": 1280,
+      "scale": 200,
+      "issues": [
+        "text contrast .tsui-task-copy>span: 3.10",
+        "text contrast .tsui-task-copy>span: 3.10"
+      ],
+      "ratios": [
+        {
+          "selector": ".tsui-task-copy>span",
+          "ratio": 3.0954629169800016
+        },
+        {
+          "selector": ".tsui-task-copy>span",
+          "ratio": 3.0954629169800016
+        },
+        {
+          "selector": ".tsui-task-context",
+          "ratio": 4.988338821763132
+        },
+        {
+          "selector": ".tsui-task-context",
+          "ratio": 4.988338821763132
+        }
+      ],
+      "rootFont": "32px",
+      "taskIds": [
+        "A-action-1",
+        "A-action-2"
+      ]
+    },
+    {
+      "phase": "before",
+      "label": "TODAY",
+      "width": 1440,
+      "scale": 100,
+      "issues": [
+        "text contrast .tsui-task-copy>span: 3.10",
+        "text contrast .tsui-task-copy>span: 3.10"
+      ],
+      "ratios": [
+        {
+          "selector": ".tsui-task-copy>span",
+          "ratio": 3.0954629169800016
+        },
+        {
+          "selector": ".tsui-task-copy>span",
+          "ratio": 3.0954629169800016
+        },
+        {
+          "selector": ".tsui-task-context",
+          "ratio": 4.988338821763132
+        },
+        {
+          "selector": ".tsui-task-context",
+          "ratio": 4.988338821763132
+        }
+      ],
+      "rootFont": "16px",
+      "taskIds": [
+        "A-action-1",
+        "A-action-2"
+      ]
+    },
+    {
+      "phase": "before",
+      "label": "TODAY",
+      "width": 1440,
+      "scale": 200,
+      "issues": [
+        "text contrast .tsui-task-copy>span: 3.10",
+        "text contrast .tsui-task-copy>span: 3.10"
+      ],
+      "ratios": [
+        {
+          "selector": ".tsui-task-copy>span",
+          "ratio": 3.0954629169800016
+        },
+        {
+          "selector": ".tsui-task-copy>span",
+          "ratio": 3.0954629169800016
+        },
+        {
+          "selector": ".tsui-task-context",
+          "ratio": 4.988338821763132
+        },
+        {
+          "selector": ".tsui-task-context",
+          "ratio": 4.988338821763132
+        }
+      ],
+      "rootFont": "32px",
+      "taskIds": [
+        "A-action-1",
+        "A-action-2"
+      ]
+    },
+    {
+      "phase": "before",
+      "label": "LIBRARY",
+      "width": 360,
+      "scale": 100,
+      "issues": [],
+      "ratios": [
+        {
+          "selector": ".tsui-library-heading span",
+          "ratio": 4.634868168415379
+        }
+      ],
+      "rootFont": "16px",
+      "taskIds": []
+    },
+    {
+      "phase": "before",
+      "label": "LIBRARY",
+      "width": 360,
+      "scale": 200,
+      "issues": [
+        "capture label overflow"
+      ],
+      "ratios": [
+        {
+          "selector": ".tsui-library-heading span",
+          "ratio": 4.634868168415379
+        }
+      ],
+      "rootFont": "32px",
+      "taskIds": []
+    },
+    {
+      "phase": "before",
+      "label": "LIBRARY",
+      "width": 390,
+      "scale": 100,
+      "issues": [],
+      "ratios": [
+        {
+          "selector": ".tsui-library-heading span",
+          "ratio": 4.634868168415379
+        }
+      ],
+      "rootFont": "16px",
+      "taskIds": []
+    },
+    {
+      "phase": "before",
+      "label": "LIBRARY",
+      "width": 390,
+      "scale": 200,
+      "issues": [],
+      "ratios": [
+        {
+          "selector": ".tsui-library-heading span",
+          "ratio": 4.634868168415379
+        }
+      ],
+      "rootFont": "32px",
+      "taskIds": []
+    },
+    {
+      "phase": "before",
+      "label": "LIBRARY",
+      "width": 430,
+      "scale": 100,
+      "issues": [],
+      "ratios": [
+        {
+          "selector": ".tsui-library-heading span",
+          "ratio": 4.634868168415379
+        }
+      ],
+      "rootFont": "16px",
+      "taskIds": []
+    },
+    {
+      "phase": "before",
+      "label": "LIBRARY",
+      "width": 430,
+      "scale": 200,
+      "issues": [],
+      "ratios": [
+        {
+          "selector": ".tsui-library-heading span",
+          "ratio": 4.634868168415379
+        }
+      ],
+      "rootFont": "32px",
+      "taskIds": []
+    },
+    {
+      "phase": "before",
+      "label": "LIBRARY",
+      "width": 768,
+      "scale": 100,
+      "issues": [],
+      "ratios": [
+        {
+          "selector": ".tsui-library-heading span",
+          "ratio": 4.634868168415379
+        }
+      ],
+      "rootFont": "16px",
+      "taskIds": []
+    },
+    {
+      "phase": "before",
+      "label": "LIBRARY",
+      "width": 768,
+      "scale": 200,
+      "issues": [],
+      "ratios": [
+        {
+          "selector": ".tsui-library-heading span",
+          "ratio": 4.634868168415379
+        }
+      ],
+      "rootFont": "32px",
+      "taskIds": []
+    },
+    {
+      "phase": "before",
+      "label": "LIBRARY",
+      "width": 1280,
+      "scale": 100,
+      "issues": [],
+      "ratios": [
+        {
+          "selector": ".tsui-library-heading span",
+          "ratio": 4.634868168415379
+        }
+      ],
+      "rootFont": "16px",
+      "taskIds": []
+    },
+    {
+      "phase": "before",
+      "label": "LIBRARY",
+      "width": 1280,
+      "scale": 200,
+      "issues": [],
+      "ratios": [
+        {
+          "selector": ".tsui-library-heading span",
+          "ratio": 4.634868168415379
+        }
+      ],
+      "rootFont": "32px",
+      "taskIds": []
+    },
+    {
+      "phase": "before",
+      "label": "LIBRARY",
+      "width": 1440,
+      "scale": 100,
+      "issues": [],
+      "ratios": [
+        {
+          "selector": ".tsui-library-heading span",
+          "ratio": 4.634868168415379
+        }
+      ],
+      "rootFont": "16px",
+      "taskIds": []
+    },
+    {
+      "phase": "before",
+      "label": "LIBRARY",
+      "width": 1440,
+      "scale": 200,
+      "issues": [],
+      "ratios": [
+        {
+          "selector": ".tsui-library-heading span",
+          "ratio": 4.634868168415379
+        }
+      ],
+      "rootFont": "32px",
+      "taskIds": []
+    },
+    {
+      "phase": "before",
+      "label": "JOB_DETAIL",
+      "width": 360,
+      "scale": 100,
+      "issues": [],
+      "ratios": [],
+      "rootFont": "16px",
+      "taskIds": []
+    },
+    {
+      "phase": "before",
+      "label": "JOB_DETAIL",
+      "width": 360,
+      "scale": 200,
+      "issues": [
+        "capture label overflow"
+      ],
+      "ratios": [],
+      "rootFont": "32px",
+      "taskIds": []
+    },
+    {
+      "phase": "before",
+      "label": "JOB_DETAIL",
+      "width": 390,
+      "scale": 100,
+      "issues": [],
+      "ratios": [],
+      "rootFont": "16px",
+      "taskIds": []
+    },
+    {
+      "phase": "before",
+      "label": "JOB_DETAIL",
+      "width": 390,
+      "scale": 200,
+      "issues": [],
+      "ratios": [],
+      "rootFont": "32px",
+      "taskIds": []
+    },
+    {
+      "phase": "before",
+      "label": "JOB_DETAIL",
+      "width": 430,
+      "scale": 100,
+      "issues": [],
+      "ratios": [],
+      "rootFont": "16px",
+      "taskIds": []
+    },
+    {
+      "phase": "before",
+      "label": "JOB_DETAIL",
+      "width": 430,
+      "scale": 200,
+      "issues": [],
+      "ratios": [],
+      "rootFont": "32px",
+      "taskIds": []
+    },
+    {
+      "phase": "before",
+      "label": "JOB_DETAIL",
+      "width": 768,
+      "scale": 100,
+      "issues": [],
+      "ratios": [],
+      "rootFont": "16px",
+      "taskIds": []
+    },
+    {
+      "phase": "before",
+      "label": "JOB_DETAIL",
+      "width": 768,
+      "scale": 200,
+      "issues": [],
+      "ratios": [],
+      "rootFont": "32px",
+      "taskIds": []
+    },
+    {
+      "phase": "before",
+      "label": "JOB_DETAIL",
+      "width": 1280,
+      "scale": 100,
+      "issues": [],
+      "ratios": [],
+      "rootFont": "16px",
+      "taskIds": []
+    },
+    {
+      "phase": "before",
+      "label": "JOB_DETAIL",
+      "width": 1280,
+      "scale": 200,
+      "issues": [],
+      "ratios": [],
+      "rootFont": "32px",
+      "taskIds": []
+    },
+    {
+      "phase": "before",
+      "label": "JOB_DETAIL",
+      "width": 1440,
+      "scale": 100,
+      "issues": [],
+      "ratios": [],
+      "rootFont": "16px",
+      "taskIds": []
+    },
+    {
+      "phase": "before",
+      "label": "JOB_DETAIL",
+      "width": 1440,
+      "scale": 200,
+      "issues": [],
+      "ratios": [],
+      "rootFont": "32px",
+      "taskIds": []
+    },
+    {
+      "phase": "before",
+      "label": "SCHEDULE",
+      "width": 360,
+      "scale": 100,
+      "issues": [],
+      "ratios": [],
+      "rootFont": "16px",
+      "taskIds": []
+    },
+    {
+      "phase": "before",
+      "label": "SCHEDULE",
+      "width": 360,
+      "scale": 200,
+      "issues": [
+        "capture label overflow"
+      ],
+      "ratios": [],
+      "rootFont": "32px",
+      "taskIds": []
+    },
+    {
+      "phase": "before",
+      "label": "SCHEDULE",
+      "width": 390,
+      "scale": 100,
+      "issues": [],
+      "ratios": [],
+      "rootFont": "16px",
+      "taskIds": []
+    },
+    {
+      "phase": "before",
+      "label": "SCHEDULE",
+      "width": 390,
+      "scale": 200,
+      "issues": [],
+      "ratios": [],
+      "rootFont": "32px",
+      "taskIds": []
+    },
+    {
+      "phase": "before",
+      "label": "SCHEDULE",
+      "width": 430,
+      "scale": 100,
+      "issues": [],
+      "ratios": [],
+      "rootFont": "16px",
+      "taskIds": []
+    },
+    {
+      "phase": "before",
+      "label": "SCHEDULE",
+      "width": 430,
+      "scale": 200,
+      "issues": [],
+      "ratios": [],
+      "rootFont": "32px",
+      "taskIds": []
+    },
+    {
+      "phase": "before",
+      "label": "SCHEDULE",
+      "width": 768,
+      "scale": 100,
+      "issues": [],
+      "ratios": [],
+      "rootFont": "16px",
+      "taskIds": []
+    },
+    {
+      "phase": "before",
+      "label": "SCHEDULE",
+      "width": 768,
+      "scale": 200,
+      "issues": [],
+      "ratios": [],
+      "rootFont": "32px",
+      "taskIds": []
+    },
+    {
+      "phase": "before",
+      "label": "SCHEDULE",
+      "width": 1280,
+      "scale": 100,
+      "issues": [],
+      "ratios": [],
+      "rootFont": "16px",
+      "taskIds": []
+    },
+    {
+      "phase": "before",
+      "label": "SCHEDULE",
+      "width": 1280,
+      "scale": 200,
+      "issues": [],
+      "ratios": [],
+      "rootFont": "32px",
+      "taskIds": []
+    },
+    {
+      "phase": "before",
+      "label": "SCHEDULE",
+      "width": 1440,
+      "scale": 100,
+      "issues": [],
+      "ratios": [],
+      "rootFont": "16px",
+      "taskIds": []
+    },
+    {
+      "phase": "before",
+      "label": "SCHEDULE",
+      "width": 1440,
+      "scale": 200,
+      "issues": [],
+      "ratios": [],
+      "rootFont": "32px",
+      "taskIds": []
+    },
+    {
+      "phase": "before",
+      "label": "EVENT_DETAIL",
+      "width": 360,
+      "scale": 100,
+      "issues": [],
+      "ratios": [],
+      "rootFont": "16px",
+      "taskIds": []
+    },
+    {
+      "phase": "before",
+      "label": "EVENT_DETAIL",
+      "width": 360,
+      "scale": 200,
+      "issues": [
+        "capture label overflow"
+      ],
+      "ratios": [],
+      "rootFont": "32px",
+      "taskIds": []
+    },
+    {
+      "phase": "before",
+      "label": "EVENT_DETAIL",
+      "width": 390,
+      "scale": 100,
+      "issues": [],
+      "ratios": [],
+      "rootFont": "16px",
+      "taskIds": []
+    },
+    {
+      "phase": "before",
+      "label": "EVENT_DETAIL",
+      "width": 390,
+      "scale": 200,
+      "issues": [],
+      "ratios": [],
+      "rootFont": "32px",
+      "taskIds": []
+    },
+    {
+      "phase": "before",
+      "label": "EVENT_DETAIL",
+      "width": 430,
+      "scale": 100,
+      "issues": [],
+      "ratios": [],
+      "rootFont": "16px",
+      "taskIds": []
+    },
+    {
+      "phase": "before",
+      "label": "EVENT_DETAIL",
+      "width": 430,
+      "scale": 200,
+      "issues": [],
+      "ratios": [],
+      "rootFont": "32px",
+      "taskIds": []
+    },
+    {
+      "phase": "before",
+      "label": "EVENT_DETAIL",
+      "width": 768,
+      "scale": 100,
+      "issues": [],
+      "ratios": [],
+      "rootFont": "16px",
+      "taskIds": []
+    },
+    {
+      "phase": "before",
+      "label": "EVENT_DETAIL",
+      "width": 768,
+      "scale": 200,
+      "issues": [],
+      "ratios": [],
+      "rootFont": "32px",
+      "taskIds": []
+    },
+    {
+      "phase": "before",
+      "label": "EVENT_DETAIL",
+      "width": 1280,
+      "scale": 100,
+      "issues": [],
+      "ratios": [],
+      "rootFont": "16px",
+      "taskIds": []
+    },
+    {
+      "phase": "before",
+      "label": "EVENT_DETAIL",
+      "width": 1280,
+      "scale": 200,
+      "issues": [],
+      "ratios": [],
+      "rootFont": "32px",
+      "taskIds": []
+    },
+    {
+      "phase": "before",
+      "label": "EVENT_DETAIL",
+      "width": 1440,
+      "scale": 100,
+      "issues": [],
+      "ratios": [],
+      "rootFont": "16px",
+      "taskIds": []
+    },
+    {
+      "phase": "before",
+      "label": "EVENT_DETAIL",
+      "width": 1440,
+      "scale": 200,
+      "issues": [],
+      "ratios": [],
+      "rootFont": "32px",
+      "taskIds": []
+    },
+    {
+      "phase": "before",
+      "label": "CAPTURE",
+      "width": 360,
+      "scale": 100,
+      "issues": [
+        "text contrast .tsui-task-copy>span: 3.10",
+        "text contrast .tsui-task-copy>span: 3.10",
+        "text contrast .tsui-mobile-switch button: 4.00"
+      ],
+      "ratios": [
+        {
+          "selector": ".tsui-task-copy>span",
+          "ratio": 3.0954629169800016
+        },
+        {
+          "selector": ".tsui-task-copy>span",
+          "ratio": 3.0954629169800016
+        },
+        {
+          "selector": ".tsui-task-context",
+          "ratio": 4.988338821763132
+        },
+        {
+          "selector": ".tsui-task-context",
+          "ratio": 4.988338821763132
+        },
+        {
+          "selector": ".tsui-mobile-switch button",
+          "ratio": 4.7997551647128045
+        },
+        {
+          "selector": ".tsui-mobile-switch button",
+          "ratio": 4.000158305493147
+        }
+      ],
+      "rootFont": "16px",
+      "taskIds": [
+        "A-action-1",
+        "A-action-2"
+      ]
+    },
+    {
+      "phase": "before",
+      "label": "CAPTURE",
+      "width": 360,
+      "scale": 200,
+      "issues": [
+        "capture label overflow",
+        "text contrast .tsui-task-copy>span: 3.10",
+        "text contrast .tsui-task-copy>span: 3.10",
+        "text contrast .tsui-mobile-switch button: 4.00"
+      ],
+      "ratios": [
+        {
+          "selector": ".tsui-task-copy>span",
+          "ratio": 3.0954629169800016
+        },
+        {
+          "selector": ".tsui-task-copy>span",
+          "ratio": 3.0954629169800016
+        },
+        {
+          "selector": ".tsui-task-context",
+          "ratio": 4.988338821763132
+        },
+        {
+          "selector": ".tsui-task-context",
+          "ratio": 4.988338821763132
+        },
+        {
+          "selector": ".tsui-mobile-switch button",
+          "ratio": 4.7997551647128045
+        },
+        {
+          "selector": ".tsui-mobile-switch button",
+          "ratio": 4.000158305493147
+        }
+      ],
+      "rootFont": "32px",
+      "taskIds": [
+        "A-action-1",
+        "A-action-2"
+      ]
+    },
+    {
+      "phase": "before",
+      "label": "CAPTURE",
+      "width": 390,
+      "scale": 100,
+      "issues": [
+        "text contrast .tsui-task-copy>span: 3.10",
+        "text contrast .tsui-task-copy>span: 3.10",
+        "text contrast .tsui-mobile-switch button: 4.00"
+      ],
+      "ratios": [
+        {
+          "selector": ".tsui-task-copy>span",
+          "ratio": 3.0954629169800016
+        },
+        {
+          "selector": ".tsui-task-copy>span",
+          "ratio": 3.0954629169800016
+        },
+        {
+          "selector": ".tsui-task-context",
+          "ratio": 4.988338821763132
+        },
+        {
+          "selector": ".tsui-task-context",
+          "ratio": 4.988338821763132
+        },
+        {
+          "selector": ".tsui-mobile-switch button",
+          "ratio": 4.7997551647128045
+        },
+        {
+          "selector": ".tsui-mobile-switch button",
+          "ratio": 4.000158305493147
+        }
+      ],
+      "rootFont": "16px",
+      "taskIds": [
+        "A-action-1",
+        "A-action-2"
+      ]
+    },
+    {
+      "phase": "before",
+      "label": "CAPTURE",
+      "width": 390,
+      "scale": 200,
+      "issues": [
+        "text contrast .tsui-task-copy>span: 3.10",
+        "text contrast .tsui-task-copy>span: 3.10",
+        "text contrast .tsui-mobile-switch button: 4.00"
+      ],
+      "ratios": [
+        {
+          "selector": ".tsui-task-copy>span",
+          "ratio": 3.0954629169800016
+        },
+        {
+          "selector": ".tsui-task-copy>span",
+          "ratio": 3.0954629169800016
+        },
+        {
+          "selector": ".tsui-task-context",
+          "ratio": 4.988338821763132
+        },
+        {
+          "selector": ".tsui-task-context",
+          "ratio": 4.988338821763132
+        },
+        {
+          "selector": ".tsui-mobile-switch button",
+          "ratio": 4.7997551647128045
+        },
+        {
+          "selector": ".tsui-mobile-switch button",
+          "ratio": 4.000158305493147
+        }
+      ],
+      "rootFont": "32px",
+      "taskIds": [
+        "A-action-1",
+        "A-action-2"
+      ]
+    },
+    {
+      "phase": "before",
+      "label": "CAPTURE",
+      "width": 430,
+      "scale": 100,
+      "issues": [
+        "text contrast .tsui-task-copy>span: 3.10",
+        "text contrast .tsui-task-copy>span: 3.10",
+        "text contrast .tsui-mobile-switch button: 4.00"
+      ],
+      "ratios": [
+        {
+          "selector": ".tsui-task-copy>span",
+          "ratio": 3.0954629169800016
+        },
+        {
+          "selector": ".tsui-task-copy>span",
+          "ratio": 3.0954629169800016
+        },
+        {
+          "selector": ".tsui-task-context",
+          "ratio": 4.988338821763132
+        },
+        {
+          "selector": ".tsui-task-context",
+          "ratio": 4.988338821763132
+        },
+        {
+          "selector": ".tsui-mobile-switch button",
+          "ratio": 4.7997551647128045
+        },
+        {
+          "selector": ".tsui-mobile-switch button",
+          "ratio": 4.000158305493147
+        }
+      ],
+      "rootFont": "16px",
+      "taskIds": [
+        "A-action-1",
+        "A-action-2"
+      ]
+    },
+    {
+      "phase": "before",
+      "label": "CAPTURE",
+      "width": 430,
+      "scale": 200,
+      "issues": [
+        "text contrast .tsui-task-copy>span: 3.10",
+        "text contrast .tsui-task-copy>span: 3.10",
+        "text contrast .tsui-mobile-switch button: 4.00"
+      ],
+      "ratios": [
+        {
+          "selector": ".tsui-task-copy>span",
+          "ratio": 3.0954629169800016
+        },
+        {
+          "selector": ".tsui-task-copy>span",
+          "ratio": 3.0954629169800016
+        },
+        {
+          "selector": ".tsui-task-context",
+          "ratio": 4.988338821763132
+        },
+        {
+          "selector": ".tsui-task-context",
+          "ratio": 4.988338821763132
+        },
+        {
+          "selector": ".tsui-mobile-switch button",
+          "ratio": 4.7997551647128045
+        },
+        {
+          "selector": ".tsui-mobile-switch button",
+          "ratio": 4.000158305493147
+        }
+      ],
+      "rootFont": "32px",
+      "taskIds": [
+        "A-action-1",
+        "A-action-2"
+      ]
+    },
+    {
+      "phase": "before",
+      "label": "CAPTURE",
+      "width": 768,
+      "scale": 100,
+      "issues": [
+        "text contrast .tsui-task-copy>span: 3.10",
+        "text contrast .tsui-task-copy>span: 3.10"
+      ],
+      "ratios": [
+        {
+          "selector": ".tsui-task-copy>span",
+          "ratio": 3.0954629169800016
+        },
+        {
+          "selector": ".tsui-task-copy>span",
+          "ratio": 3.0954629169800016
+        },
+        {
+          "selector": ".tsui-task-context",
+          "ratio": 4.988338821763132
+        },
+        {
+          "selector": ".tsui-task-context",
+          "ratio": 4.988338821763132
+        }
+      ],
+      "rootFont": "16px",
+      "taskIds": [
+        "A-action-1",
+        "A-action-2"
+      ]
+    },
+    {
+      "phase": "before",
+      "label": "CAPTURE",
+      "width": 768,
+      "scale": 200,
+      "issues": [
+        "text contrast .tsui-task-copy>span: 3.10",
+        "text contrast .tsui-task-copy>span: 3.10"
+      ],
+      "ratios": [
+        {
+          "selector": ".tsui-task-copy>span",
+          "ratio": 3.0954629169800016
+        },
+        {
+          "selector": ".tsui-task-copy>span",
+          "ratio": 3.0954629169800016
+        },
+        {
+          "selector": ".tsui-task-context",
+          "ratio": 4.988338821763132
+        },
+        {
+          "selector": ".tsui-task-context",
+          "ratio": 4.988338821763132
+        }
+      ],
+      "rootFont": "32px",
+      "taskIds": [
+        "A-action-1",
+        "A-action-2"
+      ]
+    },
+    {
+      "phase": "before",
+      "label": "CAPTURE",
+      "width": 1280,
+      "scale": 100,
+      "issues": [
+        "text contrast .tsui-task-copy>span: 3.10",
+        "text contrast .tsui-task-copy>span: 3.10"
+      ],
+      "ratios": [
+        {
+          "selector": ".tsui-task-copy>span",
+          "ratio": 3.0954629169800016
+        },
+        {
+          "selector": ".tsui-task-copy>span",
+          "ratio": 3.0954629169800016
+        },
+        {
+          "selector": ".tsui-task-context",
+          "ratio": 4.988338821763132
+        },
+        {
+          "selector": ".tsui-task-context",
+          "ratio": 4.988338821763132
+        }
+      ],
+      "rootFont": "16px",
+      "taskIds": [
+        "A-action-1",
+        "A-action-2"
+      ]
+    },
+    {
+      "phase": "before",
+      "label": "CAPTURE",
+      "width": 1280,
+      "scale": 200,
+      "issues": [
+        "text contrast .tsui-task-copy>span: 3.10",
+        "text contrast .tsui-task-copy>span: 3.10"
+      ],
+      "ratios": [
+        {
+          "selector": ".tsui-task-copy>span",
+          "ratio": 3.0954629169800016
+        },
+        {
+          "selector": ".tsui-task-copy>span",
+          "ratio": 3.0954629169800016
+        },
+        {
+          "selector": ".tsui-task-context",
+          "ratio": 4.988338821763132
+        },
+        {
+          "selector": ".tsui-task-context",
+          "ratio": 4.988338821763132
+        }
+      ],
+      "rootFont": "32px",
+      "taskIds": [
+        "A-action-1",
+        "A-action-2"
+      ]
+    },
+    {
+      "phase": "before",
+      "label": "CAPTURE",
+      "width": 1440,
+      "scale": 100,
+      "issues": [
+        "text contrast .tsui-task-copy>span: 3.10",
+        "text contrast .tsui-task-copy>span: 3.10"
+      ],
+      "ratios": [
+        {
+          "selector": ".tsui-task-copy>span",
+          "ratio": 3.0954629169800016
+        },
+        {
+          "selector": ".tsui-task-copy>span",
+          "ratio": 3.0954629169800016
+        },
+        {
+          "selector": ".tsui-task-context",
+          "ratio": 4.988338821763132
+        },
+        {
+          "selector": ".tsui-task-context",
+          "ratio": 4.988338821763132
+        }
+      ],
+      "rootFont": "16px",
+      "taskIds": [
+        "A-action-1",
+        "A-action-2"
+      ]
+    },
+    {
+      "phase": "before",
+      "label": "CAPTURE",
+      "width": 1440,
+      "scale": 200,
+      "issues": [
+        "text contrast .tsui-task-copy>span: 3.10",
+        "text contrast .tsui-task-copy>span: 3.10"
+      ],
+      "ratios": [
+        {
+          "selector": ".tsui-task-copy>span",
+          "ratio": 3.0954629169800016
+        },
+        {
+          "selector": ".tsui-task-copy>span",
+          "ratio": 3.0954629169800016
+        },
+        {
+          "selector": ".tsui-task-context",
+          "ratio": 4.988338821763132
+        },
+        {
+          "selector": ".tsui-task-context",
+          "ratio": 4.988338821763132
+        }
+      ],
+      "rootFont": "32px",
+      "taskIds": [
+        "A-action-1",
+        "A-action-2"
+      ]
+    },
+    {
+      "phase": "before",
+      "label": "SETTINGS",
+      "width": 360,
+      "scale": 100,
+      "issues": [
+        "text contrast .cloud-security-note: 2.78",
+        "text contrast .cloud-security-note: 2.78"
+      ],
+      "ratios": [
+        {
+          "selector": ".cloud-security-note",
+          "ratio": 2.7806077494583734
+        },
+        {
+          "selector": ".cloud-security-note",
+          "ratio": 2.7806077494583734
+        }
+      ],
+      "rootFont": "16px",
+      "taskIds": []
+    },
+    {
+      "phase": "before",
+      "label": "SETTINGS",
+      "width": 360,
+      "scale": 200,
+      "issues": [
+        "capture label overflow",
+        "text contrast .cloud-security-note: 2.78",
+        "text contrast .cloud-security-note: 2.78"
+      ],
+      "ratios": [
+        {
+          "selector": ".cloud-security-note",
+          "ratio": 2.7806077494583734
+        },
+        {
+          "selector": ".cloud-security-note",
+          "ratio": 2.7806077494583734
+        }
+      ],
+      "rootFont": "32px",
+      "taskIds": []
+    },
+    {
+      "phase": "before",
+      "label": "SETTINGS",
+      "width": 390,
+      "scale": 100,
+      "issues": [
+        "text contrast .cloud-security-note: 2.78",
+        "text contrast .cloud-security-note: 2.78"
+      ],
+      "ratios": [
+        {
+          "selector": ".cloud-security-note",
+          "ratio": 2.7806077494583734
+        },
+        {
+          "selector": ".cloud-security-note",
+          "ratio": 2.7806077494583734
+        }
+      ],
+      "rootFont": "16px",
+      "taskIds": []
+    },
+    {
+      "phase": "before",
+      "label": "SETTINGS",
+      "width": 390,
+      "scale": 200,
+      "issues": [
+        "text contrast .cloud-security-note: 2.78",
+        "text contrast .cloud-security-note: 2.78"
+      ],
+      "ratios": [
+        {
+          "selector": ".cloud-security-note",
+          "ratio": 2.7806077494583734
+        },
+        {
+          "selector": ".cloud-security-note",
+          "ratio": 2.7806077494583734
+        }
+      ],
+      "rootFont": "32px",
+      "taskIds": []
+    },
+    {
+      "phase": "before",
+      "label": "SETTINGS",
+      "width": 430,
+      "scale": 100,
+      "issues": [
+        "text contrast .cloud-security-note: 2.78",
+        "text contrast .cloud-security-note: 2.78"
+      ],
+      "ratios": [
+        {
+          "selector": ".cloud-security-note",
+          "ratio": 2.7806077494583734
+        },
+        {
+          "selector": ".cloud-security-note",
+          "ratio": 2.7806077494583734
+        }
+      ],
+      "rootFont": "16px",
+      "taskIds": []
+    },
+    {
+      "phase": "before",
+      "label": "SETTINGS",
+      "width": 430,
+      "scale": 200,
+      "issues": [
+        "text contrast .cloud-security-note: 2.78",
+        "text contrast .cloud-security-note: 2.78"
+      ],
+      "ratios": [
+        {
+          "selector": ".cloud-security-note",
+          "ratio": 2.7806077494583734
+        },
+        {
+          "selector": ".cloud-security-note",
+          "ratio": 2.7806077494583734
+        }
+      ],
+      "rootFont": "32px",
+      "taskIds": []
+    },
+    {
+      "phase": "before",
+      "label": "SETTINGS",
+      "width": 768,
+      "scale": 100,
+      "issues": [
+        "text contrast .cloud-security-note: 2.78",
+        "text contrast .cloud-security-note: 2.78"
+      ],
+      "ratios": [
+        {
+          "selector": ".cloud-security-note",
+          "ratio": 2.7806077494583734
+        },
+        {
+          "selector": ".cloud-security-note",
+          "ratio": 2.7806077494583734
+        }
+      ],
+      "rootFont": "16px",
+      "taskIds": []
+    },
+    {
+      "phase": "before",
+      "label": "SETTINGS",
+      "width": 768,
+      "scale": 200,
+      "issues": [
+        "text contrast .cloud-security-note: 2.78",
+        "text contrast .cloud-security-note: 2.78"
+      ],
+      "ratios": [
+        {
+          "selector": ".cloud-security-note",
+          "ratio": 2.7806077494583734
+        },
+        {
+          "selector": ".cloud-security-note",
+          "ratio": 2.7806077494583734
+        }
+      ],
+      "rootFont": "32px",
+      "taskIds": []
+    },
+    {
+      "phase": "before",
+      "label": "SETTINGS",
+      "width": 1280,
+      "scale": 100,
+      "issues": [
+        "text contrast .cloud-security-note: 2.78",
+        "text contrast .cloud-security-note: 2.78"
+      ],
+      "ratios": [
+        {
+          "selector": ".cloud-security-note",
+          "ratio": 2.7806077494583734
+        },
+        {
+          "selector": ".cloud-security-note",
+          "ratio": 2.7806077494583734
+        }
+      ],
+      "rootFont": "16px",
+      "taskIds": []
+    },
+    {
+      "phase": "before",
+      "label": "SETTINGS",
+      "width": 1280,
+      "scale": 200,
+      "issues": [
+        "text contrast .cloud-security-note: 2.78",
+        "text contrast .cloud-security-note: 2.78"
+      ],
+      "ratios": [
+        {
+          "selector": ".cloud-security-note",
+          "ratio": 2.7806077494583734
+        },
+        {
+          "selector": ".cloud-security-note",
+          "ratio": 2.7806077494583734
+        }
+      ],
+      "rootFont": "32px",
+      "taskIds": []
+    },
+    {
+      "phase": "before",
+      "label": "SETTINGS",
+      "width": 1440,
+      "scale": 100,
+      "issues": [
+        "text contrast .cloud-security-note: 2.78",
+        "text contrast .cloud-security-note: 2.78"
+      ],
+      "ratios": [
+        {
+          "selector": ".cloud-security-note",
+          "ratio": 2.7806077494583734
+        },
+        {
+          "selector": ".cloud-security-note",
+          "ratio": 2.7806077494583734
+        }
+      ],
+      "rootFont": "16px",
+      "taskIds": []
+    },
+    {
+      "phase": "before",
+      "label": "SETTINGS",
+      "width": 1440,
+      "scale": 200,
+      "issues": [
+        "text contrast .cloud-security-note: 2.78",
+        "text contrast .cloud-security-note: 2.78"
+      ],
+      "ratios": [
+        {
+          "selector": ".cloud-security-note",
+          "ratio": 2.7806077494583734
+        },
+        {
+          "selector": ".cloud-security-note",
+          "ratio": 2.7806077494583734
+        }
+      ],
+      "rootFont": "32px",
+      "taskIds": []
+    },
+    {
+      "phase": "before",
+      "label": "FIRST_USE",
+      "width": 360,
+      "scale": 100,
+      "issues": [
+        "text contrast .tsui-mobile-switch button: 4.00"
+      ],
+      "ratios": [
+        {
+          "selector": ".tsui-mobile-switch button",
+          "ratio": 4.7997551647128045
+        },
+        {
+          "selector": ".tsui-mobile-switch button",
+          "ratio": 4.000158305493147
+        }
+      ],
+      "rootFont": "16px",
+      "taskIds": []
+    },
+    {
+      "phase": "before",
+      "label": "FIRST_USE",
+      "width": 360,
+      "scale": 200,
+      "issues": [
+        "capture label overflow",
+        "text contrast .tsui-mobile-switch button: 4.00"
+      ],
+      "ratios": [
+        {
+          "selector": ".tsui-mobile-switch button",
+          "ratio": 4.7997551647128045
+        },
+        {
+          "selector": ".tsui-mobile-switch button",
+          "ratio": 4.000158305493147
+        }
+      ],
+      "rootFont": "32px",
+      "taskIds": []
+    },
+    {
+      "phase": "before",
+      "label": "FIRST_USE",
+      "width": 390,
+      "scale": 100,
+      "issues": [
+        "text contrast .tsui-mobile-switch button: 4.00"
+      ],
+      "ratios": [
+        {
+          "selector": ".tsui-mobile-switch button",
+          "ratio": 4.7997551647128045
+        },
+        {
+          "selector": ".tsui-mobile-switch button",
+          "ratio": 4.000158305493147
+        }
+      ],
+      "rootFont": "16px",
+      "taskIds": []
+    },
+    {
+      "phase": "before",
+      "label": "FIRST_USE",
+      "width": 390,
+      "scale": 200,
+      "issues": [
+        "text contrast .tsui-mobile-switch button: 4.00"
+      ],
+      "ratios": [
+        {
+          "selector": ".tsui-mobile-switch button",
+          "ratio": 4.7997551647128045
+        },
+        {
+          "selector": ".tsui-mobile-switch button",
+          "ratio": 4.000158305493147
+        }
+      ],
+      "rootFont": "32px",
+      "taskIds": []
+    },
+    {
+      "phase": "before",
+      "label": "FIRST_USE",
+      "width": 430,
+      "scale": 100,
+      "issues": [
+        "text contrast .tsui-mobile-switch button: 4.00"
+      ],
+      "ratios": [
+        {
+          "selector": ".tsui-mobile-switch button",
+          "ratio": 4.7997551647128045
+        },
+        {
+          "selector": ".tsui-mobile-switch button",
+          "ratio": 4.000158305493147
+        }
+      ],
+      "rootFont": "16px",
+      "taskIds": []
+    },
+    {
+      "phase": "before",
+      "label": "FIRST_USE",
+      "width": 430,
+      "scale": 200,
+      "issues": [
+        "text contrast .tsui-mobile-switch button: 4.00"
+      ],
+      "ratios": [
+        {
+          "selector": ".tsui-mobile-switch button",
+          "ratio": 4.7997551647128045
+        },
+        {
+          "selector": ".tsui-mobile-switch button",
+          "ratio": 4.000158305493147
+        }
+      ],
+      "rootFont": "32px",
+      "taskIds": []
+    },
+    {
+      "phase": "before",
+      "label": "FIRST_USE",
+      "width": 768,
+      "scale": 100,
+      "issues": [],
+      "ratios": [],
+      "rootFont": "16px",
+      "taskIds": []
+    },
+    {
+      "phase": "before",
+      "label": "FIRST_USE",
+      "width": 768,
+      "scale": 200,
+      "issues": [],
+      "ratios": [],
+      "rootFont": "32px",
+      "taskIds": []
+    },
+    {
+      "phase": "before",
+      "label": "FIRST_USE",
+      "width": 1280,
+      "scale": 100,
+      "issues": [],
+      "ratios": [],
+      "rootFont": "16px",
+      "taskIds": []
+    },
+    {
+      "phase": "before",
+      "label": "FIRST_USE",
+      "width": 1280,
+      "scale": 200,
+      "issues": [],
+      "ratios": [],
+      "rootFont": "32px",
+      "taskIds": []
+    },
+    {
+      "phase": "before",
+      "label": "FIRST_USE",
+      "width": 1440,
+      "scale": 100,
+      "issues": [],
+      "ratios": [],
+      "rootFont": "16px",
+      "taskIds": []
+    },
+    {
+      "phase": "before",
+      "label": "FIRST_USE",
+      "width": 1440,
+      "scale": 200,
+      "issues": [],
+      "ratios": [],
+      "rootFont": "32px",
+      "taskIds": []
+    },
+    {
+      "phase": "before",
+      "label": "EMPTY_ACCOUNT",
+      "width": 360,
+      "scale": 100,
+      "issues": [
+        "text contrast .tsui-mobile-switch button: 4.00"
+      ],
+      "ratios": [
+        {
+          "selector": ".tsui-mobile-switch button",
+          "ratio": 4.7997551647128045
+        },
+        {
+          "selector": ".tsui-mobile-switch button",
+          "ratio": 4.000158305493147
+        }
+      ],
+      "rootFont": "16px",
+      "taskIds": []
+    },
+    {
+      "phase": "before",
+      "label": "EMPTY_ACCOUNT",
+      "width": 360,
+      "scale": 200,
+      "issues": [
+        "capture label overflow",
+        "text contrast .tsui-mobile-switch button: 4.00"
+      ],
+      "ratios": [
+        {
+          "selector": ".tsui-mobile-switch button",
+          "ratio": 4.7997551647128045
+        },
+        {
+          "selector": ".tsui-mobile-switch button",
+          "ratio": 4.000158305493147
+        }
+      ],
+      "rootFont": "32px",
+      "taskIds": []
+    },
+    {
+      "phase": "before",
+      "label": "EMPTY_ACCOUNT",
+      "width": 390,
+      "scale": 100,
+      "issues": [
+        "text contrast .tsui-mobile-switch button: 4.00"
+      ],
+      "ratios": [
+        {
+          "selector": ".tsui-mobile-switch button",
+          "ratio": 4.7997551647128045
+        },
+        {
+          "selector": ".tsui-mobile-switch button",
+          "ratio": 4.000158305493147
+        }
+      ],
+      "rootFont": "16px",
+      "taskIds": []
+    },
+    {
+      "phase": "before",
+      "label": "EMPTY_ACCOUNT",
+      "width": 390,
+      "scale": 200,
+      "issues": [
+        "text contrast .tsui-mobile-switch button: 4.00"
+      ],
+      "ratios": [
+        {
+          "selector": ".tsui-mobile-switch button",
+          "ratio": 4.7997551647128045
+        },
+        {
+          "selector": ".tsui-mobile-switch button",
+          "ratio": 4.000158305493147
+        }
+      ],
+      "rootFont": "32px",
+      "taskIds": []
+    },
+    {
+      "phase": "before",
+      "label": "EMPTY_ACCOUNT",
+      "width": 430,
+      "scale": 100,
+      "issues": [
+        "text contrast .tsui-mobile-switch button: 4.00"
+      ],
+      "ratios": [
+        {
+          "selector": ".tsui-mobile-switch button",
+          "ratio": 4.7997551647128045
+        },
+        {
+          "selector": ".tsui-mobile-switch button",
+          "ratio": 4.000158305493147
+        }
+      ],
+      "rootFont": "16px",
+      "taskIds": []
+    },
+    {
+      "phase": "before",
+      "label": "EMPTY_ACCOUNT",
+      "width": 430,
+      "scale": 200,
+      "issues": [
+        "text contrast .tsui-mobile-switch button: 4.00"
+      ],
+      "ratios": [
+        {
+          "selector": ".tsui-mobile-switch button",
+          "ratio": 4.7997551647128045
+        },
+        {
+          "selector": ".tsui-mobile-switch button",
+          "ratio": 4.000158305493147
+        }
+      ],
+      "rootFont": "32px",
+      "taskIds": []
+    },
+    {
+      "phase": "before",
+      "label": "EMPTY_ACCOUNT",
+      "width": 768,
+      "scale": 100,
+      "issues": [],
+      "ratios": [],
+      "rootFont": "16px",
+      "taskIds": []
+    },
+    {
+      "phase": "before",
+      "label": "EMPTY_ACCOUNT",
+      "width": 768,
+      "scale": 200,
+      "issues": [],
+      "ratios": [],
+      "rootFont": "32px",
+      "taskIds": []
+    },
+    {
+      "phase": "before",
+      "label": "EMPTY_ACCOUNT",
+      "width": 1280,
+      "scale": 100,
+      "issues": [],
+      "ratios": [],
+      "rootFont": "16px",
+      "taskIds": []
+    },
+    {
+      "phase": "before",
+      "label": "EMPTY_ACCOUNT",
+      "width": 1280,
+      "scale": 200,
+      "issues": [],
+      "ratios": [],
+      "rootFont": "32px",
+      "taskIds": []
+    },
+    {
+      "phase": "before",
+      "label": "EMPTY_ACCOUNT",
+      "width": 1440,
+      "scale": 100,
+      "issues": [],
+      "ratios": [],
+      "rootFont": "16px",
+      "taskIds": []
+    },
+    {
+      "phase": "before",
+      "label": "EMPTY_ACCOUNT",
+      "width": 1440,
+      "scale": 200,
+      "issues": [],
+      "ratios": [],
+      "rootFont": "32px",
+      "taskIds": []
+    },
+    {
+      "phase": "before",
+      "label": "LOADING",
+      "width": 360,
+      "scale": 100,
+      "issues": [],
+      "ratios": [],
+      "rootFont": "16px",
+      "taskIds": []
+    },
+    {
+      "phase": "before",
+      "label": "LOADING",
+      "width": 360,
+      "scale": 200,
+      "issues": [
+        "capture label overflow"
+      ],
+      "ratios": [],
+      "rootFont": "32px",
+      "taskIds": []
+    },
+    {
+      "phase": "before",
+      "label": "LOADING",
+      "width": 390,
+      "scale": 100,
+      "issues": [],
+      "ratios": [],
+      "rootFont": "16px",
+      "taskIds": []
+    },
+    {
+      "phase": "before",
+      "label": "LOADING",
+      "width": 390,
+      "scale": 200,
+      "issues": [],
+      "ratios": [],
+      "rootFont": "32px",
+      "taskIds": []
+    },
+    {
+      "phase": "before",
+      "label": "LOADING",
+      "width": 430,
+      "scale": 100,
+      "issues": [],
+      "ratios": [],
+      "rootFont": "16px",
+      "taskIds": []
+    },
+    {
+      "phase": "before",
+      "label": "LOADING",
+      "width": 430,
+      "scale": 200,
+      "issues": [],
+      "ratios": [],
+      "rootFont": "32px",
+      "taskIds": []
+    },
+    {
+      "phase": "before",
+      "label": "LOADING",
+      "width": 768,
+      "scale": 100,
+      "issues": [],
+      "ratios": [],
+      "rootFont": "16px",
+      "taskIds": []
+    },
+    {
+      "phase": "before",
+      "label": "LOADING",
+      "width": 768,
+      "scale": 200,
+      "issues": [],
+      "ratios": [],
+      "rootFont": "32px",
+      "taskIds": []
+    },
+    {
+      "phase": "before",
+      "label": "LOADING",
+      "width": 1280,
+      "scale": 100,
+      "issues": [],
+      "ratios": [],
+      "rootFont": "16px",
+      "taskIds": []
+    },
+    {
+      "phase": "before",
+      "label": "LOADING",
+      "width": 1280,
+      "scale": 200,
+      "issues": [],
+      "ratios": [],
+      "rootFont": "32px",
+      "taskIds": []
+    },
+    {
+      "phase": "before",
+      "label": "LOADING",
+      "width": 1440,
+      "scale": 100,
+      "issues": [],
+      "ratios": [],
+      "rootFont": "16px",
+      "taskIds": []
+    },
+    {
+      "phase": "before",
+      "label": "LOADING",
+      "width": 1440,
+      "scale": 200,
+      "issues": [],
+      "ratios": [],
+      "rootFont": "32px",
+      "taskIds": []
+    },
+    {
+      "phase": "before",
+      "label": "READ_ERROR",
+      "width": 360,
+      "scale": 100,
+      "issues": [],
+      "ratios": [],
+      "rootFont": "16px",
+      "taskIds": []
+    },
+    {
+      "phase": "before",
+      "label": "READ_ERROR",
+      "width": 360,
+      "scale": 200,
+      "issues": [
+        "capture label overflow"
+      ],
+      "ratios": [],
+      "rootFont": "32px",
+      "taskIds": []
+    },
+    {
+      "phase": "before",
+      "label": "READ_ERROR",
+      "width": 390,
+      "scale": 100,
+      "issues": [],
+      "ratios": [],
+      "rootFont": "16px",
+      "taskIds": []
+    },
+    {
+      "phase": "before",
+      "label": "READ_ERROR",
+      "width": 390,
+      "scale": 200,
+      "issues": [],
+      "ratios": [],
+      "rootFont": "32px",
+      "taskIds": []
+    },
+    {
+      "phase": "before",
+      "label": "READ_ERROR",
+      "width": 430,
+      "scale": 100,
+      "issues": [],
+      "ratios": [],
+      "rootFont": "16px",
+      "taskIds": []
+    },
+    {
+      "phase": "before",
+      "label": "READ_ERROR",
+      "width": 430,
+      "scale": 200,
+      "issues": [],
+      "ratios": [],
+      "rootFont": "32px",
+      "taskIds": []
+    },
+    {
+      "phase": "before",
+      "label": "READ_ERROR",
+      "width": 768,
+      "scale": 100,
+      "issues": [],
+      "ratios": [],
+      "rootFont": "16px",
+      "taskIds": []
+    },
+    {
+      "phase": "before",
+      "label": "READ_ERROR",
+      "width": 768,
+      "scale": 200,
+      "issues": [],
+      "ratios": [],
+      "rootFont": "32px",
+      "taskIds": []
+    },
+    {
+      "phase": "before",
+      "label": "READ_ERROR",
+      "width": 1280,
+      "scale": 100,
+      "issues": [],
+      "ratios": [],
+      "rootFont": "16px",
+      "taskIds": []
+    },
+    {
+      "phase": "before",
+      "label": "READ_ERROR",
+      "width": 1280,
+      "scale": 200,
+      "issues": [],
+      "ratios": [],
+      "rootFont": "32px",
+      "taskIds": []
+    },
+    {
+      "phase": "before",
+      "label": "READ_ERROR",
+      "width": 1440,
+      "scale": 100,
+      "issues": [],
+      "ratios": [],
+      "rootFont": "16px",
+      "taskIds": []
+    },
+    {
+      "phase": "before",
+      "label": "READ_ERROR",
+      "width": 1440,
+      "scale": 200,
+      "issues": [],
+      "ratios": [],
+      "rootFont": "32px",
+      "taskIds": []
+    },
+    {
+      "phase": "before",
+      "label": "CACHED",
+      "width": 360,
+      "scale": 100,
+      "issues": [
+        "text contrast .tsui-task-copy>span: 3.10",
+        "text contrast .tsui-task-copy>span: 3.10",
+        "text contrast .tsui-mobile-switch button: 4.00"
+      ],
+      "ratios": [
+        {
+          "selector": ".tsui-task-copy>span",
+          "ratio": 3.0954629169800016
+        },
+        {
+          "selector": ".tsui-task-copy>span",
+          "ratio": 3.0954629169800016
+        },
+        {
+          "selector": ".tsui-task-context",
+          "ratio": 4.988338821763132
+        },
+        {
+          "selector": ".tsui-task-context",
+          "ratio": 4.988338821763132
+        },
+        {
+          "selector": ".tsui-mobile-switch button",
+          "ratio": 4.7997551647128045
+        },
+        {
+          "selector": ".tsui-mobile-switch button",
+          "ratio": 4.000158305493147
+        }
+      ],
+      "rootFont": "16px",
+      "taskIds": [
+        "A-action-1",
+        "A-action-2"
+      ]
+    },
+    {
+      "phase": "before",
+      "label": "CACHED",
+      "width": 360,
+      "scale": 200,
+      "issues": [
+        "capture label overflow",
+        "text contrast .tsui-task-copy>span: 3.10",
+        "text contrast .tsui-task-copy>span: 3.10",
+        "text contrast .tsui-mobile-switch button: 4.00"
+      ],
+      "ratios": [
+        {
+          "selector": ".tsui-task-copy>span",
+          "ratio": 3.0954629169800016
+        },
+        {
+          "selector": ".tsui-task-copy>span",
+          "ratio": 3.0954629169800016
+        },
+        {
+          "selector": ".tsui-task-context",
+          "ratio": 4.988338821763132
+        },
+        {
+          "selector": ".tsui-task-context",
+          "ratio": 4.988338821763132
+        },
+        {
+          "selector": ".tsui-mobile-switch button",
+          "ratio": 4.7997551647128045
+        },
+        {
+          "selector": ".tsui-mobile-switch button",
+          "ratio": 4.000158305493147
+        }
+      ],
+      "rootFont": "32px",
+      "taskIds": [
+        "A-action-1",
+        "A-action-2"
+      ]
+    },
+    {
+      "phase": "before",
+      "label": "CACHED",
+      "width": 390,
+      "scale": 100,
+      "issues": [
+        "text contrast .tsui-task-copy>span: 3.10",
+        "text contrast .tsui-task-copy>span: 3.10",
+        "text contrast .tsui-mobile-switch button: 4.00"
+      ],
+      "ratios": [
+        {
+          "selector": ".tsui-task-copy>span",
+          "ratio": 3.0954629169800016
+        },
+        {
+          "selector": ".tsui-task-copy>span",
+          "ratio": 3.0954629169800016
+        },
+        {
+          "selector": ".tsui-task-context",
+          "ratio": 4.988338821763132
+        },
+        {
+          "selector": ".tsui-task-context",
+          "ratio": 4.988338821763132
+        },
+        {
+          "selector": ".tsui-mobile-switch button",
+          "ratio": 4.7997551647128045
+        },
+        {
+          "selector": ".tsui-mobile-switch button",
+          "ratio": 4.000158305493147
+        }
+      ],
+      "rootFont": "16px",
+      "taskIds": [
+        "A-action-1",
+        "A-action-2"
+      ]
+    },
+    {
+      "phase": "before",
+      "label": "CACHED",
+      "width": 390,
+      "scale": 200,
+      "issues": [
+        "text contrast .tsui-task-copy>span: 3.10",
+        "text contrast .tsui-task-copy>span: 3.10",
+        "text contrast .tsui-mobile-switch button: 4.00"
+      ],
+      "ratios": [
+        {
+          "selector": ".tsui-task-copy>span",
+          "ratio": 3.0954629169800016
+        },
+        {
+          "selector": ".tsui-task-copy>span",
+          "ratio": 3.0954629169800016
+        },
+        {
+          "selector": ".tsui-task-context",
+          "ratio": 4.988338821763132
+        },
+        {
+          "selector": ".tsui-task-context",
+          "ratio": 4.988338821763132
+        },
+        {
+          "selector": ".tsui-mobile-switch button",
+          "ratio": 4.7997551647128045
+        },
+        {
+          "selector": ".tsui-mobile-switch button",
+          "ratio": 4.000158305493147
+        }
+      ],
+      "rootFont": "32px",
+      "taskIds": [
+        "A-action-1",
+        "A-action-2"
+      ]
+    },
+    {
+      "phase": "before",
+      "label": "CACHED",
+      "width": 430,
+      "scale": 100,
+      "issues": [
+        "text contrast .tsui-task-copy>span: 3.10",
+        "text contrast .tsui-task-copy>span: 3.10",
+        "text contrast .tsui-mobile-switch button: 4.00"
+      ],
+      "ratios": [
+        {
+          "selector": ".tsui-task-copy>span",
+          "ratio": 3.0954629169800016
+        },
+        {
+          "selector": ".tsui-task-copy>span",
+          "ratio": 3.0954629169800016
+        },
+        {
+          "selector": ".tsui-task-context",
+          "ratio": 4.988338821763132
+        },
+        {
+          "selector": ".tsui-task-context",
+          "ratio": 4.988338821763132
+        },
+        {
+          "selector": ".tsui-mobile-switch button",
+          "ratio": 4.7997551647128045
+        },
+        {
+          "selector": ".tsui-mobile-switch button",
+          "ratio": 4.000158305493147
+        }
+      ],
+      "rootFont": "16px",
+      "taskIds": [
+        "A-action-1",
+        "A-action-2"
+      ]
+    },
+    {
+      "phase": "before",
+      "label": "CACHED",
+      "width": 430,
+      "scale": 200,
+      "issues": [
+        "text contrast .tsui-task-copy>span: 3.10",
+        "text contrast .tsui-task-copy>span: 3.10",
+        "text contrast .tsui-mobile-switch button: 4.00"
+      ],
+      "ratios": [
+        {
+          "selector": ".tsui-task-copy>span",
+          "ratio": 3.0954629169800016
+        },
+        {
+          "selector": ".tsui-task-copy>span",
+          "ratio": 3.0954629169800016
+        },
+        {
+          "selector": ".tsui-task-context",
+          "ratio": 4.988338821763132
+        },
+        {
+          "selector": ".tsui-task-context",
+          "ratio": 4.988338821763132
+        },
+        {
+          "selector": ".tsui-mobile-switch button",
+          "ratio": 4.7997551647128045
+        },
+        {
+          "selector": ".tsui-mobile-switch button",
+          "ratio": 4.000158305493147
+        }
+      ],
+      "rootFont": "32px",
+      "taskIds": [
+        "A-action-1",
+        "A-action-2"
+      ]
+    },
+    {
+      "phase": "before",
+      "label": "CACHED",
+      "width": 768,
+      "scale": 100,
+      "issues": [
+        "text contrast .tsui-task-copy>span: 3.10",
+        "text contrast .tsui-task-copy>span: 3.10"
+      ],
+      "ratios": [
+        {
+          "selector": ".tsui-task-copy>span",
+          "ratio": 3.0954629169800016
+        },
+        {
+          "selector": ".tsui-task-copy>span",
+          "ratio": 3.0954629169800016
+        },
+        {
+          "selector": ".tsui-task-context",
+          "ratio": 4.988338821763132
+        },
+        {
+          "selector": ".tsui-task-context",
+          "ratio": 4.988338821763132
+        }
+      ],
+      "rootFont": "16px",
+      "taskIds": [
+        "A-action-1",
+        "A-action-2"
+      ]
+    },
+    {
+      "phase": "before",
+      "label": "CACHED",
+      "width": 768,
+      "scale": 200,
+      "issues": [
+        "text contrast .tsui-task-copy>span: 3.10",
+        "text contrast .tsui-task-copy>span: 3.10"
+      ],
+      "ratios": [
+        {
+          "selector": ".tsui-task-copy>span",
+          "ratio": 3.0954629169800016
+        },
+        {
+          "selector": ".tsui-task-copy>span",
+          "ratio": 3.0954629169800016
+        },
+        {
+          "selector": ".tsui-task-context",
+          "ratio": 4.988338821763132
+        },
+        {
+          "selector": ".tsui-task-context",
+          "ratio": 4.988338821763132
+        }
+      ],
+      "rootFont": "32px",
+      "taskIds": [
+        "A-action-1",
+        "A-action-2"
+      ]
+    },
+    {
+      "phase": "before",
+      "label": "CACHED",
+      "width": 1280,
+      "scale": 100,
+      "issues": [
+        "text contrast .tsui-task-copy>span: 3.10",
+        "text contrast .tsui-task-copy>span: 3.10"
+      ],
+      "ratios": [
+        {
+          "selector": ".tsui-task-copy>span",
+          "ratio": 3.0954629169800016
+        },
+        {
+          "selector": ".tsui-task-copy>span",
+          "ratio": 3.0954629169800016
+        },
+        {
+          "selector": ".tsui-task-context",
+          "ratio": 4.988338821763132
+        },
+        {
+          "selector": ".tsui-task-context",
+          "ratio": 4.988338821763132
+        }
+      ],
+      "rootFont": "16px",
+      "taskIds": [
+        "A-action-1",
+        "A-action-2"
+      ]
+    },
+    {
+      "phase": "before",
+      "label": "CACHED",
+      "width": 1280,
+      "scale": 200,
+      "issues": [
+        "text contrast .tsui-task-copy>span: 3.10",
+        "text contrast .tsui-task-copy>span: 3.10"
+      ],
+      "ratios": [
+        {
+          "selector": ".tsui-task-copy>span",
+          "ratio": 3.0954629169800016
+        },
+        {
+          "selector": ".tsui-task-copy>span",
+          "ratio": 3.0954629169800016
+        },
+        {
+          "selector": ".tsui-task-context",
+          "ratio": 4.988338821763132
+        },
+        {
+          "selector": ".tsui-task-context",
+          "ratio": 4.988338821763132
+        }
+      ],
+      "rootFont": "32px",
+      "taskIds": [
+        "A-action-1",
+        "A-action-2"
+      ]
+    },
+    {
+      "phase": "before",
+      "label": "CACHED",
+      "width": 1440,
+      "scale": 100,
+      "issues": [
+        "text contrast .tsui-task-copy>span: 3.10",
+        "text contrast .tsui-task-copy>span: 3.10"
+      ],
+      "ratios": [
+        {
+          "selector": ".tsui-task-copy>span",
+          "ratio": 3.0954629169800016
+        },
+        {
+          "selector": ".tsui-task-copy>span",
+          "ratio": 3.0954629169800016
+        },
+        {
+          "selector": ".tsui-task-context",
+          "ratio": 4.988338821763132
+        },
+        {
+          "selector": ".tsui-task-context",
+          "ratio": 4.988338821763132
+        }
+      ],
+      "rootFont": "16px",
+      "taskIds": [
+        "A-action-1",
+        "A-action-2"
+      ]
+    },
+    {
+      "phase": "before",
+      "label": "CACHED",
+      "width": 1440,
+      "scale": 200,
+      "issues": [
+        "text contrast .tsui-task-copy>span: 3.10",
+        "text contrast .tsui-task-copy>span: 3.10"
+      ],
+      "ratios": [
+        {
+          "selector": ".tsui-task-copy>span",
+          "ratio": 3.0954629169800016
+        },
+        {
+          "selector": ".tsui-task-copy>span",
+          "ratio": 3.0954629169800016
+        },
+        {
+          "selector": ".tsui-task-context",
+          "ratio": 4.988338821763132
+        },
+        {
+          "selector": ".tsui-task-context",
+          "ratio": 4.988338821763132
+        }
+      ],
+      "rootFont": "32px",
+      "taskIds": [
+        "A-action-1",
+        "A-action-2"
+      ]
+    },
+    {
+      "phase": "before",
+      "label": "AUTHORIZATION",
+      "width": 360,
+      "scale": 100,
+      "issues": [],
+      "ratios": [],
+      "rootFont": "16px",
+      "taskIds": []
+    },
+    {
+      "phase": "before",
+      "label": "AUTHORIZATION",
+      "width": 360,
+      "scale": 200,
+      "issues": [],
+      "ratios": [],
+      "rootFont": "32px",
+      "taskIds": []
+    },
+    {
+      "phase": "before",
+      "label": "AUTHORIZATION",
+      "width": 390,
+      "scale": 100,
+      "issues": [],
+      "ratios": [],
+      "rootFont": "16px",
+      "taskIds": []
+    },
+    {
+      "phase": "before",
+      "label": "AUTHORIZATION",
+      "width": 390,
+      "scale": 200,
+      "issues": [],
+      "ratios": [],
+      "rootFont": "32px",
+      "taskIds": []
+    },
+    {
+      "phase": "before",
+      "label": "AUTHORIZATION",
+      "width": 430,
+      "scale": 100,
+      "issues": [],
+      "ratios": [],
+      "rootFont": "16px",
+      "taskIds": []
+    },
+    {
+      "phase": "before",
+      "label": "AUTHORIZATION",
+      "width": 430,
+      "scale": 200,
+      "issues": [],
+      "ratios": [],
+      "rootFont": "32px",
+      "taskIds": []
+    },
+    {
+      "phase": "before",
+      "label": "AUTHORIZATION",
+      "width": 768,
+      "scale": 100,
+      "issues": [],
+      "ratios": [],
+      "rootFont": "16px",
+      "taskIds": []
+    },
+    {
+      "phase": "before",
+      "label": "AUTHORIZATION",
+      "width": 768,
+      "scale": 200,
+      "issues": [],
+      "ratios": [],
+      "rootFont": "32px",
+      "taskIds": []
+    },
+    {
+      "phase": "before",
+      "label": "AUTHORIZATION",
+      "width": 1280,
+      "scale": 100,
+      "issues": [],
+      "ratios": [],
+      "rootFont": "16px",
+      "taskIds": []
+    },
+    {
+      "phase": "before",
+      "label": "AUTHORIZATION",
+      "width": 1280,
+      "scale": 200,
+      "issues": [],
+      "ratios": [],
+      "rootFont": "32px",
+      "taskIds": []
+    },
+    {
+      "phase": "before",
+      "label": "AUTHORIZATION",
+      "width": 1440,
+      "scale": 100,
+      "issues": [],
+      "ratios": [],
+      "rootFont": "16px",
+      "taskIds": []
+    },
+    {
+      "phase": "before",
+      "label": "AUTHORIZATION",
+      "width": 1440,
+      "scale": 200,
+      "issues": [],
+      "ratios": [],
+      "rootFont": "32px",
+      "taskIds": []
+    },
+    {
+      "phase": "after",
+      "label": "TODAY",
+      "width": 360,
+      "scale": 100,
+      "issues": [],
+      "ratios": [
+        {
+          "selector": ".tsui-task-copy>span",
+          "ratio": 5.397277696219176
+        },
+        {
+          "selector": ".tsui-task-copy>span",
+          "ratio": 5.397277696219176
+        },
+        {
+          "selector": ".tsui-task-context",
+          "ratio": 4.988338821763132
+        },
+        {
+          "selector": ".tsui-task-context",
+          "ratio": 4.988338821763132
+        },
+        {
+          "selector": ".tsui-mobile-switch button",
+          "ratio": 4.7997551647128045
+        },
+        {
+          "selector": ".tsui-mobile-switch button",
+          "ratio": 5.397277696219176
+        }
+      ],
+      "rootFont": "16px",
+      "taskIds": [
+        "A-action-1",
+        "A-action-2"
+      ]
+    },
+    {
+      "phase": "after",
+      "label": "TODAY",
+      "width": 360,
+      "scale": 200,
+      "issues": [],
+      "ratios": [
+        {
+          "selector": ".tsui-task-copy>span",
+          "ratio": 5.397277696219176
+        },
+        {
+          "selector": ".tsui-task-copy>span",
+          "ratio": 5.397277696219176
+        },
+        {
+          "selector": ".tsui-task-context",
+          "ratio": 4.988338821763132
+        },
+        {
+          "selector": ".tsui-task-context",
+          "ratio": 4.988338821763132
+        },
+        {
+          "selector": ".tsui-mobile-switch button",
+          "ratio": 4.7997551647128045
+        },
+        {
+          "selector": ".tsui-mobile-switch button",
+          "ratio": 5.397277696219176
+        }
+      ],
+      "rootFont": "32px",
+      "taskIds": [
+        "A-action-1",
+        "A-action-2"
+      ]
+    },
+    {
+      "phase": "after",
+      "label": "TODAY",
+      "width": 390,
+      "scale": 100,
+      "issues": [],
+      "ratios": [
+        {
+          "selector": ".tsui-task-copy>span",
+          "ratio": 5.397277696219176
+        },
+        {
+          "selector": ".tsui-task-copy>span",
+          "ratio": 5.397277696219176
+        },
+        {
+          "selector": ".tsui-task-context",
+          "ratio": 4.988338821763132
+        },
+        {
+          "selector": ".tsui-task-context",
+          "ratio": 4.988338821763132
+        },
+        {
+          "selector": ".tsui-mobile-switch button",
+          "ratio": 4.7997551647128045
+        },
+        {
+          "selector": ".tsui-mobile-switch button",
+          "ratio": 5.397277696219176
+        }
+      ],
+      "rootFont": "16px",
+      "taskIds": [
+        "A-action-1",
+        "A-action-2"
+      ]
+    },
+    {
+      "phase": "after",
+      "label": "TODAY",
+      "width": 390,
+      "scale": 200,
+      "issues": [],
+      "ratios": [
+        {
+          "selector": ".tsui-task-copy>span",
+          "ratio": 5.397277696219176
+        },
+        {
+          "selector": ".tsui-task-copy>span",
+          "ratio": 5.397277696219176
+        },
+        {
+          "selector": ".tsui-task-context",
+          "ratio": 4.988338821763132
+        },
+        {
+          "selector": ".tsui-task-context",
+          "ratio": 4.988338821763132
+        },
+        {
+          "selector": ".tsui-mobile-switch button",
+          "ratio": 4.7997551647128045
+        },
+        {
+          "selector": ".tsui-mobile-switch button",
+          "ratio": 5.397277696219176
+        }
+      ],
+      "rootFont": "32px",
+      "taskIds": [
+        "A-action-1",
+        "A-action-2"
+      ]
+    },
+    {
+      "phase": "after",
+      "label": "TODAY",
+      "width": 430,
+      "scale": 100,
+      "issues": [],
+      "ratios": [
+        {
+          "selector": ".tsui-task-copy>span",
+          "ratio": 5.397277696219176
+        },
+        {
+          "selector": ".tsui-task-copy>span",
+          "ratio": 5.397277696219176
+        },
+        {
+          "selector": ".tsui-task-context",
+          "ratio": 4.988338821763132
+        },
+        {
+          "selector": ".tsui-task-context",
+          "ratio": 4.988338821763132
+        },
+        {
+          "selector": ".tsui-mobile-switch button",
+          "ratio": 4.7997551647128045
+        },
+        {
+          "selector": ".tsui-mobile-switch button",
+          "ratio": 5.397277696219176
+        }
+      ],
+      "rootFont": "16px",
+      "taskIds": [
+        "A-action-1",
+        "A-action-2"
+      ]
+    },
+    {
+      "phase": "after",
+      "label": "TODAY",
+      "width": 430,
+      "scale": 200,
+      "issues": [],
+      "ratios": [
+        {
+          "selector": ".tsui-task-copy>span",
+          "ratio": 5.397277696219176
+        },
+        {
+          "selector": ".tsui-task-copy>span",
+          "ratio": 5.397277696219176
+        },
+        {
+          "selector": ".tsui-task-context",
+          "ratio": 4.988338821763132
+        },
+        {
+          "selector": ".tsui-task-context",
+          "ratio": 4.988338821763132
+        },
+        {
+          "selector": ".tsui-mobile-switch button",
+          "ratio": 4.7997551647128045
+        },
+        {
+          "selector": ".tsui-mobile-switch button",
+          "ratio": 5.397277696219176
+        }
+      ],
+      "rootFont": "32px",
+      "taskIds": [
+        "A-action-1",
+        "A-action-2"
+      ]
+    },
+    {
+      "phase": "after",
+      "label": "TODAY",
+      "width": 768,
+      "scale": 100,
+      "issues": [],
+      "ratios": [
+        {
+          "selector": ".tsui-task-copy>span",
+          "ratio": 5.397277696219176
+        },
+        {
+          "selector": ".tsui-task-copy>span",
+          "ratio": 5.397277696219176
+        },
+        {
+          "selector": ".tsui-task-context",
+          "ratio": 4.988338821763132
+        },
+        {
+          "selector": ".tsui-task-context",
+          "ratio": 4.988338821763132
+        }
+      ],
+      "rootFont": "16px",
+      "taskIds": [
+        "A-action-1",
+        "A-action-2"
+      ]
+    },
+    {
+      "phase": "after",
+      "label": "TODAY",
+      "width": 768,
+      "scale": 200,
+      "issues": [],
+      "ratios": [
+        {
+          "selector": ".tsui-task-copy>span",
+          "ratio": 5.397277696219176
+        },
+        {
+          "selector": ".tsui-task-copy>span",
+          "ratio": 5.397277696219176
+        },
+        {
+          "selector": ".tsui-task-context",
+          "ratio": 4.988338821763132
+        },
+        {
+          "selector": ".tsui-task-context",
+          "ratio": 4.988338821763132
+        }
+      ],
+      "rootFont": "32px",
+      "taskIds": [
+        "A-action-1",
+        "A-action-2"
+      ]
+    },
+    {
+      "phase": "after",
+      "label": "TODAY",
+      "width": 1280,
+      "scale": 100,
+      "issues": [],
+      "ratios": [
+        {
+          "selector": ".tsui-task-copy>span",
+          "ratio": 5.397277696219176
+        },
+        {
+          "selector": ".tsui-task-copy>span",
+          "ratio": 5.397277696219176
+        },
+        {
+          "selector": ".tsui-task-context",
+          "ratio": 4.988338821763132
+        },
+        {
+          "selector": ".tsui-task-context",
+          "ratio": 4.988338821763132
+        }
+      ],
+      "rootFont": "16px",
+      "taskIds": [
+        "A-action-1",
+        "A-action-2"
+      ]
+    },
+    {
+      "phase": "after",
+      "label": "TODAY",
+      "width": 1280,
+      "scale": 200,
+      "issues": [],
+      "ratios": [
+        {
+          "selector": ".tsui-task-copy>span",
+          "ratio": 5.397277696219176
+        },
+        {
+          "selector": ".tsui-task-copy>span",
+          "ratio": 5.397277696219176
+        },
+        {
+          "selector": ".tsui-task-context",
+          "ratio": 4.988338821763132
+        },
+        {
+          "selector": ".tsui-task-context",
+          "ratio": 4.988338821763132
+        }
+      ],
+      "rootFont": "32px",
+      "taskIds": [
+        "A-action-1",
+        "A-action-2"
+      ]
+    },
+    {
+      "phase": "after",
+      "label": "TODAY",
+      "width": 1440,
+      "scale": 100,
+      "issues": [],
+      "ratios": [
+        {
+          "selector": ".tsui-task-copy>span",
+          "ratio": 5.397277696219176
+        },
+        {
+          "selector": ".tsui-task-copy>span",
+          "ratio": 5.397277696219176
+        },
+        {
+          "selector": ".tsui-task-context",
+          "ratio": 4.988338821763132
+        },
+        {
+          "selector": ".tsui-task-context",
+          "ratio": 4.988338821763132
+        }
+      ],
+      "rootFont": "16px",
+      "taskIds": [
+        "A-action-1",
+        "A-action-2"
+      ]
+    },
+    {
+      "phase": "after",
+      "label": "TODAY",
+      "width": 1440,
+      "scale": 200,
+      "issues": [],
+      "ratios": [
+        {
+          "selector": ".tsui-task-copy>span",
+          "ratio": 5.397277696219176
+        },
+        {
+          "selector": ".tsui-task-copy>span",
+          "ratio": 5.397277696219176
+        },
+        {
+          "selector": ".tsui-task-context",
+          "ratio": 4.988338821763132
+        },
+        {
+          "selector": ".tsui-task-context",
+          "ratio": 4.988338821763132
+        }
+      ],
+      "rootFont": "32px",
+      "taskIds": [
+        "A-action-1",
+        "A-action-2"
+      ]
+    },
+    {
+      "phase": "after",
+      "label": "LIBRARY",
+      "width": 360,
+      "scale": 100,
+      "issues": [],
+      "ratios": [
+        {
+          "selector": ".tsui-library-heading span",
+          "ratio": 4.634868168415379
+        }
+      ],
+      "rootFont": "16px",
+      "taskIds": []
+    },
+    {
+      "phase": "after",
+      "label": "LIBRARY",
+      "width": 360,
+      "scale": 200,
+      "issues": [],
+      "ratios": [
+        {
+          "selector": ".tsui-library-heading span",
+          "ratio": 4.634868168415379
+        }
+      ],
+      "rootFont": "32px",
+      "taskIds": []
+    },
+    {
+      "phase": "after",
+      "label": "LIBRARY",
+      "width": 390,
+      "scale": 100,
+      "issues": [],
+      "ratios": [
+        {
+          "selector": ".tsui-library-heading span",
+          "ratio": 4.634868168415379
+        }
+      ],
+      "rootFont": "16px",
+      "taskIds": []
+    },
+    {
+      "phase": "after",
+      "label": "LIBRARY",
+      "width": 390,
+      "scale": 200,
+      "issues": [],
+      "ratios": [
+        {
+          "selector": ".tsui-library-heading span",
+          "ratio": 4.634868168415379
+        }
+      ],
+      "rootFont": "32px",
+      "taskIds": []
+    },
+    {
+      "phase": "after",
+      "label": "LIBRARY",
+      "width": 430,
+      "scale": 100,
+      "issues": [],
+      "ratios": [
+        {
+          "selector": ".tsui-library-heading span",
+          "ratio": 4.634868168415379
+        }
+      ],
+      "rootFont": "16px",
+      "taskIds": []
+    },
+    {
+      "phase": "after",
+      "label": "LIBRARY",
+      "width": 430,
+      "scale": 200,
+      "issues": [],
+      "ratios": [
+        {
+          "selector": ".tsui-library-heading span",
+          "ratio": 4.634868168415379
+        }
+      ],
+      "rootFont": "32px",
+      "taskIds": []
+    },
+    {
+      "phase": "after",
+      "label": "LIBRARY",
+      "width": 768,
+      "scale": 100,
+      "issues": [],
+      "ratios": [
+        {
+          "selector": ".tsui-library-heading span",
+          "ratio": 4.634868168415379
+        }
+      ],
+      "rootFont": "16px",
+      "taskIds": []
+    },
+    {
+      "phase": "after",
+      "label": "LIBRARY",
+      "width": 768,
+      "scale": 200,
+      "issues": [],
+      "ratios": [
+        {
+          "selector": ".tsui-library-heading span",
+          "ratio": 4.634868168415379
+        }
+      ],
+      "rootFont": "32px",
+      "taskIds": []
+    },
+    {
+      "phase": "after",
+      "label": "LIBRARY",
+      "width": 1280,
+      "scale": 100,
+      "issues": [],
+      "ratios": [
+        {
+          "selector": ".tsui-library-heading span",
+          "ratio": 4.634868168415379
+        }
+      ],
+      "rootFont": "16px",
+      "taskIds": []
+    },
+    {
+      "phase": "after",
+      "label": "LIBRARY",
+      "width": 1280,
+      "scale": 200,
+      "issues": [],
+      "ratios": [
+        {
+          "selector": ".tsui-library-heading span",
+          "ratio": 4.634868168415379
+        }
+      ],
+      "rootFont": "32px",
+      "taskIds": []
+    },
+    {
+      "phase": "after",
+      "label": "LIBRARY",
+      "width": 1440,
+      "scale": 100,
+      "issues": [],
+      "ratios": [
+        {
+          "selector": ".tsui-library-heading span",
+          "ratio": 4.634868168415379
+        }
+      ],
+      "rootFont": "16px",
+      "taskIds": []
+    },
+    {
+      "phase": "after",
+      "label": "LIBRARY",
+      "width": 1440,
+      "scale": 200,
+      "issues": [],
+      "ratios": [
+        {
+          "selector": ".tsui-library-heading span",
+          "ratio": 4.634868168415379
+        }
+      ],
+      "rootFont": "32px",
+      "taskIds": []
+    },
+    {
+      "phase": "after",
+      "label": "JOB_DETAIL",
+      "width": 360,
+      "scale": 100,
+      "issues": [],
+      "ratios": [],
+      "rootFont": "16px",
+      "taskIds": []
+    },
+    {
+      "phase": "after",
+      "label": "JOB_DETAIL",
+      "width": 360,
+      "scale": 200,
+      "issues": [],
+      "ratios": [],
+      "rootFont": "32px",
+      "taskIds": []
+    },
+    {
+      "phase": "after",
+      "label": "JOB_DETAIL",
+      "width": 390,
+      "scale": 100,
+      "issues": [],
+      "ratios": [],
+      "rootFont": "16px",
+      "taskIds": []
+    },
+    {
+      "phase": "after",
+      "label": "JOB_DETAIL",
+      "width": 390,
+      "scale": 200,
+      "issues": [],
+      "ratios": [],
+      "rootFont": "32px",
+      "taskIds": []
+    },
+    {
+      "phase": "after",
+      "label": "JOB_DETAIL",
+      "width": 430,
+      "scale": 100,
+      "issues": [],
+      "ratios": [],
+      "rootFont": "16px",
+      "taskIds": []
+    },
+    {
+      "phase": "after",
+      "label": "JOB_DETAIL",
+      "width": 430,
+      "scale": 200,
+      "issues": [],
+      "ratios": [],
+      "rootFont": "32px",
+      "taskIds": []
+    },
+    {
+      "phase": "after",
+      "label": "JOB_DETAIL",
+      "width": 768,
+      "scale": 100,
+      "issues": [],
+      "ratios": [],
+      "rootFont": "16px",
+      "taskIds": []
+    },
+    {
+      "phase": "after",
+      "label": "JOB_DETAIL",
+      "width": 768,
+      "scale": 200,
+      "issues": [],
+      "ratios": [],
+      "rootFont": "32px",
+      "taskIds": []
+    },
+    {
+      "phase": "after",
+      "label": "JOB_DETAIL",
+      "width": 1280,
+      "scale": 100,
+      "issues": [],
+      "ratios": [],
+      "rootFont": "16px",
+      "taskIds": []
+    },
+    {
+      "phase": "after",
+      "label": "JOB_DETAIL",
+      "width": 1280,
+      "scale": 200,
+      "issues": [],
+      "ratios": [],
+      "rootFont": "32px",
+      "taskIds": []
+    },
+    {
+      "phase": "after",
+      "label": "JOB_DETAIL",
+      "width": 1440,
+      "scale": 100,
+      "issues": [],
+      "ratios": [],
+      "rootFont": "16px",
+      "taskIds": []
+    },
+    {
+      "phase": "after",
+      "label": "JOB_DETAIL",
+      "width": 1440,
+      "scale": 200,
+      "issues": [],
+      "ratios": [],
+      "rootFont": "32px",
+      "taskIds": []
+    },
+    {
+      "phase": "after",
+      "label": "SCHEDULE",
+      "width": 360,
+      "scale": 100,
+      "issues": [],
+      "ratios": [],
+      "rootFont": "16px",
+      "taskIds": []
+    },
+    {
+      "phase": "after",
+      "label": "SCHEDULE",
+      "width": 360,
+      "scale": 200,
+      "issues": [],
+      "ratios": [],
+      "rootFont": "32px",
+      "taskIds": []
+    },
+    {
+      "phase": "after",
+      "label": "SCHEDULE",
+      "width": 390,
+      "scale": 100,
+      "issues": [],
+      "ratios": [],
+      "rootFont": "16px",
+      "taskIds": []
+    },
+    {
+      "phase": "after",
+      "label": "SCHEDULE",
+      "width": 390,
+      "scale": 200,
+      "issues": [],
+      "ratios": [],
+      "rootFont": "32px",
+      "taskIds": []
+    },
+    {
+      "phase": "after",
+      "label": "SCHEDULE",
+      "width": 430,
+      "scale": 100,
+      "issues": [],
+      "ratios": [],
+      "rootFont": "16px",
+      "taskIds": []
+    },
+    {
+      "phase": "after",
+      "label": "SCHEDULE",
+      "width": 430,
+      "scale": 200,
+      "issues": [],
+      "ratios": [],
+      "rootFont": "32px",
+      "taskIds": []
+    },
+    {
+      "phase": "after",
+      "label": "SCHEDULE",
+      "width": 768,
+      "scale": 100,
+      "issues": [],
+      "ratios": [],
+      "rootFont": "16px",
+      "taskIds": []
+    },
+    {
+      "phase": "after",
+      "label": "SCHEDULE",
+      "width": 768,
+      "scale": 200,
+      "issues": [],
+      "ratios": [],
+      "rootFont": "32px",
+      "taskIds": []
+    },
+    {
+      "phase": "after",
+      "label": "SCHEDULE",
+      "width": 1280,
+      "scale": 100,
+      "issues": [],
+      "ratios": [],
+      "rootFont": "16px",
+      "taskIds": []
+    },
+    {
+      "phase": "after",
+      "label": "SCHEDULE",
+      "width": 1280,
+      "scale": 200,
+      "issues": [],
+      "ratios": [],
+      "rootFont": "32px",
+      "taskIds": []
+    },
+    {
+      "phase": "after",
+      "label": "SCHEDULE",
+      "width": 1440,
+      "scale": 100,
+      "issues": [],
+      "ratios": [],
+      "rootFont": "16px",
+      "taskIds": []
+    },
+    {
+      "phase": "after",
+      "label": "SCHEDULE",
+      "width": 1440,
+      "scale": 200,
+      "issues": [],
+      "ratios": [],
+      "rootFont": "32px",
+      "taskIds": []
+    },
+    {
+      "phase": "after",
+      "label": "EVENT_DETAIL",
+      "width": 360,
+      "scale": 100,
+      "issues": [],
+      "ratios": [],
+      "rootFont": "16px",
+      "taskIds": []
+    },
+    {
+      "phase": "after",
+      "label": "EVENT_DETAIL",
+      "width": 360,
+      "scale": 200,
+      "issues": [],
+      "ratios": [],
+      "rootFont": "32px",
+      "taskIds": []
+    },
+    {
+      "phase": "after",
+      "label": "EVENT_DETAIL",
+      "width": 390,
+      "scale": 100,
+      "issues": [],
+      "ratios": [],
+      "rootFont": "16px",
+      "taskIds": []
+    },
+    {
+      "phase": "after",
+      "label": "EVENT_DETAIL",
+      "width": 390,
+      "scale": 200,
+      "issues": [],
+      "ratios": [],
+      "rootFont": "32px",
+      "taskIds": []
+    },
+    {
+      "phase": "after",
+      "label": "EVENT_DETAIL",
+      "width": 430,
+      "scale": 100,
+      "issues": [],
+      "ratios": [],
+      "rootFont": "16px",
+      "taskIds": []
+    },
+    {
+      "phase": "after",
+      "label": "EVENT_DETAIL",
+      "width": 430,
+      "scale": 200,
+      "issues": [],
+      "ratios": [],
+      "rootFont": "32px",
+      "taskIds": []
+    },
+    {
+      "phase": "after",
+      "label": "EVENT_DETAIL",
+      "width": 768,
+      "scale": 100,
+      "issues": [],
+      "ratios": [],
+      "rootFont": "16px",
+      "taskIds": []
+    },
+    {
+      "phase": "after",
+      "label": "EVENT_DETAIL",
+      "width": 768,
+      "scale": 200,
+      "issues": [],
+      "ratios": [],
+      "rootFont": "32px",
+      "taskIds": []
+    },
+    {
+      "phase": "after",
+      "label": "EVENT_DETAIL",
+      "width": 1280,
+      "scale": 100,
+      "issues": [],
+      "ratios": [],
+      "rootFont": "16px",
+      "taskIds": []
+    },
+    {
+      "phase": "after",
+      "label": "EVENT_DETAIL",
+      "width": 1280,
+      "scale": 200,
+      "issues": [],
+      "ratios": [],
+      "rootFont": "32px",
+      "taskIds": []
+    },
+    {
+      "phase": "after",
+      "label": "EVENT_DETAIL",
+      "width": 1440,
+      "scale": 100,
+      "issues": [],
+      "ratios": [],
+      "rootFont": "16px",
+      "taskIds": []
+    },
+    {
+      "phase": "after",
+      "label": "EVENT_DETAIL",
+      "width": 1440,
+      "scale": 200,
+      "issues": [],
+      "ratios": [],
+      "rootFont": "32px",
+      "taskIds": []
+    },
+    {
+      "phase": "after",
+      "label": "CAPTURE",
+      "width": 360,
+      "scale": 100,
+      "issues": [],
+      "ratios": [
+        {
+          "selector": ".tsui-task-copy>span",
+          "ratio": 5.397277696219176
+        },
+        {
+          "selector": ".tsui-task-copy>span",
+          "ratio": 5.397277696219176
+        },
+        {
+          "selector": ".tsui-task-context",
+          "ratio": 4.988338821763132
+        },
+        {
+          "selector": ".tsui-task-context",
+          "ratio": 4.988338821763132
+        },
+        {
+          "selector": ".tsui-mobile-switch button",
+          "ratio": 4.7997551647128045
+        },
+        {
+          "selector": ".tsui-mobile-switch button",
+          "ratio": 5.397277696219176
+        }
+      ],
+      "rootFont": "16px",
+      "taskIds": [
+        "A-action-1",
+        "A-action-2"
+      ]
+    },
+    {
+      "phase": "after",
+      "label": "CAPTURE",
+      "width": 360,
+      "scale": 200,
+      "issues": [],
+      "ratios": [
+        {
+          "selector": ".tsui-task-copy>span",
+          "ratio": 5.397277696219176
+        },
+        {
+          "selector": ".tsui-task-copy>span",
+          "ratio": 5.397277696219176
+        },
+        {
+          "selector": ".tsui-task-context",
+          "ratio": 4.988338821763132
+        },
+        {
+          "selector": ".tsui-task-context",
+          "ratio": 4.988338821763132
+        },
+        {
+          "selector": ".tsui-mobile-switch button",
+          "ratio": 4.7997551647128045
+        },
+        {
+          "selector": ".tsui-mobile-switch button",
+          "ratio": 5.397277696219176
+        }
+      ],
+      "rootFont": "32px",
+      "taskIds": [
+        "A-action-1",
+        "A-action-2"
+      ]
+    },
+    {
+      "phase": "after",
+      "label": "CAPTURE",
+      "width": 390,
+      "scale": 100,
+      "issues": [],
+      "ratios": [
+        {
+          "selector": ".tsui-task-copy>span",
+          "ratio": 5.397277696219176
+        },
+        {
+          "selector": ".tsui-task-copy>span",
+          "ratio": 5.397277696219176
+        },
+        {
+          "selector": ".tsui-task-context",
+          "ratio": 4.988338821763132
+        },
+        {
+          "selector": ".tsui-task-context",
+          "ratio": 4.988338821763132
+        },
+        {
+          "selector": ".tsui-mobile-switch button",
+          "ratio": 4.7997551647128045
+        },
+        {
+          "selector": ".tsui-mobile-switch button",
+          "ratio": 5.397277696219176
+        }
+      ],
+      "rootFont": "16px",
+      "taskIds": [
+        "A-action-1",
+        "A-action-2"
+      ]
+    },
+    {
+      "phase": "after",
+      "label": "CAPTURE",
+      "width": 390,
+      "scale": 200,
+      "issues": [],
+      "ratios": [
+        {
+          "selector": ".tsui-task-copy>span",
+          "ratio": 5.397277696219176
+        },
+        {
+          "selector": ".tsui-task-copy>span",
+          "ratio": 5.397277696219176
+        },
+        {
+          "selector": ".tsui-task-context",
+          "ratio": 4.988338821763132
+        },
+        {
+          "selector": ".tsui-task-context",
+          "ratio": 4.988338821763132
+        },
+        {
+          "selector": ".tsui-mobile-switch button",
+          "ratio": 4.7997551647128045
+        },
+        {
+          "selector": ".tsui-mobile-switch button",
+          "ratio": 5.397277696219176
+        }
+      ],
+      "rootFont": "32px",
+      "taskIds": [
+        "A-action-1",
+        "A-action-2"
+      ]
+    },
+    {
+      "phase": "after",
+      "label": "CAPTURE",
+      "width": 430,
+      "scale": 100,
+      "issues": [],
+      "ratios": [
+        {
+          "selector": ".tsui-task-copy>span",
+          "ratio": 5.397277696219176
+        },
+        {
+          "selector": ".tsui-task-copy>span",
+          "ratio": 5.397277696219176
+        },
+        {
+          "selector": ".tsui-task-context",
+          "ratio": 4.988338821763132
+        },
+        {
+          "selector": ".tsui-task-context",
+          "ratio": 4.988338821763132
+        },
+        {
+          "selector": ".tsui-mobile-switch button",
+          "ratio": 4.7997551647128045
+        },
+        {
+          "selector": ".tsui-mobile-switch button",
+          "ratio": 5.397277696219176
+        }
+      ],
+      "rootFont": "16px",
+      "taskIds": [
+        "A-action-1",
+        "A-action-2"
+      ]
+    },
+    {
+      "phase": "after",
+      "label": "CAPTURE",
+      "width": 430,
+      "scale": 200,
+      "issues": [],
+      "ratios": [
+        {
+          "selector": ".tsui-task-copy>span",
+          "ratio": 5.397277696219176
+        },
+        {
+          "selector": ".tsui-task-copy>span",
+          "ratio": 5.397277696219176
+        },
+        {
+          "selector": ".tsui-task-context",
+          "ratio": 4.988338821763132
+        },
+        {
+          "selector": ".tsui-task-context",
+          "ratio": 4.988338821763132
+        },
+        {
+          "selector": ".tsui-mobile-switch button",
+          "ratio": 4.7997551647128045
+        },
+        {
+          "selector": ".tsui-mobile-switch button",
+          "ratio": 5.397277696219176
+        }
+      ],
+      "rootFont": "32px",
+      "taskIds": [
+        "A-action-1",
+        "A-action-2"
+      ]
+    },
+    {
+      "phase": "after",
+      "label": "CAPTURE",
+      "width": 768,
+      "scale": 100,
+      "issues": [],
+      "ratios": [
+        {
+          "selector": ".tsui-task-copy>span",
+          "ratio": 5.397277696219176
+        },
+        {
+          "selector": ".tsui-task-copy>span",
+          "ratio": 5.397277696219176
+        },
+        {
+          "selector": ".tsui-task-context",
+          "ratio": 4.988338821763132
+        },
+        {
+          "selector": ".tsui-task-context",
+          "ratio": 4.988338821763132
+        }
+      ],
+      "rootFont": "16px",
+      "taskIds": [
+        "A-action-1",
+        "A-action-2"
+      ]
+    },
+    {
+      "phase": "after",
+      "label": "CAPTURE",
+      "width": 768,
+      "scale": 200,
+      "issues": [],
+      "ratios": [
+        {
+          "selector": ".tsui-task-copy>span",
+          "ratio": 5.397277696219176
+        },
+        {
+          "selector": ".tsui-task-copy>span",
+          "ratio": 5.397277696219176
+        },
+        {
+          "selector": ".tsui-task-context",
+          "ratio": 4.988338821763132
+        },
+        {
+          "selector": ".tsui-task-context",
+          "ratio": 4.988338821763132
+        }
+      ],
+      "rootFont": "32px",
+      "taskIds": [
+        "A-action-1",
+        "A-action-2"
+      ]
+    },
+    {
+      "phase": "after",
+      "label": "CAPTURE",
+      "width": 1280,
+      "scale": 100,
+      "issues": [],
+      "ratios": [
+        {
+          "selector": ".tsui-task-copy>span",
+          "ratio": 5.397277696219176
+        },
+        {
+          "selector": ".tsui-task-copy>span",
+          "ratio": 5.397277696219176
+        },
+        {
+          "selector": ".tsui-task-context",
+          "ratio": 4.988338821763132
+        },
+        {
+          "selector": ".tsui-task-context",
+          "ratio": 4.988338821763132
+        }
+      ],
+      "rootFont": "16px",
+      "taskIds": [
+        "A-action-1",
+        "A-action-2"
+      ]
+    },
+    {
+      "phase": "after",
+      "label": "CAPTURE",
+      "width": 1280,
+      "scale": 200,
+      "issues": [],
+      "ratios": [
+        {
+          "selector": ".tsui-task-copy>span",
+          "ratio": 5.397277696219176
+        },
+        {
+          "selector": ".tsui-task-copy>span",
+          "ratio": 5.397277696219176
+        },
+        {
+          "selector": ".tsui-task-context",
+          "ratio": 4.988338821763132
+        },
+        {
+          "selector": ".tsui-task-context",
+          "ratio": 4.988338821763132
+        }
+      ],
+      "rootFont": "32px",
+      "taskIds": [
+        "A-action-1",
+        "A-action-2"
+      ]
+    },
+    {
+      "phase": "after",
+      "label": "CAPTURE",
+      "width": 1440,
+      "scale": 100,
+      "issues": [],
+      "ratios": [
+        {
+          "selector": ".tsui-task-copy>span",
+          "ratio": 5.397277696219176
+        },
+        {
+          "selector": ".tsui-task-copy>span",
+          "ratio": 5.397277696219176
+        },
+        {
+          "selector": ".tsui-task-context",
+          "ratio": 4.988338821763132
+        },
+        {
+          "selector": ".tsui-task-context",
+          "ratio": 4.988338821763132
+        }
+      ],
+      "rootFont": "16px",
+      "taskIds": [
+        "A-action-1",
+        "A-action-2"
+      ]
+    },
+    {
+      "phase": "after",
+      "label": "CAPTURE",
+      "width": 1440,
+      "scale": 200,
+      "issues": [],
+      "ratios": [
+        {
+          "selector": ".tsui-task-copy>span",
+          "ratio": 5.397277696219176
+        },
+        {
+          "selector": ".tsui-task-copy>span",
+          "ratio": 5.397277696219176
+        },
+        {
+          "selector": ".tsui-task-context",
+          "ratio": 4.988338821763132
+        },
+        {
+          "selector": ".tsui-task-context",
+          "ratio": 4.988338821763132
+        }
+      ],
+      "rootFont": "32px",
+      "taskIds": [
+        "A-action-1",
+        "A-action-2"
+      ]
+    },
+    {
+      "phase": "after",
+      "label": "SETTINGS",
+      "width": 360,
+      "scale": 100,
+      "issues": [],
+      "ratios": [
+        {
+          "selector": ".cloud-security-note",
+          "ratio": 5.397277696219176
+        },
+        {
+          "selector": ".cloud-security-note",
+          "ratio": 5.397277696219176
+        }
+      ],
+      "rootFont": "16px",
+      "taskIds": []
+    },
+    {
+      "phase": "after",
+      "label": "SETTINGS",
+      "width": 360,
+      "scale": 200,
+      "issues": [],
+      "ratios": [
+        {
+          "selector": ".cloud-security-note",
+          "ratio": 5.397277696219176
+        },
+        {
+          "selector": ".cloud-security-note",
+          "ratio": 5.397277696219176
+        }
+      ],
+      "rootFont": "32px",
+      "taskIds": []
+    },
+    {
+      "phase": "after",
+      "label": "SETTINGS",
+      "width": 390,
+      "scale": 100,
+      "issues": [],
+      "ratios": [
+        {
+          "selector": ".cloud-security-note",
+          "ratio": 5.397277696219176
+        },
+        {
+          "selector": ".cloud-security-note",
+          "ratio": 5.397277696219176
+        }
+      ],
+      "rootFont": "16px",
+      "taskIds": []
+    },
+    {
+      "phase": "after",
+      "label": "SETTINGS",
+      "width": 390,
+      "scale": 200,
+      "issues": [],
+      "ratios": [
+        {
+          "selector": ".cloud-security-note",
+          "ratio": 5.397277696219176
+        },
+        {
+          "selector": ".cloud-security-note",
+          "ratio": 5.397277696219176
+        }
+      ],
+      "rootFont": "32px",
+      "taskIds": []
+    },
+    {
+      "phase": "after",
+      "label": "SETTINGS",
+      "width": 430,
+      "scale": 100,
+      "issues": [],
+      "ratios": [
+        {
+          "selector": ".cloud-security-note",
+          "ratio": 5.397277696219176
+        },
+        {
+          "selector": ".cloud-security-note",
+          "ratio": 5.397277696219176
+        }
+      ],
+      "rootFont": "16px",
+      "taskIds": []
+    },
+    {
+      "phase": "after",
+      "label": "SETTINGS",
+      "width": 430,
+      "scale": 200,
+      "issues": [],
+      "ratios": [
+        {
+          "selector": ".cloud-security-note",
+          "ratio": 5.397277696219176
+        },
+        {
+          "selector": ".cloud-security-note",
+          "ratio": 5.397277696219176
+        }
+      ],
+      "rootFont": "32px",
+      "taskIds": []
+    },
+    {
+      "phase": "after",
+      "label": "SETTINGS",
+      "width": 768,
+      "scale": 100,
+      "issues": [],
+      "ratios": [
+        {
+          "selector": ".cloud-security-note",
+          "ratio": 5.397277696219176
+        },
+        {
+          "selector": ".cloud-security-note",
+          "ratio": 5.397277696219176
+        }
+      ],
+      "rootFont": "16px",
+      "taskIds": []
+    },
+    {
+      "phase": "after",
+      "label": "SETTINGS",
+      "width": 768,
+      "scale": 200,
+      "issues": [],
+      "ratios": [
+        {
+          "selector": ".cloud-security-note",
+          "ratio": 5.397277696219176
+        },
+        {
+          "selector": ".cloud-security-note",
+          "ratio": 5.397277696219176
+        }
+      ],
+      "rootFont": "32px",
+      "taskIds": []
+    },
+    {
+      "phase": "after",
+      "label": "SETTINGS",
+      "width": 1280,
+      "scale": 100,
+      "issues": [],
+      "ratios": [
+        {
+          "selector": ".cloud-security-note",
+          "ratio": 5.397277696219176
+        },
+        {
+          "selector": ".cloud-security-note",
+          "ratio": 5.397277696219176
+        }
+      ],
+      "rootFont": "16px",
+      "taskIds": []
+    },
+    {
+      "phase": "after",
+      "label": "SETTINGS",
+      "width": 1280,
+      "scale": 200,
+      "issues": [],
+      "ratios": [
+        {
+          "selector": ".cloud-security-note",
+          "ratio": 5.397277696219176
+        },
+        {
+          "selector": ".cloud-security-note",
+          "ratio": 5.397277696219176
+        }
+      ],
+      "rootFont": "32px",
+      "taskIds": []
+    },
+    {
+      "phase": "after",
+      "label": "SETTINGS",
+      "width": 1440,
+      "scale": 100,
+      "issues": [],
+      "ratios": [
+        {
+          "selector": ".cloud-security-note",
+          "ratio": 5.397277696219176
+        },
+        {
+          "selector": ".cloud-security-note",
+          "ratio": 5.397277696219176
+        }
+      ],
+      "rootFont": "16px",
+      "taskIds": []
+    },
+    {
+      "phase": "after",
+      "label": "SETTINGS",
+      "width": 1440,
+      "scale": 200,
+      "issues": [],
+      "ratios": [
+        {
+          "selector": ".cloud-security-note",
+          "ratio": 5.397277696219176
+        },
+        {
+          "selector": ".cloud-security-note",
+          "ratio": 5.397277696219176
+        }
+      ],
+      "rootFont": "32px",
+      "taskIds": []
+    },
+    {
+      "phase": "after",
+      "label": "FIRST_USE",
+      "width": 360,
+      "scale": 100,
+      "issues": [],
+      "ratios": [
+        {
+          "selector": ".tsui-mobile-switch button",
+          "ratio": 4.7997551647128045
+        },
+        {
+          "selector": ".tsui-mobile-switch button",
+          "ratio": 5.397277696219176
+        }
+      ],
+      "rootFont": "16px",
+      "taskIds": []
+    },
+    {
+      "phase": "after",
+      "label": "FIRST_USE",
+      "width": 360,
+      "scale": 200,
+      "issues": [],
+      "ratios": [
+        {
+          "selector": ".tsui-mobile-switch button",
+          "ratio": 4.7997551647128045
+        },
+        {
+          "selector": ".tsui-mobile-switch button",
+          "ratio": 5.397277696219176
+        }
+      ],
+      "rootFont": "32px",
+      "taskIds": []
+    },
+    {
+      "phase": "after",
+      "label": "FIRST_USE",
+      "width": 390,
+      "scale": 100,
+      "issues": [],
+      "ratios": [
+        {
+          "selector": ".tsui-mobile-switch button",
+          "ratio": 4.7997551647128045
+        },
+        {
+          "selector": ".tsui-mobile-switch button",
+          "ratio": 5.397277696219176
+        }
+      ],
+      "rootFont": "16px",
+      "taskIds": []
+    },
+    {
+      "phase": "after",
+      "label": "FIRST_USE",
+      "width": 390,
+      "scale": 200,
+      "issues": [],
+      "ratios": [
+        {
+          "selector": ".tsui-mobile-switch button",
+          "ratio": 4.7997551647128045
+        },
+        {
+          "selector": ".tsui-mobile-switch button",
+          "ratio": 5.397277696219176
+        }
+      ],
+      "rootFont": "32px",
+      "taskIds": []
+    },
+    {
+      "phase": "after",
+      "label": "FIRST_USE",
+      "width": 430,
+      "scale": 100,
+      "issues": [],
+      "ratios": [
+        {
+          "selector": ".tsui-mobile-switch button",
+          "ratio": 4.7997551647128045
+        },
+        {
+          "selector": ".tsui-mobile-switch button",
+          "ratio": 5.397277696219176
+        }
+      ],
+      "rootFont": "16px",
+      "taskIds": []
+    },
+    {
+      "phase": "after",
+      "label": "FIRST_USE",
+      "width": 430,
+      "scale": 200,
+      "issues": [],
+      "ratios": [
+        {
+          "selector": ".tsui-mobile-switch button",
+          "ratio": 4.7997551647128045
+        },
+        {
+          "selector": ".tsui-mobile-switch button",
+          "ratio": 5.397277696219176
+        }
+      ],
+      "rootFont": "32px",
+      "taskIds": []
+    },
+    {
+      "phase": "after",
+      "label": "FIRST_USE",
+      "width": 768,
+      "scale": 100,
+      "issues": [],
+      "ratios": [],
+      "rootFont": "16px",
+      "taskIds": []
+    },
+    {
+      "phase": "after",
+      "label": "FIRST_USE",
+      "width": 768,
+      "scale": 200,
+      "issues": [],
+      "ratios": [],
+      "rootFont": "32px",
+      "taskIds": []
+    },
+    {
+      "phase": "after",
+      "label": "FIRST_USE",
+      "width": 1280,
+      "scale": 100,
+      "issues": [],
+      "ratios": [],
+      "rootFont": "16px",
+      "taskIds": []
+    },
+    {
+      "phase": "after",
+      "label": "FIRST_USE",
+      "width": 1280,
+      "scale": 200,
+      "issues": [],
+      "ratios": [],
+      "rootFont": "32px",
+      "taskIds": []
+    },
+    {
+      "phase": "after",
+      "label": "FIRST_USE",
+      "width": 1440,
+      "scale": 100,
+      "issues": [],
+      "ratios": [],
+      "rootFont": "16px",
+      "taskIds": []
+    },
+    {
+      "phase": "after",
+      "label": "FIRST_USE",
+      "width": 1440,
+      "scale": 200,
+      "issues": [],
+      "ratios": [],
+      "rootFont": "32px",
+      "taskIds": []
+    },
+    {
+      "phase": "after",
+      "label": "EMPTY_ACCOUNT",
+      "width": 360,
+      "scale": 100,
+      "issues": [],
+      "ratios": [
+        {
+          "selector": ".tsui-mobile-switch button",
+          "ratio": 4.7997551647128045
+        },
+        {
+          "selector": ".tsui-mobile-switch button",
+          "ratio": 5.397277696219176
+        }
+      ],
+      "rootFont": "16px",
+      "taskIds": []
+    },
+    {
+      "phase": "after",
+      "label": "EMPTY_ACCOUNT",
+      "width": 360,
+      "scale": 200,
+      "issues": [],
+      "ratios": [
+        {
+          "selector": ".tsui-mobile-switch button",
+          "ratio": 4.7997551647128045
+        },
+        {
+          "selector": ".tsui-mobile-switch button",
+          "ratio": 5.397277696219176
+        }
+      ],
+      "rootFont": "32px",
+      "taskIds": []
+    },
+    {
+      "phase": "after",
+      "label": "EMPTY_ACCOUNT",
+      "width": 390,
+      "scale": 100,
+      "issues": [],
+      "ratios": [
+        {
+          "selector": ".tsui-mobile-switch button",
+          "ratio": 4.7997551647128045
+        },
+        {
+          "selector": ".tsui-mobile-switch button",
+          "ratio": 5.397277696219176
+        }
+      ],
+      "rootFont": "16px",
+      "taskIds": []
+    },
+    {
+      "phase": "after",
+      "label": "EMPTY_ACCOUNT",
+      "width": 390,
+      "scale": 200,
+      "issues": [],
+      "ratios": [
+        {
+          "selector": ".tsui-mobile-switch button",
+          "ratio": 4.7997551647128045
+        },
+        {
+          "selector": ".tsui-mobile-switch button",
+          "ratio": 5.397277696219176
+        }
+      ],
+      "rootFont": "32px",
+      "taskIds": []
+    },
+    {
+      "phase": "after",
+      "label": "EMPTY_ACCOUNT",
+      "width": 430,
+      "scale": 100,
+      "issues": [],
+      "ratios": [
+        {
+          "selector": ".tsui-mobile-switch button",
+          "ratio": 4.7997551647128045
+        },
+        {
+          "selector": ".tsui-mobile-switch button",
+          "ratio": 5.397277696219176
+        }
+      ],
+      "rootFont": "16px",
+      "taskIds": []
+    },
+    {
+      "phase": "after",
+      "label": "EMPTY_ACCOUNT",
+      "width": 430,
+      "scale": 200,
+      "issues": [],
+      "ratios": [
+        {
+          "selector": ".tsui-mobile-switch button",
+          "ratio": 4.7997551647128045
+        },
+        {
+          "selector": ".tsui-mobile-switch button",
+          "ratio": 5.397277696219176
+        }
+      ],
+      "rootFont": "32px",
+      "taskIds": []
+    },
+    {
+      "phase": "after",
+      "label": "EMPTY_ACCOUNT",
+      "width": 768,
+      "scale": 100,
+      "issues": [],
+      "ratios": [],
+      "rootFont": "16px",
+      "taskIds": []
+    },
+    {
+      "phase": "after",
+      "label": "EMPTY_ACCOUNT",
+      "width": 768,
+      "scale": 200,
+      "issues": [],
+      "ratios": [],
+      "rootFont": "32px",
+      "taskIds": []
+    },
+    {
+      "phase": "after",
+      "label": "EMPTY_ACCOUNT",
+      "width": 1280,
+      "scale": 100,
+      "issues": [],
+      "ratios": [],
+      "rootFont": "16px",
+      "taskIds": []
+    },
+    {
+      "phase": "after",
+      "label": "EMPTY_ACCOUNT",
+      "width": 1280,
+      "scale": 200,
+      "issues": [],
+      "ratios": [],
+      "rootFont": "32px",
+      "taskIds": []
+    },
+    {
+      "phase": "after",
+      "label": "EMPTY_ACCOUNT",
+      "width": 1440,
+      "scale": 100,
+      "issues": [],
+      "ratios": [],
+      "rootFont": "16px",
+      "taskIds": []
+    },
+    {
+      "phase": "after",
+      "label": "EMPTY_ACCOUNT",
+      "width": 1440,
+      "scale": 200,
+      "issues": [],
+      "ratios": [],
+      "rootFont": "32px",
+      "taskIds": []
+    },
+    {
+      "phase": "after",
+      "label": "LOADING",
+      "width": 360,
+      "scale": 100,
+      "issues": [],
+      "ratios": [],
+      "rootFont": "16px",
+      "taskIds": []
+    },
+    {
+      "phase": "after",
+      "label": "LOADING",
+      "width": 360,
+      "scale": 200,
+      "issues": [],
+      "ratios": [],
+      "rootFont": "32px",
+      "taskIds": []
+    },
+    {
+      "phase": "after",
+      "label": "LOADING",
+      "width": 390,
+      "scale": 100,
+      "issues": [],
+      "ratios": [],
+      "rootFont": "16px",
+      "taskIds": []
+    },
+    {
+      "phase": "after",
+      "label": "LOADING",
+      "width": 390,
+      "scale": 200,
+      "issues": [],
+      "ratios": [],
+      "rootFont": "32px",
+      "taskIds": []
+    },
+    {
+      "phase": "after",
+      "label": "LOADING",
+      "width": 430,
+      "scale": 100,
+      "issues": [],
+      "ratios": [],
+      "rootFont": "16px",
+      "taskIds": []
+    },
+    {
+      "phase": "after",
+      "label": "LOADING",
+      "width": 430,
+      "scale": 200,
+      "issues": [],
+      "ratios": [],
+      "rootFont": "32px",
+      "taskIds": []
+    },
+    {
+      "phase": "after",
+      "label": "LOADING",
+      "width": 768,
+      "scale": 100,
+      "issues": [],
+      "ratios": [],
+      "rootFont": "16px",
+      "taskIds": []
+    },
+    {
+      "phase": "after",
+      "label": "LOADING",
+      "width": 768,
+      "scale": 200,
+      "issues": [],
+      "ratios": [],
+      "rootFont": "32px",
+      "taskIds": []
+    },
+    {
+      "phase": "after",
+      "label": "LOADING",
+      "width": 1280,
+      "scale": 100,
+      "issues": [],
+      "ratios": [],
+      "rootFont": "16px",
+      "taskIds": []
+    },
+    {
+      "phase": "after",
+      "label": "LOADING",
+      "width": 1280,
+      "scale": 200,
+      "issues": [],
+      "ratios": [],
+      "rootFont": "32px",
+      "taskIds": []
+    },
+    {
+      "phase": "after",
+      "label": "LOADING",
+      "width": 1440,
+      "scale": 100,
+      "issues": [],
+      "ratios": [],
+      "rootFont": "16px",
+      "taskIds": []
+    },
+    {
+      "phase": "after",
+      "label": "LOADING",
+      "width": 1440,
+      "scale": 200,
+      "issues": [],
+      "ratios": [],
+      "rootFont": "32px",
+      "taskIds": []
+    },
+    {
+      "phase": "after",
+      "label": "READ_ERROR",
+      "width": 360,
+      "scale": 100,
+      "issues": [],
+      "ratios": [],
+      "rootFont": "16px",
+      "taskIds": []
+    },
+    {
+      "phase": "after",
+      "label": "READ_ERROR",
+      "width": 360,
+      "scale": 200,
+      "issues": [],
+      "ratios": [],
+      "rootFont": "32px",
+      "taskIds": []
+    },
+    {
+      "phase": "after",
+      "label": "READ_ERROR",
+      "width": 390,
+      "scale": 100,
+      "issues": [],
+      "ratios": [],
+      "rootFont": "16px",
+      "taskIds": []
+    },
+    {
+      "phase": "after",
+      "label": "READ_ERROR",
+      "width": 390,
+      "scale": 200,
+      "issues": [],
+      "ratios": [],
+      "rootFont": "32px",
+      "taskIds": []
+    },
+    {
+      "phase": "after",
+      "label": "READ_ERROR",
+      "width": 430,
+      "scale": 100,
+      "issues": [],
+      "ratios": [],
+      "rootFont": "16px",
+      "taskIds": []
+    },
+    {
+      "phase": "after",
+      "label": "READ_ERROR",
+      "width": 430,
+      "scale": 200,
+      "issues": [],
+      "ratios": [],
+      "rootFont": "32px",
+      "taskIds": []
+    },
+    {
+      "phase": "after",
+      "label": "READ_ERROR",
+      "width": 768,
+      "scale": 100,
+      "issues": [],
+      "ratios": [],
+      "rootFont": "16px",
+      "taskIds": []
+    },
+    {
+      "phase": "after",
+      "label": "READ_ERROR",
+      "width": 768,
+      "scale": 200,
+      "issues": [],
+      "ratios": [],
+      "rootFont": "32px",
+      "taskIds": []
+    },
+    {
+      "phase": "after",
+      "label": "READ_ERROR",
+      "width": 1280,
+      "scale": 100,
+      "issues": [],
+      "ratios": [],
+      "rootFont": "16px",
+      "taskIds": []
+    },
+    {
+      "phase": "after",
+      "label": "READ_ERROR",
+      "width": 1280,
+      "scale": 200,
+      "issues": [],
+      "ratios": [],
+      "rootFont": "32px",
+      "taskIds": []
+    },
+    {
+      "phase": "after",
+      "label": "READ_ERROR",
+      "width": 1440,
+      "scale": 100,
+      "issues": [],
+      "ratios": [],
+      "rootFont": "16px",
+      "taskIds": []
+    },
+    {
+      "phase": "after",
+      "label": "READ_ERROR",
+      "width": 1440,
+      "scale": 200,
+      "issues": [],
+      "ratios": [],
+      "rootFont": "32px",
+      "taskIds": []
+    },
+    {
+      "phase": "after",
+      "label": "CACHED",
+      "width": 360,
+      "scale": 100,
+      "issues": [],
+      "ratios": [
+        {
+          "selector": ".tsui-task-copy>span",
+          "ratio": 5.397277696219176
+        },
+        {
+          "selector": ".tsui-task-copy>span",
+          "ratio": 5.397277696219176
+        },
+        {
+          "selector": ".tsui-task-context",
+          "ratio": 4.988338821763132
+        },
+        {
+          "selector": ".tsui-task-context",
+          "ratio": 4.988338821763132
+        },
+        {
+          "selector": ".tsui-mobile-switch button",
+          "ratio": 4.7997551647128045
+        },
+        {
+          "selector": ".tsui-mobile-switch button",
+          "ratio": 5.397277696219176
+        }
+      ],
+      "rootFont": "16px",
+      "taskIds": [
+        "A-action-1",
+        "A-action-2"
+      ]
+    },
+    {
+      "phase": "after",
+      "label": "CACHED",
+      "width": 360,
+      "scale": 200,
+      "issues": [],
+      "ratios": [
+        {
+          "selector": ".tsui-task-copy>span",
+          "ratio": 5.397277696219176
+        },
+        {
+          "selector": ".tsui-task-copy>span",
+          "ratio": 5.397277696219176
+        },
+        {
+          "selector": ".tsui-task-context",
+          "ratio": 4.988338821763132
+        },
+        {
+          "selector": ".tsui-task-context",
+          "ratio": 4.988338821763132
+        },
+        {
+          "selector": ".tsui-mobile-switch button",
+          "ratio": 4.7997551647128045
+        },
+        {
+          "selector": ".tsui-mobile-switch button",
+          "ratio": 5.397277696219176
+        }
+      ],
+      "rootFont": "32px",
+      "taskIds": [
+        "A-action-1",
+        "A-action-2"
+      ]
+    },
+    {
+      "phase": "after",
+      "label": "CACHED",
+      "width": 390,
+      "scale": 100,
+      "issues": [],
+      "ratios": [
+        {
+          "selector": ".tsui-task-copy>span",
+          "ratio": 5.397277696219176
+        },
+        {
+          "selector": ".tsui-task-copy>span",
+          "ratio": 5.397277696219176
+        },
+        {
+          "selector": ".tsui-task-context",
+          "ratio": 4.988338821763132
+        },
+        {
+          "selector": ".tsui-task-context",
+          "ratio": 4.988338821763132
+        },
+        {
+          "selector": ".tsui-mobile-switch button",
+          "ratio": 4.7997551647128045
+        },
+        {
+          "selector": ".tsui-mobile-switch button",
+          "ratio": 5.397277696219176
+        }
+      ],
+      "rootFont": "16px",
+      "taskIds": [
+        "A-action-1",
+        "A-action-2"
+      ]
+    },
+    {
+      "phase": "after",
+      "label": "CACHED",
+      "width": 390,
+      "scale": 200,
+      "issues": [],
+      "ratios": [
+        {
+          "selector": ".tsui-task-copy>span",
+          "ratio": 5.397277696219176
+        },
+        {
+          "selector": ".tsui-task-copy>span",
+          "ratio": 5.397277696219176
+        },
+        {
+          "selector": ".tsui-task-context",
+          "ratio": 4.988338821763132
+        },
+        {
+          "selector": ".tsui-task-context",
+          "ratio": 4.988338821763132
+        },
+        {
+          "selector": ".tsui-mobile-switch button",
+          "ratio": 4.7997551647128045
+        },
+        {
+          "selector": ".tsui-mobile-switch button",
+          "ratio": 5.397277696219176
+        }
+      ],
+      "rootFont": "32px",
+      "taskIds": [
+        "A-action-1",
+        "A-action-2"
+      ]
+    },
+    {
+      "phase": "after",
+      "label": "CACHED",
+      "width": 430,
+      "scale": 100,
+      "issues": [],
+      "ratios": [
+        {
+          "selector": ".tsui-task-copy>span",
+          "ratio": 5.397277696219176
+        },
+        {
+          "selector": ".tsui-task-copy>span",
+          "ratio": 5.397277696219176
+        },
+        {
+          "selector": ".tsui-task-context",
+          "ratio": 4.988338821763132
+        },
+        {
+          "selector": ".tsui-task-context",
+          "ratio": 4.988338821763132
+        },
+        {
+          "selector": ".tsui-mobile-switch button",
+          "ratio": 4.7997551647128045
+        },
+        {
+          "selector": ".tsui-mobile-switch button",
+          "ratio": 5.397277696219176
+        }
+      ],
+      "rootFont": "16px",
+      "taskIds": [
+        "A-action-1",
+        "A-action-2"
+      ]
+    },
+    {
+      "phase": "after",
+      "label": "CACHED",
+      "width": 430,
+      "scale": 200,
+      "issues": [],
+      "ratios": [
+        {
+          "selector": ".tsui-task-copy>span",
+          "ratio": 5.397277696219176
+        },
+        {
+          "selector": ".tsui-task-copy>span",
+          "ratio": 5.397277696219176
+        },
+        {
+          "selector": ".tsui-task-context",
+          "ratio": 4.988338821763132
+        },
+        {
+          "selector": ".tsui-task-context",
+          "ratio": 4.988338821763132
+        },
+        {
+          "selector": ".tsui-mobile-switch button",
+          "ratio": 4.7997551647128045
+        },
+        {
+          "selector": ".tsui-mobile-switch button",
+          "ratio": 5.397277696219176
+        }
+      ],
+      "rootFont": "32px",
+      "taskIds": [
+        "A-action-1",
+        "A-action-2"
+      ]
+    },
+    {
+      "phase": "after",
+      "label": "CACHED",
+      "width": 768,
+      "scale": 100,
+      "issues": [],
+      "ratios": [
+        {
+          "selector": ".tsui-task-copy>span",
+          "ratio": 5.397277696219176
+        },
+        {
+          "selector": ".tsui-task-copy>span",
+          "ratio": 5.397277696219176
+        },
+        {
+          "selector": ".tsui-task-context",
+          "ratio": 4.988338821763132
+        },
+        {
+          "selector": ".tsui-task-context",
+          "ratio": 4.988338821763132
+        }
+      ],
+      "rootFont": "16px",
+      "taskIds": [
+        "A-action-1",
+        "A-action-2"
+      ]
+    },
+    {
+      "phase": "after",
+      "label": "CACHED",
+      "width": 768,
+      "scale": 200,
+      "issues": [],
+      "ratios": [
+        {
+          "selector": ".tsui-task-copy>span",
+          "ratio": 5.397277696219176
+        },
+        {
+          "selector": ".tsui-task-copy>span",
+          "ratio": 5.397277696219176
+        },
+        {
+          "selector": ".tsui-task-context",
+          "ratio": 4.988338821763132
+        },
+        {
+          "selector": ".tsui-task-context",
+          "ratio": 4.988338821763132
+        }
+      ],
+      "rootFont": "32px",
+      "taskIds": [
+        "A-action-1",
+        "A-action-2"
+      ]
+    },
+    {
+      "phase": "after",
+      "label": "CACHED",
+      "width": 1280,
+      "scale": 100,
+      "issues": [],
+      "ratios": [
+        {
+          "selector": ".tsui-task-copy>span",
+          "ratio": 5.397277696219176
+        },
+        {
+          "selector": ".tsui-task-copy>span",
+          "ratio": 5.397277696219176
+        },
+        {
+          "selector": ".tsui-task-context",
+          "ratio": 4.988338821763132
+        },
+        {
+          "selector": ".tsui-task-context",
+          "ratio": 4.988338821763132
+        }
+      ],
+      "rootFont": "16px",
+      "taskIds": [
+        "A-action-1",
+        "A-action-2"
+      ]
+    },
+    {
+      "phase": "after",
+      "label": "CACHED",
+      "width": 1280,
+      "scale": 200,
+      "issues": [],
+      "ratios": [
+        {
+          "selector": ".tsui-task-copy>span",
+          "ratio": 5.397277696219176
+        },
+        {
+          "selector": ".tsui-task-copy>span",
+          "ratio": 5.397277696219176
+        },
+        {
+          "selector": ".tsui-task-context",
+          "ratio": 4.988338821763132
+        },
+        {
+          "selector": ".tsui-task-context",
+          "ratio": 4.988338821763132
+        }
+      ],
+      "rootFont": "32px",
+      "taskIds": [
+        "A-action-1",
+        "A-action-2"
+      ]
+    },
+    {
+      "phase": "after",
+      "label": "CACHED",
+      "width": 1440,
+      "scale": 100,
+      "issues": [],
+      "ratios": [
+        {
+          "selector": ".tsui-task-copy>span",
+          "ratio": 5.397277696219176
+        },
+        {
+          "selector": ".tsui-task-copy>span",
+          "ratio": 5.397277696219176
+        },
+        {
+          "selector": ".tsui-task-context",
+          "ratio": 4.988338821763132
+        },
+        {
+          "selector": ".tsui-task-context",
+          "ratio": 4.988338821763132
+        }
+      ],
+      "rootFont": "16px",
+      "taskIds": [
+        "A-action-1",
+        "A-action-2"
+      ]
+    },
+    {
+      "phase": "after",
+      "label": "CACHED",
+      "width": 1440,
+      "scale": 200,
+      "issues": [],
+      "ratios": [
+        {
+          "selector": ".tsui-task-copy>span",
+          "ratio": 5.397277696219176
+        },
+        {
+          "selector": ".tsui-task-copy>span",
+          "ratio": 5.397277696219176
+        },
+        {
+          "selector": ".tsui-task-context",
+          "ratio": 4.988338821763132
+        },
+        {
+          "selector": ".tsui-task-context",
+          "ratio": 4.988338821763132
+        }
+      ],
+      "rootFont": "32px",
+      "taskIds": [
+        "A-action-1",
+        "A-action-2"
+      ]
+    },
+    {
+      "phase": "after",
+      "label": "AUTHORIZATION",
+      "width": 360,
+      "scale": 100,
+      "issues": [],
+      "ratios": [
+        {
+          "selector": ".ta-consent p",
+          "ratio": 5.397277696219176
+        },
+        {
+          "selector": ".ta-consent p",
+          "ratio": 5.397277696219176
+        }
+      ],
+      "rootFont": "16px",
+      "taskIds": []
+    },
+    {
+      "phase": "after",
+      "label": "AUTHORIZATION",
+      "width": 360,
+      "scale": 200,
+      "issues": [],
+      "ratios": [
+        {
+          "selector": ".ta-consent p",
+          "ratio": 5.397277696219176
+        },
+        {
+          "selector": ".ta-consent p",
+          "ratio": 5.397277696219176
+        }
+      ],
+      "rootFont": "32px",
+      "taskIds": []
+    },
+    {
+      "phase": "after",
+      "label": "AUTHORIZATION",
+      "width": 390,
+      "scale": 100,
+      "issues": [],
+      "ratios": [
+        {
+          "selector": ".ta-consent p",
+          "ratio": 5.397277696219176
+        },
+        {
+          "selector": ".ta-consent p",
+          "ratio": 5.397277696219176
+        }
+      ],
+      "rootFont": "16px",
+      "taskIds": []
+    },
+    {
+      "phase": "after",
+      "label": "AUTHORIZATION",
+      "width": 390,
+      "scale": 200,
+      "issues": [],
+      "ratios": [
+        {
+          "selector": ".ta-consent p",
+          "ratio": 5.397277696219176
+        },
+        {
+          "selector": ".ta-consent p",
+          "ratio": 5.397277696219176
+        }
+      ],
+      "rootFont": "32px",
+      "taskIds": []
+    },
+    {
+      "phase": "after",
+      "label": "AUTHORIZATION",
+      "width": 430,
+      "scale": 100,
+      "issues": [],
+      "ratios": [
+        {
+          "selector": ".ta-consent p",
+          "ratio": 5.397277696219176
+        },
+        {
+          "selector": ".ta-consent p",
+          "ratio": 5.397277696219176
+        }
+      ],
+      "rootFont": "16px",
+      "taskIds": []
+    },
+    {
+      "phase": "after",
+      "label": "AUTHORIZATION",
+      "width": 430,
+      "scale": 200,
+      "issues": [],
+      "ratios": [
+        {
+          "selector": ".ta-consent p",
+          "ratio": 5.397277696219176
+        },
+        {
+          "selector": ".ta-consent p",
+          "ratio": 5.397277696219176
+        }
+      ],
+      "rootFont": "32px",
+      "taskIds": []
+    },
+    {
+      "phase": "after",
+      "label": "AUTHORIZATION",
+      "width": 768,
+      "scale": 100,
+      "issues": [],
+      "ratios": [
+        {
+          "selector": ".ta-consent p",
+          "ratio": 5.397277696219176
+        },
+        {
+          "selector": ".ta-consent p",
+          "ratio": 5.397277696219176
+        }
+      ],
+      "rootFont": "16px",
+      "taskIds": []
+    },
+    {
+      "phase": "after",
+      "label": "AUTHORIZATION",
+      "width": 768,
+      "scale": 200,
+      "issues": [],
+      "ratios": [
+        {
+          "selector": ".ta-consent p",
+          "ratio": 5.397277696219176
+        },
+        {
+          "selector": ".ta-consent p",
+          "ratio": 5.397277696219176
+        }
+      ],
+      "rootFont": "32px",
+      "taskIds": []
+    },
+    {
+      "phase": "after",
+      "label": "AUTHORIZATION",
+      "width": 1280,
+      "scale": 100,
+      "issues": [],
+      "ratios": [
+        {
+          "selector": ".ta-consent p",
+          "ratio": 5.397277696219176
+        },
+        {
+          "selector": ".ta-consent p",
+          "ratio": 5.397277696219176
+        }
+      ],
+      "rootFont": "16px",
+      "taskIds": []
+    },
+    {
+      "phase": "after",
+      "label": "AUTHORIZATION",
+      "width": 1280,
+      "scale": 200,
+      "issues": [],
+      "ratios": [
+        {
+          "selector": ".ta-consent p",
+          "ratio": 5.397277696219176
+        },
+        {
+          "selector": ".ta-consent p",
+          "ratio": 5.397277696219176
+        }
+      ],
+      "rootFont": "32px",
+      "taskIds": []
+    },
+    {
+      "phase": "after",
+      "label": "AUTHORIZATION",
+      "width": 1440,
+      "scale": 100,
+      "issues": [],
+      "ratios": [
+        {
+          "selector": ".ta-consent p",
+          "ratio": 5.397277696219176
+        },
+        {
+          "selector": ".ta-consent p",
+          "ratio": 5.397277696219176
+        }
+      ],
+      "rootFont": "16px",
+      "taskIds": []
+    },
+    {
+      "phase": "after",
+      "label": "AUTHORIZATION",
+      "width": 1440,
+      "scale": 200,
+      "issues": [],
+      "ratios": [
+        {
+          "selector": ".ta-consent p",
+          "ratio": 5.397277696219176
+        },
+        {
+          "selector": ".ta-consent p",
+          "ratio": 5.397277696219176
+        }
+      ],
+      "rootFont": "32px",
+      "taskIds": []
+    }
+  ],
+  "sticky": [
+    {
+      "phase": "before",
+      "width": 768,
+      "headerBottom": 124,
+      "panelTop": 90,
+      "scrollY": 350
+    },
+    {
+      "phase": "before",
+      "width": 1280,
+      "headerBottom": 70,
+      "panelTop": 90,
+      "scrollY": 350
+    },
+    {
+      "phase": "before",
+      "width": 1440,
+      "headerBottom": 70,
+      "panelTop": 90,
+      "scrollY": 350
+    },
+    {
+      "phase": "after",
+      "width": 768,
+      "headerBottom": 121,
+      "panelTop": 141,
+      "scrollY": 350
+    },
+    {
+      "phase": "after",
+      "width": 1280,
+      "headerBottom": 70,
+      "panelTop": 90,
+      "scrollY": 350
+    },
+    {
+      "phase": "after",
+      "width": 1440,
+      "headerBottom": 70,
+      "panelTop": 90,
+      "scrollY": 350
+    }
+  ]
+}

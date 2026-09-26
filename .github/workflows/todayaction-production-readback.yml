@@ -33,6 +33,18 @@ jobs:
         env:
           TA_EXPECTED_COMMIT: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.workflow_run.head_sha }}
         run: npx playwright test --config=playwright.todayaction-live.config.mts
+      - name: Summarize the exact public evidence and deferred owner gates
+        env:
+          TA_READBACK_KIND: ${{ github.event_name == 'pull_request' && 'deployed base main' || 'exact post-Pages main' }}
+        run: |
+          node --input-type=module <<'NODE'
+          import {readFileSync,appendFileSync} from 'node:fs'
+          const reports=JSON.parse(readFileSync('test-results/todayaction-production/readback.json','utf8'))
+          const lines=['# TodayAction public brand readback','', 'Evidence: '+process.env.TA_READBACK_KIND,'']
+          for(const item of reports) lines.push('- '+item.target+': '+item.expected+'; frontend/backend match; '+item.assets.length+' verified assets; '+item.routes.length+' routes including root and reload.')
+          lines.push('', 'Native tab selection, real device/installed icon refresh, private workspace/Gmail, third-party branding and legal clearance: DEFERRED.', '', 'Canonical receipts: docs/todayaction-brand-v1/STATUS.yaml and TA-03-RECEIPT.md. No private canary or publication claim.')
+          appendFileSync(process.env.GITHUB_STEP_SUMMARY,lines.join('\n')+'\n')
+          NODE
       - name: Retain public release and asset evidence
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@v5

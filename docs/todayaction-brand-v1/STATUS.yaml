@@ -2,89 +2,104 @@ package: TODAYACTION-BRAND-UI-v1
 registered_on: '2026-09-26'
 brand_name: TodayAction
 selected_direction: A_three_part_abstract_mark
-status: TA_03_DEPLOYED_BASE_READBACK_PASS_STABLE_GATES_PENDING
-runtime_implementation: TA_01_TA_02_MERGED_EXACT_MAIN
-production_rebrand: TA_02_DEPLOYED_CORE_ROUTES_VERIFIED_BRAND_HTTP_PENDING
-implementation_writer:
-  pr: 171
-  branch: brand/ta03-production-closure
-  phase: TA-03
-  authorization: OWNER_EXPLICIT_SERIAL_HANDOFF_2026_09_26
-baseline:
+status: ENGINEERING_COMPLETE_EXTERNAL_DEFERRED
+package_execution: STOP
+implementation_writer: null
+final_documentation_closure:
+  pr: 172
+  runtime_changes: false
+  exact_final_identity: Resolve PR 172 merged_commit_sha and its exact-main readback receipt
+  publication: DISARMED
+registration_baseline:
   main: 153d8ccb6201e33cd1c9a09a0d7bf84a7cf0f079
-  tree: 8a1d0806c47c8fe13495c463c6358d269785e0dc
-  ci_run: 36159566822
-  ci_result: success
-  browser_run: 36159566451
-  browser_result: success
-existing_writer:
+  note: Historical registration snapshot; current evidence follows below
+rounds:
+  TA-00: HANDOFF_HASH_VERIFIED
+  TA-01:
+    status: ENGINEERING_COMPLETE_EXACT_MAIN
+    pr: 169
+    candidate: 8e60faa17dc5422dc09d6f56a75f68e22f54d83f
+    main: 6f4fe9a6528adf40c506cea84695b44b679aa24e
+    tree: 287979780ec3c67c9b0b85bfd212df9dc9678f62
+    receipt: TA-01-RECEIPT.md
+  TA-02:
+    status: ENGINEERING_COMPLETE_EXACT_MAIN
+    pr: 170
+    candidate: 101838c400833ad0dee38710eb6c6ac589207498
+    main: 4b9ca7dd3fa973ee92b0781f62bc5ac8f666f68d
+    tree: 79a466bca107d2ded67ba10070f89bcaa6121721
+    receipt: TA-02-RECEIPT.md
+    review: TA-02-REVIEW.md
+    corrected_matrix_cells_per_phase: 156
+    dense_scroll_measurements_per_phase: 3
+    full_browser_first_pass: 80
+    unit_tests: 872
+    cloud_voiceover: PASS
+  TA-03:
+    status: ENGINEERING_COMPLETE_EXACT_MAIN_EXTERNAL_DEFERRED
+    pr: 171
+    candidate: 8f200a54f73de4c3372a32b8691f587ecb326f7a
+    main: ae5ecfc78b101e581547f1553880d2dbadc1457d
+    tree: 0d7e802230cf75fdef7c4bf0bed82d9c53ba9987
+    receipt: TA-03-RECEIPT.md
+    main_ci: 36226084489
+    main_browser: 36226084444
+    main_browser_result: PASS_80_FIRST_ATTEMPT
+    main_matrix: 36226084480
+    pages: 36226084474
+    production_readonly: 36226173012
+    exact_live_visual: 36226173022
+    anonymous_exact_brand_readback: 36226173027
+certified_production_before_documentation_closure:
+  commit: ae5ecfc78b101e581547f1553880d2dbadc1457d
+  frontend_backend_identity: EXACT_MATCH
+  canonical: https://todayaction.com/
+  historical: https://haohongfei2001-png.github.io/pjsdas/
+  actual_asset_sha_bytes_mime_and_decode: PASS_17_PER_ORIGIN
+  initial_html_metadata_and_routes_reload: PASS_10_ROUTES_PER_ORIGIN
+  manifest_identity: STABLE_ID_SLASH_PER_ORIGIN
+  csp_header: NONE_OBSERVED_ON_TESTED_HTML
+  local_image_load_and_csp_errors: ZERO
+  native_browser_tab_icon_selection: DEFERRED
+  non_read_browser_requests: ZERO
+  private_workspace_or_gmail_actions: NONE
+assets:
+  approved_source_reference: assets/approved-A-reference.webp
+  provenance: assets/SOURCE.json
+  original_png_sha256: 33c6f1e93bcb6958d2bb0324675f7eaad92f3d152205559436eb54cf5cd9f417
+  reference_sha256: 3916158ffd7f8a21d52715024afb2ff8b95b4d1e78cfd0a58def6bb4a0ea8114
+  vector_status: ENGINEERING_TRACE_CLOUD_EXPORT_BYTE_VERIFIED
+  production_manifest: ../../public/brand/ASSET_MANIFEST.json
+  immutable_reference_files: UNCHANGED
+  final_evidence: evidence/PROVENANCE.json
+  production_readback: evidence/production-readback.json
+parked_hotfix:
   pr: 164
   branch: reliability/161-gmail-worker-recovery
   head: b67785ebb55b81a5c28e72eff303785a2b41249f
-  state_at_registration: OPEN_WITH_PRODUCTION_GATES
-  current_state: BLOCKED_PARKED_WRITER_RELEASED
-  recovery_gate: SAFE_EXACT_CANDIDATE_PRODUCTION_EQUIVALENT_RUNNER_REQUIRED
-  instructions_from_owner: Keep open; do not retrigger or merge. Resume independently when its gate is available.
-  instructions: Do not alter this branch or approve its private production actions for a rebrand.
-rounds:
-  TA-00: HANDOFF_HASH_VERIFIED
-  TA-01: ENGINEERING_COMPLETE_EXACT_MAIN
-  TA-02: ENGINEERING_COMPLETE_EXACT_MAIN
-  TA-03: DEPLOYED_BASE_READBACK_PASS_STABLE_GATES_PENDING
-assets:
-  reference: assets/approved-A-reference.webp
-  provenance: assets/SOURCE.json
-  vector_status: CLOUD_EXPORT_BYTE_VERIFIED
-  small_size_status: CLOUD_BROWSER_ORIGINAL_SIZE_VISUALLY_REVIEWED_DEVICE_DEFERRED
-checks:
-  repository_runtime_build: ROOT_AND_LEGACY_BUILDS_PASS
-  live_title_and_favicon: ANONYMOUS_HTTP_BYTES_DOM_DECODE_PASS_NATIVE_TAB_DEFERRED
-  targeted_candidate: 50708bc31d904ea560903aa0dcfac3e0dc51e460
-  brand_gate_run: 36222179123
-  root_and_legacy_browser_tests: 6_PASS
-  unit_and_type_run: 36222179131
-  unit_and_type_result: PASS
-  voiceover_run: 36222179156
-  voiceover_result: PASS
-  readonly_rollback_run: 36222179086
-  readonly_rollback_result: PASS
-  stable_head_ci_browser: PASS_WITH_ONE_CONFIGURED_RETRY_FLAKE
-  ta01_candidate: 8e60faa17dc5422dc09d6f56a75f68e22f54d83f
-  ta01_candidate_ci: 36222858233
-  ta01_candidate_browser: 36222858252
-  ta01_exact_main: 6f4fe9a6528adf40c506cea84695b44b679aa24e
-  ta01_exact_tree: 287979780ec3c67c9b0b85bfd212df9dc9678f62
-  ta01_main_ci: 36223127953
-  ta01_main_browser: 36223127971
-  ta01_pages: 36223127933
-  ta01_production_readonly: 36223228786
-  ta01_live_visual: 36223228840
-  ta01_live_visual_result: PASS_NON_PRIVATE_SYNTHETIC_FIXTURES
-  ta02_widths: [360, 390, 430, 768, 1280, 1440]
-  ta02_text_scale: [100, 200]
-  ta02_before_after_matrix: CORRECTED_RENDER_PASS
-  ta02_corrected_candidate: 57d6a45d66ea7c388ca7ead3ea807edcc105f597
-  ta02_ui_run: 36224876053
-  ta02_cells_per_phase: 156
-  ta02_dense_scroll_checks_per_phase: 3
-  ta02_actual_production: EXACT_MAIN_READONLY_AND_LIVE_VISUAL_PASS
-  ta02_stable_candidate: 101838c400833ad0dee38710eb6c6ac589207498
-  ta02_exact_main: 4b9ca7dd3fa973ee92b0781f62bc5ac8f666f68d
-  ta02_exact_tree: 79a466bca107d2ded67ba10070f89bcaa6121721
-  ta02_main_pages: 36225324775
-  ta02_main_readonly: 36225455392
-  ta02_main_live_visual: 36225455535
-  ta03_anonymous_canonical_and_historical: DEPLOYED_TA02_BASE_PASS
-  ta03_base_readback_run: 36225692136
-  ta03_exact_merged_main_readback: PENDING
-  real_iphone_installation: DEFERRED
-  external_oauth_branding: DEFERRED
-  trademark_clearance: NOT_PERFORMED
+  state: OPEN_BLOCKED_PARKED
+  implementation_writer: RELEASED_BY_OWNER
+  safe_exact_candidate_production_equivalent_runner: REQUIRED
+  recovery_invocation_in_brand_package: NONE
+  merge_in_brand_package: NONE
+  changed_hotfix_files_in_brand_package: NONE
+  resume: Separately after its own owner/recovery/deployment gates; not automatically
+deferred:
+  external_gates: EXTERNAL_GATES.md
+  private_workspace_and_true_owner_account: DEFERRED
+  real_gmail_recovery: PARKED_OUTSIDE_BRAND_SCOPE
+  real_iphone_and_existing_install_refresh: DEFERRED
+  physical_human_accessibility: DEFERRED
+  third_party_oauth_connector_and_repository_about: DEFERRED
+  native_ios_or_offline_capability: NOT_IMPLEMENTED
+  legal_trademark_copyright: DEFERRED_NOT_PERFORMED
 scope:
   repository_slug_change: false
   domain_change: false
   durable_identity_change: false
   permission_expansion: false
+  schema_or_data_migration: false
   private_gmail_execution: false
   native_ios_implementation: false
   general_purpose_domain_rewrite: false
+  further_product_line: STOP
