@@ -16,6 +16,49 @@ export function resolveSourceTemporal(text: string, options: {
     parts = Object.fromEntries(new Intl.DateTimeFormat('en-CA', { timeZone: options.timezone,
       year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(received).map((part) => [part.type, part.value]))
   } catch { return undefined }
+  const explicitRange = /(20\d{2})[年\/-](\d{1,2})[月\/-](\d{1,2})日?[^\d]{0,12}(\d{1,2})[:：](\d{2})\s*(?:-|—|–|~|～|至|到)\s*(\d{1,2})[:：](\d{2})/.exec(text)
+  if (explicitRange) {
+    const day = `${explicitRange[1]}-${explicitRange[2]!.padStart(2, '0')}-${explicitRange[3]!.padStart(2, '0')}`
+    const checked = new Date(`${day}T00:00:00Z`)
+    const startHour = Number(explicitRange[4]); const startMinute = Number(explicitRange[5])
+    const endHour = Number(explicitRange[6]); const endMinute = Number(explicitRange[7])
+    if (Number.isNaN(checked.getTime()) || checked.toISOString().slice(0, 10) !== day
+      || startHour > 23 || endHour > 23 || startMinute > 59 || endMinute > 59) return undefined
+    const startAt = uniqueInstantForLocal(
+      `${day}T${String(startHour).padStart(2, '0')}:${String(startMinute).padStart(2, '0')}:00`,
+      options.timezone,
+    )
+    const endAt = uniqueInstantForLocal(
+      `${day}T${String(endHour).padStart(2, '0')}:${String(endMinute).padStart(2, '0')}:00`,
+      options.timezone,
+    )
+    if (!startAt || !endAt || Date.parse(endAt) <= Date.parse(startAt)) return undefined
+    const latestMatch = /(?:最晚|最迟)\s*(?:开始|开考|入场|进入|启动)?\s*[:：]?\s*(\d{1,2})[:：](\d{2})|latest\s+start(?:\s+time)?\s*[:：]?\s*(\d{1,2})[:：](\d{2})/i.exec(text)
+    let latestStartAt: string | undefined
+    if (latestMatch) {
+      const hour = Number(latestMatch[1] ?? latestMatch[3])
+      const minute = Number(latestMatch[2] ?? latestMatch[4])
+      if (hour > 23 || minute > 59) return undefined
+      latestStartAt = uniqueInstantForLocal(
+        `${day}T${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}:00`,
+        options.timezone,
+      )
+      if (!latestStartAt || Date.parse(latestStartAt) < Date.parse(startAt) || Date.parse(latestStartAt) > Date.parse(endAt)) {
+        return undefined
+      }
+    }
+    return {
+      shape: 'availability_window',
+      precision: 'datetime',
+      timezone: options.timezone,
+      startAt,
+      endAt,
+      ...(latestStartAt ? { latestStartAt } : {}),
+      resolutionBasis: 'source_explicit',
+      rawExpression: explicitRange[0].slice(0, 180),
+    }
+  }
+
   if (/(?:开放|可参加|可完成|有效时间|时间窗|availability|available|window)/i.test(text)) {
     const bounds = text.split(/至|到|[~～]|\s+to\s+/i)
     if (bounds.length === 2) {
