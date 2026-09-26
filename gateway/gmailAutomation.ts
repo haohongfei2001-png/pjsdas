@@ -606,6 +606,25 @@ function reconciliationSummary(
   }
 }
 
+function reconciliationRecordVersion(record: GmailSemanticRecord): GmailSemanticRecord {
+  const sourceRecordId = record.observation.source.sourceRecordId
+  return {
+    ...record,
+    observation: {
+      ...record.observation,
+      inputId: `gmail:${sourceRecordId}:reconciliation-v1`,
+      source: {
+        ...record.observation.source,
+        sourceVersion: 'reconciliation-v1',
+      },
+      candidates: record.observation.candidates.map((candidate) => ({
+        ...candidate,
+        sourceVersionRefs: [`${sourceRecordId}:reconciliation-v1`],
+      })),
+    },
+  }
+}
+
 export async function runGmailReconciliationForBinding(options: {
   binding: GmailAutomationBinding
   tokenEncryptionKey: string
@@ -647,6 +666,7 @@ export async function runGmailReconciliationForBinding(options: {
   const records = batch.messages
     .map((message) => gmailSemanticRecordFromMessage(message, workspace.snapshot.data.opportunities, now))
     .filter((record): record is GmailSemanticRecord => Boolean(record))
+    .map(reconciliationRecordVersion)
   for (const sourceRecordId of batch.unavailableMessageIds) {
     records.push({
       receivedAt: checkedAt,
