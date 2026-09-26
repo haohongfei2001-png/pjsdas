@@ -207,6 +207,28 @@ describe('UU-01 ScheduleNode contract', () => {
     expect(validateScheduleNode(ambiguous)).toContain('Fixed ScheduleNode requires an offset-aware startAt.')
   })
 
+  it('accepts an explicit latest-start inside an availability window and rejects it outside the window', () => {
+    const node: ScheduleNode = {
+      ...replacement('written:window', '2026-09-23T18:00:00+08:00', '2026-09-21T12:28:00.000Z'),
+      id: 'schedule:written:window:v1',
+      version: 1,
+      kind: 'written_test',
+      temporal: {
+        shape: 'availability_window',
+        precision: 'datetime',
+        timezone: 'Asia/Shanghai',
+        startAt: '2026-09-23T18:00:00+08:00',
+        endAt: '2026-09-23T20:00:00+08:00',
+        latestStartAt: '2026-09-23T18:20:00+08:00',
+        resolutionBasis: 'source_explicit',
+      },
+    }
+    expect(validateScheduleNode(node)).toEqual([])
+    const invalid = structuredClone(node)
+    invalid.temporal.latestStartAt = '2026-09-23T20:30:00+08:00'
+    expect(validateScheduleNode(invalid)).toContain('ScheduleNode latestStartAt exceeds endAt.')
+  })
+
   it('keeps multiple rounds for the same opportunity as separate occurrences', () => {
     const first = event('round-1', '2026-09-12T02:00:00.000Z', { type: 'interview_invite' })
     const second = event('round-2', '2026-09-18T02:00:00.000Z', {
