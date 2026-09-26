@@ -16,6 +16,7 @@ import { refreshGoogleAccessToken } from './googleOAuthTokens.js'
 import { decryptSecret } from './tokenCrypto.js'
 import { GMAIL_READONLY_SCOPE, type GmailAutomationBinding } from './automationConnectionStore.js'
 import { requireWritableWorkspaceSource, WorkspaceSourceError } from './workspaceSource.js'
+import { gmailProviderRequestError, type GmailProviderOperation } from './gmailProviderFailure.js'
 import { PJSDAS_SUPABASE_URL } from './supabaseProject.js'
 
 const GMAIL_API = 'https://gmail.googleapis.com/gmail/v1/users/me'
@@ -60,6 +61,7 @@ export interface GmailAutomationContinuation {
 
 export interface GmailAutomationFetchResult {
   messages: GmailMessage[]
+  unavailableMessageIds: string[]
   nextHistoryId?: string
   continuation?: GmailAutomationContinuation
   coverageComplete: boolean
@@ -171,8 +173,17 @@ async function gmailForbiddenError(response: Response) {
   return new WorkspaceSourceError('GOOGLE_GMAIL_FORBIDDEN', 'Google denied Gmail read access for PJSDAS.', false)
 }
 
+function gmailOperation(path: string): GmailProviderOperation {
+  if (path === '/profile') return 'profile'
+  if (path.startsWith('/history?')) return 'history'
+  if (path.startsWith('/messages?')) return 'list'
+  if (path.startsWith('/messages/')) return 'message_fetch'
+  return 'unknown'
+}
+
 async function gmailFetch(fetchImpl: typeof fetch, accessToken: string, path: string) {
   let response: Response
+  const operation = gmailOperation(path)
   try {
     response = await fetchImpl(`${GMAIL_API}${path}`, {
       headers: { Authorization: `Bearer ${accessToken}`, accept: 'application/json' },
@@ -180,15 +191,35 @@ async function gmailFetch(fetchImpl: typeof fetch, accessToken: string, path: st
   } catch {
     throw new WorkspaceSourceError('GMAIL_UNAVAILABLE', 'Gmail is temporarily unavailable.', true)
   }
-  if (response.status === 401) throw new WorkspaceSourceError('GOOGLE_AUTH_EXPIRED', 'Google authorization is no longer valid. Reconnect Google to PJSDAS.', false)
-  if (response.status === 403) throw await gmailForbiddenError(response)
-  if (response.status === 429 || response.status >= 500) throw new WorkspaceSourceError('GMAIL_UNAVAILABLE', `Gmail is temporarily unavailable (HTTP ${response.status}).`, true)
+  if (response.status === 401) {
+    throw await gmailProviderRequestError(
+      response, operation, 'GOOGLE_AUTH_EXPIRED',
+      'Google authorization is no longer valid. Reconnect Google to PJSDAS.', false,
+    )
+  }
+  if (response.status === 403) {
+    const forbidden = await gmailForbiddenError(response)
+    throw await gmailProviderRequestError(
+      response, operation, forbidden.code, forbidden.message, forbidden.retryable,
+    )
+  }
+  if (response.status === 429 || response.status >= 500) {
+    throw await gmailProviderRequestError(
+      response, operation, 'GMAIL_UNAVAILABLE',
+      `Gmail is temporarily unavailable (HTTP ${response.status}).`, true,
+    )
+  }
   return response
 }
 
 async function gmailJson<T>(fetchImpl: typeof fetch, accessToken: string, path: string): Promise<T> {
   const response = await gmailFetch(fetchImpl, accessToken, path)
-  if (!response.ok) throw new WorkspaceSourceError('GMAIL_REQUEST_FAILED', `Gmail request failed (HTTP ${response.status}).`, false)
+  if (!response.ok) {
+    throw await gmailProviderRequestError(
+      response, gmailOperation(path), 'GMAIL_REQUEST_FAILED',
+      `Gmail request failed (HTTP ${response.status}).`, false,
+    )
+  }
   try {
     return await response.json() as T
   } catch {
@@ -248,7 +279,12 @@ async function historyMessagePage(
   if (response.status === 404) {
     return { expired: true as const, ids: [], historyId: undefined, nextPageToken: undefined }
   }
-  if (!response.ok) throw new WorkspaceSourceError('GMAIL_REQUEST_FAILED', `Gmail history request failed (HTTP ${response.status}).`, false)
+  if (!response.ok) {
+    throw await gmailProviderRequestError(
+      response, 'history', 'GMAIL_REQUEST_FAILED',
+      `Gmail history request failed (HTTP ${response.status}).`, false,
+    )
+  }
   const payload = await response.json().catch(() => undefined) as GmailHistoryList | undefined
   if (!payload) throw new WorkspaceSourceError('GMAIL_RESPONSE_INVALID', 'Gmail history response was invalid.', true)
   const ids: string[] = []
@@ -290,16 +326,30 @@ function boundedPage(
 
 async function fetchMessages(fetchImpl: typeof fetch, accessToken: string, ids: string[]) {
   const messages: GmailMessage[] = []
+  const unavailableMessageIds: string[] = []
   for (let index = 0; index < ids.length; index += 5) {
     const batch = ids.slice(index, index + 5)
-    const settled = await Promise.all(batch.map((id) => gmailJson<GmailMessage>(
-      fetchImpl,
-      accessToken,
-      `/messages/${encodeURIComponent(id)}?format=full`,
-    )))
-    messages.push(...settled)
+    const settled = await Promise.all(batch.map(async (id) => {
+      const response = await gmailFetch(fetchImpl, accessToken, `/messages/${encodeURIComponent(id)}?format=full`)
+      if (response.status === 404 || response.status === 410) {
+        return { kind: 'unavailable' as const, id }
+      }
+      if (!response.ok) {
+        throw await gmailProviderRequestError(
+          response, 'message_fetch', 'GMAIL_REQUEST_FAILED',
+          `Gmail message fetch failed (HTTP ${response.status}).`, false,
+        )
+      }
+      const message = await response.json().catch(() => undefined) as GmailMessage | undefined
+      if (!message) throw new WorkspaceSourceError('GMAIL_RESPONSE_INVALID', 'Gmail returned malformed message JSON.', true)
+      return { kind: 'message' as const, message }
+    }))
+    for (const item of settled) {
+      if (item.kind === 'unavailable') unavailableMessageIds.push(item.id)
+      else messages.push(item.message)
+    }
   }
-  return messages
+  return { messages, unavailableMessageIds }
 }
 
 export async function fetchGmailAutomationBatch(options: {
@@ -320,8 +370,10 @@ export async function fetchGmailAutomationBatch(options: {
       pageToken: previous.pageToken,
       pendingHistoryId: previous.pendingHistoryId,
     }, options.coverage === 'uu06' ? UU06_MAX_MESSAGES_PER_RUN : LEGACY_MAX_MESSAGES_PER_RUN)
+    const fetched = await fetchMessages(fetchImpl, options.accessToken, bounded.selected)
     return {
-      messages: await fetchMessages(fetchImpl, options.accessToken, bounded.selected),
+      messages: fetched.messages,
+      unavailableMessageIds: fetched.unavailableMessageIds,
       nextHistoryId: bounded.nextHistoryId,
       continuation: bounded.continuation,
       coverageComplete: bounded.coverageComplete,
@@ -378,8 +430,10 @@ export async function fetchGmailAutomationBatch(options: {
     pageToken: nextPageToken,
     pendingHistoryId: pendingHistoryId!,
   }, options.coverage === 'uu06' ? UU06_MAX_MESSAGES_PER_RUN : LEGACY_MAX_MESSAGES_PER_RUN)
+  const fetched = await fetchMessages(fetchImpl, options.accessToken, bounded.selected)
   return {
-    messages: await fetchMessages(fetchImpl, options.accessToken, bounded.selected),
+    messages: fetched.messages,
+    unavailableMessageIds: fetched.unavailableMessageIds,
     nextHistoryId: bounded.nextHistoryId,
     continuation: bounded.continuation,
     coverageComplete: bounded.coverageComplete,
@@ -706,6 +760,27 @@ export async function runGmailAutomationForBinding(options: {
   const records = batch.messages
     .map((message) => gmailSemanticRecordFromMessage(message, workspace.snapshot.data.opportunities, now))
     .filter((record): record is GmailSemanticRecord => Boolean(record))
+  for (const sourceRecordId of batch.unavailableMessageIds) {
+    records.push({
+      receivedAt: checkedAt,
+      gaps: ['Gmail reported this source record, but its message payload was no longer retrievable when PJSDAS fetched it; no recruiting facts were inferred.'],
+      issueKinds: ['transport_gap'],
+      observation: {
+        contractVersion: 1,
+        inputId: `gmail:${sourceRecordId}:payload-unavailable-v1`,
+        source: {
+          kind: 'gmail',
+          sourceId: GMAIL_SOURCE_ID,
+          sourceRecordId,
+          sourceVersion: 'payload-unavailable-v1',
+          observedAt: checkedAt,
+          timezone: workspace.context.timezone ?? 'Asia/Shanghai',
+        },
+        statementMode: 'assertion',
+        candidates: [],
+      },
+    })
+  }
   if (!backfillComplete && batch.usedFallbackScan && batch.coverageComplete) {
     records.unshift({
       receivedAt: checkedAt,
@@ -823,6 +898,16 @@ async function runLegacyGmailAutomationForBinding(options: {
   const messages = batch.messages
     .map((message) => gmailObservationFromMessage(message, workspace.snapshot.data.opportunities, now))
     .filter((message): message is HardenedGmailMessageObservation => Boolean(message))
+  for (const sourceRecordId of batch.unavailableMessageIds) {
+    messages.push({
+      sourceRecordId,
+      receivedAt: checkedAt,
+      classification: 'recruiting',
+      confidence: 'low',
+      subject: 'PJSDAS Gmail source record unavailable',
+      notes: 'Gmail reported this source record, but its message payload was no longer retrievable when PJSDAS fetched it; no recruiting facts were inferred.',
+    })
+  }
   if (batch.recoveryGapReason) {
     messages.unshift({
       sourceRecordId: `coverage-gap:${stableCoverageGapId(options.binding.gmailHistoryId ?? 'initial', checkedAt)}`,
@@ -880,7 +965,9 @@ function executionMetrics(binding: GmailAutomationBinding, batch: GmailAutomatio
   const receivedTimes = mode === 'history' ? batch.messages.filter((message) => message.id
     && !alreadyIngested(timeline, { sourceKind: 'gmail', sourceId: GMAIL_SOURCE_ID, sourceRecordId: message.id }))
     .map((message) => message.internalDate ? Number(message.internalDate) : Date.parse(header(message.payload, 'date'))) : []
-  return { status: 'completed', mode, receivedCount: batch.messages.length,
-    accountedCount: Math.min(accounted, batch.messages.length), unresolvedCount: Math.min(unresolved, batch.messages.length),
+  const receivedCount = batch.messages.length + batch.unavailableMessageIds.length
+  return { status: 'completed', mode, receivedCount,
+    accountedCount: Math.min(accounted, receivedCount), unresolvedCount: Math.min(unresolved, receivedCount),
+    recordGapCount: batch.unavailableMessageIds.length,
     ...(mode === 'history' ? { historyLag: aggregateHistoryLag(receivedTimes, committedAt) } : {}) }
 }
