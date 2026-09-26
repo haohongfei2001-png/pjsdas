@@ -33,6 +33,10 @@ describe('Vercel deployment policy', () => {
         source: '/api/automation-gmail-watch',
         destination: '/api/automation-gmail?__pjsdas_gmail_route=watch',
       }),
+      expect.objectContaining({
+        source: '/api/automation-ingestion-reconciliation',
+        destination: '/api/automation-gmail?__pjsdas_gmail_route=ingestion_reconciliation',
+      }),
     ]))
   })
 
