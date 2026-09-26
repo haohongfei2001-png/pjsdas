@@ -1,0 +1,44 @@
+name: TodayAction Production Brand Readback
+
+on:
+  pull_request:
+    paths:
+      - 'e2e/todayactionProduction.live.ts'
+      - 'playwright.todayaction-live.config.mts'
+      - '.github/workflows/todayaction-production-readback.yml'
+  workflow_run:
+    workflows: ['Deploy PJSDAS to GitHub Pages']
+    types: [completed]
+
+permissions:
+  contents: read
+
+jobs:
+  anonymous:
+    if: github.event_name == 'pull_request' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.event.workflow_run.head_sha }}
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm install --no-save --package-lock=false @playwright/test@1.63.0
+      - run: npx playwright install --with-deps chromium
+      - name: Exact anonymous brand bytes and browser readback
+        env:
+          TA_EXPECTED_COMMIT: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.workflow_run.head_sha }}
+        run: npx playwright test --config=playwright.todayaction-live.config.mts
+      - name: Retain public release and asset evidence
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v5
+        with:
+          name: todayaction-anonymous-production-readback
+          path: |
+            test-results/
+            playwright-report/
+          retention-days: 14

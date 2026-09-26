@@ -1,7 +1,7 @@
 name: TodayAction UI Review
 on:
   pull_request:
-    paths: ['src/**','e2e/todayactionUI.ui.ts','e2e/fixtures/todayWorkspace.ts','playwright.todayaction-ui.config.mts','.github/workflows/todayaction-ui.yml','docs/todayaction-brand-v1/**']
+    paths: ['src/**','e2e/todayactionUI.ui.ts','e2e/fixtures/todayWorkspace.ts','playwright.todayaction-ui.config.mts','.github/workflows/todayaction-ui.yml']
   workflow_dispatch:
 permissions:
   contents: read

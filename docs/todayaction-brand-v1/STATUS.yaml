@@ -2,13 +2,13 @@ package: TODAYACTION-BRAND-UI-v1
 registered_on: '2026-09-26'
 brand_name: TodayAction
 selected_direction: A_three_part_abstract_mark
-status: TA_02_CORRECTED_RENDER_PASS_STABLE_GATES_PENDING
-runtime_implementation: TA_01_MERGED_TA_02_STABLE_GATES_PENDING
-production_rebrand: TA_01_DEPLOYED_CORE_ROUTES_VERIFIED_ASSET_HTTP_PENDING
+status: TA_03_DEPLOYED_BASE_READBACK_PASS_STABLE_GATES_PENDING
+runtime_implementation: TA_01_TA_02_MERGED_EXACT_MAIN
+production_rebrand: TA_02_DEPLOYED_CORE_ROUTES_VERIFIED_BRAND_HTTP_PENDING
 implementation_writer:
-  pr: 170
-  branch: brand/ta02-ui-refinement
-  phase: TA-02
+  pr: 171
+  branch: brand/ta03-production-closure
+  phase: TA-03
   authorization: OWNER_EXPLICIT_SERIAL_HANDOFF_2026_09_26
 baseline:
   main: 153d8ccb6201e33cd1c9a09a0d7bf84a7cf0f079
@@ -29,8 +29,8 @@ existing_writer:
 rounds:
   TA-00: HANDOFF_HASH_VERIFIED
   TA-01: ENGINEERING_COMPLETE_EXACT_MAIN
-  TA-02: CORRECTED_RENDER_PASS_STABLE_GATES_PENDING
-  TA-03: NOT_STARTED
+  TA-02: ENGINEERING_COMPLETE_EXACT_MAIN
+  TA-03: DEPLOYED_BASE_READBACK_PASS_STABLE_GATES_PENDING
 assets:
   reference: assets/approved-A-reference.webp
   provenance: assets/SOURCE.json
@@ -38,7 +38,7 @@ assets:
   small_size_status: CLOUD_BROWSER_ORIGINAL_SIZE_VISUALLY_REVIEWED_DEVICE_DEFERRED
 checks:
   repository_runtime_build: ROOT_AND_LEGACY_BUILDS_PASS
-  live_title_and_favicon: NOT_VERIFIED_FOR_NEW_BRAND
+  live_title_and_favicon: ANONYMOUS_HTTP_BYTES_DOM_DECODE_PASS_NATIVE_TAB_DEFERRED
   targeted_candidate: 50708bc31d904ea560903aa0dcfac3e0dc51e460
   brand_gate_run: 36222179123
   root_and_legacy_browser_tests: 6_PASS
@@ -67,7 +67,16 @@ checks:
   ta02_ui_run: 36224876053
   ta02_cells_per_phase: 156
   ta02_dense_scroll_checks_per_phase: 3
-  ta02_actual_production: PENDING
+  ta02_actual_production: EXACT_MAIN_READONLY_AND_LIVE_VISUAL_PASS
+  ta02_stable_candidate: 101838c400833ad0dee38710eb6c6ac589207498
+  ta02_exact_main: 4b9ca7dd3fa973ee92b0781f62bc5ac8f666f68d
+  ta02_exact_tree: 79a466bca107d2ded67ba10070f89bcaa6121721
+  ta02_main_pages: 36225324775
+  ta02_main_readonly: 36225455392
+  ta02_main_live_visual: 36225455535
+  ta03_anonymous_canonical_and_historical: DEPLOYED_TA02_BASE_PASS
+  ta03_base_readback_run: 36225692136
+  ta03_exact_merged_main_readback: PENDING
   real_iphone_installation: DEFERRED
   external_oauth_branding: DEFERRED
   trademark_clearance: NOT_PERFORMED
