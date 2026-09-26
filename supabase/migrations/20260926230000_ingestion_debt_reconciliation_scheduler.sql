@@ -35,6 +35,7 @@ declare
   job_count integer;
   existing cron.job%rowtype;
   command_text text;
+  reconciliation_job_id bigint;
 begin
   command_text := $cron$
   select net.http_post(
@@ -65,7 +66,7 @@ begin
   if job_count > 1 then
     raise exception 'Duplicate TodayAction ingestion debt reconciliation jobs exist.';
   elsif job_count = 0 then
-    perform cron.schedule(
+    reconciliation_job_id := cron.schedule(
       'todayaction-ingestion-debt-reconciliation-hourly',
       '42 * * * *',
       command_text
@@ -79,6 +80,10 @@ begin
       schedule := '42 * * * *',
       command := command_text
     );
+    reconciliation_job_id := existing.jobid;
   end if;
+  -- Provision only. Production activation and private workspace writes require
+  -- a separate explicit owner authorization, including on migration replay.
+  perform cron.alter_job(reconciliation_job_id, active := false);
 end
 $migration$;

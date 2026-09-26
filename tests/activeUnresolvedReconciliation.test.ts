@@ -105,6 +105,30 @@ function snapshot(input: {
 }
 
 describe('R02 active unresolved reconciliation', () => {
+  it('appends a new active resolution when canonical state returns to an earlier ambiguity', () => {
+    const original = unresolved({ sourceRecordId: 'state-return', opportunityId: 'opp-return' })
+    const base = snapshot({
+      timeline: [original, zeroRun()],
+      opportunities: [opportunity('opp-return')],
+      processes: [process('opp-return')],
+    })
+    const initial = reconcileIngestionDebt(base, NOW)
+    const terminal = structuredClone(initial.snapshot)
+    terminal.data.processes[0] = process('opp-return', { stage: 'closed', result: 'rejected' })
+    const settled = reconcileIngestionDebt(terminal, NOW)
+    expect(summarizeCoverage(settled.snapshot.data.timeline, { now: NOW }).activeUnresolvedCount).toBe(0)
+
+    const live = structuredClone(settled.snapshot)
+    live.data.processes[0] = process('opp-return')
+    const returned = reconcileIngestionDebt(live, NOW)
+    expect(returned.appended).toHaveLength(1)
+    expect(returned.appended[0]?.ingestionResolution?.outcome).toBe('active_unresolved')
+    expect(returned.appended[0]?.id).not.toBe(initial.appended[0]?.id)
+    expect(summarizeCoverage(returned.snapshot.data.timeline, { now: NOW }).allCaughtUp).toBe(false)
+    expect(returned.snapshot.data.timeline.filter((item) => item.ingestion)).toEqual([original])
+    expect(reconcileIngestionDebt(returned.snapshot, NOW).changed).toBe(false)
+  })
+
   it('retains lifetime audit but clears active unresolved when a linked process is definitively terminal', () => {
     const record = unresolved({
       sourceRecordId: 'fragment-limit-old',
@@ -216,7 +240,7 @@ describe('R02 active unresolved reconciliation', () => {
     })
   })
 
-  it('keeps a same-company multi-role ambiguity active when no later durable evidence disambiguates it', () => {
+  it.each([false, true])('keeps same-company multi-role ambiguity active even if candidates are terminal: %s', (terminal) => {
     const record = unresolved({
       sourceRecordId: 'same-company-ambiguous',
       company: 'Example',
@@ -227,13 +251,13 @@ describe('R02 active unresolved reconciliation', () => {
         opportunity('opp-a', 'Example', 'AI Product Manager'),
         opportunity('opp-b', 'Example', 'Technical Product Manager'),
       ],
-      processes: [process('opp-a'), process('opp-b')],
+      processes: [process('opp-a', terminal ? { stage: 'closed', result: 'rejected' } : {}), process('opp-b', terminal ? { stage: 'closed', result: 'rejected' } : {})],
     })
 
     const result = reconcileIngestionDebt(base, NOW)
     expect(result.appended[0]?.ingestionResolution).toMatchObject({
       outcome: 'active_unresolved',
-      reason: 'live_process_ambiguity',
+      reason: 'unlinked_unresolved',
     })
     const coverage = summarizeCoverage(result.snapshot.data.timeline, { now: NOW })
     expect(coverage.activeUnresolvedCount).toBe(1)

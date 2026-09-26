@@ -252,7 +252,7 @@ export function summarizeCoverage(timeline: TimelineRecord[] | undefined, option
     const resolution = record.ingestionResolution!
     const key = `${resolution.sourceKind}|${resolution.sourceId}|${resolution.sourceRecordId}`
     const previous = latestResolutionByKey.get(key)
-    if (!previous || (previous.ingestionResolution?.reconciledAt ?? '') < resolution.reconciledAt) {
+    if (!previous || (previous.ingestionResolution?.reconciledAt ?? '') <= resolution.reconciledAt) {
       latestResolutionByKey.set(key, record)
     }
   }

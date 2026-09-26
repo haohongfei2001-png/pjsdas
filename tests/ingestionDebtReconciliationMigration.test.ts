@@ -16,6 +16,7 @@ describe('R02 ingestion debt reconciliation scheduler migration', () => {
   })
 
   it('does not rewrite ingestion history or Gmail cursor state', () => {
+    expect(migration).toContain('cron.alter_job(reconciliation_job_id, active := false)')
     expect(migration).not.toContain('update public.pjsdas_workspaces')
     expect(migration).not.toContain('gmail_history_id=')
     expect(migration).not.toContain('gmail_last_success_at=')

@@ -1,7 +1,7 @@
 import { reconcileIngestionDebt } from '../src/ingestionResolution.js'
 import { stableIngestionHash } from '../src/ingestion.js'
 import { createTransactionalWorkspaceSource } from './transactionalWorkspaceSource.js'
-import { WorkspaceSourceError } from './workspaceSource.js'
+import { requireWritableWorkspaceSource, WorkspaceSourceError } from './workspaceSource.js'
 
 export interface IngestionDebtReconciliationHandlerConfig {
   supabaseUrl: string
@@ -139,7 +139,7 @@ export function createIngestionDebtReconciliationHandler(config: IngestionDebtRe
           continue
         }
 
-        await source.write({
+        await requireWritableWorkspaceSource(source).write({
           snapshot: result.snapshot,
           expectedWorkspaceVersion: workspace.context.workspaceVersion,
           updatedByDevice: 'ingestion-debt-reconciliation-worker',

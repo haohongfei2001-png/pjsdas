@@ -75,7 +75,7 @@ function latestResolutionRecords(records: TimelineRecord[]) {
     if (!record.ingestionResolution) continue
     const key = resolutionKey(record.ingestionResolution)
     const prior = byKey.get(key)
-    if (!prior || (prior.ingestionResolution?.reconciledAt ?? '') < record.ingestionResolution.reconciledAt) {
+    if (!prior || (prior.ingestionResolution?.reconciledAt ?? '') <= record.ingestionResolution.reconciledAt) {
       byKey.set(key, record)
     }
   }
@@ -235,6 +235,15 @@ function classifyUnresolved(
   }
 
   const matches = matchingOpportunities(snapshot, target)
+  if (matches.length > 1) {
+    // Company/role text cannot establish source identity across multiple processes,
+    // even when all currently known candidates are terminal.
+    return {
+      outcome: 'active_unresolved',
+      reason: 'unlinked_unresolved',
+      evidenceRefs: matches.slice(0, 4).map((item) => item.id),
+    }
+  }
   if (matches.length) {
     const processByOpportunity = new Map(snapshot.data.processes.flatMap((item) =>
       item.opportunityId ? [[item.opportunityId, item] as const] : []))
@@ -270,6 +279,7 @@ function createResolutionTimeline(input: {
   reason: IngestionResolutionReason
   evidenceRefs: string[]
   reconciledAt: string
+  previousResolutionId?: string
 }): TimelineRecord {
   const ingestion = input.target.ingestion!
   const resolution: IngestionResolutionRecord = {
@@ -291,6 +301,7 @@ function createResolutionTimeline(input: {
     resolution.outcome,
     resolution.reason,
     ...resolution.evidenceRefs,
+    input.previousResolutionId ?? '',
   ].join('|')
   return {
     id: `timeline:ingestion-resolution:${stableHash(idPayload)}`,
@@ -344,15 +355,23 @@ export function reconcileIngestionDebt(
     const target = unresolvedRecords[unresolvedRecords.length - 1]!
     const latest = sourceRecords[sourceRecords.length - 1]!
     const proposed = classifyUnresolved(next, target, latest, sourceRecords, allIngestion, now)
+    const current = latestResolutions.get(key)
+    const prior = current?.ingestionResolution
+    const evidenceRefs = [...new Set(proposed.evidenceRefs)].sort()
+    if (prior?.targetIngestionTimelineId === target.id
+      && prior.targetFingerprint === target.ingestion?.fingerprint
+      && prior.outcome === proposed.outcome
+      && prior.reason === proposed.reason
+      && JSON.stringify(prior.evidenceRefs) === JSON.stringify(evidenceRefs)) continue
     const record = createResolutionTimeline({
       target,
       outcome: proposed.outcome,
       reason: proposed.reason,
       evidenceRefs: proposed.evidenceRefs,
       reconciledAt: timestamp,
+      previousResolutionId: current?.id,
     })
 
-    const current = latestResolutions.get(key)
     if (current?.id === record.id || timeline.some((item) => item.id === record.id)) continue
     appended.push(record)
   }
