@@ -158,6 +158,9 @@ export interface TodayBrief {
       missingSourceCount: number
       staleSourceCount: number
       unresolvedCount: number
+      activeUnresolvedCount: number
+      lifetimeUnresolvedCount: number
+      settledHistoricalUnresolvedCount: number
     }
   }
 }
