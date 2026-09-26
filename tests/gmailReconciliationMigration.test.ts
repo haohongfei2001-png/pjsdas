@@ -18,7 +18,16 @@ describe('Gmail reconciliation safety-net migration', () => {
     expect(migration).toContain("'30 0 * * *'")
     expect(migration).toContain("'todayaction-gmail-reconciliation-1730'")
     expect(migration).toContain("'30 9 * * *'")
-    it('adds private continuation state, a dedicated finalizer, and an offset continuation cron', () => {
+  })
+
+  it('does not rewrite Gmail cursor state or embed a second credential contract', () => {
+    expect(migration).not.toContain('update public.google_drive_connections')
+    expect(migration).not.toContain('gmail_history_id=')
+    expect(migration).not.toContain('decrypted_secret')
+    expect(migration).not.toContain('worker_token')
+  })
+
+  it('adds private continuation state, a dedicated finalizer, and an offset continuation cron', () => {
     expect(continuationMigration).toContain('gmail_reconciliation_state jsonb')
     expect(continuationMigration).toContain('pjsdas_claim_gmail_automation_bindings_v5')
     expect(continuationMigration).toContain('pjsdas_finish_gmail_reconciliation')
@@ -32,13 +41,5 @@ describe('Gmail reconciliation safety-net migration', () => {
     expect(continuationMigration).not.toContain('gmail_last_success_at=')
     expect(continuationMigration).not.toContain('gmail_last_error=')
     expect(continuationMigration).toContain("where jobname='pjsdas-gmail-automation-hourly'")
-  })
-})
-
-  it('does not rewrite Gmail cursor state or embed a second credential contract', () => {
-    expect(migration).not.toContain('update public.google_drive_connections')
-    expect(migration).not.toContain('gmail_history_id=')
-    expect(migration).not.toContain('decrypted_secret')
-    expect(migration).not.toContain('worker_token')
   })
 })
