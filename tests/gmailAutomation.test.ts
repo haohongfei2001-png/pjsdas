@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import {
   fetchGmailAutomationBatch,
+  fetchGmailReconciliationBatch,
   gmailObservationFromMessage,
   UU06_MAX_MESSAGES_PER_RUN,
 } from '../gateway/gmailAutomation.js'
@@ -132,6 +133,30 @@ describe('Gmail background automation', () => {
     expect(result.nextHistoryId).toBe('205')
     expect(result.messages.map((item) => item.id)).toEqual(['msg-205'])
     expect(calls.some((url) => url.includes('startHistoryId=199'))).toBe(true)
+  })
+
+  it('reconciliation independently unions all recent and unread messages without a company or recruiting keyword query', async () => {
+    const queries: string[] = []
+    const fetchImpl = vi.fn(async (input: RequestInfo | URL) => {
+      const url = new URL(String(input))
+      if (url.pathname.endsWith('/messages')) {
+        const q = url.searchParams.get('q') ?? ''
+        queries.push(q)
+        if (q.startsWith('after:')) return json({ messages: [{ id: 'recent' }, { id: 'shared' }] })
+        if (q === 'is:unread -in:spam -in:trash') return json({ messages: [{ id: 'old-unread' }, { id: 'shared' }] })
+      }
+      const id = /\/messages\/([^/?]+)/.exec(url.pathname)?.[1]
+      if (id) return json({ id, internalDate: '1', payload: { headers: [] } })
+      return json({ error: 'unexpected' }, 500)
+    }) as unknown as typeof fetch
+    const result = await fetchGmailReconciliationBatch({
+      accessToken: 'google-access', fetchImpl, now: new Date('2026-09-26T00:30:00.000Z'),
+    })
+    expect(result.scannedCount).toBe(3)
+    expect(result.messages.map((item) => item.id).sort()).toEqual(['old-unread', 'recent', 'shared'])
+    expect(queries).toHaveLength(2)
+    expect(queries.some((query) => query.includes('newer_than'))).toBe(false)
+    expect(queries.join(' ')).not.toMatch(/面试|笔试|recruit|company/i)
   })
 
   it('accounts history ids whose message payload disappeared instead of poisoning every later run', async () => {

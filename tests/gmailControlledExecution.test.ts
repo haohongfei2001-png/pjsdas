@@ -2,8 +2,11 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createGmailAutomationHandler } from '../gateway/gmailAutomationHandler.js'
 import { aggregateHistoryLag } from '../gateway/gmailExecutionMetrics.js'
 import { GmailProviderRequestError } from '../gateway/gmailProviderFailure.js'
-const state = vi.hoisted(() => ({ run: vi.fn() }))
-vi.mock('../gateway/gmailAutomation.js', () => ({ runGmailAutomationForBinding: state.run }))
+const state = vi.hoisted(() => ({ run: vi.fn(), reconcile: vi.fn() }))
+vi.mock('../gateway/gmailAutomation.js', () => ({
+  runGmailAutomationForBinding: state.run,
+  runGmailReconciliationForBinding: state.reconcile,
+}))
 const row = { user_id: 'user', google_subject: 'subject', refresh_token_ciphertext: 'cipher', granted_scopes: [], gmail_history_id: 'list-old' }
 const result = { coverageComplete: true, checkedAt: '2026-09-21T00:00:00Z', nextHistoryId: 'committed',
   metrics: { status: 'completed', mode: 'history', receivedCount: 1, accountedCount: 1, historyLag: { count: 1, sumMs: 1000, maxMs: 1000, under2m: 1, under15m: 0, over15m: 0 } } }
@@ -20,15 +23,27 @@ function harness(options: { coalesce?: boolean; assertValid?: boolean; budgetMs?
       if (options.finishLost && data.state_patch && Object.keys(data.state_patch as object).length) throw new Error('Synthetic lost response after commit')
       return json(!options.finishLost)
     }
+    if (rpc === 'pjsdas_finish_gmail_reconciliation') return json(true)
     if (rpc === 'slow') return new Promise((_resolve,reject) => init?.signal?.addEventListener('abort', () => reject(new Error('aborted')), { once: true }))
     throw new Error('Unexpected RPC: '+rpc)
   }
   const handler = createGmailAutomationHandler({ supabaseUrl: 'https://example.invalid', supabasePublishableKey: 'test', tokenEncryptionKey: 'test', googleClientId: 'test', googleClientSecret: 'test', fetchImpl,
     executionControlsEnabled: true, executionBudgetMs: options.budgetMs })
   const invoke = (all = false) => handler(new Request(`https://example.invalid/worker${all ? '' : '?userId=user'}`, { headers: { authorization: 'Bearer synthetic-worker' } }))
-  return { writes, invoke }
+  const reconcile = () => handler(new Request('https://example.invalid/worker?userId=user&mode=reconcile', { headers: { authorization: 'Bearer synthetic-worker' } }))
+  return { writes, invoke, reconcile }
 }
-beforeEach(() => { state.run.mockReset().mockImplementation(async (options) => { await options.execution.beforeWorkspaceWrite(); return result }) })
+beforeEach(() => {
+  state.run.mockReset().mockImplementation(async (options) => { await options.execution.beforeWorkspaceWrite(); return result })
+  state.reconcile.mockReset().mockImplementation(async (options) => {
+    await options.execution.beforeWorkspaceWrite()
+    return {
+      checkedAt: '2026-09-26T00:30:00Z',
+      metrics: { status: 'completed', mode: 'reconciliation', receivedCount: 3, accountedCount: 3, unresolvedCount: 0 },
+      summary: { scannedCount: 3, recruitingRelevantCount: 1, actionableCount: 1, unresolvedCount: 0, gmailOnlyCount: 0, pjsdasOnlyCount: 1, fixedOrHardWithin7DaysCount: 1, liveProcessCount: 2, unavailableMessageCount: 0 },
+    }
+  })
+})
 describe('opt-in controlled Gmail worker', () => {
   it('uses a fresh claimed binding and finishes state under the same lease after a guarded write', async () => {
     const h = harness(); const response = await h.invoke()
@@ -41,6 +56,21 @@ describe('opt-in controlled Gmail worker', () => {
     expect(h.writes.some((item) => item.rpc.endsWith('state_v2'))).toBe(false)
     expect(await response.text()).not.toContain('user')
   })
+  it('runs reconciliation under the same lease and finalizes without a primary cursor patch', async () => {
+    const h = harness()
+    const response = await h.reconcile()
+    expect(response.status).toBe(200)
+    expect(state.reconcile).toHaveBeenCalledTimes(1)
+    expect(state.run).not.toHaveBeenCalled()
+    const finish = h.writes.find((item) => item.rpc === 'pjsdas_finish_gmail_reconciliation')!
+    expect(finish.data.metrics).toMatchObject({ mode: 'reconciliation', receivedCount: 3, accountedCount: 3 })
+    expect(h.writes.some((item) => item.rpc === 'pjsdas_finish_gmail_execution')).toBe(false)
+    await expect(response.json()).resolves.toMatchObject({
+      successfulUsers: 1,
+      results: [{ status: 'success', summary: { fixedOrHardWithin7DaysCount: 1 } }],
+    })
+  })
+
   it('coalesces a busy binding without source access or cursor writes', async () => {
     const h = harness({ coalesce: true }); const response = await h.invoke()
     expect(state.run).not.toHaveBeenCalled()

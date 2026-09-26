@@ -201,6 +201,13 @@ export function createAutomationConnectionStore(options: AutomationConnectionSto
       if (!finished) throw new WorkspaceSourceError('LEASE_LOST', 'Gmail execution lease is no longer valid.', true)
     },
 
+    async finishGmailReconciliation(userId: string, executionToken: string, metrics: GmailExecutionMetrics) {
+      const finished = await rpc<boolean>('pjsdas_finish_gmail_reconciliation', {
+        worker_token: workerToken, target_user_id: userId, execution_token: executionToken, metrics,
+      })
+      if (!finished) throw new WorkspaceSourceError('LEASE_LOST', 'Gmail reconciliation lease is no longer valid.', true)
+    },
+
     async listDiscoveryBindings(): Promise<DiscoveryAutomationBinding[]> {
       const rows = await rpc<Array<{
         user_id?: string

@@ -25,6 +25,8 @@ const GMAIL_PROVIDER_PAGE_SIZE = 100
 const LEGACY_MAX_MESSAGES_PER_RUN = 100
 export const UU06_MAX_MESSAGES_PER_RUN = 20
 export const INITIAL_LOOKBACK_DAYS = 90
+export const RECONCILIATION_LOOKBACK_DAYS = 7
+export const RECONCILIATION_MAX_MESSAGES = 250
 
 interface GmailHeader { name?: string; value?: string }
 interface GmailPartBody { data?: string }
@@ -83,6 +85,27 @@ export interface GmailAutomationRunResult {
   alreadyApplied: boolean
   workspaceVersion?: string
   usedFallbackScan: boolean
+}
+
+export interface GmailReconciliationSummary {
+  scannedCount: number
+  recruitingRelevantCount: number
+  actionableCount: number
+  unresolvedCount: number
+  gmailOnlyCount: number
+  pjsdasOnlyCount: number
+  fixedOrHardWithin7DaysCount: number
+  liveProcessCount: number
+  unavailableMessageCount: number
+}
+
+export interface GmailReconciliationRunResult {
+  userId: string
+  checkedAt: string
+  alreadyApplied: boolean
+  workspaceVersion?: string
+  summary: GmailReconciliationSummary
+  metrics: GmailExecutionMetrics
 }
 
 function cleanText(value: string | undefined) {
@@ -439,6 +462,222 @@ export async function fetchGmailAutomationBatch(options: {
     coverageComplete: bounded.coverageComplete,
     usedFallbackScan,
     recoveryGapReason,
+  }
+}
+
+
+async function reconciliationMessageIds(fetchImpl: typeof fetch, accessToken: string, now: Date) {
+  const queries = [
+    `after:${Math.floor(now.getTime() / 1000) - RECONCILIATION_LOOKBACK_DAYS * 86400} -in:spam -in:trash`,
+    'is:unread -in:spam -in:trash',
+  ]
+  const ids = new Set<string>()
+  for (const query of queries) {
+    let pageToken: string | undefined
+    do {
+      const params = new URLSearchParams({ maxResults: String(GMAIL_PROVIDER_PAGE_SIZE), q: query })
+      if (pageToken) params.set('pageToken', pageToken)
+      const payload = await gmailJson<GmailMessageList>(fetchImpl, accessToken, `/messages?${params.toString()}`)
+      for (const item of payload.messages ?? []) if (item.id) ids.add(item.id)
+      if (ids.size > RECONCILIATION_MAX_MESSAGES) {
+        throw new WorkspaceSourceError(
+          'GMAIL_RECONCILIATION_LIMIT_EXCEEDED',
+          `Gmail reconciliation found more than ${RECONCILIATION_MAX_MESSAGES} candidate records and cannot prove complete bounded coverage.`,
+          false,
+        )
+      }
+      pageToken = payload.nextPageToken
+    } while (pageToken)
+  }
+  return [...ids]
+}
+
+export async function fetchGmailReconciliationBatch(options: {
+  accessToken: string
+  fetchImpl?: typeof fetch
+  now?: Date
+}) {
+  const fetchImpl = options.fetchImpl ?? fetch
+  const now = options.now ?? new Date()
+  const ids = await reconciliationMessageIds(fetchImpl, options.accessToken, now)
+  const fetched = await fetchMessages(fetchImpl, options.accessToken, ids)
+  return { ...fetched, scannedCount: ids.length }
+}
+
+function recentLiveProcesses(snapshot: import('../src/snapshot.js').PJSDASSnapshot, now: Date) {
+  const cutoff = now.getTime() - 30 * 86_400_000
+  const latestEventByOpportunity = new Map<string, number>()
+  for (const event of snapshot.data.processEvents) {
+    const value = new Date(event.occurredAt).getTime()
+    if (!Number.isFinite(value)) continue
+    latestEventByOpportunity.set(event.opportunityId, Math.max(latestEventByOpportunity.get(event.opportunityId) ?? 0, value))
+  }
+  return snapshot.data.processes.filter((process) => {
+    if (process.stage === 'closed' || process.participationState === 'abandoned'
+      || process.result === 'rejected' || process.result === 'closed_other') return false
+    const last = process.lastProgressAt ? new Date(process.lastProgressAt).getTime()
+      : process.opportunityId ? latestEventByOpportunity.get(process.opportunityId) : undefined
+    return last === undefined || !Number.isFinite(last) || last >= cutoff
+  })
+}
+
+function reconciliationSummary(
+  snapshot: import('../src/snapshot.js').PJSDASSnapshot,
+  records: GmailSemanticRecord[],
+  scannedCount: number,
+  unavailableMessageCount: number,
+  now: Date,
+): GmailReconciliationSummary {
+  const relevant = records.filter((record) => record.gaps.length > 0 || record.observation.candidates.length > 0)
+  const actionable = relevant.filter((record) => record.observation.candidates.some((candidate) =>
+    candidate.kind === 'process_event' || candidate.kind === 'application_submitted'
+      || candidate.kind === 'occurrence_rescheduled' || candidate.kind === 'occurrence_cancelled'
+      || candidate.kind === 'occurrence_completed'))
+  const gmailOpportunityIds = new Set<string>()
+  let gmailOnlyCount = 0
+  let fixedOrHardWithin7DaysCount = 0
+  const horizon = now.getTime() + 7 * 86_400_000
+  let unresolvedCount = 0
+  for (const record of relevant) {
+    let hasBoundTarget = false
+    let hasUnresolvedTarget = false
+    for (const candidate of record.observation.candidates) {
+      if (candidate.target?.opportunityId) {
+        hasBoundTarget = true
+        gmailOpportunityIds.add(candidate.target.opportunityId)
+      } else if (candidate.kind !== 'application_submitted') {
+        hasUnresolvedTarget = true
+      }
+      if (candidate.kind === 'process_event') {
+        const temporal = candidate.temporal
+        const instant = temporal?.deadlineAt ?? temporal?.startAt ?? candidate.dueAt
+        const value = instant ? new Date(instant).getTime() : NaN
+        if (Number.isFinite(value) && value >= now.getTime() && value <= horizon
+          && (candidate.timingMode === 'deadline' || temporal?.shape === 'fixed_range' || temporal?.shape === 'deadline')) {
+          fixedOrHardWithin7DaysCount += 1
+        }
+      }
+    }
+    if (!hasBoundTarget && record.observation.candidates.length > 0) gmailOnlyCount += 1
+    if (record.gaps.length > 0 || hasUnresolvedTarget) unresolvedCount += 1
+  }
+  const liveProcesses = recentLiveProcesses(snapshot, now)
+  const pjsdasOnlyCount = liveProcesses.filter((process) => !process.opportunityId || !gmailOpportunityIds.has(process.opportunityId)).length
+  return {
+    scannedCount,
+    recruitingRelevantCount: relevant.length,
+    actionableCount: actionable.length,
+    unresolvedCount,
+    gmailOnlyCount,
+    pjsdasOnlyCount,
+    fixedOrHardWithin7DaysCount,
+    liveProcessCount: liveProcesses.length,
+    unavailableMessageCount,
+  }
+}
+
+export async function runGmailReconciliationForBinding(options: {
+  binding: GmailAutomationBinding
+  tokenEncryptionKey: string
+  googleClientId: string
+  googleClientSecret: string
+  fetchImpl?: typeof fetch
+  now?: () => Date
+  execution?: { beforeWorkspaceWrite: () => Promise<void> }
+}): Promise<GmailReconciliationRunResult> {
+  const fetchImpl = options.fetchImpl ?? fetch
+  const now = options.now?.() ?? new Date()
+  const checkedAt = now.toISOString()
+  if (options.binding.gmailIntakeConsentVersion !== 'uu06-v1') {
+    throw new WorkspaceSourceError('GMAIL_RECONCILIATION_CONSENT_REQUIRED', 'Gmail reconciliation requires the current explicit Gmail intake consent.', false)
+  }
+  if (!options.binding.grantedScopes.includes(GMAIL_READONLY_SCOPE)) {
+    throw new WorkspaceSourceError('GOOGLE_GMAIL_SCOPE_MISSING', 'Gmail reconciliation requires the Gmail read-only permission.', false)
+  }
+  const refreshToken = await decryptSecret(options.binding.refreshTokenCiphertext, options.tokenEncryptionKey)
+  const accessToken = await refreshGoogleAccessToken(refreshToken, {
+    clientId: options.googleClientId,
+    clientSecret: options.googleClientSecret,
+    fetchImpl,
+  })
+  const transactionalAuthority = process.env.PJSDAS_CONNECTED_AUTHORITY?.trim() === 'transactional'
+  const source = transactionalAuthority
+    ? createTransactionalWorkspaceSource({
+        userId: options.binding.userId,
+        supabaseUrl: PJSDAS_SUPABASE_URL,
+        serviceRoleKey: process.env.PJSDAS_SUPABASE_SERVICE_ROLE_KEY ?? '',
+        principalKind: 'automation',
+        sourceId: GMAIL_SOURCE_ID,
+        timezone: 'Asia/Shanghai',
+        fetchImpl,
+      })
+    : createDriveWorkspaceSource({ getAccessToken: () => accessToken, fetchImpl, timezone: 'Asia/Shanghai' })
+  const workspace = await source.read()
+  const batch = await fetchGmailReconciliationBatch({ accessToken, fetchImpl, now })
+  const records = batch.messages
+    .map((message) => gmailSemanticRecordFromMessage(message, workspace.snapshot.data.opportunities, now))
+    .filter((record): record is GmailSemanticRecord => Boolean(record))
+  for (const sourceRecordId of batch.unavailableMessageIds) {
+    records.push({
+      receivedAt: checkedAt,
+      gaps: ['Gmail reconciliation found a source record whose payload was unavailable; no recruiting facts were inferred.'],
+      issueKinds: ['transport_gap'],
+      observation: {
+        contractVersion: 1,
+        inputId: `gmail:${sourceRecordId}:reconciliation-unavailable-v1`,
+        source: {
+          kind: 'gmail', sourceId: GMAIL_SOURCE_ID, sourceRecordId,
+          sourceVersion: 'reconciliation-unavailable-v1', observedAt: checkedAt,
+          timezone: workspace.context.timezone ?? 'Asia/Shanghai',
+        },
+        statementMode: 'assertion',
+        candidates: [],
+      },
+    })
+  }
+  const summary = reconciliationSummary(workspace.snapshot, records, batch.scannedCount, batch.unavailableMessageIds.length, now)
+  const runId = `gmail:reconcile:${checkedAt.slice(0, 13)}`
+  const result = applyGmailSemanticBatch(workspace.snapshot, {
+    runId,
+    sourceId: GMAIL_SOURCE_ID,
+    checkedAt,
+    records,
+    authorized: true,
+    workspaceRevision: workspace.context.workspaceVersion,
+    reconcileExisting: true,
+  })
+  let workspaceVersion = workspace.context.workspaceVersion
+  if (!result.alreadyApplied) {
+    await options.execution?.beforeWorkspaceWrite()
+    const written = await requireWritableWorkspaceSource(source).write({
+      snapshot: result.snapshot,
+      expectedWorkspaceVersion: workspace.context.workspaceVersion,
+      updatedByDevice: 'gmail-reconciliation-worker',
+      command: {
+        commandId: runId,
+        operation: 'gmail_semantic_intake',
+        payload: { sourceId: GMAIL_SOURCE_ID, reconciliation: true, scannedCount: summary.scannedCount },
+        provenance: { sourceId: GMAIL_SOURCE_ID, adapterVersion: 'reconciliation-v1' },
+        compensation: { ...result.compensation },
+        effectiveTime: checkedAt,
+      },
+    })
+    workspaceVersion = written.context.workspaceVersion
+  }
+  return {
+    userId: options.binding.userId,
+    checkedAt,
+    alreadyApplied: result.alreadyApplied,
+    workspaceVersion,
+    summary,
+    metrics: {
+      status: 'completed',
+      mode: 'reconciliation',
+      receivedCount: summary.scannedCount,
+      accountedCount: summary.scannedCount,
+      unresolvedCount: summary.unresolvedCount,
+      recordGapCount: summary.unavailableMessageCount,
+    },
   }
 }
 

@@ -1,4 +1,4 @@
-export type GmailRunMode = 'history' | 'initial_backfill' | 'history_recovery' | 'unknown'
+export type GmailRunMode = 'history' | 'initial_backfill' | 'history_recovery' | 'reconciliation' | 'unknown'
 export interface GmailHistoryLag {
   count: number
   sumMs: number
