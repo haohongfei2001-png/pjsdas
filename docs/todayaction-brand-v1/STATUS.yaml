@@ -2,8 +2,8 @@ package: TODAYACTION-BRAND-UI-v1
 registered_on: '2026-09-26'
 brand_name: TodayAction
 selected_direction: A_three_part_abstract_mark
-status: TA_02_IMPLEMENTED_VERIFICATION_PENDING
-runtime_implementation: TA_01_MERGED_TA_02_VERIFICATION_PENDING
+status: TA_02_CORRECTED_RENDER_PASS_STABLE_GATES_PENDING
+runtime_implementation: TA_01_MERGED_TA_02_STABLE_GATES_PENDING
 production_rebrand: TA_01_DEPLOYED_CORE_ROUTES_VERIFIED_ASSET_HTTP_PENDING
 implementation_writer:
   pr: 170
@@ -29,7 +29,7 @@ existing_writer:
 rounds:
   TA-00: HANDOFF_HASH_VERIFIED
   TA-01: ENGINEERING_COMPLETE_EXACT_MAIN
-  TA-02: IMPLEMENTED_VERIFICATION_PENDING
+  TA-02: CORRECTED_RENDER_PASS_STABLE_GATES_PENDING
   TA-03: NOT_STARTED
 assets:
   reference: assets/approved-A-reference.webp
@@ -62,7 +62,12 @@ checks:
   ta01_live_visual_result: PASS_NON_PRIVATE_SYNTHETIC_FIXTURES
   ta02_widths: [360, 390, 430, 768, 1280, 1440]
   ta02_text_scale: [100, 200]
-  ta02_before_after_matrix: PENDING
+  ta02_before_after_matrix: CORRECTED_RENDER_PASS
+  ta02_corrected_candidate: 57d6a45d66ea7c388ca7ead3ea807edcc105f597
+  ta02_ui_run: 36224876053
+  ta02_cells_per_phase: 156
+  ta02_dense_scroll_checks_per_phase: 3
+  ta02_actual_production: PENDING
   real_iphone_installation: DEFERRED
   external_oauth_branding: DEFERRED
   trademark_clearance: NOT_PERFORMED

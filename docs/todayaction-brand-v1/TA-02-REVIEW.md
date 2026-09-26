@@ -1,6 +1,6 @@
 # TA-02 interface refinement
 
-Status: IMPLEMENTED / VERIFICATION_PENDING. No PASS is inferred from code.
+Status: TARGETED_CORRECTED_RENDER_PASS / STABLE_GATES_PENDING. Production is not inferred from candidate evidence.
 
 ## Baseline findings and corrective scope
 
@@ -46,3 +46,16 @@ All cloud evidence and any correction after initial candidate render will be rec
 Screenshot review found a status-child layout defect beyond those measurements: the mobile status was auto-placed in the narrow icon column. The status now explicitly occupies the identity column below its metadata; desktop status receives its own fourth button column while the sibling Apply action stays in its article column. A DOM text-line measurement detects forced single-character status stacks.
 
 The wrapped header also retains the old fixed 90px node offset. A presentation-only ResizeObserver now measures header height for sticky nodes and focus/detail scroll margins. A dense eight-task, desktop 200% text journey records baseline and candidate actual bounds after scrolling. No account/workspace state, selection or command behavior changes. Corrected render remains pending.
+
+## Corrected exact candidate render and review
+
+Candidate `57d6a45d66ea7c388ca7ead3ea807edcc105f597`; tree `4f1daa8c1376be6eaf26610625bea4a98aaaadcc`.
+[UI Review 36224876053](https://github.com/haohongfei2001-png/pjsdas/actions/runs/36224876053): five before and five after journeys PASS, 156 ordinary cells per phase plus three dense desktop scrolling measurements per phase. Candidate has zero measured overflow, label clipping, forced status stacks or selected contrast failures; no requested business writes and identical task identities. Eight dense tasks remain visible in the collection.
+
+At 768px / 200%, baseline header bottom 124px versus node top 90px (34px covered). Candidate header bottom 121px versus node top 141px; at 1280/1440 both remain 70px versus 90px. This is actual cloud browser measurement after scrolling 350px.
+
+Screenshots were reviewed for Today desktop; long library names and status at mobile/desktop/large text; complete job and event details; schedule; capture focus; large-text settings; first-use/verified empty/loading/read failure/cache/consent. Mobile status now reads horizontally, full capture name remains available, and sticky nodes clear the wrapped header.
+
+Artifacts: [before/after 315 files](https://github.com/haohongfei2001-png/pjsdas/actions/runs/36224876053/artifacts/10899989277), ZIP SHA-256 `5fed2976cecd87945353a72e52a378bf46706c48bbbd4c6f3362699d695b59db`, retention 14 days.
+[Brand 36224876169](https://github.com/haohongfei2001-png/pjsdas/actions/runs/36224876169), [unit/type 36224876054](https://github.com/haohongfei2001-png/pjsdas/actions/runs/36224876054), [read-only rollback 36224876095](https://github.com/haohongfei2001-png/pjsdas/actions/runs/36224876095) PASS.
+Stable full CI/browser/matrix/affected cloud VoiceOver remain pending on the closure head. Private/physical-device/external/legal evidence remains DEFERRED.
