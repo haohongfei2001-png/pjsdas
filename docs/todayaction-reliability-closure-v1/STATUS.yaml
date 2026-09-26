@@ -1,14 +1,14 @@
 package: TODAYACTION-RELIABILITY-CLOSURE-v1
-status: R01_CONTINUATION_READY_FULL_GATES_PENDING
+status: R01_ENGINEERING_COMPLETE_R02_READY
 writer:
-  branch: reliability/todayaction-reconciliation-v1
-  phase: R01
+  branch: reliability/r01-production-closure
+  phase: R01_CLOSURE
 issues:
   R01: 125
   R02: 156
 rounds:
-  R01: CONTINUATION_READY_FULL_GATES_PENDING
-  R02: NOT_STARTED
+  R01: ENGINEERING_COMPLETE_PRODUCTION_COMPLETE_WITH_UNRESOLVED
+  R02: READY
 gmail_recovery_161:
   main: decae2c6136595d2c01f17c8b9dcf76d00cdcbbc
   poison_loop_fixed: true
@@ -27,3 +27,20 @@ production_reconciliation:
   continuation_followup_pr: 174
   coverage_reduced: false
   primary_cursor_mutated: false
+  continuation_migration:
+    version: 20260926112126
+    name: gmail_reconciliation_continuation
+    applied: true
+  production_cycle:
+    completed_at: 2026-09-26T11:34:37.509070Z
+    proof_recorded_at: 2026-09-26T11:34:31.159Z
+    outcome: COMPLETE_WITH_UNRESOLVED
+    scanned: 481
+    recruiting_relevant: 100
+    action_required: 1
+    unresolved: 44
+    gmail_only: 26
+    todayaction_only_live_processes: 14
+    unavailable_payloads: 0
+    failed_continuation_runs: 0
+  full_reconciliation_claim: false
