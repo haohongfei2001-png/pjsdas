@@ -8,6 +8,10 @@
   },
   "rewrites": [
     {
+      "source": "/api/automation-ingestion-reconciliation",
+      "destination": "/api/automation-gmail?__pjsdas_gmail_route=ingestion_reconciliation"
+    },
+    {
       "source": "/api/automation-gmail-watch",
       "destination": "/api/automation-gmail?__pjsdas_gmail_route=watch"
     },
@@ -82,9 +86,6 @@
   ],
   "functions": {
     "api/automation-gmail.ts": {
-      "maxDuration": 30
-    },
-    "api/automation-ingestion-reconciliation.ts": {
       "maxDuration": 30
     }
   }
