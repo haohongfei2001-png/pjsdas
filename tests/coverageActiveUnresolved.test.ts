@@ -4,6 +4,7 @@ import {
   buildIngestionRunSummary,
   createIngestionLedgerTimeline,
   createIngestionRunTimeline,
+  PJSDAS_EXPECTED_INGESTION_SOURCES,
 } from '../src/ingestion.js'
 import { reconcileIngestionDebt } from '../src/ingestionResolution.js'
 import { createSnapshot } from '../src/snapshot.js'
@@ -22,22 +23,24 @@ function snapshot() {
     accountedAt: '2026-08-01T00:00:00.000Z',
     reason: 'Generic recruiting ad / marketing newsletter; no actionable business fact.',
   })
-  const run = createIngestionRunTimeline(buildIngestionRunSummary({
-    runId: 'gmail:latest',
-    sourceKind: 'gmail',
-    sourceId: 'gmail:primary',
-    producer: 'server_scheduler',
-    startedAt: '2026-09-26T11:54:00.000Z',
-    completedAt: '2026-09-26T11:55:00.000Z',
-    records: [],
-    sourcePolicy: {
-      version: 1,
-      enabled: true,
-      cadenceMinutes: 10,
-      freshnessSlaMinutes: 20,
-      label: 'Gmail',
-    },
-  }))
+  const runs = PJSDAS_EXPECTED_INGESTION_SOURCES.map((source) =>
+    createIngestionRunTimeline(buildIngestionRunSummary({
+      runId: `${source.sourceId}:latest`,
+      sourceKind: source.sourceKind,
+      sourceId: source.sourceId,
+      producer: 'server_scheduler',
+      startedAt: '2026-09-26T11:54:00.000Z',
+      completedAt: '2026-09-26T11:55:00.000Z',
+      records: [],
+      sourcePolicy: {
+        version: 1,
+        enabled: true,
+        cadenceMinutes: source.cadenceMinutes ?? 10,
+        freshnessSlaMinutes: source.freshnessSlaMinutes ?? 20,
+        label: source.label,
+      },
+    })),
+  )
   return reconcileIngestionDebt(createSnapshot({
     opportunities: [],
     processes: [],
@@ -45,7 +48,7 @@ function snapshot() {
     actions: [],
     prep: [],
     applicationGroups: [],
-    timeline: [unresolved, run],
+    timeline: [unresolved, ...runs],
   }, '2026-09-26T12:00:00.000Z'), new Date('2026-09-26T12:00:00.000Z')).snapshot
 }
 
