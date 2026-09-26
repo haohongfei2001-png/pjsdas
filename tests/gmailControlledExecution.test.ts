@@ -23,7 +23,6 @@ function harness(options: { coalesce?: boolean; assertValid?: boolean; budgetMs?
       if (options.finishLost && data.state_patch && Object.keys(data.state_patch as object).length) throw new Error('Synthetic lost response after commit')
       return json(!options.finishLost)
     }
-    if (rpc === 'pjsdas_finish_gmail_reconciliation') return json(true)
     if (rpc === 'slow') return new Promise((_resolve,reject) => init?.signal?.addEventListener('abort', () => reject(new Error('aborted')), { once: true }))
     throw new Error('Unexpected RPC: '+rpc)
   }
@@ -62,9 +61,9 @@ describe('opt-in controlled Gmail worker', () => {
     expect(response.status).toBe(200)
     expect(state.reconcile).toHaveBeenCalledTimes(1)
     expect(state.run).not.toHaveBeenCalled()
-    const finish = h.writes.find((item) => item.rpc === 'pjsdas_finish_gmail_reconciliation')!
+    const finish = h.writes.find((item) => item.rpc === 'pjsdas_finish_gmail_execution')!
+    expect(finish.data.state_patch).toEqual({})
     expect(finish.data.metrics).toMatchObject({ mode: 'reconciliation', receivedCount: 3, accountedCount: 3 })
-    expect(h.writes.some((item) => item.rpc === 'pjsdas_finish_gmail_execution')).toBe(false)
     await expect(response.json()).resolves.toMatchObject({
       successfulUsers: 1,
       results: [{ status: 'success', summary: { fixedOrHardWithin7DaysCount: 1 } }],
