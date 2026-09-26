@@ -1,4 +1,11 @@
 import { aggregateHistoryLag, type GmailExecutionMetrics } from './gmailExecutionMetrics.js'
+import {
+  GMAIL_RECONCILIATION_STATES,
+  emptyGmailReconciliationAccumulator,
+  mergeGmailReconciliationAccumulator,
+  type GmailReconciliationAccumulator,
+  type GmailReconciliationContinuationState,
+} from './gmailReconciliationState.js'
 import { resolveSourceTemporal } from '../src/sourceTemporal.js'
 import { parseRecruitingNotification } from '../src/notificationParser.js'
 import { stageForProcessEvent } from '../src/processEvents.js'
@@ -33,7 +40,8 @@ const LEGACY_MAX_MESSAGES_PER_RUN = 100
 export const UU06_MAX_MESSAGES_PER_RUN = 20
 export const INITIAL_LOOKBACK_DAYS = 90
 export const RECONCILIATION_LOOKBACK_DAYS = 7
-export const RECONCILIATION_MAX_MESSAGES = 250
+export const RECONCILIATION_MAX_MESSAGES = 5000
+export const RECONCILIATION_BATCH_SIZE = UU06_MAX_MESSAGES_PER_RUN
 
 interface GmailHeader { name?: string; value?: string }
 interface GmailPartBody { data?: string }
@@ -104,6 +112,8 @@ export interface GmailReconciliationRunResult {
   checkedAt: string
   alreadyApplied: boolean
   workspaceVersion?: string
+  cycleComplete: boolean
+  continuation?: GmailReconciliationContinuationState
   summary: GmailReconciliationSummary
   metrics: GmailExecutionMetrics
 }
@@ -466,42 +476,74 @@ export async function fetchGmailAutomationBatch(options: {
 }
 
 
-async function reconciliationMessageIds(fetchImpl: typeof fetch, accessToken: string, now: Date) {
-  const queries = [
-    `after:${Math.floor(now.getTime() / 1000) - RECONCILIATION_LOOKBACK_DAYS * 86400} -in:spam -in:trash`,
-    'is:unread -in:spam -in:trash',
-  ]
-  const ids = new Set<string>()
-  for (const query of queries) {
-    let pageToken: string | undefined
-    do {
-      const params = new URLSearchParams({ maxResults: String(GMAIL_PROVIDER_PAGE_SIZE), q: query })
-      if (pageToken) params.set('pageToken', pageToken)
-      const payload = await gmailJson<GmailMessageList>(fetchImpl, accessToken, `/messages?${params.toString()}`)
-      for (const item of payload.messages ?? []) if (item.id) ids.add(item.id)
-      if (ids.size > RECONCILIATION_MAX_MESSAGES) {
-        throw new WorkspaceSourceError(
-          'GMAIL_RECONCILIATION_LIMIT_EXCEEDED',
-          `Gmail reconciliation found more than ${RECONCILIATION_MAX_MESSAGES} candidate records and cannot prove complete bounded coverage.`,
-          false,
-        )
-      }
-      pageToken = payload.nextPageToken
-    } while (pageToken)
+async function reconciliationMessagePage(
+  fetchImpl: typeof fetch,
+  accessToken: string,
+  cycleStartedAt: string,
+  pageToken?: string,
+) {
+  const cycleMs = Date.parse(cycleStartedAt)
+  if (!Number.isFinite(cycleMs)) {
+    throw new WorkspaceSourceError('GMAIL_RECONCILIATION_STATE_INVALID', 'Gmail reconciliation continuation time is invalid.', false)
   }
-  return [...ids]
+  const after = Math.floor(cycleMs / 1000) - RECONCILIATION_LOOKBACK_DAYS * 86400
+  const query = `{after:${after} is:unread} -in:spam -in:trash`
+  const params = new URLSearchParams({ maxResults: String(GMAIL_PROVIDER_PAGE_SIZE), q: query })
+  if (pageToken) params.set('pageToken', pageToken)
+  const payload = await gmailJson<GmailMessageList>(fetchImpl, accessToken, `/messages?${params.toString()}`)
+  return {
+    ids: [...new Set((payload.messages ?? []).flatMap((item) => item.id ? [item.id] : []))],
+    nextPageToken: payload.nextPageToken,
+    query,
+  }
 }
 
 export async function fetchGmailReconciliationBatch(options: {
   accessToken: string
+  continuation?: GmailReconciliationContinuationState
   fetchImpl?: typeof fetch
   now?: Date
 }) {
   const fetchImpl = options.fetchImpl ?? fetch
   const now = options.now ?? new Date()
-  const ids = await reconciliationMessageIds(fetchImpl, options.accessToken, now)
-  const fetched = await fetchMessages(fetchImpl, options.accessToken, ids)
-  return { ...fetched, scannedCount: ids.length }
+  const cycleStartedAt = options.continuation?.cycleStartedAt ?? now.toISOString()
+  const priorAggregate = options.continuation?.aggregate ?? emptyGmailReconciliationAccumulator()
+  let ids = [...(options.continuation?.pendingMessageIds ?? [])]
+  let nextPageToken = options.continuation?.pageToken
+
+  if (!ids.length) {
+    const page = await reconciliationMessagePage(
+      fetchImpl,
+      options.accessToken,
+      cycleStartedAt,
+      options.continuation?.pageToken,
+    )
+    ids = page.ids
+    nextPageToken = page.nextPageToken
+  }
+
+  if (priorAggregate.scannedCount + ids.length > RECONCILIATION_MAX_MESSAGES) {
+    throw new WorkspaceSourceError(
+      'GMAIL_RECONCILIATION_LIMIT_EXCEEDED',
+      `Gmail reconciliation exceeded the bounded ${RECONCILIATION_MAX_MESSAGES}-record cycle limit.`,
+      false,
+    )
+  }
+
+  const selectedMessageIds = ids.slice(0, RECONCILIATION_BATCH_SIZE)
+  const pendingMessageIds = ids.slice(RECONCILIATION_BATCH_SIZE)
+  const fetched = await fetchMessages(fetchImpl, options.accessToken, selectedMessageIds)
+  const coverageComplete = pendingMessageIds.length === 0 && !nextPageToken
+
+  return {
+    ...fetched,
+    scannedCount: selectedMessageIds.length,
+    selectedMessageIds,
+    cycleStartedAt,
+    nextPageToken,
+    pendingMessageIds,
+    coverageComplete,
+  }
 }
 
 function recentLiveProcesses(snapshot: import('../src/snapshot.js').PJSDASSnapshot, now: Date) {
@@ -520,11 +562,6 @@ function recentLiveProcesses(snapshot: import('../src/snapshot.js').PJSDASSnapsh
     return last === undefined || !Number.isFinite(last) || last >= cutoff
   })
 }
-
-const RECONCILIATION_STATES: GmailReconciliationState[] = [
-  'NO_ACTION', 'WAITING', 'ACTION_REQUIRED', 'COMPLETED',
-  'EXPLICITLY_DECLINED', 'CLOSED', 'UNRESOLVED',
-]
 
 export function gmailReconciliationStateForRecord(record: GmailSemanticRecord): GmailReconciliationState | undefined {
   const relevant = Boolean(record.recruitingRelevant || record.gaps.length || record.observation.candidates.length)
@@ -553,16 +590,13 @@ export function gmailReconciliationStateForRecord(record: GmailSemanticRecord): 
   return 'NO_ACTION'
 }
 
-function reconciliationSummary(
-  snapshot: import('../src/snapshot.js').PJSDASSnapshot,
+function reconciliationBatchAccumulator(
   records: GmailSemanticRecord[],
   scannedCount: number,
   unavailableMessageCount: number,
   now: Date,
-): GmailReconciliationSummary {
-  const stateCounts = Object.fromEntries(
-    RECONCILIATION_STATES.map((state) => [state, 0]),
-  ) as Record<GmailReconciliationState, number>
+): GmailReconciliationAccumulator {
+  const stateCounts = emptyGmailReconciliationAccumulator().stateCounts
   const gmailOpportunityIds = new Set<string>()
   let gmailOnlyCount = 0
   let fixedOrHardWithin7DaysCount = 0
@@ -580,10 +614,13 @@ function reconciliationSummary(
       }
       if (candidate.kind === 'process_event') {
         const temporal = candidate.temporal
-        const instant = temporal?.deadlineAt ?? temporal?.startAt ?? candidate.dueAt
+        const instant = temporal?.latestStartAt ?? temporal?.deadlineAt ?? temporal?.startAt ?? candidate.dueAt
         const value = instant ? new Date(instant).getTime() : NaN
         if (Number.isFinite(value) && value >= now.getTime() && value <= horizon
-          && (candidate.timingMode === 'deadline' || temporal?.shape === 'fixed_range' || temporal?.shape === 'deadline')) {
+          && (candidate.timingMode === 'deadline'
+            || temporal?.shape === 'fixed_range'
+            || temporal?.shape === 'deadline'
+            || temporal?.shape === 'availability_window')) {
           fixedOrHardWithin7DaysCount += 1
         }
       }
@@ -591,20 +628,37 @@ function reconciliationSummary(
     if (!hasBoundTarget && record.observation.candidates.length > 0) gmailOnlyCount += 1
   }
 
-  const liveProcesses = recentLiveProcesses(snapshot, now)
-  const pjsdasOnlyCount = liveProcesses.filter((process) => !process.opportunityId || !gmailOpportunityIds.has(process.opportunityId)).length
-  const recruitingRelevantCount = RECONCILIATION_STATES.reduce((sum, state) => sum + stateCounts[state], 0)
   return {
     scannedCount,
-    recruitingRelevantCount,
+    recruitingRelevantCount: GMAIL_RECONCILIATION_STATES.reduce((sum, state) => sum + stateCounts[state], 0),
     stateCounts,
-    actionableCount: stateCounts.ACTION_REQUIRED,
-    unresolvedCount: stateCounts.UNRESOLVED,
     gmailOnlyCount,
-    pjsdasOnlyCount,
     fixedOrHardWithin7DaysCount,
-    liveProcessCount: liveProcesses.length,
     unavailableMessageCount,
+    gmailOpportunityIds: [...gmailOpportunityIds],
+  }
+}
+
+function finalReconciliationSummary(
+  snapshot: import('../src/snapshot.js').PJSDASSnapshot,
+  aggregate: GmailReconciliationAccumulator,
+  now: Date,
+): GmailReconciliationSummary {
+  const liveProcesses = recentLiveProcesses(snapshot, now)
+  const gmailOpportunityIds = new Set(aggregate.gmailOpportunityIds)
+  const pjsdasOnlyCount = liveProcesses.filter((process) =>
+    !process.opportunityId || !gmailOpportunityIds.has(process.opportunityId)).length
+  return {
+    scannedCount: aggregate.scannedCount,
+    recruitingRelevantCount: aggregate.recruitingRelevantCount,
+    stateCounts: aggregate.stateCounts,
+    actionableCount: aggregate.stateCounts.ACTION_REQUIRED,
+    unresolvedCount: aggregate.stateCounts.UNRESOLVED,
+    gmailOnlyCount: aggregate.gmailOnlyCount,
+    pjsdasOnlyCount,
+    fixedOrHardWithin7DaysCount: aggregate.fixedOrHardWithin7DaysCount,
+    liveProcessCount: liveProcesses.length,
+    unavailableMessageCount: aggregate.unavailableMessageCount,
   }
 }
 
@@ -634,17 +688,24 @@ export async function runGmailReconciliationForBinding(options: {
   googleClientSecret: string
   fetchImpl?: typeof fetch
   now?: () => Date
+  forceStart?: boolean
   execution?: { beforeWorkspaceWrite: () => Promise<void> }
 }): Promise<GmailReconciliationRunResult> {
   const fetchImpl = options.fetchImpl ?? fetch
   const now = options.now?.() ?? new Date()
   const checkedAt = now.toISOString()
+  if (!options.binding.gmailReconciliationState
+    && !options.binding.gmailReconciliationRequestedAt
+    && !options.forceStart) {
+    throw new WorkspaceSourceError('GMAIL_RECONCILIATION_NOT_REQUESTED', 'No Gmail reconciliation cycle is pending.', false)
+  }
   if (options.binding.gmailIntakeConsentVersion !== 'uu06-v1') {
     throw new WorkspaceSourceError('GMAIL_RECONCILIATION_CONSENT_REQUIRED', 'Gmail reconciliation requires the current explicit Gmail intake consent.', false)
   }
   if (!options.binding.grantedScopes.includes(GMAIL_READONLY_SCOPE)) {
     throw new WorkspaceSourceError('GOOGLE_GMAIL_SCOPE_MISSING', 'Gmail reconciliation requires the Gmail read-only permission.', false)
   }
+
   const refreshToken = await decryptSecret(options.binding.refreshTokenCiphertext, options.tokenEncryptionKey)
   const accessToken = await refreshGoogleAccessToken(refreshToken, {
     clientId: options.googleClientId,
@@ -664,7 +725,13 @@ export async function runGmailReconciliationForBinding(options: {
       })
     : createDriveWorkspaceSource({ getAccessToken: () => accessToken, fetchImpl, timezone: 'Asia/Shanghai' })
   const workspace = await source.read()
-  const batch = await fetchGmailReconciliationBatch({ accessToken, fetchImpl, now })
+  const priorState = options.binding.gmailReconciliationState
+  const batch = await fetchGmailReconciliationBatch({
+    accessToken,
+    continuation: priorState,
+    fetchImpl,
+    now,
+  })
   const records = batch.messages
     .map((message) => gmailSemanticRecordFromMessage(message, workspace.snapshot.data.opportunities, now))
     .filter((record): record is GmailSemanticRecord => Boolean(record))
@@ -688,8 +755,41 @@ export async function runGmailReconciliationForBinding(options: {
       },
     })
   }
-  const summary = reconciliationSummary(workspace.snapshot, records, batch.scannedCount, batch.unavailableMessageIds.length, now)
-  const runId = `gmail:reconcile:${checkedAt.slice(0, 16)}`
+
+  const batchAccumulator = reconciliationBatchAccumulator(
+    records,
+    batch.scannedCount,
+    batch.unavailableMessageIds.length,
+    now,
+  )
+  const aggregate = mergeGmailReconciliationAccumulator(
+    priorState?.aggregate ?? emptyGmailReconciliationAccumulator(),
+    batchAccumulator,
+  )
+  if (aggregate.scannedCount > RECONCILIATION_MAX_MESSAGES) {
+    throw new WorkspaceSourceError(
+      'GMAIL_RECONCILIATION_LIMIT_EXCEEDED',
+      `Gmail reconciliation exceeded the bounded ${RECONCILIATION_MAX_MESSAGES}-record cycle limit.`,
+      false,
+    )
+  }
+  const summary = finalReconciliationSummary(workspace.snapshot, aggregate, now)
+  const continuation: GmailReconciliationContinuationState | undefined = batch.coverageComplete
+    ? undefined
+    : {
+        version: 1,
+        cycleStartedAt: batch.cycleStartedAt,
+        pageToken: batch.nextPageToken,
+        pendingMessageIds: batch.pendingMessageIds,
+        aggregate,
+      }
+
+  const batchIdentity = [
+    batch.cycleStartedAt,
+    priorState?.pageToken ?? 'start',
+    ...batch.selectedMessageIds,
+  ].join('|')
+  const runId = `gmail:reconcile:${stableIngestionHash(batchIdentity)}`
   const result = applyGmailSemanticBatch(workspace.snapshot, {
     runId,
     sourceId: GMAIL_SOURCE_ID,
@@ -699,7 +799,8 @@ export async function runGmailReconciliationForBinding(options: {
     workspaceRevision: workspace.context.workspaceVersion,
     reconcileExisting: true,
   })
-  if (!result.alreadyApplied) {
+
+  if (batch.coverageComplete && !result.alreadyApplied) {
     const proof: GmailReconciliationProof = {
       version: 1,
       scannedCount: summary.scannedCount,
@@ -712,7 +813,7 @@ export async function runGmailReconciliationForBinding(options: {
       unavailableMessageCount: summary.unavailableMessageCount,
     }
     result.snapshot.data.timeline = [...(result.snapshot.data.timeline ?? []), {
-      id: `timeline:gmail-reconciliation:${stableIngestionHash(runId)}`,
+      id: `timeline:gmail-reconciliation:${stableIngestionHash(batch.cycleStartedAt)}`,
       kind: 'gmail_reconciliation_completed',
       category: 'data',
       source: 'gmail',
@@ -720,12 +821,13 @@ export async function runGmailReconciliationForBinding(options: {
       recordedAt: checkedAt,
       title: `Gmail reconciliation｜${summary.recruitingRelevantCount} recruiting / ${summary.scannedCount} scanned`,
       detail: `ACTION_REQUIRED:${summary.actionableCount} · UNRESOLVED:${summary.unresolvedCount} · Gmail-only:${summary.gmailOnlyCount} · TodayAction-only:${summary.pjsdasOnlyCount} · hard/fixed≤7d:${summary.fixedOrHardWithin7DaysCount}`,
-      sourceRef: runId,
+      sourceRef: `gmail:reconciliation:${batch.cycleStartedAt}`,
       gmailReconciliation: proof,
     }]
     result.snapshot.exportedAt = checkedAt
     validateSnapshot(result.snapshot)
   }
+
   let workspaceVersion = workspace.context.workspaceVersion
   if (!result.alreadyApplied) {
     await options.execution?.beforeWorkspaceWrite()
@@ -736,7 +838,13 @@ export async function runGmailReconciliationForBinding(options: {
       command: {
         commandId: runId,
         operation: 'gmail_semantic_intake',
-        payload: { sourceId: GMAIL_SOURCE_ID, reconciliation: true, summary },
+        payload: {
+          sourceId: GMAIL_SOURCE_ID,
+          reconciliation: true,
+          cycleStartedAt: batch.cycleStartedAt,
+          batchScannedCount: batch.scannedCount,
+          cycleComplete: batch.coverageComplete,
+        },
         provenance: { sourceId: GMAIL_SOURCE_ID, adapterVersion: 'reconciliation-v1' },
         compensation: { ...result.compensation },
         effectiveTime: checkedAt,
@@ -744,19 +852,22 @@ export async function runGmailReconciliationForBinding(options: {
     })
     workspaceVersion = written.context.workspaceVersion
   }
+
   return {
     userId: options.binding.userId,
     checkedAt,
     alreadyApplied: result.alreadyApplied,
     workspaceVersion,
+    cycleComplete: batch.coverageComplete,
+    continuation,
     summary,
     metrics: {
       status: 'completed',
       mode: 'reconciliation',
-      receivedCount: summary.scannedCount,
-      accountedCount: summary.scannedCount,
-      unresolvedCount: summary.unresolvedCount,
-      recordGapCount: summary.unavailableMessageCount,
+      receivedCount: batch.scannedCount,
+      accountedCount: batch.scannedCount,
+      unresolvedCount: batchAccumulator.stateCounts.UNRESOLVED,
+      recordGapCount: batch.unavailableMessageIds.length,
     },
   }
 }
