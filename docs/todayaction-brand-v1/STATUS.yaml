@@ -2,8 +2,8 @@ package: TODAYACTION-BRAND-UI-v1
 registered_on: '2026-09-26'
 brand_name: TodayAction
 selected_direction: A_three_part_abstract_mark
-status: TA_01_IN_PROGRESS
-runtime_implementation: IMPLEMENTED_AWAITING_CLOUD_GATES
+status: TA_01_TARGETED_VERIFIED_FULL_GATE_PENDING
+runtime_implementation: IMPLEMENTED_TARGETED_VERIFIED
 production_rebrand: NOT_DEPLOYED
 implementation_writer:
   pr: 169
@@ -28,17 +28,27 @@ existing_writer:
   instructions: Do not alter this branch or approve its private production actions for a rebrand.
 rounds:
   TA-00: HANDOFF_HASH_VERIFIED
-  TA-01: IMPLEMENTED_AWAITING_CLOUD_GATES
+  TA-01: TARGETED_VERIFIED_FULL_GATE_PENDING
   TA-02: NOT_STARTED
   TA-03: NOT_STARTED
 assets:
   reference: assets/approved-A-reference.webp
   provenance: assets/SOURCE.json
-  vector_status: PRODUCTION_COPY_AWAITING_BROWSER_VERIFICATION
-  small_size_status: LOCALLY_RENDERED_NOT_BROWSER_OR_DEVICE_CERTIFIED
+  vector_status: CLOUD_EXPORT_BYTE_VERIFIED
+  small_size_status: CLOUD_BROWSER_ORIGINAL_SIZE_VISUALLY_REVIEWED_DEVICE_DEFERRED
 checks:
-  repository_runtime_build: PENDING_CLOUD_GATE
+  repository_runtime_build: ROOT_AND_LEGACY_BUILDS_PASS
   live_title_and_favicon: NOT_VERIFIED_FOR_NEW_BRAND
+  targeted_candidate: 50708bc31d904ea560903aa0dcfac3e0dc51e460
+  brand_gate_run: 36222179123
+  root_and_legacy_browser_tests: 6_PASS
+  unit_and_type_run: 36222179131
+  unit_and_type_result: PASS
+  voiceover_run: 36222179156
+  voiceover_result: PASS
+  readonly_rollback_run: 36222179086
+  readonly_rollback_result: PASS
+  stable_head_ci_browser: PENDING
   real_iphone_installation: DEFERRED
   external_oauth_branding: DEFERRED
   trademark_clearance: NOT_PERFORMED

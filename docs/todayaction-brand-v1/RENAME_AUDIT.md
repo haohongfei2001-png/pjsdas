@@ -117,4 +117,4 @@ The five production SVG copies preserve the handoff bytes. Immutable design asse
 
 ## Gate status
 
-Implementation candidate only. Cloud exporter, root/legacy build/browser, full stable-head CI/Browser, merge/main and production readback are pending. Do not infer PASS from this audit.
+Targeted candidate 50708bc31d904ea560903aa0dcfac3e0dc51e460 passed pinned cloud exports and 6 root/legacy built-browser tests. See TA-01-RECEIPT.md for exact evidence. Full stable-head CI/Browser, merge/main and production readback remain pending.
