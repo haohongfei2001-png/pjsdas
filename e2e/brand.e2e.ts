@@ -84,3 +84,37 @@ test('Brand name, accessible capture, language and narrow header preserve the TS
   await expect(page).toHaveTitle('ChatGPT 授权 · TodayAction')
   await expect(page.locator('body')).not.toContainText('PJSDAS')
 })
+
+test('A mark remains legible at real favicon sizes and maskable crops', async ({ page }) => {
+  await page.goto(base + 'today')
+  await page.setViewportSize({ width: 1000, height: 700 })
+  const origin = new URL(page.url()).origin
+  await page.setContent('<html><body style="margin:0;padding:32px;font:16px system-ui;background:#f5f6f9;color:#1b2540"><h1>TodayAction · A asset review</h1><main id="review"></main></body></html>')
+  await page.evaluate(({ prefix }) => {
+    const review = document.getElementById('review')!
+    for (const background of ['#ffffff', '#202632']) {
+      const row = document.createElement('section')
+      row.style.cssText = 'display:flex;align-items:center;gap:36px;padding:28px;margin-bottom:20px;background:' + background + ';color:' + (background === '#ffffff' ? '#1b2540' : '#fff')
+      for (const size of [16, 24, 32, 48]) {
+        const item = document.createElement('div')
+        const image = new Image(size, size); image.src = prefix + 'brand/favicon-' + size + '.png'
+        item.append(image, document.createTextNode(' ' + size + 'px'))
+        row.append(item)
+      }
+      review.append(row)
+    }
+    const row = document.createElement('section')
+    row.style.cssText = 'display:flex;gap:28px;padding:20px;background:#ffffff'
+    for (const radius of ['50%', '22%', '0']) {
+      const image = new Image(160, 160)
+      image.src = prefix + 'brand/icon-maskable-512.png'
+      image.style.borderRadius = radius
+      row.append(image)
+    }
+    review.append(row)
+  }, { prefix: origin + base })
+  await page.locator('img').evaluateAll(async images => {
+    await Promise.all(images.map(image => (image as HTMLImageElement).decode()))
+  })
+  await visual(page, (base === '/' ? 'ROOT' : 'LEGACY') + '_ICONS')
+})

@@ -28,52 +28,52 @@
       "bytes": 535
     },
     "public/brand/app-icon-1024.png": {
-      "sha256": "afccbe7b5efdeeb9e1d0d39c07d39d6de0c3de0ad40ae3cc154ca1df4e5477b2",
-      "bytes": 31561
+      "sha256": "949105f60997f73761f9c21b8540bce9ba0ef9423a412d7cef81f9251c2774c6",
+      "bytes": 30068
     },
     "public/brand/apple-touch-icon.png": {
-      "sha256": "0464d59ae2b383fac2c444c935daa1674df98155916eba2eddd9f3a3264d3fa4",
-      "bytes": 4245
+      "sha256": "f3dad96f8be7e306c4790d7c54d52ab757001c831bae69c05d473f546299039b",
+      "bytes": 4141
     },
     "public/brand/favicon-16.png": {
-      "sha256": "2123cba6b247d215535660cc7e3da3a27f54777a06e0e894fa269604ae2f940f",
-      "bytes": 467
+      "sha256": "99244b56f319084834276bdb45419f7dcd1f431f6772050c401a551959553cee",
+      "bytes": 449
     },
     "public/brand/favicon-24.png": {
-      "sha256": "b9494b297741a16b12947156b4a407f03c20f5ad28f4f45e4460377cd74f4a43",
-      "bytes": 652
+      "sha256": "2e855e340f4309a7452f5360fb307999783e60bc3d9dcc417ac96f3ecc976163",
+      "bytes": 620
     },
     "public/brand/favicon-32.png": {
-      "sha256": "baf2380cbe1a4c76cef59fcfa8bdead4931b8f9007d5d51d1f2554257dee1576",
-      "bytes": 818
+      "sha256": "3c5b289f567db98f428d2a8b3310d88d640221c60d62eb70bf39febd330694ca",
+      "bytes": 782
     },
     "public/brand/favicon-48.png": {
-      "sha256": "9993f53754fcc3a1c7632c64e486360d4742e03d9fe891cd28b4d73b31295469",
-      "bytes": 1197
+      "sha256": "e9e232b051b0ef232c8501298a70b9a509250d932febb084a15616137e8d2cdf",
+      "bytes": 1082
     },
     "public/brand/favicon.ico": {
-      "sha256": "60336545367a451550e0e7c067fb088907c1716b8a2ce8ffd53f2886f1173ce4",
-      "bytes": 4599
+      "sha256": "377b759425367b57ffab215f77d6c303bfc31a74f35648d3e3e8ec429b6caab8",
+      "bytes": 2482
     },
     "public/brand/favicon.svg": {
       "sha256": "89daeab693f865b86cb276e918e5a9cb7bfa9fcbabae7421dba95a7155cb8780",
       "bytes": 535
     },
     "public/brand/icon-192.png": {
-      "sha256": "91251d3a3fc618be3bc1ca95e61ae26f13bbcb11b6e7e405cb1f066571a2d2f8",
-      "bytes": 4422
+      "sha256": "a624aa9aee604d838a797fee23d3107509f208e64b206d6e8083af49c15a0d0b",
+      "bytes": 4352
     },
     "public/brand/icon-512.png": {
-      "sha256": "483994d3a0b8b0102b2d6ba3e759ebc3993020f58965d295c06ab6959f8cc4da",
-      "bytes": 13636
+      "sha256": "bd579933bc6e2e0601973d783eb8d81dac0e8cd0d725611175b772c90f4fa330",
+      "bytes": 13279
     },
     "public/brand/icon-maskable-512.png": {
-      "sha256": "6f61249bbbdb1aaa162b6fb7eb9e66de5e44ad9e9dc3c935df3de020b593016b",
-      "bytes": 11549
+      "sha256": "aef1511c8d8a9c2a4c1584b734b3c2a93bf91c1b523cd500811037f1b427860c",
+      "bytes": 11425
     },
     "public/favicon.ico": {
-      "sha256": "60336545367a451550e0e7c067fb088907c1716b8a2ce8ffd53f2886f1173ce4",
-      "bytes": 4599
+      "sha256": "377b759425367b57ffab215f77d6c303bfc31a74f35648d3e3e8ec429b6caab8",
+      "bytes": 2482
     }
   }
 }
