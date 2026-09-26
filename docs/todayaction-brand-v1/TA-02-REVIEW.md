@@ -18,7 +18,7 @@ No first task enlargement, new product navigation, list filtering/ranking, busin
 
 ## Verification design
 
-Cloud builds before and after using the same shared synthetic CGR workspace fixtures and the existing demo snapshot. The shared factory/cors helpers were moved without business changes from the existing CGR browser journey; its command/receipt server and assertions remain intact.
+Cloud builds before and after using the same shared synthetic CGR workspace fixtures and the existing TSUI standalone date-only node fixture. The shared factory/cors helpers were moved without business changes from the existing CGR browser journey; its command/receipt server and assertions remain intact.
 
 Widths 360/390/430/768/1280/1440, text scale 100%/200%, screenshots and measured overflow/label clipping/selected text contrast for:
 Today populated, first use, signed-in empty, loading, failed read, verified cache; library/detail; schedule/event; capture/settings; self-owned authorization.
@@ -30,3 +30,7 @@ All cloud evidence and any correction after initial candidate render will be rec
 ## Inner-loop finding 1
 
 [UI Review 36223829603](https://github.com/haohongfei2001-png/pjsdas/actions/runs/36223829603) built the exact baseline but failed before tests were registered: Node's ESM loader requires a JSON import attribute. The fixture is now read through the same local Node file mechanism used by existing repository tests, without dependency or runtime changes. No UI PASS is claimed from this failed harness invocation. Unit/type and read-only rollback passed on the initial candidate.
+
+## Inner-loop finding 2: bounded fixture diagnosis
+
+[UI Review 36223955966](https://github.com/haohongfei2001-png/pjsdas/actions/runs/36223955966) successfully rendered first-use/empty/loading baseline states and measured the inactive mobile switch at 4.00 contrast. Three loaded-state checks found zero tasks. Repository snapshot validation shows the mixed demo schedule nodes refer to demo processes absent from the CGR workspace; this composed fixture is invalid, so the client correctly rejects it. The mix was replaced with the existing TSUI standalone date-only node fixture alongside the shared CGR workspace. Every composed fixture now passes the production snapshot validator before use. Counts and safety assertions remain enforced; no production snapshot validation was weakened. Corrected baseline/after render remains pending.

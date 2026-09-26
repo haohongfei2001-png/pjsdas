@@ -1,8 +1,6 @@
 import { expect, test, type Page } from '@playwright/test'
 import { mkdir, writeFile } from 'node:fs/promises'
-import { upgradeSnapshotToLatest, type PJSDASSnapshot } from '../src/snapshot.js'
-import { readFileSync } from 'node:fs'
-const demo = JSON.parse(readFileSync(new URL('../gateway/fixtures/demo-workspace.json', import.meta.url), 'utf8'))
+import { validateSnapshot } from '../src/snapshot.js'
 import { BACKEND, seedSession, workspace, cors, health } from './fixtures/todayWorkspace.js'
 
 const before = process.env.TA_UI_REVIEW === 'before'
@@ -15,9 +13,16 @@ function fixture() {
   const value = workspace()
   value.data.opportunities[0]!.company = 'A公司 · 跨设备招聘与长期岗位进展研究团队'
   value.data.opportunities[0]!.role = 'Senior Product Research / 高级产品策略、设计与用户研究负责人'
-  const legacy = upgradeSnapshotToLatest(demo as PJSDASSnapshot)
-  value.data.processEvents = legacy.data.processEvents
-  value.data.scheduleNodes = legacy.data.scheduleNodes
+  // Existing TSUI-02 standalone date-only fixture, with no foreign process references.
+  value.data.scheduleNodes = [...(value.data.scheduleNodes ?? []), ...Array.from({length:2},(_,i)=>({
+    id:'tsui-node-'+i,occurrenceId:'tsui-occurrence-'+i,version:1,
+    kind:'interview' as const,state:'scheduled' as const,constraintKind:'employer_hard' as const,
+    temporal:{shape:'date_only' as const,precision:'date' as const,timezone:'Asia/Shanghai',
+      date:new Date(Date.UTC(2026,8,25+i)).toISOString().slice(0,10),resolutionBasis:'source_explicit' as const},
+    evidenceRefs:[],sourceVersionRefs:[],relatedActionIds:[],relatedPrepIds:[],
+    createdAt:'2026-09-20T00:00:00.000Z',updatedAt:'2026-09-20T00:00:00.000Z',
+  }))]
+  validateSnapshot(value)
   return value
 }
 async function server(page: Page, value = fixture(), options: { failed?: boolean; held?: Promise<void> } = {}) {
