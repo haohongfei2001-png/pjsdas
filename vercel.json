@@ -83,6 +83,9 @@
   "functions": {
     "api/automation-gmail.ts": {
       "maxDuration": 30
+    },
+    "api/automation-ingestion-reconciliation.ts": {
+      "maxDuration": 30
     }
   }
 }
