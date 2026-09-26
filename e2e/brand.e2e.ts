@@ -12,7 +12,14 @@ async function visual(page: Page, label: string) {
 test('TodayAction initial HTML, icons and stable installation identity work on deep links', async ({ page, request }) => {
   const html = await request.get(base + 'library/private-test-id')
   expect(html.ok()).toBeTruthy()
-  expect(await html.text()).toContain('<title>TodayAction</title>')
+  const initialHtml = await html.text()
+  expect(initialHtml).toContain('<title>TodayAction</title>')
+  // Check transformed HTML paths in both the dev server and real production builds.
+  for (const resource of ['brand/favicon.ico?v=ta-a-1', 'brand/favicon-32.png?v=ta-a-1', 'brand/favicon.svg?v=ta-a-1', 'brand/apple-touch-icon.png?v=ta-a-1', 'manifest.webmanifest']) {
+    expect(initialHtml).toContain('href="' + base + resource + '"')
+    if (base !== '/') expect(initialHtml).not.toContain('href="' + base + base.slice(1) + resource + '"')
+    expect((await request.get(base + resource)).ok()).toBeTruthy()
+  }
   const manifestResponse = await request.get(base + 'manifest.webmanifest')
   expect(manifestResponse.headers()['content-type']).toMatch(/json|manifest/)
   const manifest = await manifestResponse.json()

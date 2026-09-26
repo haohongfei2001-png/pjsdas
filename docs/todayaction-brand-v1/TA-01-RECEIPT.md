@@ -27,3 +27,7 @@ Baseline remote main: `153d8ccb6201e33cd1c9a09a0d7bf84a7cf0f079`.
 The following documentation-only closure commit leaves the tested runtime/assets unchanged and triggers the existing ready-PR full CI/Browser boundary. Full stable-head gate, merge/exact-main and production readback are pending; this receipt does not claim completion or deployment. Release publication remains disarmed (`publishOnProductionSuccess: false`); package version and protocol identities are unchanged.
 
 Actual iPhone installation/old icon refresh, owner private workspace/real account canary, third-party OAuth/connector branding and formal trademark clearance remain DEFERRED.
+
+## Stable-head boundary finding
+
+At `6f023367eda821da9f1459c70e52ad9da2df323d`, full CI, Brand Gate, Firefox/WebKit matrix, VoiceOver and read-only rollback passed. [Browser E2E 36222456522](https://github.com/haohongfei2001-png/pjsdas/actions/runs/36222456522) passed 79 journeys and failed the new icon path assertion: the Vite dev HTML transform prepended `/pjsdas/` again after `%BASE_URL%` interpolation. Both production builds passed; this was diagnosed from the exact received URL, not retried unchanged. The corrective candidate uses root-absolute public asset links, which Vite rebases for development and build, and checks every initial HTML icon/manifest URL against the configured base. Stable corrected-head gates remain pending.
