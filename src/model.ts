@@ -544,6 +544,39 @@ export interface IngestionRunSummary {
   cursor?: string
 }
 
+export type IngestionResolutionOutcome =
+  | 'resolved'
+  | 'superseded'
+  | 'ignored'
+  | 'duplicate'
+  | 'historical_only'
+  | 'active_unresolved'
+
+export type IngestionResolutionReason =
+  | 'later_source_state'
+  | 'duplicate_fingerprint'
+  | 'linked_action_settled'
+  | 'linked_process_terminal'
+  | 'matching_process_terminal'
+  | 'explicit_non_actionable'
+  | 'historical_unlinked'
+  | 'live_process_ambiguity'
+  | 'recent_unresolved'
+  | 'transport_gap_active'
+
+export interface IngestionResolutionRecord {
+  version: 1
+  sourceKind: IngestionSourceKind
+  sourceId: string
+  sourceRecordId: string
+  targetIngestionTimelineId: string
+  targetFingerprint: string
+  outcome: IngestionResolutionOutcome
+  reason: IngestionResolutionReason
+  evidenceRefs: string[]
+  reconciledAt: string
+}
+
 export type GmailReconciliationState =
   | 'NO_ACTION'
   | 'WAITING'
@@ -603,6 +636,7 @@ export type TimelineKind =
   | 'discovery_deferred'
   | 'ingestion_recorded'
   | 'ingestion_run_completed'
+  | 'ingestion_resolution_recorded'
   | 'gmail_reconciliation_completed'
   | 'semantic_intake_applied'
   | 'decision_requested'
@@ -639,6 +673,7 @@ export interface TimelineRecord {
   discoveryQualityScore?: number
   ingestion?: IngestionLedgerEntry
   ingestionRun?: IngestionRunSummary
+  ingestionResolution?: IngestionResolutionRecord
   gmailReconciliation?: GmailReconciliationProof
   changes?: Record<string, TimelineFieldChange>
 }
