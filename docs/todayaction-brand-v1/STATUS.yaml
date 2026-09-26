@@ -6,7 +6,7 @@ status: TA_02_IMPLEMENTED_VERIFICATION_PENDING
 runtime_implementation: TA_01_MERGED_TA_02_VERIFICATION_PENDING
 production_rebrand: TA_01_DEPLOYED_CORE_ROUTES_VERIFIED_ASSET_HTTP_PENDING
 implementation_writer:
-  pr: PENDING_CREATE
+  pr: 170
   branch: brand/ta02-ui-refinement
   phase: TA-02
   authorization: OWNER_EXPLICIT_SERIAL_HANDOFF_2026_09_26

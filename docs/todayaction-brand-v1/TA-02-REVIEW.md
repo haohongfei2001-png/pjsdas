@@ -26,3 +26,7 @@ Before issues are retained as observations, never reported as PASS. Candidate as
 Candidate also checks identical displayed task IDs before/after matrix navigation, no requested business writes, focus/escape restoration, truthful state distinctions. Existing TSUI journeys verify complete 130-node/300-job/history collections and event command/receipt/Undo behavior.
 
 All cloud evidence and any correction after initial candidate render will be recorded here after verification. Device/private workspace/provider-brand/legal evidence remains DEFERRED. #164 remains PARKED and untouched.
+
+## Inner-loop finding 1
+
+[UI Review 36223829603](https://github.com/haohongfei2001-png/pjsdas/actions/runs/36223829603) built the exact baseline but failed before tests were registered: Node's ESM loader requires a JSON import attribute. The fixture is now read through the same local Node file mechanism used by existing repository tests, without dependency or runtime changes. No UI PASS is claimed from this failed harness invocation. Unit/type and read-only rollback passed on the initial candidate.

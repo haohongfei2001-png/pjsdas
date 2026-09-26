@@ -1,7 +1,8 @@
 import { expect, test, type Page } from '@playwright/test'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { upgradeSnapshotToLatest, type PJSDASSnapshot } from '../src/snapshot.js'
-import demo from '../gateway/fixtures/demo-workspace.json'
+import { readFileSync } from 'node:fs'
+const demo = JSON.parse(readFileSync(new URL('../gateway/fixtures/demo-workspace.json', import.meta.url), 'utf8'))
 import { BACKEND, seedSession, workspace, cors, health } from './fixtures/todayWorkspace.js'
 
 const before = process.env.TA_UI_REVIEW === 'before'
