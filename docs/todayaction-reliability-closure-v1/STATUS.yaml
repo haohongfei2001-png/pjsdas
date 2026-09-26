@@ -1,5 +1,5 @@
 package: TODAYACTION-RELIABILITY-CLOSURE-v1
-status: R01_IMPLEMENTED_VERIFICATION_PENDING
+status: R01_READY_FULL_GATES_PENDING
 writer:
   branch: reliability/todayaction-reconciliation-v1
   phase: R01
@@ -7,7 +7,7 @@ issues:
   R01: 125
   R02: 156
 rounds:
-  R01: IMPLEMENTED_VERIFICATION_PENDING
+  R01: READY_FULL_GATES_PENDING
   R02: NOT_STARTED
 gmail_recovery_161:
   main: decae2c6136595d2c01f17c8b9dcf76d00cdcbbc
