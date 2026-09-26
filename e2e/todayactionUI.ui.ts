@@ -1,7 +1,7 @@
 import { expect, test, type Page } from '@playwright/test'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { validateSnapshot } from '../src/snapshot.js'
-import { BACKEND, seedSession, workspace, cors, health } from './fixtures/todayWorkspace.js'
+import { BACKEND, seedSession, workspace, action, cors, health } from './fixtures/todayWorkspace.js'
 
 const before = process.env.TA_UI_REVIEW === 'before'
 const phase = before ? 'before' : 'after'
@@ -54,6 +54,13 @@ async function matrix(page: Page, label: string) {
       if (document.documentElement.scrollWidth > document.documentElement.clientWidth + 1) issues.push('horizontal overflow')
       const tell = document.querySelector<HTMLElement>('.tsui-tell-button')
       if (tell && (tell.scrollWidth > tell.clientWidth + 1 || tell.scrollHeight > tell.clientHeight + 1)) issues.push('capture label overflow')
+      for (const state of document.querySelectorAll<HTMLElement>('.tsui-job-open>.tsui-job-state')) {
+        if (!state.getClientRects().length) continue
+        const range = document.createRange()
+        range.selectNodeContents(state)
+        const lines = [...range.getClientRects()]
+        if (lines.length >= 3 && lines.every(line => line.width < Number.parseFloat(getComputedStyle(state).fontSize) * 1.8)) issues.push('job status forced into single-character lines')
+      }
       const parse = (color: string) => (color.match(/[\d.]+/g) ?? []).map(Number)
       const lum = (rgb:number[]) => rgb.slice(0,3).map(v => v/255).map(v => v <= .04045 ? v/12.92 : ((v+.055)/1.055)**2.4).reduce((a,v,i)=>a+v*[.2126,.7152,.0722][i]!,0)
       const ratios: {selector:string;ratio:number}[] = []
@@ -182,5 +189,32 @@ test('TA-02 verified cache and self-owned authorization keep source failures vis
   await page.goto(base+'?authorization_id=synthetic-ui-review')
   await expect(page.getByRole('heading',{name:'授权 ChatGPT 访问 TodayAction'})).toBeVisible()
   await matrix(page,'AUTHORIZATION')
+  expect(state.writes).toEqual([])
+})
+
+test('TA-02 wrapped desktop header stays above the sticky node panel during dense-list scrolling',async ({page})=>{
+  const value=fixture()
+  value.data.actions.push(...Array.from({length:6},(_,i)=>action('TA-dense-'+i,'完整任务 '+i,'A-opp-2',55-i)))
+  validateSnapshot(value)
+  const state=await server(page,value)
+  await page.goto(base+'today')
+  await expect(page.locator('.tsui-task-row')).toHaveCount(8)
+  for (const width of [768,1280,1440]) {
+    await page.setViewportSize({width,height:900})
+    await page.evaluate(()=>{document.documentElement.style.fontSize='200%';window.scrollTo(0,0)})
+    await page.waitForTimeout(100)
+    await page.evaluate(()=>window.scrollTo(0,350))
+    await page.waitForTimeout(100)
+    const bounds=await page.evaluate(()=>{
+      const header=document.querySelector('.tsui-topbar')!.getBoundingClientRect()
+      const panel=document.querySelector('.tsui-node-panel')!.getBoundingClientRect()
+      return {headerBottom:header.bottom,panelTop:panel.top,scrollY:window.scrollY}
+    })
+    console.log('TA02_STICKY:'+JSON.stringify({phase,width,...bounds}))
+    if(!before) expect(bounds.panelTop).toBeGreaterThanOrEqual(bounds.headerBottom)
+    const encoded=(await page.screenshot({type:'jpeg',quality:48,animations:'disabled'})).toString('base64')
+    const key='TA02_'+phase.toUpperCase()+'_DENSE_'+width+'_200'
+    for(let i=0;i<encoded.length;i+=3000)console.log(key+'_DATA:'+encoded.slice(i,i+3000))
+  }
   expect(state.writes).toEqual([])
 })

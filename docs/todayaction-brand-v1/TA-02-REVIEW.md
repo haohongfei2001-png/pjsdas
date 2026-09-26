@@ -38,3 +38,11 @@ All cloud evidence and any correction after initial candidate render will be rec
 ## Inner-loop finding 3: scoped settings selector
 
 [UI Review 36224205335](https://github.com/haohongfei2001-png/pjsdas/actions/runs/36224205335) rendered valid loaded Today/library/detail/schedule/event/capture states and all freshness scenarios; the composed fixture passed snapshot validation and displayed both exact action IDs. The loaded gallery stopped at Settings because `.cloud-settings-card` matches both the account and AI-access cards. The assertion now uses the exact account heading, preserving the visible-section requirement. The capture-label measurement now checks both horizontal and vertical overflow. No runtime change was needed for this selector correction; corrected candidate render remains pending.
+
+## First full gallery and human review correction
+
+[UI Review 36224341242](https://github.com/haohongfei2001-png/pjsdas/actions/runs/36224341242), candidate `e61970767c8eae81de6f148a5f00821418d76a7c`, completed four journeys and 156 before plus 156 after cells. After had zero measured root/label overflow or selected contrast failures; baseline exposed 3.10 task-time, 4.00 inactive mobile switch, 2.78 security-note contrast and capture clipping. Brand/unit/type/rollback also passed.
+
+Screenshot review found a status-child layout defect beyond those measurements: the mobile status was auto-placed in the narrow icon column. The status now explicitly occupies the identity column below its metadata; desktop status receives its own fourth button column while the sibling Apply action stays in its article column. A DOM text-line measurement detects forced single-character status stacks.
+
+The wrapped header also retains the old fixed 90px node offset. A presentation-only ResizeObserver now measures header height for sticky nodes and focus/detail scroll margins. A dense eight-task, desktop 200% text journey records baseline and candidate actual bounds after scrolling. No account/workspace state, selection or command behavior changes. Corrected render remains pending.

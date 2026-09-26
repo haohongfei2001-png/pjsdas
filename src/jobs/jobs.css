@@ -24,3 +24,8 @@
 .tsui-library .tsui-job-open:focus-visible,.tsui-job-apply:focus-visible{outline:3px solid #315ec5;outline-offset:-3px}
 @media(max-width:800px){.tsui-library-toolbar{align-items:stretch;flex-direction:column}.tsui-library-toolbar input{width:100%}.tsui-library-filters button{white-space:normal;overflow-wrap:anywhere}}
 @media(max-width:700px){.tsui-job-row{grid-template-columns:minmax(0,1fr);gap:0;padding-bottom:14px}.tsui-library .tsui-job-open.opportunity-decision-row{grid-template-columns:36px minmax(0,1fr);padding:18px 0 12px}.tsui-job-state,.tsui-job-apply{justify-self:start;max-width:100%;margin-left:46px;text-align:left}.tsui-library-filters{flex-wrap:wrap}.tsui-library-filters button{flex:1 1 90px}}
+
+/* Status is a child of the open-row button, while Apply is its article sibling. */
+.tsui-library .tsui-job-open:has(>.tsui-job-state){grid-template-columns:38px minmax(0,1fr) minmax(100px,150px) minmax(0,8rem)}
+.tsui-job-open>.tsui-job-state{grid-column:4;margin-left:0}
+@media(max-width:700px){.tsui-library .tsui-job-open:has(>.tsui-job-state){grid-template-columns:36px minmax(0,1fr)}.tsui-job-open>.tsui-job-state{grid-column:2;grid-row:3;justify-self:start;margin-top:8px}}

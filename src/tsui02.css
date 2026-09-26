@@ -22,7 +22,7 @@
 .tsui-today-grid{display:grid;grid-template-columns:minmax(0,1.38fr) minmax(360px,1fr);gap:20px;align-items:start}
 .tsui-panel,.tsui-schedule-panel{min-width:0;border:1px solid #e6eaf1;border-radius:15px;background:#fff;box-shadow:0 4px 18px rgba(34,53,88,.035)}
 .tsui-task-panel{min-height:610px}
-.tsui-node-panel{position:sticky;top:90px;display:flex;flex-direction:column;height:min(710px,calc(100vh - 116px));min-height:420px}
+.tsui-node-panel{position:sticky;top:calc(var(--ta-header-height,70px) + 20px);display:flex;flex-direction:column;height:min(710px,calc(100vh - var(--ta-header-height,70px) - 46px));min-height:420px}
 .tsui-panel-header{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:80px;padding:17px 22px;border-bottom:1px solid #edf0f5}
 .tsui-panel-header h2{margin:0 0 4px;color:#1e2942;font-size:1.0625rem;letter-spacing:-.018em}
 .tsui-panel-header p{margin:0;color:#5d6b82;font-size:0.75rem}
@@ -224,3 +224,6 @@
 .tsui-status button,.tsui-empty button,.tsui-panel-link,.tsui-completed>button{min-height:44px}
 .tsui-empty p{margin:0;line-height:1.6}
 @media(max-width:700px){.tsui-top-actions{flex:1 1 190px}.tsui-tell-button{flex:1;min-width:0}.tsui-primary-nav button{height:auto;min-height:44px;white-space:normal;overflow-wrap:anywhere;padding-block:7px}.tsui-primary-nav{height:auto;min-height:60px;padding-bottom:8px}.tsui-task-actions{flex-wrap:wrap}.tsui-page-heading>div{min-width:0}}
+
+.tsui-schedule-detail{scroll-margin-top:calc(var(--ta-header-height,70px) + 20px)}
+.cgr-app-shell :is(button,a,input,textarea,summary){scroll-margin-block:calc(var(--ta-header-height,70px) + 24px) 32px}
