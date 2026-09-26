@@ -368,7 +368,9 @@ export function reconcileIngestionDebt(
       outcome: proposed.outcome,
       reason: proposed.reason,
       evidenceRefs: proposed.evidenceRefs,
-      reconciledAt: timestamp,
+      // IndexedDB reads timeline rows in key order, so timestamp ties cannot
+      // carry transition order across a durable round trip.
+      reconciledAt: new Date(Math.max(now.getTime(), prior ? Date.parse(prior.reconciledAt) + 1 : now.getTime())).toISOString(),
       previousResolutionId: current?.id,
     })
 

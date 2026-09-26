@@ -119,6 +119,8 @@ describe('R02 active unresolved reconciliation', () => {
     expect(summarizeCoverage(settled.snapshot.data.timeline, { now: NOW }).activeUnresolvedCount).toBe(0)
 
     const live = structuredClone(settled.snapshot)
+    // A durable IndexedDB getAll() orders rows by primary key, not append order.
+    live.data.timeline.sort((a, b) => a.id.localeCompare(b.id))
     live.data.processes[0] = process('opp-return')
     const returned = reconcileIngestionDebt(live, NOW)
     expect(returned.appended).toHaveLength(1)
