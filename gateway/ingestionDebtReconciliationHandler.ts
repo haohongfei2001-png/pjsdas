@@ -72,6 +72,7 @@ export function createIngestionDebtReconciliationHandler(config: IngestionDebtRe
       return json(405, { code: 'METHOD_NOT_ALLOWED', message: 'Use GET or POST.' })
     }
     const workerToken = bearer(request)
+    const dryRun = new URL(request.url).searchParams.get('dryRun') === '1'
     if (!workerToken) {
       return json(401, { code: 'AUTOMATION_AUTH_REQUIRED', message: 'TodayAction automation authorization is required.' })
     }
@@ -90,6 +91,7 @@ export function createIngestionDebtReconciliationHandler(config: IngestionDebtRe
       changed?: boolean
       evaluatedUnresolvedKeys?: number
       appendedResolutionCount?: number
+      resolutionOutcomeCounts?: Record<string, number>
       code?: string
     }> = []
 
@@ -121,6 +123,22 @@ export function createIngestionDebtReconciliationHandler(config: IngestionDebtRe
         }
 
         const resolutionIds = result.appended.map((item) => item.id).sort()
+        const resolutionOutcomeCounts: Record<string, number> = {}
+        for (const item of result.appended) {
+          const outcome = item.ingestionResolution?.outcome
+          if (outcome) resolutionOutcomeCounts[outcome] = (resolutionOutcomeCounts[outcome] ?? 0) + 1
+        }
+        if (dryRun) {
+          results.push({
+            status: 'success',
+            changed: true,
+            evaluatedUnresolvedKeys: result.evaluatedUnresolvedKeys,
+            appendedResolutionCount: result.appended.length,
+            resolutionOutcomeCounts,
+          })
+          continue
+        }
+
         await source.write({
           snapshot: result.snapshot,
           expectedWorkspaceVersion: workspace.context.workspaceVersion,
@@ -144,6 +162,7 @@ export function createIngestionDebtReconciliationHandler(config: IngestionDebtRe
           changed: true,
           evaluatedUnresolvedKeys: result.evaluatedUnresolvedKeys,
           appendedResolutionCount: result.appended.length,
+          resolutionOutcomeCounts,
         })
       } catch (caught) {
         const code = caught instanceof WorkspaceSourceError ? caught.code : 'AUTOMATION_FAILED'
@@ -153,6 +172,7 @@ export function createIngestionDebtReconciliationHandler(config: IngestionDebtRe
 
     const failedUsers = results.filter((item) => item.status === 'error').length
     return json(failedUsers ? 207 : 200, {
+      dryRun,
       processedWorkspaces: results.length,
       successfulWorkspaces: results.length - failedUsers,
       failedWorkspaces: failedUsers,
