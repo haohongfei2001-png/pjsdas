@@ -53,7 +53,7 @@ async function matrix(page: Page, label: string) {
       const issues: string[] = []
       if (document.documentElement.scrollWidth > document.documentElement.clientWidth + 1) issues.push('horizontal overflow')
       const tell = document.querySelector<HTMLElement>('.tsui-tell-button')
-      if (tell && tell.scrollWidth > tell.clientWidth + 1) issues.push('capture label overflow')
+      if (tell && (tell.scrollWidth > tell.clientWidth + 1 || tell.scrollHeight > tell.clientHeight + 1)) issues.push('capture label overflow')
       const parse = (color: string) => (color.match(/[\d.]+/g) ?? []).map(Number)
       const lum = (rgb:number[]) => rgb.slice(0,3).map(v => v/255).map(v => v <= .04045 ? v/12.92 : ((v+.055)/1.055)**2.4).reduce((a,v,i)=>a+v*[.2126,.7152,.0722][i]!,0)
       const ratios: {selector:string;ratio:number}[] = []
@@ -125,7 +125,7 @@ test('TA-02 loaded surfaces retain identifiers, detail, capture and keyboard foc
     expect(Number.parseFloat(outline.width)).toBeGreaterThanOrEqual(3)
   }
   await page.goto(base+'settings')
-  await expect(page.locator('.cloud-settings-card')).toBeVisible()
+  await expect(page.getByRole('heading',{name:'账号与跨设备数据',exact:true})).toBeVisible()
   await matrix(page,'SETTINGS')
   expect(state.writes).toEqual([])
 })
