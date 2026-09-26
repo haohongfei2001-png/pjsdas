@@ -13,3 +13,14 @@
 .tsui-library .tsui-job-open.opportunity-decision-row{display:grid;grid-template-columns:38px minmax(0,1fr) minmax(120px,170px);align-items:center;gap:14px;width:100%;min-height:88px;border:0;padding:13px 106px 13px 0}
 @media(max-width:700px){.tsui-library .tsui-job-open.opportunity-decision-row{grid-template-columns:36px minmax(0,1fr);align-items:start;min-height:112px;gap:2px 10px;padding:18px 82px 18px 0}}
 @media(max-width:360px){.tsui-library .tsui-job-open.opportunity-decision-row{padding-right:70px}}
+
+/* TA-02: keep the apply/status column in flow so large text cannot overlap a long identity. */
+.tsui-job-row{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:12px}
+.tsui-library .tsui-job-open.opportunity-decision-row{min-width:0;grid-template-columns:38px minmax(0,1fr) minmax(100px,150px);padding-right:0}
+.tsui-job-state,.tsui-job-apply{position:static;transform:none;max-width:8rem;overflow-wrap:anywhere;white-space:normal;text-align:center}
+.tsui-job-apply{box-sizing:border-box;padding:8px 12px;line-height:1.4}
+.tsui-library-heading{flex-wrap:wrap}
+.tsui-library-toolbar input{box-sizing:border-box;max-width:100%;min-width:0}
+.tsui-library .tsui-job-open:focus-visible,.tsui-job-apply:focus-visible{outline:3px solid #315ec5;outline-offset:-3px}
+@media(max-width:800px){.tsui-library-toolbar{align-items:stretch;flex-direction:column}.tsui-library-toolbar input{width:100%}.tsui-library-filters button{white-space:normal;overflow-wrap:anywhere}}
+@media(max-width:700px){.tsui-job-row{grid-template-columns:minmax(0,1fr);gap:0;padding-bottom:14px}.tsui-library .tsui-job-open.opportunity-decision-row{grid-template-columns:36px minmax(0,1fr);padding:18px 0 12px}.tsui-job-state,.tsui-job-apply{justify-self:start;max-width:100%;margin-left:46px;text-align:left}.tsui-library-filters{flex-wrap:wrap}.tsui-library-filters button{flex:1 1 90px}}

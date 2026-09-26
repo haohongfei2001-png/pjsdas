@@ -2,13 +2,13 @@ package: TODAYACTION-BRAND-UI-v1
 registered_on: '2026-09-26'
 brand_name: TodayAction
 selected_direction: A_three_part_abstract_mark
-status: TA_01_TARGETED_VERIFIED_FULL_GATE_PENDING
-runtime_implementation: IMPLEMENTED_TARGETED_VERIFIED
-production_rebrand: NOT_DEPLOYED
+status: TA_02_IMPLEMENTED_VERIFICATION_PENDING
+runtime_implementation: TA_01_MERGED_TA_02_VERIFICATION_PENDING
+production_rebrand: TA_01_DEPLOYED_CORE_ROUTES_VERIFIED_ASSET_HTTP_PENDING
 implementation_writer:
-  pr: 169
-  branch: docs/todayaction-brand-v1
-  phase: TA-01
+  pr: PENDING_CREATE
+  branch: brand/ta02-ui-refinement
+  phase: TA-02
   authorization: OWNER_EXPLICIT_SERIAL_HANDOFF_2026_09_26
 baseline:
   main: 153d8ccb6201e33cd1c9a09a0d7bf84a7cf0f079
@@ -28,8 +28,8 @@ existing_writer:
   instructions: Do not alter this branch or approve its private production actions for a rebrand.
 rounds:
   TA-00: HANDOFF_HASH_VERIFIED
-  TA-01: TARGETED_VERIFIED_FULL_GATE_PENDING
-  TA-02: NOT_STARTED
+  TA-01: ENGINEERING_COMPLETE_EXACT_MAIN
+  TA-02: IMPLEMENTED_VERIFICATION_PENDING
   TA-03: NOT_STARTED
 assets:
   reference: assets/approved-A-reference.webp
@@ -48,7 +48,21 @@ checks:
   voiceover_result: PASS
   readonly_rollback_run: 36222179086
   readonly_rollback_result: PASS
-  stable_head_ci_browser: PENDING
+  stable_head_ci_browser: PASS_WITH_ONE_CONFIGURED_RETRY_FLAKE
+  ta01_candidate: 8e60faa17dc5422dc09d6f56a75f68e22f54d83f
+  ta01_candidate_ci: 36222858233
+  ta01_candidate_browser: 36222858252
+  ta01_exact_main: 6f4fe9a6528adf40c506cea84695b44b679aa24e
+  ta01_exact_tree: 287979780ec3c67c9b0b85bfd212df9dc9678f62
+  ta01_main_ci: 36223127953
+  ta01_main_browser: 36223127971
+  ta01_pages: 36223127933
+  ta01_production_readonly: 36223228786
+  ta01_live_visual: 36223228840
+  ta01_live_visual_result: PASS_NON_PRIVATE_SYNTHETIC_FIXTURES
+  ta02_widths: [360, 390, 430, 768, 1280, 1440]
+  ta02_text_scale: [100, 200]
+  ta02_before_after_matrix: PENDING
   real_iphone_installation: DEFERRED
   external_oauth_branding: DEFERRED
   trademark_clearance: NOT_PERFORMED
