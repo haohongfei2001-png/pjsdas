@@ -222,7 +222,9 @@ export function expectedSourcesFromRegistry(records: TimelineRecord[] | undefine
 
 export function summarizeCoverage(timeline: TimelineRecord[] | undefined, options: CoverageOptions = {}): CoverageSummary {
   const records = timeline ?? []
-  const runs = records.filter((item): item is TimelineRecord & { ingestionRun: IngestionRunSummary } => Boolean(item.ingestionRun)).sort((a, b) => b.ingestionRun.completedAt.localeCompare(a.ingestionRun.completedAt))
+  const runs = records
+    .filter((item): item is TimelineRecord & { ingestionRun: IngestionRunSummary } => Boolean(item.ingestionRun))
+    .sort((a, b) => b.ingestionRun.completedAt.localeCompare(a.ingestionRun.completedAt))
   const latestBySource = new Map<string, IngestionRunSummary>()
   for (const record of runs) {
     const run = record.ingestionRun
@@ -233,35 +235,99 @@ export function summarizeCoverage(timeline: TimelineRecord[] | undefined, option
   const globalMode = options.expectedSources !== undefined
   const expected = options.expectedSources ?? []
   const expectedByKey = new Map(expected.map((item) => [sourceKey(item.sourceKind, item.sourceId), item]))
+  const relevantIngestion = (item: TimelineRecord) => Boolean(
+    item.ingestion
+      && (!globalMode || expectedByKey.has(sourceKey(item.ingestion.sourceKind, item.ingestion.sourceId))),
+  )
+  const relevantResolution = (item: TimelineRecord) => Boolean(
+    item.ingestionResolution
+      && (!globalMode || expectedByKey.has(sourceKey(item.ingestionResolution.sourceKind, item.ingestionResolution.sourceId))),
+  )
   const missingSources = expected.filter((item) => !latestBySource.has(sourceKey(item.sourceKind, item.sourceId)))
   const nowMs = options.now?.getTime()
 
-  const latestRecords = latestRecordStates(records)
-  const allUnresolved = latestRecords.filter((item) => item.ingestion?.outcome === 'unresolved')
-  const unresolved = globalMode
-    ? allUnresolved.filter((item) => item.ingestion && expectedByKey.has(sourceKey(item.ingestion.sourceKind, item.ingestion.sourceId)))
-    : allUnresolved
-  const capabilityBoundaries = latestRecords.filter((item) => item.ingestion?.capabilityBoundaries?.length
-    && (!globalMode || expectedByKey.has(sourceKey(item.ingestion.sourceKind, item.ingestion.sourceId))))
-  const sourceIssueCount = (items: TimelineRecord[], kind: IngestionIssueKind) => items.filter((item) => item.ingestion?.issueKinds?.includes(kind)).length
-  const unclassifiedCount = (items: TimelineRecord[]) => items.filter((item) => !item.ingestion?.issueKinds?.length).length
+  const latestRecords = latestRecordStates(records).filter(relevantIngestion)
+  const latestResolutionByKey = new Map<string, TimelineRecord>()
+  for (const record of records.filter(relevantResolution)) {
+    const resolution = record.ingestionResolution!
+    const key = `${resolution.sourceKind}|${resolution.sourceId}|${resolution.sourceRecordId}`
+    const previous = latestResolutionByKey.get(key)
+    if (!previous || (previous.ingestionResolution?.reconciledAt ?? '') < resolution.reconciledAt) {
+      latestResolutionByKey.set(key, record)
+    }
+  }
+
+  const lifetimeUnresolvedKeys = new Map<string, TimelineRecord>()
+  for (const record of records) {
+    if (!relevantIngestion(record) || record.ingestion?.outcome !== 'unresolved') continue
+    const key = ingestionSourceRecordKey(record.ingestion)
+    const previous = lifetimeUnresolvedKeys.get(key)
+    if (!previous || (previous.ingestion?.accountedAt ?? '') < record.ingestion.accountedAt) {
+      lifetimeUnresolvedKeys.set(key, record)
+    }
+  }
+
+  const activeUnresolved = latestRecords.filter((item) => {
+    const ingestion = item.ingestion
+    if (!ingestion || ingestion.outcome !== 'unresolved') return false
+    const resolution = latestResolutionByKey.get(ingestionSourceRecordKey(ingestion))?.ingestionResolution
+    if (!resolution) return true
+    if (resolution.targetIngestionTimelineId !== item.id || resolution.targetFingerprint !== ingestion.fingerprint) return true
+    return resolution.outcome === 'active_unresolved'
+  })
+
+  const resolutionOutcomeCounts: Partial<Record<IngestionResolutionOutcome, number>> = {}
+  for (const record of latestResolutionByKey.values()) {
+    const outcome = record.ingestionResolution!.outcome
+    resolutionOutcomeCounts[outcome] = (resolutionOutcomeCounts[outcome] ?? 0) + 1
+  }
+
+  const capabilityBoundaries = latestRecords.filter((item) => item.ingestion?.capabilityBoundaries?.length)
+  const sourceIssueCount = (items: TimelineRecord[], kind: IngestionIssueKind) =>
+    items.filter((item) => item.ingestion?.issueKinds?.includes(kind)).length
+  const unclassifiedCount = (items: TimelineRecord[]) =>
+    items.filter((item) => !item.ingestion?.issueKinds?.length).length
+  const lifetimeForSource = (sourceKind: IngestionSourceKind, sourceId: string) =>
+    [...lifetimeUnresolvedKeys.values()].filter((item) =>
+      item.ingestion?.sourceKind === sourceKind && item.ingestion?.sourceId === sourceId).length
 
   const sourceSummaries: CoverageSourceSummary[] = [...latestBySource.values()].map((run) => {
-    const sourceUnresolved = unresolved.filter((item) => item.ingestion?.sourceKind === run.sourceKind && item.ingestion?.sourceId === run.sourceId).length
-    const sourceBoundaries = capabilityBoundaries.filter((item) => item.ingestion?.sourceKind === run.sourceKind && item.ingestion?.sourceId === run.sourceId).length
-    const sourceIssues = unresolved.filter((item) => item.ingestion?.sourceKind === run.sourceKind && item.ingestion?.sourceId === run.sourceId)
+    const sourceActive = activeUnresolved.filter((item) =>
+      item.ingestion?.sourceKind === run.sourceKind && item.ingestion?.sourceId === run.sourceId)
+    const sourceBoundaries = capabilityBoundaries.filter((item) =>
+      item.ingestion?.sourceKind === run.sourceKind && item.ingestion?.sourceId === run.sourceId).length
     const outcomeTotal = Object.values(run.outcomes).reduce((sum, value) => sum + (value ?? 0), 0)
     const policy = expectedByKey.get(sourceKey(run.sourceKind, run.sourceId))
     const completedMs = new Date(run.completedAt).getTime()
-    const ageHours = nowMs !== undefined && Number.isFinite(nowMs) && Number.isFinite(completedMs) ? Math.max(0, (nowMs - completedMs) / 3_600_000) : undefined
+    const ageHours = nowMs !== undefined && Number.isFinite(nowMs) && Number.isFinite(completedMs)
+      ? Math.max(0, (nowMs - completedMs) / 3_600_000)
+      : undefined
     const stale = Boolean(policy && ageHours !== undefined && ageHours > policy.maxAgeHours)
+    const activeCount = sourceActive.length
     return {
-      sourceKind: run.sourceKind, sourceId: run.sourceId, label: policy?.label, producer: run.producer, lastCompletedAt: run.completedAt,
-      receivedCount: run.receivedCount, accountedCount: run.accountedCount, unresolvedCount: sourceUnresolved, capabilityBoundaryCount: sourceBoundaries,
-      transportGapCount: sourceIssueCount(sourceIssues, 'transport_gap'), interpretationFailureCount: sourceIssueCount(sourceIssues, 'interpretation_failure'), businessAmbiguityCount: sourceIssueCount(sourceIssues, 'business_ambiguity'), unclassifiedUnresolvedCount: unclassifiedCount(sourceIssues),
-      outcomes: { ...run.outcomes }, balanced: run.receivedCount === run.accountedCount && run.accountedCount === outcomeTotal,
-      maxAgeHours: policy?.maxAgeHours, cadenceMinutes: policy?.cadenceMinutes, freshnessSlaMinutes: policy?.freshnessSlaMinutes, policySource: policy?.policySource,
-      ageHours, stale,
+      sourceKind: run.sourceKind,
+      sourceId: run.sourceId,
+      label: policy?.label,
+      producer: run.producer,
+      lastCompletedAt: run.completedAt,
+      receivedCount: run.receivedCount,
+      accountedCount: run.accountedCount,
+      unresolvedCount: activeCount,
+      activeUnresolvedCount: activeCount,
+      lifetimeUnresolvedCount: lifetimeForSource(run.sourceKind, run.sourceId),
+      capabilityBoundaryCount: sourceBoundaries,
+      transportGapCount: sourceIssueCount(sourceActive, 'transport_gap'),
+      interpretationFailureCount: sourceIssueCount(sourceActive, 'interpretation_failure'),
+      businessAmbiguityCount: sourceIssueCount(sourceActive, 'business_ambiguity'),
+      unclassifiedUnresolvedCount: unclassifiedCount(sourceActive),
+      outcomes: { ...run.outcomes },
+      balanced: run.receivedCount === run.accountedCount && run.accountedCount === outcomeTotal,
+      maxAgeHours: policy?.maxAgeHours,
+      cadenceMinutes: policy?.cadenceMinutes,
+      freshnessSlaMinutes: policy?.freshnessSlaMinutes,
+      policySource: policy?.policySource,
+      ageHours,
+      stale,
     }
   }).sort((a, b) => b.lastCompletedAt.localeCompare(a.lastCompletedAt))
 
@@ -271,20 +337,36 @@ export function summarizeCoverage(timeline: TimelineRecord[] | undefined, option
   const totalReceived = relevantSources.reduce((sum, item) => sum + item.receivedCount, 0)
   const totalAccounted = relevantSources.reduce((sum, item) => sum + item.accountedCount, 0)
   const staleSourceCount = relevantSources.filter((item) => item.stale).length
+  const activeUnresolvedCount = activeUnresolved.length
+  const lifetimeUnresolvedCount = lifetimeUnresolvedKeys.size
+
   return {
     allCaughtUp:
-      relevantSources.length > 0 &&
-      relevantSources.every((item) => item.balanced && !item.stale) &&
-      unresolved.length === 0 &&
-      missingSources.length === 0,
+      relevantSources.length > 0
+      && relevantSources.every((item) => item.balanced && !item.stale)
+      && activeUnresolvedCount === 0
+      && missingSources.length === 0,
     sourceCount: relevantSources.length,
     expectedSourceCount: expected.length,
     latestCompletedAt: relevantSources[0]?.lastCompletedAt,
-    totalReceived, totalAccounted, unresolvedCount: unresolved.length, capabilityBoundaryCount: capabilityBoundaries.length,
-    transportGapCount: sourceIssueCount(unresolved, 'transport_gap'), interpretationFailureCount: sourceIssueCount(unresolved, 'interpretation_failure'), businessAmbiguityCount: sourceIssueCount(unresolved, 'business_ambiguity'), unclassifiedUnresolvedCount: unclassifiedCount(unresolved),
-    staleSourceCount, missingSourceCount: missingSources.length,
-    sources: relevantSources, missingSources,
-    exceptions: unresolved.sort((a, b) => b.recordedAt.localeCompare(a.recordedAt)),
+    totalReceived,
+    totalAccounted,
+    unresolvedCount: activeUnresolvedCount,
+    activeUnresolvedCount,
+    lifetimeUnresolvedCount,
+    settledHistoricalUnresolvedCount: Math.max(0, lifetimeUnresolvedCount - activeUnresolvedCount),
+    resolutionOutcomeCounts,
+    capabilityBoundaryCount: capabilityBoundaries.length,
+    transportGapCount: sourceIssueCount(activeUnresolved, 'transport_gap'),
+    interpretationFailureCount: sourceIssueCount(activeUnresolved, 'interpretation_failure'),
+    businessAmbiguityCount: sourceIssueCount(activeUnresolved, 'business_ambiguity'),
+    unclassifiedUnresolvedCount: unclassifiedCount(activeUnresolved),
+    staleSourceCount,
+    missingSourceCount: missingSources.length,
+    sources: relevantSources,
+    missingSources,
+    exceptions: [...activeUnresolved].sort((a, b) => b.recordedAt.localeCompare(a.recordedAt)),
     capabilityBoundaries: capabilityBoundaries.sort((a, b) => b.recordedAt.localeCompare(a.recordedAt)),
   }
 }
+
