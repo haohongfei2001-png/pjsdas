@@ -125,3 +125,7 @@ TA-03 uses an anonymous read-only cloud gate for canonical and historical HTML, 
 
 Device, private-workspace, provider/connector control and legal evidence remain DEFERRED. Release publication stays disarmed. No service worker, private authentication, storage purge or new native/offline promise is added.
 
+
+## Final actual production evidence
+
+TA-01 and TA-02 are merged/deployed, and TA-03 exact main ae5ecfc78b101e581547f1553880d2dbadc1457d passed full CI,80 first-pass Browser,matrix,Pages,read-only production,Live Visual and anonymous brand readback36226173027. Both origins returned all17 pinned actual icon assets and ten correct route/title/metadata/reload results. No CSP header was observed on tested HTML; local images decoded with no CSP errors. Native tab/device/provider/private/legal remainDEFERRED. Archived public evidence and final closure identity are in TA-03-RECEIPT.md. This package stops after bounded documentation closure; #164 stays parked.
