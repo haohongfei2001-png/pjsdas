@@ -160,9 +160,12 @@ const INGESTION_RESOLUTION_REASONS = new Set([
   'linked_process_terminal',
   'matching_process_terminal',
   'explicit_non_actionable',
-  'historical_unlinked',
+  'semantic_receipt_committed',
+  'semantic_receipt_no_write',
+  'semantic_decision_settled',
+  'semantic_decision_open',
   'live_process_ambiguity',
-  'recent_unresolved',
+  'unlinked_unresolved',
   'transport_gap_active',
 ])
 
