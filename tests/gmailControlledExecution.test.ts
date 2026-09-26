@@ -18,12 +18,17 @@ const row = {
 const result = { coverageComplete: true, checkedAt: '2026-09-21T00:00:00Z', nextHistoryId: 'committed',
   metrics: { status: 'completed', mode: 'history', receivedCount: 1, accountedCount: 1, historyLag: { count: 1, sumMs: 1000, maxMs: 1000, under2m: 1, under15m: 0, over15m: 0 } } }
 function json(value: unknown, status = 200) { return new Response(JSON.stringify(value), { status, headers: { 'content-type': 'application/json' } }) }
-function harness(options: { coalesce?: boolean; assertValid?: boolean; budgetMs?: number; finishLost?: boolean; missingClaim?: boolean } = {}) {
+function harness(options: { coalesce?: boolean; assertValid?: boolean; budgetMs?: number; finishLost?: boolean; missingClaim?: boolean; idleReconciliation?: boolean } = {}) {
   const writes: { rpc: string; data: Record<string, unknown> }[] = []
   const fetchImpl: typeof fetch = async (input, init) => {
     const rpc = String(input).split('/').at(-1)!; const data = JSON.parse(String(init?.body ?? '{}'))
     writes.push({ rpc, data })
-    if (rpc === 'pjsdas_claim_gmail_automation_bindings_v5') return json([row, { ...row, user_id: 'later' }])
+    if (rpc === 'pjsdas_claim_gmail_automation_bindings_v5') {
+      const current = options.idleReconciliation
+        ? { ...row, gmail_reconciliation_requested_at: null, gmail_reconciliation_state: null }
+        : row
+      return json([current, { ...current, user_id: 'later' }])
+    }
     if (rpc === 'pjsdas_claim_gmail_automation_bindings_v4') return json([row, { ...row, user_id: 'later' }])
     if (rpc === 'pjsdas_begin_gmail_execution') return options.missingClaim ? json({ code: 'PGRST202' },404) : json(options.coalesce ? null : { ...row, gmail_history_id: 'fresh', user_id: data.target_user_id })
     if (rpc === 'pjsdas_assert_gmail_execution') return json(options.assertValid ?? true)
@@ -38,7 +43,10 @@ function harness(options: { coalesce?: boolean; assertValid?: boolean; budgetMs?
   const handler = createGmailAutomationHandler({ supabaseUrl: 'https://example.invalid', supabasePublishableKey: 'test', tokenEncryptionKey: 'test', googleClientId: 'test', googleClientSecret: 'test', fetchImpl,
     executionControlsEnabled: true, executionBudgetMs: options.budgetMs })
   const invoke = (all = false) => handler(new Request(`https://example.invalid/worker${all ? '' : '?userId=user'}`, { headers: { authorization: 'Bearer synthetic-worker' } }))
-  const reconcile = () => handler(new Request('https://example.invalid/worker?userId=user&mode=reconcile', { headers: { authorization: 'Bearer synthetic-worker' } }))
+  const reconcile = (force = false) => handler(new Request(
+    `https://example.invalid/worker?userId=user&mode=reconcile${force ? '&start=1' : ''}`,
+    { headers: { authorization: 'Bearer synthetic-worker' } },
+  ))
   return { writes, invoke, reconcile }
 }
 beforeEach(() => {
@@ -90,6 +98,25 @@ describe('opt-in controlled Gmail worker', () => {
     expect(h.writes.some((item) => item.rpc.endsWith('state_v2'))).toBe(false)
     expect(await response.text()).not.toContain('user')
   })
+  it('keeps the offset continuation route idle when no cycle is requested or active', async () => {
+    const h = harness({ idleReconciliation: true })
+    const response = await h.reconcile()
+    expect(response.status).toBe(200)
+    expect(state.reconcile).not.toHaveBeenCalled()
+    await expect(response.json()).resolves.toMatchObject({
+      processedUsers: 0,
+      idleUsers: 1,
+    })
+  })
+
+  it('allows an explicit authorized start to begin a cycle even when no scheduled request exists', async () => {
+    const h = harness({ idleReconciliation: true })
+    const response = await h.reconcile(true)
+    expect(response.status).toBe(200)
+    expect(state.reconcile).toHaveBeenCalledTimes(1)
+    expect(state.reconcile.mock.calls[0]?.[0].forceStart).toBe(true)
+  })
+
   it('runs reconciliation under the same lease and finalizes without a primary cursor patch', async () => {
     const h = harness()
     const response = await h.reconcile()
