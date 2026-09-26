@@ -1,4 +1,5 @@
 import type {
+  DecisionRequest,
   IngestionLedgerEntry,
   IngestionResolutionOutcome,
   IngestionResolutionReason,
@@ -113,7 +114,7 @@ function semanticReceiptResolution(
 
   const requests = receipt.decisionRequestIds
     .map((id) => (snapshot.data.decisionRequests ?? []).find((item) => item.id === id))
-    .filter((item): item is NonNullable<typeof item> => Boolean(item))
+    .filter((item): item is DecisionRequest => Boolean(item))
   if (!requests.length || requests.some((item) => item.state === 'open' || item.state === 'expired')) {
     return {
       outcome: 'active_unresolved',
