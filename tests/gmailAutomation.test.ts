@@ -163,15 +163,14 @@ describe('Gmail background automation', () => {
     expect(gmailReconciliationStateForRecord(record!)).toBe('ACTION_REQUIRED')
   })
 
-  it('reconciliation independently unions all recent and unread messages without a company or recruiting keyword query', async () => {
+  it('reconciliation independently unions recent and unread mail in one provider query without recruiting filters', async () => {
     const queries: string[] = []
     const fetchImpl = vi.fn(async (input: RequestInfo | URL) => {
       const url = new URL(String(input))
       if (url.pathname.endsWith('/messages')) {
         const q = url.searchParams.get('q') ?? ''
         queries.push(q)
-        if (q.startsWith('after:')) return json({ messages: [{ id: 'recent' }, { id: 'shared' }] })
-        if (q === 'is:unread -in:spam -in:trash') return json({ messages: [{ id: 'old-unread' }, { id: 'shared' }] })
+        return json({ messages: [{ id: 'recent' }, { id: 'old-unread' }, { id: 'shared' }] })
       }
       const id = /\/messages\/([^/?]+)/.exec(url.pathname)?.[1]
       if (id) return json({ id, internalDate: '1', payload: { headers: [] } })
@@ -182,9 +181,71 @@ describe('Gmail background automation', () => {
     })
     expect(result.scannedCount).toBe(3)
     expect(result.messages.map((item) => item.id).sort()).toEqual(['old-unread', 'recent', 'shared'])
-    expect(queries).toHaveLength(2)
-    expect(queries.some((query) => query.includes('newer_than'))).toBe(false)
-    expect(queries.join(' ')).not.toMatch(/面试|笔试|recruit|company/i)
+    expect(result.coverageComplete).toBe(true)
+    expect(queries).toHaveLength(1)
+    expect(queries[0]).toContain('{after:')
+    expect(queries[0]).toContain('is:unread')
+    expect(queries[0]).toContain('-in:spam -in:trash')
+    expect(queries[0]).not.toMatch(/面试|笔试|recruit|company/i)
+  })
+
+  it('reconciliation persists provider-page and message-id continuation instead of failing on a large mailbox', async () => {
+    const ids = Array.from({ length: 45 }, (_, index) => `reconcile-${index + 1}`)
+    const fetchImpl = vi.fn(async (input: RequestInfo | URL) => {
+      const url = new URL(String(input))
+      if (url.pathname.endsWith('/messages')) {
+        if (url.searchParams.get('pageToken') === 'page-2') {
+          return json({ messages: [{ id: 'page-2-only' }] })
+        }
+        return json({ messages: ids.map((id) => ({ id })), nextPageToken: 'page-2' })
+      }
+      const id = /\/messages\/([^/?]+)/.exec(url.pathname)?.[1]
+      if (id) return json({ id, internalDate: '1', payload: { headers: [] } })
+      return json({ error: 'unexpected' }, 500)
+    }) as unknown as typeof fetch
+
+    const first = await fetchGmailReconciliationBatch({
+      accessToken: 'google-access',
+      fetchImpl,
+      now: new Date('2026-09-26T00:30:00.000Z'),
+    })
+    expect(first.scannedCount).toBe(20)
+    expect(first.pendingMessageIds).toEqual(ids.slice(20))
+    expect(first.nextPageToken).toBe('page-2')
+    expect(first.coverageComplete).toBe(false)
+
+    const continuation = {
+      version: 1 as const,
+      cycleStartedAt: first.cycleStartedAt,
+      pageToken: first.nextPageToken,
+      pendingMessageIds: first.pendingMessageIds,
+      aggregate: {
+        scannedCount: 20,
+        recruitingRelevantCount: 0,
+        stateCounts: {
+          NO_ACTION: 0,
+          WAITING: 0,
+          ACTION_REQUIRED: 0,
+          COMPLETED: 0,
+          EXPLICITLY_DECLINED: 0,
+          CLOSED: 0,
+          UNRESOLVED: 0,
+        },
+        gmailOnlyCount: 0,
+        fixedOrHardWithin7DaysCount: 0,
+        unavailableMessageCount: 0,
+        gmailOpportunityIds: [],
+      },
+    }
+    const second = await fetchGmailReconciliationBatch({
+      accessToken: 'google-access',
+      fetchImpl,
+      continuation,
+    })
+    expect(second.messages.map((item) => item.id)).toEqual(ids.slice(20, 40))
+    expect(second.pendingMessageIds).toEqual(ids.slice(40))
+    expect(second.nextPageToken).toBe('page-2')
+    expect(second.coverageComplete).toBe(false)
   })
 
   it('settles every recruiting reconciliation record into one explicit state', () => {
