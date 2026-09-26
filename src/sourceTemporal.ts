@@ -9,7 +9,7 @@ export function resolveSourceTemporal(text: string, options: {
   const received = new Date(options.receivedAt)
   if (Number.isNaN(received.getTime())) return undefined
   // An unparsed source timezone or offset must not silently become the configured zone.
-  if (/(?:UTC|GMT|[+-]\d{2}:?\d{2}|\d{2}:\d{2}(?::\d{2})?Z\b|\b[A-Za-z_]+\/[A-Za-z_]+(?:\/[A-Za-z_]+)?\b|美国|欧洲|伦敦|\b(?:PST|PDT|EST|EDT|CST|BST|CET|CEST|JST|KST|IST)\b)/i.test(text)) return undefined
+  if (/(?:UTC|GMT|(?:^|\s)[+-]\d{2}:?\d{2}\b|T\d{2}:\d{2}(?::\d{2})?[+-]\d{2}:\d{2}|\d{2}:\d{2}(?::\d{2})?Z\b|\b[A-Za-z_]+\/[A-Za-z_]+(?:\/[A-Za-z_]+)?\b|美国|欧洲|伦敦|\b(?:PST|PDT|EST|EDT|CST|BST|CET|CEST|JST|KST|IST)\b)/i.test(text)) return undefined
   if (/\d{1,2}:\d{2}(?::\d{2})?\s+[A-Z]{3,5}\b/.test(text)) return undefined
   let parts: Record<string, string>
   try {
