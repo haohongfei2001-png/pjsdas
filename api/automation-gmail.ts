@@ -1,6 +1,7 @@
 import { createGmailAutomationHandler } from '../gateway/gmailAutomationHandler.js'
 import { createGmailPushHandler } from '../gateway/gmailPushHandler.js'
 import { createGmailWatchHandler } from '../gateway/gmailWatchHandler.js'
+import { createIngestionDebtReconciliationHandler } from '../gateway/ingestionDebtReconciliationHandler.js'
 import {
   PJSDAS_SUPABASE_PUBLISHABLE_KEY,
   PJSDAS_SUPABASE_URL,
@@ -27,6 +28,12 @@ const watchHandler = createGmailWatchHandler({
   deliveryMode: gmailDeliveryMode,
 })
 
+const ingestionDebtReconciliationHandler = createIngestionDebtReconciliationHandler({
+  supabaseUrl: PJSDAS_SUPABASE_URL,
+  supabasePublishableKey: PJSDAS_SUPABASE_PUBLISHABLE_KEY,
+  supabaseServiceRoleKey: process.env.PJSDAS_SUPABASE_SERVICE_ROLE_KEY ?? '',
+})
+
 const pushHandler = createGmailPushHandler({
   supabaseUrl: PJSDAS_SUPABASE_URL,
   supabasePublishableKey: PJSDAS_SUPABASE_PUBLISHABLE_KEY,
@@ -41,12 +48,14 @@ const pushHandler = createGmailPushHandler({
 export const gmailAutomationApi = { fetch: automationHandler }
 export const gmailWatchApi = { fetch: watchHandler }
 export const gmailPushApi = { fetch: pushHandler }
+export const ingestionDebtReconciliationApi = { fetch: ingestionDebtReconciliationHandler }
 
 export default {
   fetch(request: Request) {
     const route = new URL(request.url).searchParams.get('__pjsdas_gmail_route')
     if (route === 'push') return pushHandler(request)
     if (route === 'watch') return watchHandler(request)
+    if (route === 'ingestion_reconciliation') return ingestionDebtReconciliationHandler(request)
     return automationHandler(request)
   },
 }
