@@ -7,6 +7,8 @@ import { bootstrapPolicyFor } from './sourceRegistry.js'
 export interface GmailSemanticRecord {
   observation: SemanticIntakeObservation
   receivedAt: string
+  /** True when the bounded Gmail parser classified the source message as recruiting-related even if it requires no action. */
+  recruitingRelevant?: boolean
   gaps: string[]
   capabilityBoundaries?: string[]
   issueKinds?: IngestionIssueKind[]
