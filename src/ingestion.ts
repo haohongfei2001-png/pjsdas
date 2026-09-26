@@ -3,6 +3,7 @@ import type {
   IngestionIssueKind,
   IngestionOutcome,
   IngestionProducer,
+  IngestionResolutionOutcome,
   IngestionRunSummary,
   IngestionSourceKind,
   TimelineRecord,
@@ -57,7 +58,10 @@ export interface CoverageSourceSummary {
   lastCompletedAt: string
   receivedCount: number
   accountedCount: number
+  /** Compatibility alias for activeUnresolvedCount. */
   unresolvedCount: number
+  activeUnresolvedCount: number
+  lifetimeUnresolvedCount: number
   capabilityBoundaryCount: number
   transportGapCount: number
   interpretationFailureCount: number
@@ -80,7 +84,12 @@ export interface CoverageSummary {
   latestCompletedAt?: string
   totalReceived: number
   totalAccounted: number
+  /** Compatibility alias for activeUnresolvedCount. */
   unresolvedCount: number
+  activeUnresolvedCount: number
+  lifetimeUnresolvedCount: number
+  settledHistoricalUnresolvedCount: number
+  resolutionOutcomeCounts: Partial<Record<IngestionResolutionOutcome, number>>
   capabilityBoundaryCount: number
   transportGapCount: number
   interpretationFailureCount: number
