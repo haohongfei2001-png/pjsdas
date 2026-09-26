@@ -2,7 +2,7 @@ package: TODAYACTION-BRAND-UI-v1
 registered_on: '2026-09-26'
 brand_name: TodayAction
 selected_direction: A_three_part_abstract_mark
-status: TA_03_IMPLEMENTED_READBACK_PENDING
+status: TA_03_DEPLOYED_BASE_READBACK_PASS_STABLE_GATES_PENDING
 runtime_implementation: TA_01_TA_02_MERGED_EXACT_MAIN
 production_rebrand: TA_02_DEPLOYED_CORE_ROUTES_VERIFIED_BRAND_HTTP_PENDING
 implementation_writer:
@@ -30,7 +30,7 @@ rounds:
   TA-00: HANDOFF_HASH_VERIFIED
   TA-01: ENGINEERING_COMPLETE_EXACT_MAIN
   TA-02: ENGINEERING_COMPLETE_EXACT_MAIN
-  TA-03: IMPLEMENTED_READBACK_PENDING
+  TA-03: DEPLOYED_BASE_READBACK_PASS_STABLE_GATES_PENDING
 assets:
   reference: assets/approved-A-reference.webp
   provenance: assets/SOURCE.json
@@ -38,7 +38,7 @@ assets:
   small_size_status: CLOUD_BROWSER_ORIGINAL_SIZE_VISUALLY_REVIEWED_DEVICE_DEFERRED
 checks:
   repository_runtime_build: ROOT_AND_LEGACY_BUILDS_PASS
-  live_title_and_favicon: NOT_VERIFIED_FOR_NEW_BRAND
+  live_title_and_favicon: ANONYMOUS_HTTP_BYTES_DOM_DECODE_PASS_NATIVE_TAB_DEFERRED
   targeted_candidate: 50708bc31d904ea560903aa0dcfac3e0dc51e460
   brand_gate_run: 36222179123
   root_and_legacy_browser_tests: 6_PASS
@@ -74,7 +74,9 @@ checks:
   ta02_main_pages: 36225324775
   ta02_main_readonly: 36225455392
   ta02_main_live_visual: 36225455535
-  ta03_anonymous_canonical_and_historical: PENDING
+  ta03_anonymous_canonical_and_historical: DEPLOYED_TA02_BASE_PASS
+  ta03_base_readback_run: 36225692136
+  ta03_exact_merged_main_readback: PENDING
   real_iphone_installation: DEFERRED
   external_oauth_branding: DEFERRED
   trademark_clearance: NOT_PERFORMED

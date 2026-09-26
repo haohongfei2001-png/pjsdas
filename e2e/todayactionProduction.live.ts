@@ -76,7 +76,7 @@ for (const target of targets) {
     page.on('console',m=>{if(m.type()==='error' && /content security policy|refused to load.*image/i.test(m.text()))cspErrors.push(m.text())})
     const routeReports:unknown[]=[]
     for(const [path,title] of [
-      ['today','今天 · TodayAction'],['library','岗位库 · TodayAction'],
+      ['','今天 · TodayAction'],['today','今天 · TodayAction'],['library','岗位库 · TodayAction'],
       ['library/brand-readback-nonexistent','岗位库 · TodayAction'],
       ['schedule','日程 · TodayAction'],['settings','设置 · TodayAction'],
       ['decisions','待确认 · TodayAction'],['history','历史 · TodayAction'],
@@ -85,10 +85,13 @@ for (const target of targets) {
     ]) {
       const response=await request.get(target.base+path)
       // GitHub Pages serves the committed SPA 404 body, retaining HTTP 404.
-      expect(target.legacy || path==='unmatched-brand-readback' ? [200,404] : [200],path).toContain(response.status())
+      expect((target.legacy && path!=='') || path==='unmatched-brand-readback' ? [200,404] : [200],path).toContain(response.status())
       const html=await response.text()
       console.log('TA_PRODUCTION_ROUTE:'+JSON.stringify({target:target.name,path,status:response.status(),initialTitle:html.match(/<title>(.*?)<\/title>/)?.[1]??null,csp:response.headers()['content-security-policy']??null}))
       expect(html,path).toContain('<title>TodayAction</title>')
+      expect(html,path).toContain('name="application-name" content="TodayAction"')
+      expect(html,path).toContain('name="apple-mobile-web-app-title" content="TodayAction"')
+      expect(html,path).toContain('name="theme-color" content="#F5F6F9"')
       const prefix=new URL(target.base).pathname
       for(const resource of ['brand/favicon.svg?v=ta-a-1','brand/favicon-32.png?v=ta-a-1','brand/favicon.ico?v=ta-a-1','brand/apple-touch-icon.png?v=ta-a-1','manifest.webmanifest']) {
         expect(html,path).toContain('href="'+prefix+resource+'"')
@@ -106,6 +109,8 @@ for (const target of targets) {
       await page.locator('link[rel="icon"],link[rel="apple-touch-icon"]').evaluateAll(async links=>{
         await Promise.all(links.map(async link=>{const image=new Image();image.src=(link as HTMLLinkElement).href;await image.decode()}))
       })
+      await page.reload()
+      await expect(page).toHaveTitle(title)
       routeReports.push({path,status:response.status(),title:await page.title(),brandImage:decoded,csp:response.headers()['content-security-policy']??null})
     }
     for(const icon of [...manifest.icons,{src:'brand/apple-touch-icon.png',sizes:'180x180'}]) {
