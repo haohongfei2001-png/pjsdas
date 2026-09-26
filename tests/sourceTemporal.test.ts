@@ -13,6 +13,20 @@ describe('source temporal resolution', () => {
     expect(resolveSourceTemporal('本周天 09:00', source)?.startAt).toBe('2026-09-27T09:00:00+08:00')
     expect(resolveSourceTemporal('下周天 09:00', source)?.startAt).toBe('2026-10-04T09:00:00+08:00')
   })
+  it('preserves an explicit recruiting window and employer latest-start constraint', () => {
+    expect(resolveSourceTemporal(
+      '请于2026年9月23日18:00-20:00参加在线笔试，最晚18:20进入考试。',
+      { receivedAt: '2026-09-21T12:28:00Z', timezone: 'Asia/Shanghai', mode: 'fixed' },
+    )).toMatchObject({
+      shape: 'availability_window',
+      precision: 'datetime',
+      startAt: '2026-09-23T18:00:00+08:00',
+      endAt: '2026-09-23T20:00:00+08:00',
+      latestStartAt: '2026-09-23T18:20:00+08:00',
+      resolutionBasis: 'source_explicit',
+    })
+  })
+
   it('does not normalize impossible or ambiguous date/time expressions', () => {
     for (const text of ['2026-02-30 14:00', '2026-09-22或2026-09-23 14:00', '明天或后天 14:00', '明天 25:00', '明天 14:00 PST', '2026-09-22T14:30:00Z', '2026-09-22 14:30 Asia/Tokyo', ...['CET', 'CEST', 'JST', 'KST', 'IST'].map((zone) => `2026-09-22 14:30 ${zone}`)]) expect(resolveSourceTemporal(text, source)).toBeUndefined()
   })

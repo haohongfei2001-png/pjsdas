@@ -566,7 +566,7 @@ export function validateScheduleNode(node: ScheduleNode): string[] {
   if (!timezoneValid(node.temporal.timezone)) errors.push('ScheduleNode timezone is invalid.')
   if (node.temporal.precision === 'date') {
     if (!node.temporal.date || !validDateOnly(node.temporal.date)) errors.push('Date-only ScheduleNode requires YYYY-MM-DD.')
-    if (node.temporal.deadlineAt || node.temporal.startAt || node.temporal.endAt) errors.push('Date-only ScheduleNode may not fabricate a time.')
+    if (node.temporal.deadlineAt || node.temporal.startAt || node.temporal.endAt || node.temporal.latestStartAt) errors.push('Date-only ScheduleNode may not fabricate a time.')
   } else {
     if (node.temporal.shape === 'deadline' && (!node.temporal.deadlineAt || !validInstant(node.temporal.deadlineAt))) {
       errors.push('Deadline ScheduleNode requires an offset-aware deadlineAt.')
@@ -581,6 +581,15 @@ export function validateScheduleNode(node: ScheduleNode): string[] {
     }
     if (node.temporal.startAt && node.temporal.endAt && new Date(node.temporal.endAt) < new Date(node.temporal.startAt)) {
       errors.push('ScheduleNode endAt precedes startAt.')
+    }
+    if (node.temporal.latestStartAt) {
+      if (!validInstant(node.temporal.latestStartAt)) {
+        errors.push('ScheduleNode latestStartAt must be an offset-aware instant.')
+      } else if (node.temporal.startAt && new Date(node.temporal.latestStartAt) < new Date(node.temporal.startAt)) {
+        errors.push('ScheduleNode latestStartAt precedes startAt.')
+      } else if (node.temporal.endAt && new Date(node.temporal.latestStartAt) > new Date(node.temporal.endAt)) {
+        errors.push('ScheduleNode latestStartAt exceeds endAt.')
+      }
     }
   }
   if (node.supersedesNodeId === node.id || node.supersededByNodeId === node.id) errors.push('ScheduleNode cannot supersede itself.')

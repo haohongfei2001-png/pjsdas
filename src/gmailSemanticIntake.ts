@@ -7,6 +7,8 @@ import { bootstrapPolicyFor } from './sourceRegistry.js'
 export interface GmailSemanticRecord {
   observation: SemanticIntakeObservation
   receivedAt: string
+  /** True when the bounded Gmail parser classified the source message as recruiting-related even if it requires no action. */
+  recruitingRelevant?: boolean
   gaps: string[]
   capabilityBoundaries?: string[]
   issueKinds?: IngestionIssueKind[]
@@ -21,6 +23,8 @@ export function applyGmailSemanticBatch(snapshot: PJSDASSnapshot, input: {
   records: GmailSemanticRecord[]
   authorized: boolean
   workspaceRevision?: string
+  /** Re-run semantic interpretation for an already-accounted Gmail record without replaying unchanged business facts. */
+  reconcileExisting?: boolean
 }) {
   if (!input.authorized) throw new Error('Gmail source is not authorized for writes.')
   let working = structuredClone(snapshot)
@@ -38,7 +42,7 @@ export function applyGmailSemanticBatch(snapshot: PJSDASSnapshot, input: {
     // Preserve pre-UU06 consumption, including unresolved historical evidence. A new
     // interpreter is not permission to replay old consumed mail as a new business fact.
     const prior = alreadyIngested(working.data.timeline, { sourceKind: 'gmail', sourceId: input.sourceId, sourceRecordId })
-    const result = prior ? undefined : applySemanticIntake(working, observation, {
+    const result = prior && !input.reconcileExisting ? undefined : applySemanticIntake(working, observation, {
       authorized: true, now: new Date(input.checkedAt), workspaceRevision: input.workspaceRevision,
     })
     if (result) working = result.snapshot
@@ -68,7 +72,9 @@ export function applyGmailSemanticBatch(snapshot: PJSDASSnapshot, input: {
       sourceRef: `gmail:${sourceRecordId}`,
     })
     records.push(entry)
-    if (!prior) {
+    const persistReconciliationChange = Boolean(input.reconcileExisting
+      && (record.gaps.length > 0 || result?.status === 'APPLIED' || result?.decisionRequests.length))
+    if (!prior || persistReconciliationChange) {
       working.data.timeline = [...(working.data.timeline ?? []), entry]
       persistedSourceRecords += 1
     }
@@ -78,7 +84,7 @@ export function applyGmailSemanticBatch(snapshot: PJSDASSnapshot, input: {
     startedAt: input.checkedAt, completedAt: input.checkedAt, cursor: input.cursor,
     records, sourcePolicy: bootstrapPolicyFor('gmail', input.sourceId),
   })
-  if (input.records.length > 0 && persistedSourceRecords === 0) {
+  if (!input.reconcileExisting && input.records.length > 0 && persistedSourceRecords === 0) {
     return { snapshot, run, compensation, alreadyApplied: true }
   }
   working.data.timeline = [...(working.data.timeline ?? []), createIngestionRunTimeline(run)]

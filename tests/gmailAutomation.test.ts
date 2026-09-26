@@ -1,10 +1,14 @@
 import { describe, expect, it, vi } from 'vitest'
 import {
   fetchGmailAutomationBatch,
+  fetchGmailReconciliationBatch,
   gmailObservationFromMessage,
+  gmailSemanticRecordFromMessage,
+  gmailReconciliationStateForRecord,
   UU06_MAX_MESSAGES_PER_RUN,
 } from '../gateway/gmailAutomation.js'
-import type { Opportunity } from '../src/model.js'
+import type { Opportunity, SemanticCandidate } from '../src/model.js'
+import type { GmailSemanticRecord } from '../src/gmailSemanticIntake.js'
 
 function opportunity(id: string, company: string, role: string): Opportunity {
   return {
@@ -132,6 +136,94 @@ describe('Gmail background automation', () => {
     expect(result.nextHistoryId).toBe('205')
     expect(result.messages.map((item) => item.id)).toEqual(['msg-205'])
     expect(calls.some((url) => url.includes('startHistoryId=199'))).toBe(true)
+  })
+
+  it('reconciliation preserves the China Orient written-test window and explicit latest entry time', () => {
+    const body = '中国东方资产管理股份有限公司 管理培训生 在线笔试通知：请于2026年9月23日18:00-20:00参加在线笔试，最晚18:20进入考试。'
+    const message = gmailMessage(body, {
+      id: 'china-orient-written-test',
+      internalDate: String(new Date('2026-09-21T20:28:00+08:00').getTime()),
+    }, '中国东方资产管理股份有限公司 管理培训生 在线笔试通知')
+    const record = gmailSemanticRecordFromMessage(
+      message,
+      [opportunity('china-orient-mt', '中国东方资产管理股份有限公司', '管理培训生')],
+      new Date('2026-09-22T08:30:00+08:00'),
+    )
+    const event = record?.observation.candidates.find((candidate) =>
+      candidate.kind === 'process_event' && candidate.eventType === 'written_test_invite')
+    expect(event?.kind).toBe('process_event')
+    if (event?.kind !== 'process_event') throw new Error('Expected written-test process event')
+    expect(event.temporal).toMatchObject({
+      shape: 'availability_window',
+      startAt: '2026-09-23T18:00:00+08:00',
+      endAt: '2026-09-23T20:00:00+08:00',
+      latestStartAt: '2026-09-23T18:20:00+08:00',
+      resolutionBasis: 'source_explicit',
+    })
+    expect(gmailReconciliationStateForRecord(record!)).toBe('ACTION_REQUIRED')
+  })
+
+  it('reconciliation independently unions all recent and unread messages without a company or recruiting keyword query', async () => {
+    const queries: string[] = []
+    const fetchImpl = vi.fn(async (input: RequestInfo | URL) => {
+      const url = new URL(String(input))
+      if (url.pathname.endsWith('/messages')) {
+        const q = url.searchParams.get('q') ?? ''
+        queries.push(q)
+        if (q.startsWith('after:')) return json({ messages: [{ id: 'recent' }, { id: 'shared' }] })
+        if (q === 'is:unread -in:spam -in:trash') return json({ messages: [{ id: 'old-unread' }, { id: 'shared' }] })
+      }
+      const id = /\/messages\/([^/?]+)/.exec(url.pathname)?.[1]
+      if (id) return json({ id, internalDate: '1', payload: { headers: [] } })
+      return json({ error: 'unexpected' }, 500)
+    }) as unknown as typeof fetch
+    const result = await fetchGmailReconciliationBatch({
+      accessToken: 'google-access', fetchImpl, now: new Date('2026-09-26T00:30:00.000Z'),
+    })
+    expect(result.scannedCount).toBe(3)
+    expect(result.messages.map((item) => item.id).sort()).toEqual(['old-unread', 'recent', 'shared'])
+    expect(queries).toHaveLength(2)
+    expect(queries.some((query) => query.includes('newer_than'))).toBe(false)
+    expect(queries.join(' ')).not.toMatch(/面试|笔试|recruit|company/i)
+  })
+
+  it('settles every recruiting reconciliation record into one explicit state', () => {
+    const base = {
+      id: 'candidate',
+      target: { opportunityId: 'jd-ai-pm' },
+      objectConfidence: 'high',
+      eventConfidence: 'high',
+      evidenceRefs: ['evidence'],
+      sourceVersionRefs: ['source'],
+    } as const
+    const record = (candidate?: SemanticCandidate, gaps: string[] = [], recruitingRelevant = true): GmailSemanticRecord => ({
+      receivedAt: '2026-09-26T00:00:00.000Z',
+      recruitingRelevant,
+      gaps,
+      observation: {
+        contractVersion: 1,
+        inputId: 'reconcile-test',
+        source: {
+          kind: 'gmail', sourceId: 'gmail:primary', sourceRecordId: 'record',
+          observedAt: '2026-09-26T00:00:00.000Z', timezone: 'Asia/Shanghai',
+        },
+        statementMode: 'assertion',
+        candidates: candidate ? [candidate] : [],
+      },
+    })
+    expect(gmailReconciliationStateForRecord(record())).toBe('NO_ACTION')
+    expect(gmailReconciliationStateForRecord(record({ ...base, kind: 'application_submitted' }))).toBe('WAITING')
+    expect(gmailReconciliationStateForRecord(record({
+      ...base, kind: 'process_event', eventType: 'interview_invite',
+      timingMode: 'fixed',
+    }))).toBe('ACTION_REQUIRED')
+    expect(gmailReconciliationStateForRecord(record({ ...base, kind: 'occurrence_completed' }))).toBe('COMPLETED')
+    expect(gmailReconciliationStateForRecord(record({ ...base, kind: 'abandon_opportunity' }))).toBe('EXPLICITLY_DECLINED')
+    expect(gmailReconciliationStateForRecord(record({
+      ...base, kind: 'process_event', eventType: 'rejection',
+    }))).toBe('CLOSED')
+    expect(gmailReconciliationStateForRecord(record({ ...base, kind: 'application_submitted' }, ['ambiguous']))).toBe('UNRESOLVED')
+    expect(gmailReconciliationStateForRecord(record(undefined, [], false))).toBeUndefined()
   })
 
   it('accounts history ids whose message payload disappeared instead of poisoning every later run', async () => {

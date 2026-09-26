@@ -1,4 +1,4 @@
-import { runControlledGmailExecutions } from './gmailControlledExecution.js'
+import { runControlledGmailExecutions, runControlledGmailReconciliations } from './gmailControlledExecution.js'
 import { createAutomationConnectionStore } from './automationConnectionStore.js'
 import { runGmailAutomationForBinding } from './gmailAutomation.js'
 import { WorkspaceSourceError } from './workspaceSource.js'
@@ -56,9 +56,15 @@ export function createGmailAutomationHandler(config: GmailAutomationHandlerConfi
       return json(401, { code: 'AUTOMATION_AUTH_REQUIRED', message: 'PJSDAS automation authorization is required.' })
     }
 
+    const url = new URL(request.url)
+    const requestedUserId = url.searchParams.get('userId')?.trim()
+    const reconciliation = url.searchParams.get('mode') === 'reconcile'
+
     if (config.executionControlsEnabled === true) {
       try {
-        const result = await runControlledGmailExecutions(config, workerToken, new URL(request.url).searchParams.get('userId')?.trim())
+        const result = reconciliation
+          ? await runControlledGmailReconciliations(config, workerToken, requestedUserId)
+          : await runControlledGmailExecutions(config, workerToken, requestedUserId)
         return json(result.failedUsers ? 207 : 200, result)
       } catch (caught) {
         const error = errorBody(caught)
@@ -72,8 +78,9 @@ export function createGmailAutomationHandler(config: GmailAutomationHandlerConfi
       workerToken,
       fetchImpl: config.fetchImpl,
     })
-    const url = new URL(request.url)
-    const requestedUserId = url.searchParams.get('userId')?.trim()
+    if (reconciliation) {
+      return json(409, { code: 'RECONCILIATION_REQUIRES_EXECUTION_CONTROLS', message: 'Gmail reconciliation requires controlled execution.' })
+    }
     let bindings
     try {
       bindings = await store.listEnabledGmailBindings()

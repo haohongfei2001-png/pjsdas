@@ -263,6 +263,45 @@ describe('UU-03 TodayBrief read model', () => {
     expect(brief.nextAction?.timing?.latestStartAt).toBeUndefined()
   })
 
+  it('uses an employer explicit latest-start instead of deriving it from the window end', () => {
+    const opp = opportunity('opp-written', 'Graduate Program', { processStage: 'written_test', currentStageLabel: '笔试' })
+    const written = processEvent(opp, 'written-window', 'written_test_invite', '2026-09-23T10:00:00.000Z')
+    written.temporal = {
+      shape: 'availability_window',
+      precision: 'datetime',
+      timezone: TZ,
+      startAt: '2026-09-23T18:00:00+08:00',
+      endAt: '2026-09-23T20:00:00+08:00',
+      latestStartAt: '2026-09-23T18:20:00+08:00',
+      resolutionBasis: 'source_explicit',
+    }
+    const action: Action = {
+      ...manualAction('written-window-action'),
+      opportunityId: opp.id,
+      processEventId: written.id,
+      processStage: 'written_test',
+      dueAt: written.dueAt,
+      duePrecision: 'datetime',
+      timingMode: 'fixed',
+      estimatedMinutes: 90,
+    }
+    const brief = buildTodayBrief(snapshot({
+      opportunities: [opp],
+      processes: [process(opp, 'written_test')],
+      events: [written],
+      actions: [action],
+    }), {}, { now: new Date('2026-09-23T09:30:00.000Z'), timezone: TZ })
+    const timing = brief.nextAction?.actionId === action.id
+      ? brief.nextAction.timing
+      : brief.nextActions.find((item) => item.actionId === action.id)?.timing
+    expect(timing).toMatchObject({
+      shape: 'availability_window',
+      startAt: '2026-09-23T18:00:00+08:00',
+      endAt: '2026-09-23T20:00:00+08:00',
+      latestStartAt: '2026-09-23T18:20:00+08:00',
+    })
+  })
+
   it('protects a long hard-deadline task when latest-start enters 48h even if the raw deadline is still outside 48h', () => {
     const opp = opportunity('opp-latest', 'Product Manager', {
       deadline: '2026-09-22T14:00:00.000Z',

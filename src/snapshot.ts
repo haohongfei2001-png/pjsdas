@@ -7,6 +7,7 @@ import type {
   IngestionLedgerEntry,
   IngestionOutcome,
   IngestionRunSummary,
+  GmailReconciliationProof,
   Opportunity,
   Prep,
   ProcessEvent,
@@ -115,6 +116,37 @@ function validateIngestionEntry(entry: IngestionLedgerEntry, timelineId: string)
   }
   assertIsoDate(entry.receivedAt, `Timeline ${timelineId} ingestion.receivedAt`)
   assertIsoDate(entry.accountedAt, `Timeline ${timelineId} ingestion.accountedAt`)
+}
+
+const GMAIL_RECONCILIATION_STATES = [
+  'NO_ACTION', 'WAITING', 'ACTION_REQUIRED', 'COMPLETED',
+  'EXPLICITLY_DECLINED', 'CLOSED', 'UNRESOLVED',
+] as const
+
+function validateGmailReconciliationProof(proof: GmailReconciliationProof, timelineId: string) {
+  if (proof.version !== 1) throw new Error(`备份损坏：Timeline ${timelineId} 的 Gmail reconciliation 版本无效。`)
+  const counts = [
+    proof.scannedCount, proof.recruitingRelevantCount, proof.gmailOnlyCount,
+    proof.pjsdasOnlyCount, proof.fixedOrHardWithin7DaysCount,
+    proof.liveProcessCount, proof.unavailableMessageCount,
+  ]
+  if (counts.some((value) => !Number.isInteger(value) || value < 0)) {
+    throw new Error(`备份损坏：Timeline ${timelineId} 的 Gmail reconciliation 计数无效。`)
+  }
+  if (!proof.stateCounts || typeof proof.stateCounts !== 'object') {
+    throw new Error(`备份损坏：Timeline ${timelineId} 的 Gmail reconciliation states 无效。`)
+  }
+  let settled = 0
+  for (const state of GMAIL_RECONCILIATION_STATES) {
+    const value = proof.stateCounts[state]
+    if (!Number.isInteger(value) || value < 0) {
+      throw new Error(`备份损坏：Timeline ${timelineId} 的 Gmail reconciliation state ${state} 无效。`)
+    }
+    settled += value
+  }
+  if (settled !== proof.recruitingRelevantCount || proof.recruitingRelevantCount > proof.scannedCount) {
+    throw new Error(`备份损坏：Timeline ${timelineId} 的 Gmail reconciliation 未守恒。`)
+  }
 }
 
 function validateIngestionRun(run: IngestionRunSummary, timelineId: string) {
@@ -392,11 +424,15 @@ export function validateSnapshot(value: unknown): asserts value is PJSDASSnapsho
       assertIsoDate(item.recordedAt, `Timeline ${item.id} 的 recordedAt`)
       if (item.ingestion) validateIngestionEntry(item.ingestion, item.id)
       if (item.ingestionRun) validateIngestionRun(item.ingestionRun, item.id)
+      if (item.gmailReconciliation) validateGmailReconciliationProof(item.gmailReconciliation, item.id)
       if (item.kind === 'ingestion_recorded' && !item.ingestion) {
         throw new Error(`备份损坏：Timeline ${item.id} ingestion_recorded 缺少 ingestion payload。`)
       }
       if (item.kind === 'ingestion_run_completed' && !item.ingestionRun) {
         throw new Error(`备份损坏：Timeline ${item.id} ingestion_run_completed 缺少 ingestionRun payload。`)
+      }
+      if (item.kind === 'gmail_reconciliation_completed' && !item.gmailReconciliation) {
+        throw new Error(`备份损坏：Timeline ${item.id} gmail_reconciliation_completed 缺少 proof payload。`)
       }
     }
   }

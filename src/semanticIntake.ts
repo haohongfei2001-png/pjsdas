@@ -740,7 +740,7 @@ function applyCandidate(
         && Date.parse(event.dueAt) === Date.parse(candidate.dueAt))
       const sameTemporal = !candidate.temporal || (existing.temporal.shape === candidate.temporal.shape
         && existing.temporal.precision === candidate.temporal.precision
-        && (['startAt', 'endAt', 'deadlineAt', 'date'] as const).every((key) => {
+        && (['startAt', 'endAt', 'latestStartAt', 'deadlineAt', 'date'] as const).every((key) => {
           const previous = existing.temporal[key]; const next = candidate.temporal![key]
           return previous === next || Boolean(previous && next && Date.parse(previous) === Date.parse(next))
         }))
