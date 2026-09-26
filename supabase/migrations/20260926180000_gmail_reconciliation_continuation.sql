@@ -419,6 +419,7 @@ declare
   reconcile_command text;
   request_prefix text;
   start_command text;
+  continuation_command text;
   continuation_count integer;
 begin
   select * into strict primary_job
@@ -454,6 +455,39 @@ begin
 
   start_command := request_prefix || E'\n' || reconcile_command;
 
+  continuation_command := $continuation$
+  select net.http_post(
+    url := rtrim(
+      (select decrypted_secret
+       from vault.decrypted_secrets
+       where name='pjsdas_automation_backend_origin'),
+      '/'
+    ) || '/api/automation-gmail?mode=reconcile',
+    headers := jsonb_build_object(
+      'Content-Type','application/json',
+      'Authorization','Bearer ' || (
+        select decrypted_secret
+        from vault.decrypted_secrets
+        where name='pjsdas_gmail_automation_worker_token'
+      )
+    ),
+    body := '{}'::jsonb,
+    timeout_milliseconds := 20000
+  ) as request_id
+  where exists (
+    select 1
+    from public.gmail_automation_execution_state s
+    join public.google_drive_connections c using(user_id)
+    where c.gmail_automation_enabled=true
+      and c.revoked_at is null
+      and c.gmail_intake_consent_version='uu06-v1'
+      and (
+        s.gmail_reconciliation_requested_at is not null
+        or s.gmail_reconciliation_state is not null
+      )
+  );
+  $continuation$;
+
   select * into strict morning_job
   from cron.job
   where jobname='todayaction-gmail-reconciliation-0830';
@@ -482,7 +516,7 @@ begin
     perform cron.schedule(
       'todayaction-gmail-reconciliation-continuation',
       '5,15,25,35,45,55 * * * *',
-      reconcile_command
+      continuation_command
     );
   else
     select * into strict continuation_job
@@ -491,7 +525,7 @@ begin
     perform cron.alter_job(
       continuation_job.jobid,
       schedule := '5,15,25,35,45,55 * * * *',
-      command := reconcile_command
+      command := continuation_command
     );
   end if;
 end
