@@ -2,6 +2,7 @@ import { createGmailAutomationHandler } from '../gateway/gmailAutomationHandler.
 import { createGmailPushHandler } from '../gateway/gmailPushHandler.js'
 import { createGmailWatchHandler } from '../gateway/gmailWatchHandler.js'
 import { createIngestionDebtReconciliationHandler } from '../gateway/ingestionDebtReconciliationHandler.js'
+import { createGmailFragmentReprocessDryRunHandler } from '../gateway/gmailFragmentReprocessDryRunHandler.js'
 import {
   PJSDAS_SUPABASE_PUBLISHABLE_KEY,
   PJSDAS_SUPABASE_URL,
@@ -34,6 +35,15 @@ const ingestionDebtReconciliationHandler = createIngestionDebtReconciliationHand
   supabaseServiceRoleKey: process.env.PJSDAS_SUPABASE_SERVICE_ROLE_KEY ?? '',
 })
 
+const fragmentReprocessDryRunHandler = createGmailFragmentReprocessDryRunHandler({
+  supabaseUrl: PJSDAS_SUPABASE_URL,
+  supabasePublishableKey: PJSDAS_SUPABASE_PUBLISHABLE_KEY,
+  supabaseServiceRoleKey: process.env.PJSDAS_SUPABASE_SERVICE_ROLE_KEY ?? '',
+  tokenEncryptionKey: process.env.PJSDAS_TOKEN_ENCRYPTION_KEY ?? '',
+  googleClientId: process.env.PJSDAS_GOOGLE_CLIENT_ID ?? '',
+  googleClientSecret: process.env.PJSDAS_GOOGLE_CLIENT_SECRET ?? '',
+})
+
 const pushHandler = createGmailPushHandler({
   supabaseUrl: PJSDAS_SUPABASE_URL,
   supabasePublishableKey: PJSDAS_SUPABASE_PUBLISHABLE_KEY,
@@ -49,6 +59,7 @@ export const gmailAutomationApi = { fetch: automationHandler }
 export const gmailWatchApi = { fetch: watchHandler }
 export const gmailPushApi = { fetch: pushHandler }
 export const ingestionDebtReconciliationApi = { fetch: ingestionDebtReconciliationHandler }
+export const gmailFragmentReprocessDryRunApi = { fetch: fragmentReprocessDryRunHandler }
 
 export default {
   fetch(request: Request) {
@@ -56,6 +67,7 @@ export default {
     if (route === 'push') return pushHandler(request)
     if (route === 'watch') return watchHandler(request)
     if (route === 'ingestion_reconciliation') return ingestionDebtReconciliationHandler(request)
+    if (route === 'fragment_reprocess_dry_run') return fragmentReprocessDryRunHandler(request)
     return automationHandler(request)
   },
 }
