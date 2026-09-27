@@ -1,7 +1,7 @@
 package: TODAYACTION-ACTIVE-UNRESOLVED-REDUCTION-v1
-status: REPAIR_02_READY_FULL_GATES
+status: REPAIR_02_REPLAY_SEMANTICS_REPAIR
 writer:
-  branch: reliability/active-unresolved-reduction-fragment-v1
+  branch: reliability/active-unresolved-reduction-fragment-replay-v1
   active: true
 baseline:
   main: a407c5d2a006d5ce8a4fcd5b44e6c59b114b27ae
@@ -68,9 +68,25 @@ repair_02:
   protected_semantic_decision_open: 3
   parser_old_limit: 20
   parser_new_limit: 80
-  exact_main_dry_run: PENDING_EXACT_MAIN
-  production_write: NOT_AUTHORIZED
+  exact_main_dry_run: COMPLETE_ZERO_SETTLEMENT
+  production_write: BLOCKED_NOT_AUTHORIZED
+  dry_run_runtime_main: 63a3e1f2bc54051cfc087fdeb9ad0510de9a8b12
+  dry_run_request_id: 1125
+  dry_run_workspace_revision_before: 646
+  dry_run_workspace_revision_after: 646
+  dry_run_targeted_count: 60
+  dry_run_fetched_count: 60
+  dry_run_unavailable_count: 0
+  dry_run_parser_complete_count: 45
+  dry_run_parser_gap_count: 15
+  dry_run_new_fragment_ceiling_count: 5
+  dry_run_projected_settled_count: 0
+  dry_run_active_unresolved_before: 163
+  dry_run_projected_active_unresolved: 163
+  dry_run_diagnosis: RECONCILE_EXISTING_NO_WRITE_DID_NOT_CREATE_LATER_SETTLED_SOURCE_STATE
 
 repair_02_verification:
   inner_loop_ci: SUCCESS
-  full_gates: PENDING
+  full_gates: REPAIR_REQUIRED_AFTER_DRY_RUN
+  dry_run_http: SUCCESS_200
+  dry_run_workspace_unchanged: true

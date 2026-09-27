@@ -99,16 +99,48 @@ function latestResolutionRecords(records: TimelineRecord[]) {
   return byKey
 }
 
-function semanticReceiptResolution(
+function sourceBoundActiveDecisionResolution(
   snapshot: PJSDASSnapshot,
   ingestion: IngestionLedgerEntry,
 ): { outcome: IngestionResolutionOutcome; reason: IngestionResolutionReason; evidenceRefs: string[] } | undefined {
-  const receipts = (snapshot.data.semanticReceipts ?? [])
+  const activeRequests = (snapshot.data.decisionRequests ?? []).filter((request) =>
+    request.payloadBinding.source.kind === ingestion.sourceKind
+    && request.payloadBinding.source.sourceId === ingestion.sourceId
+    && request.payloadBinding.source.sourceRecordId === ingestion.sourceRecordId
+    && (request.state === 'open' || request.state === 'expired'))
+  if (!activeRequests.length) return undefined
+
+  const activeIds = new Set(activeRequests.map((request) => request.id))
+  const activeReceiptIds = (snapshot.data.semanticReceipts ?? [])
     .filter((item) =>
       item.sourceKind === ingestion.sourceKind
       && item.sourceId === ingestion.sourceId
       && item.sourceRecordId === ingestion.sourceRecordId
-      && item.updatedAt >= ingestion.accountedAt)
+      && item.decisionRequestIds.some((id) => activeIds.has(id)))
+    .map((item) => item.id)
+
+  return {
+    outcome: 'active_unresolved',
+    reason: 'semantic_decision_open',
+    evidenceRefs: [...activeReceiptIds, ...activeRequests.map((request) => request.id)],
+  }
+}
+
+function semanticReceiptResolution(
+  snapshot: PJSDASSnapshot,
+  ingestion: IngestionLedgerEntry,
+): { outcome: IngestionResolutionOutcome; reason: IngestionResolutionReason; evidenceRefs: string[] } | undefined {
+  const activeDecision = sourceBoundActiveDecisionResolution(snapshot, ingestion)
+  if (activeDecision) return activeDecision
+
+  const sourceReceipts = (snapshot.data.semanticReceipts ?? [])
+    .filter((item) =>
+      item.sourceKind === ingestion.sourceKind
+      && item.sourceId === ingestion.sourceId
+      && item.sourceRecordId === ingestion.sourceRecordId)
+
+  const receipts = sourceReceipts
+    .filter((item) => item.updatedAt >= ingestion.accountedAt)
     .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
   const receipt = receipts[0]
   if (!receipt) return undefined
@@ -181,6 +213,11 @@ function classifyUnresolved(
   void now
   const ingestion = target.ingestion!
   const latestIngestion = latest.ingestion!
+
+  // A source-bound open/expired DecisionRequest is newer canonical uncertainty
+  // even when the latest ingestion ledger row is otherwise non-unresolved.
+  const activeDecision = sourceBoundActiveDecisionResolution(snapshot, ingestion)
+  if (activeDecision) return activeDecision
 
   if (latest.id !== target.id && latestIngestion.outcome !== 'unresolved') {
     const mapped = laterOutcomeResolution(latestIngestion.outcome)!
@@ -388,14 +425,23 @@ export function reconcileIngestionDebt(
       && prior.outcome === proposed.outcome
       && prior.reason === proposed.reason
       && JSON.stringify(prior.evidenceRefs) === JSON.stringify(evidenceRefs)) continue
+    const priorResolutionMs = prior ? Date.parse(prior.reconciledAt) : Number.NaN
+    const latestIngestionMs = Date.parse(latest.ingestion?.accountedAt ?? '')
+    const reconciledAtMs = Math.max(
+      now.getTime(),
+      Number.isFinite(priorResolutionMs) ? priorResolutionMs + 1 : now.getTime(),
+      Number.isFinite(latestIngestionMs) ? latestIngestionMs + 1 : now.getTime(),
+    )
     const record = createResolutionTimeline({
       target,
       outcome: proposed.outcome,
       reason: proposed.reason,
       evidenceRefs: proposed.evidenceRefs,
       // IndexedDB reads timeline rows in key order, so timestamp ties cannot
-      // carry transition order across a durable round trip.
-      reconciledAt: new Date(Math.max(now.getTime(), prior ? Date.parse(prior.reconciledAt) + 1 : now.getTime())).toISOString(),
+      // carry transition order across a durable round trip. A resolution that
+      // reopens a later non-unresolved source state must be strictly newer than
+      // both that ingestion state and any prior resolution.
+      reconciledAt: new Date(reconciledAtMs).toISOString(),
       previousResolutionId: current?.id,
     })
 

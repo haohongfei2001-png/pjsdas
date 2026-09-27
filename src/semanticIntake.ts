@@ -18,6 +18,7 @@ import type {
   TimelineRecord,
 } from './model.js'
 import { latestScheduleOccurrence } from './scheduleNodes.js'
+import { createIngestionLedgerTimeline, ingestionSourceRecordKey } from './ingestion.js'
 import { reminderDedupeKey, resolveReminderTrigger } from './reminders.js'
 import { upgradeSnapshotToLatest, validateSnapshot, type PJSDASSnapshot } from './snapshot.js'
 
@@ -1161,15 +1162,70 @@ export function applySemanticCompensation(
     if (index >= 0) next.data.decisionRequests![index] = structuredClone(previous)
     else next.data.decisionRequests!.push(structuredClone(previous))
   }
+  const correctiveIngestion: TimelineRecord[] = []
+  const correctedSourceKeys = new Set<string>()
+  let exportedAt = timestamp
   for (const id of compensation.payload.receiptIds) {
     const item = (next.data.semanticReceipts ?? []).find((receipt) => receipt.id === id)
     if (item) {
+      if (item.status !== 'undone' && item.commandId) {
+        const sourceKey = [item.sourceKind, item.sourceId, item.sourceRecordId].join('|')
+        const sourceRecords = (next.data.timeline ?? [])
+          .filter((record) => record.ingestion
+            && ingestionSourceRecordKey(record.ingestion) === sourceKey)
+        let latestSourceRecord: TimelineRecord | undefined
+        for (const record of sourceRecords) {
+          if (!latestSourceRecord) {
+            latestSourceRecord = record
+            continue
+          }
+          const accountedAt = record.ingestion?.accountedAt ?? ''
+          const latestAt = latestSourceRecord.ingestion?.accountedAt ?? ''
+          if (accountedAt > latestAt
+            || (accountedAt === latestAt
+              && latestSourceRecord.ingestion?.outcome === 'unresolved'
+              && record.ingestion?.outcome !== 'unresolved')) {
+            latestSourceRecord = record
+          }
+        }
+        const ingestion = latestSourceRecord?.ingestion
+        if (!correctedSourceKeys.has(sourceKey)
+          && ingestion
+          && ingestion.outcome !== 'unresolved') {
+          const priorAccountedMs = Date.parse(ingestion.accountedAt)
+          const correctionAt = new Date(Number.isFinite(priorAccountedMs)
+            ? Math.max(now.getTime(), priorAccountedMs + 1)
+            : now.getTime()).toISOString()
+          correctiveIngestion.push(createIngestionLedgerTimeline({
+            sourceKind: ingestion.sourceKind,
+            sourceId: ingestion.sourceId,
+            sourceRecordId: ingestion.sourceRecordId,
+            runId: `semantic-undo:${item.id}`,
+            recordType: ingestion.recordType,
+            outcome: 'unresolved',
+            fingerprint: ingestion.fingerprint,
+            receivedAt: ingestion.receivedAt,
+            accountedAt: correctionAt,
+            reason: 'Semantic write was undone; source requires fresh reconciliation.',
+            capabilityBoundaries: ingestion.capabilityBoundaries,
+            issueKinds: ingestion.issueKinds,
+            opportunityId: ingestion.opportunityId,
+            processEventId: ingestion.processEventId,
+            actionId: ingestion.actionId,
+            company: latestSourceRecord?.company,
+            role: latestSourceRecord?.role,
+            sourceRef: latestSourceRecord?.sourceRef,
+          }))
+          correctedSourceKeys.add(sourceKey)
+          if (correctionAt > exportedAt) exportedAt = correctionAt
+        }
+      }
       item.status = 'undone'
       item.undoAvailable = false
       item.updatedAt = timestamp
     }
   }
-  next.data.timeline = [...(next.data.timeline ?? []), {
+  next.data.timeline = [...(next.data.timeline ?? []), ...correctiveIngestion, {
     id: `timeline:semantic-undo:${stableHash(`${timestamp}|${compensation.payload.receiptIds.join(',')}`)}`,
     kind: 'semantic_undo_applied',
     category: 'change',
@@ -1179,7 +1235,7 @@ export function applySemanticCompensation(
     title: '撤销语义写入',
     detail: `${compensation.payload.domainCompensations.length} compensation operation(s)`,
   }]
-  next.exportedAt = timestamp
+  next.exportedAt = exportedAt
   validateSnapshot(next)
   return next
 }

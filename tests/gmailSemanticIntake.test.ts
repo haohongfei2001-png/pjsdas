@@ -3,7 +3,8 @@ import { gmailSemanticRecordFromMessage } from '../gateway/gmailAutomation.js'
 import { applyGmailSemanticBatch } from '../src/gmailSemanticIntake.js'
 import { applySemanticCompensation, applySemanticIntake, resolveSemanticDecision } from '../src/semanticIntake.js'
 import { validateSnapshot, type PJSDASSnapshot } from '../src/snapshot.js'
-import { summarizeCoverage } from '../src/ingestion.js'
+import { createIngestionLedgerTimeline, summarizeCoverage } from '../src/ingestion.js'
+import { reconcileIngestionDebt } from '../src/ingestionResolution.js'
 import { summarizeSourceHealth } from '../src/sourceHealth.js'
 
 const now = new Date('2026-09-21T00:00:00Z')
@@ -116,6 +117,598 @@ describe('UU06 shared Gmail intake', () => {
       accountedCount: 1,
       outcomes: { duplicate: 1 },
     })
+  })
+
+  it('reconcileExisting records a complete no-write replay as a later ignored source state and settles old fragment debt', () => {
+    const base = snapshot()
+    const legacy = createIngestionLedgerTimeline({
+      sourceKind: 'gmail',
+      sourceId: 'gmail:primary',
+      sourceRecordId: 'fragment-replay-no-write',
+      runId: 'legacy-fragment-run',
+      recordType: 'recruiting_message',
+      outcome: 'unresolved',
+      fingerprint: 'fp:fragment-replay-no-write',
+      receivedAt: '2026-09-10T00:00:00Z',
+      accountedAt: '2026-09-10T00:00:00Z',
+      reason: 'Message exceeds the 20-fragment interpretation limit.',
+    })
+    base.data.timeline = [legacy]
+    const record = gmailSemanticRecordFromMessage(
+      message('京东 AI产品经理 招聘资讯更新', 'fragment-replay-no-write'),
+      base.data.opportunities,
+      now,
+    )!
+    record.observation.inputId = 'gmail:fragment-replay-no-write:fragment-reprocess-v2'
+    record.observation.source.sourceVersion = 'fragment-reprocess-v2'
+    record.observation.candidates = []
+    record.gaps = []
+
+    const replay = applyGmailSemanticBatch(base, {
+      runId: 'fragment-replay-no-write',
+      sourceId: 'gmail:primary',
+      checkedAt: now.toISOString(),
+      authorized: true,
+      records: [record],
+      reconcileExisting: true,
+    })
+    const sourceRecords = replay.snapshot.data.timeline.filter((item) =>
+      item.ingestion?.sourceRecordId === 'fragment-replay-no-write')
+    expect(sourceRecords.map((item) => item.ingestion?.outcome)).toEqual(['unresolved', 'ignored'])
+    expect(replay.run.outcomes.ignored).toBe(1)
+
+    const reconciled = reconcileIngestionDebt(replay.snapshot, now)
+    expect(reconciled.appended[0]?.ingestionResolution).toMatchObject({
+      outcome: 'ignored',
+      reason: 'later_source_state',
+      sourceRecordId: 'fragment-replay-no-write',
+    })
+    expect(summarizeCoverage(reconciled.snapshot.data.timeline).activeUnresolvedCount).toBe(0)
+  })
+
+  it('reconcileExisting keeps the source unresolved when the complete replay still needs a semantic decision', () => {
+    const base = snapshot()
+    base.data.opportunities.push({ ...base.data.opportunities[0]!, id: 'jd-ambiguous' })
+    const legacy = createIngestionLedgerTimeline({
+      sourceKind: 'gmail',
+      sourceId: 'gmail:primary',
+      sourceRecordId: 'fragment-replay-decision',
+      runId: 'legacy-fragment-decision-run',
+      recordType: 'recruiting_message',
+      outcome: 'unresolved',
+      fingerprint: 'fp:fragment-replay-decision',
+      receivedAt: '2026-09-10T00:00:00Z',
+      accountedAt: '2026-09-10T00:00:00Z',
+      reason: 'Message exceeds the 20-fragment interpretation limit.',
+    })
+    base.data.timeline = [legacy]
+    const record = gmailSemanticRecordFromMessage(
+      message(invitation, 'fragment-replay-decision'),
+      base.data.opportunities,
+      now,
+    )!
+    record.observation.inputId = 'gmail:fragment-replay-decision:fragment-reprocess-v2'
+    record.observation.source.sourceVersion = 'fragment-reprocess-v2'
+    record.gaps = []
+
+    const replay = applyGmailSemanticBatch(base, {
+      runId: 'fragment-replay-decision',
+      sourceId: 'gmail:primary',
+      checkedAt: now.toISOString(),
+      authorized: true,
+      records: [record],
+      reconcileExisting: true,
+    })
+    const sourceRecords = replay.snapshot.data.timeline.filter((item) =>
+      item.ingestion?.sourceRecordId === 'fragment-replay-decision')
+    expect(sourceRecords.map((item) => item.ingestion?.outcome)).toEqual(['unresolved', 'unresolved'])
+    expect(replay.snapshot.data.decisionRequests).toHaveLength(1)
+
+    const reconciled = reconcileIngestionDebt(replay.snapshot, now)
+    expect(reconciled.appended[0]?.ingestionResolution).toMatchObject({
+      outcome: 'active_unresolved',
+      reason: 'semantic_decision_open',
+      sourceRecordId: 'fragment-replay-decision',
+    })
+  })
+
+  it('does not use an older committed ALREADY_APPLIED receipt as fresh parser-completeness evidence', () => {
+    const base = snapshot()
+    const legacy = createIngestionLedgerTimeline({
+      sourceKind: 'gmail',
+      sourceId: 'gmail:primary',
+      sourceRecordId: 'fragment-replay-stale-committed',
+      runId: 'legacy-stale-committed-run',
+      recordType: 'recruiting_message',
+      outcome: 'unresolved',
+      fingerprint: 'fp:fragment-replay-stale-committed',
+      receivedAt: '2026-09-10T00:00:00Z',
+      accountedAt: '2026-09-10T00:00:00Z',
+      reason: 'Message exceeds the 20-fragment interpretation limit.',
+    })
+    base.data.timeline = [legacy]
+    const record = gmailSemanticRecordFromMessage(
+      message(invitation, 'fragment-replay-stale-committed'),
+      base.data.opportunities,
+      now,
+    )!
+    record.observation.inputId = 'gmail:fragment-replay-stale-committed:reconciliation-v1'
+    record.observation.source.sourceVersion = 'reconciliation-v1'
+    record.gaps = []
+
+    const oldSemanticPass = applySemanticIntake(base, record.observation, { authorized: true, now })
+    expect(oldSemanticPass.status).toBe('APPLIED')
+    expect(oldSemanticPass.receipt?.status).toBe('committed')
+
+    const replay = applyGmailSemanticBatch(oldSemanticPass.snapshot, {
+      runId: 'fragment-replay-stale-committed',
+      sourceId: 'gmail:primary',
+      checkedAt: new Date('2026-09-21T00:01:00Z').toISOString(),
+      authorized: true,
+      records: [record],
+      reconcileExisting: true,
+    })
+    expect(replay.snapshot.data.timeline.filter((item) =>
+      item.ingestion?.sourceRecordId === 'fragment-replay-stale-committed')
+      .map((item) => item.ingestion?.outcome)).toEqual(['unresolved'])
+    expect(replay.run.outcomes.unresolved).toBe(1)
+  })
+
+  it('does not reactivate or append source debt when an ALREADY_APPLIED decision is already settled', () => {
+    const base = snapshot()
+    base.data.opportunities.push({ ...base.data.opportunities[0]!, id: 'jd-settled-decision' })
+    const legacy = createIngestionLedgerTimeline({
+      sourceKind: 'gmail',
+      sourceId: 'gmail:primary',
+      sourceRecordId: 'fragment-replay-settled-decision',
+      runId: 'legacy-settled-decision-run',
+      recordType: 'recruiting_message',
+      outcome: 'unresolved',
+      fingerprint: 'fp:fragment-replay-settled-decision',
+      receivedAt: '2026-09-10T00:00:00Z',
+      accountedAt: '2026-09-10T00:00:00Z',
+      reason: 'Message exceeds the 20-fragment interpretation limit.',
+    })
+    base.data.timeline = [legacy]
+    const record = gmailSemanticRecordFromMessage(
+      message(invitation, 'fragment-replay-settled-decision'),
+      base.data.opportunities,
+      now,
+    )!
+    record.observation.inputId = 'gmail:fragment-replay-settled-decision:reconciliation-v1'
+    record.observation.source.sourceVersion = 'reconciliation-v1'
+    record.gaps = []
+
+    const first = applySemanticIntake(base, record.observation, { authorized: true, now })
+    expect(first.status).toBe('DECISION_REQUIRED')
+    const request = first.decisionRequests[0]!
+    const choice = request.choices.find((item) => item.resolution && !item.resolution.dismiss)
+      ?? request.choices[0]!
+    const settled = resolveSemanticDecision(
+      first.snapshot,
+      request.id,
+      choice.id,
+      new Date('2026-09-21T00:01:00Z'),
+    )
+    const settledRequest = settled.snapshot.data.decisionRequests?.find((item) => item.id === request.id)
+    expect(['answered', 'superseded']).toContain(settledRequest?.state)
+
+    const sourceRowsBefore = settled.snapshot.data.timeline.filter((item) =>
+      item.ingestion?.sourceRecordId === 'fragment-replay-settled-decision').length
+    const replay = applyGmailSemanticBatch(settled.snapshot, {
+      runId: 'fragment-replay-settled-decision',
+      sourceId: 'gmail:primary',
+      checkedAt: new Date('2026-09-21T00:02:00Z').toISOString(),
+      authorized: true,
+      records: [record],
+      reconcileExisting: true,
+    })
+    const sourceRowsAfter = replay.snapshot.data.timeline.filter((item) =>
+      item.ingestion?.sourceRecordId === 'fragment-replay-settled-decision').length
+    expect(sourceRowsBefore).toBe(1)
+    expect(sourceRowsAfter).toBe(1)
+    expect(replay.snapshot.data.decisionRequests?.find((item) => item.id === request.id)?.state)
+      .toBe(settledRequest?.state)
+  })
+
+  it('does not amplify settled Gmail source ledger rows during reconcileExisting replay', () => {
+    const base = snapshot()
+    const record = gmailSemanticRecordFromMessage(
+      message(invitation, 'settled-reconciliation-replay'),
+      base.data.opportunities,
+      now,
+    )!
+    const first = applyGmailSemanticBatch(base, {
+      runId: 'settled-reconciliation-first',
+      sourceId: 'gmail:primary',
+      checkedAt: now.toISOString(),
+      authorized: true,
+      records: [record],
+    })
+    expect(first.snapshot.data.timeline.filter((item) =>
+      item.ingestion?.sourceRecordId === 'settled-reconciliation-replay')).toHaveLength(1)
+
+    const second = applyGmailSemanticBatch(first.snapshot, {
+      runId: 'settled-reconciliation-second',
+      sourceId: 'gmail:primary',
+      checkedAt: new Date('2026-09-21T00:01:00Z').toISOString(),
+      authorized: true,
+      records: [record],
+      reconcileExisting: true,
+    })
+    const third = applyGmailSemanticBatch(second.snapshot, {
+      runId: 'settled-reconciliation-third',
+      sourceId: 'gmail:primary',
+      checkedAt: new Date('2026-09-21T00:02:00Z').toISOString(),
+      authorized: true,
+      records: [record],
+      reconcileExisting: true,
+    })
+
+    expect(second.snapshot.data.timeline.filter((item) =>
+      item.ingestion?.sourceRecordId === 'settled-reconciliation-replay')).toHaveLength(1)
+    expect(third.snapshot.data.timeline.filter((item) =>
+      item.ingestion?.sourceRecordId === 'settled-reconciliation-replay')).toHaveLength(1)
+    expect(second.run.outcomes.duplicate).toBe(1)
+    expect(third.run.outcomes.duplicate).toBe(1)
+  })
+
+  it('does not settle a reconcileExisting replay whose matching semantic receipt was undone', () => {
+    const base = snapshot()
+    const legacy = createIngestionLedgerTimeline({
+      sourceKind: 'gmail',
+      sourceId: 'gmail:primary',
+      sourceRecordId: 'fragment-replay-undone',
+      runId: 'legacy-fragment-undone-run',
+      recordType: 'recruiting_message',
+      outcome: 'unresolved',
+      fingerprint: 'fp:fragment-replay-undone',
+      receivedAt: '2026-09-10T00:00:00Z',
+      accountedAt: '2026-09-10T00:00:00Z',
+      reason: 'Message exceeds the 20-fragment interpretation limit.',
+    })
+    base.data.timeline = [legacy]
+    const record = gmailSemanticRecordFromMessage(
+      message(invitation, 'fragment-replay-undone'),
+      base.data.opportunities,
+      now,
+    )!
+    record.observation.inputId = 'gmail:fragment-replay-undone:fragment-reprocess-v2'
+    record.observation.source.sourceVersion = 'fragment-reprocess-v2'
+    record.gaps = []
+
+    const applied = applySemanticIntake(base, record.observation, { authorized: true, now })
+    expect(applied.status).toBe('APPLIED')
+    const undone = applySemanticCompensation(
+      applied.snapshot,
+      applied.compensation!,
+      new Date('2026-09-21T00:01:00Z'),
+    )
+    expect(undone.data.semanticReceipts?.find((receipt) =>
+      receipt.sourceRecordId === 'fragment-replay-undone')?.status).toBe('undone')
+
+    const replay = applyGmailSemanticBatch(undone, {
+      runId: 'fragment-replay-undone',
+      sourceId: 'gmail:primary',
+      checkedAt: new Date('2026-09-21T00:02:00Z').toISOString(),
+      authorized: true,
+      records: [record],
+      reconcileExisting: true,
+    })
+    const sourceRecords = replay.snapshot.data.timeline.filter((item) =>
+      item.ingestion?.sourceRecordId === 'fragment-replay-undone')
+    expect(sourceRecords.map((item) => item.ingestion?.outcome)).toEqual(['unresolved'])
+    expect(replay.run.outcomes.unresolved).toBe(1)
+
+    const reconciled = reconcileIngestionDebt(replay.snapshot, new Date('2026-09-21T00:03:00Z'))
+    expect(reconciled.appended[0]?.ingestionResolution).toMatchObject({
+      outcome: 'active_unresolved',
+      reason: 'unlinked_unresolved',
+      sourceRecordId: 'fragment-replay-undone',
+    })
+    expect(summarizeCoverage(reconciled.snapshot.data.timeline).activeUnresolvedCount).toBe(1)
+  })
+
+  it('preserves an older open source decision even when a newer parser version can apply another fact', () => {
+    const base = snapshot()
+    base.data.opportunities.push({ ...base.data.opportunities[0]!, id: 'jd-historical-decision' })
+    const legacy = createIngestionLedgerTimeline({
+      sourceKind: 'gmail',
+      sourceId: 'gmail:primary',
+      sourceRecordId: 'fragment-replay-historical-open',
+      runId: 'legacy-historical-open-run',
+      recordType: 'recruiting_message',
+      outcome: 'unresolved',
+      fingerprint: 'fp:fragment-replay-historical-open',
+      receivedAt: '2026-09-10T00:00:00Z',
+      accountedAt: '2026-09-10T00:00:00Z',
+      reason: 'Message exceeds the 20-fragment interpretation limit.',
+    })
+    base.data.timeline = [legacy]
+
+    const oldRecord = gmailSemanticRecordFromMessage(
+      message(invitation, 'fragment-replay-historical-open'),
+      base.data.opportunities,
+      now,
+    )!
+    oldRecord.observation.inputId = 'gmail:fragment-replay-historical-open:reconciliation-v1'
+    oldRecord.observation.source.sourceVersion = 'reconciliation-v1'
+    const oldInterpretation = applySemanticIntake(base, oldRecord.observation, { authorized: true, now })
+    expect(oldInterpretation.status).toBe('DECISION_REQUIRED')
+    expect(oldInterpretation.decisionRequests[0]?.state).toBe('open')
+
+    const narrowed = structuredClone(oldInterpretation.snapshot)
+    narrowed.data.opportunities = narrowed.data.opportunities.filter((item) => item.id === 'jd')
+    const freshRecord = gmailSemanticRecordFromMessage(
+      message(invitation, 'fragment-replay-historical-open'),
+      narrowed.data.opportunities,
+      now,
+    )!
+    freshRecord.observation.inputId = 'gmail:fragment-replay-historical-open:fragment-reprocess-v2'
+    freshRecord.observation.source.sourceVersion = 'fragment-reprocess-v2'
+    freshRecord.gaps = []
+
+    const replay = applyGmailSemanticBatch(narrowed, {
+      runId: 'fragment-replay-historical-open',
+      sourceId: 'gmail:primary',
+      checkedAt: new Date('2026-09-21T00:02:00Z').toISOString(),
+      authorized: true,
+      records: [freshRecord],
+      reconcileExisting: true,
+    })
+    expect(replay.snapshot.data.processEvents).toHaveLength(1)
+    expect(replay.snapshot.data.decisionRequests?.find((item) =>
+      item.id === oldInterpretation.decisionRequests[0]!.id)?.state).toBe('open')
+    expect(replay.snapshot.data.timeline.filter((item) =>
+      item.ingestion?.sourceRecordId === 'fragment-replay-historical-open')
+      .map((item) => item.ingestion?.outcome)).toEqual(['unresolved', 'unresolved'])
+
+    const reconciled = reconcileIngestionDebt(replay.snapshot, new Date('2026-09-21T00:03:00Z'))
+    expect(reconciled.appended[0]?.ingestionResolution).toMatchObject({
+      outcome: 'active_unresolved',
+      reason: 'semantic_decision_open',
+      sourceRecordId: 'fragment-replay-historical-open',
+    })
+  })
+
+  it('reopens fragment debt immediately when the conclusive replay write is undone', () => {
+    const base = snapshot()
+    const legacy = createIngestionLedgerTimeline({
+      sourceKind: 'gmail',
+      sourceId: 'gmail:primary',
+      sourceRecordId: 'fragment-replay-applied-undo',
+      runId: 'legacy-fragment-applied-undo-run',
+      recordType: 'recruiting_message',
+      outcome: 'unresolved',
+      fingerprint: 'fp:fragment-replay-applied-undo',
+      receivedAt: '2026-09-10T00:00:00Z',
+      accountedAt: '2026-09-10T00:00:00Z',
+      reason: 'Message exceeds the 20-fragment interpretation limit.',
+    })
+    base.data.timeline = [legacy]
+    const record = gmailSemanticRecordFromMessage(
+      message(invitation, 'fragment-replay-applied-undo'),
+      base.data.opportunities,
+      now,
+    )!
+    record.observation.inputId = 'gmail:fragment-replay-applied-undo:fragment-reprocess-v2'
+    record.observation.source.sourceVersion = 'fragment-reprocess-v2'
+    record.gaps = []
+
+    const replay = applyGmailSemanticBatch(base, {
+      runId: 'fragment-replay-applied-undo',
+      sourceId: 'gmail:primary',
+      checkedAt: now.toISOString(),
+      authorized: true,
+      records: [record],
+      reconcileExisting: true,
+    })
+    expect(replay.snapshot.data.timeline.filter((item) =>
+      item.ingestion?.sourceRecordId === 'fragment-replay-applied-undo')
+      .map((item) => item.ingestion?.outcome)).toEqual(['unresolved', 'updated'])
+    expect(replay.compensation.payload.receiptIds).toHaveLength(1)
+
+    const undone = applySemanticCompensation(
+      replay.snapshot,
+      replay.compensation,
+      now,
+    )
+    const sourceRows = undone.data.timeline.filter((item) =>
+      item.ingestion?.sourceRecordId === 'fragment-replay-applied-undo')
+    expect(sourceRows.map((item) => item.ingestion?.outcome)).toEqual(['unresolved', 'updated', 'unresolved'])
+    expect(sourceRows[2]?.ingestion?.reason).toBe('Semantic write was undone; source requires fresh reconciliation.')
+    expect(Date.parse(sourceRows[2]!.ingestion!.accountedAt)).toBeGreaterThan(
+      Date.parse(sourceRows[1]!.ingestion!.accountedAt),
+    )
+    expect(undone.data.semanticReceipts?.find((receipt) =>
+      receipt.sourceRecordId === 'fragment-replay-applied-undo')?.status).toBe('undone')
+    expect(summarizeCoverage(undone.data.timeline).activeUnresolvedCount).toBe(1)
+
+    const reconciled = reconcileIngestionDebt(undone, new Date('2026-09-21T00:02:00Z'))
+    expect(reconciled.appended[0]?.ingestionResolution).toMatchObject({
+      outcome: 'active_unresolved',
+      reason: 'unlinked_unresolved',
+      sourceRecordId: 'fragment-replay-applied-undo',
+    })
+  })
+
+  it('reopens source debt when undoing an earlier write after a later conclusive replay', () => {
+    const base = snapshot()
+    const legacy = createIngestionLedgerTimeline({
+      sourceKind: 'gmail',
+      sourceId: 'gmail:primary',
+      sourceRecordId: 'fragment-replay-later-before-undo',
+      runId: 'legacy-fragment-later-before-undo',
+      recordType: 'recruiting_message',
+      outcome: 'unresolved',
+      fingerprint: 'fp:fragment-replay-later-before-undo',
+      receivedAt: '2026-09-10T00:00:00Z',
+      accountedAt: '2026-09-10T00:00:00Z',
+      reason: 'Message exceeds the 20-fragment interpretation limit.',
+    })
+    base.data.timeline = [legacy]
+
+    const firstRecord = gmailSemanticRecordFromMessage(
+      message(invitation, 'fragment-replay-later-before-undo'),
+      base.data.opportunities,
+      now,
+    )!
+    firstRecord.observation.inputId = 'gmail:fragment-replay-later-before-undo:v1'
+    firstRecord.observation.source.sourceVersion = 'fragment-reprocess-v1'
+    firstRecord.gaps = []
+    const first = applyGmailSemanticBatch(base, {
+      runId: 'fragment-replay-later-before-undo:v1',
+      sourceId: 'gmail:primary',
+      checkedAt: now.toISOString(),
+      authorized: true,
+      records: [firstRecord],
+      reconcileExisting: true,
+    })
+    expect(first.snapshot.data.timeline.filter((item) =>
+      item.ingestion?.sourceRecordId === 'fragment-replay-later-before-undo')
+      .map((item) => item.ingestion?.outcome)).toEqual(['unresolved', 'updated'])
+
+    const secondRecord = gmailSemanticRecordFromMessage(
+      message(invitation, 'fragment-replay-later-before-undo'),
+      first.snapshot.data.opportunities,
+      new Date('2026-09-21T00:01:00Z'),
+    )!
+    secondRecord.observation.inputId = 'gmail:fragment-replay-later-before-undo:v2'
+    secondRecord.observation.source.sourceVersion = 'fragment-reprocess-v2'
+    secondRecord.gaps = []
+    const second = applyGmailSemanticBatch(first.snapshot, {
+      runId: 'fragment-replay-later-before-undo:v2',
+      sourceId: 'gmail:primary',
+      checkedAt: '2026-09-21T00:01:00.000Z',
+      authorized: true,
+      records: [secondRecord],
+      reconcileExisting: true,
+    })
+    expect(second.snapshot.data.timeline.filter((item) =>
+      item.ingestion?.sourceRecordId === 'fragment-replay-later-before-undo')
+      .map((item) => item.ingestion?.outcome)).toEqual(['unresolved', 'updated', 'updated'])
+
+    const undone = applySemanticCompensation(
+      second.snapshot,
+      first.compensation,
+      new Date('2026-09-21T00:02:00Z'),
+    )
+    const sourceRows = undone.data.timeline.filter((item) =>
+      item.ingestion?.sourceRecordId === 'fragment-replay-later-before-undo')
+    expect(sourceRows.map((item) => item.ingestion?.outcome)).toEqual([
+      'unresolved', 'updated', 'updated', 'unresolved',
+    ])
+    expect(Date.parse(sourceRows[3]!.ingestion!.accountedAt)).toBeGreaterThan(
+      Date.parse(sourceRows[2]!.ingestion!.accountedAt),
+    )
+    expect(summarizeCoverage(undone.data.timeline).activeUnresolvedCount).toBe(1)
+
+    const reconciled = reconcileIngestionDebt(undone, new Date('2026-09-21T00:03:00Z'))
+    expect(reconciled.appended[0]?.ingestionResolution).toMatchObject({
+      outcome: 'active_unresolved',
+      reason: 'unlinked_unresolved',
+      sourceRecordId: 'fragment-replay-later-before-undo',
+    })
+  })
+
+  it('orders a persisted reconcileExisting source transition after a tied prior state', () => {
+    const base = snapshot()
+    const tiedAt = now.toISOString()
+    const legacy = createIngestionLedgerTimeline({
+      sourceKind: 'gmail',
+      sourceId: 'gmail:primary',
+      sourceRecordId: 'fragment-replay-tied-transition',
+      runId: 'legacy-fragment-tied-transition',
+      recordType: 'recruiting_message',
+      outcome: 'unresolved',
+      fingerprint: 'fp:fragment-replay-tied-transition',
+      receivedAt: '2026-09-10T00:00:00Z',
+      accountedAt: tiedAt,
+      reason: 'Message exceeds the 20-fragment interpretation limit.',
+    })
+    base.data.timeline = [legacy]
+    const record = gmailSemanticRecordFromMessage(
+      message('京东 AI产品经理 招聘资讯更新', 'fragment-replay-tied-transition'),
+      base.data.opportunities,
+      now,
+    )!
+    record.observation.inputId = 'gmail:fragment-replay-tied-transition:v2'
+    record.observation.source.sourceVersion = 'fragment-reprocess-v2'
+    record.observation.candidates = []
+    record.gaps = []
+
+    const replay = applyGmailSemanticBatch(base, {
+      runId: 'fragment-replay-tied-transition:v2',
+      sourceId: 'gmail:primary',
+      checkedAt: tiedAt,
+      authorized: true,
+      records: [record],
+      reconcileExisting: true,
+    })
+    const sourceRows = replay.snapshot.data.timeline.filter((item) =>
+      item.ingestion?.sourceRecordId === 'fragment-replay-tied-transition')
+    expect(sourceRows.map((item) => item.ingestion?.outcome)).toEqual(['unresolved', 'ignored'])
+    expect(Date.parse(sourceRows[1]!.ingestion!.accountedAt)).toBeGreaterThan(Date.parse(tiedAt))
+  })
+
+  it('undo reopens a tied historical source state even when durable ordering puts unresolved first', () => {
+    const base = snapshot()
+    const tiedAt = now.toISOString()
+    const unresolvedRow = createIngestionLedgerTimeline({
+      sourceKind: 'gmail',
+      sourceId: 'gmail:primary',
+      sourceRecordId: 'fragment-undo-tied-state',
+      runId: 'legacy-fragment-undo-tied-state',
+      recordType: 'recruiting_message',
+      outcome: 'unresolved',
+      fingerprint: 'fp:fragment-undo-tied-state',
+      receivedAt: '2026-09-10T00:00:00Z',
+      accountedAt: tiedAt,
+      reason: 'Message exceeds the 20-fragment interpretation limit.',
+    })
+    const updatedRow = createIngestionLedgerTimeline({
+      sourceKind: 'gmail',
+      sourceId: 'gmail:primary',
+      sourceRecordId: 'fragment-undo-tied-state',
+      runId: 'semantic-run:tied-state',
+      recordType: 'recruiting_message',
+      outcome: 'updated',
+      fingerprint: 'fp:fragment-undo-tied-state:v2',
+      receivedAt: '2026-09-10T00:00:00Z',
+      accountedAt: tiedAt,
+      reason: 'Later semantic state applied.',
+    })
+    base.data.timeline = [unresolvedRow, updatedRow]
+    base.data.semanticReceipts = [{
+      id: 'semantic-receipt:fragment-undo-tied-state',
+      inputId: 'gmail:fragment-undo-tied-state:v2',
+      sourceKind: 'gmail',
+      sourceId: 'gmail:primary',
+      sourceRecordId: 'fragment-undo-tied-state',
+      sourceVersion: 'fragment-reprocess-v2',
+      commandId: 'semantic-run:tied-state',
+      status: 'committed',
+      summary: 'Applied.',
+      affectedObjects: [],
+      decisionRequestIds: [],
+      undoAvailable: true,
+      createdAt: tiedAt,
+      updatedAt: tiedAt,
+    }]
+
+    const undone = applySemanticCompensation(base, {
+      operation: 'semantic_batch',
+      payload: {
+        domainCompensations: [],
+        decisionRequestIds: [],
+        receiptIds: ['semantic-receipt:fragment-undo-tied-state'],
+      },
+    }, now)
+    const sourceRows = undone.data.timeline.filter((item) =>
+      item.ingestion?.sourceRecordId === 'fragment-undo-tied-state')
+    expect(sourceRows.map((item) => item.ingestion?.outcome)).toEqual(['unresolved', 'updated', 'unresolved'])
+    expect(Date.parse(sourceRows[2]!.ingestion!.accountedAt)).toBeGreaterThan(Date.parse(tiedAt))
+    expect(summarizeCoverage(undone.data.timeline).activeUnresolvedCount).toBe(1)
   })
 
   it('replay and a new message for the same thread occurrence do not duplicate events', () => {

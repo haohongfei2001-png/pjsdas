@@ -267,14 +267,41 @@ export function summarizeCoverage(timeline: TimelineRecord[] | undefined, option
     }
   }
 
-  const activeUnresolved = latestRecords.filter((item) => {
-    const ingestion = item.ingestion
-    if (!ingestion || ingestion.outcome !== 'unresolved') return false
-    const resolution = latestResolutionByKey.get(ingestionSourceRecordKey(ingestion))?.ingestionResolution
-    if (!resolution) return true
-    if (resolution.targetIngestionTimelineId !== item.id || resolution.targetFingerprint !== ingestion.fingerprint) return true
-    return resolution.outcome === 'active_unresolved'
-  })
+  const latestIngestionByKey = new Map(latestRecords.flatMap((item) =>
+    item.ingestion ? [[ingestionSourceRecordKey(item.ingestion), item] as const] : []))
+  const timelineById = new Map(records.map((item) => [item.id, item]))
+  const activeUnresolved: TimelineRecord[] = []
+
+  for (const [key, lifetimeUnresolved] of lifetimeUnresolvedKeys) {
+    const latest = latestIngestionByKey.get(key)
+    const ingestion = latest?.ingestion
+    if (!latest || !ingestion) continue
+    const resolution = latestResolutionByKey.get(key)?.ingestionResolution
+
+    if (ingestion.outcome === 'unresolved') {
+      if (!resolution
+        || resolution.targetIngestionTimelineId !== latest.id
+        || resolution.targetFingerprint !== ingestion.fingerprint
+        || resolution.outcome === 'active_unresolved') {
+        activeUnresolved.push(latest)
+      }
+      continue
+    }
+
+    if (resolution?.outcome !== 'active_unresolved') continue
+    const resolutionAt = Date.parse(resolution.reconciledAt)
+    const ingestionAt = Date.parse(ingestion.accountedAt)
+    const resolutionIsNewer = Number.isFinite(resolutionAt) && Number.isFinite(ingestionAt)
+      ? resolutionAt > ingestionAt
+      : resolution.reconciledAt > ingestion.accountedAt
+    if (!resolutionIsNewer) continue
+
+    const target = timelineById.get(resolution.targetIngestionTimelineId)
+    if (!target?.ingestion
+      || ingestionSourceRecordKey(target.ingestion) !== key
+      || target.ingestion.fingerprint !== resolution.targetFingerprint) continue
+    activeUnresolved.push(target ?? lifetimeUnresolved)
+  }
 
   const resolutionOutcomeCounts: Partial<Record<IngestionResolutionOutcome, number>> = {}
   for (const record of latestResolutionByKey.values()) {
