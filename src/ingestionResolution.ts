@@ -113,6 +113,22 @@ function semanticReceiptResolution(
   const receipt = receipts[0]
   if (!receipt) return undefined
 
+  const activeRequests = receipts.flatMap((item) => item.decisionRequestIds
+    .map((id) => (snapshot.data.decisionRequests ?? []).find((request) => request.id === id))
+    .filter((request): request is DecisionRequest => Boolean(request))
+    .filter((request) => request.state === 'open' || request.state === 'expired'))
+  if (activeRequests.length) {
+    const activeIds = new Set(activeRequests.map((request) => request.id))
+    const activeReceiptIds = receipts
+      .filter((item) => item.decisionRequestIds.some((id) => activeIds.has(id)))
+      .map((item) => item.id)
+    return {
+      outcome: 'active_unresolved',
+      reason: 'semantic_decision_open',
+      evidenceRefs: [...activeReceiptIds, ...activeRequests.map((request) => request.id)],
+    }
+  }
+
   if (receipt.status === 'committed') {
     return {
       outcome: 'resolved',

@@ -242,6 +242,88 @@ describe('R02 active unresolved reconciliation', () => {
     })
   })
 
+  it('keeps an older open semantic decision active even when a newer receipt committed', () => {
+    const record = unresolved({ sourceRecordId: 'semantic-open-before-commit' })
+    const decisionId = 'decision:semantic-open-before-commit'
+    const base = snapshot({
+      timeline: [record, zeroRun()],
+      semanticReceipts: [
+        {
+          id: 'semantic-receipt:semantic-open-before-commit:v1',
+          inputId: 'gmail:semantic-open-before-commit:v1',
+          sourceKind: 'gmail',
+          sourceId: SOURCE_ID,
+          sourceRecordId: 'semantic-open-before-commit',
+          sourceVersion: 'v1',
+          status: 'decision_required',
+          summary: 'Decision required.',
+          affectedObjects: [{ type: 'decision_request', id: decisionId }],
+          decisionRequestIds: [decisionId],
+          undoAvailable: false,
+          createdAt: '2026-09-25T10:00:00.000Z',
+          updatedAt: '2026-09-25T10:00:00.000Z',
+        },
+        {
+          id: 'semantic-receipt:semantic-open-before-commit:v2',
+          inputId: 'gmail:semantic-open-before-commit:v2',
+          sourceKind: 'gmail',
+          sourceId: SOURCE_ID,
+          sourceRecordId: 'semantic-open-before-commit',
+          sourceVersion: 'v2',
+          status: 'committed',
+          summary: 'Applied a later bounded fact.',
+          affectedObjects: [],
+          decisionRequestIds: [],
+          undoAvailable: false,
+          createdAt: '2026-09-26T10:00:00.000Z',
+          updatedAt: '2026-09-26T10:00:00.000Z',
+        },
+      ],
+      decisionRequests: [{
+        id: decisionId,
+        reason: 'ambiguous_target',
+        affectedObjects: [{ type: 'source', id: 'gmail:semantic-open-before-commit' }],
+        question: 'Which target is correct?',
+        choices: [
+          { id: 'one', label: 'One', consequence: 'Use one target.' },
+          { id: 'two', label: 'Two', consequence: 'Use another target.' },
+        ],
+        evidenceRefs: ['gmail:semantic-open-before-commit'],
+        payloadBinding: {
+          contractVersion: 1,
+          inputId: 'gmail:semantic-open-before-commit:v1',
+          candidateId: 'candidate:semantic-open-before-commit',
+          source: {
+            kind: 'gmail',
+            sourceId: SOURCE_ID,
+            sourceRecordId: 'semantic-open-before-commit',
+            sourceVersion: 'v1',
+            observedAt: '2026-09-25T10:00:00.000Z',
+            timezone: 'Asia/Shanghai',
+          },
+          statementMode: 'assertion',
+          candidate: {
+            id: 'candidate:semantic-open-before-commit',
+            kind: 'application_submitted',
+            target: { company: 'Example' },
+            objectConfidence: 'low',
+            eventConfidence: 'high',
+            evidenceRefs: ['gmail:semantic-open-before-commit'],
+            sourceVersionRefs: ['semantic-open-before-commit:v1'],
+          },
+        },
+        state: 'open',
+        createdAt: '2026-09-25T10:00:00.000Z',
+        updatedAt: '2026-09-25T10:00:00.000Z',
+      }],
+    })
+    const result = reconcileIngestionDebt(base, NOW)
+    expect(result.appended[0]?.ingestionResolution).toMatchObject({
+      outcome: 'active_unresolved',
+      reason: 'semantic_decision_open',
+    })
+  })
+
   it.each([false, true])('keeps same-company multi-role ambiguity active even if candidates are terminal: %s', (terminal) => {
     const record = unresolved({
       sourceRecordId: 'same-company-ambiguous',

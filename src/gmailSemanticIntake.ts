@@ -54,8 +54,11 @@ export function applyGmailSemanticBatch(snapshot: PJSDASSnapshot, input: {
         if (result.compensation.payload.receiptIds.includes(receipt.id)) receipt.commandId = input.runId
       }
     }
-    const activeDecisionRequests = result?.decisionRequests.filter((request) =>
-      request.state === 'open' || request.state === 'expired') ?? []
+    const activeDecisionRequests = (working.data.decisionRequests ?? []).filter((request) =>
+      request.payloadBinding.source.kind === 'gmail'
+      && request.payloadBinding.source.sourceId === input.sourceId
+      && request.payloadBinding.source.sourceRecordId === sourceRecordId
+      && (request.state === 'open' || request.state === 'expired'))
     // Only this invocation's semantic work can prove that a formerly bounded
     // source was fully re-evaluated. ALREADY_APPLIED can refer to a receipt
     // created by an older, gapful parser version and is therefore not fresh

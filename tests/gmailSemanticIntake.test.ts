@@ -409,6 +409,68 @@ describe('UU06 shared Gmail intake', () => {
     expect(summarizeCoverage(reconciled.snapshot.data.timeline).activeUnresolvedCount).toBe(1)
   })
 
+  it('preserves an older open source decision even when a newer parser version can apply another fact', () => {
+    const base = snapshot()
+    base.data.opportunities.push({ ...base.data.opportunities[0]!, id: 'jd-historical-decision' })
+    const legacy = createIngestionLedgerTimeline({
+      sourceKind: 'gmail',
+      sourceId: 'gmail:primary',
+      sourceRecordId: 'fragment-replay-historical-open',
+      runId: 'legacy-historical-open-run',
+      recordType: 'recruiting_message',
+      outcome: 'unresolved',
+      fingerprint: 'fp:fragment-replay-historical-open',
+      receivedAt: '2026-09-10T00:00:00Z',
+      accountedAt: '2026-09-10T00:00:00Z',
+      reason: 'Message exceeds the 20-fragment interpretation limit.',
+    })
+    base.data.timeline = [legacy]
+
+    const oldRecord = gmailSemanticRecordFromMessage(
+      message(invitation, 'fragment-replay-historical-open'),
+      base.data.opportunities,
+      now,
+    )!
+    oldRecord.observation.inputId = 'gmail:fragment-replay-historical-open:reconciliation-v1'
+    oldRecord.observation.source.sourceVersion = 'reconciliation-v1'
+    const oldInterpretation = applySemanticIntake(base, oldRecord.observation, { authorized: true, now })
+    expect(oldInterpretation.status).toBe('DECISION_REQUIRED')
+    expect(oldInterpretation.decisionRequests[0]?.state).toBe('open')
+
+    const narrowed = structuredClone(oldInterpretation.snapshot)
+    narrowed.data.opportunities = narrowed.data.opportunities.filter((item) => item.id === 'jd')
+    const freshRecord = gmailSemanticRecordFromMessage(
+      message(invitation, 'fragment-replay-historical-open'),
+      narrowed.data.opportunities,
+      now,
+    )!
+    freshRecord.observation.inputId = 'gmail:fragment-replay-historical-open:fragment-reprocess-v2'
+    freshRecord.observation.source.sourceVersion = 'fragment-reprocess-v2'
+    freshRecord.gaps = []
+
+    const replay = applyGmailSemanticBatch(narrowed, {
+      runId: 'fragment-replay-historical-open',
+      sourceId: 'gmail:primary',
+      checkedAt: new Date('2026-09-21T00:02:00Z').toISOString(),
+      authorized: true,
+      records: [freshRecord],
+      reconcileExisting: true,
+    })
+    expect(replay.snapshot.data.processEvents).toHaveLength(1)
+    expect(replay.snapshot.data.decisionRequests?.find((item) =>
+      item.id === oldInterpretation.decisionRequests[0]!.id)?.state).toBe('open')
+    expect(replay.snapshot.data.timeline.filter((item) =>
+      item.ingestion?.sourceRecordId === 'fragment-replay-historical-open')
+      .map((item) => item.ingestion?.outcome)).toEqual(['unresolved', 'unresolved'])
+
+    const reconciled = reconcileIngestionDebt(replay.snapshot, new Date('2026-09-21T00:03:00Z'))
+    expect(reconciled.appended[0]?.ingestionResolution).toMatchObject({
+      outcome: 'active_unresolved',
+      reason: 'semantic_decision_open',
+      sourceRecordId: 'fragment-replay-historical-open',
+    })
+  })
+
   it('replay and a new message for the same thread occurrence do not duplicate events', () => {
     const first = run(snapshot(), invitation)
     const replay = run(first.snapshot, invitation)
