@@ -212,6 +212,105 @@ describe('UU06 shared Gmail intake', () => {
     })
   })
 
+  it('does not use an older committed ALREADY_APPLIED receipt as fresh parser-completeness evidence', () => {
+    const base = snapshot()
+    const legacy = createIngestionLedgerTimeline({
+      sourceKind: 'gmail',
+      sourceId: 'gmail:primary',
+      sourceRecordId: 'fragment-replay-stale-committed',
+      runId: 'legacy-stale-committed-run',
+      recordType: 'recruiting_message',
+      outcome: 'unresolved',
+      fingerprint: 'fp:fragment-replay-stale-committed',
+      receivedAt: '2026-09-10T00:00:00Z',
+      accountedAt: '2026-09-10T00:00:00Z',
+      reason: 'Message exceeds the 20-fragment interpretation limit.',
+    })
+    base.data.timeline = [legacy]
+    const record = gmailSemanticRecordFromMessage(
+      message(invitation, 'fragment-replay-stale-committed'),
+      base.data.opportunities,
+      now,
+    )!
+    record.observation.inputId = 'gmail:fragment-replay-stale-committed:reconciliation-v1'
+    record.observation.source.sourceVersion = 'reconciliation-v1'
+    record.gaps = []
+
+    const oldSemanticPass = applySemanticIntake(base, record.observation, { authorized: true, now })
+    expect(oldSemanticPass.status).toBe('APPLIED')
+    expect(oldSemanticPass.receipt?.status).toBe('committed')
+
+    const replay = applyGmailSemanticBatch(oldSemanticPass.snapshot, {
+      runId: 'fragment-replay-stale-committed',
+      sourceId: 'gmail:primary',
+      checkedAt: new Date('2026-09-21T00:01:00Z').toISOString(),
+      authorized: true,
+      records: [record],
+      reconcileExisting: true,
+    })
+    expect(replay.snapshot.data.timeline.filter((item) =>
+      item.ingestion?.sourceRecordId === 'fragment-replay-stale-committed')
+      .map((item) => item.ingestion?.outcome)).toEqual(['unresolved'])
+    expect(replay.run.outcomes.unresolved).toBe(1)
+  })
+
+  it('does not reactivate or append source debt when an ALREADY_APPLIED decision is already settled', () => {
+    const base = snapshot()
+    base.data.opportunities.push({ ...base.data.opportunities[0]!, id: 'jd-settled-decision' })
+    const legacy = createIngestionLedgerTimeline({
+      sourceKind: 'gmail',
+      sourceId: 'gmail:primary',
+      sourceRecordId: 'fragment-replay-settled-decision',
+      runId: 'legacy-settled-decision-run',
+      recordType: 'recruiting_message',
+      outcome: 'unresolved',
+      fingerprint: 'fp:fragment-replay-settled-decision',
+      receivedAt: '2026-09-10T00:00:00Z',
+      accountedAt: '2026-09-10T00:00:00Z',
+      reason: 'Message exceeds the 20-fragment interpretation limit.',
+    })
+    base.data.timeline = [legacy]
+    const record = gmailSemanticRecordFromMessage(
+      message(invitation, 'fragment-replay-settled-decision'),
+      base.data.opportunities,
+      now,
+    )!
+    record.observation.inputId = 'gmail:fragment-replay-settled-decision:reconciliation-v1'
+    record.observation.source.sourceVersion = 'reconciliation-v1'
+    record.gaps = []
+
+    const first = applySemanticIntake(base, record.observation, { authorized: true, now })
+    expect(first.status).toBe('DECISION_REQUIRED')
+    const request = first.decisionRequests[0]!
+    const choice = request.choices.find((item) => item.resolution && !item.resolution.dismiss)
+      ?? request.choices[0]!
+    const settled = resolveSemanticDecision(
+      first.snapshot,
+      request.id,
+      choice.id,
+      new Date('2026-09-21T00:01:00Z'),
+    )
+    const settledRequest = settled.snapshot.data.decisionRequests?.find((item) => item.id === request.id)
+    expect(['answered', 'superseded']).toContain(settledRequest?.state)
+
+    const sourceRowsBefore = settled.snapshot.data.timeline.filter((item) =>
+      item.ingestion?.sourceRecordId === 'fragment-replay-settled-decision').length
+    const replay = applyGmailSemanticBatch(settled.snapshot, {
+      runId: 'fragment-replay-settled-decision',
+      sourceId: 'gmail:primary',
+      checkedAt: new Date('2026-09-21T00:02:00Z').toISOString(),
+      authorized: true,
+      records: [record],
+      reconcileExisting: true,
+    })
+    const sourceRowsAfter = replay.snapshot.data.timeline.filter((item) =>
+      item.ingestion?.sourceRecordId === 'fragment-replay-settled-decision').length
+    expect(sourceRowsBefore).toBe(1)
+    expect(sourceRowsAfter).toBe(1)
+    expect(replay.snapshot.data.decisionRequests?.find((item) => item.id === request.id)?.state)
+      .toBe(settledRequest?.state)
+  })
+
   it('does not amplify settled Gmail source ledger rows during reconcileExisting replay', () => {
     const base = snapshot()
     const record = gmailSemanticRecordFromMessage(

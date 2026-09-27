@@ -54,28 +54,26 @@ export function applyGmailSemanticBatch(snapshot: PJSDASSnapshot, input: {
         if (result.compensation.payload.receiptIds.includes(receipt.id)) receipt.commandId = input.runId
       }
     }
-    const conclusiveSemanticReplay = Boolean(
-      result
-      && (
-        result.status === 'NO_WRITE'
-        || result.status === 'APPLIED'
-        || (result.status === 'ALREADY_APPLIED'
-          && (result.receipt?.status === 'committed' || result.receipt?.status === 'no_write'))
-      ),
-    )
+    const activeDecisionRequests = result?.decisionRequests.filter((request) =>
+      request.state === 'open' || request.state === 'expired') ?? []
+    // Only this invocation's semantic work can prove that a formerly bounded
+    // source was fully re-evaluated. ALREADY_APPLIED can refer to a receipt
+    // created by an older, gapful parser version and is therefore not fresh
+    // completeness evidence.
+    const conclusiveSemanticReplay = result?.status === 'NO_WRITE' || result?.status === 'APPLIED'
     const reconciledPriorUnresolved = Boolean(
       input.reconcileExisting
       && prior?.ingestion?.outcome === 'unresolved'
       && record.gaps.length === 0
-      && result?.decisionRequests.length === 0
+      && activeDecisionRequests.length === 0
       && conclusiveSemanticReplay,
     )
     const unresolved = record.gaps.length > 0
-      || Boolean(result?.decisionRequests.length)
+      || activeDecisionRequests.length > 0
       || (prior?.ingestion?.outcome === 'unresolved' && !reconciledPriorUnresolved)
     const issueKinds = [...new Set([
       ...(record.issueKinds ?? []),
-      ...(result?.decisionRequests.length ? ['business_ambiguity' as const] : []),
+      ...(activeDecisionRequests.length ? ['business_ambiguity' as const] : []),
       ...(prior?.ingestion?.issueKinds ?? []),
     ])]
     const entry = createIngestionLedgerTimeline({
@@ -101,7 +99,7 @@ export function applyGmailSemanticBatch(snapshot: PJSDASSnapshot, input: {
     const persistReconciliationChange = Boolean(input.reconcileExisting
       && (record.gaps.length > 0
         || result?.status === 'APPLIED'
-        || result?.decisionRequests.length
+        || result?.status === 'DECISION_REQUIRED'
         || reconciledPriorUnresolved))
     if (!prior || persistReconciliationChange) {
       working.data.timeline = [...(working.data.timeline ?? []), entry]
