@@ -471,6 +471,64 @@ describe('UU06 shared Gmail intake', () => {
     })
   })
 
+  it('reopens fragment debt immediately when the conclusive replay write is undone', () => {
+    const base = snapshot()
+    const legacy = createIngestionLedgerTimeline({
+      sourceKind: 'gmail',
+      sourceId: 'gmail:primary',
+      sourceRecordId: 'fragment-replay-applied-undo',
+      runId: 'legacy-fragment-applied-undo-run',
+      recordType: 'recruiting_message',
+      outcome: 'unresolved',
+      fingerprint: 'fp:fragment-replay-applied-undo',
+      receivedAt: '2026-09-10T00:00:00Z',
+      accountedAt: '2026-09-10T00:00:00Z',
+      reason: 'Message exceeds the 20-fragment interpretation limit.',
+    })
+    base.data.timeline = [legacy]
+    const record = gmailSemanticRecordFromMessage(
+      message(invitation, 'fragment-replay-applied-undo'),
+      base.data.opportunities,
+      now,
+    )!
+    record.observation.inputId = 'gmail:fragment-replay-applied-undo:fragment-reprocess-v2'
+    record.observation.source.sourceVersion = 'fragment-reprocess-v2'
+    record.gaps = []
+
+    const replay = applyGmailSemanticBatch(base, {
+      runId: 'fragment-replay-applied-undo',
+      sourceId: 'gmail:primary',
+      checkedAt: now.toISOString(),
+      authorized: true,
+      records: [record],
+      reconcileExisting: true,
+    })
+    expect(replay.snapshot.data.timeline.filter((item) =>
+      item.ingestion?.sourceRecordId === 'fragment-replay-applied-undo')
+      .map((item) => item.ingestion?.outcome)).toEqual(['unresolved', 'updated'])
+    expect(replay.compensation.payload.receiptIds).toHaveLength(1)
+
+    const undone = applySemanticCompensation(
+      replay.snapshot,
+      replay.compensation,
+      new Date('2026-09-21T00:01:00Z'),
+    )
+    const sourceRows = undone.data.timeline.filter((item) =>
+      item.ingestion?.sourceRecordId === 'fragment-replay-applied-undo')
+    expect(sourceRows.map((item) => item.ingestion?.outcome)).toEqual(['unresolved', 'updated', 'unresolved'])
+    expect(sourceRows[2]?.ingestion?.reason).toBe('Semantic write was undone; source requires fresh reconciliation.')
+    expect(undone.data.semanticReceipts?.find((receipt) =>
+      receipt.sourceRecordId === 'fragment-replay-applied-undo')?.status).toBe('undone')
+    expect(summarizeCoverage(undone.data.timeline).activeUnresolvedCount).toBe(1)
+
+    const reconciled = reconcileIngestionDebt(undone, new Date('2026-09-21T00:02:00Z'))
+    expect(reconciled.appended[0]?.ingestionResolution).toMatchObject({
+      outcome: 'active_unresolved',
+      reason: 'unlinked_unresolved',
+      sourceRecordId: 'fragment-replay-applied-undo',
+    })
+  })
+
   it('replay and a new message for the same thread occurrence do not duplicate events', () => {
     const first = run(snapshot(), invitation)
     const replay = run(first.snapshot, invitation)
