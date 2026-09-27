@@ -336,9 +336,12 @@ export interface SemanticIntakeReceipt {
   affectedObjects: Array<{ type: 'opportunity' | 'schedule_node' | 'action' | 'process' | 'decision_request' | 'reminder_intent'; id: string }>
   decisionRequestIds: string[]
   factKeys?: string[]
-  /** Receipt evidence was invalidated by undoing an earlier same-source fact dependency. */
-  invalidatedByReceiptId?: string
-  invalidatedAt?: string
+  /** Fact-level evidence invalidated by undoing an earlier same-source dependency. */
+  factInvalidations?: Array<{
+    factKey: string
+    invalidatedByReceiptId: string
+    invalidatedAt: string
+  }>
   undoAvailable: boolean
   createdAt: string
   updatedAt: string

@@ -139,7 +139,7 @@ function semanticReceiptResolution(
       && item.sourceId === ingestion.sourceId
       && item.sourceRecordId === ingestion.sourceRecordId
       && item.status !== 'undone'
-      && !item.invalidatedByReceiptId)
+      && !(item.factInvalidations?.length))
 
   const receipts = sourceReceipts
     .filter((item) => item.updatedAt >= ingestion.accountedAt)

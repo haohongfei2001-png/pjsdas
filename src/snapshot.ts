@@ -452,14 +452,25 @@ export function validateSnapshot(value: unknown): asserts value is PJSDASSnapsho
       inputIds.add(receipt.inputId)
       assertIsoDate(receipt.createdAt, `SemanticReceipt ${receipt.id} createdAt`)
       assertIsoDate(receipt.updatedAt, `SemanticReceipt ${receipt.id} updatedAt`)
-      if (receipt.invalidatedByReceiptId !== undefined
-        && (typeof receipt.invalidatedByReceiptId !== 'string'
-          || !receipt.invalidatedByReceiptId.trim()
-          || receipt.invalidatedByReceiptId === receipt.id)) {
-        throw new Error(`备份损坏：SemanticReceipt ${receipt.id} invalidation reference 无效。`)
-      }
-      if (receipt.invalidatedAt !== undefined) {
-        assertIsoDate(receipt.invalidatedAt, `SemanticReceipt ${receipt.id} invalidatedAt`)
+      if (receipt.factInvalidations !== undefined) {
+        if (!Array.isArray(receipt.factInvalidations)) {
+          throw new Error(`备份损坏：SemanticReceipt ${receipt.id} fact invalidations 无效。`)
+        }
+        const invalidatedKeys = new Set<string>()
+        for (const invalidation of receipt.factInvalidations) {
+          if (!isObject(invalidation)
+            || typeof invalidation.factKey !== 'string'
+            || !invalidation.factKey.trim()
+            || !receipt.factKeys?.includes(invalidation.factKey)
+            || typeof invalidation.invalidatedByReceiptId !== 'string'
+            || !invalidation.invalidatedByReceiptId.trim()
+            || invalidation.invalidatedByReceiptId === receipt.id
+            || invalidatedKeys.has(invalidation.factKey)) {
+            throw new Error(`备份损坏：SemanticReceipt ${receipt.id} fact invalidation 无效。`)
+          }
+          invalidatedKeys.add(invalidation.factKey)
+          assertIsoDate(invalidation.invalidatedAt, `SemanticReceipt ${receipt.id} fact invalidatedAt`)
+        }
       }
     }
   }

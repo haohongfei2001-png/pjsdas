@@ -118,10 +118,14 @@ function sourceRecordIdentity(observation: SemanticIntakeObservation) {
   ].join('|')
 }
 
+function receiptInvalidatedFactKeys(receipt: SemanticIntakeReceipt) {
+  return new Set((receipt.factInvalidations ?? []).map((item) => item.factKey))
+}
+
 function existingReceipt(snapshot: PJSDASSnapshot, observation: SemanticIntakeObservation) {
   return (snapshot.data.semanticReceipts ?? []).find((item) =>
     item.status !== 'undone'
-    && !item.invalidatedByReceiptId
+    && !(item.factInvalidations?.length)
     && (
       item.inputId === observation.inputId
       || (
@@ -201,7 +205,9 @@ export function semanticCandidateFactKey(snapshot: PJSDASSnapshot, candidate: Se
 function existingFactReceipt(snapshot: PJSDASSnapshot, factKey: string | undefined) {
   if (!factKey) return undefined
   return (snapshot.data.semanticReceipts ?? []).find((item) =>
-    item.status === 'committed' && !item.invalidatedByReceiptId && item.factKeys?.includes(factKey),
+    item.status === 'committed'
+    && item.factKeys?.includes(factKey)
+    && !receiptInvalidatedFactKeys(item).has(factKey),
   )
 }
 
@@ -1231,17 +1237,27 @@ export function applySemanticCompensation(
       }
       const invalidatedFactKeys = new Set(item.factKeys ?? [])
       if (invalidatedFactKeys.size) {
-        for (const dependent of next.data.semanticReceipts ?? []) {
-          if (dependent.id === item.id
-            || dependent.status !== 'committed'
-            || dependent.invalidatedByReceiptId
+        const receipts = next.data.semanticReceipts ?? []
+        const itemIndex = receipts.findIndex((receipt) => receipt.id === item.id)
+        for (let index = itemIndex + 1; index < receipts.length; index += 1) {
+          const dependent = receipts[index]!
+          if (dependent.status !== 'committed'
             || dependent.sourceKind !== item.sourceKind
             || dependent.sourceId !== item.sourceId
-            || dependent.sourceRecordId !== item.sourceRecordId
-            || !dependent.factKeys?.some((key) => invalidatedFactKeys.has(key))) continue
-          dependent.invalidatedByReceiptId = item.id
-          dependent.invalidatedAt = timestamp
-          dependent.undoAvailable = false
+            || dependent.sourceRecordId !== item.sourceRecordId) continue
+          const existingInvalidations = dependent.factInvalidations ?? []
+          const alreadyInvalidated = new Set(existingInvalidations.map((entry) => entry.factKey))
+          const overlap = (dependent.factKeys ?? []).filter((key) =>
+            invalidatedFactKeys.has(key) && !alreadyInvalidated.has(key))
+          if (!overlap.length) continue
+          dependent.factInvalidations = [
+            ...existingInvalidations,
+            ...overlap.map((factKey) => ({
+              factKey,
+              invalidatedByReceiptId: item.id,
+              invalidatedAt: timestamp,
+            })),
+          ]
         }
       }
       item.status = 'undone'

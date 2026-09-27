@@ -815,9 +815,11 @@ describe('UU06 shared Gmail intake', () => {
     const dependent = undone.data.semanticReceipts?.find((receipt) => receipt.id === second.receipt!.id)
     expect(dependent).toMatchObject({
       status: 'committed',
-      invalidatedByReceiptId: first.receipt!.id,
-      invalidatedAt: '2026-09-21T00:02:00.000Z',
-      undoAvailable: false,
+      factInvalidations: [{
+        factKey: first.receipt!.factKeys![0],
+        invalidatedByReceiptId: first.receipt!.id,
+        invalidatedAt: '2026-09-21T00:02:00.000Z',
+      }],
     })
 
     const recovered = applySemanticIntake(undone, secondObservation, {
@@ -826,7 +828,141 @@ describe('UU06 shared Gmail intake', () => {
     })
     expect(recovered.status).toBe('APPLIED')
     expect(recovered.snapshot.data.opportunities[0]?.deadline).toBe('2026-09-25')
-    expect(recovered.receipt?.invalidatedByReceiptId).toBeUndefined()
+    expect(recovered.receipt?.factInvalidations).toBeUndefined()
+  })
+
+  it('does not invalidate an earlier creator receipt when undoing a later no-op replay', () => {
+    const base = snapshot()
+    const observation = (version: string) => ({
+      contractVersion: 1 as const,
+      inputId: `gmail:undo-later-noop:${version}`,
+      source: {
+        kind: 'gmail' as const,
+        sourceId: 'gmail:primary',
+        sourceRecordId: 'undo-later-noop',
+        sourceVersion: version,
+        observedAt: now.toISOString(),
+        assertedAt: now.toISOString(),
+        timezone: 'Asia/Shanghai',
+      },
+      statementMode: 'assertion' as const,
+      candidates: [{
+        id: `deadline:${version}`,
+        kind: 'opportunity_deadline' as const,
+        target: { opportunityId: 'jd' },
+        deadline: '2026-09-25',
+        precision: 'date' as const,
+        objectConfidence: 'high' as const,
+        eventConfidence: 'high' as const,
+        temporalConfidence: 'high' as const,
+        evidenceRefs: ['gmail:undo-later-noop'],
+        sourceVersionRefs: [`undo-later-noop:${version}`],
+      }],
+    })
+
+    const first = applySemanticIntake(base, observation('v1'), { authorized: true, now })
+    const later = applySemanticIntake(first.snapshot, observation('v2'), {
+      authorized: true,
+      now: new Date('2026-09-21T00:01:00Z'),
+    })
+    expect(first.compensation?.payload.domainCompensations).toHaveLength(1)
+    expect(later.compensation?.payload.domainCompensations).toHaveLength(0)
+
+    const undoneLater = applySemanticCompensation(
+      later.snapshot,
+      later.compensation!,
+      new Date('2026-09-21T00:02:00Z'),
+    )
+    const original = undoneLater.data.semanticReceipts?.find((receipt) => receipt.id === first.receipt!.id)
+    expect(original).toMatchObject({ status: 'committed' })
+    expect(original?.factInvalidations).toBeUndefined()
+    expect(original?.undoAvailable).toBe(true)
+    expect(undoneLater.data.opportunities[0]?.deadline).toBe('2026-09-25')
+  })
+
+  it('invalidates only overlapping facts in a later partially dependent receipt', () => {
+    const base = snapshot()
+    const targetFact = 'opportunity_deadline|opp:jd|date|2026-09-25T00:00:00.000Z'
+    const independentFact = 'manual_action|independent action|'
+    base.data.semanticReceipts = [
+      {
+        id: 'semantic-receipt:partial-target',
+        inputId: 'gmail:partial-target:v1',
+        sourceKind: 'gmail',
+        sourceId: 'gmail:primary',
+        sourceRecordId: 'partial-source',
+        sourceVersion: 'v1',
+        commandId: 'partial-target-run',
+        status: 'committed',
+        summary: 'Created target fact.',
+        affectedObjects: [],
+        decisionRequestIds: [],
+        factKeys: [targetFact],
+        undoAvailable: true,
+        createdAt: '2026-09-21T00:00:00.000Z',
+        updatedAt: '2026-09-21T00:00:00.000Z',
+      },
+      {
+        id: 'semantic-receipt:partial-dependent',
+        inputId: 'gmail:partial-target:v2',
+        sourceKind: 'gmail',
+        sourceId: 'gmail:primary',
+        sourceRecordId: 'partial-source',
+        sourceVersion: 'v2',
+        commandId: 'partial-dependent-run',
+        status: 'committed',
+        summary: 'Contains one dependent and one independent fact.',
+        affectedObjects: [],
+        decisionRequestIds: [],
+        factKeys: [targetFact, independentFact],
+        undoAvailable: true,
+        createdAt: '2026-09-21T00:01:00.000Z',
+        updatedAt: '2026-09-21T00:01:00.000Z',
+      },
+    ]
+
+    const undone = applySemanticCompensation(base, {
+      operation: 'semantic_batch',
+      payload: {
+        domainCompensations: [],
+        decisionRequestIds: [],
+        receiptIds: ['semantic-receipt:partial-target'],
+      },
+    }, new Date('2026-09-21T00:02:00Z'))
+    const dependent = undone.data.semanticReceipts?.find((receipt) => receipt.id === 'semantic-receipt:partial-dependent')
+    expect(dependent?.factInvalidations).toEqual([{
+      factKey: targetFact,
+      invalidatedByReceiptId: 'semantic-receipt:partial-target',
+      invalidatedAt: '2026-09-21T00:02:00.000Z',
+    }])
+    expect(dependent?.undoAvailable).toBe(true)
+
+    const crossSource = applySemanticIntake(undone, {
+      contractVersion: 1,
+      inputId: 'gmail:other-source:independent',
+      source: {
+        kind: 'gmail',
+        sourceId: 'gmail:other',
+        sourceRecordId: 'other-independent',
+        sourceVersion: 'v1',
+        observedAt: '2026-09-21T00:03:00.000Z',
+        assertedAt: '2026-09-21T00:03:00.000Z',
+        timezone: 'Asia/Shanghai',
+      },
+      statementMode: 'assertion',
+      candidates: [{
+        id: 'independent-action',
+        kind: 'manual_action',
+        title: 'Independent Action',
+        objectConfidence: 'high',
+        eventConfidence: 'high',
+        evidenceRefs: ['gmail:other-independent'],
+        sourceVersionRefs: ['other-independent:v1'],
+      }],
+    }, { authorized: true, now: new Date('2026-09-21T00:03:00Z') })
+    expect(crossSource.status).toBe('APPLIED')
+    expect(crossSource.compensation?.payload.domainCompensations).toHaveLength(0)
+    expect(crossSource.snapshot.data.actions).toHaveLength(0)
   })
 
   it('replay and a new message for the same thread occurrence do not duplicate events', () => {
