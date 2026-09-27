@@ -404,7 +404,7 @@ describe('UU06 shared Gmail intake', () => {
     const reconciled = reconcileIngestionDebt(replay.snapshot, new Date('2026-09-21T00:03:00Z'))
     expect(reconciled.appended[0]?.ingestionResolution).toMatchObject({
       outcome: 'active_unresolved',
-      reason: 'unlinked_unresolved',
+      reason: 'semantic_decision_open',
       sourceRecordId: 'fragment-replay-undone',
     })
     expect(summarizeCoverage(reconciled.snapshot.data.timeline).activeUnresolvedCount).toBe(1)
@@ -764,26 +764,41 @@ describe('UU06 shared Gmail intake', () => {
 
   it('invalidates a dependent committed replay receipt and allows the same source version to recover after undo', () => {
     const base = snapshot()
-    const firstRecord = gmailSemanticRecordFromMessage(
-      message('京东 AI产品经理 申请已收到', 'dependent-replay-recovery'),
-      base.data.opportunities,
-      now,
-    )!
-    firstRecord.observation.inputId = 'gmail:dependent-replay-recovery:v1'
-    firstRecord.observation.source.sourceVersion = 'v1'
-    const first = applySemanticIntake(base, firstRecord.observation, { authorized: true, now })
+    const observation = (version: string) => ({
+      contractVersion: 1 as const,
+      inputId: `gmail:dependent-replay-recovery:${version}`,
+      source: {
+        kind: 'gmail' as const,
+        sourceId: 'gmail:primary',
+        sourceRecordId: 'dependent-replay-recovery',
+        sourceVersion: version,
+        observedAt: now.toISOString(),
+        assertedAt: now.toISOString(),
+        timezone: 'Asia/Shanghai',
+      },
+      statementMode: 'assertion' as const,
+      candidates: [{
+        id: `deadline:${version}`,
+        kind: 'opportunity_deadline' as const,
+        target: { opportunityId: 'jd' },
+        deadline: '2026-09-25',
+        precision: 'date' as const,
+        objectConfidence: 'high' as const,
+        eventConfidence: 'high' as const,
+        temporalConfidence: 'high' as const,
+        evidenceRefs: ['gmail:dependent-replay-recovery'],
+        sourceVersionRefs: [`dependent-replay-recovery:${version}`],
+      }],
+    })
+
+    const firstObservation = observation('v1')
+    const first = applySemanticIntake(base, firstObservation, { authorized: true, now })
     expect(first.status).toBe('APPLIED')
-    expect(first.snapshot.data.processEvents).toHaveLength(1)
+    expect(first.snapshot.data.opportunities[0]?.deadline).toBe('2026-09-25')
     expect(first.compensation?.payload.domainCompensations).toHaveLength(1)
 
-    const secondRecord = gmailSemanticRecordFromMessage(
-      message('京东 AI产品经理 申请已收到', 'dependent-replay-recovery'),
-      first.snapshot.data.opportunities,
-      new Date('2026-09-21T00:01:00Z'),
-    )!
-    secondRecord.observation.inputId = 'gmail:dependent-replay-recovery:v2'
-    secondRecord.observation.source.sourceVersion = 'v2'
-    const second = applySemanticIntake(first.snapshot, secondRecord.observation, {
+    const secondObservation = observation('v2')
+    const second = applySemanticIntake(first.snapshot, secondObservation, {
       authorized: true,
       now: new Date('2026-09-21T00:01:00Z'),
     })
@@ -796,7 +811,7 @@ describe('UU06 shared Gmail intake', () => {
       first.compensation!,
       new Date('2026-09-21T00:02:00Z'),
     )
-    expect(undone.data.processEvents).toHaveLength(0)
+    expect(undone.data.opportunities[0]?.deadline).toBeUndefined()
     const dependent = undone.data.semanticReceipts?.find((receipt) => receipt.id === second.receipt!.id)
     expect(dependent).toMatchObject({
       status: 'committed',
@@ -805,12 +820,12 @@ describe('UU06 shared Gmail intake', () => {
       undoAvailable: false,
     })
 
-    const recovered = applySemanticIntake(undone, secondRecord.observation, {
+    const recovered = applySemanticIntake(undone, secondObservation, {
       authorized: true,
       now: new Date('2026-09-21T00:03:00Z'),
     })
     expect(recovered.status).toBe('APPLIED')
-    expect(recovered.snapshot.data.processEvents).toHaveLength(1)
+    expect(recovered.snapshot.data.opportunities[0]?.deadline).toBe('2026-09-25')
     expect(recovered.receipt?.invalidatedByReceiptId).toBeUndefined()
   })
 
