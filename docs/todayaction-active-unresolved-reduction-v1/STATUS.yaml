@@ -1,8 +1,8 @@
 package: TODAYACTION-ACTIVE-UNRESOLVED-REDUCTION-v1
-status: REPAIR_01_PRODUCTION_COMPLETE
+status: REPAIR_02_ENGINEERING_IN_PROGRESS
 writer:
-  branch: null
-  active: false
+  branch: reliability/active-unresolved-reduction-fragment-v1
+  active: true
 baseline:
   main: a407c5d2a006d5ce8a4fcd5b44e6c59b114b27ae
   active_unresolved: 177
@@ -60,3 +60,13 @@ verification:
   production_brand_readback: SUCCESS
   live_visual: SUCCESS
   reconciliation_cron_active: false
+
+repair_02:
+  name: gmail_fragment_limit_reprocess
+  current_active_cluster: 63
+  current_unlinked_target: 60
+  protected_semantic_decision_open: 3
+  parser_old_limit: 20
+  parser_new_limit: 80
+  exact_main_dry_run: PENDING
+  production_write: NOT_AUTHORIZED
