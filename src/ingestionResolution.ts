@@ -103,23 +103,23 @@ function semanticReceiptResolution(
   snapshot: PJSDASSnapshot,
   ingestion: IngestionLedgerEntry,
 ): { outcome: IngestionResolutionOutcome; reason: IngestionResolutionReason; evidenceRefs: string[] } | undefined {
-  const receipts = (snapshot.data.semanticReceipts ?? [])
+  const sourceReceipts = (snapshot.data.semanticReceipts ?? [])
     .filter((item) =>
       item.sourceKind === ingestion.sourceKind
       && item.sourceId === ingestion.sourceId
-      && item.sourceRecordId === ingestion.sourceRecordId
-      && item.updatedAt >= ingestion.accountedAt)
-    .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
-  const receipt = receipts[0]
-  if (!receipt) return undefined
+      && item.sourceRecordId === ingestion.sourceRecordId)
 
-  const activeRequests = receipts.flatMap((item) => item.decisionRequestIds
-    .map((id) => (snapshot.data.decisionRequests ?? []).find((request) => request.id === id))
-    .filter((request): request is DecisionRequest => Boolean(request))
-    .filter((request) => request.state === 'open' || request.state === 'expired'))
+  // An unresolved user decision remains authoritative for this source even if a
+  // later parser version committed a different bounded fact. Do not hide older
+  // open/expired decisions behind the current ingestion row's accountedAt cutoff.
+  const activeRequests = (snapshot.data.decisionRequests ?? []).filter((request) =>
+    request.payloadBinding.source.kind === ingestion.sourceKind
+    && request.payloadBinding.source.sourceId === ingestion.sourceId
+    && request.payloadBinding.source.sourceRecordId === ingestion.sourceRecordId
+    && (request.state === 'open' || request.state === 'expired'))
   if (activeRequests.length) {
     const activeIds = new Set(activeRequests.map((request) => request.id))
-    const activeReceiptIds = receipts
+    const activeReceiptIds = sourceReceipts
       .filter((item) => item.decisionRequestIds.some((id) => activeIds.has(id)))
       .map((item) => item.id)
     return {
@@ -128,6 +128,12 @@ function semanticReceiptResolution(
       evidenceRefs: [...activeReceiptIds, ...activeRequests.map((request) => request.id)],
     }
   }
+
+  const receipts = sourceReceipts
+    .filter((item) => item.updatedAt >= ingestion.accountedAt)
+    .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+  const receipt = receipts[0]
+  if (!receipt) return undefined
 
   if (receipt.status === 'committed') {
     return {
