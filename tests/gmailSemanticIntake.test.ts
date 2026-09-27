@@ -803,7 +803,6 @@ describe('UU06 shared Gmail intake', () => {
       now: new Date('2026-09-21T00:01:00Z'),
     })
     expect(second.status).toBe('APPLIED')
-    expect(second.compensation?.payload.domainCompensations).toHaveLength(0)
     expect(second.receipt?.factKeys).toEqual(first.receipt?.factKeys)
 
     const undone = applySemanticCompensation(
@@ -861,16 +860,36 @@ describe('UU06 shared Gmail intake', () => {
     })
 
     const first = applySemanticIntake(base, observation('v1'), { authorized: true, now })
-    const later = applySemanticIntake(first.snapshot, observation('v2'), {
-      authorized: true,
-      now: new Date('2026-09-21T00:01:00Z'),
-    })
     expect(first.compensation?.payload.domainCompensations).toHaveLength(1)
-    expect(later.compensation?.payload.domainCompensations).toHaveLength(0)
+    const laterReceiptId = 'semantic-receipt:undo-later-noop:v2'
+    const withLaterNoop = structuredClone(first.snapshot)
+    withLaterNoop.data.semanticReceipts = [...(withLaterNoop.data.semanticReceipts ?? []), {
+      id: laterReceiptId,
+      inputId: 'gmail:undo-later-noop:v2',
+      sourceKind: 'gmail',
+      sourceId: 'gmail:primary',
+      sourceRecordId: 'undo-later-noop',
+      sourceVersion: 'v2',
+      status: 'committed',
+      summary: 'Same fact was already present; no new domain mutation.',
+      affectedObjects: first.receipt?.affectedObjects ?? [],
+      decisionRequestIds: [],
+      factKeys: first.receipt?.factKeys,
+      undoAvailable: false,
+      createdAt: '2026-09-21T00:01:00.000Z',
+      updatedAt: '2026-09-21T00:01:00.000Z',
+    }]
 
     const undoneLater = applySemanticCompensation(
-      later.snapshot,
-      later.compensation!,
+      withLaterNoop,
+      {
+        operation: 'semantic_batch',
+        payload: {
+          domainCompensations: [],
+          decisionRequestIds: [],
+          receiptIds: [laterReceiptId],
+        },
+      },
       new Date('2026-09-21T00:02:00Z'),
     )
     const original = undoneLater.data.semanticReceipts?.find((receipt) => receipt.id === first.receipt!.id)

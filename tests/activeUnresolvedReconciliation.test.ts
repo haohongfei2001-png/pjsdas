@@ -513,8 +513,11 @@ describe('R02 active unresolved reconciliation', () => {
         affectedObjects: [],
         decisionRequestIds: [],
         factKeys: ['application_submitted|opp:example'],
-        invalidatedByReceiptId: 'semantic-receipt:invalidated-source',
-        invalidatedAt: '2026-09-26T11:00:00.000Z',
+        factInvalidations: [{
+          factKey: 'application_submitted|opp:example',
+          invalidatedByReceiptId: 'semantic-receipt:invalidated-source',
+          invalidatedAt: '2026-09-26T11:00:00.000Z',
+        }],
         undoAvailable: false,
         createdAt: '2026-09-26T10:00:00.000Z',
         updatedAt: '2026-09-26T11:00:00.000Z',
