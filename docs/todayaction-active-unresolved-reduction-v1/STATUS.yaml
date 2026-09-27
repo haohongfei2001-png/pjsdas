@@ -1,8 +1,8 @@
 package: TODAYACTION-ACTIVE-UNRESOLVED-REDUCTION-v1
-status: ENGINEERING_READY_FULL_GATES
+status: AWAITING_PRODUCTION_WRITE_AUTHORIZATION
 writer:
-  branch: reliability/active-unresolved-reduction-v1
-  active: true
+  branch: null
+  active: false
 baseline:
   main: a407c5d2a006d5ce8a4fcd5b44e6c59b114b27ae
   active_unresolved: 177
@@ -16,8 +16,19 @@ baseline:
 repair_01:
   name: legacy_gmail_capability_boundary_only
   projected_safe_settlement: 31
-  production_dry_run: PENDING_EXACT_MAIN
+  production_dry_run: COMPLETE
   production_write: NOT_AUTHORIZED
+  exact_main: d40237a3ef4029633c560267adbd7dffc1b88385
+  dry_run_request_id: 1033
+  workspace_revision_before: 642
+  workspace_revision_after: 642
+  evaluated_unresolved_keys: 189
+  appended_resolution_count: 47
+  historical_only: 31
+  active_unresolved_refresh: 16
+  projected_active_after_write: 157
+  lifetime_unresolved_now: 189
+  dry_run_wrote_workspace: false
 constraints:
   delete_or_rewrite_ingestion_ledger: false
   age_only_resolution: false
@@ -27,4 +38,13 @@ constraints:
 
 verification:
   inner_loop_ci: SUCCESS
-  full_gates: PENDING
+  full_gates: SUCCESS
+  exact_main_ci: SUCCESS
+  exact_main_browser: SUCCESS
+  exact_main_matrix: SUCCESS
+  pages_deploy: SUCCESS
+  production_self_test: SUCCESS
+  reliability_certification: SUCCESS
+  production_brand_readback: SUCCESS
+  live_visual: SUCCESS
+  reconciliation_cron_active: false
