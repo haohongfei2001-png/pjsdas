@@ -563,6 +563,7 @@ export type IngestionResolutionReason =
   | 'semantic_receipt_no_write'
   | 'semantic_decision_settled'
   | 'semantic_decision_open'
+  | 'legacy_capability_boundary_only'
   | 'live_process_ambiguity'
   | 'unlinked_unresolved'
   | 'transport_gap_active'
