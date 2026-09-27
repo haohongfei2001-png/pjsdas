@@ -178,13 +178,15 @@ describe('Gmail background automation', () => {
       candidate.kind === 'process_event' && candidate.eventType === 'interview_invite')).toBe(true)
   })
 
-  it('remains fail-closed when a message exceeds the new bounded fragment ceiling', () => {
-    const fillers = Array.from({ length: GMAIL_FRAGMENT_PARSE_LIMIT + 1 }, (_, index) => `普通说明${index + 1}`)
+  it('remains fail-closed when a recruiting message exceeds the new bounded fragment ceiling', () => {
+    const fillers = Array.from({ length: GMAIL_FRAGMENT_PARSE_LIMIT }, (_, index) => `普通说明${index + 1}`)
+    const body = ['京东 AI产品经理 面试通知：请于2026年9月28日14:30参加视频面试', ...fillers].join('；')
     const record = gmailSemanticRecordFromMessage(
-      gmailMessage(fillers.join('；'), {}, '招聘通知'),
+      gmailMessage(body, {}, '京东 AI产品经理 面试通知'),
       [opportunity('jd-ai-pm', '京东', 'AI产品经理')],
       new Date('2026-09-27T08:00:00+08:00'),
     )
+    expect(record?.recruitingRelevant).toBe(true)
     expect(record?.gaps.join(' ')).toContain(`${GMAIL_FRAGMENT_PARSE_LIMIT}-fragment interpretation limit`)
     expect(record?.issueKinds).toContain('interpretation_failure')
   })
