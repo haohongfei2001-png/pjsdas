@@ -266,6 +266,67 @@ describe('R02 active unresolved reconciliation', () => {
     expect(coverage.allCaughtUp).toBe(false)
   })
 
+  it('settles a legacy Gmail link-only capability boundary without deleting the original unresolved ledger', () => {
+    const record = unresolved({
+      sourceRecordId: 'legacy-link-only',
+      reason: 'Linked pages are NOT_SUPPORTED; no link is opened or treated as verified source content.',
+    })
+    const base = snapshot({ timeline: [record, zeroRun()] })
+    const result = reconcileIngestionDebt(base, NOW)
+    expect(result.snapshot.data.timeline.some((item) => item.id === record.id)).toBe(true)
+    expect(result.appended[0]?.ingestionResolution).toMatchObject({
+      outcome: 'historical_only',
+      reason: 'legacy_capability_boundary_only',
+      targetIngestionTimelineId: record.id,
+    })
+    const coverage = summarizeCoverage(result.snapshot.data.timeline, { now: NOW })
+    expect(coverage.lifetimeUnresolvedCount).toBe(1)
+    expect(coverage.activeUnresolvedCount).toBe(0)
+  })
+
+  it('settles a legacy Gmail attachment+link capability boundary only when no stronger unresolved signal exists', () => {
+    const record = unresolved({
+      sourceRecordId: 'legacy-attachment-link-only',
+      reason: 'Attachment content is NOT_SUPPORTED; inspect the original mail if it contains material details. Linked pages are NOT_SUPPORTED; no link is opened or treated as verified source content.',
+    })
+    const result = reconcileIngestionDebt(snapshot({ timeline: [record, zeroRun()] }), NOW)
+    expect(result.appended[0]?.ingestionResolution).toMatchObject({
+      outcome: 'historical_only',
+      reason: 'legacy_capability_boundary_only',
+    })
+  })
+
+  it('does not clear Gmail link records that also contain a genuine quoted-context ambiguity', () => {
+    const record = unresolved({
+      sourceRecordId: 'legacy-link-plus-ambiguity',
+      reason: 'Linked pages are NOT_SUPPORTED; no link is opened or treated as verified source content. Quoted/forwarded context requires clarification; no facts were inferred automatically.',
+    })
+    const result = reconcileIngestionDebt(snapshot({ timeline: [record, zeroRun()] }), NOW)
+    expect(result.appended[0]?.ingestionResolution).toMatchObject({
+      outcome: 'active_unresolved',
+      reason: 'unlinked_unresolved',
+    })
+    expect(summarizeCoverage(result.snapshot.data.timeline, { now: NOW }).activeUnresolvedCount).toBe(1)
+  })
+
+  it('does not let legacy capability text clear a source record already linked to a live opportunity', () => {
+    const record = unresolved({
+      sourceRecordId: 'legacy-link-live',
+      reason: 'Linked pages are NOT_SUPPORTED; no link is opened or treated as verified source content.',
+      opportunityId: 'opp-live-capability',
+    })
+    const base = snapshot({
+      timeline: [record, zeroRun()],
+      opportunities: [opportunity('opp-live-capability')],
+      processes: [process('opp-live-capability')],
+    })
+    const result = reconcileIngestionDebt(base, NOW)
+    expect(result.appended[0]?.ingestionResolution).toMatchObject({
+      outcome: 'active_unresolved',
+      reason: 'live_process_ambiguity',
+    })
+  })
+
   it('classifies an explicitly non-actionable historical recruiting ad as ignored without deleting the ledger', () => {
     const record = unresolved({
       sourceRecordId: 'generic-ad',
