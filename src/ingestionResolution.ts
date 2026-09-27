@@ -44,6 +44,23 @@ function explicitNonActionableReason(reason: string | undefined) {
   return /(?:marketing|newsletter|generic recruiting ad|non[- ]?recruiting|no actionable business fact|广告|营销|推广|非招聘|无可执行(?:招聘)?事实)/i.test(reason)
 }
 
+const LEGACY_GMAIL_CAPABILITY_ONLY_REASONS = new Set([
+  'Linked pages are NOT_SUPPORTED; no link is opened or treated as verified source content.',
+  'Attachment content is NOT_SUPPORTED; inspect the original mail if it contains material details.',
+  'Attachment content is NOT_SUPPORTED; inspect the original mail if it contains material details. Linked pages are NOT_SUPPORTED; no link is opened or treated as verified source content.',
+])
+
+function legacyCapabilityBoundaryOnly(target: TimelineRecord, ingestion: IngestionLedgerEntry) {
+  return ingestion.sourceKind === 'gmail'
+    && !(ingestion.issueKinds?.length)
+    && !ingestion.opportunityId
+    && !ingestion.processEventId
+    && !ingestion.actionId
+    && !target.company
+    && !target.role
+    && LEGACY_GMAIL_CAPABILITY_ONLY_REASONS.has(ingestion.reason ?? '')
+}
+
 function laterOutcomeResolution(outcome: IngestionLedgerEntry['outcome']): {
   outcome: IngestionResolutionOutcome
   reason: IngestionResolutionReason
@@ -187,6 +204,14 @@ function classifyUnresolved(
 
   const semantic = semanticReceiptResolution(snapshot, ingestion)
   if (semantic) return semantic
+
+  if (legacyCapabilityBoundaryOnly(target, ingestion)) {
+    return {
+      outcome: 'historical_only',
+      reason: 'legacy_capability_boundary_only',
+      evidenceRefs: [target.id],
+    }
+  }
 
   const action = ingestion.actionId
     ? snapshot.data.actions.find((item) => item.id === ingestion.actionId)
