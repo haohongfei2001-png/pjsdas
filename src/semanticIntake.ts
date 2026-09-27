@@ -1164,6 +1164,7 @@ export function applySemanticCompensation(
   }
   const correctiveIngestion: TimelineRecord[] = []
   const correctedSourceKeys = new Set<string>()
+  let exportedAt = timestamp
   for (const id of compensation.payload.receiptIds) {
     const item = (next.data.semanticReceipts ?? []).find((receipt) => receipt.id === id)
     if (item) {
@@ -1178,6 +1179,10 @@ export function applySemanticCompensation(
           && ingestion
           && ingestion.runId === item.commandId
           && ingestion.outcome !== 'unresolved') {
+          const priorAccountedMs = Date.parse(ingestion.accountedAt)
+          const correctionAt = new Date(Number.isFinite(priorAccountedMs)
+            ? Math.max(now.getTime(), priorAccountedMs + 1)
+            : now.getTime()).toISOString()
           correctiveIngestion.push(createIngestionLedgerTimeline({
             sourceKind: ingestion.sourceKind,
             sourceId: ingestion.sourceId,
@@ -1187,7 +1192,7 @@ export function applySemanticCompensation(
             outcome: 'unresolved',
             fingerprint: ingestion.fingerprint,
             receivedAt: ingestion.receivedAt,
-            accountedAt: timestamp,
+            accountedAt: correctionAt,
             reason: 'Semantic write was undone; source requires fresh reconciliation.',
             capabilityBoundaries: ingestion.capabilityBoundaries,
             issueKinds: ingestion.issueKinds,
@@ -1199,6 +1204,7 @@ export function applySemanticCompensation(
             sourceRef: latestSourceRecord?.sourceRef,
           }))
           correctedSourceKeys.add(sourceKey)
+          if (correctionAt > exportedAt) exportedAt = correctionAt
         }
       }
       item.status = 'undone'
@@ -1216,7 +1222,7 @@ export function applySemanticCompensation(
     title: '撤销语义写入',
     detail: `${compensation.payload.domainCompensations.length} compensation operation(s)`,
   }]
-  next.exportedAt = timestamp
+  next.exportedAt = exportedAt
   validateSnapshot(next)
   return next
 }
