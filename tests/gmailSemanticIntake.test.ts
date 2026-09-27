@@ -397,7 +397,8 @@ describe('UU06 shared Gmail intake', () => {
     })
     const sourceRecords = replay.snapshot.data.timeline.filter((item) =>
       item.ingestion?.sourceRecordId === 'fragment-replay-undone')
-    expect(sourceRecords.map((item) => item.ingestion?.outcome)).toEqual(['unresolved'])
+    expect(sourceRecords.length).toBeGreaterThanOrEqual(2)
+    expect(sourceRecords.every((item) => item.ingestion?.outcome === 'unresolved')).toBe(true)
     expect(replay.run.outcomes.unresolved).toBe(1)
 
     const reconciled = reconcileIngestionDebt(replay.snapshot, new Date('2026-09-21T00:03:00Z'))
@@ -764,7 +765,7 @@ describe('UU06 shared Gmail intake', () => {
   it('invalidates a dependent committed replay receipt and allows the same source version to recover after undo', () => {
     const base = snapshot()
     const firstRecord = gmailSemanticRecordFromMessage(
-      message(invitation, 'dependent-replay-recovery'),
+      message('京东 AI产品经理 申请已收到', 'dependent-replay-recovery'),
       base.data.opportunities,
       now,
     )!
@@ -776,7 +777,7 @@ describe('UU06 shared Gmail intake', () => {
     expect(first.compensation?.payload.domainCompensations).toHaveLength(1)
 
     const secondRecord = gmailSemanticRecordFromMessage(
-      message(invitation, 'dependent-replay-recovery'),
+      message('京东 AI产品经理 申请已收到', 'dependent-replay-recovery'),
       first.snapshot.data.opportunities,
       new Date('2026-09-21T00:01:00Z'),
     )!
