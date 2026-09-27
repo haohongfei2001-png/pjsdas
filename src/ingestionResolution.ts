@@ -99,35 +99,45 @@ function latestResolutionRecords(records: TimelineRecord[]) {
   return byKey
 }
 
-function semanticReceiptResolution(
+function sourceBoundActiveDecisionResolution(
   snapshot: PJSDASSnapshot,
   ingestion: IngestionLedgerEntry,
 ): { outcome: IngestionResolutionOutcome; reason: IngestionResolutionReason; evidenceRefs: string[] } | undefined {
-  const sourceReceipts = (snapshot.data.semanticReceipts ?? [])
-    .filter((item) =>
-      item.sourceKind === ingestion.sourceKind
-      && item.sourceId === ingestion.sourceId
-      && item.sourceRecordId === ingestion.sourceRecordId)
-
-  // An unresolved user decision remains authoritative for this source even if a
-  // later parser version committed a different bounded fact. Do not hide older
-  // open/expired decisions behind the current ingestion row's accountedAt cutoff.
   const activeRequests = (snapshot.data.decisionRequests ?? []).filter((request) =>
     request.payloadBinding.source.kind === ingestion.sourceKind
     && request.payloadBinding.source.sourceId === ingestion.sourceId
     && request.payloadBinding.source.sourceRecordId === ingestion.sourceRecordId
     && (request.state === 'open' || request.state === 'expired'))
-  if (activeRequests.length) {
-    const activeIds = new Set(activeRequests.map((request) => request.id))
-    const activeReceiptIds = sourceReceipts
-      .filter((item) => item.decisionRequestIds.some((id) => activeIds.has(id)))
-      .map((item) => item.id)
-    return {
-      outcome: 'active_unresolved',
-      reason: 'semantic_decision_open',
-      evidenceRefs: [...activeReceiptIds, ...activeRequests.map((request) => request.id)],
-    }
+  if (!activeRequests.length) return undefined
+
+  const activeIds = new Set(activeRequests.map((request) => request.id))
+  const activeReceiptIds = (snapshot.data.semanticReceipts ?? [])
+    .filter((item) =>
+      item.sourceKind === ingestion.sourceKind
+      && item.sourceId === ingestion.sourceId
+      && item.sourceRecordId === ingestion.sourceRecordId
+      && item.decisionRequestIds.some((id) => activeIds.has(id)))
+    .map((item) => item.id)
+
+  return {
+    outcome: 'active_unresolved',
+    reason: 'semantic_decision_open',
+    evidenceRefs: [...activeReceiptIds, ...activeRequests.map((request) => request.id)],
   }
+}
+
+function semanticReceiptResolution(
+  snapshot: PJSDASSnapshot,
+  ingestion: IngestionLedgerEntry,
+): { outcome: IngestionResolutionOutcome; reason: IngestionResolutionReason; evidenceRefs: string[] } | undefined {
+  const activeDecision = sourceBoundActiveDecisionResolution(snapshot, ingestion)
+  if (activeDecision) return activeDecision
+
+  const sourceReceipts = (snapshot.data.semanticReceipts ?? [])
+    .filter((item) =>
+      item.sourceKind === ingestion.sourceKind
+      && item.sourceId === ingestion.sourceId
+      && item.sourceRecordId === ingestion.sourceRecordId)
 
   const receipts = sourceReceipts
     .filter((item) => item.updatedAt >= ingestion.accountedAt)
@@ -203,6 +213,11 @@ function classifyUnresolved(
   void now
   const ingestion = target.ingestion!
   const latestIngestion = latest.ingestion!
+
+  // A source-bound open/expired DecisionRequest is newer canonical uncertainty
+  // even when the latest ingestion ledger row is otherwise non-unresolved.
+  const activeDecision = sourceBoundActiveDecisionResolution(snapshot, ingestion)
+  if (activeDecision) return activeDecision
 
   if (latest.id !== target.id && latestIngestion.outcome !== 'unresolved') {
     const mapped = laterOutcomeResolution(latestIngestion.outcome)!
