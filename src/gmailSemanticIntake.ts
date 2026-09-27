@@ -54,7 +54,17 @@ export function applyGmailSemanticBatch(snapshot: PJSDASSnapshot, input: {
         if (result.compensation.payload.receiptIds.includes(receipt.id)) receipt.commandId = input.runId
       }
     }
-    const unresolved = record.gaps.length > 0 || Boolean(result?.decisionRequests.length) || prior?.ingestion?.outcome === 'unresolved'
+    const reconciledPriorUnresolved = Boolean(
+      input.reconcileExisting
+      && prior?.ingestion?.outcome === 'unresolved'
+      && record.gaps.length === 0
+      && result
+      && result.decisionRequests.length === 0
+      && ['NO_WRITE', 'APPLIED', 'ALREADY_APPLIED'].includes(result.status),
+    )
+    const unresolved = record.gaps.length > 0
+      || Boolean(result?.decisionRequests.length)
+      || (prior?.ingestion?.outcome === 'unresolved' && !reconciledPriorUnresolved)
     const issueKinds = [...new Set([
       ...(record.issueKinds ?? []),
       ...(result?.decisionRequests.length ? ['business_ambiguity' as const] : []),
@@ -63,7 +73,15 @@ export function applyGmailSemanticBatch(snapshot: PJSDASSnapshot, input: {
     const entry = createIngestionLedgerTimeline({
       sourceKind: 'gmail', sourceId: input.sourceId, sourceRecordId,
       runId: input.runId, recordType: 'recruiting_message',
-      outcome: unresolved ? 'unresolved' : prior || result?.status === 'ALREADY_APPLIED' ? 'duplicate' : result?.status === 'APPLIED' ? 'updated' : 'ignored',
+      outcome: unresolved
+        ? 'unresolved'
+        : input.reconcileExisting && result?.status === 'NO_WRITE'
+          ? 'ignored'
+          : result?.status === 'APPLIED'
+            ? 'updated'
+            : prior || result?.status === 'ALREADY_APPLIED'
+              ? 'duplicate'
+              : 'ignored',
       fingerprint: observation.originalTextFingerprint ?? stableIngestionHash(sourceRecordId),
       receivedAt: record.receivedAt, accountedAt: input.checkedAt,
       reason: record.gaps.length ? record.gaps.join(' ') : result?.summary ?? prior?.ingestion?.reason ?? 'Previously consumed Gmail source record; no business replay.',
@@ -73,7 +91,11 @@ export function applyGmailSemanticBatch(snapshot: PJSDASSnapshot, input: {
     })
     records.push(entry)
     const persistReconciliationChange = Boolean(input.reconcileExisting
-      && (record.gaps.length > 0 || result?.status === 'APPLIED' || result?.decisionRequests.length))
+      && (record.gaps.length > 0
+        || result?.status === 'APPLIED'
+        || result?.status === 'NO_WRITE'
+        || result?.status === 'ALREADY_APPLIED'
+        || result?.decisionRequests.length))
     if (!prior || persistReconciliationChange) {
       working.data.timeline = [...(working.data.timeline ?? []), entry]
       persistedSourceRecords += 1
