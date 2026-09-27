@@ -15,3 +15,7 @@ R01 scans the union of all non-spam/trash messages received in the last seven da
 Target production cadence is 08:30 and 17:30 Asia/Shanghai. A bounded maximum fails closed instead of silently claiming complete coverage.
 
 R02 starts only after R01 exact-main/deployment evidence is complete.
+
+## Canonical closure
+
+The package is `COMPLETE_WITH_UNRESOLVED` and stopped. [STATUS.yaml](STATUS.yaml) records the released writer and [R02-PRODUCTION-RECEIPT.md](R02-PRODUCTION-RECEIPT.md) records the authorized production migration, one bounded write, immutable-ledger checks and read-only idempotency verification. Lifetime unresolved remains 178; active unresolved remains 177. R02 cron is inactive. These retained business/source uncertainties do not reopen this completed contract or schedule another package writer.

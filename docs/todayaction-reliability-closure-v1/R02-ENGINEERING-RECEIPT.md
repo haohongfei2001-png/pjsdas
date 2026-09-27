@@ -17,3 +17,7 @@ Local TypeScript, 19 targeted reconciliation/Coverage/handler/migration tests an
 ## Authorization boundary
 
 No production Supabase migration has been applied for R02 and no real private workspace reconciliation write has been performed. Both require explicit owner authorization after engineering merge and exact-main verification. Historical unresolved audit is not a failed engineering gate and is not represented as resolved without evidence.
+
+## Final production checkpoint
+
+The authorization-pending text above records the engineering handoff state. It is superseded by [R02-PRODUCTION-RECEIPT.md](R02-PRODUCTION-RECEIPT.md): owner authorization was granted, migration applied, one bounded private workspace write committed, and immutable-ledger/readback/idempotency checks passed. The package is complete with active unresolved observations retained; writer released and R02 cron inactive.
