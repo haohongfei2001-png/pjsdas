@@ -611,6 +611,106 @@ describe('UU06 shared Gmail intake', () => {
     })
   })
 
+  it('orders a persisted reconcileExisting source transition after a tied prior state', () => {
+    const base = snapshot()
+    const tiedAt = now.toISOString()
+    const legacy = createIngestionLedgerTimeline({
+      sourceKind: 'gmail',
+      sourceId: 'gmail:primary',
+      sourceRecordId: 'fragment-replay-tied-transition',
+      runId: 'legacy-fragment-tied-transition',
+      recordType: 'recruiting_message',
+      outcome: 'unresolved',
+      fingerprint: 'fp:fragment-replay-tied-transition',
+      receivedAt: '2026-09-10T00:00:00Z',
+      accountedAt: tiedAt,
+      reason: 'Message exceeds the 20-fragment interpretation limit.',
+    })
+    base.data.timeline = [legacy]
+    const record = gmailSemanticRecordFromMessage(
+      message('京东 AI产品经理 招聘资讯更新', 'fragment-replay-tied-transition'),
+      base.data.opportunities,
+      now,
+    )!
+    record.observation.inputId = 'gmail:fragment-replay-tied-transition:v2'
+    record.observation.source.sourceVersion = 'fragment-reprocess-v2'
+    record.observation.candidates = []
+    record.gaps = []
+
+    const replay = applyGmailSemanticBatch(base, {
+      runId: 'fragment-replay-tied-transition:v2',
+      sourceId: 'gmail:primary',
+      checkedAt: tiedAt,
+      authorized: true,
+      records: [record],
+      reconcileExisting: true,
+    })
+    const sourceRows = replay.snapshot.data.timeline.filter((item) =>
+      item.ingestion?.sourceRecordId === 'fragment-replay-tied-transition')
+    expect(sourceRows.map((item) => item.ingestion?.outcome)).toEqual(['unresolved', 'ignored'])
+    expect(Date.parse(sourceRows[1]!.ingestion!.accountedAt)).toBeGreaterThan(Date.parse(tiedAt))
+  })
+
+  it('undo reopens a tied historical source state even when durable ordering puts unresolved first', () => {
+    const base = snapshot()
+    const tiedAt = now.toISOString()
+    const unresolvedRow = createIngestionLedgerTimeline({
+      sourceKind: 'gmail',
+      sourceId: 'gmail:primary',
+      sourceRecordId: 'fragment-undo-tied-state',
+      runId: 'legacy-fragment-undo-tied-state',
+      recordType: 'recruiting_message',
+      outcome: 'unresolved',
+      fingerprint: 'fp:fragment-undo-tied-state',
+      receivedAt: '2026-09-10T00:00:00Z',
+      accountedAt: tiedAt,
+      reason: 'Message exceeds the 20-fragment interpretation limit.',
+    })
+    const updatedRow = createIngestionLedgerTimeline({
+      sourceKind: 'gmail',
+      sourceId: 'gmail:primary',
+      sourceRecordId: 'fragment-undo-tied-state',
+      runId: 'semantic-run:tied-state',
+      recordType: 'recruiting_message',
+      outcome: 'updated',
+      fingerprint: 'fp:fragment-undo-tied-state:v2',
+      receivedAt: '2026-09-10T00:00:00Z',
+      accountedAt: tiedAt,
+      reason: 'Later semantic state applied.',
+    })
+    base.data.timeline = [unresolvedRow, updatedRow]
+    base.data.semanticReceipts = [{
+      id: 'semantic-receipt:fragment-undo-tied-state',
+      inputId: 'gmail:fragment-undo-tied-state:v2',
+      sourceKind: 'gmail',
+      sourceId: 'gmail:primary',
+      sourceRecordId: 'fragment-undo-tied-state',
+      sourceVersion: 'fragment-reprocess-v2',
+      commandId: 'semantic-run:tied-state',
+      status: 'committed',
+      summary: 'Applied.',
+      affectedObjects: [],
+      decisionRequestIds: [],
+      undoAvailable: true,
+      createdAt: tiedAt,
+      updatedAt: tiedAt,
+    }]
+
+    const undone = applySemanticCompensation(base, {
+      operation: 'semantic_batch',
+      payload: {
+        domainCompensations: [],
+        decisionRequestIds: [],
+        receiptIds: ['semantic-receipt:fragment-undo-tied-state'],
+      },
+    }, now)
+    const sourceRows = undone.data.timeline.filter((item) =>
+      item.ingestion?.sourceRecordId === 'fragment-undo-tied-state')
+    expect(sourceRows.map((item) => item.ingestion?.outcome)).toEqual(['unresolved', 'updated', 'unresolved'])
+    expect(Date.parse(sourceRows[2]!.ingestion!.accountedAt)).toBeGreaterThan(Date.parse(tiedAt))
+    expect(summarizeCoverage(undone.data.timeline).activeUnresolvedCount).toBe(1)
+  })
+
   it('replay and a new message for the same thread occurrence do not duplicate events', () => {
     const first = run(snapshot(), invitation)
     const replay = run(first.snapshot, invitation)

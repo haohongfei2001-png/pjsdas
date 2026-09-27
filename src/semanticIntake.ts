@@ -1170,10 +1170,24 @@ export function applySemanticCompensation(
     if (item) {
       if (item.status !== 'undone' && item.commandId) {
         const sourceKey = [item.sourceKind, item.sourceId, item.sourceRecordId].join('|')
-        const latestSourceRecord = (next.data.timeline ?? [])
+        const sourceRecords = (next.data.timeline ?? [])
           .filter((record) => record.ingestion
             && ingestionSourceRecordKey(record.ingestion) === sourceKey)
-          .sort((a, b) => (b.ingestion?.accountedAt ?? '').localeCompare(a.ingestion?.accountedAt ?? ''))[0]
+        let latestSourceRecord: TimelineRecord | undefined
+        for (const record of sourceRecords) {
+          if (!latestSourceRecord) {
+            latestSourceRecord = record
+            continue
+          }
+          const accountedAt = record.ingestion?.accountedAt ?? ''
+          const latestAt = latestSourceRecord.ingestion?.accountedAt ?? ''
+          if (accountedAt > latestAt
+            || (accountedAt === latestAt
+              && latestSourceRecord.ingestion?.outcome === 'unresolved'
+              && record.ingestion?.outcome !== 'unresolved')) {
+            latestSourceRecord = record
+          }
+        }
         const ingestion = latestSourceRecord?.ingestion
         if (!correctedSourceKeys.has(sourceKey)
           && ingestion

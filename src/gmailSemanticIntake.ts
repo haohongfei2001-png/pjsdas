@@ -79,6 +79,12 @@ export function applyGmailSemanticBatch(snapshot: PJSDASSnapshot, input: {
       ...(activeDecisionRequests.length ? ['business_ambiguity' as const] : []),
       ...(prior?.ingestion?.issueKinds ?? []),
     ])]
+    const checkedAtMs = Date.parse(input.checkedAt)
+    const priorAccountedMs = Date.parse(prior?.ingestion?.accountedAt ?? '')
+    const accountedAt = input.reconcileExisting && prior
+      && Number.isFinite(checkedAtMs) && Number.isFinite(priorAccountedMs)
+      ? new Date(Math.max(checkedAtMs, priorAccountedMs + 1)).toISOString()
+      : input.checkedAt
     const entry = createIngestionLedgerTimeline({
       sourceKind: 'gmail', sourceId: input.sourceId, sourceRecordId,
       runId: input.runId, recordType: 'recruiting_message',
@@ -92,7 +98,7 @@ export function applyGmailSemanticBatch(snapshot: PJSDASSnapshot, input: {
               ? 'duplicate'
               : 'ignored',
       fingerprint: observation.originalTextFingerprint ?? stableIngestionHash(sourceRecordId),
-      receivedAt: record.receivedAt, accountedAt: input.checkedAt,
+      receivedAt: record.receivedAt, accountedAt,
       reason: record.gaps.length ? record.gaps.join(' ') : result?.summary ?? prior?.ingestion?.reason ?? 'Previously consumed Gmail source record; no business replay.',
       capabilityBoundaries: record.capabilityBoundaries ?? prior?.ingestion?.capabilityBoundaries,
       issueKinds: unresolved ? issueKinds : undefined,
