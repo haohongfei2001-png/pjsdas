@@ -425,14 +425,23 @@ export function reconcileIngestionDebt(
       && prior.outcome === proposed.outcome
       && prior.reason === proposed.reason
       && JSON.stringify(prior.evidenceRefs) === JSON.stringify(evidenceRefs)) continue
+    const priorResolutionMs = prior ? Date.parse(prior.reconciledAt) : Number.NaN
+    const latestIngestionMs = Date.parse(latest.ingestion?.accountedAt ?? '')
+    const reconciledAtMs = Math.max(
+      now.getTime(),
+      Number.isFinite(priorResolutionMs) ? priorResolutionMs + 1 : now.getTime(),
+      Number.isFinite(latestIngestionMs) ? latestIngestionMs + 1 : now.getTime(),
+    )
     const record = createResolutionTimeline({
       target,
       outcome: proposed.outcome,
       reason: proposed.reason,
       evidenceRefs: proposed.evidenceRefs,
       // IndexedDB reads timeline rows in key order, so timestamp ties cannot
-      // carry transition order across a durable round trip.
-      reconciledAt: new Date(Math.max(now.getTime(), prior ? Date.parse(prior.reconciledAt) + 1 : now.getTime())).toISOString(),
+      // carry transition order across a durable round trip. A resolution that
+      // reopens a later non-unresolved source state must be strictly newer than
+      // both that ingestion state and any prior resolution.
+      reconciledAt: new Date(reconciledAtMs).toISOString(),
       previousResolutionId: current?.id,
     })
 

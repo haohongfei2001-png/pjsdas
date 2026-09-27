@@ -408,6 +408,92 @@ describe('R02 active unresolved reconciliation', () => {
     expect(summarizeCoverage(result.snapshot.data.timeline, { now: NOW }).activeUnresolvedCount).toBe(1)
   })
 
+  it('orders an active resolution strictly after a tied later ingestion state', () => {
+    const first = unresolved({
+      sourceRecordId: 'tied-active-resolution',
+      receivedAt: '2026-09-20T00:00:00.000Z',
+      fingerprint: 'fp:tied-active-resolution',
+    })
+    const later = createIngestionLedgerTimeline({
+      sourceKind: 'gmail',
+      sourceId: SOURCE_ID,
+      sourceRecordId: 'tied-active-resolution',
+      runId: 'run:tied-active-resolution:later',
+      recordType: 'recruiting_message',
+      outcome: 'updated',
+      fingerprint: 'fp:tied-active-resolution:v2',
+      receivedAt: '2026-09-20T00:00:00.000Z',
+      accountedAt: NOW.toISOString(),
+      reason: 'Later source state applied.',
+    })
+    const decisionId = 'decision:tied-active-resolution'
+    const base = snapshot({
+      timeline: [first, later, zeroRun()],
+      semanticReceipts: [{
+        id: 'semantic-receipt:tied-active-resolution',
+        inputId: 'gmail:tied-active-resolution:decision',
+        sourceKind: 'gmail',
+        sourceId: SOURCE_ID,
+        sourceRecordId: 'tied-active-resolution',
+        sourceVersion: 'decision-v1',
+        status: 'decision_required',
+        summary: 'Decision required.',
+        affectedObjects: [{ type: 'decision_request', id: decisionId }],
+        decisionRequestIds: [decisionId],
+        undoAvailable: false,
+        createdAt: NOW.toISOString(),
+        updatedAt: NOW.toISOString(),
+      }],
+      decisionRequests: [{
+        id: decisionId,
+        reason: 'ambiguous_target',
+        affectedObjects: [{ type: 'source', id: 'gmail:tied-active-resolution' }],
+        question: 'Which target is correct?',
+        choices: [
+          { id: 'one', label: 'One', consequence: 'Use one target.' },
+          { id: 'two', label: 'Two', consequence: 'Use another target.' },
+        ],
+        evidenceRefs: ['gmail:tied-active-resolution'],
+        payloadBinding: {
+          contractVersion: 1,
+          inputId: 'gmail:tied-active-resolution:decision',
+          candidateId: 'candidate:tied-active-resolution',
+          source: {
+            kind: 'gmail',
+            sourceId: SOURCE_ID,
+            sourceRecordId: 'tied-active-resolution',
+            sourceVersion: 'decision-v1',
+            observedAt: NOW.toISOString(),
+            timezone: 'Asia/Shanghai',
+          },
+          statementMode: 'assertion',
+          candidate: {
+            id: 'candidate:tied-active-resolution',
+            kind: 'application_submitted',
+            target: { company: 'Example' },
+            objectConfidence: 'low',
+            eventConfidence: 'high',
+            evidenceRefs: ['gmail:tied-active-resolution'],
+            sourceVersionRefs: ['tied-active-resolution:decision-v1'],
+          },
+        },
+        state: 'open',
+        createdAt: NOW.toISOString(),
+        updatedAt: NOW.toISOString(),
+      }],
+    })
+
+    const result = reconcileIngestionDebt(base, NOW)
+    const resolution = result.appended[0]?.ingestionResolution
+    expect(resolution).toMatchObject({
+      outcome: 'active_unresolved',
+      reason: 'semantic_decision_open',
+      targetIngestionTimelineId: first.id,
+    })
+    expect(Date.parse(resolution!.reconciledAt)).toBeGreaterThan(Date.parse(later.ingestion!.accountedAt))
+    expect(summarizeCoverage(result.snapshot.data.timeline, { now: NOW }).activeUnresolvedCount).toBe(1)
+  })
+
   it.each([false, true])('keeps same-company multi-role ambiguity active even if candidates are terminal: %s', (terminal) => {
     const record = unresolved({
       sourceRecordId: 'same-company-ambiguous',

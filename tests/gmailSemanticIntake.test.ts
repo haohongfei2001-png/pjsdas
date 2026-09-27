@@ -532,6 +532,85 @@ describe('UU06 shared Gmail intake', () => {
     })
   })
 
+  it('reopens source debt when undoing an earlier write after a later conclusive replay', () => {
+    const base = snapshot()
+    const legacy = createIngestionLedgerTimeline({
+      sourceKind: 'gmail',
+      sourceId: 'gmail:primary',
+      sourceRecordId: 'fragment-replay-later-before-undo',
+      runId: 'legacy-fragment-later-before-undo',
+      recordType: 'recruiting_message',
+      outcome: 'unresolved',
+      fingerprint: 'fp:fragment-replay-later-before-undo',
+      receivedAt: '2026-09-10T00:00:00Z',
+      accountedAt: '2026-09-10T00:00:00Z',
+      reason: 'Message exceeds the 20-fragment interpretation limit.',
+    })
+    base.data.timeline = [legacy]
+
+    const firstRecord = gmailSemanticRecordFromMessage(
+      message(invitation, 'fragment-replay-later-before-undo'),
+      base.data.opportunities,
+      now,
+    )!
+    firstRecord.observation.inputId = 'gmail:fragment-replay-later-before-undo:v1'
+    firstRecord.observation.source.sourceVersion = 'fragment-reprocess-v1'
+    firstRecord.gaps = []
+    const first = applyGmailSemanticBatch(base, {
+      runId: 'fragment-replay-later-before-undo:v1',
+      sourceId: 'gmail:primary',
+      checkedAt: now.toISOString(),
+      authorized: true,
+      records: [firstRecord],
+      reconcileExisting: true,
+    })
+    expect(first.snapshot.data.timeline.filter((item) =>
+      item.ingestion?.sourceRecordId === 'fragment-replay-later-before-undo')
+      .map((item) => item.ingestion?.outcome)).toEqual(['unresolved', 'updated'])
+
+    const secondRecord = gmailSemanticRecordFromMessage(
+      message(invitation, 'fragment-replay-later-before-undo'),
+      first.snapshot.data.opportunities,
+      new Date('2026-09-21T00:01:00Z'),
+    )!
+    secondRecord.observation.inputId = 'gmail:fragment-replay-later-before-undo:v2'
+    secondRecord.observation.source.sourceVersion = 'fragment-reprocess-v2'
+    secondRecord.gaps = []
+    const second = applyGmailSemanticBatch(first.snapshot, {
+      runId: 'fragment-replay-later-before-undo:v2',
+      sourceId: 'gmail:primary',
+      checkedAt: '2026-09-21T00:01:00.000Z',
+      authorized: true,
+      records: [secondRecord],
+      reconcileExisting: true,
+    })
+    expect(second.snapshot.data.timeline.filter((item) =>
+      item.ingestion?.sourceRecordId === 'fragment-replay-later-before-undo')
+      .map((item) => item.ingestion?.outcome)).toEqual(['unresolved', 'updated', 'updated'])
+
+    const undone = applySemanticCompensation(
+      second.snapshot,
+      first.compensation,
+      new Date('2026-09-21T00:02:00Z'),
+    )
+    const sourceRows = undone.data.timeline.filter((item) =>
+      item.ingestion?.sourceRecordId === 'fragment-replay-later-before-undo')
+    expect(sourceRows.map((item) => item.ingestion?.outcome)).toEqual([
+      'unresolved', 'updated', 'updated', 'unresolved',
+    ])
+    expect(Date.parse(sourceRows[3]!.ingestion!.accountedAt)).toBeGreaterThan(
+      Date.parse(sourceRows[2]!.ingestion!.accountedAt),
+    )
+    expect(summarizeCoverage(undone.data.timeline).activeUnresolvedCount).toBe(1)
+
+    const reconciled = reconcileIngestionDebt(undone, new Date('2026-09-21T00:03:00Z'))
+    expect(reconciled.appended[0]?.ingestionResolution).toMatchObject({
+      outcome: 'active_unresolved',
+      reason: 'unlinked_unresolved',
+      sourceRecordId: 'fragment-replay-later-before-undo',
+    })
+  })
+
   it('replay and a new message for the same thread occurrence do not duplicate events', () => {
     const first = run(snapshot(), invitation)
     const replay = run(first.snapshot, invitation)

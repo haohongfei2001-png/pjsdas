@@ -1177,7 +1177,6 @@ export function applySemanticCompensation(
         const ingestion = latestSourceRecord?.ingestion
         if (!correctedSourceKeys.has(sourceKey)
           && ingestion
-          && ingestion.runId === item.commandId
           && ingestion.outcome !== 'unresolved') {
           const priorAccountedMs = Date.parse(ingestion.accountedAt)
           const correctionAt = new Date(Number.isFinite(priorAccountedMs)
