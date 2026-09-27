@@ -1,5 +1,5 @@
 package: TODAYACTION-ACTIVE-UNRESOLVED-REDUCTION-v1
-status: AWAITING_PRODUCTION_WRITE_AUTHORIZATION
+status: REPAIR_01_PRODUCTION_COMPLETE
 writer:
   branch: null
   active: false
@@ -17,7 +17,7 @@ repair_01:
   name: legacy_gmail_capability_boundary_only
   projected_safe_settlement: 31
   production_dry_run: COMPLETE
-  production_write: NOT_AUTHORIZED
+  production_write: COMPLETE
   exact_main: d40237a3ef4029633c560267adbd7dffc1b88385
   dry_run_request_id: 1033
   workspace_revision_before: 642
@@ -29,6 +29,18 @@ repair_01:
   projected_active_after_write: 157
   lifetime_unresolved_now: 189
   dry_run_wrote_workspace: false
+  production_write_request_id: 1038
+  production_revision_before: 642
+  production_revision_after: 643
+  production_appended_resolution_count: 47
+  production_historical_only: 31
+  production_active_unresolved_refresh: 16
+  active_unresolved_after_write: 157
+  lifetime_unresolved_after_write: 189
+  unresolved_without_resolution_after_write: 0
+  idempotency_dry_run_request_id: 1040
+  idempotency_appended_resolution_count: 0
+  reconciliation_cron_active_after_write: false
 constraints:
   delete_or_rewrite_ingestion_ledger: false
   age_only_resolution: false
