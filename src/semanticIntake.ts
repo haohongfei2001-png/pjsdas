@@ -446,8 +446,9 @@ function toDomainCommand(
   occurrence?: ScheduleNode,
   reminderIntent?: ReminderIntent,
   externalCapabilities: Partial<Record<ExternalCapabilityId, ExternalCapabilityState>> = {},
+  commandInputId = observation.inputId,
 ): UserDomainCommand {
-  const commandId = `semantic:${observation.inputId}:${candidate.id}`
+  const commandId = `semantic:${commandInputId}:${candidate.id}`
   if (candidate.kind === 'application_submitted') {
     return {
       commandId,
@@ -561,6 +562,7 @@ function applyCandidate(
   now: Date,
   resolution?: SemanticResolutionTarget,
   externalCapabilities: Partial<Record<ExternalCapabilityId, ExternalCapabilityState>> = {},
+  commandInputId = observation.inputId,
 ): CandidateApplyResult {
   const candidate = resolvedTarget(originalCandidate, resolution)
   const opportunityNeeded = candidate.kind !== 'manual_action'
@@ -786,7 +788,7 @@ function applyCandidate(
     }
   }
 
-  const command = toDomainCommand(observation, candidate, opportunity, occurrence, reminderIntent, externalCapabilities)
+  const command = toDomainCommand(observation, candidate, opportunity, occurrence, reminderIntent, externalCapabilities, commandInputId)
   if (command.kind === 'record_application_submission' && resolution?.confirm) command.reactivateConfirmed = true
   const result = applyUserDomainCommand(snapshot, command, now)
   if (result.status === 'NEEDS_CONFIRMATION') {
@@ -893,6 +895,13 @@ export function applySemanticIntake(
     }
   }
 
+  const semanticCommandId = `semantic-intake:${observation.inputId}`
+  const priorSemanticApplications = (base.data.timeline ?? []).filter((item) =>
+    item.kind === 'semantic_intake_applied' && item.commandId === semanticCommandId).length
+  const commandInputId = priorSemanticApplications
+    ? `${observation.inputId}:recovery:${priorSemanticApplications}`
+    : observation.inputId
+
   if (!['assertion', 'current_intent'].includes(observation.statementMode)) {
     const value = receipt({
       observation,
@@ -949,7 +958,15 @@ export function applySemanticIntake(
       if (factKey) factKeys.push(factKey)
       continue
     }
-    const applied = applyCandidate(working, observation, candidate, now, undefined, policy.externalCapabilities ?? {})
+    const applied = applyCandidate(
+      working,
+      observation,
+      candidate,
+      now,
+      undefined,
+      policy.externalCapabilities ?? {},
+      commandInputId,
+    )
     if (applied.status === 'decision') {
       const request = createDecisionRequest({
         observation,
@@ -991,9 +1008,6 @@ export function applySemanticIntake(
   })
   appendReceipt(working, value)
 
-  const semanticCommandId = `semantic-intake:${observation.inputId}`
-  const priorSemanticApplications = (working.data.timeline ?? []).filter((item) =>
-    item.kind === 'semantic_intake_applied' && item.commandId === semanticCommandId).length
   const semanticTimelineIdentity = priorSemanticApplications
     ? `${observation.inputId}|recovery:${priorSemanticApplications}`
     : observation.inputId

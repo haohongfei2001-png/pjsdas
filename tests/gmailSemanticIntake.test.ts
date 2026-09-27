@@ -826,6 +826,7 @@ describe('UU06 shared Gmail intake', () => {
       now: new Date('2026-09-21T00:03:00Z'),
     })
     expect(recovered.status).toBe('APPLIED')
+    expect(recovered.compensation?.payload.domainCompensations).toHaveLength(1)
     expect(recovered.snapshot.data.opportunities[0]?.deadline).toBe('2026-09-25')
     expect(recovered.receipt?.factInvalidations).toBeUndefined()
   })
