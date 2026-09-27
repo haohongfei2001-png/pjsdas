@@ -324,6 +324,90 @@ describe('R02 active unresolved reconciliation', () => {
     })
   })
 
+  it('keeps a source-bound open decision active even when a later ingestion row is non-unresolved', () => {
+    const first = unresolved({
+      sourceRecordId: 'later-state-then-open-decision',
+      receivedAt: '2026-09-20T00:00:00.000Z',
+      fingerprint: 'fp:later-state-then-open-decision',
+    })
+    const later = createIngestionLedgerTimeline({
+      sourceKind: 'gmail',
+      sourceId: SOURCE_ID,
+      sourceRecordId: 'later-state-then-open-decision',
+      runId: 'run:later-state',
+      recordType: 'recruiting_message',
+      outcome: 'updated',
+      fingerprint: 'fp:later-state-then-open-decision:v2',
+      receivedAt: '2026-09-20T00:00:00.000Z',
+      accountedAt: '2026-09-25T00:00:00.000Z',
+      reason: 'Later source state applied.',
+    })
+    const decisionId = 'decision:later-state-then-open-decision'
+    const base = snapshot({
+      timeline: [first, later, zeroRun()],
+      semanticReceipts: [{
+        id: 'semantic-receipt:later-state-then-open-decision',
+        inputId: 'gmail:later-state-then-open-decision:manual-semantic-v1',
+        sourceKind: 'gmail',
+        sourceId: SOURCE_ID,
+        sourceRecordId: 'later-state-then-open-decision',
+        sourceVersion: 'manual-semantic-v1',
+        status: 'decision_required',
+        summary: 'Decision required.',
+        affectedObjects: [{ type: 'decision_request', id: decisionId }],
+        decisionRequestIds: [decisionId],
+        undoAvailable: false,
+        createdAt: '2026-09-26T10:00:00.000Z',
+        updatedAt: '2026-09-26T10:00:00.000Z',
+      }],
+      decisionRequests: [{
+        id: decisionId,
+        reason: 'ambiguous_target',
+        affectedObjects: [{ type: 'source', id: 'gmail:later-state-then-open-decision' }],
+        question: 'Which target is correct?',
+        choices: [
+          { id: 'one', label: 'One', consequence: 'Use one target.' },
+          { id: 'two', label: 'Two', consequence: 'Use another target.' },
+        ],
+        evidenceRefs: ['gmail:later-state-then-open-decision'],
+        payloadBinding: {
+          contractVersion: 1,
+          inputId: 'gmail:later-state-then-open-decision:manual-semantic-v1',
+          candidateId: 'candidate:later-state-then-open-decision',
+          source: {
+            kind: 'gmail',
+            sourceId: SOURCE_ID,
+            sourceRecordId: 'later-state-then-open-decision',
+            sourceVersion: 'manual-semantic-v1',
+            observedAt: '2026-09-26T10:00:00.000Z',
+            timezone: 'Asia/Shanghai',
+          },
+          statementMode: 'assertion',
+          candidate: {
+            id: 'candidate:later-state-then-open-decision',
+            kind: 'application_submitted',
+            target: { company: 'Example' },
+            objectConfidence: 'low',
+            eventConfidence: 'high',
+            evidenceRefs: ['gmail:later-state-then-open-decision'],
+            sourceVersionRefs: ['later-state-then-open-decision:manual-semantic-v1'],
+          },
+        },
+        state: 'open',
+        createdAt: '2026-09-26T10:00:00.000Z',
+        updatedAt: '2026-09-26T10:00:00.000Z',
+      }],
+    })
+
+    const result = reconcileIngestionDebt(base, NOW)
+    expect(result.appended[0]?.ingestionResolution).toMatchObject({
+      outcome: 'active_unresolved',
+      reason: 'semantic_decision_open',
+      targetIngestionTimelineId: first.id,
+    })
+    expect(summarizeCoverage(result.snapshot.data.timeline, { now: NOW }).activeUnresolvedCount).toBe(1)
+  })
+
   it.each([false, true])('keeps same-company multi-role ambiguity active even if candidates are terminal: %s', (terminal) => {
     const record = unresolved({
       sourceRecordId: 'same-company-ambiguous',
