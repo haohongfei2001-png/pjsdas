@@ -386,6 +386,36 @@ async function fetchMessages(fetchImpl: typeof fetch, accessToken: string, ids: 
   return { messages, unavailableMessageIds }
 }
 
+export async function fetchGmailSemanticRecordsByIds(options: {
+  accessToken: string
+  messageIds: string[]
+  opportunities: Opportunity[]
+  fetchImpl?: typeof fetch
+  now?: Date
+}) {
+  const fetchImpl = options.fetchImpl ?? fetch
+  const now = options.now ?? new Date()
+  const uniqueIds = [...new Set(options.messageIds)]
+  if (uniqueIds.length > 100) {
+    throw new WorkspaceSourceError(
+      'GMAIL_FRAGMENT_REPROCESS_LIMIT_EXCEEDED',
+      'Gmail fragment-limit reprocessing accepts at most 100 source records in one bounded dry-run.',
+      false,
+    )
+  }
+  const fetched = await fetchMessages(fetchImpl, options.accessToken, uniqueIds)
+  const records = fetched.messages
+    .map((message) => gmailSemanticRecordFromMessage(message, options.opportunities, now))
+    .filter((record): record is GmailSemanticRecord => Boolean(record))
+  return {
+    requestedCount: uniqueIds.length,
+    fetchedCount: fetched.messages.length,
+    unavailableCount: fetched.unavailableMessageIds.length,
+    records,
+  }
+}
+
+
 export async function fetchGmailAutomationBatch(options: {
   accessToken: string
   startHistoryId?: string
