@@ -5,6 +5,7 @@ import {
   gmailObservationFromMessage,
   gmailSemanticRecordFromMessage,
   gmailReconciliationStateForRecord,
+  GMAIL_FRAGMENT_PARSE_LIMIT,
   UU06_MAX_MESSAGES_PER_RUN,
 } from '../gateway/gmailAutomation.js'
 import type { Opportunity, SemanticCandidate } from '../src/model.js'
@@ -161,6 +162,31 @@ describe('Gmail background automation', () => {
       resolutionBasis: 'source_explicit',
     })
     expect(gmailReconciliationStateForRecord(record!)).toBe('ACTION_REQUIRED')
+  })
+
+  it('parses a recruiting event after fragment 20 without manufacturing an unresolved gap', () => {
+    const fillers = Array.from({ length: 24 }, (_, index) => `普通说明${index + 1}`)
+    const body = [...fillers, '京东 AI产品经理 面试通知：请于2026年9月28日14:30参加视频面试'].join('；')
+    const record = gmailSemanticRecordFromMessage(
+      gmailMessage(body, {}, '京东 AI产品经理 招聘通知'),
+      [opportunity('jd-ai-pm', '京东', 'AI产品经理')],
+      new Date('2026-09-27T08:00:00+08:00'),
+    )
+    expect(GMAIL_FRAGMENT_PARSE_LIMIT).toBeGreaterThan(20)
+    expect(record?.gaps.join(' ')).not.toContain('20-fragment')
+    expect(record?.observation.candidates.some((candidate) =>
+      candidate.kind === 'process_event' && candidate.eventType === 'interview_invite')).toBe(true)
+  })
+
+  it('remains fail-closed when a message exceeds the new bounded fragment ceiling', () => {
+    const fillers = Array.from({ length: GMAIL_FRAGMENT_PARSE_LIMIT + 1 }, (_, index) => `普通说明${index + 1}`)
+    const record = gmailSemanticRecordFromMessage(
+      gmailMessage(fillers.join('；'), {}, '招聘通知'),
+      [opportunity('jd-ai-pm', '京东', 'AI产品经理')],
+      new Date('2026-09-27T08:00:00+08:00'),
+    )
+    expect(record?.gaps.join(' ')).toContain(`${GMAIL_FRAGMENT_PARSE_LIMIT}-fragment interpretation limit`)
+    expect(record?.issueKinds).toContain('interpretation_failure')
   })
 
   it('reconciliation independently unions recent and unread mail in one provider query without recruiting filters', async () => {
