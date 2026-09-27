@@ -120,12 +120,16 @@ function sourceRecordIdentity(observation: SemanticIntakeObservation) {
 
 function existingReceipt(snapshot: PJSDASSnapshot, observation: SemanticIntakeObservation) {
   return (snapshot.data.semanticReceipts ?? []).find((item) =>
-    item.inputId === observation.inputId
-    || (
-      item.sourceKind === observation.source.kind
-      && item.sourceId === observation.source.sourceId
-      && item.sourceRecordId === observation.source.sourceRecordId
-      && (item.sourceVersion ?? '') === (observation.source.sourceVersion ?? '')
+    item.status !== 'undone'
+    && !item.invalidatedByReceiptId
+    && (
+      item.inputId === observation.inputId
+      || (
+        item.sourceKind === observation.source.kind
+        && item.sourceId === observation.source.sourceId
+        && item.sourceRecordId === observation.source.sourceRecordId
+        && (item.sourceVersion ?? '') === (observation.source.sourceVersion ?? '')
+      )
     ),
   )
 }
@@ -197,7 +201,7 @@ export function semanticCandidateFactKey(snapshot: PJSDASSnapshot, candidate: Se
 function existingFactReceipt(snapshot: PJSDASSnapshot, factKey: string | undefined) {
   if (!factKey) return undefined
   return (snapshot.data.semanticReceipts ?? []).find((item) =>
-    item.status === 'committed' && item.factKeys?.includes(factKey),
+    item.status === 'committed' && !item.invalidatedByReceiptId && item.factKeys?.includes(factKey),
   )
 }
 
@@ -1190,8 +1194,7 @@ export function applySemanticCompensation(
         }
         const ingestion = latestSourceRecord?.ingestion
         if (!correctedSourceKeys.has(sourceKey)
-          && ingestion
-          && ingestion.outcome !== 'unresolved') {
+          && ingestion) {
           const priorAccountedMs = Date.parse(ingestion.accountedAt)
           const correctionAt = new Date(Number.isFinite(priorAccountedMs)
             ? Math.max(now.getTime(), priorAccountedMs + 1)
@@ -1218,6 +1221,21 @@ export function applySemanticCompensation(
           }))
           correctedSourceKeys.add(sourceKey)
           if (correctionAt > exportedAt) exportedAt = correctionAt
+        }
+      }
+      const invalidatedFactKeys = new Set(item.factKeys ?? [])
+      if (invalidatedFactKeys.size) {
+        for (const dependent of next.data.semanticReceipts ?? []) {
+          if (dependent.id === item.id
+            || dependent.status !== 'committed'
+            || dependent.invalidatedByReceiptId
+            || dependent.sourceKind !== item.sourceKind
+            || dependent.sourceId !== item.sourceId
+            || dependent.sourceRecordId !== item.sourceRecordId
+            || !dependent.factKeys?.some((key) => invalidatedFactKeys.has(key))) continue
+          dependent.invalidatedByReceiptId = item.id
+          dependent.invalidatedAt = timestamp
+          dependent.undoAvailable = false
         }
       }
       item.status = 'undone'

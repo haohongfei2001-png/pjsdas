@@ -494,6 +494,41 @@ describe('R02 active unresolved reconciliation', () => {
     expect(summarizeCoverage(result.snapshot.data.timeline, { now: NOW }).activeUnresolvedCount).toBe(1)
   })
 
+  it('does not resolve debt from a committed semantic receipt whose evidence was invalidated', () => {
+    const record = unresolved({
+      sourceRecordId: 'invalidated-semantic-receipt',
+      receivedAt: '2026-09-20T00:00:00.000Z',
+    })
+    const base = snapshot({
+      timeline: [record, zeroRun()],
+      semanticReceipts: [{
+        id: 'semantic-receipt:invalidated-dependent',
+        inputId: 'gmail:invalidated-semantic-receipt:v2',
+        sourceKind: 'gmail',
+        sourceId: SOURCE_ID,
+        sourceRecordId: 'invalidated-semantic-receipt',
+        sourceVersion: 'v2',
+        status: 'committed',
+        summary: 'Previously committed from dependent evidence.',
+        affectedObjects: [],
+        decisionRequestIds: [],
+        factKeys: ['application_submitted|opp:example'],
+        invalidatedByReceiptId: 'semantic-receipt:invalidated-source',
+        invalidatedAt: '2026-09-26T11:00:00.000Z',
+        undoAvailable: false,
+        createdAt: '2026-09-26T10:00:00.000Z',
+        updatedAt: '2026-09-26T11:00:00.000Z',
+      }],
+    })
+
+    const result = reconcileIngestionDebt(base, NOW)
+    expect(result.appended[0]?.ingestionResolution).toMatchObject({
+      outcome: 'active_unresolved',
+      reason: 'unlinked_unresolved',
+      sourceRecordId: 'invalidated-semantic-receipt',
+    })
+  })
+
   it.each([false, true])('keeps same-company multi-role ambiguity active even if candidates are terminal: %s', (terminal) => {
     const record = unresolved({
       sourceRecordId: 'same-company-ambiguous',

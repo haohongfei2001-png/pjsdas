@@ -452,6 +452,15 @@ export function validateSnapshot(value: unknown): asserts value is PJSDASSnapsho
       inputIds.add(receipt.inputId)
       assertIsoDate(receipt.createdAt, `SemanticReceipt ${receipt.id} createdAt`)
       assertIsoDate(receipt.updatedAt, `SemanticReceipt ${receipt.id} updatedAt`)
+      if (receipt.invalidatedByReceiptId !== undefined
+        && (typeof receipt.invalidatedByReceiptId !== 'string'
+          || !receipt.invalidatedByReceiptId.trim()
+          || receipt.invalidatedByReceiptId === receipt.id)) {
+        throw new Error(`备份损坏：SemanticReceipt ${receipt.id} invalidation reference 无效。`)
+      }
+      if (receipt.invalidatedAt !== undefined) {
+        assertIsoDate(receipt.invalidatedAt, `SemanticReceipt ${receipt.id} invalidatedAt`)
+      }
     }
   }
 
