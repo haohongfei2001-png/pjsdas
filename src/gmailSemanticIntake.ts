@@ -54,13 +54,21 @@ export function applyGmailSemanticBatch(snapshot: PJSDASSnapshot, input: {
         if (result.compensation.payload.receiptIds.includes(receipt.id)) receipt.commandId = input.runId
       }
     }
+    const conclusiveSemanticReplay = Boolean(
+      result
+      && (
+        result.status === 'NO_WRITE'
+        || result.status === 'APPLIED'
+        || (result.status === 'ALREADY_APPLIED'
+          && (result.receipt?.status === 'committed' || result.receipt?.status === 'no_write'))
+      ),
+    )
     const reconciledPriorUnresolved = Boolean(
       input.reconcileExisting
       && prior?.ingestion?.outcome === 'unresolved'
       && record.gaps.length === 0
-      && result
-      && result.decisionRequests.length === 0
-      && ['NO_WRITE', 'APPLIED', 'ALREADY_APPLIED'].includes(result.status),
+      && result?.decisionRequests.length === 0
+      && conclusiveSemanticReplay,
     )
     const unresolved = record.gaps.length > 0
       || Boolean(result?.decisionRequests.length)
@@ -94,7 +102,7 @@ export function applyGmailSemanticBatch(snapshot: PJSDASSnapshot, input: {
       && (record.gaps.length > 0
         || result?.status === 'APPLIED'
         || result?.status === 'NO_WRITE'
-        || result?.status === 'ALREADY_APPLIED'
+        || (result?.status === 'ALREADY_APPLIED' && conclusiveSemanticReplay)
         || result?.decisionRequests.length))
     if (!prior || persistReconciliationChange) {
       working.data.timeline = [...(working.data.timeline ?? []), entry]

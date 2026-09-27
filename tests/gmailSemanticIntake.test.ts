@@ -212,6 +212,62 @@ describe('UU06 shared Gmail intake', () => {
     })
   })
 
+  it('does not settle a reconcileExisting replay whose matching semantic receipt was undone', () => {
+    const base = snapshot()
+    const legacy = createIngestionLedgerTimeline({
+      sourceKind: 'gmail',
+      sourceId: 'gmail:primary',
+      sourceRecordId: 'fragment-replay-undone',
+      runId: 'legacy-fragment-undone-run',
+      recordType: 'recruiting_message',
+      outcome: 'unresolved',
+      fingerprint: 'fp:fragment-replay-undone',
+      receivedAt: '2026-09-10T00:00:00Z',
+      accountedAt: '2026-09-10T00:00:00Z',
+      reason: 'Message exceeds the 20-fragment interpretation limit.',
+    })
+    base.data.timeline = [legacy]
+    const record = gmailSemanticRecordFromMessage(
+      message(invitation, 'fragment-replay-undone'),
+      base.data.opportunities,
+      now,
+    )!
+    record.observation.inputId = 'gmail:fragment-replay-undone:fragment-reprocess-v2'
+    record.observation.source.sourceVersion = 'fragment-reprocess-v2'
+    record.gaps = []
+
+    const applied = applySemanticIntake(base, record.observation, { authorized: true, now })
+    expect(applied.status).toBe('APPLIED')
+    const undone = applySemanticCompensation(
+      applied.snapshot,
+      applied.compensation!,
+      new Date('2026-09-21T00:01:00Z'),
+    )
+    expect(undone.data.semanticReceipts?.find((receipt) =>
+      receipt.sourceRecordId === 'fragment-replay-undone')?.status).toBe('undone')
+
+    const replay = applyGmailSemanticBatch(undone, {
+      runId: 'fragment-replay-undone',
+      sourceId: 'gmail:primary',
+      checkedAt: new Date('2026-09-21T00:02:00Z').toISOString(),
+      authorized: true,
+      records: [record],
+      reconcileExisting: true,
+    })
+    const sourceRecords = replay.snapshot.data.timeline.filter((item) =>
+      item.ingestion?.sourceRecordId === 'fragment-replay-undone')
+    expect(sourceRecords.map((item) => item.ingestion?.outcome)).toEqual(['unresolved'])
+    expect(replay.run.outcomes.unresolved).toBe(1)
+
+    const reconciled = reconcileIngestionDebt(replay.snapshot, new Date('2026-09-21T00:03:00Z'))
+    expect(reconciled.appended[0]?.ingestionResolution).toMatchObject({
+      outcome: 'active_unresolved',
+      reason: 'unlinked_unresolved',
+      sourceRecordId: 'fragment-replay-undone',
+    })
+    expect(summarizeCoverage(reconciled.snapshot.data.timeline).activeUnresolvedCount).toBe(1)
+  })
+
   it('replay and a new message for the same thread occurrence do not duplicate events', () => {
     const first = run(snapshot(), invitation)
     const replay = run(first.snapshot, invitation)
