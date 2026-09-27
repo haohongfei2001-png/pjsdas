@@ -42,6 +42,7 @@ export const INITIAL_LOOKBACK_DAYS = 90
 export const RECONCILIATION_LOOKBACK_DAYS = 7
 export const RECONCILIATION_MAX_MESSAGES = 5000
 export const RECONCILIATION_BATCH_SIZE = UU06_MAX_MESSAGES_PER_RUN
+export const GMAIL_FRAGMENT_PARSE_LIMIT = 80
 
 interface GmailHeader { name?: string; value?: string }
 interface GmailPartBody { data?: string }
@@ -1012,22 +1013,25 @@ export function gmailSemanticRecordFromMessage(
   if (/https?:\/\//i.test(text)) capabilityBoundaries.push('Linked pages are NOT_SUPPORTED; no link is opened or treated as verified source content.')
   if (body.length >= 12_000) interpretationGaps.push('Message exceeds the bounded body limit; remaining content was not interpreted.')
   const nonAssertion = !text && current.quoted || /^(?:示例|假设|假如|hypothetical|for example)\b/i.test(text)
-  const pieces = text.split(/[；;。\n]+/).map((item) => item.trim()).filter(Boolean)
-  if (pieces.length > 20) interpretationGaps.push('Message exceeds the 20-fragment interpretation limit.')
+  const allPieces = text.split(/[；;。\n]+/).map((item) => item.trim()).filter(Boolean)
+  const boundedPieces = allPieces.slice(0, GMAIL_FRAGMENT_PARSE_LIMIT)
+  if (allPieces.length > GMAIL_FRAGMENT_PARSE_LIMIT) {
+    interpretationGaps.push(`Message exceeds the bounded ${GMAIL_FRAGMENT_PARSE_LIMIT}-fragment interpretation limit.`)
+  }
   const whole = parseRecruitingNotification([subject, text].join('\n'), opportunities, new Date(legacy.receivedAt))
   const subjectType = /interview invitation/i.test(subject) ? 'interview_invite'
     : /(?:assessment|test) invitation/i.test(subject) ? 'assessment_invite'
     : whole.type && whole.type !== 'other' && whole.confidence.type === 'high' ? whole.type : undefined
-  const bodyHasEvent = pieces.some((piece) => {
+  const bodyHasEvent = boundedPieces.some((piece) => {
     const parsed = parseRecruitingNotification(piece, opportunities, new Date(legacy.receivedAt))
     return parsed.type && parsed.type !== 'other' && parsed.confidence.type !== 'low'
   })
-  if (!bodyHasEvent && subjectType) pieces.splice(0, pieces.length, text)
+  const pieces = !bodyHasEvent && subjectType ? [text] : boundedPieces
   const timedContextTypes = [...new Set(pieces.map((piece) => parseRecruitingNotification(piece, opportunities, new Date(legacy.receivedAt)).type)
     .filter((type) => type && requiresTiming(type)))]
   const deadlineContextType = timedContextTypes.length === 1 ? timedContextTypes[0] : undefined
   const candidates: SemanticCandidate[] = []
-  for (const [index, piece] of pieces.slice(0, 20).entries()) {
+  for (const [index, piece] of pieces.entries()) {
     if (conditionalCompletionDisclaimer(piece)) continue
     const parsed = parseRecruitingNotification(piece, opportunities, new Date(legacy.receivedAt))
     const selected = parsed.opportunity ?? whole.opportunity
