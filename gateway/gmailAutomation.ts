@@ -42,6 +42,7 @@ export const INITIAL_LOOKBACK_DAYS = 90
 export const RECONCILIATION_LOOKBACK_DAYS = 7
 export const RECONCILIATION_MAX_MESSAGES = 5000
 export const RECONCILIATION_BATCH_SIZE = UU06_MAX_MESSAGES_PER_RUN
+export const GMAIL_FRAGMENT_PARSE_LIMIT = 80
 
 interface GmailHeader { name?: string; value?: string }
 interface GmailPartBody { data?: string }
@@ -384,6 +385,36 @@ async function fetchMessages(fetchImpl: typeof fetch, accessToken: string, ids: 
   }
   return { messages, unavailableMessageIds }
 }
+
+export async function fetchGmailSemanticRecordsByIds(options: {
+  accessToken: string
+  messageIds: string[]
+  opportunities: Opportunity[]
+  fetchImpl?: typeof fetch
+  now?: Date
+}) {
+  const fetchImpl = options.fetchImpl ?? fetch
+  const now = options.now ?? new Date()
+  const uniqueIds = [...new Set(options.messageIds)]
+  if (uniqueIds.length > 100) {
+    throw new WorkspaceSourceError(
+      'GMAIL_FRAGMENT_REPROCESS_LIMIT_EXCEEDED',
+      'Gmail fragment-limit reprocessing accepts at most 100 source records in one bounded dry-run.',
+      false,
+    )
+  }
+  const fetched = await fetchMessages(fetchImpl, options.accessToken, uniqueIds)
+  const records = fetched.messages
+    .map((message) => gmailSemanticRecordFromMessage(message, options.opportunities, now))
+    .filter((record): record is GmailSemanticRecord => Boolean(record))
+  return {
+    requestedCount: uniqueIds.length,
+    fetchedCount: fetched.messages.length,
+    unavailableCount: fetched.unavailableMessageIds.length,
+    records,
+  }
+}
+
 
 export async function fetchGmailAutomationBatch(options: {
   accessToken: string
@@ -1012,24 +1043,32 @@ export function gmailSemanticRecordFromMessage(
   if (/https?:\/\//i.test(text)) capabilityBoundaries.push('Linked pages are NOT_SUPPORTED; no link is opened or treated as verified source content.')
   if (body.length >= 12_000) interpretationGaps.push('Message exceeds the bounded body limit; remaining content was not interpreted.')
   const nonAssertion = !text && current.quoted || /^(?:示例|假设|假如|hypothetical|for example)\b/i.test(text)
-  const pieces = text.split(/[；;。\n]+/).map((item) => item.trim()).filter(Boolean)
-  if (pieces.length > 20) interpretationGaps.push('Message exceeds the 20-fragment interpretation limit.')
-  const whole = parseRecruitingNotification([subject, text].join('\n'), opportunities, new Date(legacy.receivedAt))
+  const allPieces = text.split(/[；;。\n]+/).map((item) => item.trim()).filter(Boolean)
+  const boundedPieces = allPieces.slice(0, GMAIL_FRAGMENT_PARSE_LIMIT)
+  if (allPieces.length > GMAIL_FRAGMENT_PARSE_LIMIT) {
+    interpretationGaps.push(`Message exceeds the bounded ${GMAIL_FRAGMENT_PARSE_LIMIT}-fragment interpretation limit.`)
+  }
+  const parsedAt = new Date(legacy.receivedAt)
+  const whole = parseRecruitingNotification([subject, text].join('\n'), opportunities, parsedAt)
   const subjectType = /interview invitation/i.test(subject) ? 'interview_invite'
     : /(?:assessment|test) invitation/i.test(subject) ? 'assessment_invite'
     : whole.type && whole.type !== 'other' && whole.confidence.type === 'high' ? whole.type : undefined
-  const bodyHasEvent = pieces.some((piece) => {
-    const parsed = parseRecruitingNotification(piece, opportunities, new Date(legacy.receivedAt))
-    return parsed.type && parsed.type !== 'other' && parsed.confidence.type !== 'low'
-  })
-  if (!bodyHasEvent && subjectType) pieces.splice(0, pieces.length, text)
-  const timedContextTypes = [...new Set(pieces.map((piece) => parseRecruitingNotification(piece, opportunities, new Date(legacy.receivedAt)).type)
+  const parsedPieces = boundedPieces.map((piece) => ({
+    piece,
+    parsed: parseRecruitingNotification(piece, opportunities, parsedAt),
+  }))
+  const bodyHasEvent = parsedPieces.some(({ parsed }) =>
+    parsed.type && parsed.type !== 'other' && parsed.confidence.type !== 'low')
+  const pieces = !bodyHasEvent && subjectType
+    ? [{ piece: text, parsed: whole }]
+    : parsedPieces
+  const timedContextTypes = [...new Set(pieces.map(({ parsed }) => parsed.type)
     .filter((type) => type && requiresTiming(type)))]
   const deadlineContextType = timedContextTypes.length === 1 ? timedContextTypes[0] : undefined
   const candidates: SemanticCandidate[] = []
-  for (const [index, piece] of pieces.slice(0, 20).entries()) {
+  for (const [index, item] of pieces.entries()) {
+    const { piece, parsed } = item
     if (conditionalCompletionDisclaimer(piece)) continue
-    const parsed = parseRecruitingNotification(piece, opportunities, new Date(legacy.receivedAt))
     const selected = parsed.opportunity ?? whole.opportunity
     const submissionDeadline = /(?:提交|交卷|submission|submit).{0,12}(?:截止|最晚|deadline|by)|(?:截止|deadline).{0,12}(?:提交|交卷|submission|submit)/i.test(piece)
     const eventType = submissionDeadline && deadlineContextType ? deadlineContextType
