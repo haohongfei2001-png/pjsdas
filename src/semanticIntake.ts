@@ -861,6 +861,11 @@ function appendReceipt(snapshot: PJSDASSnapshot, value: SemanticIntakeReceipt) {
   snapshot.data.semanticReceipts = [...(snapshot.data.semanticReceipts ?? []).filter((item) => item.id !== value.id), value]
 }
 
+function compareReceiptCreationOrder(left: SemanticIntakeReceipt, right: SemanticIntakeReceipt) {
+  const byCreatedAt = left.createdAt.localeCompare(right.createdAt)
+  return byCreatedAt || left.id.localeCompare(right.id)
+}
+
 function appendDecision(snapshot: PJSDASSnapshot, observation: SemanticIntakeObservation, request: DecisionRequest, now: string) {
   snapshot.data.decisionRequests = [...(snapshot.data.decisionRequests ?? []).filter((item) => item.id !== request.id), request]
   snapshot.data.timeline = [...(snapshot.data.timeline ?? []), timelineForDecision(observation, request, now)]
@@ -1252,10 +1257,10 @@ export function applySemanticCompensation(
       const invalidatedFactKeys = new Set(item.factKeys ?? [])
       if (invalidatedFactKeys.size) {
         const receipts = next.data.semanticReceipts ?? []
-        const itemIndex = receipts.findIndex((receipt) => receipt.id === item.id)
-        for (let index = itemIndex + 1; index < receipts.length; index += 1) {
-          const dependent = receipts[index]!
-          if (dependent.status !== 'committed'
+        for (const dependent of receipts) {
+          if (dependent.id === item.id
+            || compareReceiptCreationOrder(item, dependent) >= 0
+            || dependent.status !== 'committed'
             || dependent.sourceKind !== item.sourceKind
             || dependent.sourceId !== item.sourceId
             || dependent.sourceRecordId !== item.sourceRecordId) continue

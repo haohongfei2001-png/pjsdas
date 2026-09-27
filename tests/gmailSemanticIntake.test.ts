@@ -805,8 +805,10 @@ describe('UU06 shared Gmail intake', () => {
     expect(second.status).toBe('APPLIED')
     expect(second.receipt?.factKeys).toEqual(first.receipt?.factKeys)
 
+    const persistedSecond = structuredClone(second.snapshot)
+    persistedSecond.data.semanticReceipts?.reverse()
     const undone = applySemanticCompensation(
-      second.snapshot,
+      persistedSecond,
       first.compensation!,
       new Date('2026-09-21T00:02:00Z'),
     )
@@ -881,6 +883,7 @@ describe('UU06 shared Gmail intake', () => {
       updatedAt: '2026-09-21T00:01:00.000Z',
     }]
 
+    withLaterNoop.data.semanticReceipts?.reverse()
     const undoneLater = applySemanticCompensation(
       withLaterNoop,
       {
