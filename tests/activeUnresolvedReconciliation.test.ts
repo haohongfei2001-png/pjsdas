@@ -266,6 +266,155 @@ describe('R02 active unresolved reconciliation', () => {
     expect(coverage.allCaughtUp).toBe(false)
   })
 
+  it('settles a legacy Gmail link-only capability boundary without deleting the original unresolved ledger', () => {
+    const record = unresolved({
+      sourceRecordId: 'legacy-link-only',
+      reason: 'Linked pages are NOT_SUPPORTED; no link is opened or treated as verified source content.',
+    })
+    const base = snapshot({ timeline: [record, zeroRun()] })
+    const result = reconcileIngestionDebt(base, NOW)
+    expect(result.snapshot.data.timeline.some((item) => item.id === record.id)).toBe(true)
+    expect(result.appended[0]?.ingestionResolution).toMatchObject({
+      outcome: 'historical_only',
+      reason: 'legacy_capability_boundary_only',
+      targetIngestionTimelineId: record.id,
+    })
+    const coverage = summarizeCoverage(result.snapshot.data.timeline, { now: NOW })
+    expect(coverage.lifetimeUnresolvedCount).toBe(1)
+    expect(coverage.activeUnresolvedCount).toBe(0)
+  })
+
+  it('settles a legacy Gmail attachment+link capability boundary only when no stronger unresolved signal exists', () => {
+    const record = unresolved({
+      sourceRecordId: 'legacy-attachment-link-only',
+      reason: 'Attachment content is NOT_SUPPORTED; inspect the original mail if it contains material details. Linked pages are NOT_SUPPORTED; no link is opened or treated as verified source content.',
+    })
+    const result = reconcileIngestionDebt(snapshot({ timeline: [record, zeroRun()] }), NOW)
+    expect(result.appended[0]?.ingestionResolution).toMatchObject({
+      outcome: 'historical_only',
+      reason: 'legacy_capability_boundary_only',
+    })
+  })
+
+  it('does not clear Gmail link records that also contain a genuine quoted-context ambiguity', () => {
+    const record = unresolved({
+      sourceRecordId: 'legacy-link-plus-ambiguity',
+      reason: 'Linked pages are NOT_SUPPORTED; no link is opened or treated as verified source content. Quoted/forwarded context requires clarification; no facts were inferred automatically.',
+    })
+    const result = reconcileIngestionDebt(snapshot({ timeline: [record, zeroRun()] }), NOW)
+    expect(result.appended[0]?.ingestionResolution).toMatchObject({
+      outcome: 'active_unresolved',
+      reason: 'unlinked_unresolved',
+    })
+    expect(summarizeCoverage(result.snapshot.data.timeline, { now: NOW }).activeUnresolvedCount).toBe(1)
+  })
+
+  it('does not let legacy capability text clear a source record already linked to a live opportunity', () => {
+    const record = unresolved({
+      sourceRecordId: 'legacy-link-live',
+      reason: 'Linked pages are NOT_SUPPORTED; no link is opened or treated as verified source content.',
+      opportunityId: 'opp-live-capability',
+    })
+    const base = snapshot({
+      timeline: [record, zeroRun()],
+      opportunities: [opportunity('opp-live-capability')],
+      processes: [process('opp-live-capability')],
+    })
+    const result = reconcileIngestionDebt(base, NOW)
+    expect(result.appended[0]?.ingestionResolution).toMatchObject({
+      outcome: 'active_unresolved',
+      reason: 'live_process_ambiguity',
+    })
+  })
+
+  it('does not clear capability-only text when a current issueKind still marks an interpretation failure', () => {
+    const record = createIngestionLedgerTimeline({
+      sourceKind: 'gmail',
+      sourceId: SOURCE_ID,
+      sourceRecordId: 'legacy-link-with-issue-kind',
+      runId: 'run:legacy-link-with-issue-kind',
+      recordType: 'recruiting_message',
+      outcome: 'unresolved',
+      fingerprint: 'fp:legacy-link-with-issue-kind',
+      receivedAt: '2026-09-20T00:00:00.000Z',
+      accountedAt: '2026-09-20T00:00:00.000Z',
+      reason: 'Linked pages are NOT_SUPPORTED; no link is opened or treated as verified source content.',
+      issueKinds: ['interpretation_failure'],
+    })
+    const result = reconcileIngestionDebt(snapshot({ timeline: [record, zeroRun()] }), NOW)
+    expect(result.appended[0]?.ingestionResolution).toMatchObject({
+      outcome: 'active_unresolved',
+      reason: 'unlinked_unresolved',
+    })
+  })
+
+  it('keeps an open semantic decision active even when the legacy reason is capability-only text', () => {
+    const record = unresolved({
+      sourceRecordId: 'legacy-link-semantic-open',
+      reason: 'Linked pages are NOT_SUPPORTED; no link is opened or treated as verified source content.',
+    })
+    const base = snapshot({
+      timeline: [record, zeroRun()],
+      semanticReceipts: [{
+        id: 'semantic-receipt:legacy-link-semantic-open',
+        inputId: 'gmail:legacy-link-semantic-open:reconciliation-v1',
+        sourceKind: 'gmail',
+        sourceId: SOURCE_ID,
+        sourceRecordId: 'legacy-link-semantic-open',
+        sourceVersion: 'reconciliation-v1',
+        status: 'decision_required',
+        summary: 'Decision required.',
+        affectedObjects: [{ type: 'decision_request', id: 'decision:legacy-link-semantic-open' }],
+        decisionRequestIds: ['decision:legacy-link-semantic-open'],
+        undoAvailable: false,
+        createdAt: '2026-09-25T10:00:00.000Z',
+        updatedAt: '2026-09-25T10:00:00.000Z',
+      }],
+      decisionRequests: [{
+        id: 'decision:legacy-link-semantic-open',
+        reason: 'ambiguous_target',
+        affectedObjects: [{ type: 'source', id: 'gmail:legacy-link-semantic-open' }],
+        question: 'Which target is correct?',
+        choices: [
+          { id: 'one', label: 'One', consequence: 'Use one target.' },
+          { id: 'two', label: 'Two', consequence: 'Use another target.' },
+        ],
+        evidenceRefs: ['gmail:legacy-link-semantic-open'],
+        payloadBinding: {
+          contractVersion: 1,
+          inputId: 'gmail:legacy-link-semantic-open:reconciliation-v1',
+          candidateId: 'candidate:legacy-link-semantic-open',
+          source: {
+            kind: 'gmail',
+            sourceId: SOURCE_ID,
+            sourceRecordId: 'legacy-link-semantic-open',
+            sourceVersion: 'reconciliation-v1',
+            observedAt: '2026-09-25T10:00:00.000Z',
+            timezone: 'Asia/Shanghai',
+          },
+          statementMode: 'assertion',
+          candidate: {
+            id: 'candidate:legacy-link-semantic-open',
+            kind: 'application_submitted',
+            target: { company: 'Example' },
+            objectConfidence: 'low',
+            eventConfidence: 'high',
+            evidenceRefs: ['gmail:legacy-link-semantic-open'],
+            sourceVersionRefs: ['legacy-link-semantic-open:reconciliation-v1'],
+          },
+        },
+        state: 'open',
+        createdAt: '2026-09-25T10:00:00.000Z',
+        updatedAt: '2026-09-25T10:00:00.000Z',
+      }],
+    })
+    const result = reconcileIngestionDebt(base, NOW)
+    expect(result.appended[0]?.ingestionResolution).toMatchObject({
+      outcome: 'active_unresolved',
+      reason: 'semantic_decision_open',
+    })
+  })
+
   it('classifies an explicitly non-actionable historical recruiting ad as ignored without deleting the ledger', () => {
     const record = unresolved({
       sourceRecordId: 'generic-ad',

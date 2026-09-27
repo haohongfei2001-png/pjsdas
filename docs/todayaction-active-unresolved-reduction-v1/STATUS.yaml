@@ -1,0 +1,30 @@
+package: TODAYACTION-ACTIVE-UNRESOLVED-REDUCTION-v1
+status: ENGINEERING_READY_FULL_GATES
+writer:
+  branch: reliability/active-unresolved-reduction-v1
+  active: true
+baseline:
+  main: a407c5d2a006d5ce8a4fcd5b44e6c59b114b27ae
+  active_unresolved: 177
+  lifetime_unresolved: 178
+  gmail_active: 123
+  monitor_active: 54
+  unlinked_unresolved: 134
+  live_process_ambiguity: 30
+  semantic_decision_open: 12
+  transport_gap_active: 1
+repair_01:
+  name: legacy_gmail_capability_boundary_only
+  projected_safe_settlement: 31
+  production_dry_run: PENDING_EXACT_MAIN
+  production_write: NOT_AUTHORIZED
+constraints:
+  delete_or_rewrite_ingestion_ledger: false
+  age_only_resolution: false
+  clear_open_semantic_decisions: false
+  clear_live_process_ambiguity: false
+  change_gmail_permissions_or_cursor: false
+
+verification:
+  inner_loop_ci: SUCCESS
+  full_gates: PENDING
