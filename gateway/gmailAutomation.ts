@@ -1048,22 +1048,27 @@ export function gmailSemanticRecordFromMessage(
   if (allPieces.length > GMAIL_FRAGMENT_PARSE_LIMIT) {
     interpretationGaps.push(`Message exceeds the bounded ${GMAIL_FRAGMENT_PARSE_LIMIT}-fragment interpretation limit.`)
   }
-  const whole = parseRecruitingNotification([subject, text].join('\n'), opportunities, new Date(legacy.receivedAt))
+  const parsedAt = new Date(legacy.receivedAt)
+  const whole = parseRecruitingNotification([subject, text].join('\n'), opportunities, parsedAt)
   const subjectType = /interview invitation/i.test(subject) ? 'interview_invite'
     : /(?:assessment|test) invitation/i.test(subject) ? 'assessment_invite'
     : whole.type && whole.type !== 'other' && whole.confidence.type === 'high' ? whole.type : undefined
-  const bodyHasEvent = boundedPieces.some((piece) => {
-    const parsed = parseRecruitingNotification(piece, opportunities, new Date(legacy.receivedAt))
-    return parsed.type && parsed.type !== 'other' && parsed.confidence.type !== 'low'
-  })
-  const pieces = !bodyHasEvent && subjectType ? [text] : boundedPieces
-  const timedContextTypes = [...new Set(pieces.map((piece) => parseRecruitingNotification(piece, opportunities, new Date(legacy.receivedAt)).type)
+  const parsedPieces = boundedPieces.map((piece) => ({
+    piece,
+    parsed: parseRecruitingNotification(piece, opportunities, parsedAt),
+  }))
+  const bodyHasEvent = parsedPieces.some(({ parsed }) =>
+    parsed.type && parsed.type !== 'other' && parsed.confidence.type !== 'low')
+  const pieces = !bodyHasEvent && subjectType
+    ? [{ piece: text, parsed: whole }]
+    : parsedPieces
+  const timedContextTypes = [...new Set(pieces.map(({ parsed }) => parsed.type)
     .filter((type) => type && requiresTiming(type)))]
   const deadlineContextType = timedContextTypes.length === 1 ? timedContextTypes[0] : undefined
   const candidates: SemanticCandidate[] = []
-  for (const [index, piece] of pieces.entries()) {
+  for (const [index, item] of pieces.entries()) {
+    const { piece, parsed } = item
     if (conditionalCompletionDisclaimer(piece)) continue
-    const parsed = parseRecruitingNotification(piece, opportunities, new Date(legacy.receivedAt))
     const selected = parsed.opportunity ?? whole.opportunity
     const submissionDeadline = /(?:提交|交卷|submission|submit).{0,12}(?:截止|最晚|deadline|by)|(?:截止|deadline).{0,12}(?:提交|交卷|submission|submit)/i.test(piece)
     const eventType = submissionDeadline && deadlineContextType ? deadlineContextType
