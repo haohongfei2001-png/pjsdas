@@ -985,8 +985,14 @@ export function applySemanticIntake(
   })
   appendReceipt(working, value)
 
+  const semanticCommandId = `semantic-intake:${observation.inputId}`
+  const priorSemanticApplications = (working.data.timeline ?? []).filter((item) =>
+    item.kind === 'semantic_intake_applied' && item.commandId === semanticCommandId).length
+  const semanticTimelineIdentity = priorSemanticApplications
+    ? `${observation.inputId}|recovery:${priorSemanticApplications}`
+    : observation.inputId
   working.data.timeline = [...(working.data.timeline ?? []), {
-    id: `timeline:semantic:${stableHash(observation.inputId)}`,
+    id: `timeline:semantic:${stableHash(semanticTimelineIdentity)}`,
     kind: 'semantic_intake_applied',
     category: 'change',
     source: sourceTimelineKind(observation.source.kind),
