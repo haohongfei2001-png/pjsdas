@@ -101,9 +101,8 @@ export function applyGmailSemanticBatch(snapshot: PJSDASSnapshot, input: {
     const persistReconciliationChange = Boolean(input.reconcileExisting
       && (record.gaps.length > 0
         || result?.status === 'APPLIED'
-        || result?.status === 'NO_WRITE'
-        || (result?.status === 'ALREADY_APPLIED' && conclusiveSemanticReplay)
-        || result?.decisionRequests.length))
+        || result?.decisionRequests.length
+        || reconciledPriorUnresolved))
     if (!prior || persistReconciliationChange) {
       working.data.timeline = [...(working.data.timeline ?? []), entry]
       persistedSourceRecords += 1

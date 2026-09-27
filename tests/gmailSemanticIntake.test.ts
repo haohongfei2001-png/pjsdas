@@ -212,6 +212,48 @@ describe('UU06 shared Gmail intake', () => {
     })
   })
 
+  it('does not amplify settled Gmail source ledger rows during reconcileExisting replay', () => {
+    const base = snapshot()
+    const record = gmailSemanticRecordFromMessage(
+      message(invitation, 'settled-reconciliation-replay'),
+      base.data.opportunities,
+      now,
+    )!
+    const first = applyGmailSemanticBatch(base, {
+      runId: 'settled-reconciliation-first',
+      sourceId: 'gmail:primary',
+      checkedAt: now.toISOString(),
+      authorized: true,
+      records: [record],
+    })
+    expect(first.snapshot.data.timeline.filter((item) =>
+      item.ingestion?.sourceRecordId === 'settled-reconciliation-replay')).toHaveLength(1)
+
+    const second = applyGmailSemanticBatch(first.snapshot, {
+      runId: 'settled-reconciliation-second',
+      sourceId: 'gmail:primary',
+      checkedAt: new Date('2026-09-21T00:01:00Z').toISOString(),
+      authorized: true,
+      records: [record],
+      reconcileExisting: true,
+    })
+    const third = applyGmailSemanticBatch(second.snapshot, {
+      runId: 'settled-reconciliation-third',
+      sourceId: 'gmail:primary',
+      checkedAt: new Date('2026-09-21T00:02:00Z').toISOString(),
+      authorized: true,
+      records: [record],
+      reconcileExisting: true,
+    })
+
+    expect(second.snapshot.data.timeline.filter((item) =>
+      item.ingestion?.sourceRecordId === 'settled-reconciliation-replay')).toHaveLength(1)
+    expect(third.snapshot.data.timeline.filter((item) =>
+      item.ingestion?.sourceRecordId === 'settled-reconciliation-replay')).toHaveLength(1)
+    expect(second.run.outcomes.duplicate).toBe(1)
+    expect(third.run.outcomes.duplicate).toBe(1)
+  })
+
   it('does not settle a reconcileExisting replay whose matching semantic receipt was undone', () => {
     const base = snapshot()
     const legacy = createIngestionLedgerTimeline({
