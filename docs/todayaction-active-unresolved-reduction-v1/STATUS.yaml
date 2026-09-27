@@ -1,5 +1,5 @@
 package: TODAYACTION-ACTIVE-UNRESOLVED-REDUCTION-v1
-status: REPAIR_02_ENGINEERING_IN_PROGRESS
+status: REPAIR_02_READY_FULL_GATES
 writer:
   branch: reliability/active-unresolved-reduction-fragment-v1
   active: true
@@ -68,5 +68,9 @@ repair_02:
   protected_semantic_decision_open: 3
   parser_old_limit: 20
   parser_new_limit: 80
-  exact_main_dry_run: PENDING
+  exact_main_dry_run: PENDING_EXACT_MAIN
   production_write: NOT_AUTHORIZED
+
+repair_02_verification:
+  inner_loop_ci: SUCCESS
+  full_gates: PENDING
