@@ -511,12 +511,15 @@ describe('UU06 shared Gmail intake', () => {
     const undone = applySemanticCompensation(
       replay.snapshot,
       replay.compensation,
-      new Date('2026-09-21T00:01:00Z'),
+      now,
     )
     const sourceRows = undone.data.timeline.filter((item) =>
       item.ingestion?.sourceRecordId === 'fragment-replay-applied-undo')
     expect(sourceRows.map((item) => item.ingestion?.outcome)).toEqual(['unresolved', 'updated', 'unresolved'])
     expect(sourceRows[2]?.ingestion?.reason).toBe('Semantic write was undone; source requires fresh reconciliation.')
+    expect(Date.parse(sourceRows[2]!.ingestion!.accountedAt)).toBeGreaterThan(
+      Date.parse(sourceRows[1]!.ingestion!.accountedAt),
+    )
     expect(undone.data.semanticReceipts?.find((receipt) =>
       receipt.sourceRecordId === 'fragment-replay-applied-undo')?.status).toBe('undone')
     expect(summarizeCoverage(undone.data.timeline).activeUnresolvedCount).toBe(1)
