@@ -428,7 +428,8 @@ export async function updateActionStatus(id: string, status: Action['status'], e
     if (!action) return
     if (expectedStatus !== undefined && action.status !== expectedStatus) throw new Error('Action changed before the transaction; no status change written.')
     if (action.status === status) return
-    const beforeContract = { opportunities, processes, processEvents, actions, prep, scheduleNodes }
+    const beforeContract = { opportunities, processes, processEvents,
+      actions: actions.some((item) => item.id === id) ? actions : [...actions, action], prep, scheduleNodes }
     ensureScheduleContractInPlace(beforeContract)
     const beforeData = structuredClone(beforeContract)
     const nextAction = { ...action, status, updatedAt: now }

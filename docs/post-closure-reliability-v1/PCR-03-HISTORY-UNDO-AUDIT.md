@@ -45,10 +45,11 @@ An edited or removed occurrence was not rejected by the compensation reducer.
 - Actual authoritative executor persists compensation, executes CAS Undo, retains
   original command/timeline; existing unrelated/dependent conflict tests pass.
 - Signed MCP batch shared-node compensation and actual executor Undo pass.
-- Three headless Chromium cases: real History → job detail → Mark done → Undo in
+- Five headless Chromium cases: real History → job detail → Mark done → Undo in
   local and connected mode, Today/Schedule/job-detail durable reload/fresh-page
-  restart, and later occurrence edit refuses Undo with raw store equality.
-- New three cases plus ten P0 and seven recovery cases: 20 browser passes.
+  restart, later occurrence edit refuses Undo with raw store equality, legacy
+  projected event action compensation, and a real second-connection status race.
+- New five cases plus ten P0 and seven recovery cases: 22 browser passes.
 - Unit: 205 files / 990 tests. Type and production build pass. Matrix includes the
   new journeys. Full head/main results must be recorded after they finish.
 

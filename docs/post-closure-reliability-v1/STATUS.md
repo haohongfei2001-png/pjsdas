@@ -89,7 +89,7 @@ and elapsed nodes and lost an in-progress prior state. New command compensation
 records its exact changed occurrences; generic status changes preserve historical
 terminal facts. Local Undo validates and writes under one IndexedDB transaction;
 connected/MCP paths preserve exact compensation and existing CAS dependency checks.
-Three real browser regressions pass, including subsequent-edit refusal and durable
+Five real browser regressions pass, including subsequent-edit refusal and durable
 Today/Schedule/job-detail reload/restart. Unit 205 files / 990 tests, type and build
 pass; full remote gates/latest Codex/exact-main verification remain required.
 PCR-04..07 are still pending. No production data mutation is authorized.

@@ -97,3 +97,59 @@ test('local durable completion evidence rejects a later occurrence edit atomical
   expect(evidence.rejected).toBe(true)
   expect(evidence.after).toEqual(evidence.before)
 })
+
+test('legacy projected event action can complete and Undo without losing its event or prior occurrence state', async ({ page }) => {
+  await page.clock.install({ time: HISTORY_NOW })
+  await page.goto('/'); await expect(page.locator('.tsui-primary-nav')).toBeVisible()
+  const evidence = await page.evaluate(async (input) => {
+    const module = await import('/pjsdas/src/db.ts')
+    const event = { id: 'legacy-invite', opportunityId: 'history-job', company: 'History company', role: 'Engineer',
+      type: 'written_test_invite' as const, occurredAt: '2026-09-20T00:00:00.000Z', dueAt: '2026-09-29T10:00:00+08:00',
+      duePrecision: 'datetime' as const, source: 'manual' as const, createdAt: '2026-09-20T00:00:00.000Z', updatedAt: '2026-09-20T00:00:00.000Z' }
+    input.data.actions = []; input.data.scheduleNodes = []; input.data.processEvents = [event]
+    await module.replaceLocalSnapshotFromCloud(input)
+    const before = await module.exportLocalSnapshot()
+    const applied = await module.applyActionStatusChangeSet('event-action:legacy-invite', 'done')
+    await module.undoActionStatusChange(JSON.parse(JSON.stringify(applied!.actionCompensations![0])))
+    return { before: before.data.scheduleNodes, after: (await module.exportLocalSnapshot()).data.scheduleNodes,
+      actions: await module.getAllActions(), events: await (await module.dbPromise).getAll('processEvents') }
+  }, historyActionWorkspace())
+  expect(evidence.actions.find((item) => item.id === 'event-action:legacy-invite')?.status).toBe('todo')
+  expect(evidence.events).toHaveLength(1)
+  for (const node of evidence.before!) {
+    const after = evidence.after!.find((item) => item.id === node.id)!
+    expect(after).toMatchObject({ state: node.state, updatedAt: node.updatedAt, temporal: node.temporal })
+    expect(after.completedAt).toBe(node.completedAt)
+  }
+})
+
+test('a real second-connection status race is checked inside the local mutation transaction', async ({ page }) => {
+  await page.clock.install({ time: HISTORY_NOW })
+  await page.goto('/'); await expect(page.locator('.tsui-primary-nav')).toBeVisible()
+  const evidence = await page.evaluate(async (input) => {
+    const module = await import('/pjsdas/src/db.ts')
+    await module.replaceLocalSnapshotFromCloud(input)
+    const db = await module.dbPromise
+    const before = await db.getAll('scheduleNodes')
+    const action = (await db.get('actions', 'history-task'))!
+    const other = await new Promise<IDBDatabase>((resolve, reject) => {
+      const req = indexedDB.open('pjsdas', 11); req.onsuccess = () => resolve(req.result); req.onerror = () => reject(req.error)
+    })
+    const original = db.transaction.bind(db)
+    let intercepted = false
+    ;(db as any).transaction = (...args: any[]) => {
+      if (!intercepted && args[1] === 'readwrite' && Array.isArray(args[0]) && args[0].includes('actions')) {
+        intercepted = true
+        other.transaction('actions', 'readwrite').objectStore('actions').put({ ...action, status: 'doing', updatedAt: '2026-09-28T12:00:01.000Z' })
+      }
+      return (original as any)(...args)
+    }
+    let rejected = false
+    try { await module.applyActionStatusChangeSet('history-task', 'done') } catch { rejected = true }
+    finally { (db as any).transaction = original; other.close() }
+    return { intercepted, rejected, before, after: await db.getAll('scheduleNodes'), action: await db.get('actions', 'history-task') }
+  }, historyActionWorkspace())
+  expect(evidence.intercepted).toBe(true); expect(evidence.rejected).toBe(true)
+  expect(evidence.action?.status).toBe('doing')
+  expect(evidence.after).toEqual(evidence.before)
+})
