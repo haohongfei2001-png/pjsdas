@@ -32,19 +32,23 @@ Both are isolated synthetic headless tests. No production state was modified.
 
 ## Verification
 
-Five new real-browser regressions:
+Seven new real-browser regressions:
 
 1. SIGNED_OUT + synchronous failure after partial clear: raw archive and durable
    stores identical, recovery visible, Retry safely clears expired cache, reload
    never revives A. No backend mutation.
 2. SIGNED_OUT + transaction abort: same lossless recovery and Retry contract.
-3. Legacy v1 restore: Today/Schedule/job details, reload, fresh-page restart;
+3. Settings sign-out + one-shot partial-clear throw: the auth listener and UI
+   share a serialized boundary; failed transition is latched until Retry. A
+   queued successful clear cannot erase the recovery archive.
+4. Settings sign-out + transaction abort: same retained archive and Retry.
+5. Legacy v1 restore: Today/Schedule/job details, reload, fresh-page restart;
    readonly startup does not change any durable store.
-4. Legacy v2 restore: same contract.
-5. Legacy v3 restore: same contract.
+6. Legacy v2 restore: same contract.
+7. Legacy v3 restore: same contract.
 
-All five pass in Chromium, together with existing A→B account isolation and
-cross-client process create/delete regressions (seven cases). They are included
+All seven pass in Chromium, together with existing A→B account isolation and
+cross-client process create/delete regressions (nine cases). They are included
 in the Firefox/WebKit Matrix. Unit 204 files / 982 tests, type and build pass.
 The final PR must pass applicable full gates and exact-head Codex review; this
 candidate receipt does not claim production has deployed this additional fix.
@@ -75,3 +79,18 @@ Remaining candidates for later phases: audit generic reopen/Undo with multiple
 historical occurrences; inspect connected refresh/auth races and offline startup
 without claiming coverage from unrelated capture tests. Only reproduce/fix real
 defects, preserving all already-closed packages.
+
+## Valid Codex concurrency finding
+
+Codex P2 at first head 3de0d2d identified duplicate clears from Settings sign-out
+and the auth listener. The one-shot Settings regression fails on that head:
+the recovery archive is empty after the listener fails and the direct clear
+succeeds. Both paths now use one serialized adoption queue; the latest transition
+controls exposure, and any boundary failure blocks every queued clear until the
+provider is explicitly remounted by Retry. Pending-operation replay runs outside
+the boundary queue. The seven-case suite verifies the repaired contract.
+
+Independent diagnostics also reproduced a late authoritative read reviving A
+after successful sign-out, and generic task Undo rewriting old completed/elapsed
+nodes. These remain factual PCR-03/PCR-05 work; this receipt does not mark those
+unfixed classes complete or claim the whole package is closed.

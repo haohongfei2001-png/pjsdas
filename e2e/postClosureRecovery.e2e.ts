@@ -2,7 +2,8 @@ import { expect, test } from '@playwright/test'
 import { AUTH_KEY, BACKEND, cors, health, session, workspace } from './fixtures/todayWorkspace.js'
 import type { PJSDASSnapshot } from '../src/snapshot.js'
 
-for (const failure of ['partial-clear-throw', 'transaction-abort'] as const) test(`auth expiry ${failure} reaches lossless recovery without leaving the expired account interactive`, async ({ page }) => {
+for (const trigger of ['auth-expiry', 'settings-sign-out'] as const)
+for (const failure of ['partial-clear-throw', 'transaction-abort'] as const) test(`${trigger} ${failure} reaches lossless recovery without leaving the expired account interactive`, async ({ page }) => {
   const snapshot = workspace()
   const requests: Array<{ token: string; action: string }> = []
   await page.addInitScript(({ key, value }) => {
@@ -15,6 +16,7 @@ for (const failure of ['partial-clear-throw', 'transaction-abort'] as const) tes
   await page.route(BACKEND + '/**', route => {
     if (route.request().method() === 'OPTIONS') return cors(route, {}, 204)
     if (new URL(route.request().url()).pathname === '/api/health') return cors(route, health())
+    if (new URL(route.request().url()).pathname !== '/api/workspace') return cors(route, { code: 'NOT_FOUND' }, 404)
     const body = route.request().postDataJSON()
     requests.push({ token: route.request().headers().authorization ?? '', action: body.action })
     if (body.action !== 'read') return cors(route, { code: 'UNEXPECTED_WRITE' }, 409)
@@ -23,8 +25,12 @@ for (const failure of ['partial-clear-throw', 'transaction-abort'] as const) tes
   await page.goto('/pjsdas/today')
   await expect(page.getByRole('heading', { name: 'A第一任务' })).toBeVisible()
   await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem('pjsdas-google-drive-sync-state-v2') ?? '{}').accounts?.['account-a']?.lastSyncedVersion)).toBe('txn:7')
+  if (trigger === 'settings-sign-out') {
+    await page.locator('.tsui-topbar').getByRole('button', { name: /设置|Settings/ }).click()
+    await expect(page.getByRole('button', { name: '退出 TodayAction' })).toBeVisible()
+  }
   const before = await page.evaluate(async () => (await (await import('/pjsdas/src/db.ts')).exportLocalRecoveryArchive()).stores)
-  await page.evaluate(async (failure) => {
+  await page.evaluate((failure) => {
     const clear = IDBObjectStore.prototype.clear
     ;(window as any).__restorePcrClear = () => { IDBObjectStore.prototype.clear = clear }
     let calls = 0
@@ -36,12 +42,14 @@ for (const failure of ['partial-clear-throw', 'transaction-abort'] as const) tes
       }
       return request
     }
-    // A real Supabase auth event, bypassing the UI's manual sign-out guard just
-    // as session expiry or another browser context can do.
+  }, failure)
+  if (trigger === 'settings-sign-out') await page.getByRole('button', { name: '退出 TodayAction' }).click()
+  else await page.evaluate(async () => {
+    // Real auth event, bypassing the UI guard as expiry/another context can do.
     const { pjsdasSupabase } = await import('/pjsdas/src/aiAccess/supabaseClient.ts')
     const result = await pjsdasSupabase.auth.signOut({ scope: 'local' })
     if (result.error) throw result.error
-  }, failure)
+  })
   await expect(page.getByRole('heading', { name: /Workspace could not open/ })).toBeVisible()
   await expect(page.getByRole('heading', { name: 'A第一任务' })).toHaveCount(0)
   const downloadPromise = page.waitForEvent('download')
@@ -52,6 +60,9 @@ for (const failure of ['partial-clear-throw', 'transaction-abort'] as const) tes
   expect(await page.evaluate(async () => (await (await import('/pjsdas/src/db.ts')).exportLocalRecoveryArchive()).stores)).toEqual(before)
   await page.evaluate(() => (window as any).__restorePcrClear())
   await page.getByRole('button', { name: /Retry/ }).click()
+  await expect(page.locator('.startup-recovery')).toHaveCount(0)
+  await expect.poll(() => page.evaluate(async () => (await (await import('/pjsdas/src/db.ts')).exportLocalRecoveryArchive()).stores.actions.length)).toBe(0)
+  await page.goto('/pjsdas/today')
   await expect(page.getByTestId('cgr02-today')).toBeVisible()
   await expect(page.getByRole('heading', { name: 'A第一任务' })).toHaveCount(0)
   expect(requests.every(request => request.action === 'read' && request.token === 'Bearer token-a')).toBe(true)
