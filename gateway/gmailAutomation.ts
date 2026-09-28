@@ -930,6 +930,9 @@ function conditionalFutureInterviewReference(value: string) {
 function recruitingInstructionOnly(value: string) {
   const event = /面试|笔试|测评|assessment|interview|written test/i
   if (!event.test(value)) return false
+  // Participation wording may share equipment advice in the same clause.
+  // Keep uncertain mixed assertions rather than silently consuming them as instructions.
+  if (/(?:参加|参与|attend|take part)/i.test(value)) return false
   // A fact can share a sentence with advice. Never erase its asserted transition or invitation.
   if (/(?:已取消|取消了|已撤销|已完成|已经完成|已提交|改期|改为|调整为|reschedul|cancelled|canceled|completed)/i.test(value)
     || /(?:诚邀|邀请您|邀请你|invite you|you are invited)/i.test(value)

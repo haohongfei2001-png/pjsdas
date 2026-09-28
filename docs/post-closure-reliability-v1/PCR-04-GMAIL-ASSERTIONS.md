@@ -30,3 +30,13 @@ No production workspace repair, historical receipt rewrite, cursor change, new
 permission, automation pause or Gmail replay is performed. Ambiguous existing
 requests remain preserved. Repair02 authorization remains consumed. PCR05 cache
 convergence/races and PCR06/07 remain open.
+
+Fresh independent review of e20f6eb found a valid P2: participation assertions
+sharing equipment advice could be suppressed (full report PRcomment5878358231).
+Three new exact-date candidate/shared-batch regressions failed before repair.
+Participation wording now preserves the fragment even with procedural words;
+uncertain mixed assertions remain eligible for clarification. Shared batch verifies
+one unresolved decision rather than an ignored source. An additional real browser
+fixture verifies two mixed instructions/invitations become exactly two durable
+scheduled events through reload.1018unit/type and seven headless Gmail cases pass.
+Latest-head independent review and full remote gates must be refreshed.

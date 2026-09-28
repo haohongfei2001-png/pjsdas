@@ -24,6 +24,7 @@ async function seedSnapshot(page: Page, data: PJSDASSnapshot['data']) {
 }
 
 for (const fixture of [
+  { title: 'mixed participation and equipment advice', body: '京东 AI产品经理 请于2026年9月24日09:00参加笔试并完成设备检查；京东 AI产品经理 请使用电脑浏览器参加2026年9月25日14:30的面试' },
   { title: 'asserted events with procedural mentions', body: '京东 AI产品经理 笔试通知：统一笔试时间明天 09:00；笔试前请检查设备；京东 AI产品经理 面试通知：后天 14:30参加面试；面试时请保持网络畅通；面试过程中请勿切换页面' },
   { title: 'multi-event', body: '京东 AI产品经理 笔试通知：统一笔试时间明天 09:00；京东 AI产品经理 面试通知：后天 14:30参加面试' },
   { title: 'window and deadline', body: '京东 AI产品经理 笔试开放窗口明天 09:00至后天 17:00；提交截止后天 18:00' },

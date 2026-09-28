@@ -46,6 +46,19 @@ describe('Gmail instruction mentions are not independent event assertions', () =
     expect(result.snapshot.data.actions).toHaveLength(0)
     expect(JSON.stringify(base)).toBe(before)
   })
+  it.each([
+    '请于2026年9月30日14:30参加面试并完成设备检查',
+    '请使用电脑浏览器参加2026年9月30日14:30的面试',
+    '请保持网络畅通并参加2026年9月30日14:30的面试',
+  ])('retains the asserted event and persisted ambiguity in mixed invitation: %s', text => {
+    const record = parse(text)
+    expect(record.observation.candidates).toHaveLength(1)
+    expect(record.observation.candidates[0]).toMatchObject({ kind: 'process_event', eventType: 'interview_invite', dueAt: '2026-09-30T14:30:00+08:00' })
+    const base = createSnapshot({ opportunities: [], processes: [], processEvents: [], actions: [], prep: [], applicationGroups: [] })
+    const result = applyGmailSemanticBatch(base, { runId: 'mixed-invitation', sourceId: 'gmail:primary', checkedAt: now.toISOString(), authorized: true, records: [record] })
+    expect(result.snapshot.data.decisionRequests).toHaveLength(1)
+    expect(result.run.outcomes).toEqual({ unresolved: 1 })
+  })
   it('preserves unknown untimed assertions as clarification candidates rather than deleting ambiguity', () => {
     expect(parse('面试安排后续通知').observation.candidates).toHaveLength(1)
   })
