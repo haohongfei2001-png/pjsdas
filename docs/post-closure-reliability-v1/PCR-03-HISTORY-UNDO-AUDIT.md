@@ -117,3 +117,12 @@ membership and lossless cache convergence take priority over general PCR audits.
 Readonly revision851 shows 6 selected actions plus358 decisions, not361 selected
 actions; 98 historical nodes remain separately unresolved. Classification continues;
 no production cleanup has been executed and Repair02 authorization remains consumed.
+
+Two follow-up P1 findings were also reproduced and repaired before merge. The
+validated import now persists the pre-import terminal-action baseline before
+replacement, retaining undated omitted done/skipped evidence. Changed legacy
+import deadlines supersede the retained occurrence with a new version instead
+of projecting the obsolete date back onto the imported action. Repeated imports
+retain the same version chain. Four new real IndexedDB regressions fail on
+40e80a2 and pass after repair; all17 history browser cases pass. No production
+workspace mutation, deletion or validation relaxation is part of this repair.

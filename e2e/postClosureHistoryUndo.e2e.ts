@@ -249,3 +249,46 @@ for (const marker of [true, false]) test(`reimport repairs an already missing pr
   for (const row of evidence.before.timeline) expect(evidence.after.timeline).toContainEqual(row)
   await page.reload(); await expect(page.getByTestId('cgr02-today')).toBeVisible()
 })
+
+for (const status of ['done', 'skipped'] as const) test(`first reimport retains undated ${status} action history even when omitted`, async ({ page }) => {
+  await page.clock.install({ time: HISTORY_NOW }); await page.goto('/'); await page.locator('.tsui-primary-nav').waitFor()
+  const result = await page.evaluate(async ({ input, status }) => {
+    const db = await import('/pjsdas/src/db.ts')
+    const job = { ...input.data.opportunities[0], locallyManaged: false }
+    input.data.opportunities = [job]; input.data.scheduleNodes = []; input.data.timeline = []
+    input.data.actions = [{ ...input.data.actions[0], status, dueAt: undefined, duePrecision: undefined, sourceLabel: 'Excel' }]
+    await db.replaceLocalSnapshotFromCloud(input)
+    await db.replaceImportedData({ opportunities: [job], processes: [], actions: [], prep: [], applicationGroups: [],
+      summary: { filename: 'omitted-terminal.xlsx', importedAt: '2026-09-28T12:00:00.000Z', opportunities: 1, pending: 0, processes: 0, prep: 0, applicationGroups: 0, actions: 0 } })
+    return (await db.exportLocalRecoveryArchive()).stores.timeline
+  }, { input: historyActionWorkspace(), status })
+  expect(result.some((r: any) => r.kind === 'action_status_changed' && r.actionId === 'history-task' && r.changes?.status?.after === status)).toBe(true)
+})
+
+for (const kind of ['manual', 'apply'] as const) test(`reimport versions a moved ${kind} deadline without erasing elapsed occurrence`, async ({ page }) => {
+  await page.clock.install({ time: HISTORY_NOW }); await page.goto('/'); await page.locator('.tsui-primary-nav').waitFor()
+  const result = await page.evaluate(async ({ input, kind }) => {
+    const db = await import('/pjsdas/src/db.ts')
+    const job = { ...input.data.opportunities[0], locallyManaged: false, deadline: kind === 'apply' ? '2026-09-20' : undefined, deadlinePrecision: 'date' as const }
+    const action = { ...input.data.actions[0], kind, status: 'todo' as const, dueAt: '2026-09-20', duePrecision: 'date' as const, sourceLabel: 'Excel' }
+    input.data.opportunities = [job]; input.data.actions = [action]; input.data.scheduleNodes = []
+    await db.replaceLocalSnapshotFromCloud(input)
+    const before = (await db.exportLocalSnapshot()).data.scheduleNodes!
+    const bundle = { opportunities: [{ ...job, deadline: kind === 'apply' ? '2026-10-20' : undefined }], processes: [],
+      actions: [{ ...action, dueAt: '2026-10-20' }], prep: [], applicationGroups: [],
+      summary: { filename: 'moved-deadline.xlsx', importedAt: '2026-09-28T12:00:00.000Z', opportunities: 1, pending: 0, processes: 0, prep: 0, applicationGroups: 0, actions: 1 } }
+    await db.replaceImportedData(bundle)
+    const after = await db.exportLocalSnapshot()
+    await db.replaceImportedData(bundle)
+    return { before, after, again: await db.exportLocalSnapshot() }
+  }, { input: historyActionWorkspace(), kind })
+  expect(result.after.data.actions[0].dueAt).toBe('2026-10-20')
+  for (const old of result.before) {
+    const retained = result.after.data.scheduleNodes!.find(n => n.id === old.id)!
+    expect(retained.temporal).toEqual(old.temporal); expect(retained.state).toBe('superseded')
+    const next = result.after.data.scheduleNodes!.find(n => n.id === retained.supersededByNodeId)!
+    expect(next.temporal.date).toBe('2026-10-20'); expect(next.version).toBe(old.version + 1)
+  }
+  expect(result.again.data.scheduleNodes).toEqual(result.after.data.scheduleNodes)
+  await page.reload(); await expect(page.getByTestId('cgr02-today')).toBeVisible()
+})

@@ -17,6 +17,8 @@ import {
   effectiveScheduleNodeState,
   ensureScheduleContractInPlace,
   normalizeProcessSemantics,
+  migrateLegacyScheduleNodes,
+  supersedeScheduleOccurrence,
   scheduleNodeForProcessEvent,
   syncScheduleNodeForActionStatus,
 } from './scheduleNodes.js'
@@ -1184,11 +1186,40 @@ export async function replaceImportedData(bundle: ImportBundle) {
       prep: bundle.prep,
       scheduleNodes,
     }
+    // Keep the occurrence's durable version chain when an imported deadline
+    // changes; projecting an elapsed v1 back onto the new action loses the edit.
+    const latestPrevious = new Map<string, ScheduleNode>()
+    for (const node of previousScheduleNodes) {
+      const prior = latestPrevious.get(node.occurrenceId)
+      if (!prior || node.version > prior.version) latestPrevious.set(node.occurrenceId, node)
+    }
+    for (const incoming of migrateLegacyScheduleNodes(contract)) {
+      const prior = latestPrevious.get(incoming.occurrenceId)
+      if (!prior || prior.temporal.resolutionBasis !== 'legacy_projection'
+        || ['completed', 'cancelled', 'superseded'].includes(prior.state)) continue
+      if (!scheduleNodes.some(node => node.id === prior.id)) scheduleNodes.push(prior)
+      const value = (node: ScheduleNode) => JSON.stringify([
+        node.temporal.shape, node.temporal.precision, node.temporal.timezone,
+        node.temporal.date, node.temporal.startAt, node.temporal.endAt, node.temporal.deadlineAt,
+      ])
+      if (value(prior) !== value(incoming)) {
+        supersedeScheduleOccurrence(scheduleNodes, {
+          ...incoming, updatedAt: bundle.summary.importedAt,
+          evidenceRefs: [...new Set([...prior.evidenceRefs, ...incoming.evidenceRefs])],
+          sourceVersionRefs: [...new Set([...prior.sourceVersionRefs, ...incoming.sourceVersionRefs])],
+        })
+      }
+    }
     ensureScheduleContractInPlace(contract)
     // Validate the complete proposed workspace under the same locks before any
     // replacement. Retained history must not acquire missing process/event refs.
     const previousData = await readLocalSnapshotData(tx)
     createSnapshot({ ...previousData, ...contract, applicationGroups: bundle.applicationGroups })
+    // Raw pre-import facts survive even when a removed terminal action had no
+    // dated node. Do this only after candidate validation, under the same locks.
+    for (const record of previousData.timeline ?? []) {
+      if (!await tx.objectStore('timeline').get(record.id)) await tx.objectStore('timeline').put(record)
+    }
 
     await Promise.all([
       tx.objectStore('opportunities').clear(),
