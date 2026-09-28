@@ -33,7 +33,7 @@ interface OpportunityDetailDrawerProps {
   onCapture: () => void
   onNavigate: (destination: OpportunityDetailDestination) => void
   onOpenDecision: (id: string) => void
-  onMarkAction: (id: string, status: Action['status']) => Promise<void>
+  onMarkAction: (id: string, status: Action['status'], intent?: 'application_submission') => Promise<void>
   readOnly?: boolean
   asPage?: boolean
   returnLabel?: string
@@ -119,7 +119,7 @@ export default function OpportunityDetailDrawer({
   const eligibleToApply = !ended && effectiveStage === 'not_applied'
   const hasRetainedStaleActions = ended && actions.some((item) => item.status === 'todo' || item.status === 'doing')
   const relevantActions = actions
-    .filter((item) => !ended && (item.status === 'todo' || item.status === 'doing'))
+    .filter((item) => !ended && item.kind !== 'apply' && (item.status === 'todo' || item.status === 'doing'))
     .sort((a, b) => (a.dueAt ?? '9999').localeCompare(b.dueAt ?? '9999'))
   const orderedTimeline = [...timeline]
     .sort((a, b) => b.occurredAt.localeCompare(a.occurredAt))
@@ -178,7 +178,7 @@ export default function OpportunityDetailDrawer({
             {eligibleToApply && confirmedApplicationUrl ? <a href={confirmedApplicationUrl} target="_blank" rel="noopener noreferrer">{zh ? '打开申请入口 ↗' : 'Open application ↗'}</a> : null}
             {eligibleToApply && applyAction && !readOnly ? <button type="button" disabled={Boolean(pendingActionId)} onClick={() => {
               setPendingActionId(applyAction.id)
-              void onMarkAction(applyAction.id, 'done').finally(() => setPendingActionId(undefined))
+              void onMarkAction(applyAction.id, 'done', 'application_submission').finally(() => setPendingActionId(undefined))
             }}>{pendingActionId === applyAction.id ? (zh ? '确认中…' : 'Confirming…') : (zh ? '我已投递' : 'I applied')}</button> : null}
             {eligibleToApply && !confirmedApplicationUrl ? <span className="job-detail-no-link">{zh ? '暂无已确认的申请入口' : 'No confirmed application link'}</span> : null}
             <button type="button" className="job-detail-capture" disabled={readOnly} onClick={onCapture}>{zh ? '告诉 TodayAction' : 'Tell TodayAction'}</button>

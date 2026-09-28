@@ -1,8 +1,8 @@
 package: TODAYACTION-ACTIVE-UNRESOLVED-REDUCTION-v1
 status: REPAIR_02_WRITE_ENGINEERING_COMPLETE_AWAITING_AUTHORIZATION
 writer:
-  branch: null
-  active: false
+  branch: reliability/p0-history-completion-startup-v1
+  active: true
   last_branch: reliability/aur-02-exact-baseline-count-v1
 baseline:
   main: a407c5d2a006d5ce8a4fcd5b44e6c59b114b27ae
@@ -118,3 +118,21 @@ repair_02_authorization_baseline_generalization:
   latest_preengineering_active_unresolved_projection: [181, 143]
   production_workspace_write: NOT_EXECUTED_AWAITING_NEW_OWNER_AUTHORIZATION
   historical_concurrency_required_count_39: SUPERSEDED_BY_EXACT_BASELINE_COUNT
+
+overnight_p0_startup:
+  status: CANDIDATE_VERIFIED_AWAITING_REMOTE_GATES
+  priority: 0
+  base_main: bb2cfd85ec492bf5a4e3272146213b4ef576f1ea
+  receipt: P0-HISTORY-STARTUP-RECEIPT.md
+  reproduced_error: "Invalid time zone specified: source-offset"
+  production_source_offset_nodes: 12
+  historical_missing_completion_times_preserved: true
+  raw_recovery_backup_without_data_deletion: true
+  targeted_browser: SUCCESS_5
+  unit: SUCCESS_982
+  full_remote_gates: PENDING
+  production_repaired: NOT_YET_VERIFIED
+  repair_02_owner_preapproved_after_p0: true
+  repair_02_exact_settlement_bound: 38
+  repair_02_exact_target_count: 60
+  repair_02_write_executed: false

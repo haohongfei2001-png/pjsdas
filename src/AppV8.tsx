@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { StartupRecovery } from './StartupRecovery.js'
 import BrandMark from './BrandMark.js'
 import { BRAND_NAME, brandDocumentTitle } from './brand.js'
 import {
@@ -158,6 +159,7 @@ export default function AppV8() {
   const [lastCompletedAction, setLastCompletedAction] = useState<CompletionFeedback | null>(null)
   const [snapshot, setSnapshot] = useState<PJSDASSnapshot>()
   const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState<string>()
   const [now, setNow] = useState(() => new Date())
   const budgetMinutes = 180
   const topbarRef = useRef<HTMLElement>(null)
@@ -199,8 +201,14 @@ export default function AppV8() {
   }, [selectedOpportunityId, surface])
 
   async function reload() {
-    const next = await exportLocalSnapshot()
-    setSnapshot(next)
+    try {
+      const next = await exportLocalSnapshot()
+      setSnapshot(next)
+      setLoadError(undefined)
+    } catch (caught) {
+      setSnapshot(undefined)
+      setLoadError(caught instanceof Error ? caught.message : String(caught))
+    }
   }
 
   function navigate(path: string, replace = false) {
@@ -407,11 +415,14 @@ export default function AppV8() {
   }, [snapshot, selectedOpportunityId, now, zh])
 
 
-  async function markAction(id: string, status: Action['status']) {
+  async function markAction(id: string, status: Action['status'], intent?: 'application_submission') {
     const before = actions.find((item) => item.id === id)
     if (!before) return
     let authoritativeCommandId: string | undefined
     try {
+      if (before.kind === 'apply' && status === 'done' && intent !== 'application_submission') {
+        throw new Error('请使用“我已投递”确认真实投递。Use I applied to confirm an application submission.')
+      }
       if (cloud.session && connectedWorkspaceAuthorityEnabled()) {
         authoritativeCommandId = createConnectedCommandId('web-action')
         const command = before.kind === 'apply' && status === 'done'
@@ -623,6 +634,8 @@ export default function AppV8() {
       navigate('/opportunities')
     }
   }
+
+  if (loadError !== undefined) return <StartupRecovery error={loadError} onRetry={() => { void reload() }} />
 
   return (
     <div className="app-shell surface-shell ultimate-shell cgr-shell cgr-app-shell">

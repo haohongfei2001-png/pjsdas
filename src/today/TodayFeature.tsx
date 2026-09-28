@@ -1,3 +1,4 @@
+import { scheduleDisplayTimezone } from '../scheduleDisplayTime.js'
 import { useState } from 'react'
 import type { Action, Opportunity } from '../model.js'
 import { localDateKey, type TodayBriefAction, type TodayBriefCoverageWarning } from '../todayBrief.js'
@@ -30,7 +31,7 @@ interface TodayFeatureProps {
   onOpenAgenda: () => void
   onOpenUnresolved: () => void
   onExecute: (item: TodayBriefAction) => Promise<void>
-  onMark: (id: string, status: Action['status']) => Promise<void>
+  onMark: (id: string, status: Action['status'], intent?: 'application_submission') => Promise<void>
   onOpenOpportunity: (id: string) => void
 }
 function timeLabel(item: TodayBriefAction, zh: boolean) {
@@ -41,7 +42,7 @@ function timeLabel(item: TodayBriefAction, zh: boolean) {
   if (!at) return zh ? '今天' : 'Today'
   const date = new Date(at)
   if (!Number.isFinite(date.getTime())) return zh ? '时间待定' : 'Time TBD'
-  const formatted = new Intl.DateTimeFormat(zh ? 'zh-CN' : 'en-GB', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false, timeZone: timing.timezone || undefined }).format(date)
+  const formatted = new Intl.DateTimeFormat(zh ? 'zh-CN' : 'en-GB', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false, timeZone: scheduleDisplayTimezone(timing.timezone) }).format(date)
   return timing.deadlineAt && !timing.startAt ? (zh ? '截止 ' : 'Due ') + formatted : formatted
 }
 function actionLabel(item: TodayBriefAction, zh: boolean) {
@@ -87,7 +88,7 @@ export default function TodayFeature({ selection, criticalWarnings, stream, oppo
           {selection.actions.length === 0 && selection.decisions.length === 0 ? <div className="tsui-empty">{uncertainEmpty ? <><strong>{zh ? '现有记录中没有今日任务' : 'No today tasks in the available records'}</strong><p>{zh ? '最新状态暂未确认，请查看上方读取状态。' : 'The latest state is not confirmed. Check the read status above.'}</p></> : workspaceEmpty ? <><strong>{verifiedEmpty ? (zh ? '账号工作区已读取，目前没有今日任务' : 'Account workspace checked; no tasks for today') : (zh ? '先让 TodayAction 了解你的求职进展' : 'Start by adding your job search')}</strong><p>{verifiedEmpty ? (zh ? '可以记录新的进展，或在设置中检查连接。' : 'Record new progress or check your connections in Settings.') : (zh ? '在设置中连接已有账号，或使用上方“告诉 TodayAction”记录进展。' : 'Connect your existing account in Settings or record progress with Tell TodayAction above.')}</p><button type="button" onClick={onStart}>{zh ? '打开设置' : 'Open settings'}</button></> : <strong>{zh ? '现在没有必须处理的任务' : 'Nothing requires action right now'}</strong>}</div> : null}
           <div className="tsui-task-list">
             {selection.decisions.map((item) => <article className="tsui-task-row" data-icon="?" key={item.id}><div className="tsui-task-copy"><small>{zh ? '需要你决定' : 'Decision needed'}</small><strong>{item.request.question}</strong></div><button className="tsui-row-action" type="button" onClick={() => onOpenDecision(item.request.id)}>{zh ? '处理' : 'Review'}</button></article>)}
-            {selection.actions.map((item) => <article className="tsui-task-row" key={item.actionId} data-action-id={item.actionId} data-icon={item.company?.slice(0, 1) ?? '✓'}><div className="tsui-task-copy">{item.opportunityId ? <button className="tsui-task-context" type="button" onClick={() => onOpenOpportunity(item.opportunityId!)}>{[item.company, item.role].filter(Boolean).join(' · ')}</button> : <small>{zh ? '独立任务' : 'Independent task'}</small>}<h3>{item.title}</h3><span>{timeLabel(item, zh)}</span></div><div className="tsui-task-actions"><button className="tsui-row-action" type="button" disabled={!!pendingId || readOnly} onClick={() => { void act(item.actionId, () => onExecute(item)) }}>{actionLabel(item, zh)}</button><button className={item.kind === 'apply' ? 'tsui-done-action tsui-submission-action' : 'tsui-done-action'} type="button" disabled={!!pendingId || readOnly} onClick={() => { void act(item.actionId, () => onMark(item.actionId, 'done')) }}>{pendingId === item.actionId ? (zh ? '处理中…' : 'Working…') : (item.kind === 'apply' ? (zh ? '我已投递' : 'I applied') : (zh ? '完成' : 'Done'))}</button></div></article>)}
+            {selection.actions.map((item) => <article className="tsui-task-row" key={item.actionId} data-action-id={item.actionId} data-icon={item.company?.slice(0, 1) ?? '✓'}><div className="tsui-task-copy">{item.opportunityId ? <button className="tsui-task-context" type="button" onClick={() => onOpenOpportunity(item.opportunityId!)}>{[item.company, item.role].filter(Boolean).join(' · ')}</button> : <small>{zh ? '独立任务' : 'Independent task'}</small>}<h3>{item.title}</h3><span>{timeLabel(item, zh)}</span></div><div className="tsui-task-actions"><button className="tsui-row-action" type="button" disabled={!!pendingId || readOnly} onClick={() => { void act(item.actionId, () => onExecute(item)) }}>{actionLabel(item, zh)}</button><button className={item.kind === 'apply' ? 'tsui-done-action tsui-submission-action' : 'tsui-done-action'} type="button" disabled={!!pendingId || readOnly} onClick={() => { void act(item.actionId, () => onMark(item.actionId, 'done', item.kind === 'apply' ? 'application_submission' : undefined)) }}>{pendingId === item.actionId ? (zh ? '处理中…' : 'Working…') : (item.kind === 'apply' ? (zh ? '我已投递' : 'I applied') : (zh ? '完成' : 'Done'))}</button></div></article>)}
           </div>
           {completedToday.length > 0 ? <section className="tsui-completed"><button type="button" aria-expanded={showCompleted} onClick={() => setShowCompleted((value) => !value)}>{zh ? '今日已完成' : 'Completed today'} · {completedToday.length} <span>{showCompleted ? '⌃' : '⌄'}</span></button>{showCompleted ? completedToday.map((entry) => <div key={entry.id}>{entry.title}</div>) : null}</section> : null}
           {selection.decisionCount > 0 ? <button type="button" className="tsui-all-decisions" onClick={onOpenDecisions}>{zh ? '查看全部待决定事项' : 'View all decisions'}</button> : null}

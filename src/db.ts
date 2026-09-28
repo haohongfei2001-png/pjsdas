@@ -279,10 +279,10 @@ async function ensureLocalScheduleBackfill(db: Awaited<typeof dbPromise>) {
     db.getAll('scheduleNodes'),
   ])
   const contract = { opportunities, processes, processEvents, actions, prep, scheduleNodes }
-  const beforeNodeCount = scheduleNodes.length
+  const beforeNodes = JSON.stringify(scheduleNodes)
   const beforeProcesses = JSON.stringify(processes)
   ensureScheduleContractInPlace(contract)
-  if (contract.scheduleNodes!.length !== beforeNodeCount || JSON.stringify(contract.processes) !== beforeProcesses) {
+  if (JSON.stringify(contract.scheduleNodes) !== beforeNodes || JSON.stringify(contract.processes) !== beforeProcesses) {
     const tx = db.transaction(['scheduleNodes', 'processes'], 'readwrite')
     for (const node of contract.scheduleNodes ?? []) await tx.objectStore('scheduleNodes').put(node)
     for (const process of contract.processes) await tx.objectStore('processes').put(process)
@@ -975,6 +975,16 @@ export async function exportLocalSnapshot() {
     changeSets,
     meta,
   })
+}
+
+/** Read every store without validation or migration, including rows that cannot render. */
+export async function exportLocalRecoveryArchive() {
+  const db = await dbPromise
+  const stores = [...db.objectStoreNames]
+  const tx = db.transaction(stores, 'readonly')
+  const rows = await Promise.all(stores.map(async (store) => [store, await tx.objectStore(store).getAll()] as const))
+  await tx.done
+  return { schema: 'todayaction-recovery-archive', exportedAt: new Date().toISOString(), stores: Object.fromEntries(rows) }
 }
 
 export async function clearLocalWorkspaceCache() {
