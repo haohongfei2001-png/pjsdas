@@ -193,3 +193,52 @@ test('readonly startup export retains reminder/outbox and stable cache projectio
   expect(first.timeline!.filter((row) => row.actionId === task.id && row.kind === 'action_status_changed')).toEqual([actualCompletion])
   for (const [store, rows] of Object.entries(before)) expect(await readStore(page, store)).toEqual(rows)
 })
+
+for (const invalid of [false, true]) test(`legacy baseline is ${invalid ? 'rejected without writes on invalid data' : 'durable before reopening an action and deleting its event'}`, async ({ page, context }) => {
+  await page.goto('/')
+  await expect(page.locator('.tsui-primary-nav')).toBeVisible()
+  const completed = { ...task, status: 'done', updatedAt: OLD }
+  const event = { id: 'legacy-event', opportunityId: job.id, company: job.company, role: job.role,
+    type: 'other', occurredAt: OLD, source: 'manual', createdAt: OLD, updatedAt: OLD }
+  await putRows(page, { opportunities: [job], actions: [completed], processEvents: [event],
+    timeline: invalid ? [{ ...history, source: 'invalid-legacy-source' }] : [history] })
+  const rawBefore = Object.fromEntries(await Promise.all(['actions', 'processEvents', 'timeline'].map(async (store) => [store, await readStore(page, store)])))
+  if (invalid) {
+    const failures = await page.evaluate(async () => {
+      const db = await import('/pjsdas/src/db.ts')
+      const results = []
+      for (const mutate of [() => db.updateActionStatus('history-task', 'todo'), () => db.deleteProcessEvent('legacy-event')]) {
+        try { await mutate(); results.push(false) } catch { results.push(true) }
+      }
+      return results
+    })
+    expect(failures).toEqual([true, true])
+    for (const [store, rows] of Object.entries(rawBefore)) expect(await readStore(page, store)).toEqual(rows)
+    return
+  }
+  const projectedBefore = await page.evaluate(async () => (await (await import('/pjsdas/src/db.ts')).exportLocalSnapshot()).data.timeline!)
+  expect(await readStore(page, 'timeline')).toEqual(rawBefore.timeline)
+  const completion = projectedBefore.find((row) => row.id === 'timeline:backfill-action:history-task:done')!
+  const recordedEvent = projectedBefore.find((row) => row.id === 'timeline:process:legacy-event')!
+  expect(completion).toBeDefined(); expect(recordedEvent).toBeDefined()
+  await page.evaluate(async () => {
+    const db = await import('/pjsdas/src/db.ts')
+    await db.updateActionStatus('history-task', 'todo')
+    await db.deleteProcessEvent('legacy-event')
+  })
+  const durableTimeline = await readStore(page, 'timeline')
+  for (const row of projectedBefore) expect(durableTimeline.find((item) => item.id === row.id)).toEqual(row)
+  expect(durableTimeline.filter((row) => row.actionId === task.id && row.changes?.status?.after === 'done')).toEqual([completion])
+  expect(durableTimeline.some((row) => row.actionId === task.id && row.changes?.status?.after === 'todo')).toBe(true)
+  expect(durableTimeline.some((row) => row.kind === 'process_event_deleted' && row.processEventId === event.id)).toBe(true)
+  expect(await readStore(page, 'processEvents')).toEqual([])
+  expect((await readStore(page, 'actions')).find((row) => row.id === task.id).status).toBe('todo')
+  await page.reload()
+  await expect(page.getByTestId('cgr02-today')).toBeVisible()
+  const restarted = await context.newPage(); await restarted.goto('/pjsdas/today'); await page.close()
+  await expect(restarted.getByTestId('cgr02-today')).toBeVisible()
+  const historyAfter = await restarted.evaluate(async () => (await import('/pjsdas/src/db.ts')).getAllTimelineRecords())
+  expect(historyAfter.find((row) => row.id === completion.id)).toEqual(completion)
+  expect(historyAfter.find((row) => row.id === recordedEvent.id)).toEqual(recordedEvent)
+  expect(await readStore(restarted, 'timeline')).toEqual(durableTimeline)
+})

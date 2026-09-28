@@ -1,4 +1,4 @@
-import { openDB, type DBSchema } from 'idb'
+import { openDB, type DBSchema, type IDBPTransaction } from 'idb'
 import { assertImportBundleSafe } from './importDiagnostics.js'
 import {
   actionForProcessEvent,
@@ -389,6 +389,7 @@ export async function saveDecisionRules(rules: DecisionRules) {
   const next: DecisionRules = { ...rules, weights: { ...rules.weights }, key: 'current', version: 1, updatedAt: new Date().toISOString() }
   const errors = validateDecisionRules(next)
   if (errors.length) throw new Error(errors[0])
+  await materializeTimelineBaselineBeforeMutation(db)
   const tx = db.transaction(['decisionRules', 'timeline'], 'readwrite')
   await tx.objectStore('decisionRules').put(next)
   const record = timelineFromRuleChange(before, next, 'save')
@@ -401,6 +402,7 @@ export async function resetDecisionRules() {
   const db = await dbPromise
   const before = await db.get('decisionRules', 'current') ?? createDefaultDecisionRules('1970-01-01T00:00:00.000Z')
   const next = createDefaultDecisionRules()
+  await materializeTimelineBaselineBeforeMutation(db)
   const tx = db.transaction(['decisionRules', 'timeline'], 'readwrite')
   await tx.objectStore('decisionRules').put(next)
   const record = timelineFromRuleChange(before, next, 'reset')
@@ -414,6 +416,7 @@ export async function updateActionStatus(id: string, status: Action['status']) {
   const stored = await db.get('actions', id)
   const action = stored ?? (await getAllActions()).find((item) => item.id === id)
   if (!action || action.status === status) return
+  await materializeTimelineBaselineBeforeMutation(db)
   const now = new Date().toISOString()
   const [opportunities, processes, processEvents, actions, prep, scheduleNodes] = await Promise.all([
     db.getAll('opportunities'),
@@ -439,6 +442,7 @@ export async function updateActionStatus(id: string, status: Action['status']) {
 }
 export async function addProcessEvent(event: ProcessEvent) {
   const db = await dbPromise
+  await materializeTimelineBaselineBeforeMutation(db)
   const [processes] = await Promise.all([db.getAll('processes')])
   const action = actionForProcessEvent(event)
   const process = processes.find((item) => item.opportunityId === event.opportunityId)
@@ -460,6 +464,7 @@ export async function deleteProcessEvent(id: string) {
   const now = new Date().toISOString()
   const nodes = await db.getAll('scheduleNodes')
   if (event) {
+    await materializeTimelineBaselineBeforeMutation(db)
     const contract = {
       opportunities: await db.getAll('opportunities'),
       processes: await db.getAll('processes'),
@@ -544,6 +549,7 @@ export async function applyProgressUpdate(operations: ProgressOperation[]) {
   if (executable.length === 0) return { applied: 0 }
 
   const db = await dbPromise
+  await materializeTimelineBaselineBeforeMutation(db)
   const tx = db.transaction(['opportunities', 'processes', 'processEvents', 'actions', 'timeline'], 'readwrite')
   const opportunityStore = tx.objectStore('opportunities')
   const processStore = tx.objectStore('processes')
@@ -755,6 +761,7 @@ type DiscoveredChangeOperation = Extract<ChangeSetRecord['operations'][number], 
 
 async function applyDiscoveredOpportunityOperations(operations: DiscoveredChangeOperation[], changeSetId: string) {
   const db = await dbPromise
+  await materializeTimelineBaselineBeforeMutation(db)
   const existing = await db.getAll('opportunities')
   const existingIds = new Set(existing.map((item) => item.id))
   const identities = new Set(existing.map((item) => opportunityIdentity(item.company, item.role)))
@@ -915,11 +922,9 @@ export async function applyChangeSet(id: string) {
   }
 }
 
-export async function exportLocalSnapshot() {
-  const db = await dbPromise
-  // Startup/export must be read-only: invalid rows must remain byte-for-byte
-  // available to recovery. Normalize a copy only after one consistent read.
-  const tx = db.transaction([...DATA_STORES], 'readonly')
+type LocalSnapshotTransaction = IDBPTransaction<PJSDASDatabase, (typeof DATA_STORES)[number][], 'readonly' | 'readwrite'>
+
+async function readLocalSnapshot(tx: LocalSnapshotTransaction) {
   const [opportunities, processes, processEvents, scheduleNodes, decisionRequests, semanticReceipts, reminderIntents, reminderOutbox, actions, prep, applicationGroups, decisionRules, discoveryProfile, discoveryInbox, timeline, changeSets, meta] =
     await Promise.all([
       tx.objectStore('opportunities').getAll(),
@@ -940,7 +945,6 @@ export async function exportLocalSnapshot() {
       tx.objectStore('changeSets').getAll(),
       tx.objectStore('meta').get('lastImport'),
     ])
-  await tx.done
   if (!timeline.some((record) => record.id === TIMELINE_BACKFILL_MARKER_ID)) {
     const existingIds = new Set(timeline.map((record) => record.id))
     // A read projection must be deterministic; a new wall-clock marker would
@@ -974,6 +978,35 @@ export async function exportLocalSnapshot() {
     changeSets,
     meta,
   })
+}
+
+export async function exportLocalSnapshot() {
+  const db = await dbPromise
+  // Startup/export must remain read-only, even when validation fails.
+  const tx = db.transaction([...DATA_STORES], 'readonly')
+  const snapshot = await readLocalSnapshot(tx)
+  await tx.done
+  return snapshot
+}
+
+async function materializeTimelineBaselineBeforeMutation(db: Awaited<typeof dbPromise>) {
+  // Lock the source stores while validating and materializing the baseline.
+  // Later edits may erase its source facts, so preserve it before any edit.
+  // Startup/history reads never call this; malformed data aborts without writes.
+  const tx = db.transaction([...DATA_STORES], 'readwrite')
+  try {
+    if (!await tx.objectStore('timeline').get(TIMELINE_BACKFILL_MARKER_ID)) {
+      const snapshot = await readLocalSnapshot(tx)
+      for (const record of snapshot.data.timeline ?? []) {
+        if (!await tx.objectStore('timeline').get(record.id)) await tx.objectStore('timeline').put(record)
+      }
+    }
+    await tx.done
+  } catch (caught) {
+    try { tx.abort() } catch { /* The transaction may already have aborted. */ }
+    await tx.done.catch(() => {})
+    throw caught
+  }
 }
 
 /** Read every store without validation or migration, including rows that cannot render. */
@@ -1077,6 +1110,7 @@ export async function replaceImportedData(bundle: ImportBundle) {
   assertImportBundleSafe(bundle)
 
   const db = await dbPromise
+  await materializeTimelineBaselineBeforeMutation(db)
   const [previousActions, previousOpportunities, previousProcesses, processEvents, previousScheduleNodes] = await Promise.all([
     db.getAll('actions'),
     db.getAll('opportunities'),

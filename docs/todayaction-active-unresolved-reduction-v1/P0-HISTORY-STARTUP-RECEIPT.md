@@ -69,3 +69,19 @@ use the same readonly projection, preserving conflict and sign-out protections.
 The two existing real account journeys and the extended raw-store/stable-export
 regression all pass locally; type checking passes. Full gates and fresh review
 must pass on the final head before merge.
+
+## Validated baseline durability
+
+Latest Codex P1 found that readonly backfill could disappear when a legacy done
+action was reopened or its legacy process event deleted. Startup and history remain
+readonly. Before local source-fact mutations, a transaction locks all source stores,
+validates the same deterministic snapshot projection, and appends only missing
+baseline timeline records plus the marker. Existing audit rows are not overwritten.
+Invalid baseline validation aborts the transaction before any writes or mutation.
+
+Two new real IndexedDB regressions verify completion/event evidence survives
+reopen + delete + reload + fresh-page restart, and malformed baseline rejects both
+mutations with every raw source/audit store unchanged. The existing historical
+completion, readonly history/export, account sign-out and two-client delete journeys
+also pass (6 targeted tests). All 982 unit tests and type checking pass. The final
+8-case P0 browser suite remains required in full Browser and Firefox/WebKit Matrix.

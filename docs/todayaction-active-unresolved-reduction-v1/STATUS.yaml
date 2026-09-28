@@ -128,7 +128,7 @@ overnight_p0_startup:
   production_source_offset_nodes: 12
   historical_missing_completion_times_preserved: true
   raw_recovery_backup_without_data_deletion: true
-  targeted_browser: SUCCESS_6
+  targeted_browser: SUCCESS_8_CASE_SUITE_PLUS_ACCOUNT_REGRESSIONS
   unit: SUCCESS_982
   full_remote_gates: PENDING
   production_repaired: NOT_YET_VERIFIED
@@ -139,3 +139,4 @@ overnight_p0_startup:
   startup_export_readonly: true
   startup_projection_clock_deterministic: true
   recovery_raw_stores_preserved: true
+  validated_timeline_baseline_preserved_before_local_mutation: true
