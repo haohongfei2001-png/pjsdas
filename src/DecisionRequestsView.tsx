@@ -1,5 +1,6 @@
+import { groupOpenDecisions, presentDecision, presentChoice } from './decisionPresentation.js'
 import { useMemo, useState } from 'react'
-import type { DecisionRequest } from './model.js'
+import type { DecisionRequest, Opportunity } from './model.js'
 import {
   resolveWebDecision,
   undoWebSemanticChange,
@@ -13,12 +14,14 @@ import './ultimateWeb.css'
 
 export default function DecisionRequestsView({
   requests,
+  opportunities = [],
   focusRequestId,
   onShowAll,
   onReturnOpportunity,
   onChanged,
 }: {
   requests: DecisionRequest[]
+  opportunities?: Opportunity[]
   focusRequestId?: string
   onShowAll: () => void
   onReturnOpportunity?: () => void
@@ -38,7 +41,9 @@ export default function DecisionRequestsView({
       const be = b.expiresAt ? new Date(b.expiresAt).getTime() : Number.POSITIVE_INFINITY
       return ae - be || a.createdAt.localeCompare(b.createdAt)
     }), [requests])
-  const visible = focusRequestId ? open.filter((item) => item.id === focusRequestId) : open
+  const groups = useMemo(() => groupOpenDecisions(open), [open])
+  const groupById = useMemo(() => new Map(groups.map(group => [group[0].id, group])), [groups])
+  const visible = focusRequestId ? open.filter((item) => item.id === focusRequestId) : groups.map(group => group[0])
 
   async function choose(request: DecisionRequest, choiceId: string) {
     if (busyId) return
@@ -80,7 +85,7 @@ export default function DecisionRequestsView({
   return (
     <section className="ultimate-decisions-page">
       <header className="ultimate-page-header">
-        <div className="eyebrow">NEEDS YOUR DECISION</div>
+        <div className="eyebrow">{zh ? '待决定事项' : 'NEEDS YOUR DECISION'}</div>
         <h1>{zh ? '只处理真正需要你决定的事' : 'Only decisions that genuinely need you'}</h1>
         <p>{zh
           ? '自动化能安全判断的事实不会出现在这里。这里只保留目标歧义、共享名额、外部后果或其他必须由你选择的情况。'
@@ -95,11 +100,11 @@ export default function DecisionRequestsView({
 
       {receipt ? (
         <div className="ultimate-receipt" role="status" aria-live="polite">
-          <div><strong>{zh ? '决定已处理' : 'Decision handled'}</strong><span>{receipt.text}</span></div>
+          <div><strong>{zh ? '决定已处理' : 'Decision handled'}</strong><span>{zh && receipt.text.match(/^[A-Za-z]/) ? '操作结果已记录，可查看相关岗位和历史。' : receipt.text}</span></div>
           {receipt.undo ? <button type="button" onClick={() => { void undoLast() }}>{zh ? '撤销' : 'Undo'}</button> : null}
         </div>
       ) : null}
-      {error ? <div className="ultimate-inline-error" role="alert">{error}</div> : null}
+      {error ? <div className="ultimate-inline-error" role="alert">{zh && error.match(/^[A-Za-z]/) ? '暂时无法完成操作，已有记录已保留。请刷新后重试。' : error}</div> : null}
 
       {visible.length === 0 ? (
         <div className="ultimate-quiet-state">
@@ -112,17 +117,21 @@ export default function DecisionRequestsView({
         </div>
       ) : (
         <div className="ultimate-decision-list">
-          {visible.map((request) => (
+          {visible.map((request) => {
+            const presentation = presentDecision(request, opportunities, zh)
+            return (
             <article className="ultimate-decision-card" key={request.id}>
               <div className="ultimate-decision-copy">
                 <span className="ultimate-decision-reason">{zh ? '需要你决定' : 'Needs your decision'}</span>
-                <h2>{request.question}</h2>
-                {request.recommendationBasis ? <p>{request.recommendationBasis}</p> : null}
+                <h2>{presentation.title}</h2><p>{presentation.context}</p>{presentation.sourceUrl ? <a href={presentation.sourceUrl} target="_blank" rel="noreferrer">{zh ? '查看来源邮件' : 'View source email'}</a> : null}
+                {!zh && request.recommendationBasis ? <p>{request.recommendationBasis}</p> : null}
                 {request.expiresAt ? <small>{zh ? '建议在' : 'Best answered by'} {formatWhen(request.expiresAt, zh)}</small> : null}
               </div>
+              {!focusRequestId && (groupById.get(request.id)?.length ?? 0) > 1 ? <details><summary>{zh ? '同一来源的重复记录（逐条保留）' : 'Repeated source records (all retained)'}</summary>{groupById.get(request.id)!.map(item => <a key={item.id} href={(import.meta.env.BASE_URL ?? '/') + 'decisions/' + encodeURIComponent(item.id)}>{item.createdAt} · {item.id.slice(-8)}</a>)}</details> : null}
               <div className="ultimate-decision-choices">
                 {request.choices.map((choice) => {
                   const recommended = choice.id === request.recommendedChoiceId
+                  const copy = presentChoice(choice, zh)
                   return (
                     <button
                       key={choice.id}
@@ -132,16 +141,16 @@ export default function DecisionRequestsView({
                       onClick={() => { void choose(request, choice.id) }}
                     >
                       <span>
-                        <strong>{choice.label}</strong>
+                        <strong>{copy.label}</strong>
                         {recommended ? <em>{zh ? '建议' : 'Recommended'}</em> : null}
                       </span>
-                      <small>{choice.consequence}</small>
+                      <small>{copy.consequence}</small>
                     </button>
                   )
                 })}
               </div>
             </article>
-          ))}
+          )})}
         </div>
       )}
     </section>

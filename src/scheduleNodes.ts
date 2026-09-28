@@ -556,11 +556,11 @@ function dateInTimezone(now: Date, timezone: string) {
   return `${values.year}-${values.month}-${values.day}`
 }
 
-export function effectiveScheduleNodeState(node: ScheduleNode, now = new Date()): ScheduleNodeState {
+export function effectiveScheduleNodeState(node: ScheduleNode, now = new Date(), displayTimezone?: string): ScheduleNodeState {
   if (terminalStates.has(node.state) || node.state === 'in_progress') return node.state
   const temporal = node.temporal
   if (temporal.shape === 'date_only' || temporal.shape === 'estimated_date') {
-    if (temporal.date && temporal.date < dateInTimezone(now, temporal.timezone)) return 'elapsed_unresolved'
+    if (temporal.date && temporal.date < dateInTimezone(now, temporal.timezone === 'floating-date' && displayTimezone ? displayTimezone : temporal.timezone)) return 'elapsed_unresolved'
     return node.state
   }
   const boundary = temporal.shape === 'deadline'

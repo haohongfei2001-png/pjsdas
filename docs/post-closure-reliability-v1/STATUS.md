@@ -13,9 +13,9 @@ Historical boundaries:
 - Existing Reliability Closure and Active-Unresolved packages retain their own
   historical receipts and truth; this package does not rewrite them.
 
-Current phase: **PCR-03 — Schedule/history mutation semantics audit**
+Current phase: **PCR-04 — owner dense-account decision correctness**
 
-Current writer: **reliability/pcr03-history-undo-v1 — exact occurrence compensation**
+Current writer: **reliability/pcr04-dense-today-v1 — bounded read-model repair**
 
 Production claim: **P0 verified on exact runtime a8d9840; Repair 02 committed 38 settlements once (CAS 841 → 842), readback 843, read-only idempotency 0. No further production write authorized.**
 
@@ -25,8 +25,8 @@ Production claim: **P0 verified on exact runtime a8d9840; Repair 02 committed 38
 | --- | --- | --- |
 | PCR-01 | COMPLETE | exact-main closure of merged PR #185 history/startup P0 and any already-authorized bounded follow-through |
 | PCR-02 | COMPLETE | PR #188 recovery slice merged; exact-main d19 CI/Browser/Matrix/Pages/Self-Test and deployed readonly startup verified; late-read race tracked in PCR-05 |
-| PCR-03 | IN_PROGRESS | reproduced historical Undo/reopen mutation; bounded compensation candidate and durable local/connected regressions |
-| PCR-04 | PLANNED | action-intent correctness across UI/API/MCP paths |
+| PCR-03 | COMPLETE | PR #189 merged6c77d62; exact-main CI/Browser/Matrix/Pages/Self-Test plus7 deployed readonly startup checks PASS |
+| PCR-04 | IN_PROGRESS | owner-priority dense Today/decision read-model repair; parser amplification remains follow-on |
 | PCR-05 | PLANNED | connected-mode restart/reload/recovery hardening |
 | PCR-06 | PLANNED | read-only production integrity classification + regression binding |
 | PCR-07 | PLANNED | bounded reliability closure |
@@ -109,3 +109,23 @@ Reimport now preserves effective elapsed history and validates the complete
 proposed snapshot inside the existing atomic transaction before replacement.
 Invalid proposals abort with raw stores unchanged. Latest head gates/review must
 be refreshed; no additional production workspace write is permitted.
+
+
+## PCR-03 exact-main closure
+
+PR #189 final02c83ce independently reviewed with fresh context; complete receipt
+PRcomment5876707647, no actionable P1/P2. Merge6c77d6289851f28a2981c72df57b6fedf6d40f40:
+CI36470718351, Browser36470718228, Matrix36470718175, Pages36470718161,
+Production Self-Test36470940662 all PASS. Actual deployed bundle manifest exact6c77;
+readonly full prior production snapshot847: Today/Schedule/Library navigation,
+reload and fresh-page restart7/7 PASS, zero page errors and zero write requests.
+No production mutation performed. Snapshot data are private and not committed.
+
+## Owner dense-account correctness (not yet production fixed)
+
+Readonly current860 retains384actions/358decisions. Private851 classification
+established6selectedactions plus358open decisions; current read-model candidate
+projects6actions/0today decisions,344exact replay groups retaining358records, and
+no past floating-date node in upcoming. Full inbox remains available. Parser
+instruction-fragment amplification and account cache order/late-read race remain
+explicit follow-on defects; this slice does not claim their resolution.
