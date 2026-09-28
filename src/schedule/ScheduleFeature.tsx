@@ -1,3 +1,4 @@
+import { scheduleDisplayTimezone } from '../scheduleDisplayTime.js'
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 import type { Opportunity } from '../model.js'
 import { readScheduleWindow, type ScheduleEntry, type ScheduleSection, type ScheduleStream } from './scheduleStream.js'
@@ -21,11 +22,11 @@ function timeLabel(entry: ScheduleEntry, zh: boolean) {
   if (!at) return zh ? '时间待定' : 'Time TBD'
   const date = new Date(at)
   if (!Number.isFinite(date.getTime())) return entry.date ?? (zh ? '时间待定' : 'Time TBD')
-  const label = new Intl.DateTimeFormat(zh ? 'zh-CN' : 'en-GB', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false, timeZone: temporal?.timezone || undefined }).format(date)
+  const label = new Intl.DateTimeFormat(zh ? 'zh-CN' : 'en-GB', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false, timeZone: scheduleDisplayTimezone(temporal?.timezone) }).format(date)
   if (temporal?.shape === 'availability_window') {
     const end = temporal.resolutionBasis !== 'legacy_projection' && temporal.endAt ? new Date(temporal.endAt) : undefined
     const endLabel = end && Number.isFinite(end.getTime())
-      ? new Intl.DateTimeFormat(zh ? 'zh-CN' : 'en-GB', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false, timeZone: temporal.timezone || undefined }).format(end)
+      ? new Intl.DateTimeFormat(zh ? 'zh-CN' : 'en-GB', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false, timeZone: scheduleDisplayTimezone(temporal.timezone) }).format(end)
       : undefined
     return (zh ? '可参加 ' : 'Available ') + label + (endLabel ? ' – ' + endLabel : '')
   }

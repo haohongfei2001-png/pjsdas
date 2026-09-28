@@ -1,6 +1,7 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import App from './AppV8.js'
+import { RootErrorBoundary } from './StartupRecovery.js'
 import { UiLanguageProvider } from './uiLanguage.js'
 import { CloudProvider, useCloud } from './cloud/CloudContext.js'
 import { AiAccessProvider } from './aiAccess/AiAccessContext.js'
@@ -41,8 +42,10 @@ function Entry() {
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <UiLanguageProvider>
-      <Entry />
-    </UiLanguageProvider>
+    <RootErrorBoundary>
+      <UiLanguageProvider>
+        <Entry />
+      </UiLanguageProvider>
+    </RootErrorBoundary>
   </StrictMode>,
 )

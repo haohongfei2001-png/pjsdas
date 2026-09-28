@@ -33,7 +33,7 @@ interface OpportunityDetailDrawerProps {
   onCapture: () => void
   onNavigate: (destination: OpportunityDetailDestination) => void
   onOpenDecision: (id: string) => void
-  onMarkAction: (id: string, status: Action['status']) => Promise<void>
+  onMarkAction: (id: string, status: Action['status'], intent?: 'application_submission') => Promise<void>
   readOnly?: boolean
   asPage?: boolean
   returnLabel?: string
@@ -178,7 +178,7 @@ export default function OpportunityDetailDrawer({
             {eligibleToApply && confirmedApplicationUrl ? <a href={confirmedApplicationUrl} target="_blank" rel="noopener noreferrer">{zh ? '打开申请入口 ↗' : 'Open application ↗'}</a> : null}
             {eligibleToApply && applyAction && !readOnly ? <button type="button" disabled={Boolean(pendingActionId)} onClick={() => {
               setPendingActionId(applyAction.id)
-              void onMarkAction(applyAction.id, 'done').finally(() => setPendingActionId(undefined))
+              void onMarkAction(applyAction.id, 'done', 'application_submission').finally(() => setPendingActionId(undefined))
             }}>{pendingActionId === applyAction.id ? (zh ? '确认中…' : 'Confirming…') : (zh ? '我已投递' : 'I applied')}</button> : null}
             {eligibleToApply && !confirmedApplicationUrl ? <span className="job-detail-no-link">{zh ? '暂无已确认的申请入口' : 'No confirmed application link'}</span> : null}
             <button type="button" className="job-detail-capture" disabled={readOnly} onClick={onCapture}>{zh ? '告诉 TodayAction' : 'Tell TodayAction'}</button>
@@ -231,7 +231,7 @@ export default function OpportunityDetailDrawer({
                   <article key={action.id}>
                     <div><strong>{action.title}</strong><small>{action.dueAt ? formatDate(action.dueAt, zh) : (zh ? '无明确时间' : 'No dated node')}</small></div>
                     <span>{actionStatusLabel(action.status, zh)}</span>
-                    {!readOnly ? <button type="button" disabled={Boolean(pendingActionId)} onClick={() => {
+                    {!readOnly && action.kind !== 'apply' ? <button type="button" disabled={Boolean(pendingActionId)} onClick={() => {
                       setPendingActionId(action.id)
                       void onMarkAction(action.id, 'done').finally(() => setPendingActionId(undefined))
                     }}>{pendingActionId === action.id ? (zh ? '正在完成…' : 'Completing…') : (zh ? '标记完成' : 'Mark done')}</button> : null}
