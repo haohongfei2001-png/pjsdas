@@ -89,7 +89,7 @@ and elapsed nodes and lost an in-progress prior state. New command compensation
 records its exact changed occurrences; generic status changes preserve historical
 terminal facts. Local Undo validates and writes under one IndexedDB transaction;
 connected/MCP paths preserve exact compensation and existing CAS dependency checks.
-Eight real browser regressions pass, including subsequent-edit refusal and durable
+Eleven real browser regressions pass, including subsequent-edit refusal and durable
 Today/Schedule/job-detail reload/restart. Unit 205 files / 996 tests, type and build
 pass; full remote gates/latest Codex/exact-main verification remain required.
 PCR-04..07 are still pending. No production data mutation is authorized.
@@ -101,3 +101,11 @@ workspace write; snapshot validation is unchanged. Future-event deletion remains
 available. Delete Undo restores only changed nodes and every removed action,
 retaining unaffected superseded evidence and rejecting later edits. Full gates and
 review must be refreshed for the final repaired head.
+
+The required reimport audit also reproduced removal of elapsed legacy evidence
+and retention of a completed node with a missing process reference. Two retention
+regressions and a valid-fixture reference regression fail before the repair.
+Reimport now preserves effective elapsed history and validates the complete
+proposed snapshot inside the existing atomic transaction before replacement.
+Invalid proposals abort with raw stores unchanged. Latest head gates/review must
+be refreshed; no additional production workspace write is permitted.

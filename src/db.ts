@@ -1160,6 +1160,7 @@ export async function replaceImportedData(bundle: ImportBundle) {
     const processes = mergeLocallyManagedProcesses(bundle.processes, previousProcesses, localOpportunityIds)
     const scheduleNodes = previousScheduleNodes.filter((node) =>
       node.state === 'completed'
+      || effectiveScheduleNodeState(node, new Date()) === 'elapsed_unresolved'
       || node.state === 'cancelled'
       || node.state === 'superseded'
       || !node.opportunityId
@@ -1175,6 +1176,11 @@ export async function replaceImportedData(bundle: ImportBundle) {
       scheduleNodes,
     }
     ensureScheduleContractInPlace(contract)
+    // Validate the complete proposed workspace under the same locks before any
+    // replacement. Retained history must not acquire missing process/event refs.
+    const previousSnapshot = await readLocalSnapshot(tx)
+    validateSnapshot({ ...previousSnapshot, data: { ...previousSnapshot.data, ...contract,
+      applicationGroups: bundle.applicationGroups } })
 
     await Promise.all([
       tx.objectStore('opportunities').clear(),

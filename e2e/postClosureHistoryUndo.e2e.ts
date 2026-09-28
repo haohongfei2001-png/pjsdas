@@ -179,3 +179,44 @@ for (const state of ['completed', 'elapsed_unresolved', 'scheduled'] as const) t
   const restarted = await context.newPage(); await restarted.goto('/pjsdas/today'); await page.close()
   await expect(restarted.getByTestId('cgr02-today')).toBeVisible()
 })
+
+test('reimport cannot commit a retained historical node with a removed process reference', async ({ page }) => {
+  await page.clock.install({ time: HISTORY_NOW })
+  await page.goto('/'); await expect(page.locator('.tsui-primary-nav')).toBeVisible()
+  const evidence = await page.evaluate(async (input) => {
+    const module = await import('/pjsdas/src/db.ts')
+    const job = { ...input.data.opportunities[0], locallyManaged: false }
+    const process = { id: 'historical-import-process', opportunityId: job.id, company: job.company, role: job.role, stage: 'not_applied' as const, stageLabel: '待投递', progress: 'not_started' as const, result: 'pending' as const, participationState: 'active' as const, lastProgressAt: '2026-09-20T00:00:00.000Z' }
+    input.data.opportunities = [job]; input.data.processes = [process]
+    input.data.scheduleNodes = [{ ...input.data.scheduleNodes![0], processId: process.id }]
+    await module.replaceLocalSnapshotFromCloud(input)
+    const before = (await module.exportLocalRecoveryArchive()).stores
+    let refused = false
+    try {
+      await module.replaceImportedData({ opportunities: [job], processes: [], actions: [], prep: [], applicationGroups: [],
+        summary: { filename: 'unsafe-process-removal.xlsx', importedAt: '2026-09-28T12:00:00.000Z', opportunities: 1, pending: 0, processes: 0, prep: 0, applicationGroups: 0, actions: 0 } })
+    } catch { refused = true }
+    return { refused, before, after: (await module.exportLocalRecoveryArchive()).stores }
+  }, historyActionWorkspace())
+  expect(evidence.refused).toBe(true)
+  expect(evidence.after).toEqual(evidence.before)
+  await page.reload(); await expect(page.getByTestId('cgr02-today')).toBeVisible()
+})
+
+for (const state of ['elapsed_unresolved', 'scheduled'] as const) test(`reimport preserves ${state} past legacy occurrence evidence instead of deleting it`, async ({ page }) => {
+  await page.clock.install({ time: HISTORY_NOW })
+  await page.goto('/'); await expect(page.locator('.tsui-primary-nav')).toBeVisible()
+  const evidence = await page.evaluate(async ({ input, state }) => {
+    const module = await import('/pjsdas/src/db.ts')
+    const job = { ...input.data.opportunities[0], locallyManaged: false }
+    const node = { ...input.data.scheduleNodes![0], state, completedAt: undefined }
+    input.data.opportunities = [job]; input.data.scheduleNodes = [node]
+    await module.replaceLocalSnapshotFromCloud(input)
+    const rawNode = (await (await module.dbPromise).get('scheduleNodes', node.id))!
+    await module.replaceImportedData({ opportunities: [job], processes: [], actions: [], prep: [], applicationGroups: [],
+      summary: { filename: 'safe-history-retention.xlsx', importedAt: '2026-09-28T12:00:00.000Z', opportunities: 1, pending: 0, processes: 0, prep: 0, applicationGroups: 0, actions: 0 } })
+    return { before: rawNode, after: await (await module.dbPromise).get('scheduleNodes', node.id), snapshot: await module.exportLocalSnapshot() }
+  }, { input: historyActionWorkspace(), state })
+  expect(evidence.after).toEqual(evidence.before)
+  await page.reload(); await expect(page.getByTestId('cgr02-today')).toBeVisible()
+})

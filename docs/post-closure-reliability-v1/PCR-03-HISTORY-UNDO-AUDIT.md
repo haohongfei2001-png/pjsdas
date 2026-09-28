@@ -45,11 +45,11 @@ An edited or removed occurrence was not rejected by the compensation reducer.
 - Actual authoritative executor persists compensation, executes CAS Undo, retains
   original command/timeline; existing unrelated/dependent conflict tests pass.
 - Signed MCP batch shared-node compensation and actual executor Undo pass.
-- Eight headless Chromium cases: real History → job detail → Mark done → Undo in
+- Eleven headless Chromium cases: real History → job detail → Mark done → Undo in
   local and connected mode, Today/Schedule/job-detail durable reload/fresh-page
   restart, later occurrence edit refuses Undo with raw store equality, legacy
   projected event action compensation, and a real second-connection status race.
-- New eight cases plus ten P0 and seven recovery cases: 25 browser passes.
+- New eleven cases plus ten P0 and seven recovery cases: 28 browser passes.
   Two existing current-event local/connected create/delete journeys also pass.
 - Unit: 205 files / 996 tests. Type and production build pass. Matrix includes the
   new journeys. Full head/main results must be recorded after they finish.
@@ -85,3 +85,22 @@ unchanged; durable local refusal passes all daily routes and restart.
 First candidate ae7a4d3 passed CI/Browser/Matrix/UI/Brand/VoiceOver/rollback and
 Codex clean review 5875258410. Those results do not certify this later deletion
 repair; the final head requires fresh full gates and review.
+
+## Required reimport audit
+
+Reimport preserved completed nodes but could drop their non-local process record,
+committing a missing-process reference that startup then rejects. It also removed
+explicit elapsed_unresolved and scheduled/past legacy occurrences from storage.
+Two retention regressions fail on the previous implementation. The missing-process
+regression was rerun with a schema-valid process fixture and fails before repair:
+unsafe reimport reports success. The corrected implementation refuses it with
+complete raw-store equality. The initial malformed fixture was a harness error,
+not counted as a reproduction.
+
+The existing terminal-history retention rule now includes effective elapsed
+occurrences. The complete proposed snapshot is validated under the same all-store
+transaction locks before any replacement. Missing historical dependencies abort
+without changing source or baseline. This preserves existing import semantics for
+valid workspaces; it does not weaken validation, create substitute facts, erase
+history or introduce another writer. All 28 history/P0/recovery journeys pass.
+No production import or write was performed.
