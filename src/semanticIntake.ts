@@ -118,6 +118,16 @@ function sourceRecordIdentity(observation: SemanticIntakeObservation) {
   ].join('|')
 }
 
+function receiptMatchesObservation(item: SemanticIntakeReceipt, observation: SemanticIntakeObservation) {
+  return item.inputId === observation.inputId
+    || (
+      item.sourceKind === observation.source.kind
+      && item.sourceId === observation.source.sourceId
+      && item.sourceRecordId === observation.source.sourceRecordId
+      && (item.sourceVersion ?? '') === (observation.source.sourceVersion ?? '')
+    )
+}
+
 function receiptInvalidatedFactKeys(receipt: SemanticIntakeReceipt) {
   return new Set((receipt.factInvalidations ?? []).map((item) => item.factKey))
 }
@@ -126,15 +136,7 @@ function existingReceipt(snapshot: PJSDASSnapshot, observation: SemanticIntakeOb
   return (snapshot.data.semanticReceipts ?? []).find((item) =>
     item.status !== 'undone'
     && !(item.factInvalidations?.length)
-    && (
-      item.inputId === observation.inputId
-      || (
-        item.sourceKind === observation.source.kind
-        && item.sourceId === observation.source.sourceId
-        && item.sourceRecordId === observation.source.sourceRecordId
-        && (item.sourceVersion ?? '') === (observation.source.sourceVersion ?? '')
-      )
-    ),
+    && receiptMatchesObservation(item, observation),
   )
 }
 
@@ -829,6 +831,7 @@ function applyCandidate(
 
 function receipt(input: {
   observation: SemanticIntakeObservation
+  recoveryInputId?: string
   status: SemanticIntakeReceipt['status']
   summary: string
   affectedObjects: SemanticIntakeReceipt['affectedObjects']
@@ -838,9 +841,10 @@ function receipt(input: {
   now: string
   commandId?: string
 }): SemanticIntakeReceipt {
+  const inputId = input.recoveryInputId ?? input.observation.inputId
   return {
-    id: `semantic-receipt:${stableHash(input.observation.inputId)}`,
-    inputId: input.observation.inputId,
+    id: `semantic-receipt:${stableHash(inputId)}`,
+    inputId,
     sourceKind: input.observation.source.kind,
     sourceId: input.observation.source.sourceId,
     sourceRecordId: input.observation.source.sourceRecordId,
@@ -903,9 +907,17 @@ export function applySemanticIntake(
   const semanticCommandId = `semantic-intake:${observation.inputId}`
   const priorSemanticApplications = (base.data.timeline ?? []).filter((item) =>
     item.kind === 'semantic_intake_applied' && item.commandId === semanticCommandId).length
-  const commandInputId = priorSemanticApplications
+  const invalidatedReceipt = (base.data.semanticReceipts ?? [])
+    .filter((item) => item.status === 'committed'
+      && item.factInvalidations?.length
+      && receiptMatchesObservation(item, observation))
+    .sort(compareReceiptCreationOrder).at(-1)
+  const commandInputId = priorSemanticApplications || invalidatedReceipt
     ? `${observation.inputId}:recovery:${priorSemanticApplications}`
     : observation.inputId
+  const recoveryFactKeys = invalidatedReceipt
+    ? receiptInvalidatedFactKeys(invalidatedReceipt)
+    : undefined
 
   if (!['assertion', 'current_intent'].includes(observation.statementMode)) {
     const value = receipt({
@@ -956,6 +968,9 @@ export function applySemanticIntake(
 
   for (const candidate of observation.candidates) {
     const factKey = semanticCandidateFactKey(working, candidate)
+    // A partially invalidated receipt still proves its other facts. A new recovery
+    // command must never recreate those domain objects (notably manual actions).
+    if (recoveryFactKeys && (!factKey || !recoveryFactKeys.has(factKey))) continue
     const priorFact = existingFactReceipt(working, factKey)
     if (priorFact && priorFact.sourceId !== observation.source.sourceId) {
       summaries.push('Cross-source fact already recorded; source receipt retained without a second business mutation.')
@@ -1002,6 +1017,7 @@ export function applySemanticIntake(
   ].filter(Boolean).join(' ')
   const value = receipt({
     observation,
+    recoveryInputId: commandInputId !== observation.inputId ? commandInputId : undefined,
     status,
     summary,
     affectedObjects: [...new Map(affectedObjects.map((item) => [`${item.type}:${item.id}`, item])).values()],
