@@ -133,7 +133,7 @@ interface PJSDASDatabase extends DBSchema {
     value: ChangeSetRecord
     indexes: { 'by-status': ChangeSetStatus; 'by-created-at': string }
   }
-  meta: { key: string; value: ImportMeta }
+  meta: { key: string; value: ImportMeta | { key: 'authoritativeProjection'; accountKey: string; version: string; canonical: string } }
 }
 
 const DATA_STORES = [
@@ -966,7 +966,7 @@ async function readLocalSnapshotData(tx: LocalSnapshotTransaction) {
       tx.objectStore('discoveryInbox').getAll(),
       tx.objectStore('timeline').getAll(),
       tx.objectStore('changeSets').getAll(),
-      tx.objectStore('meta').get('lastImport'),
+      tx.objectStore('meta').get('lastImport').then(row => row?.key === 'lastImport' ? row : undefined),
     ])
   if (!timeline.some((record) => record.id === TIMELINE_BACKFILL_MARKER_ID)) {
     const existingIds = new Set(timeline.map((record) => record.id))
@@ -1077,7 +1077,7 @@ export async function clearLocalWorkspaceCache() {
   return cleared
 }
 
-export async function replaceLocalSnapshotFromCloud(snapshot: PJSDASSnapshot, guard?: { expectedLocal: PJSDASSnapshot; assertCurrent: () => void }) {
+export async function replaceLocalSnapshotFromCloud(snapshot: PJSDASSnapshot, guard?: { expectedLocal: PJSDASSnapshot; assertCurrent: () => void; accountKey?: string; version?: string }) {
   validateSnapshot(snapshot)
   const latest = upgradeSnapshotToLatest(snapshot)
 
@@ -1087,6 +1087,9 @@ export async function replaceLocalSnapshotFromCloud(snapshot: PJSDASSnapshot, gu
     guard?.assertCurrent()
     if (guard && canonicalWorkspaceJson(await readLocalSnapshot(tx)) !== canonicalWorkspaceJson(guard.expectedLocal)) throw new AccountCacheChangedError()
     guard?.assertCurrent()
+    const priorProjection = await tx.objectStore('meta').get('authoritativeProjection')
+    if (guard?.accountKey && guard.version && priorProjection?.key === 'authoritativeProjection' && priorProjection.accountKey === guard.accountKey
+      && Number(priorProjection.version.replace('txn:', '')) > Number(guard.version.replace('txn:', ''))) throw new AccountCacheChangedError()
     await Promise.all(DATA_STORES.map((storeName) => tx.objectStore(storeName).clear()))
 
     for (const item of latest.data.opportunities) await tx.objectStore('opportunities').put(item)
@@ -1107,6 +1110,12 @@ export async function replaceLocalSnapshotFromCloud(snapshot: PJSDASSnapshot, gu
     for (const item of latest.data.changeSets ?? []) await tx.objectStore('changeSets').put(item)
     if (latest.data.meta) await tx.objectStore('meta').put(latest.data.meta)
     const committed = await readLocalSnapshot(tx)
+    if (guard?.accountKey && guard.version) {
+      // Canonical bytes are recorded in the same transaction; async crypto would
+      // let IndexedDB auto-commit before this crash-recovery proof is durable.
+      await tx.objectStore('meta').put({ key: 'authoritativeProjection', accountKey: guard.accountKey,
+        version: guard.version, canonical: canonicalWorkspaceJson(committed) })
+    }
     guard?.assertCurrent()
     await tx.done
     return committed
@@ -1294,4 +1303,10 @@ export async function assertLocalSnapshotCurrent(expected: PJSDASSnapshot, asser
     await tx.done.catch(() => {})
     throw caught
   }
+}
+
+export async function isRecordedAccountProjection(accountKey: string, snapshot: PJSDASSnapshot) {
+  const db = await dbPromise
+  const recorded = await db.get('meta', 'authoritativeProjection')
+  return recorded?.key === 'authoritativeProjection' && recorded.accountKey === accountKey && recorded.canonical === canonicalWorkspaceJson(snapshot)
 }

@@ -5,7 +5,7 @@ import type { DiscoveryProfile } from '../discoveryProfile.js'
 import type { SemanticIntakeObservation } from '../model.js'
 import { validateSnapshot, type PJSDASSnapshot } from '../snapshot.js'
 import { fetchBackend } from '../backendEndpoints.js'
-import { exportLocalSnapshot, replaceLocalSnapshotFromCloud } from '../db.js'
+import { isRecordedAccountProjection, exportLocalSnapshot, replaceLocalSnapshotFromCloud } from '../db.js'
 import { getAccountAccessToken } from './cloudClient.js'
 import { getAccountCheckpoint, patchAccountCheckpoint } from './syncState.js'
 import { fingerprintWorkspace } from './workspaceFingerprint.js'
@@ -162,7 +162,8 @@ async function request(accountKey: string, body: Record<string, unknown>) {
     ? checkpoint.lastReadProjectionFingerprint ?? checkpoint.lastSyncedFingerprint : checkpoint.lastSyncedFingerprint
   // A later receipt retry must not relabel a genuine local edit as the new baseline.
   const localFingerprint = await fingerprintWorkspace(local)
-  if (baseline && localFingerprint !== baseline && localFingerprint !== checkpoint.clearedCacheFingerprint) throw new AccountCacheChangedError()
+  if (baseline && localFingerprint !== baseline && localFingerprint !== checkpoint.clearedCacheFingerprint
+    && !await isRecordedAccountProjection(accountKey, local)) throw new AccountCacheChangedError()
   const accessToken = await getAccountAccessToken(accountKey)
   lease.assertCurrent()
   const response = await fetchBackend('/api/workspace', {
@@ -204,7 +205,7 @@ async function projectAuthoritativeResult(accountKey: string, result: ConnectedC
     guard.assertCurrent()
     if ((revisionFromCheckpoint(accountKey) ?? -1) > result.revision) throw new AccountCacheChangedError()
   }
-  const committed = await replaceLocalSnapshotFromCloud(result.snapshot, { ...guard, assertCurrent })
+  const committed = await replaceLocalSnapshotFromCloud(result.snapshot, { ...guard, assertCurrent, accountKey, version: result.workspaceVersion })
   const fingerprint = await fingerprintWorkspace(result.snapshot)
   const projectedFingerprint = await fingerprintWorkspace(committed)
   assertCurrent()

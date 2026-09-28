@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test'
 import { AUTH_KEY, BACKEND, cors, health, session, workspace } from './fixtures/todayWorkspace.js'
 
-for (const scenario of ['sign-out', 'local-edit', 'command-sign-out', 'command-local-edit', 'order-only', 'overlapping-read', 'account-aba', 'cloud-recovery', 'account-return', 'account-return-edited', 'account-return-read'] as const) test(`a delayed authoritative read preserves ${scenario} boundary`, async ({ page }) => {
+for (const scenario of ['sign-out', 'local-edit', 'command-sign-out', 'command-local-edit', 'order-only', 'overlapping-read', 'account-aba', 'cloud-recovery', 'account-return', 'account-return-edited', 'account-return-read', 'checkpoint-interruption', 'checkpoint-interruption-edited'] as const) test(`a delayed authoritative read preserves ${scenario} boundary`, async ({ page }) => {
   const snapshot = workspace()
   let revision = 7
   let commandCalls = 0
@@ -31,6 +31,41 @@ for (const scenario of ['sign-out', 'local-edit', 'command-sign-out', 'command-l
   await expect(page.getByRole('heading', { name: 'A第一任务' })).toBeVisible()
   await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem('pjsdas-google-drive-sync-state-v2') ?? '{}').accounts?.['account-a']?.lastSyncedVersion)).toBe('txn:7')
   revision = 8
+  if (scenario.startsWith('checkpoint-interruption')) {
+    const interrupted = await page.evaluate(async () => {
+      const original = Storage.prototype.setItem
+      Storage.prototype.setItem = function (key, value) {
+        if (key === 'pjsdas-google-drive-sync-state-v2' && value.includes('txn:8')) throw Error('Injected checkpoint interruption after durable projection')
+        return original.call(this, key, value)
+      }
+      try {
+        await (await import('/pjsdas/src/cloud/authoritativeCommandClient.ts')).executeConnectedBusinessCommand('account-a', { type: 'domain', value: { commandId: 'interrupted', kind: 'set_action_status', actionId: 'A-action-1', status: 'done' } })
+      } catch { /* Simulate restart after persistence failed. */ }
+      finally { Storage.prototype.setItem = original }
+      return { status: (await (await import('/pjsdas/src/db.ts')).exportLocalSnapshot()).data.actions.find(a => a.id === 'A-action-1')?.status,
+        checkpoint: JSON.parse(localStorage.getItem('pjsdas-google-drive-sync-state-v2')!).accounts['account-a'].lastSyncedVersion }
+    })
+    expect(interrupted).toEqual({ status: 'done', checkpoint: 'txn:7' })
+    if (scenario === 'checkpoint-interruption-edited') await page.evaluate(async () => {
+      const db = await (await import('/pjsdas/src/db.ts')).dbPromise
+      const action = await db.get('actions', 'A-action-1')
+      if (!action) throw Error('Missing committed action')
+      await db.put('actions', { ...action, title: 'Genuine post-projection edit' })
+    })
+    revision = 9
+    snapshot.data.actions[1].title = 'Newer remote change'
+    await page.reload()
+    if (scenario === 'checkpoint-interruption-edited') {
+      await expect.poll(() => page.evaluate(async () => (await (await import('/pjsdas/src/db.ts')).exportLocalSnapshot()).data.actions.find(a => a.id === 'A-action-1')?.title)).toBe('Genuine post-projection edit')
+      expect(await page.evaluate(() => localStorage.getItem('pjsdas-cgr01-pending:account-a'))).not.toBeNull()
+      expect(commandCalls).toBe(1)
+      return
+    }
+    await expect.poll(() => page.evaluate(() => localStorage.getItem('pjsdas-cgr01-pending:account-a'))).toBeNull()
+    await expect.poll(() => page.evaluate(async () => (await (await import('/pjsdas/src/db.ts')).exportLocalSnapshot()).data.actions.some(a => a.title === 'Newer remote change'))).toBe(true)
+    expect(commandCalls).toBe(1)
+    return
+  }
   if (scenario.startsWith('account-return')) {
     await page.evaluate(async (scenario) => {
       if (scenario !== 'account-return-read') localStorage.setItem('pjsdas-cgr01-pending:account-a', JSON.stringify([{ commandId: 'committed-before-signout', action: 'command', status: 'unknown', createdAt: '2026-09-28T00:00:00Z', updatedAt: '2026-09-28T00:00:00Z' }]))

@@ -1,5 +1,5 @@
 import { captureAccountCacheLease, AccountCacheChangedError } from './accountCacheLease.js'
-import { assertLocalSnapshotCurrent } from '../db.js'
+import { isRecordedAccountProjection, assertLocalSnapshotCurrent } from '../db.js'
 import { exportLocalSnapshot, replaceLocalSnapshotFromCloud } from '../db.js'
 import { LEGACY_SNAPSHOT_VERSION, PREVIOUS_SNAPSHOT_VERSION, SCHEDULE_SNAPSHOT_VERSION, SNAPSHOT_VERSION, validateSnapshot } from '../snapshot.js'
 import {
@@ -102,10 +102,12 @@ export async function runCloudSync(userId: string, options: { passive?: boolean 
     assertCurrent()
     await assertLocalSnapshotCurrent(local, assertCurrent)
     const checkpoint = getAccountCheckpoint(userId)
+    const recordedProjection = await isRecordedAccountProjection(userId, local)
+    assertCurrent()
     const decision = remote && localFingerprint === checkpoint.clearedCacheFingerprint ? 'pull_remote' : decideSyncAction({
       checkpoint,
       localFingerprint,
-      localProjectionBaselineFingerprint: checkpoint.lastReadProjectionSourceFingerprint === checkpoint.lastSyncedFingerprint
+      localProjectionBaselineFingerprint: recordedProjection ? localFingerprint : checkpoint.lastReadProjectionSourceFingerprint === checkpoint.lastSyncedFingerprint
         ? checkpoint.lastReadProjectionFingerprint : undefined,
       localEmpty: workspaceIsEffectivelyEmpty(local),
       remote: remote ? { version: remote.version, fingerprint: remote.fingerprint } : null,
@@ -121,7 +123,7 @@ export async function runCloudSync(userId: string, options: { passive?: boolean 
       const remoteChanged = remote.version !== checkpoint.lastSyncedVersion
         || remote.fingerprint !== checkpoint.lastSyncedFingerprint
       if (remoteChanged) {
-        const committed = await replaceLocalSnapshotFromCloud(remote.snapshot, { expectedLocal: local, assertCurrent })
+        const committed = await replaceLocalSnapshotFromCloud(remote.snapshot, { expectedLocal: local, assertCurrent, accountKey: userId, version: remote.version })
         const projectedFingerprint = await fingerprintWorkspace(committed)
         assertCurrent()
         markSynced(userId, remote)
@@ -191,7 +193,7 @@ export async function runCloudSync(userId: string, options: { passive?: boolean 
     }
 
     if (decision === 'pull_remote') {
-      const committed = await replaceLocalSnapshotFromCloud(remote.snapshot, { expectedLocal: local, assertCurrent })
+      const committed = await replaceLocalSnapshotFromCloud(remote.snapshot, { expectedLocal: local, assertCurrent, accountKey: userId, version: remote.version })
       const projectedFingerprint = await fingerprintWorkspace(committed)
       assertCurrent()
       markSynced(userId, remote)
@@ -264,7 +266,7 @@ export async function resolveConflictUseCloud(userId: string): Promise<CloudSync
   const remoteRaw = await fetchRemoteWorkspace(userId)
   if (!remoteRaw) throw new Error('这个 Google 账号还没有 TodayAction Drive 工作区。')
   const remote = await verifyRemote(remoteRaw)
-  const committed = await replaceLocalSnapshotFromCloud(remote.snapshot, { expectedLocal: local, assertCurrent })
+  const committed = await replaceLocalSnapshotFromCloud(remote.snapshot, { expectedLocal: local, assertCurrent, accountKey: userId, version: remote.version })
   const projectedFingerprint = await fingerprintWorkspace(committed)
   assertCurrent()
   bindLocalWorkspaceToUser(userId, true)

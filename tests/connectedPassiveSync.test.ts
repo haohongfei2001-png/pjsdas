@@ -11,6 +11,7 @@ const fixture = vi.hoisted(() => {
 })
 
 vi.mock('../src/db.js', () => ({
+  isRecordedAccountProjection: vi.fn(async () => false),
   assertLocalSnapshotCurrent: vi.fn(async () => undefined),
   exportLocalSnapshot: async () => ({ version: 4 }),
   replaceLocalSnapshotFromCloud: fixture.replace,

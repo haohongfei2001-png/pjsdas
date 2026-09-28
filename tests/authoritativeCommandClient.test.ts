@@ -6,6 +6,7 @@ vi.mock('../src/cloud/cloudClient.js', () => ({
 }))
 
 vi.mock('../src/db.js', () => ({
+  isRecordedAccountProjection: vi.fn(async () => false),
   assertLocalSnapshotCurrent: vi.fn(async () => undefined),
   exportLocalSnapshot: vi.fn(async () => snapshot()),
   replaceLocalSnapshotFromCloud: vi.fn(async (value) => value),

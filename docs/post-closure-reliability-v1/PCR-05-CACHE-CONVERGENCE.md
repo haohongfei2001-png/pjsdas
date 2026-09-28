@@ -61,3 +61,18 @@ intervening real local data still fails closed. Successful hydration consumes th
 marker. Pending commands and drafts remain account scoped and retained.
 1022 unit/type and19 headless regressions pass; additional re-login read-only and
 valid-local-edit preservation variants pass. New head review/full gates required.
+
+Third fresh review d9fd442 found a valid interrupted-projection recovery P2;
+fullreport5880108688. Real browser checkpoint-failure-after-IDB-commit followed by
+newer remote revision failed before repair. Projection now records account,
+revision and exact canonical projected bytes atomically in the existing local
+metadata store. It is excluded from wire snapshots. Canonical bytes avoid async
+crypto inside the IDB transaction; only one current local recovery record exists.
+Receipt/read/sync recognize only an exact account/content match; subsequent local
+edits fail closed. Recorded newer revisions reject stale replacement even when
+localStorage checkpoint persistence was interrupted. Import/clear/replacement
+remove or replace the journal atomically with the cache.
+1022 unit/type and29 headless account/command/rollback/recovery cases pass.
+Additional injected journal-put failure and post-projection genuine-edit tests
+pass. No IndexedDB schema version change, production mutation or private upload.
+Fresh review and full final-head remote gates remain required.

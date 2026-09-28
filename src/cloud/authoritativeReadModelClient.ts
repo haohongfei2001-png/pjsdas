@@ -1,5 +1,5 @@
 import { captureAccountCacheLease, AccountCacheChangedError } from './accountCacheLease.js'
-import { assertLocalSnapshotCurrent, exportLocalSnapshot, replaceLocalSnapshotFromCloud } from '../db.js'
+import { isRecordedAccountProjection, assertLocalSnapshotCurrent, exportLocalSnapshot, replaceLocalSnapshotFromCloud } from '../db.js'
 import { fetchConnectedRemoteWorkspace } from './connectedWorkspaceRepository.js'
 import {
   bindLocalWorkspaceToUser,
@@ -89,6 +89,7 @@ export async function refreshConnectedAuthoritativeCache(
       ? checkpoint.lastReadProjectionFingerprint
       : undefined
     const localChanged = localFingerprint !== (projectedBaseline ?? checkpoint.lastSyncedFingerprint)
+      && !await isRecordedAccountProjection(accountKey, local)
     const remoteChanged = remote.version !== checkpoint.lastSyncedVersion
       || remote.fingerprint !== checkpoint.lastSyncedFingerprint
     if (!localChanged && !remoteChanged) {
@@ -122,7 +123,7 @@ export async function refreshConnectedAuthoritativeCache(
     }
   }
 
-  const committed = await replaceLocalSnapshotFromCloud(remote.snapshot, { expectedLocal: local, assertCurrent })
+  const committed = await replaceLocalSnapshotFromCloud(remote.snapshot, { expectedLocal: local, assertCurrent, accountKey, version: remote.version })
   const projectedFingerprint = await fingerprintWorkspace(committed)
   assertCurrent()
   markFresh(accountKey, remote.version, remote.fingerprint, projectedFingerprint, observedAt)

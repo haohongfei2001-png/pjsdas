@@ -2,6 +2,7 @@ import { setAccountCacheSession } from '../src/cloud/accountCacheLease.js'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('../src/db.js', () => ({
+  isRecordedAccountProjection: vi.fn(async () => false),
   assertLocalSnapshotCurrent: vi.fn(async () => undefined),
   exportLocalSnapshot: vi.fn(),
   replaceLocalSnapshotFromCloud: vi.fn(async (value) => value),
