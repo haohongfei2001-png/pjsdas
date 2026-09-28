@@ -24,6 +24,7 @@ async function seedSnapshot(page: Page, data: PJSDASSnapshot['data']) {
 }
 
 for (const fixture of [
+  { title: 'asserted events with procedural mentions', body: '京东 AI产品经理 笔试通知：统一笔试时间明天 09:00；笔试前请检查设备；京东 AI产品经理 面试通知：后天 14:30参加面试；面试时请保持网络畅通；面试过程中请勿切换页面' },
   { title: 'multi-event', body: '京东 AI产品经理 笔试通知：统一笔试时间明天 09:00；京东 AI产品经理 面试通知：后天 14:30参加面试' },
   { title: 'window and deadline', body: '京东 AI产品经理 笔试开放窗口明天 09:00至后天 17:00；提交截止后天 18:00' },
 ]) test(`Gmail ${fixture.title} projects into the real Today agenda and survives reload`, async ({ page }) => {

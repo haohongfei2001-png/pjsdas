@@ -15,7 +15,7 @@ Historical boundaries:
 
 Current phase: **PCR-04 — owner dense-account decision correctness**
 
-Current writer: **reliability/pcr04-dense-today-v1 — bounded read-model repair**
+Current writer: **reliability/pcr04-gmail-assertion-v1 — procedural mention classification**
 
 Production claim: **P0 verified on exact runtime a8d9840; Repair 02 committed 38 settlements once (CAS 841 → 842), readback 843, read-only idempotency 0. No further production write authorized.**
 
@@ -26,7 +26,7 @@ Production claim: **P0 verified on exact runtime a8d9840; Repair 02 committed 38
 | PCR-01 | COMPLETE | exact-main closure of merged PR #185 history/startup P0 and any already-authorized bounded follow-through |
 | PCR-02 | COMPLETE | PR #188 recovery slice merged; exact-main d19 CI/Browser/Matrix/Pages/Self-Test and deployed readonly startup verified; late-read race tracked in PCR-05 |
 | PCR-03 | COMPLETE | PR #189 merged6c77d62; exact-main CI/Browser/Matrix/Pages/Self-Test plus7 deployed readonly startup checks PASS |
-| PCR-04 | IN_PROGRESS | owner-priority dense Today/decision read-model repair; parser amplification remains follow-on |
+| PCR-04 | IN_PROGRESS | PR190 read-model exact-main verified; bounded Gmail instruction amplification repair in progress |
 | PCR-05 | PLANNED | connected-mode restart/reload/recovery hardening |
 | PCR-06 | PLANNED | read-only production integrity classification + regression binding |
 | PCR-07 | PLANNED | bounded reliability closure |
@@ -129,3 +129,15 @@ projects6actions/0today decisions,344exact replay groups retaining358records, an
 no past floating-date node in upcoming. Full inbox remains available. Parser
 instruction-fragment amplification and account cache order/late-read race remain
 explicit follow-on defects; this slice does not claim their resolution.
+
+## PCR-04 read-model verified; parser follow-through active
+
+PR190 merged c364af0e40682b52d7d26d51fc1e7b6dad282c3c after all seven head
+gates and fresh independent review5877608040. Exact-main CI36478992590,
+Browser36478992621, Matrix36478992612, Pages36478992574 and Self-Test36479209703
+passed. Health1419 and deployed manifest match exact main. Actual deployed
+readonly snapshot847 passes seven startup/reload/restart checks, six Today rows,
+zero generic decision rows and358/358durable decisions retained. Receipt5878108183.
+
+[Parser follow-through](PCR-04-GMAIL-ASSERTIONS.md) remains a bounded candidate.
+PCR05 cache ordering and account read races, PCR06 and PCR07 are still pending.
