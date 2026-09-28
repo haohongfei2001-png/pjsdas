@@ -921,8 +921,10 @@ function appendReceipt(snapshot: PJSDASSnapshot, value: SemanticIntakeReceipt) {
 }
 
 function compareReceiptCreationOrder(left: SemanticIntakeReceipt, right: SemanticIntakeReceipt) {
-  const byCreatedAt = left.createdAt.localeCompare(right.createdAt)
-  return byCreatedAt || (left.creationSequence ?? 0) - (right.creationSequence ?? 0) || left.id.localeCompare(right.id)
+  if (left.creationSequence !== undefined && right.creationSequence !== undefined) {
+    return left.creationSequence - right.creationSequence
+  }
+  return left.createdAt.localeCompare(right.createdAt)
 }
 
 function nextReceiptSequence(snapshot: PJSDASSnapshot) {

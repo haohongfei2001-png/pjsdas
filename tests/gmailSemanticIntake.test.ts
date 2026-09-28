@@ -1137,7 +1137,7 @@ describe('UU06 shared Gmail intake', () => {
     validateSnapshot(secondRecovered.snapshot)
   })
 
-  it('uses persisted sequence when dependent receipts share one batch timestamp', () => {
+  it('uses persisted sequence when a later dependent receipt has an older caller timestamp', () => {
     const base = snapshot()
     const factKey = 'opportunity_deadline|opp:jd|date|2026-09-25T00:00:00.000Z'
     base.data.semanticReceipts = [
@@ -1152,7 +1152,7 @@ describe('UU06 shared Gmail intake', () => {
         id: 'a-dependent', inputId: 'same-time:follower', sourceKind: 'gmail', sourceId: 'gmail:primary',
         sourceRecordId: 'same-time', sourceVersion: 'v2', status: 'committed', summary: 'No-op follower',
         affectedObjects: [], decisionRequestIds: [], factKeys: [factKey], creationSequence: 2,
-        undoAvailable: false, createdAt: now.toISOString(), updatedAt: now.toISOString(),
+        undoAvailable: false, createdAt: '2026-09-20T23:59:00.000Z', updatedAt: '2026-09-20T23:59:00.000Z',
       },
     ]
     base.data.semanticReceipts.sort((left, right) => left.id.localeCompare(right.id))
