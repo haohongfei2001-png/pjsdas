@@ -85,3 +85,19 @@ mutations with every raw source/audit store unchanged. The existing historical
 completion, readonly history/export, account sign-out and two-client delete journeys
 also pass (6 targeted tests). All 982 unit tests and type checking pass. The final
 8-case P0 browser suite remains required in full Browser and Firefox/WebKit Matrix.
+
+## Atomic baseline and edit repair
+
+Codex P1 identified a queued cache replacement entering between the baseline
+transaction and the later source edit. All local source-fact mutation paths now
+use one all-store transaction for baseline validation/materialization, source
+reads, and edits. Re-import also reads and merges the latest locked state; a
+queued replacement cannot enter between baseline and source writes. Any failure
+aborts baseline and edits together. Startup and history remain readonly.
+
+Two additional real IndexedDB regressions queue a markerless replacement on a
+second database connection while the first transaction is active, and inject a
+source-write failure after baseline appends. Both fail against previous head
+4e57efc, and both pass after the fix. The full 10-case P0 suite plus both existing
+account-cache regressions pass in Chromium (12 total); all 982 unit tests/type pass.
+Remote full gates and exact-head Codex review remain mandatory.

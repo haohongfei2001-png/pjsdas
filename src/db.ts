@@ -385,107 +385,98 @@ export async function discardChangeSet(id: string) {
 
 export async function saveDecisionRules(rules: DecisionRules) {
   const db = await dbPromise
-  const before = await db.get('decisionRules', 'current') ?? createDefaultDecisionRules('1970-01-01T00:00:00.000Z')
   const next: DecisionRules = { ...rules, weights: { ...rules.weights }, key: 'current', version: 1, updatedAt: new Date().toISOString() }
   const errors = validateDecisionRules(next)
   if (errors.length) throw new Error(errors[0])
-  await materializeTimelineBaselineBeforeMutation(db)
-  const tx = db.transaction(['decisionRules', 'timeline'], 'readwrite')
-  await tx.objectStore('decisionRules').put(next)
-  const record = timelineFromRuleChange(before, next, 'save')
-  if (record) await tx.objectStore('timeline').put(record)
-  await tx.done
-  return next
+  return withTimelineMutation(db, async (tx) => {
+    const before = await tx.objectStore('decisionRules').get('current') ?? createDefaultDecisionRules('1970-01-01T00:00:00.000Z')
+    await tx.objectStore('decisionRules').put(next)
+    const record = timelineFromRuleChange(before, next, 'save')
+    if (record) await tx.objectStore('timeline').put(record)
+    return next
+  })
 }
 
 export async function resetDecisionRules() {
   const db = await dbPromise
-  const before = await db.get('decisionRules', 'current') ?? createDefaultDecisionRules('1970-01-01T00:00:00.000Z')
   const next = createDefaultDecisionRules()
-  await materializeTimelineBaselineBeforeMutation(db)
-  const tx = db.transaction(['decisionRules', 'timeline'], 'readwrite')
-  await tx.objectStore('decisionRules').put(next)
-  const record = timelineFromRuleChange(before, next, 'reset')
-  if (record) await tx.objectStore('timeline').put(record)
-  await tx.done
-  return next
+  return withTimelineMutation(db, async (tx) => {
+    const before = await tx.objectStore('decisionRules').get('current') ?? createDefaultDecisionRules('1970-01-01T00:00:00.000Z')
+    await tx.objectStore('decisionRules').put(next)
+    const record = timelineFromRuleChange(before, next, 'reset')
+    if (record) await tx.objectStore('timeline').put(record)
+    return next
+  })
 }
 
 export async function updateActionStatus(id: string, status: Action['status']) {
   const db = await dbPromise
-  const stored = await db.get('actions', id)
-  const action = stored ?? (await getAllActions()).find((item) => item.id === id)
-  if (!action || action.status === status) return
-  await materializeTimelineBaselineBeforeMutation(db)
-  const now = new Date().toISOString()
-  const [opportunities, processes, processEvents, actions, prep, scheduleNodes] = await Promise.all([
-    db.getAll('opportunities'),
-    db.getAll('processes'),
-    db.getAll('processEvents'),
-    db.getAll('actions'),
-    db.getAll('prep'),
-    db.getAll('scheduleNodes'),
-  ])
-  const nextAction = { ...action, status, updatedAt: now }
-  const nextActions = actions.some((item) => item.id === id)
-    ? actions.map((item) => item.id === id ? nextAction : item)
-    : [...actions, nextAction]
-  const contract = { opportunities, processes, processEvents, actions: nextActions, prep, scheduleNodes }
-  syncScheduleNodeForActionStatus(contract, id, status, now)
+  return withTimelineMutation(db, async (tx) => {
+    const now = new Date().toISOString()
+    const [opportunities, processes, processEvents, actions, prep, scheduleNodes] = await Promise.all([
+      tx.objectStore('opportunities').getAll(),
+      tx.objectStore('processes').getAll(),
+      tx.objectStore('processEvents').getAll(),
+      tx.objectStore('actions').getAll(),
+      tx.objectStore('prep').getAll(),
+      tx.objectStore('scheduleNodes').getAll(),
+    ])
+    const effective = overlayProcessEventsOnOpportunities(opportunities, processEvents, processes)
+    const action = actions.find((item) => item.id === id) ?? suppressSupersededActions(
+      reconcileProcessEventActions(actions, processEvents), effective).find((item) => item.id === id)
+    if (!action || action.status === status) return
+    const nextAction = { ...action, status, updatedAt: now }
+    const nextActions = actions.some((item) => item.id === id)
+      ? actions.map((item) => item.id === id ? nextAction : item)
+      : [...actions, nextAction]
+    const contract = { opportunities, processes, processEvents, actions: nextActions, prep, scheduleNodes }
+    syncScheduleNodeForActionStatus(contract, id, status, now)
 
-  const tx = db.transaction(['actions', 'scheduleNodes', 'processes', 'timeline'], 'readwrite')
-  await tx.objectStore('actions').put(nextAction)
-  for (const node of contract.scheduleNodes ?? []) await tx.objectStore('scheduleNodes').put(node)
-  for (const process of contract.processes) await tx.objectStore('processes').put(process)
-  await tx.objectStore('timeline').put(timelineFromActionStatus(action, action.status, status, now))
-  await tx.done
+    await tx.objectStore('actions').put(nextAction)
+    for (const node of contract.scheduleNodes ?? []) await tx.objectStore('scheduleNodes').put(node)
+    for (const process of contract.processes) await tx.objectStore('processes').put(process)
+    await tx.objectStore('timeline').put(timelineFromActionStatus(action, action.status, status, now))
+  })
 }
 export async function addProcessEvent(event: ProcessEvent) {
   const db = await dbPromise
-  await materializeTimelineBaselineBeforeMutation(db)
-  const [processes] = await Promise.all([db.getAll('processes')])
-  const action = actionForProcessEvent(event)
-  const process = processes.find((item) => item.opportunityId === event.opportunityId)
-  const node = scheduleNodeForProcessEvent(event, action, process)
-  const stores = node
-    ? ['processEvents', 'scheduleNodes', 'actions', 'timeline'] as const
-    : ['processEvents', 'actions', 'timeline'] as const
-  const tx = db.transaction(stores, 'readwrite')
-  await tx.objectStore('processEvents').put(event)
-  if (action) await tx.objectStore('actions').put(action)
-  if (node) await tx.objectStore('scheduleNodes').put(node)
-  await tx.objectStore('timeline').put(timelineFromProcessEvent(event))
-  await tx.done
+  return withTimelineMutation(db, async (tx) => {
+    const [processes] = await Promise.all([tx.objectStore('processes').getAll()])
+    const action = actionForProcessEvent(event)
+    const process = processes.find((item) => item.opportunityId === event.opportunityId)
+    const node = scheduleNodeForProcessEvent(event, action, process)
+    await tx.objectStore('processEvents').put(event)
+    if (action) await tx.objectStore('actions').put(action)
+    if (node) await tx.objectStore('scheduleNodes').put(node)
+    await tx.objectStore('timeline').put(timelineFromProcessEvent(event))
+  })
 }
 
 export async function deleteProcessEvent(id: string) {
   const db = await dbPromise
-  const event = await db.get('processEvents', id)
-  const now = new Date().toISOString()
-  const nodes = await db.getAll('scheduleNodes')
-  if (event) {
-    await materializeTimelineBaselineBeforeMutation(db)
-    const contract = {
-      opportunities: await db.getAll('opportunities'),
-      processes: await db.getAll('processes'),
-      processEvents: await db.getAll('processEvents'),
-      actions: await db.getAll('actions'),
-      prep: await db.getAll('prep'),
-      scheduleNodes: nodes,
+  return withTimelineMutation(db, async (tx) => {
+    const event = await tx.objectStore('processEvents').get(id)
+    const now = new Date().toISOString()
+    const nodes = await tx.objectStore('scheduleNodes').getAll()
+    if (event) {
+      const contract = {
+        opportunities: await tx.objectStore('opportunities').getAll(),
+        processes: await tx.objectStore('processes').getAll(),
+        processEvents: await tx.objectStore('processEvents').getAll(),
+        actions: await tx.objectStore('actions').getAll(),
+        prep: await tx.objectStore('prep').getAll(),
+        scheduleNodes: nodes,
+      }
+      cancelScheduleNodeForProcessEvent(contract, id, now)
+      await tx.objectStore('processEvents').delete(id)
+      await tx.objectStore('actions').delete(`event-action:${id}`)
+      for (const node of contract.scheduleNodes ?? []) await tx.objectStore('scheduleNodes').put(node)
+      await tx.objectStore('timeline').put(timelineFromDeletedProcessEvent(event))
+      return
     }
-    cancelScheduleNodeForProcessEvent(contract, id, now)
-    const tx = db.transaction(['processEvents', 'scheduleNodes', 'actions', 'timeline'], 'readwrite')
     await tx.objectStore('processEvents').delete(id)
     await tx.objectStore('actions').delete(`event-action:${id}`)
-    for (const node of contract.scheduleNodes ?? []) await tx.objectStore('scheduleNodes').put(node)
-    await tx.objectStore('timeline').put(timelineFromDeletedProcessEvent(event))
-    await tx.done
-    return
-  }
-  const tx = db.transaction(['processEvents', 'actions'], 'readwrite')
-  await tx.objectStore('processEvents').delete(id)
-  await tx.objectStore('actions').delete(`event-action:${id}`)
-  await tx.done
+  })
 }
 function defaultLocalOpportunity(
   operation: Extract<ProgressOperation, { kind: 'upsert_opportunity' }>,
@@ -549,165 +540,164 @@ export async function applyProgressUpdate(operations: ProgressOperation[]) {
   if (executable.length === 0) return { applied: 0 }
 
   const db = await dbPromise
-  await materializeTimelineBaselineBeforeMutation(db)
-  const tx = db.transaction(['opportunities', 'processes', 'processEvents', 'actions', 'timeline'], 'readwrite')
-  const opportunityStore = tx.objectStore('opportunities')
-  const processStore = tx.objectStore('processes')
-  const eventStore = tx.objectStore('processEvents')
-  const actionStore = tx.objectStore('actions')
-  const timelineStore = tx.objectStore('timeline')
+  return withTimelineMutation(db, async (tx) => {
+    const opportunityStore = tx.objectStore('opportunities')
+    const processStore = tx.objectStore('processes')
+    const eventStore = tx.objectStore('processEvents')
+    const actionStore = tx.objectStore('actions')
+    const timelineStore = tx.objectStore('timeline')
 
-  for (const operation of executable) {
-    if (operation.kind === 'upsert_opportunity') {
-      const existing = await opportunityStore.get(operation.opportunityId)
-      const submitted = operation.mode === 'submitted'
-      const opportunity: Opportunity = existing
-        ? {
-            ...existing,
-            company: operation.company,
-            role: operation.role,
-            currentStageLabel: submitted ? '筛选中' : existing.currentStageLabel,
-            processStage: submitted ? 'screening' : existing.processStage,
-            locallyManaged: true,
+    for (const operation of executable) {
+      if (operation.kind === 'upsert_opportunity') {
+        const existing = await opportunityStore.get(operation.opportunityId)
+        const submitted = operation.mode === 'submitted'
+        const opportunity: Opportunity = existing
+          ? {
+              ...existing,
+              company: operation.company,
+              role: operation.role,
+              currentStageLabel: submitted ? '筛选中' : existing.currentStageLabel,
+              processStage: submitted ? 'screening' : existing.processStage,
+              locallyManaged: true,
+            }
+          : defaultLocalOpportunity(operation)
+        await opportunityStore.put(opportunity)
+
+        const applyId = `apply:${opportunity.id}`
+        const existingApply = await actionStore.get(applyId)
+        if (submitted) {
+          if (existingApply && (existingApply.status === 'todo' || existingApply.status === 'doing')) {
+            await actionStore.put({ ...existingApply, status: 'done', updatedAt: operation.occurredAt })
           }
-        : defaultLocalOpportunity(operation)
-      await opportunityStore.put(opportunity)
-
-      const applyId = `apply:${opportunity.id}`
-      const existingApply = await actionStore.get(applyId)
-      if (submitted) {
-        if (existingApply && (existingApply.status === 'todo' || existingApply.status === 'doing')) {
-          await actionStore.put({ ...existingApply, status: 'done', updatedAt: operation.occurredAt })
+          await upsertLocalProcess(processStore, opportunity, 'screening', '筛选中', operation.occurredAt)
+        } else if (!existingApply) {
+          await actionStore.put({
+            id: applyId,
+            kind: 'apply',
+            title: `投递 ${opportunity.company}｜${opportunity.role}`,
+            opportunityId: opportunity.id,
+            estimatedMinutes: 45,
+            leverage: 86,
+            delayCost: 40,
+            status: 'todo',
+            sourceLabel: '自然语言更新',
+            createdAt: operation.occurredAt,
+            updatedAt: operation.occurredAt,
+          })
         }
-        await upsertLocalProcess(processStore, opportunity, 'screening', '筛选中', operation.occurredAt)
-      } else if (!existingApply) {
-        await actionStore.put({
-          id: applyId,
-          kind: 'apply',
-          title: `投递 ${opportunity.company}｜${opportunity.role}`,
-          opportunityId: opportunity.id,
-          estimatedMinutes: 45,
-          leverage: 86,
-          delayCost: 40,
-          status: 'todo',
+        const record = timelineFromProgressOperation(operation, existing)
+        if (record) await timelineStore.put(record)
+        continue
+      }
+
+      if (operation.kind === 'rename_opportunity') {
+        const existing = await opportunityStore.get(operation.opportunityId)
+        if (!existing) continue
+        const opportunity: Opportunity = {
+          ...existing,
+          company: operation.company,
+          role: operation.newRole,
+          locallyManaged: true,
+        }
+        await opportunityStore.put(opportunity)
+
+        const processes = await processStore.index('by-opportunity').getAll(operation.opportunityId) as ProcessRecord[]
+        for (const process of processes) {
+          await processStore.put({ ...process, company: operation.company, role: operation.newRole, locallyManaged: true })
+        }
+        const actions = await actionStore.index('by-opportunity').getAll(operation.opportunityId) as Action[]
+        for (const action of actions) {
+          const title = action.title.includes(operation.oldRole)
+            ? action.title.replace(operation.oldRole, operation.newRole)
+            : action.title
+          await actionStore.put({ ...action, title, updatedAt: operation.occurredAt })
+        }
+        const record = timelineFromProgressOperation(operation, existing)
+        if (record) await timelineStore.put(record)
+        continue
+      }
+
+      if (operation.kind === 'close_opportunity') {
+        const existing = await opportunityStore.get(operation.opportunityId)
+        if (!existing) continue
+        const opportunity: Opportunity = {
+          ...existing,
+          currentStageLabel: '流程结束',
+          processStage: 'closed',
+          locallyManaged: true,
+        }
+        await opportunityStore.put(opportunity)
+        await upsertLocalProcess(processStore, opportunity, 'closed', '流程结束', operation.occurredAt)
+
+        const actions = await actionStore.index('by-opportunity').getAll(operation.opportunityId) as Action[]
+        for (const action of actions) {
+          if (action.kind === 'prep') continue
+          if (action.status === 'todo' || action.status === 'doing') {
+            await actionStore.put({ ...action, status: 'skipped', updatedAt: operation.occurredAt })
+          }
+        }
+        const record = timelineFromProgressOperation(operation, existing)
+        if (record) await timelineStore.put(record)
+        continue
+      }
+
+      if (operation.kind === 'process_event') {
+        const eventId = `progress-event:${operation.id}`
+        const existingEvent = await eventStore.get(eventId)
+        const now = new Date().toISOString()
+        const event: ProcessEvent = {
+          id: eventId,
+          opportunityId: operation.opportunityId,
+          company: operation.company,
+          role: operation.role,
+          type: operation.eventType,
+          occurredAt: operation.occurredAt,
+          dueAt: operation.dueAt,
+          timingMode: operation.timingMode,
+          estimatedMinutes: operation.estimatedMinutes,
+          source: 'manual',
+          createdAt: existingEvent?.createdAt ?? now,
+          updatedAt: now,
+        }
+        await eventStore.put(event)
+        const generated = actionForProcessEvent(event)
+        if (generated) {
+          const previous = await actionStore.get(generated.id)
+          await actionStore.put(operation.completed
+            ? { ...generated, status: 'done', updatedAt: operation.occurredAt }
+            : previous
+              ? { ...generated, status: previous.status, updatedAt: previous.updatedAt }
+              : generated)
+        }
+        const record = timelineFromProgressOperation(operation)
+        if (record) await timelineStore.put(record)
+        continue
+      }
+
+      if (operation.kind === 'manual_action') {
+        const id = `progress-action:${operation.id}`
+        const previous = await actionStore.get(id)
+        const action: Action = {
+          id,
+          kind: 'manual',
+          title: operation.title,
+          dueAt: operation.dueAt,
+          estimatedMinutes: operation.estimatedMinutes,
+          leverage: 70,
+          delayCost: operation.dueAt ? 65 : 40,
+          status: previous?.status ?? 'todo',
           sourceLabel: '自然语言更新',
-          createdAt: operation.occurredAt,
-          updatedAt: operation.occurredAt,
-        })
-      }
-      const record = timelineFromProgressOperation(operation, existing)
-      if (record) await timelineStore.put(record)
-      continue
-    }
-
-    if (operation.kind === 'rename_opportunity') {
-      const existing = await opportunityStore.get(operation.opportunityId)
-      if (!existing) continue
-      const opportunity: Opportunity = {
-        ...existing,
-        company: operation.company,
-        role: operation.newRole,
-        locallyManaged: true,
-      }
-      await opportunityStore.put(opportunity)
-
-      const processes = await processStore.index('by-opportunity').getAll(operation.opportunityId) as ProcessRecord[]
-      for (const process of processes) {
-        await processStore.put({ ...process, company: operation.company, role: operation.newRole, locallyManaged: true })
-      }
-      const actions = await actionStore.index('by-opportunity').getAll(operation.opportunityId) as Action[]
-      for (const action of actions) {
-        const title = action.title.includes(operation.oldRole)
-          ? action.title.replace(operation.oldRole, operation.newRole)
-          : action.title
-        await actionStore.put({ ...action, title, updatedAt: operation.occurredAt })
-      }
-      const record = timelineFromProgressOperation(operation, existing)
-      if (record) await timelineStore.put(record)
-      continue
-    }
-
-    if (operation.kind === 'close_opportunity') {
-      const existing = await opportunityStore.get(operation.opportunityId)
-      if (!existing) continue
-      const opportunity: Opportunity = {
-        ...existing,
-        currentStageLabel: '流程结束',
-        processStage: 'closed',
-        locallyManaged: true,
-      }
-      await opportunityStore.put(opportunity)
-      await upsertLocalProcess(processStore, opportunity, 'closed', '流程结束', operation.occurredAt)
-
-      const actions = await actionStore.index('by-opportunity').getAll(operation.opportunityId) as Action[]
-      for (const action of actions) {
-        if (action.kind === 'prep') continue
-        if (action.status === 'todo' || action.status === 'doing') {
-          await actionStore.put({ ...action, status: 'skipped', updatedAt: operation.occurredAt })
+          createdAt: previous?.createdAt ?? operation.occurredAt,
+          updatedAt: previous?.updatedAt ?? operation.occurredAt,
         }
+        await actionStore.put(action)
+        const record = timelineFromProgressOperation(operation)
+        if (record) await timelineStore.put(record)
       }
-      const record = timelineFromProgressOperation(operation, existing)
-      if (record) await timelineStore.put(record)
-      continue
     }
 
-    if (operation.kind === 'process_event') {
-      const eventId = `progress-event:${operation.id}`
-      const existingEvent = await eventStore.get(eventId)
-      const now = new Date().toISOString()
-      const event: ProcessEvent = {
-        id: eventId,
-        opportunityId: operation.opportunityId,
-        company: operation.company,
-        role: operation.role,
-        type: operation.eventType,
-        occurredAt: operation.occurredAt,
-        dueAt: operation.dueAt,
-        timingMode: operation.timingMode,
-        estimatedMinutes: operation.estimatedMinutes,
-        source: 'manual',
-        createdAt: existingEvent?.createdAt ?? now,
-        updatedAt: now,
-      }
-      await eventStore.put(event)
-      const generated = actionForProcessEvent(event)
-      if (generated) {
-        const previous = await actionStore.get(generated.id)
-        await actionStore.put(operation.completed
-          ? { ...generated, status: 'done', updatedAt: operation.occurredAt }
-          : previous
-            ? { ...generated, status: previous.status, updatedAt: previous.updatedAt }
-            : generated)
-      }
-      const record = timelineFromProgressOperation(operation)
-      if (record) await timelineStore.put(record)
-      continue
-    }
-
-    if (operation.kind === 'manual_action') {
-      const id = `progress-action:${operation.id}`
-      const previous = await actionStore.get(id)
-      const action: Action = {
-        id,
-        kind: 'manual',
-        title: operation.title,
-        dueAt: operation.dueAt,
-        estimatedMinutes: operation.estimatedMinutes,
-        leverage: 70,
-        delayCost: operation.dueAt ? 65 : 40,
-        status: previous?.status ?? 'todo',
-        sourceLabel: '自然语言更新',
-        createdAt: previous?.createdAt ?? operation.occurredAt,
-        updatedAt: previous?.updatedAt ?? operation.occurredAt,
-      }
-      await actionStore.put(action)
-      const record = timelineFromProgressOperation(operation)
-      if (record) await timelineStore.put(record)
-    }
-  }
-
-  await tx.done
-  return { applied: executable.length }
+    return { applied: executable.length }
+  })
 }
 
 export async function stageProgressChangeSet(operations: ExecutableProgressOperation[]) {
@@ -761,71 +751,70 @@ type DiscoveredChangeOperation = Extract<ChangeSetRecord['operations'][number], 
 
 async function applyDiscoveredOpportunityOperations(operations: DiscoveredChangeOperation[], changeSetId: string) {
   const db = await dbPromise
-  await materializeTimelineBaselineBeforeMutation(db)
-  const existing = await db.getAll('opportunities')
-  const existingIds = new Set(existing.map((item) => item.id))
-  const identities = new Set(existing.map((item) => opportunityIdentity(item.company, item.role)))
-  const batchIds = new Set<string>()
-  const batchIdentities = new Set<string>()
+  return withTimelineMutation(db, async (tx) => {
+    const existing = await tx.objectStore('opportunities').getAll()
+    const existingIds = new Set(existing.map((item) => item.id))
+    const identities = new Set(existing.map((item) => opportunityIdentity(item.company, item.role)))
+    const batchIds = new Set<string>()
+    const batchIdentities = new Set<string>()
 
-  for (const operation of operations) {
-    const opportunity = operation.opportunity
-    const identity = opportunityIdentity(opportunity.company, opportunity.role)
-    if (existingIds.has(opportunity.id) || identities.has(identity)) {
-      throw new Error(`岗位 ${opportunity.company}｜${opportunity.role} 已存在，请重新让 ChatGPT 基于最新工作区生成提议。`)
+    for (const operation of operations) {
+      const opportunity = operation.opportunity
+      const identity = opportunityIdentity(opportunity.company, opportunity.role)
+      if (existingIds.has(opportunity.id) || identities.has(identity)) {
+        throw new Error(`岗位 ${opportunity.company}｜${opportunity.role} 已存在，请重新让 ChatGPT 基于最新工作区生成提议。`)
+      }
+      if (batchIds.has(opportunity.id) || batchIdentities.has(identity)) {
+        throw new Error(`岗位发现 ChangeSet 内含重复岗位：${opportunity.company}｜${opportunity.role}。`)
+      }
+      batchIds.add(opportunity.id)
+      batchIdentities.add(identity)
     }
-    if (batchIds.has(opportunity.id) || batchIdentities.has(identity)) {
-      throw new Error(`岗位发现 ChangeSet 内含重复岗位：${opportunity.company}｜${opportunity.role}。`)
+
+    const opportunityStore = tx.objectStore('opportunities')
+    const actionStore = tx.objectStore('actions')
+    const timelineStore = tx.objectStore('timeline')
+    const recordedAt = new Date().toISOString()
+
+    for (const operation of operations) {
+      const opportunity = operation.opportunity
+      await opportunityStore.put(opportunity)
+      const actionId = `apply:${opportunity.id}`
+      await actionStore.put({
+        id: actionId,
+        kind: 'apply',
+        title: `投递 ${opportunity.company}｜${opportunity.role}`,
+        opportunityId: opportunity.id,
+        processStage: 'not_applied',
+        dueAt: opportunity.deadline,
+        timingMode: opportunity.deadline ? 'deadline' : undefined,
+        estimatedMinutes: opportunity.prepEstimateMinutes ?? 45,
+        leverage: 70,
+        delayCost: opportunity.deadline ? 65 : 40,
+        status: 'todo',
+        sourceLabel: 'ChatGPT 岗位发现',
+        createdAt: opportunity.importedAt,
+        updatedAt: opportunity.importedAt,
+      })
+      await timelineStore.put({
+        id: `timeline:discovery:${opportunity.id}`,
+        kind: 'opportunity_added',
+        category: 'opportunity',
+        source: 'changeset',
+        occurredAt: opportunity.importedAt,
+        recordedAt,
+        title: '接受 AI 发现岗位',
+        detail: opportunity.detail?.discovery?.rationale,
+        opportunityId: opportunity.id,
+        actionId,
+        changeSetId,
+        company: opportunity.company,
+        role: opportunity.role,
+        sourceRef: opportunity.detail?.discovery?.sourceUrl,
+      })
     }
-    batchIds.add(opportunity.id)
-    batchIdentities.add(identity)
-  }
 
-  const tx = db.transaction(['opportunities', 'actions', 'timeline'], 'readwrite')
-  const opportunityStore = tx.objectStore('opportunities')
-  const actionStore = tx.objectStore('actions')
-  const timelineStore = tx.objectStore('timeline')
-  const recordedAt = new Date().toISOString()
-
-  for (const operation of operations) {
-    const opportunity = operation.opportunity
-    await opportunityStore.put(opportunity)
-    const actionId = `apply:${opportunity.id}`
-    await actionStore.put({
-      id: actionId,
-      kind: 'apply',
-      title: `投递 ${opportunity.company}｜${opportunity.role}`,
-      opportunityId: opportunity.id,
-      processStage: 'not_applied',
-      dueAt: opportunity.deadline,
-      timingMode: opportunity.deadline ? 'deadline' : undefined,
-      estimatedMinutes: opportunity.prepEstimateMinutes ?? 45,
-      leverage: 70,
-      delayCost: opportunity.deadline ? 65 : 40,
-      status: 'todo',
-      sourceLabel: 'ChatGPT 岗位发现',
-      createdAt: opportunity.importedAt,
-      updatedAt: opportunity.importedAt,
-    })
-    await timelineStore.put({
-      id: `timeline:discovery:${opportunity.id}`,
-      kind: 'opportunity_added',
-      category: 'opportunity',
-      source: 'changeset',
-      occurredAt: opportunity.importedAt,
-      recordedAt,
-      title: '接受 AI 发现岗位',
-      detail: opportunity.detail?.discovery?.rationale,
-      opportunityId: opportunity.id,
-      actionId,
-      changeSetId,
-      company: opportunity.company,
-      role: opportunity.role,
-      sourceRef: opportunity.detail?.discovery?.sourceUrl,
-    })
-  }
-
-  await tx.done
+  })
 }
 
 async function markChangeSetFailed(changeSet: ChangeSetRecord, caught: unknown) {
@@ -989,9 +978,13 @@ export async function exportLocalSnapshot() {
   return snapshot
 }
 
-async function materializeTimelineBaselineBeforeMutation(db: Awaited<typeof dbPromise>) {
+async function withTimelineMutation<T>(
+  db: Awaited<typeof dbPromise>,
+  mutate: (tx: IDBPTransaction<PJSDASDatabase, (typeof DATA_STORES)[number][], 'readwrite'>) => Promise<T>,
+) {
   // Lock the source stores while validating and materializing the baseline.
-  // Later edits may erase its source facts, so preserve it before any edit.
+  // Baseline and source edit commit together; no queued cache replacement can
+  // enter between their reads and writes. Every source read uses this same tx.
   // Startup/history reads never call this; malformed data aborts without writes.
   const tx = db.transaction([...DATA_STORES], 'readwrite')
   try {
@@ -1001,7 +994,9 @@ async function materializeTimelineBaselineBeforeMutation(db: Awaited<typeof dbPr
         if (!await tx.objectStore('timeline').get(record.id)) await tx.objectStore('timeline').put(record)
       }
     }
+    const result = await mutate(tx)
     await tx.done
+    return result
   } catch (caught) {
     try { tx.abort() } catch { /* The transaction may already have aborted. */ }
     await tx.done.catch(() => {})
@@ -1110,64 +1105,59 @@ export async function replaceImportedData(bundle: ImportBundle) {
   assertImportBundleSafe(bundle)
 
   const db = await dbPromise
-  await materializeTimelineBaselineBeforeMutation(db)
-  const [previousActions, previousOpportunities, previousProcesses, processEvents, previousScheduleNodes] = await Promise.all([
-    db.getAll('actions'),
-    db.getAll('opportunities'),
-    db.getAll('processes'),
-    db.getAll('processEvents'),
-    db.getAll('scheduleNodes'),
-  ])
-  const localOpportunityIds = new Set(
-    previousOpportunities.filter((item) => item.locallyManaged).map((item) => item.id),
-  )
-  const mergedActions = mergeActionsForReimport(bundle.actions, previousActions, localOpportunityIds)
-  const opportunities = mergeLocallyManagedOpportunities(bundle.opportunities, previousOpportunities)
-  const processes = mergeLocallyManagedProcesses(bundle.processes, previousProcesses, localOpportunityIds)
-  const scheduleNodes = previousScheduleNodes.filter((node) =>
-    node.state === 'completed'
-    || node.state === 'cancelled'
-    || node.state === 'superseded'
-    || !node.opportunityId
-    || localOpportunityIds.has(node.opportunityId)
-    || node.temporal.resolutionBasis !== 'legacy_projection'
-  )
-  const contract = {
-    opportunities,
-    processes,
-    processEvents,
-    actions: mergedActions,
-    prep: bundle.prep,
-    scheduleNodes,
-  }
-  ensureScheduleContractInPlace(contract)
+  return withTimelineMutation(db, async (tx) => {
+    const [previousActions, previousOpportunities, previousProcesses, processEvents, previousScheduleNodes] = await Promise.all([
+      tx.objectStore('actions').getAll(),
+      tx.objectStore('opportunities').getAll(),
+      tx.objectStore('processes').getAll(),
+      tx.objectStore('processEvents').getAll(),
+      tx.objectStore('scheduleNodes').getAll(),
+    ])
+    const localOpportunityIds = new Set(
+      previousOpportunities.filter((item) => item.locallyManaged).map((item) => item.id),
+    )
+    const mergedActions = mergeActionsForReimport(bundle.actions, previousActions, localOpportunityIds)
+    const opportunities = mergeLocallyManagedOpportunities(bundle.opportunities, previousOpportunities)
+    const processes = mergeLocallyManagedProcesses(bundle.processes, previousProcesses, localOpportunityIds)
+    const scheduleNodes = previousScheduleNodes.filter((node) =>
+      node.state === 'completed'
+      || node.state === 'cancelled'
+      || node.state === 'superseded'
+      || !node.opportunityId
+      || localOpportunityIds.has(node.opportunityId)
+      || node.temporal.resolutionBasis !== 'legacy_projection'
+    )
+    const contract = {
+      opportunities,
+      processes,
+      processEvents,
+      actions: mergedActions,
+      prep: bundle.prep,
+      scheduleNodes,
+    }
+    ensureScheduleContractInPlace(contract)
 
-  const tx = db.transaction(
-    ['opportunities', 'processes', 'scheduleNodes', 'actions', 'prep', 'applicationGroups', 'timeline', 'meta'],
-    'readwrite',
-  )
+    await Promise.all([
+      tx.objectStore('opportunities').clear(),
+      tx.objectStore('processes').clear(),
+      tx.objectStore('scheduleNodes').clear(),
+      tx.objectStore('actions').clear(),
+      tx.objectStore('prep').clear(),
+      tx.objectStore('applicationGroups').clear(),
+      tx.objectStore('meta').clear(),
+    ])
 
-  await Promise.all([
-    tx.objectStore('opportunities').clear(),
-    tx.objectStore('processes').clear(),
-    tx.objectStore('scheduleNodes').clear(),
-    tx.objectStore('actions').clear(),
-    tx.objectStore('prep').clear(),
-    tx.objectStore('applicationGroups').clear(),
-    tx.objectStore('meta').clear(),
-  ])
-
-  for (const item of opportunities) await tx.objectStore('opportunities').put(item)
-  for (const item of contract.processes) await tx.objectStore('processes').put(item)
-  for (const item of contract.scheduleNodes ?? []) await tx.objectStore('scheduleNodes').put(item)
-  for (const item of mergedActions) await tx.objectStore('actions').put(item)
-  for (const item of bundle.prep) await tx.objectStore('prep').put(item)
-  for (const item of bundle.applicationGroups) await tx.objectStore('applicationGroups').put(item)
-  for (const item of bundle.timeline ?? []) {
-    if (!await tx.objectStore('timeline').get(item.id)) await tx.objectStore('timeline').put(item)
-  }
-  const importMeta: ImportMeta = { key: 'lastImport', ...bundle.summary }
-  await tx.objectStore('timeline').put(timelineFromImport(importMeta, bundle.timeline?.length ?? 0))
-  await tx.objectStore('meta').put(importMeta)
-  await tx.done
+    for (const item of opportunities) await tx.objectStore('opportunities').put(item)
+    for (const item of contract.processes) await tx.objectStore('processes').put(item)
+    for (const item of contract.scheduleNodes ?? []) await tx.objectStore('scheduleNodes').put(item)
+    for (const item of mergedActions) await tx.objectStore('actions').put(item)
+    for (const item of bundle.prep) await tx.objectStore('prep').put(item)
+    for (const item of bundle.applicationGroups) await tx.objectStore('applicationGroups').put(item)
+    for (const item of bundle.timeline ?? []) {
+      if (!await tx.objectStore('timeline').get(item.id)) await tx.objectStore('timeline').put(item)
+    }
+    const importMeta: ImportMeta = { key: 'lastImport', ...bundle.summary }
+    await tx.objectStore('timeline').put(timelineFromImport(importMeta, bundle.timeline?.length ?? 0))
+    await tx.objectStore('meta').put(importMeta)
+  })
 }

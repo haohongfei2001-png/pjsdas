@@ -242,3 +242,79 @@ for (const invalid of [false, true]) test(`legacy baseline is ${invalid ? 'rejec
   expect(historyAfter.find((row) => row.id === recordedEvent.id)).toEqual(recordedEvent)
   expect(await readStore(restarted, 'timeline')).toEqual(durableTimeline)
 })
+
+test('queued second-connection cache replacement cannot erase legacy completion between baseline and import', async ({ page, context }) => {
+  await page.goto('/')
+  await expect(page.locator('.tsui-primary-nav')).toBeVisible()
+  const importedJob = { ...job, locallyManaged: false }
+  const completed = { ...task, status: 'done', updatedAt: OLD }
+  const replacementAction = { ...completed, id: 'replacement-done' }
+  await putRows(page, { opportunities: [importedJob], actions: [completed] })
+  const evidence = await page.evaluate(async ({ job, replacementAction, OLD }) => {
+    const module = await import('/pjsdas/src/db.ts')
+    const db = await module.dbPromise
+    // Another connection uses the real IndexedDB lock queue, as another tab does.
+    const other = await new Promise<IDBDatabase>((resolve, reject) => {
+      const request = indexedDB.open('pjsdas', 11)
+      request.onsuccess = () => resolve(request.result); request.onerror = () => reject(request.error)
+    })
+    const original = db.transaction.bind(db)
+    let queued: Promise<void> | undefined
+    let intercepted = false
+    ;(db as any).transaction = (...args: any[]) => {
+      const tx = (original as any)(...args)
+      if (!intercepted && args[1] === 'readwrite') {
+        intercepted = true
+        // Queue a markerless legacy cache replacement while the first baseline
+        // transaction still holds its locks. It must not split baseline/edit.
+        const replacement = other.transaction([...other.objectStoreNames], 'readwrite')
+        for (const store of other.objectStoreNames) replacement.objectStore(store).clear()
+        replacement.objectStore('opportunities').put(job)
+        replacement.objectStore('actions').put(replacementAction)
+        queued = new Promise<void>((resolve, reject) => {
+          replacement.oncomplete = () => resolve(); replacement.onerror = () => reject(replacement.error)
+        })
+      }
+      return tx
+    }
+    const bundle = { opportunities: [job], processes: [], actions: [], prep: [], applicationGroups: [],
+      summary: { filename: 'atomic-import.xlsx', importedAt: OLD, opportunities: 1, pending: 0, processes: 0, prep: 0, applicationGroups: 0, actions: 0 } }
+    try {
+      await module.replaceImportedData(bundle)
+      await queued
+      const afterRace = await module.exportLocalSnapshot()
+      const retained = afterRace.data.actions.some((row) => row.id === replacementAction.id)
+        || afterRace.data.timeline!.some((row) => row.actionId === replacementAction.id && row.changes?.status?.after === 'done')
+      // A later import reads the replacement's latest facts under the same lock.
+      await module.replaceImportedData(bundle)
+      return { intercepted, retained, after: (await module.exportLocalSnapshot()).data }
+    } finally { (db as any).transaction = original; other.close() }
+  }, { job: importedJob, replacementAction, OLD })
+  expect(evidence.intercepted).toBe(true)
+  expect(evidence.retained).toBe(true)
+  expect(evidence.after.actions).toEqual([])
+  const completion = evidence.after.timeline!.find((row) => row.actionId === replacementAction.id && row.changes?.status?.after === 'done')
+  expect(completion).toBeDefined()
+  await page.reload(); await expect(page.getByTestId('cgr02-today')).toBeVisible()
+  const restarted = await context.newPage(); await restarted.goto('/pjsdas/today'); await page.close()
+  expect((await readStore(restarted, 'timeline')).find((row) => row.id === completion!.id)).toEqual(completion)
+})
+
+test('source edit failure rolls back materialized baseline and source rows together', async ({ page }) => {
+  await page.goto('/'); await expect(page.locator('.tsui-primary-nav')).toBeVisible()
+  await putRows(page, { opportunities: [job], actions: [{ ...task, status: 'done', updatedAt: OLD }] })
+  const before = Object.fromEntries(await Promise.all(['actions', 'timeline', 'processes', 'scheduleNodes'].map(async (store) => [store, await readStore(page, store)])))
+  const failed = await page.evaluate(async () => {
+    const module = await import('/pjsdas/src/db.ts')
+    const original = IDBObjectStore.prototype.put
+    IDBObjectStore.prototype.put = function (...args: Parameters<typeof original>) {
+      if (this.name === 'actions') throw new DOMException('Injected source write failure', 'QuotaExceededError')
+      return original.apply(this, args)
+    }
+    try { await module.updateActionStatus('history-task', 'todo'); return false }
+    catch { return true }
+    finally { IDBObjectStore.prototype.put = original }
+  })
+  expect(failed).toBe(true)
+  for (const [store, rows] of Object.entries(before)) expect(await readStore(page, store)).toEqual(rows)
+})
