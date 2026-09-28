@@ -236,13 +236,9 @@ function backfillSemanticReceiptOrder(data: SnapshotData) {
     item.sourceKind, item.sourceId, item.sourceRecordId, item.sourceVersion ?? '', item.inputId,
   ].join('|')
 
-  const ordered = [...receipts].sort((left, right) => {
+  const missing = receipts.filter((item) => item.creationSequence === undefined).sort((left, right) => {
     const byCreatedAt = left.createdAt.localeCompare(right.createdAt)
     if (byCreatedAt) return byCreatedAt
-    if (hadSequence.has(left.id) && hadSequence.has(right.id)) {
-      const bySequence = left.creationSequence! - right.creationSequence!
-      if (bySequence) return bySequence
-    }
     const leftReceived = receivedAt(left)
     const rightReceived = receivedAt(right)
     if (leftReceived && rightReceived && leftReceived !== rightReceived) {
@@ -251,14 +247,23 @@ function backfillSemanticReceiptOrder(data: SnapshotData) {
     return sourceIdentity(left).localeCompare(sourceIdentity(right))
   })
 
-  for (let index = 0; index < ordered.length; index += 1) {
-    ordered[index]!.creationSequence = index + 1
+  let nextSequence = Math.max(0, ...receipts.map((item) => item.creationSequence ?? 0))
+  for (const item of missing) {
+    item.creationSequence = ++nextSequence
   }
-  for (let index = 0; index < ordered.length; index += 1) {
-    const left = ordered[index]!
-    for (const right of ordered.slice(index + 1)) {
-      if (right.createdAt !== left.createdAt) break
-      if (hadSequence.has(left.id) && hadSequence.has(right.id)) continue
+  for (let index = 0; index < receipts.length; index += 1) {
+    const left = receipts[index]!
+    for (const right of receipts.slice(index + 1)) {
+      const leftHadSequence = hadSequence.has(left.id)
+      const rightHadSequence = hadSequence.has(right.id)
+      if (leftHadSequence && rightHadSequence) continue
+      if (leftHadSequence !== rightHadSequence) {
+        if (!(left.factKeys ?? []).some((key) => right.factKeys?.includes(key))) continue
+        left.causalOrderAmbiguous = true
+        right.causalOrderAmbiguous = true
+        continue
+      }
+      if (right.createdAt !== left.createdAt) continue
       const leftReceived = receivedAt(left)
       const rightReceived = receivedAt(right)
       if (leftReceived && rightReceived && leftReceived !== rightReceived) continue

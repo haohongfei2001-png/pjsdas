@@ -1224,6 +1224,45 @@ describe('UU06 shared Gmail intake', () => {
     validateSnapshot(undone)
   })
 
+  it('preserves existing causal sequences when a partially migrated snapshot has older caller timestamps', () => {
+    const base = snapshot()
+    const factKey = 'opportunity_deadline|opp:jd|date|2026-09-25T00:00:00.000Z'
+    base.data.semanticReceipts = [
+      {
+        id: 'z-sequenced-creator', inputId: 'partial:creator', sourceKind: 'gmail', sourceId: 'gmail:first',
+        sourceRecordId: 'partial-creator', sourceVersion: 'v1', status: 'committed', summary: 'Creator',
+        affectedObjects: [], decisionRequestIds: [], factKeys: [factKey], mutatedFactKeys: [factKey],
+        creationSequence: 1, undoAvailable: true, createdAt: now.toISOString(), updatedAt: now.toISOString(),
+      },
+      {
+        id: 'a-sequenced-follower', inputId: 'partial:follower', sourceKind: 'gmail', sourceId: 'gmail:second',
+        sourceRecordId: 'partial-follower', sourceVersion: 'v1', status: 'committed', summary: 'Follower',
+        affectedObjects: [], decisionRequestIds: [], factKeys: [factKey], mutatedFactKeys: [],
+        creationSequence: 2, undoAvailable: false,
+        createdAt: '2026-09-20T23:59:00.000Z', updatedAt: '2026-09-20T23:59:00.000Z',
+      },
+      {
+        id: 'm-unsequenced-unrelated', inputId: 'partial:unrelated', sourceKind: 'gmail', sourceId: 'gmail:third',
+        sourceRecordId: 'partial-unrelated', sourceVersion: 'v1', status: 'committed', summary: 'Unrelated',
+        affectedObjects: [], decisionRequestIds: [], factKeys: ['manual_action|other|'],
+        undoAvailable: false, createdAt: now.toISOString(), updatedAt: now.toISOString(),
+      },
+    ]
+    base.data.semanticReceipts.sort((left, right) => left.id.localeCompare(right.id))
+    const upgraded = upgradeSnapshotToLatest(base)
+    expect(upgraded.data.semanticReceipts?.map((item) => [item.id, item.creationSequence])).toEqual([
+      ['a-sequenced-follower', 2], ['m-unsequenced-unrelated', 3], ['z-sequenced-creator', 1],
+    ])
+    const roundTrip = upgradeSnapshotToLatest(createSnapshot(upgraded.data, upgraded.exportedAt))
+    const undone = applySemanticCompensation(roundTrip, {
+      operation: 'semantic_batch',
+      payload: { domainCompensations: [], decisionRequestIds: [], receiptIds: ['z-sequenced-creator'] },
+    }, new Date('2026-09-21T00:01:00Z'))
+    expect(undone.data.semanticReceipts?.find((item) => item.id === 'a-sequenced-follower')?.factInvalidations?.[0]?.factKey)
+      .toBe(factKey)
+    validateSnapshot(undone)
+  })
+
   it('undoes only owned mutations from a mixed cross-source receipt', () => {
     const observation = (sourceId: string, withAction: boolean) => ({
       contractVersion: 1 as const,
