@@ -9,7 +9,7 @@ import { applyGmailSemanticBatch, type GmailSemanticRecord } from '../src/gmailS
 import { reconcileIngestionDebt } from '../src/ingestionResolution.js'
 import { stableIngestionHash } from '../src/ingestion.js'
 import { validateSnapshot, type PJSDASSnapshot } from '../src/snapshot.js'
-import { fragmentBindingShape, fragmentEvidenceShape, fragmentSafetyDigest } from '../src/fragmentReprocessSafety.js'
+import { fragmentBindingShape, fragmentBusinessDeltaDigest, fragmentEvidenceShape, fragmentSafetyDigest } from '../src/fragmentReprocessSafety.js'
 import type { GmailAutomationBinding } from './automationConnectionStore.js'
 import type { GatewayWorkspace, WorkspaceWriteInput } from './workspaceSource.js'
 
@@ -123,6 +123,7 @@ export interface FragmentSettlementAuthorization {
   targetSetDigest: string
   evidenceDigest: string
   settledSetDigest: string
+  businessDeltaDigest: string
 }
 
 export interface FragmentSettlementDependencies {
@@ -177,8 +178,11 @@ export async function executeBoundedFragmentSettlement(
       checkedAt: now.toISOString(), workspaceVersion: version!, targetIds: targets,
     })
     const settledSetDigest = await fragmentSafetyDigest(plan.selectedIds)
+    const businessDeltaDigest = await fragmentBusinessDeltaDigest(
+      workspace.snapshot, plan.snapshot, now.toISOString())
     if (plan.selectedIds.length !== 39 || authorization.expectedProjectedSettledCount !== 39
       || settledSetDigest !== authorization.settledSetDigest
+      || businessDeltaDigest !== authorization.businessDeltaDigest
       || (firstSettledSetDigest !== undefined && settledSetDigest !== firstSettledSetDigest)) {
       throw new WorkspaceSourceError('SETTLEMENT_PROJECTION_CHANGED', 'Authorized settlement projection changed.', false)
     }
@@ -214,7 +218,8 @@ export function createGmailFragmentReprocessWriteHandler(config: GmailFragmentRe
     const digest = (value: unknown) => typeof value === 'string' && /^[a-f0-9]{64}$/.test(value)
     if (body?.expectedProjectedSettledCount !== 39
       || !digest(body.bindingDigest) || !digest(body.targetSetDigest)
-      || !digest(body.evidenceDigest) || !digest(body.settledSetDigest)) {
+      || !digest(body.evidenceDigest) || !digest(body.settledSetDigest)
+      || !digest(body.businessDeltaDigest)) {
       return json(400, { code: 'EXACT_PROJECTION_REQUIRED' })
     }
 

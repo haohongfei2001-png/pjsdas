@@ -1,4 +1,5 @@
 import type { GmailSemanticRecord } from './gmailSemanticIntake.js'
+import type { PJSDASSnapshot } from './snapshot.js'
 
 /** Stable authorization fingerprints exclude the parser's per-request observation clock. */
 export async function fragmentSafetyDigest(value: unknown): Promise<string> {
@@ -30,4 +31,40 @@ export function fragmentBindingShape(binding: {
     consent: binding.gmailIntakeConsentVersion ?? null,
     scopes: [...binding.grantedScopes].sort(),
   }
+}
+
+const BUSINESS_COLLECTIONS = [
+  'opportunities', 'processes', 'processEvents', 'actions', 'scheduleNodes',
+  'reminderIntents', 'reminderOutbox', 'prep', 'applicationGroups',
+  'decisionRequests', 'discoveryInbox',
+] as const
+
+function normalized(value: unknown, attemptTime: string): unknown {
+  if (typeof value === 'string') return value === attemptTime ? '<request-time>' : value
+  if (Array.isArray(value)) return value.map((item) => normalized(item, attemptTime))
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(Object.entries(value).sort(([a], [b]) => a.localeCompare(b))
+      .map(([key, item]) => [key, normalized(item, attemptTime)]))
+  }
+  return value
+}
+
+/** Include the before/after value of every business object changed by the bounded plan. */
+export function fragmentBusinessDeltaShape(before: PJSDASSnapshot, after: PJSDASSnapshot, attemptTime: string) {
+  const collections = BUSINESS_COLLECTIONS.map((key) => {
+    const original = new Map(((before.data[key] ?? []) as { id: string }[]).map((item) => [item.id, item]))
+    const projected = new Map(((after.data[key] ?? []) as { id: string }[]).map((item) => [item.id, item]))
+    const changed = [...new Set([...original.keys(), ...projected.keys()])].sort()
+      .map((id) => ({
+        id, before: normalized(original.get(id) ?? null, attemptTime),
+        after: normalized(projected.get(id) ?? null, attemptTime),
+      }))
+      .filter((item) => JSON.stringify(item.before) !== JSON.stringify(item.after))
+    return [key, changed] as const
+  })
+  return Object.fromEntries(collections)
+}
+
+export async function fragmentBusinessDeltaDigest(before: PJSDASSnapshot, after: PJSDASSnapshot, attemptTime: string) {
+  return fragmentSafetyDigest(fragmentBusinessDeltaShape(before, after, attemptTime))
 }

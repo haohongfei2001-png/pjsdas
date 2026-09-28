@@ -6,7 +6,7 @@ import { createSnapshot, upgradeSnapshotToLatest, validateSnapshot } from '../sr
 import type { GmailSemanticRecord } from '../src/gmailSemanticIntake.js'
 import { applyGmailSemanticBatch } from '../src/gmailSemanticIntake.js'
 import type { TimelineRecord } from '../src/model.js'
-import { fragmentBindingShape, fragmentEvidenceShape, fragmentSafetyDigest } from '../src/fragmentReprocessSafety.js'
+import { fragmentBindingShape, fragmentBusinessDeltaDigest, fragmentEvidenceShape, fragmentSafetyDigest } from '../src/fragmentReprocessSafety.js'
 import { WorkspaceSourceError } from '../gateway/workspaceSource.js'
 import type { FragmentSettlementDependencies } from '../gateway/gmailFragmentReprocessWriteHandler.js'
 
@@ -104,10 +104,17 @@ describe('Gmail fragment settlement write', () => {
     }))).status).toBe(401)
   })
 
-  async function boundedFixture(options: { conflicts: number; change?: 'target' | 'projection' | 'parser' | 'binding' }) {
+  async function boundedFixture(options: { conflicts: number; change?: 'target' | 'projection' | 'parser' | 'binding' | 'delta' }) {
     const ids = Array.from({ length: 39 }, (_, index) => `fragment-${String(index).padStart(2, '0')}`)
     const baseline = createSnapshot({
       opportunities: [], processes: [], processEvents: [], actions: [], prep: [], applicationGroups: [],
+      scheduleNodes: options.change === 'delta' ? [{
+        id: 'interview-v1', occurrenceId: 'interview-1', version: 1, kind: 'interview', state: 'scheduled',
+        temporal: { shape: 'fixed_range', precision: 'datetime', timezone: 'Asia/Shanghai',
+          startAt: '2026-09-30T02:00:00.000Z', endAt: '2026-09-30T03:00:00.000Z', resolutionBasis: 'source_explicit' },
+        constraintKind: 'employer_hard', evidenceRefs: ['prior'], sourceVersionRefs: [],
+        relatedActionIds: [], relatedPrepIds: [], createdAt: checkedAt, updatedAt: checkedAt,
+      }] as const : [],
       timeline: ids.flatMap(legacyTarget),
     }, '2026-09-27T00:00:00.000Z')
     const binding = {
@@ -116,9 +123,15 @@ describe('Gmail fragment settlement write', () => {
       gmailIntakeConsentVersion: 'uu06-v1' as const, gmailPendingMessageIds: [],
     }
     const baselineRecords = ids.map((id) => record(id))
-    const selected = planFragmentReprocessWrite(baseline, baselineRecords, {
+    if (options.change === 'delta') baselineRecords[0]!.observation.candidates = [{
+      id: 'complete-interview', kind: 'occurrence_completed', target: { occurrenceId: 'interview-1' },
+      objectConfidence: 'high', eventConfidence: 'high', evidenceRefs: ['gmail'],
+      sourceVersionRefs: [`${ids[0]}:fragment-reprocess-v2`],
+    }]
+    const baselinePlan = planFragmentReprocessWrite(baseline, baselineRecords, {
       checkedAt, workspaceVersion: 'txn:800', targetIds: ids,
-    }).selectedIds
+    })
+    const selected = baselinePlan.selectedIds
     expect(selected).toEqual(ids)
     const authorization = {
       expectedProjectedSettledCount: 39 as const,
@@ -126,6 +139,7 @@ describe('Gmail fragment settlement write', () => {
       targetSetDigest: await fragmentSafetyDigest(ids),
       evidenceDigest: await fragmentSafetyDigest(fragmentEvidenceShape(baselineRecords)),
       settledSetDigest: await fragmentSafetyDigest(selected),
+      businessDeltaDigest: await fragmentBusinessDeltaDigest(baseline, baselinePlan.snapshot, checkedAt),
     }
     const calls = { reads: 0, evidence: 0, commits: 0, successfulWrites: 0, versions: [] as string[] }
     const dependencies: FragmentSettlementDependencies = {
@@ -135,6 +149,21 @@ describe('Gmail fragment settlement write', () => {
         calls.reads += 1
         const snapshot = structuredClone(baseline)
         if (options.change === 'target' && calls.reads > 1) snapshot.data.timeline.push(...legacyTarget('new-target'))
+        if (options.change === 'delta' && calls.reads > 1) {
+          const first = snapshot.data.scheduleNodes![0]!
+          first.state = 'superseded'
+          first.supersededByNodeId = 'interview-v2'
+          snapshot.data.scheduleNodes!.push({ ...structuredClone(first), id: 'interview-v2', version: 2,
+            state: 'scheduled', supersedesNodeId: first.id, supersededByNodeId: undefined,
+            temporal: { ...first.temporal, startAt: '2026-10-01T02:00:00.000Z', endAt: '2026-10-01T03:00:00.000Z' },
+          })
+          const changedPlan = planFragmentReprocessWrite(snapshot, baselineRecords, {
+            checkedAt, workspaceVersion: 'txn:801', targetIds: ids,
+          })
+          expect(changedPlan.selectedIds).toEqual(ids)
+          expect(await fragmentBusinessDeltaDigest(snapshot, changedPlan.snapshot, checkedAt))
+            .not.toBe(authorization.businessDeltaDigest)
+        }
         if (options.change === 'projection' && calls.reads > 1) {
           const uncertain = record(ids[0]!)
           uncertain.observation.candidates = [{
@@ -155,7 +184,8 @@ describe('Gmail fragment settlement write', () => {
       },
       evidence: async (_binding, targets) => {
         calls.evidence += 1
-        const records = targets.map((id) => record(id))
+        const records = targets.map((id) => options.change === 'delta'
+          ? structuredClone(baselineRecords.find((item) => item.observation.source.sourceRecordId === id)!) : record(id))
         if (options.change === 'parser' && calls.evidence > 1) records[0]!.gaps.push('new parser gap')
         return { records, fetchedCount: records.length, unavailableCount: 0 }
       },
@@ -190,6 +220,7 @@ describe('Gmail fragment settlement write', () => {
     ['projection', 'SETTLEMENT_PROJECTION_CHANGED'],
     ['parser', 'PARSER_SAFETY_CHANGED'],
     ['binding', 'BINDING_CHANGED'],
+    ['delta', 'SETTLEMENT_PROJECTION_CHANGED'],
   ] as const)('aborts after revision churn when %s changes', async (change, code) => {
     const { authorization, dependencies, calls } = await boundedFixture({ conflicts: 1, change })
     await expect(executeBoundedFragmentSettlement(authorization, dependencies))

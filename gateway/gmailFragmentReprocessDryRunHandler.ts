@@ -13,7 +13,8 @@ import { reconcileIngestionDebt } from '../src/ingestionResolution.js'
 import { stableIngestionHash, summarizeCoverage } from '../src/ingestion.js'
 import type { GmailReconciliationState, TimelineRecord } from '../src/model.js'
 import type { PJSDASSnapshot } from '../src/snapshot.js'
-import { fragmentBindingShape, fragmentEvidenceShape, fragmentSafetyDigest } from '../src/fragmentReprocessSafety.js'
+import { fragmentBindingShape, fragmentBusinessDeltaDigest, fragmentEvidenceShape, fragmentSafetyDigest } from '../src/fragmentReprocessSafety.js'
+import { planFragmentReprocessWrite } from './gmailFragmentReprocessWriteHandler.js'
 
 const GMAIL_SOURCE_ID = 'gmail:primary'
 const FRAGMENT_REPROCESS_SOURCE_VERSION = 'fragment-reprocess-v2'
@@ -218,6 +219,9 @@ export function createGmailFragmentReprocessDryRunHandler(config: GmailFragmentR
           record.gaps.some((gap) => gap.includes(`${GMAIL_FRAGMENT_PARSE_LIMIT}-fragment interpretation limit`)))
         const parserStates = stateCounts(records)
         const beforeCoverage = summarizeCoverage(workspace.snapshot.data.timeline)
+        const boundedPlan = planFragmentReprocessWrite(workspace.snapshot, records, {
+          checkedAt: now.toISOString(), workspaceVersion: workspace.context.workspaceVersion ?? '', targetIds: targets,
+        })
 
         let projectedSettledCount = 0
         let projectedActiveUnresolved = beforeCoverage.activeUnresolvedCount
@@ -255,6 +259,10 @@ export function createGmailFragmentReprocessDryRunHandler(config: GmailFragmentR
           }
           projectedActiveUnresolved = Math.max(0, beforeCoverage.activeUnresolvedCount - projectedSettledCount)
         }
+        if (boundedPlan.selectedIds.length !== projectedSettledCount
+          || boundedPlan.selectedIds.some((id) => !projectedSettledIds.has(id))) {
+          throw new WorkspaceSourceError('SETTLEMENT_PROJECTION_CHANGED', 'Read-only and bounded projections disagree.', false)
+        }
 
         results.push({
           status: 'success',
@@ -273,7 +281,9 @@ export function createGmailFragmentReprocessDryRunHandler(config: GmailFragmentR
           bindingDigest: await fragmentSafetyDigest(fragmentBindingShape(binding)),
           targetSetDigest: await fragmentSafetyDigest(targets),
           evidenceDigest: await fragmentSafetyDigest(fragmentEvidenceShape(records)),
-          settledSetDigest: await fragmentSafetyDigest([...projectedSettledIds].sort()),
+          settledSetDigest: await fragmentSafetyDigest(boundedPlan.selectedIds),
+          businessDeltaDigest: await fragmentBusinessDeltaDigest(
+            workspace.snapshot, boundedPlan.snapshot, now.toISOString()),
         })
       }
 
