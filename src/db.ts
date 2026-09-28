@@ -1017,8 +1017,17 @@ export async function exportLocalRecoveryArchive() {
 export async function clearLocalWorkspaceCache() {
   const db = await dbPromise
   const tx = db.transaction([...DATA_STORES], 'readwrite')
-  await Promise.all(DATA_STORES.map((storeName) => tx.objectStore(storeName).clear()))
-  await tx.done
+  try {
+    await Promise.all(DATA_STORES.map((storeName) => tx.objectStore(storeName).clear()))
+    await tx.done
+  } catch (caught) {
+    // A synchronous store failure must also abort clears already enqueued.
+    // Keep the complete cache available for recovery instead of committing a
+    // partially cleared account boundary. Consume the transaction rejection.
+    try { tx.abort() } catch { /* The transaction may already have aborted. */ }
+    await tx.done.catch(() => {})
+    throw caught
+  }
   if (typeof window !== 'undefined') window.dispatchEvent(new Event('pjsdas:workspace-replaced'))
 }
 

@@ -15,7 +15,7 @@ Historical boundaries:
 
 Current phase: **PCR-02 — startup and recovery invariant audit**
 
-Current writer: **NONE — PCR-01 closure; next bounded writer may acquire PCR-02**
+Current writer: **reliability/pcr02-account-recovery-v1 — bounded account-boundary recovery**
 
 Production claim: **P0 verified on exact runtime a8d9840; Repair 02 committed 38 settlements once (CAS 841 → 842), readback 843, read-only idempotency 0. No further production write authorized.**
 
@@ -24,7 +24,7 @@ Production claim: **P0 verified on exact runtime a8d9840; Repair 02 committed 38
 | Phase | State | Purpose |
 | --- | --- | --- |
 | PCR-01 | COMPLETE | exact-main closure of merged PR #185 history/startup P0 and any already-authorized bounded follow-through |
-| PCR-02 | READY | startup/recovery invariant audit |
+| PCR-02 | IN_PROGRESS | account-cache recovery, atomic clear and serialized auth transitions; seven regressions; full gates pending |
 | PCR-03 | PLANNED | Schedule/history mutation semantics audit |
 | PCR-04 | PLANNED | action-intent correctness across UI/API/MCP paths |
 | PCR-05 | PLANNED | connected-mode restart/reload/recovery hardening |
@@ -64,3 +64,18 @@ and continue to the next dependency-safe phase. Do not falsely mark the gate PAS
   records were not cleared. This is bounded repair completion, not zero debt.
 - Existing one-write authorization is **consumed**. PCR-02..07 grants engineering
   and read-only verification only.
+
+## PCR-02 current evidence
+
+[Recovery audit](PCR-02-RECOVERY-AUDIT.md): actual auth expiry + failed cache clear
+left stale account UI; a third-store synchronous clear failure committed partial
+data loss. Candidate repair enters root recovery and aborts the full clear
+transaction. Seven new browser regressions plus two existing account journeys pass;
+982 unit/type/build pass. Remote full gates/review and exact-main verification
+remain required. PCR-03..07 are still pending; no further production write allowed.
+
+First-head Codex P2 duplicate Settings/auth-listener clear was valid: the queue now
+serializes both paths and latches failures until Retry. Its real one-shot failure
+regression fails before the repair. Independent probes confirmed two later work
+items: late authoritative reads revive signed-out cache (PCR-05), and task Undo
+rewrites historical completed/elapsed nodes (PCR-03). Neither is marked complete.

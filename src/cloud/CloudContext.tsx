@@ -67,8 +67,12 @@ export function CloudProvider({ children }: { children: ReactNode }) {
   const [checkpoint, setCheckpoint] = useState<AccountSyncCheckpoint>({})
   const [outcome, setOutcome] = useState<CloudSyncOutcome>()
   const [error, setError] = useState<string>()
+  const [accountBoundaryError, setAccountBoundaryError] = useState<string>()
   const busyRef = useRef(false)
   const linkingRef = useRef(false)
+  const adoptionTailRef = useRef<Promise<boolean>>(Promise.resolve(true))
+  const adoptionSequenceRef = useRef(0)
+  const boundaryFailedRef = useRef(false)
 
   const refreshState = useCallback((userId?: string) => {
     setDevice(getCloudDeviceState())
@@ -80,23 +84,38 @@ export function CloudProvider({ children }: { children: ReactNode }) {
     refreshState(next?.user.id)
   }, [refreshState])
 
-  const adoptSession = useCallback(async (next: CloudSession | null) => {
-    if (connectedWorkspaceAuthorityEnabled()) {
-      const owner = getCloudDeviceState().workspaceOwnerUserId
-      const nextUserId = next?.user.id
-      await enforceConnectedAccountCacheBoundary(
-        owner,
-        nextUserId,
-        clearLocalWorkspaceCache,
-        clearLocalWorkspaceBinding,
-      )
-    }
-    applySession(next)
-    if (next && connectedWorkspaceAuthorityEnabled()) {
-      await replayAccountPendingOperations(next.user.id).catch((caught) => {
-        setError(caught instanceof Error ? caught.message : String(caught))
-      })
-    }
+  const adoptSession = useCallback((next: CloudSession | null) => {
+    const sequence = ++adoptionSequenceRef.current
+    // Auth events and manual sign-out share one boundary queue. Once a clear
+    // fails, no queued adoption may retry it behind the recovery surface.
+    const boundary = adoptionTailRef.current.then(async () => {
+      if (boundaryFailedRef.current || sequence !== adoptionSequenceRef.current) return false
+      if (connectedWorkspaceAuthorityEnabled()) {
+        await enforceConnectedAccountCacheBoundary(
+          getCloudDeviceState().workspaceOwnerUserId,
+          next?.user.id,
+          clearLocalWorkspaceCache,
+          clearLocalWorkspaceBinding,
+        )
+      }
+      if (sequence !== adoptionSequenceRef.current) return false
+      applySession(next)
+      return true
+    }).catch((caught) => {
+      boundaryFailedRef.current = true
+      setAccountBoundaryError(caught instanceof Error ? caught.message : String(caught))
+      return false
+    })
+    adoptionTailRef.current = boundary
+    return boundary.then(async (adopted) => {
+      if (!adopted) return false
+      if (next && connectedWorkspaceAuthorityEnabled() && sequence === adoptionSequenceRef.current) {
+        await replayAccountPendingOperations(next.user.id).catch((caught) => {
+          setError(caught instanceof Error ? caught.message : String(caught))
+        })
+      }
+      return sequence === adoptionSequenceRef.current
+    })
   }, [applySession])
 
   const finishPendingLink = useCallback(async () => {
@@ -119,8 +138,8 @@ export function CloudProvider({ children }: { children: ReactNode }) {
     void getCloudSession()
       .then(async (next) => {
         if (!active) return
-        await adoptSession(next)
-        if (next) await finishPendingLink()
+        const adopted = await adoptSession(next)
+        if (active && adopted && next) await finishPendingLink()
       })
       .catch((caught) => {
         if (active) setError(caught instanceof Error ? caught.message : String(caught))
@@ -131,8 +150,11 @@ export function CloudProvider({ children }: { children: ReactNode }) {
 
     void subscribeCloudSession((next) => {
       if (!active) return
-      void adoptSession(next)
-      if (next) void finishPendingLink()
+      void adoptSession(next).then((adopted) => {
+        if (active && adopted && next) void finishPendingLink()
+      }).catch((caught) => {
+        if (active) setError(caught instanceof Error ? caught.message : String(caught))
+      })
     }).then((cleanup) => {
       if (!active) cleanup()
       else unsubscribe = cleanup
@@ -282,11 +304,7 @@ export function CloudProvider({ children }: { children: ReactNode }) {
         })
       }
       await signOutCloud()
-      if (connected) {
-        await clearLocalWorkspaceCache()
-        clearLocalWorkspaceBinding()
-      }
-      applySession(null)
+      if (!await adoptSession(null)) throw new Error('Account cache recovery is required before continuing.')
       setOutcome(undefined)
       setError(undefined)
       setLoading(false)
@@ -294,7 +312,7 @@ export function CloudProvider({ children }: { children: ReactNode }) {
       busyRef.current = false
       setSyncing(false)
     }
-  }, [loading, session, outcome?.kind, checkpoint.conflict, device.workspaceOwnerUserId, applySession])
+  }, [loading, session, outcome?.kind, checkpoint.conflict, device.workspaceOwnerUserId, adoptSession])
 
   const value = useMemo<CloudContextValue>(() => ({
     configured,
@@ -317,6 +335,7 @@ export function CloudProvider({ children }: { children: ReactNode }) {
     },
   }), [configured, session, loading, syncing, device, checkpoint, outcome, error, signIn, signOut, syncNow, runResolution, refreshState])
 
+  if (accountBoundaryError !== undefined) throw new Error(accountBoundaryError)
   return <CloudContext.Provider value={value}>{children}</CloudContext.Provider>
 }
 
