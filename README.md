@@ -190,3 +190,16 @@ The next major product/usability package is registered under
 Its frozen design refines the product toward a Today-first, automation-heavy, Mac/iPhone-coherent
 experience while preserving the transactional authority, audit, idempotency, CAS, provenance, and
 external-action safety boundaries defined by the AI-operated production architecture.
+
+
+## Current post-closure reliability work
+
+The completed Consumer-Grade Refoundation remains closed and its historical
+`COMPLETE / STOPPED` status is not reopened. Subsequent dependency-safe
+reliability and product-hardening work is governed by
+[`docs/post-closure-reliability-v1/`](docs/post-closure-reliability-v1/README.md).
+
+That package begins from the merged history/startup P0 repair and may continue
+through bounded reliability audits without starting UU-08/UU-09, iPhone work,
+release publication, broader permissions, external recruiting actions or another
+product refoundation.
