@@ -147,7 +147,7 @@ function pendingFactKeys(matching: SemanticIntakeReceipt[]) {
     for (const invalidation of item.factInvalidations ?? []) {
       if (!restoredAfter(invalidation.factKey, invalidation.invalidatedAt, item)) pending.add(invalidation.factKey)
     }
-    if (item.status === 'undone') for (const factKey of item.factKeys ?? []) {
+    if (item.status === 'undone') for (const factKey of item.mutatedFactKeys ?? item.factKeys ?? []) {
       if (!restoredAfter(factKey, item.updatedAt, item)) pending.add(factKey)
     }
   }
@@ -907,7 +907,7 @@ function receipt(input: {
     affectedObjects: input.affectedObjects,
     decisionRequestIds: input.decisionRequestIds,
     factKeys: input.factKeys?.length ? [...new Set(input.factKeys)] : undefined,
-    mutatedFactKeys: input.mutatedFactKeys?.length ? [...new Set(input.mutatedFactKeys)] : undefined,
+    mutatedFactKeys: input.mutatedFactKeys === undefined ? undefined : [...new Set(input.mutatedFactKeys)],
     factMutationObjects: input.factMutationObjects,
     creationSequence: input.creationSequence,
     undoAvailable: input.undoAvailable,
@@ -1233,7 +1233,7 @@ export function resolveSemanticDecision(
     affectedObjects: applied.affected,
     decisionRequestIds: [request.id],
     factKeys: factKey ? [factKey] : [],
-    mutatedFactKeys: ownsMutation && factKey ? [factKey] : undefined,
+    mutatedFactKeys: ownsMutation && factKey ? [factKey] : [],
     factMutationObjects: ownsMutation && factKey ? { [factKey]: applied.affected } : undefined,
     creationSequence: nextReceiptSequence(working),
     undoAvailable: applied.status === 'applied' && Boolean(applied.compensation),
@@ -1365,7 +1365,7 @@ export function applySemanticCompensation(
           if (correctionAt > exportedAt) exportedAt = correctionAt
         }
       }
-      const invalidatedFactKeys = new Set(item.factKeys ?? [])
+      const invalidatedFactKeys = new Set(item.mutatedFactKeys ?? item.factKeys ?? [])
       if (invalidatedFactKeys.size) {
         const receipts = next.data.semanticReceipts ?? []
         for (const dependent of receipts) {

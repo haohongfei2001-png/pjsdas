@@ -1224,6 +1224,51 @@ describe('UU06 shared Gmail intake', () => {
     validateSnapshot(undone)
   })
 
+  it('undoes only owned mutations from a mixed cross-source receipt', () => {
+    const observation = (sourceId: string, withAction: boolean) => ({
+      contractVersion: 1 as const,
+      inputId: `${sourceId}:mixed-cross-source`,
+      source: {
+        kind: 'gmail' as const, sourceId, sourceRecordId: 'mixed-cross-source',
+        sourceVersion: 'v1', observedAt: now.toISOString(), assertedAt: now.toISOString(), timezone: 'Asia/Shanghai',
+      },
+      statementMode: 'assertion' as const,
+      candidates: [
+        {
+          id: 'deadline', kind: 'opportunity_deadline' as const, target: { opportunityId: 'jd' },
+          deadline: '2026-09-25', precision: 'date' as const,
+          objectConfidence: 'high' as const, eventConfidence: 'high' as const, temporalConfidence: 'high' as const,
+          evidenceRefs: ['mixed-cross-source'], sourceVersionRefs: ['mixed-cross-source:v1'],
+        },
+        ...(withAction ? [{
+          id: 'action', kind: 'manual_action' as const, title: 'Prepare documents',
+          objectConfidence: 'high' as const, eventConfidence: 'high' as const,
+          evidenceRefs: ['mixed-cross-source'], sourceVersionRefs: ['mixed-cross-source:v1'],
+        }] : []),
+      ],
+    })
+    const creator = applySemanticIntake(snapshot(), observation('gmail:first', false), { authorized: true, now })
+    const mixed = applySemanticIntake(creator.snapshot, observation('gmail:second', true), {
+      authorized: true, now: new Date('2026-09-21T00:01:00Z'),
+    })
+    const follower = applySemanticIntake(mixed.snapshot, observation('gmail:third', false), {
+      authorized: true, now: new Date('2026-09-21T00:02:00Z'),
+    })
+    expect(mixed.receipt?.factKeys).toHaveLength(2)
+    expect(mixed.receipt?.mutatedFactKeys).toEqual([mixed.receipt!.factKeys![1]])
+    expect(follower.compensation?.payload.domainCompensations).toHaveLength(0)
+    const undone = applySemanticCompensation(follower.snapshot, mixed.compensation!, new Date('2026-09-21T00:03:00Z'))
+    expect(undone.data.opportunities[0]?.deadline).toBe('2026-09-25')
+    expect(undone.data.actions).toHaveLength(0)
+    expect(undone.data.semanticReceipts?.find((item) => item.id === follower.receipt!.id)?.factInvalidations).toBeUndefined()
+    const replay = applySemanticIntake(undone, observation('gmail:third', false), {
+      authorized: true, now: new Date('2026-09-21T00:04:00Z'),
+    })
+    expect(replay.status).toBe('ALREADY_APPLIED')
+    expect(replay.snapshot.data.actions).toHaveLength(0)
+    validateSnapshot(replay.snapshot)
+  })
+
   it('fails closed when historical equal-time overlapping receipts have no durable causal evidence', () => {
     const base = snapshot()
     const factKey = 'manual_action|ambiguous legacy|'
