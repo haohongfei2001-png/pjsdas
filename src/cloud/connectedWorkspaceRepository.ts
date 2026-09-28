@@ -18,9 +18,9 @@ export function connectedWorkspaceAuthorityEnabled() {
   return env.VITE_PJSDAS_CONNECTED_AUTHORITY?.trim() === 'transactional'
 }
 
-async function request(path: string, init: RequestInit = {}) {
+async function request(path: string, init: RequestInit = {}, accountKey?: string) {
   const headers = new Headers(init.headers)
-  headers.set('authorization', `Bearer ${await getAccountAccessToken()}`)
+  headers.set('authorization', `Bearer ${await getAccountAccessToken(accountKey)}`)
   if (init.body) headers.set('content-type', 'application/json')
   return fetchBackend(path, { ...init, headers })
 }
@@ -56,11 +56,11 @@ async function parseWorkspaceResponse(response: Response): Promise<ConnectedRemo
   }
 }
 
-export async function fetchConnectedRemoteWorkspace(): Promise<ConnectedRemoteWorkspaceRow> {
+export async function fetchConnectedRemoteWorkspace(accountKey?: string): Promise<ConnectedRemoteWorkspaceRow> {
   return parseWorkspaceResponse(await request('/api/workspace', {
     method: 'POST',
     body: JSON.stringify({ action: 'read' }),
-  }))
+  }, accountKey))
 }
 
 export async function createConnectedRemoteWorkspace(): Promise<never> {
@@ -68,6 +68,7 @@ export async function createConnectedRemoteWorkspace(): Promise<never> {
 }
 
 export async function updateConnectedRemoteWorkspace(input: {
+  accountKey?: string
   expectedVersion: string
   fingerprint: string
   snapshot: PJSDASSnapshot
@@ -85,7 +86,7 @@ export async function updateConnectedRemoteWorkspace(input: {
       snapshotPurpose: input.purpose,
       snapshot: input.snapshot,
     }),
-  })
+  }, input.accountKey)
   if (response.status === 409) {
     const body = await response.clone().json().catch(() => undefined) as { outcome?: string; code?: string } | undefined
     if (body?.outcome === 'CONFLICT') return null

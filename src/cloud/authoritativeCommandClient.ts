@@ -1,3 +1,4 @@
+import { captureAccountCacheLease, AccountCacheChangedError } from './accountCacheLease.js'
 import type { UserDomainCommand } from '../domainCommands.js'
 import type { DiscoveryStatusCommand } from '../discoveryStatusCommand.js'
 import type { DiscoveryProfile } from '../discoveryProfile.js'
@@ -153,17 +154,27 @@ export function createConnectedCommandId(prefix = 'web') {
   return `${prefix}:${id}`
 }
 
-async function request(body: Record<string, unknown>) {
+async function request(accountKey: string, body: Record<string, unknown>) {
+  const lease = captureAccountCacheLease(accountKey)
+  const local = await exportLocalSnapshot()
+  const checkpoint = getAccountCheckpoint(accountKey)
+  const baseline = checkpoint.lastReadProjectionSourceFingerprint === checkpoint.lastSyncedFingerprint
+    ? checkpoint.lastReadProjectionFingerprint ?? checkpoint.lastSyncedFingerprint : checkpoint.lastSyncedFingerprint
+  // A later receipt retry must not relabel a genuine local edit as the new baseline.
+  if (baseline && await fingerprintWorkspace(local) !== baseline) throw new AccountCacheChangedError()
+  const accessToken = await getAccountAccessToken(accountKey)
+  lease.assertCurrent()
   const response = await fetchBackend('/api/workspace', {
     method: 'POST',
     headers: {
-      authorization: `Bearer ${await getAccountAccessToken()}`,
+      authorization: `Bearer ${accessToken}`,
       'content-type': 'application/json',
     },
     body: JSON.stringify(body),
   })
   const payload = await response.json().catch(() => undefined) as Record<string, any> | undefined
-  return { response, payload }
+  lease.assertCurrent()
+  return { response, payload, lease, local }
 }
 
 function parseCommandResponse(payload: Record<string, any> | undefined): ConnectedCommandResponse {
@@ -178,18 +189,24 @@ function revisionFromCheckpoint(accountKey: string) {
   return match ? Number(match[1]) : undefined
 }
 
-async function currentRevision() {
-  const { response, payload } = await request({ action: 'read' })
+async function currentRevision(accountKey: string) {
+  const { response, payload } = await request(accountKey, { action: 'read' })
   if (!response.ok || !payload || !Number.isInteger(payload.revision)) {
     throw new Error(`${payload?.code ?? 'CONNECTED_WORKSPACE_FAILED'}: ${payload?.message ?? `HTTP ${response.status}`}`)
   }
   return Number(payload.revision)
 }
 
-async function projectAuthoritativeResult(accountKey: string, result: ConnectedCommandResponse) {
-  await replaceLocalSnapshotFromCloud(result.snapshot)
+async function projectAuthoritativeResult(accountKey: string, result: ConnectedCommandResponse,
+  guard: { expectedLocal: PJSDASSnapshot; assertCurrent: () => void }) {
+  const assertCurrent = () => {
+    guard.assertCurrent()
+    if ((revisionFromCheckpoint(accountKey) ?? -1) > result.revision) throw new AccountCacheChangedError()
+  }
+  const committed = await replaceLocalSnapshotFromCloud(result.snapshot, { ...guard, assertCurrent })
   const fingerprint = await fingerprintWorkspace(result.snapshot)
-  const projectedFingerprint = await fingerprintWorkspace(await exportLocalSnapshot())
+  const projectedFingerprint = await fingerprintWorkspace(committed)
+  assertCurrent()
   patchAccountCheckpoint(accountKey, {
     lastSyncedVersion: result.workspaceVersion ?? `txn:${result.revision}`,
     lastSyncedFingerprint: fingerprint,
@@ -209,7 +226,7 @@ function serverError(response: Response, payload?: Record<string, any>) {
 class PreExecutionCommandError extends Error {}
 
 export async function lookupConnectedCommandReceipt(accountKey: string, commandId: string) {
-  const { response, payload } = await request({ action: 'receipt', commandId })
+  const { response, payload, lease, local } = await request(accountKey, { action: 'receipt', commandId })
   if (!response.ok) throw serverError(response, payload)
   if (!payload?.found) return undefined
   const result = parseCommandResponse({
@@ -221,7 +238,7 @@ export async function lookupConnectedCommandReceipt(accountKey: string, commandI
     receipt: payload.receipt,
     result: payload.receipt?.result,
   })
-  await projectAuthoritativeResult(accountKey, result)
+  await projectAuthoritativeResult(accountKey, result, { expectedLocal: local, assertCurrent: lease.assertCurrent })
   return result
 }
 
@@ -260,7 +277,7 @@ function rejectBeforeExecution(accountKey: string, pending: PendingCommand, resp
 
 async function submitPending(accountKey: string, pending: PendingCommand): Promise<ConnectedCommandResponse> {
   try {
-    const { response, payload } = await request(pending.action === 'command'
+    const { response, payload, lease, local } = await request(accountKey, pending.action === 'command'
       ? {
           action: 'command',
           commandId: pending.commandId,
@@ -275,7 +292,7 @@ async function submitPending(accountKey: string, pending: PendingCommand): Promi
 
     if (response.status === 409 && payload?.outcome === 'CONFLICT') {
       const result = parseCommandResponse(payload)
-      await projectAuthoritativeResult(accountKey, result)
+      await projectAuthoritativeResult(accountKey, result, { expectedLocal: local, assertCurrent: lease.assertCurrent })
       patchPending(accountKey, pending.commandId, {
         status: 'conflict',
         lastError: payload.conflict?.message ?? 'Authoritative command conflict.',
@@ -290,11 +307,11 @@ async function submitPending(accountKey: string, pending: PendingCommand): Promi
     }
 
     const result = parseCommandResponse(payload)
-    await projectAuthoritativeResult(accountKey, result)
+    await projectAuthoritativeResult(accountKey, result, { expectedLocal: local, assertCurrent: lease.assertCurrent })
     removePending(accountKey, pending.commandId)
     return result
   } catch (caught) {
-    if (caught instanceof PreExecutionCommandError) throw caught
+    if (caught instanceof PreExecutionCommandError || caught instanceof AccountCacheChangedError) throw caught
     return recoverUnknown(accountKey, pending, caught)
   }
 }
@@ -319,7 +336,7 @@ export async function executeConnectedBusinessCommand(
     return submitPending(accountKey, existing)
   }
 
-  const base = options.baseRevision ?? revisionFromCheckpoint(accountKey) ?? await currentRevision()
+  const base = options.baseRevision ?? revisionFromCheckpoint(accountKey) ?? await currentRevision(accountKey)
   const timestamp = new Date().toISOString()
   const pending: PendingCommand = {
     commandId,

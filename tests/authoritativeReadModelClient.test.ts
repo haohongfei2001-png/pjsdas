@@ -1,8 +1,10 @@
+import { setAccountCacheSession } from '../src/cloud/accountCacheLease.js'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('../src/db.js', () => ({
+  assertLocalSnapshotCurrent: vi.fn(async () => undefined),
   exportLocalSnapshot: vi.fn(),
-  replaceLocalSnapshotFromCloud: vi.fn(async () => undefined),
+  replaceLocalSnapshotFromCloud: vi.fn(async (value) => value),
 }))
 
 vi.mock('../src/cloud/connectedWorkspaceRepository.js', () => ({
@@ -51,6 +53,8 @@ function remote(version = 'txn:8', fingerprint = 'remote-fp') {
 
 describe('CGR-02 authoritative Today read freshness', () => {
   beforeEach(() => {
+    setAccountCacheSession(undefined)
+    setAccountCacheSession('account-a')
     vi.clearAllMocks()
     Object.defineProperty(globalThis, 'window', {
       configurable: true,
@@ -68,6 +72,7 @@ describe('CGR-02 authoritative Today read freshness', () => {
       },
     })
     vi.mocked(exportLocalSnapshot).mockResolvedValue(local)
+    vi.mocked(replaceLocalSnapshotFromCloud).mockResolvedValue(local)
     vi.mocked(fetchConnectedRemoteWorkspace).mockResolvedValue(remote())
     vi.mocked(getAccountCheckpoint).mockReturnValue({
       lastSyncedVersion: 'txn:7',
@@ -86,7 +91,7 @@ describe('CGR-02 authoritative Today read freshness', () => {
   it('projects a newer authoritative revision when local cache has not diverged', async () => {
     const result = await refreshConnectedAuthoritativeCache('account-a')
     expect(result).toMatchObject({ state: 'updated', workspaceVersion: 'txn:8', changed: true })
-    expect(replaceLocalSnapshotFromCloud).toHaveBeenCalledWith(remoteSnapshot)
+    expect(replaceLocalSnapshotFromCloud).toHaveBeenCalledWith(remoteSnapshot, expect.objectContaining({ expectedLocal: local, assertCurrent: expect.any(Function) }))
     expect(bindLocalWorkspaceToUser).toHaveBeenCalledWith('account-a')
     expect(patchAccountCheckpoint).toHaveBeenCalledWith('account-a', expect.objectContaining({
       lastSyncedVersion: 'txn:8',
@@ -126,7 +131,7 @@ describe('CGR-02 authoritative Today read freshness', () => {
     vi.mocked(equivalentReadProjection).mockReturnValue(true)
     const result = await refreshConnectedAuthoritativeCache('account-a')
     expect(result).toMatchObject({ state: 'updated', workspaceVersion: 'txn:442', changed: true })
-    expect(replaceLocalSnapshotFromCloud).toHaveBeenCalledWith(remoteSnapshot)
+    expect(replaceLocalSnapshotFromCloud).toHaveBeenCalledWith(remoteSnapshot, expect.objectContaining({ expectedLocal: local, assertCurrent: expect.any(Function) }))
     expect(patchAccountCheckpoint).toHaveBeenCalledWith('account-a', expect.objectContaining({
       lastSyncedVersion: 'txn:442', lastReadProjectionSourceFingerprint: 'remote-442-fp',
     }))
@@ -151,7 +156,7 @@ describe('CGR-02 authoritative Today read freshness', () => {
     })
     const result = await refreshConnectedAuthoritativeCache('account-a')
     expect(result.state).toBe('updated')
-    expect(replaceLocalSnapshotFromCloud).toHaveBeenCalledWith(remoteSnapshot)
+    expect(replaceLocalSnapshotFromCloud).toHaveBeenCalledWith(remoteSnapshot, expect.objectContaining({ expectedLocal: local, assertCurrent: expect.any(Function) }))
   })
 
   it('keeps a verified projected cache current without repeatedly replacing it', async () => {
@@ -193,6 +198,6 @@ describe('CGR-02 authoritative Today read freshness', () => {
     vi.mocked(workspaceIsEffectivelyEmpty).mockReturnValue(true)
     const result = await refreshConnectedAuthoritativeCache('account-a')
     expect(result.state).toBe('updated')
-    expect(replaceLocalSnapshotFromCloud).toHaveBeenCalledWith(remoteSnapshot)
+    expect(replaceLocalSnapshotFromCloud).toHaveBeenCalledWith(remoteSnapshot, expect.objectContaining({ expectedLocal: local, assertCurrent: expect.any(Function) }))
   })
 })

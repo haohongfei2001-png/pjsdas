@@ -1,3 +1,5 @@
+import { captureAccountCacheLease, AccountCacheChangedError } from './accountCacheLease.js'
+import { assertLocalSnapshotCurrent } from '../db.js'
 import { exportLocalSnapshot, replaceLocalSnapshotFromCloud } from '../db.js'
 import { LEGACY_SNAPSHOT_VERSION, PREVIOUS_SNAPSHOT_VERSION, SCHEDULE_SNAPSHOT_VERSION, SNAPSHOT_VERSION, validateSnapshot } from '../snapshot.js'
 import {
@@ -78,6 +80,12 @@ export async function hasUnsyncedLocalWorkspace(userId: string) {
 
 export async function runCloudSync(userId: string, options: { passive?: boolean } = {}): Promise<CloudSyncOutcome> {
   void options
+  const lease = connectedWorkspaceAuthorityEnabled() ? captureAccountCacheLease(userId) : undefined
+  let targetVersion: string | undefined
+  const assertCurrent = () => {
+    lease?.assertCurrent()
+    if (lease && targetVersion && Number(getAccountCheckpoint(userId).lastSyncedVersion?.replace('txn:', '')) > Number(targetVersion.replace('txn:', ''))) throw new AccountCacheChangedError()
+  }
   const device = getCloudDeviceState()
   if (device.workspaceOwnerUserId && device.workspaceOwnerUserId !== userId) {
     return { kind: 'account_mismatch' }
@@ -89,6 +97,9 @@ export async function runCloudSync(userId: string, options: { passive?: boolean 
     const localFingerprint = await fingerprintWorkspace(local)
     const remoteRaw = await fetchRemoteWorkspace(userId)
     const remote = remoteRaw ? await verifyRemote(remoteRaw) : null
+    targetVersion = remote?.version
+    assertCurrent()
+    await assertLocalSnapshotCurrent(local, assertCurrent)
     const checkpoint = getAccountCheckpoint(userId)
     const decision = decideSyncAction({
       checkpoint,
@@ -109,11 +120,13 @@ export async function runCloudSync(userId: string, options: { passive?: boolean 
       const remoteChanged = remote.version !== checkpoint.lastSyncedVersion
         || remote.fingerprint !== checkpoint.lastSyncedFingerprint
       if (remoteChanged) {
-        await replaceLocalSnapshotFromCloud(remote.snapshot)
+        const committed = await replaceLocalSnapshotFromCloud(remote.snapshot, { expectedLocal: local, assertCurrent })
+        const projectedFingerprint = await fingerprintWorkspace(committed)
+        assertCurrent()
         markSynced(userId, remote)
         patchAccountCheckpoint(userId, {
           lastReadProjectionSourceFingerprint: remote.fingerprint,
-          lastReadProjectionFingerprint: await fingerprintWorkspace(await exportLocalSnapshot()),
+          lastReadProjectionFingerprint: projectedFingerprint,
         })
         if (typeof window !== 'undefined') window.dispatchEvent(new Event('pjsdas:workspace-replaced'))
         return { kind: 'pulled', version: remote.version, remoteUpdatedAt: remote.updatedAt }
@@ -177,11 +190,13 @@ export async function runCloudSync(userId: string, options: { passive?: boolean 
     }
 
     if (decision === 'pull_remote') {
-      await replaceLocalSnapshotFromCloud(remote.snapshot)
+      const committed = await replaceLocalSnapshotFromCloud(remote.snapshot, { expectedLocal: local, assertCurrent })
+      const projectedFingerprint = await fingerprintWorkspace(committed)
+      assertCurrent()
       markSynced(userId, remote)
       patchAccountCheckpoint(userId, {
         lastReadProjectionSourceFingerprint: remote.fingerprint,
-        lastReadProjectionFingerprint: await fingerprintWorkspace(await exportLocalSnapshot()),
+        lastReadProjectionFingerprint: projectedFingerprint,
       })
       if (typeof window !== 'undefined') window.dispatchEvent(new Event('pjsdas:workspace-replaced'))
       return { kind: 'pulled', version: remote.version, remoteUpdatedAt: remote.updatedAt }
@@ -195,6 +210,7 @@ export async function runCloudSync(userId: string, options: { passive?: boolean 
     markSynced(userId, remote)
     return { kind: 'synced', version: remote.version, remoteUpdatedAt: remote.updatedAt }
   } catch (caught) {
+    assertCurrent()
     patchAccountCheckpoint(userId, {
       lastError: caught instanceof Error ? caught.message : String(caught),
     })
@@ -203,15 +219,20 @@ export async function runCloudSync(userId: string, options: { passive?: boolean 
 }
 
 export async function resolveConflictKeepLocal(userId: string): Promise<CloudSyncOutcome> {
+  const lease = connectedWorkspaceAuthorityEnabled() ? captureAccountCacheLease(userId) : undefined
+  const assertCurrent = () => lease?.assertCurrent()
   const device = getCloudDeviceState()
   const local = await exportLocalSnapshot()
   const fingerprint = await fingerprintWorkspace(local)
   const remoteRaw = await fetchRemoteWorkspace(userId)
   if (!remoteRaw) {
+    assertCurrent()
     bindLocalWorkspaceToUser(userId, true)
     return runCloudSync(userId)
   }
   const remote = await verifyRemote(remoteRaw)
+  await assertLocalSnapshotCurrent(local, assertCurrent)
+  assertCurrent()
   const updated = await updateRemoteWorkspace({
     userId,
     fileId: remote.fileId,
@@ -225,19 +246,25 @@ export async function resolveConflictKeepLocal(userId: string): Promise<CloudSyn
     const latest = await fetchRemoteWorkspace(userId)
     if (!latest) throw new Error('Google Drive 工作区在冲突解决过程中消失。')
     const verified = await verifyRemote(latest)
+    assertCurrent()
     markConflict(userId, verified)
     return { kind: 'conflict', version: verified.version, remoteUpdatedAt: verified.updatedAt }
   }
+  assertCurrent()
   bindLocalWorkspaceToUser(userId)
   markSynced(userId, updated)
   return { kind: 'pushed', version: updated.version, remoteUpdatedAt: updated.updatedAt }
 }
 
 export async function resolveConflictUseCloud(userId: string): Promise<CloudSyncOutcome> {
+  const lease = connectedWorkspaceAuthorityEnabled() ? captureAccountCacheLease(userId) : undefined
+  const assertCurrent = () => lease?.assertCurrent()
+  const local = await exportLocalSnapshot()
   const remoteRaw = await fetchRemoteWorkspace(userId)
   if (!remoteRaw) throw new Error('这个 Google 账号还没有 TodayAction Drive 工作区。')
   const remote = await verifyRemote(remoteRaw)
-  await replaceLocalSnapshotFromCloud(remote.snapshot)
+  await replaceLocalSnapshotFromCloud(remote.snapshot, { expectedLocal: local, assertCurrent })
+  assertCurrent()
   bindLocalWorkspaceToUser(userId, true)
   markSynced(userId, remote)
   if (typeof window !== 'undefined') window.dispatchEvent(new Event('pjsdas:workspace-replaced'))
@@ -245,6 +272,7 @@ export async function resolveConflictUseCloud(userId: string): Promise<CloudSync
 }
 
 export async function rebindCurrentLocalWorkspace(userId: string) {
+  if (connectedWorkspaceAuthorityEnabled()) captureAccountCacheLease(userId).assertCurrent()
   bindLocalWorkspaceToUser(userId, true)
   return runCloudSync(userId)
 }

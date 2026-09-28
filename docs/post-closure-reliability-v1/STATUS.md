@@ -13,9 +13,9 @@ Historical boundaries:
 - Existing Reliability Closure and Active-Unresolved packages retain their own
   historical receipts and truth; this package does not rewrite them.
 
-Current phase: **PCR-04 — owner dense-account decision correctness**
+Current phase: **PCR-05 — lossless cache convergence and account races**
 
-Current writer: **reliability/pcr04-gmail-assertion-v1 — procedural mention classification**
+Current writer: **reliability/pcr05-cache-convergence-v1**
 
 Production claim: **P0 verified on exact runtime a8d9840; Repair 02 committed 38 settlements once (CAS 841 → 842), readback 843, read-only idempotency 0. No further production write authorized.**
 
@@ -26,8 +26,8 @@ Production claim: **P0 verified on exact runtime a8d9840; Repair 02 committed 38
 | PCR-01 | COMPLETE | exact-main closure of merged PR #185 history/startup P0 and any already-authorized bounded follow-through |
 | PCR-02 | COMPLETE | PR #188 recovery slice merged; exact-main d19 CI/Browser/Matrix/Pages/Self-Test and deployed readonly startup verified; late-read race tracked in PCR-05 |
 | PCR-03 | COMPLETE | PR #189 merged6c77d62; exact-main CI/Browser/Matrix/Pages/Self-Test plus7 deployed readonly startup checks PASS |
-| PCR-04 | IN_PROGRESS | PR190 read-model exact-main verified; bounded Gmail instruction amplification repair in progress |
-| PCR-05 | PLANNED | connected-mode restart/reload/recovery hardening |
+| PCR-04 | COMPLETE_BOUNDED | PR190 read model and PR191 narrow procedural assertion repair exact-main verified; ambiguous historical records preserved |
+| PCR-05 | IN_PROGRESS | lossless ordering equivalence, account generation and atomic local cache guards; full gates/review pending |
 | PCR-06 | PLANNED | read-only production integrity classification + regression binding |
 | PCR-07 | PLANNED | bounded reliability closure |
 
@@ -141,3 +141,23 @@ zero generic decision rows and358/358durable decisions retained. Receipt58781081
 
 [Parser follow-through](PCR-04-GMAIL-ASSERTIONS.md) remains a bounded candidate.
 PCR05 cache ordering and account read races, PCR06 and PCR07 are still pending.
+
+
+## PCR-04 parser exact-main verification
+
+PR191 final9af087e clean independent source review5878948382; merged
+5d9e52fff0f22f8bc44435ddf398060ccf0c9b65. Exact-main CI36485927929,
+Browser36485927916, Matrix36485927988, Pages36485927924 and Self-Test36486141368
+PASS. Health1430 matches exact main. Deployed readonly startup7/7PASS, six Today
+rows, zero generic decision rows, 358/358 raw/durable requests retained.
+Closure5879255951. Narrow complete procedural grammar preserves unknown/mixed
+assertions; historical ambiguous requests are not automatically reprocessed.
+
+## PCR-05 candidate
+
+[Cache convergence and races](PCR-05-CACHE-CONVERGENCE.md). Private prior/current
+snapshot equivalence now succeeds across real IndexedDB ordering while content
+changes remain conflicts. Real account sign-out, late commands, overlapping reads,
+local edits and partial transaction failure are covered. No production mutation.
+Full latest-head gates, independent review and exact-main production verification
+remain required; PCR06/PCR07 are not complete.

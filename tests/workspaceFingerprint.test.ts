@@ -1,3 +1,4 @@
+import { denseDecisionWorkspace } from './fixtures/denseDecisionWorkspace.js'
 import { describe, expect, it } from 'vitest'
 import { createSnapshot } from '../src/snapshot.js'
 import { DEFAULT_DECISION_RULES } from '../src/decisionRules.js'
@@ -131,4 +132,21 @@ describe('cloud workspace fingerprint', () => {
     local.data.opportunities[0]!.company = 'Changed locally'
     expect(equivalentReadProjection(local, remote)).toBe(false)
   })
+})
+
+
+it('normalizes only unique top-level entity order, preserving wire and nested semantics', () => {
+  const a = denseDecisionWorkspace(), b = structuredClone(a)
+  b.data.actions.reverse(); b.data.opportunities.reverse(); b.data.decisionRequests!.reverse(); b.data.scheduleNodes!.reverse()
+  expect(canonicalWorkspaceJson(a)).not.toBe(canonicalWorkspaceJson(b))
+  expect(equivalentReadProjection(a, b)).toBe(true)
+  b.data.actions[0].title += ' actual edit'
+  expect(equivalentReadProjection(a, b)).toBe(false)
+  const c = structuredClone(a)
+  c.data.decisionRequests![0].choices.reverse()
+  expect(equivalentReadProjection(a, c)).toBe(false)
+  const duplicate = structuredClone(a)
+  duplicate.data.actions[1].id = duplicate.data.actions[0].id
+  const reordered = structuredClone(duplicate); reordered.data.actions.reverse()
+  expect(equivalentReadProjection(duplicate, reordered)).toBe(false)
 })

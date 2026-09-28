@@ -1,3 +1,5 @@
+import { canonicalWorkspaceJson } from './cloud/workspaceFingerprint.js'
+import { AccountCacheChangedError } from './cloud/accountCacheLease.js'
 import { captureActionStatusUndo, restoreActionStatusUndo, type ActionStatusUndo } from './actionStatusUndo.js'
 import { openDB, type DBSchema, type IDBPTransaction } from 'idb'
 import { assertImportBundleSafe } from './importDiagnostics.js'
@@ -1072,32 +1074,44 @@ export async function clearLocalWorkspaceCache() {
   if (typeof window !== 'undefined') window.dispatchEvent(new Event('pjsdas:workspace-replaced'))
 }
 
-export async function replaceLocalSnapshotFromCloud(snapshot: PJSDASSnapshot) {
+export async function replaceLocalSnapshotFromCloud(snapshot: PJSDASSnapshot, guard?: { expectedLocal: PJSDASSnapshot; assertCurrent: () => void }) {
   validateSnapshot(snapshot)
   const latest = upgradeSnapshotToLatest(snapshot)
 
   const db = await dbPromise
   const tx = db.transaction([...DATA_STORES], 'readwrite')
-  await Promise.all(DATA_STORES.map((storeName) => tx.objectStore(storeName).clear()))
+  try {
+    guard?.assertCurrent()
+    if (guard && canonicalWorkspaceJson(await readLocalSnapshot(tx)) !== canonicalWorkspaceJson(guard.expectedLocal)) throw new AccountCacheChangedError()
+    guard?.assertCurrent()
+    await Promise.all(DATA_STORES.map((storeName) => tx.objectStore(storeName).clear()))
 
-  for (const item of latest.data.opportunities) await tx.objectStore('opportunities').put(item)
-  for (const item of latest.data.processes) await tx.objectStore('processes').put(item)
-  for (const item of latest.data.processEvents) await tx.objectStore('processEvents').put(item)
-  for (const item of latest.data.scheduleNodes ?? []) await tx.objectStore('scheduleNodes').put(item)
-  for (const item of latest.data.decisionRequests ?? []) await tx.objectStore('decisionRequests').put(item)
-  for (const item of latest.data.semanticReceipts ?? []) await tx.objectStore('semanticReceipts').put(item)
-  for (const item of latest.data.reminderIntents ?? []) await tx.objectStore('reminderIntents').put(item)
-  for (const item of latest.data.reminderOutbox ?? []) await tx.objectStore('reminderOutbox').put(item)
-  for (const item of latest.data.actions) await tx.objectStore('actions').put(item)
-  for (const item of latest.data.prep) await tx.objectStore('prep').put(item)
-  for (const item of latest.data.applicationGroups) await tx.objectStore('applicationGroups').put(item)
-  await tx.objectStore('decisionRules').put(latest.data.decisionRules ?? createDefaultDecisionRules())
-  if (latest.data.discoveryProfile) await tx.objectStore('discoveryProfiles').put(latest.data.discoveryProfile)
-  for (const item of latest.data.discoveryInbox ?? []) await tx.objectStore('discoveryInbox').put(item)
-  for (const item of latest.data.timeline ?? []) await tx.objectStore('timeline').put(item)
-  for (const item of latest.data.changeSets ?? []) await tx.objectStore('changeSets').put(item)
-  if (latest.data.meta) await tx.objectStore('meta').put(latest.data.meta)
-  await tx.done
+    for (const item of latest.data.opportunities) await tx.objectStore('opportunities').put(item)
+    for (const item of latest.data.processes) await tx.objectStore('processes').put(item)
+    for (const item of latest.data.processEvents) await tx.objectStore('processEvents').put(item)
+    for (const item of latest.data.scheduleNodes ?? []) await tx.objectStore('scheduleNodes').put(item)
+    for (const item of latest.data.decisionRequests ?? []) await tx.objectStore('decisionRequests').put(item)
+    for (const item of latest.data.semanticReceipts ?? []) await tx.objectStore('semanticReceipts').put(item)
+    for (const item of latest.data.reminderIntents ?? []) await tx.objectStore('reminderIntents').put(item)
+    for (const item of latest.data.reminderOutbox ?? []) await tx.objectStore('reminderOutbox').put(item)
+    for (const item of latest.data.actions) await tx.objectStore('actions').put(item)
+    for (const item of latest.data.prep) await tx.objectStore('prep').put(item)
+    for (const item of latest.data.applicationGroups) await tx.objectStore('applicationGroups').put(item)
+    await tx.objectStore('decisionRules').put(latest.data.decisionRules ?? createDefaultDecisionRules())
+    if (latest.data.discoveryProfile) await tx.objectStore('discoveryProfiles').put(latest.data.discoveryProfile)
+    for (const item of latest.data.discoveryInbox ?? []) await tx.objectStore('discoveryInbox').put(item)
+    for (const item of latest.data.timeline ?? []) await tx.objectStore('timeline').put(item)
+    for (const item of latest.data.changeSets ?? []) await tx.objectStore('changeSets').put(item)
+    if (latest.data.meta) await tx.objectStore('meta').put(latest.data.meta)
+    const committed = await readLocalSnapshot(tx)
+    guard?.assertCurrent()
+    await tx.done
+    return committed
+  } catch (caught) {
+    try { tx.abort() } catch { /* already settled */ }
+    await tx.done.catch(() => {})
+    throw caught
+  }
 }
 
 export async function restoreLocalSnapshot(snapshot: PJSDASSnapshot) {
@@ -1261,4 +1275,20 @@ export async function replaceImportedData(bundle: ImportBundle) {
     await tx.objectStore('timeline').put(timelineFromImport(importMeta, bundle.timeline?.length ?? 0))
     await tx.objectStore('meta').put(importMeta)
   }, true)
+}
+
+/** Lock all data stores while checking a captured read; never adopt a later local edit. */
+export async function assertLocalSnapshotCurrent(expected: PJSDASSnapshot, assertCurrent: () => void) {
+  const db = await dbPromise
+  const tx = db.transaction([...DATA_STORES], 'readwrite')
+  try {
+    assertCurrent()
+    if (canonicalWorkspaceJson(await readLocalSnapshot(tx)) !== canonicalWorkspaceJson(expected)) throw new AccountCacheChangedError()
+    assertCurrent()
+    await tx.done
+  } catch (caught) {
+    try { tx.abort() } catch { /* already settled */ }
+    await tx.done.catch(() => {})
+    throw caught
+  }
 }

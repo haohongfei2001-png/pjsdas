@@ -1,3 +1,4 @@
+import { setAccountCacheSession } from './accountCacheLease.js'
 import {
   createContext,
   useCallback,
@@ -85,6 +86,7 @@ export function CloudProvider({ children }: { children: ReactNode }) {
   }, [refreshState])
 
   const adoptSession = useCallback((next: CloudSession | null) => {
+    setAccountCacheSession(next?.user.id)
     const sequence = ++adoptionSequenceRef.current
     // Auth events and manual sign-out share one boundary queue. Once a clear
     // fails, no queued adoption may retry it behind the recovery surface.

@@ -200,7 +200,7 @@ async function updateDriveRemoteWorkspace(input: {
 
 
 export async function fetchRemoteWorkspace(userId: string): Promise<RemoteWorkspaceRow | null> {
-  if (connectedWorkspaceAuthorityEnabled()) return fetchConnectedRemoteWorkspace()
+  if (connectedWorkspaceAuthorityEnabled()) return fetchConnectedRemoteWorkspace(userId)
   return fetchLegacyDriveWorkspaceForMigration(userId)
 }
 
@@ -228,6 +228,7 @@ export async function updateRemoteWorkspace(input: {
       throw new Error('CONNECTED_WRITE_REQUIRES_RECOVERY: ordinary connected sync cannot commit a whole workspace.')
     }
     return updateConnectedRemoteWorkspace({
+      accountKey: input.userId,
       expectedVersion: input.expectedVersion,
       fingerprint: input.fingerprint,
       snapshot: input.snapshot,
