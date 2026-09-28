@@ -58,3 +58,14 @@ readonly exports. The projection now uses a deterministic stored-fact timestamp,
 and does not duplicate a real completion audit row. A real browser regression
 compares exports across two wall clocks, raw stores, and reminder/outbox data.
 The pre-existing reminder source contract asserts the new readonly transaction reads.
+
+## Account-cache integration repair
+
+Full Browser at 0415f93 found two genuine regressions: safe sign-out refused to
+clear the connected cache, and a second client refused an authoritative event
+delete. Settings history reads still persisted wall-clock timeline backfill after
+startup had recorded its deterministic projection fingerprint. History reads now
+use the same readonly projection, preserving conflict and sign-out protections.
+The two existing real account journeys and the extended raw-store/stable-export
+regression all pass locally; type checking passes. Full gates and fresh review
+must pass on the final head before merge.

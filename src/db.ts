@@ -349,26 +349,10 @@ export async function saveDiscoveryProfile(profile: DiscoveryProfile) {
   return next
 }
 
-async function ensureTimelineBackfill(db: Awaited<typeof dbPromise>) {
-  const marker = await db.get('timeline', TIMELINE_BACKFILL_MARKER_ID)
-  if (marker) return
-  const [processEvents, actions, lastImport, decisionRules] = await Promise.all([
-    db.getAll('processEvents'),
-    db.getAll('actions'),
-    db.get('meta', 'lastImport'),
-    db.get('decisionRules', 'current'),
-  ])
-  const tx = db.transaction('timeline', 'readwrite')
-  for (const record of buildTimelineBackfill({ processEvents, actions, lastImport, decisionRules })) {
-    if (!await tx.store.get(record.id)) await tx.store.put(record)
-  }
-  await tx.done
-}
-
 export async function getAllTimelineRecords() {
-  const db = await dbPromise
-  await ensureTimelineBackfill(db)
-  const records = await db.getAll('timeline')
+  // History reads share startup's deterministic, read-only projection. Writing
+  // a wall-clock backfill marker here would look like an unsynced account edit.
+  const records = (await exportLocalSnapshot()).data.timeline ?? []
   return records
     .filter((item) => item.kind !== 'baseline_backfill')
     .sort((a, b) => b.occurredAt.localeCompare(a.occurredAt) || b.recordedAt.localeCompare(a.recordedAt))
