@@ -80,6 +80,25 @@ describe('dense owner decision and schedule membership', () => {
     request.payloadBinding.candidate.temporal.timezone = 'floating-date'
     expect(decisionNeedsToday(request, DENSE_NOW, zone)).toBe(false)
   })
+  it.each([
+    ['America/Los_Angeles', '2026-09-29T19:00:00Z', '2026-09-29T00:00:00Z', '2026-09-28T19:00:00Z'],
+    ['Asia/Shanghai', '2026-09-29T12:00:00Z', '2026-09-29T23:00:00Z', '2026-09-30T12:00:00Z'],
+  ])('preserves ISO-backed calendar precision in %s without shifting datetime semantics', (timezone, now, value, shiftedNow) => {
+    for (const kind of ['opportunity_deadline', 'manual_action', 'process_event'] as const) {
+      const request = denseDecision(900)
+      const common = { id: 'date-fact', objectConfidence: 'low' as const, eventConfidence: 'high' as const, evidenceRefs: [], sourceVersionRefs: [] }
+      request.payloadBinding.candidate = kind === 'opportunity_deadline'
+        ? { ...common, kind, deadline: value, precision: 'date' }
+        : kind === 'manual_action' ? { ...common, kind, title: 'Calendar task', dueAt: value, duePrecision: 'date' }
+        : { ...common, kind, eventType: 'interview_invite', dueAt: value, duePrecision: 'date' }
+      expect(decisionNeedsToday(request, new Date(now), timezone)).toBe(true)
+      expect(decisionNeedsToday(request, new Date(shiftedNow), timezone)).toBe(false)
+      if (request.payloadBinding.candidate.kind === 'opportunity_deadline') request.payloadBinding.candidate.precision = 'datetime'
+      else request.payloadBinding.candidate.duePrecision = 'datetime'
+      expect(decisionNeedsToday(request, new Date(now), timezone)).toBe(false)
+      expect(decisionNeedsToday(request, new Date(shiftedNow), timezone)).toBe(true)
+    }
+  })
   it('provides Chinese event/source context without inventing a candidate employer', () => {
     const request = denseDecision(42)
     const copy = presentDecision(request, [], true)

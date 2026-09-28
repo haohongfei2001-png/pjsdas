@@ -1,6 +1,9 @@
 import { expect, test } from '@playwright/test'
 import { denseDecisionWorkspace, DENSE_NOW } from '../tests/fixtures/denseDecisionWorkspace.js'
 
+// This fixture is the Shanghai calendar at midnight; CI host timezone must not change its day.
+test.use({ timezoneId: 'Asia/Shanghai' })
+
 test('dense persisted owner-like debt stays accessible outside Today without generic English diagnostics', async ({ page, context }) => {
   await page.clock.install({ time: DENSE_NOW })
   await page.goto('/'); await page.locator('.tsui-primary-nav').waitFor()

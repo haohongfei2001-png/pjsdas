@@ -32,8 +32,10 @@ export function groupOpenDecisions(requests: DecisionRequest[]) {
   return [...groups.values()]
 }
 
-function day(value: string | undefined, timezone: string) {
+function day(value: string | undefined, timezone: string, precision?: string) {
   if (!value) return undefined
+  // Legacy date-precision facts may carry an ISO timestamp, but its clock is not asserted.
+  if (precision === 'date' && /^\d{4}-\d{2}-\d{2}/.test(value)) return value.slice(0, 10)
   if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return value
   const instant = new Date(value)
   return Number.isFinite(instant.getTime()) ? localDateKey(instant, timezone) : undefined
@@ -48,8 +50,8 @@ export function decisionNeedsToday(request: DecisionRequest, now: Date, timezone
     && day(binding.source?.assertedAt ?? request.createdAt, timezone) === today) return true
   const candidate = binding?.candidate
   if (!candidate) return false
-  if (candidate.kind === 'opportunity_deadline') return day(candidate.deadline, timezone) === today
-  if (candidate.kind === 'manual_action') return day(candidate.dueAt, timezone) === today
+  if (candidate.kind === 'opportunity_deadline') return day(candidate.deadline, timezone, candidate.precision) === today
+  if (candidate.kind === 'manual_action') return day(candidate.dueAt, timezone, candidate.duePrecision) === today
   if (candidate.kind === 'reminder_intent') return day(candidate.triggerAt, timezone) === today
   if (candidate.kind === 'process_event' || candidate.kind === 'occurrence_rescheduled') {
     const temporal = candidate.temporal
@@ -59,7 +61,7 @@ export function decisionNeedsToday(request: DecisionRequest, now: Date, timezone
       const end = day(temporal.endAt, timezone)
       return start === today || Boolean(start && end && start <= today && today <= end)
     }
-    if (candidate.kind === 'process_event') return day(candidate.dueAt, timezone) === today
+    if (candidate.kind === 'process_event') return day(candidate.dueAt, timezone, candidate.duePrecision) === today
   }
   // An old assertion or a newly ingested undated notification is not a task
   // for today. It remains available in the complete decision inbox.

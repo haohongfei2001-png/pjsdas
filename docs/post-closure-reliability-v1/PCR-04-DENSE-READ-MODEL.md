@@ -55,3 +55,13 @@ warnings and follow-up instructions. Explicit UTC date decisions remain current
 through their source calendar day while floating dates follow display timezone.
 New regressions failed before repair;1005unit/type and3dense headless cases PASS.
 A new exact-head independent review/full gates is still required before merge.
+
+Second fresh review on1dcc15e identified one P2 (full report PRcomment5877436933):
+legacy ISO-backed date precision was treated as an instant. Candidate deadline,
+manual-action and process-event date precision now preserves its calendar prefix;
+datetime precision still converts the instant. Both east/west timezone regressions
+failed before repair and now pass.1007unit/type PASS. Browser CI additionally
+caught host-timezone dependence in the Shanghai dense fixture and an undated
+assertion in the quiet-Today fixture. Tests now explicitly bind the intended display
+zone and fixed browser date with a genuinely due candidate; original count and
+layout assertions remain intact. No production data mutation.
