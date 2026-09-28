@@ -83,7 +83,7 @@ export function fragmentLimitReprocessTargetIds(snapshot: PJSDASSnapshot) {
   return [...ids].sort()
 }
 
-function reprocessVersion(record: GmailSemanticRecord): GmailSemanticRecord {
+export function reprocessVersion(record: GmailSemanticRecord): GmailSemanticRecord {
   const sourceRecordId = record.observation.source.sourceRecordId
   return {
     ...record,
