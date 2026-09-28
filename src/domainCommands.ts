@@ -318,6 +318,7 @@ export function applyUserDomainCommand(
   const timestamp = nowIso(now)
 
   if (command.kind === 'record_application_submission') {
+    const beforeData = structuredClone(next.data)
     const target = opportunity(next, command.opportunityId)
     if (!target) throw new Error(`Opportunity ${command.opportunityId} was not found.`)
     if (target.participationStatus === 'abandoned' && !command.reactivateConfirmed) {
@@ -362,6 +363,7 @@ export function applyUserDomainCommand(
           processStage: beforeStage,
           actionId: apply?.id,
           actionStatus: beforeApplyStatus,
+          undo: apply ? captureActionStatusUndo(beforeData, next.data, [apply.id]) : undefined,
         },
       },
     }
@@ -1018,13 +1020,16 @@ export function applyDomainCompensation(
         process.progress = payload.processStage === 'not_applied' ? 'not_started' : process.progress
       }
     }
-    if (payload.actionId && payload.actionStatus) {
-      const action = next.data.actions.find((item) => item.id === payload.actionId)
-      if (action) {
-        action.status = payload.actionStatus
-        action.updatedAt = timestamp
-        syncScheduleNodeForActionStatus(next.data, action.id, action.status, timestamp)
+    if (payload.undo) {
+      restoreActionStatusUndo(next.data, payload.undo)
+    } else if (payload.actionId && payload.actionStatus) {
+      if (next.data.scheduleNodes?.some(node => node.relatedActionIds.includes(payload.actionId))) {
+        throw new Error('Legacy application Undo lacks occurrence ownership evidence; cannot restore safely.')
       }
+      const action = next.data.actions.find((item) => item.id === payload.actionId)
+      if (!action) throw new Error('Action no longer exists; Undo cannot restore safely.')
+      action.status = payload.actionStatus
+      action.updatedAt = timestamp
     }
   } else if (compensation.operation === 'remove_manual_action') {
     next.data.actions = next.data.actions.filter((item) => item.id !== payload.actionId)

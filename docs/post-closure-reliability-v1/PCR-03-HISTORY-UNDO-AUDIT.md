@@ -136,3 +136,16 @@ so a genuine subsequent user cancellation cannot be reopened by reimport. Omitte
 source rows and locally managed sources do not imply withdrawal. The two new real
 browser regressions fail on ddc572c and pass after repair; all19 history cases,
 996 unit tests and type pass. Full gates/latest review still certify the new head.
+
+Owner-authorized fresh independent review of exact20b7cfa found two P2 defects;
+complete report is PR comment5876560404. Both were reproduced before repair.
+Application submission now captures exact action/occurrence compensation too;
+Undo restores only owned changes and refuses affected later edits or legacy
+ownership gaps. Import retains the complete previous occurrence chain when a
+source row is omitted, preventing a dangling superseded pointer and lost active
+version on reappearance. Candidate reference validation remains atomic.
+Regression evidence: 997 unit tests, type and21 headless history journeys pass,
+including connected I-applied/Undo with reload/restart and moved/omitted/reappearing
+import versions. Fresh independent review and full remote gates are required on
+this new candidate; the prior20b review is changes-requested, never counted PASS.
+No production workspace mutation was performed.

@@ -49,3 +49,27 @@ describe('task status and exact historical compensation', () => {
     expect(() => applyDomainCompensation(result.snapshot, { operation: 'set_action_status', payload: { actionId: 'history-task', status: 'todo' } }, HISTORY_NOW)).toThrow(/historical|evidence/)
   })
 })
+
+function applicationWorkspace() {
+  const before = historyActionWorkspace()
+  const task = before.data.actions[0]
+  task.id = 'apply:history-job'; task.kind = 'apply'
+  for (const node of before.data.scheduleNodes!) node.relatedActionIds = [task.id]
+  return before
+}
+it('application submission Undo restores owned deadline changes without reopening prior history', () => {
+  const before = applicationWorkspace()
+  const result = applyUserDomainCommand(before, { commandId: 'submit-owned', kind: 'record_application_submission', opportunityId: 'history-job' }, HISTORY_NOW)
+  if (result.status !== 'APPLIED' || !result.compensation) throw Error('Expected compensation')
+  const restored = applyDomainCompensation(JSON.parse(JSON.stringify(result.snapshot)), JSON.parse(JSON.stringify(result.compensation)), HISTORY_NOW)
+  expect(restored.data.actions[0].status).toBe('todo')
+  for (const node of before.data.scheduleNodes!) {
+    const actual = restored.data.scheduleNodes!.find(n => n.id === node.id)!
+    expect(actual.state).toBe(node.state)
+    expect(actual.completedAt).toBe(node.completedAt)
+  }
+  expect(restored.data.timeline).toEqual(result.snapshot.data.timeline)
+  const edited = structuredClone(result.snapshot)
+  edited.data.scheduleNodes!.find(n => n.id === 'history-node-6')!.temporal.deadlineAt = '2026-10-20T10:00:00+08:00'
+  expect(() => applyDomainCompensation(edited, result.compensation!, HISTORY_NOW)).toThrow(/changed|safely/)
+})

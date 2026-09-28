@@ -1169,15 +1169,10 @@ export async function replaceImportedData(bundle: ImportBundle) {
     const mergedActions = mergeActionsForReimport(bundle.actions, previousActions, localOpportunityIds)
     const opportunities = mergeLocallyManagedOpportunities(bundle.opportunities, previousOpportunities)
     const processes = mergeLocallyManagedProcesses(bundle.processes, previousProcesses, localOpportunityIds)
-    const scheduleNodes = previousScheduleNodes.filter((node) =>
-      node.state === 'completed'
-      || effectiveScheduleNodeState(node, new Date()) === 'elapsed_unresolved'
-      || node.state === 'cancelled'
-      || node.state === 'superseded'
-      || !node.opportunityId
-      || localOpportunityIds.has(node.opportunityId)
-      || node.temporal.resolutionBasis !== 'legacy_projection'
-    )
+    // Import absence does not revoke an occurrence or its latest version.
+    // Keep the complete chain; explicit retained-source timing edits below
+    // create owned versions, and candidate validation protects references.
+    const scheduleNodes = [...previousScheduleNodes]
     const contract = {
       opportunities,
       processes,

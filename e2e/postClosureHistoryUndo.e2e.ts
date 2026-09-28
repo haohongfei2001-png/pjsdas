@@ -19,12 +19,16 @@ async function checkHistory(page: Page, before: ReturnType<typeof historyActionW
     for (const ref of prior.sourceVersionRefs) expect(actual.sourceVersionRefs).toContain(ref)
   }
   expect((await rows(page, 'timeline')).find((item) => item.id === 'retained-history')).toEqual(before.data.timeline![0])
-  expect((await rows(page, 'actions')).find((item) => item.id === 'history-task')?.status).toBe('todo')
+  expect((await rows(page, 'actions')).find((item) => item.id === before.data.actions[0].id)?.status).toBe('todo')
 }
 
-for (const connected of [false, true]) test(`${connected ? 'connected' : 'local'} history detail completion Undo restores only its changed nodes through durable reload/restart`, async ({ page, context }) => {
+for (const [connected, application] of [[false, false], [true, false], [true, true]]) test(`${connected ? 'connected' : 'local'} ${application ? 'application submission' : 'history detail completion'} Undo restores only its changed nodes through durable reload/restart`, async ({ page, context }) => {
   await page.clock.install({ time: HISTORY_NOW })
   const before = historyActionWorkspace()
+  if (application) {
+    before.data.actions[0].id = 'apply:history-job'; before.data.actions[0].kind = 'apply'
+    for (const node of before.data.scheduleNodes!) node.relatedActionIds = ['apply:history-job']
+  }
   const state = { snapshot: structuredClone(before), revision: 7, compensation: undefined as DomainCompensation | undefined }
   const commands: string[] = []
   if (connected) {
@@ -58,7 +62,8 @@ for (const connected of [false, true]) test(`${connected ? 'connected' : 'local'
   await page.goto('/pjsdas/schedule?view=past')
   await page.locator('.tsui-schedule-row').filter({ hasText: 'Historical job' }).click()
   await page.getByRole('button', { name: /查看岗位详情|View job details/ }).click()
-  await page.locator('.opportunity-detail-action-list article').filter({ hasText: 'History task' }).getByRole('button', { name: /标记完成|Mark done/ }).click()
+  if (application) await page.getByRole('button', { name: /我已投递|I applied/ }).click()
+  else await page.locator('.opportunity-detail-action-list article').filter({ hasText: 'History task' }).getByRole('button', { name: /标记完成|Mark done/ }).click()
   await expect(page.locator('.action-undo-toast').getByRole('button', { name: /撤销|Undo/ })).toBeVisible()
   expect((await rows(page, 'scheduleNodes')).find((item) => item.id === 'history-node-6')?.state).toBe('completed')
   await page.locator('.action-undo-toast').getByRole('button', { name: /撤销|Undo/ }).click()
@@ -66,7 +71,7 @@ for (const connected of [false, true]) test(`${connected ? 'connected' : 'local'
   await checkHistory(page, before)
   // The completion audit is retained after compensation, not deleted by Undo.
   const retainedTimeline = await rows(page, 'timeline')
-  expect(retainedTimeline.some((item) => item.actionId === 'history-task' && item.changes?.status?.after === 'done')).toBe(true)
+  expect(retainedTimeline.some((item) => application ? item.kind === 'application_submitted' : item.actionId === 'history-task' && item.changes?.status?.after === 'done')).toBe(true)
   for (const [path, selector] of [['today', '[data-testid="cgr02-today"]'], ['schedule', '.tsui-schedule-page'], ['library/history-job', '.job-detail-page']]) {
     await page.goto('/pjsdas/' + path); await expect(page.locator(selector)).toBeVisible()
     await page.reload(); await expect(page.locator(selector)).toBeVisible()
@@ -75,7 +80,7 @@ for (const connected of [false, true]) test(`${connected ? 'connected' : 'local'
   const restarted = await context.newPage(); await restarted.goto('/pjsdas/today'); await page.close()
   await expect(restarted.getByTestId('cgr02-today')).toBeVisible(); await checkHistory(restarted, before)
   expect(await rows(restarted, 'timeline')).toEqual(retainedTimeline)
-  if (connected) expect(commands).toEqual(['set_action_status', 'undo'])
+  if (connected) expect(commands).toEqual([application ? 'record_application_submission' : 'set_action_status', 'undo'])
 })
 
 test('local durable completion evidence rejects a later occurrence edit atomically', async ({ page }) => {
@@ -331,5 +336,31 @@ for (const kind of ['manual', 'apply'] as const) test(`reimport clears and reint
   }
   expect(result.restored.data.actions[0].dueAt).toBe('2026-10-20')
   expect(result.afterCancelImport.data.scheduleNodes).toEqual(result.cancelled.data.scheduleNodes)
+  await page.reload(); await expect(page.getByTestId('cgr02-today')).toBeVisible()
+})
+
+ test('versioned import omission and reappearance preserve every occurrence link', async ({ page }) => {
+  await page.clock.install({ time: HISTORY_NOW }); await page.goto('/'); await page.locator('.tsui-primary-nav').waitFor()
+  const result = await page.evaluate(async (input) => {
+    const db = await import('/pjsdas/src/db.ts')
+    const job = { ...input.data.opportunities[0], locallyManaged: false, deadline: undefined }
+    const action = { ...input.data.actions[0], kind: 'manual' as const, status: 'todo' as const, dueAt: '2026-10-10', duePrecision: 'date' as const, sourceLabel: 'Excel' }
+    input.data.opportunities = [job]; input.data.actions = [action]; input.data.scheduleNodes = []
+    await db.replaceLocalSnapshotFromCloud(input)
+    const bundle = { opportunities: [job], processes: [], actions: [{ ...action, dueAt: '2026-10-20' }], prep: [], applicationGroups: [],
+      summary: { filename: 'omission.xlsx', importedAt: '2026-09-28T12:00:00.000Z', opportunities: 1, pending: 0, processes: 0, prep: 0, applicationGroups: 0, actions: 1 } }
+    await db.replaceImportedData(bundle)
+    const moved = await db.exportLocalSnapshot()
+    await db.replaceImportedData({ ...bundle, actions: [] })
+    const omitted = await db.exportLocalSnapshot()
+    await db.replaceImportedData(bundle)
+    return { moved, omitted, restored: await db.exportLocalSnapshot() }
+  }, historyActionWorkspace())
+  expect(result.omitted.data.scheduleNodes).toEqual(result.moved.data.scheduleNodes)
+  expect(result.restored.data.scheduleNodes).toEqual(result.moved.data.scheduleNodes)
+  expect(result.restored.data.scheduleNodes!.some(n => n.state === 'scheduled' && n.version === 2)).toBe(true)
+  for (const node of result.restored.data.scheduleNodes!) if (node.supersededByNodeId) {
+    expect(result.restored.data.scheduleNodes!.some(n => n.id === node.supersededByNodeId)).toBe(true)
+  }
   await page.reload(); await expect(page.getByTestId('cgr02-today')).toBeVisible()
 })
