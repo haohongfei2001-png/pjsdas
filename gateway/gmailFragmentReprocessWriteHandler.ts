@@ -9,7 +9,7 @@ import { applyGmailSemanticBatch, type GmailSemanticRecord } from '../src/gmailS
 import { reconcileIngestionDebt } from '../src/ingestionResolution.js'
 import { stableIngestionHash } from '../src/ingestion.js'
 import { validateSnapshot, type PJSDASSnapshot } from '../src/snapshot.js'
-import { fragmentBindingShape, fragmentBusinessDeltaDigest, fragmentEvidenceShape, fragmentSafetyDigest } from '../src/fragmentReprocessSafety.js'
+import { fragmentBindingShape, fragmentBusinessDeltaDigest, fragmentEvidenceShape, fragmentSafetyDigest, isBoundedFragmentSettlementCount } from '../src/fragmentReprocessSafety.js'
 import type { GmailAutomationBinding } from './automationConnectionStore.js'
 import type { GatewayWorkspace, WorkspaceWriteInput } from './workspaceSource.js'
 
@@ -118,7 +118,7 @@ export function fragmentSettlementWriteCommand(revision: number, selectedIds: st
 }
 
 export interface FragmentSettlementAuthorization {
-  expectedProjectedSettledCount: 39
+  expectedProjectedSettledCount: number
   bindingDigest: string
   targetSetDigest: string
   evidenceDigest: string
@@ -141,6 +141,10 @@ export interface FragmentSettlementDependencies {
 export async function executeBoundedFragmentSettlement(
   authorization: FragmentSettlementAuthorization, dependencies: FragmentSettlementDependencies,
 ) {
+  if (!isBoundedFragmentSettlementCount(authorization.expectedProjectedSettledCount)
+    || authorization.expectedProjectedSettledCount > dependencies.maxRecords) {
+    throw new WorkspaceSourceError('EXACT_PROJECTION_REQUIRED', 'A bounded exact authorization count is required.', false)
+  }
   let firstSettledSetDigest: string | undefined
   for (let attempt = 1; attempt <= 3; attempt += 1) {
     const bindings = await dependencies.binding()
@@ -180,7 +184,7 @@ export async function executeBoundedFragmentSettlement(
     const settledSetDigest = await fragmentSafetyDigest(plan.selectedIds)
     const businessDeltaDigest = await fragmentBusinessDeltaDigest(
       workspace.snapshot, plan.snapshot, now.toISOString())
-    if (plan.selectedIds.length !== 39 || authorization.expectedProjectedSettledCount !== 39
+    if (plan.selectedIds.length !== authorization.expectedProjectedSettledCount
       || settledSetDigest !== authorization.settledSetDigest
       || businessDeltaDigest !== authorization.businessDeltaDigest
       || (firstSettledSetDigest !== undefined && settledSetDigest !== firstSettledSetDigest)) {
@@ -216,7 +220,7 @@ export function createGmailFragmentReprocessWriteHandler(config: GmailFragmentRe
     if (!workerToken) return json(401, { code: 'AUTOMATION_AUTH_REQUIRED' })
     const body = await request.json().catch(() => undefined) as Partial<FragmentSettlementAuthorization> | undefined
     const digest = (value: unknown) => typeof value === 'string' && /^[a-f0-9]{64}$/.test(value)
-    if (body?.expectedProjectedSettledCount !== 39
+    if (!isBoundedFragmentSettlementCount(body?.expectedProjectedSettledCount)
       || !digest(body.bindingDigest) || !digest(body.targetSetDigest)
       || !digest(body.evidenceDigest) || !digest(body.settledSetDigest)
       || !digest(body.businessDeltaDigest)) {

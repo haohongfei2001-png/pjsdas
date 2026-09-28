@@ -3,7 +3,7 @@ status: REPAIR_02_WRITE_ENGINEERING_COMPLETE_AWAITING_AUTHORIZATION
 writer:
   branch: null
   active: false
-  last_branch: reliability/aur-02-bounded-cas-retry-v1
+  last_branch: reliability/aur-02-exact-baseline-count-v1
 baseline:
   main: a407c5d2a006d5ce8a4fcd5b44e6c59b114b27ae
   active_unresolved: 177
@@ -103,3 +103,18 @@ repair_02_concurrency_hardening:
   latest_known_production_revision_at_start: 805
   earlier_authorized_write_attempts: ABORTED_ON_REVISION_CONFLICT
   actual_production_workspace_write: NONE
+
+repair_02_authorization_baseline_generalization:
+  base_main: 599ca3e90a55f53fdda92f80981ea1a3b6bc83f6
+  previous_pr_merged: 183
+  expected_projected_settled_count: EXACT_OWNER_AUTHORIZED_BASELINE_COUNT
+  count_bounds: [1, 100]
+  mandatory_exact_digests: [bindingDigest, targetSetDigest, evidenceDigest, settledSetDigest, businessDeltaDigest]
+  maximum_fresh_cas_attempts: 3
+  latest_preengineering_dry_run_request_id: 1341
+  latest_preengineering_projected_settled_count: 38
+  latest_preengineering_targeted_fetched: [60, 60]
+  latest_preengineering_parser_complete_gap: [45, 15]
+  latest_preengineering_active_unresolved_projection: [181, 143]
+  production_workspace_write: NOT_EXECUTED_AWAITING_NEW_OWNER_AUTHORIZATION
+  historical_concurrency_required_count_39: SUPERSEDED_BY_EXACT_BASELINE_COUNT
