@@ -13,6 +13,7 @@ import { reconcileIngestionDebt } from '../src/ingestionResolution.js'
 import { stableIngestionHash, summarizeCoverage } from '../src/ingestion.js'
 import type { GmailReconciliationState, TimelineRecord } from '../src/model.js'
 import type { PJSDASSnapshot } from '../src/snapshot.js'
+import { fragmentBindingShape, fragmentEvidenceShape, fragmentSafetyDigest } from '../src/fragmentReprocessSafety.js'
 
 const GMAIL_SOURCE_ID = 'gmail:primary'
 const FRAGMENT_REPROCESS_SOURCE_VERSION = 'fragment-reprocess-v2'
@@ -222,6 +223,7 @@ export function createGmailFragmentReprocessDryRunHandler(config: GmailFragmentR
         let projectedActiveUnresolved = beforeCoverage.activeUnresolvedCount
         let semanticReceiptCounts: Record<string, number> = {}
         let projectedResolutionOutcomeCounts: Record<string, number> = {}
+        const projectedSettledIds = new Set<string>()
 
         if (completeRecords.length) {
           const sortedIds = completeRecords.map((record) => record.observation.source.sourceRecordId).sort()
@@ -246,7 +248,10 @@ export function createGmailFragmentReprocessDryRunHandler(config: GmailFragmentR
             if (!resolution || !targetSet.has(resolution.sourceRecordId)) continue
             projectedResolutionOutcomeCounts[resolution.outcome] =
               (projectedResolutionOutcomeCounts[resolution.outcome] ?? 0) + 1
-            if (resolution.outcome !== 'active_unresolved') projectedSettledCount += 1
+            if (resolution.outcome === 'ignored' || resolution.outcome === 'resolved') {
+              projectedSettledCount += 1
+              projectedSettledIds.add(resolution.sourceRecordId)
+            }
           }
           projectedActiveUnresolved = Math.max(0, beforeCoverage.activeUnresolvedCount - projectedSettledCount)
         }
@@ -265,6 +270,10 @@ export function createGmailFragmentReprocessDryRunHandler(config: GmailFragmentR
           projectedSettledCount,
           activeUnresolvedBefore: beforeCoverage.activeUnresolvedCount,
           projectedActiveUnresolved,
+          bindingDigest: await fragmentSafetyDigest(fragmentBindingShape(binding)),
+          targetSetDigest: await fragmentSafetyDigest(targets),
+          evidenceDigest: await fragmentSafetyDigest(fragmentEvidenceShape(records)),
+          settledSetDigest: await fragmentSafetyDigest([...projectedSettledIds].sort()),
         })
       }
 
