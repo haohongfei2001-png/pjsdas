@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test'
 import { AUTH_KEY, BACKEND, cors, health, session, workspace } from './fixtures/todayWorkspace.js'
 
-for (const scenario of ['sign-out', 'local-edit', 'command-sign-out', 'command-local-edit', 'order-only', 'overlapping-read', 'account-aba', 'cloud-recovery'] as const) test(`a delayed authoritative read preserves ${scenario} boundary`, async ({ page }) => {
+for (const scenario of ['sign-out', 'local-edit', 'command-sign-out', 'command-local-edit', 'order-only', 'overlapping-read', 'account-aba', 'cloud-recovery', 'account-return', 'account-return-edited', 'account-return-read'] as const) test(`a delayed authoritative read preserves ${scenario} boundary`, async ({ page }) => {
   const snapshot = workspace()
   let revision = 7
   let commandCalls = 0
@@ -31,6 +31,31 @@ for (const scenario of ['sign-out', 'local-edit', 'command-sign-out', 'command-l
   await expect(page.getByRole('heading', { name: 'A第一任务' })).toBeVisible()
   await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem('pjsdas-google-drive-sync-state-v2') ?? '{}').accounts?.['account-a']?.lastSyncedVersion)).toBe('txn:7')
   revision = 8
+  if (scenario.startsWith('account-return')) {
+    await page.evaluate(async (scenario) => {
+      if (scenario !== 'account-return-read') localStorage.setItem('pjsdas-cgr01-pending:account-a', JSON.stringify([{ commandId: 'committed-before-signout', action: 'command', status: 'unknown', createdAt: '2026-09-28T00:00:00Z', updatedAt: '2026-09-28T00:00:00Z' }]))
+      const { pjsdasSupabase } = await import('/pjsdas/src/aiAccess/supabaseClient.ts')
+      await pjsdasSupabase.auth.signOut({ scope: 'local' })
+    }, scenario)
+    await expect.poll(() => page.evaluate(async () => (await (await import('/pjsdas/src/db.ts')).exportLocalRecoveryArchive()).stores.actions.length)).toBe(0)
+    if (scenario === 'account-return-edited') {
+      await page.evaluate(async (local) => {
+        local.data.actions[0].title = 'New local data after clear'
+        await (await import('/pjsdas/src/db.ts')).replaceLocalSnapshotFromCloud(local)
+      }, snapshot)
+    }
+    await page.evaluate(({ key, value }) => localStorage.setItem(key, JSON.stringify(value)), { key: AUTH_KEY, value: session('account-a', 'token-a') })
+    await page.reload()
+    if (scenario === 'account-return-edited') {
+      await expect.poll(() => page.evaluate(async () => (await (await import('/pjsdas/src/db.ts')).exportLocalRecoveryArchive()).stores.actions[0]?.title)).toBe('New local data after clear')
+      expect(await page.evaluate(() => localStorage.getItem('pjsdas-cgr01-pending:account-a'))).not.toBeNull()
+    } else {
+      await expect(page.getByRole('heading', { name: 'A第一任务' })).toBeVisible()
+      await expect.poll(() => page.evaluate(() => localStorage.getItem('pjsdas-cgr01-pending:account-a'))).toBeNull()
+    }
+    expect(commandCalls).toBe(0)
+    return
+  }
   if (scenario === 'cloud-recovery') {
     snapshot.data = await page.evaluate(async () => (await (await import('/pjsdas/src/db.ts')).exportLocalSnapshot()).data)
     snapshot.data.actions.reverse(); snapshot.data.opportunities.reverse()

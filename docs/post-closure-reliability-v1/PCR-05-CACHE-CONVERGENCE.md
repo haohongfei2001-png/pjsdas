@@ -51,3 +51,13 @@ AccountCacheChangedError before the repair. Recovery now publishes the committed
 projection/source fingerprint pair after the account guard. The regression and
 17 other account/command/persistence journeys pass; 1022 unit tests and type pass.
 New exact-head full gates and a new independent review are still required.
+
+Second fresh review253ee42 found a valid P2: retained account checkpoints blocked
+receipt recovery after a legitimate sign-out cache clear (fullreport5879933584).
+The real sign-out/re-login regression failed before repair. A successful boundary
+now records the exact committed cleared-cache fingerprint for retained account
+checkpoints. Commands/read refresh/sync may recover only that exact projection;
+intervening real local data still fails closed. Successful hydration consumes this
+marker. Pending commands and drafts remain account scoped and retained.
+1022 unit/type and19 headless regressions pass; additional re-login read-only and
+valid-local-edit preservation variants pass. New head review/full gates required.

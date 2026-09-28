@@ -56,6 +56,7 @@ function conflictFromRemote(row: RemoteWorkspaceRow): CloudConflictState {
 
 function markSynced(userId: string, row: RemoteWorkspaceRow) {
   patchAccountCheckpoint(userId, {
+    clearedCacheFingerprint: undefined,
     lastSyncedVersion: row.version,
     lastSyncedFingerprint: row.fingerprint,
     lastSyncedAt: new Date().toISOString(),
@@ -101,7 +102,7 @@ export async function runCloudSync(userId: string, options: { passive?: boolean 
     assertCurrent()
     await assertLocalSnapshotCurrent(local, assertCurrent)
     const checkpoint = getAccountCheckpoint(userId)
-    const decision = decideSyncAction({
+    const decision = remote && localFingerprint === checkpoint.clearedCacheFingerprint ? 'pull_remote' : decideSyncAction({
       checkpoint,
       localFingerprint,
       localProjectionBaselineFingerprint: checkpoint.lastReadProjectionSourceFingerprint === checkpoint.lastSyncedFingerprint

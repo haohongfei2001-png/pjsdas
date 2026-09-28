@@ -28,6 +28,7 @@ export interface AuthoritativeReadFreshness {
 function markFresh(accountKey: string, version: string, fingerprint: string, projectionFingerprint: string, observedAt: string) {
   bindLocalWorkspaceToUser(accountKey)
   patchAccountCheckpoint(accountKey, {
+    clearedCacheFingerprint: undefined,
     lastSyncedVersion: version,
     lastSyncedFingerprint: fingerprint,
     lastReadProjectionFingerprint: projectionFingerprint,
@@ -83,7 +84,7 @@ export async function refreshConnectedAuthoritativeCache(
         changed: false,
       }
     }
-  } else {
+  } else if (localFingerprint !== checkpoint.clearedCacheFingerprint) {
     const projectedBaseline = checkpoint.lastReadProjectionSourceFingerprint === checkpoint.lastSyncedFingerprint
       ? checkpoint.lastReadProjectionFingerprint
       : undefined

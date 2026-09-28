@@ -7,6 +7,8 @@ export interface CloudConflictState {
 }
 
 export interface AccountSyncCheckpoint {
+  /** Exact durable empty projection recorded after a successful account-boundary clear. */
+  clearedCacheFingerprint?: string
   lastSyncedVersion?: string
   lastSyncedFingerprint?: string
   lastReadProjectionFingerprint?: string
@@ -102,4 +104,10 @@ export function setCloudAutoSync(enabled: boolean) {
   const state = readRaw()
   state.autoSync = enabled
   return writeRaw(state)
+}
+
+export function recordClearedAccountCache(fingerprint: string) {
+  const state = readRaw()
+  for (const checkpoint of Object.values(state.accounts)) checkpoint.clearedCacheFingerprint = fingerprint
+  writeRaw(state)
 }

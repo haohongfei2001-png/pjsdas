@@ -19,6 +19,7 @@ import {
 } from './cloudClient.js'
 import {
   clearLocalWorkspaceBinding,
+  recordClearedAccountCache,
   getAccountCheckpoint,
   getCloudDeviceState,
   setCloudAutoSync,
@@ -35,6 +36,7 @@ import {
 } from './cloudSync.js'
 import { assertCloudSignOutAllowed, assertConnectedSignOutDataSafe } from './cloudOperationGuard.js'
 import { connectedWorkspaceAuthorityEnabled } from './connectedWorkspaceRepository.js'
+import { fingerprintWorkspace } from './workspaceFingerprint.js'
 import { clearLocalWorkspaceCache } from '../db.js'
 import { replayAccountPendingOperations } from './authoritativeCommandClient.js'
 import { enforceConnectedAccountCacheBoundary } from './accountCacheBoundary.js'
@@ -96,7 +98,10 @@ export function CloudProvider({ children }: { children: ReactNode }) {
         await enforceConnectedAccountCacheBoundary(
           getCloudDeviceState().workspaceOwnerUserId,
           next?.user.id,
-          clearLocalWorkspaceCache,
+          async () => {
+            const cleared = await clearLocalWorkspaceCache()
+            recordClearedAccountCache(await fingerprintWorkspace(cleared))
+          },
           clearLocalWorkspaceBinding,
         )
       }

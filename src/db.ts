@@ -1060,8 +1060,10 @@ export async function exportLocalRecoveryArchive() {
 export async function clearLocalWorkspaceCache() {
   const db = await dbPromise
   const tx = db.transaction([...DATA_STORES], 'readwrite')
+  let cleared: PJSDASSnapshot
   try {
     await Promise.all(DATA_STORES.map((storeName) => tx.objectStore(storeName).clear()))
+    cleared = await readLocalSnapshot(tx)
     await tx.done
   } catch (caught) {
     // A synchronous store failure must also abort clears already enqueued.
@@ -1072,6 +1074,7 @@ export async function clearLocalWorkspaceCache() {
     throw caught
   }
   if (typeof window !== 'undefined') window.dispatchEvent(new Event('pjsdas:workspace-replaced'))
+  return cleared
 }
 
 export async function replaceLocalSnapshotFromCloud(snapshot: PJSDASSnapshot, guard?: { expectedLocal: PJSDASSnapshot; assertCurrent: () => void }) {

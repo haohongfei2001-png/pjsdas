@@ -161,7 +161,8 @@ async function request(accountKey: string, body: Record<string, unknown>) {
   const baseline = checkpoint.lastReadProjectionSourceFingerprint === checkpoint.lastSyncedFingerprint
     ? checkpoint.lastReadProjectionFingerprint ?? checkpoint.lastSyncedFingerprint : checkpoint.lastSyncedFingerprint
   // A later receipt retry must not relabel a genuine local edit as the new baseline.
-  if (baseline && await fingerprintWorkspace(local) !== baseline) throw new AccountCacheChangedError()
+  const localFingerprint = await fingerprintWorkspace(local)
+  if (baseline && localFingerprint !== baseline && localFingerprint !== checkpoint.clearedCacheFingerprint) throw new AccountCacheChangedError()
   const accessToken = await getAccountAccessToken(accountKey)
   lease.assertCurrent()
   const response = await fetchBackend('/api/workspace', {
@@ -208,6 +209,7 @@ async function projectAuthoritativeResult(accountKey: string, result: ConnectedC
   const projectedFingerprint = await fingerprintWorkspace(committed)
   assertCurrent()
   patchAccountCheckpoint(accountKey, {
+    clearedCacheFingerprint: undefined,
     lastSyncedVersion: result.workspaceVersion ?? `txn:${result.revision}`,
     lastSyncedFingerprint: fingerprint,
     lastReadProjectionFingerprint: projectedFingerprint,
