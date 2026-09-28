@@ -532,6 +532,47 @@ describe('R02 active unresolved reconciliation', () => {
     })
   })
 
+  it('does not settle a source when its latest recovery receipt covers only one of two invalidated facts', () => {
+    const record = unresolved({ sourceRecordId: 'partial-semantic-recovery', receivedAt: '2026-09-20T00:00:00.000Z' })
+    const factA = 'manual_action|first|'
+    const factB = 'manual_action|second|'
+    const base = snapshot({
+      timeline: [record, zeroRun()],
+      semanticReceipts: [
+        {
+          id: 'receipt:partial-original', inputId: 'partial-original', sourceKind: 'gmail', sourceId: SOURCE_ID,
+          sourceRecordId: 'partial-semantic-recovery', sourceVersion: 'v1', status: 'committed', summary: 'Original',
+          affectedObjects: [], decisionRequestIds: [], factKeys: [factA, factB],
+          factInvalidations: [
+            { factKey: factA, invalidatedByReceiptId: 'receipt:undo-a', invalidatedAt: '2026-09-26T10:00:00.000Z' },
+            { factKey: factB, invalidatedByReceiptId: 'receipt:undo-b', invalidatedAt: '2026-09-26T10:01:00.000Z' },
+          ],
+          undoAvailable: false, createdAt: '2026-09-26T09:00:00.000Z', updatedAt: '2026-09-26T10:01:00.000Z',
+        },
+        {
+          id: 'receipt:partial-recovery-a', inputId: 'partial-recovery-a', sourceKind: 'gmail', sourceId: SOURCE_ID,
+          sourceRecordId: 'partial-semantic-recovery', sourceVersion: 'v1', status: 'committed', summary: 'Recovered A',
+          affectedObjects: [], decisionRequestIds: [], factKeys: [factA], undoAvailable: true,
+          createdAt: '2026-09-26T10:02:00.000Z', updatedAt: '2026-09-26T10:02:00.000Z',
+        },
+      ],
+    })
+    const partial = reconcileIngestionDebt(base, NOW)
+    expect(partial.appended[0]?.ingestionResolution).toMatchObject({
+      outcome: 'active_unresolved', reason: 'unlinked_unresolved',
+    })
+    const complete = structuredClone(base)
+    complete.data.semanticReceipts?.push({
+      id: 'receipt:partial-recovery-b', inputId: 'partial-recovery-b', sourceKind: 'gmail', sourceId: SOURCE_ID,
+      sourceRecordId: 'partial-semantic-recovery', sourceVersion: 'v1', status: 'committed', summary: 'Recovered B',
+      affectedObjects: [], decisionRequestIds: [], factKeys: [factB], undoAvailable: true,
+      createdAt: '2026-09-26T10:03:00.000Z', updatedAt: '2026-09-26T10:03:00.000Z',
+    })
+    expect(reconcileIngestionDebt(complete, NOW).appended[0]?.ingestionResolution).toMatchObject({
+      outcome: 'resolved', reason: 'semantic_receipt_committed',
+    })
+  })
+
   it.each([false, true])('keeps same-company multi-role ambiguity active even if candidates are terminal: %s', (terminal) => {
     const record = unresolved({
       sourceRecordId: 'same-company-ambiguous',

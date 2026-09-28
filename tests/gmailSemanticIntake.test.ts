@@ -1267,6 +1267,43 @@ describe('UU06 shared Gmail intake', () => {
     validateSnapshot(undone)
   })
 
+  it('keeps a separately created same-key offer event after undoing the first', () => {
+    const observation = (version: string) => ({
+      contractVersion: 1 as const,
+      inputId: `gmail:independent-offer:${version}`,
+      source: {
+        kind: 'gmail' as const, sourceId: 'gmail:primary', sourceRecordId: 'independent-offer',
+        sourceVersion: version, observedAt: now.toISOString(), assertedAt: now.toISOString(), timezone: 'Asia/Shanghai',
+      },
+      statementMode: 'assertion' as const,
+      candidates: [{
+        id: 'offer', kind: 'process_event' as const, eventType: 'offer' as const,
+        target: { opportunityId: 'jd' }, occurredAt: now.toISOString(),
+        objectConfidence: 'high' as const, eventConfidence: 'high' as const,
+        evidenceRefs: ['independent-offer'], sourceVersionRefs: [`independent-offer:${version}`],
+      }],
+    })
+    const first = applySemanticIntake(snapshot(), observation('v1'), { authorized: true, now })
+    const secondObservation = observation('v2')
+    const second = applySemanticIntake(first.snapshot, secondObservation, {
+      authorized: true, now: new Date('2026-09-21T00:01:00Z'),
+    })
+    expect(second.snapshot.data.processEvents).toHaveLength(2)
+    expect(second.receipt?.factKeys).toEqual(first.receipt?.factKeys)
+    expect(second.receipt?.factMutationObjects?.[first.receipt!.factKeys![0]!])
+      .toContainEqual({ type: 'process_event', id: second.snapshot.data.processEvents[1]!.id })
+    const laterEvent = structuredClone(second.snapshot.data.processEvents[1])
+    const undone = applySemanticCompensation(second.snapshot, first.compensation!, new Date('2026-09-21T00:02:00Z'))
+    expect(undone.data.processEvents).toEqual([laterEvent])
+    expect(undone.data.semanticReceipts?.find((item) => item.id === second.receipt!.id)?.factInvalidations).toBeUndefined()
+    const replay = applySemanticIntake(undone, secondObservation, {
+      authorized: true, now: new Date('2026-09-21T00:03:00Z'),
+    })
+    expect(replay.status).toBe('ALREADY_APPLIED')
+    expect(replay.snapshot.data.processEvents).toEqual([laterEvent])
+    validateSnapshot(replay.snapshot)
+  })
+
   it('replay and a new message for the same thread occurrence do not duplicate events', () => {
     const first = run(snapshot(), invitation)
     const replay = run(first.snapshot, invitation)

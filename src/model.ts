@@ -333,7 +333,7 @@ export interface SemanticIntakeReceipt {
   commandId?: string
   status: SemanticReceiptStatus
   summary: string
-  affectedObjects: Array<{ type: 'opportunity' | 'schedule_node' | 'action' | 'process' | 'decision_request' | 'reminder_intent'; id: string }>
+  affectedObjects: Array<{ type: 'opportunity' | 'schedule_node' | 'action' | 'process' | 'process_event' | 'decision_request' | 'reminder_intent'; id: string }>
   decisionRequestIds: string[]
   factKeys?: string[]
   /** Facts for which this receipt owns a compensatable domain mutation. */

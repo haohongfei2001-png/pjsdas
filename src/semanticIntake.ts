@@ -132,9 +132,7 @@ function receiptInvalidatedFactKeys(receipt: SemanticIntakeReceipt) {
   return new Set((receipt.factInvalidations ?? []).map((item) => item.factKey))
 }
 
-function pendingRecoveryFactKeys(snapshot: PJSDASSnapshot, observation: SemanticIntakeObservation) {
-  const matching = (snapshot.data.semanticReceipts ?? []).filter((item) =>
-    receiptMatchesObservation(item, observation))
+function pendingFactKeys(matching: SemanticIntakeReceipt[]) {
   const pending = new Set<string>()
   const restoredAfter = (factKey: string, at: string, invalidatedBy: SemanticIntakeReceipt) => matching.some((receipt) =>
     receipt.status === 'committed'
@@ -152,6 +150,21 @@ function pendingRecoveryFactKeys(snapshot: PJSDASSnapshot, observation: Semantic
     }
   }
   return pending
+}
+
+function pendingRecoveryFactKeys(snapshot: PJSDASSnapshot, observation: SemanticIntakeObservation) {
+  return pendingFactKeys((snapshot.data.semanticReceipts ?? []).filter((item) =>
+    receiptMatchesObservation(item, observation)))
+}
+
+export function pendingSemanticSourceFactKeys(
+  snapshot: PJSDASSnapshot,
+  source: { sourceKind: string; sourceId: string; sourceRecordId: string },
+) {
+  return pendingFactKeys((snapshot.data.semanticReceipts ?? []).filter((item) =>
+    item.sourceKind === source.sourceKind
+    && item.sourceId === source.sourceId
+    && item.sourceRecordId === source.sourceRecordId))
 }
 
 function existingReceipt(snapshot: PJSDASSnapshot, observation: SemanticIntakeObservation) {
@@ -569,6 +582,9 @@ function affectedFromDomain(command: UserDomainCommand, opportunity?: Opportunit
     }
     for (const node of snapshot.data.scheduleNodes ?? []) {
       if (!(before.data.scheduleNodes ?? []).some((item) => item.id === node.id)) affected.push({ type: 'schedule_node', id: node.id })
+    }
+    for (const event of snapshot.data.processEvents) {
+      if (!before.data.processEvents.some((item) => item.id === event.id)) affected.push({ type: 'process_event', id: event.id })
     }
   }
   return affected
