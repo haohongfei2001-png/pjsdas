@@ -43,3 +43,15 @@ Parser amplification and account read/edit/sign-out race still require separate
 bounded engineering. No production workspace mutation, Gmail permission/cursor
 change, ledger rewrite or automation pause. Repair02 authorization remains consumed.
 This candidate requires latest-head full gates and independent review before merge.
+
+Fresh independent review on db9fe41 found two valid P2 presentation defects
+(report PRcomment5877257478): dismiss-only translation erased distinct clarification
+instructions, and broad reason titles hid the old-observation intentional-correction
+warning. Both now use faithful translations of actual producer messages; unknown
+explanations and recommendations remain visible rather than discarded. Original
+choice identities stay unchanged. Exact grouping also requires identical warning
+text. Real applySemanticIntake producer unit/browser regressions preserve both
+warnings and follow-up instructions. Explicit UTC date decisions remain current
+through their source calendar day while floating dates follow display timezone.
+New regressions failed before repair;1005unit/type and3dense headless cases PASS.
+A new exact-head independent review/full gates is still required before merge.

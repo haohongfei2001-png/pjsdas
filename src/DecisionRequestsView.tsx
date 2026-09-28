@@ -1,4 +1,4 @@
-import { groupOpenDecisions, presentDecision, presentChoice } from './decisionPresentation.js'
+import { groupOpenDecisions, presentDecision, presentChoice, decisionText } from './decisionPresentation.js'
 import { useMemo, useState } from 'react'
 import type { DecisionRequest, Opportunity } from './model.js'
 import {
@@ -123,8 +123,8 @@ export default function DecisionRequestsView({
             <article className="ultimate-decision-card" key={request.id}>
               <div className="ultimate-decision-copy">
                 <span className="ultimate-decision-reason">{zh ? '需要你决定' : 'Needs your decision'}</span>
-                <h2>{presentation.title}</h2><p>{presentation.context}</p>{presentation.sourceUrl ? <a href={presentation.sourceUrl} target="_blank" rel="noreferrer">{zh ? '查看来源邮件' : 'View source email'}</a> : null}
-                {!zh && request.recommendationBasis ? <p>{request.recommendationBasis}</p> : null}
+                <h2>{presentation.title}</h2><p>{presentation.explanation}</p><p>{presentation.context}</p>{presentation.sourceUrl ? <a href={presentation.sourceUrl} target="_blank" rel="noreferrer">{zh ? '查看来源邮件' : 'View source email'}</a> : null}
+                {request.recommendationBasis ? <p>{decisionText(request.recommendationBasis, zh)}</p> : null}
                 {request.expiresAt ? <small>{zh ? '建议在' : 'Best answered by'} {formatWhen(request.expiresAt, zh)}</small> : null}
               </div>
               {!focusRequestId && (groupById.get(request.id)?.length ?? 0) > 1 ? <details><summary>{zh ? '同一来源的重复记录（逐条保留）' : 'Repeated source records (all retained)'}</summary>{groupById.get(request.id)!.map(item => <a key={item.id} href={(import.meta.env.BASE_URL ?? '/') + 'decisions/' + encodeURIComponent(item.id)}>{item.createdAt} · {item.id.slice(-8)}</a>)}</details> : null}

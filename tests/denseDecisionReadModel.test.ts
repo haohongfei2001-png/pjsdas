@@ -1,3 +1,4 @@
+import { applySemanticIntake } from '../src/semanticIntake.js'
 import { describe, expect, it } from 'vitest'
 import { denseDecision, denseDecisionWorkspace, DENSE_NOW } from './fixtures/denseDecisionWorkspace.js'
 import { decisionNeedsToday, groupOpenDecisions, presentDecision, presentChoice } from '../src/decisionPresentation.js'
@@ -43,8 +44,9 @@ describe('dense owner decision and schedule membership', () => {
     const before = JSON.stringify([a, b])
     expect(groupOpenDecisions([a, b])).toEqual([[a, b]])
     expect(JSON.stringify([a, b])).toBe(before)
-    for (const change of ['choices', 'target', 'source'] as const) {
+    for (const change of ['choices', 'target', 'source', 'question'] as const) {
       const changed = structuredClone(b)
+      if (change === 'question') changed.question = 'A different correction warning.'
       if (change === 'choices') changed.choices[0].resolution = { opportunityId: 'another-job' }
       if (change === 'target') changed.payloadBinding.candidate.target = { company: 'Another company' }
       if (change === 'source') changed.payloadBinding.source.sourceRecordId = 'another-source'
@@ -70,6 +72,14 @@ describe('dense owner decision and schedule membership', () => {
     expect(stream.sections.upcoming.some(n => n.nodeId === snapshot.data.scheduleNodes![0].id)).toBe(true)
     expect(stream.sections.unresolved).toHaveLength(97)
   })
+  it('keeps an explicit UTC date decision during its source calendar day across local midnight', () => {
+    const request = denseDecision(50)
+    if (request.payloadBinding.candidate.kind !== 'process_event') throw Error('fixture')
+    request.payloadBinding.candidate.temporal = { shape: 'date_only', precision: 'date', timezone: 'UTC', date: '2026-09-28', resolutionBasis: 'source_explicit' }
+    expect(decisionNeedsToday(request, DENSE_NOW, zone)).toBe(true)
+    request.payloadBinding.candidate.temporal.timezone = 'floating-date'
+    expect(decisionNeedsToday(request, DENSE_NOW, zone)).toBe(false)
+  })
   it('provides Chinese event/source context without inventing a candidate employer', () => {
     const request = denseDecision(42)
     const copy = presentDecision(request, [], true)
@@ -78,4 +88,24 @@ describe('dense owner decision and schedule membership', () => {
     expect(copy.title).not.toContain('Several')
     expect(presentChoice(request.choices[0], true).label).toBe('确认这条信息')
   })
+})
+
+it('preserves actual semantic producer clarification choices and old-observation correction warning', () => {
+  const snapshot = denseDecisionWorkspace()
+  snapshot.data.opportunities[0].effectiveProcessEventAt = '2026-09-27T00:00:00Z'
+  const observation = { contractVersion: 1 as const, inputId: 'old-real-producer', statementMode: 'assertion' as const,
+    source: { kind: 'web' as const, sourceId: 'web', sourceRecordId: 'old-note', observedAt: DENSE_NOW.toISOString(), assertedAt: '2026-09-20T00:00:00Z', timezone: 'Asia/Shanghai' },
+    candidates: [{ id: 'fact', kind: 'application_submitted' as const, target: { opportunityId: snapshot.data.opportunities[0].id }, occurredAt: '2026-09-20T00:00:00Z', objectConfidence: 'high' as const, eventConfidence: 'high' as const, evidenceRefs: [], sourceVersionRefs: [] }] }
+  const result = applySemanticIntake(snapshot, observation, { authorized: true, now: DENSE_NOW })
+  const warning = result.snapshot.data.decisionRequests!.find(r => r.payloadBinding.inputId === observation.inputId)!
+  expect(warning.reason).toBe('material_conflict')
+  expect(presentDecision(warning, snapshot.data.opportunities, true).explanation).toContain('早于')
+  expect(presentDecision(warning, snapshot.data.opportunities, true).explanation).toContain('有意纠正')
+  const missing = applySemanticIntake(snapshot, { ...observation, inputId: 'missing-real-producer', candidates: [{ ...observation.candidates[0], target: undefined }] }, { authorized: true, now: DENSE_NOW })
+  const request = missing.snapshot.data.decisionRequests!.find(r => r.payloadBinding.inputId === 'missing-real-producer')!
+  expect(request.choices.map(c => c.id)).toEqual(['ignore', 'clarify'])
+  const choices = request.choices.map(c => presentChoice(c, true))
+  expect(choices[0].label).not.toBe(choices[1].label)
+  expect(choices[1].consequence).toContain('公司')
+  expect(choices[1].consequence).toContain('岗位')
 })
