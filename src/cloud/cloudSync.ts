@@ -263,10 +263,15 @@ export async function resolveConflictUseCloud(userId: string): Promise<CloudSync
   const remoteRaw = await fetchRemoteWorkspace(userId)
   if (!remoteRaw) throw new Error('这个 Google 账号还没有 TodayAction Drive 工作区。')
   const remote = await verifyRemote(remoteRaw)
-  await replaceLocalSnapshotFromCloud(remote.snapshot, { expectedLocal: local, assertCurrent })
+  const committed = await replaceLocalSnapshotFromCloud(remote.snapshot, { expectedLocal: local, assertCurrent })
+  const projectedFingerprint = await fingerprintWorkspace(committed)
   assertCurrent()
   bindLocalWorkspaceToUser(userId, true)
   markSynced(userId, remote)
+  patchAccountCheckpoint(userId, {
+    lastReadProjectionSourceFingerprint: remote.fingerprint,
+    lastReadProjectionFingerprint: projectedFingerprint,
+  })
   if (typeof window !== 'undefined') window.dispatchEvent(new Event('pjsdas:workspace-replaced'))
   return { kind: 'pulled', version: remote.version, remoteUpdatedAt: remote.updatedAt }
 }

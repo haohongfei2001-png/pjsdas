@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test'
 import { AUTH_KEY, BACKEND, cors, health, session, workspace } from './fixtures/todayWorkspace.js'
 
-for (const scenario of ['sign-out', 'local-edit', 'command-sign-out', 'command-local-edit', 'order-only', 'overlapping-read', 'account-aba'] as const) test(`a delayed authoritative read preserves ${scenario} boundary`, async ({ page }) => {
+for (const scenario of ['sign-out', 'local-edit', 'command-sign-out', 'command-local-edit', 'order-only', 'overlapping-read', 'account-aba', 'cloud-recovery'] as const) test(`a delayed authoritative read preserves ${scenario} boundary`, async ({ page }) => {
   const snapshot = workspace()
   let revision = 7
   let commandCalls = 0
@@ -18,19 +18,34 @@ for (const scenario of ['sign-out', 'local-edit', 'command-sign-out', 'command-l
     if (route.request().method() === 'OPTIONS') return cors(route, {}, 204)
     if (new URL(route.request().url()).pathname === '/api/health') return cors(route, health())
     const body = route.request().postDataJSON()
-    if (!['read', 'command'].includes(body.action)) return cors(route, { code: 'UNEXPECTED_WRITE' }, 409)
+    if (!['read', 'command', 'receipt'].includes(body.action)) return cors(route, { code: 'UNEXPECTED_WRITE' }, 409)
     if (body.action === 'command') { commandCalls += 1; snapshot.data.actions[0].status = 'done' }
     const responseSnapshot = structuredClone(snapshot), responseRevision = revision
     if (holdNext) {
       holdNext = false
       await new Promise<void>(resolve => { release = resolve })
     }
-    return cors(route, { outcome: 'COMMITTED', receipt: { commandId: body.commandId, status: 'COMMITTED' }, workspaceId: 'ws-a', workspaceVersion: `txn:${responseRevision}`, revision: responseRevision, schemaVersion: responseSnapshot.version, snapshot: responseSnapshot })
+    return cors(route, { found: body.action === 'receipt', outcome: 'COMMITTED', receipt: { commandId: body.commandId, status: 'COMMITTED' }, workspaceId: 'ws-a', workspaceVersion: `txn:${responseRevision}`, revision: responseRevision, schemaVersion: responseSnapshot.version, snapshot: responseSnapshot })
   })
   await page.goto('/pjsdas/today')
   await expect(page.getByRole('heading', { name: 'A第一任务' })).toBeVisible()
   await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem('pjsdas-google-drive-sync-state-v2') ?? '{}').accounts?.['account-a']?.lastSyncedVersion)).toBe('txn:7')
   revision = 8
+  if (scenario === 'cloud-recovery') {
+    snapshot.data = await page.evaluate(async () => (await (await import('/pjsdas/src/db.ts')).exportLocalSnapshot()).data)
+    snapshot.data.actions.reverse(); snapshot.data.opportunities.reverse()
+    const result = await page.evaluate(async () => {
+      const { resolveConflictUseCloud } = await import('/pjsdas/src/cloud/cloudSync.ts')
+      const { executeConnectedBusinessCommand, confirmConnectedCommand } = await import('/pjsdas/src/cloud/authoritativeCommandClient.ts')
+      await resolveConflictUseCloud('account-a')
+      const command = await executeConnectedBusinessCommand('account-a', { type: 'domain', value: { commandId: 'after-cloud', kind: 'set_action_status', actionId: 'A-action-1', status: 'done' } })
+      const receipt = await confirmConnectedCommand('account-a', 'after-cloud')
+      return { command: command.outcome, receipt: receipt.outcome }
+    })
+    expect(result).toEqual({ command: 'COMMITTED', receipt: 'ALREADY_APPLIED' })
+    expect(commandCalls).toBe(1)
+    return
+  }
   if (scenario === 'order-only') {
     snapshot.data = await page.evaluate(async () => (await (await import('/pjsdas/src/db.ts')).exportLocalSnapshot()).data)
     snapshot.data.actions.reverse(); snapshot.data.opportunities.reverse()

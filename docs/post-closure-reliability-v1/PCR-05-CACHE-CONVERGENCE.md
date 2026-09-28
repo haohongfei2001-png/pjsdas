@@ -40,3 +40,14 @@ entity deletion, Gmail reprocessing, cursor/permission changes or production wri
 Owner browser itself has not been inspected; this proves the reproduced safe
 ordering convergence class, not that every possible divergence is equivalent.
 Repair02's single-write authorization remains consumed.
+
+## Independent review repair
+
+Fresh exact-head f498ecd source review found one valid P2: explicit cloud conflict
+recovery discarded the committed projection baseline, blocking the next command
+and receipt lookup on harmless entity reordering. Full report PRcomment5879753272.
+A new real IndexedDB recovery→command→receipt regression failed with
+AccountCacheChangedError before the repair. Recovery now publishes the committed
+projection/source fingerprint pair after the account guard. The regression and
+17 other account/command/persistence journeys pass; 1022 unit tests and type pass.
+New exact-head full gates and a new independent review are still required.
