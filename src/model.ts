@@ -344,11 +344,15 @@ export interface SemanticIntakeReceipt {
   creationSequence?: number
   /** Legacy equal-time overlap whose causal order cannot be proven from durable evidence. */
   causalOrderAmbiguous?: true
+  /** Highest receipt sequence present when this receipt was undone. */
+  undoneAfterSequence?: number
   /** Fact-level evidence invalidated by undoing an earlier same-source dependency. */
   factInvalidations?: Array<{
     factKey: string
     invalidatedByReceiptId: string
     invalidatedAt: string
+    /** Highest receipt sequence present when this fact was invalidated. */
+    invalidatedAfterSequence?: number
   }>
   undoAvailable: boolean
   createdAt: string

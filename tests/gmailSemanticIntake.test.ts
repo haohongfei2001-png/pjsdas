@@ -957,6 +957,7 @@ describe('UU06 shared Gmail intake', () => {
       factKey: targetFact,
       invalidatedByReceiptId: 'semantic-receipt:partial-target',
       invalidatedAt: '2026-09-21T00:02:00.000Z',
+      invalidatedAfterSequence: 2,
     }])
     expect(dependent?.undoAvailable).toBe(true)
 
@@ -1393,6 +1394,43 @@ describe('UU06 shared Gmail intake', () => {
     })
     expect(replay.status).toBe('ALREADY_APPLIED')
     expect(replay.snapshot.data.actions).toHaveLength(1)
+    validateSnapshot(replay.snapshot)
+  })
+
+  it('deduplicates manual action recovery when the later batch carries an older checkedAt', () => {
+    const observation = (sourceId: string) => ({
+      contractVersion: 1 as const,
+      inputId: `${sourceId}:older-checked-at-action`,
+      source: {
+        kind: 'gmail' as const, sourceId, sourceRecordId: 'older-checked-at-action',
+        sourceVersion: 'v1', observedAt: now.toISOString(), assertedAt: now.toISOString(), timezone: 'Asia/Shanghai',
+      },
+      statementMode: 'assertion' as const,
+      candidates: [{
+        id: 'action', kind: 'manual_action' as const, title: 'Send updated portfolio',
+        objectConfidence: 'high' as const, eventConfidence: 'high' as const,
+        evidenceRefs: ['older-checked-at-action'], sourceVersionRefs: ['older-checked-at-action:v1'],
+      }],
+    })
+    const creator = applySemanticIntake(snapshot(), observation('gmail:first'), { authorized: true, now })
+    const follower = applySemanticIntake(creator.snapshot, observation('gmail:second'), {
+      authorized: true, now: new Date('2026-09-21T00:01:00Z'),
+    })
+    const undone = applySemanticCompensation(follower.snapshot, creator.compensation!, new Date('2026-09-21T00:02:00Z'))
+    const olderCheckedAt = new Date('2026-09-20T23:59:00Z')
+    const recovered = applySemanticIntake(undone, observation('gmail:second'), {
+      authorized: true, now: olderCheckedAt,
+    })
+    expect(recovered.status).toBe('APPLIED')
+    expect(recovered.snapshot.data.actions).toHaveLength(1)
+    expect(recovered.receipt?.createdAt).toBe(olderCheckedAt.toISOString())
+    expect(recovered.receipt?.creationSequence).toBeGreaterThan(follower.receipt?.creationSequence ?? 0)
+    const persisted = upgradeSnapshotToLatest(createSnapshot(recovered.snapshot.data, recovered.snapshot.exportedAt))
+    const replay = applySemanticIntake(persisted, observation('gmail:second'), {
+      authorized: true, now: olderCheckedAt,
+    })
+    expect(replay.status).toBe('ALREADY_APPLIED')
+    expect(replay.snapshot.data.actions).toEqual(recovered.snapshot.data.actions)
     validateSnapshot(replay.snapshot)
   })
 

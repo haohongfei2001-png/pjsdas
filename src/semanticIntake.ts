@@ -134,21 +134,24 @@ function receiptInvalidatedFactKeys(receipt: SemanticIntakeReceipt) {
 
 function pendingFactKeys(matching: SemanticIntakeReceipt[]) {
   const pending = new Set<string>()
-  const restoredAfter = (factKey: string, at: string, invalidatedBy: SemanticIntakeReceipt) => matching.some((receipt) =>
+  const restoredAfter = (factKey: string, at: string, afterSequence: number | undefined, invalidatedBy: SemanticIntakeReceipt) => matching.some((receipt) =>
     receipt.status === 'committed'
-    && (receipt.createdAt > at
-      || (receipt.createdAt === at
-        && !receipt.causalOrderAmbiguous
-        && !invalidatedBy.causalOrderAmbiguous
-        && (receipt.creationSequence ?? 0) > (invalidatedBy.creationSequence ?? 0)))
+    && (afterSequence !== undefined && receipt.creationSequence !== undefined
+      ? !receipt.causalOrderAmbiguous && !invalidatedBy.causalOrderAmbiguous
+        && receipt.creationSequence > afterSequence
+      : receipt.createdAt > at
+        || (receipt.createdAt === at
+          && !receipt.causalOrderAmbiguous
+          && !invalidatedBy.causalOrderAmbiguous
+          && (receipt.creationSequence ?? 0) > (invalidatedBy.creationSequence ?? 0)))
     && receipt.factKeys?.includes(factKey)
     && !receiptInvalidatedFactKeys(receipt).has(factKey))
   for (const item of matching) {
     for (const invalidation of item.factInvalidations ?? []) {
-      if (!restoredAfter(invalidation.factKey, invalidation.invalidatedAt, item)) pending.add(invalidation.factKey)
+      if (!restoredAfter(invalidation.factKey, invalidation.invalidatedAt, invalidation.invalidatedAfterSequence, item)) pending.add(invalidation.factKey)
     }
     if (item.status === 'undone') for (const factKey of item.mutatedFactKeys ?? item.factKeys ?? []) {
-      if (!restoredAfter(factKey, item.updatedAt, item)) pending.add(factKey)
+      if (!restoredAfter(factKey, item.updatedAt, item.undoneAfterSequence, item)) pending.add(factKey)
     }
   }
   return pending
@@ -1287,14 +1290,14 @@ export function applySemanticCompensation(
     const hasUnorderedOverlap = next.data.semanticReceipts?.some((item) =>
       item.id !== target.id
       && item.causalOrderAmbiguous
-      && item.createdAt === target.createdAt
       && item.status === 'committed'
       && (item.factKeys ?? []).some((key) => target.factKeys?.includes(key)))
     if (hasUnorderedOverlap) {
-      throw new Error('Semantic receipt causal order cannot be proven for this legacy same-time fact; automatic undo is blocked.')
+      throw new Error('Semantic receipt causal order cannot be proven for this legacy fact; automatic undo is blocked.')
     }
   }
   const timestamp = now.toISOString()
+  const undoAfterSequence = Math.max(0, ...(next.data.semanticReceipts ?? []).map((item) => item.creationSequence ?? 0))
   for (const item of [...compensation.payload.domainCompensations].reverse()) {
     next = applyDomainCompensation(next, item, now)
   }
@@ -1387,11 +1390,13 @@ export function applySemanticCompensation(
               factKey,
               invalidatedByReceiptId: item.id,
               invalidatedAt: timestamp,
+              invalidatedAfterSequence: undoAfterSequence,
             })),
           ]
         }
       }
       item.status = 'undone'
+      item.undoneAfterSequence = undoAfterSequence
       item.undoAvailable = false
       item.updatedAt = timestamp
     }

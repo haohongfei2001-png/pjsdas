@@ -258,6 +258,9 @@ function backfillSemanticReceiptOrder(data: SnapshotData) {
       const rightHadSequence = hadSequence.has(right.id)
       if (leftHadSequence && rightHadSequence) continue
       if (leftHadSequence !== rightHadSequence) {
+        const unsequenced = leftHadSequence ? right : left
+        const sequenced = leftHadSequence ? left : right
+        if (unsequenced.createdAt > sequenced.createdAt) continue
         if (!(left.factKeys ?? []).some((key) => right.factKeys?.includes(key))) continue
         left.causalOrderAmbiguous = true
         right.causalOrderAmbiguous = true
@@ -518,6 +521,10 @@ export function validateSnapshot(value: unknown): asserts value is PJSDASSnapsho
       if (receipt.causalOrderAmbiguous !== undefined && receipt.causalOrderAmbiguous !== true) {
         throw new Error(`备份损坏：SemanticReceipt ${receipt.id} causal order marker 无效。`)
       }
+      if (receipt.undoneAfterSequence !== undefined
+        && (!Number.isSafeInteger(receipt.undoneAfterSequence) || receipt.undoneAfterSequence < 0)) {
+        throw new Error(`备份损坏：SemanticReceipt ${receipt.id} undo sequence 无效。`)
+      }
       if (receipt.mutatedFactKeys !== undefined
         && (!Array.isArray(receipt.mutatedFactKeys)
           || new Set(receipt.mutatedFactKeys).size !== receipt.mutatedFactKeys.length
@@ -551,6 +558,10 @@ export function validateSnapshot(value: unknown): asserts value is PJSDASSnapsho
           }
           invalidatedKeys.add(invalidation.factKey)
           assertIsoDate(invalidation.invalidatedAt, `SemanticReceipt ${receipt.id} fact invalidatedAt`)
+          if (invalidation.invalidatedAfterSequence !== undefined
+            && (!Number.isSafeInteger(invalidation.invalidatedAfterSequence) || invalidation.invalidatedAfterSequence < 0)) {
+            throw new Error(`备份损坏：SemanticReceipt ${receipt.id} fact invalidation sequence 无效。`)
+          }
         }
       }
     }
