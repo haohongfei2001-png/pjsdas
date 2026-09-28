@@ -4,6 +4,7 @@ import { fragmentLimitReprocessTargetIds } from '../gateway/gmailFragmentReproce
 import { createIngestionLedgerTimeline } from '../src/ingestion.js'
 import { createSnapshot, upgradeSnapshotToLatest, validateSnapshot } from '../src/snapshot.js'
 import type { GmailSemanticRecord } from '../src/gmailSemanticIntake.js'
+import { applyGmailSemanticBatch } from '../src/gmailSemanticIntake.js'
 import type { TimelineRecord } from '../src/model.js'
 import { fragmentBindingShape, fragmentEvidenceShape, fragmentSafetyDigest } from '../src/fragmentReprocessSafety.js'
 import { WorkspaceSourceError } from '../gateway/workspaceSource.js'
@@ -103,7 +104,7 @@ describe('Gmail fragment settlement write', () => {
     }))).status).toBe(401)
   })
 
-  async function boundedFixture(options: { conflicts: number; change?: 'target' | 'projection' | 'binding' }) {
+  async function boundedFixture(options: { conflicts: number; change?: 'target' | 'projection' | 'parser' | 'binding' }) {
     const ids = Array.from({ length: 39 }, (_, index) => `fragment-${String(index).padStart(2, '0')}`)
     const baseline = createSnapshot({
       opportunities: [], processes: [], processEvents: [], actions: [], prep: [], applicationGroups: [],
@@ -134,6 +135,19 @@ describe('Gmail fragment settlement write', () => {
         calls.reads += 1
         const snapshot = structuredClone(baseline)
         if (options.change === 'target' && calls.reads > 1) snapshot.data.timeline.push(...legacyTarget('new-target'))
+        if (options.change === 'projection' && calls.reads > 1) {
+          const uncertain = record(ids[0]!)
+          uncertain.observation.candidates = [{
+            id: 'new-open-decision', kind: 'manual_action', title: 'Unclear request',
+            objectConfidence: 'low', eventConfidence: 'low', evidenceRefs: ['gmail'],
+            sourceVersionRefs: [`${ids[0]}:fragment-reprocess-v2`],
+          }]
+          const projected = applyGmailSemanticBatch(snapshot, {
+            runId: 'concurrent-open-decision', sourceId: 'gmail:primary', checkedAt,
+            records: [uncertain], authorized: true, workspaceRevision: 'txn:801', reconcileExisting: true,
+          })
+          snapshot.data = projected.snapshot.data
+        }
         return { snapshot, context: {
           now: new Date(checkedAt), timezone: 'Asia/Shanghai',
           workspaceVersion: `txn:${799 + calls.reads}`,
@@ -142,7 +156,7 @@ describe('Gmail fragment settlement write', () => {
       evidence: async (_binding, targets) => {
         calls.evidence += 1
         const records = targets.map((id) => record(id))
-        if (options.change === 'projection' && calls.evidence > 1) records[0]!.gaps.push('new parser gap')
+        if (options.change === 'parser' && calls.evidence > 1) records[0]!.gaps.push('new parser gap')
         return { records, fetchedCount: records.length, unavailableCount: 0 }
       },
       commit: async (_binding, input) => {
@@ -173,7 +187,8 @@ describe('Gmail fragment settlement write', () => {
 
   it.each([
     ['target', 'TARGET_SET_CHANGED'],
-    ['projection', 'PARSER_SAFETY_CHANGED'],
+    ['projection', 'SETTLEMENT_PROJECTION_CHANGED'],
+    ['parser', 'PARSER_SAFETY_CHANGED'],
     ['binding', 'BINDING_CHANGED'],
   ] as const)('aborts after revision churn when %s changes', async (change, code) => {
     const { authorization, dependencies, calls } = await boundedFixture({ conflicts: 1, change })

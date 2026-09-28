@@ -1,8 +1,9 @@
 package: TODAYACTION-ACTIVE-UNRESOLVED-REDUCTION-v1
-status: REPAIR_02_BOUNDED_CONCURRENCY_HARDENING
+status: REPAIR_02_WRITE_ENGINEERING_COMPLETE_AWAITING_AUTHORIZATION
 writer:
-  branch: reliability/aur-02-bounded-cas-retry-v1
-  active: true
+  branch: null
+  active: false
+  last_branch: reliability/aur-02-bounded-cas-retry-v1
 baseline:
   main: a407c5d2a006d5ce8a4fcd5b44e6c59b114b27ae
   active_unresolved: 177
@@ -99,3 +100,6 @@ repair_02_concurrency_hardening:
   authorization_requires_target_evidence_binding_and_settled_set_digests: true
   required_projected_settled_count: 39
   production_write_this_round: PROHIBITED_AWAITING_NEW_OWNER_AUTHORIZATION
+  latest_known_production_revision_at_start: 805
+  earlier_authorized_write_attempts: ABORTED_ON_REVISION_CONFLICT
+  actual_production_workspace_write: NONE
