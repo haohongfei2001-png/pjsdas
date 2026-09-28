@@ -1,3 +1,4 @@
+import { historyActionWorkspace } from './fixtures/historyActionWorkspace.js'
 import { describe, expect, it, vi } from 'vitest'
 import { createAuthoritativeCommandExecutor } from '../gateway/authoritativeCommands.js'
 import { upgradeSnapshotToLatest, type PJSDASSnapshot } from '../src/snapshot.js'
@@ -217,6 +218,25 @@ describe('CGR-01 authoritative command executor', () => {
       },
     })
     expect(h.state().current.data.actions.find((item) => item.id === 'action-1')?.status).toBe('done')
+  })
+
+  it('persists bounded occurrence compensation and retains historical facts through authoritative Undo', async () => {
+    const h = harness()
+    const before = historyActionWorkspace()
+    Object.assign(h.state().current.data, structuredClone(before.data))
+    const result = await h.executor.execute(h.principal, { ...statusCommand('cmd-history-0001', 'history-task', 'done'), baseRevision: 1 })
+    expect(result.outcome).toBe('COMMITTED')
+    h.ledger[0].compensation = JSON.parse(JSON.stringify(h.ledger[0].compensation))
+    const completedTimeline = structuredClone(h.state().current.data.timeline)
+    const undone = await h.executor.undo(h.principal, { commandId: 'cmd-undo-history-0001', targetCommandId: 'cmd-history-0001' })
+    expect(undone.outcome).toBe('COMMITTED')
+    for (const node of before.data.scheduleNodes!) {
+      const actual = h.state().current.data.scheduleNodes!.find((item) => item.id === node.id)!
+      expect(actual).toMatchObject({ state: node.state, updatedAt: node.updatedAt })
+      expect(actual.completedAt).toBe(node.completedAt)
+    }
+    for (const row of completedTimeline ?? []) expect(h.state().current.data.timeline).toContainEqual(row)
+    expect(h.ledger).toHaveLength(2)
   })
 
   it('allows compensating Undo after an unrelated later mutation', async () => {

@@ -1,3 +1,4 @@
+import { restoreActionStatusUndo, type ActionStatusUndo } from '../src/actionStatusUndo.js'
 import * as z from 'zod/v4'
 import {
   applyDomainCompensation,
@@ -303,6 +304,14 @@ function applyCompensation(snapshot: PJSDASSnapshot, compensation: Record<string
     return next
   }
   if (compensation.operation === 'mcp_action_status_batch') {
+    const undo = (compensation.payload as { undo?: ActionStatusUndo } | undefined)?.undo
+    if (undo) {
+      const next = upgradeSnapshotToLatest(snapshot)
+      restoreActionStatusUndo(next.data, undo)
+      next.exportedAt = now.toISOString()
+      validateSnapshot(next)
+      return next
+    }
     const previous = (compensation.payload as { previous?: Array<{ actionId: string; status: string }> } | undefined)?.previous
     if (!Array.isArray(previous) || !previous.length) throw new Error('MCP Action compensation is invalid.')
     return [...previous].reverse().reduce((current, item) => applyDomainCompensation(current, {

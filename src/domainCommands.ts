@@ -1,3 +1,4 @@
+import { captureActionStatusUndo, restoreActionStatusUndo } from './actionStatusUndo.js'
 import {
   actionForProcessEvent,
   defaultMinutesForProcessEvent,
@@ -613,6 +614,7 @@ export function applyUserDomainCommand(
     const target = action(next, command.actionId)
     if (!target) throw new Error(`Action ${command.actionId} was not found.`)
     const before = target.status
+    const beforeData = structuredClone(next.data)
     if (before === command.status) {
       return { status: 'ALREADY_APPLIED', snapshot, summary: `Action ${target.title} is already ${command.status}.` }
     }
@@ -628,7 +630,8 @@ export function applyUserDomainCommand(
       status: 'APPLIED',
       snapshot: next,
       summary: `Updated action ${target.title} to ${command.status}.`,
-      compensation: { operation: 'set_action_status', payload: { actionId: target.id, status: before } },
+      compensation: { operation: 'set_action_status', payload: { actionId: target.id, status: before,
+        undo: captureActionStatusUndo(beforeData, next.data, [target.id]) } },
     }
   }
 
@@ -902,11 +905,18 @@ export function applyDomainCompensation(
   const payload = compensation.payload ?? {}
 
   if (compensation.operation === 'set_action_status') {
-    const target = next.data.actions.find((item) => item.id === payload.actionId)
-    if (target) {
+    if (payload.undo) {
+      restoreActionStatusUndo(next.data, payload.undo)
+    } else {
+      // Older receipts lack occurrence ownership evidence. Never guess which
+      // historical completion to reopen from an action id or a matching time.
+      if (next.data.scheduleNodes?.some((node) => node.relatedActionIds.includes(payload.actionId))) {
+        throw new Error('Legacy Undo lacks historical occurrence evidence; cannot restore safely.')
+      }
+      const target = next.data.actions.find((item) => item.id === payload.actionId)
+      if (!target) throw new Error('Action no longer exists; Undo cannot restore safely.')
       target.status = payload.status
       target.updatedAt = timestamp
-      syncScheduleNodeForActionStatus(next.data, target.id, target.status, timestamp)
     }
   } else if (compensation.operation === 'restore_discovery_promotion') {
     const target = (next.data.discoveryInbox ?? []).find((item) => item.id === payload.inboxItemId)

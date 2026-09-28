@@ -500,7 +500,7 @@ export function syncScheduleNodeForActionStatus(
     if (!node.relatedActionIds.includes(actionId) || node.state === 'superseded' || node.state === 'cancelled') continue
     // A task checkbox does not confirm participation in a historical occurrence.
     // Keep unknown legacy completion times unknown, and preserve prior completions.
-    if (status === 'done' && terminalStates.has(effectiveScheduleNodeState(node, new Date(updatedAt)))) continue
+    if (terminalStates.has(effectiveScheduleNodeState(node, new Date(updatedAt)))) continue
     if (status === 'done') {
       node.state = 'completed'
       node.completedAt = updatedAt

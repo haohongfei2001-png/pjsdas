@@ -8,7 +8,8 @@ const today = readFileSync(new URL('../src/today/TodayFeature.tsx', import.meta.
 describe('UU-04 Web friction rules', () => {
   it('keeps action completion reversible through the existing bounded status path', () => {
     expect(app).toContain('lastCompletedAction')
-    expect(app).toContain("applyActionStatusChangeSet(item.id, item.previousStatus)")
+    expect(app).toContain('undoActionStatusChange(item.localUndo)')
+    expect(app).toContain('Undo lacks exact completion evidence')
     expect(app).toContain('action-undo-toast')
     expect(app).not.toContain('updateActionStatus(')
   })

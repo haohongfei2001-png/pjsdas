@@ -1,3 +1,4 @@
+import { captureActionStatusUndo, restoreActionStatusUndo, type ActionStatusUndo } from './actionStatusUndo.js'
 import { openDB, type DBSchema, type IDBPTransaction } from 'idb'
 import { assertImportBundleSafe } from './importDiagnostics.js'
 import {
@@ -409,7 +410,7 @@ export async function resetDecisionRules() {
   })
 }
 
-export async function updateActionStatus(id: string, status: Action['status']) {
+export async function updateActionStatus(id: string, status: Action['status'], expectedStatus?: Action['status']) {
   const db = await dbPromise
   return withTimelineMutation(db, async (tx) => {
     const now = new Date().toISOString()
@@ -424,20 +425,43 @@ export async function updateActionStatus(id: string, status: Action['status']) {
     const effective = overlayProcessEventsOnOpportunities(opportunities, processEvents, processes)
     const action = actions.find((item) => item.id === id) ?? suppressSupersededActions(
       reconcileProcessEventActions(actions, processEvents), effective).find((item) => item.id === id)
-    if (!action || action.status === status) return
+    if (!action) return
+    if (expectedStatus !== undefined && action.status !== expectedStatus) throw new Error('Action changed before the transaction; no status change written.')
+    if (action.status === status) return
+    const beforeContract = { opportunities, processes, processEvents, actions, prep, scheduleNodes }
+    ensureScheduleContractInPlace(beforeContract)
+    const beforeData = structuredClone(beforeContract)
     const nextAction = { ...action, status, updatedAt: now }
     const nextActions = actions.some((item) => item.id === id)
       ? actions.map((item) => item.id === id ? nextAction : item)
       : [...actions, nextAction]
     const contract = { opportunities, processes, processEvents, actions: nextActions, prep, scheduleNodes }
     syncScheduleNodeForActionStatus(contract, id, status, now)
+    ensureScheduleContractInPlace(contract)
 
     await tx.objectStore('actions').put(nextAction)
     for (const node of contract.scheduleNodes ?? []) await tx.objectStore('scheduleNodes').put(node)
     for (const process of contract.processes) await tx.objectStore('processes').put(process)
     await tx.objectStore('timeline').put(timelineFromActionStatus(action, action.status, status, now))
+    return captureActionStatusUndo(beforeData, contract, [id])
   })
 }
+
+export async function undoActionStatusChange(undo: ActionStatusUndo) {
+  const db = await dbPromise
+  return withTimelineMutation(db, async (tx) => {
+    const snapshot = await readLocalSnapshot(tx)
+    restoreActionStatusUndo(snapshot.data, undo)
+    validateSnapshot(snapshot)
+    for (const { before, after } of undo.actions) {
+      await tx.objectStore('actions').put(snapshot.data.actions.find((item) => item.id === before.id)!)
+      await tx.objectStore('timeline').put(timelineFromActionStatus(after, after.status, before.status, new Date().toISOString()))
+    }
+    for (const node of snapshot.data.scheduleNodes ?? []) await tx.objectStore('scheduleNodes').put(node)
+    for (const process of snapshot.data.processes) await tx.objectStore('processes').put(process)
+  })
+}
+
 export async function addProcessEvent(event: ProcessEvent) {
   const db = await dbPromise
   return withTimelineMutation(db, async (tx) => {
@@ -829,7 +853,7 @@ async function markChangeSetFailed(changeSet: ChangeSetRecord, caught: unknown) 
   await (await dbPromise).put('changeSets', failed)
 }
 
-export async function applyChangeSet(id: string) {
+export async function applyChangeSet(id: string): Promise<ChangeSetRecord & { actionCompensations?: ActionStatusUndo[] }> {
   const db = await dbPromise
   const changeSet = await db.get('changeSets', id)
   if (!changeSet) throw new Error(`找不到 ChangeSet ${id}。`)
@@ -837,6 +861,7 @@ export async function applyChangeSet(id: string) {
   if (changeSet.status === 'applied') return changeSet
   if (changeSet.status !== 'pending') throw new Error(`ChangeSet ${id} 当前状态为 ${changeSet.status}，不能应用。`)
 
+  const actionCompensations: ActionStatusUndo[] = []
   try {
     const discoveredOperations = changeSet.operations.filter((operation): operation is DiscoveredChangeOperation => operation.kind === 'add_discovered_opportunity')
     if (discoveredOperations.length > 0) {
@@ -887,7 +912,8 @@ export async function applyChangeSet(id: string) {
       if (action.status !== operation.expectedStatus) {
         throw new Error(`Action ${operation.actionId} 状态已经变化，请重新操作。`)
       }
-      await updateActionStatus(operation.actionId, operation.status)
+      const compensation = await updateActionStatus(operation.actionId, operation.status, operation.expectedStatus)
+      if (compensation) actionCompensations.push(compensation)
     }
     }
 
@@ -904,7 +930,7 @@ export async function applyChangeSet(id: string) {
     await tx.objectStore('changeSets').put(applied)
     await tx.objectStore('timeline').put(timelineFromChangeSetApplied(applied))
     await tx.done
-    return applied
+    return { ...applied, actionCompensations }
   } catch (caught) {
     await markChangeSetFailed(changeSet, caught)
     throw caught

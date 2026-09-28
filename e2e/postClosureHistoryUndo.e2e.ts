@@ -1,0 +1,99 @@
+import { expect, test, type Page } from '@playwright/test'
+import { historyActionWorkspace, HISTORY_NOW } from '../tests/fixtures/historyActionWorkspace.js'
+import { applyDomainCompensation, applyUserDomainCommand, type DomainCompensation } from '../src/domainCommands.js'
+import { seedSession, BACKEND, cors, health } from './fixtures/todayWorkspace.js'
+
+async function rows(page: Page, store: string) {
+  return page.evaluate(async (store) => {
+    const db = await (await import('/pjsdas/src/db.ts')).dbPromise
+    return db.getAll(store as any)
+  }, store)
+}
+async function checkHistory(page: Page, before: ReturnType<typeof historyActionWorkspace>) {
+  const nodes = await rows(page, 'scheduleNodes')
+  for (const prior of before.data.scheduleNodes!) {
+    const actual = nodes.find((item) => item.id === prior.id)!
+    expect(actual).toMatchObject({ state: prior.state, updatedAt: prior.updatedAt, temporal: prior.temporal })
+    expect(actual.completedAt).toBe(prior.completedAt)
+    for (const ref of prior.evidenceRefs) expect(actual.evidenceRefs).toContain(ref)
+    for (const ref of prior.sourceVersionRefs) expect(actual.sourceVersionRefs).toContain(ref)
+  }
+  expect((await rows(page, 'timeline')).find((item) => item.id === 'retained-history')).toEqual(before.data.timeline![0])
+  expect((await rows(page, 'actions')).find((item) => item.id === 'history-task')?.status).toBe('todo')
+}
+
+for (const connected of [false, true]) test(`${connected ? 'connected' : 'local'} history detail completion Undo restores only its changed nodes through durable reload/restart`, async ({ page, context }) => {
+  await page.clock.install({ time: HISTORY_NOW })
+  const before = historyActionWorkspace()
+  const state = { snapshot: structuredClone(before), revision: 7, compensation: undefined as DomainCompensation | undefined }
+  const commands: string[] = []
+  if (connected) {
+    await seedSession(context)
+    await context.route(BACKEND + '/**', async (route) => {
+      if (route.request().method() === 'OPTIONS') return cors(route, {}, 204)
+      const url = new URL(route.request().url())
+      if (url.pathname === '/api/health') return cors(route, health())
+      if (url.pathname !== '/api/workspace') return cors(route, { code: 'NOT_FOUND' }, 404)
+      const body = route.request().postDataJSON()
+      const read = () => ({ workspaceId: 'ws-history', workspaceVersion: 'txn:' + state.revision, revision: state.revision, schemaVersion: state.snapshot.version, snapshot: state.snapshot })
+      if (body.action === 'read') return cors(route, read())
+      if (body.action === 'command' && body.command?.type === 'domain') {
+        expect(body.baseRevision).toBe(state.revision)
+        commands.push(body.command.value.kind)
+        const result = applyUserDomainCommand(state.snapshot, body.command.value, HISTORY_NOW)
+        if (result.status !== 'APPLIED' || !result.compensation) throw Error('Expected reversible completion')
+        state.compensation = JSON.parse(JSON.stringify(result.compensation)); state.snapshot = result.snapshot
+      } else if (body.action === 'undo') {
+        commands.push('undo')
+        state.snapshot = applyDomainCompensation(JSON.parse(JSON.stringify(state.snapshot)), state.compensation!, HISTORY_NOW)
+      } else return cors(route, { code: 'UNEXPECTED_WRITE' }, 400)
+      state.revision += 1
+      return cors(route, { ...read(), outcome: 'COMMITTED', receipt: { commandId: body.commandId, receiptId: 'receipt:' + body.commandId, status: 'COMMITTED', revision: state.revision,
+        undoAvailable: true, affectedObjects: [{ type: 'action', id: 'history-task' }], result: { type: 'domain', status: 'APPLIED', summary: 'Updated history task' } } })
+    })
+  } else {
+    await page.goto('/'); await expect(page.locator('.tsui-primary-nav')).toBeVisible()
+    await page.evaluate(async (snapshot) => (await import('/pjsdas/src/db.ts')).replaceLocalSnapshotFromCloud(snapshot), before)
+  }
+  await page.goto('/pjsdas/schedule?view=past')
+  await page.locator('.tsui-schedule-row').filter({ hasText: 'Historical job' }).click()
+  await page.getByRole('button', { name: /查看岗位详情|View job details/ }).click()
+  await page.locator('.opportunity-detail-action-list article').filter({ hasText: 'History task' }).getByRole('button', { name: /标记完成|Mark done/ }).click()
+  await expect(page.locator('.action-undo-toast').getByRole('button', { name: /撤销|Undo/ })).toBeVisible()
+  expect((await rows(page, 'scheduleNodes')).find((item) => item.id === 'history-node-6')?.state).toBe('completed')
+  await page.locator('.action-undo-toast').getByRole('button', { name: /撤销|Undo/ }).click()
+  await expect(page.locator('.action-undo-toast')).toHaveCount(0)
+  await checkHistory(page, before)
+  // The completion audit is retained after compensation, not deleted by Undo.
+  const retainedTimeline = await rows(page, 'timeline')
+  expect(retainedTimeline.some((item) => item.actionId === 'history-task' && item.changes?.status?.after === 'done')).toBe(true)
+  for (const [path, selector] of [['today', '[data-testid="cgr02-today"]'], ['schedule', '.tsui-schedule-page'], ['library/history-job', '.job-detail-page']]) {
+    await page.goto('/pjsdas/' + path); await expect(page.locator(selector)).toBeVisible()
+    await page.reload(); await expect(page.locator(selector)).toBeVisible()
+    await checkHistory(page, before)
+  }
+  const restarted = await context.newPage(); await restarted.goto('/pjsdas/today'); await page.close()
+  await expect(restarted.getByTestId('cgr02-today')).toBeVisible(); await checkHistory(restarted, before)
+  expect(await rows(restarted, 'timeline')).toEqual(retainedTimeline)
+  if (connected) expect(commands).toEqual(['set_action_status', 'undo'])
+})
+
+test('local durable completion evidence rejects a later occurrence edit atomically', async ({ page }) => {
+  await page.clock.install({ time: HISTORY_NOW })
+  await page.goto('/'); await expect(page.locator('.tsui-primary-nav')).toBeVisible()
+  const evidence = await page.evaluate(async (before) => {
+    const module = await import('/pjsdas/src/db.ts')
+    await module.replaceLocalSnapshotFromCloud(before)
+    const applied = await module.applyActionStatusChangeSet('history-task', 'done')
+    const undo = JSON.parse(JSON.stringify(applied!.actionCompensations![0]))
+    const db = await module.dbPromise
+    const node = (await db.get('scheduleNodes', 'history-node-6'))!
+    await db.put('scheduleNodes', { ...node, state: 'superseded', supersededByNodeId: 'later-occurrence' })
+    const raw = await module.exportLocalRecoveryArchive()
+    let rejected = false
+    try { await module.undoActionStatusChange(undo) } catch { rejected = true }
+    return { rejected, before: raw.stores, after: (await module.exportLocalRecoveryArchive()).stores }
+  }, historyActionWorkspace())
+  expect(evidence.rejected).toBe(true)
+  expect(evidence.after).toEqual(evidence.before)
+})
