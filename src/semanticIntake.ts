@@ -132,7 +132,28 @@ function receiptInvalidatedFactKeys(receipt: SemanticIntakeReceipt) {
   return new Set((receipt.factInvalidations ?? []).map((item) => item.factKey))
 }
 
+function pendingRecoveryFactKeys(snapshot: PJSDASSnapshot, observation: SemanticIntakeObservation) {
+  const matching = (snapshot.data.semanticReceipts ?? []).filter((item) =>
+    receiptMatchesObservation(item, observation))
+  const pending = new Set<string>()
+  const restoredAfter = (factKey: string, at: string) => matching.some((receipt) =>
+    receipt.status === 'committed'
+    && receipt.createdAt > at
+    && receipt.factKeys?.includes(factKey)
+    && !receiptInvalidatedFactKeys(receipt).has(factKey))
+  for (const item of matching) {
+    for (const invalidation of item.factInvalidations ?? []) {
+      if (!restoredAfter(invalidation.factKey, invalidation.invalidatedAt)) pending.add(invalidation.factKey)
+    }
+    if (item.status === 'undone') for (const factKey of item.factKeys ?? []) {
+      if (!restoredAfter(factKey, item.updatedAt)) pending.add(factKey)
+    }
+  }
+  return pending
+}
+
 function existingReceipt(snapshot: PJSDASSnapshot, observation: SemanticIntakeObservation) {
+  if (pendingRecoveryFactKeys(snapshot, observation).size) return undefined
   return (snapshot.data.semanticReceipts ?? []).find((item) =>
     item.status !== 'undone'
     && !(item.factInvalidations?.length)
@@ -907,17 +928,10 @@ export function applySemanticIntake(
   const semanticCommandId = `semantic-intake:${observation.inputId}`
   const priorSemanticApplications = (base.data.timeline ?? []).filter((item) =>
     item.kind === 'semantic_intake_applied' && item.commandId === semanticCommandId).length
-  const invalidatedReceipt = (base.data.semanticReceipts ?? [])
-    .filter((item) => item.status === 'committed'
-      && item.factInvalidations?.length
-      && receiptMatchesObservation(item, observation))
-    .sort(compareReceiptCreationOrder).at(-1)
-  const commandInputId = priorSemanticApplications || invalidatedReceipt
+  const recoveryFactKeys = pendingRecoveryFactKeys(base, observation)
+  const commandInputId = priorSemanticApplications || recoveryFactKeys.size
     ? `${observation.inputId}:recovery:${priorSemanticApplications}`
     : observation.inputId
-  const recoveryFactKeys = invalidatedReceipt
-    ? receiptInvalidatedFactKeys(invalidatedReceipt)
-    : undefined
 
   if (!['assertion', 'current_intent'].includes(observation.statementMode)) {
     const value = receipt({
@@ -970,7 +984,7 @@ export function applySemanticIntake(
     const factKey = semanticCandidateFactKey(working, candidate)
     // A partially invalidated receipt still proves its other facts. A new recovery
     // command must never recreate those domain objects (notably manual actions).
-    if (recoveryFactKeys && (!factKey || !recoveryFactKeys.has(factKey))) continue
+    if (recoveryFactKeys.size && (!factKey || !recoveryFactKeys.has(factKey))) continue
     const priorFact = existingFactReceipt(working, factKey)
     if (priorFact && priorFact.sourceId !== observation.source.sourceId) {
       summaries.push('Cross-source fact already recorded; source receipt retained without a second business mutation.')
@@ -1276,10 +1290,7 @@ export function applySemanticCompensation(
         for (const dependent of receipts) {
           if (dependent.id === item.id
             || compareReceiptCreationOrder(item, dependent) >= 0
-            || dependent.status !== 'committed'
-            || dependent.sourceKind !== item.sourceKind
-            || dependent.sourceId !== item.sourceId
-            || dependent.sourceRecordId !== item.sourceRecordId) continue
+            || dependent.status !== 'committed') continue
           const existingInvalidations = dependent.factInvalidations ?? []
           const alreadyInvalidated = new Set(existingInvalidations.map((entry) => entry.factKey))
           const overlap = (dependent.factKeys ?? []).filter((key) =>

@@ -1061,6 +1061,82 @@ describe('UU06 shared Gmail intake', () => {
     validateSnapshot(recovered.snapshot)
   })
 
+  it('invalidates a later cross-source dedupe receipt when its original mutation is undone', () => {
+    const observation = (sourceId: string) => ({
+      contractVersion: 1 as const,
+      inputId: `${sourceId}:cross-source-deadline`,
+      source: {
+        kind: 'gmail' as const, sourceId, sourceRecordId: 'cross-source-deadline',
+        sourceVersion: 'v1', observedAt: now.toISOString(), assertedAt: now.toISOString(), timezone: 'Asia/Shanghai',
+      },
+      statementMode: 'assertion' as const,
+      candidates: [{
+        id: 'deadline', kind: 'opportunity_deadline' as const, target: { opportunityId: 'jd' },
+        deadline: '2026-09-25', precision: 'date' as const,
+        objectConfidence: 'high' as const, eventConfidence: 'high' as const, temporalConfidence: 'high' as const,
+        evidenceRefs: ['cross-source-deadline'], sourceVersionRefs: ['cross-source-deadline:v1'],
+      }],
+    })
+    const creator = applySemanticIntake(snapshot(), observation('gmail:first'), { authorized: true, now })
+    const follower = applySemanticIntake(creator.snapshot, observation('gmail:second'), {
+      authorized: true, now: new Date('2026-09-21T00:01:00Z'),
+    })
+    expect(follower.compensation?.payload.domainCompensations).toHaveLength(0)
+    const undone = applySemanticCompensation(follower.snapshot, creator.compensation!, new Date('2026-09-21T00:02:00Z'))
+    expect(undone.data.opportunities[0]?.deadline).toBeUndefined()
+    expect(undone.data.semanticReceipts?.find((item) => item.id === follower.receipt!.id)?.factInvalidations?.[0]?.factKey)
+      .toBe(creator.receipt?.factKeys?.[0])
+    const replay = applySemanticIntake(undone, observation('gmail:second'), {
+      authorized: true, now: new Date('2026-09-21T00:03:00Z'),
+    })
+    expect(replay.status).toBe('APPLIED')
+    expect(replay.compensation?.payload.domainCompensations).toHaveLength(1)
+    expect(replay.snapshot.data.opportunities[0]?.deadline).toBe('2026-09-25')
+    validateSnapshot(replay.snapshot)
+  })
+
+  it('recovers a second invalidated fact after an earlier subset was already restored', () => {
+    const base = snapshot()
+    base.data.opportunities.push({ ...base.data.opportunities[0]!, id: 'other' })
+    const observation = (version: string, targets: string[]) => ({
+      contractVersion: 1 as const,
+      inputId: `gmail:staggered-recovery:${version}`,
+      source: {
+        kind: 'gmail' as const, sourceId: 'gmail:primary', sourceRecordId: 'staggered-recovery',
+        sourceVersion: version, observedAt: now.toISOString(), assertedAt: now.toISOString(), timezone: 'Asia/Shanghai',
+      },
+      statementMode: 'assertion' as const,
+      candidates: targets.map((target) => ({
+        id: `deadline:${target}`, kind: 'opportunity_deadline' as const, target: { opportunityId: target },
+        deadline: '2026-09-25', precision: 'date' as const,
+        objectConfidence: 'high' as const, eventConfidence: 'high' as const, temporalConfidence: 'high' as const,
+        evidenceRefs: ['staggered-recovery'], sourceVersionRefs: [`staggered-recovery:${version}`],
+      })),
+    })
+    const first = applySemanticIntake(base, observation('v1', ['jd']), { authorized: true, now })
+    const second = applySemanticIntake(first.snapshot, observation('v2', ['other']), {
+      authorized: true, now: new Date('2026-09-21T00:01:00Z'),
+    })
+    const combined = observation('v3', ['jd', 'other'])
+    const third = applySemanticIntake(second.snapshot, combined, {
+      authorized: true, now: new Date('2026-09-21T00:02:00Z'),
+    })
+    const firstUndone = applySemanticCompensation(third.snapshot, first.compensation!, new Date('2026-09-21T00:03:00Z'))
+    const firstRecovered = applySemanticIntake(firstUndone, combined, {
+      authorized: true, now: new Date('2026-09-21T00:04:00Z'),
+    })
+    expect(firstRecovered.receipt?.factKeys).toEqual(first.receipt?.factKeys)
+    const secondUndone = applySemanticCompensation(firstRecovered.snapshot, second.compensation!, new Date('2026-09-21T00:05:00Z'))
+    const secondRecovered = applySemanticIntake(secondUndone, combined, {
+      authorized: true, now: new Date('2026-09-21T00:06:00Z'),
+    })
+    expect(secondRecovered.status).toBe('APPLIED')
+    expect(secondRecovered.receipt?.factKeys).toEqual(second.receipt?.factKeys)
+    expect(secondRecovered.snapshot.data.opportunities.map((item) => item.deadline)).toEqual(['2026-09-25', '2026-09-25'])
+    expect(secondRecovered.snapshot.data.semanticReceipts).toHaveLength(5)
+    validateSnapshot(secondRecovered.snapshot)
+  })
+
   it('replay and a new message for the same thread occurrence do not duplicate events', () => {
     const first = run(snapshot(), invitation)
     const replay = run(first.snapshot, invitation)
