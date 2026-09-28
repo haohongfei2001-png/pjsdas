@@ -11,16 +11,16 @@ the fix the root disappeared with `RangeError: Invalid time zone specified: sour
 Both Today and Schedule passed storage provenance markers directly to Intl.
 Production read-only inspection at revision 829 found 12 source-offset nodes.
 The 13 legacy completed nodes without completedAt remain unknown historical completion
- times; that observation is not evidence of a newly performed completion.
+times; that observation is not evidence of a newly performed completion.
 
 ## Repair
 
 - Convert provenance markers to a safe display timezone without changing stored instants.
 - Catch root provider, selector and render errors with a recovery surface.
-- Catch initial exportLocalSnapshot and subsequent reload rejections.
+- Catch initial exportLocalSnapshot and subsequent reload rejections; export reads one readonly transaction and normalizes only in memory.
 - Retry and download a raw readonly archive of every IndexedDB store, including invalid rows.
 - Retain elapsed, superseded and previously completed occurrences when a task checkbox changes.
-- Require explicit application-submission intent; remove apply from generic job-detail task completion.
+- Require explicit application-submission intent; retain apply status but exclude it from generic job-detail task completion.
 - Persist existing schedule backfill changes even when node count stays the same.
 
 ## Candidate verification
@@ -36,3 +36,19 @@ The 13 legacy completed nodes without completedAt remain unknown historical comp
 
 Repair 02 is preauthorized only after this P0's exact-main verification and a fresh
 38-settlement, same-60-target dry-run. No Repair 02 write has been performed here.
+
+## Actual production snapshot before fix
+
+The deployed bb2cfd8 bundle, with a readonly copy of the complete revision-832
+production snapshot in an isolated browser IndexedDB, reproduced the same
+source-offset RangeError on Today navigation and reload; a fresh page also
+failed to start. Schedule and job detail remained available. The network guard
+blocked production mutations; zero write requests were observed.
+
+## Review repair
+
+Codex P1 identified startup migrations writing before a later validation failure.
+Export/startup now reads a single readonly transaction, with timeline and schedule
+normalization applied only to the returned copy. Recovery regressions assert raw
+actions, legacy processes, schedule nodes and malformed timeline rows are identical
+before failure, in the downloaded archive and after failure.

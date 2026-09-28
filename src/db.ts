@@ -933,28 +933,35 @@ export async function applyChangeSet(id: string) {
 
 export async function exportLocalSnapshot() {
   const db = await dbPromise
-  await ensureTimelineBackfill(db)
-  await ensureLocalScheduleBackfill(db)
+  // Startup/export must be read-only: invalid rows must remain byte-for-byte
+  // available to recovery. Normalize a copy only after one consistent read.
+  const tx = db.transaction([...DATA_STORES], 'readonly')
   const [opportunities, processes, processEvents, scheduleNodes, decisionRequests, semanticReceipts, reminderIntents, reminderOutbox, actions, prep, applicationGroups, decisionRules, discoveryProfile, discoveryInbox, timeline, changeSets, meta] =
     await Promise.all([
-      db.getAll('opportunities'),
-      db.getAll('processes'),
-      db.getAll('processEvents'),
-      db.getAll('scheduleNodes'),
-      db.getAll('decisionRequests'),
-      db.getAll('semanticReceipts'),
-      db.getAll('reminderIntents'),
-      db.getAll('reminderOutbox'),
-      db.getAll('actions'),
-      db.getAll('prep'),
-      db.getAll('applicationGroups'),
-      db.get('decisionRules', 'current'),
-      db.get('discoveryProfiles', 'current'),
-      db.getAll('discoveryInbox'),
-      db.getAll('timeline'),
-      db.getAll('changeSets'),
-      db.get('meta', 'lastImport'),
+      tx.objectStore('opportunities').getAll(),
+      tx.objectStore('processes').getAll(),
+      tx.objectStore('processEvents').getAll(),
+      tx.objectStore('scheduleNodes').getAll(),
+      tx.objectStore('decisionRequests').getAll(),
+      tx.objectStore('semanticReceipts').getAll(),
+      tx.objectStore('reminderIntents').getAll(),
+      tx.objectStore('reminderOutbox').getAll(),
+      tx.objectStore('actions').getAll(),
+      tx.objectStore('prep').getAll(),
+      tx.objectStore('applicationGroups').getAll(),
+      tx.objectStore('decisionRules').get('current'),
+      tx.objectStore('discoveryProfiles').get('current'),
+      tx.objectStore('discoveryInbox').getAll(),
+      tx.objectStore('timeline').getAll(),
+      tx.objectStore('changeSets').getAll(),
+      tx.objectStore('meta').get('lastImport'),
     ])
+  await tx.done
+  if (!timeline.some((record) => record.id === TIMELINE_BACKFILL_MARKER_ID)) {
+    const existingIds = new Set(timeline.map((record) => record.id))
+    timeline.push(...buildTimelineBackfill({ processEvents, actions, lastImport: meta, decisionRules })
+      .filter((record) => !existingIds.has(record.id)))
+  }
 
   return createSnapshot({
     opportunities,

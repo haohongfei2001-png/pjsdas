@@ -70,7 +70,8 @@ test('past entry ordinary completion keeps terminal/elapsed/legacy/multiple occu
   await assertStartup(page)
   // A fresh page discards React/module memory and opens the same durable IndexedDB.
   const restarted = await context.newPage()
-  await restarted.clock.install({ time: NOW })
+  await restarted.goto('/pjsdas/today')
+  await restarted.clock.setFixedTime(NOW)
   await page.close()
   await assertStartup(restarted)
   expect((await readStore(restarted, 'actions')).find((row) => row.id === task.id)?.status).toBe('done')
@@ -103,7 +104,9 @@ test('connected historical apply requires explicit I applied and persists the re
       undoAvailable: true, affectedObjects: [{ type: 'opportunity', id: job.id }], result: { type: 'domain', status: 'APPLIED', summary: applied.summary } } })
   })
   await openHistoricalJob(page)
-  await expect(page.locator('.opportunity-detail-action-list')).not.toContainText(apply.title)
+  const applyRow = page.locator('.opportunity-detail-action-list article').filter({ hasText: apply.title })
+  await expect(applyRow).toContainText(/待做|待办|To do/)
+  await expect(applyRow.getByRole('button', { name: /标记完成|Mark done/ })).toHaveCount(0)
   const before = structuredClone(state.snapshot.data.scheduleNodes!.filter((node) => node.id.startsWith('history-node-')))
   await page.getByRole('button', { name: /我已投递|I applied/ }).click()
   await expect.poll(() => commands.length).toBe(1)
@@ -111,7 +114,7 @@ test('connected historical apply requires explicit I applied and persists the re
   expect(state.snapshot.data.scheduleNodes!.filter((node) => node.id.startsWith('history-node-'))).toEqual(before)
   await expect.poll(async () => (await readStore(page, 'actions')).find((row) => row.id === apply.id)?.status).toBe('done')
   await assertStartup(page)
-  const restarted = await context.newPage(); await restarted.clock.install({ time: NOW }); await page.close()
+  const restarted = await context.newPage(); await restarted.goto('/pjsdas/today'); await restarted.clock.setFixedTime(NOW); await page.close()
   await assertStartup(restarted)
   expect(commands).toHaveLength(1)
   expect(state.snapshot.data.timeline!.find((row) => row.id === history.id)).toEqual(history)
@@ -120,7 +123,10 @@ test('connected historical apply requires explicit I applied and persists the re
 for (const trigger of ['initial', 'reload'] as const) test(`startup recovery catches ${trigger} snapshot error, exports every raw record and retries without data loss`, async ({ page }) => {
   await page.goto('/')
   await expect(page.locator('.tsui-primary-nav')).toBeVisible()
-  await putRows(page, { opportunities: [job], actions: [task], timeline: [{ ...history, source: 'invalid-legacy-source' }] })
+  await putRows(page, { opportunities: [job], actions: [task, offsetTask],
+    processes: [{ id: 'legacy-process', opportunityId: job.id, company: job.company, role: job.role, stage: 'not_applied', stageLabel: '待投递', lastProgressAt: OLD }],
+    timeline: [{ ...history, source: 'invalid-legacy-source' }] })
+  const originalStores = Object.fromEntries(await Promise.all(['actions', 'processes', 'scheduleNodes', 'timeline'].map(async (store) => [store, await readStore(page, store)])))
   if (trigger === 'initial') await page.reload()
   else await page.evaluate(() => window.dispatchEvent(new Event('pjsdas:workspace-replaced')))
   await expect(page.getByRole('heading', { name: /Workspace could not open/ })).toBeVisible()
@@ -130,6 +136,10 @@ for (const trigger of ['initial', 'reload'] as const) test(`startup recovery cat
   const stream = await download.createReadStream()
   let contents = ''; for await (const bytes of stream!) contents += bytes.toString()
   const archive = JSON.parse(contents)
+  for (const [store, rows] of Object.entries(originalStores)) {
+    expect(archive.stores[store]).toEqual(rows)
+    expect(await readStore(page, store)).toEqual(rows)
+  }
   expect(archive.stores.timeline.find((row: any) => row.id === history.id).source).toBe('invalid-legacy-source')
   expect(archive.stores.actions.find((row: any) => row.id === task.id)).toEqual(task)
   expect((await readStore(page, 'timeline'))[0].source).toBe('invalid-legacy-source')

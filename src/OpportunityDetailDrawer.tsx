@@ -119,7 +119,7 @@ export default function OpportunityDetailDrawer({
   const eligibleToApply = !ended && effectiveStage === 'not_applied'
   const hasRetainedStaleActions = ended && actions.some((item) => item.status === 'todo' || item.status === 'doing')
   const relevantActions = actions
-    .filter((item) => !ended && item.kind !== 'apply' && (item.status === 'todo' || item.status === 'doing'))
+    .filter((item) => !ended && (item.status === 'todo' || item.status === 'doing'))
     .sort((a, b) => (a.dueAt ?? '9999').localeCompare(b.dueAt ?? '9999'))
   const orderedTimeline = [...timeline]
     .sort((a, b) => b.occurredAt.localeCompare(a.occurredAt))
@@ -231,7 +231,7 @@ export default function OpportunityDetailDrawer({
                   <article key={action.id}>
                     <div><strong>{action.title}</strong><small>{action.dueAt ? formatDate(action.dueAt, zh) : (zh ? '无明确时间' : 'No dated node')}</small></div>
                     <span>{actionStatusLabel(action.status, zh)}</span>
-                    {!readOnly ? <button type="button" disabled={Boolean(pendingActionId)} onClick={() => {
+                    {!readOnly && action.kind !== 'apply' ? <button type="button" disabled={Boolean(pendingActionId)} onClick={() => {
                       setPendingActionId(action.id)
                       void onMarkAction(action.id, 'done').finally(() => setPendingActionId(undefined))
                     }}>{pendingActionId === action.id ? (zh ? '正在完成…' : 'Completing…') : (zh ? '标记完成' : 'Mark done')}</button> : null}
