@@ -292,3 +292,44 @@ for (const kind of ['manual', 'apply'] as const) test(`reimport versions a moved
   expect(result.again.data.scheduleNodes).toEqual(result.after.data.scheduleNodes)
   await page.reload(); await expect(page.getByTestId('cgr02-today')).toBeVisible()
 })
+
+for (const kind of ['manual', 'apply'] as const) test(`reimport clears and reintroduces ${kind} deadline with an auditable version chain`, async ({ page }) => {
+  await page.clock.install({ time: HISTORY_NOW }); await page.goto('/'); await page.locator('.tsui-primary-nav').waitFor()
+  const result = await page.evaluate(async ({ input, kind }) => {
+    const db = await import('/pjsdas/src/db.ts')
+    const job = { ...input.data.opportunities[0], locallyManaged: false, deadline: kind === 'apply' ? '2026-09-20' : undefined, deadlinePrecision: 'date' as const }
+    const action = { ...input.data.actions[0], kind, status: 'todo' as const, dueAt: '2026-09-20', duePrecision: 'date' as const, sourceLabel: 'Excel' }
+    input.data.opportunities = [job]; input.data.actions = [action]; input.data.scheduleNodes = []
+    await db.replaceLocalSnapshotFromCloud(input)
+    const before = (await db.exportLocalSnapshot()).data.scheduleNodes!
+    const bundle = { opportunities: [{ ...job, deadline: undefined }], processes: [], actions: [{ ...action, dueAt: undefined }], prep: [], applicationGroups: [],
+      summary: { filename: 'cleared-deadline.xlsx', importedAt: '2026-09-28T12:00:00.000Z', opportunities: 1, pending: 0, processes: 0, prep: 0, applicationGroups: 0, actions: 1 } }
+    await db.replaceImportedData(bundle)
+    const cleared = await db.exportLocalSnapshot()
+    await db.replaceImportedData(bundle)
+    const repeat = await db.exportLocalSnapshot()
+    await db.replaceImportedData({ ...bundle, opportunities: [{ ...job, deadline: kind === 'apply' ? '2026-10-20' : undefined }], actions: [{ ...action, dueAt: '2026-10-20' }] })
+    const restored = await db.exportLocalSnapshot()
+    const active = restored.data.scheduleNodes!.find(n => n.state === 'scheduled')!
+    const cancel = (await import('/pjsdas/src/domainCommands.ts')).applyUserDomainCommand(restored,
+      { commandId: 'real-user-cancel', kind: 'cancel_occurrence', occurrenceId: active.occurrenceId }, new Date('2026-09-28T12:01:00.000Z'))
+    if (cancel.status !== 'APPLIED') throw Error('Expected actual cancellation')
+    await db.replaceLocalSnapshotFromCloud(cancel.snapshot)
+    await db.replaceImportedData({ ...bundle, opportunities: [{ ...job, deadline: kind === 'apply' ? '2026-11-20' : undefined }], actions: [{ ...action, dueAt: '2026-11-20' }] })
+    return { before, cleared, repeat, restored, cancelled: cancel.snapshot, afterCancelImport: await db.exportLocalSnapshot() }
+  }, { input: historyActionWorkspace(), kind })
+  expect(result.cleared.data.actions[0].dueAt).toBeUndefined()
+  expect(result.cleared.data.opportunities[0].deadline).toBeUndefined()
+  expect(result.repeat.data.scheduleNodes).toEqual(result.cleared.data.scheduleNodes)
+  for (const old of result.before) {
+    const retained = result.cleared.data.scheduleNodes!.find(n => n.id === old.id)!
+    expect(retained.temporal).toEqual(old.temporal); expect(retained.state).toBe('superseded')
+    const withdrawn = result.cleared.data.scheduleNodes!.find(n => n.id === retained.supersededByNodeId)!
+    expect(withdrawn.state).toBe('cancelled'); expect(withdrawn.temporal).toEqual(old.temporal)
+    const latest = result.restored.data.scheduleNodes!.find(n => n.version === withdrawn.version + 1)!
+    expect(latest.temporal.date).toBe('2026-10-20'); expect(latest.supersedesNodeId).toBe(withdrawn.id)
+  }
+  expect(result.restored.data.actions[0].dueAt).toBe('2026-10-20')
+  expect(result.afterCancelImport.data.scheduleNodes).toEqual(result.cancelled.data.scheduleNodes)
+  await page.reload(); await expect(page.getByTestId('cgr02-today')).toBeVisible()
+})

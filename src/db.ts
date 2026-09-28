@@ -1193,16 +1193,38 @@ export async function replaceImportedData(bundle: ImportBundle) {
       const prior = latestPrevious.get(node.occurrenceId)
       if (!prior || node.version > prior.version) latestPrevious.set(node.occurrenceId, node)
     }
-    for (const incoming of migrateLegacyScheduleNodes(contract)) {
+    const incomingNodes = migrateLegacyScheduleNodes(contract)
+    const importWithdrawal = (node: ScheduleNode) => node.state === 'cancelled'
+      && node.sourceVersionRefs.includes(`import:deadline-cleared:${node.occurrenceId}:v${node.version}:${node.cancelledAt}`)
+    for (const prior of latestPrevious.values()) {
+      if (prior.temporal.resolutionBasis !== 'legacy_projection' || prior.processEventId
+        || ['completed', 'cancelled', 'superseded'].includes(prior.state)
+        || (prior.opportunityId && localOpportunityIds.has(prior.opportunityId))
+        || incomingNodes.some(node => node.occurrenceId === prior.occurrenceId)) continue
+      // An omitted source row is not an instruction to cancel its history.
+      // Only a retained imported source with an explicitly empty timing field
+      // withdraws the projection; retain the previous temporal in a new version.
+      const sourceRetained = prior.kind === 'application_deadline' && prior.opportunityId
+        ? bundle.opportunities.some(item => item.id === prior.opportunityId && !item.deadline)
+        : bundle.actions.some(item => prior.relatedActionIds.includes(item.id) && !item.dueAt)
+      if (!sourceRetained) continue
+      if (!scheduleNodes.some(node => node.id === prior.id)) scheduleNodes.push(prior)
+      supersedeScheduleOccurrence(scheduleNodes, {
+        ...prior, state: 'cancelled', cancelledAt: bundle.summary.importedAt,
+        updatedAt: bundle.summary.importedAt,
+        sourceVersionRefs: [...prior.sourceVersionRefs, `import:deadline-cleared:${prior.occurrenceId}:v${prior.version + 1}:${bundle.summary.importedAt}`],
+      })
+    }
+    for (const incoming of incomingNodes) {
       const prior = latestPrevious.get(incoming.occurrenceId)
       if (!prior || prior.temporal.resolutionBasis !== 'legacy_projection'
-        || ['completed', 'cancelled', 'superseded'].includes(prior.state)) continue
+        || (['completed', 'cancelled', 'superseded'].includes(prior.state) && !importWithdrawal(prior))) continue
       if (!scheduleNodes.some(node => node.id === prior.id)) scheduleNodes.push(prior)
       const value = (node: ScheduleNode) => JSON.stringify([
         node.temporal.shape, node.temporal.precision, node.temporal.timezone,
         node.temporal.date, node.temporal.startAt, node.temporal.endAt, node.temporal.deadlineAt,
       ])
-      if (value(prior) !== value(incoming)) {
+      if (importWithdrawal(prior) || value(prior) !== value(incoming)) {
         supersedeScheduleOccurrence(scheduleNodes, {
           ...incoming, updatedAt: bundle.summary.importedAt,
           evidenceRefs: [...new Set([...prior.evidenceRefs, ...incoming.evidenceRefs])],

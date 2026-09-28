@@ -126,3 +126,13 @@ of projecting the obsolete date back onto the imported action. Repeated imports
 retain the same version chain. Four new real IndexedDB regressions fail on
 40e80a2 and pass after repair; all17 history browser cases pass. No production
 workspace mutation, deletion or validation relaxation is part of this repair.
+
+The final cleared-deadline review P1 was reproduced for both ordinary tasks and
+application deadlines. A retained imported source with cleared timing now appends
+an import-owned cancelled version, superseding rather than erasing historical
+timing. Repeating the cleared import is idempotent; a later imported date creates
+another version. Withdrawal provenance binds occurrence, version and timestamp,
+so a genuine subsequent user cancellation cannot be reopened by reimport. Omitted
+source rows and locally managed sources do not imply withdrawal. The two new real
+browser regressions fail on ddc572c and pass after repair; all19 history cases,
+996 unit tests and type pass. Full gates/latest review still certify the new head.
