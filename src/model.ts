@@ -342,6 +342,8 @@ export interface SemanticIntakeReceipt {
   factMutationObjects?: Record<string, SemanticIntakeReceipt['affectedObjects']>
   /** Monotonic local order, including receipts created in the same batch instant. */
   creationSequence?: number
+  /** Legacy equal-time overlap whose causal order cannot be proven from durable evidence. */
+  causalOrderAmbiguous?: true
   /** Fact-level evidence invalidated by undoing an earlier same-source dependency. */
   factInvalidations?: Array<{
     factKey: string

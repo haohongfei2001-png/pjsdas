@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { gmailSemanticRecordFromMessage } from '../gateway/gmailAutomation.js'
 import { applyGmailSemanticBatch } from '../src/gmailSemanticIntake.js'
 import { applySemanticCompensation, applySemanticIntake, resolveSemanticDecision } from '../src/semanticIntake.js'
-import { validateSnapshot, type PJSDASSnapshot } from '../src/snapshot.js'
+import { createSnapshot, upgradeSnapshotToLatest, validateSnapshot, type PJSDASSnapshot } from '../src/snapshot.js'
 import { createIngestionLedgerTimeline, summarizeCoverage } from '../src/ingestion.js'
 import { reconcileIngestionDebt } from '../src/ingestionResolution.js'
 import { summarizeSourceHealth } from '../src/sourceHealth.js'
@@ -1162,6 +1162,85 @@ describe('UU06 shared Gmail intake', () => {
     expect(undone.data.semanticReceipts?.find((item) => item.id === 'a-dependent')?.factInvalidations?.[0]?.factKey)
       .toBe(factKey)
     validateSnapshot(undone)
+  })
+
+  it('backfills historical same-time Gmail receipt order from durable ingestion times after ID reordering', () => {
+    const base = snapshot()
+    const batchTime = new Date('2026-09-21T00:00:00Z')
+    const observation = (sourceRecordId: string, receivedAt: string) => ({
+      contractVersion: 1 as const,
+      inputId: `gmail:historical-order:${sourceRecordId}`,
+      source: {
+        kind: 'gmail' as const, sourceId: 'gmail:primary', sourceRecordId,
+        sourceVersion: 'v1', observedAt: receivedAt, assertedAt: receivedAt, timezone: 'Asia/Shanghai',
+      },
+      statementMode: 'assertion' as const,
+      candidates: [{
+        id: 'deadline', kind: 'opportunity_deadline' as const, target: { opportunityId: 'jd' },
+        deadline: '2026-09-25', precision: 'date' as const,
+        objectConfidence: 'high' as const, eventConfidence: 'high' as const, temporalConfidence: 'high' as const,
+        evidenceRefs: ['historical-order'], sourceVersionRefs: ['historical-order:v1'],
+      }],
+    })
+    base.data.timeline = [
+      ['older-mail', '2026-09-20T09:00:00Z'],
+      ['newer-mail', '2026-09-20T09:01:00Z'],
+    ].map(([sourceRecordId, receivedAt]) => createIngestionLedgerTimeline({
+      sourceKind: 'gmail', sourceId: 'gmail:primary', sourceRecordId: sourceRecordId!,
+      runId: 'historical-order-batch', recordType: 'recruiting_message', outcome: 'unresolved',
+      fingerprint: `fp:${sourceRecordId}`, receivedAt: receivedAt!, accountedAt: batchTime.toISOString(),
+      reason: 'Historical batch pending reconciliation.',
+    }))
+    const first = applySemanticIntake(base, observation('older-mail', '2026-09-20T09:00:00Z'), {
+      authorized: true, now: batchTime,
+    })
+    const second = applySemanticIntake(first.snapshot, observation('newer-mail', '2026-09-20T09:01:00Z'), {
+      authorized: true, now: batchTime,
+    })
+    const persisted = structuredClone(second.snapshot)
+    persisted.data.semanticReceipts![0]!.id = 'z-legacy-creator'
+    persisted.data.semanticReceipts![1]!.id = 'a-legacy-dependent'
+    for (const item of persisted.data.semanticReceipts!) delete item.creationSequence
+    persisted.data.semanticReceipts!.sort((left, right) => left.id.localeCompare(right.id))
+    persisted.data.timeline!.sort((left, right) => left.id.localeCompare(right.id))
+
+    const upgraded = upgradeSnapshotToLatest(persisted)
+    const creator = upgraded.data.semanticReceipts!.find((item) => item.id === 'z-legacy-creator')!
+    const dependent = upgraded.data.semanticReceipts!.find((item) => item.id === 'a-legacy-dependent')!
+    expect(creator.creationSequence).toBeLessThan(dependent.creationSequence!)
+    expect(creator.causalOrderAmbiguous).toBeUndefined()
+    const roundTrip = createSnapshot(upgraded.data, upgraded.exportedAt)
+    roundTrip.data.semanticReceipts!.sort((left, right) => left.id.localeCompare(right.id))
+    expect(upgradeSnapshotToLatest(roundTrip).data.semanticReceipts!.find((item) => item.id === creator.id)?.creationSequence)
+      .toBe(creator.creationSequence)
+
+    const undone = applySemanticCompensation(roundTrip, {
+      ...first.compensation!,
+      payload: { ...first.compensation!.payload, receiptIds: [creator.id] },
+    }, new Date('2026-09-21T00:02:00Z'))
+    expect(undone.data.opportunities[0]?.deadline).toBeUndefined()
+    expect(undone.data.semanticReceipts?.find((item) => item.id === dependent.id)?.factInvalidations?.[0]?.factKey)
+      .toBe(first.receipt?.factKeys?.[0])
+    validateSnapshot(undone)
+  })
+
+  it('fails closed when historical equal-time overlapping receipts have no durable causal evidence', () => {
+    const base = snapshot()
+    const factKey = 'manual_action|ambiguous legacy|'
+    base.data.semanticReceipts = ['z-unknown', 'a-unknown'].map((id, index) => ({
+      id, inputId: `unknown:${index}`, sourceKind: 'gmail' as const, sourceId: 'gmail:primary',
+      sourceRecordId: `unknown-${index}`, sourceVersion: 'v1', status: 'committed' as const,
+      summary: 'Historical receipt with no ordering proof.', affectedObjects: [], decisionRequestIds: [],
+      factKeys: [factKey], undoAvailable: false, createdAt: now.toISOString(), updatedAt: now.toISOString(),
+    }))
+    const persisted = structuredClone(base)
+    persisted.data.semanticReceipts?.sort((left, right) => left.id.localeCompare(right.id))
+    const upgraded = upgradeSnapshotToLatest(persisted)
+    expect(upgraded.data.semanticReceipts?.every((item) => item.causalOrderAmbiguous)).toBe(true)
+    expect(() => applySemanticCompensation(upgraded, {
+      operation: 'semantic_batch', payload: { domainCompensations: [], decisionRequestIds: [], receiptIds: ['z-unknown'] },
+    }, new Date('2026-09-21T00:01:00Z'))).toThrow(/causal order cannot be proven/)
+    expect(upgraded.data.semanticReceipts?.every((item) => item.status === 'committed')).toBe(true)
   })
 
   it('keeps an independently written same-key manual action valid after undoing the first', () => {

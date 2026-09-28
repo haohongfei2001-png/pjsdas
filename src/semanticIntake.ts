@@ -138,6 +138,8 @@ function pendingFactKeys(matching: SemanticIntakeReceipt[]) {
     receipt.status === 'committed'
     && (receipt.createdAt > at
       || (receipt.createdAt === at
+        && !receipt.causalOrderAmbiguous
+        && !invalidatedBy.causalOrderAmbiguous
         && (receipt.creationSequence ?? 0) > (invalidatedBy.creationSequence ?? 0)))
     && receipt.factKeys?.includes(factKey)
     && !receiptInvalidatedFactKeys(receipt).has(factKey))
@@ -1277,6 +1279,19 @@ export function applySemanticCompensation(
   now = new Date(),
 ) {
   let next = upgradeSnapshotToLatest(snapshot)
+  for (const id of compensation.payload.receiptIds) {
+    const target = next.data.semanticReceipts?.find((item) => item.id === id)
+    if (!target?.causalOrderAmbiguous) continue
+    const hasUnorderedOverlap = next.data.semanticReceipts?.some((item) =>
+      item.id !== target.id
+      && item.causalOrderAmbiguous
+      && item.createdAt === target.createdAt
+      && item.status === 'committed'
+      && (item.factKeys ?? []).some((key) => target.factKeys?.includes(key)))
+    if (hasUnorderedOverlap) {
+      throw new Error('Semantic receipt causal order cannot be proven for this legacy same-time fact; automatic undo is blocked.')
+    }
+  }
   const timestamp = now.toISOString()
   for (const item of [...compensation.payload.domainCompensations].reverse()) {
     next = applyDomainCompensation(next, item, now)
