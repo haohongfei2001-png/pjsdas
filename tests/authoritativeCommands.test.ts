@@ -220,6 +220,23 @@ describe('CGR-01 authoritative command executor', () => {
     expect(h.state().current.data.actions.find((item) => item.id === 'action-1')?.status).toBe('done')
   })
 
+  it('refuses historical event deletion before any CAS workspace write', async () => {
+    const h = harness()
+    const before = historyActionWorkspace()
+    const event = { id: 'retained-event', opportunityId: 'history-job', company: 'History company', role: 'Engineer', type: 'written_test_invite' as const,
+      occurredAt: '2026-09-20T00:00:00.000Z', dueAt: '2026-09-20T01:00:00.000Z', source: 'manual' as const, createdAt: '2026-09-20T00:00:00.000Z', updatedAt: '2026-09-20T00:00:00.000Z' }
+    before.data.processEvents = [event]
+    before.data.actions[0].processEventId = event.id
+    before.data.scheduleNodes![0].processEventId = event.id
+    Object.assign(h.state().current.data, before.data)
+    const original = structuredClone(h.state().current)
+    const result = await h.executor.execute(h.principal, { commandId: 'cmd-delete-history-0001', baseRevision: 1, command: { type: 'process_event_delete', value: { eventId: event.id } } })
+    expect(result).toMatchObject({ outcome: 'CONFLICT', conflict: { reason: 'HISTORICAL_OCCURRENCES_RETAINED' } })
+    expect(h.ledger).toEqual([])
+    expect(h.state().current).toEqual(original)
+    expect(h.state().revision).toBe(1)
+  })
+
   it('persists bounded occurrence compensation and retains historical facts through authoritative Undo', async () => {
     const h = harness()
     const before = historyActionWorkspace()

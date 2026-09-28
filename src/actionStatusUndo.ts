@@ -47,22 +47,27 @@ export function restoreActionStatusUndo(data: ScheduleContractData, undo: Action
       throw new Error('Action changed after completion; Undo cannot be applied safely.')
     }
   }
-  for (const { before, after } of undo.scheduleNodes) {
+  restoreScheduleNodeChanges(data, undo.scheduleNodes)
+  for (const { before } of undo.actions) {
+    data.actions[data.actions.findIndex((item) => item.id === before.id)] = structuredClone(before)
+  }
+  ensureScheduleContractInPlace(data)
+}
+
+export function restoreScheduleNodeChanges(data: ScheduleContractData, changes: ActionStatusUndo['scheduleNodes']) {
+  if (!Array.isArray(changes)) throw new Error('Schedule compensation evidence is invalid.')
+  for (const { before, after } of changes) {
     if (!before?.id || before.id !== after?.id || !equal(data.scheduleNodes?.find((item) => item.id === after.id), after)) {
       throw new Error('Schedule occurrence changed after completion; Undo cannot be applied safely.')
     }
   }
-  for (const { before } of undo.actions) {
-    data.actions[data.actions.findIndex((item) => item.id === before.id)] = structuredClone(before)
-  }
-  for (const { before, after } of undo.scheduleNodes) {
+  for (const { before, after } of changes) {
     // Restore business state while retaining every provenance reference created
-    // by the completed command. Its timeline/receipt also remains in history.
+    // by the command. Its timeline/receipt also remains in history.
     data.scheduleNodes![data.scheduleNodes!.findIndex((item) => item.id === before.id)] = {
       ...structuredClone(before),
       evidenceRefs: [...new Set([...before.evidenceRefs, ...after.evidenceRefs])],
       sourceVersionRefs: [...new Set([...before.sourceVersionRefs, ...after.sourceVersionRefs])],
     }
   }
-  ensureScheduleContractInPlace(data)
 }

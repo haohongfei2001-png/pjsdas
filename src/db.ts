@@ -12,6 +12,8 @@ import { mergeActionsForReimport } from './reimportState.js'
 import { createSnapshot, upgradeSnapshotToLatest, validateSnapshot, type PJSDASSnapshot } from './snapshot.js'
 import {
   cancelScheduleNodeForProcessEvent,
+  processEventHasHistoricalOccurrences,
+  PROCESS_EVENT_HISTORY_DELETION_MESSAGE,
   effectiveScheduleNodeState,
   ensureScheduleContractInPlace,
   normalizeProcessSemantics,
@@ -492,6 +494,7 @@ export async function deleteProcessEvent(id: string) {
         prep: await tx.objectStore('prep').getAll(),
         scheduleNodes: nodes,
       }
+      if (processEventHasHistoricalOccurrences(contract, id, new Date(now))) throw new Error(PROCESS_EVENT_HISTORY_DELETION_MESSAGE)
       cancelScheduleNodeForProcessEvent(contract, id, now)
       await tx.objectStore('processEvents').delete(id)
       await tx.objectStore('actions').delete(`event-action:${id}`)

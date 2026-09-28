@@ -153,3 +153,29 @@ test('a real second-connection status race is checked inside the local mutation 
   expect(evidence.action?.status).toBe('doing')
   expect(evidence.after).toEqual(evidence.before)
 })
+
+for (const state of ['completed', 'elapsed_unresolved', 'scheduled'] as const) test(`deleting an event with ${state} historical evidence refuses atomically and every route remains usable`, async ({ page, context }) => {
+  await page.clock.install({ time: HISTORY_NOW })
+  await page.goto('/'); await expect(page.locator('.tsui-primary-nav')).toBeVisible()
+  const evidence = await page.evaluate(async ({ input, state }) => {
+    const module = await import('/pjsdas/src/db.ts')
+    const event = { id: 'retained-event', opportunityId: 'history-job', company: 'History company', role: 'Engineer',
+      type: 'written_test_invite' as const, occurredAt: '2026-09-20T00:00:00.000Z', dueAt: '2026-09-20T01:00:00.000Z',
+      duePrecision: 'datetime' as const, source: 'manual' as const, createdAt: '2026-09-20T00:00:00.000Z', updatedAt: '2026-09-20T00:00:00.000Z' }
+    input.data.processEvents = [event]
+    input.data.actions[0].processEventId = event.id
+    input.data.scheduleNodes = [{ ...input.data.scheduleNodes![0], state, processEventId: event.id }]
+    await module.replaceLocalSnapshotFromCloud(input)
+    const before = (await module.exportLocalRecoveryArchive()).stores
+    let error = ''
+    try { await module.deleteProcessEvent(event.id) } catch (caught) { error = String(caught) }
+    return { error, before, after: (await module.exportLocalRecoveryArchive()).stores }
+  }, { input: historyActionWorkspace(), state })
+  expect(evidence.error).toMatch(/historical|历史/)
+  expect(evidence.after).toEqual(evidence.before)
+  for (const [path, selector] of [['today', '[data-testid="cgr02-today"]'], ['schedule', '.tsui-schedule-page'], ['library/history-job', '.job-detail-page']]) {
+    await page.goto('/pjsdas/' + path); await page.reload(); await expect(page.locator(selector)).toBeVisible()
+  }
+  const restarted = await context.newPage(); await restarted.goto('/pjsdas/today'); await page.close()
+  await expect(restarted.getByTestId('cgr02-today')).toBeVisible()
+})

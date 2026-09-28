@@ -1,4 +1,4 @@
-import { captureActionStatusUndo, restoreActionStatusUndo } from './actionStatusUndo.js'
+import { captureActionStatusUndo, restoreActionStatusUndo, restoreScheduleNodeChanges } from './actionStatusUndo.js'
 import {
   actionForProcessEvent,
   defaultMinutesForProcessEvent,
@@ -957,15 +957,18 @@ export function applyDomainCompensation(
       throw new Error('Deleted process event cannot be restored safely.')
     }
     next.data.processEvents.push(structuredClone(event))
-    if (payload.action) {
-      const action = payload.action as Action
+    const actions = (payload.actions ?? (payload.action ? [payload.action] : [])) as Action[]
+    for (const action of actions) {
       if (next.data.actions.some((item) => item.id === action.id)) throw new Error('Generated Action already exists.')
       next.data.actions.push(structuredClone(action))
     }
-    for (const previous of (payload.scheduleNodes ?? []) as ScheduleNode[]) {
-      const index = (next.data.scheduleNodes ?? []).findIndex((item) => item.id === previous.id)
-      if (index >= 0) next.data.scheduleNodes![index] = structuredClone(previous)
-      else (next.data.scheduleNodes ??= []).push(structuredClone(previous))
+    if (payload.scheduleNodeChanges) {
+      restoreScheduleNodeChanges(next.data, payload.scheduleNodeChanges)
+    } else {
+      // A legacy receipt can retain unchanged history but cannot prove ownership
+      // of a later cancellation/replacement without its exact post-delete state.
+      restoreScheduleNodeChanges(next.data, ((payload.scheduleNodes ?? []) as ScheduleNode[])
+        .map((previous) => ({ before: previous, after: previous })))
     }
   } else if (compensation.operation === 'restore_deadline') {
     const target = next.data.opportunities.find((item) => item.id === payload.opportunityId)

@@ -520,6 +520,14 @@ export function syncScheduleNodeForActionStatus(
   projectScheduleNodesToLegacyInPlace(data)
 }
 
+export const PROCESS_EVENT_HISTORY_DELETION_MESSAGE = '此事件关联已完成或已过期的历史日程；请保留历史并操作具体安排。This event has completed or elapsed historical occurrences; keep its history and update the exact occurrence.'
+
+export function processEventHasHistoricalOccurrences(data: ScheduleContractData, processEventId: string, now: Date) {
+  ensureScheduleContractInPlace(data)
+  return (data.scheduleNodes ?? []).some((node) => node.processEventId === processEventId
+    && ['completed', 'elapsed_unresolved'].includes(effectiveScheduleNodeState(node, now)))
+}
+
 export function cancelScheduleNodeForProcessEvent(
   data: ScheduleContractData,
   processEventId: string,

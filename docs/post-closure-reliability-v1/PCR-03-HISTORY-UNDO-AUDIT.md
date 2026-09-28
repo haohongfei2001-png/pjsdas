@@ -45,14 +45,43 @@ An edited or removed occurrence was not rejected by the compensation reducer.
 - Actual authoritative executor persists compensation, executes CAS Undo, retains
   original command/timeline; existing unrelated/dependent conflict tests pass.
 - Signed MCP batch shared-node compensation and actual executor Undo pass.
-- Five headless Chromium cases: real History → job detail → Mark done → Undo in
+- Eight headless Chromium cases: real History → job detail → Mark done → Undo in
   local and connected mode, Today/Schedule/job-detail durable reload/fresh-page
   restart, later occurrence edit refuses Undo with raw store equality, legacy
   projected event action compensation, and a real second-connection status race.
-- New five cases plus ten P0 and seven recovery cases: 22 browser passes.
-- Unit: 205 files / 990 tests. Type and production build pass. Matrix includes the
+- New eight cases plus ten P0 and seven recovery cases: 25 browser passes.
+  Two existing current-event local/connected create/delete journeys also pass.
+- Unit: 205 files / 996 tests. Type and production build pass. Matrix includes the
   new journeys. Full head/main results must be recorded after they finish.
 
 All fixtures are synthetic. No private snapshots or production mutations. The
 late authoritative read after sign-out remains a separate PCR-05 reproduced
 privacy defect; PCR-04..07 have not been declared complete.
+
+## Historical deletion audit and bounded repair
+
+Three actual IndexedDB regressions against the first candidate reproduced local
+event deletion succeeding for completed, elapsed and legacy scheduled/past nodes.
+For completed/elapsed nodes it left a missing-event reference rejected by startup
+validation; for scheduled/past nodes it rewrote elapsed evidence into cancellation.
+The connected reducer already refused invalid snapshots, but surfaced an indirect
+validation failure rather than the business boundary.
+
+Both paths now inspect normalized effective history before deletion. A history
+reference returns an explicit refusal (connected BUSINESS_CONFIRMATION_REQUIRED /
+HISTORICAL_OCCURRENCES_RETAINED; local readable error), keeping every raw store
+unchanged. Current/future event deletion remains supported and its two existing
+real browser journeys pass. Snapshot reference validation has not been relaxed.
+Completed times remain unknown where originally unknown; no new completion or
+cancellation fact is invented to make deletion succeed.
+
+Delete compensation also captures only nodes actually cancelled, checks their
+exact post-delete state, and retains any unaffected superseded provenance edited
+later. It restores every action removed by that scoped event, rather than just
+the first. Legacy deletion receipts without post-delete evidence fail closed on
+changed nodes. Actual authoritative executor refusal leaves revision and ledger
+unchanged; durable local refusal passes all daily routes and restart.
+
+First candidate ae7a4d3 passed CI/Browser/Matrix/UI/Brand/VoiceOver/rollback and
+Codex clean review 5875258410. Those results do not certify this later deletion
+repair; the final head requires fresh full gates and review.

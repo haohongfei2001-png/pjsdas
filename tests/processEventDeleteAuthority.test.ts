@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { applyDomainCompensation, applyUserDomainCommand } from '../src/domainCommands.js'
 import { applyProcessEventDeleteCommand } from '../src/processEventDeleteCommand.js'
 import { createSnapshot } from '../src/snapshot.js'
@@ -24,6 +24,8 @@ function withEvent() {
   return created.snapshot
 }
 
+afterEach(() => vi.useRealTimers())
+
 describe('CGR-05 first-party process event deletion', () => {
   it('removes only the selected event, cancels its schedule, and restores it with Undo', () => {
     const before = withEvent()
@@ -44,7 +46,46 @@ describe('CGR-05 first-party process event deletion', () => {
     expect(() => applyProcessEventDeleteCommand(deleted.snapshot, event.id)).toThrow('no longer exists')
   })
 
+  for (const state of ['completed', 'elapsed_unresolved', 'scheduled'] as const) it(`retains ${state} historical references with an explicit refusal`, () => {
+    const before = withEvent()
+    const node = before.data.scheduleNodes![0]
+    node.state = state
+    node.temporal = { shape: 'deadline', precision: 'datetime', timezone: 'UTC', deadlineAt: '2026-09-20T00:00:00.000Z', resolutionBasis: 'legacy_projection' }
+    const unchanged = structuredClone(before)
+    const result = applyProcessEventDeleteCommand(before, before.data.processEvents[0].id, at)
+    expect(result).toMatchObject({ status: 'NEEDS_CONFIRMATION', changed: false, reason: 'HISTORICAL_OCCURRENCES_RETAINED' })
+    expect(result.snapshot).toEqual(unchanged)
+    expect(before).toEqual(unchanged)
+  })
+
+  it('delete Undo touches only its cancelled node and refuses an edited affected occurrence', () => {
+    const before = withEvent()
+    const node = before.data.scheduleNodes![0]
+    before.data.scheduleNodes!.push({ ...structuredClone(node), id: 'retained-superseded', occurrenceId: 'retained-superseded', state: 'superseded' })
+    const deleted = applyProcessEventDeleteCommand(before, before.data.processEvents[0].id, at)
+    if (!deleted.compensation) throw Error('Expected deletion compensation')
+    const later = structuredClone(deleted.snapshot)
+    later.data.scheduleNodes!.find((item) => item.id === 'retained-superseded')!.sourceVersionRefs.push('later:retained-source')
+    const restored = applyDomainCompensation(later, JSON.parse(JSON.stringify(deleted.compensation)), at)
+    expect(restored.data.scheduleNodes!.find((item) => item.id === 'retained-superseded')!.sourceVersionRefs).toContain('later:retained-source')
+    later.data.scheduleNodes!.find((item) => item.id === node.id)!.updatedAt = '2026-09-24T05:00:00.000Z'
+    expect(() => applyDomainCompensation(later, deleted.compensation!, at)).toThrow(/changed/)
+  })
+
+  it('restores every action removed by one scoped event deletion', () => {
+    const before = withEvent()
+    const original = before.data.actions.find((item) => item.processEventId === before.data.processEvents[0].id)!
+    before.data.actions.push({ ...structuredClone(original), id: 'second-event-action', title: 'Second linked preparation' })
+    const deleted = applyProcessEventDeleteCommand(before, before.data.processEvents[0].id, at)
+    if (!deleted.compensation) throw Error('Expected deletion compensation')
+    const restored = applyDomainCompensation(deleted.snapshot, JSON.parse(JSON.stringify(deleted.compensation)), at)
+    for (const action of before.data.actions) expect(restored.data.actions).toContainEqual(action)
+    expect(deleted.snapshot.data.actions.some((item) => item.processEventId === original.processEventId)).toBe(false)
+  })
+
   it('keeps deletion outside delegated MCP while committing one scoped receipt', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(at)
     let current = withEvent()
     let revision = 1
     let commits = 0
