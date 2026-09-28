@@ -104,3 +104,16 @@ without changing source or baseline. This preserves existing import semantics fo
 valid workspaces; it does not weaken validation, create substitute facts, erase
 history or introduce another writer. All 28 history/P0/recovery journeys pass.
 No production import or write was performed.
+
+Latest-head Codex P1 was valid: validating old stores before overlay prevented a
+correct reimport from restoring an already missing process. The import now reads
+raw transactional rows, overlays and validates the complete candidate, and only
+then materializes the baseline inside the same atomic transaction. Both existing-
+marker and no-marker real IndexedDB regressions fail on 5e9b26c and pass after
+repair. All 13 history browser cases pass; unsafe proposals still abort unchanged.
+
+Owner escalation: after this single writer closes, dense production Today/decision
+membership and lossless cache convergence take priority over general PCR audits.
+Readonly revision851 shows 6 selected actions plus358 decisions, not361 selected
+actions; 98 historical nodes remain separately unresolved. Classification continues;
+no production cleanup has been executed and Repair02 authorization remains consumed.

@@ -943,7 +943,7 @@ export async function applyChangeSet(id: string): Promise<ChangeSetRecord & { ac
 
 type LocalSnapshotTransaction = IDBPTransaction<PJSDASDatabase, (typeof DATA_STORES)[number][], 'readonly' | 'readwrite'>
 
-async function readLocalSnapshot(tx: LocalSnapshotTransaction) {
+async function readLocalSnapshotData(tx: LocalSnapshotTransaction) {
   const [opportunities, processes, processEvents, scheduleNodes, decisionRequests, semanticReceipts, reminderIntents, reminderOutbox, actions, prep, applicationGroups, decisionRules, discoveryProfile, discoveryInbox, timeline, changeSets, meta] =
     await Promise.all([
       tx.objectStore('opportunities').getAll(),
@@ -978,7 +978,7 @@ async function readLocalSnapshot(tx: LocalSnapshotTransaction) {
         && existing.occurredAt === record.occurredAt && existing.changes?.status?.after === record.changes?.status?.after)))
   }
 
-  return createSnapshot({
+  return {
     opportunities,
     processes,
     processEvents,
@@ -996,7 +996,11 @@ async function readLocalSnapshot(tx: LocalSnapshotTransaction) {
     timeline,
     changeSets,
     meta,
-  })
+  }
+}
+
+async function readLocalSnapshot(tx: LocalSnapshotTransaction) {
+  return createSnapshot(await readLocalSnapshotData(tx))
 }
 
 export async function exportLocalSnapshot() {
@@ -1011,20 +1015,25 @@ export async function exportLocalSnapshot() {
 async function withTimelineMutation<T>(
   db: Awaited<typeof dbPromise>,
   mutate: (tx: IDBPTransaction<PJSDASDatabase, (typeof DATA_STORES)[number][], 'readwrite'>) => Promise<T>,
+  baselineAfterMutation = false,
 ) {
   // Lock the source stores while validating and materializing the baseline.
   // Baseline and source edit commit together; no queued cache replacement can
   // enter between their reads and writes. Every source read uses this same tx.
   // Startup/history reads never call this; malformed data aborts without writes.
   const tx = db.transaction([...DATA_STORES], 'readwrite')
-  try {
+  const materializeBaseline = async () => {
     if (!await tx.objectStore('timeline').get(TIMELINE_BACKFILL_MARKER_ID)) {
       const snapshot = await readLocalSnapshot(tx)
       for (const record of snapshot.data.timeline ?? []) {
         if (!await tx.objectStore('timeline').get(record.id)) await tx.objectStore('timeline').put(record)
       }
     }
+  }
+  try {
+    if (!baselineAfterMutation) await materializeBaseline()
     const result = await mutate(tx)
+    if (baselineAfterMutation) await materializeBaseline()
     await tx.done
     return result
   } catch (caught) {
@@ -1178,9 +1187,8 @@ export async function replaceImportedData(bundle: ImportBundle) {
     ensureScheduleContractInPlace(contract)
     // Validate the complete proposed workspace under the same locks before any
     // replacement. Retained history must not acquire missing process/event refs.
-    const previousSnapshot = await readLocalSnapshot(tx)
-    validateSnapshot({ ...previousSnapshot, data: { ...previousSnapshot.data, ...contract,
-      applicationGroups: bundle.applicationGroups } })
+    const previousData = await readLocalSnapshotData(tx)
+    createSnapshot({ ...previousData, ...contract, applicationGroups: bundle.applicationGroups })
 
     await Promise.all([
       tx.objectStore('opportunities').clear(),
@@ -1204,5 +1212,5 @@ export async function replaceImportedData(bundle: ImportBundle) {
     const importMeta: ImportMeta = { key: 'lastImport', ...bundle.summary }
     await tx.objectStore('timeline').put(timelineFromImport(importMeta, bundle.timeline?.length ?? 0))
     await tx.objectStore('meta').put(importMeta)
-  })
+  }, true)
 }

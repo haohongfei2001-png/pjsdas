@@ -220,3 +220,32 @@ for (const state of ['elapsed_unresolved', 'scheduled'] as const) test(`reimport
   expect(evidence.after).toEqual(evidence.before)
   await page.reload(); await expect(page.getByTestId('cgr02-today')).toBeVisible()
 })
+
+for (const marker of [true, false]) test(`reimport repairs an already missing process without losing historical evidence (baseline ${marker})`, async ({ page }) => {
+  await page.clock.install({ time: HISTORY_NOW })
+  await page.goto('/'); await expect(page.locator('.tsui-primary-nav')).toBeVisible()
+  const evidence = await page.evaluate(async ({ input, marker }) => {
+    const module = await import('/pjsdas/src/db.ts')
+    const job = { ...input.data.opportunities[0], locallyManaged: false }
+    const process = { id: 'restorable-process', opportunityId: job.id, company: job.company, role: job.role,
+      stage: 'not_applied' as const, stageLabel: '待投递', progress: 'not_started' as const, result: 'pending' as const,
+      participationState: 'active' as const, lastProgressAt: '2026-09-20T00:00:00.000Z' }
+    input.data.opportunities = [job]; input.data.processes = [process]
+    input.data.scheduleNodes = [{ ...input.data.scheduleNodes![0], processId: process.id }]
+    await module.replaceLocalSnapshotFromCloud(input)
+    const db = await module.dbPromise
+    if (marker) await module.saveDecisionRules(await module.getDecisionRules())
+    await db.delete('processes', process.id) // Old released import failure, actual durable invalid stores.
+    const before = (await module.exportLocalRecoveryArchive()).stores
+    let invalidBefore = false
+    try { await module.exportLocalSnapshot() } catch { invalidBefore = true }
+    await module.replaceImportedData({ opportunities: [job], processes: [process], actions: [], prep: [], applicationGroups: [],
+      summary: { filename: 'restore-missing-process.xlsx', importedAt: '2026-09-28T12:00:00.000Z', opportunities: 1, pending: 0, processes: 1, prep: 0, applicationGroups: 0, actions: 0 } })
+    return { invalidBefore, before, after: (await module.exportLocalRecoveryArchive()).stores, snapshot: await module.exportLocalSnapshot() }
+  }, { input: historyActionWorkspace(), marker })
+  expect(evidence.invalidBefore).toBe(true)
+  expect(evidence.snapshot.data.processes.some(p => p.id === 'restorable-process')).toBe(true)
+  for (const node of evidence.before.scheduleNodes) expect(evidence.after.scheduleNodes).toContainEqual(node)
+  for (const row of evidence.before.timeline) expect(evidence.after.timeline).toContainEqual(row)
+  await page.reload(); await expect(page.getByTestId('cgr02-today')).toBeVisible()
+})
