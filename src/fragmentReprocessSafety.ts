@@ -1,6 +1,13 @@
 import type { GmailSemanticRecord } from './gmailSemanticIntake.js'
 import type { PJSDASSnapshot } from './snapshot.js'
 
+export const FRAGMENT_SETTLEMENT_MAX_RECORDS = 100
+
+export function isBoundedFragmentSettlementCount(value: unknown): value is number {
+  return typeof value === 'number' && Number.isSafeInteger(value)
+    && value >= 1 && value <= FRAGMENT_SETTLEMENT_MAX_RECORDS
+}
+
 /** Stable authorization fingerprints exclude the parser's per-request observation clock. */
 export async function fragmentSafetyDigest(value: unknown): Promise<string> {
   const bytes = new TextEncoder().encode(JSON.stringify(value))

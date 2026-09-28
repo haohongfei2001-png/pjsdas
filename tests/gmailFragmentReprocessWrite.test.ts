@@ -104,8 +104,9 @@ describe('Gmail fragment settlement write', () => {
     }))).status).toBe(401)
   })
 
-  async function boundedFixture(options: { conflicts: number; change?: 'target' | 'projection' | 'parser' | 'binding' | 'delta' }) {
-    const ids = Array.from({ length: 39 }, (_, index) => `fragment-${String(index).padStart(2, '0')}`)
+  async function boundedFixture(options: { conflicts: number; count?: number; change?: 'target' | 'projection' | 'parser' | 'binding' | 'delta' }) {
+    const count = options.count ?? 38
+    const ids = Array.from({ length: count }, (_, index) => `fragment-${String(index).padStart(2, '0')}`)
     const baseline = createSnapshot({
       opportunities: [], processes: [], processEvents: [], actions: [], prep: [], applicationGroups: [],
       scheduleNodes: options.change === 'delta' ? [{
@@ -134,7 +135,7 @@ describe('Gmail fragment settlement write', () => {
     const selected = baselinePlan.selectedIds
     expect(selected).toEqual(ids)
     const authorization = {
-      expectedProjectedSettledCount: 39 as const,
+      expectedProjectedSettledCount: count,
       bindingDigest: await fragmentSafetyDigest(fragmentBindingShape(binding)),
       targetSetDigest: await fragmentSafetyDigest(ids),
       evidenceDigest: await fragmentSafetyDigest(fragmentEvidenceShape(baselineRecords)),
@@ -209,7 +210,7 @@ describe('Gmail fragment settlement write', () => {
     const { authorization, dependencies, calls } = await boundedFixture({ conflicts })
     const result = await executeBoundedFragmentSettlement(authorization, dependencies)
     expect(result.attempts).toBe(conflicts + 1)
-    expect(result.selectedCount).toBe(39)
+    expect(result.selectedCount).toBe(38)
     expect(calls).toMatchObject({ reads: conflicts + 1, evidence: conflicts + 1,
       commits: conflicts + 1, successfulWrites: 1 })
     expect(calls.versions).toEqual(['txn:800', 'txn:801', 'txn:802'].slice(0, conflicts + 1))
@@ -235,5 +236,83 @@ describe('Gmail fragment settlement write', () => {
       .rejects.toMatchObject({ code: 'WORKSPACE_CONFLICT' })
     expect(calls).toMatchObject({ reads: 3, evidence: 3, commits: 3, successfulWrites: 0 })
     expect(calls.versions).toEqual(['txn:800', 'txn:801', 'txn:802'])
+  })
+
+  it('accepts the exact 38-settlement authorization baseline', async () => {
+    const { authorization, dependencies, calls } = await boundedFixture({ conflicts: 0 })
+    const result = await executeBoundedFragmentSettlement(authorization, dependencies)
+    expect(result).toMatchObject({ status: 'committed', selectedCount: 38, attempts: 1 })
+    expect(calls.successfulWrites).toBe(1)
+  })
+
+  it.each([37, 39])('rejects actual %i settlements against exact authorization count 38', async (count) => {
+    const { authorization, dependencies, calls } = await boundedFixture({ conflicts: 0, count })
+    // All five digests match the actual plan: count equality is independently mandatory.
+    authorization.expectedProjectedSettledCount = 38
+    await expect(executeBoundedFragmentSettlement(authorization, dependencies))
+      .rejects.toMatchObject({ code: 'SETTLEMENT_PROJECTION_CHANGED' })
+    expect(calls.commits).toBe(0)
+  })
+
+  it('rejects the same count when the authorized settled-set digest differs', async () => {
+    const { authorization, dependencies, calls } = await boundedFixture({ conflicts: 0 })
+    authorization.settledSetDigest = await fragmentSafetyDigest(['different-set-of-38'])
+    await expect(executeBoundedFragmentSettlement(authorization, dependencies))
+      .rejects.toMatchObject({ code: 'SETTLEMENT_PROJECTION_CHANGED' })
+    expect(calls.commits).toBe(0)
+  })
+
+  it.each(['count-increase', 'settled-set-swap'] as const)('rejects retry %s while Gmail evidence and target set remain identical', async (change) => {
+    const { authorization, dependencies, calls } = await boundedFixture({ conflicts: 1, count: 39 })
+    const read = dependencies.read
+    const baselineWorkspace = await read((await dependencies.binding())[0]!)
+    calls.reads = 0
+    const ids = fragmentLimitReprocessTargetIds(baselineWorkspace.snapshot)
+    const addOpenDecision = (snapshot: typeof baselineWorkspace.snapshot, id: string) => {
+      const uncertain = record(id)
+      uncertain.observation.candidates = [{
+        id: `uncertain-${id}`, kind: 'manual_action', title: 'Unclear request',
+        objectConfidence: 'low', eventConfidence: 'low', evidenceRefs: ['gmail'],
+        sourceVersionRefs: [`${id}:fragment-reprocess-v2`],
+      }]
+      return applyGmailSemanticBatch(snapshot, {
+        runId: `concurrent-decision-${id}`, sourceId: 'gmail:primary', checkedAt,
+        records: [uncertain], authorized: true, workspaceRevision: 'txn:800', reconcileExisting: true,
+      }).snapshot
+    }
+    const baselineSnapshot = addOpenDecision(baselineWorkspace.snapshot, ids[38]!)
+    const baselinePlan = planFragmentReprocessWrite(baselineSnapshot, ids.map((id) => record(id)), {
+      checkedAt, workspaceVersion: 'txn:800', targetIds: ids,
+    })
+    expect(baselinePlan.selectedIds).toHaveLength(38)
+    authorization.expectedProjectedSettledCount = 38
+    authorization.settledSetDigest = await fragmentSafetyDigest(baselinePlan.selectedIds)
+    authorization.businessDeltaDigest = await fragmentBusinessDeltaDigest(baselineSnapshot, baselinePlan.snapshot, checkedAt)
+    dependencies.read = async (binding) => {
+      const workspace = await read(binding)
+      if (calls.reads === 1) workspace.snapshot = structuredClone(baselineSnapshot)
+      else if (change === 'settled-set-swap') workspace.snapshot = addOpenDecision(workspace.snapshot, ids[0]!)
+      return workspace
+    }
+    await expect(executeBoundedFragmentSettlement(authorization, dependencies))
+      .rejects.toMatchObject({ code: 'SETTLEMENT_PROJECTION_CHANGED' })
+    expect(calls).toMatchObject({ reads: 2, evidence: 2, commits: 1, successfulWrites: 0 })
+  })
+
+  it.each([0, -1, 1.5, 101, Number.NaN, Number.POSITIVE_INFINITY])('rejects unbounded authorization count %s before reads', async (count) => {
+    const { authorization, dependencies, calls } = await boundedFixture({ conflicts: 0 })
+    authorization.expectedProjectedSettledCount = count
+    await expect(executeBoundedFragmentSettlement(authorization, dependencies))
+      .rejects.toMatchObject({ code: 'EXACT_PROJECTION_REQUIRED' })
+    expect(calls.reads).toBe(0)
+    expect(calls.commits).toBe(0)
+  })
+
+  it('rejects an authorization count exceeding the configured target bound', async () => {
+    const { authorization, dependencies, calls } = await boundedFixture({ conflicts: 0 })
+    dependencies.maxRecords = 37
+    await expect(executeBoundedFragmentSettlement(authorization, dependencies))
+      .rejects.toMatchObject({ code: 'EXACT_PROJECTION_REQUIRED' })
+    expect(calls.reads).toBe(0)
   })
 })
