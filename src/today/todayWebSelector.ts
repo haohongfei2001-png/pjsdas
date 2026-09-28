@@ -1,3 +1,4 @@
+import { decisionNeedsToday, groupOpenDecisions } from '../decisionPresentation.js'
 import { buildTimePlan, rankActions } from '../decisionV3.js'
 import { decisionRulesForSnapshot } from '../decisionRules.js'
 import type { DecisionRequest, RankedAction, ScheduleNode } from '../model.js'
@@ -33,6 +34,7 @@ export interface TodayWebSelection {
   decisions: TodayWebDecision[]
   actionCount: number
   decisionCount: number
+  openDecisionCount: number
   overBudgetMinutes: number
   protectedActionIds: string[]
   criticalWarnings: TodayBriefCoverageWarning[]
@@ -110,11 +112,12 @@ export function selectTodayWeb(
     context.timezone,
     rules.hardDeadlineHorizonHours,
   ))
-  const decisions = (snapshot.data.decisionRequests ?? [])
-    .filter((item) => item.state === 'open' && (!item.expiresAt || new Date(item.expiresAt) >= context.now))
+  const openGroups = groupOpenDecisions(snapshot.data.decisionRequests ?? [])
+  const decisions = openGroups
+    .map(group => group.find(request => decisionNeedsToday(request, context.now, context.timezone)))
+    .filter((request): request is DecisionRequest => Boolean(request))
     .sort((a, b) => (a.expiresAt ?? '9999').localeCompare(b.expiresAt ?? '9999')
-      || a.createdAt.localeCompare(b.createdAt)
-      || a.id.localeCompare(b.id))
+      || a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id))
     .map((request) => ({ id: `decision:${request.id}`, deepLink: `/decisions/${encodeURIComponent(request.id)}`, request }))
   const protectedOutsidePlan = protectedRanked.filter((item) => !plannedIds.has(item.action.id))
   const protectedOutsideMinutes = protectedOutsidePlan.reduce((sum, item) => sum + item.action.estimatedMinutes, 0)
@@ -135,6 +138,7 @@ export function selectTodayWeb(
     decisions,
     actionCount: actions.length,
     decisionCount: decisions.length,
+    openDecisionCount: openGroups.length,
     overBudgetMinutes: Math.max(0, plan.totalMinutes + protectedOutsideMinutes - Math.round(availableMinutes)),
     protectedActionIds: protectedRanked.map((item) => item.action.id),
     criticalWarnings,

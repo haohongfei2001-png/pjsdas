@@ -152,7 +152,7 @@ export function buildScheduleStream(
       legacyAliases.push({ legacy: node, primary: explicit })
       continue
     }
-    const state = effectiveScheduleNodeState(node, now)
+    const state = effectiveScheduleNodeState(node, now, context.timezone)
     if (state === 'completed' || state === 'cancelled') {
       const occurredAt = node.completedAt ?? node.cancelledAt
       const date = validInstant(occurredAt) ? localDateKey(new Date(occurredAt!), context.timezone) : undefined

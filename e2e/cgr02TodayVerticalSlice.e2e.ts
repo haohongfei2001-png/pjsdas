@@ -646,7 +646,7 @@ test('quiet Today and a real DecisionRequest remain legible without invented act
   expect((await page.locator('.tsui-node-panel').boundingBox())!.height).toBeLessThan(300)
   await reviewedScreenshot(page, 'quiet-today.png')
 
-  const now = new Date().toISOString()
+  const now = VISUAL_TIME.toISOString()
   state.snapshot.data.decisionRequests = [{
     id: 'decision-a',
     reason: 'ambiguous_target',
@@ -665,6 +665,8 @@ test('quiet Today and a real DecisionRequest remain legible without invented act
       statementMode: 'assertion',
       candidate: {
         id: 'candidate-a', kind: 'manual_action', title: '确认岗位',
+        // This decision is genuinely due now, rather than undated historical inbox debt.
+        dueAt: now, duePrecision: 'datetime',
         objectConfidence: 'low', eventConfidence: 'high', evidenceRefs: ['test-evidence-a'], sourceVersionRefs: [],
       },
     },

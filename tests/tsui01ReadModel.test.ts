@@ -1,3 +1,4 @@
+import { denseDecision } from './fixtures/denseDecisionWorkspace.js'
 import { describe, expect, it } from 'vitest'
 import type { Action, DecisionRequest, ScheduleNode, TimelineRecord } from '../src/model.js'
 import { createSnapshot } from '../src/snapshot.js'
@@ -130,18 +131,14 @@ describe('TSUI-01 complete Web read models', () => {
   })
 
   it('keeps more than four actionable decisions as separate rows', () => {
-    const decisions = Array.from({ length: 7 }, (_, index) => ({
-      id: `request-${index}`, reason: 'ambiguous_target', state: 'open',
-      affectedObjects: [{ type: 'opportunity', id: 'posting-1' }],
-      question: 'Which exact posting?',
-      choices: [
-        { id: 'one', label: 'First', consequence: 'First only' },
-        { id: 'two', label: 'Second', consequence: 'Second only' },
-      ],
-      evidenceRefs: [],
-      payloadBinding: { contractVersion: 1, inputId: `input-${index}`, candidateId: `candidate-${index}` },
-      createdAt: CREATED, updatedAt: CREATED,
-    })) as DecisionRequest[]
+    const decisions = Array.from({ length: 7 }, (_, index) => {
+      const request = denseDecision(index)
+      if (request.payloadBinding.candidate.kind === 'process_event') {
+        request.payloadBinding.candidate.dueAt = '2026-09-25'
+        request.payloadBinding.candidate.duePrecision = 'date'
+      }
+      return request
+    })
     const result = selectTodayWeb(snapshot([], [], [], decisions), {}, { now: NOW, timezone: TZ })
     expect(result.decisionCount).toBe(7)
     expect(result.decisions.map((item) => item.id)).toEqual(decisions.map((item) => `decision:${item.id}`))

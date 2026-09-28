@@ -712,7 +712,7 @@ export default function AppV8() {
             onMarkAction={markAction} readOnly={CGR02_TODAY_READ_ONLY}
           />
         ) : null}
-        {!loading && surface === 'decisions' ? <DecisionRequestsView requests={decisionRequests} focusRequestId={route.decisionRequestId}
+        {!loading && surface === 'decisions' ? <DecisionRequestsView requests={decisionRequests} opportunities={opportunities} focusRequestId={route.decisionRequestId}
           onShowAll={() => navigate('/decisions')}
           onReturnOpportunity={route.returnOpportunityId ? () => navigate('/library/' + encodeURIComponent(route.returnOpportunityId!)) : undefined}
           onChanged={reload} /> : null}
