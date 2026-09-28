@@ -1,11 +1,13 @@
+import type { Opportunity } from '../src/model.js'
+import { opportunity } from '../e2e/fixtures/todayWorkspace.js'
 import { applyGmailSemanticBatch } from '../src/gmailSemanticIntake.js'
 import { createSnapshot } from '../src/snapshot.js'
 import { describe, expect, it } from 'vitest'
 import { gmailSemanticRecordFromMessage } from '../gateway/gmailAutomation.js'
 const now = new Date('2026-09-28T18:00:00Z')
-function parse(text: string, subject = '招聘流程说明') {
-  return gmailSemanticRecordFromMessage({ id: 'synthetic-instructions', threadId: 'thread', internalDate: String(now.getTime()),
-    payload: { mimeType: 'text/plain', headers: [{ name: 'Subject', value: subject }], body: { data: Buffer.from(text).toString('base64url') } } }, [], now)!
+function parse(text: string, subject = '招聘流程说明', opportunities: Opportunity[] = [], id = 'synthetic-instructions') {
+  return gmailSemanticRecordFromMessage({ id, threadId: 'thread', internalDate: String(now.getTime()),
+    payload: { mimeType: 'text/plain', headers: [{ name: 'Subject', value: subject }], body: { data: Buffer.from(text).toString('base64url') } } }, opportunities, now)!
 }
 const instructions = ['面试前请检查摄像头和麦克风', '面试时请保持网络畅通', '面试过程中请勿切换页面', '如遇面试设备问题请联系技术客服']
 describe('Gmail instruction mentions are not independent event assertions', () => {
@@ -50,6 +52,7 @@ describe('Gmail instruction mentions are not independent event assertions', () =
     '请于2026年9月30日14:30参加面试并完成设备检查',
     '请使用电脑浏览器参加2026年9月30日14:30的面试',
     '请保持网络畅通并参加2026年9月30日14:30的面试',
+    '请通过浏览器进行2026年9月30日14:30的面试',
   ])('retains the asserted event and persisted ambiguity in mixed invitation: %s', text => {
     const record = parse(text)
     expect(record.observation.candidates).toHaveLength(1)
@@ -58,6 +61,20 @@ describe('Gmail instruction mentions are not independent event assertions', () =
     const result = applyGmailSemanticBatch(base, { runId: 'mixed-invitation', sourceId: 'gmail:primary', checkedAt: now.toISOString(), authorized: true, records: [record] })
     expect(result.snapshot.data.decisionRequests).toHaveLength(1)
     expect(result.run.outcomes).toEqual({ unresolved: 1 })
+  })
+  it.each(['取消', '撤销'])('applies a bare %s equipment-related notice to an existing occurrence', verb => {
+    const job = opportunity('known-job', '京东', 'AI产品经理')
+    const base = createSnapshot({ opportunities: [job], processes: [], processEvents: [], actions: [], prep: [], applicationGroups: [] })
+    const apply = (snapshot: typeof base, text: string, id: string) => applyGmailSemanticBatch(snapshot, {
+      runId: id, sourceId: 'gmail:primary', checkedAt: now.toISOString(), authorized: true,
+      records: [parse('京东 AI产品经理 ' + text, '招聘流程通知', [job], id)],
+    })
+    const seeded = apply(base, '面试通知：请于2026年9月30日14:30参加面试', 'seed')
+    expect(seeded.snapshot.data.scheduleNodes).toHaveLength(1)
+    expect(seeded.snapshot.data.scheduleNodes![0].state).toBe('scheduled')
+    const cancelled = apply(seeded.snapshot, `请注意因设备故障${verb}2026年9月30日14:30的面试`, 'cancel')
+    expect(cancelled.snapshot.data.scheduleNodes![0].state).toBe('cancelled')
+    expect(cancelled.run.outcomes).toEqual({ updated: 1 })
   })
   it('preserves unknown untimed assertions as clarification candidates rather than deleting ambiguity', () => {
     expect(parse('面试安排后续通知').observation.candidates).toHaveLength(1)

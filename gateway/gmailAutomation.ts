@@ -926,23 +926,15 @@ function conditionalFutureInterviewReference(value: string) {
   return /(?:如|如果|若|未按时|未完成).{0,48}(?:无法|不能|才能|方可|进入).{0,24}(?:后续|下一轮)?.{0,10}(?:面试|ai面|业务面|hr面)/i.test(value)
 }
 
-/** Only recognized procedural mentions are excluded; uncertain assertions remain gaps. */
+/** Drop only complete, known procedural constructions; all mixed/unknown text survives. */
 function recruitingInstructionOnly(value: string) {
-  const event = /面试|笔试|测评|assessment|interview|written test/i
-  if (!event.test(value)) return false
-  // Participation wording may share equipment advice in the same clause.
-  // Keep uncertain mixed assertions rather than silently consuming them as instructions.
-  if (/(?:参加|参与|attend|take part)/i.test(value)) return false
-  // A fact can share a sentence with advice. Never erase its asserted transition or invitation.
-  if (/(?:已取消|取消了|已撤销|已完成|已经完成|已提交|改期|改为|调整为|reschedul|cancelled|canceled|completed)/i.test(value)
-    || /(?:诚邀|邀请您|邀请你|invite you|you are invited)/i.test(value)
-    || /(?:面试|笔试|测评|interview|assessment).{0,8}(?:时间|定于|截止|time|scheduled)/i.test(value)
-    || /(?:请于|定于|scheduled for).{0,60}(?:参加|面试|笔试|测评|interview|assessment)/i.test(value)
-      && !/(?:设备检查|设备检测|网络测试|camera check|equipment check)/i.test(value)) return false
-  const clauses = value.split(/[，,！!？?]+/).map(item => item.trim()).filter(item => event.test(item))
-  return clauses.length > 0 && clauses.every(clause =>
-    /(?:请|务必|勿|不要|建议|确保|检查|检测|保持|如遇|联系|please|ensure|check|do not|contact)/i.test(clause)
-    && /(?:摄像头|麦克风|设备|网络|浏览器|切换|页面|客服|技术支持|安静|camera|microphone|equipment|network|browser|switch.{0,12}(?:tab|page)|support)/i.test(clause))
+  const text = value.trim().replace(/\s+/g, '')
+  // These closed grammars cannot swallow a second assertion, date, invitation,
+  // cancellation or explanatory suffix. Equipment keywords alone prove nothing.
+  return /^(?:面试|笔试|测评)(?:前|时|中|过程中|期间)(?:请|务必|建议)?(?:提前)?(?:检查|检测|测试|确认|开启|保持|确保)(?:(?:摄像头|麦克风|设备|网络|浏览器)(?:和|及|、)?)+(?:正常|正常运行|畅通|稳定|可用)?$/.test(text)
+    || /^(?:面试|笔试|测评)(?:时|中|过程中|期间)(?:请勿|勿|不要|避免)(?:切换页面|切换浏览器页面|切换窗口|切换标签页)$/.test(text)
+    || /^如遇(?:面试|笔试|测评)(?:设备|网络|浏览器)(?:问题|故障)请联系(?:技术客服|客服|技术支持)$/.test(text)
+    || /^请于[0-9年月日/:：+T.Z-]+完成(?:面试|笔试|测评)(?:设备检查|设备检测|网络测试)$/.test(text)
 }
 
 function candidateHasOpportunityIdentity(candidate: SemanticCandidate) {

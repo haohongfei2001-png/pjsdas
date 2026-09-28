@@ -40,3 +40,24 @@ one unresolved decision rather than an ignored source. An additional real browse
 fixture verifies two mixed instructions/invitations become exactly two durable
 scheduled events through reload.1018unit/type and seven headless Gmail cases pass.
 Latest-head independent review and full remote gates must be refreshed.
+
+Second independent review of2e091ad found another P2 instance of the broad
+imperative/equipment classifier (report5878650224). The classifier has now been
+replaced, not extended with more invitation exceptions: only complete closed
+procedural grammars are discarded. Mixed clauses, arbitrary suffixes, unknown
+wording and business transitions do not match those grammars and remain eligible.
+Three new failing cases now pass, including actual shared-batch cancellation and
+withdrawal of an existing scheduled occurrence plus a timed invitation using 进行.
+1021unit/type and14headless Gmail/authoritative-command tests pass.
+
+This narrower repair supersedes the earlier267candidate aggregate: latest private
+52mail replay retains283candidates/44bound/0missing. Existing ambiguous instruction
+wordings remain; this is a conservative bounded fix, not full parser completeness
+or a historical cleanup authorization. The former larger reduction is rejected
+because the broad classifier could silently lose genuine assertions.
+
+The remote Browser failure on2e091ad was a separate asynchronous test race: the
+UI no longer showing an action does not establish that receipt recovery has
+removed its pending localStorage record. The test now waits for the same null
+condition using bounded expect.poll; command count and recovered receipt checks
+remain unchanged. Latest-head remote gates and fresh independent review required.
