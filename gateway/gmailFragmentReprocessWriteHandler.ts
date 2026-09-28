@@ -40,6 +40,8 @@ function settledIds(snapshot: PJSDASSnapshot, records: GmailSemanticRecord[], ch
   const candidateIds = new Set(ids)
   return new Set(reconciled.appended
     .filter((item) => item.ingestionResolution
+      && item.ingestionResolution.sourceKind === 'gmail'
+      && item.ingestionResolution.sourceId === GMAIL_SOURCE_ID
       && candidateIds.has(item.ingestionResolution.sourceRecordId)
       && SETTLED_OUTCOMES.has(item.ingestionResolution.outcome))
     .map((item) => item.ingestionResolution!.sourceRecordId))
@@ -73,6 +75,8 @@ export function planFragmentReprocessWrite(snapshot: PJSDASSnapshot, records: Gm
   const reconciled = reconcileIngestionDebt(semantic.snapshot, new Date(input.checkedAt), { maxRecords: 2000 })
   const actualIds = new Set(reconciled.appended
     .filter((item) => item.ingestionResolution
+      && item.ingestionResolution.sourceKind === 'gmail'
+      && item.ingestionResolution.sourceId === GMAIL_SOURCE_ID
       && projectedIds.has(item.ingestionResolution.sourceRecordId)
       && SETTLED_OUTCOMES.has(item.ingestionResolution.outcome))
     .map((item) => item.ingestionResolution!.sourceRecordId))
@@ -89,6 +93,7 @@ export function planFragmentReprocessWrite(snapshot: PJSDASSnapshot, records: Gm
   const unrelatedResolutionIds = new Set(reconciled.appended
     .filter((item) => !item.ingestionResolution
       || item.ingestionResolution.sourceKind !== 'gmail'
+      || item.ingestionResolution.sourceId !== GMAIL_SOURCE_ID
       || !selectedSet.has(item.ingestionResolution.sourceRecordId))
     .map((item) => item.id))
   const boundedSnapshot = structuredClone(reconciled.snapshot)
