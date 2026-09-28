@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { createGmailFragmentReprocessWriteHandler, planFragmentReprocessWrite } from '../gateway/gmailFragmentReprocessWriteHandler.js'
+import { createGmailFragmentReprocessWriteHandler, fragmentSettlementWriteCommand, planFragmentReprocessWrite } from '../gateway/gmailFragmentReprocessWriteHandler.js'
 import { fragmentLimitReprocessTargetIds } from '../gateway/gmailFragmentReprocessDryRunHandler.js'
 import { createIngestionLedgerTimeline } from '../src/ingestion.js'
 import { createSnapshot, upgradeSnapshotToLatest, validateSnapshot } from '../src/snapshot.js'
@@ -71,8 +71,10 @@ describe('Gmail fragment settlement write', () => {
     })
     expect(plan.selectedIds).toEqual(['action', 'complete'])
     expect(plan.snapshot.data.actions).toHaveLength(1)
-    expect(plan.compensation?.payload.domainCompensations).toHaveLength(1)
     expect(plan.snapshot.data.decisionRequests).toHaveLength(0)
+    const command = fragmentSettlementWriteCommand(770, plan.selectedIds, checkedAt)
+    expect(command).not.toHaveProperty('compensation')
+    expect(command.payload).toEqual({ sourceId: 'gmail:primary', selectedIds: ['action', 'complete'] })
     expect(plan.snapshot.data.timeline.map((item) => item.id)).toEqual(expect.arrayContaining(originalIds))
     const persisted = upgradeSnapshotToLatest(createSnapshot(plan.snapshot.data, plan.snapshot.exportedAt))
     expect(fragmentLimitReprocessTargetIds(persisted)).toEqual(['decision', 'gap'])

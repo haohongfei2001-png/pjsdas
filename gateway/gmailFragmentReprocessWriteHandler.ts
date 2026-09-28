@@ -4,7 +4,7 @@ import { fragmentLimitReprocessTargetIds, reprocessVersion, type GmailFragmentRe
 import { refreshGoogleAccessToken } from './googleOAuthTokens.js'
 import { createTransactionalWorkspaceSource } from './transactionalWorkspaceSource.js'
 import { decryptSecret } from './tokenCrypto.js'
-import { requireWritableWorkspaceSource, WorkspaceSourceError } from './workspaceSource.js'
+import { requireWritableWorkspaceSource, WorkspaceSourceError, type WorkspaceWriteCommand } from './workspaceSource.js'
 import { applyGmailSemanticBatch, type GmailSemanticRecord } from '../src/gmailSemanticIntake.js'
 import { reconcileIngestionDebt } from '../src/ingestionResolution.js'
 import { stableIngestionHash } from '../src/ingestion.js'
@@ -57,7 +57,7 @@ export function planFragmentReprocessWrite(snapshot: PJSDASSnapshot, records: Gm
   const complete = records.filter((record) => targetIds.has(recordId(record)) && record.gaps.length === 0)
   const projectedIds = settledIds(snapshot, complete, input.checkedAt, input.workspaceVersion)
   const selected = complete.filter((record) => projectedIds.has(recordId(record)))
-  if (!selected.length) return { snapshot, selectedIds: [] as string[], compensation: undefined }
+  if (!selected.length) return { snapshot, selectedIds: [] as string[] }
 
   const selectedIds = selected.map(recordId).sort()
   const semantic = applyGmailSemanticBatch(snapshot, {
@@ -99,7 +99,19 @@ export function planFragmentReprocessWrite(snapshot: PJSDASSnapshot, records: Gm
   const boundedSnapshot = structuredClone(reconciled.snapshot)
   boundedSnapshot.data.timeline = (boundedSnapshot.data.timeline ?? []).filter((item) => !unrelatedResolutionIds.has(item.id))
   validateSnapshot(boundedSnapshot)
-  return { snapshot: boundedSnapshot, selectedIds, compensation: semantic.compensation }
+  return { snapshot: boundedSnapshot, selectedIds }
+}
+
+export function fragmentSettlementWriteCommand(revision: number, selectedIds: string[], effectiveTime: string): WorkspaceWriteCommand {
+  // A mixed APPLIED/NO_WRITE batch has no complete automatic compensation:
+  // NO_WRITE settles debt through ledger rows without a semantic receipt.
+  return {
+    commandId: `gmail:fragment-reprocess-write:${revision}:${stableIngestionHash(selectedIds.join('|'))}`,
+    operation: 'gmail_fragment_reprocess_settlement',
+    payload: { sourceId: GMAIL_SOURCE_ID, selectedIds },
+    provenance: { sourceId: GMAIL_SOURCE_ID, adapterVersion: 'fragment-reprocess-write-v1' },
+    effectiveTime,
+  }
 }
 
 /** Explicit one-shot production write. No scheduler or dry-run route calls this handler. */
@@ -181,14 +193,7 @@ export function createGmailFragmentReprocessWriteHandler(config: GmailFragmentRe
         snapshot: plan.snapshot,
         expectedWorkspaceVersion: expectedVersion,
         updatedByDevice: 'gmail-fragment-reprocess-write',
-        command: {
-          commandId: `gmail:fragment-reprocess-write:${body!.expectedRevision}:${stableIngestionHash(plan.selectedIds.join('|'))}`,
-          operation: 'gmail_fragment_reprocess_settlement',
-          payload: { sourceId: GMAIL_SOURCE_ID, selectedIds: plan.selectedIds },
-          provenance: { sourceId: GMAIL_SOURCE_ID, adapterVersion: 'fragment-reprocess-write-v1' },
-          compensation: plan.compensation ? { ...plan.compensation } : undefined,
-          effectiveTime: now.toISOString(),
-        },
+        command: fragmentSettlementWriteCommand(Number(body!.expectedRevision), plan.selectedIds, now.toISOString()),
       })
       return json(200, {
         status: 'committed',

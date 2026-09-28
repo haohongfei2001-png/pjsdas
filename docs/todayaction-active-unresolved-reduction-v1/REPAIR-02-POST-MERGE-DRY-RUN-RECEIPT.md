@@ -33,4 +33,7 @@ explicitly authorizes an actual workspace write. It requires the exact current
 revision and projected settlement count; re-fetches and re-evaluates current
 Gmail evidence; commits only records that are still fully parsed and conclusively
 settled; and fails closed if the projection or workspace revision changes.
+The resulting command has no automatic undo payload: `NO_WRITE` settlements
+create ledger-only evidence that semantic compensation cannot reverse. Any
+later reversal requires an explicit reviewed correction.
 The current dry-run receipt does not authorize invoking that write route.
