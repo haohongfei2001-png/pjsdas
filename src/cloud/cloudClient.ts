@@ -186,11 +186,12 @@ export async function signOutCloud() {
   if (error) throw error
 }
 
-export async function getAccountAccessToken() {
+export async function getAccountAccessToken(expectedAccountKey?: string) {
   const supabase = await loadSupabase()
   const { data, error } = await supabase.auth.getSession()
   if (error) throw error
   if (!data.session) throw new Error(signedOutCloudAccountMessage(currentCloudUiLanguage()))
+  if (expectedAccountKey && googleSubject(data.session.user) !== expectedAccountKey) throw new Error('当前账号已变化，已停止旧账号的请求。')
   return data.session.access_token
 }
 

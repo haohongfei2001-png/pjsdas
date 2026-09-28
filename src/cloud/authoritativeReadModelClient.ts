@@ -1,4 +1,5 @@
-import { exportLocalSnapshot, replaceLocalSnapshotFromCloud } from '../db.js'
+import { captureAccountCacheLease, AccountCacheChangedError } from './accountCacheLease.js'
+import { isRecordedAccountProjection, assertLocalSnapshotCurrent, exportLocalSnapshot, replaceLocalSnapshotFromCloud } from '../db.js'
 import { fetchConnectedRemoteWorkspace } from './connectedWorkspaceRepository.js'
 import {
   bindLocalWorkspaceToUser,
@@ -27,6 +28,7 @@ export interface AuthoritativeReadFreshness {
 function markFresh(accountKey: string, version: string, fingerprint: string, projectionFingerprint: string, observedAt: string) {
   bindLocalWorkspaceToUser(accountKey)
   patchAccountCheckpoint(accountKey, {
+    clearedCacheFingerprint: undefined,
     lastSyncedVersion: version,
     lastSyncedFingerprint: fingerprint,
     lastReadProjectionFingerprint: projectionFingerprint,
@@ -40,17 +42,29 @@ function markFresh(accountKey: string, version: string, fingerprint: string, pro
 export async function refreshConnectedAuthoritativeCache(
   accountKey: string,
 ): Promise<AuthoritativeReadFreshness> {
+  const lease = captureAccountCacheLease(accountKey)
   const startedAt = Date.now()
   const [local, remote] = await Promise.all([
     exportLocalSnapshot(),
-    fetchConnectedRemoteWorkspace(),
+    fetchConnectedRemoteWorkspace(accountKey),
   ])
   const localFingerprint = await fingerprintWorkspace(local)
+  lease.assertCurrent()
   const checkpoint = getAccountCheckpoint(accountKey)
   const observedAt = new Date().toISOString()
+  const assertCurrent = () => {
+    lease.assertCurrent()
+    const current = getAccountCheckpoint(accountKey).lastSyncedVersion
+    if (Number(current?.replace('txn:', '')) > Number(remote.version.replace('txn:', ''))) throw new AccountCacheChangedError()
+  }
+  const markCurrent = async () => {
+    await assertLocalSnapshotCurrent(local, assertCurrent)
+    assertCurrent()
+    markFresh(accountKey, remote.version, remote.fingerprint, localFingerprint, observedAt)
+  }
 
   if (remote.fingerprint === localFingerprint) {
-    markFresh(accountKey, remote.version, remote.fingerprint, localFingerprint, observedAt)
+    await markCurrent()
     return {
       state: 'current',
       workspaceVersion: remote.version,
@@ -70,15 +84,16 @@ export async function refreshConnectedAuthoritativeCache(
         changed: false,
       }
     }
-  } else {
+  } else if (localFingerprint !== checkpoint.clearedCacheFingerprint) {
     const projectedBaseline = checkpoint.lastReadProjectionSourceFingerprint === checkpoint.lastSyncedFingerprint
       ? checkpoint.lastReadProjectionFingerprint
       : undefined
     const localChanged = localFingerprint !== (projectedBaseline ?? checkpoint.lastSyncedFingerprint)
+      && !await isRecordedAccountProjection(accountKey, local)
     const remoteChanged = remote.version !== checkpoint.lastSyncedVersion
       || remote.fingerprint !== checkpoint.lastSyncedFingerprint
     if (!localChanged && !remoteChanged) {
-      markFresh(accountKey, remote.version, remote.fingerprint, localFingerprint, observedAt)
+      await markCurrent()
       return {
         state: 'current',
         workspaceVersion: remote.version,
@@ -93,7 +108,7 @@ export async function refreshConnectedAuthoritativeCache(
       // conflict, including when a newer authoritative revision exists.
       if (equivalentReadProjection(local, remote.snapshot)) {
         if (!remoteChanged) {
-          markFresh(accountKey, remote.version, remote.fingerprint, localFingerprint, observedAt)
+          await markCurrent()
           return { state: 'current', workspaceVersion: remote.version, observedAt, latencyMs: Date.now() - startedAt, changed: false }
         }
       } else {
@@ -108,8 +123,9 @@ export async function refreshConnectedAuthoritativeCache(
     }
   }
 
-  await replaceLocalSnapshotFromCloud(remote.snapshot)
-  const projectedFingerprint = await fingerprintWorkspace(await exportLocalSnapshot())
+  const committed = await replaceLocalSnapshotFromCloud(remote.snapshot, { expectedLocal: local, assertCurrent, accountKey, version: remote.version })
+  const projectedFingerprint = await fingerprintWorkspace(committed)
+  assertCurrent()
   markFresh(accountKey, remote.version, remote.fingerprint, projectedFingerprint, observedAt)
   if (typeof window !== 'undefined') {
     window.dispatchEvent(new CustomEvent('pjsdas:workspace-replaced', {

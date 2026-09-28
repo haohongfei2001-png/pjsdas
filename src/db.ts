@@ -1,3 +1,5 @@
+import { canonicalWorkspaceJson } from './cloud/workspaceFingerprint.js'
+import { AccountCacheChangedError } from './cloud/accountCacheLease.js'
 import { captureActionStatusUndo, restoreActionStatusUndo, type ActionStatusUndo } from './actionStatusUndo.js'
 import { openDB, type DBSchema, type IDBPTransaction } from 'idb'
 import { assertImportBundleSafe } from './importDiagnostics.js'
@@ -131,7 +133,7 @@ interface PJSDASDatabase extends DBSchema {
     value: ChangeSetRecord
     indexes: { 'by-status': ChangeSetStatus; 'by-created-at': string }
   }
-  meta: { key: string; value: ImportMeta }
+  meta: { key: string; value: ImportMeta | { key: 'authoritativeProjection'; accountKey: string; version: string; canonical: string } }
 }
 
 const DATA_STORES = [
@@ -964,7 +966,7 @@ async function readLocalSnapshotData(tx: LocalSnapshotTransaction) {
       tx.objectStore('discoveryInbox').getAll(),
       tx.objectStore('timeline').getAll(),
       tx.objectStore('changeSets').getAll(),
-      tx.objectStore('meta').get('lastImport'),
+      tx.objectStore('meta').get('lastImport').then(row => row?.key === 'lastImport' ? row : undefined),
     ])
   if (!timeline.some((record) => record.id === TIMELINE_BACKFILL_MARKER_ID)) {
     const existingIds = new Set(timeline.map((record) => record.id))
@@ -1058,8 +1060,10 @@ export async function exportLocalRecoveryArchive() {
 export async function clearLocalWorkspaceCache() {
   const db = await dbPromise
   const tx = db.transaction([...DATA_STORES], 'readwrite')
+  let cleared: PJSDASSnapshot
   try {
     await Promise.all(DATA_STORES.map((storeName) => tx.objectStore(storeName).clear()))
+    cleared = await readLocalSnapshot(tx)
     await tx.done
   } catch (caught) {
     // A synchronous store failure must also abort clears already enqueued.
@@ -1070,34 +1074,56 @@ export async function clearLocalWorkspaceCache() {
     throw caught
   }
   if (typeof window !== 'undefined') window.dispatchEvent(new Event('pjsdas:workspace-replaced'))
+  return cleared
 }
 
-export async function replaceLocalSnapshotFromCloud(snapshot: PJSDASSnapshot) {
+export async function replaceLocalSnapshotFromCloud(snapshot: PJSDASSnapshot, guard?: { expectedLocal: PJSDASSnapshot; assertCurrent: () => void; accountKey?: string; version?: string }) {
   validateSnapshot(snapshot)
   const latest = upgradeSnapshotToLatest(snapshot)
 
   const db = await dbPromise
   const tx = db.transaction([...DATA_STORES], 'readwrite')
-  await Promise.all(DATA_STORES.map((storeName) => tx.objectStore(storeName).clear()))
+  try {
+    guard?.assertCurrent()
+    if (guard && canonicalWorkspaceJson(await readLocalSnapshot(tx)) !== canonicalWorkspaceJson(guard.expectedLocal)) throw new AccountCacheChangedError()
+    guard?.assertCurrent()
+    const priorProjection = await tx.objectStore('meta').get('authoritativeProjection')
+    if (guard?.accountKey && guard.version && priorProjection?.key === 'authoritativeProjection' && priorProjection.accountKey === guard.accountKey
+      && Number(priorProjection.version.replace('txn:', '')) > Number(guard.version.replace('txn:', ''))) throw new AccountCacheChangedError()
+    await Promise.all(DATA_STORES.map((storeName) => tx.objectStore(storeName).clear()))
 
-  for (const item of latest.data.opportunities) await tx.objectStore('opportunities').put(item)
-  for (const item of latest.data.processes) await tx.objectStore('processes').put(item)
-  for (const item of latest.data.processEvents) await tx.objectStore('processEvents').put(item)
-  for (const item of latest.data.scheduleNodes ?? []) await tx.objectStore('scheduleNodes').put(item)
-  for (const item of latest.data.decisionRequests ?? []) await tx.objectStore('decisionRequests').put(item)
-  for (const item of latest.data.semanticReceipts ?? []) await tx.objectStore('semanticReceipts').put(item)
-  for (const item of latest.data.reminderIntents ?? []) await tx.objectStore('reminderIntents').put(item)
-  for (const item of latest.data.reminderOutbox ?? []) await tx.objectStore('reminderOutbox').put(item)
-  for (const item of latest.data.actions) await tx.objectStore('actions').put(item)
-  for (const item of latest.data.prep) await tx.objectStore('prep').put(item)
-  for (const item of latest.data.applicationGroups) await tx.objectStore('applicationGroups').put(item)
-  await tx.objectStore('decisionRules').put(latest.data.decisionRules ?? createDefaultDecisionRules())
-  if (latest.data.discoveryProfile) await tx.objectStore('discoveryProfiles').put(latest.data.discoveryProfile)
-  for (const item of latest.data.discoveryInbox ?? []) await tx.objectStore('discoveryInbox').put(item)
-  for (const item of latest.data.timeline ?? []) await tx.objectStore('timeline').put(item)
-  for (const item of latest.data.changeSets ?? []) await tx.objectStore('changeSets').put(item)
-  if (latest.data.meta) await tx.objectStore('meta').put(latest.data.meta)
-  await tx.done
+    for (const item of latest.data.opportunities) await tx.objectStore('opportunities').put(item)
+    for (const item of latest.data.processes) await tx.objectStore('processes').put(item)
+    for (const item of latest.data.processEvents) await tx.objectStore('processEvents').put(item)
+    for (const item of latest.data.scheduleNodes ?? []) await tx.objectStore('scheduleNodes').put(item)
+    for (const item of latest.data.decisionRequests ?? []) await tx.objectStore('decisionRequests').put(item)
+    for (const item of latest.data.semanticReceipts ?? []) await tx.objectStore('semanticReceipts').put(item)
+    for (const item of latest.data.reminderIntents ?? []) await tx.objectStore('reminderIntents').put(item)
+    for (const item of latest.data.reminderOutbox ?? []) await tx.objectStore('reminderOutbox').put(item)
+    for (const item of latest.data.actions) await tx.objectStore('actions').put(item)
+    for (const item of latest.data.prep) await tx.objectStore('prep').put(item)
+    for (const item of latest.data.applicationGroups) await tx.objectStore('applicationGroups').put(item)
+    await tx.objectStore('decisionRules').put(latest.data.decisionRules ?? createDefaultDecisionRules())
+    if (latest.data.discoveryProfile) await tx.objectStore('discoveryProfiles').put(latest.data.discoveryProfile)
+    for (const item of latest.data.discoveryInbox ?? []) await tx.objectStore('discoveryInbox').put(item)
+    for (const item of latest.data.timeline ?? []) await tx.objectStore('timeline').put(item)
+    for (const item of latest.data.changeSets ?? []) await tx.objectStore('changeSets').put(item)
+    if (latest.data.meta) await tx.objectStore('meta').put(latest.data.meta)
+    const committed = await readLocalSnapshot(tx)
+    if (guard?.accountKey && guard.version) {
+      // Canonical bytes are recorded in the same transaction; async crypto would
+      // let IndexedDB auto-commit before this crash-recovery proof is durable.
+      await tx.objectStore('meta').put({ key: 'authoritativeProjection', accountKey: guard.accountKey,
+        version: guard.version, canonical: canonicalWorkspaceJson(committed) })
+    }
+    guard?.assertCurrent()
+    await tx.done
+    return committed
+  } catch (caught) {
+    try { tx.abort() } catch { /* already settled */ }
+    await tx.done.catch(() => {})
+    throw caught
+  }
 }
 
 export async function restoreLocalSnapshot(snapshot: PJSDASSnapshot) {
@@ -1261,4 +1287,26 @@ export async function replaceImportedData(bundle: ImportBundle) {
     await tx.objectStore('timeline').put(timelineFromImport(importMeta, bundle.timeline?.length ?? 0))
     await tx.objectStore('meta').put(importMeta)
   }, true)
+}
+
+/** Lock all data stores while checking a captured read; never adopt a later local edit. */
+export async function assertLocalSnapshotCurrent(expected: PJSDASSnapshot, assertCurrent: () => void) {
+  const db = await dbPromise
+  const tx = db.transaction([...DATA_STORES], 'readwrite')
+  try {
+    assertCurrent()
+    if (canonicalWorkspaceJson(await readLocalSnapshot(tx)) !== canonicalWorkspaceJson(expected)) throw new AccountCacheChangedError()
+    assertCurrent()
+    await tx.done
+  } catch (caught) {
+    try { tx.abort() } catch { /* already settled */ }
+    await tx.done.catch(() => {})
+    throw caught
+  }
+}
+
+export async function isRecordedAccountProjection(accountKey: string, snapshot: PJSDASSnapshot) {
+  const db = await dbPromise
+  const recorded = await db.get('meta', 'authoritativeProjection')
+  return recorded?.key === 'authoritativeProjection' && recorded.accountKey === accountKey && recorded.canonical === canonicalWorkspaceJson(snapshot)
 }

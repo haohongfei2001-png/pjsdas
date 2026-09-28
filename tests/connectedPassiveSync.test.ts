@@ -1,3 +1,4 @@
+import { setAccountCacheSession } from '../src/cloud/accountCacheLease.js'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const fixture = vi.hoisted(() => {
@@ -10,6 +11,8 @@ const fixture = vi.hoisted(() => {
 })
 
 vi.mock('../src/db.js', () => ({
+  isRecordedAccountProjection: vi.fn(async () => false),
+  assertLocalSnapshotCurrent: vi.fn(async () => undefined),
   exportLocalSnapshot: async () => ({ version: 4 }),
   replaceLocalSnapshotFromCloud: fixture.replace,
 }))
@@ -43,6 +46,8 @@ import { runCloudSync } from '../src/cloud/cloudSync.js'
 
 describe('connected passive sync authority', () => {
   beforeEach(() => {
+    setAccountCacheSession(undefined)
+    setAccountCacheSession('qa-account')
     fixture.update.mockReset().mockResolvedValue(fixture.remote)
     fixture.checkpoint.mockReset()
     fixture.decision.mockReset().mockReturnValue('push_local')
@@ -56,7 +61,7 @@ describe('connected passive sync authority', () => {
     fixture.equivalent.mockReturnValue(true)
     fixture.remote.version = 'txn:442'
     expect(await runCloudSync('qa-account', { passive: true })).toMatchObject({ kind: 'pulled', version: 'txn:442' })
-    expect(fixture.replace).toHaveBeenCalledWith(fixture.remote.snapshot)
+    expect(fixture.replace).toHaveBeenCalledWith(fixture.remote.snapshot, expect.objectContaining({ assertCurrent: expect.any(Function) }))
     expect(fixture.update).not.toHaveBeenCalled()
     expect(fixture.checkpoint).toHaveBeenCalledWith('qa-account', expect.objectContaining({ lastSyncedVersion: 'txn:442' }))
   })

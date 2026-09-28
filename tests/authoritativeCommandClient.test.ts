@@ -1,3 +1,4 @@
+import { setAccountCacheSession } from '../src/cloud/accountCacheLease.js'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('../src/cloud/cloudClient.js', () => ({
@@ -5,8 +6,10 @@ vi.mock('../src/cloud/cloudClient.js', () => ({
 }))
 
 vi.mock('../src/db.js', () => ({
+  isRecordedAccountProjection: vi.fn(async () => false),
+  assertLocalSnapshotCurrent: vi.fn(async () => undefined),
   exportLocalSnapshot: vi.fn(async () => snapshot()),
-  replaceLocalSnapshotFromCloud: vi.fn(async () => undefined),
+  replaceLocalSnapshotFromCloud: vi.fn(async (value) => value),
 }))
 
 vi.mock('../src/backendEndpoints.js', () => ({
@@ -59,6 +62,8 @@ function response(payload: unknown, status = 200) {
 
 describe('CGR-01 account-scoped connected command client', () => {
   beforeEach(() => {
+    setAccountCacheSession(undefined)
+    setAccountCacheSession('account-a')
     const localStorage = new MemoryStorage()
     Object.defineProperty(globalThis, 'window', {
       configurable: true,

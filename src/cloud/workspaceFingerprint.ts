@@ -48,7 +48,13 @@ export function equivalentReadProjection(local: PJSDASSnapshot, remote: PJSDASSn
           ? value.filter((row) => row?.kind !== 'baseline_backfill'
             && (!remoteSide || !serverIngestionAudit(row) || localTimelineIds.has(row.id)))
           : value
-        if (rows.length) record[key] = rows
+        if (rows.length) {
+          // IndexedDB iterates primary keys, not the server array insertion order.
+          // Duplicate/missing IDs remain order-sensitive; never collapse evidence.
+          const ids = rows.map(row => row && typeof row === 'object' ? row.id : undefined)
+          record[key] = ids.every(id => typeof id === 'string' && id.length > 0) && new Set(ids).size === rows.length
+            ? [...rows].sort((a, b) => String(a.id).localeCompare(String(b.id))) : rows
+        }
         else delete record[key]
       }
     }
