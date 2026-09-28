@@ -136,17 +136,19 @@ function pendingRecoveryFactKeys(snapshot: PJSDASSnapshot, observation: Semantic
   const matching = (snapshot.data.semanticReceipts ?? []).filter((item) =>
     receiptMatchesObservation(item, observation))
   const pending = new Set<string>()
-  const restoredAfter = (factKey: string, at: string) => matching.some((receipt) =>
+  const restoredAfter = (factKey: string, at: string, invalidatedBy: SemanticIntakeReceipt) => matching.some((receipt) =>
     receipt.status === 'committed'
-    && receipt.createdAt > at
+    && (receipt.createdAt > at
+      || (receipt.createdAt === at
+        && (receipt.creationSequence ?? 0) > (invalidatedBy.creationSequence ?? 0)))
     && receipt.factKeys?.includes(factKey)
     && !receiptInvalidatedFactKeys(receipt).has(factKey))
   for (const item of matching) {
     for (const invalidation of item.factInvalidations ?? []) {
-      if (!restoredAfter(invalidation.factKey, invalidation.invalidatedAt)) pending.add(invalidation.factKey)
+      if (!restoredAfter(invalidation.factKey, invalidation.invalidatedAt, item)) pending.add(invalidation.factKey)
     }
     if (item.status === 'undone') for (const factKey of item.factKeys ?? []) {
-      if (!restoredAfter(factKey, item.updatedAt)) pending.add(factKey)
+      if (!restoredAfter(factKey, item.updatedAt, item)) pending.add(factKey)
     }
   }
   return pending
@@ -905,6 +907,11 @@ function compareReceiptCreationOrder(left: SemanticIntakeReceipt, right: Semanti
   return byCreatedAt || (left.creationSequence ?? 0) - (right.creationSequence ?? 0) || left.id.localeCompare(right.id)
 }
 
+function nextReceiptSequence(snapshot: PJSDASSnapshot) {
+  const receipts = snapshot.data.semanticReceipts ?? []
+  return Math.max(receipts.length, ...receipts.map((item) => item.creationSequence ?? 0)) + 1
+}
+
 function ownsIndependentFactMutation(
   target: SemanticIntakeReceipt,
   dependent: SemanticIntakeReceipt,
@@ -1074,10 +1081,7 @@ export function applySemanticIntake(
     factKeys,
     mutatedFactKeys,
     factMutationObjects: Object.keys(factMutationObjects).length ? factMutationObjects : undefined,
-    creationSequence: Math.max(
-      (working.data.semanticReceipts ?? []).length,
-      ...(working.data.semanticReceipts ?? []).map((item) => item.creationSequence ?? 0),
-    ) + 1,
+    creationSequence: nextReceiptSequence(working),
     undoAvailable: domainCompensations.length > 0 || decisions.length > 0,
     now: timestamp,
     commandId: `semantic-intake:${observation.inputId}`,
@@ -1202,13 +1206,18 @@ export function resolveSemanticDecision(
   }
 
   let working = applied.snapshot
+  const factKey = semanticCandidateFactKey(base, observation.candidates[0]!)
+  const ownsMutation = applied.status === 'applied' && Boolean(applied.compensation) && Boolean(factKey)
   const resolutionReceipt = receipt({
     observation,
     status: 'committed',
     summary: applied.summary,
     affectedObjects: applied.affected,
     decisionRequestIds: [request.id],
-    factKeys: [semanticCandidateFactKey(base, observation.candidates[0]!)].filter((item): item is string => Boolean(item)),
+    factKeys: factKey ? [factKey] : [],
+    mutatedFactKeys: ownsMutation && factKey ? [factKey] : undefined,
+    factMutationObjects: ownsMutation && factKey ? { [factKey]: applied.affected } : undefined,
+    creationSequence: nextReceiptSequence(working),
     undoAvailable: applied.status === 'applied' && Boolean(applied.compensation),
     now: timestamp,
     commandId: `semantic-decision:${request.id}:${choice.id}`,

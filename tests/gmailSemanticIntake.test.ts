@@ -1198,6 +1198,75 @@ describe('UU06 shared Gmail intake', () => {
     validateSnapshot(replay.snapshot)
   })
 
+  it('deduplicates a recovery performed at the same instant as invalidation', () => {
+    const observation = (sourceId: string) => ({
+      contractVersion: 1 as const,
+      inputId: `${sourceId}:same-instant-action`,
+      source: {
+        kind: 'gmail' as const, sourceId, sourceRecordId: 'same-instant-action',
+        sourceVersion: 'v1', observedAt: now.toISOString(), assertedAt: now.toISOString(), timezone: 'Asia/Shanghai',
+      },
+      statementMode: 'assertion' as const,
+      candidates: [{
+        id: 'action', kind: 'manual_action' as const, title: 'Send portfolio',
+        objectConfidence: 'high' as const, eventConfidence: 'high' as const,
+        evidenceRefs: ['same-instant-action'], sourceVersionRefs: ['same-instant-action:v1'],
+      }],
+    })
+    const creator = applySemanticIntake(snapshot(), observation('gmail:first'), { authorized: true, now })
+    const follower = applySemanticIntake(creator.snapshot, observation('gmail:second'), {
+      authorized: true, now: new Date('2026-09-21T00:01:00Z'),
+    })
+    expect(follower.compensation?.payload.domainCompensations).toHaveLength(0)
+    const recoveryInstant = new Date('2026-09-21T00:02:00Z')
+    const undone = applySemanticCompensation(follower.snapshot, creator.compensation!, recoveryInstant)
+    const recovered = applySemanticIntake(undone, observation('gmail:second'), {
+      authorized: true, now: recoveryInstant,
+    })
+    expect(recovered.snapshot.data.actions).toHaveLength(1)
+    expect(recovered.receipt?.creationSequence).toBeGreaterThan(follower.receipt?.creationSequence ?? 0)
+    const replay = applySemanticIntake(recovered.snapshot, observation('gmail:second'), {
+      authorized: true, now: recoveryInstant,
+    })
+    expect(replay.status).toBe('ALREADY_APPLIED')
+    expect(replay.snapshot.data.actions).toHaveLength(1)
+    validateSnapshot(replay.snapshot)
+  })
+
+  it('records independent mutation ownership for a confirmed manual action', () => {
+    const observation = (version: string, confidence: 'high' | 'low') => ({
+      contractVersion: 1 as const,
+      inputId: `gmail:confirmed-action:${version}`,
+      source: {
+        kind: 'gmail' as const, sourceId: 'gmail:primary', sourceRecordId: 'confirmed-action',
+        sourceVersion: version, observedAt: now.toISOString(), assertedAt: now.toISOString(), timezone: 'Asia/Shanghai',
+      },
+      statementMode: 'assertion' as const,
+      candidates: [{
+        id: 'action', kind: 'manual_action' as const, title: 'Prepare portfolio',
+        objectConfidence: confidence, eventConfidence: confidence,
+        evidenceRefs: ['confirmed-action'], sourceVersionRefs: [`confirmed-action:${version}`],
+      }],
+    })
+    const creator = applySemanticIntake(snapshot(), observation('v1', 'high'), { authorized: true, now })
+    const pending = applySemanticIntake(creator.snapshot, observation('v2', 'low'), {
+      authorized: true, now: new Date('2026-09-21T00:01:00Z'),
+    })
+    expect(pending.status).toBe('DECISION_REQUIRED')
+    const request = pending.decisionRequests[0]!
+    const confirmed = resolveSemanticDecision(pending.snapshot, request.id, 'confirm', new Date('2026-09-21T00:02:00Z'))
+    expect(confirmed.snapshot.data.actions).toHaveLength(2)
+    expect(confirmed.receipt?.mutatedFactKeys).toEqual(creator.receipt?.factKeys)
+    expect(confirmed.receipt?.factMutationObjects?.[creator.receipt!.factKeys![0]!]).toEqual([
+      { type: 'action', id: confirmed.snapshot.data.actions[1]!.id },
+    ])
+    const laterAction = structuredClone(confirmed.snapshot.data.actions[1])
+    const undone = applySemanticCompensation(confirmed.snapshot, creator.compensation!, new Date('2026-09-21T00:03:00Z'))
+    expect(undone.data.actions).toEqual([laterAction])
+    expect(undone.data.semanticReceipts?.find((item) => item.id === confirmed.receipt!.id)?.factInvalidations).toBeUndefined()
+    validateSnapshot(undone)
+  })
+
   it('replay and a new message for the same thread occurrence do not duplicate events', () => {
     const first = run(snapshot(), invitation)
     const replay = run(first.snapshot, invitation)
