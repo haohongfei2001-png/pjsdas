@@ -1,3 +1,4 @@
+import { captureActionStatusUndo } from './actionStatusUndo.js'
 import { applyUserDomainCommand } from './domainCommands.js'
 import { upgradeSnapshotToLatest, validateSnapshot, type PJSDASSnapshot } from './snapshot.js'
 import { timelineFromChangeSetApplied } from './timeline.js'
@@ -15,6 +16,7 @@ export function applyMcpActionStatusCommand(snapshot: PJSDASSnapshot, proposal: 
   if ((next.data.changeSets ?? []).some((item) => item.id === changeSet.id)) {
     throw new Error('The signed proposal ChangeSet ID conflicts with existing workspace history.')
   }
+  const beforeData = structuredClone(next.data)
   const seen = new Set<string>()
   const previous: Array<{ actionId: string; status: string }> = []
   for (const operation of changeSet.operations) {
@@ -42,6 +44,7 @@ export function applyMcpActionStatusCommand(snapshot: PJSDASSnapshot, proposal: 
   return {
     status: 'APPLIED' as const, changed: true, snapshot: next,
     summary: `Applied ${changeSet.operations.length} reviewed Action status changes.`,
-    compensation: { operation: 'mcp_action_status_batch', payload: { previous } },
+    compensation: { operation: 'mcp_action_status_batch', payload: { previous,
+      undo: captureActionStatusUndo(beforeData, next.data, [...seen]) } },
   }
 }

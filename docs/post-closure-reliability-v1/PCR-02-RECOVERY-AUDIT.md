@@ -2,7 +2,7 @@
 
 Base: `fb3c7505b3290b088f3c48bca0648d1342e9c8b5` (PR #187 closure).
 Writer: `reliability/pcr02-account-recovery-v1`.
-Status: **CANDIDATE — remote gates/review and production readback required**.
+Status: **COMPLETE — PR #188 merged and exact-main production verified**.
 
 ## Demonstrated defects
 
@@ -94,3 +94,14 @@ Independent diagnostics also reproduced a late authoritative read reviving A
 after successful sign-out, and generic task Undo rewriting old completed/elapsed
 nodes. These remain factual PCR-03/PCR-05 work; this receipt does not mark those
 unfixed classes complete or claim the whole package is closed.
+
+## Exact-main closure
+
+PR #188 final c85781a passed all applicable head gates and latest Codex clean
+review 5874738441. Merge d19e5b5236d24f9f04f1ce6ad8cc901ddcd3fcac passed CI
+36455446215, Browser 36455446172, Matrix 36455446248, Pages 36455446488,
+production Self-Test 36455651129, Brand 36455651080 and Live Visual 36455651021.
+Health 1384 returned exact d19. Actual deployed headless bundle with full readonly
+revision-847 snapshot passed seven daily-route/reload/fresh-page startup cases,
+zero errors and zero network writes. No production workspace mutation occurred.
+The separate late authoritative-read privacy race remains an open PCR-05 defect.

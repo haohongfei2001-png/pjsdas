@@ -500,7 +500,7 @@ export function syncScheduleNodeForActionStatus(
     if (!node.relatedActionIds.includes(actionId) || node.state === 'superseded' || node.state === 'cancelled') continue
     // A task checkbox does not confirm participation in a historical occurrence.
     // Keep unknown legacy completion times unknown, and preserve prior completions.
-    if (status === 'done' && terminalStates.has(effectiveScheduleNodeState(node, new Date(updatedAt)))) continue
+    if (terminalStates.has(effectiveScheduleNodeState(node, new Date(updatedAt)))) continue
     if (status === 'done') {
       node.state = 'completed'
       node.completedAt = updatedAt
@@ -518,6 +518,14 @@ export function syncScheduleNodeForActionStatus(
   }
   data.processes = normalizeProcessSemantics(data.processes, data.opportunities, data.processEvents, data.actions)
   projectScheduleNodesToLegacyInPlace(data)
+}
+
+export const PROCESS_EVENT_HISTORY_DELETION_MESSAGE = '此事件关联已完成或已过期的历史日程；请保留历史并操作具体安排。This event has completed or elapsed historical occurrences; keep its history and update the exact occurrence.'
+
+export function processEventHasHistoricalOccurrences(data: ScheduleContractData, processEventId: string, now: Date) {
+  ensureScheduleContractInPlace(data)
+  return (data.scheduleNodes ?? []).some((node) => node.processEventId === processEventId
+    && ['completed', 'elapsed_unresolved'].includes(effectiveScheduleNodeState(node, now)))
 }
 
 export function cancelScheduleNodeForProcessEvent(

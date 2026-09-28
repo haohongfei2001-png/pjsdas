@@ -13,9 +13,9 @@ Historical boundaries:
 - Existing Reliability Closure and Active-Unresolved packages retain their own
   historical receipts and truth; this package does not rewrite them.
 
-Current phase: **PCR-02 — startup and recovery invariant audit**
+Current phase: **PCR-03 — Schedule/history mutation semantics audit**
 
-Current writer: **reliability/pcr02-account-recovery-v1 — bounded account-boundary recovery**
+Current writer: **reliability/pcr03-history-undo-v1 — exact occurrence compensation**
 
 Production claim: **P0 verified on exact runtime a8d9840; Repair 02 committed 38 settlements once (CAS 841 → 842), readback 843, read-only idempotency 0. No further production write authorized.**
 
@@ -24,8 +24,8 @@ Production claim: **P0 verified on exact runtime a8d9840; Repair 02 committed 38
 | Phase | State | Purpose |
 | --- | --- | --- |
 | PCR-01 | COMPLETE | exact-main closure of merged PR #185 history/startup P0 and any already-authorized bounded follow-through |
-| PCR-02 | IN_PROGRESS | account-cache recovery, atomic clear and serialized auth transitions; seven regressions; full gates pending |
-| PCR-03 | PLANNED | Schedule/history mutation semantics audit |
+| PCR-02 | COMPLETE | PR #188 recovery slice merged; exact-main d19 CI/Browser/Matrix/Pages/Self-Test and deployed readonly startup verified; late-read race tracked in PCR-05 |
+| PCR-03 | IN_PROGRESS | reproduced historical Undo/reopen mutation; bounded compensation candidate and durable local/connected regressions |
 | PCR-04 | PLANNED | action-intent correctness across UI/API/MCP paths |
 | PCR-05 | PLANNED | connected-mode restart/reload/recovery hardening |
 | PCR-06 | PLANNED | read-only production integrity classification + regression binding |
@@ -65,17 +65,47 @@ and continue to the next dependency-safe phase. Do not falsely mark the gate PAS
 - Existing one-write authorization is **consumed**. PCR-02..07 grants engineering
   and read-only verification only.
 
-## PCR-02 current evidence
+## PCR-02 verified evidence
 
-[Recovery audit](PCR-02-RECOVERY-AUDIT.md): actual auth expiry + failed cache clear
-left stale account UI; a third-store synchronous clear failure committed partial
-data loss. Candidate repair enters root recovery and aborts the full clear
-transaction. Seven new browser regressions plus two existing account journeys pass;
-982 unit/type/build pass. Remote full gates/review and exact-main verification
-remain required. PCR-03..07 are still pending; no further production write allowed.
+[Recovery audit](PCR-02-RECOVERY-AUDIT.md): PR #188 final head c85781a, latest
+Codex clean review 5874738441; merged main d19e5b5236d24f9f04f1ce6ad8cc901ddcd3fcac.
+Exact-main CI 36455446215, Browser 36455446172, Matrix 36455446248, Pages
+36455446488, Self-Test 36455651129, Brand 36455651080 and Live Visual
+36455651021 all SUCCESS. Health 1384 returned exact d19. Actual deployed bundle
+with complete readonly revision-847 snapshot passed seven route/reload/restart
+cases, zero errors and zero network writes. Normal Gmail advanced revision to 848;
+Repair 02 settlement command count remains exactly one. No further write allowed.
 
-First-head Codex P2 duplicate Settings/auth-listener clear was valid: the queue now
-serializes both paths and latches failures until Retry. Its real one-shot failure
-regression fails before the repair. Independent probes confirmed two later work
-items: late authoritative reads revive signed-out cache (PCR-05), and task Undo
-rewrites historical completed/elapsed nodes (PCR-03). Neither is marked complete.
+The valid first-head Codex P2 duplicate clear was repaired and its thread resolved.
+Seven recovery regressions and the existing P0 suite pass. The distinct late
+account-read revival defect remains PCR-05 work; this phase closure does not
+claim that it is fixed or that the entire package is complete.
+
+## PCR-03 candidate evidence
+
+[History Undo audit](PCR-03-HISTORY-UNDO-AUDIT.md): six new domain regressions
+failed against the verified base. Generic Undo previously reopened prior completed
+and elapsed nodes and lost an in-progress prior state. New command compensation
+records its exact changed occurrences; generic status changes preserve historical
+terminal facts. Local Undo validates and writes under one IndexedDB transaction;
+connected/MCP paths preserve exact compensation and existing CAS dependency checks.
+Eleven real browser regressions pass, including subsequent-edit refusal and durable
+Today/Schedule/job-detail reload/restart. Unit 205 files / 996 tests, type and build
+pass; full remote gates/latest Codex/exact-main verification remain required.
+PCR-04..07 are still pending. No production data mutation is authorized.
+
+PCR-03 further audit reproduced local deletion of a history-backed event committing
+invalid durable references. Three new regressions fail on the initial candidate.
+Local/connected deletion now refuses completed or elapsed history before any
+workspace write; snapshot validation is unchanged. Future-event deletion remains
+available. Delete Undo restores only changed nodes and every removed action,
+retaining unaffected superseded evidence and rejecting later edits. Full gates and
+review must be refreshed for the final repaired head.
+
+The required reimport audit also reproduced removal of elapsed legacy evidence
+and retention of a completed node with a missing process reference. Two retention
+regressions and a valid-fixture reference regression fail before the repair.
+Reimport now preserves effective elapsed history and validates the complete
+proposed snapshot inside the existing atomic transaction before replacement.
+Invalid proposals abort with raw stores unchanged. Latest head gates/review must
+be refreshed; no additional production workspace write is permitted.

@@ -1,3 +1,4 @@
+import { captureActionStatusUndo, restoreActionStatusUndo, type ActionStatusUndo } from './actionStatusUndo.js'
 import { openDB, type DBSchema, type IDBPTransaction } from 'idb'
 import { assertImportBundleSafe } from './importDiagnostics.js'
 import {
@@ -11,9 +12,13 @@ import { mergeActionsForReimport } from './reimportState.js'
 import { createSnapshot, upgradeSnapshotToLatest, validateSnapshot, type PJSDASSnapshot } from './snapshot.js'
 import {
   cancelScheduleNodeForProcessEvent,
+  processEventHasHistoricalOccurrences,
+  PROCESS_EVENT_HISTORY_DELETION_MESSAGE,
   effectiveScheduleNodeState,
   ensureScheduleContractInPlace,
   normalizeProcessSemantics,
+  migrateLegacyScheduleNodes,
+  supersedeScheduleOccurrence,
   scheduleNodeForProcessEvent,
   syncScheduleNodeForActionStatus,
 } from './scheduleNodes.js'
@@ -409,7 +414,7 @@ export async function resetDecisionRules() {
   })
 }
 
-export async function updateActionStatus(id: string, status: Action['status']) {
+export async function updateActionStatus(id: string, status: Action['status'], expectedStatus?: Action['status']) {
   const db = await dbPromise
   return withTimelineMutation(db, async (tx) => {
     const now = new Date().toISOString()
@@ -424,20 +429,44 @@ export async function updateActionStatus(id: string, status: Action['status']) {
     const effective = overlayProcessEventsOnOpportunities(opportunities, processEvents, processes)
     const action = actions.find((item) => item.id === id) ?? suppressSupersededActions(
       reconcileProcessEventActions(actions, processEvents), effective).find((item) => item.id === id)
-    if (!action || action.status === status) return
+    if (!action) return
+    if (expectedStatus !== undefined && action.status !== expectedStatus) throw new Error('Action changed before the transaction; no status change written.')
+    if (action.status === status) return
+    const beforeContract = { opportunities, processes, processEvents,
+      actions: actions.some((item) => item.id === id) ? actions : [...actions, action], prep, scheduleNodes }
+    ensureScheduleContractInPlace(beforeContract)
+    const beforeData = structuredClone(beforeContract)
     const nextAction = { ...action, status, updatedAt: now }
     const nextActions = actions.some((item) => item.id === id)
       ? actions.map((item) => item.id === id ? nextAction : item)
       : [...actions, nextAction]
     const contract = { opportunities, processes, processEvents, actions: nextActions, prep, scheduleNodes }
     syncScheduleNodeForActionStatus(contract, id, status, now)
+    ensureScheduleContractInPlace(contract)
 
     await tx.objectStore('actions').put(nextAction)
     for (const node of contract.scheduleNodes ?? []) await tx.objectStore('scheduleNodes').put(node)
     for (const process of contract.processes) await tx.objectStore('processes').put(process)
     await tx.objectStore('timeline').put(timelineFromActionStatus(action, action.status, status, now))
+    return captureActionStatusUndo(beforeData, contract, [id])
   })
 }
+
+export async function undoActionStatusChange(undo: ActionStatusUndo) {
+  const db = await dbPromise
+  return withTimelineMutation(db, async (tx) => {
+    const snapshot = await readLocalSnapshot(tx)
+    restoreActionStatusUndo(snapshot.data, undo)
+    validateSnapshot(snapshot)
+    for (const { before, after } of undo.actions) {
+      await tx.objectStore('actions').put(snapshot.data.actions.find((item) => item.id === before.id)!)
+      await tx.objectStore('timeline').put(timelineFromActionStatus(after, after.status, before.status, new Date().toISOString()))
+    }
+    for (const node of snapshot.data.scheduleNodes ?? []) await tx.objectStore('scheduleNodes').put(node)
+    for (const process of snapshot.data.processes) await tx.objectStore('processes').put(process)
+  })
+}
+
 export async function addProcessEvent(event: ProcessEvent) {
   const db = await dbPromise
   return withTimelineMutation(db, async (tx) => {
@@ -467,6 +496,7 @@ export async function deleteProcessEvent(id: string) {
         prep: await tx.objectStore('prep').getAll(),
         scheduleNodes: nodes,
       }
+      if (processEventHasHistoricalOccurrences(contract, id, new Date(now))) throw new Error(PROCESS_EVENT_HISTORY_DELETION_MESSAGE)
       cancelScheduleNodeForProcessEvent(contract, id, now)
       await tx.objectStore('processEvents').delete(id)
       await tx.objectStore('actions').delete(`event-action:${id}`)
@@ -829,7 +859,7 @@ async function markChangeSetFailed(changeSet: ChangeSetRecord, caught: unknown) 
   await (await dbPromise).put('changeSets', failed)
 }
 
-export async function applyChangeSet(id: string) {
+export async function applyChangeSet(id: string): Promise<ChangeSetRecord & { actionCompensations?: ActionStatusUndo[] }> {
   const db = await dbPromise
   const changeSet = await db.get('changeSets', id)
   if (!changeSet) throw new Error(`找不到 ChangeSet ${id}。`)
@@ -837,6 +867,7 @@ export async function applyChangeSet(id: string) {
   if (changeSet.status === 'applied') return changeSet
   if (changeSet.status !== 'pending') throw new Error(`ChangeSet ${id} 当前状态为 ${changeSet.status}，不能应用。`)
 
+  const actionCompensations: ActionStatusUndo[] = []
   try {
     const discoveredOperations = changeSet.operations.filter((operation): operation is DiscoveredChangeOperation => operation.kind === 'add_discovered_opportunity')
     if (discoveredOperations.length > 0) {
@@ -887,7 +918,8 @@ export async function applyChangeSet(id: string) {
       if (action.status !== operation.expectedStatus) {
         throw new Error(`Action ${operation.actionId} 状态已经变化，请重新操作。`)
       }
-      await updateActionStatus(operation.actionId, operation.status)
+      const compensation = await updateActionStatus(operation.actionId, operation.status, operation.expectedStatus)
+      if (compensation) actionCompensations.push(compensation)
     }
     }
 
@@ -904,7 +936,7 @@ export async function applyChangeSet(id: string) {
     await tx.objectStore('changeSets').put(applied)
     await tx.objectStore('timeline').put(timelineFromChangeSetApplied(applied))
     await tx.done
-    return applied
+    return { ...applied, actionCompensations }
   } catch (caught) {
     await markChangeSetFailed(changeSet, caught)
     throw caught
@@ -913,7 +945,7 @@ export async function applyChangeSet(id: string) {
 
 type LocalSnapshotTransaction = IDBPTransaction<PJSDASDatabase, (typeof DATA_STORES)[number][], 'readonly' | 'readwrite'>
 
-async function readLocalSnapshot(tx: LocalSnapshotTransaction) {
+async function readLocalSnapshotData(tx: LocalSnapshotTransaction) {
   const [opportunities, processes, processEvents, scheduleNodes, decisionRequests, semanticReceipts, reminderIntents, reminderOutbox, actions, prep, applicationGroups, decisionRules, discoveryProfile, discoveryInbox, timeline, changeSets, meta] =
     await Promise.all([
       tx.objectStore('opportunities').getAll(),
@@ -948,7 +980,7 @@ async function readLocalSnapshot(tx: LocalSnapshotTransaction) {
         && existing.occurredAt === record.occurredAt && existing.changes?.status?.after === record.changes?.status?.after)))
   }
 
-  return createSnapshot({
+  return {
     opportunities,
     processes,
     processEvents,
@@ -966,7 +998,11 @@ async function readLocalSnapshot(tx: LocalSnapshotTransaction) {
     timeline,
     changeSets,
     meta,
-  })
+  }
+}
+
+async function readLocalSnapshot(tx: LocalSnapshotTransaction) {
+  return createSnapshot(await readLocalSnapshotData(tx))
 }
 
 export async function exportLocalSnapshot() {
@@ -981,20 +1017,25 @@ export async function exportLocalSnapshot() {
 async function withTimelineMutation<T>(
   db: Awaited<typeof dbPromise>,
   mutate: (tx: IDBPTransaction<PJSDASDatabase, (typeof DATA_STORES)[number][], 'readwrite'>) => Promise<T>,
+  baselineAfterMutation = false,
 ) {
   // Lock the source stores while validating and materializing the baseline.
   // Baseline and source edit commit together; no queued cache replacement can
   // enter between their reads and writes. Every source read uses this same tx.
   // Startup/history reads never call this; malformed data aborts without writes.
   const tx = db.transaction([...DATA_STORES], 'readwrite')
-  try {
+  const materializeBaseline = async () => {
     if (!await tx.objectStore('timeline').get(TIMELINE_BACKFILL_MARKER_ID)) {
       const snapshot = await readLocalSnapshot(tx)
       for (const record of snapshot.data.timeline ?? []) {
         if (!await tx.objectStore('timeline').get(record.id)) await tx.objectStore('timeline').put(record)
       }
     }
+  }
+  try {
+    if (!baselineAfterMutation) await materializeBaseline()
     const result = await mutate(tx)
+    if (baselineAfterMutation) await materializeBaseline()
     await tx.done
     return result
   } catch (caught) {
@@ -1128,14 +1169,10 @@ export async function replaceImportedData(bundle: ImportBundle) {
     const mergedActions = mergeActionsForReimport(bundle.actions, previousActions, localOpportunityIds)
     const opportunities = mergeLocallyManagedOpportunities(bundle.opportunities, previousOpportunities)
     const processes = mergeLocallyManagedProcesses(bundle.processes, previousProcesses, localOpportunityIds)
-    const scheduleNodes = previousScheduleNodes.filter((node) =>
-      node.state === 'completed'
-      || node.state === 'cancelled'
-      || node.state === 'superseded'
-      || !node.opportunityId
-      || localOpportunityIds.has(node.opportunityId)
-      || node.temporal.resolutionBasis !== 'legacy_projection'
-    )
+    // Import absence does not revoke an occurrence or its latest version.
+    // Keep the complete chain; explicit retained-source timing edits below
+    // create owned versions, and candidate validation protects references.
+    const scheduleNodes = [...previousScheduleNodes]
     const contract = {
       opportunities,
       processes,
@@ -1144,7 +1181,62 @@ export async function replaceImportedData(bundle: ImportBundle) {
       prep: bundle.prep,
       scheduleNodes,
     }
+    // Keep the occurrence's durable version chain when an imported deadline
+    // changes; projecting an elapsed v1 back onto the new action loses the edit.
+    const latestPrevious = new Map<string, ScheduleNode>()
+    for (const node of previousScheduleNodes) {
+      const prior = latestPrevious.get(node.occurrenceId)
+      if (!prior || node.version > prior.version) latestPrevious.set(node.occurrenceId, node)
+    }
+    const incomingNodes = migrateLegacyScheduleNodes(contract)
+    const importWithdrawal = (node: ScheduleNode) => node.state === 'cancelled'
+      && node.sourceVersionRefs.includes(`import:deadline-cleared:${node.occurrenceId}:v${node.version}:${node.cancelledAt}`)
+    for (const prior of latestPrevious.values()) {
+      if (prior.temporal.resolutionBasis !== 'legacy_projection' || prior.processEventId
+        || ['completed', 'cancelled', 'superseded'].includes(prior.state)
+        || (prior.opportunityId && localOpportunityIds.has(prior.opportunityId))
+        || incomingNodes.some(node => node.occurrenceId === prior.occurrenceId)) continue
+      // An omitted source row is not an instruction to cancel its history.
+      // Only a retained imported source with an explicitly empty timing field
+      // withdraws the projection; retain the previous temporal in a new version.
+      const sourceRetained = prior.kind === 'application_deadline' && prior.opportunityId
+        ? bundle.opportunities.some(item => item.id === prior.opportunityId && !item.deadline)
+        : bundle.actions.some(item => prior.relatedActionIds.includes(item.id) && !item.dueAt)
+      if (!sourceRetained) continue
+      if (!scheduleNodes.some(node => node.id === prior.id)) scheduleNodes.push(prior)
+      supersedeScheduleOccurrence(scheduleNodes, {
+        ...prior, state: 'cancelled', cancelledAt: bundle.summary.importedAt,
+        updatedAt: bundle.summary.importedAt,
+        sourceVersionRefs: [...prior.sourceVersionRefs, `import:deadline-cleared:${prior.occurrenceId}:v${prior.version + 1}:${bundle.summary.importedAt}`],
+      })
+    }
+    for (const incoming of incomingNodes) {
+      const prior = latestPrevious.get(incoming.occurrenceId)
+      if (!prior || prior.temporal.resolutionBasis !== 'legacy_projection'
+        || (['completed', 'cancelled', 'superseded'].includes(prior.state) && !importWithdrawal(prior))) continue
+      if (!scheduleNodes.some(node => node.id === prior.id)) scheduleNodes.push(prior)
+      const value = (node: ScheduleNode) => JSON.stringify([
+        node.temporal.shape, node.temporal.precision, node.temporal.timezone,
+        node.temporal.date, node.temporal.startAt, node.temporal.endAt, node.temporal.deadlineAt,
+      ])
+      if (importWithdrawal(prior) || value(prior) !== value(incoming)) {
+        supersedeScheduleOccurrence(scheduleNodes, {
+          ...incoming, updatedAt: bundle.summary.importedAt,
+          evidenceRefs: [...new Set([...prior.evidenceRefs, ...incoming.evidenceRefs])],
+          sourceVersionRefs: [...new Set([...prior.sourceVersionRefs, ...incoming.sourceVersionRefs])],
+        })
+      }
+    }
     ensureScheduleContractInPlace(contract)
+    // Validate the complete proposed workspace under the same locks before any
+    // replacement. Retained history must not acquire missing process/event refs.
+    const previousData = await readLocalSnapshotData(tx)
+    createSnapshot({ ...previousData, ...contract, applicationGroups: bundle.applicationGroups })
+    // Raw pre-import facts survive even when a removed terminal action had no
+    // dated node. Do this only after candidate validation, under the same locks.
+    for (const record of previousData.timeline ?? []) {
+      if (!await tx.objectStore('timeline').get(record.id)) await tx.objectStore('timeline').put(record)
+    }
 
     await Promise.all([
       tx.objectStore('opportunities').clear(),
@@ -1168,5 +1260,5 @@ export async function replaceImportedData(bundle: ImportBundle) {
     const importMeta: ImportMeta = { key: 'lastImport', ...bundle.summary }
     await tx.objectStore('timeline').put(timelineFromImport(importMeta, bundle.timeline?.length ?? 0))
     await tx.objectStore('meta').put(importMeta)
-  })
+  }, true)
 }

@@ -1,3 +1,4 @@
+import { captureActionStatusUndo, restoreActionStatusUndo, restoreScheduleNodeChanges } from './actionStatusUndo.js'
 import {
   actionForProcessEvent,
   defaultMinutesForProcessEvent,
@@ -317,6 +318,7 @@ export function applyUserDomainCommand(
   const timestamp = nowIso(now)
 
   if (command.kind === 'record_application_submission') {
+    const beforeData = structuredClone(next.data)
     const target = opportunity(next, command.opportunityId)
     if (!target) throw new Error(`Opportunity ${command.opportunityId} was not found.`)
     if (target.participationStatus === 'abandoned' && !command.reactivateConfirmed) {
@@ -361,6 +363,7 @@ export function applyUserDomainCommand(
           processStage: beforeStage,
           actionId: apply?.id,
           actionStatus: beforeApplyStatus,
+          undo: apply ? captureActionStatusUndo(beforeData, next.data, [apply.id]) : undefined,
         },
       },
     }
@@ -613,6 +616,7 @@ export function applyUserDomainCommand(
     const target = action(next, command.actionId)
     if (!target) throw new Error(`Action ${command.actionId} was not found.`)
     const before = target.status
+    const beforeData = structuredClone(next.data)
     if (before === command.status) {
       return { status: 'ALREADY_APPLIED', snapshot, summary: `Action ${target.title} is already ${command.status}.` }
     }
@@ -628,7 +632,8 @@ export function applyUserDomainCommand(
       status: 'APPLIED',
       snapshot: next,
       summary: `Updated action ${target.title} to ${command.status}.`,
-      compensation: { operation: 'set_action_status', payload: { actionId: target.id, status: before } },
+      compensation: { operation: 'set_action_status', payload: { actionId: target.id, status: before,
+        undo: captureActionStatusUndo(beforeData, next.data, [target.id]) } },
     }
   }
 
@@ -902,11 +907,18 @@ export function applyDomainCompensation(
   const payload = compensation.payload ?? {}
 
   if (compensation.operation === 'set_action_status') {
-    const target = next.data.actions.find((item) => item.id === payload.actionId)
-    if (target) {
+    if (payload.undo) {
+      restoreActionStatusUndo(next.data, payload.undo)
+    } else {
+      // Older receipts lack occurrence ownership evidence. Never guess which
+      // historical completion to reopen from an action id or a matching time.
+      if (next.data.scheduleNodes?.some((node) => node.relatedActionIds.includes(payload.actionId))) {
+        throw new Error('Legacy Undo lacks historical occurrence evidence; cannot restore safely.')
+      }
+      const target = next.data.actions.find((item) => item.id === payload.actionId)
+      if (!target) throw new Error('Action no longer exists; Undo cannot restore safely.')
       target.status = payload.status
       target.updatedAt = timestamp
-      syncScheduleNodeForActionStatus(next.data, target.id, target.status, timestamp)
     }
   } else if (compensation.operation === 'restore_discovery_promotion') {
     const target = (next.data.discoveryInbox ?? []).find((item) => item.id === payload.inboxItemId)
@@ -947,15 +959,18 @@ export function applyDomainCompensation(
       throw new Error('Deleted process event cannot be restored safely.')
     }
     next.data.processEvents.push(structuredClone(event))
-    if (payload.action) {
-      const action = payload.action as Action
+    const actions = (payload.actions ?? (payload.action ? [payload.action] : [])) as Action[]
+    for (const action of actions) {
       if (next.data.actions.some((item) => item.id === action.id)) throw new Error('Generated Action already exists.')
       next.data.actions.push(structuredClone(action))
     }
-    for (const previous of (payload.scheduleNodes ?? []) as ScheduleNode[]) {
-      const index = (next.data.scheduleNodes ?? []).findIndex((item) => item.id === previous.id)
-      if (index >= 0) next.data.scheduleNodes![index] = structuredClone(previous)
-      else (next.data.scheduleNodes ??= []).push(structuredClone(previous))
+    if (payload.scheduleNodeChanges) {
+      restoreScheduleNodeChanges(next.data, payload.scheduleNodeChanges)
+    } else {
+      // A legacy receipt can retain unchanged history but cannot prove ownership
+      // of a later cancellation/replacement without its exact post-delete state.
+      restoreScheduleNodeChanges(next.data, ((payload.scheduleNodes ?? []) as ScheduleNode[])
+        .map((previous) => ({ before: previous, after: previous })))
     }
   } else if (compensation.operation === 'restore_deadline') {
     const target = next.data.opportunities.find((item) => item.id === payload.opportunityId)
@@ -1005,13 +1020,16 @@ export function applyDomainCompensation(
         process.progress = payload.processStage === 'not_applied' ? 'not_started' : process.progress
       }
     }
-    if (payload.actionId && payload.actionStatus) {
-      const action = next.data.actions.find((item) => item.id === payload.actionId)
-      if (action) {
-        action.status = payload.actionStatus
-        action.updatedAt = timestamp
-        syncScheduleNodeForActionStatus(next.data, action.id, action.status, timestamp)
+    if (payload.undo) {
+      restoreActionStatusUndo(next.data, payload.undo)
+    } else if (payload.actionId && payload.actionStatus) {
+      if (next.data.scheduleNodes?.some(node => node.relatedActionIds.includes(payload.actionId))) {
+        throw new Error('Legacy application Undo lacks occurrence ownership evidence; cannot restore safely.')
       }
+      const action = next.data.actions.find((item) => item.id === payload.actionId)
+      if (!action) throw new Error('Action no longer exists; Undo cannot restore safely.')
+      action.status = payload.actionStatus
+      action.updatedAt = timestamp
     }
   } else if (compensation.operation === 'remove_manual_action') {
     next.data.actions = next.data.actions.filter((item) => item.id !== payload.actionId)

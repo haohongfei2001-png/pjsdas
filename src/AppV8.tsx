@@ -1,9 +1,11 @@
+import type { ActionStatusUndo } from './actionStatusUndo.js'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { StartupRecovery } from './StartupRecovery.js'
 import BrandMark from './BrandMark.js'
 import { BRAND_NAME, brandDocumentTitle } from './brand.js'
 import {
   applyActionStatusChangeSet,
+  undoActionStatusChange,
   exportLocalSnapshot,
   replaceImportedData,
 } from './db.js'
@@ -74,7 +76,7 @@ import './tsui02.css'
 type Surface = 'today' | 'opportunities' | 'schedule' | 'decisions' | 'history' | 'settings'
 type PrimarySurface = 'today' | 'opportunities' | 'schedule'
 type OpportunityTab = 'opportunities' | 'prepare' | 'discovery'
-type CompletionFeedback = { id: string; title: string; previousStatus: Action['status']; commandId?: string; outcome: 'done' | 'no_write' | 'error'; error?: string }
+type CompletionFeedback = { id: string; title: string; previousStatus: Action['status']; commandId?: string; localUndo?: ActionStatusUndo; outcome: 'done' | 'no_write' | 'error'; error?: string }
 type RouteState = {
   surface: Surface
   capture: boolean
@@ -419,6 +421,7 @@ export default function AppV8() {
     const before = actions.find((item) => item.id === id)
     if (!before) return
     let authoritativeCommandId: string | undefined
+    let localUndo: ActionStatusUndo | undefined
     try {
       if (before.kind === 'apply' && status === 'done' && intent !== 'application_submission') {
         throw new Error('请使用“我已投递”确认真实投递。Use I applied to confirm an application submission.')
@@ -441,7 +444,8 @@ export default function AppV8() {
         }
       } else {
         if (before.kind === 'apply' && status === 'done') throw new Error('确认投递需要已连接的账户；此操作未写入。')
-        await applyActionStatusChangeSet(id, status)
+        const applied = await applyActionStatusChangeSet(id, status)
+        localUndo = applied?.actionCompensations?.[0]
         if (cloud.session) await ensureAuthoritativePersistence(true, cloud.syncNow)
       }
       await reload()
@@ -451,6 +455,7 @@ export default function AppV8() {
           title: before.title,
           previousStatus: before.status,
           commandId: authoritativeCommandId,
+          localUndo,
           outcome: 'done',
         })
       } else if (lastCompletedAction?.id === id) setLastCompletedAction(null)
@@ -475,7 +480,8 @@ export default function AppV8() {
         const result = await undoConnectedBusinessCommand(cloud.session.user.id, item.commandId)
         if (result.outcome === 'CONFLICT') throw new Error(result.conflict?.message ?? 'Undo conflicted with a dependent authoritative update.')
       } else {
-        await applyActionStatusChangeSet(item.id, item.previousStatus)
+        if (!item.localUndo) throw new Error('Undo lacks exact completion evidence; no changes written.')
+        await undoActionStatusChange(item.localUndo)
         if (cloud.session) await ensureAuthoritativePersistence(true, cloud.syncNow)
       }
       await reload()
