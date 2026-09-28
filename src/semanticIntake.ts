@@ -550,7 +550,7 @@ function toDomainCommand(
   throw new Error(`Candidate ${candidate.kind} does not map to an internal domain command.`)
 }
 
-function affectedFromDomain(command: UserDomainCommand, opportunity?: Opportunity, occurrence?: ScheduleNode, snapshot?: PJSDASSnapshot): SemanticIntakeReceipt['affectedObjects'] {
+function affectedFromDomain(command: UserDomainCommand, opportunity?: Opportunity, occurrence?: ScheduleNode, snapshot?: PJSDASSnapshot, before?: PJSDASSnapshot): SemanticIntakeReceipt['affectedObjects'] {
   const affected: SemanticIntakeReceipt['affectedObjects'] = []
   if (opportunity) affected.push({ type: 'opportunity', id: opportunity.id })
   if (occurrence) affected.push({ type: 'schedule_node', id: occurrence.id })
@@ -561,6 +561,14 @@ function affectedFromDomain(command: UserDomainCommand, opportunity?: Opportunit
     if (reminder) affected.push({ type: 'reminder_intent', id: reminder.id })
   }
   if (command.kind === 'cancel_reminder_intent') affected.push({ type: 'reminder_intent', id: command.reminderIntentId })
+  if (snapshot && before) {
+    for (const action of snapshot.data.actions) {
+      if (!before.data.actions.some((item) => item.id === action.id)) affected.push({ type: 'action', id: action.id })
+    }
+    for (const node of snapshot.data.scheduleNodes ?? []) {
+      if (!(before.data.scheduleNodes ?? []).some((item) => item.id === node.id)) affected.push({ type: 'schedule_node', id: node.id })
+    }
+  }
   return affected
 }
 
@@ -846,7 +854,7 @@ function applyCandidate(
     snapshot: result.snapshot,
     compensation: result.compensation,
     summary: result.summary,
-    affected: affectedFromDomain(command, opportunity, occurrence, result.snapshot),
+    affected: affectedFromDomain(command, opportunity, occurrence, result.snapshot, snapshot),
   }
 }
 
@@ -858,6 +866,9 @@ function receipt(input: {
   affectedObjects: SemanticIntakeReceipt['affectedObjects']
   decisionRequestIds: string[]
   factKeys?: string[]
+  mutatedFactKeys?: string[]
+  factMutationObjects?: SemanticIntakeReceipt['factMutationObjects']
+  creationSequence?: number
   undoAvailable: boolean
   now: string
   commandId?: string
@@ -876,6 +887,9 @@ function receipt(input: {
     affectedObjects: input.affectedObjects,
     decisionRequestIds: input.decisionRequestIds,
     factKeys: input.factKeys?.length ? [...new Set(input.factKeys)] : undefined,
+    mutatedFactKeys: input.mutatedFactKeys?.length ? [...new Set(input.mutatedFactKeys)] : undefined,
+    factMutationObjects: input.factMutationObjects,
+    creationSequence: input.creationSequence,
     undoAvailable: input.undoAvailable,
     createdAt: input.now,
     updatedAt: input.now,
@@ -888,7 +902,20 @@ function appendReceipt(snapshot: PJSDASSnapshot, value: SemanticIntakeReceipt) {
 
 function compareReceiptCreationOrder(left: SemanticIntakeReceipt, right: SemanticIntakeReceipt) {
   const byCreatedAt = left.createdAt.localeCompare(right.createdAt)
-  return byCreatedAt || left.id.localeCompare(right.id)
+  return byCreatedAt || (left.creationSequence ?? 0) - (right.creationSequence ?? 0) || left.id.localeCompare(right.id)
+}
+
+function ownsIndependentFactMutation(
+  target: SemanticIntakeReceipt,
+  dependent: SemanticIntakeReceipt,
+  factKey: string,
+) {
+  if (!dependent.mutatedFactKeys?.includes(factKey)) return false
+  const affected = dependent.factMutationObjects?.[factKey]
+  if (!affected?.length) return false
+  const targetAffected = target.factMutationObjects?.[factKey] ?? target.affectedObjects
+  const targetIds = new Set(targetAffected.map((item) => `${item.type}:${item.id}`))
+  return affected.some((item) => !targetIds.has(`${item.type}:${item.id}`))
 }
 
 function appendDecision(snapshot: PJSDASSnapshot, observation: SemanticIntakeObservation, request: DecisionRequest, now: string) {
@@ -979,6 +1006,8 @@ export function applySemanticIntake(
   const affectedObjects: SemanticIntakeReceipt['affectedObjects'] = []
   const summaries: string[] = []
   const factKeys: string[] = []
+  const mutatedFactKeys: string[] = []
+  const factMutationObjects: NonNullable<SemanticIntakeReceipt['factMutationObjects']> = {}
 
   for (const candidate of observation.candidates) {
     const factKey = semanticCandidateFactKey(working, candidate)
@@ -1020,7 +1049,13 @@ export function applySemanticIntake(
     summaries.push(applied.summary)
     if (factKey) factKeys.push(factKey)
     affectedObjects.push(...applied.affected)
-    if (applied.status === 'applied' && applied.compensation) domainCompensations.push(applied.compensation)
+    if (applied.status === 'applied' && applied.compensation) {
+      domainCompensations.push(applied.compensation)
+      if (factKey) {
+        mutatedFactKeys.push(factKey)
+        factMutationObjects[factKey] = [...(factMutationObjects[factKey] ?? []), ...applied.affected]
+      }
+    }
   }
 
   const committed = domainCompensations.length > 0 || summaries.length > 0
@@ -1037,6 +1072,12 @@ export function applySemanticIntake(
     affectedObjects: [...new Map(affectedObjects.map((item) => [`${item.type}:${item.id}`, item])).values()],
     decisionRequestIds: decisions.map((item) => item.id),
     factKeys,
+    mutatedFactKeys,
+    factMutationObjects: Object.keys(factMutationObjects).length ? factMutationObjects : undefined,
+    creationSequence: Math.max(
+      (working.data.semanticReceipts ?? []).length,
+      ...(working.data.semanticReceipts ?? []).map((item) => item.creationSequence ?? 0),
+    ) + 1,
     undoAvailable: domainCompensations.length > 0 || decisions.length > 0,
     now: timestamp,
     commandId: `semantic-intake:${observation.inputId}`,
@@ -1294,7 +1335,9 @@ export function applySemanticCompensation(
           const existingInvalidations = dependent.factInvalidations ?? []
           const alreadyInvalidated = new Set(existingInvalidations.map((entry) => entry.factKey))
           const overlap = (dependent.factKeys ?? []).filter((key) =>
-            invalidatedFactKeys.has(key) && !alreadyInvalidated.has(key))
+            invalidatedFactKeys.has(key)
+            && !alreadyInvalidated.has(key)
+            && !ownsIndependentFactMutation(item, dependent, key))
           if (!overlap.length) continue
           dependent.factInvalidations = [
             ...existingInvalidations,

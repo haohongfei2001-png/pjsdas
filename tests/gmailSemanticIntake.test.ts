@@ -1137,6 +1137,67 @@ describe('UU06 shared Gmail intake', () => {
     validateSnapshot(secondRecovered.snapshot)
   })
 
+  it('uses persisted sequence when dependent receipts share one batch timestamp', () => {
+    const base = snapshot()
+    const factKey = 'opportunity_deadline|opp:jd|date|2026-09-25T00:00:00.000Z'
+    base.data.semanticReceipts = [
+      {
+        id: 'z-creator', inputId: 'same-time:creator', sourceKind: 'gmail', sourceId: 'gmail:primary',
+        sourceRecordId: 'same-time', sourceVersion: 'v1', status: 'committed', summary: 'Creator',
+        affectedObjects: [], decisionRequestIds: [], factKeys: [factKey], mutatedFactKeys: [factKey],
+        creationSequence: 1, undoAvailable: true,
+        createdAt: now.toISOString(), updatedAt: now.toISOString(),
+      },
+      {
+        id: 'a-dependent', inputId: 'same-time:follower', sourceKind: 'gmail', sourceId: 'gmail:primary',
+        sourceRecordId: 'same-time', sourceVersion: 'v2', status: 'committed', summary: 'No-op follower',
+        affectedObjects: [], decisionRequestIds: [], factKeys: [factKey], creationSequence: 2,
+        undoAvailable: false, createdAt: now.toISOString(), updatedAt: now.toISOString(),
+      },
+    ]
+    base.data.semanticReceipts.sort((left, right) => left.id.localeCompare(right.id))
+    const undone = applySemanticCompensation(base, {
+      operation: 'semantic_batch', payload: { domainCompensations: [], decisionRequestIds: [], receiptIds: ['z-creator'] },
+    }, new Date('2026-09-21T00:01:00Z'))
+    expect(undone.data.semanticReceipts?.find((item) => item.id === 'a-dependent')?.factInvalidations?.[0]?.factKey)
+      .toBe(factKey)
+    validateSnapshot(undone)
+  })
+
+  it('keeps an independently written same-key manual action valid after undoing the first', () => {
+    const observation = (version: string) => ({
+      contractVersion: 1 as const,
+      inputId: `gmail:independent-action:${version}`,
+      source: {
+        kind: 'gmail' as const, sourceId: 'gmail:primary', sourceRecordId: 'independent-action',
+        sourceVersion: version, observedAt: now.toISOString(), assertedAt: now.toISOString(), timezone: 'Asia/Shanghai',
+      },
+      statementMode: 'assertion' as const,
+      candidates: [{
+        id: 'same-action', kind: 'manual_action' as const, title: 'Review portfolio',
+        objectConfidence: 'high' as const, eventConfidence: 'high' as const,
+        evidenceRefs: ['independent-action'], sourceVersionRefs: [`independent-action:${version}`],
+      }],
+    })
+    const first = applySemanticIntake(snapshot(), observation('v1'), { authorized: true, now })
+    const secondObservation = observation('v2')
+    const second = applySemanticIntake(first.snapshot, secondObservation, {
+      authorized: true, now: new Date('2026-09-21T00:01:00Z'),
+    })
+    expect(second.snapshot.data.actions).toHaveLength(2)
+    expect(second.receipt?.mutatedFactKeys).toEqual(first.receipt?.factKeys)
+    const secondAction = structuredClone(second.snapshot.data.actions[1])
+    const undone = applySemanticCompensation(second.snapshot, first.compensation!, new Date('2026-09-21T00:02:00Z'))
+    expect(undone.data.actions).toEqual([secondAction])
+    expect(undone.data.semanticReceipts?.find((item) => item.id === second.receipt!.id)?.factInvalidations).toBeUndefined()
+    const replay = applySemanticIntake(undone, secondObservation, {
+      authorized: true, now: new Date('2026-09-21T00:03:00Z'),
+    })
+    expect(replay.status).toBe('ALREADY_APPLIED')
+    expect(replay.snapshot.data.actions).toEqual([secondAction])
+    validateSnapshot(replay.snapshot)
+  })
+
   it('replay and a new message for the same thread occurrence do not duplicate events', () => {
     const first = run(snapshot(), invitation)
     const replay = run(first.snapshot, invitation)

@@ -336,6 +336,12 @@ export interface SemanticIntakeReceipt {
   affectedObjects: Array<{ type: 'opportunity' | 'schedule_node' | 'action' | 'process' | 'decision_request' | 'reminder_intent'; id: string }>
   decisionRequestIds: string[]
   factKeys?: string[]
+  /** Facts for which this receipt owns a compensatable domain mutation. */
+  mutatedFactKeys?: string[]
+  /** Domain objects changed by each fact, for dependency versus independent-write checks. */
+  factMutationObjects?: Record<string, SemanticIntakeReceipt['affectedObjects']>
+  /** Monotonic local order, including receipts created in the same batch instant. */
+  creationSequence?: number
   /** Fact-level evidence invalidated by undoing an earlier same-source dependency. */
   factInvalidations?: Array<{
     factKey: string

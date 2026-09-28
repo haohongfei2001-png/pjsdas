@@ -452,6 +452,25 @@ export function validateSnapshot(value: unknown): asserts value is PJSDASSnapsho
       inputIds.add(receipt.inputId)
       assertIsoDate(receipt.createdAt, `SemanticReceipt ${receipt.id} createdAt`)
       assertIsoDate(receipt.updatedAt, `SemanticReceipt ${receipt.id} updatedAt`)
+      if (receipt.creationSequence !== undefined
+        && (!Number.isSafeInteger(receipt.creationSequence) || receipt.creationSequence < 1)) {
+        throw new Error(`备份损坏：SemanticReceipt ${receipt.id} creation sequence 无效。`)
+      }
+      if (receipt.mutatedFactKeys !== undefined
+        && (!Array.isArray(receipt.mutatedFactKeys)
+          || new Set(receipt.mutatedFactKeys).size !== receipt.mutatedFactKeys.length
+          || receipt.mutatedFactKeys.some((key) => typeof key !== 'string' || !receipt.factKeys?.includes(key)))) {
+        throw new Error(`备份损坏：SemanticReceipt ${receipt.id} mutated fact keys 无效。`)
+      }
+      if (receipt.factMutationObjects !== undefined
+        && (typeof receipt.factMutationObjects !== 'object'
+          || Array.isArray(receipt.factMutationObjects)
+          || Object.entries(receipt.factMutationObjects).some(([key, affected]) =>
+            !receipt.mutatedFactKeys?.includes(key)
+            || !Array.isArray(affected)
+            || affected.some((object) => !object || typeof object.id !== 'string' || typeof object.type !== 'string')))) {
+        throw new Error(`备份损坏：SemanticReceipt ${receipt.id} fact mutation objects 无效。`)
+      }
       if (receipt.factInvalidations !== undefined) {
         if (!Array.isArray(receipt.factInvalidations)) {
           throw new Error(`备份损坏：SemanticReceipt ${receipt.id} fact invalidations 无效。`)
