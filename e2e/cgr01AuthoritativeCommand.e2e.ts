@@ -213,8 +213,8 @@ test('lost response after server commit survives reload and recovers one durable
   await expect(page.getByRole('heading', { name: 'A第一任务' })).toHaveCount(0)
   expect(commandCalls).toBe(1)
   expect(receiptCalls).toBeGreaterThanOrEqual(2)
-  const pending = await page.evaluate(() => window.localStorage.getItem('pjsdas-cgr01-pending:account-a'))
-  expect(pending).toBeNull()
+  // UI absence can precede receipt projection and durable pending-record removal.
+  await expect.poll(() => page.evaluate(() => window.localStorage.getItem('pjsdas-cgr01-pending:account-a'))).toBeNull()
 })
 
 test('connected Web recovers a lost command response and Undo preserves unrelated later state', async ({ page }) => {

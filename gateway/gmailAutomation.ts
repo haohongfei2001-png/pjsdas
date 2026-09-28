@@ -926,6 +926,17 @@ function conditionalFutureInterviewReference(value: string) {
   return /(?:如|如果|若|未按时|未完成).{0,48}(?:无法|不能|才能|方可|进入).{0,24}(?:后续|下一轮)?.{0,10}(?:面试|ai面|业务面|hr面)/i.test(value)
 }
 
+/** Drop only complete, known procedural constructions; all mixed/unknown text survives. */
+function recruitingInstructionOnly(value: string) {
+  const text = value.trim().replace(/\s+/g, '')
+  // These closed grammars cannot swallow a second assertion, date, invitation,
+  // cancellation or explanatory suffix. Equipment keywords alone prove nothing.
+  return /^(?:面试|笔试|测评)(?:前|时|中|过程中|期间)(?:请|务必|建议)?(?:提前)?(?:检查|检测|测试|确认|开启|保持|确保)(?:(?:摄像头|麦克风|设备|网络|浏览器)(?:和|及|、)?)+(?:正常|正常运行|畅通|稳定|可用)?$/.test(text)
+    || /^(?:面试|笔试|测评)(?:时|中|过程中|期间)(?:请勿|勿|不要|避免)(?:切换页面|切换浏览器页面|切换窗口|切换标签页)$/.test(text)
+    || /^如遇(?:面试|笔试|测评)(?:设备|网络|浏览器)(?:问题|故障)请联系(?:技术客服|客服|技术支持)$/.test(text)
+    || /^请于[0-9年月日/:：+T.Z-]+完成(?:面试|笔试|测评)(?:设备检查|设备检测|网络测试)$/.test(text)
+}
+
 function candidateHasOpportunityIdentity(candidate: SemanticCandidate) {
   const target = candidate.target
   return Boolean(target?.opportunityId || target?.company?.trim() || target?.role?.trim())
@@ -1049,26 +1060,28 @@ export function gmailSemanticRecordFromMessage(
     interpretationGaps.push(`Message exceeds the bounded ${GMAIL_FRAGMENT_PARSE_LIMIT}-fragment interpretation limit.`)
   }
   const parsedAt = new Date(legacy.receivedAt)
-  const whole = parseRecruitingNotification([subject, text].join('\n'), opportunities, parsedAt)
+  const assertionText = boundedPieces.filter(piece => !recruitingInstructionOnly(piece)).join('；')
+  const whole = parseRecruitingNotification([subject, assertionText].join('\n'), opportunities, parsedAt)
+  const subjectParsed = parseRecruitingNotification(subject, opportunities, parsedAt)
   const subjectType = /interview invitation/i.test(subject) ? 'interview_invite'
     : /(?:assessment|test) invitation/i.test(subject) ? 'assessment_invite'
-    : whole.type && whole.type !== 'other' && whole.confidence.type === 'high' ? whole.type : undefined
+    : !recruitingInstructionOnly(subject) && subjectParsed.type && subjectParsed.type !== 'other' && subjectParsed.confidence.type === 'high' ? subjectParsed.type : undefined
   const parsedPieces = boundedPieces.map((piece) => ({
-    piece,
+    piece, instructionOnly: recruitingInstructionOnly(piece),
     parsed: parseRecruitingNotification(piece, opportunities, parsedAt),
   }))
-  const bodyHasEvent = parsedPieces.some(({ parsed }) =>
-    parsed.type && parsed.type !== 'other' && parsed.confidence.type !== 'low')
+  const bodyHasEvent = parsedPieces.some(({ parsed, instructionOnly }) =>
+    !instructionOnly && parsed.type && parsed.type !== 'other' && parsed.confidence.type !== 'low')
   const pieces = !bodyHasEvent && subjectType
-    ? [{ piece: text, parsed: whole }]
+    ? [{ piece: assertionText, parsed: whole, instructionOnly: false }]
     : parsedPieces
-  const timedContextTypes = [...new Set(pieces.map(({ parsed }) => parsed.type)
+  const timedContextTypes = [...new Set(pieces.filter(item => !item.instructionOnly).map(({ parsed }) => parsed.type)
     .filter((type) => type && requiresTiming(type)))]
   const deadlineContextType = timedContextTypes.length === 1 ? timedContextTypes[0] : undefined
   const candidates: SemanticCandidate[] = []
   for (const [index, item] of pieces.entries()) {
     const { piece, parsed } = item
-    if (conditionalCompletionDisclaimer(piece)) continue
+    if (item.instructionOnly || conditionalCompletionDisclaimer(piece)) continue
     const selected = parsed.opportunity ?? whole.opportunity
     const submissionDeadline = /(?:提交|交卷|submission|submit).{0,12}(?:截止|最晚|deadline|by)|(?:截止|deadline).{0,12}(?:提交|交卷|submission|submit)/i.test(piece)
     const eventType = submissionDeadline && deadlineContextType ? deadlineContextType
