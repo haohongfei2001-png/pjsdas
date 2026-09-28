@@ -164,3 +164,29 @@ test('root boundary contains selector/render exception and retry remounts withou
   await expect(host).toContainText('Recovered render')
   expect((await readStore(page, 'actions')).find((row) => row.id === task.id)).toEqual(task)
 })
+
+
+test('readonly startup export retains reminder/outbox and stable cache projection without backfill writes', async ({ page }) => {
+  await page.goto('/')
+  await expect(page.locator('.tsui-primary-nav')).toBeVisible()
+  const node = historicalNodes(task.id)[0]
+  const intent = { id: 'retained-reminder', scheduleNodeId: node.id, scheduleNodeVersion: 1, purpose: 'custom',
+    triggerAt: OLD, deliveryOwner: 'external_task', channel: 'task', capability: 'chatgpt_tasks', state: 'unsupported',
+    dedupeKey: node.id + '@1|custom', createdAt: OLD, updatedAt: OLD }
+  const outbox = { id: 'retained-outbox', reminderIntentId: intent.id, operation: 'upsert', capability: 'chatgpt_tasks',
+    state: 'unsupported', attemptCount: 0, payloadFingerprint: 'retained-fingerprint', createdAt: OLD, updatedAt: OLD }
+  const done = { ...task, status: 'done', updatedAt: OLD }
+  const actualCompletion = { id: 'real-completion', kind: 'action_status_changed', category: 'action', source: 'user_action',
+    occurredAt: OLD, recordedAt: OLD, title: 'Completed task', actionId: task.id, changes: { status: { before: 'todo', after: 'done' } } }
+  await putRows(page, { opportunities: [job], actions: [done], scheduleNodes: [node], timeline: [actualCompletion], reminderIntents: [intent], reminderOutbox: [outbox] })
+  const before = Object.fromEntries(await Promise.all(['actions', 'scheduleNodes', 'timeline', 'reminderIntents', 'reminderOutbox'].map(async (store) => [store, await readStore(page, store)])))
+  const exportData = () => page.evaluate(async () => (await (await import('/pjsdas/src/db.ts')).exportLocalSnapshot()).data)
+  const first = await exportData()
+  await page.clock.setFixedTime(new Date('2026-09-30T12:00:00.000Z'))
+  const second = await exportData()
+  expect(second).toEqual(first)
+  expect(first.reminderIntents).toEqual([intent])
+  expect(first.reminderOutbox).toEqual([outbox])
+  expect(first.timeline!.filter((row) => row.actionId === task.id && row.kind === 'action_status_changed')).toEqual([actualCompletion])
+  for (const [store, rows] of Object.entries(before)) expect(await readStore(page, store)).toEqual(rows)
+})

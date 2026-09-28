@@ -27,7 +27,7 @@ times; that observation is not evidence of a newly performed completion.
 
 - Unit: 204 files / 982 tests pass.
 - Type and production build pass.
-- New Chromium regressions: 5 pass, including ordinary/apply, terminal/elapsed/legacy
+- New Chromium regressions: 6 pass, including ordinary/apply, terminal/elapsed/legacy
   nodes, one action with multiple nodes, durable restart, Today/Schedule/job detail
   reload, initial and reload errors, raw backup and root render recovery.
 - Firefox/WebKit Matrix now includes these regressions.
@@ -52,3 +52,9 @@ Export/startup now reads a single readonly transaction, with timeline and schedu
 normalization applied only to the returned copy. Recovery regressions assert raw
 actions, legacy processes, schedule nodes and malformed timeline rows are identical
 before failure, in the downloaded archive and after failure.
+
+Codex also identified synthesized backfill timestamps changing fingerprints between
+readonly exports. The projection now uses a deterministic stored-fact timestamp,
+and does not duplicate a real completion audit row. A real browser regression
+compares exports across two wall clocks, raw stores, and reminder/outbox data.
+The pre-existing reminder source contract asserts the new readonly transaction reads.

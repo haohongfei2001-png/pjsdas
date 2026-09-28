@@ -959,8 +959,16 @@ export async function exportLocalSnapshot() {
   await tx.done
   if (!timeline.some((record) => record.id === TIMELINE_BACKFILL_MARKER_ID)) {
     const existingIds = new Set(timeline.map((record) => record.id))
-    timeline.push(...buildTimelineBackfill({ processEvents, actions, lastImport: meta, decisionRules })
-      .filter((record) => !existingIds.has(record.id)))
+    // A read projection must be deterministic; a new wall-clock marker would
+    // otherwise look like a local edit on every account-cache fingerprint.
+    const storedTimes = [...actions.map((item) => item.updatedAt), ...processEvents.map((item) => item.updatedAt),
+      ...timeline.map((item) => item.recordedAt), decisionRules?.updatedAt]
+      .map((value) => value ? new Date(value).getTime() : NaN).filter(Number.isFinite)
+    const projectionTime = new Date(storedTimes.reduce((latest, time) => Math.max(latest, time), 0)).toISOString()
+    timeline.push(...buildTimelineBackfill({ processEvents, actions, lastImport: meta, decisionRules, now: projectionTime })
+      .filter((record) => !existingIds.has(record.id) && !timeline.some((existing) =>
+        existing.kind === record.kind && existing.actionId === record.actionId && Boolean(record.actionId)
+        && existing.occurredAt === record.occurredAt && existing.changes?.status?.after === record.changes?.status?.after)))
   }
 
   return createSnapshot({
