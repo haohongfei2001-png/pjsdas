@@ -217,11 +217,72 @@ function validateIngestionRun(run: IngestionRunSummary, timelineId: string) {
   }
 }
 
+function backfillSemanticReceiptOrder(data: SnapshotData) {
+  const receipts = data.semanticReceipts ?? []
+  if (!receipts.some((item) => item.creationSequence === undefined)) return
+
+  const receivedAtBySource = new Map<string, string>()
+  for (const record of data.timeline ?? []) {
+    const ingestion = record.ingestion
+    if (!ingestion) continue
+    const key = `${ingestion.sourceKind}|${ingestion.sourceId}|${ingestion.sourceRecordId}`
+    const previous = receivedAtBySource.get(key)
+    if (!previous || ingestion.receivedAt < previous) receivedAtBySource.set(key, ingestion.receivedAt)
+  }
+  const receivedAt = (item: SemanticIntakeReceipt) => receivedAtBySource.get(
+    `${item.sourceKind}|${item.sourceId}|${item.sourceRecordId}`)
+  const hadSequence = new Set(receipts.filter((item) => item.creationSequence !== undefined).map((item) => item.id))
+  const sourceIdentity = (item: SemanticIntakeReceipt) => [
+    item.sourceKind, item.sourceId, item.sourceRecordId, item.sourceVersion ?? '', item.inputId,
+  ].join('|')
+
+  const missing = receipts.filter((item) => item.creationSequence === undefined).sort((left, right) => {
+    const byCreatedAt = left.createdAt.localeCompare(right.createdAt)
+    if (byCreatedAt) return byCreatedAt
+    const leftReceived = receivedAt(left)
+    const rightReceived = receivedAt(right)
+    if (leftReceived && rightReceived && leftReceived !== rightReceived) {
+      return leftReceived.localeCompare(rightReceived)
+    }
+    return sourceIdentity(left).localeCompare(sourceIdentity(right))
+  })
+
+  let nextSequence = Math.max(0, ...receipts.map((item) => item.creationSequence ?? 0))
+  for (const item of missing) {
+    item.creationSequence = ++nextSequence
+  }
+  for (let index = 0; index < receipts.length; index += 1) {
+    const left = receipts[index]!
+    for (const right of receipts.slice(index + 1)) {
+      const leftHadSequence = hadSequence.has(left.id)
+      const rightHadSequence = hadSequence.has(right.id)
+      if (leftHadSequence && rightHadSequence) continue
+      if (leftHadSequence !== rightHadSequence) {
+        const unsequenced = leftHadSequence ? right : left
+        const sequenced = leftHadSequence ? left : right
+        if (unsequenced.createdAt > sequenced.createdAt) continue
+        if (!(left.factKeys ?? []).some((key) => right.factKeys?.includes(key))) continue
+        left.causalOrderAmbiguous = true
+        right.causalOrderAmbiguous = true
+        continue
+      }
+      if (right.createdAt !== left.createdAt) continue
+      const leftReceived = receivedAt(left)
+      const rightReceived = receivedAt(right)
+      if (leftReceived && rightReceived && leftReceived !== rightReceived) continue
+      if (!(left.factKeys ?? []).some((key) => right.factKeys?.includes(key))) continue
+      left.causalOrderAmbiguous = true
+      right.causalOrderAmbiguous = true
+    }
+  }
+}
+
 export function createSnapshot(data: SnapshotData, exportedAt = new Date().toISOString()): PJSDASSnapshot {
   const normalized = structuredClone(data)
   ensureScheduleContractInPlace(normalized)
   normalized.decisionRequests ??= []
   normalized.semanticReceipts ??= []
+  backfillSemanticReceiptOrder(normalized)
   normalized.reminderIntents ??= []
   normalized.reminderOutbox ??= []
   const snapshot: PJSDASSnapshot = {
@@ -239,6 +300,7 @@ export function upgradeSnapshotToLatest(snapshot: PJSDASSnapshot): PJSDASSnapsho
   ensureScheduleContractInPlace(next.data)
   next.data.decisionRequests ??= []
   next.data.semanticReceipts ??= []
+  backfillSemanticReceiptOrder(next.data)
   next.data.reminderIntents ??= []
   next.data.reminderOutbox ??= []
   next.version = SNAPSHOT_VERSION
@@ -452,6 +514,56 @@ export function validateSnapshot(value: unknown): asserts value is PJSDASSnapsho
       inputIds.add(receipt.inputId)
       assertIsoDate(receipt.createdAt, `SemanticReceipt ${receipt.id} createdAt`)
       assertIsoDate(receipt.updatedAt, `SemanticReceipt ${receipt.id} updatedAt`)
+      if (receipt.creationSequence !== undefined
+        && (!Number.isSafeInteger(receipt.creationSequence) || receipt.creationSequence < 1)) {
+        throw new Error(`备份损坏：SemanticReceipt ${receipt.id} creation sequence 无效。`)
+      }
+      if (receipt.causalOrderAmbiguous !== undefined && receipt.causalOrderAmbiguous !== true) {
+        throw new Error(`备份损坏：SemanticReceipt ${receipt.id} causal order marker 无效。`)
+      }
+      if (receipt.undoneAfterSequence !== undefined
+        && (!Number.isSafeInteger(receipt.undoneAfterSequence) || receipt.undoneAfterSequence < 0)) {
+        throw new Error(`备份损坏：SemanticReceipt ${receipt.id} undo sequence 无效。`)
+      }
+      if (receipt.mutatedFactKeys !== undefined
+        && (!Array.isArray(receipt.mutatedFactKeys)
+          || new Set(receipt.mutatedFactKeys).size !== receipt.mutatedFactKeys.length
+          || receipt.mutatedFactKeys.some((key) => typeof key !== 'string' || !receipt.factKeys?.includes(key)))) {
+        throw new Error(`备份损坏：SemanticReceipt ${receipt.id} mutated fact keys 无效。`)
+      }
+      if (receipt.factMutationObjects !== undefined
+        && (typeof receipt.factMutationObjects !== 'object'
+          || Array.isArray(receipt.factMutationObjects)
+          || Object.entries(receipt.factMutationObjects).some(([key, affected]) =>
+            !receipt.mutatedFactKeys?.includes(key)
+            || !Array.isArray(affected)
+            || affected.some((object) => !object || typeof object.id !== 'string' || typeof object.type !== 'string')))) {
+        throw new Error(`备份损坏：SemanticReceipt ${receipt.id} fact mutation objects 无效。`)
+      }
+      if (receipt.factInvalidations !== undefined) {
+        if (!Array.isArray(receipt.factInvalidations)) {
+          throw new Error(`备份损坏：SemanticReceipt ${receipt.id} fact invalidations 无效。`)
+        }
+        const invalidatedKeys = new Set<string>()
+        for (const invalidation of receipt.factInvalidations) {
+          if (!isObject(invalidation)
+            || typeof invalidation.factKey !== 'string'
+            || !invalidation.factKey.trim()
+            || !receipt.factKeys?.includes(invalidation.factKey)
+            || typeof invalidation.invalidatedByReceiptId !== 'string'
+            || !invalidation.invalidatedByReceiptId.trim()
+            || invalidation.invalidatedByReceiptId === receipt.id
+            || invalidatedKeys.has(invalidation.factKey)) {
+            throw new Error(`备份损坏：SemanticReceipt ${receipt.id} fact invalidation 无效。`)
+          }
+          invalidatedKeys.add(invalidation.factKey)
+          assertIsoDate(invalidation.invalidatedAt, `SemanticReceipt ${receipt.id} fact invalidatedAt`)
+          if (invalidation.invalidatedAfterSequence !== undefined
+            && (!Number.isSafeInteger(invalidation.invalidatedAfterSequence) || invalidation.invalidatedAfterSequence < 0)) {
+            throw new Error(`备份损坏：SemanticReceipt ${receipt.id} fact invalidation sequence 无效。`)
+          }
+        }
+      }
     }
   }
 

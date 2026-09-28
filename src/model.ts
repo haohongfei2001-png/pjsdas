@@ -333,9 +333,27 @@ export interface SemanticIntakeReceipt {
   commandId?: string
   status: SemanticReceiptStatus
   summary: string
-  affectedObjects: Array<{ type: 'opportunity' | 'schedule_node' | 'action' | 'process' | 'decision_request' | 'reminder_intent'; id: string }>
+  affectedObjects: Array<{ type: 'opportunity' | 'schedule_node' | 'action' | 'process' | 'process_event' | 'decision_request' | 'reminder_intent'; id: string }>
   decisionRequestIds: string[]
   factKeys?: string[]
+  /** Facts for which this receipt owns a compensatable domain mutation. */
+  mutatedFactKeys?: string[]
+  /** Domain objects changed by each fact, for dependency versus independent-write checks. */
+  factMutationObjects?: Record<string, SemanticIntakeReceipt['affectedObjects']>
+  /** Monotonic local order, including receipts created in the same batch instant. */
+  creationSequence?: number
+  /** Legacy equal-time overlap whose causal order cannot be proven from durable evidence. */
+  causalOrderAmbiguous?: true
+  /** Highest receipt sequence present when this receipt was undone. */
+  undoneAfterSequence?: number
+  /** Fact-level evidence invalidated by undoing an earlier same-source dependency. */
+  factInvalidations?: Array<{
+    factKey: string
+    invalidatedByReceiptId: string
+    invalidatedAt: string
+    /** Highest receipt sequence present when this fact was invalidated. */
+    invalidatedAfterSequence?: number
+  }>
   undoAvailable: boolean
   createdAt: string
   updatedAt: string

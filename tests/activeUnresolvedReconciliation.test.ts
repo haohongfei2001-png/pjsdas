@@ -494,6 +494,85 @@ describe('R02 active unresolved reconciliation', () => {
     expect(summarizeCoverage(result.snapshot.data.timeline, { now: NOW }).activeUnresolvedCount).toBe(1)
   })
 
+  it('does not resolve debt from a committed semantic receipt whose evidence was invalidated', () => {
+    const record = unresolved({
+      sourceRecordId: 'invalidated-semantic-receipt',
+      receivedAt: '2026-09-20T00:00:00.000Z',
+    })
+    const base = snapshot({
+      timeline: [record, zeroRun()],
+      semanticReceipts: [{
+        id: 'semantic-receipt:invalidated-dependent',
+        inputId: 'gmail:invalidated-semantic-receipt:v2',
+        sourceKind: 'gmail',
+        sourceId: SOURCE_ID,
+        sourceRecordId: 'invalidated-semantic-receipt',
+        sourceVersion: 'v2',
+        status: 'committed',
+        summary: 'Previously committed from dependent evidence.',
+        affectedObjects: [],
+        decisionRequestIds: [],
+        factKeys: ['application_submitted|opp:example'],
+        factInvalidations: [{
+          factKey: 'application_submitted|opp:example',
+          invalidatedByReceiptId: 'semantic-receipt:invalidated-source',
+          invalidatedAt: '2026-09-26T11:00:00.000Z',
+        }],
+        undoAvailable: false,
+        createdAt: '2026-09-26T10:00:00.000Z',
+        updatedAt: '2026-09-26T11:00:00.000Z',
+      }],
+    })
+
+    const result = reconcileIngestionDebt(base, NOW)
+    expect(result.appended[0]?.ingestionResolution).toMatchObject({
+      outcome: 'active_unresolved',
+      reason: 'unlinked_unresolved',
+      sourceRecordId: 'invalidated-semantic-receipt',
+    })
+  })
+
+  it('does not settle a source when its latest recovery receipt covers only one of two invalidated facts', () => {
+    const record = unresolved({ sourceRecordId: 'partial-semantic-recovery', receivedAt: '2026-09-20T00:00:00.000Z' })
+    const factA = 'manual_action|first|'
+    const factB = 'manual_action|second|'
+    const base = snapshot({
+      timeline: [record, zeroRun()],
+      semanticReceipts: [
+        {
+          id: 'receipt:partial-original', inputId: 'partial-original', sourceKind: 'gmail', sourceId: SOURCE_ID,
+          sourceRecordId: 'partial-semantic-recovery', sourceVersion: 'v1', status: 'committed', summary: 'Original',
+          affectedObjects: [], decisionRequestIds: [], factKeys: [factA, factB],
+          factInvalidations: [
+            { factKey: factA, invalidatedByReceiptId: 'receipt:undo-a', invalidatedAt: '2026-09-26T10:00:00.000Z' },
+            { factKey: factB, invalidatedByReceiptId: 'receipt:undo-b', invalidatedAt: '2026-09-26T10:01:00.000Z' },
+          ],
+          undoAvailable: false, createdAt: '2026-09-26T09:00:00.000Z', updatedAt: '2026-09-26T10:01:00.000Z',
+        },
+        {
+          id: 'receipt:partial-recovery-a', inputId: 'partial-recovery-a', sourceKind: 'gmail', sourceId: SOURCE_ID,
+          sourceRecordId: 'partial-semantic-recovery', sourceVersion: 'v1', status: 'committed', summary: 'Recovered A',
+          affectedObjects: [], decisionRequestIds: [], factKeys: [factA], undoAvailable: true,
+          createdAt: '2026-09-26T10:02:00.000Z', updatedAt: '2026-09-26T10:02:00.000Z',
+        },
+      ],
+    })
+    const partial = reconcileIngestionDebt(base, NOW)
+    expect(partial.appended[0]?.ingestionResolution).toMatchObject({
+      outcome: 'active_unresolved', reason: 'unlinked_unresolved',
+    })
+    const complete = structuredClone(base)
+    complete.data.semanticReceipts?.push({
+      id: 'receipt:partial-recovery-b', inputId: 'partial-recovery-b', sourceKind: 'gmail', sourceId: SOURCE_ID,
+      sourceRecordId: 'partial-semantic-recovery', sourceVersion: 'v1', status: 'committed', summary: 'Recovered B',
+      affectedObjects: [], decisionRequestIds: [], factKeys: [factB], undoAvailable: true,
+      createdAt: '2026-09-26T10:03:00.000Z', updatedAt: '2026-09-26T10:03:00.000Z',
+    })
+    expect(reconcileIngestionDebt(complete, NOW).appended[0]?.ingestionResolution).toMatchObject({
+      outcome: 'resolved', reason: 'semantic_receipt_committed',
+    })
+  })
+
   it.each([false, true])('keeps same-company multi-role ambiguity active even if candidates are terminal: %s', (terminal) => {
     const record = unresolved({
       sourceRecordId: 'same-company-ambiguous',

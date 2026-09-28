@@ -7,6 +7,7 @@ import type {
   TimelineRecord,
 } from './model.js'
 import { validateSnapshot, type PJSDASSnapshot } from './snapshot.js'
+import { pendingSemanticSourceFactKeys } from './semanticIntake.js'
 
 function stableHash(value: string) {
   let hash = 2166136261
@@ -132,12 +133,15 @@ function semanticReceiptResolution(
 ): { outcome: IngestionResolutionOutcome; reason: IngestionResolutionReason; evidenceRefs: string[] } | undefined {
   const activeDecision = sourceBoundActiveDecisionResolution(snapshot, ingestion)
   if (activeDecision) return activeDecision
+  if (pendingSemanticSourceFactKeys(snapshot, ingestion).size) return undefined
 
   const sourceReceipts = (snapshot.data.semanticReceipts ?? [])
     .filter((item) =>
       item.sourceKind === ingestion.sourceKind
       && item.sourceId === ingestion.sourceId
-      && item.sourceRecordId === ingestion.sourceRecordId)
+      && item.sourceRecordId === ingestion.sourceRecordId
+      && item.status !== 'undone'
+      && !(item.factInvalidations?.length))
 
   const receipts = sourceReceipts
     .filter((item) => item.updatedAt >= ingestion.accountedAt)

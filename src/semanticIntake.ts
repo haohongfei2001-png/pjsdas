@@ -118,15 +118,66 @@ function sourceRecordIdentity(observation: SemanticIntakeObservation) {
   ].join('|')
 }
 
-function existingReceipt(snapshot: PJSDASSnapshot, observation: SemanticIntakeObservation) {
-  return (snapshot.data.semanticReceipts ?? []).find((item) =>
-    item.inputId === observation.inputId
+function receiptMatchesObservation(item: SemanticIntakeReceipt, observation: SemanticIntakeObservation) {
+  return item.inputId === observation.inputId
     || (
       item.sourceKind === observation.source.kind
       && item.sourceId === observation.source.sourceId
       && item.sourceRecordId === observation.source.sourceRecordId
       && (item.sourceVersion ?? '') === (observation.source.sourceVersion ?? '')
-    ),
+    )
+}
+
+function receiptInvalidatedFactKeys(receipt: SemanticIntakeReceipt) {
+  return new Set((receipt.factInvalidations ?? []).map((item) => item.factKey))
+}
+
+function pendingFactKeys(matching: SemanticIntakeReceipt[]) {
+  const pending = new Set<string>()
+  const restoredAfter = (factKey: string, at: string, afterSequence: number | undefined, invalidatedBy: SemanticIntakeReceipt) => matching.some((receipt) =>
+    receipt.status === 'committed'
+    && (afterSequence !== undefined && receipt.creationSequence !== undefined
+      ? !receipt.causalOrderAmbiguous && !invalidatedBy.causalOrderAmbiguous
+        && receipt.creationSequence > afterSequence
+      : receipt.createdAt > at
+        || (receipt.createdAt === at
+          && !receipt.causalOrderAmbiguous
+          && !invalidatedBy.causalOrderAmbiguous
+          && (receipt.creationSequence ?? 0) > (invalidatedBy.creationSequence ?? 0)))
+    && receipt.factKeys?.includes(factKey)
+    && !receiptInvalidatedFactKeys(receipt).has(factKey))
+  for (const item of matching) {
+    for (const invalidation of item.factInvalidations ?? []) {
+      if (!restoredAfter(invalidation.factKey, invalidation.invalidatedAt, invalidation.invalidatedAfterSequence, item)) pending.add(invalidation.factKey)
+    }
+    if (item.status === 'undone') for (const factKey of item.mutatedFactKeys ?? item.factKeys ?? []) {
+      if (!restoredAfter(factKey, item.updatedAt, item.undoneAfterSequence, item)) pending.add(factKey)
+    }
+  }
+  return pending
+}
+
+function pendingRecoveryFactKeys(snapshot: PJSDASSnapshot, observation: SemanticIntakeObservation) {
+  return pendingFactKeys((snapshot.data.semanticReceipts ?? []).filter((item) =>
+    receiptMatchesObservation(item, observation)))
+}
+
+export function pendingSemanticSourceFactKeys(
+  snapshot: PJSDASSnapshot,
+  source: { sourceKind: string; sourceId: string; sourceRecordId: string },
+) {
+  return pendingFactKeys((snapshot.data.semanticReceipts ?? []).filter((item) =>
+    item.sourceKind === source.sourceKind
+    && item.sourceId === source.sourceId
+    && item.sourceRecordId === source.sourceRecordId))
+}
+
+function existingReceipt(snapshot: PJSDASSnapshot, observation: SemanticIntakeObservation) {
+  if (pendingRecoveryFactKeys(snapshot, observation).size) return undefined
+  return (snapshot.data.semanticReceipts ?? []).find((item) =>
+    item.status !== 'undone'
+    && !(item.factInvalidations?.length)
+    && receiptMatchesObservation(item, observation),
   )
 }
 
@@ -197,7 +248,9 @@ export function semanticCandidateFactKey(snapshot: PJSDASSnapshot, candidate: Se
 function existingFactReceipt(snapshot: PJSDASSnapshot, factKey: string | undefined) {
   if (!factKey) return undefined
   return (snapshot.data.semanticReceipts ?? []).find((item) =>
-    item.status === 'committed' && item.factKeys?.includes(factKey),
+    item.status === 'committed'
+    && item.factKeys?.includes(factKey)
+    && !receiptInvalidatedFactKeys(item).has(factKey),
   )
 }
 
@@ -436,8 +489,9 @@ function toDomainCommand(
   occurrence?: ScheduleNode,
   reminderIntent?: ReminderIntent,
   externalCapabilities: Partial<Record<ExternalCapabilityId, ExternalCapabilityState>> = {},
+  commandInputId = observation.inputId,
 ): UserDomainCommand {
-  const commandId = `semantic:${observation.inputId}:${candidate.id}`
+  const commandId = `semantic:${commandInputId}:${candidate.id}`
   if (candidate.kind === 'application_submitted') {
     return {
       commandId,
@@ -516,7 +570,7 @@ function toDomainCommand(
   throw new Error(`Candidate ${candidate.kind} does not map to an internal domain command.`)
 }
 
-function affectedFromDomain(command: UserDomainCommand, opportunity?: Opportunity, occurrence?: ScheduleNode, snapshot?: PJSDASSnapshot): SemanticIntakeReceipt['affectedObjects'] {
+function affectedFromDomain(command: UserDomainCommand, opportunity?: Opportunity, occurrence?: ScheduleNode, snapshot?: PJSDASSnapshot, before?: PJSDASSnapshot): SemanticIntakeReceipt['affectedObjects'] {
   const affected: SemanticIntakeReceipt['affectedObjects'] = []
   if (opportunity) affected.push({ type: 'opportunity', id: opportunity.id })
   if (occurrence) affected.push({ type: 'schedule_node', id: occurrence.id })
@@ -527,6 +581,17 @@ function affectedFromDomain(command: UserDomainCommand, opportunity?: Opportunit
     if (reminder) affected.push({ type: 'reminder_intent', id: reminder.id })
   }
   if (command.kind === 'cancel_reminder_intent') affected.push({ type: 'reminder_intent', id: command.reminderIntentId })
+  if (snapshot && before) {
+    for (const action of snapshot.data.actions) {
+      if (!before.data.actions.some((item) => item.id === action.id)) affected.push({ type: 'action', id: action.id })
+    }
+    for (const node of snapshot.data.scheduleNodes ?? []) {
+      if (!(before.data.scheduleNodes ?? []).some((item) => item.id === node.id)) affected.push({ type: 'schedule_node', id: node.id })
+    }
+    for (const event of snapshot.data.processEvents) {
+      if (!before.data.processEvents.some((item) => item.id === event.id)) affected.push({ type: 'process_event', id: event.id })
+    }
+  }
   return affected
 }
 
@@ -551,6 +616,7 @@ function applyCandidate(
   now: Date,
   resolution?: SemanticResolutionTarget,
   externalCapabilities: Partial<Record<ExternalCapabilityId, ExternalCapabilityState>> = {},
+  commandInputId = observation.inputId,
 ): CandidateApplyResult {
   const candidate = resolvedTarget(originalCandidate, resolution)
   const opportunityNeeded = candidate.kind !== 'manual_action'
@@ -776,7 +842,7 @@ function applyCandidate(
     }
   }
 
-  const command = toDomainCommand(observation, candidate, opportunity, occurrence, reminderIntent, externalCapabilities)
+  const command = toDomainCommand(observation, candidate, opportunity, occurrence, reminderIntent, externalCapabilities, commandInputId)
   if (command.kind === 'record_application_submission' && resolution?.confirm) command.reactivateConfirmed = true
   const result = applyUserDomainCommand(snapshot, command, now)
   if (result.status === 'NEEDS_CONFIRMATION') {
@@ -811,24 +877,29 @@ function applyCandidate(
     snapshot: result.snapshot,
     compensation: result.compensation,
     summary: result.summary,
-    affected: affectedFromDomain(command, opportunity, occurrence, result.snapshot),
+    affected: affectedFromDomain(command, opportunity, occurrence, result.snapshot, snapshot),
   }
 }
 
 function receipt(input: {
   observation: SemanticIntakeObservation
+  recoveryInputId?: string
   status: SemanticIntakeReceipt['status']
   summary: string
   affectedObjects: SemanticIntakeReceipt['affectedObjects']
   decisionRequestIds: string[]
   factKeys?: string[]
+  mutatedFactKeys?: string[]
+  factMutationObjects?: SemanticIntakeReceipt['factMutationObjects']
+  creationSequence?: number
   undoAvailable: boolean
   now: string
   commandId?: string
 }): SemanticIntakeReceipt {
+  const inputId = input.recoveryInputId ?? input.observation.inputId
   return {
-    id: `semantic-receipt:${stableHash(input.observation.inputId)}`,
-    inputId: input.observation.inputId,
+    id: `semantic-receipt:${stableHash(inputId)}`,
+    inputId,
     sourceKind: input.observation.source.kind,
     sourceId: input.observation.source.sourceId,
     sourceRecordId: input.observation.source.sourceRecordId,
@@ -839,6 +910,9 @@ function receipt(input: {
     affectedObjects: input.affectedObjects,
     decisionRequestIds: input.decisionRequestIds,
     factKeys: input.factKeys?.length ? [...new Set(input.factKeys)] : undefined,
+    mutatedFactKeys: input.mutatedFactKeys === undefined ? undefined : [...new Set(input.mutatedFactKeys)],
+    factMutationObjects: input.factMutationObjects,
+    creationSequence: input.creationSequence,
     undoAvailable: input.undoAvailable,
     createdAt: input.now,
     updatedAt: input.now,
@@ -847,6 +921,31 @@ function receipt(input: {
 
 function appendReceipt(snapshot: PJSDASSnapshot, value: SemanticIntakeReceipt) {
   snapshot.data.semanticReceipts = [...(snapshot.data.semanticReceipts ?? []).filter((item) => item.id !== value.id), value]
+}
+
+function compareReceiptCreationOrder(left: SemanticIntakeReceipt, right: SemanticIntakeReceipt) {
+  if (left.creationSequence !== undefined && right.creationSequence !== undefined) {
+    return left.creationSequence - right.creationSequence
+  }
+  return left.createdAt.localeCompare(right.createdAt)
+}
+
+function nextReceiptSequence(snapshot: PJSDASSnapshot) {
+  const receipts = snapshot.data.semanticReceipts ?? []
+  return Math.max(receipts.length, ...receipts.map((item) => item.creationSequence ?? 0)) + 1
+}
+
+function ownsIndependentFactMutation(
+  target: SemanticIntakeReceipt,
+  dependent: SemanticIntakeReceipt,
+  factKey: string,
+) {
+  if (!dependent.mutatedFactKeys?.includes(factKey)) return false
+  const affected = dependent.factMutationObjects?.[factKey]
+  if (!affected?.length) return false
+  const targetAffected = target.factMutationObjects?.[factKey] ?? target.affectedObjects
+  const targetIds = new Set(targetAffected.map((item) => `${item.type}:${item.id}`))
+  return affected.some((item) => !targetIds.has(`${item.type}:${item.id}`))
 }
 
 function appendDecision(snapshot: PJSDASSnapshot, observation: SemanticIntakeObservation, request: DecisionRequest, now: string) {
@@ -882,6 +981,14 @@ export function applySemanticIntake(
       decisionRequests: (base.data.decisionRequests ?? []).filter((item) => replay.decisionRequestIds.includes(item.id)),
     }
   }
+
+  const semanticCommandId = `semantic-intake:${observation.inputId}`
+  const priorSemanticApplications = (base.data.timeline ?? []).filter((item) =>
+    item.kind === 'semantic_intake_applied' && item.commandId === semanticCommandId).length
+  const recoveryFactKeys = pendingRecoveryFactKeys(base, observation)
+  const commandInputId = priorSemanticApplications || recoveryFactKeys.size
+    ? `${observation.inputId}:recovery:${priorSemanticApplications}`
+    : observation.inputId
 
   if (!['assertion', 'current_intent'].includes(observation.statementMode)) {
     const value = receipt({
@@ -929,9 +1036,14 @@ export function applySemanticIntake(
   const affectedObjects: SemanticIntakeReceipt['affectedObjects'] = []
   const summaries: string[] = []
   const factKeys: string[] = []
+  const mutatedFactKeys: string[] = []
+  const factMutationObjects: NonNullable<SemanticIntakeReceipt['factMutationObjects']> = {}
 
   for (const candidate of observation.candidates) {
     const factKey = semanticCandidateFactKey(working, candidate)
+    // A partially invalidated receipt still proves its other facts. A new recovery
+    // command must never recreate those domain objects (notably manual actions).
+    if (recoveryFactKeys.size && (!factKey || !recoveryFactKeys.has(factKey))) continue
     const priorFact = existingFactReceipt(working, factKey)
     if (priorFact && priorFact.sourceId !== observation.source.sourceId) {
       summaries.push('Cross-source fact already recorded; source receipt retained without a second business mutation.')
@@ -939,7 +1051,15 @@ export function applySemanticIntake(
       if (factKey) factKeys.push(factKey)
       continue
     }
-    const applied = applyCandidate(working, observation, candidate, now, undefined, policy.externalCapabilities ?? {})
+    const applied = applyCandidate(
+      working,
+      observation,
+      candidate,
+      now,
+      undefined,
+      policy.externalCapabilities ?? {},
+      commandInputId,
+    )
     if (applied.status === 'decision') {
       const request = createDecisionRequest({
         observation,
@@ -959,7 +1079,13 @@ export function applySemanticIntake(
     summaries.push(applied.summary)
     if (factKey) factKeys.push(factKey)
     affectedObjects.push(...applied.affected)
-    if (applied.status === 'applied' && applied.compensation) domainCompensations.push(applied.compensation)
+    if (applied.status === 'applied' && applied.compensation) {
+      domainCompensations.push(applied.compensation)
+      if (factKey) {
+        mutatedFactKeys.push(factKey)
+        factMutationObjects[factKey] = [...(factMutationObjects[factKey] ?? []), ...applied.affected]
+      }
+    }
   }
 
   const committed = domainCompensations.length > 0 || summaries.length > 0
@@ -970,19 +1096,26 @@ export function applySemanticIntake(
   ].filter(Boolean).join(' ')
   const value = receipt({
     observation,
+    recoveryInputId: commandInputId !== observation.inputId ? commandInputId : undefined,
     status,
     summary,
     affectedObjects: [...new Map(affectedObjects.map((item) => [`${item.type}:${item.id}`, item])).values()],
     decisionRequestIds: decisions.map((item) => item.id),
     factKeys,
+    mutatedFactKeys,
+    factMutationObjects: Object.keys(factMutationObjects).length ? factMutationObjects : undefined,
+    creationSequence: nextReceiptSequence(working),
     undoAvailable: domainCompensations.length > 0 || decisions.length > 0,
     now: timestamp,
     commandId: `semantic-intake:${observation.inputId}`,
   })
   appendReceipt(working, value)
 
+  const semanticTimelineIdentity = priorSemanticApplications
+    ? `${observation.inputId}|recovery:${priorSemanticApplications}`
+    : observation.inputId
   working.data.timeline = [...(working.data.timeline ?? []), {
-    id: `timeline:semantic:${stableHash(observation.inputId)}`,
+    id: `timeline:semantic:${stableHash(semanticTimelineIdentity)}`,
     kind: 'semantic_intake_applied',
     category: 'change',
     source: sourceTimelineKind(observation.source.kind),
@@ -1096,13 +1229,18 @@ export function resolveSemanticDecision(
   }
 
   let working = applied.snapshot
+  const factKey = semanticCandidateFactKey(base, observation.candidates[0]!)
+  const ownsMutation = applied.status === 'applied' && Boolean(applied.compensation) && Boolean(factKey)
   const resolutionReceipt = receipt({
     observation,
     status: 'committed',
     summary: applied.summary,
     affectedObjects: applied.affected,
     decisionRequestIds: [request.id],
-    factKeys: [semanticCandidateFactKey(base, observation.candidates[0]!)].filter((item): item is string => Boolean(item)),
+    factKeys: factKey ? [factKey] : [],
+    mutatedFactKeys: ownsMutation && factKey ? [factKey] : [],
+    factMutationObjects: ownsMutation && factKey ? { [factKey]: applied.affected } : undefined,
+    creationSequence: nextReceiptSequence(working),
     undoAvailable: applied.status === 'applied' && Boolean(applied.compensation),
     now: timestamp,
     commandId: `semantic-decision:${request.id}:${choice.id}`,
@@ -1146,7 +1284,20 @@ export function applySemanticCompensation(
   now = new Date(),
 ) {
   let next = upgradeSnapshotToLatest(snapshot)
+  for (const id of compensation.payload.receiptIds) {
+    const target = next.data.semanticReceipts?.find((item) => item.id === id)
+    if (!target?.causalOrderAmbiguous) continue
+    const hasUnorderedOverlap = next.data.semanticReceipts?.some((item) =>
+      item.id !== target.id
+      && item.causalOrderAmbiguous
+      && item.status === 'committed'
+      && (item.factKeys ?? []).some((key) => target.factKeys?.includes(key)))
+    if (hasUnorderedOverlap) {
+      throw new Error('Semantic receipt causal order cannot be proven for this legacy fact; automatic undo is blocked.')
+    }
+  }
   const timestamp = now.toISOString()
+  const undoAfterSequence = Math.max(0, ...(next.data.semanticReceipts ?? []).map((item) => item.creationSequence ?? 0))
   for (const item of [...compensation.payload.domainCompensations].reverse()) {
     next = applyDomainCompensation(next, item, now)
   }
@@ -1190,8 +1341,7 @@ export function applySemanticCompensation(
         }
         const ingestion = latestSourceRecord?.ingestion
         if (!correctedSourceKeys.has(sourceKey)
-          && ingestion
-          && ingestion.outcome !== 'unresolved') {
+          && ingestion) {
           const priorAccountedMs = Date.parse(ingestion.accountedAt)
           const correctionAt = new Date(Number.isFinite(priorAccountedMs)
             ? Math.max(now.getTime(), priorAccountedMs + 1)
@@ -1220,7 +1370,33 @@ export function applySemanticCompensation(
           if (correctionAt > exportedAt) exportedAt = correctionAt
         }
       }
+      const invalidatedFactKeys = new Set(item.mutatedFactKeys ?? item.factKeys ?? [])
+      if (invalidatedFactKeys.size) {
+        const receipts = next.data.semanticReceipts ?? []
+        for (const dependent of receipts) {
+          if (dependent.id === item.id
+            || compareReceiptCreationOrder(item, dependent) >= 0
+            || dependent.status !== 'committed') continue
+          const existingInvalidations = dependent.factInvalidations ?? []
+          const alreadyInvalidated = new Set(existingInvalidations.map((entry) => entry.factKey))
+          const overlap = (dependent.factKeys ?? []).filter((key) =>
+            invalidatedFactKeys.has(key)
+            && !alreadyInvalidated.has(key)
+            && !ownsIndependentFactMutation(item, dependent, key))
+          if (!overlap.length) continue
+          dependent.factInvalidations = [
+            ...existingInvalidations,
+            ...overlap.map((factKey) => ({
+              factKey,
+              invalidatedByReceiptId: item.id,
+              invalidatedAt: timestamp,
+              invalidatedAfterSequence: undoAfterSequence,
+            })),
+          ]
+        }
+      }
       item.status = 'undone'
+      item.undoneAfterSequence = undoAfterSequence
       item.undoAvailable = false
       item.updatedAt = timestamp
     }

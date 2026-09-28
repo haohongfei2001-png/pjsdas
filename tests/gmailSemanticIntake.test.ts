@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { gmailSemanticRecordFromMessage } from '../gateway/gmailAutomation.js'
 import { applyGmailSemanticBatch } from '../src/gmailSemanticIntake.js'
 import { applySemanticCompensation, applySemanticIntake, resolveSemanticDecision } from '../src/semanticIntake.js'
-import { validateSnapshot, type PJSDASSnapshot } from '../src/snapshot.js'
+import { createSnapshot, upgradeSnapshotToLatest, validateSnapshot, type PJSDASSnapshot } from '../src/snapshot.js'
 import { createIngestionLedgerTimeline, summarizeCoverage } from '../src/ingestion.js'
 import { reconcileIngestionDebt } from '../src/ingestionResolution.js'
 import { summarizeSourceHealth } from '../src/sourceHealth.js'
@@ -397,13 +397,14 @@ describe('UU06 shared Gmail intake', () => {
     })
     const sourceRecords = replay.snapshot.data.timeline.filter((item) =>
       item.ingestion?.sourceRecordId === 'fragment-replay-undone')
-    expect(sourceRecords.map((item) => item.ingestion?.outcome)).toEqual(['unresolved'])
+    expect(sourceRecords.length).toBeGreaterThanOrEqual(2)
+    expect(sourceRecords.every((item) => item.ingestion?.outcome === 'unresolved')).toBe(true)
     expect(replay.run.outcomes.unresolved).toBe(1)
 
     const reconciled = reconcileIngestionDebt(replay.snapshot, new Date('2026-09-21T00:03:00Z'))
     expect(reconciled.appended[0]?.ingestionResolution).toMatchObject({
       outcome: 'active_unresolved',
-      reason: 'unlinked_unresolved',
+      reason: 'semantic_decision_open',
       sourceRecordId: 'fragment-replay-undone',
     })
     expect(summarizeCoverage(reconciled.snapshot.data.timeline).activeUnresolvedCount).toBe(1)
@@ -709,6 +710,799 @@ describe('UU06 shared Gmail intake', () => {
     expect(sourceRows.map((item) => item.ingestion?.outcome)).toEqual(['unresolved', 'updated', 'unresolved'])
     expect(Date.parse(sourceRows[2]!.ingestion!.accountedAt)).toBeGreaterThan(Date.parse(tiedAt))
     expect(summarizeCoverage(undone.data.timeline).activeUnresolvedCount).toBe(1)
+  })
+
+  it('appends a distinct undo source marker even when the latest Gmail source row is already unresolved', () => {
+    const base = snapshot()
+    const sourceRecordId = 'fragment-undo-behind-unresolved'
+    const latest = createIngestionLedgerTimeline({
+      sourceKind: 'gmail',
+      sourceId: 'gmail:primary',
+      sourceRecordId,
+      runId: 'later-mixed-run',
+      recordType: 'recruiting_message',
+      outcome: 'unresolved',
+      fingerprint: 'fp:fragment-undo-behind-unresolved',
+      receivedAt: '2026-09-10T00:00:00Z',
+      accountedAt: now.toISOString(),
+      reason: 'A later parser run still has an open decision.',
+    })
+    base.data.timeline = [latest]
+    base.data.semanticReceipts = [{
+      id: 'semantic-receipt:fragment-undo-behind-unresolved',
+      inputId: 'gmail:fragment-undo-behind-unresolved:v1',
+      sourceKind: 'gmail',
+      sourceId: 'gmail:primary',
+      sourceRecordId,
+      sourceVersion: 'v1',
+      commandId: 'older-committed-run',
+      status: 'committed',
+      summary: 'Applied an earlier fact.',
+      affectedObjects: [],
+      decisionRequestIds: [],
+      factKeys: ['application_submitted|opp:jd'],
+      undoAvailable: true,
+      createdAt: '2026-09-20T23:59:00.000Z',
+      updatedAt: '2026-09-20T23:59:00.000Z',
+    }]
+
+    const undone = applySemanticCompensation(base, {
+      operation: 'semantic_batch',
+      payload: {
+        domainCompensations: [],
+        decisionRequestIds: [],
+        receiptIds: ['semantic-receipt:fragment-undo-behind-unresolved'],
+      },
+    }, now)
+
+    const rows = undone.data.timeline.filter((item) => item.ingestion?.sourceRecordId === sourceRecordId)
+    expect(rows.map((item) => item.ingestion?.outcome)).toEqual(['unresolved', 'unresolved'])
+    expect(rows[1]?.ingestion?.reason).toBe('Semantic write was undone; source requires fresh reconciliation.')
+    expect(Date.parse(rows[1]!.ingestion!.accountedAt)).toBeGreaterThan(Date.parse(rows[0]!.ingestion!.accountedAt))
+    expect(summarizeCoverage(undone.data.timeline).activeUnresolvedCount).toBe(1)
+  })
+
+  it('invalidates a dependent committed replay receipt and allows the same source version to recover after undo', () => {
+    const base = snapshot()
+    const observation = (version: string) => ({
+      contractVersion: 1 as const,
+      inputId: `gmail:dependent-replay-recovery:${version}`,
+      source: {
+        kind: 'gmail' as const,
+        sourceId: 'gmail:primary',
+        sourceRecordId: 'dependent-replay-recovery',
+        sourceVersion: version,
+        observedAt: now.toISOString(),
+        assertedAt: now.toISOString(),
+        timezone: 'Asia/Shanghai',
+      },
+      statementMode: 'assertion' as const,
+      candidates: [{
+        id: `deadline:${version}`,
+        kind: 'opportunity_deadline' as const,
+        target: { opportunityId: 'jd' },
+        deadline: '2026-09-25',
+        precision: 'date' as const,
+        objectConfidence: 'high' as const,
+        eventConfidence: 'high' as const,
+        temporalConfidence: 'high' as const,
+        evidenceRefs: ['gmail:dependent-replay-recovery'],
+        sourceVersionRefs: [`dependent-replay-recovery:${version}`],
+      }],
+    })
+
+    const firstObservation = observation('v1')
+    const first = applySemanticIntake(base, firstObservation, { authorized: true, now })
+    expect(first.status).toBe('APPLIED')
+    expect(first.snapshot.data.opportunities[0]?.deadline).toBe('2026-09-25')
+    expect(first.compensation?.payload.domainCompensations).toHaveLength(1)
+
+    const secondObservation = observation('v2')
+    const second = applySemanticIntake(first.snapshot, secondObservation, {
+      authorized: true,
+      now: new Date('2026-09-21T00:01:00Z'),
+    })
+    expect(second.status).toBe('APPLIED')
+    expect(second.receipt?.factKeys).toEqual(first.receipt?.factKeys)
+
+    const persistedSecond = structuredClone(second.snapshot)
+    persistedSecond.data.semanticReceipts?.reverse()
+    const undone = applySemanticCompensation(
+      persistedSecond,
+      first.compensation!,
+      new Date('2026-09-21T00:02:00Z'),
+    )
+    expect(undone.data.opportunities[0]?.deadline).toBeUndefined()
+    const dependent = undone.data.semanticReceipts?.find((receipt) => receipt.id === second.receipt!.id)
+    expect(dependent).toMatchObject({
+      status: 'committed',
+      factInvalidations: [{
+        factKey: first.receipt!.factKeys![0],
+        invalidatedByReceiptId: first.receipt!.id,
+        invalidatedAt: '2026-09-21T00:02:00.000Z',
+      }],
+    })
+
+    const recovered = applySemanticIntake(undone, secondObservation, {
+      authorized: true,
+      now: new Date('2026-09-21T00:03:00Z'),
+    })
+    expect(recovered.status).toBe('APPLIED')
+    expect(recovered.compensation?.payload.domainCompensations).toHaveLength(1)
+    expect(recovered.snapshot.data.opportunities[0]?.deadline).toBe('2026-09-25')
+    expect(recovered.receipt?.factInvalidations).toBeUndefined()
+  })
+
+  it('does not invalidate an earlier creator receipt when undoing a later no-op replay', () => {
+    const base = snapshot()
+    const observation = (version: string) => ({
+      contractVersion: 1 as const,
+      inputId: `gmail:undo-later-noop:${version}`,
+      source: {
+        kind: 'gmail' as const,
+        sourceId: 'gmail:primary',
+        sourceRecordId: 'undo-later-noop',
+        sourceVersion: version,
+        observedAt: now.toISOString(),
+        assertedAt: now.toISOString(),
+        timezone: 'Asia/Shanghai',
+      },
+      statementMode: 'assertion' as const,
+      candidates: [{
+        id: `deadline:${version}`,
+        kind: 'opportunity_deadline' as const,
+        target: { opportunityId: 'jd' },
+        deadline: '2026-09-25',
+        precision: 'date' as const,
+        objectConfidence: 'high' as const,
+        eventConfidence: 'high' as const,
+        temporalConfidence: 'high' as const,
+        evidenceRefs: ['gmail:undo-later-noop'],
+        sourceVersionRefs: [`undo-later-noop:${version}`],
+      }],
+    })
+
+    const first = applySemanticIntake(base, observation('v1'), { authorized: true, now })
+    expect(first.compensation?.payload.domainCompensations).toHaveLength(1)
+    const laterReceiptId = 'semantic-receipt:undo-later-noop:v2'
+    const withLaterNoop = structuredClone(first.snapshot)
+    withLaterNoop.data.semanticReceipts = [...(withLaterNoop.data.semanticReceipts ?? []), {
+      id: laterReceiptId,
+      inputId: 'gmail:undo-later-noop:v2',
+      sourceKind: 'gmail',
+      sourceId: 'gmail:primary',
+      sourceRecordId: 'undo-later-noop',
+      sourceVersion: 'v2',
+      status: 'committed',
+      summary: 'Same fact was already present; no new domain mutation.',
+      affectedObjects: first.receipt?.affectedObjects ?? [],
+      decisionRequestIds: [],
+      factKeys: first.receipt?.factKeys,
+      undoAvailable: false,
+      createdAt: '2026-09-21T00:01:00.000Z',
+      updatedAt: '2026-09-21T00:01:00.000Z',
+    }]
+
+    withLaterNoop.data.semanticReceipts?.reverse()
+    const undoneLater = applySemanticCompensation(
+      withLaterNoop,
+      {
+        operation: 'semantic_batch',
+        payload: {
+          domainCompensations: [],
+          decisionRequestIds: [],
+          receiptIds: [laterReceiptId],
+        },
+      },
+      new Date('2026-09-21T00:02:00Z'),
+    )
+    const original = undoneLater.data.semanticReceipts?.find((receipt) => receipt.id === first.receipt!.id)
+    expect(original).toMatchObject({ status: 'committed' })
+    expect(original?.factInvalidations).toBeUndefined()
+    expect(original?.undoAvailable).toBe(true)
+    expect(undoneLater.data.opportunities[0]?.deadline).toBe('2026-09-25')
+  })
+
+  it('invalidates only overlapping facts in a later partially dependent receipt', () => {
+    const base = snapshot()
+    const targetFact = 'opportunity_deadline|opp:jd|date|2026-09-25T00:00:00.000Z'
+    const independentFact = 'manual_action|independent action|'
+    base.data.semanticReceipts = [
+      {
+        id: 'semantic-receipt:partial-target',
+        inputId: 'gmail:partial-target:v1',
+        sourceKind: 'gmail',
+        sourceId: 'gmail:primary',
+        sourceRecordId: 'partial-source',
+        sourceVersion: 'v1',
+        commandId: 'partial-target-run',
+        status: 'committed',
+        summary: 'Created target fact.',
+        affectedObjects: [],
+        decisionRequestIds: [],
+        factKeys: [targetFact],
+        undoAvailable: true,
+        createdAt: '2026-09-21T00:00:00.000Z',
+        updatedAt: '2026-09-21T00:00:00.000Z',
+      },
+      {
+        id: 'semantic-receipt:partial-dependent',
+        inputId: 'gmail:partial-target:v2',
+        sourceKind: 'gmail',
+        sourceId: 'gmail:primary',
+        sourceRecordId: 'partial-source',
+        sourceVersion: 'v2',
+        commandId: 'partial-dependent-run',
+        status: 'committed',
+        summary: 'Contains one dependent and one independent fact.',
+        affectedObjects: [],
+        decisionRequestIds: [],
+        factKeys: [targetFact, independentFact],
+        undoAvailable: true,
+        createdAt: '2026-09-21T00:01:00.000Z',
+        updatedAt: '2026-09-21T00:01:00.000Z',
+      },
+    ]
+
+    const undone = applySemanticCompensation(base, {
+      operation: 'semantic_batch',
+      payload: {
+        domainCompensations: [],
+        decisionRequestIds: [],
+        receiptIds: ['semantic-receipt:partial-target'],
+      },
+    }, new Date('2026-09-21T00:02:00Z'))
+    const dependent = undone.data.semanticReceipts?.find((receipt) => receipt.id === 'semantic-receipt:partial-dependent')
+    expect(dependent?.factInvalidations).toEqual([{
+      factKey: targetFact,
+      invalidatedByReceiptId: 'semantic-receipt:partial-target',
+      invalidatedAt: '2026-09-21T00:02:00.000Z',
+      invalidatedAfterSequence: 2,
+    }])
+    expect(dependent?.undoAvailable).toBe(true)
+
+    const crossSource = applySemanticIntake(undone, {
+      contractVersion: 1,
+      inputId: 'gmail:other-source:independent',
+      source: {
+        kind: 'gmail',
+        sourceId: 'gmail:other',
+        sourceRecordId: 'other-independent',
+        sourceVersion: 'v1',
+        observedAt: '2026-09-21T00:03:00.000Z',
+        assertedAt: '2026-09-21T00:03:00.000Z',
+        timezone: 'Asia/Shanghai',
+      },
+      statementMode: 'assertion',
+      candidates: [{
+        id: 'independent-action',
+        kind: 'manual_action',
+        title: 'Independent Action',
+        objectConfidence: 'high',
+        eventConfidence: 'high',
+        evidenceRefs: ['gmail:other-independent'],
+        sourceVersionRefs: ['other-independent:v1'],
+      }],
+    }, { authorized: true, now: new Date('2026-09-21T00:03:00Z') })
+    expect(crossSource.status).toBe('APPLIED')
+    expect(crossSource.compensation?.payload.domainCompensations).toHaveLength(0)
+    expect(crossSource.snapshot.data.actions).toHaveLength(0)
+  })
+
+  it('recovers only the invalidated fact after durable receipt reordering without duplicating a manual action', () => {
+    const observation = (version: string, withAction: boolean) => ({
+      contractVersion: 1 as const,
+      inputId: `gmail:partial-recovery:${version}`,
+      source: {
+        kind: 'gmail' as const,
+        sourceId: 'gmail:primary',
+        sourceRecordId: 'partial-recovery',
+        sourceVersion: version,
+        observedAt: now.toISOString(),
+        assertedAt: now.toISOString(),
+        timezone: 'Asia/Shanghai',
+      },
+      statementMode: 'assertion' as const,
+      candidates: [
+        {
+          id: `deadline:${version}`,
+          kind: 'opportunity_deadline' as const,
+          target: { opportunityId: 'jd' },
+          deadline: '2026-09-25',
+          precision: 'date' as const,
+          objectConfidence: 'high' as const,
+          eventConfidence: 'high' as const,
+          temporalConfidence: 'high' as const,
+          evidenceRefs: ['gmail:partial-recovery'],
+          sourceVersionRefs: [`partial-recovery:${version}`],
+        },
+        ...(withAction ? [{
+          id: 'independent-action',
+          kind: 'manual_action' as const,
+          title: 'Independent Action',
+          objectConfidence: 'high' as const,
+          eventConfidence: 'high' as const,
+          evidenceRefs: ['gmail:partial-recovery'],
+          sourceVersionRefs: [`partial-recovery:${version}`],
+        }] : []),
+      ],
+    })
+    const first = applySemanticIntake(snapshot(), observation('v1', false), { authorized: true, now })
+    const secondObservation = observation('v2', true)
+    const second = applySemanticIntake(first.snapshot, secondObservation, {
+      authorized: true, now: new Date('2026-09-21T00:01:00Z'),
+    })
+    expect(second.snapshot.data.actions).toHaveLength(1)
+    expect(second.receipt?.factKeys).toHaveLength(2)
+    const originalAction = structuredClone(second.snapshot.data.actions[0])
+    const persisted = structuredClone(second.snapshot)
+    persisted.data.semanticReceipts?.reverse() // IndexedDB returns primary-key order, not creation order.
+    const undone = applySemanticCompensation(persisted, first.compensation!, new Date('2026-09-21T00:02:00Z'))
+    const dependent = undone.data.semanticReceipts?.find((item) => item.id === second.receipt!.id)
+    expect(dependent?.factInvalidations?.map((item) => item.factKey)).toEqual(first.receipt?.factKeys)
+    expect(dependent?.factKeys).toHaveLength(2)
+    expect(undone.data.actions).toEqual([originalAction])
+
+    const recovered = applySemanticIntake(undone, secondObservation, {
+      authorized: true, now: new Date('2026-09-21T00:03:00Z'),
+    })
+    expect(recovered.status).toBe('APPLIED')
+    expect(recovered.snapshot.data.actions).toEqual([originalAction])
+    expect(recovered.snapshot.data.opportunities[0]?.deadline).toBe('2026-09-25')
+    expect(recovered.compensation?.payload.domainCompensations).toHaveLength(1)
+    expect(recovered.receipt?.factKeys).toEqual(first.receipt?.factKeys)
+    expect(recovered.receipt?.id).not.toBe(second.receipt?.id)
+    expect(recovered.snapshot.data.semanticReceipts).toHaveLength(3)
+    expect(recovered.snapshot.data.semanticReceipts?.find((item) => item.id === second.receipt!.id)?.factInvalidations).toEqual(dependent?.factInvalidations)
+    const replay = applySemanticIntake(recovered.snapshot, secondObservation, {
+      authorized: true, now: new Date('2026-09-21T00:04:00Z'),
+    })
+    expect(replay.status).toBe('ALREADY_APPLIED')
+    expect(replay.snapshot.data.actions).toEqual([originalAction])
+    validateSnapshot(recovered.snapshot)
+  })
+
+  it('invalidates a later cross-source dedupe receipt when its original mutation is undone', () => {
+    const observation = (sourceId: string) => ({
+      contractVersion: 1 as const,
+      inputId: `${sourceId}:cross-source-deadline`,
+      source: {
+        kind: 'gmail' as const, sourceId, sourceRecordId: 'cross-source-deadline',
+        sourceVersion: 'v1', observedAt: now.toISOString(), assertedAt: now.toISOString(), timezone: 'Asia/Shanghai',
+      },
+      statementMode: 'assertion' as const,
+      candidates: [{
+        id: 'deadline', kind: 'opportunity_deadline' as const, target: { opportunityId: 'jd' },
+        deadline: '2026-09-25', precision: 'date' as const,
+        objectConfidence: 'high' as const, eventConfidence: 'high' as const, temporalConfidence: 'high' as const,
+        evidenceRefs: ['cross-source-deadline'], sourceVersionRefs: ['cross-source-deadline:v1'],
+      }],
+    })
+    const creator = applySemanticIntake(snapshot(), observation('gmail:first'), { authorized: true, now })
+    const follower = applySemanticIntake(creator.snapshot, observation('gmail:second'), {
+      authorized: true, now: new Date('2026-09-21T00:01:00Z'),
+    })
+    expect(follower.compensation?.payload.domainCompensations).toHaveLength(0)
+    const undone = applySemanticCompensation(follower.snapshot, creator.compensation!, new Date('2026-09-21T00:02:00Z'))
+    expect(undone.data.opportunities[0]?.deadline).toBeUndefined()
+    expect(undone.data.semanticReceipts?.find((item) => item.id === follower.receipt!.id)?.factInvalidations?.[0]?.factKey)
+      .toBe(creator.receipt?.factKeys?.[0])
+    const replay = applySemanticIntake(undone, observation('gmail:second'), {
+      authorized: true, now: new Date('2026-09-21T00:03:00Z'),
+    })
+    expect(replay.status).toBe('APPLIED')
+    expect(replay.compensation?.payload.domainCompensations).toHaveLength(1)
+    expect(replay.snapshot.data.opportunities[0]?.deadline).toBe('2026-09-25')
+    validateSnapshot(replay.snapshot)
+  })
+
+  it('recovers a second invalidated fact after an earlier subset was already restored', () => {
+    const base = snapshot()
+    base.data.opportunities.push({ ...base.data.opportunities[0]!, id: 'other' })
+    const observation = (version: string, targets: string[]) => ({
+      contractVersion: 1 as const,
+      inputId: `gmail:staggered-recovery:${version}`,
+      source: {
+        kind: 'gmail' as const, sourceId: 'gmail:primary', sourceRecordId: 'staggered-recovery',
+        sourceVersion: version, observedAt: now.toISOString(), assertedAt: now.toISOString(), timezone: 'Asia/Shanghai',
+      },
+      statementMode: 'assertion' as const,
+      candidates: targets.map((target) => ({
+        id: `deadline:${target}`, kind: 'opportunity_deadline' as const, target: { opportunityId: target },
+        deadline: '2026-09-25', precision: 'date' as const,
+        objectConfidence: 'high' as const, eventConfidence: 'high' as const, temporalConfidence: 'high' as const,
+        evidenceRefs: ['staggered-recovery'], sourceVersionRefs: [`staggered-recovery:${version}`],
+      })),
+    })
+    const first = applySemanticIntake(base, observation('v1', ['jd']), { authorized: true, now })
+    const second = applySemanticIntake(first.snapshot, observation('v2', ['other']), {
+      authorized: true, now: new Date('2026-09-21T00:01:00Z'),
+    })
+    const combined = observation('v3', ['jd', 'other'])
+    const third = applySemanticIntake(second.snapshot, combined, {
+      authorized: true, now: new Date('2026-09-21T00:02:00Z'),
+    })
+    const firstUndone = applySemanticCompensation(third.snapshot, first.compensation!, new Date('2026-09-21T00:03:00Z'))
+    const firstRecovered = applySemanticIntake(firstUndone, combined, {
+      authorized: true, now: new Date('2026-09-21T00:04:00Z'),
+    })
+    expect(firstRecovered.receipt?.factKeys).toEqual(first.receipt?.factKeys)
+    const secondUndone = applySemanticCompensation(firstRecovered.snapshot, second.compensation!, new Date('2026-09-21T00:05:00Z'))
+    const secondRecovered = applySemanticIntake(secondUndone, combined, {
+      authorized: true, now: new Date('2026-09-21T00:06:00Z'),
+    })
+    expect(secondRecovered.status).toBe('APPLIED')
+    expect(secondRecovered.receipt?.factKeys).toEqual(second.receipt?.factKeys)
+    expect(secondRecovered.snapshot.data.opportunities.map((item) => item.deadline)).toEqual(['2026-09-25', '2026-09-25'])
+    expect(secondRecovered.snapshot.data.semanticReceipts).toHaveLength(5)
+    validateSnapshot(secondRecovered.snapshot)
+  })
+
+  it('uses persisted sequence when a later dependent receipt has an older caller timestamp', () => {
+    const base = snapshot()
+    const factKey = 'opportunity_deadline|opp:jd|date|2026-09-25T00:00:00.000Z'
+    base.data.semanticReceipts = [
+      {
+        id: 'z-creator', inputId: 'same-time:creator', sourceKind: 'gmail', sourceId: 'gmail:primary',
+        sourceRecordId: 'same-time', sourceVersion: 'v1', status: 'committed', summary: 'Creator',
+        affectedObjects: [], decisionRequestIds: [], factKeys: [factKey], mutatedFactKeys: [factKey],
+        creationSequence: 1, undoAvailable: true,
+        createdAt: now.toISOString(), updatedAt: now.toISOString(),
+      },
+      {
+        id: 'a-dependent', inputId: 'same-time:follower', sourceKind: 'gmail', sourceId: 'gmail:primary',
+        sourceRecordId: 'same-time', sourceVersion: 'v2', status: 'committed', summary: 'No-op follower',
+        affectedObjects: [], decisionRequestIds: [], factKeys: [factKey], creationSequence: 2,
+        undoAvailable: false, createdAt: '2026-09-20T23:59:00.000Z', updatedAt: '2026-09-20T23:59:00.000Z',
+      },
+    ]
+    base.data.semanticReceipts.sort((left, right) => left.id.localeCompare(right.id))
+    const undone = applySemanticCompensation(base, {
+      operation: 'semantic_batch', payload: { domainCompensations: [], decisionRequestIds: [], receiptIds: ['z-creator'] },
+    }, new Date('2026-09-21T00:01:00Z'))
+    expect(undone.data.semanticReceipts?.find((item) => item.id === 'a-dependent')?.factInvalidations?.[0]?.factKey)
+      .toBe(factKey)
+    validateSnapshot(undone)
+  })
+
+  it('backfills historical same-time Gmail receipt order from durable ingestion times after ID reordering', () => {
+    const base = snapshot()
+    const batchTime = new Date('2026-09-21T00:00:00Z')
+    const observation = (sourceRecordId: string, receivedAt: string) => ({
+      contractVersion: 1 as const,
+      inputId: `gmail:historical-order:${sourceRecordId}`,
+      source: {
+        kind: 'gmail' as const, sourceId: 'gmail:primary', sourceRecordId,
+        sourceVersion: 'v1', observedAt: receivedAt, assertedAt: receivedAt, timezone: 'Asia/Shanghai',
+      },
+      statementMode: 'assertion' as const,
+      candidates: [{
+        id: 'deadline', kind: 'opportunity_deadline' as const, target: { opportunityId: 'jd' },
+        deadline: '2026-09-25', precision: 'date' as const,
+        objectConfidence: 'high' as const, eventConfidence: 'high' as const, temporalConfidence: 'high' as const,
+        evidenceRefs: ['historical-order'], sourceVersionRefs: ['historical-order:v1'],
+      }],
+    })
+    base.data.timeline = [
+      ['older-mail', '2026-09-20T09:00:00Z'],
+      ['newer-mail', '2026-09-20T09:01:00Z'],
+    ].map(([sourceRecordId, receivedAt]) => createIngestionLedgerTimeline({
+      sourceKind: 'gmail', sourceId: 'gmail:primary', sourceRecordId: sourceRecordId!,
+      runId: 'historical-order-batch', recordType: 'recruiting_message', outcome: 'unresolved',
+      fingerprint: `fp:${sourceRecordId}`, receivedAt: receivedAt!, accountedAt: batchTime.toISOString(),
+      reason: 'Historical batch pending reconciliation.',
+    }))
+    const first = applySemanticIntake(base, observation('older-mail', '2026-09-20T09:00:00Z'), {
+      authorized: true, now: batchTime,
+    })
+    const second = applySemanticIntake(first.snapshot, observation('newer-mail', '2026-09-20T09:01:00Z'), {
+      authorized: true, now: batchTime,
+    })
+    const persisted = structuredClone(second.snapshot)
+    persisted.data.semanticReceipts![0]!.id = 'z-legacy-creator'
+    persisted.data.semanticReceipts![1]!.id = 'a-legacy-dependent'
+    for (const item of persisted.data.semanticReceipts!) delete item.creationSequence
+    persisted.data.semanticReceipts!.sort((left, right) => left.id.localeCompare(right.id))
+    persisted.data.timeline!.sort((left, right) => left.id.localeCompare(right.id))
+
+    const upgraded = upgradeSnapshotToLatest(persisted)
+    const creator = upgraded.data.semanticReceipts!.find((item) => item.id === 'z-legacy-creator')!
+    const dependent = upgraded.data.semanticReceipts!.find((item) => item.id === 'a-legacy-dependent')!
+    expect(creator.creationSequence).toBeLessThan(dependent.creationSequence!)
+    expect(creator.causalOrderAmbiguous).toBeUndefined()
+    const roundTrip = createSnapshot(upgraded.data, upgraded.exportedAt)
+    roundTrip.data.semanticReceipts!.sort((left, right) => left.id.localeCompare(right.id))
+    expect(upgradeSnapshotToLatest(roundTrip).data.semanticReceipts!.find((item) => item.id === creator.id)?.creationSequence)
+      .toBe(creator.creationSequence)
+
+    const undone = applySemanticCompensation(roundTrip, {
+      ...first.compensation!,
+      payload: { ...first.compensation!.payload, receiptIds: [creator.id] },
+    }, new Date('2026-09-21T00:02:00Z'))
+    expect(undone.data.opportunities[0]?.deadline).toBeUndefined()
+    expect(undone.data.semanticReceipts?.find((item) => item.id === dependent.id)?.factInvalidations?.[0]?.factKey)
+      .toBe(first.receipt?.factKeys?.[0])
+    validateSnapshot(undone)
+  })
+
+  it('preserves existing causal sequences when a partially migrated snapshot has older caller timestamps', () => {
+    const base = snapshot()
+    const factKey = 'opportunity_deadline|opp:jd|date|2026-09-25T00:00:00.000Z'
+    base.data.semanticReceipts = [
+      {
+        id: 'z-sequenced-creator', inputId: 'partial:creator', sourceKind: 'gmail', sourceId: 'gmail:first',
+        sourceRecordId: 'partial-creator', sourceVersion: 'v1', status: 'committed', summary: 'Creator',
+        affectedObjects: [], decisionRequestIds: [], factKeys: [factKey], mutatedFactKeys: [factKey],
+        creationSequence: 1, undoAvailable: true, createdAt: now.toISOString(), updatedAt: now.toISOString(),
+      },
+      {
+        id: 'a-sequenced-follower', inputId: 'partial:follower', sourceKind: 'gmail', sourceId: 'gmail:second',
+        sourceRecordId: 'partial-follower', sourceVersion: 'v1', status: 'committed', summary: 'Follower',
+        affectedObjects: [], decisionRequestIds: [], factKeys: [factKey], mutatedFactKeys: [],
+        creationSequence: 2, undoAvailable: false,
+        createdAt: '2026-09-20T23:59:00.000Z', updatedAt: '2026-09-20T23:59:00.000Z',
+      },
+      {
+        id: 'm-unsequenced-unrelated', inputId: 'partial:unrelated', sourceKind: 'gmail', sourceId: 'gmail:third',
+        sourceRecordId: 'partial-unrelated', sourceVersion: 'v1', status: 'committed', summary: 'Unrelated',
+        affectedObjects: [], decisionRequestIds: [], factKeys: ['manual_action|other|'],
+        undoAvailable: false, createdAt: now.toISOString(), updatedAt: now.toISOString(),
+      },
+    ]
+    base.data.semanticReceipts.sort((left, right) => left.id.localeCompare(right.id))
+    const upgraded = upgradeSnapshotToLatest(base)
+    expect(upgraded.data.semanticReceipts?.map((item) => [item.id, item.creationSequence])).toEqual([
+      ['a-sequenced-follower', 2], ['m-unsequenced-unrelated', 3], ['z-sequenced-creator', 1],
+    ])
+    const roundTrip = upgradeSnapshotToLatest(createSnapshot(upgraded.data, upgraded.exportedAt))
+    const undone = applySemanticCompensation(roundTrip, {
+      operation: 'semantic_batch',
+      payload: { domainCompensations: [], decisionRequestIds: [], receiptIds: ['z-sequenced-creator'] },
+    }, new Date('2026-09-21T00:01:00Z'))
+    expect(undone.data.semanticReceipts?.find((item) => item.id === 'a-sequenced-follower')?.factInvalidations?.[0]?.factKey)
+      .toBe(factKey)
+    validateSnapshot(undone)
+  })
+
+  it('undoes only owned mutations from a mixed cross-source receipt', () => {
+    const observation = (sourceId: string, withAction: boolean) => ({
+      contractVersion: 1 as const,
+      inputId: `${sourceId}:mixed-cross-source`,
+      source: {
+        kind: 'gmail' as const, sourceId, sourceRecordId: 'mixed-cross-source',
+        sourceVersion: 'v1', observedAt: now.toISOString(), assertedAt: now.toISOString(), timezone: 'Asia/Shanghai',
+      },
+      statementMode: 'assertion' as const,
+      candidates: [
+        {
+          id: 'deadline', kind: 'opportunity_deadline' as const, target: { opportunityId: 'jd' },
+          deadline: '2026-09-25', precision: 'date' as const,
+          objectConfidence: 'high' as const, eventConfidence: 'high' as const, temporalConfidence: 'high' as const,
+          evidenceRefs: ['mixed-cross-source'], sourceVersionRefs: ['mixed-cross-source:v1'],
+        },
+        ...(withAction ? [{
+          id: 'action', kind: 'manual_action' as const, title: 'Prepare documents',
+          objectConfidence: 'high' as const, eventConfidence: 'high' as const,
+          evidenceRefs: ['mixed-cross-source'], sourceVersionRefs: ['mixed-cross-source:v1'],
+        }] : []),
+      ],
+    })
+    const creator = applySemanticIntake(snapshot(), observation('gmail:first', false), { authorized: true, now })
+    const mixed = applySemanticIntake(creator.snapshot, observation('gmail:second', true), {
+      authorized: true, now: new Date('2026-09-21T00:01:00Z'),
+    })
+    const follower = applySemanticIntake(mixed.snapshot, observation('gmail:third', false), {
+      authorized: true, now: new Date('2026-09-21T00:02:00Z'),
+    })
+    expect(mixed.receipt?.factKeys).toHaveLength(2)
+    expect(mixed.receipt?.mutatedFactKeys).toEqual([mixed.receipt!.factKeys![1]])
+    expect(follower.compensation?.payload.domainCompensations).toHaveLength(0)
+    const undone = applySemanticCompensation(follower.snapshot, mixed.compensation!, new Date('2026-09-21T00:03:00Z'))
+    expect(undone.data.opportunities[0]?.deadline).toBe('2026-09-25')
+    expect(undone.data.actions).toHaveLength(0)
+    expect(undone.data.semanticReceipts?.find((item) => item.id === follower.receipt!.id)?.factInvalidations).toBeUndefined()
+    const replay = applySemanticIntake(undone, observation('gmail:third', false), {
+      authorized: true, now: new Date('2026-09-21T00:04:00Z'),
+    })
+    expect(replay.status).toBe('ALREADY_APPLIED')
+    expect(replay.snapshot.data.actions).toHaveLength(0)
+    validateSnapshot(replay.snapshot)
+  })
+
+  it('fails closed when historical equal-time overlapping receipts have no durable causal evidence', () => {
+    const base = snapshot()
+    const factKey = 'manual_action|ambiguous legacy|'
+    base.data.semanticReceipts = ['z-unknown', 'a-unknown'].map((id, index) => ({
+      id, inputId: `unknown:${index}`, sourceKind: 'gmail' as const, sourceId: 'gmail:primary',
+      sourceRecordId: `unknown-${index}`, sourceVersion: 'v1', status: 'committed' as const,
+      summary: 'Historical receipt with no ordering proof.', affectedObjects: [], decisionRequestIds: [],
+      factKeys: [factKey], undoAvailable: false, createdAt: now.toISOString(), updatedAt: now.toISOString(),
+    }))
+    const persisted = structuredClone(base)
+    persisted.data.semanticReceipts?.sort((left, right) => left.id.localeCompare(right.id))
+    const upgraded = upgradeSnapshotToLatest(persisted)
+    expect(upgraded.data.semanticReceipts?.every((item) => item.causalOrderAmbiguous)).toBe(true)
+    expect(() => applySemanticCompensation(upgraded, {
+      operation: 'semantic_batch', payload: { domainCompensations: [], decisionRequestIds: [], receiptIds: ['z-unknown'] },
+    }, new Date('2026-09-21T00:01:00Z'))).toThrow(/causal order cannot be proven/)
+    expect(upgraded.data.semanticReceipts?.every((item) => item.status === 'committed')).toBe(true)
+  })
+
+  it('keeps an independently written same-key manual action valid after undoing the first', () => {
+    const observation = (version: string) => ({
+      contractVersion: 1 as const,
+      inputId: `gmail:independent-action:${version}`,
+      source: {
+        kind: 'gmail' as const, sourceId: 'gmail:primary', sourceRecordId: 'independent-action',
+        sourceVersion: version, observedAt: now.toISOString(), assertedAt: now.toISOString(), timezone: 'Asia/Shanghai',
+      },
+      statementMode: 'assertion' as const,
+      candidates: [{
+        id: 'same-action', kind: 'manual_action' as const, title: 'Review portfolio',
+        objectConfidence: 'high' as const, eventConfidence: 'high' as const,
+        evidenceRefs: ['independent-action'], sourceVersionRefs: [`independent-action:${version}`],
+      }],
+    })
+    const first = applySemanticIntake(snapshot(), observation('v1'), { authorized: true, now })
+    const secondObservation = observation('v2')
+    const second = applySemanticIntake(first.snapshot, secondObservation, {
+      authorized: true, now: new Date('2026-09-21T00:01:00Z'),
+    })
+    expect(second.snapshot.data.actions).toHaveLength(2)
+    expect(second.receipt?.mutatedFactKeys).toEqual(first.receipt?.factKeys)
+    const secondAction = structuredClone(second.snapshot.data.actions[1])
+    const undone = applySemanticCompensation(second.snapshot, first.compensation!, new Date('2026-09-21T00:02:00Z'))
+    expect(undone.data.actions).toEqual([secondAction])
+    expect(undone.data.semanticReceipts?.find((item) => item.id === second.receipt!.id)?.factInvalidations).toBeUndefined()
+    const replay = applySemanticIntake(undone, secondObservation, {
+      authorized: true, now: new Date('2026-09-21T00:03:00Z'),
+    })
+    expect(replay.status).toBe('ALREADY_APPLIED')
+    expect(replay.snapshot.data.actions).toEqual([secondAction])
+    validateSnapshot(replay.snapshot)
+  })
+
+  it('deduplicates a recovery performed at the same instant as invalidation', () => {
+    const observation = (sourceId: string) => ({
+      contractVersion: 1 as const,
+      inputId: `${sourceId}:same-instant-action`,
+      source: {
+        kind: 'gmail' as const, sourceId, sourceRecordId: 'same-instant-action',
+        sourceVersion: 'v1', observedAt: now.toISOString(), assertedAt: now.toISOString(), timezone: 'Asia/Shanghai',
+      },
+      statementMode: 'assertion' as const,
+      candidates: [{
+        id: 'action', kind: 'manual_action' as const, title: 'Send portfolio',
+        objectConfidence: 'high' as const, eventConfidence: 'high' as const,
+        evidenceRefs: ['same-instant-action'], sourceVersionRefs: ['same-instant-action:v1'],
+      }],
+    })
+    const creator = applySemanticIntake(snapshot(), observation('gmail:first'), { authorized: true, now })
+    const follower = applySemanticIntake(creator.snapshot, observation('gmail:second'), {
+      authorized: true, now: new Date('2026-09-21T00:01:00Z'),
+    })
+    expect(follower.compensation?.payload.domainCompensations).toHaveLength(0)
+    const recoveryInstant = new Date('2026-09-21T00:02:00Z')
+    const undone = applySemanticCompensation(follower.snapshot, creator.compensation!, recoveryInstant)
+    const recovered = applySemanticIntake(undone, observation('gmail:second'), {
+      authorized: true, now: recoveryInstant,
+    })
+    expect(recovered.snapshot.data.actions).toHaveLength(1)
+    expect(recovered.receipt?.creationSequence).toBeGreaterThan(follower.receipt?.creationSequence ?? 0)
+    const replay = applySemanticIntake(recovered.snapshot, observation('gmail:second'), {
+      authorized: true, now: recoveryInstant,
+    })
+    expect(replay.status).toBe('ALREADY_APPLIED')
+    expect(replay.snapshot.data.actions).toHaveLength(1)
+    validateSnapshot(replay.snapshot)
+  })
+
+  it('deduplicates manual action recovery when the later batch carries an older checkedAt', () => {
+    const observation = (sourceId: string) => ({
+      contractVersion: 1 as const,
+      inputId: `${sourceId}:older-checked-at-action`,
+      source: {
+        kind: 'gmail' as const, sourceId, sourceRecordId: 'older-checked-at-action',
+        sourceVersion: 'v1', observedAt: now.toISOString(), assertedAt: now.toISOString(), timezone: 'Asia/Shanghai',
+      },
+      statementMode: 'assertion' as const,
+      candidates: [{
+        id: 'action', kind: 'manual_action' as const, title: 'Send updated portfolio',
+        objectConfidence: 'high' as const, eventConfidence: 'high' as const,
+        evidenceRefs: ['older-checked-at-action'], sourceVersionRefs: ['older-checked-at-action:v1'],
+      }],
+    })
+    const creator = applySemanticIntake(snapshot(), observation('gmail:first'), { authorized: true, now })
+    const follower = applySemanticIntake(creator.snapshot, observation('gmail:second'), {
+      authorized: true, now: new Date('2026-09-21T00:01:00Z'),
+    })
+    const undone = applySemanticCompensation(follower.snapshot, creator.compensation!, new Date('2026-09-21T00:02:00Z'))
+    const olderCheckedAt = new Date('2026-09-20T23:59:00Z')
+    const recovered = applySemanticIntake(undone, observation('gmail:second'), {
+      authorized: true, now: olderCheckedAt,
+    })
+    expect(recovered.status).toBe('APPLIED')
+    expect(recovered.snapshot.data.actions).toHaveLength(1)
+    expect(recovered.receipt?.createdAt).toBe(olderCheckedAt.toISOString())
+    expect(recovered.receipt?.creationSequence).toBeGreaterThan(follower.receipt?.creationSequence ?? 0)
+    const persisted = upgradeSnapshotToLatest(createSnapshot(recovered.snapshot.data, recovered.snapshot.exportedAt))
+    const replay = applySemanticIntake(persisted, observation('gmail:second'), {
+      authorized: true, now: olderCheckedAt,
+    })
+    expect(replay.status).toBe('ALREADY_APPLIED')
+    expect(replay.snapshot.data.actions).toEqual(recovered.snapshot.data.actions)
+    validateSnapshot(replay.snapshot)
+  })
+
+  it('records independent mutation ownership for a confirmed manual action', () => {
+    const observation = (version: string, confidence: 'high' | 'low') => ({
+      contractVersion: 1 as const,
+      inputId: `gmail:confirmed-action:${version}`,
+      source: {
+        kind: 'gmail' as const, sourceId: 'gmail:primary', sourceRecordId: 'confirmed-action',
+        sourceVersion: version, observedAt: now.toISOString(), assertedAt: now.toISOString(), timezone: 'Asia/Shanghai',
+      },
+      statementMode: 'assertion' as const,
+      candidates: [{
+        id: 'action', kind: 'manual_action' as const, title: 'Prepare portfolio',
+        objectConfidence: confidence, eventConfidence: confidence,
+        evidenceRefs: ['confirmed-action'], sourceVersionRefs: [`confirmed-action:${version}`],
+      }],
+    })
+    const creator = applySemanticIntake(snapshot(), observation('v1', 'high'), { authorized: true, now })
+    const pending = applySemanticIntake(creator.snapshot, observation('v2', 'low'), {
+      authorized: true, now: new Date('2026-09-21T00:01:00Z'),
+    })
+    expect(pending.status).toBe('DECISION_REQUIRED')
+    const request = pending.decisionRequests[0]!
+    const confirmed = resolveSemanticDecision(pending.snapshot, request.id, 'confirm', new Date('2026-09-21T00:02:00Z'))
+    expect(confirmed.snapshot.data.actions).toHaveLength(2)
+    expect(confirmed.receipt?.mutatedFactKeys).toEqual(creator.receipt?.factKeys)
+    expect(confirmed.receipt?.factMutationObjects?.[creator.receipt!.factKeys![0]!]).toEqual([
+      { type: 'action', id: confirmed.snapshot.data.actions[1]!.id },
+    ])
+    const laterAction = structuredClone(confirmed.snapshot.data.actions[1])
+    const undone = applySemanticCompensation(confirmed.snapshot, creator.compensation!, new Date('2026-09-21T00:03:00Z'))
+    expect(undone.data.actions).toEqual([laterAction])
+    expect(undone.data.semanticReceipts?.find((item) => item.id === confirmed.receipt!.id)?.factInvalidations).toBeUndefined()
+    validateSnapshot(undone)
+  })
+
+  it('keeps a separately created same-key offer event after undoing the first', () => {
+    const observation = (version: string) => ({
+      contractVersion: 1 as const,
+      inputId: `gmail:independent-offer:${version}`,
+      source: {
+        kind: 'gmail' as const, sourceId: 'gmail:primary', sourceRecordId: 'independent-offer',
+        sourceVersion: version, observedAt: now.toISOString(), assertedAt: now.toISOString(), timezone: 'Asia/Shanghai',
+      },
+      statementMode: 'assertion' as const,
+      candidates: [{
+        id: 'offer', kind: 'process_event' as const, eventType: 'offer' as const,
+        target: { opportunityId: 'jd' }, occurredAt: now.toISOString(),
+        objectConfidence: 'high' as const, eventConfidence: 'high' as const,
+        evidenceRefs: ['independent-offer'], sourceVersionRefs: [`independent-offer:${version}`],
+      }],
+    })
+    const first = applySemanticIntake(snapshot(), observation('v1'), { authorized: true, now })
+    const secondObservation = observation('v2')
+    const second = applySemanticIntake(first.snapshot, secondObservation, {
+      authorized: true, now: new Date('2026-09-21T00:01:00Z'),
+    })
+    expect(second.snapshot.data.processEvents).toHaveLength(2)
+    expect(second.receipt?.factKeys).toEqual(first.receipt?.factKeys)
+    expect(second.receipt?.factMutationObjects?.[first.receipt!.factKeys![0]!])
+      .toContainEqual({ type: 'process_event', id: second.snapshot.data.processEvents[1]!.id })
+    const laterEvent = structuredClone(second.snapshot.data.processEvents[1])
+    const undone = applySemanticCompensation(second.snapshot, first.compensation!, new Date('2026-09-21T00:02:00Z'))
+    expect(undone.data.processEvents).toEqual([laterEvent])
+    expect(undone.data.semanticReceipts?.find((item) => item.id === second.receipt!.id)?.factInvalidations).toBeUndefined()
+    const replay = applySemanticIntake(undone, secondObservation, {
+      authorized: true, now: new Date('2026-09-21T00:03:00Z'),
+    })
+    expect(replay.status).toBe('ALREADY_APPLIED')
+    expect(replay.snapshot.data.processEvents).toEqual([laterEvent])
+    validateSnapshot(replay.snapshot)
   })
 
   it('replay and a new message for the same thread occurrence do not duplicate events', () => {
