@@ -101,3 +101,45 @@ source-write failure after baseline appends. Both fail against previous head
 4e57efc, and both pass after the fix. The full 10-case P0 suite plus both existing
 account-cache regressions pass in Chromium (12 total); all 982 unit tests/type pass.
 Remote full gates and exact-head Codex review remain mandatory.
+
+## Merged and exact-main production verification
+
+PR [#185](https://github.com/haohongfei2001-png/pjsdas/pull/185) merged final head
+`4046223fbac23cea697649feef9e4ee49c44baf1` as
+`c93a0fca9ef9b8eec8e234557f525445c0ef6b20`.
+The final P0 suite contains **10** cases, plus both existing account-cache regressions.
+The earlier candidate counts and pending/no-write statements above are historical.
+
+All final-head gates passed, including actual VoiceOver, full Browser and Firefox/
+WebKit Matrix. All four valid Codex P1 findings were repaired; the
+[latest review](https://github.com/haohongfei2001-png/pjsdas/pull/185#issuecomment-5873417065)
+reviewed the final head and found no blocker.
+
+Exact merge-main gates:
+[CI](https://github.com/haohongfei2001-png/pjsdas/actions/runs/36447809012),
+[Browser](https://github.com/haohongfei2001-png/pjsdas/actions/runs/36447809296),
+[Matrix](https://github.com/haohongfei2001-png/pjsdas/actions/runs/36447809433),
+[Pages](https://github.com/haohongfei2001-png/pjsdas/actions/runs/36447809027),
+[Production Self-Test](https://github.com/haohongfei2001-png/pjsdas/actions/runs/36448088249)
+all succeeded.
+
+Current verified runtime `a8d984059a2cc47b98d0f5abb7cb9fd84933f9a2` differs only by
+PR #186 queue documentation. Its exact
+[CI](https://github.com/haohongfei2001-png/pjsdas/actions/runs/36448814886),
+[Browser](https://github.com/haohongfei2001-png/pjsdas/actions/runs/36448815143),
+[Pages](https://github.com/haohongfei2001-png/pjsdas/actions/runs/36448814880),
+[Production Self-Test](https://github.com/haohongfei2001-png/pjsdas/actions/runs/36449142896),
+[Brand readback](https://github.com/haohongfei2001-png/pjsdas/actions/runs/36449142846)
+and [live visual](https://github.com/haohongfei2001-png/pjsdas/actions/runs/36449142832)
+succeeded. Matrix and VoiceOver were not retriggered by that docs-only commit;
+their evidence applies to the unchanged runtime source.
+
+Both deployed c93 and a8 bundles were independently tested headlessly against a
+complete read-only revision-838 production snapshot in isolated IndexedDB.
+All seven Today/Schedule/job-detail navigation, reload and fresh-page startup
+checks rendered successfully, with **zero errors and zero write requests**.
+Backend health request 1378 returned HTTP 200 and exact a8 runtime identity.
+No private payload or snapshot is included in this receipt.
+
+**P0 production repair verified.** Repair 02 subsequently consumed its bounded
+authorization; see [production settlement receipt](REPAIR-02-PRODUCTION-SETTLEMENT-RECEIPT.md).

@@ -13,18 +13,18 @@ Historical boundaries:
 - Existing Reliability Closure and Active-Unresolved packages retain their own
   historical receipts and truth; this package does not rewrite them.
 
-Current phase: **PCR-01 — adopt and close the merged history/startup P0 repair**
+Current phase: **PCR-02 — startup and recovery invariant audit**
 
-Current writer: **NONE — next manager may acquire one writer for PCR-01**
+Current writer: **NONE — PCR-01 closure; next bounded writer may acquire PCR-02**
 
-Production claim: **NONE beyond evidence already recorded by prior packages**
+Production claim: **P0 verified on exact runtime a8d9840; Repair 02 committed 38 settlements once (CAS 841 → 842), readback 843, read-only idempotency 0. No further production write authorized.**
 
 ## Phase queue
 
 | Phase | State | Purpose |
 | --- | --- | --- |
-| PCR-01 | READY | exact-main closure of merged PR #185 history/startup P0 and any already-authorized bounded follow-through |
-| PCR-02 | PLANNED | startup/recovery invariant audit |
+| PCR-01 | COMPLETE | exact-main closure of merged PR #185 history/startup P0 and any already-authorized bounded follow-through |
+| PCR-02 | READY | startup/recovery invariant audit |
 | PCR-03 | PLANNED | Schedule/history mutation semantics audit |
 | PCR-04 | PLANNED | action-intent correctness across UI/API/MCP paths |
 | PCR-05 | PLANNED | connected-mode restart/reload/recovery hardening |
@@ -48,3 +48,19 @@ This authorization does **not** authorize:
 
 If a phase reaches only an external/owner/prohibited gate, record it as deferred
 and continue to the next dependency-safe phase. Do not falsely mark the gate PASS.
+
+## PCR-01 closure evidence
+
+- P0 final-head 4046223 / merge c93, exact-main CI/Browser/Matrix/Pages/Self-Test
+  and real deployed startup probe passed. Docs-only a8 has fresh applicable gates
+  and frontend/backend identity; Matrix/VoiceOver evidence is inherited from the
+  identical runtime source.
+- [P0 receipt](../todayaction-active-unresolved-reduction-v1/P0-HISTORY-STARTUP-RECEIPT.md).
+- [Repair 02 receipt](../todayaction-active-unresolved-reduction-v1/REPAIR-02-PRODUCTION-SETTLEMENT-RECEIPT.md):
+  baseline1374 60/60, parser45/15, exact38ignored, revision841 unchanged;
+  write1375 oneattempt841→842; readback843 retains all3747priorrows; idempotency1377
+  22/22, parser7/15, zero settlement, revision843 unchanged.
+- Production remains 163 active unresolved at that readback; protected/parser-gap
+  records were not cleared. This is bounded repair completion, not zero debt.
+- Existing one-write authorization is **consumed**. PCR-02..07 grants engineering
+  and read-only verification only.
