@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { backendReleaseCommit } from '../gateway/releaseIdentity.js'
+import { GENERATED_RELEASE_COMMIT_SHA } from '../gateway/generatedReleaseIdentity.js'
 
 const VERCEL_SHA = '1234567890abcdef1234567890abcdef12345678'
 const OVERRIDE_SHA = 'abcdef1234567890abcdef1234567890abcdef12'
@@ -22,8 +23,9 @@ describe('backend release identity', () => {
     expect(backendReleaseCommit({ WORKERS_CI_COMMIT_SHA: WORKERS_SHA })).toBe(WORKERS_SHA)
   })
 
-  it('fails closed to undefined for missing or malformed deployment identity', () => {
-    expect(backendReleaseCommit({})).toBeUndefined()
-    expect(backendReleaseCommit({ VERCEL_GIT_COMMIT_SHA: 'not-a-sha' })).toBeUndefined()
+  it('falls back to the embedded source commit when deployment identity is missing or malformed', () => {
+    const embedded = /^[0-9a-f]{7,64}$/i.test(GENERATED_RELEASE_COMMIT_SHA) ? GENERATED_RELEASE_COMMIT_SHA.toLowerCase() : undefined
+    expect(backendReleaseCommit({})).toBe(embedded)
+    expect(backendReleaseCommit({ VERCEL_GIT_COMMIT_SHA: 'not-a-sha' })).toBe(embedded)
   })
 })

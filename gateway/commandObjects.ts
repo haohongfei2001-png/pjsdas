@@ -72,6 +72,17 @@ export function diffCommandObjects(before: PJSDASSnapshot, after: PJSDASSnapshot
   if (stableJson(before.data.meta) !== stableJson(after.data.meta)) {
     refs.set('import_meta:current', { type: 'import_meta', id: 'current' })
   }
+  if (before.data.timePlanning?.defaultDailyMinutes !== after.data.timePlanning?.defaultDailyMinutes) {
+    refs.set('time_planning:default', { type: 'time_planning', id: 'default' })
+  }
+  if (stableJson(before.data.timePlanning?.weeklyWindows) !== stableJson(after.data.timePlanning?.weeklyWindows)) {
+    refs.set('time_planning:windows', { type: 'time_planning', id: 'windows' })
+  }
+  const oldDays = before.data.timePlanning?.dateOverrides ?? {}
+  const newDays = after.data.timePlanning?.dateOverrides ?? {}
+  for (const date of new Set([...Object.keys(oldDays), ...Object.keys(newDays)])) {
+    if (oldDays[date] !== newDays[date]) refs.set(`time_planning:${date}`, { type: 'time_planning', id: date })
+  }
   return [...refs.values()].sort((a, b) => `${a.type}:${a.id}`.localeCompare(`${b.type}:${b.id}`))
 }
 
@@ -106,6 +117,9 @@ export function domainIntentObjects(command: UserDomainCommand, snapshot: PJSDAS
       : { type: 'schedule_node', id: command.scheduleNodeId })
   }
   if (command.kind === 'add_manual_action') refs.push({ type: 'command_target', id: command.commandId })
+  if (command.kind === 'set_daily_capacity') refs.push({ type: 'time_planning', id: 'default' })
+  if (command.kind === 'set_date_capacity') refs.push({ type: 'time_planning', id: command.date })
+  if (command.kind === 'set_work_windows') refs.push({ type: 'time_planning', id: 'windows' })
   return unique(refs)
 }
 

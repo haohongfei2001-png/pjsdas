@@ -88,8 +88,29 @@
 .tsui-today .tsui-page-heading>div{display:flex;align-items:baseline;gap:14px}
 .tsui-today .tsui-page-heading h1{order:0}
 .tsui-today .tsui-page-heading p{order:1;margin:0}
-.tsui-today .tsui-page-heading span{display:none}
+.tsui-today .tsui-page-heading>div>span{display:none}
 .tsui-today .tsui-page-heading{margin-bottom:22px}
+.tsui-capacity{position:relative;flex:0 0 auto;color:#53627b;font-size:.8125rem}
+.tsui-capacity summary{cursor:pointer;list-style:none;border:1px solid #dfe5f0;border-radius:9px;padding:8px 11px;background:#fff}
+.tsui-capacity summary::-webkit-details-marker{display:none}
+.tsui-capacity summary:focus-visible{outline:2px solid #3264cf;outline-offset:3px}
+.tsui-capacity form{position:absolute;right:0;top:calc(100% + 6px);z-index:4;display:flex;flex-wrap:wrap;align-items:end;gap:8px;min-width:245px;padding:12px;border:1px solid #dfe5f0;border-radius:10px;background:#fff;box-shadow:0 8px 24px #1c2c4a1a}
+.tsui-capacity label{display:grid;gap:4px;white-space:nowrap}
+.tsui-capacity input{width:80px;min-height:36px;border:1px solid #c7d1e2;border-radius:7px;padding:0 8px;font:inherit}
+.tsui-capacity button{min-height:36px;border:0;border-radius:7px;padding:0 12px;background:#3264cf;color:#fff;font:inherit;cursor:pointer}
+.tsui-capacity form [role=alert]{display:block;flex-basis:100%;color:#a6403c}
+.tsui-planning-settings{display:grid;gap:12px;color:#53627b;font-size:.8125rem}
+.tsui-planning-settings p{margin:0;line-height:1.55}
+.tsui-planning-settings form,.tsui-planning-actions,.tsui-work-window{display:flex;flex-wrap:wrap;align-items:end;gap:9px}
+.tsui-planning-settings label{display:grid;gap:5px;min-width:110px}
+.tsui-planning-settings input,.tsui-planning-settings select{min-height:38px;padding:5px 8px;border:1px solid #c7d1e2;border-radius:8px;background:#fff;color:#24344d;font:inherit}
+.tsui-planning-settings input[type=number]{width:110px}
+.tsui-planning-settings button{min-height:38px;padding:6px 11px;border:1px solid #c7d1e2;border-radius:8px;background:#fff;color:#24344d;font:inherit;cursor:pointer}
+.tsui-planning-settings button[type=submit],.tsui-planning-actions button:last-child{border-color:#3264cf;background:#3264cf;color:#fff}
+.tsui-planning-settings button:disabled{opacity:.55;cursor:default}
+.tsui-work-windows{display:grid;gap:10px;padding-top:8px;border-top:1px solid #e5e9f1}
+.tsui-work-window{padding:8px;border:1px solid #e5e9f1;border-radius:9px}
+.tsui-planning-settings [role=alert]{color:#a6403c}
 .tsui-task-panel .tsui-panel-header p,.tsui-node-panel .tsui-panel-header p{display:none}
 .tsui-task-panel .tsui-panel-header,.tsui-node-panel .tsui-panel-header{min-height:64px}
 .tsui-task-panel .tsui-panel-header>span{background:transparent;color:#5d6b82;min-width:auto;height:auto;font-weight:500}
@@ -107,6 +128,8 @@
   .tsui-today .tsui-page-heading{margin:7px 0 20px}
   .tsui-today .tsui-page-heading h1{font-size:1.625rem}
   .tsui-today .tsui-page-heading p{font-size:0.8125rem}
+  .tsui-today .tsui-page-heading{align-items:flex-start;flex-wrap:wrap}
+  .tsui-capacity form{right:auto;left:0}
 }
 
 .tsui-node-panel>.tsui-unresolved-link{display:flex;align-items:center;justify-content:space-between;width:100%;min-height:44px;border:0;border-bottom:1px solid #f1e5d9;border-radius:0;padding:0 22px;background:#fffaf4;color:#a16738;text-align:left;font-size:0.75rem}

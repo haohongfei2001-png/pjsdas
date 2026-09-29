@@ -28,6 +28,7 @@ import { validateOpportunityAssessment } from './opportunityAssessment.js'
 import { validateOpportunityFacts } from './richOpportunity.js'
 import { ensureScheduleContractInPlace, validateScheduleNode } from './scheduleNodes.js'
 import { validateReminderIntent, validateReminderOutbox } from './reminders.js'
+import { validateTimePlanningPreferences, type TimePlanningPreferences } from './timePlanningPreferences.js'
 
 export const SNAPSHOT_SCHEMA = 'pjsdas-local-snapshot' as const
 export const SNAPSHOT_VERSION = 4 as const
@@ -48,6 +49,7 @@ export interface SnapshotData {
   prep: Prep[]
   applicationGroups: ApplicationGroup[]
   decisionRules?: DecisionRules
+  timePlanning?: TimePlanningPreferences
   discoveryProfile?: DiscoveryProfile
   discoveryInbox?: DiscoveryInboxItem[]
   timeline?: TimelineRecord[]
@@ -472,6 +474,12 @@ export function validateSnapshot(value: unknown): asserts value is PJSDASSnapsho
       const errors = validateReminderOutbox(record, reminderIntentIds)
       if (errors.length) throw new Error(`备份损坏：ReminderOutbox ${record.id} 无效（${errors[0]}）`)
     }
+  }
+
+  if (data.timePlanning !== undefined) {
+    if (!isObject(data.timePlanning)) throw new Error('备份损坏：时间规划偏好无效。')
+    const errors = validateTimePlanningPreferences(data.timePlanning as unknown as TimePlanningPreferences)
+    if (errors.length) throw new Error(`备份损坏：时间规划偏好无效（${errors[0]}）`)
   }
 
   if (data.decisionRequests) {

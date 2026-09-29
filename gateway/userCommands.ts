@@ -62,6 +62,11 @@ export const applyUserCommandSchema = z.discriminatedUnion('kind', [
     value: z.string().trim().min(1).max(2000),
   }).strict(),
   z.object({ commandId, kind: z.literal('set_opportunity_preference'), opportunityId, roleType }).strict(),
+  z.object({ commandId, kind: z.literal('set_daily_capacity'), minutes: z.number().int().min(0).max(1440) }).strict(),
+  z.object({ commandId, kind: z.literal('set_date_capacity'), date: dateOnly, minutes: z.number().int().min(0).max(1440) }).strict(),
+  z.object({ commandId, kind: z.literal('set_work_windows'), windows: z.array(z.object({
+    weekday: z.number().int().min(0).max(6), startMinute: z.number().int().min(0).max(1439), endMinute: z.number().int().min(1).max(1440),
+  }).strict()).max(21) }).strict(),
   z.object({
     commandId,
     kind: z.literal('add_manual_action'),

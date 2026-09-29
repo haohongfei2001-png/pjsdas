@@ -1,8 +1,8 @@
 import { presentDecision } from '../decisionPresentation.js'
 import { scheduleDisplayTimezone } from '../scheduleDisplayTime.js'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { Action, Opportunity } from '../model.js'
-import { localDateKey, type TodayBriefAction, type TodayBriefCoverageWarning } from '../todayBrief.js'
+import { localDateKey, type TodayBriefAction } from '../todayBrief.js'
 import type { TodayWebSelection } from './todayWebSelector.js'
 import type { ScheduleStream } from '../schedule/scheduleStream.js'
 import { ScheduleWindowList } from '../schedule/ScheduleFeature.js'
@@ -18,7 +18,6 @@ export interface TodayFreshnessView {
 }
 interface TodayFeatureProps {
   selection: TodayWebSelection
-  criticalWarnings: TodayBriefCoverageWarning[]
   stream: ScheduleStream
   opportunities: Opportunity[]
   readOnly?: boolean
@@ -26,6 +25,7 @@ interface TodayFeatureProps {
   workspaceEmpty: boolean
   freshness: TodayFreshnessView
   onStart: () => void
+  onSetTodayCapacity: (minutes: number) => Promise<void>
   onRetry: () => void
   onOpenDecision: (id: string) => void
   onOpenAgenda: () => void
@@ -51,12 +51,16 @@ function actionLabel(item: TodayBriefAction, zh: boolean) {
   if (item.execution.operation === 'open_process') return zh ? '查看流程' : 'View process'
   return !item.opportunityId && item.execution.operation === 'open_action' ? (zh ? '开始' : 'Start') : (zh ? '查看' : 'Open')
 }
-export default function TodayFeature({ selection, criticalWarnings, stream, opportunities, readOnly = false, now, workspaceEmpty, freshness, onStart, onRetry, onOpenDecision, onOpenAgenda, onOpenUnresolved, onExecute, onMark, onOpenOpportunity }: TodayFeatureProps) {
+export default function TodayFeature({ selection, stream, opportunities, readOnly = false, now, workspaceEmpty, freshness, onStart, onSetTodayCapacity, onRetry, onOpenDecision, onOpenAgenda, onOpenUnresolved, onExecute, onMark, onOpenOpportunity }: TodayFeatureProps) {
   const { lang } = useUiLanguage()
   const zh = lang === 'zh'
   const [mobileView, setMobileView] = useState<'tasks' | 'nodes'>('tasks')
   const [pendingId, setPendingId] = useState<string>()
   const [showCompleted, setShowCompleted] = useState(false)
+  const [capacityHours, setCapacityHours] = useState(selection.capacityMinutes === undefined ? '' : String(selection.capacityMinutes / 60))
+  const [capacitySaving, setCapacitySaving] = useState(false)
+  const [capacityError, setCapacityError] = useState('')
+  useEffect(() => { setCapacityHours(selection.capacityMinutes === undefined ? '' : String(selection.capacityMinutes / 60)) }, [selection.capacityMinutes])
   const zhDateParts = new Intl.DateTimeFormat('zh-CN', { month: 'numeric', day: 'numeric', timeZone: stream.timezone }).formatToParts(now)
   const date = zh
     ? `${zhDateParts.find((part) => part.type === 'month')?.value ?? ''}月${zhDateParts.find((part) => part.type === 'day')?.value ?? ''}日 · ${new Intl.DateTimeFormat('zh-CN', { weekday: 'short', timeZone: stream.timezone }).format(now)}`
@@ -67,6 +71,9 @@ export default function TodayFeature({ selection, criticalWarnings, stream, oppo
   const unavailable = freshness.state === 'unavailable' && workspaceEmpty
   const verifiedEmpty = workspaceEmpty && (freshness.state === 'current' || freshness.state === 'updated')
   const uncertainEmpty = freshness.state === 'cached' || freshness.state === 'blocked'
+  const timeConflict = selection.businessConflicts[0]
+  const conflictLabels = timeConflict?.relatedIds.map(id => stream.sections.upcoming.find(entry => entry.nodeId === id)?.title
+    ?? selection.actions.find(item => item.actionId === id)?.title ?? id) ?? []
   async function act(id: string, operation: () => Promise<void>) {
     if (pendingId) return
     setPendingId(id)
@@ -74,16 +81,16 @@ export default function TodayFeature({ selection, criticalWarnings, stream, oppo
   }
   return <section className="tsui-today" data-testid="cgr02-today">
     <header className="tsui-page-heading"><div><p>{date}</p><h1>{zh ? '今天' : 'Today'}</h1><span>{zh ? '把今天该做的事，一件件做好。' : 'Make progress on what matters today.'}</span></div>
+      <details className="tsui-capacity"><summary>{selection.capacityMinutes === undefined ? (zh ? '设置今天可用时间' : 'Set today’s available time') : (zh ? `今天可用 ${selection.capacityMinutes / 60} 小时 · 调整` : `${selection.capacityMinutes / 60} hours available · Adjust`)}</summary><form onSubmit={event => { event.preventDefault(); const minutes = Math.round(Number(capacityHours) * 60); setCapacitySaving(true); setCapacityError(''); void onSetTodayCapacity(minutes).catch(caught => setCapacityError(caught instanceof Error ? caught.message : String(caught))).finally(() => setCapacitySaving(false)) }}><label>{zh ? '今天可用小时' : 'Hours available today'} <input type="number" min="0" max="24" step="0.5" required value={capacityHours} onChange={event => setCapacityHours(event.target.value)} /></label><button type="submit" disabled={capacitySaving || readOnly}>{capacitySaving ? (zh ? '保存中…' : 'Saving…') : (zh ? '保存' : 'Save')}</button>{capacityError ? <span role="alert">{capacityError}</span> : null}</form></details>
     </header>
     {readOnly ? <div className="tsui-alert" role="alert">{zh ? '今天暂时只读；已有记录和回执保留。' : 'Today is temporarily read only; existing records and receipts are retained.'}</div> : null}
     {freshness.state === 'cached' || freshness.state === 'blocked' || freshness.state === 'unavailable' ? <div className="tsui-status tsui-compact-state" role="status">{freshness.state === 'cached' ? (zh ? '显示已验证记录，刷新暂不可用。' : 'Showing verified records; refresh unavailable.') : freshness.state === 'blocked' ? (zh ? '本机状态待核对' : 'Review this device’s sync state') : (zh ? '暂时无法读取最新状态' : 'Latest state unavailable')} <button type="button" onClick={freshness.state === 'blocked' ? onStart : onRetry}>{freshness.state === 'blocked' ? (zh ? '打开设置' : 'Open settings') : (zh ? '重试' : 'Retry')}</button></div> : null}
     {awaiting || unavailable ? <div className="tsui-empty" role="status">{awaiting ? (zh ? '正在确认最新状态…' : 'Checking the latest state…') : (zh ? '暂时无法确认今天，请重试。' : 'Today is unavailable; please retry.')}</div> : <>
       <div className="tsui-mobile-switch" role="group" aria-label={zh ? '今天内容' : 'Today content'}><button type="button" className={mobileView === 'tasks' ? 'active' : ''} onClick={() => setMobileView('tasks')}>{zh ? '任务' : 'Tasks'} <span>{selection.actionCount + selection.decisionCount}</span></button><button type="button" className={mobileView === 'nodes' ? 'active' : ''} onClick={() => setMobileView('nodes')}>{zh ? '节点' : 'Nodes'} <span>{stream.counts.upcoming}</span></button></div>
       <div className="tsui-today-grid">
-        {criticalWarnings.length > 0 ? <div className="tsui-inline-notice tsui-deadline-notice" role="status"><strong>{zh ? '有硬截止尚未纳入今日计划。' : 'A hard deadline is outside today’s plan.'}</strong> <button type="button" onClick={onOpenAgenda}>{zh ? '查看日程' : 'Open schedule'}</button></div> : null}
+        {timeConflict ? <div className="tsui-inline-notice tsui-deadline-notice" role="status"><strong>{timeConflict.kind === 'fixed_overlap' ? (zh ? '两个固定安排时间冲突。' : 'Two fixed commitments overlap.') : (zh ? '今天有无法同时完成的硬截止事项。' : 'Required deadlines cannot both fit today.')}</strong> <span>{conflictLabels.slice(0, 2).join(' · ')}</span> <button type="button" onClick={onOpenAgenda}>{zh ? '查看相关安排' : 'Review commitments'}</button></div> : null}
         <section className={'tsui-panel tsui-task-panel' + (mobileView === 'nodes' ? ' mobile-hidden' : '') + (selection.actionCount + selection.decisionCount <= 1 ? ' is-sparse' : '')} aria-label={zh ? '今天的任务' : 'Tasks for today'}>
           <div className="tsui-panel-header"><div><h2>{zh ? '今日任务' : 'Today’s tasks'} <span className="tsui-count">{selection.actionCount + selection.decisionCount}</span></h2></div></div>
-          {selection.overBudgetMinutes > 0 && criticalWarnings.length === 0 ? <div className="tsui-inline-notice" role="status">{zh ? '今天的安排可能超出可用时间；请先查看有明确时间的事项。' : 'Time commitments may exceed today’s available time. Review timed items first.'}</div> : null}
           {selection.actions.length === 0 && selection.decisions.length === 0 ? <div className="tsui-empty">{uncertainEmpty ? <><strong>{zh ? '现有记录中没有今日任务' : 'No today tasks in the available records'}</strong><p>{zh ? '最新状态暂未确认，请查看上方读取状态。' : 'The latest state is not confirmed. Check the read status above.'}</p></> : workspaceEmpty ? <><strong>{verifiedEmpty ? (zh ? '账号工作区已读取，目前没有今日任务' : 'Account workspace checked; no tasks for today') : (zh ? '先让 TodayAction 了解你的求职进展' : 'Start by adding your job search')}</strong><p>{verifiedEmpty ? (zh ? '可以记录新的进展，或在设置中检查连接。' : 'Record new progress or check your connections in Settings.') : (zh ? '在设置中连接已有账号，或使用上方“告诉 TodayAction”记录进展。' : 'Connect your existing account in Settings or record progress with Tell TodayAction above.')}</p><button type="button" onClick={onStart}>{zh ? '打开设置' : 'Open settings'}</button></> : <strong>{zh ? '现在没有必须处理的任务' : 'Nothing requires action right now'}</strong>}</div> : null}
           <div className="tsui-task-list">
             {selection.decisions.map((item) => <article className="tsui-task-row" data-icon="?" key={item.id}><div className="tsui-task-copy"><small>{zh ? '需要你决定' : 'Decision needed'}</small><strong>{presentDecision(item.request, opportunities, zh).title}</strong><span>{presentDecision(item.request, opportunities, zh).context}</span><span>{presentDecision(item.request, opportunities, zh).explanation}</span></div><button className="tsui-row-action" type="button" onClick={() => onOpenDecision(item.request.id)}>{zh ? '处理' : 'Review'}</button></article>)}

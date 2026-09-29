@@ -37,7 +37,7 @@ function snapshot(actions: Action[] = [], nodes: ScheduleNode[] = [], timeline: 
 }
 
 describe('TSUI-01 complete Web read models', () => {
-  it('returns the full daily set while the external TodayBrief remains capped', () => {
+  it('keeps Web Today within capacity while the external TodayBrief remains a separate capped contract', () => {
     const actions = Array.from({ length: 8 }, (_, i) => action(`manual-${i}`))
     actions.push(action('doing', { status: 'doing', estimatedMinutes: 1000, leverage: 1, delayCost: 1 }))
     actions.push(action('due-today', {
@@ -52,16 +52,17 @@ describe('TSUI-01 complete Web read models', () => {
     const source = snapshot(actions)
     const web = selectTodayWeb(source, { availableMinutes: 180 }, { now: NOW, timezone: TZ, workspaceVersion: 'r1' })
     const ids = web.actions.map((item) => item.actionId)
-    expect(ids.length).toBeGreaterThan(4)
-    expect(ids).toContain('doing')
-    expect(ids).toContain('due-today')
+    expect(ids).toEqual(['date-only-today'])
     expect(ids).toContain('date-only-today')
+    expect(ids).not.toContain('doing')
+    expect(ids).not.toContain('due-today')
     expect(ids).not.toContain('future-backlog')
     expect(new Set(ids).size).toBe(ids.length)
     expect(web.actionCount).toBe(ids.length)
     const brief = buildTodayBrief(source, { availableMinutes: 180 }, { now: NOW, timezone: TZ })
     expect([brief.nextAction, ...brief.nextActions].filter(Boolean)).toHaveLength(4)
-    expect(web.criticalWarnings).toEqual(brief.materialCoverageWarnings.filter((item) => item.severity === 'critical' && item.code !== 'capacity_conflict'))
+    expect(web.criticalWarnings).toHaveLength(1)
+    expect(web.criticalWarnings[0]?.relatedIds).toContain('date-only-today')
   })
 
   it('keeps every future node, ongoing window and unresolved past occurrence', () => {

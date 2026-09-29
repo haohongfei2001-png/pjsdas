@@ -11,6 +11,7 @@ import type {
 } from './model.js'
 import { effectiveScheduleNodeState } from './scheduleNodes.js'
 import { upgradeSnapshotToLatest, type PJSDASSnapshot } from './snapshot.js'
+import { capacityForDate } from './timePlanningPreferences.js'
 
 const HOUR = 3_600_000
 const DAY = 86_400_000
@@ -122,6 +123,7 @@ export interface TodayBriefCoverageWarning {
     | 'coverage_unresolved_inputs'
     | 'capacity_conflict'
     | 'hard_deadline_unplanned'
+    | 'business_time_conflict'
     | 'execution_target_missing'
   severity: 'warning' | 'critical'
   title: string
@@ -138,7 +140,7 @@ export interface TodayBrief {
     version: number
     updatedAt: string
   }
-  availableMinutes: number
+  availableMinutes: number | null
   plannedMinutes: number
   nextAction?: TodayBriefAction
   nextActions: TodayBriefAction[]
@@ -180,7 +182,7 @@ export function resolvedContext(context: TodayBriefContext) {
     now,
     timezone,
     workspaceVersion: context.workspaceVersion,
-    defaultAvailableMinutes: context.defaultAvailableMinutes ?? 180,
+    defaultAvailableMinutes: context.defaultAvailableMinutes,
   }
 }
 
@@ -590,21 +592,25 @@ export function buildTodayBrief(
   rawContext: TodayBriefContext = {},
 ): TodayBrief {
   const context = resolvedContext(rawContext)
-  const availableMinutes = input.availableMinutes ?? context.defaultAvailableMinutes
-  if (!Number.isFinite(availableMinutes) || availableMinutes < 30 || availableMinutes > 1440) {
-    throw new Error('TodayBrief availableMinutes must be between 30 and 1440.')
+  const snapshot = upgradeSnapshotToLatest(rawSnapshot)
+  const today = localDateKey(context.now, context.timezone)
+  const weekday = new Date(`${today}T12:00:00.000Z`).getUTCDay()
+  const availableMinutes = input.availableMinutes ?? capacityForDate(snapshot.data.timePlanning, today, weekday) ?? context.defaultAvailableMinutes
+  if (availableMinutes !== undefined && (!Number.isInteger(availableMinutes) || availableMinutes < 0 || availableMinutes > 1440)) {
+    throw new Error('TodayBrief availableMinutes must be between 0 and 1440.')
   }
   const agendaHorizonDays = input.agendaHorizonDays ?? 7
   if (!Number.isInteger(agendaHorizonDays) || agendaHorizonDays < 1 || agendaHorizonDays > 30) {
     throw new Error('TodayBrief agendaHorizonDays must be an integer between 1 and 30.')
   }
 
-  const snapshot = upgradeSnapshotToLatest(rawSnapshot)
   const rules = decisionRulesForSnapshot(snapshot.data.decisionRules)
   const opportunities = opportunityMap(snapshot.data.opportunities)
   const activeNodes = latestByOccurrence(snapshot.data.scheduleNodes ?? [])
   const ranked = rankActions(snapshot.data.actions, snapshot.data.opportunities, context.now, rules)
-  const plan = buildTimePlan(ranked, availableMinutes, context.now, rules)
+  // The legacy brief contract still needs a numerical planner input. Its
+  // maximum is only a computational ceiling when the user's capacity is unknown.
+  const plan = buildTimePlan(ranked, availableMinutes ?? 1440, context.now, rules)
 
   const rankedById = new Map(ranked.map((item) => [item.action.id, item]))
   const protectedRanked = ranked
@@ -633,7 +639,7 @@ export function buildTodayBrief(
     0,
   )
   const effectivePlannedMinutes = plan.totalMinutes + protectedOutsidePlanMinutes
-  const effectiveOverBudgetMinutes = Math.max(0, effectivePlannedMinutes - Math.round(availableMinutes))
+  const effectiveOverBudgetMinutes = availableMinutes === undefined ? 0 : Math.max(0, effectivePlannedMinutes - availableMinutes)
 
   const ordered: RankedAction[] = []
   const seen = new Set<string>()
@@ -707,7 +713,7 @@ export function buildTodayBrief(
   ].filter((item, index, items) =>
     items.findIndex((candidate) => candidate.action.id === item.action.id) === index,
   )
-  if (protectedUnplanned.length > 0) {
+  if (availableMinutes !== undefined && protectedUnplanned.length > 0) {
     warnings.push(warning(
       'hard_deadline_unplanned',
       'critical',
@@ -738,7 +744,7 @@ export function buildTodayBrief(
       version: rules.version,
       updatedAt: rules.updatedAt,
     },
-    availableMinutes: Math.round(availableMinutes),
+    availableMinutes: availableMinutes ?? null,
     plannedMinutes: effectivePlannedMinutes,
     nextAction: visibleActions[0],
     nextActions: visibleActions.slice(1),

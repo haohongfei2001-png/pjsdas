@@ -119,6 +119,7 @@ export function workspaceIsEffectivelyEmpty(snapshot: PJSDASSnapshot) {
     (data.changeSets ?? []).length === 0 &&
     !meaningfulTimeline &&
     !data.meta &&
+    !data.timePlanning &&
     rulesAreDefault(snapshot) &&
     discoveryProfileIsDefault(snapshot)
 }

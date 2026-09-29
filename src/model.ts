@@ -647,6 +647,7 @@ export type TimelineKind =
   | 'action_added'
   | 'action_status_changed'
   | 'rules_changed'
+  | 'time_preferences_changed'
   | 'excel_imported'
   | 'backup_restored'
   | 'baseline_backfill'
