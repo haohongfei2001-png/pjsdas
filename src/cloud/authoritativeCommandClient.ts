@@ -93,7 +93,7 @@ function readPending(accountKey: string): PendingCommand[] {
 
 function assertNoOtherProjectionPending(accountKey: string, commandId: string) {
   if (readPending(accountKey).some(item => item.status === 'projection_pending' && item.commandId !== commandId)) {
-    throw new ConnectedProjectionPendingError()
+    throw new CommandBlockedByPendingProjectionError()
   }
 }
 
@@ -258,6 +258,10 @@ export class ConnectedProjectionPendingError extends Error {
   readonly code = 'CONNECTED_PROJECTION_PENDING'
   constructor() { super('服务器已确认操作，本机状态待安全刷新。请在设置中核对同步状态。') }
 }
+export class CommandBlockedByPendingProjectionError extends Error {
+  readonly code = 'COMMAND_BLOCKED_BY_PENDING_PROJECTION'
+  constructor() { super('本机还有已确认操作待安全刷新；这次新操作尚未发送。请先在设置中核对同步状态。') }
+}
 
 export async function lookupConnectedCommandReceipt(accountKey: string, commandId: string): Promise<ConnectedCommandResponse | undefined> {
   // Receipt existence is a server fact. Local projection safety is checked
@@ -388,9 +392,9 @@ async function submitPending(accountKey: string, pending: PendingCommand, newlyC
     if (projected.localProjection === 'applied' || projected.outcome === 'NO_WRITE') removePending(accountKey, pending.commandId)
     return projected
   } catch (caught) {
-    if (caught instanceof ConnectedProjectionPendingError && newlyCreated) removePending(accountKey, pending.commandId)
+    if (caught instanceof CommandBlockedByPendingProjectionError && newlyCreated) removePending(accountKey, pending.commandId)
     if (caught instanceof PreExecutionCommandError || caught instanceof AccountCacheChangedError
-      || caught instanceof ConnectedProjectionPendingError) throw caught
+      || caught instanceof ConnectedProjectionPendingError || caught instanceof CommandBlockedByPendingProjectionError) throw caught
     return recoverUnknown(accountKey, pending, caught)
   }
 }

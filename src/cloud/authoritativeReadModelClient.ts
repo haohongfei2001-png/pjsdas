@@ -72,8 +72,13 @@ export async function refreshConnectedAuthoritativeCache(
     return { state: 'pending_operations', workspaceVersion: remote.version, observedAt,
       latencyMs: Date.now() - startedAt, changed: false }
   }
-  const preserveLatestConflict = () => {
+  const preserveLatestConflict = async () => {
     if (!checkpoint.conflict) return
+    await assertLocalSnapshotCurrent(local, assertCurrent)
+    const current = getAccountCheckpoint(accountKey)
+    if (!current.conflict) return
+    if ((Number(current.conflict.remoteVersion.replace('txn:', '')) || 0)
+      > (Number(remote.version.replace('txn:', '')) || 0)) return
     assertCurrent()
     patchAccountCheckpoint(accountKey, { conflict: {
       remoteVersion: remote.version,
@@ -97,7 +102,7 @@ export async function refreshConnectedAuthoritativeCache(
 
   if (!checkpoint.lastSyncedFingerprint || !checkpoint.lastSyncedVersion) {
     if (!workspaceIsEffectivelyEmpty(local)) {
-      preserveLatestConflict()
+      await preserveLatestConflict()
       return {
         state: 'unbound_local',
         workspaceVersion: remote.version,
@@ -134,7 +139,7 @@ export async function refreshConnectedAuthoritativeCache(
           return { state: 'current', workspaceVersion: remote.version, observedAt, latencyMs: Date.now() - startedAt, changed: false }
         }
       } else {
-        preserveLatestConflict()
+        await preserveLatestConflict()
         return {
           state: remoteChanged ? 'diverged' : 'local_changes_pending',
           workspaceVersion: remote.version,

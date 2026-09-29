@@ -134,6 +134,16 @@ export async function runCloudSync(userId: string, options: { passive?: boolean;
     // may refresh the local cache only after a fresh exact equivalence proof.
     if (options.equivalenceOnly && (!remote || pendingCommandSummary(userId).count > 0
       || !equivalentReadProjection(local, remote.snapshot))) {
+      await assertLocalSnapshotCurrent(local, assertCurrent)
+      const latestCheckpoint = getAccountCheckpoint(userId)
+      if (checkpoint.conflict && !latestCheckpoint.conflict) {
+        return { kind: 'synced', version: latestCheckpoint.lastSyncedVersion }
+      }
+      if (remote && latestCheckpoint.conflict
+        && Number(latestCheckpoint.conflict.remoteVersion.replace('txn:', '')) > Number(remote.version.replace('txn:', ''))) {
+        return { kind: 'conflict', version: latestCheckpoint.conflict.remoteVersion,
+          remoteUpdatedAt: latestCheckpoint.conflict.remoteUpdatedAt }
+      }
       if (remote) markConflict(userId, remote)
       return { kind: 'conflict', version: remote?.version, remoteUpdatedAt: remote?.updatedAt }
     }

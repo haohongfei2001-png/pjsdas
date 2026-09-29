@@ -31,6 +31,7 @@ import {
   saveAccountDraft,
   UnknownCommandOutcomeError,
   ConnectedProjectionPendingError,
+  CommandBlockedByPendingProjectionError,
   PreExecutionCommandError,
 } from '../src/cloud/authoritativeCommandClient.js'
 import { upgradeSnapshotToLatest, type PJSDASSnapshot } from '../src/snapshot.js'
@@ -379,7 +380,7 @@ describe('CGR-01 account-scoped connected command client', () => {
     } }, { commandId: firstId, baseRevision: 7, allowProjectionPending: true })).toMatchObject({ localProjection: 'pending' })
     await expect(executeConnectedBusinessCommand('account-a', { type: 'domain', value: {
       commandId: secondId, kind: 'complete_occurrence', occurrenceId: 'occurrence-b',
-    } }, { commandId: secondId, baseRevision: 7 })).rejects.toBeInstanceOf(ConnectedProjectionPendingError)
+    } }, { commandId: secondId, baseRevision: 7 })).rejects.toBeInstanceOf(CommandBlockedByPendingProjectionError)
     expect(listAccountPendingOperations('account-a').map(item => item.commandId)).toEqual([firstId])
     expect(fetchBackend).toHaveBeenCalledTimes(1)
   })

@@ -19,6 +19,7 @@ import {
   saveAccountDraft,
   UnknownCommandOutcomeError,
   ConnectedProjectionPendingError,
+  CommandBlockedByPendingProjectionError,
   PreExecutionCommandError,
 } from './cloud/authoritativeCommandClient.js'
 import type { SemanticCandidate } from './model.js'
@@ -34,7 +35,7 @@ interface TellPjsdasCaptureProps {
   contextRefs?: string[]
 }
 
-type CaptureSaveState = 'idle' | 'saving' | 'saved' | 'offline' | 'unknown' | 'reauth' | 'conflict' | 'error' | 'confirmed_pending'
+type CaptureSaveState = 'idle' | 'saving' | 'saved' | 'offline' | 'unknown' | 'reauth' | 'conflict' | 'error' | 'confirmed_pending' | 'blocked_by_pending'
 
 function targetLabel(candidate: SemanticCandidate) {
   const target = candidate.target
@@ -98,6 +99,9 @@ function saveErrorCopy(state: CaptureSaveState, zh: boolean) {
   if (state === 'confirmed_pending') return zh
     ? '服务器已确认这次操作。请在设置中核对本机状态，再确认保存结果；原操作不会重复发送。'
     : 'The server confirmed this action. Review this device in Settings, then confirm the saved result; the original action will not be resent.'
+  if (state === 'blocked_by_pending') return zh
+    ? '此前已确认的操作仍待本机安全刷新；这次新操作没有发送。输入仍保留，先在设置中核对同步状态。'
+    : 'An earlier confirmed action awaits a safe refresh. This new action was not sent. Your input is retained; review sync in Settings.'
   if (state === 'conflict') return zh
     ? '请先核对最新事实，再决定是否重新提交。输入内容仍在这里。'
     : 'Review the latest facts before submitting again. Your input remains here.'
@@ -316,6 +320,10 @@ export default function TellPjsdasCapture({
       setError(detail)
       if (caught instanceof UnknownCommandOutcomeError) setSaveState('unknown')
       else if (caught instanceof ConnectedProjectionPendingError) setSaveState('confirmed_pending')
+      else if (caught instanceof CommandBlockedByPendingProjectionError) {
+        setSaveState('blocked_by_pending')
+        setStableCommandId(undefined)
+      }
       else if (caught instanceof PreExecutionCommandError && caught.code === 'SESSION_EXPIRED_BEFORE_COMMAND') setSaveState('reauth')
       else if (/CONFLICT|conflict/i.test(detail)) setSaveState('conflict')
       else setSaveState('error')
@@ -409,7 +417,8 @@ export default function TellPjsdasCapture({
                 {saveState === 'saving' ? (zh ? '正在保存' : 'Saving')
                   : saveState === 'saved' ? (zh ? '已保存' : 'Saved')
                   : saveState === 'unknown' ? (zh ? '等待确认' : 'Confirming')
-                    : saveState === 'confirmed_pending' ? (zh ? '服务器已确认，本机待刷新' : 'Server confirmed; device refresh pending')
+                  : saveState === 'confirmed_pending' ? (zh ? '服务器已确认，本机待刷新' : 'Server confirmed; device refresh pending')
+                    : saveState === 'blocked_by_pending' ? (zh ? '尚未发送' : 'Not sent')
                       : saveState === 'offline' ? (zh ? '仅草稿' : 'Draft only')
                         : (zh ? '尚未保存' : 'Not saved')}
               </span>
@@ -471,6 +480,8 @@ export default function TellPjsdasCapture({
               ? (zh ? '保存结果暂时未知' : 'Save outcome is not confirmed yet')
               : saveState === 'confirmed_pending'
                 ? (zh ? '服务器已确认，本机待安全刷新' : 'Server confirmed; this device awaits a safe refresh')
+              : saveState === 'blocked_by_pending'
+                ? (zh ? '这次操作尚未发送' : 'This action was not sent')
               : saveState === 'reauth'
                 ? (zh ? '登录会话已过期' : 'Session expired')
                 : saveState === 'conflict'
