@@ -89,6 +89,17 @@ function readPending(accountKey: string): PendingCommand[] {
   }
 }
 
+/** No command payload leaves this read-only diagnostic. */
+export function pendingCommandSummary(accountKey: string) {
+  const pending = readPending(accountKey)
+  return {
+    count: pending.length,
+    pending: pending.filter(item => item.status === 'pending').length,
+    unknown: pending.filter(item => item.status === 'unknown').length,
+    conflict: pending.filter(item => item.status === 'conflict').length,
+  }
+}
+
 function writePending(accountKey: string, items: PendingCommand[]) {
   const store = storage()
   if (!store) return

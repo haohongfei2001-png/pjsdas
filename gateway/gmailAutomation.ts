@@ -1083,6 +1083,12 @@ export function gmailSemanticRecordFromMessage(
     const { piece, parsed } = item
     if (item.instructionOnly || conditionalCompletionDisclaimer(piece)) continue
     const selected = parsed.opportunity ?? whole.opportunity
+    const plausible = (parsed.candidates.length ? parsed.candidates : whole.candidates)
+      .filter(item => item.score >= 40)
+    const commonCompany = plausible.length >= 2 && plausible.every(item =>
+      item.opportunity.company === plausible[0]?.opportunity.company) ? plausible[0]?.opportunity.company : undefined
+    const commonRole = plausible.length >= 2 && plausible.every(item =>
+      item.opportunity.role === plausible[0]?.opportunity.role) ? plausible[0]?.opportunity.role : undefined
     const submissionDeadline = /(?:提交|交卷|submission|submit).{0,12}(?:截止|最晚|deadline|by)|(?:截止|deadline).{0,12}(?:提交|交卷|submission|submit)/i.test(piece)
     const eventType = submissionDeadline && deadlineContextType ? deadlineContextType
       : parsed.type && parsed.type !== 'other' ? parsed.type : !bodyHasEvent ? subjectType : undefined
@@ -1093,7 +1099,12 @@ export function gmailSemanticRecordFromMessage(
     const evidenceRef = `gmail:primary:${message.id}:fragment:${index}`
     const base = {
       id: `fragment:${index}`,
-      target: selected ? { opportunityId: selected.id } : undefined,
+      // A source-only ambiguity is a user choice only when the message itself
+      // names a bounded business target. Keep the common identity for the
+      // shared resolver; an unanchored parser guess stays coverage debt.
+      target: selected ? { opportunityId: selected.id }
+        : commonCompany || (commonRole && piece.includes(commonRole))
+          ? { company: commonCompany, role: commonRole && piece.includes(commonRole) ? commonRole : undefined } : undefined,
       objectConfidence: selected ? (parsed.opportunity ? parsed.confidence.opportunity : whole.confidence.opportunity) : 'low' as const,
       eventConfidence: !originalReceivedAt ? 'low' as const : application ? 'high' as const : eventConfidence,
       evidenceRefs: [evidenceRef], sourceVersionRefs: [`${message.id}:uu06-v1`],

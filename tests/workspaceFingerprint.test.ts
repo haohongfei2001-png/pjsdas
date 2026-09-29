@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest'
 import { createSnapshot } from '../src/snapshot.js'
 import { DEFAULT_DECISION_RULES } from '../src/decisionRules.js'
 import { createDefaultDiscoveryProfile } from '../src/discoveryProfile.js'
-import { canonicalWorkspaceJson, equivalentReadProjection, fingerprintWorkspace, workspaceIsEffectivelyEmpty } from '../src/cloud/workspaceFingerprint.js'
+import { canonicalWorkspaceJson, classifyReadProjectionDifference, equivalentReadProjection, fingerprintWorkspace, workspaceIsEffectivelyEmpty } from '../src/cloud/workspaceFingerprint.js'
 
 function snapshot(exportedAt: string, company?: string) {
   return createSnapshot({
@@ -140,13 +140,30 @@ it('normalizes only unique top-level entity order, preserving wire and nested se
   b.data.actions.reverse(); b.data.opportunities.reverse(); b.data.decisionRequests!.reverse(); b.data.scheduleNodes!.reverse()
   expect(canonicalWorkspaceJson(a)).not.toBe(canonicalWorkspaceJson(b))
   expect(equivalentReadProjection(a, b)).toBe(true)
+  expect(classifyReadProjectionDifference(a, b)).toBe('order_only')
   b.data.actions[0].title += ' actual edit'
   expect(equivalentReadProjection(a, b)).toBe(false)
   const c = structuredClone(a)
   c.data.decisionRequests![0].choices.reverse()
   expect(equivalentReadProjection(a, c)).toBe(false)
+  expect(classifyReadProjectionDifference(a, c)).toBe('unproven_difference')
   const duplicate = structuredClone(a)
   duplicate.data.actions[1].id = duplicate.data.actions[0].id
   const reordered = structuredClone(duplicate); reordered.data.actions.reverse()
   expect(equivalentReadProjection(duplicate, reordered)).toBe(false)
+})
+
+it('distinguishes derived cache metadata and server-only audit from business edits', () => {
+  const remote = snapshot('2026-09-11T00:00:00.000Z', 'Example')
+  delete remote.data.decisionRules
+  const local = snapshot('2026-09-11T00:00:00.000Z', 'Example')
+  local.data.timeline = [{ id: 'derived-1', kind: 'baseline_backfill', source: 'system' } as any]
+  expect(classifyReadProjectionDifference(local, remote)).toBe('cache_metadata')
+  remote.data.timeline = [{
+    id: 'server-audit', kind: 'ingestion_recorded', source: 'gmail',
+    ingestion: { sourceKind: 'gmail' },
+  } as any]
+  expect(classifyReadProjectionDifference(local, remote)).toBe('historical_read_only_evidence')
+  local.data.opportunities[0]!.company = 'Edited locally'
+  expect(classifyReadProjectionDifference(local, remote)).toBe('unproven_difference')
 })

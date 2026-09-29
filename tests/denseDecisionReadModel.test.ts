@@ -2,17 +2,135 @@ import { applySemanticIntake } from '../src/semanticIntake.js'
 import { describe, expect, it } from 'vitest'
 import { denseDecision, denseDecisionWorkspace, DENSE_NOW } from './fixtures/denseDecisionWorkspace.js'
 import { decisionNeedsToday, groupOpenDecisions, presentDecision, presentChoice } from '../src/decisionPresentation.js'
+import { partitionDecisions } from '../src/decisionActionability.js'
 import { selectTodayWeb } from '../src/today/todayWebSelector.js'
 import { buildScheduleStream } from '../src/schedule/scheduleStream.js'
 const zone = 'Asia/Shanghai'
 describe('dense owner decision and schedule membership', () => {
+  it('quarantines the production aggregate shape without deleting any of its 363 source records', () => {
+    const snapshot = denseDecisionWorkspace()
+    const reasons = [
+      ...Array(173).fill('missing_required_field'),
+      ...Array(117).fill('ambiguous_target'),
+      ...Array(69).fill('low_confidence'),
+      ...Array(4).fill('ambiguous_occurrence'),
+    ] as Array<NonNullable<typeof snapshot.data.decisionRequests>[number]['reason']>
+    snapshot.data.decisionRequests = reasons.map((reason, index) => ({
+      ...denseDecision(index), reason,
+    }))
+    const before = JSON.stringify(snapshot.data.decisionRequests)
+    const classified = partitionDecisions(snapshot.data.decisionRequests, {
+      opportunities: snapshot.data.opportunities, scheduleNodes: snapshot.data.scheduleNodes, now: DENSE_NOW,
+    })
+    expect(classified.actionable).toHaveLength(0)
+    expect(classified.dataQuality).toHaveLength(363)
+    const today = selectTodayWeb(snapshot, {}, { now: DENSE_NOW, timezone: zone })
+    expect(today.decisionCount).toBe(0)
+    expect(today.openDecisionCount).toBe(0)
+    expect(today.actionCount).toBeLessThan(20)
+    expect(JSON.stringify(snapshot.data.decisionRequests)).toBe(before)
+  })
+  it('keeps a bounded reminder cancellation selectable when every choice names an active reminder', () => {
+    const snapshot = denseDecisionWorkspace()
+    const request = denseDecision(500)
+    request.reason = 'missing_required_field'
+    request.payloadBinding.candidate = {
+      id: 'fragment:0', kind: 'reminder_cancelled', purpose: 'upcoming',
+      objectConfidence: 'low', eventConfidence: 'high', evidenceRefs: [], sourceVersionRefs: [],
+    }
+    const reminders = [0, 1].map(index => ({
+      id: `reminder-${index}`, scheduleNodeId: `dense-node-${index}`, scheduleNodeVersion: 1,
+      purpose: 'upcoming' as const, triggerAt: '2026-09-29T01:00:00Z',
+      deliveryOwner: 'pjsdas' as const, channel: 'in_product' as const,
+      state: 'active' as const, dedupeKey: `reminder-${index}`,
+      createdAt: DENSE_NOW.toISOString(), updatedAt: DENSE_NOW.toISOString(),
+    }))
+    request.choices = reminders.map(item => ({
+      id: item.id, label: item.id, consequence: 'Cancel only this reminder.',
+      resolution: { reminderIntentId: item.id },
+    }))
+    const context = { opportunities: snapshot.data.opportunities, scheduleNodes: snapshot.data.scheduleNodes,
+      reminderIntents: reminders, now: DENSE_NOW }
+    expect(partitionDecisions([request], context).actionable).toHaveLength(1)
+    request.payloadBinding.candidate.eventConfidence = 'low'
+    expect(partitionDecisions([request], context).dataQuality).toHaveLength(1)
+    request.payloadBinding.candidate.eventConfidence = 'high'
+    reminders[1].state = 'cancelled' as const
+    expect(partitionDecisions([request], context).dataQuality).toHaveLength(1)
+  })
+  it('removes stale occurrence choices even when the plausible count stays the same', () => {
+    const snapshot = denseDecisionWorkspace()
+    const nodes = snapshot.data.scheduleNodes!
+    for (const node of nodes.slice(0, 3)) node.kind = 'interview'
+    const request = denseDecision(502)
+    request.reason = 'ambiguous_occurrence'
+    request.payloadBinding.candidate.target = { occurrenceKind: 'interview' }
+    request.choices = nodes.slice(0, 3).map(node => ({
+      id: `occurrence:${node.occurrenceId}`, label: node.occurrenceId,
+      consequence: 'Update only this interview.', resolution: { occurrenceId: node.occurrenceId },
+    }))
+    const context = { opportunities: snapshot.data.opportunities, scheduleNodes: nodes, now: DENSE_NOW }
+    expect(partitionDecisions([request], context).actionable).toHaveLength(1)
+    nodes[2]!.kind = 'written_test'
+    nodes[3]!.kind = 'interview'
+    expect(partitionDecisions([request], context).dataQuality).toHaveLength(1)
+  })
+  it('keeps a company-scoped occurrence choice when another company has the same event kind', () => {
+    const snapshot = denseDecisionWorkspace()
+    const nodes = snapshot.data.scheduleNodes!
+    for (const node of nodes.slice(0, 3)) node.kind = 'interview'
+    nodes[1]!.opportunityId = nodes[0]!.opportunityId
+    nodes[1]!.temporal.date = '2026-09-29'
+    const request = denseDecision(503)
+    request.reason = 'ambiguous_occurrence'
+    request.payloadBinding.candidate.target = {
+      company: snapshot.data.opportunities[0]!.company, occurrenceKind: 'interview',
+    }
+    request.choices = nodes.slice(0, 2).map(node => ({
+      id: `occurrence:${node.occurrenceId}`, label: node.occurrenceId,
+      consequence: 'Update only this interview.', resolution: { occurrenceId: node.occurrenceId },
+    }))
+    const context = { opportunities: snapshot.data.opportunities, scheduleNodes: nodes, now: DENSE_NOW }
+    expect(partitionDecisions([request], context).actionable).toHaveLength(1)
+    const generated = applySemanticIntake(snapshot, {
+      contractVersion: 1, inputId: 'gmail:company-occurrence',
+      source: { kind: 'gmail', sourceId: 'primary', sourceRecordId: 'company-occurrence',
+        observedAt: DENSE_NOW.toISOString(), assertedAt: DENSE_NOW.toISOString(), timezone: zone },
+      statementMode: 'assertion',
+      candidates: [{ id: 'fragment:0', kind: 'occurrence_cancelled',
+        target: { company: snapshot.data.opportunities[0]!.company, occurrenceKind: 'interview' },
+        objectConfidence: 'low', eventConfidence: 'high', evidenceRefs: ['company-occurrence'], sourceVersionRefs: [] }],
+    }, { authorized: true, now: DENSE_NOW })
+    expect(generated.status).toBe('DECISION_REQUIRED')
+    expect(generated.decisionRequests).toHaveLength(1)
+    expect(generated.decisionRequests[0]!.reason).toBe('ambiguous_occurrence')
+    nodes[1]!.opportunityId = snapshot.data.opportunities[1]!.id
+    expect(partitionDecisions([request], context).dataQuality).toHaveLength(1)
+  })
+  it('uses the same normalized company identity as semantic resolution', () => {
+    const snapshot = denseDecisionWorkspace()
+    snapshot.data.opportunities[0]!.company = '京东'
+    snapshot.data.opportunities[1]!.company = '京东'
+    const request = denseDecision(501)
+    request.payloadBinding.candidate.target = { company: '京东招聘' }
+    request.choices = [0, 1].map(index => ({
+      id: `opportunity:${snapshot.data.opportunities[index]!.id}`,
+      label: `京东 · 机会${index}`,
+      consequence: 'Only this opportunity will be updated.',
+      resolution: { opportunityId: snapshot.data.opportunities[index]!.id },
+    }))
+    expect(partitionDecisions([request], {
+      opportunities: snapshot.data.opportunities, now: DENSE_NOW,
+    }).actionable).toHaveLength(1)
+  })
   it('preserves all records but does not mistake 358 undated email decisions for Today tasks', () => {
     const snapshot = denseDecisionWorkspace(), before = JSON.stringify(snapshot)
     const selected = selectTodayWeb(snapshot, {}, { now: DENSE_NOW, timezone: zone })
     expect(snapshot.data.actions.filter(a => a.status === 'todo')).toHaveLength(361)
     expect(snapshot.data.scheduleNodes).toHaveLength(300)
     expect(selected.actionCount).toBeGreaterThan(0); expect(selected.actionCount).toBeLessThan(20)
-    expect(selected.decisionCount).toBe(0); expect(selected.openDecisionCount).toBe(358)
+    expect(selected.decisionCount).toBe(0); expect(selected.openDecisionCount).toBe(0)
+    expect(snapshot.data.decisionRequests).toHaveLength(358)
     const schedule = buildScheduleStream(snapshot, { now: DENSE_NOW, timezone: zone, accountKey: 'synthetic', workspaceRevision: '1' })
     expect(schedule.sections.upcoming.every(n => !n.date || n.date >= '2026-09-29')).toBe(true)
     expect(schedule.sections.unresolved).toHaveLength(98)
@@ -20,8 +138,18 @@ describe('dense owner decision and schedule membership', () => {
   })
   it('keeps all seven genuine same-day decisions without a count cap, excludes old and future timing', () => {
     const snapshot = denseDecisionWorkspace()
+    snapshot.data.opportunities[0]!.company = 'Shared company'
+    snapshot.data.opportunities[1]!.company = 'Shared company'
+    snapshot.data.opportunities[1]!.role = 'Analyst'
     for (let i = 0; i < 7; i++) {
       const candidate = snapshot.data.decisionRequests![i].payloadBinding.candidate
+      candidate.target = { company: 'Shared company' }
+      snapshot.data.decisionRequests![i].choices = [0, 1].map(j => ({
+        id: `opportunity:${snapshot.data.opportunities[j]!.id}`,
+        label: `Shared company｜${snapshot.data.opportunities[j]!.role}`,
+        consequence: 'Only this opportunity will be updated.',
+        resolution: { opportunityId: snapshot.data.opportunities[j]!.id },
+      }))
       if (candidate.kind === 'process_event') { candidate.dueAt = '2026-09-29'; candidate.duePrecision = 'date' }
     }
     const selected = selectTodayWeb(snapshot, {}, { now: DENSE_NOW, timezone: zone })

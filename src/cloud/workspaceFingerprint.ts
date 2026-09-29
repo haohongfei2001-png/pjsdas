@@ -63,6 +63,33 @@ export function equivalentReadProjection(local: PJSDASSnapshot, remote: PJSDASSn
   return normalized(local, false) === normalized(remote, true)
 }
 
+/** Explain a difference without broadening the equivalence safety rule. */
+export function classifyReadProjectionDifference(local: PJSDASSnapshot, remote: PJSDASSnapshot) {
+  if (canonicalWorkspaceJson(local) === canonicalWorkspaceJson(remote)) return 'equal' as const
+  // A label used to offer automatic convergence must satisfy the same strict
+  // one-way projection proof as the sync path, including all local audit rows.
+  if (!equivalentReadProjection(local, remote)) return 'unproven_difference' as const
+  const normalized = (snapshot: PJSDASSnapshot, derived: boolean) => {
+    const data = structuredClone(snapshot.data)
+    if (derived && rulesAreDefault({ ...snapshot, data })) delete data.decisionRules
+    const record = data as unknown as Record<string, unknown>
+    for (const [key, value] of Object.entries(data)) {
+      if (!Array.isArray(value)) continue
+      const rows = derived && key === 'timeline'
+        ? value.filter(row => row?.kind !== 'baseline_backfill') : value
+      if (derived && rows.length === 0) { delete record[key]; continue }
+      const ids = rows.map(row => row && typeof row === 'object' ? row.id : undefined)
+      record[key] = ids.every(id => typeof id === 'string' && id.length > 0)
+        && new Set(ids).size === rows.length
+        ? [...rows].sort((a, b) => String(a.id).localeCompare(String(b.id))) : rows
+    }
+    return JSON.stringify(canonical(data))
+  }
+  if (normalized(local, false) === normalized(remote, false)) return 'order_only' as const
+  if (normalized(local, true) === normalized(remote, true)) return 'cache_metadata' as const
+  return 'historical_read_only_evidence' as const
+}
+
 function rulesAreDefault(snapshot: PJSDASSnapshot) {
   const rules = snapshot.data.decisionRules
   if (!rules) return true

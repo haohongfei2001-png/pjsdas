@@ -16,8 +16,9 @@ import {
   updateRemoteWorkspace,
   type RemoteWorkspaceRow,
 } from './cloudRepository.js'
-import { equivalentReadProjection, fingerprintWorkspace, workspaceIsEffectivelyEmpty } from './workspaceFingerprint.js'
+import { classifyReadProjectionDifference, equivalentReadProjection, fingerprintWorkspace, workspaceIsEffectivelyEmpty } from './workspaceFingerprint.js'
 import { connectedWorkspaceAuthorityEnabled } from './connectedWorkspaceRepository.js'
+import { pendingCommandSummary } from './authoritativeCommandClient.js'
 
 export type CloudSyncOutcomeKind =
   | 'created'
@@ -32,6 +33,30 @@ export interface CloudSyncOutcome {
   kind: CloudSyncOutcomeKind
   version?: string
   remoteUpdatedAt?: string
+}
+
+export async function inspectConnectedDivergence(userId: string) {
+  const local = await exportLocalSnapshot()
+  const remoteRaw = await fetchRemoteWorkspace(userId)
+  const remote = remoteRaw ? await verifyRemote(remoteRaw) : null
+  const checkpoint = getAccountCheckpoint(userId)
+  const localFingerprint = await fingerprintWorkspace(local)
+  const pendingOperations = pendingCommandSummary(userId)
+  const recordedProjection = await isRecordedAccountProjection(userId, local)
+  const difference = remote ? classifyReadProjectionDifference(local, remote.snapshot) : 'remote_unavailable' as const
+  return {
+    localFingerprint,
+    authoritativeFingerprint: remote?.fingerprint,
+    authoritativeVersion: remote?.version,
+    checkpointVersion: checkpoint.lastSyncedVersion,
+    checkpointFingerprint: checkpoint.lastSyncedFingerprint,
+    localProjectionFingerprint: checkpoint.lastReadProjectionFingerprint,
+    localProjectionSourceFingerprint: checkpoint.lastReadProjectionSourceFingerprint,
+    localPendingFingerprint: checkpoint.localPendingFingerprint,
+    recordedProjection,
+    pendingOperations,
+    classification: pendingOperations.count ? 'pending_operations' as const : difference,
+  }
 }
 
 async function verifyRemote(row: RemoteWorkspaceRow) {
@@ -79,8 +104,7 @@ export async function hasUnsyncedLocalWorkspace(userId: string) {
   return localFingerprintHasUnsyncedChanges({ checkpoint, localFingerprint })
 }
 
-export async function runCloudSync(userId: string, options: { passive?: boolean } = {}): Promise<CloudSyncOutcome> {
-  void options
+export async function runCloudSync(userId: string, options: { passive?: boolean; equivalenceOnly?: boolean } = {}): Promise<CloudSyncOutcome> {
   const lease = connectedWorkspaceAuthorityEnabled() ? captureAccountCacheLease(userId) : undefined
   let targetVersion: string | undefined
   const assertCurrent = () => {
@@ -104,6 +128,12 @@ export async function runCloudSync(userId: string, options: { passive?: boolean 
     const checkpoint = getAccountCheckpoint(userId)
     const recordedProjection = await isRecordedAccountProjection(userId, local)
     assertCurrent()
+    // Recovery probe never creates or pushes an authoritative workspace. It
+    // may refresh the local cache only after a fresh exact equivalence proof.
+    if (options.equivalenceOnly && (!remote || pendingCommandSummary(userId).count > 0
+      || !equivalentReadProjection(local, remote.snapshot))) {
+      return { kind: 'conflict', version: remote?.version, remoteUpdatedAt: remote?.updatedAt }
+    }
     const decision = remote && localFingerprint === checkpoint.clearedCacheFingerprint ? 'pull_remote' : decideSyncAction({
       checkpoint,
       localFingerprint,
@@ -117,8 +147,9 @@ export async function runCloudSync(userId: string, options: { passive?: boolean 
     // caused solely by local hydration plus newer server ingestion audit.
     // Reconcile only when the local data is a verified read projection of the
     // current remote; a real local edit still takes the fail-closed path below.
-    if (connectedWorkspaceAuthorityEnabled() && remote
+    if ((connectedWorkspaceAuthorityEnabled() || options.equivalenceOnly) && remote
       && (decision === 'conflict' || decision === 'push_local')
+      && pendingCommandSummary(userId).count === 0
       && equivalentReadProjection(local, remote.snapshot)) {
       const remoteChanged = remote.version !== checkpoint.lastSyncedVersion
         || remote.fingerprint !== checkpoint.lastSyncedFingerprint
@@ -143,6 +174,7 @@ export async function runCloudSync(userId: string, options: { passive?: boolean 
     }
 
     if (decision === 'create_remote') {
+      if (options.equivalenceOnly) return { kind: 'conflict' }
       const created = await createRemoteWorkspace({
         userId,
         fingerprint: localFingerprint,
@@ -163,6 +195,7 @@ export async function runCloudSync(userId: string, options: { passive?: boolean 
     if (!remote) throw new Error('同步状态异常：预期存在 Google Drive 工作区。')
 
     if (decision === 'push_local') {
+      if (options.equivalenceOnly) return { kind: 'conflict', version: remote.version, remoteUpdatedAt: remote.updatedAt }
       // Connected mode has one authoritative write path: scoped commands.
       // A manual refresh is a read/reconciliation request, not permission to
       // upload unrelated local changes as one workspace snapshot.

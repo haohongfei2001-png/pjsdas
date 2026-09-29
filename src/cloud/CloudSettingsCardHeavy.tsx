@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { useUiLanguage } from '../uiLanguage.js'
 import { useCloud } from './CloudContext.js'
 import { connectedWorkspaceAuthorityEnabled } from './connectedWorkspaceRepository.js'
+import { inspectConnectedDivergence } from './cloudSync.js'
 import AiAccessSettingsCard from '../aiAccess/AiAccessSettingsCard.js'
 import { fetchAudienceStatus, type AudienceStatus } from '../audienceAccessClient.js'
 import './cloudSettings.css'
@@ -19,6 +20,7 @@ export default function CloudSettingsCard() {
   const cloud = useCloud()
   const [localError, setLocalError] = useState('')
   const [audience, setAudience] = useState<AudienceStatus>()
+  const [diagnostic, setDiagnostic] = useState<Awaited<ReturnType<typeof inspectConnectedDivergence>>>()
   const user = cloud.session?.user
   const mismatch = Boolean(user && cloud.device.workspaceOwnerUserId && cloud.device.workspaceOwnerUserId !== user.id)
   const conflict = cloud.checkpoint.conflict
@@ -158,8 +160,26 @@ export default function CloudSettingsCard() {
               </div>
             ) : conflict ? (
               <div className="cloud-conflict-box">
-                <strong>{zh ? `本机和${remoteLabel}在上次同步后都发生了修改。` : `Both this device and the ${remoteLabel} changed after the last sync.`}</strong>
+                <strong>{zh ? `本机和${remoteLabel}尚不能证明等价。` : `This device and the ${remoteLabel} are not proven equivalent.`}</strong>
                 <p>{zh ? `远端版本 ${conflict.remoteVersion}，更新时间 ${formatTime(conflict.remoteUpdatedAt, zh)}。系统已停止自动同步，没有覆盖任何一方。` : `Remote version ${conflict.remoteVersion}, updated ${formatTime(conflict.remoteUpdatedAt, zh)}. Auto-sync stopped and neither side was overwritten.`}</p>
+                {transactional ? <div>
+                  <button type="button" onClick={() => { void run(async () => {
+                    const result = await inspectConnectedDivergence(user.id)
+                    setDiagnostic(result)
+                    if (['equal', 'order_only', 'cache_metadata', 'historical_read_only_evidence'].includes(result.classification)
+                      && result.pendingOperations.count === 0) {
+                      await cloud.reconcileEquivalent()
+                    }
+                  }) }}>{zh ? '只读核对差异' : 'Inspect difference'}</button>
+                  {diagnostic ? <details><summary>{zh ? '核对结果' : 'Inspection result'}</summary>
+                    <p>{['equal', 'order_only', 'cache_metadata', 'historical_read_only_evidence'].includes(diagnostic.classification)
+                      ? (zh ? `已归类为${({ equal: '完全相同', order_only: '纯顺序差异', cache_metadata: '缓存元数据', historical_read_only_evidence: '历史只读证据' } as Record<string, string>)[diagnostic.classification]}；系统可安全收敛本机缓存。` : `Equivalent projection: ${diagnostic.classification.replaceAll('_', ' ')}. Local cache can converge safely.`)
+                      : diagnostic.classification === 'pending_operations'
+                        ? (zh ? '仍有待确认的本机操作；先核对操作回执。' : 'Pending local operations require receipt review.')
+                        : (zh ? '差异尚不能证明只是缓存或顺序；请保留双方资料并人工核对。' : 'The difference is not proven to be cache or ordering only. Preserve and review both copies.')}</p>
+                    <small>{`local ${diagnostic.localFingerprint.slice(0, 12)} · authoritative ${diagnostic.authoritativeFingerprint?.slice(0, 12) ?? 'unavailable'} · checkpoint ${diagnostic.checkpointVersion ?? 'none'} · journal ${diagnostic.recordedProjection ? 'recorded' : 'unverified'} · pending ${diagnostic.pendingOperations.count}`}</small>
+                  </details> : null}
+                </div> : null}
                 <div>
                   <button onClick={() => {
                     if (window.confirm(zh ? `确认以本机数据为准覆盖${remoteLabel}？` : `Keep this device and overwrite the ${remoteLabel}?`)) void run(cloud.keepLocal)

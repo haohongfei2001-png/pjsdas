@@ -1,6 +1,7 @@
 import { denseDecision } from './fixtures/denseDecisionWorkspace.js'
 import { describe, expect, it } from 'vitest'
-import type { Action, DecisionRequest, ScheduleNode, TimelineRecord } from '../src/model.js'
+import type { Action, DecisionRequest, Opportunity, ScheduleNode, TimelineRecord } from '../src/model.js'
+import { opportunity } from '../e2e/fixtures/todayWorkspace.js'
 import { createSnapshot } from '../src/snapshot.js'
 import { buildTodayBrief } from '../src/todayBrief.js'
 import { selectTodayWeb } from '../src/today/todayWebSelector.js'
@@ -28,9 +29,9 @@ function node(occurrenceId: string, date: string, extra: Partial<ScheduleNode> =
   }
 }
 
-function snapshot(actions: Action[] = [], nodes: ScheduleNode[] = [], timeline: TimelineRecord[] = [], decisions: DecisionRequest[] = []) {
+function snapshot(actions: Action[] = [], nodes: ScheduleNode[] = [], timeline: TimelineRecord[] = [], decisions: DecisionRequest[] = [], opportunities: Opportunity[] = []) {
   return createSnapshot({
-    opportunities: [], processes: [], processEvents: [], actions, scheduleNodes: nodes,
+    opportunities, processes: [], processEvents: [], actions, scheduleNodes: nodes,
     prep: [], applicationGroups: [], timeline, changeSets: [], decisionRequests: decisions, semanticReceipts: [],
   }, NOW.toISOString())
 }
@@ -131,15 +132,21 @@ describe('TSUI-01 complete Web read models', () => {
   })
 
   it('keeps more than four actionable decisions as separate rows', () => {
+    const jobs = [opportunity('role-a', 'Example', 'Engineer'), opportunity('role-b', 'Example', 'Analyst')]
     const decisions = Array.from({ length: 7 }, (_, index) => {
       const request = denseDecision(index)
+      request.payloadBinding.candidate.target = { company: 'Example' }
+      request.choices = jobs.map(job => ({
+        id: `opportunity:${job.id}`, label: `${job.company}｜${job.role}`,
+        consequence: 'Only this opportunity will be updated.', resolution: { opportunityId: job.id },
+      }))
       if (request.payloadBinding.candidate.kind === 'process_event') {
         request.payloadBinding.candidate.dueAt = '2026-09-25'
         request.payloadBinding.candidate.duePrecision = 'date'
       }
       return request
     })
-    const result = selectTodayWeb(snapshot([], [], [], decisions), {}, { now: NOW, timezone: TZ })
+    const result = selectTodayWeb(snapshot([], [], [], decisions, jobs), {}, { now: NOW, timezone: TZ })
     expect(result.decisionCount).toBe(7)
     expect(result.decisions.map((item) => item.id)).toEqual(decisions.map((item) => `decision:${item.id}`))
     expect(result.actions).toEqual([])

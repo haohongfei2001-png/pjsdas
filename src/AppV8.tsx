@@ -54,6 +54,7 @@ import { selectTodayWeb } from './today/todayWebSelector.js'
 import { buildScheduleStream, type ScheduleEntry } from './schedule/scheduleStream.js'
 import ScheduleFeature from './schedule/ScheduleFeature.js'
 import DecisionRequestsView from './DecisionRequestsView.js'
+import { partitionDecisions } from './decisionActionability.js'
 import { type TodayBriefAction } from './todayBrief.js'
 import type {
   Action,
@@ -373,13 +374,13 @@ export default function AppV8() {
 
 
   const decisionRequests = snapshot?.data.decisionRequests ?? []
-  const openDecisionCount = decisionRequests.filter((item) =>
-    item.state === 'open' && (!item.expiresAt || new Date(item.expiresAt).getTime() >= now.getTime()),
-  ).length
   const workspaceEmpty = opportunities.length === 0 && actions.length === 0 && processes.length === 0 && prep.length === 0
   const selectedOpportunity = selectedOpportunityId ? opportunities.find((item) => item.id === selectedOpportunityId) : undefined
   const selectedDecisionRequests: DecisionRequest[] = selectedOpportunity
-    ? decisionRequests.filter((request) => request.state === 'open' && (
+    ? partitionDecisions(decisionRequests, {
+      opportunities, scheduleNodes: snapshot?.data.scheduleNodes,
+      reminderIntents: snapshot?.data.reminderIntents, now,
+    }).actionable.filter((request) => (
       request.affectedObjects.some((object) => object.type === 'opportunity' && object.id === selectedOpportunity.id)
       || request.choices.some((choice) => choice.resolution?.opportunityId === selectedOpportunity.id)
     ))
@@ -675,7 +676,6 @@ export default function AppV8() {
             freshness={workspaceEmpty && (cloud.loading || (connectedWorkspaceAuthorityEnabled() && cloud.session?.user.id && todayFreshness.state === 'local')) ? { state: 'initial' } : todayFreshness}
             onStart={navigateFromStart}
             onRetry={() => window.dispatchEvent(new Event('focus'))}
-            onOpenDecisions={() => navigate('/decisions')}
             onOpenDecision={(id) => navigate('/decisions/' + encodeURIComponent(id))}
             onOpenAgenda={() => navigate('/schedule')}
             onOpenUnresolved={() => navigate('/schedule?view=unresolved')}
@@ -712,12 +712,12 @@ export default function AppV8() {
             onMarkAction={markAction} readOnly={CGR02_TODAY_READ_ONLY}
           />
         ) : null}
-        {!loading && surface === 'decisions' ? <DecisionRequestsView requests={decisionRequests} opportunities={opportunities} focusRequestId={route.decisionRequestId}
+        {!loading && surface === 'decisions' ? <DecisionRequestsView requests={decisionRequests} opportunities={opportunities} scheduleNodes={snapshot?.data.scheduleNodes ?? []} reminderIntents={snapshot?.data.reminderIntents ?? []} focusRequestId={route.decisionRequestId}
           onShowAll={() => navigate('/decisions')}
           onReturnOpportunity={route.returnOpportunityId ? () => navigate('/library/' + encodeURIComponent(route.returnOpportunityId!)) : undefined}
           onChanged={reload} /> : null}
         {!loading && surface === 'history' ? <ActivitySurface timeline={timeline} /> : null}
-        {!loading && surface === 'settings' ? <SettingsSurface lastImport={lastImport} rules={rules} onChanged={reload} onOpenActivity={() => navigate('/history')} /> : null}
+        {!loading && surface === 'settings' ? <SettingsSurface lastImport={lastImport} rules={rules} onChanged={reload} onOpenActivity={() => navigate('/history')} onOpenDataQuality={() => navigate('/decisions')} /> : null}
       </main>
 
 
@@ -797,7 +797,7 @@ function ActivitySurface({ timeline }: { timeline: TimelineRecord[] }) {
   return <section className="surface-page"><SurfaceHeader eyebrow="HISTORY" title={zh ? '历史与审计' : 'History & audit'} text={zh ? '这里只保留发生过什么。日常行动和需要你决定的事分别留在 Today 与 Decisions。' : 'This is the audit trail only. Daily action stays in Today and genuine decisions stay in Decisions.'} /><TimelineView records={timeline} /></section>
 }
 
-function SettingsSurface({ lastImport, rules, onChanged, onOpenActivity }: { lastImport?: ImportMeta; rules: DecisionRules; onChanged: () => Promise<void>; onOpenActivity: () => void }) {
+function SettingsSurface({ lastImport, rules, onChanged, onOpenActivity, onOpenDataQuality }: { lastImport?: ImportMeta; rules: DecisionRules; onChanged: () => Promise<void>; onOpenActivity: () => void; onOpenDataQuality: () => void }) {
   const { lang } = useUiLanguage()
   const zh = lang === 'zh'
   const [preview, setPreview] = useState<ImportBundle | null>(null)
@@ -857,7 +857,7 @@ function SettingsSurface({ lastImport, rules, onChanged, onOpenActivity }: { las
 
       <details className="settings-group">
         <summary><div><strong>{zh ? '历史与审计' : 'History & audit'}</strong><span>{zh ? '发生过什么，不占用日常决策界面' : 'What happened, outside the daily decision surface'}</span></div></summary>
-        <div className="settings-group-body"><button className="settings-secondary-link" type="button" onClick={onOpenActivity}>{zh ? '查看活动记录' : 'Open activity history'}</button></div>
+        <div className="settings-group-body"><button className="settings-secondary-link" type="button" onClick={onOpenActivity}>{zh ? '查看活动记录' : 'Open activity history'}</button><button className="settings-secondary-link" type="button" onClick={onOpenDataQuality}>{zh ? '历史待核对 / 数据质量' : 'Historical review / Data quality'}</button></div>
       </details>
 
       <details className="settings-group">

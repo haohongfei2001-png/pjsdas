@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { gmailSemanticRecordFromMessage } from '../gateway/gmailAutomation.js'
+import { partitionDecisions } from '../src/decisionActionability.js'
 import { applyGmailSemanticBatch } from '../src/gmailSemanticIntake.js'
 import { applySemanticCompensation, applySemanticIntake, resolveSemanticDecision } from '../src/semanticIntake.js'
 import { createSnapshot, upgradeSnapshotToLatest, validateSnapshot, type PJSDASSnapshot } from '../src/snapshot.js'
@@ -61,9 +62,9 @@ describe('UU06 shared Gmail intake', () => {
     const applicationRecord = gmailSemanticRecordFromMessage(noDateApplication, snapshot().data.opportunities, now)!
     expect(applicationRecord.issueKinds).toContain('interpretation_failure')
     const guarded = applyGmailSemanticBatch(snapshot(), { runId: 'missing-date', sourceId: 'gmail:primary', checkedAt: now.toISOString(), authorized: true, records: [applicationRecord] })
-    expect(guarded.snapshot.data.decisionRequests).toHaveLength(1)
+    expect(guarded.snapshot.data.decisionRequests).toHaveLength(0)
     expect(guarded.snapshot.data.opportunities[0]?.appliedAt).toBeUndefined()
-    expect(summarizeCoverage(guarded.snapshot.data.timeline)).toMatchObject({ interpretationFailureCount: 1, businessAmbiguityCount: 1 })
+    expect(summarizeCoverage(guarded.snapshot.data.timeline)).toMatchObject({ interpretationFailureCount: 1 })
   })
   it('preserves test availability window and submission deadline as distinct shared schedule shapes', () => {
     const text = '京东 AI产品经理 笔试开放窗口2026年9月24日 09:00至2026年9月25日 17:00；提交截止2026年9月25日 18:00'
@@ -78,7 +79,8 @@ describe('UU06 shared Gmail intake', () => {
     const replay = run(first.snapshot, text, 'window2')
     expect(replay.snapshot.data.scheduleNodes).toHaveLength(2)
     const changedWindow = run(first.snapshot, text.replace('17:00', '16:00'), 'window3')
-    expect(changedWindow.snapshot.data.decisionRequests?.some((decision) => decision.reason === 'material_conflict')).toBe(true)
+    expect(changedWindow.snapshot.data.decisionRequests).toHaveLength(0)
+    expect(changedWindow.run.outcomes.unresolved).toBe(1)
     expect(changedWindow.snapshot.data.scheduleNodes?.[0]?.temporal.endAt).toBe('2026-09-25T17:00:00+08:00')
     const undone = applySemanticCompensation(first.snapshot, first.compensation, now)
     expect(undone.data.processEvents).toHaveLength(0)
@@ -88,7 +90,8 @@ describe('UU06 shared Gmail intake', () => {
     for (const text of ['京东 AI产品经理 面试通知2026年2月30日 14:30', '京东 AI产品经理 面试通知2026-09-22T14:30:00Z', '京东 AI产品经理 面试通知2026-09-22 14:30 Asia/Tokyo', '京东 AI产品经理 面试通知2026年9月25日 14:30或2026年9月26日 14:30']) {
       const result = run(snapshot(), text)
       expect(result.snapshot.data.processEvents).toHaveLength(0)
-      expect(result.snapshot.data.decisionRequests).toHaveLength(1)
+      expect(result.snapshot.data.decisionRequests).toHaveLength(0)
+      expect(result.run.outcomes.unresolved).toBe(1)
     }
   })
   it('treats a previously consumed Gmail source record as a no-write replay across a new run id', () => {
@@ -202,12 +205,12 @@ describe('UU06 shared Gmail intake', () => {
     const sourceRecords = replay.snapshot.data.timeline.filter((item) =>
       item.ingestion?.sourceRecordId === 'fragment-replay-decision')
     expect(sourceRecords.map((item) => item.ingestion?.outcome)).toEqual(['unresolved', 'unresolved'])
-    expect(replay.snapshot.data.decisionRequests).toHaveLength(1)
+    expect(replay.snapshot.data.decisionRequests).toHaveLength(0)
 
     const reconciled = reconcileIngestionDebt(replay.snapshot, now)
     expect(reconciled.appended[0]?.ingestionResolution).toMatchObject({
       outcome: 'active_unresolved',
-      reason: 'semantic_decision_open',
+      reason: 'unlinked_unresolved',
       sourceRecordId: 'fragment-replay-decision',
     })
   })
@@ -279,23 +282,20 @@ describe('UU06 shared Gmail intake', () => {
     record.observation.source.sourceVersion = 'reconciliation-v1'
     record.gaps = []
 
-    const first = applySemanticIntake(base, record.observation, { authorized: true, now })
+    const legacyObservation = structuredClone(record.observation)
+    legacyObservation.source.kind = 'web'
+    legacyObservation.source.sourceId = 'web'
+    const first = applySemanticIntake(base, legacyObservation, { authorized: true, now })
     expect(first.status).toBe('DECISION_REQUIRED')
     const request = first.decisionRequests[0]!
-    const choice = request.choices.find((item) => item.resolution && !item.resolution.dismiss)
-      ?? request.choices[0]!
-    const settled = resolveSemanticDecision(
-      first.snapshot,
-      request.id,
-      choice.id,
-      new Date('2026-09-21T00:01:00Z'),
-    )
-    const settledRequest = settled.snapshot.data.decisionRequests?.find((item) => item.id === request.id)
-    expect(['answered', 'superseded']).toContain(settledRequest?.state)
+    const historical = structuredClone(first.snapshot)
+    historical.data.decisionRequests![0]!.state = 'answered'
+    historical.data.decisionRequests![0]!.answerChoiceId = request.choices[0]!.id
+    historical.data.decisionRequests![0]!.answeredAt = '2026-09-21T00:01:00Z'
+    historical.data.decisionRequests![0]!.payloadBinding.source = structuredClone(record.observation.source)
+    expect(historical.data.decisionRequests?.[0]?.state).toBe('answered')
 
-    const sourceRowsBefore = settled.snapshot.data.timeline.filter((item) =>
-      item.ingestion?.sourceRecordId === 'fragment-replay-settled-decision').length
-    const replay = applyGmailSemanticBatch(settled.snapshot, {
+    const replay = applyGmailSemanticBatch(historical, {
       runId: 'fragment-replay-settled-decision',
       sourceId: 'gmail:primary',
       checkedAt: new Date('2026-09-21T00:02:00Z').toISOString(),
@@ -305,10 +305,15 @@ describe('UU06 shared Gmail intake', () => {
     })
     const sourceRowsAfter = replay.snapshot.data.timeline.filter((item) =>
       item.ingestion?.sourceRecordId === 'fragment-replay-settled-decision').length
-    expect(sourceRowsBefore).toBe(1)
-    expect(sourceRowsAfter).toBe(1)
-    expect(replay.snapshot.data.decisionRequests?.find((item) => item.id === request.id)?.state)
-      .toBe(settledRequest?.state)
+    expect(sourceRowsAfter).toBeLessThanOrEqual(2)
+    expect(replay.snapshot.data.decisionRequests?.find((item) => item.id === request.id)?.state).toBe('answered')
+    const again = applyGmailSemanticBatch(replay.snapshot, {
+      runId: 'fragment-replay-settled-decision-again', sourceId: 'gmail:primary',
+      checkedAt: new Date('2026-09-21T00:03:00Z').toISOString(), authorized: true,
+      records: [record], reconcileExisting: true,
+    })
+    expect(again.snapshot.data.timeline.filter((item) =>
+      item.ingestion?.sourceRecordId === 'fragment-replay-settled-decision')).toHaveLength(sourceRowsAfter)
   })
 
   it('does not amplify settled Gmail source ledger rows during reconcileExisting replay', () => {
@@ -404,7 +409,7 @@ describe('UU06 shared Gmail intake', () => {
     const reconciled = reconcileIngestionDebt(replay.snapshot, new Date('2026-09-21T00:03:00Z'))
     expect(reconciled.appended[0]?.ingestionResolution).toMatchObject({
       outcome: 'active_unresolved',
-      reason: 'semantic_decision_open',
+      reason: 'unlinked_unresolved',
       sourceRecordId: 'fragment-replay-undone',
     })
     expect(summarizeCoverage(reconciled.snapshot.data.timeline).activeUnresolvedCount).toBe(1)
@@ -435,8 +440,8 @@ describe('UU06 shared Gmail intake', () => {
     oldRecord.observation.inputId = 'gmail:fragment-replay-historical-open:reconciliation-v1'
     oldRecord.observation.source.sourceVersion = 'reconciliation-v1'
     const oldInterpretation = applySemanticIntake(base, oldRecord.observation, { authorized: true, now })
-    expect(oldInterpretation.status).toBe('DECISION_REQUIRED')
-    expect(oldInterpretation.decisionRequests[0]?.state).toBe('open')
+    expect(oldInterpretation.status).toBe('NO_WRITE')
+    expect(oldInterpretation.coverageDebtCount).toBeGreaterThan(0)
 
     const narrowed = structuredClone(oldInterpretation.snapshot)
     narrowed.data.opportunities = narrowed.data.opportunities.filter((item) => item.id === 'jd')
@@ -458,16 +463,15 @@ describe('UU06 shared Gmail intake', () => {
       reconcileExisting: true,
     })
     expect(replay.snapshot.data.processEvents).toHaveLength(1)
-    expect(replay.snapshot.data.decisionRequests?.find((item) =>
-      item.id === oldInterpretation.decisionRequests[0]!.id)?.state).toBe('open')
+    expect(replay.snapshot.data.decisionRequests).toHaveLength(0)
     expect(replay.snapshot.data.timeline.filter((item) =>
       item.ingestion?.sourceRecordId === 'fragment-replay-historical-open')
-      .map((item) => item.ingestion?.outcome)).toEqual(['unresolved', 'unresolved'])
+      .map((item) => item.ingestion?.outcome)).toEqual(['unresolved', 'updated'])
 
     const reconciled = reconcileIngestionDebt(replay.snapshot, new Date('2026-09-21T00:03:00Z'))
     expect(reconciled.appended[0]?.ingestionResolution).toMatchObject({
-      outcome: 'active_unresolved',
-      reason: 'semantic_decision_open',
+      outcome: 'resolved',
+      reason: 'later_source_state',
       sourceRecordId: 'fragment-replay-historical-open',
     })
   })
@@ -1439,7 +1443,7 @@ describe('UU06 shared Gmail intake', () => {
       contractVersion: 1 as const,
       inputId: `gmail:confirmed-action:${version}`,
       source: {
-        kind: 'gmail' as const, sourceId: 'gmail:primary', sourceRecordId: 'confirmed-action',
+        kind: 'web' as const, sourceId: 'web', sourceRecordId: 'confirmed-action',
         sourceVersion: version, observedAt: now.toISOString(), assertedAt: now.toISOString(), timezone: 'Asia/Shanghai',
       },
       statementMode: 'assertion' as const,
@@ -1555,19 +1559,345 @@ describe('UU06 shared Gmail intake', () => {
       records: [record],
     })
     expect(result.snapshot.data.processEvents).toHaveLength(0)
-    expect(result.snapshot.data.decisionRequests).toHaveLength(1)
-    expect(result.snapshot.data.decisionRequests?.[0]).toMatchObject({ reason: 'missing_required_field' })
-    expect(result.snapshot.data.decisionRequests?.[0]?.choices.map((choice) => choice.id)).toEqual(['ignore', 'clarify'])
-    expect(JSON.stringify(result.snapshot.data.decisionRequests?.[0])).not.toContain('京东')
-    expect(JSON.stringify(result.snapshot.data.decisionRequests?.[0])).not.toContain('Alpha')
+    expect(result.snapshot.data.decisionRequests).toHaveLength(0)
+    expect(result.run.outcomes.unresolved).toBe(1)
   })
 
-  it('ambiguous same-company roles produce a decision rather than a guessed write', () => {
+  it('indistinguishable same-company roles remain source debt rather than a fake choice', () => {
     const base = snapshot()
     base.data.opportunities.push({ ...base.data.opportunities[0]!, id: 'jd-2', role: 'AI产品经理' })
     const result = run(base, invitation)
     expect(result.snapshot.data.processEvents).toHaveLength(0)
-    expect(result.snapshot.data.decisionRequests).toHaveLength(1)
+    expect(result.snapshot.data.decisionRequests).toHaveLength(0)
+    expect(result.run.outcomes.unresolved).toBe(1)
+  })
+  it('does not hide a fifth credible company behind the four-choice Gmail limit', () => {
+    const base = snapshot()
+    base.data.opportunities = [0, 1, 2, 3].map(index => ({
+      ...base.data.opportunities[0]!, id: `jd-${index}`, role: `岗位${index}`,
+    }))
+    base.data.opportunities.push({ ...base.data.opportunities[0]!, id: 'other', company: 'Alpha', role: '研究员' })
+    const mail = message('京东 Alpha 面试通知，请于2026年9月25日 14:30参加视频面试', 'cross-company')
+    mail.payload.headers[0]!.value = '面试通知'
+    const record = gmailSemanticRecordFromMessage(mail, base.data.opportunities, now)!
+    expect(record.observation.candidates.some(candidate => Boolean(candidate.target?.company))).toBe(false)
+    const result = applyGmailSemanticBatch(base, {
+      runId: 'cross-company', sourceId: 'gmail:primary', checkedAt: now.toISOString(),
+      authorized: true, records: [record],
+    })
+    expect(result.snapshot.data.decisionRequests).toHaveLength(0)
+    expect(result.run.outcomes.unresolved).toBe(1)
+  })
+  it('offers a real choice between distinct same-company roles and applies the selected target once', () => {
+    const base = snapshot()
+    base.data.opportunities.push({ ...base.data.opportunities[0]!, id: 'jd-analyst', role: '数据分析师' })
+    const source = '京东 面试通知，请于2026年9月25日 14:30参加视频面试'
+    const mail = message(source, 'role-choice')
+    mail.payload.headers[0]!.value = '京东 招聘进展'
+    const record = gmailSemanticRecordFromMessage(mail, base.data.opportunities, now)!
+    const first = applyGmailSemanticBatch(base, {
+      runId: 'role-choice', sourceId: 'gmail:primary', checkedAt: now.toISOString(),
+      authorized: true, records: [record],
+    })
+    expect(first.snapshot.data.decisionRequests).toHaveLength(1)
+    const request = first.snapshot.data.decisionRequests![0]!
+    expect(request.reason).toBe('ambiguous_target')
+    expect(request.choices.map(item => item.label)).toEqual(['京东｜AI产品经理', '京东｜数据分析师'])
+    const versioned = structuredClone(record)
+    versioned.observation.inputId = 'gmail:role-choice:parser-v2'
+    versioned.observation.source.sourceVersion = 'parser-v2'
+    versioned.observation.candidates[0]!.sourceVersionRefs = ['role-choice:parser-v2']
+    const repeated = applyGmailSemanticBatch(first.snapshot, {
+      runId: 'role-choice-versioned', sourceId: 'gmail:primary',
+      checkedAt: new Date(now.getTime() + 30_000).toISOString(),
+      authorized: true, records: [versioned], reconcileExisting: true,
+    })
+    expect(repeated.snapshot.data.decisionRequests).toHaveLength(1)
+    expect(repeated.snapshot.data.decisionRequests![0]!.id).toBe(request.id)
+    const selected = resolveSemanticDecision(first.snapshot, request.id, 'opportunity:jd-analyst', now)
+    expect(selected.status).toBe('APPLIED')
+    expect(selected.snapshot.data.processEvents).toHaveLength(1)
+    expect(selected.snapshot.data.processEvents[0]?.opportunityId).toBe('jd-analyst')
+    const replay = applyGmailSemanticBatch(selected.snapshot, {
+      runId: 'role-choice-replay', sourceId: 'gmail:primary',
+      checkedAt: new Date(now.getTime() + 60_000).toISOString(), authorized: true,
+      records: [record],
+      reconcileExisting: true,
+    })
+    expect(replay.snapshot.data.decisionRequests).toHaveLength(1)
+    expect(replay.snapshot.data.processEvents).toHaveLength(1)
+    const answeredVersioned = applyGmailSemanticBatch(selected.snapshot, {
+      runId: 'role-choice-answered-versioned', sourceId: 'gmail:primary',
+      checkedAt: new Date(now.getTime() + 90_000).toISOString(), authorized: true,
+      records: [versioned], reconcileExisting: true,
+    })
+    expect(answeredVersioned.snapshot.data.decisionRequests?.map(item => item.state)).toEqual(['answered'])
+    expect(answeredVersioned.snapshot.data.processEvents).toHaveLength(1)
+    expect(answeredVersioned.run.outcomes.unresolved ?? 0).toBe(0)
+  })
+  it('reissues an answerable Gmail ambiguity when the plausible choices change', () => {
+    const base = snapshot()
+    base.data.opportunities.push({ ...base.data.opportunities[0]!, id: 'jd-analyst', role: '数据分析师' })
+    const mail = message('京东 面试通知，请于2026年9月25日 14:30参加视频面试', 'growing-choice')
+    mail.payload.headers[0]!.value = '京东 招聘进展'
+    const record = gmailSemanticRecordFromMessage(mail, base.data.opportunities, now)!
+    const first = applyGmailSemanticBatch(base, {
+      runId: 'growing-choice-v1', sourceId: 'gmail:primary', checkedAt: now.toISOString(),
+      authorized: true, records: [record],
+    })
+    expect(first.snapshot.data.decisionRequests).toHaveLength(1)
+    first.snapshot.data.opportunities.push({ ...first.snapshot.data.opportunities[0]!, id: 'jd-designer', role: '设计师' })
+    const revised = structuredClone(record)
+    const second = applyGmailSemanticBatch(first.snapshot, {
+      runId: 'growing-choice-v2', sourceId: 'gmail:primary', checkedAt: new Date(now.getTime() + 30_000).toISOString(),
+      authorized: true, records: [revised], reconcileExisting: true,
+    })
+    expect(second.snapshot.data.decisionRequests).toHaveLength(2)
+    expect(second.snapshot.data.decisionRequests?.map(item => item.state)).toEqual(['superseded', 'open'])
+    const undoneReissue = applySemanticCompensation(second.snapshot, second.compensation, now)
+    expect(undoneReissue.data.decisionRequests?.map(item => item.state)).toEqual(['open', 'superseded'])
+    expect(partitionDecisions(second.snapshot.data.decisionRequests!, {
+      opportunities: second.snapshot.data.opportunities, now,
+    }).actionable.map(item => item.choices.length)).toEqual([3])
+    second.snapshot.data.opportunities.find(item => item.id === 'jd-designer')!.processStage = 'closed'
+    const third = applyGmailSemanticBatch(second.snapshot, {
+      runId: 'growing-choice-v3', sourceId: 'gmail:primary',
+      checkedAt: new Date(now.getTime() + 45_000).toISOString(),
+      authorized: true, records: [revised], reconcileExisting: true,
+    })
+    expect(third.snapshot.data.decisionRequests?.map(item => item.state)).toEqual(['superseded', 'superseded', 'open'])
+    expect(new Set(third.snapshot.data.decisionRequests?.map(item => item.id)).size).toBe(3)
+    expect(partitionDecisions(third.snapshot.data.decisionRequests!, {
+      opportunities: third.snapshot.data.opportunities, now,
+    }).actionable.map(item => item.choices.length)).toEqual([2])
+    third.snapshot.data.opportunities.find(item => item.id === 'jd-designer')!.processStage = 'screening'
+    third.snapshot.data.opportunities.push({ ...third.snapshot.data.opportunities[0]!, id: 'jd-researcher', role: '研究员' })
+    const fourth = applyGmailSemanticBatch(third.snapshot, {
+      runId: 'growing-choice-v4', sourceId: 'gmail:primary',
+      checkedAt: new Date(now.getTime() + 50_000).toISOString(),
+      authorized: true, records: [revised], reconcileExisting: true,
+    })
+    expect(fourth.snapshot.data.decisionRequests?.map(item => item.state)).toEqual(['superseded', 'superseded', 'superseded', 'open'])
+    expect(partitionDecisions(fourth.snapshot.data.decisionRequests!, {
+      opportunities: fourth.snapshot.data.opportunities, now,
+    }).actionable.map(item => item.choices.length)).toEqual([4])
+    const replacement = fourth.snapshot.data.decisionRequests![3]!
+    const answered = resolveSemanticDecision(fourth.snapshot, replacement.id, 'opportunity:jd-researcher', now)
+    expect(answered.status).toBe('APPLIED')
+    expect(answered.snapshot.data.decisionRequests?.map(item => item.state)).toEqual(['superseded', 'superseded', 'superseded', 'answered'])
+    const settled = applyGmailSemanticBatch(answered.snapshot, {
+      runId: 'growing-choice-settled', sourceId: 'gmail:primary',
+      checkedAt: new Date(now.getTime() + 60_000).toISOString(),
+      authorized: true, records: [revised], reconcileExisting: true,
+    })
+    expect(settled.snapshot.data.decisionRequests).toHaveLength(4)
+    expect(settled.run.outcomes.unresolved ?? 0).toBe(0)
+    expect(settled.run.accountedCount).toBe(1)
+  })
+  it('supersedes an older Gmail choice when a newer parse loses event confidence', () => {
+    const base = snapshot()
+    base.data.opportunities.push({ ...base.data.opportunities[0]!, id: 'jd-analyst', role: '数据分析师' })
+    const mail = message('京东 面试通知，请于2026年9月25日 14:30参加视频面试', 'lower-confidence')
+    mail.payload.headers[0]!.value = '京东 招聘进展'
+    const record = gmailSemanticRecordFromMessage(mail, base.data.opportunities, now)!
+    const first = applyGmailSemanticBatch(base, {
+      runId: 'lower-confidence-v1', sourceId: 'gmail:primary', checkedAt: now.toISOString(),
+      authorized: true, records: [record],
+    })
+    expect(first.snapshot.data.decisionRequests?.[0]?.state).toBe('open')
+    const quoted = structuredClone(record)
+    quoted.observation.statementMode = 'quote'
+    const nonAssertive = applyGmailSemanticBatch(first.snapshot, {
+      runId: 'lower-confidence-quote', sourceId: 'gmail:primary',
+      checkedAt: new Date(now.getTime() + 10_000).toISOString(),
+      authorized: true, records: [quoted], reconcileExisting: true,
+    })
+    expect(nonAssertive.snapshot.data.decisionRequests?.[0]?.state).toBe('superseded')
+    expect(nonAssertive.run.outcomes.unresolved ?? 0).toBe(0)
+    const reasserted = applyGmailSemanticBatch(nonAssertive.snapshot, {
+      runId: 'lower-confidence-reasserted', sourceId: 'gmail:primary',
+      checkedAt: new Date(now.getTime() + 12_000).toISOString(),
+      authorized: true, records: [record], reconcileExisting: true,
+    })
+    expect(reasserted.snapshot.data.decisionRequests?.map(item => item.state)).toEqual(['superseded', 'open'])
+    expect(reasserted.snapshot.data.decisionRequests?.[1]?.id).not.toBe(first.snapshot.data.decisionRequests?.[0]?.id)
+    expect(reasserted.run.outcomes.unresolved).toBe(1)
+    const renumbered = structuredClone(record)
+    renumbered.observation.candidates[0]!.id = 'fragment:999'
+    const reassertedRenumbered = applyGmailSemanticBatch(nonAssertive.snapshot, {
+      runId: 'lower-confidence-reasserted-renumbered', sourceId: 'gmail:primary',
+      checkedAt: new Date(now.getTime() + 13_000).toISOString(),
+      authorized: true, records: [renumbered], reconcileExisting: true,
+    })
+    expect(reassertedRenumbered.snapshot.data.decisionRequests?.map(item => item.state)).toEqual(['superseded', 'open'])
+    expect(reassertedRenumbered.run.outcomes.unresolved).toBe(1)
+    expect(applySemanticCompensation(nonAssertive.snapshot, nonAssertive.compensation, now)
+      .data.decisionRequests?.[0]?.state).toBe('open')
+    const omitted = structuredClone(record)
+    omitted.observation.candidates = []
+    const missingFragment = applyGmailSemanticBatch(first.snapshot, {
+      runId: 'lower-confidence-omitted', sourceId: 'gmail:primary',
+      checkedAt: new Date(now.getTime() + 15_000).toISOString(),
+      authorized: true, records: [omitted], reconcileExisting: true,
+    })
+    expect(missingFragment.snapshot.data.decisionRequests?.[0]?.state).toBe('superseded')
+    expect(missingFragment.run.outcomes.unresolved).toBe(1)
+    const restored = applySemanticCompensation(missingFragment.snapshot, missingFragment.compensation, now)
+    expect(restored.data.decisionRequests?.[0]?.state).toBe('open')
+    const revised = structuredClone(record)
+    revised.observation.inputId = 'gmail:lower-confidence:parser-v2'
+    revised.observation.source.sourceVersion = 'parser-v2'
+    revised.observation.candidates[0]!.eventConfidence = 'low'
+    const second = applyGmailSemanticBatch(first.snapshot, {
+      runId: 'lower-confidence-v2', sourceId: 'gmail:primary',
+      checkedAt: new Date(now.getTime() + 30_000).toISOString(),
+      authorized: true, records: [revised], reconcileExisting: true,
+    })
+    expect(second.snapshot.data.decisionRequests).toHaveLength(1)
+    expect(second.snapshot.data.decisionRequests?.[0]?.state).toBe('superseded')
+    expect(second.run.outcomes.unresolved).toBe(1)
+    expect(partitionDecisions(second.snapshot.data.decisionRequests!, {
+      opportunities: second.snapshot.data.opportunities, now,
+    }).actionable).toHaveLength(0)
+  })
+  it('treats a parser fragment ID replacement as the same answerable business choice', () => {
+    const base = snapshot()
+    base.data.opportunities.push({ ...base.data.opportunities[0]!, id: 'jd-analyst', role: '数据分析师' })
+    const mail = message('京东 面试通知，请于2026年9月25日 14:30参加视频面试', 'fragment-id')
+    mail.payload.headers[0]!.value = '京东 招聘进展'
+    const record = gmailSemanticRecordFromMessage(mail, base.data.opportunities, now)!
+    const first = applyGmailSemanticBatch(base, {
+      runId: 'fragment-id-v1', sourceId: 'gmail:primary', checkedAt: now.toISOString(),
+      authorized: true, records: [record],
+    })
+    const revised = structuredClone(record)
+    revised.observation.inputId = 'gmail:fragment-id:parser-v2'
+    revised.observation.source.sourceVersion = 'parser-v2'
+    revised.observation.candidates[0]!.id = 'fragment:1'
+    revised.observation.candidates[0]!.sourceVersionRefs = ['fragment-id:parser-v2']
+    const second = applyGmailSemanticBatch(first.snapshot, {
+      runId: 'fragment-id-v2', sourceId: 'gmail:primary',
+      checkedAt: new Date(now.getTime() + 30_000).toISOString(),
+      authorized: true, records: [revised], reconcileExisting: true,
+    })
+    expect(second.snapshot.data.decisionRequests?.map(item => item.state)).toEqual(['superseded', 'open'])
+    expect(second.run.outcomes.unresolved).toBe(1)
+    const current = second.snapshot.data.decisionRequests![1]!
+    const answered = resolveSemanticDecision(second.snapshot, current.id, 'opportunity:jd-analyst', now)
+    expect(answered.status).toBe('APPLIED')
+    const settled = applyGmailSemanticBatch(answered.snapshot, {
+      runId: 'fragment-id-settled', sourceId: 'gmail:primary',
+      checkedAt: new Date(now.getTime() + 60_000).toISOString(),
+      authorized: true, records: [revised], reconcileExisting: true,
+    })
+    expect(settled.run.outcomes.unresolved ?? 0).toBe(0)
+    expect(settled.snapshot.data.decisionRequests?.map(item => item.state)).toEqual(['superseded', 'answered'])
+    expect(settled.snapshot.data.processEvents).toHaveLength(1)
+  })
+  it('replaces an open Gmail choice when the same fragment changes event type', () => {
+    const base = snapshot()
+    base.data.opportunities.push({ ...base.data.opportunities[0]!, id: 'jd-analyst', role: '数据分析师' })
+    const mail = message('京东 面试通知，请于2026年9月25日 14:30参加视频面试', 'changed-event')
+    mail.payload.headers[0]!.value = '京东 招聘进展'
+    const observation = gmailSemanticRecordFromMessage(mail, base.data.opportunities, now)!.observation
+    const first = applySemanticIntake(base, observation, { authorized: true, now })
+    expect(first.decisionRequests).toHaveLength(1)
+    const revised = structuredClone(observation)
+    if (revised.candidates[0]?.kind !== 'process_event') throw new Error('Fixture requires a process event')
+    revised.candidates[0].eventType = 'written_test_invite'
+    const second = applySemanticIntake(first.snapshot, revised, { authorized: true, now: new Date(now.getTime() + 30_000) })
+    expect(second.snapshot.data.decisionRequests?.map(item => item.state)).toEqual(['superseded', 'open'])
+    expect(second.snapshot.data.decisionRequests?.[1]?.payloadBinding.candidate).toMatchObject({ eventType: 'written_test_invite' })
+    expect(second.snapshot.data.processEvents).toHaveLength(0)
+  })
+  it('processes a newly parsed clear fragment while rechecking an older open Gmail choice', () => {
+    const base = snapshot()
+    base.data.opportunities.push({ ...base.data.opportunities[0]!, id: 'jd-analyst', role: '数据分析师' })
+    const mail = message('京东 面试通知，请于2026年9月25日 14:30参加视频面试', 'added-fragment')
+    mail.payload.headers[0]!.value = '京东 招聘进展'
+    const observation = gmailSemanticRecordFromMessage(mail, base.data.opportunities, now)!.observation
+    const first = applySemanticIntake(base, observation, { authorized: true, now })
+    expect(first.decisionRequests).toHaveLength(1)
+    const revised = structuredClone(observation)
+    revised.candidates.push({
+      id: 'clear-action', kind: 'manual_action', title: '准备材料',
+      objectConfidence: 'high', eventConfidence: 'high', evidenceRefs: [], sourceVersionRefs: [],
+    })
+    const second = applySemanticIntake(first.snapshot, revised, { authorized: true, now: new Date(now.getTime() + 30_000) })
+    expect(second.snapshot.data.actions.filter(item => item.title === '准备材料')).toHaveLength(1)
+    expect(second.snapshot.data.decisionRequests?.map(item => item.state)).toEqual(['open'])
+    const replay = applySemanticIntake(second.snapshot, revised, { authorized: true, now: new Date(now.getTime() + 60_000) })
+    expect(replay.snapshot.data.actions.filter(item => item.title === '准备材料')).toHaveLength(1)
+  })
+  it('quarantines a changed answered Gmail fragment while another fragment remains open', () => {
+    const base = snapshot()
+    base.data.opportunities.push({ ...base.data.opportunities[0]!, id: 'jd-analyst', role: '数据分析师' })
+    const mail = message('京东 面试通知，请于2026年9月25日 14:30参加视频面试', 'answered-changed')
+    mail.payload.headers[0]!.value = '京东 招聘进展'
+    const observation = gmailSemanticRecordFromMessage(mail, base.data.opportunities, now)!.observation
+    const firstCandidate = structuredClone(observation.candidates[0]!)
+    if (firstCandidate.kind !== 'process_event') throw new Error('Fixture requires a process event')
+    observation.candidates = [firstCandidate, { ...structuredClone(firstCandidate), id: 'fragment:1' }]
+    const first = applySemanticIntake(base, observation, { authorized: true, now })
+    expect(first.decisionRequests).toHaveLength(2)
+    const answered = resolveSemanticDecision(first.snapshot, first.decisionRequests[0]!.id, 'opportunity:jd', now)
+    expect(answered.status).toBe('APPLIED')
+    const revised = structuredClone(observation)
+    if (revised.candidates[0]?.kind !== 'process_event') throw new Error('Fixture requires a process event')
+    revised.candidates[0].eventType = 'written_test_invite'
+    const rechecked = applySemanticIntake(answered.snapshot, revised, { authorized: true, now: new Date(now.getTime() + 30_000) })
+    expect(rechecked.coverageDebtCount).toBe(1)
+    expect(rechecked.snapshot.data.decisionRequests?.map(item => item.state)).toEqual(['answered', 'open'])
+    expect(rechecked.snapshot.data.processEvents).toHaveLength(1)
+    expect(rechecked.snapshot.data.processEvents[0]?.type).toBe('interview_invite')
+  })
+  it('rechecks only the open Gmail choice in a mixed committed receipt', () => {
+    const base = snapshot()
+    base.data.opportunities.push({ ...base.data.opportunities[0]!, id: 'jd-analyst', role: '数据分析师' })
+    const mail = message('京东 面试通知，请于2026年9月25日 14:30参加视频面试', 'mixed-choice')
+    mail.payload.headers[0]!.value = '京东 招聘进展'
+    const observation = gmailSemanticRecordFromMessage(mail, base.data.opportunities, now)!.observation
+    observation.candidates = [{
+      id: 'clear-action', kind: 'manual_action', title: '准备材料',
+      objectConfidence: 'high', eventConfidence: 'high', evidenceRefs: [], sourceVersionRefs: [],
+    }, {
+      id: 'ambiguous-event', kind: 'process_event', eventType: 'interview_invite',
+      target: { company: '京东' }, dueAt: '2026-09-25T14:30:00+08:00', duePrecision: 'datetime',
+      objectConfidence: 'low', eventConfidence: 'high', temporalConfidence: 'high',
+      evidenceRefs: [], sourceVersionRefs: [],
+    }]
+    const sourceRecord = { observation, receivedAt: now.toISOString(), gaps: [], issueKinds: [] }
+    const first = applyGmailSemanticBatch(base, {
+      runId: 'mixed-choice-v1', sourceId: 'gmail:primary', checkedAt: now.toISOString(),
+      authorized: true, records: [sourceRecord],
+    })
+    expect(first.snapshot.data.semanticReceipts?.[0]?.status).toBe('committed')
+    expect(first.snapshot.data.actions).toHaveLength(1)
+    expect(first.snapshot.data.decisionRequests?.map(item => item.state)).toEqual(['open'])
+    first.snapshot.data.opportunities.push({ ...first.snapshot.data.opportunities[0]!, id: 'jd-designer', role: '设计师' })
+    const second = applyGmailSemanticBatch(first.snapshot, {
+      runId: 'mixed-choice-v2', sourceId: 'gmail:primary',
+      checkedAt: new Date(now.getTime() + 30_000).toISOString(),
+      authorized: true, records: [sourceRecord], reconcileExisting: true,
+    })
+    expect(second.snapshot.data.actions).toHaveLength(1)
+    expect(second.snapshot.data.decisionRequests?.map(item => item.state)).toEqual(['superseded', 'open'])
+    const answered = resolveSemanticDecision(second.snapshot, second.snapshot.data.decisionRequests![1]!.id, 'opportunity:jd-designer', now)
+    expect(answered.status).toBe('APPLIED')
+    const settled = applyGmailSemanticBatch(answered.snapshot, {
+      runId: 'mixed-choice-settled', sourceId: 'gmail:primary',
+      checkedAt: new Date(now.getTime() + 45_000).toISOString(),
+      authorized: true, records: [sourceRecord], reconcileExisting: true,
+    })
+    expect(settled.run.outcomes.unresolved ?? 0).toBe(0)
+    expect(settled.snapshot.data.actions.filter(item => item.title === '准备材料')).toHaveLength(1)
+    second.snapshot.data.opportunities.find(item => item.id === 'jd-analyst')!.processStage = 'closed'
+    second.snapshot.data.opportunities.find(item => item.id === 'jd-designer')!.processStage = 'closed'
+    const third = applySemanticIntake(second.snapshot, observation, { authorized: true, now: new Date(now.getTime() + 60_000) })
+    expect(third.snapshot.data.actions).toHaveLength(1)
+    expect(third.snapshot.data.decisionRequests?.map(item => item.state)).toEqual(['superseded', 'superseded'])
+    expect(third.snapshot.data.processEvents).toHaveLength(0)
+    expect(third.coverageDebtCount).toBe(1)
   })
   it('late old mail preserves newer state and can still be explicitly confirmed as a correction', () => {
     const first = run(snapshot(), '京东 AI产品经理 offer录用通知', 'new', '2026-09-20T00:00:00Z')

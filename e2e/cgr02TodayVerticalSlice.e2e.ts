@@ -647,14 +647,15 @@ test('quiet Today and a real DecisionRequest remain legible without invented act
   await reviewedScreenshot(page, 'quiet-today.png')
 
   const now = VISUAL_TIME.toISOString()
+  state.snapshot.data.opportunities[1] = opportunity('A-opp-2', 'A公司', '产品经理')
   state.snapshot.data.decisionRequests = [{
     id: 'decision-a',
     reason: 'ambiguous_target',
-    affectedObjects: [{ type: 'opportunity', id: 'A-opp-1' }],
+    affectedObjects: [{ type: 'opportunity', id: 'A-opp-1' }, { type: 'opportunity', id: 'A-opp-2' }],
     question: '这条更新属于哪个岗位？',
     choices: [
-      { id: 'choose-a', label: 'A公司 · 产品经理', consequence: '只更新这个岗位' },
-      { id: 'choose-b', label: '第二公司 · 策略产品', consequence: '只更新另一个岗位' },
+      { id: 'choose-a', label: 'A公司 · 产品经理 · 机会一', consequence: '只更新机会一', resolution: { opportunityId: 'A-opp-1' } },
+      { id: 'choose-b', label: 'A公司 · 产品经理 · 机会二', consequence: '只更新机会二', resolution: { opportunityId: 'A-opp-2' } },
     ],
     evidenceRefs: ['test-evidence-a'],
     payloadBinding: {
@@ -667,6 +668,7 @@ test('quiet Today and a real DecisionRequest remain legible without invented act
         id: 'candidate-a', kind: 'manual_action', title: '确认岗位',
         // This decision is genuinely due now, rather than undated historical inbox debt.
         dueAt: now, duePrecision: 'datetime',
+        target: { company: 'A公司', role: '产品经理' },
         objectConfidence: 'low', eventConfidence: 'high', evidenceRefs: ['test-evidence-a'], sourceVersionRefs: [],
       },
     },

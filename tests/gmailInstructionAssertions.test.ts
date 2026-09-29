@@ -59,7 +59,7 @@ describe('Gmail instruction mentions are not independent event assertions', () =
     expect(record.observation.candidates[0]).toMatchObject({ kind: 'process_event', eventType: 'interview_invite', dueAt: '2026-09-30T14:30:00+08:00' })
     const base = createSnapshot({ opportunities: [], processes: [], processEvents: [], actions: [], prep: [], applicationGroups: [] })
     const result = applyGmailSemanticBatch(base, { runId: 'mixed-invitation', sourceId: 'gmail:primary', checkedAt: now.toISOString(), authorized: true, records: [record] })
-    expect(result.snapshot.data.decisionRequests).toHaveLength(1)
+    expect(result.snapshot.data.decisionRequests).toHaveLength(0)
     expect(result.run.outcomes).toEqual({ unresolved: 1 })
   })
   it.each(['取消', '撤销'])('applies a bare %s equipment-related notice to an existing occurrence', verb => {

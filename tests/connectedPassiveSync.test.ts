@@ -7,7 +7,7 @@ const fixture = vi.hoisted(() => {
     fingerprint: 'synthetic-digest', snapshot: { version: 4 },
     updatedByDevice: 'server', updatedAt: '2026-09-23T00:00:00Z',
   }
-  return { remote, update: vi.fn(), checkpoint: vi.fn(), decision: vi.fn(), equivalent: vi.fn(), replace: vi.fn() }
+  return { remote, update: vi.fn(), checkpoint: vi.fn(), decision: vi.fn(), equivalent: vi.fn(), replace: vi.fn(), pending: vi.fn() }
 })
 
 vi.mock('../src/db.js', () => ({
@@ -41,6 +41,9 @@ vi.mock('../src/cloud/workspaceFingerprint.js', () => ({
 vi.mock('../src/cloud/connectedWorkspaceRepository.js', () => ({
   connectedWorkspaceAuthorityEnabled: () => true,
 }))
+vi.mock('../src/cloud/authoritativeCommandClient.js', () => ({
+  pendingCommandSummary: fixture.pending,
+}))
 
 import { runCloudSync } from '../src/cloud/cloudSync.js'
 
@@ -53,6 +56,7 @@ describe('connected passive sync authority', () => {
     fixture.decision.mockReset().mockReturnValue('push_local')
     fixture.equivalent.mockReset().mockReturnValue(false)
     fixture.replace.mockReset().mockResolvedValue(undefined)
+    fixture.pending.mockReset().mockReturnValue({ count: 0, pending: 0, unknown: 0, conflict: 0 })
     fixture.remote.version = 'txn:7'
   })
 
@@ -82,5 +86,25 @@ describe('connected passive sync authority', () => {
       localPendingFingerprint: 'synthetic-digest',
     }))
     expect(fixture.checkpoint).not.toHaveBeenCalledWith('qa-account', expect.objectContaining({ lastSyncedAt: expect.any(String) }))
+  })
+
+  it('converges an equivalent persisted conflict through a read-only recovery probe', async () => {
+    fixture.decision.mockReturnValue('conflict')
+    fixture.equivalent.mockReturnValue(true)
+    fixture.remote.version = 'txn:442'
+    expect(await runCloudSync('qa-account', { equivalenceOnly: true })).toMatchObject({ kind: 'pulled' })
+    expect(fixture.update).not.toHaveBeenCalled()
+  })
+
+  it('does not mutate either side when equivalence is unproven or a command is pending', async () => {
+    fixture.decision.mockReturnValue('conflict')
+    fixture.equivalent.mockReturnValue(false)
+    expect(await runCloudSync('qa-account', { equivalenceOnly: true })).toMatchObject({ kind: 'conflict' })
+    fixture.equivalent.mockReturnValue(true)
+    fixture.pending.mockReturnValue({ count: 1, pending: 1, unknown: 0, conflict: 0 })
+    expect(await runCloudSync('qa-account', { equivalenceOnly: true })).toMatchObject({ kind: 'conflict' })
+    expect(fixture.replace).not.toHaveBeenCalled()
+    expect(fixture.update).not.toHaveBeenCalled()
+    expect(fixture.checkpoint).not.toHaveBeenCalled()
   })
 })
