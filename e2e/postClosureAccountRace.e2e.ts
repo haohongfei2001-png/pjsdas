@@ -171,8 +171,9 @@ for (const scenario of ['sign-out', 'local-edit', 'command-sign-out', 'command-l
   await expect(page.getByRole('heading', { name: 'Late private A task' })).toHaveCount(0)
   expect(commandCalls).toBe(scenario.startsWith('command') ? 1 : 0)
   if (scenario === 'command-local-edit') {
-    const retry = await page.evaluate(async () => (await import('/pjsdas/src/cloud/authoritativeCommandClient.ts')).confirmConnectedCommand('account-a', 'race-command').then(() => 'unexpected').catch(() => 'preserved'))
-    expect(retry).toBe('preserved')
+    const retry = await page.evaluate(async () => (await import('/pjsdas/src/cloud/authoritativeCommandClient.ts')).confirmConnectedCommand('account-a', 'race-command', { allowProjectionPending: true }))
+    expect(retry).toMatchObject({ outcome: 'ALREADY_APPLIED', localProjection: 'pending' })
+    expect(await page.evaluate(() => JSON.parse(localStorage.getItem('pjsdas-cgr01-pending:account-a') ?? '[]')[0]?.status)).toBe('projection_pending')
     expect(commandCalls).toBe(1)
   }
 })

@@ -23,6 +23,9 @@ vi.mock('../src/cloud/workspaceFingerprint.js', () => ({
   fingerprintWorkspace: vi.fn(),
   workspaceIsEffectivelyEmpty: vi.fn(),
 }))
+vi.mock('../src/cloud/authoritativeCommandClient.js', () => ({
+  pendingCommandSummary: vi.fn(() => ({ count: 0 })),
+}))
 
 import { exportLocalSnapshot, replaceLocalSnapshotFromCloud } from '../src/db.js'
 import { fetchConnectedRemoteWorkspace } from '../src/cloud/connectedWorkspaceRepository.js'
@@ -32,6 +35,7 @@ import {
   patchAccountCheckpoint,
 } from '../src/cloud/syncState.js'
 import { equivalentReadProjection, fingerprintWorkspace, workspaceIsEffectivelyEmpty } from '../src/cloud/workspaceFingerprint.js'
+import { pendingCommandSummary } from '../src/cloud/authoritativeCommandClient.js'
 import {
   refreshConnectedAuthoritativeCache,
   TODAY_AUTHORITATIVE_REFRESH_INTERVAL_MS,
@@ -81,6 +85,7 @@ describe('CGR-02 authoritative Today read freshness', () => {
     })
     vi.mocked(workspaceIsEffectivelyEmpty).mockReturnValue(false)
     vi.mocked(equivalentReadProjection).mockReturnValue(false)
+    vi.mocked(pendingCommandSummary).mockReturnValue({ count: 0, pending: 0, unknown: 0, conflict: 0 })
     vi.mocked(fingerprintWorkspace).mockImplementation(async (value: any) =>
       value?.marker === 'remote' ? 'remote-fp' : 'local-fp')
   })
@@ -200,5 +205,29 @@ describe('CGR-02 authoritative Today read freshness', () => {
     const result = await refreshConnectedAuthoritativeCache('account-a')
     expect(result.state).toBe('updated')
     expect(replaceLocalSnapshotFromCloud).toHaveBeenCalledWith(remoteSnapshot, expect.objectContaining({ expectedLocal: local, assertCurrent: expect.any(Function) }))
+  })
+
+  it('does not converge even an equal projection while a command awaits recovery', async () => {
+    vi.mocked(pendingCommandSummary).mockReturnValue({ count: 1, pending: 0, unknown: 0, conflict: 0 })
+    vi.mocked(fingerprintWorkspace).mockResolvedValue('remote-fp')
+    expect(await refreshConnectedAuthoritativeCache('account-a')).toMatchObject({ state: 'pending_operations' })
+    expect(replaceLocalSnapshotFromCloud).not.toHaveBeenCalled()
+    expect(patchAccountCheckpoint).not.toHaveBeenCalled()
+  })
+
+  it('updates a stale conflict to each current remote revision without overwriting a real local edit', async () => {
+    vi.mocked(getAccountCheckpoint).mockReturnValue({
+      lastSyncedVersion: 'txn:843', lastSyncedFingerprint: 'old-fp',
+      conflict: { remoteVersion: 'txn:843', remoteFingerprint: 'old-fp', remoteUpdatedAt: '2026-09-20T00:00:00Z' },
+    })
+    vi.mocked(fingerprintWorkspace).mockImplementation(async (value: any) => value?.marker === 'remote' ? 'remote-fp' : 'local-edit-fp')
+    for (const version of ['txn:1000', 'txn:1004']) {
+      vi.mocked(fetchConnectedRemoteWorkspace).mockResolvedValue(remote(version))
+      expect(await refreshConnectedAuthoritativeCache('account-a')).toMatchObject({ state: 'diverged', workspaceVersion: version })
+      expect(patchAccountCheckpoint).toHaveBeenLastCalledWith('account-a', expect.objectContaining({
+        conflict: expect.objectContaining({ remoteVersion: version }),
+      }))
+    }
+    expect(replaceLocalSnapshotFromCloud).not.toHaveBeenCalled()
   })
 })

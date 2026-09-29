@@ -81,7 +81,14 @@ export function ScheduleWindowList({ stream, section, opportunities, onOpenOppor
 
 type View = 'all' | 'upcoming' | 'past' | 'unresolved' | 'undated'
 type OccurrenceCommand = 'complete' | 'cancel' | 'reschedule'
-type CommandResult = { outcome: 'COMMITTED' | 'ALREADY_APPLIED' | 'NO_WRITE'; commandId?: string; message: string }
+type CommandResult = { outcome: 'COMMITTED' | 'ALREADY_APPLIED' | 'NO_WRITE'; commandId?: string; message: string; localProjection?: 'pending' }
+function commandErrorMessage(error: unknown, zh: boolean) {
+  const message = error instanceof Error ? error.message : String(error)
+  if (/^[A-Z][A-Z0-9_]+:/.test(message)) return zh
+    ? '暂时无法完成操作。请检查账号状态后重试；已有操作会先核对服务器回执。'
+    : 'This action could not be completed. Check account status and retry; existing changes will be checked first.'
+  return message
+}
 type Props = {
   stream: ScheduleStream
   opportunities: Opportunity[]
@@ -246,11 +253,11 @@ export default function ScheduleFeature({
     setFeedback(undefined)
     try {
       const result = await onOccurrenceCommand(selected, kind, kind === 'reschedule' ? newDate : undefined)
-      setFeedback({ text: result.message, commandId: result.outcome === 'COMMITTED' ? result.commandId : undefined })
+      setFeedback({ text: result.message, commandId: result.outcome === 'COMMITTED' && result.localProjection !== 'pending' ? result.commandId : undefined })
       setConfirm(undefined)
-      if (result.outcome !== 'NO_WRITE') setSelectedId(undefined)
+      if (result.outcome !== 'NO_WRITE' && result.localProjection !== 'pending') setSelectedId(undefined)
     } catch (error) {
-      setFeedback({ text: error instanceof Error ? error.message : String(error), error: true })
+      setFeedback({ text: commandErrorMessage(error, zh), error: true })
     } finally {
       setPending(undefined)
     }
@@ -263,7 +270,7 @@ export default function ScheduleFeature({
       await onUndoOccurrenceCommand(commandId)
       setFeedback({ text: zh ? '已撤销这次日程变更。' : 'This schedule change was undone.' })
     } catch (error) {
-      setFeedback({ text: error instanceof Error ? error.message : String(error), error: true })
+      setFeedback({ text: commandErrorMessage(error, zh), error: true })
     } finally {
       setPending(undefined)
     }

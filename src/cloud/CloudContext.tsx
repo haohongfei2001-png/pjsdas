@@ -77,7 +77,6 @@ export function CloudProvider({ children }: { children: ReactNode }) {
   const adoptionTailRef = useRef<Promise<boolean>>(Promise.resolve(true))
   const adoptionSequenceRef = useRef(0)
   const boundaryFailedRef = useRef(false)
-  const checkedConflictRef = useRef(new Set<string>())
 
   const refreshState = useCallback((userId?: string) => {
     setDevice(getCloudDeviceState())
@@ -218,10 +217,8 @@ export function CloudProvider({ children }: { children: ReactNode }) {
     setSyncing(true)
     try {
       const result = await runCloudSync(userId, { equivalenceOnly: true })
-      if (result.kind === 'synced' || result.kind === 'pulled') {
-        setOutcome(result)
-        refreshState(userId)
-      }
+      setOutcome(result)
+      refreshState(userId)
       return result
     } finally {
       busyRef.current = false
@@ -249,19 +246,25 @@ export function CloudProvider({ children }: { children: ReactNode }) {
     }
   }, [loading, configured, session?.user.id, device.autoSync, device.workspaceOwnerUserId, checkpoint.conflict, syncNow])
 
+  const hasConflict = Boolean(checkpoint.conflict)
   useEffect(() => {
     const userId = session?.user.id
-    const conflict = checkpoint.conflict
-    if (loading || !userId || !conflict || !connectedWorkspaceAuthorityEnabled()) return
+    if (loading || !userId || !hasConflict || !connectedWorkspaceAuthorityEnabled()) return
     if (device.workspaceOwnerUserId && device.workspaceOwnerUserId !== userId) return
-    const key = `${userId}:${conflict.remoteVersion}:${conflict.remoteFingerprint}`
-    if (checkedConflictRef.current.has(key)) return
-    if (busyRef.current) return
-    checkedConflictRef.current.add(key)
-    // One bounded read probe for a persisted conflict. No pending-command
-    // replay, remote write, or automatic choice between non-equivalent data.
-    void reconcileEquivalent().catch(() => undefined)
-  }, [loading, session?.user.id, checkpoint.conflict, device.workspaceOwnerUserId, reconcileEquivalent])
+    // Keep classifying against the latest authoritative revision. A persisted
+    // conflict is not a permanent subscription to the revision first seen.
+    const probe = () => { void reconcileEquivalent().catch(() => undefined) }
+    const initial = window.setTimeout(probe, 700)
+    const interval = window.setInterval(probe, 60_000)
+    window.addEventListener('focus', probe)
+    window.addEventListener('online', probe)
+    return () => {
+      window.clearTimeout(initial)
+      window.clearInterval(interval)
+      window.removeEventListener('focus', probe)
+      window.removeEventListener('online', probe)
+    }
+  }, [loading, session?.user.id, hasConflict, device.workspaceOwnerUserId, reconcileEquivalent])
 
   const runResolution = useCallback(async (kind: 'keep' | 'cloud' | 'rebind') => {
     const userId = session?.user.id

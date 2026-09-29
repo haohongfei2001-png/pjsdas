@@ -30,7 +30,7 @@ export default function CloudSettingsCard() {
   const impact = mismatch
     ? (zh ? '这个浏览器仍保留另一个账号的本地资料。为避免跨账号写入，当前账号不会接收这些修改；请先选择恢复路径。' : 'This browser still holds another account’s local data. Uploads to this account are paused; choose a recovery path first.')
     : conflict
-      ? (zh ? `本机与${remoteLabel}出现分叉，自动同步已暂停。其他设备可能没有这里的最新修改；请先选择保留哪一份。` : `This device and the ${remoteLabel} diverged, so automatic sync is paused. Other devices may not have these latest changes; choose which copy to keep.`)
+      ? (zh ? `本机与${remoteLabel}存在待核对差异。自动写入已暂停，系统会继续只读核对最新版本；双方记录均保留。` : `This device and the ${remoteLabel} need review. Automatic writes are paused while the latest version is checked; both copies are retained.`)
       : connectionError
         ? (zh ? '最近一次连接或同步失败。已保存在此浏览器的内容仍可查看，其他设备可能暂时没有最新修改；请检查连接后重试。' : 'The latest connection or sync failed. Saved content on this browser remains available; other devices may not have the latest changes. Check the connection and retry.')
         : !user
@@ -161,7 +161,7 @@ export default function CloudSettingsCard() {
             ) : conflict ? (
               <div className="cloud-conflict-box">
                 <strong>{zh ? `本机和${remoteLabel}尚不能证明等价。` : `This device and the ${remoteLabel} are not proven equivalent.`}</strong>
-                <p>{zh ? `远端版本 ${conflict.remoteVersion}，更新时间 ${formatTime(conflict.remoteUpdatedAt, zh)}。系统已停止自动同步，没有覆盖任何一方。` : `Remote version ${conflict.remoteVersion}, updated ${formatTime(conflict.remoteUpdatedAt, zh)}. Auto-sync stopped and neither side was overwritten.`}</p>
+                <p>{zh ? `最近核对的远端版本 ${conflict.remoteVersion}，更新时间 ${formatTime(conflict.remoteUpdatedAt, zh)}。系统会继续只读核对；没有覆盖任何一方。` : `Latest checked remote version ${conflict.remoteVersion}, updated ${formatTime(conflict.remoteUpdatedAt, zh)}. Read-only checks continue; neither side was overwritten.`}</p>
                 {transactional ? <div>
                   <button type="button" onClick={() => { void run(async () => {
                     const result = await inspectConnectedDivergence(user.id)

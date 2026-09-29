@@ -107,8 +107,10 @@ export async function hasUnsyncedLocalWorkspace(userId: string) {
 export async function runCloudSync(userId: string, options: { passive?: boolean; equivalenceOnly?: boolean } = {}): Promise<CloudSyncOutcome> {
   const lease = connectedWorkspaceAuthorityEnabled() ? captureAccountCacheLease(userId) : undefined
   let targetVersion: string | undefined
+  let projectingEquivalent = false
   const assertCurrent = () => {
     lease?.assertCurrent()
+    if (projectingEquivalent && pendingCommandSummary(userId).count > 0) throw new AccountCacheChangedError()
     if (lease && targetVersion && Number(getAccountCheckpoint(userId).lastSyncedVersion?.replace('txn:', '')) > Number(targetVersion.replace('txn:', ''))) throw new AccountCacheChangedError()
   }
   const device = getCloudDeviceState()
@@ -132,7 +134,12 @@ export async function runCloudSync(userId: string, options: { passive?: boolean;
     // may refresh the local cache only after a fresh exact equivalence proof.
     if (options.equivalenceOnly && (!remote || pendingCommandSummary(userId).count > 0
       || !equivalentReadProjection(local, remote.snapshot))) {
+      if (remote) markConflict(userId, remote)
       return { kind: 'conflict', version: remote?.version, remoteUpdatedAt: remote?.updatedAt }
+    }
+    if (options.equivalenceOnly) {
+      projectingEquivalent = true
+      assertCurrent()
     }
     const decision = remote && localFingerprint === checkpoint.clearedCacheFingerprint ? 'pull_remote' : decideSyncAction({
       checkpoint,
@@ -153,6 +160,8 @@ export async function runCloudSync(userId: string, options: { passive?: boolean;
       && equivalentReadProjection(local, remote.snapshot)) {
       const remoteChanged = remote.version !== checkpoint.lastSyncedVersion
         || remote.fingerprint !== checkpoint.lastSyncedFingerprint
+      projectingEquivalent = true
+      assertCurrent()
       if (remoteChanged) {
         const committed = await replaceLocalSnapshotFromCloud(remote.snapshot, { expectedLocal: local, assertCurrent, accountKey: userId, version: remote.version })
         const projectedFingerprint = await fingerprintWorkspace(committed)

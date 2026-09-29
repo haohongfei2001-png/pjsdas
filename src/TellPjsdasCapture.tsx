@@ -17,6 +17,9 @@ import {
   findAccountPendingSemanticOperation,
   readAccountDraft,
   saveAccountDraft,
+  UnknownCommandOutcomeError,
+  ConnectedProjectionPendingError,
+  PreExecutionCommandError,
 } from './cloud/authoritativeCommandClient.js'
 import type { SemanticCandidate } from './model.js'
 import { captureSessionTransition } from './captureSession.js'
@@ -31,7 +34,7 @@ interface TellPjsdasCaptureProps {
   contextRefs?: string[]
 }
 
-type CaptureSaveState = 'idle' | 'saving' | 'saved' | 'offline' | 'unknown' | 'reauth' | 'conflict' | 'error'
+type CaptureSaveState = 'idle' | 'saving' | 'saved' | 'offline' | 'unknown' | 'reauth' | 'conflict' | 'error' | 'confirmed_pending'
 
 function targetLabel(candidate: SemanticCandidate) {
   const target = candidate.target
@@ -92,6 +95,9 @@ function saveErrorCopy(state: CaptureSaveState, zh: boolean) {
   if (state === 'reauth') return zh
     ? '重新登录后点“重新确认”，TodayAction 会先核对原操作的结果。'
     : 'Sign in again, then retry confirmation. TodayAction will check the original operation first.'
+  if (state === 'confirmed_pending') return zh
+    ? '服务器已确认这次操作。请在设置中核对本机状态，再确认保存结果；原操作不会重复发送。'
+    : 'The server confirmed this action. Review this device in Settings, then confirm the saved result; the original action will not be resent.'
   if (state === 'conflict') return zh
     ? '请先核对最新事实，再决定是否重新提交。输入内容仍在这里。'
     : 'Review the latest facts before submitting again. Your input remains here.'
@@ -130,7 +136,7 @@ export default function TellPjsdasCapture({
   const textRef = useRef('')
 
   const connected = Boolean(cloud.session && connectedWorkspaceAuthorityEnabled())
-  const recoveryLocked = saveState === 'unknown' || saveState === 'reauth'
+  const recoveryLocked = saveState === 'unknown' || saveState === 'reauth' || saveState === 'confirmed_pending'
 
   useEffect(() => {
     if (!open) {
@@ -172,7 +178,9 @@ export default function TellPjsdasCapture({
     setPreview(undefined)
     setMessage('')
     setError(resumable?.lastError ?? '')
-    setSaveState(resumable?.status === 'unknown' ? 'unknown' : resumable?.status === 'conflict' ? 'conflict' : resumable ? 'reauth' : 'idle')
+    setSaveState(resumable?.status === 'unknown' ? 'unknown'
+      : resumable?.status === 'projection_pending' ? 'confirmed_pending'
+        : resumable?.status === 'conflict' ? 'conflict' : resumable ? 'reauth' : 'idle')
     setAuthoritativeSaveConfirmed(false)
     setDecisionCount(0)
     setUnresolvedCount(0)
@@ -306,8 +314,9 @@ export default function TellPjsdasCapture({
     } catch (caught) {
       const detail = caught instanceof Error ? caught.message : String(caught)
       setError(detail)
-      if (/UNKNOWN_COMMAND_OUTCOME/.test(detail)) setSaveState('unknown')
-      else if (/SESSION_EXPIRED_BEFORE_COMMAND/.test(detail)) setSaveState('reauth')
+      if (caught instanceof UnknownCommandOutcomeError) setSaveState('unknown')
+      else if (caught instanceof ConnectedProjectionPendingError) setSaveState('confirmed_pending')
+      else if (caught instanceof PreExecutionCommandError && caught.code === 'SESSION_EXPIRED_BEFORE_COMMAND') setSaveState('reauth')
       else if (/CONFLICT|conflict/i.test(detail)) setSaveState('conflict')
       else setSaveState('error')
     } finally {
@@ -399,7 +408,8 @@ export default function TellPjsdasCapture({
               <span data-state={saveState}>
                 {saveState === 'saving' ? (zh ? '正在保存' : 'Saving')
                   : saveState === 'saved' ? (zh ? '已保存' : 'Saved')
-                    : saveState === 'unknown' ? (zh ? '等待确认' : 'Confirming')
+                  : saveState === 'unknown' ? (zh ? '等待确认' : 'Confirming')
+                    : saveState === 'confirmed_pending' ? (zh ? '服务器已确认，本机待刷新' : 'Server confirmed; device refresh pending')
                       : saveState === 'offline' ? (zh ? '仅草稿' : 'Draft only')
                         : (zh ? '尚未保存' : 'Not saved')}
               </span>
@@ -429,6 +439,7 @@ export default function TellPjsdasCapture({
           <button className="cgr-primary-button" type="button" disabled={busy || !text.trim()} onClick={() => { void submit() }}>
             {busy ? (zh ? '正在权威保存…' : 'Saving authoritatively…')
               : saveState === 'unknown' ? (zh ? '确认保存状态' : 'Confirm save status')
+                : saveState === 'confirmed_pending' ? (zh ? '核对本机状态' : 'Check device state')
                 : saveState === 'reauth' ? (zh ? '重新确认' : 'Retry confirmation')
                   : (zh ? '确认并保存' : 'Confirm and save')}
           </button>
@@ -458,6 +469,8 @@ export default function TellPjsdasCapture({
           <div className={`cgr-capture-error state-${saveState}`} role="alert">
             <strong>{saveState === 'unknown'
               ? (zh ? '保存结果暂时未知' : 'Save outcome is not confirmed yet')
+              : saveState === 'confirmed_pending'
+                ? (zh ? '服务器已确认，本机待安全刷新' : 'Server confirmed; this device awaits a safe refresh')
               : saveState === 'reauth'
                 ? (zh ? '登录会话已过期' : 'Session expired')
                 : saveState === 'conflict'

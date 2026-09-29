@@ -616,6 +616,36 @@ test('pending authoritative save is visibly pending until its receipt arrives', 
   await expect(page.getByText('已保存')).toBeVisible()
 })
 
+test('committed capture with a blocked local projection keeps its draft and stable receipt after reload', async ({ page }) => {
+  await seedSession(page.context())
+  const state: State = { revision: 56, snapshot: workspace(), receipts: new Map(), commandBodies: [] }
+  let releaseSemantic: () => void = () => {}
+  const holdSemantic = new Promise<void>(resolve => { releaseSemantic = resolve })
+  await installServer(page, state, { holdSemantic })
+  await page.goto('/pjsdas/today')
+  await page.locator('.tsui-tell-button').click()
+  const input = page.locator('.cgr-capture-input')
+  await input.fill('事项：整理面试材料')
+  await page.getByRole('button', { name: '确认并保存' }).click()
+  await expect(page.getByText('正在保存')).toBeVisible()
+  await page.evaluate(async () => {
+    const db = await (await import('/pjsdas/src/db.ts')).dbPromise
+    const action = await db.get('actions', 'A-action-1')
+    if (!action) throw Error('Missing fixture action')
+    await db.put('actions', { ...action, title: 'Preserved owner edit' })
+  })
+  releaseSemantic()
+  await expect(page.getByRole('alert')).toContainText('服务器已确认，本机待安全刷新')
+  await expect(input).toHaveValue('事项：整理面试材料')
+  await expect(page.getByText('已保存', { exact: true })).toHaveCount(0)
+  expect(await page.evaluate(() => localStorage.getItem('pjsdas-cgr01-draft:account-a:tell-pjsdas'))).toBe('事项：整理面试材料')
+  await page.reload()
+  await expect(page.getByRole('dialog', { name: '告诉 TodayAction' })).toBeVisible()
+  await expect(page.getByRole('alert')).toContainText('服务器已确认，本机待安全刷新')
+  await expect(page.locator('.cgr-capture-input')).toHaveValue('事项：整理面试材料')
+  expect(state.commandBodies.filter(body => body.action === 'command')).toHaveLength(1)
+})
+
 test('cached Today stays useful when authoritative refresh fails', async ({ page }) => {
   await seedSession(page.context())
   const state: State = { revision: 60, snapshot: workspace(), receipts: new Map(), commandBodies: [] }
@@ -625,7 +655,7 @@ test('cached Today stays useful when authoritative refresh fails', async ({ page
   await expect(page.getByRole('heading', { name: 'A第一任务' })).toBeVisible()
   state.failReads = true
   await page.evaluate(() => window.dispatchEvent(new Event('focus')))
-  await expect(page.getByText('使用已验证缓存，暂时无法刷新。')).toBeVisible()
+  await expect(page.getByText('显示已验证记录，刷新暂不可用。')).toBeVisible()
   await expect(page.getByRole('heading', { name: 'A第一任务' })).toBeVisible()
   await expect(page.locator('.tsui-task-row .tsui-row-action').first()).toBeEnabled()
   await mkdir(VISUAL_DIR, { recursive: true })

@@ -19,6 +19,8 @@
 .tsui-unresolved-link strong{margin-left:5px;color:#bf7150}
 .tsui-alert,.tsui-status,.tsui-inline-notice{margin:0 0 15px;border:1px solid #ead9c5;border-radius:10px;padding:11px 14px;background:#fff9f1;color:#875d36;font-size:0.8125rem}
 .tsui-status button{margin-left:12px;border:0;background:transparent;color:#315ec5;font-weight:700}
+.tsui-compact-state{display:inline-flex;align-items:center;max-width:100%;margin-bottom:10px;padding:5px 9px;border-radius:999px;font-size:.75rem}
+.tsui-inline-notice button{border:0;background:transparent;color:#315ec5;font:inherit;font-weight:700;cursor:pointer}
 .tsui-today-grid{display:grid;grid-template-columns:minmax(0,1.38fr) minmax(360px,1fr);gap:20px;align-items:start}
 .tsui-panel,.tsui-schedule-panel{min-width:0;border:1px solid #e6eaf1;border-radius:15px;background:#fff;box-shadow:0 4px 18px rgba(34,53,88,.035)}
 .tsui-task-panel{min-height:610px}

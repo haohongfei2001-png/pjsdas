@@ -105,6 +105,8 @@ describe('connected passive sync authority', () => {
     expect(await runCloudSync('qa-account', { equivalenceOnly: true })).toMatchObject({ kind: 'conflict' })
     expect(fixture.replace).not.toHaveBeenCalled()
     expect(fixture.update).not.toHaveBeenCalled()
-    expect(fixture.checkpoint).not.toHaveBeenCalled()
+    expect(fixture.checkpoint).toHaveBeenCalledWith('qa-account', expect.objectContaining({
+      conflict: expect.objectContaining({ remoteVersion: 'txn:7' }),
+    }))
   })
 })
