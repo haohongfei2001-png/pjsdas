@@ -15,9 +15,10 @@ Before implementation, the owner fixture with 60 due-today flexible tasks select
 ## Green-after evidence
 
 - Unit regression covers 2/6/8-hour capacity, flexible overflow, overlapping interviews, cross-midnight clipping, genuine deadline infeasibility, work windows, snapshot and command persistence, invalid preferences, and unknown availability.
-- Full unit suite: 208 files and 1,065 tests passed locally.
+- Full unit suite: 208 files and 1,069 tests passed locally after independent-review repairs.
 - TypeScript and production build passed locally.
 - Headless Chromium could not launch in the local macOS sandbox (`MachPortRendezvousServer: Permission denied`); the same tests are included in the PR's cloud Browser E2E gate.
+- First cloud exact-head run found fixtures still assuming hidden three-hour capacity and a warning for a physically feasible future deadline. Those assertions now use explicit capacity or a genuinely infeasible deadline. Independent review found and drove repairs for latest-start visibility, shared-choice deadlines, occupied work windows, and requested-date timezone resolution.
 
 ## Remaining gates
 

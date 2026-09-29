@@ -98,8 +98,17 @@ function dateForAction(item: RankedAction, node: ScheduleNode | undefined, timez
 }
 
 function isHard(item: RankedAction, node: ScheduleNode | undefined) {
-  if (node) return node.constraintKind === 'employer_hard' && node.temporal.shape !== 'fixed_range'
-  return item.action.kind === 'apply' && Boolean(item.action.dueAt)
+  if (node?.constraintKind === 'employer_hard' && node.temporal.shape !== 'fixed_range') return true
+  return (item.action.kind === 'apply' || item.action.kind === 'group_decision') && Boolean(item.action.dueAt)
+}
+
+function needsStartToday(item: RankedAction, node: ScheduleNode | undefined, today: string, timezone: string) {
+  if (dateForAction(item, node, timezone) === today) return true
+  const explicit = node?.temporal.latestStartAt
+  const dueAt = node?.temporal.deadlineAt ?? (item.action.duePrecision === 'datetime' ? item.action.dueAt : undefined)
+  const latestStart = explicit ? new Date(explicit).getTime()
+    : dueAt ? new Date(dueAt).getTime() - item.action.estimatedMinutes * 60_000 : NaN
+  return Number.isFinite(latestStart) && localDateKey(new Date(latestStart), timezone) <= today
 }
 
 export function buildConsumerTimePlan(input: {
@@ -133,7 +142,7 @@ export function buildConsumerTimePlan(input: {
   const startable = input.ranked.filter(item => item.action.timingMode !== 'fixed')
   const mandatory = startable.filter(item => {
     const node = nodeForAction(item.action, activeNodes)
-    return isHard(item, node) && dateForAction(item, node, input.timezone) === today
+    return isHard(item, node) && needsStartToday(item, node, today, input.timezone)
   }).sort((a, b) => dueSortValue(a.action, nodeForAction(a.action, activeNodes))
     - dueSortValue(b.action, nodeForAction(b.action, activeNodes)) || b.score - a.score)
   const planned: RankedAction[] = []
@@ -141,6 +150,9 @@ export function buildConsumerTimePlan(input: {
   const workRemaining = available === undefined ? Infinity : unionMinutes(available.map(interval => ({
     start: Math.max(interval.start, input.now.getTime()), end: interval.end,
   })).filter(interval => interval.end > interval.start))
+    - unionMinutes(intersectIntervals(available, fixed).map(interval => ({
+      start: Math.max(interval.start, input.now.getTime()), end: interval.end,
+    })).filter(interval => interval.end > interval.start))
   let remaining = capacityMinutes === undefined ? 0 : Math.max(0, Math.min(capacityMinutes - fixedMinutes, workRemaining))
   const impossible: string[] = []
   let requiredMinutes = 0
@@ -157,11 +169,12 @@ export function buildConsumerTimePlan(input: {
         start: Math.max(interval.start, input.now.getTime()), end: Math.min(interval.end, deadline),
       })).filter(interval => interval.end > interval.start)) : 0
     requiredMinutes += item.action.estimatedMinutes
-    if ((capacityMinutes !== undefined && item.action.estimatedMinutes > remaining)
+    const dueToday = dateForAction(item, node, input.timezone) === today
+    if ((dueToday && capacityMinutes !== undefined && item.action.estimatedMinutes > remaining)
       || requiredMinutes > Math.max(0, minutesToDeadline - fixedBeforeDeadline)) {
       impossible.push(item.action.id)
       remaining = 0
-    } else if (capacityMinutes !== undefined) remaining -= item.action.estimatedMinutes
+    } else if (capacityMinutes !== undefined) remaining = Math.max(0, remaining - item.action.estimatedMinutes)
     planned.push(item)
     selected.add(item.action.id)
   }

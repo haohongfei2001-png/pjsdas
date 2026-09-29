@@ -98,6 +98,34 @@ describe('ZMC-01 owner time planning', () => {
     expect(selected.criticalWarnings).toEqual([])
   })
 
+  it('does not put work into a remaining window occupied by a fixed meeting', () => {
+    const snapshot = source(Array.from({ length: 4 }, (_, i) => flexible(`late-window-${i}`)), [
+      node('meeting', '2026-09-25T02:00:00.000Z', '2026-09-25T03:00:00.000Z'),
+    ])
+    snapshot.data.timePlanning = { version: 1, updatedAt: NOW.toISOString(), defaultDailyMinutes: 120,
+      weeklyWindows: [{ weekday: 5, startMinute: 540, endMinute: 660 }] }
+    const selected = selectTodayWeb(snapshot, {}, { now: new Date('2026-09-25T02:00:00.000Z'), timezone: ZONE })
+    expect(selected.actions).toEqual([])
+    expect(selected.criticalWarnings).toEqual([])
+  })
+
+  it('protects a shared application choice deadline even with a legacy user-plan node', () => {
+    const group = { ...flexible('shared-choice'), kind: 'group_decision' as const, estimatedMinutes: 60,
+      dueAt: '2026-09-25T08:00:00.000Z', duePrecision: 'datetime' as const }
+    const snapshot = source([group])
+    const selected = selectTodayWeb(snapshot, { availableMinutes: 0 }, { now: NOW, timezone: ZONE })
+    expect(selected.actions.map(item => item.actionId)).toEqual(['shared-choice'])
+    expect(selected.criticalWarnings[0]?.relatedIds).toEqual(['shared-choice'])
+  })
+
+  it('keeps a next-day hard deadline visible when its latest start is today', () => {
+    const apply = { ...flexible('tomorrow-deadline'), kind: 'apply' as const, estimatedMinutes: 240,
+      dueAt: '2026-09-25T17:00:00.000Z', duePrecision: 'datetime' as const }
+    const selected = selectTodayWeb(source([apply]), { availableMinutes: 60 }, { now: NOW, timezone: ZONE })
+    expect(selected.actions.map(item => item.actionId)).toEqual(['tomorrow-deadline'])
+    expect(selected.criticalWarnings).toEqual([])
+  })
+
   it('persists default, today override and windows through snapshot and account commands', () => {
     const base = source([])
     const initial = applyUserDomainCommand(base, { commandId: 'capacity-default-1', kind: 'set_daily_capacity', minutes: 480 }, NOW)
@@ -129,5 +157,16 @@ describe('ZMC-01 owner time planning', () => {
     expect(buildTodayBrief(snapshot, {}, { now: NOW, timezone: ZONE }).availableMinutes).toBeNull()
     expect(getTodayPlan(snapshot, {}, { now: NOW, timezone: ZONE }).availableMinutes).toBeNull()
     expect(getTodayPlan(snapshot, {}, { now: NOW, timezone: ZONE }).startableActions).toHaveLength(1)
+  })
+
+  it('resolves a requested AI plan date in the requested timezone', () => {
+    const snapshot = source([flexible('future')])
+    snapshot.data.timePlanning = { version: 1, updatedAt: NOW.toISOString(), defaultDailyMinutes: 480,
+      dateOverrides: { '2026-09-25': 120 } }
+    const result = getTodayPlan(snapshot, { date: '2026-09-25' }, {
+      now: new Date('2026-09-20T12:00:00.000Z'), timezone: 'America/Los_Angeles',
+    })
+    expect(result.date).toBe('2026-09-25')
+    expect(result.availableMinutes).toBe(120)
   })
 })

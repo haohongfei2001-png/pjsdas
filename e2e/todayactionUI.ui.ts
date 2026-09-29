@@ -11,6 +11,7 @@ const directory = 'test-results/ta02-' + phase
 const metrics: unknown[] = []
 function fixture() {
   const value = workspace()
+  value.data.timePlanning = { version: 1, defaultDailyMinutes: 480, updatedAt: '2026-09-20T00:00:00.000Z' }
   value.data.opportunities[0]!.company = 'A公司 · 跨设备招聘与长期岗位进展研究团队'
   value.data.opportunities[0]!.role = 'Senior Product Research / 高级产品策略、设计与用户研究负责人'
   // Existing TSUI-02 standalone date-only fixture, with no foreign process references.

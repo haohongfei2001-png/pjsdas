@@ -11,7 +11,7 @@ import {
   suppressSupersededActions,
 } from '../processEvents.js'
 import { validateSnapshot, type PJSDASSnapshot } from '../snapshot.js'
-import { capacityForDate } from '../timePlanningPreferences.js'
+import { capacityForDate, validPlanningDate } from '../timePlanningPreferences.js'
 import { localDateKey as displayDateKey } from '../todayBrief.js'
 import { buildConsumerTimePlan } from '../today/consumerTimePlan.js'
 import type {
@@ -355,19 +355,22 @@ function localDateKey(date: Date) {
   return `${year}-${month}-${day}`
 }
 
-function nowForRequestedDate(value: string | undefined, fallback: Date) {
+function nowForRequestedDate(value: string | undefined, fallback: Date, timezone: string) {
   if (!value) return fallback
   if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) {
     throw new BridgeReadError('INVALID_ARGUMENT', 'date must use local YYYY-MM-DD format.')
   }
-  const [year, month, day] = value.split('-').map(Number)
-  const result = new Date(fallback)
-  result.setFullYear(year, month - 1, day)
-  result.setHours(0, 0, 0, 0)
-  if (result.getFullYear() !== year || result.getMonth() !== month - 1 || result.getDate() !== day) {
+  if (!validPlanningDate(value)) {
     throw new BridgeReadError('INVALID_ARGUMENT', 'date is not a valid calendar date.')
   }
-  return result
+  const noon = new Date(`${value}T12:00:00.000Z`).getTime()
+  let lower = noon - 48 * 3_600_000, upper = noon + 48 * 3_600_000
+  while (upper - lower > 1) {
+    const middle = Math.floor((lower + upper) / 2)
+    if (displayDateKey(new Date(middle), timezone) < value) lower = middle
+    else upper = middle
+  }
+  return new Date(upper)
 }
 
 function opportunityForAction(action: Action, opportunities: Opportunity[]) {
@@ -394,7 +397,7 @@ export function getTodayPlan(
 ): GetTodayPlanOutput {
   const context = resolvedContext(bridgeContext)
   const workspace = readWorkspace(snapshot)
-  const now = nowForRequestedDate(input.date, context.now)
+  const now = nowForRequestedDate(input.date, context.now, context.timezone)
   const today = displayDateKey(now, context.timezone)
   const weekday = new Date(`${today}T12:00:00.000Z`).getUTCDay()
   const availableMinutes = input.availableMinutes ?? capacityForDate(snapshot.data.timePlanning, today, weekday) ?? context.defaultAvailableMinutes
