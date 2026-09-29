@@ -75,6 +75,38 @@ describe('dense owner decision and schedule membership', () => {
     nodes[3]!.kind = 'interview'
     expect(partitionDecisions([request], context).dataQuality).toHaveLength(1)
   })
+  it('keeps a company-scoped occurrence choice when another company has the same event kind', () => {
+    const snapshot = denseDecisionWorkspace()
+    const nodes = snapshot.data.scheduleNodes!
+    for (const node of nodes.slice(0, 3)) node.kind = 'interview'
+    nodes[1]!.opportunityId = nodes[0]!.opportunityId
+    nodes[1]!.temporal.date = '2026-09-29'
+    const request = denseDecision(503)
+    request.reason = 'ambiguous_occurrence'
+    request.payloadBinding.candidate.target = {
+      company: snapshot.data.opportunities[0]!.company, occurrenceKind: 'interview',
+    }
+    request.choices = nodes.slice(0, 2).map(node => ({
+      id: `occurrence:${node.occurrenceId}`, label: node.occurrenceId,
+      consequence: 'Update only this interview.', resolution: { occurrenceId: node.occurrenceId },
+    }))
+    const context = { opportunities: snapshot.data.opportunities, scheduleNodes: nodes, now: DENSE_NOW }
+    expect(partitionDecisions([request], context).actionable).toHaveLength(1)
+    const generated = applySemanticIntake(snapshot, {
+      contractVersion: 1, inputId: 'gmail:company-occurrence',
+      source: { kind: 'gmail', sourceId: 'primary', sourceRecordId: 'company-occurrence',
+        observedAt: DENSE_NOW.toISOString(), assertedAt: DENSE_NOW.toISOString(), timezone: zone },
+      statementMode: 'assertion',
+      candidates: [{ id: 'fragment:0', kind: 'occurrence_cancelled',
+        target: { company: snapshot.data.opportunities[0]!.company, occurrenceKind: 'interview' },
+        objectConfidence: 'low', eventConfidence: 'high', evidenceRefs: ['company-occurrence'], sourceVersionRefs: [] }],
+    }, { authorized: true, now: DENSE_NOW })
+    expect(generated.status).toBe('DECISION_REQUIRED')
+    expect(generated.decisionRequests).toHaveLength(1)
+    expect(generated.decisionRequests[0]!.reason).toBe('ambiguous_occurrence')
+    nodes[1]!.opportunityId = snapshot.data.opportunities[1]!.id
+    expect(partitionDecisions([request], context).dataQuality).toHaveLength(1)
+  })
   it('uses the same normalized company identity as semantic resolution', () => {
     const snapshot = denseDecisionWorkspace()
     snapshot.data.opportunities[0]!.company = '京东'

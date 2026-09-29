@@ -70,6 +70,11 @@ export function actionableDecision(request: DecisionRequest, context: DecisionCo
   if (request.reason === 'ambiguous_occurrence') {
     if (candidate.eventConfidence !== 'high'
       || (candidate.temporalConfidence && candidate.temporalConfidence !== 'high')) return false
+    const targetOpportunity = candidate.target?.opportunityId || candidate.target?.company?.trim() || candidate.target?.role?.trim()
+      ? resolveOpportunityTarget(context.opportunities, candidate.target)
+      : undefined
+    if (targetOpportunity && targetOpportunity.status !== 'unique') return false
+    const opportunityId = targetOpportunity?.status === 'unique' ? targetOpportunity.opportunity.id : undefined
     const ids = choices.map(item => item.resolution?.occurrenceId)
     const latest = new Map<string, ScheduleNode>()
     for (const node of context.scheduleNodes ?? []) {
@@ -78,7 +83,7 @@ export function actionableDecision(request: DecisionRequest, context: DecisionCo
     }
     const plausible = [...latest.values()].filter(node =>
       node.state !== 'cancelled' && node.state !== 'completed' && node.state !== 'superseded'
-      && (!candidate.target?.opportunityId || node.opportunityId === candidate.target.opportunityId)
+      && (!opportunityId || node.opportunityId === opportunityId)
       && (!candidate.target?.occurrenceKind || node.kind === candidate.target.occurrenceKind))
     return ids.length >= 2 && ids.every((id): id is string => Boolean(id && nodeIds.has(id)))
       && new Set(ids).size === ids.length
