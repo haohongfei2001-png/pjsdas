@@ -184,7 +184,7 @@ test('TA-02 verified cache and self-owned authorization keep source failures vis
   await expect(page.locator('.tsui-task-row')).toHaveCount(2)
   state.failed=true
   await page.evaluate(()=>window.dispatchEvent(new Event('focus')))
-  await expect(page.getByText('使用已验证缓存，暂时无法刷新。')).toBeVisible()
+  await expect(page.getByText(before ? '使用已验证缓存，暂时无法刷新。' : '显示已验证记录，刷新暂不可用。')).toBeVisible()
   await matrix(page,'CACHED')
   await page.goto(base+'?authorization_id=synthetic-ui-review')
   await expect(page.getByRole('heading',{name:'授权 ChatGPT 访问 TodayAction'})).toBeVisible()

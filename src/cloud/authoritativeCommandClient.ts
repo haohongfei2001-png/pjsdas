@@ -8,7 +8,7 @@ import { fetchBackend } from '../backendEndpoints.js'
 import { isRecordedAccountProjection, exportLocalSnapshot, replaceLocalSnapshotFromCloud } from '../db.js'
 import { getAccountAccessToken } from './cloudClient.js'
 import { getAccountCheckpoint, patchAccountCheckpoint } from './syncState.js'
-import { fingerprintWorkspace } from './workspaceFingerprint.js'
+import { equivalentReadProjection, fingerprintWorkspace } from './workspaceFingerprint.js'
 
 export type ConnectedBusinessCommand =
   | { type: 'domain'; value: UserDomainCommand }
@@ -40,6 +40,8 @@ export interface ConnectedCommandResponse {
   workspaceVersion: string
   schemaVersion: number
   snapshot: PJSDASSnapshot
+  /** The server outcome is durable even when this browser cannot project it. */
+  localProjection?: 'applied' | 'pending'
   receipt?: Record<string, unknown>
   result?: Record<string, unknown>
   conflict?: {
@@ -57,7 +59,7 @@ interface PendingCommand {
   baseRevision?: number
   command?: ConnectedBusinessCommand
   targetCommandId?: string
-  status: 'pending' | 'unknown' | 'conflict'
+  status: 'pending' | 'unknown' | 'conflict' | 'projection_pending'
   createdAt: string
   updatedAt: string
   lastError?: string
@@ -86,6 +88,12 @@ function readPending(accountKey: string): PendingCommand[] {
     return Array.isArray(parsed) ? parsed : []
   } catch {
     return []
+  }
+}
+
+function assertNoOtherProjectionPending(accountKey: string, commandId: string) {
+  if (readPending(accountKey).some(item => item.status === 'projection_pending' && item.commandId !== commandId)) {
+    throw new CommandBlockedByPendingProjectionError()
   }
 }
 
@@ -166,6 +174,7 @@ export function createConnectedCommandId(prefix = 'web') {
 }
 
 async function request(accountKey: string, body: Record<string, unknown>) {
+  if (body.action === 'command' || body.action === 'undo') assertNoOtherProjectionPending(accountKey, String(body.commandId))
   const lease = captureAccountCacheLease(accountKey)
   const local = await exportLocalSnapshot()
   const checkpoint = getAccountCheckpoint(accountKey)
@@ -237,10 +246,36 @@ function serverError(response: Response, payload?: Record<string, any>) {
   return new Error(`${payload?.code ?? 'CONNECTED_COMMAND_FAILED'}: ${payload?.message ?? payload?.conflict?.message ?? `HTTP ${response.status}`}`)
 }
 
-class PreExecutionCommandError extends Error {}
+export class PreExecutionCommandError extends Error {
+  constructor(message: string, readonly code: 'SESSION_EXPIRED_BEFORE_COMMAND' | 'AUTH_REJECTED_BEFORE_COMMAND' | 'COMMAND_REJECTED') {
+    super(message)
+  }
+}
+export class UnknownCommandOutcomeError extends Error {
+  readonly code = 'UNKNOWN_COMMAND_OUTCOME'
+}
+export class ConnectedProjectionPendingError extends Error {
+  readonly code = 'CONNECTED_PROJECTION_PENDING'
+  constructor() { super('服务器已确认操作，本机状态待安全刷新。请在设置中核对同步状态。') }
+}
+export class CommandBlockedByPendingProjectionError extends Error {
+  readonly code = 'COMMAND_BLOCKED_BY_PENDING_PROJECTION'
+  constructor() { super('本机还有已确认操作待安全刷新；这次新操作尚未发送。请先在设置中核对同步状态。') }
+}
 
-export async function lookupConnectedCommandReceipt(accountKey: string, commandId: string) {
-  const { response, payload, lease, local } = await request(accountKey, { action: 'receipt', commandId })
+export async function lookupConnectedCommandReceipt(accountKey: string, commandId: string): Promise<ConnectedCommandResponse | undefined> {
+  // Receipt existence is a server fact. Local projection safety is checked
+  // only after the receipt has been read, and cannot change its outcome.
+  const lease = captureAccountCacheLease(accountKey)
+  const accessToken = await getAccountAccessToken(accountKey)
+  lease.assertCurrent()
+  const response = await fetchBackend('/api/workspace', {
+    method: 'POST',
+    headers: { authorization: `Bearer ${accessToken}`, 'content-type': 'application/json' },
+    body: JSON.stringify({ action: 'receipt', commandId }),
+  })
+  const payload = await response.json().catch(() => undefined) as Record<string, any> | undefined
+  lease.assertCurrent()
   if (!response.ok) throw serverError(response, payload)
   if (!payload?.found) return undefined
   const result = parseCommandResponse({
@@ -252,44 +287,75 @@ export async function lookupConnectedCommandReceipt(accountKey: string, commandI
     receipt: payload.receipt,
     result: payload.receipt?.result,
   })
-  await projectAuthoritativeResult(accountKey, result, { expectedLocal: local, assertCurrent: lease.assertCurrent })
-  return result
+  try {
+    const local = await exportLocalSnapshot()
+    return projectConfirmedResult(accountKey, commandId, result,
+      { expectedLocal: local, assertCurrent: lease.assertCurrent })
+  } catch (caught) {
+    patchPending(accountKey, commandId, {
+      status: 'projection_pending',
+      lastError: caught instanceof Error ? caught.message : String(caught),
+    })
+    return { ...result, localProjection: 'pending' }
+  }
 }
 
-async function recoverUnknown(accountKey: string, pending: PendingCommand, caught: unknown) {
+async function projectConfirmedResult(accountKey: string, commandId: string, result: ConnectedCommandResponse,
+  guard: { expectedLocal: PJSDASSnapshot; assertCurrent: () => void }): Promise<ConnectedCommandResponse> {
+  try {
+    const checkpoint = getAccountCheckpoint(accountKey)
+    const baseline = checkpoint.lastReadProjectionSourceFingerprint === checkpoint.lastSyncedFingerprint
+      ? checkpoint.lastReadProjectionFingerprint ?? checkpoint.lastSyncedFingerprint : checkpoint.lastSyncedFingerprint
+    const localFingerprint = await fingerprintWorkspace(guard.expectedLocal)
+    if (baseline && localFingerprint !== baseline && localFingerprint !== checkpoint.clearedCacheFingerprint
+      && !await isRecordedAccountProjection(accountKey, guard.expectedLocal)
+      && !equivalentReadProjection(guard.expectedLocal, result.snapshot)) throw new AccountCacheChangedError()
+    await projectAuthoritativeResult(accountKey, result, guard)
+    return { ...result, localProjection: 'applied' }
+  } catch (caught) {
+    // The command is already committed. Preserve its identity and retry only
+    // the read/projection path after the local difference is resolved.
+    if (result.outcome !== 'NO_WRITE') patchPending(accountKey, commandId, {
+      status: 'projection_pending',
+      lastError: caught instanceof Error ? caught.message : String(caught),
+    })
+    return { ...result, localProjection: 'pending' }
+  }
+}
+
+async function recoverUnknown(accountKey: string, pending: PendingCommand, _caught: unknown) {
   try {
     const recovered = await lookupConnectedCommandReceipt(accountKey, pending.commandId)
     if (recovered) {
-      removePending(accountKey, pending.commandId)
+      if (recovered.localProjection === 'applied') removePending(accountKey, pending.commandId)
       return recovered
     }
   } catch {
     // Preserve the unknown-outcome state. A later retry performs the same
     // receipt lookup before reusing the stable command identity.
   }
-  const message = caught instanceof Error ? caught.message : String(caught)
-  const unknown = `UNKNOWN_COMMAND_OUTCOME: TodayAction 尚未确认这次操作是否已提交。已保留 commandId ${pending.commandId}，恢复连接后会先查询 receipt，再以同一 commandId 安全重试；请不要重复创建同一操作。原始错误：${message}`
+  const unknown = '尚未确认这次操作是否已提交。记录已保留；恢复连接后会先核对服务器回执，请勿重复操作。'
   patchPending(accountKey, pending.commandId, { status: 'unknown', lastError: unknown })
-  throw new Error(unknown)
+  throw new UnknownCommandOutcomeError(unknown)
 }
 
 function rejectBeforeExecution(accountKey: string, pending: PendingCommand, response: Response, payload?: Record<string, any>): never {
   const raw = serverError(response, payload)
   if (response.status === 401) {
-    const message = 'SESSION_EXPIRED_BEFORE_COMMAND: TodayAction 登录会话已过期；服务端在授权阶段拒绝了本次命令，因此它没有执行。重新登录后会使用同一 commandId 安全重试。'
+    const message = '登录会话已过期；服务器没有执行这次操作。重新登录后会先核对原操作。'
     patchPending(accountKey, pending.commandId, { status: 'pending', lastError: message })
-    throw new PreExecutionCommandError(message)
+    throw new PreExecutionCommandError(message, 'SESSION_EXPIRED_BEFORE_COMMAND')
   }
   if (response.status === 403) {
-    const message = `AUTH_REJECTED_BEFORE_COMMAND: 当前身份没有执行这次命令的权限；命令没有提交。原始错误：${raw.message}`
+    const message = '当前账号没有执行这次操作的权限；服务器没有提交修改。'
     patchPending(accountKey, pending.commandId, { status: 'pending', lastError: message })
-    throw new PreExecutionCommandError(message)
+    throw new PreExecutionCommandError(message, 'AUTH_REJECTED_BEFORE_COMMAND')
   }
   removePending(accountKey, pending.commandId)
-  throw new PreExecutionCommandError(raw.message)
+  throw new PreExecutionCommandError(raw.message, 'COMMAND_REJECTED')
 }
 
-async function submitPending(accountKey: string, pending: PendingCommand): Promise<ConnectedCommandResponse> {
+async function submitPending(accountKey: string, pending: PendingCommand, newlyCreated = false): Promise<ConnectedCommandResponse> {
   try {
     const { response, payload, lease, local } = await request(accountKey, pending.action === 'command'
       ? {
@@ -321,19 +387,29 @@ async function submitPending(accountKey: string, pending: PendingCommand): Promi
     }
 
     const result = parseCommandResponse(payload)
-    await projectAuthoritativeResult(accountKey, result, { expectedLocal: local, assertCurrent: lease.assertCurrent })
-    removePending(accountKey, pending.commandId)
-    return result
+    const projected = await projectConfirmedResult(accountKey, pending.commandId, result,
+      { expectedLocal: local, assertCurrent: lease.assertCurrent })
+    if (projected.localProjection === 'applied' || projected.outcome === 'NO_WRITE') removePending(accountKey, pending.commandId)
+    return projected
   } catch (caught) {
-    if (caught instanceof PreExecutionCommandError || caught instanceof AccountCacheChangedError) throw caught
+    if (caught instanceof CommandBlockedByPendingProjectionError && newlyCreated) removePending(accountKey, pending.commandId)
+    if (caught instanceof PreExecutionCommandError || caught instanceof AccountCacheChangedError
+      || caught instanceof ConnectedProjectionPendingError || caught instanceof CommandBlockedByPendingProjectionError) throw caught
     return recoverUnknown(accountKey, pending, caught)
   }
+}
+
+function forCaller(result: ConnectedCommandResponse, allowProjectionPending?: boolean) {
+  if (result.localProjection === 'pending' && result.outcome !== 'NO_WRITE' && !allowProjectionPending) {
+    throw new ConnectedProjectionPendingError()
+  }
+  return result
 }
 
 export async function executeConnectedBusinessCommand(
   accountKey: string,
   command: ConnectedBusinessCommand,
-  options: { commandId?: string; baseRevision?: number } = {},
+  options: { commandId?: string; baseRevision?: number; allowProjectionPending?: boolean } = {},
 ) {
   const commandId = options.commandId
     ?? (command.type === 'domain' ? command.value.commandId : createConnectedCommandId(command.type))
@@ -344,13 +420,17 @@ export async function executeConnectedBusinessCommand(
   if (existing) {
     const recovered = await lookupConnectedCommandReceipt(accountKey, commandId)
     if (recovered) {
-      removePending(accountKey, commandId)
-      return recovered
+      if (recovered.localProjection === 'applied') removePending(accountKey, commandId)
+      return forCaller(recovered, options.allowProjectionPending)
     }
-    return submitPending(accountKey, existing)
+    if (existing.status === 'projection_pending') throw new ConnectedProjectionPendingError()
+    return forCaller(await submitPending(accountKey, existing), options.allowProjectionPending)
   }
 
+  assertNoOtherProjectionPending(accountKey, commandId)
+
   const base = options.baseRevision ?? revisionFromCheckpoint(accountKey) ?? await currentRevision(accountKey)
+  assertNoOtherProjectionPending(accountKey, commandId)
   const timestamp = new Date().toISOString()
   const pending: PendingCommand = {
     commandId,
@@ -362,23 +442,25 @@ export async function executeConnectedBusinessCommand(
     updatedAt: timestamp,
   }
   upsertPending(accountKey, pending)
-  return submitPending(accountKey, pending)
+  return forCaller(await submitPending(accountKey, pending, true), options.allowProjectionPending)
 }
 
-export async function confirmConnectedCommand(accountKey: string, commandId: string): Promise<ConnectedCommandResponse> {
+export async function confirmConnectedCommand(accountKey: string, commandId: string,
+  options: { allowProjectionPending?: boolean } = {}): Promise<ConnectedCommandResponse> {
   try {
     const recovered = await lookupConnectedCommandReceipt(accountKey, commandId)
     if (recovered) {
-      removePending(accountKey, commandId)
-      return recovered
+      if (recovered.localProjection === 'applied') removePending(accountKey, commandId)
+      return forCaller(recovered, options.allowProjectionPending)
     }
   } catch (caught) {
-    const detail = caught instanceof Error ? caught.message : String(caught)
-    throw new Error(`UNKNOWN_COMMAND_OUTCOME: receipt lookup failed for ${commandId}: ${detail}`)
+    if (caught instanceof ConnectedProjectionPendingError) throw caught
+    throw new UnknownCommandOutcomeError('暂时无法核对服务器回执。原操作仍已保留，请稍后重试。')
   }
   const existing = readPending(accountKey).find((item) => item.commandId === commandId)
-  if (existing) return submitPending(accountKey, existing)
-  throw new Error(`UNKNOWN_COMMAND_OUTCOME: original command ${commandId} is unavailable; no new command was sent.`)
+  if (existing?.status === 'projection_pending') throw new ConnectedProjectionPendingError()
+  if (existing) return forCaller(await submitPending(accountKey, existing), options.allowProjectionPending)
+  throw new UnknownCommandOutcomeError('无法找到原操作记录；未发送新的操作。请在设置中核对账号状态。')
 }
 
 export async function undoConnectedBusinessCommand(
@@ -388,7 +470,16 @@ export async function undoConnectedBusinessCommand(
 ) {
   const commandId = options.commandId ?? createConnectedCommandId(`undo:${targetCommandId}`)
   const existing = readPending(accountKey).find((item) => item.commandId === commandId)
-  if (existing) return submitPending(accountKey, existing)
+  if (existing) {
+    const recovered = await lookupConnectedCommandReceipt(accountKey, commandId)
+    if (recovered) {
+      if (recovered.localProjection === 'applied') removePending(accountKey, commandId)
+      return forCaller(recovered)
+    }
+    if (existing.status === 'projection_pending') throw new ConnectedProjectionPendingError()
+    return forCaller(await submitPending(accountKey, existing))
+  }
+  assertNoOtherProjectionPending(accountKey, commandId)
   const timestamp = new Date().toISOString()
   const pending: PendingCommand = {
     commandId,
@@ -399,7 +490,7 @@ export async function undoConnectedBusinessCommand(
     updatedAt: timestamp,
   }
   upsertPending(accountKey, pending)
-  return submitPending(accountKey, pending)
+  return forCaller(await submitPending(accountKey, pending, true))
 }
 
 export async function replayAccountPendingOperations(accountKey: string) {
@@ -408,11 +499,12 @@ export async function replayAccountPendingOperations(accountKey: string) {
     if (pending.status === 'conflict') continue
     const recovered = await lookupConnectedCommandReceipt(accountKey, pending.commandId)
     if (recovered) {
-      removePending(accountKey, pending.commandId)
+      if (recovered.localProjection === 'applied') removePending(accountKey, pending.commandId)
       clearRecoveredSemanticDraft(accountKey, pending, recovered)
       results.push(recovered)
       continue
     }
+    if (pending.status === 'projection_pending') continue
     const result = await submitPending(accountKey, pending)
     clearRecoveredSemanticDraft(accountKey, pending, result)
     results.push(result)
@@ -421,6 +513,7 @@ export async function replayAccountPendingOperations(accountKey: string) {
 }
 
 function clearRecoveredSemanticDraft(accountKey: string, pending: PendingCommand, result: ConnectedCommandResponse) {
+  if (result.localProjection !== 'applied') return
   if (pending.action !== 'command' || pending.command?.type !== 'semantic_intake') return
   if (result.outcome !== 'COMMITTED' && result.outcome !== 'ALREADY_APPLIED') return
   if (result.result?.status !== 'APPLIED' && result.result?.status !== 'ALREADY_APPLIED') return

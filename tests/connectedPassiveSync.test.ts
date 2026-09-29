@@ -7,7 +7,7 @@ const fixture = vi.hoisted(() => {
     fingerprint: 'synthetic-digest', snapshot: { version: 4 },
     updatedByDevice: 'server', updatedAt: '2026-09-23T00:00:00Z',
   }
-  return { remote, update: vi.fn(), checkpoint: vi.fn(), decision: vi.fn(), equivalent: vi.fn(), replace: vi.fn(), pending: vi.fn() }
+  return { remote, update: vi.fn(), checkpoint: vi.fn(), checkpointRead: vi.fn(), decision: vi.fn(), equivalent: vi.fn(), replace: vi.fn(), pending: vi.fn() }
 })
 
 vi.mock('../src/db.js', () => ({
@@ -23,7 +23,7 @@ vi.mock('../src/snapshot.js', () => ({
 }))
 vi.mock('../src/cloud/syncState.js', () => ({
   getCloudDeviceState: () => ({ workspaceOwnerUserId: 'qa-account', deviceId: 'qa-device' }),
-  getAccountCheckpoint: () => ({ lastSyncedVersion: 'txn:7' }),
+  getAccountCheckpoint: fixture.checkpointRead,
   bindLocalWorkspaceToUser: vi.fn(),
   patchAccountCheckpoint: fixture.checkpoint,
 }))
@@ -53,6 +53,7 @@ describe('connected passive sync authority', () => {
     setAccountCacheSession('qa-account')
     fixture.update.mockReset().mockResolvedValue(fixture.remote)
     fixture.checkpoint.mockReset()
+    fixture.checkpointRead.mockReset().mockReturnValue({ lastSyncedVersion: 'txn:7' })
     fixture.decision.mockReset().mockReturnValue('push_local')
     fixture.equivalent.mockReset().mockReturnValue(false)
     fixture.replace.mockReset().mockResolvedValue(undefined)
@@ -105,6 +106,27 @@ describe('connected passive sync authority', () => {
     expect(await runCloudSync('qa-account', { equivalenceOnly: true })).toMatchObject({ kind: 'conflict' })
     expect(fixture.replace).not.toHaveBeenCalled()
     expect(fixture.update).not.toHaveBeenCalled()
+    expect(fixture.checkpoint).toHaveBeenCalledWith('qa-account', expect.objectContaining({
+      conflict: expect.objectContaining({ remoteVersion: 'txn:7' }),
+    }))
+  })
+
+  it('does not restore an old conflict after a concurrent user resolution clears it', async () => {
+    const old = { lastSyncedVersion: 'txn:7', conflict: { remoteVersion: 'txn:7', remoteFingerprint: 'old', remoteUpdatedAt: '2026-09-23T00:00:00Z' } }
+    fixture.checkpointRead.mockReturnValueOnce(old).mockReturnValueOnce(old)
+    fixture.decision.mockReturnValue('conflict')
+    fixture.equivalent.mockReturnValue(false)
+    expect(await runCloudSync('qa-account', { equivalenceOnly: true })).toMatchObject({ kind: 'synced' })
     expect(fixture.checkpoint).not.toHaveBeenCalled()
+    expect(fixture.replace).not.toHaveBeenCalled()
+  })
+
+  it('lets equivalent cache converge after a terminal rejected command', async () => {
+    fixture.pending.mockReturnValue({ count: 1, pending: 0, unknown: 0, conflict: 1 })
+    fixture.decision.mockReturnValue('conflict')
+    fixture.equivalent.mockReturnValue(true)
+    fixture.remote.version = 'txn:442'
+    expect(await runCloudSync('qa-account', { equivalenceOnly: true })).toMatchObject({ kind: 'pulled' })
+    expect(fixture.replace).toHaveBeenCalledTimes(1)
   })
 })

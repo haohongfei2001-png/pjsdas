@@ -313,6 +313,8 @@ export default function AppV8() {
             latencyMs: result.latencyMs,
             detail: result.state === 'diverged'
               ? 'Authoritative state changed while this client also has local changes; TodayAction did not overwrite either side.'
+              : result.state === 'pending_operations'
+                ? 'Pending commands must be confirmed before this browser refreshes its working copy.'
               : result.state === 'local_changes_pending'
                 ? 'This client has local changes that have not been projected to authoritative state.'
                 : 'A non-empty local workspace has not yet been safely bound to this account.',
@@ -601,9 +603,18 @@ export default function AppV8() {
         : { commandId, kind: 'reschedule_occurrence' as const, occurrenceId: entry.occurrenceId,
           temporal: rescheduledTemporal() }
     const result = pending
-      ? await confirmConnectedCommand(account, commandId)
-      : await executeConnectedBusinessCommand(account, { type: 'domain', value: command }, { commandId })
+      ? await confirmConnectedCommand(account, commandId, { allowProjectionPending: true })
+      : await executeConnectedBusinessCommand(account, { type: 'domain', value: command }, { commandId, allowProjectionPending: true })
     if (result.outcome === 'CONFLICT') throw new Error(result.conflict?.message ?? 'Schedule change conflicts with newer authoritative state.')
+    if (result.localProjection === 'pending') {
+      return { outcome: result.outcome, commandId,
+        localProjection: 'pending' as const,
+        message: result.outcome === 'NO_WRITE'
+          ? (zh ? '服务器未写入变化，本机状态待安全刷新。请在设置中核对同步状态。'
+            : 'The server made no change. This browser awaits a safe refresh; review sync in Settings.')
+          : (zh ? '服务器已确认这次操作，本机状态待安全刷新。请在设置中核对同步状态。'
+            : 'The server confirmed this change. This browser is waiting for a safe refresh; review sync in Settings.') }
+    }
     await reload()
     const actualKind = pending?.command?.type === 'domain' ? pending.command.value.kind : command.kind
     const message = result.outcome === 'NO_WRITE'

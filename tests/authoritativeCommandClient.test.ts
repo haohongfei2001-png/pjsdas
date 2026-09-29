@@ -17,16 +17,22 @@ vi.mock('../src/backendEndpoints.js', () => ({
 }))
 
 import { fetchBackend } from '../src/backendEndpoints.js'
-import { replaceLocalSnapshotFromCloud } from '../src/db.js'
+import { exportLocalSnapshot, replaceLocalSnapshotFromCloud } from '../src/db.js'
 import {
   clearAccountDraft,
+  confirmConnectedCommand,
   discardAccountPendingOperation,
   executeConnectedBusinessCommand,
   findAccountPendingSemanticOperation,
   listAccountPendingOperations,
+  lookupConnectedCommandReceipt,
   readAccountDraft,
   replayAccountPendingOperations,
   saveAccountDraft,
+  UnknownCommandOutcomeError,
+  ConnectedProjectionPendingError,
+  CommandBlockedByPendingProjectionError,
+  PreExecutionCommandError,
 } from '../src/cloud/authoritativeCommandClient.js'
 import { upgradeSnapshotToLatest, type PJSDASSnapshot } from '../src/snapshot.js'
 
@@ -70,7 +76,8 @@ describe('CGR-01 account-scoped connected command client', () => {
       value: { localStorage, dispatchEvent: vi.fn() },
     })
     vi.mocked(fetchBackend).mockReset()
-    vi.mocked(replaceLocalSnapshotFromCloud).mockClear()
+    vi.mocked(exportLocalSnapshot).mockReset().mockImplementation(async () => snapshot())
+    vi.mocked(replaceLocalSnapshotFromCloud).mockReset().mockImplementation(async value => value)
   })
 
   it('keeps drafts and pending operations isolated by account', async () => {
@@ -157,7 +164,7 @@ describe('CGR-01 account-scoped connected command client', () => {
       .mockRejectedValueOnce(new Error('receipt lookup lost'))
 
     await expect(executeConnectedBusinessCommand('account-a', command, { commandId, baseRevision: 7 }))
-      .rejects.toThrow(/UNKNOWN_COMMAND_OUTCOME/)
+      .rejects.toBeInstanceOf(UnknownCommandOutcomeError)
 
     expect(findAccountPendingSemanticOperation('account-a', '事项：整理面试材料')).toMatchObject({
       commandId,
@@ -198,7 +205,7 @@ describe('CGR-01 account-scoped connected command client', () => {
     await expect(executeConnectedBusinessCommand('account-a', command, {
       commandId,
       baseRevision: 7,
-    })).rejects.toThrow(/UNKNOWN_COMMAND_OUTCOME/)
+    })).rejects.toBeInstanceOf(UnknownCommandOutcomeError)
 
     expect(listAccountPendingOperations('account-a')).toMatchObject([
       { commandId, status: 'unknown' },
@@ -232,7 +239,7 @@ describe('CGR-01 account-scoped connected command client', () => {
     await expect(executeConnectedBusinessCommand('account-a', command, {
       commandId,
       baseRevision: 7,
-    })).rejects.toThrow(/SESSION_EXPIRED_BEFORE_COMMAND/)
+    })).rejects.toMatchObject({ code: 'SESSION_EXPIRED_BEFORE_COMMAND' } satisfies Partial<PreExecutionCommandError>)
 
     expect(listAccountPendingOperations('account-a')).toMatchObject([
       { commandId, status: 'pending' },
@@ -265,5 +272,128 @@ describe('CGR-01 account-scoped connected command client', () => {
     const replayed = await replayAccountPendingOperations('account-a')
     expect(replayed).toMatchObject([{ outcome: 'COMMITTED', revision: 8 }])
     expect(listAccountPendingOperations('account-a')).toEqual([])
+  })
+
+  it.each(['complete_occurrence', 'cancel_occurrence', 'reschedule_occurrence'] as const)(
+    'keeps a committed %s receipt distinct from a blocked local projection', async (kind) => {
+      const commandId = `web-occurrence:${kind}`
+      const command = { type: 'domain' as const, value: {
+        commandId, kind, occurrenceId: 'occurrence-a',
+        ...(kind === 'reschedule_occurrence' ? { temporal: {
+          shape: 'date_only' as const, precision: 'date' as const,
+          timezone: 'floating-date', date: '2026-10-01', resolutionBasis: 'user_explicit' as const,
+        } } : {}),
+      } }
+      vi.mocked(replaceLocalSnapshotFromCloud).mockRejectedValue(new Error('local projection blocked'))
+      let commandCalls = 0
+      vi.mocked(fetchBackend).mockImplementation(async (_path, init) => {
+        const body = JSON.parse(String(init?.body))
+        if (body.action === 'command') {
+          commandCalls += 1
+          return response({ outcome: 'COMMITTED', revision: 8, workspaceVersion: 'txn:8',
+            schemaVersion: 4, snapshot: snapshot() })
+        }
+        expect(body).toEqual({ action: 'receipt', commandId })
+        return response({ found: true, revision: 8, workspaceVersion: 'txn:8',
+          schemaVersion: 4, snapshot: snapshot(), receipt: { commandId, status: 'COMMITTED' } })
+      })
+      const submitted = await executeConnectedBusinessCommand('account-a', command as any, { commandId, baseRevision: 7, allowProjectionPending: true })
+      expect(submitted).toMatchObject({ outcome: 'COMMITTED', localProjection: 'pending' })
+      expect(listAccountPendingOperations('account-a')).toMatchObject([{ commandId, status: 'projection_pending' }])
+      const confirmed = await confirmConnectedCommand('account-a', commandId, { allowProjectionPending: true })
+      expect(confirmed).toMatchObject({ outcome: 'ALREADY_APPLIED', localProjection: 'pending' })
+      await replayAccountPendingOperations('account-a')
+      expect(commandCalls).toBe(1)
+      expect(listAccountPendingOperations('account-a')).toMatchObject([{ commandId, status: 'projection_pending' }])
+    },
+  )
+
+  it('does not resubmit a confirmed command when a later receipt lookup is absent', async () => {
+    const commandId = 'web-occurrence:confirmed-absent'
+    vi.mocked(replaceLocalSnapshotFromCloud).mockRejectedValue(new Error('local projection blocked'))
+    let commandCalls = 0
+    vi.mocked(fetchBackend).mockImplementation(async (_path, init) => {
+      const body = JSON.parse(String(init?.body))
+      if (body.action === 'command') {
+        commandCalls += 1
+        return response({ outcome: 'COMMITTED', revision: 8, workspaceVersion: 'txn:8', schemaVersion: 4, snapshot: snapshot() })
+      }
+      return response({ found: false })
+    })
+    await executeConnectedBusinessCommand('account-a', { type: 'domain', value: {
+      commandId, kind: 'cancel_occurrence', occurrenceId: 'occurrence-a',
+    } }, { commandId, baseRevision: 7, allowProjectionPending: true })
+    await replayAccountPendingOperations('account-a')
+    await expect(confirmConnectedCommand('account-a', commandId)).rejects.toBeInstanceOf(ConnectedProjectionPendingError)
+    expect(commandCalls).toBe(1)
+  })
+
+  it('reads an existing server receipt even when the local database cannot be opened', async () => {
+    const commandId = 'web-occurrence:receipt-before-db'
+    vi.mocked(exportLocalSnapshot).mockRejectedValueOnce(new Error('IndexedDB temporarily unavailable'))
+    vi.mocked(fetchBackend).mockResolvedValue(response({ found: true, revision: 9, workspaceVersion: 'txn:9',
+      schemaVersion: 4, snapshot: snapshot(), receipt: { commandId, status: 'COMMITTED' } }))
+    expect(await lookupConnectedCommandReceipt('account-a', commandId)).toMatchObject({
+      outcome: 'ALREADY_APPLIED', localProjection: 'pending',
+    })
+    expect(fetchBackend).toHaveBeenCalledTimes(1)
+  })
+
+  it('applies a later safe receipt projection and retires the stable pending identity', async () => {
+    const commandId = 'web-occurrence:projection-retry'
+    vi.mocked(replaceLocalSnapshotFromCloud).mockRejectedValueOnce(new Error('local projection blocked'))
+    let commandCalls = 0
+    vi.mocked(fetchBackend).mockImplementation(async (_path, init) => {
+      const body = JSON.parse(String(init?.body))
+      if (body.action === 'command') commandCalls += 1
+      return response(body.action === 'command'
+        ? { outcome: 'COMMITTED', revision: 8, workspaceVersion: 'txn:8', schemaVersion: 4, snapshot: snapshot() }
+        : { found: true, revision: 8, workspaceVersion: 'txn:8', schemaVersion: 4, snapshot: snapshot(), receipt: { commandId, status: 'COMMITTED' } })
+    })
+    expect(await executeConnectedBusinessCommand('account-a', { type: 'domain', value: {
+      commandId, kind: 'complete_occurrence', occurrenceId: 'occurrence-a',
+    } }, { commandId, baseRevision: 7, allowProjectionPending: true })).toMatchObject({ localProjection: 'pending' })
+    expect(await replayAccountPendingOperations('account-a')).toMatchObject([{ localProjection: 'applied' }])
+    expect(listAccountPendingOperations('account-a')).toEqual([])
+    expect(commandCalls).toBe(1)
+  })
+
+  it('does not report a committed command as locally saved to ordinary callers', async () => {
+    const commandId = 'web-semantic:blocked-projection'
+    vi.mocked(replaceLocalSnapshotFromCloud).mockRejectedValue(new Error('local projection blocked'))
+    vi.mocked(fetchBackend).mockResolvedValue(response({ outcome: 'COMMITTED', revision: 8,
+      workspaceVersion: 'txn:8', schemaVersion: 4, snapshot: snapshot() }))
+    await expect(executeConnectedBusinessCommand('account-a', { type: 'domain', value: {
+      commandId, kind: 'complete_occurrence', occurrenceId: 'occurrence-a',
+    } }, { commandId, baseRevision: 7 })).rejects.toBeInstanceOf(ConnectedProjectionPendingError)
+    expect(listAccountPendingOperations('account-a')).toMatchObject([{ commandId, status: 'projection_pending' }])
+  })
+
+  it('rejects a second command before journaling while an earlier commit awaits projection', async () => {
+    const firstId = 'web-occurrence:first-committed'
+    const secondId = 'web-occurrence:blocked-before-send'
+    vi.mocked(replaceLocalSnapshotFromCloud).mockRejectedValue(new Error('local projection blocked'))
+    vi.mocked(fetchBackend).mockResolvedValue(response({ outcome: 'COMMITTED', revision: 8,
+      workspaceVersion: 'txn:8', schemaVersion: 4, snapshot: snapshot() }))
+    expect(await executeConnectedBusinessCommand('account-a', { type: 'domain', value: {
+      commandId: firstId, kind: 'cancel_occurrence', occurrenceId: 'occurrence-a',
+    } }, { commandId: firstId, baseRevision: 7, allowProjectionPending: true })).toMatchObject({ localProjection: 'pending' })
+    await expect(executeConnectedBusinessCommand('account-a', { type: 'domain', value: {
+      commandId: secondId, kind: 'complete_occurrence', occurrenceId: 'occurrence-b',
+    } }, { commandId: secondId, baseRevision: 7 })).rejects.toBeInstanceOf(CommandBlockedByPendingProjectionError)
+    expect(listAccountPendingOperations('account-a').map(item => item.commandId)).toEqual([firstId])
+    expect(fetchBackend).toHaveBeenCalledTimes(1)
+  })
+
+  it('retires a no-write command without waiting for a receipt the server never created', async () => {
+    const commandId = 'web-occurrence:no-write'
+    vi.mocked(replaceLocalSnapshotFromCloud).mockRejectedValue(new Error('local projection blocked'))
+    vi.mocked(fetchBackend).mockResolvedValue(response({ outcome: 'NO_WRITE', revision: 8,
+      workspaceVersion: 'txn:8', schemaVersion: 4, snapshot: snapshot() }))
+    expect(await executeConnectedBusinessCommand('account-a', { type: 'domain', value: {
+      commandId, kind: 'cancel_occurrence', occurrenceId: 'occurrence-a',
+    } }, { commandId, baseRevision: 7 })).toMatchObject({ outcome: 'NO_WRITE', localProjection: 'pending' })
+    expect(listAccountPendingOperations('account-a')).toEqual([])
+    expect(await replayAccountPendingOperations('account-a')).toEqual([])
   })
 })

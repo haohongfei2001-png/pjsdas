@@ -20,6 +20,11 @@ import { classifyReadProjectionDifference, equivalentReadProjection, fingerprint
 import { connectedWorkspaceAuthorityEnabled } from './connectedWorkspaceRepository.js'
 import { pendingCommandSummary } from './authoritativeCommandClient.js'
 
+function unresolvedPendingCommandCount(userId: string) {
+  const summary = pendingCommandSummary(userId)
+  return summary.count - summary.conflict
+}
+
 export type CloudSyncOutcomeKind =
   | 'created'
   | 'pushed'
@@ -55,7 +60,7 @@ export async function inspectConnectedDivergence(userId: string) {
     localPendingFingerprint: checkpoint.localPendingFingerprint,
     recordedProjection,
     pendingOperations,
-    classification: pendingOperations.count ? 'pending_operations' as const : difference,
+    classification: pendingOperations.count > pendingOperations.conflict ? 'pending_operations' as const : difference,
   }
 }
 
@@ -107,8 +112,10 @@ export async function hasUnsyncedLocalWorkspace(userId: string) {
 export async function runCloudSync(userId: string, options: { passive?: boolean; equivalenceOnly?: boolean } = {}): Promise<CloudSyncOutcome> {
   const lease = connectedWorkspaceAuthorityEnabled() ? captureAccountCacheLease(userId) : undefined
   let targetVersion: string | undefined
+  let projectingEquivalent = false
   const assertCurrent = () => {
     lease?.assertCurrent()
+    if (projectingEquivalent && unresolvedPendingCommandCount(userId) > 0) throw new AccountCacheChangedError()
     if (lease && targetVersion && Number(getAccountCheckpoint(userId).lastSyncedVersion?.replace('txn:', '')) > Number(targetVersion.replace('txn:', ''))) throw new AccountCacheChangedError()
   }
   const device = getCloudDeviceState()
@@ -130,9 +137,24 @@ export async function runCloudSync(userId: string, options: { passive?: boolean;
     assertCurrent()
     // Recovery probe never creates or pushes an authoritative workspace. It
     // may refresh the local cache only after a fresh exact equivalence proof.
-    if (options.equivalenceOnly && (!remote || pendingCommandSummary(userId).count > 0
+    if (options.equivalenceOnly && (!remote || unresolvedPendingCommandCount(userId) > 0
       || !equivalentReadProjection(local, remote.snapshot))) {
+      await assertLocalSnapshotCurrent(local, assertCurrent)
+      const latestCheckpoint = getAccountCheckpoint(userId)
+      if (checkpoint.conflict && !latestCheckpoint.conflict) {
+        return { kind: 'synced', version: latestCheckpoint.lastSyncedVersion }
+      }
+      if (remote && latestCheckpoint.conflict
+        && Number(latestCheckpoint.conflict.remoteVersion.replace('txn:', '')) > Number(remote.version.replace('txn:', ''))) {
+        return { kind: 'conflict', version: latestCheckpoint.conflict.remoteVersion,
+          remoteUpdatedAt: latestCheckpoint.conflict.remoteUpdatedAt }
+      }
+      if (remote) markConflict(userId, remote)
       return { kind: 'conflict', version: remote?.version, remoteUpdatedAt: remote?.updatedAt }
+    }
+    if (options.equivalenceOnly) {
+      projectingEquivalent = true
+      assertCurrent()
     }
     const decision = remote && localFingerprint === checkpoint.clearedCacheFingerprint ? 'pull_remote' : decideSyncAction({
       checkpoint,
@@ -149,10 +171,12 @@ export async function runCloudSync(userId: string, options: { passive?: boolean;
     // current remote; a real local edit still takes the fail-closed path below.
     if ((connectedWorkspaceAuthorityEnabled() || options.equivalenceOnly) && remote
       && (decision === 'conflict' || decision === 'push_local')
-      && pendingCommandSummary(userId).count === 0
+      && unresolvedPendingCommandCount(userId) === 0
       && equivalentReadProjection(local, remote.snapshot)) {
       const remoteChanged = remote.version !== checkpoint.lastSyncedVersion
         || remote.fingerprint !== checkpoint.lastSyncedFingerprint
+      projectingEquivalent = true
+      assertCurrent()
       if (remoteChanged) {
         const committed = await replaceLocalSnapshotFromCloud(remote.snapshot, { expectedLocal: local, assertCurrent, accountKey: userId, version: remote.version })
         const projectedFingerprint = await fingerprintWorkspace(committed)

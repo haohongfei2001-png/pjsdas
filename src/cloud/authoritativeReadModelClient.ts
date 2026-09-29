@@ -7,6 +7,12 @@ import {
   patchAccountCheckpoint,
 } from './syncState.js'
 import { equivalentReadProjection, fingerprintWorkspace, workspaceIsEffectivelyEmpty } from './workspaceFingerprint.js'
+import { pendingCommandSummary } from './authoritativeCommandClient.js'
+
+function unresolvedPendingCommandCount(accountKey: string) {
+  const summary = pendingCommandSummary(accountKey)
+  return summary.count - summary.conflict
+}
 
 export const TODAY_AUTHORITATIVE_REFRESH_INTERVAL_MS = 15_000
 
@@ -16,6 +22,7 @@ export type AuthoritativeReadFreshnessState =
   | 'local_changes_pending'
   | 'diverged'
   | 'unbound_local'
+  | 'pending_operations'
 
 export interface AuthoritativeReadFreshness {
   state: AuthoritativeReadFreshnessState
@@ -54,6 +61,7 @@ export async function refreshConnectedAuthoritativeCache(
   const observedAt = new Date().toISOString()
   const assertCurrent = () => {
     lease.assertCurrent()
+    if (unresolvedPendingCommandCount(accountKey) > 0) throw new AccountCacheChangedError()
     const current = getAccountCheckpoint(accountKey).lastSyncedVersion
     if (Number(current?.replace('txn:', '')) > Number(remote.version.replace('txn:', ''))) throw new AccountCacheChangedError()
   }
@@ -61,6 +69,29 @@ export async function refreshConnectedAuthoritativeCache(
     await assertLocalSnapshotCurrent(local, assertCurrent)
     assertCurrent()
     markFresh(accountKey, remote.version, remote.fingerprint, localFingerprint, observedAt)
+  }
+
+  // A successful read must not erase a command that is still awaiting a
+  // receipt or safe local projection. Keep the local cache and conflict state.
+  if (unresolvedPendingCommandCount(accountKey) > 0) {
+    return { state: 'pending_operations', workspaceVersion: remote.version, observedAt,
+      latencyMs: Date.now() - startedAt, changed: false }
+  }
+  const preserveLatestConflict = async () => {
+    if (!checkpoint.conflict) return
+    await assertLocalSnapshotCurrent(local, assertCurrent)
+    const current = getAccountCheckpoint(accountKey)
+    if (!current.conflict) return
+    if ((Number(current.conflict.remoteVersion.replace('txn:', '')) || 0)
+      > (Number(remote.version.replace('txn:', '')) || 0)) return
+    assertCurrent()
+    patchAccountCheckpoint(accountKey, { conflict: {
+      remoteVersion: remote.version,
+      remoteFingerprint: remote.fingerprint,
+      remoteUpdatedAt: remote.updatedAt,
+      remoteDeviceId: remote.updatedByDevice,
+      remoteFileId: remote.fileId,
+    } })
   }
 
   if (remote.fingerprint === localFingerprint) {
@@ -76,6 +107,7 @@ export async function refreshConnectedAuthoritativeCache(
 
   if (!checkpoint.lastSyncedFingerprint || !checkpoint.lastSyncedVersion) {
     if (!workspaceIsEffectivelyEmpty(local)) {
+      await preserveLatestConflict()
       return {
         state: 'unbound_local',
         workspaceVersion: remote.version,
@@ -112,6 +144,7 @@ export async function refreshConnectedAuthoritativeCache(
           return { state: 'current', workspaceVersion: remote.version, observedAt, latencyMs: Date.now() - startedAt, changed: false }
         }
       } else {
+        await preserveLatestConflict()
         return {
           state: remoteChanged ? 'diverged' : 'local_changes_pending',
           workspaceVersion: remote.version,
