@@ -2,7 +2,7 @@
 
 Package: `TODAYACTION-POST-CLOSURE-RELIABILITY-v1`
 
-Status: **ACTIVE — WHOLE PACKAGE PREAUTHORIZED FOR DEPENDENCY-SAFE ENGINEERING**
+Status: **CLOSURE_CANDIDATE — COMPLETE_WITH_UNRESOLVED after final documentation gates**
 
 Baseline: `main@c93a0fca9ef9b8eec8e234557f525445c0ef6b20`
 
@@ -13,9 +13,9 @@ Historical boundaries:
 - Existing Reliability Closure and Active-Unresolved packages retain their own
   historical receipts and truth; this package does not rewrite them.
 
-Current phase: **PCR-05 — lossless cache convergence and account races**
+Current phase: **PCR-07 — bounded closure and final receipt**
 
-Current writer: **reliability/pcr05-cache-convergence-v1**
+Current writer: **reliability/pcr07-bounded-closure-v1**
 
 Production claim: **P0 verified on exact runtime a8d9840; Repair 02 committed 38 settlements once (CAS 841 → 842), readback 843, read-only idempotency 0. No further production write authorized.**
 
@@ -27,9 +27,9 @@ Production claim: **P0 verified on exact runtime a8d9840; Repair 02 committed 38
 | PCR-02 | COMPLETE | PR #188 recovery slice merged; exact-main d19 CI/Browser/Matrix/Pages/Self-Test and deployed readonly startup verified; late-read race tracked in PCR-05 |
 | PCR-03 | COMPLETE | PR #189 merged6c77d62; exact-main CI/Browser/Matrix/Pages/Self-Test plus7 deployed readonly startup checks PASS |
 | PCR-04 | COMPLETE_BOUNDED | PR190 read model and PR191 narrow procedural assertion repair exact-main verified; ambiguous historical records preserved |
-| PCR-05 | IN_PROGRESS | lossless ordering equivalence, account generation and atomic local cache guards; full gates/review pending |
-| PCR-06 | PLANNED | read-only production integrity classification + regression binding |
-| PCR-07 | PLANNED | bounded reliability closure |
+| PCR-05 | COMPLETE | PR192 exact main85e2 CI/Browser/Matrix/Pages/Self-Test, deployed startup and isolated cache convergence PASS |
+| PCR-06 | COMPLETE | fresh readonly revision934 confirms classes and reference integrity; permanent regression mappings recorded |
+| PCR-07 | CLOSURE_CANDIDATE | final documentation gates/review/main verification required |
 
 ## Authorization boundary
 
@@ -161,3 +161,20 @@ changes remain conflicts. Real account sign-out, late commands, overlapping read
 local edits and partial transaction failure are covered. No production mutation.
 Full latest-head gates, independent review and exact-main production verification
 remain required; PCR06/PCR07 are not complete.
+
+## Latest PCR05–07 evidence (supersedes candidate notes above)
+
+PR192 merged85e2f568; clean source review5880288013; exact-main closure
+[receipt5884480345](https://github.com/haohongfei2001-png/pjsdas/pull/192#issuecomment-5884480345).
+Seven deployed startup checks and isolated847→851 cache convergence PASS; six
+Today rows and358 decisions retained, zero errors or production writes.
+[Classification](PCR-06-INTEGRITY-CLASSIFICATION.md) and
+[bounded closure](PCR-07-BOUNDED-CLOSURE.md) preserve historical ambiguity and
+resolved database-read deferral (fresh revision934 verified). Final documentation gates remain
+pending; no claim of direct owner-browser inspection or zero historical debt.
+
+The checked-in PCR07 candidate is a pre-merge snapshot. The final exact-main
+receipt in [PR193](https://github.com/haohongfei2001-png/pjsdas/pull/193) governs
+transition to COMPLETE_WITH_UNRESOLVED after applicable gates and identity checks.
+Current revision934 has388actions/363decisions; saved fixture358 remains separate
+historical evidence. No current Today count is inferred from aggregate totals.
