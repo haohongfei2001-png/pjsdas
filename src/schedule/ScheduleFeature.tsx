@@ -81,7 +81,7 @@ export function ScheduleWindowList({ stream, section, opportunities, onOpenOppor
 
 type View = 'all' | 'upcoming' | 'past' | 'unresolved' | 'undated'
 type OccurrenceCommand = 'complete' | 'cancel' | 'reschedule'
-type CommandResult = { outcome: 'COMMITTED' | 'ALREADY_APPLIED' | 'NO_WRITE'; commandId?: string; message: string; localProjection?: 'pending' }
+type CommandResult = { outcome: 'COMMITTED' | 'ALREADY_APPLIED' | 'NO_WRITE' | 'QUEUED'; commandId?: string; message: string; localProjection?: 'pending' }
 function commandErrorMessage(error: unknown, zh: boolean) {
   const message = error instanceof Error ? error.message : String(error)
   if (/^[A-Z][A-Z0-9_]+:/.test(message)) return zh

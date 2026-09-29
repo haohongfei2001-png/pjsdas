@@ -1,4 +1,5 @@
 import { setAccountCacheSession } from '../src/cloud/accountCacheLease.js'
+import { AccountCacheChangedError } from '../src/cloud/accountCacheLease.js'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('../src/cloud/cloudClient.js', () => ({
@@ -26,14 +27,16 @@ import {
   findAccountPendingSemanticOperation,
   listAccountPendingOperations,
   lookupConnectedCommandReceipt,
+  queueConnectedBusinessCommand,
   readAccountDraft,
   replayAccountPendingOperations,
   saveAccountDraft,
   UnknownCommandOutcomeError,
   ConnectedProjectionPendingError,
-  CommandBlockedByPendingProjectionError,
   PreExecutionCommandError,
 } from '../src/cloud/authoritativeCommandClient.js'
+import { bindLocalWorkspaceToUser, patchAccountCheckpoint } from '../src/cloud/syncState.js'
+import { fingerprintWorkspace } from '../src/cloud/workspaceFingerprint.js'
 import { upgradeSnapshotToLatest, type PJSDASSnapshot } from '../src/snapshot.js'
 
 class MemoryStorage {
@@ -75,6 +78,7 @@ describe('CGR-01 account-scoped connected command client', () => {
       configurable: true,
       value: { localStorage, dispatchEvent: vi.fn() },
     })
+    bindLocalWorkspaceToUser('account-a')
     vi.mocked(fetchBackend).mockReset()
     vi.mocked(exportLocalSnapshot).mockReset().mockImplementation(async () => snapshot())
     vi.mocked(replaceLocalSnapshotFromCloud).mockReset().mockImplementation(async value => value)
@@ -171,6 +175,88 @@ describe('CGR-01 account-scoped connected command client', () => {
       status: 'unknown',
       originalText: '事项：整理面试材料',
     })
+  })
+
+  it('queues a verified account command offline and replays the same identity after remote advances', async () => {
+    const commandId = 'web-semantic:offline-restart'
+    const command = { type: 'domain' as const, value: {
+      commandId, kind: 'set_action_status' as const, actionId: 'action-a', status: 'done' as const,
+    } }
+    const fingerprint = await fingerprintWorkspace(snapshot())
+    patchAccountCheckpoint('account-a', { lastSyncedVersion: 'txn:7', lastSyncedFingerprint: fingerprint })
+    await queueConnectedBusinessCommand('account-a', command, { commandId })
+    await queueConnectedBusinessCommand('account-a', command, { commandId })
+    expect(fetchBackend).not.toHaveBeenCalled()
+    expect(listAccountPendingOperations('account-a')).toMatchObject([{ commandId, baseRevision: 7, status: 'pending' }])
+    vi.mocked(fetchBackend).mockImplementation(async (_path, init) => {
+      const body = JSON.parse(String(init?.body))
+      if (body.action === 'receipt') return response({ found: false })
+      expect(body).toMatchObject({ action: 'command', commandId, baseRevision: 7, command })
+      return response({ outcome: 'COMMITTED', revision: 10, workspaceVersion: 'txn:10',
+        schemaVersion: 4, snapshot: snapshot(), receipt: { commandId, status: 'COMMITTED' } })
+    })
+    expect(await replayAccountPendingOperations('account-a')).toMatchObject([{ outcome: 'COMMITTED' }])
+    expect(listAccountPendingOperations('account-a')).toEqual([])
+    expect(vi.mocked(fetchBackend).mock.calls.filter(([, init]) => JSON.parse(String(init?.body)).action === 'command')).toHaveLength(1)
+  })
+
+  it('does not queue against an unverified account cache or reuse an id for a changed payload', async () => {
+    const commandId = 'web-action:offline-protected'
+    const command = { type: 'domain' as const, value: {
+      commandId, kind: 'set_action_status' as const, actionId: 'action-a', status: 'done' as const,
+    } }
+    await expect(queueConnectedBusinessCommand('account-a', command)).rejects.toThrow('尚无已核实')
+    const fingerprint = await fingerprintWorkspace(snapshot())
+    patchAccountCheckpoint('account-a', { lastSyncedVersion: 'txn:7', lastSyncedFingerprint: fingerprint })
+    bindLocalWorkspaceToUser('account-b')
+    await expect(queueConnectedBusinessCommand('account-a', command)).rejects.toThrow('尚无已核实')
+    bindLocalWorkspaceToUser('account-a')
+    await queueConnectedBusinessCommand('account-a', command)
+    await expect(queueConnectedBusinessCommand('account-a', { type: 'domain', value: {
+      ...command.value, status: 'doing',
+    } })).rejects.toThrow('原操作内容已变化')
+    expect(listAccountPendingOperations('account-a')).toHaveLength(1)
+  })
+
+  it('keeps an unsynced local edit intact instead of queuing against its old checkpoint', async () => {
+    const fingerprint = await fingerprintWorkspace(snapshot())
+    patchAccountCheckpoint('account-a', { lastSyncedVersion: 'txn:7', lastSyncedFingerprint: fingerprint })
+    const changed = snapshot()
+    changed.data.actions.push({ id: 'local-only', kind: 'manual', title: 'Local edit',
+      estimatedMinutes: 20, leverage: 50, delayCost: 50, status: 'todo',
+      createdAt: '2026-09-23T00:00:00.000Z', updatedAt: '2026-09-23T00:00:00.000Z' })
+    vi.mocked(exportLocalSnapshot).mockResolvedValue(changed)
+    await expect(queueConnectedBusinessCommand('account-a', { type: 'domain', value: {
+      commandId: 'web-action:dirty', kind: 'set_action_status', actionId: 'local-only', status: 'done',
+    } })).rejects.toBeInstanceOf(AccountCacheChangedError)
+    expect(listAccountPendingOperations('account-a')).toEqual([])
+    expect(fetchBackend).not.toHaveBeenCalled()
+  })
+
+  it('shares one in-flight recovery when reconnect and foreground refresh race', async () => {
+    const commandId = 'web-action:one-flight'
+    const fingerprint = await fingerprintWorkspace(snapshot())
+    patchAccountCheckpoint('account-a', { lastSyncedVersion: 'txn:7', lastSyncedFingerprint: fingerprint })
+    await queueConnectedBusinessCommand('account-a', { type: 'domain', value: {
+      commandId, kind: 'set_action_status', actionId: 'action-a', status: 'done',
+    } })
+    let release!: () => void
+    const gate = new Promise<void>(resolve => { release = resolve })
+    let commandCalls = 0
+    vi.mocked(fetchBackend).mockImplementation(async (_path, init) => {
+      const body = JSON.parse(String(init?.body))
+      if (body.action === 'receipt') return response({ found: false })
+      commandCalls += 1
+      await gate
+      return response({ outcome: 'COMMITTED', revision: 8, workspaceVersion: 'txn:8',
+        schemaVersion: 4, snapshot: snapshot(), receipt: { commandId, status: 'COMMITTED' } })
+    })
+    const first = replayAccountPendingOperations('account-a')
+    const second = replayAccountPendingOperations('account-a')
+    release()
+    await Promise.all([first, second])
+    expect(commandCalls).toBe(1)
+    expect(listAccountPendingOperations('account-a')).toEqual([])
   })
 
   it('recovers a lost response by receipt identity without sending a duplicate command', async () => {
@@ -361,7 +447,7 @@ describe('CGR-01 account-scoped connected command client', () => {
   it('does not report a committed command as locally saved to ordinary callers', async () => {
     const commandId = 'web-semantic:blocked-projection'
     vi.mocked(replaceLocalSnapshotFromCloud).mockRejectedValue(new Error('local projection blocked'))
-    vi.mocked(fetchBackend).mockResolvedValue(response({ outcome: 'COMMITTED', revision: 8,
+    vi.mocked(fetchBackend).mockImplementation(async () => response({ outcome: 'COMMITTED', revision: 8,
       workspaceVersion: 'txn:8', schemaVersion: 4, snapshot: snapshot() }))
     await expect(executeConnectedBusinessCommand('account-a', { type: 'domain', value: {
       commandId, kind: 'complete_occurrence', occurrenceId: 'occurrence-a',
@@ -369,19 +455,34 @@ describe('CGR-01 account-scoped connected command client', () => {
     expect(listAccountPendingOperations('account-a')).toMatchObject([{ commandId, status: 'projection_pending' }])
   })
 
-  it('rejects a second command before journaling while an earlier commit awaits projection', async () => {
+  it('allows an independent command after an earlier commit awaits projection', async () => {
     const firstId = 'web-occurrence:first-committed'
     const secondId = 'web-occurrence:blocked-before-send'
     vi.mocked(replaceLocalSnapshotFromCloud).mockRejectedValue(new Error('local projection blocked'))
-    vi.mocked(fetchBackend).mockResolvedValue(response({ outcome: 'COMMITTED', revision: 8,
+    vi.mocked(fetchBackend).mockImplementation(async () => response({ outcome: 'COMMITTED', revision: 8,
       workspaceVersion: 'txn:8', schemaVersion: 4, snapshot: snapshot() }))
     expect(await executeConnectedBusinessCommand('account-a', { type: 'domain', value: {
       commandId: firstId, kind: 'cancel_occurrence', occurrenceId: 'occurrence-a',
     } }, { commandId: firstId, baseRevision: 7, allowProjectionPending: true })).toMatchObject({ localProjection: 'pending' })
     await expect(executeConnectedBusinessCommand('account-a', { type: 'domain', value: {
       commandId: secondId, kind: 'complete_occurrence', occurrenceId: 'occurrence-b',
-    } }, { commandId: secondId, baseRevision: 7 })).rejects.toBeInstanceOf(CommandBlockedByPendingProjectionError)
-    expect(listAccountPendingOperations('account-a').map(item => item.commandId)).toEqual([firstId])
+    } }, { commandId: secondId, baseRevision: 7, allowProjectionPending: true })).resolves.toMatchObject({ outcome: 'COMMITTED', localProjection: 'pending' })
+    expect(listAccountPendingOperations('account-a').map(item => item.commandId)).toEqual([firstId, secondId])
+    expect(fetchBackend).toHaveBeenCalledTimes(2)
+  })
+
+  it('preserves a known same-object server conflict even if its snapshot cannot project locally', async () => {
+    const commandId = 'web-occurrence:same-object-conflict'
+    vi.mocked(replaceLocalSnapshotFromCloud).mockRejectedValue(new Error('local projection blocked'))
+    vi.mocked(fetchBackend).mockResolvedValue(response({ outcome: 'CONFLICT', revision: 9,
+      workspaceVersion: 'txn:9', schemaVersion: 4, snapshot: snapshot(),
+      conflict: { kind: 'OBJECT_CONFLICT', message: 'Same occurrence changed',
+        objects: [{ type: 'occurrence', id: 'occurrence-a' }] },
+    }, 409))
+    expect(await executeConnectedBusinessCommand('account-a', { type: 'domain', value: {
+      commandId, kind: 'cancel_occurrence', occurrenceId: 'occurrence-a',
+    } }, { commandId, baseRevision: 7 })).toMatchObject({ outcome: 'CONFLICT' })
+    expect(listAccountPendingOperations('account-a')).toMatchObject([{ commandId, status: 'conflict' }])
     expect(fetchBackend).toHaveBeenCalledTimes(1)
   })
 

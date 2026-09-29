@@ -253,7 +253,9 @@ export function CloudProvider({ children }: { children: ReactNode }) {
     if (device.workspaceOwnerUserId && device.workspaceOwnerUserId !== userId) return
     // Keep classifying against the latest authoritative revision. A persisted
     // conflict is not a permanent subscription to the revision first seen.
-    const probe = () => { void reconcileEquivalent().catch(() => undefined) }
+    const probe = () => { void replayAccountPendingOperations(userId)
+      .catch(() => undefined)
+      .then(() => reconcileEquivalent().catch(() => undefined)) }
     const initial = window.setTimeout(probe, 700)
     const interval = window.setInterval(probe, 60_000)
     window.addEventListener('focus', probe)

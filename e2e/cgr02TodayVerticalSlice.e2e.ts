@@ -376,30 +376,54 @@ test('background receipt recovery preserves a newer draft from another editing c
   expect(state.commandBodies.filter((body) => body.action === 'command')).toHaveLength(1)
 })
 
-test('offline capture remains account-scoped draft only and legacy capture route redirects canonically', async ({ page, context }) => {
+test('offline capture queues a stable account command and automatically replays after reconnect', async ({ page, context }) => {
   await seedSession(context)
   const state: State = { revision: 40, snapshot: workspace(), receipts: new Map(), commandBodies: [] }
   await installServer(page, state)
 
   await page.goto('/pjsdas/capture')
   await expect(page).toHaveURL(/\/pjsdas\/today\/capture$/)
+  await expect.poll(() => page.evaluate(() => {
+    const state = JSON.parse(window.localStorage.getItem('pjsdas-google-drive-sync-state-v2') || '{}')
+    return state.accounts?.['account-a']?.lastSyncedVersion
+  })).toBe('txn:40')
   await context.setOffline(true)
   await page.locator('.cgr-capture-input').fill('事项：离线整理材料')
   const save = page.getByRole('button', { name: '确认并保存' })
   await expect(save).toBeEnabled()
   await save.click()
-  await expect(page.getByText('仅草稿')).toBeVisible()
-  await expect(page.getByText(/还没有写入 TodayAction/)).toBeVisible()
-  // Capture the settled interpretation, not a race between the loading state
-  // and the local offline parser. The draft-only assertion remains separate.
+  await expect(page.getByText('待同步')).toBeVisible()
+  await expect(page.getByText(/联网后自动提交/)).toBeVisible()
+  // Capture the settled interpretation after the durable outbox write.
   await expect(page.getByText('TodayAction 理解为')).toBeVisible()
   await expect(page.getByText(/新增行动 · 离线整理材料/)).toBeVisible()
   await mkdir(VISUAL_DIR, { recursive: true })
   await reviewedScreenshot(page, 'offline-draft.png')
   expect(state.commandBodies.filter((body) => body.action === 'command')).toHaveLength(0)
+  const queued = await page.evaluate(() => JSON.parse(window.localStorage.getItem('pjsdas-cgr01-pending:account-a') || '[]'))
+  expect(queued).toMatchObject([{ status: 'pending', baseRevision: 40,
+    command: { type: 'semantic_intake', value: { originalText: '事项：离线整理材料' } } }])
   const draft = await page.evaluate(() => window.localStorage.getItem('pjsdas-cgr01-draft:account-a:tell-pjsdas'))
   expect(draft).toBe('事项：离线整理材料')
+  state.revision += 1
+  state.snapshot.data.actions.push(action('remote-independent', '另一设备的新任务', undefined, 70))
+  const unavailable = (route: import('@playwright/test').Route) => route.abort('failed')
+  await page.route(`${BACKEND}/api/workspace`, unavailable)
   await context.setOffline(false)
+  await page.reload()
+  await expect(page.locator('.cgr-capture-input')).toHaveValue('事项：离线整理材料')
+  const afterReload = await page.evaluate(() => JSON.parse(window.localStorage.getItem('pjsdas-cgr01-pending:account-a') || '[]'))
+  expect(afterReload).toMatchObject([{ commandId: queued[0].commandId, status: 'pending' }])
+  expect(state.commandBodies.filter((body) => body.action === 'command')).toHaveLength(0)
+  await page.unroute(`${BACKEND}/api/workspace`, unavailable)
+  await page.evaluate(() => window.dispatchEvent(new Event('online')))
+  await expect.poll(() => state.commandBodies.filter((body) => body.action === 'command').length).toBe(1)
+  expect(state.commandBodies[0]).toMatchObject({ commandId: queued[0].commandId, baseRevision: 40 })
+  await expect.poll(() => page.evaluate(() => window.localStorage.getItem('pjsdas-cgr01-pending:account-a'))).toBeNull()
+  await expect.poll(async () => (await indexedActions(page)).find(item => item.id === 'capture-action')?.title).toBe('离线整理材料')
+  await page.reload()
+  expect(state.commandBodies.filter((body) => body.action === 'command')).toHaveLength(1)
+  expect((await indexedActions(page)).some(item => item.id === 'remote-independent')).toBe(true)
 })
 
 test('expired session rejects a connected save before execution and preserves the input', async ({ page }) => {
