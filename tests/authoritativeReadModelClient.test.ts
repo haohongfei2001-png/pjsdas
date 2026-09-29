@@ -215,6 +215,12 @@ describe('CGR-02 authoritative Today read freshness', () => {
     expect(patchAccountCheckpoint).not.toHaveBeenCalled()
   })
 
+  it('continues refreshing after a terminal rejected command has been recorded', async () => {
+    vi.mocked(pendingCommandSummary).mockReturnValue({ count: 1, pending: 0, unknown: 0, conflict: 1 })
+    expect(await refreshConnectedAuthoritativeCache('account-a')).toMatchObject({ state: 'updated' })
+    expect(replaceLocalSnapshotFromCloud).toHaveBeenCalledTimes(1)
+  })
+
   it('updates a stale conflict to each current remote revision without overwriting a real local edit', async () => {
     vi.mocked(getAccountCheckpoint).mockReturnValue({
       lastSyncedVersion: 'txn:843', lastSyncedFingerprint: 'old-fp',

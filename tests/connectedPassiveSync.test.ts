@@ -120,4 +120,13 @@ describe('connected passive sync authority', () => {
     expect(fixture.checkpoint).not.toHaveBeenCalled()
     expect(fixture.replace).not.toHaveBeenCalled()
   })
+
+  it('lets equivalent cache converge after a terminal rejected command', async () => {
+    fixture.pending.mockReturnValue({ count: 1, pending: 0, unknown: 0, conflict: 1 })
+    fixture.decision.mockReturnValue('conflict')
+    fixture.equivalent.mockReturnValue(true)
+    fixture.remote.version = 'txn:442'
+    expect(await runCloudSync('qa-account', { equivalenceOnly: true })).toMatchObject({ kind: 'pulled' })
+    expect(fixture.replace).toHaveBeenCalledTimes(1)
+  })
 })

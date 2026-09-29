@@ -9,6 +9,11 @@ import {
 import { equivalentReadProjection, fingerprintWorkspace, workspaceIsEffectivelyEmpty } from './workspaceFingerprint.js'
 import { pendingCommandSummary } from './authoritativeCommandClient.js'
 
+function unresolvedPendingCommandCount(accountKey: string) {
+  const summary = pendingCommandSummary(accountKey)
+  return summary.count - summary.conflict
+}
+
 export const TODAY_AUTHORITATIVE_REFRESH_INTERVAL_MS = 15_000
 
 export type AuthoritativeReadFreshnessState =
@@ -56,7 +61,7 @@ export async function refreshConnectedAuthoritativeCache(
   const observedAt = new Date().toISOString()
   const assertCurrent = () => {
     lease.assertCurrent()
-    if (pendingCommandSummary(accountKey).count > 0) throw new AccountCacheChangedError()
+    if (unresolvedPendingCommandCount(accountKey) > 0) throw new AccountCacheChangedError()
     const current = getAccountCheckpoint(accountKey).lastSyncedVersion
     if (Number(current?.replace('txn:', '')) > Number(remote.version.replace('txn:', ''))) throw new AccountCacheChangedError()
   }
@@ -68,7 +73,7 @@ export async function refreshConnectedAuthoritativeCache(
 
   // A successful read must not erase a command that is still awaiting a
   // receipt or safe local projection. Keep the local cache and conflict state.
-  if (pendingCommandSummary(accountKey).count > 0) {
+  if (unresolvedPendingCommandCount(accountKey) > 0) {
     return { state: 'pending_operations', workspaceVersion: remote.version, observedAt,
       latencyMs: Date.now() - startedAt, changed: false }
   }

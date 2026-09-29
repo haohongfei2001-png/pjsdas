@@ -104,4 +104,8 @@ test('one hard deadline risk has one actionable warning', async ({ page }) => {
   await expect(page.locator('.tsui-alert').filter({ hasText: '硬截止' })).toHaveCount(0)
   await expect(page.locator('.tsui-inline-notice').filter({ hasText: '硬截止' })).toHaveCount(1)
   await expect(page.getByRole('button', { name: '查看日程' })).toBeVisible()
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.getByRole('button', { name: /^节点/ }).click()
+  await expect(page.locator('.tsui-inline-notice').filter({ hasText: '硬截止' })).toBeVisible()
+  await expect(page.getByRole('button', { name: '查看日程' })).toHaveCount(1)
 })
