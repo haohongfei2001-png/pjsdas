@@ -1,6 +1,6 @@
 import type { IngestionIssueKind, SemanticIntakeObservation, TimelineRecord } from './model.js'
 import type { PJSDASSnapshot } from './snapshot.js'
-import { applySemanticIntake, type SemanticBatchCompensation } from './semanticIntake.js'
+import { applySemanticIntake, semanticCandidateFactKey, type SemanticBatchCompensation } from './semanticIntake.js'
 import { alreadyIngested, buildIngestionRunSummary, createIngestionLedgerTimeline, createIngestionRunTimeline, stableIngestionHash } from './ingestion.js'
 import { bootstrapPolicyFor } from './sourceRegistry.js'
 
@@ -50,6 +50,15 @@ export function applyGmailSemanticBatch(snapshot: PJSDASSnapshot, input: {
       compensation.payload.domainCompensations.push(...result.compensation.payload.domainCompensations)
       compensation.payload.decisionRequestIds.push(...result.compensation.payload.decisionRequestIds)
       compensation.payload.receiptIds.push(...result.compensation.payload.receiptIds)
+      for (const previous of result.compensation.payload.restoreDecisionRequests ?? []) {
+        // A request created earlier in this same batch did not exist before
+        // the batch, so undo must retire it rather than restore it as open.
+        if (compensation.payload.decisionRequestIds.includes(previous.id)) continue
+        compensation.payload.restoreDecisionRequests ??= []
+        if (!compensation.payload.restoreDecisionRequests.some(item => item.id === previous.id)) {
+          compensation.payload.restoreDecisionRequests.push(previous)
+        }
+      }
       for (const receipt of working.data.semanticReceipts ?? []) {
         if (result.compensation.payload.receiptIds.includes(receipt.id)) receipt.commandId = input.runId
       }
@@ -64,16 +73,23 @@ export function applyGmailSemanticBatch(snapshot: PJSDASSnapshot, input: {
       && priorIssues.length > 0
       && priorIssues.every(kind => kind === 'business_ambiguity')
       && observation.candidates.length > 0
-      && observation.candidates.every(candidate => (working.data.decisionRequests ?? []).some(request =>
-        request.state === 'answered'
-        && request.payloadBinding.source.kind === 'gmail'
-        && request.payloadBinding.source.sourceId === input.sourceId
-        && request.payloadBinding.source.sourceRecordId === sourceRecordId
-        && request.payloadBinding.source.sourceVersion === observation.source.sourceVersion
-        && request.payloadBinding.inputId === observation.inputId
-        && request.payloadBinding.candidateId === candidate.id
-        && JSON.stringify({ ...request.payloadBinding.candidate, sourceVersionRefs: undefined })
-          === JSON.stringify({ ...candidate, sourceVersionRefs: undefined })))
+      && observation.candidates.every(candidate => {
+        const answered = (working.data.decisionRequests ?? []).some(request =>
+          request.state === 'answered'
+          && request.payloadBinding.source.kind === 'gmail'
+          && request.payloadBinding.source.sourceId === input.sourceId
+          && request.payloadBinding.source.sourceRecordId === sourceRecordId
+          && request.payloadBinding.source.sourceVersion === observation.source.sourceVersion
+          && request.payloadBinding.inputId === observation.inputId
+          && request.payloadBinding.candidateId === candidate.id
+          && JSON.stringify({ ...request.payloadBinding.candidate, sourceVersionRefs: undefined })
+            === JSON.stringify({ ...candidate, sourceVersionRefs: undefined }))
+        if (answered) return true
+        const factKey = semanticCandidateFactKey(working, candidate)
+        return Boolean(result.receipt?.status === 'committed' && factKey
+          && result.receipt.factKeys?.includes(factKey)
+          && !result.receipt.factInvalidations?.some(item => item.factKey === factKey))
+      })
     // Only this invocation's semantic work can prove that a formerly bounded
     // source was fully re-evaluated. ALREADY_APPLIED can refer to a receipt
     // created by an older, gapful parser version and is therefore not fresh

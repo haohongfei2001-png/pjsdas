@@ -36,6 +36,7 @@ export function actionableDecision(request: DecisionRequest, context: DecisionCo
   const choices = request.choices
   if (request.reason === 'missing_required_field') {
     if (candidate.kind !== 'reminder_cancelled') return false
+    if (candidate.eventConfidence !== 'high') return false
     const ids = choices.map(item => item.resolution?.reminderIntentId)
     const occurrence = candidate.target?.occurrenceId
       ? (context.scheduleNodes ?? []).filter(item => item.occurrenceId === candidate.target?.occurrenceId)
@@ -83,6 +84,7 @@ export function actionableDecision(request: DecisionRequest, context: DecisionCo
       && new Set(ids).size === ids.length
       && new Set(choices.map(item => item.label.trim())).size === choices.length
       && plausible.length === ids.length
+      && ids.every(id => Boolean(id && plausible.some(node => node.occurrenceId === id)))
   }
   if (request.payloadBinding.source.kind === 'gmail'
     && (candidate.objectConfidence !== 'high' || candidate.eventConfidence !== 'high'

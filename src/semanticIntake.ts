@@ -80,6 +80,11 @@ function stableHash(value: string) {
   return (hash >>> 0).toString(36)
 }
 
+function candidateBusinessSignature(candidate: SemanticCandidate) {
+  const { id: _id, sourceVersionRefs: _sourceVersionRefs, ...business } = candidate
+  return JSON.stringify(business)
+}
+
 function iso(value: string | undefined) {
   return Boolean(value && !Number.isNaN(new Date(value).getTime()))
 }
@@ -356,7 +361,12 @@ function createDecisionRequest(input: {
   recommendation?: { choiceId: string; basis: string }
   now: string
 }): DecisionRequest {
-  const id = `decision:${stableHash(`${input.observation.inputId}|${input.candidate.id}|${input.reason}`)}`
+  const id = `decision:${stableHash(JSON.stringify({
+    inputId: input.observation.inputId, candidateId: input.candidate.id,
+    reason: input.reason,
+    candidate: { ...input.candidate, sourceVersionRefs: undefined },
+    choices: input.choices, affectedObjects: input.affectedObjects,
+  }))}`
   return {
     id,
     reason: input.reason,
@@ -934,7 +944,27 @@ export function applySemanticIntake(
   const base = upgradeSnapshotToLatest(snapshot)
 
   const replay = existingReceipt(base, observation)
-  if (replay) {
+  const openSourceChoices = observation.source.kind === 'gmail'
+    ? (base.data.decisionRequests ?? []).filter(item => item.state === 'open'
+      && item.payloadBinding.source.kind === 'gmail'
+      && item.payloadBinding.source.sourceId === observation.source.sourceId
+      && item.payloadBinding.source.sourceRecordId === observation.source.sourceRecordId)
+    : []
+  const retiredSourceChoices = observation.source.kind === 'gmail'
+    ? (base.data.decisionRequests ?? []).filter(item => item.state === 'superseded'
+      && item.payloadBinding.source.kind === 'gmail'
+      && item.payloadBinding.source.sourceId === observation.source.sourceId
+      && item.payloadBinding.source.sourceRecordId === observation.source.sourceRecordId)
+    : []
+  const needsChoiceRecheck = observation.source.kind === 'gmail'
+    && (replay?.status === 'decision_required' || replay?.status === 'committed')
+    && (openSourceChoices.length > 0
+      || (['assertion', 'current_intent'].includes(observation.statementMode)
+        && observation.candidates.length > 0 && retiredSourceChoices.length > 0))
+  const sourceNoLongerAssertive = observation.source.kind === 'gmail'
+    && openSourceChoices.length > 0
+    && (!['assertion', 'current_intent'].includes(observation.statementMode) || observation.candidates.length === 0)
+  if (replay && !needsChoiceRecheck && !sourceNoLongerAssertive) {
     return {
       status: 'ALREADY_APPLIED',
       snapshot: base,
@@ -953,7 +983,27 @@ export function applySemanticIntake(
     ? `${observation.inputId}:recovery:${priorSemanticApplications}`
     : observation.inputId
 
+  const retireAllSourceChoices = (summary: string, coverageDebtCount: number): SemanticIntakeResult => {
+    const retired = openSourceChoices.map(item => structuredClone(item))
+    for (const item of openSourceChoices) {
+      item.state = 'superseded'
+      item.updatedAt = timestamp
+    }
+    base.exportedAt = timestamp
+    validateSnapshot(base)
+    return {
+      status: 'NO_WRITE', snapshot: base, changed: true, summary,
+      decisionRequests: [], coverageDebtCount,
+      compensation: { operation: 'semantic_batch', payload: {
+        domainCompensations: [], decisionRequestIds: [], receiptIds: [], restoreDecisionRequests: retired,
+      } },
+    }
+  }
+
   if (!['assertion', 'current_intent'].includes(observation.statementMode)) {
+    if (observation.source.kind === 'gmail' && openSourceChoices.length) {
+      return retireAllSourceChoices('The current source is not an assertion; former choices were retired.', 0)
+    }
     const value = receipt({
       observation,
       status: 'no_write',
@@ -974,6 +1024,12 @@ export function applySemanticIntake(
   }
 
   if (observation.candidates.length === 0) {
+    if (observation.source.kind === 'gmail' && openSourceChoices.length) {
+      return retireAllSourceChoices(
+        'The current source parse no longer supports the former choices; coverage review is needed.',
+        openSourceChoices.length,
+      )
+    }
     const value = receipt({
       observation,
       status: 'no_write',
@@ -996,6 +1052,22 @@ export function applySemanticIntake(
   let working = base
   const decisions: DecisionRequest[] = []
   let coverageDebtCount = 0
+  let supersededCount = 0
+  const retiredRequests: DecisionRequest[] = []
+  const retirePriorOpenChoices = (candidateId: string, preserveId?: string) => {
+    if (observation.source.kind !== 'gmail') return
+    for (const item of working.data.decisionRequests ?? []) {
+      if (item.state !== 'open' || item.id === preserveId
+        || item.payloadBinding.source.kind !== 'gmail'
+        || item.payloadBinding.source.sourceId !== observation.source.sourceId
+        || item.payloadBinding.source.sourceRecordId !== observation.source.sourceRecordId
+        || item.payloadBinding.candidateId !== candidateId) continue
+      retiredRequests.push(structuredClone(item))
+      item.state = 'superseded'
+      item.updatedAt = timestamp
+      supersededCount += 1
+    }
+  }
   const domainCompensations: DomainCompensation[] = []
   const affectedObjects: SemanticIntakeReceipt['affectedObjects'] = []
   const summaries: string[] = []
@@ -1003,7 +1075,39 @@ export function applySemanticIntake(
   const mutatedFactKeys: string[] = []
   const factMutationObjects: NonNullable<SemanticIntakeReceipt['factMutationObjects']> = {}
 
+  const currentCandidateIds = new Set(observation.candidates.map(candidate => candidate.id))
+  for (const item of openSourceChoices) {
+    if (!currentCandidateIds.has(item.payloadBinding.candidateId)) {
+      retirePriorOpenChoices(item.payloadBinding.candidateId)
+      if (!observation.candidates.some(candidate => candidateBusinessSignature(candidate)
+        === candidateBusinessSignature(item.payloadBinding.candidate))) coverageDebtCount += 1
+    }
+  }
+
   for (const candidate of observation.candidates) {
+    if (observation.source.kind === 'gmail') {
+      const priorAnswer = (working.data.decisionRequests ?? []).find(item =>
+        (item.state === 'answered' || item.state === 'auto_resolved')
+        && item.payloadBinding.source.kind === 'gmail'
+        && item.payloadBinding.source.sourceId === observation.source.sourceId
+        && item.payloadBinding.source.sourceRecordId === observation.source.sourceRecordId
+        && (item.payloadBinding.candidateId === candidate.id
+          || (!currentCandidateIds.has(item.payloadBinding.candidateId)
+            && candidateBusinessSignature(item.payloadBinding.candidate) === candidateBusinessSignature(candidate))))
+      if (priorAnswer) {
+        retirePriorOpenChoices(candidate.id)
+        if (candidateBusinessSignature(priorAnswer.payloadBinding.candidate) !== candidateBusinessSignature(candidate)) {
+          coverageDebtCount += 1
+        }
+        continue
+      }
+    }
+    // Recheck the open fragment and any newly parsed fragment, while retaining
+    // receipts that already prove another fragment's business fact or answer.
+    if (needsChoiceRecheck && !openSourceChoices.some(item => item.payloadBinding.candidateId === candidate.id)) {
+      const alreadyRecorded = existingFactReceipt(working, semanticCandidateFactKey(working, candidate))
+      if (alreadyRecorded) continue
+    }
     const factKey = semanticCandidateFactKey(working, candidate)
     // A partially invalidated receipt still proves its other facts. A new recovery
     // command must never recreate those domain objects (notably manual actions).
@@ -1041,28 +1145,39 @@ export function applySemanticIntake(
         now,
       })) {
         coverageDebtCount += 1
+        retirePriorOpenChoices(candidate.id)
         continue
       }
-      const sameSourceCandidate = observation.source.kind === 'gmail'
-        ? (working.data.decisionRequests ?? []).filter(item =>
-          item.reason === request.reason
+      const currentChoices = observation.source.kind === 'gmail'
+        ? (working.data.decisionRequests ?? []).filter(item => item.state === 'open'
           && item.payloadBinding.source.kind === 'gmail'
           && item.payloadBinding.source.sourceId === observation.source.sourceId
           && item.payloadBinding.source.sourceRecordId === observation.source.sourceRecordId
-          && item.payloadBinding.candidateId === candidate.id
-          && JSON.stringify({ ...item.payloadBinding.candidate, sourceVersionRefs: undefined })
-            === JSON.stringify({ ...candidate, sourceVersionRefs: undefined }))
+          && item.payloadBinding.candidateId === candidate.id)
         : []
-      if (sameSourceCandidate.some(item =>
-        JSON.stringify(item.choices) === JSON.stringify(request.choices)
-        && JSON.stringify(item.affectedObjects) === JSON.stringify(request.affectedObjects))) continue
+      const matchingOpen = currentChoices.find(item =>
+        item.reason === request.reason
+        && JSON.stringify({ ...item.payloadBinding.candidate, sourceVersionRefs: undefined })
+          === JSON.stringify({ ...candidate, sourceVersionRefs: undefined })
+        && JSON.stringify(item.choices) === JSON.stringify(request.choices)
+        && JSON.stringify(item.affectedObjects) === JSON.stringify(request.affectedObjects))
+      if (matchingOpen) {
+        retirePriorOpenChoices(candidate.id, matchingOpen.id)
+        continue
+      }
       // A changed business choice set is a new decision. Retain the old
       // request for provenance but stop counting its obsolete choices as open.
-      for (const item of sameSourceCandidate) {
-        if (item.state === 'open') {
-          item.state = 'superseded'
-          item.updatedAt = timestamp
+      retirePriorOpenChoices(candidate.id)
+      // A return to an earlier set of choices is a new occurrence of that
+      // decision; never replace the retained superseded record with the same ID.
+      if (working.data.decisionRequests?.some(item => item.id === request.id)) {
+        let sequence = 1
+        let nextId = `decision:${stableHash(`${request.id}|reissue:${sequence}`)}`
+        while (working.data.decisionRequests.some(item => item.id === nextId)) {
+          sequence += 1
+          nextId = `decision:${stableHash(`${request.id}|reissue:${sequence}`)}`
         }
+        request.id = nextId
       }
       appendDecision(working, observation, request, timestamp)
       decisions.push(request)
@@ -1070,6 +1185,7 @@ export function applySemanticIntake(
       continue
     }
     working = applied.snapshot
+    retirePriorOpenChoices(candidate.id)
     summaries.push(applied.summary)
     if (factKey) factKeys.push(factKey)
     affectedObjects.push(...applied.affected)
@@ -1083,10 +1199,17 @@ export function applySemanticIntake(
   }
 
   if (!domainCompensations.length && !summaries.length && !decisions.length) {
+    if (supersededCount) {
+      working.exportedAt = timestamp
+      validateSnapshot(working)
+    }
     return {
-      status: 'NO_WRITE', snapshot: base, changed: false,
+      status: 'NO_WRITE', snapshot: supersededCount ? working : base, changed: supersededCount > 0,
       summary: coverageDebtCount ? 'Source interpretation needs coverage review; no answerable user decision was created.' : 'No business change.',
       decisionRequests: [], coverageDebtCount,
+      ...(retiredRequests.length ? { compensation: { operation: 'semantic_batch' as const, payload: {
+        domainCompensations: [], decisionRequestIds: [], receiptIds: [], restoreDecisionRequests: retiredRequests,
+      } } } : {}),
     }
   }
   const committed = domainCompensations.length > 0 || summaries.length > 0
@@ -1149,6 +1272,7 @@ export function applySemanticIntake(
         domainCompensations,
         decisionRequestIds: decisions.map((item) => item.id),
         receiptIds: [value.id],
+        restoreDecisionRequests: retiredRequests,
       },
     },
   }

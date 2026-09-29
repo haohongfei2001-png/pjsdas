@@ -52,7 +52,27 @@ describe('dense owner decision and schedule membership', () => {
     const context = { opportunities: snapshot.data.opportunities, scheduleNodes: snapshot.data.scheduleNodes,
       reminderIntents: reminders, now: DENSE_NOW }
     expect(partitionDecisions([request], context).actionable).toHaveLength(1)
+    request.payloadBinding.candidate.eventConfidence = 'low'
+    expect(partitionDecisions([request], context).dataQuality).toHaveLength(1)
+    request.payloadBinding.candidate.eventConfidence = 'high'
     reminders[1].state = 'cancelled' as const
+    expect(partitionDecisions([request], context).dataQuality).toHaveLength(1)
+  })
+  it('removes stale occurrence choices even when the plausible count stays the same', () => {
+    const snapshot = denseDecisionWorkspace()
+    const nodes = snapshot.data.scheduleNodes!
+    for (const node of nodes.slice(0, 3)) node.kind = 'interview'
+    const request = denseDecision(502)
+    request.reason = 'ambiguous_occurrence'
+    request.payloadBinding.candidate.target = { occurrenceKind: 'interview' }
+    request.choices = nodes.slice(0, 3).map(node => ({
+      id: `occurrence:${node.occurrenceId}`, label: node.occurrenceId,
+      consequence: 'Update only this interview.', resolution: { occurrenceId: node.occurrenceId },
+    }))
+    const context = { opportunities: snapshot.data.opportunities, scheduleNodes: nodes, now: DENSE_NOW }
+    expect(partitionDecisions([request], context).actionable).toHaveLength(1)
+    nodes[2]!.kind = 'written_test'
+    nodes[3]!.kind = 'interview'
     expect(partitionDecisions([request], context).dataQuality).toHaveLength(1)
   })
   it('uses the same normalized company identity as semantic resolution', () => {
