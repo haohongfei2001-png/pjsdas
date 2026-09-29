@@ -59,11 +59,26 @@ export function applyGmailSemanticBatch(snapshot: PJSDASSnapshot, input: {
       && request.payloadBinding.source.sourceId === input.sourceId
       && request.payloadBinding.source.sourceRecordId === sourceRecordId
       && (request.state === 'open' || request.state === 'expired'))
+    const priorIssues = prior?.ingestion?.issueKinds ?? []
+    const answeredCurrentChoices = result?.status === 'ALREADY_APPLIED'
+      && priorIssues.length > 0
+      && priorIssues.every(kind => kind === 'business_ambiguity')
+      && observation.candidates.length > 0
+      && observation.candidates.every(candidate => (working.data.decisionRequests ?? []).some(request =>
+        request.state === 'answered'
+        && request.payloadBinding.source.kind === 'gmail'
+        && request.payloadBinding.source.sourceId === input.sourceId
+        && request.payloadBinding.source.sourceRecordId === sourceRecordId
+        && request.payloadBinding.source.sourceVersion === observation.source.sourceVersion
+        && request.payloadBinding.inputId === observation.inputId
+        && request.payloadBinding.candidateId === candidate.id
+        && JSON.stringify({ ...request.payloadBinding.candidate, sourceVersionRefs: undefined })
+          === JSON.stringify({ ...candidate, sourceVersionRefs: undefined })))
     // Only this invocation's semantic work can prove that a formerly bounded
     // source was fully re-evaluated. ALREADY_APPLIED can refer to a receipt
     // created by an older, gapful parser version and is therefore not fresh
     // completeness evidence.
-    const conclusiveSemanticReplay = (result?.status === 'NO_WRITE' || result?.status === 'APPLIED')
+    const conclusiveSemanticReplay = (result?.status === 'NO_WRITE' || result?.status === 'APPLIED' || answeredCurrentChoices)
       && !result.coverageDebtCount
     const reconciledPriorUnresolved = Boolean(
       input.reconcileExisting

@@ -1648,9 +1648,22 @@ describe('UU06 shared Gmail intake', () => {
       authorized: true, records: [revised], reconcileExisting: true,
     })
     expect(second.snapshot.data.decisionRequests).toHaveLength(2)
+    expect(second.snapshot.data.decisionRequests?.map(item => item.state)).toEqual(['superseded', 'open'])
     expect(partitionDecisions(second.snapshot.data.decisionRequests!, {
       opportunities: second.snapshot.data.opportunities, now,
     }).actionable.map(item => item.choices.length)).toEqual([3])
+    const replacement = second.snapshot.data.decisionRequests![1]!
+    const answered = resolveSemanticDecision(second.snapshot, replacement.id, 'opportunity:jd-designer', now)
+    expect(answered.status).toBe('APPLIED')
+    expect(answered.snapshot.data.decisionRequests?.map(item => item.state)).toEqual(['superseded', 'answered'])
+    const settled = applyGmailSemanticBatch(answered.snapshot, {
+      runId: 'growing-choice-settled', sourceId: 'gmail:primary',
+      checkedAt: new Date(now.getTime() + 60_000).toISOString(),
+      authorized: true, records: [revised], reconcileExisting: true,
+    })
+    expect(settled.snapshot.data.decisionRequests).toHaveLength(2)
+    expect(settled.run.outcomes.unresolved ?? 0).toBe(0)
+    expect(settled.run.accountedCount).toBe(1)
   })
   it('late old mail preserves newer state and can still be explicitly confirmed as a correction', () => {
     const first = run(snapshot(), '京东 AI产品经理 offer录用通知', 'new', '2026-09-20T00:00:00Z')

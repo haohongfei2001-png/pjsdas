@@ -1043,19 +1043,27 @@ export function applySemanticIntake(
         coverageDebtCount += 1
         continue
       }
-      const previous = observation.source.kind === 'gmail'
-        ? (working.data.decisionRequests ?? []).find(item =>
+      const sameSourceCandidate = observation.source.kind === 'gmail'
+        ? (working.data.decisionRequests ?? []).filter(item =>
           item.reason === request.reason
           && item.payloadBinding.source.kind === 'gmail'
           && item.payloadBinding.source.sourceId === observation.source.sourceId
           && item.payloadBinding.source.sourceRecordId === observation.source.sourceRecordId
           && item.payloadBinding.candidateId === candidate.id
           && JSON.stringify({ ...item.payloadBinding.candidate, sourceVersionRefs: undefined })
-            === JSON.stringify({ ...candidate, sourceVersionRefs: undefined })
-          && JSON.stringify(item.choices) === JSON.stringify(request.choices)
-          && JSON.stringify(item.affectedObjects) === JSON.stringify(request.affectedObjects))
-        : undefined
-      if (previous) continue
+            === JSON.stringify({ ...candidate, sourceVersionRefs: undefined }))
+        : []
+      if (sameSourceCandidate.some(item =>
+        JSON.stringify(item.choices) === JSON.stringify(request.choices)
+        && JSON.stringify(item.affectedObjects) === JSON.stringify(request.affectedObjects))) continue
+      // A changed business choice set is a new decision. Retain the old
+      // request for provenance but stop counting its obsolete choices as open.
+      for (const item of sameSourceCandidate) {
+        if (item.state === 'open') {
+          item.state = 'superseded'
+          item.updatedAt = timestamp
+        }
+      }
       appendDecision(working, observation, request, timestamp)
       decisions.push(request)
       affectedObjects.push({ type: 'decision_request', id: request.id })
