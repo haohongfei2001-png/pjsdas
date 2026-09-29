@@ -1,6 +1,6 @@
 # PCR-07 — Bounded reliability closure
 
-Status: closure candidate, COMPLETE_WITH_DEFERRED after this documentation PR's
+Status: closure candidate, COMPLETE_WITH_UNRESOLVED after this documentation PR's
 applicable gates, independent review and exact-main verification. No runtime
 source changes are included in this closure slice.
 
@@ -53,8 +53,10 @@ No assertion was weakened to hide a product defect.
 
 ## Remaining boundaries
 
-Fresh direct database read is deferred due unavailable connector. Saved production
-fixtures and public health are not substituted for that gate. Owner's actual
+Fresh direct database aggregate read now passes after connector reconnection:
+revision934 has388 actions/363 decisions; historical shapes and reference integrity
+match the documented classes. The saved358-decision startup/cache fixture is
+separate historical evidence, not a claim about current Today membership. Owner's actual
 browser storage was not directly inspected; genuine edits remain protected.
 Ambiguous historical debt remains accessible without deletion or age cleanup.
 These are explicit limits, not zero-debt or universal-parser claims.
@@ -62,7 +64,8 @@ These are explicit limits, not zero-debt or universal-parser claims.
 Repair02 executed once and its authorization is consumed. No further production
 workspace write, Gmail cursor/permission change, private upload, paid upgrade,
 or external recruiting action was performed in this closure slice.
-The pre-existing publish workflow automatically succeeded for85e2 (36496115294);
+The pre-existing publish workflow automatically succeeded for85e2 (36496115294),
+but release-creation steps were skipped with publishOnProductionSuccess=false;
 no release publication was manually dispatched or newly enabled here.
 Issue62 (immutable-release administration) remains deferred; UU08/09 remain
 unauthorized. Prior closed packages retain their historical status.
@@ -71,3 +74,12 @@ The bounded engineering queue has no further identified safe implementation
 work. Finish this documentation slice's gates/review/main receipt, then stop the
 nightly development heartbeat. Reconnection or new owner evidence can open a
 separate follow-up; do not invent tasks to keep the queue active.
+
+## Final status transition
+
+This checked-in candidate is the pre-merge snapshot. The final exact-main receipt
+in [PR193](https://github.com/haohongfei2001-png/pjsdas/pull/193) governs the
+transition to COMPLETE_WITH_UNRESOLVED only after applicable gates and deployed
+identity verification pass. It records the final merge SHA without requiring
+an endless sequence of documentation-only merges. Historical ambiguity remains
+explicitly unresolved; no further bounded engineering defect is asserted.

@@ -1,6 +1,6 @@
 # PCR-06 — Read-only integrity classification
 
-Status: COMPLETE_WITH_DEFERRED. Aggregates below are dated evidence from the
+Status: COMPLETE. Earlier aggregates below are dated evidence from the
 2026-09-28 audit, not a claim about the current production revision. No raw private
 payloads are published. PCR05's dependency is verified on main `85e2f568`.
 
@@ -22,10 +22,16 @@ state of the owner's currently open browser.
 
 ## Deferred / unresolved
 
-- A new production database aggregate read on 2026-09-29 is deferred: the earlier
-  Supabase connector is unavailable in this session. The last earlier readonly
-  revision 882 is not presented as a current revision. Public frontend/backend
-  identity and automatic Production Self-Test remain independently verified.
+- The earlier connector-unavailable deferral was resolved after Supabase reconnection.
+  Read-only SQL on 2026-09-29 returned revision934, schema4,388 actions,
+  363 decisions,300 nodes (284 scheduled/13 completed/3 cancelled).
+  All300 remain legacy_projection:241 UTC/47 floating-date/12 source-offset.
+  All13 completed nodes still have unknown completedAt. Missing action/process/
+  event/opportunity references:0; missing receipt creationSequence:0;
+  Gmail decisions363, decisions without a referencing receipt:0.
+  The earlier358 count describes saved fixtures, not current production totals.
+  Current production Today membership was not recomputed from this aggregate query.
+  These SELECT queries did not mutate the workspace or reprocess new records.
 - Historical ambiguity remains: 52 privately audited source messages produce
   283 candidates / 44 bound / zero missing in the latest bounded parser audit.
   Unknown or mixed instructions are retained; these counts do not authorize

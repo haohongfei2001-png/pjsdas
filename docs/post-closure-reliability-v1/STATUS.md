@@ -2,7 +2,7 @@
 
 Package: `TODAYACTION-POST-CLOSURE-RELIABILITY-v1`
 
-Status: **CLOSURE_CANDIDATE — COMPLETE_WITH_DEFERRED after final documentation gates**
+Status: **CLOSURE_CANDIDATE — COMPLETE_WITH_UNRESOLVED after final documentation gates**
 
 Baseline: `main@c93a0fca9ef9b8eec8e234557f525445c0ef6b20`
 
@@ -28,7 +28,7 @@ Production claim: **P0 verified on exact runtime a8d9840; Repair 02 committed 38
 | PCR-03 | COMPLETE | PR #189 merged6c77d62; exact-main CI/Browser/Matrix/Pages/Self-Test plus7 deployed readonly startup checks PASS |
 | PCR-04 | COMPLETE_BOUNDED | PR190 read model and PR191 narrow procedural assertion repair exact-main verified; ambiguous historical records preserved |
 | PCR-05 | COMPLETE | PR192 exact main85e2 CI/Browser/Matrix/Pages/Self-Test, deployed startup and isolated cache convergence PASS |
-| PCR-06 | COMPLETE_WITH_DEFERRED | prior readonly production classes bound to regressions; fresh database read unavailable |
+| PCR-06 | COMPLETE | fresh readonly revision934 confirms classes and reference integrity; permanent regression mappings recorded |
 | PCR-07 | CLOSURE_CANDIDATE | final documentation gates/review/main verification required |
 
 ## Authorization boundary
@@ -170,5 +170,11 @@ Seven deployed startup checks and isolated847→851 cache convergence PASS; six
 Today rows and358 decisions retained, zero errors or production writes.
 [Classification](PCR-06-INTEGRITY-CLASSIFICATION.md) and
 [bounded closure](PCR-07-BOUNDED-CLOSURE.md) preserve historical ambiguity and
-the unavailable fresh database-read gate. Final documentation gates remain
+resolved database-read deferral (fresh revision934 verified). Final documentation gates remain
 pending; no claim of direct owner-browser inspection or zero historical debt.
+
+The checked-in PCR07 candidate is a pre-merge snapshot. The final exact-main
+receipt in [PR193](https://github.com/haohongfei2001-png/pjsdas/pull/193) governs
+transition to COMPLETE_WITH_UNRESOLVED after applicable gates and identity checks.
+Current revision934 has388actions/363decisions; saved fixture358 remains separate
+historical evidence. No current Today count is inferred from aggregate totals.
