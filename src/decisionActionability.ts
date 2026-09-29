@@ -1,4 +1,5 @@
 import type { DecisionRequest, Opportunity, ReminderIntent, ScheduleNode } from './model.js'
+import { resolveOpportunityTarget } from './semanticTargetMatching.js'
 
 export interface DecisionContext {
   opportunities: Opportunity[]
@@ -56,18 +57,14 @@ export function actionableDecision(request: DecisionRequest, context: DecisionCo
       || (candidate.temporalConfidence && candidate.temporalConfidence !== 'high')) return false
     if (!candidate.target?.company?.trim() && !candidate.target?.role?.trim()) return false
     const ids = choices.map(item => item.resolution?.opportunityId)
-    const targets = ids.map(id => context.opportunities.find(item => item.id === id))
-    const same = (a: string, b: string) => a.trim().toLocaleLowerCase() === b.trim().toLocaleLowerCase()
-    const plausible = context.opportunities.filter(item => item.processStage !== 'closed'
-      && (!candidate.target?.company || same(item.company, candidate.target.company))
-      && (!candidate.target?.role || same(item.role, candidate.target.role)))
+    const resolved = resolveOpportunityTarget(context.opportunities, candidate.target)
+    if (resolved.status !== 'ambiguous') return false
+    const plausible = new Set(resolved.opportunities.map(item => item.id))
     return ids.length >= 2 && ids.every((id): id is string => Boolean(id && opportunityIds.has(id)))
       && new Set(ids).size === ids.length
       && new Set(choices.map(item => item.label.trim())).size === choices.length
-      && plausible.length === ids.length
-      && targets.every(item => item
-        && (!candidate.target?.company || same(item.company, candidate.target.company))
-        && (!candidate.target?.role || same(item.role, candidate.target.role)))
+      && plausible.size === ids.length
+      && ids.every(id => Boolean(id && plausible.has(id)))
   }
   if (request.reason === 'ambiguous_occurrence') {
     if (candidate.eventConfidence !== 'high'

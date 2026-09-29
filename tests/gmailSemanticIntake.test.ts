@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { gmailSemanticRecordFromMessage } from '../gateway/gmailAutomation.js'
+import { partitionDecisions } from '../src/decisionActionability.js'
 import { applyGmailSemanticBatch } from '../src/gmailSemanticIntake.js'
 import { applySemanticCompensation, applySemanticIntake, resolveSemanticDecision } from '../src/semanticIntake.js'
 import { createSnapshot, upgradeSnapshotToLatest, validateSnapshot, type PJSDASSnapshot } from '../src/snapshot.js'
@@ -1625,6 +1626,31 @@ describe('UU06 shared Gmail intake', () => {
     })
     expect(replay.snapshot.data.decisionRequests).toHaveLength(1)
     expect(replay.snapshot.data.processEvents).toHaveLength(1)
+  })
+  it('reissues an answerable Gmail ambiguity when the plausible choices change', () => {
+    const base = snapshot()
+    base.data.opportunities.push({ ...base.data.opportunities[0]!, id: 'jd-analyst', role: '数据分析师' })
+    const mail = message('京东 面试通知，请于2026年9月25日 14:30参加视频面试', 'growing-choice')
+    mail.payload.headers[0]!.value = '京东 招聘进展'
+    const record = gmailSemanticRecordFromMessage(mail, base.data.opportunities, now)!
+    const first = applyGmailSemanticBatch(base, {
+      runId: 'growing-choice-v1', sourceId: 'gmail:primary', checkedAt: now.toISOString(),
+      authorized: true, records: [record],
+    })
+    expect(first.snapshot.data.decisionRequests).toHaveLength(1)
+    first.snapshot.data.opportunities.push({ ...first.snapshot.data.opportunities[0]!, id: 'jd-designer', role: '设计师' })
+    const revised = structuredClone(record)
+    revised.observation.inputId = 'gmail:growing-choice:parser-v2'
+    revised.observation.source.sourceVersion = 'parser-v2'
+    revised.observation.candidates[0]!.sourceVersionRefs = ['growing-choice:parser-v2']
+    const second = applyGmailSemanticBatch(first.snapshot, {
+      runId: 'growing-choice-v2', sourceId: 'gmail:primary', checkedAt: new Date(now.getTime() + 30_000).toISOString(),
+      authorized: true, records: [revised], reconcileExisting: true,
+    })
+    expect(second.snapshot.data.decisionRequests).toHaveLength(2)
+    expect(partitionDecisions(second.snapshot.data.decisionRequests!, {
+      opportunities: second.snapshot.data.opportunities, now,
+    }).actionable.map(item => item.choices.length)).toEqual([3])
   })
   it('late old mail preserves newer state and can still be explicitly confirmed as a correction', () => {
     const first = run(snapshot(), '京东 AI产品经理 offer录用通知', 'new', '2026-09-20T00:00:00Z')

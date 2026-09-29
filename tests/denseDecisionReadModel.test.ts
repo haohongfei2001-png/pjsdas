@@ -55,6 +55,22 @@ describe('dense owner decision and schedule membership', () => {
     reminders[1].state = 'cancelled' as const
     expect(partitionDecisions([request], context).dataQuality).toHaveLength(1)
   })
+  it('uses the same normalized company identity as semantic resolution', () => {
+    const snapshot = denseDecisionWorkspace()
+    snapshot.data.opportunities[0]!.company = '京东'
+    snapshot.data.opportunities[1]!.company = '京东'
+    const request = denseDecision(501)
+    request.payloadBinding.candidate.target = { company: '京东招聘' }
+    request.choices = [0, 1].map(index => ({
+      id: `opportunity:${snapshot.data.opportunities[index]!.id}`,
+      label: `京东 · 机会${index}`,
+      consequence: 'Only this opportunity will be updated.',
+      resolution: { opportunityId: snapshot.data.opportunities[index]!.id },
+    }))
+    expect(partitionDecisions([request], {
+      opportunities: snapshot.data.opportunities, now: DENSE_NOW,
+    }).actionable).toHaveLength(1)
+  })
   it('preserves all records but does not mistake 358 undated email decisions for Today tasks', () => {
     const snapshot = denseDecisionWorkspace(), before = JSON.stringify(snapshot)
     const selected = selectTodayWeb(snapshot, {}, { now: DENSE_NOW, timezone: zone })

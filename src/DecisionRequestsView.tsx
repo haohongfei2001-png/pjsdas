@@ -51,6 +51,9 @@ export default function DecisionRequestsView({
   const groups = useMemo(() => groupOpenDecisions(open), [open])
   const groupById = useMemo(() => new Map(groups.map(group => [group[0].id, group])), [groups])
   const visible = focusRequestId ? open.filter((item) => item.id === focusRequestId) : groups.map(group => group[0])
+  const quarantinedFocused = focusRequestId
+    ? classified.dataQuality.find(item => item.id === focusRequestId)
+    : undefined
 
   async function choose(request: DecisionRequest, choiceId: string) {
     if (busyId) return
@@ -116,11 +119,16 @@ export default function DecisionRequestsView({
       {visible.length === 0 ? (
         <div className="ultimate-quiet-state">
           <strong>{focusRequestId
-            ? (zh ? '这项决定已不再待处理' : 'This decision is no longer open')
+            ? quarantinedFocused
+              ? (zh ? '这条记录仍待核对，当前没有可回答的选择' : 'This source record is still open for review, without an answerable choice')
+              : (zh ? '这项决定已不再待处理' : 'This decision is no longer open')
             : (zh ? '现在没有需要你决定的事' : 'Nothing needs your decision right now')}</strong>
           <span>{focusRequestId
-            ? (zh ? '查看所有待决定事项，或返回刚才的机会。' : 'View all open decisions, or return to the opportunity.')
+            ? quarantinedFocused
+              ? (zh ? '原始记录和来源证据已保留在活动记录中；系统不会要求你猜测缺失事实。' : 'The original record and source evidence remain in activity history; no missing fact needs to be guessed.')
+              : (zh ? '查看所有待决定事项，或返回刚才的机会。' : 'View all open decisions, or return to the opportunity.')
             : (zh ? '这就是正常状态。TodayAction 会继续自动处理明确事实。' : 'That is the normal state. TodayAction keeps handling clear facts automatically.')}</span>
+          {quarantinedFocused ? <a href={(import.meta.env.BASE_URL ?? '/') + 'history'}>{zh ? '查看活动记录' : 'View activity'}</a> : null}
         </div>
       ) : (
         <div className="ultimate-decision-list">
