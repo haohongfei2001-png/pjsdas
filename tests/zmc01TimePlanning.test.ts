@@ -116,6 +116,8 @@ describe('ZMC-01 owner time planning', () => {
     const selected = selectTodayWeb(snapshot, { availableMinutes: 0 }, { now: NOW, timezone: ZONE })
     expect(selected.actions.map(item => item.actionId)).toEqual(['shared-choice'])
     expect(selected.criticalWarnings[0]?.relatedIds).toEqual(['shared-choice'])
+    const brief = buildTodayBrief(snapshot, { availableMinutes: 0 }, { now: NOW, timezone: ZONE })
+    expect(brief.nextAction?.actionId).toBe('shared-choice')
   })
 
   it('keeps a next-day hard deadline visible when its latest start is today', () => {

@@ -361,8 +361,8 @@ function executionFor(action: Action, opportunity: Opportunity | undefined): Tod
 }
 
 function isHardConstraint(action: Action, node: ScheduleNode | undefined) {
-  if (node) return node.constraintKind === 'employer_hard'
-  return action.kind === 'apply' || action.kind === 'group_decision' || Boolean(action.processEventId)
+  if (action.kind === 'apply' || action.kind === 'group_decision' || action.processEventId) return true
+  return node?.constraintKind === 'employer_hard'
 }
 
 export function protectedByLatestStart(
