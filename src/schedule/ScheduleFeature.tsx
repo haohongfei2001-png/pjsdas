@@ -1,6 +1,6 @@
 import { scheduleDisplayTimezone } from '../scheduleDisplayTime.js'
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
-import type { Opportunity } from '../model.js'
+import type { Opportunity, ScheduleNodeTemporal } from '../model.js'
 import { readScheduleWindow, type ScheduleEntry, type ScheduleSection, type ScheduleStream } from './scheduleStream.js'
 import { useUiLanguage } from '../uiLanguage.js'
 import { localDateKey } from '../todayBrief.js'
@@ -81,6 +81,7 @@ export function ScheduleWindowList({ stream, section, opportunities, onOpenOppor
 
 type View = 'all' | 'upcoming' | 'past' | 'unresolved' | 'undated'
 type OccurrenceCommand = 'complete' | 'cancel' | 'reschedule'
+type PendingOccurrenceCommand = { kind: OccurrenceCommand; temporal?: ScheduleNodeTemporal; status: 'pending' | 'unknown' | 'conflict' | 'projection_pending' }
 type CommandResult = { outcome: 'COMMITTED' | 'ALREADY_APPLIED' | 'NO_WRITE' | 'QUEUED'; commandId?: string; message: string; localProjection?: 'pending' }
 function commandErrorMessage(error: unknown, zh: boolean) {
   const message = error instanceof Error ? error.message : String(error)
@@ -95,6 +96,7 @@ type Props = {
   onOpenOpportunity: (id: string) => void
   canWrite?: boolean
   onOccurrenceCommand?: (entry: ScheduleEntry, kind: OccurrenceCommand, date?: string) => Promise<CommandResult>
+  onPendingOccurrence?: (occurrenceId: string) => PendingOccurrenceCommand | undefined
   onUndoOccurrenceCommand?: (commandId: string) => Promise<void>
 }
 
@@ -128,7 +130,7 @@ function initialRange(entries: ScheduleEntry[], view: View, today: string) {
 }
 
 export default function ScheduleFeature({
-  stream, opportunities, onOpenOpportunity, canWrite = false, onOccurrenceCommand, onUndoOccurrenceCommand,
+  stream, opportunities, onOpenOpportunity, canWrite = false, onOccurrenceCommand, onPendingOccurrence, onUndoOccurrenceCommand,
 }: Props) {
   const { lang } = useUiLanguage()
   const zh = lang === 'zh'
@@ -156,6 +158,7 @@ export default function ScheduleFeature({
   const selected = selectedId
     ? [...all, ...stream.sections.undated].find((entry) => entry.id === selectedId)
     : undefined
+  const selectedPending = selected?.occurrenceId ? onPendingOccurrence?.(selected.occurrenceId) : undefined
   const shown = entries.slice(range.start, range.end)
   const byId = useMemo(() => new Map(opportunities.map((item) => [item.id, item])), [opportunities])
 
@@ -226,9 +229,12 @@ export default function ScheduleFeature({
     setFeedback(undefined)
     setConfirm(undefined)
     const temporal = entry.node?.temporal
-    setNewDate(temporal?.precision === 'datetime'
-      ? localDateTimeInput(temporal.startAt ?? temporal.deadlineAt ?? '')
-      : temporal?.date ?? entry.date ?? '')
+    const queued = entry.occurrenceId ? onPendingOccurrence?.(entry.occurrenceId) : undefined
+    const displayTemporal = queued?.kind === 'reschedule' && queued.status !== 'conflict'
+      ? queued.temporal ?? temporal : temporal
+    setNewDate(displayTemporal?.precision === 'datetime'
+      ? localDateTimeInput(displayTemporal.startAt ?? displayTemporal.deadlineAt ?? '')
+      : displayTemporal?.date ?? entry.date ?? '')
   }
 
   function closeEntry() {
@@ -308,6 +314,12 @@ export default function ScheduleFeature({
       {selected.opportunityId && byId.has(selected.opportunityId) ? <button type="button" className="tsui-schedule-job-link" onClick={() => onOpenOpportunity(selected.opportunityId!)}>{zh ? '查看岗位详情' : 'View job details'} →</button> : null}
       {selected.node?.occurrenceId && (selected.state === 'scheduled' || selected.state === 'elapsed_unresolved') ? <div className="tsui-schedule-commands">
         <h3>{zh ? '更新这次安排' : 'Update this occurrence'}</h3>
+        {selectedPending?.status === 'conflict' ? <p role="status">{zh ? '这次安排已在别处变化，请核对最新安排。' : 'This occurrence changed elsewhere. Review the latest schedule.'}</p>
+          : selectedPending ? <p role="status">{selectedPending.kind === 'reschedule'
+            ? `${zh ? '待同步的改期日期：' : 'Pending reschedule: '}${newDate}`
+            : selectedPending.kind === 'complete'
+              ? (zh ? '完成操作待同步。' : 'Completion pending.')
+              : (zh ? '取消操作待同步。' : 'Cancellation pending.')}</p> : null}
         {!canWrite ? <p>{zh ? '连接权威工作区后才能记录变更。' : 'Connect the authoritative workspace to record changes.'}</p>
           : <>
             {confirm === 'reschedule' ? <div className="tsui-schedule-reschedule"><label>{selected.node?.temporal.precision === 'datetime' ? zh ? '新的本地日期与时间' : 'New local date and time' : zh ? '新的日期' : 'New date'}<input type={selected.node?.temporal.precision === 'datetime' ? 'datetime-local' : 'date'} value={newDate} onChange={(event) => setNewDate(event.target.value)} /></label><p>{selected.node?.temporal.precision === 'datetime' ? zh ? '保留原有明确时长；按当前设备时区记录新时间。' : 'The explicit duration is preserved; new time uses this device timezone.' : zh ? '仅记录你确认的日期；不会补造具体时间。' : 'Only the confirmed date is recorded; no time is invented.'}</p><button type="button" disabled={!newDate || Boolean(pending)} onClick={() => { void runCommand('reschedule') }}>{zh ? '确认改期' : 'Confirm reschedule'}</button><button type="button" onClick={() => setConfirm(undefined)}>{zh ? '返回' : 'Back'}</button></div>

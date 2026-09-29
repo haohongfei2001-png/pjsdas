@@ -11,11 +11,13 @@ Offline capture, action status, application submission, and schedule complete/ca
 - The existing browser journey explicitly asserted that offline capture remained only a draft with zero command requests. That behavior violated the durable offline command invariant.
 - The existing command-client test explicitly asserted that an earlier committed operation with blocked local projection rejected a second independent occurrence operation before journaling.
 - A server `CONFLICT` response whose snapshot could not project locally passed into unknown-outcome recovery rather than preserving the known business conflict.
+- Independent review reproduced three further consumer failures: an offline capture that recovered as `DECISION_REQUIRED` hid the decision entry; a conflicted schedule operation was falsely labeled queued; and a queued reschedule reopened with the old date, blocking confirmation of its original command.
 
 ## Green-after regression
 
 - Unit cases verify offline queue without a network call, original base revision and command ID across restart/replay, remote revision advance, account binding, local-only edit preservation, changed-payload rejection, independent command continuation, same-object conflict classification, receipt-first recovery, and no duplicate send after committed receipt.
 - The connected browser journey now asserts an offline capture outbox record, no offline network write, independent remote update, a real page reload while the server remains unreachable, exactly one recovered business command with the original ID, outbox retirement, and consistent local state after another reload.
+- A connected schedule browser journey now queues a changed date offline, reloads while the server is unavailable, displays the original queued date, and replays the original command once after reconnect even when ordinary automatic refresh is disabled. Conflicted schedule commands are surfaced as conflicts rather than promised automatic submission.
 - Existing receipt/projection cases cover completed, cancelled, and rescheduled occurrences, receipt found/absent, `NO_WRITE`, and safe projection retry. Final full tests, Browser, Matrix, independent review, merge, and exact-main readback remain required.
 - Full local boundary: 208 test files and 1,086 tests passed; TypeScript and production build passed. The local macOS sandbox denied headless Chromium startup, so browser journeys must run in the cloud Browser/Matrix gates without opening a visible browser.
 

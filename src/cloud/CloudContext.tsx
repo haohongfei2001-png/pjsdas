@@ -246,6 +246,32 @@ export function CloudProvider({ children }: { children: ReactNode }) {
     }
   }, [loading, configured, session?.user.id, device.autoSync, device.workspaceOwnerUserId, checkpoint.conflict, syncNow])
 
+  useEffect(() => {
+    const userId = session?.user.id
+    if (loading || !configured || !userId || device.autoSync || !connectedWorkspaceAuthorityEnabled()) return
+    if (device.workspaceOwnerUserId && device.workspaceOwnerUserId !== userId) return
+    // A user-confirmed outbox command still needs to finish after reconnect,
+    // even when ordinary background workspace refresh is disabled.
+    const resume = () => {
+      if (!navigator.onLine) return
+      try {
+        const pending = pendingCommandSummary(userId)
+        if (pending.count <= pending.conflict) return
+        void replayAccountPendingOperations(userId).catch(() => undefined)
+      } catch { /* Keep the unreadable outbox intact for diagnosis. */ }
+    }
+    const initial = window.setTimeout(resume, 700)
+    const interval = window.setInterval(resume, 60_000)
+    window.addEventListener('online', resume)
+    window.addEventListener('focus', resume)
+    return () => {
+      window.clearTimeout(initial)
+      window.clearInterval(interval)
+      window.removeEventListener('online', resume)
+      window.removeEventListener('focus', resume)
+    }
+  }, [loading, configured, session?.user.id, device.autoSync, device.workspaceOwnerUserId])
+
   const hasConflict = Boolean(checkpoint.conflict)
   useEffect(() => {
     const userId = session?.user.id

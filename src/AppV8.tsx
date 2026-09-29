@@ -627,6 +627,22 @@ export default function AppV8() {
     await markAction(item.actionId, 'doing')
   }
 
+  function pendingScheduleOccurrence(occurrenceId: string) {
+    const account = cloud.session?.user.id
+    if (!account) return undefined
+    const pending = listAccountPendingOperations(account).find(item => {
+      const value = item.command?.type === 'domain' ? item.command.value : undefined
+      return item.action === 'command' && value && 'occurrenceId' in value && value.occurrenceId === occurrenceId
+        && ['complete_occurrence', 'cancel_occurrence', 'reschedule_occurrence'].includes(value.kind)
+    })
+    const value = pending?.command?.type === 'domain' ? pending.command.value : undefined
+    if (!value || !('occurrenceId' in value)) return undefined
+    if (value.kind === 'complete_occurrence') return { kind: 'complete' as const, status: pending!.status }
+    if (value.kind === 'cancel_occurrence') return { kind: 'cancel' as const, status: pending!.status }
+    if (value.kind === 'reschedule_occurrence') return { kind: 'reschedule' as const, temporal: value.temporal, status: pending!.status }
+    return undefined
+  }
+
   async function scheduleOccurrenceCommand(entry: ScheduleEntry, kind: 'complete' | 'cancel' | 'reschedule', date?: string) {
     const account = cloud.session?.user.id
     if (!account || !connectedWorkspaceAuthorityEnabled() || CGR02_TODAY_READ_ONLY) {
@@ -775,7 +791,8 @@ export default function AppV8() {
 
         {!loading && surface === 'schedule' && scheduleStream ? <ScheduleFeature stream={scheduleStream} opportunities={opportunities} onOpenOpportunity={openOpportunity}
           canWrite={Boolean(cloud.session && connectedWorkspaceAuthorityEnabled() && !CGR02_TODAY_READ_ONLY)}
-          onOccurrenceCommand={scheduleOccurrenceCommand} onUndoOccurrenceCommand={undoScheduleOccurrenceCommand} /> : null}
+          onOccurrenceCommand={scheduleOccurrenceCommand} onPendingOccurrence={pendingScheduleOccurrence}
+          onUndoOccurrenceCommand={undoScheduleOccurrenceCommand} /> : null}
 
         {!loading && surface === 'opportunities' && opportunityDecisionList && !selectedOpportunityId ? (
           <OpportunitiesSurface read={opportunityDecisionList} opportunities={opportunities} prep={prep} tab={opportunityTab} onTabChange={chooseOpportunityTab}
