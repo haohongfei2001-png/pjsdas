@@ -63,7 +63,8 @@ export function applyGmailSemanticBatch(snapshot: PJSDASSnapshot, input: {
     // source was fully re-evaluated. ALREADY_APPLIED can refer to a receipt
     // created by an older, gapful parser version and is therefore not fresh
     // completeness evidence.
-    const conclusiveSemanticReplay = result?.status === 'NO_WRITE' || result?.status === 'APPLIED'
+    const conclusiveSemanticReplay = (result?.status === 'NO_WRITE' || result?.status === 'APPLIED')
+      && !result.coverageDebtCount
     const reconciledPriorUnresolved = Boolean(
       input.reconcileExisting
       && prior?.ingestion?.outcome === 'unresolved'
@@ -72,10 +73,12 @@ export function applyGmailSemanticBatch(snapshot: PJSDASSnapshot, input: {
       && conclusiveSemanticReplay,
     )
     const unresolved = record.gaps.length > 0
+      || Boolean(result?.coverageDebtCount)
       || activeDecisionRequests.length > 0
       || (prior?.ingestion?.outcome === 'unresolved' && !reconciledPriorUnresolved)
     const issueKinds = [...new Set([
       ...(record.issueKinds ?? []),
+      ...(result?.coverageDebtCount ? ['interpretation_failure' as const] : []),
       ...(activeDecisionRequests.length ? ['business_ambiguity' as const] : []),
       ...(prior?.ingestion?.issueKinds ?? []),
     ])]
@@ -107,10 +110,17 @@ export function applyGmailSemanticBatch(snapshot: PJSDASSnapshot, input: {
     records.push(entry)
     const persistReconciliationChange = Boolean(input.reconcileExisting
       && (record.gaps.length > 0
+        || Boolean(result?.coverageDebtCount)
         || result?.status === 'APPLIED'
         || result?.status === 'DECISION_REQUIRED'
         || reconciledPriorUnresolved))
-    if (!prior || persistReconciliationChange) {
+    const priorIssueKinds = [...(prior?.ingestion?.issueKinds ?? [])].sort().join('|')
+    const nextIssueKinds = [...(entry.ingestion?.issueKinds ?? [])].sort().join('|')
+    const sourceStateChanged = !prior
+      || prior.ingestion?.outcome !== entry.ingestion?.outcome
+      || prior.ingestion?.reason !== entry.ingestion?.reason
+      || priorIssueKinds !== nextIssueKinds
+    if (!prior || (persistReconciliationChange && (sourceStateChanged || (result?.status === 'APPLIED' && result.changed)))) {
       working.data.timeline = [...(working.data.timeline ?? []), entry]
       persistedSourceRecords += 1
     }

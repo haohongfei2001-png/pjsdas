@@ -12,7 +12,7 @@ describe('UU-04 decision visibility policy', () => {
     expect(app).toContain("const primarySurfaces: PrimarySurface[] = ['today', 'opportunities', 'schedule']")
     expect(app).toContain("navigate('/decisions')")
     expect(app).not.toContain("'review' | 'opportunities'")
-    expect(decisions).toContain("item.state === 'open'")
+    expect(decisions).toContain('partitionDecisions(requests')
     expect(decisions).toContain('request.choices.map')
     expect(decisions).toContain('resolveWebDecision')
     expect(decisions).not.toContain('ChangeSet')

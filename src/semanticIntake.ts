@@ -21,6 +21,7 @@ import { latestScheduleOccurrence } from './scheduleNodes.js'
 import { createIngestionLedgerTimeline, ingestionSourceRecordKey } from './ingestion.js'
 import { reminderDedupeKey, resolveReminderTrigger } from './reminders.js'
 import { upgradeSnapshotToLatest, validateSnapshot, type PJSDASSnapshot } from './snapshot.js'
+import { actionableDecision } from './decisionActionability.js'
 
 export interface SemanticWritePolicyContext {
   authorized: boolean
@@ -46,6 +47,8 @@ export interface SemanticIntakeResult {
   summary: string
   receipt?: SemanticIntakeReceipt
   decisionRequests: DecisionRequest[]
+  /** Parser/source uncertainty retained by the ingestion ledger, not offered as a user choice. */
+  coverageDebtCount?: number
   compensation?: SemanticBatchCompensation
 }
 
@@ -468,6 +471,9 @@ function resolvedTarget(candidate: SemanticCandidate, resolution?: SemanticResol
   if (!resolution) return candidate
   return {
     ...structuredClone(candidate),
+    ...((resolution.opportunityId || resolution.occurrenceId || resolution.reminderIntentId) ? {
+      objectConfidence: 'high' as SemanticConfidence,
+    } : {}),
     target: {
       ...(candidate.target ?? {}),
       ...(resolution.opportunityId ? { opportunityId: resolution.opportunityId } : {}),
@@ -1032,6 +1038,7 @@ export function applySemanticIntake(
 
   let working = base
   const decisions: DecisionRequest[] = []
+  let coverageDebtCount = 0
   const domainCompensations: DomainCompensation[] = []
   const affectedObjects: SemanticIntakeReceipt['affectedObjects'] = []
   const summaries: string[] = []
@@ -1070,6 +1077,26 @@ export function applySemanticIntake(
         affectedObjects: applied.affected,
         now: timestamp,
       })
+      if (observation.source.kind === 'gmail' && !actionableDecision(request, {
+        opportunities: working.data.opportunities,
+        scheduleNodes: working.data.scheduleNodes,
+        reminderIntents: working.data.reminderIntents,
+        now,
+      })) {
+        coverageDebtCount += 1
+        continue
+      }
+      const previous = observation.source.kind === 'gmail'
+        ? (working.data.decisionRequests ?? []).find(item =>
+          item.reason === request.reason
+          && item.payloadBinding.source.kind === 'gmail'
+          && item.payloadBinding.source.sourceId === observation.source.sourceId
+          && item.payloadBinding.source.sourceRecordId === observation.source.sourceRecordId
+          && item.payloadBinding.candidateId === candidate.id
+          && JSON.stringify({ ...item.payloadBinding.candidate, sourceVersionRefs: undefined })
+            === JSON.stringify({ ...candidate, sourceVersionRefs: undefined }))
+        : undefined
+      if (previous) continue
       appendDecision(working, observation, request, timestamp)
       decisions.push(request)
       affectedObjects.push({ type: 'decision_request', id: request.id })
@@ -1088,6 +1115,13 @@ export function applySemanticIntake(
     }
   }
 
+  if (!domainCompensations.length && !summaries.length && !decisions.length) {
+    return {
+      status: 'NO_WRITE', snapshot: base, changed: false,
+      summary: coverageDebtCount ? 'Source interpretation needs coverage review; no answerable user decision was created.' : 'No business change.',
+      decisionRequests: [], coverageDebtCount,
+    }
+  }
   const committed = domainCompensations.length > 0 || summaries.length > 0
   const status: SemanticIntakeReceipt['status'] = committed ? 'committed' : 'decision_required'
   const summary = [
@@ -1141,6 +1175,7 @@ export function applySemanticIntake(
     summary,
     receipt: value,
     decisionRequests: decisions,
+    coverageDebtCount,
     compensation: {
       operation: 'semantic_batch',
       payload: {

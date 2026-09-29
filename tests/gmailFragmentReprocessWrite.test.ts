@@ -9,6 +9,7 @@ import type { TimelineRecord } from '../src/model.js'
 import { fragmentBindingShape, fragmentBusinessDeltaDigest, fragmentEvidenceShape, fragmentSafetyDigest } from '../src/fragmentReprocessSafety.js'
 import { WorkspaceSourceError } from '../gateway/workspaceSource.js'
 import type { FragmentSettlementDependencies } from '../gateway/gmailFragmentReprocessWriteHandler.js'
+import { denseDecision } from './fixtures/denseDecisionWorkspace.js'
 
 const checkedAt = '2026-09-28T00:00:00.000Z'
 
@@ -166,17 +167,10 @@ describe('Gmail fragment settlement write', () => {
             .not.toBe(authorization.businessDeltaDigest)
         }
         if (options.change === 'projection' && calls.reads > 1) {
-          const uncertain = record(ids[0]!)
-          uncertain.observation.candidates = [{
-            id: 'new-open-decision', kind: 'manual_action', title: 'Unclear request',
-            objectConfidence: 'low', eventConfidence: 'low', evidenceRefs: ['gmail'],
-            sourceVersionRefs: [`${ids[0]}:fragment-reprocess-v2`],
-          }]
-          const projected = applyGmailSemanticBatch(snapshot, {
-            runId: 'concurrent-open-decision', sourceId: 'gmail:primary', checkedAt,
-            records: [uncertain], authorized: true, workspaceRevision: 'txn:801', reconcileExisting: true,
-          })
-          snapshot.data = projected.snapshot.data
+          const historical = denseDecision(999)
+          historical.payloadBinding.source.sourceId = 'gmail:primary'
+          historical.payloadBinding.source.sourceRecordId = ids[0]!
+          snapshot.data.decisionRequests = [historical]
         }
         return { snapshot, context: {
           now: new Date(checkedAt), timezone: 'Asia/Shanghai',
@@ -269,16 +263,13 @@ describe('Gmail fragment settlement write', () => {
     calls.reads = 0
     const ids = fragmentLimitReprocessTargetIds(baselineWorkspace.snapshot)
     const addOpenDecision = (snapshot: typeof baselineWorkspace.snapshot, id: string) => {
-      const uncertain = record(id)
-      uncertain.observation.candidates = [{
-        id: `uncertain-${id}`, kind: 'manual_action', title: 'Unclear request',
-        objectConfidence: 'low', eventConfidence: 'low', evidenceRefs: ['gmail'],
-        sourceVersionRefs: [`${id}:fragment-reprocess-v2`],
-      }]
-      return applyGmailSemanticBatch(snapshot, {
-        runId: `concurrent-decision-${id}`, sourceId: 'gmail:primary', checkedAt,
-        records: [uncertain], authorized: true, workspaceRevision: 'txn:800', reconcileExisting: true,
-      }).snapshot
+      const next = structuredClone(snapshot)
+      const historical = denseDecision(Number(id.slice(-2)))
+      historical.id = `historical:${id}`
+      historical.payloadBinding.source.sourceId = 'gmail:primary'
+      historical.payloadBinding.source.sourceRecordId = id
+      next.data.decisionRequests = [...(next.data.decisionRequests ?? []), historical]
+      return next
     }
     const baselineSnapshot = addOpenDecision(baselineWorkspace.snapshot, ids[38]!)
     const baselinePlan = planFragmentReprocessWrite(baselineSnapshot, ids.map((id) => record(id)), {

@@ -1,6 +1,7 @@
 import { groupOpenDecisions, presentDecision, presentChoice, decisionText } from './decisionPresentation.js'
+import { partitionDecisions } from './decisionActionability.js'
 import { useMemo, useState } from 'react'
-import type { DecisionRequest, Opportunity } from './model.js'
+import type { DecisionRequest, Opportunity, ReminderIntent, ScheduleNode } from './model.js'
 import {
   resolveWebDecision,
   undoWebSemanticChange,
@@ -15,6 +16,8 @@ import './ultimateWeb.css'
 export default function DecisionRequestsView({
   requests,
   opportunities = [],
+  scheduleNodes = [],
+  reminderIntents = [],
   focusRequestId,
   onShowAll,
   onReturnOpportunity,
@@ -22,6 +25,8 @@ export default function DecisionRequestsView({
 }: {
   requests: DecisionRequest[]
   opportunities?: Opportunity[]
+  scheduleNodes?: ScheduleNode[]
+  reminderIntents?: ReminderIntent[]
   focusRequestId?: string
   onShowAll: () => void
   onReturnOpportunity?: () => void
@@ -34,13 +39,15 @@ export default function DecisionRequestsView({
   const [error, setError] = useState('')
   const [receipt, setReceipt] = useState<{ text: string; undo?: LocalSemanticUndoToken }>()
 
-  const open = useMemo(() => [...requests]
-    .filter((item) => item.state === 'open')
+  const classified = useMemo(() => partitionDecisions(requests, {
+    opportunities, scheduleNodes, reminderIntents, now: new Date(),
+  }), [requests, opportunities, scheduleNodes, reminderIntents])
+  const open = useMemo(() => [...classified.actionable]
     .sort((a, b) => {
       const ae = a.expiresAt ? new Date(a.expiresAt).getTime() : Number.POSITIVE_INFINITY
       const be = b.expiresAt ? new Date(b.expiresAt).getTime() : Number.POSITIVE_INFINITY
       return ae - be || a.createdAt.localeCompare(b.createdAt)
-    }), [requests])
+    }), [classified])
   const groups = useMemo(() => groupOpenDecisions(open), [open])
   const groupById = useMemo(() => new Map(groups.map(group => [group[0].id, group])), [groups])
   const visible = focusRequestId ? open.filter((item) => item.id === focusRequestId) : groups.map(group => group[0])
@@ -153,6 +160,11 @@ export default function DecisionRequestsView({
           )})}
         </div>
       )}
+      {classified.dataQuality.length > 0 && !focusRequestId ? <details className="ultimate-quiet-state">
+        <summary>{zh ? '历史待核对 / 数据质量' : 'Historical review / Data quality'} · {classified.dataQuality.length}</summary>
+        <p>{zh ? '这些来源记录仍保留在历史与审计中，但目前缺少可由选择补齐的事实，或已不属于当前任务。可在活动记录中查看来源和处理过程。' : 'Source records remain in history and audit. They do not currently offer an answerable business choice or are no longer current.'}</p>
+        <a href={(import.meta.env.BASE_URL ?? '/') + 'history'}>{zh ? '查看活动记录' : 'View activity'}</a>
+      </details> : null}
     </section>
   )
 }

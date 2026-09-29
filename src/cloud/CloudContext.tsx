@@ -53,6 +53,7 @@ interface CloudContextValue {
   signIn: () => Promise<void>
   signOut: () => Promise<void>
   syncNow: (options?: { passive?: boolean }) => Promise<CloudSyncOutcome | undefined>
+  reconcileEquivalent: () => Promise<CloudSyncOutcome | undefined>
   keepLocal: () => Promise<CloudSyncOutcome | undefined>
   useCloud: () => Promise<CloudSyncOutcome | undefined>
   rebindLocal: () => Promise<CloudSyncOutcome | undefined>
@@ -76,6 +77,7 @@ export function CloudProvider({ children }: { children: ReactNode }) {
   const adoptionTailRef = useRef<Promise<boolean>>(Promise.resolve(true))
   const adoptionSequenceRef = useRef(0)
   const boundaryFailedRef = useRef(false)
+  const checkedConflictRef = useRef(new Set<string>())
 
   const refreshState = useCallback((userId?: string) => {
     setDevice(getCloudDeviceState())
@@ -209,6 +211,24 @@ export function CloudProvider({ children }: { children: ReactNode }) {
     }
   }, [configured, session?.user.id, refreshState, clearExpiredSessionIfNeeded])
 
+  const reconcileEquivalent = useCallback(async () => {
+    const userId = session?.user.id
+    if (!userId || busyRef.current) return undefined
+    busyRef.current = true
+    setSyncing(true)
+    try {
+      const result = await runCloudSync(userId, { equivalenceOnly: true })
+      if (result.kind === 'synced' || result.kind === 'pulled') {
+        setOutcome(result)
+        refreshState(userId)
+      }
+      return result
+    } finally {
+      busyRef.current = false
+      setSyncing(false)
+    }
+  }, [session?.user.id, refreshState])
+
   useEffect(() => {
     const userId = session?.user.id
     if (loading || !configured || !userId || !device.autoSync || checkpoint.conflict) return
@@ -228,6 +248,20 @@ export function CloudProvider({ children }: { children: ReactNode }) {
       window.removeEventListener('online', online)
     }
   }, [loading, configured, session?.user.id, device.autoSync, device.workspaceOwnerUserId, checkpoint.conflict, syncNow])
+
+  useEffect(() => {
+    const userId = session?.user.id
+    const conflict = checkpoint.conflict
+    if (loading || !userId || !conflict || !connectedWorkspaceAuthorityEnabled()) return
+    if (device.workspaceOwnerUserId && device.workspaceOwnerUserId !== userId) return
+    const key = `${userId}:${conflict.remoteVersion}:${conflict.remoteFingerprint}`
+    if (checkedConflictRef.current.has(key)) return
+    if (busyRef.current) return
+    checkedConflictRef.current.add(key)
+    // One bounded read probe for a persisted conflict. No pending-command
+    // replay, remote write, or automatic choice between non-equivalent data.
+    void reconcileEquivalent().catch(() => undefined)
+  }, [loading, session?.user.id, checkpoint.conflict, device.workspaceOwnerUserId, reconcileEquivalent])
 
   const runResolution = useCallback(async (kind: 'keep' | 'cloud' | 'rebind') => {
     const userId = session?.user.id
@@ -333,6 +367,7 @@ export function CloudProvider({ children }: { children: ReactNode }) {
     signIn,
     signOut,
     syncNow,
+    reconcileEquivalent,
     keepLocal: () => runResolution('keep'),
     useCloud: () => runResolution('cloud'),
     rebindLocal: () => runResolution('rebind'),
@@ -340,7 +375,7 @@ export function CloudProvider({ children }: { children: ReactNode }) {
       setCloudAutoSync(enabled)
       refreshState(session?.user.id)
     },
-  }), [configured, session, loading, syncing, device, checkpoint, outcome, error, signIn, signOut, syncNow, runResolution, refreshState])
+  }), [configured, session, loading, syncing, device, checkpoint, outcome, error, signIn, signOut, syncNow, reconcileEquivalent, runResolution, refreshState])
 
   if (accountBoundaryError !== undefined) throw new Error(accountBoundaryError)
   return <CloudContext.Provider value={value}>{children}</CloudContext.Provider>

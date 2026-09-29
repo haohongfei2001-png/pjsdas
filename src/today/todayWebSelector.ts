@@ -1,4 +1,5 @@
 import { decisionNeedsToday, groupOpenDecisions } from '../decisionPresentation.js'
+import { partitionDecisions } from '../decisionActionability.js'
 import { buildTimePlan, rankActions } from '../decisionV3.js'
 import { decisionRulesForSnapshot } from '../decisionRules.js'
 import type { DecisionRequest, RankedAction, ScheduleNode } from '../model.js'
@@ -112,7 +113,10 @@ export function selectTodayWeb(
     context.timezone,
     rules.hardDeadlineHorizonHours,
   ))
-  const openGroups = groupOpenDecisions(snapshot.data.decisionRequests ?? [])
+  const openGroups = groupOpenDecisions(partitionDecisions(snapshot.data.decisionRequests ?? [], {
+    opportunities: snapshot.data.opportunities, scheduleNodes: nodes,
+    reminderIntents: snapshot.data.reminderIntents, now: context.now,
+  }).actionable)
   const decisions = openGroups
     .map(group => group.find(request => decisionNeedsToday(request, context.now, context.timezone)))
     .filter((request): request is DecisionRequest => Boolean(request))
