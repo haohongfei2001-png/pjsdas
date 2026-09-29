@@ -159,6 +159,18 @@ describe('ZMC-01 owner time planning', () => {
     expect(getTodayPlan(snapshot, {}, { now: NOW, timezone: ZONE }).startableActions).toHaveLength(1)
   })
 
+  it('honors zero and sub-30-minute capacity in the external brief', () => {
+    const briefSource = source([{ ...flexible('short'), estimatedMinutes: 20 }])
+    const zero = buildTodayBrief(briefSource, { availableMinutes: 0 }, { now: NOW, timezone: ZONE })
+    expect(zero.availableMinutes).toBe(0)
+    expect(zero.nextAction).toBeUndefined()
+    expect(zero.plannedMinutes).toBe(0)
+    expect(zero.materialCoverageWarnings.filter(item => item.code === 'capacity_conflict')).toEqual([])
+    const short = buildTodayBrief(briefSource, { availableMinutes: 20 }, { now: NOW, timezone: ZONE })
+    expect(short.nextAction?.actionId).toBe('short')
+    expect(short.plannedMinutes).toBe(20)
+  })
+
   it('resolves a requested AI plan date in the requested timezone', () => {
     const snapshot = source([flexible('future')])
     snapshot.data.timePlanning = { version: 1, updatedAt: NOW.toISOString(), defaultDailyMinutes: 480,

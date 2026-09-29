@@ -610,7 +610,24 @@ export function buildTodayBrief(
   const ranked = rankActions(snapshot.data.actions, snapshot.data.opportunities, context.now, rules)
   // The legacy brief contract still needs a numerical planner input. Its
   // maximum is only a computational ceiling when the user's capacity is unknown.
-  const plan = buildTimePlan(ranked, availableMinutes ?? 1440, context.now, rules)
+  const legacyPlan = buildTimePlan(ranked, availableMinutes ?? 1440, context.now, rules)
+  // The v1 planner enforces a 30-minute minimum internally. An explicit
+  // shorter day must still keep optional work within the user's real limit.
+  let plan = legacyPlan
+  if (availableMinutes !== undefined && availableMinutes < 30) {
+    let used = legacyPlan.fixedTodayMinutes
+    const planned = legacyPlan.planned.filter(item => {
+      const node = nodeForAction(item.action, activeNodes)
+      const dueToday = item.action.dueAt && (item.action.duePrecision === 'date'
+        ? item.action.dueAt.slice(0, 10) === today
+        : localDateKey(new Date(item.action.dueAt), context.timezone) === today)
+      if (isHardConstraint(item.action, node) && dueToday) { used += item.action.estimatedMinutes; return true }
+      if (used + item.action.estimatedMinutes > availableMinutes) return false
+      used += item.action.estimatedMinutes
+      return true
+    })
+    plan = { ...legacyPlan, planned, totalMinutes: used }
+  }
 
   const rankedById = new Map(ranked.map((item) => [item.action.id, item]))
   const protectedRanked = ranked
