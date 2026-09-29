@@ -34,7 +34,7 @@ import {
   runCloudSync,
   type CloudSyncOutcome,
 } from './cloudSync.js'
-import { assertCloudSignOutAllowed, assertConnectedSignOutDataSafe } from './cloudOperationGuard.js'
+import { accountOutboxCanSurviveSignOut, assertCloudSignOutAllowed, assertConnectedSignOutDataSafe } from './cloudOperationGuard.js'
 import { connectedWorkspaceAuthorityEnabled } from './connectedWorkspaceRepository.js'
 import { fingerprintWorkspace } from './workspaceFingerprint.js'
 import { clearLocalWorkspaceCache } from '../db.js'
@@ -318,11 +318,15 @@ export function CloudProvider({ children }: { children: ReactNode }) {
     if (connected && session) {
       const localDirty = await hasUnsyncedLocalWorkspace(session.user.id)
       const pending = pendingCommandSummary(session.user.id)
+      const currentCheckpoint = getAccountCheckpoint(session.user.id)
+      const verifiedAccountCache = getCloudDeviceState().workspaceOwnerUserId === session.user.id
+        && Boolean(currentCheckpoint.lastSyncedVersion && currentCheckpoint.lastSyncedFingerprint)
       assertConnectedSignOutDataSafe({
         outcomeKind: outcome?.kind,
         hasConflict: Boolean(checkpoint.conflict),
         accountMismatch: Boolean(device.workspaceOwnerUserId && device.workspaceOwnerUserId !== session.user.id),
-        accountPendingOnly: !localDirty && pending.count > pending.conflict,
+        accountPendingOnly: accountOutboxCanSurviveSignOut({ pendingCommands: pending.count - pending.conflict,
+          localDirty, verifiedAccountCache }),
       })
       if (localDirty) {
         assertConnectedSignOutDataSafe({
@@ -345,12 +349,18 @@ export function CloudProvider({ children }: { children: ReactNode }) {
       if (connected && session) {
         const result = await runCloudSync(session.user.id, { passive: true })
         const pending = pendingCommandSummary(session.user.id)
+        const currentCheckpoint = getAccountCheckpoint(session.user.id)
+        const verifiedAccountCache = getCloudDeviceState().workspaceOwnerUserId === session.user.id
+          && Boolean(currentCheckpoint.lastSyncedVersion && currentCheckpoint.lastSyncedFingerprint)
         assertConnectedSignOutDataSafe({
           outcomeKind: result.kind,
           hasConflict: false,
           accountMismatch: false,
-          accountPendingOnly: result.kind === 'local_pending' && pending.count > pending.conflict
-            && !await hasUnsyncedLocalWorkspace(session.user.id),
+          accountPendingOnly: result.kind === 'local_pending' && accountOutboxCanSurviveSignOut({
+            pendingCommands: pending.count - pending.conflict,
+            localDirty: await hasUnsyncedLocalWorkspace(session.user.id),
+            verifiedAccountCache,
+          }),
         })
       }
       await signOutCloud()

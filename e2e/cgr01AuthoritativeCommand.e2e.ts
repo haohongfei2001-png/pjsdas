@@ -483,6 +483,40 @@ test('account A sign-out then account B never displays or replays A cache drafts
   expect(bBodies.some((body) => ['commit', 'command', 'undo'].includes(body.action))).toBe(false)
 })
 
+test('sign-out keeps unverified local-only data even when an account command is pending', async ({ page }) => {
+  await seedInitialSession(page, 'account-a', 'token-a')
+  const snapshot = workspace('A')
+  await page.route(`${BACKEND}/**`, route => {
+    if (route.request().method() === 'OPTIONS') return cors(route, {}, 204)
+    if (new URL(route.request().url()).pathname === '/api/health') return cors(route, health())
+    return cors(route, { workspaceId: 'ws-a', workspaceVersion: 'txn:3', revision: 3,
+      schemaVersion: snapshot.version, snapshot })
+  })
+  await page.goto('/pjsdas/settings')
+  await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem('pjsdas-google-drive-sync-state-v2') ?? '{}')
+    .accounts?.['account-a']?.lastSyncedVersion)).toBe('txn:3')
+  await page.evaluate(async () => {
+    const { dbPromise } = await import('/pjsdas/src/db.ts')
+    const db = await dbPromise
+    const action = await db.get('actions', 'A-action-1')
+    if (!action) throw new Error('Missing A action')
+    await db.put('actions', { ...action, id: 'local-only-action', title: '本机独有资料' })
+    const state = JSON.parse(localStorage.getItem('pjsdas-google-drive-sync-state-v2') ?? '{}')
+    state.accounts['account-a'] = {}
+    localStorage.setItem('pjsdas-google-drive-sync-state-v2', JSON.stringify(state))
+    localStorage.setItem('pjsdas-cgr01-pending:account-a', JSON.stringify([{
+      commandId: 'web-action:A-pending', action: 'command', baseRevision: 3,
+      command: { type: 'domain', value: { commandId: 'web-action:A-pending', kind: 'set_action_status',
+        actionId: 'A-action-1', status: 'done' } }, status: 'unknown',
+      createdAt: '2026-09-23T01:00:00.000Z', updatedAt: '2026-09-23T01:00:00.000Z',
+    }]))
+  })
+  await page.getByRole('button', { name: '退出 TodayAction' }).click()
+  await expect(page.locator('.cloud-error')).toContainText('本机仍有未进入账号工作区的修改')
+  expect(await (await readIndexedActions(page)).find(item => item.id === 'local-only-action')?.title).toBe('本机独有资料')
+  expect(await page.evaluate(() => localStorage.getItem('pjsdas-cgr01-pending:account-a'))).toContain('web-action:A-pending')
+})
+
 test('CGR-05 background and manual connected sync preserve pending local changes without whole-snapshot commit', async ({ page }) => {
   await seedInitialSession(page, 'account-a', 'token-a')
   const state: AccountState = { revision: 7, snapshot: workspace('A'), receipts: new Map() }

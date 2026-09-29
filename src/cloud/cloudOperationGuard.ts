@@ -12,6 +12,14 @@ export function assertCloudSignOutAllowed(state: CloudSignOutGuardState) {
 
 export type CloudSignOutBlockingOutcome = 'local_pending' | 'conflict' | 'account_mismatch'
 
+export function accountOutboxCanSurviveSignOut(input: {
+  pendingCommands: number
+  localDirty: boolean
+  verifiedAccountCache: boolean
+}) {
+  return input.pendingCommands > 0 && !input.localDirty && input.verifiedAccountCache
+}
+
 export function assertConnectedSignOutDataSafe(input: {
   outcomeKind?: string
   hasConflict: boolean
