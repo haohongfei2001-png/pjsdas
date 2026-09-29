@@ -38,7 +38,7 @@ import { assertCloudSignOutAllowed, assertConnectedSignOutDataSafe } from './clo
 import { connectedWorkspaceAuthorityEnabled } from './connectedWorkspaceRepository.js'
 import { fingerprintWorkspace } from './workspaceFingerprint.js'
 import { clearLocalWorkspaceCache } from '../db.js'
-import { replayAccountPendingOperations } from './authoritativeCommandClient.js'
+import { pendingCommandSummary, replayAccountPendingOperations } from './authoritativeCommandClient.js'
 import { enforceConnectedAccountCacheBoundary } from './accountCacheBoundary.js'
 
 interface CloudContextValue {
@@ -316,12 +316,15 @@ export function CloudProvider({ children }: { children: ReactNode }) {
     })
     const connected = connectedWorkspaceAuthorityEnabled()
     if (connected && session) {
+      const localDirty = await hasUnsyncedLocalWorkspace(session.user.id)
+      const pending = pendingCommandSummary(session.user.id)
       assertConnectedSignOutDataSafe({
         outcomeKind: outcome?.kind,
         hasConflict: Boolean(checkpoint.conflict),
         accountMismatch: Boolean(device.workspaceOwnerUserId && device.workspaceOwnerUserId !== session.user.id),
+        accountPendingOnly: !localDirty && pending.count > pending.conflict,
       })
-      if (await hasUnsyncedLocalWorkspace(session.user.id)) {
+      if (localDirty) {
         assertConnectedSignOutDataSafe({
           outcomeKind: 'local_pending',
           hasConflict: false,
@@ -341,10 +344,13 @@ export function CloudProvider({ children }: { children: ReactNode }) {
     try {
       if (connected && session) {
         const result = await runCloudSync(session.user.id, { passive: true })
+        const pending = pendingCommandSummary(session.user.id)
         assertConnectedSignOutDataSafe({
           outcomeKind: result.kind,
           hasConflict: false,
           accountMismatch: false,
+          accountPendingOnly: result.kind === 'local_pending' && pending.count > pending.conflict
+            && !await hasUnsyncedLocalWorkspace(session.user.id),
         })
       }
       await signOutCloud()

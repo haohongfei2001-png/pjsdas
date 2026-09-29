@@ -27,6 +27,15 @@ describe('cloud sign-out guard', () => {
     expect(() => assertConnectedSignOutDataSafe({ outcomeKind: 'synced', hasConflict: false, accountMismatch: false })).not.toThrow()
   })
 
+  it('allows an account-bound outbox to survive sign-out only when local cache data is clean', () => {
+    expect(() => assertConnectedSignOutDataSafe({ outcomeKind: 'local_pending', hasConflict: false,
+      accountMismatch: false, accountPendingOnly: true })).not.toThrow()
+    expect(() => assertConnectedSignOutDataSafe({ outcomeKind: 'local_pending', hasConflict: true,
+      accountMismatch: false, accountPendingOnly: true })).toThrow()
+    expect(() => assertConnectedSignOutDataSafe({ outcomeKind: 'local_pending', hasConflict: false,
+      accountMismatch: false, accountPendingOnly: false })).toThrow()
+  })
+
   it('enforces the guard in CloudContext instead of relying only on a disabled button', () => {
     expect(contextSource).toContain('assertCloudSignOutAllowed({')
     expect(contextSource).toContain('busy: busyRef.current')

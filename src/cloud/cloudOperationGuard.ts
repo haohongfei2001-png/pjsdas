@@ -16,8 +16,10 @@ export function assertConnectedSignOutDataSafe(input: {
   outcomeKind?: string
   hasConflict: boolean
   accountMismatch: boolean
+  /** Durable commands stay account-scoped after the cache is cleared. */
+  accountPendingOnly?: boolean
 }) {
-  if (input.outcomeKind !== 'local_pending'
+  if ((input.outcomeKind !== 'local_pending' || input.accountPendingOnly)
     && input.outcomeKind !== 'conflict'
     && input.outcomeKind !== 'account_mismatch'
     && !input.hasConflict
