@@ -110,9 +110,12 @@ describe('CGR-02 authoritative Today read freshness', () => {
 
   it('does not rewrite cache when it already matches authoritative state', async () => {
     vi.mocked(fingerprintWorkspace).mockResolvedValue('remote-fp')
+    vi.mocked(getAccountCheckpoint).mockReturnValue({ lastSyncedVersion: 'txn:7',
+      lastSyncedFingerprint: 'local-fp', localPendingFingerprint: 'remote-fp' })
     const result = await refreshConnectedAuthoritativeCache('account-a')
     expect(result).toMatchObject({ state: 'current', changed: false })
     expect(replaceLocalSnapshotFromCloud).not.toHaveBeenCalled()
+    expect(patchAccountCheckpoint).toHaveBeenCalledWith('account-a', expect.objectContaining({ localPendingFingerprint: undefined }))
   })
 
   it('never overwrites a client that has both local and remote changes', async () => {
@@ -213,6 +216,35 @@ describe('CGR-02 authoritative Today read freshness', () => {
     expect(await refreshConnectedAuthoritativeCache('account-a')).toMatchObject({ state: 'pending_operations' })
     expect(replaceLocalSnapshotFromCloud).not.toHaveBeenCalled()
     expect(patchAccountCheckpoint).not.toHaveBeenCalled()
+  })
+
+  it('refreshes an existing conflict revision while pending commands block the cache', async () => {
+    vi.mocked(getAccountCheckpoint).mockReturnValue({ lastSyncedVersion: 'txn:843', lastSyncedFingerprint: 'old-fp',
+      conflict: { remoteVersion: 'txn:843', remoteFingerprint: 'old-fp', remoteUpdatedAt: '2026-09-20T00:00:00Z' } })
+    vi.mocked(fetchConnectedRemoteWorkspace).mockResolvedValue(remote('txn:1004'))
+    vi.mocked(pendingCommandSummary).mockReturnValue({ count: 1, pending: 1, unknown: 0, conflict: 0 })
+    expect(await refreshConnectedAuthoritativeCache('account-a')).toMatchObject({ state: 'pending_operations', workspaceVersion: 'txn:1004' })
+    expect(patchAccountCheckpoint).toHaveBeenCalledWith('account-a', expect.objectContaining({
+      conflict: expect.objectContaining({ remoteVersion: 'txn:1004' }),
+    }))
+    expect(replaceLocalSnapshotFromCloud).not.toHaveBeenCalled()
+  })
+
+  it('does not overwrite a local-only edit recorded outside the command outbox', async () => {
+    vi.mocked(getAccountCheckpoint).mockReturnValue({
+      lastSyncedVersion: 'txn:7', lastSyncedFingerprint: 'local-fp', localPendingFingerprint: 'local-fp',
+    })
+    expect(await refreshConnectedAuthoritativeCache('account-a')).toMatchObject({ state: 'diverged', changed: false })
+    expect(replaceLocalSnapshotFromCloud).not.toHaveBeenCalled()
+  })
+
+  it('converges a recorded local-only edit when the remote business projection is already equivalent', async () => {
+    vi.mocked(getAccountCheckpoint).mockReturnValue({
+      lastSyncedVersion: 'txn:7', lastSyncedFingerprint: 'old-fp', localPendingFingerprint: 'local-fp',
+    })
+    vi.mocked(equivalentReadProjection).mockReturnValue(true)
+    expect(await refreshConnectedAuthoritativeCache('account-a')).toMatchObject({ state: 'updated', changed: true })
+    expect(patchAccountCheckpoint).toHaveBeenCalledWith('account-a', expect.objectContaining({ localPendingFingerprint: undefined }))
   })
 
   it('continues refreshing after a terminal rejected command has been recorded', async () => {
