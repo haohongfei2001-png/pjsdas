@@ -12,12 +12,22 @@ export function assertCloudSignOutAllowed(state: CloudSignOutGuardState) {
 
 export type CloudSignOutBlockingOutcome = 'local_pending' | 'conflict' | 'account_mismatch'
 
+export function accountOutboxCanSurviveSignOut(input: {
+  pendingCommands: number
+  localDirty: boolean
+  verifiedAccountCache: boolean
+}) {
+  return input.pendingCommands > 0 && !input.localDirty && input.verifiedAccountCache
+}
+
 export function assertConnectedSignOutDataSafe(input: {
   outcomeKind?: string
   hasConflict: boolean
   accountMismatch: boolean
+  /** Durable commands stay account-scoped after the cache is cleared. */
+  accountPendingOnly?: boolean
 }) {
-  if (input.outcomeKind !== 'local_pending'
+  if ((input.outcomeKind !== 'local_pending' || input.accountPendingOnly)
     && input.outcomeKind !== 'conflict'
     && input.outcomeKind !== 'account_mismatch'
     && !input.hasConflict

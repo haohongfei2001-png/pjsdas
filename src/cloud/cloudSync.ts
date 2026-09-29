@@ -135,10 +135,51 @@ export async function runCloudSync(userId: string, options: { passive?: boolean;
     const checkpoint = getAccountCheckpoint(userId)
     const recordedProjection = await isRecordedAccountProjection(userId, local)
     assertCurrent()
-    // Recovery probe never creates or pushes an authoritative workspace. It
-    // may refresh the local cache only after a fresh exact equivalence proof.
+    // A connected browser keeps unresolved user intent in its account-bound
+    // outbox. No workspace refresh may replace that cache before recovery.
+    if (connectedWorkspaceAuthorityEnabled() && unresolvedPendingCommandCount(userId) > 0) {
+      if (remote && checkpoint.conflict) {
+        await assertLocalSnapshotCurrent(local, assertCurrent)
+        const current = getAccountCheckpoint(userId)
+        if (current.conflict && Number(current.conflict.remoteVersion.replace('txn:', ''))
+          <= Number(remote.version.replace('txn:', ''))) markConflict(userId, remote)
+      }
+      return { kind: 'local_pending', version: remote?.version, remoteUpdatedAt: remote?.updatedAt }
+    }
+    if (connectedWorkspaceAuthorityEnabled() && checkpoint.localPendingFingerprint === localFingerprint
+      && (!remote || (remote.fingerprint !== localFingerprint && !equivalentReadProjection(local, remote.snapshot)))) {
+      if (!remote || (remote.version === checkpoint.lastSyncedVersion && remote.fingerprint === checkpoint.lastSyncedFingerprint)) {
+        return { kind: 'local_pending', version: remote?.version, remoteUpdatedAt: remote?.updatedAt }
+      }
+      await assertLocalSnapshotCurrent(local, assertCurrent)
+      const latestCheckpoint = getAccountCheckpoint(userId)
+      if (latestCheckpoint.localPendingFingerprint !== localFingerprint) {
+        return { kind: latestCheckpoint.conflict ? 'conflict' : 'synced',
+          version: latestCheckpoint.conflict?.remoteVersion ?? latestCheckpoint.lastSyncedVersion }
+      }
+      if (latestCheckpoint.conflict
+        && Number(latestCheckpoint.conflict.remoteVersion.replace('txn:', '')) > Number(remote.version.replace('txn:', ''))) {
+        return { kind: 'conflict', version: latestCheckpoint.conflict.remoteVersion,
+          remoteUpdatedAt: latestCheckpoint.conflict.remoteUpdatedAt }
+      }
+      markConflict(userId, remote)
+      return { kind: 'conflict', version: remote.version, remoteUpdatedAt: remote.updatedAt }
+    }
+    projectingEquivalent = connectedWorkspaceAuthorityEnabled() || Boolean(options.equivalenceOnly)
+    assertCurrent()
+    const decision = remote && localFingerprint === checkpoint.clearedCacheFingerprint ? 'pull_remote' : decideSyncAction({
+      checkpoint,
+      localFingerprint,
+      localProjectionBaselineFingerprint: recordedProjection ? localFingerprint : checkpoint.lastReadProjectionSourceFingerprint === checkpoint.lastSyncedFingerprint
+        ? checkpoint.lastReadProjectionFingerprint : undefined,
+      localEmpty: workspaceIsEffectivelyEmpty(local),
+      remote: remote ? { version: remote.version, fingerprint: remote.fingerprint } : null,
+    })
+    // A recovery probe may pull a newer authoritative revision when this
+    // browser still matches its verified checkpoint. Current-remote equality
+    // also covers order and cache-only differences. Neither permits uploads.
     if (options.equivalenceOnly && (!remote || unresolvedPendingCommandCount(userId) > 0
-      || !equivalentReadProjection(local, remote.snapshot))) {
+      || (decision !== 'pull_remote' && !equivalentReadProjection(local, remote.snapshot)))) {
       await assertLocalSnapshotCurrent(local, assertCurrent)
       const latestCheckpoint = getAccountCheckpoint(userId)
       if (checkpoint.conflict && !latestCheckpoint.conflict) {
@@ -152,18 +193,6 @@ export async function runCloudSync(userId: string, options: { passive?: boolean;
       if (remote) markConflict(userId, remote)
       return { kind: 'conflict', version: remote?.version, remoteUpdatedAt: remote?.updatedAt }
     }
-    if (options.equivalenceOnly) {
-      projectingEquivalent = true
-      assertCurrent()
-    }
-    const decision = remote && localFingerprint === checkpoint.clearedCacheFingerprint ? 'pull_remote' : decideSyncAction({
-      checkpoint,
-      localFingerprint,
-      localProjectionBaselineFingerprint: recordedProjection ? localFingerprint : checkpoint.lastReadProjectionSourceFingerprint === checkpoint.lastSyncedFingerprint
-        ? checkpoint.lastReadProjectionFingerprint : undefined,
-      localEmpty: workspaceIsEffectivelyEmpty(local),
-      remote: remote ? { version: remote.version, fingerprint: remote.fingerprint } : null,
-    })
 
     // Connected mode is command-authoritative. A stale raw fingerprint can be
     // caused solely by local hydration plus newer server ingestion audit.

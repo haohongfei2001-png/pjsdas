@@ -1,4 +1,4 @@
-# ZMC-01 — Time planning candidate
+# ZMC-01 — Time planning
 
 ## Product behavior
 
@@ -20,6 +20,6 @@ Before implementation, the owner fixture with 60 due-today flexible tasks select
 - Headless Chromium could not launch in the local macOS sandbox (`MachPortRendezvousServer: Permission denied`); the same tests are included in the PR's cloud Browser E2E gate.
 - First cloud exact-head run found fixtures still assuming hidden three-hour capacity and a warning for a physically feasible future deadline. Those assertions now use explicit capacity or a genuinely infeasible deadline. Independent review drove repairs for latest-start visibility, shared-choice deadlines, occupied work windows, requested-date timezone resolution, and zero-minute availability in the legacy brief.
 
-## Remaining gates
+## Closure
 
-Exact-head CI, cloud Browser E2E, Matrix, independent review, merge, and exact-main readback remain required before this phase is marked complete.
+PR #197 merged after exact-head `199a774aca898eeab1ce10c9fb0e38ae622f3dc3` passed CI, cloud Chromium, Firefox/WebKit Matrix, VoiceOver, UI, visual, brand, and rollback checks. The final focused independent review found no remaining P1/P2 after its short-day shared-choice regression was repaired. Merge commit `7fd0506a3df28b63963858494944d77d801f5021` has the same tree as the PR head (`f4ce3291b0805c0c94ba269e0a66a9dda2550026`). Production `https://todayaction.com/release-manifest.json` and `/api/health` both reported that exact merge SHA; GitHub recorded its production deployment successful. No production workspace record was changed.

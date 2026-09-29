@@ -41,6 +41,7 @@ function markFresh(accountKey: string, version: string, fingerprint: string, pro
     lastReadProjectionFingerprint: projectionFingerprint,
     lastReadProjectionSourceFingerprint: fingerprint,
     lastSyncedAt: observedAt,
+    localPendingFingerprint: undefined,
     conflict: undefined,
     lastError: undefined,
   })
@@ -59,11 +60,14 @@ export async function refreshConnectedAuthoritativeCache(
   lease.assertCurrent()
   const checkpoint = getAccountCheckpoint(accountKey)
   const observedAt = new Date().toISOString()
-  const assertCurrent = () => {
+  const assertMetadataCurrent = () => {
     lease.assertCurrent()
-    if (unresolvedPendingCommandCount(accountKey) > 0) throw new AccountCacheChangedError()
     const current = getAccountCheckpoint(accountKey).lastSyncedVersion
     if (Number(current?.replace('txn:', '')) > Number(remote.version.replace('txn:', ''))) throw new AccountCacheChangedError()
+  }
+  const assertCurrent = () => {
+    assertMetadataCurrent()
+    if (unresolvedPendingCommandCount(accountKey) > 0) throw new AccountCacheChangedError()
   }
   const markCurrent = async () => {
     await assertLocalSnapshotCurrent(local, assertCurrent)
@@ -71,20 +75,14 @@ export async function refreshConnectedAuthoritativeCache(
     markFresh(accountKey, remote.version, remote.fingerprint, localFingerprint, observedAt)
   }
 
-  // A successful read must not erase a command that is still awaiting a
-  // receipt or safe local projection. Keep the local cache and conflict state.
-  if (unresolvedPendingCommandCount(accountKey) > 0) {
-    return { state: 'pending_operations', workspaceVersion: remote.version, observedAt,
-      latencyMs: Date.now() - startedAt, changed: false }
-  }
   const preserveLatestConflict = async () => {
     if (!checkpoint.conflict) return
-    await assertLocalSnapshotCurrent(local, assertCurrent)
+    await assertLocalSnapshotCurrent(local, assertMetadataCurrent)
     const current = getAccountCheckpoint(accountKey)
     if (!current.conflict) return
     if ((Number(current.conflict.remoteVersion.replace('txn:', '')) || 0)
       > (Number(remote.version.replace('txn:', '')) || 0)) return
-    assertCurrent()
+    assertMetadataCurrent()
     patchAccountCheckpoint(accountKey, { conflict: {
       remoteVersion: remote.version,
       remoteFingerprint: remote.fingerprint,
@@ -92,6 +90,23 @@ export async function refreshConnectedAuthoritativeCache(
       remoteDeviceId: remote.updatedByDevice,
       remoteFileId: remote.fileId,
     } })
+  }
+
+  // A pending command keeps the cache in place. The conflict's observed
+  // server revision may still advance without changing any business data.
+  if (unresolvedPendingCommandCount(accountKey) > 0) {
+    await preserveLatestConflict()
+    return { state: 'pending_operations', workspaceVersion: remote.version, observedAt,
+      latencyMs: Date.now() - startedAt, changed: false }
+  }
+
+  if (checkpoint.localPendingFingerprint === localFingerprint && remote.fingerprint !== localFingerprint
+    && !equivalentReadProjection(local, remote.snapshot)) {
+    await preserveLatestConflict()
+    const remoteChanged = remote.version !== checkpoint.lastSyncedVersion
+      || remote.fingerprint !== checkpoint.lastSyncedFingerprint
+    return { state: remoteChanged ? 'diverged' : 'local_changes_pending', workspaceVersion: remote.version,
+      observedAt, latencyMs: Date.now() - startedAt, changed: false }
   }
 
   if (remote.fingerprint === localFingerprint) {

@@ -4,16 +4,16 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const fixture = vi.hoisted(() => {
   const remote = {
     fileId: 'synthetic-workspace', version: 'txn:7', schemaVersion: 4,
-    fingerprint: 'synthetic-digest', snapshot: { version: 4 },
+    fingerprint: 'synthetic-digest', snapshot: { version: 4, marker: 'remote' },
     updatedByDevice: 'server', updatedAt: '2026-09-23T00:00:00Z',
   }
-  return { remote, update: vi.fn(), checkpoint: vi.fn(), checkpointRead: vi.fn(), decision: vi.fn(), equivalent: vi.fn(), replace: vi.fn(), pending: vi.fn() }
+  return { remote, localFingerprint: 'synthetic-digest', update: vi.fn(), checkpoint: vi.fn(), checkpointRead: vi.fn(), decision: vi.fn(), equivalent: vi.fn(), replace: vi.fn(), pending: vi.fn() }
 })
 
 vi.mock('../src/db.js', () => ({
   isRecordedAccountProjection: vi.fn(async () => false),
   assertLocalSnapshotCurrent: vi.fn(async () => undefined),
-  exportLocalSnapshot: async () => ({ version: 4 }),
+  exportLocalSnapshot: async () => ({ version: 4, marker: 'local' }),
   replaceLocalSnapshotFromCloud: fixture.replace,
 }))
 vi.mock('../src/snapshot.js', () => ({
@@ -34,7 +34,7 @@ vi.mock('../src/cloud/cloudRepository.js', () => ({
   updateRemoteWorkspace: fixture.update,
 }))
 vi.mock('../src/cloud/workspaceFingerprint.js', () => ({
-  fingerprintWorkspace: async () => 'synthetic-digest',
+  fingerprintWorkspace: async (value: unknown) => value === fixture.remote.snapshot ? fixture.remote.fingerprint : fixture.localFingerprint,
   workspaceIsEffectivelyEmpty: () => false,
   equivalentReadProjection: fixture.equivalent,
 }))
@@ -59,6 +59,7 @@ describe('connected passive sync authority', () => {
     fixture.replace.mockReset().mockResolvedValue(undefined)
     fixture.pending.mockReset().mockReturnValue({ count: 0, pending: 0, unknown: 0, conflict: 0 })
     fixture.remote.version = 'txn:7'
+    fixture.remote.fingerprint = 'synthetic-digest'
   })
 
   it('pulls a newer audit-only revision when local data is only a read projection', async () => {
@@ -97,18 +98,86 @@ describe('connected passive sync authority', () => {
     expect(fixture.update).not.toHaveBeenCalled()
   })
 
+  it('pulls a newer independent remote change when the local cache still matches its verified checkpoint', async () => {
+    fixture.checkpointRead.mockReturnValue({ lastSyncedVersion: 'txn:843', lastSyncedFingerprint: 'synthetic-digest',
+      conflict: { remoteVersion: 'txn:843', remoteFingerprint: 'old-digest', remoteUpdatedAt: '2026-09-20T00:00:00Z' } })
+    fixture.remote.version = 'txn:1004'
+    fixture.decision.mockReturnValue('pull_remote')
+    fixture.equivalent.mockReturnValue(false)
+    expect(await runCloudSync('qa-account', { equivalenceOnly: true })).toMatchObject({ kind: 'pulled', version: 'txn:1004' })
+    expect(fixture.replace).toHaveBeenCalledTimes(1)
+    expect(fixture.update).not.toHaveBeenCalled()
+    expect(fixture.checkpoint).toHaveBeenCalledWith('qa-account', expect.objectContaining({ conflict: undefined, lastSyncedVersion: 'txn:1004' }))
+  })
+
   it('does not mutate either side when equivalence is unproven or a command is pending', async () => {
     fixture.decision.mockReturnValue('conflict')
     fixture.equivalent.mockReturnValue(false)
     expect(await runCloudSync('qa-account', { equivalenceOnly: true })).toMatchObject({ kind: 'conflict' })
     fixture.equivalent.mockReturnValue(true)
     fixture.pending.mockReturnValue({ count: 1, pending: 1, unknown: 0, conflict: 0 })
-    expect(await runCloudSync('qa-account', { equivalenceOnly: true })).toMatchObject({ kind: 'conflict' })
+    expect(await runCloudSync('qa-account', { equivalenceOnly: true })).toMatchObject({ kind: 'local_pending' })
+    expect(fixture.replace).not.toHaveBeenCalled()
+    expect(fixture.update).not.toHaveBeenCalled()
+  })
+
+  it('never projects a newer remote snapshot over an unresolved command during passive sync', async () => {
+    fixture.decision.mockReturnValue('pull_remote')
+    fixture.remote.version = 'txn:1004'
+    fixture.remote.fingerprint = 'new-digest'
+    fixture.pending.mockReturnValue({ count: 1, pending: 1, unknown: 0, conflict: 0 })
+    expect(await runCloudSync('qa-account', { passive: true })).toMatchObject({ kind: 'local_pending', version: 'txn:1004' })
+    expect(fixture.replace).not.toHaveBeenCalled()
+    expect(fixture.update).not.toHaveBeenCalled()
+  })
+
+  it('tracks a newer remote conflict revision while an unresolved command blocks projection', async () => {
+    fixture.checkpointRead.mockReturnValue({ lastSyncedVersion: 'txn:843', lastSyncedFingerprint: 'old-digest',
+      conflict: { remoteVersion: 'txn:843', remoteFingerprint: 'old-digest', remoteUpdatedAt: '2026-09-20T00:00:00Z' } })
+    fixture.remote.version = 'txn:1004'
+    fixture.pending.mockReturnValue({ count: 1, pending: 1, unknown: 0, conflict: 0 })
+    expect(await runCloudSync('qa-account', { equivalenceOnly: true })).toMatchObject({ kind: 'local_pending', version: 'txn:1004' })
+    expect(fixture.checkpoint).toHaveBeenCalledWith('qa-account', expect.objectContaining({
+      conflict: expect.objectContaining({ remoteVersion: 'txn:1004' }),
+    }))
+    expect(fixture.replace).not.toHaveBeenCalled()
+  })
+
+  it('aborts a read projection if a command enters the outbox during the replacement', async () => {
+    fixture.decision.mockReturnValue('pull_remote')
+    fixture.remote.version = 'txn:1004'
+    fixture.replace.mockImplementation(async (_snapshot, options) => {
+      fixture.pending.mockReturnValue({ count: 1, pending: 1, unknown: 0, conflict: 0 })
+      options.assertCurrent()
+    })
+    await expect(runCloudSync('qa-account', { passive: true })).rejects.toThrow()
+    expect(fixture.checkpoint).not.toHaveBeenCalledWith('qa-account', expect.objectContaining({ lastSyncedVersion: 'txn:1004' }))
+    expect(fixture.update).not.toHaveBeenCalled()
+  })
+
+  it('preserves an explicitly recorded local-only edit when the remote revision advances', async () => {
+    fixture.checkpointRead.mockReturnValue({ lastSyncedVersion: 'txn:843', lastSyncedFingerprint: 'old-digest',
+      localPendingFingerprint: 'synthetic-digest' })
+    fixture.decision.mockReturnValue('pull_remote')
+    fixture.remote.version = 'txn:1004'
+    fixture.remote.fingerprint = 'new-digest'
+    expect(await runCloudSync('qa-account', { equivalenceOnly: true })).toMatchObject({ kind: 'conflict', version: 'txn:1004' })
     expect(fixture.replace).not.toHaveBeenCalled()
     expect(fixture.update).not.toHaveBeenCalled()
     expect(fixture.checkpoint).toHaveBeenCalledWith('qa-account', expect.objectContaining({
-      conflict: expect.objectContaining({ remoteVersion: 'txn:7' }),
+      conflict: expect.objectContaining({ remoteVersion: 'txn:1004' }),
     }))
+  })
+
+  it('clears a stale local-only marker after business projection equivalence is proved', async () => {
+    fixture.checkpointRead.mockReturnValue({ lastSyncedVersion: 'txn:843', lastSyncedFingerprint: 'old-digest',
+      localPendingFingerprint: 'synthetic-digest' })
+    fixture.decision.mockReturnValue('conflict')
+    fixture.remote.version = 'txn:1004'
+    fixture.remote.fingerprint = 'new-digest'
+    fixture.equivalent.mockReturnValue(true)
+    expect(await runCloudSync('qa-account', { equivalenceOnly: true })).toMatchObject({ kind: 'pulled', version: 'txn:1004' })
+    expect(fixture.checkpoint).toHaveBeenCalledWith('qa-account', expect.objectContaining({ localPendingFingerprint: undefined }))
   })
 
   it('does not restore an old conflict after a concurrent user resolution clears it', async () => {

@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
-import { assertCloudSignOutAllowed, assertConnectedSignOutDataSafe } from '../src/cloud/cloudOperationGuard.js'
+import { assertCloudSignOutAllowed, assertConnectedSignOutDataSafe, accountOutboxCanSurviveSignOut } from '../src/cloud/cloudOperationGuard.js'
 
 const contextSource = readFileSync(new URL('../src/cloud/CloudContext.tsx', import.meta.url), 'utf8')
 const settingsSource = readFileSync(new URL('../src/cloud/CloudSettingsCardHeavy.tsx', import.meta.url), 'utf8')
@@ -25,6 +25,23 @@ describe('cloud sign-out guard', () => {
     expect(() => assertConnectedSignOutDataSafe({ outcomeKind: 'synced', hasConflict: false, accountMismatch: true }))
       .toThrow(/为避免退出时清除这些资料/)
     expect(() => assertConnectedSignOutDataSafe({ outcomeKind: 'synced', hasConflict: false, accountMismatch: false })).not.toThrow()
+  })
+
+  it('allows an account-bound outbox to survive sign-out only when local cache data is clean', () => {
+    expect(() => assertConnectedSignOutDataSafe({ outcomeKind: 'local_pending', hasConflict: false,
+      accountMismatch: false, accountPendingOnly: true })).not.toThrow()
+    expect(() => assertConnectedSignOutDataSafe({ outcomeKind: 'local_pending', hasConflict: true,
+      accountMismatch: false, accountPendingOnly: true })).toThrow()
+    expect(() => assertConnectedSignOutDataSafe({ outcomeKind: 'local_pending', hasConflict: false,
+      accountMismatch: false, accountPendingOnly: false })).toThrow()
+  })
+
+  it('requires a verified account-bound cache before treating a pending command as sign-out safe', () => {
+    const safe = { pendingCommands: 1, localDirty: false, verifiedAccountCache: true }
+    expect(accountOutboxCanSurviveSignOut(safe)).toBe(true)
+    expect(accountOutboxCanSurviveSignOut({ ...safe, verifiedAccountCache: false })).toBe(false)
+    expect(accountOutboxCanSurviveSignOut({ ...safe, localDirty: true })).toBe(false)
+    expect(accountOutboxCanSurviveSignOut({ ...safe, pendingCommands: 0 })).toBe(false)
   })
 
   it('enforces the guard in CloudContext instead of relying only on a disabled button', () => {
