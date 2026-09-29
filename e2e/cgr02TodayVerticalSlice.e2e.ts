@@ -194,6 +194,7 @@ async function indexedActions(page: Page) {
 
 test('CGR-02 golden journey: understand -> authoritative save -> cross-client visibility -> dependency-safe Undo', async ({ browser }) => {
   const state: State = { revision: 20, snapshot: workspace(), receipts: new Map(), commandBodies: [] }
+  state.snapshot.data.timePlanning = { version: 1, defaultDailyMinutes: 480, updatedAt: VISUAL_TIME.toISOString() }
   const contextA = await browser.newContext()
   const contextB = await browser.newContext()
   await seedSession(contextA)
@@ -339,6 +340,7 @@ test('unknown semantic save keeps one stable command identity and recovers by re
 test('background receipt recovery removes only the matching committed draft', async ({ page }) => {
   await seedSession(page.context())
   const state: State = { revision: 35, snapshot: workspace(), receipts: new Map(), commandBodies: [] }
+  state.snapshot.data.timePlanning = { version: 1, defaultDailyMinutes: 480, updatedAt: VISUAL_TIME.toISOString() }
   await installServer(page, state, { loseFirstSemanticResponse: true, loseFirstReceiptLookup: true })
 
   await page.goto('/pjsdas/today')

@@ -27,6 +27,7 @@ import type {
 } from './model.js'
 import type { PJSDASSnapshot } from './snapshot.js'
 import { upgradeSnapshotToLatest, validateSnapshot } from './snapshot.js'
+import { validPlanningDate, validateTimePlanningPreferences, type WorkWindow } from './timePlanningPreferences.js'
 import { buildReminderIntent, reminderCapabilityForOwner, reminderDedupeKey, resolveReminderTrigger } from './reminders.js'
 import {
   ensureScheduleContractInPlace,
@@ -72,6 +73,9 @@ export type UserDomainCommand =
   | { commandId: string; kind: 'abandon_opportunity'; opportunityId: string; occurredAt?: string }
   | { commandId: string; kind: 'correct_opportunity_fact'; opportunityId: string; field: UserFactField; value: string }
   | { commandId: string; kind: 'set_opportunity_preference'; opportunityId: string; roleType: OpportunityRole }
+  | { commandId: string; kind: 'set_daily_capacity'; minutes: number }
+  | { commandId: string; kind: 'set_date_capacity'; date: string; minutes: number }
+  | { commandId: string; kind: 'set_work_windows'; windows: WorkWindow[] }
   | {
       commandId: string
       kind: 'upsert_reminder_intent'
@@ -316,6 +320,38 @@ export function applyUserDomainCommand(
 
   const next = upgradeSnapshotToLatest(snapshot)
   const timestamp = nowIso(now)
+
+  if (command.kind === 'set_daily_capacity' || command.kind === 'set_date_capacity' || command.kind === 'set_work_windows') {
+    const before = next.data.timePlanning
+    const current = before ?? { version: 1 as const, updatedAt: timestamp }
+    const preferences = structuredClone(current)
+    let compensation: { operation: string; payload: unknown }
+    if (command.kind === 'set_daily_capacity') {
+      if (!Number.isInteger(command.minutes) || command.minutes < 0 || command.minutes > 1440) throw new Error('Daily capacity must be 0–1440 minutes.')
+      if (preferences.defaultDailyMinutes === command.minutes) return { status: 'ALREADY_APPLIED', snapshot, summary: 'Daily available time is already set.' }
+      compensation = { operation: 'restore_daily_capacity', payload: { minutes: preferences.defaultDailyMinutes } }
+      preferences.defaultDailyMinutes = command.minutes
+    } else if (command.kind === 'set_date_capacity') {
+      if (!validPlanningDate(command.date) || !Number.isInteger(command.minutes) || command.minutes < 0 || command.minutes > 1440) throw new Error('Invalid date capacity.')
+      const prior = preferences.dateOverrides?.[command.date]
+      if (prior === command.minutes) return { status: 'ALREADY_APPLIED', snapshot, summary: 'Available time for this day is already set.' }
+      compensation = { operation: 'restore_date_capacity', payload: { date: command.date, minutes: prior } }
+      preferences.dateOverrides = { ...preferences.dateOverrides, [command.date]: command.minutes }
+    } else {
+      const prior = preferences.weeklyWindows
+      if (JSON.stringify(prior ?? []) === JSON.stringify(command.windows)) return { status: 'ALREADY_APPLIED', snapshot, summary: 'Work windows are already set.' }
+      compensation = { operation: 'restore_work_windows', payload: { windows: prior } }
+      preferences.weeklyWindows = structuredClone(command.windows)
+    }
+    preferences.updatedAt = timestamp
+    const errors = validateTimePlanningPreferences(preferences)
+    if (errors.length) throw new Error(errors[0])
+    next.data.timePlanning = preferences
+    appendTimeline(next, commandTimeline(command, timestamp, { kind: 'time_preferences_changed', category: 'rules',
+      title: '更新可用时间', detail: command.kind }), command)
+    finalizeSnapshot(next, timestamp)
+    return { status: 'APPLIED', snapshot: next, summary: 'Available time updated.', compensation }
+  }
 
   if (command.kind === 'record_application_submission') {
     const beforeData = structuredClone(next.data)
@@ -906,7 +942,19 @@ export function applyDomainCompensation(
   const timestamp = nowIso(now)
   const payload = compensation.payload ?? {}
 
-  if (compensation.operation === 'set_action_status') {
+  if (compensation.operation === 'restore_daily_capacity' || compensation.operation === 'restore_date_capacity' || compensation.operation === 'restore_work_windows') {
+    const preferences = structuredClone(next.data.timePlanning ?? { version: 1 as const, updatedAt: timestamp })
+    if (compensation.operation === 'restore_daily_capacity') preferences.defaultDailyMinutes = payload.minutes
+    if (compensation.operation === 'restore_date_capacity') {
+      const overrides = { ...preferences.dateOverrides }
+      if (payload.minutes === undefined) delete overrides[payload.date]
+      else overrides[payload.date] = payload.minutes
+      preferences.dateOverrides = overrides
+    }
+    if (compensation.operation === 'restore_work_windows') preferences.weeklyWindows = payload.windows
+    preferences.updatedAt = timestamp
+    next.data.timePlanning = preferences
+  } else if (compensation.operation === 'set_action_status') {
     if (payload.undo) {
       restoreActionStatusUndo(next.data, payload.undo)
     } else {

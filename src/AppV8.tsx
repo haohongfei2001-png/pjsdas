@@ -8,6 +8,7 @@ import {
   undoActionStatusChange,
   exportLocalSnapshot,
   replaceImportedData,
+  saveLocalTimePlanning,
 } from './db.js'
 import { parsePJSDASWorkbook } from './importExcelV2.js'
 import { prepPriorityRank, presentPrepPriority, presentPrepSourceState } from './prepSemantics.js'
@@ -55,7 +56,7 @@ import { buildScheduleStream, type ScheduleEntry } from './schedule/scheduleStre
 import ScheduleFeature from './schedule/ScheduleFeature.js'
 import DecisionRequestsView from './DecisionRequestsView.js'
 import { partitionDecisions } from './decisionActionability.js'
-import { type TodayBriefAction } from './todayBrief.js'
+import { localDateKey, type TodayBriefAction } from './todayBrief.js'
 import type {
   Action,
   DecisionRequest,
@@ -66,6 +67,8 @@ import type {
   ScheduleNodeTemporal,
 } from './model.js'
 import type { PJSDASSnapshot } from './snapshot.js'
+import type { TimePlanningPreferences, WorkWindow } from './timePlanningPreferences.js'
+import TimePlanningSettings from './today/TimePlanningSettings.js'
 import './surfaceConsolidation.css'
 import './interactionDetail.css'
 import './webConsole.css'
@@ -164,7 +167,6 @@ export default function AppV8() {
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState<string>()
   const [now, setNow] = useState(() => new Date())
-  const budgetMinutes = 180
   const topbarRef = useRef<HTMLElement>(null)
 
   // Presentation-only offset follows wrapping and text size; no workspace state.
@@ -212,6 +214,54 @@ export default function AppV8() {
       setSnapshot(undefined)
       setLoadError(caught instanceof Error ? caught.message : String(caught))
     }
+  }
+
+  async function setTodayCapacity(minutes: number) {
+    if (!Number.isInteger(minutes) || minutes < 0 || minutes > 1440) throw new Error('今日可用时间应在 0 到 24 小时之间。')
+    const date = localDateKey(now, timezone)
+    const timestamp = new Date().toISOString()
+    if (cloud.session?.user.id && connectedWorkspaceAuthorityEnabled()) {
+      const commandId = createConnectedCommandId('set-date-capacity')
+      const result = await executeConnectedBusinessCommand(cloud.session.user.id, {
+        type: 'domain', value: { commandId, kind: 'set_date_capacity', date, minutes },
+      }, { commandId })
+      if (result.outcome === 'CONFLICT') throw new Error('今天的可用时间刚在另一台设备上修改，请查看最新安排。')
+    } else {
+      const current = snapshot?.data.timePlanning ?? { version: 1 as const, updatedAt: timestamp }
+      await saveLocalTimePlanning({ ...current, dateOverrides: { ...current.dateOverrides, [date]: minutes }, updatedAt: timestamp })
+    }
+    await reload()
+  }
+
+  async function setDefaultCapacity(minutes: number) {
+    if (!Number.isInteger(minutes) || minutes < 0 || minutes > 1440) throw new Error('每日可用时间应在 0 到 24 小时之间。')
+    const timestamp = new Date().toISOString()
+    if (cloud.session?.user.id && connectedWorkspaceAuthorityEnabled()) {
+      const commandId = createConnectedCommandId('set-daily-capacity')
+      const result = await executeConnectedBusinessCommand(cloud.session.user.id, {
+        type: 'domain', value: { commandId, kind: 'set_daily_capacity', minutes },
+      }, { commandId })
+      if (result.outcome === 'CONFLICT') throw new Error('每日可用时间刚在另一台设备上修改，请查看最新设置。')
+    } else {
+      const current = snapshot?.data.timePlanning ?? { version: 1 as const, updatedAt: timestamp }
+      await saveLocalTimePlanning({ ...current, defaultDailyMinutes: minutes, updatedAt: timestamp })
+    }
+    await reload()
+  }
+
+  async function setWorkWindows(windows: WorkWindow[]) {
+    const timestamp = new Date().toISOString()
+    if (cloud.session?.user.id && connectedWorkspaceAuthorityEnabled()) {
+      const commandId = createConnectedCommandId('set-work-windows')
+      const result = await executeConnectedBusinessCommand(cloud.session.user.id, {
+        type: 'domain', value: { commandId, kind: 'set_work_windows', windows },
+      }, { commandId })
+      if (result.outcome === 'CONFLICT') throw new Error('工作时段刚在另一台设备上修改，请查看最新设置。')
+    } else {
+      const current = snapshot?.data.timePlanning ?? { version: 1 as const, updatedAt: timestamp }
+      await saveLocalTimePlanning({ ...current, weeklyWindows: windows, updatedAt: timestamp })
+    }
+    await reload()
   }
 
   function navigate(path: string, replace = false) {
@@ -361,8 +411,7 @@ export default function AppV8() {
 
   const accountKey = cloud.session?.user.id ?? 'local-workspace'
   const workspaceRevision = snapshot ? [cloud.session?.user.id ? getAccountCheckpoint(cloud.session.user.id).lastSyncedVersion ?? 'pending' : 'local', snapshot.exportedAt].join(':') : ''
-  const todayWeb = useMemo(() => snapshot ? selectTodayWeb(snapshot, { availableMinutes: budgetMinutes }, { now, timezone, workspaceVersion: workspaceRevision }) : undefined, [snapshot, budgetMinutes, now, timezone, workspaceRevision])
-  const criticalTodayWarnings = todayWeb?.criticalWarnings ?? []
+  const todayWeb = useMemo(() => snapshot ? selectTodayWeb(snapshot, {}, { now, timezone, workspaceVersion: workspaceRevision }) : undefined, [snapshot, now, timezone, workspaceRevision])
   const scheduleStream = useMemo(() => snapshot ? buildScheduleStream(snapshot, { accountKey, workspaceRevision, timezone, now }) : undefined, [snapshot, accountKey, workspaceRevision, timezone, now])
 
   const opportunityDecisionList = useMemo<OpportunityDecisionListRead | undefined>(() => {
@@ -678,7 +727,7 @@ export default function AppV8() {
         {!loading && surface === 'today' && todayWeb && scheduleStream ? (
           <TodayFeature
             selection={todayWeb}
-            criticalWarnings={criticalTodayWarnings}
+            onSetTodayCapacity={setTodayCapacity}
             stream={scheduleStream}
             opportunities={opportunities}
             readOnly={CGR02_TODAY_READ_ONLY}
@@ -728,7 +777,7 @@ export default function AppV8() {
           onReturnOpportunity={route.returnOpportunityId ? () => navigate('/library/' + encodeURIComponent(route.returnOpportunityId!)) : undefined}
           onChanged={reload} /> : null}
         {!loading && surface === 'history' ? <ActivitySurface timeline={timeline} /> : null}
-        {!loading && surface === 'settings' ? <SettingsSurface lastImport={lastImport} rules={rules} onChanged={reload} onOpenActivity={() => navigate('/history')} onOpenDataQuality={() => navigate('/decisions')} /> : null}
+        {!loading && surface === 'settings' ? <SettingsSurface lastImport={lastImport} rules={rules} timePlanning={snapshot?.data.timePlanning} onSetDefaultCapacity={setDefaultCapacity} onSetWorkWindows={setWorkWindows} onChanged={reload} onOpenActivity={() => navigate('/history')} onOpenDataQuality={() => navigate('/decisions')} /> : null}
       </main>
 
 
@@ -808,7 +857,7 @@ function ActivitySurface({ timeline }: { timeline: TimelineRecord[] }) {
   return <section className="surface-page"><SurfaceHeader eyebrow="HISTORY" title={zh ? '历史与审计' : 'History & audit'} text={zh ? '这里只保留发生过什么。日常行动和需要你决定的事分别留在 Today 与 Decisions。' : 'This is the audit trail only. Daily action stays in Today and genuine decisions stay in Decisions.'} /><TimelineView records={timeline} /></section>
 }
 
-function SettingsSurface({ lastImport, rules, onChanged, onOpenActivity, onOpenDataQuality }: { lastImport?: ImportMeta; rules: DecisionRules; onChanged: () => Promise<void>; onOpenActivity: () => void; onOpenDataQuality: () => void }) {
+function SettingsSurface({ lastImport, rules, timePlanning, onSetDefaultCapacity, onSetWorkWindows, onChanged, onOpenActivity, onOpenDataQuality }: { lastImport?: ImportMeta; rules: DecisionRules; timePlanning?: TimePlanningPreferences; onSetDefaultCapacity: (minutes: number) => Promise<void>; onSetWorkWindows: (windows: WorkWindow[]) => Promise<void>; onChanged: () => Promise<void>; onOpenActivity: () => void; onOpenDataQuality: () => void }) {
   const { lang } = useUiLanguage()
   const zh = lang === 'zh'
   const [preview, setPreview] = useState<ImportBundle | null>(null)
@@ -836,6 +885,11 @@ function SettingsSurface({ lastImport, rules, onChanged, onOpenActivity, onOpenD
     <section className="surface-page settings-surface">
       <SurfaceHeader eyebrow="SETTINGS" title={zh ? '设置' : 'Settings'} text={zh ? '连接、偏好与数据管理。' : 'Connections, preferences, and data.'} />
       <div className="settings-mobile-language" aria-label={zh ? '移动端界面语言' : 'Mobile interface language'}><LanguageSwitch /></div>
+
+      <details className="settings-group">
+        <summary><div><strong>{zh ? '可用时间' : 'Available time'}</strong><span>{zh ? '默认每天多久，以及可选工作时段' : 'Usual daily time and optional work windows'}</span></div></summary>
+        <div className="settings-group-body"><TimePlanningSettings value={timePlanning} onSetDefault={onSetDefaultCapacity} onSetWindows={onSetWorkWindows} /></div>
+      </details>
 
       <details className="settings-group" open>
         <summary><div><strong>{zh ? '连接与自动化' : 'Connections & automation'}</strong><span>{zh ? '账户、云同步和后台来源' : 'Account, cloud sync, and background sources'}</span></div></summary>

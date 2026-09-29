@@ -11,6 +11,9 @@ import {
   suppressSupersededActions,
 } from '../processEvents.js'
 import { validateSnapshot, type PJSDASSnapshot } from '../snapshot.js'
+import { capacityForDate, validPlanningDate } from '../timePlanningPreferences.js'
+import { localDateKey as displayDateKey } from '../todayBrief.js'
+import { buildConsumerTimePlan } from '../today/consumerTimePlan.js'
 import type {
   Action,
   Opportunity,
@@ -23,7 +26,6 @@ import type {
 
 const DEFAULT_LIMIT = 30
 const MAX_LIMIT = 100
-const DEFAULT_AVAILABLE_MINUTES = 180
 
 export interface BridgeMeta {
   workspaceVersion?: string
@@ -64,7 +66,7 @@ export interface GetTodayPlanInput {
 export interface GetTodayPlanOutput {
   meta: BridgeMeta
   date: string
-  availableMinutes: number
+  availableMinutes: number | null
   plannedMinutes: number
   capacityConflict: boolean
   startableActions: Array<{
@@ -280,7 +282,7 @@ function resolvedContext(context: BridgeReadContext) {
     now,
     timezone,
     workspaceVersion: context.workspaceVersion,
-    defaultAvailableMinutes: context.defaultAvailableMinutes ?? DEFAULT_AVAILABLE_MINUTES,
+    defaultAvailableMinutes: context.defaultAvailableMinutes,
   }
 }
 
@@ -353,19 +355,22 @@ function localDateKey(date: Date) {
   return `${year}-${month}-${day}`
 }
 
-function nowForRequestedDate(value: string | undefined, fallback: Date) {
+function nowForRequestedDate(value: string | undefined, fallback: Date, timezone: string) {
   if (!value) return fallback
   if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) {
     throw new BridgeReadError('INVALID_ARGUMENT', 'date must use local YYYY-MM-DD format.')
   }
-  const [year, month, day] = value.split('-').map(Number)
-  const result = new Date(fallback)
-  result.setFullYear(year, month - 1, day)
-  result.setHours(0, 0, 0, 0)
-  if (result.getFullYear() !== year || result.getMonth() !== month - 1 || result.getDate() !== day) {
+  if (!validPlanningDate(value)) {
     throw new BridgeReadError('INVALID_ARGUMENT', 'date is not a valid calendar date.')
   }
-  return result
+  const noon = new Date(`${value}T12:00:00.000Z`).getTime()
+  let lower = noon - 48 * 3_600_000, upper = noon + 48 * 3_600_000
+  while (upper - lower > 1) {
+    const middle = Math.floor((lower + upper) / 2)
+    if (displayDateKey(new Date(middle), timezone) < value) lower = middle
+    else upper = middle
+  }
+  return new Date(upper)
 }
 
 function opportunityForAction(action: Action, opportunities: Opportunity[]) {
@@ -392,16 +397,20 @@ export function getTodayPlan(
 ): GetTodayPlanOutput {
   const context = resolvedContext(bridgeContext)
   const workspace = readWorkspace(snapshot)
-  const now = nowForRequestedDate(input.date, context.now)
-  const availableMinutes = input.availableMinutes ?? context.defaultAvailableMinutes
-  if (!Number.isFinite(availableMinutes) || availableMinutes < 30 || availableMinutes > 24 * 60) {
-    throw new BridgeReadError('INVALID_ARGUMENT', 'availableMinutes must be between 30 and 1440.')
+  const now = nowForRequestedDate(input.date, context.now, context.timezone)
+  const today = displayDateKey(now, context.timezone)
+  const weekday = new Date(`${today}T12:00:00.000Z`).getUTCDay()
+  const availableMinutes = input.availableMinutes ?? capacityForDate(snapshot.data.timePlanning, today, weekday) ?? context.defaultAvailableMinutes
+  if (availableMinutes !== undefined && (!Number.isInteger(availableMinutes) || availableMinutes < 0 || availableMinutes > 24 * 60)) {
+    throw new BridgeReadError('INVALID_ARGUMENT', 'availableMinutes must be between 0 and 1440.')
   }
 
-  const ranked = rankActions(workspace.actions, workspace.opportunities, now, workspace.rules)
-  const plan = buildTimePlan(ranked, availableMinutes, now, workspace.rules)
+  const ranked = rankActions(workspace.actions, workspace.opportunities, now, workspace.rules, context.timezone)
+  const plan = buildTimePlan(ranked, availableMinutes ?? 1440, now, workspace.rules)
+  const consumerPlan = buildConsumerTimePlan({ ranked, nodes: snapshot.data.scheduleNodes ?? [],
+    preferences: snapshot.data.timePlanning, availableMinutes, now, timezone: context.timezone })
 
-  const startableActions = plan.planned.map((item) => {
+  const startableActions = consumerPlan.planned.map((item) => {
     const identity = companyRoleForAction(item.action, workspace.opportunities, workspace.processEvents)
     return {
       actionId: item.action.id,
@@ -438,11 +447,11 @@ export function getTodayPlan(
       reason: '流程节点已过但仍未确认结果，需要先确认完成状态或采取恢复动作。',
     }))
 
-  const blocked = plan.nearDeadlineUnplanned.map((item) => ({
-    id: item.action.id,
-    label: item.action.title,
-    reason: `该硬截止位于 ${workspace.rules.hardDeadlineHorizonHours} 小时保护窗口内，但当前时间预算无法完整容纳。`,
-  }))
+  const blocked = consumerPlan.conflicts.flatMap(conflict => conflict.relatedIds.map(id => ({
+    id,
+    label: workspace.actions.find(action => action.id === id)?.title ?? id,
+    reason: conflict.kind === 'fixed_overlap' ? '两个固定安排时间重叠。' : '硬截止事项无法在剩余时间内全部完成。',
+  })))
 
   const blockedIds = new Set<string>()
   const blockedOrRecoveryItems = [...recovery, ...blocked].filter((item) => {
@@ -453,10 +462,10 @@ export function getTodayPlan(
 
   return {
     meta: meta({ ...context, now }),
-    date: localDateKey(now),
-    availableMinutes: plan.budgetMinutes,
-    plannedMinutes: plan.totalMinutes,
-    capacityConflict: plan.overBudgetMinutes > 0 || plan.nearDeadlineUnplanned.length > 0,
+    date: today,
+    availableMinutes: availableMinutes ?? null,
+    plannedMinutes: consumerPlan.planned.reduce((sum, item) => sum + item.action.estimatedMinutes, consumerPlan.fixedMinutes),
+    capacityConflict: consumerPlan.conflicts.length > 0,
     startableActions,
     fixedEvents,
     blockedOrRecoveryItems,

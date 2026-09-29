@@ -25,6 +25,8 @@ import {
   syncScheduleNodeForActionStatus,
 } from './scheduleNodes.js'
 import { createDefaultDecisionRules, decisionRulesForSnapshot, validateDecisionRules, type DecisionRules } from './decisionRules.js'
+import type { TimePlanningPreferences } from './timePlanningPreferences.js'
+import { validateTimePlanningPreferences } from './timePlanningPreferences.js'
 import {
   createDefaultDiscoveryProfile,
   normalizeDiscoveryProfile,
@@ -133,7 +135,7 @@ interface PJSDASDatabase extends DBSchema {
     value: ChangeSetRecord
     indexes: { 'by-status': ChangeSetStatus; 'by-created-at': string }
   }
-  meta: { key: string; value: ImportMeta | { key: 'authoritativeProjection'; accountKey: string; version: string; canonical: string } }
+  meta: { key: string; value: ImportMeta | { key: 'authoritativeProjection'; accountKey: string; version: string; canonical: string } | (TimePlanningPreferences & { key: 'timePlanning' }) }
 }
 
 const DATA_STORES = [
@@ -948,7 +950,7 @@ export async function applyChangeSet(id: string): Promise<ChangeSetRecord & { ac
 type LocalSnapshotTransaction = IDBPTransaction<PJSDASDatabase, (typeof DATA_STORES)[number][], 'readonly' | 'readwrite'>
 
 async function readLocalSnapshotData(tx: LocalSnapshotTransaction) {
-  const [opportunities, processes, processEvents, scheduleNodes, decisionRequests, semanticReceipts, reminderIntents, reminderOutbox, actions, prep, applicationGroups, decisionRules, discoveryProfile, discoveryInbox, timeline, changeSets, meta] =
+  const [opportunities, processes, processEvents, scheduleNodes, decisionRequests, semanticReceipts, reminderIntents, reminderOutbox, actions, prep, applicationGroups, decisionRules, discoveryProfile, discoveryInbox, timeline, changeSets, meta, timePlanning] =
     await Promise.all([
       tx.objectStore('opportunities').getAll(),
       tx.objectStore('processes').getAll(),
@@ -967,6 +969,11 @@ async function readLocalSnapshotData(tx: LocalSnapshotTransaction) {
       tx.objectStore('timeline').getAll(),
       tx.objectStore('changeSets').getAll(),
       tx.objectStore('meta').get('lastImport').then(row => row?.key === 'lastImport' ? row : undefined),
+      tx.objectStore('meta').get('timePlanning').then(row => {
+        if (row?.key !== 'timePlanning') return undefined
+        const { key: _key, ...preferences } = row
+        return preferences
+      }),
     ])
   if (!timeline.some((record) => record.id === TIMELINE_BACKFILL_MARKER_ID)) {
     const existingIds = new Set(timeline.map((record) => record.id))
@@ -995,6 +1002,7 @@ async function readLocalSnapshotData(tx: LocalSnapshotTransaction) {
     prep,
     applicationGroups,
     decisionRules: decisionRulesForSnapshot(decisionRules),
+    timePlanning,
     discoveryProfile,
     discoveryInbox,
     timeline,
@@ -1014,6 +1022,13 @@ export async function exportLocalSnapshot() {
   const snapshot = await readLocalSnapshot(tx)
   await tx.done
   return snapshot
+}
+
+export async function saveLocalTimePlanning(preferences: TimePlanningPreferences) {
+  const errors = validateTimePlanningPreferences(preferences)
+  if (errors.length) throw new Error(errors[0])
+  const db = await dbPromise
+  await db.put('meta', { ...structuredClone(preferences), key: 'timePlanning' })
 }
 
 async function withTimelineMutation<T>(
@@ -1109,6 +1124,7 @@ export async function replaceLocalSnapshotFromCloud(snapshot: PJSDASSnapshot, gu
     for (const item of latest.data.timeline ?? []) await tx.objectStore('timeline').put(item)
     for (const item of latest.data.changeSets ?? []) await tx.objectStore('changeSets').put(item)
     if (latest.data.meta) await tx.objectStore('meta').put(latest.data.meta)
+    if (latest.data.timePlanning) await tx.objectStore('meta').put({ ...latest.data.timePlanning, key: 'timePlanning' })
     const committed = await readLocalSnapshot(tx)
     if (guard?.accountKey && guard.version) {
       // Canonical bytes are recorded in the same transaction; async crypto would
@@ -1153,6 +1169,7 @@ export async function restoreLocalSnapshot(snapshot: PJSDASSnapshot) {
   for (const item of latest.data.changeSets ?? []) await tx.objectStore('changeSets').put(item)
   await tx.objectStore('timeline').put(timelineFromRestore(latest.exportedAt))
   if (latest.data.meta) await tx.objectStore('meta').put(latest.data.meta)
+  if (latest.data.timePlanning) await tx.objectStore('meta').put({ ...latest.data.timePlanning, key: 'timePlanning' })
   await tx.done
 }
 
@@ -1286,6 +1303,7 @@ export async function replaceImportedData(bundle: ImportBundle) {
     const importMeta: ImportMeta = { key: 'lastImport', ...bundle.summary }
     await tx.objectStore('timeline').put(timelineFromImport(importMeta, bundle.timeline?.length ?? 0))
     await tx.objectStore('meta').put(importMeta)
+    if (previousData.timePlanning) await tx.objectStore('meta').put({ ...previousData.timePlanning, key: 'timePlanning' })
   }, true)
 }
 

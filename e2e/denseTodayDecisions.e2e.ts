@@ -88,12 +88,12 @@ test('Chinese decision cards preserve actual old-fact warning and distinct clari
   await expect(page.getByText('This observation predates a newer process fact.', { exact: false })).toHaveCount(0)
 })
 
-test('one hard deadline risk has one actionable warning', async ({ page }) => {
+test('one genuinely infeasible hard deadline has one actionable notice', async ({ page }) => {
   await page.clock.install({ time: DENSE_NOW })
   await page.goto('/'); await page.locator('.tsui-primary-nav').waitFor()
   const job = opportunity('hard-job', 'Example', 'Engineer')
   const hard = { ...action('hard-task', 'Submit application', job.id), kind: 'apply' as const,
-    dueAt: new Date(DENSE_NOW.getTime() + 36 * 60 * 60_000).toISOString(),
+    dueAt: new Date(DENSE_NOW.getTime() + 30 * 60_000).toISOString(),
     duePrecision: 'datetime' as const, estimatedMinutes: 500 }
   const snapshot = createSnapshot({
     opportunities: [job], processes: [], processEvents: [], actions: [hard],
@@ -103,9 +103,9 @@ test('one hard deadline risk has one actionable warning', async ({ page }) => {
   await page.goto('/pjsdas/today')
   await expect(page.locator('.tsui-alert').filter({ hasText: '硬截止' })).toHaveCount(0)
   await expect(page.locator('.tsui-inline-notice').filter({ hasText: '硬截止' })).toHaveCount(1)
-  await expect(page.getByRole('button', { name: '查看日程' })).toBeVisible()
+  await expect(page.getByRole('button', { name: '查看相关安排' })).toBeVisible()
   await page.setViewportSize({ width: 390, height: 844 })
   await page.getByRole('button', { name: /^节点/ }).click()
   await expect(page.locator('.tsui-inline-notice').filter({ hasText: '硬截止' })).toBeVisible()
-  await expect(page.getByRole('button', { name: '查看日程' })).toHaveCount(1)
+  await expect(page.getByRole('button', { name: '查看相关安排' })).toHaveCount(1)
 })

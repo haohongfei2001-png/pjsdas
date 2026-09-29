@@ -41,6 +41,7 @@ test('signed progress review commits one scoped account command and appears on a
       opportunityId: 'opp-1', estimatedMinutes: 15, leverage: 75, delayCost: 75, status: 'todo',
       createdAt: at, updatedAt: at }], prep: [], applicationGroups: [], timeline: [], changeSets: [],
   }, at)
+  initial.data.timePlanning = { version: 1, defaultDailyMinutes: 480, updatedAt: at }
   const changeSet = { ...createProgressChangeSet([{ id: 'new-task', kind: 'manual_action' as const,
     title: 'Review synthetic portfolio', estimatedMinutes: 20, occurredAt: at,
     sourceText: 'Reviewed synthetic proposal', confidence: 'high' as const }], new Date(at)),

@@ -21,9 +21,10 @@ test('TSUI-02 real component: equal Today rows, shared 130-node stream and mobil
       request.onerror = () => reject(request.error)
       request.onsuccess = () => {
         const db = request.result
-        const tx = db.transaction(['actions', 'scheduleNodes'], 'readwrite')
+        const tx = db.transaction(['actions', 'scheduleNodes', 'meta'], 'readwrite')
         tx.onerror = () => reject(tx.error)
         tx.oncomplete = () => { db.close(); resolve() }
+        tx.objectStore('meta').put({ key: 'timePlanning', version: 1, defaultDailyMinutes: 240, updatedAt: created })
         for (let i = 0; i < 8; i += 1) tx.objectStore('actions').put({
           id: 'tsui-task-' + i, kind: 'manual', title: '今日行动 ' + (i + 1),
           estimatedMinutes: 20, leverage: 90 - i, delayCost: 80 - i,
