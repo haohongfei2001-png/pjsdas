@@ -124,7 +124,7 @@ function pendingRescheduleDate(temporal?: ScheduleNodeTemporal) {
 function requestedView(): View {
   const value = new URLSearchParams(window.location.search).get('view')
   if (value === 'history' || value === 'past') return 'past'
-  if (value === 'upcoming' || value === 'unresolved' || value === 'undated') return value
+  if (value === 'all' || value === 'upcoming' || value === 'unresolved' || value === 'undated') return value
   return 'upcoming'
 }
 
@@ -208,7 +208,7 @@ export default function ScheduleFeature({
     setRange(initialRange(nextEntries, next, today))
     setSelectedId(undefined)
     setFeedback(undefined)
-    window.history.replaceState(null, '', window.location.pathname + (next === 'all' ? '' : '?view=' + next) + window.location.hash)
+    window.history.replaceState(null, '', window.location.pathname + '?view=' + next + window.location.hash)
   }
 
   function locateMonth(value: string) {
@@ -222,7 +222,7 @@ export default function ScheduleFeature({
     setView('all')
     setRange({ start: index, end: Math.min(all.length, index + 30) })
     setSelectedId(undefined)
-    window.history.replaceState(null, '', window.location.pathname + window.location.hash)
+    window.history.replaceState(null, '', window.location.pathname + '?view=all' + window.location.hash)
     window.requestAnimationFrame(() => listRef.current?.scrollIntoView({ block: 'start' }))
   }
 
