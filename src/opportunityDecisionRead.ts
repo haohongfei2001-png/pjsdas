@@ -208,10 +208,10 @@ function nearestNodeFor(
       || stageForNode[item.kind] !== (process?.stage ?? opportunity.processStage)) return false
     if (!progressAt) return true
     if (item.temporal.precision === 'date' && item.temporal.date) {
-      return item.temporal.date >= localDateKey(new Date(progressAt), timezone)
+      return item.temporal.date > localDateKey(new Date(progressAt), timezone)
     }
     const at = item.temporal.endAt ?? item.temporal.deadlineAt ?? item.temporal.startAt
-    return Boolean(at && Date.parse(at) >= Date.parse(progressAt))
+    return Boolean(at && Date.parse(at) > Date.parse(progressAt))
   }).sort((a, b) => {
     const time = (item: ScheduleNode) => Date.parse(item.temporal.endAt ?? item.temporal.deadlineAt
       ?? item.temporal.startAt ?? (item.temporal.date ? `${item.temporal.date}T12:00:00Z` : '')) || 0

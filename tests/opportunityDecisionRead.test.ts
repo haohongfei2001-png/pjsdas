@@ -167,6 +167,15 @@ describe('UU-05 Opportunity decision read model', () => {
         participationState: 'active', lastProgressAt: '2026-09-20T10:00:00.000Z' }],
     }), opp.id, { now: NOW, timezone: 'Asia/Shanghai' })
     expect(progressed?.nearestNode).toBeUndefined()
+    const dateOnly: ScheduleNode = { ...past, id: 'date-only-interview', occurrenceId: 'date-only-interview',
+      temporal: { shape: 'date_only', precision: 'date', timezone: 'Asia/Shanghai', date: '2026-09-20',
+        resolutionBasis: 'source_explicit' } }
+    const sameDayProgress = getOpportunityDecisionRead(snapshot({ opportunities: [opp], scheduleNodes: [dateOnly],
+      processes: [{ id: 'same-day-process', opportunityId: opp.id, company: opp.company, role: opp.role,
+        stage: 'interview', stageLabel: '面试', progress: 'scheduled', result: 'pending',
+        participationState: 'active', lastProgressAt: '2026-09-20T10:00:00.000Z' }],
+    }), opp.id, { now: NOW, timezone: 'Asia/Shanghai' })
+    expect(sameDayProgress?.nearestNode).toBeUndefined()
     const offer = opportunity('offer-after-interview', 'offer')
     const old = { ...past, opportunityId: offer.id }
     const ended = getOpportunityDecisionRead(snapshot({ opportunities: [offer], scheduleNodes: [old] }),
