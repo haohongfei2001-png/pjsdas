@@ -28,6 +28,7 @@ export default function CloudSettingsCard() {
   const transactional = connectedWorkspaceAuthorityEnabled()
   const remoteLabel = transactional ? (zh ? '账号工作区' : 'account workspace') : 'Google Drive'
   const connectionError = localError || cloud.error || cloud.checkpoint.lastError
+  const codedLocalError = /^[A-Z][A-Z0-9_]+:/.test(localError)
   const pendingLocal = cloud.outcome?.kind === 'local_pending'
   const impact = mismatch
     ? (zh ? '此设备保存着另一个账号的资料。请先切回原账号；双方资料均已保留。' : 'This device holds another account’s data. Return to that account; both copies are preserved.')
@@ -161,7 +162,7 @@ export default function CloudSettingsCard() {
                       : diagnostic.classification === 'pending_operations'
                         ? (zh ? '仍有操作等待服务器确认；请等待自动核对回执。' : 'Some operations are awaiting server confirmation.')
                         : (zh ? '差异仍需人工核对。双方资料已保留，请先备份再考虑灾难恢复。' : 'The difference still needs review. Both copies are preserved; back up before disaster recovery.')}</p>
-                    <small>{`local ${diagnostic.localFingerprint.slice(0, 12)} · authoritative ${diagnostic.authoritativeFingerprint?.slice(0, 12) ?? 'unavailable'} · checkpoint ${diagnostic.checkpointVersion ?? 'none'} · journal ${diagnostic.recordedProjection ? 'recorded' : 'unverified'} · pending ${diagnostic.pendingOperations.count}`}</small>
+                    <small>{`local ${diagnostic.localFingerprint.slice(0, 12)} · projection ${diagnostic.localProjectionFingerprint?.slice(0, 12) ?? 'unavailable'} · authoritative ${diagnostic.authoritativeFingerprint?.slice(0, 12) ?? 'unavailable'} · checkpoint ${diagnostic.checkpointVersion ?? 'none'} · journal ${diagnostic.recordedProjection ? 'recorded' : 'unverified'} · pending ${diagnostic.pendingOperations.count}`}</small>
                   </div> : null}
                 </div> : null}
                 {conflict ? <p>{zh ? `最近核对的远端版本 ${conflict.remoteVersion}，更新时间 ${formatTime(conflict.remoteUpdatedAt, zh)}。` : `Last checked remote version ${conflict.remoteVersion}, updated ${formatTime(conflict.remoteUpdatedAt, zh)}.`}</p> : null}
@@ -181,6 +182,7 @@ export default function CloudSettingsCard() {
                   </div>
                 </details> : null}
                 {outcomeLabel ? <div className="cloud-result">{outcomeLabel}</div> : null}
+                {codedLocalError ? <div className="cloud-error">{localError}</div> : null}
                 {!localError && (cloud.error || cloud.checkpoint.lastError)
                   ? <div className="cloud-error">{cloud.error || cloud.checkpoint.lastError}</div> : null}
                 <small className="cloud-security-note">{transactional
@@ -195,7 +197,7 @@ export default function CloudSettingsCard() {
           </>
         )}
 
-        {localError ? <div className="cloud-error">{/^[A-Z][A-Z0-9_]+:/.test(localError)
+        {localError ? <div className="cloud-error">{codedLocalError
           ? (zh ? '操作暂时无法完成。请在高级诊断中查看详情。' : 'The action could not be completed. See Advanced diagnostics for details.')
           : localError}</div> : null}
       </section>

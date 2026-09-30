@@ -153,6 +153,7 @@ test('Settings recovers an old verified cache after a separate authoritative upd
 
 test('normal connected Settings keeps sync mechanics behind advanced diagnostics', async ({ page }) => {
   const snapshot = workspace()
+  let failRead = false
   await page.addInitScript(({ key, value }) => {
     if (!localStorage.getItem('owner-interaction-seeded')) {
       localStorage.setItem(key, JSON.stringify(value))
@@ -163,10 +164,14 @@ test('normal connected Settings keeps sync mechanics behind advanced diagnostics
   await page.route(`${BACKEND}/**`, route => {
     if (route.request().method() === 'OPTIONS') return cors(route, {}, 204)
     if (new URL(route.request().url()).pathname === '/api/health') return cors(route, health())
+    if (failRead && new URL(route.request().url()).pathname === '/api/workspace')
+      return cors(route, { code: 'SETTINGS_TEST_FAILURE', message: 'diagnostic marker' }, 503)
     expect(route.request().postDataJSON().action).toBe('read')
     return cors(route, { workspaceId: 'ws-a', revision: 1004, workspaceVersion: 'txn:1004',
       schemaVersion: snapshot.version, snapshot })
   })
+  await page.route(`${BACKEND}/api/access`, route => cors(route,
+    { authenticated: true, allowed: true, mode: 'allowlist', role: 'owner' }))
   await page.goto('/pjsdas/settings')
   await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem('pjsdas-google-drive-sync-state-v2') ?? '{}')
     .accounts?.['account-a']?.lastSyncedVersion)).toBe('txn:1004')
@@ -177,4 +182,11 @@ test('normal connected Settings keeps sync mechanics behind advanced diagnostics
   await expect(card.getByRole('button', { name: '保留本机' })).toHaveCount(0)
   await expect(card.getByRole('button', { name: '立即同步' })).toHaveCount(0)
   await expect(card.getByText(/本机工作副本|指纹|检查点|操作日志/)).toHaveCount(0)
+  failRead = true
+  await card.getByText('高级诊断 / 恢复').click()
+  await card.getByRole('button', { name: '立即同步' }).click()
+  await expect(card.locator(':scope > .cloud-error')).toContainText('操作暂时无法完成')
+  await expect(card.locator('.cloud-advanced .cloud-error')).toContainText('SETTINGS_TEST_FAILURE: diagnostic marker')
+  await card.getByText('高级诊断 / 恢复').click()
+  await expect(card.getByText('SETTINGS_TEST_FAILURE: diagnostic marker')).toBeHidden()
 })
