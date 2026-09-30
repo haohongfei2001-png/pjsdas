@@ -81,8 +81,9 @@ describe('ZMC-01 owner time planning', () => {
     const selected = selectTodayWeb(snapshot, { availableMinutes: 480 }, { now: NOW, timezone: ZONE })
     expect(selected.criticalWarnings).toHaveLength(1)
     expect(selected.criticalWarnings[0]?.relatedIds).toEqual(['submit'])
-    expect(selected.actions[0]?.actionId).toBe('submit')
-    expect(selected.actions).toHaveLength(1)
+    expect(selected.actions.map(item => item.actionId)).not.toContain('submit')
+    expect(selected.notSelectedHardActions.map(item => item.actionId)).toEqual(['submit'])
+    expect(selected.actions.reduce((sum, item) => sum + item.estimatedMinutes, 0)).toBeLessThanOrEqual(480)
   })
 
   it('uses actual work windows and reserves only fixed commitments inside them', () => {
@@ -114,18 +115,20 @@ describe('ZMC-01 owner time planning', () => {
       dueAt: '2026-09-25T08:00:00.000Z', duePrecision: 'datetime' as const }
     const snapshot = source([group])
     const selected = selectTodayWeb(snapshot, { availableMinutes: 0 }, { now: NOW, timezone: ZONE })
-    expect(selected.actions.map(item => item.actionId)).toEqual(['shared-choice'])
+    expect(selected.actions).toEqual([])
+    expect(selected.notSelectedHardActions.map(item => item.actionId)).toEqual(['shared-choice'])
     expect(selected.criticalWarnings[0]?.relatedIds).toEqual(['shared-choice'])
     const brief = buildTodayBrief(snapshot, { availableMinutes: 0 }, { now: NOW, timezone: ZONE })
     expect(brief.nextAction?.actionId).toBe('shared-choice')
   })
 
-  it('keeps a next-day hard deadline visible when its latest start is today', () => {
+  it('marks next-day hard work as not selected when it exceeds today capacity', () => {
     const apply = { ...flexible('tomorrow-deadline'), kind: 'apply' as const, estimatedMinutes: 240,
       dueAt: '2026-09-25T17:00:00.000Z', duePrecision: 'datetime' as const }
     const selected = selectTodayWeb(source([apply]), { availableMinutes: 60 }, { now: NOW, timezone: ZONE })
-    expect(selected.actions.map(item => item.actionId)).toEqual(['tomorrow-deadline'])
-    expect(selected.criticalWarnings).toEqual([])
+    expect(selected.actions).toEqual([])
+    expect(selected.notSelectedHardActions.map(item => item.actionId)).toEqual(['tomorrow-deadline'])
+    expect(selected.criticalWarnings[0]?.relatedIds).toEqual(['tomorrow-deadline'])
   })
 
   it('persists default, today override and windows through snapshot and account commands', () => {

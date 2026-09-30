@@ -1,0 +1,34 @@
+# Post-ZMC deadline correctness v1
+
+This bounded owner-authorized defect fix starts from remote `main@226d8cca49f68d1383eccea3ee3027f072fcdc33`, with no open PR. It does not reopen ZMC or PCR. The owner's real six application deadlines share the authoritative instant `2026-09-30T15:59:59Z`, `timezone=UTC`, and `resolutionBasis=legacy_projection`. At about 22:20 in UTC+8, their 452 estimated minutes cannot all fit before 23:59.
+
+## Time display contract
+
+Legacy timezone values describe normalization/provenance. Their exact instants are displayed in the user/browser display timezone. Only a valid source-explicit timezone selects a source clock; if it differs from the display timezone, the label includes its actual GMT offset, including DST. Today, Schedule, and job-detail operation/node/action labels use the same display policy. A date-only or floating date remains the original calendar date, with no fabricated hour. No stored instant, timezone, provenance, or record is rewritten.
+
+## Feasible work selection
+
+The consumer planner now chooses a feasible subset instead of appending tasks already judged impossible. It uses earliest-deadline dynamic programming over whole estimated task costs. Every selected prefix fits its own physical deadline after reserving fixed commitments and configured work windows, including windows after local midnight. Known user capacity imposes an additional stricter limit; unknown capacity stays unknown and only actual physical time is used.
+
+The objective maximizes the sum of squared existing priority scores, with a 2,500-point bonus for an action already `doing`. Existing priority includes opportunity value, fit, urgency, stage, leverage, delay cost and cost efficiency; prep graph enrichment remains part of that ranking. This prioritizes valuable work and work already underway without inventing a completion percentage or a dependency from a name. Ties use stable action identities. The selection is derived from current facts and remaining time, so reload/restart at the same time produces the same subset; passing a feasibility boundary can legitimately change it.
+
+Unselected hard work is a distinct read-model result, retained outside today's executable task rows. One contextual notice names the selected work and every unselected item, gives a direct job link, and recommends skipping a same-day deadline or adjusting a later commitment. This is a recommendation; it does not abandon an opportunity or modify an action. Schedule and job history retain all records.
+
+## Red-before evidence
+
+On the unchanged baseline product tree, the new permanent unit regression failed eight assertions: legacy UTC clocks were displayed as UTC in Shanghai and at both New York DST boundaries; the hard work remained overfilled under unknown/small/large capacity and across midnight; ordering still prioritized earlier latest-start rather than the useful feasible subset.
+
+Two actual headless Chromium regressions were then run before the implementation change:
+
+- `legacy UTC deadlines display the same local instant in Today, Schedule and job detail` received `A · Engineer申请 A截止 9/30 15:59查看岗位我已投递`, failing the expected `23:59`.
+- `six hard deadlines: 100 minutes and unknown capacity` found six actual Today task rows, failing the expected two.
+
+The green tests are permanent in `tests/postZmcDeadlineCorrectness.test.ts` and `e2e/postZmcDeadlineCorrectness.e2e.ts`. Their fixture has six estimates of 40, 50, 80, 90, 92 and 100 minutes, totaling 452, with deterministic opportunity values and fits. About 100 physical minutes select A/B (90 minutes); 60 user minutes select A; 500 physical/user minutes retain all six. Tests cover UTC+8, UTC, both DST transitions, source-explicit clocks with an offset label, floating dates, staggered deadlines with fixed occupancy, exhaustive small-subset optimality, in-progress work, input reordering, reload, and an actual persistent-browser process restart. All six audit-bearing ScheduleNodes and original deadline strings remain in IndexedDB.
+
+## Review and verification boundary
+
+The first independent review found two valid P2 cases: a next-day work window was omitted before a cross-midnight deadline, and a source clock needed a timezone label. Both were repaired and added to the permanent unit/browser regression. Cross-browser gates also reproduced WebKit losing the original job/Today opener because mouse clicks need not focus a button; navigation now records the actual activated element, preserving the original focus assertions and new deferred-item return path.
+
+The repaired local boundary passed 209 unit files / 1,114 tests, TypeScript/production build, 40 focused Chromium/WebKit consumer browser tests, and both WebKit job/Today return-focus journeys. The captured late-evening screen shows two selected task rows, six retained deadline nodes at 23:59, and one notice explicitly naming the four unselected applications.
+
+The PR requires full unit/type/build, Chromium Browser, Firefox/WebKit Matrix including the new regression, real VoiceOver, fresh independent review, and exact-main production readback. Production verification is read-only. No production business record, IndexedDB owner profile, Gmail cursor or scope, audit/provenance, or paid plan is modified by this fix.

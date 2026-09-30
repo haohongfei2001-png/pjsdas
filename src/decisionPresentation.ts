@@ -56,7 +56,7 @@ export function decisionNeedsToday(request: DecisionRequest, now: Date, timezone
   if (candidate.kind === 'process_event' || candidate.kind === 'occurrence_rescheduled') {
     const temporal = candidate.temporal
     if (temporal) {
-      if (temporal.date) return temporal.date === localDateKey(now, scheduleDisplayTimezone(temporal.timezone) ?? timezone)
+      if (temporal.date) return temporal.date === localDateKey(now, scheduleDisplayTimezone(temporal.timezone, temporal.resolutionBasis, timezone) ?? timezone)
       const start = day(temporal.date ?? temporal.startAt ?? temporal.deadlineAt, timezone)
       const end = day(temporal.endAt, timezone)
       return start === today || Boolean(start && end && start <= today && today <= end)

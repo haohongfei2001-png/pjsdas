@@ -15,7 +15,7 @@ describe('UU-05 frozen opportunity product contract', () => {
     expect(list).toContain("['in_progress', '推进中', 'In progress']")
     expect(list).toContain("['ended', '已结束', 'Ended']")
     expect(list).toContain('key={item.opportunityId}')
-    expect(list).toContain('onOpenOpportunity(item.opportunityId)')
+    expect(list).toContain('onOpenOpportunity(item.opportunityId, event.currentTarget)')
   })
 
   it('uses the same ranking semantics as Today for next actions', () => {

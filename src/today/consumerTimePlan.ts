@@ -1,12 +1,13 @@
 import type { RankedAction, ScheduleNode } from '../model.js'
 import type { TimePlanningPreferences } from '../timePlanningPreferences.js'
 import { capacityForDate } from '../timePlanningPreferences.js'
-import { dueSortValue, latestByOccurrence, localDateKey, nodeForAction } from '../todayBrief.js'
+import { latestByOccurrence, localDateKey, nodeForAction } from '../todayBrief.js'
 
 export interface ConsumerTimeConflict {
   kind: 'fixed_overlap' | 'hard_deadline_capacity'
   relatedIds: string[]
   at?: string
+  selectedIds?: string[]
 }
 
 export interface ConsumerTimePlan {
@@ -14,6 +15,7 @@ export interface ConsumerTimePlan {
   fixedMinutes: number
   planned: RankedAction[]
   deferredCount: number
+  deferredHard: RankedAction[]
   conflicts: ConsumerTimeConflict[]
 }
 
@@ -140,56 +142,85 @@ export function buildConsumerTimePlan(input: {
   }
   const activeNodes = latestByOccurrence(input.nodes)
   const startable = input.ranked.filter(item => item.action.timingMode !== 'fixed')
+  const deadlineFor = (item: RankedAction) => {
+    const node = nodeForAction(item.action, activeNodes)
+    const date = node?.temporal.precision === 'date' ? node.temporal.date
+      : !node && item.action.duePrecision === 'date' ? item.action.dueAt?.slice(0, 10) : undefined
+    if (date) return dayBounds(date, input.timezone).dayEnd
+    const raw = node?.temporal.deadlineAt ?? node?.temporal.endAt ?? item.action.dueAt
+    const at = raw ? Date.parse(raw) : NaN
+    return Number.isFinite(at) ? at : bounds.dayEnd
+  }
   const mandatory = startable.filter(item => {
     const node = nodeForAction(item.action, activeNodes)
     return isHard(item, node) && needsStartToday(item, node, today, input.timezone)
-  }).sort((a, b) => dueSortValue(a.action, nodeForAction(a.action, activeNodes))
-    - dueSortValue(b.action, nodeForAction(b.action, activeNodes)) || b.score - a.score)
-  const planned: RankedAction[] = []
-  const selected = new Set<string>()
-  const workRemaining = available === undefined ? Infinity : unionMinutes(available.map(interval => ({
-    start: Math.max(interval.start, input.now.getTime()), end: interval.end,
-  })).filter(interval => interval.end > interval.start))
-    - unionMinutes(intersectIntervals(available, fixed).map(interval => ({
-      start: Math.max(interval.start, input.now.getTime()), end: interval.end,
-    })).filter(interval => interval.end > interval.start))
-  let remaining = capacityMinutes === undefined ? 0 : Math.max(0, Math.min(capacityMinutes - fixedMinutes, workRemaining))
-  const impossible: string[] = []
-  let requiredMinutes = 0
-  for (const item of mandatory) {
-    const node = nodeForAction(item.action, activeNodes)
-    const deadlineRaw = node?.temporal.deadlineAt ?? (item.action.duePrecision === 'datetime' ? item.action.dueAt : undefined)
-    const deadline = deadlineRaw ? new Date(deadlineRaw).getTime() : undefined
-    const minutesToDeadline = deadline !== undefined && Number.isFinite(deadline)
-      ? (available === undefined ? Math.max(0, Math.floor((deadline - input.now.getTime()) / 60_000))
-        : unionMinutes(available.map(interval => ({ start: Math.max(interval.start, input.now.getTime()),
-          end: Math.min(interval.end, deadline) })).filter(interval => interval.end > interval.start))) : Infinity
-    const fixedBeforeDeadline = deadline !== undefined && Number.isFinite(deadline)
-      ? unionMinutes((available ? intersectIntervals(fixed, available) : fixed).map(interval => ({
-        start: Math.max(interval.start, input.now.getTime()), end: Math.min(interval.end, deadline),
-      })).filter(interval => interval.end > interval.start)) : 0
-    requiredMinutes += item.action.estimatedMinutes
-    const dueToday = dateForAction(item, node, input.timezone) === today
-    if ((dueToday && capacityMinutes !== undefined && item.action.estimatedMinutes > remaining)
-      || requiredMinutes > Math.max(0, minutesToDeadline - fixedBeforeDeadline)) {
-      impossible.push(item.action.id)
-      remaining = 0
-    } else if (capacityMinutes !== undefined) remaining = Math.max(0, remaining - item.action.estimatedMinutes)
-    planned.push(item)
-    selected.add(item.action.id)
+  }).sort((a, b) => deadlineFor(a) - deadlineFor(b) || b.score - a.score || a.action.id.localeCompare(b.action.id))
+  // Exact instants can cross local midnight. Reserve fixed commitments through
+  // those deadlines too; a local calendar boundary is not a fabricated cutoff.
+  const deadlineHorizon = Math.max(bounds.dayEnd, ...mandatory.map(deadlineFor))
+  const occupied = fixedIntervals(input.nodes, { ...bounds, dayEnd: deadlineHorizon })
+  const horizonWindows: Interval[] = []
+  let windowDay = bounds
+  while (windowDay.dayStart < deadlineHorizon) {
+    const date = localDateKey(new Date(windowDay.dayStart), input.timezone)
+    const day = new Date(`${date}T12:00:00.000Z`).getUTCDay()
+    horizonWindows.push(...(workIntervals(input.preferences, day, windowDay, input.timezone)
+      ?? [{ start: windowDay.dayStart, end: windowDay.dayEnd }]))
+    if (windowDay.dayEnd >= deadlineHorizon) break
+    windowDay = dayBounds(localDateKey(new Date(windowDay.dayEnd), input.timezone), input.timezone)
   }
-  if (impossible.length) conflicts.push({ kind: 'hard_deadline_capacity', relatedIds: impossible })
+  const freeBefore = (end: number) => {
+    const clipped = horizonWindows.map(interval => ({ start: Math.max(interval.start, input.now.getTime()),
+      end: Math.min(interval.end, end) })).filter(interval => interval.end > interval.start)
+    // Floor usable minutes and ceil occupied minutes: never promise a minute
+    // that is only partially left before a real deadline.
+    const physical = Math.floor(clipped.reduce((sum, interval) => sum + interval.end - interval.start, 0) / 60_000)
+      - unionMinutes(intersectIntervals(clipped, occupied))
+    return Math.max(0, Math.min(physical, capacityMinutes === undefined ? Infinity : capacityMinutes - fixedMinutes))
+  }
+  // Earliest-deadline knapsack: every retained prefix is feasible before its
+  // own deadline. Maximize existing business priority across the whole subset,
+  // rather than letting the first long task consume all remaining time.
+  // Priority already incorporates opportunity value, fit, urgency, stage,
+  // prep-graph leverage and cost efficiency. In-progress intent gets a bonus.
+  type Choice = { utility: number; items: RankedAction[]; key: string }
+  const states = new Map<number, Choice>([[0, { utility: 0, items: [], key: '' }]])
+  const better = (left: Choice, right: Choice) => left.utility > right.utility
+    || (left.utility === right.utility && left.key < right.key)
+  for (const item of mandatory) {
+    const cost = Math.max(1, Math.ceil(item.action.estimatedMinutes))
+    const limit = freeBefore(deadlineFor(item))
+    const utility = item.score * item.score + (item.action.status === 'doing' ? 2500 : 0)
+    for (const [used, prior] of [...states]) {
+      const total = used + cost
+      if (total > limit) continue
+      const choice = { utility: prior.utility + utility, items: [...prior.items, item],
+        key: [...prior.items, item].map(entry => entry.action.id).sort().join('\0') }
+      const existing = states.get(total)
+      if (!existing || better(choice, existing)) states.set(total, choice)
+    }
+  }
+  let best: Choice = states.get(0)!, bestMinutes = 0
+  for (const [used, choice] of states) {
+    if (better(choice, best) || (choice.utility === best.utility && used < bestMinutes)) { best = choice; bestMinutes = used }
+  }
+  const planned = [...best.items]
+  const selected = new Set(planned.map(item => item.action.id))
+  const deferredHard = mandatory.filter(item => !selected.has(item.action.id))
+  if (deferredHard.length) conflicts.push({ kind: 'hard_deadline_capacity',
+    relatedIds: deferredHard.map(item => item.action.id), selectedIds: planned.map(item => item.action.id) })
+  let remaining = Math.max(0, freeBefore(bounds.dayEnd) - bestMinutes)
   const flexible = startable.filter(item => !selected.has(item.action.id) && !mandatory.includes(item))
     .sort((a, b) => (b.action.status === 'doing' ? 1 : 0) - (a.action.status === 'doing' ? 1 : 0)
       || b.score - a.score || a.action.id.localeCompare(b.action.id))
   for (const item of flexible) {
     if (planned.length >= 8) break
-    if (capacityMinutes === undefined && planned.length >= Math.max(1, mandatory.length)) break
-    if (capacityMinutes !== undefined && item.action.estimatedMinutes > remaining) continue
+    if (capacityMinutes === undefined && planned.length >= Math.max(1, best.items.length)) break
+    if (item.action.estimatedMinutes > remaining) continue
     planned.push(item)
     selected.add(item.action.id)
-    if (capacityMinutes !== undefined) remaining -= item.action.estimatedMinutes
+    remaining -= item.action.estimatedMinutes
   }
-  return { capacityMinutes, fixedMinutes, planned,
+  return { capacityMinutes, fixedMinutes, planned, deferredHard,
     deferredCount: startable.length - planned.length, conflicts }
 }

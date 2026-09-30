@@ -13,6 +13,7 @@ import type {
   ScheduleNodeTemporal,
 } from './model.js'
 import { effectiveScheduleNodeState } from './scheduleNodes.js'
+import { nodeForAction } from './todayBrief.js'
 import { upgradeSnapshotToLatest, type PJSDASSnapshot } from './snapshot.js'
 
 const HOUR = 3_600_000
@@ -56,6 +57,7 @@ export interface OpportunityDecisionAction {
   dueAt?: string
   duePrecision?: Action['duePrecision']
   timingMode?: Action['timingMode']
+  temporal?: ScheduleNodeTemporal
   rankingReasons: string[]
   operation:
     | 'open_application'
@@ -237,7 +239,7 @@ function applicationUrl(opportunity: Opportunity) {
     ?? opportunity.detail?.facts?.application.applicationUrl
 }
 
-function actionRead(ranked: RankedAction | undefined, opportunity: Opportunity): OpportunityDecisionAction | undefined {
+function actionRead(ranked: RankedAction | undefined, opportunity: Opportunity, nodes: ScheduleNode[]): OpportunityDecisionAction | undefined {
   if (!ranked) return undefined
   const action = ranked.action
   let operation: OpportunityDecisionAction['operation'] = 'open_today'
@@ -261,6 +263,7 @@ function actionRead(ranked: RankedAction | undefined, opportunity: Opportunity):
     dueAt: action.dueAt,
     duePrecision: action.duePrecision,
     timingMode: action.timingMode,
+    temporal: nodeForAction(action, latestNodes(nodes))?.temporal,
     rankingReasons: [...ranked.reasons].slice(0, 2),
     operation,
     externalUrl,
@@ -388,7 +391,7 @@ export function getOpportunityDecisionRead(
       result: process?.result,
       participation: opportunity.participationStatus === 'abandoned' ? 'abandoned' : 'active',
     },
-    nextAction: actionRead(ranked, opportunity),
+    nextAction: actionRead(ranked, opportunity, snapshot.data.scheduleNodes ?? []),
     nearestNode,
     sourceFreshness: freshness,
     applicationGroupId: opportunity.applicationGroupId,
@@ -425,7 +428,7 @@ export function buildOpportunityDecisionList(
         result: process?.result,
         participation: opportunity.participationStatus === 'abandoned' ? 'abandoned' : 'active',
       },
-      nextAction: actionRead(ranked.get(opportunity.id), opportunity),
+      nextAction: actionRead(ranked.get(opportunity.id), opportunity, snapshot.data.scheduleNodes ?? []),
       nearestNode,
       sourceFreshness: freshness,
       applicationGroupId: opportunity.applicationGroupId,

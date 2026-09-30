@@ -41,7 +41,7 @@ export default function JobLibrary({ read, opportunities, filter, onFilterChange
   onQueryChange: (value: string) => void
   visibleCount: number
   onVisibleCountChange: (value: number) => void
-  onOpenOpportunity: (id: string) => void
+  onOpenOpportunity: (id: string, opener?: HTMLElement) => void
 }) {
   const { lang } = useUiLanguage()
   const zh = lang === 'zh'
@@ -73,7 +73,7 @@ export default function JobLibrary({ read, opportunities, filter, onFilterChange
         const ended = group(item, opportunity) === 'ended'
         const deadline = deadlineLabel(opportunity, zh)
         return <article className="tsui-job-row" key={item.opportunityId} data-opportunity-id={item.opportunityId}>
-          <button type="button" className="opportunity-decision-row tsui-job-open" data-opportunity-id={item.opportunityId} onClick={() => onOpenOpportunity(item.opportunityId)}>
+          <button type="button" className="opportunity-decision-row tsui-job-open" data-opportunity-id={item.opportunityId} onClick={event => onOpenOpportunity(item.opportunityId, event.currentTarget)}>
             <span className="tsui-job-mark" aria-hidden="true">{item.company.slice(0, 2)}</span>
             <span className="tsui-job-identity"><strong>{item.company}</strong><span>{item.role}</span></span>
             <span className="tsui-job-meta"><strong>{deadline ?? (zh ? '时间待定' : 'Date pending')}</strong><span>{deadline ? (zh ? '申请截止' : 'Application deadline') : presentStageLabel(item.process.stage, undefined, lang)}</span></span>
