@@ -8,6 +8,8 @@ Base product tree: merged ZMC-08 `main@e5b0d0f840db891ca0f52ee47781b716a72ee1ec`
 
 Independent review found that the first synthetic server accepted every stale command without checking business overlap. The fixture now uses the production `semanticIntentObjects` and `overlappingCommandObjects` scope functions: the first device's `baseRevision=1005` command rebases after the second device reaches 1006 only when their business objects are disjoint. A controlled same-source command from that stale base returns `CONFLICT` and creates no third server write. The repaired focused journey passes in Chromium and WebKit.
 
+The merged-main VoiceOver runner passed two of three real reader journeys on each of two attempts but intermittently reported `VoiceOver not running` at the start of different tests; the exact PR head had passed 3/3. The cloud VoiceOver configuration now permits one test retry on CI, keeping the real screen-reader assertions unchanged. A retry is recorded by Playwright rather than silently counted as a first-pass result.
+
 Local boundary before the final fixture-scope strengthening: 208 unit files / 1,096 tests, TypeScript/production build, and full headless Chromium Browser 158/158 passed. The repaired focused restart and Schedule cancellation cases passed 2/2 in Chromium and 2/2 in WebKit. Local Firefox could not start its temporary profile (`Could not find profile folder`) before the test ran; the remote Firefox/WebKit Matrix is the required verification for that engine. New exact-head cloud gates and independent review remain.
 
 ## Owner issue ledger
