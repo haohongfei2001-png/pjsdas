@@ -77,6 +77,7 @@ export async function refreshConnectedAuthoritativeCache(
   const markCurrent = async () => {
     await assertLocalSnapshotCurrent(local, assertCurrent)
     assertCurrent()
+    await isRecordedAccountProjection(accountKey, local, { compact: true, assertCurrent })
     markFresh(accountKey, remote.version, remote.fingerprint, localFingerprint, observedAt)
   }
 
@@ -141,7 +142,7 @@ export async function refreshConnectedAuthoritativeCache(
       ? checkpoint.lastReadProjectionFingerprint
       : undefined
     const localChanged = localFingerprint !== (projectedBaseline ?? checkpoint.lastSyncedFingerprint)
-      && !await isRecordedAccountProjection(accountKey, local)
+      && !await isRecordedAccountProjection(accountKey, local, { compact: true, assertCurrent })
     const remoteChanged = remote.version !== checkpoint.lastSyncedVersion
       || remote.fingerprint !== checkpoint.lastSyncedFingerprint
     if (!localChanged && !remoteChanged) {

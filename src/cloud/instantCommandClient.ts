@@ -2,7 +2,7 @@ import { fingerprintWorkspace } from './workspaceFingerprint.js'
 import { interactionMetric } from './interactionMetrics.js'
 import type { UserDomainCommand } from '../domainCommands.js'
 import type { PJSDASSnapshot } from '../snapshot.js'
-import { exportLocalSnapshot, isRecordedAccountProjection, replaceLocalSnapshotFromCloud, persistInteractionProjections, persistInteractionProjection, readCommandInteractions, saveCommandInteraction, type CommandInteractionRecord } from '../db.js'
+import { exportLocalSnapshot, isRecordedAccountProjection, replaceLocalSnapshotFromCloud, persistInteractionProjections, persistInteractionProjection, readPendingCommandInteractions, readCommandInteraction, saveCommandInteraction, type CommandInteractionRecord } from '../db.js'
 import { fetchBackend } from '../backendEndpoints.js'
 import { getAccountAccessToken } from './cloudClient.js'
 import { captureAccountCacheLease } from './accountCacheLease.js'
@@ -47,7 +47,7 @@ export async function beginInstantCommand(accountKey: string, snapshot: PJSDASSn
   const baseRevision = version(accountKey)
   if (!Number.isSafeInteger(baseRevision)) throw new Error('请先连接并读取账号记录。')
   const projected = interactionProjection(snapshot, command, baseRevision)
-  const existing = await readCommandInteractions(accountKey)
+  const existing = await readPendingCommandInteractions(accountKey)
   const overlapping = existing.filter(item => item.state === 'active' && item.delta.changes.some(left => projected.delta.changes.some(right => left.collection === right.collection && left.id === right.id)
     || (['set_date_capacity', 'set_daily_capacity', 'set_work_windows'].includes(command.kind) && left.collection === 'timePlanning')))
   const record: CommandInteractionRecord = { id: recordId(accountKey, command.commandId), accountKey, commandId: command.commandId,
@@ -67,7 +67,7 @@ export async function beginInstantCommand(accountKey: string, snapshot: PJSDASSn
 export async function beginInstantUndo(accountKey: string, targetCommandId: string) {
   const started = performance.now()
   const lease = captureAccountCacheLease(accountKey)
-  const target = (await readCommandInteractions(accountKey)).find(item => item.commandId === targetCommandId)
+  const target = await readCommandInteraction(accountKey, targetCommandId)
   if (!target || target.state === 'rejected' || target.state === 'conflict') throw new Error('这次操作无法安全撤销，请核对最新记录。')
   const commandId = createConnectedCommandId('instant-undo')
   const record: CommandInteractionRecord = { id: recordId(accountKey, commandId), commandId, accountKey, targetCommandId,
@@ -94,7 +94,7 @@ async function network(accountKey: string, body: Record<string, unknown>) {
 }
 async function reject(record: CommandInteractionRecord, message: string, state: 'rejected' | 'conflict') {
   const lease = captureAccountCacheLease(record.accountKey)
-  const all = await readCommandInteractions(record.accountKey)
+  const all = await readPendingCommandInteractions(record.accountKey)
   const rejectedIds = new Set([record.commandId])
   const dependents: CommandInteractionRecord[] = []
   let changed = true
@@ -161,7 +161,9 @@ async function reconcile(record: CommandInteractionRecord, payload: any, assertC
       return
     }
     validateWorkspaceDelta(payload.delta)
-    const all = await readCommandInteractions(record.accountKey)
+    const all = [...await readPendingCommandInteractions(record.accountKey), ...(
+      await Promise.all((record.predecessors ?? []).map(id => readCommandInteraction(record.accountKey, id))))
+      .filter((item): item is CommandInteractionRecord => Boolean(item && item.state === 'confirmed'))]
     const later = orderInteractions(all.filter(item => item.state === 'active' && item.commandId !== record.commandId
       && item.predecessors?.includes(record.commandId)))
     const settlement: WorkspaceDelta = { ...payload.delta, changes: payload.delta.changes.map((change: EntityDelta) => {
@@ -198,7 +200,7 @@ async function reconcile(record: CommandInteractionRecord, payload: any, assertC
 }
 async function send(record: CommandInteractionRecord, recovery: boolean) {
   if (!navigator.onLine) return
-  const durable = (await readCommandInteractions(record.accountKey)).find(item => item.commandId === record.commandId)
+  const durable = await readCommandInteraction(record.accountKey, record.commandId)
   if (durable?.state === 'rejected' || durable?.state === 'conflict' || durable?.state === 'confirmed') return
   if (durable) record = durable
   try {
@@ -215,7 +217,7 @@ async function send(record: CommandInteractionRecord, recovery: boolean) {
         return
       }
     }
-    const predecessors = (await readCommandInteractions(record.accountKey)).filter(item => record.predecessors?.includes(item.commandId))
+    const predecessors = (await Promise.all((record.predecessors ?? []).map(id => readCommandInteraction(record.accountKey, id)))).filter((item): item is CommandInteractionRecord => Boolean(item))
     if (predecessors.some(item => item.state === 'active' || item.state === 'projection_pending')) return
     if (predecessors.some(item => item.state === 'conflict' || item.state === 'rejected')) return reject(record, '先前相关操作未被接受；已恢复这次修改。', 'rejected')
     const baseRevision = Math.max(record.delta.baseRevision, ...predecessors.map(item => item.serverRevision ?? record.delta.baseRevision))
@@ -224,7 +226,15 @@ async function send(record: CommandInteractionRecord, recovery: boolean) {
       : { action: 'command', commandId: record.commandId, baseRevision, command: { type: 'domain', value: record.command } })
     if (request.response.status === 409 && request.payload.outcome === 'CONFLICT') return reconcile(record, request.payload, request.lease.assertCurrent)
     if (!request.response.ok) {
-      if ([400, 401, 403, 404, 405, 422].includes(request.response.status)) return reject(record, '这次修改未被接受，已恢复原状态。请检查登录和这项记录。', 'rejected')
+      if ([401, 403].includes(request.response.status)) {
+        const message = request.response.status === 401
+          ? '登录已过期；修改保留在本机，重新登录后会先核对原操作。'
+          : '账号访问暂不可用；修改保留在本机，访问恢复后会先核对原操作。'
+        settleConnectedInteraction(record.accountKey, record.commandId, 'pending', message)
+        emit(record, undefined, message)
+        return
+      }
+      if ([400, 404, 405, 422].includes(request.response.status)) return reject(record, '这次修改未被接受，已恢复原状态。请检查登录和这项记录。', 'rejected')
       throw new Error('Confirmation unavailable.')
     }
     await reconcile(record, request.payload, request.lease.assertCurrent)
@@ -237,13 +247,13 @@ async function send(record: CommandInteractionRecord, recovery: boolean) {
   }
 }
 export async function recoverInstantInteraction(accountKey: string, commandId: string) {
-  let record = (await readCommandInteractions(accountKey)).find(item => item.commandId === commandId)
+  let record = await readCommandInteraction(accountKey, commandId)
   if (!record) {
     const pending = listAccountPendingOperations(accountKey).find(item => item.commandId === commandId)
     if (!pending?.interaction) return
     const local = await exportLocalSnapshot()
     const target = pending.targetCommandId
-      ? (await readCommandInteractions(accountKey)).find(item => item.commandId === pending.targetCommandId) : undefined
+      ? await readCommandInteraction(accountKey, pending.targetCommandId) : undefined
     const delta = pending.command?.type === 'domain'
       ? interactionProjection(local, pending.command.value, pending.baseRevision ?? version(accountKey)).delta
       : target ? { ...reverseWorkspaceDelta(target.delta), changes: reverseWorkspaceDelta(target.delta).changes.filter(change => change.collection !== 'timeline') } : undefined

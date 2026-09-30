@@ -68,6 +68,7 @@ for (const [connected, application] of [[false, false], [true, false], [true, tr
   expect((await rows(page, 'scheduleNodes')).find((item) => item.id === 'history-node-6')?.state).toBe('completed')
   await page.locator('.action-undo-toast').getByRole('button', { name: /撤销|Undo/ }).click()
   await expect(page.locator('.action-undo-toast')).toHaveCount(0)
+  if (connected) await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem('pjsdas-cgr01-pending:account-a') ?? '[]').length)).toBe(0)
   await checkHistory(page, before)
   // The completion audit is retained after compensation, not deleted by Undo.
   const retainedTimeline = await rows(page, 'timeline')
@@ -114,12 +115,13 @@ test('queued action completion becomes confirmed with Undo after automatic recon
   await page.getByRole('button', { name: /查看岗位详情|View job details/ }).click()
   await context.setOffline(true)
   await page.locator('.opportunity-detail-action-list article').filter({ hasText: 'History task' }).getByRole('button', { name: /标记完成|Mark done/ }).click()
-  await expect(page.locator('.action-undo-toast')).toContainText(/待同步|Pending/)
+  await expect(page.locator('.action-undo-toast')).toContainText(/已保存在本机|Saved on this device/)
+  await expect(page.locator('.action-undo-toast').getByRole('button', { name: /撤销|Undo/ })).toBeVisible()
   expect(state.commands).toHaveLength(0)
   await context.setOffline(false)
   await page.evaluate(() => window.dispatchEvent(new Event('online')))
   await expect(page.locator('.action-undo-toast').getByRole('button', { name: /撤销|Undo/ })).toBeVisible()
-  expect(state.commands).toHaveLength(1)
+  await expect.poll(() => state.commands.length).toBe(1)
   expect((await rows(page, 'actions')).find((item) => item.id === 'history-task')?.status).toBe('done')
 })
 

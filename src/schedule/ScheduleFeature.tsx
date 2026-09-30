@@ -206,9 +206,9 @@ export default function ScheduleFeature({
     const update = (event: Event) => {
       const detail = (event as CustomEvent<import('../cloud/instantCommandClient.js').InteractionEvent>).detail
       setFeedback(current => current?.commandId !== detail.commandId ? current : {
-        ...current, text: detail.state === 'confirmed' ? (zh ? '修改已同步。' : 'Change synced.') : detail.message ?? current.text,
+        ...current, text: detail.state === 'confirmed' ? (zh ? current.text.replace('正在同步', '已同步') : current.text.replace('syncing', 'synced')) : detail.message ?? current.text,
         error: detail.state === 'conflict' || detail.state === 'rejected',
-        commandId: detail.state === 'conflict' || detail.state === 'rejected' ? undefined : current.commandId,
+        commandId: ['conflict', 'rejected', 'projection_pending'].includes(detail.state) ? undefined : current.commandId,
       })
     }
     window.addEventListener('pjsdas:interaction', update)
@@ -329,7 +329,7 @@ export default function ScheduleFeature({
         <button type="button" onClick={closeEntry} aria-label={zh ? '关闭详情' : 'Close details'}>×</button>
       </div>
       <p>{timeLabel(selected, zh, stream.timezone)}</p>
-      {selectedPending?.status === 'pending' ? <p role="status">{selectedPending.kind === 'reschedule'
+      {selectedPending && (selectedPending.status === 'pending' || (selectedPending.status === 'unknown' && selectedPending.kind === 'reschedule')) ? <p role="status">{selectedPending.kind === 'reschedule'
         ? `${zh ? '待同步的改期日期：' : 'Pending reschedule: '}${pendingRescheduleDate(selectedPending.temporal)}`
         : selectedPending.kind === 'complete'
           ? (zh ? '完成操作待同步。' : 'Completion pending.')

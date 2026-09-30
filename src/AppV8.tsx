@@ -1,4 +1,3 @@
-import { readModelSnapshot } from './readModelSnapshot.js'
 import { interactionMetric } from './cloud/interactionMetrics.js'
 import { beginInstantCommand, beginInstantUndo, type InteractionEvent } from './cloud/instantCommandClient.js'
 import { applyWorkspaceDelta } from './workspaceDelta.js'
@@ -167,7 +166,10 @@ export default function AppV8() {
   const [jobVisibleCount, setJobVisibleCount] = useState(40)
   const [opportunityQuery, setOpportunityQuery] = useState('')
   const detailOrigin = useRef<{ path: string; scrollY: number; actionId?: string; opportunityId?: string } | null>(null)
+  const [interactionNotice, setInteractionNotice] = useState<{ commandId: string; message: string }>()
+  const completionRef = useRef<CompletionFeedback | null>(null)
   const [lastCompletedAction, setLastCompletedAction] = useState<CompletionFeedback | null>(null)
+  completionRef.current = lastCompletedAction
   const [snapshot, setSnapshot] = useState<PJSDASSnapshot>()
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState<string>()
@@ -226,11 +228,16 @@ export default function AppV8() {
       const detail = (event as CustomEvent<InteractionEvent>).detail
       if (detail.accountKey !== cloud.session?.user.id) return
       if (detail.delta) setSnapshot(current => current ? applyWorkspaceDelta(current, detail.delta!, false) : current)
-      if (detail.state === 'rejected' || detail.state === 'conflict') setLastCompletedAction(current => ({
-        id: current?.id ?? detail.commandId, title: current?.title ?? '', previousStatus: current?.previousStatus ?? 'todo',
-        commandId: detail.commandId, outcome: 'error', error: detail.message,
-      }))
-      if (detail.state === 'active' && detail.message) setLastCompletedAction(current => current?.commandId === detail.commandId ? { ...current, syncMessage: detail.message } : current)
+      if (detail.state === 'rejected' || detail.state === 'conflict') {
+        if (completionRef.current?.commandId === detail.commandId) setLastCompletedAction(current => current?.commandId === detail.commandId
+          ? { ...current, outcome: 'error', error: detail.message } : current)
+        else if (detail.message) setInteractionNotice({ commandId: detail.commandId, message: detail.message })
+      }
+      if (detail.state === 'active' && detail.message) {
+        if (completionRef.current?.commandId === detail.commandId) setLastCompletedAction(current => current?.commandId === detail.commandId ? { ...current, syncMessage: detail.message } : current)
+        else setInteractionNotice({ commandId: detail.commandId, message: detail.message })
+      }
+      if (detail.state === 'confirmed') setInteractionNotice(current => current?.commandId === detail.commandId ? undefined : current)
       if (detail.state === 'confirmed') setLastCompletedAction(current => current?.commandId === detail.commandId ? { ...current, outcome: 'done', syncMessage: undefined } : current)
       if (detail.state === 'projection_pending') setLastCompletedAction(current => current?.commandId === detail.commandId
         ? { ...current, outcome: 'confirmed_pending' } : current)
@@ -453,9 +460,11 @@ export default function AppV8() {
 
   const accountKey = cloud.session?.user.id ?? 'local-workspace'
   const workspaceRevision = snapshot ? [cloud.session?.user.id ? getAccountCheckpoint(cloud.session.user.id).lastSyncedVersion ?? 'pending' : 'local', snapshot.exportedAt].join(':') : ''
-  const normalizedReadSnapshot = useMemo(() => snapshot ? readModelSnapshot(snapshot) : undefined, [snapshot])
-  const todayWeb = useMemo(() => { if (!normalizedReadSnapshot) return undefined; const started = performance.now(); const result = selectTodayWebNormalized(normalizedReadSnapshot, {}, { now, timezone, workspaceVersion: workspaceRevision }); interactionMetric('today-selector', started); return result }, [snapshot, now, timezone, workspaceRevision])
-  const scheduleStream = useMemo(() => { if (!normalizedReadSnapshot) return undefined; const started = performance.now(); const result = buildScheduleStreamNormalized(normalizedReadSnapshot, { accountKey, workspaceRevision, timezone, now }); interactionMetric('schedule-selector', started); return result }, [snapshot, accountKey, workspaceRevision, timezone, now])
+  // Cold IDB export and both local/server command kernels already normalize
+  // this snapshot. Read-only selectors can share it without cloning entities.
+  const normalizedReadSnapshot = snapshot
+  const todayWeb = useMemo(() => { if (!normalizedReadSnapshot || surface !== 'today') return undefined; const started = performance.now(); const result = selectTodayWebNormalized(normalizedReadSnapshot, {}, { now, timezone, workspaceVersion: workspaceRevision }); interactionMetric('today-selector', started); return result }, [snapshot, surface, now, timezone, workspaceRevision])
+  const scheduleStream = useMemo(() => { if (!normalizedReadSnapshot || (surface !== 'today' && surface !== 'schedule')) return undefined; const started = performance.now(); const result = buildScheduleStreamNormalized(normalizedReadSnapshot, { accountKey, workspaceRevision, timezone, now }); interactionMetric('schedule-selector', started); return result }, [snapshot, surface, accountKey, workspaceRevision, timezone, now])
 
   const opportunityDecisionList = useMemo<OpportunityDecisionListRead | undefined>(() => {
     if (!snapshot || surface !== 'opportunities') return undefined
@@ -528,7 +537,7 @@ export default function AppV8() {
           ? { commandId, kind: 'record_application_submission' as const, opportunityId: before.opportunityId! }
           : { commandId, kind: 'set_action_status' as const, actionId: id, status }
         await beginInstantCommand(cloud.session.user.id, snapshot, command)
-        if (status === 'done') setLastCompletedAction({ id, title: before.title, previousStatus: before.status, commandId, outcome: 'done' })
+        if (status === 'done') setLastCompletedAction({ id, title: before.title, previousStatus: before.status, commandId, outcome: 'done', syncMessage: navigator.onLine ? undefined : (zh ? '已保存在本机，联网后自动同步。' : 'Saved on this device; sync resumes when online.') })
         return
       }
       {
@@ -658,7 +667,7 @@ export default function AppV8() {
     if (!account) return undefined
     const pending = listAccountPendingOperations(account).find(item => {
       const value = item.command?.type === 'domain' ? item.command.value : undefined
-      return (!item.interaction || item.status === 'conflict' || item.status === 'projection_pending') && item.action === 'command' && value && 'occurrenceId' in value && value.occurrenceId === occurrenceId
+      return item.action === 'command' && value && 'occurrenceId' in value && value.occurrenceId === occurrenceId
         && ['complete_occurrence', 'cancel_occurrence', 'reschedule_occurrence'].includes(value.kind)
     })
     const value = pending?.command?.type === 'domain' ? pending.command.value : undefined
@@ -713,9 +722,9 @@ export default function AppV8() {
     if (!pending && snapshot) {
       await beginInstantCommand(account, snapshot, command)
       return { outcome: 'OPTIMISTIC' as const, commandId, message: kind === 'cancel'
-        ? (zh ? '已取消，正在同步。' : 'Cancelled; syncing.')
-        : kind === 'complete' ? (zh ? '已完成，正在同步。' : 'Completed; syncing.')
-          : (zh ? '已改期，正在同步。' : 'Rescheduled; syncing.') }
+        ? (zh ? (navigator.onLine ? '已取消，正在同步。' : '已取消，联网后自动提交。') : (navigator.onLine ? 'Cancelled; syncing.' : 'Cancelled; will submit when connected.'))
+        : kind === 'complete' ? (zh ? (navigator.onLine ? '已完成，正在同步。' : '已完成，联网后自动提交。') : (navigator.onLine ? 'Completed; syncing.' : 'Completed; will submit when connected.'))
+          : (zh ? (navigator.onLine ? '已改期，正在同步。' : '已改期，联网后自动提交。') : (navigator.onLine ? 'Rescheduled; syncing.' : 'Rescheduled; will submit when connected.')) }
     }
     if (pending?.status === 'conflict') {
       throw new Error(zh ? '这次安排已被另一处修改，请核对最新安排后再操作。' : 'This occurrence changed elsewhere. Review the latest schedule before trying again.')
@@ -802,6 +811,7 @@ export default function AppV8() {
       </header>
 
       <main className="main-panel surface-main ultimate-main cgr-main">
+        {interactionNotice ? <div className="tsui-interaction-notice" role="status">{interactionNotice.message}<button type="button" aria-label={zh ? '关闭提示' : 'Dismiss notice'} onClick={() => setInteractionNotice(undefined)}>×</button></div> : null}
         {surface === 'settings' ? <OriginTransitionNotice onOpenSettings={() => navigate('/settings')} /> : null}
         {loading ? <div className="empty-card">{zh ? '正在读取工作区…' : 'Loading workspace…'}</div> : null}
 

@@ -11,7 +11,7 @@ export async function setupInstantServer(context: BrowserContext, historyRows = 
   const sent: string[] = []
   const payloadBytes: number[] = []
   const serverExecutionMs: number[] = []
-  let deny = false
+  let deny: number | undefined
   let loseResponse = false
   const compensations = new Map<string, any>()
   const receipts = new Map<string, any>()
@@ -29,9 +29,9 @@ export async function setupInstantServer(context: BrowserContext, historyRows = 
     if (body.action === 'command' || body.action === 'undo') {
       sent.push(body.commandId)
       if (receipts.has(body.commandId)) return cors(route, { ...receipts.get(body.commandId), outcome: 'ALREADY_APPLIED' })
-      const rejectThis = deny; deny = false
+      const rejectThis = deny; deny = undefined
       await new Promise(resolve => setTimeout(resolve, delay))
-      if (rejectThis) return cors(route, { code: 'COMMAND_REJECTED' }, 422)
+      if (rejectThis) return cors(route, { code: 'COMMAND_REJECTED' }, rejectThis)
       const executionStarted = performance.now()
       const before = snapshot
       if (body.action === 'undo') snapshot = applyDomainCompensation(snapshot, compensations.get(body.targetCommandId), serverNow)
@@ -47,5 +47,5 @@ export async function setupInstantServer(context: BrowserContext, historyRows = 
     }
     return cors(route, { code: 'UNEXPECTED' }, 400)
   })
-  return { sent, payloadBytes, serverExecutionMs, setNow: (value: Date) => { serverNow = value }, denyNext: () => { deny = true }, loseNextResponse: () => { loseResponse = true }, backgroundGmail: () => { snapshot.data.timeline!.push({ id: 'instant-gmail-audit', kind: 'opportunity_updated', category: 'opportunity', source: 'user_action', title: 'Independent source fact', occurredAt: INSTANT_NOW.toISOString(), recordedAt: INSTANT_NOW.toISOString() }); snapshot.data.opportunities[10].role = 'Independent Gmail role'; revision++ }, setDelay: (value: number) => { delay = value }, get snapshot() { return snapshot } }
+  return { sent, payloadBytes, serverExecutionMs, setNow: (value: Date) => { serverNow = value }, denyNext: (status = 422) => { deny = status }, loseNextResponse: () => { loseResponse = true }, backgroundGmail: () => { snapshot.data.timeline!.push({ id: 'instant-gmail-audit', kind: 'opportunity_updated', category: 'opportunity', source: 'user_action', title: 'Independent source fact', occurredAt: INSTANT_NOW.toISOString(), recordedAt: INSTANT_NOW.toISOString() }); snapshot.data.opportunities[10].role = 'Independent Gmail role'; revision++ }, setDelay: (value: number) => { delay = value }, get snapshot() { return snapshot } }
 }

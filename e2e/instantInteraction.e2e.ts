@@ -207,6 +207,7 @@ test('application submitted immediately settles the exact action and process', a
   const server = await setup(context)
   server.setDelay(1000)
   await start(page)
+  await expect(page.locator('[data-action-id="apply:dense-job-2"] .tsui-done-action')).toBeVisible()
   const duration = await page.evaluate(async () => {
     const started = performance.now()
     ;(document.querySelector('[data-action-id="apply:dense-job-2"] .tsui-done-action') as HTMLButtonElement).click()
@@ -297,4 +298,66 @@ test('three optimistic edits retain latest intent through acknowledgements in de
   expect(server.snapshot.data.timePlanning!.dateOverrides?.['2026-10-01']).toBe(180)
   await page.reload()
   await expect(page.locator('.tsui-capacity summary')).toContainText('3 小时')
+})
+
+
+for (const status of [401, 403]) test(`authentication ${status} retains durable intent and retries the same identity`, async ({ page, context }) => {
+  const server = await setup(context)
+  server.setDelay(50)
+  await start(page)
+  server.denyNext(status)
+  await page.locator('[data-action-id="dense-action-0"] .tsui-done-action').click()
+  await expect(page.locator('[data-action-id="dense-action-0"]')).toHaveCount(0)
+  await expect(page.getByRole('status').filter({ hasText: status === 401 ? '登录已过期' : '账号访问暂不可用' })).toBeVisible()
+  expect(await pendingCount(page)).toBe(1)
+  const id = server.sent[0]
+  expect(server.snapshot.data.actions[0].status).toBe('todo')
+  await page.reload()
+  await expect.poll(() => pendingCount(page), { timeout: 15000 }).toBe(0)
+  expect(server.sent).toEqual([id, id])
+  expect(server.snapshot.data.actions[0].status).toBe('done')
+})
+
+test('unrelated rejected capacity preserves a completed task Undo control', async ({ page, context }) => {
+  const server = await setup(context)
+  server.setDelay(100)
+  await start(page)
+  await page.locator('[data-action-id="dense-action-0"] .tsui-done-action').click()
+  await expect.poll(() => pendingCount(page)).toBe(0)
+  server.denyNext()
+  await page.locator('.tsui-capacity summary').click()
+  await page.getByRole('spinbutton', { name: '今天可用小时' }).fill('5')
+  await page.getByRole('button', { name: '保存', exact: true }).click()
+  await expect(page.locator('.tsui-interaction-notice')).toContainText('这次修改未被接受')
+  await page.locator('.action-undo-toast button').click()
+  await expect(page.locator('[data-action-id="dense-action-0"]')).toBeVisible()
+  await expect.poll(() => pendingCount(page)).toBe(0)
+  expect(server.snapshot.data.actions[0].status).toBe('todo')
+})
+
+test('verified proof compaction retains original journals and audit and refuses genuine local edits', async ({ page, context }) => {
+  const server = await setup(context)
+  server.setDelay(50)
+  await start(page)
+  await page.locator('[data-action-id="dense-action-0"] .tsui-done-action').click()
+  await expect.poll(() => pendingCount(page)).toBe(0)
+  const result = await page.evaluate(async () => {
+    const api = await import('/pjsdas/src/db.ts'), db = await api.dbPromise
+    const originalJournal = await api.readCommandInteractions('instant-owner')
+    const timelineBefore = await db.count('timeline')
+    const tx = db.transaction('projectionDeltas', 'readwrite')
+    for (let index = 0; index < 64; index++) await tx.store.add({ accountKey: 'instant-owner', delta: { contract: 'delta-v1', baseRevision: 1205, changes: [] } })
+    await tx.done
+    const local = await api.exportLocalSnapshot()
+    const verified = await api.isRecordedAccountProjection('instant-owner', local, { compact: true })
+    const after = await db.count('projectionDeltas')
+    const stillVerified = await api.isRecordedAccountProjection('instant-owner', await api.exportLocalSnapshot())
+    const journalRetained = JSON.stringify(originalJournal) === JSON.stringify(await api.readCommandInteractions('instant-owner'))
+    const timelineRetained = timelineBefore === await db.count('timeline')
+    const action = await db.get('actions', 'dense-action-0')
+    await db.put('actions', { ...action!, title: 'Genuine independent local edit' })
+    const genuineEditVerified = await api.isRecordedAccountProjection('instant-owner', await api.exportLocalSnapshot(), { compact: true })
+    return { verified, after, stillVerified, journalRetained, timelineRetained, genuineEditVerified }
+  })
+  expect(result).toEqual({ verified: true, after: 0, stillVerified: true, journalRetained: true, timelineRetained: true, genuineEditVerified: false })
 })

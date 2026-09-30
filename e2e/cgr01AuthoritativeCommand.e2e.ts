@@ -317,7 +317,7 @@ test('connected Web recovers a lost command response and Undo preserves unrelate
 
   await page.locator('.tsui-task-row').filter({ has: page.getByRole('heading', { name: 'A第一任务' }) }).getByRole('button', { name: '完成' }).click()
   await expect(page.getByRole('status')).toContainText('已完成')
-  expect(commandBodies).toHaveLength(1)
+  await expect.poll(() => commandBodies.length).toBe(1)
   expect(commandBodies[0]).toMatchObject({
     action: 'command',
     command: { type: 'domain', value: { kind: 'set_action_status', actionId: 'A-action-1', status: 'done' } },
@@ -660,7 +660,7 @@ test('CGR-05 Discovery status, Profile and promotion use scoped first-party comm
     await expect(itemA).toHaveClass(/status-new/)
     await itemA.getByRole('button', { name: '已看' }).click()
     await expect(itemA).toHaveClass(/status-seen/)
-    expect(commandBodies).toHaveLength(1)
+    await expect.poll(() => commandBodies.length).toBe(1)
     expect(commandBodies[0].command.value).toMatchObject({ inboxItemId: 'inbox:cgr05-job', status: 'seen' })
     expect(commandBodies[0]).not.toHaveProperty('snapshot')
     expect(snapshotCommits).toBe(0)

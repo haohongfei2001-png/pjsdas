@@ -252,3 +252,5 @@
 .cgr-app-shell :is(button,a,input,textarea,summary){scroll-margin-block:calc(var(--ta-header-height,70px) + 24px) 32px}
 
 .tsui-deadline-notice p,.tsui-deadline-notice ul{flex-basis:100%;margin:2px 0}.tsui-deadline-notice ul{padding-left:18px}
+
+.tsui-interaction-notice{display:flex;align-items:center;gap:8px;margin:0 0 8px;font-size:.8125rem;color:#694b2b}.tsui-interaction-notice button{border:0;background:transparent;padding:6px;color:inherit}

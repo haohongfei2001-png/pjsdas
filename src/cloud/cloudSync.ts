@@ -139,7 +139,7 @@ export async function runCloudSync(userId: string, options: { passive?: boolean;
     assertCurrent()
     await assertLocalSnapshotCurrent(local, assertCurrent)
     const checkpoint = getAccountCheckpoint(userId)
-    const recordedProjection = await isRecordedAccountProjection(userId, local)
+    const recordedProjection = await isRecordedAccountProjection(userId, local, { compact: unresolvedPendingCommandCount(userId) === 0, assertCurrent })
     assertCurrent()
     // A connected browser keeps unresolved user intent in its account-bound
     // outbox. No workspace refresh may replace that cache before recovery.

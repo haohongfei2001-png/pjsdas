@@ -26,7 +26,7 @@ A warmed synthetic owner workspace with a delayed 3s command took 4013ms to show
 
 ## Implementation decisions
 
-- IndexedDB v12 journals exact original commands, optimistic entity preimages, dependency identities and projection proofs. Outbox and affected stores commit atomically; the existing account-scoped mirror supports crash-window recovery.
+- IndexedDB v13 journals exact original commands, optimistic entity preimages, dependency identities and projection proofs. Outbox and affected stores commit atomically; the existing account-scoped mirror supports crash-window recovery.
 - Confirmations settle only affected fields, including compact-delta omitted-field preservation and server-clock differences. Related queued edits overlay earlier confirmations; rejection unwinds dependent edits atomically in dependency order. Genuine unrecorded field edits stay intact.
 - Ordinary receipt recovery checks the ledger before sending anything. Confirmed-but-blocked projection uses an explicitly requested read-only full snapshot; a business outcome never becomes unknown because local projection fails.
 - Consumer read models retain immutable historical evidence without cloning its multi-MB payload. Only changed arrays receive new references; connected hot operations emit one incremental event and avoid workspace replacement/manual reload.
@@ -43,4 +43,19 @@ The first independent read-only review found three correctness issues: unchanged
 - 24 Chromium command/recovery cases passed before the additional three-dependent-edit ordering regression.
 - Dense performance: capacity acknowledgement p95 43ms / settled 59ms; completion 68ms; Undo 48ms; durable outbox 10ms. Submission settled 64ms, complete occurrence 64ms, cancel 61ms, reschedule 55ms. No long tasks >50ms. 100-row versus 3940-row capacity settled 54ms versus 59ms.
 - A further independent review found explicit-save suppression and legacy verification scripts depending on snapshots. Explicit saves now always journal and confirm; integrity canaries explicitly request their compatibility snapshot contract. No production canary was executed.
-- Background refresh defers full read/fingerprint work while ordinary commands are unresolved; existing persisted conflicts still reclassify at current authoritative revisions. Today and Schedule share one normalized snapshot per render to avoid duplicate entity cloning.
+- Background refresh defers full read/fingerprint work while ordinary commands are unresolved; existing persisted conflicts still reclassify at current authoritative revisions. Today and Schedule share the producer-normalized snapshot without cloning; only selectors needed by the current surface run. Timezone validation and formatters use bounded caches.
+
+
+## Final review recovery corrections
+
+- 401/403 preserve stable durable intent and optimistic local state; reconnect/sign-in recovery checks receipts before retrying the original identity. Authentication failure is distinct from definitive business rejection.
+- Completion feedback is command scoped; unrelated capacity/schedule rejection gets a compact separate notice and preserves completion Undo.
+- Verified operational proof deltas compact at a 64-row threshold under metadata/proof locks with captured sequence checks. Original journals and business/audit stores remain intact. Diagnostics keep read-only classification by default.
+- The hot command journal uses an account/state index and direct identity lookups; retained confirmed archives are not loaded for ordinary clicks. The additive v13 migration also upgrades any preview v12 store.
+
+## Final local gates after review repairs
+
+- Full 1135 unit tests and type check passed after journal-index, projection-proof and readonly-history repairs. Dense recovery 21 cases passed; connected Schedule/offline/restart and cancellation-with-genuine-edit regressions passed.
+- Final production build performance passed both formal suites: 4.44 MB / 3940 timeline rows, capacity acknowledgement p95 29ms and settled 44ms; completion and Undo settled 32ms. Submission/complete/cancel/reschedule acknowledgement p95 32/30/29/27ms and settled 40/46/46/45ms; durable p95 18/14/13/12ms. No observed command long task exceeded 50ms. Short history and dense history capacity settled p95 were both 44ms.
+- Existing browser expectations now distinguish immediate durable optimistic state from later server confirmation. Exact command identity, authoritative outcome, reload audit equality and conflict retention assertions remain in place.
+- Final cloud exact-head gates and the fresh independent read-only review remain required before merge; this local receipt is not package closure.

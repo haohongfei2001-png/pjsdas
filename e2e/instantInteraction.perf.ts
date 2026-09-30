@@ -59,6 +59,7 @@ test('instant interactions meet p95 budgets without scaling with historical time
     const p95 = (values: number[]) => [...values].sort((a, b) => a - b)[Math.ceil(values.length * 0.95) - 1]
     const row = { historyRows, bytes: Buffer.byteLength(JSON.stringify(server.snapshot)), acknowledgementP95: p95(acknowledgements),
       settledP95: p95(samples), completionP95: p95(completionSamples), undoP95: p95(undoSamples), durableP95: p95(measures.durable), longTasks: measures.longTasks, samples }
+    await info.attach(`instant-${historyRows}-stages.json`, { body: JSON.stringify(measures), contentType: 'application/json' })
     results.push(row)
     console.log('INSTANT_SAMPLE:' + JSON.stringify(row))
     expect(row.acknowledgementP95).toBeLessThanOrEqual(100)
@@ -86,6 +87,7 @@ test('submission and schedule commands meet dense local p95 budgets while offlin
     await page.goto('/pjsdas/today')
     await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem('pjsdas-google-drive-sync-state-v2') ?? '{}').accounts?.['instant-owner']?.lastSyncedVersion)).toBe('txn:1204')
     if (operation !== 'submitted') await page.getByRole('button', { name: '日程', exact: true }).click()
+    else await expect(page.locator('[data-action-id="apply:dense-job-2"] .tsui-done-action')).toBeVisible()
     await page.evaluate(() => { Object.defineProperty(navigator, 'onLine', { configurable: true, get: () => false }); (window as any).denseMeasures = []; window.addEventListener('pjsdas:interaction-measure', event => (window as any).denseMeasures.push((event as CustomEvent).detail)); (window as any).denseLongTasks = []; new PerformanceObserver(list => (window as any).denseLongTasks.push(...list.getEntries().map(entry => entry.duration))).observe({ type: 'longtask' }) })
     const acknowledgement: number[] = [], settled: number[] = []
     for (let index = 0; index < 10; index++) {
@@ -113,6 +115,7 @@ test('submission and schedule commands meet dense local p95 budgets while offlin
     const metrics = await page.evaluate(() => ({ measures: (window as any).denseMeasures, longTasks: (window as any).denseLongTasks }))
     const p95 = (values: number[]) => [...values].sort((a, b) => a - b)[Math.ceil(values.length * .95) - 1]
     const row = { operation, acknowledgementP95: p95(acknowledgement), settledP95: p95(settled), durableP95: p95(metrics.measures.filter((entry: any) => entry.phase === 'durable-outbox').map((entry: any) => entry.durationMs)), longTasks: metrics.longTasks }
+    await info.attach(`instant-${operation}-stages.json`, { body: JSON.stringify(metrics), contentType: 'application/json' })
     results.push(row)
     console.log('INSTANT_SAMPLE:' + JSON.stringify(row))
     expect(row.acknowledgementP95).toBeLessThanOrEqual(100)
