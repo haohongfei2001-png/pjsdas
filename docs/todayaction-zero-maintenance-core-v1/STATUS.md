@@ -2,10 +2,12 @@
 
 Package: TODAYACTION-ZERO-MAINTENANCE-CORE-v1
 Baseline: remote `main@a98358a0565c0200fc7da73dce6e747050ced771`
-Phase: ZMC-00 through ZMC-04 merged and exact-main verified. ZMC-05 quiet Today is in progress; see [ZMC-01.md](ZMC-01.md), [ZMC-02.md](ZMC-02.md), [ZMC-03.md](ZMC-03.md), [ZMC-04.md](ZMC-04.md), and [ZMC-05.md](ZMC-05.md).
-Next: complete ZMC-05 gates, then ZMC-06 decision/parser debt. The package remains open until all owner completion gates are verified.
+Phase: ZMC-00 through ZMC-05 merged and exact-main verified. ZMC-06 decision/parser debt is in progress; see [ZMC-01.md](ZMC-01.md), [ZMC-02.md](ZMC-02.md), [ZMC-03.md](ZMC-03.md), [ZMC-04.md](ZMC-04.md), [ZMC-05.md](ZMC-05.md), and [ZMC-06.md](ZMC-06.md).
+Next: complete ZMC-06 gates, then ZMC-07 schedule/history. The package remains open until all owner completion gates are verified.
 
 Latest verified main before ZMC-05: `175265b687dc6846136d1ba8f6b03183c5a46593`, tree `fbc894cb7208a5051e935358f92e32a29e5aab48`. PR #200 passed full CI, Browser, Matrix, VoiceOver, visual, UI, brand, rollback, Vercel, and independent review. Production release manifest and API health returned that exact merge SHA.
+
+Latest verified main before ZMC-06: `5c2b02adb8cde0537bc0b41f32c068b4541d2802`, tree `fbb666304fb865504a11d7248715848af8c6fabb`. PR #201 exact head passed CI, Browser, Matrix, VoiceOver, visual, UI, brand, rollback, Vercel, and independent review. Merged-main CI, Browser, Matrix, VoiceOver, deployment, production self-test, and certifications succeeded. Production release manifest and API health returned that exact merge SHA. Open issue #62 remains unrelated to this phase.
 
 Remote baseline readback on 2026-09-30: no open PR; CI, Browser, Matrix, VoiceOver, production self-test, and verified release succeeded for `a98358a0`. `https://todayaction.com/release-manifest.json` and `/api/health` both returned that exact commit. Open issue #62 concerns immutable GitHub Releases and is unrelated to this package.
 

@@ -1561,6 +1561,22 @@ describe('UU06 shared Gmail intake', () => {
     expect(result.snapshot.data.processEvents).toHaveLength(0)
     expect(result.snapshot.data.decisionRequests).toHaveLength(0)
     expect(result.run.outcomes.unresolved).toBe(1)
+    let latest = result.snapshot
+    for (const version of ['parser-v2', 'parser-v3', 'parser-v4']) {
+      const replay = structuredClone(record)
+      replay.observation.inputId = `gmail:unknown-company-test:${version}`
+      replay.observation.source.sourceVersion = version
+      replay.observation.candidates[0]!.sourceVersionRefs = [version]
+      const next = applyGmailSemanticBatch(latest, {
+        runId: `unknown-company-test:${version}`, sourceId: 'gmail:primary',
+        checkedAt: '2026-09-24T05:00:00Z', authorized: true,
+        records: [replay], reconcileExisting: true,
+      })
+      expect(next.snapshot.data.decisionRequests).toHaveLength(0)
+      expect(next.snapshot.data.processEvents).toHaveLength(0)
+      expect(next.snapshot.data.timeline.some(item => item.ingestion?.sourceRecordId === 'unknown-company-test')).toBe(true)
+      latest = next.snapshot
+    }
   })
 
   it('indistinguishable same-company roles remain source debt rather than a fake choice', () => {
@@ -1607,7 +1623,14 @@ describe('UU06 shared Gmail intake', () => {
     versioned.observation.inputId = 'gmail:role-choice:parser-v2'
     versioned.observation.source.sourceVersion = 'parser-v2'
     versioned.observation.candidates[0]!.sourceVersionRefs = ['role-choice:parser-v2']
-    const repeated = applyGmailSemanticBatch(first.snapshot, {
+    // Parser object insertion order is not business content. A reprocessed
+    // source must retain the same open choice even if serialization differs.
+    versioned.observation.candidates[0] = Object.fromEntries(
+      Object.entries(versioned.observation.candidates[0]!).reverse(),
+    ) as typeof versioned.observation.candidates[number]
+    const reorderedWorkspace = structuredClone(first.snapshot)
+    reorderedWorkspace.data.opportunities.reverse()
+    const repeated = applyGmailSemanticBatch(reorderedWorkspace, {
       runId: 'role-choice-versioned', sourceId: 'gmail:primary',
       checkedAt: new Date(now.getTime() + 30_000).toISOString(),
       authorized: true, records: [versioned], reconcileExisting: true,

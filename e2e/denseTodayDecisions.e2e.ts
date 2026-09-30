@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { denseDecisionWorkspace, DENSE_NOW } from '../tests/fixtures/denseDecisionWorkspace.js'
+import { denseDecision, denseDecisionWorkspace, DENSE_NOW } from '../tests/fixtures/denseDecisionWorkspace.js'
 import { createSnapshot } from '../src/snapshot.js'
 import { action, opportunity } from './fixtures/todayWorkspace.js'
 
@@ -32,6 +32,48 @@ test('dense persisted owner-like debt stays accessible outside Today without gen
   const restarted = await context.newPage(); await restarted.goto('/pjsdas/today'); await page.close()
   await expect(restarted.getByRole('button', { name: /查看全部待决定事项/ })).toHaveCount(0)
   expect(await restarted.locator('.tsui-task-row').count()).toBeLessThan(20)
+})
+
+test('363 retained Gmail parser records coexist with one current answerable choice', async ({ page, context }) => {
+  await page.clock.install({ time: DENSE_NOW })
+  await page.goto('/'); await page.locator('.tsui-primary-nav').waitFor()
+  const snapshot = denseDecisionWorkspace()
+  const reasons = [
+    ...Array(173).fill('missing_required_field'),
+    ...Array(117).fill('ambiguous_target'),
+    ...Array(69).fill('low_confidence'),
+    ...Array(4).fill('ambiguous_occurrence'),
+  ] as Array<NonNullable<typeof snapshot.data.decisionRequests>[number]['reason']>
+  snapshot.data.decisionRequests = reasons.map((reason, index) => ({ ...denseDecision(index), reason }))
+  const [first, second] = snapshot.data.opportunities
+  first!.company = 'Current choice'; second!.company = 'Current choice'
+  second!.role = 'Analyst'
+  const current = structuredClone(snapshot.data.decisionRequests[0]!)
+  current.id = 'current-web-choice'
+  current.reason = 'ambiguous_target'
+  current.createdAt = DENSE_NOW.toISOString()
+  current.payloadBinding.inputId = 'current-web-input'
+  current.payloadBinding.source = { kind: 'web', sourceId: 'web', sourceRecordId: 'current-web-input',
+    observedAt: DENSE_NOW.toISOString(), assertedAt: DENSE_NOW.toISOString(), timezone: 'Asia/Shanghai' }
+  current.payloadBinding.statementMode = 'current_intent'
+  current.payloadBinding.candidate.target = { company: 'Current choice' }
+  current.choices = [first!, second!].map(job => ({ id: `opportunity:${job.id}`,
+    label: `${job.company}｜${job.role}`, consequence: 'Only this opportunity will be updated.',
+    resolution: { opportunityId: job.id } }))
+  snapshot.data.decisionRequests.push(current)
+  await page.evaluate(async input => (await import('/pjsdas/src/db.ts')).replaceLocalSnapshotFromCloud(input), snapshot)
+  await page.goto('/pjsdas/today')
+  await expect(page.locator('.tsui-task-row').filter({ hasText: '需要你决定' })).toHaveCount(1)
+  await expect(page.getByRole('button', { name: /查看全部待决定事项/ })).toHaveCount(0)
+  await page.goto('/pjsdas/decisions')
+  await expect(page.locator('.ultimate-decision-card')).toHaveCount(1)
+  await expect(page.getByText('历史待核对 / 数据质量 · 363')).toBeVisible()
+  const saved = await page.evaluate(async () => (await (await import('/pjsdas/src/db.ts')).dbPromise).getAll('decisionRequests'))
+  expect(saved).toHaveLength(364)
+  const secondPage = await context.newPage()
+  await secondPage.goto('/pjsdas/decisions')
+  await expect(secondPage.locator('.ultimate-decision-card')).toHaveCount(1)
+  await expect(secondPage.getByText('历史待核对 / 数据质量 · 363')).toBeVisible()
 })
 
 test('exact replay groups expose each preserved request and never group changed alternatives', async ({ page }) => {

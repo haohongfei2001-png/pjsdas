@@ -80,9 +80,33 @@ function stableHash(value: string) {
   return (hash >>> 0).toString(36)
 }
 
+function canonicalBusinessValue(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(canonicalBusinessValue)
+  if (value && typeof value === 'object') return Object.fromEntries(Object.entries(value)
+    .filter(([, item]) => item !== undefined)
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([key, item]) => [key, canonicalBusinessValue(item)]))
+  return value
+}
+
+function sameBusinessValue(left: unknown, right: unknown) {
+  return JSON.stringify(canonicalBusinessValue(left)) === JSON.stringify(canonicalBusinessValue(right))
+}
+
 function candidateBusinessSignature(candidate: SemanticCandidate) {
-  const { id: _id, sourceVersionRefs: _sourceVersionRefs, ...business } = candidate
-  return JSON.stringify(business)
+  const { id: _id, sourceVersionRefs: _sourceVersionRefs, evidenceRefs: _evidenceRefs, ...business } = candidate
+  return JSON.stringify(canonicalBusinessValue(business))
+}
+
+function sameDecisionChoices(left: DecisionRequestChoice[], right: DecisionRequestChoice[]) {
+  return sameBusinessValue([...left].sort((a, b) => a.id.localeCompare(b.id)),
+    [...right].sort((a, b) => a.id.localeCompare(b.id)))
+}
+
+function sameAffectedObjects(left: DecisionRequest['affectedObjects'], right: DecisionRequest['affectedObjects']) {
+  const order = (item: { type: string; id: string }) => `${item.type}:${item.id}`
+  return sameBusinessValue([...left].sort((a, b) => order(a).localeCompare(order(b))),
+    [...right].sort((a, b) => order(a).localeCompare(order(b))))
 }
 
 function iso(value: string | undefined) {
@@ -1157,10 +1181,9 @@ export function applySemanticIntake(
         : []
       const matchingOpen = currentChoices.find(item =>
         item.reason === request.reason
-        && JSON.stringify({ ...item.payloadBinding.candidate, sourceVersionRefs: undefined })
-          === JSON.stringify({ ...candidate, sourceVersionRefs: undefined })
-        && JSON.stringify(item.choices) === JSON.stringify(request.choices)
-        && JSON.stringify(item.affectedObjects) === JSON.stringify(request.affectedObjects))
+        && candidateBusinessSignature(item.payloadBinding.candidate) === candidateBusinessSignature(candidate)
+        && sameDecisionChoices(item.choices, request.choices)
+        && sameAffectedObjects(item.affectedObjects, request.affectedObjects))
       if (matchingOpen) {
         retirePriorOpenChoices(candidate.id, matchingOpen.id)
         continue
