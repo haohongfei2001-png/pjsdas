@@ -237,6 +237,11 @@ export default function CloudSettingsCard() {
           : localError}
           {codedLocalError && !user ? <details><summary>{zh ? '查看错误详情' : 'View error details'}</summary><p>{localError}</p></details> : null}
         </div> : null}
+        {!user && !localError && (cloud.error || cloud.checkpoint.lastError)
+          ? <div className="cloud-error"><details>
+            <summary>{zh ? '查看连接问题详情' : 'View connection error details'}</summary>
+            <p>{cloud.error || cloud.checkpoint.lastError}</p>
+          </details></div> : null}
       </section>
       <AiAccessSettingsCard />
     </>
