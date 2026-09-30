@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
+import { formatScheduleTemporal } from './scheduleDisplayTime.js'
+import { latestByOccurrence, nodeForAction } from './todayBrief.js'
 import { jobPostingFreshness } from './jobPosting.js'
 import OpportunityAssessmentSummary from './OpportunityAssessmentSummary.js'
 import OpportunityDecisionSummary from './OpportunityDecisionSummary.js'
@@ -14,6 +16,7 @@ import type {
   Opportunity,
   ProcessRecord,
   TimelineRecord,
+  ScheduleNode,
 } from './model.js'
 import './opportunityDetail.css'
 import './jobs/jobDetail.css'
@@ -25,6 +28,7 @@ interface OpportunityDetailDrawerProps {
   decision?: OpportunityDecisionRead
   process?: ProcessRecord
   actions: Action[]
+  scheduleNodes?: ScheduleNode[]
   decisionRequests: DecisionRequest[]
   relatedPrep: Array<{ id: string; title: string; reason: string }>
   applicationGroup?: ApplicationGroup
@@ -90,6 +94,7 @@ export default function OpportunityDetailDrawer({
   decision,
   process,
   actions,
+  scheduleNodes = [],
   decisionRequests,
   relatedPrep,
   applicationGroup,
@@ -121,6 +126,16 @@ export default function OpportunityDetailDrawer({
   const relevantActions = actions
     .filter((item) => !ended && (item.status === 'todo' || item.status === 'doing'))
     .sort((a, b) => (a.dueAt ?? '9999').localeCompare(b.dueAt ?? '9999'))
+  const latestScheduleNodes = latestByOccurrence(scheduleNodes)
+  const activeScheduleNodes = latestScheduleNodes
+    .filter(node => !['cancelled', 'superseded'].includes(node.state))
+  const actionTemporal = (action: Action) => {
+    const node = nodeForAction(action, activeScheduleNodes)
+    if (node) return node.temporal
+    // Retained terminal evidence must not reappear through a legacy action date.
+    if (latestScheduleNodes.some(item => item.relatedActionIds.includes(action.id))) return {}
+    return { precision: action.duePrecision, date: action.dueAt?.slice(0, 10), deadlineAt: action.dueAt }
+  }
   const orderedTimeline = [...timeline]
     .sort((a, b) => b.occurredAt.localeCompare(a.occurredAt))
   const visibleTimeline = orderedTimeline.slice(0, visibleTimelineCount)
@@ -229,7 +244,7 @@ export default function OpportunityDetailDrawer({
               <div className="opportunity-detail-action-list">
                 {relevantActions.map((action) => (
                   <article key={action.id}>
-                    <div><strong>{action.title}</strong><small>{action.dueAt ? formatDate(action.dueAt, zh) : (zh ? '无明确时间' : 'No dated node')}</small></div>
+                    <div><strong>{action.title}</strong><small>{formatScheduleTemporal(actionTemporal(action), zh, decision?.displayTimezone) ?? (zh ? '无明确时间' : 'No dated node')}</small></div>
                     <span>{actionStatusLabel(action.status, zh)}</span>
                     {!readOnly && action.kind !== 'apply' ? <button type="button" disabled={Boolean(pendingActionId)} onClick={() => {
                       setPendingActionId(action.id)

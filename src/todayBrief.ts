@@ -42,6 +42,7 @@ export interface TodayBriefActionTiming {
   shape?: ScheduleNodeTemporal['shape']
   precision?: ScheduleNodeTemporal['precision']
   timezone?: string
+  resolutionBasis?: ScheduleNodeTemporal['resolutionBasis']
   date?: string
   startAt?: string
   endAt?: string
@@ -303,6 +304,7 @@ function timingForAction(action: Action, node: ScheduleNode | undefined): TodayB
     shape: node.temporal.shape,
     precision: node.temporal.precision,
     timezone: node.temporal.timezone,
+    resolutionBasis: node.temporal.resolutionBasis,
     date: node.temporal.date,
     startAt: node.temporal.startAt,
     endAt: node.temporal.endAt,

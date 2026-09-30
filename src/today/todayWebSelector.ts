@@ -32,6 +32,7 @@ export interface TodayWebSelection {
   evaluatedAt: string
   displayTimezone: string
   actions: TodayBriefAction[]
+  notSelectedHardActions: TodayBriefAction[]
   decisions: TodayWebDecision[]
   actionCount: number
   decisionCount: number
@@ -92,10 +93,10 @@ export function selectTodayWeb(
     .map((request) => ({ id: `decision:${request.id}`, deepLink: `/decisions/${encodeURIComponent(request.id)}`, request }))
   const criticalWarnings: TodayBriefCoverageWarning[] = plan.conflicts.map(conflict => ({
     code: 'business_time_conflict', severity: 'critical',
-    title: conflict.kind === 'fixed_overlap' ? 'Two fixed commitments overlap.' : 'Required deadlines cannot fit in the available time.',
+    title: conflict.kind === 'fixed_overlap' ? 'Two fixed commitments overlap.' : 'Select the deadline work that fits the remaining time.',
     detail: conflict.kind === 'fixed_overlap'
       ? `The commitments ${conflict.relatedIds.join(' and ')} overlap in time.`
-      : `The required work ${conflict.relatedIds.join(', ')} cannot fit before its deadline.`,
+      : `Expected to fit: ${plan.planned.filter(item => conflict.selectedIds?.includes(item.action.id)).map(item => item.action.title).join(', ') || 'none'}. Not selected for today: ${plan.deferredHard.map(item => item.action.title).join(', ')}.`,
     relatedIds: conflict.relatedIds,
   }))
 
@@ -104,6 +105,8 @@ export function selectTodayWeb(
     evaluatedAt: context.now.toISOString(),
     displayTimezone: context.timezone,
     actions,
+    notSelectedHardActions: plan.deferredHard.map(item => actionView(item, nodes, opportunities, context.now,
+      context.timezone, rules.hardDeadlineHorizonHours)),
     decisions,
     actionCount: actions.length,
     decisionCount: decisions.length,

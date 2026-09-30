@@ -589,12 +589,12 @@ export default function AppV8() {
     navigate('/settings')
   }
 
-  function openOpportunity(id: string) {
-    const active = document.activeElement as HTMLElement | null
+  function openOpportunity(id: string, opener?: HTMLElement) {
+    const active = opener ?? document.activeElement as HTMLElement | null
     detailOrigin.current = {
       path: selectedOpportunityId ? '/library' : semanticPath() + window.location.search,
       scrollY: window.scrollY,
-      actionId: active?.closest<HTMLElement>('[data-action-id]')?.dataset.actionId,
+      actionId: active?.closest<HTMLElement>('[data-action-id]')?.dataset.actionId ?? active?.dataset.deferredActionId,
       opportunityId: active?.closest<HTMLElement>('[data-opportunity-id]')?.dataset.opportunityId,
     }
     navigate('/library/' + encodeURIComponent(id))
@@ -605,9 +605,10 @@ export default function AppV8() {
     window.requestAnimationFrame(() => window.requestAnimationFrame(() => {
       window.scrollTo(0, origin.scrollY)
       if (origin.actionId) {
-        const row = [...document.querySelectorAll<HTMLElement>('.tsui-task-row[data-action-id]')]
-          .find((element) => element.dataset.actionId === origin.actionId)
-        row?.querySelector<HTMLElement>('.tsui-task-context')?.focus()
+        const row = [...document.querySelectorAll<HTMLElement>('.tsui-task-row[data-action-id], [data-deferred-action-id]')]
+          .find((element) => (element.dataset.actionId ?? element.dataset.deferredActionId) === origin.actionId)
+        const opener = row?.querySelector<HTMLElement>('.tsui-task-context') ?? row
+        opener?.focus()
       } else if (origin.opportunityId) {
         const row = [...document.querySelectorAll<HTMLElement>('.opportunity-decision-row[data-opportunity-id]')]
           .find((element) => element.dataset.opportunityId === origin.opportunityId)
@@ -829,7 +830,7 @@ export default function AppV8() {
           <OpportunityDetailDrawer asPage
             returnLabel={detailOrigin.current?.path.startsWith('/today') ? (zh ? '返回今天' : 'Back to Today') : detailOrigin.current?.path.startsWith('/schedule') ? (zh ? '返回日程' : 'Back to Schedule') : (zh ? '返回岗位库' : 'Back to jobs')}
             opportunity={selectedOpportunity} decision={selectedOpportunityDecision} process={selectedProcess}
-            actions={selectedActions} decisionRequests={selectedDecisionRequests} relatedPrep={selectedRelatedPrep}
+            actions={selectedActions} scheduleNodes={snapshot?.data.scheduleNodes} decisionRequests={selectedDecisionRequests} relatedPrep={selectedRelatedPrep}
             applicationGroup={selectedGroup} timeline={selectedTimeline} onClose={closeOpportunity}
             onCapture={openCapture} onNavigate={navigateFromDetail}
             onOpenDecision={(id) => navigate('/decisions/' + encodeURIComponent(id) + '?from=' + encodeURIComponent(selectedOpportunity.id))}
@@ -883,7 +884,7 @@ function OpportunitiesSurface({
   onQueryChange: (query: string) => void
   visibleCount: number
   onVisibleCountChange: (count: number) => void
-  onOpenOpportunity: (id: string) => void
+  onOpenOpportunity: (id: string, opener?: HTMLElement) => void
 }) {
   const { lang } = useUiLanguage()
   const zh = lang === 'zh'

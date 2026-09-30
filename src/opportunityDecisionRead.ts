@@ -13,6 +13,7 @@ import type {
   ScheduleNodeTemporal,
 } from './model.js'
 import { effectiveScheduleNodeState } from './scheduleNodes.js'
+import { nodeForAction } from './todayBrief.js'
 import { upgradeSnapshotToLatest, type PJSDASSnapshot } from './snapshot.js'
 
 const HOUR = 3_600_000
@@ -56,6 +57,7 @@ export interface OpportunityDecisionAction {
   dueAt?: string
   duePrecision?: Action['duePrecision']
   timingMode?: Action['timingMode']
+  temporal?: ScheduleNodeTemporal
   rankingReasons: string[]
   operation:
     | 'open_application'
@@ -141,13 +143,31 @@ function groupFor(opportunity: Opportunity, groups: ApplicationGroup[]) {
     : undefined
 }
 
-function latestNodes(nodes: ScheduleNode[]) {
+function latestNodes(nodes: ScheduleNode[], includeTerminal = false) {
   const latest = new Map<string, ScheduleNode>()
   for (const node of nodes) {
     const current = latest.get(node.occurrenceId)
     if (!current || node.version > current.version) latest.set(node.occurrenceId, node)
   }
-  return [...latest.values()].filter((node) => node.state !== 'superseded' && node.state !== 'cancelled')
+  return [...latest.values()].filter((node) => includeTerminal || (node.state !== 'superseded' && node.state !== 'cancelled'))
+}
+
+function nodesForDecision(snapshot: PJSDASSnapshot) {
+  const actions = new Map(snapshot.data.actions.map(action => [action.id, action]))
+  const opportunities = new Map(snapshot.data.opportunities.map(opportunity => [opportunity.id, opportunity]))
+  return (snapshot.data.scheduleNodes ?? []).map(node => {
+    if (node.state !== 'completed' || node.kind !== 'application_deadline' || !node.opportunityId) return node
+    const opportunity = opportunities.get(node.opportunityId)
+    if (!opportunity || opportunity.participationStatus !== 'active'
+      || (processFor(opportunity, snapshot.data.processes)?.stage ?? opportunity.processStage) !== 'not_applied') return node
+    const linked = node.relatedActionIds.map(id => actions.get(id))
+      .filter(action => action?.kind === 'apply' && action.opportunityId === opportunity.id)
+    if (!linked.some(action => action?.status === 'done')
+      || !linked.some(action => action?.status === 'todo' || action?.status === 'doing')) return node
+    // Shared legacy completion records one application, not every linked one.
+    // Reclassify only this read view; keep the stored completion/audit untouched.
+    return { ...node, state: 'scheduled' as const }
+  })
 }
 
 function localDateKey(date: Date, timezone: string) {
@@ -237,9 +257,12 @@ function applicationUrl(opportunity: Opportunity) {
     ?? opportunity.detail?.facts?.application.applicationUrl
 }
 
-function actionRead(ranked: RankedAction | undefined, opportunity: Opportunity): OpportunityDecisionAction | undefined {
+function actionRead(ranked: RankedAction | undefined, opportunity: Opportunity, nodes: ScheduleNode[]): OpportunityDecisionAction | undefined {
   if (!ranked) return undefined
   const action = ranked.action
+  const latest = latestNodes(nodes, true)
+  const node = nodeForAction(action, latest.filter(item => !['cancelled', 'superseded'].includes(item.state)))
+  const terminalOnly = !node && latest.some(item => item.relatedActionIds.includes(action.id))
   let operation: OpportunityDecisionAction['operation'] = 'open_today'
   let externalUrl: string | undefined
   if (action.kind === 'apply') {
@@ -258,9 +281,10 @@ function actionRead(ranked: RankedAction | undefined, opportunity: Opportunity):
     kind: action.kind,
     status: action.status,
     estimatedMinutes: action.estimatedMinutes,
-    dueAt: action.dueAt,
+    dueAt: terminalOnly ? undefined : action.dueAt,
     duePrecision: action.duePrecision,
     timingMode: action.timingMode,
+    temporal: node?.temporal,
     rankingReasons: [...ranked.reasons].slice(0, 2),
     operation,
     externalUrl,
@@ -366,9 +390,10 @@ export function getOpportunityDecisionRead(
   if (!opportunity) return undefined
   const process = processFor(opportunity, snapshot.data.processes)
   const group = groupFor(opportunity, snapshot.data.applicationGroups)
-  const nearestNode = nearestNodeFor(opportunity, process, snapshot.data.scheduleNodes ?? [], ctx.now, ctx.timezone)
+  const nodes = nodesForDecision(snapshot)
+  const nearestNode = nearestNodeFor(opportunity, process, nodes, ctx.now, ctx.timezone)
   const freshness = sourceFreshness(opportunity, ctx.now)
-  const delta = deadlineDelta(opportunity.id, snapshot.data.scheduleNodes ?? [], ctx.now, ctx.timezone)
+  const delta = deadlineDelta(opportunity.id, nodes, ctx.now, ctx.timezone)
   const ranked = rankedActionsByOpportunity(snapshot, ctx.now).get(opportunity.id)
 
   return {
@@ -388,7 +413,7 @@ export function getOpportunityDecisionRead(
       result: process?.result,
       participation: opportunity.participationStatus === 'abandoned' ? 'abandoned' : 'active',
     },
-    nextAction: actionRead(ranked, opportunity),
+    nextAction: actionRead(ranked, opportunity, nodes),
     nearestNode,
     sourceFreshness: freshness,
     applicationGroupId: opportunity.applicationGroupId,
@@ -402,12 +427,13 @@ export function buildOpportunityDecisionList(
   const ctx = context(rawContext)
   const snapshot = upgradeSnapshotToLatest(rawSnapshot)
   const ranked = rankedActionsByOpportunity(snapshot, ctx.now)
+  const nodes = nodesForDecision(snapshot)
   const items = snapshot.data.opportunities.map((opportunity) => {
     const process = processFor(opportunity, snapshot.data.processes)
     const group = groupFor(opportunity, snapshot.data.applicationGroups)
-    const nearestNode = nearestNodeFor(opportunity, process, snapshot.data.scheduleNodes ?? [], ctx.now, ctx.timezone)
+    const nearestNode = nearestNodeFor(opportunity, process, nodes, ctx.now, ctx.timezone)
     const freshness = sourceFreshness(opportunity, ctx.now)
-    const delta = deadlineDelta(opportunity.id, snapshot.data.scheduleNodes ?? [], ctx.now, ctx.timezone)
+    const delta = deadlineDelta(opportunity.id, nodes, ctx.now, ctx.timezone)
     const read: OpportunityDecisionRead = {
       contractVersion: 1,
       workspaceRevision: ctx.workspaceVersion ?? `snapshot:${rawSnapshot.exportedAt}`,
@@ -425,7 +451,7 @@ export function buildOpportunityDecisionList(
         result: process?.result,
         participation: opportunity.participationStatus === 'abandoned' ? 'abandoned' : 'active',
       },
-      nextAction: actionRead(ranked.get(opportunity.id), opportunity),
+      nextAction: actionRead(ranked.get(opportunity.id), opportunity, nodes),
       nearestNode,
       sourceFreshness: freshness,
       applicationGroupId: opportunity.applicationGroupId,

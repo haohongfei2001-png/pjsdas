@@ -1,4 +1,5 @@
 import { presentRankingReasons } from './rankingReasonPresentation.js'
+import { formatScheduleTemporal } from './scheduleDisplayTime.js'
 import { presentStageLabel } from './stagePresentation.js'
 import { useUiLanguage } from './uiLanguage.js'
 import type { ProcessRecord } from './model.js'
@@ -82,15 +83,10 @@ export default function OpportunityDecisionSummary({
 
   const primary = decision.nextAction
   const node = decision.nearestNode
-  const nodeTime = node?.temporal.date
-    ?? node?.temporal.startAt
-    ?? node?.temporal.deadlineAt
-    ?? node?.temporal.endAt
-  const nodeTimeLabel = node?.temporal.precision === 'date' && node.temporal.date
-    ? node.temporal.date
-    : nodeTime
-      ? new Date(nodeTime).toLocaleString(zh ? 'zh-CN' : 'en-GB')
-      : undefined
+  const nodeTimeLabel = node && formatScheduleTemporal(node.temporal, zh, decision.displayTimezone)
+  const primaryTimeLabel = primary && formatScheduleTemporal(primary.temporal ?? {
+    precision: primary.duePrecision, date: primary.dueAt?.slice(0, 10), deadlineAt: primary.dueAt,
+  }, zh, decision.displayTimezone)
 
   return (
     <>
@@ -115,7 +111,7 @@ export default function OpportunityDecisionSummary({
           <div>
             <small>{zh ? '下一操作' : 'NEXT OPERATION'}</small>
             <strong>{primary.title}</strong>
-            <span>{primary.estimatedMinutes} {zh ? '分钟' : 'min'}{primary.dueAt ? ` · ${new Date(primary.dueAt).toLocaleString(zh ? 'zh-CN' : 'en-GB')}` : ''}</span>
+            <span>{primary.estimatedMinutes} {zh ? '分钟' : 'min'}{primaryTimeLabel ? ` · ${primaryTimeLabel}` : ''}</span>
           </div>
           {primary.operation === 'open_application' && primary.externalUrl
             ? <a href={primary.externalUrl} target="_blank" rel="noreferrer">{zh ? '打开申请' : 'Open application'}</a>

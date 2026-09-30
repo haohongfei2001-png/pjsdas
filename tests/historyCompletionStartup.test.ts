@@ -24,8 +24,8 @@ describe('history completion startup defense', () => {
     expect(value).toBe('2026-11-01T01:30:00-04:00')
   })
   it('retains real IANA timezone and UTC', () => {
-    expect(scheduleDisplayTimezone('Asia/Shanghai')).toBe('Asia/Shanghai')
-    expect(scheduleDisplayTimezone('UTC')).toBe('UTC')
+    expect(scheduleDisplayTimezone('Asia/Shanghai', 'source_explicit')).toBe('Asia/Shanghai')
+    expect(scheduleDisplayTimezone('UTC', 'source_explicit')).toBe('UTC')
   })
   it('keeps historical occurrence facts and unknown completion times unchanged while completing a current related task', () => {
     const task = action('task', 'Task', 'job')

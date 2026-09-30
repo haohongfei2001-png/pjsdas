@@ -1,4 +1,4 @@
-import { scheduleDisplayTimezone } from '../scheduleDisplayTime.js'
+import { formatScheduleTemporal } from '../scheduleDisplayTime.js'
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 import type { Opportunity, ScheduleNodeTemporal } from '../model.js'
 import { readScheduleWindow, type ScheduleEntry, type ScheduleSection, type ScheduleStream } from './scheduleStream.js'
@@ -11,7 +11,7 @@ const KIND: Record<string, [string, string]> = {
   follow_up: ['跟进', 'Follow up'], prep_trigger: ['准备节点', 'Preparation'],
 }
 
-function timeLabel(entry: ScheduleEntry, zh: boolean) {
+function timeLabel(entry: ScheduleEntry, zh: boolean, displayTimezone: string) {
   const temporal = entry.node?.temporal
   if (entry.section === 'history' && entry.occurredAt) {
     const happened = new Date(entry.occurredAt)
@@ -22,11 +22,11 @@ function timeLabel(entry: ScheduleEntry, zh: boolean) {
   if (!at) return zh ? '时间待定' : 'Time TBD'
   const date = new Date(at)
   if (!Number.isFinite(date.getTime())) return entry.date ?? (zh ? '时间待定' : 'Time TBD')
-  const label = new Intl.DateTimeFormat(zh ? 'zh-CN' : 'en-GB', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false, timeZone: scheduleDisplayTimezone(temporal?.timezone) }).format(date)
+  const label = formatScheduleTemporal(temporal ?? { deadlineAt: at }, zh, displayTimezone)
   if (temporal?.shape === 'availability_window') {
     const end = temporal.resolutionBasis !== 'legacy_projection' && temporal.endAt ? new Date(temporal.endAt) : undefined
     const endLabel = end && Number.isFinite(end.getTime())
-      ? new Intl.DateTimeFormat(zh ? 'zh-CN' : 'en-GB', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false, timeZone: scheduleDisplayTimezone(temporal.timezone) }).format(end)
+      ? formatScheduleTemporal({ ...temporal, startAt: temporal.endAt, deadlineAt: undefined }, zh, displayTimezone)
       : undefined
     return (zh ? '可参加 ' : 'Available ') + label + (endLabel ? ' – ' + endLabel : '')
   }
@@ -66,7 +66,7 @@ export function ScheduleWindowList({ stream, section, opportunities, onOpenOppor
       return <Fragment key={entry.id}>
         {(index === 0 || shown[index - 1].date !== entry.date) ? <h3 className="tsui-date-heading">{entry.date ?? (zh ? '时间待定' : 'Time TBD')}</h3> : null}
         <button className="tsui-node-row" type="button" disabled={!opportunity} onClick={() => { if (entry.opportunityId) onOpenOpportunity(entry.opportunityId) }}>
-        <span className="tsui-node-time">{timeLabel(entry, zh)}</span>
+        <span className="tsui-node-time">{timeLabel(entry, zh, stream.timezone)}</span>
         <span className="tsui-node-copy"><strong>{title}</strong><small>{text || (zh ? '独立事项' : 'Independent item')}</small></span>
         {entry.state === 'elapsed_unresolved' ? <span className="tsui-node-badge">{zh ? '待确认' : 'Unresolved'}</span> : null}
         {opportunity ? <span className="tsui-node-arrow" aria-hidden="true">›</span> : null}
@@ -315,7 +315,7 @@ export default function ScheduleFeature({
         <div><small>{selected.date ?? (zh ? '时间待定' : 'Time TBD')}</small><h2 id="tsui-event-title">{selected.kind === 'node' ? KIND[selected.title]?.[zh ? 0 : 1] ?? selected.title : selected.title}</h2></div>
         <button type="button" onClick={closeEntry} aria-label={zh ? '关闭详情' : 'Close details'}>×</button>
       </div>
-      <p>{timeLabel(selected, zh)}</p>
+      <p>{timeLabel(selected, zh, stream.timezone)}</p>
       {selectedPending?.status === 'pending' ? <p role="status">{selectedPending.kind === 'reschedule'
         ? `${zh ? '待同步的改期日期：' : 'Pending reschedule: '}${pendingRescheduleDate(selectedPending.temporal)}`
         : selectedPending.kind === 'complete'
@@ -350,7 +350,7 @@ export default function ScheduleFeature({
         return <Fragment key={entry.id}>
           {heading ? <h2 className={'tsui-schedule-date' + (todayMarker ? ' today' : '')}>{date}{todayMarker ? <span>{zh ? '今天' : 'Today'}</span> : null}</h2> : null}
           <button className="tsui-schedule-row" data-schedule-entry={entry.id} type="button" onClick={() => openEntry(entry)}>
-            <span className="tsui-schedule-time">{entry.node?.temporal.precision === 'date' ? zh ? '具体时间待定' : 'Exact time TBD' : timeLabel(entry, zh)}</span>
+            <span className="tsui-schedule-time">{entry.node?.temporal.precision === 'date' ? zh ? '具体时间待定' : 'Exact time TBD' : timeLabel(entry, zh, stream.timezone)}</span>
             <span className="tsui-schedule-copy"><strong>{title}</strong><small>{opportunity ? opportunity.company + ' · ' + opportunity.role : zh ? '独立事项' : 'Independent item'}</small></span>
             <span className={'tsui-schedule-state state-' + entry.section}>{entry.state === 'elapsed_unresolved' ? zh ? '待确认' : 'Unresolved'
               : entry.state === 'completed' ? zh ? '已完成' : 'Completed'

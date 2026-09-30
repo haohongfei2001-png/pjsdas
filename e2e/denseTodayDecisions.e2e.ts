@@ -168,7 +168,7 @@ test('one genuinely infeasible hard deadline has one actionable notice', async (
   await expect(page.locator('.tsui-inline-notice').filter({ hasText: '硬截止' })).toBeVisible()
   await page.getByRole('button', { name: /^节点/ }).click()
   await expect(page.locator('.tsui-deadline-notice')).toBeHidden()
-  await expect(page.locator('.tsui-deadline-notice button')).toHaveCount(1)
+  await expect(page.locator('.tsui-deadline-notice').getByRole('button', { name: '查看相关安排', includeHidden: true })).toHaveCount(1)
   await page.getByRole('button', { name: /^任务/ }).click()
   await expect(page.getByRole('button', { name: '查看相关安排' })).toBeVisible()
 })

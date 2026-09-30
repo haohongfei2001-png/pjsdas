@@ -250,3 +250,5 @@
 
 .tsui-schedule-detail{scroll-margin-top:calc(var(--ta-header-height,70px) + 20px)}
 .cgr-app-shell :is(button,a,input,textarea,summary){scroll-margin-block:calc(var(--ta-header-height,70px) + 24px) 32px}
+
+.tsui-deadline-notice p,.tsui-deadline-notice ul{flex-basis:100%;margin:2px 0}.tsui-deadline-notice ul{padding-left:18px}

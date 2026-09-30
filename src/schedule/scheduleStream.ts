@@ -1,3 +1,4 @@
+import { scheduleDisplayTimezone } from '../scheduleDisplayTime.js'
 import type { ScheduleNode, ScheduleNodeState, TimelineRecord } from '../model.js'
 import { effectiveScheduleNodeState } from '../scheduleNodes.js'
 import { upgradeSnapshotToLatest, type PJSDASSnapshot } from '../snapshot.js'
@@ -79,7 +80,7 @@ function temporalDate(node: ScheduleNode, timezone: string) {
   if (node.temporal.precision === 'date') return node.temporal.date
   const value = node.temporal.startAt ?? node.temporal.deadlineAt ?? node.temporal.endAt
   const parsed = validInstant(value)
-  return parsed ? localDateKey(parsed, timezone) : undefined
+  return parsed ? localDateKey(parsed, scheduleDisplayTimezone(node.temporal.timezone, node.temporal.resolutionBasis, timezone) ?? timezone) : undefined
 }
 
 function nodeEntry(node: ScheduleNode, state: ScheduleNodeState, section: ScheduleSection, date?: string): ScheduleEntry {
