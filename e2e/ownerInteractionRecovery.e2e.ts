@@ -92,6 +92,14 @@ test('a real local edit stays intact while a Settings conflict tracks newer remo
   await page.goto('/pjsdas/settings')
   await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem('pjsdas-google-drive-sync-state-v2') ?? '{}')
     .accounts?.['account-a']?.conflict?.remoteVersion)).toBe('txn:1000')
+  const card = page.locator('.cloud-settings-card').filter({ has: page.locator('.cloud-connection-impact') })
+  await expect(card.locator('.cloud-state')).toHaveText('需要核对')
+  await expect(card.getByRole('button', { name: '保留本机' })).toHaveCount(0)
+  await card.getByRole('button', { name: '查看安全恢复方式' }).click()
+  await expect(card.getByRole('button', { name: '只读核对差异' })).toBeVisible()
+  await expect(card.getByRole('button', { name: '保留本机' })).toHaveCount(0)
+  await card.getByText('灾难恢复选项').click()
+  await expect(card.getByRole('button', { name: '保留本机' })).toBeVisible()
   revision = 1004
   await page.evaluate(() => window.dispatchEvent(new Event('focus')))
   await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem('pjsdas-google-drive-sync-state-v2') ?? '{}')
@@ -141,4 +149,32 @@ test('Settings recovers an old verified cache after a separate authoritative upd
   })).toEqual(['txn:1004', false])
   expect(await page.evaluate(async () => (await (await import('/pjsdas/src/db.ts')).dbPromise)
     .get('actions', 'A-action-1'))).toMatchObject({ title: '服务器新增事实后的任务' })
+})
+
+test('normal connected Settings keeps sync mechanics behind advanced diagnostics', async ({ page }) => {
+  const snapshot = workspace()
+  await page.addInitScript(({ key, value }) => {
+    if (!localStorage.getItem('owner-interaction-seeded')) {
+      localStorage.setItem(key, JSON.stringify(value))
+      localStorage.setItem('owner-interaction-seeded', '1')
+    }
+  }, { key: AUTH_KEY, value: session('account-a', 'token-a') })
+  await page.route('https://*.supabase.co/auth/v1/**', route => cors(route, {}, 200))
+  await page.route(`${BACKEND}/**`, route => {
+    if (route.request().method() === 'OPTIONS') return cors(route, {}, 204)
+    if (new URL(route.request().url()).pathname === '/api/health') return cors(route, health())
+    expect(route.request().postDataJSON().action).toBe('read')
+    return cors(route, { workspaceId: 'ws-a', revision: 1004, workspaceVersion: 'txn:1004',
+      schemaVersion: snapshot.version, snapshot })
+  })
+  await page.goto('/pjsdas/settings')
+  await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem('pjsdas-google-drive-sync-state-v2') ?? '{}')
+    .accounts?.['account-a']?.lastSyncedVersion)).toBe('txn:1004')
+  const card = page.locator('.cloud-settings-card').filter({ has: page.locator('.cloud-connection-impact') })
+  await expect(card.locator('.cloud-state')).toHaveText('同步正常')
+  await expect(card).toContainText('最后更新')
+  await expect(card.getByText('高级诊断 / 恢复')).toBeVisible()
+  await expect(card.getByRole('button', { name: '保留本机' })).toHaveCount(0)
+  await expect(card.getByRole('button', { name: '立即同步' })).toHaveCount(0)
+  await expect(card.getByText(/本机工作副本|指纹|检查点|操作日志/)).toHaveCount(0)
 })

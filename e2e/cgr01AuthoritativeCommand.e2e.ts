@@ -564,6 +564,7 @@ test('CGR-05 background and manual connected sync preserve pending local changes
   expect(commits).toBe(0)
   expect((await readIndexedActions(page)).find((item) => item.id === 'A-action-1')?.title).toBe('本地待处理修改')
   await page.locator('.tsui-topbar').getByRole('button', { name: /设置|Settings/ }).click()
+  await page.getByText('高级诊断 / 恢复').click()
   await page.getByRole('button', { name: '立即同步' }).click()
   await expect(page.getByText('本机有未进入账号工作区的修改；同步检查已保留本机数据，未上传整份工作区')).toBeVisible()
   expect(commits).toBe(0)

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useUiLanguage } from '../uiLanguage.js'
 import { useCloud } from './CloudContext.js'
 import { connectedWorkspaceAuthorityEnabled } from './connectedWorkspaceRepository.js'
@@ -21,25 +21,27 @@ export default function CloudSettingsCard() {
   const [localError, setLocalError] = useState('')
   const [audience, setAudience] = useState<AudienceStatus>()
   const [diagnostic, setDiagnostic] = useState<Awaited<ReturnType<typeof inspectConnectedDivergence>>>()
+  const advancedRef = useRef<HTMLDetailsElement>(null)
   const user = cloud.session?.user
   const mismatch = Boolean(user && cloud.device.workspaceOwnerUserId && cloud.device.workspaceOwnerUserId !== user.id)
   const conflict = cloud.checkpoint.conflict
   const transactional = connectedWorkspaceAuthorityEnabled()
   const remoteLabel = transactional ? (zh ? '账号工作区' : 'account workspace') : 'Google Drive'
   const connectionError = localError || cloud.error || cloud.checkpoint.lastError
+  const pendingLocal = cloud.outcome?.kind === 'local_pending'
   const impact = mismatch
-    ? (zh ? '这个浏览器仍保留另一个账号的本地资料。为避免跨账号写入，当前账号不会接收这些修改；请先选择恢复路径。' : 'This browser still holds another account’s local data. Uploads to this account are paused; choose a recovery path first.')
+    ? (zh ? '此设备保存着另一个账号的资料。请先切回原账号；双方资料均已保留。' : 'This device holds another account’s data. Return to that account; both copies are preserved.')
     : conflict
-      ? (zh ? `本机与${remoteLabel}存在待核对差异。自动写入已暂停，系统会继续只读核对最新版本；双方记录均保留。` : `This device and the ${remoteLabel} need review. Automatic writes are paused while the latest version is checked; both copies are retained.`)
+      ? (zh ? '此设备有尚未核对的修改。自动检查会继续；双方资料均已保留。' : 'This device has changes that still need review. Automatic checks continue and both copies are preserved.')
       : connectionError
-        ? (zh ? '最近一次连接或同步失败。已保存在此浏览器的内容仍可查看，其他设备可能暂时没有最新修改；请检查连接后重试。' : 'The latest connection or sync failed. Saved content on this browser remains available; other devices may not have the latest changes. Check the connection and retry.')
-        : !user
+        ? (zh ? '连接暂时中断。已保存的内容仍可查看，其他设备可能尚未收到最新修改。' : 'The connection is interrupted. Saved content remains available; other devices may not have the latest changes.')
+      : !user
           ? (zh ? '当前内容只保存在此设备。登录并完成连接前，其他设备看不到这些修改。' : 'Current content is on this device only. Other devices cannot see these changes until you sign in and connect.')
           : audience && !audience.allowed
-            ? (zh ? '此账号尚未获准使用跨设备工作区。本机资料仍可查看和编辑；其他设备不会收到这些修改。' : 'This account does not yet have cross-device workspace access. You can still view and edit local data; other devices will not receive these changes.')
-          : transactional
-            ? (zh ? '已连接账号工作区。此浏览器保留工作副本；若连接中断，请先核对保存结果，再依提示恢复。' : 'Your account workspace is connected. This browser keeps a working copy; if the connection drops, verify the save result before retrying.')
-            : (zh ? '已登录；其他设备以最近一次成功同步的数据为准。' : 'Signed in. Other devices have data from the latest successful sync.')
+            ? (zh ? '此账号尚未开通跨设备使用；此设备上的资料仍可查看。' : 'Cross-device access is unavailable for this account; data on this device remains available.')
+            : pendingLocal
+              ? (zh ? '部分修改仍在此设备，系统会继续核对保存结果。' : 'Some changes remain on this device while their save result is checked.')
+              : (zh ? '你的资料已连接此账号，并在设备间保持更新。' : 'Your data is connected to this account and stays up to date across devices.')
 
   useEffect(() => {
     let active = true
@@ -79,39 +81,46 @@ export default function CloudSettingsCard() {
           <div>
             <div className="eyebrow">ACCOUNT & CONNECTION</div>
             <h2>{zh ? '账号与跨设备数据' : 'Account & cross-device data'}</h2>
-            <p>{transactional
-              ? (zh
-                  ? '账号工作区保存跨设备数据；此浏览器保留工作副本。Google Drive 可用于备份、导出和携带资料。'
-                  : 'Your account workspace keeps cross-device data while this browser holds a working copy. Google Drive remains available for backup and export.')
-              : (zh
-                  ? '此浏览器可保存日常修改，Google Drive 保存同步副本。连接中断时，其他设备可能暂时看不到最新内容。'
-                  : 'This browser saves daily changes and Google Drive holds the synced copy. Other devices may lag while the connection is unavailable.')}</p>
+            <p>{zh ? '查看账号连接与最近更新状态。' : 'Check your account connection and latest update.'}</p>
           </div>
-          <span className={`cloud-state ${conflict || mismatch ? 'warning' : user ? 'online' : ''}`}>
+          <span className={`cloud-state ${conflict || mismatch || connectionError || pendingLocal || (audience && !audience.allowed) ? 'warning' : user ? 'online' : ''}`}>
             {mismatch
               ? (zh ? '账号不匹配' : 'Account mismatch')
               : conflict
-                ? (zh ? '同步冲突' : 'Sync conflict')
+                ? (zh ? '需要核对' : 'Needs review')
+                : connectionError
+                  ? (zh ? '连接中断' : 'Connection interrupted')
+                : pendingLocal
+                  ? (zh ? '等待核对' : 'Checking changes')
+                : audience && !audience.allowed
+                  ? (zh ? '跨设备不可用' : 'Cross-device unavailable')
                 : user
-                  ? (zh ? '已登录' : 'Signed in')
+                  ? cloud.checkpoint.lastSyncedVersion
+                    ? (zh ? '同步正常' : 'Sync is up to date')
+                    : (zh ? '正在连接' : 'Connecting')
                   : cloud.loading
                     ? (zh ? '正在恢复登录…' : 'Restoring session…')
                     : (zh ? '仅本机' : 'Local only')}
           </span>
         </div>
 
-        <div className={`cloud-connection-impact ${mismatch || conflict || connectionError ? 'warning' : ''}`} role="status">
-          <strong>{zh ? '当前数据可用性' : 'What is available now'}</strong>
-          <span>{impact}</span>
+        <div className={`cloud-connection-impact ${mismatch || conflict || connectionError || (audience && !audience.allowed) ? 'warning' : ''}`}>
+          <strong>{user ? (zh ? `最后更新：${formatTime(cloud.checkpoint.lastSyncedAt, zh)}` : `Last updated: ${formatTime(cloud.checkpoint.lastSyncedAt, zh)}`) : (zh ? '仅保存在此设备' : 'Saved on this device only')}</strong>
+          <span role={mismatch || conflict || connectionError || (audience && !audience.allowed) ? 'status' : undefined}>{impact}</span>
+          {mismatch || conflict ? <button type="button" onClick={() => {
+            if (advancedRef.current) advancedRef.current.open = true
+            advancedRef.current?.querySelector('summary')?.focus()
+          }}>{zh ? '查看安全恢复方式' : 'View safe recovery options'}</button> : null}
         </div>
 
         {!user ? (
           <div className="cloud-auth-row">
             <div>
               <strong>{zh ? '使用 Google 登录 TodayAction' : 'Sign in to TodayAction with Google'}</strong>
-              <p>{zh
-                ? '首次登录会申请 openid/profile/email 与 drive.appdata，并建立可持续的 Drive 授权。之后刷新页面或重新打开浏览器，不应要求你再次登录。TodayAction 不能浏览普通 Google Drive 文件。'
-                : 'The first sign-in requests openid/profile/email plus drive.appdata and creates durable Drive authorization. Refreshing or reopening the browser should not require another sign-in. TodayAction cannot browse normal Drive files.'}</p>
+              <p>{zh ? '登录后可在自己的设备间使用同一份资料。' : 'Sign in to use the same data across your devices.'}</p>
+              <details><summary>{zh ? '查看授权范围' : 'View access permissions'}</summary><p>{zh
+                ? '首次登录申请基本身份信息和应用专用的 Google Drive 文件权限；TodayAction 不能浏览普通 Drive 文件。'
+                : 'The first sign-in requests basic identity and app-specific Google Drive file access. TodayAction cannot browse ordinary Drive files.'}</p></details>
             </div>
             <button className="primary-button" disabled={cloud.loading || cloud.syncing} onClick={() => { void run(cloud.signIn) }}>
               {cloud.loading ? (zh ? '正在恢复…' : 'Restoring…') : (zh ? '使用 Google 登录' : 'Sign in with Google')}
@@ -119,100 +128,76 @@ export default function CloudSettingsCard() {
           </div>
         ) : (
           <>
-            {audience ? (
-              <div className={`cloud-audience-state ${audience.allowed ? 'allowed' : 'blocked'}`}>
-                <div><strong>{audience.allowed ? (zh ? '跨设备功能可用' : 'Cross-device access available') : (zh ? '跨设备功能尚未开通' : 'Cross-device access unavailable')}</strong><span>{audience.allowed ? (zh ? '当前账号可使用跨设备资料。' : 'This account can use its cross-device workspace.') : (zh ? '当前账号仍可使用本机资料；跨设备资料暂不可用。' : 'Local data remains available, but this account cannot use cross-device data yet.')}</span></div>
-              </div>
-            ) : null}
-
-            <div className="cloud-account-row">
-              <div>
-                <span>{zh ? 'TodayAction 账号' : 'TodayAction account'}</span>
-                <strong>{user.user_metadata?.full_name || user.email || user.id}</strong>
-                {user.email ? <small>{user.email}</small> : null}
-              </div>
-              <div>
-                <span>{zh ? '最后同步' : 'Last sync'}</span>
-                <strong>{formatTime(cloud.checkpoint.lastSyncedAt, zh)}</strong>
-                <small>{cloud.checkpoint.lastSyncedVersion ? (zh ? '此账号已有可核对的保存版本' : 'A saved account version is available') : (zh ? '尚无已确认的同步版本' : 'No confirmed synced version yet')}</small>
-              </div>
-              <div>
-                <span>{zh ? '此设备' : 'This device'}</span>
-                <strong>{zh ? '本机资料可用' : 'Local data available'}</strong>
-                <small>{transactional ? (zh ? '账号资料的本机工作副本' : 'Working copy of account data') : (zh ? '本机保存，按连接状态同步' : 'Saved locally and synced when connected')}</small>
-              </div>
+            <div className="cloud-account-identity">
+              <span>{zh ? 'TodayAction 账号' : 'TodayAction account'}</span>
+              <strong>{user.user_metadata?.full_name || user.email || user.id}</strong>
+              <button disabled={cloud.syncing || cloud.loading} onClick={() => { void run(cloud.signOut) }}>{zh ? '退出 TodayAction' : 'Sign out of TodayAction'}</button>
             </div>
 
-            {mismatch ? (
-              <div className="cloud-conflict-box">
-                <strong>{zh ? '为避免跨账号上传，自动同步已暂停。' : 'Auto-sync is paused to prevent cross-account uploads.'}</strong>
-                <p>{zh
-                  ? '这个浏览器里的本地工作区已经绑定过另一个 Google 身份。TodayAction 不会自动把那份求职数据上传到当前账号。'
-                  : 'The local workspace in this browser is already bound to another Google identity. TodayAction will not upload that job-search data into the current account automatically.'}</p>
-                <div>
-                  <button onClick={() => {
-                    if (window.confirm(zh ? `确认把当前本地工作区重新绑定到这个 TodayAction 账号？如果该账号已有${remoteLabel}数据，系统会先进入冲突处理，不会直接覆盖。` : `Rebind the current local workspace to this TodayAction account? Existing ${remoteLabel} data will trigger conflict handling rather than being overwritten.`)) void run(cloud.rebindLocal)
-                  }}>{zh ? '绑定当前本地工作区' : 'Bind current local workspace'}</button>
-                  <button className="danger" onClick={() => {
-                    if (window.confirm(zh ? `确认用当前账号的${remoteLabel}替换本机工作区？本机尚未同步的修改会丢失。` : `Replace this device workspace with the current account ${remoteLabel}? Unsynced local changes will be lost.`)) void run(cloud.useCloud)
-                  }}>{zh ? `使用此账号的${remoteLabel}` : `Use this account’s ${remoteLabel}`}</button>
+            <details ref={advancedRef} className="cloud-advanced">
+              <summary>{zh ? '高级诊断 / 恢复' : 'Advanced diagnostics / recovery'}</summary>
+              <div className="cloud-advanced-content">
+                <p>{zh ? '仅在连接持续异常或需要恢复资料时使用。这里的核对不会修改账号中的资料。' : 'Use this when a connection issue persists or data recovery is needed. Inspection does not change account data.'}</p>
+                {audience ? <p>{audience.allowed
+                  ? (zh ? '跨设备功能可用。' : 'Cross-device access is available.')
+                  : (zh ? '此账号尚未开通跨设备功能。' : 'Cross-device access is unavailable for this account.')}</p> : null}
+                <div className="cloud-controls">
+                  <label>
+                    <input type="checkbox" checked={cloud.device.autoSync} onChange={(event) => cloud.setAutoSync(event.target.checked)} />
+                    <span>{zh ? '自动同步' : 'Automatic sync'}</span>
+                  </label>
+                  <button disabled={cloud.syncing || mismatch || Boolean(conflict)} onClick={() => { void run(async () => cloud.syncNow()) }}>{cloud.syncing ? (zh ? '同步中…' : 'Syncing…') : (zh ? '立即同步' : 'Sync now')}</button>
                 </div>
-              </div>
-            ) : conflict ? (
-              <div className="cloud-conflict-box">
-                <strong>{zh ? `本机和${remoteLabel}尚不能证明等价。` : `This device and the ${remoteLabel} are not proven equivalent.`}</strong>
-                <p>{zh ? `最近核对的远端版本 ${conflict.remoteVersion}，更新时间 ${formatTime(conflict.remoteUpdatedAt, zh)}。系统会继续只读核对；没有覆盖任何一方。` : `Latest checked remote version ${conflict.remoteVersion}, updated ${formatTime(conflict.remoteUpdatedAt, zh)}. Read-only checks continue; neither side was overwritten.`}</p>
-                {transactional ? <div>
+                {transactional && conflict ? <div className="cloud-diagnostic">
                   <button type="button" onClick={() => { void run(async () => {
                     const result = await inspectConnectedDivergence(user.id)
                     setDiagnostic(result)
                     if (['equal', 'order_only', 'cache_metadata', 'historical_read_only_evidence'].includes(result.classification)
-                      && result.pendingOperations.count === 0) {
-                      await cloud.reconcileEquivalent()
-                    }
-                  }) }}>{zh ? '只读核对差异' : 'Inspect difference'}</button>
-                  {diagnostic ? <details><summary>{zh ? '核对结果' : 'Inspection result'}</summary>
+                      && result.pendingOperations.count === 0) await cloud.reconcileEquivalent()
+                  }) }}>{zh ? '只读核对差异' : 'Inspect difference without writing'}</button>
+                  {diagnostic ? <div role="status">
                     <p>{['equal', 'order_only', 'cache_metadata', 'historical_read_only_evidence'].includes(diagnostic.classification)
-                      ? (zh ? `已归类为${({ equal: '完全相同', order_only: '纯顺序差异', cache_metadata: '缓存元数据', historical_read_only_evidence: '历史只读证据' } as Record<string, string>)[diagnostic.classification]}；系统可安全收敛本机缓存。` : `Equivalent projection: ${diagnostic.classification.replaceAll('_', ' ')}. Local cache can converge safely.`)
+                      ? (zh ? '差异只是缓存或记录顺序，系统可安全更新此设备。' : 'Only cache or ordering differs; this device can be updated safely.')
                       : diagnostic.classification === 'pending_operations'
-                        ? (zh ? '仍有待确认的本机操作；先核对操作回执。' : 'Pending local operations require receipt review.')
-                        : (zh ? '差异尚不能证明只是缓存或顺序；请保留双方资料并人工核对。' : 'The difference is not proven to be cache or ordering only. Preserve and review both copies.')}</p>
+                        ? (zh ? '仍有操作等待服务器确认；请等待自动核对回执。' : 'Some operations are awaiting server confirmation.')
+                        : (zh ? '差异仍需人工核对。双方资料已保留，请先备份再考虑灾难恢复。' : 'The difference still needs review. Both copies are preserved; back up before disaster recovery.')}</p>
                     <small>{`local ${diagnostic.localFingerprint.slice(0, 12)} · authoritative ${diagnostic.authoritativeFingerprint?.slice(0, 12) ?? 'unavailable'} · checkpoint ${diagnostic.checkpointVersion ?? 'none'} · journal ${diagnostic.recordedProjection ? 'recorded' : 'unverified'} · pending ${diagnostic.pendingOperations.count}`}</small>
-                  </details> : null}
+                  </div> : null}
                 </div> : null}
-                <div>
-                  <button onClick={() => {
-                    if (window.confirm(zh ? `确认以本机数据为准覆盖${remoteLabel}？` : `Keep this device and overwrite the ${remoteLabel}?`)) void run(cloud.keepLocal)
-                  }}>{zh ? '保留本机' : 'Keep this device'}</button>
-                  <button className="danger" onClick={() => {
-                    if (window.confirm(zh ? `确认以${remoteLabel}数据为准替换本机？本机未同步修改会丢失。` : `Use the ${remoteLabel} version and replace local data? Unsynced local changes will be lost.`)) void run(cloud.useCloud)
-                  }}>{zh ? `使用${remoteLabel}` : `Use ${remoteLabel}`}</button>
-                </div>
+                {conflict ? <p>{zh ? `最近核对的远端版本 ${conflict.remoteVersion}，更新时间 ${formatTime(conflict.remoteUpdatedAt, zh)}。` : `Last checked remote version ${conflict.remoteVersion}, updated ${formatTime(conflict.remoteUpdatedAt, zh)}.`}</p> : null}
+                {mismatch || conflict ? <details className="cloud-disaster-recovery">
+                  <summary>{zh ? '灾难恢复选项' : 'Disaster recovery options'}</summary>
+                  <p>{zh ? '只有在自动恢复和人工核对均无法完成、且已单独备份双方资料时使用。选择一方可能使另一方独有的求职事实与历史记录丢失。' : 'Use only after automatic recovery and review fail, and after backing up both copies. Choosing one side can lose unique job-search facts and history from the other.'}</p>
+                  <div>
+                    {mismatch ? <button onClick={() => {
+                      if (window.confirm(zh ? `这会把此设备的求职资料绑定到当前账号。若账号已有独立资料，将进入冲突核对。确认已备份双方资料？` : 'This binds this device’s job-search data to the current account. Existing separate account data will require conflict review. Have you backed up both copies?')) void run(cloud.rebindLocal)
+                    }}>{zh ? '绑定当前本地工作区' : 'Bind this device workspace'}</button> : null}
+                    {conflict ? <button onClick={() => {
+                      if (window.confirm(zh ? `灾难恢复：用此设备的全部资料覆盖${remoteLabel}。账号中独有的求职事实和历史记录可能丢失。确认已备份双方资料？` : `Disaster recovery: overwrite all ${remoteLabel} data with this device. Unique account facts and history may be lost. Have you backed up both copies?`)) void run(cloud.keepLocal)
+                    }}>{zh ? '保留本机' : 'Keep this device'}</button> : null}
+                    <button className="danger" onClick={() => {
+                      if (window.confirm(zh ? `灾难恢复：用${remoteLabel}替换此设备的全部资料。此设备未同步的求职事实和历史记录可能丢失。确认已备份双方资料？` : `Disaster recovery: replace all data on this device with ${remoteLabel}. Unsynced facts and history may be lost. Have you backed up both copies?`)) void run(cloud.useCloud)
+                    }}>{zh ? `使用${remoteLabel}` : `Use ${remoteLabel}`}</button>
+                  </div>
+                </details> : null}
+                {outcomeLabel ? <div className="cloud-result">{outcomeLabel}</div> : null}
+                {!localError && (cloud.error || cloud.checkpoint.lastError)
+                  ? <div className="cloud-error">{cloud.error || cloud.checkpoint.lastError}</div> : null}
+                <small className="cloud-security-note">{transactional
+                  ? (zh
+                      ? 'Google 长期授权凭据在服务端加密保存。退出账号会清除此设备上的账号缓存，避免下一个登录者看到前一个账号的资料；已同步的账号资料仍保留。TodayAction 只获得应用专用的 Google Drive 文件权限。'
+                      : 'Long-lived Google authorization is encrypted on the server. Signing out clears this device’s account cache so the next sign-in cannot see the previous account’s data; already synced account data remains stored. TodayAction only receives access to its app-specific Google Drive files.')
+                  : (zh
+                      ? 'Google 长期授权凭据在服务端加密保存。此设备仍会保留本机资料；在共享设备上使用后，请按需要清理浏览器资料。TodayAction 只获得应用专用的 Google Drive 文件权限。'
+                      : 'Long-lived Google authorization is encrypted on the server. Local data remains on this device; clear browser data after use on a shared device when needed. TodayAction only receives access to its app-specific Google Drive files.')}</small>
               </div>
-            ) : null}
-
-            <div className="cloud-controls">
-              <label>
-                <input type="checkbox" checked={cloud.device.autoSync} onChange={(event) => cloud.setAutoSync(event.target.checked)} />
-                <span>{zh ? '自动同步（登录状态下约每 2 分钟及重新聚焦时检查）' : 'Auto-sync (roughly every 2 minutes and on refocus while signed in)'}</span>
-              </label>
-              <div>
-                <button disabled={cloud.syncing || mismatch || Boolean(conflict)} onClick={() => { void run(async () => cloud.syncNow()) }}>{cloud.syncing ? (zh ? '同步中…' : 'Syncing…') : (zh ? '立即同步' : 'Sync now')}</button>
-                <button disabled={cloud.syncing || cloud.loading} onClick={() => { void run(cloud.signOut) }}>{zh ? '退出 TodayAction' : 'Sign out of TodayAction'}</button>
-              </div>
-            </div>
-            {outcomeLabel ? <div className="cloud-result">{outcomeLabel}</div> : null}
+            </details>
           </>
         )}
 
-        {(localError || cloud.error || cloud.checkpoint.lastError) ? <div className="cloud-error">{localError || cloud.error || cloud.checkpoint.lastError}</div> : null}
-        <small className="cloud-security-note">{transactional
-          ? (zh
-              ? 'Google 长期授权凭据在服务端加密保存。退出账号会清除此设备上的账号缓存，避免下一个登录者看到前一个账号的资料；已同步的账号资料仍保留。TodayAction 只获得应用专用的 Google Drive 文件权限。'
-              : 'Long-lived Google authorization is encrypted on the server. Signing out clears this device’s account cache so the next sign-in cannot see the previous account’s data; already synced account data remains stored. TodayAction only receives access to its app-specific Google Drive files.')
-          : (zh
-              ? 'Google 长期授权凭据在服务端加密保存。此设备仍会保留本机资料；在共享设备上使用后，请按需要清理浏览器资料。TodayAction 只获得应用专用的 Google Drive 文件权限。'
-              : 'Long-lived Google authorization is encrypted on the server. Local data remains on this device; clear browser data after use on a shared device when needed. TodayAction only receives access to its app-specific Google Drive files.')}</small>
+        {localError ? <div className="cloud-error">{/^[A-Z][A-Z0-9_]+:/.test(localError)
+          ? (zh ? '操作暂时无法完成。请在高级诊断中查看详情。' : 'The action could not be completed. See Advanced diagnostics for details.')
+          : localError}</div> : null}
       </section>
       <AiAccessSettingsCard />
     </>

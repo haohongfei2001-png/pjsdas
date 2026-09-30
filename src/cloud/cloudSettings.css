@@ -48,3 +48,20 @@
 .cloud-audience-state{flex-wrap:wrap}
 .cloud-audience-state span{color:#5d6b82}
 .cloud-settings-card :is(button,summary):focus-visible{outline:3px solid #315ec5;outline-offset:3px}
+.cloud-account-identity{display:flex;align-items:center;flex-wrap:wrap;gap:8px 14px;margin-top:16px;color:#5d6b82;font-size:.75rem}
+.cloud-account-identity strong{color:#1b2540;overflow-wrap:anywhere}
+.cloud-account-identity button{margin-left:auto;min-height:44px;border:1px solid rgba(68,65,59,.14);border-radius:10px;padding:0 12px;background:#fff;color:#283955;font:inherit;cursor:pointer}
+.cloud-account-identity button:disabled{opacity:.5;cursor:not-allowed}
+.cloud-advanced{margin-top:16px;border-top:1px solid #e4e8ef;padding-top:14px;color:#5d6b82;font-size:.75rem}
+.cloud-advanced>summary,.cloud-disaster-recovery>summary{cursor:pointer;color:#283955;font-weight:700}
+.cloud-advanced-content{display:grid;gap:12px;margin-top:12px;line-height:1.55}
+.cloud-advanced-content>p{margin:0}
+.cloud-diagnostic{display:grid;gap:9px}
+.cloud-diagnostic button,.cloud-disaster-recovery button{min-height:44px;border:1px solid rgba(68,65,59,.14);border-radius:10px;padding:8px 12px;background:#fff;color:#283955;font:inherit;cursor:pointer}
+.cloud-diagnostic button{justify-self:start}
+.cloud-diagnostic small{display:block;overflow-wrap:anywhere}
+.cloud-disaster-recovery{border:1px solid rgba(142,91,61,.2);border-radius:12px;padding:12px;background:#fcf3eb}
+.cloud-disaster-recovery p{margin:10px 0;color:#744a37}
+.cloud-disaster-recovery>div{display:flex;flex-wrap:wrap;gap:8px}
+.cloud-disaster-recovery button.danger{background:#f3e3d8;color:#855238}
+@media(max-width:760px){.cloud-account-identity{align-items:flex-start;flex-direction:column}.cloud-account-identity button{margin-left:0}}
