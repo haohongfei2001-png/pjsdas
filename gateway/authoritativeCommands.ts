@@ -43,13 +43,14 @@ import {
 import { WorkspaceSourceError } from './workspaceSource.js'
 import {
   decisionIntentObjects,
+  commandConflictScopes,
   diffCommandFields,
   diffCommandObjects,
   domainIntentObjects,
   intentFieldScopes,
   overlappingCommandObjects,
   readModelInvalidation,
-  receiptAffectedFields,
+  receiptConflictScopes,
   receiptAffectedObjects,
   type CommandFieldRef,
   semanticIntentObjects,
@@ -290,7 +291,7 @@ function conflictFromIntervening(
       }
     }
     const shared = overlappingCommandObjects(intent, affected)
-    const changedFields = receiptAffectedFields(record.receipt)
+    const changedFields = receiptConflictScopes(record.receipt)
     const incompatible = shared.filter(ref => {
       const requested = intentFields.filter(field => field.type === ref.type && field.id === ref.id)
       const changed = changedFields?.filter(field => field.type === ref.type && field.id === ref.id)
@@ -528,12 +529,14 @@ export function createAuthoritativeCommandExecutor(options: TransactionalWorkspa
 
       const affectedObjects = diffCommandObjects(current.snapshot, evaluated.snapshot)
       const affectedFields = diffCommandFields(current.snapshot, evaluated.snapshot, affectedObjects)
+      const conflictScopes = commandConflictScopes(affectedObjects, intentFields)
       const result = resultPayload(parsed.command, evaluated)
       const receiptContext = {
-        contractVersion: 3,
+        contractVersion: 4,
         commandType: parsed.command.type,
         affectedObjects,
         affectedFields,
+        conflictScopes,
         undoDependencyObjects: affectedObjects,
         readModelInvalidation: readModelInvalidation(affectedObjects),
         lifecycle: lifecycle(startedAt, parsed.baseRevision, current.revision),

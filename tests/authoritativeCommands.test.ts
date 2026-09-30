@@ -309,11 +309,31 @@ describe('CGR-01 authoritative command executor', () => {
         opportunityId: 'opp-1', roleType: 'core' as const } } }
     expect((await h.executor.execute(h.principal, first)).outcome).toBe('COMMITTED')
     delete h.ledger[0].receipt.affectedFields
+    delete h.ledger[0].receipt.conflictScopes
     const second = { commandId: 'cmd-fact-after-legacy', baseRevision: 1, command: { type: 'domain' as const,
       value: { commandId: 'cmd-fact-after-legacy', kind: 'correct_opportunity_fact' as const,
         opportunityId: 'opp-1', field: 'location' as const, value: 'Taipei' } } }
     expect((await h.executor.execute(h.principal, second)).outcome).toBe('CONFLICT')
     expect(h.ledger).toHaveLength(1)
+  })
+
+  it('keeps dependent deadline updates object-scoped in either stale command order', async () => {
+    for (const firstKind of ['deadline', 'fact'] as const) {
+      const h = harness()
+      const deadline = { commandId: 'cmd-deadline-guard', baseRevision: 1,
+        command: { type: 'domain' as const, value: { commandId: 'cmd-deadline-guard',
+          kind: 'set_deadline' as const, opportunityId: 'opp-1',
+          deadline: '2026-09-28T00:00:00.000Z', precision: 'datetime' as const } } }
+      const fact = { commandId: 'cmd-fact-guard', baseRevision: 1,
+        command: { type: 'domain' as const, value: { commandId: 'cmd-fact-guard',
+          kind: 'correct_opportunity_fact' as const, opportunityId: 'opp-1',
+          field: 'location' as const, value: 'Taipei' } } }
+      const first = firstKind === 'deadline' ? deadline : fact
+      const second = firstKind === 'deadline' ? fact : deadline
+      expect((await h.executor.execute(h.principal, first)).outcome).toBe('COMMITTED')
+      expect((await h.executor.execute(h.principal, second)).outcome).toBe('CONFLICT')
+      expect(h.ledger).toHaveLength(1)
+    }
   })
 
   it('retains append-only process evidence while refusing a stale competing stage update', async () => {

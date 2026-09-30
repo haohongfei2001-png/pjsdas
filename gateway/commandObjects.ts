@@ -153,16 +153,27 @@ export function intentFieldScopes(command: UserDomainCommand, objects: CommandOb
   return objects.map(ref => ({ ...ref, field: '*' }))
 }
 
-export function receiptAffectedFields(receipt: Record<string, unknown>): CommandFieldRef[] | undefined {
-  if (!Array.isArray(receipt.affectedFields)) return undefined
+function readFieldRefs(raw: unknown): CommandFieldRef[] | undefined {
+  if (!Array.isArray(raw)) return undefined
   const fields: CommandFieldRef[] = []
-  for (const value of receipt.affectedFields) {
+  for (const value of raw) {
     if (!value || typeof value !== 'object') return undefined
     const { type, id, field } = value as Record<string, unknown>
     if (typeof type !== 'string' || typeof id !== 'string' || typeof field !== 'string' || !field) return undefined
     fields.push({ type, id, field })
   }
   return fields
+}
+
+export function receiptConflictScopes(receipt: Record<string, unknown>): CommandFieldRef[] | undefined {
+  return readFieldRefs(receipt.conflictScopes)
+}
+
+export function commandConflictScopes(affectedObjects: CommandObjectRef[], intentFields: CommandFieldRef[]): CommandFieldRef[] {
+  return affectedObjects.flatMap(ref => {
+    const scopes = intentFields.filter(field => field.type === ref.type && field.id === ref.id)
+    return scopes.length ? scopes : [{ ...ref, field: '*' }]
+  })
 }
 
 function scheduleOccurrenceForNode(snapshot: PJSDASSnapshot, id: string) {

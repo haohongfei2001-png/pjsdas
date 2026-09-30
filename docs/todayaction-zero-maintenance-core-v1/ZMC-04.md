@@ -2,7 +2,7 @@
 
 ## Scope and authority
 
-Connected commands still run against the latest authoritative snapshot under transactional CAS. The server records the fields changed by each new command in its durable receipt. A stale command may be rebased only when its typed intent and every intervening receipt prove that the fields are independent. A missing or malformed historical field receipt stays object-wide and blocks an overlapping stale command. No client snapshot or timestamp wins by default.
+Connected commands still run against the latest authoritative snapshot under transactional CAS. The server records both the fields actually changed (`affectedFields`, for audit) and the fields that a command semantically protects (`conflictScopes`, for rebase). A stale command may be rebased only when its typed intent and every intervening receipt prove that those protected scopes are independent. A deadline or participation command protects the whole opportunity even if it changed only a few stored fields. A missing or malformed historical scope stays object-wide and blocks an overlapping stale command. No client snapshot or timestamp wins by default.
 
 | Entity or fact family | Reconciliation rule |
 |---|---|
@@ -17,12 +17,13 @@ Connected commands still run against the latest authoritative snapshot under tra
 | Time capacity | Default daily capacity, weekly windows, and each date override are separate authoritative keys. The same key conflicts; different keys rebase. |
 | Append-only provenance | Timeline, semantic receipts, source versions, process events, and occurrence versions are retained by identity. New rows are never deleted to make reconciliation pass. |
 
-New receipts carry `affectedFields` and version 3. Existing version 2 receipts stay readable and conservative. Unknown types or missing field evidence are treated as whole-object changes. The field ledger ignores clock-only `createdAt`/`updatedAt` changes as merge proof, but a metadata-only or unknown difference falls back to whole-object conflict.
+New receipts carry `affectedFields` and `conflictScopes` under version 4. Earlier receipts stay readable and conservative. Unknown types or missing conflict scope evidence are treated as whole-object changes. The field ledger ignores clock-only `createdAt`/`updatedAt` changes as merge proof, but a metadata-only or unknown difference falls back to whole-object conflict.
 
 ## Red-before and regression
 
 - Red-before: a user-confirmed location and role preference for the same opportunity, issued from one base revision, produced `OBJECT_CONFLICT` despite independent fields.
 - The sequence matrix runs confirmed location, compensation, and application URL against role preference in both orders. Separate confirmed fact fields also run in both orders. Same-field contradictory values conflict without a second write; an identical value is already applied without a duplicate receipt.
 - A synthetic legacy receipt with only object scope still blocks a stale overlapping command. Append-only process evidence remains after sequential events, while a stale competing parent stage is held. A stale reschedule cannot supersede an already completed occurrence.
+- Independent review exposed an unsafe first attempt that used changed fields as merge permission. The regression now checks deadline versus user fact in both command orders; its whole-opportunity scope blocks both stale sequences.
 
 Final full gates, independent review, merge, and exact-main production readback remain pending.
