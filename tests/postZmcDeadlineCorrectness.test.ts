@@ -3,9 +3,26 @@ import { formatScheduleTemporal, scheduleDisplayTimezone } from '../src/schedule
 import { buildConsumerTimePlan } from '../src/today/consumerTimePlan.js'
 import { rankActions } from '../src/decisionV3.js'
 import { selectTodayWeb } from '../src/today/todayWebSelector.js'
+import { getOpportunityDecisionRead } from '../src/opportunityDecisionRead.js'
 import { DEADLINE, LATE_NOW, deadlineWorkspace, explicitStartDenseWorkspace } from './fixtures/postZmcDeadlineWorkspace.js'
 
 describe('post-ZMC deadline correctness', () => {
+  it.each((['cancelled', 'superseded', 'completed'] as const).flatMap(state =>
+    [false, true].map(retainLegacyDue => ({ state, retainLegacyDue }))))('does not revive $state deadline with retained legacy date $retainLegacyDue', ({ state, retainLegacyDue }) => {
+    const snapshot = deadlineWorkspace()
+    snapshot.data.actions = snapshot.data.actions.slice(0, 1)
+    snapshot.data.opportunities = snapshot.data.opportunities.slice(0, 1)
+    if (!retainLegacyDue) snapshot.data.actions[0].dueAt = undefined
+    snapshot.data.opportunities[0].deadline = undefined
+    const prior = snapshot.data.scheduleNodes![0]
+    snapshot.data.scheduleNodes = [prior, { ...prior, id: `${prior.id}:v2`, version: 2, state }]
+    const before = JSON.stringify(snapshot)
+    const read = getOpportunityDecisionRead(snapshot, 'job-0', { now: LATE_NOW, timezone: 'Asia/Shanghai' })
+    expect(read?.nextAction?.actionId).toBe('apply-0')
+    expect(read?.nextAction?.temporal).toBeUndefined()
+    expect(read?.nextAction?.dueAt).toBeUndefined()
+    expect(JSON.stringify(snapshot)).toBe(before)
+  })
   it.each([
     ['Asia/Shanghai', '2026-09-30T15:59:59Z', '23:59'],
     ['UTC', '2026-09-30T15:59:59Z', '15:59'],

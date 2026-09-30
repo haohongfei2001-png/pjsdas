@@ -5,6 +5,28 @@ import { join } from 'node:path'
 import { deadlineWorkspace, LATE_NOW, explicitStartDenseWorkspace } from '../tests/fixtures/postZmcDeadlineWorkspace.js'
 
 test.use({ timezoneId: 'Asia/Shanghai' })
+for (const retainLegacyDue of [false, true]) for (const state of ['cancelled', 'superseded', 'completed'] as const) test(`job detail retains ${state} deadline evidence with legacy date ${retainLegacyDue} without labeling active work with it`, async ({ page }) => {
+  await page.clock.setFixedTime(LATE_NOW)
+  await page.goto('/'); await page.locator('.tsui-primary-nav').waitFor()
+  const snapshot = deadlineWorkspace()
+  snapshot.data.actions = snapshot.data.actions.slice(0, 1)
+  snapshot.data.opportunities = snapshot.data.opportunities.slice(0, 1)
+  if (!retainLegacyDue) snapshot.data.actions[0].dueAt = undefined
+  snapshot.data.opportunities[0].deadline = undefined
+  const prior = snapshot.data.scheduleNodes![0]
+  snapshot.data.scheduleNodes = [prior, { ...prior, id: `${prior.id}:v2`, version: 2, state }]
+  await page.evaluate(async input => (await import('/pjsdas/src/db.ts')).replaceLocalSnapshotFromCloud(input), snapshot)
+  await page.goto('/pjsdas/opportunities/job-0')
+  const action = page.locator('.opportunity-detail-action-list article').filter({ hasText: '申请 A' })
+  await expect(action.locator('small')).toHaveText('无明确时间')
+  await expect(page.locator('.opportunity-detail-primary-operation')).not.toContainText('23:59')
+  await page.reload()
+  await expect(action.locator('small')).toHaveText('无明确时间')
+  const stored = await page.evaluate(async () => (await import('/pjsdas/src/db.ts')).exportLocalSnapshot())
+  expect(stored.data.scheduleNodes).toHaveLength(2)
+  expect(stored.data.scheduleNodes!.every(node => node.temporal.deadlineAt === '2026-09-30T15:59:59Z')).toBe(true)
+})
+
 test('legacy UTC deadlines display the same local instant in Today, Schedule and job detail', async ({ page }) => {
   await page.clock.install({ time: new Date('2026-09-30T07:39:00Z') })
   await page.goto('/'); await page.locator('.tsui-primary-nav').waitFor()

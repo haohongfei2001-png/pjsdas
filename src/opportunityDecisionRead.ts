@@ -143,13 +143,13 @@ function groupFor(opportunity: Opportunity, groups: ApplicationGroup[]) {
     : undefined
 }
 
-function latestNodes(nodes: ScheduleNode[]) {
+function latestNodes(nodes: ScheduleNode[], includeTerminal = false) {
   const latest = new Map<string, ScheduleNode>()
   for (const node of nodes) {
     const current = latest.get(node.occurrenceId)
     if (!current || node.version > current.version) latest.set(node.occurrenceId, node)
   }
-  return [...latest.values()].filter((node) => node.state !== 'superseded' && node.state !== 'cancelled')
+  return [...latest.values()].filter((node) => includeTerminal || (node.state !== 'superseded' && node.state !== 'cancelled'))
 }
 
 function localDateKey(date: Date, timezone: string) {
@@ -242,6 +242,9 @@ function applicationUrl(opportunity: Opportunity) {
 function actionRead(ranked: RankedAction | undefined, opportunity: Opportunity, nodes: ScheduleNode[]): OpportunityDecisionAction | undefined {
   if (!ranked) return undefined
   const action = ranked.action
+  const latest = latestNodes(nodes, true)
+  const node = nodeForAction(action, latest.filter(item => !['cancelled', 'superseded', 'completed'].includes(item.state)))
+  const terminalOnly = !node && latest.some(item => item.relatedActionIds.includes(action.id))
   let operation: OpportunityDecisionAction['operation'] = 'open_today'
   let externalUrl: string | undefined
   if (action.kind === 'apply') {
@@ -260,10 +263,10 @@ function actionRead(ranked: RankedAction | undefined, opportunity: Opportunity, 
     kind: action.kind,
     status: action.status,
     estimatedMinutes: action.estimatedMinutes,
-    dueAt: action.dueAt,
+    dueAt: terminalOnly ? undefined : action.dueAt,
     duePrecision: action.duePrecision,
     timingMode: action.timingMode,
-    temporal: nodeForAction(action, latestNodes(nodes))?.temporal,
+    temporal: node?.temporal,
     rankingReasons: [...ranked.reasons].slice(0, 2),
     operation,
     externalUrl,
