@@ -172,7 +172,8 @@ test('TA-02 loading and read failure stay separate from an empty workspace',asyn
   await errorPage.clock.setFixedTime(new Date('2026-09-23T08:00:00.000Z'))
   const failure=await server(errorPage,fixture(),{failed:true})
   await errorPage.goto(base+'today')
-  await expect(errorPage.getByText('暂时无法确认今天，请重试。')).toBeVisible()
+  await expect(errorPage.getByText(before ? '暂时无法确认今天，请重试。' : '暂时无法确认今天。')).toBeVisible()
+  if (!before) await expect(errorPage.getByRole('button', { name: '重试' })).toHaveCount(1)
   await matrix(errorPage,'READ_ERROR')
   expect(state.writes).toEqual([])
   expect(failure.writes).toEqual([])
@@ -185,7 +186,7 @@ test('TA-02 verified cache and self-owned authorization keep source failures vis
   await expect(page.locator('.tsui-task-row')).toHaveCount(2)
   state.failed=true
   await page.evaluate(()=>window.dispatchEvent(new Event('focus')))
-  await expect(page.getByText(before ? '使用已验证缓存，暂时无法刷新。' : '显示已验证记录，刷新暂不可用。')).toBeVisible()
+  await expect(page.getByText(before ? '使用已验证缓存，暂时无法刷新。' : '显示已保存记录，等待更新。')).toBeVisible()
   await matrix(page,'CACHED')
   await page.goto(base+'?authorization_id=synthetic-ui-review')
   await expect(page.getByRole('heading',{name:'授权 ChatGPT 访问 TodayAction'})).toBeVisible()

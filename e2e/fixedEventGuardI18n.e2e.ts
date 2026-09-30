@@ -60,7 +60,8 @@ test('elapsed recruiting node stays unresolved until an explicit completion fact
   await page.goto('/')
   await seedPastEvent(page)
 
-  await page.locator('.tsui-unresolved-link').click()
+  await page.locator('.tsui-primary-nav').getByRole('button', { name: /日程|Schedule/ }).click()
+  await page.locator('.tsui-schedule-context').getByRole('button', { name: /过去安排待确认|Past arrangements to confirm/ }).click()
   const unresolved = page.locator('.tsui-schedule-panel .tsui-schedule-row').filter({ hasText: '节点测试科技' })
   await expect(unresolved).toBeVisible()
   await expect(unresolved).toContainText('面试')
@@ -93,6 +94,7 @@ test('a question about an elapsed event remains read-only and does not complete 
   await expect(page.getByRole('status')).toContainText('没有被当作当前事实写入')
   await page.getByRole('button', { name: '关闭' }).click()
 
-  await page.locator('.tsui-unresolved-link').click()
+  await page.locator('.tsui-primary-nav').getByRole('button', { name: /日程|Schedule/ }).click()
+  await page.locator('.tsui-schedule-context').getByRole('button', { name: /过去安排待确认|Past arrangements to confirm/ }).click()
   await expect(page.locator('.tsui-schedule-panel .tsui-schedule-row').filter({ hasText: '节点测试科技' })).toBeVisible()
 })

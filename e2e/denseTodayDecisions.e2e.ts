@@ -16,12 +16,7 @@ test('dense persisted owner-like debt stays accessible outside Today without gen
   await expect(panel.locator('.tsui-task-row')).not.toHaveCount(0)
   expect(await panel.locator('.tsui-task-row').count()).toBeLessThan(20)
   await expect(page.getByText('Several opportunities match this input.', { exact: true })).toHaveCount(0)
-  await expect(page.locator('.tsui-unresolved-link')).toContainText('98')
-  const ordered = await page.locator('.tsui-node-panel').evaluate(node => {
-    const list = node.querySelector('.tsui-node-scroll')!, history = node.querySelector('.tsui-unresolved-link')!
-    return Boolean(list.compareDocumentPosition(history) & Node.DOCUMENT_POSITION_FOLLOWING)
-  })
-  expect(ordered).toBe(true)
+  await expect(page.locator('.tsui-unresolved-link')).toHaveCount(0)
   await expect(page.getByRole('button', { name: /查看全部待决定事项/ })).toHaveCount(0)
   await page.goto('/pjsdas/decisions')
   await expect(page.locator('.ultimate-decision-card')).toHaveCount(0)
@@ -103,9 +98,43 @@ test('one genuinely infeasible hard deadline has one actionable notice', async (
   await page.goto('/pjsdas/today')
   await expect(page.locator('.tsui-alert').filter({ hasText: '硬截止' })).toHaveCount(0)
   await expect(page.locator('.tsui-inline-notice').filter({ hasText: '硬截止' })).toHaveCount(1)
+  await expect(page.locator('.tsui-task-panel .tsui-deadline-notice')).toHaveCount(1)
+  await expect(page.locator('.tsui-today-grid > .tsui-deadline-notice')).toHaveCount(0)
   await expect(page.getByRole('button', { name: '查看相关安排' })).toBeVisible()
   await page.setViewportSize({ width: 390, height: 844 })
-  await page.getByRole('button', { name: /^节点/ }).click()
   await expect(page.locator('.tsui-inline-notice').filter({ hasText: '硬截止' })).toBeVisible()
-  await expect(page.getByRole('button', { name: '查看相关安排' })).toHaveCount(1)
+  await page.getByRole('button', { name: /^节点/ }).click()
+  await expect(page.locator('.tsui-deadline-notice')).toBeHidden()
+  await expect(page.locator('.tsui-deadline-notice button')).toHaveCount(1)
+  await page.getByRole('button', { name: /^任务/ }).click()
+  await expect(page.getByRole('button', { name: '查看相关安排' })).toBeVisible()
+})
+
+test('overlapping fixed commitments show one notice with the relevant nodes', async ({ page }) => {
+  await page.clock.install({ time: DENSE_NOW })
+  await page.goto('/'); await page.locator('.tsui-primary-nav').waitFor()
+  const start = DENSE_NOW.getTime()
+  const fixedNode = (id: string, startOffset: number, endOffset: number) => ({
+    id, occurrenceId: id, version: 1, kind: 'interview' as const, state: 'scheduled' as const,
+    constraintKind: 'employer_hard' as const,
+    temporal: { shape: 'fixed_range' as const, precision: 'datetime' as const, timezone: 'Asia/Shanghai',
+      startAt: new Date(start + startOffset).toISOString(), endAt: new Date(start + endOffset).toISOString(),
+      resolutionBasis: 'source_explicit' as const },
+    evidenceRefs: [], sourceVersionRefs: [], relatedActionIds: [], relatedPrepIds: [],
+    createdAt: DENSE_NOW.toISOString(), updatedAt: DENSE_NOW.toISOString(),
+  })
+  const snapshot = createSnapshot({
+    opportunities: [], processes: [], processEvents: [], actions: [], prep: [], applicationGroups: [],
+    scheduleNodes: [fixedNode('interview-a', 60 * 60_000, 120 * 60_000), fixedNode('interview-b', 90 * 60_000, 150 * 60_000)],
+  }, DENSE_NOW.toISOString())
+  await page.evaluate(async input => (await import('/pjsdas/src/db.ts')).replaceLocalSnapshotFromCloud(input), snapshot)
+  await page.goto('/pjsdas/today')
+  await expect(page.locator('.tsui-deadline-notice')).toHaveCount(1)
+  await expect(page.locator('.tsui-node-panel .tsui-deadline-notice')).toContainText('两个固定安排时间冲突。')
+  await expect(page.locator('.tsui-task-panel .tsui-deadline-notice')).toHaveCount(0)
+  await expect(page.locator('.tsui-today-grid > .tsui-deadline-notice')).toHaveCount(0)
+  await page.setViewportSize({ width: 390, height: 844 })
+  await expect(page.locator('.tsui-deadline-notice')).toBeHidden()
+  await page.getByRole('button', { name: /^节点/ }).click()
+  await expect(page.getByRole('button', { name: '查看相关安排' })).toBeVisible()
 })

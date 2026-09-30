@@ -802,7 +802,6 @@ export default function AppV8() {
             onRetry={() => window.dispatchEvent(new Event('focus'))}
             onOpenDecision={(id) => navigate('/decisions/' + encodeURIComponent(id))}
             onOpenAgenda={() => navigate('/schedule')}
-            onOpenUnresolved={() => navigate('/schedule?view=unresolved')}
             onExecute={executeTodayAction}
             onMark={markAction}
             onOpenOpportunity={openOpportunity}

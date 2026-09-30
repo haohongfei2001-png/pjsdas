@@ -15,14 +15,13 @@
 .tsui-page-heading p{margin:0 0 5px;color:#5d6b82;font-size:0.8125rem;font-weight:560}
 .tsui-page-heading h1{margin:0;color:#19243d;font-size:1.75rem;line-height:1.2;font-weight:760;letter-spacing:-.035em}
 .tsui-page-heading span{display:block;margin-top:7px;color:#5d6b82;font-size:0.875rem}
-.tsui-unresolved-link{min-height:44px;border:1px solid #dce3f0;border-radius:9px;padding:0 12px;background:#fff;color:#5d6b82;font-size:0.8125rem}
-.tsui-unresolved-link strong{margin-left:5px;color:#bf7150}
 .tsui-alert,.tsui-status,.tsui-inline-notice{margin:0 0 15px;border:1px solid #ead9c5;border-radius:10px;padding:11px 14px;background:#fff9f1;color:#875d36;font-size:0.8125rem}
 .tsui-status button{margin-left:12px;border:0;background:transparent;color:#315ec5;font-weight:700}
 .tsui-compact-state{display:inline-flex;align-items:center;max-width:100%;margin-bottom:10px;padding:5px 9px;border-radius:999px;font-size:.75rem}
+.tsui-freshness-note{margin:-12px 0 13px;color:#6b7890;font-size:.75rem}
 .tsui-inline-notice button{border:0;background:transparent;color:#315ec5;font:inherit;font-weight:700;cursor:pointer}
 .tsui-today-grid{display:grid;grid-template-columns:minmax(0,1.38fr) minmax(360px,1fr);gap:20px;align-items:start}
-.tsui-deadline-notice{grid-column:1/-1;justify-self:start;margin:0;max-width:100%;padding:7px 11px}
+.tsui-deadline-notice{display:flex;align-items:center;flex-wrap:wrap;gap:4px 8px;max-width:100%;margin:0 22px 8px;border:0;border-left:2px solid #ca885c;border-radius:0;padding:5px 0 5px 10px;background:transparent;font-size:.75rem}
 .tsui-panel,.tsui-schedule-panel{min-width:0;border:1px solid #e6eaf1;border-radius:15px;background:#fff;box-shadow:0 4px 18px rgba(34,53,88,.035)}
 .tsui-task-panel{min-height:610px}
 .tsui-node-panel{position:sticky;top:calc(var(--ta-header-height,70px) + 20px);display:flex;flex-direction:column;height:min(710px,calc(100vh - var(--ta-header-height,70px) - 46px));min-height:420px}
@@ -70,7 +69,7 @@
 .tsui-schedule-tabs button span{margin-left:7px;color:#5d6b82}
 .tsui-schedule-panel .tsui-node-row{min-height:76px}
 @media(max-width:900px){.tsui-today-grid{grid-template-columns:minmax(0,1.15fr) minmax(310px,1fr)}.tsui-task-row{align-items:flex-start;flex-direction:column}.tsui-task-actions{flex-wrap:wrap}}
-@media(max-width:700px){.cgr-app-shell .tsui-topbar{height:60px;grid-template-columns:auto 1fr auto;padding:0 14px}.tsui-brand strong{display:none}.tsui-primary-nav{justify-content:center;gap:0}.tsui-primary-nav button{min-width:58px;padding:0 8px;font-size:0.8125rem}.tsui-primary-nav button.active::after{left:8px;right:8px}.tsui-top-actions{gap:2px}.tsui-tell-button{width:36px;height:36px;min-height:36px;overflow:hidden;padding:0;color:transparent;font-size:0}.tsui-tell-button::before{content:"＋";color:#fff;font-size:1.3125rem}.tsui-settings-button{width:35px}.cgr-app-shell .cgr-main.surface-main{padding:20px 14px 60px!important}.tsui-page-heading h1{font-size:1.625rem}.tsui-page-heading span{font-size:0.75rem}.tsui-today-grid{display:block}.tsui-mobile-switch{display:flex;gap:8px;margin-bottom:13px}.tsui-mobile-switch button{flex:1;min-height:41px;border:1px solid #dfe5f0;border-radius:9px;background:#fff;color:#5d6b82;font-size:0.8125rem}.tsui-mobile-switch button.active{border-color:#b8caf6;background:#eaf1ff;color:#3264cf;font-weight:700}.tsui-mobile-switch span{margin-left:4px}.tsui-panel.mobile-hidden{display:none}.tsui-node-panel{position:static;height:auto;min-height:0}.tsui-node-scroll{overflow:visible}.tsui-task-panel{min-height:0}.tsui-task-row{min-height:95px}.tsui-unresolved-link{font-size:0.6875rem}.tsui-node-time{flex-basis:84px}.tsui-node-row{padding:13px 16px}}
+@media(max-width:700px){.cgr-app-shell .tsui-topbar{height:60px;grid-template-columns:auto 1fr auto;padding:0 14px}.tsui-brand strong{display:none}.tsui-primary-nav{justify-content:center;gap:0}.tsui-primary-nav button{min-width:58px;padding:0 8px;font-size:0.8125rem}.tsui-primary-nav button.active::after{left:8px;right:8px}.tsui-top-actions{gap:2px}.tsui-tell-button{width:36px;height:36px;min-height:36px;overflow:hidden;padding:0;color:transparent;font-size:0}.tsui-tell-button::before{content:"＋";color:#fff;font-size:1.3125rem}.tsui-settings-button{width:35px}.cgr-app-shell .cgr-main.surface-main{padding:20px 14px 60px!important}.tsui-page-heading h1{font-size:1.625rem}.tsui-page-heading span{font-size:0.75rem}.tsui-today-grid{display:block}.tsui-mobile-switch{display:flex;gap:8px;margin-bottom:13px}.tsui-mobile-switch button{flex:1;min-height:41px;border:1px solid #dfe5f0;border-radius:9px;background:#fff;color:#5d6b82;font-size:0.8125rem}.tsui-mobile-switch button.active{border-color:#b8caf6;background:#eaf1ff;color:#3264cf;font-weight:700}.tsui-mobile-switch span{margin-left:4px}.tsui-panel.mobile-hidden{display:none}.tsui-node-panel{position:static;height:auto;min-height:0}.tsui-node-scroll{overflow:visible}.tsui-task-panel{min-height:0}.tsui-task-row{min-height:95px}.tsui-node-time{flex-basis:84px}.tsui-node-row{padding:13px 16px}}
 @media(max-width:360px){.tsui-primary-nav button{min-width:49px;padding:0 5px;font-size:0.75rem}.tsui-settings-button{width:30px}.tsui-task-row{padding:14px 16px}}
 
 .tsui-task-context{align-self:flex-start;min-height:44px;max-width:100%;margin:-8px 0 -8px -9px;border:0;border-radius:6px;padding:0 9px;overflow:hidden;background:transparent;color:#62708b;text-overflow:ellipsis;white-space:nowrap;text-align:left;font-size:0.75rem}
@@ -132,8 +131,6 @@
   .tsui-capacity form{right:auto;left:0}
 }
 
-.tsui-node-panel>.tsui-unresolved-link{display:flex;align-items:center;justify-content:space-between;width:100%;min-height:44px;border:0;border-bottom:1px solid #f1e5d9;border-radius:0;padding:0 22px;background:#fffaf4;color:#a16738;text-align:left;font-size:0.75rem}
-.tsui-node-panel>.tsui-unresolved-link span{font-size:1.125rem}
 
 .tsui-count{margin-left:8px;color:#5d6b82;font-size:0.8125rem;font-weight:500}
 
