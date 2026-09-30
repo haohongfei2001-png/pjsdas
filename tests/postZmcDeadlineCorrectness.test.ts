@@ -68,6 +68,28 @@ describe('post-ZMC deadline correctness', () => {
     expect(selectTodayWeb(snapshot, {}, { now: new Date('2026-09-30T15:50:00Z'), timezone: 'Asia/Shanghai' })
       .actions.map(item => item.actionId)).toEqual(nextDayCapacity === undefined ? ['apply-0'] : [])
   })
+  it('applies an explicit Today allowance only to today, retaining tomorrow’s configured capacity', () => {
+    const snapshot = deadlineWorkspace(500, '2026-09-30T16:50:00Z')
+    snapshot.data.actions = snapshot.data.actions.slice(0, 1)
+    snapshot.data.actions[0].estimatedMinutes = 60
+    snapshot.data.timePlanning!.weeklyWindows = [
+      { weekday: 3, startMinute: 1430, endMinute: 1440 }, { weekday: 4, startMinute: 0, endMinute: 50 },
+    ]
+    expect(selectTodayWeb(snapshot, { availableMinutes: 10 }, { now: new Date('2026-09-30T15:50:00Z'), timezone: 'Asia/Shanghai' })
+      .actions.map(item => item.actionId)).toEqual(['apply-0'])
+  })
+  it('retains flexible work today when a hard application can use tomorrow’s capacity', () => {
+    const snapshot = deadlineWorkspace(120, '2026-09-30T17:00:00Z')
+    snapshot.data.actions = snapshot.data.actions.slice(0, 2)
+    snapshot.data.actions[0].estimatedMinutes = 70
+    snapshot.data.actions[1] = { ...snapshot.data.actions[1], kind: 'manual', estimatedMinutes: 20, dueAt: undefined }
+    snapshot.data.scheduleNodes = snapshot.data.scheduleNodes!.slice(0, 1)
+    snapshot.data.timePlanning!.weeklyWindows = [
+      { weekday: 3, startMinute: 1410, endMinute: 1440 }, { weekday: 4, startMinute: 0, endMinute: 60 },
+    ]
+    expect(selectTodayWeb(snapshot, {}, { now: new Date('2026-09-30T15:30:00Z'), timezone: 'Asia/Shanghai' })
+      .actions.map(item => item.actionId)).toEqual(['apply-0', 'apply-1'])
+  })
   it.each([60, 100, 180])('finds the global priority maximum with staggered deadlines and a fixed meeting under %i minutes', capacity => {
     const snapshot = deadlineWorkspace()
     const nodes = snapshot.data.scheduleNodes!
@@ -91,7 +113,9 @@ describe('post-ZMC deadline correctness', () => {
       for (const item of chosen) {
         used += item.action.estimatedMinutes
         const minutes = (Date.parse(item.action.dueAt!) - LATE_NOW.getTime()) / 60_000
-        if (used > Math.min(capacity - 20, minutes - Math.max(0, Math.min(40, minutes) - 20))) feasible = false
+        const todayPhysical = Math.min(100, minutes) - Math.max(0, Math.min(40, minutes) - 20)
+        const nextDayPhysical = Math.max(0, minutes - 100)
+        if (used > Math.min(capacity - 20, todayPhysical) + nextDayPhysical) feasible = false
       }
       if (feasible) maximum = Math.max(maximum, chosen.reduce((sum, item) => sum + item.score ** 2, 0))
     }

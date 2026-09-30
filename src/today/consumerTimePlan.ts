@@ -174,7 +174,7 @@ export function buildConsumerTimePlan(input: {
   const freeBefore = (end: number) => {
     // Daily preferences/overrides constrain their own calendar day. Today's
     // window-derived capacity must not erase tomorrow's usable work window.
-    const horizonCapacity = horizonDays.reduce((total, day) => {
+    return horizonDays.reduce((total, day) => {
       const clipped = day.windows.map(interval => ({ start: Math.max(interval.start, input.now.getTime()),
         end: Math.min(interval.end, end) })).filter(interval => interval.end > interval.start)
       // Floor usable minutes and ceil occupied minutes: never promise a minute
@@ -183,7 +183,6 @@ export function buildConsumerTimePlan(input: {
         - unionMinutes(intersectIntervals(clipped, occupied))
       return total + Math.max(0, Math.min(physical, day.capacity === undefined ? Infinity : day.capacity - day.reserved))
     }, 0)
-    return Math.min(horizonCapacity, input.availableMinutes === undefined ? Infinity : Math.max(0, input.availableMinutes - fixedMinutes))
   }
   // Earliest-deadline knapsack: every retained prefix is feasible before its
   // own deadline. Maximize existing business priority across the whole subset,
@@ -216,7 +215,16 @@ export function buildConsumerTimePlan(input: {
   const deferredHard = mandatory.filter(item => !selected.has(item.action.id))
   if (deferredHard.length) conflicts.push({ kind: 'hard_deadline_capacity',
     relatedIds: deferredHard.map(item => item.action.id), selectedIds: planned.map(item => item.action.id) })
-  let remaining = Math.max(0, freeBefore(bounds.dayEnd) - bestMinutes)
+  const todayFree = freeBefore(bounds.dayEnd)
+  let prefixMinutes = 0, requiredToday = 0
+  for (const item of best.items) {
+    prefixMinutes += Math.max(1, Math.ceil(item.action.estimatedMinutes))
+    const laterCapacity = Math.max(0, freeBefore(deadlineFor(item)) - todayFree)
+    requiredToday = Math.max(requiredToday, prefixMinutes - laterCapacity)
+  }
+  // Allocate hard work as late as its deadlines permit, so minutes reserved
+  // tomorrow do not consume today's otherwise usable flexible-work budget.
+  let remaining = Math.max(0, todayFree - requiredToday)
   const flexible = startable.filter(item => !selected.has(item.action.id) && !mandatory.includes(item))
     .sort((a, b) => (b.action.status === 'doing' ? 1 : 0) - (a.action.status === 'doing' ? 1 : 0)
       || b.score - a.score || a.action.id.localeCompare(b.action.id))
