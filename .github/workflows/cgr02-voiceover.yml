@@ -8,6 +8,7 @@ on:
       - 'src/capture/capture.css'
       - 'src/today/TodayFeature.tsx'
       - 'e2e/cgr02TodayVoiceOver.voiceover.ts'
+      - 'playwright.voiceover.config.mts'
       - '.github/workflows/cgr02-voiceover.yml'
   push:
     branches: [main, manager/cgr02-today-vertical-slice-20260923]
