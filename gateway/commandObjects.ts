@@ -7,6 +7,10 @@ export interface CommandObjectRef {
   id: string
 }
 
+export interface CommandFieldRef extends CommandObjectRef {
+  field: string
+}
+
 function stableJson(value: unknown) {
   return JSON.stringify(value)
 }
@@ -84,6 +88,92 @@ export function diffCommandObjects(before: PJSDASSnapshot, after: PJSDASSnapshot
     if (oldDays[date] !== newDays[date]) refs.set(`time_planning:${date}`, { type: 'time_planning', id: date })
   }
   return [...refs.values()].sort((a, b) => `${a.type}:${a.id}`.localeCompare(`${b.type}:${b.id}`))
+}
+
+function objectValue(snapshot: PJSDASSnapshot, ref: CommandObjectRef): unknown {
+  const data = snapshot.data
+  switch (ref.type) {
+    case 'opportunity': return data.opportunities.find(item => item.id === ref.id)
+    case 'process': return data.processes.find(item => item.id === ref.id)
+    case 'process_event': return data.processEvents.find(item => item.id === ref.id)
+    case 'action': return data.actions.find(item => item.id === ref.id)
+    case 'prep': return data.prep.find(item => item.id === ref.id)
+    case 'application_group': return data.applicationGroups.find(item => item.id === ref.id)
+    case 'decision_request': return data.decisionRequests?.find(item => item.id === ref.id)
+    case 'semantic_receipt': return data.semanticReceipts?.find(item => item.id === ref.id)
+    case 'reminder_intent': return data.reminderIntents?.find(item => item.id === ref.id)
+    case 'reminder_outbox': return data.reminderOutbox?.find(item => item.id === ref.id)
+    case 'discovery_inbox': return data.discoveryInbox?.find(item => item.id === ref.id)
+    case 'change_set': return data.changeSets?.find(item => item.id === ref.id)
+    case 'timeline': return data.timeline?.find(item => item.id === ref.id)
+    case 'schedule_occurrence': return data.scheduleNodes?.filter(item => item.occurrenceId === ref.id)
+    case 'decision_rules': return data.decisionRules
+    case 'discovery_profile': return data.discoveryProfile
+    case 'import_meta': return data.meta
+    case 'time_planning': return ref.id === 'default' ? data.timePlanning?.defaultDailyMinutes
+      : ref.id === 'windows' ? data.timePlanning?.weeklyWindows : data.timePlanning?.dateOverrides?.[ref.id]
+    default: return undefined
+  }
+}
+
+function plainObject(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
+}
+
+function changedFields(before: unknown, after: unknown, prefix = ''): string[] {
+  if (stableJson(before) === stableJson(after)) return []
+  if (plainObject(before) || plainObject(after)) {
+    const left = plainObject(before) ? before : {}
+    const right = plainObject(after) ? after : {}
+    return [...new Set([...Object.keys(left), ...Object.keys(right)])]
+      .filter(key => key !== 'updatedAt' && key !== 'createdAt')
+      .flatMap(key => changedFields(left[key], right[key], prefix ? `${prefix}.${key}` : key))
+  }
+  return [prefix || '*']
+}
+
+/** Field evidence is written with new receipts; a missing legacy field set stays opaque. */
+export function diffCommandFields(before: PJSDASSnapshot, after: PJSDASSnapshot,
+  affectedObjects = diffCommandObjects(before, after)): CommandFieldRef[] {
+  return affectedObjects.flatMap(ref => {
+    const left = objectValue(before, ref)
+    const right = objectValue(after, ref)
+    const fields = left === undefined || right === undefined ? ['*'] : changedFields(left, right)
+    // Unknown object kinds and metadata-only diffs remain conservative.
+    return (fields.length ? fields : ['*']).map(field => ({ ...ref, field }))
+  }).sort((a, b) => `${a.type}:${a.id}:${a.field}`.localeCompare(`${b.type}:${b.id}:${b.field}`))
+}
+
+export function intentFieldScopes(command: UserDomainCommand, objects: CommandObjectRef[]): CommandFieldRef[] {
+  if (command.kind === 'correct_opportunity_fact') return objects.map(ref => ({ ...ref,
+    field: ref.type === 'opportunity' && ref.id === command.opportunityId
+      ? `detail.userFacts.${command.field}` : '*' }))
+  if (command.kind === 'set_opportunity_preference') return objects.map(ref => ({ ...ref,
+    field: ref.type === 'opportunity' && ref.id === command.opportunityId ? 'roleType' : '*' }))
+  return objects.map(ref => ({ ...ref, field: '*' }))
+}
+
+function readFieldRefs(raw: unknown): CommandFieldRef[] | undefined {
+  if (!Array.isArray(raw)) return undefined
+  const fields: CommandFieldRef[] = []
+  for (const value of raw) {
+    if (!value || typeof value !== 'object') return undefined
+    const { type, id, field } = value as Record<string, unknown>
+    if (typeof type !== 'string' || typeof id !== 'string' || typeof field !== 'string' || !field) return undefined
+    fields.push({ type, id, field })
+  }
+  return fields
+}
+
+export function receiptConflictScopes(receipt: Record<string, unknown>): CommandFieldRef[] | undefined {
+  return readFieldRefs(receipt.conflictScopes)
+}
+
+export function commandConflictScopes(affectedObjects: CommandObjectRef[], intentFields: CommandFieldRef[]): CommandFieldRef[] {
+  return affectedObjects.flatMap(ref => {
+    const scopes = intentFields.filter(field => field.type === ref.type && field.id === ref.id)
+    return scopes.length ? scopes : [{ ...ref, field: '*' }]
+  })
 }
 
 function scheduleOccurrenceForNode(snapshot: PJSDASSnapshot, id: string) {

@@ -43,11 +43,16 @@ import {
 import { WorkspaceSourceError } from './workspaceSource.js'
 import {
   decisionIntentObjects,
+  commandConflictScopes,
+  diffCommandFields,
   diffCommandObjects,
   domainIntentObjects,
+  intentFieldScopes,
   overlappingCommandObjects,
   readModelInvalidation,
+  receiptConflictScopes,
   receiptAffectedObjects,
+  type CommandFieldRef,
   semanticIntentObjects,
   type CommandObjectRef,
 } from './commandObjects.js'
@@ -162,6 +167,17 @@ function operationFor(command: AuthoritativeBusinessCommand['command']) {
   return command.type
 }
 
+function typedFactAlreadyCurrent(command: AuthoritativeBusinessCommand['command'], snapshot: PJSDASSnapshot) {
+  if (command.type !== 'domain') return false
+  const value = command.value
+  if (value.kind !== 'correct_opportunity_fact' && value.kind !== 'set_opportunity_preference') return false
+  const target = snapshot.data.opportunities.find(item => item.id === value.opportunityId)
+  if (!target) return false
+  return value.kind === 'correct_opportunity_fact'
+    ? target.detail?.userFacts?.[value.field] === value.value.trim()
+    : target.roleType === value.roleType
+}
+
 function intentObjects(command: AuthoritativeBusinessCommand['command'], snapshot: PJSDASSnapshot, proposal?: McpProposalEnvelope) {
   if (command.type === 'domain') return domainIntentObjects(command.value as UserDomainCommand, snapshot)
   if (command.type === 'mcp_save_inbox') {
@@ -258,6 +274,7 @@ function receiptObjects(record: ConnectedCommandRecord, snapshot: PJSDASSnapshot
 
 function conflictFromIntervening(
   intent: CommandObjectRef[],
+  intentFields: CommandFieldRef[],
   current: PJSDASSnapshot,
   intervening: ConnectedCommandRecord[],
 ): AuthoritativeConflict | undefined {
@@ -274,9 +291,18 @@ function conflictFromIntervening(
       }
     }
     const shared = overlappingCommandObjects(intent, affected)
-    if (shared.length) {
+    const changedFields = receiptConflictScopes(record.receipt)
+    const incompatible = shared.filter(ref => {
+      const requested = intentFields.filter(field => field.type === ref.type && field.id === ref.id)
+      const changed = changedFields?.filter(field => field.type === ref.type && field.id === ref.id)
+      if (!requested.length || !changed?.length) return true
+      return requested.some(left => changed.some(right => left.field === '*' || right.field === '*'
+        || left.field === right.field || left.field.startsWith(`${right.field}.`)
+        || right.field.startsWith(`${left.field}.`)))
+    })
+    if (incompatible.length) {
       conflictingCommands.push(record.commandId)
-      for (const ref of shared) overlaps.set(`${ref.type}:${ref.id}`, ref)
+      for (const ref of incompatible) overlaps.set(`${ref.type}:${ref.id}`, ref)
     }
   }
   if (!overlaps.size) return undefined
@@ -407,10 +433,17 @@ export function createAuthoritativeCommandExecutor(options: TransactionalWorkspa
           throw new WorkspaceSourceError('WORKSPACE_CONFLICT', 'The signed proposal is stale. Refresh and request a new proposal.', false)
         }
       }
+      if (typedFactAlreadyCurrent(parsed.command, current.snapshot)) {
+        return { outcome: 'ALREADY_APPLIED', revision: current.revision, snapshot: current.snapshot,
+          result: { type: parsed.command.type, status: 'ALREADY_APPLIED', summary: 'The requested fact is already current.' } }
+      }
       const intent = intentObjects(parsed.command, current.snapshot, proposal)
+      const intentFields = parsed.command.type === 'domain'
+        ? intentFieldScopes(parsed.command.value as UserDomainCommand, intent)
+        : intent.map(ref => ({ ...ref, field: '*' }))
       if (parsed.baseRevision < current.revision) {
         const intervening = await store.readCommandsAfterRevision(principal.userId, parsed.baseRevision)
-        const conflict = conflictFromIntervening(intent, current.snapshot, intervening)
+        const conflict = conflictFromIntervening(intent, intentFields, current.snapshot, intervening)
         if (conflict) {
           return { outcome: 'CONFLICT', revision: current.revision, snapshot: current.snapshot, conflict }
         }
@@ -495,11 +528,15 @@ export function createAuthoritativeCommandExecutor(options: TransactionalWorkspa
       }
 
       const affectedObjects = diffCommandObjects(current.snapshot, evaluated.snapshot)
+      const affectedFields = diffCommandFields(current.snapshot, evaluated.snapshot, affectedObjects)
+      const conflictScopes = commandConflictScopes(affectedObjects, intentFields)
       const result = resultPayload(parsed.command, evaluated)
       const receiptContext = {
-        contractVersion: 2,
+        contractVersion: 4,
         commandType: parsed.command.type,
         affectedObjects,
+        affectedFields,
+        conflictScopes,
         undoDependencyObjects: affectedObjects,
         readModelInvalidation: readModelInvalidation(affectedObjects),
         lifecycle: lifecycle(startedAt, parsed.baseRevision, current.revision),

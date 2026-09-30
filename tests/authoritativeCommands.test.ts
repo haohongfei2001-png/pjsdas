@@ -220,6 +220,139 @@ describe('CGR-01 authoritative command executor', () => {
     expect(h.state().current.data.actions.find((item) => item.id === 'action-1')?.status).toBe('done')
   })
 
+  it('merges independent opportunity preference and confirmed fact at one stale base', async () => {
+    const facts = [
+      { field: 'location', value: 'Taipei' },
+      { field: 'compensationText', value: 'NT$2m' },
+      { field: 'applicationUrl', value: 'https://example.com/apply' },
+    ] as const
+    for (const [index, factCase] of facts.entries()) for (const firstKind of ['preference', 'fact'] as const) {
+      const h = harness()
+      const preference = { commandId: 'cmd-preference-0001', baseRevision: 1, command: { type: 'domain' as const,
+        value: { commandId: 'cmd-preference-0001', kind: 'set_opportunity_preference' as const,
+          opportunityId: 'opp-1', roleType: 'core' as const } } }
+      const fact = { commandId: `cmd-fact-${index}`, baseRevision: 1, command: { type: 'domain' as const,
+        value: { commandId: `cmd-fact-${index}`, kind: 'correct_opportunity_fact' as const,
+          opportunityId: 'opp-1', field: factCase.field, value: factCase.value } } }
+      const first = firstKind === 'preference' ? preference : fact
+      const second = firstKind === 'preference' ? fact : preference
+      expect((await h.executor.execute(h.principal, first)).outcome).toBe('COMMITTED')
+      expect((await h.executor.execute(h.principal, second)).outcome).toBe('COMMITTED')
+      const opportunity = h.state().current.data.opportunities.find(item => item.id === 'opp-1')!
+      expect(opportunity.roleType).toBe('core')
+      expect(opportunity.detail?.userFacts?.[factCase.field]).toBe(factCase.value)
+      expect(h.ledger).toHaveLength(2)
+    }
+  })
+
+  it('rejects contradictory same-field opportunity facts and preserves both receipts and current fact', async () => {
+    const h = harness()
+    const command = (commandId: string, value: string) => ({ commandId, baseRevision: 1,
+      command: { type: 'domain' as const, value: { commandId, kind: 'correct_opportunity_fact' as const,
+        opportunityId: 'opp-1', field: 'location' as const, value } } })
+    expect((await h.executor.execute(h.principal, command('cmd-fact-taipei', 'Taipei'))).outcome).toBe('COMMITTED')
+    const conflict = await h.executor.execute(h.principal, command('cmd-fact-tokyo', 'Tokyo'))
+    expect(conflict).toMatchObject({ outcome: 'CONFLICT', conflict: {
+      kind: 'OBJECT_CONFLICT', objects: [{ type: 'opportunity', id: 'opp-1' }],
+      interveningCommandIds: ['cmd-fact-taipei'],
+    } })
+    expect(h.state().current.data.opportunities.find(item => item.id === 'opp-1')?.detail?.userFacts?.location).toBe('Taipei')
+    expect(h.ledger).toHaveLength(1)
+  })
+
+  it('rebases different confirmed fact fields in either command order', async () => {
+    for (const firstField of ['location', 'compensationText'] as const) {
+      const h = harness()
+      const command = (field: 'location' | 'compensationText') => ({
+        commandId: `cmd-fact-${field}`, baseRevision: 1, command: { type: 'domain' as const,
+          value: { commandId: `cmd-fact-${field}`, kind: 'correct_opportunity_fact' as const,
+            opportunityId: 'opp-1', field, value: field === 'location' ? 'Taipei' : 'NT$2m' } },
+      })
+      const secondField = firstField === 'location' ? 'compensationText' : 'location'
+      expect((await h.executor.execute(h.principal, command(firstField))).outcome).toBe('COMMITTED')
+      expect((await h.executor.execute(h.principal, command(secondField))).outcome).toBe('COMMITTED')
+      expect(h.state().current.data.opportunities.find(item => item.id === 'opp-1')?.detail?.userFacts)
+        .toMatchObject({ location: 'Taipei', compensationText: 'NT$2m' })
+    }
+  })
+
+  it('treats the same confirmed fact as already applied without another evidence write', async () => {
+    const h = harness()
+    const command = (commandId: string) => ({ commandId, baseRevision: 1,
+      command: { type: 'domain' as const, value: { commandId, kind: 'correct_opportunity_fact' as const,
+        opportunityId: 'opp-1', field: 'location' as const, value: 'Taipei' } } })
+    expect((await h.executor.execute(h.principal, command('cmd-fact-first'))).outcome).toBe('COMMITTED')
+    expect((await h.executor.execute(h.principal, command('cmd-fact-same'))).outcome).toBe('ALREADY_APPLIED')
+    expect(h.ledger).toHaveLength(1)
+    expect(h.state().revision).toBe(2)
+  })
+
+  it('merges independent capacity keys but conflicts on the same date override', async () => {
+    const h = harness()
+    const capacity = (commandId: string, kind: 'set_daily_capacity' | 'set_date_capacity', minutes: number) => ({
+      commandId, baseRevision: 1, command: { type: 'domain' as const, value: kind === 'set_daily_capacity'
+        ? { commandId, kind, minutes }
+        : { commandId, kind, date: '2026-09-25', minutes } },
+    })
+    expect((await h.executor.execute(h.principal, capacity('cmd-capacity-default', 'set_daily_capacity', 360))).outcome).toBe('COMMITTED')
+    expect((await h.executor.execute(h.principal, capacity('cmd-capacity-day', 'set_date_capacity', 120))).outcome).toBe('COMMITTED')
+    expect((await h.executor.execute(h.principal, capacity('cmd-capacity-day-conflict', 'set_date_capacity', 240))).outcome).toBe('CONFLICT')
+    expect(h.state().current.data.timePlanning).toMatchObject({ defaultDailyMinutes: 360,
+      dateOverrides: { '2026-09-25': 120 } })
+    expect(h.ledger).toHaveLength(2)
+  })
+
+  it('keeps a legacy object-only receipt conservative on a stale same-object command', async () => {
+    const h = harness()
+    const first = { commandId: 'cmd-preference-legacy', baseRevision: 1, command: { type: 'domain' as const,
+      value: { commandId: 'cmd-preference-legacy', kind: 'set_opportunity_preference' as const,
+        opportunityId: 'opp-1', roleType: 'core' as const } } }
+    expect((await h.executor.execute(h.principal, first)).outcome).toBe('COMMITTED')
+    delete h.ledger[0].receipt.affectedFields
+    delete h.ledger[0].receipt.conflictScopes
+    const second = { commandId: 'cmd-fact-after-legacy', baseRevision: 1, command: { type: 'domain' as const,
+      value: { commandId: 'cmd-fact-after-legacy', kind: 'correct_opportunity_fact' as const,
+        opportunityId: 'opp-1', field: 'location' as const, value: 'Taipei' } } }
+    expect((await h.executor.execute(h.principal, second)).outcome).toBe('CONFLICT')
+    expect(h.ledger).toHaveLength(1)
+  })
+
+  it('keeps dependent deadline updates object-scoped in either stale command order', async () => {
+    for (const firstKind of ['deadline', 'fact'] as const) {
+      const h = harness()
+      const deadline = { commandId: 'cmd-deadline-guard', baseRevision: 1,
+        command: { type: 'domain' as const, value: { commandId: 'cmd-deadline-guard',
+          kind: 'set_deadline' as const, opportunityId: 'opp-1',
+          deadline: '2026-09-28T00:00:00.000Z', precision: 'datetime' as const } } }
+      const fact = { commandId: 'cmd-fact-guard', baseRevision: 1,
+        command: { type: 'domain' as const, value: { commandId: 'cmd-fact-guard',
+          kind: 'correct_opportunity_fact' as const, opportunityId: 'opp-1',
+          field: 'location' as const, value: 'Taipei' } } }
+      const first = firstKind === 'deadline' ? deadline : fact
+      const second = firstKind === 'deadline' ? fact : deadline
+      expect((await h.executor.execute(h.principal, first)).outcome).toBe('COMMITTED')
+      expect((await h.executor.execute(h.principal, second)).outcome).toBe('CONFLICT')
+      expect(h.ledger).toHaveLength(1)
+    }
+  })
+
+  it('retains append-only process evidence while refusing a stale competing stage update', async () => {
+    const h = harness()
+    const event = (commandId: string, eventType: 'assessment_invite' | 'interview_invite', baseRevision: number) => ({
+      commandId, baseRevision, command: { type: 'domain' as const, value: {
+        commandId, kind: 'record_process_event' as const, opportunityId: 'opp-1', eventType,
+        occurredAt: eventType === 'assessment_invite' ? '2026-09-23T01:00:00.000Z' : '2026-09-24T01:00:00.000Z',
+        dueAt: eventType === 'assessment_invite' ? '2026-09-25T01:00:00.000Z' : '2026-09-26T01:00:00.000Z',
+      } },
+    })
+    expect((await h.executor.execute(h.principal, event('cmd-event-assessment', 'assessment_invite', 1))).outcome).toBe('COMMITTED')
+    expect((await h.executor.execute(h.principal, event('cmd-event-stale-interview', 'interview_invite', 1))).outcome).toBe('CONFLICT')
+    expect(h.state().current.data.processEvents.map(item => item.type)).toEqual(['assessment_invite'])
+    expect((await h.executor.execute(h.principal, event('cmd-event-current-interview', 'interview_invite', 2))).outcome).toBe('COMMITTED')
+    expect(h.state().current.data.processEvents.map(item => item.type)).toEqual(['assessment_invite', 'interview_invite'])
+    expect(h.ledger).toHaveLength(2)
+  })
+
   it('refuses historical event deletion before any CAS workspace write', async () => {
     const h = harness()
     const before = historyActionWorkspace()
@@ -347,6 +480,20 @@ describe('CGR-01 authoritative command executor', () => {
       completedAt: '2026-09-24T03:05:00.000Z',
     })
     expect(completeHarness.state().current.data.actions.find((item) => item.id === 'action-1')?.status).toBe('done')
+    const staleReschedule = await completeHarness.executor.execute(completeHarness.principal, {
+      commandId: 'cmd-occurrence-stale-reschedule', baseRevision: 1,
+      command: { type: 'domain', value: { commandId: 'cmd-occurrence-stale-reschedule',
+        kind: 'reschedule_occurrence', occurrenceId: 'occurrence-1', temporal: {
+          shape: 'fixed_range', precision: 'datetime', timezone: 'Asia/Taipei',
+          startAt: '2026-09-26T02:00:00.000Z', endAt: '2026-09-26T03:00:00.000Z',
+          resolutionBasis: 'user_explicit',
+        } } },
+    })
+    expect(staleReschedule).toMatchObject({ outcome: 'CONFLICT', conflict: {
+      objects: [{ type: 'schedule_occurrence', id: 'occurrence-1' }],
+    } })
+    expect(completeHarness.state().current.data.scheduleNodes?.filter(node => node.occurrenceId === 'occurrence-1')).toHaveLength(1)
+    expect(completeHarness.ledger).toHaveLength(1)
 
     const rescheduleHarness = harness()
     rescheduleHarness.state().current.data.scheduleNodes = [{
