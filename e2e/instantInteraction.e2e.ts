@@ -2,7 +2,9 @@ import { setupInstantServer as setup } from './fixtures/instantServer.js'
 import { test, expect } from '@playwright/test'
 import { INSTANT_NOW } from '../tests/fixtures/instantDenseWorkspace.js'
 
-test.use({ timezoneId: 'Asia/Shanghai' })
+// Video encoding competes with the measured UI on small CI runners. Keep
+// failure screenshots/traces and timing receipts without a live video encoder.
+test.use({ timezoneId: 'Asia/Shanghai', video: 'off' })
 test('dense capacity and completion settle before delayed server confirmation', async ({ page, context }, info) => {
   test.setTimeout(90_000)
   const server = await setup(context)

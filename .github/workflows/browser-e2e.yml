@@ -27,6 +27,10 @@ jobs:
         run: npx playwright install --with-deps chromium
       - name: Run critical browser journeys
         run: npx playwright test --config=playwright.config.mts --project=chromium
+      - name: Run dense instant journeys with production React runtime
+        env:
+          PLAYWRIGHT_HTML_OUTPUT_DIR: playwright-report/instant
+        run: npx playwright test --config=playwright.instant.config.mts --project=chromium
       - name: Upload browser failure evidence
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@v5

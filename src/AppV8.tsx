@@ -766,7 +766,7 @@ export default function AppV8() {
     const account = cloud.session?.user.id
     if (!account || !connectedWorkspaceAuthorityEnabled()) throw new Error('Authoritative workspace is unavailable.')
     const pending = listAccountPendingOperations(account).find((item) => item.action === 'undo' && item.targetCommandId === targetCommandId)
-    if ((await (await import('./db.js')).readCommandInteractions(account)).some(item => item.commandId === targetCommandId)) {
+    if (await (await import('./db.js')).readCommandInteraction(account, targetCommandId)) {
       await beginInstantUndo(account, targetCommandId)
       return
     }

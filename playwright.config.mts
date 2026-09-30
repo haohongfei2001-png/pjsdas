@@ -3,6 +3,8 @@ import { defineConfig, devices } from '@playwright/test'
 export default defineConfig({
   testDir: './e2e',
   testMatch: '**/*.e2e.ts',
+  // Dense latency assertions run separately with the production React runtime.
+  testIgnore: '**/instantInteraction.e2e.ts',
   fullyParallel: false,
   workers: 1,
   retries: process.env.CI ? 1 : 0,

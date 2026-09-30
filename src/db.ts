@@ -1026,17 +1026,28 @@ async function readLocalSnapshotData(tx: LocalSnapshotTransaction) {
   }
 }
 
-async function readLocalSnapshot(tx: LocalSnapshotTransaction) {
-  return createSnapshot(await readLocalSnapshotData(tx))
+async function readLocalSnapshot(tx: LocalSnapshotTransaction, assertCurrent?: () => void) {
+  assertCurrent?.()
+  const data = await readLocalSnapshotData(tx)
+  // A hot intent may arrive while IndexedDB is reading. Stop before cloning
+  // and validating the historical workspace on the UI thread.
+  assertCurrent?.()
+  return createSnapshot(data)
 }
 
-export async function exportLocalSnapshot() {
+export async function exportLocalSnapshot(assertCurrent?: () => void) {
   const db = await dbPromise
   // Startup/export must remain read-only, even when validation fails.
   const tx = db.transaction([...DATA_STORES], 'readonly')
-  const snapshot = await readLocalSnapshot(tx)
-  await tx.done
-  return snapshot
+  try {
+    const snapshot = await readLocalSnapshot(tx, assertCurrent)
+    await tx.done
+    return snapshot
+  } catch (error) {
+    try { tx.abort() } catch { /* completed readonly transaction */ }
+    await tx.done.catch(() => undefined)
+    throw error
+  }
 }
 
 export async function saveLocalTimePlanning(preferences: TimePlanningPreferences) {
@@ -1355,7 +1366,7 @@ export async function assertLocalSnapshotCurrent(expected: PJSDASSnapshot, asser
   const tx = db.transaction([...DATA_STORES], 'readwrite')
   try {
     assertCurrent()
-    if (canonicalWorkspaceJson(await readLocalSnapshot(tx)) !== canonicalWorkspaceJson(expected)) throw new AccountCacheChangedError()
+    if (canonicalWorkspaceJson(await readLocalSnapshot(tx, assertCurrent)) !== canonicalWorkspaceJson(expected)) throw new AccountCacheChangedError()
     assertCurrent()
     await tx.done
   } catch (caught) {
@@ -1366,10 +1377,13 @@ export async function assertLocalSnapshotCurrent(expected: PJSDASSnapshot, asser
 }
 
 export async function isRecordedAccountProjection(accountKey: string, snapshot: PJSDASSnapshot, options?: { compact?: boolean; assertCurrent?: () => void }) {
+  options?.assertCurrent?.()
   const db = await dbPromise
   const recorded = await db.get('meta', 'authoritativeProjection')
+  options?.assertCurrent?.()
   if (recorded?.key !== 'authoritativeProjection' || recorded.accountKey !== accountKey) return false
   const deltas = (await db.getAll('projectionDeltas')).filter(item => item.accountKey === accountKey)
+  options?.assertCurrent?.()
   if (!deltas.length) return recorded.canonical === canonicalWorkspaceJson(snapshot)
   let expected: PJSDASSnapshot = { ...snapshot, data: JSON.parse(recorded.canonical) }
   try { for (const item of deltas) expected = applyWorkspaceDelta(expected, item.delta) } catch { return false }

@@ -133,7 +133,7 @@ export async function runCloudSync(userId: string, options: { passive?: boolean;
   }
 
   try {
-    const local = await exportLocalSnapshot()
+    const local = await exportLocalSnapshot(assertCurrent)
     if (hotPending()) return { kind: 'local_pending', version: getAccountCheckpoint(userId).lastSyncedVersion }
     const localFingerprint = await fingerprintWorkspace(local)
     if (hotPending()) return { kind: 'local_pending', version: getAccountCheckpoint(userId).lastSyncedVersion }

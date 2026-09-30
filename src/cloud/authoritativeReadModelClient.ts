@@ -62,7 +62,7 @@ export async function refreshConnectedAuthoritativeCache(
       observedAt: new Date().toISOString(), latencyMs: 0, changed: false }
   }
   const reading = Promise.all([
-    exportLocalSnapshot(),
+    exportLocalSnapshot(assertReadCurrent),
     fetchConnectedRemoteWorkspace(accountKey, assertReadCurrent),
   ])
   const pair = await reading.catch(error => { lease.assertCurrent(); if (hotPending()) return undefined; throw error })
