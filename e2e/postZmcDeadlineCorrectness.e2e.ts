@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { deadlineWorkspace, LATE_NOW, explicitStartDenseWorkspace } from '../tests/fixtures/postZmcDeadlineWorkspace.js'
 
 test.use({ timezoneId: 'Asia/Shanghai' })
-for (const retainLegacyDue of [false, true]) for (const state of ['cancelled', 'superseded', 'completed'] as const) test(`job detail retains ${state} deadline evidence with legacy date ${retainLegacyDue} without labeling active work with it`, async ({ page }) => {
+for (const retainLegacyDue of [false, true]) for (const state of ['cancelled', 'superseded'] as const) test(`job detail retains ${state} deadline evidence with legacy date ${retainLegacyDue} without labeling active work with it`, async ({ page }) => {
   await page.clock.setFixedTime(LATE_NOW)
   await page.goto('/'); await page.locator('.tsui-primary-nav').waitFor()
   const snapshot = deadlineWorkspace()
@@ -25,6 +25,28 @@ for (const retainLegacyDue of [false, true]) for (const state of ['cancelled', '
   const stored = await page.evaluate(async () => (await import('/pjsdas/src/db.ts')).exportLocalSnapshot())
   expect(stored.data.scheduleNodes).toHaveLength(2)
   expect(stored.data.scheduleNodes!.every(node => node.temporal.deadlineAt === '2026-09-30T15:59:59Z')).toBe(true)
+})
+
+test('job detail keeps the deadline of an unfinished application sharing a completed node', async ({ page }) => {
+  await page.clock.setFixedTime(LATE_NOW)
+  await page.goto('/'); await page.locator('.tsui-primary-nav').waitFor()
+  const snapshot = deadlineWorkspace()
+  const active = snapshot.data.actions[0]
+  const done = { ...active, id: 'already-applied', status: 'done' as const }
+  snapshot.data.actions = [active, done]
+  snapshot.data.opportunities = snapshot.data.opportunities.slice(0, 1)
+  snapshot.data.scheduleNodes = [{ ...snapshot.data.scheduleNodes![0], state: 'completed', relatedActionIds: [active.id, done.id] }]
+  await page.evaluate(async input => (await import('/pjsdas/src/db.ts')).replaceLocalSnapshotFromCloud(input), snapshot)
+  await page.goto('/pjsdas/opportunities/job-0')
+  const action = page.locator('.opportunity-detail-action-list article').filter({ hasText: '申请 A' })
+  await expect(action.locator('small')).toContainText('23:59')
+  await expect(page.locator('.opportunity-detail-primary-operation')).toContainText('23:59')
+  await page.reload()
+  await expect(action.locator('small')).toContainText('23:59')
+  const stored = await page.evaluate(async () => (await import('/pjsdas/src/db.ts')).exportLocalSnapshot())
+  expect(stored.data.scheduleNodes).toHaveLength(1)
+  expect(stored.data.scheduleNodes![0].state).toBe('completed')
+  expect(stored.data.scheduleNodes![0].temporal.deadlineAt).toBe('2026-09-30T15:59:59Z')
 })
 
 test('legacy UTC deadlines display the same local instant in Today, Schedule and job detail', async ({ page }) => {

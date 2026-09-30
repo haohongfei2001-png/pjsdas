@@ -128,7 +128,7 @@ export default function OpportunityDetailDrawer({
     .sort((a, b) => (a.dueAt ?? '9999').localeCompare(b.dueAt ?? '9999'))
   const latestScheduleNodes = latestByOccurrence(scheduleNodes)
   const activeScheduleNodes = latestScheduleNodes
-    .filter(node => !['cancelled', 'superseded', 'completed'].includes(node.state))
+    .filter(node => !['cancelled', 'superseded'].includes(node.state))
   const actionTemporal = (action: Action) => {
     const node = nodeForAction(action, activeScheduleNodes)
     if (node) return node.temporal

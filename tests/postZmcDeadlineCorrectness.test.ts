@@ -7,7 +7,7 @@ import { getOpportunityDecisionRead } from '../src/opportunityDecisionRead.js'
 import { DEADLINE, LATE_NOW, deadlineWorkspace, explicitStartDenseWorkspace } from './fixtures/postZmcDeadlineWorkspace.js'
 
 describe('post-ZMC deadline correctness', () => {
-  it.each((['cancelled', 'superseded', 'completed'] as const).flatMap(state =>
+  it.each((['cancelled', 'superseded'] as const).flatMap(state =>
     [false, true].map(retainLegacyDue => ({ state, retainLegacyDue }))))('does not revive $state deadline with retained legacy date $retainLegacyDue', ({ state, retainLegacyDue }) => {
     const snapshot = deadlineWorkspace()
     snapshot.data.actions = snapshot.data.actions.slice(0, 1)
@@ -21,6 +21,20 @@ describe('post-ZMC deadline correctness', () => {
     expect(read?.nextAction?.actionId).toBe('apply-0')
     expect(read?.nextAction?.temporal).toBeUndefined()
     expect(read?.nextAction?.dueAt).toBeUndefined()
+    expect(JSON.stringify(snapshot)).toBe(before)
+  })
+  it('keeps the real deadline of an unfinished application sharing a completed node', () => {
+    const snapshot = deadlineWorkspace()
+    const active = snapshot.data.actions[0]
+    const done = { ...active, id: 'already-applied', status: 'done' as const }
+    snapshot.data.actions = [active, done]
+    snapshot.data.opportunities = snapshot.data.opportunities.slice(0, 1)
+    snapshot.data.scheduleNodes = [{ ...snapshot.data.scheduleNodes![0], state: 'completed', relatedActionIds: [active.id, done.id] }]
+    const before = JSON.stringify(snapshot)
+    const read = getOpportunityDecisionRead(snapshot, 'job-0', { now: LATE_NOW, timezone: 'Asia/Shanghai' })
+    expect(read?.nextAction?.actionId).toBe('apply-0')
+    expect(read?.nextAction?.dueAt).toBe(DEADLINE)
+    expect(formatScheduleTemporal(read!.nextAction!.temporal!, true, 'Asia/Shanghai')).toContain('23:59')
     expect(JSON.stringify(snapshot)).toBe(before)
   })
   it.each([

@@ -243,7 +243,7 @@ function actionRead(ranked: RankedAction | undefined, opportunity: Opportunity, 
   if (!ranked) return undefined
   const action = ranked.action
   const latest = latestNodes(nodes, true)
-  const node = nodeForAction(action, latest.filter(item => !['cancelled', 'superseded', 'completed'].includes(item.state)))
+  const node = nodeForAction(action, latest.filter(item => !['cancelled', 'superseded'].includes(item.state)))
   const terminalOnly = !node && latest.some(item => item.relatedActionIds.includes(action.id))
   let operation: OpportunityDecisionAction['operation'] = 'open_today'
   let externalUrl: string | undefined
