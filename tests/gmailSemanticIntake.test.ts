@@ -1628,7 +1628,9 @@ describe('UU06 shared Gmail intake', () => {
     versioned.observation.candidates[0] = Object.fromEntries(
       Object.entries(versioned.observation.candidates[0]!).reverse(),
     ) as typeof versioned.observation.candidates[number]
-    const repeated = applyGmailSemanticBatch(first.snapshot, {
+    const reorderedWorkspace = structuredClone(first.snapshot)
+    reorderedWorkspace.data.opportunities.reverse()
+    const repeated = applyGmailSemanticBatch(reorderedWorkspace, {
       runId: 'role-choice-versioned', sourceId: 'gmail:primary',
       checkedAt: new Date(now.getTime() + 30_000).toISOString(),
       authorized: true, records: [versioned], reconcileExisting: true,

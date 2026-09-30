@@ -94,8 +94,19 @@ function sameBusinessValue(left: unknown, right: unknown) {
 }
 
 function candidateBusinessSignature(candidate: SemanticCandidate) {
-  const { id: _id, sourceVersionRefs: _sourceVersionRefs, ...business } = candidate
+  const { id: _id, sourceVersionRefs: _sourceVersionRefs, evidenceRefs: _evidenceRefs, ...business } = candidate
   return JSON.stringify(canonicalBusinessValue(business))
+}
+
+function sameDecisionChoices(left: DecisionRequestChoice[], right: DecisionRequestChoice[]) {
+  return sameBusinessValue([...left].sort((a, b) => a.id.localeCompare(b.id)),
+    [...right].sort((a, b) => a.id.localeCompare(b.id)))
+}
+
+function sameAffectedObjects(left: DecisionRequest['affectedObjects'], right: DecisionRequest['affectedObjects']) {
+  const order = (item: { type: string; id: string }) => `${item.type}:${item.id}`
+  return sameBusinessValue([...left].sort((a, b) => order(a).localeCompare(order(b))),
+    [...right].sort((a, b) => order(a).localeCompare(order(b))))
 }
 
 function iso(value: string | undefined) {
@@ -1170,10 +1181,9 @@ export function applySemanticIntake(
         : []
       const matchingOpen = currentChoices.find(item =>
         item.reason === request.reason
-        && sameBusinessValue({ ...item.payloadBinding.candidate, sourceVersionRefs: undefined },
-          { ...candidate, sourceVersionRefs: undefined })
-        && sameBusinessValue(item.choices, request.choices)
-        && sameBusinessValue(item.affectedObjects, request.affectedObjects))
+        && candidateBusinessSignature(item.payloadBinding.candidate) === candidateBusinessSignature(candidate)
+        && sameDecisionChoices(item.choices, request.choices)
+        && sameAffectedObjects(item.affectedObjects, request.affectedObjects))
       if (matchingOpen) {
         retirePriorOpenChoices(candidate.id, matchingOpen.id)
         continue
