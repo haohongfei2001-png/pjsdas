@@ -1,5 +1,8 @@
+import { freezeTodayFixture } from './support/consumerFixtureClock.js'
 import { expect, test, type Page } from '@playwright/test'
 import { createJobPostingEvidence } from '../src/jobPosting.js'
+
+test.beforeEach(async ({ page }) => { await freezeTodayFixture(page) })
 
 function sourceBackedOpportunity(id: string, company: string, role: string) {
   const observedAt = '2026-09-10T00:00:00.000Z'

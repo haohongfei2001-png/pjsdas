@@ -53,7 +53,7 @@ for (const [connected, application] of [[false, false], [true, false], [true, tr
       } else return cors(route, { code: 'UNEXPECTED_WRITE' }, 400)
       state.revision += 1
       return cors(route, { ...read(), outcome: 'COMMITTED', receipt: { commandId: body.commandId, receiptId: 'receipt:' + body.commandId, status: 'COMMITTED', revision: state.revision,
-        undoAvailable: true, affectedObjects: [{ type: 'action', id: 'history-task' }], result: { type: 'domain', status: 'APPLIED', summary: 'Updated history task' } } })
+        undoAvailable: true, undoCompensation: state.compensation, affectedObjects: [{ type: 'action', id: 'history-task' }], result: { type: 'domain', status: 'APPLIED', summary: 'Updated history task' } } })
     })
   } else {
     await page.goto('/'); await expect(page.locator('.tsui-primary-nav')).toBeVisible()

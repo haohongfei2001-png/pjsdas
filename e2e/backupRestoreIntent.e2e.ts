@@ -1,4 +1,7 @@
+import { freezeTodayFixture } from './support/consumerFixtureClock.js'
 import { expect, test, type Page } from '@playwright/test'
+
+test.beforeEach(async ({ page }) => { await freezeTodayFixture(page) })
 
 const opportunity = {
   id: 'e2e-backup-intent-opportunity',

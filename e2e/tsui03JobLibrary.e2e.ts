@@ -1,5 +1,8 @@
+import { freezeTodayFixture } from './support/consumerFixtureClock.js'
 import { mkdir } from 'node:fs/promises'
 import { expect, test, type Page } from '@playwright/test'
+
+test.beforeEach(async ({ page }) => { await freezeTodayFixture(page) })
 
 async function emitVisual(page: Page, label: string) {
   const bytes = await page.screenshot({ type: 'jpeg', quality: 52, animations: 'disabled' })

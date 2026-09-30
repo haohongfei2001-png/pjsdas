@@ -1,5 +1,8 @@
 import { expect, test } from '@playwright/test'
+import { freezeTodayFixture } from './support/consumerFixtureClock.js'
 import { AUTH_KEY, BACKEND, cors, health, session, workspace } from './fixtures/todayWorkspace.js'
+
+test.beforeEach(async ({ page }) => { await freezeTodayFixture(page) })
 
 for (const scenario of ['sign-out', 'local-edit', 'command-sign-out', 'command-local-edit', 'order-only', 'overlapping-read', 'account-aba', 'cloud-recovery', 'account-return', 'account-return-edited', 'account-return-read', 'checkpoint-interruption', 'checkpoint-interruption-edited'] as const) test(`a delayed authoritative read preserves ${scenario} boundary`, async ({ page }) => {
   const snapshot = workspace()

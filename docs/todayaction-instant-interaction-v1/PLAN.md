@@ -85,3 +85,9 @@ A fresh independent review found user Undo incorrectly using a raw inverse. Subm
 Cloud Firefox exposed an order-sensitive comparison after derived proof compaction. Both empty-proof and accumulated-proof comparisons now normalize unique-ID collection order and require exact facts/audit. Compaction stores that same normalized canonical proof. The browser regression deliberately reverses captured action/node order before compaction, then verifies the new baseline and genuine-edit refusal.
 
 Local correction receipt: 210 unit files / 1142 tests and type check passed; 48 dense Chromium/WebKit cases passed, including submission without an existing Process, server-clock differences, receipt/restart recovery and capacity without existing preferences. Full final exact-head cloud gates, built-artifact budgets and fresh independent review remain required.
+
+## Deterministic full-suite fixtures
+
+The complete cloud safety suite ran near UTC midnight. Several older Today fixtures implicitly expected 30-minute tasks to fit the day while fewer than 30 physical minutes remained. Those scenarios now fix Date at a known fixture work window; animation frames, timers, measurements and all business assertions remain unchanged. Explicit deadline/planning tests retain their own clocks. Restart and second-client pages use the same fixture clock. Legacy response-loss/history mocks now return exact domain compensation evidence and use the actual compensation kernel instead of a manual status-only Undo.
+
+The real VoiceOver Schedule journey repeatedly stalled in the OS-wide Item Chooser before entering web content. It now brings the cloud test page forward and aligns the actual VoiceOver cursor to the same keyboard-focused node. Detail focus is asserted before cursor alignment; all real spoken-node/title/date/heading assertions remain mandatory. No local visible browser or owner profile is involved. Fresh final cloud gates and review certify these harness corrections.

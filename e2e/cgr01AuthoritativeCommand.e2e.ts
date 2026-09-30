@@ -1,8 +1,11 @@
+import { freezeTodayFixture } from './support/consumerFixtureClock.js'
 import { expect, test, type Page, type Route } from '@playwright/test'
 import { upgradeSnapshotToLatest, type PJSDASSnapshot } from '../src/snapshot.js'
 import { applyDiscoveryPromotionCommand } from '../src/discoveryPromotionCommand.js'
-import { applyUserDomainCommand } from '../src/domainCommands.js'
+import { applyDomainCompensation, applyUserDomainCommand, type DomainCompensation } from '../src/domainCommands.js'
 import { applyProcessEventDeleteCommand } from '../src/processEventDeleteCommand.js'
+
+test.beforeEach(async ({ page }) => { await freezeTodayFixture(page) })
 
 const AUTH_KEY = 'sb-yyrzwpoxlxpafdlbkdtg-auth-token'
 const BACKEND = 'https://pjsdas-remote-alpha.vercel.app'
@@ -89,6 +92,7 @@ function session(accountKey: string, token: string) {
 }
 
 async function seedInitialSession(page: Page, accountKey: string, token: string) {
+  await freezeTodayFixture(page)
   await page.addInitScript(({ key, value }) => {
     if (!window.localStorage.getItem('cgr01-e2e-auth-seeded')) {
       window.localStorage.setItem(key, JSON.stringify(value))
@@ -222,6 +226,7 @@ test('connected Web recovers a lost command response and Undo preserves unrelate
   const state: AccountState = { revision: 7, snapshot: workspace('A'), receipts: new Map() }
   const commandBodies: any[] = []
   let loseFirstResponse = true
+  let compensation: DomainCompensation | undefined
 
   await page.route(`${BACKEND}/**`, async (route) => {
     const request = route.request()
@@ -243,11 +248,10 @@ test('connected Web recovers a lost command response and Undo preserves unrelate
     if (body.action === 'command') {
       commandBodies.push(body)
       const commandId = body.commandId as string
-      const target = state.snapshot.data.actions.find((item) => item.id === 'A-action-1')
-      if (target) {
-        target.status = 'done'
-        target.updatedAt = '2026-09-23T01:00:00.000Z'
-      }
+      const evaluated = applyUserDomainCommand(state.snapshot, body.command.value, new Date('2026-09-23T01:00:00Z'))
+      if (evaluated.status !== 'APPLIED') throw new Error('Expected reversible completion')
+      state.snapshot = evaluated.snapshot
+      compensation = evaluated.compensation
       state.revision += 1
       const receipt = {
         commandId,
@@ -255,6 +259,7 @@ test('connected Web recovers a lost command response and Undo preserves unrelate
         status: 'COMMITTED',
         revision: state.revision,
         undoAvailable: true,
+        undoCompensation: compensation,
         affectedObjects: [{ type: 'action', id: 'A-action-1' }],
         result: { type: 'domain', status: 'APPLIED', summary: 'Completed A-action-1.' },
       }
@@ -286,11 +291,7 @@ test('connected Web recovers a lost command response and Undo preserves unrelate
     }
     if (body.action === 'undo') {
       expect(body.targetCommandId).toBe(commandBodies[0]?.commandId)
-      const original = state.snapshot.data.actions.find((item) => item.id === 'A-action-1')
-      if (original) {
-        original.status = 'todo'
-        original.updatedAt = '2026-09-23T01:10:00.000Z'
-      }
+      state.snapshot = applyDomainCompensation(state.snapshot, compensation!, new Date('2026-09-23T01:10:00Z'))
       state.revision += 1
       return cors(route, {
         outcome: 'COMMITTED',

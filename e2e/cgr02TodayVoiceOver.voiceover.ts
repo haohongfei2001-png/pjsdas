@@ -116,7 +116,9 @@ test('real VoiceOver finds a dated schedule node and its occurrence detail', asy
   await expect(page.getByRole('heading', { name: /^(日程|Schedule)$/ })).toBeVisible()
   const node = page.locator('.tsui-schedule-row').filter({ hasText: '合成机会科技' })
   await expect(node).toHaveCount(1)
-  await voiceOver.navigateToWebContent()
+  // Use the focused web control directly. The OS-wide Item Chooser can keep
+  // a stale document from a previous test window and hang before web entry.
+  await page.bringToFront()
   await node.focus()
   await expect(node).toBeFocused()
   await voiceOver.perform(voiceOver.keyboardCommands.moveCursorToKeyboardFocus)
@@ -133,7 +135,8 @@ test('real VoiceOver finds a dated schedule node and its occurrence detail', asy
   const detail = page.locator('.tsui-schedule-detail')
   await expect(detail).toContainText('合成机会科技')
   await expect(detail).toContainText('2026-10-20')
-  await voiceOver.navigateToWebContent()
+  await expect(detail).toBeFocused()
+  await voiceOver.perform(voiceOver.keyboardCommands.moveCursorToKeyboardFocus)
   const detailPhrases: string[] = []
   let foundDetail = false
   for (let i = 0; i < 24 && !foundDetail; i += 1) {

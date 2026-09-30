@@ -1,6 +1,9 @@
+import { freezeTodayFixture } from './support/consumerFixtureClock.js'
 import { expect, test } from '@playwright/test'
 import { AUTH_KEY, BACKEND, cors, health, session, workspace } from './fixtures/todayWorkspace.js'
 import type { PJSDASSnapshot } from '../src/snapshot.js'
+
+test.beforeEach(async ({ page }) => { await freezeTodayFixture(page) })
 
 for (const trigger of ['auth-expiry', 'settings-sign-out'] as const)
 for (const failure of ['partial-clear-throw', 'transaction-abort'] as const) test(`${trigger} ${failure} reaches lossless recovery without leaving the expired account interactive`, async ({ page }) => {
@@ -94,6 +97,7 @@ for (const version of [1, 2, 3] as const) test(`legacy snapshot v${version} rest
     await expect(page.locator(selector)).toBeVisible()
   }
   const restarted = await context.newPage()
+  await freezeTodayFixture(restarted)
   restarted.on('pageerror', error => errors.push(error.message))
   await page.close()
   await restarted.goto('/pjsdas/today')
