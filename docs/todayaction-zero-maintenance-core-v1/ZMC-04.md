@@ -26,4 +26,4 @@ New receipts carry `affectedFields` and `conflictScopes` under version 4. Earlie
 - A synthetic legacy receipt with only object scope still blocks a stale overlapping command. Append-only process evidence remains after sequential events, while a stale competing parent stage is held. A stale reschedule cannot supersede an already completed occurrence.
 - Independent review exposed an unsafe first attempt that used changed fields as merge permission. The regression now checks deadline versus user fact in both command orders; its whole-opportunity scope blocks both stale sequences.
 
-Final full gates, independent review, merge, and exact-main production readback remain pending.
+Final full gates passed: 208 unit files / 1095 tests, headless Browser, Matrix, VoiceOver, visual, UI, brand, rollback, Vercel, and independent review with no actionable findings. PR #200 merged to `main@175265b687dc6846136d1ba8f6b03183c5a46593`; its tree is `fbc894cb7208a5051e935358f92e32a29e5aab48`. The production release manifest and API health returned that exact merge SHA. No production business record was mutated.
