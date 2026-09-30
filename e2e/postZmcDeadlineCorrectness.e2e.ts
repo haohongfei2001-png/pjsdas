@@ -98,7 +98,7 @@ for (const scenario of [
   await page.goto('/'); await page.locator('.tsui-primary-nav').waitFor()
   const snapshot = deadlineWorkspace(scenario.capacity, scenario.deadline)
   if ('windows' in scenario && scenario.windows) snapshot.data.timePlanning!.weeklyWindows = [
-    { weekday: 3, startMinute: 1320, endMinute: 1440 }, { weekday: 4, startMinute: 0, endMinute: 60 },
+    { weekday: 3, startMinute: 1370, endMinute: 1440 }, { weekday: 4, startMinute: 0, endMinute: 60 },
   ]
   await page.evaluate(async input => (await import('/pjsdas/src/db.ts')).replaceLocalSnapshotFromCloud(input), snapshot)
   await page.goto('/pjsdas/today')

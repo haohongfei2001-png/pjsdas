@@ -159,24 +159,31 @@ export function buildConsumerTimePlan(input: {
   // those deadlines too; a local calendar boundary is not a fabricated cutoff.
   const deadlineHorizon = Math.max(bounds.dayEnd, ...mandatory.map(deadlineFor))
   const occupied = fixedIntervals(input.nodes, { ...bounds, dayEnd: deadlineHorizon })
-  const horizonWindows: Interval[] = []
+  const horizonDays: { windows: Interval[]; capacity?: number; reserved: number }[] = []
   let windowDay = bounds
   while (windowDay.dayStart < deadlineHorizon) {
     const date = localDateKey(new Date(windowDay.dayStart), input.timezone)
     const day = new Date(`${date}T12:00:00.000Z`).getUTCDay()
-    horizonWindows.push(...(workIntervals(input.preferences, day, windowDay, input.timezone)
-      ?? [{ start: windowDay.dayStart, end: windowDay.dayEnd }]))
+    const windows = workIntervals(input.preferences, day, windowDay, input.timezone)
+      ?? [{ start: windowDay.dayStart, end: windowDay.dayEnd }]
+    horizonDays.push({ windows, capacity: date === today ? capacityMinutes : capacityForDate(input.preferences, date, day),
+      reserved: unionMinutes(intersectIntervals(windows, fixedIntervals(input.nodes, windowDay))) })
     if (windowDay.dayEnd >= deadlineHorizon) break
     windowDay = dayBounds(localDateKey(new Date(windowDay.dayEnd), input.timezone), input.timezone)
   }
   const freeBefore = (end: number) => {
-    const clipped = horizonWindows.map(interval => ({ start: Math.max(interval.start, input.now.getTime()),
-      end: Math.min(interval.end, end) })).filter(interval => interval.end > interval.start)
-    // Floor usable minutes and ceil occupied minutes: never promise a minute
-    // that is only partially left before a real deadline.
-    const physical = Math.floor(clipped.reduce((sum, interval) => sum + interval.end - interval.start, 0) / 60_000)
-      - unionMinutes(intersectIntervals(clipped, occupied))
-    return Math.max(0, Math.min(physical, capacityMinutes === undefined ? Infinity : capacityMinutes - fixedMinutes))
+    // Daily preferences/overrides constrain their own calendar day. Today's
+    // window-derived capacity must not erase tomorrow's usable work window.
+    const horizonCapacity = horizonDays.reduce((total, day) => {
+      const clipped = day.windows.map(interval => ({ start: Math.max(interval.start, input.now.getTime()),
+        end: Math.min(interval.end, end) })).filter(interval => interval.end > interval.start)
+      // Floor usable minutes and ceil occupied minutes: never promise a minute
+      // that is only partially left before a real deadline.
+      const physical = Math.floor(clipped.reduce((sum, interval) => sum + interval.end - interval.start, 0) / 60_000)
+        - unionMinutes(intersectIntervals(clipped, occupied))
+      return total + Math.max(0, Math.min(physical, day.capacity === undefined ? Infinity : day.capacity - day.reserved))
+    }, 0)
+    return Math.min(horizonCapacity, input.availableMinutes === undefined ? Infinity : Math.max(0, input.availableMinutes - fixedMinutes))
   }
   // Earliest-deadline knapsack: every retained prefix is feasible before its
   // own deadline. Maximize existing business priority across the whole subset,

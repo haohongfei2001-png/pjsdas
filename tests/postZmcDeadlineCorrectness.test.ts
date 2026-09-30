@@ -57,6 +57,17 @@ describe('post-ZMC deadline correctness', () => {
     expect(selectTodayWeb(snapshot, {}, { now: new Date('2026-09-30T14:50:00Z'), timezone: 'Asia/Shanghai' })
       .actions.map(item => item.actionId)).toEqual(['apply-0', 'apply-1'])
   })
+  it.each([undefined, 0, 30] as const)('keeps next-day capacity separate from today with override %s', nextDayCapacity => {
+    const snapshot = deadlineWorkspace(500, '2026-09-30T16:50:00Z')
+    snapshot.data.actions = snapshot.data.actions.slice(0, 1)
+    snapshot.data.actions[0].estimatedMinutes = 60
+    snapshot.data.timePlanning!.weeklyWindows = [
+      { weekday: 3, startMinute: 1430, endMinute: 1440 }, { weekday: 4, startMinute: 0, endMinute: 50 },
+    ]
+    if (nextDayCapacity !== undefined) snapshot.data.timePlanning!.dateOverrides = { '2026-10-01': nextDayCapacity }
+    expect(selectTodayWeb(snapshot, {}, { now: new Date('2026-09-30T15:50:00Z'), timezone: 'Asia/Shanghai' })
+      .actions.map(item => item.actionId)).toEqual(nextDayCapacity === undefined ? ['apply-0'] : [])
+  })
   it.each([60, 100, 180])('finds the global priority maximum with staggered deadlines and a fixed meeting under %i minutes', capacity => {
     const snapshot = deadlineWorkspace()
     const nodes = snapshot.data.scheduleNodes!
