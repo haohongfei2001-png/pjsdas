@@ -15,7 +15,7 @@ test('TSUI-03 300-job paging, exact posting identity, routed detail and truthful
   await page.evaluate(async () => {
     const createdAt = new Date('2026-09-20T00:00:00.000Z').toISOString()
     await new Promise<void>((resolve, reject) => {
-      const request = indexedDB.open('pjsdas', 11)
+      const request = indexedDB.open('pjsdas')
       request.onerror = () => reject(request.error)
       request.onsuccess = () => {
         const db = request.result
@@ -87,7 +87,7 @@ test('TSUI-03 300-job paging, exact posting identity, routed detail and truthful
   await expect(popup).toHaveURL('https://apply.example.test/posting/a')
   await popup.close()
   const stage = await page.evaluate(async () => new Promise<string | undefined>((resolve, reject) => {
-    const request = indexedDB.open('pjsdas', 11)
+    const request = indexedDB.open('pjsdas')
     request.onerror = () => reject(request.error)
     request.onsuccess = () => {
       const db = request.result
@@ -99,7 +99,7 @@ test('TSUI-03 300-job paging, exact posting identity, routed detail and truthful
   }))
   expect(stage).toBe('not_applied')
   const actionStatus = await page.evaluate(async () => new Promise<string | undefined>((resolve, reject) => {
-    const request = indexedDB.open('pjsdas', 11)
+    const request = indexedDB.open('pjsdas')
     request.onerror = () => reject(request.error)
     request.onsuccess = () => {
       const db = request.result
@@ -162,7 +162,7 @@ test('TSUI-03 Today and Schedule detail links restore their exact opener and old
   await page.evaluate(async () => {
     const now = Date.now()
     await new Promise<void>((resolve, reject) => {
-      const request = indexedDB.open('pjsdas', 11)
+      const request = indexedDB.open('pjsdas')
       request.onerror = () => reject(request.error)
       request.onsuccess = () => {
         const db = request.result

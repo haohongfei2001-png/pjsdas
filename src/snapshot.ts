@@ -297,8 +297,12 @@ export function createSnapshot(data: SnapshotData, exportedAt = new Date().toISO
   return snapshot
 }
 
-export function upgradeSnapshotToLatest(snapshot: PJSDASSnapshot): PJSDASSnapshot {
-  const next = structuredClone(snapshot)
+export function upgradeSnapshotToLatest(snapshot: PJSDASSnapshot, options?: { readOnlyHistory?: boolean }): PJSDASSnapshot {
+  // Read models own a clone of mutable domain entities. Historical rows are
+  // immutable input to normalization, and remain available for completion proof.
+  const next = options?.readOnlyHistory ? { ...snapshot, data: {
+    ...structuredClone({ ...snapshot.data, timeline: undefined }), timeline: snapshot.data.timeline,
+  } } : structuredClone(snapshot)
   ensureScheduleContractInPlace(next.data)
   next.data.decisionRequests ??= []
   next.data.semanticReceipts ??= []

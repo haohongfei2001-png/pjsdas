@@ -123,6 +123,12 @@ export async function runCloudSync(userId: string, options: { passive?: boolean;
     return { kind: 'account_mismatch' }
   }
   if (!device.workspaceOwnerUserId) bindLocalWorkspaceToUser(userId)
+  // An ordinary in-flight command already owns local projection. Defer
+  // expensive full read/fingerprint work until it settles; persisted conflicts
+  // still classify against the latest server revision below.
+  if (connectedWorkspaceAuthorityEnabled() && unresolvedPendingCommandCount(userId) > 0 && !getAccountCheckpoint(userId).conflict) {
+    return { kind: 'local_pending', version: getAccountCheckpoint(userId).lastSyncedVersion }
+  }
 
   try {
     const local = await exportLocalSnapshot()

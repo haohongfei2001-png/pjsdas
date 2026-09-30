@@ -1,3 +1,4 @@
+import { diffWorkspaceDelta } from '../src/workspaceDelta.js'
 import { restoreActionStatusUndo, type ActionStatusUndo } from '../src/actionStatusUndo.js'
 import * as z from 'zod/v4'
 import {
@@ -362,7 +363,13 @@ function lifecycle(now: string, baseRevision: number, currentRevision: number) {
 export function createAuthoritativeCommandExecutor(options: TransactionalWorkspaceStoreOptions) {
   const store = createTransactionalWorkspaceStore(options)
 
-  async function lookup(principal: MutationPrincipal, targetCommandId: string) {
+  async function lookup(principal: MutationPrincipal, targetCommandId: string, compact = false) {
+    if (compact) {
+      const record = await store.readCommandForUser(principal.userId, targetCommandId)
+      return { found: Boolean(record), revision: record?.resultingRevision ?? 0,
+        receipt: record?.receipt, commandId: record?.commandId, operation: record?.operation,
+        resultingRevision: record?.resultingRevision, snapshot: undefined }
+    }
     const current = await store.readForUser(principal.userId)
     if (!current) throw new WorkspaceSourceError('WORKSPACE_NOT_FOUND', 'TodayAction connected workspace has not been migrated yet.', false)
     const record = await store.readCommandForUser(principal.userId, targetCommandId)
@@ -532,7 +539,9 @@ export function createAuthoritativeCommandExecutor(options: TransactionalWorkspa
       const conflictScopes = commandConflictScopes(affectedObjects, intentFields)
       const result = resultPayload(parsed.command, evaluated)
       const receiptContext = {
-        contractVersion: 4,
+        contractVersion: 5,
+        projectionDelta: diffWorkspaceDelta(current.snapshot, evaluated.snapshot, current.revision),
+        schemaVersion: evaluated.snapshot.version,
         commandType: parsed.command.type,
         affectedObjects,
         affectedFields,
@@ -699,7 +708,9 @@ export function createAuthoritativeCommandExecutor(options: TransactionalWorkspa
         clientId: principal.clientId,
         provenance: { channel: 'authoritative-command-v2', undoOf: parsed.targetCommandId },
         receiptContext: {
-          contractVersion: 2,
+          contractVersion: 5,
+          projectionDelta: diffWorkspaceDelta(current.snapshot, next, current.revision),
+          schemaVersion: next.version,
           commandType: 'undo',
           undoOf: parsed.targetCommandId,
           affectedObjects,

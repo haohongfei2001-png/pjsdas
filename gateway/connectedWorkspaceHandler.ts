@@ -58,7 +58,14 @@ export function createConnectedWorkspaceHandler(config: ConnectedWorkspaceHandle
     fetchImpl,
   })
   return async function handleConnectedWorkspace(request: Request) {
+    const started = performance.now()
     const origin = request.headers.get('origin')
+    const respond = (status: number, body: unknown) => {
+      const response = json(status, body, origin, config.allowedOrigins)
+      response.headers.set('server-timing', `workspace;dur=${(performance.now() - started).toFixed(1)}`)
+      response.headers.set('access-control-expose-headers', 'server-timing')
+      return response
+    }
     if (request.method === 'OPTIONS') {
       const allowed = Boolean(origin && config.allowedOrigins.includes(origin))
       return new Response(null, {
@@ -118,6 +125,7 @@ export function createConnectedWorkspaceHandler(config: ConnectedWorkspaceHandle
       }
 
       const body = parseBody<{
+        projection?: 'snapshot' | 'delta-v1'
         action?: string
         confirmMigration?: boolean
         snapshot?: unknown
@@ -169,29 +177,28 @@ export function createConnectedWorkspaceHandler(config: ConnectedWorkspaceHandle
         }, origin, config.allowedOrigins)
       }
 
+      const projectResponse = (result: { snapshot?: PJSDASSnapshot; receipt?: Record<string, unknown>; revision: number }) => {
+        if (body.projection === 'snapshot') return { ...result, workspaceVersion: `txn:${result.revision}`, schemaVersion: result.snapshot?.version }
+        const { snapshot: _snapshot, receipt: rawReceipt, ...metadata } = result
+        const { projectionDelta: delta, ...receipt } = rawReceipt ?? {}
+        return { ...metadata, invalidatedReadModelKeys: rawReceipt?.readModelInvalidation ?? [], workspaceVersion: `txn:${result.revision}`, schemaVersion: rawReceipt?.schemaVersion ?? result.snapshot?.version,
+          receipt: rawReceipt ? receipt : undefined, delta, recoveryRequired: !delta }
+      }
       if (body.action === 'command') {
         const result = await commands.execute(principal, {
           commandId: body.commandId,
           baseRevision: body.baseRevision,
           command: body.command,
         })
-        return json(result.outcome === 'CONFLICT' ? 409 : 200, {
-          ...result,
-          workspaceVersion: `txn:${result.revision}`,
-          schemaVersion: result.snapshot.version,
-        }, origin, config.allowedOrigins)
+        return respond(result.outcome === 'CONFLICT' ? 409 : 200, projectResponse(result))
       }
 
       if (body.action === 'receipt') {
         if (!body.commandId?.trim()) {
           throw new WorkspaceSourceError('INVALID_ARGUMENT', 'Receipt lookup requires commandId.', false)
         }
-        const result = await commands.lookup(principal, body.commandId)
-        return json(200, {
-          ...result,
-          workspaceVersion: `txn:${result.revision}`,
-          schemaVersion: result.snapshot.version,
-        }, origin, config.allowedOrigins)
+        const result = await commands.lookup(principal, body.commandId, body.projection !== 'snapshot')
+        return respond(200, projectResponse(result))
       }
 
       if (body.action === 'undo') {
@@ -199,11 +206,7 @@ export function createConnectedWorkspaceHandler(config: ConnectedWorkspaceHandle
           commandId: body.commandId,
           targetCommandId: body.targetCommandId,
         })
-        return json(result.outcome === 'CONFLICT' ? 409 : 200, {
-          ...result,
-          workspaceVersion: `txn:${result.revision}`,
-          schemaVersion: result.snapshot.version,
-        }, origin, config.allowedOrigins)
+        return respond(result.outcome === 'CONFLICT' ? 409 : 200, projectResponse(result))
       }
 
       if (body.action === 'commit') {

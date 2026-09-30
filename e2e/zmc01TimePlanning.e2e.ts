@@ -7,7 +7,7 @@ test('Today capacity is a durable user choice and flexible overflow leaves the w
   await page.clock.setFixedTime(new Date('2026-09-25T01:00:00.000Z'))
   await page.goto('/pjsdas/today')
   await page.evaluate(async () => new Promise<void>((resolve, reject) => {
-    const request = indexedDB.open('pjsdas', 11)
+    const request = indexedDB.open('pjsdas')
     request.onerror = () => reject(request.error)
     request.onsuccess = () => {
       const db = request.result
@@ -33,7 +33,7 @@ test('Today capacity is a durable user choice and flexible overflow leaves the w
   await expect(page.locator('.tsui-capacity summary')).toContainText('2 小时')
   await expect(page.locator('.tsui-task-row')).toHaveCount(4)
   const persisted = await page.evaluate(async () => new Promise<{ minutes?: number; count: number }>((resolve, reject) => {
-    const request = indexedDB.open('pjsdas', 11)
+    const request = indexedDB.open('pjsdas')
     request.onerror = () => reject(request.error)
     request.onsuccess = () => {
       const db = request.result

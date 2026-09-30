@@ -63,6 +63,7 @@ interface PendingCommand {
   createdAt: string
   updatedAt: string
   lastError?: string
+  interaction?: boolean
 }
 
 const PENDING_PREFIX = 'pjsdas-cgr01-pending:'
@@ -197,7 +198,7 @@ async function request(accountKey: string, body: Record<string, unknown>) {
       authorization: `Bearer ${accessToken}`,
       'content-type': 'application/json',
     },
-    body: JSON.stringify(body),
+    body: JSON.stringify({ ...body, projection: 'snapshot' }),
   })
   const payload = await response.json().catch(() => undefined) as Record<string, any> | undefined
   lease.assertCurrent()
@@ -277,7 +278,7 @@ export async function lookupConnectedCommandReceipt(accountKey: string, commandI
   const response = await fetchBackend('/api/workspace', {
     method: 'POST',
     headers: { authorization: `Bearer ${accessToken}`, 'content-type': 'application/json' },
-    body: JSON.stringify({ action: 'receipt', commandId }),
+    body: JSON.stringify({ action: 'receipt', commandId, projection: 'snapshot' }),
   })
   const payload = await response.json().catch(() => undefined) as Record<string, any> | undefined
   lease.assertCurrent()
@@ -554,6 +555,10 @@ export async function replayAccountPendingOperations(accountKey: string) {
   const results: ConnectedCommandResponse[] = []
   for (const pending of readPending(accountKey)) {
     if (pending.status === 'conflict') continue
+    if (pending.interaction) {
+      await (await import('./instantCommandClient.js')).recoverInstantInteraction(accountKey, pending.commandId)
+      continue
+    }
     const current = readPending(accountKey).find(item => item.commandId === pending.commandId)
     if (!current) continue
     if (current.status === 'projection_pending') {
@@ -599,4 +604,23 @@ function clearRecoveredSemanticDraft(accountKey: string, pending: PendingCommand
   if (readAccountDraft(accountKey, 'tell-pjsdas') === originalText) {
     clearAccountDraft(accountKey, 'tell-pjsdas')
   }
+}
+
+
+/** Immediate interactions use the same account-scoped recovery queue and stable identity. */
+export function journalConnectedInteraction(accountKey: string, input: { commandId: string; command?: ConnectedBusinessCommand; targetCommandId?: string; baseRevision: number }) {
+  const lease = captureAccountCacheLease(accountKey)
+  const checkpoint = getAccountCheckpoint(accountKey)
+  if (getCloudDeviceState().workspaceOwnerUserId !== accountKey || !checkpoint.lastSyncedFingerprint
+    || checkpoint.localPendingFingerprint || checkpoint.conflict) throw new AccountCacheChangedError()
+  lease.assertCurrent()
+  const existing = readPending(accountKey).find(item => item.commandId === input.commandId)
+  if (existing) throw new Error('This command is already in the durable outbox.')
+  const timestamp = new Date().toISOString()
+  upsertPending(accountKey, { ...input, action: input.targetCommandId ? 'undo' : 'command', interaction: true,
+    status: 'pending', createdAt: timestamp, updatedAt: timestamp })
+}
+export function settleConnectedInteraction(accountKey: string, commandId: string, status?: PendingCommand['status'], message?: string) {
+  if (status) patchPending(accountKey, commandId, { status, lastError: message })
+  else removePending(accountKey, commandId)
 }

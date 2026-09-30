@@ -1,3 +1,7 @@
+import { readModelSnapshot } from './readModelSnapshot.js'
+import { interactionMetric } from './cloud/interactionMetrics.js'
+import { beginInstantCommand, beginInstantUndo, type InteractionEvent } from './cloud/instantCommandClient.js'
+import { applyWorkspaceDelta } from './workspaceDelta.js'
 import type { ActionStatusUndo } from './actionStatusUndo.js'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { StartupRecovery } from './StartupRecovery.js'
@@ -52,8 +56,8 @@ import {
 } from './opportunityDecisionRead.js'
 import TellPjsdasCapture from './TellPjsdasCapture.js'
 import TodayFeature, { type TodayFreshnessView } from './today/TodayFeature.js'
-import { selectTodayWeb } from './today/todayWebSelector.js'
-import { buildScheduleStream, type ScheduleEntry } from './schedule/scheduleStream.js'
+import { selectTodayWebNormalized } from './today/todayWebSelector.js'
+import { buildScheduleStreamNormalized, type ScheduleEntry } from './schedule/scheduleStream.js'
 import ScheduleFeature from './schedule/ScheduleFeature.js'
 import DecisionRequestsView from './DecisionRequestsView.js'
 import { partitionDecisions } from './decisionActionability.js'
@@ -81,7 +85,7 @@ import './tsui02.css'
 type Surface = 'today' | 'opportunities' | 'schedule' | 'decisions' | 'history' | 'settings'
 type PrimarySurface = 'today' | 'opportunities' | 'schedule'
 type OpportunityTab = 'opportunities' | 'prepare' | 'discovery'
-type CompletionFeedback = { id: string; title: string; previousStatus: Action['status']; commandId?: string; localUndo?: ActionStatusUndo; outcome: 'done' | 'no_write' | 'queued' | 'confirmed_pending' | 'error'; error?: string }
+type CompletionFeedback = { id: string; title: string; previousStatus: Action['status']; commandId?: string; localUndo?: ActionStatusUndo; syncMessage?: string; outcome: 'done' | 'no_write' | 'queued' | 'confirmed_pending' | 'error'; error?: string }
 type RouteState = {
   surface: Surface
   capture: boolean
@@ -217,16 +221,33 @@ export default function AppV8() {
     }
   }
 
+  useEffect(() => {
+    const update = (event: Event) => {
+      const detail = (event as CustomEvent<InteractionEvent>).detail
+      if (detail.accountKey !== cloud.session?.user.id) return
+      if (detail.delta) setSnapshot(current => current ? applyWorkspaceDelta(current, detail.delta!, false) : current)
+      if (detail.state === 'rejected' || detail.state === 'conflict') setLastCompletedAction(current => ({
+        id: current?.id ?? detail.commandId, title: current?.title ?? '', previousStatus: current?.previousStatus ?? 'todo',
+        commandId: detail.commandId, outcome: 'error', error: detail.message,
+      }))
+      if (detail.state === 'active' && detail.message) setLastCompletedAction(current => current?.commandId === detail.commandId ? { ...current, syncMessage: detail.message } : current)
+      if (detail.state === 'confirmed') setLastCompletedAction(current => current?.commandId === detail.commandId ? { ...current, outcome: 'done', syncMessage: undefined } : current)
+      if (detail.state === 'projection_pending') setLastCompletedAction(current => current?.commandId === detail.commandId
+        ? { ...current, outcome: 'confirmed_pending' } : current)
+    }
+    window.addEventListener('pjsdas:interaction', update)
+    return () => window.removeEventListener('pjsdas:interaction', update)
+  }, [cloud.session?.user.id])
+
   async function setTodayCapacity(minutes: number) {
     if (!Number.isInteger(minutes) || minutes < 0 || minutes > 1440) throw new Error('今日可用时间应在 0 到 24 小时之间。')
     const date = localDateKey(now, timezone)
     const timestamp = new Date().toISOString()
     if (cloud.session?.user.id && connectedWorkspaceAuthorityEnabled()) {
       const commandId = createConnectedCommandId('set-date-capacity')
-      const result = await executeConnectedBusinessCommand(cloud.session.user.id, {
-        type: 'domain', value: { commandId, kind: 'set_date_capacity', date, minutes },
-      }, { commandId })
-      if (result.outcome === 'CONFLICT') throw new Error('今天的可用时间刚在另一台设备上修改，请查看最新安排。')
+      if (!snapshot) throw new Error('账号记录尚未读取。')
+      await beginInstantCommand(cloud.session.user.id, snapshot, { commandId, kind: 'set_date_capacity', date, minutes })
+      return
     } else {
       const current = snapshot?.data.timePlanning ?? { version: 1 as const, updatedAt: timestamp }
       await saveLocalTimePlanning({ ...current, dateOverrides: { ...current.dateOverrides, [date]: minutes }, updatedAt: timestamp })
@@ -432,17 +453,18 @@ export default function AppV8() {
 
   const accountKey = cloud.session?.user.id ?? 'local-workspace'
   const workspaceRevision = snapshot ? [cloud.session?.user.id ? getAccountCheckpoint(cloud.session.user.id).lastSyncedVersion ?? 'pending' : 'local', snapshot.exportedAt].join(':') : ''
-  const todayWeb = useMemo(() => snapshot ? selectTodayWeb(snapshot, {}, { now, timezone, workspaceVersion: workspaceRevision }) : undefined, [snapshot, now, timezone, workspaceRevision])
-  const scheduleStream = useMemo(() => snapshot ? buildScheduleStream(snapshot, { accountKey, workspaceRevision, timezone, now }) : undefined, [snapshot, accountKey, workspaceRevision, timezone, now])
+  const normalizedReadSnapshot = useMemo(() => snapshot ? readModelSnapshot(snapshot) : undefined, [snapshot])
+  const todayWeb = useMemo(() => { if (!normalizedReadSnapshot) return undefined; const started = performance.now(); const result = selectTodayWebNormalized(normalizedReadSnapshot, {}, { now, timezone, workspaceVersion: workspaceRevision }); interactionMetric('today-selector', started); return result }, [snapshot, now, timezone, workspaceRevision])
+  const scheduleStream = useMemo(() => { if (!normalizedReadSnapshot) return undefined; const started = performance.now(); const result = buildScheduleStreamNormalized(normalizedReadSnapshot, { accountKey, workspaceRevision, timezone, now }); interactionMetric('schedule-selector', started); return result }, [snapshot, accountKey, workspaceRevision, timezone, now])
 
   const opportunityDecisionList = useMemo<OpportunityDecisionListRead | undefined>(() => {
-    if (!snapshot) return undefined
+    if (!snapshot || surface !== 'opportunities') return undefined
     return buildOpportunityDecisionList(snapshot, {
       now,
       timezone,
       workspaceVersion: `web:${snapshot.exportedAt}`,
     })
-  }, [snapshot, now, timezone])
+  }, [snapshot, now, timezone, surface])
 
 
   const decisionRequests = snapshot?.data.decisionRequests ?? []
@@ -499,39 +521,17 @@ export default function AppV8() {
       if (before.kind === 'apply' && status === 'done' && intent !== 'application_submission') {
         throw new Error('请使用“我已投递”确认真实投递。Use I applied to confirm an application submission.')
       }
-      if (cloud.session && connectedWorkspaceAuthorityEnabled()) {
-        const account = cloud.session.user.id
-        const pending = listAccountPendingOperations(account).find(item => {
-          const value = item.command?.type === 'domain' ? item.command.value : undefined
-          return item.status !== 'conflict' && value && (
-            value.kind === 'set_action_status' && value.actionId === id && value.status === status
-            || value.kind === 'record_application_submission' && before.kind === 'apply' && status === 'done'
-              && value.opportunityId === before.opportunityId)
-        })
-        authoritativeCommandId = pending?.commandId ?? createConnectedCommandId('web-action')
-        const command = before.kind === 'apply' && status === 'done'
-          ? { commandId: authoritativeCommandId, kind: 'record_application_submission' as const, opportunityId: before.opportunityId! }
-          : { commandId: authoritativeCommandId, kind: 'set_action_status' as const, actionId: id, status }
+      if (cloud.session && connectedWorkspaceAuthorityEnabled() && snapshot) {
+        const commandId = createConnectedCommandId('instant-action')
         if (before.kind === 'apply' && status === 'done' && !before.opportunityId) throw new Error('Application action has no exact opportunity identity.')
-        if (typeof navigator !== 'undefined' && !navigator.onLine) {
-          if (!pending) await queueConnectedBusinessCommand(account, { type: 'domain', value: command }, { commandId: authoritativeCommandId })
-          setLastCompletedAction({ id: before.id, title: before.title, previousStatus: before.status,
-            commandId: authoritativeCommandId, outcome: 'queued' })
-          return
-        }
-        const result = pending
-          ? await confirmConnectedCommand(account, authoritativeCommandId)
-          : await executeConnectedBusinessCommand(account, {
-          type: 'domain',
-          value: command,
-        }, { commandId: authoritativeCommandId })
-        if (result.outcome === 'CONFLICT') throw new Error(result.conflict?.message ?? 'Action update conflicted with newer authoritative state.')
-        if (result.outcome === 'NO_WRITE') {
-          await reload()
-          setLastCompletedAction({ id: before.id, title: before.title, previousStatus: before.status, outcome: 'no_write' })
-          return
-        }
-      } else {
+        const command = before.kind === 'apply' && status === 'done'
+          ? { commandId, kind: 'record_application_submission' as const, opportunityId: before.opportunityId! }
+          : { commandId, kind: 'set_action_status' as const, actionId: id, status }
+        await beginInstantCommand(cloud.session.user.id, snapshot, command)
+        if (status === 'done') setLastCompletedAction({ id, title: before.title, previousStatus: before.status, commandId, outcome: 'done' })
+        return
+      }
+      {
         if (before.kind === 'apply' && status === 'done') throw new Error('确认投递需要已连接的账户；此操作未写入。')
         const applied = await applyActionStatusChangeSet(id, status)
         localUndo = applied?.actionCompensations?.[0]
@@ -566,6 +566,11 @@ export default function AppV8() {
     if (!item || item.outcome !== 'done') return
     try {
       if (cloud.session && connectedWorkspaceAuthorityEnabled() && item.commandId) {
+        if (item.commandId.startsWith('instant-action:')) {
+          await beginInstantUndo(cloud.session.user.id, item.commandId)
+          setLastCompletedAction(null)
+          return
+        }
         const result = await undoConnectedBusinessCommand(cloud.session.user.id, item.commandId)
         if (result.outcome === 'CONFLICT') throw new Error(result.conflict?.message ?? 'Undo conflicted with a dependent authoritative update.')
       } else {
@@ -653,7 +658,7 @@ export default function AppV8() {
     if (!account) return undefined
     const pending = listAccountPendingOperations(account).find(item => {
       const value = item.command?.type === 'domain' ? item.command.value : undefined
-      return item.action === 'command' && value && 'occurrenceId' in value && value.occurrenceId === occurrenceId
+      return (!item.interaction || item.status === 'conflict' || item.status === 'projection_pending') && item.action === 'command' && value && 'occurrenceId' in value && value.occurrenceId === occurrenceId
         && ['complete_occurrence', 'cancel_occurrence', 'reschedule_occurrence'].includes(value.kind)
     })
     const value = pending?.command?.type === 'domain' ? pending.command.value : undefined
@@ -672,7 +677,7 @@ export default function AppV8() {
     if (!entry.occurrenceId || !entry.node) throw new Error('Schedule occurrence identity is unavailable.')
     const pending = listAccountPendingOperations(account).find((item) => {
       const value = item.command?.type === 'domain' ? item.command.value : undefined
-      return item.action === 'command' && value && 'occurrenceId' in value
+      return (!item.interaction || item.status === 'conflict' || item.status === 'projection_pending') && item.action === 'command' && value && 'occurrenceId' in value
         && value.occurrenceId === entry.occurrenceId
         && ['complete_occurrence', 'cancel_occurrence', 'reschedule_occurrence'].includes(value.kind)
     })
@@ -705,6 +710,13 @@ export default function AppV8() {
         ? { commandId, kind: 'cancel_occurrence' as const, occurrenceId: entry.occurrenceId }
         : { commandId, kind: 'reschedule_occurrence' as const, occurrenceId: entry.occurrenceId,
           temporal: rescheduledTemporal() }
+    if (!pending && snapshot) {
+      await beginInstantCommand(account, snapshot, command)
+      return { outcome: 'OPTIMISTIC' as const, commandId, message: kind === 'cancel'
+        ? (zh ? '已取消，正在同步。' : 'Cancelled; syncing.')
+        : kind === 'complete' ? (zh ? '已完成，正在同步。' : 'Completed; syncing.')
+          : (zh ? '已改期，正在同步。' : 'Rescheduled; syncing.') }
+    }
     if (pending?.status === 'conflict') {
       throw new Error(zh ? '这次安排已被另一处修改，请核对最新安排后再操作。' : 'This occurrence changed elsewhere. Review the latest schedule before trying again.')
     }
@@ -745,6 +757,10 @@ export default function AppV8() {
     const account = cloud.session?.user.id
     if (!account || !connectedWorkspaceAuthorityEnabled()) throw new Error('Authoritative workspace is unavailable.')
     const pending = listAccountPendingOperations(account).find((item) => item.action === 'undo' && item.targetCommandId === targetCommandId)
+    if ((await (await import('./db.js')).readCommandInteractions(account)).some(item => item.commandId === targetCommandId)) {
+      await beginInstantUndo(account, targetCommandId)
+      return
+    }
     const result = await undoConnectedBusinessCommand(account, targetCommandId,
       pending ? { commandId: pending.commandId } : {})
     if (result.outcome === 'CONFLICT') throw new Error(result.conflict?.message ?? 'Undo conflicts with a dependent update.')
@@ -860,7 +876,7 @@ export default function AppV8() {
         <div className="action-undo-toast" role="status" aria-live="polite">
           <div>
             <strong>{lastCompletedAction.outcome === 'error' ? (zh ? '操作未确认' : 'Action not confirmed') : lastCompletedAction.outcome === 'no_write' ? (zh ? '没有写入变化' : 'No change written') : lastCompletedAction.outcome === 'queued' ? (zh ? '待同步' : 'Pending') : lastCompletedAction.outcome === 'confirmed_pending' ? (zh ? '服务器已确认' : 'Saved on server') : (zh ? '已完成' : 'Completed')}</strong>
-            <span>{lastCompletedAction.error ?? (lastCompletedAction.outcome === 'queued' ? (zh ? '已保存在此设备，联网后自动提交。' : 'Saved on this device; it will submit when connected.') : lastCompletedAction.outcome === 'confirmed_pending' ? (zh ? '本机状态待安全刷新。' : 'This device is waiting for a safe refresh.') : lastCompletedAction.title)}</span>
+            <span>{lastCompletedAction.error ?? lastCompletedAction.syncMessage ?? (lastCompletedAction.outcome === 'queued' ? (zh ? '已保存在此设备，联网后自动提交。' : 'Saved on this device; it will submit when connected.') : lastCompletedAction.outcome === 'confirmed_pending' ? (zh ? '本机状态待安全刷新。' : 'This device is waiting for a safe refresh.') : lastCompletedAction.title)}</span>
           </div>
           {lastCompletedAction.outcome === 'done' ? <button type="button" onClick={() => { void undoLastCompletion() }}>{zh ? '撤销' : 'Undo'}</button> : null}
         </div>

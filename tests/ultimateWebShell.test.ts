@@ -28,8 +28,8 @@ describe('UU-04 final Web shell contract', () => {
   })
 
   it('projects complete Today and Schedule through their shared read models', () => {
-    expect(app).toContain('selectTodayWeb(snapshot')
-    expect(app).toContain('buildScheduleStream(snapshot')
+    expect(app).toContain('selectTodayWebNormalized(normalizedReadSnapshot')
+    expect(app).toContain('buildScheduleStreamNormalized(normalizedReadSnapshot')
     expect(app).toContain('selection={todayWeb}')
     expect(today).toContain('selection.actions.map')
     expect(today).toContain('ScheduleWindowList')

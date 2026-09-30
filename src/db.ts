@@ -1,3 +1,5 @@
+import { interactionMetric } from './cloud/interactionMetrics.js'
+import { applyWorkspaceDelta, patchDeltaRow, DELTA_COLLECTIONS, type WorkspaceDelta, type DeltaRow } from './workspaceDelta.js'
 import { canonicalWorkspaceJson } from './cloud/workspaceFingerprint.js'
 import { AccountCacheChangedError } from './cloud/accountCacheLease.js'
 import { captureActionStatusUndo, restoreActionStatusUndo, type ActionStatusUndo } from './actionStatusUndo.js'
@@ -78,7 +80,14 @@ import type {
   TimelineRecord,
 } from './model.js'
 
+export interface CommandInteractionRecord {
+  id: string; accountKey: string; commandId: string; createdAt: string; state: 'active' | 'confirmed' | 'rejected' | 'conflict' | 'projection_pending';
+  delta: WorkspaceDelta; command?: import('./domainCommands.js').UserDomainCommand; targetCommandId?: string;
+  compensation?: { operation: string; payload: unknown }; lastError?: string; serverRevision?: number; predecessors?: string[];
+}
 interface PJSDASDatabase extends DBSchema {
+  commandInteractions: { key: string; value: CommandInteractionRecord; indexes: { 'by-account': string } }
+  projectionDeltas: { key: number; value: { sequence?: number; accountKey: string; delta: WorkspaceDelta } }
   opportunities: { key: string; value: Opportunity }
   processes: {
     key: string
@@ -158,8 +167,12 @@ const DATA_STORES = [
   'meta',
 ] as const
 
-export const dbPromise = openDB<PJSDASDatabase>('pjsdas', 11, {
+export const dbPromise = openDB<PJSDASDatabase>('pjsdas', 12, {
   upgrade(db) {
+    if (!db.objectStoreNames.contains('commandInteractions')) {
+      const store = db.createObjectStore('commandInteractions', { keyPath: 'id' }); store.createIndex('by-account', 'accountKey')
+    }
+    if (!db.objectStoreNames.contains('projectionDeltas')) db.createObjectStore('projectionDeltas', { keyPath: 'sequence', autoIncrement: true })
     if (!db.objectStoreNames.contains('opportunities')) {
       db.createObjectStore('opportunities', { keyPath: 'id' })
     }
@@ -1097,15 +1110,16 @@ export async function replaceLocalSnapshotFromCloud(snapshot: PJSDASSnapshot, gu
   const latest = upgradeSnapshotToLatest(snapshot)
 
   const db = await dbPromise
-  const tx = db.transaction([...DATA_STORES], 'readwrite')
+  const tx = db.transaction([...DATA_STORES, 'projectionDeltas'], 'readwrite')
   try {
     guard?.assertCurrent()
-    if (guard && canonicalWorkspaceJson(await readLocalSnapshot(tx)) !== canonicalWorkspaceJson(guard.expectedLocal)) throw new AccountCacheChangedError()
+    if (guard && canonicalWorkspaceJson(await readLocalSnapshot(tx as LocalSnapshotTransaction)) !== canonicalWorkspaceJson(guard.expectedLocal)) throw new AccountCacheChangedError()
     guard?.assertCurrent()
     const priorProjection = await tx.objectStore('meta').get('authoritativeProjection')
     if (guard?.accountKey && guard.version && priorProjection?.key === 'authoritativeProjection' && priorProjection.accountKey === guard.accountKey
       && Number(priorProjection.version.replace('txn:', '')) > Number(guard.version.replace('txn:', ''))) throw new AccountCacheChangedError()
     await Promise.all(DATA_STORES.map((storeName) => tx.objectStore(storeName).clear()))
+    await tx.objectStore('projectionDeltas').clear()
 
     for (const item of latest.data.opportunities) await tx.objectStore('opportunities').put(item)
     for (const item of latest.data.processes) await tx.objectStore('processes').put(item)
@@ -1125,7 +1139,12 @@ export async function replaceLocalSnapshotFromCloud(snapshot: PJSDASSnapshot, gu
     for (const item of latest.data.changeSets ?? []) await tx.objectStore('changeSets').put(item)
     if (latest.data.meta) await tx.objectStore('meta').put(latest.data.meta)
     if (latest.data.timePlanning) await tx.objectStore('meta').put({ ...latest.data.timePlanning, key: 'timePlanning' })
-    const committed = await readLocalSnapshot(tx)
+    let committed = await readLocalSnapshot(tx as LocalSnapshotTransaction)
+    // Materialize the deterministic read-only backfill once. Otherwise a later
+    // ordinary entity patch would regenerate different historical rows at export.
+    const importedTimelineIds = new Set((latest.data.timeline ?? []).map(item => item.id))
+    for (const row of committed.data.timeline ?? []) if (!importedTimelineIds.has(row.id)) await tx.objectStore('timeline').put(row)
+    committed = await readLocalSnapshot(tx as LocalSnapshotTransaction)
     if (guard?.accountKey && guard.version) {
       // Canonical bytes are recorded in the same transaction; async crypto would
       // let IndexedDB auto-commit before this crash-recovery proof is durable.
@@ -1326,5 +1345,66 @@ export async function assertLocalSnapshotCurrent(expected: PJSDASSnapshot, asser
 export async function isRecordedAccountProjection(accountKey: string, snapshot: PJSDASSnapshot) {
   const db = await dbPromise
   const recorded = await db.get('meta', 'authoritativeProjection')
-  return recorded?.key === 'authoritativeProjection' && recorded.accountKey === accountKey && recorded.canonical === canonicalWorkspaceJson(snapshot)
+  if (recorded?.key !== 'authoritativeProjection' || recorded.accountKey !== accountKey) return false
+  const deltas = (await db.getAll('projectionDeltas')).filter(item => item.accountKey === accountKey)
+  if (!deltas.length) return recorded.canonical === canonicalWorkspaceJson(snapshot)
+  let expected: PJSDASSnapshot = { ...snapshot, data: JSON.parse(recorded.canonical) }
+  try { for (const item of deltas) expected = applyWorkspaceDelta(expected, item.delta) } catch { return false }
+  const normalizeOrder = (value: PJSDASSnapshot) => {
+    const data = { ...value.data }
+    for (const key of DELTA_COLLECTIONS) {
+      const rows = data[key]
+      if (rows && new Set(rows.map(item => item.id)).size === rows.length) (data as any)[key] = [...rows].sort((a, b) => a.id < b.id ? -1 : a.id > b.id ? 1 : 0)
+    }
+    return { ...value, data }
+  }
+  // This is a recorded local transaction proof, so require exact facts and
+  // audit rows. Only IndexedDB primary-key ordering is normalized.
+  return canonicalWorkspaceJson(normalizeOrder(snapshot)) === canonicalWorkspaceJson(normalizeOrder(createSnapshot(expected.data, expected.exportedAt)))
+}
+
+
+const deltaStore = (collection: string) => collection === 'timePlanning' || collection === 'meta' ? 'meta'
+  : collection === 'discoveryProfile' ? 'discoveryProfiles' : collection
+const deltaId = (collection: string, id: string) => collection === 'timePlanning' ? 'timePlanning'
+  : collection === 'meta' ? 'lastImport' : id
+
+/** Durable outbox, exact inverse, entity writes and projection proof commit atomically. */
+export async function persistInteractionProjection(record: CommandInteractionRecord, assertCurrent: () => void, delta = record.delta) {
+  return persistInteractionProjections([{ record, delta }], assertCurrent)
+}
+export async function persistInteractionProjections(steps: Array<{ record: CommandInteractionRecord; delta: WorkspaceDelta }>, assertCurrent: () => void) {
+  const started = performance.now()
+  const db = await dbPromise
+  const stores = new Set(steps.flatMap(step => step.delta.changes.map(item => deltaStore(item.collection))))
+  const tx = db.transaction(['commandInteractions', 'projectionDeltas', ...stores] as any, 'readwrite')
+  try {
+    assertCurrent()
+    for (const { record, delta } of steps) {
+      for (const change of delta.changes) {
+        const store = tx.objectStore(deltaStore(change.collection) as any)
+        const id = deltaId(change.collection, change.id)
+        let row = await store.get(id) as DeltaRow | undefined
+        if (change.collection === 'timePlanning' && row) { const { key: _key, ...value } = row; row = value }
+        const next = patchDeltaRow(row ?? null, change)
+        if (next) await store.put(change.collection === 'timePlanning' ? { ...next, key: 'timePlanning' } : next)
+        else await store.delete(id)
+      }
+      await tx.objectStore('commandInteractions').put(record)
+      await tx.objectStore('projectionDeltas').add({ accountKey: record.accountKey, delta })
+    }
+    assertCurrent()
+    await tx.done
+    interactionMetric('indexeddb-write', started)
+  } catch (error) {
+    try { tx.abort() } catch { /* settled */ }
+    await tx.done.catch(() => undefined)
+    throw error
+  }
+}
+export async function readCommandInteractions(accountKey: string) {
+  return (await dbPromise).getAllFromIndex('commandInteractions', 'by-account', accountKey)
+}
+export async function saveCommandInteraction(record: CommandInteractionRecord) {
+  await (await dbPromise).put('commandInteractions', record)
 }

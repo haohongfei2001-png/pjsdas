@@ -180,7 +180,7 @@ function installServer(page: Page, state: State, options: {
 
 async function indexedActions(page: Page) {
   return page.evaluate(async () => new Promise<Array<{ id: string; title: string; status: string }>>((resolve, reject) => {
-    const request = indexedDB.open('pjsdas', 11)
+    const request = indexedDB.open('pjsdas')
     request.onerror = () => reject(request.error)
     request.onsuccess = () => {
       const db = request.result

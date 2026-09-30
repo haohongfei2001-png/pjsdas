@@ -86,7 +86,7 @@ test('390x844 switches between the task and upcoming node without horizontal cli
     }
 
     await new Promise<void>((resolve, reject) => {
-      const request = indexedDB.open('pjsdas', 11)
+      const request = indexedDB.open('pjsdas')
       request.onerror = () => reject(request.error)
       request.onsuccess = () => {
         const db = request.result

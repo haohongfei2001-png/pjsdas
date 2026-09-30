@@ -283,7 +283,7 @@ describe('CGR-01 account-scoped connected command client', () => {
       calls += 1
       const body = JSON.parse(String(init?.body))
       if (calls <= 2) throw new Error('simulated transport loss')
-      expect(body).toEqual({ action: 'receipt', commandId: 'web-action:lost-0001' })
+      expect(body).toEqual({ action: 'receipt', commandId: 'web-action:lost-0001', projection: 'snapshot' })
       return response({
         found: true,
         revision: 8,
@@ -397,7 +397,7 @@ describe('CGR-01 account-scoped connected command client', () => {
           return response({ outcome: 'COMMITTED', revision: 8, workspaceVersion: 'txn:8',
             schemaVersion: 4, snapshot: snapshot() })
         }
-        expect(body).toEqual({ action: 'receipt', commandId })
+        expect(body).toEqual({ action: 'receipt', commandId, projection: 'snapshot' })
         return response({ found: true, revision: 8, workspaceVersion: 'txn:8',
           schemaVersion: 4, snapshot: snapshot(), receipt: { commandId, status: 'COMMITTED' } })
       })

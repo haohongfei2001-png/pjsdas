@@ -7,13 +7,13 @@ const fixture = vi.hoisted(() => {
     fingerprint: 'synthetic-digest', snapshot: { version: 4, marker: 'remote' },
     updatedByDevice: 'server', updatedAt: '2026-09-23T00:00:00Z',
   }
-  return { remote, localFingerprint: 'synthetic-digest', update: vi.fn(), checkpoint: vi.fn(), checkpointRead: vi.fn(), decision: vi.fn(), equivalent: vi.fn(), replace: vi.fn(), pending: vi.fn() }
+  return { remote, export: vi.fn(async () => ({ version: 4, marker: 'local' })), read: vi.fn(async () => remote), localFingerprint: 'synthetic-digest', update: vi.fn(), checkpoint: vi.fn(), checkpointRead: vi.fn(), decision: vi.fn(), equivalent: vi.fn(), replace: vi.fn(), pending: vi.fn() }
 })
 
 vi.mock('../src/db.js', () => ({
   isRecordedAccountProjection: vi.fn(async () => false),
   assertLocalSnapshotCurrent: vi.fn(async () => undefined),
-  exportLocalSnapshot: async () => ({ version: 4, marker: 'local' }),
+  exportLocalSnapshot: fixture.export,
   replaceLocalSnapshotFromCloud: fixture.replace,
 }))
 vi.mock('../src/snapshot.js', () => ({
@@ -29,7 +29,7 @@ vi.mock('../src/cloud/syncState.js', () => ({
 }))
 vi.mock('../src/cloud/syncLogic.js', () => ({ decideSyncAction: fixture.decision }))
 vi.mock('../src/cloud/cloudRepository.js', () => ({
-  fetchRemoteWorkspace: async () => fixture.remote,
+  fetchRemoteWorkspace: fixture.read,
   createRemoteWorkspace: vi.fn(),
   updateRemoteWorkspace: fixture.update,
 }))
@@ -126,7 +126,9 @@ describe('connected passive sync authority', () => {
     fixture.remote.version = 'txn:1004'
     fixture.remote.fingerprint = 'new-digest'
     fixture.pending.mockReturnValue({ count: 1, pending: 1, unknown: 0, conflict: 0 })
-    expect(await runCloudSync('qa-account', { passive: true })).toMatchObject({ kind: 'local_pending', version: 'txn:1004' })
+    expect(await runCloudSync('qa-account', { passive: true })).toMatchObject({ kind: 'local_pending', version: 'txn:7' })
+    expect(fixture.export).not.toHaveBeenCalled()
+    expect(fixture.read).not.toHaveBeenCalled()
     expect(fixture.replace).not.toHaveBeenCalled()
     expect(fixture.update).not.toHaveBeenCalled()
   })

@@ -82,7 +82,7 @@ export function ScheduleWindowList({ stream, section, opportunities, onOpenOppor
 type View = 'all' | 'upcoming' | 'past' | 'unresolved' | 'undated'
 type OccurrenceCommand = 'complete' | 'cancel' | 'reschedule'
 type PendingOccurrenceCommand = { kind: OccurrenceCommand; temporal?: ScheduleNodeTemporal; status: 'pending' | 'unknown' | 'conflict' | 'projection_pending' }
-type CommandResult = { outcome: 'COMMITTED' | 'ALREADY_APPLIED' | 'NO_WRITE' | 'QUEUED'; commandId?: string; message: string; localProjection?: 'pending' }
+type CommandResult = { outcome: 'COMMITTED' | 'ALREADY_APPLIED' | 'NO_WRITE' | 'QUEUED' | 'OPTIMISTIC'; commandId?: string; message: string; localProjection?: 'pending' }
 function commandErrorMessage(error: unknown, zh: boolean) {
   const message = error instanceof Error ? error.message : String(error)
   if (/^[A-Z][A-Z0-9_]+:/.test(message)) return zh
@@ -202,6 +202,19 @@ export default function ScheduleFeature({
     return () => observer.disconnect()
   }, [range.end, entries.length, view])
 
+  useEffect(() => {
+    const update = (event: Event) => {
+      const detail = (event as CustomEvent<import('../cloud/instantCommandClient.js').InteractionEvent>).detail
+      setFeedback(current => current?.commandId !== detail.commandId ? current : {
+        ...current, text: detail.state === 'confirmed' ? (zh ? '修改已同步。' : 'Change synced.') : detail.message ?? current.text,
+        error: detail.state === 'conflict' || detail.state === 'rejected',
+        commandId: detail.state === 'conflict' || detail.state === 'rejected' ? undefined : current.commandId,
+      })
+    }
+    window.addEventListener('pjsdas:interaction', update)
+    return () => window.removeEventListener('pjsdas:interaction', update)
+  }, [zh])
+
   function changeView(next: View) {
     const nextEntries = next === 'all' ? all : next === 'past' ? past : stream.sections[next]
     setView(next)
@@ -266,7 +279,7 @@ export default function ScheduleFeature({
     setFeedback(undefined)
     try {
       const result = await onOccurrenceCommand(selected, kind, kind === 'reschedule' ? newDate : undefined)
-      setFeedback({ text: result.message, commandId: result.outcome === 'COMMITTED' && result.localProjection !== 'pending' ? result.commandId : undefined })
+      setFeedback({ text: result.message, commandId: (result.outcome === 'COMMITTED' || result.outcome === 'OPTIMISTIC') && result.localProjection !== 'pending' ? result.commandId : undefined })
       setConfirm(undefined)
       if (result.outcome !== 'NO_WRITE' && result.localProjection !== 'pending') setSelectedId(undefined)
     } catch (error) {

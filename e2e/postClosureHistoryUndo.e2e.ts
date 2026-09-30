@@ -178,7 +178,7 @@ test('a real second-connection status race is checked inside the local mutation 
     const before = await db.getAll('scheduleNodes')
     const action = (await db.get('actions', 'history-task'))!
     const other = await new Promise<IDBDatabase>((resolve, reject) => {
-      const req = indexedDB.open('pjsdas', 11); req.onsuccess = () => resolve(req.result); req.onerror = () => reject(req.error)
+      const req = indexedDB.open('pjsdas'); req.onsuccess = () => resolve(req.result); req.onerror = () => reject(req.error)
     })
     const original = db.transaction.bind(db)
     let intercepted = false

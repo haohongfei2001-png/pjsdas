@@ -52,6 +52,11 @@ export async function refreshConnectedAuthoritativeCache(
 ): Promise<AuthoritativeReadFreshness> {
   const lease = captureAccountCacheLease(accountKey)
   const startedAt = Date.now()
+  if (unresolvedPendingCommandCount(accountKey) > 0) {
+    const initialCheckpoint = getAccountCheckpoint(accountKey)
+    if (!initialCheckpoint.conflict) return { state: 'pending_operations', workspaceVersion: initialCheckpoint.lastSyncedVersion ?? 'pending',
+      observedAt: new Date().toISOString(), latencyMs: 0, changed: false }
+  }
   const [local, remote] = await Promise.all([
     exportLocalSnapshot(),
     fetchConnectedRemoteWorkspace(accountKey),

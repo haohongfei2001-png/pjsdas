@@ -21,7 +21,7 @@ test('TSUI-04 real schedule: today anchor, both directions, unresolved and undat
   await page.goto('/pjsdas/today')
   await page.evaluate(async ({ created }) => {
     await new Promise<void>((resolve, reject) => {
-      const request = indexedDB.open('pjsdas', 11)
+      const request = indexedDB.open('pjsdas')
       request.onerror = () => reject(request.error)
       request.onsuccess = () => {
         const db = request.result

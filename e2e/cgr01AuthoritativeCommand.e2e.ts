@@ -134,7 +134,7 @@ function tokenOf(route: Route) {
 
 async function readIndexedActions(page: Page) {
   return page.evaluate(async () => new Promise<Array<{ id: string; title: string; status: string }>>((resolve, reject) => {
-    const request = indexedDB.open('pjsdas', 11)
+    const request = indexedDB.open('pjsdas')
     request.onerror = () => reject(request.error)
     request.onsuccess = () => {
       const db = request.result
@@ -205,14 +205,14 @@ test('lost response after server commit survives reload and recovers one durable
   await page.goto('/')
   await expect(page.getByRole('heading', { name: 'A第一任务' })).toBeVisible()
   await page.locator('.tsui-task-row').filter({ has: page.getByRole('heading', { name: 'A第一任务' }) }).getByRole('button', { name: '完成' }).click()
-  await expect(page.getByRole('status')).toContainText('尚未确认这次操作是否已提交')
+  await expect(page.getByRole('status')).toContainText('修改已保存在本机')
   expect(commandCalls).toBe(1)
   expect(receiptCalls).toBe(1)
 
   await page.reload()
   await expect(page.getByRole('heading', { name: 'A第一任务' })).toHaveCount(0)
   expect(commandCalls).toBe(1)
-  expect(receiptCalls).toBeGreaterThanOrEqual(2)
+  await expect.poll(() => receiptCalls).toBeGreaterThanOrEqual(2)
   // UI absence can precede receipt projection and durable pending-record removal.
   await expect.poll(() => page.evaluate(() => window.localStorage.getItem('pjsdas-cgr01-pending:account-a'))).toBeNull()
 })
@@ -333,6 +333,7 @@ test('connected Web recovers a lost command response and Undo preserves unrelate
 
   await page.getByRole('button', { name: '撤销' }).click()
   await expect(page.getByRole('heading', { name: 'A第一任务' })).toBeVisible()
+  await expect.poll(async () => (await readIndexedActions(page)).find(item => item.id === 'A-action-2')?.status).toBe('done')
   const actions = await readIndexedActions(page)
   expect(actions.find((item) => item.id === 'A-action-1')?.status).toBe('todo')
   expect(actions.find((item) => item.id === 'A-action-2')?.status).toBe('done')
@@ -387,10 +388,10 @@ test('same-object connected conflict is concrete and refreshes the authoritative
   await expect(complete).toBeFocused()
   await page.keyboard.press('Enter')
   const conflictStatus = page.getByRole('status')
-  await expect(conflictStatus).toContainText('这一个行动已被另一客户端修改')
+  await expect(conflictStatus).toContainText('这项记录刚被另一处修改')
   await expect(conflictStatus).toBeInViewport()
   const actions = await readIndexedActions(page)
-  expect(actions.find((item) => item.id === 'A-action-1')?.status).toBe('doing')
+  await expect.poll(async () => (await readIndexedActions(page)).find(item => item.id === 'A-action-1')?.status).toBe('doing')
   await expect(page.getByText(/本地还是云端|local.*cloud/i)).toHaveCount(0)
 })
 
@@ -546,7 +547,7 @@ test('CGR-05 background and manual connected sync preserve pending local changes
   })).toBe('txn:7')
 
   await page.evaluate(async () => new Promise<void>((resolve, reject) => {
-    const request = indexedDB.open('pjsdas', 11)
+    const request = indexedDB.open('pjsdas')
     request.onerror = () => reject(request.error)
     request.onsuccess = () => {
       const db = request.result
@@ -680,7 +681,7 @@ test('CGR-05 Discovery status, Profile and promotion use scoped first-party comm
 
     await pageB.evaluate(() => window.dispatchEvent(new Event('online')))
     await expect.poll(() => pageB.evaluate(async () => new Promise<string[]>((resolve, reject) => {
-      const request = indexedDB.open('pjsdas', 11)
+      const request = indexedDB.open('pjsdas')
       request.onerror = () => reject(request.error)
       request.onsuccess = () => {
         const db = request.result
@@ -793,7 +794,7 @@ test('CGR-05 process recovery creates and deletes one account event across clien
     expect(commands[1].command).toMatchObject({ type: 'process_event_delete' })
     await pageB.evaluate(() => window.dispatchEvent(new Event('online')))
     await expect.poll(() => pageB.evaluate(async () => new Promise<number>((resolve, reject) => {
-      const request = indexedDB.open('pjsdas', 11)
+      const request = indexedDB.open('pjsdas')
       request.onerror = () => reject(request.error)
       request.onsuccess = () => {
         const db = request.result

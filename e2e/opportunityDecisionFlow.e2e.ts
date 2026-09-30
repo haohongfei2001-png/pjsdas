@@ -5,7 +5,7 @@ test('CGR-03 dense mixed-language workspace keeps search, identity, and return f
   await page.evaluate(async () => {
     const importedAt = new Date(Date.now() - 86400000).toISOString()
     await new Promise<void>((resolve, reject) => {
-      const request = indexedDB.open('pjsdas', 11)
+      const request = indexedDB.open('pjsdas')
       request.onerror = () => reject(request.error)
       request.onsuccess = () => {
         const db = request.result
@@ -158,7 +158,7 @@ test('TSUI-03 Jobs shows one filter group and a conclusion-first routed detail',
     ]
 
     await new Promise<void>((resolve, reject) => {
-      const request = indexedDB.open('pjsdas', 11)
+      const request = indexedDB.open('pjsdas')
       request.onerror = () => reject(request.error)
       request.onsuccess = () => {
         const db = request.result
@@ -252,7 +252,7 @@ for (const fixture of [
       await page.goto('/')
       await page.evaluate(async () => {
         await new Promise<void>((resolve, reject) => {
-          const request = indexedDB.open('pjsdas', 11)
+          const request = indexedDB.open('pjsdas')
           request.onerror = () => reject(request.error)
           request.onsuccess = () => {
             const db = request.result

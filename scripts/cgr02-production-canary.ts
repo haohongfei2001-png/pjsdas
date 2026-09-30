@@ -90,7 +90,7 @@ async function workspace(origin: string, auth: AuthSession, body: Record<string,
   return workspaceReply(await json(`${origin}/api/workspace`, {
     method: 'POST',
     headers: { authorization: `Bearer ${auth.token}`, 'content-type': 'application/json', origin },
-    body: JSON.stringify(body),
+    body: JSON.stringify({ projection: 'snapshot', ...body }),
   }))
 }
 
