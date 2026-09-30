@@ -31,6 +31,7 @@ export default function CloudSettingsCard() {
   const connectionError = localError || cloud.error || cloud.checkpoint.lastError
   const codedLocalError = /^[A-Z][A-Z0-9_]+:/.test(localError)
   const pendingLocal = cloud.outcome?.kind === 'local_pending'
+  const currentLocal = !transactional || localDirty === false
   useEffect(() => {
     if (!user || !transactional) {
       setLocalDirty(undefined)
@@ -68,9 +69,9 @@ export default function CloudSettingsCard() {
             ? (zh ? '此账号尚未开通跨设备使用；此设备上的资料仍可查看。' : 'Cross-device access is unavailable for this account; data on this device remains available.')
             : pendingLocal
               ? (zh ? '部分修改仍在此设备，系统会继续核对保存结果。' : 'Some changes remain on this device while their save result is checked.')
-              : localDirty
+              : transactional && localDirty
                 ? (zh ? '此设备有尚未同步的修改。' : 'This device has changes that have not synced yet.')
-                : localDirty === undefined
+                : transactional && localDirty === undefined
                   ? (zh ? '正在核对此设备的最新修改。' : 'Checking this device for recent changes.')
               : (zh ? '你的资料已连接此账号，并在设备间保持更新。' : 'Your data is connected to this account and stays up to date across devices.')
 
@@ -114,7 +115,7 @@ export default function CloudSettingsCard() {
             <h2>{zh ? '账号与跨设备数据' : 'Account & cross-device data'}</h2>
             <p>{zh ? '查看账号连接与最近更新状态。' : 'Check your account connection and latest update.'}</p>
           </div>
-          <span className={`cloud-state ${conflict || mismatch || connectionError || pendingLocal || localDirty || (audience && !audience.allowed) ? 'warning' : user && localDirty === false ? 'online' : ''}`}>
+          <span className={`cloud-state ${conflict || mismatch || connectionError || pendingLocal || (transactional && localDirty) || (audience && !audience.allowed) ? 'warning' : user && currentLocal ? 'online' : ''}`}>
             {mismatch
               ? (zh ? '账号不匹配' : 'Account mismatch')
               : conflict
@@ -123,12 +124,12 @@ export default function CloudSettingsCard() {
                   ? (zh ? '连接中断' : 'Connection interrupted')
                 : pendingLocal
                   ? (zh ? '等待核对' : 'Checking changes')
-                : localDirty
+                : transactional && localDirty
                   ? (zh ? '待同步修改' : 'Unsynced changes')
                 : audience && !audience.allowed
                   ? (zh ? '跨设备不可用' : 'Cross-device unavailable')
                 : user
-                  ? cloud.checkpoint.lastSyncedVersion && localDirty === false
+                  ? cloud.checkpoint.lastSyncedVersion && currentLocal
                     ? (zh ? '同步正常' : 'Sync is up to date')
                     : (zh ? '正在核对' : 'Checking')
                   : cloud.loading
