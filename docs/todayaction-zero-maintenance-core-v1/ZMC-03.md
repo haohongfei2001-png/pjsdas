@@ -1,4 +1,4 @@
-# ZMC-03 — Durable command outbox and receipt recovery candidate
+# ZMC-03 — Durable command outbox and receipt recovery
 
 ## Product behavior
 
@@ -21,6 +21,7 @@ Offline capture, action status, application submission, and schedule complete/ca
 - The connected browser journey now asserts an offline capture outbox record, no offline network write, independent remote update, a real page reload while the server remains unreachable, exactly one recovered business command with the original ID, outbox retirement, and consistent local state after another reload.
 - A connected schedule browser journey now queues a changed date offline, reloads while the server is unavailable, displays the original queued date, and replays the original command once after reconnect even when ordinary automatic refresh is disabled. Conflicted schedule commands are surfaced as conflicts rather than promised automatic submission.
 - Existing receipt/projection cases cover completed, cancelled, and rescheduled occurrences, receipt found/absent, `NO_WRITE`, and safe projection retry. Final full tests, Browser, Matrix, independent review, merge, and exact-main readback remain required.
-- Before the final offline-race repair, 208 test files and 1,086 tests passed, with TypeScript and production build passing. Headless Chromium and WebKit targeted browser journeys passed locally. Final full CI, Browser, Matrix, VoiceOver, and exact-head review remain required.
+- Final local boundary: 208 test files and 1,087 tests passed, with TypeScript and production build passing. Headless Chromium and WebKit targeted browser journeys passed locally. Exact PR head `0a3d984c` passed CI, Browser Chromium, Firefox/WebKit Matrix, macOS visual and VoiceOver, UI, brand, rollback, and Vercel preview. Independent full-diff review found no actionable regression.
+- PR #199 merged as `e6062f16`; its tree matched the reviewed head. Production release manifest and API health both reported `e6062f16` on exact-main readback. No production workspace record was written during verification.
 
 No production business record, Gmail cursor, OAuth scope, or owner browser profile was mutated in this phase.
