@@ -76,6 +76,24 @@ test('363 retained Gmail parser records coexist with one current answerable choi
   await expect(secondPage.getByText('历史待核对 / 数据质量 · 363')).toBeVisible()
 })
 
+test('300-node Schedule opens on future commitments and keeps unknown past occurrences in Past', async ({ page }) => {
+  await page.clock.install({ time: DENSE_NOW })
+  await page.goto('/'); await page.locator('.tsui-primary-nav').waitFor()
+  const snapshot = denseDecisionWorkspace()
+  await page.evaluate(async input => (await import('/pjsdas/src/db.ts')).replaceLocalSnapshotFromCloud(input), snapshot)
+  await page.goto('/pjsdas/schedule')
+  await expect(page.locator('.tsui-schedule-tabs button.active')).toContainText('接下来')
+  await expect(page.locator('.tsui-schedule-context')).toHaveCount(0)
+  await expect(page.locator('.tsui-schedule-panel .tsui-schedule-row').first()).toBeVisible()
+  await expect(page.locator('.tsui-schedule-panel .state-unresolved')).toHaveCount(0)
+  await page.locator('.tsui-schedule-tabs').getByRole('button', { name: /已发生/ }).click()
+  await expect(page.locator('.tsui-schedule-panel .state-unresolved').first()).toBeVisible()
+  await expect(page.locator('.tsui-schedule-context')).toContainText('过去安排待确认')
+  await page.reload()
+  const saved = await page.evaluate(async () => (await (await import('/pjsdas/src/db.ts')).dbPromise).getAll('scheduleNodes'))
+  expect(saved).toHaveLength(300)
+})
+
 test('exact replay groups expose each preserved request and never group changed alternatives', async ({ page }) => {
   await page.clock.install({ time: DENSE_NOW }); await page.goto('/'); await page.locator('.tsui-primary-nav').waitFor()
   const snapshot = denseDecisionWorkspace()

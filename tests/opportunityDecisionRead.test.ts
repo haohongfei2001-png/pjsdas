@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { buildOpportunityDecisionList, getOpportunityDecisionRead } from '../src/opportunityDecisionRead.js'
 import { rankActions } from '../src/decisionV3.js'
 import { createSnapshot, type PJSDASSnapshot } from '../src/snapshot.js'
-import type { Action, Opportunity, ProcessEvent, ProcessRecord } from '../src/model.js'
+import type { Action, Opportunity, ProcessEvent, ProcessRecord, ScheduleNode } from '../src/model.js'
 
 const NOW = new Date('2026-09-21T00:00:00.000Z')
 
@@ -45,6 +45,7 @@ function snapshot(data: Partial<PJSDASSnapshot['data']>): PJSDASSnapshot {
     opportunities: data.opportunities ?? [],
     processes: data.processes ?? [],
     processEvents: data.processEvents ?? [],
+    scheduleNodes: data.scheduleNodes ?? [],
     actions: data.actions ?? [],
     prep: data.prep ?? [],
     applicationGroups: data.applicationGroups ?? [],
@@ -137,6 +138,36 @@ describe('UU-05 Opportunity decision read model', () => {
     expect(read?.reasons).toContainEqual({ code: 'elapsed_node_unresolved', tone: 'risk' })
   })
 
+  it('prefers a real future interview over historical unknown attendance', () => {
+    const opp = opportunity('future-round', 'interview')
+    const node = (id: string, at: string): ScheduleNode => ({
+      id, occurrenceId: id, version: 1, opportunityId: opp.id, kind: 'interview', state: 'scheduled',
+      constraintKind: 'employer_hard', temporal: { shape: 'fixed_range', precision: 'datetime',
+        timezone: 'Asia/Shanghai', startAt: at, endAt: new Date(Date.parse(at) + 60 * 60_000).toISOString(),
+        resolutionBasis: 'source_explicit' },
+      evidenceRefs: [], sourceVersionRefs: [], relatedActionIds: [], relatedPrepIds: [],
+      createdAt: '2026-09-19T00:00:00.000Z', updatedAt: '2026-09-19T00:00:00.000Z',
+    })
+    const past = node('old-interview', '2026-09-20T02:00:00.000Z')
+    const future = node('next-interview', '2026-09-22T02:00:00.000Z')
+    const read = getOpportunityDecisionRead(snapshot({ opportunities: [opp], scheduleNodes: [past, future] }),
+      opp.id, { now: NOW, timezone: 'Asia/Shanghai' })
+    expect(read?.nearestNode).toMatchObject({ nodeId: future.id, state: 'scheduled', requiresResolution: false })
+    expect(read?.reasons).not.toContainEqual({ code: 'elapsed_node_unresolved', tone: 'risk' })
+    const progressed = getOpportunityDecisionRead(snapshot({ opportunities: [opp], scheduleNodes: [past],
+      processes: [{ id: 'current-process', opportunityId: opp.id, company: opp.company, role: opp.role,
+        stage: 'interview', stageLabel: '面试', progress: 'scheduled', result: 'pending',
+        participationState: 'active', lastProgressAt: '2026-09-20T10:00:00.000Z' }],
+    }), opp.id, { now: NOW, timezone: 'Asia/Shanghai' })
+    expect(progressed?.nearestNode).toBeUndefined()
+    const offer = opportunity('offer-after-interview', 'offer')
+    const old = { ...past, opportunityId: offer.id }
+    const ended = getOpportunityDecisionRead(snapshot({ opportunities: [offer], scheduleNodes: [old] }),
+      offer.id, { now: NOW, timezone: 'Asia/Shanghai' })
+    expect(ended?.nearestNode).toBeUndefined()
+    expect(ended?.reasons).not.toContainEqual({ code: 'elapsed_node_unresolved', tone: 'risk' })
+  })
+
   it('makes offer, abandoned, and closed conclusions explicit without conflating them', () => {
     const offer = opportunity('offer-role', 'offer')
     const abandoned = opportunity('abandoned-role', 'interview', { participationStatus: 'abandoned' })
@@ -183,7 +214,8 @@ describe('UU-05 deadline precision regression', () => {
     const list = buildOpportunityDecisionList(source, ctx)
     expect(detail.bucket).toBe(expired ? 'ended' : 'worth_pursuing')
     expect(detail.conclusion).toBe(expired ? 'application_window_closed' : 'worth_pursuing')
-    expect(detail.nearestNode?.state).toBe(expired ? 'elapsed_unresolved' : 'scheduled')
+    expect(detail.nearestNode?.state).toBe(expired ? undefined : 'scheduled')
+    if (expired) expect(detail.reasons).not.toContainEqual({ code: 'elapsed_node_unresolved', tone: 'risk' })
     expect(list.all[0]).toEqual(detail)
     expect(list.worthPursuing).toHaveLength(expired ? 0 : 1)
     expect(detail.reasons.some((reason) => reason.code === 'deadline_near')).toBe(!expired)

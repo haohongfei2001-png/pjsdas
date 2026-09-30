@@ -533,6 +533,7 @@ test('connected Today keeps a fixed interview, date-only deadline and elapsed un
   await expect(upcoming.locator('.tsui-node-row').filter({ hasText: '申请截止' })).toHaveCount(1)
   await expect(page.locator('.tsui-unresolved-link')).toHaveCount(0)
   await page.locator('.tsui-primary-nav').getByRole('button', { name: /日程|Schedule/ }).click()
+  await page.locator('.tsui-schedule-tabs').getByRole('button', { name: /已发生|Past/ }).click()
   await page.locator('.tsui-schedule-context').getByRole('button', { name: /过去安排待确认|Past arrangements to confirm/ }).click()
   await expect(page).toHaveURL(/\/schedule\?view=unresolved$/)
   await expect(page.locator('.tsui-schedule-panel .tsui-schedule-row')).toHaveCount(1)
