@@ -311,4 +311,42 @@ test('TSUI-04 connected event detail uses exact occurrence commands, receipt and
       date: '2026-11-02', resolutionBasis: 'user_explicit' } })
   expect(state.snapshot.data.scheduleNodes?.filter((node) => node.occurrenceId === 'exact-occurrence' && node.state === 'scheduled')).toHaveLength(1)
   expect(snapshotWrites).toBe(0)
+
+  // A queued reschedule survives reload with its chosen date, then replays
+  // even when ordinary background workspace refresh was disabled.
+  await page.context().setOffline(true)
+  const currentRow = page.locator('.tsui-schedule-row')
+    .filter({ hasText: '权威公司' })
+    .filter({ has: page.locator('.tsui-schedule-state.state-upcoming') })
+  await currentRow.click()
+  await page.locator('.tsui-schedule-command-buttons').getByRole('button', { name: /改期|Reschedule/ }).click()
+  await page.locator('.tsui-schedule-reschedule input').fill('2026-11-04')
+  await page.locator('.tsui-schedule-reschedule').getByRole('button', { name: /确认改期|Confirm reschedule/ }).click()
+  await expect(page.locator('.tsui-schedule-feedback')).toContainText(/联网后自动提交|submit when connected/)
+  expect(commands).toHaveLength(2)
+  const queued = await page.evaluate((accountKey) => JSON.parse(window.localStorage.getItem('pjsdas-cgr01-pending:' + accountKey) || '[]'), account)
+  expect(queued).toMatchObject([{ status: 'pending', command: { value: { kind: 'reschedule_occurrence',
+    temporal: { date: '2026-11-04' } } } }])
+  await page.evaluate(() => {
+    const key = 'pjsdas-google-drive-sync-state-v2'
+    const device = JSON.parse(window.localStorage.getItem(key) || '{}')
+    device.autoSync = false
+    window.localStorage.setItem(key, JSON.stringify(device))
+  })
+  const unavailable = (route: import('@playwright/test').Route) => route.abort('failed')
+  await page.route(backend + '/api/workspace', unavailable)
+  await page.context().setOffline(false)
+  await page.reload()
+  await currentRow.click()
+  await expect(page.getByText(/待同步的改期日期|Pending reschedule/)).toContainText('2026-11-04')
+  await page.locator('.tsui-schedule-command-buttons').getByRole('button', { name: /改期|Reschedule/ }).click()
+  await expect(page.locator('.tsui-schedule-reschedule input')).toHaveValue('2026-11-04')
+  await page.locator('.tsui-schedule-reschedule input').fill('2026-11-05')
+  await expect(page.getByText(/待同步的改期日期|Pending reschedule/)).toContainText('2026-11-04')
+  await page.unroute(backend + '/api/workspace', unavailable)
+  await page.evaluate(() => window.dispatchEvent(new Event('online')))
+  await expect.poll(() => commands.length).toBe(3)
+  expect(commands[2]).toMatchObject({ commandId: queued[0].commandId,
+    command: { value: { kind: 'reschedule_occurrence', temporal: { date: '2026-11-04' } } } })
+  await expect.poll(() => page.evaluate((accountKey) => window.localStorage.getItem('pjsdas-cgr01-pending:' + accountKey), account)).toBeNull()
 })

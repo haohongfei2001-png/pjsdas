@@ -33,6 +33,7 @@ import {
   confirmConnectedCommand,
   listAccountPendingOperations,
   executeConnectedBusinessCommand,
+  queueConnectedBusinessCommand,
   undoConnectedBusinessCommand,
 } from './cloud/authoritativeCommandClient.js'
 import DiscoveryProfileCard from './DiscoveryProfileCard.js'
@@ -80,7 +81,7 @@ import './tsui02.css'
 type Surface = 'today' | 'opportunities' | 'schedule' | 'decisions' | 'history' | 'settings'
 type PrimarySurface = 'today' | 'opportunities' | 'schedule'
 type OpportunityTab = 'opportunities' | 'prepare' | 'discovery'
-type CompletionFeedback = { id: string; title: string; previousStatus: Action['status']; commandId?: string; localUndo?: ActionStatusUndo; outcome: 'done' | 'no_write' | 'error'; error?: string }
+type CompletionFeedback = { id: string; title: string; previousStatus: Action['status']; commandId?: string; localUndo?: ActionStatusUndo; outcome: 'done' | 'no_write' | 'queued' | 'confirmed_pending' | 'error'; error?: string }
 type RouteState = {
   surface: Surface
   capture: boolean
@@ -407,6 +408,26 @@ export default function AppV8() {
     return () => window.clearTimeout(timer)
   }, [lastCompletedAction])
 
+  useEffect(() => {
+    const settled = (event: Event) => {
+      const detail = (event as CustomEvent<{ commandId: string; outcome: string; localProjection?: string }>).detail
+      setLastCompletedAction((current) => {
+        if (!current?.commandId || current.commandId !== detail.commandId
+          || (current.outcome !== 'queued' && current.outcome !== 'confirmed_pending')) return current
+        if (detail.outcome === 'CONFLICT') return { ...current, outcome: 'error', error: zh
+          ? '这项操作与较新的事实冲突，请核对后处理。'
+          : 'This action conflicts with a newer fact. Review it before proceeding.' }
+        if (detail.localProjection !== 'applied') return detail.outcome === 'COMMITTED' || detail.outcome === 'ALREADY_APPLIED'
+          ? { ...current, outcome: 'confirmed_pending' } : current
+        if (detail.outcome === 'NO_WRITE') return { ...current, outcome: 'no_write', error: undefined }
+        if (detail.outcome === 'COMMITTED' || detail.outcome === 'ALREADY_APPLIED') return { ...current, outcome: 'done', error: undefined }
+        return current
+      })
+    }
+    window.addEventListener('pjsdas:command-recovered', settled)
+    return () => window.removeEventListener('pjsdas:command-recovered', settled)
+  }, [zh])
+
 
 
   const accountKey = cloud.session?.user.id ?? 'local-workspace'
@@ -479,12 +500,28 @@ export default function AppV8() {
         throw new Error('请使用“我已投递”确认真实投递。Use I applied to confirm an application submission.')
       }
       if (cloud.session && connectedWorkspaceAuthorityEnabled()) {
-        authoritativeCommandId = createConnectedCommandId('web-action')
+        const account = cloud.session.user.id
+        const pending = listAccountPendingOperations(account).find(item => {
+          const value = item.command?.type === 'domain' ? item.command.value : undefined
+          return item.status !== 'conflict' && value && (
+            value.kind === 'set_action_status' && value.actionId === id && value.status === status
+            || value.kind === 'record_application_submission' && before.kind === 'apply' && status === 'done'
+              && value.opportunityId === before.opportunityId)
+        })
+        authoritativeCommandId = pending?.commandId ?? createConnectedCommandId('web-action')
         const command = before.kind === 'apply' && status === 'done'
           ? { commandId: authoritativeCommandId, kind: 'record_application_submission' as const, opportunityId: before.opportunityId! }
           : { commandId: authoritativeCommandId, kind: 'set_action_status' as const, actionId: id, status }
         if (before.kind === 'apply' && status === 'done' && !before.opportunityId) throw new Error('Application action has no exact opportunity identity.')
-        const result = await executeConnectedBusinessCommand(cloud.session.user.id, {
+        if (typeof navigator !== 'undefined' && !navigator.onLine) {
+          if (!pending) await queueConnectedBusinessCommand(account, { type: 'domain', value: command }, { commandId: authoritativeCommandId })
+          setLastCompletedAction({ id: before.id, title: before.title, previousStatus: before.status,
+            commandId: authoritativeCommandId, outcome: 'queued' })
+          return
+        }
+        const result = pending
+          ? await confirmConnectedCommand(account, authoritativeCommandId)
+          : await executeConnectedBusinessCommand(account, {
           type: 'domain',
           value: command,
         }, { commandId: authoritativeCommandId })
@@ -610,6 +647,22 @@ export default function AppV8() {
     await markAction(item.actionId, 'doing')
   }
 
+  function pendingScheduleOccurrence(occurrenceId: string) {
+    const account = cloud.session?.user.id
+    if (!account) return undefined
+    const pending = listAccountPendingOperations(account).find(item => {
+      const value = item.command?.type === 'domain' ? item.command.value : undefined
+      return item.action === 'command' && value && 'occurrenceId' in value && value.occurrenceId === occurrenceId
+        && ['complete_occurrence', 'cancel_occurrence', 'reschedule_occurrence'].includes(value.kind)
+    })
+    const value = pending?.command?.type === 'domain' ? pending.command.value : undefined
+    if (!value || !('occurrenceId' in value)) return undefined
+    if (value.kind === 'complete_occurrence') return { kind: 'complete' as const, status: pending!.status }
+    if (value.kind === 'cancel_occurrence') return { kind: 'cancel' as const, status: pending!.status }
+    if (value.kind === 'reschedule_occurrence') return { kind: 'reschedule' as const, temporal: value.temporal, status: pending!.status }
+    return undefined
+  }
+
   async function scheduleOccurrenceCommand(entry: ScheduleEntry, kind: 'complete' | 'cancel' | 'reschedule', date?: string) {
     const account = cloud.session?.user.id
     if (!account || !connectedWorkspaceAuthorityEnabled() || CGR02_TODAY_READ_ONLY) {
@@ -651,6 +704,17 @@ export default function AppV8() {
         ? { commandId, kind: 'cancel_occurrence' as const, occurrenceId: entry.occurrenceId }
         : { commandId, kind: 'reschedule_occurrence' as const, occurrenceId: entry.occurrenceId,
           temporal: rescheduledTemporal() }
+    if (pending?.status === 'conflict') {
+      throw new Error(zh ? '这次安排已被另一处修改，请核对最新安排后再操作。' : 'This occurrence changed elsewhere. Review the latest schedule before trying again.')
+    }
+    if (pending?.command?.type === 'domain' && JSON.stringify(pending.command.value) !== JSON.stringify(command)) {
+      throw new Error(zh ? '这次安排已有待确认的修改，请先等待原操作完成。' : 'This occurrence already has a pending change. Wait for it to finish first.')
+    }
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      if (!pending) await queueConnectedBusinessCommand(account, { type: 'domain', value: command }, { commandId })
+      return { outcome: 'QUEUED' as const, commandId, localProjection: 'pending' as const,
+        message: zh ? '已保存在此设备，联网后自动提交。' : 'Saved on this device; it will submit when connected.' }
+    }
     const result = pending
       ? await confirmConnectedCommand(account, commandId, { allowProjectionPending: true })
       : await executeConnectedBusinessCommand(account, { type: 'domain', value: command }, { commandId, allowProjectionPending: true })
@@ -747,7 +811,8 @@ export default function AppV8() {
 
         {!loading && surface === 'schedule' && scheduleStream ? <ScheduleFeature stream={scheduleStream} opportunities={opportunities} onOpenOpportunity={openOpportunity}
           canWrite={Boolean(cloud.session && connectedWorkspaceAuthorityEnabled() && !CGR02_TODAY_READ_ONLY)}
-          onOccurrenceCommand={scheduleOccurrenceCommand} onUndoOccurrenceCommand={undoScheduleOccurrenceCommand} /> : null}
+          onOccurrenceCommand={scheduleOccurrenceCommand} onPendingOccurrence={pendingScheduleOccurrence}
+          onUndoOccurrenceCommand={undoScheduleOccurrenceCommand} /> : null}
 
         {!loading && surface === 'opportunities' && opportunityDecisionList && !selectedOpportunityId ? (
           <OpportunitiesSurface read={opportunityDecisionList} opportunities={opportunities} prep={prep} tab={opportunityTab} onTabChange={chooseOpportunityTab}
@@ -794,8 +859,8 @@ export default function AppV8() {
       {lastCompletedAction ? (
         <div className="action-undo-toast" role="status" aria-live="polite">
           <div>
-            <strong>{lastCompletedAction.outcome === 'error' ? (zh ? '操作未确认' : 'Action not confirmed') : lastCompletedAction.outcome === 'no_write' ? (zh ? '没有写入变化' : 'No change written') : (zh ? '已完成' : 'Completed')}</strong>
-            <span>{lastCompletedAction.error ?? lastCompletedAction.title}</span>
+            <strong>{lastCompletedAction.outcome === 'error' ? (zh ? '操作未确认' : 'Action not confirmed') : lastCompletedAction.outcome === 'no_write' ? (zh ? '没有写入变化' : 'No change written') : lastCompletedAction.outcome === 'queued' ? (zh ? '待同步' : 'Pending') : lastCompletedAction.outcome === 'confirmed_pending' ? (zh ? '服务器已确认' : 'Saved on server') : (zh ? '已完成' : 'Completed')}</strong>
+            <span>{lastCompletedAction.error ?? (lastCompletedAction.outcome === 'queued' ? (zh ? '已保存在此设备，联网后自动提交。' : 'Saved on this device; it will submit when connected.') : lastCompletedAction.outcome === 'confirmed_pending' ? (zh ? '本机状态待安全刷新。' : 'This device is waiting for a safe refresh.') : lastCompletedAction.title)}</span>
           </div>
           {lastCompletedAction.outcome === 'done' ? <button type="button" onClick={() => { void undoLastCompletion() }}>{zh ? '撤销' : 'Undo'}</button> : null}
         </div>

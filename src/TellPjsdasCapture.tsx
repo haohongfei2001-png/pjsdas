@@ -140,7 +140,7 @@ export default function TellPjsdasCapture({
   const textRef = useRef('')
 
   const connected = Boolean(cloud.session && connectedWorkspaceAuthorityEnabled())
-  const recoveryLocked = saveState === 'unknown' || saveState === 'reauth' || saveState === 'confirmed_pending'
+  const recoveryLocked = saveState === 'unknown' || saveState === 'reauth' || saveState === 'confirmed_pending' || saveState === 'offline'
 
   useEffect(() => {
     if (!open) {
@@ -182,7 +182,8 @@ export default function TellPjsdasCapture({
     setPreview(undefined)
     setMessage('')
     setError(resumable?.lastError ?? '')
-    setSaveState(resumable?.status === 'unknown' ? 'unknown'
+    setSaveState(resumable?.status === 'pending' ? 'offline'
+      : resumable?.status === 'unknown' ? 'unknown'
       : resumable?.status === 'projection_pending' ? 'confirmed_pending'
         : resumable?.status === 'conflict' ? 'conflict' : resumable ? 'reauth' : 'idle')
     setAuthoritativeSaveConfirmed(false)
@@ -191,6 +192,41 @@ export default function TellPjsdasCapture({
     setUndo(undefined)
     setStableCommandId(resumable?.commandId)
   }, [open, cloud.session?.user.id])
+
+  useEffect(() => {
+    if (!open || saveState !== 'offline' || !stableCommandId || !cloud.session) return
+    const accountKey = cloud.session.user.id
+    const settled = (event: Event) => {
+      const detail = (event as CustomEvent<{ commandId: string; outcome: string; localProjection?: string; resultStatus?: string; decisionRequestIds?: unknown }>).detail
+      if (detail.commandId !== stableCommandId) return
+      if (detail.outcome === 'CONFLICT') {
+        setSaveState('conflict')
+        setMessage(zh ? '这项操作与较新的事实冲突，请核对后处理。' : 'This action conflicts with a newer fact. Review it before proceeding.')
+        return
+      }
+      if (detail.localProjection !== 'applied') return
+      setStableCommandId(undefined)
+      setSaveState('saved')
+      if (detail.resultStatus === 'APPLIED' || detail.resultStatus === 'ALREADY_APPLIED') {
+        if (readAccountDraft(accountKey, 'tell-pjsdas') === textRef.current) clearAccountDraft(accountKey, 'tell-pjsdas')
+        textRef.current = ''
+        setText('')
+        setPreview(undefined)
+        setAuthoritativeSaveConfirmed(true)
+        setMessage(zh ? '已自动保存。' : 'Saved automatically.')
+      } else if (detail.resultStatus === 'DECISION_REQUIRED') {
+        const count = Array.isArray(detail.decisionRequestIds) ? detail.decisionRequestIds.length : 0
+        setDecisionCount(count)
+        setAuthoritativeSaveConfirmed(false)
+        setMessage(zh ? '已记录待确认的业务问题。' : 'A business question is ready for your decision.')
+      } else {
+        setAuthoritativeSaveConfirmed(false)
+        setMessage(zh ? '已核对，未写入新的事实。' : 'Checked; no new fact was written.')
+      }
+    }
+    window.addEventListener('pjsdas:command-recovered', settled)
+    return () => window.removeEventListener('pjsdas:command-recovered', settled)
+  }, [open, saveState, stableCommandId, cloud.session?.user.id, zh])
 
   useEffect(() => {
     if (!open || !text.trim() || busy) {
@@ -254,15 +290,8 @@ export default function TellPjsdasCapture({
 
   async function submit() {
     if (!text.trim() || busy) return
-    if (connected && typeof navigator !== 'undefined' && !navigator.onLine) {
-      saveAccountDraft(cloud.session!.user.id, 'tell-pjsdas', text)
-      setSaveState('offline')
-      setError('')
-      setMessage(zh
-        ? '当前离线。内容只保存在这个账号的本机草稿中，还没有写入 TodayAction。'
-        : 'You are offline. This is saved only as this account\'s local draft and has not been written to TodayAction.')
-      return
-    }
+    const queueOffline = connected && typeof navigator !== 'undefined' && !navigator.onLine
+    if (queueOffline && recoveryLocked) return
 
     const commandId = connected
       ? stableCommandId ?? createConnectedCommandId('web-semantic')
@@ -280,7 +309,14 @@ export default function TellPjsdasCapture({
         commandId,
         contextRefs,
         confirmExisting: recoveryLocked,
+        queueOffline,
       })
+      if (result.status === 'QUEUED') {
+        saveAccountDraft(cloud.session!.user.id, 'tell-pjsdas', text)
+        setSaveState('offline')
+        setMessage(zh ? '已保存在此设备，联网后自动提交。' : 'Saved on this device; it will submit when connected.')
+        return
+      }
       if ((result.status === 'APPLIED' || result.status === 'DECISION_REQUIRED') && cloud.session && !connectedWorkspaceAuthorityEnabled()) {
         await ensureAuthoritativePersistence(true, cloud.syncNow)
       }
@@ -419,7 +455,7 @@ export default function TellPjsdasCapture({
                   : saveState === 'unknown' ? (zh ? '等待确认' : 'Confirming')
                   : saveState === 'confirmed_pending' ? (zh ? '服务器已确认，本机待刷新' : 'Server confirmed; device refresh pending')
                     : saveState === 'blocked_by_pending' ? (zh ? '尚未发送' : 'Not sent')
-                      : saveState === 'offline' ? (zh ? '仅草稿' : 'Draft only')
+                      : saveState === 'offline' ? (zh ? '待同步' : 'Pending')
                         : (zh ? '尚未保存' : 'Not saved')}
               </span>
             </div>
@@ -449,6 +485,7 @@ export default function TellPjsdasCapture({
             {busy ? (zh ? '正在权威保存…' : 'Saving authoritatively…')
               : saveState === 'unknown' ? (zh ? '确认保存状态' : 'Confirm save status')
                 : saveState === 'confirmed_pending' ? (zh ? '核对本机状态' : 'Check device state')
+                : saveState === 'offline' ? (zh ? '确认保存状态' : 'Check save status')
                 : saveState === 'reauth' ? (zh ? '重新确认' : 'Retry confirmation')
                   : (zh ? '确认并保存' : 'Confirm and save')}
           </button>

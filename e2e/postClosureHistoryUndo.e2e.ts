@@ -83,6 +83,46 @@ for (const [connected, application] of [[false, false], [true, false], [true, tr
   if (connected) expect(commands).toEqual([application ? 'record_application_submission' : 'set_action_status', 'undo'])
 })
 
+test('queued action completion becomes confirmed with Undo after automatic reconnect', async ({ page, context }) => {
+  await page.clock.setFixedTime(HISTORY_NOW)
+  await seedSession(context)
+  const state = { snapshot: historyActionWorkspace(), revision: 7, commands: [] as string[] }
+  await context.route(BACKEND + '/**', async (route) => {
+    if (route.request().method() === 'OPTIONS') return cors(route, {}, 204)
+    const url = new URL(route.request().url())
+    if (url.pathname === '/api/health') return cors(route, health())
+    if (url.pathname !== '/api/workspace') return cors(route, { code: 'NOT_FOUND' }, 404)
+    const body = route.request().postDataJSON()
+    const read = () => ({ workspaceId: 'ws-history', workspaceVersion: 'txn:' + state.revision,
+      revision: state.revision, schemaVersion: state.snapshot.version, snapshot: state.snapshot })
+    if (body.action === 'read') return cors(route, read())
+    if (body.action === 'receipt') return cors(route, { ...read(), found: false })
+    if (body.action !== 'command' || body.command?.type !== 'domain') return cors(route, { code: 'UNEXPECTED_WRITE' }, 400)
+    state.commands.push(body.commandId)
+    const applied = applyUserDomainCommand(state.snapshot, body.command.value, HISTORY_NOW)
+    expect(applied.status).toBe('APPLIED')
+    state.snapshot = applied.snapshot
+    state.revision += 1
+    return cors(route, { ...read(), outcome: 'COMMITTED', receipt: {
+      commandId: body.commandId, receiptId: 'receipt:' + body.commandId, status: 'COMMITTED',
+      revision: state.revision, undoAvailable: true, result: { type: 'domain', status: 'APPLIED' },
+    } })
+  })
+  await page.goto('/pjsdas/schedule?view=past')
+  await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem('pjsdas-google-drive-sync-state-v2') || '{}').accounts?.['account-a']?.lastSyncedVersion)).toBe('txn:7')
+  await page.locator('.tsui-schedule-row').filter({ hasText: 'Historical job' }).click()
+  await page.getByRole('button', { name: /查看岗位详情|View job details/ }).click()
+  await context.setOffline(true)
+  await page.locator('.opportunity-detail-action-list article').filter({ hasText: 'History task' }).getByRole('button', { name: /标记完成|Mark done/ }).click()
+  await expect(page.locator('.action-undo-toast')).toContainText(/待同步|Pending/)
+  expect(state.commands).toHaveLength(0)
+  await context.setOffline(false)
+  await page.evaluate(() => window.dispatchEvent(new Event('online')))
+  await expect(page.locator('.action-undo-toast').getByRole('button', { name: /撤销|Undo/ })).toBeVisible()
+  expect(state.commands).toHaveLength(1)
+  expect((await rows(page, 'actions')).find((item) => item.id === 'history-task')?.status).toBe('done')
+})
+
 test('local durable completion evidence rejects a later occurrence edit atomically', async ({ page }) => {
   await page.clock.install({ time: HISTORY_NOW })
   await page.goto('/'); await expect(page.locator('.tsui-primary-nav')).toBeVisible()

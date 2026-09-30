@@ -5,9 +5,9 @@ import type { DiscoveryProfile } from '../discoveryProfile.js'
 import type { SemanticIntakeObservation } from '../model.js'
 import { validateSnapshot, type PJSDASSnapshot } from '../snapshot.js'
 import { fetchBackend } from '../backendEndpoints.js'
-import { isRecordedAccountProjection, exportLocalSnapshot, replaceLocalSnapshotFromCloud } from '../db.js'
+import { isRecordedAccountProjection, assertLocalSnapshotCurrent, exportLocalSnapshot, replaceLocalSnapshotFromCloud } from '../db.js'
 import { getAccountAccessToken } from './cloudClient.js'
-import { getAccountCheckpoint, patchAccountCheckpoint } from './syncState.js'
+import { getAccountCheckpoint, getCloudDeviceState, patchAccountCheckpoint } from './syncState.js'
 import { equivalentReadProjection, fingerprintWorkspace } from './workspaceFingerprint.js'
 
 export type ConnectedBusinessCommand =
@@ -67,6 +67,17 @@ interface PendingCommand {
 
 const PENDING_PREFIX = 'pjsdas-cgr01-pending:'
 const DRAFT_PREFIX = 'pjsdas-cgr01-draft:'
+const commandFlights = new Map<string, Promise<ConnectedCommandResponse>>()
+
+function oneCommandFlight(accountKey: string, commandId: string, run: () => Promise<ConnectedCommandResponse>) {
+  const key = `${accountKey}\u0000${commandId}`
+  const active = commandFlights.get(key)
+  if (active) return active
+  const flight = run()
+  commandFlights.set(key, flight)
+  void flight.finally(() => { if (commandFlights.get(key) === flight) commandFlights.delete(key) }).catch(() => undefined)
+  return flight
+}
 
 function storage() {
   return typeof window === 'undefined' ? undefined : window.localStorage
@@ -85,15 +96,10 @@ function readPending(accountKey: string): PendingCommand[] {
   if (!raw) return []
   try {
     const parsed = JSON.parse(raw)
-    return Array.isArray(parsed) ? parsed : []
+    if (!Array.isArray(parsed)) throw new Error('Invalid account command outbox.')
+    return parsed
   } catch {
-    return []
-  }
-}
-
-function assertNoOtherProjectionPending(accountKey: string, commandId: string) {
-  if (readPending(accountKey).some(item => item.status === 'projection_pending' && item.commandId !== commandId)) {
-    throw new CommandBlockedByPendingProjectionError()
+    throw new Error('账号待提交操作记录无法读取；已停止写入以保护原记录。')
   }
 }
 
@@ -174,7 +180,6 @@ export function createConnectedCommandId(prefix = 'web') {
 }
 
 async function request(accountKey: string, body: Record<string, unknown>) {
-  if (body.action === 'command' || body.action === 'undo') assertNoOtherProjectionPending(accountKey, String(body.commandId))
   const lease = captureAccountCacheLease(accountKey)
   const local = await exportLocalSnapshot()
   const checkpoint = getAccountCheckpoint(accountKey)
@@ -355,7 +360,7 @@ function rejectBeforeExecution(accountKey: string, pending: PendingCommand, resp
   throw new PreExecutionCommandError(raw.message, 'COMMAND_REJECTED')
 }
 
-async function submitPending(accountKey: string, pending: PendingCommand, newlyCreated = false): Promise<ConnectedCommandResponse> {
+async function submitPending(accountKey: string, pending: PendingCommand): Promise<ConnectedCommandResponse> {
   try {
     const { response, payload, lease, local } = await request(accountKey, pending.action === 'command'
       ? {
@@ -372,7 +377,12 @@ async function submitPending(accountKey: string, pending: PendingCommand, newlyC
 
     if (response.status === 409 && payload?.outcome === 'CONFLICT') {
       const result = parseCommandResponse(payload)
-      await projectAuthoritativeResult(accountKey, result, { expectedLocal: local, assertCurrent: lease.assertCurrent })
+      try {
+        await projectAuthoritativeResult(accountKey, result, { expectedLocal: local, assertCurrent: lease.assertCurrent })
+      } catch {
+        // The server conflict remains known even if this browser cannot
+        // safely project the latest snapshot yet.
+      }
       patchPending(accountKey, pending.commandId, {
         status: 'conflict',
         lastError: payload.conflict?.message ?? 'Authoritative command conflict.',
@@ -392,7 +402,6 @@ async function submitPending(accountKey: string, pending: PendingCommand, newlyC
     if (projected.localProjection === 'applied' || projected.outcome === 'NO_WRITE') removePending(accountKey, pending.commandId)
     return projected
   } catch (caught) {
-    if (caught instanceof CommandBlockedByPendingProjectionError && newlyCreated) removePending(accountKey, pending.commandId)
     if (caught instanceof PreExecutionCommandError || caught instanceof AccountCacheChangedError
       || caught instanceof ConnectedProjectionPendingError || caught instanceof CommandBlockedByPendingProjectionError) throw caught
     return recoverUnknown(accountKey, pending, caught)
@@ -418,19 +427,21 @@ export async function executeConnectedBusinessCommand(
   }
   const existing = readPending(accountKey).find((item) => item.commandId === commandId)
   if (existing) {
-    const recovered = await lookupConnectedCommandReceipt(accountKey, commandId)
-    if (recovered) {
-      if (recovered.localProjection === 'applied') removePending(accountKey, commandId)
-      return forCaller(recovered, options.allowProjectionPending)
+    if (existing.action !== 'command' || JSON.stringify(existing.command) !== JSON.stringify(command)) {
+      throw new Error('原操作内容已变化；为避免重复或错误提交，请先核对待处理操作。')
     }
-    if (existing.status === 'projection_pending') throw new ConnectedProjectionPendingError()
-    return forCaller(await submitPending(accountKey, existing), options.allowProjectionPending)
+    return forCaller(await oneCommandFlight(accountKey, commandId, async () => {
+      const recovered = await lookupConnectedCommandReceipt(accountKey, commandId)
+      if (recovered) {
+        if (recovered.localProjection === 'applied') removePending(accountKey, commandId)
+        return recovered
+      }
+      if (existing.status === 'projection_pending') throw new ConnectedProjectionPendingError()
+      return submitPending(accountKey, existing)
+    }), options.allowProjectionPending)
   }
 
-  assertNoOtherProjectionPending(accountKey, commandId)
-
   const base = options.baseRevision ?? revisionFromCheckpoint(accountKey) ?? await currentRevision(accountKey)
-  assertNoOtherProjectionPending(accountKey, commandId)
   const timestamp = new Date().toISOString()
   const pending: PendingCommand = {
     commandId,
@@ -442,16 +453,57 @@ export async function executeConnectedBusinessCommand(
     updatedAt: timestamp,
   }
   upsertPending(accountKey, pending)
-  return forCaller(await submitPending(accountKey, pending, true), options.allowProjectionPending)
+  return forCaller(await oneCommandFlight(accountKey, commandId, () => submitPending(accountKey, pending)), options.allowProjectionPending)
+}
+
+/** Persist user intent before any network request. Requires a verified account cache. */
+export async function queueConnectedBusinessCommand(
+  accountKey: string,
+  command: ConnectedBusinessCommand,
+  options: { commandId?: string } = {},
+) {
+  const commandId = options.commandId
+    ?? (command.type === 'domain' ? command.value.commandId : createConnectedCommandId(command.type))
+  if (command.type === 'domain' && command.value.commandId !== commandId) {
+    throw new Error('Connected domain command identity must be stable across client and server.')
+  }
+  const lease = captureAccountCacheLease(accountKey)
+  const existing = readPending(accountKey).find(item => item.commandId === commandId)
+  if (existing) {
+    if (existing.action !== 'command' || JSON.stringify(existing.command) !== JSON.stringify(command)) {
+      throw new Error('原操作内容已变化；为避免重复或错误提交，请先核对待处理操作。')
+    }
+    return commandId
+  }
+  const checkpoint = getAccountCheckpoint(accountKey)
+  const baseRevision = revisionFromCheckpoint(accountKey)
+  if (getCloudDeviceState().workspaceOwnerUserId !== accountKey
+    || baseRevision === undefined || !checkpoint.lastSyncedFingerprint) {
+    throw new Error('此账号尚无已核实的本机记录，暂不能离线提交。')
+  }
+  const local = await exportLocalSnapshot()
+  const localFingerprint = await fingerprintWorkspace(local)
+  const baseline = checkpoint.lastReadProjectionSourceFingerprint === checkpoint.lastSyncedFingerprint
+    ? checkpoint.lastReadProjectionFingerprint ?? checkpoint.lastSyncedFingerprint : checkpoint.lastSyncedFingerprint
+  if (localFingerprint !== baseline && localFingerprint !== checkpoint.clearedCacheFingerprint
+    && !await isRecordedAccountProjection(accountKey, local)) throw new AccountCacheChangedError()
+  lease.assertCurrent()
+  await assertLocalSnapshotCurrent(local, lease.assertCurrent)
+  lease.assertCurrent()
+  const timestamp = new Date().toISOString()
+  upsertPending(accountKey, { commandId, action: 'command', command, baseRevision,
+    status: 'pending', createdAt: timestamp, updatedAt: timestamp })
+  return commandId
 }
 
 export async function confirmConnectedCommand(accountKey: string, commandId: string,
   options: { allowProjectionPending?: boolean } = {}): Promise<ConnectedCommandResponse> {
+  return forCaller(await oneCommandFlight(accountKey, commandId, async () => {
   try {
     const recovered = await lookupConnectedCommandReceipt(accountKey, commandId)
     if (recovered) {
       if (recovered.localProjection === 'applied') removePending(accountKey, commandId)
-      return forCaller(recovered, options.allowProjectionPending)
+      return recovered
     }
   } catch (caught) {
     if (caught instanceof ConnectedProjectionPendingError) throw caught
@@ -459,8 +511,9 @@ export async function confirmConnectedCommand(accountKey: string, commandId: str
   }
   const existing = readPending(accountKey).find((item) => item.commandId === commandId)
   if (existing?.status === 'projection_pending') throw new ConnectedProjectionPendingError()
-  if (existing) return forCaller(await submitPending(accountKey, existing), options.allowProjectionPending)
+  if (existing) return submitPending(accountKey, existing)
   throw new UnknownCommandOutcomeError('无法找到原操作记录；未发送新的操作。请在设置中核对账号状态。')
+  }), options.allowProjectionPending)
 }
 
 export async function undoConnectedBusinessCommand(
@@ -471,15 +524,16 @@ export async function undoConnectedBusinessCommand(
   const commandId = options.commandId ?? createConnectedCommandId(`undo:${targetCommandId}`)
   const existing = readPending(accountKey).find((item) => item.commandId === commandId)
   if (existing) {
-    const recovered = await lookupConnectedCommandReceipt(accountKey, commandId)
-    if (recovered) {
-      if (recovered.localProjection === 'applied') removePending(accountKey, commandId)
-      return forCaller(recovered)
-    }
-    if (existing.status === 'projection_pending') throw new ConnectedProjectionPendingError()
-    return forCaller(await submitPending(accountKey, existing))
+    return forCaller(await oneCommandFlight(accountKey, commandId, async () => {
+      const recovered = await lookupConnectedCommandReceipt(accountKey, commandId)
+      if (recovered) {
+        if (recovered.localProjection === 'applied') removePending(accountKey, commandId)
+        return recovered
+      }
+      if (existing.status === 'projection_pending') throw new ConnectedProjectionPendingError()
+      return submitPending(accountKey, existing)
+    }))
   }
-  assertNoOtherProjectionPending(accountKey, commandId)
   const timestamp = new Date().toISOString()
   const pending: PendingCommand = {
     commandId,
@@ -490,26 +544,50 @@ export async function undoConnectedBusinessCommand(
     updatedAt: timestamp,
   }
   upsertPending(accountKey, pending)
-  return forCaller(await submitPending(accountKey, pending, true))
+  return forCaller(await oneCommandFlight(accountKey, commandId, () => submitPending(accountKey, pending)))
 }
 
 export async function replayAccountPendingOperations(accountKey: string) {
+  // Background refresh can fire after the browser goes offline. Keep every
+  // account-bound command intact until a real reconnect triggers recovery.
+  if (typeof navigator !== 'undefined' && navigator.onLine === false) return []
   const results: ConnectedCommandResponse[] = []
   for (const pending of readPending(accountKey)) {
     if (pending.status === 'conflict') continue
-    const recovered = await lookupConnectedCommandReceipt(accountKey, pending.commandId)
-    if (recovered) {
-      if (recovered.localProjection === 'applied') removePending(accountKey, pending.commandId)
-      clearRecoveredSemanticDraft(accountKey, pending, recovered)
-      results.push(recovered)
+    const current = readPending(accountKey).find(item => item.commandId === pending.commandId)
+    if (!current) continue
+    if (current.status === 'projection_pending') {
+      const recovered = await lookupConnectedCommandReceipt(accountKey, pending.commandId)
+      if (recovered) {
+        if (recovered.localProjection === 'applied') removePending(accountKey, pending.commandId)
+        clearRecoveredSemanticDraft(accountKey, pending, recovered)
+        results.push(recovered)
+        notifyRecoveredCommand(pending.commandId, recovered)
+      }
       continue
     }
-    if (pending.status === 'projection_pending') continue
-    const result = await submitPending(accountKey, pending)
+    const result = await oneCommandFlight(accountKey, pending.commandId, async () => {
+      const recovered = await lookupConnectedCommandReceipt(accountKey, pending.commandId)
+      if (recovered) {
+        if (recovered.localProjection === 'applied') removePending(accountKey, pending.commandId)
+        return recovered
+      }
+      return submitPending(accountKey, current)
+    })
     clearRecoveredSemanticDraft(accountKey, pending, result)
     results.push(result)
+    notifyRecoveredCommand(pending.commandId, result)
   }
   return results
+}
+
+function notifyRecoveredCommand(commandId: string, result: ConnectedCommandResponse) {
+  if (typeof window === 'undefined') return
+  window.dispatchEvent(new CustomEvent('pjsdas:command-recovered', { detail: {
+    commandId, outcome: result.outcome, localProjection: result.localProjection,
+    resultStatus: result.result?.status,
+    decisionRequestIds: result.result?.decisionRequestIds,
+  } }))
 }
 
 function clearRecoveredSemanticDraft(accountKey: string, pending: PendingCommand, result: ConnectedCommandResponse) {

@@ -1,4 +1,4 @@
-# ZMC-02 — One-authority cache lifecycle candidate
+# ZMC-02 — One-authority cache lifecycle, merged
 
 ## Product behavior
 
@@ -17,6 +17,6 @@ An unresolved account command or a recorded local-only edit prevents cache repla
 - The automatic recovery probe admits a read-only pull only after the existing sync decision has proved a safe old-cache baseline, or the current remote projection is equivalent. It never creates or uploads an authoritative workspace.
 - Passive sync and Today read refresh preserve unresolved commands and recorded local-only edits; the connected path rechecks the outbox during projection. A genuine concurrent local edit keeps an up-to-date conflict diagnostic, while a proven equivalent business projection clears its stale marker. Pending commands prevent projection but do not freeze an existing conflict's read-only remote revision metadata.
 - Owner-browser regression covers Settings at an old conflict followed by an independently changed remote snapshot and reload, with no retry click. Existing owner-browser regressions retain genuine local edits and track advancing remote revisions. The first cloud Browser gate also found that an account-scoped command outbox was incorrectly blocking safe sign-out. Independent review caught the converse risk: an outbox must not authorize clearing an unverified local-only workspace. The guard now permits sign-out only with a verified account-bound cache and no local-only edit; a browser regression preserves unverified local data and the original account's command.
-- Full local suite: 208 files and 1,081 tests passed; TypeScript and production build passed. The corrected cloud Browser E2E, Matrix, final independent review, merge, and exact-main production readback remain required for closure.
+- Full local suite: 208 files and 1,081 tests passed; TypeScript and production build passed. Final PR #198 head `6a7f5e9f329e9d08faa7948804a0bfd525670188` passed CI, Chromium Browser, Firefox/WebKit Matrix, UI, brand, and Preview. Fresh focused independent review found no remaining actionable regression. Merged main `7d72b8e31d288c1d7f2bffb7d07582ae2d77a70f` matched the local tree `22a0f6517612eccd435b2d6f254422658fa9392c`; production release manifest and API health read back that exact main commit.
 
 No production business record, Gmail cursor, OAuth scope, or IndexedDB profile was mutated during this phase.

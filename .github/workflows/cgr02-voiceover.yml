@@ -38,7 +38,7 @@ jobs:
       - run: npm install --no-save --package-lock=false @playwright/test@1.63.0
       - run: npx playwright install chromium
       - name: Check settled offline-draft visual baseline
-        run: npx playwright test --config=playwright.config.mts --project=chromium -g 'offline capture remains account-scoped'
+        run: npx playwright test --config=playwright.config.mts --project=chromium -g 'offline capture queues a stable account command'
       - name: Upload visual evidence
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@v4

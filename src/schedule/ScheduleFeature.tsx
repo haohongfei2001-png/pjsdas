@@ -1,6 +1,6 @@
 import { scheduleDisplayTimezone } from '../scheduleDisplayTime.js'
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
-import type { Opportunity } from '../model.js'
+import type { Opportunity, ScheduleNodeTemporal } from '../model.js'
 import { readScheduleWindow, type ScheduleEntry, type ScheduleSection, type ScheduleStream } from './scheduleStream.js'
 import { useUiLanguage } from '../uiLanguage.js'
 import { localDateKey } from '../todayBrief.js'
@@ -81,7 +81,8 @@ export function ScheduleWindowList({ stream, section, opportunities, onOpenOppor
 
 type View = 'all' | 'upcoming' | 'past' | 'unresolved' | 'undated'
 type OccurrenceCommand = 'complete' | 'cancel' | 'reschedule'
-type CommandResult = { outcome: 'COMMITTED' | 'ALREADY_APPLIED' | 'NO_WRITE'; commandId?: string; message: string; localProjection?: 'pending' }
+type PendingOccurrenceCommand = { kind: OccurrenceCommand; temporal?: ScheduleNodeTemporal; status: 'pending' | 'unknown' | 'conflict' | 'projection_pending' }
+type CommandResult = { outcome: 'COMMITTED' | 'ALREADY_APPLIED' | 'NO_WRITE' | 'QUEUED'; commandId?: string; message: string; localProjection?: 'pending' }
 function commandErrorMessage(error: unknown, zh: boolean) {
   const message = error instanceof Error ? error.message : String(error)
   if (/^[A-Z][A-Z0-9_]+:/.test(message)) return zh
@@ -95,6 +96,7 @@ type Props = {
   onOpenOpportunity: (id: string) => void
   canWrite?: boolean
   onOccurrenceCommand?: (entry: ScheduleEntry, kind: OccurrenceCommand, date?: string) => Promise<CommandResult>
+  onPendingOccurrence?: (occurrenceId: string) => PendingOccurrenceCommand | undefined
   onUndoOccurrenceCommand?: (commandId: string) => Promise<void>
 }
 
@@ -110,6 +112,13 @@ function localDateTimeInput(value: string) {
   if (!Number.isFinite(date.getTime())) return ''
   const pad = (number: number) => String(number).padStart(2, '0')
   return date.getFullYear() + '-' + pad(date.getMonth() + 1) + '-' + pad(date.getDate()) + 'T' + pad(date.getHours()) + ':' + pad(date.getMinutes())
+}
+
+function pendingRescheduleDate(temporal?: ScheduleNodeTemporal) {
+  if (!temporal) return ''
+  return temporal.precision === 'datetime'
+    ? localDateTimeInput(temporal.startAt ?? temporal.deadlineAt ?? '')
+    : temporal.date ?? ''
 }
 
 function requestedView(): View {
@@ -128,7 +137,7 @@ function initialRange(entries: ScheduleEntry[], view: View, today: string) {
 }
 
 export default function ScheduleFeature({
-  stream, opportunities, onOpenOpportunity, canWrite = false, onOccurrenceCommand, onUndoOccurrenceCommand,
+  stream, opportunities, onOpenOpportunity, canWrite = false, onOccurrenceCommand, onPendingOccurrence, onUndoOccurrenceCommand,
 }: Props) {
   const { lang } = useUiLanguage()
   const zh = lang === 'zh'
@@ -156,6 +165,7 @@ export default function ScheduleFeature({
   const selected = selectedId
     ? [...all, ...stream.sections.undated].find((entry) => entry.id === selectedId)
     : undefined
+  const selectedPending = selected?.occurrenceId ? onPendingOccurrence?.(selected.occurrenceId) : undefined
   const shown = entries.slice(range.start, range.end)
   const byId = useMemo(() => new Map(opportunities.map((item) => [item.id, item])), [opportunities])
 
@@ -226,9 +236,10 @@ export default function ScheduleFeature({
     setFeedback(undefined)
     setConfirm(undefined)
     const temporal = entry.node?.temporal
-    setNewDate(temporal?.precision === 'datetime'
-      ? localDateTimeInput(temporal.startAt ?? temporal.deadlineAt ?? '')
-      : temporal?.date ?? entry.date ?? '')
+    const queued = entry.occurrenceId ? onPendingOccurrence?.(entry.occurrenceId) : undefined
+    const displayTemporal = queued?.kind === 'reschedule' && queued.status !== 'conflict'
+      ? queued.temporal ?? temporal : temporal
+    setNewDate(pendingRescheduleDate(displayTemporal) || entry.date || '')
   }
 
   function closeEntry() {
@@ -303,6 +314,14 @@ export default function ScheduleFeature({
         <button type="button" onClick={closeEntry} aria-label={zh ? '关闭详情' : 'Close details'}>×</button>
       </div>
       <p>{timeLabel(selected, zh)}</p>
+      {selectedPending?.status === 'pending' ? <p role="status">{selectedPending.kind === 'reschedule'
+        ? `${zh ? '待同步的改期日期：' : 'Pending reschedule: '}${pendingRescheduleDate(selectedPending.temporal)}`
+        : selectedPending.kind === 'complete'
+          ? (zh ? '完成操作待同步。' : 'Completion pending.')
+          : (zh ? '取消操作待同步。' : 'Cancellation pending.')}</p> : null}
+      {selectedPending?.status === 'conflict' ? <p role="status" className="tsui-schedule-warning">{zh ? '这次安排已在别处变化，请核对最新安排。' : 'This occurrence changed elsewhere. Review the latest schedule.'}</p> : null}
+      {selectedPending?.status === 'projection_pending' ? <p role="status">{zh ? '这次修改已保存，日程正在更新。' : 'This change is saved; the schedule is updating.'}</p> : null}
+      {selectedPending?.status === 'unknown' ? <p role="status">{zh ? '正在核对这次修改是否已保存。' : 'Checking whether this change was saved.'}</p> : null}
       {selected.opportunityId && byId.has(selected.opportunityId) ? <p>{byId.get(selected.opportunityId)!.company} · {byId.get(selected.opportunityId)!.role}</p> : null}
       {selected.state === 'elapsed_unresolved' ? <p className="tsui-schedule-warning">{zh ? '时间已过，结果仍待确认；不会自动标记完成。' : 'The time passed, but the outcome is unconfirmed.'}</p> : null}
       {selected.opportunityId && byId.has(selected.opportunityId) ? <button type="button" className="tsui-schedule-job-link" onClick={() => onOpenOpportunity(selected.opportunityId!)}>{zh ? '查看岗位详情' : 'View job details'} →</button> : null}

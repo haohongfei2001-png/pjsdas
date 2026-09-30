@@ -19,6 +19,7 @@ import {
   confirmConnectedCommand,
   createConnectedCommandId,
   executeConnectedBusinessCommand,
+  queueConnectedBusinessCommand,
   undoConnectedBusinessCommand,
 } from './cloud/authoritativeCommandClient.js'
 
@@ -35,7 +36,7 @@ export type LocalSemanticUndoToken =
     }
 
 export interface WebSemanticCaptureResult {
-  status: 'APPLIED' | 'DECISION_REQUIRED' | 'NO_WRITE' | 'ALREADY_APPLIED'
+  status: 'APPLIED' | 'DECISION_REQUIRED' | 'NO_WRITE' | 'ALREADY_APPLIED' | 'QUEUED'
   summary: string
   unresolved: string[]
   ignored: string[]
@@ -111,7 +112,7 @@ export async function previewWebSemanticCapture(
 
 export async function submitWebSemanticCapture(
   text: string,
-  options: { now?: Date; timezone?: string; accountKey?: string; commandId?: string; contextRefs?: string[]; confirmExisting?: boolean } = {},
+  options: { now?: Date; timezone?: string; accountKey?: string; commandId?: string; contextRefs?: string[]; confirmExisting?: boolean; queueOffline?: boolean } = {},
 ): Promise<WebSemanticCaptureResult> {
   const trimmed = text.trim()
   if (!trimmed) throw new Error('请输入要告诉 TodayAction 的内容。')
@@ -145,6 +146,11 @@ export async function submitWebSemanticCapture(
 
   if (options.accountKey && connectedWorkspaceAuthorityEnabled()) {
     const commandId = options.commandId ?? createConnectedCommandId('web-semantic')
+    if (options.queueOffline) {
+      await queueConnectedBusinessCommand(options.accountKey, { type: 'semantic_intake', value: observation }, { commandId })
+      return { status: 'QUEUED', summary: '操作已保存在此设备，联网后会自动提交。',
+        unresolved: interpretation.unresolved, ignored: interpretation.ignored, decisionRequestIds: [] }
+    }
     const authoritative = options.confirmExisting
       ? await confirmConnectedCommand(options.accountKey, commandId)
       : await executeConnectedBusinessCommand(options.accountKey, {
