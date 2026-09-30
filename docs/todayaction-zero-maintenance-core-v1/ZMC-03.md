@@ -12,6 +12,7 @@ Offline capture, action status, application submission, and schedule complete/ca
 - The existing command-client test explicitly asserted that an earlier committed operation with blocked local projection rejected a second independent occurrence operation before journaling.
 - A server `CONFLICT` response whose snapshot could not project locally passed into unknown-outcome recovery rather than preserving the known business conflict.
 - Independent review reproduced three further consumer failures: an offline capture that recovered as `DECISION_REQUIRED` hid the decision entry; a conflicted schedule operation was falsely labeled queued; and a queued reschedule reopened with the old date, blocking confirmation of its original command.
+- Focused review then found that the new schedule notice disappeared when the server made the occurrence inactive, could show an unqueued date while the input was being edited, and described a server-confirmed command as unsent. The notice is now derived from the persisted command and shown beside the occurrence regardless of whether action buttons remain available.
 
 ## Green-after regression
 

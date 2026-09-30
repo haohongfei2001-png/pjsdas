@@ -114,6 +114,13 @@ function localDateTimeInput(value: string) {
   return date.getFullYear() + '-' + pad(date.getMonth() + 1) + '-' + pad(date.getDate()) + 'T' + pad(date.getHours()) + ':' + pad(date.getMinutes())
 }
 
+function pendingRescheduleDate(temporal?: ScheduleNodeTemporal) {
+  if (!temporal) return ''
+  return temporal.precision === 'datetime'
+    ? localDateTimeInput(temporal.startAt ?? temporal.deadlineAt ?? '')
+    : temporal.date ?? ''
+}
+
 function requestedView(): View {
   const value = new URLSearchParams(window.location.search).get('view')
   if (value === 'history' || value === 'past') return 'past'
@@ -232,9 +239,7 @@ export default function ScheduleFeature({
     const queued = entry.occurrenceId ? onPendingOccurrence?.(entry.occurrenceId) : undefined
     const displayTemporal = queued?.kind === 'reschedule' && queued.status !== 'conflict'
       ? queued.temporal ?? temporal : temporal
-    setNewDate(displayTemporal?.precision === 'datetime'
-      ? localDateTimeInput(displayTemporal.startAt ?? displayTemporal.deadlineAt ?? '')
-      : displayTemporal?.date ?? entry.date ?? '')
+    setNewDate(pendingRescheduleDate(displayTemporal) || entry.date || '')
   }
 
   function closeEntry() {
@@ -309,17 +314,19 @@ export default function ScheduleFeature({
         <button type="button" onClick={closeEntry} aria-label={zh ? '关闭详情' : 'Close details'}>×</button>
       </div>
       <p>{timeLabel(selected, zh)}</p>
+      {selectedPending?.status === 'pending' ? <p role="status">{selectedPending.kind === 'reschedule'
+        ? `${zh ? '待同步的改期日期：' : 'Pending reschedule: '}${pendingRescheduleDate(selectedPending.temporal)}`
+        : selectedPending.kind === 'complete'
+          ? (zh ? '完成操作待同步。' : 'Completion pending.')
+          : (zh ? '取消操作待同步。' : 'Cancellation pending.')}</p> : null}
+      {selectedPending?.status === 'conflict' ? <p role="status" className="tsui-schedule-warning">{zh ? '这次安排已在别处变化，请核对最新安排。' : 'This occurrence changed elsewhere. Review the latest schedule.'}</p> : null}
+      {selectedPending?.status === 'projection_pending' ? <p role="status">{zh ? '这次修改已保存，日程正在更新。' : 'This change is saved; the schedule is updating.'}</p> : null}
+      {selectedPending?.status === 'unknown' ? <p role="status">{zh ? '正在核对这次修改是否已保存。' : 'Checking whether this change was saved.'}</p> : null}
       {selected.opportunityId && byId.has(selected.opportunityId) ? <p>{byId.get(selected.opportunityId)!.company} · {byId.get(selected.opportunityId)!.role}</p> : null}
       {selected.state === 'elapsed_unresolved' ? <p className="tsui-schedule-warning">{zh ? '时间已过，结果仍待确认；不会自动标记完成。' : 'The time passed, but the outcome is unconfirmed.'}</p> : null}
       {selected.opportunityId && byId.has(selected.opportunityId) ? <button type="button" className="tsui-schedule-job-link" onClick={() => onOpenOpportunity(selected.opportunityId!)}>{zh ? '查看岗位详情' : 'View job details'} →</button> : null}
       {selected.node?.occurrenceId && (selected.state === 'scheduled' || selected.state === 'elapsed_unresolved') ? <div className="tsui-schedule-commands">
         <h3>{zh ? '更新这次安排' : 'Update this occurrence'}</h3>
-        {selectedPending?.status === 'conflict' ? <p role="status">{zh ? '这次安排已在别处变化，请核对最新安排。' : 'This occurrence changed elsewhere. Review the latest schedule.'}</p>
-          : selectedPending ? <p role="status">{selectedPending.kind === 'reschedule'
-            ? `${zh ? '待同步的改期日期：' : 'Pending reschedule: '}${newDate}`
-            : selectedPending.kind === 'complete'
-              ? (zh ? '完成操作待同步。' : 'Completion pending.')
-              : (zh ? '取消操作待同步。' : 'Cancellation pending.')}</p> : null}
         {!canWrite ? <p>{zh ? '连接权威工作区后才能记录变更。' : 'Connect the authoritative workspace to record changes.'}</p>
           : <>
             {confirm === 'reschedule' ? <div className="tsui-schedule-reschedule"><label>{selected.node?.temporal.precision === 'datetime' ? zh ? '新的本地日期与时间' : 'New local date and time' : zh ? '新的日期' : 'New date'}<input type={selected.node?.temporal.precision === 'datetime' ? 'datetime-local' : 'date'} value={newDate} onChange={(event) => setNewDate(event.target.value)} /></label><p>{selected.node?.temporal.precision === 'datetime' ? zh ? '保留原有明确时长；按当前设备时区记录新时间。' : 'The explicit duration is preserved; new time uses this device timezone.' : zh ? '仅记录你确认的日期；不会补造具体时间。' : 'Only the confirmed date is recorded; no time is invented.'}</p><button type="button" disabled={!newDate || Boolean(pending)} onClick={() => { void runCommand('reschedule') }}>{zh ? '确认改期' : 'Confirm reschedule'}</button><button type="button" onClick={() => setConfirm(undefined)}>{zh ? '返回' : 'Back'}</button></div>
