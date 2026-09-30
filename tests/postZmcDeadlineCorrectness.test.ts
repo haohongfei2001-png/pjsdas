@@ -90,6 +90,24 @@ describe('post-ZMC deadline correctness', () => {
     expect(selectTodayWeb(snapshot, {}, { now: new Date('2026-09-30T15:30:00Z'), timezone: 'Asia/Shanghai' })
       .actions.map(item => item.actionId)).toEqual(['apply-0', 'apply-1'])
   })
+  it('reserves work before an explicit latest start instead of filling today entirely with flexible work', () => {
+    const snapshot = deadlineWorkspace(30, '2026-09-30T16:20:00Z')
+    snapshot.data.actions = snapshot.data.actions.slice(0, 2)
+    snapshot.data.actions[0].estimatedMinutes = 20
+    snapshot.data.actions[1] = { ...snapshot.data.actions[1], kind: 'manual', estimatedMinutes: 30, dueAt: undefined }
+    snapshot.data.scheduleNodes = snapshot.data.scheduleNodes!.slice(0, 1)
+    snapshot.data.scheduleNodes[0].temporal.latestStartAt = '2026-09-30T15:59:00Z'
+    snapshot.data.timePlanning!.weeklyWindows = [
+      { weekday: 3, startMinute: 1410, endMinute: 1440 }, { weekday: 4, startMinute: 0, endMinute: 30 },
+    ]
+    const context = { now: new Date('2026-09-30T15:30:00Z'), timezone: 'Asia/Shanghai' }
+    expect(selectTodayWeb(snapshot, {}, context).actions.map(item => item.actionId)).toEqual(['apply-0'])
+    snapshot.data.actions[1].estimatedMinutes = 29
+    expect(selectTodayWeb(snapshot, {}, context).actions.map(item => item.actionId)).toEqual(['apply-0', 'apply-1'])
+    snapshot.data.actions[1].estimatedMinutes = 30
+    snapshot.data.actions[0].status = 'doing'
+    expect(selectTodayWeb(snapshot, {}, context).actions.map(item => item.actionId)).toEqual(['apply-0', 'apply-1'])
+  })
   it.each([60, 100, 180])('finds the global priority maximum with staggered deadlines and a fixed meeting under %i minutes', capacity => {
     const snapshot = deadlineWorkspace()
     const nodes = snapshot.data.scheduleNodes!

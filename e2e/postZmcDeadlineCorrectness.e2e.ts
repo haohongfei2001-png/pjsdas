@@ -137,3 +137,24 @@ test('cross-midnight hard work leaves usable time for a flexible Today task', as
   await page.reload()
   await expect(page.locator('.tsui-task-panel [data-action-id]')).toHaveCount(2)
 })
+
+
+test('explicit latest start retains room for hard work before midnight', async ({ page }) => {
+  await page.clock.setFixedTime(new Date('2026-09-30T15:30:00Z'))
+  await page.goto('/'); await page.locator('.tsui-primary-nav').waitFor()
+  const snapshot = deadlineWorkspace(30, '2026-09-30T16:20:00Z')
+  snapshot.data.actions = snapshot.data.actions.slice(0, 2)
+  snapshot.data.actions[0].estimatedMinutes = 20
+  snapshot.data.actions[1] = { ...snapshot.data.actions[1], kind: 'manual', title: '整理申请材料', estimatedMinutes: 30, dueAt: undefined }
+  snapshot.data.scheduleNodes = snapshot.data.scheduleNodes!.slice(0, 1)
+  snapshot.data.scheduleNodes[0].temporal.latestStartAt = '2026-09-30T15:59:00Z'
+  snapshot.data.timePlanning!.weeklyWindows = [
+    { weekday: 3, startMinute: 1410, endMinute: 1440 }, { weekday: 4, startMinute: 0, endMinute: 30 },
+  ]
+  await page.evaluate(async input => (await import('/pjsdas/src/db.ts')).replaceLocalSnapshotFromCloud(input), snapshot)
+  await page.goto('/pjsdas/today')
+  await expect(page.locator('.tsui-task-panel [data-action-id]')).toHaveCount(1)
+  await expect(page.locator('[data-action-id="apply-0"]')).toContainText('申请 A')
+  await page.reload()
+  await expect(page.locator('.tsui-task-panel [data-action-id]')).toHaveCount(1)
+})

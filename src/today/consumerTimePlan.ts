@@ -149,7 +149,12 @@ export function buildConsumerTimePlan(input: {
     if (date) return dayBounds(date, input.timezone).dayEnd
     const raw = node?.temporal.deadlineAt ?? node?.temporal.endAt ?? item.action.dueAt
     const at = raw ? Date.parse(raw) : NaN
-    return Number.isFinite(at) ? at : bounds.dayEnd
+    const deadline = Number.isFinite(at) ? at : bounds.dayEnd
+    const latestStart = node?.temporal.latestStartAt ? Date.parse(node.temporal.latestStartAt) : NaN
+    // A stated latest start bounds the work's latest completion envelope.
+    // Work already underway has satisfied the start requirement.
+    return item.action.status !== 'doing' && Number.isFinite(latestStart)
+      ? Math.min(deadline, latestStart + Math.max(1, Math.ceil(item.action.estimatedMinutes)) * 60_000) : deadline
   }
   const mandatory = startable.filter(item => {
     const node = nodeForAction(item.action, activeNodes)
