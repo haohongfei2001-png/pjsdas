@@ -3,7 +3,7 @@ import { formatScheduleTemporal, scheduleDisplayTimezone } from '../src/schedule
 import { buildConsumerTimePlan } from '../src/today/consumerTimePlan.js'
 import { rankActions } from '../src/decisionV3.js'
 import { selectTodayWeb } from '../src/today/todayWebSelector.js'
-import { DEADLINE, LATE_NOW, deadlineWorkspace } from './fixtures/postZmcDeadlineWorkspace.js'
+import { DEADLINE, LATE_NOW, deadlineWorkspace, explicitStartDenseWorkspace } from './fixtures/postZmcDeadlineWorkspace.js'
 
 describe('post-ZMC deadline correctness', () => {
   it.each([
@@ -107,6 +107,90 @@ describe('post-ZMC deadline correctness', () => {
     snapshot.data.actions[1].estimatedMinutes = 30
     snapshot.data.actions[0].status = 'doing'
     expect(selectTodayWeb(snapshot, {}, context).actions.map(item => item.actionId)).toEqual(['apply-0', 'apply-1'])
+  })
+  it('starts before the explicit limit and continues in a later separated work window', () => {
+    const snapshot = deadlineWorkspace(100, '2026-09-30T17:00:00Z')
+    snapshot.data.actions = snapshot.data.actions.slice(0, 1)
+    snapshot.data.actions[0].estimatedMinutes = 20
+    snapshot.data.scheduleNodes = snapshot.data.scheduleNodes!.slice(0, 1)
+    snapshot.data.scheduleNodes[0].temporal.latestStartAt = '2026-09-30T15:59:00Z'
+    snapshot.data.timePlanning!.weeklyWindows = [
+      { weekday: 3, startMinute: 1430, endMinute: 1440 }, { weekday: 4, startMinute: 30, endMinute: 60 },
+    ]
+    const context = { now: new Date('2026-09-30T15:50:00Z'), timezone: 'Asia/Shanghai' }
+    expect(selectTodayWeb(snapshot, {}, context).actions.map(item => item.actionId)).toEqual(['apply-0'])
+    snapshot.data.timePlanning!.weeklyWindows[0].endMinute = 1438
+    snapshot.data.scheduleNodes[0].temporal.latestStartAt = '2026-09-30T15:49:00Z'
+    expect(selectTodayWeb(snapshot, {}, context).actions).toEqual([])
+  })
+  it.each([40, 70, 120])('matches exhaustive selection with separate start/completion constraints at %i minutes', capacity => {
+    const snapshot = deadlineWorkspace()
+    const deadlines = [40, 60, 80, 100, 120, 150], starts = [10, 15, 20, 30, 90, 110]
+    snapshot.data.actions.forEach((item, index) => {
+      item.estimatedMinutes = 20 + index * 5
+      item.dueAt = new Date(LATE_NOW.getTime() + deadlines[index] * 60_000).toISOString()
+      snapshot.data.scheduleNodes![index].temporal.deadlineAt = item.dueAt
+      snapshot.data.scheduleNodes![index].temporal.latestStartAt = new Date(LATE_NOW.getTime() + starts[index] * 60_000).toISOString()
+    })
+    const ranked = rankActions(snapshot.data.actions, snapshot.data.opportunities, LATE_NOW)
+    const plan = buildConsumerTimePlan({ ranked, nodes: snapshot.data.scheduleNodes!, availableMinutes: capacity,
+      now: LATE_NOW, timezone: 'Asia/Shanghai' })
+    let maximum = 0
+    for (let mask = 0; mask < 64; mask++) {
+      const chosen = ranked.filter(item => mask & (1 << Number(item.action.id.slice(-1))))
+      const demands = chosen.flatMap(item => {
+        const index = Number(item.action.id.slice(-1))
+        return [{ at: starts[index] + 1, amount: 1 }, { at: deadlines[index], amount: item.action.estimatedMinutes - 1 }]
+      }).sort((a, b) => a.at - b.at)
+      let used = 0, feasible = true
+      for (const demand of demands) {
+        used += demand.amount
+        if (used > Math.min(capacity, Math.min(100, demand.at)) + Math.max(0, demand.at - 100)) feasible = false
+      }
+      if (feasible) maximum = Math.max(maximum, chosen.reduce((sum, item) => sum + item.score ** 2, 0))
+    }
+    expect(plan.selectionSearch?.complete).toBe(true)
+    expect(plan.planned.filter(item => item.action.kind === 'apply').reduce((sum, item) => sum + item.score ** 2, 0)).toBe(maximum)
+  })
+  it('optimizes the 18-action frontier reproduction within its deterministic search budget', () => {
+    const snapshot = explicitStartDenseWorkspace()
+    const plan = buildConsumerTimePlan({ ranked: rankActions(snapshot.data.actions, snapshot.data.opportunities, LATE_NOW),
+      nodes: snapshot.data.scheduleNodes!, preferences: snapshot.data.timePlanning, now: LATE_NOW, timezone: 'Asia/Shanghai' })
+    expect(plan.planned.map(item => item.action.id)).toEqual(['apply-0','apply-1','apply-2','apply-3','apply-4','apply-5'])
+    expect(plan.selectionSearch?.complete).toBe(true)
+    expect(plan.selectionSearch!.explored).toBeLessThanOrEqual(plan.selectionSearch!.limit)
+  })
+  it('preserves the identity tie-break for equal-utility subsets instead of pruning them', () => {
+    const snapshot = deadlineWorkspace(4, new Date(LATE_NOW.getTime() + 4 * 60_000).toISOString())
+    snapshot.data.actions = snapshot.data.actions.slice(0, 5)
+    snapshot.data.scheduleNodes = snapshot.data.scheduleNodes!.slice(0, 5)
+    snapshot.data.actions.forEach((item, index) => { item.estimatedMinutes = index === 4 ? 4 : 1 })
+    snapshot.data.scheduleNodes[0].temporal.latestStartAt = LATE_NOW.toISOString()
+    const ranked = rankActions(snapshot.data.actions, snapshot.data.opportunities, LATE_NOW)
+      .map(item => ({ ...item, score: item.action.id === 'apply-4' ? 2 : 1 }))
+    const plan = buildConsumerTimePlan({ ranked, nodes: snapshot.data.scheduleNodes, availableMinutes: 4,
+      now: LATE_NOW, timezone: 'Asia/Shanghai' })
+    expect(plan.planned.map(item => item.action.id)).toEqual(['apply-0','apply-1','apply-2','apply-3'])
+    expect(plan.selectionSearch?.complete).toBe(true)
+  })
+  it('finds higher utility before spending its budget on many equal-utility subsets', () => {
+    const snapshot = deadlineWorkspace(20, new Date(LATE_NOW.getTime() + 80 * 60_000).toISOString())
+    const action = snapshot.data.actions[0], node = snapshot.data.scheduleNodes![0], opportunity = snapshot.data.opportunities[0]
+    snapshot.data.actions = Array.from({ length: 28 }, (_, index) => ({ ...action, id: `apply-${String(index).padStart(2, '0')}`,
+      opportunityId: `job-${index}`, estimatedMinutes: index === 0 ? 11 : index <= 2 ? 10 : 1 }))
+    snapshot.data.opportunities = snapshot.data.actions.map(item => ({ ...opportunity, id: item.opportunityId }))
+    snapshot.data.scheduleNodes = snapshot.data.actions.map((item, index) => ({ ...node, id: `node-${index}`,
+      occurrenceId: `occ-${index}`, opportunityId: item.opportunityId, relatedActionIds: [item.id], temporal: { ...node.temporal,
+        ...(index === 0 ? { latestStartAt: new Date(LATE_NOW.getTime() + 10 * 60_000).toISOString() } : {}) } }))
+    const ranked = rankActions(snapshot.data.actions, snapshot.data.opportunities, LATE_NOW).map(item => {
+      const index = Number(item.action.id.slice(-2))
+      return { ...item, score: index === 0 ? 6 : index <= 2 ? 5 : 1 }
+    })
+    const plan = buildConsumerTimePlan({ ranked, nodes: snapshot.data.scheduleNodes, preferences: snapshot.data.timePlanning,
+      now: LATE_NOW, timezone: 'Asia/Shanghai' })
+    expect(plan.planned.map(item => item.action.id)).toEqual(['apply-01','apply-02'])
+    expect(plan.planned.reduce((sum, item) => sum + item.score ** 2, 0)).toBe(50)
+    expect(plan.selectionSearch?.complete).toBe(true)
   })
   it.each([60, 100, 180])('finds the global priority maximum with staggered deadlines and a fixed meeting under %i minutes', capacity => {
     const snapshot = deadlineWorkspace()

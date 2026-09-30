@@ -17,6 +17,7 @@ export interface ConsumerTimePlan {
   deferredCount: number
   deferredHard: RankedAction[]
   conflicts: ConsumerTimeConflict[]
+  selectionSearch?: { complete: boolean; explored: number; limit: number }
 }
 
 interface Interval { start: number; end: number }
@@ -149,12 +150,7 @@ export function buildConsumerTimePlan(input: {
     if (date) return dayBounds(date, input.timezone).dayEnd
     const raw = node?.temporal.deadlineAt ?? node?.temporal.endAt ?? item.action.dueAt
     const at = raw ? Date.parse(raw) : NaN
-    const deadline = Number.isFinite(at) ? at : bounds.dayEnd
-    const latestStart = node?.temporal.latestStartAt ? Date.parse(node.temporal.latestStartAt) : NaN
-    // A stated latest start bounds the work's latest completion envelope.
-    // Work already underway has satisfied the start requirement.
-    return item.action.status !== 'doing' && Number.isFinite(latestStart)
-      ? Math.min(deadline, latestStart + Math.max(1, Math.ceil(item.action.estimatedMinutes)) * 60_000) : deadline
+    return Number.isFinite(at) ? at : bounds.dayEnd
   }
   const mandatory = startable.filter(item => {
     const node = nodeForAction(item.action, activeNodes)
@@ -194,37 +190,111 @@ export function buildConsumerTimePlan(input: {
   // rather than letting the first long task consume all remaining time.
   // Priority already incorporates opportunity value, fit, urgency, stage,
   // prep-graph leverage and cost efficiency. In-progress intent gets a bonus.
-  type Choice = { utility: number; items: RankedAction[]; key: string }
-  const states = new Map<number, Choice>([[0, { utility: 0, items: [], key: '' }]])
+  const obligationsFor = (item: RankedAction) => {
+    const cost = Math.max(1, Math.ceil(item.action.estimatedMinutes))
+    const deadline = deadlineFor(item)
+    const rawStart = nodeForAction(item.action, activeNodes)?.temporal.latestStartAt
+    const latestStart = rawStart ? Date.parse(rawStart) : NaN
+    // Starting by S requires the first work minute by S + one minute. The
+    // remaining work may continue in later windows until the real deadline.
+    if (item.action.status !== 'doing' && Number.isFinite(latestStart) && latestStart + 60_000 < deadline) {
+      return [{ at: latestStart + 60_000, minutes: 1 }, { at: deadline, minutes: cost - 1 }]
+    }
+    return [{ at: deadline, minutes: cost }]
+  }
+  const obligations = new Map(mandatory.map(item => [item.action.id, obligationsFor(item)]))
+  const hasStartConstraint = [...obligations.values()].some(entries => entries.length > 1)
+  const eventTimes = hasStartConstraint ? [...new Set([...obligations.values()].flatMap(entries => entries.map(entry => entry.at)))].sort((a, b) => a - b) : []
+  const eventCapacity = eventTimes.map(freeBefore)
+  type Choice = { utility: number; items: RankedAction[]; key: string; demand: number[] }
+  const empty: Choice = { utility: 0, items: [], key: '', demand: eventTimes.map(() => 0) }
   const better = (left: Choice, right: Choice) => left.utility > right.utility
     || (left.utility === right.utility && left.key < right.key)
-  for (const item of mandatory) {
-    const cost = Math.max(1, Math.ceil(item.action.estimatedMinutes))
-    const limit = freeBefore(deadlineFor(item))
-    const utility = item.score * item.score + (item.action.status === 'doing' ? 2500 : 0)
-    for (const [used, prior] of [...states]) {
-      const total = used + cost
-      if (total > limit) continue
-      const choice = { utility: prior.utility + utility, items: [...prior.items, item],
-        key: [...prior.items, item].map(entry => entry.action.id).sort().join('\0') }
-      const existing = states.get(total)
-      if (!existing || better(choice, existing)) states.set(total, choice)
+  const utilityFor = (item: RankedAction) => item.score * item.score + (item.action.status === 'doing' ? 2500 : 0)
+  const costFor = (item: RankedAction) => Math.max(1, Math.ceil(item.action.estimatedMinutes))
+  const extend = (prior: Choice, item: RankedAction, demand: number[]) => ({
+    utility: prior.utility + utilityFor(item), items: [...prior.items, item], demand,
+    key: [...prior.items, item].map(entry => entry.action.id).sort().join('\0'),
+  })
+  let best = empty
+  let selectionSearch: ConsumerTimePlan['selectionSearch']
+  if (!hasStartConstraint) {
+    // Ordinary deadlines retain exact, polynomial cost dynamic programming.
+    const states = new Map<number, Choice>([[0, empty]])
+    for (const item of mandatory) {
+      const cost = costFor(item), limit = freeBefore(deadlineFor(item))
+      for (const [used, prior] of [...states]) {
+        const total = used + cost
+        if (total > limit) continue
+        const choice = extend(prior, item, [])
+        const existing = states.get(total)
+        if (!existing || better(choice, existing)) states.set(total, choice)
+      }
     }
+    for (const choice of states.values()) if (better(choice, best)) best = choice
+  } else {
+    const candidates = mandatory.map(item => ({ item, cost: costFor(item), utility: utilityFor(item),
+      demand: eventTimes.map(at => obligations.get(item.action.id)!
+        .reduce((sum, entry) => sum + (entry.at <= at ? entry.minutes : 0), 0)) }))
+      .filter(candidate => candidate.demand.every((amount, index) => amount <= eventCapacity[index]!))
+      .sort((a, b) => b.utility / b.cost - a.utility / a.cost || b.utility - a.utility
+        || deadlineFor(a.item) - deadlineFor(b.item) || a.item.action.id.localeCompare(b.item.action.id))
+    const add = (prior: Choice, candidate: typeof candidates[number]) => {
+      const demand = prior.demand.map((amount, index) => amount + candidate.demand[index]!)
+      return demand.some((amount, index) => amount > eventCapacity[index]!) ? undefined : extend(prior, candidate.item, demand)
+    }
+    // Seed a feasible full-workspace choice before searching. Every retained
+    // choice satisfies both start and completion obligations, even at the limit.
+    for (const order of [candidates, [...candidates].sort((a, b) => b.utility - a.utility || a.item.action.id.localeCompare(b.item.action.id))]) {
+      let seed = empty
+      for (const candidate of order) seed = add(seed, candidate) ?? seed
+      if (better(seed, best)) best = seed
+    }
+    const maxMinutes = Math.min(eventCapacity.at(-1) ?? 0, candidates.reduce((sum, item) => sum + item.cost, 0))
+    // A suffix knapsack ignores early constraints and therefore supplies a safe
+    // upper bound. Coarsening only relaxes costs; it never rejects a feasible plan.
+    const stride = Math.max(1, Math.ceil(maxMinutes / 1440))
+    const columns = Math.ceil(maxMinutes / stride) + 1
+    const upper = Array.from({ length: candidates.length + 1 }, () => new Float64Array(columns))
+    for (let index = candidates.length - 1; index >= 0; index--) {
+      const candidate = candidates[index]!, units = Math.floor(candidate.cost / stride)
+      for (let remaining = 0; remaining < columns; remaining++) {
+        upper[index]![remaining] = Math.max(upper[index + 1]![remaining]!, remaining >= units
+          ? candidate.utility + upper[index + 1]![remaining - units]! : 0)
+      }
+    }
+    const limit = Math.min(100_000, Math.max(1, Math.floor(2_000_000 / Math.max(1, eventTimes.length))))
+    let explored = 0, complete = true
+    const search = (index: number, used: number, choice: Choice, improveIdentity: boolean) => {
+      if (better(choice, best)) best = choice
+      if (index >= candidates.length) return
+      const residual = Math.max(0, Math.ceil((maxMinutes - used) / stride))
+      const bound = choice.utility + upper[index]![Math.min(columns - 1, residual)]!
+      if (improveIdentity ? bound < best.utility : bound <= best.utility) return
+      if (explored >= limit) { complete = false; return }
+      explored++
+      const candidate = candidates[index]!
+      const next = add(choice, candidate)
+      if (next) search(index + 1, used + candidate.cost, next, improveIdentity)
+      search(index + 1, used, choice, improveIdentity)
+    }
+    // Utility improvement gets the budget first. Equality-only branches must
+    // not exhaust it before reaching a higher-value subset.
+    search(0, 0, empty, false)
+    search(0, 0, empty, true)
+    selectionSearch = { complete, explored, limit }
   }
-  let best: Choice = states.get(0)!, bestMinutes = 0
-  for (const [used, choice] of states) {
-    if (better(choice, best) || (choice.utility === best.utility && used < bestMinutes)) { best = choice; bestMinutes = used }
-  }
-  const planned = [...best.items]
+  const planned = [...best.items].sort((a, b) => deadlineFor(a) - deadlineFor(b) || b.score - a.score || a.action.id.localeCompare(b.action.id))
   const selected = new Set(planned.map(item => item.action.id))
   const deferredHard = mandatory.filter(item => !selected.has(item.action.id))
   if (deferredHard.length) conflicts.push({ kind: 'hard_deadline_capacity',
     relatedIds: deferredHard.map(item => item.action.id), selectedIds: planned.map(item => item.action.id) })
   const todayFree = freeBefore(bounds.dayEnd)
   let prefixMinutes = 0, requiredToday = 0
-  for (const item of best.items) {
-    prefixMinutes += Math.max(1, Math.ceil(item.action.estimatedMinutes))
-    const laterCapacity = Math.max(0, freeBefore(deadlineFor(item)) - todayFree)
+  const selectedObligations = best.items.flatMap(item => obligations.get(item.action.id)!).sort((a, b) => a.at - b.at)
+  for (const obligation of selectedObligations) {
+    prefixMinutes += obligation.minutes
+    const laterCapacity = Math.max(0, freeBefore(obligation.at) - todayFree)
     requiredToday = Math.max(requiredToday, prefixMinutes - laterCapacity)
   }
   // Allocate hard work as late as its deadlines permit, so minutes reserved
@@ -241,6 +311,6 @@ export function buildConsumerTimePlan(input: {
     selected.add(item.action.id)
     remaining -= item.action.estimatedMinutes
   }
-  return { capacityMinutes, fixedMinutes, planned, deferredHard,
+  return { capacityMinutes, fixedMinutes, planned, deferredHard, selectionSearch,
     deferredCount: startable.length - planned.length, conflicts }
 }

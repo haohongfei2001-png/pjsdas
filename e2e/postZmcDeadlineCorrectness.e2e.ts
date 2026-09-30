@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { deadlineWorkspace, LATE_NOW } from '../tests/fixtures/postZmcDeadlineWorkspace.js'
+import { deadlineWorkspace, LATE_NOW, explicitStartDenseWorkspace } from '../tests/fixtures/postZmcDeadlineWorkspace.js'
 
 test.use({ timezoneId: 'Asia/Shanghai' })
 test('legacy UTC deadlines display the same local instant in Today, Schedule and job detail', async ({ page }) => {
@@ -24,7 +24,7 @@ test('deadline subset survives a full browser restart with the same retained Ind
   let context = await browser.browserType().launchPersistentContext(profile, { headless: true, timezoneId: 'Asia/Shanghai' })
   try {
     const page = await context.newPage()
-    await page.clock.install({ time: LATE_NOW })
+    await page.clock.install({ time: LATE_NOW, explicitStartDenseWorkspace })
     await page.goto('http://127.0.0.1:4173/'); await page.locator('.tsui-primary-nav').waitFor()
     const snapshot = deadlineWorkspace()
     await page.evaluate(async input => (await import('/pjsdas/src/db.ts')).replaceLocalSnapshotFromCloud(input), snapshot)
@@ -34,7 +34,7 @@ test('deadline subset survives a full browser restart with the same retained Ind
     await context.close()
     context = await browser.browserType().launchPersistentContext(profile, { headless: true, timezoneId: 'Asia/Shanghai' })
     const restarted = await context.newPage()
-    await restarted.clock.install({ time: LATE_NOW })
+    await restarted.clock.install({ time: LATE_NOW, explicitStartDenseWorkspace })
     await restarted.goto('http://127.0.0.1:4173/pjsdas/today')
     await expect(restarted.locator('[data-action-id]')).toHaveCount(2)
     expect(await restarted.locator('[data-action-id]').evaluateAll(items => items.map(item => item.getAttribute('data-action-id')))).toEqual(ids)
@@ -157,4 +157,37 @@ test('explicit latest start retains room for hard work before midnight', async (
   await expect(page.locator('[data-action-id="apply-0"]')).toContainText('申请 A')
   await page.reload()
   await expect(page.locator('.tsui-task-panel [data-action-id]')).toHaveCount(1)
+})
+
+
+test('explicit start can precede a gap without losing the later completion window', async ({ page }) => {
+  await page.clock.setFixedTime(new Date('2026-09-30T15:50:00Z'))
+  await page.goto('/'); await page.locator('.tsui-primary-nav').waitFor()
+  const snapshot = deadlineWorkspace(100, '2026-09-30T17:00:00Z')
+  snapshot.data.actions = snapshot.data.actions.slice(0, 1)
+  snapshot.data.actions[0].estimatedMinutes = 20
+  snapshot.data.scheduleNodes = snapshot.data.scheduleNodes!.slice(0, 1)
+  snapshot.data.scheduleNodes[0].temporal.latestStartAt = '2026-09-30T15:59:00Z'
+  snapshot.data.timePlanning!.weeklyWindows = [
+    { weekday: 3, startMinute: 1430, endMinute: 1440 }, { weekday: 4, startMinute: 30, endMinute: 60 },
+  ]
+  await page.evaluate(async input => (await import('/pjsdas/src/db.ts')).replaceLocalSnapshotFromCloud(input), snapshot)
+  await page.goto('/pjsdas/today')
+  await expect(page.locator('.tsui-task-panel [data-action-id]')).toHaveCount(1)
+  await expect(page.locator('[data-action-id="apply-0"]')).toContainText('申请 A')
+  await page.reload()
+  await expect(page.locator('.tsui-task-panel [data-action-id]')).toHaveCount(1)
+})
+
+
+test('18 explicit latest starts keep Today responsive and selection stable', async ({ page }) => {
+  await page.clock.setFixedTime(LATE_NOW)
+  await page.goto('/'); await page.locator('.tsui-primary-nav').waitFor()
+  await page.evaluate(async input => (await import('/pjsdas/src/db.ts')).replaceLocalSnapshotFromCloud(input), explicitStartDenseWorkspace())
+  await page.goto('/pjsdas/today')
+  await expect(page.locator('.tsui-task-panel [data-action-id]')).toHaveCount(6)
+  await expect(page.locator('[data-action-id="apply-0"]')).toContainText('密集申请 0')
+  await expect(page.locator('.tsui-deadline-notice')).toContainText('密集申请 17')
+  await page.reload()
+  await expect(page.locator('.tsui-task-panel [data-action-id]')).toHaveCount(6)
 })

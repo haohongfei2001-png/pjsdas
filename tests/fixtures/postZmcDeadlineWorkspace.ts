@@ -20,3 +20,17 @@ export function deadlineWorkspace(capacity?: number, deadline = DEADLINE) {
   return createSnapshot({ opportunities, actions, scheduleNodes, processes: [], processEvents: [], prep: [], applicationGroups: [],
     ...(capacity === undefined ? {} : { timePlanning: { version: 1 as const, defaultDailyMinutes: capacity, updatedAt: LATE_NOW.toISOString() } }) }, LATE_NOW.toISOString())
 }
+
+export function explicitStartDenseWorkspace() {
+  const snapshot = deadlineWorkspace(100, new Date(LATE_NOW.getTime() + 400 * 60_000).toISOString())
+  const opportunity = snapshot.data.opportunities[0], action = snapshot.data.actions[0], node = snapshot.data.scheduleNodes![0]
+  snapshot.data.opportunities = Array.from({ length: 18 }, (_, index) => ({ ...opportunity,
+    id: `job-${index}`, company: `Dense ${index}`, opportunityValue: 100 - index, fitScore: 100 - index }))
+  snapshot.data.actions = Array.from({ length: 18 }, (_, index) => ({ ...action,
+    id: `apply-${index}`, opportunityId: `job-${index}`, title: `密集申请 ${index}`, estimatedMinutes: 30 }))
+  snapshot.data.scheduleNodes = snapshot.data.actions.map((item, index) => ({ ...node,
+    id: `schedule:application-deadline:${item.opportunityId}:v1`, occurrenceId: `application-deadline:${item.opportunityId}`,
+    opportunityId: item.opportunityId, relatedActionIds: [item.id], temporal: { ...node.temporal,
+      latestStartAt: new Date(LATE_NOW.getTime() + (index + 1) * 5 * 60_000).toISOString() } }))
+  return snapshot
+}
