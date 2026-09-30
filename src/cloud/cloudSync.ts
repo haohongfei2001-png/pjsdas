@@ -113,8 +113,10 @@ export async function runCloudSync(userId: string, options: { passive?: boolean;
   const lease = connectedWorkspaceAuthorityEnabled() ? captureAccountCacheLease(userId) : undefined
   let targetVersion: string | undefined
   let projectingEquivalent = false
+  const hotPending = () => connectedWorkspaceAuthorityEnabled() && unresolvedPendingCommandCount(userId) > 0 && !getAccountCheckpoint(userId).conflict
   const assertCurrent = () => {
     lease?.assertCurrent()
+    if (hotPending()) throw new AccountCacheChangedError()
     if (projectingEquivalent && unresolvedPendingCommandCount(userId) > 0) throw new AccountCacheChangedError()
     if (lease && targetVersion && Number(getAccountCheckpoint(userId).lastSyncedVersion?.replace('txn:', '')) > Number(targetVersion.replace('txn:', ''))) throw new AccountCacheChangedError()
   }
@@ -132,8 +134,11 @@ export async function runCloudSync(userId: string, options: { passive?: boolean;
 
   try {
     const local = await exportLocalSnapshot()
+    if (hotPending()) return { kind: 'local_pending', version: getAccountCheckpoint(userId).lastSyncedVersion }
     const localFingerprint = await fingerprintWorkspace(local)
-    const remoteRaw = await fetchRemoteWorkspace(userId)
+    if (hotPending()) return { kind: 'local_pending', version: getAccountCheckpoint(userId).lastSyncedVersion }
+    const remoteRaw = await fetchRemoteWorkspace(userId, assertCurrent)
+    if (hotPending()) return { kind: 'local_pending', version: getAccountCheckpoint(userId).lastSyncedVersion }
     const remote = remoteRaw ? await verifyRemote(remoteRaw) : null
     targetVersion = remote?.version
     assertCurrent()
@@ -305,6 +310,8 @@ export async function runCloudSync(userId: string, options: { passive?: boolean;
     markSynced(userId, remote)
     return { kind: 'synced', version: remote.version, remoteUpdatedAt: remote.updatedAt }
   } catch (caught) {
+    lease?.assertCurrent()
+    if (hotPending()) return { kind: 'local_pending', version: getAccountCheckpoint(userId).lastSyncedVersion }
     assertCurrent()
     patchAccountCheckpoint(userId, {
       lastError: caught instanceof Error ? caught.message : String(caught),

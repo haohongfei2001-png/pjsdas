@@ -52,15 +52,22 @@ export async function refreshConnectedAuthoritativeCache(
 ): Promise<AuthoritativeReadFreshness> {
   const lease = captureAccountCacheLease(accountKey)
   const startedAt = Date.now()
+  const hotPending = () => unresolvedPendingCommandCount(accountKey) > 0 && !getAccountCheckpoint(accountKey).conflict
+  const pendingResult = (): AuthoritativeReadFreshness => ({ state: 'pending_operations', workspaceVersion: getAccountCheckpoint(accountKey).lastSyncedVersion ?? 'pending',
+    observedAt: new Date().toISOString(), latencyMs: Date.now() - startedAt, changed: false })
+  const assertReadCurrent = () => { lease.assertCurrent(); if (hotPending()) throw new AccountCacheChangedError() }
   if (unresolvedPendingCommandCount(accountKey) > 0) {
     const initialCheckpoint = getAccountCheckpoint(accountKey)
     if (!initialCheckpoint.conflict) return { state: 'pending_operations', workspaceVersion: initialCheckpoint.lastSyncedVersion ?? 'pending',
       observedAt: new Date().toISOString(), latencyMs: 0, changed: false }
   }
-  const [local, remote] = await Promise.all([
+  const reading = Promise.all([
     exportLocalSnapshot(),
-    fetchConnectedRemoteWorkspace(accountKey),
+    fetchConnectedRemoteWorkspace(accountKey, assertReadCurrent),
   ])
+  const pair = await reading.catch(error => { lease.assertCurrent(); if (hotPending()) return undefined; throw error })
+  if (!pair || hotPending()) return pendingResult()
+  const [local, remote] = pair
   const localFingerprint = await fingerprintWorkspace(local)
   lease.assertCurrent()
   const checkpoint = getAccountCheckpoint(accountKey)

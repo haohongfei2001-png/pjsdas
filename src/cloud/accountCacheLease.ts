@@ -7,6 +7,7 @@ export class AccountCacheChangedError extends Error {
 export function setAccountCacheSession(next: string | undefined) {
   if (next !== account) { account = next; generation += 1 }
 }
+export function currentAccountCacheSession() { return account }
 export function captureAccountCacheLease(expected: string) {
   const captured = generation
   const assertCurrent = () => {

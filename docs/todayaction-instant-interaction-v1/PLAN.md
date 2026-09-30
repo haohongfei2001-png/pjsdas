@@ -59,3 +59,13 @@ The first independent read-only review found three correctness issues: unchanged
 - Final production build performance passed both formal suites: 4.44 MB / 3940 timeline rows, capacity acknowledgement p95 29ms and settled 44ms; completion and Undo settled 32ms. Submission/complete/cancel/reschedule acknowledgement p95 32/30/29/27ms and settled 40/46/46/45ms; durable p95 18/14/13/12ms. No observed command long task exceeded 50ms. Short history and dense history capacity settled p95 were both 44ms.
 - Existing browser expectations now distinguish immediate durable optimistic state from later server confirmation. Exact command identity, authoritative outcome, reload audit equality and conflict retention assertions remain in place.
 - Final cloud exact-head gates and the fresh independent read-only review remain required before merge; this local receipt is not package closure.
+
+## Account-boundary review correction
+
+Recovery exports and journal read APIs are restricted to the current synchronous account lease. Retained confirmed and unresolved journals remain quarantined for their original account; switching or signing out clears only the derived proof chain along with the pre-existing active workspace cache. Other/anonymous accounts cannot export prior command payloads or preimages. An account-boundary browser regression verifies no cross-account export and exact journal retention on return. The checked-in generated release fallback remains unbound; build-generated identities are never committed. VoiceOver preparation uses Node 24 and one bounded macOS Focus-setup retry; the real screen-reader journey is still required.
+
+## Background-read race correction
+
+A full refresh can start before a click and resume after its outbox reservation. Hot intent is now journaled before the first asynchronous journal lookup. Background reads recheck pending after local export, network response, and before expensive fingerprint/validation/proof work; an arriving ordinary command defers the read without creating a business conflict. Existing genuine persisted conflicts still refresh classification against current remote state. An asynchronous-export race regression verifies no subsequent remote read or projection. Performance evidence records command/Undo time windows plus all long-task timestamps; the 50ms command gate is unchanged.
+
+After these repairs, 22 dense Chromium safety cases and both production-build performance suites passed locally. Dense capacity acknowledgement/settled p95 29/44ms; completion/Undo 32ms; submitted/complete/cancel/reschedule acknowledgement p95 27/27/38/27ms and settled 42/44/54/42ms. No command long task exceeded 50ms. Exact-head cloud and fresh independent review are still required.

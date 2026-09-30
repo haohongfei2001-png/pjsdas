@@ -47,12 +47,14 @@ export async function beginInstantCommand(accountKey: string, snapshot: PJSDASSn
   const baseRevision = version(accountKey)
   if (!Number.isSafeInteger(baseRevision)) throw new Error('请先连接并读取账号记录。')
   const projected = interactionProjection(snapshot, command, baseRevision)
+  // Reserve durable intent before the first async yield so a background full
+  // refresh cannot start fingerprinting while this click is settling.
+  journalConnectedInteraction(accountKey, { commandId: command.commandId, command: { type: 'domain', value: command }, baseRevision })
   const existing = await readPendingCommandInteractions(accountKey)
   const overlapping = existing.filter(item => item.state === 'active' && item.delta.changes.some(left => projected.delta.changes.some(right => left.collection === right.collection && left.id === right.id)
     || (['set_date_capacity', 'set_daily_capacity', 'set_work_windows'].includes(command.kind) && left.collection === 'timePlanning')))
   const record: CommandInteractionRecord = { id: recordId(accountKey, command.commandId), accountKey, commandId: command.commandId,
     command, predecessors: overlapping.map(item => item.commandId), delta: projected.delta, compensation: projected.compensation, state: 'active', createdAt: new Date().toISOString() }
-  journalConnectedInteraction(accountKey, { commandId: command.commandId, command: { type: 'domain', value: command }, baseRevision })
   try { await persistInteractionProjection(record, lease.assertCurrent) } catch (error) {
     try { await saveCommandInteraction({ ...record, state: 'rejected', lastError: 'Local projection refused.' }); settleConnectedInteraction(accountKey, command.commandId) }
     catch { settleConnectedInteraction(accountKey, command.commandId, 'conflict', '本机保存失败，原操作记录已保留。') }

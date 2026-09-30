@@ -361,3 +361,31 @@ test('verified proof compaction retains original journals and audit and refuses 
   })
   expect(result).toEqual({ verified: true, after: 0, stillVerified: true, journalRetained: true, timelineRetained: true, genuineEditVerified: false })
 })
+
+
+test('account boundary quarantines retained provenance and exports only the active account', async ({ page, context }) => {
+  const server = await setup(context); server.setDelay(50)
+  await start(page)
+  await page.locator('[data-action-id="dense-action-0"] .tsui-done-action').click()
+  await expect.poll(() => pendingCount(page)).toBe(0)
+  const result = await page.evaluate(async () => {
+    const api = await import('/pjsdas/src/db.ts')
+    const accounts = await import('/pjsdas/src/cloud/accountCacheLease.ts')
+    const confirmed = (await api.readCommandInteractions('instant-owner'))[0]
+    await api.saveCommandInteraction({ ...confirmed, id: 'instant-owner:unresolved-intent', commandId: 'unresolved-intent', state: 'active' })
+    const before = await api.readCommandInteractions('instant-owner')
+    accounts.setAccountCacheSession('different-account')
+    await api.clearLocalWorkspaceCache()
+    const other = await api.exportLocalRecoveryArchive()
+    let denied = false
+    try { await api.readCommandInteractions('instant-owner') } catch { denied = true }
+    accounts.setAccountCacheSession(undefined)
+    const anonymous = await api.exportLocalRecoveryArchive()
+    accounts.setAccountCacheSession('instant-owner')
+    const after = await api.readCommandInteractions('instant-owner')
+    const owner = await api.exportLocalRecoveryArchive()
+    return { otherCount: other.stores.commandInteractions.length, anonymousCount: anonymous.stores.commandInteractions.length,
+      proofCount: owner.stores.projectionDeltas.length, denied, retained: JSON.stringify(before) === JSON.stringify(after), ownerCount: owner.stores.commandInteractions.length }
+  })
+  expect(result).toEqual({ otherCount: 0, anonymousCount: 0, proofCount: 0, denied: true, retained: true, ownerCount: 2 })
+})

@@ -133,6 +133,17 @@ describe('connected passive sync authority', () => {
     expect(fixture.update).not.toHaveBeenCalled()
   })
 
+  it('defers when a new command arrives during the asynchronous local export', async () => {
+    fixture.export.mockImplementationOnce(async () => {
+      fixture.pending.mockReturnValue({ count: 1, pending: 1, unknown: 0, conflict: 0 })
+      return { version: 4, marker: 'local' }
+    })
+    expect(await runCloudSync('qa-account', { passive: true })).toMatchObject({ kind: 'local_pending', version: 'txn:7' })
+    expect(fixture.read).not.toHaveBeenCalled()
+    expect(fixture.replace).not.toHaveBeenCalled()
+    expect(fixture.update).not.toHaveBeenCalled()
+  })
+
   it('tracks a newer remote conflict revision while an unresolved command blocks projection', async () => {
     fixture.checkpointRead.mockReturnValue({ lastSyncedVersion: 'txn:843', lastSyncedFingerprint: 'old-digest',
       conflict: { remoteVersion: 'txn:843', remoteFingerprint: 'old-digest', remoteUpdatedAt: '2026-09-20T00:00:00Z' } })
@@ -152,7 +163,7 @@ describe('connected passive sync authority', () => {
       fixture.pending.mockReturnValue({ count: 1, pending: 1, unknown: 0, conflict: 0 })
       options.assertCurrent()
     })
-    await expect(runCloudSync('qa-account', { passive: true })).rejects.toThrow()
+    expect(await runCloudSync('qa-account', { passive: true })).toMatchObject({ kind: 'local_pending', version: 'txn:7' })
     expect(fixture.checkpoint).not.toHaveBeenCalledWith('qa-account', expect.objectContaining({ lastSyncedVersion: 'txn:1004' }))
     expect(fixture.update).not.toHaveBeenCalled()
   })

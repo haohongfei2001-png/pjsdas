@@ -1,7 +1,7 @@
 import { interactionMetric } from './cloud/interactionMetrics.js'
 import { applyWorkspaceDelta, patchDeltaRow, DELTA_COLLECTIONS, type WorkspaceDelta, type DeltaRow } from './workspaceDelta.js'
 import { canonicalWorkspaceJson } from './cloud/workspaceFingerprint.js'
-import { AccountCacheChangedError } from './cloud/accountCacheLease.js'
+import { AccountCacheChangedError, captureAccountCacheLease, currentAccountCacheSession } from './cloud/accountCacheLease.js'
 import { captureActionStatusUndo, restoreActionStatusUndo, type ActionStatusUndo } from './actionStatusUndo.js'
 import { openDB, type DBSchema, type IDBPTransaction } from 'idb'
 import { assertImportBundleSafe } from './importDiagnostics.js'
@@ -1082,18 +1082,31 @@ export async function exportLocalRecoveryArchive() {
   const db = await dbPromise
   const stores = [...db.objectStoreNames]
   const tx = db.transaction(stores, 'readonly')
-  const rows = await Promise.all(stores.map(async (store) => [store, await tx.objectStore(store).getAll()] as const))
+  const accountKey = currentAccountCacheSession()
+  const lease = accountKey ? captureAccountCacheLease(accountKey) : undefined
+  const rows = await Promise.all(stores.map(async (store) => {
+    const values = await tx.objectStore(store).getAll()
+    // Journals are durable per-account recovery provenance, outside the active
+    // workspace. An anonymous or different account must not export them.
+    return [store, store === 'commandInteractions' || store === 'projectionDeltas'
+      ? values.filter(value => accountKey && 'accountKey' in value && value.accountKey === accountKey) : values] as const
+  }))
   await tx.done
+  lease?.assertCurrent()
+  if (currentAccountCacheSession() !== accountKey) throw new AccountCacheChangedError()
   return { schema: 'todayaction-recovery-archive', exportedAt: new Date().toISOString(), stores: Object.fromEntries(rows) }
 }
 
 export async function clearLocalWorkspaceCache() {
   const db = await dbPromise
-  const tx = db.transaction([...DATA_STORES], 'readwrite')
+  const tx = db.transaction([...DATA_STORES, 'projectionDeltas'], 'readwrite')
   let cleared: PJSDASSnapshot
   try {
     await Promise.all(DATA_STORES.map((storeName) => tx.objectStore(storeName).clear()))
-    cleared = await readLocalSnapshot(tx)
+    // Proofs describe the cleared cache; original account-scoped commands
+    // remain quarantined for that account's receipt-first recovery.
+    await tx.objectStore('projectionDeltas').clear()
+    cleared = await readLocalSnapshot(tx as LocalSnapshotTransaction)
     await tx.done
   } catch (caught) {
     // A synchronous store failure must also abort clears already enqueued.
@@ -1433,19 +1446,27 @@ export async function persistInteractionProjections(steps: Array<{ record: Comma
   }
 }
 export async function readCommandInteractions(accountKey: string) {
-  return (await dbPromise).getAllFromIndex('commandInteractions', 'by-account', accountKey)
+  const lease = captureAccountCacheLease(accountKey)
+  const rows = await (await dbPromise).getAllFromIndex('commandInteractions', 'by-account', accountKey)
+  lease.assertCurrent()
+  return rows
 }
 /** Ordinary interactions never load the retained archive. */
 export async function readPendingCommandInteractions(accountKey: string) {
+  const lease = captureAccountCacheLease(accountKey)
   const db = await dbPromise
   const [active, projectionPending] = await Promise.all([
     db.getAllFromIndex('commandInteractions', 'by-account-state', [accountKey, 'active']),
     db.getAllFromIndex('commandInteractions', 'by-account-state', [accountKey, 'projection_pending']),
   ])
+  lease.assertCurrent()
   return [...active, ...projectionPending]
 }
 export async function readCommandInteraction(accountKey: string, commandId: string) {
-  return (await dbPromise).get('commandInteractions', `${accountKey}:${commandId}`)
+  const lease = captureAccountCacheLease(accountKey)
+  const row = await (await dbPromise).get('commandInteractions', `${accountKey}:${commandId}`)
+  lease.assertCurrent()
+  return row
 }
 export async function saveCommandInteraction(record: CommandInteractionRecord) {
   await (await dbPromise).put('commandInteractions', record)

@@ -86,9 +86,12 @@ test('submission and schedule commands meet dense local p95 budgets while offlin
     await page.clock.setFixedTime(INSTANT_NOW)
     await page.goto('/pjsdas/today')
     await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem('pjsdas-google-drive-sync-state-v2') ?? '{}').accounts?.['instant-owner']?.lastSyncedVersion)).toBe('txn:1204')
-    if (operation !== 'submitted') await page.getByRole('button', { name: '日程', exact: true }).click()
+    if (operation !== 'submitted') {
+      await page.getByRole('button', { name: '日程', exact: true }).click()
+      await expect(page.locator('[data-schedule-entry="node:dense-node-0"]')).toBeVisible()
+    }
     else await expect(page.locator('[data-action-id="apply:dense-job-2"] .tsui-done-action')).toBeVisible()
-    await page.evaluate(() => { Object.defineProperty(navigator, 'onLine', { configurable: true, get: () => false }); (window as any).denseMeasures = []; window.addEventListener('pjsdas:interaction-measure', event => (window as any).denseMeasures.push((event as CustomEvent).detail)); (window as any).denseLongTasks = []; new PerformanceObserver(list => (window as any).denseLongTasks.push(...list.getEntries().map(entry => entry.duration))).observe({ type: 'longtask' }) })
+    await page.evaluate(() => { Object.defineProperty(navigator, 'onLine', { configurable: true, get: () => false }); (window as any).denseMeasures = []; window.addEventListener('pjsdas:interaction-measure', event => (window as any).denseMeasures.push((event as CustomEvent).detail)); (window as any).denseLongTasks = []; (window as any).denseCommandWindows = []; new PerformanceObserver(list => (window as any).denseLongTasks.push(...list.getEntries().map(entry => ({ start: entry.startTime, duration: entry.duration })))).observe({ type: 'longtask' }) })
     const acknowledgement: number[] = [], settled: number[] = []
     for (let index = 0; index < 10; index++) {
       if (operation !== 'submitted') {
@@ -105,14 +108,25 @@ test('submission and schedule commands meet dense local p95 budgets while offlin
         while ((operation === 'submitted' ? !!document.querySelector('[data-action-id="apply:dense-job-2"]') : !!document.querySelector('.tsui-schedule-detail')) && performance.now() - started < 5000) await new Promise(requestAnimationFrame)
         const acknowledgement = performance.now() - started
         await new Promise(requestAnimationFrame)
-        return { acknowledgement, settled: performance.now() - started }
+        const ended = performance.now()
+        ;(window as any).denseCommandWindows.push({ start: started, end: ended, operation })
+        return { acknowledgement, settled: ended - started }
       }, operation)
       acknowledgement.push(timing.acknowledgement); settled.push(timing.settled)
-      await page.locator(operation === 'submitted' ? '.action-undo-toast button' : '.tsui-schedule-feedback button').click()
+      await page.evaluate(async operation => {
+        const start = performance.now()
+        const button = document.querySelector<HTMLButtonElement>(operation === 'submitted' ? '.action-undo-toast button' : '.tsui-schedule-feedback button')
+        if (!button) throw new Error('Missing measured Undo control')
+        button.click()
+        while (!(operation === 'submitted' ? document.querySelector('[data-action-id="apply:dense-job-2"]') : document.querySelector('[data-schedule-entry="node:dense-node-0"]')) && performance.now() - start < 5000) await new Promise(requestAnimationFrame)
+        await new Promise(requestAnimationFrame)
+        ;(window as any).denseCommandWindows.push({ start, end: performance.now(), operation: 'undo' })
+      }, operation)
       if (operation === 'submitted') await expect(page.locator('[data-action-id="apply:dense-job-2"]')).toBeVisible()
       else await expect(page.locator('[data-schedule-entry="node:dense-node-0"]')).toBeVisible()
     }
-    const metrics = await page.evaluate(() => ({ measures: (window as any).denseMeasures, longTasks: (window as any).denseLongTasks }))
+    const metrics = await page.evaluate(() => ({ measures: (window as any).denseMeasures, allLongTasks: (window as any).denseLongTasks, commandWindows: (window as any).denseCommandWindows,
+      longTasks: (window as any).denseLongTasks.filter((task: any) => (window as any).denseCommandWindows.some((window: any) => task.start < window.end && task.start + task.duration > window.start)).map((task: any) => task.duration) }))
     const p95 = (values: number[]) => [...values].sort((a, b) => a - b)[Math.ceil(values.length * .95) - 1]
     const row = { operation, acknowledgementP95: p95(acknowledgement), settledP95: p95(settled), durableP95: p95(metrics.measures.filter((entry: any) => entry.phase === 'durable-outbox').map((entry: any) => entry.durationMs)), longTasks: metrics.longTasks }
     await info.attach(`instant-${operation}-stages.json`, { body: JSON.stringify(metrics), contentType: 'application/json' })
