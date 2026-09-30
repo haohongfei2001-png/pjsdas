@@ -122,6 +122,25 @@ describe('dense owner decision and schedule membership', () => {
     expect(partitionDecisions([request], {
       opportunities: snapshot.data.opportunities, now: DENSE_NOW,
     }).actionable).toHaveLength(1)
+    request.payloadBinding.statementMode = 'quote'
+    expect(partitionDecisions([request], {
+      opportunities: snapshot.data.opportunities, now: DENSE_NOW,
+    }).dataQuality).toHaveLength(1)
+    request.payloadBinding.statementMode = 'assertion'
+    request.choices[1]!.label = '  '
+    expect(partitionDecisions([request], {
+      opportunities: snapshot.data.opportunities, now: DENSE_NOW,
+    }).dataQuality).toHaveLength(1)
+    request.choices[1]!.label = '京东｜AI产品经理（第二个岗位）'
+    request.choices[1]!.consequence = ''
+    expect(partitionDecisions([request], {
+      opportunities: snapshot.data.opportunities, now: DENSE_NOW,
+    }).dataQuality).toHaveLength(1)
+    request.choices[1]!.consequence = 'Only this opportunity will be updated.'
+    request.choices[1]!.id = request.choices[0]!.id
+    expect(partitionDecisions([request], {
+      opportunities: snapshot.data.opportunities, now: DENSE_NOW,
+    }).dataQuality).toHaveLength(1)
   })
   it('preserves all records but does not mistake 358 undated email decisions for Today tasks', () => {
     const snapshot = denseDecisionWorkspace(), before = JSON.stringify(snapshot)

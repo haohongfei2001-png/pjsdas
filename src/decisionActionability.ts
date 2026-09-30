@@ -27,8 +27,15 @@ function currentSource(request: DecisionRequest, now: Date) {
 /** A read-model rule. It never changes a stored request or its audit trail. */
 export function actionableDecision(request: DecisionRequest, context: DecisionContext): boolean {
   if (request.state !== 'open' || (request.expiresAt && Date.parse(request.expiresAt) < context.now.getTime())) return false
+  if (request.payloadBinding.statementMode !== 'assertion'
+    && request.payloadBinding.statementMode !== 'current_intent') return false
   if (!currentSource(request, context.now)) return false
   if (request.choices.length < 2 || request.choices.length > 4) return false
+  if (!request.question.trim() || !request.choices.every(item =>
+    item.label.trim() && item.consequence.trim() && item.resolution)) return false
+  if (new Set(request.choices.map(item => item.id)).size !== request.choices.length
+    || new Set(request.choices.map(item => item.label.trim())).size !== request.choices.length
+    || request.choices.some(item => !item.id.trim())) return false
   const candidate = request.payloadBinding.candidate
   const opportunityIds = new Set(context.opportunities.filter(item => item.processStage !== 'closed').map(item => item.id))
   const nodeIds = new Set((context.scheduleNodes ?? []).filter(item =>
