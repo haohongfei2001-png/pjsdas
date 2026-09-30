@@ -3,6 +3,7 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { applyUserDomainCommand } from '../src/domainCommands.js'
+import { overlappingCommandObjects, semanticIntentObjects, type CommandObjectRef } from '../gateway/commandObjects.js'
 import type { PJSDASSnapshot } from '../src/snapshot.js'
 import { denseDecision, denseDecisionWorkspace, DENSE_NOW } from '../tests/fixtures/denseDecisionWorkspace.js'
 import { action, BACKEND, cors, health, seedSession, workspace } from './fixtures/todayWorkspace.js'
@@ -13,7 +14,9 @@ interface SyntheticServer {
   revision: number
   snapshot: PJSDASSnapshot
   receipts: Map<string, Record<string, unknown>>
-  commands: Array<{ client: string; commandId: string; baseRevision: number }>
+  commands: Array<{ client: string; commandId: string; baseRevision: number;
+    resultingRevision: number; objects: CommandObjectRef[];
+    observation: Parameters<typeof semanticIntentObjects>[0] }>
 }
 
 function response(server: SyntheticServer, extra: Record<string, unknown> = {}) {
@@ -39,8 +42,18 @@ async function installServer(context: BrowserContext, server: SyntheticServer, c
     }
     if (body.action === 'command' && body.command?.type === 'semantic_intake') {
       const commandId = String(body.commandId)
-      server.commands.push({ client, commandId, baseRevision: Number(body.baseRevision) })
       let receipt = server.receipts.get(commandId)
+      if (receipt) return cors(route, response(server, { outcome: 'ALREADY_APPLIED', receipt, result: receipt.result }))
+      const baseRevision = Number(body.baseRevision)
+      const objects = semanticIntentObjects(body.command.value, server.snapshot)
+      const intervening = server.commands.filter(item => item.resultingRevision > baseRevision)
+      const overlapping = intervening.flatMap(item => overlappingCommandObjects(objects, item.objects))
+      if (!Number.isInteger(baseRevision) || baseRevision > server.revision || overlapping.length) {
+        return cors(route, response(server, { outcome: 'CONFLICT', conflict: {
+          kind: 'OBJECT_CONFLICT', message: 'This business object changed on another device.',
+          objects: overlapping, interveningCommandIds: intervening.map(item => item.commandId),
+        } }), 409)
+      }
       if (!receipt) {
         const candidate = body.command.value?.candidates?.find((item: { kind: string }) => item.kind === 'manual_action')
         const title = String(candidate?.title ?? '已记录的行动')
@@ -56,6 +69,8 @@ async function installServer(context: BrowserContext, server: SyntheticServer, c
           undoAvailable: true, createdAt: DENSE_NOW.toISOString(), updatedAt: DENSE_NOW.toISOString(),
         })
         server.revision += 1
+        server.commands.push({ client, commandId, baseRevision, resultingRevision: server.revision,
+          objects, observation: structuredClone(body.command.value) })
         receipt = { commandId, receiptId: `command-receipt:${commandId}`, status: 'COMMITTED',
           revision: server.revision, affectedObjects: [{ type: 'action', id: actionId }],
           undoAvailable: true, result: { type: 'semantic_intake', status: 'APPLIED',
@@ -103,6 +118,8 @@ test('dense owner day survives Gmail refresh, a cross-device update and offline 
     await first.goto('/pjsdas/today')
     await second.goto('/pjsdas/today')
     await expect.poll(() => first.evaluate(() => JSON.parse(localStorage.getItem('pjsdas-google-drive-sync-state-v2') ?? '{}')
+      .accounts?.['owner-account']?.lastSyncedVersion)).toBe('txn:1004')
+    await expect.poll(() => second.evaluate(() => JSON.parse(localStorage.getItem('pjsdas-google-drive-sync-state-v2') ?? '{}')
       .accounts?.['owner-account']?.lastSyncedVersion)).toBe('txn:1004')
     const taskCount = await first.locator('.tsui-task-panel .tsui-task-row').count()
     expect(taskCount).toBeGreaterThan(0)
@@ -165,8 +182,12 @@ test('dense owner day survives Gmail refresh, a cross-device update and offline 
     await restarted.evaluate(() => window.dispatchEvent(new Event('online')))
     await expect.poll(() => server.commands.filter(item => item.client === 'first').length).toBe(1)
     expect(server.commands.find(item => item.client === 'first')).toMatchObject({
-      commandId: queued[0].commandId, baseRevision: 1005,
+      commandId: queued[0].commandId, baseRevision: 1005, resultingRevision: 1007,
     })
+    const secondWrite = server.commands.find(item => item.client === 'second')!
+    const firstWrite = server.commands.find(item => item.client === 'first')!
+    expect(secondWrite.resultingRevision).toBe(1006)
+    expect(overlappingCommandObjects(firstWrite.objects, secondWrite.objects)).toHaveLength(0)
     await expect.poll(() => restarted.evaluate(() => localStorage.getItem('pjsdas-cgr01-pending:owner-account'))).toBeNull()
     await restarted.goto('/pjsdas/today')
     const saved = await localRows(restarted)
@@ -176,6 +197,17 @@ test('dense owner day survives Gmail refresh, a cross-device update and offline 
     expect(saved.actions.some(item => item.title === '离线整理材料')).toBe(true)
     expect(saved.actions.some(item => item.title === '另一设备整理岗位')).toBe(true)
     expect(server.commands.filter(item => item.client === 'first')).toHaveLength(1)
+    // The same stale base cannot overwrite the first device's own newer business source.
+    const staleConflict = await restarted.evaluate(async ({ backend, value }) => {
+      const result = await fetch(`${backend}/api/workspace`, { method: 'POST',
+        headers: { 'content-type': 'application/json', authorization: 'Bearer owner-token' },
+        body: JSON.stringify({ action: 'command', commandId: 'zmc09-conflicting-replay',
+          baseRevision: 1005, command: { type: 'semantic_intake', value } }),
+      })
+      return { status: result.status, outcome: (await result.json()).outcome }
+    }, { backend: BACKEND, value: firstWrite.observation })
+    expect(staleConflict).toEqual({ status: 409, outcome: 'CONFLICT' })
+    expect(server.commands).toHaveLength(2)
     await expect(restarted.locator('.tsui-status')).toHaveCount(0)
     expect(await restarted.locator('.tsui-task-panel .tsui-task-row').count()).toBeLessThan(20)
 
