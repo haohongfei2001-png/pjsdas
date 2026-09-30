@@ -152,6 +152,24 @@ function latestNodes(nodes: ScheduleNode[], includeTerminal = false) {
   return [...latest.values()].filter((node) => includeTerminal || (node.state !== 'superseded' && node.state !== 'cancelled'))
 }
 
+function nodesForDecision(snapshot: PJSDASSnapshot) {
+  const actions = new Map(snapshot.data.actions.map(action => [action.id, action]))
+  const opportunities = new Map(snapshot.data.opportunities.map(opportunity => [opportunity.id, opportunity]))
+  return (snapshot.data.scheduleNodes ?? []).map(node => {
+    if (node.state !== 'completed' || node.kind !== 'application_deadline' || !node.opportunityId) return node
+    const opportunity = opportunities.get(node.opportunityId)
+    if (!opportunity || opportunity.participationStatus !== 'active'
+      || (processFor(opportunity, snapshot.data.processes)?.stage ?? opportunity.processStage) !== 'not_applied') return node
+    const linked = node.relatedActionIds.map(id => actions.get(id))
+      .filter(action => action?.kind === 'apply' && action.opportunityId === opportunity.id)
+    if (!linked.some(action => action?.status === 'done')
+      || !linked.some(action => action?.status === 'todo' || action?.status === 'doing')) return node
+    // Shared legacy completion records one application, not every linked one.
+    // Reclassify only this read view; keep the stored completion/audit untouched.
+    return { ...node, state: 'scheduled' as const }
+  })
+}
+
 function localDateKey(date: Date, timezone: string) {
   const parts = new Intl.DateTimeFormat('en-CA', {
     timeZone: timezone,
@@ -372,9 +390,10 @@ export function getOpportunityDecisionRead(
   if (!opportunity) return undefined
   const process = processFor(opportunity, snapshot.data.processes)
   const group = groupFor(opportunity, snapshot.data.applicationGroups)
-  const nearestNode = nearestNodeFor(opportunity, process, snapshot.data.scheduleNodes ?? [], ctx.now, ctx.timezone)
+  const nodes = nodesForDecision(snapshot)
+  const nearestNode = nearestNodeFor(opportunity, process, nodes, ctx.now, ctx.timezone)
   const freshness = sourceFreshness(opportunity, ctx.now)
-  const delta = deadlineDelta(opportunity.id, snapshot.data.scheduleNodes ?? [], ctx.now, ctx.timezone)
+  const delta = deadlineDelta(opportunity.id, nodes, ctx.now, ctx.timezone)
   const ranked = rankedActionsByOpportunity(snapshot, ctx.now).get(opportunity.id)
 
   return {
@@ -394,7 +413,7 @@ export function getOpportunityDecisionRead(
       result: process?.result,
       participation: opportunity.participationStatus === 'abandoned' ? 'abandoned' : 'active',
     },
-    nextAction: actionRead(ranked, opportunity, snapshot.data.scheduleNodes ?? []),
+    nextAction: actionRead(ranked, opportunity, nodes),
     nearestNode,
     sourceFreshness: freshness,
     applicationGroupId: opportunity.applicationGroupId,
@@ -408,12 +427,13 @@ export function buildOpportunityDecisionList(
   const ctx = context(rawContext)
   const snapshot = upgradeSnapshotToLatest(rawSnapshot)
   const ranked = rankedActionsByOpportunity(snapshot, ctx.now)
+  const nodes = nodesForDecision(snapshot)
   const items = snapshot.data.opportunities.map((opportunity) => {
     const process = processFor(opportunity, snapshot.data.processes)
     const group = groupFor(opportunity, snapshot.data.applicationGroups)
-    const nearestNode = nearestNodeFor(opportunity, process, snapshot.data.scheduleNodes ?? [], ctx.now, ctx.timezone)
+    const nearestNode = nearestNodeFor(opportunity, process, nodes, ctx.now, ctx.timezone)
     const freshness = sourceFreshness(opportunity, ctx.now)
-    const delta = deadlineDelta(opportunity.id, snapshot.data.scheduleNodes ?? [], ctx.now, ctx.timezone)
+    const delta = deadlineDelta(opportunity.id, nodes, ctx.now, ctx.timezone)
     const read: OpportunityDecisionRead = {
       contractVersion: 1,
       workspaceRevision: ctx.workspaceVersion ?? `snapshot:${rawSnapshot.exportedAt}`,
@@ -431,7 +451,7 @@ export function buildOpportunityDecisionList(
         result: process?.result,
         participation: opportunity.participationStatus === 'abandoned' ? 'abandoned' : 'active',
       },
-      nextAction: actionRead(ranked.get(opportunity.id), opportunity, snapshot.data.scheduleNodes ?? []),
+      nextAction: actionRead(ranked.get(opportunity.id), opportunity, nodes),
       nearestNode,
       sourceFreshness: freshness,
       applicationGroupId: opportunity.applicationGroupId,

@@ -3,7 +3,7 @@ import { formatScheduleTemporal, scheduleDisplayTimezone } from '../src/schedule
 import { buildConsumerTimePlan } from '../src/today/consumerTimePlan.js'
 import { rankActions } from '../src/decisionV3.js'
 import { selectTodayWeb } from '../src/today/todayWebSelector.js'
-import { getOpportunityDecisionRead } from '../src/opportunityDecisionRead.js'
+import { buildOpportunityDecisionList, getOpportunityDecisionRead } from '../src/opportunityDecisionRead.js'
 import { DEADLINE, LATE_NOW, deadlineWorkspace, explicitStartDenseWorkspace } from './fixtures/postZmcDeadlineWorkspace.js'
 
 describe('post-ZMC deadline correctness', () => {
@@ -35,6 +35,12 @@ describe('post-ZMC deadline correctness', () => {
     expect(read?.nextAction?.actionId).toBe('apply-0')
     expect(read?.nextAction?.dueAt).toBe(DEADLINE)
     expect(formatScheduleTemporal(read!.nextAction!.temporal!, true, 'Asia/Shanghai')).toContain('23:59')
+    expect(read?.nearestNode?.temporal.deadlineAt).toBe(DEADLINE)
+    expect(read?.reasons.some(item => item.code === 'deadline_near')).toBe(true)
+    expect(buildOpportunityDecisionList(snapshot, { now: LATE_NOW, timezone: 'Asia/Shanghai' }).all[0]).toEqual(read)
+    const expired = getOpportunityDecisionRead(snapshot, 'job-0', { now: new Date('2026-09-30T16:01:00Z'), timezone: 'Asia/Shanghai' })
+    expect(expired?.bucket).toBe('ended')
+    expect(expired?.conclusion).toBe('application_window_closed')
     expect(JSON.stringify(snapshot)).toBe(before)
   })
   it.each([
