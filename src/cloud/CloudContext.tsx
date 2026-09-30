@@ -118,13 +118,19 @@ export function CloudProvider({ children }: { children: ReactNode }) {
     return boundary.then(async (adopted) => {
       if (!adopted) return false
       if (next && connectedWorkspaceAuthorityEnabled() && sequence === adoptionSequenceRef.current) {
-        await replayAccountPendingOperations(next.user.id).catch((caught) => {
+        await replayAccountPendingOperations(next.user.id).then(() => {
+          if (sequence !== adoptionSequenceRef.current) return
+          setError(undefined)
+          refreshState(next.user.id)
+        }).catch((caught) => {
+          if (sequence !== adoptionSequenceRef.current) return
           setError(caught instanceof Error ? caught.message : String(caught))
+          refreshState(next.user.id)
         })
       }
       return sequence === adoptionSequenceRef.current
     })
-  }, [applySession])
+  }, [applySession, refreshState])
 
   const finishPendingLink = useCallback(async () => {
     if (linkingRef.current) return
@@ -252,25 +258,38 @@ export function CloudProvider({ children }: { children: ReactNode }) {
     if (device.workspaceOwnerUserId && device.workspaceOwnerUserId !== userId) return
     // A user-confirmed outbox command still needs to finish after reconnect,
     // even when ordinary background workspace refresh is disabled.
+    let active = true
     const resume = () => {
       if (!navigator.onLine) return
       try {
         const pending = pendingCommandSummary(userId)
         if (pending.count <= pending.conflict) return
-        void replayAccountPendingOperations(userId).catch(() => undefined)
-      } catch { /* Keep the unreadable outbox intact for diagnosis. */ }
+        void replayAccountPendingOperations(userId).then(() => {
+          if (!active) return
+          setError(undefined)
+          setOutcome(undefined)
+          refreshState(userId)
+        }).catch((caught) => {
+          if (!active) return
+          setError(caught instanceof Error ? caught.message : String(caught))
+          refreshState(userId)
+        })
+      } catch (caught) {
+        if (active) setError(caught instanceof Error ? caught.message : String(caught))
+      }
     }
     const initial = window.setTimeout(resume, 700)
     const interval = window.setInterval(resume, 60_000)
     window.addEventListener('online', resume)
     window.addEventListener('focus', resume)
     return () => {
+      active = false
       window.clearTimeout(initial)
       window.clearInterval(interval)
       window.removeEventListener('online', resume)
       window.removeEventListener('focus', resume)
     }
-  }, [loading, configured, session?.user.id, device.autoSync, device.workspaceOwnerUserId])
+  }, [loading, configured, session?.user.id, device.autoSync, device.workspaceOwnerUserId, refreshState])
 
   const hasConflict = Boolean(checkpoint.conflict)
   useEffect(() => {

@@ -548,6 +548,9 @@ export async function undoConnectedBusinessCommand(
 }
 
 export async function replayAccountPendingOperations(accountKey: string) {
+  // Background refresh can fire after the browser goes offline. Keep every
+  // account-bound command intact until a real reconnect triggers recovery.
+  if (typeof navigator !== 'undefined' && navigator.onLine === false) return []
   const results: ConnectedCommandResponse[] = []
   for (const pending of readPending(accountKey)) {
     if (pending.status === 'conflict') continue

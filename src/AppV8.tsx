@@ -81,7 +81,7 @@ import './tsui02.css'
 type Surface = 'today' | 'opportunities' | 'schedule' | 'decisions' | 'history' | 'settings'
 type PrimarySurface = 'today' | 'opportunities' | 'schedule'
 type OpportunityTab = 'opportunities' | 'prepare' | 'discovery'
-type CompletionFeedback = { id: string; title: string; previousStatus: Action['status']; commandId?: string; localUndo?: ActionStatusUndo; outcome: 'done' | 'no_write' | 'queued' | 'error'; error?: string }
+type CompletionFeedback = { id: string; title: string; previousStatus: Action['status']; commandId?: string; localUndo?: ActionStatusUndo; outcome: 'done' | 'no_write' | 'queued' | 'confirmed_pending' | 'error'; error?: string }
 type RouteState = {
   surface: Surface
   capture: boolean
@@ -407,6 +407,26 @@ export default function AppV8() {
     const timer = window.setTimeout(() => setLastCompletedAction(null), 8_000)
     return () => window.clearTimeout(timer)
   }, [lastCompletedAction])
+
+  useEffect(() => {
+    const settled = (event: Event) => {
+      const detail = (event as CustomEvent<{ commandId: string; outcome: string; localProjection?: string }>).detail
+      setLastCompletedAction((current) => {
+        if (!current?.commandId || current.commandId !== detail.commandId
+          || (current.outcome !== 'queued' && current.outcome !== 'confirmed_pending')) return current
+        if (detail.outcome === 'CONFLICT') return { ...current, outcome: 'error', error: zh
+          ? '这项操作与较新的事实冲突，请核对后处理。'
+          : 'This action conflicts with a newer fact. Review it before proceeding.' }
+        if (detail.localProjection !== 'applied') return detail.outcome === 'COMMITTED' || detail.outcome === 'ALREADY_APPLIED'
+          ? { ...current, outcome: 'confirmed_pending' } : current
+        if (detail.outcome === 'NO_WRITE') return { ...current, outcome: 'no_write', error: undefined }
+        if (detail.outcome === 'COMMITTED' || detail.outcome === 'ALREADY_APPLIED') return { ...current, outcome: 'done', error: undefined }
+        return current
+      })
+    }
+    window.addEventListener('pjsdas:command-recovered', settled)
+    return () => window.removeEventListener('pjsdas:command-recovered', settled)
+  }, [zh])
 
 
 
@@ -839,8 +859,8 @@ export default function AppV8() {
       {lastCompletedAction ? (
         <div className="action-undo-toast" role="status" aria-live="polite">
           <div>
-            <strong>{lastCompletedAction.outcome === 'error' ? (zh ? '操作未确认' : 'Action not confirmed') : lastCompletedAction.outcome === 'no_write' ? (zh ? '没有写入变化' : 'No change written') : lastCompletedAction.outcome === 'queued' ? (zh ? '待同步' : 'Pending') : (zh ? '已完成' : 'Completed')}</strong>
-            <span>{lastCompletedAction.error ?? (lastCompletedAction.outcome === 'queued' ? (zh ? '已保存在此设备，联网后自动提交。' : 'Saved on this device; it will submit when connected.') : lastCompletedAction.title)}</span>
+            <strong>{lastCompletedAction.outcome === 'error' ? (zh ? '操作未确认' : 'Action not confirmed') : lastCompletedAction.outcome === 'no_write' ? (zh ? '没有写入变化' : 'No change written') : lastCompletedAction.outcome === 'queued' ? (zh ? '待同步' : 'Pending') : lastCompletedAction.outcome === 'confirmed_pending' ? (zh ? '服务器已确认' : 'Saved on server') : (zh ? '已完成' : 'Completed')}</strong>
+            <span>{lastCompletedAction.error ?? (lastCompletedAction.outcome === 'queued' ? (zh ? '已保存在此设备，联网后自动提交。' : 'Saved on this device; it will submit when connected.') : lastCompletedAction.outcome === 'confirmed_pending' ? (zh ? '本机状态待安全刷新。' : 'This device is waiting for a safe refresh.') : lastCompletedAction.title)}</span>
           </div>
           {lastCompletedAction.outcome === 'done' ? <button type="button" onClick={() => { void undoLastCompletion() }}>{zh ? '撤销' : 'Undo'}</button> : null}
         </div>

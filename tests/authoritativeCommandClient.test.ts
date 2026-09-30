@@ -200,6 +200,24 @@ describe('CGR-01 account-scoped connected command client', () => {
     expect(vi.mocked(fetchBackend).mock.calls.filter(([, init]) => JSON.parse(String(init?.body)).action === 'command')).toHaveLength(1)
   })
 
+  it('keeps the outbox untouched when background recovery fires after going offline', async () => {
+    const commandId = 'web-action:offline-background'
+    const command = { type: 'domain' as const, value: {
+      commandId, kind: 'set_action_status' as const, actionId: 'action-a', status: 'done' as const,
+    } }
+    const fingerprint = await fingerprintWorkspace(snapshot())
+    patchAccountCheckpoint('account-a', { lastSyncedVersion: 'txn:7', lastSyncedFingerprint: fingerprint })
+    await queueConnectedBusinessCommand('account-a', command, { commandId })
+    vi.stubGlobal('navigator', { onLine: false })
+    try {
+      expect(await replayAccountPendingOperations('account-a')).toEqual([])
+      expect(fetchBackend).not.toHaveBeenCalled()
+      expect(listAccountPendingOperations('account-a')).toMatchObject([{ commandId, status: 'pending' }])
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
   it('does not queue against an unverified account cache or reuse an id for a changed payload', async () => {
     const commandId = 'web-action:offline-protected'
     const command = { type: 'domain' as const, value: {
