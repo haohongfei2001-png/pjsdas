@@ -190,3 +190,41 @@ test('normal connected Settings keeps sync mechanics behind advanced diagnostics
   await card.getByText('高级诊断 / 恢复').click()
   await expect(card.getByText('SETTINGS_TEST_FAILURE: diagnostic marker')).toBeHidden()
 })
+
+test('Settings does not call an old checkpoint current after an offline local edit', async ({ page }) => {
+  const snapshot = workspace()
+  await page.addInitScript(({ key, value }) => {
+    if (!localStorage.getItem('owner-interaction-seeded')) {
+      localStorage.setItem(key, JSON.stringify(value))
+      localStorage.setItem('owner-interaction-seeded', '1')
+    }
+  }, { key: AUTH_KEY, value: session('account-a', 'token-a') })
+  await page.route('https://*.supabase.co/auth/v1/**', route => cors(route, {}, 200))
+  await page.route(`${BACKEND}/**`, route => {
+    if (route.request().method() === 'OPTIONS') return cors(route, {}, 204)
+    if (new URL(route.request().url()).pathname === '/api/health') return cors(route, health())
+    return cors(route, { workspaceId: 'ws-a', revision: 1004, workspaceVersion: 'txn:1004',
+      schemaVersion: snapshot.version, snapshot })
+  })
+  await page.route(`${BACKEND}/api/access`, route => cors(route,
+    { authenticated: true, allowed: true, mode: 'allowlist', role: 'owner' }))
+  await page.goto('/pjsdas/settings')
+  const card = page.locator('.cloud-settings-card').filter({ has: page.locator('.cloud-connection-impact') })
+  await expect(card.locator('.cloud-state')).toHaveText('同步正常')
+  await card.getByText('高级诊断 / 恢复').click()
+  await card.getByRole('checkbox', { name: '自动同步' }).uncheck()
+  await page.evaluate(async () => {
+    const { dbPromise } = await import('/pjsdas/src/db.ts')
+    const db = await dbPromise
+    const action = await db.get('actions', 'A-action-1')
+    if (!action) throw Error('Missing fixture action')
+    await db.put('actions', { ...action, title: 'Offline local edit' })
+    window.dispatchEvent(new Event('focus'))
+  })
+  await expect(card.locator('.cloud-state')).toHaveText('待同步修改')
+  await expect(card).toContainText('此设备有尚未同步的修改')
+  await page.reload()
+  await expect(card.locator('.cloud-state')).toHaveText('待同步修改')
+  expect(await page.evaluate(async () => (await (await import('/pjsdas/src/db.ts')).dbPromise)
+    .get('actions', 'A-action-1'))).toMatchObject({ title: 'Offline local edit' })
+})

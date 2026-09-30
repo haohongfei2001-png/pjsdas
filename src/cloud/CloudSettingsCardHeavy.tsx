@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useUiLanguage } from '../uiLanguage.js'
 import { useCloud } from './CloudContext.js'
 import { connectedWorkspaceAuthorityEnabled } from './connectedWorkspaceRepository.js'
-import { inspectConnectedDivergence } from './cloudSync.js'
+import { hasUnsyncedLocalWorkspace, inspectConnectedDivergence } from './cloudSync.js'
 import AiAccessSettingsCard from '../aiAccess/AiAccessSettingsCard.js'
 import { fetchAudienceStatus, type AudienceStatus } from '../audienceAccessClient.js'
 import './cloudSettings.css'
@@ -21,6 +21,7 @@ export default function CloudSettingsCard() {
   const [localError, setLocalError] = useState('')
   const [audience, setAudience] = useState<AudienceStatus>()
   const [diagnostic, setDiagnostic] = useState<Awaited<ReturnType<typeof inspectConnectedDivergence>>>()
+  const [localDirty, setLocalDirty] = useState<boolean | undefined>()
   const advancedRef = useRef<HTMLDetailsElement>(null)
   const user = cloud.session?.user
   const mismatch = Boolean(user && cloud.device.workspaceOwnerUserId && cloud.device.workspaceOwnerUserId !== user.id)
@@ -30,6 +31,31 @@ export default function CloudSettingsCard() {
   const connectionError = localError || cloud.error || cloud.checkpoint.lastError
   const codedLocalError = /^[A-Z][A-Z0-9_]+:/.test(localError)
   const pendingLocal = cloud.outcome?.kind === 'local_pending'
+  useEffect(() => {
+    if (!user || !transactional) {
+      setLocalDirty(undefined)
+      return
+    }
+    let active = true
+    let sequence = 0
+    setLocalDirty(undefined)
+    const check = () => {
+      const current = ++sequence
+      void hasUnsyncedLocalWorkspace(user.id)
+        .then(value => { if (active && current === sequence) setLocalDirty(value) })
+        .catch(() => { if (active && current === sequence) setLocalDirty(undefined) })
+    }
+    check()
+    window.addEventListener('focus', check)
+    window.addEventListener('pjsdas:workspace-replaced', check)
+    const interval = window.setInterval(() => { if (document.visibilityState === 'visible') check() }, 15_000)
+    return () => {
+      active = false
+      window.removeEventListener('focus', check)
+      window.removeEventListener('pjsdas:workspace-replaced', check)
+      window.clearInterval(interval)
+    }
+  }, [user?.id, transactional, cloud.checkpoint.lastSyncedFingerprint, cloud.checkpoint.lastReadProjectionFingerprint, cloud.syncing])
   const impact = mismatch
     ? (zh ? '此设备保存着另一个账号的资料。请先切回原账号；双方资料均已保留。' : 'This device holds another account’s data. Return to that account; both copies are preserved.')
     : conflict
@@ -42,6 +68,10 @@ export default function CloudSettingsCard() {
             ? (zh ? '此账号尚未开通跨设备使用；此设备上的资料仍可查看。' : 'Cross-device access is unavailable for this account; data on this device remains available.')
             : pendingLocal
               ? (zh ? '部分修改仍在此设备，系统会继续核对保存结果。' : 'Some changes remain on this device while their save result is checked.')
+              : localDirty
+                ? (zh ? '此设备有尚未同步的修改。' : 'This device has changes that have not synced yet.')
+                : localDirty === undefined
+                  ? (zh ? '正在核对此设备的最新修改。' : 'Checking this device for recent changes.')
               : (zh ? '你的资料已连接此账号，并在设备间保持更新。' : 'Your data is connected to this account and stays up to date across devices.')
 
   useEffect(() => {
@@ -84,7 +114,7 @@ export default function CloudSettingsCard() {
             <h2>{zh ? '账号与跨设备数据' : 'Account & cross-device data'}</h2>
             <p>{zh ? '查看账号连接与最近更新状态。' : 'Check your account connection and latest update.'}</p>
           </div>
-          <span className={`cloud-state ${conflict || mismatch || connectionError || pendingLocal || (audience && !audience.allowed) ? 'warning' : user ? 'online' : ''}`}>
+          <span className={`cloud-state ${conflict || mismatch || connectionError || pendingLocal || localDirty || (audience && !audience.allowed) ? 'warning' : user && localDirty === false ? 'online' : ''}`}>
             {mismatch
               ? (zh ? '账号不匹配' : 'Account mismatch')
               : conflict
@@ -93,12 +123,14 @@ export default function CloudSettingsCard() {
                   ? (zh ? '连接中断' : 'Connection interrupted')
                 : pendingLocal
                   ? (zh ? '等待核对' : 'Checking changes')
+                : localDirty
+                  ? (zh ? '待同步修改' : 'Unsynced changes')
                 : audience && !audience.allowed
                   ? (zh ? '跨设备不可用' : 'Cross-device unavailable')
                 : user
-                  ? cloud.checkpoint.lastSyncedVersion
+                  ? cloud.checkpoint.lastSyncedVersion && localDirty === false
                     ? (zh ? '同步正常' : 'Sync is up to date')
-                    : (zh ? '正在连接' : 'Connecting')
+                    : (zh ? '正在核对' : 'Checking')
                   : cloud.loading
                     ? (zh ? '正在恢复登录…' : 'Restoring session…')
                     : (zh ? '仅本机' : 'Local only')}
@@ -198,8 +230,12 @@ export default function CloudSettingsCard() {
         )}
 
         {localError ? <div className="cloud-error">{codedLocalError
-          ? (zh ? '操作暂时无法完成。请在高级诊断中查看详情。' : 'The action could not be completed. See Advanced diagnostics for details.')
-          : localError}</div> : null}
+          ? user
+            ? (zh ? '操作暂时无法完成。请在高级诊断中查看详情。' : 'The action could not be completed. See Advanced diagnostics for details.')
+            : (zh ? '登录暂时无法完成。' : 'Sign-in could not be completed.')
+          : localError}
+          {codedLocalError && !user ? <details><summary>{zh ? '查看错误详情' : 'View error details'}</summary><p>{localError}</p></details> : null}
+        </div> : null}
       </section>
       <AiAccessSettingsCard />
     </>
