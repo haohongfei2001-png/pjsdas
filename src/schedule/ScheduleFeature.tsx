@@ -124,8 +124,8 @@ function pendingRescheduleDate(temporal?: ScheduleNodeTemporal) {
 function requestedView(): View {
   const value = new URLSearchParams(window.location.search).get('view')
   if (value === 'history' || value === 'past') return 'past'
-  if (value === 'upcoming' || value === 'unresolved' || value === 'undated') return value
-  return 'all'
+  if (value === 'all' || value === 'upcoming' || value === 'unresolved' || value === 'undated') return value
+  return 'upcoming'
 }
 
 function initialRange(entries: ScheduleEntry[], view: View, today: string) {
@@ -145,10 +145,13 @@ export default function ScheduleFeature({
   const all = useMemo(() => [
     ...stream.sections.history, ...stream.sections.unresolved, ...stream.sections.upcoming,
   ].sort(sortEntries), [stream])
+  const past = useMemo(() => [
+    ...stream.sections.history, ...stream.sections.unresolved,
+  ].sort(sortEntries).reverse(), [stream])
   const [view, setView] = useState<View>(requestedView)
   const entries = useMemo(() => view === 'all' ? all
-    : view === 'past' ? [...stream.sections.history].reverse()
-      : stream.sections[view], [all, stream, view])
+    : view === 'past' ? past
+      : stream.sections[view], [all, past, stream, view])
   const [range, setRange] = useState(() => initialRange(entries, view, today))
   const [selectedId, setSelectedId] = useState<string>()
   const [month, setMonth] = useState(today.slice(0, 7))
@@ -200,13 +203,12 @@ export default function ScheduleFeature({
   }, [range.end, entries.length, view])
 
   function changeView(next: View) {
-    const nextEntries = next === 'all' ? all : next === 'past'
-      ? [...stream.sections.history].reverse() : stream.sections[next]
+    const nextEntries = next === 'all' ? all : next === 'past' ? past : stream.sections[next]
     setView(next)
     setRange(initialRange(nextEntries, next, today))
     setSelectedId(undefined)
     setFeedback(undefined)
-    window.history.replaceState(null, '', window.location.pathname + (next === 'all' ? '' : '?view=' + next) + window.location.hash)
+    window.history.replaceState(null, '', window.location.pathname + '?view=' + next + window.location.hash)
   }
 
   function locateMonth(value: string) {
@@ -220,7 +222,7 @@ export default function ScheduleFeature({
     setView('all')
     setRange({ start: index, end: Math.min(all.length, index + 30) })
     setSelectedId(undefined)
-    window.history.replaceState(null, '', window.location.pathname + window.location.hash)
+    window.history.replaceState(null, '', window.location.pathname + '?view=all' + window.location.hash)
     window.requestAnimationFrame(() => listRef.current?.scrollIntoView({ block: 'start' }))
   }
 
@@ -287,23 +289,23 @@ export default function ScheduleFeature({
     }
   }
 
-  const tabs: Array<[View, string, string, number]> = [
-    ['all', '全部', 'All', all.length],
-    ['upcoming', '接下来', 'Upcoming', stream.counts.upcoming],
-    ['past', '已发生', 'Past', stream.counts.history],
+  const tabs: Array<[View, string, string]> = [
+    ['all', '全部', 'All'],
+    ['upcoming', '接下来', 'Upcoming'],
+    ['past', '已发生', 'Past'],
   ]
   return <section className="tsui-schedule-page">
     <header className="tsui-page-heading"><div><h1>{zh ? '日程' : 'Schedule'}</h1></div></header>
     <div className="tsui-schedule-toolbar">
       <nav className="tsui-schedule-tabs" aria-label={zh ? '日程视图' : 'Schedule views'}>
-        {tabs.map(([id, chinese, english, count]) => <button key={id} type="button" className={view === id ? 'active' : ''} aria-current={view === id ? 'page' : undefined} onClick={() => changeView(id)}>{zh ? chinese : english}<span>{count}</span></button>)}
+        {tabs.map(([id, chinese, english]) => <button key={id} type="button" className={view === id ? 'active' : ''} aria-current={view === id ? 'page' : undefined} onClick={() => changeView(id)}>{zh ? chinese : english}{id === 'upcoming' ? <span>{stream.counts.upcoming}</span> : null}</button>)}
       </nav>
       <div className="tsui-schedule-locator">
         <label><span className="sr-only">{zh ? '选择月份' : 'Choose month'}</span><input type="month" value={month} onChange={(event) => locateMonth(event.target.value)} /></label>
-        <button type="button" onClick={() => { setMonth(today.slice(0, 7)); changeView('all'); window.requestAnimationFrame(() => listRef.current?.scrollIntoView({ block: 'start' })) }}>{zh ? '今天' : 'Today'}</button>
+        <button type="button" onClick={() => { setMonth(today.slice(0, 7)); changeView('upcoming'); window.requestAnimationFrame(() => listRef.current?.scrollIntoView({ block: 'start' })) }}>{zh ? '今天' : 'Today'}</button>
       </div>
     </div>
-    {(stream.counts.unresolved > 0 || stream.counts.undated > 0) ? <div className="tsui-schedule-context">
+    {view !== 'upcoming' && (stream.counts.unresolved > 0 || stream.counts.undated > 0) ? <div className="tsui-schedule-context">
       {stream.counts.unresolved > 0 ? <button type="button" onClick={() => changeView('unresolved')}>{zh ? '过去安排待确认' : 'Past arrangements to confirm'} · {stream.counts.unresolved}</button> : null}
       {stream.counts.undated > 0 ? <button type="button" onClick={() => changeView('undated')}>{zh ? '时间待定' : 'Time TBD'} · {stream.counts.undated}</button> : null}
       {view === 'unresolved' || view === 'undated' ? <button type="button" onClick={() => changeView('all')}>{zh ? '返回全部' : 'Back to all'}</button> : null}

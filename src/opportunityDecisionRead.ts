@@ -184,15 +184,41 @@ function nodeSortKey(node: ScheduleNode, now: Date, timezone: string) {
 }
 
 function nearestNodeFor(
-  opportunityId: string,
+  opportunity: Opportunity,
+  process: ProcessRecord | undefined,
   nodes: ScheduleNode[],
   now: Date,
   timezone: string,
 ): OpportunityDecisionNode | undefined {
-  const node = latestNodes(nodes)
-    .filter((item) => item.opportunityId === opportunityId)
-    .filter((item) => item.state !== 'completed')
+  const candidates = latestNodes(nodes)
+    .filter((item) => item.opportunityId === opportunity.id && item.state !== 'completed')
+  const future = candidates.filter((item) => nodeState(item, now, timezone) !== 'elapsed_unresolved'
+    && Number.isFinite(nodeSortKey(item, now, timezone)))
     .sort((a, b) => nodeSortKey(a, now, timezone) - nodeSortKey(b, now, timezone) || a.id.localeCompare(b.id))[0]
+  const progressAt = [process?.effectiveProcessEventAt, opportunity.effectiveProcessEventAt, process?.lastProgressAt]
+    .filter((value): value is string => Boolean(value && Number.isFinite(Date.parse(value))))
+    .sort((a, b) => Date.parse(b) - Date.parse(a))[0]
+  const stageForNode: Partial<Record<ScheduleNodeKind, Opportunity['processStage']>> = {
+    interview: 'interview', written_test: 'written_test', assessment: 'assessment',
+  }
+  const relevantPast = candidates.filter((item) => {
+    if (nodeState(item, now, timezone) !== 'elapsed_unresolved'
+      || opportunity.participationStatus === 'abandoned'
+      || process?.participationState === 'abandoned'
+      || stageForNode[item.kind] !== (process?.stage ?? opportunity.processStage)) return false
+    if (!progressAt) return true
+    if (item.temporal.precision === 'date' && item.temporal.date) {
+      return item.temporal.date > localDateKey(new Date(progressAt), timezone)
+    }
+    const at = item.temporal.endAt ?? item.temporal.deadlineAt ?? item.temporal.startAt
+    return Boolean(at && Date.parse(at) > Date.parse(progressAt))
+  }).sort((a, b) => {
+    const time = (item: ScheduleNode) => Date.parse(item.temporal.endAt ?? item.temporal.deadlineAt
+      ?? item.temporal.startAt ?? (item.temporal.date ? `${item.temporal.date}T12:00:00Z` : '')) || 0
+    return time(b) - time(a) || a.id.localeCompare(b.id)
+  })[0]
+  const undated = candidates.find((item) => nodeState(item, now, timezone) !== 'elapsed_unresolved')
+  const node = future ?? relevantPast ?? undated
   if (!node) return undefined
   const state = nodeState(node, now, timezone)
   return {
@@ -340,7 +366,7 @@ export function getOpportunityDecisionRead(
   if (!opportunity) return undefined
   const process = processFor(opportunity, snapshot.data.processes)
   const group = groupFor(opportunity, snapshot.data.applicationGroups)
-  const nearestNode = nearestNodeFor(opportunity.id, snapshot.data.scheduleNodes ?? [], ctx.now, ctx.timezone)
+  const nearestNode = nearestNodeFor(opportunity, process, snapshot.data.scheduleNodes ?? [], ctx.now, ctx.timezone)
   const freshness = sourceFreshness(opportunity, ctx.now)
   const delta = deadlineDelta(opportunity.id, snapshot.data.scheduleNodes ?? [], ctx.now, ctx.timezone)
   const ranked = rankedActionsByOpportunity(snapshot, ctx.now).get(opportunity.id)
@@ -379,7 +405,7 @@ export function buildOpportunityDecisionList(
   const items = snapshot.data.opportunities.map((opportunity) => {
     const process = processFor(opportunity, snapshot.data.processes)
     const group = groupFor(opportunity, snapshot.data.applicationGroups)
-    const nearestNode = nearestNodeFor(opportunity.id, snapshot.data.scheduleNodes ?? [], ctx.now, ctx.timezone)
+    const nearestNode = nearestNodeFor(opportunity, process, snapshot.data.scheduleNodes ?? [], ctx.now, ctx.timezone)
     const freshness = sourceFreshness(opportunity, ctx.now)
     const delta = deadlineDelta(opportunity.id, snapshot.data.scheduleNodes ?? [], ctx.now, ctx.timezone)
     const read: OpportunityDecisionRead = {
