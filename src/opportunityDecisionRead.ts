@@ -192,7 +192,8 @@ function nearestNodeFor(
 ): OpportunityDecisionNode | undefined {
   const candidates = latestNodes(nodes)
     .filter((item) => item.opportunityId === opportunity.id && item.state !== 'completed')
-  const future = candidates.filter((item) => nodeState(item, now, timezone) !== 'elapsed_unresolved')
+  const future = candidates.filter((item) => nodeState(item, now, timezone) !== 'elapsed_unresolved'
+    && Number.isFinite(nodeSortKey(item, now, timezone)))
     .sort((a, b) => nodeSortKey(a, now, timezone) - nodeSortKey(b, now, timezone) || a.id.localeCompare(b.id))[0]
   const progressAt = [process?.effectiveProcessEventAt, opportunity.effectiveProcessEventAt, process?.lastProgressAt]
     .filter((value): value is string => Boolean(value && Number.isFinite(Date.parse(value))))
@@ -216,7 +217,8 @@ function nearestNodeFor(
       ?? item.temporal.startAt ?? (item.temporal.date ? `${item.temporal.date}T12:00:00Z` : '')) || 0
     return time(b) - time(a) || a.id.localeCompare(b.id)
   })[0]
-  const node = future ?? relevantPast
+  const undated = candidates.find((item) => nodeState(item, now, timezone) !== 'elapsed_unresolved')
+  const node = future ?? relevantPast ?? undated
   if (!node) return undefined
   const state = nodeState(node, now, timezone)
   return {

@@ -154,6 +154,13 @@ describe('UU-05 Opportunity decision read model', () => {
       opp.id, { now: NOW, timezone: 'Asia/Shanghai' })
     expect(read?.nearestNode).toMatchObject({ nodeId: future.id, state: 'scheduled', requiresResolution: false })
     expect(read?.reasons).not.toContainEqual({ code: 'elapsed_node_unresolved', tone: 'risk' })
+    const undated: ScheduleNode = { ...future, id: 'undated-interview', occurrenceId: 'undated-interview',
+      temporal: { shape: 'estimated_date', precision: 'datetime', timezone: 'Asia/Shanghai',
+        resolutionBasis: 'source_explicit' } }
+    const unresolved = getOpportunityDecisionRead(snapshot({ opportunities: [opp], scheduleNodes: [past, undated] }),
+      opp.id, { now: NOW, timezone: 'Asia/Shanghai' })
+    expect(unresolved?.nearestNode).toMatchObject({ nodeId: past.id, requiresResolution: true })
+    expect(unresolved?.reasons).toContainEqual({ code: 'elapsed_node_unresolved', tone: 'risk' })
     const progressed = getOpportunityDecisionRead(snapshot({ opportunities: [opp], scheduleNodes: [past],
       processes: [{ id: 'current-process', opportunityId: opp.id, company: opp.company, role: opp.role,
         stage: 'interview', stageLabel: '面试', progress: 'scheduled', result: 'pending',
