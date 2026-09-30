@@ -223,6 +223,30 @@ test('application submitted immediately settles the exact action and process', a
   expect(server.snapshot.data.processes.find(process => process.opportunityId === 'dense-job-2')?.stage).toBe('screening')
 })
 
+test('submission Undo retains a newly created process and confirms without full recovery', async ({ page, context }) => {
+  const server = await setup(context)
+  server.snapshot.data.processes = server.snapshot.data.processes.filter(process => process.opportunityId !== 'dense-job-2')
+  server.setDelay(250)
+  server.setNow(new Date(INSTANT_NOW.getTime() + 1000))
+  await start(page)
+  await page.locator('[data-action-id="apply:dense-job-2"] .tsui-done-action').click()
+  await expect.poll(() => pendingCount(page)).toBe(0)
+  await page.getByRole('button', { name: '撤销', exact: true }).click()
+  await expect(page.locator('[data-action-id="apply:dense-job-2"]')).toBeVisible()
+  const optimistic = await page.evaluate(async () => (await (await import('/pjsdas/src/db.ts')).exportLocalSnapshot()).data.processes.find(process => process.opportunityId === 'dense-job-2'))
+  expect(optimistic).toMatchObject({ stage: 'not_applied', progress: 'not_started' })
+  await expect.poll(() => pendingCount(page)).toBe(0)
+  expect(new Set(server.sent).size).toBe(2)
+  const records = await page.evaluate(async () => (await (await import('/pjsdas/src/db.ts')).readCommandInteractions('instant-owner')))
+  expect(records.every(record => record.state === 'confirmed')).toBe(true)
+  const local = await page.evaluate(async () => (await (await import('/pjsdas/src/db.ts')).exportLocalSnapshot()))
+  expect(local.data.processes.find(process => process.opportunityId === 'dense-job-2')).toEqual(server.snapshot.data.processes.find(process => process.opportunityId === 'dense-job-2'))
+  expect(local.data.timeline!.length).toBeGreaterThanOrEqual(3941)
+  await page.reload()
+  await expect(page.locator('[data-action-id="apply:dense-job-2"]')).toBeVisible()
+  expect(server.sent).toHaveLength(2)
+})
+
 
 test('Undo journal crash before local transaction recovers the original identity', async ({ page, context }) => {
   const server = await setup(context)
@@ -351,6 +375,10 @@ test('verified proof compaction retains original journals and audit and refuses 
     for (let index = 0; index < 64; index++) await tx.store.add({ accountKey: 'instant-owner', delta: { contract: 'delta-v1', baseRevision: 1205, changes: [] } })
     await tx.done
     const local = await api.exportLocalSnapshot()
+    // A proven baseline is independent of unique-ID collection order, before
+    // and after compaction. Reverse the captured order to exercise both paths.
+    local.data.actions.reverse()
+    local.data.scheduleNodes!.reverse()
     const verified = await api.isRecordedAccountProjection('instant-owner', local, { compact: true })
     const after = await db.count('projectionDeltas')
     const stillVerified = await api.isRecordedAccountProjection('instant-owner', await api.exportLocalSnapshot())
@@ -362,6 +390,28 @@ test('verified proof compaction retains original journals and audit and refuses 
     return { verified, after, stillVerified, journalRetained, timelineRetained, genuineEditVerified }
   })
   expect(result).toEqual({ verified: true, after: 0, stillVerified: true, journalRetained: true, timelineRetained: true, genuineEditVerified: false })
+})
+
+test('capacity Undo retains newly materialized preferences with authoritative compensation semantics', async ({ page, context }) => {
+  const server = await setup(context)
+  delete server.snapshot.data.timePlanning
+  server.setDelay(50)
+  await start(page)
+  const result = await page.evaluate(async () => {
+    const api = await import('/pjsdas/src/db.ts'), client = await import('/pjsdas/src/cloud/instantCommandClient.ts')
+    const commandId = 'instant-capacity:new-preferences'
+    await client.beginInstantCommand('instant-owner', await api.exportLocalSnapshot(), { commandId, kind: 'set_date_capacity', date: '2026-10-01', minutes: 360 })
+    return commandId
+  })
+  await expect.poll(() => pendingCount(page)).toBe(0)
+  await page.evaluate(async commandId => {
+    await (await import('/pjsdas/src/cloud/instantCommandClient.ts')).beginInstantUndo('instant-owner', commandId, await (await import('/pjsdas/src/db.ts')).exportLocalSnapshot())
+  }, result)
+  await expect.poll(() => pendingCount(page)).toBe(0)
+  const local = await page.evaluate(async () => (await (await import('/pjsdas/src/db.ts')).exportLocalSnapshot()))
+  expect(local.data.timePlanning).toEqual(server.snapshot.data.timePlanning)
+  expect(local.data.timePlanning).toMatchObject({ version: 1, dateOverrides: {} })
+  expect(server.sent).toHaveLength(2)
 })
 
 

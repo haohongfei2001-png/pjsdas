@@ -358,6 +358,7 @@ describe('first-party connected workspace endpoint', () => {
       if (url.includes('/pjsdas_command_ledger?')) return json([{
         command_id: 'instant-receipt-001', operation: 'domain:set_date_capacity', payload_hash: 'hash', resulting_revision: 1205,
         receipt: { commandId: 'instant-receipt-001', schemaVersion: 17, readModelInvalidation: ['time_planning'],
+          undoCompensation: { operation: 'restore_date_capacity', payload: { date: '2026-10-01', minutes: 240 } },
           projectionDelta: { contract: 'delta-v1', baseRevision: 1204, changes: [] } },
       }])
       throw new Error('Unexpected full workspace read')
@@ -368,6 +369,7 @@ describe('first-party connected workspace endpoint', () => {
     const response = await handler(request('POST', 'ordinary-token', { action: 'receipt', commandId: 'instant-receipt-001' }))
     expect(response.status).toBe(200)
     expect(await response.json()).toMatchObject({ found: true, revision: 1205, workspaceVersion: 'txn:1205',
+      receipt: { undoCompensation: { operation: 'restore_date_capacity', payload: { date: '2026-10-01', minutes: 240 } } },
       invalidatedReadModelKeys: ['time_planning'], delta: { contract: 'delta-v1' } })
     expect(authorizeIdentity).toHaveBeenCalledTimes(1)
     expect(fetchImpl).toHaveBeenCalledTimes(2)

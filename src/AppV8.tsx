@@ -572,11 +572,11 @@ export default function AppV8() {
 
   async function undoLastCompletion() {
     const item = lastCompletedAction
-    if (!item || item.outcome !== 'done') return
+    if (!item || item.outcome !== 'done' || !snapshot) return
     try {
       if (cloud.session && connectedWorkspaceAuthorityEnabled() && item.commandId) {
         if (item.commandId.startsWith('instant-action:')) {
-          await beginInstantUndo(cloud.session.user.id, item.commandId)
+          await beginInstantUndo(cloud.session.user.id, item.commandId, snapshot)
           setLastCompletedAction(null)
           return
         }
@@ -764,10 +764,10 @@ export default function AppV8() {
 
   async function undoScheduleOccurrenceCommand(targetCommandId: string) {
     const account = cloud.session?.user.id
-    if (!account || !connectedWorkspaceAuthorityEnabled()) throw new Error('Authoritative workspace is unavailable.')
+    if (!account || !snapshot || !connectedWorkspaceAuthorityEnabled()) throw new Error('Authoritative workspace is unavailable.')
     const pending = listAccountPendingOperations(account).find((item) => item.action === 'undo' && item.targetCommandId === targetCommandId)
     if (await (await import('./db.js')).readCommandInteraction(account, targetCommandId)) {
-      await beginInstantUndo(account, targetCommandId)
+      await beginInstantUndo(account, targetCommandId, snapshot)
       return
     }
     const result = await undoConnectedBusinessCommand(account, targetCommandId,

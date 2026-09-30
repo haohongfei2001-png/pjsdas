@@ -7,7 +7,7 @@ import { fetchBackend } from '../backendEndpoints.js'
 import { getAccountAccessToken } from './cloudClient.js'
 import { captureAccountCacheLease } from './accountCacheLease.js'
 import { getAccountCheckpoint, patchAccountCheckpoint } from './syncState.js'
-import { interactionProjection } from './interactionProjection.js'
+import { interactionProjection, undoInteractionProjection } from './interactionProjection.js'
 import { createConnectedCommandId, journalConnectedInteraction, settleConnectedInteraction, listAccountPendingOperations } from './authoritativeCommandClient.js'
 import { reverseWorkspaceDelta, validateWorkspaceDelta, patchDeltaRow, type WorkspaceDelta, type EntityDelta } from '../workspaceDelta.js'
 
@@ -66,16 +66,19 @@ export async function beginInstantCommand(accountKey: string, snapshot: PJSDASSn
   setTimeout(() => { if (navigator.onLine) void dispatch(record).catch(() => undefined) }, 0)
   return record.commandId
 }
-export async function beginInstantUndo(accountKey: string, targetCommandId: string) {
+export async function beginInstantUndo(accountKey: string, targetCommandId: string, snapshot: PJSDASSnapshot) {
   const started = performance.now()
   const lease = captureAccountCacheLease(accountKey)
-  const target = await readCommandInteraction(accountKey, targetCommandId)
-  if (!target || target.state === 'rejected' || target.state === 'conflict') throw new Error('这次操作无法安全撤销，请核对最新记录。')
   const commandId = createConnectedCommandId('instant-undo')
-  const record: CommandInteractionRecord = { id: recordId(accountKey, commandId), commandId, accountKey, targetCommandId,
-    predecessors: [targetCommandId], delta: { ...reverseWorkspaceDelta(target.delta), changes: reverseWorkspaceDelta(target.delta).changes.filter(change => change.collection !== 'timeline') }, state: 'active', createdAt: new Date().toISOString() }
   journalConnectedInteraction(accountKey, { commandId, targetCommandId, baseRevision: version(accountKey) })
-  try { await persistInteractionProjection(record, lease.assertCurrent) } catch (error) { settleConnectedInteraction(accountKey, commandId); throw error }
+  let record: CommandInteractionRecord
+  try {
+    const target = await readCommandInteraction(accountKey, targetCommandId)
+    if (!target || !['active', 'confirmed'].includes(target.state)) throw new Error('这次操作无法安全撤销，请核对最新记录。')
+    record = { id: recordId(accountKey, commandId), commandId, accountKey, targetCommandId,
+      predecessors: [targetCommandId], delta: undoInteractionProjection(snapshot, target.command, target.compensation, target.delta, version(accountKey)), state: 'active', createdAt: new Date().toISOString() }
+    await persistInteractionProjection(record, lease.assertCurrent)
+  } catch (error) { settleConnectedInteraction(accountKey, commandId); throw error }
   interactionMetric('durable-outbox', started)
   emit(record, record.delta)
   setTimeout(() => { if (navigator.onLine) void dispatch(record).catch(() => undefined) }, 0)
@@ -133,6 +136,9 @@ async function reconcile(record: CommandInteractionRecord, payload: any, assertC
     return
   }
   if (!['COMMITTED', 'ALREADY_APPLIED', 'NO_WRITE'].includes(payload.outcome)) throw new Error('Invalid command outcome.')
+  // Authenticated receipt evidence carries the server's exact compensation,
+  // including its clock and provenance. Never infer that evidence from current local rows.
+  if (payload.receipt?.undoCompensation) record = { ...record, compensation: payload.receipt.undoCompensation }
   if (payload.outcome === 'NO_WRITE') return reject(record, '这次操作未写入，已恢复原状态。', 'rejected')
   // A durable receipt remains confirmed even if safe local projection is blocked.
   if (!payload.delta && payload.outcome === 'ALREADY_APPLIED' && !record.delta.changes.length) {
@@ -258,7 +264,7 @@ export async function recoverInstantInteraction(accountKey: string, commandId: s
       ? await readCommandInteraction(accountKey, pending.targetCommandId) : undefined
     const delta = pending.command?.type === 'domain'
       ? interactionProjection(local, pending.command.value, pending.baseRevision ?? version(accountKey)).delta
-      : target ? { ...reverseWorkspaceDelta(target.delta), changes: reverseWorkspaceDelta(target.delta).changes.filter(change => change.collection !== 'timeline') } : undefined
+      : target ? undoInteractionProjection(local, target.command, target.compensation, target.delta, version(accountKey)) : undefined
     if (!delta) return
     record = { id: recordId(accountKey, commandId), accountKey, commandId, command: pending.command?.type === 'domain' ? pending.command.value : undefined,
       targetCommandId: pending.targetCommandId, predecessors: target ? [target.commandId] : [],

@@ -1384,9 +1384,6 @@ export async function isRecordedAccountProjection(accountKey: string, snapshot: 
   if (recorded?.key !== 'authoritativeProjection' || recorded.accountKey !== accountKey) return false
   const deltas = (await db.getAll('projectionDeltas')).filter(item => item.accountKey === accountKey)
   options?.assertCurrent?.()
-  if (!deltas.length) return recorded.canonical === canonicalWorkspaceJson(snapshot)
-  let expected: PJSDASSnapshot = { ...snapshot, data: JSON.parse(recorded.canonical) }
-  try { for (const item of deltas) expected = applyWorkspaceDelta(expected, item.delta) } catch { return false }
   const normalizeOrder = (value: PJSDASSnapshot) => {
     const data = { ...value.data }
     for (const key of DELTA_COLLECTIONS) {
@@ -1395,6 +1392,9 @@ export async function isRecordedAccountProjection(accountKey: string, snapshot: 
     }
     return { ...value, data }
   }
+  let expected: PJSDASSnapshot = { ...snapshot, data: JSON.parse(recorded.canonical) }
+  if (!deltas.length) return canonicalWorkspaceJson(normalizeOrder(expected)) === canonicalWorkspaceJson(normalizeOrder(snapshot))
+  try { for (const item of deltas) expected = applyWorkspaceDelta(expected, item.delta) } catch { return false }
   // This is a recorded local transaction proof, so require exact facts and
   // audit rows. Only IndexedDB primary-key ordering is normalized.
   const canonical = canonicalWorkspaceJson(normalizeOrder(snapshot))
@@ -1410,7 +1410,7 @@ export async function isRecordedAccountProjection(accountKey: string, snapshot: 
       const current = (await tx.objectStore('projectionDeltas').getAll()).filter(item => item.accountKey === accountKey)
       if (baseline?.key === 'authoritativeProjection' && baseline.accountKey === accountKey && baseline.canonical === recorded.canonical
         && current.length === deltas.length && current.every((item, index) => item.sequence === deltas[index].sequence)) {
-        await tx.objectStore('meta').put({ ...recorded, canonical: canonicalWorkspaceJson(snapshot) })
+        await tx.objectStore('meta').put({ ...recorded, canonical })
         for (const item of deltas) await tx.objectStore('projectionDeltas').delete(item.sequence!)
       }
       options.assertCurrent?.()

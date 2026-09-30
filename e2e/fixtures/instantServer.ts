@@ -38,7 +38,7 @@ export async function setupInstantServer(context: BrowserContext, historyRows = 
       else { const evaluated = applyUserDomainCommand(snapshot, body.command.value, serverNow); if (evaluated.status === 'ALREADY_APPLIED') return cors(route, { outcome: 'ALREADY_APPLIED', revision, workspaceVersion: `txn:${revision}`, result: { status: 'ALREADY_APPLIED' }, recoveryRequired: true }); snapshot = evaluated.snapshot; if (evaluated.status === 'APPLIED') compensations.set(body.commandId, evaluated.compensation) }
       const delta = diffWorkspaceDelta(before, snapshot, revision++)
       const result = { outcome: 'COMMITTED', revision, workspaceVersion: `txn:${revision}`, schemaVersion: snapshot.version,
-        delta, receipt: { commandId: body.commandId, revision, undoAvailable: true, }  }
+        delta, receipt: { commandId: body.commandId, revision, undoAvailable: true, undoCompensation: compensations.get(body.commandId) }  }
       serverExecutionMs.push(performance.now() - executionStarted)
       receipts.set(body.commandId, result)
       payloadBytes.push(Buffer.byteLength(JSON.stringify(result)))

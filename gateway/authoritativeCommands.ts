@@ -1,4 +1,5 @@
 import { diffWorkspaceDelta } from '../src/workspaceDelta.js'
+import { INSTANT_COMMAND_KINDS } from '../src/instantCommandKinds.js'
 import { restoreActionStatusUndo, type ActionStatusUndo } from '../src/actionStatusUndo.js'
 import * as z from 'zod/v4'
 import {
@@ -550,6 +551,8 @@ export function createAuthoritativeCommandExecutor(options: TransactionalWorkspa
         readModelInvalidation: readModelInvalidation(affectedObjects),
         lifecycle: lifecycle(startedAt, parsed.baseRevision, current.revision),
         result,
+        ...(parsed.command.type === 'domain' && INSTANT_COMMAND_KINDS.has(parsed.command.value.kind)
+          ? { undoCompensation: evaluated.compensation } : {}),
       }
       const compensation = evaluated.compensation as Record<string, unknown> | undefined
       const committed = await store.commitAuthoritativeForUser({
