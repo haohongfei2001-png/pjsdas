@@ -8,6 +8,7 @@ const phase = process.env.TA_SECONDARY_PHASE === 'before' ? 'before' : 'after'
 const evidence = `secondary-ui-${phase}`
 const now = '2026-09-23T08:00:00.000Z'
 const digest = (bytes: Buffer) => createHash('sha256').update(bytes).digest('hex')
+const modalRoots = '.cgr-capture-sheet, .backup-dialog, .event-dock, .prep-graph-dialog, .discovery-inbox-modal, .mcp-proposal-card'
 
 function fixture() {
   const snapshot = workspace()
@@ -91,30 +92,50 @@ async function capture(page: Page, label: string, width: number, scale = 100, pr
     .filter(element => element.getClientRects().length && (element.getBoundingClientRect().right > innerWidth + 1 || element.getBoundingClientRect().left < -1))
     .slice(0, 20).map(element => ({ tag: element.tagName, className: element.className, right: element.getBoundingClientRect().right,
       left: element.getBoundingClientRect().left, scrollWidth: element.scrollWidth, clientWidth: element.clientWidth }))) : []
-  const metric = { label, width, scale, overflow, overflowNodes, sha256: digest(bytes), protectedMain: protectMain }
+  const modalBounds = await page.locator(modalRoots).evaluateAll(elements => elements.map(element => ({
+    className: element.className, left: element.getBoundingClientRect().left, right: element.getBoundingClientRect().right,
+    clientWidth: element.clientWidth, scrollWidth: element.scrollWidth,
+  })))
+  const metric = { label, width, scale, overflow, overflowNodes, modalBounds, sha256: digest(bytes), protectedMain: protectMain }
   console.log('SECONDARY_UI:' + JSON.stringify(metric))
   await writeFile(`${evidence}/${name}.json`, JSON.stringify(metric, null, 2))
-  if (phase === 'after') expect(overflow, `${name}: no horizontal overflow`).toBeLessThanOrEqual(1)
+  if (phase === 'after') {
+    for (const bounds of modalBounds) {
+      expect(bounds.left, `${name}: dialog left edge`).toBeGreaterThanOrEqual(0)
+      expect(bounds.right, `${name}: dialog right edge`).toBeLessThanOrEqual(width + 1)
+      expect(bounds.scrollWidth - bounds.clientWidth, `${name}: no hidden horizontal dialog content`).toBeLessThanOrEqual(1)
+    }
+    if (overlay && overflow > 1) {
+      // The frozen Discovery inbox behind the dialog already overflows at
+      // 320px/200% (its header/list reach442px). Do not change the owner's
+      // protected background to conceal it: require no regression there,
+      // while the active dialog still satisfies the strict bounds above.
+      const baseline = JSON.parse(await readFile(`secondary-ui-before/${name}.json`, 'utf8'))
+      expect(modalBounds.length).toBeGreaterThan(0)
+      expect(overflow, `${name}: unchanged background overflow`).toBeLessThanOrEqual(baseline.overflow)
+    } else expect(overflow, `${name}: no horizontal overflow`).toBeLessThanOrEqual(1)
+  }
 }
 
-for (const width of [1440, 390]) test(`main pixels stay fixed before and after secondary navigation at ${width}`, async ({ page }) => {
+for (const width of [1440, 390, 320]) test(`main pixels stay fixed before and after secondary navigation at ${width}`, async ({ page }) => {
   const mutations = await seed(page)
+  const scale = width === 320 ? 200 : 100
   await page.setViewportSize({ width, height: width < 600 ? 844 : 900 })
   await page.goto('/pjsdas/today')
   await expect(page.locator('.tsui-task-row')).not.toHaveCount(0)
-  await capture(page, 'MAIN_TODAY', width, 100, true)
+  await capture(page, 'MAIN_TODAY', width, scale, true)
   await page.locator('.tsui-primary-nav').getByRole('button', { name: '岗位库', exact: true }).click()
   await expect(page.locator('.tsui-job-open')).toHaveCount(2)
-  await capture(page, 'MAIN_JOBS', width, 100, true)
+  await capture(page, 'MAIN_JOBS', width, scale, true)
   await page.locator('.tsui-primary-nav').getByRole('button', { name: '日程', exact: true }).click()
   await expect(page.locator('.tsui-schedule-row')).not.toHaveCount(0)
-  await capture(page, 'MAIN_SCHEDULE', width, 100, true)
+  await capture(page, 'MAIN_SCHEDULE', width, scale, true)
   await page.locator('.tsui-topbar').getByRole('button', { name: '设置', exact: true }).click()
   await expect(page.getByRole('heading', { name: '账号与跨设备数据', exact: true })).toBeVisible()
-  await capture(page, 'SETTINGS', width)
+  await capture(page, 'SETTINGS', width, scale)
   await page.locator('.tsui-primary-nav').getByRole('button', { name: '今天', exact: true }).click()
   await expect(page.locator('.tsui-task-row')).not.toHaveCount(0)
-  await capture(page, 'MAIN_AFTER_SETTINGS', width, 100, true)
+  await capture(page, 'MAIN_AFTER_SETTINGS', width, scale, true)
   await page.locator('.tsui-tell-button').click()
   await expect(page.getByRole('textbox', { name: '要告诉 TodayAction 的内容' })).toBeFocused()
   if (phase === 'after') {
@@ -123,13 +144,13 @@ for (const width of [1440, 390]) test(`main pixels stay fixed before and after s
     }))
     expect(ring).toEqual({ color: 'rgb(49, 94, 197)', width: '3px' })
   }
-  await capture(page, 'CAPTURE', width)
+  await capture(page, 'CAPTURE', width, scale)
   await page.getByRole('textbox', { name: '要告诉 TodayAction 的内容' }).fill('例如：明天下午准备面试。')
   await expect(page.locator('.cgr-understanding')).toBeVisible()
-  await capture(page, 'CAPTURE_PREVIEW', width)
+  await capture(page, 'CAPTURE_PREVIEW', width, scale)
   await page.keyboard.press('Escape')
   await expect(page.locator('.tsui-tell-button')).toBeFocused()
-  await capture(page, 'MAIN_AFTER_CAPTURE', width, 100, true)
+  await capture(page, 'MAIN_AFTER_CAPTURE', width, scale, true)
   expect(mutations).toEqual([])
 })
 
@@ -166,15 +187,15 @@ for (const width of [1440, 390, 320]) test(`details and settings retain readable
   await expect(page.locator('.tsui-schedule-detail')).toHaveCount(0)
   await page.goto('/pjsdas/settings')
   await expect(page.getByRole('heading', { name: '账号与跨设备数据', exact: true })).toBeVisible()
-  await page.locator('.settings-group').filter({ hasText: '可用时间' }).locator('summary').first().click()
+  await page.locator('.settings-group > summary').filter({ hasText: '可用时间' }).click()
   await capture(page, 'SETTINGS_PLANNING', width, width === 320 ? 200 : 100)
-  await page.locator('.settings-group').filter({ hasText: '岗位发现偏好' }).locator('summary').first().click()
+  await page.locator('.settings-group > summary').filter({ hasText: '岗位发现偏好' }).click()
   await expect(page.locator('.discovery-profile-grid')).toBeVisible()
   await capture(page, 'SETTINGS_DISCOVERY', width, width === 320 ? 200 : 100)
-  await page.locator('.settings-group').filter({ hasText: '决策规则' }).locator('summary').first().click()
+  await page.locator('.settings-group > summary').filter({ hasText: '决策规则' }).click()
   await expect(page.locator('.rules-grid')).toBeVisible()
   await capture(page, 'SETTINGS_RULES', width, width === 320 ? 200 : 100)
-  await page.locator('.settings-group').filter({ hasText: '数据与恢复' }).locator('summary').first().click()
+  await page.locator('.settings-group > summary').filter({ hasText: '数据与恢复' }).click()
   await page.locator('.backup-dock-trigger').click()
   await expect(page.locator('.backup-dialog')).toBeVisible()
   await capture(page, 'BACKUP_DETAIL', width, width === 320 ? 200 : 100)
