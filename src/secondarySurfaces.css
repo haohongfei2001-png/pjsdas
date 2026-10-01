@@ -256,3 +256,32 @@
   .cgr-capture-sheet .cgr-capture-header > div { width: 100%; }
   .cgr-capture-sheet .cgr-capture-header > button { align-self: flex-end; }
 }
+
+/* Settings hierarchy: independent account and source cards, with local status/actions. */
+.settings-surface .settings-connections, .settings-surface .settings-sources { display: grid; gap: 16px; }
+.settings-surface .settings-account,
+.settings-surface .settings-source-panel { min-width: 0; padding: 22px; border: 1px solid var(--ta-secondary-line); border-radius: 15px; background: #fff; }
+.settings-surface .settings-sources.cloud-settings-card { padding: 0; border: 0; }
+.settings-surface .settings-source-eyebrow { display: none; }
+.settings-surface .settings-source-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+.settings-surface .settings-source-header > div { min-width: 0; }
+.settings-surface .settings-source-header h2 { margin: 0 0 6px; font-size: 1.0625rem; line-height: 1.4; letter-spacing: -.018em; }
+.settings-surface .settings-source-header p { margin: 0; color: var(--ta-secondary-muted); font-size: .8125rem; line-height: 1.6; }
+.settings-surface .settings-source-operation { display: flex; align-items: flex-start; justify-content: space-between; gap: 24px; margin-top: 18px; }
+.settings-surface .settings-source-operation > div { min-width: 0; flex: 1; }
+.settings-surface .settings-source-operation > button { flex: 0 0 auto; }
+.settings-surface .settings-source-operation strong { font-size: .875rem; overflow-wrap: anywhere; }
+.settings-surface .settings-source-panel p { max-width: 76ch; color: var(--ta-secondary-muted); font-size: .8125rem; line-height: 1.65; overflow-wrap: anywhere; }
+.settings-surface .settings-source-operation p:first-child { margin-top: 0; }
+.settings-surface .settings-source-operation p:last-child { margin-bottom: 0; }
+.settings-surface .settings-quiet-button { min-height: 44px; border: 1px solid #d7dfea; padding: 10px 15px; border-radius: 9px; color: #4c5c78; background: #fff; font: inherit; font-size: .8125rem; cursor: pointer; }
+.settings-surface .settings-quiet-button:disabled { opacity: .55; cursor: default; }
+.settings-surface .settings-scope-details { margin-top: 16px; padding-top: 12px; border-top: 1px solid #edf0f5; color: var(--ta-secondary-muted); font-size: .8125rem; }
+.settings-surface .settings-scope-details > summary { min-height: 32px; cursor: pointer; line-height: 1.6; }
+.settings-surface .settings-permission { color: #485872; }
+@media (max-width: 760px) {
+  .settings-surface .settings-account, .settings-surface .settings-source-panel { padding: 18px; }
+  .settings-surface .settings-source-header { flex-wrap: wrap; }
+  .settings-surface .settings-source-operation { flex-direction: column; gap: 12px; }
+  .settings-surface .settings-source-operation > button { align-self: flex-start; }
+}

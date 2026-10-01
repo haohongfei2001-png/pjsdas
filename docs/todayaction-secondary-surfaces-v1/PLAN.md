@@ -48,3 +48,28 @@ global styles; no global shell or main-list selector is changed.
 
 All new test workspaces are synthetic. No private workspace or production
 business write is required for design validation.
+
+
+## Owner follow-up: Settings hierarchy and repeated application identity
+
+The owner rejected the Settings result after PR210 was deployed. This follow-up
+is based on main `b602e634b76adf2cf82a36c95aa27d4b968202f0`. Reference screenshots
+were inspected privately; no real screenshot contents enter fixtures or source.
+
+- Separate account/cross-device state, background workspace connection, public
+  job discovery, and recruiting-mail tracking into independently labelled cards.
+- Place each source's state, last successful run, action, and warning together.
+  Disabling and reconnecting are secondary controls, rather than blue primary
+  actions. A enabled switch is not proof of successful execution.
+- Keep account mismatch, failed source checks and intake gaps visible. Collapse
+  long operational explanations and diagnostics explicitly. Show the full
+  necessary permission scope before enable/re-authorize controls can be used.
+- Remove only the complete repeated company/role context above an application
+  title in Today. Keep other context, right-hand job access and the main layout.
+- Cover desktop, phone and 320px/200% text; enabled, partial, disabled and error
+  states, scoped action errors, original consent journeys and duplicate titles.
+
+Implementation, local checks, exact-head CI, integration and production readback
+are distinct gates. Screenshots and local tests alone do not constitute owner
+acceptance. The inherited main Matrix run36901485731 failed its strict long-task
+assertion (87ms and59ms); do not erase this evidence or relax its50ms threshold.

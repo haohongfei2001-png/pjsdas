@@ -108,7 +108,7 @@ export default function CloudSettingsCard() {
 
   return (
     <>
-      <section className="cloud-settings-card">
+      <section className="cloud-settings-card settings-account" aria-label={zh ? '账号与跨设备数据' : 'Account & cross-device data'}>
         <div className="cloud-settings-heading">
           <div>
             <div className="eyebrow">ACCOUNT & CONNECTION</div>
@@ -152,9 +152,9 @@ export default function CloudSettingsCard() {
             <div>
               <strong>{zh ? '使用 Google 登录 TodayAction' : 'Sign in to TodayAction with Google'}</strong>
               <p>{zh ? '登录后可在自己的设备间使用同一份资料。' : 'Sign in to use the same data across your devices.'}</p>
-              <details><summary>{zh ? '查看授权范围' : 'View access permissions'}</summary><p>{zh
+              <p className="settings-permission">{zh
                 ? '首次登录申请基本身份信息和应用专用的 Google Drive 文件权限；TodayAction 不能浏览普通 Drive 文件。'
-                : 'The first sign-in requests basic identity and app-specific Google Drive file access. TodayAction cannot browse ordinary Drive files.'}</p></details>
+                : 'The first sign-in requests basic identity and app-specific Google Drive file access. TodayAction cannot browse ordinary Drive files.'}</p>
             </div>
             <button className="primary-button" disabled={cloud.loading || cloud.syncing} onClick={() => { void run(cloud.signIn) }}>
               {cloud.loading ? (zh ? '正在恢复…' : 'Restoring…') : (zh ? '使用 Google 登录' : 'Sign in with Google')}
