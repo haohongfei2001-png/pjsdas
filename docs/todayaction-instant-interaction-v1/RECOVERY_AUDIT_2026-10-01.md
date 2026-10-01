@@ -138,3 +138,15 @@ queued-Undo receipt lookup. Every prior history, audit, reload and restart
 assertion remains. There is no runtime change, added sleep, timeout increase,
 performance-budget adjustment or blind rerun. Hosted verification remains
 required on the repaired fixture head.
+
+## Full Chromium runner margin
+
+At `b3aa967c`, all 180 core and 67 dense Chromium cases passed. The workflow
+then hit its old 15-minute job cap during teardown, after the final pass summary;
+the recorded setup/core/dense work took about 15m11s. The job is correctly
+recorded as cancelled, not as a completed gate.
+
+The Chromium job has a 20-minute hard cap to accommodate the now-complete suite
+and runner/setup variance. Individual test timeouts, all cases, and the strict
+100/150/100/50ms interaction budgets are unchanged. This is a bounded execution
+margin, not permission to retry indefinitely or drop verification stages.

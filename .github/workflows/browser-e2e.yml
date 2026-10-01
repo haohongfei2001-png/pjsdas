@@ -16,7 +16,10 @@ jobs:
     if: >-
       (github.event_name != 'pull_request' || github.event.pull_request.draft == false || (github.event.pull_request.head.repo.full_name == github.repository && contains(github.event.pull_request.labels.*.name, format('full:{0}', github.event.pull_request.head.sha))))
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    # The complete 180-core + 67-dense suite passed before the old 15-minute
+    # cap interrupted teardown (15m11s). Keep every assertion and allow a
+    # bounded five-minute runner/setup margin.
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
