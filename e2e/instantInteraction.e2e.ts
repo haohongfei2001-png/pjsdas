@@ -282,10 +282,26 @@ test('confirmed blocked projection recovers with a read-only snapshot after equi
   })
   await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem('pjsdas-cgr01-pending:instant-owner') ?? '[]')[0]?.status)).toBe('projection_pending')
   await page.evaluate(async () => { const db = await (await import('/pjsdas/src/db.ts')).dbPromise; await db.put('actions', (window as any).originalAction) })
-  await page.reload()
+  await page.evaluate(async () => {
+    const api = await import('/pjsdas/src/db.ts')
+    const original = (await api.readCommandInteractions('instant-owner')).find(item => item.state === 'projection_pending')!
+    await (await import('/pjsdas/src/cloud/instantCommandClient.ts')).recoverInstantInteraction('instant-owner', original.commandId)
+  })
   await expect.poll(() => pendingCount(page), { timeout: 20000 }).toBe(0)
-  expect(server.sent).toHaveLength(1)
-  await expect(page.locator('[data-action-id="dense-action-0"]')).toHaveCount(0)
+  const checkpoint = await page.evaluate(() => JSON.parse(localStorage.getItem('pjsdas-google-drive-sync-state-v2')!).accounts['instant-owner'])
+  expect(checkpoint.lastSyncedVersion).toBe('txn:1205')
+  expect(checkpoint.lastSyncedFingerprint).toMatch(/^[0-9a-f]{64}$/)
+  expect(checkpoint.lastReadProjectionSourceFingerprint).toBe(checkpoint.lastSyncedFingerprint)
+  await page.evaluate(async () => {
+    const api = await import('/pjsdas/src/db.ts')
+    await (await import('/pjsdas/src/cloud/instantCommandClient.ts')).beginInstantCommand('instant-owner', await api.exportLocalSnapshot(),
+      { commandId: 'instant-action:after-safe-recovery', kind: 'set_action_status', actionId: 'dense-action-0', status: 'todo' })
+  })
+  await expect.poll(() => pendingCount(page)).toBe(0)
+  expect(server.baseRevisions).toEqual([1204, 1205])
+  expect(server.sent).toHaveLength(2)
+  await page.reload()
+  await expect(page.locator('[data-action-id="dense-action-0"]')).toBeVisible()
 })
 
 

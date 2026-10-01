@@ -1,4 +1,7 @@
 import { expect, test } from '@playwright/test'
+import { freezeTodayFixture } from './support/consumerFixtureClock.js'
+
+test.beforeEach(async ({ page }) => { await freezeTodayFixture(page) })
 
 test('active Today and Prepare surfaces localize presentation without changing stored facts', async ({ page }) => {
   await page.goto('/')

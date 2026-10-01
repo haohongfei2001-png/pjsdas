@@ -9,6 +9,7 @@ export async function setupInstantServer(context: BrowserContext, historyRows = 
   let delay = 3000
   let serverNow = INSTANT_NOW
   const sent: string[] = []
+  const baseRevisions: Array<number | undefined> = []
   const payloadBytes: number[] = []
   const serverExecutionMs: number[] = []
   let deny: number | undefined
@@ -28,6 +29,7 @@ export async function setupInstantServer(context: BrowserContext, historyRows = 
     }
     if (body.action === 'command' || body.action === 'undo') {
       sent.push(body.commandId)
+      baseRevisions.push(body.baseRevision)
       if (receipts.has(body.commandId)) return cors(route, { ...receipts.get(body.commandId), outcome: 'ALREADY_APPLIED' })
       const rejectThis = deny; deny = undefined
       await new Promise(resolve => setTimeout(resolve, delay))
@@ -47,5 +49,5 @@ export async function setupInstantServer(context: BrowserContext, historyRows = 
     }
     return cors(route, { code: 'UNEXPECTED' }, 400)
   })
-  return { sent, payloadBytes, serverExecutionMs, setNow: (value: Date) => { serverNow = value }, denyNext: (status = 422) => { deny = status }, loseNextResponse: () => { loseResponse = true }, backgroundGmail: () => { snapshot.data.timeline!.push({ id: 'instant-gmail-audit', kind: 'opportunity_updated', category: 'opportunity', source: 'user_action', title: 'Independent source fact', occurredAt: INSTANT_NOW.toISOString(), recordedAt: INSTANT_NOW.toISOString() }); snapshot.data.opportunities[10].role = 'Independent Gmail role'; revision++ }, setDelay: (value: number) => { delay = value }, get snapshot() { return snapshot } }
+  return { sent, baseRevisions, payloadBytes, serverExecutionMs, setNow: (value: Date) => { serverNow = value }, denyNext: (status = 422) => { deny = status }, loseNextResponse: () => { loseResponse = true }, backgroundGmail: () => { snapshot.data.timeline!.push({ id: 'instant-gmail-audit', kind: 'opportunity_updated', category: 'opportunity', source: 'user_action', title: 'Independent source fact', occurredAt: INSTANT_NOW.toISOString(), recordedAt: INSTANT_NOW.toISOString() }); snapshot.data.opportunities[10].role = 'Independent Gmail role'; revision++ }, setDelay: (value: number) => { delay = value }, get snapshot() { return snapshot } }
 }

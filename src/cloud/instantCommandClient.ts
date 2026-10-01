@@ -5,7 +5,7 @@ import type { PJSDASSnapshot } from '../snapshot.js'
 import { exportLocalSnapshot, isRecordedAccountProjection, replaceLocalSnapshotFromCloud, persistInteractionProjections, persistInteractionProjection, readPendingCommandInteractions, readCommandInteraction, saveCommandInteraction, type CommandInteractionRecord } from '../db.js'
 import { fetchBackend } from '../backendEndpoints.js'
 import { getAccountAccessToken } from './cloudClient.js'
-import { captureAccountCacheLease } from './accountCacheLease.js'
+import { AccountCacheChangedError, captureAccountCacheLease } from './accountCacheLease.js'
 import { getAccountCheckpoint, patchAccountCheckpoint } from './syncState.js'
 import { interactionProjection, undoInteractionProjection } from './interactionProjection.js'
 import { createConnectedCommandId, journalConnectedInteraction, settleConnectedInteraction, listAccountPendingOperations } from './authoritativeCommandClient.js'
@@ -154,7 +154,18 @@ async function reconcile(record: CommandInteractionRecord, payload: any, assertC
       if ((!await isRecordedAccountProjection(record.accountKey, local)
         && getAccountCheckpoint(record.accountKey).clearedCacheFingerprint !== await fingerprintWorkspace(local))
         || listAccountPendingOperations(record.accountKey).some(item => item.commandId !== record.commandId && item.status !== 'conflict' && item.status !== 'projection_pending')) throw new Error('Projection awaits recovery.')
-      await replaceLocalSnapshotFromCloud(payload.snapshot, { expectedLocal: local, assertCurrent, accountKey: record.accountKey, version: payload.workspaceVersion })
+      const assertRecoveryCurrent = () => {
+        assertCurrent()
+        if (version(record.accountKey) > payload.revision) throw new AccountCacheChangedError()
+      }
+      const recoveredVersion = payload.workspaceVersion ?? `txn:${payload.revision}`
+      const committed = await replaceLocalSnapshotFromCloud(payload.snapshot, { expectedLocal: local, assertCurrent: assertRecoveryCurrent, accountKey: record.accountKey, version: recoveredVersion })
+      const [fingerprint, projectedFingerprint] = await Promise.all([fingerprintWorkspace(payload.snapshot), fingerprintWorkspace(committed)])
+      assertRecoveryCurrent()
+      patchAccountCheckpoint(record.accountKey, { clearedCacheFingerprint: undefined,
+        lastSyncedVersion: recoveredVersion, lastSyncedFingerprint: fingerprint,
+        lastReadProjectionFingerprint: projectedFingerprint, lastReadProjectionSourceFingerprint: fingerprint,
+        lastSyncedAt: new Date().toISOString(), localPendingFingerprint: undefined, conflict: undefined, lastError: undefined })
       const delta: WorkspaceDelta = { ...record.delta, changes: record.delta.changes.map(change => {
         const rows = payload.snapshot.data[change.collection]
         const after = Array.isArray(rows) ? rows.find((row: { id: string }) => row.id === change.id) ?? null : rows ?? null
