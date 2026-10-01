@@ -1,5 +1,7 @@
+import { interactionMetric } from './cloud/interactionMetrics.js'
+import { applyWorkspaceDelta, patchDeltaRow, DELTA_COLLECTIONS, type WorkspaceDelta, type DeltaRow } from './workspaceDelta.js'
 import { canonicalWorkspaceJson } from './cloud/workspaceFingerprint.js'
-import { AccountCacheChangedError } from './cloud/accountCacheLease.js'
+import { AccountCacheChangedError, captureAccountCacheLease, currentAccountCacheSession } from './cloud/accountCacheLease.js'
 import { captureActionStatusUndo, restoreActionStatusUndo, type ActionStatusUndo } from './actionStatusUndo.js'
 import { openDB, type DBSchema, type IDBPTransaction } from 'idb'
 import { assertImportBundleSafe } from './importDiagnostics.js'
@@ -78,7 +80,16 @@ import type {
   TimelineRecord,
 } from './model.js'
 
+export interface CommandInteractionRecord {
+  id: string; accountKey: string; commandId: string; createdAt: string; state: 'active' | 'confirmed' | 'rejected' | 'conflict' | 'projection_pending' | 'rollback_pending';
+  delta: WorkspaceDelta; command?: import('./domainCommands.js').UserDomainCommand; targetCommandId?: string;
+  compensation?: { operation: string; payload: unknown }; lastError?: string; serverRevision?: number; predecessors?: string[];
+  /** Authoritative no-write acknowledgement, distinct from an owned ledger receipt. */
+  noOpRevision?: number;
+}
 interface PJSDASDatabase extends DBSchema {
+  commandInteractions: { key: string; value: CommandInteractionRecord; indexes: { 'by-account': string; 'by-account-state': [string, CommandInteractionRecord['state']] } }
+  projectionDeltas: { key: number; value: { sequence?: number; accountKey: string; delta: WorkspaceDelta } }
   opportunities: { key: string; value: Opportunity }
   processes: {
     key: string
@@ -158,8 +169,14 @@ const DATA_STORES = [
   'meta',
 ] as const
 
-export const dbPromise = openDB<PJSDASDatabase>('pjsdas', 11, {
-  upgrade(db) {
+export const dbPromise = openDB<PJSDASDatabase>('pjsdas', 13, {
+  upgrade(db, _oldVersion, _newVersion, upgradeTx) {
+    if (!db.objectStoreNames.contains('commandInteractions')) {
+      const store = db.createObjectStore('commandInteractions', { keyPath: 'id' }); store.createIndex('by-account', 'accountKey')
+    }
+    const interactions = upgradeTx.objectStore('commandInteractions')
+    if (!interactions.indexNames.contains('by-account-state')) interactions.createIndex('by-account-state', ['accountKey', 'state'])
+    if (!db.objectStoreNames.contains('projectionDeltas')) db.createObjectStore('projectionDeltas', { keyPath: 'sequence', autoIncrement: true })
     if (!db.objectStoreNames.contains('opportunities')) {
       db.createObjectStore('opportunities', { keyPath: 'id' })
     }
@@ -1011,17 +1028,28 @@ async function readLocalSnapshotData(tx: LocalSnapshotTransaction) {
   }
 }
 
-async function readLocalSnapshot(tx: LocalSnapshotTransaction) {
-  return createSnapshot(await readLocalSnapshotData(tx))
+async function readLocalSnapshot(tx: LocalSnapshotTransaction, assertCurrent?: () => void) {
+  assertCurrent?.()
+  const data = await readLocalSnapshotData(tx)
+  // A hot intent may arrive while IndexedDB is reading. Stop before cloning
+  // and validating the historical workspace on the UI thread.
+  assertCurrent?.()
+  return createSnapshot(data)
 }
 
-export async function exportLocalSnapshot() {
+export async function exportLocalSnapshot(assertCurrent?: () => void) {
   const db = await dbPromise
   // Startup/export must remain read-only, even when validation fails.
   const tx = db.transaction([...DATA_STORES], 'readonly')
-  const snapshot = await readLocalSnapshot(tx)
-  await tx.done
-  return snapshot
+  try {
+    const snapshot = await readLocalSnapshot(tx, assertCurrent)
+    await tx.done
+    return snapshot
+  } catch (error) {
+    try { tx.abort() } catch { /* completed readonly transaction */ }
+    await tx.done.catch(() => undefined)
+    throw error
+  }
 }
 
 export async function saveLocalTimePlanning(preferences: TimePlanningPreferences) {
@@ -1067,18 +1095,31 @@ export async function exportLocalRecoveryArchive() {
   const db = await dbPromise
   const stores = [...db.objectStoreNames]
   const tx = db.transaction(stores, 'readonly')
-  const rows = await Promise.all(stores.map(async (store) => [store, await tx.objectStore(store).getAll()] as const))
+  const accountKey = currentAccountCacheSession()
+  const lease = accountKey ? captureAccountCacheLease(accountKey) : undefined
+  const rows = await Promise.all(stores.map(async (store) => {
+    const values = await tx.objectStore(store).getAll()
+    // Journals are durable per-account recovery provenance, outside the active
+    // workspace. An anonymous or different account must not export them.
+    return [store, store === 'commandInteractions' || store === 'projectionDeltas'
+      ? values.filter(value => accountKey && 'accountKey' in value && value.accountKey === accountKey) : values] as const
+  }))
   await tx.done
+  lease?.assertCurrent()
+  if (currentAccountCacheSession() !== accountKey) throw new AccountCacheChangedError()
   return { schema: 'todayaction-recovery-archive', exportedAt: new Date().toISOString(), stores: Object.fromEntries(rows) }
 }
 
 export async function clearLocalWorkspaceCache() {
   const db = await dbPromise
-  const tx = db.transaction([...DATA_STORES], 'readwrite')
+  const tx = db.transaction([...DATA_STORES, 'projectionDeltas'], 'readwrite')
   let cleared: PJSDASSnapshot
   try {
     await Promise.all(DATA_STORES.map((storeName) => tx.objectStore(storeName).clear()))
-    cleared = await readLocalSnapshot(tx)
+    // Proofs describe the cleared cache; original account-scoped commands
+    // remain quarantined for that account's receipt-first recovery.
+    await tx.objectStore('projectionDeltas').clear()
+    cleared = await readLocalSnapshot(tx as LocalSnapshotTransaction)
     await tx.done
   } catch (caught) {
     // A synchronous store failure must also abort clears already enqueued.
@@ -1092,20 +1133,29 @@ export async function clearLocalWorkspaceCache() {
   return cleared
 }
 
-export async function replaceLocalSnapshotFromCloud(snapshot: PJSDASSnapshot, guard?: { expectedLocal: PJSDASSnapshot; assertCurrent: () => void; accountKey?: string; version?: string }) {
+export async function replaceLocalSnapshotFromCloud(snapshot: PJSDASSnapshot, guard?: { expectedLocal: PJSDASSnapshot; assertCurrent: () => void; accountKey?: string; version?: string; interactionSteps?: Array<{ record: CommandInteractionRecord; delta: WorkspaceDelta }> }) {
   validateSnapshot(snapshot)
   const latest = upgradeSnapshotToLatest(snapshot)
+  if (guard?.accountKey) {
+    // Locally materialized migration evidence is immutable read-only history.
+    // Older authoritative snapshots need not contain it; never regenerate it
+    // at a new wall-clock time during command recovery or passive refresh.
+    const incomingIds = new Set((latest.data.timeline ?? []).map(row => row.id))
+    latest.data.timeline = [...latest.data.timeline ?? [], ...guard.expectedLocal.data.timeline?.filter(row => row.source === 'system'
+      && (row.id.startsWith('timeline:backfill-') || row.id === 'timeline:system:backfill-v1') && !incomingIds.has(row.id)) ?? []]
+  }
 
   const db = await dbPromise
-  const tx = db.transaction([...DATA_STORES], 'readwrite')
+  const tx = db.transaction([...DATA_STORES, 'projectionDeltas', 'commandInteractions'], 'readwrite')
   try {
     guard?.assertCurrent()
-    if (guard && canonicalWorkspaceJson(await readLocalSnapshot(tx)) !== canonicalWorkspaceJson(guard.expectedLocal)) throw new AccountCacheChangedError()
+    if (guard && canonicalWorkspaceJson(await readLocalSnapshot(tx as LocalSnapshotTransaction)) !== canonicalWorkspaceJson(guard.expectedLocal)) throw new AccountCacheChangedError()
     guard?.assertCurrent()
     const priorProjection = await tx.objectStore('meta').get('authoritativeProjection')
     if (guard?.accountKey && guard.version && priorProjection?.key === 'authoritativeProjection' && priorProjection.accountKey === guard.accountKey
       && Number(priorProjection.version.replace('txn:', '')) > Number(guard.version.replace('txn:', ''))) throw new AccountCacheChangedError()
     await Promise.all(DATA_STORES.map((storeName) => tx.objectStore(storeName).clear()))
+    await tx.objectStore('projectionDeltas').clear()
 
     for (const item of latest.data.opportunities) await tx.objectStore('opportunities').put(item)
     for (const item of latest.data.processes) await tx.objectStore('processes').put(item)
@@ -1118,20 +1168,39 @@ export async function replaceLocalSnapshotFromCloud(snapshot: PJSDASSnapshot, gu
     for (const item of latest.data.actions) await tx.objectStore('actions').put(item)
     for (const item of latest.data.prep) await tx.objectStore('prep').put(item)
     for (const item of latest.data.applicationGroups) await tx.objectStore('applicationGroups').put(item)
-    await tx.objectStore('decisionRules').put(latest.data.decisionRules ?? createDefaultDecisionRules())
+    await tx.objectStore('decisionRules').put(latest.data.decisionRules ?? createDefaultDecisionRules(snapshot.exportedAt))
     if (latest.data.discoveryProfile) await tx.objectStore('discoveryProfiles').put(latest.data.discoveryProfile)
     for (const item of latest.data.discoveryInbox ?? []) await tx.objectStore('discoveryInbox').put(item)
     for (const item of latest.data.timeline ?? []) await tx.objectStore('timeline').put(item)
     for (const item of latest.data.changeSets ?? []) await tx.objectStore('changeSets').put(item)
     if (latest.data.meta) await tx.objectStore('meta').put(latest.data.meta)
     if (latest.data.timePlanning) await tx.objectStore('meta').put({ ...latest.data.timePlanning, key: 'timePlanning' })
-    const committed = await readLocalSnapshot(tx)
+    let committed = await readLocalSnapshot(tx as LocalSnapshotTransaction)
+    // Materialize the deterministic read-only backfill once. Otherwise a later
+    // ordinary entity patch would regenerate different historical rows at export.
+    const importedTimelineIds = new Set((latest.data.timeline ?? []).map(item => item.id))
+    for (const row of committed.data.timeline ?? []) if (!importedTimelineIds.has(row.id)) await tx.objectStore('timeline').put(row)
+    committed = await readLocalSnapshot(tx as LocalSnapshotTransaction)
     if (guard?.accountKey && guard.version) {
       // Canonical bytes are recorded in the same transaction; async crypto would
       // let IndexedDB auto-commit before this crash-recovery proof is durable.
       await tx.objectStore('meta').put({ key: 'authoritativeProjection', accountKey: guard.accountKey,
         version: guard.version, canonical: canonicalWorkspaceJson(committed) })
     }
+    for (const { record, delta } of guard?.interactionSteps ?? []) {
+      for (const change of delta.changes) {
+        const store = tx.objectStore(deltaStore(change.collection) as any)
+        const id = deltaId(change.collection, change.id)
+        let row = await store.get(id) as DeltaRow | undefined
+        if (change.collection === 'timePlanning' && row) { const { key: _key, ...value } = row; row = value }
+        const next = patchDeltaRow(row ?? null, change)
+        if (next) await store.put(change.collection === 'timePlanning' ? { ...next, key: 'timePlanning' } : next)
+        else await store.delete(id)
+      }
+      await tx.objectStore('commandInteractions').put(record)
+      if (delta.changes.length) await tx.objectStore('projectionDeltas').add({ accountKey: record.accountKey, delta })
+    }
+    if (guard?.interactionSteps?.length) committed = await readLocalSnapshot(tx as LocalSnapshotTransaction)
     guard?.assertCurrent()
     await tx.done
     return committed
@@ -1162,7 +1231,7 @@ export async function restoreLocalSnapshot(snapshot: PJSDASSnapshot) {
   for (const item of latest.data.actions) await tx.objectStore('actions').put(item)
   for (const item of latest.data.prep) await tx.objectStore('prep').put(item)
   for (const item of latest.data.applicationGroups) await tx.objectStore('applicationGroups').put(item)
-  await tx.objectStore('decisionRules').put(latest.data.decisionRules ?? createDefaultDecisionRules())
+  await tx.objectStore('decisionRules').put(latest.data.decisionRules ?? createDefaultDecisionRules(snapshot.exportedAt))
   if (latest.data.discoveryProfile) await tx.objectStore('discoveryProfiles').put(latest.data.discoveryProfile)
   for (const item of latest.data.discoveryInbox ?? []) await tx.objectStore('discoveryInbox').put(item)
   for (const item of latest.data.timeline ?? []) await tx.objectStore('timeline').put(item)
@@ -1313,7 +1382,7 @@ export async function assertLocalSnapshotCurrent(expected: PJSDASSnapshot, asser
   const tx = db.transaction([...DATA_STORES], 'readwrite')
   try {
     assertCurrent()
-    if (canonicalWorkspaceJson(await readLocalSnapshot(tx)) !== canonicalWorkspaceJson(expected)) throw new AccountCacheChangedError()
+    if (canonicalWorkspaceJson(await readLocalSnapshot(tx, assertCurrent)) !== canonicalWorkspaceJson(expected)) throw new AccountCacheChangedError()
     assertCurrent()
     await tx.done
   } catch (caught) {
@@ -1323,8 +1392,115 @@ export async function assertLocalSnapshotCurrent(expected: PJSDASSnapshot, asser
   }
 }
 
-export async function isRecordedAccountProjection(accountKey: string, snapshot: PJSDASSnapshot) {
+export async function isRecordedAccountProjection(accountKey: string, snapshot: PJSDASSnapshot, options?: { compact?: boolean; assertCurrent?: () => void }) {
+  options?.assertCurrent?.()
+  if ((await import('./cloud/authoritativeCommandClient.js')).listAccountPendingOperations(accountKey).some(item => item.status === 'rollback_pending')) return false
   const db = await dbPromise
+  if ((await db.getAllFromIndex('commandInteractions', 'by-account-state', [accountKey, 'rollback_pending'])).length) return false
   const recorded = await db.get('meta', 'authoritativeProjection')
-  return recorded?.key === 'authoritativeProjection' && recorded.accountKey === accountKey && recorded.canonical === canonicalWorkspaceJson(snapshot)
+  options?.assertCurrent?.()
+  if (recorded?.key !== 'authoritativeProjection' || recorded.accountKey !== accountKey) return false
+  const deltas = (await db.getAll('projectionDeltas')).filter(item => item.accountKey === accountKey)
+  options?.assertCurrent?.()
+  const normalizeOrder = (value: PJSDASSnapshot) => {
+    const data = { ...value.data }
+    for (const key of DELTA_COLLECTIONS) {
+      const rows = data[key]
+      if (rows && new Set(rows.map(item => item.id)).size === rows.length) (data as any)[key] = [...rows].sort((a, b) => a.id < b.id ? -1 : a.id > b.id ? 1 : 0)
+    }
+    return { ...value, data }
+  }
+  let expected: PJSDASSnapshot = { ...snapshot, data: JSON.parse(recorded.canonical) }
+  if (!deltas.length) return canonicalWorkspaceJson(normalizeOrder(expected)) === canonicalWorkspaceJson(normalizeOrder(snapshot))
+  try { for (const item of deltas) expected = applyWorkspaceDelta(expected, item.delta) } catch { return false }
+  // This is a recorded local transaction proof, so require exact facts and
+  // audit rows. Only IndexedDB primary-key ordering is normalized.
+  const canonical = canonicalWorkspaceJson(normalizeOrder(snapshot))
+  const verified = canonical === canonicalWorkspaceJson(normalizeOrder(createSnapshot(expected.data, expected.exportedAt)))
+  if (verified && options?.compact && deltas.length >= 64) {
+    // Operational proof compaction only: original command journals and all
+    // business/audit stores remain intact. A concurrent proof writer causes
+    // compaction to defer rather than losing its new delta.
+    const tx = db.transaction(['meta', 'projectionDeltas'], 'readwrite')
+    try {
+      options.assertCurrent?.()
+      const baseline = await tx.objectStore('meta').get('authoritativeProjection')
+      const current = (await tx.objectStore('projectionDeltas').getAll()).filter(item => item.accountKey === accountKey)
+      if (baseline?.key === 'authoritativeProjection' && baseline.accountKey === accountKey && baseline.canonical === recorded.canonical
+        && current.length === deltas.length && current.every((item, index) => item.sequence === deltas[index].sequence)) {
+        await tx.objectStore('meta').put({ ...recorded, canonical })
+        for (const item of deltas) await tx.objectStore('projectionDeltas').delete(item.sequence!)
+      }
+      options.assertCurrent?.()
+      await tx.done
+    } catch (error) { try { tx.abort() } catch { /* settled */ }; await tx.done.catch(() => undefined); throw error }
+  }
+  return verified
+}
+
+
+const deltaStore = (collection: string) => collection === 'timePlanning' || collection === 'meta' ? 'meta'
+  : collection === 'discoveryProfile' ? 'discoveryProfiles' : collection
+const deltaId = (collection: string, id: string) => collection === 'timePlanning' ? 'timePlanning'
+  : collection === 'meta' ? 'lastImport' : id
+
+/** Durable outbox, exact inverse, entity writes and projection proof commit atomically. */
+export async function persistInteractionProjection(record: CommandInteractionRecord, assertCurrent: () => void, delta = record.delta) {
+  return persistInteractionProjections([{ record, delta }], assertCurrent)
+}
+export async function persistInteractionProjections(steps: Array<{ record: CommandInteractionRecord; delta: WorkspaceDelta }>, assertCurrent: () => void) {
+  const started = performance.now()
+  const db = await dbPromise
+  const stores = new Set(steps.flatMap(step => step.delta.changes.map(item => deltaStore(item.collection))))
+  const tx = db.transaction(['commandInteractions', 'projectionDeltas', ...stores] as any, 'readwrite')
+  try {
+    assertCurrent()
+    for (const { record, delta } of steps) {
+      for (const change of delta.changes) {
+        const store = tx.objectStore(deltaStore(change.collection) as any)
+        const id = deltaId(change.collection, change.id)
+        let row = await store.get(id) as DeltaRow | undefined
+        if (change.collection === 'timePlanning' && row) { const { key: _key, ...value } = row; row = value }
+        const next = patchDeltaRow(row ?? null, change)
+        if (next) await store.put(change.collection === 'timePlanning' ? { ...next, key: 'timePlanning' } : next)
+        else await store.delete(id)
+      }
+      await tx.objectStore('commandInteractions').put(record)
+      await tx.objectStore('projectionDeltas').add({ accountKey: record.accountKey, delta })
+    }
+    assertCurrent()
+    await tx.done
+    interactionMetric('indexeddb-write', started)
+  } catch (error) {
+    try { tx.abort() } catch { /* settled */ }
+    await tx.done.catch(() => undefined)
+    throw error
+  }
+}
+export async function readCommandInteractions(accountKey: string) {
+  const lease = captureAccountCacheLease(accountKey)
+  const rows = await (await dbPromise).getAllFromIndex('commandInteractions', 'by-account', accountKey)
+  lease.assertCurrent()
+  return rows
+}
+/** Ordinary interactions never load the retained archive. */
+export async function readPendingCommandInteractions(accountKey: string) {
+  const lease = captureAccountCacheLease(accountKey)
+  const db = await dbPromise
+  const [active, projectionPending, rollbackPending] = await Promise.all([
+    db.getAllFromIndex('commandInteractions', 'by-account-state', [accountKey, 'active']),
+    db.getAllFromIndex('commandInteractions', 'by-account-state', [accountKey, 'projection_pending']),
+    db.getAllFromIndex('commandInteractions', 'by-account-state', [accountKey, 'rollback_pending']),
+  ])
+  lease.assertCurrent()
+  return [...active, ...projectionPending, ...rollbackPending]
+}
+export async function readCommandInteraction(accountKey: string, commandId: string) {
+  const lease = captureAccountCacheLease(accountKey)
+  const row = await (await dbPromise).get('commandInteractions', `${accountKey}:${commandId}`)
+  lease.assertCurrent()
+  return row
+}
+export async function saveCommandInteraction(record: CommandInteractionRecord) {
+  await (await dbPromise).put('commandInteractions', record)
 }

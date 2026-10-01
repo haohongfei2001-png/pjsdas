@@ -43,7 +43,7 @@ function fixture() {
   return { company, growth, action, snapshot }
 }
 async function workspace(origin: string, token: string, body: Record<string, unknown>) {
-  return json(`${origin}/api/workspace`, { method: 'POST', headers: { origin, authorization: `Bearer ${token}`, 'content-type': 'application/json' }, body: JSON.stringify(body) })
+  return json(`${origin}/api/workspace`, { method: 'POST', headers: { origin, authorization: `Bearer ${token}`, 'content-type': 'application/json' }, body: JSON.stringify({ projection: 'snapshot', ...body }) })
 }
 async function run() {
   const data = fixture()

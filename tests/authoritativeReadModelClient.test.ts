@@ -214,6 +214,8 @@ describe('CGR-02 authoritative Today read freshness', () => {
     vi.mocked(pendingCommandSummary).mockReturnValue({ count: 1, pending: 0, unknown: 0, conflict: 0 })
     vi.mocked(fingerprintWorkspace).mockResolvedValue('remote-fp')
     expect(await refreshConnectedAuthoritativeCache('account-a')).toMatchObject({ state: 'pending_operations' })
+    expect(exportLocalSnapshot).not.toHaveBeenCalled()
+    expect(fetchConnectedRemoteWorkspace).not.toHaveBeenCalled()
     expect(replaceLocalSnapshotFromCloud).not.toHaveBeenCalled()
     expect(patchAccountCheckpoint).not.toHaveBeenCalled()
   })

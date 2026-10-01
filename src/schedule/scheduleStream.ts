@@ -1,7 +1,8 @@
+import { readModelSnapshot } from '../readModelSnapshot.js'
 import { scheduleDisplayTimezone } from '../scheduleDisplayTime.js'
 import type { ScheduleNode, ScheduleNodeState, TimelineRecord } from '../model.js'
 import { effectiveScheduleNodeState } from '../scheduleNodes.js'
-import { upgradeSnapshotToLatest, type PJSDASSnapshot } from '../snapshot.js'
+import { type PJSDASSnapshot } from '../snapshot.js'
 import { localDateKey } from '../todayBrief.js'
 
 export type ScheduleSection = 'upcoming' | 'unresolved' | 'history' | 'undated'
@@ -119,11 +120,18 @@ export function buildScheduleStream(
   rawSnapshot: PJSDASSnapshot,
   context: { accountKey: string; workspaceRevision: string; timezone: string; now?: Date },
 ): ScheduleStream {
+  return buildScheduleStreamNormalized(readModelSnapshot(rawSnapshot), context)
+}
+
+/** Shared normalized input for a consumer render. */
+export function buildScheduleStreamNormalized(
+  snapshot: PJSDASSnapshot,
+  context: { accountKey: string; workspaceRevision: string; timezone: string; now?: Date },
+): ScheduleStream {
   if (!context.accountKey.trim() || !context.workspaceRevision.trim()) throw new Error('Schedule identity is required.')
   const now = context.now ?? new Date()
   if (!Number.isFinite(now.getTime())) throw new Error('Schedule clock is invalid.')
   try { new Intl.DateTimeFormat('en-US', { timeZone: context.timezone }) } catch { throw new Error('Schedule timezone is invalid.') }
-  const snapshot = upgradeSnapshotToLatest(rawSnapshot)
   const today = localDateKey(now, context.timezone)
   const sections: ScheduleStream['sections'] = { upcoming: [], unresolved: [], history: [], undated: [] }
   const latest = new Map<string, ScheduleNode>()

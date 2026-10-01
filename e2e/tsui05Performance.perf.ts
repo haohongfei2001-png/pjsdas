@@ -9,7 +9,7 @@ test('TSUI-05 fixed stress fixture meets warm route and tab budget', async ({ pa
   await page.goto('/pjsdas/today')
   await page.evaluate(async (created) => {
     await new Promise<void>((resolve, reject) => {
-      const request = indexedDB.open('pjsdas', 11)
+      const request = indexedDB.open('pjsdas')
       request.onerror = () => reject(request.error)
       request.onsuccess = () => {
         const db = request.result

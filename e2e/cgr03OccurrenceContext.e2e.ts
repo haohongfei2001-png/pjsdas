@@ -5,7 +5,7 @@ test('CGR-03 opportunity detail resolves its scheduled interview through context
   await page.goto('/')
   await page.evaluate(async () => {
     await new Promise<void>((resolve, reject) => {
-      const request = indexedDB.open('pjsdas', 11)
+      const request = indexedDB.open('pjsdas')
       request.onerror = () => reject(request.error)
       request.onsuccess = () => {
         const db = request.result
@@ -45,7 +45,7 @@ test('CGR-03 opportunity detail resolves its scheduled interview through context
   await expect(capture.getByRole('status')).toContainText(/已保存|处理结果|Saved|Result/)
   await expect.poll(() => page.evaluate(async () => {
     return new Promise<boolean>((resolve) => {
-      const request = indexedDB.open('pjsdas', 11)
+      const request = indexedDB.open('pjsdas')
       request.onsuccess = () => {
         const db = request.result
         const tx = db.transaction('scheduleNodes', 'readonly')

@@ -7,7 +7,9 @@ test('real VoiceOver can find Today, Tell TodayAction and the authoritative save
   await page.goto('/pjsdas/today')
   await expect(page.getByRole('heading', { name: 'A第一任务' })).toBeVisible()
 
-  await voiceOver.navigateToWebContent()
+  await page.bringToFront()
+  await page.locator('.tsui-brand').focus()
+  await voiceOver.perform(voiceOver.keyboardCommands.moveCursorToKeyboardFocus)
   let foundTodayTask = false
   for (let i = 0; i < 24; i += 1) {
     await voiceOver.nextHeading()
@@ -40,6 +42,9 @@ test('real VoiceOver can find Today, Tell TodayAction and the authoritative save
   await expect(dialog.getByText(/新增行动 · 整理面试材料/)).toBeVisible()
   await dialog.getByRole('button', { name: '确认并保存' }).click()
   await expect(dialog.getByRole('status')).toContainText('已记录：整理面试材料')
+  // Saving removes the focused submit button. VoiceOver returns to the
+  // modal container; enter it before traversing the real saved-result speech.
+  await voiceOver.interact()
   const receiptPhrases: string[] = []
   let foundReceipt = (await voiceOver.lastSpokenPhrase()).includes('已记录')
   for (let i = 0; i < 32 && !foundReceipt; i += 1) {
@@ -59,7 +64,9 @@ test('real VoiceOver identifies Opportunities and Settings primary-route semanti
   await expect(page.getByRole('heading', { name: /岗位库|Job library/i })).toBeVisible()
   await expect(page.getByRole('button', { name: /合成机会科技|AI产品经理/ })).toBeVisible()
 
-  await voiceOver.navigateToWebContent()
+  await page.bringToFront()
+  await page.locator('.tsui-brand').focus()
+  await voiceOver.perform(voiceOver.keyboardCommands.moveCursorToKeyboardFocus)
   const opportunityPhrases: string[] = []
   let foundOpportunityContext = false
   for (let i = 0; i < 32 && !foundOpportunityContext; i += 1) {
@@ -76,7 +83,9 @@ test('real VoiceOver identifies Opportunities and Settings primary-route semanti
   const detail = page.locator('.job-detail-page')
   await expect(detail).toBeVisible()
   await expect(detail).toContainText('合成机会科技')
-  await voiceOver.navigateToWebContent()
+  await page.bringToFront()
+  await page.locator('.tsui-brand').focus()
+  await voiceOver.perform(voiceOver.keyboardCommands.moveCursorToKeyboardFocus)
   const detailPhrases: string[] = []
   let foundDetailSemantics = false
   for (let i = 0; i < 36 && !foundDetailSemantics; i += 1) {
@@ -91,7 +100,9 @@ test('real VoiceOver identifies Opportunities and Settings primary-route semanti
   await page.goto('/pjsdas/settings')
   const settingsHeading = page.getByRole('heading', { name: /^(设置|Settings)$/i })
   await expect(settingsHeading).toBeVisible()
-  await voiceOver.navigateToWebContent()
+  await page.bringToFront()
+  await page.locator('.tsui-brand').focus()
+  await voiceOver.perform(voiceOver.keyboardCommands.moveCursorToKeyboardFocus)
   const settingsPhrases: string[] = []
   let foundSettings = false
   for (let i = 0; i < 32 && !foundSettings; i += 1) {
@@ -116,7 +127,9 @@ test('real VoiceOver finds a dated schedule node and its occurrence detail', asy
   await expect(page.getByRole('heading', { name: /^(日程|Schedule)$/ })).toBeVisible()
   const node = page.locator('.tsui-schedule-row').filter({ hasText: '合成机会科技' })
   await expect(node).toHaveCount(1)
-  await voiceOver.navigateToWebContent()
+  // Use the focused web control directly. The OS-wide Item Chooser can keep
+  // a stale document from a previous test window and hang before web entry.
+  await page.bringToFront()
   await node.focus()
   await expect(node).toBeFocused()
   await voiceOver.perform(voiceOver.keyboardCommands.moveCursorToKeyboardFocus)
@@ -133,7 +146,8 @@ test('real VoiceOver finds a dated schedule node and its occurrence detail', asy
   const detail = page.locator('.tsui-schedule-detail')
   await expect(detail).toContainText('合成机会科技')
   await expect(detail).toContainText('2026-10-20')
-  await voiceOver.navigateToWebContent()
+  await expect(detail).toBeFocused()
+  await voiceOver.perform(voiceOver.keyboardCommands.moveCursorToKeyboardFocus)
   const detailPhrases: string[] = []
   let foundDetail = false
   for (let i = 0; i < 24 && !foundDetail; i += 1) {

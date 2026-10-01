@@ -1,5 +1,8 @@
 import { expect, test } from '@playwright/test'
+import { freezeTodayFixture } from './support/consumerFixtureClock.js'
 import { AUTH_KEY, BACKEND, cors, health, session, workspace } from './fixtures/todayWorkspace.js'
+
+test.beforeEach(async ({ page }) => { await freezeTodayFixture(page) })
 
 for (const scenario of ['sign-out', 'local-edit', 'command-sign-out', 'command-local-edit', 'order-only', 'overlapping-read', 'account-aba', 'cloud-recovery', 'account-return', 'account-return-edited', 'account-return-read', 'checkpoint-interruption', 'checkpoint-interruption-edited'] as const) test(`a delayed authoritative read preserves ${scenario} boundary`, async ({ page }) => {
   const snapshot = workspace()
@@ -82,7 +85,13 @@ for (const scenario of ['sign-out', 'local-edit', 'command-sign-out', 'command-l
     await page.evaluate(({ key, value }) => localStorage.setItem(key, JSON.stringify(value)), { key: AUTH_KEY, value: session('account-a', 'token-a') })
     await page.reload()
     if (scenario === 'account-return-edited') {
-      await expect.poll(() => page.evaluate(async () => (await (await import('/pjsdas/src/db.ts')).exportLocalRecoveryArchive()).stores.actions[0]?.title)).toBe('New local data after clear')
+      await expect.poll(() => page.evaluate(async () => {
+        try { return (await (await import('/pjsdas/src/db.ts')).exportLocalRecoveryArchive()).stores.actions[0]?.title }
+        catch (error) {
+          if (error instanceof (await import('/pjsdas/src/cloud/accountCacheLease.ts')).AccountCacheChangedError) return undefined
+          throw error
+        }
+      })).toBe('New local data after clear')
       expect(await page.evaluate(() => localStorage.getItem('pjsdas-cgr01-pending:account-a'))).not.toBeNull()
     } else {
       await expect(page.getByRole('heading', { name: 'A第一任务' })).toBeVisible()

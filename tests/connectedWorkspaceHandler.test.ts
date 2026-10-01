@@ -151,14 +151,13 @@ describe('first-party connected workspace endpoint', () => {
         return json([{ id: 'ws-1', user_id: 'user-a', snapshot: current, revision: 7, schema_version: current.version }])
       }
       if (url.includes('/rest/v1/pjsdas_command_ledger?')) return json([])
-      if (url.endsWith('/rest/v1/rpc/pjsdas_commit_workspace_v2')) {
+      if (new URL(url).pathname === '/rest/v1/rpc/pjsdas_commit_workspace_v2') {
         const body = JSON.parse(String(init?.body))
         rpcBodies.push(body)
         return json([{
           outcome: 'COMMITTED',
           workspace_id: 'ws-1',
           revision: 8,
-          snapshot: body.target_snapshot,
           receipt: {
             ...body.target_receipt_context,
             commandId: body.target_command_id,
@@ -198,12 +197,20 @@ describe('first-party connected workspace endpoint', () => {
       receipt: {
         receiptId: 'command-receipt:web-action:test-0001',
       },
-      snapshot: { data: { actions: [{ id: 'action-1', status: 'done' }] } },
+      delta: { contract: 'delta-v1', baseRevision: 7, changes: expect.arrayContaining([expect.objectContaining({ collection: 'actions', id: 'action-1', after: expect.objectContaining({ status: 'done' }) })]) },
     })
     expect(body.receipt.affectedObjects).toEqual(expect.arrayContaining([
       { type: 'action', id: 'action-1' },
       { type: 'timeline', id: expect.any(String) },
     ]))
+    expect(body.invalidatedReadModelKeys).toEqual(body.receipt.readModelInvalidation)
+    expect(response.headers.get('server-timing')).toMatch(/workspace;dur=\d/)
+    const calls = (fetchImpl as unknown as ReturnType<typeof vi.fn>).mock.calls.map(call => String(call[0]))
+    expect(calls.filter(url => url.endsWith('/auth/v1/user'))).toHaveLength(1)
+    expect(calls.filter(url => url.includes('/pjsdas_workspaces?'))).toHaveLength(1)
+    expect(calls.find(url => url.includes('/rpc/pjsdas_commit_workspace_v2'))).toContain('select=outcome,workspace_id,revision,receipt')
+    expect(body.snapshot).toBeUndefined()
+    expect(JSON.stringify(body).length).toBeLessThan(20000)
     expect(rpcBodies).toHaveLength(1)
     expect(rpcBodies[0]).toMatchObject({
       target_command_id: commandId,
@@ -269,7 +276,7 @@ describe('first-party connected workspace endpoint', () => {
       if (url.includes('/rest/v1/pjsdas_workspaces?')) {
         return json([{ id: 'ws-1', user_id: 'user-a', snapshot: authoritative, revision: 9, schema_version: authoritative.version }])
       }
-      if (url.endsWith('/rest/v1/rpc/pjsdas_commit_workspace_v2')) {
+      if (new URL(url).pathname === '/rest/v1/rpc/pjsdas_commit_workspace_v2') {
         rpcBody = JSON.parse(String(init?.body))
         return json([{
           outcome: 'CONFLICT',
@@ -342,6 +349,56 @@ describe('first-party connected workspace endpoint', () => {
     expect(response.status).toBe(400)
     await expect(response.json()).resolves.toMatchObject({ code: 'SNAPSHOT_COMPATIBILITY_REQUIRED' })
     expect(fetchImpl).toHaveBeenCalledTimes(1)
+  })
+
+  it('compact receipt lookup preserves online authorization and reads only the ledger', async () => {
+    const fetchImpl = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.endsWith('/auth/v1/user')) return json({ id: 'user-a' })
+      if (url.includes('/pjsdas_command_ledger?')) return json([{
+        command_id: 'instant-receipt-001', operation: 'domain:set_date_capacity', payload_hash: 'hash', resulting_revision: 1205,
+        receipt: { commandId: 'instant-receipt-001', schemaVersion: 17, readModelInvalidation: ['time_planning'],
+          undoCompensation: { operation: 'restore_date_capacity', payload: { date: '2026-10-01', minutes: 240 } },
+          projectionDelta: { contract: 'delta-v1', baseRevision: 1204, changes: [] } },
+      }])
+      throw new Error('Unexpected full workspace read')
+    }) as unknown as typeof fetch
+    const authorizeIdentity = vi.fn(async () => undefined)
+    const handler = createConnectedWorkspaceHandler({ supabaseUrl: 'https://example.supabase.co',
+      supabasePublishableKey: 'publishable', serviceRoleKey: 'service-role', allowedOrigins: [ORIGIN], fetchImpl, authorizeIdentity })
+    const response = await handler(request('POST', 'ordinary-token', { action: 'receipt', commandId: 'instant-receipt-001' }))
+    expect(response.status).toBe(200)
+    expect(await response.json()).toMatchObject({ found: true, revision: 1205, workspaceVersion: 'txn:1205',
+      receipt: { undoCompensation: { operation: 'restore_date_capacity', payload: { date: '2026-10-01', minutes: 240 } } },
+      invalidatedReadModelKeys: ['time_planning'], delta: { contract: 'delta-v1' } })
+    expect(authorizeIdentity).toHaveBeenCalledTimes(1)
+    expect(fetchImpl).toHaveBeenCalledTimes(2)
+  })
+
+  it('binds compact idempotent replay to the original receipt revision after a later write', async () => {
+    const current = upgradeSnapshotToLatest(snapshot())
+    const receipt = { commandId: 'instant-replay-001', revision: 1205, schemaVersion: current.version,
+      projectionDelta: { contract: 'delta-v1', baseRevision: 1204, changes: [] } }
+    let payloadHash = ''
+    const fetchImpl = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      if (url.endsWith('/auth/v1/user')) return json({ id: 'user-a' })
+      if (url.includes('/pjsdas_workspaces?')) return json([{ id: 'ws-1', user_id: 'user-a', snapshot: current, revision: payloadHash ? 1206 : 1204, schema_version: current.version }])
+      if (url.includes('/pjsdas_command_ledger?')) return json(payloadHash ? [{ command_id: receipt.commandId, operation: 'domain:set_date_capacity', payload_hash: payloadHash, resulting_revision: 1205, receipt }] : [])
+      if (new URL(url).pathname === '/rest/v1/rpc/pjsdas_commit_workspace_v2') {
+        const body = JSON.parse(String(init?.body)); payloadHash = body.target_payload_hash
+        return json([{ outcome: 'COMMITTED', workspace_id: 'ws-1', revision: 1205, receipt: { ...receipt, ...body.target_receipt_context, revision: 1205 } }])
+      }
+      throw new Error('Unexpected endpoint')
+    }) as unknown as typeof fetch
+    const handler = createConnectedWorkspaceHandler({ supabaseUrl: 'https://example.supabase.co', supabasePublishableKey: 'publishable',
+      serviceRoleKey: 'service-role', allowedOrigins: [ORIGIN], fetchImpl, authorizeIdentity: async () => undefined })
+    const body = { action: 'command', commandId: receipt.commandId, baseRevision: 1204,
+      command: { type: 'domain', value: { commandId: receipt.commandId, kind: 'set_date_capacity', date: '2026-10-01', minutes: 300 } } }
+    expect((await handler(request('POST', 'ordinary-token', body))).status).toBe(200)
+    const replay = await (await handler(request('POST', 'ordinary-token', body))).json()
+    expect(replay).toMatchObject({ outcome: 'ALREADY_APPLIED', revision: 1205, workspaceVersion: 'txn:1205', delta: { baseRevision: 1204 } })
+    expect(replay).not.toHaveProperty('snapshot')
   })
 
 })

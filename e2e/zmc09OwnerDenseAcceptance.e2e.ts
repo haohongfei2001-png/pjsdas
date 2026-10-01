@@ -302,7 +302,7 @@ test('Schedule cancellation stays server-confirmed when a local edit blocks proj
   await row.click()
   await page.locator('.tsui-schedule-command-buttons').getByRole('button', { name: /取消安排|Cancel occurrence/ }).click()
   await page.locator('.tsui-schedule-confirm').getByRole('button', { name: /确认|Confirm/ }).click()
-  await expect(page.locator('.tsui-schedule-feedback')).toContainText(/服务器已确认这次操作，本机状态待安全刷新|server confirmed/i)
+  await expect(page.locator('.tsui-schedule-feedback')).toContainText(/服务器已确认，本机状态待安全刷新|server confirmed/i)
   await expect(page.locator('.tsui-schedule-feedback')).not.toContainText('UNKNOWN_COMMAND_OUTCOME')
   expect(commandCalls).toBe(1)
   expect(authoritative.data.scheduleNodes?.find(node => node.occurrenceId === 'owner-cancel-occurrence' && node.state === 'cancelled')).toBeTruthy()
@@ -310,6 +310,10 @@ test('Schedule cancellation stays server-confirmed when a local edit blocks proj
   expect(pending).toMatchObject([{ commandId: receipt?.commandId, status: 'projection_pending' }])
 
   await page.reload()
+  // Date-only cancellation has no invented occurrence instant; it remains
+  // accessible in the undated section after durable optimistic restart.
+  await page.getByRole('button', { name: /已发生|Past/, exact: true }).click()
+  await page.getByRole('button', { name: /时间待定|Time TBD/ }).click()
   await expect(row).toHaveCount(1)
   await row.click()
   await expect(page.getByText(/这次修改已保存，日程正在更新|change is saved; the schedule is updating/i)).toBeVisible()

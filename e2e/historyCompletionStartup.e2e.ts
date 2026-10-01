@@ -26,14 +26,14 @@ function historicalNodes(actionId: string): ScheduleNode[] {
 
 async function readStore(page: Page, store: string) {
   return page.evaluate(async (store) => {
-    const db = await new Promise<IDBDatabase>((resolve, reject) => { const request = indexedDB.open('pjsdas', 11); request.onsuccess = () => resolve(request.result); request.onerror = () => reject(request.error) })
+    const db = await new Promise<IDBDatabase>((resolve, reject) => { const request = indexedDB.open('pjsdas'); request.onsuccess = () => resolve(request.result); request.onerror = () => reject(request.error) })
     const result = await new Promise<any[]>((resolve, reject) => { const request = db.transaction(store).objectStore(store).getAll(); request.onsuccess = () => resolve(request.result); request.onerror = () => reject(request.error) })
     db.close(); return result
   }, store)
 }
 async function putRows(page: Page, records: Record<string, unknown[]>) {
   await page.evaluate(async (records) => {
-    const db = await new Promise<IDBDatabase>((resolve, reject) => { const request = indexedDB.open('pjsdas', 11); request.onsuccess = () => resolve(request.result); request.onerror = () => reject(request.error) })
+    const db = await new Promise<IDBDatabase>((resolve, reject) => { const request = indexedDB.open('pjsdas'); request.onsuccess = () => resolve(request.result); request.onerror = () => reject(request.error) })
     const tx = db.transaction(Object.keys(records), 'readwrite')
     for (const [store, rows] of Object.entries(records)) for (const row of rows) tx.objectStore(store).put(row)
     await new Promise<void>((resolve, reject) => { tx.oncomplete = () => resolve(); tx.onerror = () => reject(tx.error) }); db.close()
@@ -255,7 +255,7 @@ test('queued second-connection cache replacement cannot erase legacy completion 
     const db = await module.dbPromise
     // Another connection uses the real IndexedDB lock queue, as another tab does.
     const other = await new Promise<IDBDatabase>((resolve, reject) => {
-      const request = indexedDB.open('pjsdas', 11)
+      const request = indexedDB.open('pjsdas')
       request.onsuccess = () => resolve(request.result); request.onerror = () => reject(request.error)
     })
     const original = db.transaction.bind(db)

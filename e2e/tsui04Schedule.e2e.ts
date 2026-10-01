@@ -21,7 +21,7 @@ test('TSUI-04 real schedule: today anchor, both directions, unresolved and undat
   await page.goto('/pjsdas/today')
   await page.evaluate(async ({ created }) => {
     await new Promise<void>((resolve, reject) => {
-      const request = indexedDB.open('pjsdas', 11)
+      const request = indexedDB.open('pjsdas')
       request.onerror = () => reject(request.error)
       request.onsuccess = () => {
         const db = request.result
@@ -296,24 +296,30 @@ test('TSUI-04 connected event detail uses exact occurrence commands, receipt and
   await row.click()
   await page.locator('.tsui-schedule-command-buttons').getByRole('button', { name: /确认完成|Mark complete/ }).click()
   await page.locator('.tsui-schedule-confirm').getByRole('button', { name: /确认|Confirm/ }).click()
-  await expect(page.locator('.tsui-schedule-feedback')).toContainText(/已确认完成|marked complete/)
+  await expect(page.locator('.tsui-schedule-feedback')).toContainText(/已完成，已同步|Completed; synced/)
   expect(commands).toHaveLength(1)
   expect(commands[0].command.value).toMatchObject({ kind: 'complete_occurrence', occurrenceId: 'exact-occurrence' })
   expect(commands[0]).not.toHaveProperty('snapshot')
   expect(state.snapshot.data.scheduleNodes?.some((node) => node.occurrenceId === 'exact-occurrence' && node.state === 'completed')).toBe(true)
   await page.locator('.tsui-schedule-feedback').getByRole('button', { name: /撤销|Undo/ }).click()
   await expect(page.locator('.tsui-schedule-feedback')).toContainText(/已撤销|undone/)
+  await expect.poll(() => page.evaluate(accountKey => JSON.parse(localStorage.getItem('pjsdas-cgr01-pending:' + accountKey) || '[]').length, account)).toBe(0)
   await expect(row).toHaveCount(1)
   await row.click()
   await page.locator('.tsui-schedule-command-buttons').getByRole('button', { name: /改期|Reschedule/ }).click()
   await page.locator('.tsui-schedule-reschedule input').fill('2026-11-02')
   await page.locator('.tsui-schedule-reschedule').getByRole('button', { name: /确认改期|Confirm reschedule/ }).click()
-  await expect(page.locator('.tsui-schedule-feedback')).toContainText(/已按确认日期改期|rescheduled/)
+  await expect(page.locator('.tsui-schedule-feedback')).toContainText(/已改期|rescheduled/i)
+  await expect.poll(() => commands.length).toBe(2)
   expect(commands[1].command.value).toMatchObject({ kind: 'reschedule_occurrence',
     occurrenceId: 'exact-occurrence', temporal: { shape: 'date_only', precision: 'date',
       date: '2026-11-02', resolutionBasis: 'user_explicit' } })
   expect(state.snapshot.data.scheduleNodes?.filter((node) => node.occurrenceId === 'exact-occurrence' && node.state === 'scheduled')).toHaveLength(1)
   expect(snapshotWrites).toBe(0)
+
+  // Request arrival does not prove the response/local reconciliation finished.
+  // Begin the separate offline scenario after the prior legacy receipt settles.
+  await expect.poll(() => page.evaluate(accountKey => JSON.parse(localStorage.getItem('pjsdas-cgr01-pending:' + accountKey) || '[]').length, account)).toBe(0)
 
   // A queued reschedule survives reload with its chosen date, then replays
   // even when ordinary background workspace refresh was disabled.

@@ -1,9 +1,10 @@
+import { readModelSnapshot } from '../readModelSnapshot.js'
 import { decisionNeedsToday, groupOpenDecisions } from '../decisionPresentation.js'
 import { partitionDecisions } from '../decisionActionability.js'
 import { rankActions } from '../decisionV3.js'
 import { decisionRulesForSnapshot } from '../decisionRules.js'
 import type { DecisionRequest } from '../model.js'
-import { upgradeSnapshotToLatest, type PJSDASSnapshot } from '../snapshot.js'
+import { type PJSDASSnapshot } from '../snapshot.js'
 import {
   actionView,
   dueSortValue,
@@ -51,8 +52,12 @@ export function selectTodayWeb(
   input: TodayWebInput = {},
   rawContext: TodayBriefContext = {},
 ): TodayWebSelection {
+  return selectTodayWebNormalized(readModelSnapshot(rawSnapshot), input, rawContext)
+}
+
+/** Shared normalized input for a consumer render; never mutates its entities. */
+export function selectTodayWebNormalized(snapshot: PJSDASSnapshot, input: TodayWebInput = {}, rawContext: TodayBriefContext = {}): TodayWebSelection {
   const context = resolvedContext(rawContext)
-  const snapshot = upgradeSnapshotToLatest(rawSnapshot)
   const rules = decisionRulesForSnapshot(snapshot.data.decisionRules)
   const nodes = latestByOccurrence(snapshot.data.scheduleNodes ?? [])
   const opportunities = new Map(snapshot.data.opportunities.map((item) => [item.id, item]))
@@ -101,7 +106,7 @@ export function selectTodayWeb(
   }))
 
   return {
-    workspaceRevision: context.workspaceVersion ?? `snapshot:${rawSnapshot.exportedAt}`,
+    workspaceRevision: context.workspaceVersion ?? `snapshot:${snapshot.exportedAt}`,
     evaluatedAt: context.now.toISOString(),
     displayTimezone: context.timezone,
     actions,

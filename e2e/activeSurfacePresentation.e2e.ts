@@ -1,4 +1,7 @@
 import { expect, test } from '@playwright/test'
+import { freezeTodayFixture } from './support/consumerFixtureClock.js'
+
+test.beforeEach(async ({ page }) => { await freezeTodayFixture(page) })
 
 test('active Today and Prepare surfaces localize presentation without changing stored facts', async ({ page }) => {
   await page.goto('/')
@@ -42,7 +45,7 @@ test('active Today and Prepare surfaces localize presentation without changing s
     ]
 
     await new Promise<void>((resolve, reject) => {
-      const request = indexedDB.open('pjsdas', 11)
+      const request = indexedDB.open('pjsdas')
       request.onerror = () => reject(request.error)
       request.onsuccess = () => {
         const db = request.result

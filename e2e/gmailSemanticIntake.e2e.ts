@@ -6,7 +6,7 @@ import type { PJSDASSnapshot } from '../src/snapshot.js'
 async function seedSnapshot(page: Page, data: PJSDASSnapshot['data']) {
   await page.evaluate(async (snapshotData) => {
     await new Promise<void>((resolve, reject) => {
-      const request = indexedDB.open('pjsdas', 11)
+      const request = indexedDB.open('pjsdas')
       request.onerror = () => reject(request.error)
       request.onsuccess = () => {
         const db = request.result
@@ -54,7 +54,7 @@ for (const fixture of [
   await page.reload()
   await expect(page.locator('.tsui-node-panel .tsui-node-row')).toHaveCount(2)
   const stored = await page.evaluate(async () => new Promise<{ events: number; receipts: number }>((resolve, reject) => {
-    const request = indexedDB.open('pjsdas', 11)
+    const request = indexedDB.open('pjsdas')
     request.onerror = () => reject(request.error)
     request.onsuccess = () => {
       const db = request.result

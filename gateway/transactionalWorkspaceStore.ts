@@ -229,7 +229,7 @@ export function createTransactionalWorkspaceStore(options: TransactionalWorkspac
     async commitAuthoritativeForUser(input: ConnectedAuthoritativeCommitInput): Promise<ConnectedCommitResult> {
       validateSnapshot(input.snapshot)
       const snapshot = upgradeSnapshotToLatest(input.snapshot)
-      const response = await request('/rest/v1/rpc/pjsdas_commit_workspace_v2', {
+      const response = await request('/rest/v1/rpc/pjsdas_commit_workspace_v2?select=outcome,workspace_id,revision,receipt', {
         method: 'POST',
         body: JSON.stringify({
           target_user_id: input.userId,
@@ -267,12 +267,24 @@ export function createTransactionalWorkspaceStore(options: TransactionalWorkspac
       ) {
         throw new WorkspaceSourceError('WORKSPACE_INVALID', 'TodayAction authoritative commit returned invalid metadata.', false)
       }
-      validateSnapshot(row.snapshot)
+      let committedSnapshot = row.snapshot
+      let committedRevision = row.revision
+      if (committedSnapshot == null) {
+        if (row.outcome === 'COMMITTED') committedSnapshot = snapshot
+        else {
+          const latest = await this.readForUser(input.userId)
+          if (!latest || latest.workspaceId !== row.workspace_id || latest.revision < row.revision)
+            throw new WorkspaceSourceError('WORKSPACE_INVALID', 'Authoritative fallback snapshot metadata does not match the commit.', false)
+          committedSnapshot = latest.snapshot
+          committedRevision = latest.revision
+        }
+      }
+      validateSnapshot(committedSnapshot)
       return {
         outcome: row.outcome as ConnectedCommitResult['outcome'],
         workspaceId: row.workspace_id,
-        revision: row.revision,
-        snapshot: row.snapshot,
+        revision: committedRevision,
+        snapshot: committedSnapshot as PJSDASSnapshot,
         receipt: typeof row.receipt === 'object' && row.receipt !== null ? row.receipt as Record<string, unknown> : {},
       }
     },

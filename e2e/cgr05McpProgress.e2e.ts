@@ -1,9 +1,12 @@
+import { freezeTodayFixture } from './support/consumerFixtureClock.js'
 import { expect, test, type Page, type Route } from '@playwright/test'
 import { createSnapshot, type PJSDASSnapshot } from '../src/snapshot.js'
 import { createProgressChangeSet } from '../src/changeSet.js'
 import { createMcpProposalEnvelope } from '../src/ai/mcpProposal.js'
 import { applyMcpProgressCommand } from '../src/mcpProgressCommand.js'
 import { fingerprintWorkspace } from '../src/cloud/workspaceFingerprint.js'
+
+test.beforeEach(async ({ page }) => { await freezeTodayFixture(page) })
 
 const BACKEND = 'https://pjsdas-remote-alpha.vercel.app'
 const AUTH_KEY = 'sb-yyrzwpoxlxpafdlbkdtg-auth-token'
@@ -20,6 +23,7 @@ function session() {
 }
 
 async function seedSession(page: Page) {
+  await freezeTodayFixture(page)
   await page.addInitScript(({ key, value }) => {
     window.localStorage.setItem(key, JSON.stringify(value))
   }, { key: AUTH_KEY, value: session() })

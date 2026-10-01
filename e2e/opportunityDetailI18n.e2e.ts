@@ -34,7 +34,7 @@ test('opportunity detail localizes canonical stage and action status without cha
 
   await page.evaluate(async ({ opportunity, action }) => {
     await new Promise<void>((resolve, reject) => {
-      const request = indexedDB.open('pjsdas', 11)
+      const request = indexedDB.open('pjsdas')
       request.onerror = () => reject(request.error)
       request.onsuccess = () => {
         const db = request.result
@@ -71,7 +71,7 @@ test('opportunity detail localizes canonical stage and action status without cha
 
   const stored = await page.evaluate(async () => {
     return new Promise<{ stage?: string; status?: string }>((resolve, reject) => {
-      const request = indexedDB.open('pjsdas', 11)
+      const request = indexedDB.open('pjsdas')
       request.onerror = () => reject(request.error)
       request.onsuccess = () => {
         const db = request.result

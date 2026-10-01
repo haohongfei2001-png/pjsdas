@@ -1,3 +1,4 @@
+import { readModelSnapshot } from './readModelSnapshot.js'
 import { decisionRulesForSnapshot } from './decisionRules.js'
 import { computePriority, rankActions } from './decisionV3.js'
 import { jobPostingFreshness } from './jobPosting.js'
@@ -14,7 +15,7 @@ import type {
 } from './model.js'
 import { effectiveScheduleNodeState } from './scheduleNodes.js'
 import { nodeForAction } from './todayBrief.js'
-import { upgradeSnapshotToLatest, type PJSDASSnapshot } from './snapshot.js'
+import { type PJSDASSnapshot } from './snapshot.js'
 
 const HOUR = 3_600_000
 
@@ -385,7 +386,7 @@ export function getOpportunityDecisionRead(
   rawContext: OpportunityDecisionContext = {},
 ): OpportunityDecisionRead | undefined {
   const ctx = context(rawContext)
-  const snapshot = upgradeSnapshotToLatest(rawSnapshot)
+  const snapshot = readModelSnapshot(rawSnapshot)
   const opportunity = snapshot.data.opportunities.find((item) => item.id === opportunityId)
   if (!opportunity) return undefined
   const process = processFor(opportunity, snapshot.data.processes)
@@ -425,7 +426,7 @@ export function buildOpportunityDecisionList(
   rawContext: OpportunityDecisionContext = {},
 ): OpportunityDecisionListRead {
   const ctx = context(rawContext)
-  const snapshot = upgradeSnapshotToLatest(rawSnapshot)
+  const snapshot = readModelSnapshot(rawSnapshot)
   const ranked = rankedActionsByOpportunity(snapshot, ctx.now)
   const nodes = nodesForDecision(snapshot)
   const items = snapshot.data.opportunities.map((opportunity) => {

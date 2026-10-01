@@ -1,4 +1,7 @@
+import { freezeTodayFixture } from './support/consumerFixtureClock.js'
 import { expect, test } from '@playwright/test'
+
+test.beforeEach(async ({ page }) => { await freezeTodayFixture(page) })
 
 test('UU-04 shell keeps exactly three primary destinations keyboard-accessible and routes Settings outside primary nav', async ({ page }) => {
   await page.goto('/')
@@ -86,7 +89,7 @@ test('390x844 switches between the task and upcoming node without horizontal cli
     }
 
     await new Promise<void>((resolve, reject) => {
-      const request = indexedDB.open('pjsdas', 11)
+      const request = indexedDB.open('pjsdas')
       request.onerror = () => reject(request.error)
       request.onsuccess = () => {
         const db = request.result

@@ -1,8 +1,11 @@
+import { freezeTodayFixture } from './support/consumerFixtureClock.js'
 import { expect, test, type Page, type Route } from '@playwright/test'
 import { upgradeSnapshotToLatest, type PJSDASSnapshot } from '../src/snapshot.js'
 import { applyDiscoveryPromotionCommand } from '../src/discoveryPromotionCommand.js'
-import { applyUserDomainCommand } from '../src/domainCommands.js'
+import { applyDomainCompensation, applyUserDomainCommand, type DomainCompensation } from '../src/domainCommands.js'
 import { applyProcessEventDeleteCommand } from '../src/processEventDeleteCommand.js'
+
+test.beforeEach(async ({ page }) => { await freezeTodayFixture(page) })
 
 const AUTH_KEY = 'sb-yyrzwpoxlxpafdlbkdtg-auth-token'
 const BACKEND = 'https://pjsdas-remote-alpha.vercel.app'
@@ -89,6 +92,7 @@ function session(accountKey: string, token: string) {
 }
 
 async function seedInitialSession(page: Page, accountKey: string, token: string) {
+  await freezeTodayFixture(page)
   await page.addInitScript(({ key, value }) => {
     if (!window.localStorage.getItem('cgr01-e2e-auth-seeded')) {
       window.localStorage.setItem(key, JSON.stringify(value))
@@ -134,7 +138,7 @@ function tokenOf(route: Route) {
 
 async function readIndexedActions(page: Page) {
   return page.evaluate(async () => new Promise<Array<{ id: string; title: string; status: string }>>((resolve, reject) => {
-    const request = indexedDB.open('pjsdas', 11)
+    const request = indexedDB.open('pjsdas')
     request.onerror = () => reject(request.error)
     request.onsuccess = () => {
       const db = request.result
@@ -171,8 +175,9 @@ test('lost response after server commit survives reload and recovers one durable
     }
     if (body.action === 'command') {
       commandCalls += 1
-      const target = state.snapshot.data.actions.find((item) => item.id === 'A-action-1')
-      if (target) target.status = 'done'
+      const applied = applyUserDomainCommand(state.snapshot, body.command.value, new Date('2026-09-23T01:00:00Z'))
+      if (applied.status !== 'APPLIED') throw new Error('Expected actual completion with audit')
+      state.snapshot = applied.snapshot
       state.revision += 1
       const receipt = {
         commandId: body.commandId,
@@ -180,6 +185,7 @@ test('lost response after server commit survives reload and recovers one durable
         status: 'COMMITTED',
         revision: state.revision,
         undoAvailable: true,
+        undoCompensation: applied.compensation,
         affectedObjects: [{ type: 'action', id: 'A-action-1' }],
         result: { type: 'domain', status: 'APPLIED', summary: 'Completed A-action-1.' },
       }
@@ -205,14 +211,14 @@ test('lost response after server commit survives reload and recovers one durable
   await page.goto('/')
   await expect(page.getByRole('heading', { name: 'A第一任务' })).toBeVisible()
   await page.locator('.tsui-task-row').filter({ has: page.getByRole('heading', { name: 'A第一任务' }) }).getByRole('button', { name: '完成' }).click()
-  await expect(page.getByRole('status')).toContainText('尚未确认这次操作是否已提交')
+  await expect(page.getByRole('status')).toContainText('修改已保存在本机')
   expect(commandCalls).toBe(1)
-  expect(receiptCalls).toBe(1)
+  await expect.poll(() => receiptCalls).toBe(1)
 
   await page.reload()
   await expect(page.getByRole('heading', { name: 'A第一任务' })).toHaveCount(0)
   expect(commandCalls).toBe(1)
-  expect(receiptCalls).toBeGreaterThanOrEqual(2)
+  await expect.poll(() => receiptCalls).toBeGreaterThanOrEqual(2)
   // UI absence can precede receipt projection and durable pending-record removal.
   await expect.poll(() => page.evaluate(() => window.localStorage.getItem('pjsdas-cgr01-pending:account-a'))).toBeNull()
 })
@@ -222,6 +228,7 @@ test('connected Web recovers a lost command response and Undo preserves unrelate
   const state: AccountState = { revision: 7, snapshot: workspace('A'), receipts: new Map() }
   const commandBodies: any[] = []
   let loseFirstResponse = true
+  let compensation: DomainCompensation | undefined
 
   await page.route(`${BACKEND}/**`, async (route) => {
     const request = route.request()
@@ -243,11 +250,10 @@ test('connected Web recovers a lost command response and Undo preserves unrelate
     if (body.action === 'command') {
       commandBodies.push(body)
       const commandId = body.commandId as string
-      const target = state.snapshot.data.actions.find((item) => item.id === 'A-action-1')
-      if (target) {
-        target.status = 'done'
-        target.updatedAt = '2026-09-23T01:00:00.000Z'
-      }
+      const evaluated = applyUserDomainCommand(state.snapshot, body.command.value, new Date('2026-09-23T01:00:00Z'))
+      if (evaluated.status !== 'APPLIED') throw new Error('Expected reversible completion')
+      state.snapshot = evaluated.snapshot
+      compensation = evaluated.compensation
       state.revision += 1
       const receipt = {
         commandId,
@@ -255,6 +261,7 @@ test('connected Web recovers a lost command response and Undo preserves unrelate
         status: 'COMMITTED',
         revision: state.revision,
         undoAvailable: true,
+        undoCompensation: compensation,
         affectedObjects: [{ type: 'action', id: 'A-action-1' }],
         result: { type: 'domain', status: 'APPLIED', summary: 'Completed A-action-1.' },
       }
@@ -286,11 +293,7 @@ test('connected Web recovers a lost command response and Undo preserves unrelate
     }
     if (body.action === 'undo') {
       expect(body.targetCommandId).toBe(commandBodies[0]?.commandId)
-      const original = state.snapshot.data.actions.find((item) => item.id === 'A-action-1')
-      if (original) {
-        original.status = 'todo'
-        original.updatedAt = '2026-09-23T01:10:00.000Z'
-      }
+      state.snapshot = applyDomainCompensation(state.snapshot, compensation!, new Date('2026-09-23T01:10:00Z'))
       state.revision += 1
       return cors(route, {
         outcome: 'COMMITTED',
@@ -317,13 +320,16 @@ test('connected Web recovers a lost command response and Undo preserves unrelate
 
   await page.locator('.tsui-task-row').filter({ has: page.getByRole('heading', { name: 'A第一任务' }) }).getByRole('button', { name: '完成' }).click()
   await expect(page.getByRole('status')).toContainText('已完成')
-  expect(commandBodies).toHaveLength(1)
+  await expect.poll(() => commandBodies.length).toBe(1)
   expect(commandBodies[0]).toMatchObject({
     action: 'command',
     command: { type: 'domain', value: { kind: 'set_action_status', actionId: 'A-action-1', status: 'done' } },
   })
   expect(commandBodies[0]).not.toHaveProperty('snapshot')
 
+  // This legacy full-snapshot fixture introduces an independent server edit
+  // after receipt recovery. Immediate pre-ack Undo is covered by the dense delta fixture.
+  await expect.poll(() => page.evaluate(() => window.localStorage.getItem('pjsdas-cgr01-pending:account-a'))).toBeNull()
   const unrelated = state.snapshot.data.actions.find((item) => item.id === 'A-action-2')
   if (unrelated) {
     unrelated.status = 'done'
@@ -333,6 +339,7 @@ test('connected Web recovers a lost command response and Undo preserves unrelate
 
   await page.getByRole('button', { name: '撤销' }).click()
   await expect(page.getByRole('heading', { name: 'A第一任务' })).toBeVisible()
+  await expect.poll(async () => (await readIndexedActions(page)).find(item => item.id === 'A-action-2')?.status).toBe('done')
   const actions = await readIndexedActions(page)
   expect(actions.find((item) => item.id === 'A-action-1')?.status).toBe('todo')
   expect(actions.find((item) => item.id === 'A-action-2')?.status).toBe('done')
@@ -387,10 +394,10 @@ test('same-object connected conflict is concrete and refreshes the authoritative
   await expect(complete).toBeFocused()
   await page.keyboard.press('Enter')
   const conflictStatus = page.getByRole('status')
-  await expect(conflictStatus).toContainText('这一个行动已被另一客户端修改')
+  await expect(conflictStatus).toContainText('这项记录刚被另一处修改')
   await expect(conflictStatus).toBeInViewport()
   const actions = await readIndexedActions(page)
-  expect(actions.find((item) => item.id === 'A-action-1')?.status).toBe('doing')
+  await expect.poll(async () => (await readIndexedActions(page)).find(item => item.id === 'A-action-1')?.status).toBe('doing')
   await expect(page.getByText(/本地还是云端|local.*cloud/i)).toHaveCount(0)
 })
 
@@ -546,7 +553,7 @@ test('CGR-05 background and manual connected sync preserve pending local changes
   })).toBe('txn:7')
 
   await page.evaluate(async () => new Promise<void>((resolve, reject) => {
-    const request = indexedDB.open('pjsdas', 11)
+    const request = indexedDB.open('pjsdas')
     request.onerror = () => reject(request.error)
     request.onsuccess = () => {
       const db = request.result
@@ -659,7 +666,7 @@ test('CGR-05 Discovery status, Profile and promotion use scoped first-party comm
     await expect(itemA).toHaveClass(/status-new/)
     await itemA.getByRole('button', { name: '已看' }).click()
     await expect(itemA).toHaveClass(/status-seen/)
-    expect(commandBodies).toHaveLength(1)
+    await expect.poll(() => commandBodies.length).toBe(1)
     expect(commandBodies[0].command.value).toMatchObject({ inboxItemId: 'inbox:cgr05-job', status: 'seen' })
     expect(commandBodies[0]).not.toHaveProperty('snapshot')
     expect(snapshotCommits).toBe(0)
@@ -680,7 +687,7 @@ test('CGR-05 Discovery status, Profile and promotion use scoped first-party comm
 
     await pageB.evaluate(() => window.dispatchEvent(new Event('online')))
     await expect.poll(() => pageB.evaluate(async () => new Promise<string[]>((resolve, reject) => {
-      const request = indexedDB.open('pjsdas', 11)
+      const request = indexedDB.open('pjsdas')
       request.onerror = () => reject(request.error)
       request.onsuccess = () => {
         const db = request.result
@@ -793,7 +800,7 @@ test('CGR-05 process recovery creates and deletes one account event across clien
     expect(commands[1].command).toMatchObject({ type: 'process_event_delete' })
     await pageB.evaluate(() => window.dispatchEvent(new Event('online')))
     await expect.poll(() => pageB.evaluate(async () => new Promise<number>((resolve, reject) => {
-      const request = indexedDB.open('pjsdas', 11)
+      const request = indexedDB.open('pjsdas')
       request.onerror = () => reject(request.error)
       request.onsuccess = () => {
         const db = request.result

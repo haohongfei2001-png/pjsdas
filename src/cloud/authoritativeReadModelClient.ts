@@ -1,3 +1,4 @@
+import { interactionIsRecent } from './interactionActivity.js'
 import { captureAccountCacheLease, AccountCacheChangedError } from './accountCacheLease.js'
 import { isRecordedAccountProjection, assertLocalSnapshotCurrent, exportLocalSnapshot, replaceLocalSnapshotFromCloud } from '../db.js'
 import { fetchConnectedRemoteWorkspace } from './connectedWorkspaceRepository.js'
@@ -49,13 +50,26 @@ function markFresh(accountKey: string, version: string, fingerprint: string, pro
 
 export async function refreshConnectedAuthoritativeCache(
   accountKey: string,
+  options: { passive?: boolean } = {},
 ): Promise<AuthoritativeReadFreshness> {
   const lease = captureAccountCacheLease(accountKey)
   const startedAt = Date.now()
-  const [local, remote] = await Promise.all([
-    exportLocalSnapshot(),
-    fetchConnectedRemoteWorkspace(accountKey),
+  const hotPending = () => (unresolvedPendingCommandCount(accountKey) > 0 || (options.passive && interactionIsRecent(accountKey))) && !getAccountCheckpoint(accountKey).conflict
+  const pendingResult = (): AuthoritativeReadFreshness => ({ state: 'pending_operations', workspaceVersion: getAccountCheckpoint(accountKey).lastSyncedVersion ?? 'pending',
+    observedAt: new Date().toISOString(), latencyMs: Date.now() - startedAt, changed: false })
+  const assertReadCurrent = () => { lease.assertCurrent(); if (hotPending()) throw new AccountCacheChangedError() }
+  if (unresolvedPendingCommandCount(accountKey) > 0 || (options.passive && interactionIsRecent(accountKey))) {
+    const initialCheckpoint = getAccountCheckpoint(accountKey)
+    if (!initialCheckpoint.conflict) return { state: 'pending_operations', workspaceVersion: initialCheckpoint.lastSyncedVersion ?? 'pending',
+      observedAt: new Date().toISOString(), latencyMs: 0, changed: false }
+  }
+  const reading = Promise.all([
+    exportLocalSnapshot(assertReadCurrent),
+    fetchConnectedRemoteWorkspace(accountKey, assertReadCurrent),
   ])
+  const pair = await reading.catch(error => { lease.assertCurrent(); if (hotPending()) return undefined; throw error })
+  if (!pair || hotPending()) return pendingResult()
+  const [local, remote] = pair
   const localFingerprint = await fingerprintWorkspace(local)
   lease.assertCurrent()
   const checkpoint = getAccountCheckpoint(accountKey)
@@ -72,6 +86,7 @@ export async function refreshConnectedAuthoritativeCache(
   const markCurrent = async () => {
     await assertLocalSnapshotCurrent(local, assertCurrent)
     assertCurrent()
+    await isRecordedAccountProjection(accountKey, local, { compact: true, assertCurrent })
     markFresh(accountKey, remote.version, remote.fingerprint, localFingerprint, observedAt)
   }
 
@@ -136,7 +151,7 @@ export async function refreshConnectedAuthoritativeCache(
       ? checkpoint.lastReadProjectionFingerprint
       : undefined
     const localChanged = localFingerprint !== (projectedBaseline ?? checkpoint.lastSyncedFingerprint)
-      && !await isRecordedAccountProjection(accountKey, local)
+      && !await isRecordedAccountProjection(accountKey, local, { compact: true, assertCurrent })
     const remoteChanged = remote.version !== checkpoint.lastSyncedVersion
       || remote.fingerprint !== checkpoint.lastSyncedFingerprint
     if (!localChanged && !remoteChanged) {

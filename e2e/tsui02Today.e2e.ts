@@ -17,7 +17,7 @@ test('TSUI-02 real component: equal Today rows, shared 130-node stream and mobil
   await page.goto('/pjsdas/today')
   await page.evaluate(async ({ created }) => {
     await new Promise<void>((resolve, reject) => {
-      const request = indexedDB.open('pjsdas', 11)
+      const request = indexedDB.open('pjsdas')
       request.onerror = () => reject(request.error)
       request.onsuccess = () => {
         const db = request.result

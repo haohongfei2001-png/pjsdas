@@ -1,5 +1,8 @@
+import { freezeTodayFixture } from './support/consumerFixtureClock.js'
 import { expect, test, type Page } from '@playwright/test'
 import { createJobPostingEvidence } from '../src/jobPosting.js'
+
+test.beforeEach(async ({ page }) => { await freezeTodayFixture(page) })
 
 function sourceBackedOpportunity(id: string, company: string, role: string) {
   const observedAt = '2026-09-10T00:00:00.000Z'
@@ -40,7 +43,7 @@ async function seedOpportunities(page: Page, opportunities: ReturnType<typeof so
   await page.goto('/')
   await page.evaluate(async (items) => {
     await new Promise<void>((resolve, reject) => {
-      const request = indexedDB.open('pjsdas', 11)
+      const request = indexedDB.open('pjsdas')
       request.onerror = () => reject(request.error)
       request.onsuccess = () => {
         const db = request.result
@@ -69,7 +72,7 @@ async function readMutationState(page: Page) {
     semanticReceipts: Array<{ id: string; status: string }>
     changeSets: Array<{ id: string; status: string; operations: unknown[] }>
   }>((resolve, reject) => {
-    const request = indexedDB.open('pjsdas', 11)
+    const request = indexedDB.open('pjsdas')
     request.onerror = () => reject(request.error)
     request.onsuccess = () => {
       const db = request.result

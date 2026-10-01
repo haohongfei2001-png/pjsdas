@@ -25,7 +25,8 @@ async function request(path: string, init: RequestInit = {}, accountKey?: string
   return fetchBackend(path, { ...init, headers })
 }
 
-async function parseWorkspaceResponse(response: Response): Promise<ConnectedRemoteWorkspaceRow> {
+async function parseWorkspaceResponse(response: Response, assertReadCurrent?: () => void): Promise<ConnectedRemoteWorkspaceRow> {
+  assertReadCurrent?.()
   const body = await response.json().catch(() => undefined) as {
     workspaceId?: string
     workspaceVersion?: string
@@ -35,6 +36,7 @@ async function parseWorkspaceResponse(response: Response): Promise<ConnectedRemo
     code?: string
     message?: string
   } | undefined
+  assertReadCurrent?.()
   if (!response.ok) {
     const code = body?.code ?? 'CONNECTED_WORKSPACE_FAILED'
     throw new Error(`${code}: ${body?.message ?? `HTTP ${response.status}`}`)
@@ -56,11 +58,11 @@ async function parseWorkspaceResponse(response: Response): Promise<ConnectedRemo
   }
 }
 
-export async function fetchConnectedRemoteWorkspace(accountKey?: string): Promise<ConnectedRemoteWorkspaceRow> {
+export async function fetchConnectedRemoteWorkspace(accountKey?: string, assertReadCurrent?: () => void): Promise<ConnectedRemoteWorkspaceRow> {
   return parseWorkspaceResponse(await request('/api/workspace', {
     method: 'POST',
     body: JSON.stringify({ action: 'read' }),
-  }, accountKey))
+  }, accountKey), assertReadCurrent)
 }
 
 export async function createConnectedRemoteWorkspace(): Promise<never> {

@@ -2,6 +2,7 @@ name: Browser E2E
 
 on:
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
   push:
     branches: [main]
   workflow_dispatch:
@@ -11,9 +12,14 @@ permissions:
 
 jobs:
   chromium:
-    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    # A draft opt-in must name this exact same-repository head.
+    if: >-
+      (github.event_name != 'pull_request' || github.event.pull_request.draft == false || (github.event.pull_request.head.repo.full_name == github.repository && contains(github.event.pull_request.labels.*.name, format('full:{0}', github.event.pull_request.head.sha))))
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    # The complete 180-core + 67-dense suite passed before the old 15-minute
+    # cap interrupted teardown (15m11s). Keep every assertion and allow a
+    # bounded five-minute runner/setup margin.
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -27,6 +33,10 @@ jobs:
         run: npx playwright install --with-deps chromium
       - name: Run critical browser journeys
         run: npx playwright test --config=playwright.config.mts --project=chromium
+      - name: Run dense instant journeys with production React runtime
+        env:
+          PLAYWRIGHT_HTML_OUTPUT_DIR: playwright-report/instant
+        run: npx playwright test --config=playwright.instant.config.mts --project=chromium
       - name: Upload browser failure evidence
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@v5

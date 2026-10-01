@@ -1,4 +1,7 @@
+import { freezeTodayFixture } from './support/consumerFixtureClock.js'
 import { expect, test } from '@playwright/test'
+
+test.beforeEach(async ({ page }) => { await freezeTodayFixture(page) })
 
 const opportunity = {
   id: 'e2e-today-reason-job',
@@ -33,7 +36,7 @@ test('Today keeps the same exact action identity while labels follow UI language
   await page.goto('/')
   await page.evaluate(async ({ opportunity, action }) => {
     await new Promise<void>((resolve, reject) => {
-      const request = indexedDB.open('pjsdas', 11)
+      const request = indexedDB.open('pjsdas')
       request.onerror = () => reject(request.error)
       request.onsuccess = () => {
         const db = request.result

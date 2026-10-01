@@ -26,7 +26,7 @@ test('Job discovery preferences are bilingual, persist, and never show stale sav
 
   const stored = await page.evaluate(async () => {
     return new Promise<string[]>((resolve, reject) => {
-      const request = indexedDB.open('pjsdas', 11)
+      const request = indexedDB.open('pjsdas')
       request.onerror = () => reject(request.error)
       request.onsuccess = () => {
         const db = request.result

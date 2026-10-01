@@ -1,3 +1,4 @@
+import { interactionIsRecent } from './interactionActivity.js'
 import { captureAccountCacheLease, AccountCacheChangedError } from './accountCacheLease.js'
 import { isRecordedAccountProjection, assertLocalSnapshotCurrent } from '../db.js'
 import { exportLocalSnapshot, replaceLocalSnapshotFromCloud } from '../db.js'
@@ -113,8 +114,10 @@ export async function runCloudSync(userId: string, options: { passive?: boolean;
   const lease = connectedWorkspaceAuthorityEnabled() ? captureAccountCacheLease(userId) : undefined
   let targetVersion: string | undefined
   let projectingEquivalent = false
+  const hotPending = () => connectedWorkspaceAuthorityEnabled() && (unresolvedPendingCommandCount(userId) > 0 || (options.passive && interactionIsRecent(userId))) && !getAccountCheckpoint(userId).conflict
   const assertCurrent = () => {
     lease?.assertCurrent()
+    if (hotPending()) throw new AccountCacheChangedError()
     if (projectingEquivalent && unresolvedPendingCommandCount(userId) > 0) throw new AccountCacheChangedError()
     if (lease && targetVersion && Number(getAccountCheckpoint(userId).lastSyncedVersion?.replace('txn:', '')) > Number(targetVersion.replace('txn:', ''))) throw new AccountCacheChangedError()
   }
@@ -123,17 +126,26 @@ export async function runCloudSync(userId: string, options: { passive?: boolean;
     return { kind: 'account_mismatch' }
   }
   if (!device.workspaceOwnerUserId) bindLocalWorkspaceToUser(userId)
+  // An ordinary in-flight command already owns local projection. Defer
+  // expensive full read/fingerprint work until it settles; persisted conflicts
+  // still classify against the latest server revision below.
+  if (hotPending()) {
+    return { kind: 'local_pending', version: getAccountCheckpoint(userId).lastSyncedVersion }
+  }
 
   try {
-    const local = await exportLocalSnapshot()
+    const local = await exportLocalSnapshot(assertCurrent)
+    if (hotPending()) return { kind: 'local_pending', version: getAccountCheckpoint(userId).lastSyncedVersion }
     const localFingerprint = await fingerprintWorkspace(local)
-    const remoteRaw = await fetchRemoteWorkspace(userId)
+    if (hotPending()) return { kind: 'local_pending', version: getAccountCheckpoint(userId).lastSyncedVersion }
+    const remoteRaw = await fetchRemoteWorkspace(userId, assertCurrent)
+    if (hotPending()) return { kind: 'local_pending', version: getAccountCheckpoint(userId).lastSyncedVersion }
     const remote = remoteRaw ? await verifyRemote(remoteRaw) : null
     targetVersion = remote?.version
     assertCurrent()
     await assertLocalSnapshotCurrent(local, assertCurrent)
     const checkpoint = getAccountCheckpoint(userId)
-    const recordedProjection = await isRecordedAccountProjection(userId, local)
+    const recordedProjection = await isRecordedAccountProjection(userId, local, { compact: unresolvedPendingCommandCount(userId) === 0, assertCurrent })
     assertCurrent()
     // A connected browser keeps unresolved user intent in its account-bound
     // outbox. No workspace refresh may replace that cache before recovery.
@@ -299,6 +311,8 @@ export async function runCloudSync(userId: string, options: { passive?: boolean;
     markSynced(userId, remote)
     return { kind: 'synced', version: remote.version, remoteUpdatedAt: remote.updatedAt }
   } catch (caught) {
+    lease?.assertCurrent()
+    if (hotPending()) return { kind: 'local_pending', version: getAccountCheckpoint(userId).lastSyncedVersion }
     assertCurrent()
     patchAccountCheckpoint(userId, {
       lastError: caught instanceof Error ? caught.message : String(caught),

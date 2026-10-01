@@ -1,5 +1,6 @@
 import { type Page, type Route } from '@playwright/test'
 import { upgradeSnapshotToLatest } from '../../src/snapshot.js'
+import { freezeTodayFixture } from './consumerFixtureClock.js'
 
 const BACKEND = 'https://pjsdas-remote-alpha.vercel.app'
 const AUTH_KEY = 'sb-yyrzwpoxlxpafdlbkdtg-auth-token'
@@ -18,6 +19,7 @@ function reply(route: Route, body: unknown, status = 200) {
 }
 
 export async function prepareJourney(page: Page) {
+  await freezeTodayFixture(page)
   const token = 'voiceover-synthetic-token'
   await page.context().addInitScript(({ key, session }) => {
     localStorage.setItem(key, JSON.stringify(session))

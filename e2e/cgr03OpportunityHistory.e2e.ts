@@ -18,7 +18,7 @@ test('CGR-03 opportunity detail labels recent history honestly and reaches the o
       recordedAt:new Date(now - index * 86400000).toISOString(),
     }))
     await new Promise<void>((resolve, reject) => {
-      const request = indexedDB.open('pjsdas', 11)
+      const request = indexedDB.open('pjsdas')
       request.onerror = () => reject(request.error)
       request.onsuccess = () => {
         const db = request.result
@@ -66,7 +66,7 @@ test('CGR-03 detail completion uses the shared action command and updates the pe
   await page.evaluate(async () => {
     const now = new Date().toISOString()
     await new Promise<void>((resolve, reject) => {
-      const request = indexedDB.open('pjsdas', 11)
+      const request = indexedDB.open('pjsdas')
       request.onerror = () => reject(request.error)
       request.onsuccess = () => {
         const db = request.result
@@ -97,7 +97,7 @@ test('CGR-03 detail completion uses the shared action command and updates the pe
   await expect(page.locator('.action-undo-toast')).toContainText('准备合成面试')
   await expect(detail.locator('.opportunity-detail-action-list article', { hasText: '准备合成面试' })).toHaveCount(0)
   await expect.poll(async () => page.evaluate(async () => {
-    const request = indexedDB.open('pjsdas', 11)
+    const request = indexedDB.open('pjsdas')
     return new Promise<string | undefined>((resolve, reject) => {
       request.onerror = () => reject(request.error)
       request.onsuccess = () => {

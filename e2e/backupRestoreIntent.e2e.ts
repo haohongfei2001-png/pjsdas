@@ -1,4 +1,7 @@
+import { freezeTodayFixture } from './support/consumerFixtureClock.js'
 import { expect, test, type Page } from '@playwright/test'
+
+test.beforeEach(async ({ page }) => { await freezeTodayFixture(page) })
 
 const opportunity = {
   id: 'e2e-backup-intent-opportunity',
@@ -34,7 +37,7 @@ async function seedWorkspace(page: Page) {
 
   await page.evaluate(async ({ opportunity, action }) => {
     await new Promise<void>((resolve, reject) => {
-      const request = indexedDB.open('pjsdas', 11)
+      const request = indexedDB.open('pjsdas')
       request.onerror = () => reject(request.error)
       request.onsuccess = () => {
         const db = request.result

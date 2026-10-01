@@ -1,3 +1,5 @@
+import { diffWorkspaceDelta } from '../src/workspaceDelta.js'
+import { INSTANT_COMMAND_KINDS } from '../src/instantCommandKinds.js'
 import { restoreActionStatusUndo, type ActionStatusUndo } from '../src/actionStatusUndo.js'
 import * as z from 'zod/v4'
 import {
@@ -362,7 +364,13 @@ function lifecycle(now: string, baseRevision: number, currentRevision: number) {
 export function createAuthoritativeCommandExecutor(options: TransactionalWorkspaceStoreOptions) {
   const store = createTransactionalWorkspaceStore(options)
 
-  async function lookup(principal: MutationPrincipal, targetCommandId: string) {
+  async function lookup(principal: MutationPrincipal, targetCommandId: string, compact = false) {
+    if (compact) {
+      const record = await store.readCommandForUser(principal.userId, targetCommandId)
+      return { found: Boolean(record), revision: record?.resultingRevision ?? 0,
+        receipt: record?.receipt, commandId: record?.commandId, operation: record?.operation,
+        resultingRevision: record?.resultingRevision, snapshot: undefined }
+    }
     const current = await store.readForUser(principal.userId)
     if (!current) throw new WorkspaceSourceError('WORKSPACE_NOT_FOUND', 'TodayAction connected workspace has not been migrated yet.', false)
     const record = await store.readCommandForUser(principal.userId, targetCommandId)
@@ -527,12 +535,17 @@ export function createAuthoritativeCommandExecutor(options: TransactionalWorkspa
         }
       }
 
+      // Receipts must describe the normalized facts actually submitted to
+      // storage, including derived schedule nodes and temporal precision.
+      evaluated.snapshot = upgradeSnapshotToLatest(evaluated.snapshot)
       const affectedObjects = diffCommandObjects(current.snapshot, evaluated.snapshot)
       const affectedFields = diffCommandFields(current.snapshot, evaluated.snapshot, affectedObjects)
       const conflictScopes = commandConflictScopes(affectedObjects, intentFields)
       const result = resultPayload(parsed.command, evaluated)
       const receiptContext = {
-        contractVersion: 4,
+        contractVersion: 5,
+        projectionDelta: diffWorkspaceDelta(current.snapshot, evaluated.snapshot, current.revision),
+        schemaVersion: evaluated.snapshot.version,
         commandType: parsed.command.type,
         affectedObjects,
         affectedFields,
@@ -541,6 +554,8 @@ export function createAuthoritativeCommandExecutor(options: TransactionalWorkspa
         readModelInvalidation: readModelInvalidation(affectedObjects),
         lifecycle: lifecycle(startedAt, parsed.baseRevision, current.revision),
         result,
+        ...(parsed.command.type === 'domain' && INSTANT_COMMAND_KINDS.has(parsed.command.value.kind)
+          ? { undoCompensation: evaluated.compensation } : {}),
       }
       const compensation = evaluated.compensation as Record<string, unknown> | undefined
       const committed = await store.commitAuthoritativeForUser({
@@ -685,7 +700,7 @@ export function createAuthoritativeCommandExecutor(options: TransactionalWorkspa
       }
 
       const now = new Date()
-      const next = applyCompensation(current.snapshot, target.compensation, now)
+      const next = upgradeSnapshotToLatest(applyCompensation(current.snapshot, target.compensation, now))
       const affectedObjects = diffCommandObjects(current.snapshot, next)
       const committed = await store.commitAuthoritativeForUser({
         userId: principal.userId,
@@ -699,7 +714,9 @@ export function createAuthoritativeCommandExecutor(options: TransactionalWorkspa
         clientId: principal.clientId,
         provenance: { channel: 'authoritative-command-v2', undoOf: parsed.targetCommandId },
         receiptContext: {
-          contractVersion: 2,
+          contractVersion: 5,
+          projectionDelta: diffWorkspaceDelta(current.snapshot, next, current.revision),
+          schemaVersion: next.version,
           commandType: 'undo',
           undoOf: parsed.targetCommandId,
           affectedObjects,
