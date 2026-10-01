@@ -401,7 +401,7 @@ test('same-object connected conflict is concrete and refreshes the authoritative
   await expect(page.getByText(/本地还是云端|local.*cloud/i)).toHaveCount(0)
 })
 
-test('account A sign-out then account B never displays or replays A cache drafts or pending operations', async ({ page }) => {
+test('account A sign-out then account B never displays or replays A cache drafts or pending operations', async ({ page }, info) => {
   await seedInitialSession(page, 'account-a', 'token-a')
   const states: Record<string, AccountState> = {
     'token-a': { revision: 3, snapshot: workspace('A'), receipts: new Map() },
@@ -471,6 +471,17 @@ test('account A sign-out then account B never displays or replays A cache drafts
     }]))
   })
 
+  await page.evaluate(async () => {
+    const witness = { events: [] as unknown[], auth: [] as unknown[] }
+    ;(window as any).__signOutWitness = witness
+    for (const type of ['pointerdown', 'pointerup', 'click']) document.addEventListener(type, event => {
+      const button = (event.target as HTMLElement).closest('button')
+      if (button?.textContent?.includes('退出 TodayAction')) witness.events.push({ type, disabled: button.disabled, at: performance.now() })
+    }, true)
+    const { pjsdasSupabase } = await import('/pjsdas/src/aiAccess/supabaseClient.ts')
+    pjsdasSupabase.auth.onAuthStateChange((event, value) => witness.auth.push({ event, account: value?.user.id ?? null, at: performance.now() }))
+  })
+  try {
   await page.locator('.tsui-topbar').getByRole('button', { name: /设置|Settings/ }).click()
   await page.getByRole('button', { name: '退出 TodayAction' }).click()
   await expect.poll(async () => (await readIndexedActions(page)).length).toBe(0)
@@ -488,6 +499,17 @@ test('account A sign-out then account B never displays or replays A cache drafts
   await expect(page.locator('.cgr-capture-input')).toHaveValue('')
   expect(bBodies.some((body) => body.commandId === 'web-action:A-pending')).toBe(false)
   expect(bBodies.some((body) => ['commit', 'command', 'undo'].includes(body.action))).toBe(false)
+  } finally {
+    const evidence = await page.evaluate(() => ({
+      witness: (window as any).__signOutWitness,
+      authPresent: Boolean(localStorage.getItem('sb-yyrzwpoxlxpafdlbkdtg-auth-token')),
+      errors: [...document.querySelectorAll('.cloud-error')].map(node => node.textContent),
+      account: document.querySelector('.cloud-account-identity strong')?.textContent,
+      recoveryVisible: Boolean(document.querySelector('.startup-recovery')),
+    })).catch(error => ({ unavailable: String(error) }))
+    await info.attach('sign-out-boundary.json', { body: JSON.stringify(evidence, null, 2), contentType: 'application/json' })
+  }
+
 })
 
 test('sign-out keeps unverified local-only data even when an account command is pending', async ({ page }) => {
