@@ -87,10 +87,14 @@ async function capture(page: Page, label: string, width: number, scale = 100, pr
     expect(digest(bytes), `${label}: main/body pixels must remain identical to deployed 37e8487a`).toBe(digest(baseline))
   }
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)
-  if (phase === 'after') expect(overflow, `${name}: no horizontal overflow`).toBeLessThanOrEqual(1)
-  const metric = { label, width, scale, overflow, sha256: digest(bytes), protectedMain: protectMain }
+  const overflowNodes = overflow > 1 ? await page.evaluate(() => [...document.querySelectorAll<HTMLElement>('body *')]
+    .filter(element => element.getClientRects().length && (element.getBoundingClientRect().right > innerWidth + 1 || element.getBoundingClientRect().left < -1))
+    .slice(0, 20).map(element => ({ tag: element.tagName, className: element.className, right: element.getBoundingClientRect().right,
+      left: element.getBoundingClientRect().left, scrollWidth: element.scrollWidth, clientWidth: element.clientWidth }))) : []
+  const metric = { label, width, scale, overflow, overflowNodes, sha256: digest(bytes), protectedMain: protectMain }
   console.log('SECONDARY_UI:' + JSON.stringify(metric))
   await writeFile(`${evidence}/${name}.json`, JSON.stringify(metric, null, 2))
+  if (phase === 'after') expect(overflow, `${name}: no horizontal overflow`).toBeLessThanOrEqual(1)
 }
 
 for (const width of [1440, 390]) test(`main pixels stay fixed before and after secondary navigation at ${width}`, async ({ page }) => {
@@ -113,6 +117,12 @@ for (const width of [1440, 390]) test(`main pixels stay fixed before and after s
   await capture(page, 'MAIN_AFTER_SETTINGS', width, 100, true)
   await page.locator('.tsui-tell-button').click()
   await expect(page.getByRole('textbox', { name: '要告诉 TodayAction 的内容' })).toBeFocused()
+  if (phase === 'after') {
+    const ring = await page.locator('.cgr-capture-input').evaluate(element => ({
+      color: getComputedStyle(element).outlineColor, width: getComputedStyle(element).outlineWidth,
+    }))
+    expect(ring).toEqual({ color: 'rgb(49, 94, 197)', width: '3px' })
+  }
   await capture(page, 'CAPTURE', width)
   await page.getByRole('textbox', { name: '要告诉 TodayAction 的内容' }).fill('例如：明天下午准备面试。')
   await expect(page.locator('.cgr-understanding')).toBeVisible()
@@ -158,6 +168,12 @@ for (const width of [1440, 390, 320]) test(`details and settings retain readable
   await expect(page.getByRole('heading', { name: '账号与跨设备数据', exact: true })).toBeVisible()
   await page.locator('.settings-group').filter({ hasText: '可用时间' }).locator('summary').first().click()
   await capture(page, 'SETTINGS_PLANNING', width, width === 320 ? 200 : 100)
+  await page.locator('.settings-group').filter({ hasText: '岗位发现偏好' }).locator('summary').first().click()
+  await expect(page.locator('.discovery-profile-grid')).toBeVisible()
+  await capture(page, 'SETTINGS_DISCOVERY', width, width === 320 ? 200 : 100)
+  await page.locator('.settings-group').filter({ hasText: '决策规则' }).locator('summary').first().click()
+  await expect(page.locator('.rules-grid')).toBeVisible()
+  await capture(page, 'SETTINGS_RULES', width, width === 320 ? 200 : 100)
   await page.locator('.settings-group').filter({ hasText: '数据与恢复' }).locator('summary').first().click()
   await page.locator('.backup-dock-trigger').click()
   await expect(page.locator('.backup-dialog')).toBeVisible()

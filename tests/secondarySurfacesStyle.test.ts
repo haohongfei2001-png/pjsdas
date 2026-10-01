@@ -15,9 +15,13 @@ describe('secondary-surface styling stays outside the protected main UI', () => 
     })
   })
   it('preserves a visible high-contrast keyboard outline and 44px controls', () => {
-    expect(css).toContain('outline: 3px solid #315ec5')
+    expect(css).toContain('outline: 3px solid #315ec5 !important')
     expect(css).toContain('min-height: 44px')
     expect(css).not.toMatch(/outline\s*:\s*(?:none|0)\b/)
+  })
+  it('styles the actual backup action articles', () => {
+    expect(css).toContain('.backup-dialog .backup-actions-grid > article')
+    expect(css).not.toContain('.backup-actions-grid > section')
   })
   it('loads the confined layer after the legacy global styles', () => {
     const main = read('src/main.tsx')
