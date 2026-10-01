@@ -490,6 +490,13 @@ test('account A sign-out then account B never displays or replays A cache drafts
   })
   try {
   await page.locator('.tsui-topbar').getByRole('button', { name: /设置|Settings/ }).click()
+  // React's lazy Settings commit uses a timer too. Advance only until the
+  // real control is present and enabled, then keep the owned clock paused.
+  await expect.poll(async () => {
+    await page.clock.runFor(100)
+    const control = page.getByRole('button', { name: '退出 TodayAction' })
+    return await control.count() === 1 && await control.isEnabled()
+  }).toBe(true)
   await page.getByRole('button', { name: '退出 TodayAction' }).click()
   await expect.poll(() => page.evaluate(() => (window as any).__signOutWitness.auth.some((event: any) => event.event === 'SIGNED_OUT' && event.account === null))).toBe(true)
   await expect.poll(async () => (await readIndexedActions(page)).length).toBe(0)
@@ -512,7 +519,7 @@ test('account A sign-out then account B never displays or replays A cache drafts
   expect(bBodies.some((body) => body.commandId === 'web-action:A-pending')).toBe(false)
   expect(bBodies.some((body) => ['commit', 'command', 'undo'].includes(body.action))).toBe(false)
   } finally {
-    await page.clock.resume()
+    await page.clock.resume().catch(() => undefined)
     const evidence = await page.evaluate(() => ({
       witness: (window as any).__signOutWitness,
       authPresent: Boolean(localStorage.getItem('sb-yyrzwpoxlxpafdlbkdtg-auth-token')),
