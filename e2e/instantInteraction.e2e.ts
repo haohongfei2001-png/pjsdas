@@ -1065,3 +1065,42 @@ for (const disposition of ['rejected', 'conflict'] as const) test(`already rolle
   expect(local.timePlanning).toEqual(server.snapshot.data.timePlanning)
   expect(local.actions.find(action => action.id === 'dense-action-0')!.status).toBe('done')
 })
+
+test('mirror cleanup failure after atomic dependent rollback never rewrites terminal journals', async ({ page, context }) => {
+  const server = await setup(context); server.setDelay(50); await start(page)
+  await page.evaluate(() => Object.defineProperty(navigator, 'onLine', { configurable: true, value: false }))
+  await page.evaluate(async () => {
+    const api = await import('/pjsdas/src/db.ts'), client = await import('/pjsdas/src/cloud/instantCommandClient.ts')
+    for (const [commandId, minutes] of [['cleanup-parent', 300], ['cleanup-child', 240]] as const)
+      await client.beginInstantCommand('instant-owner', await api.exportLocalSnapshot(), { commandId, kind: 'set_date_capacity', date: '2026-10-01', minutes })
+    await new Promise(resolve => setTimeout(resolve, 0))
+    const original = Storage.prototype.setItem
+    let armed = true
+    Storage.prototype.setItem = function(key, value) {
+      if (armed && key === 'pjsdas-cgr01-pending:instant-owner' && JSON.parse(value).length < 2) {
+        armed = false; throw new Error('Synthetic post-commit mirror failure')
+      }
+      return original.call(this, key, value)
+    }
+    ;(window as any).restoreMirror = () => { Storage.prototype.setItem = original }
+  })
+  server.denyNext()
+  const result = await page.evaluate(async () => {
+    Object.defineProperty(navigator, 'onLine', { configurable: true, value: true })
+    const api = await import('/pjsdas/src/db.ts'), client = await import('/pjsdas/src/cloud/instantCommandClient.ts')
+    try {
+      await client.recoverInstantInteraction('instant-owner', 'cleanup-parent')
+      const journals = await Promise.all(['cleanup-parent', 'cleanup-child'].map(id => api.readCommandInteraction('instant-owner', id)))
+      await client.recoverInstantInteraction('instant-owner', 'cleanup-parent')
+      await client.recoverInstantInteraction('instant-owner', 'cleanup-child')
+      return { states: journals.map(item => item!.state), planning: (await api.exportLocalSnapshot()).data.timePlanning }
+    } finally { (window as any).restoreMirror() }
+  })
+  expect(result.states).toEqual(['rejected', 'rejected'])
+  expect(result.planning).toEqual(server.snapshot.data.timePlanning)
+  expect(await pendingCount(page)).toBe(0)
+  expect(server.sent).toEqual(['cleanup-parent'])
+  await page.reload()
+  await expect(page.locator('.tsui-capacity summary')).toContainText('6 小时')
+  expect(server.sent).toEqual(['cleanup-parent'])
+})

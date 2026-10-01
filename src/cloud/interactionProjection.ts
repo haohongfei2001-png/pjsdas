@@ -18,13 +18,15 @@ function interactionLens(snapshot: PJSDASSnapshot, command: UserDomainCommand): 
   snapshot.data.actions.filter(item => actionIds.has(item.id)).forEach(item => { if (item.opportunityId) opportunityIds.add(item.opportunityId) })
   const actions = snapshot.data.actions.filter(item => actionIds.has(item.id) || Boolean(item.opportunityId && opportunityIds.has(item.opportunityId)))
   actions.forEach(item => actionIds.add(item.id))
+  const opportunities = snapshot.data.opportunities.filter(item => opportunityIds.has(item.id))
+  const groupIds = new Set([...opportunities, ...actions].flatMap(item => item.applicationGroupId ? [item.applicationGroupId] : []))
   return { ...snapshot, data: {
-    opportunities: snapshot.data.opportunities.filter(item => opportunityIds.has(item.id)), actions,
+    opportunities, actions,
     processes: snapshot.data.processes.filter(item => Boolean(item.opportunityId && opportunityIds.has(item.opportunityId))),
     processEvents: snapshot.data.processEvents.filter(item => Boolean(item.opportunityId && opportunityIds.has(item.opportunityId))),
     scheduleNodes: nodes.filter(item => item.occurrenceId === occurrenceId || item.relatedActionIds.some(id => actionIds.has(id))
       || Boolean(item.opportunityId && opportunityIds.has(item.opportunityId))),
-    prep: [], applicationGroups: [], timeline: [], timePlanning: snapshot.data.timePlanning,
+    prep: [], applicationGroups: snapshot.data.applicationGroups.filter(item => groupIds.has(item.id)), timeline: [], timePlanning: snapshot.data.timePlanning,
   } }
 }
 export function interactionProjection(snapshot: PJSDASSnapshot, command: UserDomainCommand, baseRevision: number, now = new Date()) {

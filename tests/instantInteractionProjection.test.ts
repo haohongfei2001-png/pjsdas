@@ -68,3 +68,22 @@ describe('bounded interaction projection', () => {
     expect(() => applyWorkspaceDelta(concurrent, delta)).toThrow('LOCAL_FIELD_CONFLICT')
   })
 })
+
+it.each(['completion', 'submission', 'occurrence'] as const)('retains imported application-group references for %s and exact Undo', operation => {
+  const before = instantDenseWorkspace()
+  before.data.applicationGroups.push({ id: 'imported-group', company: 'Imported company' })
+  before.data.opportunities.find(item => item.id === 'dense-job-0')!.applicationGroupId = 'imported-group'
+  before.data.actions.find(item => item.id === 'dense-action-0')!.applicationGroupId = 'imported-group'
+  const command: UserDomainCommand = operation === 'completion'
+    ? { commandId: 'grouped-complete', kind: 'set_action_status', actionId: 'dense-action-0', status: 'done' }
+    : operation === 'submission' ? { commandId: 'grouped-submit', kind: 'record_application_submission', opportunityId: 'dense-job-0' }
+      : { commandId: 'grouped-occurrence', kind: 'complete_occurrence', occurrenceId: before.data.scheduleNodes!.find(node => node.relatedActionIds.includes('dense-action-0'))!.occurrenceId }
+  const full = applyUserDomainCommand(before, command, INSTANT_NOW)
+  expect(full.status).toBe('APPLIED')
+  const projected = interactionProjection(before, command, 1204, INSTANT_NOW)
+  const local = applyWorkspaceDelta(before, projected.delta)
+  expect(local.data).toEqual(full.snapshot.data)
+  const undone = applyWorkspaceDelta(local, undoInteractionProjection(local, command, projected.compensation, projected.delta, 1205, INSTANT_NOW))
+  expect(undone.data).toEqual(applyDomainCompensation(full.snapshot, projected.compensation!, INSTANT_NOW).data)
+  expect(undone.data.applicationGroups).toEqual(before.data.applicationGroups)
+})

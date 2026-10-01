@@ -303,6 +303,7 @@ test('TSUI-04 connected event detail uses exact occurrence commands, receipt and
   expect(state.snapshot.data.scheduleNodes?.some((node) => node.occurrenceId === 'exact-occurrence' && node.state === 'completed')).toBe(true)
   await page.locator('.tsui-schedule-feedback').getByRole('button', { name: /撤销|Undo/ }).click()
   await expect(page.locator('.tsui-schedule-feedback')).toContainText(/已撤销|undone/)
+  await expect.poll(() => page.evaluate(accountKey => JSON.parse(localStorage.getItem('pjsdas-cgr01-pending:' + accountKey) || '[]').length, account)).toBe(0)
   await expect(row).toHaveCount(1)
   await row.click()
   await page.locator('.tsui-schedule-command-buttons').getByRole('button', { name: /改期|Reschedule/ }).click()
@@ -315,6 +316,10 @@ test('TSUI-04 connected event detail uses exact occurrence commands, receipt and
       date: '2026-11-02', resolutionBasis: 'user_explicit' } })
   expect(state.snapshot.data.scheduleNodes?.filter((node) => node.occurrenceId === 'exact-occurrence' && node.state === 'scheduled')).toHaveLength(1)
   expect(snapshotWrites).toBe(0)
+
+  // Request arrival does not prove the response/local reconciliation finished.
+  // Begin the separate offline scenario after the prior legacy receipt settles.
+  await expect.poll(() => page.evaluate(accountKey => JSON.parse(localStorage.getItem('pjsdas-cgr01-pending:' + accountKey) || '[]').length, account)).toBe(0)
 
   // A queued reschedule survives reload with its chosen date, then replays
   // even when ordinary background workspace refresh was disabled.

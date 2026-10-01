@@ -20,6 +20,11 @@ export function instantDenseWorkspace(historyRows = 3940) {
     category: 'opportunity' as const, source: 'user_action' as const, title: 'Synthetic historical evidence', detail: 'synthetic audit '.repeat(40),
     occurredAt: '2026-09-01T01:00:00Z', recordedAt: '2026-09-01T01:00:00Z' }))
   snapshot.data.timePlanning = { version: 1, defaultDailyMinutes: 360, updatedAt: INSTANT_NOW.toISOString() }
+  snapshot.data.applicationGroups = [{ id: 'instant-imported-group', company: 'Synthetic imported company' }]
+  for (const action of snapshot.data.actions.slice(0, 6)) {
+    action.applicationGroupId = 'instant-imported-group'
+    snapshot.data.opportunities.find(item => item.id === action.opportunityId)!.applicationGroupId = 'instant-imported-group'
+  }
   let normalized = upgradeSnapshotToLatest(snapshot)
   // Normalize to a stable migrated baseline, matching a warmed connected cache.
   for (let i = 0; i < 3; i++) normalized = upgradeSnapshotToLatest(normalized)

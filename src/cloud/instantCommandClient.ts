@@ -153,6 +153,7 @@ async function network(accountKey: string, body: Record<string, unknown>) {
 }
 async function reject(record: CommandInteractionRecord, message: string, state: 'rejected' | 'conflict') {
   let all: CommandInteractionRecord[] | undefined
+  let rollbackCommitted = false
   let steps: Array<{ record: CommandInteractionRecord; delta: WorkspaceDelta }> = []
   try {
     const lease = captureAccountCacheLease(record.accountKey)
@@ -178,13 +179,24 @@ async function reject(record: CommandInteractionRecord, message: string, state: 
       return { record: { ...item, state: (item.commandId === record.commandId ? state : 'rejected') as 'rejected' | 'conflict', lastError: message }, delta: rollback }
     }))
     await persistInteractionProjections(steps, lease.assertCurrent)
+    rollbackCommitted = true
+    for (const step of steps) emit(step.record, step.delta, message)
     for (const step of steps) {
-      emit(step.record, step.delta, message)
       settleConnectedInteraction(record.accountKey, step.record.commandId, step.record.state === 'conflict' ? 'conflict' : undefined, message)
     }
     const retired = new Set(steps.map(step => step.record.commandId))
     releaseIndependentQuarantine(record.accountKey, new Set([record.commandId]), retired)
   } catch {
+    if (rollbackCommitted) {
+      // The exact inverse and terminal journals already committed atomically.
+      // Metadata cleanup must never turn them into another rollback obligation.
+      for (const step of steps) try {
+        settleConnectedInteraction(record.accountKey, step.record.commandId, step.record.state === 'conflict' ? 'conflict' : undefined, message)
+      } catch { /* Recovery reconciles the remaining mirror from its terminal journal. */ }
+      try { releaseIndependentQuarantine(record.accountKey, new Set([record.commandId]), new Set(steps.map(step => step.record.commandId))) } catch { /* Retain the account-scoped mirror for recovery. */ }
+      emit({ ...record, state }, undefined, '这次修改未被接受，已恢复本机状态；同步状态稍后核对。')
+      return
+    }
     // A known rejection cannot become an unknown outcome if local rollback or
     // archival fails. Close the durable mirror first, including potential
     // dependents when their journal cannot be read; retain every original intent.
