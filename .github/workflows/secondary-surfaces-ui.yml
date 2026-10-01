@@ -73,6 +73,13 @@ jobs:
             secondary-ui-after/
             secondary-ui-report/
             test-results/secondary-ui-checks/
+          retention-days: 14
+      - name: Keep source hierarchy evidence separately for bounded downloads
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v5
+        with:
+          name: settings-hierarchy-evidence
+          path: |
             settings-hierarchy-evidence/
             settings-hierarchy-report/
             test-results/settings-hierarchy/
