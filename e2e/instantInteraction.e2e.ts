@@ -1014,3 +1014,54 @@ test('continuous settled commands defer passive full reads while explicit refres
   expect(server.sent).toHaveLength(6)
   expect(server.snapshot.data.actions[0].status).toBe('todo')
 })
+
+for (const state of ['rejected', 'conflict'] as const) test(`terminal ${state} journal reconciles a pending mirror after a crash`, async ({ page, context }) => {
+  const server = await setup(context); server.setDelay(50); await start(page)
+  await page.evaluate(() => Object.defineProperty(navigator, 'onLine', { configurable: true, value: false }))
+  const result = await page.evaluate(async state => {
+    const api = await import('/pjsdas/src/db.ts'), client = await import('/pjsdas/src/cloud/instantCommandClient.ts')
+    const { reverseWorkspaceDelta } = await import('/pjsdas/src/workspaceDelta.ts')
+    const commandId = await client.beginInstantCommand('instant-owner', await api.exportLocalSnapshot(), {
+      commandId: `terminal-crash-${state}`, kind: 'set_action_status', actionId: 'dense-action-0', status: 'done' })
+    const record = (await api.readCommandInteraction('instant-owner', commandId))!
+    await new Promise(resolve => setTimeout(resolve, 0))
+    // Tab stops after the atomic rollback/journal commit, before mirror cleanup.
+    await api.persistInteractionProjection({ ...record, state }, () => undefined, reverseWorkspaceDelta(record.delta))
+    await client.recoverInstantInteraction('instant-owner', record.commandId)
+    const summary = (await import('/pjsdas/src/cloud/authoritativeCommandClient.ts')).pendingCommandSummary('instant-owner')
+    return { unresolved: summary.count - summary.conflict, status: (await (await api.dbPromise).get('actions', 'dense-action-0'))!.status,
+      journal: (await api.readCommandInteraction('instant-owner', record.commandId))!.state }
+  }, state)
+  expect(result).toEqual({ unresolved: 0, status: 'todo', journal: state })
+  expect(server.sent).toEqual([])
+  await page.reload()
+  await expect(page.locator('[data-action-id="dense-action-0"]')).toBeVisible()
+  expect(server.sent).toEqual([])
+})
+
+for (const disposition of ['rejected', 'conflict'] as const) test(`already rolled-back ${disposition} root releases an independent paused mirror without reversing or replaying rejection`, async ({ page, context }) => {
+  const server = await setup(context); server.setDelay(50); await start(page)
+  await page.evaluate(() => Object.defineProperty(navigator, 'onLine', { configurable: true, value: false }))
+  await page.evaluate(async disposition => {
+    const api = await import('/pjsdas/src/db.ts'), client = await import('/pjsdas/src/cloud/instantCommandClient.ts')
+    const queue = await import('/pjsdas/src/cloud/authoritativeCommandClient.ts')
+    const { reverseWorkspaceDelta } = await import('/pjsdas/src/workspaceDelta.ts')
+    const rootId = await client.beginInstantCommand('instant-owner', await api.exportLocalSnapshot(), {
+      commandId: 'terminal-root', kind: 'set_date_capacity', date: '2026-10-01', minutes: 300 })
+    const root = (await api.readCommandInteraction('instant-owner', rootId))!
+    await client.beginInstantCommand('instant-owner', await api.exportLocalSnapshot(), {
+      commandId: 'terminal-independent', kind: 'set_action_status', actionId: 'dense-action-0', status: 'done' })
+    await new Promise(resolve => setTimeout(resolve, 0))
+    await api.persistInteractionProjection({ ...root, state: disposition }, () => undefined, reverseWorkspaceDelta(root.delta))
+    for (const id of ['terminal-root', 'terminal-independent']) queue.settleConnectedInteraction('instant-owner', id, 'rollback_pending', 'Rejected root', 'terminal-root')
+    await client.recoverInstantInteraction('instant-owner', root.commandId)
+    Object.defineProperty(navigator, 'onLine', { configurable: true, value: true })
+    window.dispatchEvent(new Event('online'))
+  }, disposition)
+  await expect.poll(() => page.evaluate(async () => { const summary = (await import('/pjsdas/src/cloud/authoritativeCommandClient.ts')).pendingCommandSummary('instant-owner'); return summary.count - summary.conflict })).toBe(0)
+  expect(server.sent).toEqual(['terminal-independent'])
+  expect(server.snapshot.data.actions[0].status).toBe('done')
+  const local = await page.evaluate(async () => (await (await import('/pjsdas/src/db.ts')).exportLocalSnapshot()).data)
+  expect(local.timePlanning).toEqual(server.snapshot.data.timePlanning)
+  expect(local.actions.find(action => action.id === 'dense-action-0')!.status).toBe('done')
+})

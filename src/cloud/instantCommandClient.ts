@@ -62,6 +62,22 @@ function releaseIndependentQuarantine(accountKey: string, roots: Set<string>, re
     settleConnectedInteraction(accountKey, pending.commandId, 'unknown')
   }
 }
+async function reconcileTerminalJournal(record: CommandInteractionRecord) {
+  if (!['confirmed', 'rejected', 'conflict'].includes(record.state)) return false
+  const lease = captureAccountCacheLease(record.accountKey)
+  const mirrors = listAccountPendingOperations(record.accountKey)
+  const related = record.state !== 'confirmed' ? mirrors.filter(item => item.rejectionRoot === record.commandId && item.commandId !== record.commandId) : []
+  const journals = await Promise.all(related.map(item => readCommandInteraction(record.accountKey, item.commandId)))
+  lease.assertCurrent()
+  const retired = new Set<string>()
+  for (const journal of [record, ...journals]) if (journal && ['confirmed', 'rejected', 'conflict'].includes(journal.state)) {
+    retired.add(journal.commandId)
+    settleConnectedInteraction(record.accountKey, journal.commandId, journal.state === 'conflict' ? 'conflict' : undefined)
+  }
+  if (record.state !== 'confirmed') releaseIndependentQuarantine(record.accountKey, new Set([record.commandId]), retired)
+  emit(record)
+  return true
+}
 async function archiveFailedPreparation(record: CommandInteractionRecord) {
   try {
     await saveCommandInteraction({ ...record, state: 'rejected', lastError: 'Local projection refused.' })
@@ -420,8 +436,8 @@ async function send(record: CommandInteractionRecord, recovery: boolean) {
 }
 export async function recoverInstantInteraction(accountKey: string, commandId: string) {
   const pending = listAccountPendingOperations(accountKey).find(item => item.commandId === commandId)
-  if (pending?.interaction && pending.status === 'conflict') return
   let record = await readCommandInteraction(accountKey, commandId)
+  if (pending?.interaction && pending.status === 'conflict' && (!record || !['confirmed', 'rejected', 'conflict'].includes(record.state))) return
   if (navigator.onLine && getAccountCheckpoint(accountKey).clearedCacheFingerprint) {
     const local = await exportLocalSnapshot()
     if (workspaceIsEffectivelyEmpty(local) && getAccountCheckpoint(accountKey).clearedCacheFingerprint === await fingerprintWorkspace(local)) {
@@ -429,9 +445,20 @@ export async function recoverInstantInteraction(accountKey: string, commandId: s
       record = await readCommandInteraction(accountKey, commandId)
     }
   }
+  // The IDB transaction can finish before its localStorage mirror is retired.
+  // Terminal facts need metadata reconciliation only, never another inverse.
+  if (record && await reconcileTerminalJournal(record)) return
   if (pending?.interaction && pending.status === 'rollback_pending') {
     const root = await readCommandInteraction(accountKey, pending.rejectionRoot ?? commandId)
-    if (root && root.state !== 'rejected') await reject(root, pending.lastError ?? '这次修改未被接受，已恢复原状态。', 'rejected')
+    if (root && ['rejected', 'conflict'].includes(root.state)) {
+      await reconcileTerminalJournal(root)
+      return recoverInstantInteraction(accountKey, commandId)
+    }
+    if (root?.state === 'confirmed') {
+      settleConnectedInteraction(accountKey, commandId, 'conflict', '先前操作已确认，本机状态待安全刷新。')
+      return
+    }
+    if (root) await reject(root, pending.lastError ?? '这次修改未被接受，已恢复原状态。', 'rejected')
     return
   }
   if (!record) {
@@ -483,7 +510,7 @@ export async function recoverInstantInteraction(accountKey: string, commandId: s
     await persistInteractionProjection(record, captureAccountCacheLease(accountKey).assertCurrent)
     emit(record, delta)
   }
-  if (record?.state === 'confirmed') { settleConnectedInteraction(accountKey, commandId); return }
+  if (record && await reconcileTerminalJournal(record)) return
   if (!record || !['active', 'projection_pending'].includes(record.state)) return
   await dispatch(record, true)
 }

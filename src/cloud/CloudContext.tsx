@@ -191,7 +191,8 @@ export function CloudProvider({ children }: { children: ReactNode }) {
   const syncNow = useCallback(async (options?: { passive?: boolean }) => {
     const userId = session?.user.id
     if (!configured || !userId || busyRef.current) return undefined
-    if (options?.passive && connectedWorkspaceAuthorityEnabled() && interactionIsRecent(userId) && !getAccountCheckpoint(userId).conflict) return undefined
+    if (options?.passive && connectedWorkspaceAuthorityEnabled() && interactionIsRecent(userId) && !getAccountCheckpoint(userId).conflict
+      && pendingCommandSummary(userId).count <= pendingCommandSummary(userId).conflict) return undefined
     busyRef.current = true
     setSyncing(true)
     // A previous successful sync must not remain visible while a new attempt is
