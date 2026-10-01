@@ -9,7 +9,7 @@ import { AccountCacheChangedError, captureAccountCacheLease } from './accountCac
 import { getAccountCheckpoint, patchAccountCheckpoint } from './syncState.js'
 import { interactionProjection, undoInteractionProjection } from './interactionProjection.js'
 import { createConnectedCommandId, journalConnectedInteraction, enrichConnectedInteraction, settleConnectedInteraction, listAccountPendingOperations } from './authoritativeCommandClient.js'
-import { reverseWorkspaceDelta, validateWorkspaceDelta, patchDeltaRow, sameValue, type WorkspaceDelta, type EntityDelta } from '../workspaceDelta.js'
+import { DELTA_COLLECTIONS, reverseWorkspaceDelta, validateWorkspaceDelta, patchDeltaRow, sameValue, type WorkspaceDelta, type EntityDelta } from '../workspaceDelta.js'
 
 const flights = new Map<string, Promise<void>>()
 const tails = new Map<string, Promise<void>>()
@@ -201,6 +201,23 @@ function rebaseDelta(delta: WorkspaceDelta, confirmed: CommandInteractionRecord[
     return { ...change, before, after }
   }) }
 }
+// A legacy full reply can bind owned postimages only when its snapshot is
+// exactly the receipt revision. A later current snapshot cannot prove what
+// this command changed; preserve the original guard rather than adopt edits.
+function receiptDelta(record: CommandInteractionRecord, payload: any): WorkspaceDelta {
+  if (payload.delta || payload.receipt?.projectionDelta) return payload.delta ?? payload.receipt.projectionDelta
+  if (!payload.snapshot || payload.receipt?.commandId !== record.commandId || payload.receipt?.revision !== payload.revision) return record.delta
+  return { ...record.delta, changes: record.delta.changes.map(change => {
+    const data = (payload.snapshot as PJSDASSnapshot).data[change.collection]
+    const current = (DELTA_COLLECTIONS as readonly string[]).includes(change.collection)
+      ? (data as Array<Record<string, unknown>> | undefined)?.find(row => row.id === change.id) ?? null : data ?? null
+    if (!change.after) { if (current) throw new Error('Receipt deletion postimage mismatch'); return change }
+    if (!current) throw new Error('Receipt object postimage missing')
+    const after = !change.before ? current : Object.fromEntries([...new Set([...Object.keys(change.before), ...Object.keys(change.after)])]
+      .filter(key => key in current).map(key => [key, (current as Record<string, unknown>)[key]]))
+    return { ...change, after: after as Record<string, unknown> }
+  }) }
+}
 async function recoverAuthoritativeProjection(accountKey: string, expectedLocal: PJSDASSnapshot, supplied?: { record: CommandInteractionRecord; payload: any }) {
   const lease = captureAccountCacheLease(accountKey)
   const mirrors = listAccountPendingOperations(accountKey)
@@ -214,7 +231,7 @@ async function recoverAuthoritativeProjection(accountKey: string, expectedLocal:
   // include every confirmed receipt; absent receipts preserve original intent.
   const receipts = new Map<string, any>()
   for (const item of records) {
-    if (supplied?.record.commandId === item.commandId && (supplied.payload.delta || supplied.payload.receipt?.projectionDelta)) receipts.set(item.commandId, supplied.payload)
+    if (supplied?.record.commandId === item.commandId && ['COMMITTED', 'ALREADY_APPLIED'].includes(supplied.payload.outcome)) receipts.set(item.commandId, supplied.payload)
     else {
       const read = await network(accountKey, { action: 'receipt', commandId: item.commandId })
       if (!read.response.ok) throw new Error('暂时无法核对操作回执；原操作已保留。')
@@ -233,7 +250,7 @@ async function recoverAuthoritativeProjection(accountKey: string, expectedLocal:
   if ([...receipts.values()].some(payload => Number(payload.receipt?.revision ?? payload.revision) > remote.revision)) throw new AccountCacheChangedError()
   const confirmed = records.filter(item => receipts.has(item.commandId)).map(item => {
     const payload = receipts.get(item.commandId)
-    return { ...item, state: 'confirmed' as const, delta: payload.delta ?? payload.receipt?.projectionDelta ?? item.delta,
+    return { ...item, state: 'confirmed' as const, delta: receiptDelta(item, payload),
       compensation: payload.receipt ? payload.receipt.undoCompensation ?? item.compensation : undefined,
       serverRevision: payload.receipt?.revision ?? payload.revision }
   })
@@ -247,7 +264,9 @@ async function recoverAuthoritativeProjection(accountKey: string, expectedLocal:
     while (changed) { changed = false; for (const prior of records) if (ancestors.has(prior.commandId)) for (const id of prior.predecessors ?? []) if (!ancestors.has(id)) { ancestors.add(id); changed = true } }
     const durableParents = (await Promise.all([...ancestors].map(id => readCommandInteraction(accountKey, id))))
       .filter((prior): prior is CommandInteractionRecord => prior?.state === 'confirmed')
-    const delta = rebaseDelta(item.delta, [...confirmed.filter(prior => ancestors.has(prior.commandId)), ...durableParents.filter(prior => !confirmed.some(candidate => candidate.commandId === prior.commandId))])
+    const delta = rebaseDelta(item.delta, [...confirmed.filter(prior => ancestors.has(prior.commandId)),
+      ...durableParents.filter(prior => !confirmed.some(candidate => candidate.commandId === prior.commandId)),
+      ...steps.filter(step => step.record.state !== 'confirmed' && step.record.state !== 'rejected' && ancestors.has(step.record.commandId)).map(step => step.record)])
     steps.push({ record: { ...item, delta }, delta })
   }
   const committed = await replaceLocalSnapshotFromCloud(remote.snapshot, { expectedLocal, assertCurrent, accountKey,
@@ -390,11 +409,6 @@ async function send(record: CommandInteractionRecord, recovery: boolean) {
 }
 export async function recoverInstantInteraction(accountKey: string, commandId: string) {
   const pending = listAccountPendingOperations(accountKey).find(item => item.commandId === commandId)
-  if (pending?.interaction && pending.status === 'rollback_pending') {
-    const root = await readCommandInteraction(accountKey, pending.rejectionRoot ?? commandId)
-    if (root) await reject(root, pending.lastError ?? '这次修改未被接受，已恢复原状态。', 'rejected')
-    return
-  }
   if (pending?.interaction && pending.status === 'conflict') return
   let record = await readCommandInteraction(accountKey, commandId)
   if (navigator.onLine && getAccountCheckpoint(accountKey).clearedCacheFingerprint) {
@@ -403,6 +417,11 @@ export async function recoverInstantInteraction(accountKey: string, commandId: s
       await recoverAuthoritativeProjection(accountKey, local)
       record = await readCommandInteraction(accountKey, commandId)
     }
+  }
+  if (pending?.interaction && pending.status === 'rollback_pending') {
+    const root = await readCommandInteraction(accountKey, pending.rejectionRoot ?? commandId)
+    if (root && root.state !== 'rejected') await reject(root, pending.lastError ?? '这次修改未被接受，已恢复原状态。', 'rejected')
+    return
   }
   if (!record) {
     // A failed local preparation may retain its original mirror when even the

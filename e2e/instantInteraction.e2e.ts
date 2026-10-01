@@ -875,3 +875,57 @@ test('receiptless already-applied fact with blocked projection recovers by read 
   expect(server.sent).toEqual(['already-current-capacity', 'fact-completion'])
   await page.reload(); await expect(page.locator('[data-action-id="dense-action-0"]')).toHaveCount(0)
 })
+
+
+test('three-layer retained capacity chain restores intermediate pending preimages after cache clearing', async ({ page, context }) => {
+  const server = await setup(context); server.setDelay(50); await start(page)
+  await page.evaluate(async () => {
+    const api = await import('/pjsdas/src/db.ts'), client = await import('/pjsdas/src/cloud/instantCommandClient.ts')
+    Object.defineProperty(navigator, 'onLine', { configurable: true, get: () => false })
+    for (const [commandId, minutes] of [['three-parent', 300], ['three-middle', 240], ['three-child', 180]] as const)
+      await client.beginInstantCommand('instant-owner', await api.exportLocalSnapshot(), { commandId, kind: 'set_date_capacity', date: '2026-10-01', minutes })
+    await new Promise(resolve => setTimeout(resolve, 0))
+    Object.defineProperty(navigator, 'onLine', { configurable: true, get: () => true })
+    await client.recoverInstantInteraction('instant-owner', 'three-parent')
+    Object.defineProperty(navigator, 'onLine', { configurable: true, get: () => false })
+    const local = await api.exportLocalSnapshot(), data: any = { ...local.data }
+    for (const key of Object.keys(data)) data[key] = Array.isArray(data[key]) ? [] : undefined
+    await api.replaceLocalSnapshotFromCloud({ ...local, data })
+    ;(await import('/pjsdas/src/cloud/syncState.ts')).patchAccountCheckpoint('instant-owner', { clearedCacheFingerprint:
+      await (await import('/pjsdas/src/cloud/workspaceFingerprint.ts')).fingerprintWorkspace(await api.exportLocalSnapshot()) })
+  })
+  await page.reload(); await expect.poll(() => pendingCount(page), { timeout: 20000 }).toBe(0)
+  expect(server.sent).toEqual(['three-parent', 'three-middle', 'three-child'])
+  await expect(page.locator('.tsui-capacity summary')).toContainText('3 小时')
+  const local = await page.evaluate(async () => (await (await import('/pjsdas/src/db.ts')).exportLocalSnapshot()).data.timePlanning)
+  expect(local).toEqual(server.snapshot.data.timePlanning)
+})
+
+test('proven cleared cache hydrates a known rejected rollback obligation without resending', async ({ page, context }) => {
+  const server = await setup(context); server.setDelay(50); await start(page); server.denyNext()
+  await page.evaluate(async () => {
+    const api = await import('/pjsdas/src/db.ts'), client = await import('/pjsdas/src/cloud/instantCommandClient.ts')
+    Object.defineProperty(navigator, 'onLine', { configurable: true, get: () => false })
+    await client.beginInstantCommand('instant-owner', await api.exportLocalSnapshot(), { commandId: 'cleared-rejected-action', kind: 'set_action_status', actionId: 'dense-action-0', status: 'done' })
+    await new Promise(resolve => setTimeout(resolve, 0))
+    const put = IDBObjectStore.prototype.put
+    IDBObjectStore.prototype.put = function(...args: Parameters<IDBObjectStore['put']>) {
+      if (this.name === 'commandInteractions' && (args[0] as any).state === 'rejected') throw new Error('Synthetic rejected rollback storage failure')
+      return put.apply(this, args)
+    }
+    Object.defineProperty(navigator, 'onLine', { configurable: true, get: () => true })
+    try { await client.recoverInstantInteraction('instant-owner', 'cleared-rejected-action') } finally { IDBObjectStore.prototype.put = put }
+    if ((await api.readCommandInteraction('instant-owner', 'cleared-rejected-action'))?.state !== 'rollback_pending') throw new Error('Missing rollback disposition')
+    const local = await api.exportLocalSnapshot(), data: any = { ...local.data }
+    for (const key of Object.keys(data)) data[key] = Array.isArray(data[key]) ? [] : undefined
+    await api.replaceLocalSnapshotFromCloud({ ...local, data })
+    ;(await import('/pjsdas/src/cloud/syncState.ts')).patchAccountCheckpoint('instant-owner', { clearedCacheFingerprint:
+      await (await import('/pjsdas/src/cloud/workspaceFingerprint.ts')).fingerprintWorkspace(await api.exportLocalSnapshot()) })
+    await client.recoverInstantInteraction('instant-owner', 'cleared-rejected-action')
+  })
+  await expect.poll(() => pendingCount(page)).toBe(0)
+  expect(server.sent).toEqual(['cleared-rejected-action'])
+  const row = await page.evaluate(async () => (await (await (await import('/pjsdas/src/db.ts')).dbPromise).get('actions', 'dense-action-0')))
+  expect(row?.status).toBe('todo')
+  await page.reload(); await expect(page.locator('[data-action-id="dense-action-0"]')).toBeVisible()
+})

@@ -141,3 +141,40 @@ test('submission and schedule commands meet dense local p95 budgets while offlin
   console.log('INSTANT_DOMAIN_BUDGET:' + JSON.stringify(results))
   await info.attach('instant-domain-budgets.json', { body: JSON.stringify(results, null, 2), contentType: 'application/json' })
 })
+
+
+test('ordinary compact confirmation and Undo stay incremental without command long tasks', async ({ browser }, info) => {
+  const context = await browser.newContext({ timezoneId: 'Asia/Shanghai' })
+  const server = await setupInstantServer(context); server.setDelay(50)
+  const page = await context.newPage(); await page.clock.setFixedTime(INSTANT_NOW)
+  await page.goto('/pjsdas/today')
+  await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem('pjsdas-google-drive-sync-state-v2') ?? '{}').accounts?.['instant-owner']?.lastSyncedVersion)).toBe('txn:1204')
+  await expect(page.locator('[data-action-id="dense-action-0"]')).toBeVisible()
+  // Cold hydration is excluded; every optimistic write and confirmation below
+  // is measured, including IDB reconciliation and selector work after the RTT.
+  await page.waitForTimeout(100)
+  await page.evaluate(() => {
+    ;(window as any).confirmationStages = []; (window as any).confirmationLongTasks = []
+    window.addEventListener('pjsdas:interaction-measure', event => (window as any).confirmationStages.push((event as CustomEvent).detail))
+    new PerformanceObserver(list => (window as any).confirmationLongTasks.push(...list.getEntries().map(entry => ({ start: entry.startTime, duration: entry.duration })))).observe({ type: 'longtask' })
+  })
+  const pending = () => page.evaluate(() => JSON.parse(localStorage.getItem('pjsdas-cgr01-pending:instant-owner') ?? '[]').length)
+  for (let index = 0; index < 10; index++) {
+    await page.locator('[data-action-id="dense-action-0"] .tsui-done-action').click()
+    await expect(page.locator('[data-action-id="dense-action-0"]')).toHaveCount(0)
+    await expect.poll(pending).toBe(0)
+    await page.locator('.action-undo-toast button').click()
+    await expect(page.locator('[data-action-id="dense-action-0"]')).toBeVisible()
+    await expect.poll(pending).toBe(0)
+  }
+  const measured = await page.evaluate(() => ({ stages: (window as any).confirmationStages, longTasks: (window as any).confirmationLongTasks }))
+  expect(server.sent).toHaveLength(20)
+  expect(new Set(server.sent).size).toBe(20)
+  expect(measured.stages.filter((entry: any) => entry.phase === 'network-confirmation')).toHaveLength(20)
+  expect(Math.max(...server.payloadBytes)).toBeLessThan(150000)
+  expect(measured.longTasks.filter((entry: any) => entry.duration > 50)).toEqual([])
+  expect(server.snapshot.data.timeline!.length).toBeGreaterThanOrEqual(3940)
+  await info.attach('compact-confirmation-stages.json', { body: JSON.stringify({ ...measured, payloadBytes: server.payloadBytes, serverExecutionMs: server.serverExecutionMs }, null, 2), contentType: 'application/json' })
+  console.log('INSTANT_CONFIRMATION_BUDGET:' + JSON.stringify({ commands: server.sent.length, maxPayloadBytes: Math.max(...server.payloadBytes), longTasks: measured.longTasks }))
+  await context.close()
+})
