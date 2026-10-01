@@ -443,7 +443,14 @@ test('account A sign-out then account B never displays or replays A cache drafts
     return cors(route, { code: 'UNEXPECTED_WRITE', action: body.action }, 409)
   })
 
+  // This journey owns the pending-outbox boundary. Let startup sync finish
+  // before injecting it, then hold background timers so they cannot disable
+  // the sign-out button between pointer actionability and the actual click.
+  // Other recovery/latency journeys retain their real timers.
+  await page.clock.install({ time: new Date('2026-09-30T05:59:59Z') })
+  await page.clock.pauseAt(new Date('2026-09-30T06:00:00Z'))
   await page.goto('/')
+  await page.clock.runFor(1000)
   await expect(page.getByRole('heading', { name: 'A第一任务' })).toBeVisible()
   // The initial read can render A before the account's sync checkpoint is
   // committed. Sign-out during that window correctly refuses to clear the
@@ -484,7 +491,12 @@ test('account A sign-out then account B never displays or replays A cache drafts
   try {
   await page.locator('.tsui-topbar').getByRole('button', { name: /设置|Settings/ }).click()
   await page.getByRole('button', { name: '退出 TodayAction' }).click()
+  await expect.poll(() => page.evaluate(() => (window as any).__signOutWitness.auth.some((event: any) => event.event === 'SIGNED_OUT' && event.account === null))).toBe(true)
   await expect.poll(async () => (await readIndexedActions(page)).length).toBe(0)
+  const signedOut = await page.evaluate(() => ({ witness: (window as any).__signOutWitness, authPresent: Boolean(localStorage.getItem('sb-yyrzwpoxlxpafdlbkdtg-auth-token')) }))
+  expect(signedOut.authPresent).toBe(false)
+  await info.attach('reached-signed-out-boundary.json', { body: JSON.stringify(signedOut, null, 2), contentType: 'application/json' })
+  await page.clock.resume()
   await page.locator('.tsui-primary-nav').getByRole('button', { name: /今天|Today/ }).click()
   await expect(page.getByRole('heading', { name: 'A第一任务' })).toHaveCount(0)
 
@@ -500,6 +512,7 @@ test('account A sign-out then account B never displays or replays A cache drafts
   expect(bBodies.some((body) => body.commandId === 'web-action:A-pending')).toBe(false)
   expect(bBodies.some((body) => ['commit', 'command', 'undo'].includes(body.action))).toBe(false)
   } finally {
+    await page.clock.resume()
     const evidence = await page.evaluate(() => ({
       witness: (window as any).__signOutWitness,
       authPresent: Boolean(localStorage.getItem('sb-yyrzwpoxlxpafdlbkdtg-auth-token')),
