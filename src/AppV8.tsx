@@ -987,14 +987,11 @@ function SettingsSurface({ lastImport, rules, timePlanning, onSetDefaultCapacity
       <SurfaceHeader eyebrow="SETTINGS" title={zh ? '设置' : 'Settings'} text={zh ? '连接、偏好与数据管理。' : 'Connections, preferences, and data.'} />
       <div className="settings-mobile-language" aria-label={zh ? '移动端界面语言' : 'Mobile interface language'}><LanguageSwitch /></div>
 
+      <div className="settings-connections"><CloudSettingsCard /></div>
+
       <details className="settings-group">
         <summary><div><strong>{zh ? '可用时间' : 'Available time'}</strong><span>{zh ? '默认每天多久，以及可选工作时段' : 'Usual daily time and optional work windows'}</span></div></summary>
         <div className="settings-group-body"><TimePlanningSettings value={timePlanning} onSetDefault={onSetDefaultCapacity} onSetWindows={onSetWorkWindows} /></div>
-      </details>
-
-      <details className="settings-group" open>
-        <summary><div><strong>{zh ? '连接与自动化' : 'Connections & automation'}</strong><span>{zh ? '账户、云同步和后台来源' : 'Account, cloud sync, and background sources'}</span></div></summary>
-        <div className="settings-group-body"><CloudSettingsCard /></div>
       </details>
 
       <details className="settings-group">
