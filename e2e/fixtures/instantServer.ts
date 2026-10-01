@@ -14,6 +14,7 @@ export async function setupInstantServer(context: BrowserContext, historyRows = 
   const serverExecutionMs: number[] = []
   let deny: number | undefined
   let loseResponse = false
+  let fullResponses = false
   const compensations = new Map<string, any>()
   const receipts = new Map<string, any>()
   await seedSession(context, 'instant-owner', 'instant-token')
@@ -45,9 +46,10 @@ export async function setupInstantServer(context: BrowserContext, historyRows = 
       receipts.set(body.commandId, result)
       payloadBytes.push(Buffer.byteLength(JSON.stringify(result)))
       if (loseResponse) { loseResponse = false; return route.abort('failed') }
-      return cors(route, body.projection === 'delta-v1' ? result : { ...base(), ...result, snapshot })
+      const { delta: _delta, ...legacyResult } = result
+      return cors(route, body.projection === 'delta-v1' && !fullResponses ? result : { ...base(), ...legacyResult, snapshot })
     }
     return cors(route, { code: 'UNEXPECTED' }, 400)
   })
-  return { sent, baseRevisions, payloadBytes, serverExecutionMs, setNow: (value: Date) => { serverNow = value }, denyNext: (status = 422) => { deny = status }, loseNextResponse: () => { loseResponse = true }, backgroundGmail: () => { snapshot.data.timeline!.push({ id: 'instant-gmail-audit', kind: 'opportunity_updated', category: 'opportunity', source: 'user_action', title: 'Independent source fact', occurredAt: INSTANT_NOW.toISOString(), recordedAt: INSTANT_NOW.toISOString() }); snapshot.data.opportunities[10].role = 'Independent Gmail role'; revision++ }, setDelay: (value: number) => { delay = value }, get snapshot() { return snapshot } }
+  return { setFullResponses: (value: boolean) => { fullResponses = value }, sent, baseRevisions, payloadBytes, serverExecutionMs, setNow: (value: Date) => { serverNow = value }, denyNext: (status = 422) => { deny = status }, loseNextResponse: () => { loseResponse = true }, backgroundGmail: () => { snapshot.data.timeline!.push({ id: 'instant-gmail-audit', kind: 'opportunity_updated', category: 'opportunity', source: 'user_action', title: 'Independent source fact', occurredAt: INSTANT_NOW.toISOString(), recordedAt: INSTANT_NOW.toISOString() }); snapshot.data.opportunities[10].role = 'Independent Gmail role'; revision++ }, setDelay: (value: number) => { delay = value }, get snapshot() { return snapshot } }
 }

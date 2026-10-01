@@ -375,4 +375,30 @@ describe('first-party connected workspace endpoint', () => {
     expect(fetchImpl).toHaveBeenCalledTimes(2)
   })
 
+  it('binds compact idempotent replay to the original receipt revision after a later write', async () => {
+    const current = upgradeSnapshotToLatest(snapshot())
+    const receipt = { commandId: 'instant-replay-001', revision: 1205, schemaVersion: current.version,
+      projectionDelta: { contract: 'delta-v1', baseRevision: 1204, changes: [] } }
+    let payloadHash = ''
+    const fetchImpl = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      if (url.endsWith('/auth/v1/user')) return json({ id: 'user-a' })
+      if (url.includes('/pjsdas_workspaces?')) return json([{ id: 'ws-1', user_id: 'user-a', snapshot: current, revision: payloadHash ? 1206 : 1204, schema_version: current.version }])
+      if (url.includes('/pjsdas_command_ledger?')) return json(payloadHash ? [{ command_id: receipt.commandId, operation: 'domain:set_date_capacity', payload_hash: payloadHash, resulting_revision: 1205, receipt }] : [])
+      if (new URL(url).pathname === '/rest/v1/rpc/pjsdas_commit_workspace_v2') {
+        const body = JSON.parse(String(init?.body)); payloadHash = body.target_payload_hash
+        return json([{ outcome: 'COMMITTED', workspace_id: 'ws-1', revision: 1205, receipt: { ...receipt, ...body.target_receipt_context, revision: 1205 } }])
+      }
+      throw new Error('Unexpected endpoint')
+    }) as unknown as typeof fetch
+    const handler = createConnectedWorkspaceHandler({ supabaseUrl: 'https://example.supabase.co', supabasePublishableKey: 'publishable',
+      serviceRoleKey: 'service-role', allowedOrigins: [ORIGIN], fetchImpl, authorizeIdentity: async () => undefined })
+    const body = { action: 'command', commandId: receipt.commandId, baseRevision: 1204,
+      command: { type: 'domain', value: { commandId: receipt.commandId, kind: 'set_date_capacity', date: '2026-10-01', minutes: 300 } } }
+    expect((await handler(request('POST', 'ordinary-token', body))).status).toBe(200)
+    const replay = await (await handler(request('POST', 'ordinary-token', body))).json()
+    expect(replay).toMatchObject({ outcome: 'ALREADY_APPLIED', revision: 1205, workspaceVersion: 'txn:1205', delta: { baseRevision: 1204 } })
+    expect(replay).not.toHaveProperty('snapshot')
+  })
+
 })

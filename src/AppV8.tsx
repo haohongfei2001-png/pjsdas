@@ -267,10 +267,9 @@ export default function AppV8() {
     const timestamp = new Date().toISOString()
     if (cloud.session?.user.id && connectedWorkspaceAuthorityEnabled()) {
       const commandId = createConnectedCommandId('set-daily-capacity')
-      const result = await executeConnectedBusinessCommand(cloud.session.user.id, {
-        type: 'domain', value: { commandId, kind: 'set_daily_capacity', minutes },
-      }, { commandId })
-      if (result.outcome === 'CONFLICT') throw new Error('每日可用时间刚在另一台设备上修改，请查看最新设置。')
+      if (!snapshot) throw new Error('账号记录尚未读取。')
+      await beginInstantCommand(cloud.session.user.id, snapshot, { commandId, kind: 'set_daily_capacity', minutes })
+      return
     } else {
       const current = snapshot?.data.timePlanning ?? { version: 1 as const, updatedAt: timestamp }
       await saveLocalTimePlanning({ ...current, defaultDailyMinutes: minutes, updatedAt: timestamp })
@@ -282,10 +281,9 @@ export default function AppV8() {
     const timestamp = new Date().toISOString()
     if (cloud.session?.user.id && connectedWorkspaceAuthorityEnabled()) {
       const commandId = createConnectedCommandId('set-work-windows')
-      const result = await executeConnectedBusinessCommand(cloud.session.user.id, {
-        type: 'domain', value: { commandId, kind: 'set_work_windows', windows },
-      }, { commandId })
-      if (result.outcome === 'CONFLICT') throw new Error('工作时段刚在另一台设备上修改，请查看最新设置。')
+      if (!snapshot) throw new Error('账号记录尚未读取。')
+      await beginInstantCommand(cloud.session.user.id, snapshot, { commandId, kind: 'set_work_windows', windows })
+      return
     } else {
       const current = snapshot?.data.timePlanning ?? { version: 1 as const, updatedAt: timestamp }
       await saveLocalTimePlanning({ ...current, weeklyWindows: windows, updatedAt: timestamp })

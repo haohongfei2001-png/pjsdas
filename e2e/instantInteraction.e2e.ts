@@ -684,3 +684,194 @@ test('account boundary quarantines retained provenance and exports only the acti
   })
   expect(result).toEqual({ otherCount: 0, anonymousCount: 0, proofCount: 0, denied: true, retained: true, ownerCount: 2 })
 })
+
+test('mirror-only recovery preserves a genuine newer local edit and the original reservation', async ({ page, context }) => {
+  const server = await setup(context); server.setDelay(50); await start(page)
+  await page.evaluate(async () => {
+    const api = await import('/pjsdas/src/db.ts'), auth = await import('/pjsdas/src/cloud/authoritativeCommandClient.ts')
+    const before = await api.exportLocalSnapshot()
+    const command = { commandId: 'mirror-genuine-edit', kind: 'set_action_status' as const, actionId: 'dense-action-0', status: 'done' as const }
+    const projected = (await import('/pjsdas/src/cloud/interactionProjection.ts')).interactionProjection(before, command, 1204)
+    auth.journalConnectedInteraction('instant-owner', { commandId: command.commandId, command: { type: 'domain', value: command }, baseRevision: 1204,
+      interactionDelta: projected.delta, interactionCompensation: projected.compensation })
+    const db = await api.dbPromise, row = (await db.get('actions', command.actionId))!
+    await db.put('actions', { ...row, status: 'skipped' })
+    await (await import('/pjsdas/src/cloud/instantCommandClient.ts')).recoverInstantInteraction('instant-owner', command.commandId)
+  })
+  const state = await page.evaluate(async () => ({ status: (await (await (await import('/pjsdas/src/db.ts')).dbPromise).get('actions', 'dense-action-0'))!.status,
+    mirror: JSON.parse(localStorage.getItem('pjsdas-cgr01-pending:instant-owner') ?? '[]')[0]?.status }))
+  expect(state).toEqual({ status: 'skipped', mirror: 'conflict' })
+  expect(server.sent).toEqual([])
+  await page.reload(); expect(server.sent).toEqual([])
+})
+
+for (const parentCommitted of [false, true]) test(`retained dependency chain restores cleared cache with parent committed=${parentCommitted}`, async ({ page, context }) => {
+  const server = await setup(context); server.setDelay(50); await start(page)
+  await page.evaluate(async () => {
+    const api = await import('/pjsdas/src/db.ts'), client = await import('/pjsdas/src/cloud/instantCommandClient.ts')
+    Object.defineProperty(navigator, 'onLine', { configurable: true, get: () => false })
+    for (const [commandId, minutes] of [['cleared-parent', 300], ['cleared-child', 240]] as const)
+      await client.beginInstantCommand('instant-owner', await api.exportLocalSnapshot(), { commandId, kind: 'set_date_capacity', date: '2026-10-01', minutes })
+  })
+  if (parentCommitted) {
+    await page.evaluate(async () => {
+      Object.defineProperty(navigator, 'onLine', { configurable: true, get: () => true })
+      await (await import('/pjsdas/src/cloud/instantCommandClient.ts')).recoverInstantInteraction('instant-owner', 'cleared-parent')
+      Object.defineProperty(navigator, 'onLine', { configurable: true, get: () => false })
+    })
+  }
+  await page.evaluate(async () => {
+    const api = await import('/pjsdas/src/db.ts'), local = await api.exportLocalSnapshot(), data: any = { ...local.data }
+    for (const key of Object.keys(data)) data[key] = Array.isArray(data[key]) ? [] : undefined
+    await api.replaceLocalSnapshotFromCloud({ ...local, data })
+    ;(await import('/pjsdas/src/cloud/syncState.ts')).patchAccountCheckpoint('instant-owner', { clearedCacheFingerprint:
+      await (await import('/pjsdas/src/cloud/workspaceFingerprint.ts')).fingerprintWorkspace(await api.exportLocalSnapshot()) })
+  })
+  await page.reload()
+  await expect.poll(() => pendingCount(page), { timeout: 20000 }).toBe(0)
+  await expect(page.locator('.tsui-capacity summary')).toContainText('4 小时')
+  expect(server.sent).toEqual(['cleared-parent', 'cleared-child'])
+  expect(server.snapshot.data.timePlanning?.dateOverrides?.['2026-10-01']).toBe(240)
+  const local = await page.evaluate(async () => (await (await import('/pjsdas/src/db.ts')).exportLocalSnapshot()).data.timePlanning)
+  expect(local).toEqual(server.snapshot.data.timePlanning)
+})
+
+test('rollback-pending predecessor cannot dispatch a later overlapping edit', async ({ page, context }) => {
+  const server = await setup(context); server.setDelay(50); await start(page); server.denyNext()
+  await page.evaluate(async () => {
+    const api = await import('/pjsdas/src/db.ts'), client = await import('/pjsdas/src/cloud/instantCommandClient.ts')
+    Object.defineProperty(navigator, 'onLine', { configurable: true, get: () => false })
+    await client.beginInstantCommand('instant-owner', await api.exportLocalSnapshot(), { commandId: 'durable-rejected-parent', kind: 'set_date_capacity', date: '2026-10-01', minutes: 300 })
+    const put = IDBObjectStore.prototype.put
+    IDBObjectStore.prototype.put = function(...args: Parameters<IDBObjectStore['put']>) {
+      if (this.name === 'commandInteractions' && (args[0] as any).state === 'rejected') throw new Error('Synthetic rollback blocked; archival remains available')
+      return put.apply(this, args)
+    }
+    Object.defineProperty(navigator, 'onLine', { configurable: true, get: () => true })
+    try { await client.recoverInstantInteraction('instant-owner', 'durable-rejected-parent') } finally { IDBObjectStore.prototype.put = put }
+    if ((await api.readCommandInteraction('instant-owner', 'durable-rejected-parent'))?.state !== 'rollback_pending') throw new Error('Missing durable rollback disposition')
+    Object.defineProperty(navigator, 'onLine', { configurable: true, get: () => false })
+    await client.beginInstantCommand('instant-owner', await api.exportLocalSnapshot(), { commandId: 'durable-rejected-child', kind: 'set_date_capacity', date: '2026-10-01', minutes: 240 })
+    Object.defineProperty(navigator, 'onLine', { configurable: true, get: () => true })
+    await client.recoverInstantInteraction('instant-owner', 'durable-rejected-child')
+    await client.recoverInstantInteraction('instant-owner', 'durable-rejected-parent')
+  })
+  await expect.poll(() => pendingCount(page)).toBe(0)
+  expect(server.sent).toEqual(['durable-rejected-parent'])
+  const local = await page.evaluate(async () => (await (await import('/pjsdas/src/db.ts')).exportLocalSnapshot()).data.timePlanning)
+  expect(local).toEqual(server.snapshot.data.timePlanning)
+})
+
+test('failed predecessor lookup does not archive an independent queued command as rejected', async ({ page, context }) => {
+  const server = await setup(context); server.setDelay(50); await start(page)
+  await page.evaluate(async () => {
+    const api = await import('/pjsdas/src/db.ts'), client = await import('/pjsdas/src/cloud/instantCommandClient.ts')
+    await client.beginInstantCommand('instant-owner', await api.exportLocalSnapshot(), { commandId: 'previous-confirmed', kind: 'set_date_capacity', date: '2026-10-01', minutes: 300 })
+  })
+  await expect.poll(() => pendingCount(page)).toBe(0)
+  server.denyNext()
+  await page.evaluate(async () => {
+    const api = await import('/pjsdas/src/db.ts'), client = await import('/pjsdas/src/cloud/instantCommandClient.ts')
+    Object.defineProperty(navigator, 'onLine', { configurable: true, get: () => false })
+    await client.beginInstantCommand('instant-owner', await api.exportLocalSnapshot(), { commandId: 'bad-dependent', kind: 'set_date_capacity', date: '2026-10-01', minutes: 240 })
+    const root = (await api.readCommandInteraction('instant-owner', 'bad-dependent'))!
+    await api.saveCommandInteraction({ ...root, predecessors: ['previous-confirmed'] })
+    await client.beginInstantCommand('instant-owner', await api.exportLocalSnapshot(), { commandId: 'good-independent', kind: 'set_action_status', actionId: 'dense-action-0', status: 'done' })
+    const get = IDBObjectStore.prototype.get; let lookups = 0
+    IDBObjectStore.prototype.get = function(...args: Parameters<IDBObjectStore['get']>) {
+      if (this.name === 'commandInteractions' && String(args[0]).endsWith(':previous-confirmed') && ++lookups === 2) throw new Error('Synthetic rollback predecessor lookup failure')
+      return get.apply(this, args)
+    }
+    await new Promise(resolve => setTimeout(resolve, 0))
+    Object.defineProperty(navigator, 'onLine', { configurable: true, get: () => true })
+    try { await client.recoverInstantInteraction('instant-owner', 'bad-dependent') } finally { IDBObjectStore.prototype.get = get }
+    await client.recoverInstantInteraction('instant-owner', 'bad-dependent')
+    await client.recoverInstantInteraction('instant-owner', 'good-independent')
+  })
+  await expect.poll(() => pendingCount(page)).toBe(0)
+  expect(server.sent).toEqual(['previous-confirmed', 'bad-dependent', 'good-independent'])
+  expect(server.snapshot.data.actions[0].status).toBe('done')
+})
+
+test('mirror-only child retains its original parent ordering after parent acknowledgement', async ({ page, context }) => {
+  const server = await setup(context); server.setDelay(50); await start(page)
+  await page.evaluate(async () => {
+    const api = await import('/pjsdas/src/db.ts'), client = await import('/pjsdas/src/cloud/instantCommandClient.ts'), auth = await import('/pjsdas/src/cloud/authoritativeCommandClient.ts')
+    Object.defineProperty(navigator, 'onLine', { configurable: true, get: () => false })
+    await client.beginInstantCommand('instant-owner', await api.exportLocalSnapshot(), { commandId: 'mirror-parent', kind: 'set_date_capacity', date: '2026-10-01', minutes: 300 })
+    const command = { commandId: 'mirror-child', kind: 'set_date_capacity' as const, date: '2026-10-01', minutes: 240 }
+    const projection = (await import('/pjsdas/src/cloud/interactionProjection.ts')).interactionProjection(await api.exportLocalSnapshot(), command, 1204)
+    auth.journalConnectedInteraction('instant-owner', { commandId: command.commandId, command: { type: 'domain', value: command }, baseRevision: 1204,
+      interactionDelta: projection.delta, interactionCompensation: projection.compensation, interactionPredecessors: ['mirror-parent'] })
+  })
+  await page.reload(); await expect.poll(() => pendingCount(page), { timeout: 20000 }).toBe(0)
+  expect(server.sent).toEqual(['mirror-parent', 'mirror-child'])
+  expect(server.baseRevisions).toEqual([1204, 1205])
+  await expect(page.locator('.tsui-capacity summary')).toContainText('4 小时')
+})
+
+test('ordinary snapshot receipt cannot erase an outstanding optimistic interaction', async ({ page, context }) => {
+  const server = await setup(context); server.setDelay(50); server.setFullResponses(true); await start(page)
+  const response = await page.evaluate(async () => {
+    const api = await import('/pjsdas/src/db.ts'), client = await import('/pjsdas/src/cloud/instantCommandClient.ts'), auth = await import('/pjsdas/src/cloud/authoritativeCommandClient.ts')
+    Object.defineProperty(navigator, 'onLine', { configurable: true, get: () => false })
+    await client.beginInstantCommand('instant-owner', await api.exportLocalSnapshot(), { commandId: 'snapshot-protected-completion', kind: 'set_action_status', actionId: 'dense-action-0', status: 'done' })
+    await new Promise(resolve => setTimeout(resolve, 0))
+    const command = { commandId: 'snapshot-capacity', kind: 'set_date_capacity' as const, date: '2026-10-01', minutes: 240 }
+    const result = await auth.executeConnectedBusinessCommand('instant-owner', { type: 'domain', value: command }, { commandId: command.commandId, allowProjectionPending: true })
+    const status = (await (await api.dbPromise).get('actions', 'dense-action-0'))!.status
+    Object.defineProperty(navigator, 'onLine', { configurable: true, get: () => true })
+    await client.recoverInstantInteraction('instant-owner', 'snapshot-protected-completion')
+    await auth.replayAccountPendingOperations('instant-owner')
+    return { outcome: result.outcome, projection: result.localProjection, status }
+  })
+  expect(response).toEqual({ outcome: 'COMMITTED', projection: 'pending', status: 'done' })
+  await expect.poll(() => pendingCount(page)).toBe(0)
+  expect(server.sent).toEqual(['snapshot-capacity', 'snapshot-protected-completion'])
+  expect(server.snapshot.data.actions[0].status).toBe('done')
+  await page.reload(); await expect(page.locator('[data-action-id="dense-action-0"]')).toHaveCount(0)
+})
+
+
+test('ordinary domain compact patch preserves an unrelated outstanding optimistic completion', async ({ page, context }) => {
+  const server = await setup(context); server.setDelay(50); await start(page)
+  const result = await page.evaluate(async () => {
+    const api = await import('/pjsdas/src/db.ts'), client = await import('/pjsdas/src/cloud/instantCommandClient.ts'), auth = await import('/pjsdas/src/cloud/authoritativeCommandClient.ts')
+    Object.defineProperty(navigator, 'onLine', { configurable: true, get: () => false })
+    await client.beginInstantCommand('instant-owner', await api.exportLocalSnapshot(), { commandId: 'compact-completion', kind: 'set_action_status', actionId: 'dense-action-0', status: 'done' })
+    await new Promise(resolve => setTimeout(resolve, 0))
+    const command = { commandId: 'compact-capacity', kind: 'set_date_capacity' as const, date: '2026-10-01', minutes: 240 }
+    const response = await auth.executeConnectedBusinessCommand('instant-owner', { type: 'domain', value: command }, { commandId: command.commandId, allowProjectionPending: true })
+    const local = await api.exportLocalSnapshot()
+    Object.defineProperty(navigator, 'onLine', { configurable: true, get: () => true })
+    await client.recoverInstantInteraction('instant-owner', 'compact-completion')
+    return { projection: response.localProjection, fullSnapshot: !!response.snapshot, status: local.data.actions.find(item => item.id === 'dense-action-0')!.status, capacity: local.data.timePlanning?.dateOverrides?.['2026-10-01'] }
+  })
+  expect(result).toEqual({ projection: 'applied', fullSnapshot: false, status: 'done', capacity: 240 })
+  await expect.poll(() => pendingCount(page)).toBe(0)
+  expect(server.sent).toEqual(['compact-capacity', 'compact-completion'])
+  expect(Math.max(...server.payloadBytes)).toBeLessThan(150000)
+  await page.reload(); await expect(page.locator('[data-action-id="dense-action-0"]')).toHaveCount(0)
+  await expect(page.locator('.tsui-capacity summary')).toContainText('4 小时')
+})
+
+test('receiptless already-applied fact with blocked projection recovers by read without resending', async ({ page, context }) => {
+  const server = await setup(context); server.setDelay(50); await start(page)
+  const result = await page.evaluate(async () => {
+    const api = await import('/pjsdas/src/db.ts'), client = await import('/pjsdas/src/cloud/instantCommandClient.ts'), auth = await import('/pjsdas/src/cloud/authoritativeCommandClient.ts')
+    Object.defineProperty(navigator, 'onLine', { configurable: true, get: () => false })
+    await client.beginInstantCommand('instant-owner', await api.exportLocalSnapshot(), { commandId: 'fact-completion', kind: 'set_action_status', actionId: 'dense-action-0', status: 'done' })
+    await new Promise(resolve => setTimeout(resolve, 0))
+    const command = { commandId: 'already-current-capacity', kind: 'set_action_status' as const, actionId: 'dense-action-6', status: 'done' as const }
+    const response = await auth.executeConnectedBusinessCommand('instant-owner', { type: 'domain', value: command }, { commandId: command.commandId, allowProjectionPending: true })
+    const mirror = JSON.parse(localStorage.getItem('pjsdas-cgr01-pending:instant-owner') ?? '[]').find((item: any) => item.commandId === command.commandId)
+    Object.defineProperty(navigator, 'onLine', { configurable: true, get: () => true })
+    await client.recoverInstantInteraction('instant-owner', 'fact-completion')
+    await auth.replayAccountPendingOperations('instant-owner')
+    return { outcome: response.outcome, projection: response.localProjection, fact: mirror?.confirmedFact }
+  })
+  expect(result).toEqual({ outcome: 'ALREADY_APPLIED', projection: 'pending', fact: 'ALREADY_APPLIED' })
+  await expect.poll(() => pendingCount(page)).toBe(0)
+  expect(server.sent).toEqual(['already-current-capacity', 'fact-completion'])
+  await page.reload(); await expect(page.locator('[data-action-id="dense-action-0"]')).toHaveCount(0)
+})

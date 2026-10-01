@@ -181,7 +181,12 @@ export function createConnectedWorkspaceHandler(config: ConnectedWorkspaceHandle
         if (body.projection === 'snapshot') return { ...result, workspaceVersion: `txn:${result.revision}`, schemaVersion: result.snapshot?.version }
         const { snapshot: _snapshot, receipt: rawReceipt, ...metadata } = result
         const { projectionDelta: delta, ...receipt } = rawReceipt ?? {}
-        return { ...metadata, invalidatedReadModelKeys: rawReceipt?.readModelInvalidation ?? [], workspaceVersion: `txn:${result.revision}`, schemaVersion: rawReceipt?.schemaVersion ?? result.snapshot?.version,
+        // A replay's delta describes its original receipt revision, even if
+        // the workspace has since advanced. Only a full read observes that gap.
+        const deltaRevision = delta && Number.isSafeInteger(rawReceipt?.resultingRevision)
+          ? Number(rawReceipt!.resultingRevision) : delta && Number.isSafeInteger(rawReceipt?.revision)
+            ? Number(rawReceipt!.revision) : result.revision
+        return { ...metadata, revision: deltaRevision, invalidatedReadModelKeys: rawReceipt?.readModelInvalidation ?? [], workspaceVersion: `txn:${deltaRevision}`, schemaVersion: rawReceipt?.schemaVersion ?? result.snapshot?.version,
           receipt: rawReceipt ? receipt : undefined, delta, recoveryRequired: !delta }
       }
       if (body.action === 'command') {

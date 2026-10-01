@@ -1,3 +1,4 @@
+import { validateWorkspaceDelta, type WorkspaceDelta } from '../workspaceDelta.js'
 import { captureAccountCacheLease, AccountCacheChangedError } from './accountCacheLease.js'
 import type { UserDomainCommand } from '../domainCommands.js'
 import type { DiscoveryStatusCommand } from '../discoveryStatusCommand.js'
@@ -5,7 +6,7 @@ import type { DiscoveryProfile } from '../discoveryProfile.js'
 import type { SemanticIntakeObservation } from '../model.js'
 import { validateSnapshot, type PJSDASSnapshot } from '../snapshot.js'
 import { fetchBackend } from '../backendEndpoints.js'
-import { isRecordedAccountProjection, assertLocalSnapshotCurrent, exportLocalSnapshot, replaceLocalSnapshotFromCloud } from '../db.js'
+import { isRecordedAccountProjection, assertLocalSnapshotCurrent, exportLocalSnapshot, replaceLocalSnapshotFromCloud, persistInteractionProjection, readCommandInteraction } from '../db.js'
 import { getAccountAccessToken } from './cloudClient.js'
 import { getAccountCheckpoint, getCloudDeviceState, patchAccountCheckpoint } from './syncState.js'
 import { equivalentReadProjection, fingerprintWorkspace } from './workspaceFingerprint.js'
@@ -39,7 +40,9 @@ export interface ConnectedCommandResponse {
   revision: number
   workspaceVersion: string
   schemaVersion: number
-  snapshot: PJSDASSnapshot
+  snapshot?: PJSDASSnapshot
+  delta?: WorkspaceDelta
+  recoveryRequired?: boolean
   /** The server outcome is durable even when this browser cannot project it. */
   localProjection?: 'applied' | 'pending'
   receipt?: Record<string, unknown>
@@ -60,7 +63,11 @@ interface PendingCommand {
   command?: ConnectedBusinessCommand
   targetCommandId?: string
   status: 'pending' | 'unknown' | 'conflict' | 'projection_pending' | 'rollback_pending'
+  confirmedFact?: 'ALREADY_APPLIED' | 'NO_WRITE'
   rejectionRoot?: string
+  interactionDelta?: import('../workspaceDelta.js').WorkspaceDelta
+  interactionCompensation?: { operation: string; payload: unknown }
+  interactionPredecessors?: string[]
   createdAt: string
   updatedAt: string
   lastError?: string
@@ -199,7 +206,8 @@ async function request(accountKey: string, body: Record<string, unknown>) {
       authorization: `Bearer ${accessToken}`,
       'content-type': 'application/json',
     },
-    body: JSON.stringify({ ...body, projection: 'snapshot' }),
+    body: JSON.stringify({ ...body, projection: body.action === 'command' && (body.command as ConnectedBusinessCommand | undefined)?.type === 'domain'
+      || body.action === 'undo' && (await readCommandInteraction(accountKey, String(body.targetCommandId)))?.command ? 'delta-v1' : 'snapshot' }),
   })
   const payload = await response.json().catch(() => undefined) as Record<string, any> | undefined
   lease.assertCurrent()
@@ -208,7 +216,11 @@ async function request(accountKey: string, body: Record<string, unknown>) {
 
 function parseCommandResponse(payload: Record<string, any> | undefined): ConnectedCommandResponse {
   if (!payload || !Number.isInteger(payload.revision)) throw new Error('CONNECTED_COMMAND_INVALID: authoritative response metadata is incomplete.')
-  validateSnapshot(payload.snapshot)
+  if (payload.delta) {
+    validateWorkspaceDelta(payload.delta)
+    if (payload.revision !== payload.delta.baseRevision + 1 || (payload.receipt?.revision !== undefined && payload.receipt.revision !== payload.revision)) throw new Error('CONNECTED_COMMAND_INVALID: receipt/delta revision mismatch.')
+  } else if (payload.snapshot) validateSnapshot(payload.snapshot)
+  else if (payload.outcome !== 'CONFLICT' && !payload.recoveryRequired) throw new Error('CONNECTED_COMMAND_INVALID: projection evidence is missing.')
   return payload as ConnectedCommandResponse
 }
 
@@ -228,12 +240,15 @@ async function currentRevision(accountKey: string) {
 
 async function projectAuthoritativeResult(accountKey: string, result: ConnectedCommandResponse,
   guard: { expectedLocal: PJSDASSnapshot; assertCurrent: () => void }) {
+  if (!result.snapshot) return
+  const snapshot = result.snapshot
   const assertCurrent = () => {
     guard.assertCurrent()
+    if (readPending(accountKey).some(item => item.interaction && item.status !== 'conflict')) throw new AccountCacheChangedError()
     if ((revisionFromCheckpoint(accountKey) ?? -1) > result.revision) throw new AccountCacheChangedError()
   }
-  const committed = await replaceLocalSnapshotFromCloud(result.snapshot, { ...guard, assertCurrent, accountKey, version: result.workspaceVersion })
-  const fingerprint = await fingerprintWorkspace(result.snapshot)
+  const committed = await replaceLocalSnapshotFromCloud(snapshot, { ...guard, assertCurrent, accountKey, version: result.workspaceVersion })
+  const fingerprint = await fingerprintWorkspace(snapshot)
   const projectedFingerprint = await fingerprintWorkspace(committed)
   assertCurrent()
   patchAccountCheckpoint(accountKey, {
@@ -301,6 +316,7 @@ export async function lookupConnectedCommandReceipt(accountKey: string, commandI
   } catch (caught) {
     patchPending(accountKey, commandId, {
       status: 'projection_pending',
+      ...(!result.receipt && ['ALREADY_APPLIED', 'NO_WRITE'].includes(result.outcome) ? { confirmedFact: result.outcome as 'ALREADY_APPLIED' | 'NO_WRITE' } : {}),
       lastError: caught instanceof Error ? caught.message : String(caught),
     })
     return { ...result, localProjection: 'pending' }
@@ -310,13 +326,32 @@ export async function lookupConnectedCommandReceipt(accountKey: string, commandI
 async function projectConfirmedResult(accountKey: string, commandId: string, result: ConnectedCommandResponse,
   guard: { expectedLocal: PJSDASSnapshot; assertCurrent: () => void }): Promise<ConnectedCommandResponse> {
   try {
+    if (result.delta) {
+      const pending = readPending(accountKey).find(item => item.commandId === commandId)
+      const record = { id: `${accountKey}:${commandId}`, accountKey, commandId, createdAt: pending?.createdAt ?? new Date().toISOString(),
+        state: 'confirmed' as const, command: pending?.command?.type === 'domain' ? pending.command.value : undefined,
+        targetCommandId: pending?.targetCommandId, delta: result.delta, compensation: result.receipt?.undoCompensation as { operation: string; payload: unknown } | undefined,
+        serverRevision: result.revision }
+      await persistInteractionProjection(record, guard.assertCurrent)
+      if (revisionFromCheckpoint(accountKey) === result.delta.baseRevision) patchAccountCheckpoint(accountKey, {
+        lastSyncedVersion: result.workspaceVersion, lastSyncedAt: new Date().toISOString(), lastError: undefined })
+      if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('pjsdas:interaction', { detail: {
+        accountKey, commandId, state: 'confirmed', delta: result.delta } }))
+      return { ...result, localProjection: 'applied' }
+    }
+    if (!result.snapshot && result.recoveryRequired) {
+      const read = await request(accountKey, { action: 'read', projection: 'snapshot' })
+      if (!read.response.ok) throw serverError(read.response, read.payload)
+      result = { ...result, snapshot: read.payload!.snapshot, revision: read.payload!.revision, workspaceVersion: read.payload!.workspaceVersion }
+    }
+    if (readPending(accountKey).some(item => item.interaction && item.status !== 'conflict')) throw new AccountCacheChangedError()
     const checkpoint = getAccountCheckpoint(accountKey)
     const baseline = checkpoint.lastReadProjectionSourceFingerprint === checkpoint.lastSyncedFingerprint
       ? checkpoint.lastReadProjectionFingerprint ?? checkpoint.lastSyncedFingerprint : checkpoint.lastSyncedFingerprint
     const localFingerprint = await fingerprintWorkspace(guard.expectedLocal)
     if (baseline && localFingerprint !== baseline && localFingerprint !== checkpoint.clearedCacheFingerprint
       && !await isRecordedAccountProjection(accountKey, guard.expectedLocal)
-      && !equivalentReadProjection(guard.expectedLocal, result.snapshot)) throw new AccountCacheChangedError()
+      && (!result.snapshot || !equivalentReadProjection(guard.expectedLocal, result.snapshot))) throw new AccountCacheChangedError()
     await projectAuthoritativeResult(accountKey, result, guard)
     return { ...result, localProjection: 'applied' }
   } catch (caught) {
@@ -324,6 +359,7 @@ async function projectConfirmedResult(accountKey: string, commandId: string, res
     // the read/projection path after the local difference is resolved.
     if (result.outcome !== 'NO_WRITE') patchPending(accountKey, commandId, {
       status: 'projection_pending',
+      ...(!result.receipt && result.outcome === 'ALREADY_APPLIED' ? { confirmedFact: 'ALREADY_APPLIED' as const } : {}),
       lastError: caught instanceof Error ? caught.message : String(caught),
     })
     return { ...result, localProjection: 'pending' }
@@ -563,6 +599,15 @@ export async function replayAccountPendingOperations(accountKey: string) {
     const current = readPending(accountKey).find(item => item.commandId === pending.commandId)
     if (!current) continue
     if (current.status === 'projection_pending') {
+      if (current.confirmedFact) {
+        const read = await request(accountKey, { action: 'read', projection: 'snapshot' })
+        if (read.response.ok) {
+          const recovered = await projectConfirmedResult(accountKey, current.commandId, { ...read.payload, outcome: current.confirmedFact } as ConnectedCommandResponse, { expectedLocal: read.local, assertCurrent: read.lease.assertCurrent })
+          if (recovered.localProjection === 'applied') removePending(accountKey, current.commandId)
+          results.push(recovered); notifyRecoveredCommand(current.commandId, recovered)
+        }
+        continue
+      }
       const recovered = await lookupConnectedCommandReceipt(accountKey, pending.commandId)
       if (recovered) {
         if (recovered.localProjection === 'applied') removePending(accountKey, pending.commandId)
@@ -609,7 +654,7 @@ function clearRecoveredSemanticDraft(accountKey: string, pending: PendingCommand
 
 
 /** Immediate interactions use the same account-scoped recovery queue and stable identity. */
-export function journalConnectedInteraction(accountKey: string, input: { commandId: string; command?: ConnectedBusinessCommand; targetCommandId?: string; baseRevision: number }) {
+export function journalConnectedInteraction(accountKey: string, input: { commandId: string; command?: ConnectedBusinessCommand; targetCommandId?: string; baseRevision: number; interactionDelta?: import('../workspaceDelta.js').WorkspaceDelta; interactionCompensation?: { operation: string; payload: unknown }; interactionPredecessors?: string[] }) {
   const lease = captureAccountCacheLease(accountKey)
   const checkpoint = getAccountCheckpoint(accountKey)
   if (getCloudDeviceState().workspaceOwnerUserId !== accountKey || !checkpoint.lastSyncedFingerprint
@@ -625,3 +670,5 @@ export function settleConnectedInteraction(accountKey: string, commandId: string
   if (status) patchPending(accountKey, commandId, { status, lastError: message, rejectionRoot })
   else removePending(accountKey, commandId)
 }
+
+export function enrichConnectedInteraction(accountKey: string, commandId: string, patch: Pick<PendingCommand, 'interactionDelta' | 'interactionCompensation' | 'interactionPredecessors'>) { patchPending(accountKey, commandId, patch) }

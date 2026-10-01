@@ -1131,7 +1131,7 @@ export async function clearLocalWorkspaceCache() {
   return cleared
 }
 
-export async function replaceLocalSnapshotFromCloud(snapshot: PJSDASSnapshot, guard?: { expectedLocal: PJSDASSnapshot; assertCurrent: () => void; accountKey?: string; version?: string }) {
+export async function replaceLocalSnapshotFromCloud(snapshot: PJSDASSnapshot, guard?: { expectedLocal: PJSDASSnapshot; assertCurrent: () => void; accountKey?: string; version?: string; interactionSteps?: Array<{ record: CommandInteractionRecord; delta: WorkspaceDelta }> }) {
   validateSnapshot(snapshot)
   const latest = upgradeSnapshotToLatest(snapshot)
   if (guard?.accountKey) {
@@ -1144,7 +1144,7 @@ export async function replaceLocalSnapshotFromCloud(snapshot: PJSDASSnapshot, gu
   }
 
   const db = await dbPromise
-  const tx = db.transaction([...DATA_STORES, 'projectionDeltas'], 'readwrite')
+  const tx = db.transaction([...DATA_STORES, 'projectionDeltas', 'commandInteractions'], 'readwrite')
   try {
     guard?.assertCurrent()
     if (guard && canonicalWorkspaceJson(await readLocalSnapshot(tx as LocalSnapshotTransaction)) !== canonicalWorkspaceJson(guard.expectedLocal)) throw new AccountCacheChangedError()
@@ -1185,6 +1185,20 @@ export async function replaceLocalSnapshotFromCloud(snapshot: PJSDASSnapshot, gu
       await tx.objectStore('meta').put({ key: 'authoritativeProjection', accountKey: guard.accountKey,
         version: guard.version, canonical: canonicalWorkspaceJson(committed) })
     }
+    for (const { record, delta } of guard?.interactionSteps ?? []) {
+      for (const change of delta.changes) {
+        const store = tx.objectStore(deltaStore(change.collection) as any)
+        const id = deltaId(change.collection, change.id)
+        let row = await store.get(id) as DeltaRow | undefined
+        if (change.collection === 'timePlanning' && row) { const { key: _key, ...value } = row; row = value }
+        const next = patchDeltaRow(row ?? null, change)
+        if (next) await store.put(change.collection === 'timePlanning' ? { ...next, key: 'timePlanning' } : next)
+        else await store.delete(id)
+      }
+      await tx.objectStore('commandInteractions').put(record)
+      if (delta.changes.length) await tx.objectStore('projectionDeltas').add({ accountKey: record.accountKey, delta })
+    }
+    if (guard?.interactionSteps?.length) committed = await readLocalSnapshot(tx as LocalSnapshotTransaction)
     guard?.assertCurrent()
     await tx.done
     return committed
