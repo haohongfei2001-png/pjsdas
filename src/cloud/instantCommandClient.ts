@@ -62,6 +62,18 @@ function releaseIndependentQuarantine(accountKey: string, roots: Set<string>, re
     settleConnectedInteraction(accountKey, pending.commandId, 'unknown')
   }
 }
+function advanceConfirmedCheckpoint(record: CommandInteractionRecord) {
+  // The entity transaction and its confirmed journal can commit before the
+  // localStorage checkpoint. Recover that exact adjacent revision only; a
+  // larger gap still requires the existing authoritative read path.
+  const lease = captureAccountCacheLease(record.accountKey)
+  if (record.state === 'confirmed' && record.delta.baseRevision === version(record.accountKey)
+    && record.serverRevision === record.delta.baseRevision + 1) {
+    lease.assertCurrent()
+    patchAccountCheckpoint(record.accountKey, { lastSyncedVersion: `txn:${record.serverRevision}`,
+      lastSyncedAt: new Date().toISOString(), lastError: undefined })
+  }
+}
 async function reconcileTerminalJournal(record: CommandInteractionRecord) {
   if (!['confirmed', 'rejected', 'conflict'].includes(record.state)) return false
   const lease = captureAccountCacheLease(record.accountKey)
@@ -72,6 +84,7 @@ async function reconcileTerminalJournal(record: CommandInteractionRecord) {
   const retired = new Set<string>()
   for (const journal of [record, ...journals]) if (journal && ['confirmed', 'rejected', 'conflict'].includes(journal.state)) {
     retired.add(journal.commandId)
+    if (journal.state === 'confirmed') advanceConfirmedCheckpoint(journal)
     settleConnectedInteraction(record.accountKey, journal.commandId, journal.state === 'conflict' ? 'conflict' : undefined)
   }
   if (record.state !== 'confirmed') releaseIndependentQuarantine(record.accountKey, new Set([record.commandId]), retired)
@@ -309,18 +322,33 @@ async function recoverAuthoritativeProjection(accountKey: string, expectedLocal:
   }
   const committed = await replaceLocalSnapshotFromCloud(remote.snapshot, { expectedLocal, assertCurrent, accountKey,
     version: remote.workspaceVersion ?? `txn:${remote.revision}`, interactionSteps: steps })
-  const [sourceFingerprint, projectedFingerprint] = await Promise.all([fingerprintWorkspace(remote.snapshot), fingerprintWorkspace(committed)])
-  assertCurrent()
-  patchAccountCheckpoint(accountKey, { clearedCacheFingerprint: undefined, lastSyncedVersion: remote.workspaceVersion ?? `txn:${remote.revision}`,
-    lastSyncedFingerprint: sourceFingerprint, lastReadProjectionFingerprint: projectedFingerprint,
-    lastReadProjectionSourceFingerprint: sourceFingerprint, lastSyncedAt: new Date().toISOString(),
-    localPendingFingerprint: undefined, conflict: undefined, lastError: undefined })
-  for (const step of steps) if (step.record.state === 'confirmed' || step.record.state === 'rejected') {
-    settleConnectedInteraction(accountKey, step.record.commandId)
-    emit(step.record)
+  // The replacement and terminal journals are now committed. Metadata has a
+  // separate failure boundary: never downgrade those journals or repeat the
+  // projection because localStorage cleanup failed after the transaction.
+  let finalized = false
+  let fingerprints: [string, string] | undefined
+  for (let attempt = 0; attempt < 2 && !finalized; attempt++) {
+    try {
+      fingerprints ??= await Promise.all([fingerprintWorkspace(remote.snapshot), fingerprintWorkspace(committed)])
+      assertCurrent()
+      patchAccountCheckpoint(accountKey, { clearedCacheFingerprint: undefined, lastSyncedVersion: remote.workspaceVersion ?? `txn:${remote.revision}`,
+        lastSyncedFingerprint: fingerprints[0], lastReadProjectionFingerprint: fingerprints[1],
+        lastReadProjectionSourceFingerprint: fingerprints[0], lastSyncedAt: new Date().toISOString(),
+        localPendingFingerprint: undefined, conflict: undefined, lastError: undefined })
+      finalized = true
+    } catch { /* Retain the original mirrors for terminal metadata recovery. */ }
   }
-  releaseIndependentQuarantine(accountKey, rejected, new Set(steps.filter(step => ['confirmed', 'rejected'].includes(step.record.state)).map(step => step.record.commandId)))
-  window.dispatchEvent(new Event('pjsdas:workspace-replaced'))
+  if (finalized) {
+    for (const step of steps) if (step.record.state === 'confirmed' || step.record.state === 'rejected') {
+      try { settleConnectedInteraction(accountKey, step.record.commandId) } catch { /* Recover from the terminal journal, never its inverse. */ }
+    }
+    try { releaseIndependentQuarantine(accountKey, rejected, new Set(steps.filter(step => ['confirmed', 'rejected'].includes(step.record.state)).map(step => step.record.commandId))) } catch { /* Original independent intent remains in its mirror. */ }
+  }
+  try {
+    lease.assertCurrent()
+    for (const step of steps) if (step.record.state === 'confirmed' || step.record.state === 'rejected') emit(step.record)
+    window.dispatchEvent(new Event('pjsdas:workspace-replaced'))
+  } catch { /* An account change must not publish the old account's UI event. */ }
   return committed
 }
 async function reconcile(record: CommandInteractionRecord, payload: any, assertCurrent: () => void) {
@@ -342,6 +370,7 @@ async function reconcile(record: CommandInteractionRecord, payload: any, assertC
     if (payload.revision !== version(record.accountKey)) void (await import('./authoritativeReadModelClient.js')).refreshConnectedAuthoritativeCache(record.accountKey).catch(() => undefined)
     return
   }
+  let committed: CommandInteractionRecord | undefined
   try {
     if (!payload.delta && payload.snapshot) {
       const local = await exportLocalSnapshot()
@@ -374,14 +403,24 @@ async function reconcile(record: CommandInteractionRecord, payload: any, assertC
       }
       return { ...change, before, after }
     }) }
-    await persistInteractionProjection({ ...record, delta: payload.delta, state: 'confirmed', serverRevision: payload.revision }, assertCurrent, settlement)
+    const confirmed: CommandInteractionRecord = { ...record, delta: payload.delta, state: 'confirmed', serverRevision: payload.revision }
+    await persistInteractionProjection(confirmed, assertCurrent, settlement)
+    committed = confirmed
+    assertCurrent()
+    emit(confirmed, settlement)
     const current = version(record.accountKey)
-    if (payload.delta.baseRevision === current && Number.isSafeInteger(payload.revision)) patchAccountCheckpoint(record.accountKey,
-      { lastSyncedVersion: `txn:${payload.revision}`, lastSyncedAt: new Date().toISOString(), lastError: undefined })
+    advanceConfirmedCheckpoint(confirmed)
     settleConnectedInteraction(record.accountKey, record.commandId)
-    emit({ ...record, state: 'confirmed' }, settlement)
     if (payload.delta.baseRevision !== current) void (await import('./authoritativeReadModelClient.js')).refreshConnectedAuthoritativeCache(record.accountKey).catch(() => undefined)
   } catch (error) {
+    if (committed) {
+      // Metadata failure cannot undo a durable confirmation or disable Undo.
+      // Retry only metadata; a retained mirror is recovered from the terminal
+      // journal without another command, projection, or inverse.
+      try { assertCurrent(); advanceConfirmedCheckpoint(committed); settleConnectedInteraction(record.accountKey, record.commandId) } catch { /* Keep the original mirror for receipt-free terminal recovery. */ }
+      try { assertCurrent(); emit(committed, undefined, '修改已确认；同步状态稍后核对。') } catch { /* Do not publish across an account lease change. */ }
+      return
+    }
     const lastError = error instanceof Error ? error.message : String(error)
     await saveCommandInteraction({ ...record, state: 'projection_pending', lastError })
     settleConnectedInteraction(record.accountKey, record.commandId, 'projection_pending', lastError)

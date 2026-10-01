@@ -1,0 +1,62 @@
+name: Instant Recovery Draft Gate
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths:
+      - 'src/cloud/instantCommandClient.ts'
+      - 'src/cloud/interactionProjection.ts'
+      - 'src/db.ts'
+      - 'src/workspaceDelta.ts'
+      - 'e2e/instantInteraction.e2e.ts'
+      - 'tests/instantCommandMetadata.test.ts'
+      - 'tests/instantInteractionProjection.test.ts'
+      - '.github/workflows/instant-recovery-draft.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: instant-recovery-draft-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  recovery:
+    # Ordinary full Browser/Matrix gates remain mandatory after draft review.
+    # This narrow gate verifies risky recovery changes while the PR stays draft.
+    if: github.event.pull_request.draft == true
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    container:
+      image: mcr.microsoft.com/playwright:v1.63.0-noble@sha256:eff16c30e6f3f4af0a03fa4b706120d5e9b0891c344a27d64559aff5900a4a27
+      options: --init --ipc=host
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm install --no-save --package-lock=false @playwright/test@1.63.0
+      - name: Align isolated container home ownership
+        run: chown "$(id -u):$(id -g)" "$HOME"
+      - name: Verify confirmation, explicit references and adjacent recovery invariants
+        env:
+          PLAYWRIGHT_HTML_OUTPUT_DIR: playwright-report/instant
+        run: >-
+          npx playwright test --config=playwright.instant.config.mts
+          --project=chromium --project=webkit
+          --grep 'confirmed command remains undoable|standalone process reference|mirror cleanup failure|repeated complete and Undo|three optimistic edits|a genuine local field edit|account boundary quarantines|retained dependency chain'
+      - name: Preserve strict built-artifact instant budgets
+        env:
+          PLAYWRIGHT_HTML_OUTPUT_DIR: playwright-report/instant-performance
+        run: npx playwright test --config=playwright.perf.config.mts --project=chromium e2e/instantInteraction.perf.ts
+      - uses: actions/upload-artifact@v5
+        if: ${{ !cancelled() }}
+        with:
+          name: instant-recovery-draft
+          path: |
+            playwright-report/
+            test-results/
+          if-no-files-found: ignore
+          retention-days: 7

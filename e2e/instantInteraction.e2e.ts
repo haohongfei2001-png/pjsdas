@@ -1104,3 +1104,78 @@ test('mirror cleanup failure after atomic dependent rollback never rewrites term
   await expect(page.locator('.tsui-capacity summary')).toContainText('6 小时')
   expect(server.sent).toEqual(['cleanup-parent'])
 })
+
+for (const format of ['delta', 'snapshot'] as const) for (const failure of ['checkpoint', 'mirror'] as const) test(`confirmed command remains undoable after ${format} ${failure} metadata cleanup fails`, async ({ page, context }) => {
+  const server = await setup(context); server.setDelay(50); server.setFullResponses(format === 'snapshot'); await start(page)
+  await page.evaluate(() => Object.defineProperty(navigator, 'onLine', { configurable: true, value: false }))
+  const result = await page.evaluate(async failure => {
+    const api = await import('/pjsdas/src/db.ts'), client = await import('/pjsdas/src/cloud/instantCommandClient.ts')
+    const commandId = `confirmed-cleanup-${failure}`
+    await client.beginInstantCommand('instant-owner', await api.exportLocalSnapshot(), { commandId, kind: 'set_action_status', actionId: 'dense-action-0', status: 'done' })
+    await new Promise(resolve => setTimeout(resolve, 0))
+    const setItem = Storage.prototype.setItem, removeItem = Storage.prototype.removeItem
+    let armed = true
+    Storage.prototype.setItem = function(key, value) {
+      if (armed && failure === 'checkpoint' && key === 'pjsdas-google-drive-sync-state-v2'
+        && JSON.parse(value).accounts?.['instant-owner']?.lastSyncedVersion === 'txn:1205') {
+        armed = false; throw new Error('Synthetic post-confirmation checkpoint failure')
+      }
+      return setItem.call(this, key, value)
+    }
+    Storage.prototype.removeItem = function(key) {
+      if (armed && failure === 'mirror' && key === 'pjsdas-cgr01-pending:instant-owner') {
+        armed = false; throw new Error('Synthetic post-confirmation mirror failure')
+      }
+      return removeItem.call(this, key)
+    }
+    try {
+      Object.defineProperty(navigator, 'onLine', { configurable: true, value: true })
+      await client.recoverInstantInteraction('instant-owner', commandId)
+      const state = (await api.readCommandInteraction('instant-owner', commandId))!.state
+      Object.defineProperty(navigator, 'onLine', { configurable: true, value: false })
+      let undoable = true
+      try { await client.beginInstantUndo('instant-owner', commandId, await api.exportLocalSnapshot()) } catch { undoable = false }
+      return { armed, state, undoable }
+    } finally { Storage.prototype.setItem = setItem; Storage.prototype.removeItem = removeItem }
+  }, failure)
+  expect(result.armed).toBe(false)
+  expect(result.state).toBe('confirmed')
+  expect(result.undoable).toBe(true)
+  expect(server.sent).toEqual([`confirmed-cleanup-${failure}`])
+})
+
+for (const operation of ['action', 'complete', 'cancel', 'reschedule'] as const) test(`standalone process reference supports ${operation} and Undo`, async ({ page, context }) => {
+  const server = await setup(context); server.setDelay(50)
+  const action = server.snapshot.data.actions.find(item => item.id === 'dense-action-0')!
+  delete action.opportunityId
+  const node = server.snapshot.data.scheduleNodes!.find(item => item.relatedActionIds.includes(action.id))!
+  delete node.opportunityId
+  node.processId = 'standalone-process'
+  server.snapshot.data.processes.push({ id: node.processId, company: 'Synthetic standalone company', role: 'Engineer', stage: 'interview', stageLabel: 'Interview',
+    progress: 'action_required', result: 'pending', participationState: 'active' })
+  await start(page)
+  const commandId = await page.evaluate(async ({ operation, occurrenceId }) => {
+    const api = await import('/pjsdas/src/db.ts'), client = await import('/pjsdas/src/cloud/instantCommandClient.ts')
+    const command = operation === 'action'
+      ? { commandId: 'standalone-action', kind: 'set_action_status' as const, actionId: 'dense-action-0', status: 'done' as const }
+      : operation === 'reschedule' ? { commandId: 'standalone-reschedule', kind: 'reschedule_occurrence' as const, occurrenceId,
+        temporal: { shape: 'deadline' as const, precision: 'datetime' as const, timezone: 'UTC', deadlineAt: '2026-10-02T15:59:59Z', resolutionBasis: 'user_asserted' } }
+        : { commandId: `standalone-${operation}`, kind: operation === 'complete' ? 'complete_occurrence' as const : 'cancel_occurrence' as const, occurrenceId }
+    return client.beginInstantCommand('instant-owner', await api.exportLocalSnapshot(), command)
+  }, { operation, occurrenceId: node.occurrenceId })
+  await expect.poll(() => pendingCount(page)).toBe(0)
+  await page.evaluate(async commandId => {
+    const api = await import('/pjsdas/src/db.ts'), client = await import('/pjsdas/src/cloud/instantCommandClient.ts')
+    await client.beginInstantUndo('instant-owner', commandId, await api.exportLocalSnapshot())
+  }, commandId)
+  await expect.poll(() => pendingCount(page)).toBe(0)
+  expect(server.sent).toHaveLength(2)
+  expect(server.snapshot.data.actions.find(item => item.id === action.id)!.status).toBe('todo')
+  const local = await page.evaluate(async () => (await (await import('/pjsdas/src/db.ts')).exportLocalSnapshot()).data)
+  const byId = <T extends { id: string }>(rows: T[] = []) => [...rows].sort((a, b) => a.id.localeCompare(b.id))
+  expect(byId(local.processes)).toEqual(byId(server.snapshot.data.processes))
+  expect(byId(local.scheduleNodes)).toEqual(byId(server.snapshot.data.scheduleNodes))
+  await page.reload()
+  await expect(page.locator('[data-action-id="dense-action-0"]')).toBeVisible()
+  expect(server.sent).toHaveLength(2)
+})

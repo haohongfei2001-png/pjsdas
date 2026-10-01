@@ -87,3 +87,46 @@ it.each(['completion', 'submission', 'occurrence'] as const)('retains imported a
   expect(undone.data).toEqual(applyDomainCompensation(full.snapshot, projected.compensation!, INSTANT_NOW).data)
   expect(undone.data.applicationGroups).toEqual(before.data.applicationGroups)
 })
+
+it.each(['action', 'complete', 'cancel', 'reschedule'] as const)('closes explicit standalone process references for %s and exact Undo', operation => {
+  const before = instantDenseWorkspace(0)
+  const action = before.data.actions.find(item => item.id === 'dense-action-0')!
+  delete action.opportunityId
+  const node = before.data.scheduleNodes!.find(item => item.relatedActionIds.includes(action.id))!
+  delete node.opportunityId
+  node.processId = 'standalone-process'
+  before.data.processes.push({ id: node.processId, company: 'Synthetic standalone company', role: 'Engineer', stage: 'interview', stageLabel: 'Interview' })
+  const command: UserDomainCommand = operation === 'action'
+    ? { commandId: 'standalone-action', kind: 'set_action_status', actionId: action.id, status: 'done' }
+    : operation === 'reschedule' ? { commandId: 'standalone-reschedule', kind: 'reschedule_occurrence', occurrenceId: node.occurrenceId,
+      temporal: { shape: 'deadline', precision: 'datetime', timezone: 'UTC', deadlineAt: '2026-10-02T15:59:59Z', resolutionBasis: 'user_asserted' } }
+      : { commandId: `standalone-${operation}`, kind: operation === 'complete' ? 'complete_occurrence' : 'cancel_occurrence', occurrenceId: node.occurrenceId }
+  const full = applyUserDomainCommand(before, command, INSTANT_NOW)
+  expect(full.status).toBe('APPLIED')
+  if (full.status !== 'APPLIED') return
+  const projected = interactionProjection(before, command, 1204, INSTANT_NOW)
+  const local = applyWorkspaceDelta(before, projected.delta)
+  expect(local.data).toEqual(full.snapshot.data)
+  const undone = applyWorkspaceDelta(local, undoInteractionProjection(local, command, projected.compensation, projected.delta, 1205, INSTANT_NOW))
+  expect(undone.data).toEqual(applyDomainCompensation(full.snapshot, full.compensation!, INSTANT_NOW).data)
+})
+
+it('closes action event references without an action opportunity and retains derived node identity', () => {
+  const raw = instantDenseWorkspace(0)
+  const action = raw.data.actions.find(item => item.id === 'dense-action-0')!
+  delete action.opportunityId
+  action.processEventId = 'explicit-event'
+  raw.data.processEvents.push({ id: action.processEventId, opportunityId: 'dense-job-0', company: 'Synthetic', role: 'Engineer',
+    type: 'interview_invite', occurredAt: INSTANT_NOW.toISOString(), dueAt: '2026-10-02T10:00:00Z', source: 'manual',
+    createdAt: INSTANT_NOW.toISOString(), updatedAt: INSTANT_NOW.toISOString() })
+  const before = upgradeSnapshotToLatest(raw)
+  const command: UserDomainCommand = { commandId: 'explicit-event-action', kind: 'set_action_status', actionId: action.id, status: 'done' }
+  const full = applyUserDomainCommand(before, command, INSTANT_NOW)
+  expect(full.status).toBe('APPLIED')
+  if (full.status !== 'APPLIED') return
+  const projected = interactionProjection(before, command, 1204, INSTANT_NOW)
+  const local = applyWorkspaceDelta(before, projected.delta)
+  expect(local.data).toEqual(full.snapshot.data)
+  const undone = applyWorkspaceDelta(local, undoInteractionProjection(local, command, projected.compensation, projected.delta, 1205, INSTANT_NOW))
+  expect(undone.data).toEqual(applyDomainCompensation(full.snapshot, full.compensation!, INSTANT_NOW).data)
+})
