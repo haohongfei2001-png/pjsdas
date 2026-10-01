@@ -1,3 +1,4 @@
+import { interactionIsRecent } from './interactionActivity.js'
 import { captureAccountCacheLease, AccountCacheChangedError } from './accountCacheLease.js'
 import { isRecordedAccountProjection, assertLocalSnapshotCurrent } from '../db.js'
 import { exportLocalSnapshot, replaceLocalSnapshotFromCloud } from '../db.js'
@@ -113,7 +114,7 @@ export async function runCloudSync(userId: string, options: { passive?: boolean;
   const lease = connectedWorkspaceAuthorityEnabled() ? captureAccountCacheLease(userId) : undefined
   let targetVersion: string | undefined
   let projectingEquivalent = false
-  const hotPending = () => connectedWorkspaceAuthorityEnabled() && unresolvedPendingCommandCount(userId) > 0 && !getAccountCheckpoint(userId).conflict
+  const hotPending = () => connectedWorkspaceAuthorityEnabled() && (unresolvedPendingCommandCount(userId) > 0 || (options.passive && interactionIsRecent(userId))) && !getAccountCheckpoint(userId).conflict
   const assertCurrent = () => {
     lease?.assertCurrent()
     if (hotPending()) throw new AccountCacheChangedError()
@@ -128,7 +129,7 @@ export async function runCloudSync(userId: string, options: { passive?: boolean;
   // An ordinary in-flight command already owns local projection. Defer
   // expensive full read/fingerprint work until it settles; persisted conflicts
   // still classify against the latest server revision below.
-  if (connectedWorkspaceAuthorityEnabled() && unresolvedPendingCommandCount(userId) > 0 && !getAccountCheckpoint(userId).conflict) {
+  if (hotPending()) {
     return { kind: 'local_pending', version: getAccountCheckpoint(userId).lastSyncedVersion }
   }
 

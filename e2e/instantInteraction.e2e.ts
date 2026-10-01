@@ -929,3 +929,88 @@ test('proven cleared cache hydrates a known rejected rollback obligation without
   expect(row?.status).toBe('todo')
   await page.reload(); await expect(page.locator('[data-action-id="dense-action-0"]')).toBeVisible()
 })
+
+
+test('mirror-only Undo never resurrects an already rejected predecessor', async ({ page, context }) => {
+  const server = await setup(context); server.setDelay(50); await start(page); server.denyNext()
+  await page.evaluate(async () => {
+    const api = await import('/pjsdas/src/db.ts'), client = await import('/pjsdas/src/cloud/instantCommandClient.ts'), auth = await import('/pjsdas/src/cloud/authoritativeCommandClient.ts')
+    Object.defineProperty(navigator, 'onLine', { configurable: true, get: () => false })
+    await client.beginInstantCommand('instant-owner', await api.exportLocalSnapshot(), { commandId: 'rejected-mirror-parent', kind: 'set_action_status', actionId: 'dense-action-0', status: 'done' })
+    const parent = (await api.readCommandInteraction('instant-owner', 'rejected-mirror-parent'))!
+    const delta = (await import('/pjsdas/src/cloud/interactionProjection.ts')).undoInteractionProjection(await api.exportLocalSnapshot(), parent.command, parent.compensation, parent.delta, 1204)
+    auth.journalConnectedInteraction('instant-owner', { commandId: 'rejected-mirror-undo', targetCommandId: parent.commandId, baseRevision: 1204,
+      interactionDelta: delta, interactionPredecessors: [parent.commandId] })
+    await new Promise(resolve => setTimeout(resolve, 0))
+    Object.defineProperty(navigator, 'onLine', { configurable: true, get: () => true })
+    await client.recoverInstantInteraction('instant-owner', parent.commandId)
+    await client.recoverInstantInteraction('instant-owner', 'rejected-mirror-undo')
+  })
+  await expect.poll(() => pendingCount(page)).toBe(0)
+  expect(server.sent).toEqual(['rejected-mirror-parent'])
+  const local = await page.evaluate(async () => ({ action: await (await (await import('/pjsdas/src/db.ts')).dbPromise).get('actions', 'dense-action-0'),
+    journal: await (await import('/pjsdas/src/db.ts')).readCommandInteraction('instant-owner', 'rejected-mirror-undo') }))
+  expect(local.action?.status).toBe('todo'); expect(local.journal?.state).toBe('rejected')
+  await page.reload(); await expect(page.locator('[data-action-id="dense-action-0"]')).toBeVisible()
+})
+
+test('cleared-cache rejection releases a conservatively quarantined independent mirror', async ({ page, context }) => {
+  const server = await setup(context); server.setDelay(50); await start(page); server.denyNext()
+  await page.evaluate(async () => {
+    const api = await import('/pjsdas/src/db.ts'), client = await import('/pjsdas/src/cloud/instantCommandClient.ts')
+    Object.defineProperty(navigator, 'onLine', { configurable: true, get: () => false })
+    await client.beginInstantCommand('instant-owner', await api.exportLocalSnapshot(), { commandId: 'cleared-quarantine-root', kind: 'set_date_capacity', date: '2026-10-01', minutes: 300 })
+    await client.beginInstantCommand('instant-owner', await api.exportLocalSnapshot(), { commandId: 'cleared-quarantine-dependent', kind: 'set_date_capacity', date: '2026-10-01', minutes: 240 })
+    await client.beginInstantCommand('instant-owner', await api.exportLocalSnapshot(), { commandId: 'cleared-quarantine-independent', kind: 'set_action_status', actionId: 'dense-action-0', status: 'done' })
+    await new Promise(resolve => setTimeout(resolve, 0))
+    const getAll = IDBIndex.prototype.getAll; let armed = true
+    IDBIndex.prototype.getAll = function(...args: Parameters<IDBIndex['getAll']>) {
+      if (this.name === 'by-account-state' && armed) { armed = false; throw new Error('Synthetic rejection journal unavailable') }
+      return getAll.apply(this, args)
+    }
+    Object.defineProperty(navigator, 'onLine', { configurable: true, get: () => true })
+    try { await client.recoverInstantInteraction('instant-owner', 'cleared-quarantine-root') } finally { IDBIndex.prototype.getAll = getAll }
+    const mirrors = JSON.parse(localStorage.getItem('pjsdas-cgr01-pending:instant-owner') ?? '[]')
+    if (mirrors.find((item: any) => item.commandId === 'cleared-quarantine-independent')?.status !== 'rollback_pending') throw new Error('Independent quarantine not reproduced')
+    const local = await api.exportLocalSnapshot(), data: any = { ...local.data }
+    for (const key of Object.keys(data)) data[key] = Array.isArray(data[key]) ? [] : undefined
+    await api.replaceLocalSnapshotFromCloud({ ...local, data })
+    ;(await import('/pjsdas/src/cloud/syncState.ts')).patchAccountCheckpoint('instant-owner', { clearedCacheFingerprint:
+      await (await import('/pjsdas/src/cloud/workspaceFingerprint.ts')).fingerprintWorkspace(await api.exportLocalSnapshot()) })
+    await client.recoverInstantInteraction('instant-owner', 'cleared-quarantine-root')
+    await client.recoverInstantInteraction('instant-owner', 'cleared-quarantine-independent')
+  })
+  await expect.poll(() => pendingCount(page)).toBe(0)
+  expect(server.sent).toEqual(['cleared-quarantine-root', 'cleared-quarantine-independent'])
+  const local = await page.evaluate(async () => (await (await import('/pjsdas/src/db.ts')).exportLocalSnapshot()))
+  expect(local.data.actions.find(action => action.id === 'dense-action-0')?.status).toBe('done')
+  expect(local.data.timePlanning).toEqual(server.snapshot.data.timePlanning)
+})
+
+
+test('continuous settled commands defer passive full reads while explicit refresh remains available', async ({ page, context }) => {
+  const server = await setup(context); server.setDelay(50)
+  await start(page)
+  await page.waitForTimeout(150)
+  const initialReads = server.readCount
+  for (let index = 0; index < 3; index++) {
+    await page.locator('[data-action-id="dense-action-0"] .tsui-done-action').click()
+    await expect(page.locator('[data-action-id="dense-action-0"]')).toHaveCount(0)
+    await expect.poll(() => pendingCount(page)).toBe(0)
+    await page.getByRole('button', { name: '撤销', exact: true }).click()
+    await expect(page.locator('[data-action-id="dense-action-0"]')).toBeVisible()
+    await expect.poll(() => pendingCount(page)).toBe(0)
+    const deferred = await page.evaluate(async () => (await import('/pjsdas/src/cloud/authoritativeReadModelClient.ts'))
+      .refreshConnectedAuthoritativeCache('instant-owner', { passive: true }))
+    expect(deferred.state).toBe('pending_operations')
+  }
+  expect(server.readCount).toBe(initialReads)
+  const explicit = await page.evaluate(async () => (await import('/pjsdas/src/cloud/authoritativeReadModelClient.ts'))
+    .refreshConnectedAuthoritativeCache('instant-owner'))
+  expect(explicit.state).toBe('updated')
+  expect(explicit.workspaceVersion).toBe('txn:1210')
+  await expect(page.locator('[data-action-id="dense-action-0"]')).toBeVisible()
+  expect(server.readCount).toBe(initialReads + 1)
+  expect(server.sent).toHaveLength(6)
+  expect(server.snapshot.data.actions[0].status).toBe('todo')
+})

@@ -175,8 +175,9 @@ test('lost response after server commit survives reload and recovers one durable
     }
     if (body.action === 'command') {
       commandCalls += 1
-      const target = state.snapshot.data.actions.find((item) => item.id === 'A-action-1')
-      if (target) target.status = 'done'
+      const applied = applyUserDomainCommand(state.snapshot, body.command.value, new Date('2026-09-23T01:00:00Z'))
+      if (applied.status !== 'APPLIED') throw new Error('Expected actual completion with audit')
+      state.snapshot = applied.snapshot
       state.revision += 1
       const receipt = {
         commandId: body.commandId,
@@ -184,6 +185,7 @@ test('lost response after server commit survives reload and recovers one durable
         status: 'COMMITTED',
         revision: state.revision,
         undoAvailable: true,
+        undoCompensation: applied.compensation,
         affectedObjects: [{ type: 'action', id: 'A-action-1' }],
         result: { type: 'domain', status: 'APPLIED', summary: 'Completed A-action-1.' },
       }

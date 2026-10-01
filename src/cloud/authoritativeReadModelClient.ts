@@ -1,3 +1,4 @@
+import { interactionIsRecent } from './interactionActivity.js'
 import { captureAccountCacheLease, AccountCacheChangedError } from './accountCacheLease.js'
 import { isRecordedAccountProjection, assertLocalSnapshotCurrent, exportLocalSnapshot, replaceLocalSnapshotFromCloud } from '../db.js'
 import { fetchConnectedRemoteWorkspace } from './connectedWorkspaceRepository.js'
@@ -49,14 +50,15 @@ function markFresh(accountKey: string, version: string, fingerprint: string, pro
 
 export async function refreshConnectedAuthoritativeCache(
   accountKey: string,
+  options: { passive?: boolean } = {},
 ): Promise<AuthoritativeReadFreshness> {
   const lease = captureAccountCacheLease(accountKey)
   const startedAt = Date.now()
-  const hotPending = () => unresolvedPendingCommandCount(accountKey) > 0 && !getAccountCheckpoint(accountKey).conflict
+  const hotPending = () => (unresolvedPendingCommandCount(accountKey) > 0 || (options.passive && interactionIsRecent(accountKey))) && !getAccountCheckpoint(accountKey).conflict
   const pendingResult = (): AuthoritativeReadFreshness => ({ state: 'pending_operations', workspaceVersion: getAccountCheckpoint(accountKey).lastSyncedVersion ?? 'pending',
     observedAt: new Date().toISOString(), latencyMs: Date.now() - startedAt, changed: false })
   const assertReadCurrent = () => { lease.assertCurrent(); if (hotPending()) throw new AccountCacheChangedError() }
-  if (unresolvedPendingCommandCount(accountKey) > 0) {
+  if (unresolvedPendingCommandCount(accountKey) > 0 || (options.passive && interactionIsRecent(accountKey))) {
     const initialCheckpoint = getAccountCheckpoint(accountKey)
     if (!initialCheckpoint.conflict) return { state: 'pending_operations', workspaceVersion: initialCheckpoint.lastSyncedVersion ?? 'pending',
       observedAt: new Date().toISOString(), latencyMs: 0, changed: false }

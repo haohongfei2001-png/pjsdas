@@ -158,6 +158,9 @@ test('ordinary compact confirmation and Undo stay incremental without command lo
     window.addEventListener('pjsdas:interaction-measure', event => (window as any).confirmationStages.push((event as CustomEvent).detail))
     new PerformanceObserver(list => (window as any).confirmationLongTasks.push(...list.getEntries().map(entry => ({ start: entry.startTime, duration: entry.duration })))).observe({ type: 'longtask' })
   })
+  // Optional diagnostic capture is separate from the strict unprofiled gate.
+  const cdp = process.env.INSTANT_CONFIRMATION_TRACE === '1' ? await context.newCDPSession(page) : undefined
+  if (cdp) await cdp.send('Tracing.start', { categories: 'devtools.timeline,v8.execute,disabled-by-default-v8.gc,blink.user_timing,disabled-by-default-devtools.timeline,disabled-by-default-v8.cpu_profiler', transferMode: 'ReturnAsStream' })
   const pending = () => page.evaluate(() => JSON.parse(localStorage.getItem('pjsdas-cgr01-pending:instant-owner') ?? '[]').length)
   for (let index = 0; index < 10; index++) {
     await page.locator('[data-action-id="dense-action-0"] .tsui-done-action').click()
@@ -167,14 +170,23 @@ test('ordinary compact confirmation and Undo stay incremental without command lo
     await expect(page.locator('[data-action-id="dense-action-0"]')).toBeVisible()
     await expect.poll(pending).toBe(0)
   }
-  const measured = await page.evaluate(() => ({ stages: (window as any).confirmationStages, longTasks: (window as any).confirmationLongTasks }))
+  if (cdp) {
+    const complete = new Promise<any>(resolve => cdp.once('Tracing.tracingComplete', resolve))
+    await cdp.send('Tracing.end'); const { stream } = await complete
+    let body = ''
+    while (true) { const chunk = await cdp.send('IO.read', { handle: stream }); body += chunk.data; if (chunk.eof) break }
+    await cdp.send('IO.close', { handle: stream })
+    await info.attach('compact-confirmation-native-trace.json', { body, contentType: 'application/json' })
+  }
+  const measured = await page.evaluate(() => ({ stages: (window as any).confirmationStages, longTasks: (window as any).confirmationLongTasks,
+    phaseEntries: performance.getEntriesByType('measure').filter(entry => entry.name.startsWith('todayaction:')).map(entry => ({ name: entry.name, start: entry.startTime, duration: entry.duration })) }))
+  await info.attach('compact-confirmation-stages.json', { body: JSON.stringify({ ...measured, payloadBytes: server.payloadBytes, serverExecutionMs: server.serverExecutionMs }, null, 2), contentType: 'application/json' })
   expect(server.sent).toHaveLength(20)
   expect(new Set(server.sent).size).toBe(20)
   expect(measured.stages.filter((entry: any) => entry.phase === 'network-confirmation')).toHaveLength(20)
   expect(Math.max(...server.payloadBytes)).toBeLessThan(150000)
   expect(measured.longTasks.filter((entry: any) => entry.duration > 50)).toEqual([])
   expect(server.snapshot.data.timeline!.length).toBeGreaterThanOrEqual(3940)
-  await info.attach('compact-confirmation-stages.json', { body: JSON.stringify({ ...measured, payloadBytes: server.payloadBytes, serverExecutionMs: server.serverExecutionMs }, null, 2), contentType: 'application/json' })
   console.log('INSTANT_CONFIRMATION_BUDGET:' + JSON.stringify({ commands: server.sent.length, maxPayloadBytes: Math.max(...server.payloadBytes), longTasks: measured.longTasks }))
   await context.close()
 })

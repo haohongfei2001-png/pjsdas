@@ -535,6 +535,9 @@ export function createAuthoritativeCommandExecutor(options: TransactionalWorkspa
         }
       }
 
+      // Receipts must describe the normalized facts actually submitted to
+      // storage, including derived schedule nodes and temporal precision.
+      evaluated.snapshot = upgradeSnapshotToLatest(evaluated.snapshot)
       const affectedObjects = diffCommandObjects(current.snapshot, evaluated.snapshot)
       const affectedFields = diffCommandFields(current.snapshot, evaluated.snapshot, affectedObjects)
       const conflictScopes = commandConflictScopes(affectedObjects, intentFields)
@@ -697,7 +700,7 @@ export function createAuthoritativeCommandExecutor(options: TransactionalWorkspa
       }
 
       const now = new Date()
-      const next = applyCompensation(current.snapshot, target.compensation, now)
+      const next = upgradeSnapshotToLatest(applyCompensation(current.snapshot, target.compensation, now))
       const affectedObjects = diffCommandObjects(current.snapshot, next)
       const committed = await store.commitAuthoritativeForUser({
         userId: principal.userId,

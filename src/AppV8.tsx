@@ -1,3 +1,4 @@
+import { interactionIsRecent } from './cloud/interactionActivity.js'
 import { todayScheduleSnapshot, patchConsumerSnapshot } from './today/consumerScheduleSnapshot.js'
 import { interactionMetric } from './cloud/interactionMetrics.js'
 import { beginInstantCommand, beginInstantUndo, recoverInstantInteraction, type InteractionEvent } from './cloud/instantCommandClient.js'
@@ -246,6 +247,9 @@ export default function AppV8() {
     return () => window.removeEventListener('pjsdas:interaction', update)
   }, [cloud.session?.user.id])
 
+  const todayFreshnessRef = useRef(todayFreshness)
+  todayFreshnessRef.current = todayFreshness
+
   async function setTodayCapacity(minutes: number) {
     if (!Number.isInteger(minutes) || minutes < 0 || minutes > 1440) throw new Error('今日可用时间应在 0 到 24 小时之间。')
     const date = localDateKey(now, timezone)
@@ -367,15 +371,17 @@ export default function AppV8() {
     let active = true
     let running = false
     const refresh = async (initial = false) => {
-      if (running) return
+      if (running || (interactionIsRecent(accountKey) && !getAccountCheckpoint(accountKey).conflict)) return
+      const previousFreshness = todayFreshnessRef.current
       running = true
       setTodayFreshness((current) => ({
         ...current,
         state: workspaceEmpty && (initial || current.state === 'unavailable') ? 'initial' : 'refreshing',
       }))
       try {
-        const result = await refreshConnectedAuthoritativeCache(accountKey)
+        const result = await refreshConnectedAuthoritativeCache(accountKey, { passive: true })
         if (!active) return
+        if (interactionIsRecent(accountKey) && !getAccountCheckpoint(accountKey).conflict) { setTodayFreshness(previousFreshness); return }
         if (result.state === 'current' || result.state === 'updated') {
           setTodayFreshness({
             state: result.state,

@@ -6,6 +6,7 @@ import { BACKEND, seedSession, health, cors } from './todayWorkspace.js'
 export async function setupInstantServer(context: BrowserContext, historyRows = 3940) {
   let snapshot = instantDenseWorkspace(historyRows)
   let revision = 1204
+  let readCount = 0
   let delay = 3000
   let serverNow = INSTANT_NOW
   const sent: string[] = []
@@ -23,7 +24,7 @@ export async function setupInstantServer(context: BrowserContext, historyRows = 
     if (route.request().url().endsWith('/api/health')) return cors(route, health())
     const body = route.request().postDataJSON()
     const base = () => ({ workspaceId: 'instant-workspace', revision, workspaceVersion: `txn:${revision}`, schemaVersion: snapshot.version, snapshot })
-    if (body.action === 'read') return cors(route, base())
+    if (body.action === 'read') { readCount++; return cors(route, base()) }
     if (body.action === 'receipt') {
       const receipt = receipts.get(body.commandId)
       return cors(route, body.projection === 'delta-v1' ? { found: !!receipt, ...receipt } : { ...base(), found: !!receipt, receipt: receipt?.receipt })
@@ -51,5 +52,5 @@ export async function setupInstantServer(context: BrowserContext, historyRows = 
     }
     return cors(route, { code: 'UNEXPECTED' }, 400)
   })
-  return { setFullResponses: (value: boolean) => { fullResponses = value }, sent, baseRevisions, payloadBytes, serverExecutionMs, setNow: (value: Date) => { serverNow = value }, denyNext: (status = 422) => { deny = status }, loseNextResponse: () => { loseResponse = true }, backgroundGmail: () => { snapshot.data.timeline!.push({ id: 'instant-gmail-audit', kind: 'opportunity_updated', category: 'opportunity', source: 'user_action', title: 'Independent source fact', occurredAt: INSTANT_NOW.toISOString(), recordedAt: INSTANT_NOW.toISOString() }); snapshot.data.opportunities[10].role = 'Independent Gmail role'; revision++ }, setDelay: (value: number) => { delay = value }, get snapshot() { return snapshot } }
+  return { get readCount() { return readCount }, setFullResponses: (value: boolean) => { fullResponses = value }, sent, baseRevisions, payloadBytes, serverExecutionMs, setNow: (value: Date) => { serverNow = value }, denyNext: (status = 422) => { deny = status }, loseNextResponse: () => { loseResponse = true }, backgroundGmail: () => { snapshot.data.timeline!.push({ id: 'instant-gmail-audit', kind: 'opportunity_updated', category: 'opportunity', source: 'user_action', title: 'Independent source fact', occurredAt: INSTANT_NOW.toISOString(), recordedAt: INSTANT_NOW.toISOString() }); snapshot.data.opportunities[10].role = 'Independent Gmail role'; revision++ }, setDelay: (value: number) => { delay = value }, get snapshot() { return snapshot } }
 }

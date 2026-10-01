@@ -1,3 +1,4 @@
+import { applyWorkspaceDelta, type WorkspaceDelta } from '../src/workspaceDelta.js'
 import { historyActionWorkspace } from './fixtures/historyActionWorkspace.js'
 import { describe, expect, it, vi } from 'vitest'
 import { createAuthoritativeCommandExecutor } from '../gateway/authoritativeCommands.js'
@@ -637,4 +638,15 @@ describe('CGR-01 authoritative command executor', () => {
     expect(h.ledger).toHaveLength(0)
   })
 
+})
+
+
+it('compact manual action receipt projects the exact committed derived schedule node', async () => {
+  const h = harness(), before = h.state().current, commandId = 'manual-derived-schedule'
+  const result = await h.executor.execute(h.principal, { commandId, baseRevision: 1, command: { type: 'domain', value: {
+    commandId, kind: 'add_manual_action', title: 'Prepare interview', dueAt: '2026-10-02T10:00:00Z' } } })
+  const delta = result.receipt!.projectionDelta as WorkspaceDelta
+  const projected = applyWorkspaceDelta(before, delta)
+  expect(h.state().current.data.scheduleNodes!.some(node => node.relatedActionIds.includes(projected.data.actions.find(action => action.title === 'Prepare interview')!.id))).toBe(true)
+  expect(projected.data).toEqual(h.state().current.data)
 })
