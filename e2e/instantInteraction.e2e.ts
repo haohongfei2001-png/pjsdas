@@ -235,8 +235,18 @@ test('rejected child restores the confirmed parent server fields instead of its 
 
 test('quarantined predecessor rejects a later dependent and resumes safe rollback when reads return', async ({ page, context }) => {
   const server = await setup(context); server.setDelay(50)
-  await start(page); server.denyNext()
-  await page.evaluate(async () => {
+  // This probe owns the recovery order. A real background resume can otherwise
+  // finish the deliberately quarantined rollback between exporting reject-later's
+  // preimage and persisting it, which correctly refuses that stale local edit.
+  // Freeze before navigation so no startup resume is already in flight. The
+  // authoritative bootstrap, network responses and IndexedDB remain live;
+  // latency and automatic-reconnect tests keep their real browser timers.
+  await page.clock.install({ time: new Date(INSTANT_NOW.getTime() - 60_000) })
+  await page.clock.pauseAt(INSTANT_NOW)
+  await page.goto('/pjsdas/today')
+  await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem('pjsdas-google-drive-sync-state-v2') ?? '{}').accounts?.['instant-owner']?.lastSyncedVersion)).toBe('txn:1204')
+  server.denyNext()
+  try { await page.evaluate(async () => {
     const api = await import('/pjsdas/src/db.ts'), client = await import('/pjsdas/src/cloud/instantCommandClient.ts')
     Object.defineProperty(navigator, 'onLine', { configurable: true, get: () => false })
     for (const [commandId, minutes] of [['reject-parent', 300], ['reject-child', 240]] as const)
@@ -249,13 +259,22 @@ test('quarantined predecessor rejects a later dependent and resumes safe rollbac
     Object.defineProperty(navigator, 'onLine', { configurable: true, get: () => true })
     try { await client.recoverInstantInteraction('instant-owner', 'reject-parent') } finally { IDBIndex.prototype.getAll = getAll }
     Object.defineProperty(navigator, 'onLine', { configurable: true, get: () => false })
+    const parent = await api.readCommandInteraction('instant-owner', 'reject-parent')
+    const child = await api.readCommandInteraction('instant-owner', 'reject-child')
+    const quarantined = JSON.parse(localStorage.getItem('pjsdas-cgr01-pending:instant-owner') ?? '[]')
+    if (armed || parent?.state !== 'rollback_pending' || child?.state !== 'active'
+      || quarantined.length !== 2 || quarantined.some((item: any) => item.status !== 'rollback_pending' || item.rejectionRoot !== 'reject-parent'))
+      throw new Error('The injected journal read must leave the parent and child quarantined before the later dependent is created.')
     await client.beginInstantCommand('instant-owner', await api.exportLocalSnapshot(), { commandId: 'reject-later', kind: 'set_date_capacity', date: '2026-10-01', minutes: 540 })
     Object.defineProperty(navigator, 'onLine', { configurable: true, get: () => true })
     await client.recoverInstantInteraction('instant-owner', 'reject-later')
     await client.recoverInstantInteraction('instant-owner', 'reject-parent')
     await client.recoverInstantInteraction('instant-owner', 'reject-child')
     await client.beginInstantCommand('instant-owner', await api.exportLocalSnapshot(), { commandId: 'safe-next', kind: 'set_date_capacity', date: '2026-10-01', minutes: 480 })
-  })
+  }) } finally {
+    // The independent follow-on command still completes through automatic dispatch.
+    await page.clock.resume()
+  }
   await expect.poll(() => pendingCount(page)).toBe(0)
   expect(server.sent).toEqual(['reject-parent', 'safe-next'])
   await expect(page.locator('.tsui-capacity summary')).toContainText('8 小时')
