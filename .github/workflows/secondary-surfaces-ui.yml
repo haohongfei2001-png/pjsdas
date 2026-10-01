@@ -32,7 +32,10 @@ jobs:
           baseline_dir="$RUNNER_TEMP/secondary-ui-base"
           git worktree add --detach "$baseline_dir" "$TA_SECONDARY_BASE"
           copy_baseline_evidence() {
-            for name in secondary-ui-before secondary-ui-report test-results; do
+            if [ -d "$baseline_dir/secondary-ui-before" ]; then
+              cp -R "$baseline_dir/secondary-ui-before" "$GITHUB_WORKSPACE/"
+            fi
+            for name in secondary-ui-report test-results; do
               if [ -d "$baseline_dir/$name" ]; then
                 mkdir -p "$GITHUB_WORKSPACE/secondary-baseline-evidence"
                 cp -R "$baseline_dir/$name" "$GITHUB_WORKSPACE/secondary-baseline-evidence/"
@@ -46,7 +49,6 @@ jobs:
           cd "$baseline_dir"
           GITHUB_SHA="$TA_SECONDARY_BASE" PJSDAS_VITE_BASE=/pjsdas/ VITE_PJSDAS_CONNECTED_AUTHORITY=transactional npm run build
           TA_SECONDARY_PHASE=before npx playwright test --config=playwright.secondary-ui.config.mts
-          cp -R secondary-ui-before "$GITHUB_WORKSPACE/secondary-ui-before"
       - name: Render the candidate and require unchanged main-page pixels
         run: |
           PJSDAS_VITE_BASE=/pjsdas/ VITE_PJSDAS_CONNECTED_AUTHORITY=transactional npm run build

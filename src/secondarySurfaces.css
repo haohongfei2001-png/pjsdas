@@ -128,12 +128,13 @@
 .job-detail-page .opportunity-detail-conclusion { margin: 0; }
 .job-detail-page .opportunity-detail-conclusion h3 { margin: 8px 0 10px; font-size: 1.0625rem; }
 .job-detail-page .opportunity-detail-process-summary { align-self: stretch; align-content: start; grid-template-columns: 1fr; gap: 12px; }
-.job-detail-page .opportunity-detail-process-summary > div { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; padding: 0; border: 0; background: transparent; }
+.job-detail-page .opportunity-detail-process-summary > div { display: flex; flex-direction: row; align-items: baseline; justify-content: space-between; gap: 12px; padding: 0; border: 0; background: transparent; }
 .job-detail-page .opportunity-detail-process-summary strong { text-align: right; }
 .job-detail-page .opportunity-detail-primary-operation { gap: 14px; align-items: center; }
 .job-detail-page .opportunity-detail-primary-operation strong { line-height: 1.55; }
 .job-detail-page .opportunity-detail-progressive { display: grid; grid-column: 1 / -1; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; align-items: start; padding: 0; border: 0; border-radius: 0; background: transparent; }
 .job-detail-page .opportunity-detail-progressive > :is(details, .opportunity-detail-section) { min-width: 0; margin: 0; padding: 0 20px; border: 1px solid #e6eaf1; border-radius: 15px; background: #fff; }
+.job-detail-page .opportunity-detail-progressive > :only-child { grid-column: 1 / -1; }
 .job-detail-page .opportunity-detail-section > summary { padding: 17px 0; font-size: .875rem; font-weight: 650; }
 .job-detail-page .job-detail-related { grid-column: 1 / -1; display: flex; align-items: center; flex-wrap: wrap; gap: 10px 20px; min-height: 0; }
 .job-detail-page .job-detail-related h2 { margin: 0; font-size: .9375rem; }
@@ -202,6 +203,7 @@
 .cgr-main.surface-main > .cgr-missing-opportunity { width: 100%; max-width: 1120px; margin: 0 auto; box-sizing: border-box; border: 1px solid #e6eaf1; border-radius: 15px; padding: 24px; background: #fff; color: #1b2540; }
 .cgr-missing-opportunity h2 { font-size: 1.5rem; line-height: 1.4; }
 .cgr-missing-opportunity p { color: #5d6b82; font-size: .875rem; line-height: 1.6; }
+.cgr-missing-opportunity .surface-tool-row button { min-height: 44px; padding: 9px 14px; border: 1px solid #dce5fa; border-radius: 9px; background: #edf2ff; color: #315ec5; font: inherit; font-size: .8125rem; }
 
 @media (max-width: 800px) {
   .job-detail-page .job-detail-surface { grid-template-columns: minmax(0, 1fr); }
@@ -229,4 +231,11 @@
   .tsui-schedule-detail, .ultimate-decisions-page .ultimate-decision-card { padding: 16px; }
   .ultimate-decisions-page .ultimate-decision-choices { grid-template-columns: minmax(0, 1fr); }
   .backup-dialog .backup-actions-grid, .event-dock .event-form-grid { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 360px) {
+  /* At 200% text, give the full title/context width instead of squeezing it
+   * beside the close control. The dialog remains independently scrollable. */
+  .cgr-capture-sheet .cgr-capture-header { flex-direction: column-reverse; gap: 12px; }
+  .cgr-capture-sheet .cgr-capture-header > div { width: 100%; }
+  .cgr-capture-sheet .cgr-capture-header > button { align-self: flex-end; }
 }
