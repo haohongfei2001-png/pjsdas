@@ -30,7 +30,7 @@ test('shell hides stale version copy and Jobs uses the approved library with sec
   // Secondary surfaces use the localized section heading rather than the
   // decorative legacy English eyebrow; the status/safety checks stay below.
   await expect(page.getByRole('heading', { name: '账号与跨设备数据', exact: true })).toBeVisible()
-  await expect(page.locator('.cloud-connection-impact')).toContainText('其他设备看不到这些修改')
-  await expect(page.locator('.cloud-settings-card').filter({ has: page.locator('.cloud-connection-impact') })).not.toContainText(/Controlled production|Legacy access mode|Local IndexedDB|Connected revision/)
+  await expect(page.getByRole('region', { name: '账号与跨设备数据', exact: true }).locator('.cloud-connection-impact')).toContainText('其他设备看不到这些修改')
+  await expect(page.getByRole('region', { name: '账号与跨设备数据', exact: true })).not.toContainText(/Controlled production|Legacy access mode|Local IndexedDB|Connected revision/)
   await expect(page.getByText(/V1\.9/)).toHaveCount(0)
 })

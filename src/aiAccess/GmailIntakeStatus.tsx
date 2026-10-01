@@ -13,7 +13,7 @@ function boundaryText(text: string, zh: boolean) {
 
 export default function GmailIntakeStatus({ zh, enabled, lastSuccessAt, lastError }: {
   zh: boolean
-  enabled: boolean
+  enabled: boolean | undefined
   lastSuccessAt?: string
   lastError?: string
 }) {
@@ -49,9 +49,11 @@ export default function GmailIntakeStatus({ zh, enabled, lastSuccessAt, lastErro
     now, expectedSources: expectedSourcesFromRegistry(timeline).filter((source) => source.sourceKind === 'gmail' && source.sourceId === 'gmail:primary'),
   }), [timeline, now])
   const source = coverage.sources.find((item) => item.sourceKind === 'gmail' && item.sourceId === 'gmail:primary')
-  if (!enabled && !source && !lastSuccessAt && !lastError) return null
+  if (enabled === false && !source && !lastSuccessAt && !lastError) return null
 
-  const transport = !loaded
+  const transport = enabled === undefined
+    ? (zh ? '状态待核对' : 'Status unverified')
+    : !loaded
     ? (zh ? '正在核对' : 'Checking')
     : readError
       ? (zh ? '本机结果不可读取' : 'Local results unavailable')

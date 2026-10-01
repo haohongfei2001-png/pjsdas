@@ -1,13 +1,19 @@
 import { expect, test } from '@playwright/test'
+import { createIngestionLedgerTimeline } from '../src/ingestion.js'
 import { BACKEND, cors, health, seedSession, workspace } from './fixtures/todayWorkspace.js'
 
 const now = '2026-10-02T02:00:00.000Z'
-for (const state of ['enabled', 'partial', 'error', 'disabled'] as const) {
+for (const state of ['enabled', 'partial', 'error', 'disabled', 'unverified'] as const) {
   for (const width of [1440, 390, 320]) test(`settings hierarchy ${state} at ${width}`, async ({ page }, info) => {
     await seedSession(page.context())
     await page.clock.setFixedTime(new Date(now))
     await page.setViewportSize({ width, height: width < 600 ? 844 : 900 })
     const snapshot = workspace()
+    if (state === 'unverified') snapshot.data.timeline = [createIngestionLedgerTimeline({
+      sourceKind: 'gmail', sourceId: 'gmail:primary', sourceRecordId: 'synthetic-historical-mail',
+      runId: 'synthetic-historical-run', recordType: 'recruiting_message', outcome: 'unresolved',
+      fingerprint: 'synthetic-fingerprint', receivedAt: now, accountedAt: now,
+    })]
     const calls: unknown[] = []
     await page.route(/https:\/\/[^/]+\.supabase\.co\//, route => route.abort())
     await page.route(BACKEND + '/**', route => {
@@ -17,6 +23,7 @@ for (const state of ['enabled', 'partial', 'error', 'disabled'] as const) {
       if (path === '/api/access') return cors(route, { authenticated: true, allowed: true, mode: 'allowlist', role: 'owner', email: 'synthetic@example.test' })
       if (path === '/api/automation-settings') {
         const body = request.postDataJSON()
+        if (state === 'unverified') return cors(route, { message: 'SYNTHETIC_STATUS_UNAVAILABLE' }, 503)
         if (body.action !== 'read') { calls.push(body); return cors(route, { message: 'SYNTHETIC_ACTION_FAILURE' }, 503) }
         return cors(route, { googleEmail: state === 'disabled' ? null : 'synthetic-long-workspace-identity@example.test', gmailScopeGranted: state !== 'disabled', gmailEnabled: state === 'enabled' || state === 'error', discoveryEnabled: state !== 'disabled', gmailLastSuccessAt: state === 'disabled' ? null : now, discoveryLastSuccessAt: null, gmailLastError: state === 'error' ? 'SYNTHETIC_AUTH_EXPIRED' : null, discoveryLastError: state === 'error' ? 'SYNTHETIC_DISCOVERY_TIMEOUT' : null })
       }
@@ -29,6 +36,13 @@ for (const state of ['enabled', 'partial', 'error', 'disabled'] as const) {
     if (width === 320) await page.evaluate(() => { document.documentElement.style.fontSize = '200%' })
     const gmail = page.locator('section[aria-labelledby="settings-gmail-heading"]')
     const discovery = page.locator('section[aria-labelledby="settings-discovery-heading"]')
+    if (state === 'unverified') {
+      await expect(page.getByRole('alert')).toContainText('后台来源状态暂时无法核对')
+      await expect(page.locator('#settings-workspace-heading').locator('..').locator('..').locator('.cloud-state')).toHaveText('状态待核对')
+      await expect(gmail.getByLabel('Gmail 来源结果')).toContainText('传输与对账：状态待核对')
+      await expect(gmail.getByLabel('Gmail 来源结果')).not.toContainText('传输与对账：已关闭')
+      for (const region of [gmail, discovery]) await expect(region.getByRole('alert')).toHaveCount(0)
+    }
     if (state === 'error') {
       await expect(gmail.getByText('新邮件进展可能未同步')).toBeVisible()
       await expect(discovery.getByText('新岗位可能延迟出现')).toBeVisible()
@@ -48,7 +62,8 @@ for (const state of ['enabled', 'partial', 'error', 'disabled'] as const) {
     if (state === 'enabled' && width === 390) {
       await gmail.getByRole('button', { name: '关闭自动跟踪' }).click()
       await expect(gmail.getByRole('alert')).toHaveText('SYNTHETIC_ACTION_FAILURE')
-      await expect(gmail.locator('.cloud-state')).toHaveText('已启用')
+      await expect(gmail.locator('.cloud-state')).toHaveText('状态待核对')
+      await expect(gmail.getByRole('button', { name: '关闭自动跟踪' })).toBeVisible()
       await expect(discovery.getByRole('alert')).toHaveCount(0)
       expect(calls).toEqual([{ gmailEnabled: false }])
     }

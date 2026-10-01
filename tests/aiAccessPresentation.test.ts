@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
-import { aiAccessConnectedMessage, aiAccessErrorMessage } from '../src/aiAccess/AiAccessContext.js'
+import { aiAccessConnectedMessage, aiAccessErrorMessage, aiAccessFailure, clearRecoveredStatusFailure } from '../src/aiAccess/AiAccessContext.js'
 
 const source = readFileSync(new URL('../src/aiAccess/AiAccessContext.tsx', import.meta.url), 'utf8')
 
@@ -32,7 +32,7 @@ describe('AI Access status presentation', () => {
     const successClearIndex = source.indexOf('clearPendingGoogleLinkState()', persistIndex)
     expect(successClearIndex).toBeGreaterThan(persistIndex)
 
-    expect(source).toMatch(/catch \(caught\) \{\n\s+clearPendingGoogleLinkState\(\)\n\s+setError\(aiAccessErrorMessage\(caught, lang\)\)/)
+    expect(source).toMatch(/catch \(caught\) \{\n\s+clearPendingGoogleLinkState\(\)\n\s+setError\(aiAccessErrorMessage\(caught, lang\), mode === 'gmail' \? 'gmail' : 'workspace'\)/)
     expect(source).toContain('clearPendingGoogleLinkState()\n        setError(aiAccessErrorMessage(caught, lang))')
   })
 })
@@ -48,5 +48,22 @@ describe('UU06 pending consent across OAuth upgrades', () => {
   it('consumes only the version captured at the new explicit Gmail enable interaction', () => {
     expect(gmailConsentForPending('gmail', 'uu06-v1')).toBe('uu06-v1')
     expect(gmailConsentForPending('gmail', 'unknown')).toBeUndefined()
+  })
+})
+
+
+describe('source-owned error records', () => {
+  it('a new status error cannot inherit a previous operation source', () => {
+    expect(aiAccessFailure('failed toggle', 'gmail')).toEqual({ message: 'failed toggle', source: 'gmail' })
+    expect(aiAccessFailure('failed refresh')).toEqual({ message: 'failed refresh', source: 'status' })
+  })
+})
+
+
+describe('successful status refresh recovery', () => {
+  it('clears stale refresh errors without discarding an operation error', () => {
+    expect(clearRecoveredStatusFailure(aiAccessFailure('status failed'))).toEqual(aiAccessFailure(''))
+    const gmail = aiAccessFailure('gmail failed', 'gmail')
+    expect(clearRecoveredStatusFailure(gmail)).toBe(gmail)
   })
 })
