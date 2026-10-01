@@ -130,7 +130,7 @@ test('definitive rejection rolls back only its own change and retains command pr
   expect(await pendingCount(page)).toBe(0)
 })
 
-test('known rejection with unavailable rollback archive never becomes a replayable unknown command', async ({ page, context }) => {
+test('known rejection with unavailable rollback archive stays untrusted and safely rolls back without replay', async ({ page, context }) => {
   const server = await setup(context); server.setDelay(700)
   await start(page); server.denyNext()
   await page.locator('[data-action-id="dense-action-0"] .tsui-done-action').click()
@@ -143,17 +143,176 @@ test('known rejection with unavailable rollback archive never becomes a replayab
       return put.apply(this, args)
     }
   })
-  await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem('pjsdas-cgr01-pending:instant-owner') ?? '[]')[0]?.status)).toBe('conflict')
-  await page.evaluate(async () => {
-    ;(window as any).restoreArchive()
-    const pending = JSON.parse(localStorage.getItem('pjsdas-cgr01-pending:instant-owner') ?? '[]')[0]
-    await (await import('/pjsdas/src/cloud/instantCommandClient.ts')).recoverInstantInteraction('instant-owner', pending.commandId)
+  await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem('pjsdas-cgr01-pending:instant-owner') ?? '[]')[0]?.status)).toBe('rollback_pending')
+  const untrusted = await page.evaluate(async () => {
+    const db = await import('/pjsdas/src/db.ts')
+    const proof = await db.isRecordedAccountProjection('instant-owner', await db.exportLocalSnapshot())
+    const refresh = await (await import('/pjsdas/src/cloud/authoritativeReadModelClient.ts')).refreshConnectedAuthoritativeCache('instant-owner')
+    return { proof, state: refresh.state }
   })
+  expect(untrusted).toEqual({ proof: false, state: 'pending_operations' })
+  await page.evaluate(() => (window as any).restoreArchive())
+  await page.reload()
+  await expect.poll(() => pendingCount(page)).toBe(0)
+  await expect(page.locator('[data-action-id="dense-action-0"]')).toBeVisible()
   expect(server.sent).toHaveLength(1)
   expect(server.snapshot.data.actions[0].status).toBe('todo')
+})
+
+test('repeated complete and Undo chain settles transitive dependencies after reconnect', async ({ page, context }) => {
+  const server = await setup(context); server.setDelay(50)
+  await start(page)
+  await page.evaluate(() => Object.defineProperty(navigator, 'onLine', { configurable: true, get: () => false }))
+  for (let i = 0; i < 2; i++) {
+    await page.locator('[data-action-id="dense-action-0"] .tsui-done-action').click()
+    await expect(page.locator('[data-action-id="dense-action-0"]')).toHaveCount(0)
+    await page.getByRole('button', { name: '撤销', exact: true }).click()
+    await expect(page.locator('[data-action-id="dense-action-0"]')).toBeVisible()
+  }
+  expect(await pendingCount(page)).toBe(4)
+  await page.evaluate(async () => {
+    Object.defineProperty(navigator, 'onLine', { configurable: true, get: () => true })
+    await (await import('/pjsdas/src/cloud/authoritativeCommandClient.ts')).replayAccountPendingOperations('instant-owner')
+  })
+  await expect.poll(() => pendingCount(page)).toBe(0)
+  expect(server.sent).toHaveLength(4)
+  expect(new Set(server.sent).size).toBe(4)
+  expect(server.snapshot.data.actions[0].status).toBe('todo')
+  await page.reload(); await expect(page.locator('[data-action-id="dense-action-0"]')).toBeVisible()
+})
+
+test('confirmed parent retries compact projection after one failed write without blocking its queued child', async ({ page, context }) => {
+  const server = await setup(context); server.setDelay(50)
+  await start(page)
+  await page.evaluate(async () => {
+    const api = await import('/pjsdas/src/db.ts'), client = await import('/pjsdas/src/cloud/instantCommandClient.ts')
+    Object.defineProperty(navigator, 'onLine', { configurable: true, get: () => false })
+    for (const [commandId, minutes] of [['capacity-parent', 300], ['capacity-child', 240]] as const)
+      await client.beginInstantCommand('instant-owner', await api.exportLocalSnapshot(), { commandId, kind: 'set_date_capacity', date: '2026-10-01', minutes })
+    const put = IDBObjectStore.prototype.put; let armed = true
+    IDBObjectStore.prototype.put = function(...args: Parameters<IDBObjectStore['put']>) {
+      if (this.name === 'commandInteractions' && (args[0] as any).state === 'confirmed' && armed) { armed = false; throw new Error('Synthetic first acknowledgement write failure') }
+      return put.apply(this, args)
+    }
+    Object.defineProperty(navigator, 'onLine', { configurable: true, get: () => true })
+    try {
+      await client.recoverInstantInteraction('instant-owner', 'capacity-parent')
+      if ((await api.readCommandInteraction('instant-owner', 'capacity-parent'))?.state !== 'projection_pending') throw new Error('Missing injected projection failure')
+      await client.recoverInstantInteraction('instant-owner', 'capacity-parent')
+      await client.recoverInstantInteraction('instant-owner', 'capacity-child')
+    } finally { IDBObjectStore.prototype.put = put }
+  })
+  await expect.poll(() => pendingCount(page)).toBe(0)
+  expect(server.sent).toEqual(['capacity-parent', 'capacity-child'])
+  expect(server.snapshot.data.timePlanning?.dateOverrides?.['2026-10-01']).toBe(240)
+  await page.reload(); await expect(page.locator('.tsui-capacity summary')).toContainText('4 小时')
+})
+
+test('rejected child restores the confirmed parent server fields instead of its optimistic preimage', async ({ page, context }) => {
+  const server = await setup(context); server.setDelay(700); server.setNow(new Date(INSTANT_NOW.getTime() + 1000))
+  await start(page)
+  await page.evaluate(async () => {
+    const api = await import('/pjsdas/src/db.ts'), client = await import('/pjsdas/src/cloud/instantCommandClient.ts')
+    Object.defineProperty(navigator, 'onLine', { configurable: true, get: () => false })
+    await client.beginInstantCommand('instant-owner', await api.exportLocalSnapshot(), { commandId: 'accepted-parent', kind: 'set_date_capacity', date: '2026-10-01', minutes: 300 })
+  })
+  await page.clock.setFixedTime(new Date(INSTANT_NOW.getTime() + 2000))
+  await page.evaluate(async () => {
+    const api = await import('/pjsdas/src/db.ts'), client = await import('/pjsdas/src/cloud/instantCommandClient.ts')
+    await client.beginInstantCommand('instant-owner', await api.exportLocalSnapshot(), { commandId: 'denied-child', kind: 'set_date_capacity', date: '2026-10-01', minutes: 240 })
+    Object.defineProperty(navigator, 'onLine', { configurable: true, get: () => true })
+    ;(window as any).replay = (await import('/pjsdas/src/cloud/authoritativeCommandClient.ts')).replayAccountPendingOperations('instant-owner')
+  })
+  await expect.poll(() => server.sent.length).toBe(1)
+  server.denyNext()
+  await page.evaluate(() => (window as any).replay)
+  await expect.poll(() => pendingCount(page)).toBe(0)
+  const local = await page.evaluate(async () => (await (await import('/pjsdas/src/db.ts')).exportLocalSnapshot()).data.timePlanning)
+  expect(local).toEqual(server.snapshot.data.timePlanning)
+  await page.reload(); await expect(page.locator('.tsui-capacity summary')).toContainText('5 小时')
+  expect(server.sent).toEqual(['accepted-parent', 'denied-child'])
+})
+
+test('quarantined predecessor rejects a later dependent and resumes safe rollback when reads return', async ({ page, context }) => {
+  const server = await setup(context); server.setDelay(50)
+  await start(page); server.denyNext()
+  await page.evaluate(async () => {
+    const api = await import('/pjsdas/src/db.ts'), client = await import('/pjsdas/src/cloud/instantCommandClient.ts')
+    Object.defineProperty(navigator, 'onLine', { configurable: true, get: () => false })
+    for (const [commandId, minutes] of [['reject-parent', 300], ['reject-child', 240]] as const)
+      await client.beginInstantCommand('instant-owner', await api.exportLocalSnapshot(), { commandId, kind: 'set_date_capacity', date: '2026-10-01', minutes })
+    const getAll = IDBIndex.prototype.getAll; let armed = true
+    IDBIndex.prototype.getAll = function(...args: Parameters<IDBIndex['getAll']>) {
+      if (this.name === 'by-account-state' && armed) { armed = false; throw new Error('Synthetic rejection journal read failure') }
+      return getAll.apply(this, args)
+    }
+    Object.defineProperty(navigator, 'onLine', { configurable: true, get: () => true })
+    try { await client.recoverInstantInteraction('instant-owner', 'reject-parent') } finally { IDBIndex.prototype.getAll = getAll }
+    Object.defineProperty(navigator, 'onLine', { configurable: true, get: () => false })
+    await client.beginInstantCommand('instant-owner', await api.exportLocalSnapshot(), { commandId: 'reject-later', kind: 'set_date_capacity', date: '2026-10-01', minutes: 540 })
+    Object.defineProperty(navigator, 'onLine', { configurable: true, get: () => true })
+    await client.recoverInstantInteraction('instant-owner', 'reject-later')
+    await client.recoverInstantInteraction('instant-owner', 'reject-parent')
+    await client.recoverInstantInteraction('instant-owner', 'reject-child')
+    await client.beginInstantCommand('instant-owner', await api.exportLocalSnapshot(), { commandId: 'safe-next', kind: 'set_date_capacity', date: '2026-10-01', minutes: 480 })
+  })
+  await expect.poll(() => pendingCount(page)).toBe(0)
+  expect(server.sent).toEqual(['reject-parent', 'safe-next'])
+  await expect(page.locator('.tsui-capacity summary')).toContainText('8 小时')
+})
+
+for (const kind of ['command', 'undo'] as const) test(`receipt-first ${kind} crash reservation hydrates only a proven cleared cache`, async ({ page, context }) => {
+  const server = await setup(context); server.setDelay(50)
+  await start(page)
+  if (kind === 'undo') {
+    await page.locator('[data-action-id="dense-action-0"] .tsui-done-action').click()
+    await expect.poll(() => pendingCount(page)).toBe(0)
+  }
+  await page.evaluate(async kind => {
+    const api = await import('/pjsdas/src/db.ts'), auth = await import('/pjsdas/src/cloud/authoritativeCommandClient.ts')
+    const target = kind === 'undo' ? (await api.readCommandInteractions('instant-owner')).find(item => item.state === 'confirmed') : undefined
+    Object.defineProperty(navigator, 'onLine', { configurable: true, get: () => false })
+    auth.journalConnectedInteraction('instant-owner', { commandId: `cleared-${kind}`, baseRevision: 1204,
+      ...(target ? { targetCommandId: target.commandId } : { command: { type: 'domain', value: { commandId: `cleared-${kind}`, kind: 'set_action_status', actionId: 'dense-action-0', status: 'done' } } }) })
+    const local = await api.exportLocalSnapshot()
+    const data: any = { ...local.data }
+    for (const key of Object.keys(data)) data[key] = Array.isArray(data[key]) ? [] : undefined
+    await api.replaceLocalSnapshotFromCloud({ ...local, data })
+    const empty = await api.exportLocalSnapshot()
+    const fingerprint = await (await import('/pjsdas/src/cloud/workspaceFingerprint.ts')).fingerprintWorkspace(empty)
+    ;(await import('/pjsdas/src/cloud/syncState.ts')).patchAccountCheckpoint('instant-owner', { clearedCacheFingerprint: fingerprint })
+  }, kind)
   await page.reload()
-  await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem('pjsdas-cgr01-pending:instant-owner') ?? '[]')[0]?.status)).toBe('conflict')
+  await expect.poll(() => pendingCount(page), { timeout: 20000 }).toBe(0)
+  expect(server.sent.at(-1)).toBe(`cleared-${kind}`)
+  expect(server.sent).toHaveLength(kind === 'undo' ? 2 : 1)
+  expect(server.snapshot.data.actions[0].status).toBe(kind === 'undo' ? 'todo' : 'done')
+  if (kind === 'undo') await expect(page.locator('[data-action-id="dense-action-0"]')).toBeVisible()
+  else await expect(page.locator('[data-action-id="dense-action-0"]')).toHaveCount(0)
+})
+
+test('failed Undo journal read and mirror removal leave a durable non-replayable tombstone', async ({ page, context }) => {
+  const server = await setup(context); server.setDelay(50)
+  await start(page)
+  await page.locator('[data-action-id="dense-action-0"] .tsui-done-action').click()
+  await expect.poll(() => pendingCount(page)).toBe(0)
+  const result = await page.evaluate(async () => {
+    const api = await import('/pjsdas/src/db.ts'), client = await import('/pjsdas/src/cloud/instantCommandClient.ts')
+    const target = (await api.readCommandInteractions('instant-owner')).find(item => item.state === 'confirmed')!
+    const get = IDBObjectStore.prototype.get, remove = Storage.prototype.removeItem
+    IDBObjectStore.prototype.get = function(...args: Parameters<IDBObjectStore['get']>) { if (this.name === 'commandInteractions') throw new Error('Synthetic target journal inaccessible'); return get.apply(this, args) }
+    Storage.prototype.removeItem = function(key: string) { if (key.includes('pjsdas-cgr01-pending:')) throw new Error('Synthetic mirror removal inaccessible'); return remove.call(this, key) }
+    let failed = false
+    try { await client.beginInstantUndo('instant-owner', target.commandId, await api.exportLocalSnapshot()) } catch { failed = true }
+    finally { IDBObjectStore.prototype.get = get; Storage.prototype.removeItem = remove }
+    const pending = JSON.parse(localStorage.getItem('pjsdas-cgr01-pending:instant-owner') ?? '[]')[0]
+    await client.recoverInstantInteraction('instant-owner', pending.commandId)
+    return { failed, mirror: pending.status, state: (await api.readCommandInteraction('instant-owner', pending.commandId))?.state }
+  })
+  expect(result).toEqual({ failed: true, mirror: 'conflict', state: 'rejected' })
+  await page.reload()
   expect(server.sent).toHaveLength(1)
+  expect(server.snapshot.data.actions[0].status).toBe('done')
 })
 
 test('lost acknowledgement recovers receipt after reload without repeating the business command', async ({ page, context }) => {

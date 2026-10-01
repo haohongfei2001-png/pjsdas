@@ -7,7 +7,9 @@ test('real VoiceOver can find Today, Tell TodayAction and the authoritative save
   await page.goto('/pjsdas/today')
   await expect(page.getByRole('heading', { name: 'A第一任务' })).toBeVisible()
 
-  await voiceOver.navigateToWebContent()
+  await page.bringToFront()
+  await page.locator('.tsui-brand').focus()
+  await voiceOver.perform(voiceOver.keyboardCommands.moveCursorToKeyboardFocus)
   let foundTodayTask = false
   for (let i = 0; i < 24; i += 1) {
     await voiceOver.nextHeading()
@@ -59,7 +61,9 @@ test('real VoiceOver identifies Opportunities and Settings primary-route semanti
   await expect(page.getByRole('heading', { name: /岗位库|Job library/i })).toBeVisible()
   await expect(page.getByRole('button', { name: /合成机会科技|AI产品经理/ })).toBeVisible()
 
-  await voiceOver.navigateToWebContent()
+  await page.bringToFront()
+  await page.locator('.tsui-brand').focus()
+  await voiceOver.perform(voiceOver.keyboardCommands.moveCursorToKeyboardFocus)
   const opportunityPhrases: string[] = []
   let foundOpportunityContext = false
   for (let i = 0; i < 32 && !foundOpportunityContext; i += 1) {
@@ -76,7 +80,9 @@ test('real VoiceOver identifies Opportunities and Settings primary-route semanti
   const detail = page.locator('.job-detail-page')
   await expect(detail).toBeVisible()
   await expect(detail).toContainText('合成机会科技')
-  await voiceOver.navigateToWebContent()
+  await page.bringToFront()
+  await page.locator('.tsui-brand').focus()
+  await voiceOver.perform(voiceOver.keyboardCommands.moveCursorToKeyboardFocus)
   const detailPhrases: string[] = []
   let foundDetailSemantics = false
   for (let i = 0; i < 36 && !foundDetailSemantics; i += 1) {
@@ -91,7 +97,9 @@ test('real VoiceOver identifies Opportunities and Settings primary-route semanti
   await page.goto('/pjsdas/settings')
   const settingsHeading = page.getByRole('heading', { name: /^(设置|Settings)$/i })
   await expect(settingsHeading).toBeVisible()
-  await voiceOver.navigateToWebContent()
+  await page.bringToFront()
+  await page.locator('.tsui-brand').focus()
+  await voiceOver.perform(voiceOver.keyboardCommands.moveCursorToKeyboardFocus)
   const settingsPhrases: string[] = []
   let foundSettings = false
   for (let i = 0; i < 32 && !foundSettings; i += 1) {

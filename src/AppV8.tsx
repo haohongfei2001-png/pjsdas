@@ -1,6 +1,6 @@
 import { todayScheduleSnapshot, patchConsumerSnapshot } from './today/consumerScheduleSnapshot.js'
 import { interactionMetric } from './cloud/interactionMetrics.js'
-import { beginInstantCommand, beginInstantUndo, type InteractionEvent } from './cloud/instantCommandClient.js'
+import { beginInstantCommand, beginInstantUndo, recoverInstantInteraction, type InteractionEvent } from './cloud/instantCommandClient.js'
 import type { ActionStatusUndo } from './actionStatusUndo.js'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { StartupRecovery } from './StartupRecovery.js'
@@ -674,9 +674,9 @@ export default function AppV8() {
     })
     const value = pending?.command?.type === 'domain' ? pending.command.value : undefined
     if (!value || !('occurrenceId' in value)) return undefined
-    if (value.kind === 'complete_occurrence') return { kind: 'complete' as const, status: pending!.status }
-    if (value.kind === 'cancel_occurrence') return { kind: 'cancel' as const, status: pending!.status }
-    if (value.kind === 'reschedule_occurrence') return { kind: 'reschedule' as const, temporal: value.temporal, status: pending!.status }
+    if (value.kind === 'complete_occurrence') return { kind: 'complete' as const, status: pending!.status === 'rollback_pending' ? 'conflict' as const : pending!.status }
+    if (value.kind === 'cancel_occurrence') return { kind: 'cancel' as const, status: pending!.status === 'rollback_pending' ? 'conflict' as const : pending!.status }
+    if (value.kind === 'reschedule_occurrence') return { kind: 'reschedule' as const, temporal: value.temporal, status: pending!.status === 'rollback_pending' ? 'conflict' as const : pending!.status }
     return undefined
   }
 
@@ -688,10 +688,14 @@ export default function AppV8() {
     if (!entry.occurrenceId || !entry.node) throw new Error('Schedule occurrence identity is unavailable.')
     const pending = listAccountPendingOperations(account).find((item) => {
       const value = item.command?.type === 'domain' ? item.command.value : undefined
-      return (!item.interaction || item.status === 'conflict' || item.status === 'projection_pending') && item.action === 'command' && value && 'occurrenceId' in value
+      return (!item.interaction || item.status === 'conflict' || item.status === 'projection_pending' || item.status === 'rollback_pending') && item.action === 'command' && value && 'occurrenceId' in value
         && value.occurrenceId === entry.occurrenceId
         && ['complete_occurrence', 'cancel_occurrence', 'reschedule_occurrence'].includes(value.kind)
     })
+    if (pending?.status === 'rollback_pending') {
+      await recoverInstantInteraction(account, pending.commandId)
+      throw new Error(zh ? '先前操作未被接受，正在安全恢复，请核对这次安排。' : 'The earlier change was rejected and is being safely restored. Review this occurrence.')
+    }
     const commandId = pending?.commandId ?? createConnectedCommandId('web-occurrence')
     function rescheduledTemporal(): ScheduleNodeTemporal {
       const original = entry.node!.temporal

@@ -59,7 +59,8 @@ interface PendingCommand {
   baseRevision?: number
   command?: ConnectedBusinessCommand
   targetCommandId?: string
-  status: 'pending' | 'unknown' | 'conflict' | 'projection_pending'
+  status: 'pending' | 'unknown' | 'conflict' | 'projection_pending' | 'rollback_pending'
+  rejectionRoot?: string
   createdAt: string
   updatedAt: string
   lastError?: string
@@ -620,7 +621,7 @@ export function journalConnectedInteraction(accountKey: string, input: { command
   upsertPending(accountKey, { ...input, action: input.targetCommandId ? 'undo' : 'command', interaction: true,
     status: 'pending', createdAt: timestamp, updatedAt: timestamp })
 }
-export function settleConnectedInteraction(accountKey: string, commandId: string, status?: PendingCommand['status'], message?: string) {
-  if (status) patchPending(accountKey, commandId, { status, lastError: message })
+export function settleConnectedInteraction(accountKey: string, commandId: string, status?: PendingCommand['status'], message?: string, rejectionRoot?: string) {
+  if (status) patchPending(accountKey, commandId, { status, lastError: message, rejectionRoot })
   else removePending(accountKey, commandId)
 }

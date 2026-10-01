@@ -1,4 +1,4 @@
-import { fingerprintWorkspace } from './workspaceFingerprint.js'
+import { fingerprintWorkspace, workspaceIsEffectivelyEmpty } from './workspaceFingerprint.js'
 import { interactionMetric } from './interactionMetrics.js'
 import type { UserDomainCommand } from '../domainCommands.js'
 import type { PJSDASSnapshot } from '../snapshot.js'
@@ -40,6 +40,27 @@ function orderInteractions(records: CommandInteractionRecord[]) {
   }
   return ordered
 }
+function dependentInteractions(records: CommandInteractionRecord[], root: string) {
+  const ids = new Set([root])
+  const dependents: CommandInteractionRecord[] = []
+  let changed = true
+  while (changed) {
+    changed = false
+    for (const item of records) if (['active', 'projection_pending', 'rollback_pending'].includes(item.state) && !ids.has(item.commandId)
+      && item.predecessors?.some(id => ids.has(id))) {
+      ids.add(item.commandId); dependents.push(item); changed = true
+    }
+  }
+  return orderInteractions(dependents)
+}
+async function archiveFailedPreparation(record: CommandInteractionRecord) {
+  try {
+    await saveCommandInteraction({ ...record, state: 'rejected', lastError: 'Local projection refused.' })
+    settleConnectedInteraction(record.accountKey, record.commandId)
+  } catch {
+    settleConnectedInteraction(record.accountKey, record.commandId, 'conflict', '本机保存失败，原操作记录已保留。')
+  }
+}
 /** Resolves after durable local settlement, never after the network round trip. */
 export async function beginInstantCommand(accountKey: string, snapshot: PJSDASSnapshot, command: UserDomainCommand) {
   const started = performance.now()
@@ -54,12 +75,11 @@ export async function beginInstantCommand(accountKey: string, snapshot: PJSDASSn
     command, predecessors: [], delta: projected.delta, compensation: projected.compensation, state: 'active', createdAt: new Date().toISOString() }
   try {
     const existing = await readPendingCommandInteractions(accountKey)
-    record.predecessors = existing.filter(item => item.state === 'active' && item.delta.changes.some(left => projected.delta.changes.some(right => left.collection === right.collection && left.id === right.id)
+    record.predecessors = existing.filter(item => ['active', 'projection_pending'].includes(item.state) && item.delta.changes.some(left => projected.delta.changes.some(right => left.collection === right.collection && left.id === right.id)
       || (['set_date_capacity', 'set_daily_capacity', 'set_work_windows'].includes(command.kind) && left.collection === 'timePlanning'))).map(item => item.commandId)
     await persistInteractionProjection(record, lease.assertCurrent)
   } catch (error) {
-    try { await saveCommandInteraction({ ...record, state: 'rejected', lastError: 'Local projection refused.' }); settleConnectedInteraction(accountKey, command.commandId) }
-    catch { settleConnectedInteraction(accountKey, command.commandId, 'conflict', '本机保存失败，原操作记录已保留。') }
+    await archiveFailedPreparation(record)
     throw new Error('本机没能保存这次修改，尚未提交，请核对最新内容后重试。')
   }
   interactionMetric('durable-outbox', started)
@@ -73,14 +93,15 @@ export async function beginInstantUndo(accountKey: string, targetCommandId: stri
   const lease = captureAccountCacheLease(accountKey)
   const commandId = createConnectedCommandId('instant-undo')
   journalConnectedInteraction(accountKey, { commandId, targetCommandId, baseRevision: version(accountKey) })
-  let record: CommandInteractionRecord
+  let record: CommandInteractionRecord = { id: recordId(accountKey, commandId), commandId, accountKey, targetCommandId, predecessors: [targetCommandId],
+    delta: { contract: 'delta-v1', baseRevision: version(accountKey), changes: [] }, state: 'active', createdAt: new Date().toISOString() }
   try {
     const target = await readCommandInteraction(accountKey, targetCommandId)
     if (!target || !['active', 'confirmed'].includes(target.state)) throw new Error('这次操作无法安全撤销，请核对最新记录。')
     record = { id: recordId(accountKey, commandId), commandId, accountKey, targetCommandId,
       predecessors: [targetCommandId], delta: undoInteractionProjection(snapshot, target.command, target.compensation, target.delta, version(accountKey)), state: 'active', createdAt: new Date().toISOString() }
     await persistInteractionProjection(record, lease.assertCurrent)
-  } catch (error) { settleConnectedInteraction(accountKey, commandId); throw error }
+  } catch (error) { await archiveFailedPreparation(record); throw error }
   interactionMetric('durable-outbox', started)
   emit(record, record.delta)
   setTimeout(() => { if (navigator.onLine) void dispatch(record).catch(() => undefined) }, 0)
@@ -105,24 +126,36 @@ async function reject(record: CommandInteractionRecord, message: string, state: 
   try {
     const lease = captureAccountCacheLease(record.accountKey)
     all = await readPendingCommandInteractions(record.accountKey)
-    const rejectedIds = new Set([record.commandId])
-    const dependents: CommandInteractionRecord[] = []
-    let changed = true
-    while (changed) {
-      changed = false
-      for (const item of all) if (item.state === 'active' && !rejectedIds.has(item.commandId) && item.predecessors?.some(id => rejectedIds.has(id))) {
-        rejectedIds.add(item.commandId); dependents.push(item); changed = true
-      }
-    }
-    // Outbox order is explicit in predecessor IDs, not primary-key iteration.
-    steps = [...orderInteractions(dependents).reverse(), record].map(item => ({
-      record: { ...item, state: (item.commandId === record.commandId ? state : 'rejected') as 'rejected' | 'conflict', lastError: message },
-      delta: reverseWorkspaceDelta(item.delta),
+    steps = await Promise.all([...dependentInteractions(all, record.commandId).reverse(), record].map(async item => {
+      const confirmed = (await Promise.all((item.predecessors ?? []).map(id => readCommandInteraction(item.accountKey, id))))
+        .filter((prior): prior is CommandInteractionRecord => prior?.state === 'confirmed')
+      const rollback = reverseWorkspaceDelta(item.delta)
+      // Roll back to the proven authoritative predecessor, rather than an
+      // earlier optimistic clock or source field captured before its receipt.
+      rollback.changes = rollback.changes.map(change => {
+        if (!change.after) return change
+        const after = { ...change.after }
+        for (const prior of orderInteractions(confirmed)) {
+          const accepted = prior.delta.changes.find(candidate => candidate.collection === change.collection && candidate.id === change.id)
+          if (accepted?.after) for (const key of Object.keys(after)) {
+            if (key in accepted.after) after[key] = accepted.after[key]
+            else if (accepted.before && key in accepted.before) delete after[key]
+          }
+        }
+        return { ...change, after }
+      })
+      return { record: { ...item, state: (item.commandId === record.commandId ? state : 'rejected') as 'rejected' | 'conflict', lastError: message }, delta: rollback }
     }))
     await persistInteractionProjections(steps, lease.assertCurrent)
     for (const step of steps) {
       emit(step.record, step.delta, message)
       settleConnectedInteraction(record.accountKey, step.record.commandId, step.record.state === 'conflict' ? 'conflict' : undefined, message)
+    }
+    const retired = new Set(steps.map(step => step.record.commandId))
+    for (const pending of listAccountPendingOperations(record.accountKey)) if (pending.rejectionRoot === record.commandId && !retired.has(pending.commandId)) {
+      // The earlier unreadable journal required a conservative pause. This
+      // independent intent still needs receipt-first recovery, never rollback.
+      settleConnectedInteraction(record.accountKey, pending.commandId, 'unknown')
     }
   } catch {
     // A known rejection cannot become an unknown outcome if local rollback or
@@ -131,9 +164,9 @@ async function reject(record: CommandInteractionRecord, message: string, state: 
     const blocked = steps.length ? steps.map(step => step.record) : all ?? [record]
     const ids = steps.length ? blocked.map(item => item.commandId)
       : listAccountPendingOperations(record.accountKey).filter(item => item.interaction).map(item => item.commandId)
-    for (const commandId of new Set([record.commandId, ...ids])) settleConnectedInteraction(record.accountKey, commandId, 'conflict', message)
+    for (const commandId of new Set([record.commandId, ...ids])) settleConnectedInteraction(record.accountKey, commandId, 'rollback_pending', message, record.commandId)
     for (const item of blocked) {
-      try { await saveCommandInteraction({ ...item, state: 'conflict', lastError: message }) } catch { /* The closed mirror retains the original command. */ }
+      try { await saveCommandInteraction({ ...item, state: 'rollback_pending', lastError: message }) } catch { /* The closed mirror retains the original command. */ }
     }
     emit({ ...record, state: 'conflict' }, undefined, '这次修改未被接受，本机状态待核对；请打开设置安全刷新。')
   }
@@ -150,7 +183,7 @@ async function reconcile(record: CommandInteractionRecord, payload: any, assertC
   if (payload.receipt?.undoCompensation) record = { ...record, compensation: payload.receipt.undoCompensation }
   if (payload.outcome === 'NO_WRITE') return reject(record, '这次操作未写入，已恢复原状态。', 'rejected')
   // A durable receipt remains confirmed even if safe local projection is blocked.
-  if (!payload.delta && payload.outcome === 'ALREADY_APPLIED' && !record.delta.changes.length) {
+  if (!payload.delta && !payload.snapshot && payload.outcome === 'ALREADY_APPLIED' && !record.delta.changes.length) {
     await saveCommandInteraction({ ...record, state: 'confirmed', serverRevision: payload.revision })
     settleConnectedInteraction(record.accountKey, record.commandId)
     emit({ ...record, state: 'confirmed' })
@@ -192,8 +225,7 @@ async function reconcile(record: CommandInteractionRecord, payload: any, assertC
     const all = [...await readPendingCommandInteractions(record.accountKey), ...(
       await Promise.all((record.predecessors ?? []).map(id => readCommandInteraction(record.accountKey, id))))
       .filter((item): item is CommandInteractionRecord => Boolean(item && item.state === 'confirmed'))]
-    const later = orderInteractions(all.filter(item => item.state === 'active' && item.commandId !== record.commandId
-      && item.predecessors?.includes(record.commandId)))
+    const later = dependentInteractions(all, record.commandId)
     const settlement: WorkspaceDelta = { ...payload.delta, changes: payload.delta.changes.map((change: EntityDelta) => {
       const optimistic = record.delta.changes.find(item => item.collection === change.collection && item.id === change.id)
       // Compact deltas omit unchanged fields. Keep the command's original
@@ -227,16 +259,21 @@ async function reconcile(record: CommandInteractionRecord, payload: any, assertC
   }
 }
 async function send(record: CommandInteractionRecord, recovery: boolean) {
-  if (!navigator.onLine || listAccountPendingOperations(record.accountKey).some(item => item.commandId === record.commandId && item.status === 'conflict')) return
+  if (!navigator.onLine || listAccountPendingOperations(record.accountKey).some(item => item.commandId === record.commandId && ['conflict', 'rollback_pending'].includes(item.status))) return
+  if (!recovery && listAccountPendingOperations(record.accountKey).some(item => item.commandId === record.commandId && item.status === 'unknown')) return send(record, true)
   const durable = await readCommandInteraction(record.accountKey, record.commandId)
-  if (durable?.state === 'rejected' || durable?.state === 'conflict' || durable?.state === 'confirmed') return
+  if (durable?.state === 'rejected' || durable?.state === 'conflict' || durable?.state === 'confirmed' || durable?.state === 'rollback_pending') return
   if (durable) record = durable
   try {
     if (recovery) {
       const read = await network(record.accountKey, { action: 'receipt', commandId: record.commandId })
       if (!read.response.ok) throw new Error('Receipt lookup unavailable.')
       if (read.payload.found) {
-        const recovered = !read.payload.delta || record.state === 'projection_pending' ? await network(record.accountKey, { action: 'receipt', commandId: record.commandId, projection: 'snapshot' }) : read
+        if (read.payload.delta) {
+          await reconcile(record, { ...read.payload, outcome: 'ALREADY_APPLIED' }, read.lease.assertCurrent)
+          if ((await readCommandInteraction(record.accountKey, record.commandId))?.state === 'confirmed') return
+        }
+        const recovered = await network(record.accountKey, { action: 'receipt', commandId: record.commandId, projection: 'snapshot' })
         return reconcile(record, { ...recovered.payload, outcome: 'ALREADY_APPLIED' }, recovered.lease.assertCurrent)
       }
       if (record.state === 'projection_pending') {
@@ -245,9 +282,14 @@ async function send(record: CommandInteractionRecord, recovery: boolean) {
         return
       }
     }
-    const predecessors = (await Promise.all((record.predecessors ?? []).map(id => readCommandInteraction(record.accountKey, id)))).filter((item): item is CommandInteractionRecord => Boolean(item))
-    if (predecessors.some(item => item.state === 'active' || item.state === 'projection_pending')) return
+    const mirrors = listAccountPendingOperations(record.accountKey)
+    const predecessors = (await Promise.all((record.predecessors ?? []).map(async id => {
+      const prior = await readCommandInteraction(record.accountKey, id)
+      return prior && mirrors.some(item => item.commandId === id && ['conflict', 'rollback_pending'].includes(item.status))
+        ? { ...prior, state: 'conflict' as const } : prior
+    }))).filter((item): item is CommandInteractionRecord => Boolean(item))
     if (predecessors.some(item => item.state === 'conflict' || item.state === 'rejected')) return reject(record, '先前相关操作未被接受；已恢复这次修改。', 'rejected')
+    if (predecessors.some(item => item.state === 'active' || item.state === 'projection_pending')) return
     const baseRevision = Math.max(record.delta.baseRevision, ...predecessors.map(item => item.serverRevision ?? record.delta.baseRevision))
     const request = await network(record.accountKey, record.targetCommandId
       ? { action: 'undo', commandId: record.commandId, targetCommandId: record.targetCommandId }
@@ -276,22 +318,50 @@ async function send(record: CommandInteractionRecord, recovery: boolean) {
 }
 export async function recoverInstantInteraction(accountKey: string, commandId: string) {
   const pending = listAccountPendingOperations(accountKey).find(item => item.commandId === commandId)
+  if (pending?.interaction && pending.status === 'rollback_pending') {
+    const root = await readCommandInteraction(accountKey, pending.rejectionRoot ?? commandId)
+    if (root) await reject(root, pending.lastError ?? '这次修改未被接受，已恢复原状态。', 'rejected')
+    return
+  }
   if (pending?.interaction && pending.status === 'conflict') return
   let record = await readCommandInteraction(accountKey, commandId)
   if (!record) {
     // A failed local preparation may retain its original mirror when even the
     // archive store is unavailable. It is closed to replay, never a queued click.
     if (!pending?.interaction || pending.status === 'conflict') return
-    const local = await exportLocalSnapshot()
+    const receipt = navigator.onLine ? await network(accountKey, { action: 'receipt', commandId }) : undefined
+    let local = await exportLocalSnapshot()
+    if (navigator.onLine && workspaceIsEffectivelyEmpty(local)
+      && getAccountCheckpoint(accountKey).clearedCacheFingerprint === await fingerprintWorkspace(local)) {
+      const read = await network(accountKey, { action: 'read', projection: 'snapshot' })
+      if (!read.response.ok) throw new Error('暂时无法读取账号记录；原操作已保留。')
+      const assertCurrent = () => { read.lease.assertCurrent(); if (version(accountKey) > read.payload.revision) throw new AccountCacheChangedError() }
+      local = await replaceLocalSnapshotFromCloud(read.payload.snapshot, { expectedLocal: local, assertCurrent, accountKey, version: read.payload.workspaceVersion })
+      const [sourceFingerprint, projectedFingerprint] = await Promise.all([fingerprintWorkspace(read.payload.snapshot), fingerprintWorkspace(local)])
+      assertCurrent()
+      patchAccountCheckpoint(accountKey, { clearedCacheFingerprint: undefined, lastSyncedVersion: read.payload.workspaceVersion,
+        lastSyncedFingerprint: sourceFingerprint, lastReadProjectionFingerprint: projectedFingerprint,
+        lastReadProjectionSourceFingerprint: sourceFingerprint, lastSyncedAt: new Date().toISOString() })
+      window.dispatchEvent(new Event('pjsdas:workspace-replaced'))
+    }
+    if (receipt?.response.ok && receipt.payload.found) {
+      record = { id: recordId(accountKey, commandId), accountKey, commandId,
+        command: pending.command?.type === 'domain' ? pending.command.value : undefined, targetCommandId: pending.targetCommandId,
+        delta: { contract: 'delta-v1', baseRevision: pending.baseRevision ?? version(accountKey), changes: [] },
+        state: 'active', createdAt: pending.createdAt }
+      await saveCommandInteraction(record)
+      return dispatch(record, true)
+    }
+    if (receipt && !receipt.response.ok) throw new Error('暂时无法核对操作回执；原操作已保留。')
     const target = pending.targetCommandId
       ? await readCommandInteraction(accountKey, pending.targetCommandId) : undefined
-    const delta = pending.command?.type === 'domain'
-      ? interactionProjection(local, pending.command.value, pending.baseRevision ?? version(accountKey)).delta
+    const projected = pending.command?.type === 'domain' ? interactionProjection(local, pending.command.value, pending.baseRevision ?? version(accountKey)) : undefined
+    const delta = projected ? projected.delta
       : target ? undoInteractionProjection(local, target.command, target.compensation, target.delta, version(accountKey)) : undefined
     if (!delta) return
     record = { id: recordId(accountKey, commandId), accountKey, commandId, command: pending.command?.type === 'domain' ? pending.command.value : undefined,
       targetCommandId: pending.targetCommandId, predecessors: target ? [target.commandId] : [],
-      delta, state: 'active', createdAt: pending.createdAt }
+      delta, compensation: projected?.compensation, state: 'active', createdAt: pending.createdAt }
     await persistInteractionProjection(record, captureAccountCacheLease(accountKey).assertCurrent)
     emit(record, delta)
   }

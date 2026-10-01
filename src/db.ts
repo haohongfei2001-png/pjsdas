@@ -81,7 +81,7 @@ import type {
 } from './model.js'
 
 export interface CommandInteractionRecord {
-  id: string; accountKey: string; commandId: string; createdAt: string; state: 'active' | 'confirmed' | 'rejected' | 'conflict' | 'projection_pending';
+  id: string; accountKey: string; commandId: string; createdAt: string; state: 'active' | 'confirmed' | 'rejected' | 'conflict' | 'projection_pending' | 'rollback_pending';
   delta: WorkspaceDelta; command?: import('./domainCommands.js').UserDomainCommand; targetCommandId?: string;
   compensation?: { operation: string; payload: unknown }; lastError?: string; serverRevision?: number; predecessors?: string[];
 }
@@ -1378,7 +1378,9 @@ export async function assertLocalSnapshotCurrent(expected: PJSDASSnapshot, asser
 
 export async function isRecordedAccountProjection(accountKey: string, snapshot: PJSDASSnapshot, options?: { compact?: boolean; assertCurrent?: () => void }) {
   options?.assertCurrent?.()
+  if ((await import('./cloud/authoritativeCommandClient.js')).listAccountPendingOperations(accountKey).some(item => item.status === 'rollback_pending')) return false
   const db = await dbPromise
+  if ((await db.getAllFromIndex('commandInteractions', 'by-account-state', [accountKey, 'rollback_pending'])).length) return false
   const recorded = await db.get('meta', 'authoritativeProjection')
   options?.assertCurrent?.()
   if (recorded?.key !== 'authoritativeProjection' || recorded.accountKey !== accountKey) return false
@@ -1469,12 +1471,13 @@ export async function readCommandInteractions(accountKey: string) {
 export async function readPendingCommandInteractions(accountKey: string) {
   const lease = captureAccountCacheLease(accountKey)
   const db = await dbPromise
-  const [active, projectionPending] = await Promise.all([
+  const [active, projectionPending, rollbackPending] = await Promise.all([
     db.getAllFromIndex('commandInteractions', 'by-account-state', [accountKey, 'active']),
     db.getAllFromIndex('commandInteractions', 'by-account-state', [accountKey, 'projection_pending']),
+    db.getAllFromIndex('commandInteractions', 'by-account-state', [accountKey, 'rollback_pending']),
   ])
   lease.assertCurrent()
-  return [...active, ...projectionPending]
+  return [...active, ...projectionPending, ...rollbackPending]
 }
 export async function readCommandInteraction(accountKey: string, commandId: string) {
   const lease = captureAccountCacheLease(accountKey)
