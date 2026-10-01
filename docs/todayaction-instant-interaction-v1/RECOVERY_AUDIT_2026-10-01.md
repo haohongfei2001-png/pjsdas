@@ -60,8 +60,11 @@ built performance suites. That prior-head evidence does not certify this repair.
 
 The `full:<full-head-SHA>` label is an exact-head opt-in to the repository's existing
 complete CI/Browser/Matrix gates while a same-repository PR remains draft.
-A stale-head or foreign-repository label cannot opt in. Unrelated label events
-do not trigger these gates; ordinary PR/push/dispatch routes remain available. It does not authorize
+A stale-head or foreign-repository label cannot opt in. Label-only events are
+not workflow triggers; ordinary PR/push/dispatch routes remain available.
+Prepare the commit object, apply its exact-head label, then advance the owned
+branch. The synchronize event consumes that precise approval without creating
+skipped required-check receipts for unrelated label changes. It does not authorize
 merge, deployment, or production mutation. Unlabelled drafts retain their cheap
 inner loop, and the narrow draft gate skips when the full gates are selected.
 VoiceOver watches both repaired interaction files as well as its existing paths.
@@ -100,3 +103,19 @@ Five browser cases cover persistent reload and the unseen-fact/mirror-failure
 boundary. Original and follow-up independent reproductions pass locally. Whole
 unit/type/build and new exact-head complete gates must be recorded in the PR;
 older green head `1735988` is historical evidence, not certification of this fix.
+
+
+## Label-event status truth
+
+Final readiness inspection found that job-level guards on `labeled` events
+still created skipped `ci-build` and browser check receipts for unrelated labels.
+GitHub considers skipped jobs successful for required-check purposes, so those
+metadata-triggered receipts must not masquerade as fresh validation.
+
+The four full workflows no longer subscribe to label-only events. Exact-head,
+same-repository opt-in remains available on normal synchronization and review
+routes, using the prelabel-before-ref-update procedure above. The required
+unit/type job has no metadata-based skip condition. Five new/strengthened static
+regression assertions failed before this correction; runtime source and all
+performance thresholds remain unchanged. See GitHub's official
+[status-check semantics](https://docs.github.com/en/pull-requests/reference/status-checks).

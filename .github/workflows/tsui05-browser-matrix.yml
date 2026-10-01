@@ -2,7 +2,7 @@ name: TSUI-05 Browser Matrix
 
 on:
   pull_request:
-    types: [opened, synchronize, reopened, ready_for_review, labeled]
+    types: [opened, synchronize, reopened, ready_for_review]
     paths:
       - 'src/**'
       - 'e2e/**'
@@ -29,8 +29,7 @@ jobs:
   firefox-webkit:
     # A draft opt-in must name this exact same-repository head.
     if: >-
-      (github.event.action != 'labeled' || (github.event.pull_request.head.repo.full_name == github.repository && github.event.label.name == format('full:{0}', github.event.pull_request.head.sha)))
-      && (github.event_name != 'pull_request' || github.event.pull_request.draft == false || (github.event.pull_request.head.repo.full_name == github.repository && contains(github.event.pull_request.labels.*.name, format('full:{0}', github.event.pull_request.head.sha))))
+      (github.event_name != 'pull_request' || github.event.pull_request.draft == false || (github.event.pull_request.head.repo.full_name == github.repository && contains(github.event.pull_request.labels.*.name, format('full:{0}', github.event.pull_request.head.sha))))
     runs-on: ubuntu-24.04
     # Frozen baseline full Matrix took 23m57s. Sixteen additional cross-engine
     # recovery cases add about two minutes; retain all tests and strict
