@@ -1,0 +1,232 @@
+/* Secondary surfaces inherit the established TSUI blue/gray language.
+ * Keep every selector rooted here: Today, Jobs, Schedule lists and the shell
+ * are intentionally unchanged. These aliases never override global tokens. */
+:is(.settings-surface, .job-detail-page, .opportunity-detail-backdrop, .cgr-capture-backdrop, .ultimate-decisions-page, .tsui-schedule-detail, .backup-backdrop, .event-dock-backdrop) {
+  --ta-secondary-text: #1b2540;
+  --ta-secondary-muted: #5d6b82;
+  --ta-secondary-line: #e6eaf1;
+  --ta-secondary-blue: #3468d4;
+  --ta-secondary-soft: #edf2ff;
+  --cgr-text: var(--ta-secondary-text);
+  --cgr-text-secondary: var(--ta-secondary-muted);
+  --cgr-text-tertiary: var(--ta-secondary-muted);
+  --cgr-border: var(--ta-secondary-line);
+  --cgr-border-strong: #c7d1e2;
+  --cgr-accent: var(--ta-secondary-blue);
+  --cgr-accent-soft: var(--ta-secondary-soft);
+  color: var(--ta-secondary-text);
+  font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+:is(.settings-surface, .job-detail-page, .opportunity-detail-backdrop, .cgr-capture-backdrop, .ultimate-decisions-page, .tsui-schedule-detail, .backup-backdrop, .event-dock-backdrop) :is(button, input, select, textarea) {
+  box-sizing: border-box;
+  max-width: 100%;
+  font-family: inherit;
+}
+:is(.settings-surface, .job-detail-page, .opportunity-detail-backdrop, .cgr-capture-backdrop, .ultimate-decisions-page, .tsui-schedule-detail, .backup-backdrop, .event-dock-backdrop) :is(button, a, summary):focus-visible {
+  outline: 3px solid #315ec5;
+  outline-offset: 3px;
+}
+:is(.settings-surface, .cgr-capture-sheet, .ultimate-decisions-page, .tsui-schedule-detail, .backup-dialog, .event-dock) :is(button, .file-button, .backup-file-button) {
+  min-height: 44px;
+  border-radius: 9px;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  line-height: 1.45;
+}
+:is(.settings-surface, .cgr-capture-sheet, .backup-dialog, .event-dock) :is(.primary-button, .cgr-primary-button, .file-button, .backup-file-button) {
+  border: 1px solid var(--ta-secondary-blue);
+  padding: 10px 15px;
+  background: var(--ta-secondary-blue);
+  color: #fff;
+  font-size: .8125rem;
+  font-weight: 650;
+  box-shadow: none;
+}
+:is(.settings-surface, .cgr-capture-sheet, .backup-dialog, .event-dock) :is(.primary-button, .cgr-primary-button):disabled {
+  opacity: .55;
+  cursor: default;
+}
+
+/* Settings: one section boundary, compact rows inside it, explicit disclosure. */
+.cgr-main.surface-main > .settings-surface { width: 100%; max-width: 1120px; margin: 0 auto; gap: 16px; }
+.settings-surface > .surface-header { margin: 0 0 8px; padding: 0; }
+.settings-surface > .surface-header > .eyebrow { display: none; }
+.settings-surface > .surface-header h1 { margin: 0 0 8px; font-size: 1.75rem; line-height: 1.2; font-weight: 760; letter-spacing: -.035em; }
+.settings-surface > .surface-header p { color: var(--ta-secondary-muted); font-size: .875rem; line-height: 1.6; }
+.settings-surface .settings-group { border: 1px solid var(--ta-secondary-line); border-radius: 15px; background: #fff; overflow: clip; }
+.settings-surface .settings-group > summary { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 18px 22px; }
+.settings-surface .settings-group > summary > div { display: grid; gap: 5px; min-width: 0; }
+.settings-surface .settings-group > summary strong { font-size: .9375rem; font-weight: 700; }
+.settings-surface .settings-group > summary span { color: var(--ta-secondary-muted); font-size: .8125rem; line-height: 1.5; }
+.settings-surface .settings-group > summary::after { content: ''; flex: 0 0 7px; width: 7px; height: 7px; border-right: 2px solid #65728d; border-bottom: 2px solid #65728d; transform: rotate(45deg); margin: -4px 4px 0; }
+.settings-surface .settings-group[open] > summary::after { transform: rotate(225deg); margin-top: 4px; }
+.settings-surface .settings-group[open] > summary { border-bottom: 1px solid #edf0f5; }
+.settings-surface .settings-group > summary:focus-visible { outline-offset: -3px; }
+.settings-surface .settings-group-body { gap: 20px; padding: 22px; }
+.settings-surface .cloud-settings-card { margin: 0; padding: 0; border: 0; border-radius: 0; background: transparent; box-shadow: none; }
+.settings-surface .cloud-settings-card + .cloud-settings-card { border-top: 1px solid var(--ta-secondary-line); padding-top: 24px; }
+.settings-surface .cloud-settings-heading { gap: 16px; }
+.settings-surface .cloud-settings-heading .eyebrow { display: none; }
+.settings-surface .cloud-settings-heading h2 { margin: 0 0 6px; font-size: 1.0625rem; line-height: 1.4; letter-spacing: -.018em; }
+.settings-surface .cloud-settings-heading p { max-width: 72ch; font-size: .8125rem; line-height: 1.6; }
+.settings-surface .cloud-state { padding: 5px 9px; border: 0; border-radius: 7px; font-size: .75rem; line-height: 1.45; }
+.settings-surface .cloud-auth-row { align-items: flex-start; gap: 20px; margin: 0; padding: 18px 0; border: 0; border-bottom: 1px solid #edf0f5; border-radius: 0; background: transparent; }
+.settings-surface .cloud-auth-row > div { flex: 1; min-width: 0; }
+.settings-surface .cloud-auth-row > button { flex: 0 0 auto; max-width: 100%; margin-top: 2px; }
+.settings-surface .cloud-auth-row strong { font-size: .875rem; }
+.settings-surface .cloud-auth-row p { max-width: 76ch; font-size: .8125rem; }
+.settings-surface .cloud-connection-impact { margin: 16px 0; padding: 12px 14px; border-radius: 9px; font-size: .8125rem; }
+.settings-surface .cloud-connection-impact strong { font-size: .8125rem; }
+.settings-surface .cloud-account-identity { gap: 8px 14px; font-size: .8125rem; }
+.settings-surface .cloud-security-note { max-width: 90ch; font-size: .75rem; line-height: 1.6; }
+.settings-surface :is(.cloud-advanced, .cloud-controls, .cloud-result, .cloud-error) { font-size: .8125rem; }
+.settings-surface :is(.cloud-advanced, .cloud-disaster-recovery) > summary { min-height: 32px; line-height: 1.5; }
+.settings-surface :is(.settings-inline-tool, .surface-import-card, .surface-language-card) { min-width: 0; padding: 16px; border: 1px solid var(--ta-secondary-line); border-radius: 10px; background: #f8faff; }
+.settings-surface :is(.settings-inline-tool, .surface-import-card, .surface-language-card) p { font-size: .8125rem; line-height: 1.6; }
+.settings-surface .settings-secondary-link { border-color: #dce5fa; background: #edf2ff; color: #315ec5; font-size: .8125rem; }
+.settings-surface :is(.rules-page, .discovery-profile-card) { padding: 0; border: 0; background: transparent; }
+.settings-surface .rules-page > .page-header { margin-top: 0; }
+.settings-surface .rules-page h1 { font-size: 1.125rem; }
+.settings-surface .rules-card { border-color: var(--ta-secondary-line); border-radius: 10px; box-shadow: none; background: #fff; }
+
+/* Capture: a focused companion to the main page, with the same action hierarchy. */
+.cgr-capture-backdrop { place-items: center; padding: 24px; background: rgb(27 37 64 / 24%); backdrop-filter: blur(4px); }
+.cgr-capture-backdrop .cgr-capture-sheet { width: min(680px, 100%); max-height: calc(100dvh - 48px); padding: 24px; border: 1px solid #e6eaf1; border-radius: 16px; background: #fff; box-shadow: 0 18px 55px rgb(34 53 88 / 16%); overscroll-behavior: contain; }
+.cgr-capture-sheet .cgr-capture-header { gap: 16px; padding-bottom: 18px; border-bottom: 1px solid #edf0f5; }
+.cgr-capture-sheet .cgr-kicker { display: none; }
+.cgr-capture-sheet .cgr-capture-header h2 { margin: 0 0 8px; font-size: 1.5rem; line-height: 1.3; font-weight: 700; letter-spacing: -.025em; }
+.cgr-capture-sheet .cgr-capture-header p { font-size: .875rem; }
+.cgr-capture-sheet .cgr-icon-button { width: 44px; height: 44px; border: 1px solid #e6eaf1; border-radius: 9px; background: #fff; }
+.cgr-capture-sheet .cgr-capture-context { max-width: 100%; padding: 7px 10px; border-radius: 7px; font-size: .8125rem; line-height: 1.5; overflow-wrap: anywhere; }
+.cgr-capture-sheet .cgr-capture-input { min-height: 160px; margin-top: 20px; padding: 14px; border: 1px solid #c7d1e2; border-radius: 9px; background: #fff; font-size: .9375rem; line-height: 1.6; }
+.cgr-capture-sheet .cgr-capture-input:focus-visible { outline: 3px solid #315ec5; outline-offset: 3px; }
+.cgr-capture-sheet .cgr-capture-input::placeholder { color: #65728d; opacity: 1; }
+.cgr-capture-sheet .cgr-capture-footer { justify-content: flex-end; margin-top: 18px; padding-top: 16px; border-top: 1px solid #edf0f5; }
+.cgr-capture-sheet :is(.cgr-understanding, .cgr-capture-receipt, .cgr-capture-error) { border-radius: 10px; overflow-wrap: anywhere; }
+.cgr-capture-sheet .cgr-understanding { background: #f8faff; }
+.cgr-capture-sheet .cgr-understanding-head { gap: 12px; padding: 12px 14px; flex-wrap: wrap; }
+.cgr-capture-sheet .cgr-understanding-head strong { font-size: .8125rem; }
+.cgr-capture-sheet .cgr-understanding-head span { font-size: .75rem; }
+.cgr-capture-sheet .cgr-understanding-body { padding: 14px; }
+.cgr-capture-sheet :is(.cgr-understanding-body ul, .cgr-understanding-note, .cgr-understanding-warning, .cgr-capture-hint, .cgr-capture-receipt span, .cgr-capture-error span) { font-size: .8125rem; line-height: 1.6; }
+.cgr-capture-sheet :is(.cgr-capture-receipt strong, .cgr-capture-error strong) { font-size: .875rem; }
+
+/* Job details: aligned summary cards and flat, readable disclosure sections. */
+.job-detail-page { max-width: 1120px; }
+.job-detail-page .job-detail-back { margin-bottom: 16px; padding: 0; color: #5d6b82; }
+.job-detail-page .job-detail-surface { gap: 20px; grid-template-columns: minmax(0, 1.38fr) minmax(280px, 1fr); }
+.job-detail-page .opportunity-detail-header { gap: 16px; }
+.job-detail-page .opportunity-detail-company { font-size: .875rem; color: #5d6b82; }
+.job-detail-page .opportunity-detail-header h1 { max-width: 40ch; margin-bottom: 10px; font-size: 1.75rem; line-height: 1.35; font-weight: 700; letter-spacing: -.025em; }
+.job-detail-page .job-detail-mark { flex-basis: 44px; width: 44px; height: 44px; border-radius: 10px; }
+.job-detail-page .job-detail-action-area { margin: 0 0 4px; }
+.job-detail-page .job-detail-actions { gap: 10px; }
+.job-detail-page .job-detail-actions :is(a, button) { font-weight: 650; }
+.job-detail-page .job-detail-actions .job-detail-capture { border-color: #dce5fa; background: #edf2ff; color: #315ec5; }
+.job-detail-page :is(.opportunity-detail-conclusion, .opportunity-detail-process-summary, .opportunity-detail-primary-operation, .opportunity-detail-nearest-node, .job-detail-related, .opportunity-detail-section) { border-color: #e6eaf1; border-radius: 15px; padding: 20px; }
+.job-detail-page .opportunity-detail-conclusion { margin: 0; }
+.job-detail-page .opportunity-detail-conclusion h3 { margin: 8px 0 10px; font-size: 1.0625rem; }
+.job-detail-page .opportunity-detail-process-summary { align-self: stretch; align-content: start; grid-template-columns: 1fr; gap: 12px; }
+.job-detail-page .opportunity-detail-process-summary > div { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; padding: 0; border: 0; background: transparent; }
+.job-detail-page .opportunity-detail-process-summary strong { text-align: right; }
+.job-detail-page .opportunity-detail-primary-operation { gap: 14px; align-items: center; }
+.job-detail-page .opportunity-detail-primary-operation strong { line-height: 1.55; }
+.job-detail-page .opportunity-detail-progressive { display: grid; grid-column: 1 / -1; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; align-items: start; padding: 0; border: 0; border-radius: 0; background: transparent; }
+.job-detail-page .opportunity-detail-progressive > :is(details, .opportunity-detail-section) { min-width: 0; margin: 0; padding: 0 20px; border: 1px solid #e6eaf1; border-radius: 15px; background: #fff; }
+.job-detail-page .opportunity-detail-section > summary { padding: 17px 0; font-size: .875rem; font-weight: 650; }
+.job-detail-page .job-detail-related { grid-column: 1 / -1; display: flex; align-items: center; flex-wrap: wrap; gap: 10px 20px; min-height: 0; }
+.job-detail-page .job-detail-related h2 { margin: 0; font-size: .9375rem; }
+.job-detail-page .job-detail-related p { flex: 1; margin: 0; font-size: .8125rem; }
+.job-detail-page .job-detail-surface > .opportunity-detail-section:not(.opportunity-detail-decisions) { grid-column: 1 / -1; padding: 0 20px; }
+.job-detail-page .opportunity-detail-timeline article { grid-template-columns: 140px minmax(0, 1fr); padding: 14px 0; }
+.job-detail-page .opportunity-detail-timeline :is(time, p) { font-size: .8125rem; line-height: 1.6; }
+.job-detail-page :is(.opportunity-detail-action-list, .opportunity-detail-source-list) { gap: 10px; }
+.job-detail-page .opportunity-detail-action-list article { padding: 12px; border-radius: 9px; background: #f5f6f9; }
+.job-detail-page :is(.opportunity-detail-process-grid small, .opportunity-detail-action-list small, .opportunity-detail-action-list span, .opportunity-detail-source-row small) { color: #5d6b82; font-size: .75rem; line-height: 1.5; }
+.job-detail-page .opportunity-detail-muted { color: #5d6b82; line-height: 1.6; }
+
+/* Detail states only; the Schedule toolbar, stream and row geometry stay fixed. */
+.tsui-schedule-detail { padding: 22px; border: 1px solid #e6eaf1; border-radius: 15px; box-shadow: 0 4px 18px rgb(34 53 88 / 3.5%); }
+.tsui-schedule-detail .tsui-schedule-detail-head { gap: 16px; padding-bottom: 16px; border-bottom: 1px solid #edf0f5; }
+.tsui-schedule-detail .tsui-schedule-detail-head h2 { margin-top: 6px; font-size: 1.125rem; line-height: 1.5; }
+.tsui-schedule-detail .tsui-schedule-detail-head > div { min-width: 0; overflow-wrap: anywhere; }
+.tsui-schedule-detail .tsui-schedule-detail-head > button { flex: 0 0 44px; border: 1px solid #e6eaf1; border-radius: 9px; }
+.tsui-schedule-detail > p { line-height: 1.6; }
+.tsui-schedule-detail .tsui-schedule-commands { margin-bottom: 0; }
+.tsui-schedule-detail :is(.tsui-schedule-command-buttons, .tsui-schedule-confirm, .tsui-schedule-reschedule) { gap: 10px; }
+.tsui-schedule-detail .tsui-schedule-command-buttons button:first-child,
+.tsui-schedule-detail .tsui-schedule-confirm button:first-of-type { border-color: #3468d4; background: #3468d4; color: #fff; }
+.tsui-schedule-detail .tsui-schedule-reschedule label { min-width: 0; gap: 6px; }
+
+/* Decision details and the secondary review list share a compact card language. */
+.ultimate-decisions-page { width: 100%; max-width: 1120px; margin: 0 auto; gap: 16px; }
+.ultimate-decisions-page .ultimate-page-header { padding: 0; }
+.ultimate-decisions-page .ultimate-page-header > .eyebrow { display: none; }
+.ultimate-decisions-page .ultimate-page-header h1 { margin: 0 0 8px; font-size: 1.75rem; line-height: 1.3; letter-spacing: -.025em; }
+.ultimate-decisions-page .ultimate-page-header p { color: #5d6b82; font-size: .875rem; }
+.ultimate-decisions-page .ultimate-decision-list { max-width: none; gap: 16px; }
+.ultimate-decisions-page .ultimate-decision-card { min-width: 0; padding: 22px; border: 1px solid #e6eaf1; border-radius: 15px; background: #fff; }
+.ultimate-decisions-page .ultimate-decision-copy h2 { font-size: 1.125rem; line-height: 1.5; overflow-wrap: anywhere; }
+.ultimate-decisions-page .ultimate-decision-copy p { color: #5d6b82; font-size: .875rem; }
+.ultimate-decisions-page :is(.ultimate-decision-copy small, .ultimate-decision-reason) { color: #5d6b82; font-size: .75rem; }
+.ultimate-decisions-page .ultimate-decision-choices { gap: 12px; margin-top: 20px; }
+.ultimate-decisions-page .ultimate-decision-choices button { padding: 16px; border: 1px solid #e6eaf1; border-radius: 10px; background: #fff; }
+.ultimate-decisions-page .ultimate-decision-choices button.recommended { border-color: #bdcff5; background: #edf2ff; }
+.ultimate-decisions-page .ultimate-decision-choices strong { font-size: .875rem; }
+.ultimate-decisions-page .ultimate-decision-choices small { color: #5d6b82; font-size: .8125rem; line-height: 1.55; }
+.ultimate-decisions-page .ultimate-decision-choices em { color: #315ec5; font-size: .75rem; }
+.ultimate-decisions-page .ultimate-quiet-state { padding: 22px; border: 1px solid #e6eaf1; border-radius: 15px; background: #fff; color: #5d6b82; }
+
+/* Low-frequency Settings overlays retain their existing behavior and warnings. */
+:is(.backup-backdrop, .event-dock-backdrop) { background: rgb(27 37 64 / 24%); backdrop-filter: blur(4px); }
+.backup-backdrop .backup-dialog, .event-dock-backdrop .event-dock { box-sizing: border-box; max-width: 100%; border-color: #e6eaf1; border-radius: 16px; background: #fff; color: #1b2540; }
+.backup-dialog .backup-header h2, .event-dock .event-dock-header h2 { font-size: 1.5rem; line-height: 1.3; }
+.backup-dialog .backup-header .eyebrow, .event-dock .event-dock-header .eyebrow { display: none; }
+.backup-dialog .backup-actions-grid > section, .event-dock .event-history-item { border-color: #e6eaf1; border-radius: 10px; background: #f8faff; }
+
+/* Other reachable detail previews; authorization consent is intentionally separate. */
+:is(.prep-graph-backdrop, .discovery-inbox-modal-backdrop, .mcp-proposal-backdrop) { background: rgb(27 37 64 / 24%); backdrop-filter: blur(4px); color: #1b2540; }
+.prep-graph-backdrop .prep-graph-dialog,
+.discovery-inbox-modal-backdrop .discovery-inbox-modal,
+.mcp-proposal-backdrop .mcp-proposal-card { box-sizing: border-box; max-width: 100%; border: 1px solid #e6eaf1; border-radius: 16px; background: #fff; color: #1b2540; font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+.prep-graph-dialog .prep-graph-header h2,
+.discovery-inbox-modal h2,
+.mcp-proposal-card > h2 { font-size: 1.5rem; line-height: 1.35; letter-spacing: -.025em; overflow-wrap: anywhere; }
+.prep-graph-dialog .prep-graph-header .eyebrow,
+.mcp-proposal-card > .mcp-proposal-eyebrow { color: #5d6b82; font-size: .75rem; letter-spacing: .04em; }
+:is(.prep-graph-dialog, .discovery-inbox-modal, .mcp-proposal-card) :is(button, input, select) { box-sizing: border-box; max-width: 100%; min-height: 44px; border-radius: 9px; font: inherit; font-size: .8125rem; white-space: normal; overflow-wrap: anywhere; }
+:is(.prep-graph-dialog, .discovery-inbox-modal, .mcp-proposal-card) :is(button, a, input, select, summary):focus-visible { outline: 3px solid #315ec5; outline-offset: 3px; }
+.discovery-inbox-modal .discovery-inbox-modal-actions button.primary,
+.mcp-proposal-card .mcp-proposal-actions button.primary { border-color: #3468d4; background: #3468d4; color: #fff; }
+.cgr-main.surface-main > .cgr-missing-opportunity { width: 100%; max-width: 1120px; margin: 0 auto; box-sizing: border-box; border: 1px solid #e6eaf1; border-radius: 15px; padding: 24px; background: #fff; color: #1b2540; }
+.cgr-missing-opportunity h2 { font-size: 1.5rem; line-height: 1.4; }
+.cgr-missing-opportunity p { color: #5d6b82; font-size: .875rem; line-height: 1.6; }
+
+@media (max-width: 800px) {
+  .job-detail-page .job-detail-surface { grid-template-columns: minmax(0, 1fr); }
+  .job-detail-page .opportunity-detail-progressive { grid-template-columns: minmax(0, 1fr); }
+  .job-detail-page .opportunity-detail-header h1 { font-size: 1.5rem; }
+  .settings-surface .cloud-auth-row { flex-direction: column; align-items: stretch; gap: 12px; }
+  .settings-surface .cloud-auth-row > button { align-self: flex-start; }
+}
+@media (max-width: 600px) {
+  .settings-surface > .surface-header h1, .ultimate-decisions-page .ultimate-page-header h1 { font-size: 1.625rem; }
+  .settings-surface .settings-group > summary { padding: 16px; }
+  .settings-surface .settings-group-body { padding: 16px; }
+  .settings-surface .cloud-settings-heading { flex-direction: column; gap: 10px; }
+  .settings-surface .cloud-state { align-self: flex-start; }
+  .cgr-capture-backdrop { place-items: end center; padding: 12px; }
+  .cgr-capture-backdrop .cgr-capture-sheet { max-height: calc(100dvh - 24px); padding: 20px 16px calc(20px + env(safe-area-inset-bottom)); }
+  .cgr-capture-sheet .cgr-capture-header h2 { font-size: 1.375rem; }
+  .cgr-capture-sheet .cgr-capture-footer .cgr-primary-button { width: 100%; }
+  .job-detail-page :is(.opportunity-detail-conclusion, .opportunity-detail-process-summary, .opportunity-detail-primary-operation, .opportunity-detail-nearest-node, .job-detail-related, .opportunity-detail-section) { padding: 16px; }
+  .job-detail-page .opportunity-detail-progressive > :is(details, .opportunity-detail-section),
+  .job-detail-page .job-detail-surface > .opportunity-detail-section:not(.opportunity-detail-decisions) { padding: 0 16px; }
+  .job-detail-page .opportunity-detail-timeline article { grid-template-columns: minmax(0, 1fr); gap: 5px; }
+  .job-detail-page .opportunity-detail-process-grid { grid-template-columns: minmax(0, 1fr); }
+  .job-detail-page .job-detail-related { align-items: flex-start; flex-direction: column; }
+  .tsui-schedule-detail, .ultimate-decisions-page .ultimate-decision-card { padding: 16px; }
+  .ultimate-decisions-page .ultimate-decision-choices { grid-template-columns: minmax(0, 1fr); }
+  .backup-dialog .backup-actions-grid, .event-dock .event-form-grid { grid-template-columns: minmax(0, 1fr); }
+}
