@@ -10,6 +10,9 @@ const GMAIL_READONLY_SCOPE = 'https://www.googleapis.com/auth/gmail.readonly'
 const OFFLINE_AUTH_MISSING = 'AI_ACCESS_GOOGLE_OFFLINE_AUTH_MISSING'
 
 type GoogleLinkMode = 'drive' | 'gmail'
+export type AiAccessErrorSource = 'workspace' | 'discovery' | 'gmail' | 'status'
+export function aiAccessFailure(message: string, source: AiAccessErrorSource = 'status') { return { message, source } }
+export function clearRecoveredStatusFailure(failure: ReturnType<typeof aiAccessFailure>) { return failure.source === 'status' ? aiAccessFailure('') : failure }
 
 export interface GmailAutomationStatus {
   googleEmail: string | null
@@ -29,6 +32,8 @@ type AiAccessState = {
   busy: boolean
   message: string
   error: string
+  errorSource: AiAccessErrorSource
+  statusVerified: boolean
   gmailAutomation: GmailAutomationStatus | null
   beginGoogleDriveLink: () => Promise<void>
   beginGmailAutomationLink: () => Promise<void>
@@ -181,18 +186,27 @@ export function AiAccessProvider({ children }: { children: ReactNode }) {
   const [busy, setBusy] = useState(false)
   const [connectedEmail, setConnectedEmail] = useState<string | null>(null)
   const [gmailAutomation, setGmailAutomation] = useState<GmailAutomationStatus | null>(null)
-  const [error, setError] = useState('')
+  const [statusVerified, setStatusVerified] = useState(false)
+  const [{ message: error, source: errorSource }, setFailure] = useState(() => aiAccessFailure(''))
+  const setError = (message: string, source: AiAccessErrorSource = 'status') => {
+    if (message && source === 'status') setStatusVerified(false)
+    setFailure(aiAccessFailure(message, source))
+  }
   const completing = useRef(false)
   const message = connectedEmail === null ? '' : aiAccessConnectedMessage(connectedEmail || undefined, lang)
 
   async function refreshStatusForSession(session: Session | null) {
     if (!session) {
       setGmailAutomation(null)
+      setStatusVerified(false)
       return
     }
     try {
       setGmailAutomation(await readAutomationStatus(session))
+      setStatusVerified(true)
+      setFailure(clearRecoveredStatusFailure)
     } catch (caught) {
+      setStatusVerified(false)
       const raw = caught instanceof Error ? caught.message : String(caught)
       if (!/Connect Google|Google.*before enabling|HTTP 400/i.test(raw)) throw caught
       setGmailAutomation(null)
@@ -211,6 +225,7 @@ export function AiAccessProvider({ children }: { children: ReactNode }) {
       const linked = await persistGoogleLink(session)
       if (mode === 'gmail') {
         setGmailAutomation(await writeAutomationStatus(session, { gmailEnabled: true, ...(consent ? { gmailIntakeConsentVersion: consent } : {}) }))
+        setStatusVerified(true)
       } else {
         await refreshStatusForSession(session)
       }
@@ -220,7 +235,7 @@ export function AiAccessProvider({ children }: { children: ReactNode }) {
       // Do not sign it out after saving the encrypted Google refresh token.
     } catch (caught) {
       clearPendingGoogleLinkState()
-      setError(aiAccessErrorMessage(caught, lang))
+      setError(aiAccessErrorMessage(caught, lang), mode === 'gmail' ? 'gmail' : 'workspace')
     } finally {
       setBusy(false)
       completing.current = false
@@ -287,7 +302,7 @@ export function AiAccessProvider({ children }: { children: ReactNode }) {
       if (signInError) throw signInError
     } catch (caught) {
       clearPendingGoogleLinkState()
-      setError(aiAccessErrorMessage(caught, lang))
+      setError(aiAccessErrorMessage(caught, lang), mode === 'gmail' ? 'gmail' : 'workspace')
       setBusy(false)
     }
   }
@@ -317,8 +332,11 @@ export function AiAccessProvider({ children }: { children: ReactNode }) {
     setError('')
     try {
       setGmailAutomation(await writeAutomationStatus(await requireSession(), { gmailEnabled: enabled, ...(enabled ? { gmailIntakeConsentVersion: 'uu06-v1' as const } : {}) }))
+      setStatusVerified(true)
     } catch (caught) {
-      setError(aiAccessErrorMessage(caught, lang))
+      // A failed response cannot prove the server did not apply the mutation.
+      setStatusVerified(false)
+      setError(aiAccessErrorMessage(caught, lang), 'gmail')
     } finally {
       setBusy(false)
     }
@@ -329,8 +347,11 @@ export function AiAccessProvider({ children }: { children: ReactNode }) {
     setError('')
     try {
       setGmailAutomation(await writeAutomationStatus(await requireSession(), { discoveryEnabled: enabled }))
+      setStatusVerified(true)
     } catch (caught) {
-      setError(aiAccessErrorMessage(caught, lang))
+      // A failed response cannot prove the server did not apply the mutation.
+      setStatusVerified(false)
+      setError(aiAccessErrorMessage(caught, lang), 'discovery')
     } finally {
       setBusy(false)
     }
@@ -353,6 +374,8 @@ export function AiAccessProvider({ children }: { children: ReactNode }) {
       busy,
       message,
       error,
+      errorSource,
+      statusVerified,
       gmailAutomation,
       beginGoogleDriveLink,
       beginGmailAutomationLink,
