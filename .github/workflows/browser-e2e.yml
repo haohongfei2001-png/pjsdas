@@ -32,7 +32,9 @@ jobs:
       - name: Install Chromium
         run: npx playwright install --with-deps chromium
       - name: Run critical browser journeys
-        run: npx playwright test --config=playwright.config.mts --project=chromium
+        env:
+          PLAYWRIGHT_HTML_OUTPUT_DIR: playwright-report/core
+        run: npx playwright test --config=playwright.config.mts --project=chromium --output=test-results/core
       - name: Run dense instant journeys with production React runtime
         env:
           PLAYWRIGHT_HTML_OUTPUT_DIR: playwright-report/instant

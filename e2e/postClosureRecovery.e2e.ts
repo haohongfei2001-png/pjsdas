@@ -1,4 +1,5 @@
 import { freezeTodayFixture } from './support/consumerFixtureClock.js'
+import { installAccountClearFault } from './support/accountClearFault.js'
 import { expect, test } from '@playwright/test'
 import { AUTH_KEY, BACKEND, cors, health, session, workspace } from './fixtures/todayWorkspace.js'
 import type { PJSDASSnapshot } from '../src/snapshot.js'
@@ -6,7 +7,7 @@ import type { PJSDASSnapshot } from '../src/snapshot.js'
 test.beforeEach(async ({ page }) => { await freezeTodayFixture(page) })
 
 for (const trigger of ['auth-expiry', 'settings-sign-out'] as const)
-for (const failure of ['partial-clear-throw', 'transaction-abort'] as const) test(`${trigger} ${failure} reaches lossless recovery without leaving the expired account interactive`, async ({ page }) => {
+for (const failure of ['partial-clear-throw', 'transaction-abort'] as const) test(`${trigger} ${failure} reaches lossless recovery without leaving the expired account interactive`, async ({ page }, info) => {
   const snapshot = workspace()
   const requests: Array<{ token: string; action: string }> = []
   await page.addInitScript(({ key, value }) => {
@@ -33,45 +34,62 @@ for (const failure of ['partial-clear-throw', 'transaction-abort'] as const) tes
     await expect(page.getByRole('button', { name: '退出 TodayAction' })).toBeVisible()
   }
   const before = await page.evaluate(async () => (await (await import('/pjsdas/src/db.ts')).exportLocalRecoveryArchive()).stores)
-  await page.evaluate((failure) => {
-    const clear = IDBObjectStore.prototype.clear
-    ;(window as any).__restorePcrClear = () => { IDBObjectStore.prototype.clear = clear }
-    let calls = 0
-    IDBObjectStore.prototype.clear = function () {
-      const request = clear.call(this)
-      if (++calls === 3) {
-        if (failure === 'transaction-abort') this.transaction.abort()
-        else throw new Error('Injected cache-clear failure')
-      }
-      return request
-    }
-  }, failure)
-  if (trigger === 'settings-sign-out') await page.getByRole('button', { name: '退出 TodayAction' }).click()
-  else await page.evaluate(async () => {
-    // Real auth event, bypassing the UI guard as expiry/another context can do.
+  // Snapshot replacement also clears stores, but includes commandInteractions.
+  // Account clearing intentionally preserves those journals. Match its complete
+  // transaction scope so a background/pre-sign-out refresh cannot consume the fault.
+  const expectedStores = Object.keys(before).filter(name => name !== 'commandInteractions')
+  await page.evaluate(installAccountClearFault, { expectedStores, failure, authKey: AUTH_KEY })
+  await page.evaluate(async () => {
     const { pjsdasSupabase } = await import('/pjsdas/src/aiAccess/supabaseClient.ts')
-    const result = await pjsdasSupabase.auth.signOut({ scope: 'local' })
-    if (result.error) throw result.error
+    ;(window as any).__pcrAuthEvents = []
+    const { data } = pjsdasSupabase.auth.onAuthStateChange((event, session) => {
+      ;(window as any).__pcrAuthEvents.push({ event, account: session?.user.id ?? null })
+    })
+    ;(window as any).__restorePcrAuthProbe = () => data.subscription.unsubscribe()
   })
-  await expect(page.getByRole('heading', { name: /Workspace could not open/ })).toBeVisible()
-  await expect(page.getByRole('heading', { name: 'A第一任务' })).toHaveCount(0)
-  const downloadPromise = page.waitForEvent('download')
-  await page.getByRole('button', { name: /Download recovery backup/ }).click()
-  const stream = await (await downloadPromise).createReadStream()
-  let bytes = ''; for await (const chunk of stream!) bytes += chunk.toString()
-  expect(JSON.parse(bytes).stores).toEqual(before)
-  expect(await page.evaluate(async () => (await (await import('/pjsdas/src/db.ts')).exportLocalRecoveryArchive()).stores)).toEqual(before)
-  await page.evaluate(() => (window as any).__restorePcrClear())
-  await page.getByRole('button', { name: /Retry/ }).click()
-  await expect(page.locator('.startup-recovery')).toHaveCount(0)
-  await expect.poll(() => page.evaluate(async () => (await (await import('/pjsdas/src/db.ts')).exportLocalRecoveryArchive()).stores.actions.length)).toBe(0)
-  await page.goto('/pjsdas/today')
-  await expect(page.getByTestId('cgr02-today')).toBeVisible()
-  await expect(page.getByRole('heading', { name: 'A第一任务' })).toHaveCount(0)
-  expect(requests.every(request => request.action === 'read' && request.token === 'Bearer token-a')).toBe(true)
-  await page.reload()
-  await expect(page.getByTestId('cgr02-today')).toBeVisible()
-  await expect(page.getByRole('heading', { name: 'A第一任务' })).toHaveCount(0)
+  let reachedBoundary: { clear: unknown; authEvents: unknown } | undefined
+  try {
+    if (trigger === 'settings-sign-out') await page.getByRole('button', { name: '退出 TodayAction' }).click()
+    else await page.evaluate(async () => {
+      // Real auth event, bypassing the UI guard as expiry/another context can do.
+      const { pjsdasSupabase } = await import('/pjsdas/src/aiAccess/supabaseClient.ts')
+      const result = await pjsdasSupabase.auth.signOut({ scope: 'local' })
+      if (result.error) throw result.error
+    })
+    await expect(page.getByRole('heading', { name: /Workspace could not open/ })).toBeVisible()
+    reachedBoundary = await page.evaluate(() => ({ clear: (window as any).__pcrClearWitness, authEvents: (window as any).__pcrAuthEvents }))
+    expect(reachedBoundary.clear).toMatchObject({
+      activated: true, scope: [...expectedStores].sort(), authPresentAtFault: false,
+    })
+    expect(reachedBoundary.authEvents).toContainEqual({ event: 'SIGNED_OUT', account: null })
+    await expect(page.getByRole('heading', { name: 'A第一任务' })).toHaveCount(0)
+    const downloadPromise = page.waitForEvent('download')
+    await page.getByRole('button', { name: /Download recovery backup/ }).click()
+    const stream = await (await downloadPromise).createReadStream()
+    let bytes = ''; for await (const chunk of stream!) bytes += chunk.toString()
+    expect(JSON.parse(bytes).stores).toEqual(before)
+    expect(await page.evaluate(async () => (await (await import('/pjsdas/src/db.ts')).exportLocalRecoveryArchive()).stores)).toEqual(before)
+    await page.evaluate(() => (window as any).__restorePcrClear())
+    await page.getByRole('button', { name: /Retry/ }).click()
+    await expect(page.locator('.startup-recovery')).toHaveCount(0)
+    await expect.poll(() => page.evaluate(async () => (await (await import('/pjsdas/src/db.ts')).exportLocalRecoveryArchive()).stores.actions.length)).toBe(0)
+    await page.goto('/pjsdas/today')
+    await expect(page.getByTestId('cgr02-today')).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'A第一任务' })).toHaveCount(0)
+    expect(requests.every(request => request.action === 'read' && request.token === 'Bearer token-a')).toBe(true)
+    await page.reload()
+    await expect(page.getByTestId('cgr02-today')).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'A第一任务' })).toHaveCount(0)
+  } finally {
+    // Preserve whether the boundary was reached, rather than only a missing heading.
+    const diagnostic = await page.evaluate(() => ({ clear: (window as any).__pcrClearWitness,
+      authEvents: (window as any).__pcrAuthEvents,
+      guardErrors: Array.from(document.querySelectorAll('.cloud-error')).map(node => node.textContent),
+      recoveryVisible: Boolean(document.querySelector('.startup-recovery')),
+    })).catch(error => ({ diagnosticError: String(error) }))
+    await info.attach('account-clear-boundary.json', { body: JSON.stringify({ ...diagnostic, reachedBoundary }, null, 2), contentType: 'application/json' })
+    await page.evaluate(() => { (window as any).__restorePcrClear?.(); (window as any).__restorePcrAuthProbe?.() }).catch(() => undefined)
+  }
 })
 
 for (const version of [1, 2, 3] as const) test(`legacy snapshot v${version} restores and starts every daily surface after durable restart`, async ({ page, context }) => {
