@@ -54,6 +54,48 @@ async function pendingCount(page: import('@playwright/test').Page) {
   return page.evaluate(() => JSON.parse(localStorage.getItem('pjsdas-cgr01-pending:instant-owner') ?? '[]').length)
 }
 
+for (const failure of ['journal-read', 'account-change', 'read-and-archive'] as const) test(`pre-projection ${failure} never replays a failed click after reopen`, async ({ page, context }) => {
+  const server = await setup(context); server.setDelay(50)
+  await start(page)
+  const result = await page.evaluate(async failure => {
+    const api = await import('/pjsdas/src/db.ts'), client = await import('/pjsdas/src/cloud/instantCommandClient.ts')
+    const accounts = await import('/pjsdas/src/cloud/accountCacheLease.ts')
+    const snapshot = await api.exportLocalSnapshot()
+    const getAll = IDBIndex.prototype.getAll, put = IDBObjectStore.prototype.put
+    let armed = true
+    IDBIndex.prototype.getAll = function(...args: Parameters<IDBIndex['getAll']>) {
+      if (this.name === 'by-account-state' && armed) {
+        armed = false
+        if (failure === 'account-change') accounts.setAccountCacheSession('different-account')
+        else throw new Error('Synthetic journal read failure')
+      }
+      return getAll.apply(this, args)
+    }
+    if (failure === 'read-and-archive') IDBObjectStore.prototype.put = function(...args: Parameters<IDBObjectStore['put']>) {
+      if (this.name === 'commandInteractions') throw new Error('Synthetic archive unavailable')
+      return put.apply(this, args)
+    }
+    const commandId = `instant-action:failed-${failure}`
+    let failed = false
+    try { await client.beginInstantCommand('instant-owner', snapshot, { commandId, kind: 'set_action_status', actionId: 'dense-action-0', status: 'done' }) }
+    catch { failed = true }
+    finally { IDBIndex.prototype.getAll = getAll; IDBObjectStore.prototype.put = put; accounts.setAccountCacheSession('instant-owner') }
+    const mirrored = JSON.parse(localStorage.getItem('pjsdas-cgr01-pending:instant-owner') ?? '[]')
+    await client.recoverInstantInteraction('instant-owner', commandId)
+    return { failed, mirrored: mirrored.map((item: any) => ({ commandId: item.commandId, status: item.status })),
+      status: (await (await api.dbPromise).get('actions', 'dense-action-0'))!.status,
+      archiveState: (await api.readCommandInteraction('instant-owner', commandId))?.state }
+  }, failure)
+  expect(result.failed).toBe(true)
+  expect(result.status).toBe('todo')
+  if (failure === 'read-and-archive') expect(result.mirrored).toEqual([{ commandId: `instant-action:failed-${failure}`, status: 'conflict' }])
+  else { expect(result.mirrored).toEqual([]); expect(result.archiveState).toBe('rejected') }
+  expect(server.sent).toEqual([])
+  await page.reload()
+  await expect(page.locator('[data-action-id="dense-action-0"]')).toBeVisible()
+  expect(server.sent).toEqual([])
+})
+
 test('immediate Undo preserves original audit and compensates after its delayed receipt', async ({ page, context }) => {
   test.setTimeout(90_000)
   const server = await setup(context)
@@ -86,6 +128,32 @@ test('definitive rejection rolls back only its own change and retains command pr
   const records = await page.evaluate(async () => (await (await import('/pjsdas/src/db.ts')).readCommandInteractions('instant-owner')))
   expect(records.some((record: any) => record.state === 'rejected' && record.command?.actionId === 'dense-action-0')).toBe(true)
   expect(await pendingCount(page)).toBe(0)
+})
+
+test('known rejection with unavailable rollback archive never becomes a replayable unknown command', async ({ page, context }) => {
+  const server = await setup(context); server.setDelay(700)
+  await start(page); server.denyNext()
+  await page.locator('[data-action-id="dense-action-0"] .tsui-done-action').click()
+  await expect(page.locator('[data-action-id="dense-action-0"]')).toHaveCount(0)
+  await page.evaluate(() => {
+    const put = IDBObjectStore.prototype.put
+    ;(window as any).restoreArchive = () => { IDBObjectStore.prototype.put = put }
+    IDBObjectStore.prototype.put = function(...args: Parameters<IDBObjectStore['put']>) {
+      if (this.name === 'commandInteractions') throw new Error('Synthetic rollback archive unavailable')
+      return put.apply(this, args)
+    }
+  })
+  await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem('pjsdas-cgr01-pending:instant-owner') ?? '[]')[0]?.status)).toBe('conflict')
+  await page.evaluate(async () => {
+    ;(window as any).restoreArchive()
+    const pending = JSON.parse(localStorage.getItem('pjsdas-cgr01-pending:instant-owner') ?? '[]')[0]
+    await (await import('/pjsdas/src/cloud/instantCommandClient.ts')).recoverInstantInteraction('instant-owner', pending.commandId)
+  })
+  expect(server.sent).toHaveLength(1)
+  expect(server.snapshot.data.actions[0].status).toBe('todo')
+  await page.reload()
+  await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem('pjsdas-cgr01-pending:instant-owner') ?? '[]')[0]?.status)).toBe('conflict')
+  expect(server.sent).toHaveLength(1)
 })
 
 test('lost acknowledgement recovers receipt after reload without repeating the business command', async ({ page, context }) => {

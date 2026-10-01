@@ -211,7 +211,7 @@ test('lost response after server commit survives reload and recovers one durable
   await page.locator('.tsui-task-row').filter({ has: page.getByRole('heading', { name: 'A第一任务' }) }).getByRole('button', { name: '完成' }).click()
   await expect(page.getByRole('status')).toContainText('修改已保存在本机')
   expect(commandCalls).toBe(1)
-  expect(receiptCalls).toBe(1)
+  await expect.poll(() => receiptCalls).toBe(1)
 
   await page.reload()
   await expect(page.getByRole('heading', { name: 'A第一任务' })).toHaveCount(0)
@@ -325,6 +325,9 @@ test('connected Web recovers a lost command response and Undo preserves unrelate
   })
   expect(commandBodies[0]).not.toHaveProperty('snapshot')
 
+  // This legacy full-snapshot fixture introduces an independent server edit
+  // after receipt recovery. Immediate pre-ack Undo is covered by the dense delta fixture.
+  await expect.poll(() => page.evaluate(() => window.localStorage.getItem('pjsdas-cgr01-pending:account-a'))).toBeNull()
   const unrelated = state.snapshot.data.actions.find((item) => item.id === 'A-action-2')
   if (unrelated) {
     unrelated.status = 'done'

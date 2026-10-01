@@ -50,15 +50,17 @@ export async function beginInstantCommand(accountKey: string, snapshot: PJSDASSn
   // Reserve durable intent before the first async yield so a background full
   // refresh cannot start fingerprinting while this click is settling.
   journalConnectedInteraction(accountKey, { commandId: command.commandId, command: { type: 'domain', value: command }, baseRevision })
-  const existing = await readPendingCommandInteractions(accountKey)
-  const overlapping = existing.filter(item => item.state === 'active' && item.delta.changes.some(left => projected.delta.changes.some(right => left.collection === right.collection && left.id === right.id)
-    || (['set_date_capacity', 'set_daily_capacity', 'set_work_windows'].includes(command.kind) && left.collection === 'timePlanning')))
   const record: CommandInteractionRecord = { id: recordId(accountKey, command.commandId), accountKey, commandId: command.commandId,
-    command, predecessors: overlapping.map(item => item.commandId), delta: projected.delta, compensation: projected.compensation, state: 'active', createdAt: new Date().toISOString() }
-  try { await persistInteractionProjection(record, lease.assertCurrent) } catch (error) {
+    command, predecessors: [], delta: projected.delta, compensation: projected.compensation, state: 'active', createdAt: new Date().toISOString() }
+  try {
+    const existing = await readPendingCommandInteractions(accountKey)
+    record.predecessors = existing.filter(item => item.state === 'active' && item.delta.changes.some(left => projected.delta.changes.some(right => left.collection === right.collection && left.id === right.id)
+      || (['set_date_capacity', 'set_daily_capacity', 'set_work_windows'].includes(command.kind) && left.collection === 'timePlanning'))).map(item => item.commandId)
+    await persistInteractionProjection(record, lease.assertCurrent)
+  } catch (error) {
     try { await saveCommandInteraction({ ...record, state: 'rejected', lastError: 'Local projection refused.' }); settleConnectedInteraction(accountKey, command.commandId) }
     catch { settleConnectedInteraction(accountKey, command.commandId, 'conflict', '本机保存失败，原操作记录已保留。') }
-    throw new Error('这项记录刚有变化，本次修改未写入，请查看最新内容。')
+    throw new Error('本机没能保存这次修改，尚未提交，请核对最新内容后重试。')
   }
   interactionMetric('durable-outbox', started)
   emit(record, record.delta)
@@ -98,35 +100,42 @@ async function network(accountKey: string, body: Record<string, unknown>) {
   return { response, payload, lease }
 }
 async function reject(record: CommandInteractionRecord, message: string, state: 'rejected' | 'conflict') {
-  const lease = captureAccountCacheLease(record.accountKey)
-  const all = await readPendingCommandInteractions(record.accountKey)
-  const rejectedIds = new Set([record.commandId])
-  const dependents: CommandInteractionRecord[] = []
-  let changed = true
-  while (changed) {
-    changed = false
-    for (const item of all) if (item.state === 'active' && !rejectedIds.has(item.commandId) && item.predecessors?.some(id => rejectedIds.has(id))) {
-      rejectedIds.add(item.commandId); dependents.push(item); changed = true
-    }
-  }
-  // Outbox order is explicit in predecessor IDs, not primary-key iteration.
-  const ordered = orderInteractions(dependents)
-  const steps = [...ordered.reverse(), record].map(item => ({
-    record: { ...item, state: (item.commandId === record.commandId ? state : 'rejected') as 'rejected' | 'conflict', lastError: message },
-    delta: reverseWorkspaceDelta(item.delta),
-  }))
+  let all: CommandInteractionRecord[] | undefined
+  let steps: Array<{ record: CommandInteractionRecord; delta: WorkspaceDelta }> = []
   try {
+    const lease = captureAccountCacheLease(record.accountKey)
+    all = await readPendingCommandInteractions(record.accountKey)
+    const rejectedIds = new Set([record.commandId])
+    const dependents: CommandInteractionRecord[] = []
+    let changed = true
+    while (changed) {
+      changed = false
+      for (const item of all) if (item.state === 'active' && !rejectedIds.has(item.commandId) && item.predecessors?.some(id => rejectedIds.has(id))) {
+        rejectedIds.add(item.commandId); dependents.push(item); changed = true
+      }
+    }
+    // Outbox order is explicit in predecessor IDs, not primary-key iteration.
+    steps = [...orderInteractions(dependents).reverse(), record].map(item => ({
+      record: { ...item, state: (item.commandId === record.commandId ? state : 'rejected') as 'rejected' | 'conflict', lastError: message },
+      delta: reverseWorkspaceDelta(item.delta),
+    }))
     await persistInteractionProjections(steps, lease.assertCurrent)
     for (const step of steps) {
       emit(step.record, step.delta, message)
       settleConnectedInteraction(record.accountKey, step.record.commandId, step.record.state === 'conflict' ? 'conflict' : undefined, message)
     }
   } catch {
-    for (const step of steps) {
-      await saveCommandInteraction({ ...step.record, state: 'conflict' })
-      settleConnectedInteraction(record.accountKey, step.record.commandId, 'conflict', message)
+    // A known rejection cannot become an unknown outcome if local rollback or
+    // archival fails. Close the durable mirror first, including potential
+    // dependents when their journal cannot be read; retain every original intent.
+    const blocked = steps.length ? steps.map(step => step.record) : all ?? [record]
+    const ids = steps.length ? blocked.map(item => item.commandId)
+      : listAccountPendingOperations(record.accountKey).filter(item => item.interaction).map(item => item.commandId)
+    for (const commandId of new Set([record.commandId, ...ids])) settleConnectedInteraction(record.accountKey, commandId, 'conflict', message)
+    for (const item of blocked) {
+      try { await saveCommandInteraction({ ...item, state: 'conflict', lastError: message }) } catch { /* The closed mirror retains the original command. */ }
     }
-    emit({ ...record, state: 'conflict' }, undefined, '记录已在别处变化，请打开设置核对；没有覆盖新修改。')
+    emit({ ...record, state: 'conflict' }, undefined, '这次修改未被接受，本机状态待核对；请打开设置安全刷新。')
   }
 }
 async function reconcile(record: CommandInteractionRecord, payload: any, assertCurrent: () => void) {
@@ -218,7 +227,7 @@ async function reconcile(record: CommandInteractionRecord, payload: any, assertC
   }
 }
 async function send(record: CommandInteractionRecord, recovery: boolean) {
-  if (!navigator.onLine) return
+  if (!navigator.onLine || listAccountPendingOperations(record.accountKey).some(item => item.commandId === record.commandId && item.status === 'conflict')) return
   const durable = await readCommandInteraction(record.accountKey, record.commandId)
   if (durable?.state === 'rejected' || durable?.state === 'conflict' || durable?.state === 'confirmed') return
   if (durable) record = durable
@@ -266,10 +275,13 @@ async function send(record: CommandInteractionRecord, recovery: boolean) {
   }
 }
 export async function recoverInstantInteraction(accountKey: string, commandId: string) {
+  const pending = listAccountPendingOperations(accountKey).find(item => item.commandId === commandId)
+  if (pending?.interaction && pending.status === 'conflict') return
   let record = await readCommandInteraction(accountKey, commandId)
   if (!record) {
-    const pending = listAccountPendingOperations(accountKey).find(item => item.commandId === commandId)
-    if (!pending?.interaction) return
+    // A failed local preparation may retain its original mirror when even the
+    // archive store is unavailable. It is closed to replay, never a queued click.
+    if (!pending?.interaction || pending.status === 'conflict') return
     const local = await exportLocalSnapshot()
     const target = pending.targetCommandId
       ? await readCommandInteraction(accountKey, pending.targetCommandId) : undefined

@@ -1,6 +1,6 @@
+import { todayScheduleSnapshot, patchConsumerSnapshot } from './today/consumerScheduleSnapshot.js'
 import { interactionMetric } from './cloud/interactionMetrics.js'
 import { beginInstantCommand, beginInstantUndo, type InteractionEvent } from './cloud/instantCommandClient.js'
-import { applyWorkspaceDelta } from './workspaceDelta.js'
 import type { ActionStatusUndo } from './actionStatusUndo.js'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { StartupRecovery } from './StartupRecovery.js'
@@ -227,7 +227,7 @@ export default function AppV8() {
     const update = (event: Event) => {
       const detail = (event as CustomEvent<InteractionEvent>).detail
       if (detail.accountKey !== cloud.session?.user.id) return
-      if (detail.delta) setSnapshot(current => current ? applyWorkspaceDelta(current, detail.delta!, false) : current)
+      if (detail.delta) setSnapshot(current => current ? patchConsumerSnapshot(current, detail.delta!) : current)
       if (detail.state === 'rejected' || detail.state === 'conflict') {
         if (completionRef.current?.commandId === detail.commandId) setLastCompletedAction(current => current?.commandId === detail.commandId
           ? { ...current, outcome: 'error', error: detail.message } : current)
@@ -464,7 +464,9 @@ export default function AppV8() {
   // this snapshot. Read-only selectors can share it without cloning entities.
   const normalizedReadSnapshot = snapshot
   const todayWeb = useMemo(() => { if (!normalizedReadSnapshot || surface !== 'today') return undefined; const started = performance.now(); const result = selectTodayWebNormalized(normalizedReadSnapshot, {}, { now, timezone, workspaceVersion: workspaceRevision }); interactionMetric('today-selector', started); return result }, [snapshot, surface, now, timezone, workspaceRevision])
-  const scheduleStream = useMemo(() => { if (!normalizedReadSnapshot || (surface !== 'today' && surface !== 'schedule')) return undefined; const started = performance.now(); const result = buildScheduleStreamNormalized(normalizedReadSnapshot, { accountKey, workspaceRevision, timezone, now }); interactionMetric('schedule-selector', started); return result }, [snapshot, surface, accountKey, workspaceRevision, timezone, now])
+  const scheduleProjection = useMemo(() => { if (!normalizedReadSnapshot || (surface !== 'today' && surface !== 'schedule')) return undefined; const started = performance.now(); const source = surface === 'today' ? todayScheduleSnapshot(normalizedReadSnapshot, now, timezone) : normalizedReadSnapshot; const result = buildScheduleStreamNormalized(source, { accountKey, workspaceRevision, timezone, now }); interactionMetric('schedule-selector', started); return result }, [snapshot?.data.actions, snapshot?.data.scheduleNodes, snapshot?.data.timeline, snapshot?.data.processEvents, surface, accountKey, timezone, now])
+  const scheduleStream = scheduleProjection && scheduleProjection.workspaceRevision !== workspaceRevision
+    ? { ...scheduleProjection, workspaceRevision, key: JSON.stringify([accountKey, workspaceRevision, timezone, localDateKey(now, timezone)]) } : scheduleProjection
 
   const opportunityDecisionList = useMemo<OpportunityDecisionListRead | undefined>(() => {
     if (!snapshot || surface !== 'opportunities') return undefined
