@@ -1179,3 +1179,99 @@ for (const operation of ['action', 'complete', 'cancel', 'reschedule'] as const)
   await expect(page.locator('[data-action-id="dense-action-0"]')).toBeVisible()
   expect(server.sent).toHaveLength(2)
 })
+
+for (const changed of [false, true]) for (const undo of [false, true]) test(`receiptless parent restart preserves revision and dependent ownership (changed=${changed}, undo=${undo})`, async ({ page, context }) => {
+  const server = await setup(context); server.setDelay(50); await start(page)
+  await context.addInitScript(() => Object.defineProperty(navigator, 'onLine', { configurable: true, value: false }))
+  await page.evaluate(() => Object.defineProperty(navigator, 'onLine', { configurable: true, value: false }))
+  const childId = await page.evaluate(async undo => {
+    const api = await import('/pjsdas/src/db.ts'), client = await import('/pjsdas/src/cloud/instantCommandClient.ts')
+    await client.beginInstantCommand('instant-owner', await api.exportLocalSnapshot(), { commandId: 'noop-parent', kind: 'set_date_capacity', date: '2026-10-01', minutes: 300 })
+    const childId = undo ? await client.beginInstantUndo('instant-owner', 'noop-parent', await api.exportLocalSnapshot())
+      : await client.beginInstantCommand('instant-owner', await api.exportLocalSnapshot(), { commandId: 'noop-child', kind: 'set_date_capacity', date: '2026-10-01', minutes: 240 })
+    await new Promise(resolve => setTimeout(resolve, 0))
+    return childId
+  }, undo)
+  server.backgroundCapacity(300, new Date('2026-10-01T02:00:00Z'))
+  await page.evaluate(async () => {
+    Object.defineProperty(navigator, 'onLine', { configurable: true, value: true })
+    try { await (await import('/pjsdas/src/cloud/instantCommandClient.ts')).recoverInstantInteraction('instant-owner', 'noop-parent') }
+    finally { Object.defineProperty(navigator, 'onLine', { configurable: true, value: false }) }
+  })
+  await expect.poll(() => page.evaluate(async () => (await (await import('/pjsdas/src/db.ts')).readCommandInteraction('instant-owner', 'noop-parent'))?.noOpRevision)).toBe(1205)
+  if (changed) server.backgroundCapacity(400, new Date('2026-10-01T04:00:00Z'))
+  await page.reload()
+  await expect.poll(() => page.evaluate(async () => (await import('/pjsdas/src/cloud/accountCacheLease.ts')).currentAccountCacheSession())).toBe('instant-owner')
+  const result = await page.evaluate(async childId => {
+    const api = await import('/pjsdas/src/db.ts'), client = await import('/pjsdas/src/cloud/instantCommandClient.ts')
+    const persistedRevision = (await api.readCommandInteraction('instant-owner', 'noop-parent'))?.noOpRevision
+    Object.defineProperty(navigator, 'onLine', { configurable: true, value: true })
+    for (let attempt = 0; attempt < 3; attempt++) {
+      await client.recoverInstantInteraction('instant-owner', 'noop-parent')
+      await client.recoverInstantInteraction('instant-owner', childId)
+    }
+    const parent = await api.readCommandInteraction('instant-owner', 'noop-parent')
+    const child = await api.readCommandInteraction('instant-owner', childId)
+    return { persistedRevision, parentState: parent?.state, childState: child?.state, compensation: parent?.compensation,
+      planning: (await api.exportLocalSnapshot()).data.timePlanning }
+  }, childId)
+  expect(result.persistedRevision).toBe(1205)
+  expect(result.compensation).toBeUndefined()
+  expect(result.parentState).toBe(changed ? 'conflict' : 'confirmed')
+  expect(result.childState).toBe(changed || undo ? 'rejected' : 'confirmed')
+  expect(result.planning).toEqual(server.snapshot.data.timePlanning)
+  expect(server.sent).toEqual(changed || undo ? ['noop-parent'] : ['noop-parent', 'noop-child'])
+  const parentUndo = await page.evaluate(async () => {
+    Object.defineProperty(navigator, 'onLine', { configurable: true, value: false })
+    try {
+      const api = await import('/pjsdas/src/db.ts'), client = await import('/pjsdas/src/cloud/instantCommandClient.ts')
+      await client.beginInstantUndo('instant-owner', 'noop-parent', await api.exportLocalSnapshot())
+      return 'unexpected-success'
+    } catch { return 'refused' }
+  })
+  expect(parentUndo).toBe('refused')
+})
+
+test('empty no-op acknowledgement never advances the cache before unseen facts are read', async ({ page, context }) => {
+  const server = await setup(context); server.setDelay(50)
+  server.snapshot.data.timePlanning!.dateOverrides = { '2026-10-01': 300 }
+  await start(page)
+  await page.evaluate(async () => {
+    Object.defineProperty(navigator, 'onLine', { configurable: true, value: false })
+    const api = await import('/pjsdas/src/db.ts'), client = await import('/pjsdas/src/cloud/instantCommandClient.ts')
+    await client.beginInstantCommand('instant-owner', await api.exportLocalSnapshot(), { commandId: 'empty-noop', kind: 'set_date_capacity', date: '2026-10-01', minutes: 300 })
+    await new Promise(resolve => setTimeout(resolve, 0))
+  })
+  server.backgroundGmail()
+  const beforeRead = await page.evaluate(async () => {
+    Object.defineProperty(navigator, 'onLine', { configurable: true, value: true })
+    const api = await import('/pjsdas/src/db.ts'), client = await import('/pjsdas/src/cloud/instantCommandClient.ts')
+    await client.recoverInstantInteraction('instant-owner', 'empty-noop')
+    return { journal: await api.readCommandInteraction('instant-owner', 'empty-noop'),
+      checkpoint: (await import('/pjsdas/src/cloud/syncState.ts')).getAccountCheckpoint('instant-owner').lastSyncedVersion }
+  })
+  expect(beforeRead.journal?.noOpRevision).toBe(1205)
+  expect(beforeRead.journal?.state).toBe('projection_pending')
+  expect(beforeRead.checkpoint).toBe('txn:1204')
+  const afterRead = await page.evaluate(async () => {
+    const api = await import('/pjsdas/src/db.ts'), client = await import('/pjsdas/src/cloud/instantCommandClient.ts')
+    const removeItem = Storage.prototype.removeItem
+    let failed = false
+    Storage.prototype.removeItem = function(key) {
+      if (!failed && key === 'pjsdas-cgr01-pending:instant-owner') { failed = true; throw new Error('Synthetic no-op mirror cleanup failure') }
+      return removeItem.call(this, key)
+    }
+    try {
+      await client.recoverInstantInteraction('instant-owner', 'empty-noop')
+      await client.recoverInstantInteraction('instant-owner', 'empty-noop')
+      return { failed, snapshot: await api.exportLocalSnapshot(), journal: await api.readCommandInteraction('instant-owner', 'empty-noop'),
+        checkpoint: (await import('/pjsdas/src/cloud/syncState.ts')).getAccountCheckpoint('instant-owner').lastSyncedVersion }
+    } finally { Storage.prototype.removeItem = removeItem }
+  })
+  expect(afterRead.failed).toBe(true)
+  expect(afterRead.checkpoint).toBe('txn:1205')
+  expect(afterRead.snapshot.data.opportunities.find(item => item.id === 'dense-job-10')?.role).toBe('Independent Gmail role')
+  expect(afterRead.journal?.state).toBe('confirmed')
+  expect(afterRead.journal?.compensation).toBeUndefined()
+  expect(server.sent).toEqual(['empty-noop'])
+})

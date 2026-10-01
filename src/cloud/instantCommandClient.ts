@@ -65,9 +65,10 @@ function releaseIndependentQuarantine(accountKey: string, roots: Set<string>, re
 function advanceConfirmedCheckpoint(record: CommandInteractionRecord) {
   // The entity transaction and its confirmed journal can commit before the
   // localStorage checkpoint. Recover that exact adjacent revision only; a
-  // larger gap still requires the existing authoritative read path.
+  // larger gap still requires the existing authoritative read path. A no-op
+  // observation never proves that its revision's other facts were installed.
   const lease = captureAccountCacheLease(record.accountKey)
-  if (record.state === 'confirmed' && record.delta.baseRevision === version(record.accountKey)
+  if (record.state === 'confirmed' && record.noOpRevision === undefined && record.delta.baseRevision === version(record.accountKey)
     && record.serverRevision === record.delta.baseRevision + 1) {
     lease.assertCurrent()
     patchAccountCheckpoint(record.accountKey, { lastSyncedVersion: `txn:${record.serverRevision}`,
@@ -249,14 +250,9 @@ function rebaseDelta(delta: WorkspaceDelta, confirmed: CommandInteractionRecord[
     return { ...change, before, after }
   }) }
 }
-// A legacy full reply can bind owned postimages only when its snapshot is
-// exactly the receipt revision. A later current snapshot cannot prove what
-// this command changed; preserve the original guard rather than adopt edits.
-function receiptDelta(record: CommandInteractionRecord, payload: any): WorkspaceDelta {
-  if (payload.delta || payload.receipt?.projectionDelta) return payload.delta ?? payload.receipt.projectionDelta
-  if (!payload.snapshot || payload.receipt?.commandId !== record.commandId || payload.receipt?.revision !== payload.revision) return record.delta
-  return { ...record.delta, changes: record.delta.changes.map(change => {
-    const data = (payload.snapshot as PJSDASSnapshot).data[change.collection]
+function bindProjectionPostimages(record: CommandInteractionRecord, snapshot: PJSDASSnapshot, receiptless = false): WorkspaceDelta {
+  return { ...record.delta, changes: record.delta.changes.filter(change => !receiptless || change.collection !== 'timeline').map(change => {
+    const data = snapshot.data[change.collection]
     const current = (DELTA_COLLECTIONS as readonly string[]).includes(change.collection)
       ? (data as Array<Record<string, unknown>> | undefined)?.find(row => row.id === change.id) ?? null : data ?? null
     if (!change.after) { if (current) throw new Error('Receipt deletion postimage mismatch'); return change }
@@ -266,6 +262,15 @@ function receiptDelta(record: CommandInteractionRecord, payload: any): Workspace
     return { ...change, after: after as Record<string, unknown> }
   }) }
 }
+// A legacy full reply can bind owned postimages only when its snapshot is
+// exactly the receipt revision. A later current snapshot cannot prove what
+// this command changed; preserve the original guard rather than adopt edits.
+function receiptDelta(record: CommandInteractionRecord, payload: any): WorkspaceDelta {
+  if (payload.delta || payload.receipt?.projectionDelta) return payload.delta ?? payload.receipt.projectionDelta
+  if (!payload.snapshot || payload.receipt?.commandId !== record.commandId || payload.receipt?.revision !== payload.revision) return record.delta
+  return bindProjectionPostimages(record, payload.snapshot)
+}
+
 async function recoverAuthoritativeProjection(accountKey: string, expectedLocal: PJSDASSnapshot, supplied?: { record: CommandInteractionRecord; payload: any }) {
   const lease = captureAccountCacheLease(accountKey)
   const mirrors = listAccountPendingOperations(accountKey)
@@ -284,6 +289,7 @@ async function recoverAuthoritativeProjection(accountKey: string, expectedLocal:
       const read = await network(accountKey, { action: 'receipt', commandId: item.commandId })
       if (!read.response.ok) throw new Error('暂时无法核对操作回执；原操作已保留。')
       if (read.payload.found) receipts.set(item.commandId, read.payload)
+      else if (item.noOpRevision !== undefined) receipts.set(item.commandId, { outcome: 'ALREADY_APPLIED', revision: item.noOpRevision })
       else if (supplied?.record.commandId === item.commandId) receipts.set(item.commandId, supplied.payload)
     }
   }
@@ -296,20 +302,37 @@ async function recoverAuthoritativeProjection(accountKey: string, expectedLocal:
   }
   assertCurrent()
   if ([...receipts.values()].some(payload => Number(payload.receipt?.revision ?? payload.revision) > remote.revision)) throw new AccountCacheChangedError()
-  const confirmed = records.filter(item => receipts.has(item.commandId)).map(item => {
+  const staleNoOps = new Set<string>()
+  const confirmed: CommandInteractionRecord[] = []
+  for (const item of records.filter(item => receipts.has(item.commandId))) {
     const payload = receipts.get(item.commandId)
-    return { ...item, state: 'confirmed' as const, delta: receiptDelta(item, payload),
+    let delta: WorkspaceDelta
+    if (item.noOpRevision !== undefined && !payload.receipt) {
+      // A no-write response proves facts only at its original observed revision.
+      // It grants no audit/Undo ownership. A later read cannot silently rebase
+      // a dependent command onto someone else's newer edit.
+      if (remote.revision !== item.noOpRevision) { staleNoOps.add(item.commandId); continue }
+      try { delta = bindProjectionPostimages(item, remote.snapshot, true) }
+      catch { staleNoOps.add(item.commandId); continue }
+    } else delta = receiptDelta(item, payload)
+    confirmed.push({ ...item, state: 'confirmed', delta,
       compensation: payload.receipt ? payload.receipt.undoCompensation ?? item.compensation : undefined,
-      serverRevision: payload.receipt?.revision ?? payload.revision }
-  })
+      serverRevision: payload.receipt?.revision ?? item.noOpRevision ?? payload.revision })
+  }
   const steps: Array<{ record: CommandInteractionRecord; delta: WorkspaceDelta }> = confirmed.map(record => ({ record,
     delta: { contract: 'delta-v1', baseRevision: remote.revision, changes: [] } }))
   const empty = (baseRevision: number): WorkspaceDelta => ({ contract: 'delta-v1', baseRevision, changes: [] })
-  const rejected = new Set(records.filter(item => item.state === 'rollback_pending' && !receipts.has(item.commandId)).map(item => item.commandId))
+  const receiptlessIds = new Set(records.filter(item => item.noOpRevision !== undefined && !receipts.get(item.commandId)?.receipt).map(item => item.commandId))
+  const unownedUndos = new Set(records.filter(item => item.targetCommandId && receiptlessIds.has(item.targetCommandId) && !receipts.has(item.commandId)).map(item => item.commandId))
+  const rejected = new Set([...staleNoOps, ...unownedUndos, ...records.filter(item => item.state === 'rollback_pending' && !receipts.has(item.commandId)).map(item => item.commandId)])
   let expanded = true
   while (expanded) { expanded = false; for (const item of records) if (!receipts.has(item.commandId) && !rejected.has(item.commandId) && item.predecessors?.some(id => rejected.has(id))) { rejected.add(item.commandId); expanded = true } }
-  for (const item of orderInteractions(records.filter(item => !receipts.has(item.commandId)))) {
-    if (rejected.has(item.commandId)) { steps.push({ record: { ...item, state: 'rejected' }, delta: empty(remote.revision) }); continue }
+  for (const item of orderInteractions(records.filter(item => !receipts.has(item.commandId) || staleNoOps.has(item.commandId)))) {
+    if (rejected.has(item.commandId)) {
+      const lastError = staleNoOps.size ? '账号记录已在确认后变化，后续修改尚未提交；请核对最新内容后重试。'
+        : unownedUndos.size ? '这项记录已由别处完成，没有本次操作的撤销回执；撤销尚未提交。' : item.lastError
+      steps.push({ record: { ...item, state: staleNoOps.has(item.commandId) ? 'conflict' : 'rejected', lastError }, delta: empty(remote.revision) }); continue
+    }
     const ancestors = new Set(item.predecessors ?? [])
     let changed = true
     while (changed) { changed = false; for (const prior of records) if (ancestors.has(prior.commandId)) for (const id of prior.predecessors ?? []) if (!ancestors.has(id)) { ancestors.add(id); changed = true } }
@@ -339,14 +362,14 @@ async function recoverAuthoritativeProjection(accountKey: string, expectedLocal:
     } catch { /* Retain the original mirrors for terminal metadata recovery. */ }
   }
   if (finalized) {
-    for (const step of steps) if (step.record.state === 'confirmed' || step.record.state === 'rejected') {
-      try { settleConnectedInteraction(accountKey, step.record.commandId) } catch { /* Recover from the terminal journal, never its inverse. */ }
+    for (const step of steps) if (['confirmed', 'rejected', 'conflict'].includes(step.record.state)) {
+      try { settleConnectedInteraction(accountKey, step.record.commandId, step.record.state === 'conflict' ? 'conflict' : undefined, step.record.lastError) } catch { /* Recover from the terminal journal, never its inverse. */ }
     }
-    try { releaseIndependentQuarantine(accountKey, rejected, new Set(steps.filter(step => ['confirmed', 'rejected'].includes(step.record.state)).map(step => step.record.commandId))) } catch { /* Original independent intent remains in its mirror. */ }
+    try { releaseIndependentQuarantine(accountKey, rejected, new Set(steps.filter(step => ['confirmed', 'rejected', 'conflict'].includes(step.record.state)).map(step => step.record.commandId))) } catch { /* Original independent intent remains in its mirror. */ }
   }
   try {
     lease.assertCurrent()
-    for (const step of steps) if (step.record.state === 'confirmed' || step.record.state === 'rejected') emit(step.record)
+    for (const step of steps) if (['confirmed', 'rejected', 'conflict'].includes(step.record.state)) emit(step.record, undefined, step.record.lastError)
     window.dispatchEvent(new Event('pjsdas:workspace-replaced'))
   } catch { /* An account change must not publish the old account's UI event. */ }
   return committed
@@ -363,7 +386,8 @@ async function reconcile(record: CommandInteractionRecord, payload: any, assertC
   if (payload.receipt?.undoCompensation) record = { ...record, compensation: payload.receipt.undoCompensation }
   if (payload.outcome === 'NO_WRITE') return reject(record, '这次操作未写入，已恢复原状态。', 'rejected')
   // A durable receipt remains confirmed even if safe local projection is blocked.
-  if (!payload.delta && !payload.snapshot && payload.outcome === 'ALREADY_APPLIED' && !record.delta.changes.length) {
+  if (!payload.delta && !payload.snapshot && payload.outcome === 'ALREADY_APPLIED' && !record.delta.changes.length
+    && (record.noOpRevision === undefined || record.noOpRevision === version(record.accountKey))) {
     await saveCommandInteraction({ ...record, state: 'confirmed', serverRevision: payload.revision })
     settleConnectedInteraction(record.accountKey, record.commandId)
     emit({ ...record, state: 'confirmed' })
@@ -445,7 +469,7 @@ async function send(record: CommandInteractionRecord, recovery: boolean) {
         const recovered = await network(record.accountKey, { action: 'receipt', commandId: record.commandId, projection: 'snapshot' })
         return reconcile(record, { ...recovered.payload, outcome: 'ALREADY_APPLIED' }, recovered.lease.assertCurrent)
       }
-      if (record.state === 'projection_pending') {
+      if (record.state === 'projection_pending' || record.noOpRevision !== undefined) {
         const readback = await network(record.accountKey, { action: 'read', projection: 'snapshot' })
         if (readback.response.ok) return reconcile(record, { ...readback.payload, outcome: 'ALREADY_APPLIED' }, readback.lease.assertCurrent)
         return
@@ -475,6 +499,11 @@ async function send(record: CommandInteractionRecord, recovery: boolean) {
       }
       if ([400, 404, 405, 422].includes(request.response.status)) return reject(record, '这次修改未被接受，已恢复原状态。请检查登录和这项记录。', 'rejected')
       throw new Error('Confirmation unavailable.')
+    }
+    if (request.payload.outcome === 'ALREADY_APPLIED' && !request.payload.receipt) {
+      if (!Number.isSafeInteger(request.payload.revision) || request.payload.revision < 0) throw new Error('Invalid no-write acknowledgement revision.')
+      record = { ...record, state: 'projection_pending', noOpRevision: request.payload.revision, compensation: undefined }
+      await saveCommandInteraction(record)
     }
     await reconcile(record, request.payload, request.lease.assertCurrent)
   } catch {

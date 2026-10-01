@@ -69,3 +69,34 @@ No checks or performance thresholds are removed. The Matrix has a 30-minute
 hard cap: its measured frozen baseline took 23m57s, before the 16 additional
 cross-engine recovery cases in this repair. Whole-package gates must pass on
 the new exact integration head before any stronger readiness claim.
+
+## Receiptless acknowledgement follow-through
+
+The comprehensive integration review reproduced one further recovery defect:
+when another device already made the requested change, a receiptless
+`ALREADY_APPLIED` parent retained an optimistic timestamp. Its queued child
+repeatedly failed field comparison and never dispatched. The original no-write
+revision was also lost, so it could not safely distinguish a later read.
+
+No-write acknowledgement revision and `projection_pending` disposition now
+persist together before recovery. Recovery reads first even for a legacy active
+journal carrying that marker. The exact acknowledged revision can bind existing
+entity postimages for dependent edits, but cannot create audit or Undo ownership.
+A newer authoritative snapshot retires only the original optimistic dependency
+closure under the existing account/local guards; it never silently rebases a
+child onto another writer's newer change. Independent intent remains retained.
+Queued Undo cannot undo the other writer's fact or send an unowned compensation.
+
+Review also reproduced two adjacent boundaries before repair: a crash after
+saving the acknowledgement could resend it, and zero-delta terminal metadata
+cleanup could advance a checkpoint without installing that revision's facts.
+The no-op disposition prevents replay; a newer zero-delta acknowledgement now
+requires guarded readback. No-op journals cannot advance a checkpoint merely
+because their revision is adjacent.
+
+Ten permanent unit cases cover dependent edit/Undo, stable/newer remote facts,
+post-acknowledgement crash, independent intent, and empty-delta checkpoint truth.
+Five browser cases cover persistent reload and the unseen-fact/mirror-failure
+boundary. Original and follow-up independent reproductions pass locally. Whole
+unit/type/build and new exact-head complete gates must be recorded in the PR;
+older green head `1735988` is historical evidence, not certification of this fix.

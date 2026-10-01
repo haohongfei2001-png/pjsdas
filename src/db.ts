@@ -84,6 +84,8 @@ export interface CommandInteractionRecord {
   id: string; accountKey: string; commandId: string; createdAt: string; state: 'active' | 'confirmed' | 'rejected' | 'conflict' | 'projection_pending' | 'rollback_pending';
   delta: WorkspaceDelta; command?: import('./domainCommands.js').UserDomainCommand; targetCommandId?: string;
   compensation?: { operation: string; payload: unknown }; lastError?: string; serverRevision?: number; predecessors?: string[];
+  /** Authoritative no-write acknowledgement, distinct from an owned ledger receipt. */
+  noOpRevision?: number;
 }
 interface PJSDASDatabase extends DBSchema {
   commandInteractions: { key: string; value: CommandInteractionRecord; indexes: { 'by-account': string; 'by-account-state': [string, CommandInteractionRecord['state']] } }
