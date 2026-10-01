@@ -1,0 +1,31 @@
+name: Account sign-out boundary diagnosis
+on:
+  pull_request:
+    paths:
+      - 'e2e/cgr01AuthoritativeCommand.e2e.ts'
+      - '.github/workflows/account-signout-diagnosis.yml'
+permissions:
+  contents: read
+jobs:
+  boundary:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm install --no-save --package-lock=false @playwright/test@1.63.0
+      - run: npx playwright install --with-deps chromium
+      - name: Observe the unchanged account isolation assertions
+        run: npx playwright test --config=playwright.config.mts --project=chromium e2e/cgr01AuthoritativeCommand.e2e.ts --grep 'account A sign-out then account B' --retries=0 --repeat-each=3
+      - uses: actions/upload-artifact@v5
+        if: ${{ !cancelled() }}
+        with:
+          name: account-signout-boundary
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 7

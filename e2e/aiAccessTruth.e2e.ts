@@ -12,7 +12,10 @@ test('AI Access settings disclose bounded trusted automation and user-controlled
 
   const card = page.locator('.cloud-settings-card').filter({ hasText: 'BACKGROUND SOURCES' })
   await expect(card).toBeVisible()
-  await expect(card.getByRole('heading', { name: 'Background sources and AI connection' })).toBeVisible()
+  await expect(card.getByRole('heading', { name: 'Background workspace connection' })).toBeVisible()
+  await expect(card.getByRole('heading', { name: 'Background job discovery' })).toBeVisible()
+  await expect(card.getByRole('heading', { name: 'Automatic recruiting-email tracking' })).toBeVisible()
+  await card.getByText('Background operation and write boundaries', { exact: true }).click()
   await expect(card).toContainText('trusted discovery or recruiting-email intake may add only bounded, source-backed facts')
   await expect(card).toContainText('changes to durable preferences, rejection decisions, or deletions still require your review')
   await expect(card).toContainText('app-specific Google Drive files, not your normal Drive files')

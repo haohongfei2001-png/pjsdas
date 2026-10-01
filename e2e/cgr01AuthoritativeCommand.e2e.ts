@@ -401,7 +401,7 @@ test('same-object connected conflict is concrete and refreshes the authoritative
   await expect(page.getByText(/本地还是云端|local.*cloud/i)).toHaveCount(0)
 })
 
-test('account A sign-out then account B never displays or replays A cache drafts or pending operations', async ({ page }) => {
+test('account A sign-out then account B never displays or replays A cache drafts or pending operations', async ({ page }, info) => {
   await seedInitialSession(page, 'account-a', 'token-a')
   const states: Record<string, AccountState> = {
     'token-a': { revision: 3, snapshot: workspace('A'), receipts: new Map() },
@@ -443,7 +443,14 @@ test('account A sign-out then account B never displays or replays A cache drafts
     return cors(route, { code: 'UNEXPECTED_WRITE', action: body.action }, 409)
   })
 
+  // This journey owns the pending-outbox boundary. Let startup sync finish
+  // before injecting it, then hold background timers so they cannot disable
+  // the sign-out button between pointer actionability and the actual click.
+  // Other recovery/latency journeys retain their real timers.
+  await page.clock.install({ time: new Date('2026-09-30T05:59:59Z') })
+  await page.clock.pauseAt(new Date('2026-09-30T06:00:00Z'))
   await page.goto('/')
+  await page.clock.runFor(1000)
   await expect(page.getByRole('heading', { name: 'A第一任务' })).toBeVisible()
   // The initial read can render A before the account's sync checkpoint is
   // committed. Sign-out during that window correctly refuses to clear the
@@ -471,9 +478,32 @@ test('account A sign-out then account B never displays or replays A cache drafts
     }]))
   })
 
+  await page.evaluate(async () => {
+    const witness = { events: [] as unknown[], auth: [] as unknown[] }
+    ;(window as any).__signOutWitness = witness
+    for (const type of ['pointerdown', 'pointerup', 'click']) document.addEventListener(type, event => {
+      const button = (event.target as HTMLElement).closest('button')
+      if (button?.textContent?.includes('退出 TodayAction')) witness.events.push({ type, disabled: button.disabled, at: performance.now() })
+    }, true)
+    const { pjsdasSupabase } = await import('/pjsdas/src/aiAccess/supabaseClient.ts')
+    pjsdasSupabase.auth.onAuthStateChange((event, value) => witness.auth.push({ event, account: value?.user.id ?? null, at: performance.now() }))
+  })
+  try {
   await page.locator('.tsui-topbar').getByRole('button', { name: /设置|Settings/ }).click()
+  // React's lazy Settings commit uses a timer too. Advance only until the
+  // real control is present and enabled, then keep the owned clock paused.
+  await expect.poll(async () => {
+    await page.clock.runFor(100)
+    const control = page.getByRole('button', { name: '退出 TodayAction' })
+    return await control.count() === 1 && await control.isEnabled()
+  }).toBe(true)
   await page.getByRole('button', { name: '退出 TodayAction' }).click()
+  await expect.poll(() => page.evaluate(() => (window as any).__signOutWitness.auth.some((event: any) => event.event === 'SIGNED_OUT' && event.account === null))).toBe(true)
   await expect.poll(async () => (await readIndexedActions(page)).length).toBe(0)
+  const signedOut = await page.evaluate(() => ({ witness: (window as any).__signOutWitness, authPresent: Boolean(localStorage.getItem('sb-yyrzwpoxlxpafdlbkdtg-auth-token')) }))
+  expect(signedOut.authPresent).toBe(false)
+  await info.attach('reached-signed-out-boundary.json', { body: JSON.stringify(signedOut, null, 2), contentType: 'application/json' })
+  await page.clock.resume()
   await page.locator('.tsui-primary-nav').getByRole('button', { name: /今天|Today/ }).click()
   await expect(page.getByRole('heading', { name: 'A第一任务' })).toHaveCount(0)
 
@@ -488,6 +518,18 @@ test('account A sign-out then account B never displays or replays A cache drafts
   await expect(page.locator('.cgr-capture-input')).toHaveValue('')
   expect(bBodies.some((body) => body.commandId === 'web-action:A-pending')).toBe(false)
   expect(bBodies.some((body) => ['commit', 'command', 'undo'].includes(body.action))).toBe(false)
+  } finally {
+    await page.clock.resume().catch(() => undefined)
+    const evidence = await page.evaluate(() => ({
+      witness: (window as any).__signOutWitness,
+      authPresent: Boolean(localStorage.getItem('sb-yyrzwpoxlxpafdlbkdtg-auth-token')),
+      errors: [...document.querySelectorAll('.cloud-error')].map(node => node.textContent),
+      account: document.querySelector('.cloud-account-identity strong')?.textContent,
+      recoveryVisible: Boolean(document.querySelector('.startup-recovery')),
+    })).catch(error => ({ unavailable: String(error) }))
+    await info.attach('sign-out-boundary.json', { body: JSON.stringify(evidence, null, 2), contentType: 'application/json' })
+  }
+
 })
 
 test('sign-out keeps unverified local-only data even when an account command is pending', async ({ page }) => {
