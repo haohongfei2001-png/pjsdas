@@ -49,3 +49,23 @@ retained for recovery.
 
 All fixtures are synthetic. Their tasks and dates are not statements about any
 user's actual applications, deadlines, or production workspace.
+
+## Integrated full-gate follow-through
+
+Scoped candidate `b03215f5` passed hosted 30/30 Chromium/WebKit recovery cases and
+3/3 strict built-artifact performance suites. The upstream `68dcb51a` Matrix
+rerun also succeeded, with 180 core cases, 107 dense passes plus one case that
+passed its existing retry (WebKit cancel, 151ms against a 150ms limit), and 4/4
+built performance suites. That prior-head evidence does not certify this repair.
+
+The `full:<full-head-SHA>` label is an exact-head opt-in to the repository's existing
+complete CI/Browser/Matrix gates while a same-repository PR remains draft.
+A stale-head or foreign-repository label cannot opt in. Unrelated label events
+do not trigger these gates; ordinary PR/push/dispatch routes remain available. It does not authorize
+merge, deployment, or production mutation. Unlabelled drafts retain their cheap
+inner loop, and the narrow draft gate skips when the full gates are selected.
+VoiceOver watches both repaired interaction files as well as its existing paths.
+No checks or performance thresholds are removed. The Matrix has a 30-minute
+hard cap: its measured frozen baseline took 23m57s, before the 16 additional
+cross-engine recovery cases in this repair. Whole-package gates must pass on
+the new exact integration head before any stronger readiness claim.

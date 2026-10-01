@@ -2,8 +2,11 @@ name: CGR-02 VoiceOver
 
 on:
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review, labeled]
     paths:
       - 'src/AppV8.tsx'
+      - 'src/cloud/instantCommandClient.ts'
+      - 'src/cloud/interactionProjection.ts'
       - 'src/tsui02.css'
       - 'src/capture/capture.css'
       - 'src/today/TodayFeature.tsx'
@@ -28,6 +31,8 @@ permissions:
 
 jobs:
   visual-macos:
+    if: >-
+      (github.event.action != 'labeled' || (github.event.pull_request.head.repo.full_name == github.repository && github.event.label.name == format('full:{0}', github.event.pull_request.head.sha)))
     runs-on: macos-latest
     timeout-minutes: 15
     steps:
@@ -50,6 +55,8 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
   voiceover:
+    if: >-
+      (github.event.action != 'labeled' || (github.event.pull_request.head.repo.full_name == github.repository && github.event.label.name == format('full:{0}', github.event.pull_request.head.sha)))
     runs-on: macos-14
     timeout-minutes: 25
     steps:

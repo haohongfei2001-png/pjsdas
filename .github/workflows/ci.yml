@@ -4,11 +4,17 @@ on:
   push:
     branches: [main]
   pull_request:
-    types: [opened, synchronize, reopened, ready_for_review]
+    types: [opened, synchronize, reopened, ready_for_review, labeled]
+
+permissions:
+  contents: read
 
 jobs:
   ci-build:
+    if: >-
+      (github.event.action != 'labeled' || (github.event.pull_request.head.repo.full_name == github.repository && github.event.label.name == format('full:{0}', github.event.pull_request.head.sha)))
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -21,13 +27,13 @@ jobs:
       - name: Draft/inner-loop type gate
         run: npx tsc -b --pretty false
       - name: Dependency security gate
-        if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+        if: (github.event_name != 'pull_request' || github.event.pull_request.draft == false || (github.event.pull_request.head.repo.full_name == github.repository && contains(github.event.pull_request.labels.*.name, format('full:{0}', github.event.pull_request.head.sha))))
         run: npm audit --audit-level=high
       - name: Production build
-        if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+        if: (github.event_name != 'pull_request' || github.event.pull_request.draft == false || (github.event.pull_request.head.repo.full_name == github.repository && contains(github.event.pull_request.labels.*.name, format('full:{0}', github.event.pull_request.head.sha))))
         run: npm run build
       - name: Cloudflare standby bundle gate
-        if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+        if: (github.event_name != 'pull_request' || github.event.pull_request.draft == false || (github.event.pull_request.head.repo.full_name == github.repository && contains(github.event.pull_request.labels.*.name, format('full:{0}', github.event.pull_request.head.sha))))
         shell: bash
         run: |
           set -euo pipefail

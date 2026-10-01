@@ -24,7 +24,8 @@ jobs:
   recovery:
     # Ordinary full Browser/Matrix gates remain mandatory after draft review.
     # This narrow gate verifies risky recovery changes while the PR stays draft.
-    if: github.event.pull_request.draft == true
+    if: >-
+      github.event.pull_request.draft == true && !(github.event.pull_request.head.repo.full_name == github.repository && contains(github.event.pull_request.labels.*.name, format('full:{0}', github.event.pull_request.head.sha)))
     runs-on: ubuntu-24.04
     timeout-minutes: 12
     container:
