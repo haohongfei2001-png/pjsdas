@@ -12,6 +12,7 @@ import './designSystem.css'
 import './visualPolish.css'
 import './usabilityFriction.css'
 import './productTruth.css'
+import './secondarySurfaces.css'
 
 function Root() {
   return <App />

@@ -1,0 +1,67 @@
+name: Secondary surfaces visual adaptation
+on:
+  pull_request:
+    paths:
+      - 'src/main.tsx'
+      - 'src/secondarySurfaces.css'
+      - 'e2e/secondarySurfaces.ui.ts'
+      - 'playwright.secondary-ui.config.mts'
+      - '.github/workflows/secondary-surfaces-ui.yml'
+permissions:
+  contents: read
+jobs:
+  secondary-ui:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      TA_SECONDARY_BASE: 37e8487a7f2b5f99d82527895deff20202b70eeb
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm install --no-save --package-lock=false @playwright/test@1.63.0
+      - run: npx playwright install --with-deps chromium
+      - name: Render the exact deployed main reference
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch --depth=1 origin "$TA_SECONDARY_BASE"
+          baseline_dir="$RUNNER_TEMP/secondary-ui-base"
+          git worktree add --detach "$baseline_dir" "$TA_SECONDARY_BASE"
+          copy_baseline_evidence() {
+            if [ -d "$baseline_dir/secondary-ui-before" ]; then
+              cp -R "$baseline_dir/secondary-ui-before" "$GITHUB_WORKSPACE/"
+            fi
+            for name in secondary-ui-report test-results; do
+              if [ -d "$baseline_dir/$name" ]; then
+                mkdir -p "$GITHUB_WORKSPACE/secondary-baseline-evidence"
+                cp -R "$baseline_dir/$name" "$GITHUB_WORKSPACE/secondary-baseline-evidence/"
+              fi
+            done
+          }
+          trap copy_baseline_evidence EXIT
+          cp e2e/secondarySurfaces.ui.ts "$baseline_dir/e2e/"
+          cp playwright.secondary-ui.config.mts "$baseline_dir/"
+          ln -s "$GITHUB_WORKSPACE/node_modules" "$baseline_dir/node_modules"
+          cd "$baseline_dir"
+          GITHUB_SHA="$TA_SECONDARY_BASE" PJSDAS_VITE_BASE=/pjsdas/ VITE_PJSDAS_CONNECTED_AUTHORITY=transactional npm run build
+          TA_SECONDARY_PHASE=before npx playwright test --config=playwright.secondary-ui.config.mts
+      - name: Render the candidate and require unchanged main-page pixels
+        run: |
+          PJSDAS_VITE_BASE=/pjsdas/ VITE_PJSDAS_CONNECTED_AUTHORITY=transactional npm run build
+          TA_SECONDARY_PHASE=after npx playwright test --config=playwright.secondary-ui.config.mts
+      - name: Keep both phases and their failure evidence
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v5
+        with:
+          name: secondary-surfaces-before-after
+          path: |
+            secondary-ui-before/
+            secondary-baseline-evidence/
+            secondary-ui-after/
+            secondary-ui-report/
+            test-results/secondary-ui-checks/
+          retention-days: 14

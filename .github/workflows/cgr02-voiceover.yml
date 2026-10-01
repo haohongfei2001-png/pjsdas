@@ -8,6 +8,7 @@ on:
       - 'src/cloud/instantCommandClient.ts'
       - 'src/cloud/interactionProjection.ts'
       - 'src/tsui02.css'
+      - 'src/secondarySurfaces.css'
       - 'src/capture/capture.css'
       - 'src/today/TodayFeature.tsx'
       - 'e2e/cgr02TodayVoiceOver.voiceover.ts'
@@ -18,6 +19,7 @@ on:
     paths:
       - 'src/today/TodayFeature.tsx'
       - 'src/TellPjsdasCapture.tsx'
+      - 'src/secondarySurfaces.css'
       - 'e2e/cgr02TodayVoiceOver.voiceover.ts'
       - 'e2e/support/cgr02Journey.ts'
       - 'e2e/cgr02TodayVerticalSlice.e2e.ts'
