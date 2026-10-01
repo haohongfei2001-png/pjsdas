@@ -119,3 +119,22 @@ unit/type job has no metadata-based skip condition. Five new/strengthened static
 regression assertions failed before this correction; runtime source and all
 performance thresholds remain unchanged. See GitHub's official
 [status-check semantics](https://docs.github.com/en/pull-requests/reference/status-checks).
+
+## Legacy history fixture receipt contract
+
+The final Matrix on `63021b8` passed 178 core cases but failed the legacy
+application-submission Undo journey in WebKit, including its retry. Both saved
+network traces show a normal command acknowledgement and snapshot read followed
+by a read-only receipt lookup for the queued Undo. The old mock returned
+`400 UNEXPECTED_WRITE` for that supported read, leaving safe recovery pending.
+A companion completion case was timing-sensitive as well.
+
+The legacy full-response fixture now retains real command receipts and answers
+both found and absent receipt lookups. It holds the parent acknowledgement until
+Undo has been durably applied, then releases it in `finally`, so the intended
+immediate-Undo boundary is exercised deterministically. Added assertions require
+the original exact two commands, retained receipt identities and an absent
+queued-Undo receipt lookup. Every prior history, audit, reload and restart
+assertion remains. There is no runtime change, added sleep, timeout increase,
+performance-budget adjustment or blind rerun. Hosted verification remains
+required on the repaired fixture head.

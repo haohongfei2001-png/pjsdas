@@ -31,6 +31,11 @@ for (const [connected, application] of [[false, false], [true, false], [true, tr
   }
   const state = { snapshot: structuredClone(before), revision: 7, compensation: undefined as DomainCompensation | undefined }
   const commands: string[] = []
+  const commandIds: string[] = []
+  const receipts = new Map<string, Record<string, unknown>>()
+  const receiptLookups: Array<{ commandId: string; found: boolean }> = []
+  let releaseCompletion = () => {}
+  const completionResponse = new Promise<void>(resolve => { releaseCompletion = resolve })
   if (connected) {
     await seedSession(context)
     await context.route(BACKEND + '/**', async (route) => {
@@ -41,6 +46,11 @@ for (const [connected, application] of [[false, false], [true, false], [true, tr
       const body = route.request().postDataJSON()
       const read = () => ({ workspaceId: 'ws-history', workspaceVersion: 'txn:' + state.revision, revision: state.revision, schemaVersion: state.snapshot.version, snapshot: state.snapshot })
       if (body.action === 'read') return cors(route, read())
+      if (body.action === 'receipt') {
+        const receipt = receipts.get(body.commandId)
+        receiptLookups.push({ commandId: body.commandId, found: Boolean(receipt) })
+        return cors(route, { ...read(), found: Boolean(receipt), receipt })
+      }
       if (body.action === 'command' && body.command?.type === 'domain') {
         expect(body.baseRevision).toBe(state.revision)
         commands.push(body.command.value.kind)
@@ -52,8 +62,15 @@ for (const [connected, application] of [[false, false], [true, false], [true, tr
         state.snapshot = applyDomainCompensation(JSON.parse(JSON.stringify(state.snapshot)), state.compensation!, HISTORY_NOW)
       } else return cors(route, { code: 'UNEXPECTED_WRITE' }, 400)
       state.revision += 1
-      return cors(route, { ...read(), outcome: 'COMMITTED', receipt: { commandId: body.commandId, receiptId: 'receipt:' + body.commandId, status: 'COMMITTED', revision: state.revision,
-        undoAvailable: true, undoCompensation: state.compensation, affectedObjects: [{ type: 'action', id: 'history-task' }], result: { type: 'domain', status: 'APPLIED', summary: 'Updated history task' } } })
+      commandIds.push(body.commandId)
+      const receipt = { commandId: body.commandId, receiptId: 'receipt:' + body.commandId, status: 'COMMITTED', revision: state.revision,
+        undoAvailable: true, undoCompensation: state.compensation, affectedObjects: [{ type: 'action', id: 'history-task' }], result: { type: 'domain', status: 'APPLIED', summary: 'Updated history task' } }
+      receipts.set(body.commandId, receipt)
+      const response = { ...read(), outcome: 'COMMITTED', receipt }
+      // Force the immediate-Undo window rather than relying on engine timing.
+      // Receipt lookup is still available while this acknowledgement is held.
+      if (body.action === 'command') await completionResponse
+      return cors(route, response)
     })
   } else {
     await page.goto('/'); await expect(page.locator('.tsui-primary-nav')).toBeVisible()
@@ -62,12 +79,15 @@ for (const [connected, application] of [[false, false], [true, false], [true, tr
   await page.goto('/pjsdas/schedule?view=past')
   await page.locator('.tsui-schedule-row').filter({ hasText: 'Historical job' }).click()
   await page.getByRole('button', { name: /查看岗位详情|View job details/ }).click()
-  if (application) await page.getByRole('button', { name: /我已投递|I applied/ }).click()
-  else await page.locator('.opportunity-detail-action-list article').filter({ hasText: 'History task' }).getByRole('button', { name: /标记完成|Mark done/ }).click()
-  await expect(page.locator('.action-undo-toast').getByRole('button', { name: /撤销|Undo/ })).toBeVisible()
-  expect((await rows(page, 'scheduleNodes')).find((item) => item.id === 'history-node-6')?.state).toBe('completed')
-  await page.locator('.action-undo-toast').getByRole('button', { name: /撤销|Undo/ }).click()
-  await expect(page.locator('.action-undo-toast')).toHaveCount(0)
+  try {
+    if (application) await page.getByRole('button', { name: /我已投递|I applied/ }).click()
+    else await page.locator('.opportunity-detail-action-list article').filter({ hasText: 'History task' }).getByRole('button', { name: /标记完成|Mark done/ }).click()
+    await expect(page.locator('.action-undo-toast').getByRole('button', { name: /撤销|Undo/ })).toBeVisible()
+    expect((await rows(page, 'scheduleNodes')).find((item) => item.id === 'history-node-6')?.state).toBe('completed')
+    if (connected) await expect.poll(() => commandIds.length).toBe(1)
+    await page.locator('.action-undo-toast').getByRole('button', { name: /撤销|Undo/ }).click()
+    await expect(page.locator('.action-undo-toast')).toHaveCount(0)
+  } finally { releaseCompletion() }
   if (connected) await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem('pjsdas-cgr01-pending:account-a') ?? '[]').length)).toBe(0)
   await checkHistory(page, before)
   // The completion audit is retained after compensation, not deleted by Undo.
@@ -81,7 +101,11 @@ for (const [connected, application] of [[false, false], [true, false], [true, tr
   const restarted = await context.newPage(); await restarted.goto('/pjsdas/today'); await page.close()
   await expect(restarted.getByTestId('cgr02-today')).toBeVisible(); await checkHistory(restarted, before)
   expect(await rows(restarted, 'timeline')).toEqual(retainedTimeline)
-  if (connected) expect(commands).toEqual([application ? 'record_application_submission' : 'set_action_status', 'undo'])
+  if (connected) {
+    expect(commands).toEqual([application ? 'record_application_submission' : 'set_action_status', 'undo'])
+    expect([...receipts.keys()]).toEqual(commandIds)
+    expect(receiptLookups).toContainEqual({ commandId: commandIds[1], found: false })
+  }
 })
 
 test('queued action completion becomes confirmed with Undo after automatic reconnect', async ({ page, context }) => {
