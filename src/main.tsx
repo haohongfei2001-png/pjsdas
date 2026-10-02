@@ -7,6 +7,7 @@ import { CloudProvider, useCloud } from './cloud/CloudContext.js'
 import { AiAccessProvider } from './aiAccess/AiAccessContext.js'
 import McpProposalReview from './aiAccess/McpProposalReview.js'
 import OAuthConsentPage from './aiAccess/OAuthConsentPage.js'
+import OwnerManagementConsentPage from './aiAccess/OwnerManagementConsentPage.js'
 import './styles.css'
 import './designSystem.css'
 import './visualPolish.css'
@@ -30,6 +31,7 @@ function Entry() {
     : null
 
   if (authorizationId) return <OAuthConsentPage />
+  if (typeof window !== 'undefined' && new URL(window.location.href).searchParams.get('manage_access') === '1') return <OwnerManagementConsentPage />
 
   return (
     <CloudProvider>

@@ -1,3 +1,4 @@
+import { createOwnerBusinessManagementRuntime } from './businessManagementRuntime.js'
 import { createMcpHandler } from '@modelcontextprotocol/server'
 import { createAuthenticatedDriveWorkspaceSource } from './authenticatedDriveSource.js'
 import { createTransactionalWorkspaceSource } from './transactionalWorkspaceSource.js'
@@ -106,7 +107,7 @@ export async function authenticatedRemoteMcpFetch(request: Request) {
       publishableKey: PJSDAS_SUPABASE_PUBLISHABLE_KEY,
     })
     const { identity, accessToken } = await resolveIdentity(request)
-    await createConfiguredAudienceAccessGuard({ supabaseUrl: PJSDAS_SUPABASE_URL })(identity)
+    const audience = await createConfiguredAudienceAccessGuard({ supabaseUrl: PJSDAS_SUPABASE_URL })(identity)
     let grants: AuthorizationGrant[] = []
     if (identity.oauthClientId) {
       const grantStore = createAuthorizationGrantStore({
@@ -148,8 +149,16 @@ export async function authenticatedRemoteMcpFetch(request: Request) {
           timezone: 'Asia/Shanghai',
         })
       : lazyDriveSource(request)
+    const businessManagement = createOwnerBusinessManagementRuntime({
+      enabled: process.env.PJSDAS_OWNER_MANAGEMENT,
+      transactional: transactionalAuthority,
+      identity, audience, source,
+      supabaseUrl: PJSDAS_SUPABASE_URL,
+      serviceRoleKey: transactionalAuthority ? env('PJSDAS_SUPABASE_SERVICE_ROLE_KEY') : '',
+    })
     const handler = createMcpHandler(
       () => createPjsdasMcpServer(source, {
+        businessManagement,
         version: AUTHENTICATED_GATEWAY_VERSION,
         dataMode: transactionalAuthority ? 'transactional' : 'google-drive',
         proposalMode: 'review-link',
