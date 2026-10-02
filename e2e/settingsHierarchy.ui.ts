@@ -72,9 +72,11 @@ for (const state of ['enabled', 'partial', 'error', 'disabled', 'unverified'] as
       expect(await control.evaluate(el => getComputedStyle(el).backgroundColor)).toBe('rgb(255, 255, 255)')
     }
     expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBeLessThanOrEqual(1)
+    await page.evaluate(() => window.scrollTo(0, 0))
     await page.screenshot({ path: `settings-hierarchy-evidence/${state}-${width}-expanded.png`, fullPage: true })
     for (const region of [gmail, discovery]) await region.locator('.settings-source-manage > summary').click()
     expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBeLessThanOrEqual(1)
+    await page.evaluate(() => window.scrollTo(0, 0))
     await page.screenshot({ path: `settings-hierarchy-evidence/${state}-${width}.png`, fullPage: true })
     await info.attach('settings-hierarchy', { path: `settings-hierarchy-evidence/${state}-${width}.png`, contentType: 'image/png' })
     expect(calls).toEqual([])
