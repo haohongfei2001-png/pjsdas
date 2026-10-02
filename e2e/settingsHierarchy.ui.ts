@@ -33,6 +33,15 @@ for (const state of ['enabled', 'partial', 'error', 'disabled', 'unverified'] as
     await page.goto('/pjsdas/settings')
     await expect(page.getByRole('heading', { name: '账号与跨设备数据', exact: true })).toBeVisible()
     for (const label of ['后台工作区连接', '后台岗位发现', '招聘邮件自动跟踪']) await expect(page.getByRole('heading', { name: label, exact: true })).toBeVisible()
+    await expect(page.getByRole('button', { name: '退出 TodayAction', exact: true })).toBeHidden()
+    await page.getByText('管理账号与同步', { exact: true }).click()
+    await expect(page.getByRole('button', { name: '退出 TodayAction', exact: true })).toBeVisible()
+    await page.getByText('管理账号与同步', { exact: true }).click()
+    if (width === 1440 && state === 'enabled') {
+      const bounds = await page.locator('.settings-connections').boundingBox()
+      expect(bounds?.height).toBeLessThan(850)
+      await expect(page.locator('.settings-preferences')).toBeVisible()
+    }
     if (width === 320) await page.evaluate(() => { document.documentElement.style.fontSize = '200%' })
     const gmail = page.locator('section[aria-labelledby="settings-gmail-heading"]')
     const discovery = page.locator('section[aria-labelledby="settings-discovery-heading"]')

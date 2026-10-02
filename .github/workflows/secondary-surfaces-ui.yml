@@ -6,6 +6,7 @@ on:
       - 'src/AppV8.tsx'
       - 'src/cloud/CloudSettingsCardHeavy.tsx'
       - 'src/aiAccess/AiAccessSettingsCard.tsx'
+      - 'src/aiAccess/GmailIntakeStatus.tsx'
       - 'src/today/TodayFeature.tsx'
       - 'src/today/taskContext.ts'
       - 'e2e/settingsHierarchy.ui.ts'
@@ -21,7 +22,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     env:
-      TA_SECONDARY_BASE: 37e8487a7f2b5f99d82527895deff20202b70eeb
+      TA_SECONDARY_BASE: 1fa12d02ac5073bac0e82b419e1162d0ae84fdea
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7

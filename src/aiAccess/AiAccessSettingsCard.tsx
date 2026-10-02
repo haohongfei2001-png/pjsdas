@@ -46,14 +46,14 @@ export default function AiAccessSettingsCard() {
         </header>
         <div className="settings-source-operation">
           <div><strong>{automation?.googleEmail || (zh ? '连接后台工作区' : 'Connect background workspace')}</strong>
-            <p className="settings-permission">{zh ? '只申请 Google Drive 的应用专用文件权限，不会浏览普通 Drive 文件。Google 长期授权信息会加密保存。' : 'This requests only access to app-specific Google Drive files, not your normal Drive files. Long-lived Google authorization is encrypted.'}</p></div>
+            {!automation?.googleEmail ? <p className="settings-permission">{zh ? '只申请 Google Drive 的应用专用文件权限，不会浏览普通 Drive 文件。Google 长期授权信息会加密保存。' : 'This requests only access to app-specific Google Drive files, not your normal Drive files. Long-lived Google authorization is encrypted.'}</p> : null}</div>
           <button className={automation?.googleEmail ? 'settings-quiet-button' : 'primary-button'} disabled={ai.busy} onClick={() => run('workspace', ai.beginGoogleDriveLink)}>
             {ai.busy && actionSource === 'workspace' ? (zh ? '处理中…' : 'Working…') : automation?.googleEmail ? (zh ? '重新连接' : 'Reconnect') : (zh ? '使用 Google 连接' : 'Connect with Google')}
           </button>
         </div>
         {ai.message ? <div className="cloud-result" role="status">{ai.message}</div> : null}
         {result('workspace')}
-        <details className="settings-scope-details"><summary>{zh ? '后台工作方式与写入边界' : 'Background operation and write boundaries'}</summary><p>{zh
+        <details className="settings-scope-details"><summary>{zh ? '连接权限与后台工作方式' : 'Connection access and background operation'}</summary><p>{zh ? '只申请 Google Drive 的应用专用文件权限，不会浏览普通 Drive 文件。Google 长期授权信息会加密保存。重新连接将打开 Google 授权页面。' : 'Access is limited to app-specific Google Drive files. Long-lived authorization is encrypted. Reconnecting opens the Google consent page.'}</p><p>{zh
           ? '网页关闭后，已授权的来源仍可带来新的岗位和招聘进展。AI 读取与受信任的岗位发现、招聘邮件摄入只能加入有来源依据的有限事实；修改长期偏好、拒绝决定或删除资料仍需你审阅确认。每项来源都能单独关闭。新进展须经过来源、身份、重复项和冲突检查，才会写入工作区。'
           : 'Authorized sources can bring in new opportunities and recruiting progress while this page is closed. AI reading and trusted discovery or recruiting-email intake may add only bounded, source-backed facts; changes to durable preferences, rejection decisions, or deletions still require your review. Each source can be turned off. New progress is checked for source, identity, duplicates, and conflicts before it enters your workspace.'}</p></details>
       </section>
