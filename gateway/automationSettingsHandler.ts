@@ -1,3 +1,4 @@
+import type { DiscoveryReadiness } from '../src/discoveryReadiness.js'
 import { GMAIL_READONLY_SCOPE } from './automationConnectionStore.js'
 import { registerGmailWatch, type GmailWatchResult } from './gmailWatch.js'
 import { createSupabaseIdentityResolver } from './supabaseIdentity.js'
@@ -8,6 +9,7 @@ export interface AutomationSettingsHandlerConfig {
   supabasePublishableKey: string
   allowedOrigins: string[]
   fetchImpl?: typeof fetch
+  readDiscoveryReadiness?: (userId: string) => Promise<DiscoveryReadiness>
   tokenEncryptionKey?: string
   googleClientId?: string
   googleClientSecret?: string
@@ -129,6 +131,12 @@ export function createAutomationSettingsHandler(config: AutomationSettingsHandle
     return row
   }
 
+  async function responseStatus(row: AutomationRow, userId: string) {
+    let discoveryReadiness: DiscoveryReadiness = { profileConfigured: null, budgetState: 'approval_required' }
+    try { discoveryReadiness = await config.readDiscoveryReadiness?.(userId) ?? discoveryReadiness } catch { /* Keep unrelated Gmail status readable. */ }
+    return { ...statusForRow(row), discoveryReadiness }
+  }
+
   return async function handleAutomationSettings(request: Request) {
     const origin = request.headers.get('origin')
     if (request.method === 'OPTIONS') {
@@ -146,7 +154,7 @@ export function createAutomationSettingsHandler(config: AutomationSettingsHandle
       const { identity, accessToken } = await resolveIdentity(request)
       await config.authorizeIdentity?.(identity)
       const current = await readRow(identity.userId, accessToken)
-      if (request.method === 'GET') return json(200, statusForRow(current), origin, config.allowedOrigins)
+      if (request.method === 'GET') return json(200, await responseStatus(current, identity.userId), origin, config.allowedOrigins)
 
       const body = await request.json().catch(() => undefined) as {
         action?: unknown
@@ -154,7 +162,7 @@ export function createAutomationSettingsHandler(config: AutomationSettingsHandle
         gmailIntakeConsentVersion?: unknown
         discoveryEnabled?: unknown
       } | undefined
-      if (body?.action === 'read') return json(200, statusForRow(current), origin, config.allowedOrigins)
+      if (body?.action === 'read') return json(200, await responseStatus(current, identity.userId), origin, config.allowedOrigins)
 
       const gmailProvided = Boolean(body && Object.prototype.hasOwnProperty.call(body, 'gmailEnabled'))
       const discoveryProvided = Boolean(body && Object.prototype.hasOwnProperty.call(body, 'discoveryEnabled'))
@@ -283,7 +291,7 @@ export function createAutomationSettingsHandler(config: AutomationSettingsHandle
         updated.discovery_automation_enabled = body!.discoveryEnabled as boolean
         if (body!.discoveryEnabled === true) updated.discovery_last_error = null
       }
-      return json(200, statusForRow(updated), origin, config.allowedOrigins)
+      return json(200, await responseStatus(updated, identity.userId), origin, config.allowedOrigins)
     } catch (caught) {
       const error = caught instanceof WorkspaceSourceError
         ? { code: caught.code, message: caught.message, retryable: caught.retryable }

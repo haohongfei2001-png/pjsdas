@@ -31,7 +31,7 @@ for (const state of ['enabled', 'pending', 'partial', 'error', 'disabled', 'unve
         const body = request.postDataJSON()
         if (state === 'unverified') return cors(route, { message: 'SYNTHETIC_STATUS_UNAVAILABLE' }, 503)
         if (body.action !== 'read') { calls.push(body); return cors(route, { message: 'SYNTHETIC_ACTION_FAILURE' }, 503) }
-        return cors(route, { googleEmail: state === 'disabled' ? null : 'synthetic-long-workspace-identity@example.test', gmailScopeGranted: state !== 'disabled', gmailEnabled: state === 'enabled' || state === 'pending' || state === 'error', discoveryEnabled: state !== 'disabled', gmailLastSuccessAt: state === 'disabled' ? null : now, discoveryLastSuccessAt: null, gmailLastError: state === 'error' ? 'SYNTHETIC_AUTH_EXPIRED' : null, discoveryLastError: state === 'error' || state === 'pending' ? 'SYNTHETIC_DISCOVERY_TIMEOUT' : null })
+        return cors(route, { googleEmail: state === 'disabled' ? null : 'synthetic-long-workspace-identity@example.test', gmailScopeGranted: state !== 'disabled', gmailEnabled: state === 'enabled' || state === 'pending' || state === 'error', discoveryEnabled: state !== 'disabled', discoveryReadiness: { profileConfigured: state === 'partial', budgetState: 'approval_required' }, gmailLastSuccessAt: state === 'disabled' ? null : now, discoveryLastSuccessAt: null, gmailLastError: state === 'error' ? 'SYNTHETIC_AUTH_EXPIRED' : null, discoveryLastError: state === 'error' || state === 'pending' ? 'SYNTHETIC_DISCOVERY_TIMEOUT' : null })
       }
       if (path === '/api/workspace' && request.postDataJSON().action === 'read') return cors(route, { workspaceId: 'ws-a', revision: 91, workspaceVersion: 'txn:91', schemaVersion: snapshot.version, snapshot })
       calls.push(path); return cors(route, { code: 'UNEXPECTED' }, 409)
@@ -52,6 +52,8 @@ for (const state of ['enabled', 'pending', 'partial', 'error', 'disabled', 'unve
     if (width === 320) await page.evaluate(() => { document.documentElement.style.fontSize = '200%' })
     const gmail = page.locator('section[aria-labelledby="settings-gmail-heading"]')
     const discovery = page.locator('section[aria-labelledby="settings-discovery-heading"]')
+    if (state === 'enabled') await expect(discovery.locator('.cloud-state')).toHaveText('待配置发现偏好')
+    if (state === 'partial') await expect(discovery.locator('.cloud-state')).toHaveText('待批准 TA 搜索预算')
     if (state === 'unverified') {
       await expect(page.getByRole('alert')).toContainText('后台来源状态暂时无法核对')
       await expect(page.locator('#settings-workspace-heading').locator('..').locator('..').locator('.cloud-state')).toHaveText('状态待核对')

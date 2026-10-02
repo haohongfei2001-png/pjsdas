@@ -1,3 +1,4 @@
+import { createDiscoveryReadinessReader } from '../gateway/discoveryReadinessReader.js'
 import { createAutomationSettingsHandler } from '../gateway/automationSettingsHandler.js'
 import {
   PJSDAS_SUPABASE_PUBLISHABLE_KEY,
@@ -10,6 +11,7 @@ const handler = createAutomationSettingsHandler({
   supabaseUrl: PJSDAS_SUPABASE_URL,
   supabasePublishableKey: PJSDAS_SUPABASE_PUBLISHABLE_KEY,
   allowedOrigins: firstPartyWebOrigins(),
+  readDiscoveryReadiness: createDiscoveryReadinessReader({ transactional: process.env.PJSDAS_CONNECTED_AUTHORITY?.trim() === 'transactional', supabaseUrl: PJSDAS_SUPABASE_URL, serviceRoleKey: process.env.PJSDAS_SUPABASE_SERVICE_ROLE_KEY ?? '' }),
   tokenEncryptionKey: process.env.PJSDAS_TOKEN_ENCRYPTION_KEY ?? '',
   googleClientId: process.env.PJSDAS_GOOGLE_CLIENT_ID ?? '',
   googleClientSecret: process.env.PJSDAS_GOOGLE_CLIENT_SECRET ?? '',

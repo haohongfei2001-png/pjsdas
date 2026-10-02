@@ -1,3 +1,4 @@
+import { syntheticDiscoveryBudget } from './fixtures/discoveryBudget.js'
 import { readFile } from 'node:fs/promises'
 import { describe, expect, it, vi } from 'vitest'
 import {
@@ -79,7 +80,7 @@ describe('server-owned discovery worker model boundary', () => {
       executionRules: ['Use exact source identity.', 'Unknown facts remain unknown.'],
       incrementalSince: '2026-09-14T01:00:00.000Z',
       now: new Date('2026-09-15T01:00:00.000Z'),
-      ai: { generateTextImpl },
+      ai: { ...syntheticDiscoveryBudget, generateTextImpl },
       fetchImpl: vi.fn(async () => new Response(
         '<html><head><title>AI Product Manager - Example AI</title></head><body>Example AI AI Product Manager 2027 Campus Beijing</body></html>',
         { status: 200, headers: { 'content-type': 'text/html' } },
@@ -112,7 +113,7 @@ describe('server-owned discovery worker model boundary', () => {
     const observations = await discoverSourceRun(snapshot, sourceRun(), {
       executionRules: [],
       now: new Date('2026-09-15T01:00:00.000Z'),
-      ai: { generateTextImpl: generator('{"observations":[]}') },
+      ai: { ...syntheticDiscoveryBudget, generateTextImpl: generator('{"observations":[]}') },
     })
     expect(observations).toEqual([])
   })
@@ -135,7 +136,7 @@ describe('server-owned discovery worker model boundary', () => {
     await expect(discoverSourceRun(snapshot, sourceRun(), {
       executionRules: [],
       now: new Date('2026-09-15T01:00:00.000Z'),
-      ai: { generateTextImpl },
+      ai: { ...syntheticDiscoveryBudget, generateTextImpl },
     })).rejects.toMatchObject({ code: 'DISCOVERY_MODEL_INVALID' })
   })
 
@@ -158,7 +159,7 @@ describe('server-owned discovery worker model boundary', () => {
     await expect(discoverSourceRun(snapshot, sourceRun(), {
       executionRules: [],
       now: new Date('2026-09-15T01:00:00.000Z'),
-      ai: { generateTextImpl: generator(JSON.stringify({ observations: [base, base] })) },
+      ai: { ...syntheticDiscoveryBudget, generateTextImpl: generator(JSON.stringify({ observations: [base, base] })) },
     })).rejects.toMatchObject({ code: 'DISCOVERY_MODEL_INVALID' })
   })
 
@@ -167,7 +168,7 @@ describe('server-owned discovery worker model boundary', () => {
     await expect(discoverSourceRun(snapshot, sourceRun(), {
       executionRules: [],
       now: new Date('2026-09-15T01:00:00.000Z'),
-      ai: {
+      ai: { ...syntheticDiscoveryBudget,
         generateTextImpl: async () => { throw { statusCode: 429, message: 'provider-private-detail' } },
       },
     })).rejects.toMatchObject({
@@ -182,7 +183,7 @@ describe('server-owned discovery worker model boundary', () => {
     await expect(discoverSourceRun(snapshot, sourceRun(), {
       executionRules: [],
       now: new Date('2026-09-15T01:00:00.000Z'),
-      ai: {
+      ai: { ...syntheticDiscoveryBudget,
         generateTextImpl: async () => {
           throw {
             statusCode: 403,
@@ -206,7 +207,7 @@ describe('server-owned discovery worker model boundary', () => {
     await expect(discoverSourceRun(snapshot, sourceRun(), {
       executionRules: [],
       now: new Date('2026-09-15T01:00:00.000Z'),
-      ai: {
+      ai: { ...syntheticDiscoveryBudget,
         generateTextImpl: async () => {
           throw {
             statusCode: 402,
@@ -230,7 +231,7 @@ describe('server-owned discovery worker model boundary', () => {
     await expect(discoverSourceRun(snapshot, sourceRun(), {
       executionRules: [],
       now: new Date('2026-09-15T01:00:00.000Z'),
-      ai: {
+      ai: { ...syntheticDiscoveryBudget,
         generateTextImpl: async () => {
           throw {
             name: 'GatewayForbiddenError',
@@ -253,7 +254,7 @@ describe('server-owned discovery worker model boundary', () => {
     await expect(discoverSourceRun(snapshot, sourceRun(), {
       executionRules: [],
       now: new Date('2026-09-15T01:00:00.000Z'),
-      ai: {
+      ai: { ...syntheticDiscoveryBudget,
         generateTextImpl: async () => {
           throw {
             statusCode: 403,
@@ -276,7 +277,7 @@ describe('server-owned discovery worker model boundary', () => {
     await expect(discoverSourceRun(snapshot, sourceRun(), {
       executionRules: [],
       now: new Date('2026-09-15T01:00:00.000Z'),
-      ai: {
+      ai: { ...syntheticDiscoveryBudget,
         generateTextImpl: async () => {
           throw {
             statusCode: 403,
