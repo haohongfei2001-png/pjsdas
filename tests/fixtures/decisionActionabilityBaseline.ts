@@ -1,5 +1,7 @@
-import type { DecisionRequest, Opportunity, ReminderIntent, ScheduleNode } from './model.js'
-import { resolveOpportunityTarget } from './semanticTargetMatching.js'
+// Frozen pre-optimization predicate baseline from the source tree deployed as main80d77406.
+// Tests only: preserve behavior while changing lookup allocation, not product semantics.
+import type { DecisionRequest, Opportunity, ReminderIntent, ScheduleNode } from '../../src/model.js'
+import { resolveOpportunityTarget } from '../../src/semanticTargetMatching.js'
 
 export interface DecisionContext {
   opportunities: Opportunity[]
@@ -24,25 +26,8 @@ function currentSource(request: DecisionRequest, now: Date) {
   return recent || future
 }
 
-interface DecisionContextIndexes {
-  opportunityIds: Set<string>
-  nodeIds: Set<string>
-}
-
-function indexDecisionContext(context: DecisionContext): DecisionContextIndexes {
-  return {
-    opportunityIds: new Set(context.opportunities.filter(item => item.processStage !== 'closed').map(item => item.id)),
-    nodeIds: new Set((context.scheduleNodes ?? []).filter(item =>
-      item.state !== 'cancelled' && item.state !== 'completed' && item.state !== 'superseded').map(item => item.occurrenceId)),
-  }
-}
-
 /** A read-model rule. It never changes a stored request or its audit trail. */
 export function actionableDecision(request: DecisionRequest, context: DecisionContext): boolean {
-  return evaluateActionableDecision(request, context, () => indexDecisionContext(context))
-}
-
-function evaluateActionableDecision(request: DecisionRequest, context: DecisionContext, indexes: () => DecisionContextIndexes): boolean {
   if (request.state !== 'open' || (request.expiresAt && Date.parse(request.expiresAt) < context.now.getTime())) return false
   if (request.payloadBinding.statementMode !== 'assertion'
     && request.payloadBinding.statementMode !== 'current_intent') return false
@@ -54,6 +39,9 @@ function evaluateActionableDecision(request: DecisionRequest, context: DecisionC
     || new Set(request.choices.map(item => item.label.trim())).size !== request.choices.length
     || request.choices.some(item => !item.id.trim())) return false
   const candidate = request.payloadBinding.candidate
+  const opportunityIds = new Set(context.opportunities.filter(item => item.processStage !== 'closed').map(item => item.id))
+  const nodeIds = new Set((context.scheduleNodes ?? []).filter(item =>
+    item.state !== 'cancelled' && item.state !== 'completed' && item.state !== 'superseded').map(item => item.occurrenceId))
   const choices = request.choices
   if (request.reason === 'missing_required_field') {
     if (candidate.kind !== 'reminder_cancelled') return false
@@ -82,7 +70,6 @@ function evaluateActionableDecision(request: DecisionRequest, context: DecisionC
     const resolved = resolveOpportunityTarget(context.opportunities, candidate.target)
     if (resolved.status !== 'ambiguous') return false
     const plausible = new Set(resolved.opportunities.map(item => item.id))
-    const { opportunityIds } = indexes()
     return ids.length >= 2 && ids.every((id): id is string => Boolean(id && opportunityIds.has(id)))
       && new Set(ids).size === ids.length
       && new Set(choices.map(item => item.label.trim())).size === choices.length
@@ -107,7 +94,6 @@ function evaluateActionableDecision(request: DecisionRequest, context: DecisionC
       node.state !== 'cancelled' && node.state !== 'completed' && node.state !== 'superseded'
       && (!opportunityId || node.opportunityId === opportunityId)
       && (!candidate.target?.occurrenceKind || node.kind === candidate.target.occurrenceKind))
-    const { nodeIds } = indexes()
     return ids.length >= 2 && ids.every((id): id is string => Boolean(id && nodeIds.has(id)))
       && new Set(ids).size === ids.length
       && new Set(choices.map(item => item.label.trim())).size === choices.length
@@ -118,7 +104,6 @@ function evaluateActionableDecision(request: DecisionRequest, context: DecisionC
     && (candidate.objectConfidence !== 'high' || candidate.eventConfidence !== 'high'
       || (candidate.temporalConfidence && candidate.temporalConfidence !== 'high'))) return false
   const target = candidate.target
-  const { opportunityIds, nodeIds } = indexes()
   const hasObject = Boolean(
     (target?.opportunityId && opportunityIds.has(target.opportunityId))
     || (target?.occurrenceId && nodeIds.has(target.occurrenceId))
@@ -135,12 +120,8 @@ function evaluateActionableDecision(request: DecisionRequest, context: DecisionC
 export function partitionDecisions(requests: DecisionRequest[], context: DecisionContext) {
   const actionable: DecisionRequest[] = []
   const dataQuality: DecisionRequest[] = []
-  // One synchronous read-model pass shares immutable lookup indexes. Cheap
-  // refusals never scan the workspace; no cache survives this call or account.
-  let cached: DecisionContextIndexes | undefined
-  const indexes = () => cached ??= indexDecisionContext(context)
   for (const request of requests.filter(item => item.state === 'open')) {
-    if (evaluateActionableDecision(request, context, indexes)) actionable.push(request)
+    if (actionableDecision(request, context)) actionable.push(request)
     else dataQuality.push(request)
   }
   return { actionable, dataQuality }
