@@ -1,3 +1,4 @@
+import { getBusinessManagementSchema, executeBusinessManagementSchema, undoBusinessManagementSchema, type BusinessManagementTools } from './businessManagementTools.js'
 import { McpServer } from '@modelcontextprotocol/server'
 import {
   explainPrioritySchema,
@@ -69,6 +70,7 @@ const trustedIngestionAnnotations = {
 } as const
 
 export interface PjsdasMcpServerOptions {
+  businessManagement?: BusinessManagementTools
   version?: string
   dataMode?: 'workspace' | 'demo' | 'google-drive-readonly' | 'google-drive' | 'transactional'
   proposalMode?: 'disabled' | 'review-link'
@@ -299,6 +301,24 @@ export function createPjsdasMcpServer(
       inputSchema: addOpportunitiesSchema, annotations: directWriteAnnotations,
     }, async (args) => invokeAddOpportunities(source, args))
 
+  }
+
+  if (options.businessManagement) {
+    server.registerTool('get_business_management', {
+      title: 'Read own-account management access and objects',
+      description: 'Read explicit v2 management authorization, current workspace version and optional bounded preparation, manual action or application-group objects. Does not grant access.',
+      inputSchema: getBusinessManagementSchema, annotations: readOnlyAnnotations,
+    }, async args => options.businessManagement!.invoke('get_business_management', args))
+    server.registerTool('execute_business_management', {
+      title: 'Apply reversible own-account business edits',
+      description: 'Apply the user-requested bounded atomic batch to independent preparation, manual actions or application groups. Requires explicit current account/client v2 consent and an observed base revision. Archive is recoverable with undo; permanent deletion, security settings and external sharing are unsupported. Reuse the same command ID only for retries of the same intent.',
+      inputSchema: executeBusinessManagementSchema, annotations: { ...directWriteAnnotations, destructiveHint: true },
+    }, async args => options.businessManagement!.invoke('execute_business_management', args))
+    server.registerTool('undo_business_management', {
+      title: 'Undo an own-account management command',
+      description: 'Restore a specific management command only after the user requests undo. Rejects conflicting later changes; never overwrites them or restores other command families.',
+      inputSchema: undoBusinessManagementSchema, annotations: { ...directWriteAnnotations, destructiveHint: true },
+    }, async args => options.businessManagement!.invoke('undo_business_management', args))
   }
 
   if (explicitUserCommandMode === 'enabled') {
