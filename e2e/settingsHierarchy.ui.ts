@@ -81,7 +81,13 @@ for (const state of ['enabled', 'pending', 'partial', 'error', 'disabled', 'unve
     }
     if (state === 'disabled' || state === 'partial') await expect(gmail.locator('.settings-permission')).toContainText('不发送或修改邮件')
     if (state === 'disabled') await expect(discovery.locator('.settings-permission')).toContainText('不会收到完整工作区')
-    for (const region of [gmail, discovery]) await region.locator('.settings-source-manage > summary').click()
+    for (const region of [gmail, discovery]) {
+      await expect(region.locator('.settings-source-body')).toBeHidden()
+      await region.locator('.settings-source-manage > summary').click()
+      const panelBounds = await region.boundingBox()
+      const bodyBounds = await region.locator('.settings-source-body').boundingBox()
+      expect(bodyBounds!.width).toBeGreaterThan(panelBounds!.width * .8)
+    }
     if (state === 'disabled' || state === 'partial') await expect(gmail.locator('.settings-permission')).toBeVisible()
     if (state === 'disabled') await expect(discovery.locator('.settings-permission')).toBeVisible()
     for (const control of await page.getByRole('button', { name: /关闭自动跟踪|关闭后台发现/ }).all()) {
@@ -106,11 +112,22 @@ for (const state of ['enabled', 'pending', 'partial', 'error', 'disabled', 'unve
       await expect(discovery.getByRole('alert')).toHaveCount(0)
       expect(calls).toEqual([{ gmailEnabled: false }])
     }
+    if (state === 'pending') {
+      const interfaceGroup = page.locator('details.settings-group').filter({ has: page.locator('summary strong').filter({ hasText: /^(界面|Interface)$/ }) })
+      await interfaceGroup.locator('summary').click()
+      await interfaceGroup.getByRole('button', { name: 'EN', exact: true }).click()
+      await interfaceGroup.locator('summary').click()
+      await expect(page.getByRole('heading', { name: 'Automatic recruiting-email tracking', exact: true })).toBeVisible()
+      expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBeLessThanOrEqual(1)
+      await page.evaluate(() => window.scrollTo(0, 0))
+      await page.screenshot({ path: `settings-hierarchy-evidence/pending-en-${width}.png`, fullPage: true })
+    }
   })
 }
 
 test('Today hides only a repeated application identity and retains job access and other context', async ({ page }, info) => {
   await seedSession(page.context())
+  await page.clock.setFixedTime(new Date(now))
   const snapshot = workspace()
   snapshot.data.actions[0] = { ...snapshot.data.actions[0]!, kind: 'apply', title: '投递 A公司｜产品经理' }
   snapshot.data.timePlanning = { version: 1, defaultDailyMinutes: 480, updatedAt: now }

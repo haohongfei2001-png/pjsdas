@@ -338,7 +338,7 @@
 
 /* Source connections use the same compact name/value/action rhythm as preferences. */
 .settings-surface .settings-account,.settings-surface .settings-source-panel {
-  grid-template-columns: minmax(9rem, 12rem) minmax(0, 1fr) auto auto;
+  grid-template-columns: 8rem minmax(0, 1fr) auto auto;
   min-height: 60px; padding: 8px 24px; gap: 0 24px;
 }
 .settings-surface .cloud-settings-heading > div,.settings-surface .settings-source-header > div { display: contents; }
@@ -362,3 +362,5 @@
  .settings-surface .cloud-advanced > summary,.settings-surface .settings-source-manage > summary { grid-column: 2; grid-row: 1 / span 3; max-width: none; }
  .settings-surface .settings-intake-details > summary { min-height: 32px; }
 }
+/* Native details introduces its own content grid item in modern browsers. */
+.settings-surface :is(.cloud-advanced,.settings-source-manage,.settings-intake-details)::details-content { grid-column: 1 / -1; min-width: 0; }
