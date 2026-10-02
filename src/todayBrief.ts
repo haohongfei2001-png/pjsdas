@@ -248,13 +248,14 @@ function opportunityMap(opportunities: Opportunity[]) {
 }
 
 export function nodeForAction(action: Action, nodes: ScheduleNode[]) {
-  return nodes
-    .filter((node) => node.relatedActionIds.includes(action.id))
-    .sort((a, b) => {
-      const aTerminal = ['cancelled', 'superseded'].includes(a.state) ? 1 : 0
-      const bTerminal = ['cancelled', 'superseded'].includes(b.state) ? 1 : 0
-      return aTerminal - bTerminal || b.version - a.version
-    })[0]
+  // Withdrawn occurrences retain their time and action links as source history.
+  // Resolve the latest version first so filtering a tombstone cannot revive an
+  // older scheduled version, then exclude it from current action constraints.
+  // Completed shared nodes may still constrain another unfinished action.
+  return latestByOccurrence(nodes)
+    .filter((node) => node.relatedActionIds.includes(action.id)
+      && node.state !== 'cancelled' && node.state !== 'superseded')
+    .sort((a, b) => b.version - a.version)[0]
 }
 
 function latestStartFor(action: Action, node: ScheduleNode | undefined): Pick<TodayBriefActionTiming, 'latestStartAt' | 'latestStartDate'> {
