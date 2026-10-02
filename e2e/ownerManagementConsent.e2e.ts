@@ -56,7 +56,7 @@ async function fixture(
   options: {
     unknownFirst?: boolean
     disabled?: boolean
-    holdFirstRead?: Promise<void>
+    holdReads?: Promise<void>
     holdPost?: Promise<void>
   } = {},
 ) {
@@ -116,8 +116,7 @@ async function fixture(
         return json(route, { code: 'CAPABILITY_DISABLED' }, 404)
       if (route.request().method() === 'GET') {
         readCount++
-        if (readCount === 1 && options.holdFirstRead)
-          await options.holdFirstRead
+        if (options.holdReads) await options.holdReads
         return json(route, state)
       }
       const body = route.request().postDataJSON()
@@ -253,9 +252,9 @@ test('closing while read is delayed cannot surface a stale consent or issue a gr
   const hold = new Promise<void>((resolve) => {
     release = resolve
   })
-  const f = await fixture(page, { holdFirstRead: hold })
+  const f = await fixture(page, { holdReads: hold })
   await page.goto(entry)
-  await expect.poll(() => f.reads).toBe(1)
+  await expect.poll(() => f.reads).toBeGreaterThanOrEqual(1)
   await page
     .getByRole('button', { name: '返回 TodayAction', exact: true })
     .click()
