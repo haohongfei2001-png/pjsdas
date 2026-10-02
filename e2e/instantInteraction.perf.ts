@@ -16,7 +16,7 @@ test('instant interactions meet p95 budgets without scaling with historical time
     await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem('pjsdas-google-drive-sync-state-v2') ?? '{}').accounts?.['instant-owner']?.lastSyncedVersion)).toBe('txn:1204')
     await expect(page.locator('[data-action-id="dense-action-0"]')).toBeVisible()
     // Initial hydration is outside the ordinary command budget.
-    await page.evaluate(() => { performance.clearMeasures(); (window as any).commandMeasures = []; window.addEventListener('pjsdas:interaction-measure', event => (window as any).commandMeasures.push((event as CustomEvent).detail)); (window as any).commandLongTasks = []; new PerformanceObserver(list => {
+    await page.evaluate(() => { performance.clearMeasures(); (window as any).commandMeasures = []; window.addEventListener('pjsdas:interaction-measure', event => (window as any).commandMeasures.push((event as CustomEvent).detail)); (window as any).commandLongTasks = []; (window as any).capacityCommandWindows = []; new PerformanceObserver(list => {
       (window as any).commandLongTasks.push(...list.getEntries().map(entry => ({ start: entry.startTime, duration: entry.duration })))
     }).observe({ type: 'longtask' }) })
     const samples: number[] = []
@@ -31,7 +31,7 @@ test('instant interactions meet p95 budgets without scaling with historical time
         while (!document.querySelector('.tsui-capacity summary')?.textContent?.includes(`${hours} 小时`) && performance.now() - started < 5000) await new Promise(requestAnimationFrame)
         const acknowledgement = performance.now() - started
         await new Promise(requestAnimationFrame)
-        return { acknowledgement, settled: performance.now() - started }
+        const ended = performance.now(); (window as any).capacityCommandWindows.push({ start: started, end: ended, operation: 'capacity' }); return { acknowledgement, settled: ended - started }
       }, hours)
       samples.push(sample.settled); acknowledgements.push(sample.acknowledgement)
       await expect(page.locator('.tsui-capacity')).not.toHaveAttribute('open', '')
@@ -49,13 +49,13 @@ test('instant interactions meet p95 budgets without scaling with historical time
           while ((operation === 'complete' ? !!document.querySelector('[data-action-id="dense-action-0"]') : !document.querySelector('[data-action-id="dense-action-0"]'))
             && performance.now() - started < 5000) await new Promise(requestAnimationFrame)
           await new Promise(requestAnimationFrame)
-          return performance.now() - started
+          const ended = performance.now(); (window as any).capacityCommandWindows.push({ start: started, end: ended, operation }); return ended - started
         }, operation)
         ;(operation === 'complete' ? completionSamples : undoSamples).push(duration)
       }
     }
     const measures = await page.evaluate(() => ({ durable: (window as any).commandMeasures.filter((entry: any) => entry.phase === 'durable-outbox').map((entry: any) => entry.durationMs),
-      longTasks: (window as any).commandLongTasks }))
+      longTasks: (window as any).commandLongTasks, stages: (window as any).commandMeasures, commandWindows: (window as any).capacityCommandWindows }))
     const p95 = (values: number[]) => [...values].sort((a, b) => a - b)[Math.ceil(values.length * 0.95) - 1]
     const row = { historyRows, bytes: Buffer.byteLength(JSON.stringify(server.snapshot)), acknowledgementP95: p95(acknowledgements),
       settledP95: p95(samples), completionP95: p95(completionSamples), undoP95: p95(undoSamples), durableP95: p95(measures.durable), longTasks: measures.longTasks, samples }
