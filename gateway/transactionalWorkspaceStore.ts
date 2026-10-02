@@ -36,7 +36,7 @@ export interface ConnectedCommandRecord {
 }
 
 export interface ConnectedAuthoritativeCommitInput extends ConnectedCommitInput {
-  managementAuthorization?: { grantId: string; grantRevision: number; consentVersion?: 2 | 3 | 4 }
+  managementAuthorization?: { grantId: string; grantRevision: number; consentVersion?: 2 | 3 | 4 | 5 }
   receiptContext: Record<string, unknown>
 }
 
@@ -231,12 +231,12 @@ export function createTransactionalWorkspaceStore(options: TransactionalWorkspac
       validateSnapshot(input.snapshot)
       const authorization = input.managementAuthorization
       // Planning changes preserve validated raw facts; SQL enforces this boundary again.
-      const snapshot = authorization?.consentVersion === 4 ? structuredClone(input.snapshot) : upgradeSnapshotToLatest(input.snapshot)
-      if ((input.operation === 'business_management' || input.operation === 'opportunity_management' || input.operation === 'planning_management') && !authorization) throw new WorkspaceSourceError('AUTH_FORBIDDEN', 'Management writes require a transaction-bound grant.', false)
+      const snapshot = (authorization?.consentVersion === 4 || authorization?.consentVersion === 5) ? structuredClone(input.snapshot) : upgradeSnapshotToLatest(input.snapshot)
+      if ((input.operation === 'business_management' || input.operation === 'opportunity_management' || input.operation === 'planning_management' || input.operation === 'discovery_profile_management') && !authorization) throw new WorkspaceSourceError('AUTH_FORBIDDEN', 'Management writes require a transaction-bound grant.', false)
       if (authorization && (input.principalKind !== 'delegated_mcp' || !input.clientId || !authorization.grantId || !Number.isSafeInteger(authorization.grantRevision) || authorization.grantRevision < 1)) throw new WorkspaceSourceError('AUTH_FORBIDDEN', 'Management transaction authorization is invalid.', false)
-      if ((input.operation === 'planning_management' && authorization?.consentVersion !== 4) || (input.operation === 'opportunity_management' && authorization?.consentVersion !== 3) || (input.operation === 'business_management' && authorization?.consentVersion !== undefined && authorization.consentVersion !== 2)) throw new WorkspaceSourceError('AUTH_FORBIDDEN', 'Management grant version does not match this operation.', false)
-      if (authorization?.consentVersion !== undefined && ![2, 3, 4].includes(authorization.consentVersion)) throw new WorkspaceSourceError('AUTH_FORBIDDEN', 'Unsupported management consent version.', false)
-      const rpc = authorization?.consentVersion === 4 ? 'pjsdas_commit_planning_workspace_v1' : authorization?.consentVersion === 3 ? 'pjsdas_commit_opportunity_workspace_v1' : authorization ? 'pjsdas_commit_management_workspace_v1' : 'pjsdas_commit_workspace_v2'
+      if ((input.operation === 'discovery_profile_management' && authorization?.consentVersion !== 5) || (input.operation === 'planning_management' && authorization?.consentVersion !== 4) || (input.operation === 'opportunity_management' && authorization?.consentVersion !== 3) || (input.operation === 'business_management' && authorization?.consentVersion !== undefined && authorization.consentVersion !== 2)) throw new WorkspaceSourceError('AUTH_FORBIDDEN', 'Management grant version does not match this operation.', false)
+      if (authorization?.consentVersion !== undefined && ![2, 3, 4, 5].includes(authorization.consentVersion)) throw new WorkspaceSourceError('AUTH_FORBIDDEN', 'Unsupported management consent version.', false)
+      const rpc = authorization?.consentVersion === 5 ? 'pjsdas_commit_discovery_profile_workspace_v1' : authorization?.consentVersion === 4 ? 'pjsdas_commit_planning_workspace_v1' : authorization?.consentVersion === 3 ? 'pjsdas_commit_opportunity_workspace_v1' : authorization ? 'pjsdas_commit_management_workspace_v1' : 'pjsdas_commit_workspace_v2'
       const response = await request(`/rest/v1/rpc/${rpc}?select=outcome,workspace_id,revision,receipt`, {
         method: 'POST',
         body: JSON.stringify({
@@ -282,7 +282,7 @@ export function createTransactionalWorkspaceStore(options: TransactionalWorkspac
       if (committedSnapshot == null) {
         if (row.outcome === 'COMMITTED') committedSnapshot = snapshot
         else {
-          const latest = await this.readForUser(input.userId, { preserveRawData: authorization?.consentVersion === 4 })
+          const latest = await this.readForUser(input.userId, { preserveRawData: authorization?.consentVersion === 4 || authorization?.consentVersion === 5 })
           if (!latest || latest.workspaceId !== row.workspace_id || latest.revision < row.revision)
             throw new WorkspaceSourceError('WORKSPACE_INVALID', 'Authoritative fallback snapshot metadata does not match the commit.', false)
           committedSnapshot = latest.snapshot

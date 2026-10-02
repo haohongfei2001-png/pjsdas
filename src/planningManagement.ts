@@ -73,10 +73,10 @@ export function planningManagementObjectRefs(input: PlanningManagementInput) {
 }
 
 /** Canonical persisted JSON, including update metadata and the difference between absent and explicit defaults. */
-function canonicalJson(value: unknown): string {
+function canonicalJson(value: unknown, compensation = false): string {
   let count = 0
   function canonical(item: unknown, depth: number): unknown {
-    if (++count > 65536 || depth > 32) throw new PlanningManagementError('INVALID_CONFIGURATION', 'Planning configuration exceeds its structural limit.')
+    if (++count > (compensation ? 4 * 65536 + 32 : 65536) || depth > (compensation ? 37 : 32)) throw new PlanningManagementError('INVALID_CONFIGURATION', 'Planning configuration exceeds its structural limit.')
     if (item === null || typeof item === 'string' || typeof item === 'boolean') return item
     if (typeof item === 'number' && Number.isFinite(item)) return item
     if (Array.isArray(item)) return item.map(value => canonical(value === undefined ? null : value, depth + 1))
@@ -95,8 +95,8 @@ function boundedConfiguration(value: unknown) {
 }
 /** Also fingerprints validated ledger compensation for exact restore consent. */
 export async function planningManagementFingerprint(value: unknown) {
-  const json = canonicalJson(value)
-  if (new TextEncoder().encode(json).byteLength > 4 * MAX_BYTES) throw new PlanningManagementError('INVALID_CONFIGURATION', 'Planning fingerprint evidence exceeds its bounded limit.')
+  const json = canonicalJson(value, Boolean(value && typeof value === 'object' && 'operation' in value && value.operation === 'planning_management_restore'))
+  if (new TextEncoder().encode(json).byteLength > 4 * MAX_BYTES + 4096) throw new PlanningManagementError('INVALID_CONFIGURATION', 'Planning fingerprint evidence exceeds its bounded limit.')
   const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(json))
   return [...new Uint8Array(digest)].map(item => item.toString(16).padStart(2, '0')).join('')
 }
@@ -242,7 +242,7 @@ const compensationSchema = z.object({ operation: z.literal('planning_management_
  * client-provided restore JSON. Audit history is retained by this reducer. */
 function assertCompensation(compensation: PlanningManagementCompensation) {
   try {
-    if (new TextEncoder().encode(canonicalJson(compensation)).byteLength > 4 * MAX_BYTES || !compensationSchema.safeParse(compensation).success) throw new Error('Invalid shape.')
+    if (new TextEncoder().encode(canonicalJson(compensation, true)).byteLength > 4 * MAX_BYTES + 4096 || !compensationSchema.safeParse(compensation).success) throw new Error('Invalid shape.')
     const seen = new Set<PlanningManagementObjectType>()
     for (const change of compensation.payload.changes) {
       if (seen.has(change.type) || equal(change.before, change.after)) throw new Error('Invalid change.')

@@ -128,7 +128,7 @@ test('submission and schedule commands meet dense local p95 budgets while offlin
     const metrics = await page.evaluate(() => ({ measures: (window as any).denseMeasures, allLongTasks: (window as any).denseLongTasks, commandWindows: (window as any).denseCommandWindows,
       longTasks: (window as any).denseLongTasks.filter((task: any) => (window as any).denseCommandWindows.some((window: any) => task.start < window.end && task.start + task.duration > window.start)).map((task: any) => task.duration) }))
     const p95 = (values: number[]) => [...values].sort((a, b) => a - b)[Math.ceil(values.length * .95) - 1]
-    const row = { operation, acknowledgementP95: p95(acknowledgement), settledP95: p95(settled), durableP95: p95(metrics.measures.filter((entry: any) => entry.phase === 'durable-outbox').map((entry: any) => entry.durationMs)), longTasks: metrics.longTasks }
+    const row = { operation, acknowledgementSamples: acknowledgement, settledSamples: settled, durableSamples: metrics.measures.filter((entry: any) => entry.phase === 'durable-outbox').map((entry: any) => entry.durationMs), acknowledgementP95: p95(acknowledgement), settledP95: p95(settled), durableP95: p95(metrics.measures.filter((entry: any) => entry.phase === 'durable-outbox').map((entry: any) => entry.durationMs)), longTasks: metrics.longTasks }
     await info.attach(`instant-${operation}-stages.json`, { body: JSON.stringify(metrics), contentType: 'application/json' })
     results.push(row)
     console.log('INSTANT_SAMPLE:' + JSON.stringify(row))

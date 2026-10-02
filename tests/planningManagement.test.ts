@@ -330,3 +330,37 @@ describe('planning changes preserve historical and scheduling facts', () => {
     expect(initial).toEqual(before)
   })
 })
+
+describe('planning evidence preserves accepted raw metadata limits',()=>{
+  it.each(['deep','wide'])('restores bounded %s metadata in both configuration pairs',async kind=>{
+    const { unknownDeadlineWorkspace }=await import('./fixtures/unknownDeadlineWorkspace.js')
+    const { createDefaultDecisionRules }=await import('../src/decisionRules.js')
+    const api=await import('../src/planningManagement.js')
+    const s=unknownDeadlineWorkspace(1);let metadata:any=0;if(kind==='deep')for(let i=0;i<30;i++)metadata={child:metadata};else metadata=Array(34000).fill(0)
+    s.data.decisionRules={...createDefaultDecisionRules('2026-10-01T00:00:00Z'),metadata} as any
+    s.data.timePlanning={version:1,defaultDailyMinutes:40,updatedAt:'2026-10-01T00:00:00Z',metadata} as any
+    const read=await api.getPlanningManagementRead(s)
+    const applied=await api.applyPlanningManagement(s,{operations:[{kind:'patch_decision_rules',expectedFingerprint:read.decisionRules.fingerprint,patch:{followUpDailyCap:3}},{kind:'patch_time_preferences',expectedFingerprint:read.timePreferences.fingerprint,patch:{defaultDailyMinutes:60}}]},'planning-bounded',new Date('2026-10-02T00:00:00Z'))
+    expect(applied.compensation!.payload.changes).toHaveLength(2)
+    expect(applied.compensationFingerprint).toBe(await api.planningManagementFingerprint(applied.compensation))
+    const restored=api.restorePlanningManagement(applied.snapshot,applied.compensation!,new Date('2026-10-02T00:00:00Z'))
+    expect(restored.data.decisionRules).toEqual(s.data.decisionRules);expect(restored.data.timePlanning).toEqual(s.data.timePlanning)
+  })
+})
+
+describe('planning compensation byte envelope',()=>{
+  it('accepts two maximum-size raw configurations plus bounded wrapper overhead',async()=>{
+    const { unknownDeadlineWorkspace }=await import('./fixtures/unknownDeadlineWorkspace.js')
+    const { createDefaultDecisionRules }=await import('../src/decisionRules.js')
+    const api=await import('../src/planningManagement.js');const s=unknownDeadlineWorkspace(1)
+    const fill=(value:any)=>{value.metadata='';value.metadata='x'.repeat(262144-new TextEncoder().encode(JSON.stringify(value)).byteLength);expect(new TextEncoder().encode(JSON.stringify(value)).byteLength).toBe(262144);return value}
+    s.data.decisionRules=fill(createDefaultDecisionRules('2026-10-01T00:00:00.000Z'))
+    s.data.timePlanning=fill({version:1,defaultDailyMinutes:40,updatedAt:'2026-10-01T00:00:00.000Z'})
+    const read=await api.getPlanningManagementRead(s)
+    const result=await api.applyPlanningManagement(s,{operations:[{kind:'patch_decision_rules',expectedFingerprint:read.decisionRules.fingerprint,patch:{followUpDailyCap:3}},{kind:'patch_time_preferences',expectedFingerprint:read.timePreferences.fingerprint,patch:{defaultDailyMinutes:60}}]},'max-config-command',new Date('2026-10-02T00:00:00Z'))
+    expect(result.compensation!.payload.changes).toHaveLength(2)
+    expect(new TextEncoder().encode(JSON.stringify(result.compensation)).byteLength).toBeGreaterThan(4*262144)
+    expect(result.compensationFingerprint).toBe(await api.planningManagementFingerprint(result.compensation))
+    const restored=api.restorePlanningManagement(result.snapshot,result.compensation!);expect(restored.data.decisionRules).toEqual(s.data.decisionRules);expect(restored.data.timePlanning).toEqual(s.data.timePlanning)
+  })
+})
