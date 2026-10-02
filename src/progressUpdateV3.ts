@@ -330,7 +330,7 @@ function eventFromUnresolved(
   target: Opportunity,
   now: Date,
 ): ProcessEventOperation | undefined {
-  const detected = detectNotificationType(operation.sourceText)
+  const detected = detectNotificationType(operation.sourceText, true)
   const type = detected.type
   if (!type || type === 'other' || type === 'status_update') return undefined
   const encodedDate = new Date(operation.occurredAt)
@@ -513,7 +513,7 @@ export function parseProgressUpdate(
         continue
       }
 
-      const detected = detectNotificationType(operation.sourceText)
+      const detected = detectNotificationType(operation.sourceText, true)
       if (detected.type && detected.type !== 'other' && detected.type !== 'status_update') {
         const candidates = operation.candidates?.map((item) => item.id)
         const target = selectTarget(

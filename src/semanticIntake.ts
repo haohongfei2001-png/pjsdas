@@ -1,3 +1,5 @@
+import { resolveApplicationDeadline } from './applicationDeadline.js'
+import { invalidatedSourceFact } from './processFactCorrection.js'
 import { applyDomainCompensation, applyUserDomainCommand, type DomainCompensation, type UserDomainCommand } from './domainCommands.js'
 import { resolveOpportunityTarget } from './semanticTargetMatching.js'
 import type {
@@ -1109,6 +1111,10 @@ export function applySemanticIntake(
   }
 
   for (const candidate of observation.candidates) {
+    if (invalidatedSourceFact(working, observation.source, semanticCandidateFactKey(working, candidate))) {
+      coverageDebtCount += 1
+      continue
+    }
     if (observation.source.kind === 'gmail') {
       const priorAnswer = (working.data.decisionRequests ?? []).find(item =>
         (item.state === 'answered' || item.state === 'auto_resolved')
@@ -1137,7 +1143,12 @@ export function applySemanticIntake(
     // command must never recreate those domain objects (notably manual actions).
     if (recoveryFactKeys.size && (!factKey || !recoveryFactKeys.has(factKey))) continue
     const priorFact = existingFactReceipt(working, factKey)
-    if (priorFact && priorFact.sourceId !== observation.source.sourceId) {
+    const deadlineTarget = candidate.kind === 'opportunity_deadline' ? working.data.opportunities.find(item => item.id === candidate.target?.opportunityId) : undefined
+    const repeatedAssertedDeadline = priorFact && candidate.kind === 'opportunity_deadline' && deadlineTarget
+      && observation.statementMode === 'assertion'
+      && resolveApplicationDeadline(deadlineTarget, working.data).deadline === candidate.deadline
+      && resolveApplicationDeadline(deadlineTarget, working.data).precision === candidate.precision
+    if (priorFact && (priorFact.sourceId !== observation.source.sourceId || repeatedAssertedDeadline)) {
       summaries.push('Cross-source fact already recorded; source receipt retained without a second business mutation.')
       affectedObjects.push(...priorFact.affectedObjects)
       if (factKey) factKeys.push(factKey)

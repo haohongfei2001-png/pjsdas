@@ -110,7 +110,7 @@ function completedEventFromUnresolved(
   currentOpportunities: Opportunity[],
 ): ExecutableProgressOperation | undefined {
   if (!explicitProcessCompletion(operation.sourceText)) return undefined
-  const detected = detectNotificationType(operation.sourceText)
+  const detected = detectNotificationType(operation.sourceText, true)
   if (!detected.type || !isActionableProcessEvent(detected.type)) return undefined
   const target = targetForExplicitCompletion(operation, currentOpportunities, detected.type)
   if (!target) return undefined

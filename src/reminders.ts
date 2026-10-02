@@ -166,3 +166,32 @@ export function validateReminderOutbox(value: ReminderOutboxRecord, reminderIds:
   if (!iso(value.createdAt) || !iso(value.updatedAt)) errors.push('Reminder outbox timestamps are invalid.')
   return errors
 }
+
+/** Shared cancellation semantics for explicit cancellation and invalidated deadlines. */
+export function cancelReminderIntentInPlace(data: { reminderOutbox?: ReminderOutboxRecord[] }, target: ReminderIntent, timestamp: string) {
+  target.state = 'cancelled'
+  target.updatedAt = timestamp
+  if (target.externalLink) {
+    target.externalLink.state = 'cancelled'
+    target.externalLink.lastReceiptAt = undefined
+  }
+  data.reminderOutbox = (data.reminderOutbox ?? []).filter((item) => item.reminderIntentId !== target.id)
+  const capability = reminderCapabilityForOwner(target.deliveryOwner)
+  if (capability) {
+    const capabilityState = target.externalLink?.lastErrorCode?.startsWith('CAPABILITY_') ? target.externalLink.lastErrorCode.slice('CAPABILITY_'.length).toLowerCase() : undefined
+    data.reminderOutbox.push({
+      id: `reminder-outbox:${stableHash(`${target.id}|cancel|${timestamp}`)}`,
+      reminderIntentId: target.id,
+      operation: 'cancel',
+      capability,
+      state: capabilityState === 'unsupported' || capabilityState === 'not_authorized' ? 'unsupported' : 'pending',
+      attemptCount: 0,
+      payloadFingerprint: stableHash(`${target.id}|cancel|${capability}`),
+      receiptCode: capabilityState === 'unsupported' || capabilityState === 'not_authorized'
+        ? `CAPABILITY_${capabilityState.toUpperCase()}`
+        : undefined,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    })
+  }
+}

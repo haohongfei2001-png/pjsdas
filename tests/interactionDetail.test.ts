@@ -16,7 +16,7 @@ describe('UU-05 opportunity decision/detail integration', () => {
     expect(app).toContain('<OpportunityDetailDrawer')
     expect(app).not.toContain('function OpportunityTable')
     expect(app).not.toContain('function PipelinePanel')
-    expect(list).toContain("export type JobFilter = 'all' | 'unapplied' | 'in_progress' | 'ended'")
+    expect(list).toContain("export type JobFilter = 'all' | JobCategory")
     expect(app).toContain("useState<JobFilter>('all')")
     expect(detail).toContain('<OpportunityDecisionSummary')
   })

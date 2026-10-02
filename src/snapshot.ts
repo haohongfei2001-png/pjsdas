@@ -364,6 +364,24 @@ export function validateSnapshot(value: unknown): asserts value is PJSDASSnapsho
   }
 
   const opportunityIds = assertUniqueIds(data.opportunities, 'Opportunity')
+  for (const opportunity of data.opportunities as Opportunity[]) {
+    const corrections = opportunity.detail?.deadlineCorrections
+    if (corrections !== undefined && !Array.isArray(corrections)) throw new Error('备份损坏：投递截止更正历史无效。')
+    const ids = new Set<string>()
+    for (const correction of corrections ?? []) {
+      if (!correction.commandId?.trim() || ids.has(correction.commandId) || !['confirmed', 'unknown'].includes(correction.state)
+        || !['official_role', 'official_campaign', 'university_repost', 'aggregator', 'user'].includes(correction.sourceAuthority)
+        || !['open', 'closed', 'unknown'].includes(correction.postingStatus) || !correction.sourceUrl?.trim() || !correction.evidence?.trim()
+        || !Array.isArray(correction.previousNodeIds)) throw new Error('备份损坏：投递截止更正依据无效。')
+      ids.add(correction.commandId)
+      assertIsoDate(correction.checkedAt, 'Deadline correction checkedAt')
+      assertIsoDate(correction.recordedAt, 'Deadline correction recordedAt')
+      if (correction.state === 'confirmed') {
+        assertIsoDate(correction.deadline, 'Deadline correction deadline')
+        if (!['date', 'datetime'].includes(correction.precision ?? '')) throw new Error('备份损坏：截止日期精度无效。')
+      } else if (correction.deadline !== undefined || correction.precision !== undefined) throw new Error('备份损坏：未知截止日期不能携带虚构日期。')
+    }
+  }
   const processIds = assertUniqueIds(data.processes, 'Process')
   const eventIds = assertUniqueIds(data.processEvents, 'Process Event')
   const actionIds = assertUniqueIds(data.actions, 'Action')
@@ -441,6 +459,13 @@ export function validateSnapshot(value: unknown): asserts value is PJSDASSnapsho
     }
     assertIsoDate(event.occurredAt, `流程事件 ${event.id} 的 occurredAt`)
     if (event.dueAt) assertIsoDate(event.dueAt, `流程事件 ${event.id} 的 dueAt`)
+    if (event.invalidation) {
+      const correction = event.invalidation
+      if (!correction.commandId?.trim() || !correction.reason?.trim() || !semanticReceiptIds.has(correction.receiptId) || !semanticReceiptIds.has(correction.sourceReceiptId)
+        || !Array.isArray(correction.evidenceRefs) || !correction.evidenceRefs.length || correction.evidenceRefs.some(ref => typeof ref !== 'string' || !ref.trim())) throw new Error(`备份损坏：流程事件 ${event.id} 的更正依据无效。`)
+      assertIsoDate(correction.invalidatedAt, `流程事件 ${event.id} 的 invalidatedAt`)
+    }
+
   }
 
   if (data.scheduleNodes) {

@@ -125,6 +125,7 @@ function stageScore(stage: ProcessStage | undefined, kind: Action['kind'], proce
   if (!stage) return 55
 
   const scores: Record<ProcessStage, number> = {
+    unknown: 0,
     not_applied: 62,
     screening: 68,
     assessment: 82,

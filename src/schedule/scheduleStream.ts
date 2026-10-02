@@ -1,3 +1,4 @@
+import { classifyJob, resolveApplicationDeadline, indexJobClassificationData } from '../applicationDeadline.js'
 import { readModelSnapshot } from '../readModelSnapshot.js'
 import { scheduleDisplayTimezone } from '../scheduleDisplayTime.js'
 import type { ScheduleNode, ScheduleNodeState, TimelineRecord } from '../model.js'
@@ -5,8 +6,8 @@ import { effectiveScheduleNodeState } from '../scheduleNodes.js'
 import { type PJSDASSnapshot } from '../snapshot.js'
 import { localDateKey } from '../todayBrief.js'
 
-export type ScheduleSection = 'upcoming' | 'unresolved' | 'history' | 'undated'
-export type ScheduleEntryKind = 'node' | 'process_event' | 'business_fact' | 'action'
+export type ScheduleSection = 'upcoming' | 'unresolved' | 'history' | 'undated' | 'no_deadline'
+export type ScheduleEntryKind = 'node' | 'process_event' | 'business_fact' | 'action' | 'opportunity'
 
 export interface ScheduleEntry {
   id: string
@@ -23,6 +24,7 @@ export interface ScheduleEntry {
   version?: number
   state?: ScheduleNodeState
   title: string
+  invalidated?: boolean
   sourceRefs: string[]
   node?: ScheduleNode
   timeline?: TimelineRecord
@@ -133,7 +135,7 @@ export function buildScheduleStreamNormalized(
   if (!Number.isFinite(now.getTime())) throw new Error('Schedule clock is invalid.')
   try { new Intl.DateTimeFormat('en-US', { timeZone: context.timezone }) } catch { throw new Error('Schedule timezone is invalid.') }
   const today = localDateKey(now, context.timezone)
-  const sections: ScheduleStream['sections'] = { upcoming: [], unresolved: [], history: [], undated: [] }
+  const sections: ScheduleStream['sections'] = { upcoming: [], unresolved: [], history: [], undated: [], no_deadline: [] }
   const latest = new Map<string, ScheduleNode>()
   for (const node of snapshot.data.scheduleNodes ?? []) {
     const prior = latest.get(node.occurrenceId)
@@ -218,7 +220,8 @@ export function buildScheduleStreamNormalized(
       opportunityId: event.opportunityId,
       processEventId: event.id,
       title: event.type,
-      sourceRefs: [`process_event:${event.id}`],
+      invalidated: Boolean(event.invalidation),
+      sourceRefs: [`process_event:${event.id}`, ...(event.invalidation ? [`correction:${event.invalidation.receiptId}`] : [])],
     }
     sections.history.push(entry)
     representedProcessEventIds.add(event.id)
@@ -305,6 +308,14 @@ export function buildScheduleStreamNormalized(
       title: action.title,
       sourceRefs: [],
     })
+  }
+  const classificationOwners = indexJobClassificationData(snapshot.data)
+  for (const opportunity of snapshot.data.opportunities) {
+    const owners = classificationOwners(opportunity.id)
+    if (classifyJob(opportunity, owners, now, context.timezone) !== 'no_deadline') continue
+    const deadline = resolveApplicationDeadline(opportunity, owners)
+    sections.no_deadline.push({ id: `no-deadline:${opportunity.id}`, kind: 'opportunity', section: 'no_deadline', opportunityId: opportunity.id,
+      title: 'no_deadline', sourceRefs: deadline.sourceUrl ? [deadline.sourceUrl] : [] })
   }
   for (const section of Object.keys(sections) as ScheduleSection[]) sections[section].sort(chronological)
   const counts = Object.fromEntries((Object.keys(sections) as ScheduleSection[]).map((section) => [section, sections[section].length])) as ScheduleStream['counts']

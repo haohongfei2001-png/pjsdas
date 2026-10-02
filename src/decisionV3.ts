@@ -80,6 +80,7 @@ export function rankActions(
   )
   const actionable = actions
     .filter((action) => action.kind !== 'follow_up')
+    .filter((action) => !(action.kind === 'apply' && opportunities.find(item => item.id === action.opportunityId)?.processStage === 'unknown'))
     .filter((action) => !action.opportunityId || !ended.has(action.opportunityId))
     .filter((action) => !isUnresolvedPastProcessEvent(action, now))
   const scheduledIds = new Set(

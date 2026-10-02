@@ -305,7 +305,7 @@ function readWorkspace(snapshot: PJSDASSnapshot): EffectiveWorkspace {
     )
   }
 
-  const processEvents = snapshot.data.processEvents
+  const processEvents = snapshot.data.processEvents.filter(event => !event.invalidation)
   // Process Action status is part of the effective recruiting state. Reconcile
   // every event Action before projecting Opportunities so list_opportunities and
   // get_pipeline cannot disagree about an already completed assessment/test/interview.
@@ -837,7 +837,7 @@ export function getRecentTimeline(
       recordedAt: item.recordedAt,
       category: item.category,
       source: item.source,
-      title: item.title,
+      title: item.processEventId && snapshot.data.processEvents.find(event => event.id === item.processEventId)?.invalidation ? `已失效 · ${item.title}` : item.title,
       company: item.company,
       role: item.role,
       opportunityId: item.opportunityId,

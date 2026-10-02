@@ -45,8 +45,29 @@ function normalize(value: string) {
     .replace(/[\s\u3000·•｜|（）()【】\[\]，,。.!！?？:：;；/\\_-]+/g, '')
 }
 
+// Punctuation is an evidence boundary, not permission to join unrelated names.
+// In particular, a location followed by a university must not become a company.
+function identityAlias(value: string) {
+  return value.toLowerCase().match(/[\p{L}\p{N}]+/gu)?.join(' ') ?? ''
+}
+function identityContains(text: string, alias: string) {
+  // Spaces can separate a multiword name; punctuation cannot create a name.
+  const regions = text.toLowerCase().split(/[^\p{L}\p{N}\s]+/u)
+  return regions.some(region => {
+    const tokens = region.match(/[\p{L}\p{N}]+/gu) ?? []
+    const value = tokens.join(' ')
+    if (/^[a-z0-9 ]+$/i.test(alias)) return (` ${value} `).includes(` ${alias} `)
+    return value.includes(alias)
+  })
+}
+
+function genericRole(alias: string) {
+  const value = normalize(alias).replace(/20\d{2}届?/g, '').replace(/^(?:秋季|春季|秋招|春招|应届)/, '')
+  return /^(?:岗位|职位|校招岗位|招聘岗位|校园招聘|校园招聘岗位|相关岗位|其他岗位|职位类别|岗位类别|校招|招聘|应届生招聘)$/.test(value)
+}
+
 function companyAliases(company: string) {
-  const raw = normalize(company)
+  const raw = identityAlias(company)
   const aliases = new Set<string>([raw])
   let short = raw
   for (const suffix of companySuffixes) {
@@ -60,20 +81,19 @@ function companyAliases(company: string) {
 }
 
 function roleAliases(role: string) {
-  const raw = normalize(role)
+  const raw = identityAlias(role)
   const aliases = new Set<string>([raw])
   for (const part of role.split(/[\/｜|、，,；;]/)) {
-    const normalizedPart = normalize(part)
+    const normalizedPart = identityAlias(part)
     if (normalizedPart.length >= 2) aliases.add(normalizedPart)
   }
-  return [...aliases]
+  return [...aliases].filter(alias => !genericRole(alias))
 }
 
 export function matchNotificationOpportunity(
   text: string,
   opportunities: Opportunity[],
 ): { selected?: Opportunity; candidates: OpportunityCandidate[]; confidence: 'high' | 'medium' | 'low' } {
-  const haystack = normalize(text)
   const scored = opportunities
     .map((opportunity): OpportunityCandidate => {
       let score = 0
@@ -82,14 +102,14 @@ export function matchNotificationOpportunity(
       const roles = roleAliases(opportunity.role)
       const fullCompany = companies[0]
 
-      if (fullCompany && haystack.includes(fullCompany)) {
+      if (fullCompany && identityContains(text, fullCompany)) {
         score += 70
         reasons.push('完整公司名命中')
       } else {
         const shortCompany = companies
           .slice(1)
           .sort((a, b) => b.length - a.length)
-          .find((alias) => haystack.includes(alias))
+          .find((alias) => identityContains(text, alias))
         if (shortCompany) {
           score += Math.min(58, 38 + shortCompany.length * 3)
           reasons.push('公司简称命中')
@@ -97,14 +117,14 @@ export function matchNotificationOpportunity(
       }
 
       const fullRole = roles[0]
-      if (fullRole && fullRole.length >= 3 && haystack.includes(fullRole)) {
+      if (fullRole && fullRole.length >= 3 && identityContains(text, fullRole)) {
         score += 34
         reasons.push('完整岗位名命中')
       } else {
         const rolePart = roles
           .slice(1)
           .sort((a, b) => b.length - a.length)
-          .find((alias) => alias.length >= 3 && haystack.includes(alias))
+          .find((alias) => alias.length >= 3 && identityContains(text, alias))
         if (rolePart) {
           score += 22
           reasons.push('岗位关键词命中')
@@ -135,32 +155,30 @@ export function matchNotificationOpportunity(
   return { candidates: scored, confidence: 'low' }
 }
 
-export function detectNotificationType(text: string): { type?: ProcessEventType; confidence: 'high' | 'medium' | 'low' } {
-  const normalized = normalize(text)
+function notificationClauseType(text: string, assertedByUser = false): { type?: ProcessEventType; confidence: 'high' | 'medium' | 'low' } {
+  // A described recruitment route, hypothetical, negated result, or instruction
+  // does not assert that this recipient reached any of its named stages.
+  if (/(?:招聘流程|招聘步骤|招聘简章|招聘指南|网申[、，,→\s-]*(?:测评|笔试|面试)|(?:未通过|通过)[^。；;\n]{0,25}(?:的(?:同学|候选人)|后(?:将|可|会))|(?:如|若|如果|倘若)[^。；;\n]{0,20}(?:通过|录用|offer|面试)|预计[^。；;\n]{0,20}(?:offer|录用)|尚未|还未|未收到|未获得|未发放|拟录用名单|(?:不是|并非|不代表|面试技巧|题库|朋友收到|他人收到|if you|unless you|example|sample|hypothetical|how to|recruitment (?:process|guide)))/i.test(text)) return { type: 'other', confidence: 'low' }
+  if (/(未通过|很遗憾|流程结束|终止流程|暂不匹配)/.test(text) || /感谢.*(?:参与|申请|投递).*?(?:遗憾|未能|不匹配)/.test(text)) return { type: 'rejection', confidence: 'high' }
+  const directOffer = /(?:恭喜|祝贺)[^。；;\n]{0,60}(?:录用|录取|\boffer\b)|(?:您|你)[^。；;\n]{0,20}(?:已被.{0,12}录用|已获.{0,8}offer)|(?:录用|录取)通知(?:书)?[^。；;\n]{0,20}(?:请查收|已发送|见附件)|(?:pleased|delighted)[^.;\n]{0,40}offer you|your (?:job )?offer (?:letter|is)|we (?:are offering|offer) you (?:the|a) /i.test(text)
+  const directOfferTitle = /(?:offer\s*录用通知|录用通知书|offer letter)\s*$/i.test(text)
+  if (directOffer || directOfferTitle) return { type: 'offer', confidence: 'high' }
+  const asserted = /(?:请|邀请|通知|安排|时间|开放窗口|开考|参加|收到|进入|诚邀|完成|做完|结束|取消|撤销|改期|改为|调整|已提交|completed|cancel|invitation)/i.test(text)
+  if (!asserted && !assertedByUser) return { type: 'other', confidence: 'low' }
+  if (/(面试|ai面|一面|二面|三面|终面|视频面|业务面|hr面)/i.test(text)) return { type: 'interview_invite', confidence: 'high' }
+  if (/(笔试|在线考试|统一考试|机考|开考)/.test(text)) return { type: 'written_test_invite', confidence: 'high' }
+  if (/(测评|人才测评|性格测试|在线测试|综合测评)/.test(text)) return { type: 'assessment_invite', confidence: 'high' }
+  if (/(状态更新|流程更新|进度更新)/.test(text)) return { type: 'status_update', confidence: 'medium' }
+  return text.trim() ? { type: 'other', confidence: 'low' } : { confidence: 'low' }
+}
 
-  if (
-    /(未通过|很遗憾|流程结束|终止流程|暂不匹配)/.test(text) ||
-    /感谢.*(?:参与|申请|投递).*?(?:遗憾|未能|不匹配)/.test(text)
-  ) {
-    return { type: 'rejection', confidence: 'high' }
+export function detectNotificationType(text: string, assertedByUser = false): { type?: ProcessEventType; confidence: 'high' | 'medium' | 'low' } {
+  const clauses = text.split(/[。；;\n]+/).map(clause => notificationClauseType(clause, assertedByUser))
+  for (const type of ['rejection', 'offer', 'interview_invite', 'written_test_invite', 'assessment_invite', 'status_update'] as ProcessEventType[]) {
+    const result = clauses.find(item => item.type === type)
+    if (result) return result
   }
-  if (/(offer|录用通知|拟录用|录取通知)/i.test(text)) {
-    return { type: 'offer', confidence: 'high' }
-  }
-  if (/(面试|ai面|一面|二面|三面|终面|视频面|业务面|hr面)/i.test(text)) {
-    return { type: 'interview_invite', confidence: 'high' }
-  }
-  if (/(笔试|在线考试|统一考试|机考|开考)/.test(text)) {
-    return { type: 'written_test_invite', confidence: 'high' }
-  }
-  if (/(测评|人才测评|性格测试|在线测试|综合测评)/.test(text)) {
-    return { type: 'assessment_invite', confidence: 'high' }
-  }
-  if (/(状态更新|流程更新|进度更新)/.test(text)) {
-    return { type: 'status_update', confidence: 'medium' }
-  }
-  if (normalized.length > 0) return { type: 'other', confidence: 'low' }
-  return { confidence: 'low' }
+  return text.trim() ? { type: 'other', confidence: 'low' } : { confidence: 'low' }
 }
 
 function detectTimingMode(text: string, type?: ProcessEventType): ActionTimingMode | undefined {

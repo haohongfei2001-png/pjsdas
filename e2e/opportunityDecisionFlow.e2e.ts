@@ -119,6 +119,7 @@ test('TSUI-03 Jobs shows one filter group and a conclusion-first routed detail',
       },
     ]
     const actions = [
+      { id: 'uu05-ended-submission', kind: 'apply', title: '已提交的原申请', opportunityId: 'uu05-ended', status: 'done', estimatedMinutes: 20, leverage: 70, delayCost: 70, createdAt: new Date(now - 3 * 86400000).toISOString(), updatedAt: new Date(now - 2 * 86400000).toISOString() },
       {
         id: 'uu05-interview-action',
         kind: 'manual',
@@ -180,7 +181,7 @@ test('TSUI-03 Jobs shows one filter group and a conclusion-first routed detail',
   await expect(rows.filter({ hasText: '结束科技' })).toBeVisible()
   await expect(page.getByText(/Fit 88|Value 90|机会价值 90/)).toHaveCount(0)
   const filters = page.locator('.tsui-library-filters')
-  await expect(filters.getByRole('button')).toHaveCount(4)
+  await expect(filters.getByRole('button')).toHaveCount(8)
   await expect(filters.getByRole('button', { name: /全部|All/ })).toHaveAttribute('aria-pressed', 'true')
 
   await filters.getByRole('button', { name: /待投递|To apply/ }).click()
@@ -189,7 +190,7 @@ test('TSUI-03 Jobs shows one filter group and a conclusion-first routed detail',
   await expect(rows.filter({ hasText: '推进科技' })).toHaveCount(0)
   await expect(worthRow).toContainText(/申请截止|Application deadline/)
 
-  await filters.getByRole('button', { name: /已结束|Ended/ }).click()
+  await filters.getByRole('button', { name: /流程结束|Process ended/ }).click()
   const endedRow = rows.filter({ hasText: '结束科技' })
   await expect(endedRow).toBeVisible()
   await expect(endedRow).not.toContainText('过期的结束流程待办')

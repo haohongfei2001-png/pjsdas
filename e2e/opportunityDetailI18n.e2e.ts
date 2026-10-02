@@ -58,6 +58,9 @@ test('opportunity detail localizes canonical stage and action status without cha
   await interfaceGroup.getByRole('button', { name: 'EN', exact: true }).click()
   await page.locator('.tsui-primary-nav').getByRole('button', { name: /Jobs/ }).click()
   await page.getByRole('button', { name: /To apply/ }).click()
+  await expect(page.locator('.opportunity-decision-row').filter({ hasText: opportunity.company })).toHaveCount(0)
+  // Unsubmitted is a stage; an undated job belongs to the separate No deadline category.
+  await page.getByRole('button', { name: /No deadline/ }).click()
   await page.locator('.opportunity-decision-row').filter({ hasText: opportunity.company }).click()
 
   const dialog = page.locator('.job-detail-page')

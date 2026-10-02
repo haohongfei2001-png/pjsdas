@@ -1,3 +1,4 @@
+import { classifyJob, resolveApplicationDeadline, type JobCategory, type ResolvedApplicationDeadline } from './applicationDeadline.js'
 import { readModelSnapshot } from './readModelSnapshot.js'
 import { decisionRulesForSnapshot } from './decisionRules.js'
 import { computePriority, rankActions } from './decisionV3.js'
@@ -21,6 +22,7 @@ const HOUR = 3_600_000
 
 export type OpportunityDecisionBucket = 'in_progress' | 'worth_pursuing' | 'ended'
 export type OpportunityConclusionKind =
+  | 'stage_unverified'
   | 'continue_process'
   | 'review_offer'
   | 'worth_pursuing'
@@ -88,6 +90,9 @@ export interface OpportunityDecisionRead {
   company: string
   role: string
   bucket: OpportunityDecisionBucket
+  category?: JobCategory
+  invalidatedProcessEventIds?: string[]
+  applicationDeadline?: ResolvedApplicationDeadline
   conclusion: OpportunityConclusionKind
   reasons: OpportunityDecisionReason[]
   process: {
@@ -319,6 +324,7 @@ function bucket(opportunity: Opportunity, expired: boolean): OpportunityDecision
 }
 
 function conclusion(opportunity: Opportunity, expired: boolean): OpportunityConclusionKind {
+  if (opportunity.processStage === 'unknown') return 'stage_unverified'
   if (opportunity.participationStatus === 'abandoned') return 'not_pursuing'
   if (opportunity.processStage === 'closed') return 'process_ended'
   if (opportunity.processStage === 'not_applied' && expired) return 'application_window_closed'
@@ -405,6 +411,9 @@ export function getOpportunityDecisionRead(
     opportunityId: opportunity.id,
     company: opportunity.company,
     role: opportunity.role,
+    invalidatedProcessEventIds: snapshot.data.processEvents.filter(event => event.opportunityId === opportunity.id && event.invalidation).map(event => event.id),
+    category: classifyJob(opportunity, snapshot.data, ctx.now, ctx.timezone),
+    applicationDeadline: resolveApplicationDeadline(opportunity, snapshot.data),
     bucket: bucket(opportunity, delta !== undefined && delta < 0),
     conclusion: conclusion(opportunity, delta !== undefined && delta < 0),
     reasons: reasonsFor({ opportunity, process, group, nearestNode, sourceFreshness: freshness, deadlineNear: delta !== undefined && delta >= 0 && delta <= 72 * HOUR }),
@@ -443,7 +452,10 @@ export function buildOpportunityDecisionList(
       opportunityId: opportunity.id,
       company: opportunity.company,
       role: opportunity.role,
-      bucket: bucket(opportunity, delta !== undefined && delta < 0),
+      invalidatedProcessEventIds: snapshot.data.processEvents.filter(event => event.opportunityId === opportunity.id && event.invalidation).map(event => event.id),
+    category: classifyJob(opportunity, snapshot.data, ctx.now, ctx.timezone),
+    applicationDeadline: resolveApplicationDeadline(opportunity, snapshot.data),
+    bucket: bucket(opportunity, delta !== undefined && delta < 0),
       conclusion: conclusion(opportunity, delta !== undefined && delta < 0),
       reasons: reasonsFor({ opportunity, process, group, nearestNode, sourceFreshness: freshness, deadlineNear: delta !== undefined && delta >= 0 && delta <= 72 * HOUR }),
       process: {

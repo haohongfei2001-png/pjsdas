@@ -394,14 +394,14 @@ export default function ProcessEventDock({ onChanged }: ProcessEventDockProps) {
                     return (
                       <article className="event-history-item" key={item.id}>
                         <div>
-                          <strong>{item.company}｜{eventLabel(item.type, lang)}</strong>
+                          <strong>{item.invalidation ? (zh ? '已失效 · ' : 'Invalidated · ') : ''}{item.company}｜{eventLabel(item.type, lang)}</strong>
                           <p>{item.role}</p>
                           <small>
                             {stageLabel(item, lang)} · {zh ? '收到' : 'received'} {formatDateTime(item.occurredAt, lang)}
                             {item.dueAt ? ` · ${mode === 'fixed' ? (zh ? '固定' : 'fixed') : (zh ? '截止' : 'deadline')} ${formatDateTime(item.dueAt, lang)}` : ''}
                           </small>
                         </div>
-                        <button type="button" disabled={busy} onClick={() => remove(item.id)}>{zh ? '删除' : 'Delete'}</button>
+                        <button type="button" disabled={busy || Boolean(item.invalidation)} onClick={() => remove(item.id)}>{zh ? '删除' : 'Delete'}</button>
                       </article>
                     )
                   })}
