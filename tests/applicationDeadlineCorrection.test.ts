@@ -1,5 +1,7 @@
+import { instantDenseWorkspace, INSTANT_NOW } from './fixtures/instantDenseWorkspace.js'
+import { recordCorrectionWorkspace } from './fixtures/recordCorrectionWorkspace.js'
 import { describe, expect, it } from 'vitest'
-import { applicationDeadlineFingerprint, classifyJob, resolveApplicationDeadline } from '../src/applicationDeadline.js'
+import { applicationDeadlineFingerprint, classifyJob, resolveApplicationDeadline, indexJobClassificationData } from '../src/applicationDeadline.js'
 import { applyDomainCompensation, applyUserDomainCommand } from '../src/domainCommands.js'
 import { buildOpportunityDecisionList } from '../src/opportunityDecisionRead.js'
 import { buildScheduleStream } from '../src/schedule/scheduleStream.js'
@@ -169,5 +171,28 @@ describe('exclusive user-defined job categories', () => {
     expect(classifyJob(job, snapshot.data, now, 'Asia/Shanghai')).toBeUndefined()
     const closed = applyUserDomainCommand(base(), { ...command(), correction: { ...command().correction, postingStatus: 'closed' } }, now).snapshot
     expect(classifyJob(closed.data.opportunities[0], closed.data, now, 'Asia/Shanghai')).toBe('deadline_passed')
+  })
+})
+
+describe('projection-local classification owner index', () => {
+  it('retains exact categories and deadlines for dense and corrected audit workspaces without mutating data', () => {
+    for (const snapshot of [instantDenseWorkspace(), recordCorrectionWorkspace()]) {
+      const before = JSON.stringify(snapshot)
+      const owners = indexJobClassificationData(snapshot.data)
+      for (const opportunity of snapshot.data.opportunities) {
+        expect(classifyJob(opportunity, owners(opportunity.id), INSTANT_NOW, 'Asia/Shanghai')).toBe(classifyJob(opportunity, snapshot.data, INSTANT_NOW, 'Asia/Shanghai'))
+        expect(resolveApplicationDeadline(opportunity, owners(opportunity.id))).toEqual(resolveApplicationDeadline(opportunity, snapshot.data))
+      }
+      expect(JSON.stringify(snapshot)).toBe(before)
+    }
+  })
+  it('does not scan unrelated historical audit rows once per opportunity or retain a stale cross-projection cache', () => {
+    const snapshot = instantDenseWorkspace()
+    const owners = indexJobClassificationData(snapshot.data)
+    expect(owners('dense-job-2').timeline).toHaveLength(0)
+    expect(owners('dense-job-2').actions).toHaveLength(1)
+    snapshot.data.actions.find(item => item.id === 'apply:dense-job-2')!.status = 'done'
+    const updated = indexJobClassificationData(snapshot.data)
+    expect(classifyJob(snapshot.data.opportunities[2], updated('dense-job-2'), INSTANT_NOW, 'Asia/Shanghai')).toBeUndefined()
   })
 })

@@ -74,3 +74,24 @@ source facts, permits stronger fallback evidence, and withdraws reminders across
 all versions of a corrected occurrence. Regression coverage retains the existing
 Gmail replay/receipt recovery contract. Final local verification: 221 unit files /
 1,270 tests, TypeScript, and production build. Remote exact-head gates are pending.
+
+## Dense projection performance follow-up
+
+At remote `55b0f3a`, Chromium passed 183 core + 67 dense cases; Firefox/WebKit
+passed 186 core + 134 dense cases. The Matrix's final performance step detected
+reschedule acknowledgement p95 of 113 ms against the retained 100 ms budget
+(settled 130/150 ms, durable 7/100 ms, no command long tasks). No gate was relaxed.
+
+The unknown-deadline projection had repeated whole-history/owner scans for each
+job. A projection-local owner index now partitions the exact records read by the
+unchanged classifier once. It retains per-owner order, never mutates source data,
+and introduces no persistent or cross-account cache. Differential tests compare
+all categories and resolved deadlines in dense and corrected workspaces. Local
+50-sample dense Schedule projection measurements improved from approximately
+51 ms median / 70 ms p95 to 38 ms / 45 ms; these are CPU projection observations,
+not a substitute for the exact-head real-browser acknowledgement gate.
+
+Local follow-up verification: 221 files / 1,272 tests, TypeScript and production
+build passed. Independent review found no correctness issue; 7,680 differential
+category/deadline comparisons across 20 modified dense snapshots passed. Remote
+exact-head browser/performance verification remains required.

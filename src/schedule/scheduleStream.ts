@@ -1,4 +1,4 @@
-import { classifyJob, resolveApplicationDeadline } from '../applicationDeadline.js'
+import { classifyJob, resolveApplicationDeadline, indexJobClassificationData } from '../applicationDeadline.js'
 import { readModelSnapshot } from '../readModelSnapshot.js'
 import { scheduleDisplayTimezone } from '../scheduleDisplayTime.js'
 import type { ScheduleNode, ScheduleNodeState, TimelineRecord } from '../model.js'
@@ -309,9 +309,11 @@ export function buildScheduleStreamNormalized(
       sourceRefs: [],
     })
   }
+  const classificationOwners = indexJobClassificationData(snapshot.data)
   for (const opportunity of snapshot.data.opportunities) {
-    if (classifyJob(opportunity, snapshot.data, now, context.timezone) !== 'no_deadline') continue
-    const deadline = resolveApplicationDeadline(opportunity, snapshot.data)
+    const owners = classificationOwners(opportunity.id)
+    if (classifyJob(opportunity, owners, now, context.timezone) !== 'no_deadline') continue
+    const deadline = resolveApplicationDeadline(opportunity, owners)
     sections.no_deadline.push({ id: `no-deadline:${opportunity.id}`, kind: 'opportunity', section: 'no_deadline', opportunityId: opportunity.id,
       title: 'no_deadline', sourceRefs: deadline.sourceUrl ? [deadline.sourceUrl] : [] })
   }

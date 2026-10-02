@@ -107,7 +107,25 @@ export function applicationDeadlineFingerprint(opportunity: Opportunity, data: S
   return token
 }
 
-export function hasApplicationEvidence(opportunity: Opportunity, data: SnapshotData) {
+export type JobClassificationData = Pick<SnapshotData, 'actions' | 'processes' | 'processEvents' | 'scheduleNodes' | 'timeline'>
+
+/** Projection-local owner index: no cross-account cache or mutable snapshot reuse. */
+export function indexJobClassificationData(data: JobClassificationData) {
+  const owners = new Map<string, JobClassificationData>()
+  const get = (id: string) => {
+    let owner = owners.get(id)
+    if (!owner) { owner = { actions: [], processes: [], processEvents: [], scheduleNodes: [], timeline: [] }; owners.set(id, owner) }
+    return owner
+  }
+  for (const item of data.actions) if (item.opportunityId && item.kind === 'apply') get(item.opportunityId).actions.push(item)
+  for (const item of data.processes) if (item.opportunityId) get(item.opportunityId).processes.push(item)
+  for (const item of data.processEvents) if (item.opportunityId) get(item.opportunityId).processEvents.push(item)
+  for (const item of data.scheduleNodes ?? []) if (item.opportunityId && item.kind === 'application_deadline') get(item.opportunityId).scheduleNodes!.push(item)
+  for (const item of data.timeline ?? []) if (item.opportunityId && item.kind === 'application_submitted') get(item.opportunityId).timeline!.push(item)
+  return get
+}
+
+export function hasApplicationEvidence(opportunity: Opportunity, data: JobClassificationData) {
   if (['screening', 'assessment', 'written_test', 'interview', 'offer'].includes(opportunity.processStage)) return true
   if (data.processes.some(item => item.opportunityId === opportunity.id && ['screening', 'assessment', 'written_test', 'interview', 'offer'].includes(item.stage))) return true
   if (data.actions.some(item => item.opportunityId === opportunity.id && item.kind === 'apply' && item.status === 'done')) return true
@@ -128,7 +146,7 @@ export function applicationDeadlineExpired(deadline: ResolvedApplicationDeadline
 }
 
 export type JobCategory = 'to_apply' | 'applied' | 'written_test' | 'interview' | 'process_ended' | 'deadline_passed' | 'no_deadline'
-export function classifyJob(opportunity: Opportunity, data: SnapshotData, now: Date, timezone: string): JobCategory | undefined {
+export function classifyJob(opportunity: Opportunity, data: JobClassificationData, now: Date, timezone: string): JobCategory | undefined {
   const process = data.processes.find(item => item.opportunityId === opportunity.id)
   const stage = process?.stage ?? opportunity.processStage
   const submitted = hasApplicationEvidence(opportunity, data)
