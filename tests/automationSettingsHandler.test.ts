@@ -74,6 +74,7 @@ describe('automation settings API', () => {
       discoveryLastCheckedAt: '2026-09-15T01:00:00.000Z',
       discoveryLastSuccessAt: '2026-09-15T01:00:00.000Z',
       discoveryLastCommitAt: '2026-09-15T01:00:00.000Z',
+      discoveryReadiness: { profileConfigured: null, budgetState: 'approval_required' },
       discoveryLastError: null,
     })
   })

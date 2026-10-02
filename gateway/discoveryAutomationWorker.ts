@@ -1,3 +1,4 @@
+import { requireDiscoverySpendReservation, type ReserveDiscoverySpend } from './discoveryBudgetGuard.js'
 import * as z from 'zod/v4'
 import { getDiscoveryContext } from '../src/ai/readLayer.js'
 import { buildContinuousDiscoverySummary } from '../src/continuousDiscovery.js'
@@ -75,11 +76,15 @@ export interface DiscoveryGenerateTextInput {
   prompt: string
   temperature: number
   maxOutputTokens: number
+  maxRetries: 0
 }
 
 export type DiscoveryGenerateText = (input: DiscoveryGenerateTextInput) => Promise<{ text: string }>
 
 export interface DiscoveryAiOptions {
+  reserveSpend?: ReserveDiscoverySpend
+  budgetAccountId?: string
+  budgetSourceId?: string
   model?: string
   generateTextImpl?: DiscoveryGenerateText
 }
@@ -298,14 +303,18 @@ async function defaultGenerateText(input: DiscoveryGenerateTextInput) {
 
 async function aiGatewayText(prompt: string, options: DiscoveryAiOptions) {
   const generate = options.generateTextImpl ?? defaultGenerateText
+  const model = options.model?.trim() || DEFAULT_MODEL
+  const system = 'You perform citation-grounded public job discovery and obey strict JSON output contracts.'
+  await requireDiscoverySpendReservation({ accountId: options.budgetAccountId, sourceId: options.budgetSourceId, model, prompt, system, maxOutputTokens: 5_000, reserve: options.reserveSpend })
   let content = ''
   try {
     const result = await generate({
-      model: options.model?.trim() || DEFAULT_MODEL,
-      system: 'You perform citation-grounded public job discovery and obey strict JSON output contracts.',
+      model,
+      system,
       prompt,
       temperature: 0.1,
       maxOutputTokens: 5_000,
+      maxRetries: 0,
     })
     content = result.text?.trim() ?? ''
   } catch (caught) {
@@ -392,6 +401,7 @@ export async function runDiscoveryAutomationForBinding(options: {
   googleClientSecret: string
   aiGatewayModel?: string
   generateTextImpl?: DiscoveryGenerateText
+  reserveSpend?: ReserveDiscoverySpend
   fetchImpl?: typeof fetch
   now?: () => Date
   force?: boolean
@@ -471,6 +481,9 @@ export async function runDiscoveryAutomationForBinding(options: {
       ai: {
         model: options.aiGatewayModel,
         generateTextImpl: options.generateTextImpl,
+        reserveSpend: options.reserveSpend,
+        budgetAccountId: options.binding.userId,
+        budgetSourceId: sourceRun.sourceId,
       },
       fetchImpl,
     }),

@@ -1,3 +1,4 @@
+import type { ReserveDiscoverySpend } from './discoveryBudgetGuard.js'
 import { createAutomationConnectionStore } from './automationConnectionStore.js'
 import {
   probeDiscoveryAiGateway,
@@ -15,6 +16,7 @@ export interface DiscoveryAutomationHandlerConfig {
   googleClientSecret: string
   aiGatewayModel?: string
   generateTextImpl?: DiscoveryGenerateText
+  reserveSpend?: ReserveDiscoverySpend
   fetchImpl?: typeof fetch
   now?: () => Date
 }
@@ -94,6 +96,9 @@ export function createDiscoveryAutomationHandler(config: DiscoveryAutomationHand
         const result = await probeDiscoveryAiGateway({
           model: config.aiGatewayModel,
           generateTextImpl: config.generateTextImpl,
+          reserveSpend: config.reserveSpend,
+          budgetAccountId: bindings.length === 1 ? bindings[0].userId : undefined,
+          budgetSourceId: 'discovery:probe',
         })
         return json(200, { probe: true, ...result })
       } catch (caught) {
@@ -112,6 +117,7 @@ export function createDiscoveryAutomationHandler(config: DiscoveryAutomationHand
           googleClientSecret: config.googleClientSecret,
           aiGatewayModel: config.aiGatewayModel,
           generateTextImpl: config.generateTextImpl,
+          reserveSpend: config.reserveSpend,
           fetchImpl: config.fetchImpl,
           now: config.now,
           force,

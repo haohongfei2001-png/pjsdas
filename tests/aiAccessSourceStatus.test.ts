@@ -30,6 +30,14 @@ describe('background-source status provenance', () => {
       expect(section(html, id)).not.toContain('cloud-state online')
     }
   })
+  it.each([false,true])('does not label configured=%s as actively searching without its own budget', configured => {
+    fixture.ai.gmailAutomation = { gmailEnabled: true, discoveryEnabled: true, discoveryLastCheckedAt: '2026-10-02T17:15:00Z', discoveryReadiness: { profileConfigured: configured, budgetState: 'approval_required' } }
+    const discovery = section(render(), 'discovery')
+    expect(discovery).toContain(configured ? '待批准 TA 搜索预算' : '待配置发现偏好')
+    expect(discovery).not.toContain('cloud-state online')
+    expect(discovery).not.toContain('已启用</span>')
+    expect(discovery).toContain('定时检查不代表已搜索')
+  })
   it('retains last known enabled state but does not verify a failed mutation response', () => {
     fixture.ai.gmailAutomation = { googleEmail: 'synthetic@example.test', gmailEnabled: true, discoveryEnabled: true }
     fixture.ai.statusVerified = false; fixture.ai.errorSource = 'gmail'; fixture.ai.error = 'SYNTHETIC_UNCERTAIN_WRITE'

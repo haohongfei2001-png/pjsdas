@@ -1,3 +1,4 @@
+import type { DiscoveryReadiness } from '../discoveryReadiness.js'
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from 'react'
 import type { Session } from '@supabase/supabase-js'
 import { fetchBackend } from '../backendEndpoints.js'
@@ -23,6 +24,7 @@ export interface GmailAutomationStatus {
   gmailLastSuccessAt: string | null
   gmailLastError: string | null
   discoveryEnabled: boolean
+  discoveryReadiness?: DiscoveryReadiness
   discoveryLastCheckedAt: string | null
   discoveryLastSuccessAt: string | null
   discoveryLastError: string | null
@@ -149,6 +151,7 @@ async function readAutomationStatus(session: Session) {
     gmailLastSuccessAt: data.gmailLastSuccessAt ?? null,
     gmailLastError: data.gmailLastError ?? null,
     discoveryEnabled: Boolean(data.discoveryEnabled),
+    discoveryReadiness: data.discoveryReadiness,
     discoveryLastCheckedAt: data.discoveryLastCheckedAt ?? null,
     discoveryLastSuccessAt: data.discoveryLastSuccessAt ?? null,
     discoveryLastError: data.discoveryLastError ?? null,
@@ -175,6 +178,7 @@ async function writeAutomationStatus(session: Session, patch: { gmailEnabled?: b
     gmailLastSuccessAt: data.gmailLastSuccessAt ?? null,
     gmailLastError: data.gmailLastError ?? null,
     discoveryEnabled: Boolean(data.discoveryEnabled),
+    discoveryReadiness: data.discoveryReadiness,
     discoveryLastCheckedAt: data.discoveryLastCheckedAt ?? null,
     discoveryLastSuccessAt: data.discoveryLastSuccessAt ?? null,
     discoveryLastError: data.discoveryLastError ?? null,

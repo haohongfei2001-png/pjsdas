@@ -1,3 +1,5 @@
+import { syntheticReserveDiscoverySpend } from './fixtures/discoveryBudget.js'
+import type { ReserveDiscoverySpend } from '../gateway/discoveryBudgetGuard.js'
 import { describe, expect, it, vi } from 'vitest'
 import { createDiscoveryAutomationHandler, discoveryAutomationTelemetryPatch } from '../gateway/discoveryAutomationHandler.js'
 import type { DiscoveryGenerateText } from '../gateway/discoveryAutomationWorker.js'
@@ -13,7 +15,7 @@ function json(data: unknown, status = 200) {
 
 function createHandler(
   fetchImpl: typeof fetch,
-  options: { generateTextImpl?: DiscoveryGenerateText } = {},
+  options: { generateTextImpl?: DiscoveryGenerateText; reserveSpend?: ReserveDiscoverySpend } = {},
 ) {
   return createDiscoveryAutomationHandler({
     supabaseUrl: 'https://example.supabase.co',
@@ -22,6 +24,7 @@ function createHandler(
     googleClientId: 'google-client',
     googleClientSecret: 'google-secret',
     generateTextImpl: options.generateTextImpl,
+    reserveSpend: options.reserveSpend,
     fetchImpl,
   })
 }
@@ -109,11 +112,11 @@ describe('server-owned discovery automation endpoint', () => {
       return { text: '{"observations":[]}' }
     })
     const fetchImpl = vi.fn(async (input: RequestInfo | URL) => {
-      if (String(input).endsWith(CLAIM_RPC)) return json([])
+      if (String(input).endsWith(CLAIM_RPC)) return json([{user_id:'00000000-0000-4000-8000-000000000001',google_subject:'synthetic-sub',refresh_token_ciphertext:'synthetic-unused'}])
       return json({ error: 'unexpected' }, 500)
     }) as unknown as typeof fetch
 
-    const response = await createHandler(fetchImpl, { generateTextImpl })(new Request('https://gateway.example/api/automation-discovery?probe=1', {
+    const response = await createHandler(fetchImpl, { generateTextImpl, reserveSpend: syntheticReserveDiscoverySpend })(new Request('https://gateway.example/api/automation-discovery?probe=1', {
       headers: { authorization: 'Bearer vault-worker-token' },
     }))
     expect(response.status).toBe(200)
@@ -127,11 +130,11 @@ describe('server-owned discovery automation endpoint', () => {
       throw { statusCode: 401 }
     })
     const fetchImpl = vi.fn(async (input: RequestInfo | URL) => {
-      if (String(input).endsWith(CLAIM_RPC)) return json([])
+      if (String(input).endsWith(CLAIM_RPC)) return json([{user_id:'00000000-0000-4000-8000-000000000001',google_subject:'synthetic-sub',refresh_token_ciphertext:'synthetic-unused'}])
       return json({ error: 'unexpected' }, 500)
     }) as unknown as typeof fetch
 
-    const response = await createHandler(fetchImpl, { generateTextImpl })(new Request('https://gateway.example/api/automation-discovery?probe=1', {
+    const response = await createHandler(fetchImpl, { generateTextImpl, reserveSpend: syntheticReserveDiscoverySpend })(new Request('https://gateway.example/api/automation-discovery?probe=1', {
       headers: {
         authorization: 'Bearer vault-worker-token',
         'x-vercel-oidc-token': 'attacker-controlled',
@@ -147,11 +150,12 @@ describe('server-owned discovery automation endpoint', () => {
 
   it('preserves bounded credit and transient provider failure semantics from the AI SDK error status', async () => {
     const fetchImpl = vi.fn(async (input: RequestInfo | URL) => {
-      if (String(input).endsWith(CLAIM_RPC)) return json([])
+      if (String(input).endsWith(CLAIM_RPC)) return json([{user_id:'00000000-0000-4000-8000-000000000001',google_subject:'synthetic-sub',refresh_token_ciphertext:'synthetic-unused'}])
       return json({ error: 'unexpected' }, 500)
     }) as unknown as typeof fetch
 
     const credits = await createHandler(fetchImpl, {
+      reserveSpend: syntheticReserveDiscoverySpend,
       generateTextImpl: async () => { throw { statusCode: 402 } },
     })(new Request('https://gateway.example/api/automation-discovery?probe=1', {
       headers: { authorization: 'Bearer vault-worker-token' },
@@ -160,6 +164,7 @@ describe('server-owned discovery automation endpoint', () => {
     await expect(credits.json()).resolves.toMatchObject({ code: 'DISCOVERY_MODEL_CREDITS_REQUIRED', retryable: false })
 
     const unavailable = await createHandler(fetchImpl, {
+      reserveSpend: syntheticReserveDiscoverySpend,
       generateTextImpl: async () => { throw { statusCode: 503 } },
     })(new Request('https://gateway.example/api/automation-discovery?probe=1', {
       headers: { authorization: 'Bearer vault-worker-token' },
@@ -167,4 +172,13 @@ describe('server-owned discovery automation endpoint', () => {
     expect(unavailable.status).toBe(503)
     await expect(unavailable.json()).resolves.toMatchObject({ code: 'DISCOVERY_MODEL_UNAVAILABLE', retryable: true })
   })
+  it('refuses an authenticated probe without a distinct TodayAction spend reservation', async () => {
+    const generateTextImpl = vi.fn(async () => ({ text: '{"observations":[]}' }))
+    const fetchImpl = vi.fn(async () => json([{user_id:'00000000-0000-4000-8000-000000000001',google_subject:'synthetic-sub',refresh_token_ciphertext:'synthetic-unused'}])) as unknown as typeof fetch
+    const response = await createHandler(fetchImpl, { generateTextImpl })(new Request('https://gateway.example/api/automation-discovery?probe=1&force=1', { headers: { authorization: 'Bearer vault-worker-token' } }))
+    expect(response.status).toBe(500)
+    expect(await response.json()).toMatchObject({ code: 'DISCOVERY_BUDGET_APPROVAL_REQUIRED', retryable: false })
+    expect(generateTextImpl).not.toHaveBeenCalled()
+  })
+
 })
