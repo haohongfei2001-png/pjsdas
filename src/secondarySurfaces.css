@@ -335,3 +335,30 @@
  .settings-surface .settings-account,.settings-surface .settings-source-panel { grid-template-columns: minmax(0,1fr); }
  .settings-surface .cloud-advanced > summary,.settings-surface .settings-source-manage > summary { grid-column: 1; grid-row: 3; max-width: 100%; }
 }
+
+/* Source connections use the same compact name/value/action rhythm as preferences. */
+.settings-surface .settings-account,.settings-surface .settings-source-panel {
+  grid-template-columns: minmax(9rem, 12rem) minmax(0, 1fr) auto auto;
+  min-height: 60px; padding: 8px 24px; gap: 0 24px;
+}
+.settings-surface .cloud-settings-heading > div,.settings-surface .settings-source-header > div { display: contents; }
+.settings-surface .cloud-settings-heading h2,.settings-surface .settings-source-header h2 { grid-column: 1; grid-row: 1; margin: 0; font-size: .875rem; font-weight: 700; }
+.settings-surface .cloud-settings-heading p,.settings-surface .settings-source-header p { grid-column: 2; grid-row: 1; margin: 0; font-size: .8125rem; }
+.settings-surface .cloud-state { grid-column: 3; grid-row: 1; background: transparent; padding: 0; }
+.settings-surface .cloud-advanced > summary,.settings-surface .settings-source-manage > summary { grid-column: 4; grid-row: 1; }
+.settings-surface .settings-short-warning { color: #85552c; font-weight: 600; }
+.settings-surface .settings-source-header p.settings-short-warning { color: #85552c; }
+.settings-surface .settings-intake-status,.settings-surface .settings-intake-details { display: contents; }
+.settings-surface .settings-intake-details > summary { grid-column: 2; grid-row: 1; gap: 8px; min-height: 44px; color: #3468d4; font-size: .8125rem; }
+.settings-surface .settings-intake-details > summary.settings-short-warning { color: #85552c; }
+.settings-surface .settings-intake-content { grid-column: 1 / -1; padding: 16px 0; border-top: 1px solid #edf0f5; font-size: .8125rem; color: #5d6b82; }
+.settings-surface .settings-intake-content > span,.settings-surface .settings-intake-content > small { display: block; margin-bottom: 8px; }
+.settings-surface .settings-intake-details[open] > summary > [aria-hidden] { transform: rotate(90deg); }
+@media(max-width:700px) {
+ .settings-surface .settings-account,.settings-surface .settings-source-panel { grid-template-columns: minmax(0,1fr) auto; padding: 10px 16px; gap: 2px 12px; }
+ .settings-surface .cloud-settings-heading h2,.settings-surface .settings-source-header h2 { grid-column: 1; grid-row: 1; }
+ .settings-surface .cloud-settings-heading p,.settings-surface .settings-source-header p,.settings-surface .settings-intake-details > summary { grid-column: 1; grid-row: 2; }
+ .settings-surface .cloud-state { grid-column: 1; grid-row: 3; justify-self: start; text-align: left; font-size: .75rem; }
+ .settings-surface .cloud-advanced > summary,.settings-surface .settings-source-manage > summary { grid-column: 2; grid-row: 1 / span 3; max-width: none; }
+ .settings-surface .settings-intake-details > summary { min-height: 32px; }
+}

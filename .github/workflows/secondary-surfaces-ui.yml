@@ -22,7 +22,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     env:
-      TA_SECONDARY_BASE: 1fa12d02ac5073bac0e82b419e1162d0ae84fdea
+      TA_SECONDARY_BASE: 6f537a79adeaf076d9caeb9b1b35f0d3f310fab6
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
