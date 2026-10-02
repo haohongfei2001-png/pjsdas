@@ -12,7 +12,7 @@ test('Decision Rules uses durable product terminology instead of a development-v
   await expect(rules.getByText(/V1\.6/)).toHaveCount(0)
 
   await page.locator('.tsui-topbar').getByRole('button', { name: /设置|Settings/ }).click()
-  const interfaceGroup = page.locator('details.settings-group > summary').filter({ hasText: /界面.*显示层|Interface.*Presentation/ }).locator('..')
+  const interfaceGroup = page.locator('details.settings-group').filter({ has: page.locator('summary strong').filter({ hasText: /^(界面|Interface)$/ }) })
   await interfaceGroup.locator('summary').click()
   await interfaceGroup.getByRole('button', { name: 'EN', exact: true }).click()
   await expect(rules.getByRole('heading', { name: 'Decision Rules' })).toBeVisible()
