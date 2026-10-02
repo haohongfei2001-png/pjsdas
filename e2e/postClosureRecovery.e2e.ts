@@ -31,6 +31,7 @@ for (const failure of ['partial-clear-throw', 'transaction-abort'] as const) tes
   await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem('pjsdas-google-drive-sync-state-v2') ?? '{}').accounts?.['account-a']?.lastSyncedVersion)).toBe('txn:7')
   if (trigger === 'settings-sign-out') {
     await page.locator('.tsui-topbar').getByRole('button', { name: /设置|Settings/ }).click()
+    await page.getByLabel('管理账号与同步', { exact: true }).click()
     await expect(page.getByRole('button', { name: '退出 TodayAction' })).toBeVisible()
   }
   const before = await page.evaluate(async () => (await (await import('/pjsdas/src/db.ts')).exportLocalRecoveryArchive()).stores)

@@ -49,6 +49,15 @@ describe('withdrawn application deadlines in Today planning', () => {
     expect(nodeForAction(snapshot.data.actions[0]!, [withdrawn, prior])).toBeUndefined()
   })
 
+  it('does not revive an obsolete action link removed from the latest occurrence', () => {
+    const snapshot = unknownDeadlineWorkspace(1)
+    const [prior, latest] = snapshot.data.scheduleNodes!
+    prior.state = 'scheduled'
+    latest.state = 'scheduled'
+    latest.relatedActionIds = []
+    expect(nodeForAction(snapshot.data.actions[0]!, [prior, latest])).toBeUndefined()
+  })
+
   it('retains completed shared deadlines for an unfinished related action', () => {
     const snapshot = unknownDeadlineWorkspace(1, true)
     const node = snapshot.data.scheduleNodes!.find(item => item.opportunityId === 'real-deadline')!

@@ -32,6 +32,7 @@ export default function CloudSettingsCard() {
   const codedLocalError = /^[A-Z][A-Z0-9_]+:/.test(localError)
   const pendingLocal = cloud.outcome?.kind === 'local_pending'
   const currentLocal = !transactional || localDirty === false
+  const quietConnected = Boolean(user && !mismatch && !conflict && !connectionError && !pendingLocal && currentLocal && (!audience || audience.allowed))
   useEffect(() => {
     if (!user || !transactional) {
       setLocalDirty(undefined)
@@ -111,9 +112,8 @@ export default function CloudSettingsCard() {
       <section className="cloud-settings-card settings-account" aria-label={zh ? '账号与跨设备数据' : 'Account & cross-device data'}>
         <div className="cloud-settings-heading">
           <div>
-            <div className="eyebrow">ACCOUNT & CONNECTION</div>
             <h2>{zh ? '账号与跨设备数据' : 'Account & cross-device data'}</h2>
-            <p>{zh ? '查看账号连接与最近更新状态。' : 'Check your account connection and latest update.'}</p>
+            <p>{user ? `${user.user_metadata?.full_name || user.email || user.id}${quietConnected ? ` · ${zh ? '最后更新：' : 'Last updated: '}${formatTime(cloud.checkpoint.lastSyncedAt, zh)}` : ''}` : (zh ? '登录后在自己的设备间使用同一份资料' : 'Use the same data across your devices')}</p>
           </div>
           <span className={`cloud-state ${conflict || mismatch || connectionError || pendingLocal || (transactional && localDirty) || (audience && !audience.allowed) ? 'warning' : user && currentLocal ? 'online' : ''}`}>
             {mismatch
@@ -138,14 +138,14 @@ export default function CloudSettingsCard() {
           </span>
         </div>
 
-        <div className={`cloud-connection-impact ${mismatch || conflict || connectionError || (audience && !audience.allowed) ? 'warning' : ''}`}>
+        {!quietConnected ? <div className={`cloud-connection-impact ${mismatch || conflict || connectionError || (audience && !audience.allowed) ? 'warning' : 'settings-account-status'}`}>
           <strong>{user ? (zh ? `最后更新：${formatTime(cloud.checkpoint.lastSyncedAt, zh)}` : `Last updated: ${formatTime(cloud.checkpoint.lastSyncedAt, zh)}`) : (zh ? '仅保存在此设备' : 'Saved on this device only')}</strong>
-          <span role={mismatch || conflict || connectionError || (audience && !audience.allowed) ? 'status' : undefined}>{impact}</span>
+          {!user || mismatch || conflict || connectionError || pendingLocal || localDirty || (audience && !audience.allowed) ? <span role="status">{impact}</span> : null}
           {mismatch || conflict ? <button type="button" onClick={() => {
             if (advancedRef.current) advancedRef.current.open = true
             advancedRef.current?.querySelector('summary')?.focus()
           }}>{zh ? '查看安全恢复方式' : 'View safe recovery options'}</button> : null}
-        </div>
+        </div> : null}
 
         {!user ? (
           <div className="cloud-auth-row">
@@ -162,16 +162,15 @@ export default function CloudSettingsCard() {
           </div>
         ) : (
           <>
-            <div className="cloud-account-identity">
-              <span>{zh ? 'TodayAction 账号' : 'TodayAction account'}</span>
-              <strong>{user.user_metadata?.full_name || user.email || user.id}</strong>
-              <button disabled={cloud.syncing || cloud.loading} onClick={() => { void run(cloud.signOut) }}>{zh ? '退出 TodayAction' : 'Sign out of TodayAction'}</button>
-            </div>
-
             <details ref={advancedRef} className="cloud-advanced">
-              <summary>{zh ? '高级诊断 / 恢复' : 'Advanced diagnostics / recovery'}</summary>
+              <summary aria-label={zh ? '管理账号与同步' : 'Manage account and sync'}>{zh ? '管理' : 'Manage'}</summary>
               <div className="cloud-advanced-content">
-                <p>{zh ? '仅在连接持续异常或需要恢复资料时使用。这里的核对不会修改账号中的资料。' : 'Use this when a connection issue persists or data recovery is needed. Inspection does not change account data.'}</p>
+                <div className="cloud-account-identity">
+                  <span>{zh ? 'TodayAction 账号' : 'TodayAction account'}</span>
+                  <strong>{user.user_metadata?.full_name || user.email || user.id}</strong>
+                  <button disabled={cloud.syncing || cloud.loading} onClick={() => { void run(cloud.signOut) }}>{zh ? '退出 TodayAction' : 'Sign out of TodayAction'}</button>
+                </div>
+                <p>{zh ? '管理此设备的登录与同步。下面的差异核对不会修改账号资料。' : 'Manage sign-in and sync on this device. Difference inspection does not change account data.'}</p>
                 {audience ? <p>{audience.allowed
                   ? (zh ? '跨设备功能可用。' : 'Cross-device access is available.')
                   : (zh ? '此账号尚未开通跨设备功能。' : 'Cross-device access is unavailable for this account.')}</p> : null}
@@ -232,7 +231,7 @@ export default function CloudSettingsCard() {
 
         {localError ? <div className="cloud-error">{codedLocalError
           ? user
-            ? (zh ? '操作暂时无法完成。请在高级诊断中查看详情。' : 'The action could not be completed. See Advanced diagnostics for details.')
+            ? (zh ? '操作暂时无法完成。请展开管理账号与同步查看详情。' : 'The action could not be completed. Expand Manage account and sync for details.')
             : (zh ? '登录暂时无法完成。' : 'Sign-in could not be completed.')
           : localError}
           {codedLocalError && !user ? <details><summary>{zh ? '查看错误详情' : 'View error details'}</summary><p>{localError}</p></details> : null}

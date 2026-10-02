@@ -69,7 +69,7 @@ test('elapsed recruiting node stays unresolved until an explicit completion fact
   await expect(unresolved).toContainText('待确认')
 
   await page.locator('.tsui-topbar').getByRole('button', { name: /设置|Settings/ }).click()
-  const interfaceGroup = page.locator('details.settings-group > summary').filter({ hasText: /界面.*显示层|Interface.*Presentation/ }).locator('..')
+  const interfaceGroup = page.locator('details.settings-group').filter({ has: page.locator('summary strong').filter({ hasText: /^(界面|Interface)$/ }) })
   await interfaceGroup.locator('summary').click()
   await interfaceGroup.getByRole('button', { name: 'EN', exact: true }).click()
   await page.locator('.tsui-primary-nav').getByRole('button', { name: /Schedule/ }).click()
