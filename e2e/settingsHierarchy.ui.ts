@@ -118,6 +118,13 @@ for (const state of ['enabled', 'pending', 'partial', 'error', 'disabled', 'unve
       await interfaceGroup.getByRole('button', { name: 'EN', exact: true }).click()
       await interfaceGroup.locator('summary').click()
       await expect(page.getByRole('heading', { name: 'Automatic recruiting-email tracking', exact: true })).toBeVisible()
+      if (width === 320) for (const region of [gmail, discovery]) {
+        const panelBounds = await region.boundingBox()
+        const headingBounds = await region.getByRole('heading').boundingBox()
+        const manageBounds = await region.locator('.settings-source-manage > summary').boundingBox()
+        expect(headingBounds!.width).toBeGreaterThan(panelBounds!.width * .8)
+        expect(manageBounds!.y).toBeGreaterThan(headingBounds!.y + headingBounds!.height)
+      }
       expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBeLessThanOrEqual(1)
       await page.evaluate(() => window.scrollTo(0, 0))
       await page.screenshot({ path: `settings-hierarchy-evidence/pending-en-${width}.png`, fullPage: true })

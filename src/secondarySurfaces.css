@@ -364,3 +364,7 @@
 }
 /* Native details introduces its own content grid item in modern browsers. */
 .settings-surface :is(.cloud-advanced,.settings-source-manage,.settings-intake-details)::details-content { grid-column: 1 / -1; min-width: 0; }
+@media(max-width:380px) {
+ .settings-surface .settings-account,.settings-surface .settings-source-panel { grid-template-columns: minmax(0,1fr); }
+ .settings-surface .cloud-advanced > summary,.settings-surface .settings-source-manage > summary { grid-column: 1; grid-row: 4; justify-self: start; }
+}
