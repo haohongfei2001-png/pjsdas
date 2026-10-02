@@ -6,6 +6,8 @@ on:
     paths:
       - 'gateway/businessManagement*'
       - 'gateway/opportunityManagement*'
+      - 'gateway/planningManagement*'
+      - 'src/planningManagement.ts'
       - 'src/opportunityManagement.ts'
       - 'gateway/authoritativeCommands.ts'
       - 'gateway/transactionalWorkspaceStore.ts'
@@ -17,6 +19,8 @@ on:
     paths:
       - 'gateway/businessManagement*'
       - 'gateway/opportunityManagement*'
+      - 'gateway/planningManagement*'
+      - 'src/planningManagement.ts'
       - 'src/opportunityManagement.ts'
       - 'gateway/authoritativeCommands.ts'
       - 'gateway/transactionalWorkspaceStore.ts'
@@ -52,6 +56,8 @@ jobs:
           node-version: 22
           cache: npm
           cache-dependency-path: tests/sql/package-lock.json
+      - name: Install locked gateway source-test dependencies
+        run: npm ci --ignore-scripts
       - name: Install locked isolated test dependencies
         run: npm ci --prefix tests/sql --ignore-scripts
       - name: Validate migrations and authorization in memory

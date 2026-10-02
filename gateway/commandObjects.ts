@@ -76,6 +76,7 @@ export function diffCommandObjects(before: PJSDASSnapshot, after: PJSDASSnapshot
   if (stableJson(before.data.meta) !== stableJson(after.data.meta)) {
     refs.set('import_meta:current', { type: 'import_meta', id: 'current' })
   }
+  if (stableJson(before.data.timePlanning) !== stableJson(after.data.timePlanning)) refs.set('time_preferences:current', { type: 'time_preferences', id: 'current' })
   if (before.data.timePlanning?.defaultDailyMinutes !== after.data.timePlanning?.defaultDailyMinutes) {
     refs.set('time_planning:default', { type: 'time_planning', id: 'default' })
   }
@@ -110,6 +111,7 @@ function objectValue(snapshot: PJSDASSnapshot, ref: CommandObjectRef): unknown {
     case 'decision_rules': return data.decisionRules
     case 'discovery_profile': return data.discoveryProfile
     case 'import_meta': return data.meta
+    case 'time_preferences': return data.timePlanning
     case 'time_planning': return ref.id === 'default' ? data.timePlanning?.defaultDailyMinutes
       : ref.id === 'windows' ? data.timePlanning?.weeklyWindows : data.timePlanning?.dateOverrides?.[ref.id]
     default: return undefined

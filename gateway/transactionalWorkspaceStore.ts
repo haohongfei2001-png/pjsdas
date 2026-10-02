@@ -36,7 +36,7 @@ export interface ConnectedCommandRecord {
 }
 
 export interface ConnectedAuthoritativeCommitInput extends ConnectedCommitInput {
-  managementAuthorization?: { grantId: string; grantRevision: number; consentVersion?: 2 | 3 }
+  managementAuthorization?: { grantId: string; grantRevision: number; consentVersion?: 2 | 3 | 4 }
   receiptContext: Record<string, unknown>
 }
 
@@ -72,12 +72,12 @@ function validRevision(value: unknown): value is number {
   return typeof value === 'number' && Number.isInteger(value) && value >= 0
 }
 
-function parseWorkspaceRow(row: Record<string, unknown>, userId: string): ConnectedWorkspaceRecord {
+function parseWorkspaceRow(row: Record<string, unknown>, userId: string, preserveRawData = false): ConnectedWorkspaceRecord {
   if (row.user_id !== userId || typeof row.id !== 'string' || !validRevision(row.revision) || typeof row.schema_version !== 'number') {
     throw new WorkspaceSourceError('WORKSPACE_INVALID', 'TodayAction transactional workspace metadata is invalid.', false)
   }
   validateSnapshot(row.snapshot)
-  const snapshot = upgradeSnapshotToLatest(row.snapshot)
+  const snapshot = preserveRawData ? structuredClone(row.snapshot as PJSDASSnapshot) : upgradeSnapshotToLatest(row.snapshot)
   return {
     workspaceId: row.id,
     userId,
@@ -108,7 +108,7 @@ export function createTransactionalWorkspaceStore(options: TransactionalWorkspac
   }
 
   return {
-    async readForUser(userId: string): Promise<ConnectedWorkspaceRecord | null> {
+    async readForUser(userId: string, readOptions?: { preserveRawData?: boolean }): Promise<ConnectedWorkspaceRecord | null> {
       const params = new URLSearchParams({
         select: 'id,user_id,snapshot,revision,schema_version',
         user_id: `eq.${userId}`,
@@ -120,7 +120,7 @@ export function createTransactionalWorkspaceStore(options: TransactionalWorkspac
       }
       const rows = await response.json().catch(() => undefined) as Record<string, unknown>[] | undefined
       if (!rows) throw new WorkspaceSourceError('WORKSPACE_INVALID', 'TodayAction workspace read returned invalid JSON.', false)
-      return rows[0] ? parseWorkspaceRow(rows[0], userId) : null
+      return rows[0] ? parseWorkspaceRow(rows[0], userId, readOptions?.preserveRawData) : null
     },
 
     async readCommandForUser(userId: string, commandId: string): Promise<ConnectedCommandRecord | null> {
@@ -229,12 +229,14 @@ export function createTransactionalWorkspaceStore(options: TransactionalWorkspac
 
     async commitAuthoritativeForUser(input: ConnectedAuthoritativeCommitInput): Promise<ConnectedCommitResult> {
       validateSnapshot(input.snapshot)
-      const snapshot = upgradeSnapshotToLatest(input.snapshot)
       const authorization = input.managementAuthorization
-      if ((input.operation === 'business_management' || input.operation === 'opportunity_management') && !authorization) throw new WorkspaceSourceError('AUTH_FORBIDDEN', 'Management writes require a transaction-bound grant.', false)
+      // Planning changes preserve validated raw facts; SQL enforces this boundary again.
+      const snapshot = authorization?.consentVersion === 4 ? structuredClone(input.snapshot) : upgradeSnapshotToLatest(input.snapshot)
+      if ((input.operation === 'business_management' || input.operation === 'opportunity_management' || input.operation === 'planning_management') && !authorization) throw new WorkspaceSourceError('AUTH_FORBIDDEN', 'Management writes require a transaction-bound grant.', false)
       if (authorization && (input.principalKind !== 'delegated_mcp' || !input.clientId || !authorization.grantId || !Number.isSafeInteger(authorization.grantRevision) || authorization.grantRevision < 1)) throw new WorkspaceSourceError('AUTH_FORBIDDEN', 'Management transaction authorization is invalid.', false)
-      if ((input.operation === 'opportunity_management' && authorization?.consentVersion !== 3) || (input.operation === 'business_management' && authorization?.consentVersion === 3)) throw new WorkspaceSourceError('AUTH_FORBIDDEN', 'Management grant version does not match this operation.', false)
-      const rpc = authorization?.consentVersion === 3 ? 'pjsdas_commit_opportunity_workspace_v1' : authorization ? 'pjsdas_commit_management_workspace_v1' : 'pjsdas_commit_workspace_v2'
+      if ((input.operation === 'planning_management' && authorization?.consentVersion !== 4) || (input.operation === 'opportunity_management' && authorization?.consentVersion !== 3) || (input.operation === 'business_management' && authorization?.consentVersion !== undefined && authorization.consentVersion !== 2)) throw new WorkspaceSourceError('AUTH_FORBIDDEN', 'Management grant version does not match this operation.', false)
+      if (authorization?.consentVersion !== undefined && ![2, 3, 4].includes(authorization.consentVersion)) throw new WorkspaceSourceError('AUTH_FORBIDDEN', 'Unsupported management consent version.', false)
+      const rpc = authorization?.consentVersion === 4 ? 'pjsdas_commit_planning_workspace_v1' : authorization?.consentVersion === 3 ? 'pjsdas_commit_opportunity_workspace_v1' : authorization ? 'pjsdas_commit_management_workspace_v1' : 'pjsdas_commit_workspace_v2'
       const response = await request(`/rest/v1/rpc/${rpc}?select=outcome,workspace_id,revision,receipt`, {
         method: 'POST',
         body: JSON.stringify({
@@ -280,7 +282,7 @@ export function createTransactionalWorkspaceStore(options: TransactionalWorkspac
       if (committedSnapshot == null) {
         if (row.outcome === 'COMMITTED') committedSnapshot = snapshot
         else {
-          const latest = await this.readForUser(input.userId)
+          const latest = await this.readForUser(input.userId, { preserveRawData: authorization?.consentVersion === 4 })
           if (!latest || latest.workspaceId !== row.workspace_id || latest.revision < row.revision)
             throw new WorkspaceSourceError('WORKSPACE_INVALID', 'Authoritative fallback snapshot metadata does not match the commit.', false)
           committedSnapshot = latest.snapshot
