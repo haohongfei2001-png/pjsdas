@@ -38,7 +38,7 @@ test('AI Access settings disclose bounded trusted automation and user-controlled
   await expect(card).toContainText('ambiguous messages remain unresolved')
   await expect(gmail.locator('.settings-permission')).toBeVisible()
   await expect(card.getByRole('button', { name: 'Authorize Gmail and enable' })).toBeVisible()
-  await expect(card).toContainText('Long-lived Google authorization is encrypted')
+  await expect(card).toContainText('Long-lived authorization is encrypted')
   await expect(card).toContainText('checked for source, identity, duplicates, and conflicts')
   await expect(card).not.toContainText('ingestion ledger')
   await expect(card).not.toContainText('Direct AI access remains read-only')
