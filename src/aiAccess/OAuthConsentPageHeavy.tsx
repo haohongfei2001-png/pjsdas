@@ -131,10 +131,10 @@ export default function OAuthConsentPage() {
         <div className="ta-consent-brand"><BrandMark size={30} /> TodayAction · CHATGPT ACCESS</div>
         <h1>授权 ChatGPT 访问 TodayAction</h1>
         <p>
-          ChatGPT 可以读取你的 Today、岗位、Pipeline、Decision Rules 与 Timeline。对于受信任的 Monitor / Gmail 摄入，它还可以提交受限、来源支撑的事实，由 TodayAction 在身份解析、幂等、审计记账与精确工作区版本冲突保护下自动写入。
+          此 MCP 客户端可以读取你当前账号的 Today、岗位、招聘流程、准备任务、规则与历史。它也可以按你在对话中明确给出的指令，新增岗位、记录投递与招聘进展、调整明确目标的截止时间和行动状态、修正有依据的事实，并撤销支持恢复的操作。每次写入都受身份校验、幂等、审计记账与工作区版本冲突保护。
         </p>
         <p>
-          这类自动摄入不能静默修改 Decision Rules、持久偏好、拒绝决定，也不能删除数据；除此之外的修改仍必须通过可审阅的 ChangeSet 明确应用。
+          目标不明确时需要先澄清；受治理的重大修改仍需审阅。受信任的 Monitor / Gmail 摄入另外需要来源级授权；这类自动摄入不能静默修改 Decision Rules、持久偏好、拒绝决定，也不能删除数据。本次授权不包含扩展 workspace.manage 权限，不允许永久删除数据、修改账号安全设置，或向外部投递、发送消息、接受 Offer。
         </p>
 
         {loading ? <p>正在检查授权状态…</p> : null}
