@@ -76,3 +76,8 @@ Publication gates: verified publisher; account permission; domain challenge; end
 - https://developers.openai.com/plugins/build/plugins
 - https://developers.openai.com/plugins/deploy/submission
 - https://developers.openai.com/plugins/deploy/app-review
+
+
+## Source implementation progress, 2026-10-02
+
+The original matrix remains the target, not a blanket completion claim. v2 supports independent Prep/manual Action/ApplicationGroup; v3 adds bounded Opportunity profile edits and aggregate archive/restore; v4 adds exact Decision Rules/time-preference management; v5 adds exact Discovery Profile patch/reset/restore. See `../management/planning-v4.md` and `../management/discovery-profile-v5.md` for limits and independent consent gates. Source integration does not activate these new scopes. Process/event corrections, linked/derived Prep/Action reconciliation, broader schedule operations, inbox archive/tombstones, private reminder policy coverage, material storage and archive-browsing remain incomplete. Existing semantic commands retain their prior capabilities; this inventory does not disable them or authorize external actions.

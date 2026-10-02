@@ -1,3 +1,4 @@
+import { discoveryProfileManagementFingerprint } from '../src/discoveryProfileManagement.js'
 import { requireDiscoverySpendReservation, type ReserveDiscoverySpend } from './discoveryBudgetGuard.js'
 import * as z from 'zod/v4'
 import { getDiscoveryContext } from '../src/ai/readLayer.js'
@@ -358,10 +359,13 @@ function buildPlan(snapshot: PJSDASSnapshot, now: Date) {
   })
 }
 
-async function applySourceRun(source: WorkspaceSource, sourceRun: DiscoveryAutomationSourcePlan, observations: z.infer<typeof observationSchema>[], now: Date, force: boolean) {
+async function applySourceRun(source: WorkspaceSource, sourceRun: DiscoveryAutomationSourcePlan, observations: z.infer<typeof observationSchema>[], now: Date, force: boolean, expectedProfileFingerprint: string) {
   const runId = stableRunId(sourceRun, now)
   for (let attempt = 0; attempt < 2; attempt += 1) {
     const workspace = await source.read()
+    // A profile edit/reset must not admit results generated for an older preference set.
+    // Recheck on every CAS retry; do not start another model request.
+    if (await discoveryProfileManagementFingerprint(workspace.snapshot.data.discoveryProfile ?? null) !== expectedProfileFingerprint) return { status: 'skipped' as const, reason: 'profile-changed' }
     const currentPlan = buildPlan(workspace.snapshot, now)
     const currentSourceRun = currentPlan.sourceRuns.find((item) => item.sourceId === sourceRun.sourceId)
     if (!currentSourceRun) return { status: 'skipped' as const, reason: 'source-disabled' }
@@ -453,6 +457,7 @@ export async function runDiscoveryAutomationForBinding(options: {
     }
   }
 
+  const profileFingerprint = await discoveryProfileManagementFingerprint(initial.snapshot.data.discoveryProfile ?? null)
   const plan = buildPlan(initial.snapshot, now)
   const dueSources = plan.sourceRuns.filter((item) => sourceIsDue(initial.snapshot, item, now, Boolean(options.force)))
   if (dueSources.length === 0) {
@@ -498,7 +503,7 @@ export async function runDiscoveryAutomationForBinding(options: {
   let unresolvedCount = 0
 
   for (const item of discovered) {
-    const applied = await applySourceRun(source, item.sourceRun, item.observations, now, Boolean(options.force))
+    const applied = await applySourceRun(source, item.sourceRun, item.observations, now, Boolean(options.force), profileFingerprint)
     if (applied.status === 'skipped') {
       skippedSourceCount += 1
       continue

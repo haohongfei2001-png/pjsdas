@@ -108,6 +108,8 @@ export async function beginInstantCommand(accountKey: string, snapshot: PJSDASSn
   const baseRevision = version(accountKey)
   if (!Number.isSafeInteger(baseRevision)) throw new Error('请先连接并读取账号记录。')
   const projected = interactionProjection(snapshot, command, baseRevision)
+  interactionMetric('instant-projection', started)
+  const journalStarted = performance.now()
   // Reserve durable intent before the first async yield so a background full
   // refresh cannot start fingerprinting while this click is settling.
   const mirroredPredecessors = listAccountPendingOperations(accountKey).filter(item => item.interaction && item.status !== 'conflict' && item.interactionDelta?.changes.some(left => projected.delta.changes.some(right => left.collection === right.collection && left.id === right.id))).map(item => item.commandId)
@@ -115,11 +117,16 @@ export async function beginInstantCommand(accountKey: string, snapshot: PJSDASSn
     interactionDelta: projected.delta, interactionCompensation: projected.compensation, interactionPredecessors: mirroredPredecessors })
   const record: CommandInteractionRecord = { id: recordId(accountKey, command.commandId), accountKey, commandId: command.commandId,
     command, predecessors: mirroredPredecessors, delta: projected.delta, compensation: projected.compensation, state: 'active', createdAt: new Date().toISOString() }
+  interactionMetric('instant-journal', journalStarted)
   try {
+    const pendingReadStarted = performance.now()
     const existing = await readPendingCommandInteractions(accountKey)
+    interactionMetric('instant-pending-read', pendingReadStarted)
+    const predecessorsStarted = performance.now()
     record.predecessors = [...new Set([...mirroredPredecessors, ...existing.filter(item => ['active', 'projection_pending', 'rollback_pending'].includes(item.state) && item.delta.changes.some(left => projected.delta.changes.some(right => left.collection === right.collection && left.id === right.id)
       || (['set_date_capacity', 'set_daily_capacity', 'set_work_windows'].includes(command.kind) && left.collection === 'timePlanning'))).map(item => item.commandId)])]
     enrichConnectedInteraction(accountKey, command.commandId, { interactionDelta: record.delta, interactionCompensation: record.compensation, interactionPredecessors: record.predecessors })
+    interactionMetric('instant-predecessors', predecessorsStarted)
     await persistInteractionProjection(record, lease.assertCurrent)
   } catch (error) {
     await archiveFailedPreparation(record)
