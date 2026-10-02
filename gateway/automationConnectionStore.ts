@@ -92,7 +92,7 @@ export function createAutomationConnectionStore(options: AutomationConnectionSto
     'content-type': 'application/json',
   }
 
-  async function rpc<T>(name: string, body: Record<string, unknown>): Promise<T> {
+  async function rpc<T>(name: string, body: Record<string, unknown>, responseType: 'json' | 'void' = 'json'): Promise<T> {
     let response: Response
     try {
       response = await fetchImpl(`${baseUrl}/rest/v1/rpc/${name}`, {
@@ -114,6 +114,14 @@ export function createAutomationConnectionStore(options: AutomationConnectionSto
     }
     if (!response.ok) {
       throw new WorkspaceSourceError('AUTH_UNAVAILABLE', `TodayAction automation authorization store failed (HTTP ${response.status}).`, true)
+    }
+    // PostgREST returns no content for SQL RETURNS void. Only explicitly
+    // declared void contracts may accept an empty body (or JSON null).
+    // Keep malformed/missing data fail-closed for all value-returning RPCs.
+    if (responseType === 'void') {
+      const text = await response.text().catch(() => undefined)
+      if (text !== undefined && (text.trim() === '' || text.trim() === 'null')) return null as T
+      throw new WorkspaceSourceError('AUTH_INVALID', 'TodayAction automation authorization store returned invalid data.', false)
     }
     const data = await response.json().catch(() => undefined) as T | undefined
     if (data === undefined) throw new WorkspaceSourceError('AUTH_INVALID', 'TodayAction automation authorization store returned invalid data.', false)
@@ -172,7 +180,7 @@ export function createAutomationConnectionStore(options: AutomationConnectionSto
         set_continuation: Boolean(patch.continuation),
         clear_continuation: patch.continuation === null,
         set_last_error: 'lastError' in patch,
-      })
+      }, 'void')
     },
 
     async updateGmailWatchState(userId: string, patch: {
@@ -191,7 +199,7 @@ export function createAutomationConnectionStore(options: AutomationConnectionSto
         set_watch: Boolean(patch.historyId && patch.expiresAt && patch.renewedAt),
         clear_watch: patch.historyId === null || patch.expiresAt === null,
         set_last_error: 'lastError' in patch,
-      })
+      }, 'void')
     },
 
     async beginGmailExecution(userId: string, executionToken: string): Promise<GmailAutomationBinding | undefined> {
@@ -265,7 +273,7 @@ export function createAutomationConnectionStore(options: AutomationConnectionSto
         success_at: patch.successAt ?? null,
         last_error: 'lastError' in patch ? patch.lastError ?? null : null,
         set_last_error: 'lastError' in patch,
-      })
+      }, 'void')
     },
   }
 }
