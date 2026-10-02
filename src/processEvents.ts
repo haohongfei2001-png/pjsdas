@@ -92,7 +92,7 @@ export function createProcessEvent(input: NewProcessEventInput): ProcessEvent {
 }
 
 export function actionForProcessEvent(event: ProcessEvent): Action | undefined {
-  if (!isActionableProcessEvent(event.type)) return undefined
+  if (event.invalidation || !isActionableProcessEvent(event.type)) return undefined
 
   const stage = stageForProcessEvent(event.type)
   const titles: Partial<Record<ProcessEventType, string>> = {
@@ -153,6 +153,7 @@ function latestEventMaps(events: ProcessEvent[]) {
   const latestStage = new Map<string, ProcessEvent>()
 
   for (const event of events) {
+    if (event.invalidation) continue
     latestAny.set(event.opportunityId, newerEvent(latestAny.get(event.opportunityId), event))
     if (stageForProcessEvent(event.type)) {
       latestStage.set(event.opportunityId, newerEvent(latestStage.get(event.opportunityId), event))
@@ -281,6 +282,7 @@ export function reconcileProcessEventActions(
   const byId = new Map(actions.map((item) => [item.id, item]))
 
   for (const event of events) {
+    if (event.invalidation) continue
     const generated = actionForProcessEvent(event)
     if (!generated) continue
     const previous = byId.get(generated.id)
@@ -319,6 +321,7 @@ export function suppressSupersededActions(
       )
     }
 
+    if (opportunity?.processStage === 'unknown' && (action.kind === 'apply' || action.kind === 'follow_up')) return false
     if (!opportunity?.effectiveProcessEventId) return true
     return action.kind !== 'apply' && action.kind !== 'follow_up'
   })

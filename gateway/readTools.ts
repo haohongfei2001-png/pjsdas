@@ -40,6 +40,7 @@ export const READ_TOOL_NAMES = [
 export type ReadToolName = typeof READ_TOOL_NAMES[number]
 
 export const processStageSchema = z.enum([
+  'unknown',
   'not_applied',
   'screening',
   'assessment',

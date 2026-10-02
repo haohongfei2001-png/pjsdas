@@ -111,6 +111,7 @@ function deadlineUrgency(value: string | undefined, now: Date) {
 
 function stageUrgency(stage: ProcessStage) {
   const scores: Record<ProcessStage, number> = {
+    unknown: 0,
     not_applied: 38,
     screening: 52,
     assessment: 78,

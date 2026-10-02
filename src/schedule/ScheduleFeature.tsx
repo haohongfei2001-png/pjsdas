@@ -9,9 +9,16 @@ const KIND: Record<string, [string, string]> = {
   interview: ['面试', 'Interview'], written_test: ['笔试', 'Written test'],
   assessment: ['测评', 'Assessment'], application_deadline: ['申请截止', 'Application deadline'],
   follow_up: ['跟进', 'Follow up'], prep_trigger: ['准备节点', 'Preparation'],
+  no_deadline: ['无截止日期', 'No deadline'],
+}
+
+function entryTitle(entry: ScheduleEntry, zh: boolean) {
+  if (entry.invalidated) return zh ? '已失效的流程判断（保留原始记录）' : 'Invalidated process fact (original retained)'
+  return KIND[entry.title]?.[zh ? 0 : 1] ?? entry.title
 }
 
 function timeLabel(entry: ScheduleEntry, zh: boolean, displayTimezone: string) {
+  if (entry.section === 'no_deadline') return zh ? '未公布可靠截止日期' : 'No verified deadline published'
   const temporal = entry.node?.temporal
   if (entry.section === 'history' && entry.occurredAt) {
     const happened = new Date(entry.occurredAt)
@@ -61,7 +68,7 @@ export function ScheduleWindowList({ stream, section, opportunities, onOpenOppor
   return <div className={'tsui-stream ' + className}>
     {shown.map((entry, index) => {
       const opportunity = opportunities.find((item) => item.id === entry.opportunityId)
-      const title = entry.kind === 'node' ? (KIND[entry.title]?.[zh ? 0 : 1] ?? entry.title) : entry.title
+      const title = entryTitle(entry, zh)
       const text = [opportunity?.company, opportunity?.role].filter(Boolean).join(' · ')
       return <Fragment key={entry.id}>
         {(index === 0 || shown[index - 1].date !== entry.date) ? <h3 className="tsui-date-heading">{entry.date ?? (zh ? '时间待定' : 'Time TBD')}</h3> : null}
@@ -79,7 +86,7 @@ export function ScheduleWindowList({ stream, section, opportunities, onOpenOppor
 }
 
 
-type View = 'all' | 'upcoming' | 'past' | 'unresolved' | 'undated'
+type View = 'all' | 'upcoming' | 'past' | 'unresolved' | 'undated' | 'no_deadline'
 type OccurrenceCommand = 'complete' | 'cancel' | 'reschedule'
 type PendingOccurrenceCommand = { kind: OccurrenceCommand; temporal?: ScheduleNodeTemporal; status: 'pending' | 'unknown' | 'conflict' | 'projection_pending' }
 type CommandResult = { outcome: 'COMMITTED' | 'ALREADY_APPLIED' | 'NO_WRITE' | 'QUEUED' | 'OPTIMISTIC'; commandId?: string; message: string; localProjection?: 'pending' }
@@ -124,7 +131,7 @@ function pendingRescheduleDate(temporal?: ScheduleNodeTemporal) {
 function requestedView(): View {
   const value = new URLSearchParams(window.location.search).get('view')
   if (value === 'history' || value === 'past') return 'past'
-  if (value === 'all' || value === 'upcoming' || value === 'unresolved' || value === 'undated') return value
+  if (value === 'all' || value === 'upcoming' || value === 'unresolved' || value === 'undated' || value === 'no_deadline') return value
   return 'upcoming'
 }
 
@@ -166,7 +173,7 @@ export default function ScheduleFeature({
   const loader = useRef<HTMLDivElement>(null)
   const prependAnchor = useRef<{ id: string; top: number } | null>(null)
   const selected = selectedId
-    ? [...all, ...stream.sections.undated].find((entry) => entry.id === selectedId)
+    ? [...all, ...stream.sections.undated, ...stream.sections.no_deadline].find((entry) => entry.id === selectedId)
     : undefined
   const selectedPending = selected?.occurrenceId ? onPendingOccurrence?.(selected.occurrenceId) : undefined
   const shown = entries.slice(range.start, range.end)
@@ -318,14 +325,15 @@ export default function ScheduleFeature({
         <button type="button" onClick={() => { setMonth(today.slice(0, 7)); changeView('upcoming'); window.requestAnimationFrame(() => listRef.current?.scrollIntoView({ block: 'start' })) }}>{zh ? '今天' : 'Today'}</button>
       </div>
     </div>
-    {view !== 'upcoming' && (stream.counts.unresolved > 0 || stream.counts.undated > 0) ? <div className="tsui-schedule-context">
+    {(stream.counts.no_deadline > 0 || view !== 'upcoming' && (stream.counts.unresolved > 0 || stream.counts.undated > 0)) ? <div className="tsui-schedule-context">
       {stream.counts.unresolved > 0 ? <button type="button" onClick={() => changeView('unresolved')}>{zh ? '过去安排待确认' : 'Past arrangements to confirm'} · {stream.counts.unresolved}</button> : null}
       {stream.counts.undated > 0 ? <button type="button" onClick={() => changeView('undated')}>{zh ? '时间待定' : 'Time TBD'} · {stream.counts.undated}</button> : null}
-      {view === 'unresolved' || view === 'undated' ? <button type="button" onClick={() => changeView('all')}>{zh ? '返回全部' : 'Back to all'}</button> : null}
+      {stream.counts.no_deadline > 0 ? <button type="button" onClick={() => changeView('no_deadline')}>{zh ? '无截止日期' : 'No deadline'} · {stream.counts.no_deadline}</button> : null}
+      {view === 'unresolved' || view === 'undated' || view === 'no_deadline' ? <button type="button" onClick={() => changeView('all')}>{zh ? '返回全部' : 'Back to all'}</button> : null}
     </div> : null}
     {selected ? <aside ref={detailRef} tabIndex={-1} className="tsui-schedule-detail" aria-labelledby="tsui-event-title">
       <div className="tsui-schedule-detail-head">
-        <div><small>{selected.date ?? (zh ? '时间待定' : 'Time TBD')}</small><h2 id="tsui-event-title">{selected.kind === 'node' ? KIND[selected.title]?.[zh ? 0 : 1] ?? selected.title : selected.title}</h2></div>
+        <div><small>{selected.date ?? (zh ? '时间待定' : 'Time TBD')}</small><h2 id="tsui-event-title">{entryTitle(selected, zh)}</h2></div>
         <button type="button" onClick={closeEntry} aria-label={zh ? '关闭详情' : 'Close details'}>×</button>
       </div>
       <p>{timeLabel(selected, zh, stream.timezone)}</p>
@@ -356,8 +364,8 @@ export default function ScheduleFeature({
       {range.start > 0 ? <button className="tsui-schedule-more" type="button" onClick={loadEarlier}>{zh ? '加载更早记录' : 'Load earlier records'} · {range.start}</button> : null}
       {shown.length ? shown.map((entry, index) => {
         const opportunity = entry.opportunityId ? byId.get(entry.opportunityId) : undefined
-        const title = entry.kind === 'node' ? KIND[entry.title]?.[zh ? 0 : 1] ?? entry.title : entry.title
-        const date = entry.date ?? (zh ? '时间待定' : 'Time TBD')
+        const title = entryTitle(entry, zh)
+        const date = entry.date ?? (entry.section === 'no_deadline' ? (zh ? '无截止日期' : 'No deadline') : (zh ? '时间待定' : 'Time TBD'))
         const heading = index === 0 || shown[index - 1].date !== entry.date
         const todayMarker = view === 'all' && entry.date === today && (index === 0 || shown[index - 1].date !== today)
         return <Fragment key={entry.id}>
@@ -365,7 +373,7 @@ export default function ScheduleFeature({
           <button className="tsui-schedule-row" data-schedule-entry={entry.id} type="button" onClick={() => openEntry(entry)}>
             <span className="tsui-schedule-time">{entry.node?.temporal.precision === 'date' ? zh ? '具体时间待定' : 'Exact time TBD' : timeLabel(entry, zh, stream.timezone)}</span>
             <span className="tsui-schedule-copy"><strong>{title}</strong><small>{opportunity ? opportunity.company + ' · ' + opportunity.role : zh ? '独立事项' : 'Independent item'}</small></span>
-            <span className={'tsui-schedule-state state-' + entry.section}>{entry.state === 'elapsed_unresolved' ? zh ? '待确认' : 'Unresolved'
+            <span className={'tsui-schedule-state state-' + entry.section}>{entry.invalidated ? zh ? '已失效' : 'Invalidated' : entry.section === 'no_deadline' ? zh ? '无截止日期' : 'No deadline' : entry.state === 'elapsed_unresolved' ? zh ? '待确认' : 'Unresolved'
               : entry.state === 'completed' ? zh ? '已完成' : 'Completed'
                 : entry.state === 'cancelled' ? zh ? '已取消' : 'Cancelled'
                   : entry.state === 'superseded' ? zh ? '已改期' : 'Rescheduled'

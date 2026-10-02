@@ -1,3 +1,5 @@
+import { applicationDeadlineFingerprint, classifyJob, hasApplicationEvidence, resolveApplicationDeadline } from '../src/applicationDeadline.js'
+import { upgradeSnapshotToLatest } from '../src/snapshot.js'
 import type { CallToolResult } from '@modelcontextprotocol/server'
 import * as z from 'zod/v4'
 import { auditWorkspaceIntegrity } from '../src/workspaceIntegrity.js'
@@ -21,7 +23,19 @@ export async function invokeWorkspaceIntegrity(source: WorkspaceSource): Promise
     const { snapshot, context } = await source.read()
     const generatedAt = context.now ?? new Date()
     const integrity = auditWorkspaceIntegrity(snapshot, generatedAt)
+    const normalized = upgradeSnapshotToLatest(snapshot)
+    const deadlineAudit = normalized.data.opportunities.map(opportunity => {
+      const deadline = resolveApplicationDeadline(opportunity, normalized.data)
+      const category = classifyJob(opportunity, normalized.data, generatedAt, context.timezone ?? 'Asia/Shanghai')
+      return { opportunityId: opportunity.id, company: opportunity.company, role: opportunity.role, stage: opportunity.processStage, category,
+        hasApplicationEvidence: hasApplicationEvidence(opportunity, normalized.data), ...deadline,
+        fingerprint: applicationDeadlineFingerprint(snapshot.data.opportunities.find(item => item.id === opportunity.id)!, snapshot.data),
+        actionIds: normalized.data.actions.filter(item => item.opportunityId === opportunity.id && item.kind === 'apply').map(item => item.id),
+        sourceUrls: [...new Set([deadline.sourceUrl, opportunity.detail?.discovery?.sourceUrl, opportunity.detail?.facts?.evidence.sourceUrl].filter(Boolean))],
+      }
+    }).filter(item => item.category === 'deadline_passed')
     return success({
+      applicationDeadlineAudit: { totalCandidates: deadlineAudit.length, truncated: deadlineAudit.length > 500, candidates: deadlineAudit.slice(0, 500) },
       meta: { workspaceVersion: context.workspaceVersion, generatedAt: generatedAt.toISOString(), source: 'pjsdas' },
       integrity,
       assurance: integrity.criticalCount > 0

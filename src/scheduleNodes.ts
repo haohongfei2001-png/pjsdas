@@ -1,3 +1,4 @@
+import { latestDeadlineCorrection, resolveApplicationDeadline } from './applicationDeadline.js'
 import type {
   Action,
   DatePrecision,
@@ -221,7 +222,7 @@ export function scheduleNodeForOpportunityDeadline(
   opportunity: Opportunity,
   actions: Action[],
 ): ScheduleNode | undefined {
-  if (!opportunity.deadline) return undefined
+  if (latestDeadlineCorrection(opportunity)?.state === 'unknown' || !opportunity.deadline) return undefined
   const related = actions.filter((item) => item.opportunityId === opportunity.id && item.kind === 'apply')
   return baseNode({
     occurrenceId: `application-deadline:${opportunity.id}`,
@@ -291,6 +292,7 @@ export function migrateLegacyScheduleNodes(data: ScheduleContractData): Schedule
     if (node) nodes.push(node)
   }
   for (const event of data.processEvents) {
+    if (event.invalidation) continue
     const node = scheduleNodeForProcessEvent(
       event,
       actionsByEvent.get(event.id),
@@ -316,19 +318,19 @@ export function migrateLegacyScheduleNodes(data: ScheduleContractData): Schedule
 
 function latestEventForOpportunity(events: ProcessEvent[], opportunityId: string) {
   return events
-    .filter((item) => item.opportunityId === opportunityId)
+    .filter((item) => !item.invalidation && item.opportunityId === opportunityId)
     .sort((a, b) => b.occurredAt.localeCompare(a.occurredAt))[0]
 }
 
 function latestStageEvent(events: ProcessEvent[], opportunityId: string, stage: ProcessStage) {
   return events
-    .filter((item) => item.opportunityId === opportunityId && stageForEvent(item.type) === stage)
+    .filter((item) => !item.invalidation && item.opportunityId === opportunityId && stageForEvent(item.type) === stage)
     .sort((a, b) => b.occurredAt.localeCompare(a.occurredAt))[0]
 }
 
 function processProgress(process: ProcessRecord, events: ProcessEvent[], actions: Action[]): ProcessStageProgress {
   if (process.stage === 'not_applied') return 'not_started'
-  if (process.stage === 'screening' || process.stage === 'waiting_release') return 'waiting_result'
+  if (process.stage === 'unknown' || process.stage === 'screening' || process.stage === 'waiting_release') return 'waiting_result'
   if (process.stage === 'offer' || process.stage === 'closed') return 'completed'
   const event = process.opportunityId ? latestStageEvent(events, process.opportunityId, process.stage) : undefined
   const action = event ? actions.find((item) => item.processEventId === event.id) : undefined
@@ -368,6 +370,19 @@ export function normalizeProcessSemantics(
 }
 
 export function ensureScheduleContractInPlace(data: ScheduleContractData) {
+  for (const opportunity of data.opportunities) {
+    const correction = latestDeadlineCorrection(opportunity)
+    if (!correction) continue
+    const resolved = resolveApplicationDeadline(opportunity, data)
+    opportunity.deadline = resolved.state === 'confirmed' ? resolved.deadline : undefined
+    opportunity.deadlinePrecision = resolved.state === 'confirmed' ? resolved.precision : undefined
+    for (const action of data.actions) {
+      if (action.opportunityId !== opportunity.id || action.kind !== 'apply' || !['todo', 'doing'].includes(action.status)) continue
+      action.dueAt = opportunity.deadline
+      action.duePrecision = opportunity.deadlinePrecision
+      action.timingMode = opportunity.deadline ? 'deadline' : undefined
+    }
+  }
   const existing = data.scheduleNodes ?? []
   const derived = migrateLegacyScheduleNodes(data)
   for (const candidate of derived) {
@@ -410,11 +425,12 @@ export function projectScheduleNodesToLegacyInPlace(data: ScheduleContractData) 
     if (!value) continue
     if (node.kind === 'application_deadline' && node.opportunityId) {
       const opportunity = data.opportunities.find((item) => item.id === node.opportunityId)
-      if (opportunity) {
+      if (opportunity && resolveApplicationDeadline(opportunity, data).state === 'confirmed') {
         opportunity.deadline = value
         opportunity.deadlinePrecision = node.temporal.precision
       }
     }
+    if (node.kind === 'application_deadline' && node.opportunityId && resolveApplicationDeadline(data.opportunities.find(item => item.id === node.opportunityId)!, data).state === 'unknown') continue
     for (const actionId of node.relatedActionIds) {
       const action = data.actions.find((item) => item.id === actionId)
       if (!action) continue
@@ -469,7 +485,7 @@ export function setApplicationDeadlineScheduleNode(
   const current = latestByVersion(data.scheduleNodes ?? [], occurrenceId)
   const temporal = legacyTemporal(deadline, precision, 'deadline', undefined, 'user_explicit')
   const currentValue = current ? legacyValue(current) : undefined
-  if (current && currentValue === deadline && current.temporal.precision === precision) return current
+  if (current && !['cancelled', 'superseded'].includes(current.state) && currentValue === deadline && current.temporal.precision === precision) return current
   const related = data.actions.filter((item) => item.opportunityId === opportunityId && item.kind === 'apply')
   const next = supersedeScheduleOccurrence(data.scheduleNodes ?? [], {
     occurrenceId,

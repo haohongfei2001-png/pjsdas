@@ -1,5 +1,6 @@
 export type OpportunityRole = 'core' | 'backup' | 'reach' | 'lottery' | 'practice'
 export type ProcessStage =
+  | 'unknown'
   | 'not_applied'
   | 'screening'
   | 'assessment'
@@ -728,6 +729,7 @@ export interface OpportunityUserFacts {
 }
 
 export interface OpportunityDetail {
+  deadlineCorrections?: import('./applicationDeadline.js').ApplicationDeadlineCorrection[]
   backgroundTag?: string
   coreOutput?: string
   workMode?: string
@@ -802,6 +804,15 @@ export interface ProcessRecord {
 }
 
 export interface ProcessEvent {
+  /** Original fact retained for audit; invalidated evidence cannot drive state. */
+  invalidation?: {
+    commandId: string
+    receiptId: string
+    sourceReceiptId: string
+    invalidatedAt: string
+    reason: string
+    evidenceRefs: string[]
+  }
   temporal?: ScheduleNodeTemporal
   id: string
   opportunityId: string

@@ -3,6 +3,7 @@ import type { Opportunity } from './model.js'
 export type UiStageLanguage = 'zh' | 'en'
 
 const STAGE_LABELS: Record<Opportunity['processStage'], { zh: string; en: string }> = {
+  unknown: { zh: '阶段待核实', en: 'Stage unverified' },
   not_applied: { zh: '待投递', en: 'Not applied' },
   screening: { zh: '筛选中', en: 'Screening' },
   assessment: { zh: '测评', en: 'Assessment' },
@@ -14,7 +15,7 @@ const STAGE_LABELS: Record<Opportunity['processStage'], { zh: string; en: string
 }
 
 const CANONICAL_STORED_LABELS = new Set([
-  '待投', '待投递', '筛选中', '测评', '笔试', '面试', 'offer', '等待开放', '流程结束', '已结束',
+  '阶段待核实', 'stage unverified', '待投', '待投递', '筛选中', '测评', '笔试', '面试', 'offer', '等待开放', '流程结束', '已结束',
   'not applied', 'screening', 'assessment', 'written test', 'interview', 'waiting release', 'closed',
 ])
 

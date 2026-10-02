@@ -1,17 +1,12 @@
 import { useMemo } from 'react'
+import type { JobCategory } from '../applicationDeadline.js'
 import type { Opportunity } from '../model.js'
 import type { OpportunityDecisionListRead, OpportunityDecisionRead } from '../opportunityDecisionRead.js'
 import { presentStageLabel } from '../stagePresentation.js'
 import { useUiLanguage } from '../uiLanguage.js'
 import './jobs.css'
 
-export type JobFilter = 'all' | 'unapplied' | 'in_progress' | 'ended'
-
-function group(item: OpportunityDecisionRead, opportunity?: Opportunity): JobFilter {
-  if (item.bucket === 'ended' || item.process.stage === 'closed' || opportunity?.participationStatus === 'abandoned') return 'ended'
-  if (item.process.stage === 'not_applied' || item.process.stage === 'waiting_release') return 'unapplied'
-  return 'in_progress'
-}
+export type JobFilter = 'all' | JobCategory
 
 function applicationUrl(opportunity: Opportunity | undefined, stage: OpportunityDecisionRead['process']['stage']) {
   if (!opportunity || stage !== 'not_applied' || opportunity.participationStatus === 'abandoned') return undefined
@@ -20,10 +15,10 @@ function applicationUrl(opportunity: Opportunity | undefined, stage: Opportunity
   try { const url = new URL(value); return url.protocol === 'https:' || url.protocol === 'http:' ? url.href : undefined } catch { return undefined }
 }
 
-function deadlineLabel(opportunity: Opportunity | undefined, zh: boolean) {
-  if (!opportunity?.deadline) return undefined
-  const value = opportunity.deadline
-  if (opportunity.deadlinePrecision === 'date') {
+function deadlineLabel(item: OpportunityDecisionRead, zh: boolean) {
+  if (!item.applicationDeadline?.deadline) return undefined
+  const value = item.applicationDeadline.deadline
+  if (item.applicationDeadline.precision === 'date') {
     const match = value.match(/^(\d{4})-(\d{2})-(\d{2})/)
     if (match) return zh ? `${Number(match[2])}月${Number(match[3])}日` : `${match[2]}/${match[3]}`
   }
@@ -49,14 +44,15 @@ export default function JobLibrary({ read, opportunities, filter, onFilterChange
   const filtered = useMemo(() => {
     const needle = query.trim().toLocaleLowerCase()
     return read.all.filter((item) => {
-      if (filter !== 'all' && group(item, byId.get(item.opportunityId)) !== filter) return false
+      if (filter !== 'all' && item.category !== filter) return false
       return !needle || `${item.company} ${item.role}`.toLocaleLowerCase().includes(needle)
     })
   }, [read, byId, filter, query])
   const visible = filtered.slice(0, visibleCount)
   const options: Array<[JobFilter, string, string]> = [
-    ['all', '全部', 'All'], ['unapplied', '待投递', 'To apply'],
-    ['in_progress', '推进中', 'In progress'], ['ended', '已结束', 'Ended'],
+    ['all', '全部', 'All'], ['to_apply', '待投递', 'To apply'], ['applied', '已投递', 'Applied'],
+    ['written_test', '收到笔试', 'Written test'], ['interview', '收到面试', 'Interview'],
+    ['process_ended', '流程结束', 'Process ended'], ['deadline_passed', '时间截止', 'Deadline passed'], ['no_deadline', '无截止日期', 'No deadline'],
   ]
   return <section className="tsui-library" aria-label={zh ? '岗位库' : 'Job library'}>
     <header className="tsui-library-heading"><h1>{zh ? '岗位库' : 'Job library'}</h1><span>{read.all.length} {zh ? '个岗位' : 'jobs'}</span></header>
@@ -69,15 +65,15 @@ export default function JobLibrary({ read, opportunities, filter, onFilterChange
     <div className="tsui-library-panel">
       {visible.map((item) => {
         const opportunity = byId.get(item.opportunityId)
-        const url = applicationUrl(opportunity, item.process.stage)
-        const ended = group(item, opportunity) === 'ended'
-        const deadline = deadlineLabel(opportunity, zh)
+        const url = item.category === 'to_apply' || item.category === 'no_deadline' ? applicationUrl(opportunity, item.process.stage) : undefined
+        const deadline = deadlineLabel(item, zh)
+        const stateLabel = item.process.stage === 'offer' ? 'Offer' : item.process.result === 'rejected' ? (zh ? '已拒绝' : 'Rejected') : opportunity?.participationStatus === 'abandoned' ? (zh ? '已放弃' : 'Withdrawn') : item.category === 'deadline_passed' ? (zh ? '时间截止' : 'Deadline passed') : presentStageLabel(item.process.stage, undefined, lang)
         return <article className="tsui-job-row" key={item.opportunityId} data-opportunity-id={item.opportunityId}>
           <button type="button" className="opportunity-decision-row tsui-job-open" data-opportunity-id={item.opportunityId} onClick={event => onOpenOpportunity(item.opportunityId, event.currentTarget)}>
             <span className="tsui-job-mark" aria-hidden="true">{item.company.slice(0, 2)}</span>
             <span className="tsui-job-identity"><strong>{item.company}</strong><span>{item.role}</span></span>
-            <span className="tsui-job-meta"><strong>{deadline ?? (zh ? '时间待定' : 'Date pending')}</strong><span>{deadline ? (zh ? '申请截止' : 'Application deadline') : presentStageLabel(item.process.stage, undefined, lang)}</span></span>
-            {!url ? <span className="tsui-job-state">{ended ? (zh ? '已结束' : 'Ended') : presentStageLabel(item.process.stage, undefined, lang)} <span aria-hidden="true">→</span></span> : null}
+            <span className="tsui-job-meta"><strong>{deadline ?? (item.category === 'no_deadline' ? (zh ? '无截止日期' : 'No deadline') : presentStageLabel(item.process.stage, undefined, lang))}</strong><span>{deadline ? (zh ? '申请截止' : 'Application deadline') : presentStageLabel(item.process.stage, undefined, lang)}</span></span>
+            {!url ? <span className="tsui-job-state">{stateLabel} <span aria-hidden="true">→</span></span> : null}
           </button>
           {url ? <a className="tsui-job-apply" href={url} target="_blank" rel="noopener noreferrer" aria-label={(zh ? '打开申请入口：' : 'Open application: ') + item.company + ' · ' + item.role}>{zh ? '投递 ↗' : 'Apply ↗'}</a> : null}
         </article>

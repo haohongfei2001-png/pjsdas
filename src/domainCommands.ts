@@ -1,3 +1,5 @@
+import { correctApplicationDeadline, type CorrectApplicationDeadlineCommand } from './deadlineCorrection.js'
+import { captureProcessProjectionUndo, restoreProcessProjection, invalidateProcessFact, type InvalidateProcessEventCommand } from './processFactCorrection.js'
 import { captureActionStatusUndo, restoreActionStatusUndo, restoreScheduleNodeChanges } from './actionStatusUndo.js'
 import {
   actionForProcessEvent,
@@ -41,6 +43,8 @@ import {
 export type UserFactField = 'location' | 'compensationText' | 'applicationUrl'
 
 export type UserDomainCommand =
+  | InvalidateProcessEventCommand
+  | CorrectApplicationDeadlineCommand
   | { commandId: string; kind: 'record_application_submission'; opportunityId: string; occurredAt?: string; reactivateConfirmed?: boolean }
   | {
       commandId: string
@@ -193,6 +197,8 @@ function upsertProcess(next: PJSDASSnapshot, target: Opportunity, occurredAt: st
       result: 'pending',
       participationState: 'active',
       lastProgressAt: occurredAt,
+      effectiveProcessEventId: undefined,
+      effectiveProcessEventAt: undefined,
       nextCheckAt: undefined,
       silenceRisk: undefined,
       currentAction: undefined,
@@ -259,6 +265,7 @@ function upsertProcessAtEventStage(next: PJSDASSnapshot, target: Opportunity, ev
 
 function stageLabelFor(stage: ProcessRecord['stage']) {
   const labels: Record<ProcessRecord['stage'], string> = {
+    unknown: '阶段待核实',
     not_applied: '待投',
     screening: '筛选中',
     assessment: '测评',
@@ -315,6 +322,15 @@ export function applyUserDomainCommand(
 ): UserDomainCommandResult {
   if (!command.commandId.trim()) throw new Error('commandId is required.')
   if (commandAlreadyApplied(snapshot, command.commandId)) {
+    if (command.kind === 'invalidate_process_event') {
+      const event = snapshot.data.processEvents.find(item => item.id === command.eventId && item.opportunityId === command.opportunityId)
+      const correction = event?.invalidation
+      if (!correction || correction.commandId !== command.commandId || correction.sourceReceiptId !== command.receiptId || event?.updatedAt !== command.expectedEventUpdatedAt || correction.reason !== command.reason || JSON.stringify(correction.evidenceRefs) !== JSON.stringify(command.evidenceRefs)) throw new Error('Correction command ID was reused with a different payload.')
+    }
+    if (command.kind === 'correct_application_deadline') {
+      const correction = snapshot.data.opportunities.find(item => item.id === command.opportunityId)?.detail?.deadlineCorrections?.find(item => item.commandId === command.commandId)
+      if (!correction || Object.entries(command.correction).some(([key, value]) => correction[key as keyof typeof correction] !== value)) throw new Error('Correction command ID was reused with a different payload.')
+    }
     return { status: 'ALREADY_APPLIED', snapshot, summary: `Command ${command.commandId} is already recorded.` }
   }
 
@@ -372,6 +388,8 @@ export function applyUserDomainCommand(
     target.abandonedAt = undefined
     target.processStage = 'screening'
     target.currentStageLabel = '筛选中'
+    target.effectiveProcessEventId = undefined
+    target.effectiveProcessEventAt = undefined
     target.locallyManaged = true
     const apply = next.data.actions.find((item) => item.id === `apply:${target.id}`)
     const beforeApplyStatus = apply?.status
@@ -405,7 +423,18 @@ export function applyUserDomainCommand(
     }
   }
 
+  if (command.kind === 'invalidate_process_event') {
+    invalidateProcessFact(next, command, timestamp)
+    const target = opportunity(next, command.opportunityId)!
+    appendTimeline(next, commandTimeline(command, timestamp, { kind: 'opportunity_updated', category: 'process',
+      title: '更正流程事实', detail: command.reason, opportunity: target,
+      changes: { invalidatedProcessEvent: { before: command.eventId, after: 'invalidated' } } }), command)
+    finalizeSnapshot(next, timestamp)
+    return { status: 'APPLIED', snapshot: next, summary: 'Invalidated the exact source fact; original evidence and later independent progress were retained.' }
+  }
+
   if (command.kind === 'record_process_event') {
+    const beforeProjection = structuredClone(next)
     const target = opportunity(next, command.opportunityId)
     if (!target) throw new Error(`Opportunity ${command.opportunityId} was not found.`)
     const occurredAt = command.occurredAt ?? timestamp
@@ -452,7 +481,7 @@ export function applyUserDomainCommand(
       status: 'APPLIED',
       snapshot: next,
       summary: `Recorded ${command.eventType} for ${target.company}｜${target.role}.`,
-      compensation: { operation: 'delete_process_event', payload: { eventId } },
+      compensation: { operation: 'delete_process_event', payload: { eventId, projectionUndo: captureProcessProjectionUndo(beforeProjection, next, target.id) } },
     }
   }
 
@@ -616,11 +645,20 @@ export function applyUserDomainCommand(
     }
   }
 
+  if (command.kind === 'correct_application_deadline') {
+    const correction = correctApplicationDeadline(next, command, timestamp, snapshot)
+    const target = opportunity(next, command.opportunityId)!
+    appendTimeline(next, commandTimeline(command, timestamp, { title: '核实投递截止时间', detail: correction.evidence, opportunity: target,
+      changes: { deadline: { before: correction.previousDeadline ?? null, after: target.deadline ?? null }, sourceUrl: { before: null, after: correction.sourceUrl } } }), command)
+    finalizeSnapshot(next, timestamp)
+    return { status: 'APPLIED', snapshot: next, summary: correction.state === 'confirmed' ? 'Confirmed application deadline and synchronized its action and schedule owners.' : 'Cleared the unverified deadline; retained source history without creating a reminder date.' }
+  }
+
   if (command.kind === 'set_deadline') {
     const target = opportunity(next, command.opportunityId)
     if (!target) throw new Error(`Opportunity ${command.opportunityId} was not found.`)
     assertIso(command.deadline, 'deadline')
-    const before = { deadline: target.deadline, deadlinePrecision: target.deadlinePrecision }
+    const before = { deadline: target.deadline, deadlinePrecision: target.deadlinePrecision, userFactsDeadline: target.detail?.userFacts?.deadline, userFactsDeadlinePrecision: target.detail?.userFacts?.deadlinePrecision }
     target.deadline = command.deadline
     target.deadlinePrecision = command.precision
     const userFacts = ensureUserFacts(target, timestamp)
@@ -992,6 +1030,7 @@ export function applyDomainCompensation(
     }
     if (payload.timelineId) next.data.timeline = (next.data.timeline ?? []).filter((item) => item.id !== payload.timelineId)
   } else if (compensation.operation === 'delete_process_event') {
+    restoreProcessProjection(next, payload.projectionUndo, payload.eventId)
     next.data.processEvents = next.data.processEvents.filter((item) => item.id !== payload.eventId)
     next.data.actions = next.data.actions.filter((item) => item.processEventId !== payload.eventId)
     for (const node of next.data.scheduleNodes ?? []) {
@@ -1023,6 +1062,10 @@ export function applyDomainCompensation(
   } else if (compensation.operation === 'restore_deadline') {
     const target = next.data.opportunities.find((item) => item.id === payload.opportunityId)
     if (target) {
+      if (target.detail?.userFacts) {
+        target.detail.userFacts.deadline = payload.userFactsDeadline
+        target.detail.userFacts.deadlinePrecision = payload.userFactsDeadlinePrecision
+      }
       if (payload.deadline) {
         setApplicationDeadlineScheduleNode(next.data, target.id, payload.deadline, payload.deadlinePrecision ?? 'datetime', timestamp)
       } else {

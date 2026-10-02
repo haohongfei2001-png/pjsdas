@@ -1,3 +1,4 @@
+import { invalidatedSourceFact } from './processFactCorrection.js'
 import { applyDomainCompensation, applyUserDomainCommand, type DomainCompensation, type UserDomainCommand } from './domainCommands.js'
 import { resolveOpportunityTarget } from './semanticTargetMatching.js'
 import type {
@@ -1109,6 +1110,10 @@ export function applySemanticIntake(
   }
 
   for (const candidate of observation.candidates) {
+    if (invalidatedSourceFact(working, observation.source, semanticCandidateFactKey(working, candidate))) {
+      coverageDebtCount += 1
+      continue
+    }
     if (observation.source.kind === 'gmail') {
       const priorAnswer = (working.data.decisionRequests ?? []).find(item =>
         (item.state === 'answered' || item.state === 'auto_resolved')

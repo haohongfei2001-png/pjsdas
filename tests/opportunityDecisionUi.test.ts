@@ -11,9 +11,10 @@ describe('UU-05 frozen opportunity product contract', () => {
   it('keeps exact opportunity identity and one truthful job-status filter', () => {
     expect(read).toContain("export type OpportunityDecisionBucket = 'in_progress' | 'worth_pursuing' | 'ended'")
     expect(list).toContain("['all', '全部', 'All']")
-    expect(list).toContain("['unapplied', '待投递', 'To apply']")
-    expect(list).toContain("['in_progress', '推进中', 'In progress']")
-    expect(list).toContain("['ended', '已结束', 'Ended']")
+    expect(list).toContain("['to_apply', '待投递', 'To apply']")
+    expect(list).toContain("['applied', '已投递', 'Applied']")
+    expect(list).toContain("['process_ended', '流程结束', 'Process ended']")
+    for (const label of ['收到笔试', '收到面试', '时间截止', '无截止日期']) expect(list).toContain(label)
     expect(list).toContain('key={item.opportunityId}')
     expect(list).toContain('onOpenOpportunity(item.opportunityId, event.currentTarget)')
   })

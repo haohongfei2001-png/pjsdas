@@ -37,7 +37,10 @@ export function applyGmailSemanticBatch(snapshot: PJSDASSnapshot, input: {
     && item.ingestionRun.sourceKind === 'gmail' && item.ingestionRun.sourceId === input.sourceId)?.ingestionRun
   if (priorRun) return { snapshot, run: priorRun, compensation, alreadyApplied: true }
   for (const record of [...input.records].sort((a, b) => a.receivedAt.localeCompare(b.receivedAt))) {
-    const observation = record.observation
+    // Accounting a source as unresolved must not still commit its parsed
+    // prefix. A later, unparsed fragment may negate or qualify that outcome.
+    const incomplete = record.issueKinds?.includes('interpretation_failure')
+    const observation = incomplete ? { ...record.observation, candidates: [] } : record.observation
     const sourceRecordId = observation.source.sourceRecordId
     // Preserve pre-UU06 consumption, including unresolved historical evidence. A new
     // interpreter is not permission to replay old consumed mail as a new business fact.

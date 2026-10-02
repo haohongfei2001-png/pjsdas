@@ -715,7 +715,7 @@ export function parseProgressUpdate(
     }
 
     const relativeDue = relativeDueAt(sourceText, occurredAt)
-    let detected = detectNotificationType(sourceText)
+    let detected = detectNotificationType(sourceText, true)
     if (relativeDue && /测评/.test(sourceText)) detected = { type: 'assessment_invite', confidence: 'high' }
     const eventLike = detected.type && detected.type !== 'other' && detected.type !== 'status_update'
 

@@ -295,7 +295,7 @@ export default function OpportunityDetailDrawer({
               {visibleTimeline.map((record) => (
                 <article key={record.id}>
                   <time>{formatDate(record.occurredAt, zh)}</time>
-                  <div><strong>{record.title}</strong>{record.detail ? <p>{record.detail}</p> : null}</div>
+                  <div><strong>{record.processEventId && decision?.invalidatedProcessEventIds?.includes(record.processEventId) ? (zh ? '已失效 · ' : 'Invalidated · ') : ''}{record.title}</strong>{record.detail ? <p>{record.detail}</p> : null}</div>
                 </article>
               ))}
               {!completeTimeline ? <button className="opportunity-detail-more-history" type="button"

@@ -58,7 +58,7 @@ jobs:
       - name: Run core routes and schedule anchors in Firefox and WebKit
         env:
           PLAYWRIGHT_HTML_OUTPUT_DIR: playwright-report/core
-        run: npx playwright test --config=playwright.config.mts --project=firefox --project=webkit --output=test-results/core e2e/tsui02Today.e2e.ts e2e/tsui03JobLibrary.e2e.ts e2e/tsui04Schedule.e2e.ts e2e/historyCompletionStartup.e2e.ts e2e/postClosureRecovery.e2e.ts e2e/postClosureHistoryUndo.e2e.ts e2e/denseTodayDecisions.e2e.ts e2e/postClosureAccountRace.e2e.ts e2e/cacheProjectionPersistence.e2e.ts e2e/postZmcDeadlineCorrectness.e2e.ts
+        run: npx playwright test --config=playwright.config.mts --project=firefox --project=webkit --output=test-results/core e2e/tsui02Today.e2e.ts e2e/tsui03JobLibrary.e2e.ts e2e/tsui04Schedule.e2e.ts e2e/historyCompletionStartup.e2e.ts e2e/postClosureRecovery.e2e.ts e2e/postClosureHistoryUndo.e2e.ts e2e/denseTodayDecisions.e2e.ts e2e/postClosureAccountRace.e2e.ts e2e/cacheProjectionPersistence.e2e.ts e2e/postZmcDeadlineCorrectness.e2e.ts e2e/recordEvidenceCorrection.e2e.ts
       - name: Run dense instant journeys with production React runtime
         env:
           PLAYWRIGHT_HTML_OUTPUT_DIR: playwright-report/instant

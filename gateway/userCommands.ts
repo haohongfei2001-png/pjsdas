@@ -41,6 +41,10 @@ export const applyUserCommandSchema = z.discriminatedUnion('kind', [
     estimatedMinutes: z.number().int().min(5).max(720).optional(),
     notes: z.string().trim().max(800).optional(),
   }).strict(),
+  z.object({ commandId, kind: z.literal('invalidate_process_event'), opportunityId, eventId: z.string().min(1).max(240), receiptId: z.string().min(1).max(240), expectedEventUpdatedAt: isoString, reason: z.string().trim().min(1).max(800), evidenceRefs: z.array(z.string().trim().min(1).max(1000)).min(1).max(20) }).strict(),
+  z.object({ commandId, kind: z.literal('correct_application_deadline'), opportunityId, expectedDeadlineFingerprint: z.string().min(1).max(64_000), correction: z.object({
+    state: z.enum(['confirmed', 'unknown']), deadline: isoString.optional(), precision: precision.optional(), sourceUrl: z.string().url().max(2000), sourceAuthority: z.enum(['official_role', 'official_campaign', 'university_repost', 'aggregator', 'user']), evidence: z.string().trim().min(1).max(1600), checkedAt: isoString, postingStatus: z.enum(['open', 'closed', 'unknown']),
+  }).strict() }).strict(),
   z.object({ commandId, kind: z.literal('set_deadline'), opportunityId, deadline: isoString, precision }).strict(),
   z.object({ commandId, kind: z.literal('complete_occurrence'), occurrenceId: z.string().trim().min(1).max(320), occurredAt: isoString.optional() }).strict(),
   z.object({ commandId, kind: z.literal('cancel_occurrence'), occurrenceId: z.string().trim().min(1).max(320), occurredAt: isoString.optional() }).strict(),

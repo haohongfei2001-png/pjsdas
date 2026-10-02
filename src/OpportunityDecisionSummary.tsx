@@ -23,6 +23,7 @@ const reasonLabels: Record<OpportunityDecisionReasonCode, [string, string]> = {
 }
 
 const conclusionLabels: Record<OpportunityDecisionRead['conclusion'], [string, string]> = {
+  stage_unverified: ['阶段待核实，原始证据已保留', 'Stage unverified; original evidence retained'],
   continue_process: ['继续推进当前流程', 'Keep advancing the current process'],
   review_offer: ['已到 Offer 阶段，处理下一决定', 'Offer received; handle the next decision'],
   worth_pursuing: ['值得继续考虑', 'Worth pursuing'],

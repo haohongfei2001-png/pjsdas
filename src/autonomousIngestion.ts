@@ -410,6 +410,7 @@ export function applyMonitorIngestion(
 
 function stageLabel(stage: ProcessStage) {
   const labels: Record<ProcessStage, string> = {
+    unknown: '阶段待核实',
     not_applied: '待投', screening: '筛选中', assessment: '测评', written_test: '笔试',
     interview: '面试', offer: 'Offer', waiting_release: '等待开放', closed: '流程结束',
   }
