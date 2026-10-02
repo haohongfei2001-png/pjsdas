@@ -29,7 +29,12 @@ async function review(page: Page) {
 
 test('authenticated correction reviews evidence, commits once, retains history and clears file on reload', async ({ page, context }, info) => {
   const server = await setupInstantServer(context, 100); server.setDelay(0)
-  await page.clock.setFixedTime(INSTANT_NOW); await open(page); await upload(page, packet(server)); await review(page)
+  await page.clock.setFixedTime(INSTANT_NOW); await open(page)
+  await page.getByText('核对文件账号绑定', { exact: true }).click()
+  await expect(page.getByTestId('correction-review-account-id')).toHaveText('instant-owner')
+  await expect(page.locator('.cgr-correction-account')).toContainText('instant-owner@example.test')
+  await page.getByText('核对文件账号绑定', { exact: true }).click()
+  await upload(page, packet(server)); await review(page)
   await expect(page.locator('.cgr-correction-review')).toContainText('无可靠截止日期（不代表仍开放）')
   await expect(page.locator('.cgr-correction-review')).toContainText('高校转载')
   await page.screenshot({ path: info.outputPath('correction-review.png'), fullPage: true })

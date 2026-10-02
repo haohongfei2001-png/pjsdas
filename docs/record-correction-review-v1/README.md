@@ -84,3 +84,13 @@ milliseconds remain supported. Independent recheck rejected the original probe
 and passed 78 focused tests. Full local follow-up passed 223 files / 1,304 tests,
 TypeScript and production build. Full remote gates remain required for the final
 candidate; no private packet or production correction has been applied.
+
+## Binding the private file after sign-in
+
+The review panel's collapsed Account binding details show the signed-in email
+and exact stable identifier used by its `accountId` comparison. This is the
+existing application's `CloudUser.id` (Google subject/local account lease key),
+not the distinct Supabase account UUID or a workspace revision. Copy this visible
+value into a privately prepared packet only after normal sign-in; do not infer it
+from email or inspect credentials. The display contains no access/refresh token
+and does not change authorization or automatically bind an imported file.

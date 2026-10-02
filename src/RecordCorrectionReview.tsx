@@ -104,6 +104,11 @@ export default function RecordCorrectionReview({ onChanged }: { onChanged: () =>
     <p>{zh ? '逐条核对来源后修正。原始证据会保留；这些修正不提供普通撤销。' : 'Review sources one record at a time. Original evidence is retained; ordinary Undo is not available.'}</p>
     <p>{zh ? '完整核对文件仅留在此窗口内存，关闭或切换账号即清除。提交的单条操作沿用账号回执记录。' : 'The full review file stays in window memory and clears on close or account change. Submitted individual commands use the existing account receipt journal.'}</p>
     {!connected ? <p role="status">{zh ? '请先通过设置登录已连接账号；此入口不会修改本地模式的数据。' : 'Sign into a connected account in Settings first. This entry does not change local-mode data.'}</p> : null}
+    {connected ? <details className="cgr-correction-account"><summary>{zh ? '核对文件账号绑定' : 'Review file account binding'}</summary>
+      <dl><dt>{zh ? '登录邮箱' : 'Signed-in email'}</dt><dd>{cloud.session?.user.email ?? (zh ? '未提供' : 'Not provided')}</dd>
+      <dt>{zh ? '核对文件账号绑定 ID' : 'Review file account binding ID'}</dt><dd data-testid="correction-review-account-id">{accountId}</dd></dl>
+      <p>{zh ? '文件中的 accountId 必须与此稳定账号标识完全一致。它不是访问令牌，也不是工作区版本。' : 'The file accountId must exactly match this stable account identifier. It is not an access token or workspace revision.'}</p>
+    </details> : null}
     <label>{zh ? '导入核对文件（JSON，最多 2 MB）' : 'Import review file (JSON, up to 2 MB)'}<input ref={input} type="file" accept="application/json,.json" disabled={!connected || busy || uncertain} onChange={event => { void importFile(event.target.files?.[0]) }} /></label>
     {packet ? <>
       <p>{zh ? '核对基线' : 'Review baseline'}: {packet.workspaceVersion} · {packet.reviewedAt}</p>
