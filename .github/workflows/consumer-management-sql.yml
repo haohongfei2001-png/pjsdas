@@ -5,6 +5,8 @@ on:
     types: [opened, synchronize, reopened, ready_for_review]
     paths:
       - 'gateway/businessManagement*'
+      - 'gateway/opportunityManagement*'
+      - 'src/opportunityManagement.ts'
       - 'gateway/authoritativeCommands.ts'
       - 'gateway/transactionalWorkspaceStore.ts'
       - 'supabase/migrations/**'
@@ -14,6 +16,8 @@ on:
     branches: [main]
     paths:
       - 'gateway/businessManagement*'
+      - 'gateway/opportunityManagement*'
+      - 'src/opportunityManagement.ts'
       - 'gateway/authoritativeCommands.ts'
       - 'gateway/transactionalWorkspaceStore.ts'
       - 'supabase/migrations/**'
