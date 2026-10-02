@@ -494,8 +494,8 @@ test('account A sign-out then account B never displays or replays A cache drafts
   // real control is present and enabled, then keep the owned clock paused.
   await expect.poll(async () => {
     await page.clock.runFor(100)
-    const control = page.getByRole('button', { name: '退出 TodayAction' })
-    return await control.count() === 1 && await control.isEnabled()
+    const control = page.getByText('管理账号与同步', { exact: true })
+    return await control.count() === 1 && await control.isVisible()
   }).toBe(true)
   if ((await page.locator('.cloud-advanced').getAttribute('open')) === null) await page.getByText('管理账号与同步', { exact: true }).click()
   await page.getByRole('button', { name: '退出 TodayAction' }).click()
