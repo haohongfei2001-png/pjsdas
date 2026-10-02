@@ -368,3 +368,7 @@
  .settings-surface .settings-account,.settings-surface .settings-source-panel { grid-template-columns: minmax(0,1fr); }
  .settings-surface .cloud-advanced > summary,.settings-surface .settings-source-manage > summary { grid-column: 1; grid-row: 4; justify-self: start; }
 }
+@media(max-width:380px) {
+ .settings-surface :is(.cloud-advanced,.settings-intake-details)::details-content { grid-row: 5; }
+ .settings-surface .settings-source-manage::details-content { grid-row: 6; }
+}

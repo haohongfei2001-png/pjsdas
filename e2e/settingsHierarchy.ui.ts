@@ -87,6 +87,10 @@ for (const state of ['enabled', 'pending', 'partial', 'error', 'disabled', 'unve
       const panelBounds = await region.boundingBox()
       const bodyBounds = await region.locator('.settings-source-body').boundingBox()
       expect(bodyBounds!.width).toBeGreaterThan(panelBounds!.width * .8)
+      if (width === 320) {
+        const manageBounds = await region.locator('.settings-source-manage > summary').boundingBox()
+        expect(bodyBounds!.y).toBeGreaterThanOrEqual(manageBounds!.y + manageBounds!.height)
+      }
     }
     if (state === 'disabled' || state === 'partial') await expect(gmail.locator('.settings-permission')).toBeVisible()
     if (state === 'disabled') await expect(discovery.locator('.settings-permission')).toBeVisible()
