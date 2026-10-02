@@ -3,7 +3,7 @@ import { createIngestionLedgerTimeline } from '../src/ingestion.js'
 import { BACKEND, cors, health, seedSession, workspace } from './fixtures/todayWorkspace.js'
 
 const now = '2026-10-02T02:00:00.000Z'
-for (const state of ['enabled', 'partial', 'error', 'disabled', 'unverified'] as const) {
+for (const state of ['enabled', 'pending', 'partial', 'error', 'disabled', 'unverified'] as const) {
   for (const width of [1440, 390, 320]) test(`settings hierarchy ${state} at ${width}`, async ({ page }, info) => {
     await seedSession(page.context())
     await page.clock.setFixedTime(new Date(now))
@@ -14,6 +14,12 @@ for (const state of ['enabled', 'partial', 'error', 'disabled', 'unverified'] as
       runId: 'synthetic-historical-run', recordType: 'recruiting_message', outcome: 'unresolved',
       fingerprint: 'synthetic-fingerprint', receivedAt: now, accountedAt: now,
     })]
+    if (state === 'pending') snapshot.data.timeline = Array.from({ length: 84 }, (_, index) => createIngestionLedgerTimeline({
+      sourceKind: 'gmail', sourceId: 'gmail:primary', sourceRecordId: `synthetic-review-${index}`,
+      runId: 'synthetic-review-run', recordType: 'recruiting_message', outcome: 'unresolved',
+      fingerprint: `synthetic-review-${index}`, receivedAt: now, accountedAt: now,
+      issueKinds: [index < 42 ? 'interpretation_failure' : 'business_ambiguity'],
+    }))
     const calls: unknown[] = []
     await page.route(/https:\/\/[^/]+\.supabase\.co\//, route => route.abort())
     await page.route(BACKEND + '/**', route => {
@@ -25,7 +31,7 @@ for (const state of ['enabled', 'partial', 'error', 'disabled', 'unverified'] as
         const body = request.postDataJSON()
         if (state === 'unverified') return cors(route, { message: 'SYNTHETIC_STATUS_UNAVAILABLE' }, 503)
         if (body.action !== 'read') { calls.push(body); return cors(route, { message: 'SYNTHETIC_ACTION_FAILURE' }, 503) }
-        return cors(route, { googleEmail: state === 'disabled' ? null : 'synthetic-long-workspace-identity@example.test', gmailScopeGranted: state !== 'disabled', gmailEnabled: state === 'enabled' || state === 'error', discoveryEnabled: state !== 'disabled', gmailLastSuccessAt: state === 'disabled' ? null : now, discoveryLastSuccessAt: null, gmailLastError: state === 'error' ? 'SYNTHETIC_AUTH_EXPIRED' : null, discoveryLastError: state === 'error' ? 'SYNTHETIC_DISCOVERY_TIMEOUT' : null })
+        return cors(route, { googleEmail: state === 'disabled' ? null : 'synthetic-long-workspace-identity@example.test', gmailScopeGranted: state !== 'disabled', gmailEnabled: state === 'enabled' || state === 'pending' || state === 'error', discoveryEnabled: state !== 'disabled', gmailLastSuccessAt: state === 'disabled' ? null : now, discoveryLastSuccessAt: null, gmailLastError: state === 'error' ? 'SYNTHETIC_AUTH_EXPIRED' : null, discoveryLastError: state === 'error' || state === 'pending' ? 'SYNTHETIC_DISCOVERY_TIMEOUT' : null })
       }
       if (path === '/api/workspace' && request.postDataJSON().action === 'read') return cors(route, { workspaceId: 'ws-a', revision: 91, workspaceVersion: 'txn:91', schemaVersion: snapshot.version, snapshot })
       calls.push(path); return cors(route, { code: 'UNEXPECTED' }, 409)
@@ -39,7 +45,8 @@ for (const state of ['enabled', 'partial', 'error', 'disabled', 'unverified'] as
     await page.getByLabel('管理账号与同步', { exact: true }).click()
     if (width === 1440 && state === 'enabled') {
       const bounds = await page.locator('.settings-connections').boundingBox()
-      expect(bounds?.height).toBeLessThan(520)
+      expect(bounds?.height).toBeLessThan(270)
+      for (const row of await page.locator('.settings-account, .settings-source-panel').all()) expect((await row.boundingBox())?.height).toBeLessThanOrEqual(64)
       await expect(page.locator('.settings-preferences')).toBeVisible()
     }
     if (width === 320) await page.evaluate(() => { document.documentElement.style.fontSize = '200%' })
@@ -51,6 +58,16 @@ for (const state of ['enabled', 'partial', 'error', 'disabled', 'unverified'] as
       await expect(gmail.getByLabel('Gmail 来源结果')).toContainText('传输与对账：状态待核对')
       await expect(gmail.getByLabel('Gmail 来源结果')).not.toContainText('传输与对账：已关闭')
       for (const region of [gmail, discovery]) await expect(region.getByRole('alert')).toHaveCount(0)
+    }
+    if (state === 'pending') {
+      await expect(gmail.getByLabel(/^查看邮件核对结果：/)).toContainText('84 项待核对')
+      await expect(gmail.locator('.cloud-state')).toHaveText('已启用')
+      await expect(gmail.getByRole('alert')).toHaveCount(0)
+      await expect(discovery.getByText('新岗位可能延迟出现')).toBeVisible()
+      await gmail.getByLabel(/^查看邮件核对结果：/).focus()
+      await page.keyboard.press('Enter')
+      await expect(gmail.getByText('解释失败 42', { exact: false })).toBeVisible()
+      await page.keyboard.press('Enter')
     }
     if (state === 'error') {
       await expect(gmail.getByText('新邮件进展可能未同步')).toBeVisible()
@@ -64,7 +81,17 @@ for (const state of ['enabled', 'partial', 'error', 'disabled', 'unverified'] as
     }
     if (state === 'disabled' || state === 'partial') await expect(gmail.locator('.settings-permission')).toContainText('不发送或修改邮件')
     if (state === 'disabled') await expect(discovery.locator('.settings-permission')).toContainText('不会收到完整工作区')
-    for (const region of [gmail, discovery]) await region.locator('.settings-source-manage > summary').click()
+    for (const region of [gmail, discovery]) {
+      await expect(region.locator('.settings-source-body')).toBeHidden()
+      await region.locator('.settings-source-manage > summary').click()
+      const panelBounds = await region.boundingBox()
+      const bodyBounds = await region.locator('.settings-source-body').boundingBox()
+      expect(bodyBounds!.width).toBeGreaterThan(panelBounds!.width * .8)
+      if (width === 320) {
+        const manageBounds = await region.locator('.settings-source-manage > summary').boundingBox()
+        expect(bodyBounds!.y).toBeGreaterThanOrEqual(manageBounds!.y + manageBounds!.height)
+      }
+    }
     if (state === 'disabled' || state === 'partial') await expect(gmail.locator('.settings-permission')).toBeVisible()
     if (state === 'disabled') await expect(discovery.locator('.settings-permission')).toBeVisible()
     for (const control of await page.getByRole('button', { name: /关闭自动跟踪|关闭后台发现/ }).all()) {
@@ -89,11 +116,29 @@ for (const state of ['enabled', 'partial', 'error', 'disabled', 'unverified'] as
       await expect(discovery.getByRole('alert')).toHaveCount(0)
       expect(calls).toEqual([{ gmailEnabled: false }])
     }
+    if (state === 'pending') {
+      const interfaceGroup = page.locator('details.settings-group').filter({ has: page.locator('summary strong').filter({ hasText: /^(界面|Interface)$/ }) })
+      await interfaceGroup.locator('summary').click()
+      await interfaceGroup.getByRole('button', { name: 'EN', exact: true }).click()
+      await interfaceGroup.locator('summary').click()
+      await expect(page.getByRole('heading', { name: 'Automatic recruiting-email tracking', exact: true })).toBeVisible()
+      if (width === 320) for (const region of [gmail, discovery]) {
+        const panelBounds = await region.boundingBox()
+        const headingBounds = await region.getByRole('heading').boundingBox()
+        const manageBounds = await region.locator('.settings-source-manage > summary').boundingBox()
+        expect(headingBounds!.width).toBeGreaterThan(panelBounds!.width * .8)
+        expect(manageBounds!.y).toBeGreaterThan(headingBounds!.y + headingBounds!.height)
+      }
+      expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBeLessThanOrEqual(1)
+      await page.evaluate(() => window.scrollTo(0, 0))
+      await page.screenshot({ path: `settings-hierarchy-evidence/pending-en-${width}.png`, fullPage: true })
+    }
   })
 }
 
 test('Today hides only a repeated application identity and retains job access and other context', async ({ page }, info) => {
   await seedSession(page.context())
+  await page.clock.setFixedTime(new Date(now))
   const snapshot = workspace()
   snapshot.data.actions[0] = { ...snapshot.data.actions[0]!, kind: 'apply', title: '投递 A公司｜产品经理' }
   snapshot.data.timePlanning = { version: 1, defaultDailyMinutes: 480, updatedAt: now }

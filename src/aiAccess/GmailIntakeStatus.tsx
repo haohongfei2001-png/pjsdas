@@ -72,10 +72,16 @@ export default function GmailIntakeStatus({ zh, enabled, lastSuccessAt, lastErro
                   : (zh ? '最近检查已对账' : 'Latest check reconciled')
 
   const boundaries = coverage.capabilityBoundaries.filter((record) => record.ingestion?.sourceKind === 'gmail')
+  const reviewCount = coverage.interpretationFailureCount + coverage.businessAmbiguityCount
   return (
-    <div className={`cloud-connection-impact settings-intake-status${readError || coverage.transportGapCount || coverage.interpretationFailureCount || coverage.businessAmbiguityCount ? ' warning' : ''}`} aria-label={zh ? 'Gmail 来源结果' : 'Gmail source outcomes'}>
-      {coverage.interpretationFailureCount || coverage.businessAmbiguityCount ? <span role="status">{zh ? `有 ${coverage.interpretationFailureCount + coverage.businessAmbiguityCount} 项邮件结果需要核对；失败或歧义未自动写入。` : `${coverage.interpretationFailureCount + coverage.businessAmbiguityCount} email results need review; failed or ambiguous facts were not written automatically.`}</span> : null}
-      <details className="settings-intake-details"><summary><span>{zh ? `传输与对账：${transport}` : `Transport and accounting: ${transport}`}</span><span className="settings-intake-link">{zh ? '查看邮件核对结果' : 'Review email reconciliation'}</span></summary>
+    <div className="settings-intake-status" aria-label={zh ? 'Gmail 来源结果' : 'Gmail source outcomes'}>
+      <details className="settings-intake-details"><summary aria-label={zh ? `查看邮件核对结果：${reviewCount} 项待核对${lastError && enabled ? '；新邮件进展可能未同步' : ''}` : `Review email reconciliation: ${reviewCount} need review${lastError && enabled ? '; new email progress may be missing' : ''}`} className={lastError || readError ? 'settings-short-warning' : ''}>
+        {lastError && enabled ? <span role="status">{zh ? '新邮件进展可能未同步' : 'New email progress may be missing'}</span> : readError ? (zh ? '本机结果不可读取' : 'Local results unavailable') : reviewCount ? (zh ? `${reviewCount} 项待核对` : `${reviewCount} need review`) : (zh ? '查看检查结果' : 'View check results')}
+        <span aria-hidden="true">›</span>
+      </summary>
+      <div className="settings-intake-content">
+      <span>{zh ? `传输与对账：${transport}` : `Transport and accounting: ${transport}`}</span>
+      <span>{lastSuccessAt ? `${zh ? '最近检查：' : 'Last check: '}${new Date(lastSuccessAt).toLocaleString()}` : (zh ? '尚无可核对的成功检查记录' : 'No verified successful check yet')}</span>
       {readError ? <span>{zh ? '本机来源结果暂不可读取。' : 'Local source outcomes are temporarily unavailable.'}</span> : (
         <>
           <span>{zh
@@ -89,7 +95,7 @@ export default function GmailIntakeStatus({ zh, enabled, lastSuccessAt, lastErro
           </details> : null}
         </>
       )}
-      </details>
+      </div></details>
     </div>
   )
 }

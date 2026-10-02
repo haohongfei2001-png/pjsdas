@@ -110,7 +110,7 @@ test('Gmail settings separates a normal attachment boundary from an interpretati
   const status = page.getByLabel('Gmail 来源结果')
   await expect(status).toContainText('解释失败 0')
   await expect(status).toContainText('正常能力边界 1')
-  await status.getByText('查看邮件核对结果', { exact: true }).click()
+  await status.getByLabel(/^查看邮件核对结果：/).click()
   await status.getByText('查看未读取的内容边界').click()
   await expect(status).toContainText('附件内容尚未读取')
 })

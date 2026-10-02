@@ -39,7 +39,7 @@ export default function AiAccessSettingsCard() {
       {ai.errorSource === 'status' && ai.error ? <div className="cloud-error" role="alert"><strong>{zh ? '后台来源状态暂时无法核对' : 'Background source status is unavailable'}</strong><details><summary>{zh ? '错误详情' : 'Error details'}</summary><p>{ai.error}</p></details></div> : null}
       <section className="settings-source-panel" aria-labelledby="settings-workspace-heading">
         <header className="settings-source-header">
-          <div><h2 id="settings-workspace-heading">{zh ? '后台工作区连接' : 'Background workspace connection'}</h2><p>{automation?.googleEmail || (zh ? '网页关闭后继续接收已授权来源的更新' : 'Receive authorized updates while this page is closed')}</p></div>
+          <div><h2 id="settings-workspace-heading">{zh ? '后台工作区连接' : 'Background workspace connection'}</h2><p>{automation?.googleEmail || (zh ? '尚未连接' : 'Not connected yet')}</p></div>
           <span className={`cloud-state ${ai.statusVerified && automation?.googleEmail ? 'online' : ''}`}>{!automation || !ai.statusVerified ? (zh ? '状态待核对' : 'Status unverified') : automation.googleEmail ? (zh ? '已连接' : 'Connected') : (zh ? '待连接' : 'Not connected')}</span>
         </header>
         <details className="settings-source-manage"><summary>{zh ? '管理' : 'Manage'}</summary><div className="settings-source-body">
@@ -52,19 +52,19 @@ export default function AiAccessSettingsCard() {
       </section>
 
       <section className="settings-source-panel" aria-labelledby="settings-discovery-heading">
-        <header className="settings-source-header"><div><h2 id="settings-discovery-heading">{zh ? '后台岗位发现' : 'Background job discovery'}</h2><p>{automation?.discoveryLastSuccessAt ? `${zh ? '最近发现：' : 'Last discovery: '}${new Date(automation.discoveryLastSuccessAt).toLocaleString()}` : (zh ? '尚无可核对的成功发现记录' : 'No verified successful discovery yet')}</p></div>
+        <header className="settings-source-header"><div><h2 id="settings-discovery-heading">{zh ? '后台岗位发现' : 'Background job discovery'}</h2><p className={automation?.discoveryEnabled && automation.discoveryLastError ? 'settings-short-warning' : ''} role={automation?.discoveryEnabled && automation.discoveryLastError ? 'status' : undefined}>{automation?.discoveryEnabled && automation.discoveryLastError ? (zh ? '新岗位可能延迟出现' : 'New opportunities may be delayed') : automation?.discoveryLastSuccessAt ? `${zh ? '最近发现：' : 'Last discovery: '}${new Date(automation.discoveryLastSuccessAt).toLocaleString()}` : (zh ? '尚无成功记录' : 'No successful run yet')}</p></div>
           <span className={`cloud-state ${ai.statusVerified && automation?.discoveryEnabled ? automation.discoveryLastError ? 'warning' : 'online' : ''}`}>{sourceState(automation?.discoveryEnabled, automation?.discoveryLastError)}</span></header>
         <details className="settings-source-manage"><summary>{zh ? '管理' : 'Manage'}</summary><div className="settings-source-body">
           <p className="settings-permission">{discoveryPermission}</p>
           <button className={automation?.discoveryEnabled ? 'settings-quiet-button' : 'primary-button'} disabled={ai.busy} onClick={() => run('discovery', () => ai.setDiscoveryAutomationEnabled(!automation?.discoveryEnabled))}>{ai.busy && actionSource === 'discovery' ? (zh ? '处理中…' : 'Working…') : discoveryButton}</button>
           {automation?.discoveryLastError ? <details className="settings-scope-details"><summary>{zh ? '错误详情' : 'Error details'}</summary><p>{automation.discoveryLastError}</p></details> : null}
         </div></details>
-        {automation?.discoveryEnabled && automation.discoveryLastError ? <div className="settings-inline-warning" role="status"><strong>{zh ? '新岗位可能延迟出现' : 'New opportunities may be delayed'}</strong><span>{zh ? '最近发现失败；已有岗位仍可用。展开管理检查连接。' : 'The latest search failed; saved jobs remain available. Open Manage to check the connection.'}</span></div> : null}
+
         {result('discovery')}
       </section>
 
       <section className="settings-source-panel" aria-labelledby="settings-gmail-heading">
-        <header className="settings-source-header"><div><h2 id="settings-gmail-heading">{zh ? '招聘邮件自动跟踪' : 'Automatic recruiting-email tracking'}</h2><p>{automation?.gmailLastSuccessAt ? `${zh ? '最近检查：' : 'Last check: '}${new Date(automation.gmailLastSuccessAt).toLocaleString()}` : (zh ? '尚无可核对的成功检查记录' : 'No verified successful check yet')}</p></div>
+        <header className="settings-source-header"><div><h2 id="settings-gmail-heading">{zh ? '招聘邮件自动跟踪' : 'Automatic recruiting-email tracking'}</h2><GmailIntakeStatus zh={zh} enabled={ai.statusVerified && automation ? automation.gmailEnabled : undefined} lastSuccessAt={automation?.gmailLastSuccessAt ?? undefined} lastError={automation?.gmailLastError ?? undefined} /></div>
           <span className={`cloud-state ${ai.statusVerified && automation?.gmailEnabled ? automation.gmailLastError ? 'warning' : 'online' : ''}`}>{sourceState(automation?.gmailEnabled, automation?.gmailLastError)}</span></header>
         <details className="settings-source-manage"><summary>{zh ? '管理' : 'Manage'}</summary><div className="settings-source-body">
           <p className="settings-permission">{gmailPermission}</p>
@@ -72,9 +72,8 @@ export default function AiAccessSettingsCard() {
           <button className={automation?.gmailEnabled ? 'settings-quiet-button' : 'primary-button'} disabled={ai.busy} onClick={() => run('gmail', () => ai.setGmailAutomationEnabled(!automation?.gmailEnabled))}>{ai.busy && actionSource === 'gmail' ? (zh ? '处理中…' : 'Working…') : gmailButton}</button>
           {automation?.gmailLastError ? <details className="settings-scope-details"><summary>{zh ? '错误详情' : 'Error details'}</summary><p>{automation.gmailLastError}</p></details> : null}
         </div></details>
-        {automation?.gmailEnabled && automation.gmailLastError ? <div className="settings-inline-warning" role="status"><strong>{zh ? '新邮件进展可能未同步' : 'New email progress may be missing'}</strong><span>{zh ? '最近检查失败；已有资料仍可查看。展开管理检查授权。' : 'The latest check failed; saved data remains available. Open Manage to review authorization.'}</span></div> : null}
+
         {result('gmail')}
-        <GmailIntakeStatus zh={zh} enabled={ai.statusVerified && automation ? automation.gmailEnabled : undefined} lastSuccessAt={automation?.gmailLastSuccessAt ?? undefined} lastError={automation?.gmailLastError ?? undefined} />
       </section>
     </div>
   )

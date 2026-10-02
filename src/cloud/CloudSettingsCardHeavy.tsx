@@ -113,7 +113,7 @@ export default function CloudSettingsCard() {
         <div className="cloud-settings-heading">
           <div>
             <h2>{zh ? '账号与跨设备数据' : 'Account & cross-device data'}</h2>
-            <p>{user ? `${user.user_metadata?.full_name || user.email || user.id}${quietConnected ? ` · ${zh ? '最后更新：' : 'Last updated: '}${formatTime(cloud.checkpoint.lastSyncedAt, zh)}` : ''}` : (zh ? '登录后在自己的设备间使用同一份资料' : 'Use the same data across your devices')}</p>
+            <p>{user ? `${user.user_metadata?.full_name || user.email || user.id}` : (zh ? '登录后在自己的设备间使用同一份资料' : 'Use the same data across your devices')}</p>
           </div>
           <span className={`cloud-state ${conflict || mismatch || connectionError || pendingLocal || (transactional && localDirty) || (audience && !audience.allowed) ? 'warning' : user && currentLocal ? 'online' : ''}`}>
             {mismatch
@@ -165,6 +165,7 @@ export default function CloudSettingsCard() {
             <details ref={advancedRef} className="cloud-advanced">
               <summary aria-label={zh ? '管理账号与同步' : 'Manage account and sync'}>{zh ? '管理' : 'Manage'}</summary>
               <div className="cloud-advanced-content">
+                <p>{zh ? `最后更新：${formatTime(cloud.checkpoint.lastSyncedAt, zh)}` : `Last updated: ${formatTime(cloud.checkpoint.lastSyncedAt, zh)}`}</p>
                 <div className="cloud-account-identity">
                   <span>{zh ? 'TodayAction 账号' : 'TodayAction account'}</span>
                   <strong>{user.user_metadata?.full_name || user.email || user.id}</strong>
