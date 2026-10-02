@@ -36,7 +36,7 @@ export interface ConnectedCommandRecord {
 }
 
 export interface ConnectedAuthoritativeCommitInput extends ConnectedCommitInput {
-  managementAuthorization?: { grantId: string; grantRevision: number }
+  managementAuthorization?: { grantId: string; grantRevision: number; consentVersion?: 2 | 3 }
   receiptContext: Record<string, unknown>
 }
 
@@ -231,9 +231,10 @@ export function createTransactionalWorkspaceStore(options: TransactionalWorkspac
       validateSnapshot(input.snapshot)
       const snapshot = upgradeSnapshotToLatest(input.snapshot)
       const authorization = input.managementAuthorization
-      if (input.operation === 'business_management' && !authorization) throw new WorkspaceSourceError('AUTH_FORBIDDEN', 'Management writes require a transaction-bound grant.', false)
+      if ((input.operation === 'business_management' || input.operation === 'opportunity_management') && !authorization) throw new WorkspaceSourceError('AUTH_FORBIDDEN', 'Management writes require a transaction-bound grant.', false)
       if (authorization && (input.principalKind !== 'delegated_mcp' || !input.clientId || !authorization.grantId || !Number.isSafeInteger(authorization.grantRevision) || authorization.grantRevision < 1)) throw new WorkspaceSourceError('AUTH_FORBIDDEN', 'Management transaction authorization is invalid.', false)
-      const rpc = authorization ? 'pjsdas_commit_management_workspace_v1' : 'pjsdas_commit_workspace_v2'
+      if ((input.operation === 'opportunity_management' && authorization?.consentVersion !== 3) || (input.operation === 'business_management' && authorization?.consentVersion === 3)) throw new WorkspaceSourceError('AUTH_FORBIDDEN', 'Management grant version does not match this operation.', false)
+      const rpc = authorization?.consentVersion === 3 ? 'pjsdas_commit_opportunity_workspace_v1' : authorization ? 'pjsdas_commit_management_workspace_v1' : 'pjsdas_commit_workspace_v2'
       const response = await request(`/rest/v1/rpc/${rpc}?select=outcome,workspace_id,revision,receipt`, {
         method: 'POST',
         body: JSON.stringify({
