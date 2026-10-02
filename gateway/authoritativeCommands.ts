@@ -1,3 +1,5 @@
+import { applyBusinessManagement, businessManagementSchema, businessManagementObjectRefs, restoreBusinessManagement, type BusinessManagementCompensation } from '../src/businessManagement.js'
+import { assertBusinessManagementGrant, type BusinessManagementGrant } from './businessManagementAccess.js'
 import { diffWorkspaceDelta } from '../src/workspaceDelta.js'
 import { INSTANT_COMMAND_KINDS } from '../src/instantCommandKinds.js'
 import { restoreActionStatusUndo, type ActionStatusUndo } from '../src/actionStatusUndo.js'
@@ -81,6 +83,7 @@ export const authoritativeBusinessCommandSchema = z.object({
   baseRevision,
   command: z.discriminatedUnion('type', [
     z.object({ type: z.literal('domain'), value: applyUserCommandSchema }).strict(),
+    z.object({ type: z.literal('business_management'), value: businessManagementSchema }).strict(),
     z.object({ type: z.literal('semantic_intake'), value: semanticIntakeSchema }).strict(),
     z.object({ type: z.literal('resolve_semantic_decision'), value: resolveSemanticDecisionSchema }).strict(),
     z.object({ type: z.literal('discovery_profile'), value: discoveryProfileSchema }).strict(),
@@ -140,6 +143,7 @@ export interface AuthoritativeCommandExecution {
 }
 
 function resultPayload(command: AuthoritativeBusinessCommand['command'], evaluated: any) {
+  if (command.type === 'business_management') return { type: command.type, status: evaluated.status, summary: evaluated.summary, objects: evaluated.objects }
   if (command.type === 'domain' || command.type === 'discovery_status' || command.type === 'discovery_profile' || command.type === 'discovery_promotion' || command.type === 'process_event_delete' || command.type === 'mcp_save_inbox' || command.type === 'mcp_apply_discovery' || command.type === 'mcp_apply_actions' || command.type === 'mcp_apply_rules' || command.type === 'mcp_apply_source_refresh' || command.type === 'mcp_apply_progress' || command.type === 'mcp_apply_mixed' || command.type === 'mcp_discard') {
     return {
       type: command.type,
@@ -180,7 +184,8 @@ function typedFactAlreadyCurrent(command: AuthoritativeBusinessCommand['command'
     : target.roleType === value.roleType
 }
 
-function intentObjects(command: AuthoritativeBusinessCommand['command'], snapshot: PJSDASSnapshot, proposal?: McpProposalEnvelope) {
+function intentObjects(command: AuthoritativeBusinessCommand['command'], snapshot: PJSDASSnapshot, proposal?: McpProposalEnvelope, commandId = '') {
+  if (command.type === 'business_management') return businessManagementObjectRefs(command.value, commandId)
   if (command.type === 'domain') return domainIntentObjects(command.value as UserDomainCommand, snapshot)
   if (command.type === 'mcp_save_inbox') {
     if (!proposal) throw new Error('Verified MCP proposal is required.')
@@ -322,6 +327,7 @@ function semanticCompensation(value: Record<string, unknown>): SemanticBatchComp
 }
 
 function applyCompensation(snapshot: PJSDASSnapshot, compensation: Record<string, unknown>, now: Date) {
+  if (compensation.operation === 'business_management_restore') return restoreBusinessManagement(snapshot, compensation as unknown as BusinessManagementCompensation, now)
   if (compensation.operation === 'mcp_restore_decision_rules') {
     const before = (compensation.payload as { before?: DecisionRules } | undefined)?.before
     if (!before || validateDecisionRules(before).length) throw new Error('MCP Rules compensation is invalid.')
@@ -361,8 +367,20 @@ function lifecycle(now: string, baseRevision: number, currentRevision: number) {
   }
 }
 
-export function createAuthoritativeCommandExecutor(options: TransactionalWorkspaceStoreOptions) {
+export interface AuthoritativeCommandExecutorOptions extends TransactionalWorkspaceStoreOptions {
+  // Server-owned grant resolver; omission deliberately disables the new capability.
+  resolveBusinessManagementGrant?: (principal: MutationPrincipal) => Promise<BusinessManagementGrant | undefined>
+}
+
+export function createAuthoritativeCommandExecutor(options: AuthoritativeCommandExecutorOptions) {
   const store = createTransactionalWorkspaceStore(options)
+  async function authorizeManagement(principal: MutationPrincipal, admitted?: Pick<BusinessManagementGrant, 'id' | 'revision'>) {
+    const grant = await options.resolveBusinessManagementGrant?.(principal)
+    assertBusinessManagementGrant(principal, grant)
+    if (admitted && (grant.id !== admitted.id || grant.revision !== admitted.revision)) throw new WorkspaceSourceError('AUTH_FORBIDDEN', 'Management grant changed during this request. A new explicit request is required.', false)
+    // Copy proof so a resolver that reuses objects cannot mutate admission state.
+    return Object.freeze({ ...grant })
+  }
 
   async function lookup(principal: MutationPrincipal, targetCommandId: string, compact = false) {
     if (compact) {
@@ -387,6 +405,7 @@ export function createAuthoritativeCommandExecutor(options: TransactionalWorkspa
 
   async function execute(principal: MutationPrincipal, raw: unknown): Promise<AuthoritativeCommandExecution> {
     const parsed = authoritativeBusinessCommandSchema.parse(raw) as AuthoritativeBusinessCommand
+    const admittedManagementGrant = parsed.command.type === 'business_management' ? await authorizeManagement(principal) : undefined
     if (parsed.command.type === 'domain' && parsed.command.value.commandId !== parsed.commandId) {
       throw new WorkspaceSourceError('INVALID_ARGUMENT', 'Outer commandId and domain commandId must match.', false)
     }
@@ -412,6 +431,7 @@ export function createAuthoritativeCommandExecutor(options: TransactionalWorkspa
     const startedAt = new Date().toISOString()
 
     for (let attempt = 0; attempt < 5; attempt += 1) {
+      if (attempt > 0 && parsed.command.type === 'business_management') await authorizeManagement(principal, admittedManagementGrant)
       const current = await store.readForUser(principal.userId)
       if (!current) throw new WorkspaceSourceError('WORKSPACE_NOT_FOUND', 'TodayAction connected workspace has not been migrated yet.', false)
 
@@ -445,7 +465,7 @@ export function createAuthoritativeCommandExecutor(options: TransactionalWorkspa
         return { outcome: 'ALREADY_APPLIED', revision: current.revision, snapshot: current.snapshot,
           result: { type: parsed.command.type, status: 'ALREADY_APPLIED', summary: 'The requested fact is already current.' } }
       }
-      const intent = intentObjects(parsed.command, current.snapshot, proposal)
+      const intent = intentObjects(parsed.command, current.snapshot, proposal, parsed.commandId)
       const intentFields = parsed.command.type === 'domain'
         ? intentFieldScopes(parsed.command.value as UserDomainCommand, intent)
         : intent.map(ref => ({ ...ref, field: '*' }))
@@ -459,7 +479,9 @@ export function createAuthoritativeCommandExecutor(options: TransactionalWorkspa
 
       const now = new Date()
       let evaluated: any
-      if (parsed.command.type === 'domain') {
+      if (parsed.command.type === 'business_management') {
+        evaluated = applyBusinessManagement(current.snapshot, parsed.command.value, parsed.commandId, now)
+      } else if (parsed.command.type === 'domain') {
         evaluated = applyUserDomainCommand(current.snapshot, parsed.command.value as UserDomainCommand, now)
       } else if (parsed.command.type === 'discovery_status') {
         evaluated = applyDiscoveryStatusCommand(current.snapshot, parsed.command.value, now)
@@ -558,7 +580,10 @@ export function createAuthoritativeCommandExecutor(options: TransactionalWorkspa
           ? { undoCompensation: evaluated.compensation } : {}),
       }
       const compensation = evaluated.compensation as Record<string, unknown> | undefined
+      // Carry the freshly read identity/revision into the transaction-locked RPC.
+      const managementGrant = parsed.command.type === 'business_management' ? await authorizeManagement(principal, admittedManagementGrant) : undefined
       const committed = await store.commitAuthoritativeForUser({
+        managementAuthorization: managementGrant ? { grantId: managementGrant.id, grantRevision: managementGrant.revision } : undefined,
         userId: principal.userId,
         commandId: parsed.commandId,
         operation,
@@ -596,6 +621,7 @@ export function createAuthoritativeCommandExecutor(options: TransactionalWorkspa
     const parsed = authoritativeUndoSchema.parse(raw)
     const operation = 'undo_command'
     const payload = { targetCommandId: parsed.targetCommandId }
+    let admittedManagementGrant: BusinessManagementGrant | undefined
     const payloadHash = await hashMutationPayload(operation, payload)
     const startedAt = new Date().toISOString()
 
@@ -630,6 +656,7 @@ export function createAuthoritativeCommandExecutor(options: TransactionalWorkspa
           },
         }
       }
+      if (target.operation === 'business_management') admittedManagementGrant = await authorizeManagement(principal, admittedManagementGrant)
       if (target.operation === 'process_event_delete' && principal.kind !== 'first_party_web') {
         throw new WorkspaceSourceError('AUTH_FORBIDDEN', 'Only the first-party Web client can restore a deleted process event.', false)
       }
@@ -702,7 +729,9 @@ export function createAuthoritativeCommandExecutor(options: TransactionalWorkspa
       const now = new Date()
       const next = upgradeSnapshotToLatest(applyCompensation(current.snapshot, target.compensation, now))
       const affectedObjects = diffCommandObjects(current.snapshot, next)
+      const managementGrant = target.operation === 'business_management' ? await authorizeManagement(principal, admittedManagementGrant) : undefined
       const committed = await store.commitAuthoritativeForUser({
+        managementAuthorization: managementGrant ? { grantId: managementGrant.id, grantRevision: managementGrant.revision } : undefined,
         userId: principal.userId,
         commandId: parsed.commandId,
         operation,

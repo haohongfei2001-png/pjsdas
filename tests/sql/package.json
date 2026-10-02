@@ -1,0 +1,13 @@
+{
+  "name": "todayaction-sql-fixtures",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node management-grants-check.mjs",
+    "test:concurrency": "node management-grants-concurrency.mjs"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "0.5.8",
+    "pg": "8.23.1"
+  }
+}
