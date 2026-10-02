@@ -26,6 +26,8 @@ export interface ResolvedApplicationDeadline {
   checkedAt?: string
   nodeIds: string[]
   timezone?: string
+  evidenceRefs?: string[]
+  sourceAuthority?: DeadlineAuthority
   postingStatus: 'open' | 'closed' | 'unknown'
 }
 export function latestDeadlineCorrection(opportunity: Opportunity | undefined) {
@@ -40,22 +42,40 @@ export function applicationDeadlineNodes(data: Pick<SnapshotData, 'scheduleNodes
   }
   return [...latest.values()].sort((a, b) => a.id.localeCompare(b.id))
 }
+/** Includes append-only Undo versions that restore the exact original evidence. */
+export function correctionOwnsDeadlineNode(correction: ApplicationDeadlineCorrection | undefined, node: ScheduleNode) {
+  return Boolean(correction && (correction.resultNodeIds?.includes(node.id)
+    || node.temporal.resolutionBasis === 'source_explicit' && node.sourceVersionRefs.includes(correction.commandId)
+      && (node.temporal.date ?? node.temporal.deadlineAt) === correction.deadline && node.temporal.precision === correction.precision))
+}
 export function resolveApplicationDeadline(opportunity: Opportunity, data: Pick<SnapshotData, 'scheduleNodes'>): ResolvedApplicationDeadline {
   const correction = latestDeadlineCorrection(opportunity)
   const nodes = applicationDeadlineNodes(data, opportunity.id)
   const nodeIds = nodes.map(item => item.id)
-  const postingStatus = correction?.postingStatus ?? opportunity.detail?.discovery?.posting?.postingStatus ?? 'unknown'
-  const newExplicitOwner = correction && nodes.some(node => !correction.resultNodeIds?.includes(node.id)
+  const previousAvailability = [...(opportunity.detail?.deadlineCorrections ?? [])].reverse().find(item => item.postingStatus !== 'unknown')?.postingStatus
+    ?? opportunity.detail?.discovery?.posting?.postingStatus ?? 'unknown'
+  // Not finding a deadline is not positive evidence that a closed posting reopened.
+  const postingStatus = correction?.postingStatus === 'unknown' && previousAvailability === 'closed' ? 'closed'
+    : correction?.postingStatus ?? previousAvailability
+  const newExplicitOwner = correction && nodes.some(node => !correctionOwnsDeadlineNode(correction, node)
     && !['cancelled', 'superseded'].includes(node.state)
     && ['user_explicit', 'source_explicit'].includes(node.temporal.resolutionBasis))
-  if (correction?.state === 'unknown' && !newExplicitOwner) return { state: 'unknown', source: 'correction', sourceUrl: correction.sourceUrl, checkedAt: correction.checkedAt, nodeIds, postingStatus }
+  if (correction?.state === 'unknown' && !newExplicitOwner) return { state: 'unknown', source: 'correction', sourceUrl: correction.sourceUrl, sourceAuthority: correction.sourceAuthority, evidenceRefs: [correction.sourceUrl, `deadline-correction:${correction.commandId}`], checkedAt: correction.checkedAt, nodeIds, postingStatus }
 
   // A withdrawn canonical occurrence is a tombstone, not a reason to revive
   // the retained legacy/rich-fact date. Conflicting active owners remain unknown.
   if (nodes.length) {
     const active = nodes.filter(item => !['cancelled', 'superseded'].includes(item.state))
     const values = new Set(active.map(item => item.temporal.deadlineAt ?? item.temporal.date ?? item.temporal.legacyProjectionAt).filter(Boolean))
-    if (values.size === 1) return { state: 'confirmed', deadline: [...values][0], precision: active[0].temporal.precision, timezone: active[0].temporal.timezone, source: correction && !newExplicitOwner ? 'correction' : 'schedule_node', checkedAt: correction?.checkedAt, nodeIds, postingStatus, sourceUrl: opportunity.detail?.discovery?.sourceUrl ?? opportunity.detail?.facts?.evidence.sourceUrl }
+    if (values.size === 1) {
+      const correctionOwned = Boolean(correction && !newExplicitOwner)
+      const userOwned = !correctionOwned && active[0].temporal.resolutionBasis === 'user_explicit'
+      return { state: 'confirmed', deadline: [...values][0], precision: active[0].temporal.precision, timezone: active[0].temporal.timezone,
+        source: correctionOwned ? 'correction' : userOwned ? 'user' : 'schedule_node', checkedAt: correctionOwned ? correction?.checkedAt : undefined,
+        sourceAuthority: correctionOwned ? correction?.sourceAuthority : userOwned ? 'user' : undefined,
+        evidenceRefs: [...active[0].evidenceRefs], nodeIds, postingStatus,
+        sourceUrl: correctionOwned ? correction?.sourceUrl : userOwned ? undefined : active[0].evidenceRefs.filter(ref => /^https?:\/\//.test(ref)).at(-1) }
+    }
     return { state: 'unknown', source: 'schedule_node', nodeIds, postingStatus }
   }
   const user = opportunity.detail?.userFacts

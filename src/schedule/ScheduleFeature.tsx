@@ -326,8 +326,8 @@ export default function ScheduleFeature({
       </div>
     </div>
     {(stream.counts.no_deadline > 0 || view !== 'upcoming' && (stream.counts.unresolved > 0 || stream.counts.undated > 0)) ? <div className="tsui-schedule-context">
-      {stream.counts.unresolved > 0 ? <button type="button" onClick={() => changeView('unresolved')}>{zh ? '过去安排待确认' : 'Past arrangements to confirm'} · {stream.counts.unresolved}</button> : null}
-      {stream.counts.undated > 0 ? <button type="button" onClick={() => changeView('undated')}>{zh ? '时间待定' : 'Time TBD'} · {stream.counts.undated}</button> : null}
+      {view !== 'upcoming' && stream.counts.unresolved > 0 ? <button type="button" onClick={() => changeView('unresolved')}>{zh ? '过去安排待确认' : 'Past arrangements to confirm'} · {stream.counts.unresolved}</button> : null}
+      {view !== 'upcoming' && stream.counts.undated > 0 ? <button type="button" onClick={() => changeView('undated')}>{zh ? '时间待定' : 'Time TBD'} · {stream.counts.undated}</button> : null}
       {stream.counts.no_deadline > 0 ? <button type="button" onClick={() => changeView('no_deadline')}>{zh ? '无截止日期' : 'No deadline'} · {stream.counts.no_deadline}</button> : null}
       {view === 'unresolved' || view === 'undated' || view === 'no_deadline' ? <button type="button" onClick={() => changeView('all')}>{zh ? '返回全部' : 'Back to all'}</button> : null}
     </div> : null}

@@ -1,4 +1,4 @@
-import { applicationDeadlineFingerprint, classifyJob, hasApplicationEvidence, resolveApplicationDeadline } from '../src/applicationDeadline.js'
+import { applicationDeadlineExpired, applicationDeadlineFingerprint, classifyJob, hasApplicationEvidence, resolveApplicationDeadline } from '../src/applicationDeadline.js'
 import { upgradeSnapshotToLatest } from '../src/snapshot.js'
 import type { CallToolResult } from '@modelcontextprotocol/server'
 import * as z from 'zod/v4'
@@ -27,15 +27,17 @@ export async function invokeWorkspaceIntegrity(source: WorkspaceSource): Promise
     const deadlineAudit = normalized.data.opportunities.map(opportunity => {
       const deadline = resolveApplicationDeadline(opportunity, normalized.data)
       const category = classifyJob(opportunity, normalized.data, generatedAt, context.timezone ?? 'Asia/Shanghai')
-      return { opportunityId: opportunity.id, company: opportunity.company, role: opportunity.role, stage: opportunity.processStage, category,
+      const applied = hasApplicationEvidence(opportunity, normalized.data)
+      const effectiveStage = normalized.data.processes.find(item => item.opportunityId === opportunity.id)?.stage ?? opportunity.processStage
+      return { opportunityId: opportunity.id, eligibleForCorrection: !applied && opportunity.participationStatus !== 'abandoned' && ['not_applied', 'waiting_release'].includes(opportunity.processStage) && ['not_applied', 'waiting_release'].includes(effectiveStage), expiredOrClosed: deadline.postingStatus === 'closed' || applicationDeadlineExpired(deadline, generatedAt, context.timezone ?? 'Asia/Shanghai'), company: opportunity.company, role: opportunity.role, stage: opportunity.processStage, category,
         hasApplicationEvidence: hasApplicationEvidence(opportunity, normalized.data), ...deadline,
         fingerprint: applicationDeadlineFingerprint(snapshot.data.opportunities.find(item => item.id === opportunity.id)!, snapshot.data),
         actionIds: normalized.data.actions.filter(item => item.opportunityId === opportunity.id && item.kind === 'apply').map(item => item.id),
         sourceUrls: [...new Set([deadline.sourceUrl, opportunity.detail?.discovery?.sourceUrl, opportunity.detail?.facts?.evidence.sourceUrl].filter(Boolean))],
       }
-    }).filter(item => item.category === 'deadline_passed')
+    }).filter(item => item.expiredOrClosed)
     return success({
-      applicationDeadlineAudit: { totalCandidates: deadlineAudit.length, truncated: deadlineAudit.length > 500, candidates: deadlineAudit.slice(0, 500) },
+      applicationDeadlineAudit: { totalCandidates: deadlineAudit.filter(item => item.eligibleForCorrection).length, totalProtected: deadlineAudit.filter(item => !item.eligibleForCorrection).length, truncated: deadlineAudit.length > 500, candidates: deadlineAudit.filter(item => item.eligibleForCorrection).slice(0, 500), protectedRecords: deadlineAudit.filter(item => !item.eligibleForCorrection).slice(0, 500) },
       meta: { workspaceVersion: context.workspaceVersion, generatedAt: generatedAt.toISOString(), source: 'pjsdas' },
       integrity,
       assurance: integrity.criticalCount > 0

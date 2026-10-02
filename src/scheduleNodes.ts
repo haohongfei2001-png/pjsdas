@@ -477,6 +477,7 @@ export function setApplicationDeadlineScheduleNode(
   deadline: string,
   precision: DatePrecision,
   updatedAt: string,
+  commandId?: string,
 ) {
   ensureScheduleContractInPlace(data)
   const opportunity = data.opportunities.find((item) => item.id === opportunityId)
@@ -485,7 +486,7 @@ export function setApplicationDeadlineScheduleNode(
   const current = latestByVersion(data.scheduleNodes ?? [], occurrenceId)
   const temporal = legacyTemporal(deadline, precision, 'deadline', undefined, 'user_explicit')
   const currentValue = current ? legacyValue(current) : undefined
-  if (current && !['cancelled', 'superseded'].includes(current.state) && currentValue === deadline && current.temporal.precision === precision) return current
+  if (!commandId && current && !['cancelled', 'superseded'].includes(current.state) && currentValue === deadline && current.temporal.precision === precision) return current
   const related = data.actions.filter((item) => item.opportunityId === opportunityId && item.kind === 'apply')
   const next = supersedeScheduleOccurrence(data.scheduleNodes ?? [], {
     occurrenceId,
@@ -495,7 +496,7 @@ export function setApplicationDeadlineScheduleNode(
     temporal,
     constraintKind: 'employer_hard',
     evidenceRefs: [`user:deadline:${opportunityId}`],
-    sourceVersionRefs: [`user:deadline:${opportunityId}:${updatedAt}`],
+    sourceVersionRefs: [commandId ?? `user:deadline:${opportunityId}:${updatedAt}`],
     relatedActionIds: related.map((item) => item.id),
     relatedPrepIds: [],
     createdAt: current?.createdAt ?? updatedAt,
@@ -539,6 +540,7 @@ export function syncScheduleNodeForActionStatus(
 export const PROCESS_EVENT_HISTORY_DELETION_MESSAGE = '此事件关联已完成或已过期的历史日程；请保留历史并操作具体安排。This event has completed or elapsed historical occurrences; keep its history and update the exact occurrence.'
 
 export function processEventHasHistoricalOccurrences(data: ScheduleContractData, processEventId: string, now: Date) {
+  if (data.processEvents.find(event => event.id === processEventId)?.invalidation) return true
   ensureScheduleContractInPlace(data)
   return (data.scheduleNodes ?? []).some((node) => node.processEventId === processEventId
     && ['completed', 'elapsed_unresolved'].includes(effectiveScheduleNodeState(node, now)))

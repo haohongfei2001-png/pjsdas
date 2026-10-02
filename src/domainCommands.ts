@@ -1,3 +1,4 @@
+import { applicationDeadlineFingerprint, applicationDeadlineNodes } from './applicationDeadline.js'
 import { correctApplicationDeadline, type CorrectApplicationDeadlineCommand } from './deadlineCorrection.js'
 import { captureProcessProjectionUndo, restoreProcessProjection, invalidateProcessFact, type InvalidateProcessEventCommand } from './processFactCorrection.js'
 import { captureActionStatusUndo, restoreActionStatusUndo, restoreScheduleNodeChanges } from './actionStatusUndo.js'
@@ -30,7 +31,7 @@ import type {
 import type { PJSDASSnapshot } from './snapshot.js'
 import { upgradeSnapshotToLatest, validateSnapshot } from './snapshot.js'
 import { validPlanningDate, validateTimePlanningPreferences, type WorkWindow } from './timePlanningPreferences.js'
-import { buildReminderIntent, reminderCapabilityForOwner, reminderDedupeKey, resolveReminderTrigger } from './reminders.js'
+import { cancelReminderIntentInPlace, buildReminderIntent, reminderCapabilityForOwner, reminderDedupeKey, resolveReminderTrigger } from './reminders.js'
 import {
   ensureScheduleContractInPlace,
   latestScheduleOccurrence,
@@ -658,6 +659,7 @@ export function applyUserDomainCommand(
     const target = opportunity(next, command.opportunityId)
     if (!target) throw new Error(`Opportunity ${command.opportunityId} was not found.`)
     assertIso(command.deadline, 'deadline')
+    const previousDeadlineNodes = structuredClone(applicationDeadlineNodes(next.data, target.id))
     const before = { deadline: target.deadline, deadlinePrecision: target.deadlinePrecision, userFactsDeadline: target.detail?.userFacts?.deadline, userFactsDeadlinePrecision: target.detail?.userFacts?.deadlinePrecision }
     target.deadline = command.deadline
     target.deadlinePrecision = command.precision
@@ -671,7 +673,7 @@ export function applyUserDomainCommand(
       apply.timingMode = 'deadline'
       apply.updatedAt = timestamp
     }
-    setApplicationDeadlineScheduleNode(next.data, target.id, command.deadline, command.precision, timestamp)
+    setApplicationDeadlineScheduleNode(next.data, target.id, command.deadline, command.precision, timestamp, command.commandId)
     appendTimeline(next, commandTimeline(command, timestamp, {
       title: '更新投递截止时间',
       opportunity: target,
@@ -682,7 +684,7 @@ export function applyUserDomainCommand(
       status: 'APPLIED',
       snapshot: next,
       summary: `Updated deadline for ${target.company}｜${target.role}.`,
-      compensation: { operation: 'restore_deadline', payload: { opportunityId: target.id, ...before } },
+      compensation: { operation: 'restore_deadline', payload: { opportunityId: target.id, ...before, previousDeadlineNodes, expectedDeadlineFingerprint: applicationDeadlineFingerprint(target, next.data), expectedDeadlineState: { deadline: command.deadline, correctionId: target.detail?.deadlineCorrections?.at(-1)?.commandId ?? null } } },
     }
   }
 
@@ -794,35 +796,7 @@ export function applyUserDomainCommand(
     const previousOutbox = (next.data.reminderOutbox ?? [])
       .filter((item) => item.reminderIntentId === target.id)
       .map((item) => structuredClone(item))
-    target.state = 'cancelled'
-    target.updatedAt = timestamp
-    if (target.externalLink) {
-      target.externalLink.state = 'cancelled'
-      target.externalLink.lastReceiptAt = undefined
-    }
-    next.data.reminderOutbox = (next.data.reminderOutbox ?? []).filter((item) => item.reminderIntentId !== target.id)
-    const capability = reminderCapabilityForOwner(target.deliveryOwner)
-    if (capability) {
-      const capabilityState = command.kind === 'cancel_reminder_intent'
-        ? (target.externalLink?.lastErrorCode?.startsWith('CAPABILITY_')
-          ? target.externalLink.lastErrorCode.slice('CAPABILITY_'.length).toLowerCase()
-          : undefined)
-        : undefined
-      next.data.reminderOutbox.push({
-        id: `reminder-outbox:${stableHash(`${target.id}|cancel|${timestamp}`)}`,
-        reminderIntentId: target.id,
-        operation: 'cancel',
-        capability,
-        state: capabilityState === 'unsupported' || capabilityState === 'not_authorized' ? 'unsupported' : 'pending',
-        attemptCount: 0,
-        payloadFingerprint: stableHash(`${target.id}|cancel|${capability}`),
-        receiptCode: capabilityState === 'unsupported' || capabilityState === 'not_authorized'
-          ? `CAPABILITY_${capabilityState.toUpperCase()}`
-          : undefined,
-        createdAt: timestamp,
-        updatedAt: timestamp,
-      })
-    }
+    cancelReminderIntentInPlace(next.data, target, timestamp)
     appendTimeline(next, {
       id: `timeline:command:${stableHash(command.commandId)}`,
       kind: 'semantic_intake_applied',
@@ -1030,6 +1004,7 @@ export function applyDomainCompensation(
     }
     if (payload.timelineId) next.data.timeline = (next.data.timeline ?? []).filter((item) => item.id !== payload.timelineId)
   } else if (compensation.operation === 'delete_process_event') {
+    if (next.data.processEvents.find(item => item.id === payload.eventId)?.invalidation) throw new Error('Corrected original evidence is retained; its source command cannot delete the audit record.')
     restoreProcessProjection(next, payload.projectionUndo, payload.eventId)
     next.data.processEvents = next.data.processEvents.filter((item) => item.id !== payload.eventId)
     next.data.actions = next.data.actions.filter((item) => item.processEventId !== payload.eventId)
@@ -1062,11 +1037,27 @@ export function applyDomainCompensation(
   } else if (compensation.operation === 'restore_deadline') {
     const target = next.data.opportunities.find((item) => item.id === payload.opportunityId)
     if (target) {
+      if (payload.expectedDeadlineFingerprint && payload.expectedDeadlineFingerprint !== applicationDeadlineFingerprint(target, next.data)) throw new Error('Deadline evidence changed after this command; undo cannot overwrite newer correction or ownership.')
+      const correctionId = target.detail?.deadlineCorrections?.at(-1)?.commandId ?? null
+      if (payload.expectedDeadlineState ? payload.expectedDeadlineState.deadline !== target.deadline || payload.expectedDeadlineState.correctionId !== correctionId : Boolean(correctionId)) throw new Error('Deadline evidence changed after this command; undo cannot overwrite the newer correction.')
       if (target.detail?.userFacts) {
         target.detail.userFacts.deadline = payload.userFactsDeadline
         target.detail.userFacts.deadlinePrecision = payload.userFactsDeadlinePrecision
       }
-      if (payload.deadline) {
+      if (payload.previousDeadlineNodes) {
+        for (const previous of payload.previousDeadlineNodes as ScheduleNode[]) {
+          const restored = { ...previous, updatedAt: timestamp }
+          delete restored.supersededByNodeId
+          supersedeScheduleOccurrence(next.data.scheduleNodes!, restored)
+        }
+        if (!payload.previousDeadlineNodes.length) {
+          const current = latestScheduleOccurrence(next.data.scheduleNodes ?? [], `application-deadline:${target.id}`)
+          if (current) supersedeScheduleOccurrence(next.data.scheduleNodes!, { ...current, state: 'cancelled', cancelledAt: timestamp, updatedAt: timestamp })
+        }
+        target.deadline = payload.deadline
+        target.deadlinePrecision = payload.deadlinePrecision
+        if (!payload.deadline) for (const action of next.data.actions.filter(item => item.opportunityId === target.id && item.kind === 'apply' && ['todo', 'doing'].includes(item.status))) { action.dueAt = undefined; action.duePrecision = undefined; action.timingMode = undefined }
+      } else if (payload.deadline) {
         setApplicationDeadlineScheduleNode(next.data, target.id, payload.deadline, payload.deadlinePrecision ?? 'datetime', timestamp)
       } else {
         const current = latestScheduleOccurrence(next.data.scheduleNodes ?? [], `application-deadline:${target.id}`)

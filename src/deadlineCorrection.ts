@@ -1,5 +1,6 @@
+import { cancelReminderIntentInPlace } from './reminders.js'
 import type { ApplicationDeadlineCorrection } from './applicationDeadline.js'
-import { applicationDeadlineFingerprint, applicationDeadlineNodes, hasApplicationEvidence, resolveApplicationDeadline } from './applicationDeadline.js'
+import { applicationDeadlineFingerprint, applicationDeadlineNodes, correctionOwnsDeadlineNode, hasApplicationEvidence, resolveApplicationDeadline } from './applicationDeadline.js'
 import { supersedeScheduleOccurrence } from './scheduleNodes.js'
 import type { PJSDASSnapshot } from './snapshot.js'
 
@@ -24,12 +25,10 @@ export function correctApplicationDeadline(next: PJSDASSnapshot, command: Correc
   if (input.state === 'confirmed' && (!input.deadline || !input.precision || !Number.isFinite(Date.parse(input.deadline)))) throw new Error('Confirmed deadline needs a valid date and explicit precision.')
   if (input.state === 'unknown' && (input.deadline || input.precision)) throw new Error('Unknown deadline must not carry an invented date or precision.')
   if (input.state === 'confirmed' && input.precision === 'date' && !/^\d{4}-\d{2}-\d{2}$/.test(input.deadline!)) throw new Error('Date-only evidence must retain its calendar date without an invented time.')
-  if (input.state === 'confirmed' && input.sourceAuthority === 'aggregator') throw new Error('An aggregator alone cannot confirm the application deadline.')
   const ranks = { official_role: 5, user: 5, official_campaign: 4, university_repost: 3, aggregator: 1 }
   const previousCorrection = target.detail?.deadlineCorrections?.at(-1)
   if (previousCorrection && ranks[input.sourceAuthority] < ranks[previousCorrection.sourceAuthority]) throw new Error('A lower-authority source cannot replace the existing verified deadline correction.')
-  if (input.sourceAuthority === 'aggregator' && input.postingStatus !== 'unknown') throw new Error('An aggregator alone cannot confirm posting availability.')
-  const existingExplicit = applicationDeadlineNodes(next.data, target.id).some(node => !['cancelled', 'superseded'].includes(node.state) && ['user_explicit', 'source_explicit'].includes(node.temporal.resolutionBasis))
+  const existingExplicit = applicationDeadlineNodes(next.data, target.id).some(node => !['cancelled', 'superseded'].includes(node.state) && ['user_explicit', 'source_explicit'].includes(node.temporal.resolutionBasis) && !correctionOwnsDeadlineNode(previousCorrection, node))
   const existingUser = Boolean(target.detail?.userFacts?.deadline)
   if ((existingExplicit || existingUser) && ranks[input.sourceAuthority] < ranks.official_role) throw new Error('Weaker evidence cannot replace an existing explicit user or official deadline; review the conflicting sources.')
   const previous = resolveApplicationDeadline(target, next.data)
@@ -54,9 +53,10 @@ export function correctApplicationDeadline(next: PJSDASSnapshot, command: Correc
     action.updatedAt = timestamp
   }
   // Cancel pending reminders linked only to obsolete application nodes.
-  const nodeIds = new Set(currentNodes.map(item => item.id))
+  const occurrenceIds = new Set(currentNodes.map(item => item.occurrenceId))
+  const nodeIds = new Set((next.data.scheduleNodes ?? []).filter(node => occurrenceIds.has(node.occurrenceId)).map(node => node.id))
   for (const reminder of next.data.reminderIntents ?? []) {
-    if (nodeIds.has(reminder.scheduleNodeId) && reminder.state === 'active') { reminder.state = 'cancelled'; reminder.updatedAt = timestamp }
+    if (nodeIds.has(reminder.scheduleNodeId) && reminder.state !== 'cancelled') cancelReminderIntentInPlace(next.data, reminder, timestamp)
   }
   if (input.state === 'confirmed') {
     supersedeScheduleOccurrence(next.data.scheduleNodes!, {

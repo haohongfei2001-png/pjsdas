@@ -56,6 +56,9 @@ test('canonical pending state drives visible priority and portfolio selection re
   await page.locator('.tsui-primary-nav').getByRole('button', { name: /Jobs/ }).click()
 
   await page.getByRole('button', { name: /To apply/ }).click()
+  await expect(page.locator('.opportunity-decision-row').filter({ hasText: opportunity.company })).toHaveCount(0)
+  // Unsubmitted is a stage; an undated job belongs to the separate No deadline category.
+  await page.getByRole('button', { name: /No deadline/ }).click()
   const row = page.locator('.opportunity-decision-row').filter({ hasText: opportunity.company })
   await expect(row).toBeVisible()
   await expect(row).not.toContainText('Shared application quota applies')

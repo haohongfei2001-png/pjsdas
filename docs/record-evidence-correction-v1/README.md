@@ -31,3 +31,46 @@ The first prevention fixture produced 12 failures on the base. Synthetic regress
 At an intermediate checkpoint, all 221 unit files / 1,262 tests, TypeScript and a production build passed. Final counts are recorded after the final candidate is frozen. The new real-browser journeys exercise desktop/mobile categories, correction history, routed detail, reload, Calendar unknown dates and atomic stale-correction refusal. The full Browser and Firefox/WebKit Matrix gates include these journeys.
 
 Local Chromium cannot launch in this executor because its socket operation is denied, including after a permitted escalation retry. Those attempts did not execute browser assertions. Remote CI must supply the actual browser results and pixels; no local browser pass is claimed.
+
+## Follow-up safety checkpoint
+
+After the first published candidate, independent review verified all prior parser,
+set/undo/reschedule and timezone repairs. The next local checkpoint additionally:
+
+- attributes a corrected date to its actual verified source, and a later user date
+  to user command evidence rather than an invented website URL;
+- permits lower-authority published fallback dates where no stronger owner exists,
+  while retaining stronger explicit evidence and confirmed-closed availability;
+- prevents ordinary event deletion or source Undo from erasing invalidated audit
+  records, and prevents old deadline Undo from overwriting a newer correction;
+- retires obsolete reminder intents using the existing cancellation outbox;
+- reports protected submitted/ambiguous expired owners separately in the read audit.
+
+Local verification: 221 unit files / 1,267 tests and TypeScript passed. This checkpoint
+still requires source review and exact-head remote gates. The GitHub plugin began
+returning HTTP 401 on both artifact and harmless repository reads at 08:54 UTC, so
+this follow-up was not published and no merge/deployment/data correction occurred.
+The last published candidate remains PR215 at `14f139e50c84f4cc7dbab849bb7a7a3146af2b51`.
+
+## Browser compatibility correction
+
+The first full remote run at `14f139e` passed 180 Chromium cases and 184
+Firefox/WebKit cases, but exposed three stale expectations and one related UI
+regression: undated unsubmitted fixtures now belong to No deadline, and the new
+Schedule shortcut accidentally revealed past diagnostics in Upcoming. The
+follow-up keeps those diagnostics hidden in Upcoming and preserves the new
+unknown-deadline shortcut. Existing quota/localization/past-history assertions
+remain, with explicit separation assertions added; no fixture or gate is removed.
+
+After the follow-up source changes, local verification again passed all 221 unit
+files / 1,267 tests, TypeScript and the production build. GitHub access recovered;
+the final remote browser gates and independent source review remain required.
+
+Independent review additionally found and reproduced fallback-source upgrade,
+Undo provenance/ownership, and old-version reminder cancellation gaps. The final
+batch restores source provenance via appended versions, compares exact Undo
+owners, distinguishes independent identical-date commands from repeated asserted
+source facts, permits stronger fallback evidence, and withdraws reminders across
+all versions of a corrected occurrence. Regression coverage retains the existing
+Gmail replay/receipt recovery contract. Final local verification: 221 unit files /
+1,270 tests, TypeScript, and production build. Remote exact-head gates are pending.

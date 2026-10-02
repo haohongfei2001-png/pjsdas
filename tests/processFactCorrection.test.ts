@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { applyDomainCompensation, applyUserDomainCommand } from '../src/domainCommands.js'
-import { applySemanticIntake } from '../src/semanticIntake.js'
+import { applySemanticCompensation, applySemanticIntake } from '../src/semanticIntake.js'
+import { applyProcessEventDeleteCommand } from '../src/processEventDeleteCommand.js'
 import { createSnapshot, upgradeSnapshotToLatest, validateSnapshot } from '../src/snapshot.js'
 import { overlayProcessEventsOnOpportunities, overlayProcessEventsOnProcesses } from '../src/processEvents.js'
 import type { SemanticIntakeObservation } from '../src/model.js'
@@ -44,6 +45,14 @@ describe('audit-preserving terminal fact correction', () => {
     const preserved = applyUserDomainCommand(later, command(seeded()), now).snapshot
     expect(preserved.data.opportunities[0]).toEqual(before)
     expect(preserved.data.processes[0].result).toBe('offer')
+  })
+  it('retains corrected original evidence against both source undo and ordinary event deletion', () => {
+    const original = applySemanticIntake(base(), observation(), { authorized: true, now })
+    const next = applyUserDomainCommand(original.snapshot, command(original.snapshot), now).snapshot
+    const before = JSON.stringify(next)
+    expect(() => applySemanticCompensation(next, original.compensation!, now)).toThrow(/retained/)
+    expect(applyProcessEventDeleteCommand(next, next.data.processEvents[0].id, now).status).toBe('NEEDS_CONFIRMATION')
+    expect(JSON.stringify(next)).toBe(before)
   })
   it('refuses stale event or wrong source ownership without changing any stores', () => {
     const snapshot = seeded(); const serialized = JSON.stringify(snapshot)

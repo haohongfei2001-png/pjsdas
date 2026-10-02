@@ -44,6 +44,41 @@ describe('canonical application deadline corrections', () => {
     expect(classifyJob(next.data.opportunities[0], next.data, new Date('2026-10-08T15:59:59Z'), 'Asia/Shanghai')).toBe('to_apply')
     expect(classifyJob(next.data.opportunities[0], next.data, new Date('2026-10-08T16:00:00Z'), 'Asia/Shanghai')).toBe('deadline_passed')
   })
+  it('attributes the resolved date to its actual correction owner and permits documented fallback sources', () => {
+    const input = command(base(), '2026-10-08')
+    const fallback = applyUserDomainCommand(base(), { ...input, correction: { ...input.correction, sourceAuthority: 'aggregator', postingStatus: 'unknown' } }, now).snapshot
+    expect(resolveApplicationDeadline(fallback.data.opportunities[0], fallback.data)).toMatchObject({ sourceUrl: input.correction.sourceUrl, sourceAuthority: 'aggregator' })
+    const explicit = applyUserDomainCommand(fallback, { commandId: 'synthetic-real-user-provenance', kind: 'set_deadline', opportunityId: 'synthetic-legacy', deadline: '2026-10-11', precision: 'date' }, now).snapshot
+    expect(resolveApplicationDeadline(explicit.data.opportunities[0], explicit.data)).toMatchObject({ source: 'user', sourceAuthority: 'user' })
+    expect(resolveApplicationDeadline(explicit.data.opportunities[0], explicit.data).sourceUrl).toBeUndefined()
+  })
+  it('allows stronger evidence to replace a fallback correction without treating its node as official evidence', () => {
+    const input = command(base(), '2026-10-08')
+    const fallback = applyUserDomainCommand(base(), { ...input, correction: { ...input.correction, sourceAuthority: 'aggregator' } }, now).snapshot
+    const edit = applyUserDomainCommand(fallback, { commandId: 'synthetic-fallback-manual', kind: 'set_deadline', opportunityId: 'synthetic-legacy', deadline: '2026-10-11', precision: 'date' }, now)
+    if (edit.status !== 'APPLIED' || !edit.compensation) throw new Error('Missing compensation')
+    const restored = applyDomainCompensation(edit.snapshot, edit.compensation, now)
+    const stronger = command(restored, '2026-10-09')
+    const upgraded = applyUserDomainCommand(restored, { ...stronger, commandId: 'synthetic-stronger-source', correction: { ...stronger.correction, sourceAuthority: 'university_repost' } }, now).snapshot
+    expect(resolveApplicationDeadline(upgraded.data.opportunities[0], upgraded.data)).toMatchObject({ deadline: '2026-10-09', sourceAuthority: 'university_repost' })
+  })
+  it('refuses old deadline undo after an independent identical-date edit even at the same timestamp', () => {
+    const input = { commandId: 'synthetic-first-date', kind: 'set_deadline' as const, opportunityId: 'synthetic-legacy', deadline: '2026-10-11', precision: 'date' as const }
+    const first = applyUserDomainCommand(base(), input, now)
+    if (first.status !== 'APPLIED' || !first.compensation) throw new Error('Missing compensation')
+    const later = applyUserDomainCommand(first.snapshot, { ...input, commandId: 'synthetic-independent-date' }, now).snapshot
+    const before = JSON.stringify(later)
+    expect(() => applyDomainCompensation(later, first.compensation!, now)).toThrow(/changed/)
+    expect(JSON.stringify(later)).toBe(before)
+  })
+  it('withdraws reminders on every superseded version of the corrected application occurrence', () => {
+    const reminded = applyUserDomainCommand(base(), { commandId: 'synthetic-old-version-reminder', kind: 'upsert_reminder_intent', scheduleNodeId: base().data.scheduleNodes![0].id, purpose: 'deadline', triggerAt: '2026-09-29T10:00:00Z', deliveryOwner: 'external_calendar', channel: 'calendar', capabilityStates: { google_calendar: 'available' } }, now).snapshot
+    const edited = applyUserDomainCommand(reminded, { commandId: 'synthetic-rescheduled-date', kind: 'set_deadline', opportunityId: 'synthetic-legacy', deadline: '2026-10-11', precision: 'date' }, now).snapshot
+    const next = applyUserDomainCommand(edited, command(edited), now).snapshot
+    expect(next.data.reminderIntents![0].state).toBe('cancelled')
+    expect(next.data.reminderOutbox).toHaveLength(1)
+    expect(next.data.reminderOutbox![0]).toMatchObject({ operation: 'cancel', state: 'pending' })
+  })
   it('honors an explicit source calendar timezone rather than the workspace timezone', () => {
     const next = applyUserDomainCommand(base(), command(base(), '2026-10-08'), now).snapshot
     const latest = next.data.scheduleNodes!.at(-1)!
@@ -61,7 +96,8 @@ describe('canonical application deadline corrections', () => {
     const edited = applyUserDomainCommand(corrected, { commandId: 'synthetic-later-deadline', kind: 'set_deadline', opportunityId: 'synthetic-legacy', deadline: '2026-10-11', precision: 'date' }, now)
     if (edited.status !== 'APPLIED' || !edited.compensation) throw new Error('Missing compensation')
     const undone = applyDomainCompensation(edited.snapshot, edited.compensation, now)
-    expect(resolveApplicationDeadline(undone.data.opportunities[0], undone.data).deadline).toBe('2026-10-08')
+    expect(resolveApplicationDeadline(undone.data.opportunities[0], undone.data)).toMatchObject({ deadline: '2026-10-08', source: 'correction', sourceUrl: command().correction.sourceUrl, sourceAuthority: 'official_role', checkedAt: now.toISOString() })
+    expect(resolveApplicationDeadline(undone.data.opportunities[0], undone.data).evidenceRefs).toEqual(resolveApplicationDeadline(corrected.data.opportunities[0], corrected.data).evidenceRefs)
     expect(undone.data.opportunities[0].deadline).toBe('2026-10-08')
     const moved = applyUserDomainCommand(corrected, { commandId: 'synthetic-reschedule', kind: 'reschedule_occurrence', occurrenceId: 'application-deadline:synthetic-legacy', temporal: { shape: 'date_only', precision: 'date', timezone: 'floating-date', date: '2026-10-12', resolutionBasis: 'user_explicit' } }, now).snapshot
     expect(resolveApplicationDeadline(moved.data.opportunities[0], moved.data).deadline).toBe('2026-10-12')
@@ -73,6 +109,27 @@ describe('canonical application deadline corrections', () => {
     const input = command(explicit)
     expect(() => applyUserDomainCommand(explicit, { ...input, correction: { ...input.correction, sourceAuthority: 'university_repost' } }, now)).toThrow(/Weaker evidence/)
     expect(() => applyUserDomainCommand(explicit, { ...input, correction: { ...input.correction, sourceAuthority: 'aggregator', postingStatus: 'unknown' } }, now)).toThrow(/Weaker evidence/)
+  })
+  it('a source correction cannot be overwritten by undoing an older manual deadline', () => {
+    const original = applyUserDomainCommand(base(), { commandId: 'synthetic-prior-manual', kind: 'set_deadline', opportunityId: 'synthetic-legacy', deadline: '2026-10-05', precision: 'date' }, now)
+    if (original.status !== 'APPLIED' || !original.compensation) throw new Error('Missing compensation')
+    const corrected = applyUserDomainCommand(original.snapshot, command(original.snapshot), now).snapshot
+    expect(() => applyDomainCompensation(corrected, original.compensation!, now)).toThrow(/newer correction/)
+  })
+  it('deadline withdrawal retires a pending external reminder through the same canonical cancellation outbox', () => {
+    const snapshot = applyUserDomainCommand(base(), { commandId: 'synthetic-existing-reminder', kind: 'upsert_reminder_intent', scheduleNodeId: base().data.scheduleNodes![0].id, purpose: 'deadline', triggerAt: '2026-09-29T10:00:00Z', deliveryOwner: 'external_calendar', channel: 'calendar', capabilityStates: { google_calendar: 'available' } }, now).snapshot
+    const next = applyUserDomainCommand(snapshot, command(snapshot), now).snapshot
+    expect(next.data.reminderIntents![0].state).toBe('cancelled')
+    expect(next.data.reminderOutbox).toHaveLength(1)
+    expect(next.data.reminderOutbox![0]).toMatchObject({ operation: 'cancel', state: 'pending' })
+  })
+  it('unknown source availability cannot silently reopen an earlier confirmed closed posting', () => {
+    const input = command()
+    const closed = applyUserDomainCommand(base(), { ...input, correction: { ...input.correction, postingStatus: 'closed' } }, now).snapshot
+    const unknown = applyUserDomainCommand(closed, { ...command(closed), commandId: 'synthetic-later-unknown', correction: { ...command(closed).correction, postingStatus: 'unknown' } }, now).snapshot
+    expect(classifyJob(unknown.data.opportunities[0], unknown.data, now, 'Asia/Shanghai')).toBe('deadline_passed')
+    const reopened = applyUserDomainCommand(unknown, { ...command(unknown), commandId: 'synthetic-explicit-reopening' }, now).snapshot
+    expect(classifyJob(reopened.data.opportunities[0], reopened.data, now, 'Asia/Shanghai')).toBe('no_deadline')
   })
   it('protects submissions and rejects changed owners with all-store equality', () => {
     const snapshot = base(); const input = command(snapshot)
