@@ -127,7 +127,7 @@ describe('consumer business management foundation',()=>{
 
 describe('management consent gate',()=>{
  const principal={kind:'delegated_mcp' as const,userId:'synthetic-a',clientId:'synthetic-client'}
- const grant:BusinessManagementGrant={userId:'synthetic-a',clientId:'synthetic-client',consentVersion:2,capability:'workspace.manage',grantedAt:'2026-10-01T00:00:00Z'}
+ const grant:BusinessManagementGrant={id:'00000000-0000-4000-8000-000000000001',revision:1,userId:'synthetic-a',clientId:'synthetic-client',consentVersion:2,capability:'workspace.manage',grantedAt:'2026-10-01T00:00:00Z'}
  it('accepts only matching explicit v2 grant',()=>{
    expect(()=>assertBusinessManagementGrant(principal,grant)).not.toThrow()
    for(const value of [undefined,{...grant,userId:'synthetic-b'},{...grant,clientId:'other'},{...grant,revokedAt:now.toISOString()},{...grant,consentVersion:1},{...grant,capability:'workspace.read'},{...grant,grantedAt:'invalid'}]) expect(()=>assertBusinessManagementGrant(principal,value as BusinessManagementGrant)).toThrow(/authorization/)

@@ -374,6 +374,13 @@ export interface AuthoritativeCommandExecutorOptions extends TransactionalWorksp
 
 export function createAuthoritativeCommandExecutor(options: AuthoritativeCommandExecutorOptions) {
   const store = createTransactionalWorkspaceStore(options)
+  async function authorizeManagement(principal: MutationPrincipal, admitted?: Pick<BusinessManagementGrant, 'id' | 'revision'>) {
+    const grant = await options.resolveBusinessManagementGrant?.(principal)
+    assertBusinessManagementGrant(principal, grant)
+    if (admitted && (grant.id !== admitted.id || grant.revision !== admitted.revision)) throw new WorkspaceSourceError('AUTH_FORBIDDEN', 'Management grant changed during this request. A new explicit request is required.', false)
+    // Copy proof so a resolver that reuses objects cannot mutate admission state.
+    return Object.freeze({ ...grant })
+  }
 
   async function lookup(principal: MutationPrincipal, targetCommandId: string, compact = false) {
     if (compact) {
@@ -398,7 +405,7 @@ export function createAuthoritativeCommandExecutor(options: AuthoritativeCommand
 
   async function execute(principal: MutationPrincipal, raw: unknown): Promise<AuthoritativeCommandExecution> {
     const parsed = authoritativeBusinessCommandSchema.parse(raw) as AuthoritativeBusinessCommand
-    if (parsed.command.type === 'business_management') assertBusinessManagementGrant(principal, await options.resolveBusinessManagementGrant?.(principal))
+    const admittedManagementGrant = parsed.command.type === 'business_management' ? await authorizeManagement(principal) : undefined
     if (parsed.command.type === 'domain' && parsed.command.value.commandId !== parsed.commandId) {
       throw new WorkspaceSourceError('INVALID_ARGUMENT', 'Outer commandId and domain commandId must match.', false)
     }
@@ -424,7 +431,7 @@ export function createAuthoritativeCommandExecutor(options: AuthoritativeCommand
     const startedAt = new Date().toISOString()
 
     for (let attempt = 0; attempt < 5; attempt += 1) {
-      if (attempt > 0 && parsed.command.type === 'business_management') assertBusinessManagementGrant(principal, await options.resolveBusinessManagementGrant?.(principal))
+      if (attempt > 0 && parsed.command.type === 'business_management') await authorizeManagement(principal, admittedManagementGrant)
       const current = await store.readForUser(principal.userId)
       if (!current) throw new WorkspaceSourceError('WORKSPACE_NOT_FOUND', 'TodayAction connected workspace has not been migrated yet.', false)
 
@@ -573,11 +580,10 @@ export function createAuthoritativeCommandExecutor(options: AuthoritativeCommand
           ? { undoCompensation: evaluated.compensation } : {}),
       }
       const compensation = evaluated.compensation as Record<string, unknown> | undefined
-      // Re-resolve after asynchronous reads/evaluation and before each mutation.
-      // Production activation additionally requires grant-version enforcement in
-      // the same database transaction as commit; this preflight is not atomic.
-      if (parsed.command.type === 'business_management') assertBusinessManagementGrant(principal, await options.resolveBusinessManagementGrant?.(principal))
+      // Carry the freshly read identity/revision into the transaction-locked RPC.
+      const managementGrant = parsed.command.type === 'business_management' ? await authorizeManagement(principal, admittedManagementGrant) : undefined
       const committed = await store.commitAuthoritativeForUser({
+        managementAuthorization: managementGrant ? { grantId: managementGrant.id, grantRevision: managementGrant.revision } : undefined,
         userId: principal.userId,
         commandId: parsed.commandId,
         operation,
@@ -615,6 +621,7 @@ export function createAuthoritativeCommandExecutor(options: AuthoritativeCommand
     const parsed = authoritativeUndoSchema.parse(raw)
     const operation = 'undo_command'
     const payload = { targetCommandId: parsed.targetCommandId }
+    let admittedManagementGrant: BusinessManagementGrant | undefined
     const payloadHash = await hashMutationPayload(operation, payload)
     const startedAt = new Date().toISOString()
 
@@ -649,7 +656,7 @@ export function createAuthoritativeCommandExecutor(options: AuthoritativeCommand
           },
         }
       }
-      if (target.operation === 'business_management') assertBusinessManagementGrant(principal, await options.resolveBusinessManagementGrant?.(principal))
+      if (target.operation === 'business_management') admittedManagementGrant = await authorizeManagement(principal, admittedManagementGrant)
       if (target.operation === 'process_event_delete' && principal.kind !== 'first_party_web') {
         throw new WorkspaceSourceError('AUTH_FORBIDDEN', 'Only the first-party Web client can restore a deleted process event.', false)
       }
@@ -722,8 +729,9 @@ export function createAuthoritativeCommandExecutor(options: AuthoritativeCommand
       const now = new Date()
       const next = upgradeSnapshotToLatest(applyCompensation(current.snapshot, target.compensation, now))
       const affectedObjects = diffCommandObjects(current.snapshot, next)
-      if (target.operation === 'business_management') assertBusinessManagementGrant(principal, await options.resolveBusinessManagementGrant?.(principal))
+      const managementGrant = target.operation === 'business_management' ? await authorizeManagement(principal, admittedManagementGrant) : undefined
       const committed = await store.commitAuthoritativeForUser({
+        managementAuthorization: managementGrant ? { grantId: managementGrant.id, grantRevision: managementGrant.revision } : undefined,
         userId: principal.userId,
         commandId: parsed.commandId,
         operation,
