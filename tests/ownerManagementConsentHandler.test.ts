@@ -24,6 +24,26 @@ async function decision(){return {requestId,expectedAccountId:owner,clientId:cli
 describe('first-party owner capability consent boundary',()=>{
  it('defaults off before any identity or provider request',async()=>{const f=fixture({enabled:undefined});expect((await f.handler(request())).status).toBe(404);expect(f.fetchImpl).not.toHaveBeenCalled()})
  it.each(['https://foreign.invalid','null',''])('rejects origin %s before authentication',async origin=>{const f=fixture();expect((await f.handler(request('GET',undefined,{origin}))).status).toBe(403);expect(f.fetchImpl).not.toHaveBeenCalled()})
+ it('accepts an Origin-less read only after first-party owner verification',async()=>{
+  const f=fixture();const req=request();req.headers.delete('origin')
+  const response=await f.handler(req);expect(response.status).toBe(200)
+  expect(f.authorizeIdentity).toHaveBeenCalledTimes(1);expect(f.posts).toHaveLength(0)
+  expect(response.headers.has('access-control-allow-origin')).toBe(false)
+ })
+ it('returns authentication-required, not an origin failure, for an anonymous Origin-less read',async()=>{
+  const f=fixture();const req=request();req.headers.delete('origin');req.headers.delete('authorization')
+  const response=await f.handler(req);expect(response.status).toBe(401)
+  expect(await response.json()).toMatchObject({code:'AUTH_REQUIRED'});expect(f.posts).toHaveLength(0)
+ })
+ it.each(['POST','OPTIONS'])('keeps %s Origin mandatory before authentication or writes',async method=>{
+  const f=fixture();const req=request(method,method==='POST'?await decision():undefined);req.headers.delete('origin')
+  expect((await f.handler(req)).status).toBe(403);expect(f.fetchImpl).not.toHaveBeenCalled();expect(f.posts).toHaveLength(0)
+ })
+ it('still refuses delegated authentication on an Origin-less read',async()=>{
+  const token=`eyJhbGciOiJSUzI1NiJ9.${Buffer.from(JSON.stringify({client_id:client})).toString('base64url')}.synthetic`
+  const f=fixture();const req=request('GET',undefined,{authorization:`Bearer ${token}`});req.headers.delete('origin')
+  expect((await f.handler(req)).status).toBe(403);expect(f.authorizeIdentity).not.toHaveBeenCalled();expect(f.posts).toHaveLength(0)
+ })
  it('rejects delegated self-authorization before owner/provider checks',async()=>{
   const token=`eyJhbGciOiJSUzI1NiJ9.${Buffer.from(JSON.stringify({client_id:client})).toString('base64url')}.synthetic`
   const f=fixture();expect((await f.handler(request('POST',await decision(),{authorization:`Bearer ${token}`}))).status).toBe(403);expect(f.authorizeIdentity).not.toHaveBeenCalled();expect(f.posts).toHaveLength(0)

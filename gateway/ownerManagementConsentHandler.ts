@@ -66,7 +66,11 @@ export function createOwnerManagementConsentHandler(config:OwnerManagementConsen
   if(allowed){headers['access-control-allow-origin']=origin!;headers['access-control-allow-headers']='authorization, content-type';headers['access-control-allow-methods']='GET, POST, OPTIONS'}
   const respond=(status:number,body:unknown)=>new Response(JSON.stringify(body),{status,headers})
   if(config.enabled!=='enabled')return respond(404,{code:'CAPABILITY_DISABLED'})
-  if(!allowed)return respond(403,{code:'ORIGIN_NOT_ALLOWED'})
+  // Browsers omit Origin on same-origin GET fetches. This read-only entry
+  // still requires provider-verified first-party owner authentication below.
+  // An explicit foreign/null Origin remains rejected; POST/OPTIONS keep strict Origin.
+  const originlessRead=request.method==='GET'&&origin===null
+  if(!allowed&&!originlessRead)return respond(403,{code:'ORIGIN_NOT_ALLOWED'})
   if(request.method==='OPTIONS')return new Response(null,{status:204,headers})
   if(!['GET','POST'].includes(request.method))return respond(405,{code:'METHOD_NOT_ALLOWED'})
   let decisionRequestId:string|undefined
