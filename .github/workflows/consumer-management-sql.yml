@@ -1,0 +1,58 @@
+name: Consumer Management SQL
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths:
+      - 'gateway/businessManagement*'
+      - 'gateway/authoritativeCommands.ts'
+      - 'gateway/transactionalWorkspaceStore.ts'
+      - 'supabase/migrations/**'
+      - 'tests/sql/**'
+      - '.github/workflows/consumer-management-sql.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'gateway/businessManagement*'
+      - 'gateway/authoritativeCommands.ts'
+      - 'gateway/transactionalWorkspaceStore.ts'
+      - 'supabase/migrations/**'
+      - 'tests/sql/**'
+      - '.github/workflows/consumer-management-sql.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  grant-contract:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: fixture-only
+          POSTGRES_DB: ta_management_fixture
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: tests/sql/package-lock.json
+      - name: Install locked isolated test dependencies
+        run: npm ci --prefix tests/sql --ignore-scripts
+      - name: Validate migrations and authorization in memory
+        run: npm test --prefix tests/sql
+      - name: Verify real multi-session grant contention
+        env:
+          TA_MANAGEMENT_SQL_TEST_URL: postgresql://postgres:fixture-only@127.0.0.1:5432/ta_management_fixture
+        run: npm run test:concurrency --prefix tests/sql

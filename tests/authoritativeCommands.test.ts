@@ -104,7 +104,7 @@ function harness(initial = snapshot(), managementOptions: Pick<AuthoritativeComm
         && (Number.isFinite(after) ? item.resulting_revision > after : true))
       return json(rows)
     }
-    if (url.pathname === '/rest/v1/rpc/pjsdas_commit_workspace_v2') {
+    if (url.pathname === '/rest/v1/rpc/pjsdas_commit_workspace_v2' || url.pathname === '/rest/v1/rpc/pjsdas_commit_management_workspace_v1') {
       const intercepted = hooks.beforeCommit?.({ current, revision })
       if (intercepted) return intercepted
       const body = JSON.parse(String(init?.body))
@@ -690,7 +690,7 @@ describe('website record corrections use the existing authoritative command boun
 
 describe('business management through existing authoritative transaction', () => {
   const principal = { kind: 'delegated_mcp' as const, userId: 'user-a', clientId: 'synthetic-client' }
-  const granted = { resolveBusinessManagementGrant: async () => ({ userId: 'user-a', clientId: 'synthetic-client', consentVersion: 2 as const, capability: 'workspace.manage' as const, grantedAt: '2026-10-01T00:00:00Z' }) }
+  const granted = { resolveBusinessManagementGrant: async () => ({ id: '00000000-0000-4000-8000-000000000001', revision: 1, userId: 'user-a', clientId: 'synthetic-client', consentVersion: 2 as const, capability: 'workspace.manage' as const, grantedAt: '2026-10-01T00:00:00Z' }) }
   const create = { commandId: 'managed-create-001', baseRevision: 1, command: { type: 'business_management', value: { operations: [{ kind: 'create_prep', value: { title: 'Synthetic preparation', estimatedMinutes: 30 } }] } } }
   it('commits with audit, projection delta and compensation, then safely undoes', async () => {
     const h = harness(snapshot(), granted)
@@ -731,6 +731,54 @@ describe('business management through existing authoritative transaction', () =>
     expect(attempts).toBe(1)
     expect(h.ledger).toHaveLength(0)
     expect(h.state().current.data.prep).toEqual([])
+  })
+  it.each(['revision', 'identity'])('does not adopt a newly active grant %s before execute commit', async mode => {
+    let checks = 0
+    const initial = await granted.resolveBusinessManagementGrant()
+    const shared = { ...initial }
+    const h = harness(snapshot(), { resolveBusinessManagementGrant: async () => {
+      if (++checks > 1) {
+        if (mode === 'revision') shared.revision = 2
+        else shared.id = '00000000-0000-4000-8000-000000000099'
+      }
+      return shared
+    } })
+    await expect(h.executor.execute(principal, create)).rejects.toThrow(/new explicit request/)
+    expect(h.ledger).toHaveLength(0)
+    expect(h.state().current.data.prep).toEqual([])
+  })
+  it.each(['revision', 'identity'])('does not adopt a newly active grant %s after execute CAS conflict', async mode => {
+    let epochChanged = false; let attempts = 0
+    const h = harness(snapshot(), { resolveBusinessManagementGrant: async () => ({ ...await granted.resolveBusinessManagementGrant(), ...(epochChanged ? mode === 'revision' ? { revision: 2 } : { id: '00000000-0000-4000-8000-000000000099' } : {}) }) }, { beforeCommit: ({ current, revision }) => {
+      attempts++; epochChanged = true
+      return json([{ outcome: 'CONFLICT', workspace_id: 'ws-1', revision, snapshot: current, receipt: { status: 'CONFLICT' } }])
+    } })
+    await expect(h.executor.execute(principal, create)).rejects.toThrow(/new explicit request/)
+    expect(attempts).toBe(1)
+    expect(h.ledger).toHaveLength(0)
+  })
+  it.each(['revision', 'identity'])('does not adopt a newly active grant %s before undo commit', async mode => {
+    let testingUndo = false; let checks = 0
+    const h = harness(snapshot(), { resolveBusinessManagementGrant: async () => ({ ...await granted.resolveBusinessManagementGrant(), ...(testingUndo && ++checks > 1 ? mode === 'revision' ? { revision: 2 } : { id: '00000000-0000-4000-8000-000000000099' } : {}) }) })
+    await h.executor.execute(principal, create)
+    testingUndo = true
+    await expect(h.executor.undo(principal, { commandId: 'managed-undo-001', targetCommandId: create.commandId })).rejects.toThrow(/new explicit request/)
+    expect(h.ledger).toHaveLength(1)
+    expect(h.state().current.data.prep).toHaveLength(1)
+  })
+  it.each(['revision', 'identity'])('does not adopt a newly active grant %s after undo CAS conflict', async mode => {
+    let testingUndo = false; let epochChanged = false; let attempts = 0
+    const h = harness(snapshot(), { resolveBusinessManagementGrant: async () => ({ ...await granted.resolveBusinessManagementGrant(), ...(epochChanged ? mode === 'revision' ? { revision: 2 } : { id: '00000000-0000-4000-8000-000000000099' } : {}) }) }, { beforeCommit: ({ current, revision }) => {
+      if (!testingUndo) return undefined
+      attempts++; epochChanged = true
+      return json([{ outcome: 'CONFLICT', workspace_id: 'ws-1', revision, snapshot: current, receipt: { status: 'CONFLICT' } }])
+    } })
+    await h.executor.execute(principal, create)
+    testingUndo = true
+    await expect(h.executor.undo(principal, { commandId: 'managed-undo-001', targetCommandId: create.commandId })).rejects.toThrow(/new explicit request/)
+    expect(attempts).toBe(1)
+    expect(h.ledger).toHaveLength(1)
+    expect(h.state().current.data.prep).toHaveLength(1)
   })
   it('rechecks authorization immediately before undo commit', async () => {
     let revokeOnSecondCheck = false; let checks = 0

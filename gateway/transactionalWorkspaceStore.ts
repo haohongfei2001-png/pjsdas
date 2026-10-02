@@ -36,6 +36,7 @@ export interface ConnectedCommandRecord {
 }
 
 export interface ConnectedAuthoritativeCommitInput extends ConnectedCommitInput {
+  managementAuthorization?: { grantId: string; grantRevision: number }
   receiptContext: Record<string, unknown>
 }
 
@@ -229,7 +230,11 @@ export function createTransactionalWorkspaceStore(options: TransactionalWorkspac
     async commitAuthoritativeForUser(input: ConnectedAuthoritativeCommitInput): Promise<ConnectedCommitResult> {
       validateSnapshot(input.snapshot)
       const snapshot = upgradeSnapshotToLatest(input.snapshot)
-      const response = await request('/rest/v1/rpc/pjsdas_commit_workspace_v2?select=outcome,workspace_id,revision,receipt', {
+      const authorization = input.managementAuthorization
+      if (input.operation === 'business_management' && !authorization) throw new WorkspaceSourceError('AUTH_FORBIDDEN', 'Management writes require a transaction-bound grant.', false)
+      if (authorization && (input.principalKind !== 'delegated_mcp' || !input.clientId || !authorization.grantId || !Number.isSafeInteger(authorization.grantRevision) || authorization.grantRevision < 1)) throw new WorkspaceSourceError('AUTH_FORBIDDEN', 'Management transaction authorization is invalid.', false)
+      const rpc = authorization ? 'pjsdas_commit_management_workspace_v1' : 'pjsdas_commit_workspace_v2'
+      const response = await request(`/rest/v1/rpc/${rpc}?select=outcome,workspace_id,revision,receipt`, {
         method: 'POST',
         body: JSON.stringify({
           target_user_id: input.userId,
@@ -245,10 +250,12 @@ export function createTransactionalWorkspaceStore(options: TransactionalWorkspac
           target_compensation: input.compensation ?? null,
           target_effective_time: input.effectiveTime ?? null,
           target_receipt_context: input.receiptContext,
+          ...(authorization ? { target_grant_id: authorization.grantId, target_grant_revision: authorization.grantRevision } : {}),
         }),
       })
       if (!response.ok) {
-        const body = await response.json().catch(() => ({})) as { message?: string; details?: string }
+        const body = await response.json().catch(() => ({})) as { message?: string; details?: string; code?: string }
+        if (authorization && (response.status === 403 || body.code === '42501')) throw new WorkspaceSourceError('AUTH_FORBIDDEN', 'Management authorization changed before commit. Reauthorize before retrying.', false)
         const duplicateCommand = response.status === 409 || body.message?.includes('different payload') || body.details?.includes('different payload')
         throw new WorkspaceSourceError(
           duplicateCommand ? 'COMMAND_ID_REUSED' : 'WORKSPACE_COMMIT_FAILED',
