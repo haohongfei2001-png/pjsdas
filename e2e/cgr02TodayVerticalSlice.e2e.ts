@@ -286,6 +286,8 @@ test('Today capture supports a keyboard-only save with named controls and restor
   await expect(dialog).toBeVisible()
   await expect(input).toBeFocused()
   await page.keyboard.press('Shift+Tab')
+  await expect(dialog.getByRole('button', { name: '核实已有记录', exact: true })).toBeFocused()
+  await page.keyboard.press('Shift+Tab')
   await expect(dialog.getByRole('button', { name: '关闭' })).toBeFocused()
   await page.keyboard.press('Shift+Tab')
   await expect(input).toBeFocused()

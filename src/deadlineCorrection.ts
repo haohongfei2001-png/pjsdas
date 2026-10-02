@@ -1,3 +1,4 @@
+import { validSourceDeadline, validSourceInstant } from './sourceCalendar.js'
 import { cancelReminderIntentInPlace } from './reminders.js'
 import type { ApplicationDeadlineCorrection } from './applicationDeadline.js'
 import { applicationDeadlineFingerprint, applicationDeadlineNodes, correctionOwnsDeadlineNode, hasApplicationEvidence, resolveApplicationDeadline } from './applicationDeadline.js'
@@ -21,10 +22,10 @@ export function correctApplicationDeadline(next: PJSDASSnapshot, command: Correc
   const input = command.correction
   const url = new URL(input.sourceUrl)
   if (!['https:', 'http:'].includes(url.protocol) || url.username || url.password || !input.evidence.trim()) throw new Error('Deadline correction requires a public evidence URL and explanation.')
-  if (!Number.isFinite(Date.parse(input.checkedAt)) || Date.parse(input.checkedAt) > Date.parse(timestamp) + 60_000) throw new Error('The source checkedAt is invalid or in the future.')
+  if (!validSourceInstant(input.checkedAt) || Date.parse(input.checkedAt) > Date.parse(timestamp) + 60_000) throw new Error('The source checkedAt is invalid or in the future.')
   if (input.state === 'confirmed' && (!input.deadline || !input.precision || !Number.isFinite(Date.parse(input.deadline)))) throw new Error('Confirmed deadline needs a valid date and explicit precision.')
   if (input.state === 'unknown' && (input.deadline || input.precision)) throw new Error('Unknown deadline must not carry an invented date or precision.')
-  if (input.state === 'confirmed' && input.precision === 'date' && !/^\d{4}-\d{2}-\d{2}$/.test(input.deadline!)) throw new Error('Date-only evidence must retain its calendar date without an invented time.')
+  if (input.state === 'confirmed' && !validSourceDeadline(input.deadline!, input.precision!)) throw new Error('Date-only evidence must retain a real calendar date; datetime evidence requires a valid calendar, clock and explicit timezone offset.')
   const ranks = { official_role: 5, user: 5, official_campaign: 4, university_repost: 3, aggregator: 1 }
   const previousCorrection = target.detail?.deadlineCorrections?.at(-1)
   if (previousCorrection && ranks[input.sourceAuthority] < ranks[previousCorrection.sourceAuthority]) throw new Error('A lower-authority source cannot replace the existing verified deadline correction.')

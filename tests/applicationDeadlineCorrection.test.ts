@@ -81,6 +81,22 @@ describe('canonical application deadline corrections', () => {
     expect(next.data.reminderOutbox).toHaveLength(1)
     expect(next.data.reminderOutbox![0]).toMatchObject({ operation: 'cancel', state: 'pending' })
   })
+  it('rejects impossible source calendar dates without a mutation', () => {
+    const snapshot = base(), before = JSON.stringify(snapshot)
+    expect(() => applyUserDomainCommand(snapshot, command(snapshot, '2026-02-30'), now)).toThrow(/Date-only/)
+    expect(JSON.stringify(snapshot)).toBe(before)
+  })
+  it.each(['2026-02-30T12:00:00Z', '2026-10-08T24:00:00+08:00', '2026-10-08T12:00:00'])('rejects invalid precise source evidence %s through the shared mutation reducer', deadline => {
+    const snapshot = base(), input = command(snapshot, deadline), before = JSON.stringify(snapshot)
+    input.correction.precision = 'datetime'
+    expect(() => applyUserDomainCommand(snapshot, input, now)).toThrow(/calendar|timezone/)
+    expect(JSON.stringify(snapshot)).toBe(before)
+  })
+  it('rejects rolled-over source verification timestamps', () => {
+    const snapshot = base(), input = command(snapshot)
+    input.correction.checkedAt = '2026-02-30T12:00:00Z'
+    expect(() => applyUserDomainCommand(snapshot, input, now)).toThrow(/checkedAt/)
+  })
   it('honors an explicit source calendar timezone rather than the workspace timezone', () => {
     const next = applyUserDomainCommand(base(), command(base(), '2026-10-08'), now).snapshot
     const latest = next.data.scheduleNodes!.at(-1)!

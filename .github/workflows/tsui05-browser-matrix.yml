@@ -31,10 +31,11 @@ jobs:
     if: >-
       (github.event_name != 'pull_request' || github.event.pull_request.draft == false || (github.event.pull_request.head.repo.full_name == github.repository && contains(github.event.pull_request.labels.*.name, format('full:{0}', github.event.pull_request.head.sha))))
     runs-on: ubuntu-24.04
-    # Frozen baseline full Matrix took 23m57s. Sixteen additional cross-engine
-    # recovery cases add about two minutes; retain all tests and strict
-    # performance thresholds within one bounded 30-minute gate.
-    timeout-minutes: 30
+    # PR216 added 18 cross-engine review journeys. All 204 core + 134 dense
+    # cases passed, but the 30-minute orchestration cap cut off the final
+    # performance tail. Allow bounded runner overhead; retain every test and
+    # every strict per-interaction performance threshold unchanged.
+    timeout-minutes: 35
     container:
       # Match the runner version below; browsers and OS dependencies are preinstalled.
       image: mcr.microsoft.com/playwright:v1.63.0-noble@sha256:eff16c30e6f3f4af0a03fa4b706120d5e9b0891c344a27d64559aff5900a4a27
@@ -58,7 +59,7 @@ jobs:
       - name: Run core routes and schedule anchors in Firefox and WebKit
         env:
           PLAYWRIGHT_HTML_OUTPUT_DIR: playwright-report/core
-        run: npx playwright test --config=playwright.config.mts --project=firefox --project=webkit --output=test-results/core e2e/tsui02Today.e2e.ts e2e/tsui03JobLibrary.e2e.ts e2e/tsui04Schedule.e2e.ts e2e/historyCompletionStartup.e2e.ts e2e/postClosureRecovery.e2e.ts e2e/postClosureHistoryUndo.e2e.ts e2e/denseTodayDecisions.e2e.ts e2e/postClosureAccountRace.e2e.ts e2e/cacheProjectionPersistence.e2e.ts e2e/postZmcDeadlineCorrectness.e2e.ts e2e/recordEvidenceCorrection.e2e.ts
+        run: npx playwright test --config=playwright.config.mts --project=firefox --project=webkit --output=test-results/core e2e/tsui02Today.e2e.ts e2e/tsui03JobLibrary.e2e.ts e2e/tsui04Schedule.e2e.ts e2e/historyCompletionStartup.e2e.ts e2e/postClosureRecovery.e2e.ts e2e/postClosureHistoryUndo.e2e.ts e2e/denseTodayDecisions.e2e.ts e2e/postClosureAccountRace.e2e.ts e2e/cacheProjectionPersistence.e2e.ts e2e/postZmcDeadlineCorrectness.e2e.ts e2e/recordEvidenceCorrection.e2e.ts e2e/recordCorrectionReview.e2e.ts
       - name: Run dense instant journeys with production React runtime
         env:
           PLAYWRIGHT_HTML_OUTPUT_DIR: playwright-report/instant
