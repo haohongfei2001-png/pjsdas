@@ -286,68 +286,52 @@
   .settings-surface .settings-source-operation > button { align-self: flex-start; }
 }
 
-/* Settings uses the same continuous list surface as Jobs, rather than a card per source. */
-.settings-surface .settings-connections { display: block; overflow: hidden; }
+/* Settings follows the established Jobs list: one boundary, one compact row per connection. */
+.settings-surface .settings-connections,.settings-surface .settings-preferences { display: block; overflow: hidden; }
 .settings-surface .settings-sources { display: block; }
-.settings-surface .settings-account,
-.settings-surface .settings-source-panel { display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: 24px; row-gap: 6px; padding: 20px 24px; border: 0; border-radius: 0; background: transparent; }
-.settings-surface .settings-account { padding-bottom: 12px; }
+.settings-surface .settings-account,.settings-surface .settings-source-panel { display: grid; grid-template-columns: minmax(0,1fr) auto auto; gap: 8px 20px; align-items: center; min-height: 92px; padding: 20px 24px; border: 0; border-radius: 0; background: transparent; }
 .settings-surface .settings-source-panel { border-top: 1px solid #edf0f5; }
 .settings-surface .cloud-settings-card + .cloud-settings-card { border: 0; padding: 0; }
-.settings-surface .cloud-settings-heading,
-.settings-surface .settings-source-header { display: contents; }
-.settings-surface .cloud-settings-heading > div,
-.settings-surface .settings-source-header > div { grid-column: 1; grid-row: 1; }
-.settings-surface .cloud-settings-heading h2,
-.settings-surface .settings-source-header h2 { margin: 0 0 4px; font-size: 1rem; line-height: 1.5; }
-.settings-surface .cloud-settings-heading p,
-.settings-surface .settings-source-header p { margin: 0; font-size: .8125rem; line-height: 1.5; }
-.settings-surface .cloud-state { grid-column: 2; grid-row: 1; align-self: start; justify-self: end; margin-top: 2px; background: transparent; padding: 2px 0; font-weight: 500; text-align: right; }
-.settings-surface .cloud-state.online { color: #506354; }
-.settings-surface .cloud-state.warning { color: #8a5d47; }
-.settings-surface .settings-source-operation { grid-column: 1 / -1; display: grid; grid-template-columns: minmax(0,1fr) auto; column-gap: 24px; align-items: center; margin: 0; }
-.settings-surface .settings-source-operation > div { grid-column: 1; }
-.settings-surface .settings-source-operation > button { grid-column: 2; grid-row: 1; justify-self: end; }
-.settings-surface .settings-source-operation p { margin: 0; font-size: .8125rem; }
-.settings-surface .settings-source-operation strong { font-size: .8125rem; font-weight: 500; }
-.settings-surface .settings-source-operation .settings-permission { margin-top: 10px; }
-.settings-surface .settings-scope-details,
-.settings-surface .cloud-advanced { grid-column: 1 / -1; margin: 0; padding: 0; border: 0; font-size: .8125rem; }
-.settings-surface .settings-scope-details > summary,
-.settings-surface .cloud-advanced > summary { display: inline-flex; align-items: center; gap: 8px; min-height: 44px; color: #5d6b82; font-weight: 500; cursor: pointer; list-style: none; }
-.settings-surface .settings-scope-details > summary::before,
-.settings-surface .cloud-advanced > summary::before { content: '›'; font-size: 1.125rem; }
-.settings-surface :is(.settings-scope-details,.cloud-advanced)[open] > summary::before { transform: rotate(90deg); }
-.settings-surface :is(.settings-scope-details,.cloud-advanced) > summary::-webkit-details-marker { display: none; }
-.settings-surface .settings-account-status { grid-column: 1; margin: 0; padding: 0; border: 0; border-radius: 0; background: transparent; color: #5d6b82; font-size: .8125rem; }
-.settings-surface .settings-account-status strong { font-weight: 400; font-size: .8125rem; }
-.settings-surface .cloud-connection-impact:not(.settings-account-status) { grid-column: 1 / -1; margin: 8px 0; padding: 10px 12px; border: 0; border-left: 3px solid #d3dfed; border-radius: 0; background: #f8faff; }
-.settings-surface .cloud-connection-impact.warning { border-left-color: #c29675; background: #fcf6f0; }
-.settings-surface .cloud-auth-row,
-.settings-surface .cloud-error,
-.settings-surface .cloud-result { grid-column: 1 / -1; }
+.settings-surface .cloud-settings-heading,.settings-surface .settings-source-header { display: contents; }
+.settings-surface .cloud-settings-heading > div,.settings-surface .settings-source-header > div { grid-column: 1; grid-row: 1; min-width: 0; }
+.settings-surface .cloud-settings-heading h2,.settings-surface .settings-source-header h2 { margin: 0 0 4px; font-size: 1rem; line-height: 1.5; }
+.settings-surface .cloud-settings-heading p,.settings-surface .settings-source-header p { margin: 0; font-size: .8125rem; line-height: 1.5; overflow-wrap: anywhere; }
+.settings-surface .cloud-state { grid-column: 2; grid-row: 1; justify-self: end; margin: 0; padding: 3px 7px; font-weight: 500; text-align: right; }
+.settings-surface .cloud-advanced,.settings-surface .settings-source-manage { display: contents; }
+.settings-surface .cloud-advanced > summary,.settings-surface .settings-source-manage > summary { grid-column: 3; grid-row: 1; display: flex; align-items: center; gap: 9px; min-height: 44px; color: #3468d4; font-size: .8125rem; font-weight: 500; cursor: pointer; list-style: none; }
+.settings-surface .cloud-advanced > summary::after,.settings-surface .settings-source-manage > summary::after { content: '›'; font-size: 1.25rem; }
+.settings-surface :is(.cloud-advanced,.settings-source-manage)[open] > summary::after { transform: rotate(90deg); }
+.settings-surface :is(.cloud-advanced,.settings-source-manage) > summary::-webkit-details-marker { display: none; }
+.settings-surface .cloud-advanced-content,.settings-surface .settings-source-body { grid-column: 1 / -1; margin-top: 8px; padding-top: 16px; border-top: 1px solid #edf0f5; }
+.settings-surface .settings-source-body { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
+.settings-surface .settings-source-body > p,.settings-surface .settings-source-body > details { flex-basis: 100%; margin: 0; }
+.settings-surface .settings-source-body .settings-permission { max-width: 85ch; }
+.settings-surface .settings-scope-details { border: 0; padding: 0; }
+.settings-surface .settings-inline-warning { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 4px 12px; padding: 8px 12px; border-left: 3px solid #c29675; background: #fcf6f0; color: #744a37; font-size: .8125rem; line-height: 1.5; }
+.settings-surface .settings-inline-warning strong { font-weight: 600; }
+.settings-surface .cloud-connection-impact,.settings-surface .cloud-auth-row,.settings-surface .cloud-error,.settings-surface .cloud-result { grid-column: 1 / -1; }
 .settings-surface .cloud-auth-row { padding: 8px 0; border: 0; }
-.settings-surface .settings-preferences { overflow: hidden; }
+.settings-surface .settings-account-status { margin: 0; padding: 0; border: 0; border-radius: 0; background: transparent; color: #5d6b82; }
+.settings-surface .settings-account-status strong { font-weight: 400; }
+.settings-surface .settings-source-panel .cloud-connection-impact.settings-intake-status { margin: 0; padding: 0; border: 0; background: transparent; color: #5d6b82; }
+.settings-surface .settings-source-panel .cloud-connection-impact.settings-intake-status.warning { padding: 8px 12px; border-left: 3px solid #c29675; background: #fcf6f0; }
+.settings-surface .settings-intake-details > summary { min-height: 32px; display: flex; align-items: center; flex-wrap: wrap; column-gap: 16px; row-gap: 4px; font-size: .75rem; font-weight: 400; cursor: pointer; list-style: none; }
+.settings-surface .settings-intake-details > summary::-webkit-details-marker { display: none; }
+.settings-surface .settings-intake-link { color: #3468d4; }
+.settings-surface .settings-intake-details > span { display: block; margin-top: 8px; }
 .settings-surface .settings-preferences .settings-group { border: 0; border-bottom: 1px solid #edf0f5; border-radius: 0; background: transparent; }
 .settings-surface .settings-preferences .settings-group:last-child { border-bottom: 0; }
 .settings-surface .settings-preferences .settings-group > summary { padding: 17px 24px; }
-.settings-surface .settings-preferences .settings-group > summary > div { display: flex; align-items: baseline; flex-wrap: wrap; column-gap: 24px; row-gap: 4px; }
+.settings-surface .settings-preferences .settings-group > summary > div { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 24px; }
 .settings-surface .settings-preferences .settings-group > summary strong { min-width: 8rem; font-size: .875rem; }
 .settings-surface .settings-preferences .settings-group > summary span { font-size: .8125rem; }
 @media(max-width:700px) {
- .settings-surface .settings-account,.settings-surface .settings-source-panel { padding: 16px; column-gap: 12px; }
- .settings-surface .settings-source-operation { column-gap: 12px; align-items: start; }
- .settings-surface .settings-source-operation > button { max-width: 10rem; }
- .settings-surface .cloud-state { max-width: 8rem; }
+ .settings-surface .settings-account,.settings-surface .settings-source-panel { grid-template-columns: minmax(0,1fr) auto; padding: 16px; column-gap: 12px; }
+ .settings-surface .cloud-state { grid-column: 1; grid-row: 2; justify-self: start; text-align: left; }
+ .settings-surface .cloud-advanced > summary,.settings-surface .settings-source-manage > summary { grid-column: 2; grid-row: 1 / span 2; max-width: 7rem; }
  .settings-surface .settings-preferences .settings-group > summary { padding: 16px; }
 }
 @media(max-width:380px) {
  .settings-surface .settings-account,.settings-surface .settings-source-panel { grid-template-columns: minmax(0,1fr); }
- .settings-surface .cloud-state { grid-column: 1; grid-row: auto; justify-self: start; text-align: left; max-width: none; }
- .settings-surface .settings-source-operation { grid-template-columns: minmax(0,1fr); gap: 8px; }
- .settings-surface .settings-source-operation > button { grid-column: 1; grid-row: auto; justify-self: start; max-width: 100%; }
+ .settings-surface .cloud-advanced > summary,.settings-surface .settings-source-manage > summary { grid-column: 1; grid-row: 3; max-width: 100%; }
 }
-.settings-surface .settings-intake-details > summary { min-height: 44px; display: flex; align-items: center; color: #5d6b82; font-size: .8125rem; font-weight: 400; cursor: pointer; }
-.settings-surface .settings-intake-details > span { display: block; margin-top: 8px; }
-.settings-surface [aria-label="Gmail 来源结果"],.settings-surface [aria-label="Gmail source outcomes"] { background: transparent; padding: 0; border: 0; margin: 0; color: #5d6b82; }
-.settings-surface [aria-label="Gmail 来源结果"].warning,.settings-surface [aria-label="Gmail source outcomes"].warning { padding: 10px 12px; border-left: 3px solid #c29675; background: #fcf6f0; }

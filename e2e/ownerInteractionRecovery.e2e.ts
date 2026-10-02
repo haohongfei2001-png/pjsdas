@@ -178,16 +178,16 @@ test('normal connected Settings keeps sync mechanics behind advanced diagnostics
   const card = page.getByRole('region', { name: '账号与跨设备数据', exact: true })
   await expect(card.locator('.cloud-state')).toHaveText('同步正常')
   await expect(card).toContainText('最后更新')
-  await expect(card.getByText('管理账号与同步')).toBeVisible()
+  await expect(card.getByLabel('管理账号与同步')).toBeVisible()
   await expect(card.getByRole('button', { name: '保留本机' })).toHaveCount(0)
   await expect(card.getByRole('button', { name: '立即同步' })).toHaveCount(0)
   await expect(card.getByText(/本机工作副本|指纹|检查点|操作日志/)).toHaveCount(0)
   failRead = true
-  await card.getByText('管理账号与同步').click()
+  await card.getByLabel('管理账号与同步').click()
   await card.getByRole('button', { name: '立即同步' }).click()
   await expect(card.locator(':scope > .cloud-error')).toContainText('操作暂时无法完成')
   await expect(card.locator('.cloud-advanced .cloud-error')).toContainText('SETTINGS_TEST_FAILURE: diagnostic marker')
-  await card.getByText('管理账号与同步').click()
+  await card.getByLabel('管理账号与同步').click()
   await expect(card.getByText('SETTINGS_TEST_FAILURE: diagnostic marker')).toBeHidden()
 })
 
@@ -211,7 +211,7 @@ test('Settings does not call an old checkpoint current after an offline local ed
   await page.goto('/pjsdas/settings')
   const card = page.getByRole('region', { name: '账号与跨设备数据', exact: true })
   await expect(card.locator('.cloud-state')).toHaveText('同步正常')
-  await card.getByText('管理账号与同步').click()
+  await card.getByLabel('管理账号与同步').click()
   await card.getByRole('checkbox', { name: '自动同步' }).uncheck()
   await page.evaluate(async () => {
     const { dbPromise } = await import('/pjsdas/src/db.ts')

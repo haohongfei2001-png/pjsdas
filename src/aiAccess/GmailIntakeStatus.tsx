@@ -73,10 +73,9 @@ export default function GmailIntakeStatus({ zh, enabled, lastSuccessAt, lastErro
 
   const boundaries = coverage.capabilityBoundaries.filter((record) => record.ingestion?.sourceKind === 'gmail')
   return (
-    <div className={`cloud-connection-impact${readError || coverage.transportGapCount || coverage.interpretationFailureCount || coverage.businessAmbiguityCount ? ' warning' : ''}`} aria-label={zh ? 'Gmail 来源结果' : 'Gmail source outcomes'}>
-      <span>{zh ? `传输与对账：${transport}` : `Transport and accounting: ${transport}`}</span>
+    <div className={`cloud-connection-impact settings-intake-status${readError || coverage.transportGapCount || coverage.interpretationFailureCount || coverage.businessAmbiguityCount ? ' warning' : ''}`} aria-label={zh ? 'Gmail 来源结果' : 'Gmail source outcomes'}>
       {coverage.interpretationFailureCount || coverage.businessAmbiguityCount ? <span role="status">{zh ? `有 ${coverage.interpretationFailureCount + coverage.businessAmbiguityCount} 项邮件结果需要核对；失败或歧义未自动写入。` : `${coverage.interpretationFailureCount + coverage.businessAmbiguityCount} email results need review; failed or ambiguous facts were not written automatically.`}</span> : null}
-      <details className="settings-intake-details"><summary>{zh ? '查看邮件核对结果' : 'Review email reconciliation'}</summary>
+      <details className="settings-intake-details"><summary><span>{zh ? `传输与对账：${transport}` : `Transport and accounting: ${transport}`}</span><span className="settings-intake-link">{zh ? '查看邮件核对结果' : 'Review email reconciliation'}</span></summary>
       {readError ? <span>{zh ? '本机来源结果暂不可读取。' : 'Local source outcomes are temporarily unavailable.'}</span> : (
         <>
           <span>{zh
