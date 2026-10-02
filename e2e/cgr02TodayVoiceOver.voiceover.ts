@@ -115,7 +115,7 @@ test('real VoiceOver identifies Opportunities and Settings primary-route semanti
   expect(foundSettings, settingsPhrases.join(' | ')).toBe(true)
 
   await expect(page.getByRole('button', { name: /立即同步|Sync now/ })).toHaveCount(0)
-  await page.getByText(/高级诊断 \/ 恢复|Advanced diagnostics \/ recovery/).click()
+  await page.getByLabel(/管理账号与同步|Manage account and sync/).click()
   await expect(page.getByRole('button', { name: /立即同步|Sync now/ })).toBeVisible()
   await expect(page.getByRole('button', { name: /退出 TodayAction|Sign out/ })).toBeVisible()
 })

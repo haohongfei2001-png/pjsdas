@@ -984,10 +984,12 @@ function SettingsSurface({ lastImport, rules, timePlanning, onSetDefaultCapacity
 
   return (
     <section className="surface-page settings-surface">
-      <SurfaceHeader eyebrow="SETTINGS" title={zh ? '设置' : 'Settings'} text={zh ? '连接、偏好与数据管理。' : 'Connections, preferences, and data.'} />
+      <SurfaceHeader eyebrow="SETTINGS" title={zh ? '设置' : 'Settings'} text={zh ? '管理连接和偏好' : 'Manage connections and preferences'} />
       <div className="settings-mobile-language" aria-label={zh ? '移动端界面语言' : 'Mobile interface language'}><LanguageSwitch /></div>
 
-      <div className="settings-connections"><CloudSettingsCard /></div>
+      <div className="settings-connections tsui-panel"><CloudSettingsCard /></div>
+
+      <div className="settings-preferences tsui-panel" aria-label={zh ? '偏好与数据' : 'Preferences and data'}>
 
       <details className="settings-group">
         <summary><div><strong>{zh ? '可用时间' : 'Available time'}</strong><span>{zh ? '默认每天多久，以及可选工作时段' : 'Usual daily time and optional work windows'}</span></div></summary>
@@ -995,12 +997,12 @@ function SettingsSurface({ lastImport, rules, timePlanning, onSetDefaultCapacity
       </details>
 
       <details className="settings-group">
-        <summary><div><strong>{zh ? '岗位发现偏好' : 'Discovery preferences'}</strong><span>{zh ? '长期搜索边界，不是日常操作' : 'Durable discovery boundaries, not daily work'}</span></div></summary>
+        <summary><div><strong>{zh ? '岗位发现偏好' : 'Discovery preferences'}</strong><span>{zh ? '想找的岗位、城市与公司' : 'Roles, locations and companies'}</span></div></summary>
         <div className="settings-group-body"><DiscoveryProfileCard /></div>
       </details>
 
       <details className="settings-group">
-        <summary><div><strong>{zh ? '决策规则' : 'Decision policy'}</strong><span>{zh ? '确定性排序和风险阈值' : 'Deterministic ranking and guardrails'}</span></div></summary>
+        <summary><div><strong>{zh ? '决策规则' : 'Decision policy'}</strong><span>{zh ? '岗位排序与提醒条件' : 'Job ranking and reminder criteria'}</span></div></summary>
         <div className="settings-group-body"><RulesView rules={rules} onChanged={onChanged} /></div>
       </details>
 
@@ -1019,14 +1021,15 @@ function SettingsSurface({ lastImport, rules, timePlanning, onSetDefaultCapacity
       </details>
 
       <details className="settings-group">
-        <summary><div><strong>{zh ? '历史与审计' : 'History & audit'}</strong><span>{zh ? '发生过什么，不占用日常决策界面' : 'What happened, outside the daily decision surface'}</span></div></summary>
+        <summary><div><strong>{zh ? '历史与审计' : 'History & audit'}</strong><span>{zh ? '操作记录与待核对信息' : 'Activity and items to review'}</span></div></summary>
         <div className="settings-group-body"><button className="settings-secondary-link" type="button" onClick={onOpenActivity}>{zh ? '查看活动记录' : 'Open activity history'}</button><button className="settings-secondary-link" type="button" onClick={onOpenDataQuality}>{zh ? '历史待核对 / 数据质量' : 'Historical review / Data quality'}</button></div>
       </details>
 
       <details className="settings-group">
-        <summary><div><strong>{zh ? '界面' : 'Interface'}</strong><span>{zh ? '显示层，不改变业务数据' : 'Presentation only; business data is unchanged'}</span></div></summary>
+        <summary><div><strong>{zh ? '界面' : 'Interface'}</strong><span>{zh ? '界面语言' : 'Interface language'}</span></div></summary>
         <div className="settings-group-body"><div className="surface-language-card"><div><strong>{zh ? '界面语言' : 'Interface language'}</strong><p>{zh ? '语言只影响界面显示，不改变工作区数据。' : 'Language affects presentation only, not workspace data.'}</p></div><LanguageSwitch /></div></div>
       </details>
+      </div>
     </section>
   )
 }
