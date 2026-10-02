@@ -3,8 +3,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "node management-grants-check.mjs",
-    "test:concurrency": "node management-grants-concurrency.mjs"
+    "test": "node management-grants-check.mjs && node owner-consent-check.mjs",
+    "test:concurrency": "node management-grants-concurrency.mjs && node owner-consent-concurrency.mjs"
   },
   "devDependencies": {
     "@electric-sql/pglite": "0.5.8",
