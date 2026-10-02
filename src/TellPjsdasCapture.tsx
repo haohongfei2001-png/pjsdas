@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from 'react'
+import { lazy, Suspense, useEffect, useRef, useState } from 'react'
+const RecordCorrectionReview = lazy(() => import('./RecordCorrectionReview.js'))
 import {
   previewWebSemanticCapture,
   submitWebSemanticCapture,
@@ -121,6 +122,8 @@ export default function TellPjsdasCapture({
   const { lang } = useUiLanguage()
   const cloud = useCloud()
   const zh = lang === 'zh'
+  const [correctionMode, setCorrectionMode] = useState(false)
+  useEffect(() => { if (!open) setCorrectionMode(false) }, [open])
   const [text, setText] = useState('')
   const [busy, setBusy] = useState(false)
   const [previewBusy, setPreviewBusy] = useState(false)
@@ -265,6 +268,7 @@ export default function TellPjsdasCapture({
         return
       }
       if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
+        if (correctionMode) { event.preventDefault(); return }
         event.preventDefault()
         void submit()
         return
@@ -286,7 +290,7 @@ export default function TellPjsdasCapture({
     }
     window.addEventListener('keydown', key)
     return () => window.removeEventListener('keydown', key)
-  }, [open, text, busy, stableCommandId, saveState])
+  }, [open, text, busy, stableCommandId, saveState, correctionMode])
 
   async function submit() {
     if (!text.trim() || busy) return
@@ -432,6 +436,8 @@ export default function TellPjsdasCapture({
           <button className="cgr-icon-button" type="button" onClick={onClose} aria-label={zh ? '关闭' : 'Close'}>×</button>
         </header>
 
+        <button type="button" className="cgr-correction-toggle" disabled={busy || recoveryLocked} onClick={() => setCorrectionMode(value => !value)}>{correctionMode ? (zh ? '返回记录进展' : 'Back to progress capture') : (zh ? '核实已有记录' : 'Review existing records')}</button>
+        {correctionMode ? <Suspense fallback={<p role="status">{zh ? '正在打开核对入口…' : 'Opening review…'}</p>}><RecordCorrectionReview key={cloud.session?.user.id ?? 'signed-out'} onChanged={onChanged} /></Suspense> : <>
         <textarea
           ref={textareaRef}
           className="cgr-capture-input"
@@ -527,6 +533,7 @@ export default function TellPjsdasCapture({
             <span>{saveErrorCopy(saveState, zh)}</span>
           </div>
         ) : null}
+        </>}
       </section>
     </div>
   )

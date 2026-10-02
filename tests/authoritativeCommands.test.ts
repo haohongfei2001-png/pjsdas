@@ -1,3 +1,5 @@
+import { recordCorrectionWorkspace } from './fixtures/recordCorrectionWorkspace.js'
+import { applicationDeadlineFingerprint } from '../src/applicationDeadline.js'
 import { applyWorkspaceDelta, type WorkspaceDelta } from '../src/workspaceDelta.js'
 import { historyActionWorkspace } from './fixtures/historyActionWorkspace.js'
 import { describe, expect, it, vi } from 'vitest'
@@ -75,8 +77,8 @@ function json(data: unknown, status = 200) {
   return new Response(JSON.stringify(data), { status, headers: { 'content-type': 'application/json' } })
 }
 
-function harness() {
-  let current = upgradeSnapshotToLatest(snapshot())
+function harness(initial = snapshot()) {
+  let current = upgradeSnapshotToLatest(initial)
   let revision = 1
   const ledger: Array<{
     command_id: string
@@ -649,4 +651,34 @@ it('compact manual action receipt projects the exact committed derived schedule 
   const projected = applyWorkspaceDelta(before, delta)
   expect(h.state().current.data.scheduleNodes!.some(node => node.relatedActionIds.includes(projected.data.actions.find(action => action.title === 'Prepare interview')!.id))).toBe(true)
   expect(projected.data).toEqual(h.state().current.data)
+})
+
+
+describe('website record corrections use the existing authoritative command boundary', () => {
+  function correction(h: ReturnType<typeof harness>) {
+    const snapshot = h.state().current, target = snapshot.data.opportunities.find(item => item.id === 'expired')!
+    return { commandId: 'synthetic-ui-correction', kind: 'correct_application_deadline' as const, opportunityId: target.id, expectedDeadlineFingerprint: applicationDeadlineFingerprint(target, snapshot.data), correction: { state: 'unknown' as const, sourceUrl: 'https://careers.example.test/role', sourceAuthority: 'official_role' as const, evidence: 'Synthetic verified public role has no published deadline. Availability remains unknown.', checkedAt: '2026-10-02T08:00:00Z', postingStatus: 'unknown' as const } }
+  }
+  it('commits once through CAS, recovers its receipt, and exposes no unsupported undo', async () => {
+    const h = harness(recordCorrectionWorkspace()), command = correction(h)
+    const body = { commandId: command.commandId, baseRevision: 1, command: { type: 'domain' as const, value: command } }
+    const first = await h.executor.execute(h.principal, body)
+    expect(first.outcome).toBe('COMMITTED')
+    expect(first.receipt?.undoAvailable).toBe(false)
+    expect((await h.executor.execute(h.principal, body)).outcome).toBe('ALREADY_APPLIED')
+    expect((await h.executor.lookup(h.principal, command.commandId)).found).toBe(true)
+    expect(h.ledger).toHaveLength(1)
+    expect(h.state().current.data.opportunities.find(item => item.id === 'expired')!.detail?.deadlineCorrections).toHaveLength(1)
+    await expect(h.executor.execute(h.principal, { ...body, command: { ...body.command, value: { ...command, correction: { ...command.correction, evidence: 'Different payload.' } } } })).rejects.toThrow(/reused/)
+  })
+  it('refuses a protected or stale exact owner even when invoked directly through the website endpoint', async () => {
+    const h = harness(recordCorrectionWorkspace()), command = correction(h)
+    h.state().current.data.opportunities.find(item => item.id === 'expired')!.processStage = 'screening'
+    await expect(h.executor.execute(h.principal, { commandId: command.commandId, baseRevision: 1, command: { type: 'domain', value: command } })).rejects.toThrow(/unsubmitted/)
+    expect(h.ledger).toHaveLength(0)
+    const clean = harness(recordCorrectionWorkspace()), stale = correction(clean)
+    clean.state().current.data.scheduleNodes!.find(item => item.opportunityId === 'expired')!.temporal.date = '2026-11-01'
+    await expect(clean.executor.execute(clean.principal, { commandId: stale.commandId, baseRevision: 1, command: { type: 'domain', value: stale } })).rejects.toThrow(/changed/)
+    expect(clean.ledger).toHaveLength(0)
+  })
 })

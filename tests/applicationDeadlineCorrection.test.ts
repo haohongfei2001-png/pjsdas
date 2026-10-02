@@ -81,6 +81,11 @@ describe('canonical application deadline corrections', () => {
     expect(next.data.reminderOutbox).toHaveLength(1)
     expect(next.data.reminderOutbox![0]).toMatchObject({ operation: 'cancel', state: 'pending' })
   })
+  it('rejects impossible source calendar dates without a mutation', () => {
+    const snapshot = base(), before = JSON.stringify(snapshot)
+    expect(() => applyUserDomainCommand(snapshot, command(snapshot, '2026-02-30'), now)).toThrow(/Date-only/)
+    expect(JSON.stringify(snapshot)).toBe(before)
+  })
   it('honors an explicit source calendar timezone rather than the workspace timezone', () => {
     const next = applyUserDomainCommand(base(), command(base(), '2026-10-08'), now).snapshot
     const latest = next.data.scheduleNodes!.at(-1)!

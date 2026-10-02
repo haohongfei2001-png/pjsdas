@@ -24,7 +24,7 @@ export function correctApplicationDeadline(next: PJSDASSnapshot, command: Correc
   if (!Number.isFinite(Date.parse(input.checkedAt)) || Date.parse(input.checkedAt) > Date.parse(timestamp) + 60_000) throw new Error('The source checkedAt is invalid or in the future.')
   if (input.state === 'confirmed' && (!input.deadline || !input.precision || !Number.isFinite(Date.parse(input.deadline)))) throw new Error('Confirmed deadline needs a valid date and explicit precision.')
   if (input.state === 'unknown' && (input.deadline || input.precision)) throw new Error('Unknown deadline must not carry an invented date or precision.')
-  if (input.state === 'confirmed' && input.precision === 'date' && !/^\d{4}-\d{2}-\d{2}$/.test(input.deadline!)) throw new Error('Date-only evidence must retain its calendar date without an invented time.')
+  if (input.state === 'confirmed' && input.precision === 'date' && (!/^\d{4}-\d{2}-\d{2}$/.test(input.deadline!) || new Date(input.deadline!).toISOString().slice(0, 10) !== input.deadline)) throw new Error('Date-only evidence must retain its calendar date without an invented time.')
   const ranks = { official_role: 5, user: 5, official_campaign: 4, university_repost: 3, aggregator: 1 }
   const previousCorrection = target.detail?.deadlineCorrections?.at(-1)
   if (previousCorrection && ranks[input.sourceAuthority] < ranks[previousCorrection.sourceAuthority]) throw new Error('A lower-authority source cannot replace the existing verified deadline correction.')
