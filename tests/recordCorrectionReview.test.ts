@@ -32,6 +32,8 @@ describe('bounded existing-record correction review', () => {
     expect(() => parseCorrectionReviewPacket(JSON.stringify(input))).toThrow()
     const impossible = packet(); Object.assign(impossible.entries[0].command.correction, { state: 'confirmed', deadline: '2026-02-30', precision: 'date' })
     expect(() => parseCorrectionReviewPacket(JSON.stringify(impossible))).toThrow()
+    const impossibleInstant = packet(); Object.assign(impossibleInstant.entries[0].command.correction, { state: 'confirmed', deadline: '2026-02-30T12:00:00Z', precision: 'datetime' })
+    expect(() => parseCorrectionReviewPacket(JSON.stringify(impossibleInstant))).toThrow(/calendar/)
     const unknown = packet(); Object.assign(unknown.entries[0].command.correction, { precision: 'date' })
     expect(() => parseCorrectionReviewPacket(JSON.stringify(unknown))).toThrow(/Unknown deadline/)
   })

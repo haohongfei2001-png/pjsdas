@@ -1,16 +1,18 @@
+import { validSourceDate, validSourceInstant, validSourceDeadline } from './sourceCalendar.js'
 import * as z from 'zod/v4'
 import { applyUserDomainCommand } from './domainCommands.js'
 import { resolveApplicationDeadline } from './applicationDeadline.js'
 import type { PJSDASSnapshot } from './snapshot.js'
 
 const id = z.string().trim().min(1).max(240)
-const instant = z.string().max(80).refine(value => Number.isFinite(Date.parse(value)), 'Invalid date/time')
+const instant = z.string().max(80).refine(validSourceInstant, 'Expected a valid explicit source instant')
+const dateOrInstant = z.string().max(80).refine(value => validSourceDate(value) || validSourceInstant(value), 'Invalid source calendar date/time')
 const publicUrl = z.string().url().max(2000).refine(value => { const url = new URL(value); return ['https:', 'http:'].includes(url.protocol) && !url.username && !url.password }, 'Expected a public evidence URL')
 const commandId = z.string().trim().min(8).max(160)
 const deadlineCommand = z.object({
   commandId, kind: z.literal('correct_application_deadline'), opportunityId: id,
   expectedDeadlineFingerprint: z.string().min(1).max(64_000),
-  correction: z.object({ state: z.enum(['confirmed', 'unknown']), deadline: instant.optional(), precision: z.enum(['date', 'datetime']).optional(),
+  correction: z.object({ state: z.enum(['confirmed', 'unknown']), deadline: dateOrInstant.optional(), precision: z.enum(['date', 'datetime']).optional(),
     sourceUrl: publicUrl, sourceAuthority: z.enum(['official_role', 'official_campaign', 'university_repost', 'aggregator', 'user']),
     evidence: z.string().trim().min(1).max(1600), checkedAt: instant, postingStatus: z.enum(['open', 'closed', 'unknown']) }).strict(),
 }).strict()
@@ -33,7 +35,7 @@ export const correctionReviewPacketSchema = z.object({
     if (command.kind === 'correct_application_deadline') {
       const correction = command.correction
       if (correction.state === 'unknown' ? correction.deadline !== undefined || correction.precision !== undefined : !correction.deadline || !correction.precision) ctx.addIssue({ code: 'custom', path: ['entries', index], message: 'Unknown deadline must omit date and precision; confirmed deadline requires both.' })
-      if (correction.precision === 'date' && (!/^\d{4}-\d{2}-\d{2}$/.test(correction.deadline ?? '') || new Date(correction.deadline!).toISOString().slice(0, 10) !== correction.deadline)) ctx.addIssue({ code: 'custom', path: ['entries', index], message: 'Date-only evidence cannot invent a clock time.' })
+      if (correction.deadline && correction.precision && !validSourceDeadline(correction.deadline, correction.precision)) ctx.addIssue({ code: 'custom', path: ['entries', index], message: 'Source calendar/clock/precision must be valid and datetime needs an explicit offset.' })
     }
   })
 })

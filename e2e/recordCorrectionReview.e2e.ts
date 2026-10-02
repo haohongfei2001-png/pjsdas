@@ -31,7 +31,7 @@ test('authenticated correction reviews evidence, commits once, retains history a
   const server = await setupInstantServer(context, 100); server.setDelay(0)
   await page.clock.setFixedTime(INSTANT_NOW); await open(page); await upload(page, packet(server)); await review(page)
   await expect(page.locator('.cgr-correction-review')).toContainText('无可靠截止日期（不代表仍开放）')
-  await expect(page.locator('.cgr-correction-review')).toContainText('university_repost')
+  await expect(page.locator('.cgr-correction-review')).toContainText('高校转载')
   await page.screenshot({ path: info.outputPath('correction-review.png'), fullPage: true })
   await page.getByRole('button', { name: '确认修正这一条', exact: true }).evaluate(button => { (button as HTMLButtonElement).click(); (button as HTMLButtonElement).click() })
   await expect(page.locator('.cgr-correction-review')).toContainText('服务器已确认')
@@ -44,9 +44,12 @@ test('authenticated correction reviews evidence, commits once, retains history a
   await expect(page.locator('.cgr-correction-review')).toContainText('不提供普通撤销')
 })
 
-test('changed owner after review refuses without a command or token substitution', async ({ page, context }) => {
+test('changed owner after review refuses without a command or token substitution', async ({ page, context }, info) => {
+  await page.setViewportSize({ width: 390, height: 844 })
   const server = await setupInstantServer(context, 100); server.setDelay(0)
   await page.clock.setFixedTime(INSTANT_NOW); await open(page); const input = packet(server); await upload(page, input); await review(page)
+  await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 2)).toBe(true)
+  await page.screenshot({ path: info.outputPath('mobile-correction-review.png'), fullPage: true })
   server.snapshot.data.scheduleNodes!.find(item => item.opportunityId === 'dense-job-2')!.temporal.deadlineAt = '2026-10-12T00:00:00Z'
   await page.getByRole('button', { name: '确认修正这一条', exact: true }).click()
   await expect(page.locator('.cgr-correction-review [role=alert]')).toContainText('changed')

@@ -7,6 +7,8 @@ import { parseCorrectionReviewPacket, prepareRecordCorrection, type CorrectionRe
 import { useUiLanguage } from './uiLanguage.js'
 
 type Review = ReturnType<typeof prepareRecordCorrection>
+const authorityLabels = { official_role: ['官方岗位页', 'Official role page'], official_campaign: ['官方招聘计划', 'Official campaign'], university_repost: ['高校转载', 'University repost'], aggregator: ['第三方聚合', 'Third-party aggregator'], user: ['用户明确说明', 'Explicit user evidence'] } as const
+const availabilityLabels = { open: ['已核实开放', 'Verified open'], closed: ['已核实关闭', 'Verified closed'], unknown: ['开放状态未核实', 'Availability unverified'] } as const
 export default function RecordCorrectionReview({ onChanged }: { onChanged: () => Promise<void> }) {
   const cloud = useCloud(), { lang } = useUiLanguage(), zh = lang === 'zh'
   const accountId = cloud.session?.user.id
@@ -112,7 +114,7 @@ export default function RecordCorrectionReview({ onChanged }: { onChanged: () =>
       <h4>{selected.company} · {selected.role}</h4><p>{selected.command.opportunityId} · {selected.command.commandId}</p>
       {selected.command.kind === 'correct_application_deadline' ? <>
         <p>{zh ? '原截止' : 'Previous deadline'}: {review?.previousDeadline.deadline ?? '—'} → {selected.command.correction.state === 'unknown' ? (zh ? '无可靠截止日期（不代表仍开放）' : 'No verified deadline (does not mean open)') : selected.command.correction.deadline}</p>
-        <p>{zh ? '岗位来源状态' : 'Posting availability'}: {selected.command.correction.postingStatus} · {selected.command.correction.sourceAuthority}</p>
+        <p>{zh ? '岗位来源状态' : 'Posting availability'}: {availabilityLabels[selected.command.correction.postingStatus][zh ? 0 : 1]} · {authorityLabels[selected.command.correction.sourceAuthority][zh ? 0 : 1]}</p>
         <p><a href={selected.command.correction.sourceUrl} target="_blank" rel="noreferrer">{selected.command.correction.sourceUrl}</a></p>
         <p>{selected.command.correction.evidence}</p><p>{zh ? '来源核验时间' : 'Source checked at'}: {selected.command.correction.checkedAt}</p>
       </> : <><p>{zh ? '撤销错误流程证据的效力，保留原始记录' : 'Invalidate mistaken process evidence; retain the original'}: {selected.command.eventId}</p><p>{selected.command.receiptId} · {selected.command.expectedEventUpdatedAt}</p><p>{selected.command.reason}</p><ul>{selected.command.evidenceRefs.map(ref => <li key={ref}>{ref}</li>)}</ul><p>{zh ? '原阶段' : 'Previous stage'}: {review?.previousStage ?? '—'}</p></>}

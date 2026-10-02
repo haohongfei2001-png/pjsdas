@@ -67,3 +67,20 @@ Local candidate verification: 222 unit files / 1,283 tests, TypeScript and
 production build passed. Local browser execution remains unavailable because the
 executor denies browser socket launch; remote full Browser/Matrix journeys and
 pixels are required before merge. Only synthetic records are used in tests.
+
+## First remote review and source-time hardening
+
+The first candidate passed all nine new Chromium review journeys. The old capture
+keyboard test needed one additional Shift+Tab stop for the new accessible review
+button; its original focus-wrap/save/restoration checks remain intact. Desktop
+review pixels were inspected; the stale-owner journey also covers a 390px mobile
+viewport in the next candidate.
+
+Independent review caught Date.parse rollover in precise timestamps. Shared
+source-calendar validation now rejects impossible dates/clocks and offsetless
+precise timestamps in the reducer and review parser, including checkedAt and
+review audit timestamps. Legitimate date-only deadlines and explicit offsets/
+milliseconds remain supported. Independent recheck rejected the original probe
+and passed 78 focused tests. Full local follow-up passed 223 files / 1,304 tests,
+TypeScript and production build. Full remote gates remain required for the final
+candidate; no private packet or production correction has been applied.
