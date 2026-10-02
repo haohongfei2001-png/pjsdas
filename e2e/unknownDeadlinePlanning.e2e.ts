@@ -12,8 +12,10 @@ for (const withRealDeadline of [false, true]) test(`withdrawn deadline history s
   const snapshot = unknownDeadlineWorkspace(8, withRealDeadline)
   snapshot.data.actions[0]!.estimatedMinutes = 20
   snapshot.data.timePlanning = { version: 1, updatedAt: UNKNOWN_DEADLINE_NOW.toISOString(), defaultDailyMinutes: 480 }
-  const history = snapshot.data.scheduleNodes
-  const corrections = snapshot.data.opportunities.map(item => item.detail?.deadlineCorrections)
+  // IndexedDB exports in key order, not the fixture's insertion order.
+  const byId = <T extends { id: string }>(items: T[]) => [...items].sort((a, b) => a.id.localeCompare(b.id))
+  const history = byId(snapshot.data.scheduleNodes ?? [])
+  const corrections = byId(snapshot.data.opportunities.map(item => ({ id: item.id, corrections: item.detail?.deadlineCorrections })))
   await page.evaluate(async value => (await import('/pjsdas/src/db.ts')).replaceLocalSnapshotFromCloud(value), snapshot)
   await page.goto('/pjsdas/today')
   for (let reload = 0; reload < 2; reload++) {
@@ -35,8 +37,8 @@ for (const withRealDeadline of [false, true]) test(`withdrawn deadline history s
   await page.goBack()
   await expect(page.locator('[data-deferred-action-id^="apply:unknown-"]')).toHaveCount(0)
   const retained = await page.evaluate(async () => (await import('/pjsdas/src/db.ts')).exportLocalSnapshot())
-  expect(retained.data.scheduleNodes).toEqual(history)
-  expect(retained.data.opportunities.map(item => item.detail?.deadlineCorrections)).toEqual(corrections)
+  expect(byId(retained.data.scheduleNodes ?? [])).toEqual(history)
+  expect(byId(retained.data.opportunities.map(item => ({ id: item.id, corrections: item.detail?.deadlineCorrections })))).toEqual(corrections)
   expect(retained.data.actions.filter(item => item.opportunityId?.startsWith('unknown-')).every(item => !item.dueAt)).toBe(true)
   expect(errors).toEqual([])
 })
