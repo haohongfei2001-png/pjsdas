@@ -2,7 +2,7 @@ import { SCOPED_MANAGEMENT_CONSENTS, scopedManagementConsentHash, type ScopedMan
 import { expect, test, type Page, type Route } from '@playwright/test'
 const owner='00000000-0000-4000-8000-000000000001', clientId='00000000-0000-4000-8000-000000000002'
 const entry='/pjsdas/?connect=1'
-const descriptors=Object.entries(SCOPED_MANAGEMENT_CONSENTS).map(([domain,consent])=>({domain,consentTextHash:'a'.repeat(64),consent}))
+const descriptors=Object.entries(SCOPED_MANAGEMENT_CONSENTS).map(([domain,consent])=>({domain,canApprove:true,consentTextHash:'a'.repeat(64),consent}))
 async function json(route:Route,body:unknown,status=200){await route.fulfill({status,contentType:'application/json',headers:{'access-control-allow-origin':'*','access-control-allow-headers':'authorization, content-type','access-control-allow-methods':'GET, POST, OPTIONS','cache-control':'no-store'},body:JSON.stringify(body)})}
 async function fixture(page:Page,unknownFirst=false,options:{neverCommitted?:boolean;expired?:boolean;holdPost?:Promise<void>}={}){
  const viewDescriptors=await Promise.all(descriptors.map(async d=>({...d,consentTextHash:await scopedManagementConsentHash(d.domain as ScopedManagementDomain)})))
@@ -122,4 +122,30 @@ test('account switch during POST never displays the old receipt as the new accou
  },other)
  release();await expect(page.getByText('other@example.invalid',{exact:true})).toBeVisible();await expect(page.getByText('这次决定已记录；下方展示重新读取的当前授权状态。')).toHaveCount(0)
  await expect(page.getByRole('button',{name:'确认所选变更'})).toBeDisabled();expect(f.posts).toHaveLength(1);expect(f.posts[0].expectedAccountId).toBe(owner)
+})
+
+test('consumer business permission is an explicit separate choice and revoked in the same bounded batch',async({page})=>{
+ const f=await fixture(page);await page.goto(entry);await page.getByLabel('选择已连接客户端').selectOption(clientId)
+ await expect(page.getByLabel('本次选择：独立准备、手动行动与投递组')).toHaveValue('')
+ await page.getByLabel('本次选择：独立准备、手动行动与投递组').selectOption('approve')
+ await page.getByLabel('本次选择：决策规则与时间偏好').selectOption('approve')
+ await page.getByLabel('我已核对账号、客户端及上方列出的本次变更。').check();await page.getByRole('button',{name:'确认所选变更'}).click()
+ await expect(page.getByText('这次决定已记录；下方展示重新读取的当前授权状态。')).toBeVisible()
+ expect(f.posts[0].choices.map((c:any)=>c.domain)).toEqual(['business','planning'])
+ expect(f.posts[0].choices[0]).toMatchObject({consentVersion:7,expectedGrant:null})
+ expect(f.state.clients[0].grants.map(g=>g.domain).sort()).toEqual(['business','planning'])
+ await page.getByLabel('本次选择：独立准备、手动行动与投递组').selectOption('revoke');await page.getByLabel('本次选择：决策规则与时间偏好').selectOption('revoke')
+ await page.getByLabel('我已核对账号、客户端及上方列出的本次变更。').check();await page.getByRole('button',{name:'确认所选变更'}).click()
+ await expect.poll(()=>f.posts.length).toBe(2);expect(f.posts[1].choices.every((c:any)=>c.decision==='revoke'&&c.expectedGrant.revision===1)).toBe(true)
+})
+
+test('stale business consent text is not shown as current authority and remains revocable',async({page})=>{
+ const f=await fixture(page),d=f.state.descriptors.find(d=>d.domain==='business')!
+ f.state.clients[0].grants.push({domain:'business',id:'00000000-0000-4000-8000-000000000093',client_id:clientId,revision:3,revoked_at:null,consent_version:7,capability:d.consent.capability,consent_text_hash:'0'.repeat(64)})
+ await page.goto(entry);await page.getByLabel('选择已连接客户端').selectOption(clientId)
+ await expect(page.getByText('当前状态：授权文本已变更，需要重新明确确认；仍可撤销旧授权')).toBeVisible()
+ await expect(page.getByText('最近读取的状态：0 项有效授权')).toBeVisible()
+ await expect(page.getByLabel('本次选择：独立准备、手动行动与投递组')).toHaveValue('')
+ await page.getByLabel('本次选择：独立准备、手动行动与投递组').selectOption('revoke');await page.getByLabel('我已核对账号、客户端及上方列出的本次变更。').check();await page.getByRole('button',{name:'确认所选变更'}).click()
+ await expect.poll(()=>f.posts.length).toBe(1);expect(f.posts[0].choices[0]).toMatchObject({domain:'business',decision:'revoke',expectedGrant:{revision:3}})
 })

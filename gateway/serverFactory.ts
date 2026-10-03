@@ -331,6 +331,24 @@ export function createPjsdasMcpServer(
     }, async args => options.businessManagement!.invoke('undo_business_management', args))
   }
 
+  if (options.scopedManagement?.business) {
+    server.registerTool('get_consumer_business_management', {
+      title: 'Read explicitly authorized business objects',
+      description: 'Read current own-account version 7 consumer business access and bounded preparation, action or application-group objects. Requires its separate exact consent; existing owner v2 grants do not authorize this tool.',
+      inputSchema: getBusinessManagementSchema, annotations: readOnlyAnnotations,
+    }, args => options.scopedManagement!.business!.invoke('get_consumer_business_management', args))
+    server.registerTool('execute_consumer_business_management', {
+      title: 'Apply reversible consumer business edits',
+      description: 'Apply a user-requested bounded atomic batch to independent preparation, independent manual actions or application groups at the observed revision. Separate version 7 consent is required. Preserves unrelated raw facts. No permanent deletion, external messages, applications or security changes.',
+      inputSchema: executeBusinessManagementSchema, annotations: { ...directWriteAnnotations, destructiveHint: true },
+    }, args => options.scopedManagement!.business!.invoke('execute_consumer_business_management', args))
+    server.registerTool('undo_consumer_business_management', {
+      title: 'Undo a consumer business command',
+      description: 'Undo a specific version 7 consumer business command only when the user requests it. Refuses changed targets, unsafe dependencies and legacy owner-only command receipts.',
+      inputSchema: undoBusinessManagementSchema, annotations: { ...directWriteAnnotations, destructiveHint: true },
+    }, args => options.scopedManagement!.business!.invoke('undo_consumer_business_management', args))
+  }
+
   if (options.scopedManagement) {
     server.registerTool('get_opportunity_management', {
       title: 'Get 机会资料',

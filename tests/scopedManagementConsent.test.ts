@@ -22,7 +22,7 @@ function fixture(enabled='enabled'){
 }
 describe('explicit scoped first-party consent',()=>{
  it('default-off handler performs no reads or writes',async()=>{const f=fixture('');expect((await f.handler(req())).status).toBe(404);expect(f.fetchImpl).not.toHaveBeenCalled()})
- it('reads four independent descriptors and provider client without granting anything',async()=>{const f=fixture();const response=await f.handler(req());expect(response.status).toBe(200);const v=await response.json();expect(v.descriptors.map((x:any)=>x.domain)).toEqual(scopedManagementDomains);expect(v.clients[0].grants).toEqual([]);expect(f.posts).toEqual([])})
+ it('reads five independent descriptors and provider client without granting anything',async()=>{const f=fixture();const response=await f.handler(req());expect(response.status).toBe(200);const v=await response.json();expect(v.descriptors.map((x:any)=>x.domain)).toEqual(scopedManagementDomains);expect(v.clients[0].grants).toEqual([]);expect(f.posts).toEqual([])})
  it.each(['origin','account','self-grant','hash','version','duplicate','empty','unknown','missing-proof','unconfirmed'])('rejects %s before persistent changes',async mode=>{
   const f=fixture(),v:any=await body(),headers:Record<string,string>={}
   if(mode==='origin')headers.origin='https://foreign.invalid'

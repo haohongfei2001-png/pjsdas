@@ -1,3 +1,4 @@
+import { assertConsumerBusinessManagementGrant, type ConsumerBusinessManagementGrant } from './consumerBusinessManagementAccess.js'
 import { assertOpportunityManagementGrant, type OpportunityManagementGrant } from './opportunityManagementAccess.js'
 import { assertPlanningManagementGrant, type PlanningManagementGrant } from './planningManagementAccess.js'
 import { assertDiscoveryProfileManagementGrant, type DiscoveryProfileManagementGrant } from './discoveryProfileManagementAccess.js'
@@ -8,6 +9,7 @@ import type { TransactionalWorkspaceStoreOptions } from './transactionalWorkspac
 import { WorkspaceSourceError } from './workspaceSource.js'
 
 interface Grants {
+  business: ConsumerBusinessManagementGrant
   opportunity: OpportunityManagementGrant
   planning: PlanningManagementGrant
   discoveryProfile: DiscoveryProfileManagementGrant
@@ -33,7 +35,8 @@ export function createScopedManagementGrantReader<K extends ScopedManagementDoma
     if (!row || typeof row !== 'object' || Array.isArray(row) || row.consent_text_hash !== await scopedManagementConsentHash(domain)) throw new WorkspaceSourceError('AUTH_FORBIDDEN', 'Current explicit consent for this domain is required.', false)
     const grant = { id: row.id, userId: row.user_id, clientId: row.client_id, capability: row.capability, consentVersion: row.consent_version, revision: row.revision, grantedAt: row.granted_at, revokedAt: row.revoked_at }
     // Each assertion validates untrusted row types plus exact principal/version/capability.
-    if (domain === 'opportunity') assertOpportunityManagementGrant(principal, grant)
+    if (domain === 'business') assertConsumerBusinessManagementGrant(principal, grant)
+    else if (domain === 'opportunity') assertOpportunityManagementGrant(principal, grant)
     else if (domain === 'planning') assertPlanningManagementGrant(principal, grant)
     else if (domain === 'discoveryProfile') assertDiscoveryProfileManagementGrant(principal, grant)
     else assertPrivateReminderManagementGrant(principal, grant)

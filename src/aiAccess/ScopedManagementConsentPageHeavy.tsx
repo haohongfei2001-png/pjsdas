@@ -307,7 +307,7 @@ export default function ScopedManagementConsentPageHeavy() {
                 <div>客户端 ID：{target.id}</div>
                 <div>
                   最近读取的状态：
-                  {target.grants.filter(grant => !grant.revoked_at).length} 项有效授权
+                  {target.grants.filter(grant => !grant.revoked_at && view.descriptors.some(descriptor => descriptor.domain === grant.domain && descriptor.consent.version === grant.consent_version && descriptor.consentTextHash === grant.consent_text_hash)).length} 项有效授权
                 </div>
                 {!target.canApprove ? (
                   <p>当前不能新增授权；已有权限仍可撤销。</p>
@@ -316,10 +316,12 @@ export default function ScopedManagementConsentPageHeavy() {
             ) : null}
             {view.descriptors.map(descriptor => {
               const grant = target?.grants.find(item => item.domain === descriptor.domain)
-              const active = Boolean(grant && !grant.revoked_at)
+              const revocable = Boolean(grant && !grant.revoked_at)
+              const active = revocable && grant?.consent_text_hash === descriptor.consentTextHash
               return <fieldset className="ta-consent-scope" key={descriptor.domain} disabled={busy || Boolean(pending) || !target}>
                 <legend>{descriptor.consent.title}</legend>
-                <p>当前状态：{active ? '已授权' : '未授权或已撤销'}</p>
+                {descriptor.domain === 'business' && descriptor.canApprove !== true ? <p>此项当前不能新增授权；已有授权仍可撤销。</p> : null}
+                <p>当前状态：{active ? '已授权' : revocable ? '授权文本已变更，需要重新明确确认；仍可撤销旧授权' : '未授权或已撤销'}</p>
                 <ul>{descriptor.consent.scope.map(text => <li key={text}>{text}</li>)}</ul>
                 <p>不包含：</p>
                 <ul>{descriptor.consent.exclusions.map(text => <li key={text}>{text}</li>)}</ul>
@@ -332,8 +334,8 @@ export default function ScopedManagementConsentPageHeavy() {
                     setSelections(next); setConfirmed(false)
                   }}>
                     <option value="">保持当前状态</option>
-                    <option value="approve" disabled={!target?.canApprove}>明确授权此项</option>
-                    <option value="revoke" disabled={!active}>撤销此项授权</option>
+                    <option value="approve" disabled={!target?.canApprove || (descriptor.domain === 'business' && descriptor.canApprove !== true)}>明确授权此项</option>
+                    <option value="revoke" disabled={!revocable}>撤销此项授权</option>
                   </select>
                 </label>
               </fieldset>

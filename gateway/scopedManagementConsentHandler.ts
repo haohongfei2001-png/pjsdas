@@ -67,7 +67,7 @@ export function createScopedManagementConsentHandler(config: OwnerManagementCons
    }
    const consumerAudience=audience?.mode==='legacy'&&audience.role==='legacy'||audience?.mode==='allowlist'&&['owner','beta'].includes(audience.role??'')
    const canApprove=Boolean(audience?.allowed&&(consumerEnabled?consumerAudience:audience.mode==='allowlist'&&audience.role==='owner'))
-   const descriptors=await Promise.all(scopedManagementDomains.map(async domain=>({domain,consent:SCOPED_MANAGEMENT_CONSENTS[domain],consentTextHash:await scopedManagementConsentHash(domain)})))
+   const descriptors=await Promise.all(scopedManagementDomains.map(async domain=>({domain,canApprove:domain!=='business'||consumerEnabled,consent:SCOPED_MANAGEMENT_CONSENTS[domain],consentTextHash:await scopedManagementConsentHash(domain)})))
    if(request.method==='GET'){
     const [clients,grants]=await Promise.all([canApprove?providerClients(accessToken).catch(()=>[]):Promise.resolve([]),store.list(identity.userId)])
     const clientById=new Map(clients.map(c=>[c.id,c])),ids=new Set([...clientById.keys(),...grants.map(g=>g.client_id)])
