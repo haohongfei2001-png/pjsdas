@@ -50,6 +50,7 @@ describe('transactional workspace source', () => {
       serviceRoleKey: 'service-role',
       principalKind: 'automation',
       sourceId: 'gmail:primary',
+      reuseReadPreimage: true,
       fetchImpl,
       now: () => new Date('2026-09-19T00:02:00.000Z'),
     })
@@ -131,5 +132,99 @@ describe('transactional workspace source', () => {
       fetchImpl,
     })
     await expect(source.read()).rejects.toMatchObject({ code: 'WORKSPACE_MIGRATION_REQUIRED' })
+  })
+})
+
+describe('one-shot revision-bound read preimage', () => {
+  async function fixture() {
+    const { unknownDeadlineWorkspace } = await import('./fixtures/unknownDeadlineWorkspace.js')
+    let current = unknownDeadlineWorkspace(2), revision = 7
+    const reads: string[] = [], writes: any[] = []
+    let afterIdentity: (() => void) | undefined, workspaceId = 'synthetic-ws', storedSchema = current.version
+    const fetchImpl = vi.fn<typeof fetch>(async (input, init) => {
+      const url = new URL(String(input))
+      if (url.pathname === '/rest/v1/pjsdas_workspaces') {
+        reads.push(String(input))
+        const row = { id: workspaceId, user_id: 'user-a', revision, schema_version: storedSchema }
+        const identityOnly = !url.searchParams.get('select')?.includes('snapshot')
+        const result = json([{ ...row, ...(identityOnly ? {} : { snapshot: current }) }])
+        if (identityOnly) { const hook = afterIdentity; afterIdentity = undefined; hook?.() }
+        return result
+      }
+      if (url.pathname === '/rest/v1/rpc/pjsdas_commit_workspace_v2') {
+        const body = JSON.parse(String(init?.body)); writes.push(body)
+        if (body.target_expected_revision !== revision) return json([{ outcome: 'CONFLICT', workspace_id: 'synthetic-ws', revision, snapshot: current, receipt: {} }])
+        current = body.target_snapshot; revision++
+        return json([{ outcome: 'COMMITTED', workspace_id: 'synthetic-ws', revision, receipt: body.target_receipt_context }])
+      }
+      throw new Error(`Unexpected synthetic URL ${url.pathname}`)
+    })
+    const options = { userId: 'user-a', supabaseUrl: 'https://fixture.invalid', serviceRoleKey: 'fixture-only', principalKind: 'automation' as const, reuseReadPreimage: true, fetchImpl }
+    return { source: createTransactionalWorkspaceSource(options), options, reads, writes, current: () => structuredClone(current), replaceIdentity: () => { workspaceId = 'replacement-ws' }, changeSchema: () => { storedSchema = 1 }, afterIdentity: (fn: () => void) => { afterIdentity = fn }, advance: () => { current.data.opportunities[1].early = true; revision++ } }
+  }
+  it('uses one full GET and preserves receipt diff even when caller mutates the read result', async () => {
+    const f = await fixture(), read = await f.source.read()
+    read.snapshot.data.opportunities[0].early = true
+    const written = await f.source.write!({ snapshot: read.snapshot, expectedWorkspaceVersion: read.context.workspaceVersion })
+    expect(written.context.workspaceVersion).toBe('txn:8')
+    expect(f.reads.filter(url => new URL(url).searchParams.get('select')?.includes('snapshot'))).toHaveLength(1)
+    expect(f.writes[0].target_expected_revision).toBe(7)
+    expect(f.writes[0].target_receipt_context.affectedObjects).toContainEqual({ type: 'opportunity', id: 'unknown-0' })
+    expect(f.current().data.opportunities[0].early).toBe(true)
+  })
+  it('keeps changed remote revision as a CAS conflict without overwriting newer data', async () => {
+    const f = await fixture(), read = await f.source.read()
+    f.advance(); const newer = f.current()
+    read.snapshot.data.opportunities[0].early = true
+    await expect(f.source.write!({ snapshot: read.snapshot, expectedWorkspaceVersion: read.context.workspaceVersion })).rejects.toMatchObject({ code: 'WORKSPACE_CONFLICT' })
+    expect(f.current()).toEqual(newer)
+    expect(f.writes).toHaveLength(0)
+    expect(f.reads.filter(url => new URL(url).searchParams.get('select')?.includes('snapshot'))).toHaveLength(1)
+  })
+  it('still relies on atomic CAS if another writer commits after the small identity read', async () => {
+    const f = await fixture(), read = await f.source.read()
+    f.afterIdentity(f.advance)
+    await expect(f.source.write!({ snapshot: read.snapshot, expectedWorkspaceVersion: read.context.workspaceVersion })).rejects.toMatchObject({ code: 'WORKSPACE_CONFLICT' })
+    expect(f.writes).toHaveLength(1)
+    expect(f.writes[0].target_expected_revision).toBe(7)
+    expect(f.current().data.opportunities[1].early).toBe(true)
+  })
+  it('refuses a replaced workspace identity even when its revision number was reused', async () => {
+    const f = await fixture(), read = await f.source.read()
+    f.replaceIdentity()
+    await expect(f.source.write!({ snapshot: read.snapshot, expectedWorkspaceVersion: read.context.workspaceVersion })).rejects.toMatchObject({ code: 'WORKSPACE_CONFLICT' })
+    expect(f.writes).toHaveLength(0)
+  })
+  it('refuses changed storage schema even when workspace ID and revision were reused', async () => {
+    const f = await fixture(), read = await f.source.read()
+    f.changeSchema()
+    await expect(f.source.write!({ snapshot: read.snapshot, expectedWorkspaceVersion: read.context.workspaceVersion })).rejects.toMatchObject({ code: 'WORKSPACE_CONFLICT' })
+    expect(f.writes).toHaveLength(0)
+  })
+  it('cannot reuse another account preimage', async () => {
+    const f = await fixture(), read = await f.source.read()
+    f.options.userId = 'other-account'
+    await expect(f.source.write!({ snapshot: read.snapshot, expectedWorkspaceVersion: read.context.workspaceVersion })).rejects.toMatchObject({ code: 'WORKSPACE_INVALID' })
+    expect(f.writes).toHaveLength(0)
+    expect(f.reads).toHaveLength(2)
+  })
+  it('does a fresh read without a matching source-instance revision', async () => {
+    const f = await fixture(), read = await f.source.read()
+    f.advance()
+    const second = createTransactionalWorkspaceSource(f.options)
+    await second.write!({ snapshot: f.current(), expectedWorkspaceVersion: 'txn:8' })
+    expect(f.reads).toHaveLength(2)
+    await expect(f.source.write!({ snapshot: f.current(), expectedWorkspaceVersion: 'txn:9' })).resolves.toMatchObject({ context: { workspaceVersion: 'txn:10' } })
+    expect(f.reads).toHaveLength(3)
+  })
+  it('consumes the preimage once when two writes race from the same read', async () => {
+    const f = await fixture(), read = await f.source.read()
+    const input = { snapshot: read.snapshot, expectedWorkspaceVersion: read.context.workspaceVersion }
+    const results = await Promise.allSettled([f.source.write!(input), f.source.write!(input)])
+    expect(results.filter(row => row.status === 'fulfilled')).toHaveLength(1)
+    expect(results.filter(row => row.status === 'rejected')).toHaveLength(1)
+    expect(f.reads.filter(url => new URL(url).searchParams.get('select')?.includes('snapshot'))).toHaveLength(2)
+    expect(f.writes).toHaveLength(2)
+    expect(f.writes.every(row => row.target_expected_revision === 7)).toBe(true)
   })
 })
