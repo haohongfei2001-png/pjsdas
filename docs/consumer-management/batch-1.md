@@ -2,6 +2,8 @@
 
 This is a gated foundation, not the complete consumer plugin rollout.
 
+This is the historical first-batch receipt. Later persistence, consent UI and runtime wiring are described in [business v7](business-v7.md) and the [current delivery entry](plugin-delivery.md); pending items below reflect the original batch, not a fresh inventory. Consumer scopes remain separately gated and do not inherit owner v2 permission.
+
 Implemented:
 - Strict read and create/update/archive schemas for independent Prep, independent manual Action, ApplicationGroup. Prep records already referenced by materialized actions/schedules are rejected for generic updates until shared reconciliation is implemented.
 - Atomic maximum 50 operations / 256 KiB batch. Server-derived deterministic IDs; no owner or arbitrary snapshot fields.

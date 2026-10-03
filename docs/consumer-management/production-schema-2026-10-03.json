@@ -1,0 +1,163 @@
+{
+  "project": "yyrzwpoxlxpafdlbkdtg",
+  "observedAt": "2026-10-03",
+  "sourceCommit": "0b98402519cd4ddea0997835ed759f028cdf9352",
+  "readOnly": true,
+  "functions": [
+    {
+      "name": "pjsdas_bump_management_grant_revision",
+      "arguments": "",
+      "bodyMd5": "6b4bdd6aae253333bbed6c87327c27bd",
+      "securityDefiner": false,
+      "config": [
+        "search_path=public, pg_temp"
+      ],
+      "anonExecute": false,
+      "authenticatedExecute": false,
+      "serviceExecute": true
+    },
+    {
+      "name": "pjsdas_commit_management_workspace_v1",
+      "arguments": "target_user_id uuid, target_command_id text, target_operation text, target_payload_hash text, target_expected_revision bigint, target_snapshot jsonb, target_schema_version integer, target_principal_kind text, target_client_id text, target_provenance jsonb, target_compensation jsonb, target_effective_time timestamp with time zone, target_receipt_context jsonb, target_grant_id uuid, target_grant_revision bigint",
+      "bodyMd5": "cd0a9332d6210a7786acabbc4bb225af",
+      "securityDefiner": false,
+      "config": [
+        "search_path=public, pg_temp"
+      ],
+      "anonExecute": false,
+      "authenticatedExecute": false,
+      "serviceExecute": true
+    },
+    {
+      "name": "pjsdas_decide_management_consent_v1",
+      "arguments": "target_user_id uuid, target_client_id uuid, target_request_id uuid, target_request_hash text, target_decision text, target_consent_version integer, target_consent_text_hash text, target_expected_grant_id uuid, target_expected_grant_revision bigint, target_first_party boolean, target_provider_client_verified boolean",
+      "bodyMd5": "f1331355132980d02d2cc6cd5c34bcdd",
+      "securityDefiner": false,
+      "config": [
+        "search_path=public, pg_temp"
+      ],
+      "anonExecute": false,
+      "authenticatedExecute": false,
+      "serviceExecute": true
+    }
+  ],
+  "tables": [
+    {
+      "name": "pjsdas_business_management_grants",
+      "rls": true,
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "nullable": "NO"
+        },
+        {
+          "name": "user_id",
+          "type": "uuid",
+          "nullable": "NO"
+        },
+        {
+          "name": "client_id",
+          "type": "uuid",
+          "nullable": "NO"
+        },
+        {
+          "name": "capability",
+          "type": "text",
+          "nullable": "NO"
+        },
+        {
+          "name": "consent_version",
+          "type": "integer",
+          "nullable": "NO"
+        },
+        {
+          "name": "consent_text_hash",
+          "type": "text",
+          "nullable": "NO"
+        },
+        {
+          "name": "revision",
+          "type": "bigint",
+          "nullable": "NO"
+        },
+        {
+          "name": "granted_at",
+          "type": "timestamp with time zone",
+          "nullable": "NO"
+        },
+        {
+          "name": "revoked_at",
+          "type": "timestamp with time zone",
+          "nullable": "YES"
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "nullable": "NO"
+        }
+      ]
+    },
+    {
+      "name": "pjsdas_management_consent_events",
+      "rls": true,
+      "columns": [
+        {
+          "name": "user_id",
+          "type": "uuid",
+          "nullable": "NO"
+        },
+        {
+          "name": "request_id",
+          "type": "uuid",
+          "nullable": "NO"
+        },
+        {
+          "name": "client_id",
+          "type": "uuid",
+          "nullable": "NO"
+        },
+        {
+          "name": "request_hash",
+          "type": "text",
+          "nullable": "NO"
+        },
+        {
+          "name": "decision",
+          "type": "text",
+          "nullable": "NO"
+        },
+        {
+          "name": "consent_version",
+          "type": "integer",
+          "nullable": "NO"
+        },
+        {
+          "name": "consent_text_hash",
+          "type": "text",
+          "nullable": "NO"
+        },
+        {
+          "name": "grant_id",
+          "type": "uuid",
+          "nullable": "YES"
+        },
+        {
+          "name": "grant_revision",
+          "type": "bigint",
+          "nullable": "YES"
+        },
+        {
+          "name": "outcome",
+          "type": "text",
+          "nullable": "NO"
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "nullable": "NO"
+        }
+      ]
+    }
+  ]
+}
