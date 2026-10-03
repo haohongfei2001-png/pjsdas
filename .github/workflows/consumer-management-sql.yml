@@ -17,6 +17,7 @@ on:
       - 'gateway/transactionalWorkspaceStore.ts'
       - 'supabase/migrations/**'
       - 'tests/sql/**'
+      - 'scripts/consumer-management/**'
       - '.github/workflows/consumer-management-sql.yml'
   push:
     branches: [main]
@@ -34,6 +35,7 @@ on:
       - 'gateway/transactionalWorkspaceStore.ts'
       - 'supabase/migrations/**'
       - 'tests/sql/**'
+      - 'scripts/consumer-management/**'
       - '.github/workflows/consumer-management-sql.yml'
 
 permissions:

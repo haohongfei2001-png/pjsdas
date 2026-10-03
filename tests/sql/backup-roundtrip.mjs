@@ -1,7 +1,9 @@
 // Native dump/restore of synthetic fixture data only. Production backups never enter CI.
 import assert from 'node:assert/strict'
 import { spawn } from 'node:child_process'
-import { createHash } from 'node:crypto'
+import { createHash, randomBytes } from 'node:crypto'
+import { sealBackup, openBackup } from './backup-archive.mjs'
+import { backupInventory } from './backup-inventory.mjs'
 import pg from 'pg'
 
 export async function backupRoundtrip(source, admin, url, inspect) {
@@ -23,10 +25,16 @@ export async function backupRoundtrip(source, admin, url, inspect) {
  await source.query('begin isolation level repeatable read read only')
  let expected,dump
  try{
-  expected=await inspect(source)
+  expected={catalog:await inspect(source),inventory:await backupInventory(source)}
   const snapshot=(await source.query('select pg_export_snapshot() s')).rows[0].s
   dump=await invoke('pg_dump',['-h',url.hostname,'-p',url.port||'5432','-U','postgres','-d','ta_chain_fixture','--format=custom','--strict-names','--schema=public','--schema=auth','--schema=supabase_migrations',`--snapshot=${snapshot}`,'--lock-wait-timeout=2s'])
  }finally{await source.query('rollback')}
+ const key=randomBytes(32),encrypted=sealBackup(dump,key)
+ assert.deepEqual(openBackup(encrypted,key),dump)
+ const corrupted=Buffer.from(encrypted);corrupted[corrupted.length-1]^=1
+ assert.throws(()=>openBackup(corrupted,key),'tampered archive must be rejected')
+ assert.throws(()=>openBackup(encrypted,randomBytes(32)),'wrong key must be rejected')
+ dump=openBackup(encrypted,key);key.fill(0)
  await admin.query(`create database ${target}`)
  const destination=new URL(url);destination.pathname='/'+target
  const restored=new pg.Client({connectionString:destination.toString()})
@@ -41,7 +49,7 @@ export async function backupRoundtrip(source, admin, url, inspect) {
   assert.equal([...sql.matchAll(/^CREATE SCHEMA public;$/gm)].length,1)
   const restoreSql=sql.replace(/^CREATE SCHEMA public;$/m,'-- Empty initdb public schema retained; owner and ACL statements below are unchanged.')
   await invoke('psql',['-X','-w','-h',url.hostname,'-p',url.port||'5432','-U','postgres','-d',target,'--single-transaction','--set','ON_ERROR_STOP=1','--file=-'],restoreSql)
-  assert.deepEqual(await inspect(restored),expected,'native restored catalog/ACL/data/history must exactly match the exported snapshot')
+  assert.deepEqual({catalog:await inspect(restored),inventory:await backupInventory(restored)},expected,'native restored catalog/ACL/data/history must exactly match the exported snapshot')
  }
  finally{await restored.end()}
  console.log(`PASS native pg_dump/pg_restore: consistent snapshot; exact schema/owner/ACL/rows/history restored, archive SHA256 ${createHash('sha256').update(dump).digest('hex')}`)
