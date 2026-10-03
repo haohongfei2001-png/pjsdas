@@ -20,12 +20,38 @@ const [a,b,c,client]=[81,82,83,84].map(id)
 const state=who=>({schema:'pjsdas-local-snapshot',version:4,exportedAt:'2026-10-03T00:00:00Z',future:{who,raw:['second','first']},data:{opportunities:[],processes:[],processEvents:[],actions:[],prep:[],applicationGroups:[],scheduleNodes:[],decisionRequests:[],semanticReceipts:[],reminderIntents:[],reminderOutbox:[],unknown:{who,legacy:'preserve'}}})
 const tables=['pjsdas_access_grants','pjsdas_business_management_grants','pjsdas_workspaces','pjsdas_command_ledger','pjsdas_management_consent_events']
 const allRows=async()=>Object.fromEntries(await Promise.all(tables.map(async table=>[table,(await db.query(`select to_jsonb(t)::text v from public.${table} t order by to_jsonb(t)::text`)).rows])))
+// Compare semantic catalogs within the same engine; never compare unstable object OIDs.
+const catalog=async()=>({
+ tables:(await db.query(`select c.relname,c.relrowsecurity,c.relforcerowsecurity,c.relacl::text,
+  (select jsonb_agg(jsonb_build_array(a.attname,format_type(a.atttypid,a.atttypmod),a.attnotnull,pg_get_expr(d.adbin,d.adrelid),a.attacl::text) order by a.attnum)
+   from pg_attribute a left join pg_attrdef d on d.adrelid=a.attrelid and d.adnum=a.attnum where a.attrelid=c.oid and a.attnum>0 and not a.attisdropped) columns,
+  (select jsonb_agg(jsonb_build_array(k.conname,pg_get_constraintdef(k.oid),k.convalidated) order by k.conname) from pg_constraint k where k.conrelid=c.oid) constraints,
+  (select jsonb_agg(jsonb_build_array(t.tgname,pg_get_triggerdef(t.oid),t.tgenabled) order by t.tgname) from pg_trigger t where t.tgrelid=c.oid and not t.tgisinternal) triggers
+  from pg_class c join pg_namespace n on n.oid=c.relnamespace where n.nspname='public' and c.relkind='r' order by c.relname`)).rows,
+ functions:(await db.query(`select p.oid::regprocedure::text signature,pg_get_functiondef(p.oid) definition,p.proacl::text
+  from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.prokind='f' order by signature`)).rows,
+ policies:(await db.query("select * from pg_policies where schemaname='public' order by tablename,policyname")).rows,
+ indexes:(await db.query("select tablename,indexname,indexdef from pg_indexes where schemaname='public' order by tablename,indexname")).rows,
+ history:(await db.query('select * from supabase_migrations.schema_migrations order by version')).rows,
+})
+const tablePrivileges=async(table)=>(await db.query(`select r.role,p.permission,has_table_privilege(r.role,$1,p.permission) allowed
+ from unnest(array['anon','authenticated','service_role']) r(role)
+ cross join unnest(array['SELECT','INSERT','UPDATE','DELETE','TRUNCATE','REFERENCES','TRIGGER']) p(permission)
+ order by r.role,p.permission`,[table])).rows
 const commit=async(user,command,revision,grant=id(91),v7=false,next=state(user),comp={},operation='business_management',provenance={})=>(await db.query(`select * from public.${v7?'pjsdas_commit_consumer_business_workspace_v1':'pjsdas_commit_management_workspace_v1'}($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)`,[user,command,operation,'hash:'+command,revision,JSON.stringify(next),4,'delegated_mcp',client,JSON.stringify(provenance),JSON.stringify(comp),null,'{}',grant,1])).rows[0]
 try{
  if(!real)await exec('create role anon;create role authenticated;create role service_role bypassrls;')
  // Roles already exist in the parent CI fixture, while this database is new.
  await exec('create schema auth;create table auth.users(id uuid primary key);create function auth.uid() returns uuid language sql stable as $$select null::uuid$$;')
- for(const file of ['2026091901_ai_operated_mutation_foundation.sql','2026091903_controlled_audience.sql','20260923030000_cgr01_authoritative_commands.sql','20261002123812_consumer_management_atomic_grants.sql','20261002143625_owner_management_consent_audit.sql'])await exec(await sql(file))
+ for(const file of ['2026091901_ai_operated_mutation_foundation.sql','2026091903_controlled_audience.sql','20260923030000_cgr01_authoritative_commands.sql'])await exec(await sql(file))
+ // Reproduce observed platform defaults before the two already-installed management migrations.
+ // Their explicit REVOKEs must close ordinary-role access even under these broad defaults.
+ await exec(`alter default privileges for role postgres in schema public grant all on tables to anon,authenticated,service_role;
+  alter default privileges for role postgres in schema public grant all on functions to anon,authenticated,service_role;
+  alter default privileges for role postgres in schema public grant all on sequences to anon,authenticated,service_role;`)
+ for(const file of ['20261002123812_consumer_management_atomic_grants.sql','20261002143625_owner_management_consent_audit.sql'])await exec(await sql(file))
+ // Isolated fixture history, not an implementation claim about the hosted migration endpoint.
+ await exec('create schema supabase_migrations;create table supabase_migrations.schema_migrations(version text primary key,name text,statements text[]);')
  for(const [i,user] of [a,b,c].entries()){
   await db.query('insert into auth.users(id) values($1)',[user]);await db.query("insert into pjsdas_access_grants(user_id,role) values($1,$2)",[user,i===0?'owner':'beta'])
   await db.query('insert into pjsdas_workspaces(user_id,snapshot,schema_version) values($1,$2,4)',[user,JSON.stringify(state(user))])
@@ -38,18 +64,42 @@ try{
  await db.query('select * from pjsdas_decide_management_consent_v1($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)',oldDecision)
  await exec('reset role')
  const before=await allRows(), reviewedFunctions=new Set()
+ const oldTablePrivileges=Object.fromEntries(await Promise.all(['pjsdas_business_management_grants','pjsdas_management_consent_events'].map(async t=>[t,await tablePrivileges(t)])))
+ for(const [table,privileges] of Object.entries(oldTablePrivileges))for(const p of privileges){
+  assert.equal(p.allowed,p.role==='service_role'&&(table==='pjsdas_business_management_grants'||['SELECT','INSERT'].includes(p.permission)),`${table} ${p.role} ${p.permission} baseline`)
+ }
  for(const entry of manifest.migrations){
   const text=await sql(entry.file);for(const match of text.matchAll(/create (?:or replace )?function public\.(\w+)/g))reviewedFunctions.add(match[1]);assert.equal(createHash('sha256').update(text).digest('hex'),entry.sha256)
-  await exec('begin');try{await exec("set local lock_timeout='2s';set local statement_timeout='15s'");await exec(text);await exec('commit')}catch(e){await exec('rollback');throw e}
+  const previous=await catalog(),version=entry.file.split('_')[0],name=entry.file.slice(version.length+1,-4)
+  const stage=async()=>{
+   await exec('begin')
+   await exec("set local lock_timeout='2s';set local statement_timeout='15s'")
+   assert.deepEqual((await db.query("select current_setting('lock_timeout') l,current_setting('statement_timeout') s")).rows[0],{l:'2s',s:'15s'})
+   await exec(text)
+   await db.query('insert into supabase_migrations.schema_migrations(version,name,statements) values($1,$2,$3)',[version,name,[text]])
+   assert.deepEqual((await db.query('select * from supabase_migrations.schema_migrations where version=$1',[version])).rows,[{version,name,statements:[text]}])
+  }
+  // Failure after both DDL and history insertion must roll everything back. This is deliberate
+  // fault injection in disposable data, not a production retry policy or a timeout simulation.
+  try{await stage();await assert.rejects(db.query('select 1/0'),e=>e.code==='22012')}finally{await exec('rollback')}
+  assert.deepEqual(await catalog(),previous,`${entry.file}: failure must roll back schema, functions, permissions and history`)
+  assert.deepEqual(await allRows(),before,`${entry.file}: failure must preserve existing rows`)
+  try{await stage();await exec('commit')}catch(e){await exec('rollback');throw e}
+  const committed=await catalog()
+  assert.deepEqual(committed.history,[...previous.history,{version,name,statements:[text]}],`${entry.file}: exactly one committed history row`)
+  for(const [table,privileges] of Object.entries(oldTablePrivileges)){
+   assert.deepEqual(await tablePrivileges(table),privileges,`${entry.file}: preserve ${table} privileges`)
+   assert.equal(committed.tables.find(t=>t.relname===table).relacl,previous.tables.find(t=>t.relname===table).relacl)
+  }
   assert.deepEqual(await allRows(),before,`${entry.file} must not rewrite existing rows`)
-  console.log('PASS whole-chain unchanged rows + SHA256:',entry.file)
+  console.log('PASS whole-chain failure rollback + committed history + preserved rows/ACL + SHA256:',entry.file)
  }
  assert.equal(Number((await db.query('select count(*) n from pjsdas_scoped_management_consent_events')).rows[0].n),0)
  const functions=(await db.query("select p.oid::regprocedure::text signature,p.prosecdef from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.proname=any($1::text[])",[[...reviewedFunctions]])).rows
  assert.equal(functions.length,reviewedFunctions.size)
  for(const f of functions){assert.equal(f.prosecdef,false);for(const role of ['anon','authenticated'])assert.equal((await db.query("select has_function_privilege($1,$2,'EXECUTE') allowed",[role,f.signature])).rows[0].allowed,false,f.signature)}
  assert.equal((await db.query("select relrowsecurity from pg_class where oid='pjsdas_scoped_management_consent_events'::regclass")).rows[0].relrowsecurity,true)
- for(const role of ['anon','authenticated'])for(const permission of ['SELECT','INSERT','UPDATE','DELETE'])assert.equal((await db.query("select has_table_privilege($1,'pjsdas_scoped_management_consent_events',$2) allowed",[role,permission])).rows[0].allowed,false)
+ for(const p of await tablePrivileges('pjsdas_scoped_management_consent_events'))assert.equal(p.allowed,p.role==='service_role'&&['SELECT','INSERT'].includes(p.permission),`scoped audit ${p.role} ${p.permission}`)
  await exec('set role service_role')
  // Consent bumps owner grant to revision 2. Use its current exact proof for old replay/new v2 write.
  await db.query('update pjsdas_business_management_grants set revoked_at=null where id=$1',[id(91)])
