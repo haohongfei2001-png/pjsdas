@@ -4,6 +4,7 @@ import { diffCommandObjects, readModelInvalidation } from './commandObjects.js'
 import {
   createTransactionalWorkspaceStore,
   type MutationPrincipalKind,
+  type ConnectedWorkspaceRecord,
 } from './transactionalWorkspaceStore.js'
 import {
   WorkspaceSourceError,
@@ -21,6 +22,7 @@ export interface TransactionalWorkspaceSourceOptions {
   timezone?: string
   fetchImpl?: typeof fetch
   now?: () => Date
+  reuseReadPreimage?: boolean
 }
 
 function revisionFromWorkspaceVersion(value: string | undefined) {
@@ -40,10 +42,12 @@ export function createTransactionalWorkspaceSource(options: TransactionalWorkspa
   })
   const now = options.now ?? (() => new Date())
   const timezone = options.timezone?.trim() || 'UTC'
+  let readPreimage: ConnectedWorkspaceRecord | undefined
 
   return {
     async read() {
-      const workspace = await store.readForUser(options.userId)
+      readPreimage = undefined
+      const workspace = await store.readForUser(options.userId, { includeStoredSchema: options.reuseReadPreimage })
       if (!workspace) {
         throw new WorkspaceSourceError(
           'WORKSPACE_MIGRATION_REQUIRED',
@@ -51,6 +55,9 @@ export function createTransactionalWorkspaceSource(options: TransactionalWorkspa
           false,
         )
       }
+      // Private one-shot preimage; callers may mutate the returned snapshot.
+      // Reuse never survives this source instance or bypasses server CAS.
+      readPreimage = options.reuseReadPreimage ? structuredClone(workspace) : undefined
       return {
         snapshot: workspace.snapshot,
         context: {
@@ -63,7 +70,17 @@ export function createTransactionalWorkspaceSource(options: TransactionalWorkspa
     },
 
     async write(input: WorkspaceWriteInput) {
-      const workspace = await store.readForUser(options.userId)
+      const expectedRevision = revisionFromWorkspaceVersion(input.expectedWorkspaceVersion)
+      const observed = readPreimage
+      readPreimage = undefined
+      let workspace: ConnectedWorkspaceRecord | null
+      if (observed?.userId === options.userId && observed.revision === expectedRevision) {
+        const identity = await store.readIdentityForUser(options.userId)
+        if (!identity) workspace = null
+        else if (identity.workspaceId !== observed.workspaceId || identity.revision !== observed.revision || identity.schemaVersion !== observed.storedSchemaVersion) {
+          throw new WorkspaceSourceError('WORKSPACE_CONFLICT', 'The observed workspace identity or revision changed; read it again before writing.', true)
+        } else workspace = observed
+      } else workspace = await store.readForUser(options.userId)
       if (!workspace) {
         throw new WorkspaceSourceError(
           'WORKSPACE_MIGRATION_REQUIRED',
@@ -71,7 +88,6 @@ export function createTransactionalWorkspaceSource(options: TransactionalWorkspa
           false,
         )
       }
-      const expectedRevision = revisionFromWorkspaceVersion(input.expectedWorkspaceVersion)
       if (expectedRevision === undefined) {
         throw new WorkspaceSourceError('WORKSPACE_CONFLICT', 'Transactional writes require an exact expected revision.', false)
       }

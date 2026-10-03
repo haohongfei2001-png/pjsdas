@@ -751,6 +751,7 @@ export async function runGmailReconciliationForBinding(options: {
         serviceRoleKey: process.env.PJSDAS_SUPABASE_SERVICE_ROLE_KEY ?? '',
         principalKind: 'automation',
         sourceId: GMAIL_SOURCE_ID,
+        reuseReadPreimage: true,
         timezone: 'Asia/Shanghai',
         fetchImpl,
       })
@@ -1228,6 +1229,7 @@ export async function runGmailAutomationForBinding(options: {
         serviceRoleKey: process.env.PJSDAS_SUPABASE_SERVICE_ROLE_KEY ?? '',
         principalKind: 'automation',
         sourceId: GMAIL_SOURCE_ID,
+        reuseReadPreimage: true,
         timezone: 'Asia/Shanghai',
         fetchImpl,
       })
@@ -1369,6 +1371,7 @@ async function runLegacyGmailAutomationForBinding(options: {
         serviceRoleKey: process.env.PJSDAS_SUPABASE_SERVICE_ROLE_KEY ?? '',
         principalKind: 'automation',
         sourceId: GMAIL_SOURCE_ID,
+        reuseReadPreimage: true,
         timezone: 'Asia/Shanghai',
         fetchImpl,
       })
