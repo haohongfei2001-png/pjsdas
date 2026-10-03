@@ -188,3 +188,38 @@ describe('recoverable exact-closure opportunity archive', () => {
     expect(() => restoreOpportunityManagement(removed.snapshot, compensation, now)).toThrow(/identity/)
   })
 })
+
+describe('raw opportunity preservation regression', () => {
+  it('preserves unrelated raw dates, states, metadata and exact order across read/apply/undo', async () => {
+    const { unknownDeadlineWorkspace } = await import('./fixtures/unknownDeadlineWorkspace.js')
+    const initial = unknownDeadlineWorkspace(2)
+    initial.data.actions[1].dueAt = '2026-08-27T15:59:59Z'; initial.data.actions[1].timingMode = 'deadline'
+    ;(initial.data.opportunities[1] as any).privateMetadata = { exact: ['retain', null] }
+    const before = structuredClone(initial)
+    const read = await readOpportunityManagement(initial, initial.data.opportunities[0].id)
+    expect(initial).toEqual(before)
+    expect(read.opportunity).toEqual(initial.data.opportunities[0])
+    const changed = await applyOpportunityManagement(initial, { operations: [{ kind: 'update_opportunity_profile', id: read.opportunity.id, expectedFingerprint: read.profileFingerprint, patch: { early: true } }] }, 'raw-preservation-command', now)
+    for (const [key, value] of Object.entries(before.data)) if (!['opportunities', 'timeline'].includes(key)) expect((changed.snapshot.data as any)[key]).toEqual(value)
+    expect(changed.snapshot.data.opportunities[1]).toEqual(before.data.opportunities[1])
+    const restored = restoreOpportunityManagement(changed.snapshot, changed.compensation!, now)
+    for (const [key, value] of Object.entries(before.data)) if (key !== 'timeline') expect((restored.data as any)[key]).toEqual(value)
+    expect(restored.data.timeline?.slice(0, before.data.timeline?.length ?? 0)).toEqual(before.data.timeline ?? [])
+    expect(initial).toEqual(before)
+  })
+  it('refuses implicit legacy array materialization before read/apply/undo', async () => {
+    const initial = opportunityFixture(); const result = await update({ early: true }, initial)
+    const legacy = structuredClone(initial); legacy.version = 1; delete legacy.data.scheduleNodes
+    await expect(readOpportunityManagement(legacy, 'opp-a')).rejects.toThrow(/separate snapshot migration/)
+    await expect(update({ early: true }, legacy)).rejects.toThrow(/separate snapshot migration/)
+    expect(() => restoreOpportunityManagement(legacy, result.compensation!)).toThrow(/separate snapshot migration/)
+    expect(Object.hasOwn(legacy.data, 'scheduleNodes')).toBe(false)
+  })
+  it('preserves exact whitespace-bearing IDs through updates and undo', async () => {
+    const initial = opportunityFixture(); const target = initial.data.opportunities[1]; target.id = ' exact raw id '
+    const read = await readOpportunityManagement(initial, target.id)
+    const changed = await applyOpportunityManagement(initial, { operations: [{ kind: 'update_opportunity_profile', id: target.id, expectedFingerprint: read.profileFingerprint, patch: { early: true } }] }, 'whitespace-id-command', now)
+    expect(changed.snapshot.data.opportunities[1].id).toBe(target.id)
+    expect(restoreOpportunityManagement(changed.snapshot, changed.compensation!, now).data.opportunities).toEqual(initial.data.opportunities)
+  })
+})

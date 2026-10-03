@@ -3,12 +3,12 @@ import * as z from 'zod/v4'
 import { opportunityManagementSchema, readOpportunityManagement, OpportunityManagementError } from '../src/opportunityManagement.js'
 import type { MutationPrincipal } from './mutationKernel.js'
 import { assertOpportunityManagementGrant, type OpportunityManagementGrant } from './opportunityManagementAccess.js'
-import type { createAuthoritativeCommandExecutor } from './authoritativeCommands.js'
-import type { WorkspaceSource } from './workspaceSource.js'
+import { createAuthoritativeCommandExecutor } from './authoritativeCommands.js'
+import { createTransactionalWorkspaceStore, type TransactionalWorkspaceStoreOptions } from './transactionalWorkspaceStore.js'
 import { WorkspaceSourceError } from './workspaceSource.js'
 
 const commandId = z.string().trim().min(8).max(160)
-export const getOpportunityManagementSchema = z.object({ opportunityId: z.string().trim().min(1).max(240) }).strict()
+export const getOpportunityManagementSchema = z.object({ opportunityId: z.string().min(1).max(240).refine(value => value.trim().length > 0) }).strict()
 export const executeOpportunityManagementSchema = z.object({ commandId, baseRevision: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER), change: opportunityManagementSchema }).strict()
 export const restoreOpportunityManagementSchema = z.object({ commandId, targetCommandId: commandId, expectedCompensationFingerprint: z.string().regex(/^[a-f0-9]{64}$/) }).strict()
 export type OpportunityManagementToolName = 'get_opportunity_management' | 'execute_opportunity_management' | 'restore_opportunity_management'
@@ -17,11 +17,11 @@ const result = (data: Record<string, unknown>): CallToolResult => ({ content: [{
 /** Source-only adapter: no production runtime, tool catalog or consent handler registers it. */
 export function createOpportunityManagementTools(options: {
   principal: MutationPrincipal
-  source: WorkspaceSource
-  createExecutor: (admitted: OpportunityManagementGrant) => ReturnType<typeof createAuthoritativeCommandExecutor>
+  storeOptions: TransactionalWorkspaceStoreOptions
   resolveGrant: (principal: MutationPrincipal) => Promise<OpportunityManagementGrant | undefined>
 }) {
   const principal = Object.freeze({ ...options.principal })
+  const store = createTransactionalWorkspaceStore(options.storeOptions)
   async function authorize(admitted?: OpportunityManagementGrant) {
     const grant = await options.resolveGrant(principal)
     assertOpportunityManagementGrant(principal, grant)
@@ -33,13 +33,14 @@ export function createOpportunityManagementTools(options: {
       const admitted = await authorize()
       if (name === 'get_opportunity_management') {
         const parsed = getOpportunityManagementSchema.parse(input)
-        const current = await options.source.read()
-        if (current.context.workspaceOwnerUserId !== principal.userId) throw new WorkspaceSourceError('AUTH_FORBIDDEN', 'Workspace owner does not match the current account.', false)
+        const current = await store.readForUser(principal.userId, { preserveRawData: true })
+        if (!current) throw new WorkspaceSourceError('WORKSPACE_NOT_FOUND', 'TodayAction workspace is unavailable.', false)
+        if (current.userId !== principal.userId) throw new WorkspaceSourceError('AUTH_FORBIDDEN', 'Workspace owner does not match the current account.', false)
         const data = await readOpportunityManagement(current.snapshot, parsed.opportunityId)
         await authorize(admitted)
-        return result({ authorized: true, consentVersion: 3, capability: 'workspace.opportunity.manage', workspaceVersion: current.context.workspaceVersion, data })
+        return result({ authorized: true, consentVersion: 3, capability: 'workspace.opportunity.manage', workspaceVersion: `txn:${current.revision}`, data })
       }
-      const executor = options.createExecutor(admitted)
+      const executor = createAuthoritativeCommandExecutor({ ...options.storeOptions, resolveOpportunityManagementGrant: async () => authorize(admitted) })
       let executed
       let submittedCommandId: string
       if (name === 'execute_opportunity_management') {

@@ -3,9 +3,9 @@ import { resolveOpportunityTarget } from './semanticTargetMatching.js'
 import type { OpportunityAssessment, SemanticTargetRef } from './model.js'
 import { decisionRulesForSnapshot } from './decisionRules.js'
 import { scoreOpportunityAssessment } from './opportunityAssessment.js'
-import { upgradeSnapshotToLatest, validateSnapshot, type PJSDASSnapshot } from './snapshot.js'
+import { SNAPSHOT_VERSION, validateSnapshot, type PJSDASSnapshot } from './snapshot.js'
 
-const id = z.string().trim().min(1).max(240)
+const id = z.string().min(1).max(240).refine(value => value.trim().length > 0, 'An exact nonblank identifier is required.')
 const text = z.string().trim().min(1).max(2000)
 const fingerprint = z.string().regex(/^[a-f0-9]{64}$/)
 const nonempty = (value: object) => Object.keys(value).length > 0
@@ -40,7 +40,7 @@ export interface OpportunityManagementCompensation {
   payload: { changes: OpportunityManagementChange[]; archives: string[]; guards: Array<{ type: 'application_group' | 'decision_rules'; id: string; value: unknown }> }
 }
 export class OpportunityManagementError extends Error {
-  constructor(public readonly code: 'NOT_FOUND' | 'STALE_TARGET' | 'REFERENCE_IN_USE' | 'RESTORE_CONFLICT' | 'INVALID_COMPENSATION', message: string) { super(message); this.name = 'OpportunityManagementError' }
+  constructor(public readonly code: 'NOT_FOUND' | 'STALE_TARGET' | 'REFERENCE_IN_USE' | 'RESTORE_CONFLICT' | 'INVALID_COMPENSATION' | 'INVALID_CONFIGURATION', message: string) { super(message); this.name = 'OpportunityManagementError' }
 }
 function canonical(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(canonical)
@@ -51,6 +51,16 @@ const equal = (a: unknown, b: unknown) => JSON.stringify(canonical(a)) === JSON.
 export async function opportunityManagementFingerprint(value: unknown) {
   const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(JSON.stringify(canonical(value))))
   return [...new Uint8Array(digest)].map(value => value.toString(16).padStart(2, '0')).join('')
+}
+function rawSnapshot(snapshot: PJSDASSnapshot) {
+  for (const key of ['scheduleNodes', 'decisionRequests', 'semanticReceipts', 'reminderIntents', 'reminderOutbox'] as const) {
+    if (!snapshot.data || !Object.hasOwn(snapshot.data, key) || snapshot.data[key] === undefined) throw new OpportunityManagementError('INVALID_CONFIGURATION', 'The workspace needs a separate snapshot migration before opportunity management.')
+  }
+  validateSnapshot(snapshot)
+  const next = structuredClone(snapshot)
+  next.version = SNAPSHOT_VERSION
+  validateSnapshot(next)
+  return next
 }
 function rows(snapshot: PJSDASSnapshot, type: ObjectType): Entity[] { return (snapshot.data[collections[type]] ?? []) as unknown as Entity[] }
 function setRows(snapshot: PJSDASSnapshot, type: ObjectType, value: Entity[]) { (snapshot.data as unknown as Record<string, unknown>)[collections[type]] = value }
@@ -84,7 +94,7 @@ function assertArchiveClosure(snapshot: PJSDASSnapshot, opportunityId: string, s
     throw new OpportunityManagementError('REFERENCE_IN_USE', 'Shared preparations, actions or schedule occurrences require an explicit reassignment workflow before archive.')
   }
   const reminderIds = new Set(selected.dependencies.reminderIntentIds)
-  if (selected.reminders.some(item => item.deliveryOwner !== 'pjsdas' || item.channel !== 'in_product' || item.capability || item.externalLink)
+  if (selected.reminders.some(item => item.deliveryOwner !== 'pjsdas' || item.channel !== 'in_product' || item.capability !== undefined || item.externalLink !== undefined)
     || (snapshot.data.reminderOutbox ?? []).some(item => reminderIds.has(item.reminderIntentId))) throw new OpportunityManagementError('REFERENCE_IN_USE', 'External reminder delivery must be reconciled separately before archive.')
   if ((snapshot.data.discoveryInbox ?? []).some(item => item.promotedOpportunityId === opportunityId || (item.status === 'promoted' && item.candidateOpportunityId === opportunityId))) throw new OpportunityManagementError('REFERENCE_IN_USE', 'A promoted discovery record requires an explicit linked-inbox archive workflow.')
   const targets = new Set(selected.refs.map(ref => `${ref.type}:${ref.id}`))
@@ -107,7 +117,7 @@ export function opportunityManagementObjectRefs(snapshot: PJSDASSnapshot, input:
   return input.operations.flatMap(operation => operation.kind === 'archive_opportunity' ? closure(snapshot, operation.id).refs.map(ref => ref.type === 'schedule_node' ? { type: 'schedule_occurrence', id: snapshot.data.scheduleNodes!.find(node => node.id === ref.id)!.occurrenceId } : ref) : [{ type: 'opportunity', id: operation.id }, ...(operation.patch.assessment ? [{ type: 'decision_rules', id: 'current' }] : [])])
 }
 export async function readOpportunityManagement(snapshot: PJSDASSnapshot, opportunityId: string) {
-  const original = upgradeSnapshotToLatest(snapshot)
+  const original = rawSnapshot(snapshot)
   const opportunity = original.data.opportunities.find(item => item.id === opportunityId)
   if (!opportunity) throw new OpportunityManagementError('NOT_FOUND', 'The opportunity was not found in this workspace.')
   const selected = closure(original, opportunityId)
@@ -119,7 +129,7 @@ export async function readOpportunityManagement(snapshot: PJSDASSnapshot, opport
 export async function applyOpportunityManagement(snapshot: PJSDASSnapshot, raw: unknown, commandId: string, now = new Date()) {
   const input = opportunityManagementSchema.parse(raw)
   if (commandId.length < 8 || commandId.length > 160) throw new Error('Invalid opportunity management command identity.')
-  const original = upgradeSnapshotToLatest(snapshot)
+  const original = rawSnapshot(snapshot)
   const next = structuredClone(original)
   const changes: OpportunityManagementChange[] = []
   const archives: string[] = []
@@ -159,7 +169,7 @@ export async function applyOpportunityManagement(snapshot: PJSDASSnapshot, raw: 
       }
       if (assessment) {
         const previous = current.detail?.assessment
-        const value: OpportunityAssessment = { version: 1, mode: 'component', fit: patch(previous?.fit ?? {}, assessment.fit ?? {}), opportunityValue: patch(previous?.opportunityValue ?? {}, assessment.opportunityValue ?? {}), assessedAt: previous?.assessedAt ?? timestamp }
+        const value: OpportunityAssessment = { ...previous, version: 1, mode: 'component', fit: patch(previous?.fit ?? {}, assessment.fit ?? {}), opportunityValue: patch(previous?.opportunityValue ?? {}, assessment.opportunityValue ?? {}), assessedAt: previous?.assessedAt ?? timestamp }
         if (!Object.keys(value.fit).length || !Object.keys(value.opportunityValue).length) throw new Error('An assessment needs at least one explicitly supplied component on each axis.')
         if (!equal(previous, value)) {
           value.assessedAt = timestamp
@@ -187,7 +197,7 @@ export async function applyOpportunityManagement(snapshot: PJSDASSnapshot, raw: 
 export function restoreOpportunityManagement(snapshot: PJSDASSnapshot, compensation: OpportunityManagementCompensation, now = new Date()) {
   const payload = compensation?.payload
   if (compensation?.operation !== 'opportunity_management_restore' || !payload || !Array.isArray(payload.changes) || !payload.changes.length || payload.changes.length > 2500 || !Array.isArray(payload.archives) || !Array.isArray(payload.guards)) throw new OpportunityManagementError('INVALID_COMPENSATION', 'Opportunity compensation is invalid.')
-  const next = upgradeSnapshotToLatest(snapshot)
+  const next = rawSnapshot(snapshot)
   const seen = new Set<string>()
   for (const change of payload.changes) {
     if (!Object.hasOwn(collections, change.type) || !change.id || seen.has(`${change.type}:${change.id}`) || change.before?.id !== change.id || (change.after && change.after.id !== change.id) || !Number.isInteger(change.beforeIndex) || change.beforeIndex < 0) throw new OpportunityManagementError('INVALID_COMPENSATION', 'Opportunity compensation identity is invalid.')

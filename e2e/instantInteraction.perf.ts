@@ -16,9 +16,24 @@ test('instant interactions meet p95 budgets without scaling with historical time
     await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem('pjsdas-google-drive-sync-state-v2') ?? '{}').accounts?.['instant-owner']?.lastSyncedVersion)).toBe('txn:1204')
     await expect(page.locator('[data-action-id="dense-action-0"]')).toBeVisible()
     // Initial hydration is outside the ordinary command budget.
-    await page.evaluate(() => { performance.clearMeasures(); (window as any).commandMeasures = []; window.addEventListener('pjsdas:interaction-measure', event => (window as any).commandMeasures.push((event as CustomEvent).detail)); (window as any).commandLongTasks = []; (window as any).capacityCommandWindows = []; new PerformanceObserver(list => {
+    // Native constructor timestamps bypass Playwright's mocked performance object.
+    // Diagnostic-only: preserve all tasks, samples and assertions.
+    await page.evaluate(() => {
+    const nativeNow = () => new PerformanceMark('ta-native-diagnostic').startTime
+    const state = { clock: 'native PerformanceMark constructor', installedAt: nativeNow(), observerInstalledAt: 0,
+      clockPairs: [{ native: nativeNow(), fixture: performance.now() }], inputs: [] as { type: string; target: string; handlerEntry: number }[],
+      stageHandlerEntries: [] as { phase: string; handlerEntry: number }[], commandWindows: [] as { operation: string; start: number; end: number }[] }
+    ;(window as any).nativeTimingDiagnostic = state
+    ;(window as any).nativeTimingNow = nativeNow
+    for (const type of ['pointerdown', 'click', 'input']) window.addEventListener(type, event => {
+      if (state.inputs.length < 1000) state.inputs.push({ type, target: event.target instanceof Element ? event.target.tagName : 'unknown', handlerEntry: nativeNow() })
+    }, { capture: true })
+    window.addEventListener('pjsdas:interaction-measure', event => {
+      if (state.stageHandlerEntries.length < 2000) state.stageHandlerEntries.push({ phase: (event as CustomEvent).detail.phase, handlerEntry: nativeNow() })
+    })
+      performance.clearMeasures(); (window as any).commandMeasures = []; window.addEventListener('pjsdas:interaction-measure', event => (window as any).commandMeasures.push((event as CustomEvent).detail)); (window as any).commandLongTasks = []; (window as any).capacityCommandWindows = []; new PerformanceObserver(list => {
       (window as any).commandLongTasks.push(...list.getEntries().map(entry => ({ start: entry.startTime, duration: entry.duration })))
-    }).observe({ type: 'longtask' }) })
+    }).observe({ type: 'longtask' }); (window as any).nativeTimingDiagnostic.observerInstalledAt = (window as any).nativeTimingNow() })
     const samples: number[] = []
     const acknowledgements: number[] = []
     for (let index = 0; index < 20; index++) {
@@ -26,12 +41,13 @@ test('instant interactions meet p95 budgets without scaling with historical time
       const hours = index % 2 === 0 ? '5' : '6'
       await page.getByRole('spinbutton', { name: '今天可用小时' }).fill(hours)
       const sample = await page.evaluate(async hours => {
+        const nativeStarted = (window as any).nativeTimingNow()
         const started = performance.now()
         ;(document.querySelector('.tsui-capacity button[type=submit]') as HTMLButtonElement).click()
         while (!document.querySelector('.tsui-capacity summary')?.textContent?.includes(`${hours} 小时`) && performance.now() - started < 5000) await new Promise(requestAnimationFrame)
         const acknowledgement = performance.now() - started
         await new Promise(requestAnimationFrame)
-        const ended = performance.now(); (window as any).capacityCommandWindows.push({ start: started, end: ended, operation: 'capacity' }); return { acknowledgement, settled: ended - started }
+        const ended = performance.now(); (window as any).nativeTimingDiagnostic.commandWindows.push({ start: nativeStarted, end: (window as any).nativeTimingNow(), operation: 'capacity' }); (window as any).capacityCommandWindows.push({ start: started, end: ended, operation: 'capacity' }); return { acknowledgement, settled: ended - started }
       }, hours)
       samples.push(sample.settled); acknowledgements.push(sample.acknowledgement)
       await expect(page.locator('.tsui-capacity')).not.toHaveAttribute('open', '')
@@ -41,6 +57,7 @@ test('instant interactions meet p95 budgets without scaling with historical time
     for (let index = 0; index < 10; index++) {
       for (const operation of ['complete', 'undo']) {
         const duration = await page.evaluate(async operation => {
+          const nativeStarted = (window as any).nativeTimingNow()
           const started = performance.now()
           const button = operation === 'complete' ? document.querySelector('[data-action-id="dense-action-0"] .tsui-done-action')
             : document.querySelector('.action-undo-toast button')
@@ -49,13 +66,15 @@ test('instant interactions meet p95 budgets without scaling with historical time
           while ((operation === 'complete' ? !!document.querySelector('[data-action-id="dense-action-0"]') : !document.querySelector('[data-action-id="dense-action-0"]'))
             && performance.now() - started < 5000) await new Promise(requestAnimationFrame)
           await new Promise(requestAnimationFrame)
-          const ended = performance.now(); (window as any).capacityCommandWindows.push({ start: started, end: ended, operation }); return ended - started
+          const ended = performance.now(); (window as any).nativeTimingDiagnostic.commandWindows.push({ start: nativeStarted, end: (window as any).nativeTimingNow(), operation }); (window as any).capacityCommandWindows.push({ start: started, end: ended, operation }); return ended - started
         }, operation)
         ;(operation === 'complete' ? completionSamples : undoSamples).push(duration)
       }
     }
-    const measures = await page.evaluate(() => ({ durable: (window as any).commandMeasures.filter((entry: any) => entry.phase === 'durable-outbox').map((entry: any) => entry.durationMs),
-      longTasks: (window as any).commandLongTasks, stages: (window as any).commandMeasures, commandWindows: (window as any).capacityCommandWindows }))
+    const measures = await page.evaluate(() => {
+      (window as any).nativeTimingDiagnostic.clockPairs.push({ native: (window as any).nativeTimingNow(), fixture: performance.now() })
+      return { durable: (window as any).commandMeasures.filter((entry: any) => entry.phase === 'durable-outbox').map((entry: any) => entry.durationMs),
+      nativeDiagnostic: (window as any).nativeTimingDiagnostic, longTasks: (window as any).commandLongTasks, stages: (window as any).commandMeasures, commandWindows: (window as any).capacityCommandWindows } })
     const p95 = (values: number[]) => [...values].sort((a, b) => a - b)[Math.ceil(values.length * 0.95) - 1]
     const row = { historyRows, bytes: Buffer.byteLength(JSON.stringify(server.snapshot)), acknowledgementP95: p95(acknowledgements),
       settledP95: p95(samples), completionP95: p95(completionSamples), undoP95: p95(undoSamples), durableP95: p95(measures.durable), longTasks: measures.longTasks, samples }

@@ -14,6 +14,21 @@ import { DELTA_COLLECTIONS, reverseWorkspaceDelta, validateWorkspaceDelta, patch
 
 const flights = new Map<string, Promise<void>>()
 const tails = new Map<string, Promise<void>>()
+// A synchronous reservation is intentionally visible before its IDB journal.
+// Only this live caller owns that gap; crash recovery is for a later realm.
+const localPreparations = new Set<string>()
+const preparedDispatches = new Map<string, CommandInteractionRecord>()
+function schedulePreparedDispatch(record: CommandInteractionRecord) {
+  // Local settlement is complete. A paused/throttled timer must not keep the
+  // operation marked as preparing or block an explicit reconnect/recovery.
+  preparedDispatches.set(record.id, record)
+  localPreparations.delete(record.id)
+  setTimeout(() => {
+    if (preparedDispatches.get(record.id) !== record) return
+    preparedDispatches.delete(record.id)
+    if (navigator.onLine) void dispatch(record).catch(() => undefined)
+  }, 0)
+}
 export interface InteractionEvent { accountKey: string; commandId: string; delta?: WorkspaceDelta; state: CommandInteractionRecord['state']; message?: string }
 function emit(record: CommandInteractionRecord, delta?: WorkspaceDelta, message?: string) {
   markInteractionActivity(record.accountKey)
@@ -26,6 +41,7 @@ const version = (accountKey: string) => Number(/^txn:(\d+)$/.exec(getAccountChec
 function dispatch(record: CommandInteractionRecord, recovery = false) {
   const active = flights.get(record.id)
   if (active) return active
+  preparedDispatches.delete(record.id)
   const flight = (tails.get(record.accountKey) ?? Promise.resolve()).catch(() => undefined).then(() => send(record, recovery))
   flights.set(record.id, flight)
   tails.set(record.accountKey, flight)
@@ -113,12 +129,14 @@ export async function beginInstantCommand(accountKey: string, snapshot: PJSDASSn
   // Reserve durable intent before the first async yield so a background full
   // refresh cannot start fingerprinting while this click is settling.
   const mirroredPredecessors = listAccountPendingOperations(accountKey).filter(item => item.interaction && item.status !== 'conflict' && item.interactionDelta?.changes.some(left => projected.delta.changes.some(right => left.collection === right.collection && left.id === right.id))).map(item => item.commandId)
-  journalConnectedInteraction(accountKey, { commandId: command.commandId, command: { type: 'domain', value: command }, baseRevision,
-    interactionDelta: projected.delta, interactionCompensation: projected.compensation, interactionPredecessors: mirroredPredecessors })
+  localPreparations.add(recordId(accountKey, command.commandId))
+  try { journalConnectedInteraction(accountKey, { commandId: command.commandId, command: { type: 'domain', value: command }, baseRevision,
+    interactionDelta: projected.delta, interactionCompensation: projected.compensation, interactionPredecessors: mirroredPredecessors }) }
+  catch (error) { localPreparations.delete(recordId(accountKey, command.commandId)); throw error }
   const record: CommandInteractionRecord = { id: recordId(accountKey, command.commandId), accountKey, commandId: command.commandId,
     command, predecessors: mirroredPredecessors, delta: projected.delta, compensation: projected.compensation, state: 'active', createdAt: new Date().toISOString() }
-  interactionMetric('instant-journal', journalStarted)
   try {
+    interactionMetric('instant-journal', journalStarted)
     const pendingReadStarted = performance.now()
     const existing = await readPendingCommandInteractions(accountKey)
     interactionMetric('instant-pending-read', pendingReadStarted)
@@ -129,13 +147,13 @@ export async function beginInstantCommand(accountKey: string, snapshot: PJSDASSn
     interactionMetric('instant-predecessors', predecessorsStarted)
     await persistInteractionProjection(record, lease.assertCurrent)
   } catch (error) {
-    await archiveFailedPreparation(record)
+    try { await archiveFailedPreparation(record) } finally { localPreparations.delete(record.id) }
     throw new Error('本机没能保存这次修改，尚未提交，请核对最新内容后重试。')
   }
-  interactionMetric('durable-outbox', started)
-  emit(record, record.delta)
-  // Let the UI paint before starting auth or any remote work.
-  setTimeout(() => { if (navigator.onLine) void dispatch(record).catch(() => undefined) }, 0)
+  // Let the UI paint before starting auth or any remote work. Scheduling in
+  // finally also releases the live marker if optional UI instrumentation fails.
+  try { interactionMetric('durable-outbox', started); emit(record, record.delta) }
+  finally { schedulePreparedDispatch(record) }
   return record.commandId
 }
 export async function beginInstantUndo(accountKey: string, targetCommandId: string, snapshot: PJSDASSnapshot) {
@@ -143,7 +161,9 @@ export async function beginInstantUndo(accountKey: string, targetCommandId: stri
   markInteractionActivity(accountKey)
   const lease = captureAccountCacheLease(accountKey)
   const commandId = createConnectedCommandId('instant-undo')
-  journalConnectedInteraction(accountKey, { commandId, targetCommandId, baseRevision: version(accountKey), interactionPredecessors: [targetCommandId] })
+  localPreparations.add(recordId(accountKey, commandId))
+  try { journalConnectedInteraction(accountKey, { commandId, targetCommandId, baseRevision: version(accountKey), interactionPredecessors: [targetCommandId] }) }
+  catch (error) { localPreparations.delete(recordId(accountKey, commandId)); throw error }
   let record: CommandInteractionRecord = { id: recordId(accountKey, commandId), commandId, accountKey, targetCommandId, predecessors: [targetCommandId],
     delta: { contract: 'delta-v1', baseRevision: version(accountKey), changes: [] }, state: 'active', createdAt: new Date().toISOString() }
   try {
@@ -153,10 +173,9 @@ export async function beginInstantUndo(accountKey: string, targetCommandId: stri
       predecessors: [targetCommandId], delta: undoInteractionProjection(snapshot, target.command, target.compensation, target.delta, version(accountKey)), state: 'active', createdAt: new Date().toISOString() }
     enrichConnectedInteraction(accountKey, commandId, { interactionDelta: record.delta, interactionPredecessors: record.predecessors })
     await persistInteractionProjection(record, lease.assertCurrent)
-  } catch (error) { await archiveFailedPreparation(record); throw error }
-  interactionMetric('durable-outbox', started)
-  emit(record, record.delta)
-  setTimeout(() => { if (navigator.onLine) void dispatch(record).catch(() => undefined) }, 0)
+  } catch (error) { try { await archiveFailedPreparation(record) } finally { localPreparations.delete(record.id) }; throw error }
+  try { interactionMetric('durable-outbox', started); emit(record, record.delta) }
+  finally { schedulePreparedDispatch(record) }
   return commandId
 }
 async function network(accountKey: string, body: Record<string, unknown>) {
@@ -522,6 +541,12 @@ async function send(record: CommandInteractionRecord, recovery: boolean) {
   }
 }
 export async function recoverInstantInteraction(accountKey: string, commandId: string) {
+  const id = recordId(accountKey, commandId)
+  if (localPreparations.has(id)) return
+  const prepared = preparedDispatches.get(id)
+  if (prepared) return dispatch(prepared)
+  const flight = flights.get(id)
+  if (flight) return flight
   const pending = listAccountPendingOperations(accountKey).find(item => item.commandId === commandId)
   let record = await readCommandInteraction(accountKey, commandId)
   if (pending?.interaction && pending.status === 'conflict' && (!record || !['confirmed', 'rejected', 'conflict'].includes(record.state))) return
