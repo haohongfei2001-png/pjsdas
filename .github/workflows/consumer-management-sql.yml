@@ -17,6 +17,7 @@ on:
       - 'gateway/transactionalWorkspaceStore.ts'
       - 'supabase/migrations/**'
       - 'tests/sql/**'
+      - 'scripts/consumer-management/**'
       - '.github/workflows/consumer-management-sql.yml'
   push:
     branches: [main]
@@ -34,6 +35,7 @@ on:
       - 'gateway/transactionalWorkspaceStore.ts'
       - 'supabase/migrations/**'
       - 'tests/sql/**'
+      - 'scripts/consumer-management/**'
       - '.github/workflows/consumer-management-sql.yml'
 
 permissions:
@@ -59,6 +61,8 @@ jobs:
           --health-retries 10
     steps:
       - uses: actions/checkout@v7
+      - name: Validate private preparation form
+        run: python3 scripts/consumer-management/prepare-access.test.py
       - uses: actions/setup-node@v7
         with:
           node-version: 22
@@ -73,4 +77,5 @@ jobs:
       - name: Verify real multi-session grant contention
         env:
           TA_MANAGEMENT_SQL_TEST_URL: postgresql://postgres:fixture-only@127.0.0.1:5432/ta_management_fixture
+          TA_PG_FIXTURE_CONTAINER: ${{ job.services.postgres.id }}
         run: npm run test:concurrency --prefix tests/sql
