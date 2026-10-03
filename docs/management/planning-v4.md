@@ -1,5 +1,7 @@
 # Planning management v4: source-only contract
 
+Current integration note (2026-10-03): source runtime/consent wiring now exists behind the default-off scoped consumer switch. The original slice-stage description below is historical; live activation and real installed-host acceptance remain pending. See [current delivery](../consumer-management/plugin-delivery.md) and [exact migration plan](../consumer-management/activation-migrations.md).
+
 This slice is not registered in the production tool catalog or consent routes. It issues no grants and applies no production migration. Existing v2 and v3 consent keep their exact meanings. Activation needs a separately reviewed, explicitly accepted owner/client scope and the prerequisite database migration chain.
 
 ## Bounded operations

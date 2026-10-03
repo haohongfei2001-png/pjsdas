@@ -1,0 +1,9 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
+  "mcpServers": {
+    "todayaction": {
+      "type": "streamable-http",
+      "url": "https://todayaction.com/api/mcp"
+    }
+  }
+}

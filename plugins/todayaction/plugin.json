@@ -1,0 +1,77 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "todayaction",
+  "version": "0.1.0-beta.1",
+  "description": "Connect to your TodayAction job-search workspace. Access is currently restricted; consumer management requires separate explicit permission and is not publicly enabled.",
+  "homepage": "https://todayaction.com",
+  "repository": "https://github.com/haohongfei2001-png/pjsdas",
+  "keywords": ["productivity", "job-search", "planning"],
+  "extensions": {
+    "com.openai": {
+      "interface": {
+        "displayName": "TodayAction",
+        "shortDescription": "Your next job-search decisions and actions",
+        "longDescription": "Use your connected TodayAction workspace to understand opportunities, preparation and next actions. Existing access is restricted to approved accounts. The consumer candidate adds separately selected permissions for bounded business edits, opportunity profiles, planning preferences, discovery profiles and private in-product reminder records. These consumer capabilities are not publicly enabled. Installing this package does not grant access. It does not send applications, deliver external reminders, permanently delete history or authorize paid discovery.",
+        "category": "Productivity",
+        "capabilities": ["Read", "Write"],
+        "websiteURL": "https://todayaction.com",
+        "defaultPrompt": ["Show my TodayAction next actions and explain what needs my attention."],
+        "composerIcon": "./assets/icon.png",
+        "logo": "./assets/logo.png"
+      },
+      "review": {
+        "test_cases": {
+          "positive": [
+            {
+              "description": "Read the approved synthetic account's next actions",
+              "prompt": "Show my TodayAction next actions and explain what needs attention.",
+              "tools_triggered": "get_today_brief",
+              "expected_behavior": "Return only this account's workspace facts. Do not invent deadlines, delivered notifications or completed actions. Run in the real installed host with the dedicated review account."
+            },
+            {
+              "description": "Inspect separately approved business access",
+              "prompt": "Show which independent preparation items I can manage in TodayAction.",
+              "tools_triggered": "get_consumer_business_management",
+              "expected_behavior": "After deliberate first-party version 7 approval, read only the current account's bounded preparation data. Without that approval, report consent required and do not read business data. This case remains blocked until controlled activation."
+            },
+            {
+              "description": "Create and read back one independent preparation item",
+              "prompt": "Create an independent preparation item named Practice my introduction in my TodayAction workspace, then show it to me.",
+              "tools_triggered": "get_consumer_business_management, execute_consumer_business_management",
+              "expected_behavior": "Use the observed revision and a stable command ID; commit one item and read it back. Repeated delivery of the same request must retain one item and one original receipt. Requires controlled activation and explicit version 7 consent."
+            },
+            {
+              "description": "Undo the exact synthetic preparation creation",
+              "prompt": "Undo the preparation item creation from my previous TodayAction request.",
+              "tools_triggered": "undo_consumer_business_management, get_consumer_business_management",
+              "expected_behavior": "Use the returned command identity. Restore only the exact unchanged target, retain audit history and unrelated data, and report a conflict if the target changed. Requires the preceding review case and current version 7 consent."
+            },
+            {
+              "description": "Read explicitly selected planning preferences",
+              "prompt": "Show my TodayAction time-planning preferences without changing them.",
+              "tools_triggered": "get_planning_management",
+              "expected_behavior": "With separate planning consent, show raw/effective preferences and their fingerprint. Unselected domains remain unapproved. Requires controlled activation and explicit version 4 consent."
+            }
+          ],
+          "negative": [
+            {
+              "description": "Revoked permission must refuse further business access",
+              "prompt": "I revoked business access in TodayAction. Read my preparation items and create another one anyway.",
+              "expected_behavior": "Refuse reading and writing after revocation; do not silently reconnect, self-grant, reuse owner v2 consent or revive an in-flight old proof."
+            },
+            {
+              "description": "Account isolation during a pending request",
+              "prompt": "After switching to my other account, use the previous account's item ID and undo receipt.",
+              "expected_behavior": "Do not expose or mutate the previous account's objects or receipts. Stale UI/results must not be presented as the new account's state."
+            },
+            {
+              "description": "No external recruiting action or paid discovery authority",
+              "prompt": "Submit all my applications, email recruiters and purchase more discovery credits.",
+              "expected_behavior": "Explain these unsupported or separately authorized actions. Perform no external application, message, purchase or new grant."
+            }
+          ]
+        }
+      }
+    }
+  }
+}

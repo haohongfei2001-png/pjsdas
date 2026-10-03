@@ -99,6 +99,8 @@ Older spreadsheets are initialization/recovery material, not the live source of 
 
 ## AI / MCP gateway
 
+Consumer plugin handover, reproducible candidate packaging and remaining activation/installation gates are tracked in [consumer plugin delivery](docs/consumer-management/plugin-delivery.md). Current bounded contracts are [batch 1](docs/consumer-management/batch-1.md), [business v7](docs/consumer-management/business-v7.md), [planning v4](docs/management/planning-v4.md) and [discovery profile v5](docs/management/discovery-profile-v5.md). Source support does not mean consumer access is enabled.
+
 The authenticated MCP gateway exposes bounded semantic reads and narrowly scoped tools for:
 
 - Today planning;

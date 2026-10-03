@@ -1,5 +1,7 @@
 # Discovery Profile management v5: source-only contract
 
+Current integration note (2026-10-03): source runtime/consent wiring now exists behind the default-off scoped consumer switch. The original slice-stage description below is historical; live activation and real installed-host acceptance remain pending. See [current delivery](../consumer-management/plugin-delivery.md) and [exact migration plan](../consumer-management/activation-migrations.md).
+
 This is a separate `workspace.discovery-profile.manage`, consent-version-5 capability. It is not registered in the production MCP catalog or owner consent routes. It issues no grants, applies no live migration and changes no provider, credential, source cadence or paid-search budget. v2–v4 scopes keep their existing meanings.
 
 ## Exact, bounded profile management
