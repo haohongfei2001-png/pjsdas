@@ -51,24 +51,28 @@ import type { ExternalCapabilityProbe } from '../src/reminders.js'
 import type { WorkspaceSource } from './workspaceSource.js'
 
 const readOnlyAnnotations = {
+  openWorldHint: false,
   readOnlyHint: true,
   destructiveHint: false,
   idempotentHint: true,
 } as const
 
 const proposalAnnotations = {
+  openWorldHint: false,
   readOnlyHint: true,
   destructiveHint: false,
   idempotentHint: true,
 } as const
 
 const directWriteAnnotations = {
+  openWorldHint: false,
   readOnlyHint: false,
   destructiveHint: false,
   idempotentHint: true,
 } as const
 
 const trustedIngestionAnnotations = {
+  openWorldHint: false,
   readOnlyHint: false,
   destructiveHint: false,
   idempotentHint: true,

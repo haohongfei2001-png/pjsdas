@@ -82,7 +82,13 @@ describe('scoped management admission', () => {
     const baseline = await payload(await disabled.fetch(request('tools/list')))
     expect((await payload(await explicitOff.fetch(request('tools/list')))).result).toEqual(baseline.result)
     const enabled = createMcpHandler(() => createPjsdasMcpServer(source, { scopedManagement: runtime }))
-    const names = (await payload(await enabled.fetch(request('tools/list')))).result.tools.map((tool: { name: string }) => tool.name)
+    const catalog = (await payload(await enabled.fetch(request('tools/list')))).result.tools
+    for (const tool of catalog) {
+      expect(typeof tool.annotations.readOnlyHint).toBe('boolean')
+      expect(typeof tool.annotations.destructiveHint).toBe('boolean')
+      expect(tool.annotations.openWorldHint).toBe(false)
+    }
+    const names = catalog.map((tool: { name: string }) => tool.name)
     expect(names.length).toBe(baseline.result.tools.length + 12)
     expect(new Set(names).size).toBe(names.length)
     expect(o.fetchImpl).not.toHaveBeenCalled()

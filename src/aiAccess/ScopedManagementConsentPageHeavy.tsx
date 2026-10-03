@@ -310,14 +310,14 @@ export default function ScopedManagementConsentPageHeavy() {
                   {target.grants.filter(grant => !grant.revoked_at).length} 项有效授权
                 </div>
                 {!target.canApprove ? (
-                  <p>OAuth 连接已断开，仅可撤销已有扩展授权。</p>
+                  <p>当前不能新增授权；已有权限仍可撤销。</p>
                 ) : null}
               </div>
             ) : null}
             {view.descriptors.map(descriptor => {
               const grant = target?.grants.find(item => item.domain === descriptor.domain)
               const active = Boolean(grant && !grant.revoked_at)
-              return <fieldset key={descriptor.domain} disabled={busy || Boolean(pending) || !target}>
+              return <fieldset className="ta-consent-scope" key={descriptor.domain} disabled={busy || Boolean(pending) || !target}>
                 <legend>{descriptor.consent.title}</legend>
                 <p>当前状态：{active ? '已授权' : '未授权或已撤销'}</p>
                 <ul>{descriptor.consent.scope.map(text => <li key={text}>{text}</li>)}</ul>

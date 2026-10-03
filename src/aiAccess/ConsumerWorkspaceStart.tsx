@@ -31,12 +31,12 @@ export default function ConsumerWorkspaceStart({ accountId }: { accountId: strin
       if (mounted.current && epoch.current === generation) setMessage(error instanceof Error ? error.message : '工作区结果未确认。')
     } finally { flight.current = false; if (mounted.current) setBusy(false) }
   }
-  return <section aria-label="准备工作区" aria-busy={busy}>
+  return <section className="ta-consumer-start" aria-label="准备工作区" aria-busy={busy}>
     <h2>第一次使用 TodayAction</h2>
     <p>可以从空工作区开始，无需连接 Gmail 或 Drive。已有 TodayAction 工作区会直接保留。</p>
     <p>如果你要沿用已有本机或 Drive 资料，请返回 TodayAction 选择迁移；这里不会导入或删除这些资料。</p>
-    <label>工作区时区<input aria-label="工作区时区" value={timezone} disabled={busy || Boolean(pending.current)} onChange={event => { setTimezone(event.target.value); setConfirmed(false) }} /></label>
-    <label><input type="checkbox" checked={confirmed} disabled={busy} onChange={event => setConfirmed(event.target.checked)} />我明确选择从空工作区开始，并已核对当前账号及上述时区。</label>
+    <label className="ta-consumer-timezone">工作区时区<input type="text" aria-label="工作区时区" value={timezone} disabled={busy || Boolean(pending.current)} onChange={event => { setTimezone(event.target.value); setConfirmed(false) }} /></label>
+    <label className="ta-consumer-empty-confirm"><input type="checkbox" checked={confirmed} disabled={busy} onChange={event => setConfirmed(event.target.checked)} />我明确选择从空工作区开始，并已核对当前账号及上述时区。</label>
     <button disabled={busy || !confirmed || !validPlanningTimezone(timezone)} onClick={() => void initialize()}>{pending.current ? '重试同一初始化请求' : '准备我的工作区'}</button>
     {message ? <p role="status">{message}</p> : null}
   </section>
