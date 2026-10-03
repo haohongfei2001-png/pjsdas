@@ -1,3 +1,4 @@
+import { assertConsumerBusinessManagementGrant, type ConsumerBusinessManagementGrant } from './consumerBusinessManagementAccess.js'
 import { applyPrivateReminderManagement, privateReminderManagementSchema, privateReminderManagementObjectRefs, privateReminderManagementFingerprint, restorePrivateReminderManagement, type PrivateReminderManagementCompensation } from '../src/privateReminderManagement.js'
 import { assertPrivateReminderManagementGrant, type PrivateReminderManagementGrant } from './privateReminderManagementAccess.js'
 import { applyDiscoveryProfileManagement, discoveryProfileManagementSchema, discoveryProfileManagementObjectRefs, discoveryProfileManagementFingerprint, restoreDiscoveryProfileManagement, type DiscoveryProfileManagementCompensation } from '../src/discoveryProfileManagement.js'
@@ -394,6 +395,7 @@ function lifecycle(now: string, baseRevision: number, currentRevision: number) {
 
 export interface AuthoritativeCommandExecutorOptions extends TransactionalWorkspaceStoreOptions {
   // Server-owned grant resolver; omission deliberately disables the new capability.
+  resolveConsumerBusinessManagementGrant?: (principal: MutationPrincipal) => Promise<ConsumerBusinessManagementGrant | undefined>
   resolveBusinessManagementGrant?: (principal: MutationPrincipal) => Promise<BusinessManagementGrant | undefined>
   resolveOpportunityManagementGrant?: (principal: MutationPrincipal) => Promise<OpportunityManagementGrant | undefined>
   resolvePrivateReminderManagementGrant?: (principal: MutationPrincipal) => Promise<PrivateReminderManagementGrant | undefined>
@@ -404,7 +406,7 @@ export interface AuthoritativeCommandExecutorOptions extends TransactionalWorksp
 export function createAuthoritativeCommandExecutor(options: AuthoritativeCommandExecutorOptions) {
   const store = createTransactionalWorkspaceStore(options)
   async function authorizeManagement(principal: MutationPrincipal, admitted?: Pick<BusinessManagementGrant, 'id' | 'revision'>, operation = 'business_management') {
-    let grant: BusinessManagementGrant | OpportunityManagementGrant | PlanningManagementGrant | DiscoveryProfileManagementGrant | PrivateReminderManagementGrant
+    let grant: ConsumerBusinessManagementGrant | BusinessManagementGrant | OpportunityManagementGrant | PlanningManagementGrant | DiscoveryProfileManagementGrant | PrivateReminderManagementGrant
     if (operation === 'private_reminder_management') {
       const resolved = await options.resolvePrivateReminderManagementGrant?.(principal)
       assertPrivateReminderManagementGrant(principal, resolved)
@@ -420,6 +422,10 @@ export function createAuthoritativeCommandExecutor(options: AuthoritativeCommand
     } else if (operation === 'opportunity_management') {
       const resolved = await options.resolveOpportunityManagementGrant?.(principal)
       assertOpportunityManagementGrant(principal, resolved)
+      grant = resolved
+    } else if (options.resolveConsumerBusinessManagementGrant) {
+      const resolved = await options.resolveConsumerBusinessManagementGrant(principal)
+      assertConsumerBusinessManagementGrant(principal, resolved)
       grant = resolved
     } else {
       const resolved = await options.resolveBusinessManagementGrant?.(principal)
@@ -477,7 +483,7 @@ export function createAuthoritativeCommandExecutor(options: AuthoritativeCommand
     }
 
     const operation = operationFor(parsed.command)
-    const payloadHash = await hashMutationPayload(operation, parsed.command)
+    const payloadHash = await hashMutationPayload(admittedManagementGrant?.consentVersion === 7 ? 'consumer_business_management_v7' : operation, parsed.command)
     const startedAt = new Date().toISOString()
 
     for (let attempt = 0; attempt < 5; attempt += 1) {
@@ -487,6 +493,8 @@ export function createAuthoritativeCommandExecutor(options: AuthoritativeCommand
 
       const existing = await store.readCommandForUser(principal.userId, parsed.commandId)
       if (existing) {
+        if (admittedManagementGrant?.consentVersion === 2 && (existing.receipt.managementAuthorization as { consentVersion?: unknown } | undefined)?.consentVersion === 7) throw new WorkspaceSourceError('COMMAND_ID_REUSED', 'Command ID belongs to the consumer management family.', false)
+        if (admittedManagementGrant?.consentVersion === 7 && (existing.operation !== 'business_management' || (existing.receipt.managementAuthorization as { consentVersion?: unknown } | undefined)?.consentVersion !== 7)) throw new WorkspaceSourceError('COMMAND_ID_REUSED', 'Command ID belongs to a different management consent family.', false)
         if (existing.payloadHash !== payloadHash) {
           throw new WorkspaceSourceError('COMMAND_ID_REUSED', 'TodayAction command id was reused with a different payload.', false)
         }
@@ -645,7 +653,7 @@ export function createAuthoritativeCommandExecutor(options: AuthoritativeCommand
       // Carry the freshly read identity/revision into the transaction-locked RPC.
       const managementGrant = isManagement ? await authorizeManagement(principal, admittedManagementGrant, parsed.command.type) : undefined
       const committed = await store.commitAuthoritativeForUser({
-        managementAuthorization: managementGrant ? { grantId: managementGrant.id, grantRevision: managementGrant.revision, ...(managementGrant.consentVersion === 6 ? { consentVersion: 6 as const } : managementGrant.consentVersion === 5 ? { consentVersion: 5 as const } : managementGrant.consentVersion === 4 ? { consentVersion: 4 as const } : managementGrant.consentVersion === 3 ? { consentVersion: 3 as const } : {}) } : undefined,
+        managementAuthorization: managementGrant ? { grantId: managementGrant.id, grantRevision: managementGrant.revision, ...(managementGrant.consentVersion === 7 ? { consentVersion: 7 as const } : managementGrant.consentVersion === 6 ? { consentVersion: 6 as const } : managementGrant.consentVersion === 5 ? { consentVersion: 5 as const } : managementGrant.consentVersion === 4 ? { consentVersion: 4 as const } : managementGrant.consentVersion === 3 ? { consentVersion: 3 as const } : {}) } : undefined,
         userId: principal.userId,
         commandId: parsed.commandId,
         operation,
@@ -684,8 +692,8 @@ export function createAuthoritativeCommandExecutor(options: AuthoritativeCommand
     const parsed = authoritativeUndoSchema.parse(raw)
     const operation = 'undo_command'
     const payload = { targetCommandId: parsed.targetCommandId, ...(parsed.expectedCompensationFingerprint ? { expectedCompensationFingerprint: parsed.expectedCompensationFingerprint } : {}) }
-    let admittedManagementGrant: BusinessManagementGrant | OpportunityManagementGrant | PlanningManagementGrant | DiscoveryProfileManagementGrant | PrivateReminderManagementGrant | undefined
-    const payloadHash = await hashMutationPayload(operation, payload)
+    let admittedManagementGrant: ConsumerBusinessManagementGrant | BusinessManagementGrant | OpportunityManagementGrant | PlanningManagementGrant | DiscoveryProfileManagementGrant | PrivateReminderManagementGrant | undefined
+    const payloadHash = await hashMutationPayload(options.resolveConsumerBusinessManagementGrant ? 'consumer_business_management_undo_v7' : operation, payload)
     const startedAt = new Date().toISOString()
 
     for (let attempt = 0; attempt < 5; attempt += 1) {
@@ -693,6 +701,8 @@ export function createAuthoritativeCommandExecutor(options: AuthoritativeCommand
       if (!current) throw new WorkspaceSourceError('WORKSPACE_NOT_FOUND', 'TodayAction connected workspace has not been migrated yet.', false)
 
       const target = await store.readCommandForUser(principal.userId, parsed.targetCommandId)
+      if (options.resolveConsumerBusinessManagementGrant && target?.operation === 'business_management' && (target.receipt.managementAuthorization as { consentVersion?: unknown } | undefined)?.consentVersion !== 7) throw new WorkspaceSourceError('AUTH_FORBIDDEN', 'Consumer business undo requires its own versioned command receipt.', false)
+      if (options.resolveBusinessManagementGrant && !options.resolveConsumerBusinessManagementGrant && target?.operation === 'business_management' && (target.receipt.managementAuthorization as { consentVersion?: unknown } | undefined)?.consentVersion === 7) throw new WorkspaceSourceError('AUTH_FORBIDDEN', 'Owner v2 undo cannot restore a consumer business command.', false)
       if (target?.operation === 'business_management' || target?.operation === 'opportunity_management' || target?.operation === 'planning_management' || target?.operation === 'discovery_profile_management' || target?.operation === 'private_reminder_management') {
         current = await store.readForUser(principal.userId, { preserveRawData: true })
         if (!current) throw new WorkspaceSourceError('WORKSPACE_NOT_FOUND', 'TodayAction workspace is unavailable.', false)
@@ -704,6 +714,8 @@ export function createAuthoritativeCommandExecutor(options: AuthoritativeCommand
       if (target?.operation === 'opportunity_management' && (!target.compensation || !parsed.expectedCompensationFingerprint || parsed.expectedCompensationFingerprint !== await opportunityManagementFingerprint(target.compensation))) throw new WorkspaceSourceError('INVALID_ARGUMENT', 'Opportunity restore requires the exact owner-ledger compensation fingerprint.', false)
       const existingUndo = await store.readCommandForUser(principal.userId, parsed.commandId)
       if (existingUndo) {
+        if (options.resolveBusinessManagementGrant && !options.resolveConsumerBusinessManagementGrant && (existingUndo.receipt.managementAuthorization as { consentVersion?: unknown } | undefined)?.consentVersion === 7) throw new WorkspaceSourceError('COMMAND_ID_REUSED', 'Undo ID belongs to the consumer management family.', false)
+        if (options.resolveConsumerBusinessManagementGrant && (existingUndo.operation !== 'undo_command' || (existingUndo.receipt.managementAuthorization as { consentVersion?: unknown } | undefined)?.consentVersion !== 7)) throw new WorkspaceSourceError('COMMAND_ID_REUSED', 'Undo ID belongs to a different management consent family.', false)
         if (existingUndo.payloadHash !== payloadHash) {
           throw new WorkspaceSourceError('COMMAND_ID_REUSED', 'TodayAction undo command id was reused with a different target.', false)
         }
@@ -804,7 +816,7 @@ export function createAuthoritativeCommandExecutor(options: AuthoritativeCommand
       const affectedObjects = diffCommandObjects(current.snapshot, next)
       const managementGrant = target.operation === 'business_management' || target.operation === 'opportunity_management' || target.operation === 'planning_management' || target.operation === 'discovery_profile_management' || target.operation === 'private_reminder_management' ? await authorizeManagement(principal, admittedManagementGrant, target.operation) : undefined
       const committed = await store.commitAuthoritativeForUser({
-        managementAuthorization: managementGrant ? { grantId: managementGrant.id, grantRevision: managementGrant.revision, ...(managementGrant.consentVersion === 6 ? { consentVersion: 6 as const } : managementGrant.consentVersion === 5 ? { consentVersion: 5 as const } : managementGrant.consentVersion === 4 ? { consentVersion: 4 as const } : managementGrant.consentVersion === 3 ? { consentVersion: 3 as const } : {}) } : undefined,
+        managementAuthorization: managementGrant ? { grantId: managementGrant.id, grantRevision: managementGrant.revision, ...(managementGrant.consentVersion === 7 ? { consentVersion: 7 as const } : managementGrant.consentVersion === 6 ? { consentVersion: 6 as const } : managementGrant.consentVersion === 5 ? { consentVersion: 5 as const } : managementGrant.consentVersion === 4 ? { consentVersion: 4 as const } : managementGrant.consentVersion === 3 ? { consentVersion: 3 as const } : {}) } : undefined,
         userId: principal.userId,
         commandId: parsed.commandId,
         operation,

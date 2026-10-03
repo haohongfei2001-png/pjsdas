@@ -5,7 +5,7 @@ import type { TransactionalWorkspaceStoreOptions } from './transactionalWorkspac
 import { WorkspaceSourceError } from './workspaceSource.js'
 
 const grantSchema = z.object({ id: z.uuid(), user_id: z.uuid(), client_id: z.uuid(), revision: z.number().int().positive().max(Number.MAX_SAFE_INTEGER), revoked_at: z.iso.datetime({ offset: true }).nullable(), consent_version: z.number().int(), capability: z.string(), consent_text_hash: z.string().regex(/^[0-9a-f]{64}$/) })
-const receiptSchema = z.array(z.object({ domain: scopedConsentDomainSchema, outcome: z.enum(['APPROVED', 'REVOKED', 'ALREADY_REVOKED', 'DENIED']), grant_id: z.uuid().nullable(), grant_revision: z.number().int().positive().max(Number.MAX_SAFE_INTEGER).nullable() })).min(1).max(4)
+const receiptSchema = z.array(z.object({ domain: scopedConsentDomainSchema, outcome: z.enum(['APPROVED', 'REVOKED', 'ALREADY_REVOKED', 'DENIED']), grant_id: z.uuid().nullable(), grant_revision: z.number().int().positive().max(Number.MAX_SAFE_INTEGER).nullable() })).min(1).max(5)
 const uncertain = () => new WorkspaceSourceError('CONSENT_OUTCOME_UNCONFIRMED', 'The decision may have committed. Read current state and retry only the same request ID and exact choices.', false)
 export function createScopedManagementConsentStore(options: TransactionalWorkspaceStoreOptions) {
   const fetchImpl = options.fetchImpl ?? fetch
@@ -27,8 +27,8 @@ export function createScopedManagementConsentStore(options: TransactionalWorkspa
   return {
     async list(userId: string) {
       const capabilities = scopedManagementDomains.map(domain => SCOPED_MANAGEMENT_CONSENTS[domain].capability)
-      const query = new URLSearchParams({ select: 'id,user_id,client_id,revision,revoked_at,consent_version,capability,consent_text_hash', user_id: `eq.${userId}`, capability: `in.(${capabilities.join(',')})`, limit: '401' })
-      const parsed = z.array(grantSchema).max(400).safeParse(await request(`pjsdas_business_management_grants?${query}`))
+      const query = new URLSearchParams({ select: 'id,user_id,client_id,revision,revoked_at,consent_version,capability,consent_text_hash', user_id: `eq.${userId}`, capability: `in.(${capabilities.join(',')})`, limit: '501' })
+      const parsed = z.array(grantSchema).max(500).safeParse(await request(`pjsdas_business_management_grants?${query}`))
       if (!parsed.success) throw new WorkspaceSourceError('AUTH_INVALID', 'Consent state is invalid.', false)
       const seen = new Set<string>()
       return parsed.data.map(({ user_id, ...grant }) => {

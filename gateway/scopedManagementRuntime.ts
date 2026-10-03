@@ -1,3 +1,4 @@
+import { createConsumerBusinessManagementRuntime } from './consumerBusinessManagementRuntime.js'
 import { createScopedManagementGrantReader } from './scopedManagementGrantStore.js'
 import { createOpportunityManagementTools } from './opportunityManagementTools.js'
 import { createPlanningManagementTools } from './planningManagementTools.js'
@@ -21,6 +22,7 @@ export function createOwnerScopedManagementRuntime(options: TransactionalWorkspa
   const principal = Object.freeze({ kind: 'delegated_mcp' as const, userId: options.identity.userId, clientId: options.identity.oauthClientId })
   const storeOptions = { supabaseUrl: options.supabaseUrl, serviceRoleKey: options.serviceRoleKey, fetchImpl: options.fetchImpl }
   return Object.freeze({
+    business: consumerAllowed ? createConsumerBusinessManagementRuntime({ principal, storeOptions, resolveGrant: createScopedManagementGrantReader('business', storeOptions) }) : undefined,
     opportunity: createOpportunityManagementTools({ principal, storeOptions, resolveGrant: createScopedManagementGrantReader('opportunity', storeOptions) }),
     planning: createPlanningManagementTools({ principal, storeOptions, resolveGrant: createScopedManagementGrantReader('planning', storeOptions) }),
     discoveryProfile: createDiscoveryProfileManagementTools({ principal, storeOptions, resolveGrant: createScopedManagementGrantReader('discoveryProfile', storeOptions) }),

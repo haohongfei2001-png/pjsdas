@@ -592,13 +592,18 @@ test('confirmed blocked projection recovers with a read-only snapshot after equi
   const server = await setup(context)
   server.setDelay(700)
   await start(page)
+  const releaseConfirmation = server.holdNextConfirmation()
+  try {
   await page.locator('[data-action-id="dense-action-0"] .tsui-done-action').click()
+  await expect.poll(() => server.sent.length).toBe(1)
+  await expect(page.locator('[data-action-id="dense-action-0"]')).toHaveCount(0)
   await page.evaluate(async () => {
     const db = await (await import('/pjsdas/src/db.ts')).dbPromise
     const row = await db.get('actions', 'dense-action-0')
     ;(window as any).originalAction = row
     await db.put('actions', { ...row!, status: 'skipped' })
   })
+  } finally { releaseConfirmation() }
   await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem('pjsdas-cgr01-pending:instant-owner') ?? '[]')[0]?.status)).toBe('projection_pending')
   await page.evaluate(async () => { const db = await (await import('/pjsdas/src/db.ts')).dbPromise; await db.put('actions', (window as any).originalAction) })
   await page.evaluate(async () => {
@@ -1080,11 +1085,30 @@ test('cleared-cache rejection releases a conservatively quarantined independent 
 })
 
 
-test('continuous settled commands defer passive full reads while explicit refresh remains available', async ({ page, context }) => {
+test('continuous settled commands defer passive full reads while explicit refresh remains available', async ({ page, context }, info) => {
   const server = await setup(context); server.setDelay(50)
+  await page.addInitScript(() => {
+    const original = window.fetch
+    const witness = { reads: [] as any[], inputs: [] as any[] }
+    ;(window as any).__passiveReadWitness = witness
+    const at = () => new PerformanceMark('ta-passive-read-diagnostic').startTime
+    window.fetch = function (...args: Parameters<typeof fetch>) {
+      try {
+        const [input, init] = args, path = new URL(typeof input === 'string' ? input : input instanceof URL ? input.href : input.url, location.href).pathname
+        const action = typeof init?.body === 'string' ? JSON.parse(init.body).action : undefined
+        if (action && witness.reads.length < 1000) witness.reads.push({ path, action, nativeAt: at(), interactionRecent: (window as any).__instantInteractionIsRecent?.() })
+      } catch { /* Diagnostics must not change the request. */ }
+      return original.apply(this, args)
+    }
+    for (const type of ['pointerdown', 'keydown']) window.addEventListener(type, () => {
+      if (witness.inputs.length < 1000) witness.inputs.push({ type, handlerEntryNativeAt: at() })
+    }, { capture: true })
+  })
   await start(page)
+  await page.evaluate(async () => { const activity = await import('/pjsdas/src/cloud/interactionActivity.ts'); (window as any).__instantInteractionIsRecent = () => activity.interactionIsRecent('instant-owner') })
   await page.waitForTimeout(150)
   const initialReads = server.readCount
+  try {
   for (let index = 0; index < 3; index++) {
     await page.locator('[data-action-id="dense-action-0"] .tsui-done-action').click()
     await expect(page.locator('[data-action-id="dense-action-0"]')).toHaveCount(0)
@@ -1105,6 +1129,10 @@ test('continuous settled commands defer passive full reads while explicit refres
   expect(server.readCount).toBe(initialReads + 1)
   expect(server.sent).toHaveLength(6)
   expect(server.snapshot.data.actions[0].status).toBe('todo')
+  } finally {
+    const browser = await page.evaluate(() => (window as any).__passiveReadWitness).catch(error => ({ diagnosticError: String(error) }))
+    await info.attach('passive-read-admission.json', { body: JSON.stringify({ initialReads, finalReads: server.readCount, serverReadAdmissions: server.readAdmissions, browser }, null, 2), contentType: 'application/json' })
+  }
 })
 
 for (const state of ['rejected', 'conflict'] as const) test(`terminal ${state} journal reconciles a pending mirror after a crash`, async ({ page, context }) => {

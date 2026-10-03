@@ -23,7 +23,7 @@ describe('scoped management admission', () => {
       expect(Object.isFrozen(descriptor.exclusions)).toBe(true)
       hashes.push(await scopedManagementConsentHash(domain))
     }
-    expect(new Set(hashes).size).toBe(4)
+    expect(new Set(hashes).size).toBe(5)
   })
   it.each(scopedManagementDomains)('requires exact %s account, client, domain, version and descriptor hash', async domain => {
     const o = options(), d = SCOPED_MANAGEMENT_CONSENTS[domain]
@@ -64,8 +64,8 @@ describe('scoped management admission', () => {
         expect(String(input)).toContain('/pjsdas_workspaces?')
         return Response.json([{ id: 'synthetic-workspace', user_id: owner, revision: 0, schema_version: 4, snapshot }])
       })
-      const runtime = createOwnerScopedManagementRuntime(o)!
-      const result = domain === 'opportunity' ? await runtime.opportunity.invoke('get_opportunity_management', { opportunityId: snapshot.data.opportunities[0].id })
+      const runtime = createOwnerScopedManagementRuntime({ ...o, consumerEnabled: 'enabled' })!
+      const result = domain === 'business' ? await runtime.business!.invoke('get_consumer_business_management', { query: { type: 'action' } }) : domain === 'opportunity' ? await runtime.opportunity.invoke('get_opportunity_management', { opportunityId: snapshot.data.opportunities[0].id })
         : domain === 'planning' ? await runtime.planning.invoke('get_planning_management', {})
           : domain === 'discoveryProfile' ? await runtime.discoveryProfile.invoke('get_discovery_profile_management', {})
             : await runtime.privateReminder.invoke('get_private_reminder_management', { type: 'reminders' })

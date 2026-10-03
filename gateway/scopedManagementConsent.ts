@@ -2,6 +2,13 @@ import { hashMutationPayload } from './mutationKernel.js'
 
 /** Immutable application capabilities. No OAuth scope or existing v2 grant is upgraded. */
 export const SCOPED_MANAGEMENT_CONSENTS = Object.freeze({
+  business: Object.freeze({
+    version: 7 as const, capability: 'workspace.business.manage' as const,
+    title: '独立准备、手动行动与投递组',
+    scope: Object.freeze(['读取当前账号中明确选择的准备任务、行动和投递组', '创建、修改、可恢复归档独立准备任务、独立手动行动和投递组', '撤销上述修改；后续目标或依赖发生变化时拒绝覆盖']),
+    exclusions: Object.freeze(['不修改由招聘事实、准备任务或日程派生的行动', '不永久删除、不修改账号安全或其他授权、不发送外部消息或投递', '现有基础管理授权不会自动转为此项授权']),
+    duration: '持续有效，直到你撤销；撤销不回滚已经完成的修改。',
+  }),
   opportunity: Object.freeze({
     version: 3 as const, capability: 'workspace.opportunity.manage' as const,
     title: '机会资料与可恢复归档',
