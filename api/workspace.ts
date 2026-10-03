@@ -1,3 +1,4 @@
+import { configuredConsumerTestCohort } from '../gateway/consumerTestCohort.js'
 import { createScopedManagementConsentHandler } from '../gateway/scopedManagementConsentHandler.js'
 import { createOwnerManagementConsentHandler } from '../gateway/ownerManagementConsentHandler.js'
 import { createConnectedWorkspaceHandler } from '../gateway/connectedWorkspaceHandler.js'
@@ -9,6 +10,7 @@ import { firstPartyWebOrigins, audienceMode } from '../gateway/productionTopolog
 import { createConfiguredAudienceAccessGuard } from '../gateway/audienceAccess.js'
 
 const handler = createConnectedWorkspaceHandler({
+  consumerCohort: configuredConsumerTestCohort(),
   consumerOnboardingEnabled: process.env.PJSDAS_CONSUMER_ONBOARDING === 'enabled',
   consumerAudienceMode: audienceMode(),
   supabaseUrl: PJSDAS_SUPABASE_URL,
@@ -29,6 +31,8 @@ const ownerConsentHandler = createOwnerManagementConsentHandler({
 })
 
 const scopedConsentHandler = createScopedManagementConsentHandler({
+  consumerCohort: configuredConsumerTestCohort(),
+  consumerOnboardingEnabled: process.env.PJSDAS_CONSUMER_ONBOARDING === 'enabled',
   enabled: process.env.PJSDAS_OWNER_SCOPED_MANAGEMENT_CONSENT,
   consumerEnabled: process.env.PJSDAS_CONSUMER_SCOPED_MANAGEMENT,
   audienceMode: audienceMode(),

@@ -1,5 +1,7 @@
 # Consumer management: first implementation batch
 
+本轮受控范围以 [controlled-v7-review.md](controlled-v7-review.md) 为准：仅精确 A/B beta + 原 client 的业务 v7，其他消费者领域另行同意；全部关闭仍可第一方撤权。源代码能力不代表线上开放。
+
 This is a gated foundation, not the complete consumer plugin rollout.
 
 This is the historical first-batch receipt. Later persistence, consent UI and runtime wiring are described in [business v7](business-v7.md) and the [current delivery entry](plugin-delivery.md); pending items below reflect the original batch, not a fresh inventory. Consumer scopes remain separately gated and do not inherit owner v2 permission.

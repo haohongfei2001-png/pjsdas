@@ -39,12 +39,15 @@ try{
   const after=u.searchParams.get('resulting_revision');if(after)rows=rows.filter(row=>row.resulting_revision>Number(after.slice(3)))
   return Response.json(rows)
  }
- const config={enabled:'enabled',consumerEnabled:'enabled',audienceMode:'allowlist',supabaseUrl:origin,supabasePublishableKey:'synthetic-public',serviceRoleKey:'synthetic-service',allowedOrigins:[origin],authorizeIdentity:async()=>({allowed:true,mode:'allowlist',role:'beta'}),fetchImpl}
- const workspace=createConnectedWorkspaceHandler({...config,consumerOnboardingEnabled:true}),consent=createScopedManagementConsentHandler(config)
- const runtime=createOwnerScopedManagementRuntime({...config,transactional:true,identity:{userId:owner,oauthClientId:client},audience:{allowed:true,mode:'allowlist',role:'beta'}})
+ const config={consumerCohort:{accountIds:owner+',00000000-0000-4000-8000-000000000159',clientId:client},enabled:'enabled',consumerEnabled:'enabled',audienceMode:'allowlist',supabaseUrl:origin,supabasePublishableKey:'synthetic-public',serviceRoleKey:'synthetic-service',allowedOrigins:[origin],authorizeIdentity:async()=>({allowed:true,mode:'allowlist',role:'beta'}),fetchImpl}
+ const workspace=createConnectedWorkspaceHandler({...config,consumerOnboardingEnabled:true})
+ // Existing independently enabled owner v4 regression; it is NOT the consumer v7 acceptance scope.
+ const consent=createScopedManagementConsentHandler({...config,consumerEnabled:undefined,authorizeIdentity:async()=>({allowed:true,mode:'allowlist',role:'owner'})})
+ const runtime=createOwnerScopedManagementRuntime({...config,transactional:true,identity:{userId:owner,oauthClientId:client},audience:{allowed:true,mode:'allowlist',role:'owner'}})
  assert.equal((await runtime.planning.invoke('get_planning_management',{})).isError,true)
  const initialize={action:'initialize_empty',expectedAccountId:owner,commandId:'synthetic-empty-start',timezone:'America/New_York',confirmStartEmpty:true}
  const started=await workspace(post(initialize));assert.equal(started.status,200,await started.clone().text());const start=await started.json();assert.equal(start.snapshot.data.opportunities.length,0);assert.equal(start.snapshot.data.timePlanning.timezone,'America/New_York')
+ await db.query('reset role');await db.query("update public.pjsdas_access_grants set role='owner' where user_id=$1",[owner]);await db.query('set role service_role')
  const view=await (await consent(read())).json();const descriptor=view.descriptors.find(d=>d.domain==='planning')
  const decision={requestId:'00000000-0000-4000-8000-000000000153',expectedAccountId:owner,clientId:client,confirmed:true,choices:[{domain:'planning',decision:'approve',consentVersion:4,consentTextHash:descriptor.consentTextHash,expectedGrant:null}]}
  const approved=await consent(post(decision));assert.equal(approved.status,200,await approved.clone().text())
@@ -62,5 +65,5 @@ try{
  for(const [method,input]of [['get_planning_management',{}],['execute_planning_management',command],['restore_planning_management',undo]])assert.equal((await runtime.planning.invoke(method,input)).structuredContent.code,'AUTH_FORBIDDEN')
  assert.equal((await runtime.discoveryProfile.invoke('get_discovery_profile_management',{})).structuredContent.code,'AUTH_FORBIDDEN')
  assert.equal((await db.query('select count(*) n from public.pjsdas_command_ledger where user_id=$1',[owner])).rows[0].n,2)
- console.log('PASS fresh-account empty start -> per-domain consent -> real SQL read/write -> exact undo -> revoke -> read/write/undo denial. Unselected domains denied; existing workspace never reset.')
+ console.log('PASS synthetic empty start and independently authorized existing owner v4 regression -> per-domain consent -> real SQL read/write -> exact undo -> revoke -> read/write/undo denial. Unselected domains denied; existing workspace never reset.')
 }finally{globalThis.fetch=network;await db.end()}

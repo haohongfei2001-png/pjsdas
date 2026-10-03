@@ -1,3 +1,4 @@
+import { configuredConsumerTestCohort } from './consumerTestCohort.js'
 import { createOwnerScopedManagementRuntime } from './scopedManagementRuntime.js'
 import { createOwnerBusinessManagementRuntime } from './businessManagementRuntime.js'
 import { createMcpHandler } from '@modelcontextprotocol/server'
@@ -159,6 +160,7 @@ export async function authenticatedRemoteMcpFetch(request: Request) {
     })
     const scopedManagement = createOwnerScopedManagementRuntime({
       enabled: process.env.PJSDAS_OWNER_SCOPED_MANAGEMENT,
+      consumerCohort: configuredConsumerTestCohort(),
       // Capability consent is separate from OAuth resource binding. A valid
       // provider session for another resource cannot expose consumer tools.
       consumerEnabled: process.env.PJSDAS_CONSUMER_SCOPED_MANAGEMENT === 'enabled'

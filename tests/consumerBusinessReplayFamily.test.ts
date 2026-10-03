@@ -22,7 +22,7 @@ async function fixture(version:2|7,receiptVersion:2|7,undo=false,regrantDuringRe
   throw new Error('Unexpected synthetic request')
  })
  const options={enabled:'enabled',consumerEnabled:'enabled',transactional:true,identity:{userId:owner,oauthClientId:client},audience:{mode:'allowlist' as const,role:'owner' as const,allowed:true},supabaseUrl:'https://synthetic.invalid',serviceRoleKey:'synthetic',fetchImpl}
- const runtime=version===7?createOwnerScopedManagementRuntime(options)!.business!:createOwnerBusinessManagementRuntime({...options,source:{read:async()=>{throw new Error('No normalized read')}}})!
+ const runtime=version===7?createOwnerScopedManagementRuntime({...options,audience:{...options.audience,role:'beta'},consumerCohort:{accountIds:`${owner},00000000-0000-4000-8000-000000000099`,clientId:client}})!.business!:createOwnerBusinessManagementRuntime({...options,source:{read:async()=>{throw new Error('No normalized read')}}})!
  const name=undo?(version===7?'undo_consumer_business_management':'undo_business_management'):(version===7?'execute_consumer_business_management':'execute_business_management')
  const invoke=()=>runtime.invoke(name as never,undo?{commandId,targetCommandId}:{commandId,baseRevision:0,change})
  return{invoke,posts}

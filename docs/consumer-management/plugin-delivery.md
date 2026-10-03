@@ -4,7 +4,7 @@ This is the current handover entry, dated 2026-10-03. Historical slice documents
 
 ## What exists
 
-The source implements empty-workspace onboarding, explicit timezone selection, separate five-domain consent, read/write/undo or restore, revocation, uncertain-result recovery and account-switch protection. Business consent is **v7**, separate from owner-only v2. The source runtime registers these capabilities only behind explicit flags and verified audience/account/client checks. No old grant is upgraded.
+The source implements empty-workspace onboarding, explicit timezone selection, separate five-domain consent, read/write/undo or restore, revocation, uncertain-result recovery and account-switch protection. Business consent is **v7**, separate from owner-only v2. The controlled consumer runtime registers only business v7 for exactly two configured beta account UUIDs and the verified original client; other domains remain outside this test. Owned revocation is available even with all admission flags disabled. See [controlled-v7-review.md](controlled-v7-review.md). No old grant is upgraded.
 
 The canonical production MCP address is `https://todayaction.com/api/mcp`. On takeover, both backend health and remote main identify `4b1e2b0b3cde303246804ba3a0a8a45f577ba884`, with `allowlist` audience mode. Consumer activation is not performed by this delivery. A health `migrationSet` lists source files; it does **not** prove those migrations are installed.
 
@@ -35,11 +35,11 @@ Resolve these through the existing publisher account. Do not guess an ID, replac
 
 ## Real-host acceptance after controlled activation
 
-Use the **existing** plugin entry and the publisher's supported draft/update mechanism. Record its real edit ID, organization/project, package digest, scanned catalog revision and host name/version. Use two dedicated synthetic accounts A/B and sample data. Secure reviewer access details stay outside this repository.
+Use the **existing** plugin entry and the publisher's supported draft/update mechanism. Record its real edit ID, organization/project, package digest, scanned catalog revision and host name/version. Use two dedicated synthetic accounts A/B and sample data under the exact server-only cohort/client configuration. Use the original plugin owner account, never a duplicate plugin. Secure reviewer access details stay outside this repository.
 
 1. Install in a fresh host session. Observe actual OAuth login, return URI, cancellation and resume; a direct backend call is not a substitute. Confirm the catalog from the installed connection. Record which tools are visible, held or absent. The previously reported 25-tool connection is a handover fact, not a fresh catalog observation.
 2. Log in as A. Open `https://todayaction.com/?connect=1`. Create a blank workspace with a deliberate IANA timezone, or connect existing data without reset. Existing Local/Drive data keeps its explicit migration decision. Verify duplicate clicks create no duplicate workspace.
-3. Select the actual OAuth client. All five scopes initially stay unchanged. Approve only business v7 and planning v4; verify the exact change summary and unselected scope denial. Close/Back/Forward and interrupted login must not submit a decision.
+3. Select the actual OAuth client. All five scopes initially stay unchanged. Approve only business v7; planning v4 and all other domains are outside this controlled test and require separate future consent; verify the exact change summary and unselected scope denial. Close/Back/Forward and interrupted login must not submit a decision.
 4. Run all five positive cases from the manifest in the installed host. Preserve command IDs, receipt references and before/after values. Read back from the web UI and host. Replay the same request once and verify no duplicate object/ledger mutation. Undo the exact unchanged target; a newer edit must conflict.
 5. While a request is pending, switch to B. Verify no A data, receipt, consent choice or cached result is presented as B's. Foreign object/receipt identifiers must not disclose existence. Repeat close/reopen and login recovery.
 6. Revoke through the first-party page. Installed-host reads/writes in that scope must fail afterward. Exercise a controlled write/revoke race using only synthetic data, distinguishing a write committed before revocation from a stale request after it. Regrant must not revive the old request. Revoke remains possible for disconnected/stale-text grants.

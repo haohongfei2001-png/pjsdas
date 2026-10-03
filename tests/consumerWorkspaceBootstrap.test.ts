@@ -51,7 +51,7 @@ describe('explicit empty consumer workspace',()=>{
 })
 
 describe('consumer onboarding route remains gated and first-party only',()=>{
- const config={supabaseUrl:'https://fixture.invalid',supabasePublishableKey:'synthetic-public',serviceRoleKey:'synthetic-service',allowedOrigins:[origin]}
+ const config={consumerCohort:{accountIds:owner+',00000000-0000-4000-8000-000000000009',clientId:'00000000-0000-4000-8000-000000000002'},authorizeIdentity:async()=>({allowed:true,mode:'allowlist',role:'beta'}),supabaseUrl:'https://fixture.invalid',supabasePublishableKey:'synthetic-public',serviceRoleKey:'synthetic-service',allowedOrigins:[origin]}
  it('is disabled by default before any workspace mutation or read',async()=>{
   const fetchImpl=vi.fn(async()=>json({id:owner}))
   const response=await createConnectedWorkspaceHandler({...config,fetchImpl})(request(input))

@@ -1,3 +1,4 @@
+import { consumerTestAccountAllowed, consumerTestClientAllowed, type ConsumerTestCohort } from './consumerTestCohort.js'
 import * as z from 'zod/v4'
 import { createSupabaseIdentityResolver } from './supabaseIdentity.js'
 import type { OwnerManagementConsentConfig } from './ownerManagementConsentHandler.js'
@@ -26,7 +27,7 @@ async function boundedJson(request:Request) {
 }
 
 /** Consumer admission is independently default-off; existing audience policy still applies. */
-export function createScopedManagementConsentHandler(config: OwnerManagementConsentConfig & { consumerEnabled?: string; audienceMode?: 'allowlist' | 'legacy' }) {
+export function createScopedManagementConsentHandler(config: OwnerManagementConsentConfig & { consumerEnabled?: string; consumerCohort?: ConsumerTestCohort; consumerOnboardingEnabled?: boolean; audienceMode?: 'allowlist' | 'legacy' }) {
  const fetchImpl=config.fetchImpl??fetch
  const resolveIdentity=createSupabaseIdentityResolver({supabaseUrl:config.supabaseUrl,publishableKey:config.supabasePublishableKey,fetchImpl})
  const store=createScopedManagementConsentStore({...config,fetchImpl})
@@ -44,8 +45,7 @@ export function createScopedManagementConsentHandler(config: OwnerManagementCons
   const headers:Record<string,string>={'content-type':'application/json; charset=utf-8','cache-control':'no-store',vary:'Origin'}
   if(allowed){headers['access-control-allow-origin']=origin!;headers['access-control-allow-headers']='authorization, content-type';headers['access-control-allow-methods']='GET, POST, OPTIONS'}
   const respond=(status:number,body:unknown)=>new Response(JSON.stringify(body),{status,headers})
-  const consumerEnabled=config.consumerEnabled==='enabled'
-  if(config.enabled!=='enabled'&&!consumerEnabled)return respond(404,{code:'CAPABILITY_DISABLED'})
+  // Owned grant metadata/revocation remain available when every admission flag is off.
   if(!allowed&&!(request.method==='GET'&&origin===null))return respond(403,{code:'ORIGIN_NOT_ALLOWED'})
   if(request.method==='OPTIONS')return new Response(null,{status:204,headers})
   if(!['GET','POST'].includes(request.method))return respond(405,{code:'METHOD_NOT_ALLOWED'})
@@ -65,13 +65,16 @@ export function createScopedManagementConsentHandler(config: OwnerManagementCons
    if(!revocationOnly){
     try{audience=await config.authorizeIdentity(identity)}catch{/* Admission cannot be proved; only a historical or denied receipt may resolve this request. */}
    }
-   const consumerAudience=audience?.mode==='legacy'&&audience.role==='legacy'||audience?.mode==='allowlist'&&['owner','beta'].includes(audience.role??'')
-   const canApprove=Boolean(audience?.allowed&&(consumerEnabled?consumerAudience:audience.mode==='allowlist'&&audience.role==='owner'))
-   const descriptors=await Promise.all(scopedManagementDomains.map(async domain=>({domain,canApprove:domain!=='business'||consumerEnabled,consent:SCOPED_MANAGEMENT_CONSENTS[domain],consentTextHash:await scopedManagementConsentHash(domain)})))
+   const cohortAccount=consumerTestAccountAllowed(identity.userId,config.consumerCohort)
+   const consumerEnabled=config.consumerEnabled==='enabled' && cohortAccount && audience?.mode==='allowlist' && audience.role==='beta' && audience.allowed
+   const ownerAllowed=config.enabled==='enabled' && audience?.allowed && audience.mode==='allowlist' && audience.role==='owner'
+   const canApprove=Boolean(consumerEnabled||ownerAllowed)
+   const descriptors=await Promise.all(scopedManagementDomains.map(async domain=>({domain,canApprove:Boolean(domain==='business'?consumerEnabled:ownerAllowed),consent:SCOPED_MANAGEMENT_CONSENTS[domain],consentTextHash:await scopedManagementConsentHash(domain)})))
    if(request.method==='GET'){
     const [clients,grants]=await Promise.all([canApprove?providerClients(accessToken).catch(()=>[]):Promise.resolve([]),store.list(identity.userId)])
-    const clientById=new Map(clients.map(c=>[c.id,c])),ids=new Set([...clientById.keys(),...grants.map(g=>g.client_id)])
-    return respond(200,{account:{id:identity.userId,email:identity.email},descriptors,clients:[...ids].map(id=>({id,name:clientById.get(id)?.name??'当前仅可撤销权限的客户端',canApprove:clientById.has(id),grants:grants.filter(g=>g.client_id===id)}))})
+    const admittedClients=clients.filter(c=>ownerAllowed||consumerTestClientAllowed(identity.userId,c.id,config.consumerCohort))
+    const clientById=new Map(admittedClients.map(c=>[c.id,c])),ids=new Set([...clientById.keys(),...grants.map(g=>g.client_id)])
+    return respond(200,{canInitialize:Boolean(config.consumerOnboardingEnabled&&cohortAccount&&audience?.allowed&&audience.mode==='allowlist'&&audience.role==='beta'),account:{id:identity.userId,email:identity.email},descriptors,clients:[...ids].map(id=>({id,name:clientById.get(id)?.name??'当前仅可撤销权限的客户端',canApprove:clientById.has(id),grants:grants.filter(g=>g.client_id===id)}))})
    }
    if(!decision)throw new WorkspaceSourceError('INVALID_ARGUMENT','Explicit choices required.',false)
    for(const choice of decision.choices){
@@ -81,9 +84,10 @@ export function createScopedManagementConsentHandler(config: OwnerManagementCons
    // Revocation works after OAuth disconnect. Any approval requires a fresh provider binding.
    const needsProvider=decision.choices.some(choice=>choice.decision==='approve')
    const clients=needsProvider?await providerClients(accessToken).catch(()=>[]):[]
-   const verified=clients.some(client=>client.id===decision.clientId)
+   const permittedChoices=decision.choices.every(choice=>choice.decision==='revoke'||(choice.domain==='business' ? consumerEnabled&&consumerTestClientAllowed(identity.userId,decision.clientId,config.consumerCohort) : ownerAllowed))
+   const verified=permittedChoices&&clients.some(client=>client.id===decision.clientId)
    const requestHash=await hashMutationPayload('scoped_management_consent_decision_v1',decision)
-   const receipts=await store.decide(decision,requestHash,verified&&canApprove,consumerEnabled,audience?.mode??config.audienceMode??'allowlist')
+   const receipts=await store.decide(decision,requestHash,verified&&canApprove,Boolean(consumerEnabled),audience?.mode??config.audienceMode??'allowlist')
    return respond(200,{requestId:decision.requestId,receipts,refreshRequired:true})
   } catch(error) {
    if(error instanceof z.ZodError)return respond(400,{code:'INVALID_ARGUMENT',message:'Choose explicit nonduplicate scopes and exact current proofs.'})

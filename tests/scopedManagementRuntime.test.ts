@@ -64,11 +64,11 @@ describe('scoped management admission', () => {
         expect(String(input)).toContain('/pjsdas_workspaces?')
         return Response.json([{ id: 'synthetic-workspace', user_id: owner, revision: 0, schema_version: 4, snapshot }])
       })
-      const runtime = createOwnerScopedManagementRuntime({ ...o, consumerEnabled: 'enabled' })!
-      const result = domain === 'business' ? await runtime.business!.invoke('get_consumer_business_management', { query: { type: 'action' } }) : domain === 'opportunity' ? await runtime.opportunity.invoke('get_opportunity_management', { opportunityId: snapshot.data.opportunities[0].id })
-        : domain === 'planning' ? await runtime.planning.invoke('get_planning_management', {})
-          : domain === 'discoveryProfile' ? await runtime.discoveryProfile.invoke('get_discovery_profile_management', {})
-            : await runtime.privateReminder.invoke('get_private_reminder_management', { type: 'reminders' })
+      const runtime = createOwnerScopedManagementRuntime({ ...o, consumerEnabled: 'enabled', ...(domain==='business'?{enabled:undefined,audience:{allowed:true,mode:'allowlist',role:'beta'},consumerCohort:{accountIds:owner+',00000000-0000-4000-8000-000000000009',clientId:client}}:{}) })!
+      const result = domain === 'business' ? await runtime.business!.invoke('get_consumer_business_management', { query: { type: 'action' } }) : domain === 'opportunity' ? await runtime.opportunity!.invoke('get_opportunity_management', { opportunityId: snapshot.data.opportunities[0].id })
+        : domain === 'planning' ? await runtime.planning!.invoke('get_planning_management', {})
+          : domain === 'discoveryProfile' ? await runtime.discoveryProfile!.invoke('get_discovery_profile_management', {})
+            : await runtime.privateReminder!.invoke('get_private_reminder_management', { type: 'reminders' })
       expect(reads, `${domain}/${mode}: ${JSON.stringify(result)}`).toBe(2)
       expect(result.structuredContent).toMatchObject({ code: 'AUTH_FORBIDDEN' })
       expect(result.structuredContent).not.toHaveProperty('data')
@@ -103,7 +103,7 @@ describe('scoped management admission', () => {
     for (const [url, init] of o.fetchImpl.mock.calls) { expect(String(url)).toContain('/pjsdas_business_management_grants?'); expect(init?.method ?? 'GET').toBe('GET') }
   })
   it.each([{mode:'allowlist' as const,allowed:true,role:'beta' as const},{mode:'legacy' as const,allowed:true,role:'legacy' as const}])('admits consumer catalogue only under its separate explicit source flag %#', audience=>{
-    const o={...options(),audience};expect(createOwnerScopedManagementRuntime(o)).toBeUndefined();expect(createOwnerScopedManagementRuntime({...o,consumerEnabled:'enabled'})).toBeDefined();expect(createOwnerScopedManagementRuntime({...o,consumerEnabled:'enabled',audience:{...audience,allowed:false}})).toBeUndefined();expect(o.fetchImpl).not.toHaveBeenCalled()
+    const o={...options(),audience};expect(createOwnerScopedManagementRuntime(o)).toBeUndefined();expect(createOwnerScopedManagementRuntime({...o,consumerEnabled:'enabled'})).toBeUndefined();const isolated=createOwnerScopedManagementRuntime({...o,consumerEnabled:'enabled',consumerCohort:{accountIds:owner+',00000000-0000-4000-8000-000000000009',clientId:client}});if(audience.mode==='allowlist'){expect(isolated?.business).toBeDefined();expect(isolated?.planning).toBeUndefined()}else expect(isolated).toBeUndefined();expect(createOwnerScopedManagementRuntime({...o,consumerEnabled:'enabled',audience:{...audience,allowed:false}})).toBeUndefined();expect(o.fetchImpl).not.toHaveBeenCalled()
   })
 
 })
