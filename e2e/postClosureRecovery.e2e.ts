@@ -33,6 +33,10 @@ for (const failure of ['partial-clear-throw', 'transaction-abort'] as const) tes
     await page.locator('.tsui-topbar').getByRole('button', { name: /设置|Settings/ }).click()
     await page.getByLabel('管理账号与同步', { exact: true }).click()
     await expect(page.getByRole('button', { name: '退出 TodayAction' })).toBeVisible()
+    // Exercise sign-out recovery after the control is stable. Expiry cases
+    // retain automatic synchronization and their independent auth trigger.
+    await page.getByLabel('自动同步', { exact: true }).uncheck()
+    await expect(page.getByRole('button', { name: '退出 TodayAction' })).toBeEnabled()
   }
   const before = await page.evaluate(async () => (await (await import('/pjsdas/src/db.ts')).exportLocalRecoveryArchive()).stores)
   // Snapshot replacement also clears stores, but includes commandInteractions.
@@ -57,7 +61,10 @@ for (const failure of ['partial-clear-throw', 'transaction-abort'] as const) tes
       const result = await pjsdasSupabase.auth.signOut({ scope: 'local' })
       if (result.error) throw result.error
     })
-    await expect(page.getByRole('heading', { name: /Workspace could not open/ })).toBeVisible()
+    await Promise.all([
+      expect.poll(() => page.evaluate(() => (window as any).__pcrAuthEvents.some((event: any) => event.event === 'SIGNED_OUT' && event.account === null))).toBe(true),
+      expect(page.getByRole('heading', { name: /Workspace could not open/ })).toBeVisible(),
+    ])
     reachedBoundary = await page.evaluate(() => ({ clear: (window as any).__pcrClearWitness, authEvents: (window as any).__pcrAuthEvents }))
     expect(reachedBoundary.clear).toMatchObject({
       activated: true, scope: [...expectedStores].sort(), authPresentAtFault: false,

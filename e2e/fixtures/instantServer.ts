@@ -7,6 +7,8 @@ export async function setupInstantServer(context: BrowserContext, historyRows = 
   let snapshot = instantDenseWorkspace(historyRows)
   let revision = 1204
   let readCount = 0
+  const readAdmissions: Array<{ path: string; ordinal: number }> = []
+  let nextConfirmation: Promise<void> | undefined
   let delay = 3000
   let serverNow = INSTANT_NOW
   const sent: string[] = []
@@ -25,7 +27,7 @@ export async function setupInstantServer(context: BrowserContext, historyRows = 
     if (route.request().url().endsWith('/api/health')) return cors(route, health())
     const body = route.request().postDataJSON()
     const base = () => ({ workspaceId: 'instant-workspace', revision, workspaceVersion: `txn:${revision}`, schemaVersion: snapshot.version, snapshot })
-    if (body.action === 'read') { readCount++; return cors(route, base()) }
+    if (body.action === 'read') { readCount++; if (readAdmissions.length < 1000) readAdmissions.push({ path: new URL(route.request().url()).pathname, ordinal: readCount }); return cors(route, base()) }
     if (body.action === 'receipt') {
       receiptLookups.push(body.commandId)
       const receipt = receipts.get(body.commandId)
@@ -36,6 +38,8 @@ export async function setupInstantServer(context: BrowserContext, historyRows = 
       baseRevisions.push(body.baseRevision)
       if (receipts.has(body.commandId)) return cors(route, { ...receipts.get(body.commandId), outcome: 'ALREADY_APPLIED' })
       const rejectThis = deny; deny = undefined
+      const confirmation = nextConfirmation; nextConfirmation = undefined
+      if (confirmation) await confirmation
       await new Promise(resolve => setTimeout(resolve, delay))
       if (rejectThis) return cors(route, { code: 'COMMAND_REJECTED' }, rejectThis)
       const executionStarted = performance.now()
@@ -54,5 +58,5 @@ export async function setupInstantServer(context: BrowserContext, historyRows = 
     }
     return cors(route, { code: 'UNEXPECTED' }, 400)
   })
-  return { backgroundCapacity: (minutes: number, now: Date) => { snapshot = applyUserDomainCommand(snapshot, { commandId: `other-device-${revision}`, kind: 'set_date_capacity', date: '2026-10-01', minutes }, now).snapshot; revision++ }, get readCount() { return readCount }, setFullResponses: (value: boolean) => { fullResponses = value }, sent, receiptLookups, baseRevisions, payloadBytes, serverExecutionMs, setNow: (value: Date) => { serverNow = value }, denyNext: (status = 422) => { deny = status }, loseNextResponse: () => { loseResponse = true }, backgroundGmail: () => { snapshot.data.timeline!.push({ id: 'instant-gmail-audit', kind: 'opportunity_updated', category: 'opportunity', source: 'user_action', title: 'Independent source fact', occurredAt: INSTANT_NOW.toISOString(), recordedAt: INSTANT_NOW.toISOString() }); snapshot.data.opportunities[10].role = 'Independent Gmail role'; revision++ }, setDelay: (value: number) => { delay = value }, get snapshot() { return snapshot } }
+  return { readAdmissions, holdNextConfirmation: () => { if (nextConfirmation) throw new Error('A confirmation barrier is already armed'); let release!: () => void; nextConfirmation = new Promise<void>(resolve => { release = resolve }); return () => release() }, backgroundCapacity: (minutes: number, now: Date) => { snapshot = applyUserDomainCommand(snapshot, { commandId: `other-device-${revision}`, kind: 'set_date_capacity', date: '2026-10-01', minutes }, now).snapshot; revision++ }, get readCount() { return readCount }, setFullResponses: (value: boolean) => { fullResponses = value }, sent, receiptLookups, baseRevisions, payloadBytes, serverExecutionMs, setNow: (value: Date) => { serverNow = value }, denyNext: (status = 422) => { deny = status }, loseNextResponse: () => { loseResponse = true }, backgroundGmail: () => { snapshot.data.timeline!.push({ id: 'instant-gmail-audit', kind: 'opportunity_updated', category: 'opportunity', source: 'user_action', title: 'Independent source fact', occurredAt: INSTANT_NOW.toISOString(), recordedAt: INSTANT_NOW.toISOString() }); snapshot.data.opportunities[10].role = 'Independent Gmail role'; revision++ }, setDelay: (value: number) => { delay = value }, get snapshot() { return snapshot } }
 }
