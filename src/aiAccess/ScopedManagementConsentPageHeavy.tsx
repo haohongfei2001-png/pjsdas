@@ -274,7 +274,7 @@ export default function ScopedManagementConsentPageHeavy() {
               <small>{view.account.id}</small>
             </div>
             {view.canInitialize === true ? <ConsumerWorkspaceStart key={view.account.id} accountId={view.account.id} /> : null}
-            {view.descriptors.every(d => d.canApprove === false) ? <p role="status">当前仅可查看和撤销已有权限，不能新增授权或创建工作区。</p> : null}
+            {view.descriptors.every(d => d.canApprove === false) ? <p role="status">当前不能新增管理授权；已有权限仍可查看和撤销。</p> : null}
             <label style={{ display: 'block', marginTop: 20 }}>
               选择已连接客户端
               <select

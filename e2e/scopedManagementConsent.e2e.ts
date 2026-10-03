@@ -161,7 +161,7 @@ for (const width of [1280,390]) test(`all consumer flags off retains owned revoc
  for(const descriptor of f.state.descriptors)descriptor.canApprove=false
  f.state.clients[0].grants.push({domain:'business',id:'00000000-0000-4000-8000-000000000093',client_id:clientId,revision:3,revoked_at:null,consent_version:d.consent.version,capability:d.consent.capability,consent_text_hash:d.consentTextHash})
  await page.goto(entry);await page.getByLabel('选择已连接客户端').selectOption(clientId)
- await expect(page.getByText('当前仅可查看和撤销已有权限，不能新增授权或创建工作区。')).toBeVisible()
+ await expect(page.getByText('当前不能新增管理授权；已有权限仍可查看和撤销。')).toBeVisible()
  await expect(page.getByText('第一次使用 TodayAction')).toHaveCount(0)
  const choice=page.getByLabel('本次选择：独立准备、手动行动与投递组')
  await expect(choice.getByRole('option',{name:'明确授权此项',exact:true})).toHaveJSProperty('disabled',true)
