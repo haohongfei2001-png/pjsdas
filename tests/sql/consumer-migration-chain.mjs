@@ -1,16 +1,25 @@
 // Whole-chain preservation proof. PGlite by default; --postgres accepts ONLY the CI loopback fixture.
 import assert from 'node:assert/strict'
-import { readFile } from 'node:fs/promises'
+import { readFile, mkdtemp, writeFile, rm } from 'node:fs/promises'
 import { createHash } from 'node:crypto'
+import { execFile } from 'node:child_process'
+import { promisify } from 'node:util'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { migrationEnvelope } from './migration-envelope.mjs'
+import { backupRoundtrip } from './backup-roundtrip.mjs'
 import { PGlite } from '@electric-sql/pglite'
 import pg from 'pg'
 const real=process.argv.includes('--postgres')
-let db, admin
+let db, admin, fixtureUrl, scratch
+const run=promisify(execFile)
 if(real){
  const url=new URL(process.env.TA_MANAGEMENT_SQL_TEST_URL??'http://missing.invalid')
  if(url.protocol!=='postgresql:'||!['localhost','127.0.0.1'].includes(url.hostname)||url.pathname!=='/ta_management_fixture'||url.username!=='postgres'||url.password!=='fixture-only'||url.search)throw Error('Only isolated CI fixture accepted')
  admin=new pg.Client({connectionString:url.toString()});await admin.connect()
  await admin.query('create database ta_chain_fixture');url.pathname='/ta_chain_fixture'
+ fixtureUrl=url
+ scratch=await mkdtemp(join(tmpdir(),'ta-migration-proof-'))
  db=new pg.Client({connectionString:url.toString(),statement_timeout:15000});await db.connect()
 }else db=new PGlite()
 const exec=sql=>real?db.query(sql):db.exec(sql), sql=async name=>readFile(new URL(`../../supabase/migrations/${name}`,import.meta.url),'utf8')
@@ -22,17 +31,19 @@ const tables=['pjsdas_access_grants','pjsdas_business_management_grants','pjsdas
 const allRows=async()=>Object.fromEntries(await Promise.all(tables.map(async table=>[table,(await db.query(`select to_jsonb(t)::text v from public.${table} t order by to_jsonb(t)::text`)).rows])))
 // Compare semantic catalogs within the same engine; never compare unstable object OIDs.
 const catalog=async()=>({
- tables:(await db.query(`select c.relname,c.relrowsecurity,c.relforcerowsecurity,c.relacl::text,
+ schemas:(await db.query("select nspname,pg_get_userbyid(nspowner) owner,nspacl::text from pg_namespace where nspname in ('public','auth','supabase_migrations') order by nspname")).rows,
+ tables:(await db.query(`select n.nspname,c.relname,pg_get_userbyid(c.relowner) owner,c.relrowsecurity,c.relforcerowsecurity,c.relacl::text,
   (select jsonb_agg(jsonb_build_array(a.attname,format_type(a.atttypid,a.atttypmod),a.attnotnull,pg_get_expr(d.adbin,d.adrelid),a.attacl::text) order by a.attnum)
    from pg_attribute a left join pg_attrdef d on d.adrelid=a.attrelid and d.adnum=a.attnum where a.attrelid=c.oid and a.attnum>0 and not a.attisdropped) columns,
   (select jsonb_agg(jsonb_build_array(k.conname,pg_get_constraintdef(k.oid),k.convalidated) order by k.conname) from pg_constraint k where k.conrelid=c.oid) constraints,
   (select jsonb_agg(jsonb_build_array(t.tgname,pg_get_triggerdef(t.oid),t.tgenabled) order by t.tgname) from pg_trigger t where t.tgrelid=c.oid and not t.tgisinternal) triggers
-  from pg_class c join pg_namespace n on n.oid=c.relnamespace where n.nspname='public' and c.relkind='r' order by c.relname`)).rows,
- functions:(await db.query(`select p.oid::regprocedure::text signature,pg_get_functiondef(p.oid) definition,p.proacl::text
-  from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.prokind='f' order by signature`)).rows,
- policies:(await db.query("select * from pg_policies where schemaname='public' order by tablename,policyname")).rows,
- indexes:(await db.query("select tablename,indexname,indexdef from pg_indexes where schemaname='public' order by tablename,indexname")).rows,
+  from pg_class c join pg_namespace n on n.oid=c.relnamespace where n.nspname in ('public','auth','supabase_migrations') and c.relkind='r' order by n.nspname,c.relname`)).rows,
+ functions:(await db.query(`select p.oid::regprocedure::text signature,pg_get_userbyid(p.proowner) owner,pg_get_functiondef(p.oid) definition,p.proacl::text
+  from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname in ('public','auth','supabase_migrations') and p.prokind='f' order by signature`)).rows,
+ policies:(await db.query("select * from pg_policies where schemaname in ('public','auth','supabase_migrations') order by schemaname,tablename,policyname")).rows,
+ indexes:(await db.query("select schemaname,tablename,indexname,indexdef from pg_indexes where schemaname in ('public','auth','supabase_migrations') order by schemaname,tablename,indexname")).rows,
  history:(await db.query('select * from supabase_migrations.schema_migrations order by version')).rows,
+ defaults:(await db.query(`select pg_get_userbyid(d.defaclrole) owner,n.nspname,d.defaclobjtype,d.defaclacl::text from pg_default_acl d left join pg_namespace n on n.oid=d.defaclnamespace order by owner,n.nspname,d.defaclobjtype`)).rows,
 })
 const tablePrivileges=async(table)=>(await db.query(`select r.role,p.permission,has_table_privilege(r.role,$1,p.permission) allowed
  from unnest(array['anon','authenticated','service_role']) r(role)
@@ -68,9 +79,21 @@ try{
  for(const [table,privileges] of Object.entries(oldTablePrivileges))for(const p of privileges){
   assert.equal(p.allowed,p.role==='service_role'&&(table==='pjsdas_business_management_grants'||['SELECT','INSERT'].includes(p.permission)),`${table} ${p.role} ${p.permission} baseline`)
  }
+ if(real)await backupRoundtrip(db,admin,fixtureUrl,async connection=>{
+  const original=db;db=connection
+  try{return {catalog:await catalog(),rows:await allRows(),auth:(await db.query('select * from auth.users order by id')).rows}}
+  finally{db=original}
+ })
  for(const entry of manifest.migrations){
   const text=await sql(entry.file);for(const match of text.matchAll(/create (?:or replace )?function public\.(\w+)/g))reviewedFunctions.add(match[1]);assert.equal(createHash('sha256').update(text).digest('hex'),entry.sha256)
   const previous=await catalog(),version=entry.file.split('_')[0],name=entry.file.slice(version.length+1,-4)
+  const nativeEnvelope=async(fault='')=>{
+   const file=join(scratch,'envelope.sql')
+   await writeFile(file,migrationEnvelope(entry,text)+'\n'+fault,{mode:0o600})
+   return run('psql',['-X','-w','--single-transaction','--set','ON_ERROR_STOP=1','--set','VERBOSITY=sqlstate','--file',file],{
+    env:{...process.env,PGHOST:fixtureUrl.hostname,PGPORT:fixtureUrl.port,PGDATABASE:fixtureUrl.pathname.slice(1),PGUSER:fixtureUrl.username,PGPASSWORD:fixtureUrl.password},maxBuffer:1024*1024,timeout:25000,
+   })
+  }
   const stage=async()=>{
    await exec('begin')
    await exec("set local lock_timeout='2s';set local statement_timeout='15s'")
@@ -81,10 +104,24 @@ try{
   }
   // Failure after both DDL and history insertion must roll everything back. This is deliberate
   // fault injection in disposable data, not a production retry policy or a timeout simulation.
-  try{await stage();await assert.rejects(db.query('select 1/0'),e=>e.code==='22012')}finally{await exec('rollback')}
+  if(real&&entry.order===1){
+   const blocker=new pg.Client({connectionString:fixtureUrl.toString()});await blocker.connect()
+   try{
+    await blocker.query('begin');await blocker.query('lock table public.pjsdas_business_management_grants in access exclusive mode')
+    await assert.rejects(nativeEnvelope(),e=>e.code===3&&e.stderr.includes('55P03'))
+   }finally{await blocker.query('rollback');await blocker.end()}
+   assert.deepEqual(await catalog(),previous,'actual 2s lock timeout must leave schema/history unchanged')
+   await assert.rejects(nativeEnvelope('SELECT pg_sleep(20);'),e=>e.code===3&&e.stderr.includes('57014'))
+   assert.deepEqual(await catalog(),previous,'actual 15s statement timeout after history insert must roll back everything')
+   assert.deepEqual(await allRows(),before)
+   console.log('PASS native psql actual lock_timeout=2s and statement_timeout=15s; no partial schema/history/data commits.')
+  }
+  if(real)await assert.rejects(nativeEnvelope('SELECT 1/0;'),e=>e.code===3&&e.stderr.includes('22012'))
+  else try{await stage();await assert.rejects(db.query('select 1/0'),e=>e.code==='22012')}finally{await exec('rollback')}
   assert.deepEqual(await catalog(),previous,`${entry.file}: failure must roll back schema, functions, permissions and history`)
   assert.deepEqual(await allRows(),before,`${entry.file}: failure must preserve existing rows`)
-  try{await stage();await exec('commit')}catch(e){await exec('rollback');throw e}
+  if(real)await nativeEnvelope()
+  else try{await stage();await exec('commit')}catch(e){await exec('rollback');throw e}
   const committed=await catalog()
   assert.deepEqual(committed.history,[...previous.history,{version,name,statements:[text]}],`${entry.file}: exactly one committed history row`)
   for(const [table,privileges] of Object.entries(oldTablePrivileges)){
@@ -92,6 +129,10 @@ try{
    assert.equal(committed.tables.find(t=>t.relname===table).relacl,previous.tables.find(t=>t.relname===table).relacl)
   }
   assert.deepEqual(await allRows(),before,`${entry.file} must not rewrite existing rows`)
+  if(real){
+   await assert.rejects(nativeEnvelope(),e=>e.code===3&&e.stderr.includes('P0001'))
+   assert.deepEqual(await catalog(),committed,'completed migration must stop instead of being replayed')
+  }
   console.log('PASS whole-chain failure rollback + committed history + preserved rows/ACL + SHA256:',entry.file)
  }
  assert.equal(Number((await db.query('select count(*) n from pjsdas_scoped_management_consent_events')).rows[0].n),0)
@@ -123,4 +164,4 @@ try{
  await assert.rejects(commit(a,'after-revoke',4,id(101),true,next,comp),e=>e.code==='42501')
  assert.deepEqual(await protectedRows(),untouched)
  console.log(`PASS ${real?'PostgreSQL':'PGlite'}: eight complete migrations preserve every existing fixture row; v2 history/new write/undo; RLS/privileges; A/B cross-proof & cross-undo denial; A write/revoke leaves B/C workspace, grant and ledger unchanged.`)
-}finally{if(real){await db.end();await admin.end()}else await db.close()}
+}finally{if(real){await db.end();await admin.end();await rm(scratch,{recursive:true,force:true})}else await db.close()}

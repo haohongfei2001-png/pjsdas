@@ -73,4 +73,5 @@ jobs:
       - name: Verify real multi-session grant contention
         env:
           TA_MANAGEMENT_SQL_TEST_URL: postgresql://postgres:fixture-only@127.0.0.1:5432/ta_management_fixture
+          TA_PG_FIXTURE_CONTAINER: ${{ job.services.postgres.id }}
         run: npm run test:concurrency --prefix tests/sql
