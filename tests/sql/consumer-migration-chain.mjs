@@ -87,11 +87,11 @@ try{
  for(const entry of manifest.migrations){
   const text=await sql(entry.file);for(const match of text.matchAll(/create (?:or replace )?function public\.(\w+)/g))reviewedFunctions.add(match[1]);assert.equal(createHash('sha256').update(text).digest('hex'),entry.sha256)
   const previous=await catalog(),version=entry.file.split('_')[0],name=entry.file.slice(version.length+1,-4)
-  const nativeEnvelope=async(fault='')=>{
+  const nativeEnvelope=async(fault='',singleTransaction=true)=>{
    const file=join(scratch,'envelope.sql')
    await writeFile(file,migrationEnvelope(entry,text)+'\n'+fault,{mode:0o600})
-   return run('psql',['-X','-w','--single-transaction','--set','ON_ERROR_STOP=1','--set','VERBOSITY=sqlstate','--file',file],{
-    env:{...process.env,PGHOST:fixtureUrl.hostname,PGPORT:fixtureUrl.port,PGDATABASE:fixtureUrl.pathname.slice(1),PGUSER:fixtureUrl.username,PGPASSWORD:fixtureUrl.password},maxBuffer:1024*1024,timeout:25000,
+   return run('psql',['-X','-w',...(singleTransaction?['--single-transaction']:[]),'--set','ON_ERROR_STOP=1','--set','VERBOSITY=sqlstate','--file',file],{
+    env:{...process.env,PGHOST:fixtureUrl.hostname,PGPORT:fixtureUrl.port,PGDATABASE:fixtureUrl.pathname.slice(1),PGUSER:fixtureUrl.username,PGPASSWORD:fixtureUrl.password,PGOPTIONS:'-c lock_timeout=2s -c statement_timeout=15s'},maxBuffer:1024*1024,timeout:25000,
    })
   }
   const stage=async()=>{
@@ -105,6 +105,9 @@ try{
   // Failure after both DDL and history insertion must roll everything back. This is deliberate
   // fault injection in disposable data, not a production retry policy or a timeout simulation.
   if(real&&entry.order===1){
+   // Even a session whose ambient timeout values match must not accept autocommit.
+   await assert.rejects(nativeEnvelope('',false),e=>e.code===3&&e.stderr.includes('22P02'))
+   assert.deepEqual(await catalog(),previous,'autocommit must be rejected before any migration DDL')
    const blocker=new pg.Client({connectionString:fixtureUrl.toString()});await blocker.connect()
    try{
     await blocker.query('begin');await blocker.query('lock table public.pjsdas_business_management_grants in access exclusive mode')

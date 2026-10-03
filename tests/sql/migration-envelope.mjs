@@ -10,6 +10,9 @@ export function migrationEnvelope(entry, source) {
  const quote=`$ta_${entry.sha256}$`
  assert.equal(source.includes(quote), false)
  return `-- Requires psql --single-transaction --set ON_ERROR_STOP=1; never run as autocommit.
+SELECT pg_current_xact_id()::text AS ta_migration_transaction \\gset
+SELECT (CASE WHEN pg_current_xact_id()::text = :'ta_migration_transaction'
+ THEN '1' ELSE 'explicit_transaction_required' END)::integer;
 SET LOCAL lock_timeout='2s';
 SET LOCAL statement_timeout='15s';
 DO $guard$ BEGIN
