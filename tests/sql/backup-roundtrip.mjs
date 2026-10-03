@@ -22,13 +22,25 @@ export async function backupRoundtrip(source, admin, url, inspect) {
   child.on('close',code=>code===0?resolve(Buffer.concat(chunks)):reject(Error(`${tool} failed (${code}): ${Buffer.concat(errors).toString()}`)))
   child.stdin.end(input)
  })
- await source.query('begin isolation level repeatable read read only')
+ // Model the official short-lived native login without changing the source owner
+ // password. This fixture is loopback-only; never create a login on production.
+ const login='cli_login_postgres'
+ assert.equal((await admin.query('select 1 from pg_roles where rolname=$1',[login])).rowCount,0)
+ await admin.query(`create role ${login} login noinherit password 'fixture-only'; grant postgres to ${login}`)
+ const temporaryUrl=new URL(url);temporaryUrl.username=login
+ const temporarySource=new pg.Client({connectionString:temporaryUrl.toString()})
+ try{
+ await temporarySource.connect()
+ await assert.rejects(temporarySource.query('select * from auth.users'),e=>e.code==='42501')
+ await temporarySource.query('set role postgres')
+ assert.deepEqual((await temporarySource.query('select current_user,session_user')).rows[0],{current_user:'postgres',session_user:login})
+ await temporarySource.query('begin isolation level repeatable read read only')
  let expected,dump
  try{
-  expected={catalog:await inspect(source),inventory:await backupInventory(source)}
-  const snapshot=(await source.query('select pg_export_snapshot() s')).rows[0].s
-  dump=await invoke('pg_dump',['-h',url.hostname,'-p',url.port||'5432','-U','postgres','-d','ta_chain_fixture','--format=custom','--strict-names','--schema=public','--schema=auth','--schema=supabase_migrations',`--snapshot=${snapshot}`,'--lock-wait-timeout=2s'])
- }finally{await source.query('rollback')}
+  expected={catalog:await inspect(temporarySource),inventory:await backupInventory(temporarySource)}
+  const snapshot=(await temporarySource.query('select pg_export_snapshot() s')).rows[0].s
+  dump=await invoke('pg_dump',['-h',url.hostname,'-p',url.port||'5432','-U',login,'--role=postgres','-d','ta_chain_fixture','--format=custom','--strict-names','--schema=public','--schema=auth','--schema=supabase_migrations',`--snapshot=${snapshot}`,'--lock-wait-timeout=2s'])
+ }finally{await temporarySource.query('rollback')}
  const key=randomBytes(32),encrypted=sealBackup(dump,key)
  assert.deepEqual(openBackup(encrypted,key),dump)
  const corrupted=Buffer.from(encrypted);corrupted[corrupted.length-1]^=1
@@ -52,5 +64,10 @@ export async function backupRoundtrip(source, admin, url, inspect) {
   assert.deepEqual({catalog:await inspect(restored),inventory:await backupInventory(restored)},expected,'native restored catalog/ACL/data/history must exactly match the exported snapshot')
  }
  finally{await restored.end()}
- console.log(`PASS native pg_dump/pg_restore: consistent snapshot; exact schema/owner/ACL/rows/history restored, archive SHA256 ${createHash('sha256').update(dump).digest('hex')}`)
+ console.log(`PASS temporary native login with explicit role switch and pg_dump/pg_restore: consistent snapshot; exact schema/owner/ACL/rows/history restored, archive SHA256 ${createHash('sha256').update(dump).digest('hex')}`)
+ }finally{
+  await temporarySource.end()
+  await admin.query(`drop role ${login}`)
+ }
+ assert.equal((await admin.query('select 1 from pg_roles where rolname=$1',[login])).rowCount,0,'temporary fixture login must be removed')
 }

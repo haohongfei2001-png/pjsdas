@@ -31,7 +31,13 @@ try{
   assert.equal(settings.sslrootcert,join(config,'supabase-ca.crt'))
   ca=await privateFile(settings.sslrootcert);assert.equal(sha256(Buffer.from(ca)),CA_SHA256)
  }
- const direct=settings.host==='db.'+PROJECT+'.supabase.co'&&settings.user==='postgres'
+ const temporary=settings.user==='cli_login_postgres'
+ if(temporary){
+  const receipt=JSON.parse(await privateFile(join(config,'temporary-login-receipt.json')))
+  assert.equal(receipt.project,PROJECT);assert.equal(receipt.role,settings.user);assert.equal(receipt.source,'supabase-cli-login-role')
+  assert.ok(Date.parse(receipt.expiresAt)>Date.now(),'Temporary login expired')
+ }
+ const direct=settings.host==='db.'+PROJECT+'.supabase.co'&&(settings.user==='postgres'||temporary)
  const pooled=/^aws-\d+-[a-z0-9-]+\.pooler\.supabase\.com$/.test(settings.host)&&settings.user==='postgres.'+PROJECT
  assert.ok(direct||pooled,'Unexpected project connection')
  assert.equal(settings.passfile,join(config,'pgpass'))
@@ -41,23 +47,24 @@ try{
  const transportText=await privateFile(join(config,'transport.json')).catch(error=>{if(error.code==='ENOENT')return null;throw error})
  if(transportText){
   assert.deepEqual(JSON.parse(transportText),{type:'existing-local-proxy',destination:DATABASE_HOST,port:5432})
-  assert.equal(host,DATABASE_HOST);assert.equal(user,'postgres');assert.ok(ca)
+  assert.equal(host,DATABASE_HOST);assert.ok(user==='postgres'||temporary);assert.ok(ca)
   tunnel=await openFixedTunnel();connectionHost='127.0.0.1';connectionPort=tunnel.port
   temporaryConfig=await mkdtemp(join(config,'native-session-'))
   const passfile=join(temporaryConfig,'pgpass'),escape=s=>String(s).replaceAll('\\','\\\\').replaceAll(':','\\:')
   await writeFile(passfile,[host,connectionPort,database,user,password].map(escape).join(':')+'\n',{mode:0o600,flag:'wx'})
   serviceFile=join(temporaryConfig,'pg_service.conf')
-  await writeFile(serviceFile,`[todayaction_migration]\nhost=${host}\nhostaddr=127.0.0.1\nport=${connectionPort}\ndbname=postgres\nuser=postgres\npassfile=${passfile}\nsslmode=verify-full\nsslrootcert=${settings.sslrootcert}\nconnect_timeout=5\n`,{mode:0o600,flag:'wx'})
+  await writeFile(serviceFile,`[todayaction_migration]\nhost=${host}\nhostaddr=127.0.0.1\nport=${connectionPort}\ndbname=postgres\nuser=${user}\npassfile=${passfile}\nsslmode=verify-full\nsslrootcert=${settings.sslrootcert}\nconnect_timeout=5\n`,{mode:0o600,flag:'wx'})
  }
  client=new Client({host:connectionHost,port:connectionPort,database,user,password,ssl:{rejectUnauthorized:true,servername:host,...(ca?{ca}:{})},connectionTimeoutMillis:5000,statement_timeout:15000,application_name:'todayaction-readonly-backup'})
  await client.connect()
+ if(temporary)await client.query('set role postgres')
  await client.query("begin isolation level repeatable read read only;set local lock_timeout='2s';set local statement_timeout='15s';set local timezone='UTC'")
  const identity=(await client.query("select current_database() database,current_user role,current_setting('server_version_num') version,transaction_timestamp() captured_at,pg_export_snapshot() snapshot")).rows[0]
  assert.equal(identity.database,'postgres');assert.equal(identity.role,'postgres');assert.equal(Math.floor(Number(identity.version)/10000),17)
  const inventory=await backupInventory(client)
  const env={...Object.fromEntries(Object.entries(process.env).filter(([key])=>!key.startsWith('PG'))),PGSERVICEFILE:serviceFile,PGSERVICE:'todayaction_migration',PGOPTIONS:'-c default_transaction_read_only=on -c lock_timeout=2s -c statement_timeout=15s -c timezone=UTC'}
  for(const key of ['PGHOST','PGPORT','PGDATABASE','PGUSER','PGPASSWORD','PGPASSFILE','PGSSLMODE','PGSSLROOTCERT'])delete env[key]
- const dump=await command(join(bin,'pg_dump'),['-w','--format=custom','--strict-names','--schema=public','--schema=auth','--schema=supabase_migrations','--lock-wait-timeout=2s','--snapshot='+identity.snapshot],env)
+ const dump=await command(join(bin,'pg_dump'),['-w',...(temporary?['--role=postgres']:[]),'--format=custom','--strict-names','--schema=public','--schema=auth','--schema=supabase_migrations','--lock-wait-timeout=2s','--snapshot='+identity.snapshot],env)
  await client.query('rollback');await client.end();client=null
  const metadata={project:PROJECT,identity,...inventory,archiveSha256:sha256(dump),scope:['public','auth','supabase_migrations'],notIncluded:['storage object bytes','platform settings','OAuth/JWT secrets','role passwords'],restoreStatus:'NOT_YET_VERIFIED',migrationPermission:'BLOCKED_UNTIL_ACTUAL_RESTORE_AND_FULL_PREFLIGHT_PASS'}
  const payload=Buffer.from(JSON.stringify({metadata,archive:dump.toString('base64')})),key=randomBytes(32),sealed=sealBackup(payload,key)
