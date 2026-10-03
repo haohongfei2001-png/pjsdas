@@ -9,7 +9,7 @@ import { backendUrl } from './backendOrigin.js'
 import { createPjsdasMcpServer } from './serverFactory.js'
 import { defaultExternalCapabilityProbes } from './reminderTools.js'
 import type { SemanticIntakeSourceRef } from '../src/model.js'
-import { createSupabaseIdentityResolver } from './supabaseIdentity.js'
+import { createSupabaseIdentityResolver, validatedAccessTokenTargetsResource } from './supabaseIdentity.js'
 import {
   PJSDAS_SUPABASE_PUBLISHABLE_KEY,
   PJSDAS_SUPABASE_URL,
@@ -159,7 +159,11 @@ export async function authenticatedRemoteMcpFetch(request: Request) {
     })
     const scopedManagement = createOwnerScopedManagementRuntime({
       enabled: process.env.PJSDAS_OWNER_SCOPED_MANAGEMENT,
-      consumerEnabled: process.env.PJSDAS_CONSUMER_SCOPED_MANAGEMENT,
+      // Capability consent is separate from OAuth resource binding. A valid
+      // provider session for another resource cannot expose consumer tools.
+      consumerEnabled: process.env.PJSDAS_CONSUMER_SCOPED_MANAGEMENT === 'enabled'
+        && validatedAccessTokenTargetsResource(accessToken, identity, AUTHORIZATION_SERVER, authenticatedMcpResource())
+        ? 'enabled' : undefined,
       transactional: transactionalAuthority,
       identity, audience,
       supabaseUrl: PJSDAS_SUPABASE_URL,

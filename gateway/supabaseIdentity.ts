@@ -46,6 +46,22 @@ export function oauthClientIdFromValidatedAccessToken(accessToken: string) {
     : undefined
 }
 
+/** Denial-only consumer gate, called AFTER the provider validates this token.
+ * Decoding alone never establishes identity or a business capability grant.
+ * Use a server-configured resource, never a request Host or tool argument.
+ */
+export function validatedAccessTokenTargetsResource(accessToken: string, identity: PjsdasIdentity, issuer: string, resource: string) {
+  const claims = decodeJwtPayload(accessToken)
+  if (!claims || !identity.oauthClientId || claims.client_id !== identity.oauthClientId
+    || claims.sub !== identity.userId || claims.iss !== issuer) return false
+  const now = Math.floor(Date.now() / 1000)
+  if (!Number.isSafeInteger(claims.exp) || (claims.exp as number) <= now) return false
+  if (claims.nbf !== undefined && (!Number.isSafeInteger(claims.nbf) || (claims.nbf as number) > now)) return false
+  if (claims.iat !== undefined && (!Number.isSafeInteger(claims.iat) || (claims.iat as number) > now)) return false
+  return claims.aud === resource || (Array.isArray(claims.aud)
+    && claims.aud.every(value => typeof value === 'string') && claims.aud.includes(resource))
+}
+
 export function createSupabaseIdentityResolver(options: SupabaseIdentityOptions) {
   const baseUrl = options.supabaseUrl.replace(/\/+$/, '')
   const fetchImpl = options.fetchImpl ?? fetch
