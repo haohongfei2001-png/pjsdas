@@ -1487,13 +1487,24 @@ export async function readCommandInteractions(accountKey: string) {
 export async function readPendingCommandInteractions(accountKey: string) {
   const lease = captureAccountCacheLease(accountKey)
   const db = await dbPromise
-  const [active, projectionPending, rollbackPending] = await Promise.all([
-    db.getAllFromIndex('commandInteractions', 'by-account-state', [accountKey, 'active']),
-    db.getAllFromIndex('commandInteractions', 'by-account-state', [accountKey, 'projection_pending']),
-    db.getAllFromIndex('commandInteractions', 'by-account-state', [accountKey, 'rollback_pending']),
-  ])
-  lease.assertCurrent()
-  return [...active, ...projectionPending, ...rollbackPending]
+  // All three status ranges must share one stable journal view. Separate
+  // helper calls each open a transaction and can straddle another writer.
+  const tx = db.transaction('commandInteractions', 'readonly')
+  try {
+    const index = tx.store.index('by-account-state')
+    const [active, projectionPending, rollbackPending] = await Promise.all([
+      index.getAll([accountKey, 'active']),
+      index.getAll([accountKey, 'projection_pending']),
+      index.getAll([accountKey, 'rollback_pending']),
+    ])
+    await tx.done
+    lease.assertCurrent()
+    return [...active, ...projectionPending, ...rollbackPending]
+  } catch (error) {
+    try { tx.abort() } catch { /* already settled */ }
+    await tx.done.catch(() => undefined)
+    throw error
+  }
 }
 export async function readCommandInteraction(accountKey: string, commandId: string) {
   const lease = captureAccountCacheLease(accountKey)

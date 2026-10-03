@@ -9,6 +9,7 @@ export interface ConnectedWorkspaceRecord {
   snapshot: PJSDASSnapshot
   revision: number
   schemaVersion: number
+  storedSchemaVersion?: number
 }
 
 export interface ConnectedCommitInput {
@@ -72,7 +73,7 @@ function validRevision(value: unknown): value is number {
   return typeof value === 'number' && Number.isInteger(value) && value >= 0
 }
 
-function parseWorkspaceRow(row: Record<string, unknown>, userId: string, preserveRawData = false): ConnectedWorkspaceRecord {
+function parseWorkspaceRow(row: Record<string, unknown>, userId: string, preserveRawData = false, includeStoredSchema = false): ConnectedWorkspaceRecord {
   if (row.user_id !== userId || typeof row.id !== 'string' || !validRevision(row.revision) || typeof row.schema_version !== 'number') {
     throw new WorkspaceSourceError('WORKSPACE_INVALID', 'TodayAction transactional workspace metadata is invalid.', false)
   }
@@ -84,6 +85,7 @@ function parseWorkspaceRow(row: Record<string, unknown>, userId: string, preserv
     snapshot,
     revision: row.revision,
     schemaVersion: snapshot.version,
+    ...(includeStoredSchema ? { storedSchemaVersion: row.schema_version } : {}),
   }
 }
 
@@ -108,7 +110,19 @@ export function createTransactionalWorkspaceStore(options: TransactionalWorkspac
   }
 
   return {
-    async readForUser(userId: string, readOptions?: { preserveRawData?: boolean }): Promise<ConnectedWorkspaceRecord | null> {
+    async readIdentityForUser(userId: string): Promise<Omit<ConnectedWorkspaceRecord, 'snapshot' | 'storedSchemaVersion'> | null> {
+      const params = new URLSearchParams({ select: 'id,user_id,revision,schema_version', user_id: `eq.${userId}`, limit: '1' })
+      const response = await request(`/rest/v1/pjsdas_workspaces?${params}`, { method: 'GET' })
+      if (!response.ok) throw new WorkspaceSourceError('WORKSPACE_UNAVAILABLE', `TodayAction workspace identity read failed (HTTP ${response.status}).`, response.status >= 500 || response.status === 429)
+      const rows: unknown = await response.json().catch(() => undefined)
+      if (!Array.isArray(rows) || rows.length > 1) throw new WorkspaceSourceError('WORKSPACE_INVALID', 'Workspace identity response is invalid.', false)
+      if (!rows.length) return null
+      const row = rows[0]
+      if (!row || typeof row.id !== 'string' || row.user_id !== userId || !validRevision(row.revision) || typeof row.schema_version !== 'number') throw new WorkspaceSourceError('WORKSPACE_INVALID', 'Workspace identity metadata is invalid.', false)
+      return { workspaceId: row.id, userId, revision: row.revision, schemaVersion: row.schema_version }
+    },
+
+    async readForUser(userId: string, readOptions?: { preserveRawData?: boolean; includeStoredSchema?: boolean }): Promise<ConnectedWorkspaceRecord | null> {
       const params = new URLSearchParams({
         select: 'id,user_id,snapshot,revision,schema_version',
         user_id: `eq.${userId}`,
@@ -120,7 +134,7 @@ export function createTransactionalWorkspaceStore(options: TransactionalWorkspac
       }
       const rows = await response.json().catch(() => undefined) as Record<string, unknown>[] | undefined
       if (!rows) throw new WorkspaceSourceError('WORKSPACE_INVALID', 'TodayAction workspace read returned invalid JSON.', false)
-      return rows[0] ? parseWorkspaceRow(rows[0], userId, readOptions?.preserveRawData) : null
+      return rows[0] ? parseWorkspaceRow(rows[0], userId, readOptions?.preserveRawData, readOptions?.includeStoredSchema) : null
     },
 
     async readCommandForUser(userId: string, commandId: string): Promise<ConnectedCommandRecord | null> {
