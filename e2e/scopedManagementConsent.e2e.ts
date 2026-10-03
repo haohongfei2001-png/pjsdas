@@ -152,6 +152,8 @@ test('stale business consent text is not shown as current authority and remains 
  await expect.poll(()=>f.posts.length).toBe(1);expect(f.posts[0].choices[0]).toMatchObject({domain:'business',decision:'revoke',expectedGrant:{revision:3}})
 })
 
+// Native <option> disabledness is checked via its DOM property; the generic ARIA/actionability
+// matcher did not reflect this flag in the captured failures. Keep exact option and submitted-scope checks.
 for (const width of [1280,390]) test(`all consumer flags off retains owned revocation and hides onboarding at ${width}`,async({page},testInfo)=>{
  await page.setViewportSize({width,height:900})
  const f=await fixture(page),d=f.state.descriptors.find(d=>d.domain==='business')!
@@ -162,8 +164,8 @@ for (const width of [1280,390]) test(`all consumer flags off retains owned revoc
  await expect(page.getByText('当前仅可查看和撤销已有权限，不能新增授权或创建工作区。')).toBeVisible()
  await expect(page.getByText('第一次使用 TodayAction')).toHaveCount(0)
  const choice=page.getByLabel('本次选择：独立准备、手动行动与投递组')
- await expect(choice.getByRole('option',{name:'明确授权此项',exact:true})).toBeDisabled()
- await expect(choice.getByRole('option',{name:'撤销此项授权',exact:true})).toBeEnabled()
+ await expect(choice.getByRole('option',{name:'明确授权此项',exact:true})).toHaveJSProperty('disabled',true)
+ await expect(choice.getByRole('option',{name:'撤销此项授权',exact:true})).toHaveJSProperty('disabled',false)
  await testInfo.attach(`revocation-only-${width}`,{body:await page.screenshot({fullPage:true}),contentType:'image/png'})
  await choice.selectOption('revoke');await page.getByLabel('我已核对账号、客户端及上方列出的本次变更。').check();await page.getByRole('button',{name:'确认所选变更'}).click()
  await expect.poll(()=>f.posts.length).toBe(1);expect(f.posts[0].choices).toHaveLength(1)
@@ -178,7 +180,7 @@ test('controlled consumer screen permits business v7 only and sends exactly one 
  await page.goto(entry);await page.getByLabel('选择已连接客户端').selectOption(clientId)
  for(const d of f.state.descriptors){
   const option=page.getByLabel(`本次选择：${d.consent.title}`).getByRole('option',{name:'明确授权此项',exact:true})
-  if(d.domain==='business')await expect(option).toBeEnabled();else await expect(option).toBeDisabled()
+  await expect(option).toHaveJSProperty('disabled',d.domain!=='business')
  }
  await page.getByLabel('本次选择：独立准备、手动行动与投递组').selectOption('approve')
  for(const width of [1280,390]){
