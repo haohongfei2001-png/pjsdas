@@ -32,10 +32,15 @@ export async function backupRoundtrip(source, admin, url, inspect) {
  const restored=new pg.Client({connectionString:destination.toString()})
  await restored.connect()
  try{
-  // Only the freshly created disposable database: remove its empty default schema so
-  // the archive restores the source schema owner and ACL verbatim. No CASCADE/clean.
-  await restored.query('drop schema public')
-  await invoke('pg_restore',['-h',url.hostname,'-p',url.port||'5432','-U','postgres','-d',target,'--single-transaction','--exit-on-error'],dump)
+  // pg_dump encodes public ACLs relative to initdb's standard public schema. Keep
+  // that empty schema; omit only its duplicate CREATE, retaining ALTER OWNER and
+  // every ACL statement. Dropping it would silently lose the default PUBLIC USAGE.
+  const count=(await restored.query("select count(*) n from pg_class where relnamespace='public'::regnamespace")).rows[0].n
+  assert.equal(Number(count),0)
+  const sql=(await invoke('pg_restore',['--file=-'],dump)).toString()
+  assert.equal([...sql.matchAll(/^CREATE SCHEMA public;$/gm)].length,1)
+  const restoreSql=sql.replace(/^CREATE SCHEMA public;$/m,'-- Empty initdb public schema retained; owner and ACL statements below are unchanged.')
+  await invoke('psql',['-X','-w','-h',url.hostname,'-p',url.port||'5432','-U','postgres','-d',target,'--single-transaction','--set','ON_ERROR_STOP=1','--file=-'],restoreSql)
   assert.deepEqual(await inspect(restored),expected,'native restored catalog/ACL/data/history must exactly match the exported snapshot')
  }
  finally{await restored.end()}
