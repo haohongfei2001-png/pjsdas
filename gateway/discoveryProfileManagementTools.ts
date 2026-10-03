@@ -14,7 +14,7 @@ export const restoreDiscoveryProfileManagementSchema = z.object({ commandId, tar
 export type DiscoveryProfileManagementToolName = 'get_discovery_profile_management' | 'execute_discovery_profile_management' | 'restore_discovery_profile_management'
 const result = (data: Record<string, unknown>): CallToolResult => ({ content: [{ type: 'text', text: JSON.stringify(data) }], structuredContent: data })
 
-/** Source-only adapter: no production runtime, tool catalog or consent handler registers it. */
+/** Scoped adapter. Registration is default-off; every invocation requires its own current consent proof. */
 export function createDiscoveryProfileManagementTools(options: {
   principal: MutationPrincipal
   storeOptions: TransactionalWorkspaceStoreOptions

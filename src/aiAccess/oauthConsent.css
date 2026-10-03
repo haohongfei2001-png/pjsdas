@@ -13,3 +13,11 @@
 .ta-consent button:focus-visible{outline:3px solid #315ec5;outline-offset:3px}
 .ta-consent-error{margin-top:22px;padding:14px;border-radius:10px;background:#fff0ed;color:#8b2e25;font-size:.875rem;line-height:1.6}
 @media(max-width:640px){.ta-consent{padding:16px}.ta-consent-panel{padding:24px 18px}.ta-consent h1{font-size:1.375rem}}
+
+/* Keep the new scoped controls legible and usable on narrow/touch surfaces. */
+.ta-consumer-timezone{display:grid;gap:8px;max-width:100%}
+.ta-consumer-timezone input,.ta-consent-scope select{box-sizing:border-box;min-height:44px;width:100%;max-width:100%;font:inherit;padding:8px}
+.ta-consumer-empty-confirm{display:flex;gap:10px;align-items:flex-start;margin:14px 0;line-height:1.6}
+.ta-consumer-empty-confirm input{flex:none;margin-top:5px}
+.ta-consent-scope{min-inline-size:0;margin:16px 0;padding:14px}
+.ta-consent-scope legend{font-weight:600;max-width:100%}

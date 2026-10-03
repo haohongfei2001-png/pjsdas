@@ -14,7 +14,7 @@ export const restoreOpportunityManagementSchema = z.object({ commandId, targetCo
 export type OpportunityManagementToolName = 'get_opportunity_management' | 'execute_opportunity_management' | 'restore_opportunity_management'
 const result = (data: Record<string, unknown>): CallToolResult => ({ content: [{ type: 'text', text: JSON.stringify(data) }], structuredContent: data })
 
-/** Source-only adapter: no production runtime, tool catalog or consent handler registers it. */
+/** Scoped adapter. Registration is default-off; every invocation requires its own current consent proof. */
 export function createOpportunityManagementTools(options: {
   principal: MutationPrincipal
   storeOptions: TransactionalWorkspaceStoreOptions

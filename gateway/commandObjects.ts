@@ -83,6 +83,7 @@ export function diffCommandObjects(before: PJSDASSnapshot, after: PJSDASSnapshot
   if (stableJson(before.data.timePlanning?.weeklyWindows) !== stableJson(after.data.timePlanning?.weeklyWindows)) {
     refs.set('time_planning:windows', { type: 'time_planning', id: 'windows' })
   }
+  if (before.data.timePlanning?.timezone !== after.data.timePlanning?.timezone) refs.set('time_planning:timezone', { type: 'time_planning', id: 'timezone' })
   const oldDays = before.data.timePlanning?.dateOverrides ?? {}
   const newDays = after.data.timePlanning?.dateOverrides ?? {}
   for (const date of new Set([...Object.keys(oldDays), ...Object.keys(newDays)])) {
@@ -112,7 +113,7 @@ function objectValue(snapshot: PJSDASSnapshot, ref: CommandObjectRef): unknown {
     case 'discovery_profile': return data.discoveryProfile
     case 'import_meta': return data.meta
     case 'time_preferences': return data.timePlanning
-    case 'time_planning': return ref.id === 'default' ? data.timePlanning?.defaultDailyMinutes
+    case 'time_planning': return ref.id === 'timezone' ? data.timePlanning?.timezone : ref.id === 'default' ? data.timePlanning?.defaultDailyMinutes
       : ref.id === 'windows' ? data.timePlanning?.weeklyWindows : data.timePlanning?.dateOverrides?.[ref.id]
     default: return undefined
   }

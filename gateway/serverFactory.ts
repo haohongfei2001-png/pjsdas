@@ -1,3 +1,8 @@
+import type { ScopedManagementRuntime } from './scopedManagementRuntime.js'
+import { getOpportunityManagementSchema, executeOpportunityManagementSchema, restoreOpportunityManagementSchema } from './opportunityManagementTools.js'
+import { getPlanningManagementSchema, executePlanningManagementSchema, restorePlanningManagementSchema } from './planningManagementTools.js'
+import { getDiscoveryProfileManagementSchema, executeDiscoveryProfileManagementSchema, restoreDiscoveryProfileManagementSchema } from './discoveryProfileManagementTools.js'
+import { getPrivateReminderManagementSchema, executePrivateReminderManagementSchema, restorePrivateReminderManagementSchema } from './privateReminderManagementTools.js'
 import { getBusinessManagementSchema, executeBusinessManagementSchema, undoBusinessManagementSchema, type BusinessManagementTools } from './businessManagementTools.js'
 import { McpServer } from '@modelcontextprotocol/server'
 import {
@@ -46,30 +51,35 @@ import type { ExternalCapabilityProbe } from '../src/reminders.js'
 import type { WorkspaceSource } from './workspaceSource.js'
 
 const readOnlyAnnotations = {
+  openWorldHint: false,
   readOnlyHint: true,
   destructiveHint: false,
   idempotentHint: true,
 } as const
 
 const proposalAnnotations = {
+  openWorldHint: false,
   readOnlyHint: true,
   destructiveHint: false,
   idempotentHint: true,
 } as const
 
 const directWriteAnnotations = {
+  openWorldHint: false,
   readOnlyHint: false,
   destructiveHint: false,
   idempotentHint: true,
 } as const
 
 const trustedIngestionAnnotations = {
+  openWorldHint: false,
   readOnlyHint: false,
   destructiveHint: false,
   idempotentHint: true,
 } as const
 
 export interface PjsdasMcpServerOptions {
+  scopedManagement?: ScopedManagementRuntime
   businessManagement?: BusinessManagementTools
   version?: string
   dataMode?: 'workspace' | 'demo' | 'google-drive-readonly' | 'google-drive' | 'transactional'
@@ -319,6 +329,69 @@ export function createPjsdasMcpServer(
       description: 'Restore a specific management command only after the user requests undo. Rejects conflicting later changes; never overwrites them or restores other command families.',
       inputSchema: undoBusinessManagementSchema, annotations: { ...directWriteAnnotations, destructiveHint: true },
     }, async args => options.businessManagement!.invoke('undo_business_management', args))
+  }
+
+  if (options.scopedManagement) {
+    server.registerTool('get_opportunity_management', {
+      title: 'Get 机会资料',
+      description: 'Read the current account’s 机会资料 after explicit domain consent. Never grants access.',
+      inputSchema: getOpportunityManagementSchema, annotations: readOnlyAnnotations,
+    }, async args => options.scopedManagement!.opportunity.invoke('get_opportunity_management', args))
+    server.registerTool('execute_opportunity_management', {
+      title: 'Execute 机会资料',
+      description: 'Apply a bounded user-requested 机会资料 change at the observed revision. Requires separate current account/client consent. Preserves unrelated facts and refuses conflicts. No external actions or permanent deletion. Reuse command ID only for identical retries.',
+      inputSchema: executeOpportunityManagementSchema, annotations: { ...directWriteAnnotations, destructiveHint: true },
+    }, async args => options.scopedManagement!.opportunity.invoke('execute_opportunity_management', args))
+    server.registerTool('restore_opportunity_management', {
+      title: 'Restore 机会资料',
+      description: 'Restore one 机会资料 command only after the user requests undo. Requires current domain consent and the exact compensation fingerprint. Refuses later conflicts; never restores a whole stale workspace.',
+      inputSchema: restoreOpportunityManagementSchema, annotations: { ...directWriteAnnotations, destructiveHint: true },
+    }, async args => options.scopedManagement!.opportunity.invoke('restore_opportunity_management', args))
+    server.registerTool('get_planning_management', {
+      title: 'Get 决策规则和时间偏好',
+      description: 'Read the current account’s 决策规则和时间偏好 after explicit domain consent. Never grants access.',
+      inputSchema: getPlanningManagementSchema, annotations: readOnlyAnnotations,
+    }, async args => options.scopedManagement!.planning.invoke('get_planning_management', args))
+    server.registerTool('execute_planning_management', {
+      title: 'Execute 决策规则和时间偏好',
+      description: 'Apply a bounded user-requested 决策规则和时间偏好 change at the observed revision. Requires separate current account/client consent. Preserves unrelated facts and refuses conflicts. No external actions or permanent deletion. Reuse command ID only for identical retries.',
+      inputSchema: executePlanningManagementSchema, annotations: { ...directWriteAnnotations, destructiveHint: true },
+    }, async args => options.scopedManagement!.planning.invoke('execute_planning_management', args))
+    server.registerTool('restore_planning_management', {
+      title: 'Restore 决策规则和时间偏好',
+      description: 'Restore one 决策规则和时间偏好 command only after the user requests undo. Requires current domain consent and the exact compensation fingerprint. Refuses later conflicts; never restores a whole stale workspace.',
+      inputSchema: restorePlanningManagementSchema, annotations: { ...directWriteAnnotations, destructiveHint: true },
+    }, async args => options.scopedManagement!.planning.invoke('restore_planning_management', args))
+    server.registerTool('get_discovery_profile_management', {
+      title: 'Get 职位发现偏好',
+      description: 'Read the current account’s 职位发现偏好 after explicit domain consent. Never grants access.',
+      inputSchema: getDiscoveryProfileManagementSchema, annotations: readOnlyAnnotations,
+    }, async args => options.scopedManagement!.discoveryProfile.invoke('get_discovery_profile_management', args))
+    server.registerTool('execute_discovery_profile_management', {
+      title: 'Execute 职位发现偏好',
+      description: 'Apply a bounded user-requested 职位发现偏好 change at the observed revision. Requires separate current account/client consent. Preserves unrelated facts and refuses conflicts. No external actions or permanent deletion. Reuse command ID only for identical retries.',
+      inputSchema: executeDiscoveryProfileManagementSchema, annotations: { ...directWriteAnnotations, destructiveHint: true },
+    }, async args => options.scopedManagement!.discoveryProfile.invoke('execute_discovery_profile_management', args))
+    server.registerTool('restore_discovery_profile_management', {
+      title: 'Restore 职位发现偏好',
+      description: 'Restore one 职位发现偏好 command only after the user requests undo. Requires current domain consent and the exact compensation fingerprint. Refuses later conflicts; never restores a whole stale workspace.',
+      inputSchema: restoreDiscoveryProfileManagementSchema, annotations: { ...directWriteAnnotations, destructiveHint: true },
+    }, async args => options.scopedManagement!.discoveryProfile.invoke('restore_discovery_profile_management', args))
+    server.registerTool('get_private_reminder_management', {
+      title: 'Get 应用内私人提醒',
+      description: 'Read the current account’s 应用内私人提醒 after explicit domain consent. Never grants access.',
+      inputSchema: getPrivateReminderManagementSchema, annotations: readOnlyAnnotations,
+    }, async args => options.scopedManagement!.privateReminder.invoke('get_private_reminder_management', args))
+    server.registerTool('execute_private_reminder_management', {
+      title: 'Execute 应用内私人提醒',
+      description: 'Apply a bounded user-requested 应用内私人提醒 change at the observed revision. Requires separate current account/client consent. Preserves unrelated facts and refuses conflicts. No external actions or permanent deletion. Reuse command ID only for identical retries.',
+      inputSchema: executePrivateReminderManagementSchema, annotations: { ...directWriteAnnotations, destructiveHint: true },
+    }, async args => options.scopedManagement!.privateReminder.invoke('execute_private_reminder_management', args))
+    server.registerTool('restore_private_reminder_management', {
+      title: 'Restore 应用内私人提醒',
+      description: 'Restore one 应用内私人提醒 command only after the user requests undo. Requires current domain consent and the exact compensation fingerprint. Refuses later conflicts; never restores a whole stale workspace.',
+      inputSchema: restorePrivateReminderManagementSchema, annotations: { ...directWriteAnnotations, destructiveHint: true },
+    }, async args => options.scopedManagement!.privateReminder.invoke('restore_private_reminder_management', args))
   }
 
   if (explicitUserCommandMode === 'enabled') {

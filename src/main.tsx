@@ -1,3 +1,4 @@
+import ScopedManagementConsentPage from './aiAccess/ScopedManagementConsentPage.js'
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import App from './AppV8.js'
@@ -31,6 +32,7 @@ function Entry() {
     : null
 
   if (authorizationId) return <OAuthConsentPage />
+  if (typeof window !== 'undefined' && (new URL(window.location.href).searchParams.get('scoped_access') === '1' || new URL(window.location.href).searchParams.get('connect') === '1')) return <ScopedManagementConsentPage />
   if (typeof window !== 'undefined' && new URL(window.location.href).searchParams.get('manage_access') === '1') return <OwnerManagementConsentPage />
 
   return (
