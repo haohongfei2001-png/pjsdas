@@ -96,6 +96,42 @@ for (const failure of ['journal-read', 'account-change', 'read-and-archive'] as 
   expect(server.sent).toEqual([])
 })
 
+test('background recovery never races a live Undo before its IDB journal is ready', async ({ page, context }) => {
+  const server = await setup(context); server.setDelay(50)
+  await start(page)
+  await page.locator('[data-action-id="dense-action-0"] .tsui-done-action').click()
+  await expect.poll(() => pendingCount(page)).toBe(0)
+  expect(server.sent).toHaveLength(1)
+  const receiptCount = server.receiptLookups.length
+  const result = await page.evaluate(async parentId => {
+    const api = await import('/pjsdas/src/db.ts'), client = await import('/pjsdas/src/cloud/instantCommandClient.ts')
+    const db = await api.dbPromise, snapshot = await api.exportLocalSnapshot()
+    const get = db.get
+    let release!: () => void, entered!: () => void, armed = true
+    const held = new Promise<void>(resolve => { release = resolve }), ready = new Promise<void>(resolve => { entered = resolve })
+    ;(db as any).get = async (store: string, key: string) => {
+      if (armed && store === 'commandInteractions' && key === `instant-owner:${parentId}`) { armed = false; entered(); await held }
+      return (get as any).call(db, store, key)
+    }
+    let preparing: Promise<string> | undefined
+    try {
+      preparing = client.beginInstantUndo('instant-owner', parentId, snapshot)
+      await ready
+      const pending = JSON.parse(localStorage.getItem('pjsdas-cgr01-pending:instant-owner') ?? '[]').find((row: any) => row.targetCommandId === parentId)
+      await client.recoverInstantInteraction('instant-owner', pending.commandId)
+      const during = (await (get as any).call(db, 'actions', 'dense-action-0')).status
+      release(); const commandId = await preparing
+      return { during, commandId }
+    } finally { release(); (db as any).get = get; await preparing }
+  }, server.sent[0])
+  expect(result.during).toBe('done')
+  expect(server.receiptLookups).toHaveLength(receiptCount)
+  await expect.poll(() => pendingCount(page)).toBe(0)
+  await expect(page.locator('[data-action-id="dense-action-0"]')).toBeVisible()
+  expect(server.sent).toEqual([server.sent[0], result.commandId])
+  expect(new Set(server.sent).size).toBe(2)
+})
+
 test('immediate Undo preserves original audit and compensates after its delayed receipt', async ({ page, context }) => {
   test.setTimeout(90_000)
   const server = await setup(context)

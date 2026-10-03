@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { PJSDASSnapshot } from '../src/snapshot.js'
 import type { CommandInteractionRecord } from '../src/db.js'
 
-const state = vi.hoisted(() => ({ snapshot: undefined as unknown as PJSDASSnapshot, records: new Map<string, CommandInteractionRecord>(), failAfterNoopWrite: false }))
+const state = vi.hoisted(() => ({ snapshot: undefined as unknown as PJSDASSnapshot, records: new Map<string, CommandInteractionRecord>(), failAfterNoopWrite: false, holdPending: undefined as undefined | Promise<void>, holdRead: undefined as undefined | { id: string; wait: Promise<void> } }))
 vi.mock('../src/db.js', async () => {
   const { applyWorkspaceDelta } = await import('../src/workspaceDelta.js')
   return {
@@ -15,8 +15,8 @@ vi.mock('../src/db.js', async () => {
       for (const { record } of guard.interactionSteps) state.records.set(record.commandId, record)
       return structuredClone(state.snapshot)
     },
-    readCommandInteraction: async (_account: string, id: string) => state.records.get(id),
-    readPendingCommandInteractions: async () => [...state.records.values()].filter(row => ['active', 'projection_pending', 'rollback_pending'].includes(row.state)),
+    readCommandInteraction: async (_account: string, id: string) => { if (state.holdRead?.id === id) await state.holdRead.wait; return state.records.get(id) },
+    readPendingCommandInteractions: async () => { if(state.holdPending) await state.holdPending; return [...state.records.values()].filter(row => ['active', 'projection_pending', 'rollback_pending'].includes(row.state)) },
     saveCommandInteraction: async (record: CommandInteractionRecord) => {
       state.records.set(record.commandId, record)
       if (state.failAfterNoopWrite && record.noOpRevision !== undefined) {
@@ -56,13 +56,61 @@ function response(payload: unknown) { return new Response(JSON.stringify(payload
 
 describe('confirmed interaction metadata recovery', () => {
   beforeEach(() => {
-    state.snapshot = instantDenseWorkspace(0); state.records.clear(); state.failAfterNoopWrite = false
+    state.snapshot = instantDenseWorkspace(0); state.records.clear(); state.failAfterNoopWrite = false; state.holdRead = undefined; state.holdPending = undefined
     setAccountCacheSession(undefined); setAccountCacheSession('metadata-owner')
     Object.defineProperty(globalThis, 'window', { configurable: true, value: { localStorage: new MemoryStorage(), dispatchEvent: vi.fn() } })
     Object.defineProperty(globalThis, 'navigator', { configurable: true, value: { onLine: false } })
     bindLocalWorkspaceToUser('metadata-owner')
     patchAccountCheckpoint('metadata-owner', { lastSyncedVersion: 'txn:1204', lastSyncedFingerprint: 'synthetic-baseline' })
     vi.mocked(fetchBackend).mockReset()
+  })
+  it('does not recover a live action preparation and releases the guard after local settlement', async () => {
+    let release!: () => void
+    state.holdPending = new Promise<void>(resolve => { release = resolve })
+    Object.defineProperty(globalThis, 'navigator', { configurable: true, value: { onLine: true } })
+    vi.mocked(fetchBackend).mockResolvedValue(response({ found: false }))
+    const command = { commandId: 'live-action-preparation', kind: 'set_action_status' as const, actionId: 'dense-action-0', status: 'done' as const }
+    const preparing = beginInstantCommand('metadata-owner', state.snapshot, command)
+    expect(listAccountPendingOperations('metadata-owner')).toHaveLength(1)
+    expect(state.records.has(command.commandId)).toBe(false)
+    await recoverInstantInteraction('metadata-owner', command.commandId)
+    expect(fetchBackend).not.toHaveBeenCalled()
+    Object.defineProperty(globalThis, 'navigator', { configurable: true, value: { onLine: false } })
+    release();state.holdPending=undefined;await preparing
+    await new Promise(resolve=>setTimeout(resolve,0))
+    expect(state.records.get(command.commandId)?.state).toBe('active')
+    // A later reconnect is real recovery, so the temporary marker must be gone.
+    Object.defineProperty(globalThis, 'navigator', { configurable: true, value: { onLine: true } })
+    await recoverInstantInteraction('metadata-owner', command.commandId)
+    expect(JSON.parse(String(vi.mocked(fetchBackend).mock.calls[0][1]!.body)).action).toBe('receipt')
+  })
+  it('does not mistake a live Undo preparation for a crash before its journal transaction', async () => {
+    const command = { commandId: 'live-preparation-parent', kind: 'set_action_status' as const, actionId: 'dense-action-0', status: 'done' as const }
+    await beginInstantCommand('metadata-owner', state.snapshot, command)
+    await new Promise(resolve => setTimeout(resolve, 0))
+    const parent = state.records.get(command.commandId)!
+    state.records.set(command.commandId, { ...parent, state: 'confirmed', serverRevision: 1205 })
+    // Terminal parent no longer belongs in the pending mirror.
+    const { settleConnectedInteraction } = await import('../src/cloud/authoritativeCommandClient.js')
+    settleConnectedInteraction('metadata-owner', command.commandId)
+    let release!: () => void
+    state.holdRead = { id: command.commandId, wait: new Promise<void>(resolve => { release = resolve }) }
+    Object.defineProperty(globalThis, 'navigator', { configurable: true, value: { onLine: true } })
+    vi.mocked(fetchBackend).mockResolvedValue(response({ found: false }))
+    const preparing = beginInstantUndo('metadata-owner', command.commandId, state.snapshot)
+    const pending = listAccountPendingOperations('metadata-owner').find(row => row.targetCommandId === command.commandId)!
+    expect(pending).toBeDefined(); expect(state.records.has(pending.commandId)).toBe(false)
+    // The recovery timer can see the synchronous localStorage reservation while
+    // the original caller is still awaiting IDB. It must not query or project it.
+    const recovery = recoverInstantInteraction('metadata-owner', pending.commandId)
+    await new Promise(resolve => setTimeout(resolve, 0))
+    expect(fetchBackend).not.toHaveBeenCalled()
+    Object.defineProperty(globalThis, 'navigator', { configurable: true, value: { onLine: false } })
+    release(); state.holdRead = undefined; state.holdPending = undefined
+    await preparing; await recovery
+    await new Promise(resolve => setTimeout(resolve, 0))
+    expect(state.records.get(pending.commandId)?.state).toBe('active')
+    expect(state.snapshot.data.actions.find(row => row.id === 'dense-action-0')?.status).toBe('todo')
   })
   describe.each(['delta', 'snapshot'] as const)('%s response', format => {
   it.each(['checkpoint', 'mirror'] as const)('keeps a committed journal undoable after a failed %s write', async failure => {

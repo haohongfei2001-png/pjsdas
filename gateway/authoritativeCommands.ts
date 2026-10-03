@@ -482,7 +482,7 @@ export function createAuthoritativeCommandExecutor(options: AuthoritativeCommand
 
     for (let attempt = 0; attempt < 5; attempt += 1) {
       if (attempt > 0 && isManagement) await authorizeManagement(principal, admittedManagementGrant, parsed.command.type)
-      const current = await store.readForUser(principal.userId, { preserveRawData: parsed.command.type === 'planning_management' || parsed.command.type === 'discovery_profile_management' || parsed.command.type === 'private_reminder_management' })
+      const current = await store.readForUser(principal.userId, { preserveRawData: parsed.command.type === 'opportunity_management' || parsed.command.type === 'planning_management' || parsed.command.type === 'discovery_profile_management' || parsed.command.type === 'private_reminder_management' })
       if (!current) throw new WorkspaceSourceError('WORKSPACE_NOT_FOUND', 'TodayAction connected workspace has not been migrated yet.', false)
 
       const existing = await store.readCommandForUser(principal.userId, parsed.commandId)
@@ -621,7 +621,7 @@ export function createAuthoritativeCommandExecutor(options: AuthoritativeCommand
 
       // Receipts must describe the normalized facts actually submitted to
       // storage, including derived schedule nodes and temporal precision.
-      if (parsed.command.type !== 'planning_management' && parsed.command.type !== 'discovery_profile_management' && parsed.command.type !== 'private_reminder_management') evaluated.snapshot = upgradeSnapshotToLatest(evaluated.snapshot)
+      if (parsed.command.type !== 'opportunity_management' && parsed.command.type !== 'planning_management' && parsed.command.type !== 'discovery_profile_management' && parsed.command.type !== 'private_reminder_management') evaluated.snapshot = upgradeSnapshotToLatest(evaluated.snapshot)
       const affectedObjects = diffCommandObjects(current.snapshot, evaluated.snapshot)
       const affectedFields = diffCommandFields(current.snapshot, evaluated.snapshot, affectedObjects)
       const conflictScopes = commandConflictScopes(affectedObjects, intentFields)
@@ -693,7 +693,7 @@ export function createAuthoritativeCommandExecutor(options: AuthoritativeCommand
       if (!current) throw new WorkspaceSourceError('WORKSPACE_NOT_FOUND', 'TodayAction connected workspace has not been migrated yet.', false)
 
       const target = await store.readCommandForUser(principal.userId, parsed.targetCommandId)
-      if (target?.operation === 'planning_management' || target?.operation === 'discovery_profile_management' || target?.operation === 'private_reminder_management') {
+      if (target?.operation === 'opportunity_management' || target?.operation === 'planning_management' || target?.operation === 'discovery_profile_management' || target?.operation === 'private_reminder_management') {
         current = await store.readForUser(principal.userId, { preserveRawData: true })
         if (!current) throw new WorkspaceSourceError('WORKSPACE_NOT_FOUND', 'TodayAction workspace is unavailable.', false)
       }
@@ -800,7 +800,7 @@ export function createAuthoritativeCommandExecutor(options: AuthoritativeCommand
 
       const now = new Date()
       const restored = await applyCompensation(current.snapshot, target.compensation, now)
-      const next = target.operation === 'planning_management' || target.operation === 'discovery_profile_management' || target.operation === 'private_reminder_management' ? restored : upgradeSnapshotToLatest(restored)
+      const next = target.operation === 'opportunity_management' || target.operation === 'planning_management' || target.operation === 'discovery_profile_management' || target.operation === 'private_reminder_management' ? restored : upgradeSnapshotToLatest(restored)
       const affectedObjects = diffCommandObjects(current.snapshot, next)
       const managementGrant = target.operation === 'business_management' || target.operation === 'opportunity_management' || target.operation === 'planning_management' || target.operation === 'discovery_profile_management' || target.operation === 'private_reminder_management' ? await authorizeManagement(principal, admittedManagementGrant, target.operation) : undefined
       const committed = await store.commitAuthoritativeForUser({

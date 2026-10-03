@@ -1,6 +1,11 @@
 import { expect, test } from '@playwright/test'
 import { AUTH_KEY, BACKEND, cors, health, session, workspace } from './fixtures/todayWorkspace.js'
 
+// Owner recovery is a synchronization fixture, not a midnight capacity test.
+// Keep its 20-minute task eligible in every runner timezone and wall-clock hour.
+test.use({ timezoneId: 'UTC' })
+test.beforeEach(async ({ page }) => { await page.clock.setFixedTime(new Date('2026-10-02T12:00:00Z')) })
+
 test('stale owner conflict follows the latest revision and equivalent cache converges without a click', async ({ page }) => {
   const snapshot = workspace()
   let revision = 843

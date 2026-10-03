@@ -1,0 +1,31 @@
+{
+  "baselineTree": "f3335c354f8224932ff8a0ffe45f3c98b206aa96",
+  "inputChanged": true,
+  "target": "unknown-0",
+  "unrelatedBefore": {
+    "id": "apply:unknown-1",
+    "kind": "apply",
+    "title": "Apply to Synthetic Company 1",
+    "opportunityId": "unknown-1",
+    "status": "todo",
+    "dueAt": "2026-08-27T15:59:59Z",
+    "timingMode": "deadline",
+    "estimatedMinutes": 60,
+    "leverage": 70,
+    "delayCost": 70,
+    "createdAt": "2026-10-02T15:07:00.000Z",
+    "updatedAt": "2026-10-02T15:07:00.000Z"
+  },
+  "unrelatedAfter": {
+    "id": "apply:unknown-1",
+    "kind": "apply",
+    "title": "Apply to Synthetic Company 1",
+    "opportunityId": "unknown-1",
+    "status": "todo",
+    "estimatedMinutes": 60,
+    "leverage": 70,
+    "delayCost": 70,
+    "createdAt": "2026-10-02T15:07:00.000Z",
+    "updatedAt": "2026-10-02T15:07:00.000Z"
+  }
+}

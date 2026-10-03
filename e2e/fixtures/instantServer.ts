@@ -10,6 +10,7 @@ export async function setupInstantServer(context: BrowserContext, historyRows = 
   let delay = 3000
   let serverNow = INSTANT_NOW
   const sent: string[] = []
+  const receiptLookups: string[] = []
   const baseRevisions: Array<number | undefined> = []
   const payloadBytes: number[] = []
   const serverExecutionMs: number[] = []
@@ -26,6 +27,7 @@ export async function setupInstantServer(context: BrowserContext, historyRows = 
     const base = () => ({ workspaceId: 'instant-workspace', revision, workspaceVersion: `txn:${revision}`, schemaVersion: snapshot.version, snapshot })
     if (body.action === 'read') { readCount++; return cors(route, base()) }
     if (body.action === 'receipt') {
+      receiptLookups.push(body.commandId)
       const receipt = receipts.get(body.commandId)
       return cors(route, body.projection === 'delta-v1' ? { found: !!receipt, ...receipt } : { ...base(), found: !!receipt, receipt: receipt?.receipt })
     }
@@ -52,5 +54,5 @@ export async function setupInstantServer(context: BrowserContext, historyRows = 
     }
     return cors(route, { code: 'UNEXPECTED' }, 400)
   })
-  return { backgroundCapacity: (minutes: number, now: Date) => { snapshot = applyUserDomainCommand(snapshot, { commandId: `other-device-${revision}`, kind: 'set_date_capacity', date: '2026-10-01', minutes }, now).snapshot; revision++ }, get readCount() { return readCount }, setFullResponses: (value: boolean) => { fullResponses = value }, sent, baseRevisions, payloadBytes, serverExecutionMs, setNow: (value: Date) => { serverNow = value }, denyNext: (status = 422) => { deny = status }, loseNextResponse: () => { loseResponse = true }, backgroundGmail: () => { snapshot.data.timeline!.push({ id: 'instant-gmail-audit', kind: 'opportunity_updated', category: 'opportunity', source: 'user_action', title: 'Independent source fact', occurredAt: INSTANT_NOW.toISOString(), recordedAt: INSTANT_NOW.toISOString() }); snapshot.data.opportunities[10].role = 'Independent Gmail role'; revision++ }, setDelay: (value: number) => { delay = value }, get snapshot() { return snapshot } }
+  return { backgroundCapacity: (minutes: number, now: Date) => { snapshot = applyUserDomainCommand(snapshot, { commandId: `other-device-${revision}`, kind: 'set_date_capacity', date: '2026-10-01', minutes }, now).snapshot; revision++ }, get readCount() { return readCount }, setFullResponses: (value: boolean) => { fullResponses = value }, sent, receiptLookups, baseRevisions, payloadBytes, serverExecutionMs, setNow: (value: Date) => { serverNow = value }, denyNext: (status = 422) => { deny = status }, loseNextResponse: () => { loseResponse = true }, backgroundGmail: () => { snapshot.data.timeline!.push({ id: 'instant-gmail-audit', kind: 'opportunity_updated', category: 'opportunity', source: 'user_action', title: 'Independent source fact', occurredAt: INSTANT_NOW.toISOString(), recordedAt: INSTANT_NOW.toISOString() }); snapshot.data.opportunities[10].role = 'Independent Gmail role'; revision++ }, setDelay: (value: number) => { delay = value }, get snapshot() { return snapshot } }
 }
