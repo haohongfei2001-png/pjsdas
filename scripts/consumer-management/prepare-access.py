@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Private loopback handoff. Stores user input; never executes SQL or changes access."""
-import argparse, hashlib, json, os, re, secrets, shutil, tempfile, threading
+import argparse, json, os, re, secrets, threading
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -18,24 +18,6 @@ def private_dir(path):
 def write_private(path,text):
     with path.open('x',encoding='utf8') as f:
         os.chmod(path,0o600);f.write(text);f.flush();os.fsync(f.fileno())
-def save_database(workspace,password):
-    if not isinstance(password,str) or not password or len(password)>4096 or any(c in password for c in '\x00\r\n'): raise ValueError('PASSWORD_INVALID')
-    target=workspace/'work/private-migration-access'
-    if target.exists() or target.is_symlink(): raise ValueError('EXISTING_CONFIGURATION')
-    ca=Path(__file__).parent/'certs/supabase-prod-ca-2021.crt'
-    raw=ca.read_bytes()
-    if hashlib.sha256(raw).hexdigest()!=CA_HASH: raise ValueError('CERTIFICATE_CHANGED')
-    stage=Path(tempfile.mkdtemp(prefix='private-access-staging-',dir=workspace/'work'))
-    try:
-        esc=lambda s:s.replace('\\','\\\\').replace(':','\\:')
-        write_private(stage/'pgpass',':'.join(map(esc,[HOST,'5432','postgres','postgres',password]))+'\n')
-        write_private(stage/'supabase-ca.crt',raw.decode())
-        write_private(stage/'pg_service.conf',f'[todayaction_migration]\nhost={HOST}\nport=5432\ndbname=postgres\nuser=postgres\npassfile={target}/pgpass\nsslmode=verify-full\nsslrootcert={target}/supabase-ca.crt\nconnect_timeout=5\napplication_name=todayaction-controlled-migration\n')
-        write_private(stage/'transport.json',json.dumps({'type':'existing-local-proxy','destination':HOST,'port':5432})+'\n')
-        if target.exists() or target.is_symlink(): raise ValueError('EXISTING_CONFIGURATION')
-        stage.rename(target)
-    finally:
-        if stage.exists(): shutil.rmtree(stage)
 def save_permission(workspace,fields):
     if fields.get('confirm')!='yes': raise ValueError('CONSENT_REQUIRED')
     emails=[fields.get('accountA','').strip().lower(),fields.get('accountB','').strip().lower()]
@@ -43,8 +25,8 @@ def save_permission(workspace,fields):
     folder=workspace/'work/private-handoff';private_dir(folder)
     record={'project':PROJECT,'accountEmails':emails,'scope':SCOPE,'confirmedAt':datetime.now(timezone.utc).isoformat(),'source':'explicit-user-submit-on-private-preparation-page','applied':False,'requiresServerIdentityAndOriginalClientVerification':True,'firstPartyDomainConsentStillRequired':True}
     write_private(folder/'controlled-test-approval.json',json.dumps(record,ensure_ascii=False,indent=2)+'\n')
-def make_server(workspace,port=0):
-    token=secrets.token_urlsafe(32);route='/prepare/'+token
+def make_server(workspace,port=0,existing_token=None):
+    token=existing_token or secrets.token_urlsafe(32);route='/prepare/'+token
     class Handler(BaseHTTPRequestHandler):
         def log_message(self,*args): pass
         def setup(self): super().setup();self.connection.settimeout(5)
@@ -55,9 +37,9 @@ def make_server(workspace,port=0):
             if not self.trusted() or self.path!=route:return self.send(404,'{}')
             configured=(workspace/'work/private-migration-access/pg_service.conf').exists()
             approved=(workspace/'work/private-handoff/controlled-test-approval.json').exists()
-            database='<p class="notice">已有安全配置。我会检查连接并执行备份恢复验证；无需再次输入。</p>' if configured else f'''<form action="{route}/database" data-kind="database" method="post" autocomplete="off"><input type="hidden" name="token" value="{token}"><label for="password">现有项目的数据库密码</label><input id="password" name="password" type="password" autocomplete="off" required maxlength="4096"><p><button>安全保存密码，交给执行方验证</button></p><small>密码只保存在这台电脑的私有文件，不进入聊天、网址或日志。不会重置密码，也不会立即执行迁移。</small></form>'''
+            database='<p class="notice">不需要你提供或找回数据库密码。执行方已核查现有部署和管理连接，正在准备限定原项目的短期维护授权；尚未生成任何凭据。</p><p>数据库维护由执行方负责：先备份、实际隔离恢复、核验权限，再按原批准范围升级。密码不重置，不购买服务。</p><p><a class="button secondary" target="_blank" rel="noreferrer noopener" href="https://supabase.com/dashboard/account/tokens">查看原账号维护授权草稿</a></p><small>这里只提供第一方入口。具体范围预填并审阅后，由你确认新增访问；不要复制或发送任何密钥。</small>'
             approval='<p class="notice">本次具体测试许可已记录，尚未执行。账号与原插件仍须核实。</p>' if approved else f'''<form action="{route}/permission" data-kind="permission" method="post"><input type="hidden" name="token" value="{token}"><label for="a">专用测试账号 A 的登录邮箱</label><input id="a" name="accountA" type="email" autocomplete="off" required><label for="b">专用测试账号 B 的登录邮箱</label><input id="b" name="accountB" type="email" autocomplete="off" required><label class="check"><input name="confirm" type="checkbox" value="yes" required><span>我控制上述两个专用测试身份，允许仅为这两个账号和核实后的原 TodayAction 插件开启业务 v7 受控测试准入及必要开关。其他用户不变；本人分别登录并确认领域授权。</span></label><button>确认这项具体测试范围</button></form>'''
-            content=f'''<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>TodayAction · 本人准备</title><style nonce="{token}">{STYLE}</style><main><div class="tag">TODAYACTION · 受控测试</div><h1>只完成必须由你本人完成的准备</h1><p class="muted">项目、地址、证书和测试范围已准备。无需 SQL、参数或截图。</p><p class="notice">尚未开放普通用户使用。生产迁移 0/8；备份恢复通过后才升级。此页仅收取必要输入，不修改线上。</p><section><h2>1 · 输入一次已有数据库密码</h2><p>已固定原项目 <strong>pjsdas-auth</strong>。不要输入 Supabase 网站登录密码。</p>{database}<details><summary>已填好的连接信息</summary><p><code>{PROJECT}</code><br><code>{HOST}:5432 / postgres</code><br>证书与主机名校验保持开启；沿用现有本机网络代理。</p></details></section><section><h2>2 · 使用原插件所属账号登录</h2><p>在宿主选中<strong>已有 TodayAction 开发版</strong>。如果看不到原插件，先核对登录账号，不要创建替代插件。</p><div class="row"><a class="button" target="_blank" rel="noreferrer noopener" href="https://chatgpt.com/plugins">打开插件入口</a><a class="button secondary" target="_blank" rel="noreferrer noopener" href="https://supabase.com/dashboard/project/{PROJECT}?showConnect=true&amp;method=session">打开原数据库项目</a></div><small>这是宿主插件入口；原插件的专属安装链接仍待后台核实，不能把这一步标作安装通过。</small></section><section><h2>3 · 一次确认受控测试范围</h2><p>使用两个专用身份验证账号隔离，不挪用现有 owner 的真实工作区。此确认不直接授予业务权限；具体业务授权仍在原网站由本人确认。</p>{approval}<p class="muted">仅业务 v7；不开放公众，不更改 OAuth，不启用其他领域，不新增费用。账号尚未注册时，本人完成注册和相应条款确认。</p></section><p id="result" role="status" aria-live="polite"></p><p class="muted">提交后回到对话告诉我“已完成本人准备”即可。接下来由我检查、备份恢复、逐项升级并完成原插件实测。</p></main><script nonce="{token}">{SCRIPT}</script></html>'''
+            content=f'''<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>TodayAction · 本人准备</title><style nonce="{token}">{STYLE}</style><main><div class="tag">TODAYACTION · 受控测试</div><h1>只完成必须由你本人完成的准备</h1><p class="muted">项目、地址、证书和测试范围已准备。无需 SQL、参数或截图。</p><p class="notice">尚未开放普通用户使用。生产迁移 0/8；备份恢复通过后才升级。此页仅收取必要输入，不修改线上。</p><section><h2>1 · 数据库维护由执行方完成</h2><p>已核对原项目 <strong>pjsdas-auth</strong>，无需你处理连接配置。</p>{database}<details><summary>已填好的连接信息</summary><p><code>{PROJECT}</code><br><code>{HOST}:5432 / postgres</code><br>证书与主机名校验保持开启；沿用现有本机网络代理。</p></details></section><section><h2>2 · 使用原插件所属账号登录</h2><p>在宿主选中<strong>已有 TodayAction 开发版</strong>。如果看不到原插件，先核对登录账号，不要创建替代插件。</p><div class="row"><a class="button" target="_blank" rel="noreferrer noopener" href="https://chatgpt.com/plugins">打开插件入口</a><a class="button secondary" target="_blank" rel="noreferrer noopener" href="https://supabase.com/dashboard/project/{PROJECT}?showConnect=true&amp;method=session">打开原数据库项目</a></div><small>这是宿主插件入口；原插件的专属安装链接仍待后台核实，不能把这一步标作安装通过。</small></section><section><h2>3 · 一次确认受控测试范围</h2><p>使用两个专用身份验证账号隔离，不挪用现有 owner 的真实工作区。此确认不直接授予业务权限；具体业务授权仍在原网站由本人确认。</p>{approval}<p class="muted">仅业务 v7；不开放公众，不更改 OAuth，不启用其他领域，不新增费用。账号尚未注册时，本人完成注册和相应条款确认。</p></section><p id="result" role="status" aria-live="polite"></p><p class="muted">提交后回到对话告诉我“已完成本人准备”即可。接下来由我检查、备份恢复、逐项升级并完成原插件实测。</p></main><script nonce="{token}">{SCRIPT}</script></html>'''
             self.send(200,content,'text/html')
         def do_POST(self):
             if not self.trusted() or self.headers.get('Origin')!=self.server.origin or self.headers.get('Sec-Fetch-Site') not in (None,'same-origin') or self.headers.get('Content-Type','').split(';')[0]!='application/x-www-form-urlencoded':return self.send(403,'{"message":"请求来源不符，未保存。"}')
@@ -69,7 +51,7 @@ def make_server(workspace,port=0):
                 fields={k:v[0] for k,v in data.items()}
                 if not secrets.compare_digest(fields.get('token',''),token):return self.send(403,'{"message":"页面已失效，未保存。"}')
                 with self.server.write_lock:
-                    if self.path==route+'/database' and set(fields)=={'token','password'}:save_database(workspace,fields['password'])
+                    if self.path==route+'/database':return self.send(410,'{"message":"数据库密码录入已停用。不需要提供或重置密码。"}')
                     elif self.path==route+'/permission' and set(fields)=={'token','accountA','accountB','confirm'}:save_permission(workspace,fields)
                     else:raise ValueError('INVALID_FORM')
                 self.send(200,'{"message":"已安全记录。未执行线上迁移或授权。请回到对话告知已完成本人准备。"}')
@@ -78,9 +60,10 @@ def make_server(workspace,port=0):
     server=ThreadingHTTPServer(('127.0.0.1',port),Handler);server.daemon_threads=True;server.write_lock=threading.Lock();server.host_header=f'127.0.0.1:{server.server_port}';server.origin='http://'+server.host_header
     return server,server.origin+route,token
 if __name__=='__main__':
-    parser=argparse.ArgumentParser();parser.add_argument('--workspace',type=Path,default=Path(__file__).resolve().parents[4]);args=parser.parse_args();os.umask(0o077)
+    parser=argparse.ArgumentParser();parser.add_argument('--workspace',type=Path,default=Path(__file__).resolve().parents[4]);parser.add_argument('--resume-page',type=Path);args=parser.parse_args();os.umask(0o077)
     workspace=args.workspace.resolve();(workspace/'work').mkdir(exist_ok=True)
-    server,url,_=make_server(workspace)
+    page=json.loads(args.resume_page.read_text()) if args.resume_page else {}
+    server,url,_=make_server(workspace,page.get("port",0),page.get("token"))
     print(url,flush=True)
     try:server.serve_forever()
     except KeyboardInterrupt:pass

@@ -12,22 +12,14 @@ class HandoffTest(unittest.TestCase):
   conn.request(method,path or self.route,urlencode(fields or {}) if method=='POST' else None,h);r=conn.getresponse();result=(r.status,dict(r.getheaders()),r.read().decode());conn.close();return result
  def post(self,suffix,fields,**kw):return self.request('POST',self.route+suffix,{'token':self.token,**fields},**kw)
  def test_prefilled_private_page(self):
-  status,headers,body=self.request();self.assertEqual(status,200);self.assertIn(m.HOST,body);self.assertIn('type="password"',body);self.assertIn('frame-ancestors',headers['Content-Security-Policy']);self.assertEqual(headers['Cache-Control'],'no-store');self.assertNotIn('checked',body);self.assertEqual(self.request(path='/')[0],404)
+  status,headers,body=self.request();self.assertEqual(status,200);self.assertIn(m.HOST,body);self.assertNotIn('type="password"',body);self.assertIn('frame-ancestors',headers['Content-Security-Policy']);self.assertEqual(headers['Cache-Control'],'no-store');self.assertNotIn('checked',body);self.assertEqual(self.request(path='/')[0],404)
  def test_exact_origin_csrf_host_and_no_side_effect(self):
   for headers in ({'Origin':'https://evil.test'},{'Host':'evil.test'},{'Sec-Fetch-Site':'cross-site'}):self.assertEqual(self.post('/database',{'password':'secret'},headers=headers)[0],403)
   self.assertEqual(self.request('POST',self.route+'/database',{'token':'wrong','password':'secret'})[0],403);self.assertFalse((self.workspace/'work/private-migration-access').exists())
- def test_secret_escaping_private_modes_and_no_overwrite(self):
-  secret='fixture-only-a:b\\c$`?特殊';logs=io.StringIO()
+ def test_password_collection_is_retired(self):
+  secret='fixture-only-do-not-collect';logs=io.StringIO()
   with contextlib.redirect_stderr(logs):status,_,body=self.post('/database',{'password':secret})
-  self.assertEqual(status,200);self.assertNotIn(secret,body+logs.getvalue())
-  folder=self.workspace/'work/private-migration-access';self.assertEqual(folder.stat().st_mode&0o777,0o700)
-  for f in folder.iterdir():self.assertEqual(f.stat().st_mode&0o777,0o600)
-  self.assertIn('a\\:b\\\\c', (folder/'pgpass').read_text());self.assertEqual(hashlib.sha256((folder/'supabase-ca.crt').read_bytes()).hexdigest(),m.CA_HASH)
-  before={f.name:f.read_bytes() for f in folder.iterdir()};self.assertEqual(self.post('/database',{'password':'replacement'})[0],400);self.assertEqual(before,{f.name:f.read_bytes() for f in folder.iterdir()})
-  self.assertNotIn(secret,self.request()[2])
- def test_reject_symlink_and_control_char(self):
-  self.assertEqual(self.post('/database',{'password':'a\nb'})[0],400)
-  target=self.workspace/'work/private-migration-access';target.symlink_to(self.workspace/'missing');self.assertEqual(self.post('/database',{'password':'fixture'})[0],400)
+  self.assertEqual(status,410);self.assertNotIn(secret,body+logs.getvalue());self.assertFalse((self.workspace/'work/private-migration-access').exists())
  def test_permission_exact_accounts_explicit_and_separate(self):
   fields={'accountA':'A@example.test','accountB':'B@example.test'}
   self.assertEqual(self.post('/permission',fields)[0],400);self.assertEqual(self.post('/permission',{**fields,'confirm':'yes','accountB':'a@example.test'})[0],400)
