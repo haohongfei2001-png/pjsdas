@@ -122,7 +122,11 @@ test('background recovery never races a live Undo before its IDB journal is read
       const during = (await (get as any).call(db, 'actions', 'dense-action-0')).status
       release(); const commandId = await preparing
       return { during, commandId }
-    } finally { release(); (db as any).get = get; await preparing }
+    } finally {
+      release(); delete (db as any).get; await preparing
+      // idb synthesizes get through its Proxy. Assigning the captured helper
+      // onto native IDBDatabase double-wraps it and breaks later journal reads.
+    }
   }, server.sent[0])
   expect(result.during).toBe('done')
   expect(server.receiptLookups).toHaveLength(receiptCount)

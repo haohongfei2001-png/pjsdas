@@ -17,10 +17,16 @@ const tails = new Map<string, Promise<void>>()
 // A synchronous reservation is intentionally visible before its IDB journal.
 // Only this live caller owns that gap; crash recovery is for a later realm.
 const localPreparations = new Set<string>()
+const preparedDispatches = new Map<string, CommandInteractionRecord>()
 function schedulePreparedDispatch(record: CommandInteractionRecord) {
+  // Local settlement is complete. A paused/throttled timer must not keep the
+  // operation marked as preparing or block an explicit reconnect/recovery.
+  preparedDispatches.set(record.id, record)
+  localPreparations.delete(record.id)
   setTimeout(() => {
-    try { if (navigator.onLine) void dispatch(record).catch(() => undefined) }
-    finally { localPreparations.delete(record.id) }
+    if (preparedDispatches.get(record.id) !== record) return
+    preparedDispatches.delete(record.id)
+    if (navigator.onLine) void dispatch(record).catch(() => undefined)
   }, 0)
 }
 export interface InteractionEvent { accountKey: string; commandId: string; delta?: WorkspaceDelta; state: CommandInteractionRecord['state']; message?: string }
@@ -35,6 +41,7 @@ const version = (accountKey: string) => Number(/^txn:(\d+)$/.exec(getAccountChec
 function dispatch(record: CommandInteractionRecord, recovery = false) {
   const active = flights.get(record.id)
   if (active) return active
+  preparedDispatches.delete(record.id)
   const flight = (tails.get(record.accountKey) ?? Promise.resolve()).catch(() => undefined).then(() => send(record, recovery))
   flights.set(record.id, flight)
   tails.set(record.accountKey, flight)
@@ -536,6 +543,8 @@ async function send(record: CommandInteractionRecord, recovery: boolean) {
 export async function recoverInstantInteraction(accountKey: string, commandId: string) {
   const id = recordId(accountKey, commandId)
   if (localPreparations.has(id)) return
+  const prepared = preparedDispatches.get(id)
+  if (prepared) return dispatch(prepared)
   const flight = flights.get(id)
   if (flight) return flight
   const pending = listAccountPendingOperations(accountKey).find(item => item.commandId === commandId)

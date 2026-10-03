@@ -84,6 +84,29 @@ describe('confirmed interaction metadata recovery', () => {
     await recoverInstantInteraction('metadata-owner', command.commandId)
     expect(JSON.parse(String(vi.mocked(fetchBackend).mock.calls[0][1]!.body)).action).toBe('receipt')
   })
+  it('recovers a settled offline command even before a paused dispatch timer fires', async () => {
+    const queued: Array<() => void> = []
+    const timer = vi.spyOn(globalThis, 'setTimeout').mockImplementation((callback: any) => { queued.push(callback); return 1 as any })
+    try {
+      const command = { commandId: 'settled-before-timer', kind: 'set_action_status' as const, actionId: 'dense-action-0', status: 'done' as const }
+      await beginInstantCommand('metadata-owner', state.snapshot, command)
+      expect(state.records.get(command.commandId)?.state).toBe('active')
+      expect(queued).toHaveLength(1)
+      Object.defineProperty(globalThis, 'navigator', { configurable: true, value: { onLine: true } })
+      vi.mocked(fetchBackend).mockResolvedValue(new Response(JSON.stringify({ code: 'COMMAND_REJECTED' }), { status: 422 }))
+      await recoverInstantInteraction('metadata-owner', command.commandId)
+      expect(fetchBackend).toHaveBeenCalledTimes(1)
+      expect(JSON.parse(String(vi.mocked(fetchBackend).mock.calls[0][1]!.body)).action).toBe('command')
+      expect(state.records.get(command.commandId)?.state).toBe('rejected')
+      expect(listAccountPendingOperations('metadata-owner')).toHaveLength(0)
+      // Even if terminal journal retention has ended, an old timer no longer
+      // owns this preparation and must not re-send its captured stale record.
+      state.records.delete(command.commandId)
+      queued[0]()
+      await recoverInstantInteraction('metadata-owner', command.commandId)
+      expect(fetchBackend).toHaveBeenCalledTimes(1)
+    } finally { timer.mockRestore() }
+  })
   it('does not mistake a live Undo preparation for a crash before its journal transaction', async () => {
     const command = { commandId: 'live-preparation-parent', kind: 'set_action_status' as const, actionId: 'dense-action-0', status: 'done' as const }
     await beginInstantCommand('metadata-owner', state.snapshot, command)

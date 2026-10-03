@@ -9,10 +9,16 @@
 
 Undo publishes a synchronous pending mirror before awaiting its parent IDB record and persisting its own journal/projection. Background recovery could interpret that live gap as a crash, query a nonexistent receipt and race the original local preparation. A held-IDB unit regression fails on the baseline by observing that receipt request, then passes with the repair.
 
-A temporary in-memory account/command marker covers local preparation through registration of the deferred normal dispatch. It is removed on failure or by that dispatch timer. Recovery skips a currently live preparation and shares an existing dispatch flight. It does not authorize data, change persisted states, suppress a later reconnect or survive page restart; existing receipt-first crash recovery remains intact.
+A temporary in-memory account/command marker covers active local preparation. After durable settlement, a separate prepared record can be consumed either by deferred dispatch or explicit recovery; the timer checks exact ownership and cannot dispatch a record already consumed by recovery. The marker is removed on failure or settlement. Recovery skips a currently live preparation and shares an existing dispatch flight. It does not authorize data, change persisted states, suppress a later reconnect or survive page restart; existing receipt-first crash recovery remains intact.
 
 The action regression verifies marker release before a later reconnect. The held-IDB Undo regression verifies no request or early projection during preparation. The browser regression exercises the same gap using the real IndexedDB adapter and records receipt lookups independently from writes. Existing performance thresholds, sample counts, metric labels and retry policy are unchanged.
 
 ## Scope and verification
 
 The owner fixture correction only pins test time and timezone. No UI, business-day rules, capabilities, live grants or external calls are added. Run full existing tests, exact-head SQL and browser/performance checks, then exact-main and production verification before adoption. Retain both failures even after a passing candidate.
+
+## Retained fb02a4f follow-up failure
+
+Run37082266224 (artifact11259690333) and Matrix37082266308 failed the held-IDB probe and two existing quarantine cases across all engines. The first marker incorrectly remained active until a0ms timer, so paused/throttled timers suppressed recovery after local settlement. The revised lifecycle separates active preparation from a settled pending dispatch. A deterministic paused-timer test completes manual recovery, removes the retained terminal journal, then resumes the old timer and verifies no second send or receipt.
+
+The held-IDB probe also assigned idb's synthetic Proxy get helper back onto native IDBDatabase, causing it to be double-wrapped on later journal reads. It now deletes the temporary own property so idb can synthesize its original helper correctly. This changes test instrumentation cleanup only. Existing quarantine, rollback and20-confirmation assertions remain unchanged.
