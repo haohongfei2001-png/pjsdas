@@ -1,3 +1,4 @@
+import { resolvePlanningTimezone } from '../src/timePlanningPreferences.js'
 import { fingerprintWorkspace } from '../src/cloud/workspaceFingerprint.js'
 import { hashMutationPayload } from './mutationKernel.js'
 import { diffCommandObjects, readModelInvalidation } from './commandObjects.js'
@@ -62,7 +63,7 @@ export function createTransactionalWorkspaceSource(options: TransactionalWorkspa
         snapshot: workspace.snapshot,
         context: {
           now: now(),
-          timezone,
+          timezone: resolvePlanningTimezone(workspace.snapshot.data.timePlanning, timezone),
           workspaceVersion: `txn:${workspace.revision}`,
           workspaceOwnerUserId: options.userId,
         },
@@ -141,7 +142,7 @@ export function createTransactionalWorkspaceSource(options: TransactionalWorkspa
         snapshot: result.snapshot,
         context: {
           now: now(),
-          timezone,
+          timezone: resolvePlanningTimezone(result.snapshot.data.timePlanning, timezone),
           workspaceVersion: `txn:${result.revision}`,
           workspaceOwnerUserId: options.userId,
         },

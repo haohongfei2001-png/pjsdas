@@ -113,22 +113,38 @@ describe('v4 grant discrimination and atomic kernel', () => {
 })
 
 describe('source-only planning tool adapter', () => {
-  function tools(read: () => Promise<any>, resolveGrant: () => Promise<PlanningManagementGrant | undefined>) {
-    return createPlanningManagementTools({ principal, source: { read }, resolveGrant, createExecutor: () => { throw new Error('No mutation expected') } })
+  function tools(f: ReturnType<typeof storeFixture>, resolveGrant: () => Promise<PlanningManagementGrant | undefined>, fetchImpl = f.fetchImpl) {
+    return createPlanningManagementTools({ principal, storeOptions: { ...f.options, fetchImpl }, resolveGrant })
   }
   it('requires a v4 grant before reading workspace data', async () => {
-    const read = vi.fn(async () => { throw new Error('No read expected') })
-    const result = await tools(read, async () => undefined).invoke('get_planning_management', {})
-    expect(result.structuredContent).toMatchObject({ code: 'AUTH_FORBIDDEN' }); expect(read).not.toHaveBeenCalled()
+    const f = storeFixture()
+    const result = await tools(f, async () => undefined).invoke('get_planning_management', {})
+    expect(result.structuredContent).toMatchObject({ code: 'AUTH_FORBIDDEN' }); expect(f.fetchImpl).not.toHaveBeenCalled()
   })
-  it.each(['foreign-workspace', 'revoke', 'replacement'] as const)('withholds a read on %s', async change => {
-    let active: PlanningManagementGrant | undefined = grant
-    const read = async () => { if (change === 'revoke') active = undefined; if (change === 'replacement') active = { ...grant, revision: 2 }; return { snapshot: fixture(), context: { workspaceOwnerUserId: change === 'foreign-workspace' ? client : owner, workspaceVersion: 'txn:0' } } }
-    const result = await tools(read, async () => active).invoke('get_planning_management', {})
-    expect(result.isError).toBe(true); expect(result.structuredContent).toMatchObject({ code: 'AUTH_FORBIDDEN' }); expect(JSON.stringify(result)).not.toContain('Engineer')
+  it.each(['foreign-workspace', 'revoke', 'revision', 'replacement'] as const)('withholds a read on %s', async change => {
+    const f = storeFixture(); let active: PlanningManagementGrant | undefined = grant
+    const fetchImpl = vi.fn<typeof fetch>(async (input, init) => {
+      const response = await f.fetchImpl(input, init)
+      if (change === 'revoke') active = undefined
+      if (change === 'revision') active = { ...grant, revision: 2 }
+      if (change === 'replacement') active = { ...grant, id: '00000000-0000-4000-8000-000000000004' }
+      if (change === 'foreign-workspace') return Response.json([{ id: 'foreign', user_id: client, snapshot: fixture(), revision: 0, schema_version: 4 }])
+      return response
+    })
+    const result = await tools(f, async () => active, fetchImpl).invoke('get_planning_management', {})
+    expect(result.isError).toBe(true); expect(JSON.stringify(result)).not.toContain('Engineer')
   })
-  it('returns exact configuration proofs without ledger contents', async () => {
-    const result = await tools(async () => ({ snapshot: fixture(), context: { workspaceOwnerUserId: owner, workspaceVersion: 'txn:0' } }), async () => grant).invoke('get_planning_management', {})
-    expect(result.structuredContent).toMatchObject({ consentVersion: 4, capability: 'workspace.planning.manage', data: { timePreferences: { raw: null } } }); expect(JSON.stringify(result)).not.toContain('planning_management_restore')
+  it('returns exact raw configuration proofs without ledger contents', async () => {
+    const f = storeFixture()
+    const result = await tools(f, async () => grant).invoke('get_planning_management', {})
+    expect(result.structuredContent).toMatchObject({ consentVersion: 4, capability: 'workspace.planning.manage', data: { timePreferences: { raw: null } } })
+    expect(JSON.stringify(result)).not.toContain('planning_management_restore')
+  })
+  it.each(['revoke', 'revision', 'replacement'] as const)('internally binds adapter admission before executor access on %s', async change => {
+    const f = storeFixture(); let reads = 0
+    const adapter = tools(f, async () => ++reads === 1 ? grant : change === 'revoke' ? undefined : change === 'revision' ? { ...grant, revision: 2 } : { ...grant, id: '00000000-0000-4000-8000-000000000004' })
+    const c = await command()
+    const result = await adapter.invoke('execute_planning_management', { commandId: c.commandId, baseRevision: 0, change: c.command.value })
+    expect(result.structuredContent).toMatchObject({ code: 'AUTH_FORBIDDEN' }); expect(f.fetchImpl).not.toHaveBeenCalled()
   })
 })

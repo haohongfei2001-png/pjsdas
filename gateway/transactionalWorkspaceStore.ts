@@ -210,10 +210,11 @@ export function createTransactionalWorkspaceStore(options: TransactionalWorkspac
       schemaVersion: number
       sourceFingerprint?: string
       migratedFrom?: string
+      consumerAudienceMode?: 'allowlist' | 'legacy'
     }): Promise<ConnectedWorkspaceRecord> {
       validateSnapshot(input.snapshot)
       const snapshot = upgradeSnapshotToLatest(input.snapshot)
-      const response = await request('/rest/v1/rpc/pjsdas_bootstrap_workspace', {
+      const response = await request(input.consumerAudienceMode ? '/rest/v1/rpc/pjsdas_bootstrap_consumer_workspace_v1' : '/rest/v1/rpc/pjsdas_bootstrap_workspace', {
         method: 'POST',
         body: JSON.stringify({
           target_user_id: input.userId,
@@ -221,6 +222,7 @@ export function createTransactionalWorkspaceStore(options: TransactionalWorkspac
           initial_schema_version: snapshot.version,
           initial_source_fingerprint: input.sourceFingerprint ?? null,
           initial_migrated_from: input.migratedFrom ?? null,
+          ...(input.consumerAudienceMode ? { target_first_party: true, target_audience_mode: input.consumerAudienceMode } : {}),
         }),
       })
       if (!response.ok) {

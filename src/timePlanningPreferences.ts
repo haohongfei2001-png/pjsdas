@@ -7,10 +7,27 @@ export interface WorkWindow {
 
 export interface TimePlanningPreferences {
   version: 1
+  /** Optional owner-selected IANA zone; missing keeps the existing surface fallback. */
+  timezone?: string
   defaultDailyMinutes?: number
   weeklyWindows?: WorkWindow[]
   dateOverrides?: Record<string, number>
   updatedAt: string
+}
+
+export function validPlanningTimezone(value: unknown): value is string {
+  if (typeof value !== 'string' || !value.trim() || value.length > 120 || !/^[A-Za-z][A-Za-z0-9_+\/-]*$/.test(value)) return false
+  try { new Intl.DateTimeFormat('en', { timeZone: value }); return true } catch { return false }
+}
+
+export function normalizePlanningTimezone(value: string): string {
+  if (!validPlanningTimezone(value)) throw new Error('Invalid planning timezone.')
+  return new Intl.DateTimeFormat('en', { timeZone: value }).resolvedOptions().timeZone
+}
+
+/** Does not reinterpret historical instants or floating date-only source facts. */
+export function resolvePlanningTimezone(preferences: TimePlanningPreferences | undefined, fallback = 'UTC') {
+  return preferences?.timezone ?? fallback
 }
 
 export function validPlanningDate(value: string) {
@@ -22,6 +39,7 @@ export function validPlanningDate(value: string) {
 export function validateTimePlanningPreferences(value: TimePlanningPreferences): string[] {
   const errors: string[] = []
   if (!value || typeof value !== 'object') return ['Invalid planning preferences.']
+  if (value.timezone !== undefined && !validPlanningTimezone(value.timezone)) errors.push('Invalid planning timezone.')
   const minutes = value.defaultDailyMinutes
   if (value.version !== 1 || typeof value.updatedAt !== 'string' || !Number.isFinite(new Date(value.updatedAt).getTime())) errors.push('Invalid planning preference version or update time.')
   if (minutes !== undefined && (!Number.isInteger(minutes) || minutes < 0 || minutes > 1440)) errors.push('Default available time must be 0–1440 minutes.')

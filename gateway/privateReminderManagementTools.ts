@@ -14,7 +14,7 @@ export const restorePrivateReminderManagementSchema = z.object({ commandId, targ
 export type PrivateReminderManagementToolName = 'get_private_reminder_management' | 'execute_private_reminder_management' | 'restore_private_reminder_management'
 const result = (data: Record<string, unknown>): CallToolResult => ({ content: [{ type: 'text', text: JSON.stringify(data) }], structuredContent: data })
 
-/** Source-only adapter: no production runtime, tool catalog or consent handler registers it. */
+/** Scoped adapter. Registration is default-off; every invocation requires its own current consent proof. */
 export function createPrivateReminderManagementTools(options: {
   principal: MutationPrincipal
   storeOptions: TransactionalWorkspaceStoreOptions

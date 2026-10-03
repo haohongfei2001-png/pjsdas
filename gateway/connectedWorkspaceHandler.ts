@@ -1,3 +1,4 @@
+import { initializeEmptyConsumerWorkspace } from './consumerWorkspaceBootstrap.js'
 import { fingerprintWorkspace } from '../src/cloud/workspaceFingerprint.js'
 import { upgradeSnapshotToLatest, validateSnapshot, type PJSDASSnapshot } from '../src/snapshot.js'
 import { hashMutationPayload } from './mutationKernel.js'
@@ -12,6 +13,9 @@ export interface ConnectedWorkspaceHandlerConfig {
   supabasePublishableKey: string
   serviceRoleKey: string
   allowedOrigins: string[]
+  /** Source-only consumer onboarding gate; never enabled implicitly. */
+  consumerOnboardingEnabled?: boolean
+  consumerAudienceMode?: 'allowlist' | 'legacy'
   fetchImpl?: typeof fetch
   authorizeIdentity?: (identity: import('./supabaseIdentity.js').PjsdasIdentity) => Promise<unknown>
 }
@@ -83,7 +87,7 @@ export function createConnectedWorkspaceHandler(config: ConnectedWorkspaceHandle
     }
 
     try {
-      const { identity } = await resolveIdentity(request)
+      const { identity, accessToken } = await resolveIdentity(request)
       await config.authorizeIdentity?.(identity)
       if (identity.oauthClientId) {
         throw new WorkspaceSourceError('AUTH_FORBIDDEN', 'Delegated OAuth clients cannot call the first-party connected workspace endpoint.', false)
@@ -140,6 +144,21 @@ export function createConnectedWorkspaceHandler(config: ConnectedWorkspaceHandle
       }>(await request.json().catch(() => undefined))
 
       if (body.action === 'read') return readWorkspace()
+
+      if (body.action === 'initialize_empty') {
+        if (config.consumerOnboardingEnabled !== true) throw new WorkspaceSourceError('AUTH_FORBIDDEN', 'Consumer onboarding is not enabled.', false)
+        // This check can only deny after the provider verified this bearer.
+        try {
+          const parts = accessToken.split('.')
+          if (parts.length !== 3) throw new Error('uncertain token')
+          const encoded = parts[1].replace(/-/g, '+').replace(/_/g, '/')
+          const claims = JSON.parse(atob(encoded.padEnd(Math.ceil(encoded.length / 4) * 4, '=')))
+          if (!claims || typeof claims !== 'object' || Array.isArray(claims) || Object.hasOwn(claims, 'client_id')) throw new Error('delegated or uncertain')
+        } catch { throw new WorkspaceSourceError('AUTH_FORBIDDEN', 'Empty initialization requires a verified first-party session.', false) }
+        const result = await initializeEmptyConsumerWorkspace(store, identity.userId, body, new Date(), config.consumerAudienceMode ?? 'allowlist')
+        const workspace = result.workspace
+        return json(200, { outcome: result.outcome, workspaceId: workspace.workspaceId, workspaceVersion: `txn:${workspace.revision}`, revision: workspace.revision, schemaVersion: workspace.schemaVersion, snapshot: workspace.snapshot }, origin, config.allowedOrigins)
+      }
 
       if (body.action === 'bootstrap') {
         if (body.confirmMigration !== true) {

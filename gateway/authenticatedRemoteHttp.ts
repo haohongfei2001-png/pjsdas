@@ -1,3 +1,4 @@
+import { createOwnerScopedManagementRuntime } from './scopedManagementRuntime.js'
 import { createOwnerBusinessManagementRuntime } from './businessManagementRuntime.js'
 import { createMcpHandler } from '@modelcontextprotocol/server'
 import { createAuthenticatedDriveWorkspaceSource } from './authenticatedDriveSource.js'
@@ -156,9 +157,18 @@ export async function authenticatedRemoteMcpFetch(request: Request) {
       supabaseUrl: PJSDAS_SUPABASE_URL,
       serviceRoleKey: transactionalAuthority ? env('PJSDAS_SUPABASE_SERVICE_ROLE_KEY') : '',
     })
+    const scopedManagement = createOwnerScopedManagementRuntime({
+      enabled: process.env.PJSDAS_OWNER_SCOPED_MANAGEMENT,
+      consumerEnabled: process.env.PJSDAS_CONSUMER_SCOPED_MANAGEMENT,
+      transactional: transactionalAuthority,
+      identity, audience,
+      supabaseUrl: PJSDAS_SUPABASE_URL,
+      serviceRoleKey: transactionalAuthority ? env('PJSDAS_SUPABASE_SERVICE_ROLE_KEY') : '',
+    })
     const handler = createMcpHandler(
       () => createPjsdasMcpServer(source, {
         businessManagement,
+        scopedManagement,
         version: AUTHENTICATED_GATEWAY_VERSION,
         dataMode: transactionalAuthority ? 'transactional' : 'google-drive',
         proposalMode: 'review-link',

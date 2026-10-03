@@ -72,7 +72,7 @@ import type {
   ScheduleNodeTemporal,
 } from './model.js'
 import type { PJSDASSnapshot } from './snapshot.js'
-import type { TimePlanningPreferences, WorkWindow } from './timePlanningPreferences.js'
+import { resolvePlanningTimezone, type TimePlanningPreferences, type WorkWindow } from './timePlanningPreferences.js'
 import TimePlanningSettings from './today/TimePlanningSettings.js'
 import './surfaceConsolidation.css'
 import './interactionDetail.css'
@@ -200,7 +200,7 @@ export default function AppV8() {
 
   const surface = route.surface
   const selectedOpportunityId = route.opportunityId
-  const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
+  const timezone = resolvePlanningTimezone(snapshot?.data.timePlanning, Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC')
 
   useEffect(() => {
     document.title = brandDocumentTitle(route.capture ? 'capture' : surface, lang)
