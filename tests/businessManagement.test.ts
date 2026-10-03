@@ -4,7 +4,7 @@ import { assertBusinessManagementGrant, type BusinessManagementGrant } from '../
 import { createAuthoritativeCommandExecutor } from '../gateway/authoritativeCommands.js'
 import type { PJSDASSnapshot } from '../src/snapshot.js'
 const now = new Date('2026-10-02T12:00:00Z')
-function snapshot(): PJSDASSnapshot { return { schema:'pjsdas-local-snapshot',version:4,exportedAt:now.toISOString(),data:{opportunities:[],processes:[],processEvents:[],actions:[],prep:[],applicationGroups:[],timeline:[],scheduleNodes:[]} } }
+function snapshot(): PJSDASSnapshot { return { schema:'pjsdas-local-snapshot',version:4,exportedAt:now.toISOString(),data:{opportunities:[],processes:[],processEvents:[],actions:[],prep:[],applicationGroups:[],timeline:[],scheduleNodes:[],decisionRequests:[],semanticReceipts:[],reminderIntents:[],reminderOutbox:[]} } }
 const createPrep = {kind:'create_prep',value:{title:'Synthetic preparation',estimatedMinutes:30}}
 function apply(operations: unknown[], initial = snapshot(), commandId='synthetic-command-1') { return applyBusinessManagement(initial,{operations},commandId,now) }
 

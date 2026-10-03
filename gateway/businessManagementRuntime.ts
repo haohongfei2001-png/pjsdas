@@ -1,6 +1,8 @@
 import { WorkspaceSourceError } from './workspaceSource.js'
 import { createAuthoritativeCommandExecutor } from './authoritativeCommands.js'
 import { createBusinessManagementGrantReader } from './businessManagementGrantStore.js'
+import { createTransactionalWorkspaceStore } from './transactionalWorkspaceStore.js'
+import { resolvePlanningTimezone } from '../src/timePlanningPreferences.js'
 import { createBusinessManagementTools } from './businessManagementTools.js'
 import type { AudienceAccessResult } from './audienceAccess.js'
 import type { PjsdasIdentity } from './supabaseIdentity.js'
@@ -19,9 +21,16 @@ export function createOwnerBusinessManagementRuntime(options: {
 }) {
   if (options.enabled !== 'enabled' || !options.transactional || !options.identity.oauthClientId || !options.audience.allowed || options.audience.mode !== 'allowlist' || options.audience.role !== 'owner') return undefined
   const resolveGrant = createBusinessManagementGrantReader(options)
+  const store = createTransactionalWorkspaceStore(options)
   return createBusinessManagementTools({
     principal: { kind: 'delegated_mcp', userId: options.identity.userId, clientId: options.identity.oauthClientId },
-    source: options.source,
+    // This adapter consumes only owner/revision metadata and bounded raw rows.
+    // It must not use the general source's whole-snapshot read normalization.
+    source: { read: async () => {
+      const workspace = await store.readForUser(options.identity.userId, { preserveRawData: true })
+      if (!workspace) throw new WorkspaceSourceError('WORKSPACE_NOT_FOUND', 'TodayAction workspace is unavailable.', false)
+      return { snapshot: workspace.snapshot, context: { now: new Date(), timezone: resolvePlanningTimezone(workspace.snapshot.data.timePlanning), workspaceOwnerUserId: workspace.userId, workspaceVersion: `txn:${workspace.revision}` } }
+    } },
     resolveGrant,
     createExecutor: admitted => createAuthoritativeCommandExecutor({ ...options, resolveBusinessManagementGrant: async principal => {
       const current = await resolveGrant(principal)

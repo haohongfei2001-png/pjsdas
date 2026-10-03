@@ -1,6 +1,6 @@
 import * as z from 'zod/v4'
 import type { Action, ApplicationGroup, Prep } from './model.js'
-import { upgradeSnapshotToLatest, validateSnapshot, type PJSDASSnapshot } from './snapshot.js'
+import { validateSnapshot, type PJSDASSnapshot } from './snapshot.js'
 
 const id = z.string().trim().min(1).max(240)
 const short = z.string().trim().min(1).max(300)
@@ -73,11 +73,18 @@ function assertEditableAction(snapshot: PJSDASSnapshot, action: Action) {
   }
 }
 
+/** Business edits preserve the validated envelope and unrelated raw facts. */
+function rawBusinessSnapshot(snapshot: PJSDASSnapshot) {
+  validateSnapshot(snapshot)
+  const next = structuredClone(snapshot)
+  return next
+}
+
 /** Pure atomic reducer. The gateway must authorize, persist its compensation and perform CAS. */
 export function applyBusinessManagement(snapshot: PJSDASSnapshot, raw: unknown, commandId: string, now = new Date()) {
   const input = businessManagementSchema.parse(raw)
   if (commandId.length < 8 || commandId.length > 160) throw new Error('Invalid business command identity.')
-  const original = upgradeSnapshotToLatest(snapshot)
+  const original = rawBusinessSnapshot(snapshot)
   const next = structuredClone(original)
   const timestamp = now.toISOString()
   const refs = businessManagementObjectRefs(input, commandId)
@@ -128,7 +135,7 @@ export function applyBusinessManagement(snapshot: PJSDASSnapshot, raw: unknown, 
 export function restoreBusinessManagement(snapshot: PJSDASSnapshot, compensation: BusinessManagementCompensation, now = new Date()) {
   const changes = compensation?.payload?.changes
   if (compensation?.operation !== 'business_management_restore' || !Array.isArray(changes) || !changes.length || changes.length > 50) throw new BusinessManagementError('INVALID_COMPENSATION', 'Management compensation is invalid.')
-  const next = upgradeSnapshotToLatest(snapshot)
+  const next = rawBusinessSnapshot(snapshot)
   const seen = new Set<string>()
   for (const change of changes) {
     if (!['prep', 'action', 'application_group'].includes(change.type) || !change.id || seen.has(`${change.type}:${change.id}`) || (change.before && change.before.id !== change.id) || (change.after && change.after.id !== change.id) || (!change.before && !change.after) || !Number.isInteger(change.beforeIndex) || (change.before ? change.beforeIndex < 0 : change.beforeIndex !== -1)) throw new BusinessManagementError('INVALID_COMPENSATION', 'Management compensation object is invalid.')
