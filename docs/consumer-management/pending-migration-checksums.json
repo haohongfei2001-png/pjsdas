@@ -1,0 +1,47 @@
+{
+  "status": "NOT_APPLIED_REQUIRES_EXPLICIT_AUTHORIZATION",
+  "project": "yyrzwpoxlxpafdlbkdtg",
+  "sourceCommit": "0b98402519cd4ddea0997835ed759f028cdf9352",
+  "migrations": [
+    {
+      "order": 1,
+      "file": "20261002175431_opportunity_management_v3.sql",
+      "sha256": "00e8cdf7c5c565e95b07a3803c174e4761c4c1f2d1ea264deba9cebee58f97ee"
+    },
+    {
+      "order": 2,
+      "file": "20261002195807_planning_management_v4.sql",
+      "sha256": "e228b4754b8348757cf116b1919c17c94b4cf2ed6c75a6f0ef46860860633cd7"
+    },
+    {
+      "order": 3,
+      "file": "20261002211312_discovery_profile_management_v5.sql",
+      "sha256": "0aeb168ca0b401bc0230f9d89b79e74ef6cbf997ef702f6145ae6968fae772a2"
+    },
+    {
+      "order": 4,
+      "file": "20261002220516_private_reminder_management_v6.sql",
+      "sha256": "176df83ba92d36a9bc2273ad996c13c3872586fc3b9124a4771f86f239221cc3"
+    },
+    {
+      "order": 5,
+      "file": "20261002234255_opportunity_management_raw_boundary.sql",
+      "sha256": "35a26e71cffb728cbd5c631537b110a59c62eb19bc3a49978c7bd986a6e6fbe1"
+    },
+    {
+      "order": 6,
+      "file": "20261003083410_scoped_management_consent_batch.sql",
+      "sha256": "18eb1b460536218eb91352b59e6056d0741825039da46f155da7b1b2b01cce76"
+    },
+    {
+      "order": 7,
+      "file": "20261003091106_consumer_bootstrap_audience.sql",
+      "sha256": "94d9b84e929e91c4670feab1e0fce531a6a66fd34bb52b0a87cbf5d2eb3c729e"
+    },
+    {
+      "order": 8,
+      "file": "20261003104723_consumer_business_scoped_access.sql",
+      "sha256": "d67fc8878e88861a01fba5cff240aba86f2e25fa3452c6d82529f8a81ce7c957"
+    }
+  ]
+}

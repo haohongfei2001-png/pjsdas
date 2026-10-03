@@ -65,7 +65,7 @@ try {
       const after = u.searchParams.get('resulting_revision'); if (after) rows = rows.filter(row => row.resulting_revision > Number(after.slice(3)))
       return Response.json(rows)
     }
-    const runtime = createOwnerScopedManagementRuntime({ consumerEnabled: 'enabled', enabled: 'enabled', transactional: true, identity: { userId: owner, oauthClientId: client }, audience: { mode: 'allowlist', allowed: true, role: 'owner' }, supabaseUrl: origin, serviceRoleKey: 'fixture-only', fetchImpl }).business
+    const runtime = createOwnerScopedManagementRuntime({ consumerEnabled: 'enabled', consumerCohort: { accountIds: `${owner},00000000-0000-4000-8000-000000005959`, clientId: client }, enabled: 'enabled', transactional: true, identity: { userId: owner, oauthClientId: client }, audience: { mode: 'allowlist', allowed: true, role: 'beta' }, supabaseUrl: origin, serviceRoleKey: 'fixture-only', fetchImpl }).business
     const read = await runtime.invoke('get_consumer_business_management', { query: { type: 'action', ids: [initial.data.actions[0].id] } })
     assert.deepEqual(read.structuredContent.data.items[0], initial.data.actions[0])
     const command = { commandId: `consumer-v7-raw-${scenario}`, baseRevision: 0, change: { operations: [op] } }

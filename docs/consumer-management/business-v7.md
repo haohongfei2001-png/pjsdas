@@ -1,5 +1,7 @@
 # Consumer business access, source candidate
 
+本轮受控范围以 [controlled-v7-review.md](controlled-v7-review.md) 为准：仅精确 A/B beta + 原 client 的业务 v7，其他消费者领域另行同意；全部关闭仍可第一方撤权。源代码能力不代表线上开放。
+
 Latest exact-head acceptance (2026-10-03): PR237 head `0b98402519cd4ddea0997835ed759f028cdf9352`, tree `d7b3665b18b8454372b07b911eafb6072d7de611`, passed CI/build, real PostgreSQL, brand, UI, Chromium (212 core / 69 dense), and Firefox/WebKit (224 core / 138 dense / 4 performance). The final browser logs contain no failed/flaky/retry summary; earlier failures remain in their original runs. The ten consumer Chromium cases each passed on retry 0, and the actual 1280/390 screenshots were inspected. PR237 merged as `4876a70d90f379b35bf7e458c6287c28163448e5`; main/deployment verification follows separately. Source gates do not certify live grants or fresh-host installation. See [delivery](plugin-delivery.md) and [migration reconciliation](activation-migrations.md).
 
 This closes consumer access to the existing bounded Prep, independent manual Action and ApplicationGroup reducer. It adds no new entity operations. The owner-only `workspace.manage` version 2 grant, its consent page and its tools remain separate. Legacy grants never qualify for consumer business access.

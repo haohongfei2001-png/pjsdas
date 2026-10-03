@@ -15,6 +15,8 @@ const token = (overrides: Record<string, unknown>) => [
 afterEach(() => { vi.unstubAllGlobals(); vi.unstubAllEnvs() })
 
 async function catalog(overrides: Record<string, unknown>, providerStatus = 200, enabled = true, tool?: string) {
+  vi.stubEnv('PJSDAS_CONSUMER_TEST_ACCOUNT_IDS', owner+',00000000-0000-4000-8000-000000000009')
+  vi.stubEnv('PJSDAS_CONSUMER_TEST_CLIENT_ID', client)
   vi.stubEnv('PJSDAS_CANONICAL_API_ORIGIN', 'https://todayaction.com')
   vi.stubEnv('PJSDAS_CONSUMER_SCOPED_MANAGEMENT', enabled ? 'enabled' : '')
   vi.stubEnv('PJSDAS_OWNER_SCOPED_MANAGEMENT', '')
@@ -59,7 +61,7 @@ it.each(['get_consumer_business_management', 'execute_consumer_business_manageme
 it.each([resource, ['authenticated', resource]])('exposes consumer tools only after provider validation and exact resource binding (%j)', async aud => {
   const { names, fetchImpl } = await catalog({ aud })
   expect(names).toContain('get_consumer_business_management')
-  expect(names).toContain('get_planning_management')
+  expect(names).not.toContain('get_planning_management')
   expect(fetchImpl.mock.calls).toHaveLength(3)
 })
 

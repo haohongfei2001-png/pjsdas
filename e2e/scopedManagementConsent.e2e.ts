@@ -2,11 +2,13 @@ import { SCOPED_MANAGEMENT_CONSENTS, scopedManagementConsentHash, type ScopedMan
 import { expect, test, type Page, type Route } from '@playwright/test'
 const owner='00000000-0000-4000-8000-000000000001', clientId='00000000-0000-4000-8000-000000000002'
 const entry='/pjsdas/?connect=1'
+// Multi-domain fixtures retain historical component recovery/atomic-batch regressions.
+// Controlled consumer admission is tested separately below with business-only descriptors.
 const descriptors=Object.entries(SCOPED_MANAGEMENT_CONSENTS).map(([domain,consent])=>({domain,canApprove:true,consentTextHash:'a'.repeat(64),consent}))
 async function json(route:Route,body:unknown,status=200){await route.fulfill({status,contentType:'application/json',headers:{'access-control-allow-origin':'*','access-control-allow-headers':'authorization, content-type','access-control-allow-methods':'GET, POST, OPTIONS','cache-control':'no-store'},body:JSON.stringify(body)})}
 async function fixture(page:Page,unknownFirst=false,options:{neverCommitted?:boolean;expired?:boolean;holdPost?:Promise<void>}={}){
  const viewDescriptors=await Promise.all(descriptors.map(async d=>({...d,consentTextHash:await scopedManagementConsentHash(d.domain as ScopedManagementDomain)})))
- const state={account:{id:owner,email:'synthetic@example.invalid'},descriptors:viewDescriptors,clients:[{id:clientId,name:'Synthetic client',canApprove:true,grants:[] as any[]}]}
+ const state={canInitialize:true,account:{id:owner,email:'synthetic@example.invalid'},descriptors:viewDescriptors,clients:[{id:clientId,name:'Synthetic client',canApprove:true,grants:[] as any[]}]}
  const posts:any[]=[],initializations:any[]=[],receipts=new Map<string,unknown>();let expired=Boolean(options.expired),viewState=state
  await page.addInitScript(({owner})=>{localStorage.setItem('sb-yyrzwpoxlxpafdlbkdtg-auth-token',JSON.stringify({access_token:'synthetic-session',refresh_token:'synthetic-refresh',token_type:'bearer',expires_in:86400,expires_at:Math.floor(Date.now()/1000)+86400,user:{id:owner,aud:'authenticated',role:'authenticated',email:'synthetic@example.invalid',app_metadata:{provider:'google',providers:['google']},user_metadata:{sub:owner},identities:[],created_at:'2026-10-01T00:00:00Z'}}))},{owner})
  await page.route('**/*',route=>['127.0.0.1','localhost'].includes(new URL(route.request().url()).hostname)?route.continue():route.abort())
@@ -148,4 +150,44 @@ test('stale business consent text is not shown as current authority and remains 
  await expect(page.getByLabel('本次选择：独立准备、手动行动与投递组')).toHaveValue('')
  await page.getByLabel('本次选择：独立准备、手动行动与投递组').selectOption('revoke');await page.getByLabel('我已核对账号、客户端及上方列出的本次变更。').check();await page.getByRole('button',{name:'确认所选变更'}).click()
  await expect.poll(()=>f.posts.length).toBe(1);expect(f.posts[0].choices[0]).toMatchObject({domain:'business',decision:'revoke',expectedGrant:{revision:3}})
+})
+
+// Native <option> disabledness is checked via its DOM property; the generic ARIA/actionability
+// matcher did not reflect this flag in the captured failures. Keep exact option and submitted-scope checks.
+for (const width of [1280,390]) test(`all consumer flags off retains owned revocation and hides onboarding at ${width}`,async({page},testInfo)=>{
+ await page.setViewportSize({width,height:900})
+ const f=await fixture(page),d=f.state.descriptors.find(d=>d.domain==='business')!
+ f.state.canInitialize=false;f.state.clients[0].canApprove=false
+ for(const descriptor of f.state.descriptors)descriptor.canApprove=false
+ f.state.clients[0].grants.push({domain:'business',id:'00000000-0000-4000-8000-000000000093',client_id:clientId,revision:3,revoked_at:null,consent_version:d.consent.version,capability:d.consent.capability,consent_text_hash:d.consentTextHash})
+ await page.goto(entry);await page.getByLabel('选择已连接客户端').selectOption(clientId)
+ await expect(page.getByText('当前不能新增管理授权；已有权限仍可查看和撤销。')).toBeVisible()
+ await expect(page.getByText('第一次使用 TodayAction')).toHaveCount(0)
+ const choice=page.getByLabel('本次选择：独立准备、手动行动与投递组')
+ await expect(choice.getByRole('option',{name:'明确授权此项',exact:true})).toHaveJSProperty('disabled',true)
+ await expect(choice.getByRole('option',{name:'撤销此项授权',exact:true})).toHaveJSProperty('disabled',false)
+ await testInfo.attach(`revocation-only-${width}`,{body:await page.screenshot({fullPage:true}),contentType:'image/png'})
+ await choice.selectOption('revoke');await page.getByLabel('我已核对账号、客户端及上方列出的本次变更。').check();await page.getByRole('button',{name:'确认所选变更'}).click()
+ await expect.poll(()=>f.posts.length).toBe(1);expect(f.posts[0].choices).toHaveLength(1)
+ expect(f.posts[0].choices[0]).toMatchObject({domain:'business',decision:'revoke',expectedGrant:{revision:3}})
+ await expect.poll(()=>f.state.clients[0].grants[0].revoked_at).not.toBeNull()
+ expect(f.initializations).toEqual([])
+})
+
+test('controlled consumer screen permits business v7 only and sends exactly one scope',async({page},testInfo)=>{
+ const f=await fixture(page)
+ for(const d of f.state.descriptors)d.canApprove=d.domain==='business'
+ await page.goto(entry);await page.getByLabel('选择已连接客户端').selectOption(clientId)
+ for(const d of f.state.descriptors){
+  const option=page.getByLabel(`本次选择：${d.consent.title}`).getByRole('option',{name:'明确授权此项',exact:true})
+  await expect(option).toHaveJSProperty('disabled',d.domain!=='business')
+ }
+ await page.getByLabel('本次选择：独立准备、手动行动与投递组').selectOption('approve')
+ for(const width of [1280,390]){
+  await page.setViewportSize({width,height:900});expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1)).toBe(true)
+  await testInfo.attach(`controlled-v7-only-${width}`,{body:await page.screenshot({fullPage:true}),contentType:'image/png'})
+ }
+ await page.getByLabel('我已核对账号、客户端及上方列出的本次变更。').check();await page.getByRole('button',{name:'确认所选变更'}).click()
+ await expect(page.getByText('这次决定已记录；下方展示重新读取的当前授权状态。')).toBeVisible()
+ expect(f.posts[0].choices).toHaveLength(1);expect(f.posts[0].choices[0]).toMatchObject({domain:'business',consentVersion:7})
 })

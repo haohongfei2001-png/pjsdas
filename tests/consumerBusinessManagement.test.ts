@@ -31,11 +31,11 @@ describe('distinct consumer business bridge', () => {
     for (const [name, input] of [['get_consumer_business_management', {}], ['execute_consumer_business_management', {}], ['undo_consumer_business_management', {}]] as const) expect((await tools.invoke(name, input)).structuredContent).toMatchObject({ code: 'AUTH_FORBIDDEN' })
     expect(read).not.toHaveBeenCalled(); expect(createExecutor).not.toHaveBeenCalled()
   })
-  it('advertises three separate tools only with the consumer flag; catalog reads never grant access', async () => {
+  it('advertises three separate tools only with the consumer flag and explicit beta cohort; catalog reads never grant access', async () => {
     const fetchImpl = vi.fn<typeof fetch>(async () => Response.json([])), source = { read: vi.fn(async () => { throw new Error('Unexpected workspace access') }) }
-    const options = { enabled: 'enabled', transactional: true, identity: { userId: owner, oauthClientId: client }, audience: { mode: 'allowlist' as const, role: 'owner' as const, allowed: true }, supabaseUrl: 'https://synthetic.invalid', serviceRoleKey: 'synthetic', fetchImpl }
+    const options = { enabled: 'enabled', transactional: true, identity: { userId: owner, oauthClientId: client }, audience: { mode: 'allowlist' as const, role: 'beta' as const, allowed: true }, supabaseUrl: 'https://synthetic.invalid', serviceRoleKey: 'synthetic', fetchImpl }
     const catalog = async (consumerEnabled?: string) => {
-      const handler = createMcpHandler(() => createPjsdasMcpServer(source, { scopedManagement: createOwnerScopedManagementRuntime({ ...options, consumerEnabled }) }))
+      const handler = createMcpHandler(() => createPjsdasMcpServer(source, { scopedManagement: createOwnerScopedManagementRuntime({ ...options, consumerEnabled, consumerCohort: { accountIds: `${owner},00000000-0000-4000-8000-000000000099`, clientId: client } }) }))
       const response = await handler.fetch(new Request('https://synthetic.invalid/api/mcp', { method: 'POST', headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream', 'MCP-Protocol-Version': '2026-07-28', 'Mcp-Method': 'tools/list' }, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list', params: { _meta: { 'io.modelcontextprotocol/protocolVersion': '2026-07-28', 'io.modelcontextprotocol/clientInfo': { name: 'synthetic', version: '1' }, 'io.modelcontextprotocol/clientCapabilities': {} } } }) }))
       const body = await response.text(); return JSON.parse(body.startsWith('event:') ? body.split('\n').find(x => x.startsWith('data:'))!.slice(5) : body).result.tools
     }

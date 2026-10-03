@@ -1,3 +1,4 @@
+import { consumerTestAccountAllowed, type ConsumerTestCohort } from './consumerTestCohort.js'
 import { initializeEmptyConsumerWorkspace } from './consumerWorkspaceBootstrap.js'
 import { fingerprintWorkspace } from '../src/cloud/workspaceFingerprint.js'
 import { upgradeSnapshotToLatest, validateSnapshot, type PJSDASSnapshot } from '../src/snapshot.js'
@@ -15,6 +16,7 @@ export interface ConnectedWorkspaceHandlerConfig {
   allowedOrigins: string[]
   /** Source-only consumer onboarding gate; never enabled implicitly. */
   consumerOnboardingEnabled?: boolean
+  consumerCohort?: ConsumerTestCohort
   consumerAudienceMode?: 'allowlist' | 'legacy'
   fetchImpl?: typeof fetch
   authorizeIdentity?: (identity: import('./supabaseIdentity.js').PjsdasIdentity) => Promise<unknown>
@@ -88,7 +90,7 @@ export function createConnectedWorkspaceHandler(config: ConnectedWorkspaceHandle
 
     try {
       const { identity, accessToken } = await resolveIdentity(request)
-      await config.authorizeIdentity?.(identity)
+      const audience = await config.authorizeIdentity?.(identity) as { allowed?: boolean; mode?: string; role?: string } | undefined
       if (identity.oauthClientId) {
         throw new WorkspaceSourceError('AUTH_FORBIDDEN', 'Delegated OAuth clients cannot call the first-party connected workspace endpoint.', false)
       }
@@ -146,7 +148,7 @@ export function createConnectedWorkspaceHandler(config: ConnectedWorkspaceHandle
       if (body.action === 'read') return readWorkspace()
 
       if (body.action === 'initialize_empty') {
-        if (config.consumerOnboardingEnabled !== true) throw new WorkspaceSourceError('AUTH_FORBIDDEN', 'Consumer onboarding is not enabled.', false)
+        if (config.consumerOnboardingEnabled !== true || config.consumerAudienceMode === 'legacy' || audience?.allowed !== true || audience.mode !== 'allowlist' || audience.role !== 'beta' || !consumerTestAccountAllowed(identity.userId, config.consumerCohort)) throw new WorkspaceSourceError('AUTH_FORBIDDEN', 'Consumer onboarding is not enabled.', false)
         // This check can only deny after the provider verified this bearer.
         try {
           const parts = accessToken.split('.')
