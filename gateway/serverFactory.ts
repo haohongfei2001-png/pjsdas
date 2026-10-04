@@ -122,7 +122,7 @@ export function createPjsdasMcpServer(
   if (options.consumerBusinessOnly || options.scopedManagement?.business) {
     const server = new McpServer(
       { name: 'pjsdas', version: options.version ?? '1.10.0-alpha.1' },
-      { instructions: 'TodayAction controlled consumer access supports only explicitly authorized business version 7: independent preparation, manual actions and application groups. Use the three consumer business tools; each call checks the current account/client grant. Missing or revoked consent does not authorize any workspace read or write. Other domains and legacy tools are unavailable.' },
+      { instructions: 'TodayAction controlled consumer access supports only explicitly authorized business version 7: independent preparation, manual actions and application groups. Use the three consumer business tools; each call checks the current account/client grant. Missing or revoked consent does not authorize any workspace read or write. Other domains and legacy tools are unavailable. If consent is missing, direct the user to https://todayaction.com/?connect=1 to sign in and initialize or connect their own workspace, then https://todayaction.com/?scoped_access=1 to choose business permission for this plugin. The same permission page supports revocation; never grant permission on the user\'s behalf.' },
     )
     if (options.scopedManagement?.business) registerConsumerBusinessTools(server, options.scopedManagement.business)
     return server
