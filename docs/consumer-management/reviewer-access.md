@@ -20,6 +20,16 @@ Developer execution, no owner-operated A/B workflow:
 
 This document is an execution proposal, not approval. The owner confirms only new security-sensitive scope and irreplaceable publisher identity/login; the developer performs account creation, UUID lookup, login/switching, QA and cleanup.
 
+## Bounded cloud identity operator
+
+`consumer-review-identities.yml` uses the existing repository service credential in the existing `production-certification` environment. The service credential is never exported. The developer generates an RSA recipient key locally; only its public half is sent to the workflow. Preparation creates exactly two new UUIDs and random passwords, saves a password-free identity manifest and authenticated encrypted recovery packet, and uploads those **before** any Auth mutation. Runner-only plaintext stays in a separate private temporary directory and is removed by the final step, never uploaded or committed. Download and verify the encrypted recovery artifact while it is available; keep its private key outside the repository and outputs.
+
+Provisioning requires the original project, canonical origin, exact deployed SHA, transactional/allowlist mode, a verified existing client ID and a future expiry no more than 24 hours away. Any existing identity with this dedicated purpose blocks creating another pair, including a retired or uncertain pair. A lost create response is reconciled against the preselected IDs; there is no automatic create retry. Partial failure disables only identities whose ID, synthetic email, role and complete server-owned lease metadata match. Unrelated identities are never modified.
+
+This operator only creates or bans Auth identities. It does **not** set beta audience rows, open flags, modify OAuth, insert business consent, reset passwords or complete host acceptance. Any subsequent test audience row must use `reviewAudienceNote(manifest)` verbatim. The audience guard rejects this reserved note at its deadline, malformed notes and leases longer than 24 hours; existing unmarked owner/beta grants are unchanged. This denies new business access even before a cleanup worker runs. It does not claim Supabase automatically deletes or bans the Auth account, or cancels an already admitted transaction.
+
+Before opening audience access, the developer must also establish the bounded cleanup schedule in the existing project and retain immediate cleanup access. If that cannot be established, leave access closed and disable the identities. Cleanup requires domain/audience revocation, session termination, flags/config restoration and independent denial/readback; a successful ban step alone is not complete cleanup. No public policy or reviewer retention promise follows from this operator.
+
 ## Reviewer instructions after authorization and successful host tests
 
 Provide these privately through the existing portal's Review details, not the ZIP:

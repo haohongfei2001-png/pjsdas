@@ -1,6 +1,7 @@
 import type { PjsdasIdentity } from './supabaseIdentity.js'
 import { audienceMode, type PjsdasAudienceMode } from './productionTopology.js'
 import { WorkspaceSourceError } from './workspaceSource.js'
+import { CONSUMER_REVIEW_NOTE_PREFIX, consumerReviewLeaseAllows } from './consumerReviewLease.js'
 
 export type AudienceRole = 'owner' | 'beta' | 'legacy'
 
@@ -8,6 +9,7 @@ export interface AudienceAccessResult {
   mode: PjsdasAudienceMode
   allowed: boolean
   role?: AudienceRole
+  consumerReview?: true
 }
 
 export interface AudienceAccessOptions {
@@ -35,7 +37,7 @@ export function createAudienceAccessGuard(options: AudienceAccessOptions) {
     }
 
     const params = new URLSearchParams({
-      select: 'user_id,email,role,revoked_at',
+      select: 'user_id,email,role,revoked_at,granted_at,note',
       user_id: `eq.${identity.userId}`,
       revoked_at: 'is.null',
       limit: '1',
@@ -63,11 +65,14 @@ export function createAudienceAccessGuard(options: AudienceAccessOptions) {
       user_id?: string
       email?: string | null
       role?: string
+      granted_at?: string | null
+      note?: string | null
     }> | undefined
     const row = rows?.[0]
     if (
       row?.user_id !== identity.userId
       || (row.role !== 'owner' && row.role !== 'beta')
+      || !consumerReviewLeaseAllows(row.note, row.granted_at)
     ) {
       throw new WorkspaceSourceError(
         'AUDIENCE_ACCESS_REQUIRED',
@@ -87,7 +92,7 @@ export function createAudienceAccessGuard(options: AudienceAccessOptions) {
       )
     }
 
-    return { mode, allowed: true, role: row.role }
+    return { mode, allowed: true, role: row.role, ...(row.note?.startsWith(CONSUMER_REVIEW_NOTE_PREFIX) ? { consumerReview: true as const } : {}) }
   }
 }
 
