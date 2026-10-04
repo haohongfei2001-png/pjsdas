@@ -1,6 +1,7 @@
 /** Dedicated synthetic identities only. Never changes audience, OAuth or business grants. */
 import { createCipheriv, createPublicKey, publicEncrypt, randomBytes, randomUUID, constants } from 'node:crypto'
 import type { SupabaseClient, User } from '@supabase/supabase-js'
+import { CONSUMER_REVIEW_NOTE_PREFIX } from '../../gateway/consumerReviewLease.js'
 
 export const reviewProject = 'yyrzwpoxlxpafdlbkdtg'
 export const reviewPurpose = 'todayaction-consumer-v7-review'
@@ -11,6 +12,11 @@ export interface ReviewManifest {
   identities: Array<{ label: 'a' | 'b'; id: string; email: string }>
 }
 export interface ReviewPacket { manifest: ReviewManifest; passwords: Record<'a' | 'b', string> }
+
+export function reviewAudienceNote(manifest: ReviewManifest) {
+  validateManifest(manifest)
+  return `${CONSUMER_REVIEW_NOTE_PREFIX}${manifest.expiresAt}|${manifest.leaseId}`
+}
 
 export function validateManifest(value: ReviewManifest, now?: number) {
   if (value.project !== reviewProject || value.origin !== 'https://todayaction.com'
