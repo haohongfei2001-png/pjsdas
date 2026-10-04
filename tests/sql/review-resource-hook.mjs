@@ -40,6 +40,10 @@ try {
   await exec('alter default privileges in schema public grant execute on functions to anon, authenticated, service_role')
   await exec('create table public.unrelated_data(id int primary key, raw jsonb); insert into public.unrelated_data values (1,\'{"unknown":["z","a"]}\');')
   const baseline = (await db.query('select * from public.unrelated_data')).rows
+  const installBody = plan.install.match(/do \$install\$[\s\S]*end \$install\$;/)[0]
+  await assert.rejects(exec(installBody), /Bounded explicit transaction required/)
+  assert.equal((await db.query("select to_regprocedure('public.pjsdas_review_oauth_resource_hook(jsonb)') value")).rows[0].value, null)
+  cases++
   const failedInstall = plan.install.replace('to supabase_auth_admin;', 'to missing_fixture_hook_role;')
   await assert.rejects(exec(failedInstall), e => e.code === '42704')
   await exec('rollback')
@@ -78,6 +82,10 @@ try {
   for (const mutate of negatives) { const event = input(); mutate(event); await unchanged(event) }
   await exec('reset role')
   assert.deepEqual((await db.query('select * from public.unrelated_data')).rows, baseline)
+  const removeBody = plan.remove.match(/do \$remove\$[\s\S]*end \$remove\$;/)[0]
+  await assert.rejects(exec(removeBody), /Bounded explicit transaction required/)
+  assert.notEqual((await db.query("select to_regprocedure('public.pjsdas_review_oauth_resource_hook(jsonb)') value")).rows[0].value, null)
+  cases++
   await exec(plan.remove)
   assert.equal((await db.query("select to_regprocedure('public.pjsdas_review_oauth_resource_hook(jsonb)') value")).rows[0].value, null)
   // Lease expiry is proved without a sleep or an expanded production lease.

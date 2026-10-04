@@ -42,15 +42,25 @@ $hook$;`
   const install = `begin;
 set local lock_timeout = '2s';
 set local statement_timeout = '15s';
-${definition}
+do $install$ begin
+if current_setting('lock_timeout') <> '2s' or current_setting('statement_timeout') <> '15s' then
+  raise exception 'Bounded explicit transaction required';
+end if;
+execute $definition$${definition}$definition$;
 revoke all on function public.pjsdas_review_oauth_resource_hook(jsonb) from public, anon, authenticated, service_role;
 grant execute on function public.pjsdas_review_oauth_resource_hook(jsonb) to supabase_auth_admin;
+end $install$;
 commit;
 `
   const remove = `begin;
 set local lock_timeout = '2s';
 set local statement_timeout = '15s';
+do $remove$ begin
+if current_setting('lock_timeout') <> '2s' or current_setting('statement_timeout') <> '15s' then
+  raise exception 'Bounded explicit transaction required';
+end if;
 drop function public.pjsdas_review_oauth_resource_hook(jsonb);
+end $remove$;
 commit;
 `
   return { install, remove, uri: 'pg-functions://postgres/public/pjsdas_review_oauth_resource_hook', deadline: manifest.expiresAt }
