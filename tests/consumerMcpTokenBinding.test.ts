@@ -14,8 +14,8 @@ const token = (overrides: Record<string, unknown>) => [
 
 afterEach(() => { vi.unstubAllGlobals(); vi.unstubAllEnvs() })
 
-async function catalog(overrides: Record<string, unknown>, providerStatus = 200, enabled = true, tool?: string) {
-  vi.stubEnv('PJSDAS_CONSUMER_TEST_ACCOUNT_IDS', owner+',00000000-0000-4000-8000-000000000009')
+async function catalog(overrides: Record<string, unknown>, providerStatus = 200, enabled = true, tool?: string, admission: { configured?: boolean; marked?: boolean; role?: 'owner'|'beta' } = {}) {
+  vi.stubEnv('PJSDAS_CONSUMER_TEST_ACCOUNT_IDS', admission.configured === false ? '' : owner+',00000000-0000-4000-8000-000000000009')
   vi.stubEnv('PJSDAS_CONSUMER_TEST_CLIENT_ID', client)
   vi.stubEnv('PJSDAS_CANONICAL_API_ORIGIN', 'https://todayaction.com')
   vi.stubEnv('PJSDAS_CONSUMER_SCOPED_MANAGEMENT', enabled ? 'enabled' : '')
@@ -28,8 +28,9 @@ async function catalog(overrides: Record<string, unknown>, providerStatus = 200,
   const fetchImpl = vi.fn(async (input: RequestInfo | URL) => {
     const url = String(input)
     if (url.endsWith('/auth/v1/user')) return Response.json({ id: owner }, { status: providerStatus })
-    if (url.includes('/rest/v1/pjsdas_access_grants?')) return Response.json([{ user_id: owner, role: 'beta' }])
+    if (url.includes('/rest/v1/pjsdas_access_grants?')) return Response.json([{ user_id: owner, role: admission.role ?? 'beta', ...(admission.marked ? { granted_at: new Date(Date.now()-1000).toISOString(), note: `TA_REVIEW_V7|${new Date(Date.now()+3600000).toISOString()}|00000000-0000-4000-8000-000000000081` } : {}) }])
     if (url.includes('/rest/v1/pjsdas_authorization_grants?')) return Response.json([])
+    if (url.includes('/rest/v1/pjsdas_business_management_grants?')) return Response.json([])
     throw new Error('Unexpected outbound request: ' + url)
   })
   vi.stubGlobal('fetch', fetchImpl)
@@ -45,8 +46,8 @@ async function catalog(overrides: Record<string, unknown>, providerStatus = 200,
 
 it('withholds every consumer scope from a provider-valid token for another resource', async () => {
   const { response, names, fetchImpl } = await catalog({ aud: 'https://other.invalid/api/mcp' })
-  expect(response.status).toBe(200)
-  expect(names).toContain('get_today_brief')
+  expect(response.status).toBe(404) // No tools are registered for this restricted principal.
+  expect(names).toEqual([])
   for (const name of ['get_consumer_business_management', 'get_opportunity_management', 'get_planning_management', 'get_discovery_profile_management', 'get_private_reminder_management']) expect(names).not.toContain(name)
   expect(fetchImpl.mock.calls.every(([url]) => !String(url).includes('pjsdas_business_management_grants'))).toBe(true)
 })
@@ -87,4 +88,42 @@ it.each([
 
 it('cannot classify an opaque/malformed token as consumer resource authority', () => {
   for (const value of ['opaque', 'a.%%.c', 'a.bnVsbA.c']) expect(validatedAccessTokenTargetsResource(value, { userId: owner, oauthClientId: client }, issuer, resource)).toBe(false)
+})
+
+const onlyBusinessTools=['get_consumer_business_management','execute_consumer_business_management','undo_consumer_business_management']
+it('advertises only v7 to selected consumers and never the legacy full-workspace surface',async()=>{
+ const {names}=await catalog({})
+ expect(names.sort()).toEqual([...onlyBusinessTools].sort())
+})
+it.each(['get_today_brief','get_prep_graph','list_opportunities','get_discovery_context','list_reminder_intents','add_opportunities','apply_user_command','semantic_intake','ingest_paia_input','resolve_semantic_decision','undo_semantic_command','propose_changes','get_business_management','execute_business_management','get_planning_management'])('denies cached or guessed legacy %s before any consumer workspace read/write',async tool=>{
+ const {parsed,fetchImpl}=await catalog({},200,true,tool)
+ expect(parsed.error || parsed.result?.isError).toBeTruthy()
+ expect(fetchImpl.mock.calls).toHaveLength(3)
+})
+it('cannot fall back to old tools after flags or cohort configuration are removed',async()=>{
+ for(const configured of [true,false]) {
+  const {names}=await catalog({},200,false,undefined,{marked:true,configured})
+  expect(names).toEqual([])
+  const {parsed,fetchImpl}=await catalog({},200,false,'get_today_brief',{marked:true,configured})
+  expect(parsed.error || parsed.result?.isError).toBeTruthy();expect(fetchImpl.mock.calls).toHaveLength(3)
+ }
+})
+it('missing or revoked v7 consent returns only an authorization explanation, without workspace reads',async()=>{
+ const {parsed,fetchImpl}=await catalog({},200,true,'get_consumer_business_management')
+ expect(parsed.result.structuredContent).toMatchObject({authorized:false,consentVersion:7,reason:'EXPLICIT_CONSENT_REQUIRED'})
+ expect(fetchImpl.mock.calls).toHaveLength(4)
+ expect(fetchImpl.mock.calls.some(([url])=>String(url).includes('/pjsdas_workspaces'))).toBe(false)
+})
+it('preserves the existing 25-tool release surface for unmarked owners and other beta users',async()=>{
+ for(const role of ['owner','beta'] as const){
+  const {names}=await catalog({},200,false,undefined,{configured:false,role})
+  expect(names).toHaveLength(25)
+  for(const name of ['get_today_brief','get_prep_graph','apply_user_command','semantic_intake','propose_changes'])expect(names).toContain(name)
+  for(const name of onlyBusinessTools)expect(names).not.toContain(name)
+ }
+})
+
+it.each([{client_id:owner},{client_id:undefined}])('a consumer using another client or a first-party token cannot inherit old MCP access (%j)',async claims=>{
+ const {names}=await catalog(claims)
+ expect(names).toEqual([])
 })

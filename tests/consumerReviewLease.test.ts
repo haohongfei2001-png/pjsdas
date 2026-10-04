@@ -20,10 +20,10 @@ it('the real audience guard rejects an expired test identity before workspace ac
   const guard = createAudienceAccessGuard({ mode: 'allowlist', supabaseUrl: 'https://fixture.invalid', serviceRoleKey: 'synthetic', fetchImpl })
   const identity = { userId: packet.manifest.identities[0].id, email: packet.manifest.identities[0].email }
   try {
-    expect(await guard(identity)).toMatchObject({ allowed: true, role: 'beta' })
+    expect(await guard(identity)).toMatchObject({ allowed: true, role: 'beta', consumerReview: true })
     vi.setSystemTime(Date.parse(expiresAt))
     await expect(guard(identity)).rejects.toMatchObject({ code: 'AUDIENCE_ACCESS_REQUIRED' })
     marker = 'existing owner audit note'; role = 'owner'
-    expect(await guard(identity)).toMatchObject({ allowed: true, role: 'owner' })
+    expect(await guard(identity)).toEqual({ mode: 'allowlist', allowed: true, role: 'owner' })
   } finally { vi.useRealTimers() }
 })

@@ -1,4 +1,4 @@
-import { configuredConsumerTestCohort } from './consumerTestCohort.js'
+import { configuredConsumerTestCohort, consumerTestAccountAllowed } from './consumerTestCohort.js'
 import { createOwnerScopedManagementRuntime } from './scopedManagementRuntime.js'
 import { createOwnerBusinessManagementRuntime } from './businessManagementRuntime.js'
 import { createMcpHandler } from '@modelcontextprotocol/server'
@@ -175,6 +175,9 @@ export async function authenticatedRemoteMcpFetch(request: Request) {
       () => createPjsdasMcpServer(source, {
         businessManagement,
         scopedManagement,
+        // Removing flags/cohort must never upgrade a marked review identity to
+        // the legacy full-workspace tools. Other existing audiences are unchanged.
+        consumerBusinessOnly: audience.consumerReview === true || consumerTestAccountAllowed(identity.userId, configuredConsumerTestCohort()),
         version: AUTHENTICATED_GATEWAY_VERSION,
         dataMode: transactionalAuthority ? 'transactional' : 'google-drive',
         proposalMode: 'review-link',

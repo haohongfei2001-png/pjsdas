@@ -1,7 +1,7 @@
 import type { PjsdasIdentity } from './supabaseIdentity.js'
 import { audienceMode, type PjsdasAudienceMode } from './productionTopology.js'
 import { WorkspaceSourceError } from './workspaceSource.js'
-import { consumerReviewLeaseAllows } from './consumerReviewLease.js'
+import { CONSUMER_REVIEW_NOTE_PREFIX, consumerReviewLeaseAllows } from './consumerReviewLease.js'
 
 export type AudienceRole = 'owner' | 'beta' | 'legacy'
 
@@ -9,6 +9,7 @@ export interface AudienceAccessResult {
   mode: PjsdasAudienceMode
   allowed: boolean
   role?: AudienceRole
+  consumerReview?: true
 }
 
 export interface AudienceAccessOptions {
@@ -91,7 +92,7 @@ export function createAudienceAccessGuard(options: AudienceAccessOptions) {
       )
     }
 
-    return { mode, allowed: true, role: row.role }
+    return { mode, allowed: true, role: row.role, ...(row.note?.startsWith(CONSUMER_REVIEW_NOTE_PREFIX) ? { consumerReview: true as const } : {}) }
   }
 }
 

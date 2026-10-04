@@ -40,7 +40,8 @@ describe('distinct consumer business bridge', () => {
       const body = await response.text(); return JSON.parse(body.startsWith('event:') ? body.split('\n').find(x => x.startsWith('data:'))!.slice(5) : body).result.tools
     }
     const absent = await catalog(), present = await catalog('enabled')
-    expect(present).toHaveLength(absent.length + 3)
+    expect(present).toHaveLength(3)
+    expect(present.some((t: any) => t.name === 'get_today_brief')).toBe(false)
     for (const name of ['get_consumer_business_management', 'execute_consumer_business_management', 'undo_consumer_business_management']) {
       expect(absent.some((t: any) => t.name === name)).toBe(false)
       expect(present.find((t: any) => t.name === name).annotations.openWorldHint).toBe(false)
