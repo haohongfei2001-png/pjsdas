@@ -6,7 +6,7 @@ This is the current handover entry, updated 2026-10-04. Historical slice documen
 
 The approved eight migrations from 9055fa21 are installed after an actual encrypted production backup was restored and verified offline. Every complete file and history record committed in one native transaction with lock_timeout=2s and statement_timeout=15s; independent final catalog/permissions/history readback passed. Temporary maintenance roles/tokens were removed and old credentials rejected. See [production migration result](production-migration-result-2026-10-04.md).
 
-Consumer activation, A/B admission, OAuth changes and publication were not performed. The installed-host journey is still pending explicit business-v7 controlled-test consent and verification of the original plugin/client. Database maintenance is no longer blocked on a user-provided password.
+Consumer activation, A/B admission, OAuth changes and publication were not performed. The installed-host journey is still pending the exact developer-operated business-v7 test scope and verification of the original plugin/client. Developer testing does not require the owner to supply two emails, switch accounts or run acceptance. Database maintenance is no longer blocked on a user-provided password.
 
 ## What exists
 
@@ -43,7 +43,7 @@ Resolve these through the existing publisher account. Do not guess an ID, replac
 
 Use the **existing** plugin entry and the publisher's supported draft/update mechanism. Record its real edit ID, organization/project, package digest, scanned catalog revision and host name/version. Use two dedicated synthetic accounts A/B and sample data under the exact server-only cohort/client configuration. Use the original plugin owner account, never a duplicate plugin. Secure reviewer access details stay outside this repository.
 
-1. Install in a fresh host session. Observe actual OAuth login, return URI, cancellation and resume; a direct backend call is not a substitute. Confirm the catalog from the installed connection. Record which tools are visible, held or absent. The previously reported 25-tool connection is a handover fact, not a fresh catalog observation.
+1. Install in a fresh host session. Observe actual OAuth login, return URI, cancellation and resume; a direct backend call is not a substitute. Confirm the catalog from the installed connection. Record which tools are visible, held or absent. The 2026-10-04 existing-host catalog was observed with 25 tools (17 reads, 8 writes), without consumer v7 tools. This is an existing-connection observation, not fresh-install acceptance.
 2. Log in as A. Open `https://todayaction.com/?connect=1`. Create a blank workspace with a deliberate IANA timezone, or connect existing data without reset. Existing Local/Drive data keeps its explicit migration decision. Verify duplicate clicks create no duplicate workspace.
 3. Select the actual OAuth client. All five scopes initially stay unchanged. Approve only business v7; planning v4 and all other domains are outside this controlled test and require separate future consent; verify the exact change summary and unselected scope denial. Close/Back/Forward and interrupted login must not submit a decision.
 4. Run all five positive cases from the manifest in the installed host. Preserve command IDs, receipt references and before/after values. Read back from the web UI and host. Replay the same request once and verify no duplicate object/ledger mutation. Undo the exact unchanged target; a newer edit must conflict.
@@ -56,3 +56,11 @@ The walkthrough should show installation, OAuth, workspace/timezone, scope choic
 ## Publication boundary
 
 Format and submission requirements were checked against [OpenAI package documentation](https://developers.openai.com/plugins/build/plugins) and [submission documentation](https://developers.openai.com/plugins/deploy/submission) on 2026-10-03. Publisher verification, policies, reviewer access, domain challenge, actual OAuth/tool scan, executed cases and approved publication remain independent gates. Passing source tests or uploading a candidate does not satisfy them.
+
+## Review follow-up and developer-owned testing (2026-10-04)
+
+PR241 retained two outstanding review findings. The follow-up moves the native backup regression to a separately initialized PostgreSQL 17 cluster, checks a different system identifier, proves database-only restoration fails when required roles are absent, and then restores password-free role definitions and memberships before comparing catalog, ACL, rows and history. Membership comparisons now include grantors. Production migrations and backup receipts are not rerun or rewritten.
+
+The local preparation page is read-only. Both historical password and A/B email POST endpoints return 410 without reading or storing input. Direct invocation defaults to the checkout, with an actual subprocess regression in a temporary checkout. The page no longer asks the user to operate developer QA.
+
+The exact remaining test authorization and resource gap are in [controlled-v7-review.md](controlled-v7-review.md). The original submission portal is [OpenAI Plugins](https://platform.openai.com/plugins); always use the original plugin owner account and verify the existing record before any upload. Current official [submission requirements](https://developers.openai.com/plugins/deploy/submission) require sample reviewer access without interactive codes, executed positive/negative cases and an actual walkthrough. No fabricated host receipts or policy publication are part of this follow-up.
