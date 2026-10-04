@@ -59,6 +59,19 @@ jobs:
           --health-interval 5s
           --health-timeout 5s
           --health-retries 10
+      restore:
+        image: postgres:17
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: fixture-only
+          POSTGRES_DB: ta_backup_fixture
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     steps:
       - uses: actions/checkout@v7
       - name: Validate private preparation form
@@ -78,4 +91,6 @@ jobs:
         env:
           TA_MANAGEMENT_SQL_TEST_URL: postgresql://postgres:fixture-only@127.0.0.1:5432/ta_management_fixture
           TA_PG_FIXTURE_CONTAINER: ${{ job.services.postgres.id }}
+          TA_PG_RESTORE_TEST_URL: postgresql://postgres:fixture-only@127.0.0.1:5433/ta_backup_fixture
+          TA_PG_RESTORE_CONTAINER: ${{ job.services.restore.id }}
         run: npm run test:concurrency --prefix tests/sql

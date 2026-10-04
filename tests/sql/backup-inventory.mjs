@@ -8,7 +8,7 @@ export async function backupInventory(client){
   Object.assign(table,result)
  }
  const roles=(await client.query('select rolname,rolsuper,rolinherit,rolcreaterole,rolcreatedb,rolcanlogin,rolreplication,rolbypassrls from pg_roles order by rolname')).rows
- const memberships=(await client.query('select pg_get_userbyid(roleid) role,pg_get_userbyid(member) member,admin_option,inherit_option,set_option from pg_auth_members order by role,member')).rows
+ const memberships=(await client.query('select pg_get_userbyid(roleid) role,pg_get_userbyid(member) member,pg_get_userbyid(grantor) grantor,admin_option,inherit_option,set_option from pg_auth_members order by role,member,grantor')).rows
  const extensions=(await client.query('select e.extname,e.extversion,n.nspname from pg_extension e join pg_namespace n on n.oid=e.extnamespace order by e.extname')).rows
  const history=(await client.query('select * from supabase_migrations.schema_migrations order by version')).rows
  return {tables,roles,memberships,extensions,history}

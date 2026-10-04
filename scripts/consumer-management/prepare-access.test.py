@@ -1,4 +1,4 @@
-import contextlib, hashlib, http.client, importlib.util, io, json, os, re, tempfile, threading, unittest
+import contextlib, http.client, importlib.util, io, shutil, subprocess, sys, tempfile, threading, unittest
 from pathlib import Path
 from urllib.parse import urlencode,urlsplit
 spec=importlib.util.spec_from_file_location('handoff',Path(__file__).with_name('prepare-access.py'));m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m)
@@ -12,18 +12,24 @@ class HandoffTest(unittest.TestCase):
   conn.request(method,path or self.route,urlencode(fields or {}) if method=='POST' else None,h);r=conn.getresponse();result=(r.status,dict(r.getheaders()),r.read().decode());conn.close();return result
  def post(self,suffix,fields,**kw):return self.request('POST',self.route+suffix,{'token':self.token,**fields},**kw)
  def test_prefilled_private_page(self):
-  status,headers,body=self.request();self.assertEqual(status,200);self.assertIn(m.HOST,body);self.assertNotIn('type="password"',body);self.assertIn('frame-ancestors',headers['Content-Security-Policy']);self.assertEqual(headers['Cache-Control'],'no-store');self.assertNotIn('checked',body);self.assertEqual(self.request(path='/')[0],404)
+  status,headers,body=self.request();self.assertEqual(status,200);self.assertIn('开发测试由执行方完成',body);self.assertNotIn('<form',body);self.assertNotIn('<input',body);self.assertIn("form-action 'none'",headers['Content-Security-Policy']);self.assertEqual(headers['Cache-Control'],'no-store');self.assertEqual(self.request(path='/')[0],404)
  def test_exact_origin_csrf_host_and_no_side_effect(self):
   for headers in ({'Origin':'https://evil.test'},{'Host':'evil.test'},{'Sec-Fetch-Site':'cross-site'}):self.assertEqual(self.post('/database',{'password':'secret'},headers=headers)[0],403)
-  self.assertEqual(self.request('POST',self.route+'/database',{'token':'wrong','password':'secret'})[0],403);self.assertFalse((self.workspace/'work/private-migration-access').exists())
+  self.assertFalse((self.workspace/'work/private-migration-access').exists())
  def test_password_collection_is_retired(self):
   secret='fixture-only-do-not-collect';logs=io.StringIO()
   with contextlib.redirect_stderr(logs):status,_,body=self.post('/database',{'password':secret})
   self.assertEqual(status,410);self.assertNotIn(secret,body+logs.getvalue());self.assertFalse((self.workspace/'work/private-migration-access').exists())
- def test_permission_exact_accounts_explicit_and_separate(self):
-  fields={'accountA':'A@example.test','accountB':'B@example.test'}
-  self.assertEqual(self.post('/permission',fields)[0],400);self.assertEqual(self.post('/permission',{**fields,'confirm':'yes','accountB':'a@example.test'})[0],400)
-  self.assertEqual(self.post('/permission',{**fields,'confirm':'yes'})[0],200)
-  record=json.loads((self.workspace/'work/private-handoff/controlled-test-approval.json').read_text());self.assertEqual(record['accountEmails'],['a@example.test','b@example.test']);self.assertEqual(record['scope'],m.SCOPE);self.assertFalse(record['applied']);self.assertTrue(record['firstPartyDomainConsentStillRequired']);self.assertFalse((self.workspace/'work/private-migration-access').exists())
-  self.assertEqual(self.post('/permission',{**fields,'confirm':'yes'})[0],409)
+ def test_stale_test_account_form_cannot_collect_or_authorize(self):
+  fields={'accountA':'A@example.test','accountB':'B@example.test','confirm':'yes'}
+  logs=io.StringIO()
+  with contextlib.redirect_stderr(logs):status,_,body=self.post('/permission',fields)
+  self.assertEqual(status,410);self.assertNotIn(fields['accountA'],body+logs.getvalue());self.assertFalse((self.workspace/'work/private-handoff').exists())
+ def test_direct_invocation_uses_checkout_not_ancestor_or_cwd(self):
+  checkout=self.workspace/'checkout';script=checkout/'scripts/consumer-management/prepare-access.py';script.parent.mkdir(parents=True);shutil.copyfile(Path(m.__file__),script)
+  process=subprocess.Popen([sys.executable,str(script)],cwd=self.workspace,stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True)
+  try:
+   url=process.stdout.readline().strip();self.assertTrue(url.startswith('http://127.0.0.1:'));self.assertTrue((checkout/'work').is_dir());self.assertFalse((self.workspace/'private-handoff').exists())
+  finally:
+   process.terminate();process.communicate(timeout=5)
 if __name__=='__main__':unittest.main()
