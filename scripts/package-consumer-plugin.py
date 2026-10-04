@@ -50,6 +50,20 @@ def validate(package=PACKAGE, source=ROOT):
                 inspect(item)
     inspect(manifest)
     interface = extension["interface"]
+    for field, limit in (("displayName", 30), ("shortDescription", 30), ("longDescription", 4000)):
+        value = interface.get(field)
+        if not isinstance(value, str) or not value.strip() or len(value) > limit:
+            raise ValueError(f"{field} must contain 1-{limit} characters")
+    prompts = interface.get("defaultPrompt", [])
+    if not isinstance(prompts, list) or len(prompts) > 3:
+        raise ValueError("Use at most three default prompts")
+    normalized = []
+    for prompt in prompts:
+        if not isinstance(prompt, str) or not prompt.strip() or len(prompt) > 128 or "\n" in prompt or "\r" in prompt:
+            raise ValueError("Default prompts must be nonblank single lines of at most 128 characters")
+        normalized.append(" ".join(prompt.split()))
+    if len(set(normalized)) != len(normalized):
+        raise ValueError("Default prompts must be unique after whitespace normalization")
     for field, filename in (("composerIcon", "assets/icon.png"), ("logo", "assets/logo.png")):
         if interface.get(field) != "./" + filename or not (package / filename).read_bytes().startswith(b"\x89PNG\r\n\x1a\n"):
             raise ValueError("Package icons must be the reviewed local PNG assets")
@@ -59,8 +73,11 @@ def validate(package=PACKAGE, source=ROOT):
         raise ValueError("Keep exactly five positive and three negative review cases")
     for kind in ("positive", "negative"):
         for case in cases[kind]:
-            if not all(isinstance(case.get(k), str) and case[k].strip() for k in ("description", "prompt", "expected_behavior")):
+            required = ("description", "prompt", "tools_triggered", "expected_behavior") if kind == "positive" else ("description", "prompt")
+            if not all(isinstance(case.get(k), str) and case[k].strip() for k in required):
                 raise ValueError("Each case needs observable expected behavior")
+            if kind == "negative" and any(k in case for k in ("tools_triggered", "expected_behavior")):
+                raise ValueError("Negative cases state prohibited tool use and expectations in their description")
             if kind == "positive":
                 names = {s.strip() for s in case.get("tools_triggered", "").split(",")}
                 if not names or not names <= registered:
