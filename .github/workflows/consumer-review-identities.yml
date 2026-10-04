@@ -1,0 +1,70 @@
+name: Controlled consumer review identities
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: Provision two approved synthetic identities, or ban their exact verified identities
+        required: true
+        type: choice
+        options: [provision, ban]
+      expected_sha:
+        description: Exact production SHA (provision only)
+        type: string
+      verified_client_id:
+        description: Original plugin client verified by developer (provision only)
+        type: string
+      expires_at:
+        description: UTC expiry no more than 24 hours ahead (provision only)
+        type: string
+      recipient_public_key_base64:
+        description: Developer-generated RSA public key, never a private key (provision only)
+        type: string
+      identity_manifest:
+        description: Exact non-secret recovery manifest (ban only)
+        type: string
+permissions:
+  contents: read
+concurrency:
+  group: todayaction-controlled-review-identities
+  cancel-in-progress: false
+jobs:
+  identities:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    environment: production-certification
+    env:
+      PJSDAS_SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.PJSDAS_SUPABASE_SERVICE_ROLE_KEY }}
+      TA_REVIEW_MODE: ${{ inputs.mode }}
+      TA_REVIEW_EXPECTED_SHA: ${{ inputs.expected_sha }}
+      TA_REVIEW_VERIFIED_CLIENT_ID: ${{ inputs.verified_client_id }}
+      TA_REVIEW_EXPIRES_AT: ${{ inputs.expires_at }}
+      TA_REVIEW_RECIPIENT_PUBLIC_KEY_BASE64: ${{ inputs.recipient_public_key_base64 }}
+      TA_REVIEW_MANIFEST: ${{ inputs.identity_manifest }}
+      TA_REVIEW_OUTPUT_DIR: ${{ runner.temp }}/ta-consumer-review
+      TA_REVIEW_PRIVATE_PACKET: ${{ runner.temp }}/ta-consumer-review-private/packet.json
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - name: Prepare credentials privately before any account creation
+        if: inputs.mode == 'provision'
+        run: npx tsx scripts/consumer-management/review-identities-cli.ts --prepare
+      - name: Preserve encrypted recovery before any account creation
+        if: inputs.mode == 'provision'
+        id: recovery
+        uses: actions/upload-artifact@v5
+        with:
+          name: controlled-review-recovery
+          path: ${{ runner.temp }}/ta-consumer-review/
+          if-no-files-found: error
+          retention-days: 1
+      - name: Execute the bounded identity operation
+        env:
+          TA_REVIEW_RECOVERY_ARTIFACT_ID: ${{ steps.recovery.outputs.artifact-id }}
+        run: npx tsx scripts/consumer-management/review-identities-cli.ts --execute
+      - name: Remove runner-only plaintext credentials
+        if: always()
+        run: rm -f -- "$TA_REVIEW_PRIVATE_PACKET"
