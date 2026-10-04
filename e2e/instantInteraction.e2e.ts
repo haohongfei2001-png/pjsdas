@@ -136,19 +136,27 @@ test('background recovery never races a live Undo before its IDB journal is read
   expect(new Set(server.sent).size).toBe(2)
 })
 
-test('pending journal statuses share one transaction across a queued state transition', async ({ page, context }) => {
-  await setup(context); await start(page)
+test('pending journal statuses share one transaction across a queued state transition', async ({ page }, info) => {
+  // Count this function's native IDB transactions in a same-origin document
+  // without mounting the app. Offline mode does not stop journal recovery
+  // already admitted by the app, which contaminated the former global count.
+  // Keep the real module, real IndexedDB and competing native writer.
+  await page.route('**/pjsdas/journal-contract-fixture', route => route.fulfill({ contentType: 'text/html', body: '<!doctype html><html><head><title>Journal transaction fixture</title></head><body></body></html>' }))
+  await page.goto('/pjsdas/journal-contract-fixture')
   const result = await page.evaluate(async () => {
-    Object.defineProperty(navigator, 'onLine', { configurable: true, get: () => false })
+    const accounts = await import('/pjsdas/src/cloud/accountCacheLease.ts')
+    accounts.setAccountCacheSession('instant-owner')
     const api = await import('/pjsdas/src/db.ts'), db = await api.dbPromise
     const record = { id: 'instant-owner:atomic-read-probe', accountKey: 'instant-owner', commandId: 'atomic-read-probe', state: 'active' as const, createdAt: new Date().toISOString(), delta: { contract: 'delta-v1' as const, baseRevision: 1204, changes: [] } }
     await api.saveCommandInteraction(record)
     const transaction = IDBDatabase.prototype.transaction
+    const readStacks: string[] = []
     let reads = 0, transition: Promise<void> | undefined
     IDBDatabase.prototype.transaction = function(...args: Parameters<IDBDatabase['transaction']>) {
       const tx = transaction.apply(this, args)
       if ((args[0] === 'commandInteractions' || Array.isArray(args[0]) && args[0].includes('commandInteractions')) && (args[1] === 'readonly' || args[1] === undefined)) {
         reads++
+        readStacks.push(new Error('Journal read transaction').stack ?? 'Stack unavailable')
         if (reads === 1) {
           const write = transaction.call(this, 'commandInteractions', 'readwrite')
           transition = new Promise<void>((resolve, reject) => { write.oncomplete = () => resolve(); write.onerror = () => reject(write.error); write.onabort = () => reject(write.error) })
@@ -163,10 +171,12 @@ test('pending journal statuses share one transaction across a queued state trans
       const readCount = reads
       IDBDatabase.prototype.transaction = transaction
       const current = await api.readCommandInteraction('instant-owner', record.commandId)
-      return { rows: rows.filter(row => row.commandId === record.commandId).map(row => ({ id: row.id, state: row.state })), readCount, currentState: current?.state }
-    } finally { IDBDatabase.prototype.transaction = transaction; await db.delete('commandInteractions', record.id) }
+      return { rows: rows.filter(row => row.commandId === record.commandId).map(row => ({ id: row.id, state: row.state })), readCount, currentState: current?.state, readStacks }
+    } finally { IDBDatabase.prototype.transaction = transaction; await db.delete('commandInteractions', record.id); accounts.setAccountCacheSession(undefined) }
   })
-  expect(result).toEqual({ rows: [{ id: 'instant-owner:atomic-read-probe', state: 'active' }], readCount: 1, currentState: 'projection_pending' })
+  const { readStacks, ...observed } = result
+  await info.attach('journal-read-transactions.json', { body: JSON.stringify({ ...observed, readStacks }, null, 2), contentType: 'application/json' })
+  expect(observed).toEqual({ rows: [{ id: 'instant-owner:atomic-read-probe', state: 'active' }], readCount: 1, currentState: 'projection_pending' })
 })
 
 test('immediate Undo preserves original audit and compensates after its delayed receipt', async ({ page, context }) => {
