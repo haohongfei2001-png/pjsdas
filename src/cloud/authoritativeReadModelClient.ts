@@ -63,16 +63,29 @@ export async function refreshConnectedAuthoritativeCache(
     if (!initialCheckpoint.conflict) return { state: 'pending_operations', workspaceVersion: initialCheckpoint.lastSyncedVersion ?? 'pending',
       observedAt: new Date().toISOString(), latencyMs: 0, changed: false }
   }
+  let sampledCheckpoint = JSON.stringify(getAccountCheckpoint(accountKey))
   const reading = Promise.all([
     exportLocalSnapshot(assertReadCurrent),
     fetchConnectedRemoteWorkspace(accountKey, assertReadCurrent),
   ])
   const pair = await reading.catch(error => { lease.assertCurrent(); if (hotPending()) return undefined; throw error })
   if (!pair || hotPending()) return pendingResult()
-  const [local, remote] = pair
-  const localFingerprint = await fingerprintWorkspace(local)
-  lease.assertCurrent()
-  const checkpoint = getAccountCheckpoint(accountKey)
+  let [local] = pair
+  const remote = pair[1]
+  let localFingerprint = await fingerprintWorkspace(local)
+  assertReadCurrent()
+  let checkpoint = getAccountCheckpoint(accountKey)
+  if (JSON.stringify(checkpoint) !== sampledCheckpoint) {
+    // Login sync can install the account projection while this remote read is
+    // in flight. Never compare its new checkpoint with our earlier local copy.
+    // Resample only the local side once; continuous changes remain fail-closed.
+    sampledCheckpoint = JSON.stringify(checkpoint)
+    local = await exportLocalSnapshot(assertReadCurrent)
+    localFingerprint = await fingerprintWorkspace(local)
+    assertReadCurrent()
+    checkpoint = getAccountCheckpoint(accountKey)
+    if (JSON.stringify(checkpoint) !== sampledCheckpoint) throw new AccountCacheChangedError()
+  }
   const observedAt = new Date().toISOString()
   const assertMetadataCurrent = () => {
     lease.assertCurrent()

@@ -186,3 +186,52 @@ for (const scenario of ['sign-out', 'local-edit', 'command-sign-out', 'command-l
     expect(commandCalls).toBe(1)
   }
 })
+
+for (const edited of [false, true]) test(`first login sync settles before an older passive read: local edit ${edited}`, async ({ page }) => {
+  const snapshot = workspace()
+  let reads = 0, writes = 0
+  let release: (() => void) | undefined
+  await page.addInitScript(({ key, value }) => localStorage.setItem(key, JSON.stringify(value)), { key: AUTH_KEY, value: session('account-a', 'token-a') })
+  // Isolate the two real coordinators on the real IndexedDB, without a third
+  // background UI timer changing the deliberately held commit boundary.
+  await page.route('**/pjsdas/consumer-read-race', route => route.fulfill({ contentType: 'text/html', body: '<!doctype html><title>Consumer read race</title>' }))
+  await page.route('https://*.supabase.co/auth/v1/**', route => cors(route, {}, 200))
+  await page.route(BACKEND + '/**', async route => {
+    if (route.request().method() === 'OPTIONS') return cors(route, {}, 204)
+    if (new URL(route.request().url()).pathname === '/api/health') return cors(route, health())
+    const body = route.request().postDataJSON()
+    if (body.action !== 'read') { writes += 1; return cors(route, { code: 'UNEXPECTED_WRITE' }, 409) }
+    reads += 1
+    if (reads === 1) await new Promise<void>(resolve => { release = resolve })
+    return cors(route, { workspaceId: 'ws-a', workspaceVersion: 'txn:7', revision: 7, schemaVersion: snapshot.version, snapshot })
+  })
+  await page.goto('/pjsdas/consumer-read-race')
+  await page.evaluate(async () => {
+    const { setAccountCacheSession } = await import('/pjsdas/src/cloud/accountCacheLease.ts')
+    setAccountCacheSession('account-a')
+    const db = await import('/pjsdas/src/db.ts')
+    await db.exportLocalSnapshot()
+    const { refreshConnectedAuthoritativeCache } = await import('/pjsdas/src/cloud/authoritativeReadModelClient.ts')
+    ;(window as any).__consumerRead = refreshConnectedAuthoritativeCache('account-a')
+  })
+  await expect.poll(() => Boolean(release)).toBe(true)
+  await page.evaluate(async (edited) => {
+    const db = await import('/pjsdas/src/db.ts')
+    await db.exportLocalSnapshot() // IDB transaction boundary, no arbitrary delay.
+    const { runCloudSync } = await import('/pjsdas/src/cloud/cloudSync.ts')
+    await runCloudSync('account-a')
+    if (edited) {
+      const store = await db.dbPromise
+      const row = await store.get('actions', 'A-action-1')
+      if (!row) throw Error('Login sync projection missing')
+      await store.put('actions', { ...row, title: 'Real edit after login sync' })
+    }
+  }, edited)
+  release!()
+  const result = await page.evaluate(async () => (window as any).__consumerRead)
+  expect(result).toMatchObject({ state: edited ? 'local_changes_pending' : 'current', changed: false })
+  const title = await page.evaluate(async () => (await (await import('/pjsdas/src/db.ts')).exportLocalSnapshot()).data.actions.find(a => a.id === 'A-action-1')?.title)
+  expect(title).toBe(edited ? 'Real edit after login sync' : 'A第一任务')
+  expect(reads).toBe(2)
+  expect(writes).toBe(0)
+})

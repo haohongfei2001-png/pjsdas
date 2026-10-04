@@ -210,6 +210,51 @@ describe('CGR-02 authoritative Today read freshness', () => {
     expect(replaceLocalSnapshotFromCloud).toHaveBeenCalledWith(remoteSnapshot, expect.objectContaining({ expectedLocal: local, assertCurrent: expect.any(Function) }))
   })
 
+  it('resamples only local state when login sync completes during the remote read', async () => {
+    let checkpoint = {}
+    const projected = { marker: 'projected' } as any
+    vi.mocked(getAccountCheckpoint).mockImplementation(() => checkpoint)
+    vi.mocked(exportLocalSnapshot).mockResolvedValueOnce(local).mockResolvedValue(projected)
+    vi.mocked(fetchConnectedRemoteWorkspace).mockImplementation(async () => {
+      checkpoint = { lastSyncedVersion: 'txn:8', lastSyncedFingerprint: 'remote-fp',
+        lastReadProjectionSourceFingerprint: 'remote-fp', lastReadProjectionFingerprint: 'projected-fp' }
+      return remote()
+    })
+    vi.mocked(fingerprintWorkspace).mockImplementation(async (value: any) => value === projected ? 'projected-fp' : 'unbound-empty-fp')
+    expect(await refreshConnectedAuthoritativeCache('account-a')).toMatchObject({ state: 'current', changed: false })
+    expect(exportLocalSnapshot).toHaveBeenCalledTimes(2)
+    expect(fetchConnectedRemoteWorkspace).toHaveBeenCalledTimes(1)
+    expect(replaceLocalSnapshotFromCloud).not.toHaveBeenCalled()
+  })
+
+  it('preserves an actual local edit made after the competing login sync', async () => {
+    let checkpoint = {}
+    vi.mocked(getAccountCheckpoint).mockImplementation(() => checkpoint)
+    vi.mocked(fetchConnectedRemoteWorkspace).mockImplementation(async () => {
+      checkpoint = { lastSyncedVersion: 'txn:8', lastSyncedFingerprint: 'remote-fp',
+        lastReadProjectionSourceFingerprint: 'remote-fp', lastReadProjectionFingerprint: 'projected-fp' }
+      return remote()
+    })
+    vi.mocked(fingerprintWorkspace).mockResolvedValue('real-local-edit-fp')
+    expect(await refreshConnectedAuthoritativeCache('account-a')).toMatchObject({ state: 'local_changes_pending', changed: false })
+    expect(exportLocalSnapshot).toHaveBeenCalledTimes(2)
+    expect(fetchConnectedRemoteWorkspace).toHaveBeenCalledTimes(1)
+    expect(replaceLocalSnapshotFromCloud).not.toHaveBeenCalled()
+    expect(patchAccountCheckpoint).not.toHaveBeenCalled()
+  })
+
+  it('stops without a write or repeated remote reads if the checkpoint keeps changing', async () => {
+    let revision = 7
+    vi.mocked(getAccountCheckpoint).mockImplementation(() => ({ lastSyncedVersion: `txn:${revision}` }))
+    vi.mocked(fetchConnectedRemoteWorkspace).mockImplementation(async () => { revision = 8; return remote() })
+    vi.mocked(exportLocalSnapshot).mockResolvedValueOnce(local).mockImplementation(async () => { revision = 9; return local })
+    await expect(refreshConnectedAuthoritativeCache('account-a')).rejects.toThrow('账号或本地数据已变化')
+    expect(exportLocalSnapshot).toHaveBeenCalledTimes(2)
+    expect(fetchConnectedRemoteWorkspace).toHaveBeenCalledTimes(1)
+    expect(replaceLocalSnapshotFromCloud).not.toHaveBeenCalled()
+    expect(patchAccountCheckpoint).not.toHaveBeenCalled()
+  })
+
   it('does not converge even an equal projection while a command awaits recovery', async () => {
     vi.mocked(pendingCommandSummary).mockReturnValue({ count: 1, pending: 0, unknown: 0, conflict: 0 })
     vi.mocked(fingerprintWorkspace).mockResolvedValue('remote-fp')
@@ -276,12 +321,13 @@ describe('CGR-02 authoritative Today read freshness', () => {
       lastSyncedVersion: 'txn:843', lastSyncedFingerprint: 'old-fp',
       conflict: { remoteVersion: 'txn:843', remoteFingerprint: 'old-fp', remoteUpdatedAt: '2026-09-20T00:00:00Z' },
     }
-    vi.mocked(getAccountCheckpoint).mockReturnValueOnce(stale).mockReturnValue({
-      lastSyncedVersion: 'txn:1004', lastSyncedFingerprint: 'remote-fp',
-    })
+    let checkpoint: ReturnType<typeof getAccountCheckpoint> = stale
+    vi.mocked(getAccountCheckpoint).mockImplementation(() => checkpoint)
     vi.mocked(fetchConnectedRemoteWorkspace).mockResolvedValue(remote('txn:1004'))
     vi.mocked(fingerprintWorkspace).mockResolvedValue('local-edit-fp')
-    vi.mocked(assertLocalSnapshotCurrent).mockResolvedValueOnce(undefined)
+    vi.mocked(assertLocalSnapshotCurrent).mockImplementationOnce(async () => {
+      checkpoint = { lastSyncedVersion: 'txn:1004', lastSyncedFingerprint: 'remote-fp' }
+    })
     expect(await refreshConnectedAuthoritativeCache('account-a')).toMatchObject({ state: 'diverged' })
     expect(patchAccountCheckpoint).not.toHaveBeenCalled()
     expect(replaceLocalSnapshotFromCloud).not.toHaveBeenCalled()
