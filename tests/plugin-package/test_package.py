@@ -69,6 +69,22 @@ class PackageTest(unittest.TestCase):
         self.edit("plugin.json", lambda d: d["extensions"]["com.openai"]["review"].update(test_credentials="synthetic"))
         with self.assertRaises(ValueError): module.validate(self.package)
 
+    def test_subtitle_submission_boundary(self):
+        self.edit("plugin.json", lambda d: d["extensions"]["com.openai"]["interface"].update(shortDescription="x" * 30))
+        module.validate(self.package)
+        self.edit("plugin.json", lambda d: d["extensions"]["com.openai"]["interface"].update(shortDescription="x" * 31))
+        with self.assertRaises(ValueError): module.validate(self.package)
+
+    def test_default_prompt_validation(self):
+        for prompts in (["same words", " same  words "], ["two\nlines"], ["x" * 129], ["a", "b", "c", "d"]):
+            with self.subTest(prompts=prompts):
+                self.edit("plugin.json", lambda d: d["extensions"]["com.openai"]["interface"].update(defaultPrompt=prompts))
+                with self.assertRaises(ValueError): module.validate(self.package)
+
+    def test_negative_cases_keep_expectations_in_description(self):
+        self.edit("plugin.json", lambda d: d["extensions"]["com.openai"]["review"]["test_cases"]["negative"][0].update(expected_behavior="Not a supported negative-case field"))
+        with self.assertRaises(ValueError): module.validate(self.package)
+
 
 if __name__ == "__main__":
     unittest.main()
