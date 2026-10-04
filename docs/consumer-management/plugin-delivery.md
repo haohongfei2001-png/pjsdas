@@ -1,6 +1,12 @@
 # Consumer plugin delivery and activation
 
-This is the current handover entry, dated 2026-10-03. Historical slice documents describe their implementation stage; they are not blanket live-availability claims.
+This is the current handover entry, updated 2026-10-04. Historical slice documents describe their implementation stage; they are not blanket live-availability claims.
+
+## Current production boundary
+
+The approved eight migrations from 9055fa21 are installed after an actual encrypted production backup was restored and verified offline. Every complete file and history record committed in one native transaction with lock_timeout=2s and statement_timeout=15s; independent final catalog/permissions/history readback passed. Temporary maintenance roles/tokens were removed and old credentials rejected. See [production migration result](production-migration-result-2026-10-04.md).
+
+Consumer activation, A/B admission, OAuth changes and publication were not performed. The installed-host journey is still pending explicit business-v7 controlled-test consent and verification of the original plugin/client. Database maintenance is no longer blocked on a user-provided password.
 
 ## What exists
 
@@ -27,8 +33,8 @@ The candidate includes five positive and three negative review scenarios. They a
 ## Verified missing publication inputs
 
 - `/privacy`, `/terms` and `/support` returned HTTP 404 on the canonical origin on 2026-10-03; no versioned policy/support page or package was present at the reviewed head. These are observed missing paths, not a claim that no alternate policy URL exists.
-- The verified publisher name, publication organization/project, existing portal edit ID and publication history have not been established. The supplied installed reference `dev-6aabd85e5ae08191ac65ca9ac975c400@openai-curated-remote` is not treated as a portal ID. Plugin search returned no accessible TodayAction result in this session; this does not prove the existing private plugin is absent.
-- The current session could enumerate an in-app browser but could not create a usable tab; the requested portal tab was queued by Codex. No external visible browser was launched. No logged-in publication dashboard was inspected.
+- The current signed-in host personal directory lists TodayAction under “由你创建”, with observed detail URL `https://chatgpt.com/plugins/plugin_asdk_app_6abfbe4dea888191ad2c6a28af430d32?directoryTab=personal`. This is an observed plugin detail reference, not a verified backend edit ID. Its detail page currently reports `cloudflare_challenge`; mapping to the handed-over installed reference `dev-6aabd85e5ae08191ac65ca9ac975c400@openai-curated-remote`, original OAuth client, publisher identity and publication history remains unverified. Public plugin search still returns no result; no duplicate was created.
+- The in-app browser now works and the existing Supabase/Vercel sessions were inspected. The original plugin publisher dashboard and edit ID have still not been verified. No external visible browser or duplicate plugin was created.
 - No dedicated synthetic reviewer account or actual-host demo receipt is available in this checkout. Do not use the owner's private account as a reviewer fixture. Reviewer credentials belong in the secure dashboard form, never a ZIP, Git commit, screenshot or public issue.
 
 Resolve these through the existing publisher account. Do not guess an ID, replace a domain challenge, create a second plugin, issue real grants or reconnect users to force a scan. The operator must authorize the exact controlled audience and flags separately.
