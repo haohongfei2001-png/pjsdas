@@ -46,6 +46,9 @@ do $install$ begin
 if current_setting('lock_timeout') <> '2s' or current_setting('statement_timeout') <> '15s' then
   raise exception 'Bounded explicit transaction required';
 end if;
+if not has_schema_privilege('supabase_auth_admin', 'public', 'USAGE') then
+  raise exception 'Existing Auth schema usage required; do not expand privileges';
+end if;
 execute $definition$${definition}$definition$;
 revoke all on function public.pjsdas_review_oauth_resource_hook(jsonb) from public, anon, authenticated, service_role;
 grant execute on function public.pjsdas_review_oauth_resource_hook(jsonb) to supabase_auth_admin;

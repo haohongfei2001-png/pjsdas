@@ -40,6 +40,14 @@ try {
   await exec('alter default privileges in schema public grant execute on functions to anon, authenticated, service_role')
   await exec('create table public.unrelated_data(id int primary key, raw jsonb); insert into public.unrelated_data values (1,\'{"unknown":["z","a"]}\');')
   const baseline = (await db.query('select * from public.unrelated_data')).rows
+  // Hosted installations may revoke PUBLIC schema usage. Refuse instead of
+  // silently expanding that permission or enabling an uncallable global hook.
+  await exec('revoke usage on schema public from public, supabase_auth_admin')
+  await assert.rejects(exec(plan.install), /Existing Auth schema usage required/)
+  await exec('rollback')
+  assert.equal((await db.query("select to_regprocedure('public.pjsdas_review_oauth_resource_hook(jsonb)') value")).rows[0].value, null)
+  assert.equal((await db.query("select has_schema_privilege('supabase_auth_admin','public','USAGE') value")).rows[0].value, false)
+  await exec('grant usage on schema public to public'); cases++
   const installBody = plan.install.match(/do \$install\$[\s\S]*end \$install\$;/)[0]
   await assert.rejects(exec(installBody), /Bounded explicit transaction required/)
   assert.equal((await db.query("select to_regprocedure('public.pjsdas_review_oauth_resource_hook(jsonb)') value")).rows[0].value, null)
