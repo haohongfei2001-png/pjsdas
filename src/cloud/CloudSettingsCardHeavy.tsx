@@ -220,8 +220,8 @@ export default function CloudSettingsCard() {
                   ? <div className="cloud-error">{cloud.error || cloud.checkpoint.lastError}</div> : null}
                 <small className="cloud-security-note">{transactional
                   ? (zh
-                      ? 'Google 长期授权凭据在服务端加密保存。退出账号会清除此设备上的账号缓存，避免下一个登录者看到前一个账号的资料；已同步的账号资料仍保留。TodayAction 只获得应用专用的 Google Drive 文件权限。'
-                      : 'Long-lived Google authorization is encrypted on the server. Signing out clears this device’s account cache so the next sign-in cannot see the previous account’s data; already synced account data remains stored. TodayAction only receives access to its app-specific Google Drive files.')
+                      ? '退出账号会清除此设备上的账号缓存，避免下一个登录者看到前一个账号的资料；已同步的账号资料仍保留。空工作区不需要 Google Drive；如果你另行连接 Drive，其长期授权凭据在服务端加密保存，权限仅限应用专用文件。'
+                      : 'Signing out clears this device’s account cache so the next sign-in cannot see the previous account’s data; already synced account data remains stored. An empty workspace does not require Google Drive. If you separately connect Drive, its long-lived authorization is encrypted on the server and limited to app-specific files.')
                   : (zh
                       ? 'Google 长期授权凭据在服务端加密保存。此设备仍会保留本机资料；在共享设备上使用后，请按需要清理浏览器资料。TodayAction 只获得应用专用的 Google Drive 文件权限。'
                       : 'Long-lived Google authorization is encrypted on the server. Local data remains on this device; clear browser data after use on a shared device when needed. TodayAction only receives access to its app-specific Google Drive files.')}</small>
