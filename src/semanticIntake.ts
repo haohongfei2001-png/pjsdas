@@ -1,3 +1,5 @@
+import { dismissedSemanticCandidate } from './decisionDismissal.js'
+import { canonicalOpportunityId, canonicalSemanticFactKey, sameSemanticFactKey, resolveCanonicalOpportunityTarget } from './opportunityCanonicalization.js'
 import { resolveApplicationDeadline } from './applicationDeadline.js'
 import { invalidatedSourceFact } from './processFactCorrection.js'
 import { applyDomainCompensation, applyUserDomainCommand, type DomainCompensation, type UserDomainCommand } from './domainCommands.js'
@@ -157,11 +159,11 @@ function receiptMatchesObservation(item: SemanticIntakeReceipt, observation: Sem
     )
 }
 
-function receiptInvalidatedFactKeys(receipt: SemanticIntakeReceipt) {
-  return new Set((receipt.factInvalidations ?? []).map((item) => item.factKey))
+function receiptInvalidatedFactKeys(snapshot: PJSDASSnapshot, receipt: SemanticIntakeReceipt) {
+  return new Set((receipt.factInvalidations ?? []).map((item) => canonicalSemanticFactKey(snapshot, item.factKey)))
 }
 
-function pendingFactKeys(matching: SemanticIntakeReceipt[]) {
+function pendingFactKeys(snapshot: PJSDASSnapshot, matching: SemanticIntakeReceipt[]) {
   const pending = new Set<string>()
   const restoredAfter = (factKey: string, at: string, afterSequence: number | undefined, invalidatedBy: SemanticIntakeReceipt) => matching.some((receipt) =>
     receipt.status === 'committed'
@@ -173,21 +175,21 @@ function pendingFactKeys(matching: SemanticIntakeReceipt[]) {
           && !receipt.causalOrderAmbiguous
           && !invalidatedBy.causalOrderAmbiguous
           && (receipt.creationSequence ?? 0) > (invalidatedBy.creationSequence ?? 0)))
-    && receipt.factKeys?.includes(factKey)
-    && !receiptInvalidatedFactKeys(receipt).has(factKey))
+    && receipt.factKeys?.some(key => sameSemanticFactKey(snapshot, key, factKey))
+    && !receiptInvalidatedFactKeys(snapshot, receipt).has(canonicalSemanticFactKey(snapshot, factKey)))
   for (const item of matching) {
     for (const invalidation of item.factInvalidations ?? []) {
-      if (!restoredAfter(invalidation.factKey, invalidation.invalidatedAt, invalidation.invalidatedAfterSequence, item)) pending.add(invalidation.factKey)
+      if (!restoredAfter(invalidation.factKey, invalidation.invalidatedAt, invalidation.invalidatedAfterSequence, item)) pending.add(canonicalSemanticFactKey(snapshot, invalidation.factKey))
     }
     if (item.status === 'undone') for (const factKey of item.mutatedFactKeys ?? item.factKeys ?? []) {
-      if (!restoredAfter(factKey, item.updatedAt, item.undoneAfterSequence, item)) pending.add(factKey)
+      if (!restoredAfter(factKey, item.updatedAt, item.undoneAfterSequence, item)) pending.add(canonicalSemanticFactKey(snapshot, factKey))
     }
   }
   return pending
 }
 
 function pendingRecoveryFactKeys(snapshot: PJSDASSnapshot, observation: SemanticIntakeObservation) {
-  return pendingFactKeys((snapshot.data.semanticReceipts ?? []).filter((item) =>
+  return pendingFactKeys(snapshot, (snapshot.data.semanticReceipts ?? []).filter((item) =>
     receiptMatchesObservation(item, observation)))
 }
 
@@ -195,7 +197,7 @@ export function pendingSemanticSourceFactKeys(
   snapshot: PJSDASSnapshot,
   source: { sourceKind: string; sourceId: string; sourceRecordId: string },
 ) {
-  return pendingFactKeys((snapshot.data.semanticReceipts ?? []).filter((item) =>
+  return pendingFactKeys(snapshot, (snapshot.data.semanticReceipts ?? []).filter((item) =>
     item.sourceKind === source.sourceKind
     && item.sourceId === source.sourceId
     && item.sourceRecordId === source.sourceRecordId))
@@ -278,8 +280,8 @@ function existingFactReceipt(snapshot: PJSDASSnapshot, factKey: string | undefin
   if (!factKey) return undefined
   return (snapshot.data.semanticReceipts ?? []).find((item) =>
     item.status === 'committed'
-    && item.factKeys?.includes(factKey)
-    && !receiptInvalidatedFactKeys(item).has(factKey),
+    && item.factKeys?.some(key => sameSemanticFactKey(snapshot, key, factKey))
+    && !receiptInvalidatedFactKeys(snapshot, item).has(canonicalSemanticFactKey(snapshot, factKey)),
   )
 }
 
@@ -306,7 +308,7 @@ function assertObservation(observation: SemanticIntakeObservation) {
 }
 
 function opportunityResolution(snapshot: PJSDASSnapshot, candidate: SemanticCandidate) {
-  return resolveOpportunityTarget(snapshot.data.opportunities, candidate.target)
+  return resolveCanonicalOpportunityTarget(snapshot, candidate.target)
 }
 
 function latestActiveNodes(snapshot: PJSDASSnapshot) {
@@ -408,6 +410,7 @@ function createDecisionRequest(input: {
       candidateId: input.candidate.id,
       source: structuredClone(input.observation.source),
       statementMode: input.observation.statementMode,
+      originalTextFingerprint: originalFingerprint(input.observation),
       candidate: structuredClone(input.candidate),
     },
     state: 'open',
@@ -935,16 +938,19 @@ function nextReceiptSequence(snapshot: PJSDASSnapshot) {
 }
 
 function ownsIndependentFactMutation(
+  snapshot: PJSDASSnapshot,
   target: SemanticIntakeReceipt,
   dependent: SemanticIntakeReceipt,
   factKey: string,
 ) {
-  if (!dependent.mutatedFactKeys?.includes(factKey)) return false
-  const affected = dependent.factMutationObjects?.[factKey]
+  if (!dependent.mutatedFactKeys?.some(key => sameSemanticFactKey(snapshot, key, factKey))) return false
+  const affected = Object.entries(dependent.factMutationObjects ?? {}).filter(([key]) => sameSemanticFactKey(snapshot, key, factKey)).flatMap(([, refs]) => refs)
   if (!affected?.length) return false
-  const targetAffected = target.factMutationObjects?.[factKey] ?? target.affectedObjects
-  const targetIds = new Set(targetAffected.map((item) => `${item.type}:${item.id}`))
-  return affected.some((item) => !targetIds.has(`${item.type}:${item.id}`))
+  const matchingTargetObjects = Object.entries(target.factMutationObjects ?? {}).filter(([key]) => sameSemanticFactKey(snapshot, key, factKey)).flatMap(([, refs]) => refs)
+  const targetAffected = matchingTargetObjects.length ? matchingTargetObjects : target.affectedObjects
+  const identity = (item: SemanticIntakeReceipt['affectedObjects'][number]) => `${item.type}:${item.type === 'opportunity' ? canonicalOpportunityId(snapshot, item.id) : item.id}`
+  const targetIds = new Set(targetAffected.map(identity))
+  return affected.some((item) => !targetIds.has(identity(item)))
 }
 
 function appendDecision(snapshot: PJSDASSnapshot, observation: SemanticIntakeObservation, request: DecisionRequest, now: string) {
@@ -969,7 +975,15 @@ export function applySemanticIntake(
   const timestamp = now.toISOString()
   const base = upgradeSnapshotToLatest(snapshot)
 
-  const replay = existingReceipt(base, observation)
+  // A dismissed source may later supply corrected facts. Receipt identity alone
+  // must not hide a new source version or changed candidate content.
+  const changedDismissedSource = (base.data.decisionRequests ?? []).some(request => request.state === 'dismissed'
+    && request.payloadBinding.source.kind === observation.source.kind
+    && request.payloadBinding.source.sourceId === observation.source.sourceId
+    && request.payloadBinding.source.sourceRecordId === observation.source.sourceRecordId)
+    && observation.candidates.some(candidate => !dismissedSemanticCandidate(base, observation, candidate)
+      && !existingFactReceipt(base, semanticCandidateFactKey(base, candidate)))
+  const replay = changedDismissedSource ? undefined : existingReceipt(base, observation)
   const openSourceChoices = observation.source.kind === 'gmail'
     ? (base.data.decisionRequests ?? []).filter(item => item.state === 'open'
       && item.payloadBinding.source.kind === 'gmail'
@@ -1111,6 +1125,7 @@ export function applySemanticIntake(
   }
 
   for (const candidate of observation.candidates) {
+    if (dismissedSemanticCandidate(working, observation, candidate)) continue
     if (invalidatedSourceFact(working, observation.source, semanticCandidateFactKey(working, candidate))) {
       coverageDebtCount += 1
       continue
@@ -1143,7 +1158,7 @@ export function applySemanticIntake(
     // command must never recreate those domain objects (notably manual actions).
     if (recoveryFactKeys.size && (!factKey || !recoveryFactKeys.has(factKey))) continue
     const priorFact = existingFactReceipt(working, factKey)
-    const deadlineTarget = candidate.kind === 'opportunity_deadline' ? working.data.opportunities.find(item => item.id === candidate.target?.opportunityId) : undefined
+    const deadlineTarget = candidate.kind === 'opportunity_deadline' ? working.data.opportunities.find(item => item.id === canonicalOpportunityId(working, candidate.target?.opportunityId ?? '')) : undefined
     const repeatedAssertedDeadline = priorFact && candidate.kind === 'opportunity_deadline' && deadlineTarget
       && observation.statementMode === 'assertion'
       && resolveApplicationDeadline(deadlineTarget, working.data).deadline === candidate.deadline
@@ -1451,7 +1466,7 @@ export function applySemanticCompensation(
       item.id !== target.id
       && item.causalOrderAmbiguous
       && item.status === 'committed'
-      && (item.factKeys ?? []).some((key) => target.factKeys?.includes(key)))
+      && (item.factKeys ?? []).some((key) => target.factKeys?.some(targetKey => sameSemanticFactKey(next, targetKey, key))))
     if (hasUnorderedOverlap) {
       throw new Error('Semantic receipt causal order cannot be proven for this legacy fact; automatic undo is blocked.')
     }
@@ -1530,7 +1545,7 @@ export function applySemanticCompensation(
           if (correctionAt > exportedAt) exportedAt = correctionAt
         }
       }
-      const invalidatedFactKeys = new Set(item.mutatedFactKeys ?? item.factKeys ?? [])
+      const invalidatedFactKeys = new Set((item.mutatedFactKeys ?? item.factKeys ?? []).map(key => canonicalSemanticFactKey(next, key)))
       if (invalidatedFactKeys.size) {
         const receipts = next.data.semanticReceipts ?? []
         for (const dependent of receipts) {
@@ -1538,11 +1553,11 @@ export function applySemanticCompensation(
             || compareReceiptCreationOrder(item, dependent) >= 0
             || dependent.status !== 'committed') continue
           const existingInvalidations = dependent.factInvalidations ?? []
-          const alreadyInvalidated = new Set(existingInvalidations.map((entry) => entry.factKey))
+          const alreadyInvalidated = new Set(existingInvalidations.map((entry) => canonicalSemanticFactKey(next, entry.factKey)))
           const overlap = (dependent.factKeys ?? []).filter((key) =>
-            invalidatedFactKeys.has(key)
-            && !alreadyInvalidated.has(key)
-            && !ownsIndependentFactMutation(item, dependent, key))
+            invalidatedFactKeys.has(canonicalSemanticFactKey(next, key))
+            && !alreadyInvalidated.has(canonicalSemanticFactKey(next, key))
+            && !ownsIndependentFactMutation(next, item, dependent, key))
           if (!overlap.length) continue
           dependent.factInvalidations = [
             ...existingInvalidations,

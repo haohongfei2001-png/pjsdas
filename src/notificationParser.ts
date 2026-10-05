@@ -90,10 +90,80 @@ function roleAliases(role: string) {
   return [...aliases].filter(alias => !genericRole(alias))
 }
 
+/** Transport metadata and support/footer identities are not business targets. */
+export function notificationIdentityText(text: string): string {
+  return text
+    .replace(/(?:https?:\/\/|www\.)[^\s<>"\u3002]+/gi, ' ')
+    .replace(/[\p{L}\p{N}_.+-]+@[\p{L}\p{N}_.-]+\.[a-z]{2,}/giu, ' ')
+    .replace(/(?:[\p{L}\p{N}-]+\.)+[a-z]{2,}(?:[/:?#][^\s<>；;。]*)?/giu, ' ')
+    .replace(/(?:[?&]|\b)(?:utm_\w+|tracking|redirect|company|role)=[^\s；;。]+/gi, ' ')
+    .split(/[\n；;。]+/)
+    .filter(line => !/(?:unsubscribe|privacy policy|all rights reserved|powered by|technical support|退订|隐私政策|版权所有|技术支持)[:：\s]/i.test(line))
+    .join('；')
+}
+
+function withoutTargetIdentity(text: string, target: Opportunity) {
+  let value = text.toLowerCase()
+  for (const alias of [...companyAliases(target.company), ...roleAliases(target.role)].sort((a, b) => b.length - a.length)) {
+    value = value.replaceAll(alias, ' ')
+  }
+  return value
+}
+
+// Inheritance is permitted only for a closed, identity-neutral vocabulary.
+// Unknown names need no company suffix (and unknown titles need no job suffix).
+function neutralIdentityLanguage(text: string) {
+  const words = text.toLowerCase()
+    .replace(/\b(?:a|an|the|your|you|we|our|us|this|that|it|its|for|of|to|at|on|in|by|and|or|with|from|as|is|are|was|were|be|been|have|has|had|will|would|can|not|no|thank|thanks|regret|sorry|pleased|delighted|congratulations|application|applications|applied|apply|submitted|received|confirmed|recruiting|recruitment|campus|update|notification|notice|invitation|invite|interview|assessment|test|written|offer|letter|job|role|position|company|employer|process|stage|result|successfully|unfortunately|unsuccessful|rejected|rejection|please|attend|complete|completed|cancelled|canceled|deadline|submission|submit|before|after|tomorrow|today|am|pm)\b/g, ' ')
+    .replace(/(?:很遗憾|感谢您|感谢你|恭喜|祝贺|诚挚|诚邀|邀请|通知|安排|参加|完成|已提交|已收到|收到|未通过|通过|已获得|录用|录取|投递|申请|成功|后续|进展|进度|流程|本次|此次|本轮|您的|你的|您|你|我们|我司|本公司|该公司|相关|该|本|岗位|职位|公司|企业|校园|招聘|面试|测评|笔试|考试|统一|在线|视频|时间|截止|提交|最晚|之前|前|请|于|在|为|是|已|未|将|进行|结束|终止|不匹配|暂不匹配|取消|撤销|改期|改为|调整|开放窗口|至|到|年|月|日|号|点|时|分|明天|明日|今天|今日|后天|上午|下午|晚上|早上|的|和|与|及|并|请查收|通知书|校招|秋招|春招|应届)/g, ' ')
+  return !/[\p{L}]/u.test(words)
+}
+
+export function notificationIdentityCanInherit(text: string, target: Opportunity): boolean {
+  return neutralIdentityLanguage(withoutTargetIdentity(notificationIdentityText(text), target))
+}
+
+/** A company hit cannot override an explicitly different role/company. */
+export function notificationIdentityCompatible(text: string, target: Opportunity, opportunities: Opportunity[]): boolean {
+  const evidence = notificationIdentityText(text)
+  const targetCompanies = companyAliases(target.company)
+  const targetRoles = roleAliases(target.role)
+  for (const clause of evidence.split(/[；;\n]+/)) {
+    const lead = clause.split(/(?:很遗憾|感谢|恭喜|祝贺|请|邀请|诚邀|面试|测评|笔试|招聘|\b(?:we|your|please|recruiting|recruitment|interview|assessment|regret|congratulations)\b)/i)[0]!
+    if ([...targetCompanies, ...targetRoles].some(alias => identityContains(lead, alias))
+      && !neutralIdentityLanguage(withoutTargetIdentity(lead, target))) return false
+  }
+  for (const other of opportunities) {
+    if (normalize(other.company) !== normalize(target.company)
+      && companyAliases(other.company).some(alias => identityContains(evidence, alias))) return false
+    if (normalize(other.role) !== normalize(target.role)
+      && roleAliases(other.role).some(alias => identityContains(evidence, alias)
+        && !targetRoles.some(targetAlias => identityContains(targetAlias, alias) || identityContains(alias, targetAlias)))) return false
+  }
+  const explicit = [...evidence.matchAll(/(?:^|[\s，,；;])(?:公司|企业|company|employer)\s*[:：]\s*([^，,；;。\n]+)/gi)]
+  if (explicit.some(match => !targetCompanies.some(alias => identityContains(match[1]!, alias)))) return false
+  const roles = [...evidence.matchAll(/(?:^|[\s，,；;])(?:(?:应聘|申请)?(?:岗位|职位)|role|position)\s*[:：]\s*([^，,；;。\n]+)/gi)]
+  if (roles.some(match => !targetRoles.some(alias => identityContains(match[1]!, alias)))) return false
+  // Common job-title forms also count when they are absent from the workspace.
+  // Strip the known company first so an adjacent company does not become a role.
+  let roleEvidence = evidence.toLowerCase()
+  for (const alias of targetCompanies) roleEvidence = roleEvidence.replaceAll(alias, ' ')
+  if (/[\p{L}\p{N}]{2,}(?:公司|集团|银行|科技)/u.test(roleEvidence.replace(/(?:本|该|贵|我们|您的)公司/g, ' '))) return false
+  const englishCompany = /\b(?:position at|role at|application to)\s+([A-Z][\w-]*(?:\s+[A-Z][\w-]*)*)/.exec(evidence)?.[1]
+  if (englishCompany && !targetCompanies.some(alias => identityContains(englishCompany, alias))) return false
+  const titles = roleEvidence.match(/[\p{L}\p{N}]+(?:工程师|经理|培训生|分析师|设计师|专员|研究员)/gu) ?? []
+  const englishTitles = roleEvidence.match(/(?:[a-z]+[ -]){0,5}(?:engineer|manager|analyst|scientist|designer|developer|intern|trainee)\b/gi) ?? []
+  if ([...titles, ...englishTitles].some(title => !targetRoles.some(alias =>
+    identityContains(alias, identityAlias(title))
+      || identityContains(title, alias) && neutralIdentityLanguage(withoutTargetIdentity(title, target))))) return false
+  return true
+}
+
 export function matchNotificationOpportunity(
   text: string,
   opportunities: Opportunity[],
 ): { selected?: Opportunity; candidates: OpportunityCandidate[]; confidence: 'high' | 'medium' | 'low' } {
+  text = notificationIdentityText(text)
   const scored = opportunities
     .map((opportunity): OpportunityCandidate => {
       let score = 0
@@ -139,7 +209,9 @@ export function matchNotificationOpportunity(
 
   const first = scored[0]
   const second = scored[1]
-  if (!first || first.score < 40) return { candidates: scored, confidence: 'low' }
+  if (!first || first.score < 40 || !notificationIdentityCompatible(text, first.opportunity, opportunities)) {
+    return { candidates: scored, confidence: 'low' }
+  }
 
   const margin = first.score - (second?.score ?? 0)
   const sameCompanyAmbiguity = second &&

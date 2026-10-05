@@ -1,3 +1,4 @@
+import { canonicalOpportunityId } from '../src/opportunityCanonicalization.js'
 import type { CallToolResult } from '@modelcontextprotocol/server'
 import * as z from 'zod/v4'
 import { getApplicationPortfolio } from '../src/ai/applicationPortfolioRead.js'
@@ -169,6 +170,12 @@ export async function invokeReadTool(
   try {
     const { snapshot, context } = await source.read()
 
+    // Resolve a copied read selector, retaining caller payload and original historical evidence.
+    if (args && typeof args === 'object' && !Array.isArray(args)) {
+      const resolved = { ...args } as Record<string, unknown>
+      for (const key of ['opportunityId', 'compareWithOpportunityId']) if (typeof resolved[key] === 'string') resolved[key] = canonicalOpportunityId(snapshot, resolved[key])
+      args = resolved
+    }
     switch (name) {
       case 'get_today_brief':
         return success(buildTodayBrief(snapshot, getTodayBriefSchema.parse(args), context))

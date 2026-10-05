@@ -1,3 +1,4 @@
+import { canonicalOpportunityId, sameSemanticFactKey } from './opportunityCanonicalization.js'
 import type { Opportunity, ProcessEvent, ProcessRecord, SemanticIntakeReceipt } from './model.js'
 import { processEventStageLabel, stageForProcessEvent } from './processEvents.js'
 import type { PJSDASSnapshot } from './snapshot.js'
@@ -19,7 +20,7 @@ function correctionStage(event: ProcessEvent | undefined) {
 
 /** Exact terminal evidence correction, never deletion or a guess of the prior stage. */
 export function invalidateProcessFact(next: PJSDASSnapshot, command: InvalidateProcessEventCommand, timestamp: string) {
-  const event = next.data.processEvents.find(item => item.id === command.eventId && item.opportunityId === command.opportunityId)
+  const event = next.data.processEvents.find(item => item.id === command.eventId && item.opportunityId === canonicalOpportunityId(next, command.opportunityId))
   if (!event || !['offer', 'rejection'].includes(event.type)) throw new Error('Correction requires an exact terminal ProcessEvent.')
   if (event.invalidation) throw new Error('This evidence was already invalidated by another command.')
   if (event.updatedAt !== command.expectedEventUpdatedAt) throw new Error('ProcessEvent changed since review; read it again before correcting.')
@@ -67,7 +68,7 @@ export function invalidateProcessFact(next: PJSDASSnapshot, command: InvalidateP
   // Only invalidate same-source dependants lacking an independently owned event.
   for (const receipt of next.data.semanticReceipts ?? []) {
     if (receipt.sourceKind !== owner.sourceKind || receipt.sourceId !== owner.sourceId || receipt.sourceRecordId !== owner.sourceRecordId) continue
-    const overlaps = (receipt.factKeys ?? []).filter(key => keys.includes(key) && !receipt.factInvalidations?.some(item => item.factKey === key)
+    const overlaps = (receipt.factKeys ?? []).filter(key => keys.some(ownedKey => sameSemanticFactKey(next, ownedKey, key)) && !receipt.factInvalidations?.some(item => sameSemanticFactKey(next, item.factKey, key))
       && (receipt.id === owner.id || !receipt.factMutationObjects?.[key]?.some(item => item.type === 'process_event' && item.id !== event.id)))
     if (!overlaps.length) continue
     receipt.factInvalidations = [...(receipt.factInvalidations ?? []), ...overlaps.map(factKey => ({ factKey, invalidatedByReceiptId: receiptId, invalidatedAt: timestamp, invalidatedAfterSequence: afterSequence }))]
@@ -82,7 +83,7 @@ export function invalidateProcessFact(next: PJSDASSnapshot, command: InvalidateP
 export function invalidatedSourceFact(snapshot: PJSDASSnapshot, source: { kind: string; sourceId: string; sourceRecordId: string }, factKey: string | undefined) {
   if (!factKey) return false
   return (snapshot.data.semanticReceipts ?? []).some(receipt => receipt.sourceKind === source.kind && receipt.sourceId === source.sourceId && receipt.sourceRecordId === source.sourceRecordId
-    && receipt.factInvalidations?.some(item => item.factKey === factKey && item.invalidatedByReceiptId.startsWith('process-fact-correction:')))
+    && receipt.factInvalidations?.some(item => sameSemanticFactKey(snapshot, item.factKey, factKey) && item.invalidatedByReceiptId.startsWith('process-fact-correction:')))
 }
 
 const opportunityProjectionKeys = ['processStage', 'currentStageLabel', 'effectiveProcessEventId', 'effectiveProcessEventAt', 'locallyManaged'] as const
@@ -97,6 +98,7 @@ export interface ProcessProjectionUndo {
   processes: Array<{ id: string; before?: ProcessRecord; after: ProcessRecord }>
 }
 export function captureProcessProjectionUndo(before: PJSDASSnapshot, after: PJSDASSnapshot, opportunityId: string): ProcessProjectionUndo {
+  opportunityId = canonicalOpportunityId(after, opportunityId)
   return {
     opportunityId,
     opportunityBefore: projection(before.data.opportunities.find(item => item.id === opportunityId)!, opportunityProjectionKeys),

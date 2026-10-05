@@ -1,3 +1,5 @@
+import { dismissalSourceFingerprint } from './decisionDismissal.js'
+import { canonicalOpportunityId } from './opportunityCanonicalization.js'
 import type {
   DecisionRequest,
   IngestionLedgerEntry,
@@ -143,11 +145,36 @@ function semanticReceiptResolution(
       && item.status !== 'undone'
       && !(item.factInvalidations?.length))
 
+  const linkedRequests = (receipt: typeof sourceReceipts[number]) => receipt.decisionRequestIds
+    .map(id => snapshot.data.decisionRequests?.find(request => request.id === id))
+  const sameSource = (request: DecisionRequest, receipt: typeof sourceReceipts[number]) =>
+    request.payloadBinding.source.kind === receipt.sourceKind
+    && request.payloadBinding.source.sourceId === receipt.sourceId
+    && request.payloadBinding.source.sourceRecordId === receipt.sourceRecordId
+    && (request.payloadBinding.source.sourceVersion ?? '') === (receipt.sourceVersion ?? '')
+  const effectiveAt = (receipt: typeof sourceReceipts[number]) => linkedRequests(receipt)
+    .filter((request): request is DecisionRequest => Boolean(request && request.state === 'dismissed'
+      && sameSource(request, receipt) && dismissalSourceFingerprint(snapshot, request) === ingestion.fingerprint))
+    .reduce((at, request) => request.updatedAt > at ? request.updatedAt : at, receipt.updatedAt)
   const receipts = sourceReceipts
-    .filter((item) => item.updatedAt >= ingestion.accountedAt)
+    .filter((item) => effectiveAt(item) >= ingestion.accountedAt)
     .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
   const receipt = receipts[0]
   if (!receipt) return undefined
+
+  const linked = linkedRequests(receipt)
+  const requests = linked.filter((request): request is DecisionRequest => Boolean(request))
+  if (linked.some(request => !request || !sameSource(request, receipt))) {
+    return { outcome: 'active_unresolved', reason: 'semantic_decision_open', evidenceRefs: [receipt.id, ...receipt.decisionRequestIds] }
+  }
+  if (requests.some(request => request.state === 'dismissed')
+    && (ingestion.reason !== receipt.summary || ingestion.issueKinds?.some(kind => kind !== 'business_ambiguity')
+      || requests.some(request => request.state === 'dismissed'
+        && dismissalSourceFingerprint(snapshot, request) !== ingestion.fingerprint))) {
+    // Dismissing a bounded choice cannot erase a separate parsing/transport gap,
+    // or account for a different version of the source's content.
+    return { outcome: 'active_unresolved', reason: 'unlinked_unresolved', evidenceRefs: [receipt.id, ...requests.map(request => request.id)] }
+  }
 
   if (receipt.status === 'committed') {
     return {
@@ -165,15 +192,15 @@ function semanticReceiptResolution(
   }
   if (receipt.status !== 'decision_required') return undefined
 
-  const requests = receipt.decisionRequestIds
-    .map((id) => (snapshot.data.decisionRequests ?? []).find((item) => item.id === id))
-    .filter((item): item is DecisionRequest => Boolean(item))
   if (!requests.length || requests.some((item) => item.state === 'open' || item.state === 'expired')) {
     return {
       outcome: 'active_unresolved',
       reason: 'semantic_decision_open',
       evidenceRefs: [receipt.id, ...requests.map((item) => item.id)],
     }
+  }
+  if (requests.every(item => item.state === 'dismissed')) {
+    return { outcome: 'ignored', reason: 'semantic_decision_settled', evidenceRefs: [receipt.id, ...requests.map(item => item.id)] }
   }
   if (requests.every((item) => item.state === 'superseded')) {
     return {
@@ -182,7 +209,7 @@ function semanticReceiptResolution(
       evidenceRefs: [receipt.id, ...requests.map((item) => item.id)],
     }
   }
-  if (requests.every((item) => item.state === 'answered' || item.state === 'auto_resolved' || item.state === 'superseded')) {
+  if (requests.every((item) => item.state === 'answered' || item.state === 'auto_resolved' || item.state === 'superseded' || item.state === 'dismissed')) {
     return {
       outcome: 'resolved',
       reason: 'semantic_decision_settled',
@@ -286,8 +313,9 @@ function classifyUnresolved(
   }
 
   if (ingestion.opportunityId) {
-    const opportunity = snapshot.data.opportunities.find((item) => item.id === ingestion.opportunityId)
-    const process = snapshot.data.processes.find((item) => item.opportunityId === ingestion.opportunityId)
+    const resolvedOpportunityId = canonicalOpportunityId(snapshot, ingestion.opportunityId)
+    const opportunity = snapshot.data.opportunities.find((item) => item.id === resolvedOpportunityId)
+    const process = snapshot.data.processes.find((item) => item.opportunityId === resolvedOpportunityId)
     if (opportunity?.participationStatus === 'abandoned' || terminalProcess(process)) {
       return {
         outcome: 'historical_only',

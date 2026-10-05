@@ -68,6 +68,7 @@ import type {
   ImportMeta,
   DiscoveryInboxItem,
   Opportunity,
+  OpportunityAlias,
   Prep,
   ProcessEvent,
   ProcessRecord,
@@ -91,6 +92,7 @@ interface PJSDASDatabase extends DBSchema {
   commandInteractions: { key: string; value: CommandInteractionRecord; indexes: { 'by-account': string; 'by-account-state': [string, CommandInteractionRecord['state']] } }
   projectionDeltas: { key: number; value: { sequence?: number; accountKey: string; delta: WorkspaceDelta } }
   opportunities: { key: string; value: Opportunity }
+  opportunityAliases: { key: string; value: OpportunityAlias }
   processes: {
     key: string
     value: ProcessRecord
@@ -151,6 +153,7 @@ interface PJSDASDatabase extends DBSchema {
 
 const DATA_STORES = [
   'opportunities',
+  'opportunityAliases',
   'processes',
   'processEvents',
   'scheduleNodes',
@@ -169,7 +172,7 @@ const DATA_STORES = [
   'meta',
 ] as const
 
-export const dbPromise = openDB<PJSDASDatabase>('pjsdas', 13, {
+export const dbPromise = openDB<PJSDASDatabase>('pjsdas', 14, {
   upgrade(db, _oldVersion, _newVersion, upgradeTx) {
     if (!db.objectStoreNames.contains('commandInteractions')) {
       const store = db.createObjectStore('commandInteractions', { keyPath: 'id' }); store.createIndex('by-account', 'accountKey')
@@ -177,6 +180,7 @@ export const dbPromise = openDB<PJSDASDatabase>('pjsdas', 13, {
     const interactions = upgradeTx.objectStore('commandInteractions')
     if (!interactions.indexNames.contains('by-account-state')) interactions.createIndex('by-account-state', ['accountKey', 'state'])
     if (!db.objectStoreNames.contains('projectionDeltas')) db.createObjectStore('projectionDeltas', { keyPath: 'sequence', autoIncrement: true })
+    if (!db.objectStoreNames.contains('opportunityAliases')) db.createObjectStore('opportunityAliases', { keyPath: 'id' })
     if (!db.objectStoreNames.contains('opportunities')) {
       db.createObjectStore('opportunities', { keyPath: 'id' })
     }
@@ -488,9 +492,18 @@ export async function undoActionStatusChange(undo: ActionStatusUndo) {
   })
 }
 
+async function localCanonicalOpportunityId(tx: LocalSnapshotTransaction, id: string) {
+  const alias = await tx.objectStore('opportunityAliases').get(id)
+  if (!alias) return id
+  if (await tx.objectStore('opportunities').get(id) || await tx.objectStore('opportunityAliases').get(alias.canonicalOpportunityId)
+    || !await tx.objectStore('opportunities').get(alias.canonicalOpportunityId)) throw new Error('Invalid opportunity alias; refresh the authoritative workspace.')
+  return alias.canonicalOpportunityId
+}
+
 export async function addProcessEvent(event: ProcessEvent) {
   const db = await dbPromise
   return withTimelineMutation(db, async (tx) => {
+    event = { ...event, opportunityId: await localCanonicalOpportunityId(tx, event.opportunityId) }
     const [processes] = await Promise.all([tx.objectStore('processes').getAll()])
     const action = actionForProcessEvent(event)
     const process = processes.find((item) => item.opportunityId === event.opportunityId)
@@ -598,7 +611,8 @@ export async function applyProgressUpdate(operations: ProgressOperation[]) {
     const actionStore = tx.objectStore('actions')
     const timelineStore = tx.objectStore('timeline')
 
-    for (const operation of executable) {
+    for (const rawOperation of executable) {
+      const operation = 'opportunityId' in rawOperation ? { ...rawOperation, opportunityId: await localCanonicalOpportunityId(tx, rawOperation.opportunityId) } : rawOperation
       if (operation.kind === 'upsert_opportunity') {
         const existing = await opportunityStore.get(operation.opportunityId)
         const submitted = operation.mode === 'submitted'
@@ -805,7 +819,9 @@ async function applyDiscoveredOpportunityOperations(operations: DiscoveredChange
   return withTimelineMutation(db, async (tx) => {
     const existing = await tx.objectStore('opportunities').getAll()
     const existingIds = new Set(existing.map((item) => item.id))
-    const identities = new Set(existing.map((item) => opportunityIdentity(item.company, item.role)))
+    const aliases = await tx.objectStore('opportunityAliases').getAll()
+    const identities = new Set([...existing, ...aliases.map(alias => alias.originalOpportunity)].map((item) => opportunityIdentity(item.company, item.role)))
+    for (const alias of aliases) existingIds.add(alias.id)
     const batchIds = new Set<string>()
     const batchIdentities = new Set<string>()
 
@@ -967,9 +983,10 @@ export async function applyChangeSet(id: string): Promise<ChangeSetRecord & { ac
 type LocalSnapshotTransaction = IDBPTransaction<PJSDASDatabase, (typeof DATA_STORES)[number][], 'readonly' | 'readwrite'>
 
 async function readLocalSnapshotData(tx: LocalSnapshotTransaction) {
-  const [opportunities, processes, processEvents, scheduleNodes, decisionRequests, semanticReceipts, reminderIntents, reminderOutbox, actions, prep, applicationGroups, decisionRules, discoveryProfile, discoveryInbox, timeline, changeSets, meta, timePlanning] =
+  const [opportunities, opportunityAliases, processes, processEvents, scheduleNodes, decisionRequests, semanticReceipts, reminderIntents, reminderOutbox, actions, prep, applicationGroups, decisionRules, discoveryProfile, discoveryInbox, timeline, changeSets, meta, timePlanning] =
     await Promise.all([
       tx.objectStore('opportunities').getAll(),
+      tx.objectStore('opportunityAliases').getAll(),
       tx.objectStore('processes').getAll(),
       tx.objectStore('processEvents').getAll(),
       tx.objectStore('scheduleNodes').getAll(),
@@ -1008,6 +1025,7 @@ async function readLocalSnapshotData(tx: LocalSnapshotTransaction) {
 
   return {
     opportunities,
+    ...(opportunityAliases.length ? { opportunityAliases } : {}),
     processes,
     processEvents,
     scheduleNodes,
@@ -1080,6 +1098,14 @@ async function withTimelineMutation<T>(
   try {
     if (!baselineAfterMutation) await materializeBaseline()
     const result = await mutate(tx)
+    // Once aliases exist, every local write must retain the canonical identity invariant.
+    // This runs in the same transaction and aborts, rather than committing latent corruption.
+    if (await tx.objectStore('opportunityAliases').count()) {
+      const after = await readLocalSnapshot(tx)
+      const aliases = new Set(after.data.opportunityAliases!.map(alias => alias.id))
+      if ([...after.data.processes, ...after.data.processEvents, ...after.data.actions, ...(after.data.scheduleNodes ?? [])]
+        .some(item => item.opportunityId && aliases.has(item.opportunityId))) throw new Error('Local write references a merged opportunity; refresh the canonical target.')
+    }
     if (baselineAfterMutation) await materializeBaseline()
     await tx.done
     return result
@@ -1158,6 +1184,7 @@ export async function replaceLocalSnapshotFromCloud(snapshot: PJSDASSnapshot, gu
     await tx.objectStore('projectionDeltas').clear()
 
     for (const item of latest.data.opportunities) await tx.objectStore('opportunities').put(item)
+    for (const item of latest.data.opportunityAliases ?? []) await tx.objectStore('opportunityAliases').put(item)
     for (const item of latest.data.processes) await tx.objectStore('processes').put(item)
     for (const item of latest.data.processEvents) await tx.objectStore('processEvents').put(item)
     for (const item of latest.data.scheduleNodes ?? []) await tx.objectStore('scheduleNodes').put(item)
@@ -1221,6 +1248,7 @@ export async function restoreLocalSnapshot(snapshot: PJSDASSnapshot) {
   await Promise.all(DATA_STORES.map((storeName) => tx.objectStore(storeName).clear()))
 
   for (const item of latest.data.opportunities) await tx.objectStore('opportunities').put(item)
+    for (const item of latest.data.opportunityAliases ?? []) await tx.objectStore('opportunityAliases').put(item)
   for (const item of latest.data.processes) await tx.objectStore('processes').put(item)
   for (const item of latest.data.processEvents) await tx.objectStore('processEvents').put(item)
   for (const item of latest.data.scheduleNodes ?? []) await tx.objectStore('scheduleNodes').put(item)
@@ -1268,6 +1296,7 @@ export async function replaceImportedData(bundle: ImportBundle) {
 
   const db = await dbPromise
   return withTimelineMutation(db, async (tx) => {
+    if (await tx.objectStore('opportunityAliases').count()) throw new Error('Imported data must be reconciled with existing canonical opportunity aliases before replacement.')
     const [previousActions, previousOpportunities, previousProcesses, processEvents, previousScheduleNodes] = await Promise.all([
       tx.objectStore('actions').getAll(),
       tx.objectStore('opportunities').getAll(),

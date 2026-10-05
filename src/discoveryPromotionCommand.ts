@@ -1,3 +1,4 @@
+import { canonicalOpportunityId } from './opportunityCanonicalization.js'
 import { createInboxPromotionChangeSet, discoveryInboxDecisionTimeline } from './discoveryInbox.js'
 import { findSimilarOpportunity } from './discoveryQuality.js'
 import { upgradeSnapshotToLatest, validateSnapshot, type PJSDASSnapshot } from './snapshot.js'
@@ -14,7 +15,7 @@ export function applyDiscoveryPromotionCommand(snapshot: PJSDASSnapshot, command
   if (previous.status === 'promoted') {
     return { status: 'ALREADY_APPLIED' as const, changed: false, snapshot: next, summary: 'Job already promoted.' }
   }
-  const existing = next.data.opportunities.find((item) => item.id === previous.candidateOpportunityId)
+  const existing = next.data.opportunities.find((item) => item.id === canonicalOpportunityId(next, previous.candidateOpportunityId))
     ?? findSimilarOpportunity({ company: previous.company, role: previous.role }, next.data.opportunities)
   let promotedOpportunityId = existing?.id
   let createdOpportunityId: string | undefined
@@ -37,6 +38,7 @@ export function applyDiscoveryPromotionCommand(snapshot: PJSDASSnapshot, command
       opportunityId: opportunity.id, actionId, changeSetId: applied.id,
       company: opportunity.company, role: opportunity.role, sourceRef: opportunity.detail?.discovery?.sourceUrl,
     }
+    if ((next.data.opportunityAliases ?? []).some(alias => alias.id === opportunity.id)) throw new Error('An aliased opportunity cannot be recreated.')
     next.data.opportunities.push(opportunity)
     next.data.actions.push({
       id: actionId, kind: 'apply', title: `投递 ${opportunity.company}｜${opportunity.role}`,

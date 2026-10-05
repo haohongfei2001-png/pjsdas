@@ -1,3 +1,6 @@
+import { invalidateLegacyProcessEvent } from '../src/legacyProcessCorrection.js'
+import { dismissSemanticDecision } from '../src/decisionDismissal.js'
+import { applyOpportunityMerge, opportunityMergeSchema } from '../src/opportunityMerge.js'
 import type { CallToolResult } from '@modelcontextprotocol/server'
 import * as z from 'zod/v4'
 import { applyUserDomainCommand, type UserDomainCommand } from '../src/domainCommands.js'
@@ -27,7 +30,16 @@ const scheduleTemporal = z.object({
   legacyProjectionAt: z.string().trim().max(100).optional(),
 }).strict()
 
+const repairRevision = z.string().regex(/^txn:\d+$/)
+const evidenceRefs = z.array(z.string().trim().min(1).max(1000)).min(1).max(20)
 export const applyUserCommandSchema = z.discriminatedUnion('kind', [
+  z.object({ commandId, kind: z.literal('invalidate_legacy_process_event'), expectedWorkspaceVersion: repairRevision,
+    eventId: z.string().trim().min(1).max(240), expectedEventFingerprint: z.string().regex(/^[a-f0-9]{64}$/),
+    sourceRefs: evidenceRefs, reason: z.string().trim().min(1).max(800), evidenceRefs }).strict(),
+  z.object({ commandId, kind: z.literal('dismiss_semantic_decision'), expectedWorkspaceVersion: repairRevision,
+    requestId: z.string().trim().min(1).max(240), expectedRequestUpdatedAt: isoString, expectedFingerprint: z.string().regex(/^[a-f0-9]{64}$/),
+    reason: z.string().trim().min(1).max(800), evidenceRefs }).strict(),
+  z.object({ ...opportunityMergeSchema.shape, commandId, kind: z.literal('merge_opportunities'), expectedWorkspaceVersion: repairRevision }).strict(),
   z.object({ commandId, kind: z.literal('record_application_submission'), opportunityId, occurredAt: isoString.optional() }).strict(),
   z.object({
     commandId,
@@ -105,9 +117,16 @@ function errorResult(caught: unknown): CallToolResult {
 
 export async function invokeApplyUserCommand(source: WorkspaceSource, rawArgs: unknown): Promise<CallToolResult> {
   try {
-    const command = applyUserCommandSchema.parse(rawArgs) as UserDomainCommand
+    const command = applyUserCommandSchema.parse(rawArgs)
     const workspace = await source.read()
-    const applied = applyUserDomainCommand(workspace.snapshot, command, workspace.context.now ?? new Date())
+    const now = workspace.context.now ?? new Date()
+    const applied = command.kind === 'invalidate_legacy_process_event'
+      ? await invalidateLegacyProcessEvent(workspace.snapshot, command, now)
+      : command.kind === 'dismiss_semantic_decision'
+        ? await dismissSemanticDecision(workspace.snapshot, command, now)
+        : command.kind === 'merge_opportunities'
+          ? await applyOpportunityMerge(workspace.snapshot, (({ commandId: _id, kind: _kind, expectedWorkspaceVersion: _version, ...input }) => input)(command), command.commandId, now)
+          : applyUserDomainCommand(workspace.snapshot, command as UserDomainCommand, now)
 
     if (applied.status === 'NEEDS_CONFIRMATION') {
       return result({
@@ -130,6 +149,9 @@ export async function invokeApplyUserCommand(source: WorkspaceSource, rawArgs: u
       })
     }
 
+    if ('expectedWorkspaceVersion' in command && workspace.context.workspaceVersion !== command.expectedWorkspaceVersion) {
+      throw new WorkspaceSourceError('CONFLICT', 'Workspace revision changed since repair review; read it again before applying.', false)
+    }
     const writable = requireWritableWorkspaceSource(source)
     const payloadHash = await hashMutationPayload(command.kind, command)
     const written = await writable.write({
@@ -141,7 +163,7 @@ export async function invokeApplyUserCommand(source: WorkspaceSource, rawArgs: u
         operation: command.kind,
         payload: command,
         payloadHash,
-        compensation: applied.compensation,
+        compensation: 'compensation' in applied ? applied.compensation as unknown as Record<string, unknown> : undefined,
         provenance: { channel: 'mcp-explicit-user-command' },
         effectiveTime: 'occurredAt' in command && command.occurredAt ? command.occurredAt : undefined,
       },

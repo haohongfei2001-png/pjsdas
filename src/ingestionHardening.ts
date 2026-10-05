@@ -1,3 +1,4 @@
+import { canonicalOpportunityId, resolveCanonicalPostingIdentity } from './opportunityCanonicalization.js'
 import {
   applyGmailIngestion,
   applyMonitorIngestion,
@@ -160,7 +161,7 @@ export function applyMonitorIngestionHardened(snapshot: PJSDASSnapshot, input: H
   const unverifiedIds = new Set(unverified.map((item) => item.sourceRecordId))
   const ambiguous = normalizedInput.observations.filter((item) =>
     !unverifiedIds.has(item.sourceRecordId) &&
-    monitorObservationIsAmbiguous(item, snapshot.data.opportunities),
+    resolveCanonicalPostingIdentity(snapshot, item).kind === 'ambiguous',
   )
   const ambiguousIds = new Set(ambiguous.map((item) => item.sourceRecordId))
 
@@ -172,7 +173,7 @@ export function applyMonitorIngestionHardened(snapshot: PJSDASSnapshot, input: H
     const receivedAt = observation.discoveredAt ?? normalizedInput.completedAt
     if (unverifiedIds.has(observation.sourceRecordId) || ambiguousIds.has(observation.sourceRecordId)) return false
     if (!observation.sourceRecordId.trim() || !observation.company.trim() || !observation.role.trim() || !validIso(receivedAt)) return false
-    return resolveOpportunityPostingIdentity(observation, snapshot.data.opportunities).kind === 'same_posting'
+    return resolveCanonicalPostingIdentity(snapshot, observation).kind === 'same_posting'
   })
   const existingIds = new Set(existingRefreshes.map((item) => item.sourceRecordId))
   const baseObservations = normalizedInput.observations.filter((item) =>
@@ -237,10 +238,10 @@ export function applyMonitorIngestionHardened(snapshot: PJSDASSnapshot, input: H
     )
     let outcome: 'merged' | 'duplicate' | 'unresolved' = duplicate ? 'duplicate' : 'unresolved'
     let reason = duplicate ? `来源记录 ${observation.sourceRecordId} 的当前事实已在先前 run 对账。` : undefined
-    let opportunityId = duplicate ? previous?.ingestion?.opportunityId : undefined
+    let opportunityId = duplicate && previous?.ingestion?.opportunityId ? canonicalOpportunityId(next, previous.ingestion.opportunityId) : undefined
 
     if (!duplicate) {
-      const identity = resolveOpportunityPostingIdentity(observation, next.data.opportunities)
+      const identity = resolveCanonicalPostingIdentity(next, observation)
       if (identity.kind !== 'same_posting') {
         reason = identity.kind === 'ambiguous'
           ? '现有相似岗位缺少足够 posting identity；已保留为 unresolved。'
@@ -290,7 +291,7 @@ export function applyMonitorIngestionHardened(snapshot: PJSDASSnapshot, input: H
       reason: observation.sourceVerificationReason?.trim()
         ? `公开来源尚未通过独立核验：${observation.sourceVerificationReason.trim().slice(0, 500)}`
         : '公开来源尚未通过独立核验；模型输出不会自动升级为 TodayAction 来源事实。',
-      opportunityId: previous?.ingestion?.opportunityId,
+      opportunityId: previous?.ingestion?.opportunityId ? canonicalOpportunityId(next, previous.ingestion.opportunityId) : undefined,
       company: observation.company,
       role: observation.role,
       sourceRef: observation.sourceUrl,
@@ -312,7 +313,7 @@ export function applyMonitorIngestionHardened(snapshot: PJSDASSnapshot, input: H
       runId: normalizedInput.runId, recordType: 'job_observation', outcome: duplicate ? 'duplicate' : 'unresolved',
       fingerprint: currentFingerprint, receivedAt: observation.discoveredAt ?? normalizedInput.completedAt, accountedAt: normalizedInput.completedAt,
       reason: duplicate ? `来源记录 ${observation.sourceRecordId} 的当前事实已在先前 run 对账。` : '同一公司存在多个高度相似的现有 Opportunity；为避免错误归并，本次自动摄入停止并保留为 unresolved。',
-      opportunityId: duplicate ? previous?.ingestion?.opportunityId : undefined,
+      opportunityId: duplicate && previous?.ingestion?.opportunityId ? canonicalOpportunityId(next, previous.ingestion.opportunityId) : undefined,
       company: observation.company, role: observation.role, sourceRef: observation.sourceUrl,
     })
     records.push(record)
