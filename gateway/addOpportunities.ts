@@ -1,7 +1,8 @@
+import { resolveCanonicalPostingIdentity } from '../src/opportunityCanonicalization.js'
 import type { CallToolResult } from '@modelcontextprotocol/server'
 import { z } from 'zod'
 import { stableIngestionHash } from '../src/ingestion.js'
-import { createJobPostingEvidence, jobIdentityKey, resolveOpportunityPostingIdentity } from '../src/jobPosting.js'
+import { createJobPostingEvidence, jobIdentityKey } from '../src/jobPosting.js'
 import type { Action, DiscoveryConfidence, Opportunity, TimelineRecord } from '../src/model.js'
 import { validateSnapshot, type PJSDASSnapshot } from '../src/snapshot.js'
 import {
@@ -175,7 +176,7 @@ export async function invokeAddOpportunities(source: WorkspaceSource, rawArgs: u
     const ambiguities: Array<{ company: string; role: string; canonicalSourceUrl: string; candidateOpportunityIds: string[]; reason: string }> = []
 
     for (const candidate of args.opportunities) {
-      const identity = resolveOpportunityPostingIdentity(candidate, next.data.opportunities)
+      const identity = resolveCanonicalPostingIdentity(next, candidate)
       if (identity.kind === 'same_posting') {
         const existing = identity.opportunity
         duplicates.push({
@@ -199,6 +200,7 @@ export async function invokeAddOpportunities(source: WorkspaceSource, rawArgs: u
       }
 
       const opportunity = buildOpportunity(candidate, now)
+      if ((next.data.opportunityAliases ?? []).some(alias => alias.id === opportunity.id)) throw new Error('An aliased opportunity cannot be recreated.')
       next.data.opportunities.push(opportunity)
       next.data.actions.push(applyAction(opportunity, nowIso))
       next.data.timeline = [...(next.data.timeline ?? []), timelineRecord(opportunity, nowIso)]

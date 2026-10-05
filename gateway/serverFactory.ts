@@ -316,9 +316,9 @@ export function createPjsdasMcpServer(
 
   server.registerTool('get_workspace_integrity', {
     title: 'Audit TodayAction workspace integrity',
-    description: 'Read-only structural audit for duplicate opportunities/postings, orphan events/actions, missing process actions, closed-process active tasks, and expired not-applied opportunities. Never repairs data.',
+    description: 'Read-only structural audit for duplicate opportunities/postings, orphan events/actions, missing process actions, closed-process active tasks, and expired not-applied opportunities. Never repairs data. Optional review returns exact legacy-event, decision-request, or merge fingerprints and dependency evidence for a separately explicit repair.',
     inputSchema: getWorkspaceIntegritySchema, annotations: readOnlyAnnotations,
-  }, async () => invokeWorkspaceIntegrity(source))
+  }, async (args) => invokeWorkspaceIntegrity(source, args))
 
   server.registerTool('explain_priority', {
     title: 'Explain TodayAction priority',
@@ -426,7 +426,7 @@ export function createPjsdasMcpServer(
   if (explicitUserCommandMode === 'enabled') {
     server.registerTool('apply_user_command', {
       title: 'Apply one explicit TodayAction user command',
-      description: 'Directly commit one bounded, explicit, low-risk user command against an exact TodayAction target. Ambiguous targets must be clarified in the AI conversation before calling this tool; governed/high-impact changes remain review-only.',
+      description: 'Directly commit one bounded, explicit, low-risk user command against an exact TodayAction target. Ambiguous targets must be clarified in the AI conversation before calling this tool; governed/high-impact changes remain review-only. Repairs require a current get_workspace_integrity review and exact txn revision: invalidate_legacy_process_event is limited to receipt-less evidence, dismiss_semantic_decision never executes its candidate, and merge_opportunities requires positive identity evidence.',
       inputSchema: applyUserCommandSchema, annotations: directWriteAnnotations,
     }, async (args) => invokeApplyUserCommand(source, args))
   }

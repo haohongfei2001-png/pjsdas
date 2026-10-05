@@ -1,3 +1,4 @@
+import { canonicalOpportunityId, resolveCanonicalPostingIdentity } from './opportunityCanonicalization.js'
 import { decisionRulesForSnapshot } from './decisionRules.js'
 import { discoveryProfileForSnapshot } from './discoveryProfile.js'
 import { evaluateDiscoveryCandidate, findSimilarOpportunity } from './discoveryQuality.js'
@@ -5,7 +6,6 @@ import {
   createJobPostingEvidence,
   jobIdentityKey,
   mergeJobPostingEvidence,
-  resolveOpportunityPostingIdentity,
 } from './jobPosting.js'
 import {
   alreadyIngested,
@@ -324,7 +324,7 @@ export function applyMonitorIngestion(
       reason = '缺少稳定来源 ID、公司、岗位或有效发现时间。'
     } else if (prior?.ingestion?.outcome && prior.ingestion.outcome !== 'unresolved') {
       outcome = 'duplicate'
-      opportunityId = prior.ingestion.opportunityId
+      opportunityId = prior.ingestion.opportunityId ? canonicalOpportunityId(next, prior.ingestion.opportunityId) : undefined
       reason = `来源记录 ${observation.sourceRecordId} 已在先前 run 对账。`
     } else {
       try {
@@ -336,7 +336,7 @@ export function applyMonitorIngestion(
           outcome = 'filtered'
           reason = evaluated.hardRejectReasons.join('；')
         } else {
-          const identity = resolveOpportunityPostingIdentity(observation, next.data.opportunities)
+          const identity = resolveCanonicalPostingIdentity(next, observation)
           if (identity.kind === 'same_posting') {
             const existing = identity.opportunity
             const merged = mergeMonitorObservation(existing, observation, receivedAt)
@@ -350,6 +350,7 @@ export function applyMonitorIngestion(
             reason = '存在标题相似但缺少足够 posting identity 的历史 Opportunity；为避免错误归并，本次自动摄入保留为 unresolved。'
           } else {
             const opportunity = createMonitorOpportunity(observation, receivedAt)
+            if ((next.data.opportunityAliases ?? []).some(alias => alias.id === opportunity.id)) throw new Error('An aliased opportunity cannot be recreated.')
             next.data.opportunities.push(opportunity)
             next.data.actions.push(applyActionForNewOpportunity(opportunity, receivedAt))
             opportunityId = opportunity.id
@@ -517,7 +518,7 @@ export function applyGmailIngestion(
       reason = 'Gmail message 缺少稳定 message id 或有效 receivedAt。'
     } else if (prior?.ingestion?.outcome && prior.ingestion.outcome !== 'unresolved') {
       outcome = 'duplicate'
-      opportunityId = prior.ingestion.opportunityId
+      opportunityId = prior.ingestion.opportunityId ? canonicalOpportunityId(next, prior.ingestion.opportunityId) : undefined
       processEventId = prior.ingestion.processEventId
       actionId = prior.ingestion.actionId
       reason = `Gmail message ${message.sourceRecordId} 已在先前 run 对账。`
@@ -532,6 +533,7 @@ export function applyGmailIngestion(
       let created = false
       if (!opportunity) {
         opportunity = createGmailShellOpportunity(message)
+        if ((next.data.opportunityAliases ?? []).some(alias => alias.id === opportunity!.id)) throw new Error('An aliased opportunity cannot be recreated.')
         next.data.opportunities.push(opportunity)
         createdOpportunityIds.push(opportunity.id)
         created = true

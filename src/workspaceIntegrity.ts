@@ -136,6 +136,13 @@ export function auditWorkspaceIntegrity(snapshot: PJSDASSnapshot, now = new Date
   }
 
   for (const event of processEvents) {
+    // A reviewed tombstone remains inspectable history, not an active dangling fact.
+    // A random invalidation-shaped object is not sufficient to hide corruption.
+    const correction = event.invalidation
+    const auditedTombstone = correction?.legacyReview && (snapshot.data.semanticReceipts ?? []).some(receipt =>
+      receipt.id === correction.receiptId && receipt.status === 'committed' && receipt.sourceId === 'explicit-legacy-review'
+      && receipt.commandId === correction.commandId && receipt.affectedObjects.some(ref => ref.type === 'process_event' && ref.id === event.id))
+    if (auditedTombstone) continue
     if (!opportunityById.has(event.opportunityId)) {
       issues.push({
         code: 'orphan_process_event', severity: 'critical', title: '流程事件缺少所属 Opportunity',

@@ -1,3 +1,4 @@
+import { canonicalOpportunityId } from './opportunityCanonicalization.js'
 import { applicationDeadlineFingerprint, applicationDeadlineNodes } from './applicationDeadline.js'
 import { correctApplicationDeadline, type CorrectApplicationDeadlineCommand } from './deadlineCorrection.js'
 import { captureProcessProjectionUndo, restoreProcessProjection, invalidateProcessFact, type InvalidateProcessEventCommand } from './processFactCorrection.js'
@@ -140,7 +141,7 @@ function assertIso(value: string, label: string) {
 }
 
 function opportunity(next: PJSDASSnapshot, id: string) {
-  return next.data.opportunities.find((item) => item.id === id)
+  return next.data.opportunities.find((item) => item.id === canonicalOpportunityId(next, id))
 }
 
 function action(next: PJSDASSnapshot, id: string) {
@@ -324,12 +325,12 @@ export function applyUserDomainCommand(
   if (!command.commandId.trim()) throw new Error('commandId is required.')
   if (commandAlreadyApplied(snapshot, command.commandId)) {
     if (command.kind === 'invalidate_process_event') {
-      const event = snapshot.data.processEvents.find(item => item.id === command.eventId && item.opportunityId === command.opportunityId)
+      const event = snapshot.data.processEvents.find(item => item.id === command.eventId && item.opportunityId === canonicalOpportunityId(snapshot, command.opportunityId))
       const correction = event?.invalidation
       if (!correction || correction.commandId !== command.commandId || correction.sourceReceiptId !== command.receiptId || event?.updatedAt !== command.expectedEventUpdatedAt || correction.reason !== command.reason || JSON.stringify(correction.evidenceRefs) !== JSON.stringify(command.evidenceRefs)) throw new Error('Correction command ID was reused with a different payload.')
     }
     if (command.kind === 'correct_application_deadline') {
-      const correction = snapshot.data.opportunities.find(item => item.id === command.opportunityId)?.detail?.deadlineCorrections?.find(item => item.commandId === command.commandId)
+      const correction = snapshot.data.opportunities.find(item => item.id === canonicalOpportunityId(snapshot, command.opportunityId))?.detail?.deadlineCorrections?.find(item => item.commandId === command.commandId)
       if (!correction || Object.entries(command.correction).some(([key, value]) => correction[key as keyof typeof correction] !== value)) throw new Error('Correction command ID was reused with a different payload.')
     }
     return { status: 'ALREADY_APPLIED', snapshot, summary: `Command ${command.commandId} is already recorded.` }

@@ -278,7 +278,7 @@ export type DecisionRequestReason =
   | 'missing_required_field'
   | 'target_abandoned'
 
-export type DecisionRequestState = 'open' | 'answered' | 'auto_resolved' | 'superseded' | 'expired'
+export type DecisionRequestState = 'open' | 'answered' | 'auto_resolved' | 'superseded' | 'expired' | 'dismissed'
 
 export interface SemanticResolutionTarget {
   opportunityId?: string
@@ -296,6 +296,7 @@ export interface DecisionRequestChoice {
 }
 
 export interface DecisionRequestPayloadBinding {
+  originalTextFingerprint?: string
   contractVersion: 1
   inputId: string
   candidateId: string
@@ -305,6 +306,7 @@ export interface DecisionRequestPayloadBinding {
 }
 
 export interface DecisionRequest {
+  dismissal?: { commandId: string; dismissedAt: string; reason: string; evidenceRefs: string[]; expectedRequestUpdatedAt: string; expectedFingerprint: string }
   id: string
   reason: DecisionRequestReason
   affectedObjects: Array<{ type: 'opportunity' | 'schedule_node' | 'application_group' | 'source' | 'reminder_intent'; id: string }>
@@ -803,12 +805,22 @@ export interface ProcessRecord {
   locallyManaged?: boolean
 }
 
+export interface OpportunityAlias {
+  payloadFingerprint?: string
+  id: string
+  canonicalOpportunityId: string
+  commandId: string
+  mergedAt: string
+  originalOpportunity: Opportunity
+}
+
 export interface ProcessEvent {
   /** Original fact retained for audit; invalidated evidence cannot drive state. */
   invalidation?: {
     commandId: string
     receiptId: string
-    sourceReceiptId: string
+    sourceReceiptId?: string
+    legacyReview?: { expectedEventFingerprint: string; sourceRefs: string[] }
     invalidatedAt: string
     reason: string
     evidenceRefs: string[]

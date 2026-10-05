@@ -83,6 +83,7 @@ function closure(snapshot: PJSDASSnapshot, opportunityId: string) {
   return { dependencies, refs, nodes, reminders, processIds, eventIds, actionIds }
 }
 function assertArchiveClosure(snapshot: PJSDASSnapshot, opportunityId: string, selected: ReturnType<typeof closure>) {
+  if ((snapshot.data.opportunityAliases ?? []).some(alias => alias.canonicalOpportunityId === opportunityId)) throw new OpportunityManagementError('REFERENCE_IN_USE', 'Merged source aliases still depend on this canonical opportunity; reconcile or undo the merge before archive.')
   if (selected.refs.length > 2500) throw new OpportunityManagementError('REFERENCE_IN_USE', 'This aggregate exceeds the bounded archive limit.')
   const opportunity = snapshot.data.opportunities.find(item => item.id === opportunityId)
   const crossesEventOwnership = (eventId: string | undefined, belongs: boolean) => Boolean(eventId) && selected.eventIds.has(eventId!) !== belongs

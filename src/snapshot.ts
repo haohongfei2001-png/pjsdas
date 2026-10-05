@@ -10,6 +10,7 @@ import type {
   IngestionRunSummary,
   GmailReconciliationProof,
   Opportunity,
+  OpportunityAlias,
   Prep,
   ProcessEvent,
   ProcessRecord,
@@ -38,6 +39,7 @@ export const LEGACY_SNAPSHOT_VERSION = 1 as const
 
 export interface SnapshotData {
   opportunities: Opportunity[]
+  opportunityAliases?: OpportunityAlias[]
   processes: ProcessRecord[]
   processEvents: ProcessEvent[]
   actions: Action[]
@@ -334,6 +336,7 @@ export function validateSnapshot(value: unknown): asserts value is PJSDASSnapsho
   assertArray(data.processEvents, 'processEvents')
   assertArray(data.actions, 'actions')
   if (data.scheduleNodes !== undefined) assertArray(data.scheduleNodes, 'scheduleNodes')
+  if (data.opportunityAliases !== undefined) assertArray(data.opportunityAliases, 'opportunityAliases')
   if (data.decisionRequests !== undefined) assertArray(data.decisionRequests, 'decisionRequests')
   if (data.semanticReceipts !== undefined) assertArray(data.semanticReceipts, 'semanticReceipts')
   if (data.reminderIntents !== undefined) assertArray(data.reminderIntents, 'reminderIntents')
@@ -408,7 +411,7 @@ export function validateSnapshot(value: unknown): asserts value is PJSDASSnapsho
     if (errors.length) throw new Error(`备份损坏：发现箱条目无效（${errors[0]}）`)
   }
 
-  for (const raw of data.opportunities) {
+  for (const raw of [...data.opportunities, ...(data.opportunityAliases as OpportunityAlias[] | undefined ?? []).map(alias => alias.originalOpportunity)]) {
     const opportunity = raw as Opportunity
     if (!opportunity.company?.trim() || !opportunity.role?.trim()) {
       throw new Error(`备份损坏：岗位 ${opportunity.id} 缺少公司或岗位名称。`)
@@ -452,6 +455,17 @@ export function validateSnapshot(value: unknown): asserts value is PJSDASSnapsho
     }
   }
 
+  if (data.opportunityAliases) {
+    const aliasIds = assertUniqueIds(data.opportunityAliases, 'Opportunity Alias')
+    for (const alias of data.opportunityAliases as OpportunityAlias[]) {
+      if (!alias.commandId?.trim() || !alias.originalOpportunity || alias.originalOpportunity.id !== alias.id
+        || opportunityIds.has(alias.id) || !opportunityIds.has(alias.canonicalOpportunityId) || aliasIds.has(alias.canonicalOpportunityId)) throw new Error('Invalid or conflicting Opportunity alias.')
+      assertIsoDate(alias.mergedAt, 'Opportunity alias mergedAt')
+      assertIsoDate(alias.originalOpportunity.importedAt, 'Opportunity alias importedAt')
+      if (alias.payloadFingerprint !== undefined && !/^[a-f0-9]{64}$/.test(alias.payloadFingerprint)) throw new Error('Invalid alias payload fingerprint.')
+    }
+  }
+
   for (const raw of data.processEvents) {
     const event = raw as ProcessEvent
     if (!event.opportunityId?.trim() || !event.company?.trim() || !event.role?.trim()) {
@@ -461,7 +475,7 @@ export function validateSnapshot(value: unknown): asserts value is PJSDASSnapsho
     if (event.dueAt) assertIsoDate(event.dueAt, `流程事件 ${event.id} 的 dueAt`)
     if (event.invalidation) {
       const correction = event.invalidation
-      if (!correction.commandId?.trim() || !correction.reason?.trim() || !semanticReceiptIds.has(correction.receiptId) || !semanticReceiptIds.has(correction.sourceReceiptId)
+      if (!correction.commandId?.trim() || !correction.reason?.trim() || !semanticReceiptIds.has(correction.receiptId) || !(correction.sourceReceiptId && semanticReceiptIds.has(correction.sourceReceiptId) && !correction.legacyReview || !correction.sourceReceiptId && correction.legacyReview && /^[a-f0-9]{64}$/.test(correction.legacyReview.expectedEventFingerprint) && Array.isArray(correction.legacyReview.sourceRefs) && correction.legacyReview.sourceRefs.length > 0 && correction.legacyReview.sourceRefs.every(ref => typeof ref === 'string' && Boolean(ref.trim())))
         || !Array.isArray(correction.evidenceRefs) || !correction.evidenceRefs.length || correction.evidenceRefs.some(ref => typeof ref !== 'string' || !ref.trim())) throw new Error(`备份损坏：流程事件 ${event.id} 的更正依据无效。`)
       assertIsoDate(correction.invalidatedAt, `流程事件 ${event.id} 的 invalidatedAt`)
     }
@@ -512,7 +526,7 @@ export function validateSnapshot(value: unknown): asserts value is PJSDASSnapsho
   }
 
   if (data.decisionRequests) {
-    const states = new Set(['open', 'answered', 'auto_resolved', 'superseded', 'expired'])
+    const states = new Set(['open', 'answered', 'auto_resolved', 'superseded', 'expired', 'dismissed'])
     const reasons = new Set(['ambiguous_target', 'ambiguous_occurrence', 'low_confidence', 'material_conflict', 'shared_governance', 'external_consequence', 'missing_required_field', 'target_abandoned'])
     for (const raw of data.decisionRequests) {
       const request = raw as DecisionRequest
@@ -534,6 +548,13 @@ export function validateSnapshot(value: unknown): asserts value is PJSDASSnapsho
       }
       assertIsoDate(request.createdAt, `DecisionRequest ${request.id} createdAt`)
       assertIsoDate(request.updatedAt, `DecisionRequest ${request.id} updatedAt`)
+      if (request.state === 'dismissed' || request.dismissal) {
+        const d = request.dismissal
+        if (request.state !== 'dismissed' || !d?.commandId?.trim() || !d.reason?.trim() || !/^[a-f0-9]{64}$/.test(d.expectedFingerprint)
+          || !Array.isArray(d.evidenceRefs) || !d.evidenceRefs.length || d.evidenceRefs.some(ref => typeof ref !== 'string' || !ref.trim())) throw new Error('Invalid DecisionRequest dismissal audit.')
+        assertIsoDate(d.dismissedAt, 'DecisionRequest dismissedAt')
+        assertIsoDate(d.expectedRequestUpdatedAt, 'DecisionRequest expectedRequestUpdatedAt')
+      }
       if (request.expiresAt) assertIsoDate(request.expiresAt, `DecisionRequest ${request.id} expiresAt`)
       if (request.answeredAt) assertIsoDate(request.answeredAt, `DecisionRequest ${request.id} answeredAt`)
     }

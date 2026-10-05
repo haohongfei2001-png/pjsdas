@@ -7,7 +7,7 @@ import {
   type GmailReconciliationContinuationState,
 } from './gmailReconciliationState.js'
 import { resolveSourceTemporal } from '../src/sourceTemporal.js'
-import { parseRecruitingNotification } from '../src/notificationParser.js'
+import { notificationIdentityCanInherit, notificationIdentityCompatible, notificationIdentityText, parseRecruitingNotification } from '../src/notificationParser.js'
 import { stageForProcessEvent } from '../src/processEvents.js'
 import {
   applyGmailIngestionHardened,
@@ -1055,7 +1055,7 @@ export function gmailSemanticRecordFromMessage(
   if (/https?:\/\//i.test(text)) capabilityBoundaries.push('Linked pages are NOT_SUPPORTED; no link is opened or treated as verified source content.')
   if (body.length >= 12_000) interpretationGaps.push('Message exceeds the bounded body limit; remaining content was not interpreted.')
   const nonAssertion = !text && current.quoted || /^(?:示例|假设|假如|hypothetical|for example)\b/i.test(text)
-  const allPieces = text.split(/[；;。\n]+/).map((item) => item.trim()).filter(Boolean)
+  const allPieces = text.replace(/https?:\/\/[^\s<>]+/gi, url => url.replaceAll(';', '%3B').replaceAll('；', '%3B')).split(/[；;。\n]+/).map((item) => item.trim()).filter(Boolean)
   const boundedPieces = allPieces.slice(0, GMAIL_FRAGMENT_PARSE_LIMIT)
   if (allPieces.length > GMAIL_FRAGMENT_PARSE_LIMIT) {
     interpretationGaps.push(`Message exceeds the bounded ${GMAIL_FRAGMENT_PARSE_LIMIT}-fragment interpretation limit.`)
@@ -1063,6 +1063,7 @@ export function gmailSemanticRecordFromMessage(
   const parsedAt = new Date(legacy.receivedAt)
   const assertionText = boundedPieces.filter(piece => !recruitingInstructionOnly(piece)).join('；')
   const whole = parseRecruitingNotification([subject, assertionText].join('\n'), opportunities, parsedAt)
+  const assertionParsed = parseRecruitingNotification(assertionText, opportunities, parsedAt)
   const subjectParsed = parseRecruitingNotification(subject, opportunities, parsedAt)
   const subjectType = /interview invitation/i.test(subject) ? 'interview_invite'
     : /(?:assessment|test) invitation/i.test(subject) ? 'assessment_invite'
@@ -1071,10 +1072,19 @@ export function gmailSemanticRecordFromMessage(
     piece, instructionOnly: recruitingInstructionOnly(piece),
     parsed: parseRecruitingNotification(piece, opportunities, parsedAt),
   }))
+  // Only the subject or a leading identity-only header can supply omitted
+  // identity. Never borrow a target from an independent event elsewhere.
+  const firstPiece = parsedPieces[0]
+  const identityHeader = firstPiece && !firstPiece.instructionOnly
+    && firstPiece.parsed.type === 'other' ? firstPiece.parsed : undefined
+  const context = subjectParsed.opportunity ? subjectParsed : identityHeader
+  const contextTarget = context?.opportunity
+  const contextSafe = contextTarget && [subject, ...parsedPieces.map(item => item.piece)]
+    .every(value => notificationIdentityCompatible(value, contextTarget, opportunities))
   const bodyHasEvent = parsedPieces.some(({ parsed, instructionOnly }) =>
     !instructionOnly && parsed.type && parsed.type !== 'other' && parsed.confidence.type !== 'low')
   const pieces = !bodyHasEvent && subjectType
-    ? [{ piece: assertionText, parsed: whole, instructionOnly: false }]
+    ? [{ piece: assertionText, parsed: { ...whole, opportunity: assertionParsed.opportunity, candidates: assertionParsed.candidates, confidence: { ...whole.confidence, opportunity: assertionParsed.confidence.opportunity } }, instructionOnly: false }]
     : parsedPieces
   const timedContextTypes = [...new Set(pieces.filter(item => !item.instructionOnly).map(({ parsed }) => parsed.type)
     .filter((type) => type && requiresTiming(type)))]
@@ -1083,9 +1093,12 @@ export function gmailSemanticRecordFromMessage(
   for (const [index, item] of pieces.entries()) {
     const { piece, parsed } = item
     if (item.instructionOnly || conditionalCompletionDisclaimer(piece)) continue
-    const selected = parsed.opportunity ?? whole.opportunity
-    const plausible = (parsed.candidates.length ? parsed.candidates : whole.candidates)
-      .filter(item => item.score >= 40)
+    const inherited = contextSafe && contextTarget
+      && notificationIdentityCompatible(piece, contextTarget, opportunities)
+      && notificationIdentityCanInherit(piece, contextTarget) ? contextTarget : undefined
+    const selected = parsed.opportunity ?? inherited
+    const plausible = parsed.candidates
+      .filter(item => item.score >= 40 && notificationIdentityCompatible(piece, item.opportunity, opportunities))
     const commonCompany = plausible.length >= 2 && plausible.every(item =>
       item.opportunity.company === plausible[0]?.opportunity.company) ? plausible[0]?.opportunity.company : undefined
     const commonRole = plausible.length >= 2 && plausible.every(item =>
@@ -1104,9 +1117,9 @@ export function gmailSemanticRecordFromMessage(
       // names a bounded business target. Keep the common identity for the
       // shared resolver; an unanchored parser guess stays coverage debt.
       target: selected ? { opportunityId: selected.id }
-        : commonCompany || (commonRole && piece.includes(commonRole))
-          ? { company: commonCompany, role: commonRole && piece.includes(commonRole) ? commonRole : undefined } : undefined,
-      objectConfidence: selected ? (parsed.opportunity ? parsed.confidence.opportunity : whole.confidence.opportunity) : 'low' as const,
+        : commonCompany || (commonRole && notificationIdentityText(piece).includes(commonRole))
+          ? { company: commonCompany, role: commonRole && notificationIdentityText(piece).includes(commonRole) ? commonRole : undefined } : undefined,
+      objectConfidence: selected ? (parsed.opportunity ? parsed.confidence.opportunity : context!.confidence.opportunity) : 'low' as const,
       eventConfidence: !originalReceivedAt ? 'low' as const : application ? 'high' as const : eventConfidence,
       evidenceRefs: [evidenceRef], sourceVersionRefs: [`${message.id}:uu06-v1`],
     }

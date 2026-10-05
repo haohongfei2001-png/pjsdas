@@ -1,6 +1,6 @@
 import type { PJSDASSnapshot, SnapshotData } from './snapshot.js'
 
-export const DELTA_COLLECTIONS = ['opportunities', 'processes', 'processEvents', 'scheduleNodes', 'actions', 'prep',
+export const DELTA_COLLECTIONS = ['opportunities', 'opportunityAliases', 'processes', 'processEvents', 'scheduleNodes', 'actions', 'prep',
   'applicationGroups', 'decisionRequests', 'semanticReceipts', 'reminderIntents', 'reminderOutbox', 'discoveryInbox', 'timeline', 'changeSets'] as const
 export const DELTA_SINGLETONS = ['timePlanning', 'decisionRules', 'discoveryProfile', 'meta'] as const
 export type DeltaKey = typeof DELTA_COLLECTIONS[number] | typeof DELTA_SINGLETONS[number]

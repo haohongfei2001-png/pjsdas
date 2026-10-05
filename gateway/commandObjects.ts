@@ -1,3 +1,4 @@
+import { canonicalOpportunityId } from '../src/opportunityCanonicalization.js'
 import type { UserDomainCommand } from '../src/domainCommands.js'
 import type { PJSDASSnapshot } from '../src/snapshot.js'
 import type { SemanticIntakeObservation } from '../src/model.js'
@@ -53,6 +54,7 @@ function addChangedScheduleOccurrences(
 
 export function diffCommandObjects(before: PJSDASSnapshot, after: PJSDASSnapshot): CommandObjectRef[] {
   const refs = new Map<string, CommandObjectRef>()
+  addChangedById(refs, 'opportunity_alias', before.data.opportunityAliases ?? [], after.data.opportunityAliases ?? [])
   addChangedById(refs, 'opportunity', before.data.opportunities, after.data.opportunities)
   addChangedById(refs, 'process', before.data.processes, after.data.processes)
   addChangedById(refs, 'process_event', before.data.processEvents, after.data.processEvents)
@@ -95,6 +97,7 @@ export function diffCommandObjects(before: PJSDASSnapshot, after: PJSDASSnapshot
 function objectValue(snapshot: PJSDASSnapshot, ref: CommandObjectRef): unknown {
   const data = snapshot.data
   switch (ref.type) {
+    case 'opportunity_alias': return data.opportunityAliases?.find(item => item.id === ref.id)
     case 'opportunity': return data.opportunities.find(item => item.id === ref.id)
     case 'process': return data.processes.find(item => item.id === ref.id)
     case 'process_event': return data.processEvents.find(item => item.id === ref.id)
@@ -184,6 +187,7 @@ function scheduleOccurrenceForNode(snapshot: PJSDASSnapshot, id: string) {
 }
 
 export function normalizeCommandObjectRef(ref: CommandObjectRef, snapshot: PJSDASSnapshot): CommandObjectRef {
+  if (ref.type === 'opportunity') return { ...ref, id: canonicalOpportunityId(snapshot, ref.id) }
   if (ref.type === 'schedule_node') {
     const occurrenceId = scheduleOccurrenceForNode(snapshot, ref.id)
     if (occurrenceId) return { type: 'schedule_occurrence', id: occurrenceId }
@@ -199,7 +203,7 @@ function unique(refs: CommandObjectRef[]) {
 
 export function domainIntentObjects(command: UserDomainCommand, snapshot: PJSDASSnapshot): CommandObjectRef[] {
   const refs: CommandObjectRef[] = []
-  if ('opportunityId' in command && command.opportunityId) refs.push({ type: 'opportunity', id: command.opportunityId })
+  if ('opportunityId' in command && command.opportunityId) refs.push({ type: 'opportunity', id: canonicalOpportunityId(snapshot, command.opportunityId) })
   if ('actionId' in command && command.actionId) refs.push({ type: 'action', id: command.actionId })
   if ('occurrenceId' in command && command.occurrenceId) refs.push({ type: 'schedule_occurrence', id: command.occurrenceId })
   if ('reminderIntentId' in command && command.reminderIntentId) refs.push({ type: 'reminder_intent', id: command.reminderIntentId })
@@ -223,7 +227,7 @@ export function semanticIntentObjects(observation: SemanticIntakeObservation, sn
   }]
   for (const candidate of observation.candidates) {
     const target = candidate.target
-    if (target?.opportunityId) refs.push({ type: 'opportunity', id: target.opportunityId })
+    if (target?.opportunityId) refs.push({ type: 'opportunity', id: canonicalOpportunityId(snapshot, target.opportunityId) })
     if (target?.occurrenceId) refs.push({ type: 'schedule_occurrence', id: target.occurrenceId })
     if (target?.scheduleNodeId) {
       const occurrenceId = scheduleOccurrenceForNode(snapshot, target.scheduleNodeId)

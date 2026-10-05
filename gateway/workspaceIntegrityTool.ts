@@ -1,3 +1,6 @@
+import { readLegacyProcessCorrection } from '../src/legacyProcessCorrection.js'
+import { decisionRequestFingerprint } from '../src/decisionDismissal.js'
+import { readOpportunityMerge } from '../src/opportunityMerge.js'
 import { applicationDeadlineExpired, applicationDeadlineFingerprint, classifyJob, hasApplicationEvidence, resolveApplicationDeadline } from '../src/applicationDeadline.js'
 import { upgradeSnapshotToLatest } from '../src/snapshot.js'
 import type { CallToolResult } from '@modelcontextprotocol/server'
@@ -5,7 +8,13 @@ import * as z from 'zod/v4'
 import { auditWorkspaceIntegrity } from '../src/workspaceIntegrity.js'
 import { WorkspaceSourceError, type WorkspaceSource } from './workspaceSource.js'
 
-export const getWorkspaceIntegritySchema = z.object({})
+export const getWorkspaceIntegritySchema = z.object({
+  review: z.discriminatedUnion('kind', [
+    z.object({ kind: z.literal('legacy_process_event'), eventId: z.string().min(1).max(240) }).strict(),
+    z.object({ kind: z.literal('decision_request'), requestId: z.string().min(1).max(240) }).strict(),
+    z.object({ kind: z.literal('opportunity_merge'), canonicalOpportunityId: z.string().min(1).max(240), duplicateOpportunityId: z.string().min(1).max(240) }).strict(),
+  ]).optional(),
+}).strict()
 
 function success(output: object): CallToolResult {
   return { content: [{ type: 'text', text: JSON.stringify(output, null, 2) }], structuredContent: { ...output } }
@@ -18,9 +27,16 @@ function failure(caught: unknown): CallToolResult {
   return { isError: true, content: [{ type: 'text', text: JSON.stringify({ code, message, retryable }) }] }
 }
 
-export async function invokeWorkspaceIntegrity(source: WorkspaceSource): Promise<CallToolResult> {
+export async function invokeWorkspaceIntegrity(source: WorkspaceSource, rawArgs: unknown = {}): Promise<CallToolResult> {
   try {
+    const args = getWorkspaceIntegritySchema.parse(rawArgs)
     const { snapshot, context } = await source.read()
+    const requestId = args.review?.kind === 'decision_request' ? args.review.requestId : undefined
+    const request = requestId ? snapshot.data.decisionRequests?.find(item => item.id === requestId) : undefined
+    if (args.review?.kind === 'decision_request' && !request) throw new Error('DecisionRequest was not found.')
+    const repairReview = args.review?.kind === 'legacy_process_event' ? await readLegacyProcessCorrection(snapshot, args.review.eventId)
+      : args.review?.kind === 'opportunity_merge' ? await readOpportunityMerge(snapshot, args.review.canonicalOpportunityId, args.review.duplicateOpportunityId)
+        : request ? { request, expectedFingerprint: await decisionRequestFingerprint(request), expectedRequestUpdatedAt: request.updatedAt } : undefined
     const generatedAt = context.now ?? new Date()
     const integrity = auditWorkspaceIntegrity(snapshot, generatedAt)
     const normalized = upgradeSnapshotToLatest(snapshot)
@@ -37,6 +53,7 @@ export async function invokeWorkspaceIntegrity(source: WorkspaceSource): Promise
       }
     }).filter(item => item.expiredOrClosed)
     return success({
+      repairReview,
       applicationDeadlineAudit: { totalCandidates: deadlineAudit.filter(item => item.eligibleForCorrection).length, totalProtected: deadlineAudit.filter(item => !item.eligibleForCorrection).length, truncated: deadlineAudit.length > 500, candidates: deadlineAudit.filter(item => item.eligibleForCorrection).slice(0, 500), protectedRecords: deadlineAudit.filter(item => !item.eligibleForCorrection).slice(0, 500) },
       meta: { workspaceVersion: context.workspaceVersion, generatedAt: generatedAt.toISOString(), source: 'pjsdas' },
       integrity,

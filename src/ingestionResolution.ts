@@ -1,3 +1,4 @@
+import { canonicalOpportunityId } from './opportunityCanonicalization.js'
 import type {
   DecisionRequest,
   IngestionLedgerEntry,
@@ -286,8 +287,9 @@ function classifyUnresolved(
   }
 
   if (ingestion.opportunityId) {
-    const opportunity = snapshot.data.opportunities.find((item) => item.id === ingestion.opportunityId)
-    const process = snapshot.data.processes.find((item) => item.opportunityId === ingestion.opportunityId)
+    const resolvedOpportunityId = canonicalOpportunityId(snapshot, ingestion.opportunityId)
+    const opportunity = snapshot.data.opportunities.find((item) => item.id === resolvedOpportunityId)
+    const process = snapshot.data.processes.find((item) => item.opportunityId === resolvedOpportunityId)
     if (opportunity?.participationStatus === 'abandoned' || terminalProcess(process)) {
       return {
         outcome: 'historical_only',

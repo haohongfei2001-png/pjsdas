@@ -1,3 +1,5 @@
+import { applyDecisionDismissalCompensation, type DecisionDismissalCompensation } from '../src/decisionDismissal.js'
+import { restoreOpportunityMerge, type OpportunityMergeCompensation } from '../src/opportunityMerge.js'
 import type { CallToolResult } from '@modelcontextprotocol/server'
 import * as z from 'zod/v4'
 import {
@@ -351,8 +353,11 @@ export async function invokeSemanticUndo(
         currentRevision: prepared.currentRevision,
       })
     }
-    const compensation = semanticCompensation(prepared.compensation)
-    const next = applySemanticCompensation(prepared.snapshot, compensation)
+    const next = prepared.compensation.operation === 'restore_dismissed_decision'
+      ? await applyDecisionDismissalCompensation(prepared.snapshot, prepared.compensation as unknown as DecisionDismissalCompensation)
+      : prepared.compensation.operation === 'opportunity_merge_restore'
+        ? await restoreOpportunityMerge(prepared.snapshot, prepared.compensation as unknown as OpportunityMergeCompensation)
+        : applySemanticCompensation(prepared.snapshot, semanticCompensation(prepared.compensation))
     const writable = requireWritableWorkspaceSource(workspaceSource)
     const commandId = `semantic-undo:${parsed.targetCommandId}:${prepared.expectedWorkspaceVersion}`
     const written = await writable.write({

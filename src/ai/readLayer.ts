@@ -1,3 +1,4 @@
+import { canonicalOpportunityId } from '../opportunityCanonicalization.js'
 import { buildTimePlan, processNeedsReview, rankAction, rankActions } from '../decisionV3.js'
 import { decisionRulesForSnapshot, type DecisionRules, type DecisionWeights } from '../decisionRules.js'
 import { discoveryProfileForSnapshot, type DiscoveryProfile } from '../discoveryProfile.js'
@@ -826,7 +827,7 @@ export function getRecentTimeline(
     .filter((item) => !until || new Date(item.occurredAt).getTime() <= until.getTime())
     .filter((item) => !categories || categories.has(item.category))
     .filter((item) => !company || item.company?.toLocaleLowerCase().includes(company))
-    .filter((item) => !input.opportunityId || item.opportunityId === input.opportunityId)
+    .filter((item) => !input.opportunityId || Boolean(item.opportunityId && canonicalOpportunityId(snapshot, item.opportunityId) === canonicalOpportunityId(snapshot, input.opportunityId)))
     .sort((a, b) => b.occurredAt.localeCompare(a.occurredAt) || b.recordedAt.localeCompare(a.recordedAt) || a.id.localeCompare(b.id))
 
   return {

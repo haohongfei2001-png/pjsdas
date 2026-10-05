@@ -1,3 +1,4 @@
+import { canonicalOpportunityId } from './opportunityCanonicalization.js'
 import { validSourceDeadline, validSourceInstant } from './sourceCalendar.js'
 import { cancelReminderIntentInPlace } from './reminders.js'
 import type { ApplicationDeadlineCorrection } from './applicationDeadline.js'
@@ -15,7 +16,7 @@ export interface CorrectApplicationDeadlineCommand {
 
 /** Bounded unsubmitted-only repair. Retains history and never creates an occurrence for an unknown date. */
 export function correctApplicationDeadline(next: PJSDASSnapshot, command: CorrectApplicationDeadlineCommand, timestamp: string, original = next) {
-  const target = next.data.opportunities.find(item => item.id === command.opportunityId)
+  const target = next.data.opportunities.find(item => item.id === canonicalOpportunityId(next, command.opportunityId))
   if (!target) throw new Error('The exact Opportunity was not found.')
   if (hasApplicationEvidence(target, next.data) || !['not_applied', 'waiting_release'].includes(next.data.processes.find(item => item.opportunityId === target.id)?.stage ?? target.processStage) || !['not_applied', 'waiting_release'].includes(target.processStage) || target.participationStatus === 'abandoned') throw new Error('Deadline correction is limited to active confirmed-unsubmitted opportunities.')
   if (applicationDeadlineFingerprint(original.data.opportunities.find(item => item.id === target.id)!, original.data) !== command.expectedDeadlineFingerprint) throw new Error('Deadline owners changed since review; read them again before correcting.')
