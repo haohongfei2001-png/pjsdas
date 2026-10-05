@@ -1,3 +1,4 @@
+import { googleRefreshLifecycle } from './googleRefreshLifecycle.js'
 import { createGoogleConnectionStore } from './googleConnectionStore.js'
 import { refreshGoogleAccessToken } from './googleOAuthTokens.js'
 import { createSupabaseIdentityResolver } from './supabaseIdentity.js'
@@ -91,7 +92,9 @@ export function createGoogleAccessTokenHandler(config: GoogleAccessTokenHandlerC
       const binding = await connections.readForUser(identity.userId, pjsdasAccessToken)
       const refreshToken = await decryptSecret(binding.refreshTokenCiphertext, config.tokenEncryptionKey)
       const accessToken = await refreshGoogleAccessToken(refreshToken, {
-        clientId: config.googleClientId,
+        ...googleRefreshLifecycle(config.tokenEncryptionKey, (patch) =>
+      connections.updateRefreshState(identity.userId, pjsdasAccessToken, binding.refreshTokenCiphertext, patch)),
+    clientId: config.googleClientId,
         clientSecret: config.googleClientSecret,
         fetchImpl,
       })

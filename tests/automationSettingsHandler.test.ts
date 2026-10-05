@@ -5,6 +5,7 @@ const ORIGIN = 'https://haohongfei2001-png.github.io'
 const GMAIL_SCOPE = 'https://www.googleapis.com/auth/gmail.readonly'
 
 function json(data: unknown, status = 200) {
+  if (Array.isArray(data)) data = data.map((row) => ({ updated_at: '2026-10-05T00:00:00Z', ...row }))
   return new Response(JSON.stringify(data), {
     status,
     headers: { 'content-type': 'application/json' },
@@ -79,6 +80,96 @@ describe('automation settings API', () => {
     })
   })
 
+  it('preserves same-consent checkpoint, pending work and auth error on reconnect enable', async () => {
+    const enabled = true
+    const row = { user_id: 'user-a', granted_scopes: [GMAIL_SCOPE], gmail_automation_enabled: true,
+      gmail_intake_consent_version: 'uu06-v1', gmail_history_id: 'durable-cursor', gmail_sync_mode: 'history',
+      gmail_page_token: 'pending-page', gmail_pending_history_id: 'next-cursor', gmail_pending_message_ids: ['fictional-message'],
+      gmail_last_error: 'GOOGLE_AUTH_EXPIRED: Reconnect Google to resume.' }
+    const writes: Record<string, unknown>[] = []
+    const fetchImpl: typeof fetch = async (input, init) => {
+      if (String(input).endsWith('/auth/v1/user')) return json({ id: 'user-a' })
+      if (init?.method === 'PATCH') { writes.push(JSON.parse(String(init.body))); return json([{ user_id: 'user-a' }]) }
+      return json([row])
+    }
+    const response = await handler(fetchImpl)(request('POST', { gmailEnabled: enabled, ...(enabled ? { gmailIntakeConsentVersion: 'uu06-v1' } : {}) }))
+    expect(response.status).toBe(200)
+    for (const key of ['gmail_history_id', 'gmail_sync_mode', 'gmail_page_token', 'gmail_pending_history_id', 'gmail_pending_message_ids', 'gmail_last_error']) {
+      expect(writes[0]).not.toHaveProperty(key)
+    }
+    expect(writes[0]?.gmail_intake_consent_version).toBe('uu06-v1')
+    await expect(response.json()).resolves.toMatchObject({ gmailHistoryIdPresent: true, gmailLastError: row.gmail_last_error })
+  })
+
+  it('starts expanded backfill only for an explicit consent-version transition', async () => {
+    const writes: Record<string, unknown>[] = []
+    const fetchImpl: typeof fetch = async (input, init) => {
+      if (String(input).endsWith('/auth/v1/user')) return json({ id: 'user-a' })
+      if (init?.method === 'PATCH') { writes.push(JSON.parse(String(init.body))); return json([{ user_id: 'user-a' }]) }
+      return json([{ user_id: 'user-a', granted_scopes: [GMAIL_SCOPE], gmail_history_id: 'legacy', gmail_intake_consent_version: null }])
+    }
+    const response = await handler(fetchImpl)(request('POST', { gmailEnabled: true, gmailIntakeConsentVersion: 'uu06-v1' }))
+    expect(response.status).toBe(200)
+    expect(writes[0]).toMatchObject({ gmail_history_id: null, gmail_sync_mode: null, gmail_page_token: null,
+      gmail_pending_history_id: null, gmail_pending_message_ids: [], gmail_intake_consent_version: 'uu06-v1' })
+  })
+
+  it('continues push enable from its own confirmed credential rotation version', async () => {
+    const writes: URL[] = []
+    const fetchImpl: typeof fetch = async (input, init) => {
+      if (String(input).endsWith('/auth/v1/user')) return json({ id: 'user-a' })
+      if (init?.method === 'PATCH') {
+        const url = new URL(String(input)); writes.push(url)
+        if (url.searchParams.has('refresh_token_ciphertext')) return json([{ user_id: 'user-a', updated_at: '2026-10-05T12:01:00Z' }])
+        expect(url.searchParams.get('updated_at')).toBe('eq.2026-10-05T12:01:00Z')
+        return json([{ user_id: 'user-a' }])
+      }
+      return json([{ user_id: 'user-a', updated_at: '2026-10-05T12:00:00Z', refresh_token_ciphertext: 'v1.previous', granted_scopes: [GMAIL_SCOPE], gmail_intake_consent_version: 'uu06-v1' }])
+    }
+    const handle = createAutomationSettingsHandler({ supabaseUrl: 'https://fixture.invalid', supabasePublishableKey: 'fixture',
+      allowedOrigins: [ORIGIN], fetchImpl, gmailExecutionControlsEnabled: true, gmailDeliveryMode: 'push',
+      tokenEncryptionKey: Buffer.alloc(32, 42).toString('base64url'),
+      registerGmailWatchImpl: async (options) => {
+        await options.refreshLifecycle!.onRefreshTokenRotated!('fictional-replacement')
+        return { historyId: '123', expiresAt: '2026-10-12T00:00:00Z', renewedAt: '2026-10-05T12:01:00Z' }
+      },
+    })
+    const response = await handle(request('POST', { gmailEnabled: true, gmailIntakeConsentVersion: 'uu06-v1' }))
+    expect(response.status).toBe(200)
+    expect(writes).toHaveLength(2)
+  })
+
+  it('explicit disable still revokes expanded consent and drops private continuation', async () => {
+    const writes: Record<string, unknown>[] = []
+    const fetchImpl: typeof fetch = async (input, init) => {
+      if (String(input).endsWith('/auth/v1/user')) return json({ id: 'user-a' })
+      if (init?.method === 'PATCH') { writes.push(JSON.parse(String(init.body))); return json([{ user_id: 'user-a' }]) }
+      return json([{ user_id: 'user-a', gmail_intake_consent_version: 'uu06-v1', gmail_history_id: 'durable' }])
+    }
+    expect((await handler(fetchImpl)(request('POST', { gmailEnabled: false }))).status).toBe(200)
+    expect(writes[0]).toMatchObject({ gmail_automation_enabled: false, gmail_intake_consent_version: null,
+      gmail_sync_mode: null, gmail_page_token: null, gmail_pending_history_id: null, gmail_pending_message_ids: [] })
+    expect(writes[0]).not.toHaveProperty('gmail_history_id')
+  })
+
+  it('refuses a stale settings update after reconnect or account change', async () => {
+    const writes: URL[] = []
+    const fetchImpl: typeof fetch = async (input, init) => {
+      if (String(input).endsWith('/auth/v1/user')) return json({ id: 'user-a' })
+      if (init?.method === 'PATCH') {
+        writes.push(new URL(String(input)))
+        return json([]) // Another reconnect changed updated_at after this read.
+      }
+      return json([{ user_id: 'user-a', updated_at: '2026-10-05T12:00:00Z', granted_scopes: [GMAIL_SCOPE], gmail_intake_consent_version: 'uu06-v1' }])
+    }
+    const response = await handler(fetchImpl)(request('POST', { gmailEnabled: true, gmailIntakeConsentVersion: 'uu06-v1' }))
+    expect(response.status).toBe(503)
+    await expect(response.json()).resolves.toMatchObject({ code: 'GOOGLE_CONNECTION_CHANGED' })
+    expect(writes).toHaveLength(1)
+    expect(writes[0].searchParams.get('updated_at')).toBe('eq.2026-10-05T12:00:00Z')
+    expect(writes[0].searchParams.get('revoked_at')).toBe('is.null')
+  })
+
   it('refuses to enable Gmail automation before Gmail read-only permission exists', async () => {
     const fetchImpl = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input)
@@ -114,7 +205,7 @@ describe('automation settings API', () => {
       }])
       if (url.includes('/rest/v1/google_drive_connections?') && init?.method === 'PATCH') {
         writes.push({ url, body: JSON.parse(String(init.body ?? '{}')) as Record<string, unknown> })
-        return new Response(null, { status: 204 })
+        return json([{ user_id: 'user-a' }])
       }
       return json({ error: 'unexpected' }, 500)
     }) as unknown as typeof fetch
@@ -126,14 +217,11 @@ describe('automation settings API', () => {
     expect(writes[0]?.body).toMatchObject({
       gmail_automation_enabled: true,
       gmail_intake_consent_version: null,
-      gmail_history_id: null,
-      gmail_sync_mode: null,
-      gmail_page_token: null,
-      gmail_pending_history_id: null,
-      gmail_pending_message_ids: [],
-      gmail_last_error: null,
     })
     expect(writes[0]?.body).not.toHaveProperty('discovery_automation_enabled')
+    expect(writes[0]?.body).not.toHaveProperty('gmail_history_id')
+    expect(writes[0]?.body).not.toHaveProperty('gmail_pending_message_ids')
+    expect(writes[0]?.body).not.toHaveProperty('gmail_last_error')
   })
 
   it('fails explicit UU06 Gmail enable closed until execution controls are active', async () => {
@@ -160,7 +248,7 @@ describe('automation settings API', () => {
     expect(fetchImpl).toHaveBeenCalledTimes(2)
   })
 
-  it('enables background discovery without requesting Gmail scope and clears only discovery error state', async () => {
+  it('enables background discovery without erasing a previous error or requesting Gmail scope', async () => {
     const writes: Array<Record<string, unknown>> = []
     const fetchImpl = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input)
@@ -175,7 +263,7 @@ describe('automation settings API', () => {
       }])
       if (url.includes('/rest/v1/google_drive_connections?') && init?.method === 'PATCH') {
         writes.push(JSON.parse(String(init.body ?? '{}')) as Record<string, unknown>)
-        return new Response(null, { status: 204 })
+        return json([{ user_id: 'user-a' }])
       }
       return json({ error: 'unexpected' }, 500)
     }) as unknown as typeof fetch
@@ -183,7 +271,7 @@ describe('automation settings API', () => {
     const response = await handler(fetchImpl)(request('POST', { discoveryEnabled: true }))
     expect(response.status).toBe(200)
     expect(writes).toHaveLength(1)
-    expect(writes[0]).toMatchObject({ discovery_automation_enabled: true, discovery_last_error: null })
+    expect(writes[0]).toMatchObject({ discovery_automation_enabled: true })
     expect(writes[0]).not.toHaveProperty('gmail_automation_enabled')
     await expect(response.json()).resolves.toMatchObject({ discoveryEnabled: true, gmailEnabled: false })
   })
@@ -218,7 +306,7 @@ describe('automation settings API', () => {
       }])
       const body = JSON.parse(String(init.body)); writes.push(body)
       if (missing && 'gmail_intake_consent_version' in body) return json({ code: 'PGRST204', message: 'Missing gmail_intake_consent_version' }, 400)
-      return new Response(null, { status: 204 })
+      return json([{ user_id: 'user-a' }])
     }) as unknown as typeof fetch
     const response = await handler(fetchImpl)(request('POST', { gmailEnabled: true, gmailIntakeConsentVersion: version }))
     expect(response.status).toBe(status)

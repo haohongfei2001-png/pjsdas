@@ -128,7 +128,26 @@ export function createAutomationConnectionStore(options: AutomationConnectionSto
     return data
   }
 
+  async function stateRpc(name: string, body: Record<string, unknown>, expectedCiphertext?: string) {
+    if (!expectedCiphertext) return rpc<null>(name, body, 'void')
+    const { worker_token: _worker, target_user_id: userId, ...statePatch } = body
+    const updated = await rpc<boolean>('pjsdas_update_google_automation_state', {
+      worker_token: workerToken, target_user_id: userId, expected_ciphertext: expectedCiphertext,
+      state_operation: name, state_patch: statePatch,
+    })
+    if (updated !== true) throw new WorkspaceSourceError('GOOGLE_CONNECTION_CHANGED', 'Google connection changed before the run state was saved.', true)
+  }
+
   return {
+    async updateGoogleRefreshState(userId: string, expectedCiphertext: string,
+      patch: { nextCiphertext?: string; reconnectRequired?: boolean }, executionToken?: string) {
+      const updated = await rpc<boolean>('pjsdas_update_google_refresh_state', {
+        worker_token: workerToken, target_user_id: userId, expected_ciphertext: expectedCiphertext,
+        next_ciphertext: patch.nextCiphertext ?? null, reconnect_required: patch.reconnectRequired === true, execution_token: executionToken ?? null,
+      })
+      if (updated !== true) throw new WorkspaceSourceError('GOOGLE_CONNECTION_CHANGED',
+        'Google connection changed during refresh. Retry with the current connection.', true)
+    },
     async listEnabledGmailBindings(): Promise<GmailAutomationBinding[]> {
       let rows: GmailBindingRow[]
       try {
@@ -164,8 +183,8 @@ export function createAutomationConnectionStore(options: AutomationConnectionSto
       checkedAt?: string
       successAt?: string
       lastError?: string | null
-    }) {
-      await rpc<null>('pjsdas_update_gmail_automation_state_v2', {
+    }, expectedCiphertext?: string) {
+      await stateRpc('pjsdas_update_gmail_automation_state_v2', {
         worker_token: workerToken,
         target_user_id: userId,
         next_history_id: 'historyId' in patch ? patch.historyId ?? null : null,
@@ -180,7 +199,7 @@ export function createAutomationConnectionStore(options: AutomationConnectionSto
         set_continuation: Boolean(patch.continuation),
         clear_continuation: patch.continuation === null,
         set_last_error: 'lastError' in patch,
-      }, 'void')
+      }, expectedCiphertext)
     },
 
     async updateGmailWatchState(userId: string, patch: {
@@ -188,8 +207,8 @@ export function createAutomationConnectionStore(options: AutomationConnectionSto
       expiresAt?: string | null
       renewedAt?: string | null
       lastError?: string | null
-    }) {
-      await rpc<null>('pjsdas_update_gmail_watch_state', {
+    }, expectedCiphertext?: string) {
+      await stateRpc('pjsdas_update_gmail_watch_state', {
         worker_token: workerToken,
         target_user_id: userId,
         watch_history_id: patch.historyId ?? null,
@@ -199,7 +218,7 @@ export function createAutomationConnectionStore(options: AutomationConnectionSto
         set_watch: Boolean(patch.historyId && patch.expiresAt && patch.renewedAt),
         clear_watch: patch.historyId === null || patch.expiresAt === null,
         set_last_error: 'lastError' in patch,
-      }, 'void')
+      }, expectedCiphertext)
     },
 
     async beginGmailExecution(userId: string, executionToken: string): Promise<GmailAutomationBinding | undefined> {
@@ -265,15 +284,15 @@ export function createAutomationConnectionStore(options: AutomationConnectionSto
       checkedAt?: string
       successAt?: string
       lastError?: string | null
-    }) {
-      await rpc<null>('pjsdas_update_discovery_automation_state', {
+    }, expectedCiphertext?: string) {
+      await stateRpc('pjsdas_update_discovery_automation_state', {
         worker_token: workerToken,
         target_user_id: userId,
         checked_at: patch.checkedAt ?? null,
         success_at: patch.successAt ?? null,
         last_error: 'lastError' in patch ? patch.lastError ?? null : null,
         set_last_error: 'lastError' in patch,
-      }, 'void')
+      }, expectedCiphertext)
     },
   }
 }

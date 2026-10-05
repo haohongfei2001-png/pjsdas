@@ -91,9 +91,9 @@ async function driveRequest(
 
   if (response.status === 401) {
     throw new WorkspaceSourceError(
-      'GOOGLE_AUTH_EXPIRED',
-      'Google authorization is no longer valid. Reconnect Google Drive to TodayAction.',
-      false,
+      'GOOGLE_ACCESS_REJECTED',
+      'Google rejected the current access token. Retry the operation to refresh authorization.',
+      true,
     )
   }
 

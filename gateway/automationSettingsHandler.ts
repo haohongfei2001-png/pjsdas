@@ -1,3 +1,5 @@
+import { createGoogleConnectionStore } from './googleConnectionStore.js'
+import { googleRefreshLifecycle } from './googleRefreshLifecycle.js'
 import type { DiscoveryReadiness } from '../src/discoveryReadiness.js'
 import { GMAIL_READONLY_SCOPE } from './automationConnectionStore.js'
 import { registerGmailWatch, type GmailWatchResult } from './gmailWatch.js'
@@ -23,10 +25,12 @@ export interface AutomationSettingsHandlerConfig {
 
 interface AutomationRow {
   user_id?: string
+  updated_at?: string
   google_email?: string | null
   refresh_token_ciphertext?: string | null
   granted_scopes?: string[] | null
   gmail_automation_enabled?: boolean | null
+  gmail_intake_consent_version?: string | null
   gmail_history_id?: string | null
   gmail_sync_mode?: string | null
   gmail_page_token?: string | null
@@ -93,10 +97,12 @@ export function createAutomationSettingsHandler(config: AutomationSettingsHandle
     const params = new URLSearchParams({
       select: [
         'user_id',
+        'updated_at',
         'google_email',
         'refresh_token_ciphertext',
         'granted_scopes',
         'gmail_automation_enabled',
+        'gmail_intake_consent_version',
         'gmail_history_id',
         'gmail_sync_mode',
         'gmail_page_token',
@@ -201,6 +207,12 @@ export function createAutomationSettingsHandler(config: AutomationSettingsHandle
           }
           gmailWatch = await (config.registerGmailWatchImpl ?? registerGmailWatch)({
             refreshTokenCiphertext: current.refresh_token_ciphertext,
+            refreshLifecycle: googleRefreshLifecycle(config.tokenEncryptionKey ?? '', async (patch) => {
+              const saved = await createGoogleConnectionStore({ supabaseUrl: config.supabaseUrl, publishableKey: config.supabasePublishableKey, fetchImpl })
+                .updateRefreshState(identity.userId, accessToken, current.refresh_token_ciphertext!, patch)
+              current.updated_at = saved.updatedAt
+              if (patch.nextCiphertext) current.refresh_token_ciphertext = patch.nextCiphertext
+            }),
             tokenEncryptionKey: config.tokenEncryptionKey ?? '',
             googleClientId: config.googleClientId ?? '',
             googleClientSecret: config.googleClientSecret ?? '',
@@ -211,19 +223,26 @@ export function createAutomationSettingsHandler(config: AutomationSettingsHandle
         }
       }
 
-      const params = new URLSearchParams({ user_id: `eq.${identity.userId}` })
+      if (!current.updated_at) throw new WorkspaceSourceError('AUTH_INVALID', 'Google connection version is unavailable. Reload settings before changing them.', true)
+      const params = new URLSearchParams({ user_id: `eq.${identity.userId}`, updated_at: `eq.${current.updated_at}`, revoked_at: 'is.null', select: 'user_id' })
       const patch: Record<string, unknown> = { updated_at: new Date().toISOString() }
       if (gmailProvided) {
         patch.gmail_automation_enabled = body!.gmailEnabled
-        patch.gmail_intake_consent_version = body!.gmailEnabled === true && body!.gmailIntakeConsentVersion === 'uu06-v1' ? 'uu06-v1' : null
-        patch.gmail_sync_mode = null
-        patch.gmail_page_token = null
-        patch.gmail_pending_history_id = null
-        patch.gmail_pending_message_ids = []
-        if (body!.gmailEnabled === true) {
-          patch.gmail_history_id = null
-          patch.gmail_last_error = null
+        // Reconnecting the same mailbox retains its durable cursor and pending
+        // work. Explicit disable still revokes expanded intake consent; enabling
+        // with a new consent version starts its appropriate backfill.
+        const nextConsent = body!.gmailEnabled !== true ? null : body!.gmailIntakeConsentVersion === 'uu06-v1' ? 'uu06-v1' : current.gmail_intake_consent_version ?? null
+        const consentChanged = body!.gmailEnabled === true && nextConsent !== (current.gmail_intake_consent_version ?? null)
+        patch.gmail_intake_consent_version = nextConsent
+        if (consentChanged || body!.gmailEnabled === false) {
+          if (consentChanged) patch.gmail_history_id = null
+          patch.gmail_sync_mode = null
+          patch.gmail_page_token = null
+          patch.gmail_pending_history_id = null
+          patch.gmail_pending_message_ids = []
         }
+        // A settings toggle is not proof that Google credentials became valid.
+        // Only an explicit successful reconnect clears the persisted auth error.
         if (gmailWatch) {
           patch.gmail_watch_history_id = gmailWatch.historyId
           patch.gmail_watch_expires_at = gmailWatch.expiresAt
@@ -238,7 +257,6 @@ export function createAutomationSettingsHandler(config: AutomationSettingsHandle
       }
       if (discoveryProvided) {
         patch.discovery_automation_enabled = body!.discoveryEnabled
-        if (body!.discoveryEnabled === true) patch.discovery_last_error = null
       }
 
       let response: Response
@@ -249,7 +267,7 @@ export function createAutomationSettingsHandler(config: AutomationSettingsHandle
             Authorization: `Bearer ${accessToken}`,
             apikey: config.supabasePublishableKey,
             'content-type': 'application/json',
-            Prefer: 'return=minimal',
+            Prefer: 'return=representation',
           },
           body: JSON.stringify(patch),
         })
@@ -266,7 +284,7 @@ export function createAutomationSettingsHandler(config: AutomationSettingsHandle
           const legacyPatch = { ...patch }; delete legacyPatch.gmail_intake_consent_version
           response = await fetchImpl(`${baseUrl}/rest/v1/google_drive_connections?${params.toString()}`, {
             method: 'PATCH', headers: { Authorization: `Bearer ${accessToken}`, apikey: config.supabasePublishableKey,
-              'content-type': 'application/json', Prefer: 'return=minimal' }, body: JSON.stringify(legacyPatch),
+              'content-type': 'application/json', Prefer: 'return=representation' }, body: JSON.stringify(legacyPatch),
           })
         } else if (missingConsentColumn) {
           return json(409, { code: 'GMAIL_INTAKE_NOT_DEPLOYED', message: 'The expanded recruiting-email intake is not deployed yet. No expanded consent was saved.' }, origin, config.allowedOrigins)
@@ -275,21 +293,14 @@ export function createAutomationSettingsHandler(config: AutomationSettingsHandle
       if (response.status === 401 || response.status === 403) throw new WorkspaceSourceError('AUTH_INVALID', 'TodayAction authentication is invalid or expired.', false)
       if (!response.ok) throw new WorkspaceSourceError('AUTH_UNAVAILABLE', `TodayAction automation settings update failed (HTTP ${response.status}).`, true)
 
-      const updated: AutomationRow = { ...current }
-      if (gmailProvided) {
-        updated.gmail_automation_enabled = body!.gmailEnabled as boolean
-        updated.gmail_sync_mode = null
-        updated.gmail_page_token = null
-        updated.gmail_pending_history_id = null
-        updated.gmail_pending_message_ids = []
-        if (body!.gmailEnabled === true) {
-          updated.gmail_history_id = null
-          updated.gmail_last_error = null
-        }
+      const changed = await response.json().catch(() => undefined)
+      if (!Array.isArray(changed) || changed.length !== 1 || changed[0]?.user_id !== identity.userId) {
+        throw new WorkspaceSourceError('GOOGLE_CONNECTION_CHANGED', 'Google connection changed. Reload settings and retry.', true)
       }
+
+      const updated: AutomationRow = { ...current, ...patch }
       if (discoveryProvided) {
         updated.discovery_automation_enabled = body!.discoveryEnabled as boolean
-        if (body!.discoveryEnabled === true) updated.discovery_last_error = null
       }
       return json(200, await responseStatus(updated, identity.userId), origin, config.allowedOrigins)
     } catch (caught) {

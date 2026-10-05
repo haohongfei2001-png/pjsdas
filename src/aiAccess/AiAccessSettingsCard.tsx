@@ -1,5 +1,6 @@
+import { googleAuthorizationErrorCode, googleConnectionHealth, googleConnectionHealthLabel } from '../googleConnectionHealth.js'
 import { discoveryReadinessLabel } from '../discoveryReadiness.js'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useAiAccess } from './AiAccessContext.js'
 import { useUiLanguage } from '../uiLanguage.js'
 import GmailIntakeStatus from './GmailIntakeStatus.js'
@@ -12,6 +13,15 @@ export default function AiAccessSettingsCard() {
   const zh = lang === 'zh'
   const ai = useAiAccess()
   const automation = ai.gmailAutomation
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => {
+    const update = () => setNow(Date.now())
+    const timer = window.setInterval(update, 120_000)
+    window.addEventListener('focus', update)
+    return () => { window.clearInterval(timer); window.removeEventListener('focus', update) }
+  }, [])
+  const gmailHealth = googleConnectionHealth({ verified: ai.statusVerified, enabled: automation?.gmailEnabled, lastError: automation?.gmailLastError, lastSuccessAt: automation?.gmailLastSuccessAt, now })
+  const reconnectRequired = gmailHealth === 'reconnect_required' || googleAuthorizationErrorCode(automation?.discoveryLastError) === 'GOOGLE_AUTH_EXPIRED'
   const discoveryState = discoveryReadinessLabel({ verified: ai.statusVerified, enabled: automation?.discoveryEnabled, readiness: automation?.discoveryReadiness }, zh)
   const [actionSource, setActionSource] = useState<Source>('workspace')
   const run = (source: Source, action: () => Promise<void>) => { setActionSource(source); void action() }
@@ -29,10 +39,6 @@ export default function AiAccessSettingsCard() {
   const discoveryPermission = zh
     ? '开关开启不代表已经搜索：还需明确保存岗位发现偏好，并单独批准可计量的 TA 搜索预算。条件未满足时不调用付费模型；HCLA 等其他项目预算不能用于此处。条件满足后，TodayAction 按你的岗位偏好和决策规则检索公开招聘信息，避免重复加入。搜索模型只收到有限的岗位发现条件，不会收到完整工作区、Gmail 正文或无关个人资料；关闭后停止后台公开网页搜索。'
     : 'An enabled switch does not mean searches are running. Saved discovery preferences and a separately approved, metered TodayAction budget are required; other projects’ budgets do not apply. Until then paid model calls are blocked. Once ready, TodayAction searches public job information using your preferences and decision rules, without adding duplicates. The search model receives only bounded discovery criteria, never your full workspace, Gmail bodies, or unrelated personal data. Turning this off stops background public-web search.'
-  const sourceState = (enabled: boolean | undefined, error: string | null | undefined) => !automation || !ai.statusVerified
-    ? (zh ? '状态待核对' : 'Status unverified')
-    : enabled && error ? (zh ? '已启用 · 需要处理' : 'Enabled · Needs attention')
-      : enabled ? (zh ? '已启用' : 'Enabled') : (zh ? '未启用' : 'Disabled')
   const result = (source: Source) => ai.errorSource === source && ai.error
     ? <div className="cloud-error" role="alert">{ai.error}</div> : null
 
@@ -42,7 +48,7 @@ export default function AiAccessSettingsCard() {
       <section className="settings-source-panel" aria-labelledby="settings-workspace-heading">
         <header className="settings-source-header">
           <div><h2 id="settings-workspace-heading">{zh ? '后台工作区连接' : 'Background workspace connection'}</h2><p>{automation?.googleEmail || (zh ? '尚未连接' : 'Not connected yet')}</p></div>
-          <span className={`cloud-state ${ai.statusVerified && automation?.googleEmail ? 'online' : ''}`}>{!automation || !ai.statusVerified ? (zh ? '状态待核对' : 'Status unverified') : automation.googleEmail ? (zh ? '已连接' : 'Connected') : (zh ? '待连接' : 'Not connected')}</span>
+          <span className={`cloud-state ${ai.statusVerified && automation?.googleEmail ? reconnectRequired ? 'warning' : 'online' : ''}`}>{!automation || !ai.statusVerified ? (zh ? '状态待核对' : 'Status unverified') : reconnectRequired ? (zh ? '需要重新连接 Google' : 'Reconnect Google required') : automation.googleEmail ? (zh ? '已连接' : 'Connected') : (zh ? '待连接' : 'Not connected')}</span>
         </header>
         <details className="settings-source-manage"><summary>{zh ? '管理' : 'Manage'}</summary><div className="settings-source-body">
           <p className="settings-permission">{zh ? '只申请 Google Drive 的应用专用文件权限，不会浏览普通 Drive 文件。Google 长期授权信息会加密保存。重新连接将打开 Google 授权页面。' : 'This requests only access to app-specific Google Drive files, not normal Drive files. Long-lived authorization is encrypted. Reconnecting opens the Google consent page.'}</p>
@@ -66,11 +72,11 @@ export default function AiAccessSettingsCard() {
       </section>
 
       <section className="settings-source-panel" aria-labelledby="settings-gmail-heading">
-        <header className="settings-source-header"><div><h2 id="settings-gmail-heading">{zh ? '招聘邮件自动跟踪' : 'Automatic recruiting-email tracking'}</h2><GmailIntakeStatus zh={zh} enabled={ai.statusVerified && automation ? automation.gmailEnabled : undefined} lastSuccessAt={automation?.gmailLastSuccessAt ?? undefined} lastError={automation?.gmailLastError ?? undefined} /></div>
-          <span className={`cloud-state ${ai.statusVerified && automation?.gmailEnabled ? automation.gmailLastError ? 'warning' : 'online' : ''}`}>{sourceState(automation?.gmailEnabled, automation?.gmailLastError)}</span></header>
+        <header className="settings-source-header"><div><h2 id="settings-gmail-heading">{zh ? '招聘邮件自动跟踪' : 'Automatic recruiting-email tracking'}</h2><GmailIntakeStatus zh={zh} enabled={ai.statusVerified && automation ? automation.gmailEnabled : undefined} lastSuccessAt={automation?.gmailLastSuccessAt ?? undefined} lastCheckedAt={automation?.gmailLastCheckedAt ?? undefined} lastError={automation?.gmailLastError ?? undefined} /></div>
+          <span className={`cloud-state ${ai.statusVerified && automation?.gmailEnabled ? gmailHealth === 'current' ? 'online' : 'warning' : ''}`}>{googleConnectionHealthLabel(gmailHealth, zh)}</span></header>
         <details className="settings-source-manage"><summary>{zh ? '管理' : 'Manage'}</summary><div className="settings-source-body">
           <p className="settings-permission">{gmailPermission}</p>
-          {automation?.gmailEnabled && automation.gmailLastError ? <><p>{zh ? '重新授权会再次请求上方说明的 90 天 Gmail 只读范围；请先查看 Google 同意页面。' : 'Reauthorizing requests the 90-day Gmail read-only scope described above again; review the Google consent screen first.'}</p><button type="button" className="primary-button" disabled={ai.busy} onClick={() => run('gmail', ai.beginGmailAutomationLink)}>{zh ? '查看并重新授权 Gmail' : 'Review and reauthorize Gmail'}</button></> : null}
+          {gmailHealth === 'reconnect_required' ? <><p>{zh ? '重新授权会再次请求上方说明的 90 天 Gmail 只读范围；请先查看 Google 同意页面。' : 'Reauthorizing requests the 90-day Gmail read-only scope described above again; review the Google consent screen first.'}</p><button type="button" className="primary-button" disabled={ai.busy} onClick={() => run('gmail', ai.beginGmailAutomationLink)}>{zh ? '查看并重新授权 Gmail' : 'Review and reauthorize Gmail'}</button></> : null}
           <button className={automation?.gmailEnabled ? 'settings-quiet-button' : 'primary-button'} disabled={ai.busy} onClick={() => run('gmail', () => ai.setGmailAutomationEnabled(!automation?.gmailEnabled))}>{ai.busy && actionSource === 'gmail' ? (zh ? '处理中…' : 'Working…') : gmailButton}</button>
           {automation?.gmailLastError ? <details className="settings-scope-details"><summary>{zh ? '错误详情' : 'Error details'}</summary><p>{automation.gmailLastError}</p></details> : null}
         </div></details>

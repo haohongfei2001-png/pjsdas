@@ -1,3 +1,4 @@
+import { automationGoogleRefreshLifecycle } from './googleRefreshLifecycle.js'
 import { runControlledGmailExecutions, runControlledGmailReconciliations } from './gmailControlledExecution.js'
 import { createAutomationConnectionStore } from './automationConnectionStore.js'
 import { runGmailAutomationForBinding } from './gmailAutomation.js'
@@ -97,6 +98,7 @@ export function createGmailAutomationHandler(config: GmailAutomationHandlerConfi
       try {
         const run = await runGmailAutomationForBinding({
           binding,
+          refreshLifecycle: { ...automationGoogleRefreshLifecycle(config.tokenEncryptionKey, binding, store) },
           tokenEncryptionKey: config.tokenEncryptionKey,
           googleClientId: config.googleClientId,
           googleClientSecret: config.googleClientSecret,
@@ -109,7 +111,7 @@ export function createGmailAutomationHandler(config: GmailAutomationHandlerConfi
           checkedAt: run.checkedAt,
           ...(run.coverageComplete ? { successAt: run.checkedAt } : {}),
           lastError: null,
-        })
+        }, binding.refreshTokenCiphertext)
         results.push({ status: 'success', ...run })
       } catch (caught) {
         const checkedAt = (config.now?.() ?? new Date()).toISOString()
@@ -117,7 +119,7 @@ export function createGmailAutomationHandler(config: GmailAutomationHandlerConfi
           await store.updateGmailRunState(binding.userId, {
             checkedAt,
             lastError: compactError(caught),
-          })
+          }, binding.refreshTokenCiphertext)
         } catch {
           // The primary automation error remains authoritative; state telemetry is best-effort.
         }

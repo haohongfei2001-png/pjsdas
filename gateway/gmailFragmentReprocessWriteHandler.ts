@@ -1,3 +1,4 @@
+import { automationGoogleRefreshLifecycle } from './googleRefreshLifecycle.js'
 import { createAutomationConnectionStore, GMAIL_READONLY_SCOPE } from './automationConnectionStore.js'
 import { fetchGmailSemanticRecordsByIds } from './gmailAutomation.js'
 import { fragmentLimitReprocessTargetIds, reprocessVersion, type GmailFragmentReprocessDryRunConfig } from './gmailFragmentReprocessDryRunHandler.js'
@@ -245,6 +246,7 @@ export function createGmailFragmentReprocessWriteHandler(config: GmailFragmentRe
         evidence: async (binding, targets, snapshot, now) => {
           const refreshToken = await decryptSecret(binding.refreshTokenCiphertext, config.tokenEncryptionKey)
           const accessToken = await refreshGoogleAccessToken(refreshToken, {
+          ...automationGoogleRefreshLifecycle(config.tokenEncryptionKey, binding, store),
             clientId: config.googleClientId, clientSecret: config.googleClientSecret, fetchImpl: config.fetchImpl,
           })
           return fetchGmailSemanticRecordsByIds({

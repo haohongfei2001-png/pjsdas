@@ -37,7 +37,7 @@ describe('Gmail watch renewal worker', () => {
           gmail_pending_message_ids: [],
         }])
       }
-      if (rpc === 'pjsdas_update_gmail_watch_state') return json(null)
+      if (rpc === 'pjsdas_update_google_automation_state') return json(true)
       return json({ error: 'unexpected' }, 500)
     }) as unknown as typeof fetch
     const registerGmailWatchImpl = vi.fn(async () => ({
@@ -63,13 +63,13 @@ describe('Gmail watch renewal worker', () => {
     expect(registerGmailWatchImpl).toHaveBeenCalledTimes(1)
     expect(calls.map((call) => call.rpc)).toEqual([
       'pjsdas_claim_gmail_automation_bindings_v5',
-      'pjsdas_update_gmail_watch_state',
+      'pjsdas_update_google_automation_state',
     ])
     expect(calls[1]?.body).toMatchObject({
       target_user_id: 'user-a',
-      watch_history_id: '777',
-      set_watch: true,
-      set_last_error: true,
+      expected_ciphertext: 'cipher',
+      state_operation: 'pjsdas_update_gmail_watch_state',
+      state_patch: { watch_history_id: '777', set_watch: true, set_last_error: true },
     })
   })
 

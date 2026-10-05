@@ -1,3 +1,4 @@
+import type { GoogleRefreshLifecycle } from './googleRefreshLifecycle.js'
 import { dismissedSemanticCandidate } from '../src/decisionDismissal.js'
 import { aggregateHistoryLag, type GmailExecutionMetrics } from './gmailExecutionMetrics.js'
 import {
@@ -228,8 +229,8 @@ async function gmailFetch(fetchImpl: typeof fetch, accessToken: string, path: st
   }
   if (response.status === 401) {
     throw await gmailProviderRequestError(
-      response, operation, 'GOOGLE_AUTH_EXPIRED',
-      'Google authorization is no longer valid. Reconnect Google to PJSDAS.', false,
+      response, operation, 'GOOGLE_ACCESS_REJECTED',
+      'Google rejected the current access token. A later check will retry authorization.', true,
     )
   }
   if (response.status === 403) {
@@ -730,6 +731,7 @@ export async function runGmailReconciliationForBinding(options: {
   tokenEncryptionKey: string
   googleClientId: string
   googleClientSecret: string
+  refreshLifecycle?: GoogleRefreshLifecycle
   fetchImpl?: typeof fetch
   now?: () => Date
   forceStart?: boolean
@@ -752,6 +754,7 @@ export async function runGmailReconciliationForBinding(options: {
 
   const refreshToken = await decryptSecret(options.binding.refreshTokenCiphertext, options.tokenEncryptionKey)
   const accessToken = await refreshGoogleAccessToken(refreshToken, {
+    ...options.refreshLifecycle,
     clientId: options.googleClientId,
     clientSecret: options.googleClientSecret,
     fetchImpl,
@@ -1245,6 +1248,7 @@ export async function runGmailAutomationForBinding(options: {
   tokenEncryptionKey: string
   googleClientId: string
   googleClientSecret: string
+  refreshLifecycle?: GoogleRefreshLifecycle
   fetchImpl?: typeof fetch
   now?: () => Date
   execution?: { beforeWorkspaceWrite: () => Promise<void> }
@@ -1259,6 +1263,7 @@ export async function runGmailAutomationForBinding(options: {
 
   const refreshToken = await decryptSecret(options.binding.refreshTokenCiphertext, options.tokenEncryptionKey)
   const accessToken = await refreshGoogleAccessToken(refreshToken, {
+    ...options.refreshLifecycle,
     clientId: options.googleClientId,
     clientSecret: options.googleClientSecret,
     fetchImpl,
@@ -1388,6 +1393,7 @@ async function runLegacyGmailAutomationForBinding(options: {
   tokenEncryptionKey: string
   googleClientId: string
   googleClientSecret: string
+  refreshLifecycle?: GoogleRefreshLifecycle
   fetchImpl?: typeof fetch
   now?: () => Date
   execution?: { beforeWorkspaceWrite: () => Promise<void> }
@@ -1401,6 +1407,7 @@ async function runLegacyGmailAutomationForBinding(options: {
 
   const refreshToken = await decryptSecret(options.binding.refreshTokenCiphertext, options.tokenEncryptionKey)
   const accessToken = await refreshGoogleAccessToken(refreshToken, {
+    ...options.refreshLifecycle,
     clientId: options.googleClientId,
     clientSecret: options.googleClientSecret,
     fetchImpl,

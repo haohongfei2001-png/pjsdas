@@ -1,3 +1,4 @@
+import { automationGoogleRefreshLifecycle } from './googleRefreshLifecycle.js'
 import { randomUUID } from 'node:crypto'
 import { createAutomationConnectionStore } from './automationConnectionStore.js'
 import { runGmailAutomationForBinding, runGmailReconciliationForBinding, type GmailReconciliationSummary } from './gmailAutomation.js'
@@ -41,7 +42,7 @@ export async function runControlledGmailExecutions(config: GmailAutomationHandle
         const binding = await store.beginGmailExecution(listed.userId, executionToken)
         if (!binding) { coalescedUsers += 1; continue }
         owned = true
-        const run = await runGmailAutomationForBinding({ binding, tokenEncryptionKey: config.tokenEncryptionKey,
+        const run = await runGmailAutomationForBinding({ binding, refreshLifecycle: { ...automationGoogleRefreshLifecycle(config.tokenEncryptionKey, binding, store, executionToken), signal: controller.signal }, tokenEncryptionKey: config.tokenEncryptionKey,
           googleClientId: config.googleClientId, googleClientSecret: config.googleClientSecret,
           fetchImpl: budgetFetch, now: config.now,
           execution: { beforeWorkspaceWrite: async () => {
@@ -173,6 +174,7 @@ export async function runControlledGmailReconciliations(
 
         const run = await runGmailReconciliationForBinding({
           binding,
+          refreshLifecycle: { ...automationGoogleRefreshLifecycle(config.tokenEncryptionKey, binding, store, executionToken), signal: controller.signal },
           tokenEncryptionKey: config.tokenEncryptionKey,
           googleClientId: config.googleClientId,
           googleClientSecret: config.googleClientSecret,

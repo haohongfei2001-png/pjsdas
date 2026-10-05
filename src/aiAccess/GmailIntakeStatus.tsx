@@ -1,3 +1,4 @@
+import { googleConnectionHealth, googleConnectionHealthLabel } from '../googleConnectionHealth.js'
 import { useEffect, useMemo, useState } from 'react'
 import { getAllTimelineRecords } from '../db.js'
 import { expectedSourcesFromRegistry, summarizeCoverage } from '../ingestion.js'
@@ -11,10 +12,11 @@ function boundaryText(text: string, zh: boolean) {
   return '此来源有已记录的能力边界；请查看原邮件确认未读取的细节。'
 }
 
-export default function GmailIntakeStatus({ zh, enabled, lastSuccessAt, lastError }: {
+export default function GmailIntakeStatus({ zh, enabled, lastSuccessAt, lastCheckedAt, lastError }: {
   zh: boolean
   enabled: boolean | undefined
   lastSuccessAt?: string
+  lastCheckedAt?: string
   lastError?: string
 }) {
   const [timeline, setTimeline] = useState<TimelineRecord[]>([])
@@ -51,7 +53,10 @@ export default function GmailIntakeStatus({ zh, enabled, lastSuccessAt, lastErro
   const source = coverage.sources.find((item) => item.sourceKind === 'gmail' && item.sourceId === 'gmail:primary')
   if (enabled === false && !source && !lastSuccessAt && !lastError) return null
 
-  const transport = enabled === undefined
+  const health = googleConnectionHealth({ verified: enabled !== undefined, enabled, lastSuccessAt, lastError, now: now.getTime(), freshnessSlaMinutes: source?.freshnessSlaMinutes })
+  const transport = health === 'reconnect_required' || health === 'configuration_error' || health === 'stale'
+    ? googleConnectionHealthLabel(health, zh)
+    : enabled === undefined
     ? (zh ? '状态待核对' : 'Status unverified')
     : !loaded
     ? (zh ? '正在核对' : 'Checking')
@@ -81,7 +86,8 @@ export default function GmailIntakeStatus({ zh, enabled, lastSuccessAt, lastErro
       </summary>
       <div className="settings-intake-content">
       <span>{zh ? `传输与对账：${transport}` : `Transport and accounting: ${transport}`}</span>
-      <span>{lastSuccessAt ? `${zh ? '最近检查：' : 'Last check: '}${new Date(lastSuccessAt).toLocaleString()}` : (zh ? '尚无可核对的成功检查记录' : 'No verified successful check yet')}</span>
+      <span>{lastSuccessAt ? `${zh ? '最近完整同步：' : 'Last complete sync: '}${new Date(lastSuccessAt).toLocaleString()}` : (zh ? '尚无可核对的成功检查记录' : 'No verified successful check yet')}</span>
+      <span>{lastCheckedAt ? `${zh ? '最近尝试：' : 'Last attempt: '}${new Date(lastCheckedAt).toLocaleString()}` : (zh ? '尚无检查尝试记录' : 'No recorded attempt')}</span>
       {readError ? <span>{zh ? '本机来源结果暂不可读取。' : 'Local source outcomes are temporarily unavailable.'}</span> : (
         <>
           <span>{zh

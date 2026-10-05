@@ -128,14 +128,14 @@ describe('Google Drive MCP workspace source', () => {
     expect(error.message).toMatch(/fingerprint/i)
   })
 
-  it('maps expired Google authorization to a stable non-retryable source error', async () => {
+  it('distinguishes an access-token rejection from revoked refresh authorization', async () => {
     const envelope = await validEnvelope()
     const fetchImpl = driveMock({ envelope, listStatus: 401 })
     const source = createDriveWorkspaceSource({ getAccessToken: () => 'expired-token', fetchImpl })
 
     const error = await sourceError(source.read())
-    expect(error.code).toBe('GOOGLE_AUTH_EXPIRED')
-    expect(error.retryable).toBe(false)
+    expect(error.code).toBe('GOOGLE_ACCESS_REJECTED')
+    expect(error.retryable).toBe(true)
     expect(error.message).not.toContain('expired-token')
   })
 

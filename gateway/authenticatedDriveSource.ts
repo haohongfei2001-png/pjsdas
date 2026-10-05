@@ -1,3 +1,4 @@
+import { googleRefreshLifecycle } from './googleRefreshLifecycle.js'
 import { createDriveWorkspaceSource } from './driveWorkspaceSource.js'
 import { createGoogleConnectionStore } from './googleConnectionStore.js'
 import { refreshGoogleAccessToken } from './googleOAuthTokens.js'
@@ -36,6 +37,8 @@ export async function createAuthenticatedDriveWorkspaceSource(
   const binding = await connections.readForUser(identity.userId, pjsdasAccessToken)
   const refreshToken = await decryptSecret(binding.refreshTokenCiphertext, options.tokenEncryptionKey)
   const googleAccessToken = await refreshGoogleAccessToken(refreshToken, {
+    ...googleRefreshLifecycle(options.tokenEncryptionKey, (patch) =>
+      connections.updateRefreshState(identity.userId, pjsdasAccessToken, binding.refreshTokenCiphertext, patch)),
     clientId: options.googleClientId,
     clientSecret: options.googleClientSecret,
     fetchImpl,
