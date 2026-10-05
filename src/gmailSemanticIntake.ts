@@ -1,3 +1,5 @@
+import { sameSemanticFactKey } from './opportunityCanonicalization.js'
+import { dismissedSemanticCandidate } from './decisionDismissal.js'
 import type { IngestionIssueKind, SemanticIntakeObservation, TimelineRecord } from './model.js'
 import type { PJSDASSnapshot } from './snapshot.js'
 import { applySemanticIntake, semanticCandidateFactKey, type SemanticBatchCompensation } from './semanticIntake.js'
@@ -39,6 +41,7 @@ export function applyGmailSemanticBatch(snapshot: PJSDASSnapshot, input: {
   for (const record of [...input.records].sort((a, b) => a.receivedAt.localeCompare(b.receivedAt))) {
     // Accounting a source as unresolved must not still commit its parsed
     // prefix. A later, unparsed fragment may negate or qualify that outcome.
+    const independentGap = record.gaps.length > 0 || Boolean(record.issueKinds?.some(kind => kind !== 'business_ambiguity'))
     const incomplete = record.issueKinds?.includes('interpretation_failure')
     const observation = incomplete ? { ...record.observation, candidates: [] } : record.observation
     const sourceRecordId = observation.source.sourceRecordId
@@ -72,11 +75,20 @@ export function applyGmailSemanticBatch(snapshot: PJSDASSnapshot, input: {
       && request.payloadBinding.source.sourceRecordId === sourceRecordId
       && (request.state === 'open' || request.state === 'expired'))
     const priorIssues = prior?.ingestion?.issueKinds ?? []
-    const answeredCurrentChoices = result?.status === 'ALREADY_APPLIED'
+    const settledCurrentChoices = result?.status === 'ALREADY_APPLIED'
       && priorIssues.length > 0
       && priorIssues.every(kind => kind === 'business_ambiguity')
       && observation.candidates.length > 0
       && observation.candidates.every(candidate => {
+        if (dismissedSemanticCandidate(working, observation, candidate)) {
+          return Boolean(result.receipt?.decisionRequestIds.length
+            && result.receipt.decisionRequestIds.every(id => working.data.decisionRequests?.some(request => request.id === id
+              && request.payloadBinding.source.kind === observation.source.kind
+              && request.payloadBinding.source.sourceId === observation.source.sourceId
+              && request.payloadBinding.source.sourceRecordId === sourceRecordId
+              && request.payloadBinding.source.sourceVersion === observation.source.sourceVersion))
+            && prior?.ingestion?.reason === result.receipt.summary)
+        }
         const answered = (working.data.decisionRequests ?? []).some(request =>
           request.state === 'answered'
           && request.payloadBinding.source.kind === 'gmail'
@@ -90,23 +102,23 @@ export function applyGmailSemanticBatch(snapshot: PJSDASSnapshot, input: {
         if (answered) return true
         const factKey = semanticCandidateFactKey(working, candidate)
         return Boolean(result.receipt?.status === 'committed' && factKey
-          && result.receipt.factKeys?.includes(factKey)
-          && !result.receipt.factInvalidations?.some(item => item.factKey === factKey))
+          && result.receipt.factKeys?.some(key => sameSemanticFactKey(working, key, factKey))
+          && !result.receipt.factInvalidations?.some(item => sameSemanticFactKey(working, item.factKey, factKey)))
       })
     // Only this invocation's semantic work can prove that a formerly bounded
     // source was fully re-evaluated. ALREADY_APPLIED can refer to a receipt
     // created by an older, gapful parser version and is therefore not fresh
     // completeness evidence.
-    const conclusiveSemanticReplay = (result?.status === 'NO_WRITE' || result?.status === 'APPLIED' || answeredCurrentChoices)
+    const conclusiveSemanticReplay = (result?.status === 'NO_WRITE' || result?.status === 'APPLIED' || settledCurrentChoices)
       && !result.coverageDebtCount
     const reconciledPriorUnresolved = Boolean(
       input.reconcileExisting
       && prior?.ingestion?.outcome === 'unresolved'
-      && record.gaps.length === 0
+      && !independentGap
       && activeDecisionRequests.length === 0
       && conclusiveSemanticReplay,
     )
-    const unresolved = record.gaps.length > 0
+    const unresolved = independentGap
       || Boolean(result?.coverageDebtCount)
       || activeDecisionRequests.length > 0
       || (prior?.ingestion?.outcome === 'unresolved' && !reconciledPriorUnresolved)
@@ -143,7 +155,7 @@ export function applyGmailSemanticBatch(snapshot: PJSDASSnapshot, input: {
     })
     records.push(entry)
     const persistReconciliationChange = Boolean(input.reconcileExisting
-      && (record.gaps.length > 0
+      && (independentGap
         || Boolean(result?.coverageDebtCount)
         || result?.status === 'APPLIED'
         || result?.status === 'DECISION_REQUIRED'

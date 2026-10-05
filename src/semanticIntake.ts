@@ -981,7 +981,8 @@ export function applySemanticIntake(
     && request.payloadBinding.source.kind === observation.source.kind
     && request.payloadBinding.source.sourceId === observation.source.sourceId
     && request.payloadBinding.source.sourceRecordId === observation.source.sourceRecordId)
-    && observation.candidates.some(candidate => !dismissedSemanticCandidate(base, observation, candidate))
+    && observation.candidates.some(candidate => !dismissedSemanticCandidate(base, observation, candidate)
+      && !existingFactReceipt(base, semanticCandidateFactKey(base, candidate)))
   const replay = changedDismissedSource ? undefined : existingReceipt(base, observation)
   const openSourceChoices = observation.source.kind === 'gmail'
     ? (base.data.decisionRequests ?? []).filter(item => item.state === 'open'

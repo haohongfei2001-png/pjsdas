@@ -104,4 +104,25 @@ describe('bounded notification identity evidence', () => {
     expect(record.observation.candidates[0]?.target?.opportunityId).toBeUndefined()
   })
 
+  it('binds an identity-neutral submission deadline only to its immediately preceding test window', () => {
+    const text = '甲星公司 产品经理 笔试开放窗口明天09:00至后天17:00；提交截止后天18:00'
+    const record = parse(text)
+    expect(record.observation.candidates).toHaveLength(2)
+    expect(record.observation.candidates.map(candidate => candidate.target?.opportunityId)).toEqual([alpha.id, alpha.id])
+    const result = apply(text)
+    expect(result.snapshot.data.processEvents).toHaveLength(2)
+    expect(result.snapshot.data.processEvents.map(event => event.opportunityId)).toEqual([alpha.id, alpha.id])
+    expect(result.snapshot.data.scheduleNodes?.map(node => node.temporal.shape)).toEqual(['availability_window', 'deadline'])
+  })
+  it.each([
+    '甲星公司 产品经理 笔试开放窗口明天09:00至后天17:00；乙月公司 客户经理提交截止后天18:00',
+    '甲星公司 产品经理 笔试开放窗口明天09:00至后天17:00；未知主体；提交截止后天18:00',
+    '甲星公司 产品经理 笔试开放窗口明天09:00至后天17:00；提交截止后天18:00；提交截止后天19:00',
+    '甲星公司 产品经理 笔试开放窗口已取消明天09:00至后天17:00；提交截止后天18:00',
+    '甲星公司 产品经理 面试邀请明天09:00至后天17:00；提交截止后天18:00',
+  ])('does not carry window identity across conflicting, intervening, inherited or non-window facts: %s', text => {
+    const record = parse(text)
+    expect(record.observation.candidates.at(-1)?.target?.opportunityId).not.toBe(alpha.id)
+  })
+
 })

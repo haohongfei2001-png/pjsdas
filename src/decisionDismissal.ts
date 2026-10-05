@@ -138,14 +138,54 @@ function sourceContentFingerprint(observation: SemanticIntakeObservation) {
   return `fnv1a:${(hash >>> 0).toString(36)}`
 }
 
+/** Recover old bindings only from the immutable ledger of their creation. */
+export function dismissalSourceFingerprint(snapshot: PJSDASSnapshot, request: DecisionRequest): string | undefined {
+  if (request.payloadBinding.originalTextFingerprint) return request.payloadBinding.originalTextFingerprint
+  const source = request.payloadBinding.source
+  if (source.kind !== 'gmail') return undefined
+  const fingerprints = new Set((snapshot.data.timeline ?? []).flatMap(record => {
+    const entry = record.ingestion
+    return entry && entry.sourceKind === source.kind && entry.sourceId === source.sourceId
+      && entry.sourceRecordId === source.sourceRecordId && entry.accountedAt === request.createdAt
+      && entry.fingerprint ? [entry.fingerprint] : []
+  }))
+  return fingerprints.size === 1 ? [...fingerprints][0] : undefined
+}
+
+/** Only these two Gmail parser tags describe the same bytes, not new source versions. */
+function sameGmailInterpreterContent(snapshot: PJSDASSnapshot, request: DecisionRequest, observation: SemanticIntakeObservation) {
+  const known = new Set(['uu06-v1', 'reconciliation-v1'])
+  return observation.source.kind === 'gmail'
+    && request.payloadBinding.source.kind === 'gmail'
+    && known.has(request.payloadBinding.source.sourceVersion ?? '')
+    && known.has(observation.source.sourceVersion ?? '')
+    && Boolean(dismissalSourceFingerprint(snapshot, request))
+    && dismissalSourceFingerprint(snapshot, request) === observation.originalTextFingerprint
+}
+function interpreterCandidate(candidate: ReturnType<typeof candidateIdentity>, sourceRecordId: string, sourceVersion: string | undefined) {
+  // Tagged tuples cannot collide with an arbitrary source reference string.
+  return { ...candidate, sourceVersionRefs: candidate.sourceVersionRefs.map(ref =>
+    ref === `${sourceRecordId}:${sourceVersion}` ? ['known_gmail_interpreter', sourceRecordId] : ['source_ref', ref]) }
+}
+
 /** Observation clocks and input IDs may change during replay; source facts may not. */
 export function dismissedSemanticCandidate(snapshot: PJSDASSnapshot, observation: SemanticIntakeObservation, candidate: SemanticCandidate): boolean {
-  return (snapshot.data.decisionRequests ?? []).some(request => request.state === 'dismissed' && request.dismissal
-    && request.payloadBinding.source.kind === observation.source.kind
-    && request.payloadBinding.source.sourceId === observation.source.sourceId
-    && request.payloadBinding.source.sourceRecordId === observation.source.sourceRecordId
-    && (request.payloadBinding.source.sourceVersion ?? '') === (observation.source.sourceVersion ?? '')
-    && (!request.payloadBinding.originalTextFingerprint || request.payloadBinding.originalTextFingerprint === sourceContentFingerprint(observation))
-    && request.payloadBinding.statementMode === observation.statementMode
-    && same(candidateIdentity(snapshot, request.payloadBinding.candidate), candidateIdentity(snapshot, candidate)))
+  return (snapshot.data.decisionRequests ?? []).some(request => {
+    const interpreterEquivalent = sameGmailInterpreterContent(snapshot, request, observation)
+    const source = request.payloadBinding.source
+    const fingerprint = dismissalSourceFingerprint(snapshot, request)
+    const gmailParserBinding = source.kind === 'gmail'
+    const originalCandidate = interpreterEquivalent
+      ? interpreterCandidate(candidateIdentity(snapshot, request.payloadBinding.candidate), source.sourceRecordId, source.sourceVersion) : candidateIdentity(snapshot, request.payloadBinding.candidate)
+    const replayCandidate = interpreterEquivalent
+      ? interpreterCandidate(candidateIdentity(snapshot, candidate), observation.source.sourceRecordId, observation.source.sourceVersion) : candidateIdentity(snapshot, candidate)
+    return request.state === 'dismissed' && Boolean(request.dismissal)
+      && source.kind === observation.source.kind
+      && source.sourceId === observation.source.sourceId
+      && source.sourceRecordId === observation.source.sourceRecordId
+      && ((source.sourceVersion ?? '') === (observation.source.sourceVersion ?? '') || interpreterEquivalent)
+      && (fingerprint ? fingerprint === sourceContentFingerprint(observation) : !gmailParserBinding)
+      && request.payloadBinding.statementMode === observation.statementMode
+      && same(originalCandidate, replayCandidate)
+  })
 }

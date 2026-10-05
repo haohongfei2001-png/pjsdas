@@ -1,3 +1,4 @@
+import { dismissedSemanticCandidate } from '../src/decisionDismissal.js'
 import { aggregateHistoryLag, type GmailExecutionMetrics } from './gmailExecutionMetrics.js'
 import {
   GMAIL_RECONCILIATION_STATES,
@@ -15,7 +16,7 @@ import {
 } from '../src/ingestionHardening.js'
 import { bootstrapPolicyFor } from '../src/sourceRegistry.js'
 import { alreadyIngested, stableIngestionHash } from '../src/ingestion.js'
-import { validateSnapshot } from '../src/snapshot.js'
+import { validateSnapshot, type PJSDASSnapshot } from '../src/snapshot.js'
 import { applyGmailSemanticBatch, type GmailSemanticRecord } from '../src/gmailSemanticIntake.js'
 import type {
   GmailReconciliationProof,
@@ -594,14 +595,24 @@ function recentLiveProcesses(snapshot: import('../src/snapshot.js').PJSDASSnapsh
   })
 }
 
-export function gmailReconciliationStateForRecord(record: GmailSemanticRecord): GmailReconciliationState | undefined {
+export function gmailReconciliationStateForRecord(record: GmailSemanticRecord, snapshot?: PJSDASSnapshot): GmailReconciliationState | undefined {
+  if (snapshot?.data.decisionRequests?.some(request => (request.state === 'open' || request.state === 'expired')
+    && request.payloadBinding.source.kind === record.observation.source.kind
+    && request.payloadBinding.source.sourceId === record.observation.source.sourceId
+    && request.payloadBinding.source.sourceRecordId === record.observation.source.sourceRecordId)) return 'UNRESOLVED'
+  const latestAccounted = snapshot?.data.timeline?.filter(item => item.ingestion
+    && item.ingestion.sourceKind === record.observation.source.kind
+    && item.ingestion.sourceId === record.observation.source.sourceId
+    && item.ingestion.sourceRecordId === record.observation.source.sourceRecordId)
+    .sort((a, b) => b.ingestion!.accountedAt.localeCompare(a.ingestion!.accountedAt))[0]?.ingestion
+  if (latestAccounted?.outcome === 'unresolved') return 'UNRESOLVED'
   const relevant = Boolean(record.recruitingRelevant || record.gaps.length || record.observation.candidates.length)
   if (!relevant) return undefined
-  const candidates = record.observation.candidates
+  const candidates = record.observation.candidates.filter(candidate => !snapshot || !dismissedSemanticCandidate(snapshot, record.observation, candidate))
   const unresolvedTarget = candidates.some((candidate) =>
     !candidate.target?.opportunityId
     && !['reminder_cancelled'].includes(candidate.kind))
-  if (record.gaps.length > 0 || unresolvedTarget) return 'UNRESOLVED'
+  if (record.gaps.length > 0 || record.issueKinds?.some(kind => kind !== 'business_ambiguity') || unresolvedTarget) return 'UNRESOLVED'
   if (candidates.some((candidate) => candidate.kind === 'abandon_opportunity' || candidate.kind === 'external_withdrawal')) {
     return 'EXPLICITLY_DECLINED'
   }
@@ -626,6 +637,7 @@ function reconciliationBatchAccumulator(
   scannedCount: number,
   unavailableMessageCount: number,
   now: Date,
+  snapshot: PJSDASSnapshot,
 ): GmailReconciliationAccumulator {
   const stateCounts = emptyGmailReconciliationAccumulator().stateCounts
   const gmailOpportunityIds = new Set<string>()
@@ -634,11 +646,12 @@ function reconciliationBatchAccumulator(
   const horizon = now.getTime() + 7 * 86_400_000
 
   for (const record of records) {
-    const state = gmailReconciliationStateForRecord(record)
+    const state = gmailReconciliationStateForRecord(record, snapshot)
     if (!state) continue
     stateCounts[state] += 1
     let hasBoundTarget = false
-    for (const candidate of record.observation.candidates) {
+    const candidates = record.observation.candidates.filter(candidate => !dismissedSemanticCandidate(snapshot, record.observation, candidate))
+    for (const candidate of candidates) {
       if (candidate.target?.opportunityId) {
         hasBoundTarget = true
         gmailOpportunityIds.add(candidate.target.opportunityId)
@@ -656,7 +669,7 @@ function reconciliationBatchAccumulator(
         }
       }
     }
-    if (!hasBoundTarget && record.observation.candidates.length > 0) gmailOnlyCount += 1
+    if (!hasBoundTarget && candidates.length > 0) gmailOnlyCount += 1
   }
 
   return {
@@ -788,34 +801,6 @@ export async function runGmailReconciliationForBinding(options: {
     })
   }
 
-  const batchAccumulator = reconciliationBatchAccumulator(
-    records,
-    batch.scannedCount,
-    batch.unavailableMessageIds.length,
-    now,
-  )
-  const aggregate = mergeGmailReconciliationAccumulator(
-    priorState?.aggregate ?? emptyGmailReconciliationAccumulator(),
-    batchAccumulator,
-  )
-  if (aggregate.scannedCount > RECONCILIATION_MAX_MESSAGES) {
-    throw new WorkspaceSourceError(
-      'GMAIL_RECONCILIATION_LIMIT_EXCEEDED',
-      `Gmail reconciliation exceeded the bounded ${RECONCILIATION_MAX_MESSAGES}-record cycle limit.`,
-      false,
-    )
-  }
-  const summary = finalReconciliationSummary(workspace.snapshot, aggregate, now)
-  const continuation: GmailReconciliationContinuationState | undefined = batch.coverageComplete
-    ? undefined
-    : {
-        version: 1,
-        cycleStartedAt: batch.cycleStartedAt,
-        pageToken: batch.nextPageToken,
-        pendingMessageIds: batch.pendingMessageIds,
-        aggregate,
-      }
-
   const batchIdentity = [
     batch.cycleStartedAt,
     priorState?.pageToken ?? 'start',
@@ -831,6 +816,37 @@ export async function runGmailReconciliationForBinding(options: {
     workspaceRevision: workspace.context.workspaceVersion,
     reconcileExisting: true,
   })
+
+
+  const batchAccumulator = reconciliationBatchAccumulator(
+    records,
+    batch.scannedCount,
+    batch.unavailableMessageIds.length,
+    now,
+    result.snapshot,
+  )
+  const aggregate = mergeGmailReconciliationAccumulator(
+    priorState?.aggregate ?? emptyGmailReconciliationAccumulator(),
+    batchAccumulator,
+  )
+  if (aggregate.scannedCount > RECONCILIATION_MAX_MESSAGES) {
+    throw new WorkspaceSourceError(
+      'GMAIL_RECONCILIATION_LIMIT_EXCEEDED',
+      `Gmail reconciliation exceeded the bounded ${RECONCILIATION_MAX_MESSAGES}-record cycle limit.`,
+      false,
+    )
+  }
+  const summary = finalReconciliationSummary(result.snapshot, aggregate, now)
+  const continuation: GmailReconciliationContinuationState | undefined = batch.coverageComplete
+    ? undefined
+    : {
+        version: 1,
+        cycleStartedAt: batch.cycleStartedAt,
+        pageToken: batch.nextPageToken,
+        pendingMessageIds: batch.pendingMessageIds,
+        aggregate,
+      }
+
 
   if (batch.coverageComplete && !result.alreadyApplied) {
     const proof: GmailReconciliationProof = {
@@ -1093,17 +1109,30 @@ export function gmailSemanticRecordFromMessage(
   for (const [index, item] of pieces.entries()) {
     const { piece, parsed } = item
     if (item.instructionOnly || conditionalCompletionDisclaimer(piece)) continue
+    const submissionDeadline = /(?:提交|交卷|submission|submit).{0,12}(?:截止|最晚|deadline|by)|(?:截止|deadline).{0,12}(?:提交|交卷|submission|submit)/i.test(piece)
+    const previous = pieces[index - 1]
+    // A submission deadline immediately following a directly identified test
+    // window is a dependent detail. Never search across another fragment or
+    // propagate an identity that the previous fragment itself inherited.
+    const precedingWindow = submissionDeadline && parsed.type === 'other' && previous?.parsed.opportunity
+      && !previous.instructionOnly && !conditionalCompletionDisclaimer(previous.piece)
+      && ['written_test_invite', 'assessment_invite'].includes(previous.parsed.type ?? '')
+      && previous.parsed.type === deadlineContextType
+      && !/(?:取消|撤销|已完成|已经完成|已提交|改期|改为|调整|cancel|completed|reschedul)/i.test(previous.piece)
+      && notificationIdentityCompatible(piece, previous.parsed.opportunity, opportunities)
+      && notificationIdentityCanInherit(piece, previous.parsed.opportunity)
+      && resolveSourceTemporal(previous.piece, { receivedAt: originalReceivedAt ?? '', timezone: 'Asia/Shanghai', mode: previous.parsed.timingMode })?.shape === 'availability_window'
+      ? previous.parsed : undefined
     const inherited = contextSafe && contextTarget
       && notificationIdentityCompatible(piece, contextTarget, opportunities)
       && notificationIdentityCanInherit(piece, contextTarget) ? contextTarget : undefined
-    const selected = parsed.opportunity ?? inherited
+    const selected = parsed.opportunity ?? inherited ?? precedingWindow?.opportunity
     const plausible = parsed.candidates
       .filter(item => item.score >= 40 && notificationIdentityCompatible(piece, item.opportunity, opportunities))
     const commonCompany = plausible.length >= 2 && plausible.every(item =>
       item.opportunity.company === plausible[0]?.opportunity.company) ? plausible[0]?.opportunity.company : undefined
     const commonRole = plausible.length >= 2 && plausible.every(item =>
       item.opportunity.role === plausible[0]?.opportunity.role) ? plausible[0]?.opportunity.role : undefined
-    const submissionDeadline = /(?:提交|交卷|submission|submit).{0,12}(?:截止|最晚|deadline|by)|(?:截止|deadline).{0,12}(?:提交|交卷|submission|submit)/i.test(piece)
     const eventType = submissionDeadline && deadlineContextType ? deadlineContextType
       : parsed.type && parsed.type !== 'other' ? parsed.type : !bodyHasEvent ? subjectType : undefined
     if (eventType === 'interview_invite' && conditionalFutureInterviewReference(piece)) continue
@@ -1119,7 +1148,7 @@ export function gmailSemanticRecordFromMessage(
       target: selected ? { opportunityId: selected.id }
         : commonCompany || (commonRole && notificationIdentityText(piece).includes(commonRole))
           ? { company: commonCompany, role: commonRole && notificationIdentityText(piece).includes(commonRole) ? commonRole : undefined } : undefined,
-      objectConfidence: selected ? (parsed.opportunity ? parsed.confidence.opportunity : context!.confidence.opportunity) : 'low' as const,
+      objectConfidence: selected ? (parsed.opportunity ? parsed.confidence.opportunity : inherited ? context!.confidence.opportunity : precedingWindow!.confidence.opportunity) : 'low' as const,
       eventConfidence: !originalReceivedAt ? 'low' as const : application ? 'high' as const : eventConfidence,
       evidenceRefs: [evidenceRef], sourceVersionRefs: [`${message.id}:uu06-v1`],
     }
