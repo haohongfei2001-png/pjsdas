@@ -36,6 +36,14 @@ describe('bounded repair gateway',()=>{
     expect(result.structuredContent).toMatchObject({code:'CONFLICT'});expect(f.writes).toHaveLength(0)
     expect(f.snapshot.data.processEvents[0].invalidation).toBeUndefined()
   })
+  it('rejects a legacy nonterminal orphan with zero authoritative writes or upgrade side effects',async()=>{
+    const f=fixture();f.snapshot.version=1;delete f.snapshot.data.scheduleNodes
+    f.snapshot.data.processEvents[0].type='written_test_invite';f.snapshot.data.processEvents[0].dueAt='2026-10-07T00:00:00Z'
+    const before=structuredClone(f.snapshot)
+    const result=await invokeApplyUserCommand(f.source,await legacy(f))
+    expect(result.isError).toBe(true);expect(f.writes).toHaveLength(0)
+    expect(f.snapshot).toEqual(before);expect(f.snapshot.data.scheduleNodes).toBeUndefined()
+  })
   it('cannot use repairs through a read-only workspace source',async()=>{
     const f=fixture(), command=await legacy(f)
     const result=await invokeApplyUserCommand({read:f.source.read},command)

@@ -36,6 +36,16 @@ describe('audited legacy process evidence correction',()=>{
     const dependent=base();dependent.data.actions.push({id:'synthetic-action',kind:'manual',title:'Work',processEventId:event.id,leverage:1,delayCost:1,status:'todo'})
     await expect(invalidateLegacyProcessEvent(dependent,await command(dependent),now)).rejects.toThrow(/DEPENDENT_SCHEDULE/)
   })
+  it('rejects an unmigrated actionable orphan before an upgrade can create a live schedule',async()=>{
+    const before=base();before.version=1;delete before.data.scheduleNodes
+    before.data.processEvents[0].type='written_test_invite';before.data.processEvents[0].dueAt='2026-10-07T00:00:00Z'
+    const original=structuredClone(before)
+    expect(await readLegacyProcessCorrection(before,event.id)).toMatchObject({eligible:false,blocked:'NONTERMINAL_EVENT_REQUIRES_LIFECYCLE_RECONCILIATION'})
+    await expect(invalidateLegacyProcessEvent(before,await command(before),now)).rejects.toThrow(/NONTERMINAL_EVENT/)
+    expect(before).toEqual(original)
+    expect(before.data.scheduleNodes).toBeUndefined()
+    expect(before.data.processEvents[0].invalidation).toBeUndefined()
+  })
   it('does not hide an unaudited tombstone in the integrity report',()=>{
     const before=base();before.data.processEvents[0].invalidation={commandId:'fake',receiptId:'missing',legacyReview:{expectedEventFingerprint:'0'.repeat(64),sourceRefs:['synthetic:ref']},reason:'fake',evidenceRefs:['synthetic:ref'],invalidatedAt:now.toISOString()}
     expect(auditWorkspaceIntegrity(before,now).criticalCount).toBe(1)

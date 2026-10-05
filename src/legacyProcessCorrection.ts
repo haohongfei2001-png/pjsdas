@@ -28,6 +28,18 @@ function receiptReferences(snapshot: PJSDASSnapshot, eventId: string) {
 }
 /** Review bytes include all exact provenance and projections that may be touched. */
 export async function readLegacyProcessCorrection(snapshot: PJSDASSnapshot, eventId: string) {
+  const originalEvent = snapshot.data.processEvents.find(item => item.id === eventId)
+  if (!originalEvent) throw new Error('The exact ProcessEvent was not found.')
+  if (!['offer', 'rejection'].includes(originalEvent.type)) {
+    const refs = sourceRefs(snapshot, originalEvent)
+    const receiptIds = receiptReferences(snapshot, eventId).map(item => item.id)
+    return { event: originalEvent, sourceRefs: refs, receiptIds, eligible: false,
+      blocked: 'NONTERMINAL_EVENT_REQUIRES_LIFECYCLE_RECONCILIATION',
+      expectedEventFingerprint: await opportunityManagementFingerprint({ event: originalEvent, refs, receiptIds }) }
+  }
+  // Review the same deterministic legacy projection used by apply. Otherwise
+  // migration could materialize a live schedule after an empty dependency review.
+  snapshot = upgradeSnapshotToLatest(snapshot)
   const event = snapshot.data.processEvents.find(item => item.id === eventId)
   if (!event) throw new Error('The exact ProcessEvent was not found.')
   const refs = sourceRefs(snapshot, event)
@@ -50,7 +62,7 @@ export async function readLegacyProcessCorrection(snapshot: PJSDASSnapshot, even
   const blocked = event.invalidation ? 'ALREADY_INVALIDATED' : ownedReceipts.length ? 'SOURCE_RECEIPT_PRESENT'
     : unprovenTerminal ? 'UNPROVEN_TERMINAL_PROJECTION'
     : dependencies.actions.length || dependencies.nodes.length ? 'DEPENDENT_SCHEDULE_REQUIRES_RECONCILIATION'
-      : !['offer', 'rejection'].includes(event.type) && snapshot.data.opportunities.some(item => item.id === event.opportunityId) ? 'NONTERMINAL_OWNED_EVENT' : undefined
+      : undefined
   return { event, sourceRefs: refs, receiptIds: ownedReceipts.map(item => item.id), eligible: !blocked, blocked,
     expectedEventFingerprint: await opportunityManagementFingerprint({ event, refs, ownedReceipts, dependencies }) }
 }

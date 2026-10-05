@@ -426,7 +426,7 @@ export function createPjsdasMcpServer(
   if (explicitUserCommandMode === 'enabled') {
     server.registerTool('apply_user_command', {
       title: 'Apply one explicit TodayAction user command',
-      description: 'Directly commit one bounded, explicit, low-risk user command against an exact TodayAction target. Ambiguous targets must be clarified in the AI conversation before calling this tool; governed/high-impact changes remain review-only. Repairs require a current get_workspace_integrity review and exact txn revision: invalidate_legacy_process_event is limited to receipt-less evidence, dismiss_semantic_decision never executes its candidate, and merge_opportunities requires positive identity evidence.',
+      description: 'Directly commit one bounded, explicit, low-risk user command against an exact TodayAction target. Ambiguous targets must be clarified in the AI conversation before calling this tool; governed/high-impact changes remain review-only. Repairs require a current get_workspace_integrity review and exact txn revision: invalidate_legacy_process_event is limited to receipt-less terminal offer/rejection evidence, dismiss_semantic_decision never executes its candidate, and merge_opportunities requires positive identity evidence.',
       inputSchema: applyUserCommandSchema, annotations: directWriteAnnotations,
     }, async (args) => invokeApplyUserCommand(source, args))
   }
