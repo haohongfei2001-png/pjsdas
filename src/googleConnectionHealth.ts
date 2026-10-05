@@ -17,7 +17,7 @@ export function googleConnectionHealth(input: {
   if (!input.verified) return 'unverified'
   const code = googleAuthorizationErrorCode(input.lastError)
   if (code && ['GOOGLE_AUTH_EXPIRED', 'GOOGLE_CONNECTION_REQUIRED', 'GOOGLE_GMAIL_SCOPE_MISSING', 'GOOGLE_ACCOUNT_MISMATCH'].includes(code)) return 'reconnect_required'
-  if (code === 'GOOGLE_AUTH_CONFIG_INVALID') return 'configuration_error'
+  if (code === 'GOOGLE_AUTH_CONFIG_INVALID' || code === 'GOOGLE_REFRESH_STORAGE_REQUIRED') return 'configuration_error'
   if (!input.enabled) return 'disabled'
   if (input.lastError) return 'retrying'
   if (!input.lastSuccessAt) return 'waiting'

@@ -1,7 +1,7 @@
 import { encryptSecret } from './tokenCrypto.js'
 import type { GoogleOAuthClientConfig } from './googleOAuthTokens.js'
 
-export type GoogleRefreshLifecycle = Pick<GoogleOAuthClientConfig, 'onRefreshTokenRotated' | 'onReconnectRequired' | 'signal'>
+export type GoogleRefreshLifecycle = Pick<GoogleOAuthClientConfig, 'onRefreshTokenRotated' | 'onReconnectRequired' | 'signal' | 'beforeRefresh'>
 
 /** Closure captures one encrypted generation. A stale worker may neither replace
  * a newer reconnect nor mark it expired. The store must implement compare-and-set. */
@@ -18,12 +18,12 @@ export function googleRefreshLifecycle(tokenEncryptionKey: string,
 }
 
 export function automationGoogleRefreshLifecycle(tokenEncryptionKey: string,
-  binding: { userId: string; refreshTokenCiphertext: string },
-  store: { updateGoogleRefreshState: (userId: string, expectedCiphertext: string, patch: { nextCiphertext?: string; reconnectRequired?: boolean }, executionToken?: string) => Promise<void> },
+  binding: { userId: string; googleSubject: string; refreshTokenCiphertext: string },
+  store: { assertRefreshPersistenceConfigured: () => void; updateGoogleRefreshState: (userId: string, expectedCiphertext: string, patch: { nextCiphertext?: string; reconnectRequired?: boolean }, executionToken?: string, expectedSubject?: string) => Promise<void> },
   executionToken?: string,
 ): GoogleRefreshLifecycle {
-  return googleRefreshLifecycle(tokenEncryptionKey, async (patch) => {
-    await store.updateGoogleRefreshState(binding.userId, binding.refreshTokenCiphertext, patch, executionToken)
+  return { beforeRefresh: () => store.assertRefreshPersistenceConfigured(), ...googleRefreshLifecycle(tokenEncryptionKey, async (patch) => {
+    await store.updateGoogleRefreshState(binding.userId, binding.refreshTokenCiphertext, patch, executionToken, binding.googleSubject)
     if (patch.nextCiphertext) binding.refreshTokenCiphertext = patch.nextCiphertext
-  })
+  }) }
 }

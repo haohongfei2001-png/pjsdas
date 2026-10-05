@@ -49,6 +49,8 @@ export interface AutomationConnectionStoreOptions {
   supabaseUrl: string
   supabasePublishableKey: string
   workerToken: string
+  supabaseServiceRoleKey?: string
+  refreshSource?: 'gmail' | 'discovery'
   fetchImpl?: typeof fetch
 }
 
@@ -92,18 +94,19 @@ export function createAutomationConnectionStore(options: AutomationConnectionSto
     'content-type': 'application/json',
   }
 
-  async function rpc<T>(name: string, body: Record<string, unknown>, responseType: 'json' | 'void' = 'json'): Promise<T> {
+  async function rpc<T>(name: string, body: Record<string, unknown>, responseType: 'json' | 'void' = 'json', serviceOnly = false): Promise<T> {
     let response: Response
     try {
       response = await fetchImpl(`${baseUrl}/rest/v1/rpc/${name}`, {
         method: 'POST',
-        headers,
+        headers: serviceOnly ? { ...headers, apikey: options.supabaseServiceRoleKey!.trim(), Authorization: `Bearer ${options.supabaseServiceRoleKey!.trim()}` } : headers,
         body: JSON.stringify(body),
       })
     } catch {
       throw new WorkspaceSourceError('AUTH_UNAVAILABLE', 'TodayAction automation authorization store is temporarily unavailable.', true)
     }
     if (response.status === 401 || response.status === 403) {
+      if (serviceOnly) throw new WorkspaceSourceError('GOOGLE_REFRESH_STORAGE_REQUIRED', 'Trusted Google credential storage authorization is unavailable.', false)
       throw new WorkspaceSourceError('AUTOMATION_AUTH_REQUIRED', 'TodayAction automation worker authorization is invalid.', false)
     }
     if (response.status === 404) {
@@ -138,13 +141,22 @@ export function createAutomationConnectionStore(options: AutomationConnectionSto
     if (updated !== true) throw new WorkspaceSourceError('GOOGLE_CONNECTION_CHANGED', 'Google connection changed before the run state was saved.', true)
   }
 
+  function assertRefreshPersistenceConfigured() {
+    if (!options.supabaseServiceRoleKey?.trim() || !options.refreshSource) {
+      throw new WorkspaceSourceError('GOOGLE_REFRESH_STORAGE_REQUIRED', 'Trusted Google credential storage is not configured.', false)
+    }
+  }
+
   return {
+    assertRefreshPersistenceConfigured,
     async updateGoogleRefreshState(userId: string, expectedCiphertext: string,
-      patch: { nextCiphertext?: string; reconnectRequired?: boolean }, executionToken?: string) {
+      patch: { nextCiphertext?: string; reconnectRequired?: boolean }, executionToken?: string, expectedSubject?: string) {
+      assertRefreshPersistenceConfigured()
+      if (!expectedSubject?.trim()) throw new WorkspaceSourceError('GOOGLE_REFRESH_STORAGE_REQUIRED', 'Google credential identity is unavailable.', false)
       const updated = await rpc<boolean>('pjsdas_update_google_refresh_state', {
-        worker_token: workerToken, target_user_id: userId, expected_ciphertext: expectedCiphertext,
+        source_kind: options.refreshSource, target_user_id: userId, expected_subject: expectedSubject, expected_ciphertext: expectedCiphertext,
         next_ciphertext: patch.nextCiphertext ?? null, reconnect_required: patch.reconnectRequired === true, execution_token: executionToken ?? null,
-      })
+      }, 'json', true)
       if (updated !== true) throw new WorkspaceSourceError('GOOGLE_CONNECTION_CHANGED',
         'Google connection changed during refresh. Retry with the current connection.', true)
     },

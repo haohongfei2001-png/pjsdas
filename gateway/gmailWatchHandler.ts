@@ -6,6 +6,7 @@ import { WorkspaceSourceError } from './workspaceSource.js'
 export interface GmailWatchHandlerConfig {
   supabaseUrl: string
   supabasePublishableKey: string
+  supabaseServiceRoleKey?: string
   tokenEncryptionKey: string
   googleClientId: string
   googleClientSecret: string
@@ -52,6 +53,8 @@ export function createGmailWatchHandler(config: GmailWatchHandlerConfig) {
       supabaseUrl: config.supabaseUrl,
       supabasePublishableKey: config.supabasePublishableKey,
       workerToken,
+      supabaseServiceRoleKey: config.supabaseServiceRoleKey,
+      refreshSource: 'gmail',
       fetchImpl: config.fetchImpl,
     })
     try {

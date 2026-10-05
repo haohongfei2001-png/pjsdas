@@ -10,6 +10,7 @@ export interface GoogleOAuthClientConfig {
   onReconnectRequired?: () => Promise<void>
   signal?: AbortSignal
   retryDelayMs?: number
+  beforeRefresh?: () => void
 }
 
 function unavailable() {
@@ -29,6 +30,7 @@ async function delay(ms: number, signal?: AbortSignal) {
  * erase durable authorization or tell users their consent has been revoked. */
 export async function refreshGoogleAccessToken(refreshToken: string, config: GoogleOAuthClientConfig) {
   if (!refreshToken) throw new WorkspaceSourceError('GOOGLE_CONNECTION_REQUIRED', 'Google is not connected to TodayAction.', false)
+  config.beforeRefresh?.()
   const fetchImpl = config.fetchImpl ?? fetch
   for (let attempt = 0; attempt < 2; attempt += 1) {
     if (config.signal?.aborted) throw unavailable()

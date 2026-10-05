@@ -144,6 +144,8 @@ export function createGmailFragmentReprocessDryRunHandler(config: GmailFragmentR
         supabaseUrl: config.supabaseUrl,
         supabasePublishableKey: config.supabasePublishableKey,
         workerToken,
+        supabaseServiceRoleKey: config.supabaseServiceRoleKey,
+        refreshSource: 'gmail',
         fetchImpl: config.fetchImpl,
       })
       let bindings = await store.listEnabledGmailBindings()

@@ -26,7 +26,8 @@ export async function runControlledGmailExecutions(config: GmailAutomationHandle
     const priorSignal = init?.signal ?? (input instanceof Request ? input.signal : undefined)
     return rawFetch(input, { ...init, signal: priorSignal ? AbortSignal.any([controller.signal, priorSignal]) : controller.signal })
   }
-  const storeOptions = { supabaseUrl: config.supabaseUrl, supabasePublishableKey: config.supabasePublishableKey, workerToken }
+  const storeOptions = { supabaseUrl: config.supabaseUrl, supabasePublishableKey: config.supabasePublishableKey, workerToken,
+    supabaseServiceRoleKey: config.supabaseServiceRoleKey, refreshSource: 'gmail' as const }
   const store = createAutomationConnectionStore({ ...storeOptions, fetchImpl: budgetFetch })
   const results: Array<{ status: 'success' | 'error'; code?: string }> = []
   let coalescedUsers = 0
@@ -123,7 +124,8 @@ export async function runControlledGmailReconciliations(
     const priorSignal = init?.signal ?? (input instanceof Request ? input.signal : undefined)
     return rawFetch(input, { ...init, signal: priorSignal ? AbortSignal.any([controller.signal, priorSignal]) : controller.signal })
   }
-  const storeOptions = { supabaseUrl: config.supabaseUrl, supabasePublishableKey: config.supabasePublishableKey, workerToken }
+  const storeOptions = { supabaseUrl: config.supabaseUrl, supabasePublishableKey: config.supabasePublishableKey, workerToken,
+    supabaseServiceRoleKey: config.supabaseServiceRoleKey, refreshSource: 'gmail' as const }
   const store = createAutomationConnectionStore({ ...storeOptions, fetchImpl: budgetFetch })
   const results: Array<{
     status: 'success' | 'error'

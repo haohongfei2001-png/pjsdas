@@ -7,6 +7,7 @@ import {
 const handler = createDiscoveryAutomationHandler({
   supabaseUrl: PJSDAS_SUPABASE_URL,
   supabasePublishableKey: PJSDAS_SUPABASE_PUBLISHABLE_KEY,
+  supabaseServiceRoleKey: process.env.PJSDAS_SUPABASE_SERVICE_ROLE_KEY ?? '',
   tokenEncryptionKey: process.env.PJSDAS_TOKEN_ENCRYPTION_KEY ?? '',
   googleClientId: process.env.PJSDAS_GOOGLE_CLIENT_ID ?? '',
   googleClientSecret: process.env.PJSDAS_GOOGLE_CLIENT_SECRET ?? '',

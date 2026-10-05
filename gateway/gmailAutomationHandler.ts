@@ -7,6 +7,7 @@ import { WorkspaceSourceError } from './workspaceSource.js'
 export interface GmailAutomationHandlerConfig {
   supabaseUrl: string
   supabasePublishableKey: string
+  supabaseServiceRoleKey?: string
   tokenEncryptionKey: string
   googleClientId: string
   googleClientSecret: string
@@ -78,6 +79,8 @@ export function createGmailAutomationHandler(config: GmailAutomationHandlerConfi
       supabaseUrl: config.supabaseUrl,
       supabasePublishableKey: config.supabasePublishableKey,
       workerToken,
+      supabaseServiceRoleKey: config.supabaseServiceRoleKey,
+      refreshSource: 'gmail',
       fetchImpl: config.fetchImpl,
     })
     if (reconciliation) {

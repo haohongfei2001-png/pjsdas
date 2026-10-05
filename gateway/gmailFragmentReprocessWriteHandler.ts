@@ -233,6 +233,8 @@ export function createGmailFragmentReprocessWriteHandler(config: GmailFragmentRe
         supabaseUrl: config.supabaseUrl,
         supabasePublishableKey: config.supabasePublishableKey,
         workerToken,
+        supabaseServiceRoleKey: config.supabaseServiceRoleKey,
+        refreshSource: 'gmail',
         fetchImpl: config.fetchImpl,
       })
       const result = await executeBoundedFragmentSettlement(body as FragmentSettlementAuthorization, {

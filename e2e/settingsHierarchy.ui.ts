@@ -3,7 +3,7 @@ import { createIngestionLedgerTimeline } from '../src/ingestion.js'
 import { BACKEND, cors, health, seedSession, workspace } from './fixtures/todayWorkspace.js'
 
 const now = '2026-10-02T02:00:00.000Z'
-for (const state of ['enabled', 'pending', 'partial', 'error', 'disabled', 'unverified'] as const) {
+for (const state of ['enabled', 'pending', 'partial', 'error', 'transient', 'configuration', 'disabled', 'unverified'] as const) {
   for (const width of [1440, 390, 320]) test(`settings hierarchy ${state} at ${width}`, async ({ page }, info) => {
     await seedSession(page.context())
     await page.clock.setFixedTime(new Date(now))
@@ -20,6 +20,11 @@ for (const state of ['enabled', 'pending', 'partial', 'error', 'disabled', 'unve
       fingerprint: `synthetic-review-${index}`, receivedAt: now, accountedAt: now,
       issueKinds: [index < 42 ? 'interpretation_failure' : 'business_ambiguity'],
     }))
+    // Fixture content is synthetic; error enums match the real persisted contract.
+    // An HTTP/provider outage or client configuration failure is not revoked consent.
+    const gmailError = state === 'error' ? 'GOOGLE_AUTH_EXPIRED: Synthetic revoked authorization'
+      : state === 'transient' ? 'GOOGLE_DRIVE_UNAVAILABLE: Synthetic temporary outage'
+        : state === 'configuration' ? 'GOOGLE_AUTH_CONFIG_INVALID: Synthetic client configuration failure' : null
     const calls: unknown[] = []
     await page.route(/https:\/\/[^/]+\.supabase\.co\//, route => route.abort())
     await page.route(BACKEND + '/**', route => {
@@ -31,7 +36,7 @@ for (const state of ['enabled', 'pending', 'partial', 'error', 'disabled', 'unve
         const body = request.postDataJSON()
         if (state === 'unverified') return cors(route, { message: 'SYNTHETIC_STATUS_UNAVAILABLE' }, 503)
         if (body.action !== 'read') { calls.push(body); return cors(route, { message: 'SYNTHETIC_ACTION_FAILURE' }, 503) }
-        return cors(route, { googleEmail: state === 'disabled' ? null : 'synthetic-long-workspace-identity@example.test', gmailScopeGranted: state !== 'disabled', gmailEnabled: state === 'enabled' || state === 'pending' || state === 'error', discoveryEnabled: state !== 'disabled', discoveryReadiness: { profileConfigured: state === 'partial', budgetState: 'approval_required' }, gmailLastSuccessAt: state === 'disabled' ? null : now, discoveryLastSuccessAt: null, gmailLastError: state === 'error' ? 'SYNTHETIC_AUTH_EXPIRED' : null, discoveryLastError: state === 'error' || state === 'pending' ? 'SYNTHETIC_DISCOVERY_TIMEOUT' : null })
+        return cors(route, { googleEmail: state === 'disabled' ? null : 'synthetic-long-workspace-identity@example.test', gmailScopeGranted: state !== 'disabled', gmailEnabled: state === 'enabled' || state === 'pending' || Boolean(gmailError), discoveryEnabled: state !== 'disabled', discoveryReadiness: { profileConfigured: state === 'partial', budgetState: 'approval_required' }, gmailLastSuccessAt: state === 'disabled' ? null : now, discoveryLastSuccessAt: null, gmailLastError: gmailError, discoveryLastError: state === 'error' || state === 'pending' ? 'SYNTHETIC_DISCOVERY_TIMEOUT' : null })
       }
       if (path === '/api/workspace' && request.postDataJSON().action === 'read') return cors(route, { workspaceId: 'ws-a', revision: 91, workspaceVersion: 'txn:91', schemaVersion: snapshot.version, snapshot })
       calls.push(path); return cors(route, { code: 'UNEXPECTED' }, 409)
@@ -63,15 +68,17 @@ for (const state of ['enabled', 'pending', 'partial', 'error', 'disabled', 'unve
     }
     if (state === 'pending') {
       await expect(gmail.getByLabel(/^查看邮件核对结果：/)).toContainText('84 项待核对')
-      await expect(gmail.locator('.cloud-state')).toHaveText('已启用')
+      await expect(gmail.locator('.cloud-state')).toHaveText('最近检查已完成')
       await expect(gmail.getByRole('alert')).toHaveCount(0)
       await expect(discovery.getByText('新岗位可能延迟出现')).toBeVisible()
       await gmail.getByLabel(/^查看邮件核对结果：/).focus()
       await page.keyboard.press('Enter')
       await expect(gmail.getByText('解释失败 42', { exact: false })).toBeVisible()
+      await expect(gmail.getByText('业务歧义 42', { exact: false })).toBeVisible()
       await page.keyboard.press('Enter')
     }
     if (state === 'error') {
+      await expect(gmail.locator('.cloud-state')).toHaveText('需要重新连接 Google')
       await expect(gmail.getByText('新邮件进展可能未同步')).toBeVisible()
       await expect(discovery.getByText('新岗位可能延迟出现')).toBeVisible()
       await expect(gmail.locator('.settings-permission')).toContainText('最近90天')
@@ -79,6 +86,17 @@ for (const state of ['enabled', 'pending', 'partial', 'error', 'disabled', 'unve
       await gmail.locator('.settings-source-manage > summary').click()
       await expect(gmail.locator('.settings-permission')).toBeVisible()
       await expect(gmail.getByRole('button', { name: '查看并重新授权 Gmail' })).toBeVisible()
+      await gmail.locator('.settings-source-manage > summary').click()
+    }
+    if (state === 'transient' || state === 'configuration') {
+      await expect(gmail.locator('.cloud-state')).toHaveText(state === 'transient'
+        ? '最近检查失败 · 等待重试' : '授权配置需要维护')
+      await expect(gmail.getByText('新邮件进展可能未同步')).toBeVisible()
+      await gmail.locator('.settings-source-manage > summary').click()
+      await expect(gmail.locator('.settings-permission')).toBeVisible()
+      await expect(gmail.getByRole('button', { name: '关闭自动跟踪', exact: true })).toBeVisible()
+      await expect(gmail.getByRole('button', { name: '查看并重新授权 Gmail', exact: true })).toHaveCount(0)
+      await expect(gmail).not.toContainText('重新授权会再次请求')
       await gmail.locator('.settings-source-manage > summary').click()
     }
     if (state === 'disabled' || state === 'partial') await expect(gmail.locator('.settings-permission')).toContainText('不发送或修改邮件')
@@ -124,6 +142,8 @@ for (const state of ['enabled', 'pending', 'partial', 'error', 'disabled', 'unve
       await interfaceGroup.getByRole('button', { name: 'EN', exact: true }).click()
       await interfaceGroup.locator('summary').click()
       await expect(page.getByRole('heading', { name: 'Automatic recruiting-email tracking', exact: true })).toBeVisible()
+      await expect(gmail.locator('.cloud-state')).toHaveText('Recent check completed')
+      await expect(gmail.getByLabel(/^Review email reconciliation:/)).toContainText('84 need review')
       if (width === 320) for (const region of [gmail, discovery]) {
         const panelBounds = await region.boundingBox()
         const headingBounds = await region.getByRole('heading').boundingBox()

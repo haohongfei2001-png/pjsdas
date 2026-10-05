@@ -18,7 +18,7 @@ const exec = sql => real ? db.query(sql) : db.exec(sql)
 const user = '00000000-0000-4000-8000-000000000001'
 const migration = await readFile(new URL('../../supabase/migrations/20261005211006_google_refresh_lifecycle.sql', import.meta.url), 'utf8')
 try {
- if (!real) await exec('create role anon; create role authenticated; create role service_role;')
+ if (!real) await exec('create role anon; create role authenticated; create role service_role bypassrls;')
  await exec(`
  create schema vault; create table vault.decrypted_secrets(name text,decrypted_secret text);
  create view vault.secrets as select name from vault.decrypted_secrets;
@@ -43,7 +43,18 @@ try {
    if(name==='20260926180000_gmail_reconciliation_continuation.sql') sql=sql.slice(0,sql.indexOf('do $migration$'))
    await exec(sql)
  }
+ // Verified baseline service-role table privileges are fixture-only. The
+ // candidate migration must not introduce new table/Vault privileges.
+ await exec('grant select,update on public.google_drive_connections,public.gmail_automation_execution_state to service_role; alter table public.google_drive_connections enable row level security;')
+ // Model a previously provisioned broad six-argument function; upgrade must remove it.
+ await exec(`create function public.pjsdas_update_google_refresh_state(text,uuid,text,text,boolean,uuid) returns boolean language sql security definer as $$ select true $$;
+ grant execute on function public.pjsdas_update_google_refresh_state(text,uuid,text,text,boolean,uuid) to anon,authenticated;`)
+ await exec('alter default privileges grant execute on functions to anon,authenticated')
  await exec(migration)
+ assert.equal((await db.query("select to_regprocedure('public.pjsdas_update_google_refresh_state(text,uuid,text,text,boolean,uuid)') old")).rows[0].old,null)
+ assert.equal((await db.query("select prosecdef from pg_proc where oid='public.pjsdas_update_google_refresh_state(text,uuid,text,text,text,boolean,uuid)'::regprocedure")).rows[0].prosecdef,false)
+ const asService=async(sql,params=[])=>{await db.query('set role service_role');try{return await db.query(sql,params)}finally{await db.query('reset role')}}
+
  assert.deepEqual((await db.query("select tgname from pg_trigger where tgrelid='google_drive_connections'::regclass and not tgisinternal order by tgname")).rows.map(x=>x.tgname),
    ['pjsdas_guard_gmail_intake_consent','pjsdas_invalidate_gmail_execution','pjsdas_reset_changed_google_subject'])
  await db.query(`insert into google_drive_connections(user_id,google_subject,refresh_token_ciphertext,gmail_history_id,gmail_sync_mode,gmail_page_token,gmail_pending_history_id,gmail_pending_message_ids,gmail_intake_consent_version,gmail_last_success_at,gmail_automation_enabled,granted_scopes)
@@ -52,18 +63,28 @@ try {
  values ($1,$1,now()+interval '1 hour',now(),' {"fictional":"pending"}')`,[user])
  const row=async()=> (await db.query('select * from google_drive_connections')).rows[0]
  const state=async()=> (await db.query('select * from gmail_automation_execution_state')).rows[0]
- const update=async(token,expected,next=null,reconnect=false)=>(await db.query('select pjsdas_update_google_refresh_state($1,$2,$3,$4,$5) updated',[token,user,expected,next,reconnect])).rows[0].updated
- assert.equal((await db.query("select has_function_privilege('authenticated','pjsdas_update_google_refresh_state(text,uuid,text,text,boolean,uuid)','execute') allowed")).rows[0].allowed,false)
- assert.equal((await db.query("select has_function_privilege('anon','pjsdas_update_google_refresh_state(text,uuid,text,text,boolean,uuid)','execute') allowed")).rows[0].allowed,true)
- await assert.rejects(()=>update('wrong','v1.initial','v1.bad'),/Invalid automation worker authorization/)
- assert.equal(await update('fictional-discovery','v1.initial','v1.bad'),false,'disabled worker cannot mutate another worker scope')
- assert.equal(await update('fictional-gmail','v1.initial','v1.rotated'),true)
+ const update=async(source,expected,next=null,reconnect=false)=> (await asService('select pjsdas_update_google_refresh_state($1,$2,$3,$4,$5,$6) updated',[source,user,'fictional-subject',expected,next,reconnect])).rows[0].updated
+ for(const role of ['anon','authenticated']) {
+  assert.equal((await db.query("select has_function_privilege($1,'pjsdas_update_google_refresh_state(text,uuid,text,text,text,boolean,uuid)','execute') allowed",[role])).rows[0].allowed,false)
+  await db.query(`set role ${role}`)
+  await assert.rejects(()=>db.query("select pjsdas_update_google_refresh_state('gmail',$1,'fictional-subject','v1.initial','v1.attack',false)",[user]),/permission denied/)
+  await db.query('reset role')
+ }
+ assert.equal((await db.query("select has_function_privilege('service_role','pjsdas_update_google_refresh_state(text,uuid,text,text,text,boolean,uuid)','execute') allowed")).rows[0].allowed,true)
+ await assert.rejects(()=>update('wrong','v1.initial','v1.bad'),/Invalid refresh source/)
+ assert.equal((await asService("select pjsdas_update_google_refresh_state('gmail',$1,'wrong-subject','v1.initial','v1.bad',false) updated",[user])).rows[0].updated,false)
+ // Missing existing privileges must deny; candidate never grants them itself.
+ await exec('revoke update on public.google_drive_connections from service_role')
+ await assert.rejects(()=>update('gmail','v1.initial','v1.bad'),/permission denied/)
+ await exec('grant update on public.google_drive_connections to service_role')
+ assert.equal(await update('discovery','v1.initial','v1.bad'),false,'disabled worker cannot mutate another worker scope')
+ assert.equal(await update('gmail','v1.initial','v1.rotated'),true)
  assert.equal((await row()).gmail_history_id,'durable');assert.deepEqual((await row()).gmail_pending_message_ids,['pending-message'])
  assert.equal((await state()).lease_token,null,'rotation invalidates old execution')
  assert.deepEqual((await state()).gmail_reconciliation_state,{fictional:'pending'},'rotation preserves same-account catch-up')
- assert.equal(await update('fictional-gmail','v1.initial',null,true),false,'late invalid_grant cannot expire rotated generation')
- assert.equal(await update('fictional-gmail','v1.initial','v1.stale'),false,'late rotation cannot overwrite newer generation')
- assert.equal(await update('fictional-gmail','v1.rotated',null,true),true)
+ assert.equal(await update('gmail','v1.initial',null,true),false,'late invalid_grant cannot expire rotated generation')
+ assert.equal(await update('gmail','v1.initial','v1.stale'),false,'late rotation cannot overwrite newer generation')
+ assert.equal(await update('gmail','v1.rotated',null,true),true)
  assert.equal((await row()).gmail_last_error,'GOOGLE_AUTH_EXPIRED: Reconnect Google to resume.')
  assert.equal((await db.query("select * from pjsdas_claim_gmail_automation_bindings_v5('fictional-gmail')")).rows.length,0,'invalid grant suppresses repeated refresh')
  assert.equal((await row()).gmail_last_success_at.toISOString(),'2026-10-04T12:30:00.000Z')
@@ -86,16 +107,23 @@ try {
  }
  assert.equal((await db.query("select pjsdas_update_google_automation_state('fictional-discovery',$1,'v1.rotated','pjsdas_update_discovery_automation_state','{\"set_last_error\":true}') updated",[user])).rows[0].updated,false)
  assert.equal((await db.query("select pjsdas_update_google_automation_state('fictional-discovery',$1,'v1.reconnected','pjsdas_update_discovery_automation_state','{\"set_last_error\":true}') updated",[user])).rows[0].updated,true)
+ assert.equal((await db.query("select pjsdas_update_google_automation_state('fictional-discovery',$1,'v1.reconnected','pjsdas_update_discovery_automation_state','{\"refresh_token_ciphertext\":\"v1.injected\",\"next_ciphertext\":\"v1.injected\",\"google_subject\":\"forged-subject\"}') updated",[user])).rows[0].updated,true)
+ assert.equal((await row()).refresh_token_ciphertext,'v1.reconnected')
+ assert.equal((await row()).google_subject,'fictional-subject')
  // Owner-controlled rotation keeps only its existing lease, never extends it,
  // and can complete the same run. No indefinite rotate/restart loop.
  await db.query('update gmail_automation_execution_state set lease_token=$1,lease_expires_at=now()+interval \'1 hour\',binding_updated_at=(select updated_at from google_drive_connections),started_at=now()',[user])
  const expiry=(await state()).lease_expires_at.toISOString()
- assert.equal((await db.query("select pjsdas_update_google_refresh_state('fictional-gmail',$1,'v1.reconnected','v1.wrong-owner',false,'00000000-0000-4000-8000-000000000099') updated",[user])).rows[0].updated,false)
+ assert.equal((await asService("select pjsdas_update_google_refresh_state('gmail',$1,'fictional-subject','v1.reconnected','v1.wrong-owner',false,'00000000-0000-4000-8000-000000000099') updated",[user])).rows[0].updated,false)
  await db.query("update gmail_automation_execution_state set lease_expires_at=now()-interval '1 second'")
- assert.equal((await db.query("select pjsdas_update_google_refresh_state('fictional-gmail',$1,'v1.reconnected','v1.expired',false,$1) updated",[user])).rows[0].updated,false)
+ assert.equal((await asService("select pjsdas_update_google_refresh_state('gmail',$1,'fictional-subject','v1.reconnected','v1.expired',false,$1) updated",[user])).rows[0].updated,false)
  await db.query('update gmail_automation_execution_state set lease_expires_at=$1',[expiry])
 
- assert.equal((await db.query("select pjsdas_update_google_refresh_state('fictional-gmail',$1,'v1.reconnected','v1.owned',false,$1) updated",[user])).rows[0].updated,true)
+ await exec('revoke update on public.gmail_automation_execution_state from service_role')
+ await assert.rejects(()=>asService("select pjsdas_update_google_refresh_state('gmail',$1,'fictional-subject','v1.reconnected','v1.denied-lease',false,$1)",[user]),/permission denied/)
+ assert.equal((await row()).refresh_token_ciphertext,'v1.reconnected','permission failure must roll back the credential update and trigger changes')
+ await exec('grant update on public.gmail_automation_execution_state to service_role')
+ assert.equal((await asService("select pjsdas_update_google_refresh_state('gmail',$1,'fictional-subject','v1.reconnected','v1.owned',false,$1) updated",[user])).rows[0].updated,true)
  assert.equal((await state()).lease_expires_at.toISOString(),expiry)
  assert.equal((await db.query("select pjsdas_assert_gmail_execution('fictional-gmail',$1,$1) valid",[user])).rows[0].valid,true)
  assert.equal((await db.query("select pjsdas_finish_gmail_execution('fictional-gmail',$1,$1,'{}','{\"status\":\"completed\",\"mode\":\"history\"}') finished",[user])).rows[0].finished,true)
@@ -124,7 +152,7 @@ try {
  const changed=await row();assert.equal(changed.gmail_history_id,null);assert.equal(changed.gmail_page_token,null);assert.deepEqual(changed.gmail_pending_message_ids,[])
  assert.equal(changed.gmail_automation_enabled,false);assert.equal(changed.gmail_intake_consent_version,null);assert.equal(changed.gmail_last_success_at,null)
  assert.equal((await state()).gmail_reconciliation_state,null,'different mailbox cannot inherit reconciliation')
- assert.equal(await update('fictional-gmail','v1.reconnected',null,true),false)
+ assert.equal(await update('gmail','v1.reconnected',null,true),false)
  // All original fail-closed consent transitions still apply under every guard.
  for (const change of ["gmail_automation_enabled=false", "revoked_at=now()", "granted_scopes='{}'", "gmail_intake_consent_version=null"]) {
   await db.query("update google_drive_connections set revoked_at=null,granted_scopes='{https://www.googleapis.com/auth/gmail.readonly}',gmail_automation_enabled=true,gmail_intake_consent_version='uu06-v1',gmail_sync_mode='history',gmail_page_token='page',gmail_pending_history_id='pending-history',gmail_pending_message_ids='{pending-message}',gmail_last_error=null where user_id=$1",[user])
@@ -148,8 +176,9 @@ try {
    await db.query('begin')
    if(mode==='sticky-revocation') await db.query("update google_drive_connections set gmail_last_error='GOOGLE_AUTH_EXPIRED' where user_id=$1",[user])
    else await db.query("update google_drive_connections set refresh_token_ciphertext='v1.newer-reconnect' where user_id=$1",[user])
+   await worker.query(mode==='late-revocation' ? 'set role service_role' : 'set role anon')
    const pending=mode==='late-revocation'
-    ? worker.query("select pjsdas_update_google_refresh_state('fictional-gmail',$1,'v1.race',null,true) updated",[user])
+    ? worker.query("select pjsdas_update_google_refresh_state('gmail',$1,'different-subject','v1.race',null,true) updated",[user])
     : worker.query("select pjsdas_update_google_automation_state('fictional-discovery',$1,'v1.race','pjsdas_update_discovery_automation_state','{\"set_last_error\":true}') updated",[user])
    await waitLocked(); await db.query('commit')
    assert.equal((await pending).rows[0].updated,false,mode+' must lose the generation/blocked-state race')

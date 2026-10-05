@@ -1,12 +1,16 @@
 -- Google refresh lifecycle, no schedules, credentials, opt-in or OAuth settings.
--- Existing worker-token authority only. CAS is fenced by the encrypted generation,
--- and each token may change only a binding already enabled for its own worker.
+-- Credential mutation is restricted to the existing trusted backend service_role.
+-- The gateway validates source-worker authority before calling this RPC. No worker
+-- token alone can write credentials, no new table grant is added, and missing
+-- existing service-role SELECT/UPDATE privileges fail closed under SECURITY INVOKER.
+-- Remove any previously provisioned same-signature anonymous/definer variant.
+drop function if exists public.pjsdas_update_google_refresh_state(text,uuid,text,text,boolean,uuid);
 create function public.pjsdas_update_google_refresh_state(
-  worker_token text, target_user_id uuid, expected_ciphertext text,
+  source_kind text, target_user_id uuid, expected_subject text, expected_ciphertext text,
   next_ciphertext text default null, reconnect_required boolean default false, execution_token uuid default null
 )
-returns boolean language plpgsql security definer
-set search_path = public, vault, pg_temp as $$
+returns boolean language plpgsql security invoker
+set search_path = public, pg_temp as $$
 declare
   gmail_worker boolean;
   discovery_worker boolean;
@@ -15,20 +19,22 @@ declare
   owned_lease public.gmail_automation_execution_state%rowtype;
   rotated_at timestamptz;
 begin
-  select exists(select 1 from vault.decrypted_secrets where name='pjsdas_gmail_automation_worker_token' and decrypted_secret=worker_token),
-    exists(select 1 from vault.decrypted_secrets where name='pjsdas_discovery_automation_worker_token' and decrypted_secret=worker_token)
-    into gmail_worker, discovery_worker;
-  if worker_token is null or not (gmail_worker or discovery_worker) then
-    raise exception 'Invalid automation worker authorization.' using errcode='42501';
+  if current_user <> 'service_role' then
+    raise exception 'Trusted backend authorization required.' using errcode='42501';
   end if;
-  if expected_ciphertext is null or expected_ciphertext='' or reconnect_required is null
+  if source_kind is null or source_kind not in ('gmail','discovery') then
+    raise exception 'Invalid refresh source.' using errcode='22023';
+  end if;
+  gmail_worker = source_kind='gmail';
+  discovery_worker = source_kind='discovery';
+  if expected_subject is null or expected_subject='' or expected_ciphertext is null or expected_ciphertext='' or reconnect_required is null
     or (next_ciphertext is not null and (next_ciphertext !~ '^v1\.' or length(next_ciphertext)>16384))
     or (next_ciphertext is null and not reconnect_required)
     or (next_ciphertext is not null and reconnect_required) then
     raise exception 'Invalid refresh state transition.' using errcode='22023';
   end if;
   select * into binding from public.google_drive_connections where user_id=target_user_id for update;
-  if not found or binding.revoked_at is not null or binding.refresh_token_ciphertext is distinct from expected_ciphertext
+  if not found or binding.revoked_at is not null or binding.google_subject is distinct from expected_subject or binding.refresh_token_ciphertext is distinct from expected_ciphertext
     or not ((gmail_worker and binding.gmail_automation_enabled) or (discovery_worker and binding.discovery_automation_enabled)) then return false; end if;
   if coalesce(binding.gmail_last_error,'') ~ '^GOOGLE_AUTH_EXPIRED($|[:[:space:]\[])'
     or coalesce(binding.discovery_last_error,'') ~ '^GOOGLE_AUTH_EXPIRED($|[:[:space:]\[])' then return false; end if;
@@ -47,7 +53,7 @@ begin
     discovery_last_checked_at=case when reconnect_required and discovery_worker then clock_timestamp() else c.discovery_last_checked_at end,
     updated_at=rotated_at
   where c.user_id=target_user_id and c.revoked_at is null
-    and c.refresh_token_ciphertext=expected_ciphertext
+    and c.google_subject=expected_subject and c.refresh_token_ciphertext=expected_ciphertext
     and ((gmail_worker and c.gmail_automation_enabled) or (discovery_worker and c.discovery_automation_enabled));
   get diagnostics changed=row_count;
   -- The existing trigger invalidates every other execution. Restore only the
@@ -58,8 +64,8 @@ begin
   end if;
   return changed=1;
 end $$;
-revoke all on function public.pjsdas_update_google_refresh_state(text,uuid,text,text,boolean,uuid) from public,authenticated;
-grant execute on function public.pjsdas_update_google_refresh_state(text,uuid,text,text,boolean,uuid) to anon;
+revoke all on function public.pjsdas_update_google_refresh_state(text,uuid,text,text,text,boolean,uuid) from public,anon,authenticated;
+grant execute on function public.pjsdas_update_google_refresh_state(text,uuid,text,text,text,boolean,uuid) to service_role;
 
 -- App intake consent is distinct from renewable provider credentials. Retain it
 -- on same-subject rotation/reconnect and invalid_grant, which is gated above.

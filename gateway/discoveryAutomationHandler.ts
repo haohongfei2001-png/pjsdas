@@ -12,6 +12,7 @@ import { WorkspaceSourceError } from './workspaceSource.js'
 export interface DiscoveryAutomationHandlerConfig {
   supabaseUrl: string
   supabasePublishableKey: string
+  supabaseServiceRoleKey?: string
   tokenEncryptionKey: string
   googleClientId: string
   googleClientSecret: string
@@ -75,6 +76,8 @@ export function createDiscoveryAutomationHandler(config: DiscoveryAutomationHand
       supabaseUrl: config.supabaseUrl,
       supabasePublishableKey: config.supabasePublishableKey,
       workerToken,
+      supabaseServiceRoleKey: config.supabaseServiceRoleKey,
+      refreshSource: 'discovery',
       fetchImpl: config.fetchImpl,
     })
     const url = new URL(request.url)
