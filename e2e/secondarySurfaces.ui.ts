@@ -74,6 +74,36 @@ async function seed(page: Page) {
   return mutations
 }
 
+// The owner explicitly replaced this one labelled header button with a + icon.
+// Keep the unmasked evidence and compare every other pixel against the frozen reference.
+async function compareOutsideCaptureButton(page: Page, before: Buffer, after: Buffer, boxes: Array<{ x: number; y: number; width: number; height: number; headerBottom: number }>, viewportWidth: number) {
+  for (const box of boxes) {
+    expect(box.y - 6).toBeGreaterThanOrEqual(0)
+    expect(box.y + box.height + 6).toBeLessThanOrEqual(box.headerBottom)
+    expect(box.x).toBeGreaterThanOrEqual(0)
+    expect(box.x + box.width).toBeLessThanOrEqual(viewportWidth + 1)
+    expect(box.width).toBeLessThanOrEqual(Math.min(viewportWidth, 400))
+    expect(box.height).toBeLessThanOrEqual(140)
+  }
+  expect(boxes.reduce((sum, box) => sum + (box.width + 12) * (box.height + 12), 0)).toBeLessThanOrEqual(55_000)
+  return page.evaluate(async ({ images, boxes }) => {
+    const loaded = await Promise.all(images.map(async encoded => {
+      const image = new Image(); image.src = 'data:image/png;base64,' + encoded; await image.decode(); return image
+    }))
+    const hashes: string[] = []
+    for (const image of loaded) {
+      const canvas = document.createElement('canvas'); canvas.width = image.naturalWidth; canvas.height = image.naturalHeight
+      const context = canvas.getContext('2d')!; context.drawImage(image, 0, 0)
+      context.fillStyle = '#ff00ff'
+      for (const box of boxes) context.fillRect(Math.floor(box.x) - 6, Math.floor(box.y) - 6, Math.ceil(box.width) + 12, Math.ceil(box.height) + 12)
+      const pixels = context.getImageData(0, 0, canvas.width, canvas.height).data
+      const hash = await crypto.subtle.digest('SHA-256', pixels)
+      hashes.push(`${canvas.width}x${canvas.height}:` + [...new Uint8Array(hash)].map(value => value.toString(16).padStart(2, '0')).join(''))
+    }
+    return hashes
+  }, { images: [before.toString('base64'), after.toString('base64')], boxes })
+}
+
 async function capture(page: Page, label: string, width: number, scale = 100, protectMain = false, scrollRoot?: string) {
   await page.setViewportSize({ width, height: width < 600 ? 844 : 900 })
   await page.evaluate(scale => { document.documentElement.style.fontSize = `${scale}%`; window.scrollTo(0, 0) }, scale)
@@ -83,9 +113,16 @@ async function capture(page: Page, label: string, width: number, scale = 100, pr
   await mkdir(evidence, { recursive: true })
   const overlay = await page.locator('.cgr-capture-backdrop, .backup-backdrop, .event-dock-backdrop, .prep-graph-backdrop, .discovery-inbox-modal-backdrop, .mcp-proposal-backdrop').count()
   const bytes = await page.screenshot({ path: `${evidence}/${name}`, fullPage: overlay === 0, animations: 'disabled', caret: 'hide' })
+  const captureAffordance = await page.locator('.tsui-topbar .tsui-tell-button').boundingBox()
+  const captureHeader = await page.locator('.tsui-topbar').boundingBox()
+  const captureHeaderBottom = captureHeader ? captureHeader.y + captureHeader.height : 0
   if (protectMain && phase === 'after') {
     const baseline = await readFile(`secondary-ui-before/${name}`)
-    expect(digest(bytes), `${label}: main/body pixels must remain identical to baseline main 1fa12d02`).toBe(digest(baseline))
+    const reference = JSON.parse(await readFile(`secondary-ui-before/${name}.json`, 'utf8'))
+    expect(captureAffordance).not.toBeNull()
+    expect(reference.captureAffordance).not.toBeNull()
+    const hashes = await compareOutsideCaptureButton(page, baseline, bytes, [{ ...reference.captureAffordance, headerBottom: reference.captureHeaderBottom }, { ...captureAffordance!, headerBottom: captureHeaderBottom }], width)
+    expect(hashes[1], `${label}: pixels outside the explicitly replaced capture button must match the frozen main reference`).toBe(hashes[0])
   }
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)
   const overflowNodes = overflow > 1 ? await page.evaluate(() => [...document.querySelectorAll<HTMLElement>('body *')]
@@ -96,7 +133,7 @@ async function capture(page: Page, label: string, width: number, scale = 100, pr
     className: element.className, left: element.getBoundingClientRect().left, right: element.getBoundingClientRect().right,
     clientWidth: element.clientWidth, scrollWidth: element.scrollWidth,
   })))
-  const metric = { label, width, scale, overflow, overflowNodes, modalBounds, sha256: digest(bytes), protectedMain: protectMain }
+  const metric = { label, width, scale, captureAffordance, captureHeaderBottom, overflow, overflowNodes, modalBounds, sha256: digest(bytes), protectedMain: protectMain }
   console.log('SECONDARY_UI:' + JSON.stringify(metric))
   await writeFile(`${evidence}/${name}.json`, JSON.stringify(metric, null, 2))
   if (phase === 'after') {
@@ -188,8 +225,14 @@ for (const width of [1440, 390, 320]) test(`details and settings retain readable
   await page.goto('/pjsdas/settings')
   await expect(page.getByRole('heading', { name: '账号与跨设备数据', exact: true })).toBeVisible()
   await capture(page, 'SETTINGS_OVERVIEW', width, width === 320 ? 200 : 100)
-  await page.locator('.settings-group > summary').filter({ hasText: '可用时间' }).click()
-  await capture(page, 'SETTINGS_PLANNING', width, width === 320 ? 200 : 100)
+  if (phase === 'before') {
+    await page.locator('.settings-group > summary').filter({ hasText: '可用时间' }).click()
+    await capture(page, 'SETTINGS_PLANNING', width, width === 320 ? 200 : 100)
+  } else {
+    await expect(page.locator('.settings-group > summary').filter({ hasText: '可用时间' })).toHaveCount(0)
+    await expect(page.getByRole('button', { name: '保存时段', exact: true })).toHaveCount(0)
+    await capture(page, 'SETTINGS_PLANNING_RETIRED', width, width === 320 ? 200 : 100)
+  }
   await page.locator('.settings-group > summary').filter({ hasText: '岗位发现偏好' }).click()
   await expect(page.locator('.discovery-profile-grid')).toBeVisible()
   await capture(page, 'SETTINGS_DISCOVERY', width, width === 320 ? 200 : 100)
