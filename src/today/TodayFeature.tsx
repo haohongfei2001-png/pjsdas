@@ -8,6 +8,7 @@ import type { ScheduleStream } from '../schedule/scheduleStream.js'
 import { ScheduleWindowList } from '../schedule/ScheduleFeature.js'
 import { useUiLanguage } from '../uiLanguage.js'
 import './today.css'
+import { remainingLocalDayMinutes } from './localDayCapacity.js'
 import { hasRepeatedApplicationContext } from './taskContext.js'
 
 export type TodayFreshnessState = 'local' | 'initial' | 'refreshing' | 'current' | 'updated' | 'cached' | 'blocked' | 'unavailable'
@@ -57,10 +58,26 @@ export default function TodayFeature({ selection, stream, opportunities, readOnl
   const [mobileView, setMobileView] = useState<'tasks' | 'nodes'>('tasks')
   const [pendingId, setPendingId] = useState<string>()
   const [showCompleted, setShowCompleted] = useState(false)
-  const [capacityHours, setCapacityHours] = useState(selection.capacityMinutes === undefined ? '' : String(selection.capacityMinutes / 60))
+  const manualCapacity = selection.capacitySource === 'manual' ? selection.capacityMinutes : undefined
+  const [capacityHours, setCapacityHours] = useState(manualCapacity === undefined ? '' : String(manualCapacity / 60))
   const [capacitySaving, setCapacitySaving] = useState(false)
   const [capacityError, setCapacityError] = useState('')
-  useEffect(() => { setCapacityHours(selection.capacityMinutes === undefined ? '' : String(selection.capacityMinutes / 60)) }, [selection.capacityMinutes])
+  const capacityDate = localDateKey(now, selection.displayTimezone)
+  useEffect(() => { setCapacityHours(manualCapacity === undefined ? '' : String(manualCapacity / 60)); setCapacityError('') }, [manualCapacity, capacityDate])
+  const remainingMinutes = remainingLocalDayMinutes(now, selection.displayTimezone)
+  const capacityMinutes = selection.capacityMinutes ?? remainingMinutes
+  const durationLabel = (minutes: number) => {
+    const hours = Math.floor(minutes / 60), rest = minutes % 60
+    return zh ? `${hours ? `${hours} 小时` : ''}${hours && rest ? ' ' : ''}${rest || !hours ? `${rest} 分钟` : ''}`
+      : `${hours ? `${hours}h` : ''}${hours && rest ? ' ' : ''}${rest || !hours ? `${rest}m` : ''}`
+  }
+  async function saveCapacity(minutes: number, editor: HTMLDetailsElement | null) {
+    if (capacitySaving || readOnly) return
+    setCapacitySaving(true); setCapacityError('')
+    try { await onSetTodayCapacity(minutes); if (editor) editor.open = false }
+    catch (caught) { setCapacityError(caught instanceof Error ? caught.message : String(caught)) }
+    finally { setCapacitySaving(false) }
+  }
   const zhDateParts = new Intl.DateTimeFormat('zh-CN', { month: 'numeric', day: 'numeric', timeZone: stream.timezone }).formatToParts(now)
   const date = zh
     ? `${zhDateParts.find((part) => part.type === 'month')?.value ?? ''}月${zhDateParts.find((part) => part.type === 'day')?.value ?? ''}日 · ${new Intl.DateTimeFormat('zh-CN', { weekday: 'short', timeZone: stream.timezone }).format(now)}`
@@ -97,8 +114,17 @@ export default function TodayFeature({ selection, stream, opportunities, readOnl
   }
   return <section className="tsui-today" data-testid="cgr02-today">
     <header className="tsui-page-heading"><div><p>{date}</p><h1>{zh ? '今天' : 'Today'}</h1><span>{zh ? '把今天该做的事，一件件做好。' : 'Make progress on what matters today.'}</span></div>
-      <details className="tsui-capacity"><summary>{selection.capacityMinutes === undefined ? (zh ? '设置今天可用时间' : 'Set today’s available time') : (zh ? `今天可用 ${selection.capacityMinutes / 60} 小时 · 调整` : `${selection.capacityMinutes / 60} hours available · Adjust`)}</summary><form onSubmit={event => { event.preventDefault(); const minutes = Math.round(Number(capacityHours) * 60); setCapacitySaving(true); setCapacityError(''); const editor = event.currentTarget.closest('details'); void onSetTodayCapacity(minutes).then(() => { if (editor) editor.open = false }).catch(caught => setCapacityError(caught instanceof Error ? caught.message : String(caught))).finally(() => setCapacitySaving(false)) }}><label>{zh ? '今天可用小时' : 'Hours available today'} <input type="number" min="0" max="24" step="0.5" required value={capacityHours} onChange={event => setCapacityHours(event.target.value)} /></label><button type="submit" disabled={capacitySaving || readOnly}>{capacitySaving ? (zh ? '保存中…' : 'Saving…') : (zh ? '保存' : 'Save')}</button>{capacityError ? <span role="alert">{capacityError}</span> : null}</form></details>
+      <details className="tsui-capacity"><summary>{zh ? `今天可用 ${durationLabel(capacityMinutes)} · 调整` : `${durationLabel(capacityMinutes)} available · Adjust`}</summary>
+        <form onSubmit={event => { event.preventDefault(); void saveCapacity(Math.round(Number(capacityHours) * 60), event.currentTarget.closest('details')) }}>
+          <p className="tsui-capacity-note">{zh ? `默认按 ${selection.displayTimezone} 时区计算距次日 00:00 的剩余时间；手动调整仅保留当天。` : `Defaults to the time until the next midnight in ${selection.displayTimezone}. Manual choices apply only today.`}</p>
+          <div className="tsui-capacity-presets" role="group" aria-label={zh ? '快捷可用时间' : 'Quick available time'}>{[3, 6].map(hours => <button key={hours} type="button" disabled={capacitySaving || readOnly} onClick={event => { void saveCapacity(hours * 60, event.currentTarget.closest('details')) }}>{zh ? `${hours} 小时` : `${hours} hours`}</button>)}</div>
+          <label>{zh ? '今天可用小时' : 'Hours available today'} <input type="number" min="0" max="24" step="any" required placeholder="0–24" disabled={capacitySaving || readOnly} value={capacityHours} onChange={event => setCapacityHours(event.target.value)} /></label>
+          <button type="submit" disabled={capacitySaving || readOnly}>{capacitySaving ? (zh ? '保存中…' : 'Saving…') : (zh ? '保存' : 'Save')}</button>
+          {capacityError ? <span role="alert">{capacityError}</span> : null}
+        </form>
+      </details>
     </header>
+    {manualCapacity !== undefined && manualCapacity > remainingMinutes ? <p className="tsui-capacity-override" role="status">{zh ? `已保留你设置的 ${durationLabel(manualCapacity)}；距本地午夜仅剩 ${durationLabel(remainingMinutes)}，任务仍按真实截止时间和工作时段安排。` : `Your ${durationLabel(manualCapacity)} choice is saved. Only ${durationLabel(remainingMinutes)} remains until local midnight; real deadlines and work windows still apply.`}</p> : null}
     {readOnly ? <div className="tsui-alert" role="alert">{zh ? '今天暂时只读；已有记录和回执保留。' : 'Today is temporarily read only; existing records and receipts are retained.'}</div> : null}
     {freshness.state === 'cached' ? <p className="tsui-freshness-note">{zh ? '显示已保存记录，等待更新。' : 'Showing saved records while updates are unavailable.'}</p> : null}
     {freshness.state === 'blocked' || (freshness.state === 'unavailable' && !workspaceEmpty) ? <div className="tsui-status tsui-compact-state" role="status">{freshness.state === 'blocked' ? (zh ? '本机状态待核对' : 'Review this device’s sync state') : (zh ? '暂时无法读取最新状态' : 'Latest state unavailable')} <button type="button" onClick={freshness.state === 'blocked' ? onStart : onRetry}>{freshness.state === 'blocked' ? (zh ? '打开设置' : 'Open settings') : (zh ? '重试' : 'Retry')}</button></div> : null}

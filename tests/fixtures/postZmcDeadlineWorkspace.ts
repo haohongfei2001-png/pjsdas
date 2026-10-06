@@ -18,7 +18,7 @@ export function deadlineWorkspace(capacity?: number, deadline = DEADLINE) {
     evidenceRefs: ['retained-source'], sourceVersionRefs: ['retained-version'], relatedActionIds: [item.id], relatedPrepIds: [],
     createdAt: '2026-09-20T00:00:00Z', updatedAt: '2026-09-20T00:00:00Z' }))
   return createSnapshot({ opportunities, actions, scheduleNodes, processes: [], processEvents: [], prep: [], applicationGroups: [],
-    ...(capacity === undefined ? {} : { timePlanning: { version: 1 as const, defaultDailyMinutes: capacity, updatedAt: LATE_NOW.toISOString() } }) }, LATE_NOW.toISOString())
+    ...(capacity === undefined ? {} : { timePlanning: { version: 1 as const, defaultDailyMinutes: capacity, dateOverrides: { '2026-09-30': capacity }, updatedAt: LATE_NOW.toISOString() } }) }, LATE_NOW.toISOString())
 }
 
 export function explicitStartDenseWorkspace() {

@@ -16,6 +16,7 @@ import {
   type TodayBriefCoverageWarning,
   type TodayBriefContext,
 } from '../todayBrief.js'
+import { todayCapacity } from './localDayCapacity.js'
 import { buildConsumerTimePlan, type ConsumerTimeConflict } from './consumerTimePlan.js'
 
 export interface TodayWebInput {
@@ -40,6 +41,7 @@ export interface TodayWebSelection {
   openDecisionCount: number
   overBudgetMinutes: number
   capacityMinutes?: number
+  capacitySource?: 'remaining_day' | 'manual'
   deferredActionCount: number
   businessConflicts: ConsumerTimeConflict[]
   protectedActionIds: string[]
@@ -63,7 +65,7 @@ export function selectTodayWebNormalized(snapshot: PJSDASSnapshot, input: TodayW
   const opportunities = new Map(snapshot.data.opportunities.map((item) => [item.id, item]))
   const ranked = rankActions(snapshot.data.actions, snapshot.data.opportunities, context.now, rules, context.timezone)
   const plan = buildConsumerTimePlan({ ranked, nodes, preferences: snapshot.data.timePlanning,
-    availableMinutes: input.availableMinutes, now: context.now, timezone: context.timezone })
+    availableMinutes: input.availableMinutes, useRemainingDayDefault: true, now: context.now, timezone: context.timezone })
   const protectedRanked = ranked
     .filter((item) => item.action.timingMode !== 'fixed')
     .filter((item) => protectedByLatestStart(
@@ -118,6 +120,7 @@ export function selectTodayWebNormalized(snapshot: PJSDASSnapshot, input: TodayW
     openDecisionCount: openGroups.length,
     overBudgetMinutes: 0,
     capacityMinutes: plan.capacityMinutes,
+    capacitySource: todayCapacity(snapshot.data.timePlanning, context.now, context.timezone, input.availableMinutes).source,
     deferredActionCount: plan.deferredCount,
     businessConflicts: plan.conflicts,
     protectedActionIds: protectedRanked.map((item) => item.action.id),

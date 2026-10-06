@@ -94,6 +94,10 @@
 .tsui-capacity summary::-webkit-details-marker{display:none}
 .tsui-capacity summary:focus-visible{outline:2px solid #3264cf;outline-offset:3px}
 .tsui-capacity form{position:absolute;right:0;top:calc(100% + 6px);z-index:4;display:flex;flex-wrap:wrap;align-items:end;gap:8px;min-width:245px;padding:12px;border:1px solid #dfe5f0;border-radius:10px;background:#fff;box-shadow:0 8px 24px #1c2c4a1a}
+.tsui-capacity-note{flex-basis:100%;max-width:290px;margin:0;line-height:1.5;font-size:.75rem}
+.tsui-capacity-presets{display:flex;gap:8px;flex-basis:100%}
+.tsui-capacity button:disabled{opacity:.55;cursor:default}
+.tsui-capacity-override{margin:0;color:#53627b;font-size:.8125rem;line-height:1.5}
 .tsui-capacity label{display:grid;gap:4px;white-space:nowrap}
 .tsui-capacity input{width:80px;min-height:36px;border:1px solid #c7d1e2;border-radius:7px;padding:0 8px;font:inherit}
 .tsui-capacity button{min-height:36px;border:0;border-radius:7px;padding:0 12px;background:#3264cf;color:#fff;font:inherit;cursor:pointer}
