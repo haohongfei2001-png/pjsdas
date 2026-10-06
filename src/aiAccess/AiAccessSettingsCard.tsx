@@ -1,4 +1,4 @@
-import { googleAuthorizationErrorCode, googleConnectionHealth, googleConnectionHealthLabel } from '../googleConnectionHealth.js'
+import { googleConnectionHealth, googleConnectionHealthLabel } from '../googleConnectionHealth.js'
 import { discoveryReadinessLabel } from '../discoveryReadiness.js'
 import { useEffect, useState } from 'react'
 import { useAiAccess } from './AiAccessContext.js'
@@ -6,7 +6,7 @@ import { useUiLanguage } from '../uiLanguage.js'
 import GmailIntakeStatus from './GmailIntakeStatus.js'
 import '../cloud/cloudSettings.css'
 
-type Source = 'workspace' | 'discovery' | 'gmail'
+type Source = 'discovery' | 'gmail'
 
 export default function AiAccessSettingsCard() {
   const { lang } = useUiLanguage()
@@ -21,9 +21,8 @@ export default function AiAccessSettingsCard() {
     return () => { window.clearInterval(timer); window.removeEventListener('focus', update) }
   }, [])
   const gmailHealth = googleConnectionHealth({ verified: ai.statusVerified, enabled: automation?.gmailEnabled, lastError: automation?.gmailLastError, lastSuccessAt: automation?.gmailLastSuccessAt, now })
-  const reconnectRequired = gmailHealth === 'reconnect_required' || googleAuthorizationErrorCode(automation?.discoveryLastError) === 'GOOGLE_AUTH_EXPIRED'
   const discoveryState = discoveryReadinessLabel({ verified: ai.statusVerified, enabled: automation?.discoveryEnabled, readiness: automation?.discoveryReadiness }, zh)
-  const [actionSource, setActionSource] = useState<Source>('workspace')
+  const [actionSource, setActionSource] = useState<Source>('discovery')
   const run = (source: Source, action: () => Promise<void>) => { setActionSource(source); void action() }
   const gmailButton = automation?.gmailEnabled
     ? (zh ? '关闭自动跟踪' : 'Disable tracking')
@@ -44,21 +43,6 @@ export default function AiAccessSettingsCard() {
 
   return (
     <div className="cloud-settings-card settings-sources">
-      {ai.errorSource === 'status' && ai.error ? <div className="cloud-error" role="alert"><strong>{zh ? '后台来源状态暂时无法核对' : 'Background source status is unavailable'}</strong><details><summary>{zh ? '错误详情' : 'Error details'}</summary><p>{ai.error}</p></details></div> : null}
-      <section className="settings-source-panel" aria-labelledby="settings-workspace-heading">
-        <header className="settings-source-header">
-          <div><h2 id="settings-workspace-heading">{zh ? '后台工作区连接' : 'Background workspace connection'}</h2><p>{automation?.googleEmail || (zh ? '尚未连接' : 'Not connected yet')}</p></div>
-          <span className={`cloud-state ${ai.statusVerified && automation?.googleEmail ? reconnectRequired ? 'warning' : 'online' : ''}`}>{!automation || !ai.statusVerified ? (zh ? '状态待核对' : 'Status unverified') : reconnectRequired ? (zh ? '需要重新连接 Google' : 'Reconnect Google required') : automation.googleEmail ? (zh ? '已连接' : 'Connected') : (zh ? '待连接' : 'Not connected')}</span>
-        </header>
-        <details className="settings-source-manage"><summary>{zh ? '管理' : 'Manage'}</summary><div className="settings-source-body">
-          <p className="settings-permission">{zh ? '只申请 Google Drive 的应用专用文件权限，不会浏览普通 Drive 文件。Google 长期授权信息会加密保存。重新连接将打开 Google 授权页面。' : 'This requests only access to app-specific Google Drive files, not normal Drive files. Long-lived authorization is encrypted. Reconnecting opens the Google consent page.'}</p>
-          <button className={automation?.googleEmail ? 'settings-quiet-button' : 'primary-button'} disabled={ai.busy} onClick={() => run('workspace', ai.beginGoogleDriveLink)}>{ai.busy && actionSource === 'workspace' ? (zh ? '处理中…' : 'Working…') : automation?.googleEmail ? (zh ? '重新连接' : 'Reconnect') : (zh ? '使用 Google 连接' : 'Connect with Google')}</button>
-          <details className="settings-scope-details"><summary>{zh ? '后台工作方式与写入边界' : 'Background operation and write boundaries'}</summary><p>{zh ? '网页关闭后，已授权的来源仍可带来新的岗位和招聘进展。AI 读取与受信任的岗位发现、招聘邮件摄入只能加入有来源依据的有限事实；修改长期偏好、拒绝决定或删除资料仍需你审阅确认。每项来源都能单独关闭。新进展须经过来源、身份、重复项和冲突检查，才会写入工作区。' : 'Authorized sources can bring in new opportunities and recruiting progress while this page is closed. AI reading and trusted discovery or recruiting-email intake may add only bounded, source-backed facts; changes to durable preferences, rejection decisions, or deletions still require your review. Each source can be turned off. New progress is checked for source, identity, duplicates, and conflicts before it enters your workspace.'}</p></details>
-        </div></details>
-        {ai.message ? <div className="cloud-result" role="status">{ai.message}</div> : null}
-        {result('workspace')}
-      </section>
-
       <section className="settings-source-panel" aria-labelledby="settings-discovery-heading">
         <header className="settings-source-header"><div><h2 id="settings-discovery-heading">{zh ? '后台岗位发现' : 'Background job discovery'}</h2><p className={automation?.discoveryEnabled && automation.discoveryLastError ? 'settings-short-warning' : ''} role={automation?.discoveryEnabled && automation.discoveryLastError ? 'status' : undefined}>{automation?.discoveryEnabled && automation.discoveryLastError ? (zh ? '新岗位可能延迟出现' : 'New opportunities may be delayed') : automation?.discoveryLastSuccessAt ? `${zh ? '历史已提交发现：' : 'Last committed discovery: '}${new Date(automation.discoveryLastSuccessAt).toLocaleString()}` : (zh ? '尚无已提交发现；定时检查不代表已搜索' : 'No committed discovery; a scheduler check is not a search')}</p></div>
           <span className={`cloud-state ${ai.statusVerified && automation?.discoveryEnabled ? 'warning' : ''}`}>{discoveryState}</span></header>

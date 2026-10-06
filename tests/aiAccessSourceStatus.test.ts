@@ -13,10 +13,9 @@ const section = (html: string, id: string) => html.split(`aria-labelledby="setti
 beforeEach(() => { fixture.ai = { busy: false, message: '', error: '', errorSource: 'status', statusVerified: true, gmailAutomation: null } })
 
 describe('background-source status provenance', () => {
-  it('does not equate unknown workspace status with disconnected', () => {
+  it('keeps unknown source status and removes the duplicate workspace panel', () => {
     const html = render()
-    expect(section(html, 'workspace')).toContain('状态待核对')
-    expect(section(html, 'workspace')).not.toContain('待连接</span>')
+    expect(html).not.toContain('settings-workspace-heading')
     expect(section(html, 'gmail')).toContain('传输与对账：状态待核对')
     expect(section(html, 'gmail')).not.toContain('传输与对账：已关闭')
   })
@@ -25,7 +24,7 @@ describe('background-source status provenance', () => {
     fixture.ai.statusVerified = false
     fixture.ai.error = 'SYNTHETIC_STATUS_UNAVAILABLE'
     const html = render()
-    for (const id of ['workspace', 'discovery', 'gmail']) {
+    for (const id of ['discovery', 'gmail']) {
       expect(section(html, id)).toContain('状态待核对')
       expect(section(html, id)).not.toContain('cloud-state online')
     }
@@ -49,19 +48,18 @@ describe('background-source status provenance', () => {
   })
   it('distinguishes verified disconnected from a missing response', () => {
     fixture.ai.gmailAutomation = { googleEmail: null, gmailEnabled: false, discoveryEnabled: false }
-    expect(section(render(), 'workspace')).toContain('待连接</span>')
+    expect(section(render(), 'gmail')).toContain('未启用</span>')
   })
   it('keeps a general refresh error outside every source operation', () => {
     fixture.ai.error = 'SYNTHETIC_STATUS_UNAVAILABLE'
     const html = render()
-    expect(html).toContain('后台来源状态暂时无法核对')
-    expect(html).toContain('SYNTHETIC_STATUS_UNAVAILABLE')
-    for (const id of ['workspace', 'discovery', 'gmail']) expect(section(html, id)).not.toContain('SYNTHETIC_STATUS_UNAVAILABLE')
+    expect(html).not.toContain('SYNTHETIC_STATUS_UNAVAILABLE')
+    for (const id of ['discovery', 'gmail']) expect(section(html, id)).not.toContain('SYNTHETIC_STATUS_UNAVAILABLE')
   })
   it.each(['workspace', 'discovery', 'gmail'])('shows a failed %s operation only at its source', source => {
     fixture.ai.error = 'SYNTHETIC_ACTION_FAILURE'; fixture.ai.errorSource = source
     const html = render()
-    for (const id of ['workspace', 'discovery', 'gmail']) {
+    for (const id of ['discovery', 'gmail']) {
       expect(section(html, id).includes('SYNTHETIC_ACTION_FAILURE')).toBe(id === source)
     }
   })
