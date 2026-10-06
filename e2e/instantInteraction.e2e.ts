@@ -518,8 +518,10 @@ test('unchanged explicit capacity confirms without leaving a permanent outbox en
   expect(server.sent).toHaveLength(1)
 })
 
-test('rejected earlier capacity unwinds dependent optimistic edits to the confirmed baseline', async ({ page, context }) => {
+for (const baseline of [undefined, 360]) test(`rejected earlier capacity unwinds dependent optimistic edits to the confirmed ${baseline === undefined ? 'live default' : 'manual baseline'}`, async ({ page, context }) => {
   const server = await setup(context)
+  // Today now derives its default from the clock; an explicit same-day choice must also survive rollback.
+  if (baseline !== undefined) server.snapshot.data.timePlanning!.dateOverrides = { '2026-10-01': baseline }
   server.setDelay(1000)
   await start(page)
   server.denyNext()
@@ -530,8 +532,10 @@ test('rejected earlier capacity unwinds dependent optimistic edits to the confir
     await expect(page.locator('.tsui-capacity summary')).toContainText(`${hours} 小时`)
   }
   await expect.poll(() => pendingCount(page)).toBe(0)
-  await expect(page.locator('.tsui-capacity summary')).toContainText('6 小时')
+  await expect(page.locator('.tsui-capacity summary')).toContainText(baseline === undefined ? '15 小时' : '6 小时')
   expect(server.sent).toHaveLength(1)
+  const local = await page.evaluate(async () => (await (await import('/pjsdas/src/db.ts')).exportLocalSnapshot()).data.timePlanning)
+  expect(local).toEqual(server.snapshot.data.timePlanning)
 })
 
 test('application submitted immediately settles the exact action and process', async ({ page, context }) => {
@@ -1197,7 +1201,10 @@ for (const disposition of ['rejected', 'conflict'] as const) test(`already rolle
 })
 
 test('mirror cleanup failure after atomic dependent rollback never rewrites terminal journals', async ({ page, context }) => {
-  const server = await setup(context); server.setDelay(50); await start(page)
+  const server = await setup(context); server.setDelay(50)
+  // Restore a real saved choice rather than the retired recurring default.
+  server.snapshot.data.timePlanning!.dateOverrides = { '2026-10-01': 360 }
+  await start(page)
   await page.evaluate(() => Object.defineProperty(navigator, 'onLine', { configurable: true, value: false }))
   await page.evaluate(async () => {
     const api = await import('/pjsdas/src/db.ts'), client = await import('/pjsdas/src/cloud/instantCommandClient.ts')

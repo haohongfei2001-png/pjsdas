@@ -37,7 +37,7 @@ export default function TimePlanningSettings({ value, onSetDefault, onSetWindows
     finally { setBusy(false) }
   }
   return <div className="tsui-planning-settings">
-    <p>{zh ? '默认每天可用多久？今天临时变化可直接在“今天”调整。' : 'Set your usual daily availability. Adjust just today from Today.'}</p>
+    <p>{zh ? '“今天”默认使用距次日午夜的剩余时间，可在“今天”手动调整。以下每日偏好用于其他日期和 AI 规划。' : 'Today defaults to the time remaining until midnight, with manual adjustments in Today. The daily preference below applies to other dates and AI planning.'}</p>
     <form onSubmit={event => { event.preventDefault(); void save(() => onSetDefault(Math.round(Number(hours) * 60))) }}>
       <label>{zh ? '默认每日小时' : 'Usual hours per day'} <input type="number" min="0" max="24" step="0.5" required value={hours} onChange={event => setHours(event.target.value)} /></label>
       <button type="submit" disabled={busy}>{zh ? '保存默认时间' : 'Save usual time'}</button>

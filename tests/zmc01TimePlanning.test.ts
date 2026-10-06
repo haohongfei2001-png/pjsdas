@@ -94,7 +94,7 @@ describe('ZMC-01 owner time planning', () => {
     snapshot.data.timePlanning = { version: 1, updatedAt: NOW.toISOString(), defaultDailyMinutes: 480,
       weeklyWindows: [{ weekday: 5, startMinute: 540, endMinute: 720 }] }
     const selected = selectTodayWeb(snapshot, {}, { now: new Date('2026-09-25T01:00:00.000Z'), timezone: ZONE })
-    expect(selected.capacityMinutes).toBe(180)
+    expect(selected.capacityMinutes).toBe(900)
     expect(selected.actionCount).toBe(4)
     expect(selected.criticalWarnings).toEqual([])
   })
@@ -156,9 +156,9 @@ describe('ZMC-01 owner time planning', () => {
     expect(base.data.timePlanning).toBeUndefined()
   })
 
-  it('does not invent 180 minutes for Web, brief or AI when availability is unknown', () => {
+  it('uses the live day remainder for Web and preserves external unknown-availability contracts', () => {
     const snapshot = source([flexible('one'), flexible('two')])
-    expect(selectTodayWeb(snapshot, {}, { now: NOW, timezone: ZONE }).capacityMinutes).toBeUndefined()
+    expect(selectTodayWeb(snapshot, {}, { now: NOW, timezone: ZONE }).capacityMinutes).toBe(720)
     expect(buildTodayBrief(snapshot, {}, { now: NOW, timezone: ZONE }).availableMinutes).toBeNull()
     expect(getTodayPlan(snapshot, {}, { now: NOW, timezone: ZONE }).availableMinutes).toBeNull()
     expect(getTodayPlan(snapshot, {}, { now: NOW, timezone: ZONE }).startableActions).toHaveLength(1)

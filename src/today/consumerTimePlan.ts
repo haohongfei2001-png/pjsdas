@@ -1,5 +1,6 @@
 import type { RankedAction, ScheduleNode } from '../model.js'
 import type { TimePlanningPreferences } from '../timePlanningPreferences.js'
+import { localDayBounds as dayBounds, todayCapacity } from './localDayCapacity.js'
 import { capacityForDate } from '../timePlanningPreferences.js'
 import { latestByOccurrence, localDateKey, nodeForAction } from '../todayBrief.js'
 
@@ -22,24 +23,6 @@ export interface ConsumerTimePlan {
 
 interface Interval { start: number; end: number }
 const workIntervalCache = new Map<string, Interval[]>()
-
-function dayBounds(today: string, timezone: string) {
-  const noon = new Date(`${today}T12:00:00.000Z`).getTime()
-  const firstTimeForDate = (date: string) => {
-    let lower = noon - 48 * 3_600_000, upper = noon + 48 * 3_600_000
-    while (upper - lower > 1) {
-      const middle = Math.floor((lower + upper) / 2)
-      if (localDateKey(new Date(middle), timezone) < date) lower = middle
-      else upper = middle
-    }
-    return upper
-  }
-  const dayStart = firstTimeForDate(today)
-  const following = new Date(`${today}T12:00:00.000Z`)
-  following.setUTCDate(following.getUTCDate() + 1)
-  const dayEnd = firstTimeForDate(following.toISOString().slice(0, 10))
-  return { dayStart, dayEnd }
-}
 
 function workIntervals(preferences: TimePlanningPreferences | undefined, weekday: number, bounds: ReturnType<typeof dayBounds>, timezone: string): Interval[] | undefined {
   const windows = preferences?.weeklyWindows?.filter(window => window.weekday === weekday) ?? []
@@ -119,13 +102,17 @@ export function buildConsumerTimePlan(input: {
   nodes: ScheduleNode[]
   preferences?: TimePlanningPreferences
   availableMinutes?: number
+  /** Web Today uses a live remaining-day default; external brief contracts stay unchanged. */
+  useRemainingDayDefault?: boolean
   now: Date
   timezone: string
 }): ConsumerTimePlan {
   const today = localDateKey(input.now, input.timezone)
   const weekday = new Date(`${today}T12:00:00.000Z`).getUTCDay()
-  const capacityMinutes = input.availableMinutes ?? capacityForDate(input.preferences, today, weekday)
-  if (capacityMinutes !== undefined && (!Number.isInteger(capacityMinutes) || capacityMinutes < 0 || capacityMinutes > 1440)) {
+  const todayChoice = input.useRemainingDayDefault ? todayCapacity(input.preferences, input.now, input.timezone, input.availableMinutes) : undefined
+  const capacityMinutes = todayChoice?.minutes ?? input.availableMinutes ?? capacityForDate(input.preferences, today, weekday)
+  if (capacityMinutes !== undefined && (!Number.isInteger(capacityMinutes) || capacityMinutes < 0
+    || (todayChoice?.source !== 'remaining_day' && capacityMinutes > 1440))) {
     throw new Error('Today available time must be between 0 and 1440 minutes.')
   }
   const bounds = dayBounds(today, input.timezone)
@@ -168,7 +155,9 @@ export function buildConsumerTimePlan(input: {
     const windows = workIntervals(input.preferences, day, windowDay, input.timezone)
       ?? [{ start: windowDay.dayStart, end: windowDay.dayEnd }]
     horizonDays.push({ windows, capacity: date === today ? capacityMinutes : capacityForDate(input.preferences, date, day),
-      reserved: unionMinutes(intersectIntervals(windows, fixedIntervals(input.nodes, windowDay))) })
+      reserved: unionMinutes(intersectIntervals(windows, fixedIntervals(input.nodes, { ...windowDay,
+        // A live remaining-time budget must not subtract commitments already in the past.
+        dayStart: todayChoice && date === today ? Math.max(windowDay.dayStart, input.now.getTime()) : windowDay.dayStart }))) })
     if (windowDay.dayEnd >= deadlineHorizon) break
     windowDay = dayBounds(localDateKey(new Date(windowDay.dayEnd), input.timezone), input.timezone)
   }

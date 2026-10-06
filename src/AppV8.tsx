@@ -252,8 +252,10 @@ export default function AppV8() {
 
   async function setTodayCapacity(minutes: number) {
     if (!Number.isInteger(minutes) || minutes < 0 || minutes > 1440) throw new Error('今日可用时间应在 0 到 24 小时之间。')
-    const date = localDateKey(now, timezone)
-    const timestamp = new Date().toISOString()
+    const currentTime = new Date()
+    const date = localDateKey(currentTime, timezone)
+    const timestamp = currentTime.toISOString()
+    setNow(currentTime)
     if (cloud.session?.user.id && connectedWorkspaceAuthorityEnabled()) {
       const commandId = createConnectedCommandId('set-date-capacity')
       if (!snapshot) throw new Error('账号记录尚未读取。')
@@ -341,7 +343,15 @@ export default function AppV8() {
   }, [])
 
   useEffect(() => {
-    const timer = window.setInterval(() => setNow(new Date()), 60_000)
+    const updateClock = () => setNow(new Date())
+    const visibleClock = () => { if (document.visibilityState === 'visible') updateClock() }
+    // Align with wall-clock minute boundaries and recalculate immediately after sleep/BFCache.
+    let timer: number
+    const tick = () => { updateClock(); timer = window.setTimeout(tick, 60_000 - Date.now() % 60_000) }
+    tick()
+    window.addEventListener('focus', updateClock)
+    window.addEventListener('pageshow', updateClock)
+    document.addEventListener('visibilitychange', visibleClock)
     const refresh = () => { void reload() }
     const pop = () => setRoute(routeFromPath())
     const keyboard = (event: KeyboardEvent) => {
@@ -354,7 +364,10 @@ export default function AppV8() {
     window.addEventListener('popstate', pop)
     window.addEventListener('keydown', keyboard)
     return () => {
-      window.clearInterval(timer)
+      window.clearTimeout(timer)
+      window.removeEventListener('focus', updateClock)
+      window.removeEventListener('pageshow', updateClock)
+      document.removeEventListener('visibilitychange', visibleClock)
       window.removeEventListener('pjsdas:workspace-replaced', refresh)
       window.removeEventListener('popstate', pop)
       window.removeEventListener('keydown', keyboard)

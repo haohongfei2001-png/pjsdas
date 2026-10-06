@@ -23,7 +23,7 @@ test('Today capacity is a durable user choice and flexible overflow leaves the w
     }
   }))
   await page.reload()
-  await expect(page.locator('.tsui-task-row')).toHaveCount(1)
+  await expect(page.locator('.tsui-task-row')).toHaveCount(8)
   await expect(page.getByText('今天的安排可能超出可用时间')).toHaveCount(0)
   await page.locator('.tsui-capacity summary').click()
   await page.locator('.tsui-capacity input').fill('2')
@@ -92,7 +92,7 @@ test('connected capacity command reaches another client and remains after reload
     await routeBackend(pageB)
     await pageA.goto('/pjsdas/today')
     await pageB.goto('/pjsdas/today')
-    await expect(pageA.locator('.tsui-task-row')).toHaveCount(1)
+    await expect(pageA.locator('.tsui-task-row')).toHaveCount(8)
     await pageA.locator('.tsui-capacity summary').click()
     await pageA.locator('.tsui-capacity input').fill('2')
     await pageA.locator('.tsui-capacity button[type=submit]').click()

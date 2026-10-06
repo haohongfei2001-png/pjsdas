@@ -74,7 +74,7 @@ describe('post-ZMC deadline correctness', () => {
     expect(selected.actions.map(item => item.actionId)).toEqual(expected)
     expect(selected.actions.reduce((sum, item) => sum + item.estimatedMinutes, 0)).toBeLessThanOrEqual(
       Math.min(capacity ?? Infinity, Math.floor((Date.parse(DEADLINE) - now.getTime()) / 60_000)))
-    expect(selected.capacityMinutes).toBe(capacity)
+    expect(selected.capacityMinutes).toBe(capacity ?? Math.floor((Date.parse('2026-09-30T16:00:00Z') - now.getTime()) / 60_000))
     expect(JSON.stringify(snapshot)).toBe(before)
   })
   it('keeps the same feasible selection across local midnight and input ordering', () => {
