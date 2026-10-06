@@ -66,7 +66,7 @@ test('opportunity detail localizes canonical stage and action status without cha
   const dialog = page.locator('.job-detail-page')
   await expect(dialog).toBeVisible()
   await expect(dialog.getByText('Not applied', { exact: true }).first()).toBeVisible()
-  await expect(dialog.locator('.opportunity-detail-conclusion')).toContainText('Worth pursuing')
+  await expect(dialog.locator('.opportunity-detail-conclusion')).toContainText('Awaiting application')
   await expect(dialog.getByText('To do', { exact: true })).toBeVisible()
   await expect(dialog.getByText('待投递', { exact: true })).toHaveCount(0)
   await expect(dialog.getByText('todo', { exact: true })).toHaveCount(0)
