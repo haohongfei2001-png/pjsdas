@@ -126,10 +126,10 @@ export default function CloudSettingsCard() {
       <section className="cloud-settings-card settings-account" aria-label={zh ? '账号与跨设备数据' : 'Account & cross-device data'}>
         <div className="cloud-settings-heading">
           <div>
-            <h2>{zh ? '账号与跨设备数据' : 'Account & cross-device data'}</h2>
-            <p>{user ? `${user.user_metadata?.full_name || user.email || user.id}` : (zh ? '登录后在自己的设备间使用同一份资料' : 'Use the same data across your devices')}</p>
+            <h2>{zh ? '账号' : 'Account'}</h2>
+            <p>{user ? `${user.user_metadata?.full_name || user.email || user.id}` : cloud.loading ? (zh ? '正在恢复登录…' : 'Restoring session…') : (zh ? '内容仅保存在此设备' : 'Data is saved on this device only')}</p>
           </div>
-          <span className={`cloud-state ${conflict || mismatch || connectionError || pendingLocal || (transactional && localDirty) || (audience && !audience.allowed) || (user && googleNeedsAttention) ? 'warning' : user && currentLocal && googleConnection === 'connected' ? 'online' : ''}`}>
+          {user ? <span className={`cloud-state ${conflict || mismatch || connectionError || pendingLocal || (transactional && localDirty) || (audience && !audience.allowed) || (user && googleNeedsAttention) ? 'warning' : user && currentLocal && googleConnection === 'connected' ? 'online' : ''}`}>
             {mismatch
               ? (zh ? '账号不匹配' : 'Account mismatch')
               : conflict
@@ -151,10 +151,10 @@ export default function CloudSettingsCard() {
                   : cloud.loading
                     ? (zh ? '正在恢复登录…' : 'Restoring session…')
                     : (zh ? '仅本机' : 'Local only')}
-          </span>
+          </span> : null}
         </div>
 
-        {!quietConnected ? <div className={`cloud-connection-impact ${mismatch || conflict || connectionError || (audience && !audience.allowed) || (user && googleNeedsAttention) ? 'warning' : 'settings-account-status'}`}>
+        {user && !quietConnected ? <div className={`cloud-connection-impact ${mismatch || conflict || connectionError || (audience && !audience.allowed) || (user && googleNeedsAttention) ? 'warning' : 'settings-account-status'}`}>
           <strong>{user ? (zh ? `最后更新：${formatTime(cloud.checkpoint.lastSyncedAt, zh)}` : `Last updated: ${formatTime(cloud.checkpoint.lastSyncedAt, zh)}`) : (zh ? '仅保存在此设备' : 'Saved on this device only')}</strong>
           {!user || mismatch || conflict || connectionError || pendingLocal || localDirty || (audience && !audience.allowed) || (user && googleConnection !== 'connected') ? <span role="status">{impact}</span> : null}
           {user && googleConnection === 'unverified' ? <button type="button" disabled={ai.busy || checkingGoogle} onClick={() => {
@@ -172,17 +172,16 @@ export default function CloudSettingsCard() {
         </div> : null}
 
         {!user ? (
-          <div className="cloud-auth-row">
-            <div>
-              <strong>{zh ? '使用 Google 登录 TodayAction' : 'Sign in to TodayAction with Google'}</strong>
-              <p>{zh ? '登录后可在自己的设备间使用同一份资料。' : 'Sign in to use the same data across your devices.'}</p>
-              <p className="settings-permission">{zh
-                ? '首次登录申请基本身份信息和应用专用的 Google Drive 文件权限；TodayAction 不能浏览普通 Drive 文件。'
-                : 'The first sign-in requests basic identity and app-specific Google Drive file access. TodayAction cannot browse ordinary Drive files.'}</p>
-            </div>
+          <div className="cloud-auth-row settings-signin">
             <button className="primary-button" disabled={cloud.loading || cloud.syncing} onClick={() => { void run(cloud.signIn) }}>
               {cloud.loading ? (zh ? '正在恢复…' : 'Restoring…') : (zh ? '使用 Google 登录' : 'Sign in with Google')}
             </button>
+            <details className="settings-scope-details settings-signin-permission">
+              <summary>{zh ? '授权说明' : 'Permissions'}</summary>
+              <p className="settings-permission">{zh
+                ? '首次登录申请基本身份信息和应用专用的 Google Drive 文件权限；TodayAction 不能浏览普通 Drive 文件。'
+                : 'The first sign-in requests basic identity and app-specific Google Drive file access. TodayAction cannot browse ordinary Drive files.'}</p>
+            </details>
           </div>
         ) : (
           <>

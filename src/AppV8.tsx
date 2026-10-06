@@ -993,7 +993,6 @@ function SettingsSurface({ lastImport, rules, onChanged, onOpenActivity, onOpenD
   return (
     <section className="surface-page settings-surface">
       <SurfaceHeader eyebrow="SETTINGS" title={zh ? '设置' : 'Settings'} text={zh ? '管理连接和偏好' : 'Manage connections and preferences'} />
-      <div className="settings-mobile-language" aria-label={zh ? '移动端界面语言' : 'Mobile interface language'}><LanguageSwitch /></div>
 
       <div className="settings-connections tsui-panel"><CloudSettingsCard /></div>
 
