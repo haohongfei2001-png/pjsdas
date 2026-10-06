@@ -19,18 +19,18 @@ respecting real deadlines and fixed events. Stored preferences remain intact;
 future-date and external AI planning contracts retain their existing policies.
 
 The topbar capture button displays only +, retains its original localized
-accessible name, and keeps a 44px target and the same capture/focus flow. Its
-approved visual difference is isolated in the frozen secondary-surface pixel
-comparison. On narrow screens, the smaller button may shorten its row; raw
-geometry must prove that the header/body displacement is exactly that row-height
-delta and the settings button stays horizontally fixed. Only that row minimum
-height is temporarily normalized for a second strict pixel comparison, then
-restored and verified. Raw and normalized evidence are retained; all other
-pixels remain exact.
+accessible name, and keeps a 44px target and the same capture/focus flow.
+The owner approved this visual change and its natural narrow-screen row-height
+reduction. The fixed visual reference advances from `6f537a79` to the actual
+reviewed runtime `1ba685209e81d6185456aa4c0eacc1c4e82663c3` after independent
+inspection of the original unmodified before/after images. No reference source
+or screenshot is transformed to simulate a different product.
 
-After fractional-height normalization, the test performs exactly one paint-only
-opacity pulse on the main region, restoring the original inline value/priority.
-Every element rectangle, focus, text/input selection and scroll position must
-remain identical. Pre-paint and post-paint images are both retained; the latter
-still requires exact full-image pixels outside the same button mask. The pulse
-never retries until a hash matches and does not change application code.
+Main-page screenshots again require exact full-image PNG hashes, without masks,
+pixel tolerances, row normalization or repaint interventions. Existing overflow,
+secondary navigation, capture focus, accessible-name and 44px checks remain.
+The original evidence is preserved in Actions runs [37504863158](https://github.com/haohongfei2001-png/pjsdas/actions/runs/37504863158)
+and [37506483737](https://github.com/haohongfei2001-png/pjsdas/actions/runs/37506483737):
+trying to normalize the obsolete header introduced browser edge rasterization
+differences, so those experimental comparison helpers were removed rather than
+relaxing the pixel threshold or changing application behavior.
