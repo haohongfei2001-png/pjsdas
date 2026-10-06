@@ -47,14 +47,14 @@ describe('Prep canonical semantics', () => {
     expect(prepSourceState('Active')).toBe('active')
     expect(prepPriorityBand('中高')).toBe('medium_high')
     expect(prepPriorityBand('Medium-high')).toBe('medium_high')
-    expect(prepPriorityWeights('Highest')).toEqual({ leverage: 96, delayCost: 78 })
+    expect(prepPriorityWeights('Highest')).toEqual({ leverage: 0, delayCost: 0 })
     expect(presentPrepPriority('Highest', true)).toBe('最高')
     expect(presentPrepPriority('中高', false)).toBe('Medium-high')
     expect(presentPrepSourceState('Waiting', true)).toBe('等待触发')
     expect(presentPrepSourceState('进行中', false)).toBe('Active')
   })
 
-  it('never activates waiting Prep and maps English/Chinese priority labels to the same action semantics', async () => {
+  it('never activates waiting Prep and retains English/Chinese priority labels without creating action scores', async () => {
     const bundle = await parsePJSDASWorkbook(prepWorkbook())
 
     expect(bundle.prep.map((item) => [item.title, item.priorityLabel, item.sourceStatus])).toEqual([
@@ -70,8 +70,8 @@ describe('Prep canonical semantics', () => {
       'prep:英文进行中',
     ])
     expect(prepActions.map((item) => [item.leverage, item.delayCost])).toEqual([
-      [88, 64],
-      [80, 52],
+      [0, 0],
+      [0, 0],
     ])
   })
 })

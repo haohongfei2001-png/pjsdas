@@ -1,36 +1,13 @@
+import { buildApplicationPortfolioDecision } from './applicationPortfolio.js'
 import { useEffect, useState } from 'react'
-import { buildAllApplicationPortfolioDecisions, type ApplicationPortfolioDecision, type PortfolioCandidateDecision } from './applicationPortfolio.js'
-import { portfolioReasonText, portfolioWarningText } from './applicationPortfolioPresentation.js'
-import { getAllApplicationGroups, getAllOpportunities, getDecisionRules } from './db.js'
+import { exportLocalSnapshot } from './db.js'
+import { resolveApplicationDeadline, type ResolvedApplicationDeadline } from './applicationDeadline.js'
+import type { ApplicationGroup, Opportunity } from './model.js'
+import { presentStageLabel } from './stagePresentation.js'
 import { useUiLanguage } from './uiLanguage.js'
 import './applicationPortfolio.css'
 
-function statusLabel(status: ApplicationPortfolioDecision['status'], zh: boolean) {
-  const labels: Record<ApplicationPortfolioDecision['status'], [string, string]> = {
-    ready: ['可决策', 'Ready'],
-    needs_rule_confirmation: ['先核实名额', 'Confirm quota'],
-    capacity_exhausted: ['名额已用完', 'No capacity'],
-    locked: ['已锁定', 'Locked'],
-    no_candidates: ['无候选', 'No candidates'],
-    no_recommendation: ['无需凑名额', 'No recommendation'],
-  }
-  return labels[status][zh ? 0 : 1]
-}
-
-function dispositionLabel(candidate: PortfolioCandidateDecision, zh: boolean) {
-  const labels: Record<PortfolioCandidateDecision['disposition'], [string, string]> = {
-    recommended: ['推荐', 'Recommended'],
-    below_minimum: ['低于最低价值线', 'Below minimum'],
-    overlap: ['与已选岗位过度重叠', 'Too much overlap'],
-    capacity: ['名额优先给更高价值岗位', 'Capacity used by stronger roles'],
-    expired: ['已过截止', 'Expired'],
-    not_pending: ['已不在待投阶段', 'Not pending'],
-    not_selected: ['边际组合价值不足', 'Insufficient marginal value'],
-  }
-  return labels[candidate.disposition][zh ? 0 : 1]
-}
-
-function roleTypeLabel(value: PortfolioCandidateDecision['roleType'], zh: boolean) {
+function roleTypeLabel(value: Opportunity['roleType'], zh: boolean) {
   const labels = {
     core: zh ? '核心' : 'Core',
     backup: zh ? '保底' : 'Backup',
@@ -41,165 +18,74 @@ function roleTypeLabel(value: PortfolioCandidateDecision['roleType'], zh: boolea
   return labels[value]
 }
 
-function CandidateCard({ candidate, zh }: { candidate: PortfolioCandidateDecision; zh: boolean }) {
-  const components = candidate.components
-  return (
-    <article className={`portfolio-candidate ${candidate.disposition === 'recommended' ? 'recommended' : ''}`}>
-      <div className="portfolio-candidate-head">
-        <div>
-          <strong>{candidate.role}</strong>
-          <span>{roleTypeLabel(candidate.roleType, zh)}</span>
-        </div>
-        <div className="portfolio-score"><b>{candidate.baseScore}</b><small>{zh ? '基础效用' : 'base utility'}</small></div>
-      </div>
-      <div className="portfolio-component-row">
-        <span>{zh ? '机会' : 'Value'} <b>{components.opportunityValue}</b></span>
-        <span>{zh ? '匹配' : 'Fit'} <b>{components.fit}</b></span>
-        <span>{zh ? '角色' : 'Role'} <b>{components.rolePriority}</b></span>
-        {components.deadline !== undefined ? <span>{zh ? '截止' : 'Deadline'} <b>{components.deadline}</b></span> : null}
-        {components.applicationEfficiency !== undefined ? <span>{zh ? '效率' : 'Efficiency'} <b>{components.applicationEfficiency}</b></span> : null}
-        {components.evidenceConfidence !== undefined ? <span>{zh ? '证据' : 'Evidence'} <b>{components.evidenceConfidence}</b></span> : null}
-      </div>
-      <div className="portfolio-candidate-reason">
-        <strong>{dispositionLabel(candidate, zh)}</strong>
-        {candidate.reasons.length ? <span>{candidate.reasons.map((reason) => portfolioReasonText(reason, zh)).join(' · ')}</span> : null}
-      </div>
-    </article>
-  )
-}
-
 export default function ApplicationPortfolioDock() {
   const { lang } = useUiLanguage()
   const zh = lang === 'zh'
   const [open, setOpen] = useState(false)
   const [loading, setLoading] = useState(false)
-  const [decisions, setDecisions] = useState<ApplicationPortfolioDecision[]>([])
+  const [groups, setGroups] = useState<ApplicationGroup[]>([])
+  const [opportunities, setOpportunities] = useState<Array<Opportunity & { deadlineResolution: ResolvedApplicationDeadline }>>([])
   const [error, setError] = useState('')
 
   async function reload() {
     setLoading(true)
     setError('')
     try {
-      const [groups, opportunities, rules] = await Promise.all([
-        getAllApplicationGroups(),
-        getAllOpportunities(),
-        getDecisionRules(),
-      ])
-      setDecisions(buildAllApplicationPortfolioDecisions(groups, opportunities, rules, new Date()))
+      const snapshot = await exportLocalSnapshot()
+      setGroups(snapshot.data.applicationGroups)
+      setOpportunities(snapshot.data.opportunities.map(item => {
+        const resolved = resolveApplicationDeadline(item, snapshot.data)
+        return { ...item, deadlineResolution: resolved }
+      }))
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : String(caught))
-    } finally {
-      setLoading(false)
-    }
+    } finally { setLoading(false) }
   }
 
-  useEffect(() => {
-    if (!open) return
-    void reload()
-  }, [open])
-
+  useEffect(() => { if (open) void reload() }, [open])
   useEffect(() => {
     const handler = () => { if (open) void reload() }
     window.addEventListener('pjsdas:workspace-replaced', handler)
     return () => window.removeEventListener('pjsdas:workspace-replaced', handler)
   }, [open])
 
-  return (
-    <>
-      <button className="portfolio-dock-trigger" type="button" onClick={() => setOpen(true)}>
-        {zh ? '申请组合' : 'Portfolio'}
-      </button>
-      {open ? (
-        <div className="portfolio-backdrop" onMouseDown={() => setOpen(false)}>
-          <section className="portfolio-dialog" onMouseDown={(event) => event.stopPropagation()}>
-            <header className="portfolio-header">
-              <div>
-                <div className="eyebrow">APPLICATION PORTFOLIO</div>
-                <h2>{zh ? '申请组合决策' : 'Application portfolio decisions'}</h2>
-                <p>{zh
-                  ? '把“最多可投几个”视为上限，而不是必须填满的目标。TodayAction 比较组内岗位的价值、匹配、角色、截止、投递成本与证据置信度，并惩罚高度重复的组合。'
-                  : 'Capacity is a ceiling, not a fill target. TodayAction compares value, fit, role priority, deadlines, application cost, evidence confidence, and redundancy inside each explicit Application Group.'}</p>
-              </div>
-              <button className="portfolio-close" type="button" onClick={() => setOpen(false)} aria-label={zh ? '关闭' : 'Close'}>×</button>
-            </header>
-
-            <div className="portfolio-safety">
-              <strong>{zh ? '只读建议' : 'Read-only advice'}</strong>
-              <span>{zh ? '这里不会自动修改志愿、占用名额或提交申请。' : 'This view never changes preferences, consumes quota, or submits an application.'}</span>
-              <button type="button" disabled={loading} onClick={() => { void reload() }}>{loading ? '…' : (zh ? '重新计算' : 'Recalculate')}</button>
+  return <>
+    <button className="portfolio-dock-trigger" type="button" onClick={() => setOpen(true)}>{zh ? '申请名额' : 'Application quotas'}</button>
+    {open ? <div className="portfolio-backdrop" onMouseDown={() => setOpen(false)}>
+      <section className="portfolio-dialog" role="dialog" aria-modal="true" aria-label={zh ? '申请名额' : 'Application quotas'} onMouseDown={(event) => event.stopPropagation()}>
+        <header className="portfolio-header">
+          <div><div className="eyebrow">APPLICATION QUOTAS</div><h2>{zh ? '申请名额与志愿记录' : 'Application quotas and preferences'}</h2><p>{zh ? '查看已记录的公司名额、志愿顺序与关联岗位。岗位仅按截止时间排列。' : 'View recorded company quotas, preference order, and associated jobs. Jobs are ordered only by deadline.'}</p></div>
+          <button className="portfolio-close" type="button" onClick={() => setOpen(false)} aria-label={zh ? '关闭' : 'Close'}>×</button>
+        </header>
+        <div className="portfolio-safety"><strong>{zh ? '只读记录' : 'Read-only records'}</strong><span>{zh ? '这里不会修改志愿、占用名额或提交申请。' : 'This view does not change preferences, consume quota, or submit applications.'}</span><button type="button" disabled={loading} onClick={() => { void reload() }}>{loading ? '…' : (zh ? '刷新' : 'Refresh')}</button></div>
+        {error ? <div className="portfolio-notice error">{error}</div> : null}
+        {!loading && !groups.length ? <div className="portfolio-empty"><strong>{zh ? '当前没有结构化申请组' : 'No structured application groups'}</strong><p>{zh ? '只有明确关联的岗位才显示在申请组内；不会仅凭同一家公司推断名额规则。' : 'Only explicitly associated jobs appear in a group. Quota rules are not inferred from company identity alone.'}</p></div> : null}
+        <div className="portfolio-groups">{groups.map((group) => {
+          const byId = new Map(opportunities.map(item => [item.id, item]))
+          const candidates = buildApplicationPortfolioDecision(group, opportunities, undefined, new Date(),
+            Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC').candidates
+            .map(item => ({ ...byId.get(item.opportunityId)!, deadline: item.deadline }))
+          const remaining = group.remaining ?? (group.total !== undefined && group.used !== undefined ? Math.max(0, group.total - group.used) : undefined)
+          const inconsistent = group.remaining !== undefined && group.total !== undefined && group.used !== undefined && group.remaining !== Math.max(0, group.total - group.used)
+          return <article className="portfolio-group" key={group.id}>
+            <div className="portfolio-group-head"><div>{group.locked ? <span className="portfolio-status">{zh ? '已锁定' : 'Locked'}</span> : null}<h3>{group.company}</h3><small>{group.id}</small></div><div className="portfolio-capacity"><span>{zh ? '剩余名额' : 'Remaining quota'}</span><strong>{remaining ?? '?'}</strong><small>{zh ? `总 ${group.total ?? '?'} · 已用 ${group.used ?? '?'}` : `total ${group.total ?? '?'} · used ${group.used ?? '?'}`}</small></div></div>
+            <div className="portfolio-source-rule">
+              {group.rule ? <span><b>{zh ? '名额规则' : 'Quota rule'}：</b>{group.rule}</span> : null}
+              {group.currentOrder ? <span><b>{zh ? '已记录志愿' : 'Recorded preference'}：</b>{group.currentOrder}</span> : null}
+              {group.coveredRoles ? <span><b>{zh ? '覆盖岗位' : 'Covered roles'}：</b>{group.coveredRoles}</span> : null}
+              {group.notes ? <span>{group.notes}</span> : null}
             </div>
-
-            {error ? <div className="portfolio-notice error">{error}</div> : null}
-            {!loading && decisions.length === 0 ? (
-              <div className="portfolio-empty">
-                <strong>{zh ? '当前没有结构化申请组' : 'No structured Application Groups'}</strong>
-                <p>{zh ? '只有明确绑定 applicationGroupId 的岗位才参与组合决策；TodayAction 不会仅凭“同一家公司”自动猜测名额规则。' : 'Only roles explicitly bound to an applicationGroupId participate. TodayAction does not infer quota rules from company identity alone.'}</p>
-              </div>
-            ) : null}
-
-            <div className="portfolio-groups">
-              {decisions.map((decision) => (
-                <article className={`portfolio-group status-${decision.status}`} key={decision.groupId}>
-                  <div className="portfolio-group-head">
-                    <div>
-                      <span className="portfolio-status">{statusLabel(decision.status, zh)}</span>
-                      <h3>{decision.company}</h3>
-                      <small>{decision.groupId}</small>
-                    </div>
-                    <div className="portfolio-capacity">
-                      <span>{zh ? '剩余上限' : 'Capacity'}</span>
-                      <strong>{decision.capacity ?? '?'}</strong>
-                      {decision.totalSlots !== undefined ? <small>{zh ? `总 ${decision.totalSlots} · 已用 ${decision.usedSlots ?? '?'}` : `total ${decision.totalSlots} · used ${decision.usedSlots ?? '?'}`}</small> : null}
-                    </div>
-                  </div>
-
-                  {decision.sourceRule || decision.currentOrder ? (
-                    <div className="portfolio-source-rule">
-                      {decision.sourceRule ? <span><b>{zh ? '名额规则' : 'Quota rule'}：</b>{decision.sourceRule}</span> : null}
-                      {decision.currentOrder ? <span><b>{zh ? '历史首选' : 'Recorded preference'}：</b>{decision.currentOrder}</span> : null}
-                    </div>
-                  ) : null}
-
-                  {decision.recommended.length ? (
-                    <section className="portfolio-section">
-                      <div className="portfolio-section-title">
-                        <strong>{zh ? `推荐组合 · ${decision.recommended.length} 个` : `Recommended portfolio · ${decision.recommended.length}`}</strong>
-                        <span>{zh ? `最低候选线 ${decision.minimumCandidateScore}` : `minimum ${decision.minimumCandidateScore}`}</span>
-                      </div>
-                      <div className="portfolio-candidate-list">
-                        {decision.recommended.map((candidate) => <CandidateCard key={candidate.opportunityId} candidate={candidate} zh={zh} />)}
-                      </div>
-                    </section>
-                  ) : (
-                    <div className="portfolio-no-pick">
-                      {decision.status === 'needs_rule_confirmation'
-                        ? (zh ? '先确认剩余名额，系统不会猜测一个组合。' : 'Confirm remaining quota before TodayAction chooses a portfolio.')
-                        : decision.status === 'locked'
-                          ? (zh ? '申请组已锁定，不建议替换现有志愿。' : 'The group is locked; no replacement portfolio is proposed.')
-                          : decision.status === 'capacity_exhausted'
-                            ? (zh ? '当前没有剩余名额。' : 'No remaining application capacity.')
-                            : (zh ? '当前没有岗位达到足够的净组合价值；无需为了凑名额而投。' : 'No role has enough net portfolio value; do not apply merely to fill capacity.')}
-                    </div>
-                  )}
-
-                  {decision.notRecommended.length ? (
-                    <details className="portfolio-not-recommended">
-                      <summary>{zh ? `查看未推荐的 ${decision.notRecommended.length} 个岗位` : `See ${decision.notRecommended.length} not recommended`}</summary>
-                      <div className="portfolio-candidate-list compact">
-                        {decision.notRecommended.map((candidate) => <CandidateCard key={candidate.opportunityId} candidate={candidate} zh={zh} />)}
-                      </div>
-                    </details>
-                  ) : null}
-
-                  {decision.warnings.length ? (
-                    <div className="portfolio-warnings">{decision.warnings.map((warning, index) => <span key={`${warning.code}:${index}`}>{portfolioWarningText(warning, zh)}</span>)}</div>
-                  ) : null}
-                </article>
-              ))}
-            </div>
-          </section>
-        </div>
-      ) : null}
-    </>
-  )
+            {inconsistent ? <div className="portfolio-warnings">{zh ? '总名额、已用名额与剩余名额不一致，请核对来源。' : 'Total, used, and remaining quota are inconsistent; check the source.'}</div> : null}
+            {remaining === undefined ? <div className="portfolio-warnings">{zh ? '剩余名额尚未明确。' : 'Remaining quota is not stated.'}</div> : null}
+            <section className="portfolio-section"><div className="portfolio-section-title"><strong>{zh ? `关联岗位 · ${candidates.length} 个` : `Associated jobs · ${candidates.length}`}</strong><span>{zh ? '按截止时间' : 'By deadline'}</span></div>
+              <div className="portfolio-candidate-list">{candidates.map((candidate) => <article className="portfolio-candidate" key={candidate.id}>
+                <div className="portfolio-candidate-head"><div><strong>{candidate.role}</strong><span>{roleTypeLabel(candidate.roleType, zh)} · {presentStageLabel(candidate.processStage, undefined, lang)}</span></div></div>
+                <div className="portfolio-candidate-reason"><span>{zh ? '申请截止' : 'Application deadline'}：{candidate.deadline ?? (zh ? '未明确' : 'Not stated')}</span>{candidate.order !== undefined ? <span>{zh ? '已记录志愿序号' : 'Recorded preference position'}：{candidate.order}</span> : null}</div>
+              </article>)}</div>
+            </section>
+          </article>
+        })}</div>
+      </section>
+    </div> : null}
+  </>
 }

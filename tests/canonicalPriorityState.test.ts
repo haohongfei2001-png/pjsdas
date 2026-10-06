@@ -21,16 +21,16 @@ function opportunity(overrides: Partial<Opportunity> = {}): Opportunity {
 
 describe('canonical priority state', () => {
   it('treats a canonical not_applied opportunity as pending regardless of localized stage label', () => {
-    expect(computePriority(opportunity({ currentStageLabel: '待投递' }), new Date('2026-09-14T08:00:00Z'))).toBe('P2')
-    expect(computePriority(opportunity({ currentStageLabel: 'Not applied' }), new Date('2026-09-14T08:00:00Z'))).toBe('P2')
+    expect(computePriority(opportunity({ currentStageLabel: '待投递' }), new Date('2026-09-14T08:00:00Z'))).toBe('none')
+    expect(computePriority(opportunity({ currentStageLabel: 'Not applied' }), new Date('2026-09-14T08:00:00Z'))).toBe('none')
   })
 
   it('does not let a stale pending-looking label override a canonical pipeline stage', () => {
     expect(computePriority(opportunity({ currentStageLabel: '待投', processStage: 'screening' }), new Date('2026-09-14T08:00:00Z'))).toBe('none')
   })
 
-  it('still applies deadline and early-window priority once canonical state is pending', () => {
-    expect(computePriority(opportunity({ deadline: '2026-09-16T08:00:00Z' }), new Date('2026-09-14T08:00:00Z'))).toBe('P0')
-    expect(computePriority(opportunity({ early: true }), new Date('2026-09-14T08:00:00Z'))).toBe('P1')
+  it('retires priority tiers while retaining expired state and canonical process state', () => {
+    expect(computePriority(opportunity({ deadline: '2026-09-16T08:00:00Z' }), new Date('2026-09-14T08:00:00Z'))).toBe('none')
+    expect(computePriority(opportunity({ early: true }), new Date('2026-09-14T08:00:00Z'))).toBe('none')
   })
 })

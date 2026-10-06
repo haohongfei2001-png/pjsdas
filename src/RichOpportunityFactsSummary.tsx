@@ -39,8 +39,8 @@ export default function RichOpportunityFactsSummary({ facts, zh }: { facts?: Opp
       </summary>
       <p className="rich-opportunity-facts-note">
         {zh
-          ? '以下仅保存公开来源明确支持的事实；匹配度、机会价值和推荐理由仍是单独的评估层。'
-          : 'Only facts explicitly supported by the public source are stored here. Fit, opportunity value, and rationale remain a separate assessment layer.'}
+          ? '以下仅展示公开来源明确支持的招聘事实；来源未明确的信息保持未知。'
+          : 'Only recruiting facts explicitly supported by the public source are shown here. Information not stated by the source remains unknown.'}
       </p>
       <dl className="rich-opportunity-facts-grid">
         <FactRow zh={zh} label={zh ? '部门' : 'Department'} value={facts.identity.department} />

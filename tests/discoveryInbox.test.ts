@@ -1,3 +1,4 @@
+import { assertNoNewOpportunityRating } from '../src/scoringRetirement.js'
 import { describe, expect, it } from 'vitest'
 import {
   createInboxPromotionChangeSet,
@@ -71,4 +72,28 @@ describe('v1.4 discovery inbox', () => {
       expect(promotion.operations[0].opportunity.detail?.discovery?.posting).toBeTruthy()
     }
   })
+  it('promotes legacy evidence as factual data while leaving original ratings archived in the Inbox', () => {
+    const [item] = discoveryInboxItemsFromChangeSet(changeSet())
+    item.assessment = { version: 1, mode: 'component', fit: { skills: { score: 70, confidence: 'high', rationale: 'Historical evidence' } }, opportunityValue: { companyQuality: { score: 80, confidence: 'high', rationale: 'Historical evidence' } }, assessedAt: item.createdAt }
+    const before = structuredClone(item)
+    const promotion = createInboxPromotionChangeSet(item)
+    const operation = promotion.operations[0]
+    expect(operation.kind).toBe('add_discovered_opportunity')
+    if (operation.kind === 'add_discovered_opportunity') {
+      expect(() => assertNoNewOpportunityRating(operation.opportunity)).not.toThrow()
+      expect(operation.opportunity).toMatchObject({ fitScore: 0, opportunityValue: 0 })
+      expect(operation.opportunity.detail?.assessment).toBeUndefined()
+    }
+    expect(item).toEqual(before)
+  })
+  it('never replaces aggregate-only legacy ratings with new factual placeholders on rediscovery', () => {
+    const [old] = discoveryInboxItemsFromChangeSet(changeSet())
+    old.assessment = undefined
+    const incoming = { ...structuredClone(old), fitScore: 0, opportunityValue: 0, fitConfidence: 'low' as const, opportunityValueConfidence: 'low' as const, sourceTitle: 'Refreshed source title' }
+    const before = structuredClone(old)
+    const [merged] = mergeDiscoveryInboxItems([old], [incoming])
+    expect(merged).toMatchObject({ fitScore: old.fitScore, opportunityValue: old.opportunityValue, fitConfidence: old.fitConfidence, opportunityValueConfidence: old.opportunityValueConfidence, sourceTitle: 'Refreshed source title' })
+    expect(old).toEqual(before)
+  })
+
 })

@@ -41,18 +41,18 @@ describe('Decision Rules', () => {
     expect(validateDecisionRules(rules).join(' ')).toMatch(/风险阈值/)
   })
 
-  it('respects editable daily follow-up and prep caps', () => {
+  it('ignores retired cap fields retained in legacy snapshots', () => {
     const rules = cloneDecisionRules()
     rules.followUpDailyCap = 1
     rules.prepDailyCap = 1
     const selected = selectTodayActions([
       ranked('f1', 'follow_up'), ranked('f2', 'follow_up'), ranked('p1', 'prep'), ranked('p2', 'prep'), ranked('m1', 'manual'),
     ], new Date('2026-09-10T09:00:00.000Z'), 10, rules)
-    expect(selected.filter((x) => x.action.kind === 'follow_up')).toHaveLength(1)
-    expect(selected.filter((x) => x.action.kind === 'prep')).toHaveLength(1)
+    expect(selected.filter((x) => x.action.kind === 'follow_up')).toHaveLength(2)
+    expect(selected.filter((x) => x.action.kind === 'prep')).toHaveLength(2)
   })
 
-  it('changes hard-deadline protection without changing the task data', () => {
+  it('does not restore legacy horizon-based selection by reading old settings', () => {
     const now = new Date('2026-09-10T00:00:00.000Z')
     const due36h = '2026-09-11T12:00:00.000Z'
     const hard = ranked('hard', 'apply', 90, due36h)
@@ -61,14 +61,14 @@ describe('Decision Rules', () => {
     const protect48 = cloneDecisionRules()
     protect48.nearDeadlineStretchMinutes = 0
     const protectedPlan = buildTimePlan([quick, hard], 20, now, protect48)
-    expect(protectedPlan.planned).toHaveLength(0)
+    expect(protectedPlan.planned.map(item => item.action.id)).toEqual(['quick'])
     expect(protectedPlan.nearDeadlineUnplanned.map((x) => x.action.id)).toContain('hard')
 
     const protect24 = cloneDecisionRules()
     protect24.hardDeadlineHorizonHours = 24
     protect24.nearDeadlineStretchMinutes = 0
     const relaxedPlan = buildTimePlan([quick, hard], 20, now, protect24)
-    expect(relaxedPlan.planned.map((x) => x.action.id)).toContain('quick')
+    expect(relaxedPlan).toEqual(protectedPlan)
   })
 
   it('uses editable countdown risk thresholds', () => {

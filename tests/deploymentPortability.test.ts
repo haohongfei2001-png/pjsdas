@@ -78,7 +78,7 @@ describe('deployment portability', () => {
     expect(pages).toContain('PJSDAS_EXPECTED_CANONICAL_WEB_ORIGIN')
     expect(pages).toContain('PJSDAS_EXPECTED_CANONICAL_API_ORIGIN')
     expect(pages).toContain('health.version === "1.10.0-alpha.1"')
-    expect(pages).toContain('authenticatedMcp.toolSurfaceVersion === "v7"')
+    expect(pages).toContain('authenticatedMcp.toolSurfaceVersion === "v8"')
     expect(pages).toContain('"list_reminder_intents"')
     expect(pages).toContain('"get_external_capabilities"')
     expect(pages).toContain('"ingest_paia_input"')

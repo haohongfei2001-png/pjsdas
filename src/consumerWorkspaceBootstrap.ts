@@ -1,5 +1,4 @@
 import * as z from 'zod/v4'
-import { createDefaultDecisionRules } from './decisionRules.js'
 import { createDefaultDiscoveryProfile } from './discoveryProfile.js'
 import { normalizePlanningTimezone, validPlanningTimezone } from './timePlanningPreferences.js'
 import { SNAPSHOT_SCHEMA, SNAPSHOT_VERSION, validateSnapshot, type PJSDASSnapshot } from './snapshot.js'
@@ -25,7 +24,6 @@ export function createEmptyConsumerWorkspace(raw: unknown, now = new Date()): PJ
       opportunities: [], processes: [], processEvents: [], actions: [], prep: [], applicationGroups: [],
       scheduleNodes: [], decisionRequests: [], semanticReceipts: [], reminderIntents: [], reminderOutbox: [],
       discoveryInbox: [], changeSets: [],
-      decisionRules: createDefaultDecisionRules(timestamp),
       discoveryProfile: createDefaultDiscoveryProfile(timestamp),
       // Capacity is deliberately unknown until the owner supplies it.
       timePlanning: { version: 1, timezone: normalizePlanningTimezone(input.timezone), updatedAt: timestamp },

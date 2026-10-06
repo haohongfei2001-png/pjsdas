@@ -38,7 +38,13 @@ async function fixture(page:Page,unknownFirst=false,options:{neverCommitted?:boo
 test('fresh empty workspace and explicit single-domain approve/revoke leave neighbors unchanged',async({page})=>{
  const f=await fixture(page);await page.goto(entry)
  await page.getByLabel('选择已连接客户端').selectOption(clientId)
- for(const d of descriptors)await expect(page.getByLabel(`本次选择：${d.consent.title}`)).toHaveValue('')
+ for(const d of descriptors)await expect(page.getByLabel(`本次选择：${d.domain==='planning'?'时间偏好':d.consent.title}`)).toHaveValue('')
+ const planning=page.getByRole('group',{name:'时间偏好',exact:true})
+ await expect(planning.getByText('当前仅支持读取、修改、重置时间偏好及撤销相关修改。评分与决策策略已退役。')).toBeVisible()
+ await expect(planning.getByText('读取、修改、重置决策规则及时间偏好',{exact:true})).not.toBeVisible()
+ await planning.getByText('查看 v4 授权原文',{exact:true}).click()
+ await expect(planning.getByText('读取、修改、重置决策规则及时间偏好',{exact:true})).toBeVisible()
+ await planning.getByText('查看 v4 授权原文',{exact:true}).click()
  await expect(page.getByRole('button',{name:'确认所选变更'})).toBeDisabled()
  for(const [width,height]of [[1280,900],[390,844]]){await page.setViewportSize({width,height});expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1)).toBe(true);await test.info().attach(`consumer-default-none-${width}`,{body:await page.screenshot({fullPage:true}),contentType:'image/png'})}
  await page.setViewportSize({width:1280,height:900})
@@ -47,13 +53,14 @@ test('fresh empty workspace and explicit single-domain approve/revoke leave neig
  await page.getByRole('button',{name:'准备我的工作区',exact:true}).click()
  await expect(page.getByText('工作区已准备好；已有数据不会被重置。现在可选择此客户端的分项权限。')).toBeVisible()
  expect(f.initializations).toHaveLength(1);expect(f.initializations[0].timezone).toBe('America/New_York')
- await page.getByLabel('本次选择：决策规则与时间偏好').selectOption('approve')
+ await page.getByLabel('本次选择：时间偏好').selectOption('approve')
  await test.info().attach('consumer-exact-planning-choice',{body:await page.screenshot({fullPage:true}),contentType:'image/png'})
  await page.getByLabel('我已核对账号、客户端及上方列出的本次变更。').check()
  await page.getByRole('button',{name:'确认所选变更'}).click()
  await expect(page.getByText('这次决定已记录；下方展示重新读取的当前授权状态。')).toBeVisible()
  expect(f.posts[0].choices.map((x:any)=>x.domain)).toEqual(['planning'])
- await page.getByLabel('本次选择：决策规则与时间偏好').selectOption('revoke')
+ expect(f.posts[0].choices[0]).toMatchObject({consentVersion:4,consentTextHash:'8d00011548bd7cd023b8993127be68a68b10c148a769b0ce66dc456b02590ee8'})
+ await page.getByLabel('本次选择：时间偏好').selectOption('revoke')
  await page.getByLabel('我已核对账号、客户端及上方列出的本次变更。').check()
  await page.getByRole('button',{name:'确认所选变更'}).click()
  await expect.poll(()=>f.posts.length).toBe(2)
@@ -63,7 +70,7 @@ test('fresh empty workspace and explicit single-domain approve/revoke leave neig
 })
 test('ambiguous batch response preserves exact choices across reload and same-ID retry',async({page})=>{
  const f=await fixture(page,true);await page.goto(entry);await page.getByLabel('选择已连接客户端').selectOption(clientId)
- await page.getByLabel('本次选择：决策规则与时间偏好').selectOption('approve');await page.getByLabel('本次选择：应用内私人提醒').selectOption('approve')
+ await page.getByLabel('本次选择：时间偏好').selectOption('approve');await page.getByLabel('本次选择：应用内私人提醒').selectOption('approve')
  await page.getByLabel('我已核对账号、客户端及上方列出的本次变更。').check();await page.getByRole('button',{name:'确认所选变更'}).click()
  await expect(page.getByRole('button',{name:'重试同一请求'})).toBeDisabled();const submitted=structuredClone(f.posts[0])
  await page.reload();await expect(page.getByRole('button',{name:'重试同一请求'})).toBeEnabled();await page.getByRole('button',{name:'重试同一请求'}).click()
@@ -73,24 +80,24 @@ test('ambiguous batch response preserves exact choices across reload and same-ID
 
 test('committed approval receipt remains recoverable after disconnect, then revoke stays available',async({page})=>{
  const f=await fixture(page,true);await page.goto(entry);await page.getByLabel('选择已连接客户端').selectOption(clientId)
- await page.getByLabel('本次选择：决策规则与时间偏好').selectOption('approve');await page.getByLabel('我已核对账号、客户端及上方列出的本次变更。').check();await page.getByRole('button',{name:'确认所选变更'}).click()
+ await page.getByLabel('本次选择：时间偏好').selectOption('approve');await page.getByLabel('我已核对账号、客户端及上方列出的本次变更。').check();await page.getByRole('button',{name:'确认所选变更'}).click()
  await expect(page.getByRole('button',{name:'重试同一请求'})).toBeDisabled();const submitted=structuredClone(f.posts[0]);f.state.clients[0].canApprove=false
  await page.reload();await page.getByRole('button',{name:'重试同一请求'}).click();await expect.poll(()=>f.posts.length).toBe(2);expect(f.posts[1]).toEqual(submitted)
  await expect(page.getByRole('button',{name:'重试同一请求'})).toHaveCount(0)
- await page.getByLabel('本次选择：决策规则与时间偏好').selectOption('revoke');await page.getByLabel('我已核对账号、客户端及上方列出的本次变更。').check();await page.getByRole('button',{name:'确认所选变更'}).click();await expect.poll(()=>f.posts.length).toBe(3)
+ await page.getByLabel('本次选择：时间偏好').selectOption('revoke');await page.getByLabel('我已核对账号、客户端及上方列出的本次变更。').check();await page.getByRole('button',{name:'确认所选变更'}).click();await expect.poll(()=>f.posts.length).toBe(3)
  expect(f.state.clients[0].grants).toHaveLength(1);expect(f.state.clients[0].grants[0].revoked_at).not.toBeNull()
 })
 test('definitive stale CAS clears an uncertain retry and permits a new explicit choice',async({page})=>{
  const f=await fixture(page,false,{neverCommitted:true});await page.goto(entry);await page.getByLabel('选择已连接客户端').selectOption(clientId)
- await page.getByLabel('本次选择：决策规则与时间偏好').selectOption('approve');await page.getByLabel('我已核对账号、客户端及上方列出的本次变更。').check();await page.getByRole('button',{name:'确认所选变更'}).click()
+ await page.getByLabel('本次选择：时间偏好').selectOption('approve');await page.getByLabel('我已核对账号、客户端及上方列出的本次变更。').check();await page.getByRole('button',{name:'确认所选变更'}).click()
  await expect(page.getByRole('button',{name:'重试同一请求'})).toBeDisabled();await page.reload();await page.getByRole('button',{name:'重试同一请求'}).click()
  await expect(page.getByRole('button',{name:'重试同一请求'})).toHaveCount(0)
- await expect(page.getByLabel('本次选择：决策规则与时间偏好')).toBeEnabled();await page.getByLabel('本次选择：决策规则与时间偏好').selectOption('approve');await page.getByLabel('我已核对账号、客户端及上方列出的本次变更。').check();await page.getByRole('button',{name:'确认所选变更'}).click()
+ await expect(page.getByLabel('本次选择：时间偏好')).toBeEnabled();await page.getByLabel('本次选择：时间偏好').selectOption('approve');await page.getByLabel('我已核对账号、客户端及上方列出的本次变更。').check();await page.getByRole('button',{name:'确认所选变更'}).click()
  await expect.poll(()=>f.posts.length).toBe(3);expect(f.posts[2].requestId).not.toBe(f.posts[0].requestId);expect(f.state.clients[0].grants).toHaveLength(1)
 })
 test('expired cached session exposes login and preserves pending request for authenticated recovery',async({page})=>{
  const f=await fixture(page,true);await page.goto(entry);await page.getByLabel('选择已连接客户端').selectOption(clientId)
- await page.getByLabel('本次选择：决策规则与时间偏好').selectOption('approve');await page.getByLabel('我已核对账号、客户端及上方列出的本次变更。').check();await page.getByRole('button',{name:'确认所选变更'}).click()
+ await page.getByLabel('本次选择：时间偏好').selectOption('approve');await page.getByLabel('我已核对账号、客户端及上方列出的本次变更。').check();await page.getByRole('button',{name:'确认所选变更'}).click()
  await expect(page.getByRole('button',{name:'重试同一请求'})).toBeDisabled();const submitted=structuredClone(f.posts[0]);f.setExpired(true);await page.reload()
  await expect(page.getByRole('button',{name:'使用 Google 登录 TodayAction'})).toBeVisible();f.setExpired(false);await page.getByRole('button',{name:'重新读取状态'}).click()
  await page.getByRole('button',{name:'重试同一请求'}).click();await expect.poll(()=>f.posts.length).toBe(2);expect(f.posts[1]).toEqual(submitted)
@@ -98,22 +105,22 @@ test('expired cached session exposes login and preserves pending request for aut
 
 test('repeated submit while a request is outstanding sends one immutable decision',async({page})=>{
  let release!:()=>void;const holdPost=new Promise<void>(resolve=>{release=resolve}),f=await fixture(page,false,{holdPost});await page.goto(entry);await page.getByLabel('选择已连接客户端').selectOption(clientId)
- await page.getByLabel('本次选择：决策规则与时间偏好').selectOption('approve');await page.getByLabel('我已核对账号、客户端及上方列出的本次变更。').check()
+ await page.getByLabel('本次选择：时间偏好').selectOption('approve');await page.getByLabel('我已核对账号、客户端及上方列出的本次变更。').check()
  await page.getByRole('button',{name:'确认所选变更'}).evaluate((element:HTMLButtonElement)=>{element.click();element.click()})
  await expect.poll(()=>f.posts.length).toBe(1);await expect(page.getByRole('button',{name:'确认所选变更'})).toBeDisabled();release()
  await expect(page.getByText('这次决定已记录；下方展示重新读取的当前授权状态。')).toBeVisible();expect(f.posts).toHaveLength(1)
 })
 test('Close and Back/Forward discard unsubmitted scope choices without issuing grants',async({page})=>{
- const f=await fixture(page);await page.goto(entry);await page.getByLabel('选择已连接客户端').selectOption(clientId);await page.getByLabel('本次选择：决策规则与时间偏好').selectOption('approve')
+ const f=await fixture(page);await page.goto(entry);await page.getByLabel('选择已连接客户端').selectOption(clientId);await page.getByLabel('本次选择：时间偏好').selectOption('approve')
  await page.getByRole('button',{name:'返回 TodayAction',exact:true}).click();await expect(page).not.toHaveURL(/connect=1|scoped_access=1/)
  await page.goBack();await expect(page.getByRole('heading',{name:'选择这个客户端可以管理什么'})).toBeVisible();await expect(page.getByRole('button',{name:'确认所选变更'})).toBeDisabled()
  await page.goForward();await expect(page).not.toHaveURL(/connect=1|scoped_access=1/);await page.goBack();await page.getByLabel('选择已连接客户端').selectOption(clientId)
- for(const d of descriptors)await expect(page.getByLabel(`本次选择：${d.consent.title}`)).toHaveValue('')
+ for(const d of descriptors)await expect(page.getByLabel(`本次选择：${d.domain==='planning'?'时间偏好':d.consent.title}`)).toHaveValue('')
  expect(f.posts).toEqual([])
 })
 test('account switch during POST never displays the old receipt as the new account state',async({page})=>{
  let release!:()=>void;const holdPost=new Promise<void>(resolve=>{release=resolve}),f=await fixture(page,false,{holdPost}),other='00000000-0000-4000-8000-000000000009'
- await page.goto(entry);await page.getByLabel('选择已连接客户端').selectOption(clientId);await page.getByLabel('本次选择：决策规则与时间偏好').selectOption('approve');await page.getByLabel('我已核对账号、客户端及上方列出的本次变更。').check();await page.getByRole('button',{name:'确认所选变更'}).click();await expect.poll(()=>f.posts.length).toBe(1)
+ await page.goto(entry);await page.getByLabel('选择已连接客户端').selectOption(clientId);await page.getByLabel('本次选择：时间偏好').selectOption('approve');await page.getByLabel('我已核对账号、客户端及上方列出的本次变更。').check();await page.getByRole('button',{name:'确认所选变更'}).click();await expect.poll(()=>f.posts.length).toBe(1)
  f.setView({...f.state,account:{id:other,email:'other@example.invalid'},clients:[]})
  await page.route('**/auth/v1/user',route=>json(route,{id:other,aud:'authenticated',role:'authenticated',email:'other@example.invalid',app_metadata:{provider:'google'},user_metadata:{},identities:[],created_at:'2026-10-01T00:00:00Z'}))
  await page.evaluate(async other=>{
@@ -130,13 +137,13 @@ test('consumer business permission is an explicit separate choice and revoked in
  const f=await fixture(page);await page.goto(entry);await page.getByLabel('选择已连接客户端').selectOption(clientId)
  await expect(page.getByLabel('本次选择：独立准备、手动行动与投递组')).toHaveValue('')
  await page.getByLabel('本次选择：独立准备、手动行动与投递组').selectOption('approve')
- await page.getByLabel('本次选择：决策规则与时间偏好').selectOption('approve')
+ await page.getByLabel('本次选择：时间偏好').selectOption('approve')
  await page.getByLabel('我已核对账号、客户端及上方列出的本次变更。').check();await page.getByRole('button',{name:'确认所选变更'}).click()
  await expect(page.getByText('这次决定已记录；下方展示重新读取的当前授权状态。')).toBeVisible()
  expect(f.posts[0].choices.map((c:any)=>c.domain)).toEqual(['business','planning'])
  expect(f.posts[0].choices[0]).toMatchObject({consentVersion:7,expectedGrant:null})
  expect(f.state.clients[0].grants.map(g=>g.domain).sort()).toEqual(['business','planning'])
- await page.getByLabel('本次选择：独立准备、手动行动与投递组').selectOption('revoke');await page.getByLabel('本次选择：决策规则与时间偏好').selectOption('revoke')
+ await page.getByLabel('本次选择：独立准备、手动行动与投递组').selectOption('revoke');await page.getByLabel('本次选择：时间偏好').selectOption('revoke')
  await page.getByLabel('我已核对账号、客户端及上方列出的本次变更。').check();await page.getByRole('button',{name:'确认所选变更'}).click()
  await expect.poll(()=>f.posts.length).toBe(2);expect(f.posts[1].choices.every((c:any)=>c.decision==='revoke'&&c.expectedGrant.revision===1)).toBe(true)
 })
@@ -179,7 +186,7 @@ test('controlled consumer screen permits business v7 only and sends exactly one 
  for(const d of f.state.descriptors)d.canApprove=d.domain==='business'
  await page.goto(entry);await page.getByLabel('选择已连接客户端').selectOption(clientId)
  for(const d of f.state.descriptors){
-  const option=page.getByLabel(`本次选择：${d.consent.title}`).getByRole('option',{name:'明确授权此项',exact:true})
+  const option=page.getByLabel(`本次选择：${d.domain==='planning'?'时间偏好':d.consent.title}`).getByRole('option',{name:'明确授权此项',exact:true})
   await expect(option).toHaveJSProperty('disabled',d.domain!=='business')
  }
  await page.getByLabel('本次选择：独立准备、手动行动与投递组').selectOption('approve')

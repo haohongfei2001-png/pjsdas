@@ -57,7 +57,7 @@ describe('Today queue constraints', () => {
     expect(selected.filter((item) => item.action.kind === 'follow_up')).toHaveLength(0)
   })
 
-  it('never hides same-day hard deadlines when the requested time budget is too small', () => {
+  it('keeps earliest feasible deadlines and reports unplanned work without overbooking', () => {
     const now = new Date(2026, 8, 10, 11, 36)
     const opportunities = [opportunity({ id: 'urgent-1' }), opportunity({ id: 'urgent-2' }), opportunity({ id: 'tomorrow' })]
     const actions = [
@@ -66,14 +66,14 @@ describe('Today queue constraints', () => {
       action({ id: 'deadline-tomorrow', opportunityId: 'tomorrow', dueAt: new Date(2026, 8, 11, 23, 59, 59).toISOString(), estimatedMinutes: 90 }),
     ]
     const plan = buildTimePlan(rankActions(actions, opportunities, now), 60, now)
-    expect(plan.planned.map((item) => item.action.id)).toEqual(['deadline-14', 'deadline-eod'])
-    expect(plan.requiredTodayMinutes).toBe(110)
-    expect(plan.overBudgetMinutes).toBe(50)
-    expect(plan.overrunReason).toBe('today_deadlines')
-    expect(plan.nearDeadlineUnplanned.map((item) => item.action.id)).toEqual(['deadline-tomorrow'])
+    expect(plan.planned.map((item) => item.action.id)).toEqual(['deadline-14'])
+    expect(plan.totalMinutes).toBe(20)
+    expect(plan.overBudgetMinutes).toBe(0)
+    expect(plan.overrunReason).toBeUndefined()
+    expect(plan.nearDeadlineUnplanned.map((item) => item.action.id)).toEqual(['deadline-eod', 'deadline-tomorrow'])
   })
 
-  it('prefers a small overrun for the next 48h hard deadline over packing lower-value short tasks', () => {
+  it('does not use retired near-deadline stretch or hidden value preferences', () => {
     const now = new Date(2026, 8, 10, 11, 36)
     const opportunities = [opportunity({ id: 'today-1' }), opportunity({ id: 'today-2' }), opportunity({ id: 'tomorrow' }), opportunity({ id: 'later' })]
     const actions = [
@@ -83,10 +83,10 @@ describe('Today queue constraints', () => {
       action({ id: 'later-30', opportunityId: 'later', dueAt: new Date(2026, 8, 20, 23, 59, 59).toISOString(), estimatedMinutes: 30 }),
     ]
     const plan = buildTimePlan(rankActions(actions, opportunities, now), 180, now)
-    expect(plan.planned.map((item) => item.action.id)).toEqual(['today-20', 'today-90', 'tomorrow-90'])
-    expect(plan.totalMinutes).toBe(200)
-    expect(plan.overBudgetMinutes).toBe(20)
-    expect(plan.overrunReason).toBe('near_deadline_stretch')
+    expect(plan.planned.map((item) => item.action.id)).toEqual(['today-20', 'today-90', 'later-30'])
+    expect(plan.totalMinutes).toBe(140)
+    expect(plan.overBudgetMinutes).toBe(0)
+    expect(plan.overrunReason).toBeUndefined()
   })
 
   it('does not treat a natural-language scheduled assessment date as a recruiter hard deadline', () => {
@@ -107,6 +107,6 @@ describe('Today queue constraints', () => {
     expect(scheduled?.reasons).toContain('计划执行日')
 
     const plan = buildTimePlan(ranked, 180, now)
-    expect(plan.planned.map((item) => item.action.id)).toEqual(['dell-apply', 'xpeng-assessment', 'cxmt-scheduled-assessment'])
+    expect(plan.planned.map((item) => item.action.id)).toEqual(['cxmt-scheduled-assessment', 'dell-apply', 'xpeng-assessment'])
   })
 })

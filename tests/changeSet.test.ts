@@ -49,17 +49,10 @@ describe('ChangeSet protocol', () => {
     expect(JSON.stringify(changeSet)).not.toContain('raw input must not persist')
   })
 
-  it('creates an optimistic-concurrency rule ChangeSet only when rules differ', () => {
-    const before = createDefaultDecisionRules('2026-09-11T00:00:00.000Z')
-    const after = { ...before, hardDeadlineHorizonHours: 72 }
-    const changeSet = createRulesChangeSet(before, after, 'save', new Date('2026-09-11T01:00:00.000Z'))
-    expect(changeSet).toBeTruthy()
-    expect(changeSet!.operations[0]).toMatchObject({
-      kind: 'replace_decision_rules',
-      expectedUpdatedAt: before.updatedAt,
-    })
-    expect(createRulesChangeSet(before, before, 'save')).toBeUndefined()
-    expect(decisionRulesEquivalent(before, { ...before, updatedAt: '2030-01-01T00:00:00.000Z' })).toBe(true)
+  it('retires new rule ChangeSets but retains historical equality decoding', () => {
+    const before = createDefaultDecisionRules('2026-09-11T00:00:00Z')
+    expect(() => createRulesChangeSet(before, { ...before, hardDeadlineHorizonHours: 72 }, 'save')).toThrow(/retired/)
+    expect(decisionRulesEquivalent(before, { ...before, updatedAt: '2030-01-01T00:00:00Z' })).toBe(true)
   })
 
   it('represents explicit action completion with the same protocol', () => {

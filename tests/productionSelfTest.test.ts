@@ -32,7 +32,7 @@ function health() {
       },
     },
     authenticatedMcp: {
-      toolSurfaceVersion: 'v7',
+      toolSurfaceVersion: 'v8',
       releaseRequiredTools: DRIVE_REQUIRED_TOOLS,
     },
     status: 'ok',

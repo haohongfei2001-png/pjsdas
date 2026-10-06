@@ -1,3 +1,4 @@
+import { ScoringRetiredError, assertNoNewOpportunityRating, preserveRetiredProfileFields } from './scoringRetirement.js'
 import { interactionMetric } from './cloud/interactionMetrics.js'
 import { applyWorkspaceDelta, patchDeltaRow, DELTA_COLLECTIONS, type WorkspaceDelta, type DeltaRow } from './workspaceDelta.js'
 import { canonicalWorkspaceJson } from './cloud/workspaceFingerprint.js'
@@ -26,7 +27,7 @@ import {
   scheduleNodeForProcessEvent,
   syncScheduleNodeForActionStatus,
 } from './scheduleNodes.js'
-import { createDefaultDecisionRules, decisionRulesForSnapshot, validateDecisionRules, type DecisionRules } from './decisionRules.js'
+import { type DecisionRules } from './decisionRules.js'
 import type { TimePlanningPreferences } from './timePlanningPreferences.js'
 import { validateTimePlanningPreferences } from './timePlanningPreferences.js'
 import {
@@ -42,7 +43,6 @@ import {
   createProcessEventDeleteChangeSet,
   createProgressChangeSet,
   createRulesChangeSet,
-  decisionRulesEquivalent,
   restoreProgressOperation,
   type ChangeSetRecord,
   type ChangeSetStatus,
@@ -56,7 +56,6 @@ import {
   timelineFromProcessEvent,
   timelineFromProgressOperation,
   timelineFromRestore,
-  timelineFromRuleChange,
   timelineFromChangeSetApplied,
 } from './timeline.js'
 import type { ExecutableProgressOperation, ProgressOperation } from './progressUpdate.js'
@@ -361,10 +360,7 @@ export async function getLastImport() {
   return (await dbPromise).get('meta', 'lastImport')
 }
 
-export async function getDecisionRules() {
-  const stored = await (await dbPromise).get('decisionRules', 'current')
-  return stored ?? decisionRulesForSnapshot()
-}
+export async function getDecisionRules(): Promise<never> { throw new ScoringRetiredError() }
 
 export async function getDiscoveryProfile() {
   const stored = await (await dbPromise).get('discoveryProfiles', 'current')
@@ -372,7 +368,8 @@ export async function getDiscoveryProfile() {
 }
 
 export async function saveDiscoveryProfile(profile: DiscoveryProfile) {
-  const next = normalizeDiscoveryProfile(profile)
+  const previous = await (await dbPromise).get('discoveryProfiles', 'current')
+  const next = normalizeDiscoveryProfile(preserveRetiredProfileFields(profile, previous))
   const errors = validateDiscoveryProfile(next)
   if (errors.length) throw new Error(errors[0])
   await (await dbPromise).put('discoveryProfiles', next)
@@ -413,31 +410,8 @@ export async function discardChangeSet(id: string) {
   return discarded
 }
 
-export async function saveDecisionRules(rules: DecisionRules) {
-  const db = await dbPromise
-  const next: DecisionRules = { ...rules, weights: { ...rules.weights }, key: 'current', version: 1, updatedAt: new Date().toISOString() }
-  const errors = validateDecisionRules(next)
-  if (errors.length) throw new Error(errors[0])
-  return withTimelineMutation(db, async (tx) => {
-    const before = await tx.objectStore('decisionRules').get('current') ?? createDefaultDecisionRules('1970-01-01T00:00:00.000Z')
-    await tx.objectStore('decisionRules').put(next)
-    const record = timelineFromRuleChange(before, next, 'save')
-    if (record) await tx.objectStore('timeline').put(record)
-    return next
-  })
-}
-
-export async function resetDecisionRules() {
-  const db = await dbPromise
-  const next = createDefaultDecisionRules()
-  return withTimelineMutation(db, async (tx) => {
-    const before = await tx.objectStore('decisionRules').get('current') ?? createDefaultDecisionRules('1970-01-01T00:00:00.000Z')
-    await tx.objectStore('decisionRules').put(next)
-    const record = timelineFromRuleChange(before, next, 'reset')
-    if (record) await tx.objectStore('timeline').put(record)
-    return next
-  })
-}
+export async function saveDecisionRules(_rules: DecisionRules): Promise<never> { throw new ScoringRetiredError() }
+export async function resetDecisionRules(): Promise<never> { throw new ScoringRetiredError() }
 
 export async function updateActionStatus(id: string, status: Action['status'], expectedStatus?: Action['status']) {
   const db = await dbPromise
@@ -554,8 +528,8 @@ function defaultLocalOpportunity(
     processStage: submitted ? 'screening' : 'not_applied',
     roleType: 'core',
     early: false,
-    opportunityValue: 86,
-    fitScore: 60,
+    opportunityValue: 0,
+    fitScore: 0,
     locallyManaged: true,
     importedAt: operation.occurredAt,
   }
@@ -642,8 +616,8 @@ export async function applyProgressUpdate(operations: ProgressOperation[]) {
             title: `投递 ${opportunity.company}｜${opportunity.role}`,
             opportunityId: opportunity.id,
             estimatedMinutes: 45,
-            leverage: 86,
-            delayCost: 40,
+            leverage: 0,
+            delayCost: 0,
             status: 'todo',
             sourceLabel: '自然语言更新',
             createdAt: operation.occurredAt,
@@ -748,8 +722,8 @@ export async function applyProgressUpdate(operations: ProgressOperation[]) {
           title: operation.title,
           dueAt: operation.dueAt,
           estimatedMinutes: operation.estimatedMinutes,
-          leverage: 70,
-          delayCost: operation.dueAt ? 65 : 40,
+          leverage: 0,
+          delayCost: 0,
           status: previous?.status ?? 'todo',
           sourceLabel: '自然语言更新',
           createdAt: previous?.createdAt ?? operation.occurredAt,
@@ -771,13 +745,7 @@ export async function stageProgressChangeSet(operations: ExecutableProgressOpera
   return savePendingChangeSet(changeSet)
 }
 
-export async function applyDecisionRulesChangeSet(rules: DecisionRules, mode: 'save' | 'reset' = 'save') {
-  const before = await getDecisionRules()
-  const changeSet = createRulesChangeSet(before, rules, mode)
-  if (!changeSet) return undefined
-  await savePendingChangeSet(changeSet)
-  return applyChangeSet(changeSet.id)
-}
+export async function applyDecisionRulesChangeSet(_rules: DecisionRules, _mode: 'save' | 'reset' = 'save'): Promise<never> { throw new ScoringRetiredError() }
 
 export async function applyProcessEventChangeSet(event: ProcessEvent) {
   const changeSet = createProcessEventChangeSet(event)
@@ -856,8 +824,8 @@ async function applyDiscoveredOpportunityOperations(operations: DiscoveredChange
         dueAt: opportunity.deadline,
         timingMode: opportunity.deadline ? 'deadline' : undefined,
         estimatedMinutes: opportunity.prepEstimateMinutes ?? 45,
-        leverage: 70,
-        delayCost: opportunity.deadline ? 65 : 40,
+        leverage: 0,
+        delayCost: 0,
         status: 'todo',
         sourceLabel: 'ChatGPT 岗位发现',
         createdAt: opportunity.importedAt,
@@ -904,6 +872,11 @@ export async function applyChangeSet(id: string): Promise<ChangeSetRecord & { ac
   if (changeSet.status === 'applied') return changeSet
   if (changeSet.status !== 'pending') throw new Error(`ChangeSet ${id} 当前状态为 ${changeSet.status}，不能应用。`)
 
+  for (const operation of changeSet.operations) {
+    if (operation.kind === 'replace_decision_rules') throw new ScoringRetiredError()
+    if (operation.kind === 'add_discovered_opportunity') assertNoNewOpportunityRating(operation.opportunity)
+  }
+
   const actionCompensations: ActionStatusUndo[] = []
   try {
     const discoveredOperations = changeSet.operations.filter((operation): operation is DiscoveredChangeOperation => operation.kind === 'add_discovered_opportunity')
@@ -921,15 +894,7 @@ export async function applyChangeSet(id: string): Promise<ChangeSetRecord & { ac
         continue
       }
 
-      if (operation.kind === 'replace_decision_rules') {
-        const current = await getDecisionRules()
-        const alreadyApplied = decisionRulesEquivalent(current, operation.rules)
-        if (!alreadyApplied && current.updatedAt !== operation.expectedUpdatedAt) {
-          throw new Error('决策规则在 ChangeSet 创建后已发生变化，请重新审阅再应用。')
-        }
-        if (!alreadyApplied) await saveDecisionRules(operation.rules)
-        continue
-      }
+      if (operation.kind === 'replace_decision_rules') throw new ScoringRetiredError()
 
       if (operation.kind === 'add_process_event') {
         await addProcessEvent(operation.event)
@@ -1036,7 +1001,7 @@ async function readLocalSnapshotData(tx: LocalSnapshotTransaction) {
     actions,
     prep,
     applicationGroups,
-    decisionRules: decisionRulesForSnapshot(decisionRules),
+    ...(decisionRules ? { decisionRules: structuredClone(decisionRules) } : {}),
     timePlanning,
     discoveryProfile,
     discoveryInbox,
@@ -1195,7 +1160,7 @@ export async function replaceLocalSnapshotFromCloud(snapshot: PJSDASSnapshot, gu
     for (const item of latest.data.actions) await tx.objectStore('actions').put(item)
     for (const item of latest.data.prep) await tx.objectStore('prep').put(item)
     for (const item of latest.data.applicationGroups) await tx.objectStore('applicationGroups').put(item)
-    await tx.objectStore('decisionRules').put(latest.data.decisionRules ?? createDefaultDecisionRules(snapshot.exportedAt))
+    if (latest.data.decisionRules) await tx.objectStore('decisionRules').put(latest.data.decisionRules)
     if (latest.data.discoveryProfile) await tx.objectStore('discoveryProfiles').put(latest.data.discoveryProfile)
     for (const item of latest.data.discoveryInbox ?? []) await tx.objectStore('discoveryInbox').put(item)
     for (const item of latest.data.timeline ?? []) await tx.objectStore('timeline').put(item)
@@ -1259,7 +1224,7 @@ export async function restoreLocalSnapshot(snapshot: PJSDASSnapshot) {
   for (const item of latest.data.actions) await tx.objectStore('actions').put(item)
   for (const item of latest.data.prep) await tx.objectStore('prep').put(item)
   for (const item of latest.data.applicationGroups) await tx.objectStore('applicationGroups').put(item)
-  await tx.objectStore('decisionRules').put(latest.data.decisionRules ?? createDefaultDecisionRules(snapshot.exportedAt))
+  if (latest.data.decisionRules) await tx.objectStore('decisionRules').put(latest.data.decisionRules)
   if (latest.data.discoveryProfile) await tx.objectStore('discoveryProfiles').put(latest.data.discoveryProfile)
   for (const item of latest.data.discoveryInbox ?? []) await tx.objectStore('discoveryInbox').put(item)
   for (const item of latest.data.timeline ?? []) await tx.objectStore('timeline').put(item)

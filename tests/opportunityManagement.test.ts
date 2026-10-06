@@ -47,19 +47,11 @@ describe('bounded opportunity profile management', () => {
     const initial = opportunityFixture(); delete initial.data.opportunities[0].detail?.userFacts
     expect((await update({ userFacts: { applicationUrl: null } }, initial)).changed).toBe(false)
   })
-  it('recomputes assessment totals only from explicitly supplied components with unchanged rules', async () => {
-    const original = opportunityFixture()
-    const changed = await update({ assessment: { fit: { skills: { score: 83, confidence: 'high', rationale: 'User supplied' } }, opportunityValue: { roleGrowth: { score: 67, confidence: 'medium', rationale: 'User supplied' } } } }, original)
-    expect(changed.snapshot.data.opportunities[0]).toMatchObject({ fitScore: 83, opportunityValue: 67, assessmentStatus: 'assessed' })
-    expect(changed.snapshot.data.decisionRules).toEqual(original.data.decisionRules)
-    expect(changed.snapshot.data.processes).toEqual(original.data.processes)
-    expect(restoreOpportunityManagement(changed.snapshot, changed.compensation!, now).data.opportunities).toEqual(original.data.opportunities)
-  })
-  it('merges and clears individual assessment components without replacing neighboring values', async () => {
-    const initial = (await update({ assessment: { fit: { skills: { score: 70, confidence: 'high', rationale: 'First' }, experience: { score: 40, confidence: 'low', rationale: 'Second' } }, opportunityValue: { roleGrowth: { score: 80, confidence: 'high', rationale: 'Third' } } } })).snapshot
-    const changed = await update({ assessment: { fit: { skills: null } } }, initial, 'profile-command-b')
-    expect(changed.snapshot.data.opportunities[0].detail?.assessment?.fit).toEqual({ experience: { score: 40, confidence: 'low', rationale: 'Second' } })
-    await expect(update({ assessment: { fit: { experience: null } } }, changed.snapshot)).rejects.toThrow(/at least one/)
+  it('rejects new and cleared assessment patches without changing historical fields', async () => {
+    const original = opportunityFixture(), before = structuredClone(original)
+    await expect(update({ assessment: { fit: { skills: { score: 83, confidence: 'high', rationale: 'User supplied' } } } }, original)).rejects.toMatchObject({ code: 'SCORING_RETIRED' })
+    await expect(update({ assessment: { fit: { skills: null } } }, original)).rejects.toMatchObject({ code: 'SCORING_RETIRED' })
+    expect(original).toEqual(before)
   })
   it.each([{ company: 'Renamed' }, { role: 'Renamed' }, { processStage: 'offer' }, { deadline: '2026-11-01' }, { fitScore: 100 }, { detail: { facts: {} } }, { detail: { discovery: {} } }, { userFacts: { deadline: '2026-11-01' } }, { userFacts: { provenance: 'verified' } }, { assessment: { weights: {} } }, { assessment: { fit: { invented: {} } } }, { userFacts: { applicationUrl: 'javascript:alert(1)' } }])('rejects source/derived/security/identity field injection %#', async patch => {
     const read = await readOpportunityManagement(opportunityFixture(), 'opp-a')
@@ -198,7 +190,8 @@ describe('raw opportunity preservation regression', () => {
     const before = structuredClone(initial)
     const read = await readOpportunityManagement(initial, initial.data.opportunities[0].id)
     expect(initial).toEqual(before)
-    expect(read.opportunity).toEqual(initial.data.opportunities[0])
+    const { fitScore: _fit, opportunityValue: _value, ...visible } = initial.data.opportunities[0]
+    expect(read.opportunity).toEqual(visible)
     const changed = await applyOpportunityManagement(initial, { operations: [{ kind: 'update_opportunity_profile', id: read.opportunity.id, expectedFingerprint: read.profileFingerprint, patch: { early: true } }] }, 'raw-preservation-command', now)
     for (const [key, value] of Object.entries(before.data)) if (!['opportunities', 'timeline'].includes(key)) expect((changed.snapshot.data as any)[key]).toEqual(value)
     expect(changed.snapshot.data.opportunities[1]).toEqual(before.data.opportunities[1])

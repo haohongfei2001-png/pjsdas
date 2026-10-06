@@ -1,5 +1,5 @@
+import { resolveApplicationDeadline } from '../applicationDeadline.js'
 import { buildApplicationPortfolioDecision } from '../applicationPortfolio.js'
-import { decisionRulesForSnapshot } from '../decisionRules.js'
 import { validateSnapshot, type PJSDASSnapshot } from '../snapshot.js'
 import { BridgeReadError, type BridgeReadContext } from './readLayer.js'
 
@@ -43,11 +43,11 @@ export function getApplicationPortfolio(
     throw new BridgeReadError('NOT_FOUND', `Application Group ${groupId} was not found.`)
   }
 
-  const rules = decisionRulesForSnapshot(snapshot.data.decisionRules)
+  const opportunities = snapshot.data.opportunities.map(item => ({ ...item, deadlineResolution: resolveApplicationDeadline(item, snapshot.data) }))
   const decisions = groups
-    .map((group) => buildApplicationPortfolioDecision(group, snapshot.data.opportunities, rules, context.now))
+    .map((group) => buildApplicationPortfolioDecision(group, opportunities, undefined, context.now, context.timezone))
     .sort((a, b) => {
-      const order = { ready: 0, needs_rule_confirmation: 1, no_recommendation: 2, capacity_exhausted: 3, locked: 4, no_candidates: 5 }
+      const order = { ready: 0, needs_rule_confirmation: 1, capacity_exhausted: 2, locked: 3, no_candidates: 4 }
       return order[a.status] - order[b.status] || a.company.localeCompare(b.company) || a.groupId.localeCompare(b.groupId)
     })
 
@@ -64,8 +64,8 @@ export function getApplicationPortfolio(
       capacityIsMaximum: true,
       autoFillSlots: false,
       automaticApplication: false,
-      minimumCandidateScore: rules.portfolioMinimumCandidateScore,
-      portfolioWeights: rules.portfolioWeights,
+      ordering: 'deadline_ascending', inactiveLast: true,
+      scoring: 'retired',
     },
   }
 }

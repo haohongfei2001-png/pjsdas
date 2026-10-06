@@ -61,7 +61,7 @@ describe('CGR-05 signed mixed proposal authority', () => {
     expect(before.data.changeSets).toEqual([])
   })
 
-  it('applies one Decision Rules patch with progress and Action changes in the same revision', () => {
+  it('rejects the whole retired Rules mixed batch before any progress or Action mutation', () => {
     const before = snapshot()
     const currentRules = decisionRulesForSnapshot(before.data.decisionRules)
     const mixed = changeSet()
@@ -71,10 +71,10 @@ describe('CGR-05 signed mixed proposal authority', () => {
       rules: { ...currentRules, followUpDailyCap: currentRules.followUpDailyCap + 1 },
     })
     const proposal = createMcpProposalEnvelope(mixed, 'txn:1', at, undefined, 'account-a')
-    const result = applyMcpMixedCommand(before, proposal, new Date('2026-09-24T07:01:00.000Z'))
-    expect(result.snapshot.data.decisionRules?.followUpDailyCap).toBe(currentRules.followUpDailyCap + 1)
-    expect(result.snapshot.data.actions.find((item) => item.id === 'existing-action')?.status).toBe('done')
-    expect(result.snapshot.data.changeSets).toHaveLength(1)
+    const unchanged = structuredClone(before)
+    expect(() => applyMcpMixedCommand(before, proposal, new Date('2026-09-24T07:01:00.000Z'))).toThrow(/retired/)
+    expect(before).toEqual(unchanged)
+
   })
 
   it('rejects delegated and cross-account callers, then commits one scoped receipt', async () => {

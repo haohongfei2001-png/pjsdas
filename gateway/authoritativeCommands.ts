@@ -1,3 +1,4 @@
+import { assertNoScoringInput } from '../src/scoringRetirement.js'
 import { assertConsumerBusinessManagementGrant, type ConsumerBusinessManagementGrant } from './consumerBusinessManagementAccess.js'
 import { applyPrivateReminderManagement, privateReminderManagementSchema, privateReminderManagementObjectRefs, privateReminderManagementFingerprint, restorePrivateReminderManagement, type PrivateReminderManagementCompensation } from '../src/privateReminderManagement.js'
 import { assertPrivateReminderManagementGrant, type PrivateReminderManagementGrant } from './privateReminderManagementAccess.js'
@@ -26,7 +27,7 @@ import {
   type SemanticBatchCompensation,
 } from '../src/semanticIntake.js'
 import { upgradeSnapshotToLatest, validateSnapshot, type PJSDASSnapshot } from '../src/snapshot.js'
-import { decisionRulesForSnapshot, validateDecisionRules, type DecisionRules } from '../src/decisionRules.js'
+import { validateDecisionRules, type DecisionRules } from '../src/decisionRules.js'
 import type { SemanticIntakeObservation } from '../src/model.js'
 import { applyDiscoveryStatusCommand } from '../src/discoveryStatusCommand.js'
 import { applyDiscoveryProfileCommand } from '../src/discoveryProfileCommand.js'
@@ -80,8 +81,7 @@ const discoveryProfileSchema = z.object({
   minimumAnnualCompensationWan: z.number().min(0).max(1000).optional(),
   preferredRoleTypes: z.array(z.enum(['core','backup','reach','lottery','practice'])).max(5).optional(),
   locationPolicy: z.enum(['prefer','strict']).optional(),
-  minimumFitScore: z.number().min(0).max(100).optional(),
-  minimumOpportunityValue: z.number().min(0).max(100).optional(),
+  minimumFitScore: z.never().optional(), minimumOpportunityValue: z.never().optional(),
   maxReviewCandidates: z.number().int().min(1).max(12).optional(),
   mustHave: profileList, mustNotHave: profileList, strengths: profileList,
   notes: z.string().max(2400), updatedAt: z.string().max(40),
@@ -355,10 +355,14 @@ async function applyCompensation(snapshot: PJSDASSnapshot, compensation: Record<
   if (compensation.operation === 'opportunity_management_restore') return restoreOpportunityManagement(snapshot, compensation as unknown as OpportunityManagementCompensation, now)
   if (compensation.operation === 'business_management_restore') return restoreBusinessManagement(snapshot, compensation as unknown as BusinessManagementCompensation, now)
   if (compensation.operation === 'mcp_restore_decision_rules') {
-    const before = (compensation.payload as { before?: DecisionRules } | undefined)?.before
-    if (!before || validateDecisionRules(before).length) throw new Error('MCP Rules compensation is invalid.')
+    const payload = compensation.payload as { before?: DecisionRules | null } | undefined
+    const before = payload?.before
+    if (!payload || !Object.hasOwn(payload, 'before') || before === undefined || before !== null && validateDecisionRules(before).length) {
+      throw new Error('MCP Rules compensation is invalid.')
+    }
     const next = upgradeSnapshotToLatest(snapshot)
-    next.data.decisionRules = { ...decisionRulesForSnapshot(before), updatedAt: now.toISOString() }
+    if (before === null) delete next.data.decisionRules
+    else next.data.decisionRules = structuredClone(before)
     next.exportedAt = now.toISOString()
     validateSnapshot(next)
     return next
@@ -459,6 +463,7 @@ export function createAuthoritativeCommandExecutor(options: AuthoritativeCommand
   }
 
   async function execute(principal: MutationPrincipal, raw: unknown): Promise<AuthoritativeCommandExecution> {
+    assertNoScoringInput(raw)
     const parsed = authoritativeBusinessCommandSchema.parse(raw) as AuthoritativeBusinessCommand
     const isManagement = parsed.command.type === 'business_management' || parsed.command.type === 'opportunity_management' || parsed.command.type === 'planning_management' || parsed.command.type === 'discovery_profile_management' || parsed.command.type === 'private_reminder_management'
     const admittedManagementGrant = isManagement ? await authorizeManagement(principal, undefined, parsed.command.type) : undefined

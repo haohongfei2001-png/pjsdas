@@ -30,17 +30,8 @@ export function prepPriorityBand(value: string | undefined): PrepPriorityBand {
   return 'unknown'
 }
 
-export function prepPriorityWeights(value: string | undefined) {
-  switch (prepPriorityBand(value)) {
-    case 'highest': return { leverage: 96, delayCost: 78 }
-    case 'high': return { leverage: 88, delayCost: 64 }
-    case 'medium_high': return { leverage: 80, delayCost: 52 }
-    case 'medium': return { leverage: 68, delayCost: 40 }
-    case 'low':
-    case 'unknown':
-      return { leverage: 45, delayCost: 24 }
-  }
-}
+/** Legacy import shape only; manual labels no longer produce business scores. */
+export function prepPriorityWeights(_value: string | undefined) { return { leverage: 0, delayCost: 0 } }
 
 export function prepPriorityRank(value: string | undefined) {
   const rank: Record<PrepPriorityBand, number> = {

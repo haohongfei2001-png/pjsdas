@@ -44,8 +44,8 @@ export function applyDiscoveryPromotionCommand(snapshot: PJSDASSnapshot, command
       id: actionId, kind: 'apply', title: `投递 ${opportunity.company}｜${opportunity.role}`,
       opportunityId: opportunity.id, processStage: 'not_applied', dueAt: opportunity.deadline,
       timingMode: opportunity.deadline ? 'deadline' : undefined,
-      estimatedMinutes: opportunity.prepEstimateMinutes ?? 45, leverage: 70,
-      delayCost: opportunity.deadline ? 65 : 40, status: 'todo', sourceLabel: 'ChatGPT 岗位发现',
+      estimatedMinutes: opportunity.prepEstimateMinutes ?? 45, leverage: 0,
+      delayCost: 0, status: 'todo', sourceLabel: 'ChatGPT 岗位发现',
       createdAt: opportunity.importedAt, updatedAt: opportunity.importedAt,
     })
     next.data.changeSets = [...(next.data.changeSets ?? []), applied]

@@ -2,14 +2,12 @@ import { readModelSnapshot } from '../readModelSnapshot.js'
 import { decisionNeedsToday, groupOpenDecisions } from '../decisionPresentation.js'
 import { partitionDecisions } from '../decisionActionability.js'
 import { rankActions } from '../decisionV3.js'
-import { decisionRulesForSnapshot } from '../decisionRules.js'
+import { compareActionDeadlines, latestActionNode } from '../deadlineOrder.js'
 import type { DecisionRequest } from '../model.js'
 import { type PJSDASSnapshot } from '../snapshot.js'
 import {
   actionView,
-  dueSortValue,
   latestByOccurrence,
-  nodeForAction,
   protectedByLatestStart,
   resolvedContext,
   type TodayBriefAction,
@@ -60,25 +58,21 @@ export function selectTodayWeb(
 /** Shared normalized input for a consumer render; never mutates its entities. */
 export function selectTodayWebNormalized(snapshot: PJSDASSnapshot, input: TodayWebInput = {}, rawContext: TodayBriefContext = {}): TodayWebSelection {
   const context = resolvedContext(rawContext)
-  const rules = decisionRulesForSnapshot(snapshot.data.decisionRules)
   const nodes = latestByOccurrence(snapshot.data.scheduleNodes ?? [])
   const opportunities = new Map(snapshot.data.opportunities.map((item) => [item.id, item]))
-  const ranked = rankActions(snapshot.data.actions, snapshot.data.opportunities, context.now, rules, context.timezone)
+  const ranked = rankActions(snapshot.data.actions, snapshot.data.opportunities, context.now, undefined, context.timezone, nodes)
   const plan = buildConsumerTimePlan({ ranked, nodes, preferences: snapshot.data.timePlanning,
     availableMinutes: input.availableMinutes, useRemainingDayDefault: true, now: context.now, timezone: context.timezone })
   const protectedRanked = ranked
     .filter((item) => item.action.timingMode !== 'fixed')
     .filter((item) => protectedByLatestStart(
       item.action,
-      nodeForAction(item.action, nodes),
+      latestActionNode(item.action, nodes),
       context.now,
       context.timezone,
-      rules.hardDeadlineHorizonHours,
+      48,
     ))
-    .sort((a, b) => dueSortValue(a.action, nodeForAction(a.action, nodes))
-      - dueSortValue(b.action, nodeForAction(b.action, nodes))
-      || b.score - a.score
-      || a.action.id.localeCompare(b.action.id))
+    .sort((a, b) => compareActionDeadlines(a.action, b.action, context.timezone, latestActionNode(a.action, nodes), latestActionNode(b.action, nodes)))
 
   const actions = plan.planned.map((item) => actionView(
     item,
@@ -86,7 +80,7 @@ export function selectTodayWebNormalized(snapshot: PJSDASSnapshot, input: TodayW
     opportunities,
     context.now,
     context.timezone,
-    rules.hardDeadlineHorizonHours,
+    48,
   ))
   const openGroups = groupOpenDecisions(partitionDecisions(snapshot.data.decisionRequests ?? [], {
     opportunities: snapshot.data.opportunities, scheduleNodes: nodes,
@@ -113,7 +107,7 @@ export function selectTodayWebNormalized(snapshot: PJSDASSnapshot, input: TodayW
     displayTimezone: context.timezone,
     actions,
     notSelectedHardActions: plan.deferredHard.map(item => actionView(item, nodes, opportunities, context.now,
-      context.timezone, rules.hardDeadlineHorizonHours)),
+      context.timezone, 48)),
     decisions,
     actionCount: actions.length,
     decisionCount: decisions.length,

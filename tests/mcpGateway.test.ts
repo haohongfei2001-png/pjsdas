@@ -53,11 +53,16 @@ describe('PJSDAS MCP gateway alpha', () => {
     ['get_recent_timeline', { since: '2026-09-10T00:00:00+08:00' }],
   ] satisfies Array<[ReadToolName, unknown]>)('runs %s against the validated snapshot source', async (name, args) => {
     const result = await invokeReadTool(source, name, args)
+    if (['get_opportunity_assessment', 'get_decision_rules', 'explain_priority'].includes(name)) {
+      expect(result.isError).toBe(true)
+      expect(jsonFrom(result)).toMatchObject({ code: 'SCORING_RETIRED', retryable: false })
+      return
+    }
     expect(result.isError).not.toBe(true)
     const data = jsonFrom(result)
     if (name === 'get_today_brief' || name === 'get_opportunity_detail') {
       expect(data).toMatchObject({
-        contractVersion: 1,
+        contractVersion: name === 'get_today_brief' ? 2 : 1,
         workspaceRevision: 'demo-v1',
         displayTimezone: 'Asia/Shanghai',
       })
@@ -71,7 +76,7 @@ describe('PJSDAS MCP gateway alpha', () => {
     expect(result.isError).not.toBe(true)
     const data = jsonFrom(result)
     expect(data).toMatchObject({
-      contractVersion: 1,
+      contractVersion: 2,
       workspaceRevision: 'demo-v1',
       displayTimezone: 'Asia/Shanghai',
       availableMinutes: 180,
@@ -82,14 +87,13 @@ describe('PJSDAS MCP gateway alpha', () => {
     expect(Array.isArray(data.materialCoverageWarnings)).toBe(true)
   })
 
-  it('returns component and portfolio policy through get_decision_rules', async () => {
-    const result = await invokeReadTool(source, 'get_decision_rules', {})
-    expect(result.isError).not.toBe(true)
-    const data = jsonFrom(result)
-    expect(data.fitComponentWeights).toMatchObject({ roleDirection: 24, location: 18 })
-    expect(data.opportunityValueComponentWeights).toMatchObject({ companyQuality: 18, roleGrowth: 18 })
-    expect(data.portfolioWeights).toMatchObject({ opportunityValue: 28, fit: 28, overlapPenalty: 18 })
-    expect(data.portfolioMinimumCandidateScore).toBe(62)
+  it('retired tools do not read or expose stored score policies', async () => {
+    const forbidden = { read: async () => { throw new Error('must not read historical scores') } }
+    for (const name of ['get_opportunity_assessment', 'get_decision_rules', 'explain_priority'] as const) {
+      const result = await invokeReadTool(forbidden, name, {})
+      expect(result.isError).toBe(true)
+      expect(jsonFrom(result)).toMatchObject({ code: 'SCORING_RETIRED', retryable: false })
+    }
   })
 
   it('returns a stable non-retryable tool error for invalid input', async () => {

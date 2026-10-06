@@ -388,7 +388,15 @@ export function ensureScheduleContractInPlace(data: ScheduleContractData) {
   for (const candidate of derived) {
     const current = latestByVersion(existing, candidate.occurrenceId)
     if (!current) {
-      existing.push(candidate)
+      // Canonical ownership survives a changed occurrence ID, cancellation or
+      // estimate. Backfilling another legacy occurrence from retained raw dates
+      // would revive time that the canonical record has already superseded.
+      const alreadyOwned = existing.some(node => candidate.relatedActionIds.some(id => node.relatedActionIds.includes(id))
+        || Boolean(candidate.processEventId && node.processEventId === candidate.processEventId
+          && (!candidate.opportunityId || !node.opportunityId || candidate.opportunityId === node.opportunityId))
+        || Boolean(candidate.kind === 'application_deadline' && node.kind === 'application_deadline'
+          && candidate.opportunityId && candidate.opportunityId === node.opportunityId))
+      if (!alreadyOwned) existing.push(candidate)
       continue
     }
     current.relatedActionIds = unique([...current.relatedActionIds, ...candidate.relatedActionIds])

@@ -44,23 +44,8 @@ function snapshot(opportunities: Opportunity[], currentRules = cloneDecisionRule
   }, '2026-09-12T01:00:00.000Z')
 }
 
-describe('v1.5 Round 2 assessment read projection', () => {
-  it('returns stored scores and an explicit current-rules projection for component assessments', () => {
-    const rules = cloneDecisionRules(DEFAULT_DECISION_RULES)
-    rules.fitComponentWeights = { ...rules.fitComponentWeights!, roleDirection: 0, skills: 100 }
-    const result = getOpportunityAssessment(snapshot([opportunity()], rules), { opportunityId: 'component-job' })
-    expect(result.mode).toBe('component')
-    expect(result.stored).toEqual({ fitScore: 80, opportunityValue: 80 })
-    expect(result.currentProjection?.fitScore).toBe(65)
-    expect(result.projectionDiffersFromStored).toBe(true)
-    expect(result.fitComponents.find((item) => item.key === 'skills')).toMatchObject({ score: 65, weight: 100 })
-  })
-
-  it('returns a bounded legacy view when no component assessment exists', () => {
-    const result = getOpportunityAssessment(snapshot([opportunity(false)]), { opportunityId: 'legacy-job' })
-    expect(result.mode).toBe('legacy')
-    expect(result.currentProjection).toBeUndefined()
-    expect(result.fitComponents).toEqual([])
-    expect(result.opportunityValueComponents).toEqual([])
+describe('retired assessment read', () => {
+  it('returns an explicit retirement instead of projecting legacy scores', () => {
+    expect(() => getOpportunityAssessment({} as any, { opportunityId: 'old' })).toThrow(/retired/)
   })
 })

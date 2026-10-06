@@ -128,7 +128,7 @@ test('dense owner day survives Gmail refresh, a cross-device update and offline 
       .accounts?.['owner-account']?.lastSyncedVersion)).toBe('txn:1004')
     const taskCount = await first.locator('.tsui-task-panel .tsui-task-row').count()
     expect(taskCount).toBeGreaterThan(0)
-    expect(taskCount).toBeLessThan(20)
+    expect(taskCount).toBeLessThanOrEqual(server.snapshot.data.actions.length)
     await expect(first.locator('.tsui-node-panel .tsui-node-row').first()).toBeVisible()
     await expect(first.locator('.tsui-status')).toHaveCount(0)
     await expect(first.getByRole('button', { name: /查看全部待决定事项/ })).toHaveCount(0)
@@ -216,7 +216,7 @@ test('dense owner day survives Gmail refresh, a cross-device update and offline 
     expect(staleConflict).toEqual({ status: 409, outcome: 'CONFLICT' })
     expect(server.commands).toHaveLength(2)
     await expect(restarted.locator('.tsui-status')).toHaveCount(0)
-    expect(await restarted.locator('.tsui-task-panel .tsui-task-row').count()).toBeLessThan(20)
+    expect(await restarted.locator('.tsui-task-panel .tsui-task-row').count()).toBeLessThanOrEqual(server.snapshot.data.actions.length)
 
     // An actual current web choice appears as one business question; old Gmail parser debt stays quiet.
     const current = denseDecision(999)

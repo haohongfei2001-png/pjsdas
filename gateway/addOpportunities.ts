@@ -1,9 +1,10 @@
+import { assertNoScoringInput, ScoringRetiredError } from '../src/scoringRetirement.js'
 import { resolveCanonicalPostingIdentity } from '../src/opportunityCanonicalization.js'
 import type { CallToolResult } from '@modelcontextprotocol/server'
 import { z } from 'zod'
 import { stableIngestionHash } from '../src/ingestion.js'
 import { createJobPostingEvidence, jobIdentityKey } from '../src/jobPosting.js'
-import type { Action, DiscoveryConfidence, Opportunity, TimelineRecord } from '../src/model.js'
+import type { Action, Opportunity, TimelineRecord } from '../src/model.js'
 import { validateSnapshot, type PJSDASSnapshot } from '../src/snapshot.js'
 import {
   requireWritableWorkspaceSource,
@@ -33,10 +34,6 @@ export const addOpportunityCandidateSchema = z.object({
   compensationText: z.string().min(1).max(500).optional(),
   rationale: z.string().min(1).max(1200).optional(),
   roleType: z.enum(['core', 'backup', 'reach', 'lottery', 'practice']),
-  opportunityValue: z.number().min(0).max(100).optional(),
-  fitScore: z.number().min(0).max(100).optional(),
-  fitConfidence: z.enum(['high', 'medium', 'low']).optional(),
-  opportunityValueConfidence: z.enum(['high', 'medium', 'low']).optional(),
   postingStatus: z.enum(['open', 'unknown']).optional(),
   discoveredAt: optionalDateString,
 }).strict()
@@ -47,11 +44,6 @@ export const addOpportunitiesSchema = z.object({
 
 export type AddOpportunityCandidate = z.infer<typeof addOpportunityCandidateSchema>
 export type AddOpportunitiesArgs = z.infer<typeof addOpportunitiesSchema>
-
-function confidenceFor(score: number | undefined, confidence: DiscoveryConfidence | undefined): DiscoveryConfidence {
-  if (confidence) return confidence
-  return score === undefined ? 'low' : 'medium'
-}
 
 function buildOpportunity(candidate: AddOpportunityCandidate, now: Date): Opportunity {
   const discoveredAt = candidate.discoveredAt ?? now.toISOString()
@@ -68,7 +60,6 @@ function buildOpportunity(candidate: AddOpportunityCandidate, now: Date): Opport
   })
   const identity = jobIdentityKey(candidate.company, candidate.role, candidate.location)
   const id = `user-opportunity:${stableIngestionHash(`${identity}|${posting.canonicalSourceUrl}`)}`
-  const hasAssessment = candidate.opportunityValue !== undefined && candidate.fitScore !== undefined
 
   return {
     id,
@@ -77,15 +68,15 @@ function buildOpportunity(candidate: AddOpportunityCandidate, now: Date): Opport
     currentStageLabel: '待投',
     processStage: 'not_applied',
     roleType: candidate.roleType,
-    assessmentStatus: hasAssessment ? 'provisional' : 'unassessed',
+    assessmentStatus: 'unassessed',
     early: false,
     deadline: candidate.deadline,
-    sourcePriority: hasAssessment ? 'ChatGPT 明确写入' : 'ChatGPT 明确写入 · 待补评估',
+    sourcePriority: 'ChatGPT 明确写入',
     salaryReference: candidate.compensationText,
     nextActionLabel: '审阅并投递',
     prepEstimateMinutes: 45,
-    opportunityValue: candidate.opportunityValue ?? 50,
-    fitScore: candidate.fitScore ?? 50,
+    opportunityValue: 0,
+    fitScore: 0,
     locallyManaged: true,
     importedAt: discoveredAt,
     detail: {
@@ -96,8 +87,8 @@ function buildOpportunity(candidate: AddOpportunityCandidate, now: Date): Opport
         compensationText: candidate.compensationText,
         rationale: candidate.rationale ?? '用户已在当前对话中明确要求将该来源岗位写入 TodayAction。',
         discoveredAt,
-        fitConfidence: confidenceFor(candidate.fitScore, candidate.fitConfidence),
-        opportunityValueConfidence: confidenceFor(candidate.opportunityValue, candidate.opportunityValueConfidence),
+        fitConfidence: 'low',
+        opportunityValueConfidence: 'low',
         posting,
       },
     },
@@ -114,8 +105,8 @@ function applyAction(opportunity: Opportunity, now: string): Action {
     dueAt: opportunity.deadline,
     timingMode: opportunity.deadline ? 'deadline' : undefined,
     estimatedMinutes: opportunity.prepEstimateMinutes ?? 45,
-    leverage: 70,
-    delayCost: opportunity.deadline ? 65 : 40,
+    leverage: 0,
+    delayCost: 0,
     status: 'todo',
     sourceLabel: 'ChatGPT 明确写入',
     createdAt: now,
@@ -154,7 +145,7 @@ function jsonResult(structuredContent: Record<string, unknown>, isError = false)
 }
 
 function toolError(caught: unknown): CallToolResult {
-  if (caught instanceof WorkspaceSourceError) {
+  if (caught instanceof WorkspaceSourceError || caught instanceof ScoringRetiredError) {
     return jsonResult({ code: caught.code, message: caught.message, retryable: caught.retryable }, true)
   }
   return jsonResult({
@@ -166,6 +157,7 @@ function toolError(caught: unknown): CallToolResult {
 
 export async function invokeAddOpportunities(source: WorkspaceSource, rawArgs: unknown): Promise<CallToolResult> {
   try {
+    assertNoScoringInput(rawArgs)
     const args = addOpportunitiesSchema.parse(rawArgs)
     const workspace = await source.read()
     const now = workspace.context.now ?? new Date()

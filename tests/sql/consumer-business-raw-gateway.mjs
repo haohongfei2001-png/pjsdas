@@ -66,12 +66,28 @@ try {
       return Response.json(rows)
     }
     const runtime = createOwnerScopedManagementRuntime({ consumerEnabled: 'enabled', consumerCohort: { accountIds: `${owner},00000000-0000-4000-8000-000000005959`, clientId: client }, enabled: 'enabled', transactional: true, identity: { userId: owner, oauthClientId: client }, audience: { mode: 'allowlist', allowed: true, role: 'beta' }, supabaseUrl: origin, serviceRoleKey: 'fixture-only', fetchImpl }).business
-    const read = await runtime.invoke('get_consumer_business_management', { query: { type: 'action', ids: [initial.data.actions[0].id] } })
-    assert.deepEqual(read.structuredContent.data.items[0], initial.data.actions[0])
-    const command = { commandId: `consumer-v7-raw-${scenario}`, baseRevision: 0, change: { operations: [op] } }
-    const applied = await runtime.invoke('execute_consumer_business_management', command)
     const stored = async () => (await db.query('select snapshot from public.pjsdas_workspaces where user_id=$1', [owner])).rows[0].snapshot
     const ledgerCount = async () => (await db.query('select count(*) n from public.pjsdas_command_ledger where user_id=$1', [owner])).rows[0].n
+    const read = await runtime.invoke('get_consumer_business_management', { query: { type: 'action', ids: [initial.data.actions[0].id] } })
+    const { leverage, delayCost, ...facts } = initial.data.actions[0]
+    assert.equal(typeof leverage, 'number'); assert.equal(typeof delayCost, 'number')
+    assert.deepEqual(read.structuredContent.data.items[0], facts)
+    assert.equal(Object.hasOwn(read.structuredContent.data.items[0], 'leverage'), false)
+    assert.equal(Object.hasOwn(read.structuredContent.data.items[0], 'delayCost'), false)
+    // The public projection must not redact or normalize the authoritative row.
+    assert.deepEqual(await stored(), initial); assert.equal(await ledgerCount(), 0)
+    if (index === 0) {
+      for (const retired of [
+        { kind: 'create_manual_action', value: { title: 'Retired score input', estimatedMinutes: 30, leverage: 70 } },
+        { kind: 'update_manual_action', id: 'manual-b', patch: { delayCost: 70 } },
+      ]) {
+        const rejected = await runtime.invoke('execute_consumer_business_management', { commandId: `retired-${retired.kind}`, baseRevision: 0, change: { operations: [retired] } })
+        assert.equal(rejected.structuredContent.code, 'SCORING_RETIRED')
+      }
+      assert.equal(posts, 0); assert.equal(await ledgerCount(), 0); assert.deepEqual(await stored(), initial)
+    }
+    const command = { commandId: `consumer-v7-raw-${scenario}`, baseRevision: 0, change: { operations: [op] } }
+    const applied = await runtime.invoke('execute_consumer_business_management', command)
     if (scenario === 'revoke-before-rpc' || scenario === 'cas-before-rpc' || scenario.startsWith('tamper-')) {
       assert.ok(applied.isError || applied.structuredContent.outcome === 'CONFLICT'); assert.deepEqual(await stored(), initial); assert.equal(await ledgerCount(), 0)
       console.log(`PASS ${scenario}: SQL retained raw snapshot and appended no ledger receipt`); continue
@@ -81,6 +97,14 @@ try {
     const changed = await stored(), expected = structuredClone(initial)
     for (const [key, value] of Object.entries(initial.data)) if (!['timeline', 'prep', 'actions', 'applicationGroups'].includes(key)) assert.deepEqual(changed.data[key], value)
     assert.deepEqual(changed.data.actions.slice(0, 2), initial.data.actions.slice(0, 2))
+    if (scenario === 'update_manual_action' || scenario === 'archive_manual_action') {
+      const compensation = (await db.query('select compensation from public.pjsdas_command_ledger where user_id=$1 and command_id=$2', [owner, command.commandId])).rows[0].compensation
+      const actionChange = compensation.payload.changes.find(change => change.type === 'action' && change.id === 'manual-b')
+      // Undo evidence retains the complete historical scores, metadata and order.
+      assert.deepEqual(actionChange.before, initial.data.actions.find(action => action.id === 'manual-b'))
+      assert.deepEqual(actionChange.after, changed.data.actions.find(action => action.id === 'manual-b') ?? null)
+      assert.equal(actionChange.beforeIndex, initial.data.actions.findIndex(action => action.id === 'manual-b'))
+    }
     if (scenario.startsWith('newer-')) {
       if (scenario === 'newer-target') changed.data.prep[0].title = 'Later owner title'
       else { changed.data.actions[0].dueAt = '2026-12-31T01:00:00Z'; expected.data.actions[0].dueAt = changed.data.actions[0].dueAt }
@@ -94,6 +118,6 @@ try {
     const restored = await stored(); assert.equal(restored.version, initial.version)
     for (const [key, value] of Object.entries(expected.data)) if (key !== 'timeline') assert.deepEqual(restored.data[key], value, `${scenario}: exact ${key}`)
     assert.equal(await ledgerCount(), 2); assert.equal(posts, 2)
-    console.log(`PASS ${scenario}: actual consumer v7 raw read/commit/replay/undo preserves unknown fields and order`)
+    console.log(`PASS ${scenario}: actual consumer v7 score-free read and raw commit/replay/undo preserve historical fields and order`)
   }
 } finally { globalThis.fetch = network; await db.end() }

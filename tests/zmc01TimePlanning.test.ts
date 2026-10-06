@@ -72,7 +72,7 @@ describe('ZMC-01 owner time planning', () => {
       node('overnight', '2026-09-24T15:00:00.000Z', '2026-09-24T17:00:00.000Z'),
     ])
     const selected = selectTodayWeb(snapshot, { availableMinutes: 360 }, { now: NOW, timezone: ZONE })
-    expect(selected.actionCount).toBe(8)
+    expect(selected.actionCount).toBe(12)
     expect(selected.criticalWarnings).toEqual([])
   })
 
@@ -97,7 +97,7 @@ describe('ZMC-01 owner time planning', () => {
       weeklyWindows: [{ weekday: 5, startMinute: 540, endMinute: 720 }] }
     const selected = selectTodayWeb(snapshot, {}, { now: new Date('2026-09-25T01:00:00.000Z'), timezone: ZONE })
     expect(selected.capacityMinutes).toBe(900)
-    expect(selected.actionCount).toBe(8)
+    expect(selected.actionCount).toBe(20)
     expect(selected.criticalWarnings).toEqual([])
     const external = buildConsumerTimePlan({ ranked: rankActions(snapshot.data.actions, [], new Date('2026-09-25T01:00:00.000Z')),
       nodes: snapshot.data.scheduleNodes!, preferences: snapshot.data.timePlanning, now: new Date('2026-09-25T01:00:00.000Z'), timezone: ZONE })
@@ -131,7 +131,8 @@ describe('ZMC-01 owner time planning', () => {
     expect(selected.notSelectedHardActions.map(item => item.actionId)).toEqual(['shared-choice'])
     expect(selected.criticalWarnings[0]?.relatedIds).toEqual(['shared-choice'])
     const brief = buildTodayBrief(snapshot, { availableMinutes: 0 }, { now: NOW, timezone: ZONE })
-    expect(brief.nextAction?.actionId).toBe('shared-choice')
+    expect(brief.nextAction).toBeUndefined()
+    expect(brief.materialCoverageWarnings.find(item => item.code === 'hard_deadline_unplanned')?.relatedIds).toContain('shared-choice')
   })
 
   it('marks next-day hard work as not selected when it exceeds today capacity', () => {
@@ -168,12 +169,12 @@ describe('ZMC-01 owner time planning', () => {
     expect(base.data.timePlanning).toBeUndefined()
   })
 
-  it('uses the live day remainder for Web and preserves external unknown-availability contracts', () => {
+  it('uses the same live day remainder for Web and external plans', () => {
     const snapshot = source([flexible('one'), flexible('two')])
     expect(selectTodayWeb(snapshot, {}, { now: NOW, timezone: ZONE }).capacityMinutes).toBe(720)
-    expect(buildTodayBrief(snapshot, {}, { now: NOW, timezone: ZONE }).availableMinutes).toBeNull()
-    expect(getTodayPlan(snapshot, {}, { now: NOW, timezone: ZONE }).availableMinutes).toBeNull()
-    expect(getTodayPlan(snapshot, {}, { now: NOW, timezone: ZONE }).startableActions).toHaveLength(1)
+    expect(buildTodayBrief(snapshot, {}, { now: NOW, timezone: ZONE }).availableMinutes).toBe(720)
+    expect(getTodayPlan(snapshot, {}, { now: NOW, timezone: ZONE }).availableMinutes).toBe(720)
+    expect(getTodayPlan(snapshot, {}, { now: NOW, timezone: ZONE }).startableActions).toHaveLength(2)
   })
 
   it('honors zero and sub-30-minute capacity in the external brief', () => {

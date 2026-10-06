@@ -48,6 +48,22 @@ export function correctionOwnsDeadlineNode(correction: ApplicationDeadlineCorrec
     || node.temporal.resolutionBasis === 'source_explicit' && node.sourceVersionRefs.includes(correction.commandId)
       && (node.temporal.date ?? node.temporal.deadlineAt) === correction.deadline && node.temporal.precision === correction.precision))
 }
+/** Latest canonical occurrences agree on one fact, or the deadline is unknown. */
+export function confirmedApplicationNode(nodes: ScheduleNode[]) {
+  const active = nodes.filter(item => !['cancelled', 'superseded'].includes(item.state)
+    && item.temporal.shape !== 'estimated_date' && item.temporal.resolutionBasis !== 'system_estimate')
+  const valueFor = (item: ScheduleNode) => item.temporal.deadlineAt ?? item.temporal.date ?? item.temporal.legacyProjectionAt
+  const values = new Set(active.map(valueFor).filter((value): value is string => Boolean(value)))
+  const timingFacts = new Set(active.filter(item => valueFor(item)).map(item => {
+    const value = valueFor(item)!
+    const dateOnly = item.temporal.precision === 'date' || /^\d{4}-\d{2}-\d{2}$/.test(value)
+    return dateOnly ? `date:${value.slice(0, 10)}:${item.temporal.timezone}` : `instant:${Date.parse(value)}`
+  }))
+  if (!values.size || timingFacts.size !== 1) return undefined
+  const deadline = [...values][0]
+  const node = active.find(item => valueFor(item) === deadline)!
+  return { node, deadline }
+}
 export function resolveApplicationDeadline(opportunity: Opportunity, data: Pick<SnapshotData, 'scheduleNodes'>): ResolvedApplicationDeadline {
   const correction = latestDeadlineCorrection(opportunity)
   const nodes = applicationDeadlineNodes(data, opportunity.id)
@@ -65,16 +81,16 @@ export function resolveApplicationDeadline(opportunity: Opportunity, data: Pick<
   // A withdrawn canonical occurrence is a tombstone, not a reason to revive
   // the retained legacy/rich-fact date. Conflicting active owners remain unknown.
   if (nodes.length) {
-    const active = nodes.filter(item => !['cancelled', 'superseded'].includes(item.state))
-    const values = new Set(active.map(item => item.temporal.deadlineAt ?? item.temporal.date ?? item.temporal.legacyProjectionAt).filter(Boolean))
-    if (values.size === 1) {
+    const confirmed = confirmedApplicationNode(nodes)
+    if (confirmed) {
+      const { node, deadline } = confirmed
       const correctionOwned = Boolean(correction && !newExplicitOwner)
-      const userOwned = !correctionOwned && active[0].temporal.resolutionBasis === 'user_explicit'
-      return { state: 'confirmed', deadline: [...values][0], precision: active[0].temporal.precision, timezone: active[0].temporal.timezone,
+      const userOwned = !correctionOwned && node.temporal.resolutionBasis === 'user_explicit'
+      return { state: 'confirmed', deadline, precision: node.temporal.precision, timezone: node.temporal.timezone,
         source: correctionOwned ? 'correction' : userOwned ? 'user' : 'schedule_node', checkedAt: correctionOwned ? correction?.checkedAt : undefined,
         sourceAuthority: correctionOwned ? correction?.sourceAuthority : userOwned ? 'user' : undefined,
-        evidenceRefs: [...active[0].evidenceRefs], nodeIds, postingStatus,
-        sourceUrl: correctionOwned ? correction?.sourceUrl : userOwned ? undefined : active[0].evidenceRefs.filter(ref => /^https?:\/\//.test(ref)).at(-1) }
+        evidenceRefs: [...node.evidenceRefs], nodeIds, postingStatus,
+        sourceUrl: correctionOwned ? correction?.sourceUrl : userOwned ? undefined : node.evidenceRefs.filter(ref => /^https?:\/\//.test(ref)).at(-1) }
     }
     return { state: 'unknown', source: 'schedule_node', nodeIds, postingStatus }
   }

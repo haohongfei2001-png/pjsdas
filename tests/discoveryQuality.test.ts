@@ -107,7 +107,7 @@ describe('v1.4 discovery quality gate', () => {
     expect(discoveryRoleSimilarity('商业分析', 'AI 产品经理')).toBeLessThan(0.72)
   })
 
-  it('hard-rejects expired, closed, explicitly excluded and below-threshold candidates', () => {
+  it('retains factual exclusions while ignoring retired score thresholds', () => {
     const configured = {
       ...profile(),
       minimumFitScore: 70,
@@ -124,8 +124,8 @@ describe('v1.4 discovery quality gate', () => {
     expect(excluded.hardRejectReasons.join(' ')).toContain('纯销售')
 
     const lowScore = evaluateDiscoveryCandidate(configured, candidate({ fitScore: 60, opportunityValue: 70 }), weights, now)
-    expect(lowScore.hardRejectReasons.join(' ')).toContain('匹配度')
-    expect(lowScore.hardRejectReasons.join(' ')).toContain('机会价值')
+    expect(lowScore.accepted).toBe(true)
+    expect(lowScore).not.toHaveProperty('qualityScore')
   })
 
   it('keeps unknown evidence visible instead of fabricating salary or must-have facts', () => {

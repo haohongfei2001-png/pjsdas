@@ -63,4 +63,4 @@ export function authenticatedMcpReleaseRequiredTools(authority: WorkspaceAuthori
     : [...AUTHENTICATED_MCP_BASE_RELEASE_REQUIRED_TOOLS]
 }
 
-export const AUTHENTICATED_MCP_TOOL_SURFACE_VERSION = 'v7' as const
+export const AUTHENTICATED_MCP_TOOL_SURFACE_VERSION = 'v8' as const

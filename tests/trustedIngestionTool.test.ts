@@ -31,7 +31,6 @@ function monitorArgs(runId = 'run-1') {
     observations: [{
       sourceRecordId: 'job-123', company: 'Example', role: 'AI Product Manager', sourceUrl: 'https://careers.example.com/job/123',
       sourceTitle: 'AI Product Manager', rationale: 'Explicitly matches the configured direction.', roleType: 'core',
-      opportunityValue: 80, fitScore: 78, fitConfidence: 'high', opportunityValueConfidence: 'high', postingStatus: 'open',
     }],
   }
 }

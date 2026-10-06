@@ -1,5 +1,6 @@
 import type { CallToolResult } from '@modelcontextprotocol/server'
 import * as z from 'zod/v4'
+import { assertNoScoringInput, ScoringRetiredError } from '../src/scoringRetirement.js'
 import { businessManagementSchema, businessManagementReadSchema, readBusinessManagement } from '../src/businessManagement.js'
 import type { MutationPrincipal } from './mutationKernel.js'
 import { assertConsumerBusinessManagementGrant, type ConsumerBusinessManagementGrant } from './consumerBusinessManagementAccess.js'
@@ -51,6 +52,7 @@ export function createConsumerBusinessManagementTools(options: {
         // The executor independently binds/rechecks grant proof and uses atomic SQL.
         // This precheck also protects lookup/idempotent-return paths of undo.
         const admitted = await authorize()
+        assertNoScoringInput(input)
         const executor = options.createExecutor(admitted)
         let executed
         let submittedCommandId: string
@@ -74,7 +76,7 @@ export function createConsumerBusinessManagementTools(options: {
         // Do not return the entire workspace or stored compensation through MCP.
         return result({ outcome: executed.outcome, workspaceVersion: `txn:${executed.revision}`, commandId: submittedCommandId, result: executed.result, conflict: executed.conflict })
       } catch (caught) {
-        const data = caught instanceof WorkspaceSourceError
+        const data = caught instanceof WorkspaceSourceError || caught instanceof ScoringRetiredError
           ? { code: caught.code, message: caught.message, retryable: caught.retryable }
           : caught instanceof z.ZodError
             ? { code: 'INVALID_ARGUMENT', message: 'Management arguments do not match the supported bounded command schema.', retryable: false }

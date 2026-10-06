@@ -1,5 +1,7 @@
-import { buildTimePlan, rankActions } from './decisionV3.js'
-import { decisionRulesForSnapshot } from './decisionRules.js'
+import { rankActions } from './decisionV3.js'
+import { actionDeadline, compareActionDeadlines, hasKnownActionTiming, latestActionNode } from './deadlineOrder.js'
+import { buildConsumerTimePlan } from './today/consumerTimePlan.js'
+import { todayCapacity } from './today/localDayCapacity.js'
 import { expectedSourcesFromRegistry, summarizeCoverage } from './ingestion.js'
 import type {
   Action,
@@ -11,7 +13,6 @@ import type {
 } from './model.js'
 import { effectiveScheduleNodeState } from './scheduleNodes.js'
 import { upgradeSnapshotToLatest, type PJSDASSnapshot } from './snapshot.js'
-import { capacityForDate } from './timePlanningPreferences.js'
 
 const HOUR = 3_600_000
 const DAY = 86_400_000
@@ -58,7 +59,8 @@ export interface TodayBriefAction {
   company?: string
   role?: string
   kind: Action['kind']
-  score: number
+  /** Legacy decoder compatibility only; not emitted by current reads. */
+  score?: number
   estimatedMinutes: number
   whyNow: string[]
   timing?: TodayBriefActionTiming
@@ -133,14 +135,11 @@ export interface TodayBriefCoverageWarning {
 }
 
 export interface TodayBrief {
-  contractVersion: 1
+  contractVersion: 2
+  ordering: 'deadline_ascending'
   workspaceRevision: string
   evaluatedAt: string
   displayTimezone: string
-  rules: {
-    version: number
-    updatedAt: string
-  }
   availableMinutes: number | null
   plannedMinutes: number
   nextAction?: TodayBriefAction
@@ -259,6 +258,7 @@ export function nodeForAction(action: Action, nodes: ScheduleNode[]) {
 }
 
 function latestStartFor(action: Action, node: ScheduleNode | undefined): Pick<TodayBriefActionTiming, 'latestStartAt' | 'latestStartDate'> {
+  if (node && !hasKnownActionTiming(node)) return {}
   if (!node) {
     if (!action.dueAt) return {}
     if (action.duePrecision === 'date') return { latestStartDate: action.dueAt.slice(0, 10) }
@@ -285,6 +285,7 @@ function latestStartFor(action: Action, node: ScheduleNode | undefined): Pick<To
 }
 
 function timingForAction(action: Action, node: ScheduleNode | undefined): TodayBriefActionTiming | undefined {
+  if (node && !hasKnownActionTiming(node)) return undefined
   if (!node && !action.dueAt) return undefined
   const latest = latestStartFor(action, node)
   if (!node) {
@@ -390,6 +391,7 @@ export function protectedByLatestStart(
 }
 
 export function dueSortValue(action: Action, node: ScheduleNode | undefined) {
+  if (!actionDeadline(action, node).deadline) return Number.POSITIVE_INFINITY
   const latest = latestStartFor(action, node)
   if (latest.latestStartAt) return new Date(latest.latestStartAt).getTime()
   if (latest.latestStartDate) return new Date(`${latest.latestStartDate}T12:00:00.000Z`).getTime()
@@ -409,7 +411,7 @@ export function actionView(
   timezone: string,
   hardDeadlineHorizonHours: number,
 ): TodayBriefAction {
-  const node = nodeForAction(ranked.action, nodes)
+  const node = latestActionNode(ranked.action, nodes)
   const opportunity = ranked.action.opportunityId ? opportunities.get(ranked.action.opportunityId) : undefined
   return {
     actionId: ranked.action.id,
@@ -418,7 +420,6 @@ export function actionView(
     company: opportunity?.company,
     role: opportunity?.role,
     kind: ranked.action.kind,
-    score: ranked.score,
     estimatedMinutes: ranked.action.estimatedMinutes,
     whyNow: [...ranked.reasons],
     timing: timingForAction(ranked.action, node),
@@ -597,9 +598,8 @@ export function buildTodayBrief(
   const context = resolvedContext(rawContext)
   const snapshot = upgradeSnapshotToLatest(rawSnapshot)
   const today = localDateKey(context.now, context.timezone)
-  const weekday = new Date(`${today}T12:00:00.000Z`).getUTCDay()
-  const availableMinutes = input.availableMinutes ?? capacityForDate(snapshot.data.timePlanning, today, weekday) ?? context.defaultAvailableMinutes
-  if (availableMinutes !== undefined && (!Number.isInteger(availableMinutes) || availableMinutes < 0 || availableMinutes > 1440)) {
+  const availableMinutes = todayCapacity(snapshot.data.timePlanning, context.now, context.timezone, input.availableMinutes).minutes
+  if (!Number.isInteger(availableMinutes) || availableMinutes < 0 || (input.availableMinutes !== undefined && availableMinutes > 1440)) {
     throw new Error('TodayBrief availableMinutes must be between 0 and 1440.')
   }
   const agendaHorizonDays = input.agendaHorizonDays ?? 7
@@ -607,70 +607,17 @@ export function buildTodayBrief(
     throw new Error('TodayBrief agendaHorizonDays must be an integer between 1 and 30.')
   }
 
-  const rules = decisionRulesForSnapshot(snapshot.data.decisionRules)
   const opportunities = opportunityMap(snapshot.data.opportunities)
   const activeNodes = latestByOccurrence(snapshot.data.scheduleNodes ?? [])
-  const ranked = rankActions(snapshot.data.actions, snapshot.data.opportunities, context.now, rules)
-  // The legacy brief contract still needs a numerical planner input. Its
-  // maximum is only a computational ceiling when the user's capacity is unknown.
-  const legacyPlan = buildTimePlan(ranked, availableMinutes ?? 1440, context.now, rules)
-  // The v1 planner enforces a 30-minute minimum internally. An explicit
-  // shorter day must still keep optional work within the user's real limit.
-  let plan = legacyPlan
-  if (availableMinutes !== undefined && availableMinutes < 30) {
-    let used = legacyPlan.fixedTodayMinutes
-    const planned = legacyPlan.planned.filter(item => {
-      const node = nodeForAction(item.action, activeNodes)
-      const dueToday = item.action.dueAt && (item.action.duePrecision === 'date'
-        ? item.action.dueAt.slice(0, 10) === today
-        : localDateKey(new Date(item.action.dueAt), context.timezone) === today)
-      if (isHardConstraint(item.action, node) && dueToday) { used += item.action.estimatedMinutes; return true }
-      if (used + item.action.estimatedMinutes > availableMinutes) return false
-      used += item.action.estimatedMinutes
-      return true
-    })
-    plan = { ...legacyPlan, planned, totalMinutes: used }
-  }
-
-  const rankedById = new Map(ranked.map((item) => [item.action.id, item]))
-  const protectedRanked = ranked
-    .filter((item) => {
-      if (item.action.timingMode === 'fixed') return false
-      return protectedByLatestStart(
-        item.action,
-        nodeForAction(item.action, activeNodes),
-        context.now,
-        context.timezone,
-        rules.hardDeadlineHorizonHours,
-      )
-    })
-    .sort((a, b) => {
-      const aNode = nodeForAction(a.action, activeNodes)
-      const bNode = nodeForAction(b.action, activeNodes)
-      return dueSortValue(a.action, aNode) - dueSortValue(b.action, bNode)
-        || b.score - a.score
-        || a.action.id.localeCompare(b.action.id)
-    })
-
-  const planIds = new Set(plan.planned.map((item) => item.action.id))
-  const protectedOutsidePlan = protectedRanked.filter((item) => !planIds.has(item.action.id))
-  const protectedOutsidePlanMinutes = protectedOutsidePlan.reduce(
-    (sum, item) => sum + item.action.estimatedMinutes,
-    0,
-  )
-  const effectivePlannedMinutes = plan.totalMinutes + protectedOutsidePlanMinutes
-  const effectiveOverBudgetMinutes = availableMinutes === undefined ? 0 : Math.max(0, effectivePlannedMinutes - availableMinutes)
-
-  const ordered: RankedAction[] = []
-  const seen = new Set<string>()
-  for (const item of [...protectedRanked, ...plan.planned]) {
-    if (seen.has(item.action.id)) continue
-    seen.add(item.action.id)
-    ordered.push(rankedById.get(item.action.id) ?? item)
-  }
-  const visibleActions = ordered.slice(0, 4).map((item) =>
-    actionView(item, activeNodes, opportunities, context.now, context.timezone, rules.hardDeadlineHorizonHours),
-  )
+  const ranked = rankActions(snapshot.data.actions, snapshot.data.opportunities, context.now, undefined, context.timezone, activeNodes)
+  const plan = buildConsumerTimePlan({ ranked, nodes: activeNodes, preferences: snapshot.data.timePlanning,
+    availableMinutes: input.availableMinutes, useRemainingDayDefault: true, now: context.now, timezone: context.timezone })
+  const protectedRanked = ranked.filter(item => item.action.timingMode !== 'fixed')
+    .filter(item => protectedByLatestStart(item.action, latestActionNode(item.action, activeNodes), context.now, context.timezone, 48))
+    .sort((a, b) => compareActionDeadlines(a.action, b.action, context.timezone, latestActionNode(a.action, activeNodes), latestActionNode(b.action, activeNodes)))
+  const effectivePlannedMinutes = plan.planned.reduce((sum, item) => sum + item.action.estimatedMinutes, plan.fixedMinutes)
+  const effectiveOverBudgetMinutes = Math.max(0, effectivePlannedMinutes - availableMinutes)
+  const visibleActions = plan.planned.map(item => actionView(item, activeNodes, opportunities, context.now, context.timezone, 48))
 
   const agendaGroups = buildAgendaGroups(
     snapshot.data.scheduleNodes ?? [],
@@ -727,12 +674,7 @@ export function buildTodayBrief(
       protectedRanked.map((item) => item.action.id),
     ))
   }
-  const protectedUnplanned = [
-    ...plan.nearDeadlineUnplanned,
-    ...protectedOutsidePlan,
-  ].filter((item, index, items) =>
-    items.findIndex((candidate) => candidate.action.id === item.action.id) === index,
-  )
+  const protectedUnplanned = plan.deferredHard
   if (availableMinutes !== undefined && protectedUnplanned.length > 0) {
     warnings.push(warning(
       'hard_deadline_unplanned',
@@ -756,14 +698,11 @@ export function buildTodayBrief(
   }
 
   return {
-    contractVersion: 1,
+    contractVersion: 2,
+    ordering: 'deadline_ascending',
     workspaceRevision: context.workspaceVersion ?? `snapshot:${rawSnapshot.exportedAt}`,
     evaluatedAt: context.now.toISOString(),
     displayTimezone: context.timezone,
-    rules: {
-      version: rules.version,
-      updatedAt: rules.updatedAt,
-    },
     availableMinutes: availableMinutes ?? null,
     plannedMinutes: effectivePlannedMinutes,
     nextAction: visibleActions[0],

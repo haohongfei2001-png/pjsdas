@@ -18,6 +18,7 @@ describe('explicit empty consumer workspace',()=>{
   const result=createEmptyConsumerWorkspace(input,now)
   expect(()=>validateSnapshot(result)).not.toThrow()
   expect(result.data.opportunities).toEqual([]);expect(result.data.actions).toEqual([])
+  expect(result.data.decisionRules).toBeUndefined()
   expect(result.data.timePlanning).toMatchObject({timezone:'Europe/London'})
   expect(result.data.timePlanning?.defaultDailyMinutes).toBeUndefined()
   expect(result.data.discoveryProfile?.targetRoleQueries).toEqual([])

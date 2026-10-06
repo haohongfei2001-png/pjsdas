@@ -12,7 +12,7 @@ describe('consumer business management foundation',()=>{
   it('creates existing prep, manual action and group entities with server-owned IDs',()=>{
     const result=apply([createPrep,{kind:'create_manual_action',value:{title:'Sample task',estimatedMinutes:20}},{kind:'create_application_group',value:{company:'Synthetic Co',total:2}}])
     expect(result.snapshot.data.prep[0]).toMatchObject({id:'managed:prep:synthetic-command-1:0',title:'Synthetic preparation'})
-    expect(result.snapshot.data.actions[0]).toMatchObject({kind:'manual',status:'todo',leverage:50})
+    expect(result.snapshot.data.actions[0]).toMatchObject({kind:'manual',status:'todo',leverage:0})
     expect(result.snapshot.data.applicationGroups[0]).toMatchObject({company:'Synthetic Co',total:2})
     expect(result.compensation?.payload.changes).toHaveLength(3)
     expect(result.snapshot.data.timeline).toHaveLength(1)

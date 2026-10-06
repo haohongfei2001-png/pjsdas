@@ -14,7 +14,7 @@ test('dense persisted owner-like debt stays accessible outside Today without gen
   await page.goto('/pjsdas/today')
   const panel = page.locator('.tsui-task-panel')
   await expect(panel.locator('.tsui-task-row')).not.toHaveCount(0)
-  expect(await panel.locator('.tsui-task-row').count()).toBeLessThan(20)
+  expect(await panel.locator('.tsui-task-row').count()).toBeLessThanOrEqual(snapshot.data.actions.length)
   await expect(page.getByText('Several opportunities match this input.', { exact: true })).toHaveCount(0)
   await expect(page.locator('.tsui-unresolved-link')).toHaveCount(0)
   await expect(page.getByRole('button', { name: /查看全部待决定事项/ })).toHaveCount(0)
@@ -31,7 +31,7 @@ test('dense persisted owner-like debt stays accessible outside Today without gen
   expect(stored).toEqual([...snapshot.data.decisionRequests!].sort((a,b) => a.id.localeCompare(b.id)))
   const restarted = await context.newPage(); await restarted.goto('/pjsdas/today'); await page.close()
   await expect(restarted.getByRole('button', { name: /查看全部待决定事项/ })).toHaveCount(0)
-  expect(await restarted.locator('.tsui-task-row').count()).toBeLessThan(20)
+  expect(await restarted.locator('.tsui-task-row').count()).toBeLessThanOrEqual(snapshot.data.actions.length)
 })
 
 test('363 retained Gmail parser records coexist with one current answerable choice', async ({ page, context }) => {

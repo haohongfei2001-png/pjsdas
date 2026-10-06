@@ -18,6 +18,8 @@ export const SCOPED_MANAGEMENT_CONSENTS = Object.freeze({
   }),
   planning: Object.freeze({
     version: 4 as const, capability: 'workspace.planning.manage' as const,
+    // The deployed v4 SQL and existing grants bind this exact historical text.
+    // Current feature availability is shown separately; scoring remains retired.
     title: '决策规则与时间偏好',
     scope: Object.freeze(['读取、修改、重置决策规则及时间偏好', '撤销上述修改，后续冲突存在时拒绝覆盖']),
     exclusions: Object.freeze(['不重写历史评分', '不修改已有招聘事实或重新安排已有日程']),

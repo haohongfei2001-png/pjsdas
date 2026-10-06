@@ -37,7 +37,7 @@ function snapshot(actions: Action[] = [], nodes: ScheduleNode[] = [], timeline: 
 }
 
 describe('TSUI-01 complete Web read models', () => {
-  it('keeps Web Today within capacity while the external TodayBrief remains a separate capped contract', () => {
+  it('keeps Web Today and external TodayBrief on the same feasible chronological list', () => {
     const actions = Array.from({ length: 8 }, (_, i) => action(`manual-${i}`))
     actions.push(action('doing', { status: 'doing', estimatedMinutes: 1000, leverage: 1, delayCost: 1 }))
     actions.push(action('due-today', {
@@ -61,7 +61,7 @@ describe('TSUI-01 complete Web read models', () => {
     expect(new Set(ids).size).toBe(ids.length)
     expect(web.actionCount).toBe(ids.length)
     const brief = buildTodayBrief(source, { availableMinutes: 180 }, { now: NOW, timezone: TZ })
-    expect([brief.nextAction, ...brief.nextActions].filter(Boolean)).toHaveLength(4)
+    expect([brief.nextAction, ...brief.nextActions].filter(Boolean).map(item => item!.actionId)).toEqual(ids)
     expect(web.criticalWarnings).toHaveLength(1)
     expect(web.criticalWarnings[0]?.relatedIds).toContain('date-only-today')
   })

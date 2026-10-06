@@ -28,21 +28,14 @@ const changeSet: ChangeSetRecord = {
 afterEach(() => vi.unstubAllEnvs())
 
 describe('CGR-05 signed Decision Rules proposal authority', () => {
-  it('applies one reviewed rules change with audit and prior-state compensation', () => {
-    const original = snapshot()
+  it('keeps historical rule proposals decodable but refuses to apply them', () => {
+    const original = snapshot(), unchanged = structuredClone(original)
     const proposal = createMcpProposalEnvelope(changeSet, 'txn:1', at, undefined, 'account-a')
-    const applied = applyMcpRulesCommand(original, proposal, new Date('2026-09-24T02:31:00.000Z'))
-    expect(applied.snapshot.data.decisionRules?.followUpDailyCap).toBe(after.followUpDailyCap)
-    expect(applied.snapshot.data.changeSets).toMatchObject([{ id: changeSet.id, status: 'applied' }])
-    expect(applied.snapshot.data.timeline?.map((item) => item.kind)).toEqual(expect.arrayContaining(['rules_changed', 'change_set_applied']))
-    expect(applied.compensation.payload.before).toMatchObject(before)
-    expect(original.data.decisionRules?.followUpDailyCap).toBe(before.followUpDailyCap)
-    const stale = snapshot()
-    stale.data.decisionRules!.updatedAt = '2026-09-24T02:30:30.000Z'
-    expect(() => applyMcpRulesCommand(stale, proposal)).toThrow('changed since')
+    expect(() => applyMcpRulesCommand(original, proposal)).toThrow(/retired/)
+    expect(original).toEqual(unchanged)
   })
 
-  it('rejects delegated and cross-account callers, then commits one exact-baseline revision', async () => {
+  it('retains account restrictions and rejects retired rules without a commit', async () => {
     vi.stubEnv('PJSDAS_TOKEN_ENCRYPTION_KEY', secret)
     let current = snapshot()
     let revision = 1
@@ -80,12 +73,9 @@ describe('CGR-05 signed Decision Rules proposal authority', () => {
     await expect(executor.execute({ kind: 'delegated_mcp', userId: 'account-a' }, command)).rejects.toMatchObject({ code: 'AUTH_FORBIDDEN' })
     await expect(executor.execute({ kind: 'first_party_web', userId: 'account-b' }, command)).rejects.toMatchObject({ code: 'AUTH_FORBIDDEN' })
     expect(commits).toBe(0)
-    const applied = await executor.execute({ kind: 'first_party_web', userId: 'account-a' }, command)
-    expect(applied.outcome).toBe('COMMITTED')
-    expect(current.data.decisionRules?.followUpDailyCap).toBe(after.followUpDailyCap)
-    expect(commits).toBe(1)
-    await expect(executor.execute({ kind: 'first_party_web', userId: 'account-a' },
-      { ...command, commandId: 'mcp-apply-rules:test-0002', baseRevision: 2 })).rejects.toMatchObject({ code: 'WORKSPACE_CONFLICT' })
-    expect(commits).toBe(1)
+    await expect(executor.execute({ kind: 'first_party_web', userId: 'account-a' }, command)).rejects.toMatchObject({ code: 'SCORING_RETIRED' })
+    expect(current.data.decisionRules).toEqual(before)
+    expect(commits).toBe(0)
+
   })
 })

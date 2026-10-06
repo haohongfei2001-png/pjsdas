@@ -80,9 +80,9 @@ describe('explicit user-authorized opportunity writes', () => {
       processStage: 'not_applied',
       currentStageLabel: '待投',
       roleType: 'core',
-      opportunityValue: 50,
-      fitScore: 50,
-      sourcePriority: 'ChatGPT 明确写入 · 待补评估',
+      opportunityValue: 0,
+      fitScore: 0,
+      sourcePriority: 'ChatGPT 明确写入',
       assessmentStatus: 'unassessed',
       locallyManaged: true,
     })

@@ -1,19 +1,13 @@
+import { assertNoScoringInput, withoutRetiredScoring } from './scoringRetirement.js'
 import * as z from 'zod/v4'
 import { resolveOpportunityTarget } from './semanticTargetMatching.js'
-import type { OpportunityAssessment, SemanticTargetRef } from './model.js'
-import { decisionRulesForSnapshot } from './decisionRules.js'
-import { scoreOpportunityAssessment } from './opportunityAssessment.js'
+import type { SemanticTargetRef } from './model.js'
 import { SNAPSHOT_VERSION, validateSnapshot, type PJSDASSnapshot } from './snapshot.js'
 
 const id = z.string().min(1).max(240).refine(value => value.trim().length > 0, 'An exact nonblank identifier is required.')
 const text = z.string().trim().min(1).max(2000)
 const fingerprint = z.string().regex(/^[a-f0-9]{64}$/)
 const nonempty = (value: object) => Object.keys(value).length > 0
-const component = z.object({ score: z.number().min(0).max(100), confidence: z.enum(['high', 'medium', 'low']), rationale: z.string().trim().min(1).max(500) }).strict().nullable().optional()
-const assessmentPatch = z.object({
-  fit: z.object({ roleDirection: component, skills: component, education: component, experience: component, industry: component, language: component, location: component }).strict().refine(nonempty).optional(),
-  opportunityValue: z.object({ companyQuality: component, roleGrowth: component, compensation: component, careerOptionality: component, brandValue: component, industryGrowth: component, locationValue: component }).strict().refine(nonempty).optional(),
-}).strict().refine(nonempty)
 // Source provenance, identity, application state, dates and derived scores are deliberately absent.
 const profilePatch = z.object({
   roleType: z.enum(['core', 'backup', 'reach', 'lottery', 'practice']).optional(),
@@ -21,7 +15,6 @@ const profilePatch = z.object({
   prepEstimateMinutes: z.number().int().min(5).max(720).nullable().optional(),
   detail: z.object({ backgroundTag: text.nullable().optional(), coreOutput: text.nullable().optional(), workMode: text.nullable().optional(), candidateProfile: text.nullable().optional(), jdSummary: text.nullable().optional(), gap: text.nullable().optional(), intensity: text.nullable().optional(), earlyReason: text.nullable().optional(), rules: text.nullable().optional() }).strict().refine(nonempty).optional(),
   userFacts: z.object({ location: text.nullable().optional(), compensationText: text.nullable().optional(), applicationUrl: z.url().max(2000).refine(value => /^https?:\/\//.test(value)).nullable().optional() }).strict().refine(nonempty).optional(),
-  assessment: assessmentPatch.optional(),
 }).strict().refine(nonempty)
 const ids = z.array(id).max(2500).refine(value => new Set(value).size === value.length)
 export const opportunityArchiveDependenciesSchema = z.object({ processIds: ids, eventIds: ids, actionIds: ids, scheduleNodeIds: ids, reminderIntentIds: ids }).strict()
@@ -115,7 +108,7 @@ function groupGuard(snapshot: PJSDASSnapshot, opportunityId: string) {
   return groupId ? [{ type: 'application_group' as const, id: groupId, value: structuredClone(snapshot.data.applicationGroups.find(item => item.id === groupId)) }] : []
 }
 export function opportunityManagementObjectRefs(snapshot: PJSDASSnapshot, input: OpportunityManagementInput) {
-  return input.operations.flatMap(operation => operation.kind === 'archive_opportunity' ? closure(snapshot, operation.id).refs.map(ref => ref.type === 'schedule_node' ? { type: 'schedule_occurrence', id: snapshot.data.scheduleNodes!.find(node => node.id === ref.id)!.occurrenceId } : ref) : [{ type: 'opportunity', id: operation.id }, ...(operation.patch.assessment ? [{ type: 'decision_rules', id: 'current' }] : [])])
+  return input.operations.flatMap(operation => operation.kind === 'archive_opportunity' ? closure(snapshot, operation.id).refs.map(ref => ref.type === 'schedule_node' ? { type: 'schedule_occurrence', id: snapshot.data.scheduleNodes!.find(node => node.id === ref.id)!.occurrenceId } : ref) : [{ type: 'opportunity', id: operation.id }])
 }
 export async function readOpportunityManagement(snapshot: PJSDASSnapshot, opportunityId: string) {
   const original = rawSnapshot(snapshot)
@@ -123,11 +116,12 @@ export async function readOpportunityManagement(snapshot: PJSDASSnapshot, opport
   if (!opportunity) throw new OpportunityManagementError('NOT_FOUND', 'The opportunity was not found in this workspace.')
   const selected = closure(original, opportunityId)
   const aggregate = selected.refs.map(ref => ({ ...ref, value: rows(original, ref.type).find(item => item.id === ref.id) }))
-  return { opportunity: structuredClone(opportunity), profileFingerprint: await opportunityManagementFingerprint(opportunity), archive: { dependencies: selected.dependencies, fingerprint: await opportunityManagementFingerprint({ aggregate, guards: groupGuard(original, opportunityId) }) } }
+  return { opportunity: withoutRetiredScoring(opportunity), profileFingerprint: await opportunityManagementFingerprint(opportunity), archive: { dependencies: selected.dependencies, fingerprint: await opportunityManagementFingerprint({ aggregate, guards: groupGuard(original, opportunityId) }) } }
 }
 
 /** Pure bounded reducer; authorization and authoritative CAS belong to the existing gateway kernel. */
 export async function applyOpportunityManagement(snapshot: PJSDASSnapshot, raw: unknown, commandId: string, now = new Date()) {
+  assertNoScoringInput(raw)
   const input = opportunityManagementSchema.parse(raw)
   if (commandId.length < 8 || commandId.length > 160) throw new Error('Invalid opportunity management command identity.')
   const original = rawSnapshot(snapshot)
@@ -153,7 +147,7 @@ export async function applyOpportunityManagement(snapshot: PJSDASSnapshot, raw: 
       archives.push(operation.id)
       guards.push(...groupGuard(original, operation.id))
     } else {
-      const { detail, userFacts, assessment, ...top } = operation.patch
+      const { detail, userFacts, ...top } = operation.patch
       let updated = patch(current, top)
       if (detail) {
         const changed = patch(updated.detail ?? {}, detail)
@@ -166,17 +160,6 @@ export async function applyOpportunityManagement(snapshot: PJSDASSnapshot, raw: 
         if (!equal(withoutMetadata(previous), withoutMetadata(facts))) {
           facts.updatedAt = timestamp
           updated.detail = { ...updated.detail, userFacts: facts }
-        }
-      }
-      if (assessment) {
-        const previous = current.detail?.assessment
-        const value: OpportunityAssessment = { ...previous, version: 1, mode: 'component', fit: patch(previous?.fit ?? {}, assessment.fit ?? {}), opportunityValue: patch(previous?.opportunityValue ?? {}, assessment.opportunityValue ?? {}), assessedAt: previous?.assessedAt ?? timestamp }
-        if (!Object.keys(value.fit).length || !Object.keys(value.opportunityValue).length) throw new Error('An assessment needs at least one explicitly supplied component on each axis.')
-        if (!equal(previous, value)) {
-          value.assessedAt = timestamp
-          const scored = scoreOpportunityAssessment(value, decisionRulesForSnapshot(next.data.decisionRules))
-          updated = { ...updated, assessmentStatus: 'assessed', fitScore: scored.fit.score, opportunityValue: scored.opportunityValue.score, detail: { ...updated.detail, assessment: value } }
-          guards.push({ type: 'decision_rules', id: 'current', value: structuredClone(next.data.decisionRules ?? null) })
         }
       }
       if (!equal(current, updated)) {

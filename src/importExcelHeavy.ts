@@ -160,26 +160,6 @@ function roleType(value: unknown): OpportunityRole {
   return 'practice'
 }
 
-function opportunityValue(role: OpportunityRole) {
-  const scores: Record<OpportunityRole, number> = {
-    core: 94,
-    backup: 76,
-    reach: 90,
-    lottery: 84,
-    practice: 46,
-  }
-  return scores[role]
-}
-
-function fitScore(value: unknown) {
-  const raw = text(value)
-  if (raw === '高') return 90
-  if (raw === '中高') return 76
-  if (raw === '中') return 60
-  if (raw === '中低') return 43
-  if (raw === '低') return 22
-  return 50
-}
 
 function processStage(value: unknown): ProcessStage {
   const raw = text(value)
@@ -268,8 +248,8 @@ export async function parsePJSDASWorkbook(file: File): Promise<ImportBundle> {
       applicationGroupId: cleanOptional(row['申请组ID']),
       capacityStatus: cleanOptional(row['名额状态']),
       order: numberOrUndefined(row['序']),
-      opportunityValue: opportunityValue(role),
-      fitScore: fitScore(row['Offer成功率']),
+      opportunityValue: 0,
+      fitScore: 0,
       detail: detail ? {
         backgroundTag: cleanOptional(detail['背景标签']),
         coreOutput: cleanOptional(detail['核心产出']),
@@ -346,8 +326,8 @@ export async function parsePJSDASWorkbook(file: File): Promise<ImportBundle> {
       applicationGroupId: opportunity.applicationGroupId,
       dueAt: opportunity.deadline,
       estimatedMinutes,
-      leverage: opportunity.roleType === 'practice' ? 64 : 86,
-      delayCost: opportunity.early ? 78 : opportunity.deadline ? 68 : 34,
+      leverage: 0,
+      delayCost: 0,
       status: 'todo',
       sourceLabel: '投递总表',
       createdAt: importedAt,
@@ -373,8 +353,8 @@ export async function parsePJSDASWorkbook(file: File): Promise<ImportBundle> {
       applicationGroupId: group.id,
       dueAt,
       estimatedMinutes,
-      leverage: hasKnownCapacityConflict ? 94 : 88,
-      delayCost: dueAt ? 78 : candidates.some((candidate) => candidate.early) ? 72 : 58,
+      leverage: 0,
+      delayCost: 0,
       status: 'todo',
       sourceLabel: '申请组',
       createdAt: importedAt,
@@ -407,8 +387,8 @@ export async function parsePJSDASWorkbook(file: File): Promise<ImportBundle> {
         opportunityId: linkedOpportunityId,
         dueAt: nextCheckAt,
         estimatedMinutes: 10,
-        leverage: 62,
-        delayCost: 55,
+        leverage: 0,
+        delayCost: 0,
         status: 'todo',
         sourceLabel: '在途流程',
         createdAt: importedAt,

@@ -24,7 +24,8 @@ test('AI Access settings disclose bounded trusted automation and user-controlled
   for (const source of [discovery, gmail]) await source.locator('.settings-source-manage > summary').click()
 
   await expect(card).toContainText('Background job discovery')
-  await expect(card).toContainText('using your preferences and decision rules, without adding duplicates')
+  await expect(card).toContainText('using your saved factual discovery preferences, without adding duplicates')
+  await expect(card).not.toContainText('decision rules')
   await expect(card).toContainText('The search model receives only bounded discovery criteria')
   await expect(card).toContainText('never your full workspace, Gmail bodies, or unrelated personal data')
   await expect(card).toContainText('Turning this off stops background public-web search')

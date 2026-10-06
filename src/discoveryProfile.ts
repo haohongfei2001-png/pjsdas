@@ -112,8 +112,6 @@ export function isDiscoveryProfileConfigured(profile: DiscoveryProfile) {
     normalized.locationNotes ||
     normalized.minimumAnnualCompensationWan !== undefined ||
     (normalized.preferredRoleTypes?.length ?? 0) ||
-    normalized.minimumFitScore !== undefined ||
-    normalized.minimumOpportunityValue !== undefined ||
     normalized.mustHave.length ||
     normalized.mustNotHave.length ||
     normalized.strengths.length ||

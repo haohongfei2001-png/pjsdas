@@ -905,8 +905,9 @@ export interface PriorityBreakdown {
 
 export interface RankedAction {
   action: Action
-  score: number
-  breakdown: PriorityBreakdown
+  /** Legacy test/snapshot adapter fields. Active ordering does not populate or read them. */
+  score?: number
+  breakdown?: PriorityBreakdown
   reasons: string[]
 }
 

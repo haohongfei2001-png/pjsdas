@@ -37,8 +37,8 @@ function temporaryOpportunity(operation: Extract<ProgressOperation, { kind: 'pro
     processStage: 'screening',
     roleType: 'core',
     early: false,
-    opportunityValue: 80,
-    fitScore: 60,
+    opportunityValue: 0,
+    fitScore: 0,
     importedAt: operation.occurredAt,
   }
 }

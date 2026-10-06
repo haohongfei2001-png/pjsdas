@@ -25,17 +25,17 @@ describe('UU-05 frozen opportunity product contract', () => {
     expect(app).toContain('getOpportunityDecisionRead(snapshot')
   })
 
-  it('keeps progressive evidence/assessment/history behind the conclusion-first layer', () => {
+  it('keeps factual evidence and history behind the conclusion-first layer', () => {
     expect(detail).toContain('<RichOpportunityFactsSummary')
     expect(detail).toContain("zh ? '申请约束' : 'Application constraints'")
     expect(detail).toContain("zh ? '准备与相关待办' : 'Preparation & related actions'")
     expect(detail).toContain("zh ? '来源证据' : 'Source evidence'")
-    expect(detail).toContain('<OpportunityAssessmentSummary')
+    expect(detail).not.toContain('OpportunityAssessmentSummary')
     expect(detail).toContain("zh ? '完整历史' : 'Full history'")
   })
 
   it('exposes the platform-neutral conclusion-first detail through the read-only MCP surface', () => {
     expect(server).toContain("server.registerTool('get_opportunity_detail'")
-    expect(server).toContain('canonical opportunity decision read')
+    expect(server).toContain('inputSchema: getOpportunityDetailSchema, annotations: readOnlyAnnotations')
   })
 })

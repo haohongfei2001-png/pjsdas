@@ -14,10 +14,35 @@ const previous = '2026-10-01T12:00:00.000Z'
 function fixture(): PJSDASSnapshot {
   return createSnapshot({ opportunities: [], processes: [], processEvents: [], actions: [], prep: [], applicationGroups: [], timeline: [] }, previous)
 }
-async function apply(kind: PlanningManagementOperation['kind'], patch?: object, initial = fixture(), commandId = 'planning-command-1') {
+async function apply(kind: string, patch?: object, initial = fixture(), commandId = 'planning-command-1') {
   const read = await getPlanningManagementRead(initial)
-  const expectedFingerprint = kind.endsWith('decision_rules') ? read.decisionRules.fingerprint : read.timePreferences.fingerprint
+  const expectedFingerprint = kind.endsWith('decision_rules') ? await planningManagementFingerprint(initial.data.decisionRules ?? null) : read.timePreferences.fingerprint
   return applyPlanningManagement(initial, { operations: [{ kind, expectedFingerprint, ...(patch ? { patch } : {}) }] }, commandId, now)
+}
+// Historical ledger fixtures are manufactured as retained evidence, never by
+// invoking a retired writer. Restore must still preserve the original raw rows.
+async function historicChange(initial: PJSDASSnapshot, changes: PlanningManagementCompensation['payload']['changes']) {
+  const snapshot = structuredClone(initial)
+  for (const change of changes) {
+    const field = change.type === 'decision_rules' ? 'decisionRules' : 'timePlanning'
+    if (change.after === null) delete snapshot.data[field]
+    else Object.assign(snapshot.data, { [field]: structuredClone(change.after) })
+  }
+  snapshot.data.timeline = [...(snapshot.data.timeline ?? []), { id: 'historic-planning', kind: 'change_set_applied', category: 'rules', source: 'user_action', occurredAt: previous, recordedAt: previous, title: 'Historical planning change' }]
+  const compensation: PlanningManagementCompensation = { operation: 'planning_management_restore', payload: { changes } }
+  validateSnapshot(snapshot)
+  return { snapshot, compensation, compensationFingerprint: await planningManagementFingerprint(compensation) }
+}
+async function historicRules(initial = fixture(), patch: object = { prepDailyCap: 4 }) {
+  const before = initial.data.decisionRules ?? null
+  const after = { ...(before ?? createDefaultDecisionRules(previous)), ...patch, updatedAt: now.toISOString() }
+  return historicChange(initial, [{ type: 'decision_rules', id: 'current', before, after }])
+}
+async function historicPair(initial: PJSDASSnapshot) {
+  return historicChange(initial, [
+    { type: 'decision_rules', id: 'current', before: initial.data.decisionRules ?? null, after: { ...(initial.data.decisionRules ?? createDefaultDecisionRules(previous)), followUpDailyCap: 3 } },
+    { type: 'time_preferences', id: 'current', before: initial.data.timePlanning ?? null, after: { ...(initial.data.timePlanning ?? { version: 1 as const, updatedAt: previous }), defaultDailyMinutes: 60 } },
+  ])
 }
 const validFingerprint = 'a'.repeat(64)
 const ruleOperation = (patch: object) => ({ kind: 'patch_decision_rules', expectedFingerprint: validFingerprint, patch })
@@ -55,8 +80,8 @@ describe('strict bounded planning management input', () => {
   ])('rejects invalid or injected time preferences patch %#', patch => {
     expect(planningManagementSchema.safeParse({ operations: [timeOperation(patch)] }).success).toBe(false)
   })
-  it('accepts leap dates, adjacent windows, fractional weights, null clearing and zero capacity', () => {
-    expect(planningManagementSchema.safeParse({ operations: [ruleOperation({ weights: { fit: 2.5 } }), timeOperation({ defaultDailyMinutes: 0, dateOverrides: { '2028-02-29': null }, weeklyWindows: [{ weekday: 0, startMinute: 0, endMinute: 60 }, { weekday: 0, startMinute: 60, endMinute: 120 }] })] }).success).toBe(true)
+  it('accepts leap dates, adjacent windows, null clearing and zero capacity without score policy', () => {
+    expect(planningManagementSchema.safeParse({ operations: [timeOperation({ defaultDailyMinutes: 0, dateOverrides: { '2028-02-29': null }, weeklyWindows: [{ weekday: 0, startMinute: 0, endMinute: 60 }, { weekday: 0, startMinute: 60, endMinute: 120 }] })] }).success).toBe(true)
   })
   it.each([
     [], [ruleOperation({ prepDailyCap: 1 }), ruleOperation({ prepDailyCap: 2 })],
@@ -78,15 +103,15 @@ describe('strict bounded planning management input', () => {
 })
 
 describe('exact planning reads and guarded atomic writes', () => {
-  it('reads recommended rules, unknown capacity and raw absence without mutating the snapshot', async () => {
+  it('reports retired ratings and unknown time without exposing scores or mutating the snapshot', async () => {
     const initial = fixture(); const before = structuredClone(initial)
     const read = await getPlanningManagementRead(initial)
-    expect(read.decisionRules.raw).toBeNull()
-    expect(read.decisionRules.effective).toEqual(DEFAULT_DECISION_RULES)
+    expect(read.decisionRules).toEqual({ status: 'retired', code: 'SCORING_RETIRED', historicalDataRetained: false })
+    expect(read.decisionRules).not.toHaveProperty('raw')
+    expect(read.decisionRules).not.toHaveProperty('effective')
     expect(read.timePreferences).toMatchObject({ raw: null, effective: { defaultDailyMinutes: null, weeklyWindows: null, dateOverrides: {} } })
-    expect(read.decisionRules.fingerprint).toBe(await planningManagementFingerprint(null))
-    read.decisionRules.effective.weights.fit = 99
-    expect(initial).toEqual(before); expect(DEFAULT_DECISION_RULES.weights.fit).toBe(12)
+    expect(read.timePreferences.fingerprint).toBe(await planningManagementFingerprint(null))
+    expect(initial).toEqual(before)
   })
   it('fingerprints raw values with deterministic object ordering and distinguishes absence, defaults, metadata and arrays', async () => {
     const left = { version: 1 as const, defaultDailyMinutes: 60, dateOverrides: { '2026-10-03': 0, '2026-10-02': 60 }, updatedAt: previous }
@@ -97,26 +122,21 @@ describe('exact planning reads and guarded atomic writes', () => {
     expect(await planningManagementFingerprint({ ...left, weeklyWindows: [] })).not.toBe(await planningManagementFingerprint(left))
     expect(await planningManagementFingerprint({ ...left, defaultDailyMinutes: 0 })).not.toBe(await planningManagementFingerprint(left))
   })
-  it('patches nested weights and scalars without resetting adjacent or optional raw fields', async () => {
+  it('rejects nested rating edits while preserving all adjacent archival fields', async () => {
     const initial = fixture(); initial.data.decisionRules = createDefaultDecisionRules(previous)
     delete initial.data.decisionRules.fitComponentWeights
     delete initial.data.decisionRules.opportunityValueComponentWeights
     const before = structuredClone(initial)
-    const changed = await apply('patch_decision_rules', { weights: { fit: 32 }, portfolioWeights: { overlapPenalty: 3 }, prepDailyCap: 4 }, initial)
-    expect(changed.snapshot.data.decisionRules).toMatchObject({ prepDailyCap: 4, weights: { fit: 32, urgency: 23 }, portfolioWeights: { overlapPenalty: 3, fit: 28 }, updatedAt: now.toISOString() })
-    expect(changed.snapshot.data.decisionRules?.fitComponentWeights).toBeUndefined()
-    expect(changed.snapshot.data.decisionRules?.opportunityValueComponentWeights).toBeUndefined()
-    expect(changed.compensation?.payload.changes[0].before).toEqual(before.data.decisionRules)
-    expect(changed.compensationFingerprint).toBe(await planningManagementFingerprint(changed.compensation))
+    await expect(apply('patch_decision_rules', { weights: { fit: 32 }, prepDailyCap: 4 }, initial)).rejects.toMatchObject({ code: 'SCORING_RETIRED' })
     expect(initial).toEqual(before)
   })
-  it('uses effective optional weight defaults only when an explicitly patched group changes', async () => {
+  it('does not recreate missing optional weight defaults through a retired write', async () => {
     const initial = fixture(); initial.data.decisionRules = createDefaultDecisionRules(previous)
     delete initial.data.decisionRules.fitComponentWeights
-    const changed = await apply('patch_decision_rules', { fitComponentWeights: { skills: 30 } }, initial)
-    expect(changed.snapshot.data.decisionRules?.fitComponentWeights).toEqual({ ...DEFAULT_DECISION_RULES.fitComponentWeights, skills: 30 })
+    await expect(apply('patch_decision_rules', { fitComponentWeights: { skills: 30 } }, initial)).rejects.toMatchObject({ code: 'SCORING_RETIRED' })
+    expect(initial.data.decisionRules.fitComponentWeights).toBeUndefined()
   })
-  it('reuses cross-field risk and positive weight validators atomically', async () => {
+  it('rejects all retired rating/risk edits atomically', async () => {
     for (const patch of [
       { riskCriticalHours: 40 },
       { weights: Object.fromEntries(Object.keys(DEFAULT_DECISION_RULES.weights).map(key => [key, 0])) },
@@ -125,7 +145,7 @@ describe('exact planning reads and guarded atomic writes', () => {
       { portfolioWeights: Object.fromEntries(Object.keys(DEFAULT_DECISION_RULES.portfolioWeights!).map(key => [key, 0])) },
     ]) {
       const initial = fixture(); const before = structuredClone(initial)
-      await expect(apply('patch_decision_rules', patch, initial)).rejects.toMatchObject({ code: 'INVALID_CONFIGURATION' })
+      await expect(apply('patch_decision_rules', patch, initial)).rejects.toMatchObject({ code: 'SCORING_RETIRED' })
       expect(initial).toEqual(before)
     }
   })
@@ -142,8 +162,6 @@ describe('exact planning reads and guarded atomic writes', () => {
     expect(changed.snapshot.data.timePlanning).toEqual({ version: 1, defaultDailyMinutes: 0, weeklyWindows: [], updatedAt: now.toISOString() })
   })
   it.each([
-    ['patch_decision_rules', { prepDailyCap: DEFAULT_DECISION_RULES.prepDailyCap }],
-    ['patch_decision_rules', { fitComponentWeights: { skills: DEFAULT_DECISION_RULES.fitComponentWeights!.skills } }],
     ['patch_time_preferences', { defaultDailyMinutes: null, weeklyWindows: null, dateOverrides: { '2026-10-02': null } }],
     ['reset_time_preferences', undefined],
   ] as const)('no-op %s does not create defaults, audit history, metadata or compensation', async (kind, patch) => {
@@ -154,13 +172,11 @@ describe('exact planning reads and guarded atomic writes', () => {
   it('does not update metadata for identical stored values or a repeat reset', async () => {
     const initial = fixture(); initial.data.decisionRules = createDefaultDecisionRules(previous)
     initial.data.timePlanning = { version: 1, defaultDailyMinutes: 0, updatedAt: previous }
-    expect((await apply('reset_decision_rules', undefined, initial)).changed).toBe(false)
+    await expect(apply('reset_decision_rules', undefined, initial)).rejects.toMatchObject({ code: 'SCORING_RETIRED' })
     expect((await apply('patch_time_preferences', { defaultDailyMinutes: 0 }, initial)).snapshot).toBe(initial)
   })
-  it('reset rules explicitly persists recommended defaults; reset time deletes the row to unknown capacity', async () => {
-    const defaults = await apply('reset_decision_rules')
-    expect(defaults.snapshot.data.decisionRules).toEqual(createDefaultDecisionRules(now.toISOString()))
-    expect(defaults.compensation?.payload.changes[0].before).toBeNull()
+  it('rejects retired rule reset while time reset restores unknown capacity', async () => {
+    await expect(apply('reset_decision_rules')).rejects.toMatchObject({ code: 'SCORING_RETIRED' })
     const initial = fixture(); initial.data.timePlanning = { version: 1, defaultDailyMinutes: 0, updatedAt: previous }
     const cleared = await apply('reset_time_preferences', undefined, initial)
     expect(Object.hasOwn(cleared.snapshot.data, 'timePlanning')).toBe(false)
@@ -168,26 +184,28 @@ describe('exact planning reads and guarded atomic writes', () => {
   })
   it('requires exact raw fingerprints even for no-op changes and metadata-only edits', async () => {
     const initial = fixture(); const read = await getPlanningManagementRead(initial)
-    initial.data.decisionRules = createDefaultDecisionRules(previous)
-    await expect(applyPlanningManagement(initial, { operations: [{ kind: 'patch_decision_rules', expectedFingerprint: read.decisionRules.fingerprint, patch: { prepDailyCap: 2 } }] }, 'stale-command', now)).rejects.toMatchObject({ code: 'STALE_TARGET' })
+    initial.data.timePlanning = { version: 1, defaultDailyMinutes: 30, updatedAt: previous }
+    await expect(applyPlanningManagement(initial, { operations: [{ kind: 'patch_time_preferences', expectedFingerprint: read.timePreferences.fingerprint, patch: { defaultDailyMinutes: 30 } }] }, 'stale-command', now)).rejects.toMatchObject({ code: 'STALE_TARGET' })
     const stored = await getPlanningManagementRead(initial)
-    initial.data.decisionRules.updatedAt = now.toISOString()
-    await expect(applyPlanningManagement(initial, { operations: [{ kind: 'reset_decision_rules', expectedFingerprint: stored.decisionRules.fingerprint }] }, 'stale-command', now)).rejects.toMatchObject({ code: 'STALE_TARGET' })
+    initial.data.timePlanning.updatedAt = now.toISOString()
+    await expect(applyPlanningManagement(initial, { operations: [{ kind: 'reset_time_preferences', expectedFingerprint: stored.timePreferences.fingerprint }] }, 'stale-command', now)).rejects.toMatchObject({ code: 'STALE_TARGET' })
   })
-  it('applies a mixed batch atomically and provides one aggregate audit event and exact refs', async () => {
+  it('audits factual time edits and rejects an entire mixed batch containing retired rules', async () => {
     const initial = fixture(); const read = await getPlanningManagementRead(initial)
-    const input = { operations: [{ kind: 'patch_decision_rules' as const, expectedFingerprint: read.decisionRules.fingerprint, patch: { prepDailyCap: 4 } }, { kind: 'patch_time_preferences' as const, expectedFingerprint: read.timePreferences.fingerprint, patch: { defaultDailyMinutes: 30 } }] }
-    const changed = await applyPlanningManagement(initial, input, 'mixed-command', now)
-    expect(changed.compensation?.payload.changes).toHaveLength(2)
+    const input = { operations: [{ kind: 'patch_time_preferences' as const, expectedFingerprint: read.timePreferences.fingerprint, patch: { defaultDailyMinutes: 30 } }] }
+    const changed = await applyPlanningManagement(initial, input, 'time-command', now)
+    expect(changed.compensation?.payload.changes).toHaveLength(1)
     expect(changed.snapshot.data.timeline).toHaveLength(1)
-    expect(changed.snapshot.data.timeline![0]).toMatchObject({ commandOperation: 'planning_management', commandId: 'mixed-command', category: 'rules' })
-    expect(planningManagementObjectRefs(input)).toEqual([{ type: 'decision_rules', id: 'current' }, { type: 'time_preferences', id: 'current' }])
+    expect(changed.snapshot.data.timeline![0]).toMatchObject({ commandOperation: 'planning_management', commandId: 'time-command', category: 'rules' })
+    expect(planningManagementObjectRefs(input)).toEqual([{ type: 'time_preferences', id: 'current' }])
+    await expect(applyPlanningManagement(initial, { operations: [...input.operations, { kind: 'reset_decision_rules', expectedFingerprint: await planningManagementFingerprint(null) }] }, 'retired-mixed-command', now)).rejects.toMatchObject({ code: 'SCORING_RETIRED' })
+    expect(initial.data.timePlanning).toBeUndefined()
   })
   it('leaves the input untouched when the second operation is stale or violates semantic validators', async () => {
     const initial = fixture(); const before = structuredClone(initial); const read = await getPlanningManagementRead(initial)
     for (const second of [
       { kind: 'reset_decision_rules', expectedFingerprint: validFingerprint },
-      { kind: 'patch_decision_rules', expectedFingerprint: read.decisionRules.fingerprint, patch: { riskCriticalHours: 100 } },
+      { kind: 'patch_decision_rules', expectedFingerprint: validFingerprint, patch: { riskCriticalHours: 100 } },
     ]) {
       await expect(applyPlanningManagement(initial, { operations: [{ kind: 'patch_time_preferences', expectedFingerprint: read.timePreferences.fingerprint, patch: { defaultDailyMinutes: 50 } }, second] }, 'atomic-command', now)).rejects.toThrow()
       expect(initial).toEqual(before)
@@ -207,19 +225,19 @@ describe('conflict-aware reversible planning compensation', () => {
   it('restores original raw rows and absent optional fields exactly, preserving audit history', async () => {
     const initial = fixture(); initial.data.decisionRules = createDefaultDecisionRules(previous)
     delete initial.data.decisionRules.fitComponentWeights
-    const changed = await apply('patch_decision_rules', { fitComponentWeights: { skills: 29 } }, initial)
+    const changed = await historicRules(initial, { fitComponentWeights: { ...DEFAULT_DECISION_RULES.fitComponentWeights, skills: 29 } })
     const restored = restorePlanningManagement(changed.snapshot, changed.compensation!, now)
     expect(restored.data.decisionRules).toEqual(initial.data.decisionRules)
     expect(restored.data.timeline).toEqual(changed.snapshot.data.timeline)
     expect(changed.snapshot.data.decisionRules?.fitComponentWeights?.skills).toBe(29)
   })
   it('undo of created rules and preferences restores missing rows instead of persisting defaults', async () => {
-    for (const [kind, patch, field] of [['reset_decision_rules', undefined, 'decisionRules'], ['patch_time_preferences', { defaultDailyMinutes: 40 }, 'timePlanning']] as const) {
-      const changed = await apply(kind, patch)
-      const restored = restorePlanningManagement(changed.snapshot, changed.compensation!, now)
-      expect(Object.hasOwn(restored.data, field)).toBe(false)
-      expect(restored.data.timeline).toEqual(changed.snapshot.data.timeline)
-    }
+    const legacy = await historicRules()
+    expect(Object.hasOwn(restorePlanningManagement(legacy.snapshot, legacy.compensation, now).data, 'decisionRules')).toBe(false)
+    const changed = await apply('patch_time_preferences', { defaultDailyMinutes: 40 })
+    const restored = restorePlanningManagement(changed.snapshot, changed.compensation!, now)
+    expect(Object.hasOwn(restored.data, 'timePlanning')).toBe(false)
+    expect(restored.data.timeline).toEqual(changed.snapshot.data.timeline)
   })
   it('undo of a reset restores explicit zero, empty arrays and raw extra metadata exactly', async () => {
     const initial = fixture(); initial.data.timePlanning = { version: 1, defaultDailyMinutes: 0, weeklyWindows: [], dateOverrides: {}, updatedAt: previous, ...{ legacyLabel: 'Retained synthetic metadata' } }
@@ -229,7 +247,7 @@ describe('conflict-aware reversible planning compensation', () => {
     expect(restorePlanningManagement(changed.snapshot, changed.compensation!, now).data.timePlanning).not.toBe(initial.data.timePlanning)
   })
   it('refuses restoring over a newer edit, including update metadata or a recreated explicit-default row', async () => {
-    const changed = await apply('patch_decision_rules', { prepDailyCap: 4 })
+    const changed = await historicRules()
     changed.snapshot.data.decisionRules!.updatedAt = '2026-10-03T00:00:00Z'
     expect(() => restorePlanningManagement(changed.snapshot, changed.compensation!, now)).toThrow(/newer data/)
     const initial = fixture(); initial.data.timePlanning = { version: 1, defaultDailyMinutes: 50, updatedAt: previous }
@@ -238,12 +256,12 @@ describe('conflict-aware reversible planning compensation', () => {
     expect(() => restorePlanningManagement(reset.snapshot, reset.compensation!, now)).toThrow(/newer data/)
   })
   it('retains unrelated later edits but refuses a mixed restore if either configuration changed', async () => {
-    const first = await apply('patch_decision_rules', { prepDailyCap: 4 })
+    const first = await historicRules()
     const second = await apply('patch_time_preferences', { defaultDailyMinutes: 60 }, first.snapshot, 'planning-command-2')
     const restored = restorePlanningManagement(second.snapshot, first.compensation!, now)
     expect(restored.data.decisionRules).toBeUndefined(); expect(restored.data.timePlanning).toEqual(second.snapshot.data.timePlanning)
     const initial = fixture(); const fingerprint = await planningManagementFingerprint(null)
-    const mixed = await applyPlanningManagement(initial, { operations: [{ kind: 'patch_decision_rules', expectedFingerprint: fingerprint, patch: { prepDailyCap: 5 } }, { kind: 'patch_time_preferences', expectedFingerprint: fingerprint, patch: { defaultDailyMinutes: 100 } }] }, 'mixed-restore-command', now)
+    const mixed = await historicPair(initial)
     mixed.snapshot.data.timePlanning!.defaultDailyMinutes = 99
     const before = structuredClone(mixed.snapshot)
     expect(() => restorePlanningManagement(mixed.snapshot, mixed.compensation!, now)).toThrow(/newer data/)
@@ -299,10 +317,10 @@ describe('planning changes preserve historical and scheduling facts', () => {
     const initial = unknownDeadlineWorkspace(2, true)
     const before = structuredClone(initial)
     const fingerprint = await planningManagementFingerprint(null)
-    const result = await applyPlanningManagement(initial, { operations: [{ kind: 'patch_decision_rules', expectedFingerprint: fingerprint, patch: { weights: { urgency: 90 }, fitComponentWeights: { skills: 75 }, portfolioMinimumCandidateScore: 10 } }, { kind: 'patch_time_preferences', expectedFingerprint: fingerprint, patch: { defaultDailyMinutes: 0 } }] }, 'preserve-facts-command', now)
+    const result = await applyPlanningManagement(initial, { operations: [{ kind: 'patch_time_preferences', expectedFingerprint: fingerprint, patch: { defaultDailyMinutes: 0 } }] }, 'preserve-facts-command', now)
     const restored = restorePlanningManagement(result.snapshot, result.compensation!, now)
     for (const output of [result.snapshot, restored]) {
-      for (const field of Object.keys(initial.data).filter(key => key !== 'timeline') as Array<keyof PJSDASSnapshot['data']>) {
+      for (const field of Object.keys(initial.data).filter(key => key !== 'timeline' && key !== 'timePlanning') as Array<keyof PJSDASSnapshot['data']>) {
         expect(JSON.stringify(output.data[field]), field).toBe(JSON.stringify(initial.data[field]))
       }
       expect(output.data.timeline!.slice(0, initial.data.timeline!.length)).toEqual(initial.data.timeline)
@@ -340,7 +358,7 @@ describe('planning evidence preserves accepted raw metadata limits',()=>{
     s.data.decisionRules={...createDefaultDecisionRules('2026-10-01T00:00:00Z'),metadata} as any
     s.data.timePlanning={version:1,defaultDailyMinutes:40,updatedAt:'2026-10-01T00:00:00Z',metadata} as any
     const read=await api.getPlanningManagementRead(s)
-    const applied=await api.applyPlanningManagement(s,{operations:[{kind:'patch_decision_rules',expectedFingerprint:read.decisionRules.fingerprint,patch:{followUpDailyCap:3}},{kind:'patch_time_preferences',expectedFingerprint:read.timePreferences.fingerprint,patch:{defaultDailyMinutes:60}}]},'planning-bounded',new Date('2026-10-02T00:00:00Z'))
+    const applied=await historicPair(s)
     expect(applied.compensation!.payload.changes).toHaveLength(2)
     expect(applied.compensationFingerprint).toBe(await api.planningManagementFingerprint(applied.compensation))
     const restored=api.restorePlanningManagement(applied.snapshot,applied.compensation!,new Date('2026-10-02T00:00:00Z'))
@@ -357,7 +375,7 @@ describe('planning compensation byte envelope',()=>{
     s.data.decisionRules=fill(createDefaultDecisionRules('2026-10-01T00:00:00.000Z'))
     s.data.timePlanning=fill({version:1,defaultDailyMinutes:40,updatedAt:'2026-10-01T00:00:00.000Z'})
     const read=await api.getPlanningManagementRead(s)
-    const result=await api.applyPlanningManagement(s,{operations:[{kind:'patch_decision_rules',expectedFingerprint:read.decisionRules.fingerprint,patch:{followUpDailyCap:3}},{kind:'patch_time_preferences',expectedFingerprint:read.timePreferences.fingerprint,patch:{defaultDailyMinutes:60}}]},'max-config-command',new Date('2026-10-02T00:00:00Z'))
+    const result=await historicPair(s)
     expect(result.compensation!.payload.changes).toHaveLength(2)
     expect(new TextEncoder().encode(JSON.stringify(result.compensation)).byteLength).toBeGreaterThan(4*262144)
     expect(result.compensationFingerprint).toBe(await api.planningManagementFingerprint(result.compensation))

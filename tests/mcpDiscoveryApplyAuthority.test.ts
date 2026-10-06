@@ -15,7 +15,7 @@ const discoveryOperation = (id: string) => ({
   opportunity: {
     id, company: `Company ${id}`, role: 'Designer', currentStageLabel: '待投',
     processStage: 'not_applied' as const, roleType: 'core' as const, early: false,
-    opportunityValue: 70, fitScore: 75, locallyManaged: true, importedAt: at.toISOString(),
+    opportunityValue: 0, fitScore: 0, locallyManaged: true, importedAt: at.toISOString(),
     detail: { discovery: {
       sourceUrl: `https://example.com/jobs/${id}`, sourceTitle: `Designer ${id}`,
       rationale: 'Source-backed match', discoveredAt: at.toISOString(),

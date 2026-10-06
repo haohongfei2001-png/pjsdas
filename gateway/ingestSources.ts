@@ -1,3 +1,4 @@
+import { assertNoScoringInput, ScoringRetiredError } from '../src/scoringRetirement.js'
 import type { CallToolResult } from '@modelcontextprotocol/server'
 import * as z from 'zod/v4'
 import type { GmailMessageObservation, MonitorJobObservation } from '../src/autonomousIngestion.js'
@@ -38,7 +39,6 @@ export const ingestDiscoveryRunSchema = z.object({
     sourceRecordId: z.string().trim().min(1).max(500), company: z.string().trim().min(1).max(200), role: z.string().trim().min(1).max(260),
     sourceUrl: z.string().url().max(2_000), sourceTitle: z.string().trim().min(1).max(400), location: z.string().trim().max(240).optional(), deadline: isoString.optional(),
     compensationText: z.string().trim().max(600).optional(), rationale: z.string().trim().min(1).max(1_600), roleType: roleTypeSchema,
-    opportunityValue: z.number().min(0).max(100), fitScore: z.number().min(0).max(100), fitConfidence: confidenceSchema, opportunityValueConfidence: confidenceSchema,
     postingStatus: postingStatusSchema.optional(), discoveredAt: isoString.optional(),
   })).max(100),
 })
@@ -51,7 +51,7 @@ export const ingestGmailRunSchema = z.object({
     sender: z.string().trim().max(320).optional(), subject: z.string().trim().max(500).optional(), company: z.string().trim().max(200).optional(), role: z.string().trim().max(260).optional(),
     eventType: processEventTypeSchema.optional(), eventKey: z.string().trim().max(500).optional(), eventState: eventStateSchema.optional(), dueAt: isoString.optional(), timingMode: timingModeSchema.optional(),
     estimatedMinutes: z.number().int().min(5).max(720).optional(), notes: z.string().trim().max(800).optional(), stage: processStageSchema.optional(), stageLabel: z.string().trim().max(120).optional(),
-    roleType: roleTypeSchema.optional(), fitScore: z.number().min(0).max(100).optional(), opportunityValue: z.number().min(0).max(100).optional(),
+    roleType: roleTypeSchema.optional(),
   })).max(100),
 })
 
@@ -62,7 +62,7 @@ type SimulationArgs = { dryRun?: boolean; replayOfRunId?: string }
 function success(output: object): CallToolResult { return { content: [{ type: 'text', text: JSON.stringify(output, null, 2) }], structuredContent: { ...output } } }
 function toolError(code: string, message: string, retryable: boolean): CallToolResult { return { isError: true, content: [{ type: 'text', text: JSON.stringify({ code, message, retryable }) }] } }
 function failure(caught: unknown): CallToolResult {
-  if (caught instanceof WorkspaceSourceError) return toolError(caught.code, caught.message, caught.retryable)
+  if (caught instanceof WorkspaceSourceError || caught instanceof ScoringRetiredError) return toolError(caught.code, caught.message, caught.retryable)
   if (caught instanceof z.ZodError) return toolError('INVALID_ARGUMENT', caught.issues[0]?.message ?? 'Invalid ingestion arguments.', false)
   return toolError('INGESTION_FAILED', caught instanceof Error ? caught.message : 'PJSDAS trusted-source ingestion failed.', false)
 }
@@ -160,6 +160,7 @@ export async function invokeTrustedIngestion(
   } = {},
 ): Promise<CallToolResult> {
   try {
+    assertNoScoringInput(args)
     if (name === 'ingest_discovery_run') {
       const parsed = ingestDiscoveryRunSchema.parse(args) as HardenedMonitorIngestionRunInput & SimulationArgs
       await options.authorize?.(name, parsed.sourceId)

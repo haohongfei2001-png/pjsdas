@@ -38,11 +38,8 @@ export function readPrepGraph(snapshot: PJSDASSnapshot, input: PrepGraphReadInpu
       title: node.title,
       sourceStatus: node.sourceStatus,
       estimatedMinutes: node.estimatedMinutes,
-      leverageScore: node.leverageScore,
       coverageCount: node.coverageCount,
       matchedNeedCount: node.matchedNeedCount,
-      urgencyScore: node.urgencyScore,
-      valueScore: node.valueScore,
       nextRelevantAt: node.nextRelevantAt,
       triggerSuggested: node.triggerSuggested,
       opportunities: node.coveredOpportunityIds.map((id) => {
@@ -52,8 +49,6 @@ export function readPrepGraph(snapshot: PJSDASSnapshot, input: PrepGraphReadInpu
           company: opportunity?.company,
           role: opportunity?.role,
           stage: opportunity?.processStage,
-          opportunityValue: opportunity?.opportunityValue,
-          fitScore: opportunity?.fitScore,
         }
       }),
       links: node.links.map((link) => ({
@@ -75,7 +70,6 @@ export function readPrepGraph(snapshot: PJSDASSnapshot, input: PrepGraphReadInpu
       role: need.role,
       kind: need.kind,
       label: need.label,
-      severity: need.severity,
       source: need.source,
     }))
 

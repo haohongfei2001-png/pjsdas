@@ -175,7 +175,7 @@ function decision(opportunityId: string, expiresAt?: string): DecisionRequest {
 }
 
 describe('UU-03 TodayBrief read model', () => {
-  it('binds output to workspace revision, clock, timezone and rules version without mutating the snapshot', () => {
+  it('binds output to workspace revision, clock, timezone and deadline ordering contract without mutating the snapshot', () => {
     const opp = opportunity('opp-1')
     const source = snapshot({ opportunities: [opp], actions: [applyAction(opp, '2026-09-21T12:00:00.000Z')] })
     const before = JSON.stringify(source)
@@ -186,12 +186,13 @@ describe('UU-03 TodayBrief read model', () => {
     })
 
     expect(brief).toMatchObject({
-      contractVersion: 1,
+      contractVersion: 2,
+      ordering: 'deadline_ascending',
       workspaceRevision: 'txn:42',
       evaluatedAt: NOW.toISOString(),
       displayTimezone: TZ,
       availableMinutes: 120,
-      rules: { version: 1, updatedAt: '2026-09-19T12:00:00.000Z' },
+
     })
     expect(JSON.stringify(source)).toBe(before)
   })
@@ -302,7 +303,7 @@ describe('UU-03 TodayBrief read model', () => {
     })
   })
 
-  it('protects a long hard-deadline task when latest-start enters 48h even if the raw deadline is still outside 48h', () => {
+  it('does not overbook a long future task while preserving its latest-start diagnostic', () => {
     const opp = opportunity('opp-latest', 'Product Manager', {
       deadline: '2026-09-22T14:00:00.000Z',
       deadlinePrecision: 'datetime',
@@ -320,13 +321,11 @@ describe('UU-03 TodayBrief read model', () => {
       { now: NOW, timezone: TZ },
     )
     expect(new Date(opp.deadline!).getTime() - NOW.getTime()).toBe(50 * 60 * 60 * 1000)
-    expect(brief.nextAction).toMatchObject({
-      actionId: apply.id,
-      protectedByLatestStart: true,
-      timing: { latestStartAt: '2026-09-22T11:00:00.000Z' },
-    })
-    expect(brief.materialCoverageWarnings.find((item) => item.code === 'capacity_conflict')).toBeTruthy()
-    expect(brief.materialCoverageWarnings.find((item) => item.code === 'hard_deadline_unplanned')?.relatedIds).toContain(apply.id)
+    expect(brief.nextAction?.actionId).toBe('manual-high')
+    expect(brief.internalDiagnostics.protectedActionIds).toContain(apply.id)
+    expect(brief.plannedMinutes).toBeLessThanOrEqual(60)
+    expect(brief.materialCoverageWarnings.find(item => item.code === 'capacity_conflict')).toBeUndefined()
+
   })
 
   it('projects elapsed recruiting nodes as unresolved recovery instead of completing them', () => {
@@ -430,13 +429,13 @@ describe('UU-03 TodayBrief read model', () => {
     expect(a).toEqual(b)
   })
 
-  it('keeps nextActions sparse at no more than three after the primary action', () => {
+  it('keeps the full feasible deadline-ordered list consistent with Web Today', () => {
     const actions = Array.from({ length: 8 }, (_, index) => manualAction(`manual-${index}`, {
       title: `Task ${index}`,
       leverage: 90 - index,
     }))
     const brief = buildTodayBrief(snapshot({ actions }), { availableMinutes: 300 }, { now: NOW, timezone: TZ })
     expect(brief.nextAction).toBeTruthy()
-    expect(brief.nextActions.length).toBeLessThanOrEqual(3)
+    expect(brief.nextActions).toHaveLength(7)
   })
 })

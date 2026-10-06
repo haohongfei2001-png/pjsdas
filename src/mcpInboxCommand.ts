@@ -1,3 +1,4 @@
+import { assertNoNewOpportunityRating } from './scoringRetirement.js'
 import { discoveryInboxItemsFromChangeSet, mergeDiscoveryInboxItems } from './discoveryInbox.js'
 import { upgradeSnapshotToLatest, validateSnapshot, type PJSDASSnapshot } from './snapshot.js'
 import type { McpProposalEnvelope } from './ai/mcpProposal.js'
@@ -9,6 +10,7 @@ export function applyMcpInboxSaveCommand(snapshot: PJSDASSnapshot, proposal: Mcp
   if (changeSet.source !== 'mcp' || changeSet.status !== 'pending') {
     throw new Error('Only a pending MCP discovery proposal can be saved to Discovery Inbox.')
   }
+  for (const operation of changeSet.operations) if (operation.kind === 'add_discovered_opportunity') assertNoNewOpportunityRating(operation.opportunity)
   const incoming = discoveryInboxItemsFromChangeSet(changeSet, now)
   const previous = (next.data.changeSets ?? []).find((item) => item.id === changeSet.id)
   if (previous) {

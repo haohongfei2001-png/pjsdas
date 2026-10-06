@@ -23,4 +23,11 @@ describe('Today ranking reason presentation', () => {
   it('fails open for unknown reason text instead of inventing a translation', () => {
     expect(presentRankingReason('来源自定义原因', false)).toBe('来源自定义原因')
   })
+
+  it('localizes the deadline-only active ordering reasons', () => {
+    expect(presentRankingReasons(['按截止日期排列', '截止日期未明确，排在已知截止之后', '按固定事件时间排列'], false)).toEqual([
+      'Ordered by deadline', 'No stated deadline; listed after dated tasks', 'Ordered by fixed event time',
+    ])
+  })
+
 })

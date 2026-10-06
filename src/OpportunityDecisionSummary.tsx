@@ -26,7 +26,7 @@ const conclusionLabels: Record<OpportunityDecisionRead['conclusion'], [string, s
   stage_unverified: ['阶段待核实，原始证据已保留', 'Stage unverified; original evidence retained'],
   continue_process: ['继续推进当前流程', 'Keep advancing the current process'],
   review_offer: ['已到 Offer 阶段，处理下一决定', 'Offer received; handle the next decision'],
-  worth_pursuing: ['值得继续考虑', 'Worth pursuing'],
+  worth_pursuing: ['待投递', 'Awaiting application'],
   wait_for_opening: ['等待开放，同时保留关注', 'Wait for opening and keep it on radar'],
   application_window_closed: ['申请窗口已结束', 'Application window has closed'],
   not_pursuing: ['当前不再推进', 'Not pursuing'],

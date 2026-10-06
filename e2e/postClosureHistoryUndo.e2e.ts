@@ -305,7 +305,11 @@ for (const marker of [true, false]) test(`reimport repairs an already missing pr
     input.data.scheduleNodes = [{ ...input.data.scheduleNodes![0], processId: process.id }]
     await module.replaceLocalSnapshotFromCloud(input)
     const db = await module.dbPromise
-    if (marker) await module.saveDecisionRules(await module.getDecisionRules())
+    if (marker) {
+      // Seed an actual historical baseline projection; the retired scoring writer is not a test setup API.
+      const projected = await module.exportLocalSnapshot()
+      for (const row of projected.data.timeline ?? []) await db.put('timeline', row)
+    }
     await db.delete('processes', process.id) // Old released import failure, actual durable invalid stores.
     const before = (await module.exportLocalRecoveryArchive()).stores
     let invalidBefore = false

@@ -1,3 +1,4 @@
+import { assertNoNewOpportunityRating } from '../scoringRetirement.js'
 import { useEffect, useMemo, useState } from 'react'
 import { fetchBackend } from '../backendEndpoints.js'
 import { discardChangeSet, savePendingChangeSet } from '../db.js'
@@ -22,7 +23,6 @@ import { connectedWorkspaceAuthorityEnabled } from '../cloud/connectedWorkspaceR
 import { createConnectedCommandId, executeConnectedBusinessCommand } from '../cloud/authoritativeCommandClient.js'
 import { ensureAuthoritativePersistence } from '../cloud/authoritativePersistence.js'
 import { getAccountCheckpoint } from '../cloud/syncState.js'
-import OpportunityAssessmentSummary from '../OpportunityAssessmentSummary.js'
 import RichOpportunityFactsSummary from '../RichOpportunityFactsSummary.js'
 import { useUiLanguage } from '../uiLanguage.js'
 import './mcpProposalReview.css'
@@ -43,16 +43,10 @@ function driveVersion(workspaceVersion?: string) {
 
 function formatDeadline(value: string | undefined, zh: boolean) {
   if (!value) return zh ? '来源未明确' : 'Not stated by source'
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return value
   return new Intl.DateTimeFormat(zh ? 'zh-CN' : 'en-GB', {
     year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false,
   }).format(new Date(value))
-}
-
-function confidenceLabel(value: string, zh: boolean) {
-  if (!zh) return value
-  if (value === 'high') return '高'
-  if (value === 'medium') return '中'
-  return '低'
 }
 
 function defaultRejectionSelections(ids: string[]) {
@@ -156,6 +150,15 @@ export default function McpProposalReview() {
     () => proposal?.changeSet.operations.filter((item) => item.kind === 'add_discovered_opportunity') ?? [],
     [proposal],
   )
+  const retiredProposal = useMemo(() => proposal?.changeSet.operations.some(operation => {
+    if (operation.kind === 'replace_decision_rules') return true
+    if (operation.kind === 'add_discovered_opportunity') {
+      try { assertNoNewOpportunityRating(operation.opportunity) } catch { return true }
+    }
+    return false
+  }) ?? false, [proposal])
+  const retiredMessage = zh ? '该提议包含已取消的评分策略，不能应用。原记录已保留，请重新生成只含岗位事实和截止日期的提议。'
+    : 'This proposal contains retired rating policy and cannot be applied. The original record is retained; request a new proposal containing job facts and deadlines only.'
   const selectedCount = discoveryOperations.filter((item) => selectedIds.has(item.id)).length
 
   function toggleDiscovery(id: string) {
@@ -176,6 +179,7 @@ export default function McpProposalReview() {
 
   async function applyProposal() {
     if (!proposal) return
+    if (retiredProposal) { setError(retiredMessage); return }
     setBusy(true)
     setError('')
     try {
@@ -216,20 +220,6 @@ export default function McpProposalReview() {
         setResult(zh ? '已审阅的行动状态已保存到账号工作区。' : 'Reviewed Action statuses were saved to the account workspace.')
         return
       }
-      if (connectedWorkspaceAuthorityEnabled() && cloud.session && proposal.changeSet.operations.length === 1 &&
-        proposal.changeSet.operations[0].kind === 'replace_decision_rules') {
-        if (cloud.checkpoint.conflict) throw new Error('账号工作区存在冲突；请先处理，再重新生成提议。')
-        if (!signedToken) throw new Error('已验证的签名提议不可用；请重新打开提议。')
-        const result = await executeConnectedBusinessCommand(cloud.session.user.id, {
-          type: 'mcp_apply_rules', value: { token: signedToken },
-        }, { commandId: createConnectedCommandId('mcp-apply-rules') })
-        if (result.outcome !== 'COMMITTED' && result.outcome !== 'ALREADY_APPLIED') {
-          throw new Error(result.conflict?.message ?? '决策规则未写入账号工作区。')
-        }
-        announceWorkspaceChange()
-        setResult(zh ? '已审阅的决策规则已保存到账号工作区。' : 'Reviewed Decision Rules were saved to the account workspace.')
-        return
-      }
       if (connectedWorkspaceAuthorityEnabled() && cloud.session && proposal.changeSet.operations.length > 0 &&
         (proposal.changeSet.operations.every((operation) => operation.kind === 'refresh_job_posting') ||
           proposal.changeSet.operations.every((operation) => operation.kind === 'record_discovery_run'))) {
@@ -261,7 +251,7 @@ export default function McpProposalReview() {
       }
       if (connectedWorkspaceAuthorityEnabled() && cloud.session && proposal.changeSet.operations.length > 0 &&
         proposal.changeSet.operations.every((operation) =>
-          operation.kind === 'progress_update' || operation.kind === 'set_action_status' || operation.kind === 'replace_decision_rules')) {
+          operation.kind === 'progress_update' || operation.kind === 'set_action_status')) {
         if (cloud.checkpoint.conflict) throw new Error('账号工作区存在冲突；请先处理，再重新生成提议。')
         if (!signedToken) throw new Error('已验证的签名提议不可用；请重新打开提议。')
         const result = await executeConnectedBusinessCommand(cloud.session.user.id, {
@@ -327,6 +317,7 @@ export default function McpProposalReview() {
 
   async function saveToInbox() {
     if (!proposal || !discoveryOperations.length) return
+    if (retiredProposal) { setError(retiredMessage); return }
     setBusy(true)
     setError('')
     try {
@@ -440,8 +431,8 @@ export default function McpProposalReview() {
           <>
             <p className="mcp-proposal-safety">{discoveryOperations.length
               ? (zh
-                ? '打开链接没有修改数据。招聘事实与匹配度/机会价值分项评估分层显示；只有勾选并应用的岗位会进入 Opportunities。'
-                : 'Opening this link changed no data. Source-backed job facts and component assessments are shown separately; only selected jobs are added to Opportunities.')
+                ? '打开链接没有修改数据。这里显示来源支持的招聘事实；只有勾选并应用的岗位会进入 Opportunities。'
+                : 'Opening this link changed no data. Source-backed recruiting facts are shown here; only selected jobs are added to Opportunities.')
               : (zh
                 ? '打开这条链接没有修改任何 TodayAction 数据。只有你点击“应用 ChangeSet”后，这些规范化修改才会进入求职数据。'
                 : 'Opening this link changed no TodayAction data. These normalized edits enter your job-search data only after you click Apply ChangeSet.')}</p>
@@ -504,20 +495,8 @@ export default function McpProposalReview() {
                           <span>{zh ? '截止' : 'Deadline'}：{formatDeadline(item.deadline, zh)}</span>
                           <span>{zh ? '薪资' : 'Compensation'}：{evidence?.compensationText ?? (zh ? '来源未明确' : 'Not stated')}</span>
                         </div>
-                        <div className="mcp-discovery-scores">
-                          <span>{zh ? '机会价值' : 'Opportunity'} <b>{item.opportunityValue}</b> · {confidenceLabel(evidence?.opportunityValueConfidence ?? 'low', zh)}</span>
-                          <span>{zh ? '匹配度' : 'Fit'} <b>{item.fitScore}</b> · {confidenceLabel(evidence?.fitConfidence ?? 'low', zh)}</span>
-                        </div>
                         {evidence?.rationale ? <p className="mcp-discovery-rationale">{evidence.rationale}</p> : null}
                         <RichOpportunityFactsSummary facts={item.detail?.facts} zh={zh} />
-                        <OpportunityAssessmentSummary
-                          assessment={item.detail?.assessment}
-                          fitScore={item.fitScore}
-                          opportunityValue={item.opportunityValue}
-                          fitConfidence={evidence?.fitConfidence}
-                          opportunityValueConfidence={evidence?.opportunityValueConfidence}
-                          zh={zh}
-                        />
                         {evidence?.profileWarnings?.length ? (
                           <div className="mcp-discovery-warnings">
                             {evidence.profileWarnings.map((warning) => <span key={warning}>{warning}</span>)}
@@ -553,15 +532,16 @@ export default function McpProposalReview() {
           </>
         ) : null}
 
+        {retiredProposal ? <div className="mcp-proposal-error" role="status">{retiredMessage}</div> : null}
         {error ? <div className="mcp-proposal-error">{error}</div> : null}
         {result ? <div className="mcp-proposal-result">{result}</div> : null}
 
         <div className="mcp-proposal-actions">
           {!result && proposal ? (
             <>
-              {discoveryOperations.length ? <button disabled={busy} onClick={() => { void saveToInbox() }}>{zh ? '保存到发现箱' : 'Save to Inbox'}</button> : null}
+              {discoveryOperations.length ? <button disabled={busy || retiredProposal} onClick={() => { void saveToInbox() }}>{zh ? '保存到发现箱' : 'Save to Inbox'}</button> : null}
               <button disabled={busy} onClick={() => { void discardProposal() }}>{discoveryOperations.length ? (zh ? '放弃整批' : 'Discard batch') : (zh ? '放弃' : 'Discard')}</button>
-              <button className="primary" disabled={busy || (discoveryOperations.length > 0 && selectedCount === 0)} onClick={() => { void applyProposal() }}>
+              <button className="primary" disabled={busy || retiredProposal || (discoveryOperations.length > 0 && selectedCount === 0)} onClick={() => { void applyProposal() }}>
                 {busy ? '…' : discoveryOperations.length
                   ? (zh ? `应用已选择的 ${selectedCount} 个` : `Apply ${selectedCount} selected`)
                   : (zh ? '应用 ChangeSet' : 'Apply ChangeSet')}

@@ -1,3 +1,4 @@
+import { assertNoScoringInput, withoutRetiredScoring } from './scoringRetirement.js'
 import * as z from 'zod/v4'
 import type { Action, ApplicationGroup, Prep } from './model.js'
 import { validateSnapshot, type PJSDASSnapshot } from './snapshot.js'
@@ -9,7 +10,7 @@ const minutes = z.number().int().min(5).max(720)
 const prepFields = z.object({ title: short, estimatedMinutes: minutes, triggeredBy: note.nullable().optional(), priorityLabel: short.nullable().optional(), minimumOutput: note.nullable().optional(), triggerRule: note.nullable().optional(), sourceStatus: short.nullable().optional() }).strict()
 // Timeline/status/time edits continue through the existing domain/schedule commands.
 // These new operations cannot silently edit or remove a derived scheduled action.
-const actionFields = z.object({ title: short, estimatedMinutes: minutes, leverage: z.number().min(0).max(100).optional(), delayCost: z.number().min(0).max(100).optional() }).strict()
+const actionFields = z.object({ title: short, estimatedMinutes: minutes }).strict()
 const groupFields = z.object({ company: short, coveredRoles: note.nullable().optional(), rule: note.nullable().optional(), total: z.number().int().min(0).max(1000).optional(), currentOrder: note.nullable().optional(), locked: z.boolean().optional(), nextAction: note.nullable().optional(), notes: note.nullable().optional() }).strict()
 const nonempty = (v: object) => Object.keys(v).length > 0
 export const businessManagementOperationSchema = z.discriminatedUnion('kind', [
@@ -82,6 +83,7 @@ function rawBusinessSnapshot(snapshot: PJSDASSnapshot) {
 
 /** Pure atomic reducer. The gateway must authorize, persist its compensation and perform CAS. */
 export function applyBusinessManagement(snapshot: PJSDASSnapshot, raw: unknown, commandId: string, now = new Date()) {
+  assertNoScoringInput(raw)
   const input = businessManagementSchema.parse(raw)
   if (commandId.length < 8 || commandId.length > 160) throw new Error('Invalid business command identity.')
   const original = rawBusinessSnapshot(snapshot)
@@ -96,7 +98,7 @@ export function applyBusinessManagement(snapshot: PJSDASSnapshot, raw: unknown, 
       if (current) throw new BusinessManagementError('RESTORE_CONFLICT', 'The deterministic new object ID already exists.')
       let created: ManagementEntity
       if (operation.kind === 'create_prep') created = patchObject({ id: ref.id, title: operation.value.title, estimatedMinutes: operation.value.estimatedMinutes, createdAt: timestamp, updatedAt: timestamp }, operation.value)
-      else if (operation.kind === 'create_manual_action') created = { ...operation.value, id: ref.id, kind: 'manual', status: 'todo', leverage: operation.value.leverage ?? 50, delayCost: operation.value.delayCost ?? 50, createdAt: timestamp, updatedAt: timestamp }
+      else if (operation.kind === 'create_manual_action') created = { ...operation.value, id: ref.id, kind: 'manual', status: 'todo', leverage: 0, delayCost: 0, createdAt: timestamp, updatedAt: timestamp }
       else created = patchObject({ id: ref.id, company: operation.value.company }, operation.value)
       items.push(created)
       continue
@@ -171,5 +173,5 @@ export function readBusinessManagement(snapshot: PJSDASSnapshot, raw: unknown) {
     .filter(item => (!requested || requested.has(item.id)) && (!input.afterId || item.id > input.afterId))
     .sort((a, b) => a.id < b.id ? -1 : a.id > b.id ? 1 : 0)
   const page = selected.slice(0, input.limit)
-  return { type: input.type, items: structuredClone(page), nextAfterId: selected.length > input.limit ? page.at(-1)!.id : null }
+  return { type: input.type, items: withoutRetiredScoring(page), nextAfterId: selected.length > input.limit ? page.at(-1)!.id : null }
 }

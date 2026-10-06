@@ -1,20 +1,21 @@
 import { expect, test } from '@playwright/test'
 
-test('Decision Rules uses durable product terminology instead of a development-version label', async ({ page }) => {
+test('deadline-only settings retain facts and recovery in both interface languages', async ({ page }) => {
   await page.goto('/')
   await expect(page.getByRole('heading', { name: '今天', exact: true })).toBeVisible()
-
   await page.locator('.tsui-topbar').getByRole('button', { name: /设置/ }).click()
-  await page.locator('details.settings-group > summary').filter({ hasText: '决策规则' }).click()
-  const rules = page.locator('.rules-page')
-  await expect(rules.getByRole('heading', { name: '决策规则' })).toBeVisible()
-  await expect(rules.getByText('DECISION POLICY', { exact: true })).toBeVisible()
-  await expect(rules.getByText(/V1\.6/)).toHaveCount(0)
-
-  await page.locator('.tsui-topbar').getByRole('button', { name: /设置|Settings/ }).click()
+  await expect(page.locator('.settings-group > summary').filter({ hasText: '决策规则' })).toHaveCount(0)
+  await expect(page.locator('.settings-group > summary').filter({ hasText: '数据与恢复' })).toBeVisible()
   const interfaceGroup = page.locator('details.settings-group').filter({ has: page.locator('summary strong').filter({ hasText: /^(界面|Interface)$/ }) })
   await interfaceGroup.locator('summary').click()
   await interfaceGroup.getByRole('button', { name: 'EN', exact: true }).click()
-  await expect(rules.getByRole('heading', { name: 'Decision Rules' })).toBeVisible()
-  await expect(rules.getByText('DECISION POLICY', { exact: true })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Settings', exact: true })).toBeVisible()
+  await expect(page.locator('.settings-group > summary').filter({ hasText: /Decision Rules|Decision policy/ })).toHaveCount(0)
+  await expect(page.locator('.settings-group > summary').filter({ hasText: 'Discovery preferences' })).toBeVisible()
+  await expect(page.locator('.settings-group > summary').filter({ hasText: 'Data & recovery' })).toBeVisible()
+  await expect(page.locator('.settings-group > summary').filter({ hasText: 'History & audit' })).toBeVisible()
+  await page.getByRole('button', { name: /Jobs/, exact: true }).click()
+  await page.goBack()
+  await expect(page.getByRole('heading', { name: 'Settings', exact: true })).toBeVisible()
+  await expect(page.locator('.rules-page')).toHaveCount(0)
 })

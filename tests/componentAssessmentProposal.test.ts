@@ -72,56 +72,27 @@ function candidate() {
   }
 }
 
-describe('v1.5 Round 2 component-derived discovery proposals', () => {
-  it('derives aggregate scores and confidence inside PJSDAS instead of trusting client totals', async () => {
+describe('retired component proposal inputs', () => {
+  it('rejects component and aggregate ratings explicitly', async () => {
     const result = await invokeProposeChanges(source(), { discoveredOpportunities: [candidate()] }, { signingKey })
+    expect(result.isError).toBe(true)
+    expect(resultJson(result)).toMatchObject({ code: 'SCORING_RETIRED', retryable: false })
+  })
+  it('accepts factual candidates without scores even when the stored profile has old score thresholds', async () => {
+    const { assessment, fitScore, opportunityValue, fitConfidence, opportunityValueConfidence, ...facts } = candidate()
+    const result = await invokeProposeChanges(source(100), { discoveredOpportunities: [facts] }, { signingKey })
     expect(result.isError).not.toBe(true)
     const data = resultJson(result)
+    expect(data.discoveryScreening).toMatchObject({ accepted: 1, rejectedCount: 0 })
     const token = encodedProposalFromHash(new URL(String(data.reviewUrl)).hash)!
     const envelope = await verifySignedProposalToken(token, signingKey, new Date('2026-09-12T10:01:00+08:00'))
     const operation = envelope.changeSet.operations[0]
-    expect(operation.kind).toBe('add_discovered_opportunity')
-    if (operation.kind !== 'add_discovered_opportunity') throw new Error('Expected discovery operation')
-
-    expect(operation.opportunity.fitScore).toBeGreaterThan(80)
-    expect(operation.opportunity.opportunityValue).toBeGreaterThan(80)
-    expect(operation.opportunity.fitScore).not.toBe(5)
-    expect(operation.opportunity.detail?.assessment?.fit.roleDirection).toMatchObject({ score: 92, confidence: 'high' })
-    // Only 42% of configured Fit weight is covered here; strong known components
-    // keep merit high while overall certainty correctly remains low.
-    expect(operation.opportunity.detail?.discovery?.fitConfidence).toBe('low')
-    expect(operation.opportunity.detail?.discovery?.profileWarnings?.join(' ')).toContain('覆盖')
+    if (operation.kind !== 'add_discovered_opportunity') throw new Error('Expected factual opportunity')
+    expect(operation.opportunity).toMatchObject({ fitScore: 0, opportunityValue: 0 })
+    expect(operation.opportunity.detail?.assessment).toBeUndefined()
   })
-
-  it('applies Discovery Profile thresholds and records a review-only zero-result run', async () => {
-    const result = await invokeProposeChanges(source(90), {
-      discoveredOpportunities: [candidate()],
-      discoveryRunContext: { mode: 'incremental', queries: ['AI 产品经理 2027 校招'] },
-    }, { signingKey })
-    expect(result.isError).not.toBe(true)
-    const data = resultJson(result)
-    expect(data.discoveryScreening).toMatchObject({ received: 1, accepted: 0, rejectedCount: 1 })
-    const token = encodedProposalFromHash(new URL(String(data.reviewUrl)).hash)!
-    const envelope = await verifySignedProposalToken(token, signingKey, new Date('2026-09-12T10:01:00+08:00'))
-    expect(envelope.changeSet.operations).toHaveLength(1)
-    expect(envelope.changeSet.operations[0]).toMatchObject({ kind: 'record_discovery_run' })
-    expect(envelope.changeSet.discoveryRun).toMatchObject({
-      mode: 'incremental',
-      queries: ['AI 产品经理 2027 校招'],
-      receivedCount: 1,
-      reviewCandidateCount: 0,
-      filteredCount: 1,
-    })
-  })
-
-  it('keeps the legacy aggregate contract available for stale connector schemas', async () => {
-    const legacy = candidate()
-    delete (legacy as any).assessment
-    legacy.fitScore = 82
-    legacy.opportunityValue = 86
-    legacy.fitConfidence = 'medium'
-    legacy.opportunityValueConfidence = 'high'
-    const result = await invokeProposeChanges(source(), { discoveredOpportunities: [legacy] }, { signingKey })
-    expect(result.isError).not.toBe(true)
+  it('rejects score-policy writes before reading the workspace', async () => {
+    const result = await invokeProposeChanges({ read: async () => { throw new Error('unexpected read') } }, { decisionRulesPatch: { weights: { fit: 100 } } }, { signingKey })
+    expect(resultJson(result)).toMatchObject({ code: 'SCORING_RETIRED' })
   })
 })

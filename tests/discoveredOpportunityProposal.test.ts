@@ -57,10 +57,6 @@ const candidate = {
   compensationText: '招聘页面未披露明确薪资',
   rationale: '岗位职责包含 AI 产品规划与跨团队协作，符合显式目标岗位；来源页面标注 2027 届校园招聘。',
   roleType: 'core' as const,
-  opportunityValue: 87,
-  fitScore: 78,
-  fitConfidence: 'medium' as const,
-  opportunityValueConfidence: 'medium' as const,
   discoveredAt: '2026-09-11T11:25:00+08:00',
 }
 
@@ -96,8 +92,6 @@ describe('v1.3 discovered opportunity proposals', () => {
         company: candidate.company,
         role: candidate.role,
         processStage: 'not_applied',
-        opportunityValue: 87,
-        fitScore: 78,
         detail: {
           discovery: {
             sourceUrl: candidate.sourceUrl,
@@ -190,9 +184,9 @@ describe('v1.3 discovered opportunity proposals', () => {
   it('caps the review batch after quality ranking instead of sending every search hit to the user', async () => {
     const result = await invokeProposeChanges(source(true, 2), {
       discoveredOpportunities: [
-        { ...candidate, company: '甲公司', fitScore: 92, opportunityValue: 94, sourceUrl: 'https://careers.example.com/a' },
-        { ...candidate, company: '乙公司', fitScore: 84, opportunityValue: 88, sourceUrl: 'https://careers.example.com/b' },
-        { ...candidate, company: '丙公司', fitScore: 65, opportunityValue: 70, sourceUrl: 'https://careers.example.com/c' },
+        { ...candidate, company: '甲公司', sourceUrl: 'https://careers.example.com/a' },
+        { ...candidate, company: '乙公司', sourceUrl: 'https://careers.example.com/b' },
+        { ...candidate, company: '丙公司', sourceUrl: 'https://careers.example.com/c' },
       ],
     }, { signingKey })
     expect(result.isError).not.toBe(true)

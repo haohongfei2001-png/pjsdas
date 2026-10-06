@@ -2,12 +2,9 @@ import { canonicalOpportunityId } from '../src/opportunityCanonicalization.js'
 import type { CallToolResult } from '@modelcontextprotocol/server'
 import * as z from 'zod/v4'
 import { getApplicationPortfolio } from '../src/ai/applicationPortfolioRead.js'
-import { getOpportunityAssessment } from '../src/ai/assessmentRead.js'
 import { readPrepGraph } from '../src/ai/prepGraphRead.js'
 import {
   BridgeReadError,
-  explainPriority,
-  getDecisionRules,
   getDiscoveryContext,
   getPipeline,
   getRecentTimeline,
@@ -18,7 +15,6 @@ import { enrichOpportunityListWithFacts } from '../src/ai/richOpportunityRead.js
 import { buildTodayBrief } from '../src/todayBrief.js'
 import { getOpportunityDecisionRead } from '../src/opportunityDecisionRead.js'
 import { buildContinuousDiscoverySummary } from '../src/continuousDiscovery.js'
-import { decisionRulesForSnapshot } from '../src/decisionRules.js'
 import { buildDiscoveryAutomationPlan } from '../src/discoveryAutomation.js'
 import { enabledSourceRegistry } from '../src/sourceRegistry.js'
 import { WorkspaceSourceError, type WorkspaceSource } from './workspaceSource.js'
@@ -56,7 +52,7 @@ export const opportunityRoleSchema = z.enum(['core', 'backup', 'reach', 'lottery
 export const timelineCategorySchema = z.enum(['opportunity', 'process', 'action', 'rules', 'change', 'data', 'note'])
 
 export const getTodayBriefSchema = z.object({
-  availableMinutes: z.number().min(30).max(1440).optional(),
+  availableMinutes: z.number().int().min(0).max(1440).optional(),
   agendaHorizonDays: z.number().int().min(1).max(30).optional(),
 })
 
@@ -168,6 +164,9 @@ export async function invokeReadTool(
   args: unknown = {},
 ): Promise<CallToolResult> {
   try {
+    if (name === 'get_decision_rules' || name === 'get_opportunity_assessment' || name === 'explain_priority') {
+      return toolError('SCORING_RETIRED', `${name} has been retired. Read factual opportunity deadlines, Today actions or application-group quotas instead; no score is computed or returned.`, false)
+    }
     const { snapshot, context } = await source.read()
 
     // Resolve a copied read selector, retaining caller payload and original historical evidence.
@@ -203,13 +202,6 @@ export async function invokeReadTool(
         if (!read) return toolError('NOT_FOUND', `Opportunity ${parsed.opportunityId} was not found.`, false)
         return success(read)
       }
-      case 'get_opportunity_assessment': {
-        const parsed = getOpportunityAssessmentSchema.parse(args)
-        if (!snapshot.data.opportunities.some((item) => item.id === parsed.opportunityId)) {
-          return toolError('NOT_FOUND', `Opportunity ${parsed.opportunityId} was not found.`, false)
-        }
-        return success({ meta: readMeta(context), ...getOpportunityAssessment(snapshot, parsed) })
-      }
       case 'get_application_portfolio':
         return success(getApplicationPortfolio(snapshot, getApplicationPortfolioSchema.parse(args), context))
       case 'get_prep_graph': {
@@ -224,18 +216,6 @@ export async function invokeReadTool(
       }
       case 'get_pipeline':
         return success(getPipeline(snapshot, getPipelineSchema.parse(args), context))
-      case 'get_decision_rules': {
-        getDecisionRulesSchema.parse(args)
-        const output = getDecisionRules(snapshot, context)
-        const rules = decisionRulesForSnapshot(snapshot.data.decisionRules)
-        return success({
-          ...output,
-          fitComponentWeights: { ...rules.fitComponentWeights! },
-          opportunityValueComponentWeights: { ...rules.opportunityValueComponentWeights! },
-          portfolioWeights: { ...rules.portfolioWeights! },
-          portfolioMinimumCandidateScore: rules.portfolioMinimumCandidateScore,
-        })
-      }
       case 'get_discovery_context': {
         getDiscoveryContextSchema.parse(args)
         const output = getDiscoveryContext(snapshot, context)
@@ -282,11 +262,10 @@ export async function invokeReadTool(
           },
         })
       }
-      case 'explain_priority':
-        return success(explainPriority(snapshot, explainPrioritySchema.parse(args), context))
       case 'get_recent_timeline':
         return success(getRecentTimeline(snapshot, getRecentTimelineSchema.parse(args), context))
     }
+    return toolError('INVALID_ARGUMENT', 'Unknown read tool.', false)
   } catch (caught) {
     return failure(caught)
   }

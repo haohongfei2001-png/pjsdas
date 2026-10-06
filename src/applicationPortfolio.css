@@ -194,10 +194,7 @@
   background: #fbfcfd;
 }
 
-.portfolio-candidate.recommended {
-  background: #f6faf7;
-  border-color: rgba(48, 104, 76, 0.2);
-}
+
 
 .portfolio-candidate-head {
   display: flex;
@@ -217,33 +214,15 @@
   font-size: 12px;
 }
 
-.portfolio-score {
-  text-align: right;
-}
 
-.portfolio-score b {
-  display: block;
-  font-size: 21px;
-}
 
-.portfolio-score small {
-  color: #8a94a2;
-}
 
-.portfolio-component-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 7px;
-  margin-top: 10px;
-}
 
-.portfolio-component-row span {
-  padding: 4px 7px;
-  border-radius: 8px;
-  background: #eef2f6;
-  color: #606b7b;
-  font-size: 12px;
-}
+
+
+
+
+
 
 .portfolio-candidate-reason {
   display: flex;
@@ -257,7 +236,6 @@
   color: #788292;
 }
 
-.portfolio-no-pick,
 .portfolio-empty {
   margin-top: 16px;
   padding: 16px;
@@ -271,19 +249,11 @@
   color: #1d2939;
 }
 
-.portfolio-not-recommended {
-  margin-top: 14px;
-}
 
-.portfolio-not-recommended summary {
-  cursor: pointer;
-  color: #647083;
-  font-size: 13px;
-}
 
-.portfolio-not-recommended[open] summary {
-  margin-bottom: 10px;
-}
+
+
+
 
 .portfolio-candidate-list.compact .portfolio-candidate {
   background: #fafafa;

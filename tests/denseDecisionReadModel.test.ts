@@ -27,7 +27,7 @@ describe('dense owner decision and schedule membership', () => {
     const today = selectTodayWeb(snapshot, {}, { now: DENSE_NOW, timezone: zone })
     expect(today.decisionCount).toBe(0)
     expect(today.openDecisionCount).toBe(0)
-    expect(today.actionCount).toBeLessThan(20)
+    expect(today.actions.reduce((sum, item) => sum + item.estimatedMinutes, 0)).toBeLessThanOrEqual(today.capacityMinutes!)
     expect(JSON.stringify(snapshot.data.decisionRequests)).toBe(before)
   })
   it('keeps a bounded reminder cancellation selectable when every choice names an active reminder', () => {
@@ -147,7 +147,7 @@ describe('dense owner decision and schedule membership', () => {
     const selected = selectTodayWeb(snapshot, {}, { now: DENSE_NOW, timezone: zone })
     expect(snapshot.data.actions.filter(a => a.status === 'todo')).toHaveLength(361)
     expect(snapshot.data.scheduleNodes).toHaveLength(300)
-    expect(selected.actionCount).toBeGreaterThan(0); expect(selected.actionCount).toBeLessThan(20)
+    expect(selected.actionCount).toBeGreaterThan(0); expect(selected.actions.reduce((sum, item) => sum + item.estimatedMinutes, 0)).toBeLessThanOrEqual(selected.capacityMinutes!)
     expect(selected.decisionCount).toBe(0); expect(selected.openDecisionCount).toBe(0)
     expect(snapshot.data.decisionRequests).toHaveLength(358)
     const schedule = buildScheduleStream(snapshot, { now: DENSE_NOW, timezone: zone, accountKey: 'synthetic', workspaceRevision: '1' })
