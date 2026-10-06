@@ -116,7 +116,7 @@ export function buildConsumerTimePlan(input: {
     throw new Error('Today available time must be between 0 and 1440 minutes.')
   }
   const bounds = dayBounds(today, input.timezone)
-  const available = workIntervals(input.preferences, weekday, bounds, input.timezone)
+  const available = input.useRemainingDayDefault ? undefined : workIntervals(input.preferences, weekday, bounds, input.timezone)
   const fixed = fixedIntervals(input.nodes, bounds)
   const fixedMinutes = unionMinutes(available ? intersectIntervals(fixed, available) : fixed)
   const conflicts: ConsumerTimeConflict[] = []
@@ -152,7 +152,10 @@ export function buildConsumerTimePlan(input: {
   while (windowDay.dayStart < deadlineHorizon) {
     const date = localDateKey(new Date(windowDay.dayStart), input.timezone)
     const day = new Date(`${date}T12:00:00.000Z`).getUTCDay()
-    const windows = workIntervals(input.preferences, day, windowDay, input.timezone)
+    // Today has only its remaining-time/manual budget. Keep legacy work-window
+    // policies for later dates and external planning contracts without rewriting them.
+    const windows = (input.useRemainingDayDefault && date === today ? undefined
+      : workIntervals(input.preferences, day, windowDay, input.timezone))
       ?? [{ start: windowDay.dayStart, end: windowDay.dayEnd }]
     horizonDays.push({ windows, capacity: date === today ? capacityMinutes : capacityForDate(input.preferences, date, day),
       reserved: unionMinutes(intersectIntervals(windows, fixedIntervals(input.nodes, { ...windowDay,

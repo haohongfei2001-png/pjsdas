@@ -55,6 +55,8 @@ import {
   type OpportunityDecisionListRead,
 } from './opportunityDecisionRead.js'
 import TellPjsdasCapture from './TellPjsdasCapture.js'
+import { createCapacityAutosaver, type CapacitySaveState } from './today/capacityAutosave.js'
+import { deviceTimezone as resolveDeviceTimezone, surfaceTimezone, todayCapacityScope } from './today/deviceTodayTime.js'
 import TodayFeature, { type TodayFreshnessView } from './today/TodayFeature.js'
 import { selectTodayWebNormalized } from './today/todayWebSelector.js'
 import { buildScheduleStreamNormalized, type ScheduleEntry } from './schedule/scheduleStream.js'
@@ -72,8 +74,6 @@ import type {
   ScheduleNodeTemporal,
 } from './model.js'
 import type { PJSDASSnapshot } from './snapshot.js'
-import { resolvePlanningTimezone, type TimePlanningPreferences, type WorkWindow } from './timePlanningPreferences.js'
-import TimePlanningSettings from './today/TimePlanningSettings.js'
 import './surfaceConsolidation.css'
 import './interactionDetail.css'
 import './webConsole.css'
@@ -200,7 +200,24 @@ export default function AppV8() {
 
   const surface = route.surface
   const selectedOpportunityId = route.opportunityId
-  const timezone = resolvePlanningTimezone(snapshot?.data.timePlanning, Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC')
+  const deviceTimezone = resolveDeviceTimezone()
+  // Today follows the device's local day; other surfaces retain account planning preferences.
+  const timezone = surfaceTimezone(surface, snapshot?.data.timePlanning, deviceTimezone)
+  const capacityAccount = cloud.session?.user.id ?? 'local'
+  const capacityAccountRef = useRef(capacityAccount)
+  capacityAccountRef.current = capacityAccount
+  const capacityScope = todayCapacityScope(capacityAccount, now, deviceTimezone)
+  const [capacitySaveState, setCapacitySaveState] = useState<CapacitySaveState>({ pending: false })
+  const capacitySaveRef = useRef(setTodayCapacity)
+  capacitySaveRef.current = setTodayCapacity
+  const capacityAutosaver = useRef<ReturnType<typeof createCapacityAutosaver> | null>(null)
+  if (!capacityAutosaver.current) capacityAutosaver.current = createCapacityAutosaver(
+    intent => capacitySaveRef.current(intent.minutes, intent.scope), setCapacitySaveState)
+  useEffect(() => { capacityAutosaver.current!.cancel() }, [capacityScope])
+  useEffect(() => {
+    capacityAutosaver.current!.attach()
+    return () => { capacityAutosaver.current!.detach() }
+  }, [])
 
   useEffect(() => {
     document.title = brandDocumentTitle(route.capture ? 'capture' : surface, lang)
@@ -250,10 +267,14 @@ export default function AppV8() {
   const todayFreshnessRef = useRef(todayFreshness)
   todayFreshnessRef.current = todayFreshness
 
-  async function setTodayCapacity(minutes: number) {
+  async function setTodayCapacity(minutes: number, expectedScope: string) {
     if (!Number.isInteger(minutes) || minutes < 0 || minutes > 1440) throw new Error('今日可用时间应在 0 到 24 小时之间。')
     const currentTime = new Date()
-    const date = localDateKey(currentTime, timezone)
+    const currentTimezone = resolveDeviceTimezone()
+    const date = localDateKey(currentTime, currentTimezone)
+    if (expectedScope !== todayCapacityScope(capacityAccountRef.current, currentTime, currentTimezone)) {
+      throw new Error(zh ? '日期、时区或账号已变化，请重新设置。' : 'The date, timezone or account changed. Please set the time again.')
+    }
     const timestamp = currentTime.toISOString()
     setNow(currentTime)
     if (cloud.session?.user.id && connectedWorkspaceAuthorityEnabled()) {
@@ -264,35 +285,6 @@ export default function AppV8() {
     } else {
       const current = snapshot?.data.timePlanning ?? { version: 1 as const, updatedAt: timestamp }
       await saveLocalTimePlanning({ ...current, dateOverrides: { ...current.dateOverrides, [date]: minutes }, updatedAt: timestamp })
-    }
-    await reload()
-  }
-
-  async function setDefaultCapacity(minutes: number) {
-    if (!Number.isInteger(minutes) || minutes < 0 || minutes > 1440) throw new Error('每日可用时间应在 0 到 24 小时之间。')
-    const timestamp = new Date().toISOString()
-    if (cloud.session?.user.id && connectedWorkspaceAuthorityEnabled()) {
-      const commandId = createConnectedCommandId('set-daily-capacity')
-      if (!snapshot) throw new Error('账号记录尚未读取。')
-      await beginInstantCommand(cloud.session.user.id, snapshot, { commandId, kind: 'set_daily_capacity', minutes })
-      return
-    } else {
-      const current = snapshot?.data.timePlanning ?? { version: 1 as const, updatedAt: timestamp }
-      await saveLocalTimePlanning({ ...current, defaultDailyMinutes: minutes, updatedAt: timestamp })
-    }
-    await reload()
-  }
-
-  async function setWorkWindows(windows: WorkWindow[]) {
-    const timestamp = new Date().toISOString()
-    if (cloud.session?.user.id && connectedWorkspaceAuthorityEnabled()) {
-      const commandId = createConnectedCommandId('set-work-windows')
-      if (!snapshot) throw new Error('账号记录尚未读取。')
-      await beginInstantCommand(cloud.session.user.id, snapshot, { commandId, kind: 'set_work_windows', windows })
-      return
-    } else {
-      const current = snapshot?.data.timePlanning ?? { version: 1 as const, updatedAt: timestamp }
-      await saveLocalTimePlanning({ ...current, weeklyWindows: windows, updatedAt: timestamp })
     }
     await reload()
   }
@@ -828,12 +820,13 @@ export default function AppV8() {
           })}
         </nav>
         <div className="tsui-top-actions">
-          <button className="tsui-tell-button" type="button" onClick={openCapture} disabled={CGR02_TODAY_READ_ONLY}>{zh ? '＋ 告诉 TodayAction' : '＋ Tell TodayAction'}</button>
+          <button className="tsui-tell-button" type="button" aria-label={zh ? '＋ 告诉 TodayAction' : '＋ Tell TodayAction'} onClick={openCapture} disabled={CGR02_TODAY_READ_ONLY}><span aria-hidden="true">＋</span></button>
           <button className="tsui-settings-button" type="button" aria-label={zh ? '设置' : 'Settings'} onClick={() => navigate('/settings')}>⚙</button>
         </div>
       </header>
 
       <main className="main-panel surface-main ultimate-main cgr-main">
+        {capacitySaveState.error && surface !== 'today' ? <div className="tsui-interaction-notice" role="alert">{zh ? '可用时间未保存，请回到今天重试。' : 'Available time was not saved. Return to Today to try again.'}<button type="button" onClick={() => navigate('/today')}>{zh ? '今天' : 'Today'}</button></div> : null}
         {interactionNotice ? <div className="tsui-interaction-notice" role="status">{interactionNotice.message}<button type="button" aria-label={zh ? '关闭提示' : 'Dismiss notice'} onClick={() => setInteractionNotice(undefined)}>×</button></div> : null}
         {surface === 'settings' ? <OriginTransitionNotice onOpenSettings={() => navigate('/settings')} /> : null}
         {loading ? <div className="empty-card">{zh ? '正在读取工作区…' : 'Loading workspace…'}</div> : null}
@@ -841,7 +834,9 @@ export default function AppV8() {
         {!loading && surface === 'today' && todayWeb && scheduleStream ? (
           <TodayFeature
             selection={todayWeb}
-            onSetTodayCapacity={setTodayCapacity}
+            capacityAutosaver={capacityAutosaver.current!}
+            capacitySaveState={capacitySaveState}
+            capacityScope={capacityScope}
             stream={scheduleStream}
             opportunities={opportunities}
             readOnly={CGR02_TODAY_READ_ONLY}
@@ -891,7 +886,7 @@ export default function AppV8() {
           onReturnOpportunity={route.returnOpportunityId ? () => navigate('/library/' + encodeURIComponent(route.returnOpportunityId!)) : undefined}
           onChanged={reload} /> : null}
         {!loading && surface === 'history' ? <ActivitySurface timeline={timeline} /> : null}
-        {!loading && surface === 'settings' ? <SettingsSurface lastImport={lastImport} rules={rules} timePlanning={snapshot?.data.timePlanning} onSetDefaultCapacity={setDefaultCapacity} onSetWorkWindows={setWorkWindows} onChanged={reload} onOpenActivity={() => navigate('/history')} onOpenDataQuality={() => navigate('/decisions')} /> : null}
+        {!loading && surface === 'settings' ? <SettingsSurface lastImport={lastImport} rules={rules} onChanged={reload} onOpenActivity={() => navigate('/history')} onOpenDataQuality={() => navigate('/decisions')} /> : null}
       </main>
 
 
@@ -971,7 +966,7 @@ function ActivitySurface({ timeline }: { timeline: TimelineRecord[] }) {
   return <section className="surface-page"><SurfaceHeader eyebrow="HISTORY" title={zh ? '历史与审计' : 'History & audit'} text={zh ? '这里只保留发生过什么。日常行动和需要你决定的事分别留在 Today 与 Decisions。' : 'This is the audit trail only. Daily action stays in Today and genuine decisions stay in Decisions.'} /><TimelineView records={timeline} /></section>
 }
 
-function SettingsSurface({ lastImport, rules, timePlanning, onSetDefaultCapacity, onSetWorkWindows, onChanged, onOpenActivity, onOpenDataQuality }: { lastImport?: ImportMeta; rules: DecisionRules; timePlanning?: TimePlanningPreferences; onSetDefaultCapacity: (minutes: number) => Promise<void>; onSetWorkWindows: (windows: WorkWindow[]) => Promise<void>; onChanged: () => Promise<void>; onOpenActivity: () => void; onOpenDataQuality: () => void }) {
+function SettingsSurface({ lastImport, rules, onChanged, onOpenActivity, onOpenDataQuality }: { lastImport?: ImportMeta; rules: DecisionRules; onChanged: () => Promise<void>; onOpenActivity: () => void; onOpenDataQuality: () => void }) {
   const { lang } = useUiLanguage()
   const zh = lang === 'zh'
   const [preview, setPreview] = useState<ImportBundle | null>(null)
@@ -1004,10 +999,6 @@ function SettingsSurface({ lastImport, rules, timePlanning, onSetDefaultCapacity
 
       <div className="settings-preferences tsui-panel" aria-label={zh ? '偏好与数据' : 'Preferences and data'}>
 
-      <details className="settings-group">
-        <summary><div><strong>{zh ? '可用时间' : 'Available time'}</strong><span>{zh ? '默认每天多久，以及可选工作时段' : 'Usual daily time and optional work windows'}</span></div></summary>
-        <div className="settings-group-body"><TimePlanningSettings value={timePlanning} onSetDefault={onSetDefaultCapacity} onSetWindows={onSetWorkWindows} /></div>
-      </details>
 
       <details className="settings-group">
         <summary><div><strong>{zh ? '岗位发现偏好' : 'Discovery preferences'}</strong><span>{zh ? '想找的岗位、城市与公司' : 'Roles, locations and companies'}</span></div></summary>

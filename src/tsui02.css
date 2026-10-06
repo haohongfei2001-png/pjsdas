@@ -94,26 +94,16 @@
 .tsui-capacity summary::-webkit-details-marker{display:none}
 .tsui-capacity summary:focus-visible{outline:2px solid #3264cf;outline-offset:3px}
 .tsui-capacity form{position:absolute;right:0;top:calc(100% + 6px);z-index:4;display:flex;flex-wrap:wrap;align-items:end;gap:8px;box-sizing:border-box;width:min(320px,calc(100vw - 28px));min-width:0;padding:12px;border:1px solid #dfe5f0;border-radius:10px;background:#fff;box-shadow:0 8px 24px #1c2c4a1a}
-.tsui-capacity-note{overflow-wrap:anywhere;flex-basis:100%;max-width:290px;margin:0;line-height:1.5;font-size:.75rem}
-.tsui-capacity-presets{display:flex;gap:8px;flex-basis:100%}
+.tsui-capacity-options{display:flex;flex-wrap:wrap;align-items:center;gap:8px;width:100%}
+.tsui-capacity-options>button{flex:0 0 auto}
+.tsui-capacity .tsui-capacity-custom{display:flex;flex:1 1 90px;align-items:center;gap:5px;min-width:0}
+.tsui-capacity-custom span{margin:0;font:inherit;flex:0 0 auto}
+.tsui-capacity .tsui-capacity-custom input{min-width:0;width:100%;box-sizing:border-box}
 .tsui-capacity button:disabled{opacity:.55;cursor:default}
-.tsui-capacity-override{margin:0;color:#53627b;font-size:.8125rem;line-height:1.5}
 .tsui-capacity label{display:grid;gap:4px;max-width:100%;white-space:normal}
 .tsui-capacity input{width:80px;min-height:36px;border:1px solid #c7d1e2;border-radius:7px;padding:0 8px;font:inherit}
 .tsui-capacity button{min-height:36px;border:0;border-radius:7px;padding:0 12px;background:#3264cf;color:#fff;font:inherit;cursor:pointer}
 .tsui-capacity form [role=alert]{display:block;flex-basis:100%;color:#a6403c}
-.tsui-planning-settings{display:grid;gap:12px;color:#53627b;font-size:.8125rem}
-.tsui-planning-settings p{margin:0;line-height:1.55}
-.tsui-planning-settings form,.tsui-planning-actions,.tsui-work-window{display:flex;flex-wrap:wrap;align-items:end;gap:9px}
-.tsui-planning-settings label{display:grid;gap:5px;min-width:110px}
-.tsui-planning-settings input,.tsui-planning-settings select{min-height:38px;padding:5px 8px;border:1px solid #c7d1e2;border-radius:8px;background:#fff;color:#24344d;font:inherit}
-.tsui-planning-settings input[type=number]{width:110px}
-.tsui-planning-settings button{min-height:38px;padding:6px 11px;border:1px solid #c7d1e2;border-radius:8px;background:#fff;color:#24344d;font:inherit;cursor:pointer}
-.tsui-planning-settings button[type=submit],.tsui-planning-actions button:last-child{border-color:#3264cf;background:#3264cf;color:#fff}
-.tsui-planning-settings button:disabled{opacity:.55;cursor:default}
-.tsui-work-windows{display:grid;gap:10px;padding-top:8px;border-top:1px solid #e5e9f1}
-.tsui-work-window{padding:8px;border:1px solid #e5e9f1;border-radius:9px}
-.tsui-planning-settings [role=alert]{color:#a6403c}
 .tsui-task-panel .tsui-panel-header p,.tsui-node-panel .tsui-panel-header p{display:none}
 .tsui-task-panel .tsui-panel-header,.tsui-node-panel .tsui-panel-header{min-height:64px}
 .tsui-task-panel .tsui-panel-header>span{background:transparent;color:#5d6b82;min-width:auto;height:auto;font-weight:500}
@@ -261,3 +251,8 @@
 
 .tsui-interaction-notice{display:flex;align-items:center;gap:8px;margin:0 0 8px;font-size:.8125rem;color:#694b2b}.tsui-interaction-notice button{border:0;background:transparent;padding:6px;color:inherit}
 .cgr-correction-review{min-width:0;overflow-wrap:anywhere}.cgr-correction-review input[type=file]{display:block;width:100%;margin:8px 0 14px}.cgr-correction-entries{list-style:none;padding:0;max-height:230px;overflow:auto}.cgr-correction-entries li{margin:8px 0}.cgr-correction-entries button{width:100%;text-align:left;padding:10px;border:1px solid #dbe3ee;border-radius:8px;background:#fff;min-height:44px}.cgr-correction-toggle{margin:0 0 14px;padding:8px 12px;min-height:44px;border:1px solid #dbe3ee;border-radius:8px;background:#fff}.cgr-correction-review button:disabled{opacity:.55}.cgr-correction-review .cgr-understanding{padding:12px}.cgr-correction-review input[type=checkbox]{margin-right:8px}
+
+/* The requested topbar capture affordance remains a labelled 44px icon button. */
+.cgr-app-shell .tsui-topbar .tsui-tell-button{display:grid;place-items:center;flex:0 0 44px;width:44px;min-width:44px;height:44px;min-height:44px;padding:0;color:#fff;font-size:24px;line-height:1}
+.cgr-app-shell .tsui-topbar .tsui-tell-button::before{display:none}
+.cgr-app-shell .tsui-topbar .tsui-top-actions{justify-content:flex-end}

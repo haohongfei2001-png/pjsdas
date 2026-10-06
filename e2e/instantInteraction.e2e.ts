@@ -19,7 +19,7 @@ test('dense capacity and completion settle before delayed server confirmation', 
   await page.getByRole('spinbutton', { name: '今天可用小时' }).fill('5')
   const capacityMs = await page.evaluate(async () => {
     const started = performance.now()
-    ;(document.querySelector('.tsui-capacity button[type=submit]') as HTMLButtonElement).click()
+    ;(document.querySelector('.tsui-capacity form') as HTMLFormElement).requestSubmit()
     while (!document.querySelector('.tsui-capacity summary')?.textContent?.includes('5 小时') && performance.now() - started < 5000) await new Promise(requestAnimationFrame)
     return performance.now() - started
   })
@@ -512,7 +512,7 @@ test('unchanged explicit capacity confirms without leaving a permanent outbox en
   server.snapshot.data.timePlanning!.dateOverrides = { '2026-10-01': 360 }
   await start(page)
   await page.locator('.tsui-capacity summary').click()
-  await page.getByRole('button', { name: '保存', exact: true }).click()
+  await page.locator('.tsui-capacity').getByRole('button', { name: '6 小时', exact: true }).click()
   await expect(page.locator('.tsui-capacity')).not.toHaveAttribute('open', '')
   await expect.poll(() => pendingCount(page)).toBe(0)
   expect(server.sent).toHaveLength(1)
@@ -528,7 +528,7 @@ for (const baseline of [undefined, 360]) test(`rejected earlier capacity unwinds
   for (const hours of ['5', '4']) {
     await page.locator('.tsui-capacity summary').click()
     await page.getByRole('spinbutton', { name: '今天可用小时' }).fill(hours)
-    await page.getByRole('button', { name: '保存', exact: true }).click()
+    await page.locator('.tsui-capacity input').press('Enter')
     await expect(page.locator('.tsui-capacity summary')).toContainText(`${hours} 小时`)
   }
   await expect.poll(() => pendingCount(page)).toBe(0)
@@ -650,7 +650,7 @@ test('explicit unchanged local capacity still updates a newer authoritative pref
   await start(page)
   server.snapshot.data.timePlanning!.dateOverrides = { '2026-10-01': 420 }
   await page.locator('.tsui-capacity summary').click()
-  await page.getByRole('button', { name: '保存', exact: true }).click()
+  await page.locator('.tsui-capacity').getByRole('button', { name: '6 小时', exact: true }).click()
   await expect.poll(() => pendingCount(page)).toBe(0)
   expect(server.sent).toHaveLength(1)
   expect(server.snapshot.data.timePlanning!.dateOverrides?.['2026-10-01']).toBe(360)
@@ -668,7 +668,7 @@ test('three optimistic edits retain latest intent through acknowledgements in de
   for (const hours of ['5', '4', '3']) {
     await page.locator('.tsui-capacity summary').click()
     await page.getByRole('spinbutton', { name: '今天可用小时' }).fill(hours)
-    await page.getByRole('button', { name: '保存', exact: true }).click()
+    await page.locator('.tsui-capacity input').press('Enter')
     await expect(page.locator('.tsui-capacity summary')).toContainText(`${hours} 小时`)
   }
   await expect.poll(() => pendingCount(page), { timeout: 10000 }).toBe(2)
@@ -707,7 +707,7 @@ test('unrelated rejected capacity preserves a completed task Undo control', asyn
   server.denyNext()
   await page.locator('.tsui-capacity summary').click()
   await page.getByRole('spinbutton', { name: '今天可用小时' }).fill('5')
-  await page.getByRole('button', { name: '保存', exact: true }).click()
+  await page.locator('.tsui-capacity input').press('Enter')
   await expect(page.locator('.tsui-interaction-notice')).toContainText('这次修改未被接受')
   await page.locator('.action-undo-toast button').click()
   await expect(page.locator('[data-action-id="dense-action-0"]')).toBeVisible()

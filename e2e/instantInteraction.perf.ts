@@ -43,7 +43,7 @@ test('instant interactions meet p95 budgets without scaling with historical time
       const sample = await page.evaluate(async hours => {
         const nativeStarted = (window as any).nativeTimingNow()
         const started = performance.now()
-        ;(document.querySelector('.tsui-capacity button[type=submit]') as HTMLButtonElement).click()
+        ;(document.querySelector('.tsui-capacity form') as HTMLFormElement).requestSubmit()
         while (!document.querySelector('.tsui-capacity summary')?.textContent?.includes(`${hours} 小时`) && performance.now() - started < 5000) await new Promise(requestAnimationFrame)
         const acknowledgement = performance.now() - started
         await new Promise(requestAnimationFrame)

@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import { createSnapshot } from '../src/snapshot.js'
 import { validateSnapshot } from '../src/snapshot.js'
+import { buildConsumerTimePlan } from '../src/today/consumerTimePlan.js'
+import { rankActions } from '../src/decisionV3.js'
 import { selectTodayWeb } from '../src/today/todayWebSelector.js'
 import type { Action, ScheduleNode } from '../src/model.js'
 import { applyUserDomainCommand } from '../src/domainCommands.js'
@@ -86,7 +88,7 @@ describe('ZMC-01 owner time planning', () => {
     expect(selected.actions.reduce((sum, item) => sum + item.estimatedMinutes, 0)).toBeLessThanOrEqual(480)
   })
 
-  it('uses actual work windows and reserves only fixed commitments inside them', () => {
+  it('keeps legacy external work windows but removes their hidden limit from Today', () => {
     const snapshot = source(Array.from({ length: 20 }, (_, i) => flexible(`window-task-${i}`)), [
       node('inside', '2026-09-25T02:00:00.000Z', '2026-09-25T03:00:00.000Z'),
       node('outside', '2026-09-25T06:00:00.000Z', '2026-09-25T07:00:00.000Z'),
@@ -95,19 +97,29 @@ describe('ZMC-01 owner time planning', () => {
       weeklyWindows: [{ weekday: 5, startMinute: 540, endMinute: 720 }] }
     const selected = selectTodayWeb(snapshot, {}, { now: new Date('2026-09-25T01:00:00.000Z'), timezone: ZONE })
     expect(selected.capacityMinutes).toBe(900)
-    expect(selected.actionCount).toBe(4)
+    expect(selected.actionCount).toBe(8)
     expect(selected.criticalWarnings).toEqual([])
+    const external = buildConsumerTimePlan({ ranked: rankActions(snapshot.data.actions, [], new Date('2026-09-25T01:00:00.000Z')),
+      nodes: snapshot.data.scheduleNodes!, preferences: snapshot.data.timePlanning, now: new Date('2026-09-25T01:00:00.000Z'), timezone: ZONE })
+    expect(external.capacityMinutes).toBe(180)
+    expect(external.planned).toHaveLength(4)
   })
 
-  it('does not put work into a remaining window occupied by a fixed meeting', () => {
+  it('allows Today work after an old work window while preserving fixed commitments', () => {
     const snapshot = source(Array.from({ length: 4 }, (_, i) => flexible(`late-window-${i}`)), [
       node('meeting', '2026-09-25T02:00:00.000Z', '2026-09-25T03:00:00.000Z'),
     ])
     snapshot.data.timePlanning = { version: 1, updatedAt: NOW.toISOString(), defaultDailyMinutes: 120,
       weeklyWindows: [{ weekday: 5, startMinute: 540, endMinute: 660 }] }
     const selected = selectTodayWeb(snapshot, {}, { now: new Date('2026-09-25T02:00:00.000Z'), timezone: ZONE })
-    expect(selected.actions).toEqual([])
+    expect(selected.actions).toHaveLength(4)
     expect(selected.criticalWarnings).toEqual([])
+    const external = buildConsumerTimePlan({ ranked: rankActions(snapshot.data.actions, [], new Date('2026-09-25T02:00:00.000Z')),
+      nodes: snapshot.data.scheduleNodes!, preferences: snapshot.data.timePlanning, now: new Date('2026-09-25T02:00:00.000Z'), timezone: ZONE })
+    expect(external.planned).toEqual([])
+    const now = new Date('2026-09-25T15:00:00.000Z')
+    snapshot.data.scheduleNodes = [node('late-meeting', now.toISOString(), '2026-09-25T16:00:00.000Z')]
+    expect(selectTodayWeb(snapshot, {}, { now, timezone: ZONE }).actions).toEqual([])
   })
 
   it('protects a shared application choice deadline even with a legacy user-plan node', () => {

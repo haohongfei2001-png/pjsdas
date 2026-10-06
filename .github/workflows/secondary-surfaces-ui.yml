@@ -22,7 +22,9 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     env:
-      TA_SECONDARY_BASE: 6f537a79adeaf076d9caeb9b1b35f0d3f310fab6
+      # Owner-approved + button and its natural responsive row-height change.
+      # This is an actual reviewed runtime commit, never a transformed screenshot.
+      TA_SECONDARY_BASE: 1ba685209e81d6185456aa4c0eacc1c4e82663c3
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -32,7 +34,7 @@ jobs:
       - run: npm ci
       - run: npm install --no-save --package-lock=false @playwright/test@1.63.0
       - run: npx playwright install --with-deps chromium
-      - name: Render the exact deployed main reference
+      - name: Render the fixed approved compact-header reference
         shell: bash
         run: |
           set -euo pipefail

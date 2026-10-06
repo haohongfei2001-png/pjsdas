@@ -85,7 +85,7 @@ async function capture(page: Page, label: string, width: number, scale = 100, pr
   const bytes = await page.screenshot({ path: `${evidence}/${name}`, fullPage: overlay === 0, animations: 'disabled', caret: 'hide' })
   if (protectMain && phase === 'after') {
     const baseline = await readFile(`secondary-ui-before/${name}`)
-    expect(digest(bytes), `${label}: main/body pixels must remain identical to baseline main 1fa12d02`).toBe(digest(baseline))
+    expect(digest(bytes), `${label}: all main pixels must match the approved compact-header reference 1ba68520`).toBe(digest(baseline))
   }
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)
   const overflowNodes = overflow > 1 ? await page.evaluate(() => [...document.querySelectorAll<HTMLElement>('body *')]
@@ -188,8 +188,9 @@ for (const width of [1440, 390, 320]) test(`details and settings retain readable
   await page.goto('/pjsdas/settings')
   await expect(page.getByRole('heading', { name: '账号与跨设备数据', exact: true })).toBeVisible()
   await capture(page, 'SETTINGS_OVERVIEW', width, width === 320 ? 200 : 100)
-  await page.locator('.settings-group > summary').filter({ hasText: '可用时间' }).click()
-  await capture(page, 'SETTINGS_PLANNING', width, width === 320 ? 200 : 100)
+  await expect(page.locator('.settings-group > summary').filter({ hasText: '可用时间' })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: '保存时段', exact: true })).toHaveCount(0)
+  await capture(page, 'SETTINGS_PLANNING_RETIRED', width, width === 320 ? 200 : 100)
   await page.locator('.settings-group > summary').filter({ hasText: '岗位发现偏好' }).click()
   await expect(page.locator('.discovery-profile-grid')).toBeVisible()
   await capture(page, 'SETTINGS_DISCOVERY', width, width === 320 ? 200 : 100)
