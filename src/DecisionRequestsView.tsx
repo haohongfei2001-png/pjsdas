@@ -128,7 +128,7 @@ export default function DecisionRequestsView({
               ? (zh ? '原始记录和来源证据已保留在活动记录中；系统不会要求你猜测缺失事实。' : 'The original record and source evidence remain in activity history; no missing fact needs to be guessed.')
               : (zh ? '查看所有待决定事项，或返回刚才的机会。' : 'View all open decisions, or return to the opportunity.')
             : (zh ? '这就是正常状态。TodayAction 会继续自动处理明确事实。' : 'That is the normal state. TodayAction keeps handling clear facts automatically.')}</span>
-          {quarantinedFocused ? <a href={(import.meta.env.BASE_URL ?? '/') + 'history'}>{zh ? '查看活动记录' : 'View activity'}</a> : null}
+          {quarantinedFocused ? <a href={(import.meta.env.BASE_URL ?? '/') + 'history'}>{zh ? '查看操作记录' : 'View operation records'}</a> : null}
         </div>
       ) : (
         <div className="ultimate-decision-list">
@@ -170,8 +170,8 @@ export default function DecisionRequestsView({
       )}
       {classified.dataQuality.length > 0 && !focusRequestId ? <details className="ultimate-quiet-state">
         <summary>{zh ? '历史待核对 / 数据质量' : 'Historical review / Data quality'} · {classified.dataQuality.length}</summary>
-        <p>{zh ? '这些来源记录仍保留在历史与审计中，但目前缺少可由选择补齐的事实，或已不属于当前任务。可在活动记录中查看来源和处理过程。' : 'Source records remain in history and audit. They do not currently offer an answerable business choice or are no longer current.'}</p>
-        <a href={(import.meta.env.BASE_URL ?? '/') + 'history'}>{zh ? '查看活动记录' : 'View activity'}</a>
+        <p>{zh ? '这些来源记录仍保留在历史与审计中，但目前缺少可由选择补齐的事实，或已不属于当前任务。可在设置的操作记录中查看来源和处理过程。' : 'Source records remain in history and audit. They do not currently offer an answerable business choice or are no longer current.'}</p>
+        <a href={(import.meta.env.BASE_URL ?? '/') + 'history'}>{zh ? '查看操作记录' : 'View operation records'}</a>
       </details> : null}
     </section>
   )

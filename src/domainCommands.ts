@@ -401,12 +401,12 @@ export function applyUserDomainCommand(
       syncScheduleNodeForActionStatus(next.data, apply.id, 'done', occurredAt)
     }
     upsertProcess(next, target, occurredAt)
-    appendTimeline(next, commandTimeline(command, occurredAt, {
+    appendTimeline(next, { ...commandTimeline(command, occurredAt, {
       kind: 'application_submitted',
       title: '完成投递',
       opportunity: target,
       changes: { stage: { before: beforeStage, after: 'screening' } },
-    }), command)
+    }), recordedAt: timestamp }, command)
     finalizeSnapshot(next, timestamp)
     return {
       status: 'APPLIED',
@@ -842,12 +842,12 @@ export function applyUserDomainCommand(
         item.updatedAt = occurredAt
       }
     }
-    appendTimeline(next, commandTimeline(command, occurredAt, {
+    appendTimeline(next, { ...commandTimeline(command, occurredAt, {
       title: '放弃岗位',
       opportunity: target,
       detail: '这是用户参与决定，不改变招聘方流程事实，也不删除历史。',
       changes: { participationStatus: { before, after: 'abandoned' } },
-    }), command)
+    }), recordedAt: timestamp }, command)
     finalizeSnapshot(next, timestamp)
     return {
       status: 'APPLIED',

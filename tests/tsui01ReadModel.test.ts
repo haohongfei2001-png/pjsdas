@@ -109,7 +109,8 @@ describe('TSUI-01 complete Web read models', () => {
     const b = buildScheduleStream(source, { accountKey: 'B', workspaceRevision: 'r1', timezone: TZ, now: NOW })
     const changed = buildScheduleStream(source, { accountKey: 'A', workspaceRevision: 'r2', timezone: TZ, now: NOW })
     expect(a.sections.upcoming.filter((item) => item.occurrenceId === 'interview-1')).toHaveLength(1)
-    expect(a.sections.history.some((item) => item.nodeId === old.id)).toBe(true)
+    expect(a.sections.history.some((item) => item.nodeId === old.id)).toBe(false)
+    expect(source.data.scheduleNodes).toContainEqual(old)
     const cursor = readScheduleWindow(a, 'upcoming', 1).nextCursor!
     expect(() => readScheduleWindow(b, 'upcoming', 1, cursor)).toThrow(/different account/)
     expect(() => readScheduleWindow(changed, 'upcoming', 1, cursor)).toThrow(/different account/)
@@ -128,9 +129,8 @@ describe('TSUI-01 complete Web read models', () => {
     const source = snapshot([action('done-legacy', { status: 'done', updatedAt: NOW.toISOString() })], [], [recent, late])
     const stream = buildScheduleStream(source, { accountKey: 'A', workspaceRevision: 'r1', timezone: TZ, now: NOW })
     expect(stream.sections.history.map((item) => item.id)).toEqual(['fact:late', 'fact:recent'])
-    const legacy = stream.sections.undated.find((item) => item.id === 'action:done-legacy')
-    expect(legacy?.occurredAt).toBeUndefined()
-    expect(legacy?.date).toBeUndefined()
+    expect(stream.sections.undated.some((item) => item.id === 'action:done-legacy')).toBe(false)
+    expect(source.data.actions[0].status).toBe('done')
   })
 
   it('keeps more than four actionable decisions as separate rows', () => {
@@ -156,7 +156,7 @@ describe('TSUI-01 complete Web read models', () => {
 
   it('dates completed legacy nodes from exact completion facts without creating duplicate history', () => {
     const completed = node('action:prep-1', '2026-09-24', {
-      state: 'completed', completedAt: undefined, relatedActionIds: ['prep-1'],
+      state: 'completed', kind: 'prep_trigger', completedAt: undefined, relatedActionIds: ['prep-1'],
       temporal: { shape: 'date_only', precision: 'date', timezone: TZ, date: '2026-09-24', resolutionBasis: 'legacy_projection' },
     })
     const log: TimelineRecord = {
@@ -185,10 +185,10 @@ describe('TSUI-01 complete Web read models', () => {
     }
     const stream = buildScheduleStream(snapshot([
       action('assessment-action', { status: 'done' }),
-    ], [completed], [log]), { accountKey: 'A', workspaceRevision: 'r1', timezone: TZ, now: NOW })
+    ], [completed], [log, { ...log, id: 'occurrence-completed', kind: 'semantic_intake_applied', scheduleNodeId: completed.id, commandOperation: 'complete_occurrence' }]), { accountKey: 'A', workspaceRevision: 'r1', timezone: TZ, now: NOW })
     expect(stream.sections.history.map((item) => item.id)).toEqual([`node:${completed.id}`])
     expect(stream.sections.undated).toEqual([])
-    expect(stream.sections.history[0].sourceRefs).toContain('timeline:action-log')
+    expect(stream.sections.history[0].sourceRefs).toContain('timeline:occurrence-completed')
   })
   it('keeps a legacy completed action undated when its only timestamp is a system backfill', () => {
     const backfill: TimelineRecord = {
@@ -202,7 +202,7 @@ describe('TSUI-01 complete Web read models', () => {
     const stream = buildScheduleStream(snapshot([
       action('legacy-done', { status: 'done', updatedAt: CREATED }),
     ], [], [backfill]), { accountKey: 'A', workspaceRevision: 'r1', timezone: TZ, now: NOW })
-    expect(stream.sections.undated.map((entry) => entry.id)).toContain('action:legacy-done')
+    expect(stream.sections.undated.map((entry) => entry.id)).not.toContain('action:legacy-done')
     expect(stream.sections.history.some((entry) => entry.id === 'fact:' + backfill.id)).toBe(false)
   })
 

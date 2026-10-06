@@ -883,7 +883,7 @@ export default function AppV8() {
           onShowAll={() => navigate('/decisions')}
           onReturnOpportunity={route.returnOpportunityId ? () => navigate('/library/' + encodeURIComponent(route.returnOpportunityId!)) : undefined}
           onChanged={reload} /> : null}
-        {!loading && surface === 'history' ? <ActivitySurface timeline={timeline} /> : null}
+        {!loading && surface === 'history' ? <ActivitySurface timeline={timeline} onBack={() => navigate('/settings')} /> : null}
         {!loading && surface === 'settings' ? <SettingsSurface lastImport={lastImport} onChanged={reload} onOpenActivity={() => navigate('/history')} onOpenDataQuality={() => navigate('/decisions')} /> : null}
       </main>
 
@@ -958,10 +958,14 @@ function PreparePanel({ prep }: { prep: Prep[] }) {
   )
 }
 
-function ActivitySurface({ timeline }: { timeline: TimelineRecord[] }) {
+function ActivitySurface({ timeline, onBack }: { timeline: TimelineRecord[]; onBack: () => void }) {
   const { lang } = useUiLanguage()
   const zh = lang === 'zh'
-  return <section className="surface-page"><SurfaceHeader eyebrow="HISTORY" title={zh ? '历史与审计' : 'History & audit'} text={zh ? '这里只保留发生过什么。日常行动和需要你决定的事分别留在 Today 与 Decisions。' : 'This is the audit trail only. Daily action stays in Today and genuine decisions stay in Decisions.'} /><TimelineView records={timeline} /></section>
+  return <section className="surface-page operation-records-surface">
+    <button className="tsui-library-back" type="button" onClick={onBack}>← {zh ? '返回设置' : 'Back to Settings'}</button>
+    <SurfaceHeader eyebrow="SETTINGS" title={zh ? '操作记录' : 'Operation records'} text={zh ? '按记录时间查看变更与来源' : 'Changes and sources, ordered by recorded time'} />
+    <TimelineView records={timeline} />
+  </section>
 }
 
 function SettingsSurface({ lastImport, onChanged, onOpenActivity, onOpenDataQuality }: { lastImport?: ImportMeta; onChanged: () => Promise<void>; onOpenActivity: () => void; onOpenDataQuality: () => void }) {
@@ -1017,8 +1021,8 @@ function SettingsSurface({ lastImport, onChanged, onOpenActivity, onOpenDataQual
       </details>
 
       <details className="settings-group">
-        <summary><div><strong>{zh ? '历史与审计' : 'History & audit'}</strong><span>{zh ? '操作记录与待核对信息' : 'Activity and items to review'}</span></div></summary>
-        <div className="settings-group-body"><button className="settings-secondary-link" type="button" onClick={onOpenActivity}>{zh ? '查看活动记录' : 'Open activity history'}</button><button className="settings-secondary-link" type="button" onClick={onOpenDataQuality}>{zh ? '历史待核对 / 数据质量' : 'Historical review / Data quality'}</button></div>
+        <summary><div><strong>{zh ? '操作记录' : 'Operation records'}</strong><span>{zh ? '变更、来源与待核对信息' : 'Changes, sources and items to review'}</span></div></summary>
+        <div className="settings-group-body"><button className="settings-secondary-link" type="button" onClick={onOpenActivity}>{zh ? '查看操作记录' : 'Open operation records'}</button><button className="settings-secondary-link" type="button" onClick={onOpenDataQuality}>{zh ? '历史待核对 / 数据质量' : 'Historical review / Data quality'}</button></div>
       </details>
 
       <details className="settings-group">

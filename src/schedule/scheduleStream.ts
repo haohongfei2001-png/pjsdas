@@ -39,6 +39,8 @@ export interface ScheduleStream {
   sections: Record<ScheduleSection, ScheduleEntry[]>
   counts: Record<ScheduleSection, number>
   positions: Record<ScheduleSection, Map<string, number>>
+  /** Task status receipts for Today; never calendar events. */
+  completedActions?: ScheduleEntry[]
 }
 
 export interface ScheduleCursor {
@@ -54,18 +56,15 @@ export interface ScheduleWindow {
   nextCursor?: ScheduleCursor
 }
 
-const BUSINESS_KINDS = new Set<TimelineRecord['kind']>([
-  'application_submitted',
-  'process_event_recorded',
-  'process_event_deleted',
-  'process_closed',
-  'action_status_changed',
-  'decision_resolved',
-  'opportunity_added',
-  'opportunity_updated',
-  'opportunity_renamed',
-  'semantic_undo_applied',
+// Only typed real-world facts belong in the calendar. All operation records
+// remain unchanged in Timeline/Settings, including action checkboxes and Undo.
+const EVENT_FACT_KINDS = new Set<TimelineRecord['kind']>([
+  'application_submitted', 'process_event_recorded', 'process_closed',
 ])
+
+function recruitingNode(node: ScheduleNode) {
+  return ['application_deadline', 'assessment', 'written_test', 'interview'].includes(node.kind)
+}
 
 // Legacy IndexedDB backfill records a status seen at upgrade time, not a proven completion instant.
 function syntheticActionBackfill(item: TimelineRecord) {
@@ -88,7 +87,7 @@ function temporalDate(node: ScheduleNode, timezone: string) {
 
 function nodeEntry(node: ScheduleNode, state: ScheduleNodeState, section: ScheduleSection, date?: string): ScheduleEntry {
   const occurredAt = section === 'history'
-    ? node.completedAt ?? node.cancelledAt ?? (node.supersededByNodeId ? node.updatedAt : undefined)
+    ? state === 'completed' ? node.completedAt : undefined
     : undefined
   return {
     id: `node:${node.id}`,
@@ -136,14 +135,27 @@ export function buildScheduleStreamNormalized(
   try { new Intl.DateTimeFormat('en-US', { timeZone: context.timezone }) } catch { throw new Error('Schedule timezone is invalid.') }
   const today = localDateKey(now, context.timezone)
   const sections: ScheduleStream['sections'] = { upcoming: [], unresolved: [], history: [], undated: [], no_deadline: [] }
+  const timeline = snapshot.data.timeline ?? []
+  const completedActions: ScheduleEntry[] = []
+  const completionFacts = new Map<string, TimelineRecord[]>()
+  const occurrenceFacts = new Map<string, TimelineRecord[]>()
+  const submissions = new Map<string, TimelineRecord[]>()
+  for (const fact of timeline) {
+    if (fact.kind === 'action_status_changed' && fact.actionId && !syntheticActionBackfill(fact)) {
+      completionFacts.set(fact.actionId, [...(completionFacts.get(fact.actionId) ?? []), fact])
+    }
+    if (fact.kind === 'semantic_intake_applied' && fact.scheduleNodeId && ['complete_occurrence', 'cancel_occurrence'].includes(fact.commandOperation ?? '')) {
+      occurrenceFacts.set(fact.scheduleNodeId, [...(occurrenceFacts.get(fact.scheduleNodeId) ?? []), fact])
+    }
+    if (fact.kind === 'application_submitted' && fact.opportunityId) {
+      submissions.set(fact.opportunityId, [...(submissions.get(fact.opportunityId) ?? []), fact])
+    }
+  }
   const latest = new Map<string, ScheduleNode>()
   for (const node of snapshot.data.scheduleNodes ?? []) {
     const prior = latest.get(node.occurrenceId)
     if (!prior || node.version > prior.version || (node.version === prior.version && node.id > prior.id)) latest.set(node.occurrenceId, node)
   }
-  const representedNodeIds = new Set<string>()
-  const representedProcessEventIds = new Set<string>()
-  const representedCompletedActionIds = new Set<string>()
   const nodeEntries = new Map<string, ScheduleEntry>()
   const completedActionEntries = new Map<string, ScheduleEntry>()
   const processEventEntries = new Map<string, ScheduleEntry>()
@@ -153,7 +165,8 @@ export function buildScheduleStreamNormalized(
     for (const actionId of candidate.relatedActionIds) explicitNodeForAction.set(actionId, candidate)
   }
   const legacyAliases: Array<{ legacy: ScheduleNode; primary: ScheduleNode }> = []
-  for (const node of latest.values()) {
+  for (const storedNode of latest.values()) {
+    let node = storedNode
     const onlyActionId = node.relatedActionIds.length === 1 ? node.relatedActionIds[0] : undefined
     const explicit = onlyActionId && node.temporal.resolutionBasis === 'legacy_projection'
       && node.occurrenceId === `action:${onlyActionId}`
@@ -163,15 +176,42 @@ export function buildScheduleStreamNormalized(
       legacyAliases.push({ legacy: node, primary: explicit })
       continue
     }
+    // A recruiting action checkbox is an operation, not proof that an
+    // application/test/interview happened. Project conservatively without
+    // changing the archived node or its operation/Undo evidence.
+    const occurrenceEvidence = occurrenceFacts.get(node.id) ?? []
+    const completionTime = validInstant(node.completedAt)?.getTime()
+    const evidenceMatchesCompletion = (fact: TimelineRecord) => {
+      const time = validInstant(fact.occurredAt)?.getTime()
+      return time !== undefined && time <= now.getTime() && (completionTime === undefined || time === completionTime)
+    }
+    const typedCompletion = occurrenceEvidence.some(fact => fact.commandOperation === 'complete_occurrence' && evidenceMatchesCompletion(fact))
+      || Boolean(node.kind === 'application_deadline' && node.opportunityId
+        && submissions.get(node.opportunityId)?.some(evidenceMatchesCompletion))
+    const actionReceipts = node.relatedActionIds.flatMap(id => completionFacts.get(id) ?? [])
+    const checkboxCompletion = actionReceipts.some(fact => fact.changes?.status?.after === 'done'
+      && (!node.completedAt || fact.occurredAt === node.completedAt))
+    if (node.state === 'completed' && recruitingNode(node) && !typedCompletion
+      && (checkboxCompletion || node.temporal.resolutionBasis === 'legacy_projection' && !node.completedAt)) {
+      node = { ...node, state: 'scheduled', completedAt: undefined }
+    }
+    if (node.state === 'cancelled' && recruitingNode(node)
+      && !occurrenceEvidence.some(fact => fact.commandOperation === 'cancel_occurrence')
+      && actionReceipts.some(fact => fact.changes?.status?.after === 'skipped'
+        && (!node.cancelledAt || fact.occurredAt === node.cancelledAt))) {
+      node = { ...node, state: 'scheduled', cancelledAt: undefined }
+    }
     const state = effectiveScheduleNodeState(node, now, context.timezone)
     if (state === 'completed' || state === 'cancelled') {
-      const occurredAt = node.completedAt ?? node.cancelledAt
-      const date = validInstant(occurredAt) ? localDateKey(new Date(occurredAt!), context.timezone) : undefined
+      const occurredAt = state === 'completed' ? node.completedAt : undefined
+      // Cancellation records the operation elsewhere; this row is the original
+      // arrangement and therefore retains its planned time.
+      const date = state === 'cancelled' ? temporalDate(node, context.timezone)
+        : validInstant(occurredAt) ? localDateKey(new Date(occurredAt!), context.timezone) : undefined
       const entry = nodeEntry(node, state, date ? 'history' : 'undated', date)
       sections[entry.section].push(entry)
       nodeEntries.set(node.id, entry)
       if (state === 'completed') node.relatedActionIds.forEach((id) => {
-        representedCompletedActionIds.add(id)
         completedActionEntries.set(id, entry)
       })
     } else if (state === 'elapsed_unresolved') {
@@ -188,34 +228,27 @@ export function buildScheduleStreamNormalized(
       sections[entry.section].push(entry)
       nodeEntries.set(node.id, entry)
     }
-    representedNodeIds.add(node.id)
+    const entry = nodeEntries.get(node.id)
+    if (entry) entry.sourceRefs.push(...occurrenceEvidence.map(fact => `timeline:${fact.id}`))
   }
   for (const { legacy, primary } of legacyAliases) {
     const entry = nodeEntries.get(primary.id)
     if (!entry) continue
     entry.sourceRefs.push(...legacy.evidenceRefs, ...legacy.sourceVersionRefs)
     nodeEntries.set(legacy.id, entry)
-    representedNodeIds.add(legacy.id)
   }
-  // Superseded versions are historical changes, never extra future appointments.
-  for (const node of snapshot.data.scheduleNodes ?? []) {
-    if (representedNodeIds.has(node.id) || !node.supersededByNodeId) continue
-    const when = validInstant(node.updatedAt)
-    if (!when || when > now) continue
-    const entry = nodeEntry(node, 'superseded', 'history', localDateKey(when, context.timezone))
-    sections.history.push(entry)
-    nodeEntries.set(node.id, entry)
-    representedNodeIds.add(node.id)
-  }
+  // Superseded versions stay in the audit trail, not as duplicate appointments.
   for (const event of snapshot.data.processEvents) {
     const when = validInstant(event.occurredAt)
-    if (!when || when > now) continue
+    if (when && when > now) continue
+    const existing = processEventEntries.get(event.id)
+    if (existing) continue
     const entry: ScheduleEntry = {
       id: `process:${event.id}`,
       kind: 'process_event',
-      section: 'history',
-      date: localDateKey(when, context.timezone),
-      occurredAt: event.occurredAt,
+      section: when ? 'history' : 'undated',
+      date: when ? localDateKey(when, context.timezone) : undefined,
+      occurredAt: when ? event.occurredAt : undefined,
       recordedAt: event.createdAt,
       opportunityId: event.opportunityId,
       processEventId: event.id,
@@ -223,14 +256,15 @@ export function buildScheduleStreamNormalized(
       invalidated: Boolean(event.invalidation),
       sourceRefs: [`process_event:${event.id}`, ...(event.invalidation ? [`correction:${event.invalidation.receiptId}`] : [])],
     }
-    sections.history.push(entry)
-    representedProcessEventIds.add(event.id)
+    sections[entry.section].push(entry)
     processEventEntries.set(event.id, entry)
   }
   function linkCompletionFact(entry: ScheduleEntry | undefined, fact: TimelineRecord) {
     if (!entry) return false
     const when = validInstant(fact.occurredAt)
     if (!when || when > now) return false
+    const existingTime = validInstant(entry.occurredAt)
+    if (existingTime && existingTime.getTime() !== when.getTime()) return false
     if (entry.section === 'undated') {
       sections.undated = sections.undated.filter((candidate) => candidate !== entry)
       entry.section = 'history'
@@ -242,72 +276,89 @@ export function buildScheduleStreamNormalized(
     entry.sourceRefs.push(`timeline:${fact.id}`)
     return true
   }
-  const timelineByCommand = new Map<string, ScheduleEntry>()
-  for (const item of snapshot.data.timeline ?? []) {
-    if (!BUSINESS_KINDS.has(item.kind) || syntheticActionBackfill(item)) continue
-    if (item.processEventId && representedProcessEventIds.has(item.processEventId) && item.kind === 'process_event_recorded') {
-      processEventEntries.get(item.processEventId)?.sourceRefs.push(`timeline:${item.id}`)
+  const timelineByIdentity = new Map<string, ScheduleEntry>()
+  for (const item of timeline) {
+    if (syntheticActionBackfill(item)) continue
+    if (item.kind === 'action_status_changed') {
+      if (item.changes?.status?.after !== 'done' || !item.actionId) continue
+      const entry = item.scheduleNodeId ? nodeEntries.get(item.scheduleNodeId) : completedActionEntries.get(item.actionId)
+      if (entry?.node && (!recruitingNode(entry.node) || entry.state === 'completed' && Boolean(entry.occurredAt))
+        && linkCompletionFact(entry, item)) continue
+      // Keep Today task history independent of the calendar projection.
+      const when = validInstant(item.occurredAt)
+      if (when && when <= now) completedActions.push({ id: `task:${item.id}`, kind: 'action', section: 'history',
+        date: localDateKey(when, context.timezone), occurredAt: item.occurredAt, recordedAt: item.recordedAt,
+        actionId: item.actionId, opportunityId: item.opportunityId, title: item.title, timeline: item,
+        sourceRefs: [`timeline:${item.id}`] })
       continue
     }
-    if (item.scheduleNodeId && representedNodeIds.has(item.scheduleNodeId) && item.kind === 'action_status_changed' && item.changes?.status?.after === 'done') {
-      if (linkCompletionFact(nodeEntries.get(item.scheduleNodeId), item)) continue
+    if (item.kind === 'semantic_intake_applied' && item.commandOperation === 'complete_occurrence' && item.scheduleNodeId) {
+      const entry = nodeEntries.get(item.scheduleNodeId)
+      if (entry?.state === 'completed') linkCompletionFact(entry, item)
+      continue
     }
-    if (item.kind === 'action_status_changed'
-      && item.actionId
-      && item.changes?.status?.after === 'done'
-      && representedCompletedActionIds.has(item.actionId)) {
-      if (linkCompletionFact(completedActionEntries.get(item.actionId), item)) continue
+    if (!EVENT_FACT_KINDS.has(item.kind)) continue
+    if (item.kind === 'process_event_recorded' || item.kind === 'process_closed') {
+      // The legacy progress writer emitted this exact deterministic pair but
+      // omitted processEventId from its timeline row. Resolve only that known
+      // source contract, never a title/company/time similarity.
+      const legacyEventId = !item.processEventId && item.id.startsWith('timeline:progress:')
+        ? `progress-event:${item.id.slice('timeline:progress:'.length)}` : undefined
+      const eventId = item.processEventId ?? legacyEventId
+      const existing = eventId ? processEventEntries.get(eventId) : undefined
+      const existingTime = validInstant(existing?.occurredAt)?.getTime()
+      const factTime = validInstant(item.occurredAt)?.getTime()
+      const sameLegacyFact = existing && legacyEventId && existing.opportunityId === item.opportunityId
+        && existingTime !== undefined && factTime !== undefined && existingTime === factTime
+      if (existing && (item.processEventId || sameLegacyFact)) {
+        existing.sourceRefs.push(`timeline:${item.id}`)
+        // Preserve the original descriptive completion/receipt wording; this
+        // changes neither the event's time nor its completion state.
+        if (sameLegacyFact) existing.title = item.title
+        continue
+      }
     }
     if (item.kind === 'application_submitted' && item.opportunityId
       && linkCompletionFact(completedActionEntries.get(`apply:${item.opportunityId}`), item)) continue
     const when = validInstant(item.occurredAt)
-    if (!when || when > now) continue
-    // Only exact command/type/object references may collapse log duplicates.
-    const commandKey = item.commandId
-      ? `${item.commandId}:${item.kind}:${item.opportunityId ?? ''}:${item.actionId ?? ''}:${item.processEventId ?? ''}`
-      : undefined
-    if (commandKey && timelineByCommand.has(commandKey)) {
-      timelineByCommand.get(commandKey)?.sourceRefs.push(`timeline:${item.id}`)
+    if (when && when > now) continue
+    // Deduplicate exact typed facts, independent of which transport recorded
+    // them or when. Never use title text or recordedAt as an event identity.
+    const factKey = item.scheduleNodeId ? `node:${item.scheduleNodeId}:${item.kind}`
+      : item.processEventId ? `process:${item.processEventId}:${item.kind}`
+      : item.kind !== 'process_event_recorded' && item.opportunityId && when ? `${item.kind}:${item.opportunityId}:${when.toISOString()}`
+        : item.commandId ? `${item.commandId}:${item.kind}:${item.opportunityId ?? ''}` : `timeline:${item.id}`
+    if (timelineByIdentity.has(factKey)) {
+      timelineByIdentity.get(factKey)?.sourceRefs.push(`timeline:${item.id}`)
       continue
     }
     const entry: ScheduleEntry = {
       id: `fact:${item.id}`,
       kind: 'business_fact',
-      section: 'history',
-      date: localDateKey(when, context.timezone),
-      occurredAt: item.occurredAt,
+      section: when ? 'history' : 'undated',
+      date: when ? localDateKey(when, context.timezone) : undefined,
+      occurredAt: when ? item.occurredAt : undefined,
       recordedAt: item.recordedAt,
       opportunityId: item.opportunityId,
       actionId: item.actionId,
       processEventId: item.processEventId,
       nodeId: item.scheduleNodeId,
       title: item.title,
-      sourceRefs: [item.sourceRef, item.commandId].filter((value): value is string => Boolean(value)),
+      sourceRefs: [`timeline:${item.id}`, item.sourceRef, item.commandId].filter((value): value is string => Boolean(value)),
       timeline: item,
     }
-    if (commandKey) timelineByCommand.set(commandKey, entry)
-    sections.history.push(entry)
+    timelineByIdentity.set(factKey, entry)
+    sections[entry.section].push(entry)
   }
-  const completedActionIds = new Set((snapshot.data.timeline ?? [])
-    .filter((item) => item.kind === 'action_status_changed' && !syntheticActionBackfill(item)
-      && item.actionId && item.changes?.status?.after === 'done')
-    .map((item) => item.actionId!))
-  representedCompletedActionIds.forEach((id) => completedActionIds.add(id))
-  for (const fact of snapshot.data.timeline ?? []) {
-    if (fact.kind === 'application_submitted' && fact.opportunityId) completedActionIds.add(`apply:${fact.opportunityId}`)
-  }
-  for (const action of snapshot.data.actions) {
-    if (action.status !== 'done' || completedActionIds.has(action.id)) continue
-    // Existing status is real, but an old action without a completion fact has no known completion time.
-    sections.undated.push({
-      id: `action:${action.id}`,
-      kind: 'action',
-      section: 'undated',
-      actionId: action.id,
-      opportunityId: action.opportunityId,
-      title: action.title,
-      sourceRefs: [],
-    })
+  // Explicit occurrence evidence may be recorded after its task receipt in
+  // the input array. Reconcile after all facts, so sync order never duplicates
+  // the same completion in Today.
+  for (let index = completedActions.length - 1; index >= 0; index -= 1) {
+    const task = completedActions[index]
+    const entry = task.actionId ? completedActionEntries.get(task.actionId) : undefined
+    if (entry?.state === 'completed' && entry.occurredAt && task.timeline && linkCompletionFact(entry, task.timeline)) {
+      completedActions.splice(index, 1)
+    }
   }
   const classificationOwners = indexJobClassificationData(snapshot.data)
   for (const opportunity of snapshot.data.opportunities) {
@@ -317,7 +368,10 @@ export function buildScheduleStreamNormalized(
     sections.no_deadline.push({ id: `no-deadline:${opportunity.id}`, kind: 'opportunity', section: 'no_deadline', opportunityId: opportunity.id,
       title: 'no_deadline', sourceRefs: deadline.sourceUrl ? [deadline.sourceUrl] : [] })
   }
-  for (const section of Object.keys(sections) as ScheduleSection[]) sections[section].sort(chronological)
+  for (const section of Object.keys(sections) as ScheduleSection[]) {
+    for (const entry of sections[section]) entry.sourceRefs = [...new Set(entry.sourceRefs)]
+    sections[section].sort(chronological)
+  }
   const counts = Object.fromEntries((Object.keys(sections) as ScheduleSection[]).map((section) => [section, sections[section].length])) as ScheduleStream['counts']
   const positions = Object.fromEntries((Object.keys(sections) as ScheduleSection[]).map((section) => [
     section,
@@ -330,6 +384,7 @@ export function buildScheduleStreamNormalized(
     evaluatedAt: now.toISOString(),
     key: JSON.stringify([context.accountKey, context.workspaceRevision, context.timezone, today]),
     sections,
+    completedActions,
     counts,
     positions,
   }

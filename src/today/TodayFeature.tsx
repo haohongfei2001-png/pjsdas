@@ -70,7 +70,7 @@ export default function TodayFeature({ selection, stream, opportunities, readOnl
     ? `${zhDateParts.find((part) => part.type === 'month')?.value ?? ''}月${zhDateParts.find((part) => part.type === 'day')?.value ?? ''}日 · ${new Intl.DateTimeFormat('zh-CN', { weekday: 'short', timeZone: stream.timezone }).format(now)}`
     : new Intl.DateTimeFormat('en-GB', { month: 'short', day: 'numeric', weekday: 'short', timeZone: stream.timezone }).format(now)
   const todayKey = localDateKey(now, stream.timezone)
-  const completedToday = stream.sections.history.filter((item) => item.date === todayKey && (item.state === 'completed' || item.timeline?.kind === 'action_status_changed'))
+  const completedToday = [...stream.sections.history, ...(stream.completedActions ?? [])].filter((item) => item.date === todayKey && (item.state === 'completed' || item.timeline?.kind === 'action_status_changed'))
   const awaiting = freshness.state === 'initial' && workspaceEmpty
   const unavailable = freshness.state === 'unavailable' && workspaceEmpty
   const verifiedEmpty = workspaceEmpty && (freshness.state === 'current' || freshness.state === 'updated')
