@@ -133,3 +133,45 @@ test('capacity editor remains usable at a mobile width without horizontal overfl
   await expect(summary(page)).toContainText('3 小时')
   await expect(form).not.toBeVisible()
 })
+
+
+test('capacity summary and editor wrap at 200 percent text on narrow screens', async ({ page }) => {
+  await page.clock.setFixedTime(new Date('2026-10-06T04:24:00Z'))
+  await page.goto('/pjsdas/today')
+  await page.evaluate(() => { document.documentElement.style.fontSize = '200%' })
+  for (const width of [390, 360, 320]) {
+    await page.setViewportSize({ width, height: 844 })
+    await expect(summary(page)).toContainText('11 小时 36 分钟')
+    await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1)
+    await summary(page).click()
+    const form = editor(page).locator('form')
+    await expect(form).toBeVisible()
+    const bounds = await form.boundingBox()
+    expect(bounds!.x).toBeGreaterThanOrEqual(0)
+    expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(width)
+    await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1)
+    await test.info().attach(`today-capacity-text200-${width}`, { body: await page.screenshot({ fullPage: true }), contentType: 'image/png' })
+    await summary(page).click()
+  }
+})
+
+
+test('short manual summaries keep the editor on-screen across tablet and mobile widths', async ({ page }) => {
+  await page.clock.setFixedTime(new Date('2026-10-06T14:00:00Z'))
+  await page.goto('/pjsdas/today')
+  await summary(page).click()
+  await editor(page).locator('input').fill('0')
+  await editor(page).getByRole('button', { name: '保存', exact: true }).click()
+  await expect(summary(page)).toContainText('0 分钟')
+  for (const width of [700, 600, 390, 320]) {
+    await page.setViewportSize({ width, height: 844 })
+    await summary(page).click()
+    const form = editor(page).locator('form')
+    await expect(form).toBeVisible()
+    const bounds = await form.boundingBox()
+    expect(bounds!.x).toBeGreaterThanOrEqual(0)
+    expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(width)
+    await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1)
+    await summary(page).click()
+  }
+})
