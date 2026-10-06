@@ -21,4 +21,9 @@ future-date and external AI planning contracts retain their existing policies.
 The topbar capture button displays only +, retains its original localized
 accessible name, and keeps a 44px target and the same capture/focus flow. Its
 approved visual difference is isolated in the frozen secondary-surface pixel
-comparison; unmasked before/after evidence and all other pixels remain checked.
+comparison. On narrow screens, the smaller button may shorten its row; raw
+geometry must prove that the header/body displacement is exactly that row-height
+delta and the settings button stays horizontally fixed. Only that row minimum
+height is temporarily normalized for a second strict pixel comparison, then
+restored and verified. Raw and normalized evidence are retained; all other
+pixels remain exact.

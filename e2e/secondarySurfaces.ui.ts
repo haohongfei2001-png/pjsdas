@@ -104,6 +104,79 @@ async function compareOutsideCaptureButton(page: Page, before: Buffer, after: Bu
   }, { images: [before.toString('base64'), after.toString('base64')], boxes })
 }
 
+async function captureLayout(page: Page) {
+  const selectors = ['.tsui-topbar', '.tsui-top-actions', '.tsui-primary-nav', '.cgr-main', '.tsui-settings-button', '.tsui-topbar .tsui-tell-button']
+  const boxes = await Promise.all(selectors.map(selector => page.locator(selector).boundingBox()))
+  for (const box of boxes) expect(box).not.toBeNull()
+  const [header, actions, nav, main, gear, button] = boxes
+  return { header: header!, actions: actions!, nav: nav!, main: main!, gear: gear!, button: button! }
+}
+
+async function settleHeaderLayout(page: Page) {
+  await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))))
+  await expect.poll(() => page.evaluate(() => {
+    const header = document.querySelector<HTMLElement>('.tsui-topbar')!
+    const shell = header.closest<HTMLElement>('.cgr-app-shell')!
+    return Math.abs(Number.parseFloat(getComputedStyle(shell).getPropertyValue('--ta-header-height')) - header.getBoundingClientRect().height)
+  })).toBeLessThanOrEqual(1)
+}
+
+async function protectedMainPixels(page: Page, name: string, raw: Buffer, rawLayout: Awaited<ReturnType<typeof captureLayout>>, width: number) {
+  const baseline = await readFile(`secondary-ui-before/${name}`)
+  const reference = JSON.parse(await readFile(`secondary-ui-before/${name}.json`, 'utf8'))
+  const prior = reference.rawLayout as typeof rawLayout
+  expect(prior).toBeTruthy()
+  const near = (actual: number, expected: number) => expect(Math.abs(actual - expected)).toBeLessThanOrEqual(1)
+  near(rawLayout.actions.height, 44)
+  for (const key of ['x', 'width', 'height'] as const) near(rawLayout.gear[key], prior.gear[key])
+  for (const key of ['x', 'width'] as const) near(rawLayout.main[key], prior.main[key])
+  const delta = prior.actions.height - rawLayout.actions.height
+  expect(delta).toBeGreaterThanOrEqual(0)
+  near(prior.header.height - rawLayout.header.height, delta)
+  near(prior.main.y - rawLayout.main.y, delta)
+  near(prior.nav.y - rawLayout.nav.y, delta)
+  const normalize = width <= 700 && prior.actions.height > 44
+  if (!normalize) near(delta, 0)
+  const original = await page.locator('.tsui-top-actions').evaluate(element => ({
+    value: (element as HTMLElement).style.getPropertyValue('min-height'),
+    priority: (element as HTMLElement).style.getPropertyPriority('min-height'),
+  }))
+  let compared = raw, comparedLayout = rawLayout
+  try {
+    if (normalize) {
+      // Only the approved button's shorter row is normalized. Raw UI evidence
+      // remains untouched; every other pixel must still match the frozen page.
+      await page.locator('.tsui-top-actions').evaluate((element, height) => {
+        (element as HTMLElement).style.setProperty('min-height', height + 'px')
+      }, prior.actions.height)
+      await settleHeaderLayout(page)
+      comparedLayout = await captureLayout(page)
+      near(comparedLayout.header.height, prior.header.height)
+      near(comparedLayout.main.y, prior.main.y)
+      compared = await page.screenshot({ path: `${evidence}/${name.replace('.png', '-normalized.png')}`, fullPage: true, animations: 'disabled', caret: 'hide' })
+      await writeFile(`${evidence}/${name}.normalized-layout.json`, JSON.stringify({ baseline: prior, raw: rawLayout, normalized: comparedLayout }, null, 2))
+    }
+    const hashes = await compareOutsideCaptureButton(page, baseline, compared, [
+      { ...prior.button, headerBottom: prior.header.y + prior.header.height },
+      { ...comparedLayout.button, headerBottom: comparedLayout.header.y + comparedLayout.header.height },
+    ], width)
+    expect(hashes[1], `${name}: exact remaining pixels after only approved button/row normalization`).toBe(hashes[0])
+  } finally {
+    if (normalize) {
+      await page.locator('.tsui-top-actions').evaluate((element, original) => {
+        const style = (element as HTMLElement).style
+        if (original.value) style.setProperty('min-height', original.value, original.priority)
+        else style.removeProperty('min-height')
+      }, original)
+      await settleHeaderLayout(page)
+      const restored = await captureLayout(page)
+      for (const name of Object.keys(rawLayout) as Array<keyof typeof rawLayout>) {
+        for (const key of ['x', 'y', 'width', 'height'] as const) near(restored[name][key], rawLayout[name][key])
+      }
+    }
+  }
+}
+
 async function capture(page: Page, label: string, width: number, scale = 100, protectMain = false, scrollRoot?: string) {
   await page.setViewportSize({ width, height: width < 600 ? 844 : 900 })
   await page.evaluate(scale => { document.documentElement.style.fontSize = `${scale}%`; window.scrollTo(0, 0) }, scale)
@@ -113,17 +186,11 @@ async function capture(page: Page, label: string, width: number, scale = 100, pr
   await mkdir(evidence, { recursive: true })
   const overlay = await page.locator('.cgr-capture-backdrop, .backup-backdrop, .event-dock-backdrop, .prep-graph-backdrop, .discovery-inbox-modal-backdrop, .mcp-proposal-backdrop').count()
   const bytes = await page.screenshot({ path: `${evidence}/${name}`, fullPage: overlay === 0, animations: 'disabled', caret: 'hide' })
-  const captureAffordance = await page.locator('.tsui-topbar .tsui-tell-button').boundingBox()
-  const captureHeader = await page.locator('.tsui-topbar').boundingBox()
-  const captureHeaderBottom = captureHeader ? captureHeader.y + captureHeader.height : 0
-  if (protectMain && phase === 'after') {
-    const baseline = await readFile(`secondary-ui-before/${name}`)
-    const reference = JSON.parse(await readFile(`secondary-ui-before/${name}.json`, 'utf8'))
-    expect(captureAffordance).not.toBeNull()
-    expect(reference.captureAffordance).not.toBeNull()
-    const hashes = await compareOutsideCaptureButton(page, baseline, bytes, [{ ...reference.captureAffordance, headerBottom: reference.captureHeaderBottom }, { ...captureAffordance!, headerBottom: captureHeaderBottom }], width)
-    expect(hashes[1], `${label}: pixels outside the explicitly replaced capture button must match the frozen main reference`).toBe(hashes[0])
-  }
+  const rawLayout = await captureLayout(page)
+  const captureAffordance = rawLayout.button
+  const captureHeaderBottom = rawLayout.header.y + rawLayout.header.height
+  await writeFile(`${evidence}/${name}.raw-layout.json`, JSON.stringify(rawLayout, null, 2))
+  if (protectMain && phase === 'after') await protectedMainPixels(page, name, bytes, rawLayout, width)
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)
   const overflowNodes = overflow > 1 ? await page.evaluate(() => [...document.querySelectorAll<HTMLElement>('body *')]
     .filter(element => element.getClientRects().length && (element.getBoundingClientRect().right > innerWidth + 1 || element.getBoundingClientRect().left < -1))
@@ -133,7 +200,7 @@ async function capture(page: Page, label: string, width: number, scale = 100, pr
     className: element.className, left: element.getBoundingClientRect().left, right: element.getBoundingClientRect().right,
     clientWidth: element.clientWidth, scrollWidth: element.scrollWidth,
   })))
-  const metric = { label, width, scale, captureAffordance, captureHeaderBottom, overflow, overflowNodes, modalBounds, sha256: digest(bytes), protectedMain: protectMain }
+  const metric = { label, width, scale, captureAffordance, captureHeaderBottom, rawLayout, overflow, overflowNodes, modalBounds, sha256: digest(bytes), protectedMain: protectMain }
   console.log('SECONDARY_UI:' + JSON.stringify(metric))
   await writeFile(`${evidence}/${name}.json`, JSON.stringify(metric, null, 2))
   if (phase === 'after') {

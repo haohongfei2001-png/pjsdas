@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 
 const consent = readFileSync(new URL('../src/aiAccess/OAuthConsentPageHeavy.tsx', import.meta.url), 'utf8')
-const settings = readFileSync(new URL('../src/aiAccess/AiAccessSettingsCard.tsx', import.meta.url), 'utf8')
+const settings = readFileSync(new URL('../src/cloud/CloudSettingsCardHeavy.tsx', import.meta.url), 'utf8')
 const protectedResource = readFileSync(new URL('../api/oauth-protected-resource.ts', import.meta.url), 'utf8')
 const serverFactory = readFileSync(new URL('../gateway/serverFactory.ts', import.meta.url), 'utf8')
 

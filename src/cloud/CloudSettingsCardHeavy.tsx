@@ -3,6 +3,8 @@ import { useUiLanguage } from '../uiLanguage.js'
 import { useCloud } from './CloudContext.js'
 import { connectedWorkspaceAuthorityEnabled } from './connectedWorkspaceRepository.js'
 import { hasUnsyncedLocalWorkspace, inspectConnectedDivergence } from './cloudSync.js'
+import { useAiAccess } from '../aiAccess/AiAccessContext.js'
+import { accountGoogleConnection, accountGoogleConnectionLabel } from './accountGoogleConnection.js'
 import AiAccessSettingsCard from '../aiAccess/AiAccessSettingsCard.js'
 import { fetchAudienceStatus, type AudienceStatus } from '../audienceAccessClient.js'
 import './cloudSettings.css'
@@ -18,6 +20,12 @@ export default function CloudSettingsCard() {
   const { lang } = useUiLanguage()
   const zh = lang === 'zh'
   const cloud = useCloud()
+  const ai = useAiAccess()
+  const automation = ai.gmailAutomation
+  const googleConnection = accountGoogleConnection({ verified: ai.statusVerified && Boolean(automation), ...automation })
+  const googleNeedsRepair = googleConnection === 'not_connected' || googleConnection === 'reconnect_required'
+  const googleNeedsAttention = googleNeedsRepair || googleConnection === 'configuration_error'
+  const [checkingGoogle, setCheckingGoogle] = useState(false)
   const [localError, setLocalError] = useState('')
   const [audience, setAudience] = useState<AudienceStatus>()
   const [diagnostic, setDiagnostic] = useState<Awaited<ReturnType<typeof inspectConnectedDivergence>>>()
@@ -32,7 +40,7 @@ export default function CloudSettingsCard() {
   const codedLocalError = /^[A-Z][A-Z0-9_]+:/.test(localError)
   const pendingLocal = cloud.outcome?.kind === 'local_pending'
   const currentLocal = !transactional || localDirty === false
-  const quietConnected = Boolean(user && !mismatch && !conflict && !connectionError && !pendingLocal && currentLocal && (!audience || audience.allowed))
+  const quietConnected = Boolean(user && !mismatch && !conflict && !connectionError && !pendingLocal && currentLocal && googleConnection === 'connected' && (!audience || audience.allowed))
   useEffect(() => {
     if (!user || !transactional) {
       setLocalDirty(undefined)
@@ -74,6 +82,12 @@ export default function CloudSettingsCard() {
                 ? (zh ? '此设备有尚未同步的修改。' : 'This device has changes that have not synced yet.')
                 : transactional && localDirty === undefined
                   ? (zh ? '正在核对此设备的最新修改。' : 'Checking this device for recent changes.')
+                : googleConnection === 'unverified'
+                  ? (zh ? '账号已登录，Google 连接状态暂时无法核对。' : 'You are signed in; the Google connection has not been verified yet.')
+                  : googleConnection === 'configuration_error'
+                    ? (zh ? 'Google 连接需要维护。已保存的资料仍保留，请查看错误详情。' : 'The Google connection needs attention. Saved data is preserved; see the error details.')
+                    : googleNeedsRepair
+                      ? (zh ? '请完成 Google 连接，让已授权的来源继续更新。邮件跟踪和岗位发现仍需分别启用。' : 'Complete the Google connection so authorized sources can keep updating. Email tracking and job discovery still need to be enabled separately.')
               : (zh ? '你的资料已连接此账号，并在设备间保持更新。' : 'Your data is connected to this account and stays up to date across devices.')
 
   useEffect(() => {
@@ -115,7 +129,7 @@ export default function CloudSettingsCard() {
             <h2>{zh ? '账号与跨设备数据' : 'Account & cross-device data'}</h2>
             <p>{user ? `${user.user_metadata?.full_name || user.email || user.id}` : (zh ? '登录后在自己的设备间使用同一份资料' : 'Use the same data across your devices')}</p>
           </div>
-          <span className={`cloud-state ${conflict || mismatch || connectionError || pendingLocal || (transactional && localDirty) || (audience && !audience.allowed) ? 'warning' : user && currentLocal ? 'online' : ''}`}>
+          <span className={`cloud-state ${conflict || mismatch || connectionError || pendingLocal || (transactional && localDirty) || (audience && !audience.allowed) || (user && googleNeedsAttention) ? 'warning' : user && currentLocal && googleConnection === 'connected' ? 'online' : ''}`}>
             {mismatch
               ? (zh ? '账号不匹配' : 'Account mismatch')
               : conflict
@@ -128,6 +142,8 @@ export default function CloudSettingsCard() {
                   ? (zh ? '待同步修改' : 'Unsynced changes')
                 : audience && !audience.allowed
                   ? (zh ? '跨设备不可用' : 'Cross-device unavailable')
+                : user && googleConnection !== 'connected'
+                  ? accountGoogleConnectionLabel(googleConnection, zh)
                 : user
                   ? cloud.checkpoint.lastSyncedVersion && currentLocal
                     ? (zh ? '同步正常' : 'Sync is up to date')
@@ -138,9 +154,17 @@ export default function CloudSettingsCard() {
           </span>
         </div>
 
-        {!quietConnected ? <div className={`cloud-connection-impact ${mismatch || conflict || connectionError || (audience && !audience.allowed) ? 'warning' : 'settings-account-status'}`}>
+        {!quietConnected ? <div className={`cloud-connection-impact ${mismatch || conflict || connectionError || (audience && !audience.allowed) || (user && googleNeedsAttention) ? 'warning' : 'settings-account-status'}`}>
           <strong>{user ? (zh ? `最后更新：${formatTime(cloud.checkpoint.lastSyncedAt, zh)}` : `Last updated: ${formatTime(cloud.checkpoint.lastSyncedAt, zh)}`) : (zh ? '仅保存在此设备' : 'Saved on this device only')}</strong>
-          {!user || mismatch || conflict || connectionError || pendingLocal || localDirty || (audience && !audience.allowed) ? <span role="status">{impact}</span> : null}
+          {!user || mismatch || conflict || connectionError || pendingLocal || localDirty || (audience && !audience.allowed) || (user && googleConnection !== 'connected') ? <span role="status">{impact}</span> : null}
+          {user && googleConnection === 'unverified' ? <button type="button" disabled={ai.busy || checkingGoogle} onClick={() => {
+            setCheckingGoogle(true)
+            void ai.refreshGmailAutomationStatus().finally(() => setCheckingGoogle(false))
+          }}>{checkingGoogle ? (zh ? '正在核对…' : 'Checking…') : (zh ? '重新核对连接' : 'Check connection again')}</button> : null}
+          {user && googleNeedsRepair && !mismatch && !conflict ? <button type="button" onClick={() => {
+            if (advancedRef.current) advancedRef.current.open = true
+            advancedRef.current?.querySelector('summary')?.focus()
+          }}>{zh ? '查看连接修复' : 'Review connection repair'}</button> : null}
           {mismatch || conflict ? <button type="button" onClick={() => {
             if (advancedRef.current) advancedRef.current.open = true
             advancedRef.current?.querySelector('summary')?.focus()
@@ -170,6 +194,12 @@ export default function CloudSettingsCard() {
                   <span>{zh ? 'TodayAction 账号' : 'TodayAction account'}</span>
                   <strong>{user.user_metadata?.full_name || user.email || user.id}</strong>
                   <button disabled={cloud.syncing || cloud.loading} onClick={() => { void run(cloud.signOut) }}>{zh ? '退出 TodayAction' : 'Sign out of TodayAction'}</button>
+                </div>
+                <div className="settings-google-connection">
+                  <p>{automation?.googleEmail ? `${zh ? '已关联 Google：' : 'Linked Google: '}${automation.googleEmail}` : accountGoogleConnectionLabel(googleConnection, zh)}</p>
+                  <p className="settings-permission">{zh ? 'Google 连接使用基本身份信息和应用专用的 Drive 文件权限，不会浏览普通 Drive 文件。长期授权信息会加密保存；重新连接会打开 Google 授权页面。邮件跟踪和岗位发现仍需在下方分别启用。' : 'The Google connection uses basic identity and app-specific Drive file access, not ordinary Drive files. Long-lived authorization is encrypted; reconnecting opens the Google consent page. Enable email tracking and job discovery separately below.'}</p>
+                  <button type="button" className="settings-quiet-button" disabled={ai.busy || cloud.loading || cloud.syncing} onClick={() => { void ai.beginGoogleDriveLink() }}>{ai.busy ? (zh ? '处理中…' : 'Working…') : googleConnection === 'not_connected' ? (zh ? '连接 Google' : 'Connect Google') : (zh ? '重新连接 Google' : 'Reconnect Google')}</button>
+                  <details className="settings-scope-details"><summary>{zh ? '后台更新与授权范围' : 'Background updates and permissions'}</summary><p>{zh ? '网页关闭后，已授权的来源仍可带来新的岗位和招聘进展。AI 读取与受信任的岗位发现、招聘邮件摄入只能加入有来源依据的有限事实；修改长期偏好、拒绝决定或删除资料仍需你审阅确认。每项来源都能单独关闭。新进展须经过来源、身份、重复项和冲突检查，才会写入账号资料。' : 'Authorized sources can bring in new opportunities and recruiting progress while this page is closed. AI reading and trusted discovery or recruiting-email intake may add only bounded, source-backed facts; changes to durable preferences, rejection decisions, or deletions still require your review. Each source can be turned off. New progress is checked for source, identity, duplicates, and conflicts before it enters your account data.'}</p></details>
                 </div>
                 <p>{zh ? '管理此设备的登录与同步。下面的差异核对不会修改账号资料。' : 'Manage sign-in and sync on this device. Difference inspection does not change account data.'}</p>
                 {audience ? <p>{audience.allowed
@@ -220,8 +250,8 @@ export default function CloudSettingsCard() {
                   ? <div className="cloud-error">{cloud.error || cloud.checkpoint.lastError}</div> : null}
                 <small className="cloud-security-note">{transactional
                   ? (zh
-                      ? '退出账号会清除此设备上的账号缓存，避免下一个登录者看到前一个账号的资料；已同步的账号资料仍保留。空工作区不需要 Google Drive；如果你另行连接 Drive，其长期授权凭据在服务端加密保存，权限仅限应用专用文件。'
-                      : 'Signing out clears this device’s account cache so the next sign-in cannot see the previous account’s data; already synced account data remains stored. An empty workspace does not require Google Drive. If you separately connect Drive, its long-lived authorization is encrypted on the server and limited to app-specific files.')
+                      ? '退出账号会清除此设备上的账号缓存，避免下一个登录者看到前一个账号的资料；已同步的账号资料仍保留。Google 长期授权凭据在服务端加密保存，Drive 权限仅限应用专用文件。'
+                      : 'Signing out clears this device’s account cache so the next sign-in cannot see the previous account’s data; already synced account data remains stored. Long-lived Google authorization is encrypted on the server, with Drive access limited to app-specific files.')
                   : (zh
                       ? 'Google 长期授权凭据在服务端加密保存。此设备仍会保留本机资料；在共享设备上使用后，请按需要清理浏览器资料。TodayAction 只获得应用专用的 Google Drive 文件权限。'
                       : 'Long-lived Google authorization is encrypted on the server. Local data remains on this device; clear browser data after use on a shared device when needed. TodayAction only receives access to its app-specific Google Drive files.')}</small>
@@ -230,6 +260,8 @@ export default function CloudSettingsCard() {
           </>
         )}
 
+        {ai.message ? <div className="cloud-result" role="status">{ai.message}</div> : null}
+        {(ai.errorSource === 'status' || ai.errorSource === 'workspace') && ai.error ? <div className="cloud-error" role="alert"><strong>{ai.errorSource === 'status' ? (zh ? 'Google 连接状态暂时无法核对' : 'The Google connection status is unavailable') : (zh ? 'Google 连接未完成' : 'The Google connection could not be completed')}</strong><details><summary>{zh ? '错误详情' : 'Error details'}</summary><p>{ai.error}</p></details></div> : null}
         {localError ? <div className="cloud-error">{codedLocalError
           ? user
             ? (zh ? '操作暂时无法完成。请展开管理账号与同步查看详情。' : 'The action could not be completed. Expand Manage account and sync for details.')
