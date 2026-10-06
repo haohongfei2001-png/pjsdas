@@ -133,7 +133,7 @@ test('TA-02 loaded surfaces retain identifiers, detail, capture and keyboard foc
     expect(Number.parseFloat(outline.width)).toBeGreaterThanOrEqual(3)
   }
   await page.goto(base+'settings')
-  await expect(page.getByRole('heading',{name:'账号与跨设备数据',exact:true})).toBeVisible()
+  await expect(page.getByRole('heading',{name:before?'账号与跨设备数据':'账号',exact:true})).toBeVisible()
   await matrix(page,'SETTINGS')
   expect(state.writes).toEqual([])
 })

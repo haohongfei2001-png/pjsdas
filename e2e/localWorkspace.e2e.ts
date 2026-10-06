@@ -58,7 +58,7 @@ test('empty local workspace routes directly into setup instead of a maintenance 
   await expect(page.getByText('先让 TodayAction 了解你的求职进展')).toBeVisible()
   await page.getByRole('button', { name: '打开设置' }).click()
   await expect(page.getByRole('heading', { name: '设置' })).toBeVisible()
-  await expect(page.getByRole('region', { name: '账号与跨设备数据', exact: true }).locator('.cloud-connection-impact')).toContainText('当前内容只保存在此设备')
+  await expect(page.getByRole('region', { name: '账号与跨设备数据', exact: true }).locator('.cloud-settings-heading')).toContainText('内容仅保存在此设备')
   await expect(page).toHaveURL(/\/settings$/)
 })
 

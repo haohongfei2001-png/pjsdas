@@ -20,7 +20,7 @@ beforeEach(() => {
 describe('account connection owns the shared Google UI', () => {
   it('keeps one account panel and the original explicit Google repair and permission disclosures', () => {
     const html = account()
-    expect(html).toContain('账号与跨设备数据')
+    expect(html).toContain('<h2>账号</h2>')
     expect(render()).not.toContain('settings-workspace-heading')
     expect(html).toContain('重新连接 Google')
     expect(html).toContain('基本身份信息和应用专用的 Drive 文件权限')
@@ -43,10 +43,29 @@ describe('account connection owns the shared Google UI', () => {
     expect(account()).toContain('连接待核对')
     expect(account()).not.toContain('cloud-state online')
   })
+  it('retains the original sign-in failure details while signed out', () => {
+    fixture.cloud.session = null
+    fixture.cloud.error = 'SYNTHETIC_SIGNIN_FAILURE'
+    expect(account()).toContain('SYNTHETIC_SIGNIN_FAILURE')
+    expect(account()).toContain('查看连接问题详情')
+  })
+  it('does not claim local-only status while restoring an existing session', () => {
+    fixture.cloud.session = null
+    fixture.cloud.loading = true
+    expect(account()).toContain('正在恢复登录…')
+    expect(account()).not.toContain('内容仅保存在此设备')
+  })
   it('keeps signed-out users on the normal login entry without a duplicate connect flow', () => {
     fixture.cloud.session = null
     const html = account()
     expect(html).toContain('使用 Google 登录')
+    expect(html).toContain('内容仅保存在此设备')
+    expect(html).not.toContain('cloud-connection-impact')
+    expect(html).not.toContain('cloud-state')
+    expect(html).not.toContain('登录后可在自己的设备间使用同一份资料')
+    expect(html).not.toContain('使用 Google 登录 TodayAction')
+    expect(html).toContain('<details class="settings-scope-details settings-signin-permission">')
+    expect(html).toContain('基本身份信息和应用专用的 Google Drive 文件权限')
     expect(html).not.toContain('重新连接 Google')
     expect(html).not.toContain('查看连接修复')
     expect(html).not.toContain('重新核对连接')

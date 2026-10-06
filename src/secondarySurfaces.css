@@ -372,3 +372,10 @@
  .settings-surface :is(.cloud-advanced,.settings-intake-details)::details-content { grid-row: 5; }
  .settings-surface .settings-source-manage::details-content { grid-row: 6; }
 }
+
+/* Keep the ordinary sign-in row brief; permission details remain one explicit disclosure away. */
+.settings-surface .cloud-auth-row.settings-signin { flex-direction: row; flex-wrap: wrap; align-items: center; gap: 4px 16px; padding: 8px 0 0; }
+.settings-surface .settings-signin-permission { min-width: 0; margin: 0; }
+.settings-surface .settings-signin-permission[open] { flex-basis: 100%; }
+.settings-surface .settings-signin-permission > summary { display: flex; align-items: center; min-height: 44px; color: #3468d4; }
+.settings-surface .settings-signin-permission > p { margin: 0 0 8px; }
