@@ -131,8 +131,8 @@
   .tsui-today .tsui-page-heading{margin:7px 0 20px}
   .tsui-today .tsui-page-heading h1{font-size:1.625rem}
   .tsui-today .tsui-page-heading p{font-size:0.8125rem}
-  .tsui-today .tsui-page-heading{align-items:flex-start;flex-wrap:wrap}
-  .tsui-capacity{flex-basis:100%}
+  .tsui-today .tsui-page-heading{position:relative;align-items:flex-start;flex-wrap:wrap}
+  .tsui-capacity{position:static}
   .tsui-capacity summary{width:fit-content;max-width:100%;box-sizing:border-box}
   .tsui-capacity form{right:auto;left:0}
 }
