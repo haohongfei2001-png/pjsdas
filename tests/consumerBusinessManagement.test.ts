@@ -31,6 +31,39 @@ describe('distinct consumer business bridge', () => {
     for (const [name, input] of [['get_consumer_business_management', {}], ['execute_consumer_business_management', {}], ['undo_consumer_business_management', {}]] as const) expect((await tools.invoke(name, input)).structuredContent).toMatchObject({ code: 'AUTH_FORBIDDEN' })
     expect(read).not.toHaveBeenCalled(); expect(createExecutor).not.toHaveBeenCalled()
   })
+  it.each([
+    { kind: 'create_manual_action', value: { title: 'Old rated action', estimatedMinutes: 30, leverage: 70 } },
+    { kind: 'update_manual_action', id: 'manual-b', patch: { delayCost: 70 } },
+  ])('reports retired scoring for an admitted v7 $kind before any executor or workspace access', async operation => {
+    const read = vi.fn(), createExecutor = vi.fn(), resolveGrant = vi.fn(async () => grant)
+    const tools = createConsumerBusinessManagementTools({ principal, source: { read }, resolveGrant, createExecutor })
+    const result = await tools.invoke('execute_consumer_business_management', { commandId: 'synthetic-retired-command', baseRevision: 0, change: { operations: [operation] } })
+    expect(result).toMatchObject({ isError: true, structuredContent: { code: 'SCORING_RETIRED', retryable: false } })
+    expect(resolveGrant).toHaveBeenCalledOnce(); expect(read).not.toHaveBeenCalled(); expect(createExecutor).not.toHaveBeenCalled()
+  })
+  it.each([
+    undefined,
+    { ...grant, revokedAt: '2026-10-02T00:00:00Z' },
+    { ...grant, consentVersion: 2, capability: 'workspace.manage' },
+    { ...grant, userId: client },
+  ])('keeps authorization ahead of scoring retirement for an invalid grant %#', async candidate => {
+    const read = vi.fn(), createExecutor = vi.fn()
+    const tools = createConsumerBusinessManagementTools({ principal, source: { read }, resolveGrant: async () => candidate as typeof grant | undefined, createExecutor })
+    const result = await tools.invoke('execute_consumer_business_management', { commandId: 'synthetic-retired-command', baseRevision: 0,
+      change: { operations: [{ kind: 'create_manual_action', value: { title: 'Old rated action', estimatedMinutes: 30, leverage: 70 } }] } })
+    expect(result.structuredContent).toMatchObject({ code: 'AUTH_FORBIDDEN' })
+    expect(read).not.toHaveBeenCalled(); expect(createExecutor).not.toHaveBeenCalled()
+  })
+  it('keeps score-free factual writes valid and rejects unrelated unsupported fields', async () => {
+    const read = vi.fn(), execute = vi.fn(async () => ({ outcome: 'COMMITTED', revision: 1, result: {} }))
+    const tools = createConsumerBusinessManagementTools({ principal, source: { read }, resolveGrant: async () => grant, createExecutor: () => ({ execute } as any) })
+    const input = { commandId: 'synthetic-factual-command', baseRevision: 0, change: { operations: [{ kind: 'create_manual_action', value: { title: 'Factual action', estimatedMinutes: 30 } }] } }
+    expect((await tools.invoke('execute_consumer_business_management', input)).structuredContent).toMatchObject({ outcome: 'COMMITTED' })
+    expect(execute).toHaveBeenCalledExactlyOnceWith(principal, { commandId: input.commandId, baseRevision: 0, command: { type: 'business_management', value: input.change } })
+    const invalid = { ...input, change: { operations: [{ ...input.change.operations[0], value: { ...input.change.operations[0].value, unsupported: true } }] } }
+    expect((await tools.invoke('execute_consumer_business_management', invalid)).structuredContent).toMatchObject({ code: 'INVALID_ARGUMENT' })
+    expect(execute).toHaveBeenCalledOnce(); expect(read).not.toHaveBeenCalled()
+  })
   it('advertises three separate tools only with the consumer flag and explicit beta cohort; catalog reads never grant access', async () => {
     const fetchImpl = vi.fn<typeof fetch>(async () => Response.json([])), source = { read: vi.fn(async () => { throw new Error('Unexpected workspace access') }) }
     const options = { enabled: 'enabled', transactional: true, identity: { userId: owner, oauthClientId: client }, audience: { mode: 'allowlist' as const, role: 'beta' as const, allowed: true }, supabaseUrl: 'https://synthetic.invalid', serviceRoleKey: 'synthetic', fetchImpl }
