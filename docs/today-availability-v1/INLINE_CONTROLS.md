@@ -27,3 +27,10 @@ delta and the settings button stays horizontally fixed. Only that row minimum
 height is temporarily normalized for a second strict pixel comparison, then
 restored and verified. Raw and normalized evidence are retained; all other
 pixels remain exact.
+
+After fractional-height normalization, the test performs exactly one paint-only
+opacity pulse on the main region, restoring the original inline value/priority.
+Every element rectangle, focus, text/input selection and scroll position must
+remain identical. Pre-paint and post-paint images are both retained; the latter
+still requires exact full-image pixels outside the same button mask. The pulse
+never retries until a hash matches and does not change application code.

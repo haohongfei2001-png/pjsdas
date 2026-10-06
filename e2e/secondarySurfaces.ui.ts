@@ -121,6 +121,55 @@ async function settleHeaderLayout(page: Page) {
   })).toBeLessThanOrEqual(1)
 }
 
+// Diagnose stale edge pixels after the authorized fractional row shift with one
+// fixed paint invalidation. It never changes layout or loops until a match.
+async function repaintMainOnce(page: Page) {
+  const checkpoint = await page.evaluateHandle(() => {
+    const main = document.querySelector<HTMLElement>('.cgr-main')!
+    const selection = window.getSelection()
+    const active = document.activeElement
+    const input = active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement ? active : undefined
+    return { main, opacity: main.style.getPropertyValue('opacity'), priority: main.style.getPropertyPriority('opacity'),
+      hadStyle: main.hasAttribute('style'), active, input, inputStart: input?.selectionStart,
+      inputEnd: input?.selectionEnd, inputDirection: input?.selectionDirection,
+      anchor: selection?.anchorNode, anchorOffset: selection?.anchorOffset,
+      focus: selection?.focusNode, focusOffset: selection?.focusOffset,
+      x: scrollX, y: scrollY,
+      elements: [...document.querySelectorAll<HTMLElement>('body *')].map(element => ({ element,
+        rect: element.getBoundingClientRect().toJSON(), top: element.scrollTop, left: element.scrollLeft })) }
+  })
+  try {
+    try {
+      await page.evaluate(state => state.main.style.setProperty('opacity', '0', 'important'), checkpoint)
+      await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))))
+    } finally {
+      await page.evaluate(state => {
+        if (state.opacity) state.main.style.setProperty('opacity', state.opacity, state.priority)
+        else state.main.style.removeProperty('opacity')
+        if (!state.hadStyle && !state.main.getAttribute('style')) state.main.removeAttribute('style')
+      }, checkpoint)
+    }
+    await settleHeaderLayout(page)
+    const preserved = await page.evaluate(state => {
+      const selection = window.getSelection()
+      return {
+        opacity: state.main.style.getPropertyValue('opacity') === state.opacity && state.main.style.getPropertyPriority('opacity') === state.priority,
+        focus: document.activeElement === state.active,
+        selection: selection?.anchorNode === state.anchor && selection?.anchorOffset === state.anchorOffset
+          && selection?.focusNode === state.focus && selection?.focusOffset === state.focusOffset
+          && state.input?.selectionStart === state.inputStart && state.input?.selectionEnd === state.inputEnd
+          && state.input?.selectionDirection === state.inputDirection,
+        scroll: scrollX === state.x && scrollY === state.y && state.elements.every(({ element, top, left }) => element.scrollTop === top && element.scrollLeft === left),
+        rectangles: state.elements.every(({ element, rect }) => JSON.stringify(element.getBoundingClientRect().toJSON()) === JSON.stringify(rect)),
+      }
+    }, checkpoint)
+    expect(preserved).toEqual({ opacity: true, focus: true, selection: true, scroll: true, rectangles: true })
+    return preserved
+  } finally {
+    await checkpoint.dispose()
+  }
+}
+
 async function protectedMainPixels(page: Page, name: string, raw: Buffer, rawLayout: Awaited<ReturnType<typeof captureLayout>>, width: number) {
   const baseline = await readFile(`secondary-ui-before/${name}`)
   const reference = JSON.parse(await readFile(`secondary-ui-before/${name}.json`, 'utf8'))
@@ -155,6 +204,9 @@ async function protectedMainPixels(page: Page, name: string, raw: Buffer, rawLay
       near(comparedLayout.main.y, prior.main.y)
       compared = await page.screenshot({ path: `${evidence}/${name.replace('.png', '-normalized.png')}`, fullPage: true, animations: 'disabled', caret: 'hide' })
       await writeFile(`${evidence}/${name}.normalized-layout.json`, JSON.stringify({ baseline: prior, raw: rawLayout, normalized: comparedLayout }, null, 2))
+      const preserved = await repaintMainOnce(page)
+      compared = await page.screenshot({ path: `${evidence}/${name.replace('.png', '-repainted.png')}`, fullPage: true, animations: 'disabled', caret: 'hide' })
+      await writeFile(`${evidence}/${name}.paint-state.json`, JSON.stringify(preserved, null, 2))
     }
     const hashes = await compareOutsideCaptureButton(page, baseline, compared, [
       { ...prior.button, headerBottom: prior.header.y + prior.header.height },
