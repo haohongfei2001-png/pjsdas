@@ -99,7 +99,7 @@ describe('bounded audited opportunity merge', () => {
   })
   it('reads aliased detail/assessment/prep and historical timeline without changing original evidence IDs', async () => {
     const result = await merge(); const source = { read: async () => ({ snapshot: result.snapshot, context: { now, timezone: 'UTC' } }) }
-    for (const name of ['get_opportunity_detail', 'get_opportunity_assessment', 'get_prep_graph'] as const) {
+    for (const name of ['get_opportunity_detail', 'get_prep_graph'] as const) {
       const args = { opportunityId: 'duplicate' }
       const response = await invokeReadTool(source, name, args)
       expect(response.isError).not.toBe(true)

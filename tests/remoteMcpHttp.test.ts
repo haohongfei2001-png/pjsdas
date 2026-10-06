@@ -77,13 +77,13 @@ describe('PJSDAS remote MCP HTTP alpha', () => {
   it('executes a read-only tool through the remote HTTP handler', async () => {
     const response = await remoteMcpHandler.fetch(request(
       'tools/call',
-      { name: 'get_decision_rules', arguments: {} },
-      'get_decision_rules',
+      { name: 'list_opportunities', arguments: {} },
+      'list_opportunities',
     ))
     const text = await responseText(response)
 
     expect(response.status).toBe(200)
-    expect(text).toContain('rulesVersion')
+    expect(text).toContain('opportunities')
     expect(text).toContain('remote-demo-v1')
   })
 })

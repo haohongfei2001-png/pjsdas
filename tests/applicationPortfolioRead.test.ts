@@ -42,14 +42,17 @@ function jsonFrom(result: Awaited<ReturnType<typeof invokeReadTool>>) {
 }
 
 describe('v1.6 Round 1 application portfolio read tool', () => {
-  it('returns a deterministic bounded recommendation without auto-filling weak roles', async () => {
+  it('returns all factual quota candidates without filtering legacy low scores', async () => {
     const result = await invokeReadTool(source, 'get_application_portfolio', { groupId: 'GROUP-TEST' })
     expect(result.isError).not.toBe(true)
     const data = jsonFrom(result)
     expect(data.meta).toMatchObject({ source: 'pjsdas', workspaceVersion: 'drive:20', timezone: 'Asia/Shanghai' })
     expect(data.decisions).toHaveLength(1)
     expect(data.decisions[0]).toMatchObject({ groupId: 'GROUP-TEST', status: 'ready', capacity: 2 })
-    expect(data.decisions[0].recommended.map((item: any) => item.opportunityId)).not.toContain('opp-three')
+    expect(data.decisions[0].candidates.map((item: any) => item.opportunityId)).toContain('opp-three')
+    expect(data.decisions[0]).not.toHaveProperty('recommended')
+    expect(data.policy).not.toHaveProperty('portfolioWeights')
+    expect(data.policy).not.toHaveProperty('minimumCandidateScore')
     expect(data.policy).toMatchObject({ capacityIsMaximum: true, autoFillSlots: false, automaticApplication: false })
   })
 

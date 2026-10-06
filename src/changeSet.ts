@@ -1,3 +1,4 @@
+import { ScoringRetiredError } from './scoringRetirement.js'
 import { decisionRulesForSnapshot, validateDecisionRules, type DecisionRules } from './decisionRules.js'
 import { validateOpportunityAssessment } from './opportunityAssessment.js'
 import { progressOperationSummary, type ExecutableProgressOperation } from './progressUpdate.js'
@@ -179,27 +180,8 @@ export function decisionRulesEquivalent(a: DecisionRules, b: DecisionRules) {
   return JSON.stringify(comparableRules(a)) === JSON.stringify(comparableRules(b))
 }
 
-export function createRulesChangeSet(before: DecisionRules, after: DecisionRules, mode: 'save' | 'reset', now = new Date()) {
-  if (decisionRulesEquivalent(before, after)) return undefined
-  const timestamp = now.toISOString()
-  const normalizedAfter = decisionRulesForSnapshot(after)
-  const proposed: DecisionRules = {
-    ...normalizedAfter,
-    key: 'current',
-    version: 1,
-    weights: { ...normalizedAfter.weights },
-    fitComponentWeights: { ...normalizedAfter.fitComponentWeights! },
-    opportunityValueComponentWeights: { ...normalizedAfter.opportunityValueComponentWeights! },
-    updatedAt: timestamp,
-  }
-  return baseChangeSet('rules', mode === 'reset' ? '恢复推荐决策规则' : '修改决策规则', [{
-    id: 'rules:current',
-    kind: 'replace_decision_rules',
-    summary: mode === 'reset' ? '恢复 TodayAction 推荐规则' : '应用当前规则修改',
-    expectedUpdatedAt: before.updatedAt,
-    mode,
-    rules: proposed,
-  }], now)
+export function createRulesChangeSet(_before: DecisionRules, _after: DecisionRules, _mode: 'save' | 'reset', _now = new Date()): ChangeSetRecord | undefined {
+  throw new ScoringRetiredError()
 }
 
 function processEventName(type: ProcessEvent['type']) {

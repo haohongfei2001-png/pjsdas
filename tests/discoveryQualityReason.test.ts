@@ -88,15 +88,12 @@ describe('structured discovery quality reasons', () => {
     )
 
     expect(evaluated.hardRejectReasons).toEqual([
-      '匹配度 70 低于显式门槛 90。',
       '岗位地点“Beijing”不符合严格地点约束。',
     ])
     expect(evaluated.hardRejectDetails).toEqual([
-      { code: 'fit_below_minimum', params: { score: 70, minimum: 90 } },
       { code: 'strict_location_mismatch', params: { location: 'Beijing' } },
     ])
     expect(evaluated.hardRejectDetails.map((detail) => presentDiscoveryQualityReason(detail, false))).toEqual([
-      'Fit score 70 is below the explicit minimum 90.',
       'Job location “Beijing” does not satisfy the strict location constraint.',
     ])
   })

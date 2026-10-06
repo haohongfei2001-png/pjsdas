@@ -1,3 +1,4 @@
+import { createDefaultDecisionRules } from '../src/decisionRules.js'
 import { recordCorrectionWorkspace } from './fixtures/recordCorrectionWorkspace.js'
 import { applicationDeadlineFingerprint } from '../src/applicationDeadline.js'
 import { applyWorkspaceDelta, type WorkspaceDelta } from '../src/workspaceDelta.js'
@@ -375,6 +376,28 @@ describe('CGR-01 authoritative command executor', () => {
     expect(h.ledger).toEqual([])
     expect(h.state().current).toEqual(original)
     expect(h.state().revision).toBe(1)
+  })
+
+  it.each(['raw', 'absent'] as const)('restores %s historical MCP rules exactly without new defaults or timestamps', async state => {
+    const h = harness()
+    const before = state === 'absent' ? null : { ...createDefaultDecisionRules('2026-01-01T00:00:00Z'), retainedMetadata: { source: 'Historical only' } }
+    if (before) {
+      delete before.fitComponentWeights
+      delete before.opportunityValueComponentWeights
+      delete before.portfolioWeights
+      delete before.portfolioMinimumCandidateScore
+    }
+    h.state().current.data.decisionRules = { ...createDefaultDecisionRules('2026-09-01T00:00:00Z'), prepDailyCap: 3 }
+    const original = structuredClone(h.state().current.data)
+    h.ledger.push({ command_id: 'historic-rules-0001', operation: 'mcp_apply_rules', payload_hash: 'historic-rules-hash', resulting_revision: 1, status: 'COMMITTED',
+      receipt: { affectedObjects: [{ type: 'decision_rules', id: 'current' }], undoDependencyObjects: [{ type: 'decision_rules', id: 'current' }] },
+      compensation: { operation: 'mcp_restore_decision_rules', payload: { before } } })
+    const undone = await h.executor.undo(h.principal, { commandId: 'undo-historic-rules-0001', targetCommandId: 'historic-rules-0001' })
+    expect(undone.outcome).toBe('COMMITTED')
+    if (before) expect(h.state().current.data.decisionRules).toEqual(before)
+    else expect(h.state().current.data).not.toHaveProperty('decisionRules')
+    for (const key of ['opportunities', 'processes', 'processEvents', 'actions', 'scheduleNodes'] as const) expect(h.state().current.data[key]).toEqual(original[key])
+    expect(h.ledger).toHaveLength(2)
   })
 
   it('persists bounded occurrence compensation and retains historical facts through authoritative Undo', async () => {

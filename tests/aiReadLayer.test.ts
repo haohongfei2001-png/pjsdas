@@ -90,7 +90,7 @@ describe('AI Bridge read layer', () => {
 
     expect(result.availableMinutes).toBe(60)
     expect(result.startableActions[0].actionId).toBe('apply-a')
-    expect(result.startableActions[0].priority).toBeGreaterThan(0)
+    expect(result.startableActions[0]).not.toHaveProperty('priority')
     expect(result.startableActions[0].rationale.length).toBeGreaterThan(0)
     expect(JSON.stringify(snapshot.data.decisionRules)).toBe(originalRules)
   })
@@ -131,35 +131,15 @@ describe('AI Bridge read layer', () => {
     expect(result.processes[0].upcomingEvent?.timingSemantics).toBe('fixed')
   })
 
-  it('exposes persisted decision policy in semantic groups', () => {
-    const result = getDecisionRules(baseSnapshot(), { now: NOW })
-
-    expect(result.rulesVersion).toBe(1)
-    expect(result.weights.urgency).toBe(23)
-    expect(result.deadlines.hardDeadlineHorizonHours).toBe(48)
-    expect(result.planning.followUpDailyCap).toBe(2)
-    expect(result.visibility.upcomingHorizonDays).toBe(7)
-    expect(result.humanSummary.length).toBeGreaterThan(0)
+  it('explicitly retires decision scoring policy without mutating historical rules', () => {
+    const snapshot = baseSnapshot(), before = structuredClone(snapshot)
+    expect(() => getDecisionRules(snapshot, { now: NOW })).toThrow(/retired/)
+    expect(snapshot).toEqual(before)
   })
 
-  it('explains opportunity priority from the existing ranking engine and supports comparison', () => {
-    const a = opportunity('opp-a', 'Alpha', 'Product Manager', '2026-09-11T12:00:00.000Z')
-    const b = opportunity('opp-b', 'Beta', 'Strategy', '2026-09-18T12:00:00.000Z')
-    const snapshot = baseSnapshot({
-      opportunities: [a, b],
-      actions: [
-        applyAction('apply-a', a.id, '投递 Alpha', a.deadline),
-        applyAction('apply-b', b.id, '投递 Beta', b.deadline),
-      ],
-    })
-
-    const result = explainPriority(snapshot, { opportunityId: 'opp-a', compareWithOpportunityId: 'opp-b' }, { now: NOW })
-
-    expect(result.target.type).toBe('opportunity')
-    expect(result.score).toBeGreaterThan(0)
-    expect(result.components.map((item) => item.key)).toContain('urgency')
-    expect(result.comparison?.targetId).toBe('opp-b')
-    expect(result.comparison?.decisiveDifferences.length).toBeGreaterThan(0)
+  it('explicitly retires priority explanations and comparisons', () => {
+    const snapshot = baseSnapshot()
+    expect(() => explainPriority(snapshot, { opportunityId: 'opp-a', compareWithOpportunityId: 'opp-b' })).toThrow(/retired/)
   })
 
   it('filters Timeline history and reports truncation without exposing raw source input', () => {

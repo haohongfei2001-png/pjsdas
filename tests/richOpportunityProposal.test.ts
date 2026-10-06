@@ -73,10 +73,6 @@ describe('v1.5 Round 1 signed Rich Opportunity proposal', () => {
         },
         rationale: '岗位方向符合 AI 产品目标；匹配度和机会价值仍是评估，不属于招聘事实。',
         roleType: 'core',
-        opportunityValue: 90,
-        fitScore: 86,
-        fitConfidence: 'high',
-        opportunityValueConfidence: 'medium',
         discoveredAt: '2026-09-12T09:55:00+08:00',
       }],
     }, { signingKey })
@@ -119,10 +115,6 @@ describe('v1.5 Round 1 signed Rich Opportunity proposal', () => {
         facts: { annualCompensationMaxWan: 30 },
         rationale: '测试非法薪资边界。',
         roleType: 'core',
-        opportunityValue: 80,
-        fitScore: 80,
-        fitConfidence: 'medium',
-        opportunityValueConfidence: 'medium',
       }],
     }, { signingKey })
     expect(result.isError).toBe(true)

@@ -2,7 +2,6 @@ import { useEffect, useRef, useState } from 'react'
 import { formatScheduleTemporal } from './scheduleDisplayTime.js'
 import { latestByOccurrence, nodeForAction } from './todayBrief.js'
 import { jobPostingFreshness } from './jobPosting.js'
-import OpportunityAssessmentSummary from './OpportunityAssessmentSummary.js'
 import OpportunityDecisionSummary from './OpportunityDecisionSummary.js'
 import type { OpportunityDecisionRead } from './opportunityDecisionRead.js'
 import RichOpportunityFactsSummary from './RichOpportunityFactsSummary.js'
@@ -270,14 +269,6 @@ export default function OpportunityDetailDrawer({
             </details>
           ) : null}
 
-          <OpportunityAssessmentSummary
-            assessment={opportunity.detail?.assessment}
-            fitScore={opportunity.fitScore}
-            opportunityValue={opportunity.opportunityValue}
-            fitConfidence={discovery?.fitConfidence}
-            opportunityValueConfidence={discovery?.opportunityValueConfidence}
-            zh={zh}
-          />
         </div>
 
         {asPage ? <aside className="job-detail-related">

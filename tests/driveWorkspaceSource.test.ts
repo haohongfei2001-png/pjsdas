@@ -155,7 +155,7 @@ describe('Google Drive MCP workspace source', () => {
     const fetchImpl = driveMock({ envelope, files: [] })
     const source = createDriveWorkspaceSource({ getAccessToken: () => 'token', fetchImpl })
 
-    const result = await invokeReadTool(source, 'get_decision_rules', {})
+    const result = await invokeReadTool(source, 'list_opportunities', {})
     expect(result.isError).toBe(true)
     expect(result.content[0]).toMatchObject({ type: 'text' })
     if (result.content[0]?.type === 'text') {

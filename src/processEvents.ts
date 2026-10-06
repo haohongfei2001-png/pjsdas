@@ -100,16 +100,6 @@ export function actionForProcessEvent(event: ProcessEvent): Action | undefined {
     written_test_invite: `完成 ${event.company}｜笔试`,
     interview_invite: `参加 ${event.company}｜面试`,
   }
-  const leverage: Partial<Record<ProcessEventType, number>> = {
-    assessment_invite: 90,
-    written_test_invite: 94,
-    interview_invite: 98,
-  }
-  const delayCost: Partial<Record<ProcessEventType, number>> = {
-    assessment_invite: 92,
-    written_test_invite: 95,
-    interview_invite: 100,
-  }
 
   return {
     id: `event-action:${event.id}`,
@@ -122,8 +112,8 @@ export function actionForProcessEvent(event: ProcessEvent): Action | undefined {
     duePrecision: event.duePrecision,
     timingMode: event.timingMode ?? defaultTimingModeForProcessEvent(event.type),
     estimatedMinutes: event.estimatedMinutes ?? defaultMinutesForProcessEvent(event.type),
-    leverage: leverage[event.type] ?? 88,
-    delayCost: delayCost[event.type] ?? 90,
+    leverage: 0,
+    delayCost: 0,
     status: 'todo',
     sourceLabel: '流程事件',
     createdAt: event.createdAt,
@@ -289,6 +279,9 @@ export function reconcileProcessEventActions(
     byId.set(generated.id, previous
       ? {
           ...generated,
+          // Historic score fields remain archival; they are never recalculated or used.
+          leverage: previous.leverage,
+          delayCost: previous.delayCost,
           status: previous.status,
           createdAt: previous.createdAt,
           updatedAt: previous.updatedAt,

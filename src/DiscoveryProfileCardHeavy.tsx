@@ -5,6 +5,7 @@ import { ensureAuthoritativePersistence } from './cloud/authoritativePersistence
 import { connectedWorkspaceAuthorityEnabled } from './cloud/connectedWorkspaceRepository.js'
 import { createConnectedCommandId, executeConnectedBusinessCommand } from './cloud/authoritativeCommandClient.js'
 import { discoveryFeedbackSummary } from './discoveryFeedback.js'
+import { discoveryProfileSavePayload } from './discoveryProfileSave.js'
 import { useUiLanguage } from './uiLanguage.js'
 import type { DiscoveryProfile } from './discoveryProfile.js'
 import type { OpportunityRole, TimelineRecord } from './model.js'
@@ -145,7 +146,7 @@ export default function DiscoveryProfileCard() {
       if (connected) {
         const accountKey = cloud.session!.user.id
         const result = await executeConnectedBusinessCommand(accountKey, {
-          type: 'discovery_profile', value: requested,
+          type: 'discovery_profile', value: discoveryProfileSavePayload(requested),
         }, { commandId: createConnectedCommandId('discovery-profile') })
         if (result.outcome !== 'COMMITTED' && result.outcome !== 'ALREADY_APPLIED') {
           throw new Error(result.conflict?.message ?? '岗位发现偏好未写入账号工作区。')
@@ -223,7 +224,7 @@ export default function DiscoveryProfileCard() {
           <textarea value={mustNotHave} onChange={(event) => editText(setMustNotHave, event.target.value)} placeholder={zh ? '每行一条；来源明确命中时不进入 ChangeSet' : 'One exclusion per line; confirmed matches are filtered before ChangeSet review.'} />
         </label>
         <label>
-          <span>{zh ? '可用于判断匹配度的个人优势' : 'Strengths used for fit assessment'}</span>
+          <span>{zh ? '个人优势' : 'Personal strengths'}</span>
           <textarea value={strengths} onChange={(event) => editText(setStrengths, event.target.value)} placeholder={zh ? '只写你希望长期用于岗位发现的事实或能力' : 'Include only facts or strengths you want reused in ongoing discovery.'} />
         </label>
         <label>
@@ -277,28 +278,6 @@ export default function DiscoveryProfileCard() {
             onChange={(event) => updateProfile({ maxReviewCandidates: Number(event.target.value) })}
           />
         </label>
-        <label>
-          <span>{zh ? '最低匹配度（0–100，可空）' : 'Minimum fit score (0–100, optional)'}</span>
-          <input
-            type="number"
-            min="0"
-            max="100"
-            step="1"
-            value={profile.minimumFitScore ?? ''}
-            onChange={(event) => updateProfile({ minimumFitScore: event.target.value === '' ? undefined : Number(event.target.value) })}
-          />
-        </label>
-        <label>
-          <span>{zh ? '最低机会价值（0–100，可空）' : 'Minimum opportunity value (0–100, optional)'}</span>
-          <input
-            type="number"
-            min="0"
-            max="100"
-            step="1"
-            value={profile.minimumOpportunityValue ?? ''}
-            onChange={(event) => updateProfile({ minimumOpportunityValue: event.target.value === '' ? undefined : Number(event.target.value) })}
-          />
-        </label>
         <label className="wide">
           <span>{zh ? '地点规则 / 例外' : 'Location rules / exceptions'}</span>
           <textarea value={profile.locationNotes} onChange={(event) => updateProfile({ locationNotes: event.target.value })} placeholder={zh ? '例如：通常按某个地域范围；特定城市例外可接受。严格模式只执行上面的地点列表，复杂例外仍需人工确认。' : 'For example: use a normal geographic range, with explicit city exceptions. Strict mode enforces the list above; complex exceptions remain explicit.'} />
@@ -312,8 +291,8 @@ export default function DiscoveryProfileCard() {
       {error ? <div className="notice error">{error}</div> : null}
       {message ? <div className="notice success">{message}</div> : null}
       <small>{zh
-        ? '质量闸门会直接拦截已过期、明确关闭、命中排除条件、低于显式分数/薪资门槛或相似重复的岗位；无法从公开来源确认的事实保持未知并在审阅中提示。'
-        : 'The quality gate blocks expired or closed postings, explicit exclusions, jobs below configured score/compensation thresholds, and likely duplicates. Facts that cannot be verified from public sources remain unknown and visible in review.'}</small>
+        ? '质量闸门会直接拦截已过期、明确关闭、命中排除条件、低于显式薪资门槛或相似重复的岗位；无法从公开来源确认的事实保持未知并在审阅中提示。'
+        : 'The quality gate blocks expired or closed postings, explicit exclusions, jobs below configured compensation thresholds, and likely duplicates. Facts that cannot be verified from public sources remain unknown and visible in review.'}</small>
 
       <div className="discovery-history">
         <div className="discovery-history-heading">

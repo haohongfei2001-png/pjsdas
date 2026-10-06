@@ -29,7 +29,11 @@ export function scheduleDisplayTimezone(value?: string, basis?: ScheduleNodeTemp
 }
 
 export function formatScheduleTemporal(temporal: Partial<ScheduleNodeTemporal>, zh: boolean, displayTimezone?: string): string | undefined {
-  if (temporal.precision === 'date') return temporal.date
+  if (temporal.precision === 'date') {
+    if (!temporal.date) return undefined
+    return temporal.shape === 'estimated_date' || temporal.resolutionBasis === 'system_estimate'
+      ? (zh ? `预计 ${temporal.date}（待确认）` : `Estimated ${temporal.date} (unconfirmed)`) : temporal.date
+  }
   const at = temporal.startAt ?? temporal.deadlineAt ?? temporal.endAt
   if (!at || !Number.isFinite(Date.parse(at))) return undefined
   const timezone = scheduleDisplayTimezone(temporal.timezone, temporal.resolutionBasis, displayTimezone)

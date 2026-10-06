@@ -10,11 +10,21 @@ const fields = [
   ['targetRoleQueries', ['Product manager']], ['preferredLocations', ['Shanghai']], ['locationNotes', 'Only with transit'],
   ['mustHave', ['Growth']], ['mustNotHave', ['Night shifts']], ['strengths', ['Analysis']], ['notes', 'Explicit user preference'],
   ['minimumAnnualCompensationWan', 30], ['preferredRoleTypes', ['core', 'backup']], ['locationPolicy', 'strict'],
-  ['minimumFitScore', 70], ['minimumOpportunityValue', 60], ['maxReviewCandidates', 8],
+  ['maxReviewCandidates', 8],
 ] as const
-const optional = ['minimumAnnualCompensationWan', 'preferredRoleTypes', 'locationPolicy', 'minimumFitScore', 'minimumOpportunityValue', 'maxReviewCandidates']
+const optional = ['minimumAnnualCompensationWan', 'preferredRoleTypes', 'locationPolicy', 'maxReviewCandidates']
 function protectedData(s: PJSDASSnapshot) { return Object.fromEntries(Object.entries(s.data).filter(([key]) => !['discoveryProfile', 'timeline'].includes(key))) }
 describe('raw-preserving discovery profile management v5', () => {
+  it.each(['minimumFitScore', 'minimumOpportunityValue'])('rejects retired %s edits and preserves historical storage', async key => {
+    const current = fixture(); current.data.discoveryProfile = { ...createDefaultDiscoveryProfile(), minimumFitScore: 70, minimumOpportunityValue: 80 }
+    const before = structuredClone(current)
+    await expect(patch(current, { [key]: 99 })).rejects.toMatchObject({ code: 'SCORING_RETIRED' })
+    await expect(patch(current, { [key]: null })).rejects.toMatchObject({ code: 'SCORING_RETIRED' })
+    const result = await patch(current, { notes: 'New factual preference' })
+    expect(result.snapshot.data.discoveryProfile).toMatchObject({ minimumFitScore: 70, minimumOpportunityValue: 80 })
+    expect(restore(result.snapshot, result.compensation!, NOW).data.discoveryProfile).toEqual(before.data.discoveryProfile)
+    expect(current).toEqual(before)
+  })
   it('reads absent raw state, effective defaults, fingerprint and not-configured truth', async () => {
     const s=fixture(); const before=structuredClone(s); const v=await read(s)
     expect(v).toMatchObject({raw:null,configured:false,effective:{maxReviewCandidates:6,locationPolicy:'prefer'}})

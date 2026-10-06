@@ -9,8 +9,7 @@ const need: PrepOpportunityNeed = {
   role: 'AI PM',
   kind: 'gap',
   label: 'SQL',
-  severity: 80,
-  source: 'Fit assessment · skills 55',
+  source: 'Opportunity detail · explicit gap',
 }
 
 function link(source: PrepGraphLink['source'], matchedNeedIds: string[] = []): PrepGraphLink {

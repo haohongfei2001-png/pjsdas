@@ -1,6 +1,6 @@
+import { ScoringRetiredError } from './scoringRetirement.js'
 import { applyMcpActionStatusCommand } from './mcpActionStatusCommand.js'
 import { applyMcpProgressCommand } from './mcpProgressCommand.js'
-import { applyMcpRulesCommand } from './mcpRulesCommand.js'
 import { timelineFromChangeSetApplied } from './timeline.js'
 import { upgradeSnapshotToLatest, validateSnapshot, type PJSDASSnapshot } from './snapshot.js'
 import type { ChangeSetOperation } from './changeSet.js'
@@ -11,6 +11,7 @@ import type { McpProposalEnvelope } from './ai/mcpProposal.js'
 // the gateway commits only the final combined snapshot and one real ChangeSet.
 export function applyMcpMixedCommand(snapshot: PJSDASSnapshot, proposal: McpProposalEnvelope, now = new Date()) {
   const changeSet = proposal.changeSet
+  if (changeSet.operations.some(operation => operation.kind === 'replace_decision_rules')) throw new ScoringRetiredError()
   if (changeSet.source !== 'mcp' || changeSet.status !== 'pending' || !changeSet.operations.length ||
     changeSet.operations.some((item) => !['progress_update', 'set_action_status', 'replace_decision_rules'].includes(item.kind))) {
     throw new Error('Only a pending progress/Action/Rules MCP proposal can use this command.')
@@ -35,7 +36,6 @@ export function applyMcpMixedCommand(snapshot: PJSDASSnapshot, proposal: McpProp
   }
   applyFamily('progress', changeSet.operations.filter((item) => item.kind === 'progress_update'), applyMcpProgressCommand)
   applyFamily('actions', changeSet.operations.filter((item) => item.kind === 'set_action_status'), applyMcpActionStatusCommand)
-  applyFamily('rules', changeSet.operations.filter((item) => item.kind === 'replace_decision_rules'), applyMcpRulesCommand)
   const timestamp = now.toISOString()
   const applied = { ...changeSet, status: 'applied' as const, appliedAt: timestamp, updatedAt: timestamp }
   next.data.changeSets = [...(next.data.changeSets ?? []), applied]

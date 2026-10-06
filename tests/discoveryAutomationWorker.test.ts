@@ -68,10 +68,6 @@ describe('server-owned discovery worker model boundary', () => {
       location: 'Beijing',
       rationale: 'Official employer posting matches the explicit target role.',
       roleType: 'core',
-      opportunityValue: 75,
-      fitScore: 80,
-      fitConfidence: 'medium',
-      opportunityValueConfidence: 'medium',
       postingStatus: 'open',
       discoveredAt: '2026-09-15T01:00:00.000Z',
     }] }), seen)
@@ -91,7 +87,6 @@ describe('server-owned discovery worker model boundary', () => {
     expect(observations[0]).toMatchObject({
       sourceRecordId: expect.stringMatching(/^verified:/),
       company: 'Example AI',
-      fitScore: 80,
       sourceVerification: 'verified',
       sourceTitle: 'AI Product Manager - Example AI',
       postingStatus: 'unknown',
@@ -127,10 +122,6 @@ describe('server-owned discovery worker model boundary', () => {
       sourceTitle: 'AI Product Manager',
       rationale: 'Looks relevant.',
       roleType: 'core',
-      opportunityValue: 80,
-      fitScore: 80,
-      fitConfidence: 'high',
-      opportunityValueConfidence: 'high',
     }] }))
 
     await expect(discoverSourceRun(snapshot, sourceRun(), {
@@ -150,10 +141,6 @@ describe('server-owned discovery worker model boundary', () => {
       sourceTitle: 'AI Product Manager',
       rationale: 'Official source.',
       roleType: 'core',
-      opportunityValue: 70,
-      fitScore: 70,
-      fitConfidence: 'medium',
-      opportunityValueConfidence: 'medium',
     }
 
     await expect(discoverSourceRun(snapshot, sourceRun(), {
@@ -307,10 +294,6 @@ describe('server-owned discovery worker model boundary', () => {
       compensationText: '300k RMB',
       rationale: 'Model says this is the job.',
       roleType: 'core',
-      opportunityValue: 88,
-      fitScore: 90,
-      fitConfidence: 'high',
-      opportunityValueConfidence: 'high',
       postingStatus: 'open',
     }, {
       now: new Date('2026-09-19T00:00:00.000Z'),
@@ -340,10 +323,6 @@ describe('server-owned discovery worker model boundary', () => {
       sourceTitle: 'Example',
       rationale: 'Example',
       roleType: 'core',
-      opportunityValue: 70,
-      fitScore: 70,
-      fitConfidence: 'medium',
-      opportunityValueConfidence: 'medium',
     }, { fetchImpl })
 
     expect(observation).toMatchObject({
@@ -365,10 +344,6 @@ describe('server-owned discovery worker model boundary', () => {
       compensationText: '300k RMB',
       rationale: 'Model assessment.',
       roleType: 'core',
-      opportunityValue: 80,
-      fitScore: 80,
-      fitConfidence: 'medium',
-      opportunityValueConfidence: 'medium',
       postingStatus: 'open',
     }, {
       now: new Date('2026-09-19T00:00:00.000Z'),

@@ -1,5 +1,4 @@
 import { canonicalOpportunityId, resolveCanonicalPostingIdentity } from './opportunityCanonicalization.js'
-import { decisionRulesForSnapshot } from './decisionRules.js'
 import { discoveryProfileForSnapshot } from './discoveryProfile.js'
 import { evaluateDiscoveryCandidate, findSimilarOpportunity } from './discoveryQuality.js'
 import {
@@ -47,10 +46,10 @@ export interface MonitorJobObservation {
   compensationText?: string
   rationale: string
   roleType: OpportunityRole
-  opportunityValue: number
-  fitScore: number
-  fitConfidence: DiscoveryConfidence
-  opportunityValueConfidence: DiscoveryConfidence
+  opportunityValue?: number
+  fitScore?: number
+  fitConfidence?: DiscoveryConfidence
+  opportunityValueConfidence?: DiscoveryConfidence
   postingStatus?: JobPostingStatus
   discoveredAt?: string
   sourceVerification?: 'verified' | 'unverified'
@@ -136,8 +135,8 @@ function applyActionForNewOpportunity(opportunity: Opportunity, observedAt: stri
     dueAt: opportunity.deadline,
     timingMode: opportunity.deadline ? 'deadline' : undefined,
     estimatedMinutes: opportunity.prepEstimateMinutes ?? 45,
-    leverage: 70,
-    delayCost: opportunity.deadline ? 65 : 40,
+    leverage: 0,
+    delayCost: 0,
     status: 'todo',
     sourceLabel: '自动岗位监控',
     createdAt: observedAt,
@@ -170,15 +169,15 @@ function createMonitorOpportunity(observation: MonitorJobObservation, observedAt
     currentStageLabel: '待投',
     processStage: 'not_applied',
     roleType: observation.roleType,
-    assessmentStatus: 'provisional',
+    assessmentStatus: 'unassessed',
     early: false,
     deadline: observation.deadline,
     sourcePriority: 'GPT Monitor 自动摄入',
     salaryReference: observation.compensationText,
     nextActionLabel: '审阅并投递',
     prepEstimateMinutes: 45,
-    opportunityValue: observation.opportunityValue,
-    fitScore: observation.fitScore,
+    opportunityValue: 0, // Legacy snapshot field only; never scored or ranked.
+    fitScore: 0,
     locallyManaged: true,
     importedAt: observedAt,
     detail: {
@@ -191,8 +190,8 @@ function createMonitorOpportunity(observation: MonitorJobObservation, observedAt
         discoveredAt: observedAt,
         sourceVerification: observation.sourceVerification,
         sourceVerifiedAt: observation.sourceVerifiedAt,
-        fitConfidence: observation.fitConfidence,
-        opportunityValueConfidence: observation.opportunityValueConfidence,
+        fitConfidence: 'low',
+        opportunityValueConfidence: 'low',
         posting,
       },
     },
@@ -233,8 +232,8 @@ function mergeMonitorObservation(existing: Opportunity, observation: MonitorJobO
         discoveredAt: discovery?.discoveredAt ?? observedAt,
         sourceVerification: observation.sourceVerification ?? discovery?.sourceVerification,
         sourceVerifiedAt: observation.sourceVerifiedAt ?? discovery?.sourceVerifiedAt,
-        fitConfidence: discovery?.fitConfidence ?? observation.fitConfidence,
-        opportunityValueConfidence: discovery?.opportunityValueConfidence ?? observation.opportunityValueConfidence,
+        fitConfidence: discovery?.fitConfidence ?? 'low',
+        opportunityValueConfidence: discovery?.opportunityValueConfidence ?? 'low',
         profileWarnings: discovery?.profileWarnings,
         posting: mergedPosting.current,
         postingHistory: mergedPosting.history.length ? mergedPosting.history : undefined,
@@ -306,7 +305,6 @@ export function applyMonitorIngestion(
   const createdOpportunityIds: string[] = []
   const touchedOpportunityIds: string[] = []
   const profile = discoveryProfileForSnapshot(next.data.discoveryProfile)
-  const rules = decisionRulesForSnapshot(next.data.decisionRules)
   const now = new Date(input.completedAt)
 
   for (const observation of input.observations) {
@@ -331,7 +329,7 @@ export function applyMonitorIngestion(
         const evaluated = evaluateDiscoveryCandidate(profile, {
           ...observation,
           discoveredAt: receivedAt,
-        }, rules.weights, now)
+        }, undefined, now)
         if (!evaluated.accepted) {
           outcome = 'filtered'
           reason = evaluated.hardRejectReasons.join('；')
@@ -439,12 +437,12 @@ function createGmailShellOpportunity(message: GmailMessageObservation): Opportun
     currentStageLabel: message.stageLabel?.trim() || stageLabel(stage),
     processStage: stage,
     roleType: message.roleType ?? 'core',
-    assessmentStatus: message.opportunityValue !== undefined && message.fitScore !== undefined ? 'provisional' : 'unassessed',
+    assessmentStatus: 'unassessed',
     early: false,
     sourcePriority: 'Gmail 自动摄入 · 待补评估',
     nextActionLabel: stage === 'closed' ? '流程已结束' : '根据邮件进展继续流程',
-    opportunityValue: message.opportunityValue ?? 50,
-    fitScore: message.fitScore ?? 50,
+    opportunityValue: 0,
+    fitScore: 0,
     locallyManaged: true,
     importedAt: message.receivedAt,
     detail: { backgroundTag: 'Gmail 自动摄入；Fit / 机会价值尚未正式评估。' },

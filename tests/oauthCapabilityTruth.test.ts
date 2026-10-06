@@ -13,7 +13,7 @@ describe('OAuth capability truth', () => {
     expect(serverFactory).toContain('readOnlyHint: false')
 
     expect(consent).toContain('受信任的 Monitor / Gmail 摄入')
-    expect(consent).toContain('不能静默修改 Decision Rules、持久偏好、拒绝决定，也不能删除数据')
+    expect(consent).toContain('不能静默修改持久偏好、拒绝决定，也不能删除数据')
     expect(consent).toContain('允许此访问')
     expect(consent).not.toContain('此授权仅用于 v1.1 的只读工具')
     expect(consent).not.toContain('允许只读访问')

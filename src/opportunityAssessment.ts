@@ -1,12 +1,7 @@
 import {
-  resolvedFitComponentWeights,
-  resolvedOpportunityValueComponentWeights,
   type DecisionRules,
-  type FitComponentWeights,
-  type OpportunityValueComponentWeights,
 } from './decisionRules.js'
 import type {
-  DiscoveryConfidence,
   DiscoveryInboxItem,
   FitAssessmentComponentKey,
   Opportunity,
@@ -38,12 +33,6 @@ export const OPPORTUNITY_VALUE_ASSESSMENT_COMPONENT_KEYS: OpportunityValueAssess
 export interface OpportunityAssessmentInput {
   fit: Partial<Record<FitAssessmentComponentKey, OpportunityAssessmentComponent>>
   opportunityValue: Partial<Record<OpportunityValueAssessmentComponentKey, OpportunityAssessmentComponent>>
-}
-
-const confidenceValue: Record<DiscoveryConfidence, number> = {
-  high: 1,
-  medium: 0.7,
-  low: 0.4,
 }
 
 function cleanComponent(component: OpportunityAssessmentComponent): OpportunityAssessmentComponent {
@@ -99,56 +88,6 @@ export function validateOpportunityAssessment(assessment: OpportunityAssessment)
   return errors
 }
 
-function aggregateAxis<K extends string>(
-  keys: K[],
-  components: Partial<Record<K, OpportunityAssessmentComponent>>,
-  weights: Record<K, number>,
-) {
-  const totalConfiguredWeight = keys.reduce((sum, key) => sum + Math.max(0, weights[key] ?? 0), 0)
-  let knownWeight = 0
-  let weightedScore = 0
-  let weightedConfidence = 0
-  for (const key of keys) {
-    const component = components[key]
-    const weight = Math.max(0, weights[key] ?? 0)
-    if (!component || weight <= 0) continue
-    knownWeight += weight
-    weightedScore += component.score * weight
-    weightedConfidence += confidenceValue[component.confidence] * weight
-  }
-  const score = knownWeight > 0 ? Math.round((weightedScore / knownWeight) * 10) / 10 : 0
-  const coverage = totalConfiguredWeight > 0 ? knownWeight / totalConfiguredWeight : 0
-  const evidenceConfidence = knownWeight > 0 ? weightedConfidence / knownWeight : 0
-  const certainty = coverage * evidenceConfidence
-  const confidence: DiscoveryConfidence = certainty >= 0.72 ? 'high' : certainty >= 0.4 ? 'medium' : 'low'
-  return {
-    score,
-    confidence,
-    coveragePercent: Math.round(coverage * 100),
-    knownComponents: keys.filter((key) => Boolean(components[key])),
-    missingComponents: keys.filter((key) => !components[key]),
-  }
-}
-
-export function scoreOpportunityAssessment(assessment: OpportunityAssessment, rules: DecisionRules) {
-  const fitWeights = resolvedFitComponentWeights(rules) as Record<FitAssessmentComponentKey, number>
-  const opportunityWeights = resolvedOpportunityValueComponentWeights(rules) as Record<OpportunityValueAssessmentComponentKey, number>
-  return {
-    fit: aggregateAxis(FIT_ASSESSMENT_COMPONENT_KEYS, assessment.fit, fitWeights),
-    opportunityValue: aggregateAxis(OPPORTUNITY_VALUE_ASSESSMENT_COMPONENT_KEYS, assessment.opportunityValue, opportunityWeights),
-  }
-}
-
-export function assessmentWarnings(assessment: OpportunityAssessment, rules: DecisionRules) {
-  const scored = scoreOpportunityAssessment(assessment, rules)
-  const warnings: string[] = []
-  if (scored.fit.coveragePercent < 60) warnings.push(`匹配度组件覆盖仅 ${scored.fit.coveragePercent}%，总分基于有限分项。`)
-  if (scored.opportunityValue.coveragePercent < 60) warnings.push(`机会价值组件覆盖仅 ${scored.opportunityValue.coveragePercent}%，总分基于有限分项。`)
-  if (scored.fit.confidence === 'low') warnings.push('匹配度组件综合置信度较低。')
-  if (scored.opportunityValue.confidence === 'low') warnings.push('机会价值组件综合置信度较低。')
-  return warnings
-}
-
 export function mergeOpportunityAssessments(previous: OpportunityAssessment | undefined, incoming: OpportunityAssessment | undefined) {
   if (!previous) return incoming
   if (!incoming) return previous
@@ -158,37 +97,6 @@ export function mergeOpportunityAssessments(previous: OpportunityAssessment | un
   }, incoming.assessedAt >= previous.assessedAt ? incoming.assessedAt : previous.assessedAt)
 }
 
-export function projectOpportunityAssessment(opportunity: Opportunity, rules: DecisionRules): Opportunity {
-  const assessment = opportunity.detail?.assessment
-  if (!assessment) return opportunity
-  const scored = scoreOpportunityAssessment(assessment, rules)
-  return {
-    ...opportunity,
-    assessmentStatus: 'assessed',
-    fitScore: scored.fit.score,
-    opportunityValue: scored.opportunityValue.score,
-    detail: {
-      ...opportunity.detail,
-      discovery: opportunity.detail?.discovery ? {
-        ...opportunity.detail.discovery,
-        fitConfidence: scored.fit.confidence,
-        opportunityValueConfidence: scored.opportunityValue.confidence,
-      } : opportunity.detail?.discovery,
-    },
-  }
-}
-
-export function projectDiscoveryInboxAssessment(item: DiscoveryInboxItem, rules: DecisionRules): DiscoveryInboxItem {
-  if (!item.assessment) return item
-  const scored = scoreOpportunityAssessment(item.assessment, rules)
-  return {
-    ...item,
-    fitScore: scored.fit.score,
-    opportunityValue: scored.opportunityValue.score,
-    fitConfidence: scored.fit.confidence,
-    opportunityValueConfidence: scored.opportunityValue.confidence,
-  }
-}
-
-export type FitComponentWeightsResolved = FitComponentWeights
-export type OpportunityValueComponentWeightsResolved = OpportunityValueComponentWeights
+// Compatibility projections are identity functions: never recalculate historical ratings.
+export function projectOpportunityAssessment(opportunity: Opportunity, _rules?: DecisionRules): Opportunity { return opportunity }
+export function projectDiscoveryInboxAssessment(item: DiscoveryInboxItem, _rules?: DecisionRules): DiscoveryInboxItem { return item }

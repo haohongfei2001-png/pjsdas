@@ -41,7 +41,7 @@ interface TodayFeatureProps {
 }
 function timeLabel(item: TodayBriefAction, zh: boolean, displayTimezone: string) {
   const timing = item.timing
-  if (!timing) return zh ? '今天' : 'Today'
+  if (!timing) return zh ? '截止日期未明确' : 'Deadline not stated'
   if (timing.precision === 'date' && timing.date) return timing.date
   const at = timing.startAt ?? timing.deadlineAt
   if (!at) return zh ? '今天' : 'Today'
@@ -85,13 +85,13 @@ export default function TodayFeature({ selection, stream, opportunities, readOnl
     : Boolean(item.timing?.deadlineAt && localDateKey(new Date(item.timing.deadlineAt), selection.displayTimezone) === todayKey)
   const fixedNotice = fixedConflict ? <div className="tsui-inline-notice tsui-deadline-notice" role="status"><strong>{zh ? '两个固定安排时间冲突。' : 'Two fixed commitments overlap.'}</strong> <span>{fixedConflict.relatedIds.map(id => stream.sections.upcoming.find(entry => entry.nodeId === id)?.title ?? id).join(' · ')}</span> <button type="button" onClick={onOpenAgenda}>{zh ? '查看相关安排' : 'Review commitments'}</button></div> : null
   const deadlineNotice = deadlineConflict ? <div className="tsui-inline-notice tsui-deadline-notice" role="status">
-    <strong>{zh ? '按剩余时间取舍硬截止事项' : 'Choose deadlines that fit the remaining time'}</strong>
+    <strong>{zh ? '这些截止事项无法全部在可用时间内完成' : 'These deadlines do not all fit the available time'}</strong>
     <p>{selectedHard.length ? (zh ? '剩余时间预计可完成：' : 'Expected to fit: ') + selectedHard.map(tradeoffLabel).join('、')
       : (zh ? '按当前剩余时间，没有可完整完成的硬截止任务。' : 'No complete deadline task fits the remaining time.')}</p>
     <p>{zh ? '以下事项未选入今天：' : 'Not selected for today: '}</p>
     <ul>{notSelectedHard.map(item => <li key={item.actionId}>
       <button type="button" data-deferred-action-id={item.actionId} onClick={event => item.opportunityId ? onOpenOpportunity(item.opportunityId, event.currentTarget) : onOpenAgenda()}>{tradeoffLabel(item)}</button>
-      {' · '}{dueToday(item) ? (zh ? '建议放弃本次截止' : 'Consider skipping this deadline') : (zh ? '需调整安排或放弃本次截止' : 'Reschedule the work or skip this deadline')}
+      {' · '}{zh ? '可用时间不足，未改变任务状态' : 'Insufficient available time; task status unchanged'}
     </li>)}</ul>
     <button type="button" onClick={onOpenAgenda}>{zh ? '查看相关安排' : 'Review commitments'}</button>
   </div> : null

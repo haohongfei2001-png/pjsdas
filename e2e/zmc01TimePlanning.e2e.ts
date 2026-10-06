@@ -3,6 +3,8 @@ import { createSnapshot } from '../src/snapshot.js'
 import { applyUserDomainCommand } from '../src/domainCommands.js'
 import { BACKEND, cors, health, seedSession } from './fixtures/todayWorkspace.js'
 
+test.use({ timezoneId: 'Asia/Shanghai' })
+
 test('Today capacity is a durable user choice and flexible overflow leaves the workspace intact', async ({ page }) => {
   await page.clock.setFixedTime(new Date('2026-09-25T01:00:00.000Z'))
   await page.goto('/pjsdas/today')
@@ -23,7 +25,7 @@ test('Today capacity is a durable user choice and flexible overflow leaves the w
     }
   }))
   await page.reload()
-  await expect(page.locator('.tsui-task-row')).toHaveCount(8)
+  await expect(page.locator('.tsui-task-row')).toHaveCount(30)
   await expect(page.getByText('今天的安排可能超出可用时间')).toHaveCount(0)
   await page.locator('.tsui-capacity summary').click()
   await page.locator('.tsui-capacity input').fill('2')

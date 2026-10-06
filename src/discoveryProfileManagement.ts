@@ -1,3 +1,4 @@
+import { assertNoScoringInput, withoutRetiredScoring } from './scoringRetirement.js'
 import * as z from 'zod/v4'
 import { discoveryProfileForSnapshot, isDiscoveryProfileConfigured, validateDiscoveryProfile, type DiscoveryProfile } from './discoveryProfile.js'
 import { SNAPSHOT_VERSION, validateSnapshot, type PJSDASSnapshot } from './snapshot.js'
@@ -12,11 +13,12 @@ const optionalFields = {
   locationPolicy: z.enum(['prefer', 'strict']), minimumFitScore: z.number().min(0).max(100),
   minimumOpportunityValue: z.number().min(0).max(100), maxReviewCandidates: z.number().int().min(1).max(12),
 }
+const { minimumFitScore: _oldFit, minimumOpportunityValue: _oldValue, ...editableOptionalFields } = optionalFields
 const patch = z.object({
   targetRoleQueries: list.optional(), preferredLocations: list.optional(),
   locationNotes: z.string().max(1200).optional(), mustHave: list.optional(), mustNotHave: list.optional(),
   strengths: list.optional(), notes: z.string().max(2400).optional(),
-  ...Object.fromEntries(Object.entries(optionalFields).map(([key, schema]) => [key, schema.nullable().optional()])) as { [K in keyof typeof optionalFields]: z.ZodOptional<z.ZodNullable<(typeof optionalFields)[K]>> },
+  ...Object.fromEntries(Object.entries(editableOptionalFields).map(([key, schema]) => [key, schema.nullable().optional()])) as { [K in keyof typeof editableOptionalFields]: z.ZodOptional<z.ZodNullable<(typeof editableOptionalFields)[K]>> },
 }).strict().refine(value => Object.values(value).some(item => item !== undefined), 'A nonempty patch is required.')
 export const discoveryProfileManagementSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('patch_discovery_profile'), expectedFingerprint: fingerprint, patch }).strict(),
@@ -83,11 +85,12 @@ export async function getDiscoveryProfileManagementRead(snapshot: PJSDASSnapshot
   const current = rawSnapshot(snapshot).data.discoveryProfile ?? null
   validateProfile(current)
   const effective = discoveryProfileForSnapshot(current ?? undefined)
-  return { raw: structuredClone(current), effective, fingerprint: await discoveryProfileManagementFingerprint(current), configured: isDiscoveryProfileConfigured(effective) }
+  return { raw: withoutRetiredScoring(current), effective: withoutRetiredScoring(effective), fingerprint: await discoveryProfileManagementFingerprint(current), configured: isDiscoveryProfileConfigured(effective) }
 }
 /** This only stores explicitly supplied preferences. It never starts a search, changes a budget,
  * rewrites discovered facts, infers preferences or changes provider/credential settings. */
 export async function applyDiscoveryProfileManagement(snapshot: PJSDASSnapshot, raw: unknown, commandId: string, now = new Date()) {
+  assertNoScoringInput(raw)
   const input = discoveryProfileManagementSchema.parse(raw)
   if (commandId.trim().length < 8 || commandId.length > 160) throw new Error('Invalid discovery-profile command identity.')
   const next = rawSnapshot(snapshot)

@@ -139,19 +139,19 @@ export function createPjsdasMcpServer(
   const externalCapabilityStates = capabilityStateMap(externalCapabilities)
   const instructions = [
     'TodayAction is a personal job-search decision and action system.',
-    'Use its explicit decision rules and deterministic explanations instead of inventing hidden ranking rules.',
+    'Actions and opportunity lists use actual deadline order. Do not invent scores, weighted priorities or fit/value ratings.',
     'Read tools never change TodayAction state.',
-    'Use get_today_brief as the canonical daily read contract for Web/MCP/iPhone-equivalent planning. It is revision-bound and already combines next action, sparse next actions, recruiting agenda, DecisionRequests, and material coverage warnings. get_today_plan remains a compatibility read for older clients.',
+    'Use get_today_brief as the canonical daily read contract for Web/MCP/iPhone-equivalent planning. It is revision-bound and already combines next action, deadline-ordered next actions, recruiting agenda, DecisionRequests, and material coverage warnings. get_today_plan remains a compatibility read for older clients.',
     'For job discovery, first call get_discovery_context. Treat its Discovery Profile as the durable user-controlled search preference source; do not silently invent or rewrite durable preferences from chat history.',
     'When get_discovery_context returns continuousDiscovery, use incrementalSince as the normal lower bound for new or materially updated postings, and treat refreshQueue as separate source-verification work. Do not repeat a full historical search without a reason.',
     'For refreshQueue work, preserve ownerKind, ownerId, postingId and canonicalSourceUrl exactly. A newly found canonical URL is a new/re-posted source and must go through normal discovery instead of overwriting an existing posting.',
     'A public posting becoming closed does not by itself close the TodayAction Opportunity or recruitment Process. Posting lifecycle and recruiting lifecycle are separate facts.',
     'Interactive MCP tools do not perform arbitrary job-web discovery. If the user asks for current jobs in ChatGPT, use ChatGPT web search/browsing and preserve public source URLs. Separately, TodayAction background Discovery may discover candidates and independently fetch their source URLs before any source fact is trusted.',
     'When a public source explicitly supports them, submit bounded structured job facts. Do not convert model inference into source facts.',
-    'For new web-discovered jobs, prefer bounded component assessments over opaque aggregate ratings. TodayAction derives Fit and Opportunity Value totals from explicit components and user-controlled weights.',
-    'Use get_opportunity_detail as the canonical opportunity decision read: conclusion, material reasons/risks, current process state, next operation, and nearest ScheduleNode. Use get_opportunity_assessment only when the user explicitly asks why a stored Fit or Opportunity Value score exists.',
-    'Use get_application_portfolio when the user asks which roles to choose inside an explicit Application Group. Capacity is a maximum, not a target.',
-    'Use get_prep_graph when the user asks what preparation has the highest leverage or which current gaps are uncovered.',
+    'New job inputs contain source facts and deadlines only. Scoring fields and score policies are retired and are rejected.',
+    'Use get_opportunity_detail for source facts, current process state, next operation and ScheduleNode. get_opportunity_assessment, get_decision_rules and explain_priority return SCORING_RETIRED.',
+    'Use get_application_portfolio for factual application-group quotas and candidates in deadline order. Contract version 2 does not score, recommend or automatically fill slots.',
+    'Use get_prep_graph for explicit preparation links, upcoming dates and uncovered stated requirements.',
     'Use get_coverage_status when the user asks whether automated sources missed anything. A green result means every currently enabled Source Registry entry is fresh and balanced with no active unresolved input. Lifetime unresolved audit history is preserved separately and does not by itself block green Coverage; this still does not claim that the public internet contains no other jobs.',
     'Use get_workspace_integrity when the user asks whether the TodayAction workspace itself is structurally healthy. This audit is read-only and never repairs or deletes data.',
     'Use get_external_capabilities before assuming an external Task or Calendar delivery channel exists. Host-side ChatGPT features are not callable merely because they exist in the host product.',
@@ -163,7 +163,7 @@ export function createPjsdasMcpServer(
       'When the user explicitly asks in the current conversation to add, save, record, or write specific source-backed job opportunities into TodayAction, use add_opportunities and execute the write immediately. Do not route that explicit instruction through propose_changes and do not require a second Apply click.',
       'Use add_opportunities only for additive Opportunity creation. It is duplicate-safe and cannot change Decision Rules, delete history, close processes, or make other policy decisions.',
       'Do not use add_opportunities when the user is only asking for recommendations, evaluation, discovery, or whether a job should be added. Those requests do not constitute write authorization.',
-      'If Fit or Opportunity Value is not already grounded, omit those optional scores rather than inventing precision; TodayAction will mark the opportunity unassessed even if internal ranking needs fallback values.',
+      'Do not submit fit/value scores or assessment confidence with new opportunities.',
     )
   }
 
@@ -212,7 +212,7 @@ export function createPjsdasMcpServer(
       'For ad-hoc web-discovered jobs that are not part of a trusted monitoring run and are not covered by an explicit current user write instruction, submit only source-backed candidates through discoveredOpportunities.',
       'When a discovery pass produces zero eligible jobs, TodayAction can return a review-only record_discovery_run proposal.',
       'For refreshQueue verification, use postingRefreshes as a separate review batch.',
-      'Rich Opportunity facts are evidence fields, not ratings. Component assessment is the preferred rating path.',
+      'Rich Opportunity facts are evidence fields; ratings and component assessments are no longer accepted.',
     )
   } else if (!trustedDiscoveryEnabled && !trustedGmailEnabled && explicitUserWriteMode !== 'enabled' && explicitUserCommandMode !== 'enabled' && semanticIntakeMode !== 'enabled') {
     instructions.push('This server exposes no mutation or proposal tools.')
@@ -250,13 +250,13 @@ export function createPjsdasMcpServer(
 
   server.registerTool('get_today_brief', {
     title: 'Get TodayAction Today brief',
-    description: 'Read the canonical revision-bound daily decision contract: one next action, sparse next actions, recruiting agenda, relevant DecisionRequests, material coverage warnings, executability and latest-start protection.',
+    description: 'Read the canonical revision-bound daily decision contract: one next action, deadline-ordered next actions, recruiting agenda, relevant DecisionRequests, material coverage warnings, executability and latest-start protection.',
     inputSchema: getTodayBriefSchema, annotations: readOnlyAnnotations,
   }, async (args) => invokeReadTool(source, 'get_today_brief', args))
 
   server.registerTool('get_today_plan', {
     title: 'Get TodayAction today plan',
-    description: 'Read the deterministic TodayAction action plan for a day and optional available-time budget. Existing Prep Actions may receive runtime leverage/urgency boosts without rewriting stored records.',
+    description: 'Read Today actions in actual deadline order with an optional available-time budget and real fixed-event constraints.',
     inputSchema: getTodayPlanSchema, annotations: readOnlyAnnotations,
   }, async (args) => invokeReadTool(source, 'get_today_plan', args))
 
@@ -273,14 +273,14 @@ export function createPjsdasMcpServer(
   }, async (args) => invokeReadTool(source, 'get_opportunity_detail', args))
 
   server.registerTool('get_opportunity_assessment', {
-    title: 'Get TodayAction opportunity assessment',
-    description: 'Read a single Opportunity component assessment, stored aggregate scores, and current-rules projection without rewriting history.',
+    title: 'Retired TodayAction opportunity assessment',
+    description: 'Retired compatibility tool. Always returns SCORING_RETIRED; use get_opportunity_detail for source facts and actual deadlines.',
     inputSchema: getOpportunityAssessmentSchema, annotations: readOnlyAnnotations,
   }, async (args) => invokeReadTool(source, 'get_opportunity_assessment', args))
 
   server.registerTool('get_application_portfolio', {
     title: 'Get TodayAction application portfolio decision',
-    description: 'Read deterministic portfolio recommendations for explicit Application Groups with shared application quotas. Capacity is treated as a maximum.',
+    description: 'Read contract version 2: factual application-group quotas and candidates in deadline order, without scores or automatic slot selection.',
     inputSchema: getApplicationPortfolioSchema, annotations: readOnlyAnnotations,
   }, async (args) => invokeReadTool(source, 'get_application_portfolio', args))
 
@@ -297,14 +297,14 @@ export function createPjsdasMcpServer(
   }, async (args) => invokeReadTool(source, 'get_pipeline', args))
 
   server.registerTool('get_decision_rules', {
-    title: 'Get TodayAction decision rules',
-    description: 'Read the explicit user-controlled rules that govern planning, risk thresholds, ranking weights, component-assessment weights, and portfolio policy.',
+    title: 'Retired TodayAction decision rules',
+    description: 'Retired compatibility tool. Always returns SCORING_RETIRED; planning uses actual deadlines and fixed commitments.',
     annotations: readOnlyAnnotations,
   }, async () => invokeReadTool(source, 'get_decision_rules', {}))
 
   server.registerTool('get_discovery_context', {
     title: 'Get TodayAction continuous job-discovery context',
-    description: 'Read the Discovery Profile, active weights, existing/inbox identities, Discovery Run history, incremental baseline, source coverage, and posting-refresh queue.',
+    description: 'Read factual Discovery Profile preferences, existing/inbox identities, run history, incremental baseline, source coverage and posting-refresh queue without scoring weights.',
     inputSchema: getDiscoveryContextSchema, annotations: readOnlyAnnotations,
   }, async (args) => invokeReadTool(source, 'get_discovery_context', args))
 
@@ -321,8 +321,8 @@ export function createPjsdasMcpServer(
   }, async (args) => invokeWorkspaceIntegrity(source, args))
 
   server.registerTool('explain_priority', {
-    title: 'Explain TodayAction priority',
-    description: 'Explain an action or opportunity using deterministic Today-ranking components and active guardrails.',
+    title: 'Retired TodayAction score explanation',
+    description: 'Retired compatibility tool. Always returns SCORING_RETIRED; no priority score is calculated.',
     inputSchema: explainPrioritySchema, annotations: readOnlyAnnotations,
   }, async (args) => invokeReadTool(source, 'explain_priority', args))
 

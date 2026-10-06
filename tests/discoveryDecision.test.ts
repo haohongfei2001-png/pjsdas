@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
   discoveryDecisionSummary,
-  discoveryReviewScore,
   sortDiscoveryInboxItems,
 } from '../src/discoveryDecision.js'
 import { createJobPostingEvidence } from '../src/jobPosting.js'
@@ -33,10 +32,6 @@ function candidate(overrides: Partial<DiscoveryInboxItem> = {}): DiscoveryInboxI
 }
 
 describe('v1.4 round 2/3 discovery decision workspace', () => {
-  it('keeps the inbox review reference transparent and separate from formal priority', () => {
-    expect(discoveryReviewScore(candidate({ fitScore: 82, opportunityValue: 94 }))).toBe(88)
-  })
-
   it('reports missing decision facts without fabricating unknown values', () => {
     const summary = discoveryDecisionSummary(candidate({ location: undefined, compensationText: undefined }))
     expect(summary.knownFacts).toBe(1)
@@ -45,7 +40,7 @@ describe('v1.4 round 2/3 discovery decision workspace', () => {
     expect(summary.missing.map((entry) => entry.key)).toEqual(['location', 'compensation'])
   })
 
-  it('surfaces low-confidence, unknown source status and near-deadline risks deterministically', () => {
+  it('surfaces source status and near-deadline risks without score-confidence judgments', () => {
     const summary = discoveryDecisionSummary(candidate({
       deadline: '2026-09-14T10:00:00.000Z',
       fitConfidence: 'low',
@@ -53,8 +48,6 @@ describe('v1.4 round 2/3 discovery decision workspace', () => {
       profileWarnings: ['地点不在首选范围'],
     }), new Date('2026-09-12T10:00:00.000Z'))
     expect(summary.risks.map((entry) => entry.key)).toEqual([
-      'fit-low-confidence',
-      'opportunity-low-confidence',
       'profile-warnings',
       'posting-status-unknown',
       'deadline-soon',
@@ -81,16 +74,27 @@ describe('v1.4 round 2/3 discovery decision workspace', () => {
     expect(summary.risks.map((entry) => entry.key)).not.toContain('posting-status-unknown')
   })
 
-  it('keeps active candidates ahead of archived candidates in review-priority sorting', () => {
-    const active = candidate({ id: 'active', fitScore: 80, opportunityValue: 80, status: 'new' })
-    const promoted = candidate({ id: 'promoted', fitScore: 99, opportunityValue: 99, status: 'promoted' })
-    expect(sortDiscoveryInboxItems([promoted, active], 'review_priority').map((item) => item.id)).toEqual(['active', 'promoted'])
+  it('orders every status by deadline and ignores legacy scores, confidence and timestamps', () => {
+    const earlier = candidate({ id: 'earlier', deadline: '2026-09-15T00:00:00.000Z', fitScore: 1, opportunityValue: 1, status: 'promoted', fitConfidence: 'low' })
+    const later = candidate({ id: 'later', deadline: '2026-09-20T00:00:00.000Z', fitScore: 99, opportunityValue: 99, status: 'new' })
+    expect(sortDiscoveryInboxItems([later, earlier]).map((item) => item.id)).toEqual(['earlier', 'later'])
   })
 
-  it('can sort by information completeness and deadline without treating unknown deadlines as urgent', () => {
-    const complete = candidate({ id: 'complete', deadline: '2026-09-20T00:00:00.000Z' })
-    const incomplete = candidate({ id: 'incomplete', location: undefined, compensationText: undefined, deadline: undefined })
-    expect(sortDiscoveryInboxItems([incomplete, complete], 'completeness').map((item) => item.id)).toEqual(['complete', 'incomplete'])
-    expect(sortDiscoveryInboxItems([incomplete, complete], 'deadline').map((item) => item.id)).toEqual(['complete', 'incomplete'])
+  it('puts unknown or invalid deadlines last, breaks equal dates by stable ID, and does not mutate inputs', () => {
+    const a = candidate({ id: 'a', deadline: '2026-09-20T00:00:00.000Z' })
+    const b = candidate({ id: 'b', deadline: '2026-09-20T00:00:00.000Z' })
+    const unknown = candidate({ id: 'unknown', deadline: undefined })
+    const invalid = candidate({ id: 'invalid', deadline: 'invalid' })
+    const items = [unknown, b, invalid, a]
+    expect(sortDiscoveryInboxItems(items).map((item) => item.id)).toEqual(['a', 'b', 'invalid', 'unknown'])
+    expect(items.map((item) => item.id)).toEqual(['unknown', 'b', 'invalid', 'a'])
+  })
+
+  it('preserves factual summaries identically regardless of legacy score values', () => {
+    const low = candidate({ fitScore: 0, opportunityValue: 0, fitConfidence: 'low', opportunityValueConfidence: 'low' })
+    const high = candidate({ fitScore: 100, opportunityValue: 100, fitConfidence: 'high', opportunityValueConfidence: 'high' })
+    const now = new Date('2026-09-12T10:00:00.000Z')
+    expect(discoveryDecisionSummary(low, now)).toEqual(discoveryDecisionSummary(high, now))
+    expect(discoveryDecisionSummary(high, now)).not.toHaveProperty('reviewScore')
   })
 })

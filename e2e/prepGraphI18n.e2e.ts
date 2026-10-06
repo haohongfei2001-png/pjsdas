@@ -61,7 +61,7 @@ test('Prep Graph keeps source facts but localizes system status and link explana
   await page.getByRole('button', { name: 'Prep Graph' }).click()
 
   const dialog = page.locator('.prep-graph-dialog')
-  await expect(dialog.getByRole('heading', { name: 'Preparation leverage graph' })).toBeVisible()
+  await expect(dialog.getByRole('heading', { name: 'Preparation links' })).toBeVisible()
   await expect(dialog.getByText('PREP GRAPH', { exact: true })).toBeVisible()
   await expect(dialog.getByText(/V1\.6/)).toHaveCount(0)
   await expect(dialog.getByText('Waiting', { exact: true })).toBeVisible()

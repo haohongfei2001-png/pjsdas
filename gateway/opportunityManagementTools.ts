@@ -1,3 +1,4 @@
+import { assertNoScoringInput, ScoringRetiredError } from '../src/scoringRetirement.js'
 import type { CallToolResult } from '@modelcontextprotocol/server'
 import * as z from 'zod/v4'
 import { opportunityManagementSchema, readOpportunityManagement, OpportunityManagementError } from '../src/opportunityManagement.js'
@@ -31,6 +32,7 @@ export function createOpportunityManagementTools(options: {
   return { async invoke(name: OpportunityManagementToolName, input: unknown): Promise<CallToolResult> {
     try {
       const admitted = await authorize()
+      assertNoScoringInput(input)
       if (name === 'get_opportunity_management') {
         const parsed = getOpportunityManagementSchema.parse(input)
         const current = await store.readForUser(principal.userId, { preserveRawData: true })
@@ -57,7 +59,7 @@ export function createOpportunityManagementTools(options: {
       if (executed.outcome !== 'COMMITTED') await authorize(admitted)
       return result({ outcome: executed.outcome, workspaceVersion: `txn:${executed.revision}`, commandId: submittedCommandId, result: executed.result, conflict: executed.conflict })
     } catch (error) {
-      const data = error instanceof WorkspaceSourceError || error instanceof OpportunityManagementError ? { code: error.code, message: error.message, retryable: error instanceof WorkspaceSourceError ? error.retryable : false }
+      const data = error instanceof ScoringRetiredError || error instanceof WorkspaceSourceError || error instanceof OpportunityManagementError ? { code: error.code, message: error.message, retryable: error instanceof WorkspaceSourceError ? error.retryable : false }
         : error instanceof z.ZodError ? { code: 'INVALID_ARGUMENT', message: 'Arguments do not match the bounded opportunity-management schema.', retryable: false }
           : { code: 'MANAGEMENT_FAILED', message: 'No result was confirmed. Read current state before retrying the same command ID.', retryable: false }
       return { ...result(data), isError: true }

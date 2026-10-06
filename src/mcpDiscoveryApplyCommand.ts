@@ -1,3 +1,4 @@
+import { assertNoNewOpportunityRating } from './scoringRetirement.js'
 import { deriveDiscoveryReviewChangeSet, createDiscoveryFeedbackRecords, type DiscoveryRejectionSelection } from './discoveryFeedback.js'
 import { discoveryInboxIdentity } from './discoveryInbox.js'
 import { upgradeSnapshotToLatest, validateSnapshot, type PJSDASSnapshot } from './snapshot.js'
@@ -32,6 +33,7 @@ export function applyMcpDiscoveryCommand(
   for (const operation of reviewed.operations) {
     if (operation.kind !== 'add_discovered_opportunity') throw new Error('Discovery proposal contains another operation type.')
     const opportunity = operation.opportunity
+    assertNoNewOpportunityRating(opportunity)
     const identity = discoveryInboxIdentity(opportunity.company, opportunity.role)
     if (next.data.opportunities.some((item) => item.id === opportunity.id) || identities.has(identity) || newIds.has(opportunity.id)) {
       throw new Error(`Job ${opportunity.company} | ${opportunity.role} already exists. Request a proposal based on the current workspace.`)
@@ -51,8 +53,8 @@ export function applyMcpDiscoveryCommand(
       id: actionId, kind: 'apply', title: `投递 ${opportunity.company}｜${opportunity.role}`,
       opportunityId: opportunity.id, processStage: 'not_applied', dueAt: opportunity.deadline,
       timingMode: opportunity.deadline ? 'deadline' : undefined,
-      estimatedMinutes: opportunity.prepEstimateMinutes ?? 45, leverage: 70,
-      delayCost: opportunity.deadline ? 65 : 40, status: 'todo', sourceLabel: 'ChatGPT 岗位发现',
+      estimatedMinutes: opportunity.prepEstimateMinutes ?? 45, leverage: 0,
+      delayCost: 0, status: 'todo', sourceLabel: 'ChatGPT 岗位发现',
       createdAt: opportunity.importedAt, updatedAt: opportunity.importedAt,
     })
     timeline.push({

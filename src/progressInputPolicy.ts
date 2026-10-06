@@ -393,8 +393,8 @@ function rememberOpportunity(recentByCompany: Map<string, string>, virtual: Oppo
         processStage: operation.mode === 'submitted' ? 'screening' : 'not_applied',
         roleType: 'core',
         early: false,
-        opportunityValue: 80,
-        fitScore: 60,
+        opportunityValue: 0,
+        fitScore: 0,
         locallyManaged: true,
         importedAt: operation.occurredAt,
       })

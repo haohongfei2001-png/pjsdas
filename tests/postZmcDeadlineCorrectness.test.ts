@@ -67,7 +67,7 @@ describe('post-ZMC deadline correctness', () => {
     ['capacity below wall clock', 60, LATE_NOW, ['apply-0']],
     ['capacity above wall clock', 500, LATE_NOW, ['apply-0', 'apply-1']],
     ['500 physical minutes', 500, new Date('2026-09-30T07:39:00Z'), ['apply-0','apply-1','apply-2','apply-3','apply-4','apply-5']],
-  ] as const)('selects a feasible optimal subset with %s', (_, capacity, now, expected) => {
+  ] as const)('selects the earliest feasible deadline subset with %s', (_, capacity, now, expected) => {
     const snapshot = deadlineWorkspace(capacity)
     const before = JSON.stringify(snapshot)
     const selected = selectTodayWeb(snapshot, {}, { now, timezone: 'Asia/Shanghai' })
@@ -160,7 +160,7 @@ describe('post-ZMC deadline correctness', () => {
     snapshot.data.scheduleNodes[0].temporal.latestStartAt = '2026-09-30T15:49:00Z'
     expect(selectTodayWeb(snapshot, {}, context).actions).toEqual([])
   })
-  it.each([40, 70, 120])('matches exhaustive selection with separate start/completion constraints at %i minutes', capacity => {
+  it.each([40, 70, 120])('matches the earliest feasible chronological subset with separate start/completion constraints at %i minutes', capacity => {
     const snapshot = deadlineWorkspace()
     const deadlines = [40, 60, 80, 100, 120, 150], starts = [10, 15, 20, 30, 90, 110]
     snapshot.data.actions.forEach((item, index) => {
@@ -172,7 +172,8 @@ describe('post-ZMC deadline correctness', () => {
     const ranked = rankActions(snapshot.data.actions, snapshot.data.opportunities, LATE_NOW)
     const plan = buildConsumerTimePlan({ ranked, nodes: snapshot.data.scheduleNodes!, availableMinutes: capacity,
       now: LATE_NOW, timezone: 'Asia/Shanghai' })
-    let maximum = 0
+    let firstKey = ''
+    let expected: string[] = []
     for (let mask = 0; mask < 64; mask++) {
       const chosen = ranked.filter(item => mask & (1 << Number(item.action.id.slice(-1))))
       const demands = chosen.flatMap(item => {
@@ -184,20 +185,19 @@ describe('post-ZMC deadline correctness', () => {
         used += demand.amount
         if (used > Math.min(capacity, Math.min(100, demand.at)) + Math.max(0, demand.at - 100)) feasible = false
       }
-      if (feasible) maximum = Math.max(maximum, chosen.reduce((sum, item) => sum + item.score ** 2, 0))
+      const key = ranked.map(item => chosen.includes(item) ? '1' : '0').join('')
+      if (feasible && key > firstKey) { firstKey = key; expected = chosen.map(item => item.action.id) }
     }
-    expect(plan.selectionSearch?.complete).toBe(true)
-    expect(plan.planned.filter(item => item.action.kind === 'apply').reduce((sum, item) => sum + item.score ** 2, 0)).toBe(maximum)
+    expect(plan.planned.filter(item => item.action.kind === 'apply').map(item => item.action.id)).toEqual(expected)
   })
-  it('optimizes the 18-action frontier reproduction within its deterministic search budget', () => {
+  it('keeps deadline ties deterministic without the retired utility search', () => {
     const snapshot = explicitStartDenseWorkspace()
     const plan = buildConsumerTimePlan({ ranked: rankActions(snapshot.data.actions, snapshot.data.opportunities, LATE_NOW),
       nodes: snapshot.data.scheduleNodes!, preferences: snapshot.data.timePlanning, now: LATE_NOW, timezone: 'Asia/Shanghai' })
-    expect(plan.planned.map(item => item.action.id)).toEqual(['apply-0','apply-1','apply-2','apply-3','apply-4','apply-5'])
-    expect(plan.selectionSearch?.complete).toBe(true)
-    expect(plan.selectionSearch!.explored).toBeLessThanOrEqual(plan.selectionSearch!.limit)
+    expect(plan.planned.map(item => item.action.id)).toEqual(['apply-0','apply-1','apply-10','apply-11','apply-12','apply-13'])
+    expect(plan.selectionSearch).toBeUndefined()
   })
-  it('preserves the identity tie-break for equal-utility subsets instead of pruning them', () => {
+  it('uses stable IDs for equal deadlines regardless of supplied legacy scores', () => {
     const snapshot = deadlineWorkspace(4, new Date(LATE_NOW.getTime() + 4 * 60_000).toISOString())
     snapshot.data.actions = snapshot.data.actions.slice(0, 5)
     snapshot.data.scheduleNodes = snapshot.data.scheduleNodes!.slice(0, 5)
@@ -208,9 +208,8 @@ describe('post-ZMC deadline correctness', () => {
     const plan = buildConsumerTimePlan({ ranked, nodes: snapshot.data.scheduleNodes, availableMinutes: 4,
       now: LATE_NOW, timezone: 'Asia/Shanghai' })
     expect(plan.planned.map(item => item.action.id)).toEqual(['apply-0','apply-1','apply-2','apply-3'])
-    expect(plan.selectionSearch?.complete).toBe(true)
   })
-  it('finds higher utility before spending its budget on many equal-utility subsets', () => {
+  it('does not let a higher legacy utility replace the earlier stable-ID selection', () => {
     const snapshot = deadlineWorkspace(20, new Date(LATE_NOW.getTime() + 80 * 60_000).toISOString())
     const action = snapshot.data.actions[0], node = snapshot.data.scheduleNodes![0], opportunity = snapshot.data.opportunities[0]
     snapshot.data.actions = Array.from({ length: 28 }, (_, index) => ({ ...action, id: `apply-${String(index).padStart(2, '0')}`,
@@ -225,11 +224,10 @@ describe('post-ZMC deadline correctness', () => {
     })
     const plan = buildConsumerTimePlan({ ranked, nodes: snapshot.data.scheduleNodes, preferences: snapshot.data.timePlanning,
       now: LATE_NOW, timezone: 'Asia/Shanghai' })
-    expect(plan.planned.map(item => item.action.id)).toEqual(['apply-01','apply-02'])
-    expect(plan.planned.reduce((sum, item) => sum + item.score ** 2, 0)).toBe(50)
-    expect(plan.selectionSearch?.complete).toBe(true)
+    expect(plan.planned.map(item => item.action.id)).toEqual(['apply-00','apply-03','apply-04','apply-05','apply-06','apply-07','apply-08','apply-09','apply-10','apply-11'])
+    expect(plan.planned.reduce((sum, item) => sum + item.action.estimatedMinutes, 0)).toBe(20)
   })
-  it.each([60, 100, 180])('finds the global priority maximum with staggered deadlines and a fixed meeting under %i minutes', capacity => {
+  it.each([60, 100, 180])('keeps earliest feasible deadlines with a fixed meeting under %i minutes', capacity => {
     const snapshot = deadlineWorkspace()
     const nodes = snapshot.data.scheduleNodes!
     const offsets = [30, 60, 90, 100, 120, 150]
@@ -244,7 +242,8 @@ describe('post-ZMC deadline correctness', () => {
         endAt: new Date(LATE_NOW.getTime() + 40 * 60_000).toISOString() } }
     const plan = buildConsumerTimePlan({ ranked, nodes: [...nodes, meeting], availableMinutes: capacity,
       now: LATE_NOW, timezone: 'Asia/Shanghai' })
-    let maximum = 0
+    let firstKey = ''
+    let expected: string[] = []
     for (let mask = 0; mask < 64; mask++) {
       const chosen = ranked.filter(item => mask & (1 << Number(item.action.id.slice(-1))))
         .sort((a,b) => Date.parse(a.action.dueAt!) - Date.parse(b.action.dueAt!))
@@ -256,15 +255,16 @@ describe('post-ZMC deadline correctness', () => {
         const nextDayPhysical = Math.max(0, minutes - 100)
         if (used > Math.min(capacity - 20, todayPhysical) + nextDayPhysical) feasible = false
       }
-      if (feasible) maximum = Math.max(maximum, chosen.reduce((sum, item) => sum + item.score ** 2, 0))
+      const key = ranked.map(item => chosen.includes(item) ? '1' : '0').join('')
+      if (feasible && key > firstKey) { firstKey = key; expected = chosen.map(item => item.action.id) }
     }
-    expect(plan.planned.reduce((sum, item) => sum + item.score ** 2, 0)).toBe(maximum)
+    expect(plan.planned.map(item => item.action.id)).toEqual(expected)
   })
-  it('prioritizes work already in progress when business value and cost are otherwise equal', () => {
+  it('does not add a doing or business-score bonus to same-deadline order', () => {
     const snapshot = deadlineWorkspace(40)
     snapshot.data.actions = snapshot.data.actions.slice(0,2).map(item => ({ ...item, estimatedMinutes: 40 }))
     snapshot.data.opportunities[1].opportunityValue = 100; snapshot.data.opportunities[1].fitScore = 100
     snapshot.data.actions[1].status = 'doing'
-    expect(selectTodayWeb(snapshot, {}, { now: LATE_NOW, timezone: 'Asia/Shanghai' }).actions.map(item => item.actionId)).toEqual(['apply-1'])
+    expect(selectTodayWeb(snapshot, {}, { now: LATE_NOW, timezone: 'Asia/Shanghai' }).actions.map(item => item.actionId)).toEqual(['apply-0'])
   })
 })

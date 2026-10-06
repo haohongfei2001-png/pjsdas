@@ -11,8 +11,8 @@ const serverFactory = readFileSync(new URL('../gateway/serverFactory.ts', import
 const authenticatedRuntime = readFileSync(new URL('../gateway/authenticatedRemoteHttp.ts', import.meta.url), 'utf8')
 
 describe('authenticated MCP release tool surface', () => {
-  it('uses a stable v7 contract while exposing P1 commands only for transactional authority', () => {
-    expect(AUTHENTICATED_MCP_TOOL_SURFACE_VERSION).toBe('v7')
+  it('uses a stable v8 contract while exposing P1 commands only for transactional authority', () => {
+    expect(AUTHENTICATED_MCP_TOOL_SURFACE_VERSION).toBe('v8')
     expect(AUTHENTICATED_MCP_BASE_RELEASE_REQUIRED_TOOLS).toEqual([
       'get_today_brief',
       'get_opportunity_detail',

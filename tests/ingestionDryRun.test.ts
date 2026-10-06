@@ -22,7 +22,7 @@ function args(runId: string, extras: Record<string, unknown> = {}) {
     completedAt: '2026-09-13T00:05:00.000Z',
     observations: [{
       sourceRecordId: 'job-1', company: 'Example', role: 'AI Product Manager', sourceUrl: 'https://example.com/jobs/1', sourceTitle: 'AI Product Manager',
-      rationale: 'source backed', roleType: 'core', opportunityValue: 80, fitScore: 75, fitConfidence: 'high', opportunityValueConfidence: 'high', postingStatus: 'open',
+      rationale: 'source backed', roleType: 'core', postingStatus: 'open',
     }],
     ...extras,
   }

@@ -141,7 +141,6 @@ export function mergeDiscoveryInboxItems(existing: DiscoveryInboxItem[], incomin
       jobPostingForInboxItem(candidate),
       now,
     )
-    const keepPreviousAssessment = !candidate.assessment && Boolean(previous.assessment)
     const merged: DiscoveryInboxItem = {
       ...candidate,
       id: previous.id,
@@ -149,11 +148,11 @@ export function mergeDiscoveryInboxItems(existing: DiscoveryInboxItem[], incomin
       posting: mergedPosting.current,
       postingHistory: mergedPosting.history.length ? mergedPosting.history : undefined,
       facts: mergeOpportunityFacts(previous.facts, candidate.facts),
-      assessment: candidate.assessment ? structuredClone(candidate.assessment) : previous.assessment ? structuredClone(previous.assessment) : undefined,
-      fitScore: keepPreviousAssessment ? previous.fitScore : candidate.fitScore,
-      opportunityValue: keepPreviousAssessment ? previous.opportunityValue : candidate.opportunityValue,
-      fitConfidence: keepPreviousAssessment ? previous.fitConfidence : candidate.fitConfidence,
-      opportunityValueConfidence: keepPreviousAssessment ? previous.opportunityValueConfidence : candidate.opportunityValueConfidence,
+      assessment: previous.assessment ? structuredClone(previous.assessment) : undefined,
+      fitScore: previous.fitScore,
+      opportunityValue: previous.opportunityValue,
+      fitConfidence: previous.fitConfidence,
+      opportunityValueConfidence: previous.opportunityValueConfidence,
       status: previous.status,
       rejectionReason: previous.rejectionReason,
       createdAt: previous.createdAt,
@@ -183,8 +182,8 @@ export function inboxOpportunity(item: DiscoveryInboxItem, now = new Date()): Op
     salaryReference: item.compensationText,
     nextActionLabel: '审阅并投递',
     prepEstimateMinutes: 45,
-    opportunityValue: item.opportunityValue,
-    fitScore: item.fitScore,
+    opportunityValue: 0,
+    fitScore: 0,
     locallyManaged: true,
     importedAt: now.toISOString(),
     detail: {
@@ -193,7 +192,6 @@ export function inboxOpportunity(item: DiscoveryInboxItem, now = new Date()): Op
       salaryBasis: item.facts?.compensation.basis,
       salaryRaw: item.compensationText,
       facts: cloneOpportunityFacts(item.facts),
-      assessment: item.assessment ? structuredClone(item.assessment) : undefined,
       discovery: {
         sourceUrl: item.sourceUrl,
         sourceTitle: item.sourceTitle,

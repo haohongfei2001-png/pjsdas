@@ -1,6 +1,7 @@
+import { assertNoScoringInput } from './scoringRetirement.js'
 import * as z from 'zod/v4'
 import {
-  createDefaultDecisionRules, decisionRulesForSnapshot, validateDecisionRules, type DecisionRules,
+  validateDecisionRules, type DecisionRules,
 } from './decisionRules.js'
 import { SNAPSHOT_VERSION, validateSnapshot, type PJSDASSnapshot } from './snapshot.js'
 import {
@@ -22,14 +23,6 @@ const ruleScalars = {
   upcomingHorizonDays: integer(1, 30), upcomingNodeLimit: integer(1, 50),
   riskCriticalHours: integer(1, 168), riskHighHours: integer(1, 336), riskNearHours: integer(1, 504), riskWatchHours: integer(1, 720),
 }
-const rulePatch = z.object({
-  ...ruleScalars,
-  weights: weights.partial().refine(nonempty),
-  fitComponentWeights: fitWeights.partial().refine(nonempty),
-  opportunityValueComponentWeights: opportunityWeights.partial().refine(nonempty),
-  portfolioWeights: portfolioWeights.partial().refine(nonempty),
-  portfolioMinimumCandidateScore: integer(0, 100),
-}).strict().partial().refine(nonempty, 'A nonempty patch is required.')
 const planningDate = z.string().refine(validPlanningDate, 'An actual calendar date in YYYY-MM-DD format is required.')
 const minutes = integer(0, 1440)
 const window = z.object({ weekday: integer(0, 6), startMinute: integer(0, 1439), endMinute: integer(1, 1440) }).strict()
@@ -42,8 +35,6 @@ const timePatch = z.object({
 }).strict().refine(nonempty, 'A nonempty patch is required.')
 
 export const planningManagementOperationSchema = z.discriminatedUnion('kind', [
-  z.object({ kind: z.literal('patch_decision_rules'), expectedFingerprint: fingerprint, patch: rulePatch }).strict(),
-  z.object({ kind: z.literal('reset_decision_rules'), expectedFingerprint: fingerprint }).strict(),
   z.object({ kind: z.literal('patch_time_preferences'), expectedFingerprint: fingerprint, patch: timePatch }).strict(),
   z.object({ kind: z.literal('reset_time_preferences'), expectedFingerprint: fingerprint }).strict(),
 ])
@@ -140,7 +131,7 @@ async function readPlanningConfiguration(snapshot: PJSDASSnapshot) {
   validateConfiguration('decision_rules', rules)
   validateConfiguration('time_preferences', time)
   return {
-    decisionRules: { raw: structuredClone(rules), effective: decisionRulesForSnapshot(rules ?? undefined), fingerprint: await planningManagementFingerprint(rules) },
+    decisionRules: { status: 'retired' as const, code: 'SCORING_RETIRED', historicalDataRetained: rules !== null },
     timePreferences: {
       raw: structuredClone(time),
       effective: { defaultDailyMinutes: time?.defaultDailyMinutes ?? null, weeklyWindows: structuredClone(time?.weeklyWindows ?? null), dateOverrides: structuredClone(time?.dateOverrides ?? {}) },
@@ -155,19 +146,6 @@ export async function getPlanningManagementRead(snapshot: PJSDASSnapshot) {
   return readPlanningConfiguration(planningSnapshot(snapshot))
 }
 
-function patchRules(before: DecisionRules | null, patch: z.infer<typeof rulePatch>): DecisionRules | null {
-  const effective = decisionRulesForSnapshot(before ?? undefined)
-  const after = structuredClone(before ?? effective)
-  for (const [key, value] of Object.entries(patch)) {
-    if (value === undefined) continue
-    if (typeof value === 'object') {
-      const field = key as 'weights' | 'fitComponentWeights' | 'opportunityValueComponentWeights' | 'portfolioWeights'
-      const merged = { ...effective[field], ...Object.fromEntries(Object.entries(value).filter(([, item]) => item !== undefined)) }
-      if (!equal(merged, effective[field])) Object.assign(after, { [field]: merged })
-    } else if (value !== effective[key as keyof DecisionRules]) Object.assign(after, { [key]: value })
-  }
-  return equal(after, before ?? effective) ? before : after
-}
 function patchTime(before: TimePlanningPreferences | null, patch: z.infer<typeof timePatch>, at: string): TimePlanningPreferences | null {
   const base: TimePlanningPreferences = before ?? { version: 1, updatedAt: at }
   const after = structuredClone(base)
@@ -190,6 +168,7 @@ function patchTime(before: TimePlanningPreferences | null, patch: z.infer<typeof
 /** Pure atomic reducer; authorization, replay protection, ledger persistence and
  * workspace CAS remain owned by the gateway. It never recalculates saved scores. */
 export async function applyPlanningManagement(snapshot: PJSDASSnapshot, raw: unknown, commandId: string, now = new Date()) {
+  assertNoScoringInput(raw)
   const input = planningManagementSchema.parse(raw)
   if (commandId.trim().length < 8 || commandId.length > 160) throw new Error('Invalid planning management command identity.')
   const next = planningSnapshot(snapshot)
@@ -198,18 +177,9 @@ export async function applyPlanningManagement(snapshot: PJSDASSnapshot, raw: unk
   const reviewed = await readPlanningConfiguration(next)
   for (const operation of input.operations) {
     const type = configurationType(operation.kind)
-    const current = type === 'decision_rules' ? reviewed.decisionRules : reviewed.timePreferences
+    const current = reviewed.timePreferences
     if (operation.expectedFingerprint !== current.fingerprint) throw new PlanningManagementError('STALE_TARGET', 'The planning configuration changed. Read its exact fingerprint again before applying this command.')
-    if (operation.kind === 'patch_decision_rules' || operation.kind === 'reset_decision_rules') {
-      const before = next.data.decisionRules ?? null
-      const after = operation.kind === 'patch_decision_rules' ? patchRules(before, operation.patch) : createDefaultDecisionRules(before?.updatedAt ?? at)
-      validateConfiguration(type, after)
-      if (equal(before, after)) continue
-      after!.updatedAt = at
-      validateConfiguration(type, after)
-      next.data.decisionRules = after!
-      changes.push({ type: 'decision_rules', id: 'current', before: structuredClone(before), after: structuredClone(after) })
-    } else {
+    {
       const before = next.data.timePlanning ?? null
       const after = operation.kind === 'patch_time_preferences' ? patchTime(before, operation.patch, at) : null
       validateConfiguration(type, after)

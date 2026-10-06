@@ -15,6 +15,11 @@ function fixture() {
   snapshot.data.opportunities[0]!.company = '示例公司 · 产品与用户研究团队'
   snapshot.data.opportunities[0]!.role = '高级产品策略与体验研究 / Senior Product Research'
   snapshot.data.opportunities[1]!.company = snapshot.data.opportunities[0]!.company
+  // Isolate this pixel/layout comparison from the separately tested retirement
+  // of business-score ordering: both reference and candidate receive the same
+  // explicit source dates and therefore the same unambiguous row order.
+  snapshot.data.opportunities.forEach((item, index) => { item.deadline = `2026-09-${25 + index}`; item.deadlinePrecision = 'date' })
+  snapshot.data.actions.forEach((item, index) => { item.dueAt = `2026-09-${25 + index}`; item.duePrecision = 'date'; item.timingMode = 'deadline' })
   snapshot.data.timePlanning = { version: 1, defaultDailyMinutes: 480, updatedAt: now }
   snapshot.data.scheduleNodes = [{
     id: 'secondary-node', occurrenceId: 'secondary-occurrence', version: 1,
@@ -194,9 +199,11 @@ for (const width of [1440, 390, 320]) test(`details and settings retain readable
   await page.locator('.settings-group > summary').filter({ hasText: '岗位发现偏好' }).click()
   await expect(page.locator('.discovery-profile-grid')).toBeVisible()
   await capture(page, 'SETTINGS_DISCOVERY', width, width === 320 ? 200 : 100)
-  await page.locator('.settings-group > summary').filter({ hasText: '决策规则' }).click()
-  await expect(page.locator('.rules-grid')).toBeVisible()
-  await capture(page, 'SETTINGS_RULES', width, width === 320 ? 200 : 100)
+  if (phase === 'after') {
+    await expect(page.locator('.settings-group > summary').filter({ hasText: '决策规则' })).toHaveCount(0)
+    await expect(page.locator('.rules-grid')).toHaveCount(0)
+  }
+  await capture(page, 'SETTINGS_RULES_RETIRED', width, width === 320 ? 200 : 100)
   await page.locator('.settings-group > summary').filter({ hasText: '数据与恢复' }).click()
   await page.locator('.backup-dock-trigger').click()
   await expect(page.locator('.backup-dialog')).toBeVisible()

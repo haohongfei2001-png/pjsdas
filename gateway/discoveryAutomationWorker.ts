@@ -8,7 +8,6 @@ import {
   buildDiscoveryAutomationPlan,
   type DiscoveryAutomationSourcePlan,
 } from '../src/discoveryAutomation.js'
-import { decisionRulesForSnapshot } from '../src/decisionRules.js'
 import {
   discoveryProfileForSnapshot,
   isDiscoveryProfileConfigured,
@@ -33,7 +32,6 @@ const DEFAULT_MODEL = 'perplexity/sonar'
 const MAX_EXISTING_IDENTITIES = 100
 const MAX_RECENT_REJECTIONS = 40
 
-const confidenceSchema = z.enum(['high', 'medium', 'low'])
 const roleTypeSchema = z.enum(['core', 'backup', 'reach', 'lottery', 'practice'])
 const postingStatusSchema = z.enum(['open', 'closed', 'unknown'])
 const isoString = z.string().min(1).refine((value) => !Number.isNaN(new Date(value).getTime()), 'Must be a valid date/time.')
@@ -49,10 +47,6 @@ const observationSchema = z.object({
   compensationText: z.string().trim().max(600).optional(),
   rationale: z.string().trim().min(1).max(1_600),
   roleType: roleTypeSchema,
-  opportunityValue: z.number().min(0).max(100),
-  fitScore: z.number().min(0).max(100),
-  fitConfidence: confidenceSchema,
-  opportunityValueConfidence: confidenceSchema,
   postingStatus: postingStatusSchema.optional(),
   discoveredAt: isoString.optional(),
 }).strict()
@@ -174,10 +168,8 @@ function stableRunId(sourceRun: DiscoveryAutomationSourcePlan, now: Date) {
 
 function boundedModelContext(snapshot: PJSDASSnapshot, now: Date) {
   const discovery = getDiscoveryContext(snapshot, { now })
-  const rules = decisionRulesForSnapshot(snapshot.data.decisionRules)
   return {
     profile: discovery.profile,
-    decisionWeights: rules.weights,
     existingOpportunities: discovery.existingOpportunities.slice(0, MAX_EXISTING_IDENTITIES),
     recentlyRejected: discovery.recentlyRejected.slice(0, MAX_RECENT_REJECTIONS),
   }
@@ -191,7 +183,7 @@ function buildPrompt(snapshot: PJSDASSnapshot, sourceRun: DiscoveryAutomationSou
     'Every observation must be supported by a public job/recruiting source URL. Prefer the employer official career/campus-recruiting page or the authoritative ATS posting. Never use a search-result page, social repost, or model-generated URL as sourceUrl when an authoritative posting is available.',
     'Keep unknown facts omitted. Never infer a deadline, location, salary, posting status, qualification, or source fact that the page does not support.',
     'sourceRecordId must be stable across reruns: use a source-native posting/job id when visible; otherwise use the canonical source URL itself.',
-    'fitScore and opportunityValue are bounded interpretations for the existing PJSDAS ingestion contract, not source facts. Score conservatively from the explicit profile and evidence. Use medium/low confidence whenever evidence is incomplete. 50 is an appropriate neutral value when attractiveness cannot be established. Do not inflate scores to pass thresholds.',
+    'Return factual evidence and actual deadlines only. Do not generate fit/value scores, ratings, component assessments or score confidences.',
     'roleType must be one of core, backup, reach, lottery, practice and should reflect the explicit profile rather than hidden preferences.',
     'For refreshTargets, verify the exact canonicalSourceUrl first. A closed/expired posting may be returned with postingStatus="closed" so PJSDAS can update factual posting evidence; this must never be interpreted as the user being rejected or their recruiting process closing.',
     `Current time: ${now.toISOString()}`,
@@ -199,7 +191,7 @@ function buildPrompt(snapshot: PJSDASSnapshot, sourceRun: DiscoveryAutomationSou
     `Source run: ${JSON.stringify(sourceRun)}`,
     `Execution rules: ${JSON.stringify(executionRules)}`,
     `Canonical user-controlled discovery context: ${JSON.stringify(context)}`,
-    `Return at most ${sourceRun.maxObservations} observations. Each observation requires sourceRecordId, company, role, sourceUrl, sourceTitle, rationale, roleType, opportunityValue, fitScore, fitConfidence, opportunityValueConfidence. Optional fields: location, deadline, compensationText, postingStatus, discoveredAt.`,
+    `Return at most ${sourceRun.maxObservations} observations. Each observation requires sourceRecordId, company, role, sourceUrl, sourceTitle, rationale, roleType. Optional fields: location, deadline, compensationText, postingStatus, discoveredAt.`,
     'If no qualifying or verifiable observations are found, return exactly {"observations":[]}.',
   ].join('\n\n')
 }

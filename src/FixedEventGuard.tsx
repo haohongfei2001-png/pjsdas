@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useState } from 'react'
-import { applyActionStatusChangeSet, getAllActions } from './db.js'
+import { applyActionStatusChangeSet, exportLocalSnapshot, getAllActions } from './db.js'
+import { actionDeadline, actionNodesById, compareActionDeadlines } from './deadlineOrder.js'
 import { isUnresolvedPastProcessEvent } from './fixedEventGuardLogic.js'
 import { useUiLanguage } from './uiLanguage.js'
 import { useCloud } from './cloud/CloudContext.js'
 import { connectedWorkspaceAuthorityEnabled } from './cloud/connectedWorkspaceRepository.js'
 import { createConnectedCommandId, executeConnectedBusinessCommand } from './cloud/authoritativeCommandClient.js'
-import type { Action } from './model.js'
+import type { Action, ScheduleNode } from './model.js'
 import './fixedEventGuard.css'
 
 interface FixedEventGuardProps {
@@ -17,13 +18,18 @@ export default function FixedEventGuard({ onChanged }: FixedEventGuardProps) {
   const cloud = useCloud()
   const zh = lang === 'zh'
   const [actions, setActions] = useState<Action[]>([])
+  const [nodes, setNodes] = useState<ScheduleNode[]>([])
+  const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
+  const nodeMap = useMemo(() => actionNodesById(nodes, actions), [nodes, actions])
   const [now, setNow] = useState(() => new Date())
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
 
   async function reload() {
     setNow(new Date())
+    const snapshot = await exportLocalSnapshot()
     setActions(await getAllActions())
+    setNodes(snapshot.data.scheduleNodes ?? [])
   }
 
   useEffect(() => {
@@ -39,13 +45,15 @@ export default function FixedEventGuard({ onChanged }: FixedEventGuardProps) {
 
   const overdue = useMemo(
     () => actions
-      .filter((action) => isUnresolvedPastProcessEvent(action, now))
-      .sort((a, b) => (a.dueAt ?? '').localeCompare(b.dueAt ?? '')),
-    [actions, now],
+      .filter((action) => isUnresolvedPastProcessEvent(action, now, nodeMap.get(action.id), timezone))
+      .sort((a, b) => compareActionDeadlines(a, b, timezone, nodeMap.get(a.id), nodeMap.get(b.id))),
+    [actions, now, nodeMap, timezone],
   )
 
   if (overdue.length === 0) return null
   const current = overdue[0]
+  const timing = actionDeadline(current, nodeMap.get(current.id))
+  const timeLabel = timing.precision === 'date' ? timing.deadline!.slice(0, 10) : formatDateTime(timing.deadline!, zh)
 
   async function confirmCompleted() {
     setBusy(true)
@@ -78,8 +86,8 @@ export default function FixedEventGuard({ onChanged }: FixedEventGuardProps) {
         <div className="eyebrow">PROCESS EVENT · CONFIRMATION</div>
         <strong>{current.title}</strong>
         <p>{zh
-          ? `原节点 ${formatDateTime(current.dueAt!, zh)} 已经过期。系统不会把它继续当成可执行任务，也不会假定你已经完成。`
-          : `The original event at ${formatDateTime(current.dueAt!, zh)} has passed. TodayAction will not keep treating it as executable work, and it will not assume you completed it.`}</p>
+          ? `原节点 ${timeLabel} 已经过期。系统不会把它继续当成可执行任务，也不会假定你已经完成。`
+          : `The original event at ${timeLabel} has passed. TodayAction will not keep treating it as executable work, and it will not assume you completed it.`}</p>
         {overdue.length > 1 ? <small>{zh ? `另外还有 ${overdue.length - 1} 个流程节点待确认。` : `${overdue.length - 1} more recruiting event${overdue.length - 1 === 1 ? '' : 's'} need confirmation.`}</small> : null}
         {error ? <div className="fixed-guard-error" role="status">{error}</div> : null}
       </div>

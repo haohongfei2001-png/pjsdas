@@ -55,7 +55,7 @@ export function applyMcpProgressCommand(snapshot: PJSDASSnapshot, proposal: McpP
         id: operation.opportunityId, company: operation.company, role: operation.role,
         currentStageLabel: submitted ? '筛选中' : '待投',
         processStage: submitted ? 'screening' : 'not_applied', roleType: 'core',
-        early: false, opportunityValue: 86, fitScore: 60, locallyManaged: true,
+        early: false, opportunityValue: 0, fitScore: 0, locallyManaged: true,
         importedAt: operation.occurredAt,
       }
       data.opportunities = [...data.opportunities.filter((item) => item.id !== opportunity.id), opportunity]
@@ -69,7 +69,7 @@ export function applyMcpProgressCommand(snapshot: PJSDASSnapshot, proposal: McpP
         upsertProcess(opportunity, 'screening', '筛选中', operation.occurredAt)
       } else if (!existingApply) data.actions.push({
         id: applyId, kind: 'apply', title: `投递 ${opportunity.company}｜${opportunity.role}`,
-        opportunityId: opportunity.id, estimatedMinutes: 45, leverage: 86, delayCost: 40,
+        opportunityId: opportunity.id, estimatedMinutes: 45, leverage: 0, delayCost: 0,
         status: 'todo', sourceLabel: '自然语言更新',
         createdAt: operation.occurredAt, updatedAt: operation.occurredAt,
       })
@@ -118,8 +118,8 @@ export function applyMcpProgressCommand(snapshot: PJSDASSnapshot, proposal: McpP
       const prior = data.actions.find((action) => action.id === actionId)
       const action: Action = {
         id: actionId, kind: 'manual', title: operation.title, dueAt: operation.dueAt,
-        estimatedMinutes: operation.estimatedMinutes, leverage: 70,
-        delayCost: operation.dueAt ? 65 : 40, status: prior?.status ?? 'todo',
+        estimatedMinutes: operation.estimatedMinutes, leverage: prior?.leverage ?? 0,
+        delayCost: prior?.delayCost ?? 0, status: prior?.status ?? 'todo',
         sourceLabel: '自然语言更新', createdAt: prior?.createdAt ?? operation.occurredAt,
         updatedAt: prior?.updatedAt ?? operation.occurredAt,
       }

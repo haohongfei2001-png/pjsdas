@@ -65,25 +65,10 @@ describe('propose_changes', () => {
     }))
   })
 
-  it('proposes a Decision Rules patch without applying it', async () => {
-    const result = await propose({
-      decisionRulesPatch: {
-        weights: { urgency: 25, opportunity: 17 },
-        upcomingHorizonDays: 10,
-      },
-    })
-    expect(result.isError).not.toBe(true)
-    const proposal = await decodedFrom(result)
-    const operation = proposal.changeSet.operations.find((item) => item.kind === 'replace_decision_rules')
-    expect(operation).toMatchObject({
-      kind: 'replace_decision_rules',
-      expectedUpdatedAt: '2026-09-10T08:00:00+08:00',
-      rules: {
-        upcomingHorizonDays: 10,
-        weights: { urgency: 25, opportunity: 17 },
-      },
-    })
-    expect(proposal.changeSet.status).toBe('pending')
+  it('rejects retired Decision Rules patches without a review proposal', async () => {
+    const result = await propose({ decisionRulesPatch: { weights: { fit: 100 } } })
+    expect(result.isError).toBe(true)
+    expect(JSON.stringify(result)).toContain('SCORING_RETIRED')
   })
 
   it('fails closed when an action id is not in the current workspace', async () => {

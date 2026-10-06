@@ -21,14 +21,14 @@ describe('UU-05 opportunity decision/detail integration', () => {
     expect(detail).toContain('<OpportunityDecisionSummary')
   })
 
-  it('keeps the frozen conclusion-first order and hides assessment internals from the default first screen', () => {
+  it('keeps the conclusion-first order and removes scoring from the entire detail', () => {
     expect(summary).toContain("zh ? '结论' : 'CONCLUSION'")
     expect(summary).toContain('opportunity-detail-decision-reasons')
     expect(summary).toContain('opportunity-detail-process-summary')
     expect(summary).toContain('opportunity-detail-primary-operation')
     expect(summary).toContain('opportunity-detail-nearest-node')
     expect(detail.indexOf('<OpportunityDecisionSummary')).toBeLessThan(detail.indexOf('<RichOpportunityFactsSummary'))
-    expect(detail.indexOf('<RichOpportunityFactsSummary')).toBeLessThan(detail.indexOf('<OpportunityAssessmentSummary'))
+    expect(detail).not.toContain('OpportunityAssessmentSummary')
     expect(detail).not.toContain('opportunity-detail-score-grid')
     expect(detail).not.toContain('OPPORTUNITY · {opportunity.id}')
   })

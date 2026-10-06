@@ -9,7 +9,7 @@ const create={operations:[{kind:'create_prep',value:{title:'Synthetic new prep',
 describe('v2 exact raw preservation regression',()=>{
  it.each([create,{operations:[{kind:'update_prep',id:'synthetic-b',patch:{title:'Edited'}}]},{operations:[{kind:'archive_prep',id:'synthetic-b'}]}])('preserves unrelated raw facts and restores exact prep order/metadata %#',change=>{
   const before=raw(),unchanged=structuredClone(before)
-  const read=readBusinessManagement(before,{type:'action',ids:[before.data.actions[0].id]});expect(read.items[0]).toEqual(before.data.actions[0])
+  const read=readBusinessManagement(before,{type:'action',ids:[before.data.actions[0].id]});const {leverage:_leverage,delayCost:_delay,...visibleAction}=before.data.actions[0];expect(read.items[0]).toEqual(visibleAction);expect(read.items[0]).not.toHaveProperty('leverage');expect(read.items[0]).not.toHaveProperty('delayCost')
   const applied=applyBusinessManagement(before,change,'synthetic-v2-raw-command',now)
   expect(protectedData(applied.snapshot)).toEqual(protectedData(before));expect(before).toEqual(unchanged)
   const restored=restoreBusinessManagement(applied.snapshot,applied.compensation!,now)
@@ -40,7 +40,7 @@ describe('v2 exact raw preservation regression',()=>{
   })
   const runtime=createOwnerBusinessManagementRuntime({enabled:'enabled',transactional:true,identity:{userId:owner,oauthClientId:client},audience:{mode:'allowlist',allowed:true,role:'owner'},source:{read:async()=>{throw new Error('Normalized source must not be read')}},supabaseUrl:'https://synthetic.invalid',serviceRoleKey:'synthetic',fetchImpl})!
   if(mode==='commit'){
-   const read=await runtime.invoke('get_business_management',{query:{type:'action',ids:[initial.data.actions[0].id]}});expect((read.structuredContent as any).data.items[0]).toEqual(initial.data.actions[0])
+   const read=await runtime.invoke('get_business_management',{query:{type:'action',ids:[initial.data.actions[0].id]}});const {leverage:_leverage,delayCost:_delay,...visibleAction}=initial.data.actions[0];expect((read.structuredContent as any).data.items[0]).toEqual(visibleAction);expect((read.structuredContent as any).data.items[0]).not.toHaveProperty('leverage');expect((read.structuredContent as any).data.items[0]).not.toHaveProperty('delayCost')
   }
   const applied=await runtime.invoke('execute_business_management',{commandId:'synthetic-v2-runtime',baseRevision:0,change:create})
   for(const post of posts)expect(protectedData(post.target_snapshot)).toEqual(protectedData(initial))

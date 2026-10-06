@@ -33,7 +33,7 @@ TodayAction has three primary entries:
 
 Decisions, read-only history and the following settings remain contextual secondary surfaces:
 
-- **Settings** — account/automation, Discovery Profile, Decision Rules, connected migration, backup/recovery, and language.
+- **Settings** — account/automation, Discovery Profile, connected migration, backup/recovery, and language.
 
 Manual progress/process capture remains available as a fallback, but routine fact capture is expected to move through AI or trusted automation.
 
@@ -51,11 +51,10 @@ Core durable concepts include:
 - **Prep / Prep Graph** — reusable preparation plus deterministic leverage links;
 - **Application Group** — explicit shared-quota or shared-preference constraints;
 - **Discovery Profile / Discovery Run** — durable search preferences and auditable discovery history;
-- **Decision Rules** — explicit user-controlled policy and weights;
 - **Timeline / ChangeSet** — factual history and normalized review/apply protocol;
 - **Ingestion Ledger / Source Registry / Coverage** — trusted-source accounting and health.
 
-TodayAction is deterministic after interpretation. AI may provide bounded assessments, but scoring aggregation, identity, policy, reconciliation, and durable writes remain product-owned.
+TodayAction is deterministic after interpretation. Jobs and actions are ordered only by actual applicable deadlines, unknown dates last, with stable identity ties. Fixed events retain their own event times. Fit/value scores, weights, recommendation thresholds and portfolio scoring are retired. Identity verification, source evidence, capacity, real company quotas, reconciliation and durable writes remain product-owned. See [the deadline-only policy](docs/DEADLINE_ONLY_POLICY.md) for legacy compatibility.
 
 ## Job discovery and trusted ingestion
 
@@ -106,15 +105,18 @@ The authenticated MCP gateway exposes bounded semantic reads and narrowly scoped
 - Today planning;
 - Opportunities and rich source-backed facts;
 - Pipeline;
-- Decision Rules;
-- component assessment explanation;
-- Application Portfolio;
+- Factual application-group quotas and candidates in deadline order;
 - Prep Graph;
 - Discovery Context;
 - Coverage / source health;
 - Workspace Integrity;
 - bounded trusted Monitor and Gmail ingestion;
 - bounded explicit user Domain Commands after transactional authority activation.
+
+Scoring and weighted decision policies are retired in authenticated MCP surface v8.
+The compatibility tools `get_decision_rules`, `get_opportunity_assessment` and
+`explain_priority` return `SCORING_RETIRED`. New job inputs need source facts and
+actual deadlines, without rating fields. Historical snapshots remain readable.
 
 The production auth boundary rejects anonymous MCP access. The release health contract also exposes a versioned release-tool surface so production can verify that required MCP capabilities are present without requiring a QA account or test secrets.
 

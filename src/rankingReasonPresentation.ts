@@ -1,4 +1,7 @@
 const exactEnglishReasons: Record<string, string> = {
+  '按截止日期排列': 'Ordered by deadline',
+  '截止日期未明确，排在已知截止之后': 'No stated deadline; listed after dated tasks',
+  '按固定事件时间排列': 'Ordered by fixed event time',
   '固定流程已过，立即确认': 'Fixed event has passed — confirm now',
   '今天固定时间': 'Fixed time today',
   '近期固定时间': 'Fixed event soon',

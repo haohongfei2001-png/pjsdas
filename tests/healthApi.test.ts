@@ -82,7 +82,7 @@ describe('public production health contract', () => {
     expect(body.capabilities.canonicalOriginPolicy).toBe('v1')
     expect(body.capabilities.controlledAudience).toBe('v1')
     expect(body.capabilities.connectedOriginMigration).toBe('v1')
-    expect(body.authenticatedMcp.toolSurfaceVersion).toBe('v7')
+    expect(body.authenticatedMcp.toolSurfaceVersion).toBe('v8')
     expect(body.authenticatedMcp.releaseRequiredTools).toContain('get_today_brief')
     expect(body.authenticatedMcp.releaseRequiredTools).toContain('get_opportunity_detail')
     expect(body.authenticatedMcp.releaseRequiredTools).not.toContain('apply_user_command')

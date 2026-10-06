@@ -53,13 +53,14 @@ function prepAction(title: string): Action {
 }
 
 describe('v1.6 Round 2 Today Prep Graph projection', () => {
-  it('raises a matching Prep Action at runtime and exposes factual coverage reason without mutating the source Action', () => {
+  it('does not turn a title match or legacy fit assessment into a preparation priority boost', () => {
     const original = prepAction('SQL 刷题')
     const ranked = rankActions([original], [sqlOpportunity], now)
     expect(ranked).toHaveLength(1)
-    expect(ranked[0].action.leverage).toBeGreaterThan(original.leverage)
-    expect(ranked[0].action.sourceLabel).toContain('Prep Graph')
-    expect(ranked[0].reasons.join(' ')).toContain('覆盖1岗')
+    expect(ranked[0].action.leverage).toBe(original.leverage)
+    expect(ranked[0].action.delayCost).toBe(original.delayCost)
+    expect(ranked[0].action.sourceLabel).toBe(original.sourceLabel)
+    expect(ranked[0].reasons.join(' ')).not.toContain('覆盖1岗')
     expect(original).toMatchObject({ leverage: 30, delayCost: 20, sourceLabel: '准备中心' })
     expect(original).not.toHaveProperty('dueAt')
   })
@@ -68,7 +69,7 @@ describe('v1.6 Round 2 Today Prep Graph projection', () => {
     const original = prepAction('随手整理')
     const ranked = rankActions([original], [sqlOpportunity], now)
     expect(ranked[0].action.leverage).toBe(30)
-    expect(ranked[0].reasons).toContain('准备任务')
+    expect(ranked[0].reasons).toContain('截止日期未明确，排在已知截止之后')
     expect(ranked[0].reasons).not.toContain('可复用于多个岗位')
   })
 })

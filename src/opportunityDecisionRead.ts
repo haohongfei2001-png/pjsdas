@@ -1,7 +1,7 @@
 import { classifyJob, resolveApplicationDeadline, type JobCategory, type ResolvedApplicationDeadline } from './applicationDeadline.js'
 import { readModelSnapshot } from './readModelSnapshot.js'
-import { decisionRulesForSnapshot } from './decisionRules.js'
-import { computePriority, rankActions } from './decisionV3.js'
+import { actionDeadline, compareDeadlines } from './deadlineOrder.js'
+import { rankActions } from './decisionV3.js'
 import { jobPostingFreshness } from './jobPosting.js'
 import type {
   Action,
@@ -15,7 +15,7 @@ import type {
   ScheduleNodeTemporal,
 } from './model.js'
 import { effectiveScheduleNodeState } from './scheduleNodes.js'
-import { nodeForAction } from './todayBrief.js'
+import { hasKnownActionTiming, latestActionNode } from './deadlineOrder.js'
 import { type PJSDASSnapshot } from './snapshot.js'
 
 const HOUR = 3_600_000
@@ -267,8 +267,9 @@ function actionRead(ranked: RankedAction | undefined, opportunity: Opportunity, 
   if (!ranked) return undefined
   const action = ranked.action
   const latest = latestNodes(nodes, true)
-  const node = nodeForAction(action, latest.filter(item => !['cancelled', 'superseded'].includes(item.state)))
-  const terminalOnly = !node && latest.some(item => item.relatedActionIds.includes(action.id))
+  const node = latestActionNode(action, latest)
+  const unknownTiming = node && !hasKnownActionTiming(node)
+  const applicable = actionDeadline(action, node)
   let operation: OpportunityDecisionAction['operation'] = 'open_today'
   let externalUrl: string | undefined
   if (action.kind === 'apply') {
@@ -287,10 +288,10 @@ function actionRead(ranked: RankedAction | undefined, opportunity: Opportunity, 
     kind: action.kind,
     status: action.status,
     estimatedMinutes: action.estimatedMinutes,
-    dueAt: terminalOnly ? undefined : action.dueAt,
-    duePrecision: action.duePrecision,
+    dueAt: unknownTiming ? undefined : applicable.deadline,
+    duePrecision: unknownTiming ? undefined : applicable.precision,
     timingMode: action.timingMode,
-    temporal: node?.temporal,
+    temporal: unknownTiming ? undefined : node?.temporal,
     rankingReasons: [...ranked.reasons].slice(0, 2),
     operation,
     externalUrl,
@@ -303,7 +304,8 @@ function deadlineDelta(opportunityId: string, nodes: ScheduleNode[], now: Date, 
   )
   if (!node || node.state === 'completed') return undefined
   const temporal = node.temporal
-  if (temporal.shape === 'date_only' || temporal.shape === 'estimated_date') {
+  if (temporal.shape === 'estimated_date' || temporal.resolutionBasis === 'system_estimate') return undefined
+  if (temporal.shape === 'date_only') {
     if (!temporal.date) return undefined
     const zone = ['floating-date', 'source-offset'].includes(temporal.timezone)
       ? timezone : temporal.timezone
@@ -358,14 +360,11 @@ function reasonsFor(input: {
   else if (opportunity.processStage === 'offer') push('offer_received', 'reason')
   else if (['screening', 'assessment', 'written_test', 'interview'].includes(opportunity.processStage)) push('active_recruiting_process', 'reason')
   else if (opportunity.processStage === 'waiting_release') push('waiting_release', 'info')
-  else if (opportunity.roleType === 'core') push('core_opportunity', 'reason')
 
-  if (opportunity.early) push('early_window', 'reason')
   if (deadlineNear) push('deadline_near', 'risk')
   if (group && (group.locked || group.remaining === 0)) push('shared_application_constraint', 'risk')
   if (freshness === 'stale' || freshness === 'aging' || freshness === 'unknown') push('source_needs_refresh', 'risk')
   if (freshness === 'closed') push('source_closed', 'risk')
-  if ((opportunity.assessmentStatus ?? (opportunity.detail?.assessment ? 'assessed' : 'legacy')) === 'unassessed') push('assessment_missing', 'info')
   if (nearestNode?.requiresResolution) push('elapsed_node_unresolved', 'risk')
 
   return reasons.slice(0, 4)
@@ -374,9 +373,9 @@ function reasonsFor(input: {
 function rankedActionsByOpportunity(
   snapshot: PJSDASSnapshot,
   now: Date,
+  timezone: string,
 ) {
-  const rules = decisionRulesForSnapshot(snapshot.data.decisionRules)
-  const ranked = rankActions(snapshot.data.actions, snapshot.data.opportunities, now, rules)
+  const ranked = rankActions(snapshot.data.actions, snapshot.data.opportunities, now, undefined, timezone, snapshot.data.scheduleNodes)
   const map = new Map<string, RankedAction>()
   for (const item of ranked) {
     const opportunityId = item.action.opportunityId
@@ -401,7 +400,7 @@ export function getOpportunityDecisionRead(
   const nearestNode = nearestNodeFor(opportunity, process, nodes, ctx.now, ctx.timezone)
   const freshness = sourceFreshness(opportunity, ctx.now)
   const delta = deadlineDelta(opportunity.id, nodes, ctx.now, ctx.timezone)
-  const ranked = rankedActionsByOpportunity(snapshot, ctx.now).get(opportunity.id)
+  const ranked = rankedActionsByOpportunity(snapshot, ctx.now, ctx.timezone).get(opportunity.id)
 
   return {
     contractVersion: 1,
@@ -436,7 +435,7 @@ export function buildOpportunityDecisionList(
 ): OpportunityDecisionListRead {
   const ctx = context(rawContext)
   const snapshot = readModelSnapshot(rawSnapshot)
-  const ranked = rankedActionsByOpportunity(snapshot, ctx.now)
+  const ranked = rankedActionsByOpportunity(snapshot, ctx.now, ctx.timezone)
   const nodes = nodesForDecision(snapshot)
   const items = snapshot.data.opportunities.map((opportunity) => {
     const process = processFor(opportunity, snapshot.data.processes)
@@ -472,13 +471,14 @@ export function buildOpportunityDecisionList(
     return read
   })
 
-  const sort = (a: OpportunityDecisionRead, b: OpportunityDecisionRead) => {
-    const aHasAction = a.nextAction ? 0 : 1
-    const bHasAction = b.nextAction ? 0 : 1
-    const aDue = a.nextAction?.dueAt ? new Date(a.nextAction.dueAt).getTime() : Number.POSITIVE_INFINITY
-    const bDue = b.nextAction?.dueAt ? new Date(b.nextAction.dueAt).getTime() : Number.POSITIVE_INFINITY
-    return aHasAction - bHasAction || aDue - bDue || a.company.localeCompare(b.company) || a.role.localeCompare(b.role)
+  const orderingDeadline = (item: OpportunityDecisionRead) => {
+    if (item.process.stage === 'not_applied' || item.process.stage === 'waiting_release') {
+      return { id: item.opportunityId, deadline: item.applicationDeadline?.state === 'confirmed' ? item.applicationDeadline.deadline : undefined,
+        precision: item.applicationDeadline?.precision, timezone: item.applicationDeadline?.timezone }
+    }
+    return { id: item.opportunityId, deadline: item.nextAction?.dueAt, precision: item.nextAction?.duePrecision, timezone: item.nextAction?.temporal?.timezone }
   }
+  const sort = (a: OpportunityDecisionRead, b: OpportunityDecisionRead) => compareDeadlines(orderingDeadline(a), orderingDeadline(b), ctx.timezone)
 
   return {
     contractVersion: 1,
@@ -488,8 +488,7 @@ export function buildOpportunityDecisionList(
     inProgress: items.filter((item) => item.bucket === 'in_progress').sort(sort),
     worthPursuing: items.filter((item) => item.bucket === 'worth_pursuing').sort(sort),
     all: [...items].sort((a, b) => {
-      const bucketOrder: Record<OpportunityDecisionBucket, number> = { in_progress: 0, worth_pursuing: 1, ended: 2 }
-      return bucketOrder[a.bucket] - bucketOrder[b.bucket] || sort(a, b)
+      return Number(a.bucket === 'ended') - Number(b.bucket === 'ended') || sort(a, b)
     }),
     endedCount: items.filter((item) => item.bucket === 'ended').length,
   }

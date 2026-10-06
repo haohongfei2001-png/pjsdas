@@ -1,3 +1,4 @@
+import { compareDeadlines } from './deadlineOrder.js'
 import type { DecisionWeights } from './decisionRules.js'
 import { discoveryProfileForSnapshot, type DiscoveryProfile } from './discoveryProfile.js'
 import {
@@ -37,16 +38,15 @@ export interface DiscoveryCandidateForQuality {
   sourceEvidenceText?: string
   postingStatus?: DiscoveryPostingStatus
   roleType: OpportunityRole
-  opportunityValue: number
-  fitScore: number
-  fitConfidence: DiscoveryConfidence
-  opportunityValueConfidence: DiscoveryConfidence
+  opportunityValue?: number
+  fitScore?: number
+  fitConfidence?: DiscoveryConfidence
+  opportunityValueConfidence?: DiscoveryConfidence
   discoveredAt?: string
 }
 
 export interface ScreenedDiscoveryCandidate<T extends DiscoveryCandidateForQuality = DiscoveryCandidateForQuality> {
   candidate: T
-  qualityScore: number
   warnings: string[]
 }
 
@@ -55,7 +55,7 @@ export interface DiscoveryScreeningResult<T extends DiscoveryCandidateForQuality
   accepted: ScreenedDiscoveryCandidate<T>[]
   skippedDuplicates: Array<{ company: string; role: string; reason: string; reasonDetail?: DiscoveryQualityReasonDetail }>
   rejectedCandidates: Array<{ company: string; role: string; reasons: string[]; reasonDetails?: DiscoveryQualityReasonDetail[] }>
-  deferredCandidates: Array<{ company: string; role: string; qualityScore: number; reason: string; reasonDetail?: DiscoveryQualityReasonDetail }>
+  deferredCandidates: Array<{ company: string; role: string; reason: string; reasonDetail?: DiscoveryQualityReasonDetail }>
 }
 
 function compact(value: string) {
@@ -128,26 +128,10 @@ function locationMatches(profile: DiscoveryProfile, location: string) {
   })
 }
 
-function confidencePenalty(value: DiscoveryConfidence) {
-  if (value === 'low') return 6
-  if (value === 'medium') return 2
-  return 0
-}
-
-export function discoveryQualityScore(candidate: DiscoveryCandidateForQuality, weights: DecisionWeights) {
-  const fitWeight = Math.max(1, weights.fit)
-  const opportunityWeight = Math.max(1, weights.opportunity)
-  const base = (
-    candidate.fitScore * fitWeight + candidate.opportunityValue * opportunityWeight
-  ) / (fitWeight + opportunityWeight)
-  const penalty = confidencePenalty(candidate.fitConfidence) + confidencePenalty(candidate.opportunityValueConfidence)
-  return Math.max(0, Math.min(100, Math.round((base - penalty) * 10) / 10))
-}
-
 export function evaluateDiscoveryCandidate(
   rawProfile: DiscoveryProfile,
   candidate: DiscoveryCandidateForQuality,
-  weights: DecisionWeights,
+  _weights: DecisionWeights | undefined,
   now = new Date(),
 ) {
   const profile = discoveryProfileForSnapshot(rawProfile)
@@ -173,13 +157,6 @@ export function evaluateDiscoveryCandidate(
   const preferredRoleTypes = profile.preferredRoleTypes ?? []
   if (preferredRoleTypes.length > 0 && !preferredRoleTypes.includes(candidate.roleType)) {
     reject({ code: 'role_type_not_allowed', params: { roleType: candidate.roleType } })
-  }
-
-  if (profile.minimumFitScore !== undefined && candidate.fitScore < profile.minimumFitScore) {
-    reject({ code: 'fit_below_minimum', params: { score: candidate.fitScore, minimum: profile.minimumFitScore } })
-  }
-  if (profile.minimumOpportunityValue !== undefined && candidate.opportunityValue < profile.minimumOpportunityValue) {
-    reject({ code: 'opportunity_value_below_minimum', params: { score: candidate.opportunityValue, minimum: profile.minimumOpportunityValue } })
   }
 
   for (const exclusion of profile.mustNotHave) {
@@ -221,7 +198,6 @@ export function evaluateDiscoveryCandidate(
     hardRejectReasons,
     hardRejectDetails,
     warnings: warnings.slice(0, 10),
-    qualityScore: discoveryQualityScore(candidate, weights),
   }
 }
 
@@ -255,7 +231,7 @@ export function screenDiscoveryCandidates<T extends DiscoveryCandidateForQuality
   rawProfile: DiscoveryProfile,
   candidates: T[],
   existing: Opportunity[],
-  weights: DecisionWeights,
+  _weights: DecisionWeights | undefined,
   now = new Date(),
   timeline: TimelineRecord[] = [],
   inbox: DiscoveryInboxItem[] = [],
@@ -364,7 +340,7 @@ export function screenDiscoveryCandidates<T extends DiscoveryCandidateForQuality
       continue
     }
 
-    const evaluated = evaluateDiscoveryCandidate(profile, candidate, weights, now)
+    const evaluated = evaluateDiscoveryCandidate(profile, candidate, undefined, now)
     if (!evaluated.accepted) {
       rejectedCandidates.push({
         company: candidate.company,
@@ -377,18 +353,13 @@ export function screenDiscoveryCandidates<T extends DiscoveryCandidateForQuality
 
     eligible.push({
       candidate,
-      qualityScore: evaluated.qualityScore,
       warnings: [...postingWarnings, ...evaluated.warnings].slice(0, 10),
     })
   }
 
-  eligible.sort((a, b) =>
-    b.qualityScore - a.qualityScore ||
-    b.candidate.fitScore - a.candidate.fitScore ||
-    b.candidate.opportunityValue - a.candidate.opportunityValue ||
-    a.candidate.company.localeCompare(b.candidate.company) ||
-    a.candidate.role.localeCompare(b.candidate.role),
-  )
+  eligible.sort((a, b) => compareDeadlines(
+    { id: a.candidate.sourceUrl, deadline: a.candidate.deadline },
+    { id: b.candidate.sourceUrl, deadline: b.candidate.deadline }))
 
   const maxReviewCandidates = Math.max(1, Math.min(12, profile.maxReviewCandidates ?? 6))
   const accepted = eligible.slice(0, maxReviewCandidates)
@@ -400,7 +371,6 @@ export function screenDiscoveryCandidates<T extends DiscoveryCandidateForQuality
     return {
       company: item.candidate.company,
       role: item.candidate.role,
-      qualityScore: item.qualityScore,
       reason: presentDiscoveryQualityReason(reasonDetail, true),
       reasonDetail,
     }

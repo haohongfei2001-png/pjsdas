@@ -19,7 +19,7 @@ const changeSet: ChangeSetRecord = {
     opportunity: {
       id: 'job-1', company: 'Example', role: 'Designer', currentStageLabel: '待投',
       processStage: 'not_applied', roleType: 'core', early: false,
-      opportunityValue: 70, fitScore: 75, locallyManaged: true, importedAt: at.toISOString(),
+      opportunityValue: 0, fitScore: 0, locallyManaged: true, importedAt: at.toISOString(),
       detail: { discovery: {
         sourceUrl: 'https://example.com/job/1', sourceTitle: 'Designer', rationale: 'Source-backed role',
         discoveredAt: at.toISOString(), fitConfidence: 'medium', opportunityValueConfidence: 'medium',

@@ -15,13 +15,12 @@ import {
   saveLocalTimePlanning,
 } from './db.js'
 import { parsePJSDASWorkbook } from './importExcelV2.js'
-import { prepPriorityRank, presentPrepPriority, presentPrepSourceState } from './prepSemantics.js'
+import { presentPrepSourceState } from './prepSemantics.js'
+import { compareDeadlines } from './deadlineOrder.js'
 import { buildPrepGraph } from './prepGraph.js'
 import { presentPrepGraphLinkExplanation } from './prepGraphPresentation.js'
 import { presentStageLabel } from './stagePresentation.js'
 import { currentUiLanguage, useUiLanguage } from './uiLanguage.js'
-import { DEFAULT_DECISION_RULES, type DecisionRules } from './decisionRules.js'
-import RulesView from './RulesView.js'
 import TimelineView from './TimelineView.js'
 import CloudSettingsCard from './cloud/CloudSettingsCard.js'
 import { useCloud } from './cloud/CloudContext.js'
@@ -195,7 +194,6 @@ export default function AppV8() {
   const prep = snapshot?.data.prep ?? []
   const groups = snapshot?.data.applicationGroups ?? []
   const timeline = snapshot?.data.timeline ?? []
-  const rules = snapshot?.data.decisionRules ?? DEFAULT_DECISION_RULES
   const lastImport = snapshot?.data.meta
 
   const surface = route.surface
@@ -886,7 +884,7 @@ export default function AppV8() {
           onReturnOpportunity={route.returnOpportunityId ? () => navigate('/library/' + encodeURIComponent(route.returnOpportunityId!)) : undefined}
           onChanged={reload} /> : null}
         {!loading && surface === 'history' ? <ActivitySurface timeline={timeline} /> : null}
-        {!loading && surface === 'settings' ? <SettingsSurface lastImport={lastImport} rules={rules} onChanged={reload} onOpenActivity={() => navigate('/history')} onOpenDataQuality={() => navigate('/decisions')} /> : null}
+        {!loading && surface === 'settings' ? <SettingsSurface lastImport={lastImport} onChanged={reload} onOpenActivity={() => navigate('/history')} onOpenDataQuality={() => navigate('/decisions')} /> : null}
       </main>
 
 
@@ -951,11 +949,11 @@ function OpportunitiesSurface({
 function PreparePanel({ prep }: { prep: Prep[] }) {
   const { lang } = useUiLanguage()
   const zh = lang === 'zh'
-  const sorted = [...prep].sort((a, b) => prepPriorityRank(a.priorityLabel) - prepPriorityRank(b.priorityLabel) || a.title.localeCompare(b.title))
+  const sorted = [...prep].sort((a, b) => compareDeadlines({ id: a.id, deadline: a.recentNodeAt }, { id: b.id, deadline: b.recentNodeAt }))
   return (
     <div className="prepare-context">
       <div className="surface-tool-strip"><div><strong>{zh ? '准备图谱' : 'Prep Graph'}</strong><span>{zh ? '查看一个准备任务覆盖哪些岗位、命中哪些真实缺口。' : 'See which opportunities a prep item supports and which real needs it covers.'}</span></div><div className="surface-tool-row"><PrepGraphDock /></div></div>
-      <section className="surface-panel"><div className="surface-panel-head"><div><div className="eyebrow">PREP INVENTORY</div><h2>{zh ? '准备资产' : 'Preparation inventory'}</h2></div><span>{prep.length}</span></div>{sorted.length ? <div className="surface-prep-grid">{sorted.map((item) => <article key={item.id}><div><span>{presentPrepPriority(item.priorityLabel, zh)}</span><span>{presentPrepSourceState(item.sourceStatus, zh)}</span></div><h3>{item.title}</h3><p>{item.minimumOutput ?? (zh ? '暂无最小产出定义' : 'No minimum output defined')}</p><small>{formatMinutes(item.estimatedMinutes)} · {item.triggeredBy ?? (zh ? '无显式触发条件' : 'No explicit trigger')}</small></article>)}</div> : <EmptyState title={zh ? '暂无准备任务' : 'No preparation items'} text={zh ? '准备资产不是为了填满列表；只有明确可复用的准备才值得长期保留。' : 'The Prep inventory is not a checklist to fill; keep reusable preparation with a clear purpose.'} />}</section>
+      <section className="surface-panel"><div className="surface-panel-head"><div><div className="eyebrow">PREP INVENTORY</div><h2>{zh ? '准备资产' : 'Preparation inventory'}</h2></div><span>{prep.length}</span></div>{sorted.length ? <div className="surface-prep-grid">{sorted.map((item) => <article key={item.id}><div><span>{presentPrepSourceState(item.sourceStatus, zh)}</span></div><h3>{item.title}</h3><p>{item.minimumOutput ?? (zh ? '暂无最小产出定义' : 'No minimum output defined')}</p><small>{formatMinutes(item.estimatedMinutes)} · {item.triggeredBy ?? (zh ? '无显式触发条件' : 'No explicit trigger')}</small></article>)}</div> : <EmptyState title={zh ? '暂无准备任务' : 'No preparation items'} text={zh ? '准备资产不是为了填满列表；只有明确可复用的准备才值得长期保留。' : 'The Prep inventory is not a checklist to fill; keep reusable preparation with a clear purpose.'} />}</section>
     </div>
   )
 }
@@ -966,7 +964,7 @@ function ActivitySurface({ timeline }: { timeline: TimelineRecord[] }) {
   return <section className="surface-page"><SurfaceHeader eyebrow="HISTORY" title={zh ? '历史与审计' : 'History & audit'} text={zh ? '这里只保留发生过什么。日常行动和需要你决定的事分别留在 Today 与 Decisions。' : 'This is the audit trail only. Daily action stays in Today and genuine decisions stay in Decisions.'} /><TimelineView records={timeline} /></section>
 }
 
-function SettingsSurface({ lastImport, rules, onChanged, onOpenActivity, onOpenDataQuality }: { lastImport?: ImportMeta; rules: DecisionRules; onChanged: () => Promise<void>; onOpenActivity: () => void; onOpenDataQuality: () => void }) {
+function SettingsSurface({ lastImport, onChanged, onOpenActivity, onOpenDataQuality }: { lastImport?: ImportMeta; onChanged: () => Promise<void>; onOpenActivity: () => void; onOpenDataQuality: () => void }) {
   const { lang } = useUiLanguage()
   const zh = lang === 'zh'
   const [preview, setPreview] = useState<ImportBundle | null>(null)
@@ -1002,11 +1000,6 @@ function SettingsSurface({ lastImport, rules, onChanged, onOpenActivity, onOpenD
       <details className="settings-group">
         <summary><div><strong>{zh ? '岗位发现偏好' : 'Discovery preferences'}</strong><span>{zh ? '想找的岗位、城市与公司' : 'Roles, locations and companies'}</span></div></summary>
         <div className="settings-group-body"><DiscoveryProfileCard /></div>
-      </details>
-
-      <details className="settings-group">
-        <summary><div><strong>{zh ? '决策规则' : 'Decision policy'}</strong><span>{zh ? '岗位排序与提醒条件' : 'Job ranking and reminder criteria'}</span></div></summary>
-        <div className="settings-group-body"><RulesView rules={rules} onChanged={onChanged} /></div>
       </details>
 
       <details className="settings-group">

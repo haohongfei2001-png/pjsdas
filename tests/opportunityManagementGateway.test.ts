@@ -130,12 +130,16 @@ describe('source-only opportunity tool adapter', () => {
     const result = await tools(f, async () => active, fetchImpl).invoke('get_opportunity_management', { opportunityId: 'opp-a' })
     expect(result.isError).toBe(true); expect(JSON.stringify(result)).not.toContain('Engineer')
   })
-  it('returns exact raw profile/archive proofs without ledger contents', async () => {
+  it('returns a score-free profile with exact raw archive proofs and no ledger contents', async () => {
     const f = storeFixture()
     const raw = f.snapshot().data.opportunities[0]
     raw.detail = { ...raw.detail, privateMetadata: { kept: true } } as any
     const result = await tools(f, async () => grant).invoke('get_opportunity_management', { opportunityId: 'opp-a' })
-    expect(result.structuredContent).toMatchObject({ consentVersion: 3, capability: 'workspace.opportunity.manage', data: { opportunity: raw } }); expect(JSON.stringify(result)).not.toContain('opportunity_management_restore')
+    const { fitScore: _fit, opportunityValue: _value, ...visible } = raw
+    expect(result.structuredContent).toMatchObject({ consentVersion: 3, capability: 'workspace.opportunity.manage', data: { opportunity: visible } }); expect(JSON.stringify(result)).not.toContain('opportunity_management_restore')
+    expect((result.structuredContent as any).data.opportunity).not.toHaveProperty('fitScore')
+    expect((result.structuredContent as any).data.opportunity).not.toHaveProperty('opportunityValue')
+    expect(raw.fitScore).toBe(80)
   })
   it('internally binds adapter admission before executor admission', async () => {
     const f = storeFixture(); let reads = 0

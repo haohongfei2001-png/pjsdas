@@ -1,6 +1,9 @@
+import { buildOpportunityDecisionList } from '../opportunityDecisionRead.js'
+import { resolveApplicationDeadline } from '../applicationDeadline.js'
+import { todayCapacity } from '../today/localDayCapacity.js'
+import { compareDeadlines, actionDeadline, actionNodesById, deadlineBoundaryMs } from '../deadlineOrder.js'
 import { canonicalOpportunityId } from '../opportunityCanonicalization.js'
-import { buildTimePlan, processNeedsReview, rankAction, rankActions } from '../decisionV3.js'
-import { decisionRulesForSnapshot, type DecisionRules, type DecisionWeights } from '../decisionRules.js'
+import { processNeedsReview, rankActions } from '../decisionV3.js'
 import { discoveryProfileForSnapshot, type DiscoveryProfile } from '../discoveryProfile.js'
 import { discoveryFeedbackSummary, recentRejectedDiscoveryFeedback } from '../discoveryFeedback.js'
 import { isUnresolvedPastProcessEvent } from '../fixedEventGuardLogic.js'
@@ -12,7 +15,7 @@ import {
   suppressSupersededActions,
 } from '../processEvents.js'
 import { validateSnapshot, type PJSDASSnapshot } from '../snapshot.js'
-import { capacityForDate, validPlanningDate } from '../timePlanningPreferences.js'
+import { validPlanningDate } from '../timePlanningPreferences.js'
 import { localDateKey as displayDateKey } from '../todayBrief.js'
 import { buildConsumerTimePlan } from '../today/consumerTimePlan.js'
 import type {
@@ -21,7 +24,6 @@ import type {
   ProcessEvent,
   ProcessRecord,
   ProcessStage,
-  RankedAction,
   TimelineCategory,
 } from '../model.js'
 
@@ -47,6 +49,7 @@ export type BridgeErrorCode =
   | 'WORKSPACE_INVALID'
   | 'INVALID_ARGUMENT'
   | 'NOT_FOUND'
+  | 'SCORING_RETIRED'
 
 export class BridgeReadError extends Error {
   readonly code: BridgeErrorCode
@@ -77,8 +80,10 @@ export interface GetTodayPlanOutput {
     role?: string
     kind: string
     estimatedMinutes: number
-    priority: number
     dueAt?: string
+    duePrecision?: Action['duePrecision']
+    timezone?: string
+    timingMode?: Action['timingMode']
     rationale: string[]
   }>
   fixedEvents: Array<{
@@ -87,6 +92,8 @@ export interface GetTodayPlanOutput {
     role: string
     label: string
     occursAt: string
+    precision?: Action['duePrecision']
+    timezone?: string
   }>
   blockedOrRecoveryItems: Array<{
     id: string
@@ -113,9 +120,11 @@ export interface ListOpportunitiesOutput {
     stage: string
     stageLabel: string
     applicationDeadline?: string
-    opportunityValue: number
-    fitScore: number
-    assessmentStatus: string
+    applicationDeadlinePrecision?: Action['duePrecision']
+    applicationDeadlineTimezone?: string
+    currentActionDueAt?: string
+    currentActionDuePrecision?: Action['duePrecision']
+    currentActionTimingMode?: Action['timingMode']
     participationStatus: string
     applicationGroupId?: string
     locallyManaged: boolean
@@ -153,22 +162,10 @@ export interface GetPipelineOutput {
   truncated: boolean
 }
 
-export interface GetDecisionRulesOutput {
-  meta: BridgeMeta
-  rulesVersion: number
-  updatedAt: string
-  weights: DecisionWeights
-  planning: Record<string, number | boolean | string>
-  deadlines: Record<string, number | boolean | string>
-  visibility: Record<string, number | boolean | string>
-  humanSummary: string[]
-}
-
 export interface GetDiscoveryContextOutput {
   meta: BridgeMeta
   configured: boolean
   profile: DiscoveryProfile
-  decisionWeights: DecisionWeights
   existingOpportunities: Array<{
     opportunityId: string
     company: string
@@ -214,34 +211,6 @@ export interface ExplainPriorityInput {
   compareWithOpportunityId?: string
 }
 
-export interface ExplainPriorityOutput {
-  meta: BridgeMeta
-  target: {
-    id: string
-    type: 'action' | 'opportunity'
-    label: string
-  }
-  score?: number
-  components: Array<{
-    key: string
-    label: string
-    contribution?: number
-    value?: number | string | boolean
-    explanation: string
-  }>
-  guardrails: Array<{
-    key: string
-    effect: string
-    explanation: string
-  }>
-  comparison?: {
-    targetId: string
-    label: string
-    score?: number
-    decisiveDifferences: string[]
-  }
-}
-
 export interface GetRecentTimelineInput {
   since?: string
   until?: string
@@ -273,7 +242,6 @@ interface EffectiveWorkspace {
   processes: ProcessRecord[]
   processEvents: ProcessEvent[]
   actions: Action[]
-  rules: DecisionRules
 }
 
 function resolvedContext(context: BridgeReadContext) {
@@ -330,7 +298,6 @@ function readWorkspace(snapshot: PJSDASSnapshot): EffectiveWorkspace {
     processes,
     processEvents,
     actions,
-    rules: decisionRulesForSnapshot(snapshot.data.decisionRules),
   }
 }
 
@@ -347,13 +314,6 @@ function parseDate(value: string | undefined, label: string) {
   const parsed = new Date(value)
   if (Number.isNaN(parsed.getTime())) throw new BridgeReadError('INVALID_ARGUMENT', `${label} is not a valid date.`)
   return parsed
-}
-
-function localDateKey(date: Date) {
-  const year = date.getFullYear()
-  const month = String(date.getMonth() + 1).padStart(2, '0')
-  const day = String(date.getDate()).padStart(2, '0')
-  return `${year}-${month}-${day}`
 }
 
 function nowForRequestedDate(value: string | undefined, fallback: Date, timezone: string) {
@@ -400,19 +360,30 @@ export function getTodayPlan(
   const workspace = readWorkspace(snapshot)
   const now = nowForRequestedDate(input.date, context.now, context.timezone)
   const today = displayDateKey(now, context.timezone)
-  const weekday = new Date(`${today}T12:00:00.000Z`).getUTCDay()
-  const availableMinutes = input.availableMinutes ?? capacityForDate(snapshot.data.timePlanning, today, weekday) ?? context.defaultAvailableMinutes
+  const availableMinutes = input.availableMinutes
   if (availableMinutes !== undefined && (!Number.isInteger(availableMinutes) || availableMinutes < 0 || availableMinutes > 24 * 60)) {
     throw new BridgeReadError('INVALID_ARGUMENT', 'availableMinutes must be between 0 and 1440.')
   }
 
-  const ranked = rankActions(workspace.actions, workspace.opportunities, now, workspace.rules, context.timezone)
-  const plan = buildTimePlan(ranked, availableMinutes ?? 1440, now, workspace.rules)
+  const ranked = rankActions(workspace.actions, workspace.opportunities, now, undefined, context.timezone, snapshot.data.scheduleNodes ?? [])
   const consumerPlan = buildConsumerTimePlan({ ranked, nodes: snapshot.data.scheduleNodes ?? [],
-    preferences: snapshot.data.timePlanning, availableMinutes, now, timezone: context.timezone })
+    preferences: snapshot.data.timePlanning, availableMinutes, now, timezone: context.timezone, useRemainingDayDefault: true })
+  const capacityMinutes = consumerPlan.capacityMinutes ?? todayCapacity(snapshot.data.timePlanning, now, context.timezone, availableMinutes).minutes
+
+  const nodes = snapshot.data.scheduleNodes ?? []
+  const activeNodes = actionNodesById(nodes, workspace.actions)
+  const linkedActions = new Set(nodes.flatMap(node => node.relatedActionIds))
+  const timingFor = (action: Action) => {
+    const node = activeNodes.get(action.id)
+    const timing = node ? actionDeadline(action, node) : linkedActions.has(action.id) ? { id: action.id } : actionDeadline(action)
+    const timingMode = !timing.deadline ? undefined : node?.temporal.shape === 'fixed_range' ? 'fixed' as const
+      : node?.temporal.shape === 'deadline' ? 'deadline' as const : action.timingMode
+    return { ...timing, timingMode }
+  }
 
   const startableActions = consumerPlan.planned.map((item) => {
     const identity = companyRoleForAction(item.action, workspace.opportunities, workspace.processEvents)
+    const timing = timingFor(item.action)
     return {
       actionId: item.action.id,
       title: item.action.title,
@@ -420,14 +391,17 @@ export function getTodayPlan(
       role: identity.role,
       kind: item.action.kind,
       estimatedMinutes: item.action.estimatedMinutes,
-      priority: item.score,
-      dueAt: item.action.dueAt,
+      dueAt: timing.deadline,
+      duePrecision: timing.precision,
+      timezone: timing.timezone,
+      timingMode: timing.timingMode,
       rationale: [...item.reasons],
     }
   })
 
-  const fixedEvents = plan.upcomingFixedEvents.flatMap((item) => {
-    if (!item.action.dueAt) return []
+  const fixedEvents = ranked.flatMap((item) => {
+    const timing = timingFor(item.action)
+    if (timing.timingMode !== 'fixed' || !timing.deadline || (deadlineBoundaryMs(timing, context.timezone) ?? -Infinity) < now.getTime()) return []
     const event = eventForAction(item.action, workspace.processEvents)
     const identity = companyRoleForAction(item.action, workspace.opportunities, workspace.processEvents)
     if (!identity.company || !identity.role) return []
@@ -436,12 +410,14 @@ export function getTodayPlan(
       company: identity.company,
       role: identity.role,
       label: event ? processEventStageLabel(event) : item.action.title,
-      occursAt: item.action.dueAt,
+      occursAt: timing.deadline,
+      precision: timing.precision,
+      timezone: timing.timezone,
     }]
   })
 
   const recovery = workspace.actions
-    .filter((action) => isUnresolvedPastProcessEvent(action, now))
+    .filter((action) => isUnresolvedPastProcessEvent(action, now, activeNodes.get(action.id), context.timezone))
     .map((action) => ({
       id: action.id,
       label: action.title,
@@ -464,7 +440,7 @@ export function getTodayPlan(
   return {
     meta: meta({ ...context, now }),
     date: today,
-    availableMinutes: availableMinutes ?? null,
+    availableMinutes: capacityMinutes,
     plannedMinutes: consumerPlan.planned.reduce((sum, item) => sum + item.action.estimatedMinutes, consumerPlan.fixedMinutes),
     capacityConflict: consumerPlan.conflicts.length > 0,
     startableActions,
@@ -484,22 +460,22 @@ export function listOpportunities(
   const query = input.query?.trim().toLocaleLowerCase()
   const company = input.company?.trim().toLocaleLowerCase()
   const deadlineBefore = parseDate(input.deadlineBefore, 'deadlineBefore')
+  const decisions = buildOpportunityDecisionList(snapshot, context).all
+  const decisionById = new Map(decisions.map(item => [item.opportunityId, item]))
+  const order = new Map(decisions.map((item, index) => [item.opportunityId, index]))
 
   const filtered = workspace.opportunities
+    .map(item => { const deadline = resolveApplicationDeadline(item, snapshot.data); return { ...item, deadline: deadline.deadline, deadlinePrecision: deadline.precision, deadlineTimezone: deadline.timezone } })
     .filter((item) => !input.stage || item.processStage === input.stage)
     .filter((item) => !input.roleType || item.roleType === input.roleType)
     .filter((item) => !company || item.company.toLocaleLowerCase().includes(company))
     .filter((item) => !query || `${item.company} ${item.role}`.toLocaleLowerCase().includes(query))
     .filter((item) => {
       if (!deadlineBefore) return true
-      return Boolean(item.deadline && new Date(item.deadline).getTime() <= deadlineBefore.getTime())
+      return Boolean(item.deadline && compareDeadlines({ id: '', deadline: item.deadline, precision: item.deadlinePrecision, timezone: item.deadlineTimezone },
+        { id: '', deadline: input.deadlineBefore }, context.timezone) <= 0)
     })
-    .sort((a, b) => {
-      const aDeadline = a.deadline ? new Date(a.deadline).getTime() : Number.POSITIVE_INFINITY
-      const bDeadline = b.deadline ? new Date(b.deadline).getTime() : Number.POSITIVE_INFINITY
-      return aDeadline - bDeadline || (a.order ?? Number.POSITIVE_INFINITY) - (b.order ?? Number.POSITIVE_INFINITY) ||
-        b.opportunityValue - a.opportunityValue || b.fitScore - a.fitScore || a.id.localeCompare(b.id)
-    })
+    .sort((a, b) => (order.get(a.id) ?? Number.MAX_SAFE_INTEGER) - (order.get(b.id) ?? Number.MAX_SAFE_INTEGER) || a.id.localeCompare(b.id))
 
   return {
     meta: meta(context),
@@ -510,9 +486,10 @@ export function listOpportunities(
       stage: item.processStage,
       stageLabel: item.currentStageLabel,
       applicationDeadline: item.deadline,
-      opportunityValue: item.opportunityValue,
-      fitScore: item.fitScore,
-      assessmentStatus: item.assessmentStatus ?? (item.detail?.assessment ? 'assessed' : 'legacy'),
+      applicationDeadlinePrecision: item.deadlinePrecision,
+      applicationDeadlineTimezone: item.deadlineTimezone,      currentActionDueAt: decisionById.get(item.id)?.nextAction?.dueAt,
+      currentActionDuePrecision: decisionById.get(item.id)?.nextAction?.duePrecision,
+      currentActionTimingMode: decisionById.get(item.id)?.nextAction?.timingMode,
       participationStatus: item.participationStatus ?? 'active',
       applicationGroupId: item.applicationGroupId,
       locallyManaged: Boolean(item.locallyManaged),
@@ -579,42 +556,8 @@ export function getPipeline(
   }
 }
 
-export function getDecisionRules(
-  snapshot: PJSDASSnapshot,
-  bridgeContext: BridgeReadContext = {},
-): GetDecisionRulesOutput {
-  const context = resolvedContext(bridgeContext)
-  const rules = readWorkspace(snapshot).rules
-
-  return {
-    meta: meta(context),
-    rulesVersion: rules.version,
-    updatedAt: rules.updatedAt,
-    weights: { ...rules.weights },
-    planning: {
-      nearDeadlineStretchMinutes: rules.nearDeadlineStretchMinutes,
-      followUpDailyCap: rules.followUpDailyCap,
-      prepDailyCap: rules.prepDailyCap,
-    },
-    deadlines: {
-      hardDeadlineHorizonHours: rules.hardDeadlineHorizonHours,
-      fixedEventHorizonHours: rules.fixedEventHorizonHours,
-    },
-    visibility: {
-      upcomingHorizonDays: rules.upcomingHorizonDays,
-      upcomingNodeLimit: rules.upcomingNodeLimit,
-      riskCriticalHours: rules.riskCriticalHours,
-      riskHighHours: rules.riskHighHours,
-      riskNearHours: rules.riskNearHours,
-      riskWatchHours: rules.riskWatchHours,
-    },
-    humanSummary: [
-      `硬截止保护窗口：${rules.hardDeadlineHorizonHours} 小时。`,
-      `固定时间事件预告窗口：${rules.fixedEventHorizonHours} 小时。`,
-      `每日最多纳入 ${rules.followUpDailyCap} 个复核任务和 ${rules.prepDailyCap} 个准备任务。`,
-      `排序权重最高项：${highestWeightLabel(rules.weights)}。`,
-    ],
-  }
+export function getDecisionRules(_snapshot: PJSDASSnapshot, _context: BridgeReadContext = {}): never {
+  throw new BridgeReadError('SCORING_RETIRED', 'Decision scoring and user score policies have been retired. Read Today actions or factual deadlines instead.')
 }
 
 function discoveryProfileConfigured(profile: DiscoveryProfile) {
@@ -636,7 +579,7 @@ export function getDiscoveryContext(
 ): GetDiscoveryContextOutput {
   const context = resolvedContext(bridgeContext)
   const workspace = readWorkspace(snapshot)
-  const profile = discoveryProfileForSnapshot(snapshot.data.discoveryProfile)
+  const { minimumFitScore: _fit, minimumOpportunityValue: _value, ...profile } = discoveryProfileForSnapshot(snapshot.data.discoveryProfile)
   const active = workspace.opportunities
     .filter((item) => item.processStage !== 'closed')
     .sort((a, b) => a.company.localeCompare(b.company) || a.role.localeCompare(b.role))
@@ -657,14 +600,13 @@ export function getDiscoveryContext(
     meta: meta(context),
     configured: discoveryProfileConfigured(profile),
     profile,
-    decisionWeights: { ...workspace.rules.weights },
     existingOpportunities: active.map((item) => ({
       opportunityId: item.id,
       company: item.company,
       role: item.role,
       stage: item.processStage,
       roleType: item.roleType,
-      deadline: item.deadline,
+      deadline: resolveApplicationDeadline(item, snapshot.data).deadline,
       participationStatus: item.participationStatus ?? 'active',
     })),
     recentlyClosed: recentlyClosed.map((item) => ({
@@ -700,109 +642,8 @@ export function getDiscoveryContext(
   }
 }
 
-const componentLabels: Record<keyof DecisionWeights, string> = {
-  opportunity: '机会价值',
-  fit: '匹配度',
-  urgency: '紧迫度',
-  stage: '流程阶段',
-  leverage: '行动杠杆',
-  delayCost: '延误成本',
-  timeEfficiency: '时间效率',
-}
-
-function highestWeightLabel(weights: DecisionWeights) {
-  const [key, value] = (Object.entries(weights) as Array<[keyof DecisionWeights, number]>)
-    .sort((a, b) => b[1] - a[1])[0]
-  return `${componentLabels[key]}（${value}）`
-}
-
-function rankedForTarget(
-  workspace: EffectiveWorkspace,
-  now: Date,
-  input: Pick<ExplainPriorityInput, 'actionId' | 'opportunityId'>,
-): { ranked?: RankedAction; target: ExplainPriorityOutput['target'] } {
-  if (input.actionId) {
-    const action = workspace.actions.find((item) => item.id === input.actionId)
-    if (!action) throw new BridgeReadError('NOT_FOUND', `Action ${input.actionId} was not found.`)
-    const opportunity = opportunityForAction(action, workspace.opportunities)
-    return {
-      ranked: rankAction(action, opportunity, now, workspace.rules),
-      target: { id: action.id, type: 'action', label: action.title },
-    }
-  }
-
-  const opportunity = workspace.opportunities.find((item) => item.id === input.opportunityId)
-  if (!opportunity) throw new BridgeReadError('NOT_FOUND', `Opportunity ${input.opportunityId} was not found.`)
-  const ranked = rankActions(workspace.actions, workspace.opportunities, now, workspace.rules)
-    .find((item) => item.action.opportunityId === opportunity.id)
-  return {
-    ranked,
-    target: { id: opportunity.id, type: 'opportunity', label: `${opportunity.company}｜${opportunity.role}` },
-  }
-}
-
-function componentsForRanked(item: RankedAction | undefined, rules: DecisionRules) {
-  if (!item) return []
-  const totalWeight = Math.max(1, Object.values(rules.weights).reduce((sum, value) => sum + value, 0))
-  return (Object.entries(item.breakdown) as Array<[keyof DecisionWeights, number]>).map(([key, value]) => ({
-    key,
-    label: componentLabels[key],
-    value,
-    contribution: Math.round((value * rules.weights[key] / totalWeight) * 100) / 100,
-    explanation: `${componentLabels[key]}当前值 ${Math.round(value)}，规则权重 ${rules.weights[key]}。`,
-  }))
-}
-
-function decisiveDifferences(primary: RankedAction | undefined, other: RankedAction | undefined, rules: DecisionRules) {
-  if (!primary || !other) return []
-  const totalWeight = Math.max(1, Object.values(rules.weights).reduce((sum, value) => sum + value, 0))
-  return (Object.keys(primary.breakdown) as Array<keyof DecisionWeights>)
-    .map((key) => {
-      const delta = (primary.breakdown[key] - other.breakdown[key]) * rules.weights[key] / totalWeight
-      return { key, delta }
-    })
-    .filter((item) => Math.abs(item.delta) >= 0.5)
-    .sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta))
-    .slice(0, 3)
-    .map(({ key, delta }) => `${componentLabels[key]}使主目标${delta >= 0 ? '领先' : '落后'}约 ${Math.abs(delta).toFixed(1)} 分。`)
-}
-
-export function explainPriority(
-  snapshot: PJSDASSnapshot,
-  input: ExplainPriorityInput,
-  bridgeContext: BridgeReadContext = {},
-): ExplainPriorityOutput {
-  const context = resolvedContext(bridgeContext)
-  const workspace = readWorkspace(snapshot)
-  const primaryCount = Number(Boolean(input.actionId)) + Number(Boolean(input.opportunityId))
-  if (primaryCount !== 1) {
-    throw new BridgeReadError('INVALID_ARGUMENT', 'Provide exactly one of actionId or opportunityId.')
-  }
-
-  const primary = rankedForTarget(workspace, context.now, input)
-  const result: ExplainPriorityOutput = {
-    meta: meta(context),
-    target: primary.target,
-    score: primary.ranked?.score,
-    components: componentsForRanked(primary.ranked, workspace.rules),
-    guardrails: primary.ranked?.reasons.map((reason, index) => ({
-      key: `reason_${index + 1}`,
-      effect: 'active',
-      explanation: reason,
-    })) ?? [],
-  }
-
-  if (input.compareWithOpportunityId) {
-    const comparison = rankedForTarget(workspace, context.now, { opportunityId: input.compareWithOpportunityId })
-    result.comparison = {
-      targetId: comparison.target.id,
-      label: comparison.target.label,
-      score: comparison.ranked?.score,
-      decisiveDifferences: decisiveDifferences(primary.ranked, comparison.ranked, workspace.rules),
-    }
-  }
-
-  return result
+export function explainPriority(_snapshot: PJSDASSnapshot, _input: ExplainPriorityInput, _context: BridgeReadContext = {}): never {
+  throw new BridgeReadError('SCORING_RETIRED', 'Priority scores and score comparisons have been retired. Today actions are ordered by actual deadlines.')
 }
 
 export function getRecentTimeline(
