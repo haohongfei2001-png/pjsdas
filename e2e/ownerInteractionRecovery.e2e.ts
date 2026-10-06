@@ -177,6 +177,12 @@ test('normal connected Settings keeps sync mechanics behind advanced diagnostics
   })
   await page.route(`${BACKEND}/api/access`, route => cors(route,
     { authenticated: true, allowed: true, mode: 'allowlist', role: 'owner' }))
+  // Unified account status also needs a real-shaped, independently verified Google link.
+  await page.route(`${BACKEND}/api/automation-settings`, route => {
+    if (route.request().method() === 'OPTIONS') return cors(route, {}, 204)
+    expect(route.request().postDataJSON().action).toBe('read')
+    return cors(route, { googleEmail: 'account-a@example.test', gmailEnabled: false, discoveryEnabled: false })
+  })
   await page.goto('/pjsdas/settings')
   await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem('pjsdas-google-drive-sync-state-v2') ?? '{}')
     .accounts?.['account-a']?.lastSyncedVersion)).toBe('txn:1004')
@@ -213,6 +219,12 @@ test('Settings does not call an old checkpoint current after an offline local ed
   })
   await page.route(`${BACKEND}/api/access`, route => cors(route,
     { authenticated: true, allowed: true, mode: 'allowlist', role: 'owner' }))
+  // Unified account status also needs a real-shaped, independently verified Google link.
+  await page.route(`${BACKEND}/api/automation-settings`, route => {
+    if (route.request().method() === 'OPTIONS') return cors(route, {}, 204)
+    expect(route.request().postDataJSON().action).toBe('read')
+    return cors(route, { googleEmail: 'account-a@example.test', gmailEnabled: false, discoveryEnabled: false })
+  })
   await page.goto('/pjsdas/settings')
   const card = page.getByRole('region', { name: '账号与跨设备数据', exact: true })
   await expect(card.locator('.cloud-state')).toHaveText('同步正常')
