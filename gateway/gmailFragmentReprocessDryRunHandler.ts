@@ -1,3 +1,4 @@
+import { automationGoogleRefreshLifecycle } from './googleRefreshLifecycle.js'
 import { createAutomationConnectionStore, GMAIL_READONLY_SCOPE } from './automationConnectionStore.js'
 import {
   fetchGmailSemanticRecordsByIds,
@@ -143,6 +144,8 @@ export function createGmailFragmentReprocessDryRunHandler(config: GmailFragmentR
         supabaseUrl: config.supabaseUrl,
         supabasePublishableKey: config.supabasePublishableKey,
         workerToken,
+        supabaseServiceRoleKey: config.supabaseServiceRoleKey,
+        refreshSource: 'gmail',
         fetchImpl: config.fetchImpl,
       })
       let bindings = await store.listEnabledGmailBindings()
@@ -201,6 +204,7 @@ export function createGmailFragmentReprocessDryRunHandler(config: GmailFragmentR
 
         const refreshToken = await decryptSecret(binding.refreshTokenCiphertext, config.tokenEncryptionKey)
         const accessToken = await refreshGoogleAccessToken(refreshToken, {
+          ...automationGoogleRefreshLifecycle(config.tokenEncryptionKey, binding, store),
           clientId: config.googleClientId,
           clientSecret: config.googleClientSecret,
           fetchImpl: config.fetchImpl,

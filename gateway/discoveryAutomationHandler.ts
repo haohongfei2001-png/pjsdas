@@ -1,3 +1,4 @@
+import { automationGoogleRefreshLifecycle } from './googleRefreshLifecycle.js'
 import type { ReserveDiscoverySpend } from './discoveryBudgetGuard.js'
 import { createAutomationConnectionStore } from './automationConnectionStore.js'
 import {
@@ -11,6 +12,7 @@ import { WorkspaceSourceError } from './workspaceSource.js'
 export interface DiscoveryAutomationHandlerConfig {
   supabaseUrl: string
   supabasePublishableKey: string
+  supabaseServiceRoleKey?: string
   tokenEncryptionKey: string
   googleClientId: string
   googleClientSecret: string
@@ -74,6 +76,8 @@ export function createDiscoveryAutomationHandler(config: DiscoveryAutomationHand
       supabaseUrl: config.supabaseUrl,
       supabasePublishableKey: config.supabasePublishableKey,
       workerToken,
+      supabaseServiceRoleKey: config.supabaseServiceRoleKey,
+      refreshSource: 'discovery',
       fetchImpl: config.fetchImpl,
     })
     const url = new URL(request.url)
@@ -112,6 +116,7 @@ export function createDiscoveryAutomationHandler(config: DiscoveryAutomationHand
       try {
         const run = await runDiscoveryAutomationForBinding({
           binding,
+          refreshLifecycle: { ...automationGoogleRefreshLifecycle(config.tokenEncryptionKey, binding, store) },
           tokenEncryptionKey: config.tokenEncryptionKey,
           googleClientId: config.googleClientId,
           googleClientSecret: config.googleClientSecret,
@@ -123,7 +128,7 @@ export function createDiscoveryAutomationHandler(config: DiscoveryAutomationHand
           force,
         })
         const durableCommit = run.completedSourceCount > 0
-        await store.updateDiscoveryRunState(binding.userId, discoveryAutomationTelemetryPatch(run))
+        await store.updateDiscoveryRunState(binding.userId, discoveryAutomationTelemetryPatch(run), binding.refreshTokenCiphertext)
         results.push({
           status: run.state,
           producer: run.producer,
@@ -144,7 +149,7 @@ export function createDiscoveryAutomationHandler(config: DiscoveryAutomationHand
           await store.updateDiscoveryRunState(binding.userId, {
             checkedAt,
             lastError: compactError(caught),
-          })
+          }, binding.refreshTokenCiphertext)
         } catch {
           // Primary automation failure remains authoritative; telemetry is best-effort.
         }

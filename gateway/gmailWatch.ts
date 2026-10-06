@@ -1,3 +1,4 @@
+import type { GoogleRefreshLifecycle } from './googleRefreshLifecycle.js'
 import { refreshGoogleAccessToken } from './googleOAuthTokens.js'
 import { decryptSecret } from './tokenCrypto.js'
 import { WorkspaceSourceError } from './workspaceSource.js'
@@ -17,6 +18,7 @@ export interface GmailWatchOptions {
   googleClientId: string
   googleClientSecret: string
   topicName: string
+  refreshLifecycle?: GoogleRefreshLifecycle
   fetchImpl?: typeof fetch
   now?: () => Date
 }
@@ -39,6 +41,7 @@ export async function registerGmailWatch(options: GmailWatchOptions): Promise<Gm
   const topicName = validateTopicName(options.topicName)
   const refreshToken = await decryptSecret(options.refreshTokenCiphertext, options.tokenEncryptionKey)
   const accessToken = await refreshGoogleAccessToken(refreshToken, {
+    ...options.refreshLifecycle,
     clientId: options.googleClientId,
     clientSecret: options.googleClientSecret,
     fetchImpl,
@@ -61,7 +64,7 @@ export async function registerGmailWatch(options: GmailWatchOptions): Promise<Gm
   }
 
   if (response.status === 401) {
-    throw new WorkspaceSourceError('GOOGLE_AUTH_EXPIRED', 'Google authorization is no longer valid. Reconnect Google to PJSDAS.', false)
+    throw new WorkspaceSourceError('GOOGLE_ACCESS_REJECTED', 'Google rejected the current access token. A later check will retry authorization.', true)
   }
   if (response.status === 403) {
     throw new WorkspaceSourceError(

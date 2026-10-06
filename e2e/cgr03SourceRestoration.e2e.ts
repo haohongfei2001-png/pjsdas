@@ -9,7 +9,7 @@ test('CGR-03 broken Gmail source explains stale data and offers explicit read-on
     body: JSON.stringify({
       googleEmail: 'synthetic@example.invalid', gmailScopeGranted: true, gmailEnabled: true,
       gmailHistoryIdPresent: true, gmailLastCheckedAt: '2026-09-23T10:00:00.000Z',
-      gmailLastSuccessAt: '2026-09-23T09:00:00.000Z', gmailLastError: 'SYNTHETIC_AUTH_EXPIRED',
+      gmailLastSuccessAt: '2026-09-23T09:00:00.000Z', gmailLastError: 'GOOGLE_AUTH_EXPIRED: Synthetic revoked authorization',
       discoveryEnabled: false, discoveryLastError: null,
     }),
   }))
@@ -23,7 +23,7 @@ test('CGR-03 broken Gmail source explains stale data and offers explicit read-on
   const card = page.locator('section[aria-labelledby="settings-gmail-heading"]')
   await expect(card.getByText('新邮件进展可能未同步')).toBeVisible()
   await card.getByLabel(/^查看邮件核对结果：/).click()
-  await expect(card.getByText('传输与对账：最近检查失败', { exact: true })).toBeVisible()
+  await expect(card.getByText('传输与对账：需要重新连接 Google', { exact: true })).toBeVisible()
   await card.getByLabel(/^查看邮件核对结果：/).click()
   await expect(card.getByRole('button', { name: '查看并重新授权 Gmail' })).toBeHidden()
   await card.locator('.settings-source-manage > summary').click()

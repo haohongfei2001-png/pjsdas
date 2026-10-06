@@ -28,8 +28,8 @@ describe('explicit void automation RPC contracts',()=>{
  })
 })
 
-describe('background discovery does not mislabel successful void telemetry as failed authorization',()=>{
- it('finishes a no-model check with one 204 state update and no false AUTH_INVALID',async()=>{
+describe('background discovery finalizes through the generation-fenced wrapper',()=>{
+ it('finishes a no-model check with one confirmed fenced update and no false AUTH_INVALID',async()=>{
   vi.stubEnv('PJSDAS_CONNECTED_AUTHORITY','transactional');vi.stubEnv('PJSDAS_SUPABASE_SERVICE_ROLE_KEY','synthetic-service')
   const snapshot=createSnapshot({opportunities:[],processes:[],processEvents:[],actions:[],prep:[],applicationGroups:[]})
   const updates:Record<string,unknown>[]=[]
@@ -38,7 +38,7 @@ describe('background discovery does not mislabel successful void telemetry as fa
    const url=String(input)
    if(url.includes('pjsdas_claim_enabled_discovery_automation_bindings'))return Response.json([{user_id:owner,google_subject:'synthetic-subject',refresh_token_ciphertext:'synthetic-unused',granted_scopes:[]}])
    if(url.includes('/pjsdas_workspaces?'))return Response.json([{id:'synthetic-workspace',user_id:owner,snapshot,revision:0,schema_version:4}])
-   if(url.includes('pjsdas_update_discovery_automation_state')){updates.push(JSON.parse(String(init?.body)));return new Response(null,{status:204})}
+   if(url.includes('pjsdas_update_google_automation_state')){const body=JSON.parse(String(init?.body));expect(body.expected_ciphertext).toBe('synthetic-unused');expect(body.state_operation).toBe('pjsdas_update_discovery_automation_state');updates.push(body.state_patch);return Response.json(true)}
    throw new Error('Unexpected fixture request')
   })
   const handler=createDiscoveryAutomationHandler({...options,tokenEncryptionKey:'synthetic-unused',googleClientId:'synthetic-unused',googleClientSecret:'synthetic-unused',fetchImpl,generateTextImpl,now:()=>new Date('2026-10-02T15:15:00Z')})

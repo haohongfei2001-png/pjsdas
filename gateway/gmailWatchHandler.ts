@@ -1,3 +1,4 @@
+import { automationGoogleRefreshLifecycle } from './googleRefreshLifecycle.js'
 import { createAutomationConnectionStore } from './automationConnectionStore.js'
 import { registerGmailWatch } from './gmailWatch.js'
 import { WorkspaceSourceError } from './workspaceSource.js'
@@ -5,6 +6,7 @@ import { WorkspaceSourceError } from './workspaceSource.js'
 export interface GmailWatchHandlerConfig {
   supabaseUrl: string
   supabasePublishableKey: string
+  supabaseServiceRoleKey?: string
   tokenEncryptionKey: string
   googleClientId: string
   googleClientSecret: string
@@ -51,6 +53,8 @@ export function createGmailWatchHandler(config: GmailWatchHandlerConfig) {
       supabaseUrl: config.supabaseUrl,
       supabasePublishableKey: config.supabasePublishableKey,
       workerToken,
+      supabaseServiceRoleKey: config.supabaseServiceRoleKey,
+      refreshSource: 'gmail',
       fetchImpl: config.fetchImpl,
     })
     try {
@@ -62,6 +66,7 @@ export function createGmailWatchHandler(config: GmailWatchHandlerConfig) {
         try {
           const watch = await (config.registerGmailWatchImpl ?? registerGmailWatch)({
             refreshTokenCiphertext: binding.refreshTokenCiphertext,
+            refreshLifecycle: automationGoogleRefreshLifecycle(config.tokenEncryptionKey, binding, store),
             tokenEncryptionKey: config.tokenEncryptionKey,
             googleClientId: config.googleClientId,
             googleClientSecret: config.googleClientSecret,
@@ -74,12 +79,12 @@ export function createGmailWatchHandler(config: GmailWatchHandlerConfig) {
             expiresAt: watch.expiresAt,
             renewedAt: watch.renewedAt,
             lastError: null,
-          })
+          }, binding.refreshTokenCiphertext)
           renewedUsers += 1
         } catch (caught) {
           failedUsers += 1
           try {
-            await store.updateGmailWatchState(binding.userId, { lastError: compactCode(caught) })
+            await store.updateGmailWatchState(binding.userId, { lastError: compactCode(caught) }, binding.refreshTokenCiphertext)
           } catch {
             // Watch failure is reported below; compensation polling remains authoritative.
           }

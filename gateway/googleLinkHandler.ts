@@ -92,7 +92,7 @@ async function inspectGoogleToken(fetchImpl: typeof fetch, providerToken: string
     throw new WorkspaceSourceError('GOOGLE_AUTH_INVALID', 'Google authorization is invalid or expired.', false)
   }
 
-  const scopes = (data.scope ?? '').split(/\s+/).filter(Boolean)
+  const scopes = [...new Set((data.scope ?? '').split(/\s+/).filter(Boolean))].sort()
   if (!scopes.includes(DRIVE_APPDATA_SCOPE)) {
     throw new WorkspaceSourceError(
       'GOOGLE_SCOPE_MISSING',
@@ -160,6 +160,8 @@ export function createGoogleLinkHandler(config: GoogleLinkHandlerConfig) {
         connected_at: now,
         updated_at: now,
         revoked_at: null,
+        gmail_last_error: null,
+        discovery_last_error: null,
       }
 
       const params = new URLSearchParams({ on_conflict: 'user_id' })

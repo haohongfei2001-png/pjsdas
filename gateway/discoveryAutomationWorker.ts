@@ -1,3 +1,4 @@
+import type { GoogleRefreshLifecycle } from './googleRefreshLifecycle.js'
 import { discoveryProfileManagementFingerprint } from '../src/discoveryProfileManagement.js'
 import { requireDiscoverySpendReservation, type ReserveDiscoverySpend } from './discoveryBudgetGuard.js'
 import * as z from 'zod/v4'
@@ -403,6 +404,7 @@ export async function runDiscoveryAutomationForBinding(options: {
   tokenEncryptionKey: string
   googleClientId: string
   googleClientSecret: string
+  refreshLifecycle?: GoogleRefreshLifecycle
   aiGatewayModel?: string
   generateTextImpl?: DiscoveryGenerateText
   reserveSpend?: ReserveDiscoverySpend
@@ -428,7 +430,8 @@ export async function runDiscoveryAutomationForBinding(options: {
   } else {
     const refreshToken = await decryptSecret(options.binding.refreshTokenCiphertext, options.tokenEncryptionKey)
     const accessToken = await refreshGoogleAccessToken(refreshToken, {
-      clientId: options.googleClientId,
+      ...options.refreshLifecycle,
+    clientId: options.googleClientId,
       clientSecret: options.googleClientSecret,
       fetchImpl,
     })
