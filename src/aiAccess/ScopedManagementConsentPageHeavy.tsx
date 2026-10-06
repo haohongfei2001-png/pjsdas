@@ -319,16 +319,29 @@ export default function ScopedManagementConsentPageHeavy() {
               const grant = target?.grants.find(item => item.domain === descriptor.domain)
               const revocable = Boolean(grant && !grant.revoked_at)
               const active = revocable && grant?.consent_text_hash === descriptor.consentTextHash
-              return <fieldset className="ta-consent-scope" key={descriptor.domain} disabled={busy || Boolean(pending) || !target}>
-                <legend>{descriptor.consent.title}</legend>
-                {(descriptor.canApprove === false || (descriptor.domain === 'business' && descriptor.canApprove !== true)) ? <p>此项当前不能新增授权；已有授权仍可撤销。</p> : null}
-                <p>当前状态：{active ? '已授权' : revocable ? '授权文本已变更，需要重新明确确认；仍可撤销旧授权' : '未授权或已撤销'}</p>
+              const title = descriptor.domain === 'planning' ? '时间偏好' : descriptor.consent.title
+              const boundText = <>
                 <ul>{descriptor.consent.scope.map(text => <li key={text}>{text}</li>)}</ul>
                 <p>不包含：</p>
                 <ul>{descriptor.consent.exclusions.map(text => <li key={text}>{text}</li>)}</ul>
                 <p>{descriptor.consent.duration}</p>
+              </>
+              return <fieldset className="ta-consent-scope" key={descriptor.domain} disabled={busy || Boolean(pending) || !target}>
+                <legend>{title}</legend>
+                {(descriptor.canApprove === false || (descriptor.domain === 'business' && descriptor.canApprove !== true)) ? <p>此项当前不能新增授权；已有授权仍可撤销。</p> : null}
+                <p>当前状态：{active ? '已授权' : revocable ? '授权文本已变更，需要重新明确确认；仍可撤销旧授权' : '未授权或已撤销'}</p>
+                {descriptor.domain === 'planning' ? <>
+                  <p>当前仅支持读取、修改、重置时间偏好及撤销相关修改。评分与决策策略已退役。</p>
+                  <p>沿用 v4 授权范围；授权不会恢复已退役功能。</p>
+                  <details>
+                    <summary>查看 v4 授权原文</summary>
+                    <strong>{descriptor.consent.title}</strong>
+                    {boundText}
+                  </details>
+                  <p>{descriptor.consent.duration}</p>
+                </> : boundText}
                 <label>本次选择
-                  <select aria-label={`本次选择：${descriptor.consent.title}`} value={selections[descriptor.domain] ?? ''} onChange={event => {
+                  <select aria-label={`本次选择：${title}`} value={selections[descriptor.domain] ?? ''} onChange={event => {
                     const next = { ...selections }
                     if (event.target.value === 'approve' || event.target.value === 'revoke') next[descriptor.domain] = event.target.value
                     else delete next[descriptor.domain]
@@ -342,7 +355,7 @@ export default function ScopedManagementConsentPageHeavy() {
               </fieldset>
             })}
             <h2>本次变更</h2>
-            {Object.keys(selections).length ? <ul>{view.descriptors.filter(d => selections[d.domain]).map(d => <li key={d.domain}>{d.consent.title}：{selections[d.domain] === 'approve' ? '授权' : '撤销'}</li>)}</ul> : <p>尚未选择任何变更。</p>}
+            {Object.keys(selections).length ? <ul>{view.descriptors.filter(d => selections[d.domain]).map(d => <li key={d.domain}>{d.domain === 'planning' ? '时间偏好' : d.consent.title}：{selections[d.domain] === 'approve' ? '授权' : '撤销'}</li>)}</ul> : <p>尚未选择任何变更。</p>}
             <p>未选择的权限保持原状。现有基础管理授权不会自动扩展。</p>
             <label style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
               <input type="checkbox" checked={confirmed} disabled={busy || Boolean(pending) || !target || !Object.keys(selections).length} onChange={event => setConfirmed(event.target.checked)} />
