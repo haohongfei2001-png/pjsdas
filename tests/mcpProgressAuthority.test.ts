@@ -7,6 +7,8 @@ import { authoritativeBusinessCommandSchema, createAuthoritativeCommandExecutor 
 import { applyUserCommandSchema } from '../gateway/userCommands.js'
 import { createSnapshot } from '../src/snapshot.js'
 import { fingerprintWorkspace } from '../src/cloud/workspaceFingerprint.js'
+import { applyDomainCompensation, applyUserDomainCommand } from '../src/domainCommands.js'
+import { progressSubmissionProofId } from '../src/progressUpdate.js'
 
 const at = new Date('2026-09-24T06:00:00.000Z')
 const occurredAt = at.toISOString()
@@ -31,6 +33,19 @@ const changeSet = () => ({
 afterEach(() => vi.unstubAllEnvs())
 
 describe('CGR-05 signed progress authority', () => {
+  it('owns an explicit later progress submission even when its stage and time match the earlier domain submission', () => {
+    const first = applyUserDomainCommand(snapshot(), { commandId: 'first-domain-submission', kind: 'record_application_submission', opportunityId: 'opp-1' }, at)
+    if (first.status !== 'APPLIED') throw new Error('Expected submission')
+    const operation = { id: 'later-progress-submission', kind: 'upsert_opportunity' as const, opportunityId: 'opp-1', company: 'Synthetic',
+      role: 'Designer', mode: 'submitted' as const, occurredAt, sourceText: 'I submitted again', confidence: 'high' as const }
+    const proposal = createMcpProposalEnvelope({ ...createProgressChangeSet([operation], at), source: 'mcp', expectedWorkspaceVersion: 'txn:1' }, 'txn:1', at, undefined, 'account-a')
+    const later = applyMcpProgressCommand(first.snapshot, proposal, at).snapshot
+    expect(later.data.opportunities[0].applicationSubmissionProofs).toEqual({
+      'first-domain-submission': 'active', [progressSubmissionProofId(operation)]: 'active',
+    })
+    expect(() => applyDomainCompensation(later, first.compensation!, at)).toThrow(/later independent/)
+    expect(later.data.timeline).toContainEqual(first.snapshot.data.timeline![0])
+  })
   it('commits a reviewed progress batch atomically without touching unrelated facts', () => {
     const before = snapshot()
     const proposal = createMcpProposalEnvelope(changeSet(), 'txn:1', at, undefined, 'account-a')

@@ -22,6 +22,8 @@ for (const width of [390, 1440]) test(`B1 global add, explicit today and timed t
   snapshot.data.processes = []; snapshot.data.scheduleNodes = []; snapshot.data.timeline = []
   const commands = new Map<string, { input: string; result: any; compensation?: any }>()
   const mutations: string[] = []
+  let holdSubmission = false, releaseSubmission = () => {}
+  let submissionAcknowledgement = Promise.resolve()
   await page.route(/https:\/\/[^/]+\.supabase\.co\//, route => route.abort())
   await page.route(BACKEND + '/**', async route => {
     const request = route.request(), path = new URL(request.url()).pathname
@@ -57,8 +59,10 @@ for (const width of [390, 1440]) test(`B1 global add, explicit today and timed t
           result = { status: evaluated.status, summary: evaluated.summary }
         }
         revision++; mutations.push(body.commandId)
-        const response = { outcome: 'COMMITTED', result, receipt: { commandId: body.commandId, revision, undoAvailable: Boolean(compensation) } }
+        const response = { outcome: 'COMMITTED', result, receipt: { commandId: body.commandId, receiptId: `receipt:${body.commandId}`,
+          status: 'COMMITTED', revision, undoAvailable: Boolean(compensation), undoCompensation: compensation, result } }
         commands.set(body.commandId, { input, result: response, compensation })
+        if (holdSubmission && body.command?.type === 'domain' && body.command.value.kind === 'record_application_submission') await submissionAcknowledgement
         return cors(route, { ...base(), ...response })
       } catch (error) { return cors(route, { code: 'INVALID_COMMAND', message: String(error) }, 422) }
     }
@@ -87,6 +91,28 @@ for (const width of [390, 1440]) test(`B1 global add, explicit today and timed t
   await page.getByRole('button', { name: '关闭', exact: true }).click()
   await page.goto(`/pjsdas/opportunities/${encodeURIComponent(job.id)}`)
   await expect(page.getByRole('heading', { name: '产品经理 2027', exact: true })).toBeVisible()
+  // A new job has no application task. Explicit submission still uses the
+  // durable immediate Undo path, including offline capture and delayed ACK.
+  submissionAcknowledgement = new Promise(resolve => { releaseSubmission = resolve })
+  holdSubmission = true
+  try {
+    if (width === 390) await page.evaluate(() => Object.defineProperty(navigator, 'onLine', { configurable: true, value: false }))
+    await page.getByRole('button', { name: '我已投递', exact: true }).click()
+    const undo = page.locator('.action-undo-toast').getByRole('button', { name: '撤销', exact: true })
+    await expect(undo).toBeVisible()
+    if (width === 390) {
+      expect(mutations).toHaveLength(1)
+      await page.evaluate(() => { Object.defineProperty(navigator, 'onLine', { configurable: true, value: true }); window.dispatchEvent(new Event('online')) })
+    }
+    await expect.poll(() => snapshot.data.opportunities[0].processStage).toBe('screening')
+    expect(snapshot.data.actions).toEqual([])
+    await undo.click()
+    await expect(page.getByRole('button', { name: '我已投递', exact: true })).toBeVisible()
+  } finally { holdSubmission = false; releaseSubmission() }
+  await expect.poll(() => snapshot.data.opportunities[0].processStage).toBe('not_applied')
+  await expect.poll(() => mutations.length).toBe(3)
+  expect(snapshot.data.actions).toEqual([])
+  expect(snapshot.data.scheduleNodes).toEqual([])
   await page.getByRole('button', { name: '加入今天', exact: true }).click()
   await expect(page.getByRole('status').filter({ hasText: '已加入今天' })).toBeVisible()
   await page.getByRole('button', { name: '加入今天', exact: true }).click()
@@ -118,8 +144,8 @@ for (const width of [390, 1440]) test(`B1 global add, explicit today and timed t
   await expect(page.locator('.tsui-schedule-row')).toHaveCount(1)
   await page.goto(`/pjsdas/opportunities/${encodeURIComponent(job.id)}`)
   await page.getByRole('button', { name: '我已投递', exact: true }).click()
-  await expect(page.getByRole('status').filter({ hasText: '已记录投递' })).toBeVisible()
-  expect(snapshot.data.opportunities[0].processStage).toBe('screening')
-  expect(snapshot.data.actions.find(item => item.id === `apply:${job.id}`)?.status).toBe('done')
+  await expect(page.locator('.action-undo-toast').getByRole('button', { name: '撤销', exact: true })).toBeVisible()
+  await expect.poll(() => snapshot.data.opportunities[0].processStage).toBe('screening')
+  await expect.poll(() => snapshot.data.actions.find(item => item.id === `apply:${job.id}`)?.status).toBe('done')
   expect(snapshot.data.scheduleNodes).toHaveLength(1)
 })

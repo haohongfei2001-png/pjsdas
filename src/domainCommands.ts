@@ -556,6 +556,8 @@ export function applyUserDomainCommand(
     const occurredAt = command.occurredAt ?? timestamp
     assertIso(occurredAt, 'occurredAt')
     const beforeStage = target.processStage
+    const priorSubmissionCommandIds = Object.entries(target.applicationSubmissionProofs ?? {}).filter(([, state]) => state === 'active').map(([id]) => id)
+    target.applicationSubmissionProofs = { ...target.applicationSubmissionProofs, [command.commandId]: 'active' }
     target.participationStatus = 'active'
     target.abandonedAt = undefined
     target.processStage = 'screening'
@@ -586,6 +588,9 @@ export function applyUserDomainCommand(
         operation: 'restore_application_submission',
         payload: {
           opportunityId: target.id,
+          submissionCommandId: command.commandId,
+          priorSubmissionCommandIds,
+          priorProcessEventIds: beforeData.processEvents.filter(event => event.opportunityId === target.id && !event.invalidation).map(event => event.id),
           processStage: beforeStage,
           actionId: apply?.id,
           actionStatus: beforeApplyStatus,
@@ -1145,11 +1150,28 @@ export interface DomainCompensation {
   payload: any
 }
 
+/** Bind old receipts only when the original trusted command owns an exact fact. */
+export function bindLegacyApplicationSubmissionUndo(compensation: DomainCompensation, commandId: string, timeline: readonly TimelineRecord[]): DomainCompensation {
+  if (compensation.operation !== 'restore_application_submission' || compensation.payload.submissionCommandId) return compensation
+  const proof = timeline.find(record => record.kind === 'application_submitted' && record.commandOperation === 'record_application_submission'
+    && record.commandId === commandId && record.opportunityId === compensation.payload.opportunityId)
+  if (!proof) throw new Error('Legacy submission Undo lacks exact fact ownership; no history was changed.')
+  return { ...compensation, payload: { ...compensation.payload, submissionCommandId: commandId, legacySubmissionTimelineId: proof.id } }
+}
+
 export function applyDomainCompensation(
   snapshot: PJSDASSnapshot,
   compensation: DomainCompensation,
   now = new Date(),
 ): PJSDASSnapshot {
+  if (compensation.operation === 'restore_application_submission') {
+    const target = snapshot.data.opportunities.find(item => item.id === compensation.payload.opportunityId)
+    const commandId = compensation.payload.submissionCommandId
+    if (!target || typeof commandId !== 'string' || !commandId.trim()) throw new Error('Legacy submission Undo lacks exact fact ownership; no history was changed.')
+    const state = target.applicationSubmissionProofs?.[commandId]
+    if (state === 'withdrawn') return snapshot
+    if (state !== 'active' && !compensation.payload.legacySubmissionTimelineId) throw new Error('Submission proof changed; Undo cannot replace another fact.')
+  }
   if (compensation.operation === 'restore_action_plan') {
     const payload = compensation.payload
     const current = snapshot.data.actions.find(item => item.id === payload.actionId)
@@ -1345,6 +1367,26 @@ export function applyDomainCompensation(
     }
   } else if (compensation.operation === 'restore_application_submission') {
     const target = next.data.opportunities.find((item) => item.id === payload.opportunityId)
+    if (!target) throw new Error('Submitted job no longer exists; Undo cannot restore safely.')
+    target.applicationSubmissionProofs = { ...target.applicationSubmissionProofs, [payload.submissionCommandId]: 'withdrawn' }
+    const priorProofs = new Set<string>(payload.priorSubmissionCommandIds ?? [])
+    const otherProofs = Object.entries(target.applicationSubmissionProofs).filter(([, state]) => state === 'active').map(([id]) => id)
+    if (otherProofs.some(id => !priorProofs.has(id))
+      || next.data.processEvents.some(event => event.opportunityId === target.id && !event.invalidation && !(payload.priorProcessEventIds ?? []).includes(event.id))) {
+      throw new Error('A later independent submission or recruiting fact owns this job; Undo cannot overwrite it.')
+    }
+    // Legacy audit remains unchanged and continues to classify historical facts.
+    // Its position is not reliable causal ownership and the instant kernel does
+    // not scan it. Both kernels decide Undo from the same command-owned proofs.
+    const independentSubmission = otherProofs.length > 0
+    if (independentSubmission) {
+      // The withdrawn command no longer proves submission; a different actual
+      // submission/recruiting fact still owns the current business state.
+      ensureScheduleContractInPlace(next.data)
+      next.exportedAt = timestamp
+      validateSnapshot(next)
+      return next
+    }
     if (target) {
       target.processStage = payload.processStage
       target.currentStageLabel = stageLabelFor(payload.processStage)

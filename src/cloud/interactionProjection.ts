@@ -1,4 +1,5 @@
-import { applyDomainCompensation, applyUserDomainCommand, type DomainCompensation, type UserDomainCommand } from '../domainCommands.js'
+import { applyDomainCompensation, applyUserDomainCommand, bindLegacyApplicationSubmissionUndo, type DomainCompensation, type UserDomainCommand } from '../domainCommands.js'
+import type { TimelineRecord } from '../model.js'
 import type { PJSDASSnapshot } from '../snapshot.js'
 import { DELTA_COLLECTIONS, diffWorkspaceDelta, patchDeltaRow, sameValue, type WorkspaceDelta } from '../workspaceDelta.js'
 import { INSTANT_COMMAND_KINDS } from '../instantCommandKinds.js'
@@ -60,6 +61,10 @@ export function interactionProjection(snapshot: PJSDASSnapshot, command: UserDom
 export function undoInteractionProjection(snapshot: PJSDASSnapshot, command: UserDomainCommand | undefined,
   compensation: DomainCompensation | undefined, targetDelta: WorkspaceDelta, baseRevision: number, now = new Date()) {
   if (!command || !compensation) throw new Error('这次操作没有安全撤销依据，请核对最新记录。')
+  if (command.kind === 'record_application_submission' && compensation.operation === 'restore_application_submission' && !compensation.payload.submissionCommandId) {
+    compensation = bindLegacyApplicationSubmissionUndo(compensation, command.commandId,
+      targetDelta.changes.filter(change => change.collection === 'timeline' && !change.before && change.after).map(change => change.after as unknown as TimelineRecord))
+  }
   const lens = interactionLens(snapshot, command)
   // Occurrence compensation restores a captured whole node. A local edit to
   // even an otherwise unchanged node field must not be erased by that restore.

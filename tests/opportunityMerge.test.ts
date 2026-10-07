@@ -4,7 +4,7 @@ import { invokeReadTool } from '../gateway/readTools.js'
 import { diffCommandObjects, diffCommandFields } from '../gateway/commandObjects.js'
 import { invalidateProcessFact, invalidatedSourceFact } from '../src/processFactCorrection.js'
 import { correctApplicationDeadline } from '../src/deadlineCorrection.js'
-import { applicationDeadlineFingerprint } from '../src/applicationDeadline.js'
+import { applicationDeadlineFingerprint, hasApplicationEvidence, indexJobClassificationData } from '../src/applicationDeadline.js'
 import type { SemanticIntakeObservation } from '../src/model.js'
 import { applyGmailIngestion, applyMonitorIngestion } from '../src/autonomousIngestion.js'
 import { applySemanticIntake } from '../src/semanticIntake.js'
@@ -27,6 +27,20 @@ async function command(snapshot: PJSDASSnapshot) {
 }
 async function merge(snapshot = fixture()) { return applyOpportunityMerge(snapshot, await command(snapshot), 'merge-command-123', now) }
 describe('bounded audited opportunity merge', () => {
+  it('retains exact submission proof ownership across canonical aliases and merge Undo', async () => {
+    const before = fixture()
+    before.data.opportunities[0].applicationSubmissionProofs = { 'withdrawn-proof': 'withdrawn' }
+    before.data.opportunities[1].applicationSubmissionProofs = { 'active-duplicate-proof': 'active' }
+    before.data.timeline!.push({ id: 'duplicate-submission-audit', kind: 'application_submitted', category: 'process', source: 'user_action', title: 'Submission',
+      opportunityId: 'duplicate', commandId: 'active-duplicate-proof', commandOperation: 'record_application_submission', occurredAt: at, recordedAt: at })
+    const result = await merge(before)
+    const target = result.snapshot.data.opportunities[0]
+    expect(target.applicationSubmissionProofs).toEqual({ 'withdrawn-proof': 'withdrawn', 'active-duplicate-proof': 'active' })
+    expect(result.snapshot.data.timeline!.find(item => item.id === 'duplicate-submission-audit')).toEqual(before.data.timeline!.at(-1))
+    expect(hasApplicationEvidence(target, indexJobClassificationData(result.snapshot.data)(target.id))).toBe(true)
+    const undone = await restoreOpportunityMerge(result.snapshot, result.compensation!, now)
+    expect(undone.data.opportunities.map(item => item.applicationSubmissionProofs)).toEqual(before.data.opportunities.map(item => item.applicationSubmissionProofs))
+  })
   it('preserves original source record and historical links with an explicit durable alias', async () => {
     const original = fixture(); const before = structuredClone(original)
     const result = await merge(original)

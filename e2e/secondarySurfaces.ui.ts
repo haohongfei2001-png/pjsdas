@@ -90,7 +90,7 @@ async function capture(page: Page, label: string, width: number, scale = 100, pr
   const bytes = await page.screenshot({ path: `${evidence}/${name}`, fullPage: overlay === 0, animations: 'disabled', caret: 'hide' })
   if (protectMain && phase === 'after') {
     const baseline = await readFile(`secondary-ui-before/${name}`)
-    expect(digest(bytes), `${label}: all main pixels must match the approved compact-header reference 1ba68520`).toBe(digest(baseline))
+    expect(digest(bytes), `${label}: all main pixels must match the approved pre-B1 reference dbad720`).toBe(digest(baseline))
   }
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)
   const overflowNodes = overflow > 1 ? await page.evaluate(() => [...document.querySelectorAll<HTMLElement>('body *')]
@@ -137,7 +137,7 @@ for (const width of [1440, 390, 320]) test(`main pixels stay fixed before and af
   await expect(page.locator('.tsui-schedule-row')).not.toHaveCount(0)
   await capture(page, 'MAIN_SCHEDULE', width, scale, true)
   await page.locator('.tsui-topbar').getByRole('button', { name: '设置', exact: true }).click()
-  await expect(page.getByRole('heading', { name: phase === 'before' ? '账号与跨设备数据' : '账号', exact: true })).toBeVisible()
+  await expect(page.getByRole('heading', { name: '账号', exact: true })).toBeVisible()
   await capture(page, 'SETTINGS', width, scale)
   await page.locator('.tsui-primary-nav').getByRole('button', { name: '今天', exact: true }).click()
   await expect(page.locator('.tsui-task-row')).not.toHaveCount(0)
@@ -195,7 +195,7 @@ for (const width of [1440, 390, 320]) test(`details and settings retain readable
   await page.getByRole('button', { name: '关闭详情' }).click()
   await expect(page.locator('.tsui-schedule-detail')).toHaveCount(0)
   await page.goto('/pjsdas/settings')
-  await expect(page.getByRole('heading', { name: phase === 'before' ? '账号与跨设备数据' : '账号', exact: true })).toBeVisible()
+  await expect(page.getByRole('heading', { name: '账号', exact: true })).toBeVisible()
   await capture(page, 'SETTINGS_OVERVIEW', width, width === 320 ? 200 : 100)
   await expect(page.locator('.settings-group > summary').filter({ hasText: '可用时间' })).toHaveCount(0)
   await expect(page.getByRole('button', { name: '保存时段', exact: true })).toHaveCount(0)

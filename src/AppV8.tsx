@@ -86,7 +86,7 @@ import './tsui02.css'
 type Surface = 'today' | 'opportunities' | 'schedule' | 'decisions' | 'history' | 'settings'
 type PrimarySurface = 'today' | 'opportunities' | 'schedule'
 type OpportunityTab = 'opportunities' | 'prepare' | 'discovery'
-type CompletionFeedback = { id: string; title: string; previousStatus: Action['status']; commandId?: string; localUndo?: ActionStatusUndo; syncMessage?: string; outcome: 'done' | 'no_write' | 'queued' | 'confirmed_pending' | 'error'; error?: string }
+type CompletionFeedback = { id: string; title: string; previousStatus?: Action['status']; commandId?: string; localUndo?: ActionStatusUndo; syncMessage?: string; outcome: 'done' | 'no_write' | 'queued' | 'confirmed_pending' | 'error'; error?: string }
 type RouteState = {
   surface: Surface
   capture: boolean
@@ -532,9 +532,20 @@ export default function AppV8() {
   }, [snapshot, selectedOpportunityId, now, zh])
 
 
-  async function recordJobAction(opportunityId: string, kind: 'today' | 'submission'): Promise<WebSemanticCaptureResult> {
+  async function recordJobAction(opportunityId: string, kind: 'today' | 'submission'): Promise<WebSemanticCaptureResult | void> {
     if (CGR02_TODAY_READ_ONLY) throw new Error('This workspace is read-only.')
     const accountKey = cloud.session?.user.id
+    if (kind === 'submission' && accountKey && connectedWorkspaceAuthorityEnabled() && snapshot) {
+      const target = opportunities.find(item => item.id === opportunityId)
+      if (!target) throw new Error('Choose an existing job before recording submission.')
+      const apply = actions.find(item => item.opportunityId === opportunityId && item.kind === 'apply')
+      const commandId = createConnectedCommandId('instant-action')
+      await beginInstantCommand(accountKey, snapshot, { commandId, kind: 'record_application_submission', opportunityId })
+      setLastCompletedAction({ id: apply?.id ?? `submission:${opportunityId}`, title: apply?.title ?? `${target.company} · ${target.role}`,
+        previousStatus: apply?.status, commandId, outcome: 'done', syncMessage: navigator.onLine ? undefined
+          : (zh ? '已保存在本机，联网后自动同步。' : 'Saved on this device; sync resumes when online.') })
+      return
+    }
     const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
     const at = new Date()
     const day = localDateKey(at, timezone)

@@ -298,7 +298,7 @@ test('queued second-connection cache replacement cannot erase legacy completion 
   }, { job: importedJob, replacementAction, OLD })
   expect(evidence.intercepted).toBe(true)
   expect(evidence.retained).toBe(true)
-  expect(evidence.after.actions).toEqual([])
+  expect(evidence.after.actions).toEqual([replacementAction])
   const completion = evidence.after.timeline!.find((row) => row.actionId === replacementAction.id && row.changes?.status?.after === 'done')
   expect(completion).toBeDefined()
   await page.reload(); await expect(page.getByTestId('cgr02-today')).toBeVisible()

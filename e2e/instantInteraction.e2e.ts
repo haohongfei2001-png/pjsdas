@@ -194,7 +194,9 @@ test('immediate Undo preserves original audit and compensates after its delayed 
   expect(server.snapshot.data.actions[0].status).toBe('todo')
   expect(server.snapshot.data.timeline!.length).toBeGreaterThanOrEqual(3941)
   const localNodes = await page.evaluate(async () => (await (await import('/pjsdas/src/db.ts')).exportLocalSnapshot()).data.scheduleNodes)
-  expect(localNodes?.find(node => node.id === 'schedule:action:dense-action-0:v1')?.sourceVersionRefs).toEqual(server.snapshot.data.scheduleNodes?.find(node => node.id === 'schedule:action:dense-action-0:v1')?.sourceVersionRefs)
+  const restoredNode = localNodes?.find(node => node.id === 'dense-node-0')
+  expect(restoredNode).toBeDefined()
+  expect(restoredNode?.sourceVersionRefs).toEqual(server.snapshot.data.scheduleNodes?.find(node => node.id === 'dense-node-0')?.sourceVersionRefs)
 
   await page.reload()
   await expect(page.locator('[data-action-id="dense-action-0"]')).toBeVisible()
@@ -500,8 +502,12 @@ for (const operation of ['complete', 'cancel', 'reschedule'] as const) {
     expect(elapsed).toBeLessThanOrEqual(150)
     await expect.poll(() => pendingCount(page)).toBe(0)
     expect(server.sent).toHaveLength(1)
-    const node = server.snapshot.data.scheduleNodes!.filter(item => item.occurrenceId === 'application-deadline:dense-job-0').sort((a, b) => b.version - a.version)[0]
-    if (operation === 'reschedule') expect(node.temporal.deadlineAt).toBe('2026-10-02T14:30:00.000Z')
+    const node = server.snapshot.data.scheduleNodes!.filter(item => item.occurrenceId === 'action:dense-action-0').sort((a, b) => b.version - a.version)[0]
+    if (operation === 'reschedule') {
+      expect(node.temporal.startAt).toBe('2026-10-02T14:30:00.000Z')
+      expect(node.temporal.endAt).toBe('2026-10-02T15:30:00.000Z')
+      expect(node.temporal.deadlineAt).toBeUndefined()
+    }
     else expect(node.state).toBe(operation === 'complete' ? 'completed' : 'cancelled')
   })
 }
@@ -1296,7 +1302,7 @@ for (const operation of ['action', 'complete', 'cancel', 'reschedule'] as const)
     const command = operation === 'action'
       ? { commandId: 'standalone-action', kind: 'set_action_status' as const, actionId: 'dense-action-0', status: 'done' as const }
       : operation === 'reschedule' ? { commandId: 'standalone-reschedule', kind: 'reschedule_occurrence' as const, occurrenceId,
-        temporal: { shape: 'deadline' as const, precision: 'datetime' as const, timezone: 'UTC', deadlineAt: '2026-10-02T15:59:59Z', resolutionBasis: 'user_asserted' } }
+        temporal: { shape: 'fixed_range' as const, precision: 'datetime' as const, timezone: 'Asia/Shanghai', startAt: '2026-10-02T14:00:00+08:00', endAt: '2026-10-02T15:00:00+08:00', resolutionBasis: 'user_explicit' } }
         : { commandId: `standalone-${operation}`, kind: operation === 'complete' ? 'complete_occurrence' as const : 'cancel_occurrence' as const, occurrenceId }
     return client.beginInstantCommand('instant-owner', await api.exportLocalSnapshot(), command)
   }, { operation, occurrenceId: node.occurrenceId })

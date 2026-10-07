@@ -763,6 +763,8 @@ export interface OpportunityDetail {
 
 export interface Opportunity {
   id: string
+  /** Exact command or progress-operation ownership; withdrawn proof stays auditable. */
+  applicationSubmissionProofs?: Record<string, 'active' | 'withdrawn'>
   company: string
   role: string
   currentStageLabel: string

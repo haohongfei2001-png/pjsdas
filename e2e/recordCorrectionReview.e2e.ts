@@ -3,7 +3,8 @@ import { expect, test, type Page } from '@playwright/test'
 import { setupInstantServer } from './fixtures/instantServer.js'
 import { BACKEND } from './fixtures/todayWorkspace.js'
 import { INSTANT_NOW } from '../tests/fixtures/instantDenseWorkspace.js'
-import { applicationDeadlineFingerprint } from '../src/applicationDeadline.js'
+import { applicationDeadlineFingerprint, resolveApplicationDeadline } from '../src/applicationDeadline.js'
+import { buildScheduleStream } from '../src/schedule/scheduleStream.js'
 
 test.use({ timezoneId: 'Asia/Shanghai' })
 function packet(server: Awaited<ReturnType<typeof setupInstantServer>>) {
@@ -29,6 +30,7 @@ async function review(page: Page) {
 
 test('authenticated correction reviews evidence, commits once, retains history and clears file on reload', async ({ page, context }, info) => {
   const server = await setupInstantServer(context, 100); server.setDelay(0)
+  const originalNodes = structuredClone(server.snapshot.data.scheduleNodes!.filter(node => node.opportunityId === 'dense-job-2'))
   await page.clock.setFixedTime(INSTANT_NOW); await open(page)
   await page.getByText('核对文件账号绑定', { exact: true }).click()
   await expect(page.getByTestId('correction-review-account-id')).toHaveText('instant-owner')
@@ -43,7 +45,11 @@ test('authenticated correction reviews evidence, commits once, retains history a
   expect(server.sent).toEqual(['synthetic-review-browser-command'])
   const target = server.snapshot.data.opportunities.find(item => item.id === 'dense-job-2')!
   expect(target.deadline).toBeUndefined(); expect(target.detail?.deadlineCorrections).toHaveLength(1)
-  expect(server.snapshot.data.scheduleNodes?.some(node => node.opportunityId === target.id && node.state === 'superseded')).toBe(true)
+  expect(server.snapshot.data.scheduleNodes!.filter(node => node.opportunityId === target.id)).toEqual(originalNodes)
+  expect(resolveApplicationDeadline(target, server.snapshot.data).state).toBe('unknown')
+  const rows = Object.values(buildScheduleStream(server.snapshot, { accountKey: 'instant-owner', workspaceRevision: 'txn:1205', timezone: 'Asia/Shanghai', now: INSTANT_NOW }).sections).flat()
+  expect(rows.filter(row => row.opportunityId === target.id)).toEqual([])
+  expect(rows.some(row => row.actionId === 'dense-action-0')).toBe(true)
   await page.reload(); await page.getByRole('button', { name: '核实已有记录', exact: true }).click()
   await expect(page.locator('.cgr-correction-entries')).toHaveCount(0)
   await expect(page.locator('.cgr-correction-review')).toContainText('不提供普通撤销')

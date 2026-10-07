@@ -254,12 +254,40 @@ for (const state of ['completed', 'elapsed_unresolved', 'scheduled'] as const) t
   await expect(restarted.getByTestId('cgr02-today')).toBeVisible()
 })
 
-test('reimport retains omitted jobs, processes and task history while invalid replacement remains atomic', async ({ page }) => {
+test('local progress submission owns its exact later fact and blocks undoing an earlier submission', async ({ page }) => {
+  await page.clock.install({ time: HISTORY_NOW })
+  await page.goto('/'); await expect(page.locator('.tsui-primary-nav')).toBeVisible()
+  const evidence = await page.evaluate(async input => {
+    const db = await import('/pjsdas/src/db.ts')
+    const domain = await import('/pjsdas/src/domainCommands.ts')
+    const at = new Date('2026-09-28T12:00:00Z')
+    const job = input.data.opportunities[0]
+    const first = domain.applyUserDomainCommand(input, { commandId: 'first-local-proof', kind: 'record_application_submission', opportunityId: job.id }, at)
+    if (first.status !== 'APPLIED') throw new Error('Expected submission')
+    await db.replaceLocalSnapshotFromCloud(first.snapshot)
+    const operation = { id: 'later-local-proof', kind: 'upsert_opportunity' as const, mode: 'submitted' as const,
+      opportunityId: job.id, company: job.company, role: job.role, occurredAt: at.toISOString(), sourceText: 'I submitted again', confidence: 'high' as const }
+    await db.applyProgressUpdate([operation])
+    await db.applyProgressUpdate([operation])
+    const after = await db.exportLocalSnapshot()
+    let rejected = false
+    try { domain.applyDomainCompensation(after, first.compensation!, at) } catch { rejected = true }
+    return { rejected, proofs: after.data.opportunities.find(item => item.id === job.id)?.applicationSubmissionProofs,
+      retainedOriginal: after.data.timeline?.some(item => item.commandId === 'first-local-proof'),
+      retainedLater: after.data.timeline?.filter(item => item.id === 'timeline:progress:later-local-proof').length }
+  }, historyActionWorkspace())
+  expect(evidence.rejected).toBe(true)
+  expect(Object.values(evidence.proofs!)).toEqual(['active', 'active'])
+  expect(evidence.retainedOriginal).toBe(true)
+  expect(evidence.retainedLater).toBe(1)
+})
+
+test('reimport retains omitted history and exact submission ownership while invalid replacement remains atomic', async ({ page }) => {
   await page.clock.install({ time: HISTORY_NOW })
   await page.goto('/'); await expect(page.locator('.tsui-primary-nav')).toBeVisible()
   const evidence = await page.evaluate(async (input) => {
     const module = await import('/pjsdas/src/db.ts')
-    const job = { ...input.data.opportunities[0], locallyManaged: false }
+    const job = { ...input.data.opportunities[0], locallyManaged: false, applicationSubmissionProofs: { 'withdrawn-original-command': 'withdrawn' as const } }
     const process = { id: 'historical-import-process', opportunityId: job.id, company: job.company, role: job.role, stage: 'not_applied' as const, stageLabel: '待投递', progress: 'not_started' as const, result: 'pending' as const, participationState: 'active' as const, lastProgressAt: '2026-09-20T00:00:00.000Z' }
     input.data.opportunities = [job]; input.data.processes = [process]
     input.data.scheduleNodes = [{ ...input.data.scheduleNodes![0], processId: process.id }]
@@ -268,14 +296,18 @@ test('reimport retains omitted jobs, processes and task history while invalid re
     const summary = { filename: 'retained-history.xlsx', importedAt: '2026-09-28T12:00:00.000Z', opportunities: 0, pending: 0, processes: 0, prep: 0, applicationGroups: 0, actions: 0 }
     await module.replaceImportedData({ opportunities: [], processes: [], actions: [], prep: [], applicationGroups: [], summary })
     const after = (await module.exportLocalRecoveryArchive()).stores
+    await module.replaceImportedData({ opportunities: [{ ...job, applicationSubmissionProofs: undefined }], processes: [], actions: [], prep: [], applicationGroups: [], summary: { ...summary, opportunities: 1 } })
+    const retainedProofs = (await module.exportLocalSnapshot()).data.opportunities.find(item => item.id === job.id)?.applicationSubmissionProofs
+    const beforeInvalid = (await module.exportLocalRecoveryArchive()).stores
     let refused = false
     try { await module.replaceImportedData({ opportunities: [job, job], processes: [], actions: [], prep: [], applicationGroups: [], summary: { ...summary, opportunities: 2 } }) }
     catch { refused = true }
-    return { refused, before, after, afterInvalid: (await module.exportLocalRecoveryArchive()).stores }
+    return { refused, before, after, retainedProofs, beforeInvalid, afterInvalid: (await module.exportLocalRecoveryArchive()).stores }
   }, historyActionWorkspace())
   expect(evidence.refused).toBe(true)
   for (const store of ['opportunities', 'processes', 'actions', 'scheduleNodes'] as const) expect(evidence.after[store]).toEqual(evidence.before[store])
-  expect(evidence.afterInvalid).toEqual(evidence.after)
+  expect(evidence.retainedProofs).toEqual({ 'withdrawn-original-command': 'withdrawn' })
+  expect(evidence.afterInvalid).toEqual(evidence.beforeInvalid)
   await page.reload(); await expect(page.getByTestId('cgr02-today')).toBeVisible()
 })
 

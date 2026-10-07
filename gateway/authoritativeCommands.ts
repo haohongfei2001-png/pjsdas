@@ -16,6 +16,7 @@ import { restoreActionStatusUndo, type ActionStatusUndo } from '../src/actionSta
 import * as z from 'zod/v4'
 import {
   applyDomainCompensation,
+  bindLegacyApplicationSubmissionUndo,
   applyUserDomainCommand,
   type DomainCompensation,
   type UserDomainCommand,
@@ -816,7 +817,10 @@ export function createAuthoritativeCommandExecutor(options: AuthoritativeCommand
       }
 
       const now = new Date()
-      const restored = await applyCompensation(current.snapshot, target.compensation, now)
+      const compensation = target.compensation.operation === 'restore_application_submission'
+        ? bindLegacyApplicationSubmissionUndo(target.compensation as unknown as DomainCompensation, target.commandId, current.snapshot.data.timeline ?? [])
+        : target.compensation
+      const restored = await applyCompensation(current.snapshot, compensation as unknown as Record<string, unknown>, now)
       const next = target.operation === 'business_management' || target.operation === 'opportunity_management' || target.operation === 'planning_management' || target.operation === 'discovery_profile_management' || target.operation === 'private_reminder_management' ? restored : upgradeSnapshotToLatest(restored)
       const affectedObjects = diffCommandObjects(current.snapshot, next)
       const managementGrant = target.operation === 'business_management' || target.operation === 'opportunity_management' || target.operation === 'planning_management' || target.operation === 'discovery_profile_management' || target.operation === 'private_reminder_management' ? await authorizeManagement(principal, admittedManagementGrant, target.operation) : undefined

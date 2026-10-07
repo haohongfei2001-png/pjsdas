@@ -60,6 +60,7 @@ import {
   timelineFromChangeSetApplied,
 } from './timeline.js'
 import type { ExecutableProgressOperation, ProgressOperation } from './progressUpdate.js'
+import { progressSubmissionProofId } from './progressUpdate.js'
 import type {
   Action,
   ApplicationGroup,
@@ -601,6 +602,9 @@ export async function applyProgressUpdate(operations: ProgressOperation[]) {
               locallyManaged: true,
             }
           : defaultLocalOpportunity(operation)
+        if (submitted) opportunity.applicationSubmissionProofs = {
+          ...opportunity.applicationSubmissionProofs, [progressSubmissionProofId(operation)]: 'active',
+        }
         await opportunityStore.put(opportunity)
 
         const applyId = `apply:${opportunity.id}`
@@ -1226,8 +1230,9 @@ function mergeLocallyManagedOpportunities(imported: Opportunity[], previous: Opp
     const local = localById.get(item.id)
     if (local) return local
     const before = previousById.get(item.id)
-    if (!before?.detail?.deadlineCorrections?.length && !before?.detail?.userFacts) return item
-    return { ...item, detail: { ...item.detail,
+    const owned = before?.applicationSubmissionProofs ? { ...item, applicationSubmissionProofs: structuredClone(before.applicationSubmissionProofs) } : item
+    if (!before?.detail?.deadlineCorrections?.length && !before?.detail?.userFacts) return owned
+    return { ...owned, detail: { ...item.detail,
       deadlineCorrections: before.detail.deadlineCorrections, userFacts: before.detail.userFacts } }
   })
   const importedIds = new Set(imported.map((item) => item.id))

@@ -5,8 +5,30 @@ import { upgradeSnapshotToLatest } from '../src/snapshot.js'
 import { applyDomainCompensation, applyUserDomainCommand, type UserDomainCommand } from '../src/domainCommands.js'
 import { instantDenseWorkspace, INSTANT_NOW } from './fixtures/instantDenseWorkspace.js'
 import { denseDecisionWorkspace, DENSE_NOW } from './fixtures/denseDecisionWorkspace.js'
+import { selectTodayWeb } from '../src/today/todayWebSelector.js'
+import { buildScheduleStream } from '../src/schedule/scheduleStream.js'
 
 describe('bounded interaction projection', () => {
+  it('keeps the arranged recovery target in Today and Schedule without promoting the 299 archived deadlines', () => {
+    const before = instantDenseWorkspace(0)
+    const context = { accountKey: 'instant-owner', workspaceRevision: 'txn:1204', now: INSTANT_NOW, timezone: 'Asia/Shanghai' }
+    const target = before.data.actions.find(action => action.id === 'dense-action-0')!
+    expect(target.dueAt).toBe('2026-10-01T15:59:59Z')
+    expect(target.scheduledTemporal?.startAt).toBe('2026-10-01T14:00:00+08:00')
+    expect(selectTodayWeb(before, {}, context).actions.map(action => action.actionId)).toContain(target.id)
+    const rows = Object.values(buildScheduleStream(before, context).sections).flat()
+    expect(rows).toHaveLength(1)
+    expect(rows[0].node).toMatchObject({ occurrenceId: `action:${target.id}`, relatedActionIds: [target.id] })
+    const archived = before.data.scheduleNodes!.filter(node => node.id !== 'dense-node-0')
+    expect(archived).toHaveLength(299)
+    expect(archived.every(node => node.kind === 'application_deadline' && node.temporal.shape === 'deadline')).toBe(true)
+    const result = applyUserDomainCommand(before, { commandId: 'recovery-target-done', kind: 'set_action_status', actionId: target.id, status: 'done' }, INSTANT_NOW)
+    expect(result.status).toBe('APPLIED')
+    if (result.status !== 'APPLIED') return
+    const undone = applyDomainCompensation(result.snapshot, result.compensation!, INSTANT_NOW)
+    expect(undone.data.scheduleNodes!.filter(node => node.id !== 'dense-node-0')).toEqual(archived)
+    expect(selectTodayWeb(undone, {}, context).actions.map(action => action.actionId)).toContain(target.id)
+  })
   it.each(['submission', 'capacity', 'action', 'reschedule', 'cancel', 'complete'] as const)('projects %s Undo with exact kernel semantics and retained audit', kind => {
     const before = instantDenseWorkspace()
     before.data.processes = before.data.processes.filter(item => item.opportunityId !== 'dense-job-2')
@@ -16,7 +38,7 @@ describe('bounded interaction projection', () => {
       ? { commandId: 'undo-kernel-submission', kind: 'record_application_submission', opportunityId: 'dense-job-2' }
       : kind === 'capacity' ? { commandId: 'undo-kernel-capacity', kind: 'set_date_capacity', date: '2026-10-01', minutes: 360 }
       : kind === 'action' ? { commandId: 'undo-kernel-action', kind: 'set_action_status', actionId: 'dense-action-0', status: 'done' }
-      : kind === 'reschedule' ? { commandId: 'undo-kernel-reschedule', kind: 'reschedule_occurrence', occurrenceId, temporal: { shape: 'deadline', precision: 'datetime', timezone: 'UTC', deadlineAt: '2026-10-02T15:59:59Z', resolutionBasis: 'user_asserted' } }
+      : kind === 'reschedule' ? { commandId: 'undo-kernel-reschedule', kind: 'reschedule_occurrence', occurrenceId, temporal: { shape: 'fixed_range', precision: 'datetime', timezone: 'Asia/Shanghai', startAt: '2026-10-02T14:00:00+08:00', endAt: '2026-10-02T15:00:00+08:00', resolutionBasis: 'user_explicit' } }
       : { commandId: `undo-kernel-${kind}`, kind: kind === 'cancel' ? 'cancel_occurrence' : 'complete_occurrence', occurrenceId }
     const forward = applyUserDomainCommand(before, command, INSTANT_NOW)
     expect(forward.status).toBe('APPLIED')
@@ -99,7 +121,7 @@ it.each(['action', 'complete', 'cancel', 'reschedule'] as const)('closes explici
   const command: UserDomainCommand = operation === 'action'
     ? { commandId: 'standalone-action', kind: 'set_action_status', actionId: action.id, status: 'done' }
     : operation === 'reschedule' ? { commandId: 'standalone-reschedule', kind: 'reschedule_occurrence', occurrenceId: node.occurrenceId,
-      temporal: { shape: 'deadline', precision: 'datetime', timezone: 'UTC', deadlineAt: '2026-10-02T15:59:59Z', resolutionBasis: 'user_asserted' } }
+      temporal: { shape: 'fixed_range', precision: 'datetime', timezone: 'Asia/Shanghai', startAt: '2026-10-02T14:00:00+08:00', endAt: '2026-10-02T15:00:00+08:00', resolutionBasis: 'user_explicit' } }
       : { commandId: `standalone-${operation}`, kind: operation === 'complete' ? 'complete_occurrence' : 'cancel_occurrence', occurrenceId: node.occurrenceId }
   const full = applyUserDomainCommand(before, command, INSTANT_NOW)
   expect(full.status).toBe('APPLIED')

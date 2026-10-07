@@ -30,6 +30,7 @@ export interface ResolvedApplicationDeadline {
   checkedAt?: string
   nodeIds: string[]
   timezone?: string
+  resolutionBasis?: ScheduleNode['temporal']['resolutionBasis']
   evidenceRefs?: string[]
   sourceAuthority?: DeadlineAuthority
   postingStatus: 'open' | 'closed' | 'unknown'
@@ -98,6 +99,7 @@ export function resolveApplicationDeadline(opportunity: Opportunity, data: Pick<
       deadline: matches && correction.state === 'confirmed' ? correction.deadline : undefined,
       precision: matches && correction.state === 'confirmed' ? correction.precision : undefined,
       timezone: correction.timezone ?? (correction.precision === 'date' ? 'floating-date' : 'source-offset'),
+      resolutionBasis: correction.sourceAuthority === 'user' ? 'user_explicit' : 'source_explicit',
       source: correction.sourceAuthority === 'user' && !correction.sourceUrl ? 'user' : 'correction', sourceUrl: correction.sourceUrl, sourceAuthority: correction.sourceAuthority,
       evidenceRefs, checkedAt: correction.checkedAt, nodeIds, postingStatus }
   }
@@ -114,7 +116,7 @@ export function resolveApplicationDeadline(opportunity: Opportunity, data: Pick<
       const { node, deadline } = confirmed
       const correctionOwned = Boolean(correction && !newExplicitOwner)
       const userOwned = !correctionOwned && node.temporal.resolutionBasis === 'user_explicit'
-      return { state: 'confirmed', deadline, precision: node.temporal.precision, timezone: node.temporal.timezone,
+      return { state: 'confirmed', deadline, precision: node.temporal.precision, timezone: node.temporal.timezone, resolutionBasis: node.temporal.resolutionBasis,
         source: correctionOwned ? 'correction' : userOwned ? 'user' : 'schedule_node', checkedAt: correctionOwned ? correction?.checkedAt : undefined,
         sourceAuthority: correctionOwned ? correction?.sourceAuthority : userOwned ? 'user' : undefined,
         evidenceRefs: [...node.evidenceRefs], nodeIds, postingStatus,
@@ -170,9 +172,11 @@ export function indexJobClassificationData(data: JobClassificationData) {
 }
 
 export function hasApplicationEvidence(opportunity: Opportunity, data: JobClassificationData) {
+  if (Object.values(opportunity.applicationSubmissionProofs ?? {}).some(state => state === 'active')) return true
   if (['screening', 'assessment', 'written_test', 'interview', 'offer'].includes(opportunity.processStage)) return true
   if (data.processes.some(item => item.opportunityId === opportunity.id && ['screening', 'assessment', 'written_test', 'interview', 'offer'].includes(item.stage))) return true
-  if ((data.timeline ?? []).some(item => item.opportunityId === opportunity.id && item.kind === 'application_submitted')) return true
+  if ((data.timeline ?? []).some(item => item.opportunityId === opportunity.id && item.kind === 'application_submitted'
+    && (!item.commandId || opportunity.applicationSubmissionProofs?.[item.commandId] !== 'withdrawn'))) return true
   return data.processEvents.some(item => item.opportunityId === opportunity.id && !item.invalidation && ['assessment_invite', 'written_test_invite', 'interview_invite', 'offer'].includes(item.type))
 }
 function dateKey(now: Date, timezone: string) {

@@ -38,7 +38,7 @@ interface OpportunityDetailDrawerProps {
   onNavigate: (destination: OpportunityDetailDestination) => void
   onOpenDecision: (id: string) => void
   onMarkAction: (id: string, status: Action['status'], intent?: 'application_submission') => Promise<void>
-  onJobAction?: (id: string, kind: 'today' | 'submission') => Promise<WebSemanticCaptureResult>
+  onJobAction?: (id: string, kind: 'today' | 'submission') => Promise<WebSemanticCaptureResult | void>
   onUndoJobAction?: (token: LocalSemanticUndoToken) => Promise<void>
   readOnly?: boolean
   asPage?: boolean
@@ -183,6 +183,8 @@ export default function OpportunityDetailDrawer({
     setJobReceipt(undefined)
     try {
       const result = await onJobAction(opportunity.id, kind)
+      // Connected submission uses the existing durable instant feedback/Undo.
+      if (!result) return
       const saved = result.status === 'APPLIED' || result.status === 'ALREADY_APPLIED'
       setJobReceipt({ message: result.status === 'QUEUED' ? (zh ? '已保存在本机，联网后确认。' : 'Saved on this device; confirmation follows when online.')
         : saved ? (kind === 'today' ? (zh ? '已加入今天。' : 'Added to today.') : (zh ? '已记录投递。' : 'Application recorded.'))
@@ -210,7 +212,7 @@ export default function OpportunityDetailDrawer({
             <p className="job-detail-facts">
               {(userFacts?.location ?? discovery?.location) ? <span>{userFacts?.location ?? discovery?.location}</span> : null}
               <span>{zh ? '申请截止：' : 'Application deadline: '}{decision?.applicationDeadline?.state === 'confirmed' && decision.applicationDeadline.deadline
-                ? formatScheduleTemporal({ precision: decision.applicationDeadline.precision, timezone: decision.applicationDeadline.timezone,
+                ? formatScheduleTemporal({ precision: decision.applicationDeadline.precision, timezone: decision.applicationDeadline.timezone, resolutionBasis: decision.applicationDeadline.resolutionBasis,
                   date: decision.applicationDeadline.deadline.slice(0, 10), deadlineAt: decision.applicationDeadline.precision === 'date' ? undefined : decision.applicationDeadline.deadline }, zh, decision.displayTimezone)
                 : (zh ? '未知' : 'Unknown')}</span>
             </p>

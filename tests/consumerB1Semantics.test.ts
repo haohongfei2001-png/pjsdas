@@ -1,4 +1,4 @@
-import { applySemanticIntake } from '../src/semanticIntake.js'
+import { applySemanticCompensation, applySemanticIntake } from '../src/semanticIntake.js'
 import { mergeActionsForReimport } from '../src/reimportState.js'
 import { buildWebSemanticInterpretation } from '../src/webSemanticInterpretation.js'
 import { describe, expect, it } from 'vitest'
@@ -7,7 +7,10 @@ import { applyDomainCompensation, applyUserDomainCommand } from '../src/domainCo
 import { buildScheduleStream } from '../src/schedule/scheduleStream.js'
 import { selectTodayWeb } from '../src/today/todayWebSelector.js'
 import { upgradeSnapshotToLatest } from '../src/snapshot.js'
-import { applicationDeadlineFingerprint, hasApplicationEvidence, resolveApplicationDeadline } from '../src/applicationDeadline.js'
+import { applicationDeadlineFingerprint, classifyJob, hasApplicationEvidence, indexJobClassificationData, resolveApplicationDeadline } from '../src/applicationDeadline.js'
+import { interactionProjection, undoInteractionProjection } from '../src/cloud/interactionProjection.js'
+import { applyWorkspaceDelta, diffWorkspaceDelta } from '../src/workspaceDelta.js'
+import { formatScheduleTemporal } from '../src/scheduleDisplayTime.js'
 import { actionDeadline, latestActionNode } from '../src/deadlineOrder.js'
 import { buildTodayBrief } from '../src/todayBrief.js'
 import { getTodayPlan } from '../src/ai/readLayer.js'
@@ -23,6 +26,101 @@ const arrangement = { shape: 'fixed_range' as const, precision: 'datetime' as co
 function applied(s: ReturnType<typeof empty>, command: Parameters<typeof applyUserDomainCommand>[1]) { const r = applyUserDomainCommand(s, command, now); if (r.status !== 'APPLIED') throw new Error(r.status); return r }
 
 describe('B1 job, task and calendar ownership', () => {
+  it.each(['semantic', 'instant'] as const)('withdraws only active submission proof after %s Undo while retaining audit and reload classification', path => {
+    const before = job()
+    let submitted: ReturnType<typeof job>, undone: ReturnType<typeof job>
+    if (path === 'semantic') {
+      const result = applySemanticIntake(before, { contractVersion: 1, inputId: 'undo-submission',
+        source: { kind: 'mcp', sourceId: 'source', sourceRecordId: 'record', observedAt: now.toISOString(), timezone: 'Asia/Shanghai' }, statementMode: 'assertion',
+        candidates: [{ id: 'submit', kind: 'application_submitted', target: { opportunityId: 'job' }, occurredAt: '2026-10-02T08:00:00Z',
+          objectConfidence: 'high', eventConfidence: 'high', evidenceRefs: [], sourceVersionRefs: [] }] }, { authorized: true, now })
+      submitted = result.snapshot
+      undone = applySemanticCompensation(submitted, result.compensation!, now)
+    } else {
+      const command = { commandId: 'instant-submission-proof', kind: 'record_application_submission' as const, opportunityId: 'job' }
+      const projected = interactionProjection(before, command, 1, now)
+      submitted = applyWorkspaceDelta(before, projected.delta)
+      undone = applyWorkspaceDelta(submitted, undoInteractionProjection(submitted, command, projected.compensation, projected.delta, 2, now))
+    }
+    const original = submitted.data.timeline!.find(record => record.kind === 'application_submitted')!
+    expect(original.commandId).toBeTruthy()
+    for (const snapshot of [undone, upgradeSnapshotToLatest(JSON.parse(JSON.stringify(undone)))]) {
+      const target = snapshot.data.opportunities[0]
+      expect(snapshot.data.timeline!.find(record => record.id === original.id)).toEqual(original)
+      expect(target.applicationSubmissionProofs?.[original.commandId!]).toBe('withdrawn')
+      expect(hasApplicationEvidence(target, snapshot.data)).toBe(false)
+      expect(classifyJob(target, snapshot.data, now, context.timezone)).toBe('to_apply')
+      expect(classifyJob(target, indexJobClassificationData(snapshot.data)(target.id), now, context.timezone)).toBe('to_apply')
+      expect(snapshot.data.actions).toEqual([])
+      expect(entries(snapshot)).toEqual([])
+    }
+  })
+  it('keeps legacy submission facts while full and instant Undo agree on a later command-owned proof', () => {
+    const before = job()
+    before.data.timeline = applied(job(), { commandId: 'legacy-domain-command', kind: 'record_application_submission',
+      opportunityId: 'job', occurredAt: '2026-09-01T08:00:00Z' }).snapshot.data.timeline
+    const command = { commandId: 'new-after-legacy', kind: 'record_application_submission' as const, opportunityId: 'job' }
+    const full = applied(before, command)
+    const fullUndo = applyDomainCompensation(full.snapshot, full.compensation!, now)
+    const projection = interactionProjection(before, command, 1, now)
+    const local = applyWorkspaceDelta(before, projection.delta)
+    const localUndo = applyWorkspaceDelta(local, undoInteractionProjection(local, command, projection.compensation, projection.delta, 2, now))
+    expect(localUndo.data).toEqual(fullUndo.data)
+    for (const result of [fullUndo, localUndo]) {
+      expect(result.data.timeline).toContainEqual(before.data.timeline![0])
+      expect(result.data.opportunities[0].applicationSubmissionProofs).toEqual({ 'new-after-legacy': 'withdrawn' })
+      expect(hasApplicationEvidence(result.data.opportunities[0], result.data)).toBe(true)
+      expect(classifyJob(result.data.opportunities[0], result.data, now, context.timezone))
+        .toBe(classifyJob(before.data.opportunities[0], before.data, now, context.timezone))
+      expect(entries(result)).toEqual([])
+    }
+  })
+  it('preserves another job and refuses to overwrite a later independent same-job submission or recruiting fact', () => {
+    const before = job(); before.data.opportunities.push({ ...before.data.opportunities[0], id: 'job-b', company: 'Other' })
+    const first = applied(before, { commandId: 'proof-first', kind: 'record_application_submission', opportunityId: 'job' })
+    const other = applied(first.snapshot, { commandId: 'proof-other-job', kind: 'record_application_submission', opportunityId: 'job-b' })
+    const undone = applyDomainCompensation(other.snapshot, first.compensation!, now)
+    expect(hasApplicationEvidence(undone.data.opportunities[0], undone.data)).toBe(false)
+    expect(hasApplicationEvidence(undone.data.opportunities[1], undone.data)).toBe(true)
+    expect(undone.data.timeline).toEqual(other.snapshot.data.timeline)
+    const second = applied(first.snapshot, { commandId: 'proof-second', kind: 'record_application_submission', opportunityId: 'job' })
+    expect(() => applyDomainCompensation(second.snapshot, first.compensation!, now)).toThrow(/later independent/)
+    const onlyFirst = applyDomainCompensation(second.snapshot, second.compensation!, now)
+    expect(onlyFirst.data.opportunities[0].applicationSubmissionProofs).toEqual({ 'proof-first': 'active', 'proof-second': 'withdrawn' })
+    expect(classifyJob(onlyFirst.data.opportunities[0], onlyFirst.data, now, context.timezone)).toBe('applied')
+    const none = applyDomainCompensation(onlyFirst, first.compensation!, now)
+    expect(classifyJob(none.data.opportunities[0], none.data, now, context.timezone)).toBe('to_apply')
+    expect(applyDomainCompensation(none, first.compensation!, new Date('2026-11-01'))).toBe(none)
+    const interview = applied(first.snapshot, { commandId: 'later-interview', kind: 'record_process_event', opportunityId: 'job', eventType: 'interview_invite', dueAt: arrangement.startAt, timingMode: 'fixed' })
+    expect(() => applyDomainCompensation(interview.snapshot, first.compensation!, now)).toThrow(/later independent/)
+    expect(entries(interview.snapshot)).toHaveLength(1)
+  })
+  it('binds legacy instant Undo to its exact original command proof and refuses an unowned legacy compensation', () => {
+    const before = job(), command = { commandId: 'legacy-exact-proof', kind: 'record_application_submission' as const, opportunityId: 'job' }
+    const result = applied(before, command)
+    delete result.snapshot.data.opportunities[0].applicationSubmissionProofs
+    delete result.compensation!.payload.submissionCommandId
+    const delta = diffWorkspaceDelta(before, result.snapshot, 1)
+    expect(() => applyDomainCompensation(result.snapshot, result.compensation!, now)).toThrow(/exact fact ownership/)
+    const undone = applyWorkspaceDelta(result.snapshot, undoInteractionProjection(result.snapshot, command, result.compensation, delta, 2, now))
+    expect(hasApplicationEvidence(undone.data.opportunities[0], undone.data)).toBe(false)
+    expect(undone.data.timeline).toEqual(result.snapshot.data.timeline)
+  })
+  it('rejects malformed optional submission ownership instead of silently accepting forged states', () => {
+    for (const proof of [[], { '': 'active' }, { forged: 'confirmed' }]) {
+      const invalid = job(); invalid.data.opportunities[0].applicationSubmissionProofs = proof as never
+      expect(() => upgradeSnapshotToLatest(invalid)).toThrow(/投递事实归属/)
+    }
+  })
+  it.each([['legacy_projection', 'UTC', '23:59'], ['source_explicit', 'America/New_York', '11:59']] as const)('retains %s deadline display provenance without an eligible calendar row', (resolutionBasis, timezone, expected) => {
+    const source = job()
+    source.data.scheduleNodes = [{ id: 'deadline-zone', occurrenceId: 'deadline-zone', version: 1, opportunityId: 'job', kind: 'application_deadline', state: 'scheduled', constraintKind: 'employer_hard',
+      temporal: { shape: 'deadline', precision: 'datetime', deadlineAt: '2026-09-30T15:59:59Z', timezone, resolutionBasis },
+      evidenceRefs: [], sourceVersionRefs: [], relatedActionIds: [], relatedPrepIds: [], createdAt: now.toISOString(), updatedAt: now.toISOString() }]
+    const fact = resolveApplicationDeadline(source.data.opportunities[0], source.data)
+    expect(formatScheduleTemporal({ ...fact, deadlineAt: fact.deadline }, true, 'Asia/Shanghai')).toContain(expected)
+    expect(entries(source)).toEqual([])
+  })
   it('A02/A03 saves company/title without a URL as a user job only and preserves actual write time', () => {
     const command = { commandId: 'manual-job-1', kind: 'add_user_opportunity' as const, company: 'Example', role: 'Product 2027', deadline: '2026-10-10', deadlinePrecision: 'date' as const }
     const result = applied(empty(), command)

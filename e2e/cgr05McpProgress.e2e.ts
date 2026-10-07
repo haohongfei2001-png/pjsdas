@@ -36,7 +36,7 @@ function cors(route: Route, body: unknown, status = 200) {
   }, body: JSON.stringify(body) })
 }
 
-test('signed progress review commits one scoped account command and appears on another client', async ({ page, browser }) => {
+test('signed progress review commits one scoped unplanned task and syncs it without inventing a Today plan', async ({ page, browser }) => {
   const initial = createSnapshot({
     opportunities: [{ id: 'opp-1', company: 'Synthetic', role: 'Designer', currentStageLabel: '待投',
       processStage: 'not_applied', roleType: 'core', early: false, opportunityValue: 70, fitScore: 75,
@@ -102,6 +102,10 @@ test('signed progress review commits one scoped account command and appears on a
     await seedSession(otherPage)
     await otherPage.route(`${BACKEND}/**`, routeBackend)
     await otherPage.goto('/')
-    await expect(otherPage.getByRole('heading', { name: /Review synthetic portfolio/ })).toBeVisible()
+    await expect.poll(() => otherPage.evaluate(async () => (await (await import('/pjsdas/src/db.ts')).dbPromise).get('actions', 'progress-action:new-task'))).toMatchObject({ title: 'Review synthetic portfolio' })
+    await expect(otherPage.getByRole('heading', { name: /Review synthetic portfolio/ })).toHaveCount(0)
+    const saved = await otherPage.evaluate(async () => (await (await import('/pjsdas/src/db.ts')).dbPromise).get('actions', 'progress-action:new-task'))
+    expect(saved?.plannedDate).toBeUndefined()
+    expect(saved?.scheduledTemporal).toBeUndefined()
   } finally { await second.close() }
 })

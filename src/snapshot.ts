@@ -415,6 +415,11 @@ export function validateSnapshot(value: unknown): asserts value is PJSDASSnapsho
 
   for (const raw of [...data.opportunities, ...(data.opportunityAliases as OpportunityAlias[] | undefined ?? []).map(alias => alias.originalOpportunity)]) {
     const opportunity = raw as Opportunity
+    const submissionProofs = opportunity.applicationSubmissionProofs
+    if (submissionProofs !== undefined && (!submissionProofs || typeof submissionProofs !== 'object' || Array.isArray(submissionProofs)
+      || Object.entries(submissionProofs).some(([id, state]) => !id.trim() || !['active', 'withdrawn'].includes(state)))) {
+      throw new Error('备份损坏：投递事实归属无效。')
+    }
     if (!opportunity.company?.trim() || !opportunity.role?.trim()) {
       throw new Error(`备份损坏：岗位 ${opportunity.id} 缺少公司或岗位名称。`)
     }

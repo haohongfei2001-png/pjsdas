@@ -1,5 +1,6 @@
 import { restoreProgressOperation } from './changeSet.js'
 import { actionForProcessEvent } from './processEvents.js'
+import { progressSubmissionProofId } from './progressUpdate.js'
 import { timelineFromChangeSetApplied, timelineFromProgressOperation } from './timeline.js'
 import { upgradeSnapshotToLatest, validateSnapshot, type PJSDASSnapshot } from './snapshot.js'
 import type { McpProposalEnvelope } from './ai/mcpProposal.js'
@@ -57,6 +58,9 @@ export function applyMcpProgressCommand(snapshot: PJSDASSnapshot, proposal: McpP
         processStage: submitted ? 'screening' : 'not_applied', roleType: 'core',
         early: false, opportunityValue: 0, fitScore: 0, locallyManaged: true,
         importedAt: operation.occurredAt,
+      }
+      if (submitted) opportunity.applicationSubmissionProofs = {
+        ...opportunity.applicationSubmissionProofs, [progressSubmissionProofId(operation)]: 'active',
       }
       data.opportunities = [...data.opportunities.filter((item) => item.id !== opportunity.id), opportunity]
       const applyId = `apply:${opportunity.id}`
