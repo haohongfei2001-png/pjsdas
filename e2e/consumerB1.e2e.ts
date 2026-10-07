@@ -42,7 +42,8 @@ for (const width of [390, 1440]) test(`B1 global add, explicit today and timed t
       const input = JSON.stringify(body.command ?? body.targetCommandId)
       const prior = commands.get(body.commandId)
       if (prior) return prior.input === input ? cors(route, { ...base(), ...prior.result, outcome: 'ALREADY_APPLIED' }) : cors(route, { code: 'COMMAND_ID_REUSED' }, 409)
-      if (body.baseRevision !== revision) return cors(route, { code: 'CONFLICT' }, 409)
+      // Undo is bound to its authoritative target receipt, not a client revision.
+      if (body.action === 'command' && body.baseRevision !== revision) return cors(route, { code: 'CONFLICT' }, 409)
       try {
         let compensation: any, result: any
         if (body.action === 'undo') {
