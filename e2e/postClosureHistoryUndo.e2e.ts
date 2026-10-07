@@ -77,7 +77,8 @@ for (const [connected, application] of [[false, false], [true, false], [true, tr
     await page.evaluate(async (snapshot) => (await import('/pjsdas/src/db.ts')).replaceLocalSnapshotFromCloud(snapshot), before)
   }
   await page.goto('/pjsdas/schedule?view=past')
-  await page.locator('.tsui-schedule-row').filter({ hasText: 'Historical job' }).click()
+  await expect(page.locator('[data-schedule-entry="fact:retained-history"]')).toHaveCount(0)
+  await page.locator('[data-schedule-entry="node:history-node-0"]').click()
   await page.getByRole('button', { name: /查看岗位详情|View job details/ }).click()
   try {
     if (application) await page.getByRole('button', { name: /我已投递|I applied/ }).click()
@@ -135,7 +136,8 @@ test('queued action completion becomes confirmed with Undo after automatic recon
   })
   await page.goto('/pjsdas/schedule?view=past')
   await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem('pjsdas-google-drive-sync-state-v2') || '{}').accounts?.['account-a']?.lastSyncedVersion)).toBe('txn:7')
-  await page.locator('.tsui-schedule-row').filter({ hasText: 'Historical job' }).click()
+  await expect(page.locator('[data-schedule-entry="fact:retained-history"]')).toHaveCount(0)
+  await page.locator('[data-schedule-entry="node:history-node-0"]').click()
   await page.getByRole('button', { name: /查看岗位详情|View job details/ }).click()
   await context.setOffline(true)
   await page.locator('.opportunity-detail-action-list article').filter({ hasText: 'History task' }).getByRole('button', { name: /标记完成|Mark done/ }).click()

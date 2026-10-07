@@ -67,9 +67,11 @@ test('TSUI-04 real schedule: today anchor, both directions, unresolved and undat
           evidenceRefs: [], sourceVersionRefs: [], relatedActionIds: [], relatedPrepIds: [],
           createdAt: created, updatedAt: created,
         })
-        tx.objectStore('actions').put({
-          id: 'tsui04-undated-action', kind: 'manual', title: '历史完成时间未知',
-          estimatedMinutes: 15, leverage: 70, delayCost: 70, status: 'done',
+        tx.objectStore('scheduleNodes').put({
+          id: 'tsui04-undated-action', occurrenceId: 'tsui04-undated-occurrence', version: 1,
+          kind: 'interview', state: 'completed', constraintKind: 'employer_hard',
+          temporal: { shape: 'date_only', precision: 'date', timezone: 'Asia/Shanghai', date: '2026-09-19', resolutionBasis: 'source_explicit' },
+          evidenceRefs: [], sourceVersionRefs: [], relatedActionIds: [], relatedPrepIds: [],
           createdAt: created, updatedAt: created,
         })
       }

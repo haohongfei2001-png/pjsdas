@@ -13,7 +13,7 @@ test('deadline-only settings retain facts and recovery in both interface languag
   await expect(page.locator('.settings-group > summary').filter({ hasText: /Decision Rules|Decision policy/ })).toHaveCount(0)
   await expect(page.locator('.settings-group > summary').filter({ hasText: 'Discovery preferences' })).toBeVisible()
   await expect(page.locator('.settings-group > summary').filter({ hasText: 'Data & recovery' })).toBeVisible()
-  await expect(page.locator('.settings-group > summary').filter({ hasText: 'History & audit' })).toBeVisible()
+  await expect(page.locator('.settings-group > summary').filter({ hasText: 'Operation records' })).toBeVisible()
   await page.getByRole('button', { name: /Jobs/, exact: true }).click()
   await page.goBack()
   await expect(page.getByRole('heading', { name: 'Settings', exact: true })).toBeVisible()

@@ -41,7 +41,9 @@ async function putRows(page: Page, records: Record<string, unknown[]>) {
 }
 async function openHistoricalJob(page: Page) {
   await page.goto('/pjsdas/schedule?view=past')
-  await page.locator('.tsui-schedule-row').filter({ hasText: 'Historical job' }).click()
+  // Enter through an actual historical arrangement; the opportunity-write receipt stays in Settings.
+  await expect(page.locator('[data-schedule-entry="fact:prior-history"]')).toHaveCount(0)
+  await page.locator('[data-schedule-entry="node:history-node-1"]').click()
   await page.getByRole('button', { name: /查看岗位详情|View job details/ }).click()
 }
 async function assertStartup(page: Page) {

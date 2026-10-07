@@ -5,6 +5,8 @@ import './timeline.css'
 
 const categories: TimelineCategory[] = ['opportunity', 'process', 'action', 'rules', 'change', 'data', 'note']
 const sources: TimelineSource[] = ['excel', 'natural_language', 'process_event', 'user_action', 'rules', 'backup', 'system', 'changeset', 'automation', 'gmail', 'paia', 'mcp', 'iphone']
+const dateOnlyPattern = /^\d{4}-\d{2}-\d{2}$/
+const isoTimestampPattern = /^\d{4}-\d{2}-\d{2}(?:T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:\d{2})?)?$/
 
 const categoryLabels: Record<TimelineCategory, [string, string]> = {
   opportunity: ['机会', 'Opportunity'],
@@ -32,20 +34,30 @@ const sourceLabels: Record<TimelineSource, [string, string]> = {
   iphone: ['iPhone 输入', 'iPhone input'],
 }
 
-function dayKey(iso: string) {
-  const date = new Date(iso)
+function validTimestamp(value: unknown): number | undefined {
+  if (typeof value !== 'string' || !isoTimestampPattern.test(value)) return undefined
+  // Date.parse normalizes impossible dates such as February 30. Keep those unknown.
+  const calendarDay = Date.parse(`${value.slice(0, 10)}T00:00:00Z`)
+  if (!Number.isFinite(calendarDay) || new Date(calendarDay).toISOString().slice(0, 10) !== value.slice(0, 10)) return undefined
+  const timestamp = Date.parse(value)
+  return Number.isFinite(timestamp) ? timestamp : undefined
+}
+
+function dayKey(timestamp: number, literal?: string) {
+  if (literal && dateOnlyPattern.test(literal)) return literal
+  const date = new Date(timestamp)
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
 }
 
-function formatDay(iso: string, zh: boolean) {
+function formatDay(timestamp: number, zh: boolean, calendarDate?: string) {
   return new Intl.DateTimeFormat(zh ? 'zh-CN' : 'en-GB', {
     year: 'numeric', month: zh ? 'long' : 'short', day: 'numeric', weekday: 'short',
-  }).format(new Date(iso))
+    ...(calendarDate ? { timeZone: 'UTC' } : {}),
+  }).format(new Date(calendarDate ? calendarDate + 'T00:00:00Z' : timestamp))
 }
 
-function formatTime(iso: string, zh: boolean) {
-  const date = new Date(iso)
-  if (date.getHours() === 0 && date.getMinutes() === 0) return zh ? '当天' : 'Date only'
+function formatTime(timestamp: number, zh: boolean) {
+  const date = new Date(timestamp)
   return new Intl.DateTimeFormat(zh ? 'zh-CN' : 'en-GB', { hour: '2-digit', minute: '2-digit', hour12: false }).format(date)
 }
 
@@ -61,12 +73,21 @@ export default function TimelineView({ records }: { records: TimelineRecord[] })
   const [query, setQuery] = useState('')
   const [category, setCategory] = useState<'all' | TimelineCategory>('all')
   const [source, setSource] = useState<'all' | TimelineSource>('all')
+  // Match the existing audit reader: the deterministic upgrade marker is
+  // bookkeeping, not an operation that happened at its placeholder time.
+  const operationRecords = useMemo(() => records.filter(item => item.kind !== 'baseline_backfill'), [records])
 
   const filtered = useMemo(() => {
     const needle = query.trim().toLowerCase()
-    return [...records]
-      .sort((a, b) => b.recordedAt.localeCompare(a.recordedAt))
-      .filter((item) => {
+    return operationRecords
+      .map((item) => ({ item, recordedTime: validTimestamp(item.recordedAt), eventTime: validTimestamp(item.occurredAt) }))
+      .sort((a, b) => {
+        if (a.recordedTime === undefined) return b.recordedTime === undefined ? 0 : 1
+        if (b.recordedTime === undefined) return -1
+        return dayKey(b.recordedTime, b.item.recordedAt).localeCompare(dayKey(a.recordedTime, a.item.recordedAt))
+          || b.recordedTime - a.recordedTime
+      })
+      .filter(({ item }) => {
         if (category !== 'all' && item.category !== category) return false
         if (source !== 'all' && item.source !== source) return false
         if (!needle) return true
@@ -80,63 +101,64 @@ export default function TimelineView({ records }: { records: TimelineRecord[] })
           item.commandOperation,
         ].filter(Boolean).join(' ').toLowerCase().includes(needle)
       })
-  }, [records, query, category, source])
+  }, [operationRecords, query, category, source])
 
   const groups = useMemo(() => {
-    const result: Array<{ key: string; date: string; items: TimelineRecord[] }> = []
+    const result: Array<{ key: string; date?: number; items: typeof filtered }> = []
     for (const item of filtered) {
-      const key = dayKey(item.occurredAt)
+      const key = item.recordedTime === undefined ? 'unknown' : dayKey(item.recordedTime, item.item.recordedAt)
       const last = result[result.length - 1]
-      if (!last || last.key !== key) result.push({ key, date: item.occurredAt, items: [item] })
+      if (!last || last.key !== key) result.push({ key, date: item.recordedTime, items: [item] })
       else last.items.push(item)
     }
     return result
   }, [filtered])
 
-  const automationCount = records.filter((item) => item.source === 'automation' || item.source === 'gmail').length
-  const commandCount = records.filter((item) => Boolean(item.commandId)).length
+  const automationCount = operationRecords.filter((item) => item.source === 'automation' || item.source === 'gmail').length
+  const commandCount = operationRecords.filter((item) => Boolean(item.commandId)).length
 
   return (
     <section className="timeline-page activity-page">
       <div className="timeline-summary">
-        <div><span>{zh ? '全部活动' : 'All activity'}</span><strong>{records.length}</strong></div>
+        <div><span>{zh ? '全部记录' : 'All records'}</span><strong>{operationRecords.length}</strong></div>
         <div><span>{zh ? '用户 / AI 命令' : 'User / AI commands'}</span><strong>{commandCount}</strong></div>
         <div><span>{zh ? '自动化记录' : 'Automation records'}</span><strong>{automationCount}</strong></div>
-        <div><span>{zh ? '流程事件' : 'Process events'}</span><strong>{records.filter((item) => item.category === 'process').length}</strong></div>
+        <div><span>{zh ? '流程事件' : 'Process events'}</span><strong>{operationRecords.filter((item) => item.category === 'process').length}</strong></div>
       </div>
 
       <div className="timeline-toolbar">
-        <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={zh ? '搜索公司、岗位、命令或事件' : 'Search company, role, command, or event'} />
-        <select value={category} onChange={(event) => setCategory(event.target.value as 'all' | TimelineCategory)}>
+        <input aria-label={zh ? '搜索操作记录' : 'Search operation records'} value={query} onChange={(event) => setQuery(event.target.value)} placeholder={zh ? '搜索公司、岗位、命令或事件' : 'Search company, role, command, or event'} />
+        <select aria-label={zh ? '记录类型' : 'Record type'} value={category} onChange={(event) => setCategory(event.target.value as 'all' | TimelineCategory)}>
           <option value="all">{zh ? '全部类型' : 'All types'}</option>
           {categories.map((item) => <option value={item} key={item}>{categoryLabels[item][zh ? 0 : 1]}</option>)}
         </select>
-        <select value={source} onChange={(event) => setSource(event.target.value as 'all' | TimelineSource)}>
+        <select aria-label={zh ? '记录来源' : 'Record source'} value={source} onChange={(event) => setSource(event.target.value as 'all' | TimelineSource)}>
           <option value="all">{zh ? '全部来源' : 'All sources'}</option>
           {sources.map((item) => <option value={item} key={item}>{sourceLabels[item][zh ? 0 : 1]}</option>)}
         </select>
-        <span>{filtered.length} / {records.length}</span>
+        <span>{filtered.length} / {operationRecords.length}</span>
       </div>
 
       {filtered.length === 0 ? (
-        <div className="empty-card"><strong>{zh ? '没有匹配的活动记录' : 'No matching activity'}</strong><p>{zh ? '调整搜索或筛选条件。' : 'Adjust search or filters.'}</p></div>
+        <div className="empty-card"><strong>{zh ? '没有匹配的操作记录' : 'No matching operation records'}</strong><p>{zh ? '调整搜索或筛选条件。' : 'Adjust search or filters.'}</p></div>
       ) : (
         <div className="timeline-groups">
           {groups.map((group) => (
             <section className="timeline-day" key={group.key}>
-              <div className="timeline-day-label"><strong>{formatDay(group.date, zh)}</strong><span>{group.items.length} {zh ? '条' : 'events'}</span></div>
+              <div className="timeline-day-label"><strong>{group.date === undefined ? (zh ? '操作时间未知' : 'Operation time unknown') : formatDay(group.date, zh, group.key)}</strong><span>{group.items.length} {zh ? '条' : 'records'}</span></div>
               <div className="timeline-day-events">
-                {group.items.map((item) => (
-                  <article className={`timeline-event category-${item.category}`} key={item.id}>
+                {group.items.map(({ item, recordedTime, eventTime }) => (
+                  <article className={`timeline-event category-${item.category}`} key={item.id} data-record-id={item.id}>
                     <div className="timeline-marker"><span /></div>
                     <div className="timeline-event-body">
                       <div className="timeline-event-meta">
                         <span className="timeline-category">{categoryLabels[item.category][zh ? 0 : 1]}</span>
                         <span>{sourceLabels[item.source][zh ? 0 : 1]}</span>
-                        <span>{formatTime(item.occurredAt, zh)}</span>
+                        <span className="timeline-recorded-time">{recordedTime === undefined ? (zh ? '操作时间未知' : 'Operation time unknown') : <>{zh ? '记录于 ' : 'Recorded '}<time dateTime={item.recordedAt}>{dateOnlyPattern.test(item.recordedAt) ? (zh ? '仅日期' : 'Date only') : formatTime(recordedTime, zh)}</time></>}</span>
                         {item.commandOperation ? <span>{item.commandOperation}</span> : null}
                       </div>
                       <h3>{item.title}</h3>
+                      {eventTime !== undefined && eventTime !== recordedTime ? <p className="timeline-event-time">{zh ? '事件时间：' : 'Event time: '}<time dateTime={item.occurredAt}>{formatDay(eventTime, zh, dateOnlyPattern.test(item.occurredAt) ? item.occurredAt : undefined)}{dateOnlyPattern.test(item.occurredAt) ? '' : ` · ${formatTime(eventTime, zh)}`}</time></p> : null}
                       {(item.company || item.role) ? <p className="timeline-entity">{[item.company, item.role].filter(Boolean).join('｜')}</p> : null}
                       {item.sourceRef && !item.company ? <p className="timeline-entity">{item.sourceRef}</p> : null}
                       {item.detail ? <p className="timeline-detail">{item.detail}</p> : null}

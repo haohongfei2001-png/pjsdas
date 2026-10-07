@@ -34,7 +34,7 @@ describe('UU-04 Web friction rules', () => {
     expect(app).toContain("const primarySurfaces: PrimarySurface[] = ['today', 'opportunities', 'schedule']")
     expect(app).toContain("navigate('/settings')")
     expect(app).toContain("onOpenActivity={() => navigate('/history')}")
-    expect(app).toContain("zh ? '历史与审计' : 'History & audit'")
+    expect(app).toContain("zh ? '操作记录' : 'Operation records'")
   })
 
   it('keeps Opportunities decision-first without creating Pipeline or Review maintenance tabs', () => {

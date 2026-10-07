@@ -4,7 +4,7 @@
 .timeline-summary span { color:#77736d; font-size:13px; }
 .timeline-summary strong { color:#282722; font-size:27px; letter-spacing:-.04em; }
 .timeline-toolbar { display:grid; grid-template-columns:minmax(260px,1fr) 180px 180px auto; gap:10px; align-items:center; padding:12px; border:1px solid rgba(49,46,42,.12); border-radius:18px; background:rgba(255,255,255,.72); }
-.timeline-toolbar input,.timeline-toolbar select { box-sizing:border-box; width:100%; min-height:42px; border:1px solid rgba(49,46,42,.14); border-radius:12px; padding:0 13px; background:#fffdf9; color:#2f2e29; font:inherit; font-size:13px; }
+.timeline-toolbar input,.timeline-toolbar select { box-sizing:border-box; min-width:0; width:100%; min-height:42px; border:1px solid rgba(49,46,42,.14); border-radius:12px; padding:0 13px; background:#fffdf9; color:#2f2e29; font:inherit; font-size:13px; }
 .timeline-toolbar > span { min-width:74px; text-align:right; color:#8a857d; font-size:12px; font-variant-numeric:tabular-nums; }
 .timeline-groups { display:grid; gap:26px; margin-top:24px; }
 .timeline-day { display:grid; grid-template-columns:170px minmax(0,1fr); gap:28px; }
@@ -21,11 +21,12 @@
 .timeline-event.category-opportunity .timeline-marker span { background:#5f6f63; }
 .timeline-event.category-rules .timeline-marker span { background:#6d6478; }
 .timeline-event.category-action .timeline-marker span { background:#7c704f; }
-.timeline-event-body { margin-bottom:12px; padding:15px 17px 16px; border:1px solid rgba(49,46,42,.11); border-radius:16px; background:rgba(255,255,255,.72); box-shadow:0 5px 18px rgba(48,43,36,.025); }
+.timeline-event-body { min-width:0; overflow-wrap:anywhere; margin-bottom:12px; padding:15px 17px 16px; border:1px solid rgba(49,46,42,.11); border-radius:16px; background:rgba(255,255,255,.72); box-shadow:0 5px 18px rgba(48,43,36,.025); }
 .timeline-event-meta { display:flex; align-items:center; gap:8px; flex-wrap:wrap; color:#99938b; font-size:11px; }
 .timeline-event-meta span + span::before { content:'·'; margin-right:8px; color:#c4bfb6; }
 .timeline-category { color:#5f5b55; font-weight:700; }
 .timeline-event-body h3 { margin:7px 0 0; color:#282722; font-size:15px; line-height:1.45; letter-spacing:-.01em; }
+.timeline-event-time { margin:5px 0 0; color:#777169; font-size:11px; line-height:1.5; }
 .timeline-entity { margin:5px 0 0; color:#605c55; font-size:12px; font-weight:650; }
 .timeline-detail { margin:8px 0 0; color:#777169; font-size:12px; line-height:1.65; white-space:pre-line; }
 .timeline-changes { display:flex; gap:6px; flex-wrap:wrap; margin-top:10px; }
@@ -69,3 +70,5 @@
 .changeset-item-actions button.apply { background:#35322d; color:#fff; }
 .changeset-item-actions button:disabled { opacity:.55; cursor:default; }
 @media (max-width:620px) { .changeset-item { align-items:flex-start; flex-direction:column; } .changeset-item-state { align-items:flex-start; } }
+
+.activity-command-id { display:block; margin-top:10px; color:#8a857d; font-size:10px; overflow-wrap:anywhere; }

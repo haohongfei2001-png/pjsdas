@@ -10,6 +10,11 @@ const KIND: Record<string, [string, string]> = {
   assessment: ['测评', 'Assessment'], application_deadline: ['申请截止', 'Application deadline'],
   follow_up: ['跟进', 'Follow up'], prep_trigger: ['准备节点', 'Preparation'],
   no_deadline: ['无截止日期', 'No deadline'],
+  assessment_invite: ['收到测评通知', 'Assessment invitation'],
+  written_test_invite: ['收到笔试通知', 'Written test invitation'],
+  interview_invite: ['收到面试通知', 'Interview invitation'],
+  offer: ['收到 Offer', 'Offer received'], rejection: ['流程结束', 'Process closed'],
+  status_update: ['流程进展', 'Process update'], other: ['流程事件', 'Process event'],
 }
 
 function entryTitle(entry: ScheduleEntry, zh: boolean) {
@@ -21,8 +26,9 @@ function timeLabel(entry: ScheduleEntry, zh: boolean, displayTimezone: string) {
   if (entry.section === 'no_deadline') return zh ? '未公布可靠截止日期' : 'No verified deadline published'
   const temporal = entry.node?.temporal
   if (entry.section === 'history' && entry.occurredAt) {
+    if (/^\d{4}-\d{2}-\d{2}$/.test(entry.occurredAt)) return entry.occurredAt + (zh ? ' · 具体时间待定' : ' · Exact time TBD')
     const happened = new Date(entry.occurredAt)
-    if (Number.isFinite(happened.getTime())) return new Intl.DateTimeFormat(zh ? 'zh-CN' : 'en-GB', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false }).format(happened)
+    if (Number.isFinite(happened.getTime())) return new Intl.DateTimeFormat(zh ? 'zh-CN' : 'en-GB', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false, timeZone: displayTimezone }).format(happened)
   }
   if (temporal?.precision === 'date' && temporal.date) return temporal.date + (zh ? ' · 具体时间待定' : ' · Exact time TBD')
   const at = temporal?.startAt ?? temporal?.deadlineAt ?? entry.occurredAt
@@ -371,7 +377,7 @@ export default function ScheduleFeature({
         return <Fragment key={entry.id}>
           {heading ? <h2 className={'tsui-schedule-date' + (todayMarker ? ' today' : '')}>{date}{todayMarker ? <span>{zh ? '今天' : 'Today'}</span> : null}</h2> : null}
           <button className="tsui-schedule-row" data-schedule-entry={entry.id} type="button" onClick={() => openEntry(entry)}>
-            <span className="tsui-schedule-time">{entry.node?.temporal.precision === 'date' ? zh ? '具体时间待定' : 'Exact time TBD' : timeLabel(entry, zh, stream.timezone)}</span>
+            <span className="tsui-schedule-time">{entry.node?.temporal.precision === 'date' && !entry.occurredAt ? zh ? '具体时间待定' : 'Exact time TBD' : timeLabel(entry, zh, stream.timezone)}</span>
             <span className="tsui-schedule-copy"><strong>{title}</strong><small>{opportunity ? opportunity.company + ' · ' + opportunity.role : zh ? '独立事项' : 'Independent item'}</small></span>
             <span className={'tsui-schedule-state state-' + entry.section}>{entry.invalidated ? zh ? '已失效' : 'Invalidated' : entry.section === 'no_deadline' ? zh ? '无截止日期' : 'No deadline' : entry.state === 'elapsed_unresolved' ? zh ? '待确认' : 'Unresolved'
               : entry.state === 'completed' ? zh ? '已完成' : 'Completed'
