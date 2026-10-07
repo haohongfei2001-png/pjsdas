@@ -39,3 +39,8 @@ Canonical files:
 
 Remote `main`, the active PR/head, exact-SHA verification and package receipts
 are the engineering source of truth.
+
+## Approved subsequent product convergence
+
+[TodayAction Consumer Convergence v1](../TODAYACTION_CONSUMER_CONVERGENCE_V1.md) is the separately approved small-scope next-stage plan for Intake/Discovery and job/action/schedule semantics. It does not reopen or rewrite this package's historical STATUS or receipts. At implementation start, reconcile the actual current runtime writer (PR #256 at the plan's baseline) and continue that affected boundary without a parallel implementation. The current convergence task creates documentation/design references only and stops after its PR.
+

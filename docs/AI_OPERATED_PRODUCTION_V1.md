@@ -7,6 +7,12 @@ This document supersedes earlier unconditional AI-write and connected-storage ru
 `docs/AI_BRIDGE_DESIGN.md`. Historical documents remain useful for context, but when
 they conflict with this contract, this contract wins.
 
+## Approved Intake / Discovery convergence
+
+[TodayAction Consumer Convergence v1](TODAYACTION_CONSUMER_CONVERGENCE_V1.md) is the approved next-stage product and execution plan. Its Intake model returns strict candidate facts only; the existing Semantic Intake / Domain Command / authoritative commit chain owns validation and mutation. A model never receives database-write authority or establishes its own actor/source permissions. Existing bounded client command APIs remain application-controlled.
+
+The convergence plan narrows job creation and Schedule eligibility without changing the transactional authority, security, revision, receipt or Undo requirements in this document. It does not authorize a new deployment or production migration through its documentation PR.
+
 ## Product contract
 
 PJSDAS is an **AI-operated, user-controlled, auditable job-search decision and action
@@ -198,3 +204,4 @@ Web/API origin, the canonical browser pulled the real connected workspace withou
 write, and the exact-SHA production chain passed. The owner-canary / controlled-launch evidence is
 in `docs/ROUND_6_CANARY.md`. The final public `v1.1.0` release remains a separate explicit owner
 publication decision; the release publication switch is disarmed.
+

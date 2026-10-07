@@ -23,12 +23,20 @@ The `v1.0.1` Git tag identifies its production-verified release commit. Earlier 
 
 See [`docs/RELEASE_POLICY.md`](docs/RELEASE_POLICY.md) for the permanent mapping between product version, package version, Git tag, gateway runtime, exact deployed commit identity, and GitHub platform release immutability.
 
+## Owner-approved next development package
+
+The next scoped product direction is [TodayAction Consumer Convergence v1](docs/TODAYACTION_CONSUMER_CONVERGENCE_V1.md), approved on 2026-10-07. It is the canonical implementation plan for Intake/Discovery, job-library naming and queries, and the Opportunity / Action / Schedule boundary. The existing eight job-library queries remain, with 新发现 added; manual job creation uses the global ＋.
+
+This is an approved plan, not a claim that its runtime changes are shipped. Its first implementation batch is business semantics: saving a job creates no implicit application Action or Schedule event. Models return candidate facts; existing domain commands and authoritative writes own mutations. The current documentation PR performs no product implementation or deployment. Continue the current affected runtime writer before starting a new one.
+
+The new plan supersedes conflicting historical Discovery/scoring and deadline-to-Schedule product requirements while preserving the authority, security, audit, idempotency and release contracts below.
+
 ## Product surface
 
 TodayAction has three primary entries:
 
 - **Today / 今天** — browse the complete set of daily actions and upcoming recruiting nodes.
-- **Jobs / 岗位库** — browse opportunities, inspect their full context, and open contextual actions.
+- **Jobs / 岗位库** — browse jobs, inspect their full context, and open contextual actions.
 - **Schedule / 日程** — browse the complete recruiting-node stream and its exact time/state context.
 
 Decisions, read-only history and the following settings remain contextual secondary surfaces:
@@ -103,7 +111,7 @@ Consumer plugin handover, reproducible candidate packaging and remaining activat
 The authenticated MCP gateway exposes bounded semantic reads and narrowly scoped tools for:
 
 - Today planning;
-- Opportunities and rich source-backed facts;
+- Jobs and rich source-backed facts;
 - Pipeline;
 - Factual application-group quotas and candidates in deadline order;
 - Prep Graph;
@@ -207,3 +215,4 @@ That package begins from the merged history/startup P0 repair and may continue
 through bounded reliability audits without starting UU-08/UU-09, iPhone work,
 release publication, broader permissions, external recruiting actions or another
 product refoundation.
+
