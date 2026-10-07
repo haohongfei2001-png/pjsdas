@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import { action, opportunity, workspace } from '../e2e/fixtures/todayWorkspace.js'
 import type { ScheduleNode, TimelineRecord, ProcessEvent } from '../src/model.js'
-import { applyUserDomainCommand } from '../src/domainCommands.js'
+import { applyDomainCompensation, applyUserDomainCommand, type UserDomainCommand } from '../src/domainCommands.js'
+import { upgradeSnapshotToLatest } from '../src/snapshot.js'
 import { buildScheduleStream, buildScheduleStreamNormalized } from '../src/schedule/scheduleStream.js'
 import { invokeAddOpportunities } from '../gateway/addOpportunities.js'
 
@@ -11,6 +12,190 @@ const context = { accountKey: 'synthetic', workspaceRevision: '1', timezone: 'As
 const log = (id: string, kind: TimelineRecord['kind'], extra: Partial<TimelineRecord> = {}): TimelineRecord => ({
   id, kind, category: 'opportunity', source: 'user_action', occurredAt: now.toISOString(),
   recordedAt: now.toISOString(), title: id, opportunityId: 'job', ...extra,
+})
+
+describe('explicit correction of checkbox-only occurrence state', () => {
+  function checkboxSnapshot(status: 'done' | 'skipped', knownTime: boolean, past = false) {
+    const snapshot = empty()
+    snapshot.data.actions = [{ ...action('task', '招聘任务', 'job'), status }]
+    snapshot.data.scheduleNodes = [node('meeting', {
+      opportunityId: 'job', kind: 'written_test', state: status === 'done' ? 'completed' : 'cancelled', relatedActionIds: ['task'],
+      completedAt: status === 'done' && knownTime ? now.toISOString() : undefined,
+      cancelledAt: status === 'skipped' && knownTime ? now.toISOString() : undefined,
+      ...(past ? { temporal: { shape: 'date_only', precision: 'date', timezone: 'floating-date', date: '2026-10-01', resolutionBasis: 'legacy_projection' } } : {}),
+    }), node('independent', { state: 'completed', completedAt: eventTime })]
+    snapshot.data.timeline = [log('checkbox', 'action_status_changed', { actionId: 'task', changes: { status: { before: 'todo', after: status } } })]
+    return upgradeSnapshotToLatest(snapshot)
+  }
+  const cases = (['done', 'skipped'] as const).flatMap(status =>
+    (['complete_occurrence', 'cancel_occurrence', 'reschedule_occurrence'] as const).flatMap(kind =>
+      [true, false].map(knownTime => ({ status, kind, knownTime }))))
+
+  it.each(cases)('$status checkbox → $kind works with knownTime=$knownTime, preserving replay and Undo', ({ status, kind, knownTime }) => {
+    const snapshot = checkboxSnapshot(status, knownTime)
+    const original = structuredClone(snapshot)
+    expect(buildScheduleStream(snapshot, context).sections.upcoming.find(item => item.nodeId === 'meeting')?.state).toBe('scheduled')
+    const command: UserDomainCommand = kind === 'reschedule_occurrence'
+      ? { commandId: `explicit:${status}:${kind}:${knownTime}`, kind, occurrenceId: 'meeting', temporal: {
+        shape: 'fixed_range', precision: 'datetime', timezone: 'UTC', startAt: '2026-10-09T08:00:00.000Z', resolutionBasis: 'user_explicit',
+      } }
+      : { commandId: `explicit:${status}:${kind}:${knownTime}`, kind, occurrenceId: 'meeting', occurredAt: now.toISOString() }
+    const result = applyUserDomainCommand(snapshot, command, now)
+    if (result.status !== 'APPLIED') throw new Error(result.status)
+    expect(snapshot).toEqual(original)
+    const replacement = result.snapshot.data.scheduleNodes!.find(item => item.occurrenceId === 'meeting' && item.version === 2)!
+    expect(replacement.id).not.toBe('meeting')
+    expect(replacement.state).toBe(kind === 'complete_occurrence' ? 'completed' : kind === 'cancel_occurrence' ? 'cancelled' : 'scheduled')
+    expect(result.snapshot.data.timeline).toContainEqual(original.data.timeline![0])
+    expect(result.snapshot.data.timeline!.find(item => item.commandId === command.commandId)?.scheduleNodeId).toBe(replacement.id)
+    expect(result.snapshot.data.scheduleNodes!.find(item => item.id === 'independent')).toEqual(original.data.scheduleNodes!.find(item => item.id === 'independent'))
+    const replay = applyUserDomainCommand(result.snapshot, command, new Date('2026-10-08T12:00:00.000Z'))
+    expect(replay.status).toBe('ALREADY_APPLIED')
+    expect(replay.snapshot).toEqual(result.snapshot)
+    const restored = applyDomainCompensation(result.snapshot, result.compensation, now)
+    for (const collection of ['scheduleNodes', 'actions', 'opportunities', 'processEvents', 'processes'] as const) expect(restored.data[collection]).toEqual(original.data[collection])
+    expect(restored.data.timeline).toEqual(result.snapshot.data.timeline)
+    expect(buildScheduleStream(restored, context).sections.upcoming.find(item => item.nodeId === 'meeting')?.state).toBe('scheduled')
+    // A fresh explicit correction after Undo cannot reuse the old fact's node ID.
+    const repeated = applyUserDomainCommand(restored, { ...command, commandId: `${command.commandId}:again` }, now)
+    if (repeated.status !== 'APPLIED') throw new Error(repeated.status)
+    expect(repeated.snapshot.data.scheduleNodes!.find(item => item.occurrenceId === 'meeting' && item.version === 2)?.id).not.toBe(replacement.id)
+  })
+
+  it('allows an explicitly confirmed completion of an elapsed ambiguous legacy occurrence', () => {
+    const snapshot = checkboxSnapshot('done', false, true)
+    expect(buildScheduleStream(snapshot, context).sections.unresolved.some(item => item.nodeId === 'meeting')).toBe(true)
+    const result = applyUserDomainCommand(snapshot, { commandId: 'confirm-elapsed', kind: 'complete_occurrence', occurrenceId: 'meeting', occurredAt: eventTime }, now)
+    if (result.status !== 'APPLIED') throw new Error(result.status)
+    expect(buildScheduleStream(result.snapshot, context).sections.history.some(item => item.occurrenceId === 'meeting' && item.occurredAt === eventTime)).toBe(true)
+  })
+
+  function processBackedCorrection(deterministicIdentity = false) {
+    const snapshot = checkboxSnapshot('done', true)
+    snapshot.data.processEvents = [{ ...event('invitation', 'written_test_invite'), dueAt: '2026-10-07T08:00:00.000Z', notes: 'Original event note' }]
+    snapshot.data.actions[0].processEventId = 'invitation'
+    snapshot.data.scheduleNodes![0].processEventId = 'invitation'
+    snapshot.data.scheduleNodes![0].processId = 'process'
+    if (deterministicIdentity) {
+      snapshot.data.scheduleNodes![0].occurrenceId = 'process-event:invitation'
+      snapshot.data.scheduleNodes![0].id = 'schedule:process-event:invitation:v1'
+    }
+    snapshot.data.processes = [{ id: 'process', opportunityId: 'job', company: '真实公司', role: '产品经理', stage: 'written_test',
+      stageLabel: '笔试', lastProgressAt: eventTime, currentAction: 'Original process action', notes: 'Original process note' }]
+    const original = upgradeSnapshotToLatest(snapshot)
+    const result = applyUserDomainCommand(original, { commandId: 'correct-process', kind: 'reschedule_occurrence', occurrenceId: snapshot.data.scheduleNodes![0].occurrenceId, temporal: {
+      shape: 'fixed_range', precision: 'datetime', timezone: 'UTC', startAt: '2026-10-09T08:00:00.000Z', resolutionBasis: 'user_explicit',
+    } }, now)
+    if (result.status !== 'APPLIED') throw new Error(result.status)
+    return { original, result }
+  }
+
+  it('Undo restores only occurrence-owned fields and preserves later independent owner edits', () => {
+    const { original, result } = processBackedCorrection()
+    const edited = structuredClone(result.snapshot)
+    edited.data.opportunities[0].role = 'Later independent role'
+    edited.data.actions[0].title = 'Later independent task title'
+    edited.data.processEvents[0].notes = 'Later independent event note'
+    edited.data.processes[0].notes = 'Later independent process note'
+    const restored = applyDomainCompensation(edited, result.compensation, now)
+    expect(restored.data.opportunities[0].role).toBe('Later independent role')
+    expect(restored.data.actions[0].title).toBe('Later independent task title')
+    expect(restored.data.processEvents[0].notes).toBe('Later independent event note')
+    expect(restored.data.processes[0].notes).toBe('Later independent process note')
+    expect(restored.data.processEvents[0].dueAt).toBe(original.data.processEvents[0].dueAt)
+    expect(restored.data.actions[0].dueAt).toBe(original.data.actions[0].dueAt)
+    expect(restored.data.processes[0].lastProgressAt).toBe(original.data.processes[0].lastProgressAt)
+    expect(restored.data.scheduleNodes).toEqual(original.data.scheduleNodes)
+  })
+
+  it.each([false, true])('Undo preserves timestamped event notes and derived provenance with normalizedInput=%s', normalizedInput => {
+    const { original, result } = processBackedCorrection(true)
+    const edited = structuredClone(result.snapshot)
+    edited.data.processEvents[0].notes = 'Independent notes after rescheduling'
+    edited.data.processEvents[0].updatedAt = '2026-10-06T13:00:00.000Z'
+    const rawNode = structuredClone(edited.data.scheduleNodes!.find(item => item.version === 2)!)
+    const input = normalizedInput ? upgradeSnapshotToLatest(edited) : edited
+    const beforeUndo = structuredClone(input)
+    if (normalizedInput) expect(input.data.scheduleNodes!.find(item => item.version === 2)!.sourceVersionRefs).toContain('process-event:invitation:2026-10-06T13:00:00.000Z')
+    const restored = applyDomainCompensation(input, result.compensation, new Date('2026-10-06T14:00:00.000Z'))
+    expect(input).toEqual(beforeUndo)
+    expect(rawNode).toEqual(result.snapshot.data.scheduleNodes!.find(item => item.version === 2))
+    expect(restored.data.processEvents[0]).toMatchObject({ notes: 'Independent notes after rescheduling', updatedAt: '2026-10-06T13:00:00.000Z', dueAt: original.data.processEvents[0].dueAt })
+    const restoredNode = restored.data.scheduleNodes!.find(item => item.occurrenceId === 'process-event:invitation')!
+    expect(restoredNode.id).toBe('schedule:process-event:invitation:v1')
+    expect(restoredNode.sourceVersionRefs).toEqual(expect.arrayContaining([
+      ...original.data.scheduleNodes![0].sourceVersionRefs, 'process-event:invitation:2026-10-06T13:00:00.000Z',
+    ]))
+    expect(restored.data.timeline).toEqual(result.snapshot.data.timeline)
+  })
+
+  it.each(['unverified_ref', 'removed_ref', 'structural_source_change'] as const)('Undo refuses %s instead of treating it as derived provenance', variation => {
+    const { result } = processBackedCorrection(true)
+    const edited = structuredClone(result.snapshot)
+    edited.data.processEvents[0].notes = 'Independent note'
+    edited.data.processEvents[0].updatedAt = '2026-10-06T13:00:00.000Z'
+    if (variation === 'structural_source_change') edited.data.processEvents[0].temporal = {
+      shape: 'date_only', precision: 'date', timezone: 'floating-date', date: '2026-10-15', resolutionBasis: 'source_explicit',
+    }
+    const normalized = upgradeSnapshotToLatest(edited)
+    const replacement = normalized.data.scheduleNodes!.find(item => item.version === 2)!
+    if (variation === 'unverified_ref') replacement.sourceVersionRefs.push('unverified-independent-source')
+    if (variation === 'removed_ref') replacement.sourceVersionRefs = replacement.sourceVersionRefs.filter(ref => !result.snapshot.data.scheduleNodes!.find(item => item.version === 2)!.sourceVersionRefs.includes(ref))
+    const beforeUndo = structuredClone(normalized)
+    expect(() => applyDomainCompensation(normalized, result.compensation, now)).toThrow(/Confirmed occurrence changed/)
+    expect(normalized).toEqual(beforeUndo)
+  })
+
+  it('Undo refuses a later conflicting occurrence-owned field without mutating its input', () => {
+    const { result } = processBackedCorrection()
+    const edited = structuredClone(result.snapshot)
+    edited.data.processEvents[0].dueAt = '2026-10-12T08:00:00.000Z'
+    const original = structuredClone(edited)
+    expect(() => applyDomainCompensation(edited, result.compensation, now)).toThrow(/Occurrence-owned field changed/)
+    expect(edited).toEqual(original)
+  })
+
+  it('Undo refuses an independently changed confirmed occurrence instead of deleting it', () => {
+    const { result } = processBackedCorrection()
+    const edited = structuredClone(result.snapshot)
+    edited.data.scheduleNodes!.find(item => item.version === 2)!.evidenceRefs.push('later-independent-evidence')
+    const original = structuredClone(edited)
+    expect(() => applyDomainCompensation(edited, result.compensation, now)).toThrow(/Confirmed occurrence changed/)
+    expect(edited).toEqual(original)
+  })
+
+  it.each(['completed', 'cancelled'] as const)('keeps an independently evidenced %s occurrence protected', state => {
+    const snapshot = checkboxSnapshot(state === 'completed' ? 'done' : 'skipped', true)
+    snapshot.data.timeline!.push(log('real-terminal', 'semantic_intake_applied', {
+      scheduleNodeId: 'meeting', commandOperation: state === 'completed' ? 'complete_occurrence' : 'cancel_occurrence',
+    }))
+    const original = structuredClone(snapshot)
+    for (const kind of ['complete_occurrence', 'cancel_occurrence', 'reschedule_occurrence'] as const) {
+      const command: UserDomainCommand = kind === 'reschedule_occurrence'
+        ? { commandId: `protected:${kind}`, kind, occurrenceId: 'meeting', temporal: snapshot.data.scheduleNodes![0].temporal }
+        : { commandId: `protected:${kind}`, kind, occurrenceId: 'meeting' }
+      const result = applyUserDomainCommand(snapshot, command, now)
+      expect(result.status).toBe(kind === (state === 'completed' ? 'complete_occurrence' : 'cancel_occurrence') ? 'ALREADY_APPLIED' : 'NEEDS_CONFIRMATION')
+      expect(result.snapshot).toEqual(original)
+    }
+  })
+
+  it('preserves the actual later submission without treating the earlier checkbox time as an event or leaving a duplicate deadline', () => {
+    const snapshot = empty()
+    snapshot.data.actions = [{ ...action('apply:job', '投递', 'job'), kind: 'apply', status: 'done' }]
+    snapshot.data.scheduleNodes = [node('application', { kind: 'application_deadline', opportunityId: 'job', relatedActionIds: ['apply:job'], state: 'completed', completedAt: eventTime })]
+    snapshot.data.timeline = [log('apply-checkbox', 'action_status_changed', { actionId: 'apply:job', occurredAt: eventTime, changes: { status: { before: 'todo', after: 'done' } } })]
+    const result = applyUserDomainCommand(snapshot, { commandId: 'actual-submission', kind: 'record_application_submission', opportunityId: 'job', occurredAt: now.toISOString() }, now)
+    if (result.status !== 'APPLIED') throw new Error(result.status)
+    const original = structuredClone(result.snapshot)
+    const stream = buildScheduleStream(result.snapshot, context)
+    expect(stream.sections.history).toHaveLength(1)
+    expect(stream.sections.history[0]).toMatchObject({ occurredAt: now.toISOString(), timeline: { kind: 'application_submitted' } })
+    expect(stream.sections.upcoming).toEqual([])
+    expect(stream.sections.unresolved).toEqual([])
+    expect(result.snapshot).toEqual(original)
+    expect(result.snapshot.data.scheduleNodes![0].completedAt).toBe(eventTime)
+  })
 })
 function empty() {
   const snapshot = workspace()

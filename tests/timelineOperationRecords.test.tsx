@@ -73,6 +73,42 @@ describe('Settings operation-record chronology', () => {
     expect(html).not.toContain('timeline-event-time')
   })
 
+  it('retains literal date-only operation and event days west of UTC', () => {
+    const previousZone = process.env.TZ
+    process.env.TZ = 'America/Los_Angeles'
+    try {
+      const html = render([
+        record('calendar-only', { recordedAt: '2026-10-06', occurredAt: '2026-10-02' }),
+        record('previous-local-evening', { recordedAt: '2026-10-06T05:00:00Z' }),
+      ])
+      expect(recordIds(html)).toEqual(['calendar-only', 'previous-local-evening'])
+      const literalDay = (value: string) => new Intl.DateTimeFormat('en-GB', { year: 'numeric', month: 'short', day: 'numeric', weekday: 'short', timeZone: 'UTC' }).format(new Date(value))
+      expect(dayLabels(html)).toEqual([literalDay('2026-10-06'), literalDay('2026-10-05')])
+      expect(html).toContain('Event time: <time dateTime="2026-10-02">' + literalDay('2026-10-02') + '</time>')
+      expect(html).toContain('<time dateTime="2026-10-06">Date only</time>')
+    } finally {
+      if (previousZone === undefined) delete process.env.TZ
+      else process.env.TZ = previousZone
+    }
+  })
+
+  it('omits the deterministic initialization marker without changing original audit data', () => {
+    const records = [record('operation'), record('timeline:system:backfill-v1', {
+      kind: 'baseline_backfill', source: 'system', title: 'Timeline 初始化', recordedAt: '1970-01-01T00:00:00Z', occurredAt: '1970-01-01T00:00:00Z',
+    })]
+    const original = structuredClone(records)
+    const html = render(records)
+    expect(recordIds(html)).toEqual(['operation'])
+    expect(html).not.toContain('Timeline 初始化')
+    expect(html).not.toContain('1970')
+    expect(records).toEqual(original)
+    const ordinary1970 = record('ordinary-1970', { recordedAt: '1970-01-01T00:00:00Z', occurredAt: '1970-01-01T00:00:00Z', title: 'Timeline 初始化' })
+    const withRealOperation = render([...records, ordinary1970])
+    expect(recordIds(withRealOperation)).toEqual(['operation', 'ordinary-1970'])
+    expect(withRealOperation).toContain('1970')
+    expect(withRealOperation).toContain('Timeline 初始化')
+  })
+
   it('uses matching Chinese labels for operations, unknown time, event time, and filters', () => {
     state.language = 'zh'
     const html = render([record('known'), record('unknown', { recordedAt: '' })])

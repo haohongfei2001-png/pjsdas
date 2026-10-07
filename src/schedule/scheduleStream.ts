@@ -3,6 +3,7 @@ import { readModelSnapshot } from '../readModelSnapshot.js'
 import { scheduleDisplayTimezone } from '../scheduleDisplayTime.js'
 import type { ScheduleNode, ScheduleNodeState, TimelineRecord } from '../model.js'
 import { effectiveScheduleNodeState } from '../scheduleNodes.js'
+import { indexScheduleOccurrenceEvidence, recruitingOccurrenceNeedsConfirmation, recruitingScheduleNode as recruitingNode, syntheticActionBackfill } from '../scheduleOccurrenceEvidence.js'
 import { type PJSDASSnapshot } from '../snapshot.js'
 import { localDateKey } from '../todayBrief.js'
 
@@ -62,20 +63,16 @@ const EVENT_FACT_KINDS = new Set<TimelineRecord['kind']>([
   'application_submitted', 'process_event_recorded', 'process_closed',
 ])
 
-function recruitingNode(node: ScheduleNode) {
-  return ['application_deadline', 'assessment', 'written_test', 'interview'].includes(node.kind)
-}
-
-// Legacy IndexedDB backfill records a status seen at upgrade time, not a proven completion instant.
-function syntheticActionBackfill(item: TimelineRecord) {
-  return item.kind === 'action_status_changed' && item.source === 'system'
-    && item.id.startsWith('timeline:backfill-action:')
-}
-
 function validInstant(value: string | undefined) {
   if (!value) return undefined
   const date = new Date(value)
   return Number.isFinite(date.getTime()) ? date : undefined
+}
+
+function eventCalendarDate(value: string, when: Date, timezone: string) {
+  // A calendar date has no UTC offset or clock time. Do not shift it to the
+  // previous day when the device is west of UTC.
+  return /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : localDateKey(when, timezone)
 }
 
 function temporalDate(node: ScheduleNode, timezone: string) {
@@ -137,20 +134,7 @@ export function buildScheduleStreamNormalized(
   const sections: ScheduleStream['sections'] = { upcoming: [], unresolved: [], history: [], undated: [], no_deadline: [] }
   const timeline = snapshot.data.timeline ?? []
   const completedActions: ScheduleEntry[] = []
-  const completionFacts = new Map<string, TimelineRecord[]>()
-  const occurrenceFacts = new Map<string, TimelineRecord[]>()
-  const submissions = new Map<string, TimelineRecord[]>()
-  for (const fact of timeline) {
-    if (fact.kind === 'action_status_changed' && fact.actionId && !syntheticActionBackfill(fact)) {
-      completionFacts.set(fact.actionId, [...(completionFacts.get(fact.actionId) ?? []), fact])
-    }
-    if (fact.kind === 'semantic_intake_applied' && fact.scheduleNodeId && ['complete_occurrence', 'cancel_occurrence'].includes(fact.commandOperation ?? '')) {
-      occurrenceFacts.set(fact.scheduleNodeId, [...(occurrenceFacts.get(fact.scheduleNodeId) ?? []), fact])
-    }
-    if (fact.kind === 'application_submitted' && fact.opportunityId) {
-      submissions.set(fact.opportunityId, [...(submissions.get(fact.opportunityId) ?? []), fact])
-    }
-  }
+  const evidence = indexScheduleOccurrenceEvidence(timeline)
   const latest = new Map<string, ScheduleNode>()
   for (const node of snapshot.data.scheduleNodes ?? []) {
     const prior = latest.get(node.occurrenceId)
@@ -179,27 +163,17 @@ export function buildScheduleStreamNormalized(
     // A recruiting action checkbox is an operation, not proof that an
     // application/test/interview happened. Project conservatively without
     // changing the archived node or its operation/Undo evidence.
-    const occurrenceEvidence = occurrenceFacts.get(node.id) ?? []
-    const completionTime = validInstant(node.completedAt)?.getTime()
-    const evidenceMatchesCompletion = (fact: TimelineRecord) => {
-      const time = validInstant(fact.occurredAt)?.getTime()
-      return time !== undefined && time <= now.getTime() && (completionTime === undefined || time === completionTime)
-    }
-    const typedCompletion = occurrenceEvidence.some(fact => fact.commandOperation === 'complete_occurrence' && evidenceMatchesCompletion(fact))
-      || Boolean(node.kind === 'application_deadline' && node.opportunityId
-        && submissions.get(node.opportunityId)?.some(evidenceMatchesCompletion))
-    const actionReceipts = node.relatedActionIds.flatMap(id => completionFacts.get(id) ?? [])
-    const checkboxCompletion = actionReceipts.some(fact => fact.changes?.status?.after === 'done'
-      && (!node.completedAt || fact.occurredAt === node.completedAt))
-    if (node.state === 'completed' && recruitingNode(node) && !typedCompletion
-      && (checkboxCompletion || node.temporal.resolutionBasis === 'legacy_projection' && !node.completedAt)) {
-      node = { ...node, state: 'scheduled', completedAt: undefined }
-    }
-    if (node.state === 'cancelled' && recruitingNode(node)
-      && !occurrenceEvidence.some(fact => fact.commandOperation === 'cancel_occurrence')
-      && actionReceipts.some(fact => fact.changes?.status?.after === 'skipped'
-        && (!node.cancelledAt || fact.occurredAt === node.cancelledAt))) {
-      node = { ...node, state: 'scheduled', cancelledAt: undefined }
+    const occurrenceEvidence = evidence.occurrenceFacts.get(node.id) ?? []
+    if (recruitingOccurrenceNeedsConfirmation(node, evidence, now)) {
+      // A later real submission remains its own dated fact. Do not resurrect
+      // the earlier checkbox-derived deadline beside it or retime that node.
+      const checkboxTime = validInstant(node.completedAt)?.getTime()
+      if (node.kind === 'application_deadline' && node.opportunityId && checkboxTime !== undefined
+        && evidence.submissions.get(node.opportunityId)?.some(fact => {
+          const time = validInstant(fact.occurredAt)?.getTime()
+          return time !== undefined && time > checkboxTime && time <= now.getTime()
+        })) continue
+      node = { ...node, state: 'scheduled', completedAt: undefined, cancelledAt: undefined }
     }
     const state = effectiveScheduleNodeState(node, now, context.timezone)
     if (state === 'completed' || state === 'cancelled') {
@@ -207,7 +181,7 @@ export function buildScheduleStreamNormalized(
       // Cancellation records the operation elsewhere; this row is the original
       // arrangement and therefore retains its planned time.
       const date = state === 'cancelled' ? temporalDate(node, context.timezone)
-        : validInstant(occurredAt) ? localDateKey(new Date(occurredAt!), context.timezone) : undefined
+        : validInstant(occurredAt) ? eventCalendarDate(occurredAt!, new Date(occurredAt!), context.timezone) : undefined
       const entry = nodeEntry(node, state, date ? 'history' : 'undated', date)
       sections[entry.section].push(entry)
       nodeEntries.set(node.id, entry)
@@ -247,7 +221,7 @@ export function buildScheduleStreamNormalized(
       id: `process:${event.id}`,
       kind: 'process_event',
       section: when ? 'history' : 'undated',
-      date: when ? localDateKey(when, context.timezone) : undefined,
+      date: when ? eventCalendarDate(event.occurredAt, when, context.timezone) : undefined,
       occurredAt: when ? event.occurredAt : undefined,
       recordedAt: event.createdAt,
       opportunityId: event.opportunityId,
@@ -268,7 +242,7 @@ export function buildScheduleStreamNormalized(
     if (entry.section === 'undated') {
       sections.undated = sections.undated.filter((candidate) => candidate !== entry)
       entry.section = 'history'
-      entry.date = localDateKey(when, context.timezone)
+      entry.date = eventCalendarDate(fact.occurredAt, when, context.timezone)
       entry.occurredAt = fact.occurredAt
       entry.recordedAt = fact.recordedAt
       sections.history.push(entry)
@@ -287,7 +261,7 @@ export function buildScheduleStreamNormalized(
       // Keep Today task history independent of the calendar projection.
       const when = validInstant(item.occurredAt)
       if (when && when <= now) completedActions.push({ id: `task:${item.id}`, kind: 'action', section: 'history',
-        date: localDateKey(when, context.timezone), occurredAt: item.occurredAt, recordedAt: item.recordedAt,
+        date: eventCalendarDate(item.occurredAt, when, context.timezone), occurredAt: item.occurredAt, recordedAt: item.recordedAt,
         actionId: item.actionId, opportunityId: item.opportunityId, title: item.title, timeline: item,
         sourceRefs: [`timeline:${item.id}`] })
       continue
@@ -336,7 +310,7 @@ export function buildScheduleStreamNormalized(
       id: `fact:${item.id}`,
       kind: 'business_fact',
       section: when ? 'history' : 'undated',
-      date: when ? localDateKey(when, context.timezone) : undefined,
+      date: when ? eventCalendarDate(item.occurredAt, when, context.timezone) : undefined,
       occurredAt: when ? item.occurredAt : undefined,
       recordedAt: item.recordedAt,
       opportunityId: item.opportunityId,

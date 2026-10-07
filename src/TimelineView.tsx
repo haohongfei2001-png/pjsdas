@@ -43,15 +43,17 @@ function validTimestamp(value: unknown): number | undefined {
   return Number.isFinite(timestamp) ? timestamp : undefined
 }
 
-function dayKey(timestamp: number) {
+function dayKey(timestamp: number, literal?: string) {
+  if (literal && dateOnlyPattern.test(literal)) return literal
   const date = new Date(timestamp)
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
 }
 
-function formatDay(timestamp: number, zh: boolean) {
+function formatDay(timestamp: number, zh: boolean, calendarDate?: string) {
   return new Intl.DateTimeFormat(zh ? 'zh-CN' : 'en-GB', {
     year: 'numeric', month: zh ? 'long' : 'short', day: 'numeric', weekday: 'short',
-  }).format(new Date(timestamp))
+    ...(calendarDate ? { timeZone: 'UTC' } : {}),
+  }).format(new Date(calendarDate ? calendarDate + 'T00:00:00Z' : timestamp))
 }
 
 function formatTime(timestamp: number, zh: boolean) {
@@ -71,15 +73,19 @@ export default function TimelineView({ records }: { records: TimelineRecord[] })
   const [query, setQuery] = useState('')
   const [category, setCategory] = useState<'all' | TimelineCategory>('all')
   const [source, setSource] = useState<'all' | TimelineSource>('all')
+  // Match the existing audit reader: the deterministic upgrade marker is
+  // bookkeeping, not an operation that happened at its placeholder time.
+  const operationRecords = useMemo(() => records.filter(item => item.kind !== 'baseline_backfill'), [records])
 
   const filtered = useMemo(() => {
     const needle = query.trim().toLowerCase()
-    return records
+    return operationRecords
       .map((item) => ({ item, recordedTime: validTimestamp(item.recordedAt), eventTime: validTimestamp(item.occurredAt) }))
       .sort((a, b) => {
         if (a.recordedTime === undefined) return b.recordedTime === undefined ? 0 : 1
         if (b.recordedTime === undefined) return -1
-        return b.recordedTime - a.recordedTime
+        return dayKey(b.recordedTime, b.item.recordedAt).localeCompare(dayKey(a.recordedTime, a.item.recordedAt))
+          || b.recordedTime - a.recordedTime
       })
       .filter(({ item }) => {
         if (category !== 'all' && item.category !== category) return false
@@ -95,12 +101,12 @@ export default function TimelineView({ records }: { records: TimelineRecord[] })
           item.commandOperation,
         ].filter(Boolean).join(' ').toLowerCase().includes(needle)
       })
-  }, [records, query, category, source])
+  }, [operationRecords, query, category, source])
 
   const groups = useMemo(() => {
     const result: Array<{ key: string; date?: number; items: typeof filtered }> = []
     for (const item of filtered) {
-      const key = item.recordedTime === undefined ? 'unknown' : dayKey(item.recordedTime)
+      const key = item.recordedTime === undefined ? 'unknown' : dayKey(item.recordedTime, item.item.recordedAt)
       const last = result[result.length - 1]
       if (!last || last.key !== key) result.push({ key, date: item.recordedTime, items: [item] })
       else last.items.push(item)
@@ -108,16 +114,16 @@ export default function TimelineView({ records }: { records: TimelineRecord[] })
     return result
   }, [filtered])
 
-  const automationCount = records.filter((item) => item.source === 'automation' || item.source === 'gmail').length
-  const commandCount = records.filter((item) => Boolean(item.commandId)).length
+  const automationCount = operationRecords.filter((item) => item.source === 'automation' || item.source === 'gmail').length
+  const commandCount = operationRecords.filter((item) => Boolean(item.commandId)).length
 
   return (
     <section className="timeline-page activity-page">
       <div className="timeline-summary">
-        <div><span>{zh ? '全部记录' : 'All records'}</span><strong>{records.length}</strong></div>
+        <div><span>{zh ? '全部记录' : 'All records'}</span><strong>{operationRecords.length}</strong></div>
         <div><span>{zh ? '用户 / AI 命令' : 'User / AI commands'}</span><strong>{commandCount}</strong></div>
         <div><span>{zh ? '自动化记录' : 'Automation records'}</span><strong>{automationCount}</strong></div>
-        <div><span>{zh ? '流程事件' : 'Process events'}</span><strong>{records.filter((item) => item.category === 'process').length}</strong></div>
+        <div><span>{zh ? '流程事件' : 'Process events'}</span><strong>{operationRecords.filter((item) => item.category === 'process').length}</strong></div>
       </div>
 
       <div className="timeline-toolbar">
@@ -130,7 +136,7 @@ export default function TimelineView({ records }: { records: TimelineRecord[] })
           <option value="all">{zh ? '全部来源' : 'All sources'}</option>
           {sources.map((item) => <option value={item} key={item}>{sourceLabels[item][zh ? 0 : 1]}</option>)}
         </select>
-        <span>{filtered.length} / {records.length}</span>
+        <span>{filtered.length} / {operationRecords.length}</span>
       </div>
 
       {filtered.length === 0 ? (
@@ -139,7 +145,7 @@ export default function TimelineView({ records }: { records: TimelineRecord[] })
         <div className="timeline-groups">
           {groups.map((group) => (
             <section className="timeline-day" key={group.key}>
-              <div className="timeline-day-label"><strong>{group.date === undefined ? (zh ? '操作时间未知' : 'Operation time unknown') : formatDay(group.date, zh)}</strong><span>{group.items.length} {zh ? '条' : 'records'}</span></div>
+              <div className="timeline-day-label"><strong>{group.date === undefined ? (zh ? '操作时间未知' : 'Operation time unknown') : formatDay(group.date, zh, group.key)}</strong><span>{group.items.length} {zh ? '条' : 'records'}</span></div>
               <div className="timeline-day-events">
                 {group.items.map(({ item, recordedTime, eventTime }) => (
                   <article className={`timeline-event category-${item.category}`} key={item.id} data-record-id={item.id}>
@@ -152,7 +158,7 @@ export default function TimelineView({ records }: { records: TimelineRecord[] })
                         {item.commandOperation ? <span>{item.commandOperation}</span> : null}
                       </div>
                       <h3>{item.title}</h3>
-                      {eventTime !== undefined && eventTime !== recordedTime ? <p className="timeline-event-time">{zh ? '事件时间：' : 'Event time: '}<time dateTime={item.occurredAt}>{formatDay(eventTime, zh)}{dateOnlyPattern.test(item.occurredAt) ? '' : ` · ${formatTime(eventTime, zh)}`}</time></p> : null}
+                      {eventTime !== undefined && eventTime !== recordedTime ? <p className="timeline-event-time">{zh ? '事件时间：' : 'Event time: '}<time dateTime={item.occurredAt}>{formatDay(eventTime, zh, dateOnlyPattern.test(item.occurredAt) ? item.occurredAt : undefined)}{dateOnlyPattern.test(item.occurredAt) ? '' : ` · ${formatTime(eventTime, zh)}`}</time></p> : null}
                       {(item.company || item.role) ? <p className="timeline-entity">{[item.company, item.role].filter(Boolean).join('｜')}</p> : null}
                       {item.sourceRef && !item.company ? <p className="timeline-entity">{item.sourceRef}</p> : null}
                       {item.detail ? <p className="timeline-detail">{item.detail}</p> : null}

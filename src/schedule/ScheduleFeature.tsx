@@ -26,6 +26,7 @@ function timeLabel(entry: ScheduleEntry, zh: boolean, displayTimezone: string) {
   if (entry.section === 'no_deadline') return zh ? '未公布可靠截止日期' : 'No verified deadline published'
   const temporal = entry.node?.temporal
   if (entry.section === 'history' && entry.occurredAt) {
+    if (/^\d{4}-\d{2}-\d{2}$/.test(entry.occurredAt)) return entry.occurredAt + (zh ? ' · 具体时间待定' : ' · Exact time TBD')
     const happened = new Date(entry.occurredAt)
     if (Number.isFinite(happened.getTime())) return new Intl.DateTimeFormat(zh ? 'zh-CN' : 'en-GB', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false, timeZone: displayTimezone }).format(happened)
   }

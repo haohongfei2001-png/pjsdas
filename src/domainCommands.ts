@@ -11,6 +11,7 @@ import {
   stageForProcessEvent,
 } from './processEvents.js'
 import { timelineFromActionStatus, timelineFromProcessEvent } from './timeline.js'
+import { indexScheduleOccurrenceEvidence, recruitingOccurrenceNeedsConfirmation } from './scheduleOccurrenceEvidence.js'
 import type {
   Action,
   ActionStatus,
@@ -36,6 +37,7 @@ import { cancelReminderIntentInPlace, buildReminderIntent, reminderCapabilityFor
 import {
   ensureScheduleContractInPlace,
   latestScheduleOccurrence,
+  migrateLegacyScheduleNodes,
   projectScheduleNodesToLegacyInPlace,
   setApplicationDeadlineScheduleNode,
   supersedeScheduleOccurrence,
@@ -284,6 +286,80 @@ function activeScheduleNode(next: PJSDASSnapshot, occurrenceId: string) {
   return latestScheduleOccurrence(next.data.scheduleNodes ?? [], occurrenceId)
 }
 
+// Only an explicit occurrence command may replace an ambiguous task-derived
+// terminal state. Keep its original version and give the new fact its own ID.
+function confirmationVersionId(node: ScheduleNode, previous: ScheduleNode, commandId: string) {
+  node.id = `${node.id}:confirmation:${encodeURIComponent(commandId)}`
+  previous.supersededByNodeId = node.id
+}
+
+function occurrenceOwnerStates(snapshot: PJSDASSnapshot, node: ScheduleNode) {
+  return structuredClone({
+    actions: snapshot.data.actions.filter(item => node.relatedActionIds.includes(item.id)),
+    processEvents: snapshot.data.processEvents.filter(item => item.id === node.processEventId),
+    opportunities: snapshot.data.opportunities.filter(item => node.kind === 'application_deadline' && item.id === node.opportunityId),
+    processes: snapshot.data.processes.filter(item => item.id === node.processId || Boolean(node.opportunityId && item.opportunityId === node.opportunityId)),
+  })
+}
+
+function occurrenceValueEqual(left: unknown, right: unknown): boolean {
+  const canonical = (value: unknown): unknown => Array.isArray(value) ? value.map(canonical)
+    : value && typeof value === 'object' ? Object.fromEntries(Object.entries(value)
+      .filter(([, item]) => item !== undefined).sort(([a], [b]) => a.localeCompare(b)).map(([key, item]) => [key, canonical(item)])) : value
+  return JSON.stringify(canonical(left)) === JSON.stringify(canonical(right))
+}
+
+function occurrenceMatchesWithDerivedSources(snapshot: PJSDASSnapshot, current: ScheduleNode, expected: ScheduleNode,
+  owners: ReturnType<typeof occurrenceOwnerStates>) {
+  if (occurrenceValueEqual(current, expected)) return true
+  if (!expected || !occurrenceValueEqual({ ...current, sourceVersionRefs: [] }, { ...expected, sourceVersionRefs: [] })) return false
+  const retained = new Set(current.sourceVersionRefs)
+  if (expected.sourceVersionRefs.some(ref => !retained.has(ref))) return false
+  const added = current.sourceVersionRefs.filter(ref => !expected.sourceVersionRefs.includes(ref))
+  if (!added.length) return false
+  // A normal workspace read may already have added source-version provenance
+  // for a descriptive edit. Do not admit structural owner changes or arbitrary
+  // references under that exception.
+  const structural = (value: object) => Object.fromEntries(Object.entries(value)
+    .filter(([field]) => !['notes', 'updatedAt', 'title', 'sourceLabel'].includes(field)))
+  for (const collection of ['actions', 'processEvents', 'opportunities', 'processes'] as const) {
+    for (const owner of owners[collection]) {
+      const actual = snapshot.data[collection].find(item => item.id === owner.id)
+      if (!actual || !occurrenceValueEqual(structural(actual), structural(owner))) return false
+    }
+  }
+  const derived = migrateLegacyScheduleNodes(snapshot.data).find(candidate => candidate.occurrenceId === current.occurrenceId
+    && candidate.kind === current.kind && candidate.opportunityId === current.opportunityId
+    && candidate.processEventId === current.processEventId && candidate.processId === current.processId)
+  return Boolean(derived && added.every(ref => derived.sourceVersionRefs.includes(ref)))
+}
+
+function restoreOccurrenceOwnerStates(snapshot: PJSDASSnapshot, states: {
+  before: ReturnType<typeof occurrenceOwnerStates>; after: ReturnType<typeof occurrenceOwnerStates>
+}, apply = true) {
+  const changes: Array<{ target: Record<string, unknown>; field: string; present: boolean; value: unknown }> = []
+  for (const collection of ['actions', 'processEvents', 'opportunities', 'processes'] as const) {
+    for (const before of states.before[collection]) {
+      const after = states.after[collection].find(item => item.id === before.id)
+      const current = snapshot.data[collection].find(item => item.id === before.id)
+      if (!after || !current) throw new Error('Occurrence owner changed; Undo cannot restore safely.')
+      const previous = before as unknown as Record<string, unknown>
+      const expected = after as unknown as Record<string, unknown>
+      const target = current as unknown as Record<string, unknown>
+      for (const field of new Set([...Object.keys(previous), ...Object.keys(expected)])) {
+        if (occurrenceValueEqual(previous[field], expected[field])) continue
+        if (!occurrenceValueEqual(target[field], expected[field])) throw new Error('Occurrence-owned field changed; Undo cannot restore safely.')
+        changes.push({ target, field, present: Object.hasOwn(previous, field), value: previous[field] })
+      }
+    }
+  }
+  // Validate every owned field first. Unrelated later fields remain untouched.
+  for (const change of apply ? changes : []) {
+    if (change.present) change.target[change.field] = structuredClone(change.value)
+    else delete change.target[change.field]
+  }
+}
+
 function restoreProcessSnapshots(next: PJSDASSnapshot, states: Array<{
   id: string
   stage: ProcessRecord['stage']
@@ -489,12 +565,13 @@ export function applyUserDomainCommand(
 
   if (command.kind === 'complete_occurrence' || command.kind === 'cancel_occurrence') {
     const cancelled = command.kind === 'cancel_occurrence'
-    const node = activeScheduleNode(next, command.occurrenceId)
+    let node = activeScheduleNode(next, command.occurrenceId)
     if (!node) throw new Error(`Schedule occurrence ${command.occurrenceId} was not found.`)
-    if (node.state === (cancelled ? 'cancelled' : 'completed')) {
+    const confirmsTaskObservation = recruitingOccurrenceNeedsConfirmation(node, indexScheduleOccurrenceEvidence(next.data.timeline ?? []), now)
+    if (!confirmsTaskObservation && node.state === (cancelled ? 'cancelled' : 'completed')) {
       return { status: 'ALREADY_APPLIED', snapshot, summary: `Schedule occurrence ${command.occurrenceId} is already ${cancelled ? 'cancelled' : 'completed'}.` }
     }
-    if (node.state === 'cancelled' || node.state === 'completed' || node.state === 'superseded') {
+    if (!confirmsTaskObservation && (node.state === 'cancelled' || node.state === 'completed' || node.state === 'superseded')) {
       return {
         status: 'NEEDS_CONFIRMATION',
         snapshot,
@@ -505,6 +582,7 @@ export function applyUserDomainCommand(
     const occurredAt = command.occurredAt ?? timestamp
     assertIso(occurredAt, 'occurredAt')
     const beforeNode = structuredClone(node)
+    const ownerStates = confirmsTaskObservation ? occurrenceOwnerStates(next, node) : undefined
     const actionStates = node.relatedActionIds.flatMap((id) => {
       const item = next.data.actions.find((action) => action.id === id)
       return item ? [{ id: item.id, status: item.status, updatedAt: item.updatedAt }] : []
@@ -522,8 +600,15 @@ export function applyUserDomainCommand(
       participationState: process.participationState,
     }))
 
+    if (confirmsTaskObservation) {
+      const previous = node
+      const { id: _id, version: _version, supersedesNodeId: _supersedes, supersededByNodeId: _supersededBy, ...replacement } = structuredClone(node)
+      node = supersedeScheduleOccurrence(next.data.scheduleNodes ?? [], { ...replacement, updatedAt: timestamp })
+      confirmationVersionId(node, previous, command.commandId)
+    }
     node.state = cancelled ? 'cancelled' : 'completed'
     node.completedAt = cancelled ? undefined : occurredAt
+    if (confirmsTaskObservation) node.cancelledAt = cancelled ? occurredAt : undefined
     node.updatedAt = occurredAt
     for (const actionId of node.relatedActionIds) {
       const item = next.data.actions.find((action) => action.id === actionId)
@@ -557,7 +642,11 @@ export function applyUserDomainCommand(
       status: 'APPLIED',
       snapshot: next,
       summary: `${cancelled ? 'Cancelled' : 'Completed'} schedule occurrence ${node.occurrenceId}.`,
-      compensation: {
+      compensation: confirmsTaskObservation ? {
+        operation: 'restore_occurrence_supersession',
+        payload: { previousNode: beforeNode, newNodeId: node.id, expectedNode: structuredClone(node),
+          ownerStates: { before: ownerStates!, after: occurrenceOwnerStates(next, node) } },
+      } : {
         operation: 'restore_occurrence_completion',
         payload: {
           occurrenceId: node.occurrenceId,
@@ -572,7 +661,8 @@ export function applyUserDomainCommand(
   if (command.kind === 'reschedule_occurrence') {
     const current = activeScheduleNode(next, command.occurrenceId)
     if (!current) throw new Error(`Schedule occurrence ${command.occurrenceId} was not found.`)
-    if (current.state === 'completed' || current.state === 'cancelled') {
+    const confirmsTaskObservation = recruitingOccurrenceNeedsConfirmation(current, indexScheduleOccurrenceEvidence(next.data.timeline ?? []), now)
+    if (!confirmsTaskObservation && (current.state === 'completed' || current.state === 'cancelled' || current.state === 'superseded')) {
       return {
         status: 'NEEDS_CONFIRMATION',
         snapshot,
@@ -581,6 +671,7 @@ export function applyUserDomainCommand(
       }
     }
     const previousNode = structuredClone(current)
+    const ownerStates = confirmsTaskObservation ? occurrenceOwnerStates(next, current) : undefined
     const affectedProcesses = next.data.processes.filter((process) =>
       (current.processId && process.id === current.processId)
       || (current.opportunityId && process.opportunityId === current.opportunityId),
@@ -613,6 +704,7 @@ export function applyUserDomainCommand(
       createdAt: current.createdAt,
       updatedAt: timestamp,
     })
+    if (confirmsTaskObservation) confirmationVersionId(replacement, current, command.commandId)
     for (const process of affectedProcesses) {
       process.progress = 'scheduled'
       process.currentAction = process.currentAction
@@ -642,6 +734,7 @@ export function applyUserDomainCommand(
           previousNode,
           newNodeId: replacement.id,
           processStates,
+          ...(ownerStates ? { expectedNode: structuredClone(replacement), ownerStates: { before: ownerStates, after: occurrenceOwnerStates(next, replacement) } } : {}),
         },
       },
     }
@@ -951,6 +1044,17 @@ export function applyDomainCompensation(
   compensation: DomainCompensation,
   now = new Date(),
 ): PJSDASSnapshot {
+  if (compensation.operation === 'restore_occurrence_supersession' && compensation.payload?.ownerStates) {
+    // Inspect the supplied rows before legacy projection could normalize a
+    // conflicting date or add provenance from an unrelated source-note edit.
+    const payload = compensation.payload
+    const current = latestScheduleOccurrence(snapshot.data.scheduleNodes ?? [], payload.previousNode?.occurrenceId)
+    if (!current || current.id !== payload.newNodeId
+      || !occurrenceMatchesWithDerivedSources(snapshot, current, payload.expectedNode, payload.ownerStates.after)) {
+      throw new Error('Confirmed occurrence changed; Undo cannot restore safely.')
+    }
+    restoreOccurrenceOwnerStates(snapshot, compensation.payload.ownerStates, false)
+  }
   const next = upgradeSnapshotToLatest(snapshot)
   const timestamp = nowIso(now)
   const payload = compensation.payload ?? {}
@@ -1140,13 +1244,18 @@ export function applyDomainCompensation(
     }
     restoreProcessSnapshots(next, payload.processStates ?? [])
   } else if (compensation.operation === 'restore_occurrence_supersession') {
+    if (payload.ownerStates) {
+      // The raw occurrence was checked before normalization. Rebuilding legacy
+      // source refs must not turn a preserved independent edit into a conflict.
+      restoreOccurrenceOwnerStates(next, payload.ownerStates)
+    }
     next.data.scheduleNodes = (next.data.scheduleNodes ?? []).filter((item) => item.id !== payload.newNodeId)
     if (payload.previousNode) {
       const index = (next.data.scheduleNodes ?? []).findIndex((item) => item.id === payload.previousNode.id)
       if (index >= 0) next.data.scheduleNodes![index] = structuredClone(payload.previousNode)
       else next.data.scheduleNodes!.push(structuredClone(payload.previousNode))
     }
-    restoreProcessSnapshots(next, payload.processStates ?? [])
+    if (!payload.ownerStates) restoreProcessSnapshots(next, payload.processStates ?? [])
   } else {
     throw new Error(`Unsupported domain compensation operation: ${compensation.operation}`)
   }
