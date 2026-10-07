@@ -116,7 +116,7 @@ export function selectTodayWebNormalized(snapshot: PJSDASSnapshot, input: TodayW
     actionCount: actions.length,
     decisionCount: decisions.length,
     openDecisionCount: openGroups.length,
-    overBudgetMinutes: 0,
+    overBudgetMinutes: plan.overBudgetMinutes,
     capacityMinutes: plan.capacityMinutes,
     capacitySource: todayCapacity(snapshot.data.timePlanning, context.now, context.timezone, input.availableMinutes).source,
     deferredActionCount: plan.deferredCount,

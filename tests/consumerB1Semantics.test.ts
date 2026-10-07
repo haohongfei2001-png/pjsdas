@@ -297,6 +297,85 @@ describe('B1 job, task and calendar ownership', () => {
     expect(getTodayPlan(result.snapshot, { availableMinutes: 120 }, context).plannedMinutes).toBe(60)
   })
 
+  it.each([60, 30])('reserves a start-only estimate before flexible work within %i minutes without fabricating an end', availableMinutes => {
+    const first = applied(empty(), { commandId: 'start-only-reservation', kind: 'add_manual_action', title: 'Arranged', estimatedMinutes: 60,
+      scheduledTemporal: { ...arrangement, startAt: '2026-10-07T15:00:00+08:00' } }).snapshot
+    const second = applied(first, { commandId: 'flex-after-arrangement', kind: 'add_manual_action', title: 'Flexible', estimatedMinutes: 60, plannedDate: '2026-10-07' }).snapshot
+    const before = structuredClone(second)
+    const web = selectTodayWeb(second, { availableMinutes }, context)
+    const brief = buildTodayBrief(second, { availableMinutes }, context)
+    const external = getTodayPlan(second, { availableMinutes }, context)
+    expect(web.actions.map(item => item.title)).toEqual(['Arranged'])
+    expect(web.deferredActionCount).toBe(1)
+    expect(web.overBudgetMinutes).toBe(60 - availableMinutes)
+    expect(brief.plannedMinutes).toBe(60)
+    expect(external.plannedMinutes).toBe(60)
+    expect(external.capacityConflict).toBe(availableMinutes < 60)
+    expect(external.fixedEvents).toMatchObject([{ occursAt: '2026-10-07T15:00:00+08:00', precision: 'datetime' }])
+    expect(external.startableActions[0].dueAt).toBeUndefined()
+    expect(second).toEqual(before)
+    expect(second.data.scheduleNodes![0].temporal.endAt).toBeUndefined()
+  })
+
+  it('keeps explicitly arranged work when estimates exceed capacity and reports the same overage', () => {
+    let snapshot = empty()
+    for (const [id, hour] of [['first-arranged', '14'], ['second-arranged', '17']]) snapshot = applied(snapshot,
+      { commandId: id, kind: 'add_manual_action', title: id, estimatedMinutes: 60,
+        scheduledTemporal: { ...arrangement, startAt: `2026-10-07T${hour}:00:00+08:00` } }).snapshot
+    expect(selectTodayWeb(snapshot, { availableMinutes: 60 }, context).overBudgetMinutes).toBe(60)
+    expect(buildTodayBrief(snapshot, { availableMinutes: 60 }, context).plannedMinutes).toBe(120)
+    expect(getTodayPlan(snapshot, { availableMinutes: 60 }, context)).toMatchObject({ plannedMinutes: 120, capacityConflict: true })
+    expect(snapshot.data.scheduleNodes!.every(node => node.temporal.endAt === undefined)).toBe(true)
+  })
+
+  it('reserves start-only estimates before admitting a genuine recruiting deadline obligation', () => {
+    const arranged = applied(job(), { commandId: 'before-assessment', kind: 'add_manual_action', title: 'Arranged', estimatedMinutes: 60,
+      scheduledTemporal: { ...arrangement, startAt: '2026-10-07T15:00:00+08:00' } }).snapshot
+    const snapshot = applied(arranged, { commandId: 'real-assessment-obligation', kind: 'record_process_event', opportunityId: 'job',
+      eventType: 'assessment_invite', dueAt: '2026-10-07T18:00:00+08:00', timingMode: 'deadline', estimatedMinutes: 60 }).snapshot
+    const web = selectTodayWeb(snapshot, { availableMinutes: 60 }, context)
+    expect(web.actions.map(item => item.title)).toEqual(['Arranged'])
+    expect(web.notSelectedHardActions).toHaveLength(1)
+    expect(web.businessConflicts).toMatchObject([{ kind: 'hard_deadline_capacity' }])
+    expect(snapshot.data.processEvents[0].dueAt).toBe('2026-10-07T18:00:00+08:00')
+    expect(entries(snapshot)).toHaveLength(1)
+  })
+
+  it.each(['tomorrow', 'done', 'cancelled', 'known_end'] as const)('handles %s arrangements without charging the start-only estimate twice', scenario => {
+    let snapshot = applied(empty(), { commandId: `reservation-${scenario}`, kind: 'add_manual_action', title: 'Arranged', estimatedMinutes: 60,
+      scheduledTemporal: { ...arrangement, startAt: scenario === 'tomorrow' ? arrangement.startAt : '2026-10-07T15:00:00+08:00',
+        endAt: scenario === 'known_end' ? '2026-10-07T16:00:00+08:00' : undefined } }).snapshot
+    if (scenario === 'done') snapshot.data.actions[0].status = 'done'
+    if (scenario === 'cancelled') snapshot = applied(snapshot, { commandId: 'cancel-estimated-arrangement', kind: 'cancel_occurrence', occurrenceId: snapshot.data.scheduleNodes![0].occurrenceId }).snapshot
+    snapshot = applied(snapshot, { commandId: `flex-${scenario}`, kind: 'add_manual_action', title: 'Flexible', estimatedMinutes: 60, plannedDate: '2026-10-07' }).snapshot
+    const budget = scenario === 'known_end' ? 120 : 60
+    const web = selectTodayWeb(snapshot, { availableMinutes: budget }, context)
+    expect(web.actions.some(item => item.title === 'Flexible')).toBe(true)
+    expect(web.overBudgetMinutes).toBe(0)
+    expect(buildTodayBrief(snapshot, { availableMinutes: budget }, context).plannedMinutes).toBe(budget)
+    expect(getTodayPlan(snapshot, { availableMinutes: budget }, context).plannedMinutes).toBe(budget)
+  })
+
+  it.each(['Asia/Tokyo', 'source-offset'])('keeps the confirmed %s arrangement day across display timezones', timezone => {
+    const snapshot = applied(empty(), { commandId: 'tokyo-arrangement', kind: 'add_manual_action', title: 'Tokyo plan',
+      scheduledTemporal: { ...arrangement, timezone, startAt: '2026-10-08T00:30:00+09:00' } }).snapshot
+    expect(snapshot.data.actions[0].plannedDate).toBe('2026-10-08')
+    const west = { ...context, timezone: 'America/Los_Angeles', now: new Date('2026-10-07T12:00:00Z') }
+    expect(selectTodayWeb(snapshot, {}, west).actions).toEqual([])
+    expect(buildTodayBrief(snapshot, {}, west).nextActions).toEqual([])
+    expect(getTodayPlan(snapshot, {}, west).startableActions).toEqual([])
+    expect(selectTodayWeb(snapshot, {}, { ...west, now: new Date('2026-10-08T12:00:00Z') }).actions).toHaveLength(1)
+  })
+
+  it('exposes the actual arranged start separately from a later completion deadline', () => {
+    const snapshot = applied(job(), { commandId: 'arranged-application', kind: 'plan_application_action', opportunityId: 'job',
+      scheduledTemporal: { ...arrangement, startAt: '2026-10-07T15:00:00+08:00' } }).snapshot
+    const result = getTodayPlan(snapshot, {}, context)
+    expect(result.startableActions[0]).toMatchObject({ dueAt: '2026-10-10', duePrecision: 'date', timingMode: 'deadline' })
+    expect(result.fixedEvents).toMatchObject([{ occursAt: '2026-10-07T15:00:00+08:00', precision: 'datetime', timezone: 'Asia/Shanghai' }])
+    expect(getTodayPlan(snapshot, {}, { ...context, now: new Date('2026-10-08T02:00:00Z') }).fixedEvents).toEqual([])
+  })
+
   it('source occurrence dedup preserves deadline versus appointment meaning at the same instant', () => {
     const observation = (id: string, timingMode: 'deadline' | 'fixed') => ({ contractVersion: 1 as const, inputId: id,
       source: { kind: 'mcp' as const, sourceId: 'b1-source', sourceRecordId: id, observedAt: now.toISOString(), timezone: 'Asia/Shanghai' },

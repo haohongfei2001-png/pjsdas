@@ -1,4 +1,4 @@
-import { calendarNodeProjection, isExplicitActionArrangement, scheduleNodeEligible } from '../scheduleEligibility.js'
+import { actionArrangementDate, calendarNodeProjection, isExplicitActionArrangement, scheduleNodeEligible } from '../scheduleEligibility.js'
 import { actionDeadline, actionNodesById, compareActionDeadlines, deadlineBoundaryMs } from '../deadlineOrder.js'
 import type { Opportunity, ProcessEvent, RankedAction, ScheduleNode } from '../model.js'
 import type { TimePlanningPreferences } from '../timePlanningPreferences.js'
@@ -17,6 +17,7 @@ export interface ConsumerTimePlan {
   capacityMinutes?: number
   fixedMinutes: number
   plannedMinutes: number
+  overBudgetMinutes: number
   planned: RankedAction[]
   deferredCount: number
   deferredHard: RankedAction[]
@@ -134,8 +135,21 @@ export function buildConsumerTimePlan(input: {
   const nodeMap = actionNodesById(input.nodes, input.ranked.map(item => item.action), input.opportunities, input.processEvents)
   const compare = (a: RankedAction, b: RankedAction) => compareActionDeadlines(a.action, b.action, input.timezone,
     nodeMap.get(a.action.id), nodeMap.get(b.action.id))
-  const arrangedToday = input.ranked.filter(item => isExplicitActionArrangement(item.action.scheduledTemporal)
-    && localDateKey(new Date(item.action.scheduledTemporal!.startAt!), input.timezone) === today)
+  const arrangements = input.ranked.filter(item => {
+    if (!isExplicitActionArrangement(item.action.scheduledTemporal)) return false
+    const owner = nodeMap.get(item.action.id)
+    return !owner || ['scheduled', 'in_progress'].includes(owner.state)
+  })
+  const arrangedToday = arrangements.filter(item => actionArrangementDate(item.action.scheduledTemporal!) === today)
+  // Unknown ends remain unknown. These are workload reservations, never
+  // fabricated fixed intervals or evidence of an overlap.
+  const estimatedByDay = new Map<string, Array<{ start: number; minutes: number }>>()
+  for (const item of arrangements.filter(item => !item.action.scheduledTemporal!.endAt)) {
+    const temporal = item.action.scheduledTemporal!, date = actionArrangementDate(temporal)!
+    const reservations = estimatedByDay.get(date) ?? []
+    reservations.push({ start: Date.parse(temporal.startAt!), minutes: item.action.estimatedMinutes })
+    estimatedByDay.set(date, reservations)
+  }
   const startable = input.ranked.filter(item => {
     const action = item.action
     if (action.scheduledTemporal || action.timingMode === 'fixed') return false
@@ -159,7 +173,7 @@ export function buildConsumerTimePlan(input: {
   // those deadlines too; a local calendar boundary is not a fabricated cutoff.
   const deadlineHorizon = Math.max(bounds.dayEnd, ...mandatory.map(deadlineFor))
   const occupied = fixedIntervals(calendarNodes, { ...bounds, dayEnd: deadlineHorizon })
-  const horizonDays: { windows: Interval[]; capacity?: number; reserved: number }[] = []
+  const horizonDays: { windows: Interval[]; capacity?: number; reserved: number; estimates: Array<{ start: number; minutes: number }> }[] = []
   let windowDay = bounds
   while (windowDay.dayStart < deadlineHorizon) {
     const date = localDateKey(new Date(windowDay.dayStart), input.timezone)
@@ -169,10 +183,12 @@ export function buildConsumerTimePlan(input: {
     const windows = (input.useRemainingDayDefault && date === today ? undefined
       : workIntervals(input.preferences, day, windowDay, input.timezone))
       ?? [{ start: windowDay.dayStart, end: windowDay.dayEnd }]
-    horizonDays.push({ windows, capacity: date === today ? capacityMinutes : capacityForDate(input.preferences, date, day),
+    const estimates = estimatedByDay.get(date) ?? []
+    horizonDays.push({ windows, estimates, capacity: date === today ? capacityMinutes : capacityForDate(input.preferences, date, day),
       reserved: unionMinutes(intersectIntervals(windows, fixedIntervals(calendarNodes, { ...windowDay,
         // A live remaining-time budget must not subtract commitments already in the past.
-        dayStart: todayChoice && date === today ? Math.max(windowDay.dayStart, input.now.getTime()) : windowDay.dayStart }))) })
+        dayStart: todayChoice && date === today ? Math.max(windowDay.dayStart, input.now.getTime()) : windowDay.dayStart })))
+        + estimates.reduce((sum, item) => sum + item.minutes, 0) })
     if (windowDay.dayEnd >= deadlineHorizon) break
     windowDay = dayBounds(localDateKey(new Date(windowDay.dayEnd), input.timezone), input.timezone)
   }
@@ -186,6 +202,7 @@ export function buildConsumerTimePlan(input: {
       // that is only partially left before a real deadline.
       const physical = Math.floor(clipped.reduce((sum, interval) => sum + interval.end - interval.start, 0) / 60_000)
         - unionMinutes(intersectIntervals(clipped, occupied))
+        - day.estimates.filter(item => item.start < end).reduce((sum, item) => sum + item.minutes, 0)
       return total + Math.max(0, Math.min(physical, day.capacity === undefined ? Infinity : day.capacity - day.reserved))
     }, 0)
   }
@@ -240,6 +257,7 @@ export function buildConsumerTimePlan(input: {
     + arrangedToday.filter(item => !item.action.scheduledTemporal?.endAt).reduce((sum, item) => sum + item.action.estimatedMinutes, 0)
   planned.push(...arrangedToday)
   planned.sort(compare)
-  return { capacityMinutes, fixedMinutes, plannedMinutes, planned, deferredHard,
+  const overBudgetMinutes = capacityMinutes === undefined ? 0 : Math.max(0, plannedMinutes - capacityMinutes)
+  return { capacityMinutes, fixedMinutes, plannedMinutes, overBudgetMinutes, planned, deferredHard,
     deferredCount, conflicts }
 }
