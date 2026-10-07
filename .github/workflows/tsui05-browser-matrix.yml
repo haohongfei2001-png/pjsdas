@@ -49,9 +49,9 @@ jobs:
       - run: npm ci
       - name: Install Playwright test runner
         run: |
+          node scripts/verify-installed-runtime-lock.mjs --capture
           npm install --no-save @playwright/test@1.63.0
           node scripts/verify-installed-runtime-lock.mjs
-          git diff --exit-code -- package.json package-lock.json
       - name: Verify browser launch in the test container
         run: |
           # Actions mounts a host-owned home; Firefox requires it to match this container user.
