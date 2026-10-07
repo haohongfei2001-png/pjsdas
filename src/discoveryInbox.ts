@@ -42,7 +42,7 @@ export function validateDiscoveryInboxItem(item: DiscoveryInboxItem): string[] {
   if (!item.id?.trim()) errors.push('发现箱条目缺少 ID。')
   if (!item.candidateOpportunityId?.trim()) errors.push('发现箱条目缺少候选岗位 ID。')
   if (!item.company?.trim() || !item.role?.trim()) errors.push('发现箱条目缺少公司或岗位。')
-  if (!roleTypes.has(item.roleType)) errors.push('发现箱岗位类型无效。')
+  if (item.roleType !== undefined && !roleTypes.has(item.roleType)) errors.push('发现箱岗位类型无效。')
   if (!statuses.has(item.status)) errors.push('发现箱状态无效。')
   if (!item.sourceUrl?.startsWith('http://') && !item.sourceUrl?.startsWith('https://')) errors.push('发现箱来源 URL 无效。')
   if (!item.sourceTitle?.trim() || !item.rationale?.trim()) errors.push('发现箱来源证据不完整。')

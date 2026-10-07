@@ -1,3 +1,5 @@
+import { legacyDeadlineNode } from './fixtures/legacyDeadlineNodes.js'
+import { localDateKey } from '../src/todayBrief.js'
 import { describe, expect, it } from 'vitest'
 import { formatScheduleTemporal } from '../src/scheduleDisplayTime.js'
 import { actionDeadline, actionNodesById, compareDeadlines } from '../src/deadlineOrder.js'
@@ -23,14 +25,14 @@ const makeOpportunity = (id: string, deadline?: string, high = false): Opportuni
 } as Opportunity)
 const makeAction = (opportunity: Opportunity, minutes = 10): Action => ({
   id: `apply:${opportunity.id}`, opportunityId: opportunity.id, kind: 'apply', title: opportunity.id,
-  status: 'todo', dueAt: opportunity.deadline, duePrecision: opportunity.deadlinePrecision,
+  status: 'todo', plannedDate: '2026-10-07', dueAt: opportunity.deadline, duePrecision: opportunity.deadlinePrecision,
   timingMode: 'deadline', estimatedMinutes: minutes,
   leverage: opportunity.fitScore, delayCost: opportunity.opportunityValue,
   createdAt: now.toISOString(), updatedAt: now.toISOString(),
 })
 function snapshot(opportunities: Opportunity[], nodes: ScheduleNode[] = []) {
   return createSnapshot({ opportunities, actions: opportunities.map(item => makeAction(item)),
-    processes: [], processEvents: [], prep: [], applicationGroups: [], scheduleNodes: nodes,
+    processes: [], processEvents: [], prep: [], applicationGroups: [], scheduleNodes: nodes.length ? nodes : opportunities.filter(item => item.deadline).map(item => legacyDeadlineNode(item, opportunities.map(job => makeAction(job)))),
     decisionRules: cloneDecisionRules(), timePlanning: { version: 1, dateOverrides: { '2026-10-07': 120 }, updatedAt: now.toISOString() },
   }, now.toISOString())
 }
@@ -128,6 +130,7 @@ describe('Deadline-only product policy', () => {
     const node = source.data.scheduleNodes!.find(item => item.kind === 'application_deadline')!
     node.temporal.timezone = sourceZone; node.temporal.resolutionBasis = 'source_explicit'
     const at = new Date(instant)
+    source.data.actions[0].plannedDate = localDateKey(at, displayZone)
     const resolved = resolveApplicationDeadline(source.data.opportunities[0], source.data)
     expect(applicationDeadlineExpired(resolved, at, displayZone)).toBe(expired)
     const selected = selectTodayWeb(source, { availableMinutes: 30 }, { now: at, timezone: displayZone })

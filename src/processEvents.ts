@@ -282,6 +282,8 @@ export function reconcileProcessEventActions(
           // Historic score fields remain archival; they are never recalculated or used.
           leverage: previous.leverage,
           delayCost: previous.delayCost,
+          plannedDate: previous.plannedDate,
+          scheduledTemporal: previous.scheduledTemporal,
           status: previous.status,
           createdAt: previous.createdAt,
           updatedAt: previous.updatedAt,

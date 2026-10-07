@@ -25,7 +25,7 @@ test('TSUI-05 fixed stress fixture meets warm route and tab budget', async ({ pa
         for (let i = 0; i < 500; i += 1) tx.objectStore('actions').put({
           id: 'perf-action-' + i, kind: i % 5 === 0 ? 'prep' : 'manual', title: 'Task ' + i,
           opportunityId: 'perf-posting-' + (i % 300), estimatedMinutes: 20, leverage: 80,
-          delayCost: 60, status: 'todo', createdAt: created, updatedAt: created,
+          delayCost: 60, status: 'todo', plannedDate: '2026-09-25', createdAt: created, updatedAt: created,
         })
         for (let i = 0; i < 130; i += 1) tx.objectStore('scheduleNodes').put({
           id: 'perf-node-' + i, occurrenceId: 'perf-occurrence-' + i, version: 1,

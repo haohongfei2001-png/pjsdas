@@ -2,7 +2,7 @@ import { actionDeadline, deadlineHasPassed } from './deadlineOrder.js'
 import type { Action, ScheduleNode } from './model.js'
 
 export function isUnresolvedPastProcessEvent(action: Action, now: Date, node?: ScheduleNode, timezone = 'UTC') {
-  if (!action.processEventId) return false
+  if (!action.processEventId || (action.timingMode !== 'fixed' && node?.temporal.shape !== 'fixed_range')) return false
   if (action.status !== 'todo' && action.status !== 'doing') return false
   return deadlineHasPassed(actionDeadline(action, node), now, timezone)
 }

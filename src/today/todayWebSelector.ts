@@ -6,6 +6,7 @@ import { compareActionDeadlines, latestActionNode } from '../deadlineOrder.js'
 import type { DecisionRequest } from '../model.js'
 import { type PJSDASSnapshot } from '../snapshot.js'
 import {
+  localDateKey,
   actionView,
   latestByOccurrence,
   protectedByLatestStart,
@@ -61,13 +62,15 @@ export function selectTodayWebNormalized(snapshot: PJSDASSnapshot, input: TodayW
   const nodes = latestByOccurrence(snapshot.data.scheduleNodes ?? [])
   const opportunities = new Map(snapshot.data.opportunities.map((item) => [item.id, item]))
   const ranked = rankActions(snapshot.data.actions, snapshot.data.opportunities, context.now, undefined, context.timezone, nodes)
-  const plan = buildConsumerTimePlan({ ranked, nodes, preferences: snapshot.data.timePlanning,
+  const plan = buildConsumerTimePlan({ ranked, nodes, opportunities: snapshot.data.opportunities, processEvents: snapshot.data.processEvents, preferences: snapshot.data.timePlanning,
     availableMinutes: input.availableMinutes, useRemainingDayDefault: true, now: context.now, timezone: context.timezone })
-  const protectedRanked = ranked
+  const todayActionIds = new Set([...plan.planned, ...plan.deferredHard].map(item => item.action.id))
+  const today = localDateKey(context.now, context.timezone)
+  const protectedRanked = ranked.filter(item => item.action.plannedDate === today || todayActionIds.has(item.action.id))
     .filter((item) => item.action.timingMode !== 'fixed')
     .filter((item) => protectedByLatestStart(
       item.action,
-      latestActionNode(item.action, nodes),
+      latestActionNode(item.action, nodes, snapshot.data.opportunities, snapshot.data.processEvents),
       context.now,
       context.timezone,
       48,
@@ -81,6 +84,7 @@ export function selectTodayWebNormalized(snapshot: PJSDASSnapshot, input: TodayW
     context.now,
     context.timezone,
     48,
+    snapshot.data.processEvents,
   ))
   const openGroups = groupOpenDecisions(partitionDecisions(snapshot.data.decisionRequests ?? [], {
     opportunities: snapshot.data.opportunities, scheduleNodes: nodes,
@@ -107,7 +111,7 @@ export function selectTodayWebNormalized(snapshot: PJSDASSnapshot, input: TodayW
     displayTimezone: context.timezone,
     actions,
     notSelectedHardActions: plan.deferredHard.map(item => actionView(item, nodes, opportunities, context.now,
-      context.timezone, 48)),
+      context.timezone, 48, snapshot.data.processEvents)),
     decisions,
     actionCount: actions.length,
     decisionCount: decisions.length,

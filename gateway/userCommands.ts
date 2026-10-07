@@ -1,3 +1,4 @@
+import { userJobFactsShape } from '../src/userJobFactsSchema.js'
 import { invalidateLegacyProcessEvent } from '../src/legacyProcessCorrection.js'
 import { dismissSemanticDecision } from '../src/decisionDismissal.js'
 import { applyOpportunityMerge, opportunityMergeSchema } from '../src/opportunityMerge.js'
@@ -33,6 +34,8 @@ const scheduleTemporal = z.object({
 const repairRevision = z.string().regex(/^txn:\d+$/)
 const evidenceRefs = z.array(z.string().trim().min(1).max(1000)).min(1).max(20)
 export const applyUserCommandSchema = z.discriminatedUnion('kind', [
+  z.object({ commandId, kind: z.literal('plan_application_action'), opportunityId, plannedDate: dateOnly.optional(), scheduledTemporal: scheduleTemporal.optional() }).strict(),
+  z.object({ commandId, ...userJobFactsShape, kind: z.literal('add_user_opportunity') }).strict(),
   z.object({ commandId, kind: z.literal('invalidate_legacy_process_event'), expectedWorkspaceVersion: repairRevision,
     eventId: z.string().trim().min(1).max(240), expectedEventFingerprint: z.string().regex(/^[a-f0-9]{64}$/),
     sourceRefs: evidenceRefs, reason: z.string().trim().min(1).max(800), evidenceRefs }).strict(),
@@ -55,7 +58,7 @@ export const applyUserCommandSchema = z.discriminatedUnion('kind', [
   }).strict(),
   z.object({ commandId, kind: z.literal('invalidate_process_event'), opportunityId, eventId: z.string().min(1).max(240), receiptId: z.string().min(1).max(240), expectedEventUpdatedAt: isoString, reason: z.string().trim().min(1).max(800), evidenceRefs: z.array(z.string().trim().min(1).max(1000)).min(1).max(20) }).strict(),
   z.object({ commandId, kind: z.literal('correct_application_deadline'), opportunityId, expectedDeadlineFingerprint: z.string().min(1).max(64_000), correction: z.object({
-    state: z.enum(['confirmed', 'unknown']), deadline: isoString.optional(), precision: precision.optional(), sourceUrl: z.string().url().max(2000), sourceAuthority: z.enum(['official_role', 'official_campaign', 'university_repost', 'aggregator', 'user']), evidence: z.string().trim().min(1).max(1600), checkedAt: isoString, postingStatus: z.enum(['open', 'closed', 'unknown']),
+    state: z.enum(['confirmed', 'unknown']), deadline: isoString.optional(), precision: precision.optional(), timezone: z.string().min(1).max(120).optional(), sourceUrl: z.string().url().max(2000), sourceAuthority: z.enum(['official_role', 'official_campaign', 'university_repost', 'aggregator', 'user']), evidence: z.string().trim().min(1).max(1600), checkedAt: isoString, postingStatus: z.enum(['open', 'closed', 'unknown']),
   }).strict() }).strict(),
   z.object({ commandId, kind: z.literal('set_deadline'), opportunityId, deadline: isoString, precision }).strict(),
   z.object({ commandId, kind: z.literal('complete_occurrence'), occurrenceId: z.string().trim().min(1).max(320), occurredAt: isoString.optional() }).strict(),
@@ -86,6 +89,8 @@ export const applyUserCommandSchema = z.discriminatedUnion('kind', [
   z.object({
     commandId,
     kind: z.literal('add_manual_action'),
+    plannedDate: dateOnly.optional(),
+    scheduledTemporal: scheduleTemporal.optional(),
     title: z.string().trim().min(1).max(300),
     dueAt: isoString.optional(),
     duePrecision: precision.optional(),

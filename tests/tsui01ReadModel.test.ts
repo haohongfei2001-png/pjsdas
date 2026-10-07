@@ -14,7 +14,7 @@ const CREATED = '2026-09-20T00:00:00.000Z'
 function action(id: string, extra: Partial<Action> = {}): Action {
   return {
     id, kind: 'manual', title: `Task ${id}`, estimatedMinutes: 20,
-    leverage: 80, delayCost: 60, status: 'todo', createdAt: CREATED, updatedAt: CREATED,
+    leverage: 80, delayCost: 60, status: 'todo', plannedDate: '2026-09-25', createdAt: CREATED, updatedAt: CREATED,
     ...extra,
   }
 }
@@ -66,7 +66,7 @@ describe('TSUI-01 complete Web read models', () => {
     expect(web.criticalWarnings[0]?.relatedIds).toContain('date-only-today')
   })
 
-  it('keeps every future node, ongoing window and unresolved past occurrence', () => {
+  it('keeps future appointments and unresolved occurrences while retaining task windows outside Calendar', () => {
     const future = Array.from({ length: 130 }, (_, i) => {
       const date = new Date(Date.UTC(2026, 8, 25 + i)).toISOString().slice(0, 10)
       return node(`future-${i}`, date)
@@ -82,9 +82,10 @@ describe('TSUI-01 complete Web read models', () => {
     const stream = buildScheduleStream(snapshot([], [...future, ...unresolved, window]), {
       accountKey: 'account-A', workspaceRevision: 'r1', timezone: TZ, now: NOW,
     })
-    expect(stream.counts.upcoming).toBe(131)
+    expect(stream.counts.upcoming).toBe(130)
     expect(stream.counts.unresolved).toBe(8)
-    expect(stream.sections.upcoming.find((item) => item.occurrenceId === 'window')?.date).toBe('2026-09-25')
+    expect(stream.sections.upcoming.find((item) => item.occurrenceId === 'window')).toBeUndefined()
+    expect(window.temporal.endAt).toBe('2026-09-26T02:00:00.000Z')
     expect(stream.sections.upcoming.some((item) => item.occurrenceId === 'future-129')).toBe(true)
     const seen: string[] = []
     let cursor: ReturnType<typeof readScheduleWindow>['nextCursor']
@@ -94,7 +95,7 @@ describe('TSUI-01 complete Web read models', () => {
       cursor = page.nextCursor
     } while (cursor)
     expect(seen).toEqual(stream.sections.upcoming.map((item) => item.id))
-    expect(new Set(seen).size).toBe(131)
+    expect(new Set(seen).size).toBe(130)
   })
 
   it('uses only the latest occurrence for upcoming and rejects cross-revision cursors', () => {
@@ -128,7 +129,8 @@ describe('TSUI-01 complete Web read models', () => {
     }
     const source = snapshot([action('done-legacy', { status: 'done', updatedAt: NOW.toISOString() })], [], [recent, late])
     const stream = buildScheduleStream(source, { accountKey: 'A', workspaceRevision: 'r1', timezone: TZ, now: NOW })
-    expect(stream.sections.history.map((item) => item.id)).toEqual(['fact:late', 'fact:recent'])
+    expect(stream.sections.history).toEqual([])
+    expect(source.data.timeline).toEqual([recent, late])
     expect(stream.sections.undated.some((item) => item.id === 'action:done-legacy')).toBe(false)
     expect(source.data.actions[0].status).toBe('done')
   })
@@ -156,8 +158,8 @@ describe('TSUI-01 complete Web read models', () => {
 
   it('dates completed legacy nodes from exact completion facts without creating duplicate history', () => {
     const completed = node('action:prep-1', '2026-09-24', {
-      state: 'completed', kind: 'prep_trigger', completedAt: undefined, relatedActionIds: ['prep-1'],
-      temporal: { shape: 'date_only', precision: 'date', timezone: TZ, date: '2026-09-24', resolutionBasis: 'legacy_projection' },
+      state: 'completed', kind: 'prep_trigger', constraintKind: 'user_plan', completedAt: undefined, relatedActionIds: ['prep-1'],
+      temporal: { shape: 'fixed_range', precision: 'datetime', timezone: TZ, startAt: '2026-09-24T08:00:00Z', resolutionBasis: 'user_explicit' },
     })
     const log: TimelineRecord = {
       id: 'prep-done', kind: 'action_status_changed', category: 'action', source: 'user_action',

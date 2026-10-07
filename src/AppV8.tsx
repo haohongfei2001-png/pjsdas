@@ -1,3 +1,4 @@
+import { submitWebSemanticCapture, undoWebSemanticChange, type WebSemanticCaptureResult, type LocalSemanticUndoToken } from './webSemanticIntake.js'
 import { interactionIsRecent } from './cloud/interactionActivity.js'
 import { todayScheduleSnapshot, patchConsumerSnapshot } from './today/consumerScheduleSnapshot.js'
 import { interactionMetric } from './cloud/interactionMetrics.js'
@@ -32,6 +33,7 @@ import {
   TODAY_AUTHORITATIVE_REFRESH_INTERVAL_MS,
 } from './cloud/authoritativeReadModelClient.js'
 import {
+  findAccountPendingSemanticOperation,
   createConnectedCommandId,
   confirmConnectedCommand,
   listAccountPendingOperations,
@@ -530,6 +532,29 @@ export default function AppV8() {
   }, [snapshot, selectedOpportunityId, now, zh])
 
 
+  async function recordJobAction(opportunityId: string, kind: 'today' | 'submission'): Promise<WebSemanticCaptureResult> {
+    if (CGR02_TODAY_READ_ONLY) throw new Error('This workspace is read-only.')
+    const accountKey = cloud.session?.user.id
+    const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
+    const at = new Date()
+    const day = localDateKey(at, timezone)
+    const text = `${kind === 'today' ? '加入今天' : '我已投递'} | ${opportunityId}${kind === 'today' ? ` | ${day}` : ''}`
+    const pending = accountKey ? findAccountPendingSemanticOperation(accountKey, text) : undefined
+    const commandId = pending?.commandId ?? createConnectedCommandId('job-intent')
+    const result = await submitWebSemanticCapture(text, { accountKey, commandId,
+      confirmExisting: Boolean(pending), queueOffline: Boolean(accountKey && !navigator.onLine), timezone, now: at,
+      candidates: [{ id: 'job-intent', target: { opportunityId }, objectConfidence: 'high', eventConfidence: 'high',
+        evidenceRefs: [], sourceVersionRefs: [], ...(kind === 'today'
+          ? { kind: 'application_action' as const, plannedDate: day }
+          : { kind: 'application_submitted' as const, occurredAt: at.toISOString() }) }] })
+    await reload()
+    return result
+  }
+  async function undoJobAction(token: LocalSemanticUndoToken) {
+    await undoWebSemanticChange(token)
+    await reload()
+  }
+
   async function markAction(id: string, status: Action['status'], intent?: 'application_submission') {
     const before = actions.find((item) => item.id === id)
     if (!before) return
@@ -876,6 +901,7 @@ export default function AppV8() {
             applicationGroup={selectedGroup} timeline={selectedTimeline} onClose={closeOpportunity}
             onCapture={openCapture} onNavigate={navigateFromDetail}
             onOpenDecision={(id) => navigate('/decisions/' + encodeURIComponent(id) + '?from=' + encodeURIComponent(selectedOpportunity.id))}
+            onJobAction={recordJobAction} onUndoJobAction={undoJobAction}
             onMarkAction={markAction} readOnly={CGR02_TODAY_READ_ONLY}
           />
         ) : null}

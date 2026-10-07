@@ -1,3 +1,4 @@
+import { calendarNodeProjection, scheduleNodeEligible } from './scheduleEligibility.js'
 import { classifyJob, resolveApplicationDeadline, type JobCategory, type ResolvedApplicationDeadline } from './applicationDeadline.js'
 import { readModelSnapshot } from './readModelSnapshot.js'
 import { actionDeadline, compareDeadlines } from './deadlineOrder.js'
@@ -267,7 +268,7 @@ function actionRead(ranked: RankedAction | undefined, opportunity: Opportunity, 
   if (!ranked) return undefined
   const action = ranked.action
   const latest = latestNodes(nodes, true)
-  const node = latestActionNode(action, latest)
+  const node = latestActionNode(action, latest, [opportunity])
   const unknownTiming = node && !hasKnownActionTiming(node)
   const applicable = actionDeadline(action, node)
   let operation: OpportunityDecisionAction['operation'] = 'open_today'
@@ -298,23 +299,15 @@ function actionRead(ranked: RankedAction | undefined, opportunity: Opportunity, 
   }
 }
 
-function deadlineDelta(opportunityId: string, nodes: ScheduleNode[], now: Date, timezone: string) {
-  const node = latestNodes(nodes).find((item) =>
-    item.opportunityId === opportunityId && item.kind === 'application_deadline',
-  )
-  if (!node || node.state === 'completed') return undefined
-  const temporal = node.temporal
-  if (temporal.shape === 'estimated_date' || temporal.resolutionBasis === 'system_estimate') return undefined
-  if (temporal.shape === 'date_only') {
-    if (!temporal.date) return undefined
-    const zone = ['floating-date', 'source-offset'].includes(temporal.timezone)
-      ? timezone : temporal.timezone
+function deadlineDelta(opportunity: Opportunity, nodes: ScheduleNode[], now: Date, timezone: string) {
+  const deadline = resolveApplicationDeadline(opportunity, { scheduleNodes: nodes })
+  if (deadline.state !== 'confirmed' || !deadline.deadline) return undefined
+  if (deadline.precision === 'date') {
+    const zone = deadline.timezone && !['floating-date', 'source-offset'].includes(deadline.timezone) ? deadline.timezone : timezone
     const today = localDateKey(now, zone)
-    // Compare calendar days without inventing a deadline time for date-only input.
-    return (Date.parse(`${temporal.date}T12:00:00Z`) - Date.parse(`${today}T12:00:00Z`))
+    return Date.parse(`${deadline.deadline.slice(0, 10)}T12:00:00Z`) - Date.parse(`${today}T12:00:00Z`)
   }
-  const boundary = temporal.deadlineAt ?? temporal.endAt ?? temporal.startAt
-  return boundary ? Date.parse(boundary) - now.getTime() : undefined
+  return Date.parse(deadline.deadline) - now.getTime()
 }
 
 function bucket(opportunity: Opportunity, expired: boolean): OpportunityDecisionBucket {
@@ -397,9 +390,9 @@ export function getOpportunityDecisionRead(
   const process = processFor(opportunity, snapshot.data.processes)
   const group = groupFor(opportunity, snapshot.data.applicationGroups)
   const nodes = nodesForDecision(snapshot)
-  const nearestNode = nearestNodeFor(opportunity, process, nodes, ctx.now, ctx.timezone)
+  const nearestNode = nearestNodeFor(opportunity, process, nodes.filter(node => scheduleNodeEligible(node, snapshot.data)).map(calendarNodeProjection), ctx.now, ctx.timezone)
   const freshness = sourceFreshness(opportunity, ctx.now)
-  const delta = deadlineDelta(opportunity.id, nodes, ctx.now, ctx.timezone)
+  const delta = deadlineDelta(opportunity, nodes, ctx.now, ctx.timezone)
   const ranked = rankedActionsByOpportunity(snapshot, ctx.now, ctx.timezone).get(opportunity.id)
 
   return {
@@ -440,9 +433,9 @@ export function buildOpportunityDecisionList(
   const items = snapshot.data.opportunities.map((opportunity) => {
     const process = processFor(opportunity, snapshot.data.processes)
     const group = groupFor(opportunity, snapshot.data.applicationGroups)
-    const nearestNode = nearestNodeFor(opportunity, process, nodes, ctx.now, ctx.timezone)
+    const nearestNode = nearestNodeFor(opportunity, process, nodes.filter(node => scheduleNodeEligible(node, snapshot.data)).map(calendarNodeProjection), ctx.now, ctx.timezone)
     const freshness = sourceFreshness(opportunity, ctx.now)
-    const delta = deadlineDelta(opportunity.id, nodes, ctx.now, ctx.timezone)
+    const delta = deadlineDelta(opportunity, nodes, ctx.now, ctx.timezone)
     const read: OpportunityDecisionRead = {
       contractVersion: 1,
       workspaceRevision: ctx.workspaceVersion ?? `snapshot:${rawSnapshot.exportedAt}`,

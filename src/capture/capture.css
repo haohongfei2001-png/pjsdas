@@ -256,3 +256,12 @@
 .cgr-capture-sheet :is(button,a,textarea):focus-visible{outline:3px solid #315ec5;outline-offset:3px}
 .cgr-capture-receipt-actions{flex-wrap:wrap}
 .cgr-capture-sheet .cgr-capture-hint,.cgr-capture-sheet .cgr-capture-footer small{color:#5d6b82}
+
+.cgr-manual-job { display: grid; gap: 18px; margin-top: 22px; min-width: 0; }
+.cgr-manual-job-identity { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; min-width: 0; }
+.cgr-manual-job label { display: grid; gap: 8px; min-width: 0; font-size: .82rem; }
+.cgr-manual-job input { box-sizing: border-box; width: 100%; min-width: 0; min-height: 44px; border: 1px solid var(--cgr-border-strong); border-radius: 10px; padding: 10px 12px; background: var(--cgr-surface-strong); font: inherit; }
+.cgr-manual-job details summary { cursor: pointer; min-height: 44px; align-content: center; font-size: .82rem; }
+.cgr-manual-job p { color: var(--cgr-text-secondary); font-size: .78rem; margin: 0; }
+.cgr-capture-footer .cgr-capture-mode { margin-right: auto; }
+@media (max-width: 520px) { .cgr-manual-job-identity { grid-template-columns: 1fr; } .cgr-capture-footer { flex-wrap: wrap; } .cgr-capture-footer .cgr-capture-mode { flex-basis: 100%; text-align: left; } }

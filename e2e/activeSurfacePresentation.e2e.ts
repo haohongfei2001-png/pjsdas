@@ -18,7 +18,7 @@ test('active Today and Prepare surfaces localize presentation without changing s
       estimatedMinutes: 20,
       leverage: 90,
       delayCost: 90,
-      status: 'todo',
+      status: 'todo', plannedDate: '2026-09-30',
       sourceLabel: 'E2E',
       createdAt: new Date(now).toISOString(),
       updatedAt: new Date(now).toISOString(),

@@ -12,8 +12,8 @@ const old = '2026-09-20T00:00:00.000Z'
 const now = new Date('2026-09-28T12:00:00.000Z')
 function node(id: string, state: ScheduleNode['state'], at: string): ScheduleNode {
   return { id, occurrenceId: id, version: 1, opportunityId: 'job', kind: 'follow_up', state,
-    temporal: { shape: 'deadline', precision: 'datetime', timezone: 'source-offset', deadlineAt: at, resolutionBasis: 'legacy_projection' },
-    relatedActionIds: ['task'], relatedPrepIds: [], evidenceRefs: ['source'], sourceVersionRefs: ['version'], constraintKind: 'user_soft',
+    temporal: { shape: 'fixed_range', precision: 'datetime', timezone: 'source-offset', startAt: at, resolutionBasis: 'user_explicit' },
+    relatedActionIds: ['task'], relatedPrepIds: [], evidenceRefs: ['source'], sourceVersionRefs: ['version'], constraintKind: 'user_plan',
     createdAt: old, updatedAt: old }
 }
 

@@ -1,3 +1,4 @@
+import { legacyDeadlineNode } from './fixtures/legacyDeadlineNodes.js'
 import { instantDenseWorkspace, INSTANT_NOW } from './fixtures/instantDenseWorkspace.js'
 import { recordCorrectionWorkspace } from './fixtures/recordCorrectionWorkspace.js'
 import { describe, expect, it } from 'vitest'
@@ -11,7 +12,7 @@ import { invokeApplyUserCommand } from '../gateway/userCommands.js'
 import { enrichOpportunityListWithFacts } from '../src/ai/richOpportunityRead.js'
 import type { WorkspaceWriteInput } from '../gateway/workspaceSource.js'
 const now = new Date('2026-10-02T08:00:00Z')
-function base(): PJSDASSnapshot { return createSnapshot({ opportunities: [{ id: 'synthetic-legacy', company: '河谷智能', role: '运营分析师', processStage: 'not_applied', currentStageLabel: '待投', participationStatus: 'active', deadline: '2026-09-30T15:59:59Z', deadlinePrecision: 'datetime', roleType: 'core', early: false, opportunityValue: 70, fitScore: 80, importedAt: now.toISOString() }], processes: [], processEvents: [], actions: [{ id: 'legacy-apply-owner', kind: 'apply', title: '申请河谷智能', opportunityId: 'synthetic-legacy', dueAt: '2026-09-30T15:59:59Z', timingMode: 'deadline', estimatedMinutes: 45, leverage: 70, delayCost: 70, status: 'todo', createdAt: now.toISOString(), updatedAt: now.toISOString() }], prep: [], applicationGroups: [] }) }
+function base(): PJSDASSnapshot { const snapshot = createSnapshot({ opportunities: [{ id: 'synthetic-legacy', company: '河谷智能', role: '运营分析师', processStage: 'not_applied', currentStageLabel: '待投', participationStatus: 'active', deadline: '2026-09-30T15:59:59Z', deadlinePrecision: 'datetime', roleType: 'core', early: false, opportunityValue: 70, fitScore: 80, importedAt: now.toISOString() }], processes: [], processEvents: [], actions: [{ id: 'legacy-apply-owner', kind: 'apply', title: '申请河谷智能', opportunityId: 'synthetic-legacy', dueAt: '2026-09-30T15:59:59Z', timingMode: 'deadline', estimatedMinutes: 45, leverage: 70, delayCost: 70, status: 'todo', createdAt: now.toISOString(), updatedAt: now.toISOString() }], prep: [], applicationGroups: [] }); snapshot.data.scheduleNodes = [legacyDeadlineNode(snapshot.data.opportunities[0], snapshot.data.actions)]; return snapshot }
 function command(snapshot = base(), deadline?: string): CorrectApplicationDeadlineCommand { return { commandId: 'synthetic-deadline-correction', kind: 'correct_application_deadline', opportunityId: 'synthetic-legacy', expectedDeadlineFingerprint: applicationDeadlineFingerprint(snapshot.data.opportunities[0], snapshot.data), correction: { state: deadline ? 'confirmed' : 'unknown', deadline, precision: deadline ? 'date' : undefined, sourceUrl: 'https://careers.example.test/roles/analyst', sourceAuthority: 'official_role', evidence: deadline ? 'Official role page publishes the application deadline.' : 'Official current role page is open and does not publish an application deadline.', checkedAt: now.toISOString(), postingStatus: 'open' } } }
 
 describe('canonical application deadline corrections', () => {
@@ -21,17 +22,13 @@ describe('canonical application deadline corrections', () => {
     const next = upgradeSnapshotToLatest(JSON.parse(JSON.stringify(result.snapshot)))
     expect(next.data.opportunities[0].deadline).toBeUndefined()
     expect(next.data.actions[0].dueAt).toBeUndefined()
-    expect(next.data.scheduleNodes).toHaveLength(2)
-    expect(next.data.scheduleNodes![0].temporal).toEqual(oldNodes![0].temporal)
-    expect(next.data.scheduleNodes![0].state).toBe('superseded')
-    expect(next.data.scheduleNodes![1].state).toBe('cancelled')
+    expect(next.data.scheduleNodes).toEqual(oldNodes)
     expect(resolveApplicationDeadline(next.data.opportunities[0], next.data)).toMatchObject({ state: 'unknown', source: 'correction', postingStatus: 'open' })
     expect(classifyJob(next.data.opportunities[0], next.data, now, 'Asia/Shanghai')).toBe('no_deadline')
     const jobs = buildOpportunityDecisionList(next, { now, timezone: 'Asia/Shanghai' })
     const schedule = buildScheduleStream(next, { accountKey: 'synthetic', workspaceRevision: '1', now, timezone: 'Asia/Shanghai' })
     expect(jobs.all[0].category).toBe('no_deadline')
-    expect(schedule.sections.no_deadline.map(item => item.opportunityId)).toEqual(['synthetic-legacy'])
-    expect(schedule.sections.no_deadline[0].node).toBeUndefined()
+    expect(schedule.sections.no_deadline).toEqual([])
     expect(schedule.sections.upcoming).toHaveLength(0)
     expect(next.data.reminderIntents).toHaveLength(0)
     expect(applyUserDomainCommand(next, command(before), now).status).toBe('ALREADY_APPLIED')
@@ -42,7 +39,8 @@ describe('canonical application deadline corrections', () => {
     const next = applyUserDomainCommand(base(), command(base(), '2026-10-08'), now).snapshot
     expect(next.data.opportunities[0].deadline).toBe('2026-10-08')
     expect(next.data.actions[0].dueAt).toBe('2026-10-08')
-    expect(next.data.scheduleNodes!.at(-1)?.temporal).toEqual({ shape: 'date_only', precision: 'date', timezone: 'floating-date', date: '2026-10-08', resolutionBasis: 'source_explicit' })
+    expect(next.data.scheduleNodes).toEqual(base().data.scheduleNodes)
+    expect(resolveApplicationDeadline(next.data.opportunities[0], next.data)).toMatchObject({ precision: 'date', deadline: '2026-10-08', timezone: 'floating-date' })
     expect(classifyJob(next.data.opportunities[0], next.data, new Date('2026-10-08T15:59:59Z'), 'Asia/Shanghai')).toBe('to_apply')
     expect(classifyJob(next.data.opportunities[0], next.data, new Date('2026-10-08T16:00:00Z'), 'Asia/Shanghai')).toBe('deadline_passed')
   })
@@ -98,9 +96,8 @@ describe('canonical application deadline corrections', () => {
     expect(() => applyUserDomainCommand(snapshot, input, now)).toThrow(/checkedAt/)
   })
   it('honors an explicit source calendar timezone rather than the workspace timezone', () => {
-    const next = applyUserDomainCommand(base(), command(base(), '2026-10-08'), now).snapshot
-    const latest = next.data.scheduleNodes!.at(-1)!
-    latest.temporal.timezone = 'Asia/Tokyo'
+    const input = command(base(), '2026-10-08'); input.correction.timezone = 'Asia/Tokyo'
+    const next = applyUserDomainCommand(base(), input, now).snapshot
     expect(classifyJob(next.data.opportunities[0], next.data, new Date('2026-10-08T15:30:00Z'), 'Asia/Shanghai')).toBe('deadline_passed')
   })
   it('an explicit later user deadline can replace an unknown correction', () => {
@@ -117,16 +114,16 @@ describe('canonical application deadline corrections', () => {
     expect(resolveApplicationDeadline(undone.data.opportunities[0], undone.data)).toMatchObject({ deadline: '2026-10-08', source: 'correction', sourceUrl: command().correction.sourceUrl, sourceAuthority: 'official_role', checkedAt: now.toISOString() })
     expect(resolveApplicationDeadline(undone.data.opportunities[0], undone.data).evidenceRefs).toEqual(resolveApplicationDeadline(corrected.data.opportunities[0], corrected.data).evidenceRefs)
     expect(undone.data.opportunities[0].deadline).toBe('2026-10-08')
-    const moved = applyUserDomainCommand(corrected, { commandId: 'synthetic-reschedule', kind: 'reschedule_occurrence', occurrenceId: 'application-deadline:synthetic-legacy', temporal: { shape: 'date_only', precision: 'date', timezone: 'floating-date', date: '2026-10-12', resolutionBasis: 'user_explicit' } }, now).snapshot
-    expect(resolveApplicationDeadline(moved.data.opportunities[0], moved.data).deadline).toBe('2026-10-12')
-    expect(moved.data.opportunities[0].deadline).toBe('2026-10-12')
-    expect(moved.data.actions[0].dueAt).toBe('2026-10-12')
+    const archived = structuredClone(corrected.data.scheduleNodes)
+    expect(() => applyUserDomainCommand(corrected, { commandId: 'synthetic-reschedule', kind: 'reschedule_occurrence', occurrenceId: 'application-deadline:synthetic-legacy', temporal: { shape: 'date_only', precision: 'date', timezone: 'floating-date', date: '2026-10-12', resolutionBasis: 'user_explicit' } }, now)).toThrow(/not a calendar/)
+    expect(corrected.data.scheduleNodes).toEqual(archived)
+
   })
   it('does not let a weaker new correction erase pre-existing explicit ownership', () => {
     const explicit = applyUserDomainCommand(base(), { commandId: 'synthetic-old-user-deadline', kind: 'set_deadline', opportunityId: 'synthetic-legacy', deadline: '2026-10-11', precision: 'date' }, now).snapshot
     const input = command(explicit)
-    expect(() => applyUserDomainCommand(explicit, { ...input, correction: { ...input.correction, sourceAuthority: 'university_repost' } }, now)).toThrow(/Weaker evidence/)
-    expect(() => applyUserDomainCommand(explicit, { ...input, correction: { ...input.correction, sourceAuthority: 'aggregator', postingStatus: 'unknown' } }, now)).toThrow(/Weaker evidence/)
+    expect(() => applyUserDomainCommand(explicit, { ...input, correction: { ...input.correction, sourceAuthority: 'university_repost' } }, now)).toThrow(/Weaker evidence|lower-authority/g)
+    expect(() => applyUserDomainCommand(explicit, { ...input, correction: { ...input.correction, sourceAuthority: 'aggregator', postingStatus: 'unknown' } }, now)).toThrow(/Weaker evidence|lower-authority/g)
   })
   it('a source correction cannot be overwritten by undoing an older manual deadline', () => {
     const original = applyUserDomainCommand(base(), { commandId: 'synthetic-prior-manual', kind: 'set_deadline', opportunityId: 'synthetic-legacy', deadline: '2026-10-05', precision: 'date' }, now)
@@ -153,7 +150,7 @@ describe('canonical application deadline corrections', () => {
     const snapshot = base(); const input = command(snapshot)
     snapshot.data.actions[0].dueAt = '2026-10-09'
     expect(() => applyUserDomainCommand(snapshot, input, now)).toThrow(/changed/)
-    const applied = base(); applied.data.actions[0].status = 'done'
+    const applied = applyUserDomainCommand(base(), { commandId: 'actual-application', kind: 'record_application_submission', opportunityId: 'synthetic-legacy' }, now).snapshot
     const serialized = JSON.stringify(applied)
     expect(() => applyUserDomainCommand(applied, command(applied), now)).toThrow(/unsubmitted/)
     expect(JSON.stringify(applied)).toBe(serialized)
@@ -181,9 +178,9 @@ describe('exclusive user-defined job categories', () => {
   })
   it('terminates a submitted process separately from closing an unsubmitted source, preserving abandoned uncertainty', () => {
     const snapshot = base(); const job = snapshot.data.opportunities[0]
-    job.processStage = 'closed'; snapshot.data.actions[0].status = 'done'
+    job.processStage = 'closed'; snapshot.data.timeline = [{ id: 'applied-proof', kind: 'application_submitted', category: 'opportunity', source: 'user_action', opportunityId: job.id, title: 'Applied', occurredAt: now.toISOString(), recordedAt: now.toISOString() }]
     expect(classifyJob(job, snapshot.data, now, 'Asia/Shanghai')).toBe('process_ended')
-    job.processStage = 'not_applied'; job.participationStatus = 'abandoned'; snapshot.data.actions[0].status = 'todo'
+    job.processStage = 'not_applied'; job.participationStatus = 'abandoned'; snapshot.data.actions[0].status = 'todo'; snapshot.data.timeline = []
     expect(classifyJob(job, snapshot.data, now, 'Asia/Shanghai')).toBeUndefined()
     const closed = applyUserDomainCommand(base(), { ...command(), correction: { ...command().correction, postingStatus: 'closed' } }, now).snapshot
     expect(classifyJob(closed.data.opportunities[0], closed.data, now, 'Asia/Shanghai')).toBe('deadline_passed')
@@ -209,6 +206,8 @@ describe('projection-local classification owner index', () => {
     expect(owners('dense-job-2').actions).toHaveLength(1)
     snapshot.data.actions.find(item => item.id === 'apply:dense-job-2')!.status = 'done'
     const updated = indexJobClassificationData(snapshot.data)
-    expect(classifyJob(snapshot.data.opportunities[2], updated('dense-job-2'), INSTANT_NOW, 'Asia/Shanghai')).toBeUndefined()
+    expect(classifyJob(snapshot.data.opportunities[2], updated('dense-job-2'), INSTANT_NOW, 'Asia/Shanghai')).toBe('to_apply')
+    snapshot.data.timeline!.push({ id: 'explicit-submit', kind: 'application_submitted', category: 'opportunity', source: 'user_action', opportunityId: 'dense-job-2', title: 'Applied', occurredAt: INSTANT_NOW.toISOString(), recordedAt: INSTANT_NOW.toISOString() })
+    expect(classifyJob(snapshot.data.opportunities[2], indexJobClassificationData(snapshot.data)('dense-job-2'), INSTANT_NOW, 'Asia/Shanghai')).toBeUndefined()
   })
 })

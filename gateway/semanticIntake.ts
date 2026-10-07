@@ -1,3 +1,4 @@
+import { userJobFactsShape } from '../src/userJobFactsSchema.js'
 import { applyDecisionDismissalCompensation, type DecisionDismissalCompensation } from '../src/decisionDismissal.js'
 import { restoreOpportunityMerge, type OpportunityMergeCompensation } from '../src/opportunityMerge.js'
 import type { CallToolResult } from '@modelcontextprotocol/server'
@@ -56,6 +57,8 @@ const baseCandidate = {
 }
 
 const candidate = z.discriminatedUnion('kind', [
+  z.object({ ...baseCandidate, kind: z.literal('application_action'), plannedDate: dateOnly.optional(), scheduledTemporal: temporal.optional() }).strict(),
+  z.object({ ...baseCandidate, ...userJobFactsShape, kind: z.literal('user_opportunity') }).strict(),
   z.object({ ...baseCandidate, kind: z.literal('application_submitted'), occurredAt: isoString.optional() }).strict(),
   z.object({
     ...baseCandidate,
@@ -83,6 +86,8 @@ const candidate = z.discriminatedUnion('kind', [
   z.object({
     ...baseCandidate,
     kind: z.literal('manual_action'),
+    plannedDate: dateOnly.optional(),
+    scheduledTemporal: temporal.optional(),
     title: z.string().trim().min(1).max(300),
     dueAt: z.string().trim().min(1).max(100).optional(),
     duePrecision: precision.optional(),

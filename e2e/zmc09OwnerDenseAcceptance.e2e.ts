@@ -62,7 +62,7 @@ async function installServer(context: BrowserContext, server: SyntheticServer, c
         const candidate = body.command.value?.candidates?.find((item: { kind: string }) => item.kind === 'manual_action')
         const title = String(candidate?.title ?? '已记录的行动')
         const actionId = `accepted:${commandId}`
-        server.snapshot.data.actions.push(action(actionId, title, undefined, 70))
+        server.snapshot.data.actions.push(action(actionId, title, undefined, 70, '2026-09-29'))
         server.snapshot.data.semanticReceipts ??= []
         server.snapshot.data.semanticReceipts.push({
           id: `semantic-receipt:${commandId}`, inputId: body.command.value.inputId,

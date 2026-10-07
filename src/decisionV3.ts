@@ -50,7 +50,7 @@ export function rankActions(
   const ended = new Set(
     opportunities.filter((item) => item.participationStatus === 'abandoned' || item.processStage === 'closed').map((item) => item.id),
   )
-  const nodeMap = actionNodesById(nodes, actions)
+  const nodeMap = actionNodesById(nodes, actions, opportunities)
   const actionable = actions
     .filter((action) => action.kind !== 'follow_up')
     .filter((action) => !(action.kind === 'apply' && opportunities.find(item => item.id === action.opportunityId)?.processStage === 'unknown'))

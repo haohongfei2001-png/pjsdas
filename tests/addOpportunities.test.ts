@@ -23,9 +23,6 @@ function args() {
       sourceTitle: 'AI Product Manager - Campus Recruiting',
       location: 'Shanghai',
       deadline: '2026-10-10',
-      rationale: 'The user explicitly asked to add this source-backed role.',
-      roleType: 'core' as const,
-      postingStatus: 'open' as const,
     }],
   }
 }
@@ -56,7 +53,7 @@ function textError(result: Awaited<ReturnType<typeof invokeAddOpportunities>>) {
 }
 
 describe('explicit user-authorized opportunity writes', () => {
-  it('adds a source-backed opportunity immediately with an apply action and audit timeline, without a review step', async () => {
+  it('adds a source-backed opportunity as facts only with the shared domain receipt and audit timeline, without a review step', async () => {
     const source = new WritableSource()
     const result = await invokeAddOpportunities(source, args())
 
@@ -70,34 +67,28 @@ describe('explicit user-authorized opportunity writes', () => {
     })
     expect(source.writes).toHaveLength(1)
     expect(source.snapshot.data.opportunities).toHaveLength(1)
-    expect(source.snapshot.data.actions).toHaveLength(1)
-    expect(source.snapshot.data.timeline).toHaveLength(1)
+    expect(source.snapshot.data.actions).toHaveLength(0)
+    expect(source.snapshot.data.timeline!.filter(item => item.kind === 'opportunity_added')).toHaveLength(1)
+    expect(source.snapshot.data.scheduleNodes).toHaveLength(0)
+    expect(source.writes[0].command?.compensation).toBeDefined()
 
     const opportunity = source.snapshot.data.opportunities[0]!
     expect(opportunity).toMatchObject({
       company: 'Example AI',
       role: 'AI Product Manager',
       processStage: 'not_applied',
-      currentStageLabel: '待投',
-      roleType: 'core',
+      currentStageLabel: '未投递',
       opportunityValue: 0,
       fitScore: 0,
-      sourcePriority: 'ChatGPT 明确写入',
-      assessmentStatus: 'unassessed',
       locallyManaged: true,
     })
-    expect(opportunity.detail?.discovery?.posting?.canonicalSourceUrl).toBe('https://careers.example.com/jobs/ai-pm')
-    expect(opportunity.detail?.discovery?.fitConfidence).toBe('low')
-    expect(opportunity.detail?.discovery?.opportunityValueConfidence).toBe('low')
-    expect(source.snapshot.data.actions[0]).toMatchObject({
-      kind: 'apply',
-      opportunityId: opportunity.id,
-      status: 'todo',
-      sourceLabel: 'ChatGPT 明确写入',
-    })
+    expect(opportunity.detail?.userFacts?.applicationUrl).toBe('https://careers.example.com/jobs/ai-pm')
+    expect(opportunity.detail?.userFacts?.provenance).toBe('user_asserted')
+    expect(opportunity.roleType).toBeUndefined()
+    expect(opportunity.detail?.discovery).toBeUndefined()
     expect(source.snapshot.data.timeline?.[0]).toMatchObject({
       kind: 'opportunity_added',
-      source: 'user_action',
+      source: 'mcp',
       opportunityId: opportunity.id,
     })
   })
@@ -119,7 +110,7 @@ describe('explicit user-authorized opportunity writes', () => {
     })
     expect(source.writes).toHaveLength(1)
     expect(source.snapshot.data.opportunities).toHaveLength(1)
-    expect(source.snapshot.data.actions).toHaveLength(1)
+    expect(source.snapshot.data.actions).toHaveLength(0)
   })
 
   it('keeps same-company same-title roles distinct when exact posting URLs differ', async () => {
@@ -145,7 +136,7 @@ describe('explicit user-authorized opportunity writes', () => {
     })
     expect(source.writes).toHaveLength(2)
     expect(source.snapshot.data.opportunities).toHaveLength(2)
-    expect(source.snapshot.data.opportunities.map((item) => item.detail?.discovery?.posting?.canonicalSourceUrl).sort()).toEqual([
+    expect(source.snapshot.data.opportunities.map((item) => item.detail?.userFacts?.applicationUrl).sort()).toEqual([
       'https://careers.example.com/jobs/ai-pm',
       'https://careers.example.com/jobs/ai-pm-community',
     ])
@@ -181,4 +172,16 @@ describe('explicit user-authorized opportunity writes', () => {
     expect(result.isError).toBe(true)
     expect(textError(result).code).toBe('WORKSPACE_READ_ONLY')
   })
+  it('accepts company/title alone, rejects retired fields, and binds replay to exact facts', async () => {
+    const source = new WritableSource()
+    const input = { commandId: 'synthetic-manual-job', opportunities: [{ company: 'No Link', role: 'Product' }] }
+    expect((await invokeAddOpportunities(source, input)).isError).not.toBe(true)
+    const before = structuredClone(source.snapshot)
+    expect((await invokeAddOpportunities(source, { ...input, opportunities: [{ company: 'Changed', role: 'Product' }] })).isError).toBe(true)
+    expect((await invokeAddOpportunities(source, { opportunities: [{ company: 'Forbidden', role: 'Product', roleType: 'core' }] })).isError).toBe(true)
+    expect(source.snapshot).toEqual(before)
+    expect(source.snapshot.data.actions).toEqual([])
+    expect(source.snapshot.data.scheduleNodes).toEqual([])
+  })
+
 })

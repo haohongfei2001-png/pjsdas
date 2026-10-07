@@ -54,7 +54,7 @@ function workbookWithPendingVariants(): File {
 }
 
 describe('Excel importer canonical pending stage semantics', () => {
-  it('normalizes pending label variants and generates apply actions from canonical processStage', async () => {
+  it('normalizes pending labels without interpreting job import as application intent', async () => {
     const bundle = await parsePJSDASWorkbook(workbookWithPendingVariants())
 
     expect(bundle.opportunities).toHaveLength(5)
@@ -73,6 +73,6 @@ describe('Excel importer canonical pending stage semantics', () => {
       '待投',
     ])
     expect(bundle.summary.pending).toBe(5)
-    expect(bundle.actions.filter((item) => item.kind === 'apply')).toHaveLength(5)
+    expect(bundle.actions.filter((item) => item.kind === 'apply')).toHaveLength(0)
   })
 })

@@ -112,13 +112,6 @@ describe('v1.10 autonomous reliability harness', () => {
       }],
       actions: [
         {
-          kind: 'apply',
-          status: 'todo',
-          processStage: 'not_applied',
-          dueAt: undefined,
-          eventLinked: false,
-        },
-        {
           kind: 'manual',
           status: 'done',
           processStage: 'assessment',
@@ -177,7 +170,7 @@ describe('v1.10 autonomous reliability harness', () => {
     const state = projectReliabilityState(shanghai.snapshot)
     expect(state.opportunities).toHaveLength(2)
     expect(state.opportunities.map((item) => item.location).sort()).toEqual(['上海', '北京'].sort())
-    expect(state.actions.filter((item) => item.kind === 'apply')).toHaveLength(2)
+    expect(state.actions.filter((item) => item.kind === 'apply')).toHaveLength(0)
     expect(state.ingestionRuns.every((run) => run.receivedCount === run.accountedCount)).toBe(true)
     expect(state.integrity).toEqual({ status: 'healthy', criticalCount: 0, warningCount: 0, issueCodes: [] })
   })

@@ -144,7 +144,7 @@ function replacement(occurrenceId: string, startAt: string, updatedAt: string): 
 }
 
 describe('UU-01 ScheduleNode contract', () => {
-  it('migrates a date-only application deadline without inventing a clock time', () => {
+  it('retains a legacy date-only job deadline without creating a calendar occurrence or clock time', () => {
     const legacy = legacySnapshot({
       opportunity: opportunity({
         processStage: 'not_applied',
@@ -173,15 +173,8 @@ describe('UU-01 ScheduleNode contract', () => {
     const migrated = upgradeSnapshotToLatest(legacy)
     const node = migrated.data.scheduleNodes?.find((item) => item.kind === 'application_deadline')
     expect(migrated.version).toBe(4)
-    expect(node?.temporal).toMatchObject({
-      shape: 'date_only',
-      precision: 'date',
-      date: '2026-09-22',
-      timezone: 'floating-date',
-    })
-    expect(node?.temporal.deadlineAt).toBeUndefined()
-    expect(node?.temporal.startAt).toBeUndefined()
-    expect(node?.temporal.endAt).toBeUndefined()
+    expect(node).toBeUndefined()
+    expect(migrated.data.scheduleNodes).toEqual([])
     expect(migrated.data.opportunities[0]?.deadline).toBe('2026-09-22T23:59:59.000Z')
   })
 

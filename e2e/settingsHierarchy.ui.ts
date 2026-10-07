@@ -8,7 +8,7 @@ for (const state of ['enabled', 'pending', 'partial', 'error', 'transient', 'con
     await seedSession(page.context())
     await page.clock.setFixedTime(new Date(now))
     await page.setViewportSize({ width, height: width < 600 ? 844 : 900 })
-    const snapshot = workspace()
+    const snapshot = workspace('2026-10-02')
     if (state === 'unverified') snapshot.data.timeline = [createIngestionLedgerTimeline({
       sourceKind: 'gmail', sourceId: 'gmail:primary', sourceRecordId: 'synthetic-historical-mail',
       runId: 'synthetic-historical-run', recordType: 'recruiting_message', outcome: 'unresolved',
@@ -162,7 +162,7 @@ for (const state of ['enabled', 'pending', 'partial', 'error', 'transient', 'con
 test('Today hides only a repeated application identity and retains job access and other context', async ({ page }, info) => {
   await seedSession(page.context())
   await page.clock.setFixedTime(new Date(now))
-  const snapshot = workspace()
+  const snapshot = workspace('2026-10-02')
   snapshot.data.actions[0] = { ...snapshot.data.actions[0]!, kind: 'apply', title: '投递 A公司｜产品经理' }
   snapshot.data.timePlanning = { version: 1, defaultDailyMinutes: 480, updatedAt: now }
   await page.route(/https:\/\/[^/]+\.supabase\.co\//, route => route.abort())

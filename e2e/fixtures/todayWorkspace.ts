@@ -53,12 +53,13 @@ export function opportunity(id: string, company: string, role: string) {
   }
 }
 
-export function action(id: string, title: string, opportunityId?: string, leverage = 70) {
+export function action(id: string, title: string, opportunityId?: string, leverage = 70, plannedDate?: string) {
   return {
     id,
     kind: 'manual' as const,
     title,
     opportunityId,
+    plannedDate,
     estimatedMinutes: 20,
     leverage,
     delayCost: leverage,
@@ -68,7 +69,7 @@ export function action(id: string, title: string, opportunityId?: string, levera
   }
 }
 
-export function workspace(): PJSDASSnapshot {
+export function workspace(plannedDate = '2026-09-23'): PJSDASSnapshot {
   return upgradeSnapshotToLatest({
     schema: 'pjsdas-local-snapshot',
     version: 1,
@@ -81,8 +82,8 @@ export function workspace(): PJSDASSnapshot {
       processes: [],
       processEvents: [],
       actions: [
-        action('A-action-1', 'A第一任务', 'A-opp-1', 86),
-        action('A-action-2', 'A第二任务', 'A-opp-2', 60),
+        action('A-action-1', 'A第一任务', 'A-opp-1', 86, plannedDate),
+        action('A-action-2', 'A第二任务', 'A-opp-2', 60, plannedDate),
       ],
       prep: [],
       applicationGroups: [],

@@ -26,7 +26,7 @@ const action = {
   leverage: 80,
   delayCost: 80,
   processStage: 'not_applied',
-  status: 'todo',
+  status: 'todo', plannedDate: '2026-09-30',
   createdAt: '2026-09-14T00:00:00.000Z',
   updatedAt: '2026-09-14T00:00:00.000Z',
 }

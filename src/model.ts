@@ -196,6 +196,8 @@ export interface SemanticCandidateBase {
 }
 
 export type SemanticCandidate =
+  | (SemanticCandidateBase & { kind: 'application_action'; plannedDate?: string; scheduledTemporal?: ScheduleNodeTemporal })
+  | (SemanticCandidateBase & import('./opportunityCreation.js').UserJobFacts & { kind: 'user_opportunity' })
   | (SemanticCandidateBase & {
       kind: 'application_submitted'
       occurredAt?: string
@@ -239,6 +241,8 @@ export type SemanticCandidate =
       title: string
       dueAt?: string
       duePrecision?: DatePrecision
+      plannedDate?: string
+      scheduledTemporal?: ScheduleNodeTemporal
       estimatedMinutes?: number
     })
   | (SemanticCandidateBase & {
@@ -327,6 +331,8 @@ export interface DecisionRequest {
 export type SemanticReceiptStatus = 'committed' | 'decision_required' | 'no_write' | 'undone'
 
 export interface SemanticIntakeReceipt {
+  /** Exact candidate binding for new additive/user-plan commands. */
+  inputFacts?: string
   id: string
   inputId: string
   sourceKind: SemanticIntakeSourceKind
@@ -488,7 +494,7 @@ export interface DiscoveryInboxItem {
   candidateOpportunityId: string
   company: string
   role: string
-  roleType: OpportunityRole
+  roleType?: OpportunityRole
   sourceUrl: string
   sourceTitle: string
   location?: string
@@ -721,6 +727,8 @@ export interface OpportunityDiscoveryEvidence {
 }
 
 export interface OpportunityUserFacts {
+  /** Set only by the explicit job-creation command, not by later fact edits. */
+  creationCommandId?: string
   provenance: 'user_asserted'
   updatedAt: string
   location?: string
@@ -759,7 +767,7 @@ export interface Opportunity {
   role: string
   currentStageLabel: string
   processStage: ProcessStage
-  roleType: OpportunityRole
+  roleType?: OpportunityRole
   participationStatus?: OpportunityParticipationStatus
   abandonedAt?: string
   assessmentStatus?: OpportunityAssessmentStatus
@@ -815,6 +823,8 @@ export interface OpportunityAlias {
 }
 
 export interface ProcessEvent {
+  /** Stable source occurrence identity, independent of Calendar eligibility. */
+  sourceOccurrenceId?: string
   /** Original fact retained for audit; invalidated evidence cannot drive state. */
   invalidation?: {
     commandId: string
@@ -845,6 +855,8 @@ export interface ProcessEvent {
 }
 
 export interface Action {
+  /** v2 keeps the Action deadline separate from archival calendar projections. */
+  timingContractVersion?: 2
   id: string
   kind: ActionKind
   title: string
@@ -853,6 +865,10 @@ export interface Action {
   applicationGroupId?: string
   processEventId?: string
   processStage?: ProcessStage
+  /** Explicit local-day intent; a completion deadline is not a plan. */
+  plannedDate?: string
+  /** Explicit user-chosen execution time, independent of the completion deadline. */
+  scheduledTemporal?: ScheduleNodeTemporal
   dueAt?: string
   duePrecision?: DatePrecision
   timingMode?: ActionTimingMode

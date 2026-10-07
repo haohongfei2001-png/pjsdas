@@ -5,7 +5,7 @@ import { AUTH_KEY, BACKEND, cors, health, session, workspace } from './fixtures/
 test.beforeEach(async ({ page }) => { await freezeTodayFixture(page) })
 
 for (const scenario of ['sign-out', 'local-edit', 'command-sign-out', 'command-local-edit', 'order-only', 'overlapping-read', 'account-aba', 'cloud-recovery', 'account-return', 'account-return-edited', 'account-return-read', 'checkpoint-interruption', 'checkpoint-interruption-edited'] as const) test(`a delayed authoritative read preserves ${scenario} boundary`, async ({ page }) => {
-  const snapshot = workspace()
+  const snapshot = workspace('2026-09-30')
   let revision = 7
   let commandCalls = 0
   let holdNext = false
@@ -188,7 +188,7 @@ for (const scenario of ['sign-out', 'local-edit', 'command-sign-out', 'command-l
 })
 
 for (const edited of [false, true]) test(`first login sync settles before an older passive read: local edit ${edited}`, async ({ page }) => {
-  const snapshot = workspace()
+  const snapshot = workspace('2026-09-30')
   let reads = 0, writes = 0
   let release: (() => void) | undefined
   await page.addInitScript(({ key, value }) => localStorage.setItem(key, JSON.stringify(value)), { key: AUTH_KEY, value: session('account-a', 'token-a') })

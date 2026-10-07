@@ -7,13 +7,13 @@ import type { ScheduleNode } from '../src/model.js'
 const NOW = new Date('2026-09-28T12:00:00.000Z')
 const OLD = '2026-09-20T00:00:00.000Z'
 const job = opportunity('history-job', 'History startup company', 'Engineer')
-const task = action('history-task', 'History task', job.id)
-const offsetTask = { ...action('offset-task', 'Offset task', job.id), dueAt: '2026-09-29T10:00:00+08:00', duePrecision: 'datetime' as const }
+const task = action('history-task', 'History task', job.id, 70, '2026-09-28')
+const offsetTask = { ...action('offset-task', 'Offset task', job.id, 70, '2026-09-28'), dueAt: '2026-09-29T10:00:00+08:00', duePrecision: 'datetime' as const }
 const history = { id: 'prior-history', kind: 'opportunity_added' as const, category: 'data' as const, source: 'user_action' as const,
   opportunityId: job.id, title: 'Historical job', occurredAt: OLD, recordedAt: OLD }
 
 function historicalNodes(actionId: string): ScheduleNode[] {
-  return ['elapsed_unresolved', 'completed', 'superseded', 'legacy', 'completed_unknown'].map((state, index) => ({
+  const archive: ScheduleNode[] = ['elapsed_unresolved', 'completed', 'superseded', 'legacy', 'completed_unknown'].map((state, index) => ({
     id: `history-node-${index}`, occurrenceId: `history-occurrence-${index}`, version: 1,
     opportunityId: job.id, kind: 'follow_up', state: state === 'legacy' ? 'scheduled' : state === 'completed_unknown' ? 'completed' : state as ScheduleNode['state'],
     temporal: { shape: 'deadline', precision: 'datetime', timezone: 'source-offset', deadlineAt: '2026-09-20T10:00:00+08:00',
@@ -22,6 +22,10 @@ function historicalNodes(actionId: string): ScheduleNode[] {
     evidenceRefs: ['retained:source'], sourceVersionRefs: ['retained:version'], relatedActionIds: [actionId], relatedPrepIds: [],
     constraintKind: 'user_soft', createdAt: OLD, updatedAt: OLD,
   }))
+  return [...archive, { id: 'real-history-event', occurrenceId: 'real-history-event', version: 1,
+    opportunityId: job.id, kind: 'interview', state: 'completed', completedAt: OLD, constraintKind: 'employer_hard',
+    temporal: { shape: 'fixed_range', precision: 'datetime', timezone: 'UTC', startAt: OLD, resolutionBasis: 'source_explicit' },
+    relatedActionIds: [], relatedPrepIds: [], evidenceRefs: [], sourceVersionRefs: [], createdAt: OLD, updatedAt: OLD }]
 }
 
 async function readStore(page: Page, store: string) {
@@ -43,7 +47,7 @@ async function openHistoricalJob(page: Page) {
   await page.goto('/pjsdas/schedule?view=past')
   // Enter through an actual historical arrangement; the opportunity-write receipt stays in Settings.
   await expect(page.locator('[data-schedule-entry="fact:prior-history"]')).toHaveCount(0)
-  await page.locator('[data-schedule-entry="node:history-node-1"]').click()
+  await page.locator('[data-schedule-entry="node:real-history-event"]').click()
   await page.getByRole('button', { name: /查看岗位详情|View job details/ }).click()
 }
 async function assertStartup(page: Page) {

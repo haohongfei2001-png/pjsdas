@@ -212,7 +212,7 @@ test('TSUI-03 Jobs shows one filter group and a conclusion-first routed detail',
   await expect(detail.locator('.opportunity-detail-conclusion')).toContainText(/待投递|Awaiting application/)
   await expect(detail.locator('.opportunity-detail-process-summary')).toContainText(/待投|Not applied/)
   await expect(detail.locator('.opportunity-detail-primary-operation')).toContainText('提交值得科技产品经理申请')
-  await expect(detail.locator('.opportunity-detail-nearest-node')).toContainText(/申请截止|Application deadline/)
+  await expect(detail.locator('.job-detail-facts')).toContainText(/申请截止|Application deadline/)
   await expect(detail.locator('.opportunity-detail-score-grid')).toHaveCount(0)
   await expect(detail.locator('.job-detail-no-link')).toBeVisible()
 

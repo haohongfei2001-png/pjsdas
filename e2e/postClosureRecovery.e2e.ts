@@ -8,7 +8,7 @@ test.beforeEach(async ({ page }) => { await freezeTodayFixture(page) })
 
 for (const trigger of ['auth-expiry', 'settings-sign-out'] as const)
 for (const failure of ['partial-clear-throw', 'transaction-abort'] as const) test(`${trigger} ${failure} reaches lossless recovery without leaving the expired account interactive`, async ({ page }, info) => {
-  const snapshot = workspace()
+  const snapshot = workspace('2026-09-30')
   const requests: Array<{ token: string; action: string }> = []
   await page.addInitScript(({ key, value }) => {
     if (!localStorage.getItem('pcr-auth-seeded')) {
@@ -101,7 +101,7 @@ for (const failure of ['partial-clear-throw', 'transaction-abort'] as const) tes
 })
 
 for (const version of [1, 2, 3] as const) test(`legacy snapshot v${version} restores and starts every daily surface after durable restart`, async ({ page, context }) => {
-  const snapshot: PJSDASSnapshot = workspace()
+  const snapshot: PJSDASSnapshot = workspace('2026-09-30')
   snapshot.version = version
   delete snapshot.data.reminderIntents
   delete snapshot.data.reminderOutbox

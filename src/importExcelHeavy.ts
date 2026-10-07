@@ -289,78 +289,9 @@ export async function parsePJSDASWorkbook(file: File): Promise<ImportBundle> {
     }]
   })
 
-  const groupById = new Map(applicationGroups.map((group) => [group.id, group]))
-  const actionablePending = opportunities.filter(
-    (opportunity) =>
-      opportunity.processStage === 'not_applied' &&
-      (!opportunity.deadline || new Date(opportunity.deadline).getTime() >= now.getTime()),
-  )
-
-  const pendingByGroup = new Map<string, Opportunity[]>()
-  for (const opportunity of actionablePending) {
-    if (!opportunity.applicationGroupId) continue
-    const current = pendingByGroup.get(opportunity.applicationGroupId) ?? []
-    current.push(opportunity)
-    pendingByGroup.set(opportunity.applicationGroupId, current)
-  }
-
-  const groupedAsSingleAction = new Set<string>()
-  for (const [groupId, candidates] of pendingByGroup) {
-    const group = groupById.get(groupId)
-    if (group && groupNeedsSingleAction(group, candidates)) groupedAsSingleAction.add(groupId)
-  }
-
+  // Importing posting facts does not express a decision to apply or plan a day.
+  // Existing user Actions are preserved by the reimport reconciliation layer.
   const actions: Action[] = []
-
-  for (const opportunity of actionablePending) {
-    if (opportunity.applicationGroupId && groupedAsSingleAction.has(opportunity.applicationGroupId)) {
-      continue
-    }
-
-    const estimatedMinutes = opportunity.prepEstimateMinutes ?? 45
-    actions.push({
-      id: `apply:${opportunity.id}`,
-      kind: 'apply',
-      title: `投递 ${opportunity.company}｜${opportunity.role}`,
-      opportunityId: opportunity.id,
-      applicationGroupId: opportunity.applicationGroupId,
-      dueAt: opportunity.deadline,
-      estimatedMinutes,
-      leverage: 0,
-      delayCost: 0,
-      status: 'todo',
-      sourceLabel: '投递总表',
-      createdAt: importedAt,
-      updatedAt: importedAt,
-    })
-  }
-
-  for (const groupId of groupedAsSingleAction) {
-    const group = groupById.get(groupId)
-    const candidates = pendingByGroup.get(groupId) ?? []
-    if (!group || candidates.length === 0) continue
-
-    const dueAt = minDate(candidates.map((candidate) => candidate.deadline))
-    const candidateMinutes = candidates.map((candidate) => candidate.prepEstimateMinutes ?? 45)
-    const estimatedMinutes = Math.max(20, Math.min(...candidateMinutes))
-    const hasKnownCapacityConflict = group.remaining !== undefined && group.remaining < candidates.length
-    const instruction = group.nextAction ?? group.currentOrder ?? '核实共享志愿规则并择优提交'
-
-    actions.push({
-      id: `group:${group.id}`,
-      kind: 'group_decision',
-      title: `${group.company}｜${instruction}`,
-      applicationGroupId: group.id,
-      dueAt,
-      estimatedMinutes,
-      leverage: 0,
-      delayCost: 0,
-      status: 'todo',
-      sourceLabel: '申请组',
-      createdAt: importedAt,
-      updatedAt: importedAt,
-    })
-  }
 
   const processes: ProcessRecord[] = pipeline.flatMap((row, index) => {
     const company = text(row['公司'])

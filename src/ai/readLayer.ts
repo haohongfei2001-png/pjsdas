@@ -366,12 +366,12 @@ export function getTodayPlan(
   }
 
   const ranked = rankActions(workspace.actions, workspace.opportunities, now, undefined, context.timezone, snapshot.data.scheduleNodes ?? [])
-  const consumerPlan = buildConsumerTimePlan({ ranked, nodes: snapshot.data.scheduleNodes ?? [],
+  const consumerPlan = buildConsumerTimePlan({ ranked, nodes: snapshot.data.scheduleNodes ?? [], opportunities: workspace.opportunities, processEvents: workspace.processEvents,
     preferences: snapshot.data.timePlanning, availableMinutes, now, timezone: context.timezone, useRemainingDayDefault: true })
   const capacityMinutes = consumerPlan.capacityMinutes ?? todayCapacity(snapshot.data.timePlanning, now, context.timezone, availableMinutes).minutes
 
   const nodes = snapshot.data.scheduleNodes ?? []
-  const activeNodes = actionNodesById(nodes, workspace.actions)
+  const activeNodes = actionNodesById(nodes, workspace.actions, workspace.opportunities, workspace.processEvents)
   const linkedActions = new Set(nodes.flatMap(node => node.relatedActionIds))
   const timingFor = (action: Action) => {
     const node = activeNodes.get(action.id)
@@ -441,7 +441,7 @@ export function getTodayPlan(
     meta: meta({ ...context, now }),
     date: today,
     availableMinutes: capacityMinutes,
-    plannedMinutes: consumerPlan.planned.reduce((sum, item) => sum + item.action.estimatedMinutes, consumerPlan.fixedMinutes),
+    plannedMinutes: consumerPlan.plannedMinutes,
     capacityConflict: consumerPlan.conflicts.length > 0,
     startableActions,
     fixedEvents,

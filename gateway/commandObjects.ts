@@ -213,7 +213,7 @@ export function domainIntentObjects(command: UserDomainCommand, snapshot: PJSDAS
       ? { type: 'schedule_occurrence', id: occurrenceId }
       : { type: 'schedule_node', id: command.scheduleNodeId })
   }
-  if (command.kind === 'add_manual_action') refs.push({ type: 'command_target', id: command.commandId })
+  if (command.kind === 'add_manual_action' || command.kind === 'add_user_opportunity') refs.push({ type: 'command_target', id: command.commandId })
   if (command.kind === 'set_daily_capacity') refs.push({ type: 'time_planning', id: 'default' })
   if (command.kind === 'set_date_capacity') refs.push({ type: 'time_planning', id: command.date })
   if (command.kind === 'set_work_windows') refs.push({ type: 'time_planning', id: 'windows' })
@@ -226,6 +226,7 @@ export function semanticIntentObjects(observation: SemanticIntakeObservation, sn
     id: `${observation.source.kind}:${observation.source.sourceId}:${observation.source.sourceRecordId}`,
   }]
   for (const candidate of observation.candidates) {
+    if (candidate.kind === 'user_opportunity') refs.push({ type: 'command_target', id: `new-job:${candidate.company.trim().toLowerCase()}|${candidate.role.trim().toLowerCase()}|${candidate.location ?? ''}` })
     const target = candidate.target
     if (target?.opportunityId) refs.push({ type: 'opportunity', id: canonicalOpportunityId(snapshot, target.opportunityId) })
     if (target?.occurrenceId) refs.push({ type: 'schedule_occurrence', id: target.occurrenceId })

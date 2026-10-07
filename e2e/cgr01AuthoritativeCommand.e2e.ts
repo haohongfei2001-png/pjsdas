@@ -13,7 +13,7 @@ const BACKEND = 'https://pjsdas-remote-alpha.vercel.app'
 function action(id: string, title: string, opportunityId: string) {
   return {
     id,
-    kind: 'manual' as const,
+    kind: 'manual' as const, plannedDate: '2026-09-30',
     title,
     opportunityId,
     estimatedMinutes: 15,

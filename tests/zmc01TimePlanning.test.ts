@@ -17,7 +17,7 @@ const ZONE = 'Asia/Shanghai'
 const CREATED = '2026-09-20T00:00:00.000Z'
 
 function flexible(id: string): Action {
-  return { id, kind: 'manual', title: `Prepare ${id}`, status: 'todo',
+  return { id, kind: 'manual', title: `Prepare ${id}`, status: 'todo', plannedDate: '2026-09-25',
     estimatedMinutes: 30, leverage: 75, delayCost: 50,
     dueAt: '2026-09-25', duePrecision: 'date', timingMode: 'deadline',
     createdAt: CREATED, updatedAt: CREATED }

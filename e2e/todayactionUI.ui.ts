@@ -1,7 +1,8 @@
 import { expect, test, type Page } from '@playwright/test'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { validateSnapshot } from '../src/snapshot.js'
-import { BACKEND, seedSession, workspace, action, cors, health } from './fixtures/todayWorkspace.js'
+import { BACKEND, seedSession, workspace, action as fixtureAction, cors, health } from './fixtures/todayWorkspace.js'
+const action = (...args: Parameters<typeof fixtureAction>) => fixtureAction(args[0], args[1], args[2], args[3], '2026-09-23')
 
 const before = process.env.TA_UI_REVIEW === 'before'
 const phase = before ? 'before' : 'after'

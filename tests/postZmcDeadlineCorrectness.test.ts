@@ -35,7 +35,8 @@ describe('post-ZMC deadline correctness', () => {
     expect(read?.nextAction?.actionId).toBe('apply-0')
     expect(read?.nextAction?.dueAt).toBe(DEADLINE)
     expect(formatScheduleTemporal(read!.nextAction!.temporal!, true, 'Asia/Shanghai')).toContain('23:59')
-    expect(read?.nearestNode?.temporal.deadlineAt).toBe(DEADLINE)
+    expect(read?.nearestNode).toBeUndefined()
+    expect(read?.applicationDeadline?.deadline).toBe(DEADLINE)
     expect(read?.reasons.some(item => item.code === 'deadline_near')).toBe(true)
     expect(buildOpportunityDecisionList(snapshot, { now: LATE_NOW, timezone: 'Asia/Shanghai' }).all[0]).toEqual(read)
     const expired = getOpportunityDecisionRead(snapshot, 'job-0', { now: new Date('2026-09-30T16:01:00Z'), timezone: 'Asia/Shanghai' })
@@ -236,7 +237,7 @@ describe('post-ZMC deadline correctness', () => {
       nodes[i].temporal.deadlineAt = item.dueAt
     })
     const ranked = rankActions(snapshot.data.actions, snapshot.data.opportunities, LATE_NOW)
-    const meeting = { ...nodes[0], id: 'meeting', occurrenceId: 'meeting', relatedActionIds: [],
+    const meeting = { ...nodes[0], kind: 'interview' as const, id: 'meeting', occurrenceId: 'meeting', relatedActionIds: [],
       temporal: { shape: 'fixed_range' as const, precision: 'datetime' as const, timezone: 'Asia/Shanghai',
         resolutionBasis: 'source_explicit' as const, startAt: new Date(LATE_NOW.getTime() + 20 * 60_000).toISOString(),
         endAt: new Date(LATE_NOW.getTime() + 40 * 60_000).toISOString() } }

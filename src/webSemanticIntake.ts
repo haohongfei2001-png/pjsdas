@@ -101,7 +101,7 @@ export async function previewWebSemanticCapture(
     canonicalReferences(),
     exportLocalSnapshot(),
   ])
-  const interpretation = buildWebSemanticInterpretation(trimmed, opportunities, baseline, references, now)
+  const interpretation = buildWebSemanticInterpretation(trimmed, opportunities, baseline, references, now, Intl.DateTimeFormat().resolvedOptions().timeZone ?? 'UTC')
   return {
     mode: interpretation.mode,
     candidates: interpretation.candidates,
@@ -112,7 +112,7 @@ export async function previewWebSemanticCapture(
 
 export async function submitWebSemanticCapture(
   text: string,
-  options: { now?: Date; timezone?: string; accountKey?: string; commandId?: string; contextRefs?: string[]; confirmExisting?: boolean; queueOffline?: boolean } = {},
+  options: { now?: Date; timezone?: string; accountKey?: string; commandId?: string; contextRefs?: string[]; confirmExisting?: boolean; queueOffline?: boolean; candidates?: SemanticCandidate[] } = {},
 ): Promise<WebSemanticCaptureResult> {
   const trimmed = text.trim()
   if (!trimmed) throw new Error('请输入要告诉 TodayAction 的内容。')
@@ -124,8 +124,9 @@ export async function submitWebSemanticCapture(
     exportLocalSnapshot(),
   ])
   const baselineFingerprint = await fingerprintWorkspace(baseline)
-  const interpretation = buildWebSemanticInterpretation(trimmed, opportunities, baseline, references, now)
-  const recordId = `capture:${now.getTime()}:${stableHash(trimmed)}`
+  const interpretation = options.candidates ? { mode: 'current_intent' as const, candidates: options.candidates, unresolved: [], ignored: [] }
+    : buildWebSemanticInterpretation(trimmed, opportunities, baseline, references, now, timezone)
+  const recordId = options.commandId ?? `capture:${now.getTime()}:${stableHash(trimmed)}`
   const observation: SemanticIntakeObservation = {
     contractVersion: 1,
     inputId: `web:${recordId}`,

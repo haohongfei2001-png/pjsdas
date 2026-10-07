@@ -65,7 +65,7 @@ export async function prepareJourney(page: Page) {
         createdAt: '2026-09-23T00:00:00.000Z', updatedAt: '2026-09-23T00:00:00.000Z',
       }],
       actions: [{
-        id: 'voiceover-action', kind: 'manual' as const, title: 'A第一任务',
+        id: 'voiceover-action', kind: 'manual' as const, title: 'A第一任务', plannedDate: '2026-09-30',
         estimatedMinutes: 20, leverage: 80, delayCost: 80, status: 'todo' as const,
         createdAt: '2026-09-23T00:00:00.000Z', updatedAt: '2026-09-23T00:00:00.000Z',
       }],
@@ -91,7 +91,7 @@ export async function prepareJourney(page: Page) {
       commandCount += 1
       const title = body.command.value.candidates?.find((item: any) => item.kind === 'manual_action')?.title ?? '整理面试材料'
       snapshot.data.actions.push({
-        id: 'captured-action', kind: 'manual' as const, title, estimatedMinutes: 20,
+        id: 'captured-action', kind: 'manual' as const, title, plannedDate: '2026-09-30', estimatedMinutes: 20,
         leverage: 90, delayCost: 90, status: 'todo' as const,
         createdAt: '2026-09-23T05:10:00.000Z', updatedAt: '2026-09-23T05:10:00.000Z',
       })

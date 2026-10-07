@@ -70,18 +70,18 @@ describe('UU06 shared Gmail intake', () => {
     const text = '京东 AI产品经理 笔试开放窗口2026年9月24日 09:00至2026年9月25日 17:00；提交截止2026年9月25日 18:00'
     const first = run(snapshot(), text, 'window')
     expect(first.snapshot.data.processEvents).toHaveLength(2)
-    expect(first.snapshot.data.scheduleNodes?.map((node) => node.temporal.shape)).toEqual(['availability_window', 'deadline'])
-    expect(first.snapshot.data.scheduleNodes?.[0]?.temporal).toMatchObject({ startAt: '2026-09-24T09:00:00+08:00', endAt: '2026-09-25T17:00:00+08:00' })
-    expect(first.snapshot.data.scheduleNodes?.[1]?.temporal.deadlineAt).toBe('2026-09-25T18:00:00+08:00')
+    expect(first.snapshot.data.scheduleNodes).toEqual([])
+    expect(first.snapshot.data.processEvents?.[0]?.temporal).toMatchObject({ startAt: '2026-09-24T09:00:00+08:00', endAt: '2026-09-25T17:00:00+08:00' })
+    expect(first.snapshot.data.processEvents?.[1]?.temporal?.deadlineAt).toBe('2026-09-25T18:00:00+08:00')
     validateSnapshot(first.snapshot)
     const reschedule = gmailSemanticRecordFromMessage(message('京东 AI产品经理 笔试开放窗口改期为2026年9月26日 09:00至2026年9月27日 17:00'), snapshot().data.opportunities, now)!
     expect(reschedule.observation.candidates[0]).toMatchObject({ kind: 'occurrence_rescheduled', temporal: { shape: 'availability_window', endAt: '2026-09-27T17:00:00+08:00' } })
     const replay = run(first.snapshot, text, 'window2')
-    expect(replay.snapshot.data.scheduleNodes).toHaveLength(2)
+    expect(replay.snapshot.data.scheduleNodes).toHaveLength(0)
     const changedWindow = run(first.snapshot, text.replace('17:00', '16:00'), 'window3')
     expect(changedWindow.snapshot.data.decisionRequests).toHaveLength(0)
     expect(changedWindow.run.outcomes.unresolved).toBe(1)
-    expect(changedWindow.snapshot.data.scheduleNodes?.[0]?.temporal.endAt).toBe('2026-09-25T17:00:00+08:00')
+    expect(changedWindow.snapshot.data.processEvents?.[0]?.temporal?.endAt).toBe('2026-09-25T17:00:00+08:00')
     const undone = applySemanticCompensation(first.snapshot, first.compensation, now)
     expect(undone.data.processEvents).toHaveLength(0)
     expect(undone.data.scheduleNodes?.filter((node) => node.state !== 'cancelled')).toHaveLength(0)
@@ -1520,7 +1520,8 @@ describe('UU06 shared Gmail intake', () => {
   it('date-only assessment deadlines remain date-only without a fabricated 23:59', () => {
     const result = run(snapshot(), '京东 AI产品经理 测评通知，请在2026年9月25日前完成测评')
     expect(result.snapshot.data.processEvents[0]).toMatchObject({ dueAt: '2026-09-25', duePrecision: 'date' })
-    expect(result.snapshot.data.scheduleNodes?.[0]?.temporal).toMatchObject({ shape: 'date_only', date: '2026-09-25' })
+    expect(result.snapshot.data.scheduleNodes).toEqual([])
+    expect(result.snapshot.data.processEvents[0].temporal).toMatchObject({ shape: 'date_only', date: '2026-09-25' })
     expect(JSON.stringify(result.snapshot)).not.toContain('23:59')
   })
   it('turns an unknown-company test reminder into one source clarification without unrelated choices', () => {

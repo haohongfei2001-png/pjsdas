@@ -42,7 +42,7 @@ test('signed progress review commits one scoped account command and appears on a
       processStage: 'not_applied', roleType: 'core', early: false, opportunityValue: 70, fitScore: 75,
       locallyManaged: true, importedAt: at }],
     processes: [], processEvents: [], actions: [{ id: 'existing-action', kind: 'manual', title: 'Existing task',
-      opportunityId: 'opp-1', estimatedMinutes: 15, leverage: 75, delayCost: 75, status: 'todo',
+      opportunityId: 'opp-1', estimatedMinutes: 15, leverage: 75, delayCost: 75, status: 'todo', plannedDate: '2026-09-30',
       createdAt: at, updatedAt: at }], prep: [], applicationGroups: [], timeline: [], changeSets: [],
   }, at)
   initial.data.timePlanning = { version: 1, defaultDailyMinutes: 480, updatedAt: at }

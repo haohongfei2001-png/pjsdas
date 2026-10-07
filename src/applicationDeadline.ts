@@ -3,11 +3,13 @@ import type { SnapshotData } from './snapshot.js'
 
 export type DeadlineAuthority = 'official_role' | 'official_campaign' | 'university_repost' | 'aggregator' | 'user'
 export interface ApplicationDeadlineCorrection {
+  origin?: 'import'
   commandId: string
   state: 'confirmed' | 'unknown'
   deadline?: string
   precision?: DatePrecision
-  sourceUrl: string
+  timezone?: string
+  sourceUrl?: string
   sourceAuthority: DeadlineAuthority
   evidence: string
   checkedAt: string
@@ -16,6 +18,8 @@ export interface ApplicationDeadlineCorrection {
   previousDeadline?: string
   previousNodeIds: string[]
   resultNodeIds?: string[]
+  /** New fact-only owner; archival nodes are retained, never made appointments. */
+  acknowledgedNodeFacts?: string
 }
 export interface ResolvedApplicationDeadline {
   state: 'confirmed' | 'unknown'
@@ -42,6 +46,20 @@ export function applicationDeadlineNodes(data: Pick<SnapshotData, 'scheduleNodes
   }
   return [...latest.values()].sort((a, b) => a.id.localeCompare(b.id))
 }
+/** Bounded exact archival owner state, independent of array/sync order. */
+export function deadlineNodeFacts(nodes: ScheduleNode[]) {
+  function canonical(value: unknown): unknown {
+    if (Array.isArray(value)) return value.map(canonical)
+    if (value && typeof value === 'object') return Object.fromEntries(Object.entries(value).filter(([, item]) => item !== undefined)
+      .sort(([a], [b]) => a.localeCompare(b)).map(([key, item]) => [key, canonical(item)]))
+    return value
+  }
+  return JSON.stringify(canonical([...nodes].sort((a, b) => a.id.localeCompare(b.id)).map(node => ({
+    id: node.id, version: node.version, state: node.state, temporal: node.temporal,
+    sourceVersionRefs: [...node.sourceVersionRefs].sort(),
+  }))))
+}
+
 /** Includes append-only Undo versions that restore the exact original evidence. */
 export function correctionOwnsDeadlineNode(correction: ApplicationDeadlineCorrection | undefined, node: ScheduleNode) {
   return Boolean(correction && (correction.resultNodeIds?.includes(node.id)
@@ -73,10 +91,20 @@ export function resolveApplicationDeadline(opportunity: Opportunity, data: Pick<
   // Not finding a deadline is not positive evidence that a closed posting reopened.
   const postingStatus = correction?.postingStatus === 'unknown' && previousAvailability === 'closed' ? 'closed'
     : correction?.postingStatus ?? previousAvailability
+  if (correction?.acknowledgedNodeFacts !== undefined) {
+    const matches = correction.acknowledgedNodeFacts === deadlineNodeFacts(nodes)
+    const evidenceRefs = [correction.sourceUrl, `deadline-correction:${correction.commandId}`].filter((value): value is string => Boolean(value))
+    return { state: matches ? correction.state : 'unknown',
+      deadline: matches && correction.state === 'confirmed' ? correction.deadline : undefined,
+      precision: matches && correction.state === 'confirmed' ? correction.precision : undefined,
+      timezone: correction.timezone ?? (correction.precision === 'date' ? 'floating-date' : 'source-offset'),
+      source: correction.sourceAuthority === 'user' && !correction.sourceUrl ? 'user' : 'correction', sourceUrl: correction.sourceUrl, sourceAuthority: correction.sourceAuthority,
+      evidenceRefs, checkedAt: correction.checkedAt, nodeIds, postingStatus }
+  }
   const newExplicitOwner = correction && nodes.some(node => !correctionOwnsDeadlineNode(correction, node)
     && !['cancelled', 'superseded'].includes(node.state)
     && ['user_explicit', 'source_explicit'].includes(node.temporal.resolutionBasis))
-  if (correction?.state === 'unknown' && !newExplicitOwner) return { state: 'unknown', source: 'correction', sourceUrl: correction.sourceUrl, sourceAuthority: correction.sourceAuthority, evidenceRefs: [correction.sourceUrl, `deadline-correction:${correction.commandId}`], checkedAt: correction.checkedAt, nodeIds, postingStatus }
+  if (correction?.state === 'unknown' && !newExplicitOwner) return { state: 'unknown', source: 'correction', sourceUrl: correction.sourceUrl, sourceAuthority: correction.sourceAuthority, evidenceRefs: [correction.sourceUrl, `deadline-correction:${correction.commandId}`].filter((value): value is string => Boolean(value)), checkedAt: correction.checkedAt, nodeIds, postingStatus }
 
   // A withdrawn canonical occurrence is a tombstone, not a reason to revive
   // the retained legacy/rich-fact date. Conflicting active owners remain unknown.
@@ -110,7 +138,7 @@ export function applicationDeadlineFingerprint(opportunity: Opportunity, data: S
     user: user ? { deadline: user.deadline, precision: user.deadlinePrecision, updatedAt: user.updatedAt } : null,
     source: { deadline: opportunity.detail?.facts?.application.deadline, evidence: opportunity.detail?.facts?.evidence },
     posting: posting ? { id: posting.id, deadline: posting.deadline, status: posting.postingStatus, verifiedAt: posting.lastVerifiedAt, sourceUrl: posting.sourceUrl } : null,
-    correction: correction ? { commandId: correction.commandId, state: correction.state, deadline: correction.deadline, precision: correction.precision, sourceAuthority: correction.sourceAuthority, recordedAt: correction.recordedAt, resultNodeIds: correction.resultNodeIds } : null,
+    correction: correction ? { commandId: correction.commandId, state: correction.state, deadline: correction.deadline, precision: correction.precision, timezone: correction.timezone, sourceAuthority: correction.sourceAuthority, recordedAt: correction.recordedAt, resultNodeIds: correction.resultNodeIds, acknowledgedNodeFacts: correction.acknowledgedNodeFacts } : null,
     nodes: applicationDeadlineNodes(data, opportunity.id).map(node => ({ id: node.id, version: node.version, state: node.state, temporal: node.temporal, updatedAt: node.updatedAt, sourceVersionRefs: node.sourceVersionRefs, relatedActionIds: node.relatedActionIds })),
     actions: data.actions.filter(item => item.opportunityId === opportunity.id && item.kind === 'apply').sort((a, b) => a.id.localeCompare(b.id)).map(action => ({ id: action.id, status: action.status, dueAt: action.dueAt, duePrecision: action.duePrecision, timingMode: action.timingMode, updatedAt: action.updatedAt })) }
   function canonical(value: unknown): unknown {
@@ -144,7 +172,6 @@ export function indexJobClassificationData(data: JobClassificationData) {
 export function hasApplicationEvidence(opportunity: Opportunity, data: JobClassificationData) {
   if (['screening', 'assessment', 'written_test', 'interview', 'offer'].includes(opportunity.processStage)) return true
   if (data.processes.some(item => item.opportunityId === opportunity.id && ['screening', 'assessment', 'written_test', 'interview', 'offer'].includes(item.stage))) return true
-  if (data.actions.some(item => item.opportunityId === opportunity.id && item.kind === 'apply' && item.status === 'done')) return true
   if ((data.timeline ?? []).some(item => item.opportunityId === opportunity.id && item.kind === 'application_submitted')) return true
   return data.processEvents.some(item => item.opportunityId === opportunity.id && !item.invalidation && ['assessment_invite', 'written_test_invite', 'interview_invite', 'offer'].includes(item.type))
 }

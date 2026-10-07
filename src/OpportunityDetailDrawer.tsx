@@ -1,3 +1,4 @@
+import type { WebSemanticCaptureResult, LocalSemanticUndoToken } from './webSemanticIntake.js'
 import { useEffect, useRef, useState } from 'react'
 import { formatScheduleTemporal } from './scheduleDisplayTime.js'
 import { latestByOccurrence, nodeForAction } from './todayBrief.js'
@@ -37,6 +38,8 @@ interface OpportunityDetailDrawerProps {
   onNavigate: (destination: OpportunityDetailDestination) => void
   onOpenDecision: (id: string) => void
   onMarkAction: (id: string, status: Action['status'], intent?: 'application_submission') => Promise<void>
+  onJobAction?: (id: string, kind: 'today' | 'submission') => Promise<WebSemanticCaptureResult>
+  onUndoJobAction?: (token: LocalSemanticUndoToken) => Promise<void>
   readOnly?: boolean
   asPage?: boolean
   returnLabel?: string
@@ -103,6 +106,8 @@ export default function OpportunityDetailDrawer({
   onNavigate,
   onOpenDecision,
   onMarkAction,
+  onJobAction,
+  onUndoJobAction,
   readOnly = false,
   asPage = false,
   returnLabel,
@@ -115,6 +120,9 @@ export default function OpportunityDetailDrawer({
   const postingHistory = discovery?.postingHistory ?? []
   const [visibleTimelineCount, setVisibleTimelineCount] = useState(6)
   const [pendingActionId, setPendingActionId] = useState<string>()
+  const jobIntentFlightRef = useRef(false)
+  const [jobReceipt, setJobReceipt] = useState<{ message: string; error?: boolean; undo?: LocalSemanticUndoToken }>()
+  useEffect(() => setJobReceipt(undefined), [opportunity.id])
   const dialogRef = useRef<HTMLElement>(null)
   const closeButtonRef = useRef<HTMLButtonElement>(null)
   useEffect(() => setVisibleTimelineCount(6), [opportunity.id])
@@ -168,6 +176,21 @@ export default function OpportunityDetailDrawer({
     return () => window.removeEventListener('keydown', handler)
   }, [onClose, asPage])
 
+  async function saveJobIntent(kind: 'today' | 'submission') {
+    if (!onJobAction || pendingActionId || jobIntentFlightRef.current) return
+    jobIntentFlightRef.current = true
+    setPendingActionId(kind)
+    setJobReceipt(undefined)
+    try {
+      const result = await onJobAction(opportunity.id, kind)
+      const saved = result.status === 'APPLIED' || result.status === 'ALREADY_APPLIED'
+      setJobReceipt({ message: result.status === 'QUEUED' ? (zh ? '已保存在本机，联网后确认。' : 'Saved on this device; confirmation follows when online.')
+        : saved ? (kind === 'today' ? (zh ? '已加入今天。' : 'Added to today.') : (zh ? '已记录投递。' : 'Application recorded.'))
+          : (zh ? '请在待确认事项中核对。' : 'Review the pending decision.'), undo: result.undo })
+    } catch (error) { setJobReceipt({ message: error instanceof Error ? error.message : String(error), error: true }) }
+    finally { jobIntentFlightRef.current = false; setPendingActionId(undefined) }
+  }
+
   const Surface = asPage ? 'article' : 'aside'
   return (
     <div className={asPage ? 'job-detail-page' : 'opportunity-detail-backdrop'} role={asPage ? undefined : 'presentation'} onMouseDown={asPage ? undefined : onClose}>
@@ -181,8 +204,16 @@ export default function OpportunityDetailDrawer({
             {asPage ? <h1>{opportunity.role}</h1> : <h2>{opportunity.role}</h2>}
             <div className="opportunity-detail-header-badges">
               <span>{effectiveStageText}</span>
+              {userFacts?.creationCommandId ? <span>{zh ? '用户添加' : 'Added by you'}</span> : null}
               {opportunity.early ? <span>{zh ? '早期窗口' : 'Early window'}</span> : null}
             </div>
+            <p className="job-detail-facts">
+              {(userFacts?.location ?? discovery?.location) ? <span>{userFacts?.location ?? discovery?.location}</span> : null}
+              <span>{zh ? '申请截止：' : 'Application deadline: '}{decision?.applicationDeadline?.state === 'confirmed' && decision.applicationDeadline.deadline
+                ? formatScheduleTemporal({ precision: decision.applicationDeadline.precision, timezone: decision.applicationDeadline.timezone,
+                  date: decision.applicationDeadline.deadline.slice(0, 10), deadlineAt: decision.applicationDeadline.precision === 'date' ? undefined : decision.applicationDeadline.deadline }, zh, decision.displayTimezone)
+                : (zh ? '未知' : 'Unknown')}</span>
+            </p>
           </div>
           {!asPage ? <button ref={closeButtonRef} className="opportunity-detail-close" type="button" onClick={onClose} aria-label={zh ? '关闭' : 'Close'}>×</button> : null}
         </header>
@@ -190,13 +221,20 @@ export default function OpportunityDetailDrawer({
         {asPage ? <div className="job-detail-action-area">
           <div className="job-detail-actions">
             {eligibleToApply && confirmedApplicationUrl ? <a href={confirmedApplicationUrl} target="_blank" rel="noopener noreferrer">{zh ? '打开申请入口 ↗' : 'Open application ↗'}</a> : null}
-            {eligibleToApply && applyAction && !readOnly ? <button type="button" disabled={Boolean(pendingActionId)} onClick={() => {
+            {eligibleToApply && !readOnly && onJobAction ? <>
+              <button type="button" disabled={Boolean(pendingActionId)} onClick={() => { void saveJobIntent('today') }}>{pendingActionId === 'today' ? (zh ? '保存中…' : 'Saving…') : (zh ? '加入今天' : 'Add to today')}</button>
+              <button type="button" disabled={Boolean(pendingActionId)} onClick={() => { void saveJobIntent('submission') }}>{pendingActionId === 'submission' ? (zh ? '确认中…' : 'Confirming…') : (zh ? '我已投递' : 'I applied')}</button>
+            </> : eligibleToApply && applyAction && !readOnly ? <button type="button" disabled={Boolean(pendingActionId)} onClick={() => {
               setPendingActionId(applyAction.id)
               void onMarkAction(applyAction.id, 'done', 'application_submission').finally(() => setPendingActionId(undefined))
-            }}>{pendingActionId === applyAction.id ? (zh ? '确认中…' : 'Confirming…') : (zh ? '我已投递' : 'I applied')}</button> : null}
+            }}>{zh ? '我已投递' : 'I applied'}</button> : null}
             {eligibleToApply && !confirmedApplicationUrl ? <span className="job-detail-no-link">{zh ? '暂无已确认的申请入口' : 'No confirmed application link'}</span> : null}
             <button type="button" className="job-detail-capture" disabled={readOnly} onClick={onCapture}>{zh ? '告诉 TodayAction' : 'Tell TodayAction'}</button>
           </div>
+          {jobReceipt ? <p role={jobReceipt.error ? 'alert' : 'status'}>{jobReceipt.message} {jobReceipt.undo && onUndoJobAction ? <button type="button" disabled={Boolean(pendingActionId)} onClick={() => {
+            setPendingActionId('undo')
+            void onUndoJobAction(jobReceipt.undo!).then(() => setJobReceipt({ message: zh ? '已撤销。' : 'Undone.' })).catch(error => setJobReceipt({ message: String(error), error: true })).finally(() => setPendingActionId(undefined))
+          }}>{zh ? '撤销' : 'Undo'}</button> : null}</p> : null}
           {applicationGroup ? <p className="job-detail-constraint">{applicationGroup.rule ?? (zh ? '此岗位受共享投递名额约束。' : 'This job shares application capacity.')} {applicationGroup.remaining !== undefined ? (zh ? `剩余名额：${applicationGroup.remaining}` : `Remaining: ${applicationGroup.remaining}`) : ''}</p> : null}
         </div> : null}
 

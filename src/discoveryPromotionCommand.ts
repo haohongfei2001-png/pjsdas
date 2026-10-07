@@ -1,3 +1,4 @@
+import { appendOpportunityOnly } from './opportunityCreation.js'
 import { canonicalOpportunityId } from './opportunityCanonicalization.js'
 import { createInboxPromotionChangeSet, discoveryInboxDecisionTimeline } from './discoveryInbox.js'
 import { findSimilarOpportunity } from './discoveryQuality.js'
@@ -19,7 +20,6 @@ export function applyDiscoveryPromotionCommand(snapshot: PJSDASSnapshot, command
     ?? findSimilarOpportunity({ company: previous.company, role: previous.role }, next.data.opportunities)
   let promotedOpportunityId = existing?.id
   let createdOpportunityId: string | undefined
-  let createdActionId: string | undefined
   let createdChangeSetId: string | undefined
   const timelineIds: string[] = []
 
@@ -29,32 +29,22 @@ export function applyDiscoveryPromotionCommand(snapshot: PJSDASSnapshot, command
     if (operation.kind !== 'add_discovered_opportunity') throw new Error('Promotion ChangeSet is invalid.')
     const opportunity = operation.opportunity
     const timestamp = now.toISOString()
-    const actionId = `apply:${opportunity.id}`
     const applied = { ...pending, status: 'applied' as const, appliedAt: timestamp, updatedAt: timestamp }
     const added: TimelineRecord = {
       id: `timeline:discovery:${opportunity.id}`, kind: 'opportunity_added', category: 'opportunity',
       source: 'changeset', occurredAt: opportunity.importedAt, recordedAt: timestamp,
       title: '接受 AI 发现岗位', detail: opportunity.detail?.discovery?.rationale,
-      opportunityId: opportunity.id, actionId, changeSetId: applied.id,
+      opportunityId: opportunity.id, changeSetId: applied.id,
       company: opportunity.company, role: opportunity.role, sourceRef: opportunity.detail?.discovery?.sourceUrl,
     }
     if ((next.data.opportunityAliases ?? []).some(alias => alias.id === opportunity.id)) throw new Error('An aliased opportunity cannot be recreated.')
-    next.data.opportunities.push(opportunity)
-    next.data.actions.push({
-      id: actionId, kind: 'apply', title: `投递 ${opportunity.company}｜${opportunity.role}`,
-      opportunityId: opportunity.id, processStage: 'not_applied', dueAt: opportunity.deadline,
-      timingMode: opportunity.deadline ? 'deadline' : undefined,
-      estimatedMinutes: opportunity.prepEstimateMinutes ?? 45, leverage: 0,
-      delayCost: 0, status: 'todo', sourceLabel: 'ChatGPT 岗位发现',
-      createdAt: opportunity.importedAt, updatedAt: opportunity.importedAt,
-    })
+    appendOpportunityOnly(next.data, opportunity)
     next.data.changeSets = [...(next.data.changeSets ?? []), applied]
     const changeTimeline = timelineFromChangeSetApplied(applied)
     next.data.timeline = [...(next.data.timeline ?? []), added, changeTimeline]
     timelineIds.push(added.id, changeTimeline.id)
     promotedOpportunityId = opportunity.id
     createdOpportunityId = opportunity.id
-    createdActionId = actionId
     createdChangeSetId = applied.id
   }
 
@@ -74,7 +64,7 @@ export function applyDiscoveryPromotionCommand(snapshot: PJSDASSnapshot, command
     compensation: { operation: 'restore_discovery_promotion', payload: {
       inboxItemId: command.inboxItemId, status: previous.status,
       rejectionReason: previous.rejectionReason, promotedOpportunityId: previous.promotedOpportunityId,
-      createdOpportunityId, createdActionId, createdChangeSetId, timelineIds,
+      createdOpportunityId, createdChangeSetId, timelineIds,
     } },
   }
 }

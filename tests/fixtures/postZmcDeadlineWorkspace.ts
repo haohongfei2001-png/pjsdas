@@ -10,7 +10,7 @@ export function deadlineWorkspace(capacity?: number, deadline = DEADLINE) {
     opportunityValue: [100, 95, 65, 55, 40, 25][i], fitScore: [100, 95, 65, 55, 40, 25][i],
     deadline, deadlinePrecision: 'datetime' as const }))
   const actions = costs.map((cost, i) => ({ ...action(`apply-${i}`, `申请 ${String.fromCharCode(65 + i)}`, `job-${i}`),
-    kind: 'apply' as const, timingMode: 'deadline' as const, dueAt: deadline, duePrecision: 'datetime' as const,
+    kind: 'apply' as const, plannedDate: '2026-09-30', timingMode: 'deadline' as const, dueAt: deadline, duePrecision: 'datetime' as const,
     estimatedMinutes: cost }))
   const scheduleNodes: ScheduleNode[] = actions.map(item => ({ id: `schedule:application-deadline:${item.opportunityId}:v1`, occurrenceId: `application-deadline:${item.opportunityId}`,
     version: 1, opportunityId: item.opportunityId, kind: 'application_deadline', state: 'scheduled', constraintKind: 'employer_hard',

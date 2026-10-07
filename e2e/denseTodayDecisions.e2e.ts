@@ -80,11 +80,12 @@ test('300-node Schedule opens on future commitments and keeps unknown past occur
   await page.clock.install({ time: DENSE_NOW })
   await page.goto('/'); await page.locator('.tsui-primary-nav').waitFor()
   const snapshot = denseDecisionWorkspace()
+  snapshot.data.scheduleNodes!.forEach(node => { node.kind = 'interview'; node.temporal.resolutionBasis = 'source_explicit' })
   await page.evaluate(async input => (await import('/pjsdas/src/db.ts')).replaceLocalSnapshotFromCloud(input), snapshot)
   await page.goto('/pjsdas/schedule')
   await expect(page.locator('.tsui-schedule-tabs button.active')).toContainText('接下来')
   const context = page.locator('.tsui-schedule-context')
-  await expect(context.getByRole('button', { name: /无截止日期/ })).toBeVisible()
+  await expect(context.getByRole('button', { name: /无截止日期/ })).toHaveCount(0)
   await expect(context.getByRole('button', { name: /过去安排待确认|时间待定/ })).toHaveCount(0)
   await expect(page.locator('.tsui-schedule-panel .tsui-schedule-row').first()).toBeVisible()
   await expect(page.locator('.tsui-schedule-panel .state-unresolved')).toHaveCount(0)
@@ -152,7 +153,7 @@ test('one genuinely infeasible hard deadline has one actionable notice', async (
   await page.clock.install({ time: DENSE_NOW })
   await page.goto('/'); await page.locator('.tsui-primary-nav').waitFor()
   const job = opportunity('hard-job', 'Example', 'Engineer')
-  const hard = { ...action('hard-task', 'Submit application', job.id), kind: 'apply' as const,
+  const hard = { ...action('hard-task', 'Submit application', job.id), kind: 'apply' as const, plannedDate: '2026-09-29',
     dueAt: new Date(DENSE_NOW.getTime() + 30 * 60_000).toISOString(),
     duePrecision: 'datetime' as const, estimatedMinutes: 500 }
   const snapshot = createSnapshot({

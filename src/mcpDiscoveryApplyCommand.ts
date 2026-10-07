@@ -1,3 +1,4 @@
+import { appendOpportunityOnly } from './opportunityCreation.js'
 import { assertNoNewOpportunityRating } from './scoringRetirement.js'
 import { deriveDiscoveryReviewChangeSet, createDiscoveryFeedbackRecords, type DiscoveryRejectionSelection } from './discoveryFeedback.js'
 import { discoveryInboxIdentity } from './discoveryInbox.js'
@@ -47,21 +48,12 @@ export function applyMcpDiscoveryCommand(
   for (const operation of reviewed.operations) {
     if (operation.kind !== 'add_discovered_opportunity') continue
     const opportunity = operation.opportunity
-    const actionId = `apply:${opportunity.id}`
-    next.data.opportunities.push(opportunity)
-    next.data.actions.push({
-      id: actionId, kind: 'apply', title: `投递 ${opportunity.company}｜${opportunity.role}`,
-      opportunityId: opportunity.id, processStage: 'not_applied', dueAt: opportunity.deadline,
-      timingMode: opportunity.deadline ? 'deadline' : undefined,
-      estimatedMinutes: opportunity.prepEstimateMinutes ?? 45, leverage: 0,
-      delayCost: 0, status: 'todo', sourceLabel: 'ChatGPT 岗位发现',
-      createdAt: opportunity.importedAt, updatedAt: opportunity.importedAt,
-    })
+    appendOpportunityOnly(next.data, opportunity)
     timeline.push({
       id: `timeline:discovery:${opportunity.id}`, kind: 'opportunity_added', category: 'opportunity',
       source: 'changeset', occurredAt: opportunity.importedAt, recordedAt: timestamp,
       title: '接受 AI 发现岗位', detail: opportunity.detail?.discovery?.rationale,
-      opportunityId: opportunity.id, actionId, changeSetId: applied.id,
+      opportunityId: opportunity.id, changeSetId: applied.id,
       company: opportunity.company, role: opportunity.role, sourceRef: opportunity.detail?.discovery?.sourceUrl,
     })
   }

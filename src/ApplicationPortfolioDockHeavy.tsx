@@ -15,7 +15,7 @@ function roleTypeLabel(value: Opportunity['roleType'], zh: boolean) {
     lottery: zh ? '彩票' : 'Lottery',
     practice: zh ? '练手' : 'Practice',
   }
-  return labels[value]
+  return value ? labels[value] : (zh ? '未分类' : 'Unclassified')
 }
 
 export default function ApplicationPortfolioDock() {

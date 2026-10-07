@@ -1,4 +1,4 @@
-import { classifyJob, resolveApplicationDeadline, indexJobClassificationData } from '../applicationDeadline.js'
+import { calendarNodeProjection, scheduleNodeEligible } from '../scheduleEligibility.js'
 import { readModelSnapshot } from '../readModelSnapshot.js'
 import { scheduleDisplayTimezone } from '../scheduleDisplayTime.js'
 import type { ScheduleNode, ScheduleNodeState, TimelineRecord } from '../model.js'
@@ -56,12 +56,6 @@ export interface ScheduleWindow {
   totalCount: number
   nextCursor?: ScheduleCursor
 }
-
-// Only typed real-world facts belong in the calendar. All operation records
-// remain unchanged in Timeline/Settings, including action checkboxes and Undo.
-const EVENT_FACT_KINDS = new Set<TimelineRecord['kind']>([
-  'application_submitted', 'process_event_recorded', 'process_closed',
-])
 
 function validInstant(value: string | undefined) {
   if (!value) return undefined
@@ -142,15 +136,15 @@ export function buildScheduleStreamNormalized(
   }
   const nodeEntries = new Map<string, ScheduleEntry>()
   const completedActionEntries = new Map<string, ScheduleEntry>()
-  const processEventEntries = new Map<string, ScheduleEntry>()
   const explicitNodeForAction = new Map<string, ScheduleNode>()
   for (const candidate of latest.values()) {
-    if (candidate.temporal.resolutionBasis === 'legacy_projection') continue
+    if (!scheduleNodeEligible(candidate, snapshot.data) || candidate.temporal.resolutionBasis === 'legacy_projection') continue
     for (const actionId of candidate.relatedActionIds) explicitNodeForAction.set(actionId, candidate)
   }
   const legacyAliases: Array<{ legacy: ScheduleNode; primary: ScheduleNode }> = []
   for (const storedNode of latest.values()) {
-    let node = storedNode
+    if (!scheduleNodeEligible(storedNode, snapshot.data)) continue
+    let node = calendarNodeProjection(storedNode)
     const onlyActionId = node.relatedActionIds.length === 1 ? node.relatedActionIds[0] : undefined
     const explicit = onlyActionId && node.temporal.resolutionBasis === 'legacy_projection'
       && node.occurrenceId === `action:${onlyActionId}`
@@ -203,7 +197,13 @@ export function buildScheduleStreamNormalized(
       nodeEntries.set(node.id, entry)
     }
     const entry = nodeEntries.get(node.id)
-    if (entry) entry.sourceRefs.push(...occurrenceEvidence.map(fact => `timeline:${fact.id}`))
+    if (entry) {
+      entry.sourceRefs.push(...occurrenceEvidence.map(fact => `timeline:${fact.id}`))
+      if (node.constraintKind === 'user_plan') {
+        const task = snapshot.data.actions.find(action => node.relatedActionIds.includes(action.id))
+        if (task) { entry.title = task.title; entry.actionId = task.id }
+      }
+    }
   }
   for (const { legacy, primary } of legacyAliases) {
     const entry = nodeEntries.get(primary.id)
@@ -211,28 +211,8 @@ export function buildScheduleStreamNormalized(
     entry.sourceRefs.push(...legacy.evidenceRefs, ...legacy.sourceVersionRefs)
     nodeEntries.set(legacy.id, entry)
   }
-  // Superseded versions stay in the audit trail, not as duplicate appointments.
-  for (const event of snapshot.data.processEvents) {
-    const when = validInstant(event.occurredAt)
-    if (when && when > now) continue
-    const existing = processEventEntries.get(event.id)
-    if (existing) continue
-    const entry: ScheduleEntry = {
-      id: `process:${event.id}`,
-      kind: 'process_event',
-      section: when ? 'history' : 'undated',
-      date: when ? eventCalendarDate(event.occurredAt, when, context.timezone) : undefined,
-      occurredAt: when ? event.occurredAt : undefined,
-      recordedAt: event.createdAt,
-      opportunityId: event.opportunityId,
-      processEventId: event.id,
-      title: event.type,
-      invalidated: Boolean(event.invalidation),
-      sourceRefs: [`process_event:${event.id}`, ...(event.invalidation ? [`correction:${event.invalidation.receiptId}`] : [])],
-    }
-    sections[entry.section].push(entry)
-    processEventEntries.set(event.id, entry)
-  }
+  // Invitation receipt, submission and process closure are retained in job and
+  // operation history. Only the eligible occurrence owns calendar chronology.
   function linkCompletionFact(entry: ScheduleEntry | undefined, fact: TimelineRecord) {
     if (!entry) return false
     const when = validInstant(fact.occurredAt)
@@ -250,7 +230,6 @@ export function buildScheduleStreamNormalized(
     entry.sourceRefs.push(`timeline:${fact.id}`)
     return true
   }
-  const timelineByIdentity = new Map<string, ScheduleEntry>()
   for (const item of timeline) {
     if (syntheticActionBackfill(item)) continue
     if (item.kind === 'action_status_changed') {
@@ -271,59 +250,8 @@ export function buildScheduleStreamNormalized(
       if (entry?.state === 'completed') linkCompletionFact(entry, item)
       continue
     }
-    if (!EVENT_FACT_KINDS.has(item.kind)) continue
-    if (item.kind === 'process_event_recorded' || item.kind === 'process_closed') {
-      // The legacy progress writer emitted this exact deterministic pair but
-      // omitted processEventId from its timeline row. Resolve only that known
-      // source contract, never a title/company/time similarity.
-      const legacyEventId = !item.processEventId && item.id.startsWith('timeline:progress:')
-        ? `progress-event:${item.id.slice('timeline:progress:'.length)}` : undefined
-      const eventId = item.processEventId ?? legacyEventId
-      const existing = eventId ? processEventEntries.get(eventId) : undefined
-      const existingTime = validInstant(existing?.occurredAt)?.getTime()
-      const factTime = validInstant(item.occurredAt)?.getTime()
-      const sameLegacyFact = existing && legacyEventId && existing.opportunityId === item.opportunityId
-        && existingTime !== undefined && factTime !== undefined && existingTime === factTime
-      if (existing && (item.processEventId || sameLegacyFact)) {
-        existing.sourceRefs.push(`timeline:${item.id}`)
-        // Preserve the original descriptive completion/receipt wording; this
-        // changes neither the event's time nor its completion state.
-        if (sameLegacyFact) existing.title = item.title
-        continue
-      }
-    }
-    if (item.kind === 'application_submitted' && item.opportunityId
-      && linkCompletionFact(completedActionEntries.get(`apply:${item.opportunityId}`), item)) continue
-    const when = validInstant(item.occurredAt)
-    if (when && when > now) continue
-    // Deduplicate exact typed facts, independent of which transport recorded
-    // them or when. Never use title text or recordedAt as an event identity.
-    const factKey = item.scheduleNodeId ? `node:${item.scheduleNodeId}:${item.kind}`
-      : item.processEventId ? `process:${item.processEventId}:${item.kind}`
-      : item.kind !== 'process_event_recorded' && item.opportunityId && when ? `${item.kind}:${item.opportunityId}:${when.toISOString()}`
-        : item.commandId ? `${item.commandId}:${item.kind}:${item.opportunityId ?? ''}` : `timeline:${item.id}`
-    if (timelineByIdentity.has(factKey)) {
-      timelineByIdentity.get(factKey)?.sourceRefs.push(`timeline:${item.id}`)
-      continue
-    }
-    const entry: ScheduleEntry = {
-      id: `fact:${item.id}`,
-      kind: 'business_fact',
-      section: when ? 'history' : 'undated',
-      date: when ? eventCalendarDate(item.occurredAt, when, context.timezone) : undefined,
-      occurredAt: when ? item.occurredAt : undefined,
-      recordedAt: item.recordedAt,
-      opportunityId: item.opportunityId,
-      actionId: item.actionId,
-      processEventId: item.processEventId,
-      nodeId: item.scheduleNodeId,
-      title: item.title,
-      sourceRefs: [`timeline:${item.id}`, item.sourceRef, item.commandId].filter((value): value is string => Boolean(value)),
-      timeline: item,
-    }
-    timelineByIdentity.set(factKey, entry)
-    sections[entry.section].push(entry)
   }
+
   // Explicit occurrence evidence may be recorded after its task receipt in
   // the input array. Reconcile after all facts, so sync order never duplicates
   // the same completion in Today.
@@ -333,14 +261,6 @@ export function buildScheduleStreamNormalized(
     if (entry?.state === 'completed' && entry.occurredAt && task.timeline && linkCompletionFact(entry, task.timeline)) {
       completedActions.splice(index, 1)
     }
-  }
-  const classificationOwners = indexJobClassificationData(snapshot.data)
-  for (const opportunity of snapshot.data.opportunities) {
-    const owners = classificationOwners(opportunity.id)
-    if (classifyJob(opportunity, owners, now, context.timezone) !== 'no_deadline') continue
-    const deadline = resolveApplicationDeadline(opportunity, owners)
-    sections.no_deadline.push({ id: `no-deadline:${opportunity.id}`, kind: 'opportunity', section: 'no_deadline', opportunityId: opportunity.id,
-      title: 'no_deadline', sourceRefs: deadline.sourceUrl ? [deadline.sourceUrl] : [] })
   }
   for (const section of Object.keys(sections) as ScheduleSection[]) {
     for (const entry of sections[section]) entry.sourceRefs = [...new Set(entry.sourceRefs)]

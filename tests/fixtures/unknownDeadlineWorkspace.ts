@@ -1,3 +1,4 @@
+import { legacyDeadlineNode } from './legacyDeadlineNodes.js'
 import { applicationDeadlineFingerprint } from '../../src/applicationDeadline.js'
 import { applyUserDomainCommand } from '../../src/domainCommands.js'
 import type { Action, Opportunity } from '../../src/model.js'
@@ -19,10 +20,10 @@ export function unknownDeadlineWorkspace(count = 8, withRealDeadline = false) {
   const actions: Action[] = opportunities.map(opportunity => ({
     id: `apply:${opportunity.id}`, kind: 'apply', title: `Apply to ${opportunity.company}`,
     opportunityId: opportunity.id, status: 'todo', dueAt: opportunity.deadline, duePrecision: 'datetime',
-    timingMode: 'deadline', estimatedMinutes: 60, leverage: 70, delayCost: 70,
+    plannedDate: '2026-10-02', timingMode: 'deadline', estimatedMinutes: 60, leverage: 70, delayCost: 70,
     createdAt: UNKNOWN_DEADLINE_NOW.toISOString(), updatedAt: UNKNOWN_DEADLINE_NOW.toISOString(),
   }))
-  let snapshot = createSnapshot({ opportunities, actions, processes: [], processEvents: [], prep: [], applicationGroups: [] })
+  let snapshot = createSnapshot({ scheduleNodes: opportunities.map(job => legacyDeadlineNode(job, actions)), opportunities, actions, processes: [], processEvents: [], prep: [], applicationGroups: [] })
   for (const opportunity of opportunities.slice(0, count)) {
     const current = snapshot.data.opportunities.find(item => item.id === opportunity.id)!
     snapshot = applyUserDomainCommand(snapshot, {
@@ -32,6 +33,15 @@ export function unknownDeadlineWorkspace(count = 8, withRealDeadline = false) {
         sourceAuthority: 'official_role', evidence: 'Synthetic open role has no published deadline.',
         checkedAt: UNKNOWN_DEADLINE_NOW.toISOString(), postingStatus: 'open' },
     }, UNKNOWN_DEADLINE_NOW).snapshot
+    // Explicit pre-B1 archived versions: the current writer no longer creates them.
+    const prior = snapshot.data.scheduleNodes!.find(node => node.opportunityId === opportunity.id)!
+    const cancelled = { ...structuredClone(prior), id: `${prior.id}:withdrawn`, version: 2, state: 'cancelled' as const,
+      cancelledAt: UNKNOWN_DEADLINE_NOW.toISOString(), supersedesNodeId: prior.id }
+    prior.state = 'superseded'; prior.supersededByNodeId = cancelled.id
+    snapshot.data.scheduleNodes!.push(cancelled)
+    const correction = snapshot.data.opportunities.find(item => item.id === opportunity.id)!.detail!.deadlineCorrections![0]
+    delete correction.acknowledgedNodeFacts
+    correction.resultNodeIds = [cancelled.id]
   }
   return snapshot
 }

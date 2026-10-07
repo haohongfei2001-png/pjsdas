@@ -32,8 +32,7 @@ for (const withRealDeadline of [false, true]) test(`withdrawn deadline history s
   }
   await page.screenshot({ path: testInfo.outputPath('today-withdrawn-deadlines.png'), fullPage: true })
   await page.goto('/pjsdas/schedule?view=no_deadline')
-  await expect(page.locator('.tsui-schedule-row')).toHaveCount(8)
-  await expect(page.locator('.tsui-schedule-row').first()).toContainText('未公布可靠截止日期')
+  await expect(page.locator('.tsui-schedule-row')).toHaveCount(0)
   await page.goBack()
   await expect(page.locator('[data-deferred-action-id^="apply:unknown-"]')).toHaveCount(0)
   const retained = await page.evaluate(async () => (await import('/pjsdas/src/db.ts')).exportLocalSnapshot())

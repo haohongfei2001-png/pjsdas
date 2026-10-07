@@ -1,3 +1,6 @@
+import ManualJobFields from './capture/ManualJobFields.js'
+import { manualJobDraft, readManualJobDraft, manualJobCandidate } from './capture/manualJob.js'
+import type { UserJobFacts } from './opportunityCreation.js'
 import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 const RecordCorrectionReview = lazy(() => import('./RecordCorrectionReview.js'))
 import {
@@ -47,6 +50,8 @@ function targetLabel(candidate: SemanticCandidate) {
 function candidateLabel(candidate: SemanticCandidate, zh: boolean) {
   const target = targetLabel(candidate)
   const suffix = target ? ` · ${target}` : ''
+  if (candidate.kind === 'user_opportunity') return `${zh ? '添加岗位' : 'Add job'} · ${candidate.company} · ${candidate.role}`
+  if (candidate.kind === 'application_action') return (zh ? '安排投递任务' : 'Plan application') + suffix
   if (candidate.kind === 'application_submitted') return (zh ? '记录已投递' : 'Record application submitted') + suffix
   if (candidate.kind === 'abandon_opportunity') return (zh ? '停止继续该机会' : 'Stop pursuing opportunity') + suffix
   if (candidate.kind === 'occurrence_completed') {
@@ -122,10 +127,14 @@ export default function TellPjsdasCapture({
   const { lang } = useUiLanguage()
   const cloud = useCloud()
   const zh = lang === 'zh'
+  const [manualMode, setManualMode] = useState(false)
+  const naturalDraftRef = useRef('')
+  const manualDraftRef = useRef<UserJobFacts>({ company: '', role: '' })
   const [correctionMode, setCorrectionMode] = useState(false)
   useEffect(() => { if (!open) setCorrectionMode(false) }, [open])
   const [text, setText] = useState('')
   const [busy, setBusy] = useState(false)
+  const submissionFlightRef = useRef(false)
   const [previewBusy, setPreviewBusy] = useState(false)
   const [preview, setPreview] = useState<WebSemanticCapturePreview>()
   const [message, setMessage] = useState('')
@@ -181,6 +190,10 @@ export default function TellPjsdasCapture({
       ? findAccountPendingSemanticOperation(userId, initial)
       : undefined
     textRef.current = initial
+    const manual = readManualJobDraft(initial)
+    setManualMode(Boolean(manual))
+    manualDraftRef.current = manual ?? { company: '', role: '' }
+    naturalDraftRef.current = manual ? '' : initial
     setText(initial)
     setPreview(undefined)
     setMessage('')
@@ -232,7 +245,7 @@ export default function TellPjsdasCapture({
   }, [open, saveState, stableCommandId, cloud.session?.user.id, zh])
 
   useEffect(() => {
-    if (!open || !text.trim() || busy) {
+    if (!open || manualMode || !text.trim() || busy) {
       setPreviewBusy(false)
       if (!text.trim()) setPreview(undefined)
       return
@@ -257,7 +270,7 @@ export default function TellPjsdasCapture({
       active = false
       window.clearTimeout(id)
     }
-  }, [open, text, busy])
+  }, [open, text, busy, manualMode])
 
   useEffect(() => {
     if (!open) return
@@ -290,10 +303,14 @@ export default function TellPjsdasCapture({
     }
     window.addEventListener('keydown', key)
     return () => window.removeEventListener('keydown', key)
-  }, [open, text, busy, stableCommandId, saveState, correctionMode])
+  }, [open, text, busy, stableCommandId, saveState, correctionMode, manualMode])
 
   async function submit() {
-    if (!text.trim() || busy) return
+    if (!text.trim() || busy || submissionFlightRef.current) return
+    if (manualMode) {
+      const invalid = sheetRef.current?.querySelector<HTMLInputElement>('input:invalid')
+      if (invalid) { invalid.reportValidity(); return }
+    }
     const queueOffline = connected && typeof navigator !== 'undefined' && !navigator.onLine
     if (queueOffline && recoveryLocked) return
 
@@ -301,6 +318,7 @@ export default function TellPjsdasCapture({
       ? stableCommandId ?? createConnectedCommandId('web-semantic')
       : undefined
     if (commandId) setStableCommandId(commandId)
+    submissionFlightRef.current = true
     setBusy(true)
     setSaveState('saving')
     setMessage('')
@@ -314,6 +332,7 @@ export default function TellPjsdasCapture({
         contextRefs,
         confirmExisting: recoveryLocked,
         queueOffline,
+        candidates: manualMode ? [manualJobCandidate(readManualJobDraft(text) ?? manualDraftRef.current)] : undefined,
       })
       if (result.status === 'QUEUED') {
         saveAccountDraft(cloud.session!.user.id, 'tell-pjsdas', text)
@@ -337,7 +356,7 @@ export default function TellPjsdasCapture({
       } else if (result.status === 'ALREADY_APPLIED') {
         setMessage(zh ? '服务器确认这条来源已经处理过，没有重复写入。' : 'The server confirmed this source was already handled; no duplicate was created.')
       } else {
-        const summary = /^\d+ bounded update\(s\) committed\.$/.test(result.summary.trim())
+        const summary = manualMode ? (zh ? '岗位已保存。' : 'Job saved.') : /^\d+ bounded update\(s\) committed\.$/.test(result.summary.trim())
           ? (zh ? '已记录明确事实。' : 'Confirmed facts recorded.')
           : result.summary
         const parts = [
@@ -348,6 +367,7 @@ export default function TellPjsdasCapture({
         ].filter(Boolean)
         setMessage(parts.join(' '))
         if (result.status === 'APPLIED') {
+          if (manualMode) manualDraftRef.current = { company: '', role: '' }
           textRef.current = ''
           setText('')
           setPreview(undefined)
@@ -368,6 +388,7 @@ export default function TellPjsdasCapture({
       else if (/CONFLICT|conflict/i.test(detail)) setSaveState('conflict')
       else setSaveState('error')
     } finally {
+      submissionFlightRef.current = false
       setBusy(false)
     }
   }
@@ -409,7 +430,22 @@ export default function TellPjsdasCapture({
     if (!recoveryLocked) setSaveState('idle')
   }
 
+  function switchManualMode() {
+    if (busy || recoveryLocked) return
+    if (manualMode) {
+      manualDraftRef.current = readManualJobDraft(text) ?? manualDraftRef.current
+      setManualMode(false)
+      editText(naturalDraftRef.current)
+    } else {
+      naturalDraftRef.current = text
+      setManualMode(true)
+      setCorrectionMode(false)
+      editText(manualJobDraft(manualDraftRef.current))
+    }
+  }
   if (!open) return null
+  const manualJob = readManualJobDraft(text) ?? { company: '', role: '' }
+
 
   const modeNote = preview ? modeExplanation(preview, zh) : undefined
 
@@ -427,8 +463,8 @@ export default function TellPjsdasCapture({
         <header className="cgr-capture-header">
           <div>
             <div className="cgr-kicker">TELL TodayAction</div>
-            <h2 id="tell-pjsdas-title">{zh ? '告诉 TodayAction' : 'Tell TodayAction'}</h2>
-            <p id="tell-pjsdas-description">{zh
+            <h2 id="tell-pjsdas-title">{manualMode ? (zh ? '添加岗位' : 'Add job') : (zh ? '告诉 TodayAction' : 'Tell TodayAction')}</h2>
+            <p id="tell-pjsdas-description">{manualMode ? (zh ? '保存你已了解的岗位。' : 'Save a job you know about.') : zh
               ? '记录求职进展，确认后保存。'
               : 'Record an update, then confirm before saving.'}</p>
             {contextLabel ? <span className="cgr-capture-context">{zh ? '当前上下文：' : 'Context: '}{contextLabel}</span> : null}
@@ -436,8 +472,9 @@ export default function TellPjsdasCapture({
           <button className="cgr-icon-button" type="button" onClick={onClose} aria-label={zh ? '关闭' : 'Close'}>×</button>
         </header>
 
-        <button type="button" className="cgr-correction-toggle" disabled={busy || recoveryLocked} onClick={() => setCorrectionMode(value => !value)}>{correctionMode ? (zh ? '返回记录进展' : 'Back to progress capture') : (zh ? '核实已有记录' : 'Review existing records')}</button>
+        {!manualMode ? <button type="button" className="cgr-correction-toggle" disabled={busy || recoveryLocked} onClick={() => setCorrectionMode(value => !value)}>{correctionMode ? (zh ? '返回记录进展' : 'Back to progress capture') : (zh ? '核实已有记录' : 'Review existing records')}</button> : null}
         {correctionMode ? <Suspense fallback={<p role="status">{zh ? '正在打开核对入口…' : 'Opening review…'}</p>}><RecordCorrectionReview key={cloud.session?.user.id ?? 'signed-out'} onChanged={onChanged} /></Suspense> : <>
+        {manualMode ? <ManualJobFields value={manualJob} onChange={value => { manualDraftRef.current = value; editText(manualJobDraft(value)) }} disabled={busy || recoveryLocked} zh={zh} /> : <>
         <textarea
           ref={textareaRef}
           className="cgr-capture-input"
@@ -486,14 +523,17 @@ export default function TellPjsdasCapture({
           </section>
         ) : null}
 
+        </>}
         <div className="cgr-capture-footer">
-          <button className="cgr-primary-button" type="button" disabled={busy || !text.trim()} onClick={() => { void submit() }}>
+          <button className="text-button cgr-capture-mode" type="button" disabled={busy || recoveryLocked} onClick={switchManualMode}>{manualMode ? (zh ? '用自然语言添加' : 'Use natural language') : (zh ? '手动填写岗位' : 'Enter job manually')}</button>
+          {manualMode ? <button className="text-button" type="button" disabled={busy} onClick={onClose}>{zh ? '取消' : 'Cancel'}</button> : null}
+          <button className="cgr-primary-button" type="button" disabled={busy || !text.trim() || manualMode && (!manualJob.company.trim() || !manualJob.role.trim())} onClick={() => { void submit() }}>
             {busy ? (zh ? '正在权威保存…' : 'Saving authoritatively…')
               : saveState === 'unknown' ? (zh ? '确认保存状态' : 'Confirm save status')
                 : saveState === 'confirmed_pending' ? (zh ? '核对本机状态' : 'Check device state')
                 : saveState === 'offline' ? (zh ? '确认保存状态' : 'Check save status')
                 : saveState === 'reauth' ? (zh ? '重新确认' : 'Retry confirmation')
-                  : (zh ? '确认并保存' : 'Confirm and save')}
+                  : manualMode ? (zh ? '保存岗位' : 'Save job') : (zh ? '确认并保存' : 'Confirm and save')}
           </button>
         </div>
 

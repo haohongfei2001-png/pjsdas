@@ -1,3 +1,4 @@
+import { legacyDeadlineNode } from './legacyDeadlineNodes.js'
 import { applyUserDomainCommand } from '../../src/domainCommands.js'
 import { applySemanticIntake } from '../../src/semanticIntake.js'
 import { createSnapshot } from '../../src/snapshot.js'
@@ -10,6 +11,8 @@ export function recordCorrectionWorkspace() {
   })
   const jobs = [job('future', '未来科技', 'not_applied', '2026-10-09'), job('expired', '过期科技', 'not_applied', '2026-09-20'), job('undated', '长期科技', 'not_applied'), job('applied', '已投科技', 'screening', '2026-09-20'), job('exam', '笔试科技', 'written_test', '2026-09-20'), job('interview', '面试科技', 'interview', '2026-09-20'), job('offer', '录用科技', 'offer', '2026-09-20'), job('rejected', '结束科技', 'closed'), job('disputed', '待核科技', 'not_applied')]
   let snapshot = createSnapshot({ opportunities: jobs, processes: [], processEvents: [], actions: [{ id: 'submitted-before-rejection', kind: 'apply', opportunityId: 'rejected', title: '原申请', status: 'done', estimatedMinutes: 30, leverage: 70, delayCost: 70, createdAt: RECORD_NOW.toISOString(), updatedAt: RECORD_NOW.toISOString() }], prep: [], applicationGroups: [] })
+  snapshot.data.scheduleNodes = jobs.filter(job => job.deadline).map(job => legacyDeadlineNode(job, snapshot.data.actions))
+  snapshot.data.timeline = [{ id: 'real-application-before-rejection', kind: 'application_submitted', category: 'opportunity', source: 'user_action', opportunityId: 'rejected', title: 'Confirmed application', occurredAt: RECORD_NOW.toISOString(), recordedAt: RECORD_NOW.toISOString() }]
   const seeded = applySemanticIntake(snapshot, { contractVersion: 1, inputId: 'synthetic-false-result', source: { kind: 'gmail', sourceId: 'gmail:primary', sourceRecordId: 'synthetic-false-result', observedAt: RECORD_NOW.toISOString(), timezone: 'Asia/Shanghai' }, statementMode: 'assertion', candidates: [{ id: 'false-terminal', kind: 'process_event', eventType: 'offer', target: { opportunityId: 'disputed' }, occurredAt: RECORD_NOW.toISOString(), objectConfidence: 'high', eventConfidence: 'high', evidenceRefs: ['synthetic:misinterpreted'], sourceVersionRefs: ['synthetic:v1'] }] }, { authorized: true, now: RECORD_NOW })
   snapshot = seeded.snapshot
   const event = snapshot.data.processEvents[0]

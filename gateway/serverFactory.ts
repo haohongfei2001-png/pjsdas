@@ -160,7 +160,7 @@ export function createPjsdasMcpServer(
 
   if (explicitUserWriteMode === 'enabled') {
     instructions.push(
-      'When the user explicitly asks in the current conversation to add, save, record, or write specific source-backed job opportunities into TodayAction, use add_opportunities and execute the write immediately. Do not route that explicit instruction through propose_changes and do not require a second Apply click.',
+      'When the user explicitly asks in the current conversation to add, save, record, or write specific jobs (company and title suffice; source link is optional) into TodayAction, use add_opportunities and execute the write immediately. Do not route that explicit instruction through propose_changes and do not require a second Apply click.',
       'Use add_opportunities only for additive Opportunity creation. It is duplicate-safe and cannot change Decision Rules, delete history, close processes, or make other policy decisions.',
       'Do not use add_opportunities when the user is only asking for recommendations, evaluation, discovery, or whether a job should be added. Those requests do not constitute write authorization.',
       'Do not submit fit/value scores or assessment confidence with new opportunities.',
@@ -335,7 +335,7 @@ export function createPjsdasMcpServer(
   if (explicitUserWriteMode === 'enabled') {
     server.registerTool('add_opportunities', {
       title: 'Add explicitly user-authorized TodayAction opportunities',
-      description: 'Directly add source-backed opportunities to the canonical TodayAction workspace only when the current user message explicitly asks to add, save, record, or write those specific jobs. This is an immediate duplicate-safe additive write with no review click; never use it for mere recommendations or autonomous discovery.',
+      description: 'Save user-source jobs (company and title required, source URL optional; no automatic application Action or calendar event) to the canonical TodayAction workspace only when the current user message explicitly asks to add, save, record, or write those specific jobs. This is an immediate duplicate-safe additive write with no review click; never use it for mere recommendations or autonomous discovery.',
       inputSchema: addOpportunitiesSchema, annotations: directWriteAnnotations,
     }, async (args) => invokeAddOpportunities(source, args))
 

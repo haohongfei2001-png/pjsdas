@@ -152,7 +152,7 @@ describe('dense owner decision and schedule membership', () => {
     expect(snapshot.data.decisionRequests).toHaveLength(358)
     const schedule = buildScheduleStream(snapshot, { now: DENSE_NOW, timezone: zone, accountKey: 'synthetic', workspaceRevision: '1' })
     expect(schedule.sections.upcoming.every(n => !n.date || n.date >= '2026-09-29')).toBe(true)
-    expect(schedule.sections.unresolved).toHaveLength(98)
+    expect(schedule.sections.unresolved).toHaveLength(0)
     expect(JSON.stringify(snapshot)).toBe(before)
   })
   it('keeps all seven genuine same-day decisions without a count cap, excludes old and future timing', () => {
@@ -214,6 +214,7 @@ describe('dense owner decision and schedule membership', () => {
   })
   it('uses display timezone only for floating dates and keeps explicit UTC semantics', () => {
     const snapshot = denseDecisionWorkspace()
+    for (const node of snapshot.data.scheduleNodes!.slice(0, 98)) { node.kind = 'interview'; node.temporal.resolutionBasis = 'source_explicit' }
     snapshot.data.scheduleNodes![0].temporal.timezone = 'UTC'
     const stream = buildScheduleStream(snapshot, { now: DENSE_NOW, timezone: zone, accountKey: 'synthetic', workspaceRevision: '2' })
     expect(stream.sections.upcoming.some(n => n.nodeId === snapshot.data.scheduleNodes![0].id)).toBe(true)

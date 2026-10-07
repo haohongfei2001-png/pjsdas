@@ -56,7 +56,7 @@ function applyAction(opp: Opportunity, dueAt?: string, estimatedMinutes = 45, du
     estimatedMinutes,
     leverage: 80,
     delayCost: 80,
-    status: 'todo',
+    status: 'todo', plannedDate: '2026-09-20',
     createdAt: '2026-09-19T00:00:00.000Z',
     updatedAt: '2026-09-19T00:00:00.000Z',
   }
@@ -70,7 +70,7 @@ function manualAction(id = 'manual-1', overrides: Partial<Action> = {}): Action 
     estimatedMinutes: 20,
     leverage: 98,
     delayCost: 90,
-    status: 'todo',
+    status: 'todo', plannedDate: '2026-09-20',
     createdAt: '2026-09-19T00:00:00.000Z',
     updatedAt: '2026-09-19T00:00:00.000Z',
     ...overrides,
@@ -246,13 +246,14 @@ describe('UU-03 TodayBrief read model', () => {
     const brief = buildTodayBrief(
       snapshot({
         opportunities: [opp],
+        events: [{ ...processEvent(opp, 'date-interview', 'interview_invite', '2026-09-22'), duePrecision: 'date' }],
         actions: [applyAction(opp, '2026-09-22T23:59:59.000Z', 45, 'date')],
       }),
       {},
       { now: NOW, timezone: TZ },
     )
     const node = brief.agendaGroups.flatMap((group) => group.nodes)
-      .find((item) => item.kind === 'application_deadline')
+      .find((item) => item.kind === 'interview')
     expect(node?.temporal).toMatchObject({
       shape: 'date_only',
       precision: 'date',
@@ -266,7 +267,7 @@ describe('UU-03 TodayBrief read model', () => {
 
   it('uses an employer explicit latest-start instead of deriving it from the window end', () => {
     const opp = opportunity('opp-written', 'Graduate Program', { processStage: 'written_test', currentStageLabel: '笔试' })
-    const written = processEvent(opp, 'written-window', 'written_test_invite', '2026-09-23T10:00:00.000Z')
+    const written = processEvent(opp, 'written-window', 'written_test_invite', '2026-09-23T12:00:00.000Z', 'deadline')
     written.temporal = {
       shape: 'availability_window',
       precision: 'datetime',
@@ -277,13 +278,13 @@ describe('UU-03 TodayBrief read model', () => {
       resolutionBasis: 'source_explicit',
     }
     const action: Action = {
-      ...manualAction('written-window-action'),
+      ...manualAction('written-window-action'), plannedDate: '2026-09-23',
       opportunityId: opp.id,
       processEventId: written.id,
       processStage: 'written_test',
       dueAt: written.dueAt,
       duePrecision: 'datetime',
-      timingMode: 'fixed',
+      timingMode: 'deadline',
       estimatedMinutes: 90,
     }
     const brief = buildTodayBrief(snapshot({
@@ -416,6 +417,7 @@ describe('UU-03 TodayBrief read model', () => {
     })
     const source = snapshot({
       opportunities: [inside, outside],
+      events: [inside, outside].map(opp => ({ ...processEvent(opp, `interview:${opp.id}`, 'interview_invite', opp.deadline!.slice(0, 10)), duePrecision: 'date' as const })),
       actions: [
         applyAction(inside, inside.deadline, 45, 'date'),
         applyAction(outside, outside.deadline, 45, 'date'),

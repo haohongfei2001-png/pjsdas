@@ -374,7 +374,9 @@ export function validateSnapshot(value: unknown): asserts value is PJSDASSnapsho
     for (const correction of corrections ?? []) {
       if (!correction.commandId?.trim() || ids.has(correction.commandId) || !['confirmed', 'unknown'].includes(correction.state)
         || !['official_role', 'official_campaign', 'university_repost', 'aggregator', 'user'].includes(correction.sourceAuthority)
-        || !['open', 'closed', 'unknown'].includes(correction.postingStatus) || !correction.sourceUrl?.trim() || !correction.evidence?.trim()
+        || !['open', 'closed', 'unknown'].includes(correction.postingStatus)
+        || (!correction.sourceUrl?.trim() && !(correction.sourceAuthority === 'user' && correction.acknowledgedNodeFacts !== undefined)) || !correction.evidence?.trim()
+        || (correction.acknowledgedNodeFacts !== undefined && (typeof correction.acknowledgedNodeFacts !== 'string' || correction.acknowledgedNodeFacts.length > 64_000))
         || !Array.isArray(correction.previousNodeIds)) throw new Error('备份损坏：投递截止更正依据无效。')
       ids.add(correction.commandId)
       assertIsoDate(correction.checkedAt, 'Deadline correction checkedAt')

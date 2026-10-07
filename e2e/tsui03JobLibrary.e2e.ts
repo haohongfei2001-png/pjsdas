@@ -178,7 +178,7 @@ test('TSUI-03 Today and Schedule detail links restore their exact opener and old
       request.onerror = () => reject(request.error)
       request.onsuccess = () => {
         const db = request.result
-        const tx = db.transaction(['opportunities', 'actions'], 'readwrite')
+        const tx = db.transaction(['opportunities', 'actions', 'scheduleNodes'], 'readwrite')
         tx.onerror = () => reject(tx.error)
         tx.oncomplete = () => { db.close(); resolve() }
         tx.objectStore('opportunities').put({
@@ -188,11 +188,15 @@ test('TSUI-03 Today and Schedule detail links restore their exact opener and old
           roleType: 'core', participationStatus: 'active', early: false, locallyManaged: true,
           opportunityValue: 80, fitScore: 80, importedAt: new Date(now - 86400000).toISOString(),
         })
+        tx.objectStore('scheduleNodes').put({ id: 'context-interview', occurrenceId: 'context-interview', version: 1,
+          opportunityId: 'tsui03-context-opp', kind: 'interview', state: 'scheduled', constraintKind: 'employer_hard',
+          temporal: { shape: 'date_only', precision: 'date', date: '2026-10-02', timezone: 'UTC', resolutionBasis: 'source_explicit' },
+          relatedActionIds: [], relatedPrepIds: [], evidenceRefs: [], sourceVersionRefs: [], createdAt: new Date(now).toISOString(), updatedAt: new Date(now).toISOString() })
         tx.objectStore('actions').put({
           id: 'tsui03-context-action', kind: 'manual', title: '准备上下文申请',
           opportunityId: 'tsui03-context-opp',
           estimatedMinutes: 20, leverage: 90, delayCost: 90,
-          status: 'todo', createdAt: new Date(now - 86400000).toISOString(), updatedAt: new Date(now - 86400000).toISOString(),
+          status: 'todo', plannedDate: '2026-09-30', createdAt: new Date(now - 86400000).toISOString(), updatedAt: new Date(now - 86400000).toISOString(),
         })
 
       }

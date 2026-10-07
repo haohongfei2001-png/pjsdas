@@ -26,6 +26,7 @@ for (const width of [1440, 390]) test(`Calendar keeps actual events apart from o
     { id: 'skip', kind: 'action_status_changed', category: 'action', source: 'user_action', occurredAt: '2026-10-06T03:21:00.000Z', recordedAt: '2026-10-06T03:21:00.000Z', title: '跳过行动｜完成示例游戏｜笔试', actionId: 'old-test', changes: { status: { before: 'todo', after: 'skipped' } } },
     { id: 'submitted', kind: 'application_submitted', category: 'opportunity', source: 'user_action', occurredAt: '2026-10-02T08:00:00.000Z', recordedAt: '2026-10-06T03:21:00.000Z', title: '完成投递', opportunityId: 'applied' },
   ]
+  snapshot.data.scheduleNodes.push({ ...snapshot.data.scheduleNodes[0], id: 'completed-interview', occurrenceId: 'completed-interview', state: 'completed', completedAt: '2026-10-02T08:00:00Z', temporal: { shape: 'fixed_range', precision: 'datetime', timezone: 'Asia/Shanghai', startAt: '2026-10-02T07:00:00Z', resolutionBasis: 'source_explicit' } })
   const writes: string[] = []
   await page.route(/https:\/\/[^/]+\.supabase\.co\//, route => route.abort())
   await page.route(BACKEND + '/**', route => {
@@ -41,7 +42,8 @@ for (const width of [1440, 390]) test(`Calendar keeps actual events apart from o
   await page.goto('/pjsdas/schedule?view=past')
   const rows = page.locator('.tsui-schedule-row')
   await expect(rows).toHaveCount(1)
-  await expect(rows.first()).toContainText('完成投递')
+  await expect(rows.first()).toContainText('面试')
+  await expect(rows.first()).not.toContainText('完成投递')
   await expect(page.locator('.tsui-schedule-date')).toHaveText('2026-10-02')
   await expect(page.getByText('明确写入机会', { exact: false })).toHaveCount(0)
   await expect(page.getByText('核实投递截止时间', { exact: false })).toHaveCount(0)

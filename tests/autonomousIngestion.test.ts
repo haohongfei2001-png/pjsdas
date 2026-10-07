@@ -54,7 +54,7 @@ const monitorRun = {
 }
 
 describe('autonomous monitor ingestion', () => {
-  it('creates a new opportunity and apply action while fully accounting the run', () => {
+  it('creates only a new opportunity while fully accounting the run', () => {
     const result = applyMonitorIngestion(baseSnapshot(), {
       ...monitorRun,
       observations: [observation()],
@@ -62,8 +62,8 @@ describe('autonomous monitor ingestion', () => {
 
     expect(result.alreadyApplied).toBe(false)
     expect(result.snapshot.data.opportunities).toHaveLength(1)
-    expect(result.snapshot.data.actions).toHaveLength(1)
-    expect(result.snapshot.data.actions[0]).toMatchObject({ kind: 'apply', status: 'todo' })
+    expect(result.snapshot.data.actions).toHaveLength(0)
+    expect(result.snapshot.data.scheduleNodes ?? []).toHaveLength(0)
     expect(result.run).toMatchObject({ receivedCount: 1, accountedCount: 1, outcomes: { created: 1 } })
     expect(summarizeCoverage(result.snapshot.data.timeline).allCaughtUp).toBe(true)
   })
@@ -90,7 +90,7 @@ describe('autonomous monitor ingestion', () => {
 
     expect(second.snapshot.data.opportunities).toHaveLength(2)
     expect(second.run.outcomes.created).toBe(1)
-    expect(second.snapshot.data.actions).toHaveLength(2)
+    expect(second.snapshot.data.actions).toHaveLength(0)
     const original = second.snapshot.data.opportunities.find((item) => item.id === firstId)!
     expect(original.detail?.discovery?.posting?.canonicalSourceUrl).toBe('https://careers.example.com/jobs/123')
     expect(original.detail?.discovery?.postingHistory).toBeUndefined()

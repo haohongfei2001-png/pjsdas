@@ -227,7 +227,7 @@ function intentObjects(command: AuthoritativeBusinessCommand['command'], snapsho
       { type: 'change_set', id: proposal.changeSet.id },
       ...proposal.changeSet.operations.filter((item) => command.value.selectedOperationIds.includes(item.id) && item.kind === 'add_discovered_opportunity')
         .flatMap((item) => item.kind === 'add_discovered_opportunity' ? [
-          { type: 'opportunity', id: item.opportunity.id }, { type: 'action', id: `apply:${item.opportunity.id}` },
+          { type: 'opportunity', id: item.opportunity.id },
         ] : []),
     ]
   }
@@ -289,7 +289,7 @@ function intentObjects(command: AuthoritativeBusinessCommand['command'], snapsho
       ?? findSimilarOpportunity({ company: item.company, role: item.role }, snapshot.data.opportunities))
     return [
       { type: 'discovery_inbox', id: command.value.inboxItemId },
-      ...(item ? [{ type: 'opportunity', id: item.candidateOpportunityId }, { type: 'action', id: `apply:${item.candidateOpportunityId}` }] : []),
+      ...(item ? [{ type: 'opportunity', id: item.candidateOpportunityId }] : []),
       ...(existing && existing.id !== item?.candidateOpportunityId ? [{ type: 'opportunity', id: existing.id }] : []),
     ]
   }

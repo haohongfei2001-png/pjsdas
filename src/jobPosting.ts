@@ -107,14 +107,20 @@ export function resolveOpportunityPostingIdentity(
   opportunities: Opportunity[],
 ): OpportunityPostingIdentityResolution {
   const canonicalSourceUrl = canonicalizeJobSourceUrl(candidate.sourceUrl)
-  const logical = opportunities.filter((item) => logicalJobMatches(
-    { company: candidate.company, role: candidate.role, location: candidate.location },
-    { company: item.company, role: item.role, location: item.detail?.discovery?.location },
-  ))
+  const exact = (value: string | undefined) => (value ?? '').trim().replace(/\s+/g, ' ').toLocaleLowerCase()
+  const logical = opportunities.filter((item) => item.detail?.userFacts?.creationCommandId
+    ? exact(item.company) === exact(candidate.company) && exact(item.role) === exact(candidate.role)
+      && (!candidate.location || !item.detail.userFacts.location || exact(candidate.location) === exact(item.detail.userFacts.location))
+    : logicalJobMatches({ company: candidate.company, role: candidate.role, location: candidate.location },
+      { company: item.company, role: item.role, location: item.detail?.discovery?.location }))
+  const ambiguousUserLocations = logical.filter(item => item.detail?.userFacts?.creationCommandId
+    && Boolean(item.detail.userFacts.location) !== Boolean(candidate.location)
+    && item.detail.userFacts.applicationUrl && canonicalizeJobSourceUrl(item.detail.userFacts.applicationUrl) === canonicalSourceUrl)
+  if (ambiguousUserLocations.length) return { kind: 'ambiguous', opportunities: ambiguousUserLocations, canonicalSourceUrl, reason: 'legacy_missing_posting' }
   const samePosting = logical.filter((item) => {
     const current = item.detail?.discovery?.posting
     if (current) return current.canonicalSourceUrl === canonicalSourceUrl
-    const sourceUrl = item.detail?.discovery?.sourceUrl
+    const sourceUrl = item.detail?.discovery?.sourceUrl ?? item.detail?.userFacts?.applicationUrl
     return sourceUrl ? canonicalizeJobSourceUrl(sourceUrl) === canonicalSourceUrl : false
   })
   if (samePosting.length === 1) return { kind: 'same_posting', opportunity: samePosting[0]!, canonicalSourceUrl }
@@ -124,7 +130,7 @@ export function resolveOpportunityPostingIdentity(
 
   // A known different exact posting source is positive evidence that this is a
   // different posting. Weak title/company/location similarity cannot override it.
-  const legacyMissingPosting = logical.filter((item) => !item.detail?.discovery?.posting && !item.detail?.discovery?.sourceUrl)
+  const legacyMissingPosting = logical.filter((item) => !item.detail?.discovery?.posting && !item.detail?.discovery?.sourceUrl && !item.detail?.userFacts?.applicationUrl)
   if (legacyMissingPosting.length > 0) {
     return { kind: 'ambiguous', opportunities: legacyMissingPosting, canonicalSourceUrl, reason: 'legacy_missing_posting' }
   }
