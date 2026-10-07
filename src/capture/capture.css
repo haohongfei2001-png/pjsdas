@@ -263,5 +263,5 @@
 .cgr-manual-job input { box-sizing: border-box; width: 100%; min-width: 0; min-height: 44px; border: 1px solid var(--cgr-border-strong); border-radius: 10px; padding: 10px 12px; background: var(--cgr-surface-strong); font: inherit; }
 .cgr-manual-job details summary { cursor: pointer; min-height: 44px; align-content: center; font-size: .82rem; }
 .cgr-manual-job p { color: var(--cgr-text-secondary); font-size: .78rem; margin: 0; }
-.cgr-capture-footer .cgr-capture-mode { margin-right: auto; }
+.cgr-capture-footer .cgr-capture-mode { margin-right: auto; min-height: 44px; font-size: .8125rem; }
 @media (max-width: 520px) { .cgr-manual-job-identity { grid-template-columns: 1fr; } .cgr-capture-footer { flex-wrap: wrap; } .cgr-capture-footer .cgr-capture-mode { flex-basis: 100%; text-align: left; } }

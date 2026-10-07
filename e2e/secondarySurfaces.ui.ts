@@ -15,11 +15,11 @@ function fixture() {
   snapshot.data.opportunities[0]!.company = '示例公司 · 产品与用户研究团队'
   snapshot.data.opportunities[0]!.role = '高级产品策略与体验研究 / Senior Product Research'
   snapshot.data.opportunities[1]!.company = snapshot.data.opportunities[0]!.company
-  // Isolate this pixel/layout comparison from the separately tested retirement
-  // of business-score ordering: both reference and candidate receive the same
-  // explicit source dates and therefore the same unambiguous row order.
-  snapshot.data.opportunities.forEach((item, index) => { item.deadline = `2026-09-${25 + index}`; item.deadlinePrecision = 'date' })
-  snapshot.data.actions.forEach((item, index) => { item.dueAt = `2026-09-${25 + index}`; item.duePrecision = 'date'; item.timingMode = 'deadline' })
+  // This layout guard compares the same eligible content in both runtimes:
+  // two explicitly chosen tasks and the real appointment below. Job/task
+  // deadlines used to fabricate four extra reference calendar rows; their
+  // removal is a separately asserted B1 business change, not a layout change.
+  snapshot.data.actions.forEach(item => { item.plannedDate = '2026-09-23' })
   snapshot.data.timePlanning = { version: 1, defaultDailyMinutes: 480, updatedAt: now }
   snapshot.data.scheduleNodes = [{
     id: 'secondary-node', occurrenceId: 'secondary-occurrence', version: 1,
@@ -128,6 +128,7 @@ for (const width of [1440, 390, 320]) test(`main pixels stay fixed before and af
   await page.setViewportSize({ width, height: width < 600 ? 844 : 900 })
   await page.goto('/pjsdas/today')
   await expect(page.locator('.tsui-task-row')).not.toHaveCount(0)
+  await expect(page.locator('.tsui-node-panel .tsui-node-row')).toHaveCount(1)
   await capture(page, 'MAIN_TODAY', width, scale, true)
   await page.locator('.tsui-primary-nav').getByRole('button', { name: '岗位库', exact: true }).click()
   await expect(page.locator('.tsui-job-open')).toHaveCount(2)
@@ -170,7 +171,10 @@ for (const width of [1440, 390, 320]) test(`details and settings retain readable
   await capture(page, 'CONTEXT_CAPTURE', width, width === 320 ? 200 : 100)
   if (width === 320) {
     await capture(page, 'CONTEXT_CAPTURE_BOTTOM', width, 200, false, '.cgr-capture-sheet')
-    await expect(page.locator('.cgr-capture-footer button')).toBeInViewport()
+    const footerButtons = page.locator('.cgr-capture-footer button')
+    await expect(footerButtons).toHaveCount(phase === 'after' ? 2 : 1)
+    for (const button of await footerButtons.all()) await expect(button).toBeInViewport()
+    if (phase === 'after') expect(await page.locator('.cgr-capture-mode').evaluate(element => parseFloat(getComputedStyle(element).fontSize))).toBeGreaterThanOrEqual(25)
   }
   await page.keyboard.press('Escape')
   await expect(page.locator('.job-detail-capture')).toBeFocused()
