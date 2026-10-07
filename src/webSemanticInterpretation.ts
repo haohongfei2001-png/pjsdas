@@ -1,3 +1,4 @@
+import { resolveSourceTemporal } from './sourceTemporal.js'
 import { parseProgressUpdate, type CanonicalJobReference } from './progressUpdate.js'
 import type {
   Opportunity,
@@ -264,12 +265,27 @@ export function buildWebSemanticInterpretation(
   baseline: PJSDASSnapshot,
   references: CanonicalJobReference[],
   now = new Date(),
+  timezone = baseline.data.timePlanning?.timezone ?? Intl.DateTimeFormat().resolvedOptions().timeZone ?? 'UTC',
 ) {
   const mode = webStatementMode(text)
   if (mode !== 'assertion' && mode !== 'current_intent') {
     return { mode, candidates: [], unresolved: [], ignored: [] }
   }
   const current = withoutQuotedContext(text)
+  // A first-party task plan is distinct from a recruiting notice or deadline.
+  // Reuse the source-time resolver: ambiguous local times remain unresolved.
+  if (/准备|整理|复习|练习|修改|准备材料|prepare|practice|revise/i.test(current.text)
+    && !/截止|最晚|通知|邀请|收到|deadline|invitation|received/i.test(current.text)) {
+    const temporal = resolveSourceTemporal(current.text, { receivedAt: now.toISOString(), timezone,
+      mode: hasExplicitClock(current.text) ? 'fixed' : 'deadline' })
+    if (temporal) {
+      const scheduledTemporal = temporal.startAt ? { ...temporal, resolutionBasis: 'user_explicit' as const } : undefined
+      const plannedDate = temporal.date ?? (temporal.startAt ? new Intl.DateTimeFormat('en-CA', { timeZone: timezone, year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(temporal.startAt)) : undefined)
+      const candidate: SemanticCandidate = { ...candidateBase(`plan:${stableHash(current.text)}`, current.text, 'high'),
+        kind: 'manual_action', title: current.text, plannedDate, scheduledTemporal }
+      return { mode, candidates: [candidate], unresolved: [], ignored: current.excluded ? [text] : [] }
+    }
+  }
   const plan = parseProgressUpdate(current.text, opportunities, now, references)
   const explicitCompletion = explicitCompletionCandidate(current.text, mode, plan, opportunities, baseline)
   const explicitKind = explicitCompletion?.target?.occurrenceKind

@@ -1,3 +1,6 @@
+import { actionArrangementDate, isExplicitActionArrangement, scheduleNodeEligible } from './scheduleEligibility.js'
+import { resolveApplicationDeadline } from './applicationDeadline.js'
+import { appendOpportunityOnly, createUserOpportunity, findUserJobDuplicate, normalizedUserJobFacts, userJobIdentity, type UserJobFacts } from './opportunityCreation.js'
 import { canonicalOpportunityId } from './opportunityCanonicalization.js'
 import { applicationDeadlineFingerprint, applicationDeadlineNodes } from './applicationDeadline.js'
 import { correctApplicationDeadline, type CorrectApplicationDeadlineCommand } from './deadlineCorrection.js'
@@ -35,9 +38,11 @@ import { upgradeSnapshotToLatest, validateSnapshot } from './snapshot.js'
 import { validPlanningDate, validateTimePlanningPreferences, type WorkWindow } from './timePlanningPreferences.js'
 import { cancelReminderIntentInPlace, buildReminderIntent, reminderCapabilityForOwner, reminderDedupeKey, resolveReminderTrigger } from './reminders.js'
 import {
+  validateScheduleNode,
   ensureScheduleContractInPlace,
   latestScheduleOccurrence,
   migrateLegacyScheduleNodes,
+  scheduleNodeForAction,
   projectScheduleNodesToLegacyInPlace,
   setApplicationDeadlineScheduleNode,
   supersedeScheduleOccurrence,
@@ -47,12 +52,15 @@ import {
 export type UserFactField = 'location' | 'compensationText' | 'applicationUrl'
 
 export type UserDomainCommand =
+  | ({ commandId: string; kind: 'add_user_opportunity' } & UserJobFacts)
+  | { commandId: string; kind: 'plan_application_action'; opportunityId: string; plannedDate?: string; scheduledTemporal?: ScheduleNodeTemporal }
   | InvalidateProcessEventCommand
   | CorrectApplicationDeadlineCommand
   | { commandId: string; kind: 'record_application_submission'; opportunityId: string; occurredAt?: string; reactivateConfirmed?: boolean }
   | {
       commandId: string
       kind: 'record_process_event'
+      sourceOccurrenceId?: string
       temporal?: ScheduleNodeTemporal
       opportunityId: string
       eventType: ProcessEventType
@@ -102,6 +110,8 @@ export type UserDomainCommand =
       title: string
       dueAt?: string
       duePrecision?: DatePrecision
+      plannedDate?: string
+      scheduledTemporal?: ScheduleNodeTemporal
       estimatedMinutes?: number
     }
 
@@ -123,6 +133,24 @@ export type UserDomainCommandResult =
       reason: string
       summary: string
     }
+
+function validateActionPlan(command: { plannedDate?: string; scheduledTemporal?: ScheduleNodeTemporal }) {
+  if (command.plannedDate && !validPlanningDate(command.plannedDate)) throw new Error('Plan day must be a valid local calendar date.')
+  if (!command.scheduledTemporal) return
+  if (!isExplicitActionArrangement(command.scheduledTemporal)) throw new Error('An Action arrangement requires an explicit user-chosen start time and timezone.')
+  const errors = validateScheduleNode({ id: 'validation', occurrenceId: 'validation', version: 1, kind: 'follow_up',
+    state: 'scheduled', temporal: command.scheduledTemporal, constraintKind: 'user_plan', evidenceRefs: [],
+    sourceVersionRefs: [], relatedActionIds: [], relatedPrepIds: [], createdAt: '', updatedAt: '' })
+  if (errors.length) throw new Error(errors[0])
+  if (command.scheduledTemporal.timezone === 'floating-date' || command.plannedDate && command.plannedDate !== (command.scheduledTemporal ? actionArrangementDate(command.scheduledTemporal) : undefined)) throw new Error('The plan day must match the explicit arrangement timezone and date.')
+}
+
+function actionPlanFacts(command: Extract<UserDomainCommand, { kind: 'plan_application_action' | 'add_manual_action' }>) {
+  return command.kind === 'plan_application_action'
+    ? { kind: command.kind, opportunityId: command.opportunityId, plannedDate: command.plannedDate, scheduledTemporal: command.scheduledTemporal }
+    : { kind: command.kind, title: command.title.trim(), dueAt: command.dueAt, duePrecision: command.duePrecision,
+      plannedDate: command.plannedDate, scheduledTemporal: command.scheduledTemporal, estimatedMinutes: command.estimatedMinutes }
+}
 
 function stableHash(value: string) {
   let result = 2166136261
@@ -400,6 +428,14 @@ export function applyUserDomainCommand(
 ): UserDomainCommandResult {
   if (!command.commandId.trim()) throw new Error('commandId is required.')
   if (commandAlreadyApplied(snapshot, command.commandId)) {
+    if (command.kind === 'plan_application_action' || command.kind === 'add_manual_action') {
+      const recorded = snapshot.data.timeline?.find(item => item.commandId === command.commandId)?.changes?.planFacts?.after
+      if (typeof recorded !== 'string' || !occurrenceValueEqual(JSON.parse(recorded), actionPlanFacts(command))) throw new Error('Task plan command ID was reused with different facts or an unsupported legacy receipt.')
+    }
+    if (command.kind === 'add_user_opportunity') {
+      const record = snapshot.data.timeline?.find(item => item.commandId === command.commandId)
+      if (record?.changes?.jobFacts?.after !== JSON.stringify(normalizedUserJobFacts(command))) throw new Error('Job creation command ID was reused with different facts.')
+    }
     if (command.kind === 'invalidate_process_event') {
       const event = snapshot.data.processEvents.find(item => item.id === command.eventId && item.opportunityId === canonicalOpportunityId(snapshot, command.opportunityId))
       const correction = event?.invalidation
@@ -414,6 +450,64 @@ export function applyUserDomainCommand(
 
   const next = upgradeSnapshotToLatest(snapshot)
   const timestamp = nowIso(now)
+
+  if (command.kind === 'add_user_opportunity') {
+    const facts = normalizedUserJobFacts(command)
+    const duplicate = findUserJobDuplicate(facts, next.data.opportunities)
+    if (duplicate) return { status: 'ALREADY_APPLIED', snapshot,
+      summary: `Job already saved: ${duplicate.company}｜${duplicate.role}.` }
+    const target = appendOpportunityOnly(next.data, createUserOpportunity(facts, command.commandId, timestamp))
+    appendTimeline(next, commandTimeline(command, timestamp, { kind: 'opportunity_added',
+      title: `添加岗位｜${target.company}｜${target.role}`, opportunity: target,
+      changes: { jobFacts: { before: null, after: JSON.stringify(facts) } } }), command)
+    finalizeSnapshot(next, timestamp)
+    return { status: 'APPLIED', snapshot: next, summary: `Saved job ${target.company}｜${target.role}.`,
+      compensation: { operation: 'remove_created_opportunity', payload: { opportunityId: target.id,
+        expected: structuredClone(target) } } }
+  }
+
+  if (command.kind === 'plan_application_action') {
+    validateActionPlan(command)
+    const plannedDate = command.plannedDate ?? (command.scheduledTemporal ? actionArrangementDate(command.scheduledTemporal) : undefined)
+    const target = opportunity(next, command.opportunityId)
+    if (!target || !['not_applied', 'waiting_release'].includes(target.processStage) || target.participationStatus === 'abandoned') {
+      throw new Error('Choose an active unsubmitted job before planning an application.')
+    }
+    const previous = next.data.actions.find(item => item.kind === 'apply' && item.opportunityId === target.id)
+    if (previous && ['todo', 'doing'].includes(previous.status) && previous.plannedDate === plannedDate
+      && occurrenceValueEqual(previous.scheduledTemporal, command.scheduledTemporal)) return { status: 'ALREADY_APPLIED', snapshot, summary: 'Application task is already planned.' }
+    const existingArrangement = previous ? latestScheduleOccurrence(next.data.scheduleNodes ?? [], `action:${previous.id}`) : undefined
+    if (existingArrangement && !['cancelled', 'superseded'].includes(existingArrangement.state)
+      && (!command.scheduledTemporal || existingArrangement.state === 'completed')) return {
+      status: 'NEEDS_CONFIRMATION', snapshot, reason: 'EXISTING_ARRANGEMENT',
+      summary: 'This task already has a precise or completed arrangement; update that occurrence explicitly before replacing its time.' }
+    const before = previous ? structuredClone(previous) : undefined
+    const beforeNodes = structuredClone(next.data.scheduleNodes?.filter(node => previous && node.relatedActionIds.includes(previous.id)) ?? [])
+    const deadline = resolveApplicationDeadline(target, next.data)
+    const planned: Action = { ...(previous ?? {}), timingContractVersion: 2, id: previous?.id ?? `apply:${target.id}`, kind: 'apply',
+      title: previous?.title ?? `投递 ${target.company}｜${target.role}`, opportunityId: target.id, processStage: 'not_applied',
+      plannedDate, scheduledTemporal: command.scheduledTemporal ? structuredClone(command.scheduledTemporal) : undefined,
+      dueAt: deadline.deadline, duePrecision: deadline.precision, timingMode: deadline.deadline ? 'deadline' : undefined,
+      estimatedMinutes: previous?.estimatedMinutes ?? 45, leverage: previous?.leverage ?? 0, delayCost: previous?.delayCost ?? 0,
+      status: previous?.status === 'doing' ? 'doing' : 'todo', sourceLabel: '用户明确计划',
+      createdAt: previous?.createdAt ?? timestamp, updatedAt: timestamp }
+    if (previous) next.data.actions[next.data.actions.indexOf(previous)] = planned
+    else next.data.actions.push(planned)
+    if (existingArrangement && command.scheduledTemporal) {
+      const candidate = scheduleNodeForAction(planned)!
+      const { id: _id, version: _version, ...replacement } = candidate
+      const updated = supersedeScheduleOccurrence(next.data.scheduleNodes!, replacement)
+      confirmationVersionId(updated, existingArrangement, command.commandId)
+    }
+    appendTimeline(next, commandTimeline(command, timestamp, { kind: previous ? 'action_status_changed' : 'action_added', category: 'action',
+      title: command.plannedDate ? '安排投递任务' : '创建投递任务', opportunity: target, action: planned,
+      changes: { planFacts: { before: null, after: JSON.stringify(actionPlanFacts(command)) } } }), command)
+    finalizeSnapshot(next, timestamp)
+    return { status: 'APPLIED', snapshot: next, summary: 'Application task planned.',
+      compensation: { operation: 'restore_action_plan', payload: { actionId: planned.id, previous: before,
+        expected: structuredClone(planned), previousNodes: beforeNodes,
+        expectedNodes: structuredClone(next.data.scheduleNodes?.filter(node => node.relatedActionIds.includes(planned.id)) ?? []) } } }
+  }
 
   if (command.kind === 'set_daily_capacity' || command.kind === 'set_date_capacity' || command.kind === 'set_work_windows') {
     const before = next.data.timePlanning
@@ -462,6 +556,8 @@ export function applyUserDomainCommand(
     const occurredAt = command.occurredAt ?? timestamp
     assertIso(occurredAt, 'occurredAt')
     const beforeStage = target.processStage
+    const priorSubmissionCommandIds = Object.entries(target.applicationSubmissionProofs ?? {}).filter(([, state]) => state === 'active').map(([id]) => id)
+    target.applicationSubmissionProofs = { ...target.applicationSubmissionProofs, [command.commandId]: 'active' }
     target.participationStatus = 'active'
     target.abandonedAt = undefined
     target.processStage = 'screening'
@@ -492,6 +588,9 @@ export function applyUserDomainCommand(
         operation: 'restore_application_submission',
         payload: {
           opportunityId: target.id,
+          submissionCommandId: command.commandId,
+          priorSubmissionCommandIds,
+          priorProcessEventIds: beforeData.processEvents.filter(event => event.opportunityId === target.id && !event.invalidation).map(event => event.id),
           processStage: beforeStage,
           actionId: apply?.id,
           actionStatus: beforeApplyStatus,
@@ -517,9 +616,13 @@ export function applyUserDomainCommand(
     if (!target) throw new Error(`Opportunity ${command.opportunityId} was not found.`)
     const occurredAt = command.occurredAt ?? timestamp
     assertIso(occurredAt, 'occurredAt')
-    const effectiveDueAt = command.temporal?.startAt ?? command.temporal?.deadlineAt ?? command.temporal?.date ?? command.dueAt
+    const effectiveDueAt = command.temporal?.shape === 'availability_window' ? command.temporal.endAt : command.temporal?.startAt ?? command.temporal?.deadlineAt ?? command.temporal?.date ?? command.dueAt
     if (command.temporal && !['assessment_invite', 'written_test_invite', 'interview_invite'].includes(command.eventType)) throw new Error('Explicit process temporal requires a schedule-bearing event.')
     if (effectiveDueAt) assertIso(effectiveDueAt, 'dueAt')
+    if (command.temporal) {
+      const errors = validateScheduleNode({ id: 'validation', occurrenceId: 'validation', version: 1, kind: 'interview', state: 'scheduled', temporal: command.temporal, constraintKind: 'employer_hard', evidenceRefs: [], sourceVersionRefs: [], relatedActionIds: [], relatedPrepIds: [], createdAt: timestamp, updatedAt: timestamp })
+      if (errors.length) throw new Error(errors[0])
+    }
     if (command.location && command.location.length > 200) throw new Error('Location exceeds the bounded field length.')
     if (command.joinUrl) {
       const url = new URL(command.joinUrl)
@@ -532,11 +635,12 @@ export function applyUserDomainCommand(
       company: target.company,
       role: target.role,
       type: command.eventType,
+      sourceOccurrenceId: command.sourceOccurrenceId,
       temporal: command.temporal ? structuredClone(command.temporal) : undefined,
       occurredAt,
       dueAt: effectiveDueAt,
       duePrecision: command.temporal?.precision ?? command.duePrecision,
-      timingMode: command.timingMode ?? defaultTimingModeForProcessEvent(command.eventType),
+      timingMode: command.temporal?.shape === 'deadline' || command.temporal?.shape === 'availability_window' ? 'deadline' : command.timingMode ?? defaultTimingModeForProcessEvent(command.eventType),
       estimatedMinutes: command.estimatedMinutes ?? defaultMinutesForProcessEvent(command.eventType),
       location: command.location?.trim() || undefined,
       joinUrl: command.joinUrl?.trim() || undefined,
@@ -548,7 +652,7 @@ export function applyUserDomainCommand(
     }
     next.data.processEvents.push(event)
     const generated = actionForProcessEvent(event)
-    if (generated) next.data.actions.push({ ...generated, duePrecision: command.duePrecision })
+    if (generated) next.data.actions.push(generated)
     upsertProcessAtEventStage(next, target, event)
     appendTimeline(next, {
       ...timelineFromProcessEvent(event, 'user_action', timestamp),
@@ -567,6 +671,7 @@ export function applyUserDomainCommand(
     const cancelled = command.kind === 'cancel_occurrence'
     let node = activeScheduleNode(next, command.occurrenceId)
     if (!node) throw new Error(`Schedule occurrence ${command.occurrenceId} was not found.`)
+    if (node.kind === 'application_deadline') throw new Error('A job deadline is not a calendar occurrence; use the job fact or explicit submission command.')
     const confirmsTaskObservation = recruitingOccurrenceNeedsConfirmation(node, indexScheduleOccurrenceEvidence(next.data.timeline ?? []), now)
     if (!confirmsTaskObservation && node.state === (cancelled ? 'cancelled' : 'completed')) {
       return { status: 'ALREADY_APPLIED', snapshot, summary: `Schedule occurrence ${command.occurrenceId} is already ${cancelled ? 'cancelled' : 'completed'}.` }
@@ -661,6 +766,8 @@ export function applyUserDomainCommand(
   if (command.kind === 'reschedule_occurrence') {
     const current = activeScheduleNode(next, command.occurrenceId)
     if (!current) throw new Error(`Schedule occurrence ${command.occurrenceId} was not found.`)
+    if (current.kind === 'application_deadline') throw new Error('A job deadline is not a calendar occurrence; update its deadline fact instead.')
+    if (current.constraintKind === 'user_plan' && !['interview', 'written_test', 'assessment'].includes(current.kind) && !isExplicitActionArrangement(command.temporal)) throw new Error('A timed Action reschedule requires an explicit start; a day-only plan cannot replace its arrangement.')
     const confirmsTaskObservation = recruitingOccurrenceNeedsConfirmation(current, indexScheduleOccurrenceEvidence(next.data.timeline ?? []), now)
     if (!confirmsTaskObservation && (current.state === 'completed' || current.state === 'cancelled' || current.state === 'superseded')) {
       return {
@@ -671,7 +778,7 @@ export function applyUserDomainCommand(
       }
     }
     const previousNode = structuredClone(current)
-    const ownerStates = confirmsTaskObservation ? occurrenceOwnerStates(next, current) : undefined
+    const ownerStates = occurrenceOwnerStates(next, current)
     const affectedProcesses = next.data.processes.filter((process) =>
       (current.processId && process.id === current.processId)
       || (current.opportunityId && process.opportunityId === current.opportunityId),
@@ -744,9 +851,9 @@ export function applyUserDomainCommand(
     const correction = correctApplicationDeadline(next, command, timestamp, snapshot)
     const target = opportunity(next, command.opportunityId)!
     appendTimeline(next, commandTimeline(command, timestamp, { title: '核实投递截止时间', detail: correction.evidence, opportunity: target,
-      changes: { deadline: { before: correction.previousDeadline ?? null, after: target.deadline ?? null }, sourceUrl: { before: null, after: correction.sourceUrl } } }), command)
+      changes: { deadline: { before: correction.previousDeadline ?? null, after: target.deadline ?? null }, sourceUrl: { before: null, after: correction.sourceUrl ?? null } } }), command)
     finalizeSnapshot(next, timestamp)
-    return { status: 'APPLIED', snapshot: next, summary: correction.state === 'confirmed' ? 'Confirmed application deadline and synchronized its action and schedule owners.' : 'Cleared the unverified deadline; retained source history without creating a reminder date.' }
+    return { status: 'APPLIED', snapshot: next, summary: correction.state === 'confirmed' ? 'Confirmed the application deadline fact.' : 'Cleared the unverified deadline; retained source history without creating a reminder date.' }
   }
 
   if (command.kind === 'set_deadline') {
@@ -754,7 +861,7 @@ export function applyUserDomainCommand(
     if (!target) throw new Error(`Opportunity ${command.opportunityId} was not found.`)
     assertIso(command.deadline, 'deadline')
     const previousDeadlineNodes = structuredClone(applicationDeadlineNodes(next.data, target.id))
-    const before = { deadline: target.deadline, deadlinePrecision: target.deadlinePrecision, userFactsDeadline: target.detail?.userFacts?.deadline, userFactsDeadlinePrecision: target.detail?.userFacts?.deadlinePrecision }
+    const before = { deadlineCorrections: structuredClone(target.detail?.deadlineCorrections), deadline: target.deadline, deadlinePrecision: target.deadlinePrecision, userFactsDeadline: target.detail?.userFacts?.deadline, userFactsDeadlinePrecision: target.detail?.userFacts?.deadlinePrecision }
     target.deadline = command.deadline
     target.deadlinePrecision = command.precision
     const userFacts = ensureUserFacts(target, timestamp)
@@ -778,7 +885,7 @@ export function applyUserDomainCommand(
       status: 'APPLIED',
       snapshot: next,
       summary: `Updated deadline for ${target.company}｜${target.role}.`,
-      compensation: { operation: 'restore_deadline', payload: { opportunityId: target.id, ...before, previousDeadlineNodes, expectedDeadlineFingerprint: applicationDeadlineFingerprint(target, next.data), expectedDeadlineState: { deadline: command.deadline, correctionId: target.detail?.deadlineCorrections?.at(-1)?.commandId ?? null } } },
+      compensation: { operation: 'restore_deadline', payload: { opportunityId: target.id, ...before, previousDeadlineNodes, factOnly: true, expectedDeadlineFingerprint: applicationDeadlineFingerprint(target, next.data), expectedDeadlineState: { deadline: command.deadline, correctionId: target.detail?.deadlineCorrections?.at(-1)?.commandId ?? null } } },
     }
   }
 
@@ -998,14 +1105,18 @@ export function applyUserDomainCommand(
     }
   }
 
+  validateActionPlan(command)
   const title = command.title.trim()
   if (!title) throw new Error('Action title must not be empty.')
   if (command.dueAt) assertIso(command.dueAt, 'dueAt')
   const actionId = `user-action:${stableHash(command.commandId)}`
   const created: Action = {
+    timingContractVersion: 2,
     id: actionId,
     kind: 'manual',
     title,
+    plannedDate: command.plannedDate ?? (command.scheduledTemporal ? actionArrangementDate(command.scheduledTemporal) : undefined),
+    scheduledTemporal: command.scheduledTemporal ? structuredClone(command.scheduledTemporal) : undefined,
     dueAt: command.dueAt,
     duePrecision: command.duePrecision,
     timingMode: command.dueAt ? 'deadline' : undefined,
@@ -1023,14 +1134,14 @@ export function applyUserDomainCommand(
     category: 'action',
     title: `新增行动｜${title}`,
     action: created,
+    changes: { planFacts: { before: null, after: JSON.stringify(actionPlanFacts(command)) } },
   }), command)
-  next.exportedAt = timestamp
-  validateSnapshot(next)
+  finalizeSnapshot(next, timestamp)
   return {
     status: 'APPLIED',
     snapshot: next,
     summary: `Added action ${title}.`,
-    compensation: { operation: 'remove_manual_action', payload: { actionId } },
+    compensation: { operation: 'restore_action_plan', payload: { actionId, previous: undefined, expected: structuredClone(created), previousNodes: [], expectedNodes: structuredClone(next.data.scheduleNodes?.filter(node => node.relatedActionIds.includes(actionId)) ?? []) } },
   }
 }
 
@@ -1039,11 +1150,34 @@ export interface DomainCompensation {
   payload: any
 }
 
+/** Bind old receipts only when the original trusted command owns an exact fact. */
+export function bindLegacyApplicationSubmissionUndo(compensation: DomainCompensation, commandId: string, timeline: readonly TimelineRecord[]): DomainCompensation {
+  if (compensation.operation !== 'restore_application_submission' || compensation.payload.submissionCommandId) return compensation
+  const proof = timeline.find(record => record.kind === 'application_submitted' && record.commandOperation === 'record_application_submission'
+    && record.commandId === commandId && record.opportunityId === compensation.payload.opportunityId)
+  if (!proof) throw new Error('Legacy submission Undo lacks exact fact ownership; no history was changed.')
+  return { ...compensation, payload: { ...compensation.payload, submissionCommandId: commandId, legacySubmissionTimelineId: proof.id } }
+}
+
 export function applyDomainCompensation(
   snapshot: PJSDASSnapshot,
   compensation: DomainCompensation,
   now = new Date(),
 ): PJSDASSnapshot {
+  if (compensation.operation === 'restore_application_submission') {
+    const target = snapshot.data.opportunities.find(item => item.id === compensation.payload.opportunityId)
+    const commandId = compensation.payload.submissionCommandId
+    if (!target || typeof commandId !== 'string' || !commandId.trim()) throw new Error('Legacy submission Undo lacks exact fact ownership; no history was changed.')
+    const state = target.applicationSubmissionProofs?.[commandId]
+    if (state === 'withdrawn') return snapshot
+    if (state !== 'active' && !compensation.payload.legacySubmissionTimelineId) throw new Error('Submission proof changed; Undo cannot replace another fact.')
+  }
+  if (compensation.operation === 'restore_action_plan') {
+    const payload = compensation.payload
+    const current = snapshot.data.actions.find(item => item.id === payload.actionId)
+    const nodes = snapshot.data.scheduleNodes?.filter(node => node.relatedActionIds.includes(payload.actionId)) ?? []
+    if (!current || !occurrenceValueEqual(current, payload.expected) || !occurrenceValueEqual(nodes, payload.expectedNodes)) throw new Error('The task plan changed; Undo cannot overwrite it.')
+  }
   if (compensation.operation === 'restore_occurrence_supersession' && compensation.payload?.ownerStates) {
     // Inspect the supplied rows before legacy projection could normalize a
     // conflicting date or add provenance from an unrelated source-note edit.
@@ -1058,6 +1192,33 @@ export function applyDomainCompensation(
   const next = upgradeSnapshotToLatest(snapshot)
   const timestamp = nowIso(now)
   const payload = compensation.payload ?? {}
+
+  if (compensation.operation === 'restore_action_plan') {
+    const current = next.data.actions.find(item => item.id === payload.actionId)
+    const currentNodes = next.data.scheduleNodes?.filter(node => node.relatedActionIds.includes(payload.actionId)) ?? []
+    if (!current || !occurrenceValueEqual(current, payload.expected) || !occurrenceValueEqual(currentNodes, payload.expectedNodes)) throw new Error('The task plan changed; Undo cannot overwrite it.')
+    next.data.actions = next.data.actions.filter(item => item.id !== payload.actionId)
+    if (payload.previous) next.data.actions.push(payload.previous)
+    next.data.scheduleNodes = (next.data.scheduleNodes ?? []).filter(node => !node.relatedActionIds.includes(payload.actionId)).concat(payload.previousNodes)
+    finalizeSnapshot(next, timestamp)
+    return next
+  }
+
+  if (compensation.operation === 'remove_created_opportunity') {
+    const target = next.data.opportunities.find(item => item.id === payload.opportunityId)
+    if (!target || !occurrenceValueEqual(target, payload.expected)
+      || next.data.actions.some(item => item.opportunityId === target.id)
+      || next.data.processes.some(item => item.opportunityId === target.id)
+      || next.data.processEvents.some(item => item.opportunityId === target.id)
+      || next.data.scheduleNodes?.some(item => item.opportunityId === target.id)
+      || next.data.opportunityAliases?.some(item => item.id === target.id || item.canonicalOpportunityId === target.id)) {
+      throw new Error('The saved job has later changes or related facts; Undo cannot remove it safely.')
+    }
+    next.data.opportunities = next.data.opportunities.filter(item => item.id !== target.id)
+    next.exportedAt = timestamp
+    validateSnapshot(next)
+    return next
+  }
 
   if (compensation.operation === 'restore_daily_capacity' || compensation.operation === 'restore_date_capacity' || compensation.operation === 'restore_work_windows') {
     const preferences = structuredClone(next.data.timePlanning ?? { version: 1 as const, updatedAt: timestamp })
@@ -1149,7 +1310,16 @@ export function applyDomainCompensation(
         target.detail.userFacts.deadline = payload.userFactsDeadline
         target.detail.userFacts.deadlinePrecision = payload.userFactsDeadlinePrecision
       }
-      if (payload.previousDeadlineNodes) {
+      if (payload.factOnly) {
+        target.detail = { ...target.detail, deadlineCorrections: payload.deadlineCorrections }
+        target.deadline = payload.deadline
+        target.deadlinePrecision = payload.deadlinePrecision
+        for (const apply of next.data.actions.filter(item => item.opportunityId === target.id && item.kind === 'apply' && ['todo', 'doing'].includes(item.status))) {
+          apply.dueAt = payload.deadline
+          apply.duePrecision = payload.deadlinePrecision
+          apply.timingMode = payload.deadline ? 'deadline' : undefined
+        }
+      } else if (payload.previousDeadlineNodes) {
         for (const previous of payload.previousDeadlineNodes as ScheduleNode[]) {
           const restored = { ...previous, updatedAt: timestamp }
           delete restored.supersededByNodeId
@@ -1197,6 +1367,26 @@ export function applyDomainCompensation(
     }
   } else if (compensation.operation === 'restore_application_submission') {
     const target = next.data.opportunities.find((item) => item.id === payload.opportunityId)
+    if (!target) throw new Error('Submitted job no longer exists; Undo cannot restore safely.')
+    target.applicationSubmissionProofs = { ...target.applicationSubmissionProofs, [payload.submissionCommandId]: 'withdrawn' }
+    const priorProofs = new Set<string>(payload.priorSubmissionCommandIds ?? [])
+    const otherProofs = Object.entries(target.applicationSubmissionProofs).filter(([, state]) => state === 'active').map(([id]) => id)
+    if (otherProofs.some(id => !priorProofs.has(id))
+      || next.data.processEvents.some(event => event.opportunityId === target.id && !event.invalidation && !(payload.priorProcessEventIds ?? []).includes(event.id))) {
+      throw new Error('A later independent submission or recruiting fact owns this job; Undo cannot overwrite it.')
+    }
+    // Legacy audit remains unchanged and continues to classify historical facts.
+    // Its position is not reliable causal ownership and the instant kernel does
+    // not scan it. Both kernels decide Undo from the same command-owned proofs.
+    const independentSubmission = otherProofs.length > 0
+    if (independentSubmission) {
+      // The withdrawn command no longer proves submission; a different actual
+      // submission/recruiting fact still owns the current business state.
+      ensureScheduleContractInPlace(next.data)
+      next.exportedAt = timestamp
+      validateSnapshot(next)
+      return next
+    }
     if (target) {
       target.processStage = payload.processStage
       target.currentStageLabel = stageLabelFor(payload.processStage)

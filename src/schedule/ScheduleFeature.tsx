@@ -137,7 +137,7 @@ function pendingRescheduleDate(temporal?: ScheduleNodeTemporal) {
 function requestedView(): View {
   const value = new URLSearchParams(window.location.search).get('view')
   if (value === 'history' || value === 'past') return 'past'
-  if (value === 'all' || value === 'upcoming' || value === 'unresolved' || value === 'undated' || value === 'no_deadline') return value
+  if (value === 'all' || value === 'upcoming' || value === 'unresolved' || value === 'undated' ) return value
   return 'upcoming'
 }
 

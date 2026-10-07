@@ -62,7 +62,7 @@ async function installServer(context: BrowserContext, server: SyntheticServer, c
         const candidate = body.command.value?.candidates?.find((item: { kind: string }) => item.kind === 'manual_action')
         const title = String(candidate?.title ?? '已记录的行动')
         const actionId = `accepted:${commandId}`
-        server.snapshot.data.actions.push(action(actionId, title, undefined, 70))
+        server.snapshot.data.actions.push(action(actionId, title, undefined, 70, '2026-09-29'))
         server.snapshot.data.semanticReceipts ??= []
         server.snapshot.data.semanticReceipts.push({
           id: `semantic-receipt:${commandId}`, inputId: body.command.value.inputId,
@@ -129,7 +129,8 @@ test('dense owner day survives Gmail refresh, a cross-device update and offline 
     const taskCount = await first.locator('.tsui-task-panel .tsui-task-row').count()
     expect(taskCount).toBeGreaterThan(0)
     expect(taskCount).toBeLessThanOrEqual(server.snapshot.data.actions.length)
-    await expect(first.locator('.tsui-node-panel .tsui-node-row').first()).toBeVisible()
+    // This source fixture contains only archived application deadlines.
+    await expect(first.locator('.tsui-node-panel .tsui-node-row')).toHaveCount(0)
     await expect(first.locator('.tsui-status')).toHaveCount(0)
     await expect(first.getByRole('button', { name: /查看全部待决定事项/ })).toHaveCount(0)
     await expect(first.locator('.tsui-task-row').filter({ hasText: '需要你决定' })).toHaveCount(0)

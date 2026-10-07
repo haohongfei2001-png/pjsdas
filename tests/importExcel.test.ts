@@ -49,7 +49,7 @@ function syntheticFile(): File {
 }
 
 describe('Excel importer application-group constraints', () => {
-  it('collapses competing pending opportunities into one group decision', async () => {
+  it('retains group constraints without creating an implicit decision task', async () => {
     const bundle = await parsePJSDASWorkbook(syntheticFile())
 
     expect(bundle.opportunities).toHaveLength(2)
@@ -57,9 +57,7 @@ describe('Excel importer application-group constraints', () => {
     expect(bundle.actions.filter((item) => item.kind === 'apply')).toHaveLength(0)
 
     const groupActions = bundle.actions.filter((item) => item.kind === 'group_decision')
-    expect(groupActions).toHaveLength(1)
-    expect(groupActions[0].applicationGroupId).toBe('GROUP-1')
-    expect(groupActions[0].title).toContain('先比较两岗，只提交一个')
-    expect(groupActions[0].dueAt).toBeTruthy()
+    expect(groupActions).toHaveLength(0)
+    expect(bundle.applicationGroups[0].currentOrder ?? bundle.applicationGroups[0].nextAction).toBeDefined()
   })
 })

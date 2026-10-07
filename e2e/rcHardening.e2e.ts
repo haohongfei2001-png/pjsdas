@@ -68,7 +68,7 @@ test('390x844 switches between the task and upcoming node without horizontal cli
       estimatedMinutes: 20,
       leverage: 96,
       delayCost: 90,
-      status: 'todo',
+      status: 'todo', plannedDate: '2026-09-30',
       createdAt: new Date(now).toISOString(),
       updatedAt: new Date(now).toISOString(),
     }

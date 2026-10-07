@@ -1,5 +1,5 @@
-import { confirmedApplicationNode } from './applicationDeadline.js'
-import type { Action, DatePrecision, ScheduleNode } from './model.js'
+import { confirmedApplicationNode, resolveApplicationDeadline } from './applicationDeadline.js'
+import type { Action, DatePrecision, Opportunity, ProcessEvent, ScheduleNode } from './model.js'
 
 /** Ordering is only chronological. Historic assessments never participate. */
 export interface DeadlineOrderValue { id: string; deadline?: string; precision?: DatePrecision; timezone?: string }
@@ -51,12 +51,14 @@ export function compareDeadlines(a: DeadlineOrderValue, b: DeadlineOrderValue, t
   const left = deadlineBoundaryMs(a, timezone) ?? Infinity, right = deadlineBoundaryMs(b, timezone) ?? Infinity
   return (left < right ? -1 : left > right ? 1 : 0) || a.id.localeCompare(b.id)
 }
-export type ActionTimingOwner = ScheduleNode & { readonly timingUnknown?: true }
+export type ActionTimingOwner = ScheduleNode & { readonly timingUnknown?: true; readonly projectionOnly?: true; readonly completionDeadline?: DeadlineOrderValue }
 export function hasKnownActionTiming(node: ActionTimingOwner) {
   return !node.timingUnknown && node.state !== 'cancelled' && node.state !== 'superseded'
     && node.temporal.shape !== 'estimated_date' && node.temporal.resolutionBasis !== 'system_estimate'
 }
 export function actionDeadline(action: Action, node?: ActionTimingOwner): DeadlineOrderValue {
+  if (node?.completionDeadline) return node.completionDeadline
+  if (action.timingContractVersion === 2) return { id: action.id, deadline: action.dueAt, precision: action.duePrecision }
   if (node) {
     const temporal = node.temporal
     if (!hasKnownActionTiming(node)) return { id: action.id }
@@ -66,7 +68,7 @@ export function actionDeadline(action: Action, node?: ActionTimingOwner): Deadli
   }
   return { id: action.id, deadline: action.dueAt, precision: action.duePrecision }
 }
-export function actionNodesById(nodes: ScheduleNode[], actions: Action[] = []) {
+export function actionNodesById(nodes: ScheduleNode[], actions: Action[] = [], opportunities: Opportunity[] = [], processEvents: ProcessEvent[] = []) {
   const actionsById = new Map(actions.map(action => [action.id, action]))
   const eventActions = new Map<string, Action[]>()
   const applicationActions = new Map<string, Action[]>()
@@ -122,9 +124,52 @@ export function actionNodesById(nodes: ScheduleNode[], actions: Action[] = []) {
     // guessed source choice. Every reader must honor canonical source conflict.
     byAction.set(id, confirmed?.node ?? { ...byAction.get(id)!, timingUnknown: true })
   }
+  for (const action of actions) {
+    const event = processEvents.find(item => item.id === action.processEventId && !item.invalidation)
+    if (!byAction.has(action.id) && event?.temporal && ['deadline', 'date_only', 'availability_window'].includes(event.temporal.shape) && event.timingMode !== 'fixed') {
+      byAction.set(action.id, { projectionOnly: true, id: `process-obligation:${event.id}`, occurrenceId: `process-obligation:${event.id}`, version: 1,
+        opportunityId: event.opportunityId, processEventId: event.id, kind: event.type === 'written_test_invite' ? 'written_test' : 'assessment',
+        state: 'scheduled', temporal: structuredClone(event.temporal), constraintKind: 'employer_hard',
+        relatedActionIds: [action.id], relatedPrepIds: [], evidenceRefs: [`process-event:${event.id}`], sourceVersionRefs: [], createdAt: event.createdAt, updatedAt: event.updatedAt })
+    }
+  }
+  for (const action of actions) {
+    if (action.timingContractVersion === 2 && byAction.has(action.id) && !action.processEventId) {
+      const original = byAction.get(action.id)!
+      byAction.set(action.id, { ...original, id: `action-deadline-fact:${action.id}`, occurrenceId: `action-deadline-fact:${action.id}`, projectionOnly: true,
+        state: action.dueAt ? 'scheduled' : 'cancelled',
+        temporal: { shape: action.duePrecision === 'date' ? 'date_only' : 'deadline', precision: action.duePrecision ?? 'datetime',
+          timezone: action.duePrecision === 'date' ? 'floating-date' : 'source-offset', resolutionBasis: 'user_explicit',
+          date: action.duePrecision === 'date' ? action.dueAt?.slice(0, 10) : undefined,
+          deadlineAt: action.duePrecision === 'date' ? undefined : action.dueAt },
+        completionDeadline: { id: action.id, deadline: action.dueAt, precision: action.duePrecision } })
+    }
+    const opportunity = opportunities.find(item => item.id === action.opportunityId)
+    let deadline: DeadlineOrderValue | undefined
+    if (action.kind === 'apply' && opportunity?.detail?.deadlineCorrections?.at(-1)?.acknowledgedNodeFacts !== undefined) {
+      const fact = resolveApplicationDeadline(opportunity, { scheduleNodes: nodes })
+      deadline = { id: action.id, deadline: fact.deadline, precision: fact.precision, timezone: fact.timezone }
+      byAction.set(action.id, {
+        projectionOnly: true, id: `deadline-fact:${action.id}`, occurrenceId: `deadline-fact:${action.id}`, version: 1,
+        opportunityId: opportunity.id, kind: 'application_deadline', state: fact.state === 'confirmed' ? 'scheduled' : 'cancelled',
+        temporal: { shape: fact.precision === 'date' ? 'date_only' : 'deadline', precision: fact.precision ?? 'datetime',
+          timezone: fact.timezone ?? 'source-offset', date: fact.precision === 'date' ? fact.deadline : undefined,
+          deadlineAt: fact.precision === 'date' ? undefined : fact.deadline, resolutionBasis: 'source_explicit' },
+        constraintKind: 'employer_hard', relatedActionIds: [action.id], relatedPrepIds: [],
+        evidenceRefs: fact.evidenceRefs ?? [], sourceVersionRefs: [], createdAt: action.createdAt, updatedAt: action.updatedAt,
+        completionDeadline: deadline,
+      })
+    }
+    const arrangement = [...latest.values()].filter(node => node.constraintKind === 'user_plan'
+      && node.kind !== 'application_deadline' && node.relatedActionIds.includes(action.id)
+      && node.temporal.resolutionBasis === 'user_explicit' && node.temporal.shape === 'fixed_range')
+      .sort((a, b) => b.version - a.version)[0]
+    if (arrangement) byAction.set(action.id, { ...arrangement,
+      completionDeadline: deadline ?? { id: action.id, deadline: action.dueAt, precision: action.duePrecision } })
+  }
   return byAction
 }
-export function latestActionNode(action: Action, nodes: ScheduleNode[]) { return actionNodesById(nodes, [action]).get(action.id) }
+export function latestActionNode(action: Action, nodes: ScheduleNode[], opportunities: Opportunity[] = [], processEvents: ProcessEvent[] = []) { return actionNodesById(nodes, [action], opportunities, processEvents).get(action.id) }
 export function compareActionDeadlines(a: Action, b: Action, timezone = 'UTC', nodeA?: ScheduleNode, nodeB?: ScheduleNode) {
   return compareDeadlines(actionDeadline(a, nodeA), actionDeadline(b, nodeB), timezone)
 }

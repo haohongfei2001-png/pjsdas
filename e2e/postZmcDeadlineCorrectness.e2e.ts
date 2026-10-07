@@ -3,6 +3,20 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { deadlineWorkspace, LATE_NOW, explicitStartDenseWorkspace } from '../tests/fixtures/postZmcDeadlineWorkspace.js'
+import { applyUserDomainCommand } from '../src/domainCommands.js'
+import { localDateKey } from '../src/todayBrief.js'
+
+function withConfirmedAppointment(snapshot: ReturnType<typeof deadlineWorkspace>, at: string, precision: 'date' | 'datetime', timezone: string, basis: 'legacy_projection' | 'source_explicit') {
+  snapshot.data.opportunities.push({ ...snapshot.data.opportunities[0], id: 'appointment-job', company: 'Confirmed interview', deadline: undefined, deadlinePrecision: undefined })
+  const temporal = precision === 'date'
+    ? { shape: 'date_only' as const, precision, date: at, timezone, resolutionBasis: 'source_explicit' as const }
+    : { shape: 'fixed_range' as const, precision, startAt: at, timezone, resolutionBasis: 'source_explicit' as const }
+  const result = applyUserDomainCommand(snapshot, { commandId: 'explicit-display-appointment', kind: 'record_process_event', opportunityId: 'appointment-job',
+    eventType: 'interview_invite', dueAt: at, duePrecision: precision, timingMode: 'fixed', temporal: basis === 'source_explicit' ? temporal : undefined }, new Date('2026-01-01T00:00:00Z'))
+  if (result.status !== 'APPLIED') throw new Error('Expected the explicitly supplied appointment')
+  if (basis === 'legacy_projection') for (const node of result.snapshot.data.scheduleNodes ?? []) if (node.opportunityId === 'appointment-job') node.temporal.timezone = timezone
+  return result.snapshot
+}
 
 test.use({ timezoneId: 'Asia/Shanghai' })
 for (const retainLegacyDue of [false, true]) for (const state of ['cancelled', 'superseded'] as const) test(`job detail retains ${state} deadline evidence with legacy date ${retainLegacyDue} without labeling active work with it`, async ({ page }) => {
@@ -41,7 +55,8 @@ test('job detail keeps the deadline of an unfinished application sharing a compl
   const action = page.locator('.opportunity-detail-action-list article').filter({ hasText: '申请 A' })
   await expect(action.locator('small')).toContainText('23:59')
   await expect(page.locator('.opportunity-detail-primary-operation')).toContainText('23:59')
-  await expect(page.locator('.opportunity-detail-nearest-node')).toContainText('23:59')
+  await expect(page.locator('.job-detail-facts')).toContainText('23:59')
+  await expect(page.locator('.opportunity-detail-nearest-node')).toHaveCount(0)
   await page.reload()
   await expect(action.locator('small')).toContainText('23:59')
   await page.clock.setFixedTime(new Date('2026-09-30T16:01:00Z'))
@@ -53,18 +68,19 @@ test('job detail keeps the deadline of an unfinished application sharing a compl
   expect(stored.data.scheduleNodes![0].temporal.deadlineAt).toBe('2026-09-30T15:59:59Z')
 })
 
-test('legacy UTC deadlines display the same local instant in Today, Schedule and job detail', async ({ page }) => {
+test('legacy UTC deadline facts keep their local instant without creating calendar rows', async ({ page }) => {
   await page.clock.install({ time: new Date('2026-09-30T07:39:00Z') })
   await page.goto('/'); await page.locator('.tsui-primary-nav').waitFor()
   await page.evaluate(async input => (await import('/pjsdas/src/db.ts')).replaceLocalSnapshotFromCloud(input), deadlineWorkspace(500))
   await page.goto('/pjsdas/today')
   await expect(page.locator('[data-action-id="apply-0"]')).toContainText('23:59')
-  await expect(page.locator('.tsui-node-row').first()).toContainText('23:59')
+  await expect(page.locator('.tsui-node-row')).toHaveCount(0)
   await page.goto('/pjsdas/schedule')
-  await expect(page.locator('.tsui-schedule-row').first()).toContainText('23:59')
+  await expect(page.locator('.tsui-schedule-row')).toHaveCount(0)
   await page.goto('/pjsdas/opportunities/job-0')
   await expect(page.locator('.opportunity-detail-primary-operation')).toContainText('23:59')
-  await expect(page.locator('.opportunity-detail-nearest-node')).toContainText('23:59')
+  await expect(page.locator('.job-detail-facts')).toContainText('23:59')
+  await expect(page.locator('.opportunity-detail-nearest-node')).toHaveCount(0)
 })
 
 test('deadline subset survives a full browser restart with the same retained IndexedDB', async ({ browser }) => {
@@ -72,7 +88,7 @@ test('deadline subset survives a full browser restart with the same retained Ind
   let context = await browser.browserType().launchPersistentContext(profile, { headless: true, timezoneId: 'Asia/Shanghai' })
   try {
     const page = await context.newPage()
-    await page.clock.install({ time: LATE_NOW, explicitStartDenseWorkspace })
+    await page.clock.install({ time: LATE_NOW })
     await page.goto('http://127.0.0.1:4173/'); await page.locator('.tsui-primary-nav').waitFor()
     const snapshot = deadlineWorkspace()
     await page.evaluate(async input => (await import('/pjsdas/src/db.ts')).replaceLocalSnapshotFromCloud(input), snapshot)
@@ -82,7 +98,7 @@ test('deadline subset survives a full browser restart with the same retained Ind
     await context.close()
     context = await browser.browserType().launchPersistentContext(profile, { headless: true, timezoneId: 'Asia/Shanghai' })
     const restarted = await context.newPage()
-    await restarted.clock.install({ time: LATE_NOW, explicitStartDenseWorkspace })
+    await restarted.clock.install({ time: LATE_NOW })
     await restarted.goto('http://127.0.0.1:4173/pjsdas/today')
     await expect(restarted.locator('[data-action-id]')).toHaveCount(2)
     expect(await restarted.locator('[data-action-id]').evaluateAll(items => items.map(item => item.getAttribute('data-action-id')))).toEqual(ids)
@@ -93,7 +109,7 @@ test('deadline subset survives a full browser restart with the same retained Ind
   } finally { await context.close(); await rm(profile, { recursive: true, force: true }) }
 })
 
-test('floating date stays a calendar date in all consumer surfaces', async ({ page }) => {
+test('floating deadline dates remain facts while an independently confirmed date-only interview stays on Schedule', async ({ page }) => {
   await page.clock.install({ time: new Date('2026-09-30T07:39:00Z') })
   await page.goto('/'); await page.locator('.tsui-primary-nav').waitFor()
   const snapshot = deadlineWorkspace(500)
@@ -105,10 +121,16 @@ test('floating date stays a calendar date in all consumer surfaces', async ({ pa
   await page.goto('/pjsdas/today')
   await expect(page.locator('[data-action-id="apply-0"]')).toContainText('2026-09-30')
   await page.goto('/pjsdas/schedule')
-  await expect(page.locator('.tsui-schedule-date').first()).toContainText('2026-09-30')
-  await expect(page.locator('.tsui-schedule-time').first()).toContainText('具体时间待定')
+  await expect(page.locator('.tsui-schedule-row')).toHaveCount(0)
   await page.goto('/pjsdas/opportunities/job-0')
-  await expect(page.locator('.opportunity-detail-nearest-node')).toContainText('2026-09-30')
+  await expect(page.locator('.job-detail-facts')).toContainText('2026-09-30')
+  const withEvent = withConfirmedAppointment(snapshot, '2026-09-30', 'date', 'floating-date', 'source_explicit')
+  expect(withEvent.data.scheduleNodes!.filter(node => node.kind === 'application_deadline')).toEqual(snapshot.data.scheduleNodes)
+  await page.evaluate(async input => (await import('/pjsdas/src/db.ts')).replaceLocalSnapshotFromCloud(input), withEvent)
+  await page.goto('/pjsdas/schedule')
+  await expect(page.locator('.tsui-schedule-row')).toHaveCount(1)
+  await expect(page.locator('.tsui-schedule-date')).toContainText('2026-09-30')
+  await expect(page.locator('.tsui-schedule-time')).toContainText('具体时间待定')
 })
 
 for (const scenario of [
@@ -122,13 +144,19 @@ for (const scenario of [
     const page = await context.newPage()
     await page.clock.install({ time: new Date(Date.parse(scenario.at) - 12 * 3_600_000) })
     await page.goto('http://127.0.0.1:4173/'); await page.locator('.tsui-primary-nav').waitFor()
-    const snapshot = deadlineWorkspace(500, scenario.at)
+    let snapshot = deadlineWorkspace(500, scenario.at)
+    const chosenDay = localDateKey(new Date(Date.parse(scenario.at) - 12 * 3_600_000), scenario.zone)
+    snapshot.data.actions.forEach(action => { action.plannedDate = chosenDay })
     snapshot.data.scheduleNodes!.forEach(item => { item.temporal.timezone = scenario.source; item.temporal.resolutionBasis = scenario.basis })
+    const archived = structuredClone(snapshot.data.scheduleNodes)
+    snapshot = withConfirmedAppointment(snapshot, scenario.at, 'datetime', scenario.source, scenario.basis)
+    expect(snapshot.data.scheduleNodes!.filter(node => node.kind === 'application_deadline')).toEqual(archived)
     await page.evaluate(async input => (await import('/pjsdas/src/db.ts')).replaceLocalSnapshotFromCloud(input), snapshot)
     for (const route of ['today', 'schedule', 'opportunities/job-0']) {
       await page.goto(`http://127.0.0.1:4173/pjsdas/${route}`)
-      const target = route === 'today' ? '[data-action-id="apply-0"]' : route === 'schedule' ? '.tsui-schedule-row' : '.opportunity-detail-nearest-node'
+      const target = route === 'today' ? '[data-action-id="apply-0"]' : route === 'schedule' ? '.tsui-schedule-row' : '.job-detail-facts'
       await expect(page.locator(target).first()).toContainText(scenario.expected)
+      if (route === 'schedule') await expect(page.locator('.tsui-schedule-row')).toHaveCount(1)
       if (scenario.basis === 'source_explicit') await expect(page.locator(target).first()).toContainText('GMT-4')
     }
   } finally { await context.close() }

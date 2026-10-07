@@ -7,7 +7,7 @@ test.use({ timezoneId: 'UTC' })
 test.beforeEach(async ({ page }) => { await page.clock.setFixedTime(new Date('2026-10-02T12:00:00Z')) })
 
 test('stale owner conflict follows the latest revision and equivalent cache converges without a click', async ({ page }) => {
-  const snapshot = workspace()
+  const snapshot = workspace('2026-10-02')
   let revision = 843
   let reads = 0
   let holdRead = false
@@ -60,7 +60,7 @@ test('stale owner conflict follows the latest revision and equivalent cache conv
 })
 
 test('a real local edit stays intact while a Settings conflict tracks newer remote revisions', async ({ page }) => {
-  const snapshot = workspace()
+  const snapshot = workspace('2026-10-02')
   let revision = 843
   let reads = 0
   await page.addInitScript(({ key, value }) => {
@@ -117,7 +117,7 @@ test('a real local edit stays intact while a Settings conflict tracks newer remo
 })
 
 test('Settings recovers an old verified cache after a separate authoritative update without a retry click', async ({ page }) => {
-  const snapshot = workspace()
+  const snapshot = workspace('2026-10-02')
   let revision = 843
   await page.addInitScript(({ key, value }) => {
     if (!localStorage.getItem('owner-interaction-seeded')) {
@@ -157,7 +157,7 @@ test('Settings recovers an old verified cache after a separate authoritative upd
 })
 
 test('normal connected Settings keeps sync mechanics behind advanced diagnostics', async ({ page }) => {
-  const snapshot = workspace()
+  const snapshot = workspace('2026-10-02')
   let failRead = false
   await page.addInitScript(({ key, value }) => {
     if (!localStorage.getItem('owner-interaction-seeded')) {
@@ -203,7 +203,7 @@ test('normal connected Settings keeps sync mechanics behind advanced diagnostics
 })
 
 test('Settings does not call an old checkpoint current after an offline local edit', async ({ page }) => {
-  const snapshot = workspace()
+  const snapshot = workspace('2026-10-02')
   await page.addInitScript(({ key, value }) => {
     if (!localStorage.getItem('owner-interaction-seeded')) {
       localStorage.setItem(key, JSON.stringify(value))

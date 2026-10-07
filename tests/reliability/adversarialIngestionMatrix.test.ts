@@ -82,7 +82,7 @@ describe('v1.10 adversarial ingestion matrix', () => {
     const state = projectReliabilityState(aThenB.snapshot)
     expect(state.opportunities).toHaveLength(1)
     expect(state.opportunities[0]?.canonicalSourceUrl).toBe('https://careers.matrix.example/jobs/42')
-    expect(state.actions.filter((item) => item.kind === 'apply')).toHaveLength(1)
+    expect(state.actions.filter((item) => item.kind === 'apply')).toHaveLength(0)
   })
 
   it('makes an exact ingestion-run retry a true idempotent no-op', () => {

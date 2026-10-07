@@ -14,7 +14,7 @@ const opportunity = (id: string): Opportunity => ({ id, company: 'Synthetic', ro
   detail: { backgroundTag: 'Source fact', assessment: { version: 1, mode: 'component', assessedAt: at, fit: { skills: { score: 91, confidence: 'high', rationale: 'Historical' } }, opportunityValue: { roleGrowth: { score: 89, confidence: 'high', rationale: 'Historical' } } },
     discovery: { sourceUrl: 'https://example.test/job', sourceTitle: 'Official source', discoveredAt: at, fitConfidence: 'high', opportunityValueConfidence: 'medium' } } })
 function fixture() { return createSnapshot({ opportunities: [opportunity('job')], processes: [], processEvents: [], prep: [], applicationGroups: [],
-  actions: [{ id: 'manual', kind: 'manual', title: 'Existing task', estimatedMinutes: 20, leverage: 81, delayCost: 77, status: 'todo', createdAt: at, updatedAt: at }],
+  actions: [{ id: 'manual', kind: 'manual', title: 'Existing task', plannedDate: '2026-10-06', estimatedMinutes: 20, leverage: 81, delayCost: 77, status: 'todo', createdAt: at, updatedAt: at }],
   discoveryProfile: { ...createDefaultDiscoveryProfile(at), targetRoleQueries: ['Research'], minimumFitScore: 96, minimumOpportunityValue: 97 } }, at) }
 
 describe('score-free scoped reads preserve raw editing authority', () => {

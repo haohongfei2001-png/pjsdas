@@ -40,15 +40,15 @@ function processAction(overrides: Partial<Action> = {}): Action {
 }
 
 describe('overdue process-event boundary', () => {
-  it('flags both overdue deadline and fixed process events for confirmation', () => {
-    expect(isUnresolvedPastProcessEvent(processAction(), now)).toBe(true)
+  it('flags elapsed appointments while retaining overdue process obligations', () => {
+    expect(isUnresolvedPastProcessEvent(processAction(), now)).toBe(false)
     expect(isUnresolvedPastProcessEvent(processAction({ timingMode: 'fixed' }), now)).toBe(true)
     expect(isUnresolvedPastProcessEvent(processAction({ dueAt: '2026-09-10T06:00:00.000Z' }), now)).toBe(false)
     expect(isUnresolvedPastProcessEvent(processAction({ status: 'done' }), now)).toBe(false)
     expect(isUnresolvedPastProcessEvent(processAction({ processEventId: undefined }), now)).toBe(false)
   })
 
-  it('removes overdue process events from the executable ranking while keeping future events', () => {
+  it('removes elapsed fixed appointments without discarding overdue completion obligations', () => {
     const overdueDeadline = processAction({ id: 'overdue-deadline' })
     const overdueFixed = processAction({ id: 'overdue-fixed', timingMode: 'fixed' })
     const futureDeadline = processAction({
@@ -62,6 +62,6 @@ describe('overdue process-event boundary', () => {
       now,
     )
 
-    expect(ranked.map((item) => item.action.id)).toEqual(['future-deadline'])
+    expect(ranked.map((item) => item.action.id)).toEqual(['overdue-deadline', 'future-deadline'])
   })
 })

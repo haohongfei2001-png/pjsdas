@@ -673,7 +673,7 @@ describe('CGR-01 authoritative command executor', () => {
 it('compact manual action receipt projects the exact committed derived schedule node', async () => {
   const h = harness(), before = h.state().current, commandId = 'manual-derived-schedule'
   const result = await h.executor.execute(h.principal, { commandId, baseRevision: 1, command: { type: 'domain', value: {
-    commandId, kind: 'add_manual_action', title: 'Prepare interview', dueAt: '2026-10-02T10:00:00Z' } } })
+    commandId, kind: 'add_manual_action', title: 'Prepare interview', scheduledTemporal: { shape: 'fixed_range', precision: 'datetime', timezone: 'UTC', startAt: '2026-10-02T10:00:00Z', resolutionBasis: 'user_explicit' } } } })
   const delta = result.receipt!.projectionDelta as WorkspaceDelta
   const projected = applyWorkspaceDelta(before, delta)
   expect(h.state().current.data.scheduleNodes!.some(node => node.relatedActionIds.includes(projected.data.actions.find(action => action.title === 'Prepare interview')!.id))).toBe(true)

@@ -41,6 +41,8 @@ describe('date-only event chronology', () => {
         relatedActionIds: [], relatedPrepIds: [], evidenceRefs: [], sourceVersionRefs: [], createdAt: '2026-10-01T00:00:00Z', updatedAt: '2026-10-06T12:00:00Z' }],
     }, '2026-10-06T12:00:00Z')
     const result = buildScheduleStream(source, { accountKey: 'synthetic', workspaceRevision: '1', timezone: 'America/Los_Angeles', now: new Date('2026-10-06T12:00:00Z') })
-    expect(result.sections.history.map(entry => entry.date)).toEqual(['2026-10-02', '2026-10-03', '2026-10-04'])
+    expect(result.sections.history.map(entry => entry.date)).toEqual(['2026-10-04'])
+    expect(source.data.timeline![0].occurredAt).toBe('2026-10-03')
+    expect(source.data.processEvents[0].occurredAt).toBe('2026-10-02')
   })
 })

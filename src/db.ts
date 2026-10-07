@@ -1,3 +1,4 @@
+import { appendOpportunityOnly } from './opportunityCreation.js'
 import { ScoringRetiredError, assertNoNewOpportunityRating, preserveRetiredProfileFields } from './scoringRetirement.js'
 import { interactionMetric } from './cloud/interactionMetrics.js'
 import { applyWorkspaceDelta, patchDeltaRow, DELTA_COLLECTIONS, type WorkspaceDelta, type DeltaRow } from './workspaceDelta.js'
@@ -59,6 +60,7 @@ import {
   timelineFromChangeSetApplied,
 } from './timeline.js'
 import type { ExecutableProgressOperation, ProgressOperation } from './progressUpdate.js'
+import { progressSubmissionProofId } from './progressUpdate.js'
 import type {
   Action,
   ApplicationGroup,
@@ -600,6 +602,9 @@ export async function applyProgressUpdate(operations: ProgressOperation[]) {
               locallyManaged: true,
             }
           : defaultLocalOpportunity(operation)
+        if (submitted) opportunity.applicationSubmissionProofs = {
+          ...opportunity.applicationSubmissionProofs, [progressSubmissionProofId(operation)]: 'active',
+        }
         await opportunityStore.put(opportunity)
 
         const applyId = `apply:${opportunity.id}`
@@ -807,30 +812,13 @@ async function applyDiscoveredOpportunityOperations(operations: DiscoveredChange
     }
 
     const opportunityStore = tx.objectStore('opportunities')
-    const actionStore = tx.objectStore('actions')
     const timelineStore = tx.objectStore('timeline')
     const recordedAt = new Date().toISOString()
 
     for (const operation of operations) {
       const opportunity = operation.opportunity
-      await opportunityStore.put(opportunity)
-      const actionId = `apply:${opportunity.id}`
-      await actionStore.put({
-        id: actionId,
-        kind: 'apply',
-        title: `投递 ${opportunity.company}｜${opportunity.role}`,
-        opportunityId: opportunity.id,
-        processStage: 'not_applied',
-        dueAt: opportunity.deadline,
-        timingMode: opportunity.deadline ? 'deadline' : undefined,
-        estimatedMinutes: opportunity.prepEstimateMinutes ?? 45,
-        leverage: 0,
-        delayCost: 0,
-        status: 'todo',
-        sourceLabel: 'ChatGPT 岗位发现',
-        createdAt: opportunity.importedAt,
-        updatedAt: opportunity.importedAt,
-      })
+      const facts = appendOpportunityOnly({ opportunities: [], opportunityAliases: aliases }, opportunity)
+      await opportunityStore.put(facts)
       await timelineStore.put({
         id: `timeline:discovery:${opportunity.id}`,
         kind: 'opportunity_added',
@@ -841,7 +829,6 @@ async function applyDiscoveredOpportunityOperations(operations: DiscoveredChange
         title: '接受 AI 发现岗位',
         detail: opportunity.detail?.discovery?.rationale,
         opportunityId: opportunity.id,
-        actionId,
         changeSetId,
         company: opportunity.company,
         role: opportunity.role,
@@ -1238,9 +1225,19 @@ export async function restoreLocalSnapshot(snapshot: PJSDASSnapshot) {
 function mergeLocallyManagedOpportunities(imported: Opportunity[], previous: Opportunity[]) {
   const local = previous.filter((item) => item.locallyManaged)
   const localById = new Map(local.map((item) => [item.id, item]))
-  const merged = imported.map((item) => localById.get(item.id) ?? item)
+  const previousById = new Map(previous.map(item => [item.id, item]))
+  const merged = imported.map((item) => {
+    const local = localById.get(item.id)
+    if (local) return local
+    const before = previousById.get(item.id)
+    const owned = before?.applicationSubmissionProofs ? { ...item, applicationSubmissionProofs: structuredClone(before.applicationSubmissionProofs) } : item
+    if (!before?.detail?.deadlineCorrections?.length && !before?.detail?.userFacts) return owned
+    return { ...owned, detail: { ...item.detail,
+      deadlineCorrections: before.detail.deadlineCorrections, userFacts: before.detail.userFacts } }
+  })
   const importedIds = new Set(imported.map((item) => item.id))
-  for (const item of local) if (!importedIds.has(item.id)) merged.push(item)
+  // Import omission cannot erase retained task/process/history references.
+  for (const item of previous) if (!importedIds.has(item.id)) merged.push(item)
   return merged
 }
 
@@ -1249,11 +1246,11 @@ function mergeLocallyManagedProcesses(
   previous: ProcessRecord[],
   locallyManagedOpportunityIds: Set<string>,
 ) {
-  const local = previous.filter((item) => item.locallyManaged)
   const importedSafe = imported.filter(
     (item) => !item.opportunityId || !locallyManagedOpportunityIds.has(item.opportunityId),
   )
-  return [...importedSafe, ...local]
+  const ids = new Set(importedSafe.map(item => item.id))
+  return [...importedSafe, ...previous.filter(item => !ids.has(item.id))]
 }
 
 export async function replaceImportedData(bundle: ImportBundle) {
@@ -1269,6 +1266,13 @@ export async function replaceImportedData(bundle: ImportBundle) {
       tx.objectStore('processEvents').getAll(),
       tx.objectStore('scheduleNodes').getAll(),
     ])
+    const previousData = await readLocalSnapshotData(tx)
+    const keepOmitted = <T extends { id: string }>(incoming: T[], prior: T[]) => {
+      const ids = new Set(incoming.map(item => item.id))
+      return [...incoming, ...prior.filter(item => !ids.has(item.id))]
+    }
+    const prep = keepOmitted(bundle.prep, previousData.prep)
+    const applicationGroups = keepOmitted(bundle.applicationGroups, previousData.applicationGroups)
     const localOpportunityIds = new Set(
       previousOpportunities.filter((item) => item.locallyManaged).map((item) => item.id),
     )
@@ -1284,7 +1288,7 @@ export async function replaceImportedData(bundle: ImportBundle) {
       processes,
       processEvents,
       actions: mergedActions,
-      prep: bundle.prep,
+      prep,
       scheduleNodes,
     }
     // Keep the occurrence's durable version chain when an imported deadline
@@ -1295,6 +1299,24 @@ export async function replaceImportedData(bundle: ImportBundle) {
       if (!prior || node.version > prior.version) latestPrevious.set(node.occurrenceId, node)
     }
     const incomingNodes = migrateLegacyScheduleNodes(contract)
+    // Existing legacy timing versions remain provenance owners. An explicit
+    // workbook correction may version that retained chain, but new rows never
+    // acquire a deadline occurrence and all such versions stay Calendar-ineligible.
+    for (const prior of latestPrevious.values()) {
+      if (prior.temporal.resolutionBasis !== 'legacy_projection' || prior.processEventId) continue
+      const target = prior.opportunityId ? opportunities.find(item => item.id === prior.opportunityId) : undefined
+      if (target?.locallyManaged || target?.detail?.deadlineCorrections?.length || target?.detail?.userFacts?.deadline) continue
+      const owner = prior.kind === 'application_deadline' ? bundle.opportunities.find(item => item.id === prior.opportunityId)
+        : bundle.actions.find(item => prior.relatedActionIds.includes(item.id))
+      const value = owner && ('deadline' in owner ? owner.deadline : 'dueAt' in owner ? owner.dueAt : undefined)
+      if (!value || incomingNodes.some(node => node.occurrenceId === prior.occurrenceId)) continue
+      const precision = 'deadlinePrecision' in owner! ? owner!.deadlinePrecision : 'duePrecision' in owner! ? owner!.duePrecision : undefined
+      const dateOnly = precision === 'date' || /^\d{4}-\d{2}-\d{2}$/.test(value)
+      incomingNodes.push({ ...prior, state: 'scheduled', completedAt: undefined, cancelledAt: undefined,
+        temporal: dateOnly ? { shape: 'date_only', precision: 'date', timezone: 'floating-date', date: value.slice(0, 10), resolutionBasis: 'legacy_projection', legacyProjectionAt: value }
+          : { shape: 'deadline', precision: 'datetime', timezone: 'source-offset', deadlineAt: value, resolutionBasis: 'legacy_projection', legacyProjectionAt: value },
+        updatedAt: bundle.summary.importedAt })
+    }
     const importWithdrawal = (node: ScheduleNode) => node.state === 'cancelled'
       && node.sourceVersionRefs.includes(`import:deadline-cleared:${node.occurrenceId}:v${node.version}:${node.cancelledAt}`)
     for (const prior of latestPrevious.values()) {
@@ -1305,6 +1327,8 @@ export async function replaceImportedData(bundle: ImportBundle) {
       // An omitted source row is not an instruction to cancel its history.
       // Only a retained imported source with an explicitly empty timing field
       // withdraws the projection; retain the previous temporal in a new version.
+      const owner = prior.opportunityId ? opportunities.find(item => item.id === prior.opportunityId) : undefined
+      if (owner?.detail?.deadlineCorrections?.length || owner?.detail?.userFacts?.deadline) continue
       const sourceRetained = prior.kind === 'application_deadline' && prior.opportunityId
         ? bundle.opportunities.some(item => item.id === prior.opportunityId && !item.deadline)
         : bundle.actions.some(item => prior.relatedActionIds.includes(item.id) && !item.dueAt)
@@ -1336,8 +1360,7 @@ export async function replaceImportedData(bundle: ImportBundle) {
     ensureScheduleContractInPlace(contract)
     // Validate the complete proposed workspace under the same locks before any
     // replacement. Retained history must not acquire missing process/event refs.
-    const previousData = await readLocalSnapshotData(tx)
-    createSnapshot({ ...previousData, ...contract, applicationGroups: bundle.applicationGroups })
+    createSnapshot({ ...previousData, ...contract, applicationGroups })
     // Raw pre-import facts survive even when a removed terminal action had no
     // dated node. Do this only after candidate validation, under the same locks.
     for (const record of previousData.timeline ?? []) {
@@ -1358,8 +1381,8 @@ export async function replaceImportedData(bundle: ImportBundle) {
     for (const item of contract.processes) await tx.objectStore('processes').put(item)
     for (const item of contract.scheduleNodes ?? []) await tx.objectStore('scheduleNodes').put(item)
     for (const item of mergedActions) await tx.objectStore('actions').put(item)
-    for (const item of bundle.prep) await tx.objectStore('prep').put(item)
-    for (const item of bundle.applicationGroups) await tx.objectStore('applicationGroups').put(item)
+    for (const item of prep) await tx.objectStore('prep').put(item)
+    for (const item of applicationGroups) await tx.objectStore('applicationGroups').put(item)
     for (const item of bundle.timeline ?? []) {
       if (!await tx.objectStore('timeline').get(item.id)) await tx.objectStore('timeline').put(item)
     }

@@ -1,7 +1,8 @@
 import { mkdir } from 'node:fs/promises'
 import { expect, test, type Page } from '@playwright/test'
 import { upgradeSnapshotToLatest, type PJSDASSnapshot } from '../src/snapshot.js'
-import { AUTH_KEY, BACKEND, seedSession, workspace, opportunity, action, cors, health } from './fixtures/todayWorkspace.js'
+import { AUTH_KEY, BACKEND, seedSession, workspace, opportunity, action as fixtureAction, cors, health } from './fixtures/todayWorkspace.js'
+const action = (...args: Parameters<typeof fixtureAction>) => fixtureAction(args[0], args[1], args[2], args[3], '2026-09-23')
 
 const VISUAL_DIR = 'test-results/cgr02-visual'
 const VISUAL_TIME = new Date('2026-09-23T08:00:00.000Z')
@@ -290,10 +291,14 @@ test('Today capture supports a keyboard-only save with named controls and restor
   await page.keyboard.press('Shift+Tab')
   await expect(dialog.getByRole('button', { name: '关闭' })).toBeFocused()
   await page.keyboard.press('Shift+Tab')
+  await expect(dialog.getByRole('button', { name: '手动填写岗位', exact: true })).toBeFocused()
+  await page.keyboard.press('Shift+Tab')
   await expect(input).toBeFocused()
 
   await page.keyboard.type('事项：整理面试材料')
   await expect(dialog.getByText(/新增行动 · 整理面试材料/)).toBeVisible()
+  await page.keyboard.press('Tab')
+  await expect(dialog.getByRole('button', { name: '手动填写岗位', exact: true })).toBeFocused()
   await page.keyboard.press('Tab')
   const save = dialog.getByRole('button', { name: '确认并保存' })
   await expect(save).toBeFocused()
@@ -532,7 +537,7 @@ test('connected Today keeps a fixed interview, date-only deadline and elapsed un
   await expect(page.getByRole('heading', { name: 'A第一任务' })).toBeVisible()
   const upcoming = page.locator('.tsui-node-panel')
   await expect(upcoming.locator('.tsui-node-row').filter({ hasText: '面试' })).toHaveCount(1)
-  await expect(upcoming.locator('.tsui-node-row').filter({ hasText: '申请截止' })).toHaveCount(1)
+  await expect(upcoming.locator('.tsui-node-row').filter({ hasText: '申请截止' })).toHaveCount(0)
   await expect(page.locator('.tsui-unresolved-link')).toHaveCount(0)
   await page.locator('.tsui-primary-nav').getByRole('button', { name: /日程|Schedule/ }).click()
   await page.locator('.tsui-schedule-tabs').getByRole('button', { name: /已发生|Past/ }).click()

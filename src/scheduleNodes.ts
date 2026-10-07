@@ -1,4 +1,6 @@
-import { latestDeadlineCorrection, resolveApplicationDeadline } from './applicationDeadline.js'
+import { validSourceDate, validSourceDeadline, validSourceInstant } from './sourceCalendar.js'
+import { actionArrangementDate, isExplicitActionArrangement, isRecruitingAppointment, scheduleNodeEligible } from './scheduleEligibility.js'
+import { applicationDeadlineNodes, deadlineNodeFacts, latestDeadlineCorrection, resolveApplicationDeadline } from './applicationDeadline.js'
 import type {
   Action,
   DatePrecision,
@@ -28,7 +30,7 @@ export interface ScheduleContractData {
 const terminalStates = new Set<ScheduleNodeState>(['completed', 'cancelled', 'superseded', 'elapsed_unresolved'])
 
 function validDateOnly(value: string) {
-  return /^\d{4}-\d{2}-\d{2}$/.test(value) && !Number.isNaN(new Date(`${value}T00:00:00.000Z`).getTime())
+  return validSourceDate(value)
 }
 
 function hasExplicitOffset(value: string) {
@@ -36,7 +38,7 @@ function hasExplicitOffset(value: string) {
 }
 
 function validInstant(value: string) {
-  return hasExplicitOffset(value) && !Number.isNaN(new Date(value).getTime())
+  return validSourceInstant(value)
 }
 
 function timezoneValid(value: string) {
@@ -58,12 +60,6 @@ function datePart(value: string) {
   return value.slice(0, 10)
 }
 
-function addMinutes(value: string, minutes?: number) {
-  if (!minutes || minutes <= 0) return undefined
-  const time = new Date(value).getTime()
-  if (Number.isNaN(time)) return undefined
-  return new Date(time + minutes * 60_000).toISOString()
-}
 
 function eventKind(type: ProcessEvent['type']): ScheduleNodeKind | undefined {
   if (type === 'assessment_invite') return 'assessment'
@@ -113,7 +109,6 @@ function legacyTemporal(
       precision: 'datetime',
       timezone: timezoneForLegacy(value, effectivePrecision),
       startAt: value,
-      endAt: addMinutes(value, estimatedMinutes),
       resolutionBasis: basis,
       legacyProjectionAt: value,
     }
@@ -192,7 +187,8 @@ export function scheduleNodeForProcessEvent(
   process?: ProcessRecord,
 ): ScheduleNode | undefined {
   const kind = eventKind(event.type)
-  if (!kind || !event.dueAt) return undefined
+  const at = event.temporal?.startAt ?? event.temporal?.date ?? event.dueAt
+  if (!kind || !at || !isRecruitingAppointment(event)) return undefined
   return baseNode({
     occurrenceId: `process-event:${event.id}`,
     opportunityId: event.opportunityId,
@@ -201,7 +197,7 @@ export function scheduleNodeForProcessEvent(
     kind,
     state: scheduleStateForAction(action, true),
     temporal: event.temporal ? structuredClone(event.temporal) : legacyTemporal(
-      event.dueAt,
+      at,
       event.duePrecision,
       event.timingMode,
       event.estimatedMinutes,
@@ -222,53 +218,24 @@ export function scheduleNodeForOpportunityDeadline(
   opportunity: Opportunity,
   actions: Action[],
 ): ScheduleNode | undefined {
-  if (latestDeadlineCorrection(opportunity)?.state === 'unknown' || !opportunity.deadline) return undefined
-  const related = actions.filter((item) => item.opportunityId === opportunity.id && item.kind === 'apply')
-  return baseNode({
-    occurrenceId: `application-deadline:${opportunity.id}`,
-    opportunityId: opportunity.id,
-    kind: 'application_deadline',
-    state: related.some((item) => item.status === 'done') ? 'completed' : 'scheduled',
-    temporal: legacyTemporal(
-      opportunity.deadline,
-      opportunity.deadlinePrecision,
-      'deadline',
-      undefined,
-      opportunity.detail?.userFacts?.deadline === opportunity.deadline ? 'user_explicit' : 'legacy_projection',
-    ),
-    constraintKind: 'employer_hard',
-    evidenceRefs: opportunity.detail?.discovery?.sourceUrl ? [opportunity.detail.discovery.sourceUrl] : [],
-    sourceVersionRefs: opportunity.detail?.discovery?.posting?.id ? [opportunity.detail.discovery.posting.id] : [],
-    relatedActionIds: related.map((item) => item.id),
-    createdAt: opportunity.importedAt,
-    updatedAt: opportunity.detail?.userFacts?.updatedAt ?? opportunity.importedAt,
-  })
+  // Compatibility entry point: retained nodes still own historical deadline
+  // facts, but a posting deadline never creates a new calendar occurrence.
+  void opportunity
+  void actions
+  return undefined
 }
 
 export function scheduleNodeForAction(action: Action): ScheduleNode | undefined {
-  if (!action.dueAt || action.processEventId) return undefined
-  const kind: ScheduleNodeKind = action.kind === 'apply'
-    ? 'application_deadline'
-    : action.kind === 'prep'
-      ? 'prep_trigger'
-      : 'follow_up'
+  if (action.processEventId || !isExplicitActionArrangement(action.scheduledTemporal)) return undefined
   return baseNode({
-    occurrenceId: action.kind === 'apply' && action.opportunityId
-      ? `application-deadline:${action.opportunityId}`
-      : `action:${action.id}`,
+    occurrenceId: `action:${action.id}`,
     opportunityId: action.opportunityId,
-    kind,
+    kind: action.kind === 'prep' ? 'prep_trigger' : 'follow_up',
     state: scheduleStateForAction(action, false),
-    temporal: legacyTemporal(
-      action.dueAt,
-      action.duePrecision,
-      action.timingMode,
-      action.estimatedMinutes,
-      'legacy_projection',
-    ),
-    constraintKind: action.kind === 'apply' ? 'employer_hard' : 'user_plan',
+    temporal: structuredClone(action.scheduledTemporal!),
+    constraintKind: 'user_plan',
     estimatedMinutes: action.estimatedMinutes,
-    estimateProvenance: 'legacy_projection',
+    estimateProvenance: 'user',
     evidenceRefs: [`action:${action.id}`],
     sourceVersionRefs: [`action:${action.id}:${action.updatedAt}`],
     relatedActionIds: [action.id],
@@ -391,7 +358,7 @@ export function ensureScheduleContractInPlace(data: ScheduleContractData) {
       // Canonical ownership survives a changed occurrence ID, cancellation or
       // estimate. Backfilling another legacy occurrence from retained raw dates
       // would revive time that the canonical record has already superseded.
-      const alreadyOwned = existing.some(node => candidate.relatedActionIds.some(id => node.relatedActionIds.includes(id))
+      const alreadyOwned = existing.some(node => node.kind !== 'application_deadline' && candidate.relatedActionIds.some(id => node.relatedActionIds.includes(id))
         || Boolean(candidate.processEventId && node.processEventId === candidate.processEventId
           && (!candidate.opportunityId || !node.opportunityId || candidate.opportunityId === node.opportunityId))
         || Boolean(candidate.kind === 'application_deadline' && node.kind === 'application_deadline'
@@ -428,32 +395,48 @@ function latestOccurrenceNodes(nodes: ScheduleNode[]) {
 
 export function projectScheduleNodesToLegacyInPlace(data: ScheduleContractData) {
   const nodes = latestOccurrenceNodes(data.scheduleNodes ?? [])
+  for (const opportunity of data.opportunities) {
+    if (!latestDeadlineCorrection(opportunity) && !applicationDeadlineNodes(data, opportunity.id).length) continue
+    const fact = resolveApplicationDeadline(opportunity, data)
+    opportunity.deadline = fact.state === 'confirmed' ? fact.deadline : undefined
+    opportunity.deadlinePrecision = fact.state === 'confirmed' ? fact.precision : undefined
+  }
   for (const node of nodes) {
     const value = legacyValue(node)
     if (!value) continue
-    if (node.kind === 'application_deadline' && node.opportunityId) {
-      const opportunity = data.opportunities.find((item) => item.id === node.opportunityId)
-      if (opportunity && resolveApplicationDeadline(opportunity, data).state === 'confirmed') {
-        opportunity.deadline = value
-        opportunity.deadlinePrecision = node.temporal.precision
-      }
-    }
-    if (node.kind === 'application_deadline' && node.opportunityId && resolveApplicationDeadline(data.opportunities.find(item => item.id === node.opportunityId)!, data).state === 'unknown') continue
+    if (node.kind === 'application_deadline' || !node.processEventId && !scheduleNodeEligible(node, data)) continue
     for (const actionId of node.relatedActionIds) {
       const action = data.actions.find((item) => item.id === actionId)
       if (!action) continue
-      action.dueAt = value
-      action.duePrecision = node.temporal.precision
-      action.timingMode = node.temporal.shape === 'fixed_range' ? 'fixed' : 'deadline'
+      if (node.constraintKind === 'user_plan' && isExplicitActionArrangement(node.temporal)) {
+        action.scheduledTemporal = structuredClone(node.temporal)
+        action.plannedDate = actionArrangementDate(node.temporal)
+      } else {
+        action.dueAt = value
+        action.duePrecision = node.temporal.precision
+        action.timingMode = node.temporal.shape === 'fixed_range' || scheduleNodeEligible(node, data) ? 'fixed' : 'deadline'
+      }
     }
     if (node.processEventId) {
       const event = data.processEvents.find((item) => item.id === node.processEventId)
       if (event) {
         event.dueAt = value
         event.duePrecision = node.temporal.precision
-        event.timingMode = node.temporal.shape === 'fixed_range' ? 'fixed' : 'deadline'
+        event.timingMode = node.temporal.shape === 'fixed_range' || scheduleNodeEligible(node, data) ? 'fixed' : 'deadline'
       }
     }
+  }
+  // New application tasks inherit the job's resolved deadline fact independently
+  // of their chosen day/arrangement. Reimport may change or clear that fact even
+  // when the new importer correctly emits no implicit task or calendar node.
+  for (const action of data.actions) {
+    if (action.kind !== 'apply' || action.timingContractVersion !== 2 || !['todo', 'doing'].includes(action.status)) continue
+    const opportunity = data.opportunities.find(item => item.id === action.opportunityId)
+    if (!opportunity) continue
+    const fact = resolveApplicationDeadline(opportunity, data)
+    action.dueAt = fact.state === 'confirmed' ? fact.deadline : undefined
+    action.duePrecision = fact.state === 'confirmed' ? fact.precision : undefined
+    action.timingMode = action.dueAt ? 'deadline' : undefined
   }
   return data
 }
@@ -487,31 +470,24 @@ export function setApplicationDeadlineScheduleNode(
   updatedAt: string,
   commandId?: string,
 ) {
-  ensureScheduleContractInPlace(data)
+  if (!validSourceDeadline(deadline, precision)) throw new Error('Deadline requires valid source precision and an explicit timezone offset for a datetime.')
   const opportunity = data.opportunities.find((item) => item.id === opportunityId)
   if (!opportunity) throw new Error(`Opportunity ${opportunityId} was not found.`)
-  const occurrenceId = `application-deadline:${opportunityId}`
-  const current = latestByVersion(data.scheduleNodes ?? [], occurrenceId)
-  const temporal = legacyTemporal(deadline, precision, 'deadline', undefined, 'user_explicit')
-  const currentValue = current ? legacyValue(current) : undefined
-  if (!commandId && current && !['cancelled', 'superseded'].includes(current.state) && currentValue === deadline && current.temporal.precision === precision) return current
-  const related = data.actions.filter((item) => item.opportunityId === opportunityId && item.kind === 'apply')
-  const next = supersedeScheduleOccurrence(data.scheduleNodes ?? [], {
-    occurrenceId,
-    opportunityId,
-    kind: 'application_deadline',
-    state: related.some((item) => item.status === 'done') ? 'completed' : 'scheduled',
-    temporal,
-    constraintKind: 'employer_hard',
-    evidenceRefs: [`user:deadline:${opportunityId}`],
-    sourceVersionRefs: [commandId ?? `user:deadline:${opportunityId}:${updatedAt}`],
-    relatedActionIds: related.map((item) => item.id),
-    relatedPrepIds: [],
-    createdAt: current?.createdAt ?? updatedAt,
-    updatedAt,
-  })
-  projectScheduleNodesToLegacyInPlace(data)
-  return next
+  const nodes = applicationDeadlineNodes(data, opportunityId)
+  const previous = resolveApplicationDeadline(opportunity, data)
+  const id = commandId ?? `user:deadline:${opportunityId}:${updatedAt}`
+  if (opportunity.detail?.deadlineCorrections?.some(item => item.commandId === id)) return
+  opportunity.detail = { ...opportunity.detail, deadlineCorrections: [
+    ...(opportunity.detail?.deadlineCorrections ?? []), {
+      commandId: id, state: 'confirmed', deadline, precision, sourceAuthority: 'user',
+      evidence: 'Explicit user deadline', checkedAt: updatedAt, recordedAt: updatedAt,
+      postingStatus: 'unknown', previousDeadline: previous.deadline,
+      previousNodeIds: nodes.map(item => item.id), acknowledgedNodeFacts: deadlineNodeFacts(nodes),
+    },
+  ] }
+  opportunity.deadline = deadline
+  opportunity.deadlinePrecision = precision
+
 }
 
 export function syncScheduleNodeForActionStatus(
@@ -522,7 +498,7 @@ export function syncScheduleNodeForActionStatus(
 ) {
   ensureScheduleContractInPlace(data)
   for (const node of data.scheduleNodes ?? []) {
-    if (!node.relatedActionIds.includes(actionId) || node.state === 'superseded' || node.state === 'cancelled') continue
+    if (!scheduleNodeEligible(node, data) || !node.relatedActionIds.includes(actionId) || node.state === 'superseded' || node.state === 'cancelled') continue
     // A task checkbox does not confirm participation in a historical occurrence.
     // Keep unknown legacy completion times unknown, and preserve prior completions.
     if (terminalStates.has(effectiveScheduleNodeState(node, new Date(updatedAt)))) continue
@@ -605,6 +581,8 @@ export function validateScheduleNode(node: ScheduleNode): string[] {
     if (!node.temporal.date || !validDateOnly(node.temporal.date)) errors.push('Date-only ScheduleNode requires YYYY-MM-DD.')
     if (node.temporal.deadlineAt || node.temporal.startAt || node.temporal.endAt || node.temporal.latestStartAt) errors.push('Date-only ScheduleNode may not fabricate a time.')
   } else {
+    if (node.temporal.startAt && !validInstant(node.temporal.startAt)) errors.push('ScheduleNode startAt requires a valid offset-aware instant.')
+    if (node.temporal.endAt && !validInstant(node.temporal.endAt)) errors.push('ScheduleNode endAt requires a valid offset-aware instant.')
     if (node.temporal.shape === 'deadline' && (!node.temporal.deadlineAt || !validInstant(node.temporal.deadlineAt))) {
       errors.push('Deadline ScheduleNode requires an offset-aware deadlineAt.')
     }

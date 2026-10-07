@@ -51,6 +51,7 @@ describe('spreadsheet re-import action state', () => {
     expect(merged.map((item) => item.id)).toEqual([
       'apply:stable',
       'apply:new',
+      'apply:removed',
       'event-action:evt-1',
     ])
     expect(byId.get('apply:stable')?.title).toBe('updated workbook title')
@@ -58,7 +59,7 @@ describe('spreadsheet re-import action state', () => {
     expect(byId.get('apply:stable')?.updatedAt).toBe('2026-09-09T08:00:00.000Z')
     expect(byId.get('apply:new')?.status).toBe('todo')
     expect(byId.get('event-action:evt-1')?.status).toBe('doing')
-    expect(byId.has('apply:removed')).toBe(false)
+    expect(byId.get('apply:removed')?.status).toBe('skipped')
   })
 
   it('keeps browser-side actions authoritative for locally managed opportunities', () => {
@@ -108,4 +109,9 @@ describe('spreadsheet re-import action state', () => {
     expect(byId.get('apply:normal-old')?.status).toBe('done')
     expect(byId.has('apply:normal-new')).toBe(true)
   })
+  it.each(['todo', 'doing', 'done', 'skipped'] as const)('preserves the old workbook %s Action when the new parser supplies no implicit actions', status => {
+    const previous = [action('apply:imported-job', { sourceLabel: '投递总表', status })]
+    expect(mergeActionsForReimport([], previous)).toEqual(previous)
+  })
+
 })

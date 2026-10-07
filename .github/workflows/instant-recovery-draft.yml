@@ -38,7 +38,10 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - run: npm install --no-save --package-lock=false @playwright/test@1.63.0
+      - run: |
+          node scripts/verify-installed-runtime-lock.mjs --capture
+          npm install --no-save @playwright/test@1.63.0
+          node scripts/verify-installed-runtime-lock.mjs
       - name: Align isolated container home ownership
         run: chown "$(id -u):$(id -g)" "$HOME"
       - name: Verify confirmation, explicit references and adjacent recovery invariants

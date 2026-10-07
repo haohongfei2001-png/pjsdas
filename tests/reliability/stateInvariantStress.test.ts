@@ -115,7 +115,7 @@ describe('v1.10 deterministic state-invariant stress', () => {
       const state = businessState(snapshot)
       expect(state.integrity.criticalCount).toBe(0)
       expect(state.opportunities).toHaveLength(3)
-      expect(state.actions.filter((item) => item.kind === 'apply')).toHaveLength(3)
+      expect(state.actions.filter((item) => item.kind === 'apply')).toHaveLength(0)
 
       if (!expected) expected = state
       else expect(state).toEqual(expected)

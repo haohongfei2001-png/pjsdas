@@ -20,12 +20,13 @@ const snapshot = () => createSnapshot({
 }, time)
 
 describe('CGR-05 first-party Discovery promotion authority', () => {
-  it('creates the reviewed Opportunity, Apply action and audit atomically with a guarded Undo', () => {
+  it('creates the reviewed Opportunity-only facts and audit atomically with a guarded Undo', () => {
     const before = snapshot()
     const applied = applyDiscoveryPromotionCommand(before, { inboxItemId: item.id }, new Date('2026-09-24T01:00:00.000Z'))
     expect(applied.snapshot.data.discoveryInbox?.[0]).toMatchObject({ status: 'promoted', promotedOpportunityId: 'job-1' })
     expect(applied.snapshot.data.opportunities).toHaveLength(1)
-    expect(applied.snapshot.data.actions).toMatchObject([{ id: 'apply:job-1', opportunityId: 'job-1' }])
+    expect(applied.snapshot.data.actions).toEqual([])
+    expect(applied.snapshot.data.scheduleNodes).toEqual([])
     expect(applied.snapshot.data.changeSets?.[0]).toMatchObject({ status: 'applied' })
     expect(applied.snapshot.data.timeline?.map((row) => row.kind)).toContain('discovery_accepted')
     expect(before.data.opportunities).toHaveLength(0)

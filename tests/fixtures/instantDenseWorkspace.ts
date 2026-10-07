@@ -5,6 +5,7 @@ export function instantDenseWorkspace(historyRows = 3940) {
   const snapshot = denseDecisionWorkspace()
   snapshot.data.actions.forEach((action, index) => {
     action.status = index < 6 ? 'todo' : 'done'
+    action.plannedDate = index < 6 ? '2026-10-01' : undefined
     action.kind = index === 2 ? 'apply' : 'manual'
     if (index === 2) action.id = `apply:${action.opportunityId}`
     action.title = `Instant task ${index}`
@@ -16,6 +17,15 @@ export function instantDenseWorkspace(historyRows = 3940) {
     node.relatedActionIds = [snapshot.data.actions[index].id]
     node.temporal = { shape: 'deadline', precision: 'datetime', timezone: 'UTC', deadlineAt: index < 6 ? '2026-10-01T15:59:59Z' : '2026-11-01T15:59:59Z', resolutionBasis: 'legacy_projection' }
   })
+  // The interaction target is one explicitly arranged user task, represented by
+  // the same Action and occurrence. Other rows retain archived deadline facts.
+  snapshot.data.scheduleNodes![0].kind = 'follow_up'
+  snapshot.data.scheduleNodes![0].constraintKind = 'user_plan'
+  snapshot.data.scheduleNodes![0].occurrenceId = 'action:dense-action-0'
+  snapshot.data.scheduleNodes![0].temporal = { shape: 'fixed_range', precision: 'datetime', timezone: 'Asia/Shanghai',
+    startAt: '2026-10-01T14:00:00+08:00', endAt: '2026-10-01T15:00:00+08:00', resolutionBasis: 'user_explicit' }
+  snapshot.data.actions[0].scheduledTemporal = structuredClone(snapshot.data.scheduleNodes![0].temporal)
+  snapshot.data.actions[0].timingContractVersion = 2
   snapshot.data.timeline = Array.from({ length: historyRows }, (_, index) => ({ id: `instant-history-${index}`, kind: 'opportunity_updated' as const,
     category: 'opportunity' as const, source: 'user_action' as const, title: 'Synthetic historical evidence', detail: 'synthetic audit '.repeat(40),
     occurredAt: '2026-09-01T01:00:00Z', recordedAt: '2026-09-01T01:00:00Z' }))

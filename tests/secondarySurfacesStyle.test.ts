@@ -29,7 +29,7 @@ describe('secondary-surface styling stays outside the protected main UI', () => 
   })
   it('compares actual main pixels to the fixed approved real-page reference, without retries', () => {
     const workflow = read('.github/workflows/secondary-surfaces-ui.yml')
-    expect(workflow).toContain('TA_SECONDARY_BASE: 1ba685209e81d6185456aa4c0eacc1c4e82663c3')
+    expect(workflow).toContain('TA_SECONDARY_BASE: dbad72074299c8f585a9b13d5f4ae0b3a6b32116')
     expect(workflow).toContain('contents: read')
     expect(workflow).toContain('timeout-minutes: 15')
     expect(read('playwright.secondary-ui.config.mts')).toContain('retries: 0')

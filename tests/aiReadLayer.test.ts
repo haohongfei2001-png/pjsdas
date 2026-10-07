@@ -83,6 +83,7 @@ describe('AI Bridge read layer', () => {
   it('uses the existing deterministic Today planner and keeps hypothetical time read-only', () => {
     const a = opportunity('opp-a', 'Alpha', 'Product Manager', '2026-09-11T12:00:00.000Z')
     const action = applyAction('apply-a', a.id, '投递 Alpha｜Product Manager', '2026-09-11T12:00:00.000Z')
+    action.plannedDate = '2026-09-11'
     const snapshot = baseSnapshot({ opportunities: [a], actions: [action] })
     const originalRules = JSON.stringify(snapshot.data.decisionRules)
 

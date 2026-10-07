@@ -18,6 +18,7 @@ import { validateSnapshot, type PJSDASSnapshot } from '../snapshot.js'
 import { validPlanningDate } from '../timePlanningPreferences.js'
 import { localDateKey as displayDateKey } from '../todayBrief.js'
 import { buildConsumerTimePlan } from '../today/consumerTimePlan.js'
+import { calendarNodeProjection, scheduleNodeEligible } from '../scheduleEligibility.js'
 import type {
   Action,
   Opportunity,
@@ -88,8 +89,8 @@ export interface GetTodayPlanOutput {
   }>
   fixedEvents: Array<{
     eventId: string
-    company: string
-    role: string
+    company?: string
+    role?: string
     label: string
     occursAt: string
     precision?: Action['duePrecision']
@@ -366,17 +367,17 @@ export function getTodayPlan(
   }
 
   const ranked = rankActions(workspace.actions, workspace.opportunities, now, undefined, context.timezone, snapshot.data.scheduleNodes ?? [])
-  const consumerPlan = buildConsumerTimePlan({ ranked, nodes: snapshot.data.scheduleNodes ?? [],
+  const consumerPlan = buildConsumerTimePlan({ ranked, nodes: snapshot.data.scheduleNodes ?? [], opportunities: workspace.opportunities, processEvents: workspace.processEvents,
     preferences: snapshot.data.timePlanning, availableMinutes, now, timezone: context.timezone, useRemainingDayDefault: true })
   const capacityMinutes = consumerPlan.capacityMinutes ?? todayCapacity(snapshot.data.timePlanning, now, context.timezone, availableMinutes).minutes
 
   const nodes = snapshot.data.scheduleNodes ?? []
-  const activeNodes = actionNodesById(nodes, workspace.actions)
+  const activeNodes = actionNodesById(nodes, workspace.actions, workspace.opportunities, workspace.processEvents)
   const linkedActions = new Set(nodes.flatMap(node => node.relatedActionIds))
   const timingFor = (action: Action) => {
     const node = activeNodes.get(action.id)
     const timing = node ? actionDeadline(action, node) : linkedActions.has(action.id) ? { id: action.id } : actionDeadline(action)
-    const timingMode = !timing.deadline ? undefined : node?.temporal.shape === 'fixed_range' ? 'fixed' as const
+    const timingMode = !timing.deadline ? undefined : node && 'completionDeadline' in node ? 'deadline' as const : node?.temporal.shape === 'fixed_range' ? 'fixed' as const
       : node?.temporal.shape === 'deadline' ? 'deadline' as const : action.timingMode
     return { ...timing, timingMode }
   }
@@ -400,11 +401,13 @@ export function getTodayPlan(
   })
 
   const fixedEvents = ranked.flatMap((item) => {
-    const timing = timingFor(item.action)
-    if (timing.timingMode !== 'fixed' || !timing.deadline || (deadlineBoundaryMs(timing, context.timezone) ?? -Infinity) < now.getTime()) return []
+    const node = activeNodes.get(item.action.id)
+    if (!node || node.timingUnknown || !['scheduled', 'in_progress'].includes(node.state) || !scheduleNodeEligible(node, workspace)) return []
+    const temporal = calendarNodeProjection(node).temporal
+    const timing = { id: item.action.id, deadline: temporal.startAt ?? temporal.date, precision: temporal.precision, timezone: temporal.timezone }
+    if (!timing.deadline || (deadlineBoundaryMs(timing, context.timezone) ?? -Infinity) < now.getTime()) return []
     const event = eventForAction(item.action, workspace.processEvents)
     const identity = companyRoleForAction(item.action, workspace.opportunities, workspace.processEvents)
-    if (!identity.company || !identity.role) return []
     return [{
       eventId: event?.id ?? item.action.id,
       company: identity.company,
@@ -441,8 +444,8 @@ export function getTodayPlan(
     meta: meta({ ...context, now }),
     date: today,
     availableMinutes: capacityMinutes,
-    plannedMinutes: consumerPlan.planned.reduce((sum, item) => sum + item.action.estimatedMinutes, consumerPlan.fixedMinutes),
-    capacityConflict: consumerPlan.conflicts.length > 0,
+    plannedMinutes: consumerPlan.plannedMinutes,
+    capacityConflict: consumerPlan.conflicts.length > 0 || consumerPlan.overBudgetMinutes > 0,
     startableActions,
     fixedEvents,
     blockedOrRecoveryItems,

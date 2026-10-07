@@ -1,3 +1,4 @@
+import { normalizedUserJobFacts, userJobIdentity } from './opportunityCreation.js'
 import { dismissedSemanticCandidate } from './decisionDismissal.js'
 import { canonicalOpportunityId, canonicalSemanticFactKey, sameSemanticFactKey, resolveCanonicalOpportunityTarget } from './opportunityCanonicalization.js'
 import { resolveApplicationDeadline } from './applicationDeadline.js'
@@ -12,6 +13,7 @@ import type {
   ExternalCapabilityState,
   ReminderIntent,
   Opportunity,
+  ProcessEvent,
   ScheduleNode,
   SemanticCandidate,
   SemanticConfidence,
@@ -226,6 +228,8 @@ export function semanticCandidateFactKey(snapshot: PJSDASSnapshot, candidate: Se
   const node = resolvedOccurrence?.status === 'unique' ? resolvedOccurrence.node : undefined
   const occurrenceId = node?.occurrenceId ?? candidate.target?.occurrenceId ?? ''
 
+  if (candidate.kind === 'application_action') return `application_action|opp:${opportunityId}|${candidate.plannedDate ?? ''}|${JSON.stringify(candidate.scheduledTemporal)}`
+  if (candidate.kind === 'user_opportunity') return `user_opportunity|${userJobIdentity(normalizedUserJobFacts(candidate))}`
   if (candidate.kind === 'application_submitted') return `application_submitted|opp:${opportunityId}`
   if (candidate.kind === 'opportunity_deadline') return `opportunity_deadline|opp:${opportunityId}|${candidate.precision}|${normalInstant(candidate.deadline)}`
   if (candidate.kind === 'abandon_opportunity') return `abandon_opportunity|opp:${opportunityId}`
@@ -254,6 +258,7 @@ export function semanticCandidateFactKey(snapshot: PJSDASSnapshot, candidate: Se
   }
   if (candidate.kind === 'manual_action') {
     return `manual_action|${candidate.title.trim().toLowerCase()}|${normalInstant(candidate.dueAt)}`
+      + (candidate.plannedDate || candidate.scheduledTemporal ? `|plan:${candidate.plannedDate ?? ''}|${JSON.stringify(candidate.scheduledTemporal)}` : '')
   }
   if (candidate.kind === 'reminder_intent') {
     if (!node) return undefined
@@ -283,6 +288,40 @@ function existingFactReceipt(snapshot: PJSDASSnapshot, factKey: string | undefin
     && item.factKeys?.some(key => sameSemanticFactKey(snapshot, key, factKey))
     && !receiptInvalidatedFactKeys(snapshot, item).has(canonicalSemanticFactKey(snapshot, factKey)),
   )
+}
+
+function sameProcessMeaning(event: ProcessEvent, candidate: Extract<SemanticCandidate, { kind: 'process_event' }>, temporal = event.temporal) {
+  const mode = candidate.temporal?.shape === 'deadline' || candidate.temporal?.shape === 'availability_window' ? 'deadline'
+    : candidate.temporal?.shape === 'fixed_range' ? 'fixed' : candidate.timingMode
+  if (event.type !== candidate.eventType || mode && event.timingMode !== mode) return false
+  if (candidate.location !== undefined && event.location !== candidate.location || candidate.joinUrl !== undefined && event.joinUrl !== candidate.joinUrl) return false
+  if (candidate.temporal) {
+    if (!temporal || temporal.shape !== candidate.temporal.shape || temporal.precision !== candidate.temporal.precision
+      || temporal.precision === 'date' && temporal.timezone !== candidate.temporal.timezone) return false
+    return (['startAt', 'endAt', 'latestStartAt', 'deadlineAt', 'date'] as const).every(key => {
+      const old = temporal[key], next = candidate.temporal![key]
+      return old === next || Boolean(old && next && Date.parse(old) === Date.parse(next))
+    })
+  }
+  return normalInstant(event.dueAt) === normalInstant(candidate.dueAt)
+    && (!candidate.duePrecision || event.duePrecision === candidate.duePrecision)
+}
+function receiptProvesCandidate(snapshot: PJSDASSnapshot, value: SemanticIntakeReceipt, candidate: SemanticCandidate) {
+  if (candidate.kind !== 'process_event') return true
+  const target = opportunityResolution(snapshot, candidate)
+  if (target.status !== 'unique') return false
+  const factKey = semanticCandidateFactKey(snapshot, candidate)
+  const bound = Object.entries(value.factMutationObjects ?? {})
+    .filter(([key]) => factKey && sameSemanticFactKey(snapshot, key, factKey)).flatMap(([, refs]) => refs)
+  const refs = bound.length ? bound : value.affectedObjects
+  const eventIds = new Set(refs.flatMap(item => item.type === 'process_event' ? [item.id]
+    : item.type === 'schedule_node' ? (snapshot.data.scheduleNodes ?? []).filter(node => node.id === item.id && node.processEventId).map(node => node.processEventId!) : []))
+  const occurrence = occurrenceResolution(snapshot, candidate, target.opportunity)
+  const occurrenceId = occurrence.status === 'unique' ? occurrence.node.occurrenceId : candidate.target?.occurrenceId
+  return snapshot.data.processEvents.some(event => eventIds.has(event.id) && !event.invalidation
+    && canonicalOpportunityId(snapshot, event.opportunityId) === target.opportunity.id
+    && (!occurrenceId || event.sourceOccurrenceId === occurrenceId || (snapshot.data.scheduleNodes ?? []).some(node => node.processEventId === event.id && node.occurrenceId === occurrenceId))
+    && sameProcessMeaning(event, candidate))
 }
 
 function assertObservation(observation: SemanticIntakeObservation) {
@@ -494,6 +533,8 @@ function toDomainCommand(
   commandInputId = observation.inputId,
 ): UserDomainCommand {
   const commandId = `semantic:${commandInputId}:${candidate.id}`
+  if (candidate.kind === 'application_action') return { commandId, kind: 'plan_application_action', opportunityId: opportunity!.id, plannedDate: candidate.plannedDate, scheduledTemporal: candidate.scheduledTemporal }
+  if (candidate.kind === 'user_opportunity') return { commandId, kind: 'add_user_opportunity', ...normalizedUserJobFacts(candidate) }
   if (candidate.kind === 'application_submitted') {
     return {
       commandId,
@@ -506,6 +547,7 @@ function toDomainCommand(
     return {
       commandId,
       kind: 'record_process_event',
+      sourceOccurrenceId: candidate.target?.occurrenceId,
       opportunityId: opportunity!.id,
       eventType: candidate.eventType,
       temporal: candidate.temporal,
@@ -544,6 +586,8 @@ function toDomainCommand(
       commandId,
       kind: 'add_manual_action',
       title: candidate.title,
+      plannedDate: candidate.plannedDate,
+      scheduledTemporal: candidate.scheduledTemporal,
       dueAt: candidate.dueAt,
       duePrecision: candidate.duePrecision,
       estimatedMinutes: candidate.estimatedMinutes,
@@ -584,6 +628,9 @@ function affectedFromDomain(command: UserDomainCommand, opportunity?: Opportunit
   }
   if (command.kind === 'cancel_reminder_intent') affected.push({ type: 'reminder_intent', id: command.reminderIntentId })
   if (snapshot && before) {
+    for (const job of snapshot.data.opportunities) {
+      if (!before.data.opportunities.some(item => item.id === job.id)) affected.push({ type: 'opportunity', id: job.id })
+    }
     for (const action of snapshot.data.actions) {
       if (!before.data.actions.some((item) => item.id === action.id)) affected.push({ type: 'action', id: action.id })
     }
@@ -621,7 +668,7 @@ function applyCandidate(
   commandInputId = observation.inputId,
 ): CandidateApplyResult {
   const candidate = resolvedTarget(originalCandidate, resolution)
-  const opportunityNeeded = candidate.kind !== 'manual_action'
+  const opportunityNeeded = candidate.kind !== 'user_opportunity' && candidate.kind !== 'manual_action'
     && candidate.kind !== 'reminder_intent'
     && candidate.kind !== 'reminder_cancelled'
     && candidate.kind !== 'occurrence_completed'
@@ -629,7 +676,9 @@ function applyCandidate(
     && candidate.kind !== 'occurrence_rescheduled'
   let opportunity: Opportunity | undefined
 
-  if (opportunityNeeded || candidate.target?.opportunityId || candidate.target?.company || candidate.target?.role) {
+  if (observation.source.kind === 'gmail' && (candidate.kind === 'user_opportunity' || candidate.kind === 'application_action'
+    || candidate.kind === 'manual_action' && (candidate.plannedDate || candidate.scheduledTemporal))) throw new Error('An email source cannot assert first-party job creation, application intent, or a user-chosen task plan.')
+  if (candidate.kind !== 'user_opportunity' && (opportunityNeeded || candidate.target?.opportunityId || candidate.target?.company || candidate.target?.role)) {
     const resolved = opportunityResolution(snapshot, candidate)
     if (resolved.status === 'ambiguous') {
       return {
@@ -803,17 +852,19 @@ function applyCandidate(
   if (candidate.kind === 'process_event' && candidate.target?.occurrenceId) {
     const sourceNode = (snapshot.data.scheduleNodes ?? []).find((node) => node.evidenceRefs.includes(`source-occurrence:${candidate.target!.occurrenceId}`))
     const existing = latestScheduleOccurrence(snapshot.data.scheduleNodes ?? [], sourceNode?.occurrenceId ?? candidate.target.occurrenceId)
+    const fact = snapshot.data.processEvents.find(event => !event.invalidation && event.sourceOccurrenceId === candidate.target?.occurrenceId
+      && event.opportunityId === opportunity?.id)
+    if (!existing && fact) {
+      const same = sameProcessMeaning(fact, candidate)
+      if (same) return { status: 'already', snapshot, summary: 'The same source obligation is already recorded.', affected: [{ type: 'process_event', id: fact.id }] }
+      return { status: 'decision', snapshot, reason: 'material_conflict', summary: 'The source obligation has different time facts; clarify the intended correction.', choices: [
+        { id: 'ignore', label: 'Keep the existing obligation', consequence: 'No fact is replaced.', resolution: { dismiss: true } },
+        { id: 'clarify', label: 'Clarify the change', consequence: 'Provide the intended occurrence and corrected time.', resolution: { dismiss: true } },
+      ], affected: [{ type: 'opportunity', id: fact.opportunityId }] }
+    }
     if (existing) {
       const event = snapshot.data.processEvents.find((item) => item.id === existing.processEventId)
-      const sameTime = event?.dueAt === candidate.dueAt || Boolean(event?.dueAt && candidate.dueAt
-        && Date.parse(event.dueAt) === Date.parse(candidate.dueAt))
-      const sameTemporal = !candidate.temporal || (existing.temporal.shape === candidate.temporal.shape
-        && existing.temporal.precision === candidate.temporal.precision
-        && (['startAt', 'endAt', 'latestStartAt', 'deadlineAt', 'date'] as const).every((key) => {
-          const previous = existing.temporal[key]; const next = candidate.temporal![key]
-          return previous === next || Boolean(previous && next && Date.parse(previous) === Date.parse(next))
-        }))
-      if (event?.opportunityId === opportunity?.id && event?.type === candidate.eventType && sameTime && sameTemporal) {
+      if (event && event.opportunityId === opportunity?.id && sameProcessMeaning(event, candidate, existing.temporal)) {
         return { status: 'already', snapshot, summary: 'The same source occurrence is already recorded.',
           affected: [{ type: 'schedule_node', id: existing.id }] }
       }
@@ -902,6 +953,8 @@ function receipt(input: {
   return {
     id: `semantic-receipt:${stableHash(inputId)}`,
     inputId,
+    inputFacts: input.observation.candidates.some(candidate => candidate.kind === 'user_opportunity' || candidate.kind === 'application_action' || candidate.kind === 'manual_action' && (candidate.plannedDate || candidate.scheduledTemporal))
+      ? JSON.stringify(canonicalBusinessValue(input.observation.candidates)) : undefined,
     sourceKind: input.observation.source.kind,
     sourceId: input.observation.source.sourceId,
     sourceRecordId: input.observation.source.sourceRecordId,
@@ -1004,6 +1057,7 @@ export function applySemanticIntake(
   const sourceNoLongerAssertive = observation.source.kind === 'gmail'
     && openSourceChoices.length > 0
     && (!['assertion', 'current_intent'].includes(observation.statementMode) || observation.candidates.length === 0)
+  if (replay?.inputFacts && replay.inputFacts !== JSON.stringify(canonicalBusinessValue(observation.candidates))) throw new Error('Input identity was reused with different job or task-plan facts.')
   if (replay && !needsChoiceRecheck && !sourceNoLongerAssertive) {
     return {
       status: 'ALREADY_APPLIED',
@@ -1151,13 +1205,14 @@ export function applySemanticIntake(
     // receipts that already prove another fragment's business fact or answer.
     if (needsChoiceRecheck && !openSourceChoices.some(item => item.payloadBinding.candidateId === candidate.id)) {
       const alreadyRecorded = existingFactReceipt(working, semanticCandidateFactKey(working, candidate))
-      if (alreadyRecorded) continue
+      if (alreadyRecorded && receiptProvesCandidate(working, alreadyRecorded, candidate)) continue
     }
     const factKey = semanticCandidateFactKey(working, candidate)
     // A partially invalidated receipt still proves its other facts. A new recovery
     // command must never recreate those domain objects (notably manual actions).
     if (recoveryFactKeys.size && (!factKey || !recoveryFactKeys.has(factKey))) continue
-    const priorFact = existingFactReceipt(working, factKey)
+    const matchedFact = existingFactReceipt(working, factKey)
+    const priorFact = matchedFact && receiptProvesCandidate(working, matchedFact, candidate) ? matchedFact : undefined
     const deadlineTarget = candidate.kind === 'opportunity_deadline' ? working.data.opportunities.find(item => item.id === canonicalOpportunityId(working, candidate.target?.opportunityId ?? '')) : undefined
     const repeatedAssertedDeadline = priorFact && candidate.kind === 'opportunity_deadline' && deadlineTarget
       && observation.statementMode === 'assertion'
@@ -1247,6 +1302,10 @@ export function applySemanticIntake(
     }
   }
 
+  if (observation.candidates.some(item => item.kind === 'user_opportunity') && (decisions.length || coverageDebtCount)) {
+    return { status: 'NO_WRITE', snapshot: base, changed: false,
+      summary: 'Clarify the complete set of jobs before saving; no partial additions were committed.', decisionRequests: [] }
+  }
   if (!domainCompensations.length && !summaries.length && !decisions.length) {
     if (supersededCount) {
       working.exportedAt = timestamp

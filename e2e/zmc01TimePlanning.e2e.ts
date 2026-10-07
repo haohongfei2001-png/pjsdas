@@ -18,7 +18,7 @@ test('Today capacity is a durable user choice and flexible overflow leaves the w
       tx.oncomplete = () => { db.close(); resolve() }
       for (let index = 0; index < 60; index += 1) tx.objectStore('actions').put({
         id: `zmc-task-${index}`, kind: 'manual', title: `可顺延的准备 ${index}`,
-        status: 'todo', estimatedMinutes: 30, leverage: 70, delayCost: 40,
+        status: 'todo', plannedDate: '2026-09-25', estimatedMinutes: 30, leverage: 70, delayCost: 40,
         dueAt: '2026-09-25', duePrecision: 'date', timingMode: 'deadline',
         createdAt: '2026-09-20T00:00:00.000Z', updatedAt: '2026-09-20T00:00:00.000Z',
       })
@@ -55,7 +55,7 @@ test('connected capacity command reaches another client and remains after reload
   const state = { revision: 7, commands: 0, snapshot: createSnapshot({
     opportunities: [], processes: [], processEvents: [], prep: [], applicationGroups: [],
     actions: Array.from({ length: 8 }, (_, index) => ({ id: `account-task-${index}`, kind: 'manual' as const,
-      title: `Account task ${index}`, status: 'todo' as const, estimatedMinutes: 30,
+      title: `Account task ${index}`, status: 'todo' as const, plannedDate: '2026-09-25', estimatedMinutes: 30,
       leverage: 75, delayCost: 50, dueAt: '2026-09-25', duePrecision: 'date' as const,
       timingMode: 'deadline' as const, createdAt, updatedAt: createdAt })),
   }, now.toISOString()) }

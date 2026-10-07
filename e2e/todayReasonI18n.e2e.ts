@@ -26,7 +26,7 @@ const action = {
   estimatedMinutes: 20,
   leverage: 80,
   delayCost: 80,
-  status: 'todo',
+  status: 'todo', plannedDate: '2026-09-30',
   sourceLabel: 'E2E',
   createdAt: '2026-09-14T00:00:00.000Z',
   updatedAt: '2026-09-14T00:00:00.000Z',

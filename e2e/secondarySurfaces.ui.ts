@@ -10,16 +10,22 @@ const now = '2026-09-23T08:00:00.000Z'
 const digest = (bytes: Buffer) => createHash('sha256').update(bytes).digest('hex')
 const modalRoots = '.cgr-capture-sheet, .backup-dialog, .event-dock, .prep-graph-dialog, .discovery-inbox-modal, .mcp-proposal-card'
 
-function fixture() {
+function fixture(appliedForLayout = false) {
   const snapshot = workspace()
   snapshot.data.opportunities[0]!.company = '示例公司 · 产品与用户研究团队'
   snapshot.data.opportunities[0]!.role = '高级产品策略与体验研究 / Senior Product Research'
   snapshot.data.opportunities[1]!.company = snapshot.data.opportunities[0]!.company
-  // Isolate this pixel/layout comparison from the separately tested retirement
-  // of business-score ordering: both reference and candidate receive the same
-  // explicit source dates and therefore the same unambiguous row order.
-  snapshot.data.opportunities.forEach((item, index) => { item.deadline = `2026-09-${25 + index}`; item.deadlinePrecision = 'date' })
-  snapshot.data.actions.forEach((item, index) => { item.dueAt = `2026-09-${25 + index}`; item.duePrecision = 'date'; item.timingMode = 'deadline' })
+  // The protected layout sample uses already-submitted jobs. Pre-B1 exposes
+  // unsubmitted jobs without a deadline as a Schedule category; B1 deliberately
+  // removes that business projection, covered by its separate negative tests.
+  if (appliedForLayout) snapshot.data.opportunities.forEach(item => {
+    item.processStage = 'screening'; item.currentStageLabel = '筛选中'
+  })
+  // This layout guard compares the same eligible content in both runtimes:
+  // two explicitly chosen tasks and the real appointment below. Job/task
+  // deadlines used to fabricate four extra reference calendar rows; their
+  // removal is a separately asserted B1 business change, not a layout change.
+  snapshot.data.actions.forEach(item => { item.plannedDate = '2026-09-23' })
   snapshot.data.timePlanning = { version: 1, defaultDailyMinutes: 480, updatedAt: now }
   snapshot.data.scheduleNodes = [{
     id: 'secondary-node', occurrenceId: 'secondary-occurrence', version: 1,
@@ -50,10 +56,10 @@ function fixture() {
   return snapshot
 }
 
-async function seed(page: Page) {
+async function seed(page: Page, appliedForLayout = false) {
   await page.clock.setFixedTime(new Date(now))
   await seedSession(page.context())
-  const snapshot = fixture()
+  const snapshot = fixture(appliedForLayout)
   const mutations: string[] = []
   await page.route(/https:\/\/[^/]+\.supabase\.co\//, route => route.abort())
   await page.route(BACKEND + '/**', route => {
@@ -90,7 +96,7 @@ async function capture(page: Page, label: string, width: number, scale = 100, pr
   const bytes = await page.screenshot({ path: `${evidence}/${name}`, fullPage: overlay === 0, animations: 'disabled', caret: 'hide' })
   if (protectMain && phase === 'after') {
     const baseline = await readFile(`secondary-ui-before/${name}`)
-    expect(digest(bytes), `${label}: all main pixels must match the approved compact-header reference 1ba68520`).toBe(digest(baseline))
+    expect(digest(bytes), `${label}: all main pixels must match the approved pre-B1 reference dbad720`).toBe(digest(baseline))
   }
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)
   const overflowNodes = overflow > 1 ? await page.evaluate(() => [...document.querySelectorAll<HTMLElement>('body *')]
@@ -123,20 +129,22 @@ async function capture(page: Page, label: string, width: number, scale = 100, pr
 }
 
 for (const width of [1440, 390, 320]) test(`main pixels stay fixed before and after secondary navigation at ${width}`, async ({ page }) => {
-  const mutations = await seed(page)
+  const mutations = await seed(page, true)
   const scale = width === 320 ? 200 : 100
   await page.setViewportSize({ width, height: width < 600 ? 844 : 900 })
   await page.goto('/pjsdas/today')
-  await expect(page.locator('.tsui-task-row')).not.toHaveCount(0)
+  await expect(page.locator('.tsui-task-row[data-action-id]')).toHaveCount(2)
+  await expect(page.locator('.tsui-task-row:not([data-action-id])')).toHaveCount(1)
+  await expect(page.locator('.tsui-node-panel .tsui-node-row')).toHaveCount(1)
   await capture(page, 'MAIN_TODAY', width, scale, true)
   await page.locator('.tsui-primary-nav').getByRole('button', { name: '岗位库', exact: true }).click()
   await expect(page.locator('.tsui-job-open')).toHaveCount(2)
   await capture(page, 'MAIN_JOBS', width, scale, true)
   await page.locator('.tsui-primary-nav').getByRole('button', { name: '日程', exact: true }).click()
-  await expect(page.locator('.tsui-schedule-row')).not.toHaveCount(0)
+  await expect(page.locator('.tsui-schedule-row')).toHaveCount(1)
   await capture(page, 'MAIN_SCHEDULE', width, scale, true)
   await page.locator('.tsui-topbar').getByRole('button', { name: '设置', exact: true }).click()
-  await expect(page.getByRole('heading', { name: phase === 'before' ? '账号与跨设备数据' : '账号', exact: true })).toBeVisible()
+  await expect(page.getByRole('heading', { name: '账号', exact: true })).toBeVisible()
   await capture(page, 'SETTINGS', width, scale)
   await page.locator('.tsui-primary-nav').getByRole('button', { name: '今天', exact: true }).click()
   await expect(page.locator('.tsui-task-row')).not.toHaveCount(0)
@@ -170,7 +178,10 @@ for (const width of [1440, 390, 320]) test(`details and settings retain readable
   await capture(page, 'CONTEXT_CAPTURE', width, width === 320 ? 200 : 100)
   if (width === 320) {
     await capture(page, 'CONTEXT_CAPTURE_BOTTOM', width, 200, false, '.cgr-capture-sheet')
-    await expect(page.locator('.cgr-capture-footer button')).toBeInViewport()
+    const footerButtons = page.locator('.cgr-capture-footer button')
+    await expect(footerButtons).toHaveCount(phase === 'after' ? 2 : 1)
+    for (const button of await footerButtons.all()) await expect(button).toBeInViewport()
+    if (phase === 'after') expect(await page.locator('.cgr-capture-mode').evaluate(element => parseFloat(getComputedStyle(element).fontSize))).toBeGreaterThanOrEqual(25)
   }
   await page.keyboard.press('Escape')
   await expect(page.locator('.job-detail-capture')).toBeFocused()
@@ -191,7 +202,7 @@ for (const width of [1440, 390, 320]) test(`details and settings retain readable
   await page.getByRole('button', { name: '关闭详情' }).click()
   await expect(page.locator('.tsui-schedule-detail')).toHaveCount(0)
   await page.goto('/pjsdas/settings')
-  await expect(page.getByRole('heading', { name: phase === 'before' ? '账号与跨设备数据' : '账号', exact: true })).toBeVisible()
+  await expect(page.getByRole('heading', { name: '账号', exact: true })).toBeVisible()
   await capture(page, 'SETTINGS_OVERVIEW', width, width === 320 ? 200 : 100)
   await expect(page.locator('.settings-group > summary').filter({ hasText: '可用时间' })).toHaveCount(0)
   await expect(page.getByRole('button', { name: '保存时段', exact: true })).toHaveCount(0)

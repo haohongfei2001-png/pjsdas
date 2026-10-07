@@ -25,7 +25,7 @@ const action = {
   delayCost: 90,
   dueAt: '2026-09-20T23:59:59.000Z',
   processStage: 'not_applied',
-  status: 'todo',
+  status: 'todo', plannedDate: '2026-09-18',
   createdAt: '2026-09-14T00:00:00.000Z',
   updatedAt: '2026-09-14T00:00:00.000Z',
 }

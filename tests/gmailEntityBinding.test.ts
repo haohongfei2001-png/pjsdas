@@ -112,7 +112,8 @@ describe('bounded notification identity evidence', () => {
     const result = apply(text)
     expect(result.snapshot.data.processEvents).toHaveLength(2)
     expect(result.snapshot.data.processEvents.map(event => event.opportunityId)).toEqual([alpha.id, alpha.id])
-    expect(result.snapshot.data.scheduleNodes?.map(node => node.temporal.shape)).toEqual(['availability_window', 'deadline'])
+    expect(result.snapshot.data.scheduleNodes).toEqual([])
+    expect(result.snapshot.data.processEvents.map(event => event.temporal?.shape)).toEqual(['availability_window', 'deadline'])
   })
   it.each([
     '甲星公司 产品经理 笔试开放窗口明天09:00至后天17:00；乙月公司 客户经理提交截止后天18:00',

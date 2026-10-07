@@ -1,3 +1,4 @@
+import { appendOpportunityOnly } from './opportunityCreation.js'
 import { canonicalOpportunityId, resolveCanonicalPostingIdentity } from './opportunityCanonicalization.js'
 import { discoveryProfileForSnapshot } from './discoveryProfile.js'
 import { evaluateDiscoveryCandidate, findSimilarOpportunity } from './discoveryQuality.js'
@@ -123,25 +124,6 @@ function withTimeline(records: TimelineRecord[], incoming: TimelineRecord[]) {
   const byId = new Map(records.map((item) => [item.id, item]))
   for (const record of incoming) byId.set(record.id, record)
   return [...byId.values()]
-}
-
-function applyActionForNewOpportunity(opportunity: Opportunity, observedAt: string): Action {
-  return {
-    id: `apply:${opportunity.id}`,
-    kind: 'apply',
-    title: `投递 ${opportunity.company}｜${opportunity.role}`,
-    opportunityId: opportunity.id,
-    processStage: 'not_applied',
-    dueAt: opportunity.deadline,
-    timingMode: opportunity.deadline ? 'deadline' : undefined,
-    estimatedMinutes: opportunity.prepEstimateMinutes ?? 45,
-    leverage: 0,
-    delayCost: 0,
-    status: 'todo',
-    sourceLabel: '自动岗位监控',
-    createdAt: observedAt,
-    updatedAt: observedAt,
-  }
 }
 
 function monitorOpportunityId(observation: MonitorJobObservation, canonicalSourceUrl: string) {
@@ -349,8 +331,7 @@ export function applyMonitorIngestion(
           } else {
             const opportunity = createMonitorOpportunity(observation, receivedAt)
             if ((next.data.opportunityAliases ?? []).some(alias => alias.id === opportunity.id)) throw new Error('An aliased opportunity cannot be recreated.')
-            next.data.opportunities.push(opportunity)
-            next.data.actions.push(applyActionForNewOpportunity(opportunity, receivedAt))
+            appendOpportunityOnly(next.data, opportunity)
             opportunityId = opportunity.id
             outcome = 'created'
             createdOpportunityIds.push(opportunity.id)

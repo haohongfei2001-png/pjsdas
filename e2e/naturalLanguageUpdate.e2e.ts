@@ -105,19 +105,20 @@ test('explicit non-job task enters Today through Semantic Intake without ChangeS
   await page.goto('/')
   await openCapture(page)
 
-  await page.locator('.cgr-capture-input').fill('待办：修改论文图表。')
+  await page.locator('.cgr-capture-input').fill('今天修改论文图表')
   await page.getByRole('button', { name: '确认并保存' }).click()
   await expect(page.getByRole('status')).toContainText('已记录明确事实')
   await page.getByRole('button', { name: '关闭' }).click()
 
-  await expect(page.getByRole('heading', { name: '修改论文图表' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: '今天修改论文图表' })).toBeVisible()
   const state = await readMutationState(page)
-  expect(state.actions.filter((item) => item.title === '修改论文图表')).toHaveLength(1)
+  expect(state.actions.filter((item) => item.title === '今天修改论文图表')).toHaveLength(1)
+  expect(state.actions[0]).toMatchObject({ plannedDate: '2026-09-30' })
   expect(state.changeSets).toHaveLength(0)
   expect(state.semanticReceipts.some((item) => item.status === 'committed')).toBe(true)
 
   await page.reload()
-  await expect(page.getByRole('heading', { name: '修改论文图表' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: '今天修改论文图表' })).toBeVisible()
 })
 
 test('a quoted old thread cannot create a second action beside the current Web update', async ({ page }) => {

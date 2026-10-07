@@ -106,7 +106,7 @@ describe('v1.9 pre-release ingestion hardening', () => {
     })
 
     expect(second.snapshot.data.opportunities).toHaveLength(1)
-    expect(second.snapshot.data.actions.filter((item) => item.kind === 'apply')).toHaveLength(1)
+    expect(second.snapshot.data.actions.filter((item) => item.kind === 'apply')).toHaveLength(0)
     expect((second.run.outcomes.merged ?? 0) + (second.run.outcomes.duplicate ?? 0)).toBe(1)
   })
 

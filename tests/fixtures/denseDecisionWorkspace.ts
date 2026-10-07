@@ -17,7 +17,7 @@ export function denseDecision(index: number): DecisionRequest {
 export function denseDecisionWorkspace() {
   const jobs = Array.from({ length: 384 }, (_, i) => opportunity(`dense-job-${i}`, `Synthetic company ${i}`, 'Engineer'))
   const actions = jobs.map((job, i) => ({ ...action(`dense-action-${i}`, `Synthetic task ${i}`, job.id), kind: i < 330 ? 'apply' as const : 'manual' as const, status: i < 361 ? 'todo' as const : 'done' as const,
-    dueAt: i < 72 ? '2026-09-01' : i < 236 ? '2026-10-20' : undefined, duePrecision: 'date' as const }))
+    plannedDate: i >= 98 && i < 104 ? '2026-09-29' : undefined, dueAt: i < 72 ? '2026-09-01' : i < 236 ? '2026-10-20' : undefined, duePrecision: 'date' as const }))
   const nodes: ScheduleNode[] = Array.from({ length: 300 }, (_, i) => ({
     id: `dense-node-${i}`, occurrenceId: `application-deadline:${jobs[i].id}`, version: 1, opportunityId: jobs[i].id,
     kind: 'application_deadline', state: 'scheduled', constraintKind: 'employer_hard',

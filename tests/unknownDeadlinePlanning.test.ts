@@ -82,7 +82,7 @@ describe('withdrawn application deadlines in Today planning', () => {
         expect(resolveApplicationDeadline(opportunity, snapshot.data)).toMatchObject({ state: 'unknown', source: 'correction' })
       }
       const schedule = buildScheduleStream(snapshot, { ...context, accountKey: 'synthetic', workspaceRevision: 'test-revision' })
-      expect(schedule.sections.no_deadline).toHaveLength(2)
+      expect(schedule.sections.no_deadline).toHaveLength(0)
       expect(schedule.sections.upcoming).toEqual([])
       expect(snapshot.data.scheduleNodes!.every(item => item.temporal.deadlineAt === UNKNOWN_DEADLINE_OLD_DATE)).toBe(true)
     }

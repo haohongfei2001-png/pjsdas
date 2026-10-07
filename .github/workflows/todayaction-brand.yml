@@ -30,7 +30,10 @@ jobs:
       - name: Check deterministic asset exports
         run: python3 scripts/export-brand-assets.py --check --emit
       - run: npm ci
-      - run: npm install --no-save --package-lock=false @playwright/test@1.63.0
+      - run: |
+          node scripts/verify-installed-runtime-lock.mjs --capture
+          npm install --no-save @playwright/test@1.63.0
+          node scripts/verify-installed-runtime-lock.mjs
       - run: npx playwright install --with-deps chromium
       - name: Root-path production build and browser readback
         env:

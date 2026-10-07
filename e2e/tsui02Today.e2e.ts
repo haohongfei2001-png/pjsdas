@@ -28,7 +28,7 @@ test('TSUI-02 real component: equal Today rows, shared 130-node stream and mobil
         for (let i = 0; i < 8; i += 1) tx.objectStore('actions').put({
           id: 'tsui-task-' + i, kind: 'manual', title: '今日行动 ' + (i + 1),
           estimatedMinutes: 20, leverage: 90 - i, delayCost: 80 - i,
-          status: 'todo', createdAt: created, updatedAt: created,
+          status: 'todo', plannedDate: '2026-09-25', createdAt: created, updatedAt: created,
         })
         for (let i = 0; i < 130; i += 1) {
           const date = new Date(Date.UTC(2026, 8, 25 + i)).toISOString().slice(0, 10)

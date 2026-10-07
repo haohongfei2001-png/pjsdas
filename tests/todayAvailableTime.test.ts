@@ -54,7 +54,7 @@ describe('Today live local-midnight default', () => {
   it('does not subtract past commitments from an already remaining-time budget', () => {
     const now = new Date('2026-10-06T22:00:00Z')
     const source = createSnapshot({ opportunities: [], processes: [], processEvents: [], prep: [], applicationGroups: [],
-      actions: [{ id: 'one', kind: 'manual', title: 'One hour', status: 'todo', estimatedMinutes: 60, leverage: 80, delayCost: 50,
+      actions: [{ id: 'one', kind: 'manual', title: 'One hour', status: 'todo', plannedDate: '2026-10-06', estimatedMinutes: 60, leverage: 80, delayCost: 50,
         createdAt: now.toISOString(), updatedAt: now.toISOString() }],
       scheduleNodes: [{ id: 'past', occurrenceId: 'past', version: 1, kind: 'interview', state: 'scheduled', constraintKind: 'employer_hard',
         temporal: { shape: 'fixed_range', precision: 'datetime', timezone: 'UTC', startAt: '2026-10-06T08:00:00Z', endAt: '2026-10-06T12:00:00Z', resolutionBasis: 'source_explicit' },

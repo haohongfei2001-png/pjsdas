@@ -22,9 +22,9 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     env:
-      # Owner-approved + button and its natural responsive row-height change.
-      # This is an actual reviewed runtime commit, never a transformed screenshot.
-      TA_SECONDARY_BASE: 1ba685209e81d6185456aa4c0eacc1c4e82663c3
+      # Fixed, already accepted pre-B1 runtime: deadline-only copy (#255) and
+      # operation-history separation (#256). Never use the candidate or transform pixels.
+      TA_SECONDARY_BASE: dbad72074299c8f585a9b13d5f4ae0b3a6b32116
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -32,9 +32,12 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - run: npm install --no-save --package-lock=false @playwright/test@1.63.0
+      - run: |
+          node scripts/verify-installed-runtime-lock.mjs --capture
+          npm install --no-save @playwright/test@1.63.0
+          node scripts/verify-installed-runtime-lock.mjs
       - run: npx playwright install --with-deps chromium
-      - name: Render the fixed approved compact-header reference
+      - name: Render the fixed approved pre-B1 reference
         shell: bash
         run: |
           set -euo pipefail

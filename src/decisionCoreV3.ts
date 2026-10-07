@@ -19,7 +19,7 @@ export function rankAction(action: Action, _opportunity?: Opportunity, _now = ne
     reasons: [action.dueAt ? (action.timingMode === 'fixed' ? '按固定事件时间排列' : '按截止日期排列') : '截止日期未明确，排在已知截止之后'] }
 }
 export function rankActions(actions: Action[], opportunities: Opportunity[], now = new Date(), _rules?: DecisionRules, timezone = 'UTC', nodes: ScheduleNode[] = []) {
-  const nodeMap = actionNodesById(nodes, actions)
+  const nodeMap = actionNodesById(nodes, actions, opportunities)
   return actions.filter(action => action.status === 'todo' || action.status === 'doing')
     .filter(action => {
       const deadline = actionDeadline(action, nodeMap.get(action.id))

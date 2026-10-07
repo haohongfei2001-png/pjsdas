@@ -39,7 +39,7 @@ describe('task status and exact historical compensation', () => {
     const { result } = complete()
     for (const change of ['edit', 'remove']) {
       const later = structuredClone(result.snapshot)
-      if (change === 'edit') later.data.scheduleNodes!.find((n) => n.id === 'history-node-6')!.temporal.deadlineAt = '2026-10-01T10:00:00+08:00'
+      if (change === 'edit') later.data.scheduleNodes!.find((n) => n.id === 'history-node-6')!.temporal.startAt = '2026-10-01T10:00:00+08:00'
       else later.data.scheduleNodes = later.data.scheduleNodes!.filter((n) => n.id !== 'history-node-6')
       expect(() => applyDomainCompensation(later, result.compensation!, HISTORY_NOW)).toThrow(/changed|safely/)
     }
@@ -70,6 +70,6 @@ it('application submission Undo restores owned deadline changes without reopenin
   }
   expect(restored.data.timeline).toEqual(result.snapshot.data.timeline)
   const edited = structuredClone(result.snapshot)
-  edited.data.scheduleNodes!.find(n => n.id === 'history-node-6')!.temporal.deadlineAt = '2026-10-20T10:00:00+08:00'
+  edited.data.scheduleNodes!.find(n => n.id === 'history-node-6')!.temporal.startAt = '2026-10-20T10:00:00+08:00'
   expect(() => applyDomainCompensation(edited, result.compensation!, HISTORY_NOW)).toThrow(/changed|safely/)
 })

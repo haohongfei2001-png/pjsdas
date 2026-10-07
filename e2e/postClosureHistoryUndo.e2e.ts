@@ -1,3 +1,4 @@
+import { buildScheduleStream } from '../src/schedule/scheduleStream.js'
 import { expect, test, type Page } from '@playwright/test'
 import { historyActionWorkspace, HISTORY_NOW } from '../tests/fixtures/historyActionWorkspace.js'
 import { applyDomainCompensation, applyUserDomainCommand, type DomainCompensation } from '../src/domainCommands.js'
@@ -253,26 +254,60 @@ for (const state of ['completed', 'elapsed_unresolved', 'scheduled'] as const) t
   await expect(restarted.getByTestId('cgr02-today')).toBeVisible()
 })
 
-test('reimport cannot commit a retained historical node with a removed process reference', async ({ page }) => {
+test('local progress submission owns its exact later fact and blocks undoing an earlier submission', async ({ page }) => {
+  await page.clock.install({ time: HISTORY_NOW })
+  await page.goto('/'); await expect(page.locator('.tsui-primary-nav')).toBeVisible()
+  const evidence = await page.evaluate(async input => {
+    const db = await import('/pjsdas/src/db.ts')
+    const domain = await import('/pjsdas/src/domainCommands.ts')
+    const at = new Date('2026-09-28T12:00:00Z')
+    const job = input.data.opportunities[0]
+    const first = domain.applyUserDomainCommand(input, { commandId: 'first-local-proof', kind: 'record_application_submission', opportunityId: job.id }, at)
+    if (first.status !== 'APPLIED') throw new Error('Expected submission')
+    await db.replaceLocalSnapshotFromCloud(first.snapshot)
+    const operation = { id: 'later-local-proof', kind: 'upsert_opportunity' as const, mode: 'submitted' as const,
+      opportunityId: job.id, company: job.company, role: job.role, occurredAt: at.toISOString(), sourceText: 'I submitted again', confidence: 'high' as const }
+    await db.applyProgressUpdate([operation])
+    await db.applyProgressUpdate([operation])
+    const after = await db.exportLocalSnapshot()
+    let rejected = false
+    try { domain.applyDomainCompensation(after, first.compensation!, at) } catch { rejected = true }
+    return { rejected, proofs: after.data.opportunities.find(item => item.id === job.id)?.applicationSubmissionProofs,
+      retainedOriginal: after.data.timeline?.some(item => item.commandId === 'first-local-proof'),
+      retainedLater: after.data.timeline?.filter(item => item.id === 'timeline:progress:later-local-proof').length }
+  }, historyActionWorkspace())
+  expect(evidence.rejected).toBe(true)
+  expect(Object.values(evidence.proofs!)).toEqual(['active', 'active'])
+  expect(evidence.retainedOriginal).toBe(true)
+  expect(evidence.retainedLater).toBe(1)
+})
+
+test('reimport retains omitted history and exact submission ownership while invalid replacement remains atomic', async ({ page }) => {
   await page.clock.install({ time: HISTORY_NOW })
   await page.goto('/'); await expect(page.locator('.tsui-primary-nav')).toBeVisible()
   const evidence = await page.evaluate(async (input) => {
     const module = await import('/pjsdas/src/db.ts')
-    const job = { ...input.data.opportunities[0], locallyManaged: false }
+    const job = { ...input.data.opportunities[0], locallyManaged: false, applicationSubmissionProofs: { 'withdrawn-original-command': 'withdrawn' as const } }
     const process = { id: 'historical-import-process', opportunityId: job.id, company: job.company, role: job.role, stage: 'not_applied' as const, stageLabel: '待投递', progress: 'not_started' as const, result: 'pending' as const, participationState: 'active' as const, lastProgressAt: '2026-09-20T00:00:00.000Z' }
     input.data.opportunities = [job]; input.data.processes = [process]
     input.data.scheduleNodes = [{ ...input.data.scheduleNodes![0], processId: process.id }]
     await module.replaceLocalSnapshotFromCloud(input)
     const before = (await module.exportLocalRecoveryArchive()).stores
+    const summary = { filename: 'retained-history.xlsx', importedAt: '2026-09-28T12:00:00.000Z', opportunities: 0, pending: 0, processes: 0, prep: 0, applicationGroups: 0, actions: 0 }
+    await module.replaceImportedData({ opportunities: [], processes: [], actions: [], prep: [], applicationGroups: [], summary })
+    const after = (await module.exportLocalRecoveryArchive()).stores
+    await module.replaceImportedData({ opportunities: [{ ...job, applicationSubmissionProofs: undefined }], processes: [], actions: [], prep: [], applicationGroups: [], summary: { ...summary, opportunities: 1 } })
+    const retainedProofs = (await module.exportLocalSnapshot()).data.opportunities.find(item => item.id === job.id)?.applicationSubmissionProofs
+    const beforeInvalid = (await module.exportLocalRecoveryArchive()).stores
     let refused = false
-    try {
-      await module.replaceImportedData({ opportunities: [job], processes: [], actions: [], prep: [], applicationGroups: [],
-        summary: { filename: 'unsafe-process-removal.xlsx', importedAt: '2026-09-28T12:00:00.000Z', opportunities: 1, pending: 0, processes: 0, prep: 0, applicationGroups: 0, actions: 0 } })
-    } catch { refused = true }
-    return { refused, before, after: (await module.exportLocalRecoveryArchive()).stores }
+    try { await module.replaceImportedData({ opportunities: [job, job], processes: [], actions: [], prep: [], applicationGroups: [], summary: { ...summary, opportunities: 2 } }) }
+    catch { refused = true }
+    return { refused, before, after, retainedProofs, beforeInvalid, afterInvalid: (await module.exportLocalRecoveryArchive()).stores }
   }, historyActionWorkspace())
   expect(evidence.refused).toBe(true)
-  expect(evidence.after).toEqual(evidence.before)
+  for (const store of ['opportunities', 'processes', 'actions', 'scheduleNodes'] as const) expect(evidence.after[store]).toEqual(evidence.before[store])
+  expect(evidence.retainedProofs).toEqual({ 'withdrawn-original-command': 'withdrawn' })
+  expect(evidence.afterInvalid).toEqual(evidence.beforeInvalid)
   await page.reload(); await expect(page.getByTestId('cgr02-today')).toBeVisible()
 })
 
@@ -347,8 +382,14 @@ for (const kind of ['manual', 'apply'] as const) test(`reimport versions a moved
   const result = await page.evaluate(async ({ input, kind }) => {
     const db = await import('/pjsdas/src/db.ts')
     const job = { ...input.data.opportunities[0], locallyManaged: false, deadline: kind === 'apply' ? '2026-09-20' : undefined, deadlinePrecision: 'date' as const }
-    const action = { ...input.data.actions[0], kind, status: 'todo' as const, dueAt: '2026-09-20', duePrecision: 'date' as const, sourceLabel: 'Excel' }
-    input.data.opportunities = [job]; input.data.actions = [action]; input.data.scheduleNodes = []
+    const action = { ...input.data.actions[0], kind, status: 'todo' as const, dueAt: '2026-09-20', duePrecision: 'date' as const, sourceLabel: 'Excel', plannedDate: undefined, scheduledTemporal: undefined }
+    input.data.opportunities = [job]; input.data.actions = [action]; input.data.scheduleNodes = [{
+      ...input.data.scheduleNodes![0], id: 'retained-import-timing', occurrenceId: kind === 'apply' ? `application-deadline:${job.id}` : `action:${action.id}`,
+      kind: kind === 'apply' ? 'application_deadline' : 'follow_up', state: 'scheduled', completedAt: undefined,
+      constraintKind: kind === 'apply' ? 'employer_hard' : 'user_plan',
+      temporal: { shape: 'date_only', precision: 'date', timezone: 'floating-date', date: '2026-09-20', resolutionBasis: 'legacy_projection' },
+      relatedActionIds: [action.id],
+    }]
     await db.replaceLocalSnapshotFromCloud(input)
     const before = (await db.exportLocalSnapshot()).data.scheduleNodes!
     const bundle = { opportunities: [{ ...job, deadline: kind === 'apply' ? '2026-10-20' : undefined }], processes: [],
@@ -359,6 +400,8 @@ for (const kind of ['manual', 'apply'] as const) test(`reimport versions a moved
     await db.replaceImportedData(bundle)
     return { before, after, again: await db.exportLocalSnapshot() }
   }, { input: historyActionWorkspace(), kind })
+  expect(result.before).toHaveLength(1)
+  expect(Object.values(buildScheduleStream(result.after, { accountKey: 'fixture', workspaceRevision: '1', now: HISTORY_NOW, timezone: 'UTC' }).sections).flat()).toHaveLength(0)
   expect(result.after.data.actions[0].dueAt).toBe('2026-10-20')
   for (const old of result.before) {
     const retained = result.after.data.scheduleNodes!.find(n => n.id === old.id)!
@@ -375,8 +418,14 @@ for (const kind of ['manual', 'apply'] as const) test(`reimport clears and reint
   const result = await page.evaluate(async ({ input, kind }) => {
     const db = await import('/pjsdas/src/db.ts')
     const job = { ...input.data.opportunities[0], locallyManaged: false, deadline: kind === 'apply' ? '2026-09-20' : undefined, deadlinePrecision: 'date' as const }
-    const action = { ...input.data.actions[0], kind, status: 'todo' as const, dueAt: '2026-09-20', duePrecision: 'date' as const, sourceLabel: 'Excel' }
-    input.data.opportunities = [job]; input.data.actions = [action]; input.data.scheduleNodes = []
+    const action = { ...input.data.actions[0], kind, status: 'todo' as const, dueAt: '2026-09-20', duePrecision: 'date' as const, sourceLabel: 'Excel', plannedDate: undefined, scheduledTemporal: undefined }
+    input.data.opportunities = [job]; input.data.actions = [action]; input.data.scheduleNodes = [{
+      ...input.data.scheduleNodes![0], id: 'retained-import-timing', occurrenceId: kind === 'apply' ? `application-deadline:${job.id}` : `action:${action.id}`,
+      kind: kind === 'apply' ? 'application_deadline' : 'follow_up', state: 'scheduled', completedAt: undefined,
+      constraintKind: kind === 'apply' ? 'employer_hard' : 'user_plan',
+      temporal: { shape: 'date_only', precision: 'date', timezone: 'floating-date', date: '2026-09-20', resolutionBasis: 'legacy_projection' },
+      relatedActionIds: [action.id],
+    }]
     await db.replaceLocalSnapshotFromCloud(input)
     const before = (await db.exportLocalSnapshot()).data.scheduleNodes!
     const bundle = { opportunities: [{ ...job, deadline: undefined }], processes: [], actions: [{ ...action, dueAt: undefined }], prep: [], applicationGroups: [],
@@ -387,13 +436,19 @@ for (const kind of ['manual', 'apply'] as const) test(`reimport clears and reint
     const repeat = await db.exportLocalSnapshot()
     await db.replaceImportedData({ ...bundle, opportunities: [{ ...job, deadline: kind === 'apply' ? '2026-10-20' : undefined }], actions: [{ ...action, dueAt: '2026-10-20' }] })
     const restored = await db.exportLocalSnapshot()
-    const active = restored.data.scheduleNodes!.find(n => n.state === 'scheduled')!
-    const cancel = (await import('/pjsdas/src/domainCommands.ts')).applyUserDomainCommand(restored,
+    const commands = await import('/pjsdas/src/domainCommands.ts')
+    const temporal = { shape: 'fixed_range' as const, precision: 'datetime' as const, timezone: 'UTC', startAt: '2026-10-21T10:00:00Z', resolutionBasis: 'user_explicit' as const }
+    const arranged = commands.applyUserDomainCommand(restored, kind === 'apply'
+      ? { commandId: 'explicit-import-plan', kind: 'plan_application_action', opportunityId: job.id, scheduledTemporal: temporal }
+      : { commandId: 'explicit-import-plan', kind: 'reschedule_occurrence', occurrenceId: `action:${action.id}`, temporal }, new Date('2026-09-28T12:00:30Z'))
+    if (arranged.status !== 'APPLIED') throw Error('Expected a genuine explicit arrangement')
+    const active = arranged.snapshot.data.scheduleNodes!.find(n => n.state === 'scheduled' && n.temporal.shape === 'fixed_range')!
+    const cancel = commands.applyUserDomainCommand(arranged.snapshot,
       { commandId: 'real-user-cancel', kind: 'cancel_occurrence', occurrenceId: active.occurrenceId }, new Date('2026-09-28T12:01:00.000Z'))
     if (cancel.status !== 'APPLIED') throw Error('Expected actual cancellation')
     await db.replaceLocalSnapshotFromCloud(cancel.snapshot)
     await db.replaceImportedData({ ...bundle, opportunities: [{ ...job, deadline: kind === 'apply' ? '2026-11-20' : undefined }], actions: [{ ...action, dueAt: '2026-11-20' }] })
-    return { before, cleared, repeat, restored, cancelled: cancel.snapshot, afterCancelImport: await db.exportLocalSnapshot() }
+    return { before, cleared, repeat, restored, cancelledOccurrence: active.occurrenceId, cancelled: cancel.snapshot, afterCancelImport: await db.exportLocalSnapshot() }
   }, { input: historyActionWorkspace(), kind })
   expect(result.cleared.data.actions[0].dueAt).toBeUndefined()
   expect(result.cleared.data.opportunities[0].deadline).toBeUndefined()
@@ -406,8 +461,10 @@ for (const kind of ['manual', 'apply'] as const) test(`reimport clears and reint
     const latest = result.restored.data.scheduleNodes!.find(n => n.version === withdrawn.version + 1)!
     expect(latest.temporal.date).toBe('2026-10-20'); expect(latest.supersedesNodeId).toBe(withdrawn.id)
   }
+  expect(Object.values(buildScheduleStream(result.restored, { accountKey: 'fixture', workspaceRevision: '1', now: HISTORY_NOW, timezone: 'UTC' }).sections).flat()).toHaveLength(0)
   expect(result.restored.data.actions[0].dueAt).toBe('2026-10-20')
-  expect(result.afterCancelImport.data.scheduleNodes).toEqual(result.cancelled.data.scheduleNodes)
+  expect(result.afterCancelImport.data.scheduleNodes!.filter(node => node.occurrenceId === result.cancelledOccurrence)).toEqual(result.cancelled.data.scheduleNodes!.filter(node => node.occurrenceId === result.cancelledOccurrence))
+  expect(result.afterCancelImport.data.actions[0].status).toBe('skipped')
   await page.reload(); await expect(page.getByTestId('cgr02-today')).toBeVisible()
 })
 
@@ -416,8 +473,12 @@ for (const kind of ['manual', 'apply'] as const) test(`reimport clears and reint
   const result = await page.evaluate(async (input) => {
     const db = await import('/pjsdas/src/db.ts')
     const job = { ...input.data.opportunities[0], locallyManaged: false, deadline: undefined }
-    const action = { ...input.data.actions[0], kind: 'manual' as const, status: 'todo' as const, dueAt: '2026-10-10', duePrecision: 'date' as const, sourceLabel: 'Excel' }
-    input.data.opportunities = [job]; input.data.actions = [action]; input.data.scheduleNodes = []
+    const action = { ...input.data.actions[0], kind: 'manual' as const, status: 'todo' as const, dueAt: '2026-10-10', duePrecision: 'date' as const, sourceLabel: 'Excel', plannedDate: undefined, scheduledTemporal: undefined }
+    input.data.opportunities = [job]; input.data.actions = [action]; input.data.scheduleNodes = [{
+      ...input.data.scheduleNodes![0], id: 'retained-omission-timing', occurrenceId: `action:${action.id}`, kind: 'follow_up',
+      state: 'scheduled', completedAt: undefined, constraintKind: 'user_plan', relatedActionIds: [action.id],
+      temporal: { shape: 'date_only', precision: 'date', timezone: 'floating-date', date: '2026-10-10', resolutionBasis: 'legacy_projection' },
+    }]
     await db.replaceLocalSnapshotFromCloud(input)
     const bundle = { opportunities: [job], processes: [], actions: [{ ...action, dueAt: '2026-10-20' }], prep: [], applicationGroups: [],
       summary: { filename: 'omission.xlsx', importedAt: '2026-09-28T12:00:00.000Z', opportunities: 1, pending: 0, processes: 0, prep: 0, applicationGroups: 0, actions: 1 } }

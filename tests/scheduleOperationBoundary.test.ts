@@ -64,7 +64,8 @@ describe('explicit correction of checkbox-only occurrence state', () => {
 
   it('allows an explicitly confirmed completion of an elapsed ambiguous legacy occurrence', () => {
     const snapshot = checkboxSnapshot('done', false, true)
-    expect(buildScheduleStream(snapshot, context).sections.unresolved.some(item => item.nodeId === 'meeting')).toBe(true)
+    expect(buildScheduleStream(snapshot, context).sections.unresolved.some(item => item.nodeId === 'meeting')).toBe(false)
+    expect(snapshot.data.scheduleNodes!.some(item => item.id === 'meeting')).toBe(true)
     const result = applyUserDomainCommand(snapshot, { commandId: 'confirm-elapsed', kind: 'complete_occurrence', occurrenceId: 'meeting', occurredAt: eventTime }, now)
     if (result.status !== 'APPLIED') throw new Error(result.status)
     expect(buildScheduleStream(result.snapshot, context).sections.history.some(item => item.occurrenceId === 'meeting' && item.occurredAt === eventTime)).toBe(true)
@@ -189,8 +190,8 @@ describe('explicit correction of checkbox-only occurrence state', () => {
     if (result.status !== 'APPLIED') throw new Error(result.status)
     const original = structuredClone(result.snapshot)
     const stream = buildScheduleStream(result.snapshot, context)
-    expect(stream.sections.history).toHaveLength(1)
-    expect(stream.sections.history[0]).toMatchObject({ occurredAt: now.toISOString(), timeline: { kind: 'application_submitted' } })
+    expect(stream.sections.history).toHaveLength(0)
+    expect(result.snapshot.data.timeline!.find(item => item.kind === 'application_submitted')).toMatchObject({ occurredAt: now.toISOString() })
     expect(stream.sections.upcoming).toEqual([])
     expect(stream.sections.unresolved).toEqual([])
     expect(result.snapshot).toEqual(original)
@@ -224,7 +225,7 @@ describe('schedule event / operation boundary', () => {
     const result = await invokeAddOpportunities({
       read: async () => ({ snapshot, context: { now, workspaceVersion: '1' } }),
       write: async (input: { snapshot: typeof snapshot }) => { snapshot = input.snapshot; return { snapshot, context: { now, workspaceVersion: '2' } } },
-    }, { opportunities: [{ company: '示例科技', role: '软件产品经理 P100｜2027校招', roleType: 'core',
+    }, { opportunities: [{ company: '示例科技', role: '软件产品经理 P100｜2027校招',
       sourceUrl: 'https://example.test/jobs/P100', sourceTitle: '官方招聘岗位' }] })
     expect(result.isError).not.toBe(true)
     expect(snapshot.data.timeline?.some(item => item.kind === 'opportunity_added')).toBe(true)
@@ -256,6 +257,7 @@ describe('schedule event / operation boundary', () => {
     expect(fact.recordedAt).toBe(now.toISOString())
     const later = log('newer', 'application_submitted', { opportunityId: 'other', occurredAt: '2026-10-04T08:00:00.000Z', recordedAt: eventTime })
     result.snapshot.data.timeline!.push(later)
+    result.snapshot.data.scheduleNodes = [node('real-earlier', { state: 'completed', completedAt: eventTime }), node('real-later', { state: 'completed', completedAt: later.occurredAt })]
     const first = buildScheduleStream(result.snapshot, context).sections.history.map(item => [item.id, item.occurredAt])
     result.snapshot.data.timeline!.forEach(item => { item.recordedAt = '2026-10-01T00:00:00.000Z' })
     expect(buildScheduleStream(result.snapshot, context).sections.history.map(item => [item.id, item.occurredAt])).toEqual(first)
@@ -270,9 +272,9 @@ describe('schedule event / operation boundary', () => {
       ...snapshot.data.processEvents.flatMap(item => [log(`log:${item.id}`, item.type === 'rejection' ? 'process_closed' : 'process_event_recorded', { processEventId: item.id, occurredAt: eventTime }),
         log(`sync:${item.id}`, item.type === 'rejection' ? 'process_closed' : 'process_event_recorded', { processEventId: item.id, occurredAt: eventTime, source: 'mcp' })])]
     const stream = buildScheduleStream(snapshot, context)
-    expect(stream.counts.history).toBe(4)
-    expect(stream.sections.history.filter(item => item.processEventId === 'reject')).toHaveLength(1)
-    expect(stream.sections.history.find(item => item.id === 'fact:submission-a')?.sourceRefs).toContain('timeline:submission-b')
+    expect(stream.counts.history).toBe(0)
+    expect(snapshot.data.timeline).toHaveLength(8)
+    expect(snapshot.data.processEvents).toHaveLength(3)
   })
 
   it('links exact legacy progress identities without changing completion wording or inferring from it', () => {
@@ -283,10 +285,8 @@ describe('schedule event / operation boundary', () => {
     })]
     const original = structuredClone(snapshot)
     const stream = buildScheduleStream(snapshot, context)
-    expect(stream.sections.history).toHaveLength(1)
-    expect(stream.sections.history[0]).toMatchObject({ id: 'process:progress-event:legacy-completion', title: '完成笔试', occurredAt: eventTime })
-    expect(stream.sections.history[0].sourceRefs).toContain('timeline:timeline:progress:legacy-completion')
-    expect(stream.sections.history[0].state).toBeUndefined()
+    expect(stream.sections.history).toEqual([])
+    expect(snapshot.data.timeline![0]).toMatchObject({ title: '完成笔试', occurredAt: eventTime })
     expect(snapshot).toEqual(original)
   })
 
@@ -295,7 +295,7 @@ describe('schedule event / operation boundary', () => {
     snapshot.data.processEvents = [{ ...event('progress-event:legacy-unknown'), occurredAt: 'invalid-event-time' }]
     snapshot.data.timeline = [log('timeline:progress:legacy-unknown', 'process_event_recorded', { occurredAt: 'different-invalid-time' })]
     const stream = buildScheduleStreamNormalized(snapshot, context)
-    expect(stream.sections.undated).toHaveLength(2)
+    expect(stream.sections.undated).toHaveLength(0)
     expect(stream.sections.history).toEqual([])
   })
 
@@ -303,7 +303,7 @@ describe('schedule event / operation boundary', () => {
     let snapshot = empty()
     snapshot.data.actions = [{ ...action('apply:job', '投递', 'job'), kind: 'apply', dueAt: '2026-10-07T08:00:00.000Z' },
       { ...action('test-task', '完成笔试', 'job'), processEventId: 'test' }]
-    snapshot.data.processEvents = [{ ...event('test', 'written_test_invite'), dueAt: '2026-10-07T08:00:00.000Z' }]
+    snapshot.data.processEvents = [{ ...event('test', 'written_test_invite'), dueAt: '2026-10-07T08:00:00.000Z', timingMode: 'fixed' }]
     for (const actionId of ['apply:job', 'test-task']) {
       const result = applyUserDomainCommand(snapshot, { commandId: `checkbox:${actionId}`, kind: 'set_action_status', actionId, status }, now)
       if (result.status !== 'APPLIED') throw new Error(result.status)
@@ -311,7 +311,7 @@ describe('schedule event / operation boundary', () => {
     }
     const original = structuredClone(snapshot)
     const stream = buildScheduleStream(snapshot, context)
-    expect(stream.sections.history.map(item => item.id)).toEqual(['process:test'])
+    expect(stream.sections.history).toEqual([])
     expect(stream.sections.upcoming.filter(item => item.node?.kind === 'written_test')).toHaveLength(1)
     expect(stream.sections.upcoming.every(item => item.state !== 'completed')).toBe(true)
     expect(snapshot).toEqual(original)
@@ -324,9 +324,9 @@ describe('schedule event / operation boundary', () => {
     const result = applyUserDomainCommand(snapshot, { commandId: 'complete', kind: 'complete_occurrence', occurrenceId: 'meeting', occurredAt: '2026-10-05T08:00:00.000Z' }, now)
     if (result.status !== 'APPLIED') throw new Error(result.status)
     const stream = buildScheduleStream(result.snapshot, context)
-    expect(stream.sections.history.map(item => item.id)).toEqual(['process:interview', 'node:meeting'])
-    expect(stream.sections.history[1]).toMatchObject({ state: 'completed', occurredAt: '2026-10-05T08:00:00.000Z' })
-    expect(stream.sections.history[1].sourceRefs.some(ref => ref.startsWith('timeline:'))).toBe(true)
+    expect(stream.sections.history.map(item => item.id)).toEqual(['node:meeting'])
+    expect(stream.sections.history[0]).toMatchObject({ state: 'completed', occurredAt: '2026-10-05T08:00:00.000Z' })
+    expect(stream.sections.history[0].sourceRefs.some(ref => ref.startsWith('timeline:'))).toBe(true)
   })
 
   it('shows only the latest arrangement after edits, preserving canceled planned time and raw versions', () => {
@@ -343,7 +343,7 @@ describe('schedule event / operation boundary', () => {
 
   it('keeps genuine undated completion without borrowing write time, excluding generic task-only completion', () => {
     const snapshot = empty()
-    snapshot.data.scheduleNodes = [node('unknown', { state: 'completed' }), node('prep', { kind: 'prep_trigger', state: 'completed', completedAt: eventTime })]
+    snapshot.data.scheduleNodes = [node('unknown', { state: 'completed' }), node('prep', { kind: 'prep_trigger', constraintKind: 'user_plan', temporal: { shape: 'fixed_range', precision: 'datetime', timezone: 'UTC', startAt: eventTime, resolutionBasis: 'user_explicit' }, state: 'completed', completedAt: eventTime })]
     snapshot.data.actions = [{ ...action('plain', '一般任务'), status: 'done' }]
     snapshot.data.timeline = [log('plain-done', 'action_status_changed', { actionId: 'plain', changes: { status: { after: 'done' } } })]
     const stream = buildScheduleStream(snapshot, context)
@@ -359,7 +359,7 @@ describe('schedule event / operation boundary', () => {
     snapshot.data.processEvents = [{ ...event('unknown-event'), occurredAt: '' }]
     const stream = buildScheduleStreamNormalized(snapshot, context)
     expect(stream.sections.history).toEqual([])
-    expect(stream.sections.undated).toHaveLength(2)
+    expect(stream.sections.undated).toHaveLength(0)
     expect(stream.sections.undated.every(item => !item.date && !item.occurredAt)).toBe(true)
   })
 

@@ -163,11 +163,15 @@ test('TSUI-03 Jobs shows one filter group and a conclusion-first routed detail',
       request.onerror = () => reject(request.error)
       request.onsuccess = () => {
         const db = request.result
-        const tx = db.transaction(['opportunities', 'actions'], 'readwrite')
+        const tx = db.transaction(['opportunities', 'actions', 'timeline'], 'readwrite')
         tx.onerror = () => reject(tx.error)
         tx.oncomplete = () => { db.close(); resolve() }
         for (const item of opportunities) tx.objectStore('opportunities').put(item)
         for (const item of actions) tx.objectStore('actions').put(item)
+        // Completed task status alone is not submission evidence.
+        tx.objectStore('timeline').put({ id: 'uu05-explicit-submission', kind: 'application_submitted', category: 'process', source: 'user_action',
+          opportunityId: 'uu05-ended', title: '确认投递', commandId: 'uu05-explicit-submission', commandOperation: 'record_application_submission',
+          occurredAt: new Date(now - 3 * 86400000).toISOString(), recordedAt: new Date(now - 3 * 86400000).toISOString() })
       }
     })
   })
@@ -212,7 +216,7 @@ test('TSUI-03 Jobs shows one filter group and a conclusion-first routed detail',
   await expect(detail.locator('.opportunity-detail-conclusion')).toContainText(/待投递|Awaiting application/)
   await expect(detail.locator('.opportunity-detail-process-summary')).toContainText(/待投|Not applied/)
   await expect(detail.locator('.opportunity-detail-primary-operation')).toContainText('提交值得科技产品经理申请')
-  await expect(detail.locator('.opportunity-detail-nearest-node')).toContainText(/申请截止|Application deadline/)
+  await expect(detail.locator('.job-detail-facts')).toContainText(/申请截止|Application deadline/)
   await expect(detail.locator('.opportunity-detail-score-grid')).toHaveCount(0)
   await expect(detail.locator('.job-detail-no-link')).toBeVisible()
 
@@ -221,12 +225,13 @@ test('TSUI-03 Jobs shows one filter group and a conclusion-first routed detail',
       '.opportunity-detail-conclusion',
       '.opportunity-detail-process-summary',
       '.opportunity-detail-primary-operation',
-      '.opportunity-detail-nearest-node',
+      '.job-detail-facts',
     ]
     return selectors.map((selector) => element.querySelector(selector)?.getBoundingClientRect().top ?? -1)
   })
   expect(order[0]).toBeLessThan(order[2])
-  expect(order[1]).toBeLessThan(order[3])
+  expect(order[3]).toBeLessThan(order[1])
+  await expect(detail.locator('.opportunity-detail-nearest-node')).toHaveCount(0)
 
   await page.locator('.job-detail-back').click()
   await expect(worthRow).toBeFocused()

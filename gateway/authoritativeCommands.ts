@@ -16,6 +16,7 @@ import { restoreActionStatusUndo, type ActionStatusUndo } from '../src/actionSta
 import * as z from 'zod/v4'
 import {
   applyDomainCompensation,
+  bindLegacyApplicationSubmissionUndo,
   applyUserDomainCommand,
   type DomainCompensation,
   type UserDomainCommand,
@@ -227,7 +228,7 @@ function intentObjects(command: AuthoritativeBusinessCommand['command'], snapsho
       { type: 'change_set', id: proposal.changeSet.id },
       ...proposal.changeSet.operations.filter((item) => command.value.selectedOperationIds.includes(item.id) && item.kind === 'add_discovered_opportunity')
         .flatMap((item) => item.kind === 'add_discovered_opportunity' ? [
-          { type: 'opportunity', id: item.opportunity.id }, { type: 'action', id: `apply:${item.opportunity.id}` },
+          { type: 'opportunity', id: item.opportunity.id },
         ] : []),
     ]
   }
@@ -289,7 +290,7 @@ function intentObjects(command: AuthoritativeBusinessCommand['command'], snapsho
       ?? findSimilarOpportunity({ company: item.company, role: item.role }, snapshot.data.opportunities))
     return [
       { type: 'discovery_inbox', id: command.value.inboxItemId },
-      ...(item ? [{ type: 'opportunity', id: item.candidateOpportunityId }, { type: 'action', id: `apply:${item.candidateOpportunityId}` }] : []),
+      ...(item ? [{ type: 'opportunity', id: item.candidateOpportunityId }] : []),
       ...(existing && existing.id !== item?.candidateOpportunityId ? [{ type: 'opportunity', id: existing.id }] : []),
     ]
   }
@@ -816,7 +817,10 @@ export function createAuthoritativeCommandExecutor(options: AuthoritativeCommand
       }
 
       const now = new Date()
-      const restored = await applyCompensation(current.snapshot, target.compensation, now)
+      const compensation = target.compensation.operation === 'restore_application_submission'
+        ? bindLegacyApplicationSubmissionUndo(target.compensation as unknown as DomainCompensation, target.commandId, current.snapshot.data.timeline ?? [])
+        : target.compensation
+      const restored = await applyCompensation(current.snapshot, compensation as unknown as Record<string, unknown>, now)
       const next = target.operation === 'business_management' || target.operation === 'opportunity_management' || target.operation === 'planning_management' || target.operation === 'discovery_profile_management' || target.operation === 'private_reminder_management' ? restored : upgradeSnapshotToLatest(restored)
       const affectedObjects = diffCommandObjects(current.snapshot, next)
       const managementGrant = target.operation === 'business_management' || target.operation === 'opportunity_management' || target.operation === 'planning_management' || target.operation === 'discovery_profile_management' || target.operation === 'private_reminder_management' ? await authorizeManagement(principal, admittedManagementGrant, target.operation) : undefined

@@ -44,7 +44,7 @@ describe('CGR-05 signed discovery apply authority', () => {
       'discovery:add:job-2': { code: 'location' },
     }, new Date('2026-09-24T02:00:00.000Z'))
     expect(result.snapshot.data.opportunities.map((item) => item.id)).toEqual(['job-1'])
-    expect(result.snapshot.data.actions.map((item) => item.id)).toEqual(['apply:job-1'])
+    expect(result.snapshot.data.actions.map((item) => item.id)).toEqual([])
     expect(result.snapshot.data.changeSets).toMatchObject([{ id: changeSet.id, status: 'applied', operations: [{ id: 'discovery:add:job-1' }] }])
     expect(result.snapshot.data.timeline?.map((item) => item.kind)).toEqual(expect.arrayContaining(['opportunity_added', 'discovery_accepted', 'discovery_rejected']))
     expect(result.snapshot.data.timeline?.find((item) => item.kind === 'discovery_rejected')).toMatchObject({ discoveryReasonCode: 'location' })
@@ -86,7 +86,7 @@ describe('CGR-05 signed discovery apply authority', () => {
         commits += 1
         expect(body.target_operation).toBe('mcp_apply_discovery')
         expect(body.target_receipt_context.affectedObjects).toEqual(expect.arrayContaining([
-          { type: 'opportunity', id: 'job-1' }, { type: 'action', id: 'apply:job-1' },
+          { type: 'opportunity', id: 'job-1' },
           { type: 'change_set', id: signed.id },
         ]))
         expect(body.target_receipt_context.affectedObjects).not.toContainEqual({ type: 'opportunity', id: 'job-2' })

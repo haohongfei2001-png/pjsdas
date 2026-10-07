@@ -38,21 +38,21 @@ for (const fixture of [
   const record = gmailSemanticRecordFromMessage({ id: 'uu06-mail', threadId: 'uu06-thread', internalDate: String(now.getTime()), payload: { mimeType: 'text/plain', body: { data: Buffer.from(body).toString('base64url') } } }, base.data.opportunities, now)!
   const result = applyGmailSemanticBatch(base, { runId: 'uu06-browser', sourceId: 'gmail:primary', checkedAt: now.toISOString(), authorized: true, records: [record] })
   expect(result.snapshot.data.processEvents).toHaveLength(2)
-  if (fixture.title === 'window and deadline') expect(result.snapshot.data.scheduleNodes?.map((node) => node.temporal.shape)).toEqual(['availability_window', 'deadline'])
+  if (fixture.title === 'window and deadline') {
+    expect(result.snapshot.data.scheduleNodes).toEqual([])
+    expect(result.snapshot.data.processEvents.map(event => event.temporal?.shape)).toEqual(['availability_window', 'deadline'])
+  }
   await page.clock.install({ time: now })
   await page.goto('/')
   await seedSnapshot(page, result.snapshot.data)
   await page.reload()
-  await expect(page.locator('.tsui-node-panel .tsui-node-row')).toHaveCount(2)
-  await expect(page.locator('.tsui-node-panel')).toContainText('京东')
-  await expect(page.locator('.tsui-node-panel')).toContainText('AI产品经理')
-  if (fixture.title === 'window and deadline') {
-    await expect(page.locator('.tsui-node-panel')).toContainText('可参加')
-    await expect(page.locator('.tsui-node-panel')).toContainText('截止')
-    await expect(page.locator('.tsui-node-time').filter({ hasText: '可参加' })).toContainText('–')
+  await expect(page.locator('.tsui-node-panel .tsui-node-row')).toHaveCount(fixture.title === 'window and deadline' ? 0 : 2)
+  if (fixture.title !== 'window and deadline') {
+    await expect(page.locator('.tsui-node-panel')).toContainText('京东')
+    await expect(page.locator('.tsui-node-panel')).toContainText('AI产品经理')
   }
   await page.reload()
-  await expect(page.locator('.tsui-node-panel .tsui-node-row')).toHaveCount(2)
+  await expect(page.locator('.tsui-node-panel .tsui-node-row')).toHaveCount(fixture.title === 'window and deadline' ? 0 : 2)
   const stored = await page.evaluate(async () => new Promise<{ events: number; receipts: number }>((resolve, reject) => {
     const request = indexedDB.open('pjsdas')
     request.onerror = () => reject(request.error)

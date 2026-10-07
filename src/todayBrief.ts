@@ -1,5 +1,6 @@
+import { calendarNodeProjection, scheduleNodeEligible } from './scheduleEligibility.js'
 import { rankActions } from './decisionV3.js'
-import { actionDeadline, compareActionDeadlines, hasKnownActionTiming, latestActionNode } from './deadlineOrder.js'
+import { actionDeadline, compareActionDeadlines, hasKnownActionTiming, latestActionNode, type ActionTimingOwner } from './deadlineOrder.js'
 import { buildConsumerTimePlan } from './today/consumerTimePlan.js'
 import { todayCapacity } from './today/localDayCapacity.js'
 import { expectedSourcesFromRegistry, summarizeCoverage } from './ingestion.js'
@@ -7,6 +8,7 @@ import type {
   Action,
   DecisionRequest,
   Opportunity,
+  ProcessEvent,
   RankedAction,
   ScheduleNode,
   ScheduleNodeTemporal,
@@ -284,7 +286,7 @@ function latestStartFor(action: Action, node: ScheduleNode | undefined): Pick<To
   }
 }
 
-function timingForAction(action: Action, node: ScheduleNode | undefined): TodayBriefActionTiming | undefined {
+function timingForAction(action: Action, node: ActionTimingOwner | undefined): TodayBriefActionTiming | undefined {
   if (node && !hasKnownActionTiming(node)) return undefined
   if (!node && !action.dueAt) return undefined
   const latest = latestStartFor(action, node)
@@ -301,8 +303,8 @@ function timingForAction(action: Action, node: ScheduleNode | undefined): TodayB
     }
   }
   return {
-    nodeId: node.id,
-    occurrenceId: node.occurrenceId,
+    nodeId: node.projectionOnly ? undefined : node.id,
+    occurrenceId: node.projectionOnly ? undefined : node.occurrenceId,
     shape: node.temporal.shape,
     precision: node.temporal.precision,
     timezone: node.temporal.timezone,
@@ -410,8 +412,9 @@ export function actionView(
   now: Date,
   timezone: string,
   hardDeadlineHorizonHours: number,
+  processEvents: ProcessEvent[] = [],
 ): TodayBriefAction {
-  const node = latestActionNode(ranked.action, nodes)
+  const node = latestActionNode(ranked.action, nodes, [...opportunities.values()], processEvents)
   const opportunity = ranked.action.opportunityId ? opportunities.get(ranked.action.opportunityId) : undefined
   return {
     actionId: ranked.action.id,
@@ -610,17 +613,18 @@ export function buildTodayBrief(
   const opportunities = opportunityMap(snapshot.data.opportunities)
   const activeNodes = latestByOccurrence(snapshot.data.scheduleNodes ?? [])
   const ranked = rankActions(snapshot.data.actions, snapshot.data.opportunities, context.now, undefined, context.timezone, activeNodes)
-  const plan = buildConsumerTimePlan({ ranked, nodes: activeNodes, preferences: snapshot.data.timePlanning,
+  const plan = buildConsumerTimePlan({ ranked, nodes: activeNodes, opportunities: snapshot.data.opportunities, processEvents: snapshot.data.processEvents, preferences: snapshot.data.timePlanning,
     availableMinutes: input.availableMinutes, useRemainingDayDefault: true, now: context.now, timezone: context.timezone })
-  const protectedRanked = ranked.filter(item => item.action.timingMode !== 'fixed')
-    .filter(item => protectedByLatestStart(item.action, latestActionNode(item.action, activeNodes), context.now, context.timezone, 48))
+  const todayActionIds = new Set([...plan.planned, ...plan.deferredHard].map(item => item.action.id))
+  const protectedRanked = ranked.filter(item => item.action.plannedDate === today || todayActionIds.has(item.action.id)).filter(item => item.action.timingMode !== 'fixed')
+    .filter(item => protectedByLatestStart(item.action, latestActionNode(item.action, activeNodes, snapshot.data.opportunities, snapshot.data.processEvents), context.now, context.timezone, 48))
     .sort((a, b) => compareActionDeadlines(a.action, b.action, context.timezone, latestActionNode(a.action, activeNodes), latestActionNode(b.action, activeNodes)))
-  const effectivePlannedMinutes = plan.planned.reduce((sum, item) => sum + item.action.estimatedMinutes, plan.fixedMinutes)
+  const effectivePlannedMinutes = plan.plannedMinutes
   const effectiveOverBudgetMinutes = Math.max(0, effectivePlannedMinutes - availableMinutes)
-  const visibleActions = plan.planned.map(item => actionView(item, activeNodes, opportunities, context.now, context.timezone, 48))
+  const visibleActions = plan.planned.map(item => actionView(item, activeNodes, opportunities, context.now, context.timezone, 48, snapshot.data.processEvents))
 
   const agendaGroups = buildAgendaGroups(
-    snapshot.data.scheduleNodes ?? [],
+    (snapshot.data.scheduleNodes ?? []).filter(node => scheduleNodeEligible(node, snapshot.data)).map(calendarNodeProjection),
     opportunities,
     context.now,
     context.timezone,
