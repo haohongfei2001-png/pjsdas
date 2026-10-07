@@ -356,6 +356,23 @@ describe('B1 job, task and calendar ownership', () => {
     expect(getTodayPlan(snapshot, { availableMinutes: budget }, context).plannedMinutes).toBe(budget)
   })
 
+  it('reopens an explicitly planned task without reopening its completed calendar history', () => {
+    const first = applied(empty(), { commandId: 'reopened-plan', kind: 'add_manual_action', title: 'Repeat planned work', estimatedMinutes: 60,
+      scheduledTemporal: { ...arrangement, startAt: '2026-10-07T15:00:00+08:00', endAt: '2026-10-07T16:00:00+08:00' } }).snapshot
+    const actionId = first.data.actions[0].id
+    const completed = applied(first, { commandId: 'completed-plan', kind: 'set_action_status', actionId, status: 'done' }).snapshot
+    const reopened = applied(completed, { commandId: 'repeat-plan', kind: 'set_action_status', actionId, status: 'todo' }).snapshot
+    expect(reopened.data.scheduleNodes).toEqual(completed.data.scheduleNodes)
+    expect(reopened.data.scheduleNodes![0].state).toBe('completed')
+    expect(selectTodayWeb(reopened, { availableMinutes: 60 }, context).actions.map(item => item.actionId)).toEqual([actionId])
+    expect(buildTodayBrief(reopened, { availableMinutes: 60 }, context).plannedMinutes).toBe(60)
+    const external = getTodayPlan(reopened, { availableMinutes: 60 }, context)
+    expect(external.startableActions.map(item => item.actionId)).toEqual([actionId])
+    expect(external.fixedEvents).toEqual([])
+    expect(entries(reopened)).toHaveLength(1)
+    expect(entries(reopened).every(item => item.section === 'history')).toBe(true)
+  })
+
   it.each(['Asia/Tokyo', 'source-offset'])('keeps the confirmed %s arrangement day across display timezones', timezone => {
     const snapshot = applied(empty(), { commandId: 'tokyo-arrangement', kind: 'add_manual_action', title: 'Tokyo plan',
       scheduledTemporal: { ...arrangement, timezone, startAt: '2026-10-08T00:30:00+09:00' } }).snapshot

@@ -152,7 +152,12 @@ export function buildConsumerTimePlan(input: {
   }
   const startable = input.ranked.filter(item => {
     const action = item.action
-    if (action.scheduledTemporal || action.timingMode === 'fixed') return false
+    const owner = nodeMap.get(action.id)
+    // Explicitly reopening work does not reopen its historical calendar fact.
+    // Its retained chosen day can still own ordinary, capacity-limited work.
+    const historicalArrangement = action.scheduledTemporal && owner?.constraintKind === 'user_plan'
+      && isExplicitActionArrangement(owner.temporal) && !['scheduled', 'in_progress'].includes(owner.state)
+    if ((action.scheduledTemporal || action.timingMode === 'fixed') && !historicalArrangement) return false
     if (action.plannedDate) return action.plannedDate === today
     // A real recruiting obligation may be due/overdue without a chosen plan.
     // Ordinary task deadlines and old automatic apply tasks do not choose today.
