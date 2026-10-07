@@ -133,7 +133,8 @@ for (const width of [1440, 390, 320]) test(`main pixels stay fixed before and af
   const scale = width === 320 ? 200 : 100
   await page.setViewportSize({ width, height: width < 600 ? 844 : 900 })
   await page.goto('/pjsdas/today')
-  await expect(page.locator('.tsui-task-row')).toHaveCount(2)
+  await expect(page.locator('.tsui-task-row[data-action-id]')).toHaveCount(2)
+  await expect(page.locator('.tsui-task-row:not([data-action-id])')).toHaveCount(1)
   await expect(page.locator('.tsui-node-panel .tsui-node-row')).toHaveCount(1)
   await capture(page, 'MAIN_TODAY', width, scale, true)
   await page.locator('.tsui-primary-nav').getByRole('button', { name: '岗位库', exact: true }).click()
