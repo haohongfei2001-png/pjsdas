@@ -1,6 +1,14 @@
 # PJSDAS Server-Owned Job Discovery
 
-Status: v1 implementation contract.
+Status: historical v1 implementation contract; use the approved convergence plan for next-stage changes.
+
+## Current canonical direction
+
+The Owner-approved [TodayAction Consumer Convergence v1](TODAYACTION_CONSUMER_CONVERGENCE_V1.md) governs the next Discovery/Intake implementation. It supersedes the older roleType/rationale/scoring, mandatory complex profile, thematic monitor-objective and implicit Action/Schedule product requirements below. Preserve explicit opt-in, source verification, budgets, cadence, idempotency and durable run accounting.
+
+AI/search produces candidates; independent recruiting-source evidence proves job existence and fields; verified new jobs persist as Opportunity only. Models do not write the database. Explicit user job creation may use user provenance without an official URL, but automatic candidates cannot use that exception. The confirmed Search Scope and existing authoritative domain write path are defined in the new plan.
+
+The Drive-oriented architecture below is historical. Current connected authority is governed by [AI-operated production](AI_OPERATED_PRODUCTION_V1.md) and [production topology](PRODUCTION_TOPOLOGY_V1.md); do not introduce a second durable writer by following legacy Drive wording. No runtime, scheduler, configuration or database change is performed by this documentation update.
 
 ## Product contract
 
@@ -115,3 +123,4 @@ The scheduler-facing `pjsdas_claim_enabled_discovery_automation_bindings` wrappe
 7. Run one bounded real server-owned discovery execution and verify balanced ingestion / optimistic Drive write.
 8. Schedule the production cron. A 6-hour wake interval is sufficient while Source Registry cadence remains 24 hours.
 9. Disable legacy ChatGPT monitor tasks only after the server-owned path has succeeded end to end.
+

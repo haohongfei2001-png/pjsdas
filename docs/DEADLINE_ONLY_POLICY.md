@@ -2,6 +2,14 @@
 
 Owner direction on 2026-10-06: remove scoring and matching models from the product; order work only by its actual deadline.
 
+## Approved convergence boundary
+
+[TodayAction Consumer Convergence v1](TODAYACTION_CONSUMER_CONVERGENCE_V1.md) is the Owner-approved next implementation plan. It retains factual deadline ordering for existing job-library queries and eligible work, and retains this document's scoring retirement and historical-data protections. 新发现 uses discovery-time order.
+
+For the new contract, a job deadline remains a job fact and is not a Schedule event. A deadline correction or retained legacy canonical node does not by itself confer Schedule eligibility. Only confirmed recruiting events or explicitly timed Actions qualify. New job creation does not create an application Action. The compatibility/migration work must preserve effective deadlines and their evidence before removing legacy Schedule ownership. The new plan governs those boundaries; this document's existing implementation description below is not permission to regenerate deadline-only calendar items.
+
+This documentation update does not implement or deploy that change.
+
 ## Active behavior
 
 - Jobs and startable actions use applicable known deadlines ascending; unknown or invalid deadlines come last. Equal dates use explicit times, then stable IDs. A date-only deadline is never saved or displayed as an invented midnight timestamp.
@@ -26,3 +34,4 @@ Scoring-only API calls return an explicit SCORING_RETIRED result. Old score-bear
 The deadline-only tests vary historic weights/scores and role tags, assert invariant chronology across Web/brief/plan/jobs, preserve old snapshots byte-for-byte during reads, retain expired unsubmitted jobs, and preserve fixed appointments. Existing date-only, timezone/DST, explicit latest-start, cross-midnight, source-tombstone, unknown-time, physical-capacity and authorization regressions remain in the test suite.
 
 Hosted Browser E2E captures actual 390px/1440px settings and job-list screenshots, verifies no scoring controls remain, and checks retained account/recovery and inline available-time controls.
+
