@@ -372,11 +372,23 @@ export async function getDiscoveryProfile() {
   return stored ?? createDefaultDiscoveryProfile('1970-01-01T00:00:00.000Z')
 }
 
-export async function saveDiscoveryProfile(profile: unknown) {
-  const previous = await (await dbPromise).get('discoveryProfiles', 'current')
-  const next = mergeDiscoveryScope(previous, profile, new Date().toISOString())
-  await (await dbPromise).put('discoveryProfiles', next)
-  return next
+export async function saveDiscoveryProfile(profile: unknown, assertCurrent?: () => void) {
+  assertCurrent?.()
+  const tx = (await dbPromise).transaction('discoveryProfiles', 'readwrite')
+  try {
+    assertCurrent?.()
+    const previous = await tx.store.get('current')
+    const next = mergeDiscoveryScope(previous, profile, new Date().toISOString())
+    assertCurrent?.()
+    await tx.store.put(next)
+    assertCurrent?.()
+    await tx.done
+    return next
+  } catch (caught) {
+    try { tx.abort() } catch { /* The transaction may have already aborted. */ }
+    await tx.done.catch(() => {})
+    throw caught
+  }
 }
 
 export async function getAllTimelineRecords() {
@@ -393,14 +405,22 @@ export async function getAllChangeSets() {
   return records.sort((a, b) => b.createdAt.localeCompare(a.createdAt))
 }
 
-export async function savePendingChangeSet(changeSet: ChangeSetRecord) {
+export async function savePendingChangeSet(changeSet: ChangeSetRecord, assertCurrent?: () => void) {
+  assertCurrent?.()
   assertChangeSetValid(changeSet)
   if (changeSet.status !== 'pending') throw new Error('只能暂存 pending ChangeSet。')
   const db = await dbPromise
-  const existing = await db.get('changeSets', changeSet.id)
-  if (existing && existing.status === 'applied') throw new Error(`ChangeSet ${changeSet.id} 已应用，不能覆盖。`)
-  await db.put('changeSets', changeSet)
-  return changeSet
+  const tx = db.transaction('changeSets', 'readwrite')
+  try {
+    assertCurrent?.()
+    const existing = await tx.store.get(changeSet.id)
+    if (existing && existing.status === 'applied') throw new Error(`ChangeSet ${changeSet.id} 已应用，不能覆盖。`)
+    assertCurrent?.()
+    await tx.store.put(changeSet)
+    assertCurrent?.()
+    await tx.done
+    return changeSet
+  } catch (caught) { try { tx.abort() } catch {} await tx.done.catch(() => {}); throw caught }
 }
 
 export async function discardChangeSet(id: string) {
@@ -416,7 +436,8 @@ export async function discardChangeSet(id: string) {
 export async function saveDecisionRules(_rules: DecisionRules): Promise<never> { throw new ScoringRetiredError() }
 export async function resetDecisionRules(): Promise<never> { throw new ScoringRetiredError() }
 
-export async function updateActionStatus(id: string, status: Action['status'], expectedStatus?: Action['status']) {
+export async function updateActionStatus(id: string, status: Action['status'], expectedStatus?: Action['status'], assertCurrent?: () => void) {
+  assertCurrent?.()
   const db = await dbPromise
   return withTimelineMutation(db, async (tx) => {
     const now = new Date().toISOString()
@@ -451,10 +472,11 @@ export async function updateActionStatus(id: string, status: Action['status'], e
     for (const process of contract.processes) await tx.objectStore('processes').put(process)
     await tx.objectStore('timeline').put(timelineFromActionStatus(action, action.status, status, now))
     return captureActionStatusUndo(beforeData, contract, [id])
-  })
+  }, false, assertCurrent)
 }
 
-export async function undoActionStatusChange(undo: ActionStatusUndo) {
+export async function undoActionStatusChange(undo: ActionStatusUndo, assertCurrent?: () => void) {
+  assertCurrent?.()
   const db = await dbPromise
   return withTimelineMutation(db, async (tx) => {
     const snapshot = await readLocalSnapshot(tx)
@@ -466,7 +488,7 @@ export async function undoActionStatusChange(undo: ActionStatusUndo) {
     }
     for (const node of snapshot.data.scheduleNodes ?? []) await tx.objectStore('scheduleNodes').put(node)
     for (const process of snapshot.data.processes) await tx.objectStore('processes').put(process)
-  })
+  }, false, assertCurrent)
 }
 
 async function localCanonicalOpportunityId(tx: LocalSnapshotTransaction, id: string) {
@@ -477,7 +499,8 @@ async function localCanonicalOpportunityId(tx: LocalSnapshotTransaction, id: str
   return alias.canonicalOpportunityId
 }
 
-export async function addProcessEvent(event: ProcessEvent) {
+export async function addProcessEvent(event: ProcessEvent, assertCurrent?: () => void) {
+  assertCurrent?.()
   const db = await dbPromise
   return withTimelineMutation(db, async (tx) => {
     event = { ...event, opportunityId: await localCanonicalOpportunityId(tx, event.opportunityId) }
@@ -489,10 +512,11 @@ export async function addProcessEvent(event: ProcessEvent) {
     if (action) await tx.objectStore('actions').put(action)
     if (node) await tx.objectStore('scheduleNodes').put(node)
     await tx.objectStore('timeline').put(timelineFromProcessEvent(event))
-  })
+  }, false, assertCurrent)
 }
 
-export async function deleteProcessEvent(id: string) {
+export async function deleteProcessEvent(id: string, assertCurrent?: () => void) {
+  assertCurrent?.()
   const db = await dbPromise
   return withTimelineMutation(db, async (tx) => {
     const event = await tx.objectStore('processEvents').get(id)
@@ -517,7 +541,7 @@ export async function deleteProcessEvent(id: string) {
     }
     await tx.objectStore('processEvents').delete(id)
     await tx.objectStore('actions').delete(`event-action:${id}`)
-  })
+  }, false, assertCurrent)
 }
 function defaultLocalOpportunity(
   operation: Extract<ProgressOperation, { kind: 'upsert_opportunity' }>,
@@ -576,7 +600,8 @@ async function upsertLocalProcess(
   })
 }
 
-export async function applyProgressUpdate(operations: ProgressOperation[]) {
+export async function applyProgressUpdate(operations: ProgressOperation[], assertCurrent?: () => void) {
+  assertCurrent?.()
   const executable = operations.filter((item) => item.kind !== 'unresolved' && item.kind !== 'ignored')
   if (executable.length === 0) return { applied: 0 }
 
@@ -742,7 +767,7 @@ export async function applyProgressUpdate(operations: ProgressOperation[]) {
     }
 
     return { applied: executable.length }
-  })
+  }, false, assertCurrent)
 }
 
 export async function stageProgressChangeSet(operations: ExecutableProgressOperation[]) {
@@ -753,34 +778,38 @@ export async function stageProgressChangeSet(operations: ExecutableProgressOpera
 
 export async function applyDecisionRulesChangeSet(_rules: DecisionRules, _mode: 'save' | 'reset' = 'save'): Promise<never> { throw new ScoringRetiredError() }
 
-export async function applyProcessEventChangeSet(event: ProcessEvent) {
+export async function applyProcessEventChangeSet(event: ProcessEvent, assertCurrent?: () => void) {
+  assertCurrent?.()
   const changeSet = createProcessEventChangeSet(event)
-  await savePendingChangeSet(changeSet)
-  return applyChangeSet(changeSet.id)
+  await savePendingChangeSet(changeSet, assertCurrent)
+  return applyChangeSet(changeSet.id, assertCurrent)
 }
 
-export async function applyProcessEventDeleteChangeSet(eventId: string) {
+export async function applyProcessEventDeleteChangeSet(eventId: string, assertCurrent?: () => void) {
+  assertCurrent?.()
   const db = await dbPromise
   const event = await db.get('processEvents', eventId)
   if (!event) return undefined
   const changeSet = createProcessEventDeleteChangeSet(event)
-  await savePendingChangeSet(changeSet)
-  return applyChangeSet(changeSet.id)
+  await savePendingChangeSet(changeSet, assertCurrent)
+  return applyChangeSet(changeSet.id, assertCurrent)
 }
 
-export async function applyActionStatusChangeSet(actionId: string, status: Action['status']) {
+export async function applyActionStatusChangeSet(actionId: string, status: Action['status'], assertCurrent?: () => void) {
+  assertCurrent?.()
   const db = await dbPromise
   const action = await db.get('actions', actionId) ?? (await getAllActions()).find((item) => item.id === actionId)
   if (!action) return undefined
   const changeSet = createActionStatusChangeSet(action, status)
   if (!changeSet) return undefined
-  await savePendingChangeSet(changeSet)
-  return applyChangeSet(changeSet.id)
+  await savePendingChangeSet(changeSet, assertCurrent)
+  return applyChangeSet(changeSet.id, assertCurrent)
 }
 
 type DiscoveredChangeOperation = Extract<ChangeSetRecord['operations'][number], { kind: 'add_discovered_opportunity' }>
 
-async function applyDiscoveredOpportunityOperations(changeSet: ChangeSetRecord) {
+async function applyDiscoveredOpportunityOperations(changeSet: ChangeSetRecord, assertCurrent?: () => void) {
+  assertCurrent?.()
   const db = await dbPromise
   return withTimelineMutation(db, async tx => {
     const current = await tx.objectStore('changeSets').get(changeSet.id)
@@ -817,10 +846,11 @@ async function applyDiscoveredOpportunityOperations(changeSet: ChangeSetRecord) 
     await tx.objectStore('changeSets').put(applied)
     await tx.objectStore('timeline').put(timelineFromChangeSetApplied(applied))
     return applied
-  })
+  }, false, assertCurrent)
 }
 
-export async function applyLocalDiscoveryPromotion(inboxItemId: string) {
+export async function applyLocalDiscoveryPromotion(inboxItemId: string, assertCurrent?: () => void) {
+  assertCurrent?.()
   const db = await dbPromise
   return withTimelineMutation(db, async tx => {
     const snapshot = await readLocalSnapshot(tx)
@@ -838,7 +868,7 @@ export async function applyLocalDiscoveryPromotion(inboxItemId: string) {
       await tx.objectStore('discoveryInbox').put(promoted)
     }
     return evaluated.snapshot.data.discoveryInbox!.find(item => item.id === inboxItemId)!
-  })
+  }, false, assertCurrent)
 }
 
 export async function applyLocalDiscoveryExtension(changeSet: ChangeSetRecord) {
@@ -868,7 +898,8 @@ export async function applyLocalDiscoveryExtension(changeSet: ChangeSetRecord) {
   })
 }
 
-async function markChangeSetFailed(changeSet: ChangeSetRecord, caught: unknown) {
+async function markChangeSetFailed(changeSet: ChangeSetRecord, caught: unknown, assertCurrent?: () => void) {
+  assertCurrent?.()
   const now = new Date().toISOString()
   const failed: ChangeSetRecord = {
     ...changeSet,
@@ -877,12 +908,20 @@ async function markChangeSetFailed(changeSet: ChangeSetRecord, caught: unknown) 
     updatedAt: now,
     error: caught instanceof Error ? caught.message : String(caught),
   }
-  await (await dbPromise).put('changeSets', failed)
+  const tx = (await dbPromise).transaction('changeSets', 'readwrite')
+  try {
+    assertCurrent?.()
+    await tx.store.put(failed)
+    assertCurrent?.()
+    await tx.done
+  } catch (error) { try { tx.abort() } catch {} await tx.done.catch(() => {}); throw error }
 }
 
-export async function applyChangeSet(id: string): Promise<ChangeSetRecord & { actionCompensations?: ActionStatusUndo[] }> {
+export async function applyChangeSet(id: string, assertCurrent?: () => void): Promise<ChangeSetRecord & { actionCompensations?: ActionStatusUndo[] }> {
+  assertCurrent?.()
   const db = await dbPromise
   const changeSet = await db.get('changeSets', id)
+  assertCurrent?.()
   if (!changeSet) throw new Error(`找不到 ChangeSet ${id}。`)
   assertChangeSetValid(changeSet)
   if (changeSet.status === 'applied') return changeSet
@@ -897,28 +936,28 @@ export async function applyChangeSet(id: string): Promise<ChangeSetRecord & { ac
   try {
     const discoveredOperations = changeSet.operations.filter((operation): operation is DiscoveredChangeOperation => operation.kind === 'add_discovered_opportunity')
     if (discoveredOperations.length > 0) {
-      return { ...await applyDiscoveredOpportunityOperations(changeSet), actionCompensations }
+      return { ...await applyDiscoveredOpportunityOperations(changeSet, assertCurrent), actionCompensations }
     } else {
     const progressOperations = changeSet.operations.filter((operation) => operation.kind === 'progress_update')
     if (progressOperations.length === changeSet.operations.length) {
       // The primary Natural Language Update path remains one IndexedDB transaction:
       // either every normalized operation is committed or none of them is.
-      await applyProgressUpdate(progressOperations.map((operation) => restoreProgressOperation(operation, changeSet.id)))
+      await applyProgressUpdate(progressOperations.map((operation) => restoreProgressOperation(operation, changeSet.id)), assertCurrent)
     } else for (const operation of changeSet.operations) {
       if (operation.kind === 'progress_update') {
-        await applyProgressUpdate([restoreProgressOperation(operation, changeSet.id)])
+        await applyProgressUpdate([restoreProgressOperation(operation, changeSet.id)], assertCurrent)
         continue
       }
 
       if (operation.kind === 'replace_decision_rules') throw new ScoringRetiredError()
 
       if (operation.kind === 'add_process_event') {
-        await addProcessEvent(operation.event)
+        await addProcessEvent(operation.event, assertCurrent)
         continue
       }
 
       if (operation.kind === 'delete_process_event') {
-        await deleteProcessEvent(operation.eventId)
+        await deleteProcessEvent(operation.eventId, assertCurrent)
         continue
       }
 
@@ -936,7 +975,7 @@ export async function applyChangeSet(id: string): Promise<ChangeSetRecord & { ac
       if (action.status !== operation.expectedStatus) {
         throw new Error(`Action ${operation.actionId} 状态已经变化，请重新操作。`)
       }
-      const compensation = await updateActionStatus(operation.actionId, operation.status, operation.expectedStatus)
+      const compensation = await updateActionStatus(operation.actionId, operation.status, operation.expectedStatus, assertCurrent)
       if (compensation) actionCompensations.push(compensation)
     }
     }
@@ -951,12 +990,17 @@ export async function applyChangeSet(id: string): Promise<ChangeSetRecord & { ac
       failedAt: undefined,
     }
     const tx = db.transaction(['changeSets', 'timeline'], 'readwrite')
+    try {
+    assertCurrent?.()
     await tx.objectStore('changeSets').put(applied)
     await tx.objectStore('timeline').put(timelineFromChangeSetApplied(applied))
+    assertCurrent?.()
     await tx.done
+    } catch (caught) { try { tx.abort() } catch {} await tx.done.catch(() => {}); throw caught }
     return { ...applied, actionCompensations }
   } catch (caught) {
-    await markChangeSetFailed(changeSet, caught)
+    assertCurrent?.()
+    await markChangeSetFailed(changeSet, caught, assertCurrent)
     throw caught
   }
 }
@@ -1051,17 +1095,25 @@ export async function exportLocalSnapshot(assertCurrent?: () => void) {
   }
 }
 
-export async function saveLocalTimePlanning(preferences: TimePlanningPreferences) {
+export async function saveLocalTimePlanning(preferences: TimePlanningPreferences, assertCurrent?: () => void) {
+  assertCurrent?.()
   const errors = validateTimePlanningPreferences(preferences)
   if (errors.length) throw new Error(errors[0])
   const db = await dbPromise
-  await db.put('meta', { ...structuredClone(preferences), key: 'timePlanning' })
+  const tx = db.transaction('meta', 'readwrite')
+  try {
+    assertCurrent?.()
+    await tx.store.put({ ...structuredClone(preferences), key: 'timePlanning' })
+    assertCurrent?.()
+    await tx.done
+  } catch (caught) { try { tx.abort() } catch {} await tx.done.catch(() => {}); throw caught }
 }
 
 async function withTimelineMutation<T>(
   db: Awaited<typeof dbPromise>,
   mutate: (tx: IDBPTransaction<PJSDASDatabase, (typeof DATA_STORES)[number][], 'readwrite'>) => Promise<T>,
   baselineAfterMutation = false,
+  assertCurrent?: () => void,
 ) {
   // Lock the source stores while validating and materializing the baseline.
   // Baseline and source edit commit together; no queued cache replacement can
@@ -1077,6 +1129,7 @@ async function withTimelineMutation<T>(
     }
   }
   try {
+    assertCurrent?.()
     if (!baselineAfterMutation) await materializeBaseline()
     const result = await mutate(tx)
     // Once aliases exist, every local write must retain the canonical identity invariant.
@@ -1088,6 +1141,7 @@ async function withTimelineMutation<T>(
         .some(item => item.opportunityId && aliases.has(item.opportunityId))) throw new Error('Local write references a merged opportunity; refresh the canonical target.')
     }
     if (baselineAfterMutation) await materializeBaseline()
+    assertCurrent?.()
     await tx.done
     return result
   } catch (caught) {

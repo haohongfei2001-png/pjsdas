@@ -27,7 +27,7 @@ describe('process lifecycle correctness contract', () => {
     expect(processDock).toContain('const latestOpportunities = await getAllOpportunities()')
     expect(processDock).toContain("kind: 'record_process_event'")
     expect(processDock).toContain('executeConnectedBusinessCommand(cloud.session.user.id')
-    expect(processDock).toContain('applyProcessEventChangeSet(processEvent)')
+    expect(processDock).toContain('applyProcessEventChangeSet(processEvent, writeLease.assertCurrent)')
   })
 
   it('projects completed process Action status before Opportunity/Pipeline AI reads diverge', () => {

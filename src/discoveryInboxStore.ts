@@ -31,9 +31,12 @@ export async function updateDiscoveryInboxStatus(
   id: string,
   status: DiscoveryInboxStatus,
   rejectionReason?: DiscoveryRejectionReason,
+  assertCurrent?: () => void,
 ) {
+  assertCurrent?.()
   const db = await dbPromise
   const item = await db.get('discoveryInbox', id)
+  assertCurrent?.()
   if (!item) throw new Error(`找不到发现箱条目 ${id}。`)
   if (status === 'promoted') throw new Error('加入机会池需要明确的确认操作。')
   const now = new Date()
@@ -41,9 +44,17 @@ export async function updateDiscoveryInboxStatus(
   const next = change.item
   const stores = status === 'dismissed' ? ['discoveryInbox', 'timeline'] as const : ['discoveryInbox'] as const
   const tx = db.transaction(stores, 'readwrite')
-  await tx.objectStore('discoveryInbox').put(next)
-  if (change.timeline) await tx.objectStore('timeline').put(change.timeline)
-  await tx.done
+  try {
+    assertCurrent?.()
+    await tx.objectStore('discoveryInbox').put(next)
+    if (change.timeline) await tx.objectStore('timeline').put(change.timeline)
+    assertCurrent?.()
+    await tx.done
+  } catch (caught) {
+    try { tx.abort() } catch { /* The transaction may have already aborted. */ }
+    await tx.done.catch(() => {})
+    throw caught
+  }
   return next
 }
 
@@ -51,15 +62,17 @@ export async function bulkUpdateDiscoveryInboxStatus(
   ids: string[],
   status: 'later' | 'dismissed',
   rejectionReason?: DiscoveryRejectionReason,
+  assertCurrent?: () => void,
 ) {
+  assertCurrent?.()
   const uniqueIds = Array.from(new Set(ids))
   const updated: DiscoveryInboxItem[] = []
   for (const id of uniqueIds) {
-    updated.push(await updateDiscoveryInboxStatus(id, status, rejectionReason))
+    updated.push(await updateDiscoveryInboxStatus(id, status, rejectionReason, assertCurrent))
   }
   return updated
 }
 
-export async function promoteDiscoveryInboxItem(id: string) {
-  return applyLocalDiscoveryPromotion(id)
+export async function promoteDiscoveryInboxItem(id: string, assertCurrent?: () => void) {
+  return applyLocalDiscoveryPromotion(id, assertCurrent)
 }

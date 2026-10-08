@@ -2,12 +2,13 @@ import { interactionIsRecent } from './interactionActivity.js'
 import { mockCloudMode, passiveCloudReadAllowed } from './runtimeCloudMode.js'
 import { canMountMockAccountCache, clearVerifiedMockAccountCache, forgetMockCacheProvenance, hasMockCacheProvenance, hasPendingMockCacheClear, markVerifiedMockCache, MOCK_CACHE_STOP } from './mockCacheBoundary.js'
 import { captureAccountCacheLease } from './accountCacheLease.js'
-import { setAccountCacheSession } from './accountCacheLease.js'
+import { beginAccountCacheSessionResolution, setAccountCacheSession } from './accountCacheLease.js'
 import {
   createContext,
   useCallback,
   useContext,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -106,6 +107,12 @@ export function CloudProvider({ children }: { children: ReactNode }) {
 }
 
 function ActiveCloudProvider({ children }: { children: ReactNode }) {
+  // Invalidate stale write admission before this newly mounted Auth boundary
+  // becomes interactive. getSession/INITIAL_SESSION will resolve it explicitly.
+  useLayoutEffect(() => {
+    beginAccountCacheSessionResolution()
+    return beginAccountCacheSessionResolution
+  }, [])
   const configured = true
   const [session, setSession] = useState<CloudSession | null>(null)
   const [loading, setLoading] = useState(true)

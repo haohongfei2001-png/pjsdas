@@ -1,3 +1,4 @@
+import { captureWorkspaceWriteLease } from './cloud/workspaceWriteLease.js'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { getAllTimelineRecords, getDiscoveryProfile, saveDiscoveryProfile } from './db.js'
 import { useCloud } from './cloud/CloudContext.js'
@@ -129,6 +130,7 @@ export default function DiscoveryProfileCard() {
         mustHave: parseLines(mustHave),
         mustNotHave: parseLines(mustNotHave),
       }
+      const writeLease = captureWorkspaceWriteLease(cloud.session?.user.id)
       let next: DiscoveryProfile
       const connected = connectedWorkspaceAuthorityEnabled() && Boolean(cloud.session)
       if (connected) {
@@ -140,7 +142,8 @@ export default function DiscoveryProfileCard() {
           throw new Error(result.conflict?.message ?? '岗位发现偏好未写入账号工作区。')
         }
         next = await getDiscoveryProfile()
-      } else next = await saveDiscoveryProfile(discoveryProfileSavePayload(requested))
+      } else next = await saveDiscoveryProfile(discoveryProfileSavePayload(requested), writeLease.assertCurrent)
+      writeLease.assertCurrent()
       setProfile(next)
       setTargetRoles(lines(next.targetRoleQueries))
       setLocations(lines(next.preferredLocations))
@@ -152,8 +155,10 @@ export default function DiscoveryProfileCard() {
       } else if (cloud.session && !cloud.checkpoint.conflict) {
         try {
           await ensureAuthoritativePersistence(true, cloud.syncNow)
+          writeLease.assertCurrent()
           setMessage(zh ? '岗位发现偏好已保存并请求同步到 Google Drive。' : 'Job-discovery preferences saved and Google Drive sync requested.')
         } catch {
+          writeLease.assertCurrent()
           setMessage(zh ? '岗位发现偏好已保存到本机；Google Drive 暂未同步。' : 'Job-discovery preferences saved locally; Google Drive sync did not complete.')
         }
       } else {
