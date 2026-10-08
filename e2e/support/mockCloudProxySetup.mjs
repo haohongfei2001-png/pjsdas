@@ -10,8 +10,11 @@ const PROBE_HOST = 'todayaction-egress-probe.invalid'
 // These exact fixtures have no production recipient. Rejected attempts remain
 // visible diagnostics; a CONNECT count cannot prove application mock coverage.
 export const SYNTHETIC_MOCK_HOSTS = ['todayaction-backend.invalid', 'todayaction-auth.invalid', 'apply.example.test']
+// Exact known service destination, not a claim about the request's initiator.
+// It is still refused before DNS/upstream I/O; other Mozilla hosts are unknown.
+export const KNOWN_REJECTED_SERVICE_HOSTS = ['aus5.mozilla.org']
 export function unexpectedMockProxyHosts(counts, backgroundHosts) {
-  return [...counts].filter(([host]) => host !== PROBE_HOST && !SYNTHETIC_MOCK_HOSTS.includes(host) && !backgroundHosts.has(host))
+  return [...counts].filter(([host]) => host !== PROBE_HOST && !SYNTHETIC_MOCK_HOSTS.includes(host) && !KNOWN_REJECTED_SERVICE_HOSTS.includes(host) && !backgroundHosts.has(host))
 }
 export const BROWSER_BACKGROUND_HOSTS = ['clients2.google.com', 'accounts.google.com', 'www.google.com', 'update.googleapis.com', 'android.clients.google.com', 'content-autofill.googleapis.com']
 /** Safe success-log evidence: fixed host names and counts only. The complete
@@ -21,10 +24,12 @@ export function mockProxyLogSummary(counts, backgroundHosts) {
   const blockedAttempts = [...counts.values()].reduce((sum, count) => sum + count, 0)
   const deliberateProbeAttempts = counts.get(PROBE_HOST) ?? 0
   const rejectedSyntheticTargets = Object.fromEntries(SYNTHETIC_MOCK_HOSTS.filter(host => counts.has(host)).map(host => [host, counts.get(host)]))
+  const rejectedKnownServiceTargets = Object.fromEntries(KNOWN_REJECTED_SERVICE_HOSTS.filter(host => counts.has(host)).map(host => [host, counts.get(host)]))
   return { scope: 'rejecting proxy only', forwardedRequests: 0, blockedAttempts, deliberateProbeAttempts,
-    browserBackground, rejectedSyntheticTargets, otherBlockedAttempts: blockedAttempts - deliberateProbeAttempts
+    browserBackground, rejectedSyntheticTargets, rejectedKnownServiceTargets, otherBlockedAttempts: blockedAttempts - deliberateProbeAttempts
       - Object.values(browserBackground).reduce((sum, count) => sum + count, 0)
-      - Object.values(rejectedSyntheticTargets).reduce((sum, count) => sum + count, 0) }
+      - Object.values(rejectedSyntheticTargets).reduce((sum, count) => sum + count, 0)
+      - Object.values(rejectedKnownServiceTargets).reduce((sum, count) => sum + count, 0) }
 }
 /** Diagnostic classification only. Every request is still rejected with 502.
  * Application traffic to these same hosts is separately rejected and failed
@@ -128,6 +133,8 @@ export default async function setup(config) {
       scope: 'This proxy only. Browser/API transport adoption is established by the separate isolation tests; arbitrary Node HTTP is outside this counter.',
       blockedHosts: Object.fromEntries(proxy.counts),
       rejectedSyntheticTargets: Object.fromEntries([...proxy.counts].filter(([host]) => SYNTHETIC_MOCK_HOSTS.includes(host))),
+      rejectedKnownServiceTargets: Object.fromEntries([...proxy.counts].filter(([host]) => KNOWN_REJECTED_SERVICE_HOSTS.includes(host))),
+      knownServiceClassification: 'Exact destination only; does not establish a browser-background initiator. All such attempts remain rejected.',
       coverageLimit: 'Blocked transport counts do not establish that every business request was mocked. Original business assertions and guard-first refusal tests remain required.',
       rejectedBrowserBackground: Object.fromEntries([...proxy.counts].filter(([host]) => backgroundHosts.has(host))),
       backgroundClassification: backgroundHosts.size ? { ...installed, applicationGuard: 'voiceoverMockTest: context fallback, WebSocket rejection, ServiceWorkers blocked; see per-test application request evidence' } : null,

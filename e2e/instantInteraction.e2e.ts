@@ -502,13 +502,19 @@ test('independent Gmail update during optimistic completion recovers the revisio
 test('a genuine local field edit blocks confirmed projection and is never overwritten', async ({ page, context }) => {
   const server = await setup(context)
   server.setDelay(1000)
+  const release = server.holdNextConfirmation()
   await start(page)
-  await page.locator('[data-action-id="dense-action-0"] .tsui-done-action').click()
-  await page.evaluate(async () => {
-    const db = await (await import('/pjsdas/src/db.ts')).dbPromise
-    const action = await db.get('actions', 'dense-action-0')
-    await db.put('actions', { ...action!, status: 'skipped', updatedAt: '2026-10-01T02:00:00Z' })
-  })
+  try {
+    await page.locator('[data-action-id="dense-action-0"] .tsui-done-action').click()
+    // The local edit must race confirmation of an admitted command, not
+    // prevent initial submission before this scenario has begun.
+    await expect.poll(() => server.sent.length).toBe(1)
+    await page.evaluate(async () => {
+      const db = await (await import('/pjsdas/src/db.ts')).dbPromise
+      const action = await db.get('actions', 'dense-action-0')
+      await db.put('actions', { ...action!, status: 'skipped', updatedAt: '2026-10-01T02:00:00Z' })
+    })
+  } finally { release() }
   await expect.poll(() => server.snapshot.data.actions[0].status).toBe('done')
   await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem('pjsdas-cgr01-pending:instant-owner') ?? '[]')[0]?.status)).toBe('projection_pending')
   expect(await page.evaluate(async () => (await (await import('/pjsdas/src/db.ts')).dbPromise).get('actions', 'dense-action-0').then(action => action?.status))).toBe('skipped')

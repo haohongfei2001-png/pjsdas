@@ -27,7 +27,7 @@ it('success-log evidence counts every attempt while only naming fixed browser ho
   const counts = new Map([['accounts.google.com', 3], ['todayaction-egress-probe.invalid', 2], ['synthetic-private-query.invalid', 4]])
   const result = mockProxyLogSummary(counts, new Set(['accounts.google.com', 'synthetic-private-query.invalid']))
   expect(result).toEqual({ scope: 'rejecting proxy only', forwardedRequests: 0, blockedAttempts: 9, deliberateProbeAttempts: 2,
-    browserBackground: { 'accounts.google.com': 3 }, rejectedSyntheticTargets: {}, otherBlockedAttempts: 4 })
+    browserBackground: { 'accounts.google.com': 3 }, rejectedSyntheticTargets: {}, rejectedKnownServiceTargets: {}, otherBlockedAttempts: 4 })
   expect(JSON.stringify(result)).not.toContain('synthetic-private-query')
   expect(mockProxyLogSummary(counts, new Set())).toMatchObject({ blockedAttempts: 9, browserBackground: {}, otherBlockedAttempts: 7 })
 })
@@ -90,12 +90,13 @@ it('keeps exact synthetic targets refused and counted without treating their tra
     }).on('error', reject)
   })
   const synthetic = ['todayaction-backend.invalid', 'todayaction-auth.invalid', 'apply.example.test']
-  const unexpected = ['unknown.invalid', 'other.example.test', 'todayaction-backend.invalid.evil.test', 'pjsdas-remote-alpha.vercel.app', 'yyrzwpoxlxpafdlbkdtg.supabase.co']
+  const unexpected = ['unknown.invalid', 'other.example.test', 'todayaction-backend.invalid.evil.test', 'pjsdas-remote-alpha.vercel.app', 'yyrzwpoxlxpafdlbkdtg.supabase.co', 'other.mozilla.org', 'aus5.mozilla.org.evil.test']
   try {
-    for (const host of [...synthetic, ...unexpected]) expect(await blocked(host)).toBe(502)
-    expect([...proxy.counts.keys()]).toEqual([...synthetic, ...unexpected])
+    for (const host of [...synthetic, 'aus5.mozilla.org', ...unexpected]) expect(await blocked(host)).toBe(502)
+    expect([...proxy.counts.keys()]).toEqual([...synthetic, 'aus5.mozilla.org', ...unexpected])
     expect(unexpectedMockProxyHosts(proxy.counts, new Set())).toEqual(unexpected.map(host => [host, 1]))
-    expect(mockProxyLogSummary(proxy.counts, new Set())).toMatchObject({ forwardedRequests: 0, blockedAttempts: 8,
-      rejectedSyntheticTargets: Object.fromEntries(synthetic.map(host => [host, 1])), otherBlockedAttempts: 5 })
+    expect(mockProxyLogSummary(proxy.counts, new Set())).toMatchObject({ forwardedRequests: 0, blockedAttempts: 11,
+      rejectedSyntheticTargets: Object.fromEntries(synthetic.map(host => [host, 1])),
+      rejectedKnownServiceTargets: { 'aus5.mozilla.org': 1 }, otherBlockedAttempts: 7 })
   } finally { await proxy.close() }
 })
