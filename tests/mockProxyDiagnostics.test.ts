@@ -1,6 +1,36 @@
 import http from 'node:http'
+import net from 'node:net'
 import { expect, it, vi } from 'vitest'
-import { createRejectingMockProxy } from '../e2e/support/mockCloudProxySetup.mjs'
+import { createRejectingMockProxy, mockProxyLogSummary } from '../e2e/support/mockCloudProxySetup.mjs'
+
+it('survives a real peer reset after rejecting CONNECT and retains the blocked attempt', async () => {
+  const proxy = createRejectingMockProxy()
+  await new Promise<void>(resolve => proxy.server.listen(0, '127.0.0.1', resolve))
+  const tunnel = new Promise<net.Socket>(resolve => proxy.server.once('connect', (_request, socket) => resolve(socket)))
+  const client = net.createConnection(proxy.server.address().port, '127.0.0.1')
+  client.on('error', () => {})
+  try {
+    const response = new Promise<Buffer>(resolve => client.once('data', resolve))
+    client.write('CONNECT todayaction-egress-probe.invalid:443 HTTP/1.1\r\nHost: todayaction-egress-probe.invalid:443\r\n\r\n')
+    const socket = await tunnel
+    const closed = new Promise<void>(resolve => socket.once('close', resolve))
+    expect((await response).toString()).toContain('502 Mock external request blocked')
+    client.resetAndDestroy()
+    await closed
+    expect(proxy.counts.get('todayaction-egress-probe.invalid')).toBe(1)
+    expect(proxy.socketErrors.get('ECONNRESET')).toBe(1)
+    expect(mockProxyLogSummary(proxy.counts, new Set()).forwardedRequests).toBe(0)
+  } finally { client.destroy(); await proxy.close() }
+})
+
+it('success-log evidence counts every attempt while only naming fixed browser hosts', () => {
+  const counts = new Map([['accounts.google.com', 3], ['todayaction-egress-probe.invalid', 2], ['synthetic-private-query.invalid', 4]])
+  const result = mockProxyLogSummary(counts, new Set(['accounts.google.com', 'synthetic-private-query.invalid']))
+  expect(result).toEqual({ scope: 'rejecting proxy only', forwardedRequests: 0, blockedAttempts: 9, deliberateProbeAttempts: 2,
+    browserBackground: { 'accounts.google.com': 3 }, otherBlockedAttempts: 4 })
+  expect(JSON.stringify(result)).not.toContain('synthetic-private-query')
+  expect(mockProxyLogSummary(counts, new Set())).toMatchObject({ blockedAttempts: 9, browserBackground: {}, otherBlockedAttempts: 7 })
+})
 
 it('keeps all unknown requests rejected while distinguishing exact local favicon diagnostics without paths or headers', async () => {
   const proxy = createRejectingMockProxy()

@@ -17,6 +17,8 @@ export const test = voiceOverTest.extend({
       // Finish application activity before recording the final guard result.
       await context.close()
       await info.attach('mock-application-requests.json', { body: JSON.stringify({ browser: browser.version(), proof: proof ?? null, blocked: guard.blocked }), contentType: 'application/json' })
+      const counts = (records: typeof guard.blocked) => Object.fromEntries(['http', 'websocket', 'serviceworker'].map(kind => [kind, records.filter(record => record.kind === kind).length]))
+      console.log(`VoiceOver application guard evidence: ${JSON.stringify({ browser: browser.version(), proofCompleted: Boolean(proof), proofAttempts: counts(proof ?? []), unexpectedApplicationAttempts: counts(guard.blocked) })}`)
       if (proof) guard.assertNoUnexpectedRequests()
     }
   },

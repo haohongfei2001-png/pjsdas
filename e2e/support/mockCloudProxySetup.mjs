@@ -8,6 +8,15 @@ export const MOCK_PROXY_ORIGIN = `http://127.0.0.1:${PROXY_PORT}`
 export const MOCK_PROXY = { server: MOCK_PROXY_ORIGIN, bypass: '127.0.0.1,localhost,[::1]' }
 const PROBE_HOST = 'todayaction-egress-probe.invalid'
 export const BROWSER_BACKGROUND_HOSTS = ['clients2.google.com', 'accounts.google.com', 'www.google.com', 'update.googleapis.com', 'android.clients.google.com', 'content-autofill.googleapis.com']
+/** Safe success-log evidence: fixed host names and counts only. The complete
+ * host accounting remains in the existing artifact, including unknown misses. */
+export function mockProxyLogSummary(counts, backgroundHosts) {
+  const browserBackground = Object.fromEntries(BROWSER_BACKGROUND_HOSTS.filter(host => backgroundHosts.has(host)).map(host => [host, counts.get(host) ?? 0]))
+  const blockedAttempts = [...counts.values()].reduce((sum, count) => sum + count, 0)
+  const deliberateProbeAttempts = counts.get(PROBE_HOST) ?? 0
+  return { scope: 'rejecting proxy only', forwardedRequests: 0, blockedAttempts, deliberateProbeAttempts,
+    browserBackground, otherBlockedAttempts: blockedAttempts - deliberateProbeAttempts - Object.values(browserBackground).reduce((sum, count) => sum + count, 0) }
+}
 /** Diagnostic classification only. Every request is still rejected with 502.
  * Application traffic to these same hosts is separately rejected and failed
  * by voiceoverMockTest's mandatory context guard before reaching this proxy. */
@@ -29,6 +38,7 @@ export function voiceOverBackgroundDiagnostics(config, installed) {
 export function createRejectingMockProxy() {
   const counts = new Map()
   const requestClasses = new Map()
+  const socketErrors = new Map()
   const record = (request, transport = 'http') => {
     const target = request.url ?? ''
     const tunnel = transport === 'connect'
@@ -43,6 +53,9 @@ export function createRejectingMockProxy() {
     let host = 'invalid-target'
     try { host = new URL(tunnel ? `https://${target}` : target).hostname } catch {}
     counts.set(host, (counts.get(host) ?? 0) + 1)
+    if (host === 'todayaction-backend.invalid' || host === 'todayaction-auth.invalid') {
+      console.log(`Mock application transport rejected: ${JSON.stringify({ at: new Date().toISOString(), host, transport })}`)
+    }
   }
   const server = http.createServer((request, response) => {
     if (request.url === '/__mock_proxy_stats' && request.method === 'GET') {
@@ -62,12 +75,23 @@ export function createRejectingMockProxy() {
     response.writeHead(502, { 'content-type': 'text/plain', connection: 'close' }); response.end('MOCK_EXTERNAL_REQUEST_BLOCKED')
   })
   const sockets = new Set()
-  server.on('connection', socket => { sockets.add(socket); socket.on('close', () => sockets.delete(socket)) })
+  server.on('connection', socket => {
+    sockets.add(socket)
+    socket.on('close', () => sockets.delete(socket))
+    // Node removes its HTTP parser's listener when CONNECT/upgrade hands the
+    // socket to us. A browser may reset that already-rejected tunnel after 502.
+    // Handle only this accepted peer; retain the refusal and error accounting.
+    socket.on('error', error => {
+      const code = error.code === 'ECONNRESET' || error.code === 'EPIPE' ? error.code : 'other'
+      socketErrors.set(code, (socketErrors.get(code) ?? 0) + 1)
+      socket.destroy()
+    })
+  })
   for (const event of ['connect', 'upgrade']) server.on(event, (request, socket) => {
     record(request, event)
     socket.end('HTTP/1.1 502 Mock external request blocked\r\nConnection: close\r\nContent-Length: 0\r\n\r\n')
   })
-  return { server, counts, requestClasses, close: async () => { for (const socket of sockets) socket.destroy(); await new Promise(resolve => server.close(resolve)) } }
+  return { server, counts, requestClasses, socketErrors, close: async () => { for (const socket of sockets) socket.destroy(); await new Promise(resolve => server.close(resolve)) } }
 }
 
 export default async function setup(config) {
@@ -96,8 +120,10 @@ export default async function setup(config) {
       blockedHosts: Object.fromEntries(proxy.counts),
       rejectedBrowserBackground: Object.fromEntries([...proxy.counts].filter(([host]) => backgroundHosts.has(host))),
       backgroundClassification: backgroundHosts.size ? { ...installed, applicationGuard: 'voiceoverMockTest: context fallback, WebSocket rejection, ServiceWorkers blocked; see per-test application request evidence' } : null,
-      requestClasses: Object.fromEntries(proxy.requestClasses) }, null, 2))
+      requestClasses: Object.fromEntries(proxy.requestClasses), peerSocketErrors: Object.fromEntries(proxy.socketErrors) }, null, 2))
+    console.log(`Mock cloud transport evidence: ${JSON.stringify({ ...mockProxyLogSummary(proxy.counts, backgroundHosts), peerSocketErrors: Object.fromEntries(proxy.socketErrors) })}`)
     const unexpected = [...proxy.counts].filter(([host]) => host !== PROBE_HOST && !backgroundHosts.has(host))
     if (unexpected.length) throw new Error(`Unmatched external requests were blocked by mock CI: ${unexpected.map(([host, count]) => `${host} (${count})`).join(', ')}; request classes: ${JSON.stringify(Object.fromEntries(proxy.requestClasses))}`)
+    if (proxy.socketErrors.has('other')) throw new Error('Unexpected accepted-socket error in mock proxy.')
   }
 }
