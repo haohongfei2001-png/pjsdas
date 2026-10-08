@@ -85,6 +85,8 @@ jobs:
           npx @guidepup/setup setup --ci || npx @guidepup/setup setup --ci
           npx @guidepup/setup install
       - name: Run real VoiceOver Today and capture journey
+        env:
+          DEBUG: pw:browser
         run: npx playwright test --config=playwright.voiceover.config.mts
       - name: Upload failures
         if: failure()

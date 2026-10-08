@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test'
+import { verifiedPostingFixture } from '../tests/fixtures/verifiedDiscovery.js'
 import { unknownDeadlineWorkspace } from '../tests/fixtures/unknownDeadlineWorkspace.js'
 
 const now = '2026-10-07T08:00:00.000Z'
@@ -75,20 +76,20 @@ test('local read restore and cloud replacement preserve absent or sparse archive
 })
 
 test('local reviewed Discovery batch validates every source before committing any job, status or audit', async ({ page }) => {
+  const observations = await Promise.all(['100001', '100002'].map(async id => ({ id, value: await verifiedPostingFixture({
+    company: 'Same synthetic company', role: 'Product Manager', sourceUrl: `https://www.liepin.com/job/${id}.shtml`, sourceTitle: 'Synthetic recruiting page',
+  }, now) })))
   await page.clock.setFixedTime(new Date(now))
   await page.goto('/pjsdas/today')
   await expect(page.locator('.tsui-primary-nav')).toBeVisible()
-  const result = await page.evaluate(async at => {
+  const result = await page.evaluate(async ({ at, observations }) => {
     const { dbPromise, restoreLocalSnapshot, applyChangeSet, savePendingChangeSet } = await import('/pjsdas/src/db.ts')
     const { createSnapshot } = await import('/pjsdas/src/snapshot.ts')
     const { createMonitorOpportunity } = await import('/pjsdas/src/autonomousIngestion.ts')
-    const { verifiedDiscoveryFixture } = await import('/pjsdas/tests/fixtures/verifiedDiscovery.ts')
     await restoreLocalSnapshot(createSnapshot({ opportunities: [], processes: [], processEvents: [], actions: [], prep: [], applicationGroups: [], timeline: [], changeSets: [] }, at))
     const db = await dbPromise
-    const make = (id: string) => ({ id: `add:${id}`, kind: 'add_discovered_opportunity' as const, summary: 'Synthetic source facts',
-      opportunity: { ...createMonitorOpportunity(verifiedDiscoveryFixture({ sourceRecordId: id, company: 'Same synthetic company', role: 'Product Manager',
-        sourceUrl: `https://www.liepin.com/job/${id}.shtml`, sourceTitle: 'Synthetic recruiting page' }, at), at), id } })
-    const operations = [make('100001'), make('100002')]
+    const operations = observations.map(({ id, value }) => ({ id: `add:${id}`, kind: 'add_discovered_opportunity' as const, summary: 'Synthetic source facts',
+      opportunity: { ...createMonitorOpportunity(value, at), id } }))
     const invalid = structuredClone(operations)
     invalid[1].opportunity.detail!.discovery!.posting!.sourceProof = undefined
     invalid[1].opportunity.detail!.discovery!.sourceProof = undefined
@@ -106,7 +107,7 @@ test('local reviewed Discovery batch validates every source before committing an
     await applyChangeSet(valid.id)
     return { failed, afterFailure, jobs: await db.getAll('opportunities'), actions: await db.getAll('actions'), schedule: await db.getAll('scheduleNodes'),
       change: await db.get('changeSets', valid.id), firstAudit, replayAudit: await db.getAll('timeline') }
-  }, now)
+  }, { at: now, observations })
   expect(result.failed).toContain('DISCOVERY_VERIFICATION_REQUIRED')
   expect(result.afterFailure.jobs).toEqual([])
   expect(result.afterFailure.audit).toEqual([])

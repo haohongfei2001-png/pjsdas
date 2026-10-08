@@ -25,8 +25,11 @@ test('mock browser isolation blocks pages, extra context, redirects, websocket a
   }
   await page.goto(`${MOCK_PROXY_ORIGIN}/__mock_proxy_page`)
   await blocked(() => page.evaluate(url => fetch(url).then(() => 'unexpected success', () => 'blocked'), probe))
-  await blocked(async () => { await page.goto(`${MOCK_PROXY_ORIGIN}/__mock_proxy_redirect`).catch(() => undefined) })
-  await page.goto(`${MOCK_PROXY_ORIGIN}/__mock_proxy_page`)
+  // A blocked navigation may still finish its browser error-page transition.
+  // Own that navigation in another page so it cannot interrupt the next probe.
+  const redirectPage = await page.context().newPage()
+  try { await blocked(async () => { await redirectPage.goto(`${MOCK_PROXY_ORIGIN}/__mock_proxy_redirect`).catch(() => undefined) }) }
+  finally { await redirectPage.close() }
   await blocked(() => page.evaluate(() => new Promise<void>(resolve => {
     const ws = new WebSocket('wss://todayaction-egress-probe.invalid/socket'); ws.onerror = () => resolve(); ws.onopen = () => { ws.close(); throw new Error('Unexpected external WebSocket') }
   })))

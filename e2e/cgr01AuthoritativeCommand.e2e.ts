@@ -1,4 +1,4 @@
-import { MOCK_TARGET_AUTH_KEY, MOCK_TARGET_BACKEND } from './support/mockCloudTargets.js'
+import { MOCK_TARGET_AUTH_KEY, MOCK_TARGET_BACKEND, MOCK_TARGET_AUTH_ORIGIN } from './support/mockCloudTargets.js'
 import { freezeTodayFixture } from './support/consumerFixtureClock.js'
 import { expect, test, type Page, type Route } from '@playwright/test'
 import { upgradeSnapshotToLatest, type PJSDASSnapshot } from '../src/snapshot.js'
@@ -94,6 +94,12 @@ function session(accountKey: string, token: string) {
 
 async function seedInitialSession(page: Page, accountKey: string, token: string) {
   await freezeTodayFixture(page)
+  await page.route(`${MOCK_TARGET_AUTH_ORIGIN}/auth/v1/logout*`, route => {
+    if (route.request().method() === 'OPTIONS') return cors(route, {}, 204)
+    expect(route.request().method()).toBe('POST')
+    expect(tokenOf(route)).toBe(token)
+    return cors(route, {}, 200)
+  })
   await page.addInitScript(({ key, value }) => {
     if (!window.localStorage.getItem('cgr01-e2e-auth-seeded')) {
       window.localStorage.setItem(key, JSON.stringify(value))

@@ -1,3 +1,4 @@
+import { MOCK_TARGET_AUTH_ORIGIN } from './support/mockCloudTargets.js'
 import { expect, test, type Page } from '@playwright/test'
 import { BACKEND, cors, health, seedSession, workspace } from './fixtures/todayWorkspace.js'
 import { applySemanticIntake, applySemanticCompensation } from '../src/semanticIntake.js'
@@ -24,7 +25,7 @@ for (const width of [390, 1440]) test(`B1 global add, explicit today and timed t
   const mutations: string[] = []
   let holdSubmission = false, releaseSubmission = () => {}
   let submissionAcknowledgement = Promise.resolve()
-  await page.route(/https:\/\/[^/]+\.supabase\.co\//, route => route.abort())
+  await page.route(`${MOCK_TARGET_AUTH_ORIGIN}/**`, route => route.abort())
   await page.route(BACKEND + '/**', async route => {
     const request = route.request(), path = new URL(request.url()).pathname
     if (request.method() === 'OPTIONS') return cors(route, {}, 204)

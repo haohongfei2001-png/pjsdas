@@ -9,7 +9,18 @@ const PROBE_HOST = 'todayaction-egress-probe.invalid'
  * destination. Keep only host/count diagnostics, never paths or headers. */
 export function createRejectingMockProxy() {
   const counts = new Map()
-  const record = (target, tunnel = false) => {
+  const requestClasses = new Map()
+  const record = (request, transport = 'http') => {
+    const target = request.url ?? ''
+    const tunnel = transport === 'connect'
+    const address = server.address()
+    const port = typeof address === 'object' && address ? address.port : PROXY_PORT
+    const localAuthority = [`127.0.0.1:${port}`, `localhost:${port}`, `[::1]:${port}`].includes(request.headers.host ?? '')
+    const form = tunnel ? 'authority' : target.startsWith('/') ? 'origin' : /^[a-z]+:\/\//i.test(target) ? 'absolute' : 'other'
+    const exactLocalFavicon = localAuthority && request.method === 'GET' && target === '/favicon.ico'
+    // Fixed categories only: never retain arbitrary paths, headers or tokens.
+    const category = `${transport}:${form}:${localAuthority ? 'loopback' : 'other'}:${exactLocalFavicon ? 'local-favicon' : 'other'}`
+    requestClasses.set(category, (requestClasses.get(category) ?? 0) + 1)
     let host = 'invalid-target'
     try { host = new URL(tunnel ? `https://${target}` : target).hostname } catch {}
     counts.set(host, (counts.get(host) ?? 0) + 1)
@@ -28,16 +39,16 @@ export function createRejectingMockProxy() {
     if (request.url === '/__mock_proxy_redirect' && request.method === 'GET') {
       response.writeHead(302, { location: `https://${PROBE_HOST}/redirect` }); response.end(); return
     }
-    record(request.url ?? '')
+    record(request)
     response.writeHead(502, { 'content-type': 'text/plain', connection: 'close' }); response.end('MOCK_EXTERNAL_REQUEST_BLOCKED')
   })
   const sockets = new Set()
   server.on('connection', socket => { sockets.add(socket); socket.on('close', () => sockets.delete(socket)) })
   for (const event of ['connect', 'upgrade']) server.on(event, (request, socket) => {
-    record(request.url ?? '', event === 'connect')
+    record(request, event)
     socket.end('HTTP/1.1 502 Mock external request blocked\r\nConnection: close\r\nContent-Length: 0\r\n\r\n')
   })
-  return { server, counts, close: async () => { for (const socket of sockets) socket.destroy(); await new Promise(resolve => server.close(resolve)) } }
+  return { server, counts, requestClasses, close: async () => { for (const socket of sockets) socket.destroy(); await new Promise(resolve => server.close(resolve)) } }
 }
 
 export default async function setup(config) {
@@ -54,8 +65,8 @@ export default async function setup(config) {
     await mkdir(directory, { recursive: true })
     await writeFile(`${directory}/mock-cloud-egress.json`, JSON.stringify({ proxyForwardedRequests: 0,
       scope: 'This proxy only. Browser/API transport adoption is established by the separate isolation tests; arbitrary Node HTTP is outside this counter.',
-      blockedHosts: Object.fromEntries(proxy.counts) }, null, 2))
+      blockedHosts: Object.fromEntries(proxy.counts), requestClasses: Object.fromEntries(proxy.requestClasses) }, null, 2))
     const unexpected = [...proxy.counts].filter(([host]) => host !== PROBE_HOST)
-    if (unexpected.length) throw new Error(`Unmatched external requests were blocked by mock CI: ${unexpected.map(([host, count]) => `${host} (${count})`).join(', ')}`)
+    if (unexpected.length) throw new Error(`Unmatched external requests were blocked by mock CI: ${unexpected.map(([host, count]) => `${host} (${count})`).join(', ')}; request classes: ${JSON.stringify(Object.fromEntries(proxy.requestClasses))}`)
   }
 }
