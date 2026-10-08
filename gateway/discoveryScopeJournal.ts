@@ -2,6 +2,8 @@ import type { DiscoveryAutomationSourcePlan } from '../src/discoveryAutomation.j
 import { discoveryProfileManagementFingerprint } from '../src/discoveryProfileManagement.js'
 import { discoveryScopeBatchSchema, type DiscoveryScopeBatch, type DiscoveryScopeLedgerRecord } from '../src/discoveryScopeBatch.js'
 import type { DiscoveryWebQuery } from '../src/discoveryQueryPlan.js'
+import { verifyDiscoveryBudgetAdmission } from './discoveryBatchSpend.js'
+import { describeDiscoveryBatchSpendHold, type DiscoveryBatchSpendHold, type DiscoverySpendPolicy } from './discoverySpendPolicy.js'
 import { hashMutationPayload } from './mutationKernel.js'
 import { validateDiscoveryReceipt, verifiedDiscoveryCommandId } from './verifiedDiscoveryCommit.js'
 import { requireWritableWorkspaceSource, WorkspaceSourceError, type WorkspaceSource, type DiscoveryCommitAuthorization } from './workspaceSource.js'
@@ -18,14 +20,14 @@ export function batchMetadata(identity: ScopeBatchIdentity, settled?: Omit<Disco
 }
 export function batchRequest(identity: ScopeBatchIdentity) { return { contractVersion: 2, ...identity } }
 export async function batchRunId(identity: ScopeBatchIdentity) { return `server-discovery-batch:${await hashMutationPayload('discovery_scope_batch', batchRequest(identity))}` }
-export async function checkpointIdentity(identity: ScopeBatchIdentity, batch: DiscoveryScopeBatch) {
-  const request = { request: batchRequest(identity), batch }
+export async function checkpointIdentity(identity: ScopeBatchIdentity, batch: DiscoveryScopeBatch, budgetHold?: DiscoveryBatchSpendHold) {
+  const request = { request: batchRequest(identity), batch, ...(budgetHold ? { discoveryBudgetHold: budgetHold } : {}) }
   return { commandId: `discovery-search-${batch.phase}:${await hashMutationPayload('discovery_scope_checkpoint', batchRequest(identity))}`,
     kind: 'checkpoint_discovery_search', inputFingerprint: await hashMutationPayload('checkpoint_discovery_search', request), request }
 }
-export function batchProvenance(identity: ScopeBatchIdentity, runId: string, batch: DiscoveryScopeBatch) {
+export function batchProvenance(identity: ScopeBatchIdentity, runId: string, batch: DiscoveryScopeBatch, budgetHold?: DiscoveryBatchSpendHold) {
   return { producer: 'server_scheduler', sourceId: identity.sourceId, scopeFingerprint: identity.scopeFingerprint, runId,
-    searchPlanFingerprint: identity.planFingerprint, searchCycleId: identity.cycleId, searchPhase: batch.phase, searchBatchIndex: batch.index, searchBatch: batch }
+    searchPlanFingerprint: identity.planFingerprint, searchCycleId: identity.cycleId, searchPhase: batch.phase, searchBatchIndex: batch.index, searchBatch: batch, ...(budgetHold ? { discoveryBudgetHold: budgetHold } : {}) }
 }
 
 function identityFor(source: DiscoveryAutomationSourcePlan, scopeFingerprint: string, planFingerprint: string, cycleId: string, size: number, index: number): ScopeBatchIdentity {
@@ -40,6 +42,7 @@ export async function nextDiscoveryScopeBatch(input: {
   source: WorkspaceSource; sourceRun: DiscoveryAutomationSourcePlan; scopeFingerprint: string; planFingerprint: string
   batchSize: number; workspaceVersion: string; now: Date; force: boolean; legacyDue: () => Promise<boolean>
   restartCompletedCycles?: boolean
+  spendPolicy?: DiscoverySpendPolicy
 }) {
   const { source, sourceRun, scopeFingerprint, planFingerprint, batchSize, now } = input
   if (!source.readDiscoveryScopeRecords) throw new WorkspaceSourceError('DISCOVERY_AUTHORITATIVE_COMMAND_REQUIRED', 'Search batches require the authoritative command ledger.', false)
@@ -56,7 +59,10 @@ export async function nextDiscoveryScopeBatch(input: {
       outcome: record.batch.outcome, successfulQueryCount: record.batch.successfulQueryCount, failedQueryCount: record.batch.failedQueryCount,
       ...(record.batch.omittedHitCount === undefined ? {} : { omittedHitCount: record.batch.omittedHitCount }), ...(record.batch.errorCode ? { errorCode: record.batch.errorCode } : {}),
     } : undefined, record.batch.claimAttemptId)
-    const checkpoint = await checkpointIdentity(identity, expected), runId = await batchRunId(identity)
+    const hold = input.spendPolicy ? await describeDiscoveryBatchSpendHold({ policy: input.spendPolicy,
+      accountId: input.spendPolicy.accountId, scopeFingerprint, sourceId: identity.sourceId,
+      claimAttemptId: expected.claimAttemptId, queryCount: expected.queryCount }) : undefined
+    const checkpoint = await checkpointIdentity(identity, expected, expected.phase === 'claimed' ? hold : undefined), runId = await batchRunId(identity)
     const command = record.operation === 'ingest_verified_discovery'
       ? { commandId: await verifiedDiscoveryCommandId(sourceRun.sourceId, runId), kind: record.operation, inputFingerprint: await hashMutationPayload('ingest_verified_discovery', batchRequest(identity)) }
       : checkpoint
@@ -64,6 +70,7 @@ export async function nextDiscoveryScopeBatch(input: {
     if (JSON.stringify(record.batch) !== JSON.stringify(expected) || record.runId !== runId
       || record.operation === 'ingest_verified_discovery' && record.batch.phase !== 'settled') throw new WorkspaceSourceError('DISCOVERY_RECEIPT_MISMATCH', 'Search progress disagrees with the complete immutable plan.', false)
     validateDiscoveryReceipt(record, command, input.workspaceVersion)
+    if (hold) await verifyDiscoveryBudgetAdmission(record.receipt, hold)
     const target = record.batch.phase === 'claimed' ? claimed : settled
     if (target.has(record.batch.index)) throw new WorkspaceSourceError('DISCOVERY_RECEIPT_MISMATCH', 'A search batch has conflicting original receipts.', false)
     target.set(record.batch.index, record)
@@ -102,8 +109,9 @@ export async function nextDiscoveryScopeBatch(input: {
 export async function commitDiscoveryCheckpoint(input: {
   source: WorkspaceSource; identity: ScopeBatchIdentity; batch: DiscoveryScopeBatch; authorize: () => Promise<void>
   discoveryAuthorization: DiscoveryCommitAuthorization
+  budgetHold?: DiscoveryBatchSpendHold
 }) {
-  const writable = requireWritableWorkspaceSource(input.source), command = await checkpointIdentity(input.identity, input.batch), runId = await batchRunId(input.identity)
+  const writable = requireWritableWorkspaceSource(input.source), command = await checkpointIdentity(input.identity, input.batch, input.budgetHold), runId = await batchRunId(input.identity)
   if (input.discoveryAuthorization.kind !== 'automation' || !input.source.readCommandReceipt || !input.source.readRawForCheckpoint) throw new WorkspaceSourceError('AUTH_FORBIDDEN', 'Search checkpoints require existing server automation authority and its exact raw preimage.', false)
   for (let attempt = 0; attempt < 2; attempt += 1) {
     await input.authorize()
@@ -114,7 +122,7 @@ export async function commitDiscoveryCheckpoint(input: {
       written = await writable.write({ snapshot: workspace.snapshot, expectedWorkspaceVersion: workspace.context.workspaceVersion,
         updatedByDevice: 'discovery-search-checkpoint', command: { commandId: command.commandId, operation: command.kind, payload: command.request,
           payloadHash: command.inputFingerprint, discoveryAuthorization: input.discoveryAuthorization,
-          provenance: batchProvenance(input.identity, runId, input.batch) } })
+          provenance: batchProvenance(input.identity, runId, input.batch, input.budgetHold) } })
     } catch (error) {
       if (error instanceof WorkspaceSourceError && error.code === 'WORKSPACE_CONFLICT' && attempt === 0) continue
       // A lost claim ACK cannot prove this invocation won. It must not send.
@@ -127,6 +135,7 @@ export async function commitDiscoveryCheckpoint(input: {
       || written.commandReceipt?.revision !== receipt.revision) throw new WorkspaceSourceError('DISCOVERY_RECEIPT_MISMATCH', 'Search claim response and original receipt disagree.', false)
     if (written.commandOutcome === 'COMMITTED' && (written.context.workspaceVersion !== `txn:${receipt.revision}`
       || Number(receipt.revision) !== Number(workspace.context.workspaceVersion?.slice(4)) + 1)) throw new WorkspaceSourceError('DISCOVERY_RECEIPT_MISMATCH', 'A first claim must carry its own new authoritative revision.', false)
+    if (input.budgetHold) await verifyDiscoveryBudgetAdmission(receipt, input.budgetHold)
     return { firstCommit: written.commandOutcome === 'COMMITTED', receipt }
   }
   throw new WorkspaceSourceError('WORKSPACE_CONFLICT', 'Search checkpoint could not pass bounded CAS.', true)

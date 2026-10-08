@@ -1,4 +1,6 @@
 import { automationGoogleRefreshLifecycle } from './googleRefreshLifecycle.js'
+import type { DiscoveryModelTransport } from './discoveryBatchSpend.js'
+import type { DiscoverySpendPolicy } from './discoverySpendPolicy.js'
 import type { ReserveDiscoverySpend } from './discoveryBudgetGuard.js'
 import type { DiscoverySearchProvider, ReserveDiscoverySearch } from './discoverySearchExecution.js'
 import { createAutomationConnectionStore } from './automationConnectionStore.js'
@@ -19,12 +21,14 @@ export interface DiscoveryAutomationHandlerConfig {
   googleClientSecret: string
   aiGatewayModel?: string
   budgetPolicyVersion?: string
+  batchSpend?: { policy: DiscoverySpendPolicy; modelTransport: DiscoveryModelTransport }
   generateTextImpl?: DiscoveryGenerateText
   reserveSpend?: ReserveDiscoverySpend
   searchProvider?: DiscoverySearchProvider
   reserveSearch?: ReserveDiscoverySearch
   fetchImpl?: typeof fetch
   now?: () => Date
+  assertRuntimeCurrent?: () => void
 }
 
 function json(status: number, body: unknown) {
@@ -99,6 +103,7 @@ export function createDiscoveryAutomationHandler(config: DiscoveryAutomationHand
       return json(status, error)
     }
 
+    if (config.batchSpend) bindings = bindings.filter(item => item.userId === config.batchSpend!.policy.accountId)
     if (requestedUserId) bindings = bindings.filter((item) => item.userId === requestedUserId)
 
     if (probe) {
@@ -135,6 +140,7 @@ export function createDiscoveryAutomationHandler(config: DiscoveryAutomationHand
           googleClientSecret: config.googleClientSecret,
           aiGatewayModel: config.aiGatewayModel,
           budgetPolicyVersion: config.budgetPolicyVersion,
+          batchSpend: config.batchSpend,
           generateTextImpl: config.generateTextImpl,
           reserveSpend: config.reserveSpend,
           searchProvider: config.searchProvider,
@@ -145,6 +151,7 @@ export function createDiscoveryAutomationHandler(config: DiscoveryAutomationHand
               || active.googleSubject !== binding.googleSubject) {
               throw new WorkspaceSourceError('AUTH_FORBIDDEN', 'Discovery consent was revoked, replaced or changed after this run was admitted.', false)
             }
+            config.assertRuntimeCurrent?.()
           },
           fetchImpl: config.fetchImpl,
           now: config.now,
