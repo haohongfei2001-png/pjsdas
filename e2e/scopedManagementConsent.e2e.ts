@@ -179,6 +179,7 @@ for (const width of [1280,390]) test(`all consumer flags off retains owned revoc
  await choice.selectOption('revoke');await page.getByLabel('我已核对账号、客户端及上方列出的本次变更。').check();await page.getByRole('button',{name:'确认所选变更'}).click()
  await expect.poll(()=>f.posts.length).toBe(1);expect(f.posts[0].choices).toHaveLength(1)
  expect(f.posts[0].choices[0]).toMatchObject({domain:'business',decision:'revoke',expectedGrant:{revision:3}})
+ await expect(page.getByText('这次决定已记录；下方展示重新读取的当前授权状态。',{exact:true})).toBeVisible()
  await expect.poll(()=>f.state.clients[0].grants[0].revoked_at).not.toBeNull()
  expect(f.initializations).toEqual([])
 })

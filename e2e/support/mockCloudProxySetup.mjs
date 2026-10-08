@@ -7,6 +7,12 @@ export const PROXY_PORT = 18879
 export const MOCK_PROXY_ORIGIN = `http://127.0.0.1:${PROXY_PORT}`
 export const MOCK_PROXY = { server: MOCK_PROXY_ORIGIN, bypass: '127.0.0.1,localhost,[::1]' }
 const PROBE_HOST = 'todayaction-egress-probe.invalid'
+// These exact fixtures have no production recipient. Rejected attempts remain
+// visible diagnostics; a CONNECT count cannot prove application mock coverage.
+export const SYNTHETIC_MOCK_HOSTS = ['todayaction-backend.invalid', 'todayaction-auth.invalid', 'apply.example.test']
+export function unexpectedMockProxyHosts(counts, backgroundHosts) {
+  return [...counts].filter(([host]) => host !== PROBE_HOST && !SYNTHETIC_MOCK_HOSTS.includes(host) && !backgroundHosts.has(host))
+}
 export const BROWSER_BACKGROUND_HOSTS = ['clients2.google.com', 'accounts.google.com', 'www.google.com', 'update.googleapis.com', 'android.clients.google.com', 'content-autofill.googleapis.com']
 /** Safe success-log evidence: fixed host names and counts only. The complete
  * host accounting remains in the existing artifact, including unknown misses. */
@@ -14,8 +20,11 @@ export function mockProxyLogSummary(counts, backgroundHosts) {
   const browserBackground = Object.fromEntries(BROWSER_BACKGROUND_HOSTS.filter(host => backgroundHosts.has(host)).map(host => [host, counts.get(host) ?? 0]))
   const blockedAttempts = [...counts.values()].reduce((sum, count) => sum + count, 0)
   const deliberateProbeAttempts = counts.get(PROBE_HOST) ?? 0
+  const rejectedSyntheticTargets = Object.fromEntries(SYNTHETIC_MOCK_HOSTS.filter(host => counts.has(host)).map(host => [host, counts.get(host)]))
   return { scope: 'rejecting proxy only', forwardedRequests: 0, blockedAttempts, deliberateProbeAttempts,
-    browserBackground, otherBlockedAttempts: blockedAttempts - deliberateProbeAttempts - Object.values(browserBackground).reduce((sum, count) => sum + count, 0) }
+    browserBackground, rejectedSyntheticTargets, otherBlockedAttempts: blockedAttempts - deliberateProbeAttempts
+      - Object.values(browserBackground).reduce((sum, count) => sum + count, 0)
+      - Object.values(rejectedSyntheticTargets).reduce((sum, count) => sum + count, 0) }
 }
 /** Diagnostic classification only. Every request is still rejected with 502.
  * Application traffic to these same hosts is separately rejected and failed
@@ -118,11 +127,13 @@ export default async function setup(config) {
     await writeFile(`${directory}/mock-cloud-egress.json`, JSON.stringify({ proxyForwardedRequests: 0,
       scope: 'This proxy only. Browser/API transport adoption is established by the separate isolation tests; arbitrary Node HTTP is outside this counter.',
       blockedHosts: Object.fromEntries(proxy.counts),
+      rejectedSyntheticTargets: Object.fromEntries([...proxy.counts].filter(([host]) => SYNTHETIC_MOCK_HOSTS.includes(host))),
+      coverageLimit: 'Blocked transport counts do not establish that every business request was mocked. Original business assertions and guard-first refusal tests remain required.',
       rejectedBrowserBackground: Object.fromEntries([...proxy.counts].filter(([host]) => backgroundHosts.has(host))),
       backgroundClassification: backgroundHosts.size ? { ...installed, applicationGuard: 'voiceoverMockTest: context fallback, WebSocket rejection, ServiceWorkers blocked; see per-test application request evidence' } : null,
       requestClasses: Object.fromEntries(proxy.requestClasses), peerSocketErrors: Object.fromEntries(proxy.socketErrors) }, null, 2))
     console.log(`Mock cloud transport evidence: ${JSON.stringify({ ...mockProxyLogSummary(proxy.counts, backgroundHosts), peerSocketErrors: Object.fromEntries(proxy.socketErrors) })}`)
-    const unexpected = [...proxy.counts].filter(([host]) => host !== PROBE_HOST && !backgroundHosts.has(host))
+    const unexpected = unexpectedMockProxyHosts(proxy.counts, backgroundHosts)
     if (unexpected.length) throw new Error(`Unmatched external requests were blocked by mock CI: ${unexpected.map(([host, count]) => `${host} (${count})`).join(', ')}; request classes: ${JSON.stringify(Object.fromEntries(proxy.requestClasses))}`)
     if (proxy.socketErrors.has('other')) throw new Error('Unexpected accepted-socket error in mock proxy.')
   }

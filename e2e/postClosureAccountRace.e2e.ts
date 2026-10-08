@@ -58,8 +58,19 @@ for (const scenario of ['sign-out', 'local-edit', 'command-sign-out', 'command-l
     })
     revision = 9
     snapshot.data.actions[1].title = 'Newer remote change'
+    if (scenario === 'checkpoint-interruption-edited') await page.addInitScript(() => {
+      ;(window as any).__checkpointRecovery = []
+      window.addEventListener('pjsdas:command-recovered', event => {
+        const detail = (event as CustomEvent).detail
+        if (detail.commandId === 'interrupted') (window as any).__checkpointRecovery.push(detail)
+      })
+    })
     await page.reload()
     if (scenario === 'checkpoint-interruption-edited') {
+      // Prove automatic receipt recovery ran after reload and refused to
+      // overwrite the local edit, rather than only reading preexisting IDB.
+      await expect.poll(() => page.evaluate(() => (window as any).__checkpointRecovery)).toContainEqual(
+        expect.objectContaining({ commandId: 'interrupted', outcome: 'ALREADY_APPLIED', localProjection: 'pending' }))
       await expect.poll(() => page.evaluate(async () => (await (await import('/pjsdas/src/db.ts')).exportLocalSnapshot()).data.actions.find(a => a.id === 'A-action-1')?.title)).toBe('Genuine post-projection edit')
       expect(await page.evaluate(() => localStorage.getItem('pjsdas-cgr01-pending:account-a'))).not.toBeNull()
       expect(commandCalls).toBe(1)

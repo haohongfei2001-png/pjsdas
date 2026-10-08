@@ -31,10 +31,6 @@ jobs:
     if: >-
       (github.event_name != 'pull_request' || github.event.pull_request.draft == false || (github.event.pull_request.head.repo.full_name == github.repository && contains(github.event.pull_request.labels.*.name, format('full:{0}', github.event.pull_request.head.sha))))
     runs-on: ubuntu-24.04
-    # Firefox's supported temporary policy is inherited by its process. Never
-    # copy process.env into launchOptions: persistent traces serialize them.
-    env:
-      PLAYWRIGHT_FIREFOX_POLICIES_JSON: ${{ github.workspace }}/e2e/support/firefoxMockPolicies.json
     # PR216 added 18 cross-engine review journeys. All 204 core + 134 dense
     # cases passed, but the 30-minute orchestration cap cut off the final
     # performance tail. Allow bounded runner overhead; retain every test and
@@ -60,7 +56,26 @@ jobs:
         run: |
           # Actions mounts a host-owned home; Firefox requires it to match this container user.
           chown "$(id -u):$(id -g)" "$HOME"
-          node --input-type=module -e 'import { firefox, webkit, chromium } from "playwright"; for (const type of [firefox, webkit, chromium]) { const browser = await type.launch({ headless: true }); await browser.close(); }'
+          # Resolve inside this container; github.workspace is a host path here.
+          # Inherit one policy variable, never serialize launchOptions.env.
+          export PLAYWRIGHT_FIREFOX_POLICIES_JSON="$PWD/e2e/support/firefoxMockPolicies.json"
+          test -r "$PLAYWRIGHT_FIREFOX_POLICIES_JSON"
+          printf '%s\n' "PLAYWRIGHT_FIREFOX_POLICIES_JSON=$PLAYWRIGHT_FIREFOX_POLICIES_JSON" >> "$GITHUB_ENV"
+          node --input-type=module <<'NODE'
+          import { firefox, webkit, chromium } from 'playwright'
+          for (const type of [firefox, webkit, chromium]) {
+            const browser = await type.launch({ headless: true })
+            try {
+              if (type === firefox) {
+                const page = await browser.newPage()
+                await page.goto('about:policies#active')
+                await page.waitForFunction(() => [...document.querySelectorAll('#activeContent tr')].some(row =>
+                  JSON.stringify([...row.querySelectorAll('td')].map(cell => cell.textContent.trim())) === JSON.stringify(['DisableAppUpdate', 'true'])))
+                console.log('Firefox temporary DisableAppUpdate policy is active.')
+              }
+            } finally { await browser.close() }
+          }
+          NODE
       - name: Prove mock cloud isolation before application browser tests
         run: npx playwright test --config=playwright.cloud-guard.config.mts --project=chromium --project=firefox --project=webkit
       - name: Fixed 300-job, 500-action, 130-node, 2000-history projection sample

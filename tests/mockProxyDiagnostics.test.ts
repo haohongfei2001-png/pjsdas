@@ -1,7 +1,7 @@
 import http from 'node:http'
 import net from 'node:net'
 import { expect, it, vi } from 'vitest'
-import { createRejectingMockProxy, mockProxyLogSummary } from '../e2e/support/mockCloudProxySetup.mjs'
+import { createRejectingMockProxy, mockProxyLogSummary, unexpectedMockProxyHosts } from '../e2e/support/mockCloudProxySetup.mjs'
 
 it('survives a real peer reset after rejecting CONNECT and retains the blocked attempt', async () => {
   const proxy = createRejectingMockProxy()
@@ -27,7 +27,7 @@ it('success-log evidence counts every attempt while only naming fixed browser ho
   const counts = new Map([['accounts.google.com', 3], ['todayaction-egress-probe.invalid', 2], ['synthetic-private-query.invalid', 4]])
   const result = mockProxyLogSummary(counts, new Set(['accounts.google.com', 'synthetic-private-query.invalid']))
   expect(result).toEqual({ scope: 'rejecting proxy only', forwardedRequests: 0, blockedAttempts: 9, deliberateProbeAttempts: 2,
-    browserBackground: { 'accounts.google.com': 3 }, otherBlockedAttempts: 4 })
+    browserBackground: { 'accounts.google.com': 3 }, rejectedSyntheticTargets: {}, otherBlockedAttempts: 4 })
   expect(JSON.stringify(result)).not.toContain('synthetic-private-query')
   expect(mockProxyLogSummary(counts, new Set())).toMatchObject({ blockedAttempts: 9, browserBackground: {}, otherBlockedAttempts: 7 })
 })
@@ -77,4 +77,25 @@ it('classifies only the pinned headed VoiceOver context and never business or un
   expect(voiceOverBackgroundDiagnostics(config, { ...installed, chromium: '154.0.0.0' }).size).toBe(0)
   vi.stubEnv('PW_TEST_CONNECT_WS_ENDPOINT', 'ws://synthetic.invalid')
   try { expect(voiceOverBackgroundDiagnostics(config, installed).size).toBe(0) } finally { vi.unstubAllEnvs() }
+})
+
+
+it('keeps exact synthetic targets refused and counted without treating their transport attempts as proof of mock coverage', async () => {
+  const proxy = createRejectingMockProxy()
+  await new Promise<void>(resolve => proxy.server.listen(0, '127.0.0.1', resolve))
+  const port = proxy.server.address().port
+  const blocked = (host: string) => new Promise<number>((resolve, reject) => {
+    http.get({ hostname: '127.0.0.1', port, path: `https://${host}/synthetic-request` }, response => {
+      response.resume(); response.on('end', () => resolve(response.statusCode!))
+    }).on('error', reject)
+  })
+  const synthetic = ['todayaction-backend.invalid', 'todayaction-auth.invalid', 'apply.example.test']
+  const unexpected = ['unknown.invalid', 'other.example.test', 'todayaction-backend.invalid.evil.test', 'pjsdas-remote-alpha.vercel.app', 'yyrzwpoxlxpafdlbkdtg.supabase.co']
+  try {
+    for (const host of [...synthetic, ...unexpected]) expect(await blocked(host)).toBe(502)
+    expect([...proxy.counts.keys()]).toEqual([...synthetic, ...unexpected])
+    expect(unexpectedMockProxyHosts(proxy.counts, new Set())).toEqual(unexpected.map(host => [host, 1]))
+    expect(mockProxyLogSummary(proxy.counts, new Set())).toMatchObject({ forwardedRequests: 0, blockedAttempts: 8,
+      rejectedSyntheticTargets: Object.fromEntries(synthetic.map(host => [host, 1])), otherBlockedAttempts: 5 })
+  } finally { await proxy.close() }
 })
