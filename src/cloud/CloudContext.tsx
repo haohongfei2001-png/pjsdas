@@ -111,7 +111,8 @@ function ActiveCloudProvider({ children }: { children: ReactNode }) {
   // becomes interactive. getSession/INITIAL_SESSION will resolve it explicitly.
   useLayoutEffect(() => {
     beginAccountCacheSessionResolution()
-    return beginAccountCacheSessionResolution
+    // Unmount is not an Auth transition: a verified same-page failed clear
+    // must retain its existing recovery lease until Retry completes it.
   }, [])
   const configured = true
   const [session, setSession] = useState<CloudSession | null>(null)

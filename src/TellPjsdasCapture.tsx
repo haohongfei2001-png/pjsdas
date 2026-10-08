@@ -12,6 +12,7 @@ import {
 } from './webSemanticIntake.js'
 import { useUiLanguage } from './uiLanguage.js'
 import { useCloud } from './cloud/CloudContext.js'
+import { WorkspaceWriteAuthError } from './cloud/workspaceWriteLease.js'
 import { ensureAuthoritativePersistence } from './cloud/authoritativePersistence.js'
 import { connectedWorkspaceAuthorityEnabled } from './cloud/connectedWorkspaceRepository.js'
 import {
@@ -39,7 +40,7 @@ interface TellPjsdasCaptureProps {
   contextRefs?: string[]
 }
 
-type CaptureSaveState = 'idle' | 'saving' | 'saved' | 'offline' | 'unknown' | 'reauth' | 'conflict' | 'error' | 'confirmed_pending' | 'blocked_by_pending'
+type CaptureSaveState = 'idle' | 'saving' | 'saved' | 'offline' | 'unknown' | 'reauth' | 'conflict' | 'error' | 'confirmed_pending' | 'blocked_by_pending' | 'auth_unconfirmed'
 
 function targetLabel(candidate: SemanticCandidate) {
   const target = candidate.target
@@ -96,6 +97,9 @@ function modeExplanation(preview: WebSemanticCapturePreview, zh: boolean) {
 }
 
 function saveErrorCopy(state: CaptureSaveState, zh: boolean) {
+  if (state === 'auth_unconfirmed') return zh
+    ? '内容尚未保存。请等待账号恢复后重试；若一直无法恢复，请到设置重新连接。'
+    : 'Nothing was saved. Retry after your account recovers, or reconnect in Settings if it stays unavailable.'
   if (state === 'unknown') return zh
     ? '可能已经保存。请先点“确认保存状态”；确认前不要重复提交。'
     : 'This may already be saved. Check the save status before submitting again.'
@@ -378,7 +382,8 @@ export default function TellPjsdasCapture({
     } catch (caught) {
       const detail = caught instanceof Error ? caught.message : String(caught)
       setError(detail)
-      if (caught instanceof UnknownCommandOutcomeError) setSaveState('unknown')
+      if (caught instanceof WorkspaceWriteAuthError) setSaveState('auth_unconfirmed')
+      else if (caught instanceof UnknownCommandOutcomeError) setSaveState('unknown')
       else if (caught instanceof ConnectedProjectionPendingError) setSaveState('confirmed_pending')
       else if (caught instanceof CommandBlockedByPendingProjectionError) {
         setSaveState('blocked_by_pending')
@@ -493,7 +498,8 @@ export default function TellPjsdasCapture({
             <div className="cgr-understanding-head">
               <strong>{previewBusy ? (zh ? '正在理解…' : 'Understanding…') : (zh ? 'TodayAction 理解为' : 'TodayAction understands')}</strong>
               <span data-state={saveState}>
-                {saveState === 'saving' ? (zh ? '正在保存' : 'Saving')
+                {saveState === 'auth_unconfirmed' ? (zh ? '等待账号确认' : 'Waiting for account confirmation')
+                  : saveState === 'saving' ? (zh ? '正在保存' : 'Saving')
                   : saveState === 'saved' ? (zh ? '已保存' : 'Saved')
                   : saveState === 'unknown' ? (zh ? '等待确认' : 'Confirming')
                   : saveState === 'confirmed_pending' ? (zh ? '服务器已确认，本机待刷新' : 'Server confirmed; device refresh pending')
@@ -559,7 +565,9 @@ export default function TellPjsdasCapture({
         ) : null}
         {error ? (
           <div className={`cgr-capture-error state-${saveState}`} role="alert">
-            <strong>{saveState === 'unknown'
+            <strong>{saveState === 'auth_unconfirmed'
+              ? (zh ? '账号尚未确认' : 'Account not confirmed')
+              : saveState === 'unknown'
               ? (zh ? '保存结果暂时未知' : 'Save outcome is not confirmed yet')
               : saveState === 'confirmed_pending'
                 ? (zh ? '服务器已确认，本机待安全刷新' : 'Server confirmed; this device awaits a safe refresh')
