@@ -1,6 +1,6 @@
 import { interactionIsRecent } from './interactionActivity.js'
 import { mockCloudMode, passiveCloudReadAllowed } from './runtimeCloudMode.js'
-import { canMountMockAccountCache, forgetMockCacheProvenance, hasMockCacheProvenance, markVerifiedMockCache, MOCK_CACHE_STOP } from './mockCacheBoundary.js'
+import { canMountMockAccountCache, clearVerifiedMockAccountCache, forgetMockCacheProvenance, hasMockCacheProvenance, hasPendingMockCacheClear, markVerifiedMockCache, MOCK_CACHE_STOP } from './mockCacheBoundary.js'
 import { captureAccountCacheLease } from './accountCacheLease.js'
 import { setAccountCacheSession } from './accountCacheLease.js'
 import {
@@ -66,8 +66,18 @@ interface CloudContextValue {
 
 const CloudContext = createContext<CloudContextValue | null>(null)
 
+async function clearAccountBoundaryCache(assertCurrent?: () => void) {
+  const cleared = await clearLocalWorkspaceCache(assertCurrent)
+  const fingerprint = await fingerprintWorkspace(cleared)
+  assertCurrent?.()
+  recordClearedAccountCache(fingerprint)
+  clearLocalWorkspaceBinding()
+  if (mockCloudMode()) forgetMockCacheProvenance(window.localStorage)
+}
+
 export function CloudProvider({ children }: { children: ReactNode }) {
   const mock = mockCloudMode()
+  const [recoveryError, setRecoveryError] = useState<string>()
   const [gate, setGate] = useState<'checking' | 'ready' | 'stopped'>(() => {
     if (!mock) { if (typeof window !== 'undefined') forgetMockCacheProvenance(window.localStorage); return 'ready' }
     return getCloudDeviceState().workspaceOwnerUserId ? 'checking' : 'ready'
@@ -75,11 +85,20 @@ export function CloudProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (gate !== 'checking') return
     let active = true
+    if (hasPendingMockCacheClear(window.localStorage, getCloudDeviceState())) {
+      // Retry a failed, already-authorized page-lifetime clear before mounting
+      // children. Never expose the logged-out cache while recovery is pending.
+      void clearVerifiedMockAccountCache(window.localStorage, getCloudDeviceState, clearAccountBoundaryCache)
+        .then(() => { if (active) setGate('ready') })
+        .catch(caught => { if (active) setRecoveryError(caught instanceof Error ? caught.message : String(caught)) })
+      return () => { active = false }
+    }
     void canMountMockAccountCache(window.localStorage, getCloudDeviceState).then(allowed => {
       if (active) setGate(allowed ? 'ready' : 'stopped')
     }).catch(() => { if (active) setGate('stopped') })
     return () => { active = false }
   }, [gate])
+  if (recoveryError !== undefined) throw new Error(recoveryError)
   // Do not mount children or Auth/account-boundary effects until an old bound
   // cache is proven to come from this isolated mock client.
   if (gate !== 'ready') return <div role="status" className="cloud-security-note">{gate === 'checking' ? '正在核对本地缓存来源… / Checking local cache origin…' : MOCK_CACHE_STOP}</div>
@@ -101,7 +120,6 @@ function ActiveCloudProvider({ children }: { children: ReactNode }) {
   const adoptionTailRef = useRef<Promise<boolean>>(Promise.resolve(true))
   const adoptionSequenceRef = useRef(0)
   const boundaryFailedRef = useRef(false)
-  const explicitMockSignOutRef = useRef(false)
 
   const refreshState = useCallback((userId?: string) => {
     setDevice(getCloudDeviceState())
@@ -122,17 +140,16 @@ function ActiveCloudProvider({ children }: { children: ReactNode }) {
       if (boundaryFailedRef.current || sequence !== adoptionSequenceRef.current) return false
       if (mockCloudMode()) {
         const current = getCloudDeviceState()
-        if (current.workspaceOwnerUserId && (!hasMockCacheProvenance(window.localStorage, current) || !next && !explicitMockSignOutRef.current)) throw new Error(MOCK_CACHE_STOP)
+        if (current.workspaceOwnerUserId && !hasMockCacheProvenance(window.localStorage, current)) throw new Error(MOCK_CACHE_STOP)
       }
       if (connectedWorkspaceAuthorityEnabled()) {
         await enforceConnectedAccountCacheBoundary(
           getCloudDeviceState().workspaceOwnerUserId,
           next?.user.id,
-          async () => {
-            const cleared = await clearLocalWorkspaceCache()
-            recordClearedAccountCache(await fingerprintWorkspace(cleared))
-          },
-          () => { clearLocalWorkspaceBinding(); if (mockCloudMode()) forgetMockCacheProvenance(window.localStorage) },
+          () => mockCloudMode()
+            ? clearVerifiedMockAccountCache(window.localStorage, getCloudDeviceState, clearAccountBoundaryCache)
+            : clearAccountBoundaryCache(),
+          () => {},
         )
       }
       if (sequence !== adoptionSequenceRef.current) return false
@@ -446,14 +463,12 @@ function ActiveCloudProvider({ children }: { children: ReactNode }) {
           }),
         })
       }
-      explicitMockSignOutRef.current = mockCloudMode()
       await signOutCloud()
       if (!await adoptSession(null)) throw new Error('Account cache recovery is required before continuing.')
       setOutcome(undefined)
       setError(undefined)
       setLoading(false)
     } finally {
-      explicitMockSignOutRef.current = false
       busyRef.current = false
       setSyncing(false)
     }

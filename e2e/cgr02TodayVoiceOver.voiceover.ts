@@ -1,4 +1,4 @@
-import { voiceOverTest as test } from '@guidepup/playwright'
+import { test } from './support/voiceoverMockTest.js'
 import { expect } from '@playwright/test'
 import { prepareJourney } from './support/cgr02Journey.js'
 

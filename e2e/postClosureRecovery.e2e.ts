@@ -7,6 +7,39 @@ import type { PJSDASSnapshot } from '../src/snapshot.js'
 
 test.beforeEach(async ({ page }) => { await freezeTodayFixture(page) })
 
+for (const changedAt of ['before transaction', 'after queued clears'] as const) test(`mock logout clear aborts on a new account ${changedAt}`, async ({ page }) => {
+  await page.route('**/pjsdas/clear-account-race', route => route.fulfill({ contentType: 'text/html', body: '<!doctype html><title>Account clear race</title>' }))
+  await page.goto('/pjsdas/clear-account-race')
+  const result = await page.evaluate(async ({ snapshot, changedAt }) => {
+    const db = await import('/pjsdas/src/db.ts')
+    const lease = await import('/pjsdas/src/cloud/accountCacheLease.ts')
+    await db.restoreLocalSnapshot(snapshot)
+    const before = (await db.exportLocalRecoveryArchive()).stores
+    lease.setAccountCacheSession(undefined)
+    const generation = lease.currentAccountCacheGeneration()
+    let checks = 0, cancelled = false
+    try {
+      await db.clearLocalWorkspaceCache(() => {
+        checks += 1
+        if (checks === (changedAt === 'before transaction' ? 1 : 3)) lease.setAccountCacheSession('new-account')
+        if (lease.currentAccountCacheGeneration() !== generation) throw new lease.AccountCacheChangedError()
+      })
+    } catch (error) {
+      if (!(error instanceof lease.AccountCacheChangedError)) throw error
+      cancelled = true
+    }
+    const after = (await db.exportLocalRecoveryArchive()).stores
+    // The existing unguarded production call retains its ordinary atomic clear.
+    await db.clearLocalWorkspaceCache()
+    const ordinary = (await db.exportLocalRecoveryArchive()).stores
+    return { cancelled, checks, before, after, ordinaryActions: ordinary.actions }
+  }, { snapshot: workspace('2026-09-30'), changedAt })
+  expect(result.cancelled).toBe(true)
+  expect(result.checks).toBe(changedAt === 'before transaction' ? 1 : 3)
+  expect(result.after).toEqual(result.before)
+  expect(result.ordinaryActions).toEqual([])
+})
+
 for (const trigger of ['auth-expiry', 'settings-sign-out'] as const)
 for (const failure of ['partial-clear-throw', 'transaction-abort'] as const) test(`${trigger} ${failure} reaches lossless recovery without leaving the expired account interactive`, async ({ page }, info) => {
   const snapshot = workspace('2026-09-30')

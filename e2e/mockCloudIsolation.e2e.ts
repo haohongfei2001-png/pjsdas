@@ -47,3 +47,23 @@ test('mock browser isolation blocks pages, extra context, redirects, websocket a
     }))
   } finally { await extra.close() }
 })
+
+test('VoiceOver application guard rejects same-host browser-service impersonation and worker paths', async ({ browser, browserName, request }) => {
+  test.skip(browserName !== 'chromium', 'This guard is used only by pinned headed Chromium VoiceOver contexts.')
+  const { guardMockApplicationRequests, proveMockApplicationGuard } = await import('./support/mockApplicationRequests.js')
+  const context = await browser.newContext({ serviceWorkers: 'block' })
+  const guard = await guardMockApplicationRequests(context)
+  const count = async () => Number((await (await request.get(`${MOCK_PROXY_ORIGIN}/__mock_proxy_stats`)).json())['accounts.google.com'] ?? 0)
+  const before = await count()
+  try {
+    const proof = await proveMockApplicationGuard(context, guard)
+    expect(proof).toHaveLength(6)
+    expect(guard.blocked).toEqual([])
+    guard.assertNoUnexpectedRequests()
+    const businessPage = await context.newPage()
+    await businessPage.goto(`${MOCK_PROXY_ORIGIN}/__mock_proxy_page`)
+    await businessPage.evaluate(() => fetch('https://accounts.google.com/unmocked-business').catch(() => undefined))
+    expect(() => guard.assertNoUnexpectedRequests()).toThrow('Unmocked application requests: http accounts.google.com')
+    expect(await count()).toBe(before) // Application attempts never become proxy-level background noise.
+  } finally { await context.close() }
+})

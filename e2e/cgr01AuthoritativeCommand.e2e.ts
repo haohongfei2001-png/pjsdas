@@ -3,6 +3,9 @@ import { freezeTodayFixture } from './support/consumerFixtureClock.js'
 import { expect, test, type Page, type Route } from '@playwright/test'
 import { upgradeSnapshotToLatest, type PJSDASSnapshot } from '../src/snapshot.js'
 import { applyDiscoveryPromotionCommand } from '../src/discoveryPromotionCommand.js'
+import { applyDiscoveryProfileCommand } from '../src/discoveryProfileCommand.js'
+import { createJobPostingEvidence } from '../src/jobPosting.js'
+import { verifiedPostingFixture } from '../tests/fixtures/verifiedDiscovery.js'
 import { applyDomainCompensation, applyUserDomainCommand, type DomainCompensation } from '../src/domainCommands.js'
 import { applyProcessEventDeleteCommand } from '../src/processEventDeleteCommand.js'
 
@@ -637,11 +640,15 @@ test('CGR-05 Discovery status, Profile and promotion use scoped first-party comm
   const state: AccountState = { revision: 7, snapshot: workspace('A'), receipts: new Map() }
   state.snapshot.data.discoveryInbox = [{
     id: 'inbox:cgr05-job', candidateOpportunityId: 'cgr05-job', company: '合成公司', role: '产品设计师',
-    roleType: 'core', sourceUrl: 'https://example.test/job/1', sourceTitle: '产品设计师',
+    roleType: 'core', sourceUrl: 'https://www.liepin.com/job/9401.shtml', sourceTitle: '产品设计师',
     rationale: '可核对的招聘来源', opportunityValue: 72, fitScore: 78,
     fitConfidence: 'medium', opportunityValueConfidence: 'medium', status: 'new',
     discoveredAt: '2026-09-23T00:00:00.000Z', createdAt: '2026-09-23T00:00:00.000Z', updatedAt: '2026-09-23T00:00:00.000Z',
   }]
+  const inboxItem = state.snapshot.data.discoveryInbox[0]
+  const observation = await verifiedPostingFixture(inboxItem, inboxItem.discoveredAt)
+  inboxItem.posting = createJobPostingEvidence({ ...observation, observedAt: inboxItem.discoveredAt })
+  inboxItem.sourceProof = observation.sourceProof
   const commandBodies: Array<Record<string, any>> = []
   let snapshotCommits = 0
 
@@ -672,8 +679,8 @@ test('CGR-05 Discovery status, Profile and promotion use scoped first-party comm
             item.seenAt = new Date().toISOString()
             item.updatedAt = item.seenAt
           }
-        } else if (command?.type === 'discovery_profile' && command.value?.key === 'current') {
-          state.snapshot.data.discoveryProfile = command.value
+        } else if (command?.type === 'discovery_profile') {
+          state.snapshot = applyDiscoveryProfileCommand(state.snapshot, command.value).snapshot
         } else if (command?.type === 'discovery_promotion' && command.value?.inboxItemId === 'inbox:cgr05-job') {
           state.snapshot = applyDiscoveryPromotionCommand(state.snapshot, command.value).snapshot
         } else return cors(route, { code: 'UNEXPECTED_COMMAND' }, 400)

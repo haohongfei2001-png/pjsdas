@@ -1,9 +1,16 @@
 import type { CloudDeviceState } from './syncState.js'
 import { mockCloudMode, MOCK_AUTH_ORIGIN, MOCK_AUTH_STORAGE_KEY, MOCK_BACKEND_ORIGIN } from './runtimeCloudMode.js'
+import { AccountCacheChangedError, currentAccountCacheGeneration, currentAccountCacheSession } from './accountCacheLease.js'
 
 export const MOCK_CACHE_PROVENANCE_KEY = 'todayaction-mock-cache-provenance-v1'
 type StorageView = Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>
 type MockCacheProof = { version: 1; owner: string; deviceId: string; authOrigin: string; backendOrigin: string; authStorageKey: string; fingerprint: string; tokenSha256: string }
+// Page-lifetime evidence only. A persisted marker by itself never authorizes
+// clearing an unknown cache. A failed clear can survive a recovery remount,
+// but neither a reload nor a new Auth/cache generation can inherit its intent.
+const verifiedThisPage = new WeakMap<StorageView, string>()
+type PendingClear = { proof: string; generation: number; account?: string; auth: string | null; running?: Promise<void> }
+const pendingClears = new WeakMap<StorageView, PendingClear>()
 export const MOCK_CACHE_STOP = '本地模拟模式已暂停：现有账号缓存的来源未能确认。缓存已保留，请使用明确的 live 配置恢复原账号。 / Local mock mode is paused because the account cache origin is unconfirmed. The cache is preserved; restore its account with explicit live configuration.'
 
 function readProof(storage: StorageView): MockCacheProof | undefined {
@@ -46,10 +53,12 @@ export async function canMountMockAccountCache(storage: StorageView, readState: 
   if (!token) return false
   const digest = await sha256(token)
   const current = typeof readState === 'function' ? readState() : readState
-  return current.workspaceOwnerUserId === state.workspaceOwnerUserId && current.deviceId === state.deviceId
+  const allowed = current.workspaceOwnerUserId === state.workspaceOwnerUserId && current.deviceId === state.deviceId
     && current.accounts[state.workspaceOwnerUserId]?.lastSyncedFingerprint === state.accounts[state.workspaceOwnerUserId]?.lastSyncedFingerprint
     && hasMockCacheProvenance(storage, current) && sessionToken(storage, state.workspaceOwnerUserId, Math.max(now, Date.now())) === token
     && readProof(storage)?.tokenSha256 === digest
+  if (allowed) verifiedThisPage.set(storage, storage.getItem(MOCK_CACHE_PROVENANCE_KEY)!)
+  return allowed
 }
 /** Call only after a new/mock-authorized binding has completed a verified sync.
  * The caller must recheck the same account lease after this awaited hash. */
@@ -68,8 +77,48 @@ export async function markVerifiedMockCache(storage: StorageView, readState: () 
   storage.setItem(MOCK_CACHE_PROVENANCE_KEY, JSON.stringify({ version: 1, owner, deviceId: before.deviceId,
     authOrigin: MOCK_AUTH_ORIGIN, backendOrigin: MOCK_BACKEND_ORIGIN, authStorageKey: MOCK_AUTH_STORAGE_KEY,
     fingerprint: checkpoint.lastSyncedFingerprint, tokenSha256 } satisfies MockCacheProof))
+  verifiedThisPage.set(storage, storage.getItem(MOCK_CACHE_PROVENANCE_KEY)!)
 }
-export function forgetMockCacheProvenance(storage: StorageView) { storage.removeItem(MOCK_CACHE_PROVENANCE_KEY) }
+export function forgetMockCacheProvenance(storage: StorageView) {
+  storage.removeItem(MOCK_CACHE_PROVENANCE_KEY)
+  verifiedThisPage.delete(storage)
+  pendingClears.delete(storage)
+}
+
+function clearIsCurrent(storage: StorageView, state: CloudDeviceState, pending: PendingClear) {
+  return hasMockCacheProvenance(storage, state) && storage.getItem(MOCK_CACHE_PROVENANCE_KEY) === pending.proof
+    && currentAccountCacheGeneration() === pending.generation && currentAccountCacheSession() === pending.account
+    && storage.getItem(MOCK_AUTH_STORAGE_KEY) === pending.auth
+}
+export function hasPendingMockCacheClear(storage: StorageView, state: CloudDeviceState) {
+  const pending = pendingClears.get(storage)
+  if (!pending) return false
+  if (clearIsCurrent(storage, state, pending)) return true
+  pendingClears.delete(storage)
+  return false
+}
+/** Only continues the ordinary account-boundary clear after a verified mock
+ * session is lost or replaced. It supplies no session or authorization. */
+export async function clearVerifiedMockAccountCache(storage: StorageView, readState: () => CloudDeviceState, clear: (assertCurrent: () => void) => Promise<void>) {
+  let pending = pendingClears.get(storage)
+  if (pending && !clearIsCurrent(storage, readState(), pending)) {
+    pendingClears.delete(storage)
+    throw new AccountCacheChangedError()
+  }
+  if (!pending) {
+    const state = readState(), proof = storage.getItem(MOCK_CACHE_PROVENANCE_KEY)
+    if (!proof || !hasMockCacheProvenance(storage, state) || verifiedThisPage.get(storage) !== proof) throw new Error(MOCK_CACHE_STOP)
+    pending = { proof, generation: currentAccountCacheGeneration(), account: currentAccountCacheSession(), auth: storage.getItem(MOCK_AUTH_STORAGE_KEY) }
+    pendingClears.set(storage, pending)
+  }
+  if (pending.running) return pending.running
+  const intent = pending
+  const assertCurrent = () => { if (!clearIsCurrent(storage, readState(), intent)) throw new AccountCacheChangedError() }
+  const running = Promise.resolve().then(() => { assertCurrent(); return clear(assertCurrent) })
+  intent.running = running
+  try { await running; if (pendingClears.get(storage) === intent) pendingClears.delete(storage) }
+  finally { if (intent.running === running) intent.running = undefined }
+}
 
 /** Preserve an already established mock binding through verified checkpoint
  * advances. This cannot create proof for an unknown/legacy binding. Live
@@ -80,5 +129,7 @@ export function advanceExistingMockCacheProof(storage: StorageView, before: Clou
   const fingerprint = after.accounts[after.workspaceOwnerUserId!]?.lastSyncedFingerprint
   if (!fingerprint) return
   const proof = readProof(storage)!
+  const remembered = verifiedThisPage.get(storage) === storage.getItem(MOCK_CACHE_PROVENANCE_KEY)
   storage.setItem(MOCK_CACHE_PROVENANCE_KEY, JSON.stringify({ ...proof, fingerprint }))
+  if (remembered) verifiedThisPage.set(storage, storage.getItem(MOCK_CACHE_PROVENANCE_KEY)!)
 }

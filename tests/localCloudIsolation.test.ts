@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { canMountMockAccountCache, markVerifiedMockCache, advanceExistingMockCacheProof, MOCK_CACHE_PROVENANCE_KEY } from '../src/cloud/mockCacheBoundary.js'
+import { canMountMockAccountCache, clearVerifiedMockAccountCache, forgetMockCacheProvenance, hasPendingMockCacheClear, markVerifiedMockCache, advanceExistingMockCacheProof, MOCK_CACHE_PROVENANCE_KEY } from '../src/cloud/mockCacheBoundary.js'
+import { AccountCacheChangedError, setAccountCacheSession } from '../src/cloud/accountCacheLease.js'
 import { resolveCloudMode, MOCK_AUTH_STORAGE_KEY, passiveCloudReadAllowed } from '../src/cloud/runtimeCloudMode.js'
 import type { CloudDeviceState } from '../src/cloud/syncState.js'
 afterEach(() => { vi.unstubAllGlobals(); vi.unstubAllEnvs(); vi.restoreAllMocks() })
@@ -76,5 +77,79 @@ describe('development cloud isolation without production behavior changes', () =
     let checks = 0
     await expect(markVerifiedMockCache(store, () => current, 'account-a', () => { if (++checks === 2) throw new Error('old lease') })).rejects.toThrow('old lease')
     expect(store.getItem(MOCK_CACHE_PROVENANCE_KEY)).toBeNull()
+  })
+  it('continues a verified session logout after a failed clear without accepting an anonymous reload', async () => {
+    const store = storage(), current = state(), data = ['private mock row']
+    setAccountCacheSession('account-a'); store.setItem(MOCK_AUTH_STORAGE_KEY, JSON.stringify(session))
+    await markVerifiedMockCache(store, () => current, 'account-a', () => {})
+    setAccountCacheSession(undefined); store.removeItem(MOCK_AUTH_STORAGE_KEY)
+    await expect(clearVerifiedMockAccountCache(store, () => current, async assertCurrent => { assertCurrent(); throw Error('transaction aborted') })).rejects.toThrow('transaction aborted')
+    expect(data).toEqual(['private mock row'])
+    expect(hasPendingMockCacheClear(store, current)).toBe(true)
+    expect(await canMountMockAccountCache(store, current)).toBe(false)
+    // A copied/reloaded storage view cannot inherit page-lifetime recovery.
+    const reload = storage(); for (const [key, value] of store.map) reload.setItem(key, value)
+    expect(hasPendingMockCacheClear(reload, current)).toBe(false)
+    const unknownClear = vi.fn()
+    await expect(clearVerifiedMockAccountCache(reload, () => current, unknownClear)).rejects.toThrow('origin is unconfirmed')
+    expect(unknownClear).not.toHaveBeenCalled()
+    await clearVerifiedMockAccountCache(store, () => current, async assertCurrent => {
+      assertCurrent(); data.length = 0; delete current.workspaceOwnerUserId; forgetMockCacheProvenance(store)
+    })
+    expect(data).toEqual([]); expect(hasPendingMockCacheClear(store, current)).toBe(false)
+  })
+  it.each(['new session', 'same account relogin', 'new token', 'new binding', 'new device', 'changed proof'] as const)('never applies a delayed clear after %s', async change => {
+    const store = storage(), current = state(), data = ['new local edit']
+    setAccountCacheSession('account-a'); store.setItem(MOCK_AUTH_STORAGE_KEY, JSON.stringify(session))
+    await markVerifiedMockCache(store, () => current, 'account-a', () => {})
+    setAccountCacheSession(undefined); store.removeItem(MOCK_AUTH_STORAGE_KEY)
+    const gate = Promise.withResolvers<void>(), entered = Promise.withResolvers<void>()
+    const clear = clearVerifiedMockAccountCache(store, () => current, async assertCurrent => {
+      entered.resolve(); await gate.promise; assertCurrent(); data.length = 0
+    })
+    await entered.promise
+    if (change === 'new session') setAccountCacheSession('account-b')
+    if (change === 'same account relogin') { setAccountCacheSession('account-a'); setAccountCacheSession(undefined) }
+    if (change === 'new token') store.setItem(MOCK_AUTH_STORAGE_KEY, JSON.stringify({ ...session, access_token: 'new-session' }))
+    if (change === 'new binding') current.workspaceOwnerUserId = 'account-b'
+    if (change === 'new device') current.deviceId = 'new-device'
+    if (change === 'changed proof') store.removeItem(MOCK_CACHE_PROVENANCE_KEY)
+    gate.resolve(); await expect(clear).rejects.toBeInstanceOf(AccountCacheChangedError)
+    expect(hasPendingMockCacheClear(store, current)).toBe(false); expect(data).toEqual(['new local edit'])
+  })
+  it('coalesces two recovery attempts for the same verified clear intent', async () => {
+    const store = storage(), current = state(); store.setItem(MOCK_AUTH_STORAGE_KEY, JSON.stringify(session))
+    await markVerifiedMockCache(store, () => current, 'account-a', () => {})
+    setAccountCacheSession(undefined); store.removeItem(MOCK_AUTH_STORAGE_KEY)
+    const gate = Promise.withResolvers<void>(), clearing = vi.fn(async assertCurrent => { await gate.promise; assertCurrent() })
+    const first = clearVerifiedMockAccountCache(store, () => current, clearing)
+    const second = clearVerifiedMockAccountCache(store, () => current, clearing)
+    gate.resolve(); await Promise.all([first, second]); expect(clearing).toHaveBeenCalledTimes(1)
+    expect(hasPendingMockCacheClear(store, current)).toBe(false)
+  })
+  it('an old account clear rejection cannot erase the new account pending clear', async () => {
+    const store = storage(); let current = state()
+    setAccountCacheSession('account-a'); store.setItem(MOCK_AUTH_STORAGE_KEY, JSON.stringify(session))
+    await markVerifiedMockCache(store, () => current, 'account-a', () => {})
+    setAccountCacheSession(undefined); store.removeItem(MOCK_AUTH_STORAGE_KEY)
+    const oldGate = Promise.withResolvers<void>(), oldEntered = Promise.withResolvers<void>()
+    const oldClear = clearVerifiedMockAccountCache(store, () => current, async assertCurrent => {
+      oldEntered.resolve(); await oldGate.promise; assertCurrent()
+    })
+    await oldEntered.promise
+    setAccountCacheSession('account-b')
+    expect(hasPendingMockCacheClear(store, current)).toBe(false)
+    current = { ...current, workspaceOwnerUserId: 'account-b', accounts: { 'account-b': { lastSyncedVersion: 'txn:2', lastSyncedFingerprint: 'new-account-fingerprint' } } }
+    store.setItem(MOCK_AUTH_STORAGE_KEY, JSON.stringify({ ...session, access_token: 'new-account-token', user: { id: 'account-b' } }))
+    await markVerifiedMockCache(store, () => current, 'account-b', () => {})
+    setAccountCacheSession(undefined); store.removeItem(MOCK_AUTH_STORAGE_KEY)
+    const newGate = Promise.withResolvers<void>()
+    const clearNew = vi.fn(async assertCurrent => { await newGate.promise; assertCurrent() })
+    const next = clearVerifiedMockAccountCache(store, () => current, clearNew)
+    oldGate.resolve(); await expect(oldClear).rejects.toBeInstanceOf(AccountCacheChangedError)
+    expect(hasPendingMockCacheClear(store, current)).toBe(true)
+    const repeat = clearVerifiedMockAccountCache(store, () => current, clearNew)
+    newGate.resolve(); await Promise.all([next, repeat])
+    expect(clearNew).toHaveBeenCalledTimes(1); expect(hasPendingMockCacheClear(store, current)).toBe(false)
   })
 })

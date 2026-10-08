@@ -208,12 +208,15 @@ for (const edited of [false, true]) test(`first login sync settles before an old
   })
   await page.goto('/pjsdas/consumer-read-race')
   await page.evaluate(async () => {
-    const { setAccountCacheSession } = await import('/pjsdas/src/cloud/accountCacheLease.ts')
+    const { setAccountCacheSession, AccountCacheChangedError } = await import('/pjsdas/src/cloud/accountCacheLease.ts')
     setAccountCacheSession('account-a')
     const db = await import('/pjsdas/src/db.ts')
     await db.exportLocalSnapshot()
     const { refreshConnectedAuthoritativeCache } = await import('/pjsdas/src/cloud/authoritativeReadModelClient.ts')
-    ;(window as any).__consumerRead = refreshConnectedAuthoritativeCache('account-a')
+    ;(window as any).__consumerRead = refreshConnectedAuthoritativeCache('account-a').catch(error => {
+      if (!(error instanceof AccountCacheChangedError)) throw error
+      return { cancelledByNewerRead: true }
+    })
   })
   await expect.poll(() => Boolean(release)).toBe(true)
   await page.evaluate(async (edited) => {
@@ -230,7 +233,7 @@ for (const edited of [false, true]) test(`first login sync settles before an old
   }, edited)
   release!()
   const result = await page.evaluate(async () => (window as any).__consumerRead)
-  expect(result).toMatchObject({ state: edited ? 'local_changes_pending' : 'current', changed: false })
+  expect(result).toEqual({ cancelledByNewerRead: true })
   const title = await page.evaluate(async () => (await (await import('/pjsdas/src/db.ts')).exportLocalSnapshot()).data.actions.find(a => a.id === 'A-action-1')?.title)
   expect(title).toBe(edited ? 'Real edit after login sync' : 'A第一任务')
   expect(reads).toBe(2)

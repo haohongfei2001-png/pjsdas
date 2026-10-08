@@ -1117,16 +1117,19 @@ export async function exportLocalRecoveryArchive() {
   return { schema: 'todayaction-recovery-archive', exportedAt: new Date().toISOString(), stores: Object.fromEntries(rows) }
 }
 
-export async function clearLocalWorkspaceCache() {
+export async function clearLocalWorkspaceCache(assertCurrent?: () => void) {
   const db = await dbPromise
+  assertCurrent?.()
   const tx = db.transaction([...DATA_STORES, 'projectionDeltas'], 'readwrite')
   let cleared: PJSDASSnapshot
   try {
+    assertCurrent?.()
     await Promise.all(DATA_STORES.map((storeName) => tx.objectStore(storeName).clear()))
     // Proofs describe the cleared cache; original account-scoped commands
     // remain quarantined for that account's receipt-first recovery.
     await tx.objectStore('projectionDeltas').clear()
     cleared = await readLocalSnapshot(tx as LocalSnapshotTransaction)
+    assertCurrent?.()
     await tx.done
   } catch (caught) {
     // A synchronous store failure must also abort clears already enqueued.

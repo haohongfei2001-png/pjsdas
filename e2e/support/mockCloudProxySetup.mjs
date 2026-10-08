@@ -1,10 +1,29 @@
 import http from 'node:http'
-import { mkdir, writeFile } from 'node:fs/promises'
+import { mkdir, writeFile, readFile } from 'node:fs/promises'
+import { createRequire } from 'node:module'
+import { dirname, join, basename } from 'node:path'
 
 export const PROXY_PORT = 18879
 export const MOCK_PROXY_ORIGIN = `http://127.0.0.1:${PROXY_PORT}`
 export const MOCK_PROXY = { server: MOCK_PROXY_ORIGIN, bypass: '127.0.0.1,localhost,[::1]' }
 const PROBE_HOST = 'todayaction-egress-probe.invalid'
+export const BROWSER_BACKGROUND_HOSTS = ['clients2.google.com', 'accounts.google.com', 'www.google.com', 'update.googleapis.com', 'android.clients.google.com', 'content-autofill.googleapis.com']
+/** Diagnostic classification only. Every request is still rejected with 502.
+ * Application traffic to these same hosts is separately rejected and failed
+ * by voiceoverMockTest's mandatory context guard before reaching this proxy. */
+export function voiceOverBackgroundDiagnostics(config, installed) {
+  const projects = config.projects ?? []
+  const allowed = basename(config.configFile ?? '') === 'playwright.voiceover.config.mts'
+    && projects.length === 1 && projects[0].name === 'chromium-voiceover'
+    && projects[0].use.headless === false && projects[0].use.serviceWorkers === 'block'
+    && (!projects[0].use.browserName || projects[0].use.browserName === 'chromium')
+    && !projects[0].use.channel && !projects[0].use.launchOptions?.channel
+    && !projects[0].use.connectOptions && !process.env.PW_TEST_CONNECT_WS_ENDPOINT
+    && !projects[0].use.launchOptions?.executablePath
+    && installed?.playwright === '1.63.0' && installed?.chromium === '153.0.8010.12'
+  return new Set(allowed ? BROWSER_BACKGROUND_HOSTS : [])
+}
+
 /** This process-local test proxy never forwards, resolves or connects to a
  * destination. Keep only host/count diagnostics, never paths or headers. */
 export function createRejectingMockProxy() {
@@ -30,7 +49,7 @@ export function createRejectingMockProxy() {
       response.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' }); response.end(JSON.stringify(Object.fromEntries(counts))); return
     }
     if (request.url === '/__mock_proxy_page' && request.method === 'GET') {
-      response.writeHead(200, { 'content-type': 'text/html' }); response.end('<!doctype html><title>Local isolation probe</title>'); return
+      response.writeHead(200, { 'content-type': 'text/html' }); response.end('<!doctype html><title>Local isolation probe</title><link rel="icon" type="image/png" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR4nGNgAAIAAAUAAXpeqz8AAAAASUVORK5CYII=">'); return
     }
     if (request.url === '/__mock_proxy_worker.js' && request.method === 'GET') {
       response.writeHead(200, { 'content-type': 'application/javascript', 'service-worker-allowed': '/' })
@@ -57,6 +76,15 @@ export default async function setup(config) {
     const target = new URL(project.use.baseURL ?? 'http://127.0.0.1')
     if (!['127.0.0.1', 'localhost', '[::1]'].includes(target.hostname)) throw new Error('Mock cloud isolation requires a loopback application target.')
   }
+  let installed
+  if (basename(config.configFile ?? '') === 'playwright.voiceover.config.mts') {
+    const require = createRequire(import.meta.url)
+    const packagePath = require.resolve('playwright-core/package.json')
+    const packageInfo = JSON.parse(await readFile(packagePath, 'utf8'))
+    const browsers = JSON.parse(await readFile(join(dirname(packagePath), 'browsers.json'), 'utf8'))
+    installed = { playwright: packageInfo.version, chromium: browsers.browsers.find(item => item.name === 'chromium')?.browserVersion }
+  }
+  const backgroundHosts = voiceOverBackgroundDiagnostics(config, installed)
   const proxy = createRejectingMockProxy()
   await new Promise((resolve, reject) => { proxy.server.once('error', reject); proxy.server.listen(PROXY_PORT, '127.0.0.1', resolve) })
   return async () => {
@@ -65,8 +93,11 @@ export default async function setup(config) {
     await mkdir(directory, { recursive: true })
     await writeFile(`${directory}/mock-cloud-egress.json`, JSON.stringify({ proxyForwardedRequests: 0,
       scope: 'This proxy only. Browser/API transport adoption is established by the separate isolation tests; arbitrary Node HTTP is outside this counter.',
-      blockedHosts: Object.fromEntries(proxy.counts), requestClasses: Object.fromEntries(proxy.requestClasses) }, null, 2))
-    const unexpected = [...proxy.counts].filter(([host]) => host !== PROBE_HOST)
+      blockedHosts: Object.fromEntries(proxy.counts),
+      rejectedBrowserBackground: Object.fromEntries([...proxy.counts].filter(([host]) => backgroundHosts.has(host))),
+      backgroundClassification: backgroundHosts.size ? { ...installed, applicationGuard: 'voiceoverMockTest: context fallback, WebSocket rejection, ServiceWorkers blocked; see per-test application request evidence' } : null,
+      requestClasses: Object.fromEntries(proxy.requestClasses) }, null, 2))
+    const unexpected = [...proxy.counts].filter(([host]) => host !== PROBE_HOST && !backgroundHosts.has(host))
     if (unexpected.length) throw new Error(`Unmatched external requests were blocked by mock CI: ${unexpected.map(([host, count]) => `${host} (${count})`).join(', ')}; request classes: ${JSON.stringify(Object.fromEntries(proxy.requestClasses))}`)
   }
 }

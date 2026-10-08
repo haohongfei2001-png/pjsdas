@@ -32,3 +32,15 @@ describe('mock CI and production readback execution boundary', () => {
     expect(read('.github/workflows/todayaction-ui.yml')).toContain('e2e/support/mockCloudTargets.ts')
   })
 })
+
+it('requires the narrow VoiceOver application guard and preserves ServiceWorker coverage elsewhere', () => {
+  expect(read('e2e/cgr02TodayVoiceOver.voiceover.ts')).toContain("import { test } from './support/voiceoverMockTest.js'")
+  expect(read('e2e/cgr02TodayVoiceOver.voiceover.ts')).not.toContain("from '@guidepup/playwright'")
+  expect(read('e2e/cgr02TodayVoiceOver.voiceover.ts')).not.toMatch(/browser\.newContext|request\.newContext|routeWebSocket/)
+  expect(read('playwright.voiceover.config.mts')).toContain("serviceWorkers: 'block'")
+  expect(read('playwright.brand.config.mts')).not.toContain("serviceWorkers: 'block'")
+  expect(read('playwright.config.mts')).not.toContain("serviceWorkers: 'block'")
+  expect(read('e2e/mockCloudIsolation.e2e.ts')).toContain("serviceWorkers: 'allow'")
+  expect(read('e2e/support/voiceoverMockTest.ts')).toContain('guard.assertNoUnexpectedRequests()')
+  expect(read('.github/workflows/cgr02-voiceover.yml')).not.toContain('DEBUG: pw:browser')
+})
