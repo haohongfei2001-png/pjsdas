@@ -31,6 +31,10 @@ jobs:
     if: >-
       (github.event_name != 'pull_request' || github.event.pull_request.draft == false || (github.event.pull_request.head.repo.full_name == github.repository && contains(github.event.pull_request.labels.*.name, format('full:{0}', github.event.pull_request.head.sha))))
     runs-on: ubuntu-24.04
+    # Firefox's supported temporary policy is inherited by its process. Never
+    # copy process.env into launchOptions: persistent traces serialize them.
+    env:
+      PLAYWRIGHT_FIREFOX_POLICIES_JSON: ${{ github.workspace }}/e2e/support/firefoxMockPolicies.json
     # PR216 added 18 cross-engine review journeys. All 204 core + 134 dense
     # cases passed, but the 30-minute orchestration cap cut off the final
     # performance tail. Allow bounded runner overhead; retain every test and

@@ -45,12 +45,13 @@ it('requires the narrow VoiceOver application guard and preserves ServiceWorker 
   expect(read('.github/workflows/cgr02-voiceover.yml')).not.toContain('DEBUG: pw:browser')
 })
 
-it('limits the Firefox updater policy to the pinned mock project and keeps live settings separate', () => {
+it('inherits only the temporary Firefox policy through the mock job without recording an explicit launch environment', () => {
   expect(JSON.parse(read('e2e/support/firefoxMockPolicies.json'))).toEqual({ policies: { DisableAppUpdate: true } })
-  const config = read('playwright.config.mts')
-  expect(config).toContain("...devices['Desktop Firefox'], launchOptions: mockFirefoxLaunchOptions")
-  expect(config).not.toMatch(/Desktop Chrome[^\n]*mockFirefoxLaunchOptions/)
+  for (const file of ['playwright.config.mts', 'e2e/support/mockCloudIsolation.mts']) {
+    expect(read(file)).not.toMatch(/\benv\s*:/)
+    expect(read(file)).not.toContain('...process.env')
+  }
+  expect(read('.github/workflows/tsui05-browser-matrix.yml')).toContain('PLAYWRIGHT_FIREFOX_POLICIES_JSON: ${{ github.workspace }}/e2e/support/firefoxMockPolicies.json')
   const live = read('playwright.live.config.mts') + read('playwright.todayaction-live.config.mts')
   expect(live).not.toMatch(/mockFirefoxLaunchOptions|from[^\n]*mockCloudIsolation|firefoxMockPolicies/)
-  expect(read('e2e/support/mockCloudIsolation.mts')).toContain('env: { ...process.env, PLAYWRIGHT_FIREFOX_POLICIES_JSON:')
 })

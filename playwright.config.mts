@@ -1,4 +1,4 @@
-import { mockCloudGlobalSetup, mockCloudTestUse, mockFirefoxLaunchOptions } from './e2e/support/mockCloudIsolation.mjs'
+import { mockCloudGlobalSetup, mockCloudTestUse } from './e2e/support/mockCloudIsolation.mjs'
 import { defineConfig, devices } from '@playwright/test'
 
 export default defineConfig({
@@ -35,7 +35,7 @@ export default defineConfig({
     },
     {
       name: 'firefox',
-      use: { ...devices['Desktop Firefox'], launchOptions: mockFirefoxLaunchOptions },
+      use: { ...devices['Desktop Firefox'] },
     },
     {
       name: 'webkit',

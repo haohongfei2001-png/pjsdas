@@ -349,7 +349,11 @@ test('TSUI-04 connected event detail uses exact occurrence commands, receipt and
   await page.route(backend + '/api/workspace', unavailable)
   await page.context().setOffline(false)
   await page.reload()
+  // The intentionally aborted receipt read inserts a recovery notice above
+  // the list. Wait for that expected state before choosing the row's position.
+  await expect(page.locator('.tsui-interaction-notice')).toContainText(/修改已保存在本机|saved on this device/)
   await currentRow.click()
+  await expect(page.locator('.tsui-schedule-detail')).toBeVisible()
   await expect(page.getByText(/待同步的改期日期|Pending reschedule/)).toContainText('2026-11-04')
   await page.locator('.tsui-schedule-command-buttons').getByRole('button', { name: /改期|Reschedule/ }).click()
   await expect(page.locator('.tsui-schedule-reschedule input')).toHaveValue('2026-11-04')
