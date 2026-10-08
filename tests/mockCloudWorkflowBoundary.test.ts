@@ -44,3 +44,13 @@ it('requires the narrow VoiceOver application guard and preserves ServiceWorker 
   expect(read('e2e/support/voiceoverMockTest.ts')).toContain('guard.assertNoUnexpectedRequests()')
   expect(read('.github/workflows/cgr02-voiceover.yml')).not.toContain('DEBUG: pw:browser')
 })
+
+it('limits the Firefox updater policy to the pinned mock project and keeps live settings separate', () => {
+  expect(JSON.parse(read('e2e/support/firefoxMockPolicies.json'))).toEqual({ policies: { DisableAppUpdate: true } })
+  const config = read('playwright.config.mts')
+  expect(config).toContain("...devices['Desktop Firefox'], launchOptions: mockFirefoxLaunchOptions")
+  expect(config).not.toMatch(/Desktop Chrome[^\n]*mockFirefoxLaunchOptions/)
+  const live = read('playwright.live.config.mts') + read('playwright.todayaction-live.config.mts')
+  expect(live).not.toMatch(/mockFirefoxLaunchOptions|from[^\n]*mockCloudIsolation|firefoxMockPolicies/)
+  expect(read('e2e/support/mockCloudIsolation.mts')).toContain('env: { ...process.env, PLAYWRIGHT_FIREFOX_POLICIES_JSON:')
+})

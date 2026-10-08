@@ -77,6 +77,7 @@ test('ambiguous batch response preserves exact choices across reload and same-ID
  await page.reload();await expect(page.getByRole('button',{name:'重试同一请求'})).toBeEnabled();await page.getByRole('button',{name:'重试同一请求'}).click()
  await expect.poll(()=>f.posts.length).toBe(2);expect(f.posts[1]).toEqual(submitted)
  expect(f.state.clients[0].grants.every(g=>g.revision===1)).toBe(true)
+ await page.goto('about:blank') // Settle the mocked document before context teardown.
 })
 
 test('committed approval receipt remains recoverable after disconnect, then revoke stays available',async({page})=>{

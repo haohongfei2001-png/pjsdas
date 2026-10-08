@@ -83,11 +83,13 @@ test('TSUI-03 300-job paging, exact posting identity, routed detail and truthful
   const b = page.locator('.tsui-job-row[data-opportunity-id="tsui03-posting-b"]')
   await expect(a.locator('.tsui-job-apply')).toHaveAttribute('href', 'https://apply.example.test/posting/a')
   await expect(b.locator('.tsui-job-apply')).toHaveAttribute('href', 'https://apply.example.test/posting/b')
-  await context.route('https://apply.example.test/**', (route) => route.fulfill({ status: 200, contentType: 'text/html', body: '<title>Application destination</title>' }))
+  await context.route('https://apply.example.test/**', (route) => route.fulfill({ status: 200, contentType: 'text/html', body: '<title>Application destination</title><link rel="icon" href="data:,">' }))
   const popupPromise = page.waitForEvent('popup')
   await a.locator('.tsui-job-apply').click()
   const popup = await popupPromise
   await expect(popup).toHaveURL('https://apply.example.test/posting/a')
+  await expect(popup).toHaveTitle('Application destination')
+  await popup.goto('about:blank')
   await popup.close()
   const stage = await page.evaluate(async () => new Promise<string | undefined>((resolve, reject) => {
     const request = indexedDB.open('pjsdas')

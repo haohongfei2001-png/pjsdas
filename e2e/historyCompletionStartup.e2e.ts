@@ -120,7 +120,13 @@ test('connected historical apply requires explicit I applied and persists the re
   expect(state.snapshot.data.scheduleNodes!.filter((node) => node.id.startsWith('history-node-'))).toEqual(before)
   await expect.poll(async () => (await readStore(page, 'actions')).find((row) => row.id === apply.id)?.status).toBe('done')
   await assertStartup(page)
-  const restarted = await context.newPage(); await restarted.goto('/pjsdas/today'); await restarted.clock.setFixedTime(NOW); await page.close()
+  const restarted = await context.newPage(); await restarted.goto('/pjsdas/today'); await restarted.clock.setFixedTime(NOW)
+  // End the old app document while its context routes still handle requests;
+  // page.close marks it closing before Playwright invokes further route hooks.
+  console.log(`Mock restart lifecycle: historical apply before blank ${new Date().toISOString()}`)
+  await page.goto('about:blank')
+  console.log(`Mock restart lifecycle: historical apply before close ${new Date().toISOString()}`)
+  await page.close()
   await assertStartup(restarted)
   expect(commands).toHaveLength(1)
   expect(state.snapshot.data.timeline!.find((row) => row.id === history.id)).toEqual(history)

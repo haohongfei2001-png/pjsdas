@@ -160,13 +160,14 @@ async function readIndexedActions(page: Page) {
   }))
 }
 
-test('lost response after server commit survives reload and recovers one durable receipt without duplicate mutation', async ({ page }) => {
+for (const restart of ['reload', 'direct close'] as const) test(`lost response after server commit survives ${restart} and recovers one durable receipt without duplicate mutation`, async ({ page: initialPage, context }) => {
+  let page = initialPage
   await seedInitialSession(page, 'account-a', 'token-a')
   const state: AccountState = { revision: 7, snapshot: workspace('A'), receipts: new Map() }
   let commandCalls = 0
   let receiptCalls = 0
 
-  await page.route(`${BACKEND}/**`, async (route) => {
+  await context.route(`${BACKEND}/**`, async (route) => {
     const request = route.request()
     const url = new URL(request.url())
     if (request.method() === 'OPTIONS') return cors(route, {}, 204)
@@ -225,12 +226,22 @@ test('lost response after server commit survives reload and recovers one durable
   expect(commandCalls).toBe(1)
   await expect.poll(() => receiptCalls).toBe(1)
 
-  await page.reload()
+  if (restart === 'direct close') {
+    const committed = structuredClone(state.snapshot)
+    await page.close() // Actual user close, deliberately no blank navigation.
+    expect(state.snapshot).toEqual(committed)
+    expect(commandCalls).toBe(1)
+    page = await context.newPage()
+    await freezeTodayFixture(page)
+    await page.goto('/')
+  } else await page.reload()
   await expect(page.getByRole('heading', { name: 'A第一任务' })).toHaveCount(0)
   expect(commandCalls).toBe(1)
   await expect.poll(() => receiptCalls).toBeGreaterThanOrEqual(2)
   // UI absence can precede receipt projection and durable pending-record removal.
   await expect.poll(() => page.evaluate(() => window.localStorage.getItem('pjsdas-cgr01-pending:account-a'))).toBeNull()
+  expect(state.receipts.size).toBe(1)
+  expect(state.revision).toBe(8)
 })
 
 test('connected Web recovers a lost command response and Undo preserves unrelated later state', async ({ page }) => {
