@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { applySemanticCompensation } from '../src/semanticIntake.js'
 import { invokeAddOpportunities } from '../gateway/addOpportunities.js'
 import type { GatewayWorkspace, WorkspaceSource, WorkspaceWriteInput } from '../gateway/workspaceSource.js'
 import { createDefaultDecisionRules } from '../src/decisionRules.js'
@@ -171,6 +172,21 @@ describe('explicit user-authorized opportunity writes', () => {
     const result = await invokeAddOpportunities(source, args())
     expect(result.isError).toBe(true)
     expect(textError(result).code).toBe('WORKSPACE_READ_ONLY')
+  })
+  it('does not revive an undone Drive job when the original command ID is replayed', async () => {
+    const source = new WritableSource()
+    const request = { ...args(), commandId: 'explicit-drive-undo-001' }
+    await invokeAddOpportunities(source, request)
+    source.snapshot = applySemanticCompensation(source.snapshot, source.writes[0].command!.compensation as any, new Date('2026-09-17T11:00:00Z'))
+    source.version += 1
+    const before = structuredClone(source.snapshot)
+    const result = await invokeAddOpportunities(source, request)
+    expect(result.isError).not.toBe(true)
+    expect(result.structuredContent).toMatchObject({ applied: false, alreadyApplied: true, createdCount: 0 })
+    expect(source.snapshot).toEqual(before); expect(source.writes).toHaveLength(1)
+    expect(source.snapshot.data.opportunities).toEqual([])
+    const changed = await invokeAddOpportunities(source, { ...request, opportunities: [{ company: 'Changed', role: 'Different' }] })
+    expect(textError(changed).code).toBe('COMMAND_ID_REUSED'); expect(source.writes).toHaveLength(1)
   })
   it('accepts company/title alone, rejects retired fields, and binds replay to exact facts', async () => {
     const source = new WritableSource()

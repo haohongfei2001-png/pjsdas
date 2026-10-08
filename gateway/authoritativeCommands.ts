@@ -1,3 +1,10 @@
+import { observationFromVerifiedOpportunity } from '../src/verifiedOpportunityCommand.js'
+import { bindVerifiedPostingRefresh, resolvePostingRefreshTarget } from '../src/postingRefresh.js'
+import { discoveryScopeSchema } from '../src/discoveryScopeSchema.js'
+import { createDiscoverySourceVerifier } from './discoverySourceVerifier.js'
+import { createMonitorOpportunity } from '../src/autonomousIngestion.js'
+import { inboxOpportunity } from '../src/discoveryInbox.js'
+import type { Opportunity } from '../src/model.js'
 import { assertNoScoringInput } from '../src/scoringRetirement.js'
 import { assertConsumerBusinessManagementGrant, type ConsumerBusinessManagementGrant } from './consumerBusinessManagementAccess.js'
 import { applyPrivateReminderManagement, privateReminderManagementSchema, privateReminderManagementObjectRefs, privateReminderManagementFingerprint, restorePrivateReminderManagement, type PrivateReminderManagementCompensation } from '../src/privateReminderManagement.js'
@@ -74,19 +81,7 @@ import {
 
 const commandId = z.string().trim().min(8).max(300)
 const baseRevision = z.number().int().min(0)
-const profileList = z.array(z.string().trim().min(1).max(160)).max(30)
-const discoveryProfileSchema = z.object({
-  key: z.literal('current'), version: z.literal(1),
-  targetRoleQueries: profileList, preferredLocations: profileList,
-  locationNotes: z.string().max(1200),
-  minimumAnnualCompensationWan: z.number().min(0).max(1000).optional(),
-  preferredRoleTypes: z.array(z.enum(['core','backup','reach','lottery','practice'])).max(5).optional(),
-  locationPolicy: z.enum(['prefer','strict']).optional(),
-  minimumFitScore: z.never().optional(), minimumOpportunityValue: z.never().optional(),
-  maxReviewCandidates: z.number().int().min(1).max(12).optional(),
-  mustHave: profileList, mustNotHave: profileList, strengths: profileList,
-  notes: z.string().max(2400), updatedAt: z.string().max(40),
-}).strict()
+const discoveryProfileSchema = discoveryScopeSchema
 
 export const authoritativeBusinessCommandSchema = z.object({
   commandId,
@@ -491,6 +486,22 @@ export function createAuthoritativeCommandExecutor(options: AuthoritativeCommand
     const operation = operationFor(parsed.command)
     const payloadHash = await hashMutationPayload(admittedManagementGrant?.consentVersion === 7 ? 'consumer_business_management_v7' : operation, parsed.command)
     const startedAt = new Date().toISOString()
+    const verifiedReviewCandidates=new Map<string,Opportunity>()
+    let verifySource: ReturnType<typeof createDiscoverySourceVerifier> | undefined
+    const verifyReviewCandidate=async(opportunity:Opportunity,now:Date)=>{
+      const discovery=opportunity.detail?.discovery
+      if(!discovery)throw new WorkspaceSourceError('DISCOVERY_VERIFICATION_REQUIRED','This candidate has no recruiting-source reference.',false)
+      const key=JSON.stringify([opportunity.id,opportunity.company,opportunity.role,discovery.sourceUrl])
+      const cached=verifiedReviewCandidates.get(key)
+      if(cached)return cached
+      verifySource ??= createDiscoverySourceVerifier({ fetchImpl: options.fetchImpl, now })
+      const observation=await verifySource({sourceRecordId:opportunity.id,company:opportunity.company,role:opportunity.role,
+        sourceUrl:discovery.sourceUrl,sourceTitle:discovery.sourceTitle})
+      if(observation.sourceVerification!=='verified')throw new WorkspaceSourceError('DISCOVERY_VERIFICATION_REQUIRED','This recruiting source could not establish the selected job; no job facts were saved.',false)
+      const verified={...createMonitorOpportunity(observation,now.toISOString()),id:opportunity.id}
+      verifiedReviewCandidates.set(key,verified)
+      return verified
+    }
 
     for (let attempt = 0; attempt < 5; attempt += 1) {
       if (attempt > 0 && isManagement) await authorizeManagement(principal, admittedManagementGrant, parsed.command.type)
@@ -563,19 +574,42 @@ export function createAuthoritativeCommandExecutor(options: AuthoritativeCommand
       } else if (parsed.command.type === 'discovery_profile') {
         evaluated = applyDiscoveryProfileCommand(current.snapshot, parsed.command.value, now)
       } else if (parsed.command.type === 'discovery_promotion') {
-        evaluated = applyDiscoveryPromotionCommand(current.snapshot, parsed.command.value, now)
+        const inboxItemId=parsed.command.value.inboxItemId
+        const item=current.snapshot.data.discoveryInbox?.find(item=>item.id===inboxItemId)
+        const existing=item&&current.snapshot.data.opportunities.some(row=>row.id===item.candidateOpportunityId)
+        const verified=item&&item.status!=='promoted'&&!existing?await verifyReviewCandidate(inboxOpportunity(item,now),now):undefined
+        evaluated = applyDiscoveryPromotionCommand(current.snapshot, parsed.command.value, now,verified)
       } else if (parsed.command.type === 'process_event_delete') {
         evaluated = applyProcessEventDeleteCommand(current.snapshot, parsed.command.value.eventId, now)
       } else if (parsed.command.type === 'mcp_save_inbox') {
         evaluated = applyMcpInboxSaveCommand(current.snapshot, proposal!, now)
       } else if (parsed.command.type === 'mcp_apply_discovery') {
-        evaluated = applyMcpDiscoveryCommand(current.snapshot, proposal!, parsed.command.value.selectedOperationIds, parsed.command.value.rejectionSelections, now)
+        const selected=new Set(parsed.command.value.selectedOperationIds)
+        const operations=await Promise.all(proposal!.changeSet.operations.map(async operation=>operation.kind==='add_discovered_opportunity'&&selected.has(operation.id)
+          ?{...operation,opportunity:await verifyReviewCandidate(operation.opportunity,now)}:operation))
+        evaluated = applyMcpDiscoveryCommand(current.snapshot, {...proposal!,changeSet:{...proposal!.changeSet,operations}}, parsed.command.value.selectedOperationIds, parsed.command.value.rejectionSelections, now)
       } else if (parsed.command.type === 'mcp_apply_actions') {
         evaluated = applyMcpActionStatusCommand(current.snapshot, proposal!, now)
       } else if (parsed.command.type === 'mcp_apply_rules') {
         evaluated = applyMcpRulesCommand(current.snapshot, proposal!, now)
       } else if (parsed.command.type === 'mcp_apply_source_refresh') {
-        evaluated = applyMcpSourceRefreshCommand(current.snapshot, proposal!, now)
+        const operations = await Promise.all(proposal!.changeSet.operations.map(async operation => {
+          if (operation.kind !== 'refresh_job_posting') return operation
+          const target = resolvePostingRefreshTarget(operation, current.snapshot.data.opportunities, current.snapshot.data.discoveryInbox ?? [])
+          if (!target) throw new WorkspaceSourceError('WORKSPACE_CONFLICT', 'The reviewed posting changed before its refresh.', false)
+          const key = JSON.stringify(['refresh', operation.id, target.company, target.role, operation.sourceUrl])
+          let verified = verifiedReviewCandidates.get(key)
+          if (!verified) {
+            verifySource ??= createDiscoverySourceVerifier({ fetchImpl: options.fetchImpl, now })
+            const observation = await verifySource({ sourceRecordId: operation.id, company: target.company, role: target.role,
+              sourceUrl: operation.sourceUrl, sourceTitle: operation.sourceTitle })
+            if (observation.sourceVerification !== 'verified') throw new WorkspaceSourceError('DISCOVERY_VERIFICATION_REQUIRED', 'The current source did not verify this posting; its old facts were retained.', false)
+            verified = createMonitorOpportunity(observation, now.toISOString())
+            verifiedReviewCandidates.set(key, verified)
+          }
+          return bindVerifiedPostingRefresh(operation, observationFromVerifiedOpportunity(verified))
+        }))
+        evaluated = applyMcpSourceRefreshCommand(current.snapshot, { ...proposal!, changeSet: { ...proposal!.changeSet, operations } }, now)
       } else if (parsed.command.type === 'mcp_apply_progress') {
         evaluated = applyMcpProgressCommand(current.snapshot, proposal!, now)
       } else if (parsed.command.type === 'mcp_apply_mixed') {

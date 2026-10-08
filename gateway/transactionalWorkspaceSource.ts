@@ -115,6 +115,7 @@ export function createTransactionalWorkspaceSource(options: TransactionalWorkspa
           ...(semanticCommand?.provenance ?? {}),
         },
         compensation: semanticCommand?.compensation,
+        discoveryAuthorization: semanticCommand?.discoveryAuthorization,
         effectiveTime: semanticCommand?.effectiveTime ?? input.snapshot.exportedAt,
         receiptContext: {
           contractVersion: 2,
@@ -140,6 +141,8 @@ export function createTransactionalWorkspaceSource(options: TransactionalWorkspa
       }
       return {
         snapshot: result.snapshot,
+        commandReceipt: result.receipt,
+        commandOutcome: result.outcome,
         context: {
           now: now(),
           timezone: resolvePlanningTimezone(result.snapshot.data.timePlanning, timezone),
@@ -147,6 +150,14 @@ export function createTransactionalWorkspaceSource(options: TransactionalWorkspa
           workspaceOwnerUserId: options.userId,
         },
       }
+    },
+
+    async readCommandReceipt(commandId: string) {
+      return store.readCommandForUser(options.userId, commandId)
+    },
+
+    async readLatestDiscoveryReceipt(sourceId: string, scopeFingerprint: string) {
+      return store.readLatestDiscoveryCommandForUser(options.userId, sourceId, scopeFingerprint)
     },
 
     async prepareUndo(targetCommandId: string) {

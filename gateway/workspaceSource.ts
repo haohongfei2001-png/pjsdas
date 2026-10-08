@@ -7,6 +7,8 @@ import type { BridgeReadContext } from '../src/ai/readLayer.js'
 export interface GatewayWorkspace {
   snapshot: PJSDASSnapshot
   context: BridgeReadContext
+  commandReceipt?: Record<string, unknown>
+  commandOutcome?: 'COMMITTED' | 'ALREADY_APPLIED'
 }
 
 export interface WorkspaceWriteCommand {
@@ -17,7 +19,13 @@ export interface WorkspaceWriteCommand {
   compensation?: Record<string, unknown>
   provenance?: Record<string, unknown>
   effectiveTime?: string
+  /** Trusted admission only; never a model/MCP input field. */
+  discoveryAuthorization?: DiscoveryCommitAuthorization
 }
+
+export type DiscoveryCommitAuthorization =
+  | { kind: 'automation'; userId: string; googleSubject: string; consentGeneration: string }
+  | { kind: 'delegated_mcp'; userId: string; clientId: string; sourceId: string; grantId: string; grantRevision: number }
 
 export interface WorkspaceWriteInput {
   snapshot: PJSDASSnapshot
@@ -49,6 +57,13 @@ export interface WorkspaceSource {
   write?(input: WorkspaceWriteInput): Promise<GatewayWorkspace>
   /** Transactional sources can prepare safe latest-revision compensation without exposing ledger internals. */
   prepareUndo?(targetCommandId: string): Promise<WorkspacePreparedUndo>
+  readCommandReceipt?(commandId: string): Promise<{ commandId: string; operation: string; payloadHash: string; resultingRevision: number; receipt: Record<string, unknown> } | null>
+  /** Account-bound latest original scheduled commit, independent of editable
+   * snapshot timestamps. Implemented only by the authoritative ledger source. */
+  readLatestDiscoveryReceipt?(sourceId: string, scopeFingerprint: string): Promise<{
+    commandId: string; operation: string; payloadHash: string; resultingRevision: number; receipt: Record<string, unknown>
+    runId: string; createdAt: string
+  } | null>
 }
 
 export function requireWritableWorkspaceSource(source: WorkspaceSource) {

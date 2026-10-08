@@ -1,5 +1,5 @@
 import { upgradeSnapshotToLatest, validateSnapshot, type PJSDASSnapshot } from '../src/snapshot.js'
-import { WorkspaceSourceError } from './workspaceSource.js'
+import { WorkspaceSourceError, type DiscoveryCommitAuthorization } from './workspaceSource.js'
 
 export type MutationPrincipalKind = 'first_party_web' | 'delegated_mcp' | 'automation'
 
@@ -37,6 +37,7 @@ export interface ConnectedCommandRecord {
 }
 
 export interface ConnectedAuthoritativeCommitInput extends ConnectedCommitInput {
+  discoveryAuthorization?: DiscoveryCommitAuthorization
   managementAuthorization?: { grantId: string; grantRevision: number; consentVersion?: 2 | 3 | 4 | 5 | 6 | 7 }
   receiptContext: Record<string, unknown>
 }
@@ -170,6 +171,33 @@ export function createTransactionalWorkspaceStore(options: TransactionalWorkspac
       }
     },
 
+    async readLatestDiscoveryCommandForUser(userId: string, sourceId: string, scopeFingerprint: string): Promise<(ConnectedCommandRecord & { runId: string; createdAt: string }) | null> {
+      if (!userId || !sourceId || sourceId.length > 180 || !/^[a-f0-9]{64}$/.test(scopeFingerprint)) throw new WorkspaceSourceError('WORKSPACE_INVALID', 'Invalid Discovery receipt lookup identity.', false)
+      const params = new URLSearchParams({
+        select: 'user_id,command_id,operation,payload_hash,resulting_revision,receipt,status,provenance,created_at,principal_kind',
+        user_id: `eq.${userId}`, operation: 'eq.ingest_verified_discovery', status: 'eq.COMMITTED', principal_kind: 'eq.automation',
+        'provenance->>sourceId': `eq.${sourceId}`, 'provenance->>scopeFingerprint': `eq.${scopeFingerprint}`,
+        'provenance->>producer': 'eq.server_scheduler', order: 'created_at.desc,resulting_revision.desc', limit: '1',
+      })
+      const response = await request(`/rest/v1/pjsdas_command_ledger?${params}`, { method: 'GET' })
+      if (!response.ok) throw new WorkspaceSourceError('WORKSPACE_UNAVAILABLE', `Discovery freshness receipt read failed (HTTP ${response.status}).`, response.status >= 500 || response.status === 429)
+      const rows: unknown = await response.json().catch(() => undefined)
+      if (!Array.isArray(rows) || rows.length > 1) throw new WorkspaceSourceError('WORKSPACE_INVALID', 'Discovery freshness receipt response is invalid.', false)
+      if (!rows.length) return null
+      const row = rows[0], provenance = row?.provenance
+      if (!row || row.user_id !== userId || row.operation !== 'ingest_verified_discovery' || row.status !== 'COMMITTED' || row.principal_kind !== 'automation'
+        || typeof row.command_id !== 'string' || !/^[a-f0-9]{64}$/.test(row.payload_hash ?? '') || !validRevision(row.resulting_revision)
+        || !provenance || provenance.sourceId !== sourceId || provenance.scopeFingerprint !== scopeFingerprint || provenance.producer !== 'server_scheduler'
+        || typeof provenance.runId !== 'string' || !provenance.runId || provenance.runId.length > 180
+        || typeof row.created_at !== 'string' || !Number.isFinite(Date.parse(row.created_at))
+        || !row.receipt || typeof row.receipt !== 'object' || Array.isArray(row.receipt)
+        || Date.parse(row.receipt.committedAt) !== Date.parse(row.created_at)) {
+        throw new WorkspaceSourceError('WORKSPACE_INVALID', 'Discovery freshness receipt identity or original server time is invalid.', false)
+      }
+      return { commandId: row.command_id, operation: row.operation, payloadHash: row.payload_hash, resultingRevision: row.resulting_revision,
+        receipt: row.receipt, runId: provenance.runId, createdAt: row.created_at }
+    },
+
     async readCommandsAfterRevision(userId: string, revision: number): Promise<ConnectedCommandRecord[]> {
       const params = new URLSearchParams({
         select: 'command_id,operation,payload_hash,resulting_revision,receipt,compensation,status',
@@ -246,13 +274,26 @@ export function createTransactionalWorkspaceStore(options: TransactionalWorkspac
     async commitAuthoritativeForUser(input: ConnectedAuthoritativeCommitInput): Promise<ConnectedCommitResult> {
       validateSnapshot(input.snapshot)
       const authorization = input.managementAuthorization
+      const discovery = input.discoveryAuthorization
+      if (input.operation === 'ingest_verified_discovery') {
+        const validOwner = discovery?.userId === input.userId
+        const sourceId = input.provenance?.sourceId
+        const validAutomation = discovery?.kind === 'automation' && input.principalKind === 'automation'
+          && !input.clientId && discovery.googleSubject && /^[0-9a-f-]{36}$/i.test(discovery.consentGeneration)
+        const validDelegated = discovery?.kind === 'delegated_mcp' && input.principalKind === 'delegated_mcp'
+          && discovery.clientId === input.clientId && discovery.sourceId === sourceId
+          && /^[0-9a-f-]{36}$/i.test(discovery.grantId) && Number.isSafeInteger(discovery.grantRevision) && discovery.grantRevision > 0
+        if (authorization || !validOwner || typeof sourceId !== 'string' || !sourceId || !(validAutomation || validDelegated)) {
+          throw new WorkspaceSourceError('AUTH_FORBIDDEN', 'Discovery writes require the original, owner/source-bound admission proof.', false)
+        }
+      } else if (discovery) throw new WorkspaceSourceError('AUTH_FORBIDDEN', 'Discovery authorization cannot authorize another command family.', false)
       // Authorized management preserves validated raw facts, including v2 business edits.
       const snapshot = authorization ? structuredClone(input.snapshot) : upgradeSnapshotToLatest(input.snapshot)
       if ((input.operation === 'business_management' || input.operation === 'opportunity_management' || input.operation === 'planning_management' || input.operation === 'discovery_profile_management' || input.operation === 'private_reminder_management') && !authorization) throw new WorkspaceSourceError('AUTH_FORBIDDEN', 'Management writes require a transaction-bound grant.', false)
       if (authorization && (input.principalKind !== 'delegated_mcp' || !input.clientId || !authorization.grantId || !Number.isSafeInteger(authorization.grantRevision) || authorization.grantRevision < 1)) throw new WorkspaceSourceError('AUTH_FORBIDDEN', 'Management transaction authorization is invalid.', false)
       if ((input.operation === 'private_reminder_management' && authorization?.consentVersion !== 6) || (input.operation === 'discovery_profile_management' && authorization?.consentVersion !== 5) || (input.operation === 'planning_management' && authorization?.consentVersion !== 4) || (input.operation === 'opportunity_management' && authorization?.consentVersion !== 3) || (input.operation === 'business_management' && authorization?.consentVersion !== undefined && ![2, 7].includes(authorization.consentVersion))) throw new WorkspaceSourceError('AUTH_FORBIDDEN', 'Management grant version does not match this operation.', false)
       if (authorization?.consentVersion !== undefined && ![2, 3, 4, 5, 6, 7].includes(authorization.consentVersion)) throw new WorkspaceSourceError('AUTH_FORBIDDEN', 'Unsupported management consent version.', false)
-      const rpc = authorization?.consentVersion === 7 ? 'pjsdas_commit_consumer_business_workspace_v1' : authorization?.consentVersion === 6 ? 'pjsdas_commit_private_reminder_workspace_v1' : authorization?.consentVersion === 5 ? 'pjsdas_commit_discovery_profile_workspace_v1' : authorization?.consentVersion === 4 ? 'pjsdas_commit_planning_workspace_v1' : authorization?.consentVersion === 3 ? 'pjsdas_commit_opportunity_workspace_v1' : authorization ? 'pjsdas_commit_management_workspace_v1' : 'pjsdas_commit_workspace_v2'
+      const rpc = discovery ? 'pjsdas_commit_discovery_workspace_v1' : authorization?.consentVersion === 7 ? 'pjsdas_commit_consumer_business_workspace_v1' : authorization?.consentVersion === 6 ? 'pjsdas_commit_private_reminder_workspace_v1' : authorization?.consentVersion === 5 ? 'pjsdas_commit_discovery_profile_workspace_v1' : authorization?.consentVersion === 4 ? 'pjsdas_commit_planning_workspace_v1' : authorization?.consentVersion === 3 ? 'pjsdas_commit_opportunity_workspace_v1' : authorization ? 'pjsdas_commit_management_workspace_v1' : 'pjsdas_commit_workspace_v2'
       const response = await request(`/rest/v1/rpc/${rpc}?select=outcome,workspace_id,revision,receipt`, {
         method: 'POST',
         body: JSON.stringify({
@@ -270,11 +311,12 @@ export function createTransactionalWorkspaceStore(options: TransactionalWorkspac
           target_effective_time: input.effectiveTime ?? null,
           target_receipt_context: input.receiptContext,
           ...(authorization ? { target_grant_id: authorization.grantId, target_grant_revision: authorization.grantRevision } : {}),
+          ...(discovery ? { target_discovery_authorization: discovery } : {}),
         }),
       })
       if (!response.ok) {
         const body = await response.json().catch(() => ({})) as { message?: string; details?: string; code?: string }
-        if (authorization && (response.status === 403 || body.code === '42501')) throw new WorkspaceSourceError('AUTH_FORBIDDEN', 'Management authorization changed before commit. Reauthorize before retrying.', false)
+        if ((authorization || discovery) && (response.status === 403 || body.code === '42501')) throw new WorkspaceSourceError('AUTH_FORBIDDEN', 'The admitted authorization changed before commit; this work cannot be retried with a replacement grant.', false)
         const duplicateCommand = response.status === 409 || body.message?.includes('different payload') || body.details?.includes('different payload')
         throw new WorkspaceSourceError(
           duplicateCommand ? 'COMMAND_ID_REUSED' : 'WORKSPACE_COMMIT_FAILED',
@@ -316,6 +358,7 @@ export function createTransactionalWorkspaceStore(options: TransactionalWorkspac
     },
 
     async commitForUser(input: ConnectedCommitInput): Promise<ConnectedCommitResult> {
+      if (input.operation === 'ingest_verified_discovery') throw new WorkspaceSourceError('AUTH_FORBIDDEN', 'Discovery cannot use the legacy unguarded commit route.', false)
       validateSnapshot(input.snapshot)
       const snapshot = upgradeSnapshotToLatest(input.snapshot)
       const response = await request('/rest/v1/rpc/pjsdas_commit_workspace', {

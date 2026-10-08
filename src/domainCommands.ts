@@ -1,6 +1,9 @@
+import { applyVerifiedPostingRefreshCommand, type VerifiedPostingRefreshCommand } from './verifiedPostingRefreshCommand.js'
+import { applyVerifiedDiscoveryCommand, type VerifiedDiscoveryCommand } from './verifiedDiscoveryCommand.js'
 import { actionArrangementDate, isExplicitActionArrangement, scheduleNodeEligible } from './scheduleEligibility.js'
 import { resolveApplicationDeadline } from './applicationDeadline.js'
 import { appendOpportunityOnly, createUserOpportunity, findUserJobDuplicate, normalizedUserJobFacts, userJobIdentity, type UserJobFacts } from './opportunityCreation.js'
+import {applyVerifiedOpportunityCommand,type VerifiedOpportunityCommand} from './verifiedOpportunityCommand.js'
 import { canonicalOpportunityId } from './opportunityCanonicalization.js'
 import { applicationDeadlineFingerprint, applicationDeadlineNodes } from './applicationDeadline.js'
 import { correctApplicationDeadline, type CorrectApplicationDeadlineCommand } from './deadlineCorrection.js'
@@ -421,11 +424,18 @@ function ensureUserFacts(target: Opportunity, timestamp: string) {
   return target.detail.userFacts!
 }
 
+export function applyUserDomainCommand(snapshot: PJSDASSnapshot, command: VerifiedDiscoveryCommand, now?: Date): ReturnType<typeof applyVerifiedDiscoveryCommand>
+export function applyUserDomainCommand(snapshot: PJSDASSnapshot, command: VerifiedPostingRefreshCommand, now?: Date): ReturnType<typeof applyVerifiedPostingRefreshCommand>
+export function applyUserDomainCommand(snapshot: PJSDASSnapshot, command: VerifiedOpportunityCommand, now?: Date): ReturnType<typeof applyVerifiedOpportunityCommand>
+export function applyUserDomainCommand(snapshot: PJSDASSnapshot, command: UserDomainCommand, now?: Date): UserDomainCommandResult
 export function applyUserDomainCommand(
   snapshot: PJSDASSnapshot,
-  command: UserDomainCommand,
+  command: UserDomainCommand | VerifiedDiscoveryCommand | VerifiedOpportunityCommand | VerifiedPostingRefreshCommand,
   now = new Date(),
 ): UserDomainCommandResult {
+  if (command.kind === 'ingest_verified_discovery') return applyVerifiedDiscoveryCommand(snapshot, command, now)
+  if (command.kind === 'refresh_verified_discovery_posting') return applyVerifiedPostingRefreshCommand(snapshot, command, now)
+  if (command.kind === 'save_verified_discovery_opportunity') return applyVerifiedOpportunityCommand(snapshot, command, now)
   if (!command.commandId.trim()) throw new Error('commandId is required.')
   if (commandAlreadyApplied(snapshot, command.commandId)) {
     if (command.kind === 'plan_application_action' || command.kind === 'add_manual_action') {
@@ -1159,6 +1169,20 @@ export function bindLegacyApplicationSubmissionUndo(compensation: DomainCompensa
   return { ...compensation, payload: { ...compensation.payload, submissionCommandId: commandId, legacySubmissionTimelineId: proof.id } }
 }
 
+function assertCreatedOpportunityUndoSafe(snapshot: PJSDASSnapshot, opportunityId: string, expected: unknown, allowedInboxId?: string) {
+  const target = snapshot.data.opportunities.find(item => item.id === opportunityId)
+  if (!target || !expected || !occurrenceValueEqual(target, expected)
+    || snapshot.data.actions.some(item => item.opportunityId === target.id)
+    || snapshot.data.processes.some(item => item.opportunityId === target.id)
+    || snapshot.data.processEvents.some(item => item.opportunityId === target.id)
+    || snapshot.data.scheduleNodes?.some(item => item.opportunityId === target.id)
+    || snapshot.data.opportunityAliases?.some(item => item.id === target.id || item.canonicalOpportunityId === target.id)
+    || snapshot.data.discoveryInbox?.some(item => item.id !== allowedInboxId && item.promotedOpportunityId === target.id)) {
+    throw new Error('The saved job has later changes or related facts; Undo cannot remove it safely.')
+  }
+  return target
+}
+
 export function applyDomainCompensation(
   snapshot: PJSDASSnapshot,
   compensation: DomainCompensation,
@@ -1205,15 +1229,7 @@ export function applyDomainCompensation(
   }
 
   if (compensation.operation === 'remove_created_opportunity') {
-    const target = next.data.opportunities.find(item => item.id === payload.opportunityId)
-    if (!target || !occurrenceValueEqual(target, payload.expected)
-      || next.data.actions.some(item => item.opportunityId === target.id)
-      || next.data.processes.some(item => item.opportunityId === target.id)
-      || next.data.processEvents.some(item => item.opportunityId === target.id)
-      || next.data.scheduleNodes?.some(item => item.opportunityId === target.id)
-      || next.data.opportunityAliases?.some(item => item.id === target.id || item.canonicalOpportunityId === target.id)) {
-      throw new Error('The saved job has later changes or related facts; Undo cannot remove it safely.')
-    }
+    const target = assertCreatedOpportunityUndoSafe(next, payload.opportunityId, payload.expected)
     next.data.opportunities = next.data.opportunities.filter(item => item.id !== target.id)
     next.exportedAt = timestamp
     validateSnapshot(next)
@@ -1247,17 +1263,28 @@ export function applyDomainCompensation(
       target.updatedAt = timestamp
     }
   } else if (compensation.operation === 'restore_discovery_promotion') {
-    const target = (next.data.discoveryInbox ?? []).find((item) => item.id === payload.inboxItemId)
-    if (target) {
-      target.status = payload.status
-      target.rejectionReason = payload.rejectionReason
-      target.promotedOpportunityId = payload.promotedOpportunityId
-      target.updatedAt = timestamp
+    const target = (next.data.discoveryInbox ?? []).find(item => item.id === payload.inboxItemId)
+    if (!target || payload.expectedPromotedItem && !occurrenceValueEqual(target, payload.expectedPromotedItem)
+      || !payload.expectedPromotedItem && target.status !== 'promoted') throw new Error('The promoted candidate changed; Undo cannot overwrite it safely.')
+    if (payload.createdOpportunityId) {
+      const savedChangeSet = next.data.changeSets?.find(item => item.id === payload.createdChangeSetId)
+      const originalCreation = savedChangeSet?.operations.find(item => item.kind === 'add_discovered_opportunity' && item.opportunity.id === payload.createdOpportunityId)
+      const expected = payload.createdOpportunityUndo?.operation === 'remove_created_opportunity'
+        && payload.createdOpportunityUndo.payload.opportunityId === payload.createdOpportunityId
+        ? payload.createdOpportunityUndo.payload.expected
+        : originalCreation?.kind === 'add_discovered_opportunity' ? originalCreation.opportunity : undefined
+      assertCreatedOpportunityUndoSafe(next, payload.createdOpportunityId, expected, target.id)
     }
-    next.data.timeline = (next.data.timeline ?? []).filter((item) => !(payload.timelineIds ?? []).includes(item.id))
-    if (payload.createdOpportunityId) next.data.opportunities = next.data.opportunities.filter((item) => item.id !== payload.createdOpportunityId)
-    if (payload.createdActionId) next.data.actions = next.data.actions.filter((item) => item.id !== payload.createdActionId)
-    if (payload.createdChangeSetId) next.data.changeSets = (next.data.changeSets ?? []).filter((item) => item.id !== payload.createdChangeSetId)
+    if (payload.createdActionId && next.data.actions.some(item => item.id === payload.createdActionId)) {
+      throw new Error('Legacy promotion Undo lacks the created task ownership needed for safe removal.')
+    }
+    target.status = payload.status
+    target.rejectionReason = payload.rejectionReason
+    target.promotedOpportunityId = payload.promotedOpportunityId
+    target.updatedAt = timestamp
+    next.data.timeline = (next.data.timeline ?? []).filter(item => !(payload.timelineIds ?? []).includes(item.id))
+    if (payload.createdOpportunityId) next.data.opportunities = next.data.opportunities.filter(item => item.id !== payload.createdOpportunityId)
+    if (payload.createdChangeSetId) next.data.changeSets = (next.data.changeSets ?? []).filter(item => item.id !== payload.createdChangeSetId)
   } else if (compensation.operation === 'restore_discovery_profile') {
     next.data.discoveryProfile = payload.profile
   } else if (compensation.operation === 'restore_discovery_status') {

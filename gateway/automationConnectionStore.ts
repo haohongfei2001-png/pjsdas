@@ -43,6 +43,7 @@ type GmailBindingRow = {
 
 export interface DiscoveryAutomationBinding extends GoogleAutomationBinding {
   discoveryLastCheckedAt?: string
+  discoveryConsentGeneration?: string
 }
 
 export interface AutomationConnectionStoreOptions {
@@ -95,18 +96,19 @@ export function createAutomationConnectionStore(options: AutomationConnectionSto
   }
 
   async function rpc<T>(name: string, body: Record<string, unknown>, responseType: 'json' | 'void' = 'json', serviceOnly = false): Promise<T> {
+    const serviceKey = serviceOnly ? required(options.supabaseServiceRoleKey ?? '', 'Existing trusted backend authorization') : undefined
     let response: Response
     try {
       response = await fetchImpl(`${baseUrl}/rest/v1/rpc/${name}`, {
         method: 'POST',
-        headers: serviceOnly ? { ...headers, apikey: options.supabaseServiceRoleKey!.trim(), Authorization: `Bearer ${options.supabaseServiceRoleKey!.trim()}` } : headers,
+        headers: serviceKey ? { ...headers, apikey: serviceKey, Authorization: `Bearer ${serviceKey}` } : headers,
         body: JSON.stringify(body),
       })
     } catch {
       throw new WorkspaceSourceError('AUTH_UNAVAILABLE', 'TodayAction automation authorization store is temporarily unavailable.', true)
     }
     if (response.status === 401 || response.status === 403) {
-      if (serviceOnly) throw new WorkspaceSourceError('GOOGLE_REFRESH_STORAGE_REQUIRED', 'Trusted Google credential storage authorization is unavailable.', false)
+      if (serviceOnly && name !== 'pjsdas_claim_enabled_discovery_automation_bindings_v2') throw new WorkspaceSourceError('GOOGLE_REFRESH_STORAGE_REQUIRED', 'Trusted Google credential storage authorization is unavailable.', false)
       throw new WorkspaceSourceError('AUTOMATION_AUTH_REQUIRED', 'TodayAction automation worker authorization is invalid.', false)
     }
     if (response.status === 404) {
@@ -277,7 +279,8 @@ export function createAutomationConnectionStore(options: AutomationConnectionSto
         refresh_token_ciphertext?: string
         granted_scopes?: string[] | null
         discovery_last_checked_at?: string | null
-      }>>('pjsdas_claim_enabled_discovery_automation_bindings', { worker_token: workerToken })
+        discovery_consent_generation?: string
+      }>>('pjsdas_claim_enabled_discovery_automation_bindings_v2', { worker_token: workerToken }, 'json', true)
 
       return rows.flatMap((row) => {
         if (!row.user_id || !row.google_subject || !row.refresh_token_ciphertext) return []
@@ -288,6 +291,7 @@ export function createAutomationConnectionStore(options: AutomationConnectionSto
           refreshTokenCiphertext: row.refresh_token_ciphertext,
           grantedScopes: row.granted_scopes ?? [],
           discoveryLastCheckedAt: row.discovery_last_checked_at ?? undefined,
+          discoveryConsentGeneration: row.discovery_consent_generation,
         }]
       })
     },

@@ -65,7 +65,7 @@ describe('autonomous monitor ingestion', () => {
     expect(result.snapshot.data.actions).toHaveLength(0)
     expect(result.snapshot.data.scheduleNodes ?? []).toHaveLength(0)
     expect(result.run).toMatchObject({ receivedCount: 1, accountedCount: 1, outcomes: { created: 1 } })
-    expect(summarizeCoverage(result.snapshot.data.timeline).allCaughtUp).toBe(true)
+    expect(summarizeCoverage(result.snapshot.data.timeline)).toMatchObject({allCaughtUp:false,unverifiedSearchSourceCount:1,sources:[{balanced:true}]})
   })
 
   it('keeps a second exact posting source distinct even when the logical title is highly similar', () => {
@@ -129,7 +129,7 @@ describe('autonomous monitor ingestion', () => {
     expect(result.run.outcomes.filtered).toBe(1)
     expect(result.run.receivedCount).toBe(1)
     expect(result.run.accountedCount).toBe(1)
-    expect(summarizeCoverage(result.snapshot.data.timeline).allCaughtUp).toBe(true)
+    expect(summarizeCoverage(result.snapshot.data.timeline)).toMatchObject({allCaughtUp:false,unverifiedSearchSourceCount:1,sources:[{balanced:true}]})
   })
 
   it('is idempotent for an already-completed run id', () => {
