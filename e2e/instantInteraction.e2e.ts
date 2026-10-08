@@ -49,10 +49,43 @@ async function start(page: import('@playwright/test').Page) {
   await page.clock.setFixedTime(INSTANT_NOW)
   await page.goto('/pjsdas/today')
   await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem('pjsdas-google-drive-sync-state-v2') ?? '{}').accounts?.['instant-owner']?.lastSyncedVersion)).toBe('txn:1204')
+  // Fault injection targets the next command, after verified account bootstrap
+  // finishes its asynchronous origin proof, not merely its earlier checkpoint.
+  await expect.poll(() => page.evaluate(async () => {
+    const proof = await import('/pjsdas/src/cloud/mockCacheBoundary.ts')
+    const state = await import('/pjsdas/src/cloud/syncState.ts')
+    return proof.canMountMockAccountCache(localStorage, state.getCloudDeviceState)
+  })).toBe(true)
 }
 async function pendingCount(page: import('@playwright/test').Page) {
   return page.evaluate(() => JSON.parse(localStorage.getItem('pjsdas-cgr01-pending:instant-owner') ?? '[]').length)
 }
+
+test('pre-projection unknown account binding stays paused and retains real IndexedDB after reopen', async ({ page, context }) => {
+  const server = await setup(context)
+  await page.route('**/pjsdas/unknown-cache-fixture', route => route.fulfill({ contentType: 'text/html', body: '<!doctype html><title>Unknown cache fixture</title>' }))
+  await page.goto('/pjsdas/unknown-cache-fixture')
+  const before = await page.evaluate(async snapshot => {
+    const db = await import('/pjsdas/src/db.ts'), sync = await import('/pjsdas/src/cloud/syncState.ts')
+    await db.restoreLocalSnapshot(snapshot)
+    sync.bindLocalWorkspaceToUser('instant-owner')
+    // An existing owner with no origin proof is not a new mock bootstrap,
+    // even when the synthetic session has exactly the same account ID.
+    return { stores: (await db.exportLocalRecoveryArchive()).stores, binding: localStorage.getItem('pjsdas-google-drive-sync-state-v2') }
+  }, server.snapshot)
+  await page.goto('/pjsdas/today')
+  for (let load = 0; load < 2; load++) {
+    await expect(page.getByRole('status')).toContainText('本地模拟模式已暂停')
+    await expect(page.locator('[data-action-id="dense-action-0"]')).toHaveCount(0)
+    const after = await page.evaluate(async () => ({ stores: (await (await import('/pjsdas/src/db.ts')).exportLocalRecoveryArchive()).stores,
+      binding: localStorage.getItem('pjsdas-google-drive-sync-state-v2'), proof: localStorage.getItem('todayaction-mock-cache-provenance-v1') }))
+    expect(after.stores).toEqual(before.stores)
+    expect(after.binding).toBe(before.binding)
+    expect(after.proof).toBeNull()
+    expect(server.sent).toEqual([])
+    if (load === 0) await page.reload()
+  }
+})
 
 for (const failure of ['journal-read', 'account-change', 'read-and-archive'] as const) test(`pre-projection ${failure} never replays a failed click after reopen`, async ({ page, context }) => {
   const server = await setup(context); server.setDelay(50)

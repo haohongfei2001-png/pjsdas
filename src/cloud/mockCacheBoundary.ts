@@ -11,6 +11,8 @@ type MockCacheProof = { version: 1; owner: string; deviceId: string; authOrigin:
 const verifiedThisPage = new WeakMap<StorageView, string>()
 type PendingClear = { proof: string; generation: number; account?: string; auth: string | null; running?: Promise<void> }
 const pendingClears = new WeakMap<StorageView, PendingClear>()
+type InitialBinding = { owner: string; deviceId: string; generation: number; token: string }
+const initialBindings = new WeakMap<StorageView, InitialBinding>()
 export const MOCK_CACHE_STOP = '本地模拟模式已暂停：现有账号缓存的来源未能确认。缓存已保留，请使用明确的 live 配置恢复原账号。 / Local mock mode is paused because the account cache origin is unconfirmed. The cache is preserved; restore its account with explicit live configuration.'
 
 function readProof(storage: StorageView): MockCacheProof | undefined {
@@ -31,6 +33,19 @@ function sessionToken(storage: StorageView, owner: string, now: number) {
     }
     return session.access_token as string
   } catch { return undefined }
+}
+/** Remember only a binding that began unowned in this mock page/session. A
+ * competing verified reader may finish it; an old stored binding cannot. */
+export function rememberInitialMockBinding(storage: StorageView, state: CloudDeviceState, owner: string) {
+  if (!mockCloudMode() || state.workspaceOwnerUserId || currentAccountCacheSession() !== owner) return
+  const token = sessionToken(storage, owner, Date.now())
+  if (token) initialBindings.set(storage, { owner, deviceId: state.deviceId, generation: currentAccountCacheGeneration(), token })
+}
+export function hasInitialMockBinding(storage: StorageView, state: CloudDeviceState, owner: string) {
+  const initial = initialBindings.get(storage)
+  return Boolean(mockCloudMode() && initial && initial.owner === owner && state.workspaceOwnerUserId === owner
+    && initial.deviceId === state.deviceId && currentAccountCacheSession() === owner
+    && initial.generation === currentAccountCacheGeneration() && sessionToken(storage, owner, Date.now()) === initial.token)
 }
 async function sha256(value: string) {
   return [...new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value)))].map(byte => byte.toString(16).padStart(2, '0')).join('')
@@ -78,11 +93,13 @@ export async function markVerifiedMockCache(storage: StorageView, readState: () 
     authOrigin: MOCK_AUTH_ORIGIN, backendOrigin: MOCK_BACKEND_ORIGIN, authStorageKey: MOCK_AUTH_STORAGE_KEY,
     fingerprint: checkpoint.lastSyncedFingerprint, tokenSha256 } satisfies MockCacheProof))
   verifiedThisPage.set(storage, storage.getItem(MOCK_CACHE_PROVENANCE_KEY)!)
+  initialBindings.delete(storage)
 }
 export function forgetMockCacheProvenance(storage: StorageView) {
   storage.removeItem(MOCK_CACHE_PROVENANCE_KEY)
   verifiedThisPage.delete(storage)
   pendingClears.delete(storage)
+  initialBindings.delete(storage)
 }
 
 function clearIsCurrent(storage: StorageView, state: CloudDeviceState, pending: PendingClear) {

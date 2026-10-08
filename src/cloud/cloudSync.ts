@@ -1,4 +1,5 @@
 import { interactionIsRecent } from './interactionActivity.js'
+import { rememberInitialMockBinding } from './mockCacheBoundary.js'
 import { captureAccountCacheLease, AccountCacheChangedError } from './accountCacheLease.js'
 import { isRecordedAccountProjection, assertLocalSnapshotCurrent } from '../db.js'
 import { exportLocalSnapshot, replaceLocalSnapshotFromCloud } from '../db.js'
@@ -125,7 +126,10 @@ export async function runCloudSync(userId: string, options: { passive?: boolean;
   if (device.workspaceOwnerUserId && device.workspaceOwnerUserId !== userId) {
     return { kind: 'account_mismatch' }
   }
-  if (!device.workspaceOwnerUserId) bindLocalWorkspaceToUser(userId)
+  if (!device.workspaceOwnerUserId) {
+    if (typeof window !== 'undefined') rememberInitialMockBinding(window.localStorage, device, userId)
+    bindLocalWorkspaceToUser(userId)
+  }
   // An ordinary in-flight command already owns local projection. Defer
   // expensive full read/fingerprint work until it settles; persisted conflicts
   // still classify against the latest server revision below.

@@ -1,5 +1,5 @@
 import { mockCloudMode } from './runtimeCloudMode.js'
-import { markVerifiedMockCache } from './mockCacheBoundary.js'
+import { hasInitialMockBinding, markVerifiedMockCache } from './mockCacheBoundary.js'
 import { interactionIsRecent } from './interactionActivity.js'
 import { captureAccountCacheLease, AccountCacheChangedError } from './accountCacheLease.js'
 import { isRecordedAccountProjection, assertLocalSnapshotCurrent, exportLocalSnapshot, replaceLocalSnapshotFromCloud } from '../db.js'
@@ -40,7 +40,8 @@ async function markFresh(accountKey: string, version: string, fingerprint: strin
   assertCurrent()
   // Only this verified first binding may establish a new development proof.
   // An existing unknown binding must never be silently relabelled as mock.
-  const firstMockBinding = mockCloudMode() && typeof window !== 'undefined' && !getCloudDeviceState().workspaceOwnerUserId
+  const firstMockBinding = mockCloudMode() && typeof window !== 'undefined'
+    && (!getCloudDeviceState().workspaceOwnerUserId || hasInitialMockBinding(window.localStorage, getCloudDeviceState(), accountKey))
   bindLocalWorkspaceToUser(accountKey)
   patchAccountCheckpoint(accountKey, {
     clearedCacheFingerprint: undefined,
