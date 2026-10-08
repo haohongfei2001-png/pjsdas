@@ -47,6 +47,8 @@ jobs:
           npm install --no-save @playwright/test@1.63.0
           node scripts/verify-installed-runtime-lock.mjs
       - run: npx playwright install chromium
+      - name: Prove mock cloud isolation before application browser tests
+        run: npx playwright test --config=playwright.cloud-guard.config.mts --project=chromium
       - name: Check settled offline-draft visual baseline
         run: npx playwright test --config=playwright.config.mts --project=chromium -g 'offline capture queues a stable account command'
       - name: Upload visual evidence
@@ -74,6 +76,8 @@ jobs:
           node scripts/verify-installed-runtime-lock.mjs
       - name: Install Chromium
         run: npx playwright install chromium
+      - name: Prove mock cloud isolation before application browser tests
+        run: npx playwright test --config=playwright.cloud-guard.config.mts --project=chromium
       - name: Prepare VoiceOver on CI runner
         run: |
           # A fresh macOS runner can transiently miss the Focus UI. Retry

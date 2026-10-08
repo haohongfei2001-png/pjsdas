@@ -92,6 +92,11 @@ export function resolveApplicationDeadline(opportunity: Opportunity, data: Pick<
   // Not finding a deadline is not positive evidence that a closed posting reopened.
   const postingStatus = correction?.postingStatus === 'unknown' && previousAvailability === 'closed' ? 'closed'
     : correction?.postingStatus ?? previousAvailability
+  const sourceProof=opportunity.detail?.discovery?.posting?.sourceProof??opportunity.detail?.discovery?.sourceProof
+  if(sourceProof?.unresolvedFields?.includes('deadline')&&!correction&&!opportunity.detail?.userFacts?.deadline
+    &&!nodes.some(node=>node.temporal.resolutionBasis==='user_explicit'&&!['cancelled','superseded'].includes(node.state))){
+    return {state:'unknown',source:'source',sourceUrl:sourceProof.finalUrl,checkedAt:sourceProof.verifiedAt,nodeIds,postingStatus}
+  }
   if (correction?.acknowledgedNodeFacts !== undefined) {
     const matches = correction.acknowledgedNodeFacts === deadlineNodeFacts(nodes)
     const evidenceRefs = [correction.sourceUrl, `deadline-correction:${correction.commandId}`].filter((value): value is string => Boolean(value))
@@ -139,7 +144,7 @@ export function applicationDeadlineFingerprint(opportunity: Opportunity, data: S
   const input = { deadline: opportunity.deadline, precision: opportunity.deadlinePrecision,
     user: user ? { deadline: user.deadline, precision: user.deadlinePrecision, updatedAt: user.updatedAt } : null,
     source: { deadline: opportunity.detail?.facts?.application.deadline, evidence: opportunity.detail?.facts?.evidence },
-    posting: posting ? { id: posting.id, deadline: posting.deadline, status: posting.postingStatus, verifiedAt: posting.lastVerifiedAt, sourceUrl: posting.sourceUrl } : null,
+    posting: posting ? { id: posting.id, deadline: posting.deadline, status: posting.postingStatus, verifiedAt: posting.lastVerifiedAt, sourceUrl: posting.sourceUrl,unresolvedFields:posting.sourceProof?.unresolvedFields } : null,
     correction: correction ? { commandId: correction.commandId, state: correction.state, deadline: correction.deadline, precision: correction.precision, timezone: correction.timezone, sourceAuthority: correction.sourceAuthority, recordedAt: correction.recordedAt, resultNodeIds: correction.resultNodeIds, acknowledgedNodeFacts: correction.acknowledgedNodeFacts } : null,
     nodes: applicationDeadlineNodes(data, opportunity.id).map(node => ({ id: node.id, version: node.version, state: node.state, temporal: node.temporal, updatedAt: node.updatedAt, sourceVersionRefs: node.sourceVersionRefs, relatedActionIds: node.relatedActionIds })),
     actions: data.actions.filter(item => item.opportunityId === opportunity.id && item.kind === 'apply').sort((a, b) => a.id.localeCompare(b.id)).map(action => ({ id: action.id, status: action.status, dueAt: action.dueAt, duePrecision: action.duePrecision, timingMode: action.timingMode, updatedAt: action.updatedAt })) }

@@ -376,7 +376,7 @@ export default function AppV8() {
     let active = true
     let running = false
     const refresh = async (initial = false) => {
-      if (running || (interactionIsRecent(accountKey) && !getAccountCheckpoint(accountKey).conflict)) return
+      if (!passiveCloudReadAllowed() || running || (interactionIsRecent(accountKey) && !getAccountCheckpoint(accountKey).conflict)) return
       const previousFreshness = todayFreshnessRef.current
       running = true
       setTodayFreshness((current) => ({
@@ -1094,3 +1094,4 @@ function formatMinutes(minutes: number) {
   const value = Number.isInteger(hours) ? String(hours) : hours.toFixed(1)
   return zh ? `${value} 小时` : `${value} hr`
 }
+import { passiveCloudReadAllowed } from './cloud/runtimeCloudMode.js'

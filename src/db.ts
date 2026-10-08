@@ -1,5 +1,10 @@
-import { appendOpportunityOnly } from './opportunityCreation.js'
-import { ScoringRetiredError, assertNoNewOpportunityRating, preserveRetiredProfileFields } from './scoringRetirement.js'
+import { applyMcpSourceRefreshCommand } from './mcpSourceRefreshCommand.js'
+import { createMcpProposalEnvelope } from './ai/mcpProposal.js'
+import { mergeDiscoveryScope } from './discoveryScopeSchema.js'
+import { applyUserDomainCommand } from './domainCommands.js'
+import { observationFromVerifiedOpportunity } from './verifiedOpportunityCommand.js'
+import { applyDiscoveryPromotionCommand } from './discoveryPromotionCommand.js'
+import { ScoringRetiredError, assertNoNewOpportunityRating } from './scoringRetirement.js'
 import { interactionMetric } from './cloud/interactionMetrics.js'
 import { applyWorkspaceDelta, patchDeltaRow, DELTA_COLLECTIONS, type WorkspaceDelta, type DeltaRow } from './workspaceDelta.js'
 import { canonicalWorkspaceJson } from './cloud/workspaceFingerprint.js'
@@ -33,8 +38,6 @@ import type { TimePlanningPreferences } from './timePlanningPreferences.js'
 import { validateTimePlanningPreferences } from './timePlanningPreferences.js'
 import {
   createDefaultDiscoveryProfile,
-  normalizeDiscoveryProfile,
-  validateDiscoveryProfile,
   type DiscoveryProfile,
 } from './discoveryProfile.js'
 import {
@@ -369,11 +372,9 @@ export async function getDiscoveryProfile() {
   return stored ?? createDefaultDiscoveryProfile('1970-01-01T00:00:00.000Z')
 }
 
-export async function saveDiscoveryProfile(profile: DiscoveryProfile) {
+export async function saveDiscoveryProfile(profile: unknown) {
   const previous = await (await dbPromise).get('discoveryProfiles', 'current')
-  const next = normalizeDiscoveryProfile(preserveRetiredProfileFields(profile, previous))
-  const errors = validateDiscoveryProfile(next)
-  if (errors.length) throw new Error(errors[0])
+  const next = mergeDiscoveryScope(previous, profile, new Date().toISOString())
   await (await dbPromise).put('discoveryProfiles', next)
   return next
 }
@@ -777,65 +778,93 @@ export async function applyActionStatusChangeSet(actionId: string, status: Actio
   return applyChangeSet(changeSet.id)
 }
 
-function compactOpportunityIdentity(value: string) {
-  return value.toLocaleLowerCase().replace(/[\s\u3000·•｜|（）()【】\[\]，,。.!！?？:：;；/\\_-]+/g, '')
-}
-
-function opportunityIdentity(company: string, role: string) {
-  return `${compactOpportunityIdentity(company)}|${compactOpportunityIdentity(role)}`
-}
-
 type DiscoveredChangeOperation = Extract<ChangeSetRecord['operations'][number], { kind: 'add_discovered_opportunity' }>
 
-async function applyDiscoveredOpportunityOperations(operations: DiscoveredChangeOperation[], changeSetId: string) {
+async function applyDiscoveredOpportunityOperations(changeSet: ChangeSetRecord) {
   const db = await dbPromise
-  return withTimelineMutation(db, async (tx) => {
-    const existing = await tx.objectStore('opportunities').getAll()
-    const existingIds = new Set(existing.map((item) => item.id))
-    const aliases = await tx.objectStore('opportunityAliases').getAll()
-    const identities = new Set([...existing, ...aliases.map(alias => alias.originalOpportunity)].map((item) => opportunityIdentity(item.company, item.role)))
-    for (const alias of aliases) existingIds.add(alias.id)
-    const batchIds = new Set<string>()
-    const batchIdentities = new Set<string>()
-
-    for (const operation of operations) {
-      const opportunity = operation.opportunity
-      const identity = opportunityIdentity(opportunity.company, opportunity.role)
-      if (existingIds.has(opportunity.id) || identities.has(identity)) {
-        throw new Error(`岗位 ${opportunity.company}｜${opportunity.role} 已存在，请重新让 ChatGPT 基于最新工作区生成提议。`)
-      }
-      if (batchIds.has(opportunity.id) || batchIdentities.has(identity)) {
-        throw new Error(`岗位发现 ChangeSet 内含重复岗位：${opportunity.company}｜${opportunity.role}。`)
-      }
-      batchIds.add(opportunity.id)
-      batchIdentities.add(identity)
+  return withTimelineMutation(db, async tx => {
+    const current = await tx.objectStore('changeSets').get(changeSet.id)
+    if (!current) throw new Error(`找不到 ChangeSet ${changeSet.id}。`)
+    if (current.status === 'applied') return current
+    if (current.status !== 'pending') throw new Error('The reviewed Discovery batch is no longer pending.')
+    let snapshot = await readLocalSnapshot(tx)
+    const now = new Date(), appliedOperations: ChangeSetRecord['operations'] = []
+    for (const operation of current.operations) {
+      if (operation.kind !== 'add_discovered_opportunity') throw new Error('岗位发现 ChangeSet 必须作为独立批次应用。')
+      assertNoNewOpportunityRating(operation.opportunity)
+      const evaluated = applyUserDomainCommand(snapshot, {
+        kind: 'save_verified_discovery_opportunity', commandId: `local-discovery:${current.id}:${operation.id}`,
+        opportunityId: operation.opportunity.id, observation: observationFromVerifiedOpportunity(operation.opportunity),
+      }, now)
+      if (evaluated.status !== 'APPLIED') throw new Error('This exact source posting is already saved. Refresh the reviewed batch.')
+      snapshot = evaluated.snapshot
+      appliedOperations.push({ ...operation, opportunity: evaluated.opportunity })
     }
-
-    const opportunityStore = tx.objectStore('opportunities')
-    const timelineStore = tx.objectStore('timeline')
-    const recordedAt = new Date().toISOString()
-
-    for (const operation of operations) {
+    const timestamp = now.toISOString()
+    const applied: ChangeSetRecord = { ...current, operations: appliedOperations, status: 'applied', appliedAt: timestamp,
+      updatedAt: timestamp, error: undefined, failedAt: undefined }
+    // Facts, complete batch status and its audit commit in this one transaction.
+    // Any invalid selected candidate aborts every preceding candidate as well.
+    for (const operation of appliedOperations) {
+      if (operation.kind !== 'add_discovered_opportunity') continue
       const opportunity = operation.opportunity
-      const facts = appendOpportunityOnly({ opportunities: [], opportunityAliases: aliases }, opportunity)
-      await opportunityStore.put(facts)
-      await timelineStore.put({
-        id: `timeline:discovery:${opportunity.id}`,
-        kind: 'opportunity_added',
-        category: 'opportunity',
-        source: 'changeset',
-        occurredAt: opportunity.importedAt,
-        recordedAt,
-        title: '接受 AI 发现岗位',
-        detail: opportunity.detail?.discovery?.rationale,
-        opportunityId: opportunity.id,
-        changeSetId,
-        company: opportunity.company,
-        role: opportunity.role,
-        sourceRef: opportunity.detail?.discovery?.sourceUrl,
-      })
+      await tx.objectStore('opportunities').put(opportunity)
+      await tx.objectStore('timeline').put({ id: `timeline:discovery:${opportunity.id}`, kind: 'opportunity_added', category: 'opportunity',
+        source: 'changeset', occurredAt: opportunity.importedAt, recordedAt: timestamp, title: '接受 AI 发现岗位',
+        opportunityId: opportunity.id, changeSetId: current.id, company: opportunity.company, role: opportunity.role,
+        sourceRef: opportunity.detail?.discovery?.sourceUrl })
     }
+    await tx.objectStore('changeSets').put(applied)
+    await tx.objectStore('timeline').put(timelineFromChangeSetApplied(applied))
+    return applied
+  })
+}
 
+export async function applyLocalDiscoveryPromotion(inboxItemId: string) {
+  const db = await dbPromise
+  return withTimelineMutation(db, async tx => {
+    const snapshot = await readLocalSnapshot(tx)
+    const evaluated = applyDiscoveryPromotionCommand(snapshot, { inboxItemId })
+    if (evaluated.status !== 'ALREADY_APPLIED') {
+      // The pure command owns identity, fact validation and the exact audit.
+      // Keep promotion status and job creation indivisible in the local adapter.
+      const originalJobs = new Set(snapshot.data.opportunities.map(item => item.id))
+      const originalChanges = new Set(snapshot.data.changeSets?.map(item => item.id))
+      const originalAudit = new Set(snapshot.data.timeline?.map(item => item.id))
+      for (const opportunity of evaluated.snapshot.data.opportunities) if (!originalJobs.has(opportunity.id)) await tx.objectStore('opportunities').put(opportunity)
+      for (const changeSet of evaluated.snapshot.data.changeSets ?? []) if (!originalChanges.has(changeSet.id)) await tx.objectStore('changeSets').put(changeSet)
+      for (const record of evaluated.snapshot.data.timeline ?? []) if (!originalAudit.has(record.id)) await tx.objectStore('timeline').put(record)
+      const promoted = evaluated.snapshot.data.discoveryInbox!.find(item => item.id === inboxItemId)!
+      await tx.objectStore('discoveryInbox').put(promoted)
+    }
+    return evaluated.snapshot.data.discoveryInbox!.find(item => item.id === inboxItemId)!
+  })
+}
+
+export async function applyLocalDiscoveryExtension(changeSet: ChangeSetRecord) {
+  const db = await dbPromise
+  return withTimelineMutation(db, async tx => {
+    const current = await tx.objectStore('changeSets').get(changeSet.id)
+    if (current?.status === 'applied') return current
+    if (current && current.status !== 'pending') throw new Error('The reviewed source change is no longer pending.')
+    const snapshot = await readLocalSnapshot(tx)
+    snapshot.data.changeSets = (snapshot.data.changeSets ?? []).filter(item => item.id !== changeSet.id)
+    const now = new Date()
+    const evaluated = applyMcpSourceRefreshCommand(snapshot, createMcpProposalEnvelope(changeSet, changeSet.expectedWorkspaceVersion, now), now)
+    for (const operation of changeSet.operations) if (operation.kind === 'refresh_job_posting') {
+      if (operation.ownerKind === 'opportunity') {
+        const updated = evaluated.snapshot.data.opportunities.find(item => item.id === operation.ownerId)!
+        await tx.objectStore('opportunities').put(updated)
+      } else {
+        const updated = evaluated.snapshot.data.discoveryInbox!.find(item => item.id === operation.ownerId)!
+        await tx.objectStore('discoveryInbox').put(updated)
+      }
+    }
+    const oldAudit = new Set(snapshot.data.timeline?.map(item => item.id))
+    for (const record of evaluated.snapshot.data.timeline ?? []) if (!oldAudit.has(record.id)) await tx.objectStore('timeline').put(record)
+    const applied = evaluated.snapshot.data.changeSets!.find(item => item.id === changeSet.id)!
+    await tx.objectStore('changeSets').put(applied)
+    return applied
   })
 }
 
@@ -868,7 +897,7 @@ export async function applyChangeSet(id: string): Promise<ChangeSetRecord & { ac
   try {
     const discoveredOperations = changeSet.operations.filter((operation): operation is DiscoveredChangeOperation => operation.kind === 'add_discovered_opportunity')
     if (discoveredOperations.length > 0) {
-      await applyDiscoveredOpportunityOperations(discoveredOperations, changeSet.id)
+      return { ...await applyDiscoveredOpportunityOperations(changeSet), actionCompensations }
     } else {
     const progressOperations = changeSet.operations.filter((operation) => operation.kind === 'progress_update')
     if (progressOperations.length === changeSet.operations.length) {

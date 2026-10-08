@@ -34,6 +34,8 @@ jobs:
           node scripts/verify-installed-runtime-lock.mjs
       - name: Install Chromium
         run: npx playwright install --with-deps chromium
+      - name: Prove mock cloud isolation before application browser tests
+        run: npx playwright test --config=playwright.cloud-guard.config.mts --project=chromium
       - name: Verify deadline-only settings and capture actual layouts
         run: npx playwright test --config=playwright.deadline-only-ui.config.mts
       - name: Run critical browser journeys

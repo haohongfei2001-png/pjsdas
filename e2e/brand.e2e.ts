@@ -1,4 +1,5 @@
-import { expect, test, type Page } from '@playwright/test'
+import type { Page } from '@playwright/test'
+import { expect, test } from './support/mockApiTest.js'
 import { mkdir } from 'node:fs/promises'
 const base = process.env.TA_BRAND_BASE ?? '/pjsdas/'
 async function visual(page: Page, label: string) {

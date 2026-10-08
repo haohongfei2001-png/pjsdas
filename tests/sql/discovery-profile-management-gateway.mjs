@@ -59,7 +59,7 @@ try {
     const executor = createAuthoritativeCommandExecutor({ supabaseUrl: 'https://fixture.invalid', serviceRoleKey: 'fixture-only', fetchImpl, resolveDiscoveryProfileManagementGrant: async () => grant })
     if (scenario === 'legacy-missing-arrays') {
       await assert.rejects(getDiscoveryProfileManagementRead(initial), error => error.code === 'INVALID_CONFIGURATION' && /separate snapshot migration/.test(error.message))
-      const command = { commandId: `review-${scenario}-apply`, baseRevision: 0, command: { type: 'discovery_profile_management', value: { kind:'patch_discovery_profile', expectedFingerprint:await discoveryProfileManagementFingerprint(null), patch:{notes:'New'} } } }
+      const command = { commandId: `review-${scenario}-apply`, baseRevision: 0, command: { type: 'discovery_profile_management', value: { kind:'patch_discovery_profile', expectedFingerprint:await discoveryProfileManagementFingerprint(null), patch:{searchGoal:'New'} } } }
       await assert.rejects(executor.execute(principal, command), error => error.code === 'INVALID_CONFIGURATION' && /separate snapshot migration/.test(error.message))
       assert.equal(posts, 0)
       assert.deepEqual((await db.query('select snapshot from public.pjsdas_workspaces where user_id=$1', [owner])).rows[0].snapshot, initial)
@@ -67,14 +67,14 @@ try {
       continue
     }
     const read = await getDiscoveryProfileManagementRead(initial)
-    const command = { commandId: `review-${scenario}-apply`, baseRevision: 0, command: { type: 'discovery_profile_management', value: { kind:'patch_discovery_profile', expectedFingerprint:read.fingerprint, patch:{notes:'New'} } } }
+    const command = { commandId: `review-${scenario}-apply`, baseRevision: 0, command: { type: 'discovery_profile_management', value: { kind:'patch_discovery_profile', expectedFingerprint:read.fingerprint, patch:{searchGoal:'New'} } } }
     const applied = await executor.execute(principal, command)
     assert.equal(applied.outcome, 'COMMITTED', scenario)
     assert.equal((await executor.execute(principal, command)).outcome, 'ALREADY_APPLIED')
     const undo = { commandId: `review-${scenario}-undo`, targetCommandId: command.commandId, expectedCompensationFingerprint: applied.result.compensationFingerprint }
     if (scenario === 'newer-config-conflict') {
       const current = (await db.query('select snapshot from public.pjsdas_workspaces where user_id=$1', [owner])).rows[0].snapshot
-      current.data.discoveryProfile.notes = 'Newer preference'
+      current.data.discoveryProfile.searchGoal = 'Newer preference'
       await db.query('update public.pjsdas_workspaces set snapshot=$1,revision=2 where user_id=$2', [JSON.stringify(current), owner])
       await assert.rejects(executor.undo(principal, undo), error => error.code === 'RESTORE_CONFLICT')
       assert.equal(posts, 1)

@@ -79,12 +79,15 @@ export function getAccountCheckpoint(userId: string) {
 export function patchAccountCheckpoint(userId: string, patch: Partial<AccountSyncCheckpoint>) {
   const state = readRaw()
   const current = state.accounts[userId] ?? {}
+  const before = { ...state, accounts: { ...state.accounts } }
   const next: AccountSyncCheckpoint = { ...current, ...patch }
   if (patch.conflict === undefined && 'conflict' in patch) delete next.conflict
   if (patch.lastError === undefined && 'lastError' in patch) delete next.lastError
   if (patch.localPendingFingerprint === undefined && 'localPendingFingerprint' in patch) delete next.localPendingFingerprint
   state.accounts[userId] = next
-  return writeRaw(state)
+  const written = writeRaw(state)
+  if (typeof window !== 'undefined') advanceExistingMockCacheProof(window.localStorage, before, written)
+  return written
 }
 
 export function clearLocalWorkspaceBinding() {
@@ -111,3 +114,4 @@ export function recordClearedAccountCache(fingerprint: string) {
   for (const checkpoint of Object.values(state.accounts)) checkpoint.clearedCacheFingerprint = fingerprint
   writeRaw(state)
 }
+import { advanceExistingMockCacheProof } from './mockCacheBoundary.js'

@@ -1,3 +1,4 @@
+import { MOCK_TARGET_AUTH_ORIGIN } from './support/mockCloudTargets.js'
 import { expect, test } from '@playwright/test'
 import { freezeTodayFixture } from './support/consumerFixtureClock.js'
 import { AUTH_KEY, BACKEND, cors, health, session, workspace } from './fixtures/todayWorkspace.js'
@@ -16,7 +17,7 @@ for (const scenario of ['sign-out', 'local-edit', 'command-sign-out', 'command-l
       localStorage.setItem('pcr-race-seeded', '1')
     }
   }, { key: AUTH_KEY, value: session('account-a', 'token-a') })
-  await page.route('https://*.supabase.co/auth/v1/**', route => cors(route, {}, 200))
+  await page.route(`${MOCK_TARGET_AUTH_ORIGIN}/auth/v1/**`, route => cors(route, {}, 200))
   await page.route(BACKEND + '/**', async route => {
     if (route.request().method() === 'OPTIONS') return cors(route, {}, 204)
     if (new URL(route.request().url()).pathname === '/api/health') return cors(route, health())
@@ -195,7 +196,7 @@ for (const edited of [false, true]) test(`first login sync settles before an old
   // Isolate the two real coordinators on the real IndexedDB, without a third
   // background UI timer changing the deliberately held commit boundary.
   await page.route('**/pjsdas/consumer-read-race', route => route.fulfill({ contentType: 'text/html', body: '<!doctype html><title>Consumer read race</title>' }))
-  await page.route('https://*.supabase.co/auth/v1/**', route => cors(route, {}, 200))
+  await page.route(`${MOCK_TARGET_AUTH_ORIGIN}/auth/v1/**`, route => cors(route, {}, 200))
   await page.route(BACKEND + '/**', async route => {
     if (route.request().method() === 'OPTIONS') return cors(route, {}, 204)
     if (new URL(route.request().url()).pathname === '/api/health') return cors(route, health())

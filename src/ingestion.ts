@@ -1,3 +1,4 @@
+import { discoveryRunRetrievalState } from './discoverySearchEvidence.js'
 import type {
   IngestionLedgerEntry,
   IngestionIssueKind,
@@ -51,6 +52,7 @@ export const PJSDAS_EXPECTED_INGESTION_SOURCES: ExpectedIngestionSource[] = PJSD
   .map((item) => ({ sourceKind: item.sourceKind, sourceId: item.sourceId, maxAgeHours: item.freshnessSlaMinutes / 60, label: item.label, cadenceMinutes: item.cadenceMinutes, freshnessSlaMinutes: item.freshnessSlaMinutes, policySource: item.policySource }))
 
 export interface CoverageSourceSummary {
+  retrievalState?: 'complete' | 'partial' | 'unverified'
   sourceKind: IngestionSourceKind
   sourceId: string
   label?: string
@@ -78,6 +80,8 @@ export interface CoverageSourceSummary {
 }
 
 export interface CoverageSummary {
+  partialSearchSourceCount?: number
+  unverifiedSearchSourceCount?: number
   allCaughtUp: boolean
   sourceCount: number
   expectedSourceCount: number
@@ -332,6 +336,7 @@ export function summarizeCoverage(timeline: TimelineRecord[] | undefined, option
     const stale = Boolean(policy && ageHours !== undefined && ageHours > policy.maxAgeHours)
     const activeCount = sourceActive.length
     return {
+      retrievalState: discoveryRunRetrievalState(run),
       sourceKind: run.sourceKind,
       sourceId: run.sourceId,
       label: policy?.label,
@@ -366,13 +371,18 @@ export function summarizeCoverage(timeline: TimelineRecord[] | undefined, option
   const staleSourceCount = relevantSources.filter((item) => item.stale).length
   const activeUnresolvedCount = activeUnresolved.length
   const lifetimeUnresolvedCount = lifetimeUnresolvedKeys.size
+  const partialSearchSourceCount=relevantSources.filter(item=>item.retrievalState==='partial').length
+  const unverifiedSearchSourceCount=relevantSources.filter(item=>item.retrievalState==='unverified').length
 
   return {
     allCaughtUp:
       relevantSources.length > 0
       && relevantSources.every((item) => item.balanced && !item.stale)
       && activeUnresolvedCount === 0
+      && partialSearchSourceCount === 0
+      && unverifiedSearchSourceCount === 0
       && missingSources.length === 0,
+    partialSearchSourceCount,unverifiedSearchSourceCount,
     sourceCount: relevantSources.length,
     expectedSourceCount: expected.length,
     latestCompletedAt: relevantSources[0]?.lastCompletedAt,

@@ -138,7 +138,7 @@ export async function runCloudSync(userId: string, options: { passive?: boolean;
     if (hotPending()) return { kind: 'local_pending', version: getAccountCheckpoint(userId).lastSyncedVersion }
     const localFingerprint = await fingerprintWorkspace(local)
     if (hotPending()) return { kind: 'local_pending', version: getAccountCheckpoint(userId).lastSyncedVersion }
-    const remoteRaw = await fetchRemoteWorkspace(userId, assertCurrent)
+    const remoteRaw = options.passive ? await fetchRemoteWorkspace(userId, assertCurrent, { passive: true }) : await fetchRemoteWorkspace(userId, assertCurrent)
     if (hotPending()) return { kind: 'local_pending', version: getAccountCheckpoint(userId).lastSyncedVersion }
     const remote = remoteRaw ? await verifyRemote(remoteRaw) : null
     targetVersion = remote?.version

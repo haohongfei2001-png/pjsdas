@@ -1,3 +1,4 @@
+import { emptySearchExecution } from './fixtures/discoverySearch.rebuilt.js'
 import { describe, expect, it } from 'vitest'
 import { invokeCoverageStatus } from '../gateway/coverageTool.js'
 import {
@@ -10,7 +11,7 @@ import { reconcileIngestionDebt } from '../src/ingestionResolution.js'
 import { createSnapshot } from '../src/snapshot.js'
 import type { WorkspaceSource } from '../gateway/workspaceSource.js'
 
-function snapshot() {
+async function snapshot() {
   const unresolved = createIngestionLedgerTimeline({
     sourceKind: 'gmail',
     sourceId: 'gmail:primary',
@@ -23,8 +24,8 @@ function snapshot() {
     accountedAt: '2026-08-01T00:00:00.000Z',
     reason: 'Generic recruiting ad / marketing newsletter; no actionable business fact.',
   })
-  const runs = PJSDAS_EXPECTED_INGESTION_SOURCES.map((source) =>
-    createIngestionRunTimeline(buildIngestionRunSummary({
+  const runs = await Promise.all(PJSDAS_EXPECTED_INGESTION_SOURCES.map(async (source) => {
+    const run = buildIngestionRunSummary({
       runId: `${source.sourceId}:latest`,
       sourceKind: source.sourceKind,
       sourceId: source.sourceId,
@@ -39,8 +40,10 @@ function snapshot() {
         freshnessSlaMinutes: source.freshnessSlaMinutes ?? 20,
         label: source.label,
       },
-    })),
-  )
+    })
+    if (source.sourceKind === 'gpt_monitor') { run.searchExecutions = await emptySearchExecution(source.sourceId, run.completedAt); run.retrievalStatus = 'complete' }
+    return createIngestionRunTimeline(run)
+  }))
   return reconcileIngestionDebt(createSnapshot({
     opportunities: [],
     processes: [],
@@ -54,7 +57,7 @@ function snapshot() {
 
 describe('get_coverage_status active/lifetime unresolved contract', () => {
   it('reports lifetime audit separately and does not let settled historical debt block green status', async () => {
-    const snap = snapshot()
+    const snap = await snapshot()
     const source: WorkspaceSource = {
       async read() {
         return {

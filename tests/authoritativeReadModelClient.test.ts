@@ -15,6 +15,7 @@ vi.mock('../src/cloud/connectedWorkspaceRepository.js', () => ({
 vi.mock('../src/cloud/syncState.js', () => ({
   bindLocalWorkspaceToUser: vi.fn(),
   getAccountCheckpoint: vi.fn(),
+  getCloudDeviceState: vi.fn(),
   patchAccountCheckpoint: vi.fn(),
 }))
 
@@ -32,6 +33,7 @@ import { fetchConnectedRemoteWorkspace } from '../src/cloud/connectedWorkspaceRe
 import {
   bindLocalWorkspaceToUser,
   getAccountCheckpoint,
+  getCloudDeviceState,
   patchAccountCheckpoint,
 } from '../src/cloud/syncState.js'
 import { equivalentReadProjection, fingerprintWorkspace, workspaceIsEffectivelyEmpty } from '../src/cloud/workspaceFingerprint.js'
@@ -79,6 +81,7 @@ describe('CGR-02 authoritative Today read freshness', () => {
     vi.mocked(exportLocalSnapshot).mockResolvedValue(local)
     vi.mocked(replaceLocalSnapshotFromCloud).mockResolvedValue(local)
     vi.mocked(fetchConnectedRemoteWorkspace).mockResolvedValue(remote())
+    vi.mocked(getCloudDeviceState).mockImplementation(() => ({ version: 2, deviceId: 'synthetic-device', autoSync: true, workspaceOwnerUserId: 'account-a', accounts: { 'account-a': getAccountCheckpoint('account-a') } }))
     vi.mocked(getAccountCheckpoint).mockReturnValue({
       lastSyncedVersion: 'txn:7',
       lastSyncedFingerprint: 'local-fp',

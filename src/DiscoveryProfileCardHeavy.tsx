@@ -8,7 +8,7 @@ import { discoveryFeedbackSummary } from './discoveryFeedback.js'
 import { discoveryProfileSavePayload } from './discoveryProfileSave.js'
 import { useUiLanguage } from './uiLanguage.js'
 import type { DiscoveryProfile } from './discoveryProfile.js'
-import type { OpportunityRole, TimelineRecord } from './model.js'
+import type { TimelineRecord } from './model.js'
 import './discoveryProfile.css'
 
 function lines(values: string[]) {
@@ -21,14 +21,6 @@ function parseLines(value: string) {
     .map((item) => item.trim())
     .filter(Boolean)
 }
-
-const roleTypeOptions: Array<{ value: OpportunityRole; zh: string; en: string }> = [
-  { value: 'core', zh: '核心', en: 'Core' },
-  { value: 'backup', zh: '保底', en: 'Backup' },
-  { value: 'reach', zh: '冲刺', en: 'Reach' },
-  { value: 'lottery', zh: '彩票', en: 'Long shot' },
-  { value: 'practice', zh: '练手', en: 'Practice' },
-]
 
 const discoveryDecisionLabels: Record<NonNullable<TimelineRecord['discoveryDecision']>, [string, string]> = {
   accepted: ['已接受', 'Accepted'],
@@ -57,7 +49,6 @@ export default function DiscoveryProfileCard() {
   const [locations, setLocations] = useState('')
   const [mustHave, setMustHave] = useState('')
   const [mustNotHave, setMustNotHave] = useState('')
-  const [strengths, setStrengths] = useState('')
   const [history, setHistory] = useState<TimelineRecord[]>([])
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState('')
@@ -82,7 +73,6 @@ export default function DiscoveryProfileCard() {
       setLocations(lines(value.preferredLocations))
       setMustHave(lines(value.mustHave))
       setMustNotHave(lines(value.mustNotHave))
-      setStrengths(lines(value.strengths))
       setHistory(records
         .filter((item) => Boolean(item.discoveryDecision))
         .sort((a, b) => b.occurredAt.localeCompare(a.occurredAt) || b.recordedAt.localeCompare(a.recordedAt)))
@@ -97,7 +87,6 @@ export default function DiscoveryProfileCard() {
         setLocations(lines(value.preferredLocations))
         setMustHave(lines(value.mustHave))
         setMustNotHave(lines(value.mustNotHave))
-        setStrengths(lines(value.strengths))
       })
     }
     window.addEventListener('pjsdas:workspace-replaced', onWorkspaceChanged)
@@ -139,7 +128,6 @@ export default function DiscoveryProfileCard() {
         preferredLocations: parseLines(locations),
         mustHave: parseLines(mustHave),
         mustNotHave: parseLines(mustNotHave),
-        strengths: parseLines(strengths),
       }
       let next: DiscoveryProfile
       const connected = connectedWorkspaceAuthorityEnabled() && Boolean(cloud.session)
@@ -152,13 +140,12 @@ export default function DiscoveryProfileCard() {
           throw new Error(result.conflict?.message ?? '岗位发现偏好未写入账号工作区。')
         }
         next = await getDiscoveryProfile()
-      } else next = await saveDiscoveryProfile(requested)
+      } else next = await saveDiscoveryProfile(discoveryProfileSavePayload(requested))
       setProfile(next)
       setTargetRoles(lines(next.targetRoleQueries))
       setLocations(lines(next.preferredLocations))
       setMustHave(lines(next.mustHave))
       setMustNotHave(lines(next.mustNotHave))
-      setStrengths(lines(next.strengths))
       dirtyRef.current = false
       if (connected) {
         setMessage(zh ? '岗位发现偏好已保存到账号工作区。' : 'Job-discovery preferences saved to the account workspace.')
@@ -179,15 +166,6 @@ export default function DiscoveryProfileCard() {
     }
   }
 
-  function toggleRoleType(value: OpportunityRole) {
-    if (!profile) return
-    const current = profile.preferredRoleTypes ?? []
-    updateProfile({
-      preferredRoleTypes: current.includes(value)
-        ? current.filter((item) => item !== value)
-        : [...current, value],
-    })
-  }
 
   if (!profile) return <div className="discovery-profile-card">{zh ? '正在读取岗位发现偏好…' : 'Loading job-discovery preferences…'}</div>
 
@@ -217,46 +195,12 @@ export default function DiscoveryProfileCard() {
         </label>
         <label>
           <span>{zh ? '必须满足' : 'Must have'}</span>
-          <textarea value={mustHave} onChange={(event) => editText(setMustHave, event.target.value)} placeholder={zh ? '每行一条硬要求；未从来源确认时会显示警告' : 'One hard requirement per line; unverified source facts stay explicit.'} />
+          <textarea value={mustHave} onChange={(event) => editText(setMustHave, event.target.value)} placeholder={zh ? '每行一条必须条件；未从来源证实的岗位不自动保存' : 'One hard requirement per line; unverified source facts stay explicit.'} />
         </label>
         <label>
           <span>{zh ? '明确排除' : 'Exclude'}</span>
           <textarea value={mustNotHave} onChange={(event) => editText(setMustNotHave, event.target.value)} placeholder={zh ? '每行一条；来源明确命中时不进入 ChangeSet' : 'One exclusion per line; confirmed matches are filtered before ChangeSet review.'} />
         </label>
-        <label>
-          <span>{zh ? '个人优势' : 'Personal strengths'}</span>
-          <textarea value={strengths} onChange={(event) => editText(setStrengths, event.target.value)} placeholder={zh ? '只写你希望长期用于岗位发现的事实或能力' : 'Include only facts or strengths you want reused in ongoing discovery.'} />
-        </label>
-        <label>
-          <span>{zh ? '最低年薪（万元，可空）' : 'Minimum annual compensation (10k CNY, optional)'}</span>
-          <input
-            type="number"
-            min="0"
-            max="1000"
-            step="1"
-            value={profile.minimumAnnualCompensationWan ?? ''}
-            onChange={(event) => updateProfile({
-              minimumAnnualCompensationWan: event.target.value === '' ? undefined : Number(event.target.value),
-            })}
-          />
-        </label>
-
-        <div className="discovery-profile-field wide">
-          <span>{zh ? '允许的岗位类型（不选 = 不限制）' : 'Allowed role types (none selected = unrestricted)'}</span>
-          <div className="role-type-options">
-            {roleTypeOptions.map((item) => (
-              <label className="role-type-chip" key={item.value}>
-                <input
-                  type="checkbox"
-                  checked={(profile.preferredRoleTypes ?? []).includes(item.value)}
-                  onChange={() => toggleRoleType(item.value)}
-                />
-                <span>{zh ? item.zh : item.en}</span>
-              </label>
-            ))}
-          </div>
-        </div>
-
         <label>
           <span>{zh ? '地点约束' : 'Location policy'}</span>
           <select
@@ -267,32 +211,17 @@ export default function DiscoveryProfileCard() {
             <option value="strict">{zh ? '严格：不匹配或地点未知时拦截' : 'Strict: block mismatches or unknown locations'}</option>
           </select>
         </label>
-        <label>
-          <span>{zh ? '单批最多审阅岗位' : 'Maximum jobs per review batch'}</span>
-          <input
-            type="number"
-            min="1"
-            max="12"
-            step="1"
-            value={profile.maxReviewCandidates ?? 6}
-            onChange={(event) => updateProfile({ maxReviewCandidates: Number(event.target.value) })}
-          />
-        </label>
         <label className="wide">
-          <span>{zh ? '地点规则 / 例外' : 'Location rules / exceptions'}</span>
-          <textarea value={profile.locationNotes} onChange={(event) => updateProfile({ locationNotes: event.target.value })} placeholder={zh ? '例如：通常按某个地域范围；特定城市例外可接受。严格模式只执行上面的地点列表，复杂例外仍需人工确认。' : 'For example: use a normal geographic range, with explicit city exceptions. Strict mode enforces the list above; complex exceptions remain explicit.'} />
-        </label>
-        <label className="wide">
-          <span>{zh ? '其他发现说明' : 'Other discovery instructions'}</span>
-          <textarea value={profile.notes} onChange={(event) => updateProfile({ notes: event.target.value })} placeholder={zh ? '只放长期有效、希望 ChatGPT 每次找岗位都遵守的说明。' : 'Keep only durable instructions you want every discovery run to follow.'} />
+          <span>{zh ? '搜索目标' : 'Search goal'}</span>
+          <textarea value={profile.searchGoal ?? ''} onChange={(event) => updateProfile({ searchGoal: event.target.value })} placeholder={zh ? '只放长期有效、希望 ChatGPT 每次找岗位都遵守的说明。' : 'Keep only durable instructions you want every discovery run to follow.'} />
         </label>
       </div>
 
       {error ? <div className="notice error">{error}</div> : null}
       {message ? <div className="notice success">{message}</div> : null}
       <small>{zh
-        ? '质量闸门会直接拦截已过期、明确关闭、命中排除条件、低于显式薪资门槛或相似重复的岗位；无法从公开来源确认的事实保持未知并在审阅中提示。'
-        : 'The quality gate blocks expired or closed postings, explicit exclusions, jobs below configured compensation thresholds, and likely duplicates. Facts that cannot be verified from public sources remain unknown and visible in review.'}</small>
+        ? '仅按已确认范围核验招聘来源与岗位事实；必须条件未证实、身份有歧义或来源无法核验时不自动保存。'
+        : 'Only the confirmed scope and verified recruiting facts are used. Missing required evidence, ambiguous identity or unverified sources prevent automatic saving.'}</small>
 
       <div className="discovery-history">
         <div className="discovery-history-heading">

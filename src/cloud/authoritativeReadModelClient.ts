@@ -1,3 +1,5 @@
+import { mockCloudMode } from './runtimeCloudMode.js'
+import { markVerifiedMockCache } from './mockCacheBoundary.js'
 import { interactionIsRecent } from './interactionActivity.js'
 import { captureAccountCacheLease, AccountCacheChangedError } from './accountCacheLease.js'
 import { isRecordedAccountProjection, assertLocalSnapshotCurrent, exportLocalSnapshot, replaceLocalSnapshotFromCloud } from '../db.js'
@@ -5,6 +7,7 @@ import { fetchConnectedRemoteWorkspace } from './connectedWorkspaceRepository.js
 import {
   bindLocalWorkspaceToUser,
   getAccountCheckpoint,
+  getCloudDeviceState,
   patchAccountCheckpoint,
 } from './syncState.js'
 import { equivalentReadProjection, fingerprintWorkspace, workspaceIsEffectivelyEmpty } from './workspaceFingerprint.js'
@@ -33,7 +36,11 @@ export interface AuthoritativeReadFreshness {
   changed: boolean
 }
 
-function markFresh(accountKey: string, version: string, fingerprint: string, projectionFingerprint: string, observedAt: string) {
+async function markFresh(accountKey: string, version: string, fingerprint: string, projectionFingerprint: string, observedAt: string, assertCurrent: () => void) {
+  assertCurrent()
+  // Only this verified first binding may establish a new development proof.
+  // An existing unknown binding must never be silently relabelled as mock.
+  const firstMockBinding = mockCloudMode() && typeof window !== 'undefined' && !getCloudDeviceState().workspaceOwnerUserId
   bindLocalWorkspaceToUser(accountKey)
   patchAccountCheckpoint(accountKey, {
     clearedCacheFingerprint: undefined,
@@ -46,6 +53,7 @@ function markFresh(accountKey: string, version: string, fingerprint: string, pro
     conflict: undefined,
     lastError: undefined,
   })
+  if (firstMockBinding) await markVerifiedMockCache(window.localStorage, getCloudDeviceState, accountKey, assertCurrent)
 }
 
 export async function refreshConnectedAuthoritativeCache(
@@ -66,7 +74,7 @@ export async function refreshConnectedAuthoritativeCache(
   let sampledCheckpoint = JSON.stringify(getAccountCheckpoint(accountKey))
   const reading = Promise.all([
     exportLocalSnapshot(assertReadCurrent),
-    fetchConnectedRemoteWorkspace(accountKey, assertReadCurrent),
+    options.passive ? fetchConnectedRemoteWorkspace(accountKey, assertReadCurrent, { passive: true }) : fetchConnectedRemoteWorkspace(accountKey, assertReadCurrent),
   ])
   const pair = await reading.catch(error => { lease.assertCurrent(); if (hotPending()) return undefined; throw error })
   if (!pair || hotPending()) return pendingResult()
@@ -100,7 +108,7 @@ export async function refreshConnectedAuthoritativeCache(
     await assertLocalSnapshotCurrent(local, assertCurrent)
     assertCurrent()
     await isRecordedAccountProjection(accountKey, local, { compact: true, assertCurrent })
-    markFresh(accountKey, remote.version, remote.fingerprint, localFingerprint, observedAt)
+    await markFresh(accountKey, remote.version, remote.fingerprint, localFingerprint, observedAt, assertCurrent)
   }
 
   const preserveLatestConflict = async () => {
@@ -202,7 +210,7 @@ export async function refreshConnectedAuthoritativeCache(
   const committed = await replaceLocalSnapshotFromCloud(remote.snapshot, { expectedLocal: local, assertCurrent, accountKey, version: remote.version })
   const projectedFingerprint = await fingerprintWorkspace(committed)
   assertCurrent()
-  markFresh(accountKey, remote.version, remote.fingerprint, projectedFingerprint, observedAt)
+  await markFresh(accountKey, remote.version, remote.fingerprint, projectedFingerprint, observedAt, assertCurrent)
   if (typeof window !== 'undefined') {
     window.dispatchEvent(new CustomEvent('pjsdas:workspace-replaced', {
       detail: { source: 'authoritative-read-refresh', workspaceVersion: remote.version },

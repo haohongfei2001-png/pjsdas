@@ -199,8 +199,8 @@ async function updateDriveRemoteWorkspace(input: {
 }
 
 
-export async function fetchRemoteWorkspace(userId: string, assertReadCurrent?: () => void): Promise<RemoteWorkspaceRow | null> {
-  if (connectedWorkspaceAuthorityEnabled()) return fetchConnectedRemoteWorkspace(userId, assertReadCurrent)
+export async function fetchRemoteWorkspace(userId: string, assertReadCurrent?: () => void, options?: { passive?: boolean }): Promise<RemoteWorkspaceRow | null> {
+  if (connectedWorkspaceAuthorityEnabled()) return options?.passive ? fetchConnectedRemoteWorkspace(userId, assertReadCurrent, options) : fetchConnectedRemoteWorkspace(userId, assertReadCurrent)
   return fetchLegacyDriveWorkspaceForMigration(userId)
 }
 

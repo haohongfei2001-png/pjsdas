@@ -1,3 +1,4 @@
+import { discoveryReceiptFixture, verifiedPostingFixture } from './fixtures/verifiedDiscovery.js'
 import { describe, expect, it } from 'vitest'
 import { invokeCoverageStatus } from '../gateway/coverageTool.js'
 import { invokeTrustedIngestion } from '../gateway/ingestSources.js'
@@ -10,7 +11,7 @@ function initialSnapshot() {
   return createSnapshot({
     opportunities: [], processes: [], processEvents: [], actions: [], prep: [], applicationGroups: [],
     decisionRules: createDefaultDecisionRules('2026-09-13T00:00:00.000Z'),
-    discoveryProfile: createDefaultDiscoveryProfile('2026-09-13T00:00:00.000Z'),
+    discoveryProfile: { ...createDefaultDiscoveryProfile('2026-09-13T00:00:00.000Z'), searchScopeVersion: 1, targetRoleQueries: ['AI Product Manager'] },
     discoveryInbox: [], timeline: [], changeSets: [],
   }, '2026-09-13T00:00:00.000Z')
 }
@@ -29,8 +30,8 @@ function monitorArgs(runId = 'run-1') {
       freshnessSlaMinutes: 2160,
     },
     observations: [{
-      sourceRecordId: 'job-123', company: 'Example', role: 'AI Product Manager', sourceUrl: 'https://careers.example.com/job/123',
-      sourceTitle: 'AI Product Manager', rationale: 'Explicitly matches the configured direction.', roleType: 'core',
+      sourceRecordId: 'job-123', company: 'Example', role: 'AI Product Manager', sourceUrl: 'https://www.liepin.com/job/9421.shtml',
+      sourceTitle: 'AI Product Manager',
     }],
   }
 }
@@ -39,20 +40,26 @@ class WritableSource implements WorkspaceSource {
   snapshot: PJSDASSnapshot = initialSnapshot()
   version = 5
   writes: WorkspaceWriteInput[] = []
-  async read(): Promise<GatewayWorkspace> { return { snapshot: this.snapshot, context: { workspaceVersion: `drive:${this.version}`, now: new Date('2026-09-13T00:10:00.000Z') } } }
+  receipts = new Map<string, NonNullable<ReturnType<typeof discoveryReceiptFixture>>>()
+  async readCommandReceipt(commandId: string) { return structuredClone(this.receipts.get(commandId) ?? null) }
+  async read(): Promise<GatewayWorkspace> { return { snapshot: this.snapshot, context: { workspaceVersion: `txn:${this.version}`, now: new Date('2026-09-13T00:10:00.000Z') } } }
   async write(input: WorkspaceWriteInput): Promise<GatewayWorkspace> {
-    expect(input.expectedWorkspaceVersion).toBe(`drive:${this.version}`)
-    this.writes.push(input); this.snapshot = input.snapshot; this.version += 1
-    return { snapshot: this.snapshot, context: { workspaceVersion: `drive:${this.version}`, now: new Date('2026-09-13T00:10:00.000Z') } }
+    expect(input.expectedWorkspaceVersion).toBe(`txn:${this.version}`)
+    expect(input.command?.discoveryAuthorization).toMatchObject({ kind: 'delegated_mcp', userId: 'synthetic-account', sourceId: input.command?.provenance?.sourceId })
+    const existing = this.receipts.get(input.command!.commandId)
+    if (existing) throw new Error('The adapter must reconcile the original command before proposing another write')
+    this.writes.push(input); this.snapshot = structuredClone(input.snapshot); this.version += 1
+    const recorded = discoveryReceiptFixture(input, this.version, '2026-09-13T00:10:00.000Z')!
+    this.receipts.set(recorded.commandId, recorded)
+    return { snapshot: structuredClone(this.snapshot), context: { workspaceVersion: `txn:${this.version}`, now: new Date('2026-09-13T00:10:00.000Z') }, commandOutcome: 'COMMITTED', commandReceipt: structuredClone(recorded.receipt) }
   }
 }
 
 
-const verifiedSource = async (observation: any) => ({
-  ...observation,
-  sourceVerification: 'verified' as const,
-  sourceVerifiedAt: '2026-09-13T00:04:00.000Z',
-})
+const verifiedSource = async (observation: any) => verifiedPostingFixture(observation, '2026-09-13T00:04:00.000Z')
+const sourceOptions = { sourceVerifier: verifiedSource, authorize: async (_name: unknown, sourceId: string) => ({ kind: 'delegated_mcp' as const,
+  userId: 'synthetic-account', clientId: 'synthetic-client', sourceId, grantId: '11111111-1111-4111-8111-111111111111', grantRevision: 1 }) }
+
 
 function textError(result: Awaited<ReturnType<typeof invokeTrustedIngestion>>) {
   const first = result.content[0]
@@ -63,17 +70,17 @@ function textError(result: Awaited<ReturnType<typeof invokeTrustedIngestion>>) {
 describe('trusted ingestion MCP boundary', () => {
   it('writes a monitor run once and treats exact run retry as idempotent', async () => {
     const source = new WritableSource()
-    const first = await invokeTrustedIngestion(source, 'ingest_discovery_run', monitorArgs(), { sourceVerifier: verifiedSource })
+    const first = await invokeTrustedIngestion(source, 'ingest_discovery_run', monitorArgs(), sourceOptions)
     expect(first.isError).not.toBe(true)
     expect(source.writes).toHaveLength(1)
     expect(first.structuredContent).toMatchObject({
-      workspaceVersion: 'drive:6',
+      workspaceVersion: 'txn:6',
       alreadyApplied: false,
       allInputsAccounted: true,
       unresolvedCount: 0,
       run: { producer: 'mcp_trusted_ingestion' },
     })
-    const second = await invokeTrustedIngestion(source, 'ingest_discovery_run', monitorArgs(), { sourceVerifier: verifiedSource })
+    const second = await invokeTrustedIngestion(source, 'ingest_discovery_run', monitorArgs(), sourceOptions)
     expect(second.isError).not.toBe(true)
     expect(source.writes).toHaveLength(1)
     expect(second.structuredContent).toMatchObject({ alreadyApplied: true, allInputsAccounted: true })
@@ -103,14 +110,14 @@ describe('trusted ingestion MCP boundary', () => {
 
   it('fails closed when trusted ingestion is invoked on a read-only source', async () => {
     const source: WorkspaceSource = { async read() { return { snapshot: initialSnapshot(), context: { workspaceVersion: 'file:1' } } } }
-    const result = await invokeTrustedIngestion(source, 'ingest_discovery_run', monitorArgs('run-readonly'), { sourceVerifier: verifiedSource })
+    const result = await invokeTrustedIngestion(source, 'ingest_discovery_run', monitorArgs('run-readonly'), sourceOptions)
     expect(result.isError).toBe(true)
     expect(textError(result).code).toBe('WORKSPACE_READ_ONLY')
   })
 
   it('exposes durable reconciliation without claiming global coverage when configured sources are missing', async () => {
     const source = new WritableSource()
-    await invokeTrustedIngestion(source, 'ingest_discovery_run', monitorArgs(), { sourceVerifier: verifiedSource })
+    await invokeTrustedIngestion(source, 'ingest_discovery_run', monitorArgs(), sourceOptions)
     const result = await invokeCoverageStatus(source)
     expect(result.isError).not.toBe(true)
     expect(result.structuredContent).toMatchObject({

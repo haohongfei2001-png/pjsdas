@@ -8,6 +8,7 @@ export function setAccountCacheSession(next: string | undefined) {
   if (next !== account) { account = next; generation += 1 }
 }
 export function currentAccountCacheSession() { return account }
+export function currentAccountCacheGeneration() { return generation }
 export function captureAccountCacheLease(expected: string) {
   const captured = generation
   const assertCurrent = () => {

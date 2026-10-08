@@ -1,3 +1,6 @@
+import { discoveryFactClaimSchema } from '../src/discoveryFactSchema.js'
+import type { MonitorJobObservation } from '../src/autonomousIngestion.js'
+import { createDiscoverySourceVerifier } from './discoverySourceVerifier.js'
 import { assertNoScoringInput, ScoringRetiredError } from '../src/scoringRetirement.js'
 import type { CallToolResult } from '@modelcontextprotocol/server'
 import * as z from 'zod/v4'
@@ -9,18 +12,16 @@ import {
   type ChangeSetRecord,
 } from '../src/changeSet.js'
 import { fingerprintWorkspace } from '../src/cloud/workspaceFingerprint.js'
-import { discoveryProfileForSnapshot, isDiscoveryProfileConfigured } from '../src/discoveryProfile.js'
+import { discoveryProfileForSnapshot, isDiscoveryProfileConfigured, isDiscoverySearchScopeConfirmed } from '../src/discoveryProfile.js'
 import { screenDiscoveryCandidates } from '../src/discoveryQuality.js'
 import { createDiscoveryRunRecord, type DiscoveryRunRecord } from '../src/discoveryRun.js'
-import { canonicalizeJobSourceUrl, createJobPostingEvidence } from '../src/jobPosting.js'
-import { resolvePostingRefreshTarget } from '../src/postingRefresh.js'
-import { createOpportunityFacts, validateOpportunityFacts } from '../src/richOpportunity.js'
+import { canonicalizeVerifiedJobSourceUrl, createJobPostingEvidence } from '../src/jobPosting.js'
+import { resolvePostingRefreshTarget, bindVerifiedPostingRefresh } from '../src/postingRefresh.js'
 import { buildMcpProposalReviewUrl, type McpDiscoveryReview } from '../src/ai/mcpProposal.js'
 import { parseProgressUpdate } from '../src/progressUpdate.js'
 import type {
   ActionStatus,
   Opportunity,
-  OpportunityRole,
 } from '../src/model.js'
 import { createSignedProposalToken } from './proposalToken.js'
 import { WorkspaceSourceError, type WorkspaceSource } from './workspaceSource.js'
@@ -30,7 +31,6 @@ const actionStatusChangeSchema = z.object({
   status: z.enum(['todo', 'doing', 'done', 'skipped']),
 }).strict()
 
-const opportunityRoleSchema = z.enum(['core', 'backup', 'reach', 'lottery', 'practice'])
 const postingStatusSchema = z.enum(['open', 'closed', 'unknown'])
 const discoveryRunModeSchema = z.enum(['ad_hoc', 'full', 'incremental', 'refresh'])
 
@@ -56,41 +56,7 @@ const discoveryRunContextSchema = z.object({
   searchedSourceHosts: z.array(z.string().trim().min(1).max(253)).max(32).optional(),
 }).strict()
 
-const richFactsSchema = z.object({
-  department: z.string().trim().min(1).max(200).optional(),
-  businessUnit: z.string().trim().min(1).max(200).optional(),
-  locations: z.array(z.string().trim().min(1).max(120)).max(10).optional(),
-  recruitmentBatch: z.string().trim().min(1).max(160).optional(),
-  responsibilities: z.array(z.string().trim().min(1).max(320)).max(12).optional(),
-  requirements: z.array(z.string().trim().min(1).max(320)).max(16).optional(),
-  educationRequirement: z.string().trim().min(1).max(300).optional(),
-  majorRequirements: z.array(z.string().trim().min(1).max(200)).max(12).optional(),
-  experienceRequirement: z.string().trim().min(1).max(300).optional(),
-  skills: z.array(z.string().trim().min(1).max(160)).max(16).optional(),
-  languageRequirements: z.array(z.string().trim().min(1).max(180)).max(8).optional(),
-  applicationMethod: z.string().trim().min(1).max(300).optional(),
-  applicationUrl: z.string().trim().min(1).max(2_000).refine(publicHttpUrl, 'applicationUrl must be a public http(s) URL.').optional(),
-  annualCompensationMaxWan: z.number().min(0).max(1000).optional(),
-  compensationBasis: z.string().trim().min(1).max(300).optional(),
-  evidenceSummary: z.string().trim().min(1).max(1_200).optional(),
-}).strict()
-
-const discoveredOpportunitySchema = z.object({
-  company: z.string().trim().min(1).max(200),
-  role: z.string().trim().min(1).max(240),
-  sourceUrl: z.string().trim().min(1).max(2_000).refine(publicHttpUrl, 'sourceUrl must be a public http(s) URL.'),
-  sourceTitle: z.string().trim().min(1).max(300),
-  sourceEvidenceText: z.string().trim().min(1).max(2_000).optional(),
-  postingStatus: postingStatusSchema.optional(),
-  location: z.string().trim().min(1).max(240).optional(),
-  deadline: z.string().trim().refine(validDateString, 'deadline must be a valid date/time.').optional(),
-  compensationText: z.string().trim().min(1).max(500).optional(),
-  annualCompensationMinWan: z.number().min(0).max(1000).optional(),
-  facts: richFactsSchema.optional(),
-  rationale: z.string().trim().min(1).max(1_600),
-  roleType: opportunityRoleSchema,
-  discoveredAt: z.string().trim().refine(validDateString, 'discoveredAt must be a valid date/time.').optional(),
-}).strict()
+const discoveredOpportunitySchema = discoveryFactClaimSchema
 
 const postingRefreshSchema = z.object({
   ownerKind: z.enum(['opportunity', 'inbox']),
@@ -113,7 +79,7 @@ export const proposeChangesSchema = z.object({
   discoveredOpportunities: z.array(discoveredOpportunitySchema).min(1).max(20).optional(),
   postingRefreshes: z.array(postingRefreshSchema).min(1).max(20).optional(),
   discoveryRunContext: discoveryRunContextSchema.optional(),
-}).refine(
+}).strict().refine(
   (value) => Boolean(
     value.progressText ||
     value.actionStatusChanges?.length ||
@@ -138,11 +104,11 @@ export const proposeChangesSchema = z.object({
 
 export type ProposeChangesInput = z.infer<typeof proposeChangesSchema>
 
-type ParsedDiscoveryCandidate = z.infer<typeof discoveredOpportunitySchema>
-type NormalizedDiscoveryCandidate = ParsedDiscoveryCandidate
+type NormalizedDiscoveryCandidate = MonitorJobObservation
 
 export interface ProposeChangesOptions {
   signingKey: string
+  fetchImpl?: typeof fetch
 }
 
 function proposalId(now: Date) {
@@ -168,9 +134,9 @@ function opportunityIdentity(company: string, role: string) {
   return `${compactIdentity(company)}|${compactIdentity(role)}`
 }
 
-function discoveredOpportunityId(company: string, role: string, sourceUrl: string) {
-  const postingIdentity = canonicalizeJobSourceUrl(sourceUrl)
-  return `discovery:${stableHash(`${opportunityIdentity(company, role)}|${postingIdentity}`)}`
+function discoveredOpportunityId(company: string, role: string, sourceUrl: string, sourceIdentity?: string) {
+  const identity = sourceIdentity ?? `${opportunityIdentity(company, role)}|${canonicalizeVerifiedJobSourceUrl(sourceUrl)}`
+  return `discovery:${stableHash(identity)}`
 }
 
 function failure(code: string, message: string, retryable = false): CallToolResult {
@@ -224,7 +190,7 @@ function discoveredOpportunity(
   warnings: string[],
   now: Date,
 ): Opportunity {
-  const discoveredAt = candidate.discoveredAt ?? now.toISOString()
+  const discoveredAt = now.toISOString()
   const posting = createJobPostingEvidence({
     company: candidate.company,
     role: candidate.role,
@@ -232,56 +198,33 @@ function discoveredOpportunity(
     sourceTitle: candidate.sourceTitle,
     location: candidate.location,
     deadline: candidate.deadline,
-    compensationText: candidate.compensationText,
+    deadlinePrecision: candidate.deadlinePrecision, publishedAt: candidate.publishedAt, publishedPrecision: candidate.publishedPrecision,
+    recruitmentBatch: candidate.recruitmentBatch, sourceProof: candidate.sourceProof,
     postingStatus: candidate.postingStatus ?? 'unknown',
     observedAt: discoveredAt,
   })
-  const facts = createOpportunityFacts({
-    sourceUrl: candidate.sourceUrl,
-    sourceTitle: candidate.sourceTitle,
-    verifiedAt: discoveredAt,
-    location: candidate.location,
-    deadline: candidate.deadline,
-    compensationText: candidate.compensationText,
-    annualCompensationMinWan: candidate.annualCompensationMinWan,
-    facts: candidate.facts,
-  })
-  const factErrors = validateOpportunityFacts(facts)
-  if (factErrors.length) {
-    throw new WorkspaceSourceError('INVALID_ARGUMENT', `Rich Opportunity facts are invalid: ${factErrors[0]}`, false)
-  }
   return {
-    id: discoveredOpportunityId(candidate.company, candidate.role, candidate.sourceUrl),
+    id: discoveredOpportunityId(candidate.company, candidate.role, candidate.sourceUrl, candidate.sourceProof?.postingIdentity),
     company: candidate.company,
     role: candidate.role,
     currentStageLabel: '待投',
     processStage: 'not_applied',
-    roleType: candidate.roleType as OpportunityRole,
     early: false,
     deadline: candidate.deadline,
-    sourcePriority: 'AI 岗位发现',
-    salaryReference: candidate.compensationText,
-    nextActionLabel: '审阅并投递',
-    prepEstimateMinutes: 45,
+    deadlinePrecision: candidate.deadlinePrecision,
     opportunityValue: 0,
     fitScore: 0,
     locallyManaged: true,
     importedAt: discoveredAt,
     detail: {
-      salaryMinWan: candidate.annualCompensationMinWan,
-      salaryMaxWan: candidate.facts?.annualCompensationMaxWan,
-      salaryBasis: candidate.facts?.compensationBasis,
-      salaryRaw: candidate.compensationText,
-      facts,
       discovery: {
         sourceUrl: candidate.sourceUrl,
         sourceTitle: candidate.sourceTitle,
         location: candidate.location,
-        compensationText: candidate.compensationText,
-        rationale: candidate.rationale,
-        discoveredAt,
-        fitConfidence: 'low',
-        opportunityValueConfidence: 'low',
+            discoveredAt,
+        sourceVerification: candidate.sourceVerification,
+        sourceVerifiedAt: candidate.sourceVerifiedAt,
+        sourceProof: candidate.sourceProof,
         profileWarnings: warnings.length ? warnings : undefined,
         posting,
       },
@@ -314,6 +257,7 @@ export async function invokeProposeChanges(
     const input = proposeChangesSchema.parse(rawInput)
     const { snapshot, context } = await source.read()
     const now = context.now ? new Date(context.now) : new Date()
+    const verifySource = createDiscoverySourceVerifier({ fetchImpl: options.fetchImpl, now })
     const operations: ChangeSetOperation[] = []
     let discoveryScreening: ReturnType<typeof screenDiscoveryCandidates<NormalizedDiscoveryCandidate>> | undefined
     let discoveryProfileUpdatedAt: string | undefined
@@ -329,7 +273,9 @@ export async function invokeProposeChanges(
           false,
         )
       }
-      const normalizedCandidates = input.discoveredOpportunities
+      if (!isDiscoverySearchScopeConfirmed(profile)) throw new WorkspaceSourceError('DISCOVERY_SCOPE_CONFIRMATION_REQUIRED', 'Confirm the complete current search scope before proposing automatically discovered jobs. Historical preferences remain unchanged.', false)
+      const normalizedCandidates = await Promise.all(input.discoveredOpportunities.map(candidate =>
+        verifySource({ ...candidate, sourceRecordId: candidate.sourceUrl })))
       const screened = screenDiscoveryCandidates(
         profile,
         normalizedCandidates,
@@ -381,7 +327,7 @@ export async function invokeProposeChanges(
           ownerKind: requested.ownerKind,
           ownerId: requested.ownerId,
           expectedPostingId: requested.postingId,
-          expectedCanonicalSourceUrl: canonicalizeJobSourceUrl(requested.canonicalSourceUrl),
+          expectedCanonicalSourceUrl: canonicalizeVerifiedJobSourceUrl(requested.canonicalSourceUrl),
           sourceUrl: requested.sourceUrl,
           sourceTitle: requested.sourceTitle,
           postingStatus: requested.postingStatus,
@@ -402,14 +348,17 @@ export async function invokeProposeChanges(
             false,
           )
         }
-        if (canonicalizeJobSourceUrl(requested.sourceUrl) !== target.posting.canonicalSourceUrl) {
+        if (canonicalizeVerifiedJobSourceUrl(requested.sourceUrl) !== canonicalizeVerifiedJobSourceUrl(target.posting.sourceUrl)) {
           throw new WorkspaceSourceError(
             'INVALID_ARGUMENT',
             'A posting refresh must verify the same canonical source. A newly discovered source must go through normal discovery/re-post review instead of overwriting the old posting.',
             false,
           )
         }
-        operations.push(operation)
+        const verified = await verifySource({ sourceRecordId: operation.id, company: target.company, role: target.role,
+          sourceUrl: operation.sourceUrl, sourceTitle: operation.sourceTitle })
+        if (verified.sourceVerification !== 'verified') throw new WorkspaceSourceError('DISCOVERY_VERIFICATION_REQUIRED', 'This public source could not verify the selected posting. Its old facts were retained.', false)
+        operations.push(bindVerifiedPostingRefresh(operation, verified))
       }
       explicitDiscoveryRun = createDiscoveryRunRecord({
         context: { ...input.discoveryRunContext, mode: input.discoveryRunContext?.mode ?? 'refresh' },

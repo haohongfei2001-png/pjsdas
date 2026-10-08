@@ -1,4 +1,5 @@
 import { WorkspaceSourceError } from './workspaceSource.js'
+import { UncertainDiscoveryExecution } from './discoveryExecutionOutcome.js'
 
 export interface DiscoverySpendRequest {
   requestId: string
@@ -36,12 +37,17 @@ export async function requireDiscoverySpendReservation(input: {
   const inputBytes = new TextEncoder().encode(input.system + input.prompt).byteLength
   if (inputBytes > 262144) throw new WorkspaceSourceError('DISCOVERY_BUDGET_INPUT_TOO_LARGE', 'Discovery input exceeds the bounded budget request.', false)
   const request = Object.freeze({ requestId: crypto.randomUUID(), application: 'todayaction' as const, provider: 'vercel-ai-gateway' as const, accountId: input.accountId, sourceId: input.sourceId, model: input.model, inputBytes, maxOutputTokens: input.maxOutputTokens, maxSdkAttempts: 1 as const })
-  const receipt = await input.reserve(request)
+  let receipt
+  try { receipt = await input.reserve(request) }
+  catch (caught) {
+    if (caught instanceof WorkspaceSourceError && caught.code === 'DISCOVERY_BUDGET_EXHAUSTED') throw caught
+    throw new UncertainDiscoveryExecution('DISCOVERY_BUDGET_RESERVATION_UNCERTAIN', 'The original model budget reservation may exist. Retain its hold and reconcile before retrying.', false)
+  }
   if (!receipt || Object.entries(request).some(([key, value]) => receipt[key as keyof DiscoverySpendRequest] !== value)
     || !receipt.reservationId || typeof receipt.reservationId !== 'string'
     || !Number.isFinite(receipt.reservedUsd) || receipt.reservedUsd <= 0
     || !Number.isFinite(Date.parse(receipt.expiresAt)) || Date.parse(receipt.expiresAt) <= Date.now()) {
-    throw new WorkspaceSourceError('DISCOVERY_BUDGET_RESERVATION_INVALID', 'A current, exact TodayAction budget reservation is required.', false)
+    throw new UncertainDiscoveryExecution('DISCOVERY_BUDGET_RESERVATION_INVALID', 'The returned reservation does not prove the original hold; reconcile before retrying.', false)
   }
   return Object.freeze({ ...receipt })
 }

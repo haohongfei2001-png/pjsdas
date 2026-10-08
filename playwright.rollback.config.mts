@@ -1,12 +1,14 @@
+import { mockCloudGlobalSetup, mockCloudTestUse } from './e2e/support/mockCloudIsolation.mjs'
 import { defineConfig, devices } from '@playwright/test'
 
 export default defineConfig({
+  globalSetup: mockCloudGlobalSetup,
   testDir: './e2e',
   testMatch: '**/*.rollback.ts',
   workers: 1,
   retries: 0,
   reporter: [['list']],
-  use: { baseURL: 'http://127.0.0.1:4173', trace: 'retain-on-failure' },
+  use: { ...mockCloudTestUse, baseURL: 'http://127.0.0.1:4173', trace: 'retain-on-failure' },
   projects: [{ name: 'chromium-rollback', use: { ...devices['Desktop Chrome'] } }],
   webServer: {
     command: 'VITE_PJSDAS_CONNECTED_AUTHORITY=transactional VITE_PJSDAS_CGR02_READ_ONLY=true npm run dev -- --host 127.0.0.1 --port 4173',

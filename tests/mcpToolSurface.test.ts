@@ -59,7 +59,8 @@ describe('authenticated MCP release tool surface', () => {
 
   it('keeps legacy additive writes available but gates new P1 commands on transactional authority', () => {
     expect(authenticatedRuntime).toContain('createAuthorizationGrantStore')
-    expect(authenticatedRuntime).toContain('grantAllows(grants, name, sourceId)')
+    expect(authenticatedRuntime).toContain('grantAllows(currentGrants, name, sourceId)')
+    expect(authenticatedRuntime).toContain('createDiscoveryGrantAdmission')
     expect(authenticatedRuntime).toContain("dataMode: transactionalAuthority ? 'transactional' : 'google-drive'")
     expect(authenticatedRuntime).toContain("explicitUserWriteMode: 'enabled'")
     expect(authenticatedRuntime).toContain("explicitUserCommandMode: transactionalAuthority ? 'enabled' : 'disabled'")

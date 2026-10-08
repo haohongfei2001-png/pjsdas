@@ -34,7 +34,8 @@ describe('discovery automation plan', () => {
     const profile = createDefaultDiscoveryProfile('2026-09-14T00:00:00.000Z')
     profile.targetRoleQueries = ['AI 产品经理', '商业分析']
     profile.preferredLocations = ['北京', '上海']
-    profile.maxReviewCandidates = 5
+    profile.maxReviewCandidates = 5 // Historical value is retained but cannot rank or cap the current plan.
+    profile.searchScopeVersion = 1
 
     const plan = buildDiscoveryAutomationPlan({
       profile,
@@ -54,9 +55,13 @@ describe('discovery automation plan', () => {
       'monitor:middle-layer',
       'monitor:urgent-campus',
     ])
-    expect(plan.maxReviewCandidates).toBe(5)
-    expect(plan.sourceRuns.every((item) => item.maxObservations === 15)).toBe(true)
-    expect(plan.sourceRuns.find((item) => item.sourceId === 'monitor:urgent-campus')?.queryHints).toContain('AI 产品经理 北京 校招 截止 新增')
+    expect(plan.maxReviewCandidates).toBe(18)
+    expect(plan.sourceRuns.every((item) => item.maxObservations === 18)).toBe(true)
+    expect(plan.sourceRuns.find((item) => item.sourceId === 'monitor:urgent-campus')?.queryHints).toContain('AI 产品经理 北京')
+    expect(plan.sourceRuns.flatMap(item => item.queryHints).some(query => /2027|校招|截止|新增/.test(query))).toBe(false)
+    const queries = plan.sourceRuns.flatMap(item => item.webQueries ?? [])
+    expect(new Set(queries.map(query => query.coverage))).toEqual(new Set(['general_web', 'recruiting_platforms', 'employer_sites', 'university_publishers']))
+    expect(queries.filter(query => query.coverage === 'general_web').every(query => !query.domains)).toBe(true)
     expect(plan.executionRules.join(' ')).toContain('2026-09-14T01:00:00.000Z')
     expect(plan.executionRules.join(' ')).toContain('observations is empty')
   })
@@ -77,6 +82,7 @@ describe('discovery automation plan', () => {
     }
 
     const plan = buildDiscoveryAutomationPlan({
+      profile: { ...createDefaultDiscoveryProfile(), searchScopeVersion: 1, targetRoleQueries: ['Explicit role'] },
       continuousDiscovery: summary({ suggestedMode: 'refresh', refreshQueue: [refreshTarget] }),
       sources: [source('monitor:key-changes'), source('monitor:urgent-campus')],
     })
@@ -87,14 +93,25 @@ describe('discovery automation plan', () => {
     expect(plan.executionRules.join(' ')).toContain('canonicalSourceUrl')
   })
 
-  it('still emits a bounded baseline plan when the Discovery Profile has no explicit role or location queries', () => {
+  it('does not infer a default search when the user has not confirmed a current scope', () => {
     const plan = buildDiscoveryAutomationPlan({
       continuousDiscovery: summary({ runCount: 0, suggestedMode: 'full', incrementalSince: undefined, recentQueries: [] }),
       sources: [source('monitor:urgent-campus')],
     })
 
-    expect(plan.enabled).toBe(true)
-    expect(plan.sourceRuns[0]?.queryHints).toEqual(['校园招聘 校招 截止 新增'])
+    expect(plan.enabled).toBe(false)
+    expect(plan.sourceRuns).toEqual([])
     expect(plan.executionRules.join(' ')).toContain('No durable discovery baseline exists yet')
   })
+})
+
+
+it('repartitions every general/platform/employer/university query when a monitor is disabled', () => {
+  const profile = { ...createDefaultDiscoveryProfile(), searchScopeVersion: 1 as const, targetRoleQueries: ['Explicit role'], preferredLocations: ['Explicit city'] }
+  const all = buildDiscoveryAutomationPlan({ profile, continuousDiscovery: summary(), sources: [source('monitor:urgent-campus'), source('monitor:key-changes')] })
+  const reduced = buildDiscoveryAutomationPlan({ profile, continuousDiscovery: summary(), sources: [source('monitor:urgent-campus'), source('monitor:key-changes', 'gpt_monitor', false)] })
+  const querySet = (plan: typeof all) => plan.sourceRuns.flatMap(run => run.webQueries ?? []).map(query => JSON.stringify(query)).sort()
+  expect(querySet(reduced)).toEqual(querySet(all))
+  expect(reduced.sourceRuns).toHaveLength(1)
+  expect(reduced.sourceRuns[0].sourceId).toBe('monitor:urgent-campus')
 })

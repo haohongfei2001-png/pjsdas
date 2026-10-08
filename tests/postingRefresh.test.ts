@@ -1,3 +1,5 @@
+import { verifiedPostingFixture } from './fixtures/verifiedDiscovery.js'
+import { bindVerifiedPostingRefresh } from '../src/postingRefresh.js'
 import { describe, expect, it } from 'vitest'
 import { createJobPostingEvidence } from '../src/jobPosting.js'
 import {
@@ -14,7 +16,7 @@ function opportunity(): Opportunity {
   const posting = createJobPostingEvidence({
     company: '示例科技',
     role: 'AI 产品经理',
-    sourceUrl: 'https://careers.example.com/jobs/123?utm_source=old',
+    sourceUrl: 'https://www.liepin.com/job/9402.shtml?utm_source=old',
     sourceTitle: 'AI 产品经理',
     location: '北京',
     deadline: '2026-09-30T15:59:00.000Z',
@@ -60,7 +62,7 @@ function refreshOperation(overrides: Partial<PostingRefreshOperation> = {}): Pos
     ownerId: owner.id,
     expectedPostingId: posting.id,
     expectedCanonicalSourceUrl: posting.canonicalSourceUrl,
-    sourceUrl: 'https://careers.example.com/jobs/123?utm_source=new',
+    sourceUrl: 'https://www.liepin.com/job/9402.shtml?utm_source=new',
     sourceTitle: 'AI 产品经理｜招聘官网',
     postingStatus: 'open',
     observedAt: refreshedAt,
@@ -69,9 +71,10 @@ function refreshOperation(overrides: Partial<PostingRefreshOperation> = {}): Pos
 }
 
 describe('v1.7 Round 2 posting refresh semantics', () => {
-  it('refreshes the same canonical source and advances verification time', () => {
+  it('refreshes verified source fields while preserving an older raw status without re-certifying it', async () => {
     const owner = opportunity()
-    const operation = refreshOperation({ postingStatus: 'open' })
+    const observation = await verifiedPostingFixture({ company: owner.company, role: owner.role, sourceUrl: 'https://www.liepin.com/job/9402.shtml?utm_source=new', location: '北京' }, refreshedAt)
+    const operation = bindVerifiedPostingRefresh(refreshOperation(), observation)
     const target = resolvePostingRefreshTarget(operation, [owner], [])
     expect(target?.posting.lastVerifiedAt).toBe(oldObservedAt)
 
@@ -80,14 +83,21 @@ describe('v1.7 Round 2 posting refresh semantics', () => {
       postingStatus: 'open',
       lastVerifiedAt: refreshedAt,
       firstSeenAt: oldObservedAt,
-      canonicalSourceUrl: 'https://careers.example.com/jobs/123',
+      canonicalSourceUrl: 'https://www.liepin.com/job/9402.shtml',
     })
     expect(refreshed.processStage).toBe('screening')
+    expect(operation.postingStatus).toBe('unknown')
+    expect(refreshed.detail?.discovery?.sourceProof?.fields.some(field => field.field === 'postingStatus')).toBe(false)
   })
 
-  it('records a closed source without automatically closing the Opportunity', () => {
+  it('an explicitly evidenced internal closed-source fact never closes the personal application', async () => {
     const owner = opportunity()
-    const refreshed = applyPostingRefreshToOpportunity(owner, refreshOperation({ postingStatus: 'closed' }))
+    const observation = await verifiedPostingFixture({ company: owner.company, role: owner.role, sourceUrl: 'https://www.liepin.com/job/9402.shtml?utm_source=new', location: '北京' }, refreshedAt)
+    // This reducer test supplies the trusted adapter precondition explicitly;
+    // the current public HTML verifier itself conservatively returns unknown.
+    observation.postingStatus = 'closed'
+    observation.sourceProof!.fields.push({ field: 'postingStatus', value: 'closed', sourceUrl: observation.sourceUrl, selector: 'synthetic-status', quote: 'Applications closed' })
+    const refreshed = applyPostingRefreshToOpportunity(owner, bindVerifiedPostingRefresh(refreshOperation({ postingStatus: 'closed' }), observation))
     expect(refreshed.detail?.discovery?.posting?.postingStatus).toBe('closed')
     expect(refreshed.processStage).toBe('screening')
     expect(refreshed.currentStageLabel).toBe('筛选中')
@@ -96,7 +106,7 @@ describe('v1.7 Round 2 posting refresh semantics', () => {
   it('rejects a different canonical source instead of overwriting the old posting', () => {
     const owner = opportunity()
     expect(() => applyPostingRefreshToOpportunity(owner, refreshOperation({
-      sourceUrl: 'https://careers.example.com/jobs/999',
+      sourceUrl: 'https://www.liepin.com/job/9403.shtml',
     }))).toThrow('新来源')
   })
 
@@ -105,4 +115,12 @@ describe('v1.7 Round 2 posting refresh semantics', () => {
     const operation = refreshOperation({ expectedPostingId: 'posting:stale' })
     expect(resolvePostingRefreshTarget(operation, [owner], [])).toBeUndefined()
   })
+})
+
+it('does not promote a caller-owned open/closed label into verified evidence', () => {
+  for (const postingStatus of ['open', 'closed'] as const) {
+    const before = opportunity(), original = structuredClone(before)
+    expect(() => applyPostingRefreshToOpportunity(before, refreshOperation({ postingStatus }))).toThrow('DISCOVERY_VERIFICATION_REQUIRED')
+    expect(before).toEqual(original)
+  }
 })

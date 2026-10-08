@@ -1,21 +1,16 @@
 import type { DiscoveryProfile } from './discoveryProfile.js'
+import { discoveryScopeSchema, type DiscoveryScopeInput } from './discoveryScopeSchema.js'
 
-/** Send only supported preferences; retired snapshot fields are not editable. */
-export function discoveryProfileSavePayload(profile: DiscoveryProfile): DiscoveryProfile {
-  return {
-    key: profile.key,
-    version: profile.version,
+/** Raw historical fields are never sent as a new editable scope. */
+export function discoveryProfileSavePayload(profile: DiscoveryProfile): DiscoveryScopeInput {
+  return discoveryScopeSchema.parse({
+    searchGoal: profile.searchGoal,
     targetRoleQueries: [...profile.targetRoleQueries],
     preferredLocations: [...profile.preferredLocations],
-    locationNotes: profile.locationNotes,
-    minimumAnnualCompensationWan: profile.minimumAnnualCompensationWan,
-    preferredRoleTypes: profile.preferredRoleTypes ? [...profile.preferredRoleTypes] : undefined,
     locationPolicy: profile.locationPolicy,
-    maxReviewCandidates: profile.maxReviewCandidates,
     mustHave: [...profile.mustHave],
     mustNotHave: [...profile.mustNotHave],
-    strengths: [...profile.strengths],
-    notes: profile.notes,
-    updatedAt: profile.updatedAt,
-  }
+    titleIncludes: [...(profile.titleIncludes ?? [])],
+    titleExcludes: [...(profile.titleExcludes ?? [])],
+  })
 }

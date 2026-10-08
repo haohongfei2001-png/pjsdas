@@ -19,43 +19,17 @@ type FaultMode =
   | 'fail-before-commit-once'
   | 'commit-then-fail-once'
 
-function discoveryArgs(input: {
-  runId: string
-  sourceRecordId: string
-  role?: string
-  sourceUrl?: string
-  extras?: Record<string, unknown>
-}) {
-  return {
-    runId: input.runId,
-    sourceId: 'monitor:urgent-campus',
-    startedAt: '2026-09-14T08:00:00.000Z',
-    completedAt: '2026-09-14T08:05:00.000Z',
-    observations: [{
-      sourceRecordId: input.sourceRecordId,
-      company: '故障注入科技',
-      role: input.role ?? 'AI产品经理',
-      sourceUrl: input.sourceUrl ?? `https://careers.fault.example/jobs/${input.sourceRecordId}`,
-      sourceTitle: input.role ?? 'AI产品经理',
-      location: '北京',
-      rationale: 'synthetic Drive-boundary fault injection',
-      roleType: 'core',
-      postingStatus: 'open',
-      discoveredAt: '2026-09-14T08:01:00.000Z',
-    }],
-    ...input.extras,
-  }
+// Discovery now requires a transactional ledger. Keep the original Drive
+// CAS/lost-ACK/replay matrix on its still-supported Gmail adapter, and assert
+// separately below that automatic Discovery cannot fall back to this writer.
+function driveMailArgs(input: { runId: string; sourceRecordId: string; role?: string; extras?: Record<string, unknown> }) {
+  return { runId: input.runId, sourceId: 'gmail:primary', startedAt: '2026-09-14T08:00:00.000Z', completedAt: '2026-09-14T08:05:00.000Z',
+    messages: [{ sourceRecordId: input.sourceRecordId, receivedAt: '2026-09-14T08:01:00.000Z', classification: 'recruiting', confidence: 'high',
+      company: '故障注入科技', role: input.role ?? 'AI产品经理', eventType: 'status_update', stage: 'screening',
+      subject: `Synthetic recruiting update: ${input.role ?? 'AI产品经理'}`, notes: 'Original synthetic Drive reliability fixture' }], ...input.extras }
 }
-
-
-const verifiedSource = async (observation: any) => ({
-  ...observation,
-  sourceVerification: 'verified' as const,
-  sourceVerifiedAt: '2026-09-14T08:04:00.000Z',
-})
-
-function invokeVerified(source: WorkspaceSource, args: unknown) {
-  return invokeTrustedIngestion(source, 'ingest_discovery_run', args, { sourceVerifier: verifiedSource })
+function invokeDriveMail(source: WorkspaceSource, args: unknown) {
+  return invokeTrustedIngestion(source, 'ingest_gmail_run', args)
 }
 
 function resultPayload(result: Awaited<ReturnType<typeof invokeTrustedIngestion>>) {
@@ -215,16 +189,16 @@ class ParallelDriveSource implements WorkspaceSource {
 describe('v1.10 Drive / sync / replay fault injection', () => {
   it('fails closed on a browser/cloud race, then retries from the latest workspace without overwriting the concurrent user change', async () => {
     const source = new FaultInjectingDriveSource('stale-before-write-once')
-    const args = discoveryArgs({ runId: 'race-run', sourceRecordId: 'race-job' })
+    const args = driveMailArgs({ runId: 'race-run', sourceRecordId: 'race-job' })
 
-    const raced = await invokeVerified(source, args)
+    const raced = await invokeDriveMail(source, args)
     expect(raced.isError).toBe(true)
     expect(errorPayload(raced)).toMatchObject({ code: 'WORKSPACE_CONFLICT', retryable: true })
     expect(source.committedWrites).toBe(0)
     expect(source.snapshot.data.opportunities).toHaveLength(0)
     expect(source.snapshot.data.actions.map((item) => item.id)).toContain('concurrent-browser-action')
 
-    const retried = await invokeVerified(source, args)
+    const retried = await invokeDriveMail(source, args)
     expect(retried.isError).not.toBe(true)
     expect(source.committedWrites).toBe(1)
     expect(source.snapshot.data.opportunities).toHaveLength(1)
@@ -236,9 +210,9 @@ describe('v1.10 Drive / sync / replay fault injection', () => {
 
   it('retries a network failure that happened before commit exactly once without inventing partial durable state', async () => {
     const source = new FaultInjectingDriveSource('fail-before-commit-once')
-    const args = discoveryArgs({ runId: 'precommit-run', sourceRecordId: 'precommit-job' })
+    const args = driveMailArgs({ runId: 'precommit-run', sourceRecordId: 'precommit-job' })
 
-    const failed = await invokeVerified(source, args)
+    const failed = await invokeDriveMail(source, args)
     expect(failed.isError).toBe(true)
     expect(errorPayload(failed)).toMatchObject({ code: 'GOOGLE_DRIVE_UNAVAILABLE', retryable: true })
     expect(source.version).toBe(1)
@@ -246,7 +220,7 @@ describe('v1.10 Drive / sync / replay fault injection', () => {
     expect(source.snapshot.data.opportunities).toHaveLength(0)
     expect(durableRunIds(source.snapshot)).toEqual([])
 
-    const retried = await invokeVerified(source, args)
+    const retried = await invokeDriveMail(source, args)
     expect(retried.isError).not.toBe(true)
     expect(source.version).toBe(2)
     expect(source.committedWrites).toBe(1)
@@ -257,9 +231,9 @@ describe('v1.10 Drive / sync / replay fault injection', () => {
 
   it('survives acknowledgement loss after commit: retry observes the durable run and never writes it twice', async () => {
     const source = new FaultInjectingDriveSource('commit-then-fail-once')
-    const args = discoveryArgs({ runId: 'lost-ack-run', sourceRecordId: 'lost-ack-job' })
+    const args = driveMailArgs({ runId: 'lost-ack-run', sourceRecordId: 'lost-ack-job' })
 
-    const uncertain = await invokeVerified(source, args)
+    const uncertain = await invokeDriveMail(source, args)
     expect(uncertain.isError).toBe(true)
     expect(errorPayload(uncertain)).toMatchObject({ code: 'GOOGLE_DRIVE_UNAVAILABLE', retryable: true })
     expect(source.version).toBe(2)
@@ -267,7 +241,7 @@ describe('v1.10 Drive / sync / replay fault injection', () => {
     expect(source.snapshot.data.opportunities).toHaveLength(1)
     expect(durableRunIds(source.snapshot)).toEqual(['lost-ack-run'])
 
-    const retried = await invokeVerified(source, args)
+    const retried = await invokeDriveMail(source, args)
     expect(retried.isError).not.toBe(true)
     expect(resultPayload(retried)).toMatchObject({ alreadyApplied: true, workspaceVersion: 'drive:2' })
     expect(source.writeAttempts).toBe(1)
@@ -279,12 +253,12 @@ describe('v1.10 Drive / sync / replay fault injection', () => {
 
   it('serializes two autonomous writers through optimistic version conflicts instead of last-write-wins data loss', async () => {
     const source = new ParallelDriveSource()
-    const firstArgs = discoveryArgs({ runId: 'parallel-ai-pm', sourceRecordId: 'parallel-ai', role: 'AI产品经理' })
-    const secondArgs = discoveryArgs({ runId: 'parallel-strategy', sourceRecordId: 'parallel-strategy', role: '战略分析' })
+    const firstArgs = driveMailArgs({ runId: 'parallel-ai-pm', sourceRecordId: 'parallel-ai', role: 'AI产品经理' })
+    const secondArgs = driveMailArgs({ runId: 'parallel-strategy', sourceRecordId: 'parallel-strategy', role: '战略分析' })
 
     const results = await Promise.all([
-      invokeVerified(source, firstArgs),
-      invokeVerified(source, secondArgs),
+      invokeDriveMail(source, firstArgs),
+      invokeDriveMail(source, secondArgs),
     ])
 
     const errors = results.map((result, index) => ({ result, index })).filter(({ result }) => result.isError)
@@ -296,7 +270,7 @@ describe('v1.10 Drive / sync / replay fault injection', () => {
     expect(source.snapshot.data.opportunities).toHaveLength(1)
 
     const failedArgs = errors[0]!.index === 0 ? firstArgs : secondArgs
-    const retry = await invokeVerified(source, failedArgs)
+    const retry = await invokeDriveMail(source, failedArgs)
     expect(retry.isError).not.toBe(true)
     expect(source.committedWrites).toBe(2)
     expect(source.snapshot.data.opportunities).toHaveLength(2)
@@ -308,16 +282,16 @@ describe('v1.10 Drive / sync / replay fault injection', () => {
 
   it('keeps replay read-only even after later durable workspace changes', async () => {
     const source = new FaultInjectingDriveSource()
-    const original = discoveryArgs({ runId: 'replay-original', sourceRecordId: 'replay-job-a', role: 'AI产品经理' })
-    const later = discoveryArgs({ runId: 'replay-later', sourceRecordId: 'replay-job-b', role: '商业分析' })
+    const original = driveMailArgs({ runId: 'replay-original', sourceRecordId: 'replay-job-a', role: 'AI产品经理' })
+    const later = driveMailArgs({ runId: 'replay-later', sourceRecordId: 'replay-job-b', role: '商业分析' })
 
-    expect((await invokeVerified(source, original)).isError).not.toBe(true)
-    expect((await invokeVerified(source, later)).isError).not.toBe(true)
+    expect((await invokeDriveMail(source, original)).isError).not.toBe(true)
+    expect((await invokeDriveMail(source, later)).isError).not.toBe(true)
 
     const before = JSON.stringify(source.snapshot)
     const beforeVersion = source.version
     const beforeWrites = source.committedWrites
-    const replay = await invokeVerified(source, discoveryArgs({
+    const replay = await invokeDriveMail(source, driveMailArgs({
       runId: 'replay-preview',
       sourceRecordId: 'replay-job-a',
       role: 'AI产品经理',
@@ -332,4 +306,17 @@ describe('v1.10 Drive / sync / replay fault injection', () => {
     expect(source.snapshot.data.opportunities).toHaveLength(2)
     assertRunAccounting(source.snapshot)
   })
+})
+
+
+it('automatic Discovery refuses the Drive writer before any mutation instead of silently falling back', async () => {
+  const source = new FaultInjectingDriveSource()
+  source.snapshot.data.discoveryProfile!.targetRoleQueries = ['Explicit role']
+  source.snapshot.data.discoveryProfile!.searchScopeVersion = 1
+  const before = structuredClone(source.snapshot)
+  const result = await invokeTrustedIngestion(source, 'ingest_discovery_run', { runId: 'no-discovery-drive-fallback', sourceId: 'monitor:urgent-campus',
+    startedAt: '2026-09-14T08:00:00Z', completedAt: '2026-09-14T08:05:00Z', observations: [] })
+  expect(result.isError).toBe(true)
+  expect(errorPayload(result).code).toBe('DISCOVERY_AUTHORITATIVE_COMMAND_REQUIRED')
+  expect(source.writeAttempts).toBe(0); expect(source.committedWrites).toBe(0); expect(source.snapshot).toEqual(before)
 })

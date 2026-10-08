@@ -1,3 +1,4 @@
+import { recruitingPagesFixture } from './fixtures/verifiedDiscovery.js'
 import { describe, expect, it } from 'vitest'
 import { invokeProposeChanges } from '../gateway/proposeChanges.js'
 import { verifySignedProposalToken } from '../gateway/proposalToken.js'
@@ -26,6 +27,7 @@ function source(minimumFitScore?: number): WorkspaceSource {
             discoveryProfile: {
               ...createDefaultDiscoveryProfile('2026-09-12T01:00:00.000Z'),
               targetRoleQueries: ['AI 产品经理'],
+              searchScopeVersion: 1,
               preferredLocations: ['北京'],
               minimumFitScore,
             },
@@ -46,7 +48,7 @@ function candidate() {
   return {
     company: '组件科技',
     role: 'AI 产品经理',
-    sourceUrl: 'https://careers.example.com/component-ai-pm',
+    sourceUrl: 'https://www.liepin.com/job/9301.shtml',
     sourceTitle: '组件科技 2027 校招 AI 产品经理',
     sourceEvidenceText: '北京岗位，负责 AI 产品规划和数据分析。',
     postingStatus: 'open' as const,
@@ -79,8 +81,8 @@ describe('retired component proposal inputs', () => {
     expect(resultJson(result)).toMatchObject({ code: 'SCORING_RETIRED', retryable: false })
   })
   it('accepts factual candidates without scores even when the stored profile has old score thresholds', async () => {
-    const { assessment, fitScore, opportunityValue, fitConfidence, opportunityValueConfidence, ...facts } = candidate()
-    const result = await invokeProposeChanges(source(100), { discoveredOpportunities: [facts] }, { signingKey })
+    const { assessment, fitScore, opportunityValue, fitConfidence, opportunityValueConfidence, rationale, roleType, discoveredAt, ...facts } = candidate()
+    const result = await invokeProposeChanges(source(100), { discoveredOpportunities: [facts] }, { signingKey,fetchImpl:recruitingPagesFixture([facts]) })
     expect(result.isError).not.toBe(true)
     const data = resultJson(result)
     expect(data.discoveryScreening).toMatchObject({ accepted: 1, rejectedCount: 0 })

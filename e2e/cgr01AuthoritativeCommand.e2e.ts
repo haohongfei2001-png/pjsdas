@@ -1,3 +1,4 @@
+import { MOCK_TARGET_AUTH_KEY, MOCK_TARGET_BACKEND } from './support/mockCloudTargets.js'
 import { freezeTodayFixture } from './support/consumerFixtureClock.js'
 import { expect, test, type Page, type Route } from '@playwright/test'
 import { upgradeSnapshotToLatest, type PJSDASSnapshot } from '../src/snapshot.js'
@@ -7,8 +8,8 @@ import { applyProcessEventDeleteCommand } from '../src/processEventDeleteCommand
 
 test.beforeEach(async ({ page }) => { await freezeTodayFixture(page) })
 
-const AUTH_KEY = 'sb-yyrzwpoxlxpafdlbkdtg-auth-token'
-const BACKEND = 'https://pjsdas-remote-alpha.vercel.app'
+const AUTH_KEY = MOCK_TARGET_AUTH_KEY
+const BACKEND = MOCK_TARGET_BACKEND
 
 function action(id: string, title: string, opportunityId: string) {
   return {
@@ -501,7 +502,7 @@ test('account A sign-out then account B never displays or replays A cache drafts
   await page.getByRole('button', { name: '退出 TodayAction' }).click()
   await expect.poll(() => page.evaluate(() => (window as any).__signOutWitness.auth.some((event: any) => event.event === 'SIGNED_OUT' && event.account === null))).toBe(true)
   await expect.poll(async () => (await readIndexedActions(page)).length).toBe(0)
-  const signedOut = await page.evaluate(() => ({ witness: (window as any).__signOutWitness, authPresent: Boolean(localStorage.getItem('sb-yyrzwpoxlxpafdlbkdtg-auth-token')) }))
+  const signedOut = await page.evaluate(authKey => ({ witness: (window as any).__signOutWitness, authPresent: Boolean(localStorage.getItem(authKey)) }), AUTH_KEY)
   expect(signedOut.authPresent).toBe(false)
   await info.attach('reached-signed-out-boundary.json', { body: JSON.stringify(signedOut, null, 2), contentType: 'application/json' })
   await page.clock.resume()
@@ -521,13 +522,13 @@ test('account A sign-out then account B never displays or replays A cache drafts
   expect(bBodies.some((body) => ['commit', 'command', 'undo'].includes(body.action))).toBe(false)
   } finally {
     await page.clock.resume().catch(() => undefined)
-    const evidence = await page.evaluate(() => ({
+    const evidence = await page.evaluate(authKey => ({
       witness: (window as any).__signOutWitness,
-      authPresent: Boolean(localStorage.getItem('sb-yyrzwpoxlxpafdlbkdtg-auth-token')),
+      authPresent: Boolean(localStorage.getItem(authKey)),
       errors: [...document.querySelectorAll('.cloud-error')].map(node => node.textContent),
       account: document.querySelector('.cloud-account-identity strong')?.textContent,
       recoveryVisible: Boolean(document.querySelector('.startup-recovery')),
-    })).catch(error => ({ unavailable: String(error) }))
+    }), AUTH_KEY).catch(error => ({ unavailable: String(error) }))
     await info.attach('sign-out-boundary.json', { body: JSON.stringify(evidence, null, 2), contentType: 'application/json' })
   }
 

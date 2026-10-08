@@ -1,9 +1,10 @@
+import { MOCK_TARGET_AUTH_KEY, MOCK_TARGET_BACKEND } from './mockCloudTargets.js'
 import { type Page, type Route } from '@playwright/test'
 import { upgradeSnapshotToLatest } from '../../src/snapshot.js'
 import { freezeTodayFixture } from './consumerFixtureClock.js'
 
-const BACKEND = 'https://pjsdas-remote-alpha.vercel.app'
-const AUTH_KEY = 'sb-yyrzwpoxlxpafdlbkdtg-auth-token'
+const BACKEND = MOCK_TARGET_BACKEND
+const AUTH_KEY = MOCK_TARGET_AUTH_KEY
 
 function reply(route: Route, body: unknown, status = 200) {
   return route.fulfill({

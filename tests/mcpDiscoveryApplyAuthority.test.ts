@@ -1,4 +1,5 @@
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { verifiedPostingFixture, recruitingPagesFixture } from './fixtures/verifiedDiscovery.js'
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import { applyMcpDiscoveryCommand } from '../src/mcpDiscoveryApplyCommand.js'
 import { createMcpProposalEnvelope } from '../src/ai/mcpProposal.js'
 import { createSignedProposalToken } from '../gateway/proposalToken.js'
@@ -17,7 +18,7 @@ const discoveryOperation = (id: string) => ({
     processStage: 'not_applied' as const, roleType: 'core' as const, early: false,
     opportunityValue: 0, fitScore: 0, locallyManaged: true, importedAt: at.toISOString(),
     detail: { discovery: {
-      sourceUrl: `https://example.com/jobs/${id}`, sourceTitle: `Designer ${id}`,
+      sourceUrl: `https://www.liepin.com/job/${id === 'job-1' ? '9411' : '9412'}.shtml`, sourceTitle: `Designer ${id}`,
       rationale: 'Source-backed match', discoveredAt: at.toISOString(),
       fitConfidence: 'medium' as const, opportunityValueConfidence: 'medium' as const,
     } },
@@ -33,6 +34,15 @@ const snapshot = () => createSnapshot({
   opportunities: [], processes: [], processEvents: [], actions: [], prep: [], applicationGroups: [],
   discoveryInbox: [], timeline: [], changeSets: [],
 }, at.toISOString())
+
+beforeAll(async () => {
+  for (const operation of changeSet.operations) {
+    if (operation.kind !== 'add_discovered_opportunity') continue
+    const job = operation.opportunity, discovery = job.detail!.discovery!
+    const verified = await verifiedPostingFixture({ company: job.company, role: job.role, sourceUrl: discovery.sourceUrl }, at.toISOString())
+    Object.assign(discovery, { sourceTitle: verified.sourceTitle, sourceProof: verified.sourceProof, sourceVerification: 'verified', sourceVerifiedAt: verified.sourceVerifiedAt })
+  }
+})
 
 afterEach(() => vi.unstubAllEnvs())
 
@@ -77,6 +87,7 @@ describe('CGR-05 signed discovery apply authority', () => {
     const token = await createSignedProposalToken(signed, 'txn:1', secret, new Date(), undefined, 'account-a')
     const fetchImpl = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = new URL(String(input))
+      if (url.origin === 'https://www.liepin.com') return recruitingPagesFixture([{ company: 'Company job-1', role: 'Designer', sourceUrl: 'https://www.liepin.com/job/9411.shtml' }, { company: 'Company job-2', role: 'Designer', sourceUrl: 'https://www.liepin.com/job/9412.shtml' }])(input, init)
       if (url.pathname === '/rest/v1/pjsdas_workspaces') {
         return Response.json([{ id: 'ws-1', user_id: 'account-a', snapshot: current, revision, schema_version: current.version }])
       }

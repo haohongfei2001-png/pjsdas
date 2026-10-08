@@ -15,6 +15,8 @@ on:
       - 'e2e/secondarySurfaces.ui.ts'
       - 'playwright.secondary-ui.config.mts'
       - '.github/workflows/secondary-surfaces-ui.yml'
+env:
+  VITE_PJSDAS_CLOUD_MODE: mock
 permissions:
   contents: read
 jobs:
@@ -37,6 +39,8 @@ jobs:
           npm install --no-save @playwright/test@1.63.0
           node scripts/verify-installed-runtime-lock.mjs
       - run: npx playwright install --with-deps chromium
+      - name: Prove mock cloud isolation before application browser tests
+        run: npx playwright test --config=playwright.cloud-guard.config.mts --project=chromium
       - name: Render the fixed approved pre-B1 reference
         shell: bash
         run: |
@@ -57,6 +61,8 @@ jobs:
           }
           trap copy_baseline_evidence EXIT
           cp e2e/secondarySurfaces.ui.ts "$baseline_dir/e2e/"
+          mkdir -p "$baseline_dir/e2e/support"
+          cp e2e/support/mockCloudIsolation.mts e2e/support/mockCloudProxySetup.mjs "$baseline_dir/e2e/support/"
           cp playwright.secondary-ui.config.mts "$baseline_dir/"
           ln -s "$GITHUB_WORKSPACE/node_modules" "$baseline_dir/node_modules"
           cd "$baseline_dir"

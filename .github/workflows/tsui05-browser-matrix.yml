@@ -57,6 +57,8 @@ jobs:
           # Actions mounts a host-owned home; Firefox requires it to match this container user.
           chown "$(id -u):$(id -g)" "$HOME"
           node --input-type=module -e 'import { firefox, webkit, chromium } from "playwright"; for (const type of [firefox, webkit, chromium]) { const browser = await type.launch({ headless: true }); await browser.close(); }'
+      - name: Prove mock cloud isolation before application browser tests
+        run: npx playwright test --config=playwright.cloud-guard.config.mts --project=chromium --project=firefox --project=webkit
       - name: Fixed 300-job, 500-action, 130-node, 2000-history projection sample
         run: npx tsx scripts/tsui01-projection-bench.ts
       - name: Run core routes, schedule anchors and consumer consent in Firefox and WebKit

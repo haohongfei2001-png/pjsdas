@@ -3,7 +3,7 @@ import { createAutomationConnectionStore } from '../gateway/automationConnection
 import { createDiscoveryAutomationHandler } from '../gateway/discoveryAutomationHandler.js'
 import { createSnapshot } from '../src/snapshot.js'
 const owner='00000000-0000-4000-8000-000000000001'
-const options={supabaseUrl:'https://example.invalid',supabasePublishableKey:'synthetic-public',workerToken:'synthetic-worker'}
+const options={supabaseUrl:'https://example.invalid',supabasePublishableKey:'synthetic-public',workerToken:'synthetic-worker',supabaseServiceRoleKey:'synthetic-service'}
 afterEach(()=>vi.unstubAllEnvs())
 function store(response:()=>Response){return createAutomationConnectionStore({...options,fetchImpl:async()=>response()})}
 const methods=['updateDiscoveryRunState','updateGmailRunState','updateGmailWatchState'] as const

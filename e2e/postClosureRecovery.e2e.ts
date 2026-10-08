@@ -1,3 +1,4 @@
+import { MOCK_TARGET_AUTH_ORIGIN } from './support/mockCloudTargets.js'
 import { freezeTodayFixture } from './support/consumerFixtureClock.js'
 import { installAccountClearFault } from './support/accountClearFault.js'
 import { expect, test } from '@playwright/test'
@@ -16,7 +17,7 @@ for (const failure of ['partial-clear-throw', 'transaction-abort'] as const) tes
       localStorage.setItem('pcr-auth-seeded', '1')
     }
   }, { key: AUTH_KEY, value: session('account-a', 'token-a') })
-  await page.route('https://*.supabase.co/auth/v1/**', route => cors(route, {}, 200))
+  await page.route(`${MOCK_TARGET_AUTH_ORIGIN}/auth/v1/**`, route => cors(route, {}, 200))
   await page.route(BACKEND + '/**', route => {
     if (route.request().method() === 'OPTIONS') return cors(route, {}, 204)
     if (new URL(route.request().url()).pathname === '/api/health') return cors(route, health())

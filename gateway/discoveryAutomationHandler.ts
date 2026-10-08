@@ -1,5 +1,6 @@
 import { automationGoogleRefreshLifecycle } from './googleRefreshLifecycle.js'
 import type { ReserveDiscoverySpend } from './discoveryBudgetGuard.js'
+import type { DiscoverySearchProvider, ReserveDiscoverySearch } from './discoverySearchExecution.js'
 import { createAutomationConnectionStore } from './automationConnectionStore.js'
 import {
   probeDiscoveryAiGateway,
@@ -17,8 +18,11 @@ export interface DiscoveryAutomationHandlerConfig {
   googleClientId: string
   googleClientSecret: string
   aiGatewayModel?: string
+  budgetPolicyVersion?: string
   generateTextImpl?: DiscoveryGenerateText
   reserveSpend?: ReserveDiscoverySpend
+  searchProvider?: DiscoverySearchProvider
+  reserveSearch?: ReserveDiscoverySearch
   fetchImpl?: typeof fetch
   now?: () => Date
 }
@@ -52,8 +56,10 @@ function errorBody(caught: unknown) {
 export function discoveryAutomationTelemetryPatch(run: DiscoveryAutomationRunResult) {
   return {
     checkedAt: run.checkedAt,
-    ...(run.completedSourceCount > 0 ? { successAt: run.checkedAt } : {}),
-    lastError: null,
+    ...((run.successfulSourceCount ?? run.completedSourceCount) > 0 ? { successAt: run.completedAt ?? run.checkedAt } : {}),
+    lastError: run.failedSourceCount || run.partialSourceCount || run.readbackPendingCount
+      ? `DISCOVERY_PARTIAL: ${run.failedSourceCount ?? 0} source failures; ${run.partialSourceCount ?? 0} partial searches; ${run.readbackPendingCount ?? 0} pending readbacks; ${run.remainingQueryCount ?? 0} uncovered queries; ${run.uncertainSourceCount ?? 0} uncertain batches; budget_exhausted=${Boolean(run.budgetExhausted)}.`
+      : null,
   }
 }
 
@@ -103,6 +109,13 @@ export function createDiscoveryAutomationHandler(config: DiscoveryAutomationHand
           reserveSpend: config.reserveSpend,
           budgetAccountId: bindings.length === 1 ? bindings[0].userId : undefined,
           budgetSourceId: 'discovery:probe',
+          clock: config.now,
+          authorize: async () => {
+            if (bindings.length !== 1) throw new WorkspaceSourceError('AUTH_FORBIDDEN', 'A model probe requires one admitted automation binding.', false)
+            const admitted = bindings[0], active = (await store.listDiscoveryBindings()).find(item => item.userId === admitted.userId)
+            if (!active || !admitted.discoveryConsentGeneration || active.discoveryConsentGeneration !== admitted.discoveryConsentGeneration
+              || active.googleSubject !== admitted.googleSubject) throw new WorkspaceSourceError('AUTH_FORBIDDEN', 'Automation consent changed before the model probe.', false)
+          },
         })
         return json(200, { probe: true, ...result })
       } catch (caught) {
@@ -121,8 +134,18 @@ export function createDiscoveryAutomationHandler(config: DiscoveryAutomationHand
           googleClientId: config.googleClientId,
           googleClientSecret: config.googleClientSecret,
           aiGatewayModel: config.aiGatewayModel,
+          budgetPolicyVersion: config.budgetPolicyVersion,
           generateTextImpl: config.generateTextImpl,
           reserveSpend: config.reserveSpend,
+          searchProvider: config.searchProvider,
+          reserveSearch: config.reserveSearch,
+          authorize: async () => {
+            const active = (await store.listDiscoveryBindings()).find(item => item.userId === binding.userId)
+            if (!active || !binding.discoveryConsentGeneration || active.discoveryConsentGeneration !== binding.discoveryConsentGeneration
+              || active.googleSubject !== binding.googleSubject) {
+              throw new WorkspaceSourceError('AUTH_FORBIDDEN', 'Discovery consent was revoked, replaced or changed after this run was admitted.', false)
+            }
+          },
           fetchImpl: config.fetchImpl,
           now: config.now,
           force,
@@ -142,14 +165,28 @@ export function createDiscoveryAutomationHandler(config: DiscoveryAutomationHand
           createdCount: run.createdCount,
           touchedCount: run.touchedCount,
           unresolvedCount: run.unresolvedCount,
+          failedSourceCount: run.failedSourceCount ?? 0,
+          partialSourceCount: run.partialSourceCount ?? 0,
+          successfulSourceCount: run.successfulSourceCount ?? run.completedSourceCount,
+          readbackPendingCount: run.readbackPendingCount ?? 0,
+          sourceErrors: run.sourceErrors ?? [],
+          totalQueryCount: run.totalQueryCount ?? 0,
+          remainingQueryCount: run.remainingQueryCount ?? 0,
+          uncertainSourceCount: run.uncertainSourceCount ?? 0,
+          budgetExhausted: run.budgetExhausted ?? false,
+          scopeComplete: run.scopeComplete ?? false,
         })
       } catch (caught) {
         const checkedAt = (config.now?.() ?? new Date()).toISOString()
         try {
-          await store.updateDiscoveryRunState(binding.userId, {
-            checkedAt,
-            lastError: compactError(caught),
-          }, binding.refreshTokenCiphertext)
+          // Preflight rejects incomplete scope before any search, reservation
+          // or persistent run-state write. The response still carries its error.
+          if (!(caught instanceof WorkspaceSourceError && caught.code === 'DISCOVERY_SCOPE_INCOMPLETE')) {
+            await store.updateDiscoveryRunState(binding.userId, {
+              checkedAt,
+              lastError: compactError(caught),
+            }, binding.refreshTokenCiphertext)
+          }
         } catch {
           // Primary automation failure remains authoritative; telemetry is best-effort.
         }
@@ -157,12 +194,13 @@ export function createDiscoveryAutomationHandler(config: DiscoveryAutomationHand
       }
     }
 
-    const failures = results.filter((item) => item.status === 'failed').length
+    const failures = results.filter((item) => item.status === 'failed' || item.status === 'retrieval_failed').length
     const durableCompletedUsers = results.filter((item) => item.durableCommit === true).length
     return json(failures > 0 ? 207 : 200, {
       processedUsers: results.length,
       checkedUsers: results.length - failures,
-      successfulUsers: results.length - failures,
+      successfulUsers: results.filter(item => item.status === 'committed').length,
+      partialUsers: results.filter(item => item.status === 'committed_with_exceptions').length,
       durableCompletedUsers,
       failedUsers: failures,
       results,

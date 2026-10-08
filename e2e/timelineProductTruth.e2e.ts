@@ -1,10 +1,11 @@
+import { MOCK_TARGET_BACKEND } from './support/mockCloudTargets.js'
 import { expect, test } from '@playwright/test'
 
 for (const width of [1440, 390]) test(`Settings operation records preserve chronology, facts and navigation at ${width}px`, async ({ page }, info) => {
   await page.setViewportSize({ width, height: width === 390 ? 844 : 1000 })
   // All data in this regression is synthetic and stays in this browser context.
   await page.route(/https:\/\/[^/]+\.supabase\.co\//, route => route.abort())
-  await page.route('https://pjsdas-remote-alpha.vercel.app/**', route => route.fulfill({ status: 401, body: '{}' }))
+  await page.route(`${MOCK_TARGET_BACKEND}/**`, route => route.fulfill({ status: 401, body: '{}' }))
   await page.goto('/pjsdas/history')
   await expect(page.getByRole('heading', { name: '操作记录', exact: true })).toBeVisible()
   const records = [
