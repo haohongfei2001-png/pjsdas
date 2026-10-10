@@ -1,6 +1,6 @@
 # B2 runtime wiring candidate
 
-Status: local candidate only. No production migration, configuration, credential setup, provider request or paid run is authorized by this document. PR #259 remains separate. A17 still requires a real approved complete scope, deployment environment, funding boundary and subsequent scheduler evidence.
+Status: production rollout on existing resources is approved as of 2026-10-10, with paid Discovery explicitly OFF. This document is not a deployment receipt. PR #260 remains stacked on #259 until adoption. A17 still requires a real approved complete scope, funding boundary and subsequent scheduler evidence.
 
 ## What this connects
 
@@ -11,6 +11,14 @@ Each original batch claim proposes one immutable USD-micro hold: all its Search 
 Only the invocation that receives and verifies its own first COMMITTED claim can dispatch. Search and model slots are consumed before awaits; lost acknowledgements, timeouts and unknown provider responses retain the hold. Claims, retries, cadence changes, force and failed/unused slots do not release or reset money. A declined batch has zero retention, settles budget_exhausted and prevents automatic further spending under the same plan. Recovery never overwrites an original admission.
 
 The real AI SDK transport fixes GPT-4.1-mini, only OpenAI routing, plain text, toolChoice none, maxOutputTokens 5000 and maxRetries 0. It has no tools, fallback models, service tier, BYOK, tags or user reporting options. The final current-authority check occurs in SDK fetch after authentication/header preparation. At most one application HTTP dispatch is accepted; redirects fail. These application properties do not prove Gateway's internal billing or team configuration.
+
+## Source-enforced paid-OFF release
+
+The deployed API passes a literal disabled configuration to the runtime factory. Neither an existing environment flag, approval document, credential, scheduler token, manual `force`/`probe`, nor the Cloudflare adapter can activate paid Discovery in this release. The factory returns HTTP 503 with `DISCOVERY_RUNTIME_DISABLED` and `retryable: false` before binding, source, workspace, Search or model calls. Existing account opt-in, cron configuration, user jobs and consent are not changed.
+
+This safely publishes compatible B2 code; it does not enable real automatic search or satisfy A17. Other Web, MCP and Gmail functionality is unchanged. Delegated `ingest_discovery_run` continues to accept separately authorized completed observations, independently fetch source evidence and use the guarded domain commit; it does not invoke the paid search/model runtime. A source fetch is not a paid provider call. The gate applies to this build, not an older independently deployed backend.
+
+Removing the source gate requires a separate reviewed source change and deployment after explicit funding approval, complete confirmed scope, provider/routing/fee verification and required permissions. Unknown or denied deployment configuration is not treated as approved. No restricted configuration access is bypassed. The product self-test recognizes only the exact disabled JSON contract as safe-disabled; this is not evidence of authenticated search success.
 
 ## Configuration remains off
 

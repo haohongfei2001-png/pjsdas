@@ -5,7 +5,9 @@ import {
 } from '../gateway/supabaseProject.js'
 
 const handler = createDiscoveryRuntime({
-  environment: process.env,
+  // This release is source-enforced paid-OFF. Environment configuration cannot
+  // activate paid Discovery; a separately reviewed/approved release must remove this gate.
+  environment: { PJSDAS_DISCOVERY_RUNTIME_ENABLED: 'false' },
   base: {
     supabaseUrl: PJSDAS_SUPABASE_URL,
     supabasePublishableKey: PJSDAS_SUPABASE_PUBLISHABLE_KEY,
