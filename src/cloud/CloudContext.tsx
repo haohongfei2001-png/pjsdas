@@ -1,10 +1,14 @@
 import { interactionIsRecent } from './interactionActivity.js'
-import { setAccountCacheSession } from './accountCacheLease.js'
+import { mockCloudMode, passiveCloudReadAllowed } from './runtimeCloudMode.js'
+import { canMountMockAccountCache, clearVerifiedMockAccountCache, forgetMockCacheProvenance, hasMockCacheProvenance, hasPendingMockCacheClear, markVerifiedMockCache, MOCK_CACHE_STOP } from './mockCacheBoundary.js'
+import { captureAccountCacheLease } from './accountCacheLease.js'
+import { beginAccountCacheSessionResolution, setAccountCacheSession } from './accountCacheLease.js'
 import {
   createContext,
   useCallback,
   useContext,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -63,7 +67,53 @@ interface CloudContextValue {
 
 const CloudContext = createContext<CloudContextValue | null>(null)
 
+async function clearAccountBoundaryCache(assertCurrent?: () => void) {
+  const cleared = await clearLocalWorkspaceCache(assertCurrent)
+  const fingerprint = await fingerprintWorkspace(cleared)
+  assertCurrent?.()
+  recordClearedAccountCache(fingerprint)
+  clearLocalWorkspaceBinding()
+  if (mockCloudMode()) forgetMockCacheProvenance(window.localStorage)
+}
+
 export function CloudProvider({ children }: { children: ReactNode }) {
+  const mock = mockCloudMode()
+  const [recoveryError, setRecoveryError] = useState<string>()
+  const [gate, setGate] = useState<'checking' | 'ready' | 'stopped'>(() => {
+    if (!mock) { if (typeof window !== 'undefined') forgetMockCacheProvenance(window.localStorage); return 'ready' }
+    return getCloudDeviceState().workspaceOwnerUserId ? 'checking' : 'ready'
+  })
+  useEffect(() => {
+    if (gate !== 'checking') return
+    let active = true
+    if (hasPendingMockCacheClear(window.localStorage, getCloudDeviceState())) {
+      // Retry a failed, already-authorized page-lifetime clear before mounting
+      // children. Never expose the logged-out cache while recovery is pending.
+      void clearVerifiedMockAccountCache(window.localStorage, getCloudDeviceState, clearAccountBoundaryCache)
+        .then(() => { if (active) setGate('ready') })
+        .catch(caught => { if (active) setRecoveryError(caught instanceof Error ? caught.message : String(caught)) })
+      return () => { active = false }
+    }
+    void canMountMockAccountCache(window.localStorage, getCloudDeviceState).then(allowed => {
+      if (active) setGate(allowed ? 'ready' : 'stopped')
+    }).catch(() => { if (active) setGate('stopped') })
+    return () => { active = false }
+  }, [gate])
+  if (recoveryError !== undefined) throw new Error(recoveryError)
+  // Do not mount children or Auth/account-boundary effects until an old bound
+  // cache is proven to come from this isolated mock client.
+  if (gate !== 'ready') return <div role="status" className="cloud-security-note">{gate === 'checking' ? '正在核对本地缓存来源… / Checking local cache origin…' : MOCK_CACHE_STOP}</div>
+  return <ActiveCloudProvider>{children}</ActiveCloudProvider>
+}
+
+function ActiveCloudProvider({ children }: { children: ReactNode }) {
+  // Invalidate stale write admission before this newly mounted Auth boundary
+  // becomes interactive. getSession/INITIAL_SESSION will resolve it explicitly.
+  useLayoutEffect(() => {
+    beginAccountCacheSessionResolution()
+    // Unmount is not an Auth transition: a verified same-page failed clear
+    // must retain its existing recovery lease until Retry completes it.
+  }, [])
   const configured = true
   const [session, setSession] = useState<CloudSession | null>(null)
   const [loading, setLoading] = useState(true)
@@ -96,15 +146,18 @@ export function CloudProvider({ children }: { children: ReactNode }) {
     // fails, no queued adoption may retry it behind the recovery surface.
     const boundary = adoptionTailRef.current.then(async () => {
       if (boundaryFailedRef.current || sequence !== adoptionSequenceRef.current) return false
+      if (mockCloudMode()) {
+        const current = getCloudDeviceState()
+        if (current.workspaceOwnerUserId && !hasMockCacheProvenance(window.localStorage, current)) throw new Error(MOCK_CACHE_STOP)
+      }
       if (connectedWorkspaceAuthorityEnabled()) {
         await enforceConnectedAccountCacheBoundary(
           getCloudDeviceState().workspaceOwnerUserId,
           next?.user.id,
-          async () => {
-            const cleared = await clearLocalWorkspaceCache()
-            recordClearedAccountCache(await fingerprintWorkspace(cleared))
-          },
-          clearLocalWorkspaceBinding,
+          () => mockCloudMode()
+            ? clearVerifiedMockAccountCache(window.localStorage, getCloudDeviceState, clearAccountBoundaryCache)
+            : clearAccountBoundaryCache(),
+          () => {},
         )
       }
       if (sequence !== adoptionSequenceRef.current) return false
@@ -191,6 +244,8 @@ export function CloudProvider({ children }: { children: ReactNode }) {
   const syncNow = useCallback(async (options?: { passive?: boolean }) => {
     const userId = session?.user.id
     if (!configured || !userId || busyRef.current) return undefined
+    if (options?.passive && !passiveCloudReadAllowed()
+      && (navigator.onLine === false || pendingCommandSummary(userId).count <= pendingCommandSummary(userId).conflict)) return undefined
     if (options?.passive && connectedWorkspaceAuthorityEnabled() && interactionIsRecent(userId) && !getAccountCheckpoint(userId).conflict
       && pendingCommandSummary(userId).count <= pendingCommandSummary(userId).conflict) return undefined
     busyRef.current = true
@@ -204,6 +259,10 @@ export function CloudProvider({ children }: { children: ReactNode }) {
         await replayAccountPendingOperations(userId)
       }
       const result = await runCloudSync(userId, options)
+      if (mockCloudMode() && ['synced', 'pulled', 'pushed', 'created'].includes(result.kind)) {
+        const lease = captureAccountCacheLease(userId)
+        await markVerifiedMockCache(window.localStorage, getCloudDeviceState, userId, lease.assertCurrent)
+      }
       if (options?.passive && connectedWorkspaceAuthorityEnabled() && interactionIsRecent(userId) && !getAccountCheckpoint(userId).conflict) return undefined
       setOutcome(result)
       refreshState(userId)
@@ -246,13 +305,16 @@ export function CloudProvider({ children }: { children: ReactNode }) {
     const interval = window.setInterval(() => { void syncNow({ passive: true }).catch(() => undefined) }, 120_000)
     const focus = () => { void syncNow({ passive: true }).catch(() => undefined) }
     const online = () => { void syncNow({ passive: true }).catch(() => undefined) }
+    const visible = () => { if (passiveCloudReadAllowed()) void syncNow({ passive: true }).catch(() => undefined) }
     window.addEventListener('focus', focus)
     window.addEventListener('online', online)
+    document.addEventListener('visibilitychange', visible)
     return () => {
       window.clearTimeout(initial)
       window.clearInterval(interval)
       window.removeEventListener('focus', focus)
       window.removeEventListener('online', online)
+      document.removeEventListener('visibilitychange', visible)
     }
   }, [loading, configured, session?.user.id, device.autoSync, device.workspaceOwnerUserId, checkpoint.conflict, syncNow])
 
@@ -302,18 +364,20 @@ export function CloudProvider({ children }: { children: ReactNode }) {
     if (device.workspaceOwnerUserId && device.workspaceOwnerUserId !== userId) return
     // Keep classifying against the latest authoritative revision. A persisted
     // conflict is not a permanent subscription to the revision first seen.
-    const probe = () => { void replayAccountPendingOperations(userId)
+    const probe = () => { if (!passiveCloudReadAllowed()) return; void replayAccountPendingOperations(userId)
       .catch(() => undefined)
       .then(() => reconcileEquivalent().catch(() => undefined)) }
     const initial = window.setTimeout(probe, 700)
     const interval = window.setInterval(probe, 60_000)
     window.addEventListener('focus', probe)
     window.addEventListener('online', probe)
+    document.addEventListener('visibilitychange', probe)
     return () => {
       window.clearTimeout(initial)
       window.clearInterval(interval)
       window.removeEventListener('focus', probe)
       window.removeEventListener('online', probe)
+      document.removeEventListener('visibilitychange', probe)
     }
   }, [loading, session?.user.id, hasConflict, device.workspaceOwnerUserId, reconcileEquivalent])
 
@@ -440,6 +504,7 @@ export function CloudProvider({ children }: { children: ReactNode }) {
     },
   }), [configured, session, loading, syncing, device, checkpoint, outcome, error, signIn, signOut, syncNow, reconcileEquivalent, runResolution, refreshState])
 
+  if (accountBoundaryError === MOCK_CACHE_STOP) return <div role="status" className="cloud-security-note">{MOCK_CACHE_STOP}</div>
   if (accountBoundaryError !== undefined) throw new Error(accountBoundaryError)
   return <CloudContext.Provider value={value}>{children}</CloudContext.Provider>
 }

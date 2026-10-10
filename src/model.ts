@@ -1,3 +1,4 @@
+import type { DiscoverySourceProof } from './discoveryFactSchema.js'
 export type OpportunityRole = 'core' | 'backup' | 'reach' | 'lottery' | 'practice'
 export type ProcessStage =
   | 'unknown'
@@ -393,6 +394,11 @@ export interface JobPostingEvidence {
   postingStatus: JobPostingStatus
   location?: string
   deadline?: string
+  deadlinePrecision?: DatePrecision
+  publishedAt?: string
+  publishedPrecision?: DatePrecision
+  recruitmentBatch?: string
+  sourceProof?: DiscoverySourceProof
   compensationText?: string
   firstSeenAt: string
   lastSeenAt: string
@@ -500,11 +506,11 @@ export interface DiscoveryInboxItem {
   location?: string
   deadline?: string
   compensationText?: string
-  rationale: string
+  rationale?: string
   opportunityValue: number
   fitScore: number
-  fitConfidence: DiscoveryConfidence
-  opportunityValueConfidence: DiscoveryConfidence
+  fitConfidence?: DiscoveryConfidence
+  opportunityValueConfidence?: DiscoveryConfidence
   profileWarnings?: string[]
   posting?: JobPostingEvidence
   postingHistory?: JobPostingEvidence[]
@@ -569,6 +575,13 @@ export interface IngestionRunSummary {
   accountedCount: number
   outcomes: Partial<Record<IngestionOutcome, number>>
   cursor?: string
+  inputFingerprint?: string
+  scopeFingerprint?: string
+  commandId?: string
+  searchExecutions?: import('./discoverySearchEvidence.js').DiscoverySearchExecution[]
+  retrievalStatus?: 'complete' | 'partial'
+  omittedSearchHitCount?: number
+  scopeBatch?: import('./discoveryScopeBatch.js').DiscoveryScopeBatch
 }
 
 export type IngestionResolutionOutcome =
@@ -715,12 +728,13 @@ export interface OpportunityDiscoveryEvidence {
   sourceTitle: string
   location?: string
   compensationText?: string
-  rationale: string
+  rationale?: string
   discoveredAt: string
   sourceVerification?: 'verified' | 'unverified'
   sourceVerifiedAt?: string
-  fitConfidence: DiscoveryConfidence
-  opportunityValueConfidence: DiscoveryConfidence
+  sourceProof?: DiscoverySourceProof
+  fitConfidence?: DiscoveryConfidence
+  opportunityValueConfidence?: DiscoveryConfidence
   profileWarnings?: string[]
   posting?: JobPostingEvidence
   postingHistory?: JobPostingEvidence[]

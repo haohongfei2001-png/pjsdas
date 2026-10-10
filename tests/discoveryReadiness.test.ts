@@ -17,15 +17,21 @@ describe('truthful managed discovery readiness', () => {
  })
  it('reads only the exact verified account profile projection, not the complete workspace', async () => {
   const f = reader([{ user_id: 'owner-a', profile: createDefaultDiscoveryProfile() }])
-  expect(await f.read('owner-a')).toEqual({ profileConfigured: false, budgetState: 'approval_required' })
+  expect(await f.read('owner-a')).toEqual({ profileConfigured: false, scopeConfirmed: false, budgetState: 'approval_required' })
   const [url] = f.fetchImpl.mock.calls[0] as unknown as [string]
   const query = new URL(url).searchParams
   expect(query.get('select')).toBe('user_id,profile:snapshot->data->discoveryProfile')
   expect(query.get('user_id')).toBe('eq.owner-a')
  })
  it('a configured profile is still not an approved budget', async () => {
+  const f = reader([{ user_id: 'owner-a', profile: { ...createDefaultDiscoveryProfile(), targetRoleQueries: ['Synthetic role'], searchScopeVersion: 1 } }])
+  expect(await f.read('owner-a')).toEqual({ profileConfigured: true, scopeConfirmed: true, budgetState: 'approval_required' })
+ })
+ it('a historical configured profile still requires an explicit current scope confirmation', async () => {
   const f = reader([{ user_id: 'owner-a', profile: { ...createDefaultDiscoveryProfile(), targetRoleQueries: ['Synthetic role'] } }])
-  expect(await f.read('owner-a')).toEqual({ profileConfigured: true, budgetState: 'approval_required' })
+  const readiness = await f.read('owner-a')
+  expect(readiness).toEqual({ profileConfigured: true, scopeConfirmed: false, budgetState: 'approval_required' })
+  expect(discoveryReadinessLabel({ verified: true, enabled: true, readiness }, true)).toBe('待确认搜索范围')
  })
  it.each([[], [{user_id:'foreign',profile:null}], [{user_id:'owner-a',profile:'malformed'}], [{user_id:'owner-a',profile:{...createDefaultDiscoveryProfile(),targetRoleQueries:'wrong-type'}}]])('untrusted or absent account data stays unverified %#',async body=>{expect(await reader(body).read('owner-a')).toEqual(unknown)})
  it('verified missing profile is unconfigured, failed requests remain unknown',async()=>{

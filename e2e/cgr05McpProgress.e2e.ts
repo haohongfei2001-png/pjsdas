@@ -1,3 +1,4 @@
+import { MOCK_TARGET_AUTH_KEY, MOCK_TARGET_BACKEND } from './support/mockCloudTargets.js'
 import { freezeTodayFixture } from './support/consumerFixtureClock.js'
 import { expect, test, type Page, type Route } from '@playwright/test'
 import { createSnapshot, type PJSDASSnapshot } from '../src/snapshot.js'
@@ -8,8 +9,8 @@ import { fingerprintWorkspace } from '../src/cloud/workspaceFingerprint.js'
 
 test.beforeEach(async ({ page }) => { await freezeTodayFixture(page) })
 
-const BACKEND = 'https://pjsdas-remote-alpha.vercel.app'
-const AUTH_KEY = 'sb-yyrzwpoxlxpafdlbkdtg-auth-token'
+const BACKEND = MOCK_TARGET_BACKEND
+const AUTH_KEY = MOCK_TARGET_AUTH_KEY
 const at = '2026-09-24T06:00:00.000Z'
 
 function session() {

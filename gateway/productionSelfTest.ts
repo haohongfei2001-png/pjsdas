@@ -262,7 +262,14 @@ export async function runProductionSelfTest(options: {
 
   try {
     const response = await fetchImpl(`${baseUrl}/api/automation-discovery`, { method: 'POST' })
-    checks.push(check('discovery-automation.worker-unauthorized', response.status === 401, `HTTP ${response.status}; server-owned discovery worker must require the Vault scheduler token`))
+    let disabled = false
+    if (response.status === 503 && response.headers.get('content-type')?.includes('application/json')) {
+      const body = await response.json().catch(() => null)
+      disabled = body?.code === 'DISCOVERY_RUNTIME_DISABLED' && body?.retryable === false
+    }
+    checks.push(check('discovery-automation.worker-unauthorized', response.status === 401 || disabled,
+      disabled ? 'HTTP 503; Discovery is explicitly disabled, not authenticated or search-success evidence'
+        : `HTTP ${response.status}; server-owned discovery worker must reject anonymous execution`))
   } catch (caught) {
     checks.push(check('discovery-automation.worker-fetch', false, caught instanceof Error ? caught.message : String(caught)))
   }

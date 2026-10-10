@@ -1,7 +1,8 @@
+import { MOCK_TARGET_AUTH_KEY, MOCK_TARGET_BACKEND } from '../support/mockCloudTargets.js'
 import type { BrowserContext, Route } from '@playwright/test'
 import { upgradeSnapshotToLatest, type PJSDASSnapshot } from '../../src/snapshot.js'
-export const AUTH_KEY = 'sb-yyrzwpoxlxpafdlbkdtg-auth-token'
-export const BACKEND = 'https://pjsdas-remote-alpha.vercel.app'
+export const AUTH_KEY = MOCK_TARGET_AUTH_KEY
+export const BACKEND = MOCK_TARGET_BACKEND
 
 export function session(accountKey: string, token: string) {
   return {

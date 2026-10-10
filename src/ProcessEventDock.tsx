@@ -1,3 +1,4 @@
+import { captureWorkspaceWriteLease } from './cloud/workspaceWriteLease.js'
 import { useEffect, useMemo, useState } from 'react'
 import {
   applyProcessEventChangeSet,
@@ -178,6 +179,7 @@ export default function ProcessEventDock({ onChanged }: ProcessEventDockProps) {
         notes,
         source: 'manual',
       })
+      const writeLease = captureWorkspaceWriteLease(cloud.session?.user.id)
       if (cloud.session && connectedWorkspaceAuthorityEnabled()) {
         if (cloud.checkpoint.conflict) throw new Error('账号工作区存在冲突；请先处理后再记录流程事件。')
         const commandId = createConnectedCommandId('web-process-event')
@@ -194,9 +196,10 @@ export default function ProcessEventDock({ onChanged }: ProcessEventDockProps) {
           throw new Error(result.conflict?.message ?? '流程事件未写入账号工作区。')
         }
       } else {
-        await applyProcessEventChangeSet(processEvent)
+        await applyProcessEventChangeSet(processEvent, writeLease.assertCurrent)
       }
       await reloadLocal()
+      writeLease.assertCurrent()
       setOpportunityText('')
       setDueAt('')
       setNotes('')
@@ -214,6 +217,7 @@ export default function ProcessEventDock({ onChanged }: ProcessEventDockProps) {
     setBusy(true)
     setError('')
     try {
+      const writeLease = captureWorkspaceWriteLease(cloud.session?.user.id)
       if (cloud.session && connectedWorkspaceAuthorityEnabled()) {
         if (cloud.checkpoint.conflict) throw new Error('账号工作区存在冲突；请先处理后再删除流程事件。')
         const commandId = createConnectedCommandId('web-process-delete')
@@ -224,9 +228,10 @@ export default function ProcessEventDock({ onChanged }: ProcessEventDockProps) {
           throw new Error(result.conflict?.message ?? '流程事件未从账号工作区删除。')
         }
       } else {
-        await applyProcessEventDeleteChangeSet(id)
+        await applyProcessEventDeleteChangeSet(id, writeLease.assertCurrent)
       }
       await reloadLocal()
+      writeLease.assertCurrent()
       onChanged?.()
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : (zh ? '删除流程事件失败。' : 'Could not delete the process event.'))

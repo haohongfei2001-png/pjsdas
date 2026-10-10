@@ -1,8 +1,9 @@
+import { MOCK_TARGET_AUTH_KEY, MOCK_TARGET_BACKEND } from './support/mockCloudTargets.js'
 import { expect, test, type Page, type Route } from '@playwright/test'
 const owner = '00000000-0000-4000-8000-000000000001',
   clientId = '00000000-0000-4000-8000-000000000002',
   grantId = '00000000-0000-4000-8000-000000000003'
-const authKey = 'sb-yyrzwpoxlxpafdlbkdtg-auth-token'
+const authKey = MOCK_TARGET_AUTH_KEY
 const entry = '/pjsdas/?manage_access=1'
 const view = () => ({
   account: { id: owner, email: 'owner@example.invalid' },

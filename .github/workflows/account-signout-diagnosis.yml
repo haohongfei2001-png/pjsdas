@@ -22,6 +22,8 @@ jobs:
           npm install --no-save @playwright/test@1.63.0
           node scripts/verify-installed-runtime-lock.mjs
       - run: npx playwright install --with-deps chromium
+      - name: Prove mock cloud isolation before application browser tests
+        run: npx playwright test --config=playwright.cloud-guard.config.mts --project=chromium
       - name: Observe the unchanged account isolation assertions
         run: npx playwright test --config=playwright.config.mts --project=chromium e2e/cgr01AuthoritativeCommand.e2e.ts --grep 'account A sign-out then account B' --retries=0 --repeat-each=3
       - uses: actions/upload-artifact@v5

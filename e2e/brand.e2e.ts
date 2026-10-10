@@ -1,4 +1,6 @@
-import { expect, test, type Page } from '@playwright/test'
+import { MOCK_TARGET_AUTH_ORIGIN } from './support/mockCloudTargets.js'
+import type { Page } from '@playwright/test'
+import { expect, test } from './support/mockApiTest.js'
 import { mkdir } from 'node:fs/promises'
 const base = process.env.TA_BRAND_BASE ?? '/pjsdas/'
 async function visual(page: Page, label: string) {
@@ -56,7 +58,7 @@ test('TodayAction initial HTML, icons and stable installation identity work on d
   expect(await page.evaluate(() => navigator.serviceWorker.getRegistrations().then(x => x.length))).toBe(0)
 })
 test('Brand name, accessible capture, language and narrow header preserve the TSUI surface', async ({ page }) => {
-  await page.route('**/supabase.co/**', route => route.abort())
+  await page.route(`${MOCK_TARGET_AUTH_ORIGIN}/**`, route => route.abort())
   await page.goto(base + 'today')
   await expect(page.locator('.tsui-brand')).toContainText('TodayAction')
   await expect(page.getByRole('navigation', { name: '主导航' }).getByRole('button')).toHaveCount(3)

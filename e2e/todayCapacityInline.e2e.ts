@@ -116,12 +116,17 @@ test('latest custom intent survives leaving and reopening Today while server con
   await connectedStart(page)
   await open(page); await input(page).fill('5'); await input(page).press('Enter')
   await expect(summary(page)).toContainText('5 小时')
+  // Enter closes only after the local save effect finishes; reopening before
+  // that boundary can be closed again by the previous save.
+  await expect(input(page)).toBeHidden()
   await open(page); await input(page).fill('4'); await input(page).press('Enter')
   await expect(summary(page)).toContainText('4 小时')
+  await expect(input(page)).toBeHidden()
   await page.locator('.tsui-settings-button').click()
   await page.locator('.tsui-primary-nav').getByRole('button', { name: '今天', exact: true }).click()
   await open(page); await input(page).fill('3'); await input(page).press('Enter')
   await expect(summary(page)).toContainText('3 小时')
+  await expect(input(page)).toBeHidden()
   release()
   await expect.poll(() => server.snapshot.data.timePlanning?.dateOverrides?.['2026-10-01']).toBe(180)
   await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem('pjsdas-cgr01-pending:instant-owner') ?? '[]').length)).toBe(0)

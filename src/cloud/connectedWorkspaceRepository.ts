@@ -2,6 +2,7 @@ import { fetchBackend } from '../backendEndpoints.js'
 import { validateSnapshot, type PJSDASSnapshot } from '../snapshot.js'
 import { fingerprintWorkspace } from './workspaceFingerprint.js'
 import { getAccountAccessToken } from './cloudClient.js'
+import { AccountCacheChangedError, currentAccountCacheGeneration } from './accountCacheLease.js'
 
 export interface ConnectedRemoteWorkspaceRow {
   fileId: string
@@ -58,11 +59,47 @@ async function parseWorkspaceResponse(response: Response, assertReadCurrent?: ()
   }
 }
 
-export async function fetchConnectedRemoteWorkspace(accountKey?: string, assertReadCurrent?: () => void): Promise<ConnectedRemoteWorkspaceRow> {
-  return parseWorkspaceResponse(await request('/api/workspace', {
-    method: 'POST',
-    body: JSON.stringify({ action: 'read' }),
-  }, accountKey), assertReadCurrent)
+type InFlightRead = { serial: number; active: number; current?: Promise<ConnectedRemoteWorkspaceRow> }
+const workspaceReads = new Map<string, InFlightRead>()
+let readSerial = 0
+export async function fetchConnectedRemoteWorkspace(accountKey?: string, assertReadCurrent?: () => void, options: { passive?: boolean } = {}): Promise<ConnectedRemoteWorkspaceRow> {
+  assertReadCurrent?.()
+  const generation = currentAccountCacheGeneration(), token = await getAccountAccessToken(accountKey)
+  if (currentAccountCacheGeneration() !== generation) throw new AccountCacheChangedError()
+  assertReadCurrent?.()
+  // Tokens are used only in this short-lived in-memory map; never persisted or
+  // logged. Same-user sessions cannot borrow each other's authenticated read.
+  const key = JSON.stringify([accountKey ?? '', token, generation])
+  let entry = workspaceReads.get(key)
+  if (!entry) { entry = { serial: 0, active: 0 }; workspaceReads.set(key, entry) }
+  let reading = options.passive ? entry.current : undefined
+  let serial = entry.serial
+  if (!reading) {
+    serial = ++readSerial; entry.serial = serial; entry.active += 1
+    const owner = entry
+    const pending = fetchBackend('/api/workspace', { method: 'POST', headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' }, body: JSON.stringify({ action: 'read' }) })
+      .then(response => parseWorkspaceResponse(response))
+      .then(async result => {
+        // Keep the read in flight through the last asynchronous session check.
+        // A newer forced read admitted during that check invalidates this one.
+        const currentToken = await getAccountAccessToken(accountKey)
+        if (owner.serial !== serial || currentAccountCacheGeneration() !== generation || currentToken !== token) throw new AccountCacheChangedError()
+        return result
+      })
+    reading = pending.finally(() => {
+      owner.active -= 1
+      // An older finally must not erase a newer forced read or return an old
+      // resolved result to a later passive refresh.
+      if (owner.current === reading) owner.current = undefined
+      if (owner.active === 0 && workspaceReads.get(key) === owner) workspaceReads.delete(key)
+    })
+    owner.current = reading
+  }
+  const result = await reading
+  assertReadCurrent?.()
+  if (entry.serial !== serial || currentAccountCacheGeneration() !== generation || workspaceReads.has(key) && workspaceReads.get(key) !== entry) throw new AccountCacheChangedError()
+  assertReadCurrent?.()
+  return structuredClone(result)
 }
 
 export async function createConnectedRemoteWorkspace(): Promise<never> {

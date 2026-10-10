@@ -1,9 +1,11 @@
 import type { IngestionOutcome, IngestionRunSummary, TimelineRecord } from './model.js'
 import { effectiveSourceRegistry, type IngestionRunWithPolicy } from './sourceRegistry.js'
+import { discoveryRunRetrievalState } from './discoverySearchEvidence.js'
 
-export type SourceHealthState = 'healthy' | 'missing' | 'stale' | 'unresolved' | 'unbalanced' | 'disabled'
+export type SourceHealthState = 'healthy' | 'missing' | 'stale' | 'unresolved' | 'unbalanced' | 'disabled' | 'partial' | 'unverified'
 
 export interface SourceRunHealth {
+  retrievalState?: 'complete' | 'partial' | 'unverified'
   runId: string
   completedAt: string
   receivedCount: number
@@ -39,7 +41,9 @@ function runHealth(run: IngestionRunSummary): SourceRunHealth {
   const outcomeTotal = Object.values(run.outcomes).reduce((sum, value) => sum + (value ?? 0), 0)
   const unresolvedCount = run.outcomes.unresolved ?? 0
   const balanced = run.receivedCount === run.accountedCount && run.accountedCount === outcomeTotal
+  const retrievalState=discoveryRunRetrievalState(run)
   return {
+    retrievalState,
     runId: run.runId,
     completedAt: run.completedAt,
     receivedCount: run.receivedCount,
@@ -47,7 +51,7 @@ function runHealth(run: IngestionRunSummary): SourceRunHealth {
     outcomes: { ...run.outcomes },
     balanced,
     unresolvedCount,
-    healthy: balanced && unresolvedCount === 0,
+    healthy: balanced && unresolvedCount === 0 && retrievalState!=='partial' && retrievalState!=='unverified',
   }
 }
 
@@ -91,7 +95,7 @@ export function summarizeSourceHealth(timeline: TimelineRecord[] | undefined, no
             ? 'unresolved'
             : stale
               ? 'stale'
-              : 'healthy'
+              : latest.retrievalState==='partial'||latest.retrievalState==='unverified' ? latest.retrievalState : 'healthy'
     return {
       sourceKind: source.sourceKind,
       sourceId: source.sourceId,

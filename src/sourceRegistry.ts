@@ -23,10 +23,10 @@ export type IngestionRunWithPolicy = IngestionRunSummary & {
 }
 
 export const PJSDAS_BOOTSTRAP_SOURCE_REGISTRY: RegisteredIngestionSource[] = [
-  { sourceKind: 'gpt_monitor', sourceId: 'monitor:urgent-campus', enabled: true, label: '秋招紧迫岗位检查', cadenceMinutes: 1440, freshnessSlaMinutes: 2160, policySource: 'bootstrap' },
-  { sourceKind: 'gpt_monitor', sourceId: 'monitor:state-foreign-2027', enabled: true, label: '央国企外企27届秋招', cadenceMinutes: 1440, freshnessSlaMinutes: 2160, policySource: 'bootstrap' },
-  { sourceKind: 'gpt_monitor', sourceId: 'monitor:middle-layer', enabled: true, label: '高匹配中间层校招岗位', cadenceMinutes: 1440, freshnessSlaMinutes: 2160, policySource: 'bootstrap' },
-  { sourceKind: 'gpt_monitor', sourceId: 'monitor:key-changes', enabled: true, label: '秋招岗位关键变化', cadenceMinutes: 1440, freshnessSlaMinutes: 2160, policySource: 'bootstrap' },
+  { sourceKind: 'gpt_monitor', sourceId: 'monitor:urgent-campus', enabled: true, label: '搜索范围更新', cadenceMinutes: 1440, freshnessSlaMinutes: 2160, policySource: 'bootstrap' },
+  { sourceKind: 'gpt_monitor', sourceId: 'monitor:state-foreign-2027', enabled: true, label: '搜索范围来源核验', cadenceMinutes: 1440, freshnessSlaMinutes: 2160, policySource: 'bootstrap' },
+  { sourceKind: 'gpt_monitor', sourceId: 'monitor:middle-layer', enabled: true, label: '搜索范围岗位发现', cadenceMinutes: 1440, freshnessSlaMinutes: 2160, policySource: 'bootstrap' },
+  { sourceKind: 'gpt_monitor', sourceId: 'monitor:key-changes', enabled: true, label: '已有岗位来源变化', cadenceMinutes: 1440, freshnessSlaMinutes: 2160, policySource: 'bootstrap' },
   { sourceKind: 'gmail', sourceId: 'gmail:primary', enabled: true, label: '招聘邮件自动摄入', cadenceMinutes: 10, freshnessSlaMinutes: 20, policySource: 'bootstrap' },
 ]
 

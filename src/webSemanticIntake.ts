@@ -15,6 +15,7 @@ import { type CanonicalJobReference } from './progressUpdate.js'
 import { buildWebSemanticInterpretation } from './webSemanticInterpretation.js'
 import type { SemanticCandidate, SemanticIntakeObservation, SemanticStatementMode } from './model.js'
 import { connectedWorkspaceAuthorityEnabled } from './cloud/connectedWorkspaceRepository.js'
+import { captureWorkspaceWriteLease, WorkspaceWriteAuthError } from './cloud/workspaceWriteLease.js'
 import {
   confirmConnectedCommand,
   createConnectedCommandId,
@@ -26,6 +27,8 @@ import {
 export type LocalSemanticUndoToken =
   | {
       kind?: 'local'
+      writeLease?: ReturnType<typeof captureWorkspaceWriteLease>
+      accountKey?: string
       workspaceFingerprint: string
       compensation: SemanticBatchCompensation
     }
@@ -76,15 +79,19 @@ async function canonicalReferences(): Promise<CanonicalJobReference[]> {
 async function optimisticReplace(
   baselineFingerprint: string,
   nextSnapshot: Parameters<typeof replaceLocalSnapshotFromCloud>[0],
+  assertCurrent: () => void,
 ) {
-  const latest = await exportLocalSnapshot()
+  assertCurrent()
+  const latest = await exportLocalSnapshot(assertCurrent)
   const currentFingerprint = await fingerprintWorkspace(latest)
+  assertCurrent()
   if (currentFingerprint !== baselineFingerprint) {
     throw new Error('工作区在处理期间已变化；为避免覆盖新数据，本次输入没有写入。请重新提交。')
   }
-  await replaceLocalSnapshotFromCloud(nextSnapshot)
-  const committed = await exportLocalSnapshot()
+  await replaceLocalSnapshotFromCloud(nextSnapshot, { expectedLocal: latest, assertCurrent })
+  const committed = await exportLocalSnapshot(assertCurrent)
   const committedFingerprint = await fingerprintWorkspace(committed)
+  assertCurrent()
   window.dispatchEvent(new CustomEvent('pjsdas:workspace-replaced'))
   return committedFingerprint
 }
@@ -114,6 +121,7 @@ export async function submitWebSemanticCapture(
   text: string,
   options: { now?: Date; timezone?: string; accountKey?: string; commandId?: string; contextRefs?: string[]; confirmExisting?: boolean; queueOffline?: boolean; candidates?: SemanticCandidate[] } = {},
 ): Promise<WebSemanticCaptureResult> {
+  const { assertCurrent } = captureWorkspaceWriteLease(options.accountKey)
   const trimmed = text.trim()
   if (!trimmed) throw new Error('请输入要告诉 TodayAction 的内容。')
   const now = options.now ?? new Date()
@@ -124,6 +132,7 @@ export async function submitWebSemanticCapture(
     exportLocalSnapshot(),
   ])
   const baselineFingerprint = await fingerprintWorkspace(baseline)
+  assertCurrent()
   const interpretation = options.candidates ? { mode: 'current_intent' as const, candidates: options.candidates, unresolved: [], ignored: [] }
     : buildWebSemanticInterpretation(trimmed, opportunities, baseline, references, now, timezone)
   const recordId = options.commandId ?? `capture:${now.getTime()}:${stableHash(trimmed)}`
@@ -149,6 +158,7 @@ export async function submitWebSemanticCapture(
     const commandId = options.commandId ?? createConnectedCommandId('web-semantic')
     if (options.queueOffline) {
       await queueConnectedBusinessCommand(options.accountKey, { type: 'semantic_intake', value: observation }, { commandId })
+      assertCurrent()
       return { status: 'QUEUED', summary: '操作已保存在此设备，联网后会自动提交。',
         unresolved: interpretation.unresolved, ignored: interpretation.ignored, decisionRequestIds: [] }
     }
@@ -158,6 +168,7 @@ export async function submitWebSemanticCapture(
           type: 'semantic_intake',
           value: observation,
         }, { commandId })
+    assertCurrent()
     if (authoritative.outcome === 'CONFLICT') {
       throw new Error(`CONFLICT: ${authoritative.conflict?.message ?? 'Semantic Intake conflicted with newer authoritative state.'}`)
     }
@@ -193,7 +204,7 @@ export async function submitWebSemanticCapture(
     }
   }
 
-  const committedFingerprint = await optimisticReplace(baselineFingerprint, result.snapshot)
+  const committedFingerprint = await optimisticReplace(baselineFingerprint, result.snapshot, assertCurrent)
   return {
     status: result.status,
     summary: result.summary,
@@ -201,6 +212,8 @@ export async function submitWebSemanticCapture(
     ignored: interpretation.ignored,
     decisionRequestIds: result.decisionRequests.map((item) => item.id),
     undo: result.compensation ? {
+      accountKey: options.accountKey,
+      writeLease: { assertCurrent },
       workspaceFingerprint: committedFingerprint,
       compensation: result.compensation,
     } : undefined,
@@ -212,6 +225,7 @@ export async function resolveWebDecision(
   choiceId: string,
   options: { now?: Date; accountKey?: string } = {},
 ) {
+  const { assertCurrent } = captureWorkspaceWriteLease(options.accountKey)
   const now = options.now ?? new Date()
   if (options.accountKey && connectedWorkspaceAuthorityEnabled()) {
     const commandId = createConnectedCommandId('web-decision')
@@ -219,6 +233,7 @@ export async function resolveWebDecision(
       type: 'resolve_semantic_decision',
       value: { requestId, choiceId },
     }, { commandId })
+    assertCurrent()
     if (authoritative.outcome === 'CONFLICT') {
       throw new Error(authoritative.conflict?.message ?? 'Decision resolution conflicted with newer authoritative state.')
     }
@@ -234,12 +249,15 @@ export async function resolveWebDecision(
   }
   const baseline = await exportLocalSnapshot()
   const baselineFingerprint = await fingerprintWorkspace(baseline)
+  assertCurrent()
   const result = resolveSemanticDecision(baseline, requestId, choiceId, now)
   if (!result.changed) return { ...result, undo: undefined as LocalSemanticUndoToken | undefined }
-  const committedFingerprint = await optimisticReplace(baselineFingerprint, result.snapshot)
+  const committedFingerprint = await optimisticReplace(baselineFingerprint, result.snapshot, assertCurrent)
   return {
     ...result,
     undo: result.compensation ? {
+      accountKey: options.accountKey,
+      writeLease: { assertCurrent },
       workspaceFingerprint: committedFingerprint,
       compensation: result.compensation,
     } : undefined,
@@ -247,8 +265,14 @@ export async function resolveWebDecision(
 }
 
 export async function undoWebSemanticChange(token: LocalSemanticUndoToken, now = new Date()) {
+  const { assertCurrent } = captureWorkspaceWriteLease(token.accountKey)
+  if (token.kind !== 'connected') {
+    if (!token.writeLease || (token.accountKey && connectedWorkspaceAuthorityEnabled())) throw new WorkspaceWriteAuthError()
+    token.writeLease.assertCurrent()
+  }
   if (token.kind === 'connected') {
     const result = await undoConnectedBusinessCommand(token.accountKey, token.targetCommandId)
+    assertCurrent()
     if (result.outcome === 'CONFLICT') {
       throw new Error(result.conflict?.message ?? 'Undo conflicted with a dependent authoritative update.')
     }
@@ -256,9 +280,10 @@ export async function undoWebSemanticChange(token: LocalSemanticUndoToken, now =
   }
   const baseline = await exportLocalSnapshot()
   const baselineFingerprint = await fingerprintWorkspace(baseline)
+  assertCurrent()
   if (baselineFingerprint !== token.workspaceFingerprint) {
     throw new Error('工作区已有后续变化，无法自动撤销而不影响新数据。')
   }
   const next = applySemanticCompensation(baseline, token.compensation, now)
-  return optimisticReplace(baselineFingerprint, next)
+  return optimisticReplace(baselineFingerprint, next, assertCurrent)
 }

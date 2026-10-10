@@ -1,3 +1,4 @@
+import { MOCK_TARGET_AUTH_ORIGIN } from './support/mockCloudTargets.js'
 import { expect, test, type Page } from '@playwright/test'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { createHash } from 'node:crypto'
@@ -61,7 +62,7 @@ async function seed(page: Page, appliedForLayout = false) {
   await seedSession(page.context())
   const snapshot = fixture(appliedForLayout)
   const mutations: string[] = []
-  await page.route(/https:\/\/[^/]+\.supabase\.co\//, route => route.abort())
+  await page.route(`${MOCK_TARGET_AUTH_ORIGIN}/**`, route => route.abort())
   await page.route(BACKEND + '/**', route => {
     const request = route.request(), path = new URL(request.url()).pathname
     if (request.method() === 'OPTIONS') return cors(route, {}, 204)

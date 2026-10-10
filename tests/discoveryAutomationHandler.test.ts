@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { createDiscoveryAutomationHandler, discoveryAutomationTelemetryPatch } from '../gateway/discoveryAutomationHandler.js'
 import type { DiscoveryGenerateText } from '../gateway/discoveryAutomationWorker.js'
 
-const CLAIM_RPC = '/rest/v1/rpc/pjsdas_claim_enabled_discovery_automation_bindings'
+const CLAIM_RPC = '/rest/v1/rpc/pjsdas_claim_enabled_discovery_automation_bindings_v2'
 
 function json(data: unknown, status = 200) {
   return new Response(JSON.stringify(data), {
@@ -20,6 +20,7 @@ function createHandler(
   return createDiscoveryAutomationHandler({
     supabaseUrl: 'https://example.supabase.co',
     supabasePublishableKey: 'sb_publishable_test',
+    supabaseServiceRoleKey: 'synthetic-existing-backend',
     tokenEncryptionKey: Buffer.alloc(32, 9).toString('base64url'),
     googleClientId: 'google-client',
     googleClientSecret: 'google-secret',
@@ -112,7 +113,7 @@ describe('server-owned discovery automation endpoint', () => {
       return { text: '{"observations":[]}' }
     })
     const fetchImpl = vi.fn(async (input: RequestInfo | URL) => {
-      if (String(input).endsWith(CLAIM_RPC)) return json([{user_id:'00000000-0000-4000-8000-000000000001',google_subject:'synthetic-sub',refresh_token_ciphertext:'synthetic-unused'}])
+      if (String(input).endsWith(CLAIM_RPC)) return json([{user_id:'00000000-0000-4000-8000-000000000001',google_subject:'synthetic-sub',refresh_token_ciphertext:'synthetic-unused',discovery_consent_generation:'11111111-1111-4111-8111-111111111111'}])
       return json({ error: 'unexpected' }, 500)
     }) as unknown as typeof fetch
 
@@ -130,7 +131,7 @@ describe('server-owned discovery automation endpoint', () => {
       throw { statusCode: 401 }
     })
     const fetchImpl = vi.fn(async (input: RequestInfo | URL) => {
-      if (String(input).endsWith(CLAIM_RPC)) return json([{user_id:'00000000-0000-4000-8000-000000000001',google_subject:'synthetic-sub',refresh_token_ciphertext:'synthetic-unused'}])
+      if (String(input).endsWith(CLAIM_RPC)) return json([{user_id:'00000000-0000-4000-8000-000000000001',google_subject:'synthetic-sub',refresh_token_ciphertext:'synthetic-unused',discovery_consent_generation:'11111111-1111-4111-8111-111111111111'}])
       return json({ error: 'unexpected' }, 500)
     }) as unknown as typeof fetch
 
@@ -148,9 +149,9 @@ describe('server-owned discovery automation endpoint', () => {
     expect(generateTextImpl).toHaveBeenCalledTimes(1)
   })
 
-  it('preserves bounded credit and transient provider failure semantics from the AI SDK error status', async () => {
+  it('preserves credit errors and forbids automatic retry of uncertain model transport failures', async () => {
     const fetchImpl = vi.fn(async (input: RequestInfo | URL) => {
-      if (String(input).endsWith(CLAIM_RPC)) return json([{user_id:'00000000-0000-4000-8000-000000000001',google_subject:'synthetic-sub',refresh_token_ciphertext:'synthetic-unused'}])
+      if (String(input).endsWith(CLAIM_RPC)) return json([{user_id:'00000000-0000-4000-8000-000000000001',google_subject:'synthetic-sub',refresh_token_ciphertext:'synthetic-unused',discovery_consent_generation:'11111111-1111-4111-8111-111111111111'}])
       return json({ error: 'unexpected' }, 500)
     }) as unknown as typeof fetch
 
@@ -169,12 +170,12 @@ describe('server-owned discovery automation endpoint', () => {
     })(new Request('https://gateway.example/api/automation-discovery?probe=1', {
       headers: { authorization: 'Bearer vault-worker-token' },
     }))
-    expect(unavailable.status).toBe(503)
-    await expect(unavailable.json()).resolves.toMatchObject({ code: 'DISCOVERY_MODEL_UNAVAILABLE', retryable: true })
+    expect(unavailable.status).toBe(500)
+    await expect(unavailable.json()).resolves.toMatchObject({ code: 'DISCOVERY_MODEL_UNAVAILABLE', retryable: false })
   })
   it('refuses an authenticated probe without a distinct TodayAction spend reservation', async () => {
     const generateTextImpl = vi.fn(async () => ({ text: '{"observations":[]}' }))
-    const fetchImpl = vi.fn(async () => json([{user_id:'00000000-0000-4000-8000-000000000001',google_subject:'synthetic-sub',refresh_token_ciphertext:'synthetic-unused'}])) as unknown as typeof fetch
+    const fetchImpl = vi.fn(async () => json([{user_id:'00000000-0000-4000-8000-000000000001',google_subject:'synthetic-sub',refresh_token_ciphertext:'synthetic-unused',discovery_consent_generation:'11111111-1111-4111-8111-111111111111'}])) as unknown as typeof fetch
     const response = await createHandler(fetchImpl, { generateTextImpl })(new Request('https://gateway.example/api/automation-discovery?probe=1&force=1', { headers: { authorization: 'Bearer vault-worker-token' } }))
     expect(response.status).toBe(500)
     expect(await response.json()).toMatchObject({ code: 'DISCOVERY_BUDGET_APPROVAL_REQUIRED', retryable: false })

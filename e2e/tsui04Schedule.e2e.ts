@@ -1,3 +1,4 @@
+import { MOCK_TARGET_AUTH_KEY, MOCK_TARGET_BACKEND } from './support/mockCloudTargets.js'
 import { mkdir } from 'node:fs/promises'
 import { upgradeSnapshotToLatest, type PJSDASSnapshot } from '../src/snapshot.js'
 import { applyUserDomainCommand } from '../src/domainCommands.js'
@@ -199,8 +200,8 @@ test('TSUI-04 real schedule: today anchor, both directions, unresolved and undat
 test('TSUI-04 connected event detail uses exact occurrence commands, receipt and Undo', async ({ page }) => {
   await page.clock.setFixedTime(NOW)
   const account = 'tsui04-account'
-  const authKey = 'sb-yyrzwpoxlxpafdlbkdtg-auth-token'
-  const backend = 'https://pjsdas-remote-alpha.vercel.app'
+  const authKey = MOCK_TARGET_AUTH_KEY
+  const backend = MOCK_TARGET_BACKEND
   await page.addInitScript(({ key, value }) => {
     window.localStorage.setItem(key, JSON.stringify(value))
   }, { key: authKey, value: {
@@ -348,7 +349,11 @@ test('TSUI-04 connected event detail uses exact occurrence commands, receipt and
   await page.route(backend + '/api/workspace', unavailable)
   await page.context().setOffline(false)
   await page.reload()
+  // The intentionally aborted receipt read inserts a recovery notice above
+  // the list. Wait for that expected state before choosing the row's position.
+  await expect(page.locator('.tsui-interaction-notice')).toContainText(/修改已保存在本机|saved on this device/)
   await currentRow.click()
+  await expect(page.locator('.tsui-schedule-detail')).toBeVisible()
   await expect(page.getByText(/待同步的改期日期|Pending reschedule/)).toContainText('2026-11-04')
   await page.locator('.tsui-schedule-command-buttons').getByRole('button', { name: /改期|Reschedule/ }).click()
   await expect(page.locator('.tsui-schedule-reschedule input')).toHaveValue('2026-11-04')

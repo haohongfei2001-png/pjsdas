@@ -1,8 +1,11 @@
+// Existing explicit live configuration selects production-shaped synthetic fixtures.
+process.env.TA_MOCK_FIXTURE_TARGET = 'live'
 import { defineConfig, devices } from '@playwright/test'
 
 export default defineConfig({
   testDir: './e2e',
   testMatch: '**/*.e2e.ts',
+  testIgnore: '**/mockCloudIsolation.e2e.ts',
   workers: 1,
   retries: 0,
   timeout: 60_000,

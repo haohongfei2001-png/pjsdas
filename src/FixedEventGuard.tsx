@@ -1,3 +1,4 @@
+import { captureWorkspaceWriteLease } from './cloud/workspaceWriteLease.js'
 import { useEffect, useMemo, useState } from 'react'
 import { applyActionStatusChangeSet, exportLocalSnapshot, getAllActions } from './db.js'
 import { actionDeadline, actionNodesById, compareActionDeadlines } from './deadlineOrder.js'
@@ -59,6 +60,7 @@ export default function FixedEventGuard({ onChanged }: FixedEventGuardProps) {
     setBusy(true)
     setError('')
     try {
+      const writeLease = captureWorkspaceWriteLease(cloud.session?.user.id)
       if (cloud.session && connectedWorkspaceAuthorityEnabled()) {
         const commandId = createConnectedCommandId('web-fixed-event')
         const result = await executeConnectedBusinessCommand(cloud.session.user.id, {
@@ -67,9 +69,10 @@ export default function FixedEventGuard({ onChanged }: FixedEventGuardProps) {
         }, { commandId })
         if (result.outcome === 'CONFLICT') throw new Error(result.conflict?.message ?? 'This event changed in another authoritative source.')
       } else {
-        await applyActionStatusChangeSet(current.id, 'done')
+        await applyActionStatusChangeSet(current.id, 'done', writeLease.assertCurrent)
       }
       await reload()
+      writeLease.assertCurrent()
       onChanged?.()
     } catch (caught) {
       setError(caught instanceof Error
