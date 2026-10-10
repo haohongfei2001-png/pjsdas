@@ -3,13 +3,15 @@ import { createDiscoveryRuntime } from '../gateway/discoveryRuntime.js'
 import { DISCOVERY_SPEND_TARIFF as T } from '../gateway/discoverySpendPolicy.js'
 import { hashMutationPayload } from '../gateway/mutationKernel.js'
 import { discoveryProfileManagementFingerprint } from '../src/discoveryProfileManagement.js'
-import { LedgerHarness, USER, GENERATION, json } from './fixtures/b2Ledger.rebuilt.js'
+import { LedgerHarness, USER, GENERATION, AT, json } from './fixtures/b2Ledger.rebuilt.js'
 import { budgetWire } from './fixtures/b2BudgetLedger.js'
 
 const request = (query = '') => new Request(`https://synthetic.invalid/api/automation-discovery${query}`, { headers: { authorization: 'Bearer synthetic-worker-only' } })
 const base = { supabaseUrl: 'https://synthetic.invalid', supabasePublishableKey: 'synthetic-public', supabaseServiceRoleKey: 'synthetic-service',
   tokenEncryptionKey: '', googleClientId: '', googleClientSecret: '' }
 beforeEach(() => {
+  // The ledger clock is fixed; keep the model reservation wall clock in the same fixture window.
+  vi.spyOn(Date, 'now').mockReturnValue(Date.parse(AT))
   vi.stubEnv('PJSDAS_CONNECTED_AUTHORITY', 'transactional'); vi.stubEnv('PJSDAS_SUPABASE_SERVICE_ROLE_KEY', 'synthetic-service')
   vi.stubEnv('AI_GATEWAY_API_KEY', 'synthetic-gateway-only')
   vi.stubGlobal('fetch', vi.fn(async () => { throw new Error('Uninjected external request forbidden') }))
@@ -124,6 +126,19 @@ describe('default-off production endpoint wiring, synthetic SDK and ledger only'
     await handler(request())
     expect(f.providerFetch).toHaveBeenCalledTimes(calls); expect(f.db.snapshot).toEqual(saved)
     expect(fetch).not.toHaveBeenCalled(); expect(f.db.unexpectedUrls).toEqual([])
+  })
+  it('retains original holds and refuses model dispatch when the reservation wall clock reaches expiry', async () => {
+    const f = await fixture()
+    vi.mocked(Date.now).mockReturnValue(Date.parse(f.approval.policy.expiresAt))
+    const response = await f.make()(request())
+    expect(response.status).toBe(207)
+    expect(f.providerFetch.mock.calls.filter(call => String(call[0]) === 'https://api.perplexity.ai/search')).toHaveLength(4)
+    expect(f.providerFetch.mock.calls.filter(call => String(call[0]) === 'https://ai-gateway.vercel.sh/v4/ai/language-model')).toHaveLength(0)
+    expect([...f.db.rows.values()].filter(row => row.provenance.searchPhase === 'claimed')).toHaveLength(4)
+    for (const row of f.db.rows.values()) expect(row.receipt.discoveryBudget).toMatchObject({
+      admitted: true, retainedMicroUsd: 432031, hold: { reservedMicroUsd: 432031 },
+    })
+    expect(fetch).not.toHaveBeenCalled()
   })
   it('rechecks funding-review expiry on an already initialized handler', async () => {
     const f = await fixture(), handler = f.make()
