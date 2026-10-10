@@ -2,6 +2,8 @@ import { discoveryObservationClaimSchema } from '../src/discoveryFactSchema.js'
 import { buildDiscoveryWebQueries } from '../src/discoveryQueryPlan.js'
 import { batchMetadata, batchRequest, batchRunId, commitDiscoveryCheckpoint, nextDiscoveryScopeBatch, DISCOVERY_MAX_QUERIES_PER_TICK, type ScopeBatchIdentity } from './discoveryScopeJournal.js'
 import type { DiscoveryScopeBatch } from '../src/discoveryScopeBatch.js'
+import { createDiscoveryBatchSpendAdapters, type DiscoveryModelTransport } from './discoveryBatchSpend.js'
+import { assertDiscoverySpendWindow, createDiscoveryBatchSpendHold, parseDiscoverySpendPolicy, DISCOVERY_SPEND_TARIFF, type DiscoverySpendPolicy } from './discoverySpendPolicy.js'
 import { UncertainDiscoveryExecution } from './discoveryExecutionOutcome.js'
 import { canonicalizeVerifiedJobSourceUrl } from '../src/jobPosting.js'
 import { executeDiscoveryQueries, type DiscoverySearchHit, type DiscoverySearchProvider, type ReserveDiscoverySearch } from './discoverySearchExecution.js'
@@ -434,6 +436,7 @@ export async function runDiscoveryAutomationForBinding(options: {
   aiGatewayModel?: string
   /** Server-owned budget/pricing policy version, changed only with a new approved policy. */
   budgetPolicyVersion?: string
+  batchSpend?: { policy: DiscoverySpendPolicy; modelTransport: DiscoveryModelTransport }
   generateTextImpl?: DiscoveryGenerateText
   searchProvider?: DiscoverySearchProvider
   reserveSearch?: ReserveDiscoverySearch
@@ -443,6 +446,10 @@ export async function runDiscoveryAutomationForBinding(options: {
   now?: () => Date
   force?: boolean
 }): Promise<DiscoveryAutomationRunResult> {
+  // Capture approved terms and dispatch implementation before any asynchronous
+  // read. Caller mutation cannot replace them midway through an admitted run.
+  const batchSpend = options.batchSpend ? Object.freeze({ policy: parseDiscoverySpendPolicy(options.batchSpend.policy),
+    modelTransport: options.batchSpend.modelTransport }) : undefined
   const fetchImpl = options.fetchImpl ?? fetch
   const now = options.now?.() ?? new Date()
   const checkedAt = now.toISOString()
@@ -503,12 +510,17 @@ export async function runDiscoveryAutomationForBinding(options: {
 
   const scopeCoverage = buildDiscoveryWebQueries(profile)
   if (!scopeCoverage.queries.length || scopeCoverage.queries.length > 3720) throw new WorkspaceSourceError('DISCOVERY_SCOPE_INCOMPLETE', 'The full confirmed scope cannot be represented by the bounded query plan.', false)
-  if (!options.reserveSearch) throw new WorkspaceSourceError('DISCOVERY_BUDGET_APPROVAL_REQUIRED', 'Background search requires a separately approved and atomically reserved TodayAction budget.', false)
+  if (!batchSpend && !options.reserveSearch) throw new WorkspaceSourceError('DISCOVERY_BUDGET_APPROVAL_REQUIRED', 'Background search requires a separately approved and atomically reserved TodayAction budget.', false)
   if (!options.searchProvider) throw new WorkspaceSourceError('DISCOVERY_SEARCH_PROVIDER_REQUIRED', 'A bounded real search provider is required.', false)
   const provider = options.searchProvider
   if (!provider.id || !Number.isFinite(provider.maximumRequestCostUsd) || provider.maximumRequestCostUsd <= 0
     || !Number.isInteger(provider.maximumResults ?? 25) || (provider.maximumResults ?? 25) < 1 || (provider.maximumResults ?? 25) > 25) throw new WorkspaceSourceError('DISCOVERY_SEARCH_PROVIDER_INVALID', 'Search requires a defensible request/result price bound.', false)
   const profileFingerprint = await discoveryProfileManagementFingerprint(initial.snapshot.data.discoveryProfile ?? null)
+  if (batchSpend) {
+    assertDiscoverySpendWindow(batchSpend.policy, now)
+    if (batchSpend.policy.accountId !== options.binding.userId || batchSpend.policy.scopeFingerprint !== profileFingerprint
+      || options.aiGatewayModel !== DISCOVERY_SPEND_TARIFF.model) throw new WorkspaceSourceError('DISCOVERY_BUDGET_POLICY_MISMATCH', 'The approved account, complete scope or fixed text model changed.', false)
+  }
   const plan = buildPlan(initial.snapshot, now)
   const sourceRuns = plan.sourceRuns.filter(item => item.webQueries?.length)
   const batchSize = Math.floor(DISCOVERY_MAX_QUERIES_PER_TICK / Math.max(1, sourceRuns.length))
@@ -517,20 +529,25 @@ export async function runDiscoveryAutomationForBinding(options: {
     sources: current.sourceRuns.map(item => ({ sourceId: item.sourceId, cadenceMinutes: item.cadenceMinutes, freshnessSlaMinutes: item.freshnessSlaMinutes, queries: item.webQueries })),
     provider: { id: provider.id, maximumRequestCostUsd: provider.maximumRequestCostUsd, maximumResults: provider.maximumResults ?? 25 },
     model: options.aiGatewayModel?.trim() || DEFAULT_MODEL, maxOutputTokens: 5000, maxSdkAttempts: 1,
-    budgetPolicyVersion: options.budgetPolicyVersion ?? 'unconfigured', maximumQueriesPerTick: DISCOVERY_MAX_QUERIES_PER_TICK,
+    budgetPolicyVersion: options.budgetPolicyVersion ?? 'unconfigured', ...(batchSpend ? { spendPolicy: batchSpend.policy } : {}), maximumQueriesPerTick: DISCOVERY_MAX_QUERIES_PER_TICK,
   })
   const planFingerprint = await fingerprintPlan(plan)
   const authorizeCurrentScope = async () => {
     await options.authorize!()
+    if (batchSpend) assertDiscoverySpendWindow(batchSpend.policy, options.now?.() ?? new Date())
     const current = await source.read()
     if (await discoveryProfileManagementFingerprint(current.snapshot.data.discoveryProfile ?? null) !== profileFingerprint
       || await fingerprintPlan(buildPlan(current.snapshot, now)) !== planFingerprint) {
       throw new WorkspaceSourceError('DISCOVERY_SCOPE_CHANGED', 'The confirmed scope or enabled-source plan changed; no further old-plan retrieval is allowed.', false)
     }
+    // Scope reads and hashing yield. Recheck live consent and runtime funding
+    // review after that work, before the caller can dispatch its reserved call.
+    await options.authorize!()
+    if (batchSpend) assertDiscoverySpendWindow(batchSpend.policy, options.now?.() ?? new Date())
   }
   const loadProgress = (restartCompletedCycles = true) => Promise.all(sourceRuns.map(async sourceRun => ({ sourceRun, progress: await nextDiscoveryScopeBatch({
     source, sourceRun, scopeFingerprint: profileFingerprint, planFingerprint, batchSize,
-    workspaceVersion: initial.context.workspaceVersion!, now, force: Boolean(options.force), restartCompletedCycles,
+    workspaceVersion: initial.context.workspaceVersion!, now, force: Boolean(options.force), restartCompletedCycles, spendPolicy: batchSpend?.policy,
     legacyDue: () => sourceIsDue(source, initial, sourceRun, now, Boolean(options.force), profileFingerprint),
   }) })))
   let progress = await loadProgress()
@@ -570,15 +587,20 @@ export async function runDiscoveryAutomationForBinding(options: {
     let claimed = false, commitStarted = false, executed: Awaited<ReturnType<typeof executeDiscoveryQueries>> | undefined
     try {
       await authorizeCurrentScope()
-      const claim = await commitDiscoveryCheckpoint({ source, identity, batch: claimBatch, authorize: authorizeCurrentScope, discoveryAuthorization })
+      const budgetHold = batchSpend ? await createDiscoveryBatchSpendHold({ policy: batchSpend.policy,
+        accountId: options.binding.userId, scopeFingerprint: profileFingerprint, sourceId: identity.sourceId,
+        claimAttemptId: claimBatch.claimAttemptId, queryCount: identity.queryCount, now: options.now?.() ?? new Date() }) : undefined
+      const claim = await commitDiscoveryCheckpoint({ source, identity, batch: claimBatch, authorize: authorizeCurrentScope, discoveryAuthorization, budgetHold })
       if (!claim.firstCommit) throw new WorkspaceSourceError('DISCOVERY_SEARCH_RESULT_UNCERTAIN', 'This batch already has an immutable claim. Its reservation must be retained; do not repeat external work.', false)
       claimed = true
+      const admitted = batchSpend && budgetHold ? await createDiscoveryBatchSpendAdapters({ hold: budgetHold, claim, queries: identity.queries,
+        searchProvider: provider, modelTransport: batchSpend.modelTransport, authorize: authorizeCurrentScope, clock: options.now ?? (() => new Date()) }) : undefined
       const retrieval = await retrieveDiscoverySourceRun(initial.snapshot, { ...sourceRun, webQueries: identity.queries }, {
         executionRules: plan.executionRules, incrementalSince: plan.incrementalSince, now,
         clock: options.now, authorize: authorizeCurrentScope, onRetrieval: result => { executed = result },
-        ai: { model: options.aiGatewayModel, generateTextImpl: options.generateTextImpl,
-          searchProvider: options.searchProvider, reserveSearch: options.reserveSearch,
-          reserveSpend: options.reserveSpend, budgetAccountId: options.binding.userId, budgetSourceId: sourceRun.sourceId }, fetchImpl,
+        ai: { model: options.aiGatewayModel, generateTextImpl: admitted?.generateTextImpl ?? options.generateTextImpl,
+          searchProvider: admitted?.searchProvider ?? options.searchProvider, reserveSearch: admitted?.reserveSearch ?? options.reserveSearch,
+          reserveSpend: admitted?.reserveSpend ?? options.reserveSpend, budgetAccountId: options.binding.userId, budgetSourceId: sourceRun.sourceId }, fetchImpl,
       })
       const exhausted = retrieval.executions.some(item => item.errorCode === 'DISCOVERY_BUDGET_EXHAUSTED')
       const incomplete = currentProgress.hadFailure || retrieval.failedQueryCount > 0 || retrieval.omittedHitCount > 0
