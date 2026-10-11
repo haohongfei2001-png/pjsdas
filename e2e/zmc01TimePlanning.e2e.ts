@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test'
+import { expectTodayPlan } from './fixtures/todayPlanAssertions.js'
 import { createSnapshot } from '../src/snapshot.js'
 import { applyUserDomainCommand } from '../src/domainCommands.js'
 import { BACKEND, cors, health, seedSession } from './fixtures/todayWorkspace.js'
@@ -25,15 +26,16 @@ test('Today capacity is a durable user choice and flexible overflow leaves the w
     }
   }))
   await page.reload()
-  await expect(page.locator('.tsui-task-row')).toHaveCount(30)
+  const ids = Array.from({ length: 60 }, (_, index) => `zmc-task-${index}`).sort((a, b) => a.localeCompare(b))
+  const initial = await expectTodayPlan(page, ids.slice(0, 30), 60)
   await expect(page.getByText('今天的安排可能超出可用时间')).toHaveCount(0)
   await page.locator('.tsui-capacity summary').click()
   await page.locator('.tsui-capacity input').fill('2')
   await page.locator('.tsui-capacity input').press('Enter')
-  await expect(page.locator('.tsui-task-row')).toHaveCount(4)
+  await expectTodayPlan(page, ids.slice(0, 4), 60)
   await page.reload()
   await expect(page.locator('.tsui-capacity summary')).toContainText('2 小时')
-  await expect(page.locator('.tsui-task-row')).toHaveCount(4)
+  await expectTodayPlan(page, ids.slice(0, 4), 60)
   const persisted = await page.evaluate(async () => new Promise<{ minutes?: number; count: number }>((resolve, reject) => {
     const request = indexedDB.open('pjsdas')
     request.onerror = () => reject(request.error)
@@ -47,6 +49,9 @@ test('Today capacity is a durable user choice and flexible overflow leaves the w
     }
   }))
   expect(persisted).toEqual({ minutes: 120, count: 60 })
+  const retained = await page.evaluate(async () => (await import('/pjsdas/src/db.ts')).exportLocalSnapshot())
+  expect(retained.data.actions).toEqual(initial.data.actions)
+  expect(retained.data.scheduleNodes).toEqual(initial.data.scheduleNodes)
 })
 
 test('connected capacity command reaches another client and remains after reload', async ({ browser }) => {
@@ -94,15 +99,21 @@ test('connected capacity command reaches another client and remains after reload
     await routeBackend(pageB)
     await pageA.goto('/pjsdas/today')
     await pageB.goto('/pjsdas/today')
-    await expect(pageA.locator('.tsui-task-row')).toHaveCount(8)
+    const ids = Array.from({ length: 8 }, (_, index) => `account-task-${index}`)
+    const initial = await expectTodayPlan(pageA, ids, 8)
+    await expectTodayPlan(pageB, ids, 8)
     await pageA.locator('.tsui-capacity summary').click()
     await pageA.locator('.tsui-capacity input').fill('2')
     await pageA.locator('.tsui-capacity input').press('Enter')
-    await expect(pageA.locator('.tsui-task-row')).toHaveCount(4)
+    await expectTodayPlan(pageA, ids.slice(0, 4), 8)
     await pageB.evaluate(() => window.dispatchEvent(new Event('focus')))
-    await expect(pageB.locator('.tsui-task-row')).toHaveCount(4)
+    await expectTodayPlan(pageB, ids.slice(0, 4), 8)
     await pageB.reload()
     await expect(pageB.locator('.tsui-capacity summary')).toContainText('2 小时')
+    const retained = await expectTodayPlan(pageB, ids.slice(0, 4), 8)
+    expect(retained.data.actions).toEqual(initial.data.actions)
+    expect(retained.data.scheduleNodes).toEqual(initial.data.scheduleNodes)
+    expect(state.snapshot.data.timePlanning?.dateOverrides?.['2026-09-25']).toBe(120)
     expect(state.commands).toBe(1)
   } finally {
     await contextA.close()
