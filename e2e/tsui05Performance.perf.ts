@@ -1,9 +1,10 @@
 import { expect, test } from '@playwright/test'
+import { startTodayRenderProfile } from './fixtures/todayRenderProfile.js'
 
 const NOW = new Date('2026-09-25T04:00:00.000Z')
 const CREATED = '2026-09-20T00:00:00.000Z'
 
-test('TSUI-05 fixed stress fixture meets warm route and tab budget', async ({ page }) => {
+test('TSUI-05 fixed stress fixture meets warm route and tab budget', async ({ page }, info) => {
   test.setTimeout(90_000)
   await page.clock.setFixedTime(NOW)
   await page.goto('/pjsdas/today')
@@ -56,9 +57,10 @@ test('TSUI-05 fixed stress fixture meets warm route and tab budget', async ({ pa
   await page.goto('/pjsdas/schedule')
   await expect(page.locator('.tsui-schedule-page')).toBeVisible()
   await expect(page.locator('.tsui-schedule-row').first()).toBeVisible()
+  const profile = await startTodayRenderProfile(page, info)
 
   async function paintAfterClick(selector: string, targetSelector: string) {
-    return page.evaluate(async ({ selector, targetSelector }) => {
+    const measure = () => page.evaluate(async ({ selector, targetSelector }) => {
       const button = document.querySelector<HTMLButtonElement>(selector)
       if (!button) throw new Error('Missing measured control: ' + selector)
       const start = performance.now()
@@ -70,6 +72,7 @@ test('TSUI-05 fixed stress fixture meets warm route and tab budget', async ({ pa
       await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())))
       return performance.now() - start
     }, { selector, targetSelector })
+    return profile ? profile.measure(targetSelector, measure) : measure()
   }
   const routes: number[] = []
   for (let i = 0; i < 22; i += 1) {
@@ -106,6 +109,7 @@ test('TSUI-05 fixed stress fixture meets warm route and tab budget', async ({ pa
     warmRouteP95Ms: Number(p95(routes).toFixed(2)),
     warmTabP95Ms: Number(p95(tabs).toFixed(2)) }
   console.log('TSUI05_WARM_PERFORMANCE:' + JSON.stringify(evidence))
+  await profile?.finish()
   expect(evidence.warmRouteP95Ms).toBeLessThanOrEqual(150)
   expect(evidence.warmTabP95Ms).toBeLessThanOrEqual(150)
 })

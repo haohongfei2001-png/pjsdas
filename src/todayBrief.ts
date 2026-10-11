@@ -1,7 +1,8 @@
+import { todayProcessTimingOwner, type ProcessRecoveryItem } from './fixedEventGuardLogic.js'
 import { calendarNodeProjection, scheduleNodeEligible } from './scheduleEligibility.js'
 import { rankActions } from './decisionV3.js'
 import { actionDeadline, compareActionDeadlines, hasKnownActionTiming, latestActionNode, type ActionTimingOwner } from './deadlineOrder.js'
-import { buildConsumerTimePlan } from './today/consumerTimePlan.js'
+import { buildConsumerTimePlan, capacityLimitedAction, type CapacityLimitedAction } from './today/consumerTimePlan.js'
 import { todayCapacity } from './today/localDayCapacity.js'
 import { expectedSourcesFromRegistry, summarizeCoverage } from './ingestion.js'
 import type {
@@ -146,6 +147,8 @@ export interface TodayBrief {
   plannedMinutes: number
   nextAction?: TodayBriefAction
   nextActions: TodayBriefAction[]
+  recoveryItems: ProcessRecoveryItem[]
+  capacityLimitedActions: CapacityLimitedAction[]
   agendaGroups: TodayBriefAgendaGroup[]
   relevantDecisionRequests: TodayBriefDecisionRequest[]
   recentChanges: TodayBriefRecentChange[]
@@ -378,7 +381,7 @@ export function protectedByLatestStart(
   displayTimezone: string,
   horizonHours: number,
 ) {
-  if (!isHardConstraint(action, node)) return false
+  if (todayProcessTimingOwner(action, node)?.timingUnknown || !isHardConstraint(action, node)) return false
   const latest = latestStartFor(action, node)
   if (latest.latestStartAt) {
     const delta = new Date(latest.latestStartAt).getTime() - now.getTime()
@@ -413,8 +416,10 @@ export function actionView(
   timezone: string,
   hardDeadlineHorizonHours: number,
   processEvents: ProcessEvent[] = [],
+  owners?: ReadonlyMap<string, ActionTimingOwner>,
 ): TodayBriefAction {
-  const node = latestActionNode(ranked.action, nodes, [...opportunities.values()], processEvents)
+  const node = todayProcessTimingOwner(ranked.action, owners ? owners.get(ranked.action.id)
+    : latestActionNode(ranked.action, nodes, [...opportunities.values()], processEvents))
   const opportunity = ranked.action.opportunityId ? opportunities.get(ranked.action.opportunityId) : undefined
   return {
     actionId: ranked.action.id,
@@ -424,7 +429,7 @@ export function actionView(
     role: opportunity?.role,
     kind: ranked.action.kind,
     estimatedMinutes: ranked.action.estimatedMinutes,
-    whyNow: [...ranked.reasons],
+    whyNow: node?.timingUnknown ? ['截止日期未明确，排在已知截止之后'] : [...ranked.reasons],
     timing: timingForAction(ranked.action, node),
     protectedByLatestStart: protectedByLatestStart(
       ranked.action,
@@ -600,7 +605,6 @@ export function buildTodayBrief(
 ): TodayBrief {
   const context = resolvedContext(rawContext)
   const snapshot = upgradeSnapshotToLatest(rawSnapshot)
-  const today = localDateKey(context.now, context.timezone)
   const availableMinutes = todayCapacity(snapshot.data.timePlanning, context.now, context.timezone, input.availableMinutes).minutes
   if (!Number.isInteger(availableMinutes) || availableMinutes < 0 || (input.availableMinutes !== undefined && availableMinutes > 1440)) {
     throw new Error('TodayBrief availableMinutes must be between 0 and 1440.')
@@ -613,10 +617,10 @@ export function buildTodayBrief(
   const opportunities = opportunityMap(snapshot.data.opportunities)
   const activeNodes = latestByOccurrence(snapshot.data.scheduleNodes ?? [])
   const ranked = rankActions(snapshot.data.actions, snapshot.data.opportunities, context.now, undefined, context.timezone, activeNodes)
-  const plan = buildConsumerTimePlan({ ranked, nodes: activeNodes, opportunities: snapshot.data.opportunities, processEvents: snapshot.data.processEvents, preferences: snapshot.data.timePlanning,
+  const plan = buildConsumerTimePlan({ ranked, actions: snapshot.data.actions, nodes: activeNodes, opportunities: snapshot.data.opportunities, processEvents: snapshot.data.processEvents, preferences: snapshot.data.timePlanning,
     availableMinutes: input.availableMinutes, useRemainingDayDefault: true, now: context.now, timezone: context.timezone })
-  const todayActionIds = new Set([...plan.planned, ...plan.deferredHard].map(item => item.action.id))
-  const protectedRanked = ranked.filter(item => item.action.plannedDate === today || todayActionIds.has(item.action.id)).filter(item => item.action.timingMode !== 'fixed')
+  const todayActionIds = new Set([...plan.planned, ...plan.deferredToday].map(item => item.action.id))
+  const protectedRanked = ranked.filter(item => todayActionIds.has(item.action.id)).filter(item => item.action.timingMode !== 'fixed')
     .filter(item => protectedByLatestStart(item.action, latestActionNode(item.action, activeNodes, snapshot.data.opportunities, snapshot.data.processEvents), context.now, context.timezone, 48))
     .sort((a, b) => compareActionDeadlines(a.action, b.action, context.timezone, latestActionNode(a.action, activeNodes), latestActionNode(b.action, activeNodes)))
   const effectivePlannedMinutes = plan.plannedMinutes
@@ -711,6 +715,8 @@ export function buildTodayBrief(
     plannedMinutes: effectivePlannedMinutes,
     nextAction: visibleActions[0],
     nextActions: visibleActions.slice(1),
+    recoveryItems: plan.recoveryItems,
+    capacityLimitedActions: plan.deferredToday.map(capacityLimitedAction),
     agendaGroups,
     relevantDecisionRequests: decisions,
     recentChanges: recentSemanticChanges(snapshot),

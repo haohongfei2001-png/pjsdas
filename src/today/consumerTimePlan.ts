@@ -1,6 +1,7 @@
 import { actionArrangementDate, calendarNodeProjection, isExplicitActionArrangement, scheduleNodeEligible } from '../scheduleEligibility.js'
 import { actionDeadline, actionNodesById, compareActionDeadlines, deadlineBoundaryMs } from '../deadlineOrder.js'
-import type { Opportunity, ProcessEvent, RankedAction, ScheduleNode } from '../model.js'
+import { inactiveProcessActionIds, processRecoveryItems, todayProcessTimingOwner, type ProcessRecoveryItem } from '../fixedEventGuardLogic.js'
+import type { Action, Opportunity, ProcessEvent, RankedAction, ScheduleNode } from '../model.js'
 import type { TimePlanningPreferences } from '../timePlanningPreferences.js'
 import { localDayBounds as dayBounds, todayCapacity } from './localDayCapacity.js'
 import { capacityForDate } from '../timePlanningPreferences.js'
@@ -13,6 +14,20 @@ export interface ConsumerTimeConflict {
   selectedIds?: string[]
 }
 
+export interface CapacityLimitedAction {
+  actionId: string
+  title: string
+  estimatedMinutes: number
+  deepLink: string
+  reason: 'insufficient_time'
+}
+
+export function capacityLimitedAction(item: RankedAction): CapacityLimitedAction {
+  return { actionId: item.action.id, title: item.action.title, estimatedMinutes: item.action.estimatedMinutes,
+    deepLink: item.action.opportunityId ? `/opportunities/${encodeURIComponent(item.action.opportunityId)}` : '/today',
+    reason: 'insufficient_time' }
+}
+
 export interface ConsumerTimePlan {
   capacityMinutes?: number
   fixedMinutes: number
@@ -21,6 +36,8 @@ export interface ConsumerTimePlan {
   planned: RankedAction[]
   deferredCount: number
   deferredHard: RankedAction[]
+  deferredToday: RankedAction[]
+  recoveryItems: ProcessRecoveryItem[]
   conflicts: ConsumerTimeConflict[]
   selectionSearch?: { complete: boolean; explored: number; limit: number }
 }
@@ -98,6 +115,8 @@ function needsStartToday(item: RankedAction, node: ScheduleNode | undefined, tod
 
 export function buildConsumerTimePlan(input: {
   ranked: RankedAction[]
+  /** Raw active/history actions retain fixed-event recovery omitted by ranking. */
+  actions?: Action[]
   nodes: ScheduleNode[]
   opportunities?: Opportunity[]
   processEvents?: ProcessEvent[]
@@ -108,6 +127,11 @@ export function buildConsumerTimePlan(input: {
   now: Date
   timezone: string
 }): ConsumerTimePlan {
+  const actions = input.actions ?? input.ranked.map(item => item.action)
+  const inactiveIds = inactiveProcessActionIds({ ...input, actions })
+  const recoveryItems = processRecoveryItems({ ...input, actions })
+  const recoveryIds = new Set(recoveryItems.map(item => item.actionId))
+  const ranked = input.ranked.filter(item => !inactiveIds.has(item.action.id) && !recoveryIds.has(item.action.id))
   const today = localDateKey(input.now, input.timezone)
   const weekday = new Date(`${today}T12:00:00.000Z`).getUTCDay()
   const todayChoice = input.useRemainingDayDefault ? todayCapacity(input.preferences, input.now, input.timezone, input.availableMinutes) : undefined
@@ -119,7 +143,7 @@ export function buildConsumerTimePlan(input: {
   const bounds = dayBounds(today, input.timezone)
   const available = input.useRemainingDayDefault ? undefined : workIntervals(input.preferences, weekday, bounds, input.timezone)
   const calendarNodes = input.nodes.filter(node => scheduleNodeEligible(node, {
-    actions: input.ranked.map(item => item.action), processEvents: input.processEvents ?? [],
+    actions: ranked.map(item => item.action), processEvents: input.processEvents ?? [],
   })).map(calendarNodeProjection)
   const fixed = fixedIntervals(calendarNodes, { ...bounds, dayStart: todayChoice ? Math.max(bounds.dayStart, input.now.getTime()) : bounds.dayStart })
   const fixedMinutes = unionMinutes(available ? intersectIntervals(fixed, available) : fixed)
@@ -132,10 +156,14 @@ export function buildConsumerTimePlan(input: {
       conflicts.push({ kind: 'fixed_overlap', relatedIds: [current.node.id, later.node.id], at: new Date(later.start).toISOString() })
     }
   }
-  const nodeMap = actionNodesById(input.nodes, input.ranked.map(item => item.action), input.opportunities, input.processEvents)
+  const nodeMap = actionNodesById(input.nodes, ranked.map(item => item.action), input.opportunities, input.processEvents)
+  for (const item of ranked) {
+    const owner = todayProcessTimingOwner(item.action, nodeMap.get(item.action.id))
+    if (owner) nodeMap.set(item.action.id, owner)
+  }
   const compare = (a: RankedAction, b: RankedAction) => compareActionDeadlines(a.action, b.action, input.timezone,
     nodeMap.get(a.action.id), nodeMap.get(b.action.id))
-  const arrangements = input.ranked.filter(item => {
+  const arrangements = ranked.filter(item => {
     if (!isExplicitActionArrangement(item.action.scheduledTemporal)) return false
     const owner = nodeMap.get(item.action.id)
     return !owner || ['scheduled', 'in_progress'].includes(owner.state)
@@ -150,7 +178,7 @@ export function buildConsumerTimePlan(input: {
     reservations.push({ start: Date.parse(temporal.startAt!), minutes: item.action.estimatedMinutes })
     estimatedByDay.set(date, reservations)
   }
-  const startable = input.ranked.filter(item => {
+  const startable = ranked.filter(item => {
     const action = item.action
     const owner = nodeMap.get(action.id)
     // Explicitly reopening work does not reopen its historical calendar fact.
@@ -159,7 +187,7 @@ export function buildConsumerTimePlan(input: {
       && isExplicitActionArrangement(owner.temporal) && !['scheduled', 'in_progress'].includes(owner.state)
     if ((action.scheduledTemporal || action.timingMode === 'fixed') && !historicalArrangement) return false
     if (action.plannedDate) return action.plannedDate === today
-    // A real recruiting obligation may be due/overdue without a chosen plan.
+    // A live recruiting obligation may be due without a chosen plan.
     // Ordinary task deadlines and old automatic apply tasks do not choose today.
     const event = input.processEvents?.find(event => event.id === action.processEventId && !event.invalidation)
     return Boolean(event && event.dueAt && event.timingMode !== 'fixed'
@@ -257,12 +285,13 @@ export function buildConsumerTimePlan(input: {
     selected.add(item.action.id)
     remaining -= item.action.estimatedMinutes
   }
-  const deferredCount = startable.length - planned.length
+  const deferredToday = startable.filter(item => !selected.has(item.action.id))
+  const deferredCount = deferredToday.length
   const plannedMinutes = fixedMinutes + planned.reduce((sum, item) => sum + item.action.estimatedMinutes, 0)
     + arrangedToday.filter(item => !item.action.scheduledTemporal?.endAt).reduce((sum, item) => sum + item.action.estimatedMinutes, 0)
   planned.push(...arrangedToday)
   planned.sort(compare)
   const overBudgetMinutes = capacityMinutes === undefined ? 0 : Math.max(0, plannedMinutes - capacityMinutes)
   return { capacityMinutes, fixedMinutes, plannedMinutes, overBudgetMinutes, planned, deferredHard,
-    deferredCount, conflicts }
+    deferredToday, recoveryItems, deferredCount, conflicts }
 }

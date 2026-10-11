@@ -31,6 +31,16 @@
 .tsui-panel-header>span{display:grid;place-items:center;min-width:28px;height:28px;border-radius:8px;background:#eef3ff;color:#3468d4;font-size:0.8125rem;font-weight:730}
 .tsui-panel-link{border:0;background:transparent;color:#3569d5;font-size:0.75rem;font-weight:680;white-space:nowrap}
 .tsui-task-row{display:flex;align-items:center;justify-content:space-between;gap:16px;min-height:93px;padding:16px 22px;border-bottom:1px solid #edf0f5}
+/* Dense lists retain every task and control in the DOM/accessibility tree.
+   Auto skips only off-screen rendering; the intrinsic size is a remembered
+   estimate, never a fixed row height. Older browsers keep ordinary rendering. */
+@supports (content-visibility:auto) and (contain-intrinsic-block-size:auto 120px){
+  .tsui-task-list.is-dense>.tsui-task-row[data-action-id]{content-visibility:auto;contain-intrinsic-block-size:auto 120px}
+  .tsui-task-list.is-dense>.tsui-task-row[data-action-id]:focus-within{content-visibility:visible;contain:none;contain-intrinsic-block-size:none}
+}
+@media print{
+  .tsui-task-list.is-dense>.tsui-task-row[data-action-id]{content-visibility:visible;contain:none;contain-intrinsic-block-size:none}
+}
 .tsui-task-copy{display:flex;min-width:0;flex:1;flex-direction:column;gap:4px}
 .tsui-task-copy small{overflow:hidden;color:#62708b;font-size:0.75rem;text-overflow:ellipsis;white-space:nowrap}
 .tsui-task-copy h3{margin:0;overflow-wrap:anywhere;color:#1c2741;font-size:0.9375rem;font-weight:700;line-height:1.35}

@@ -250,13 +250,13 @@ export function createPjsdasMcpServer(
 
   server.registerTool('get_today_brief', {
     title: 'Get TodayAction Today brief',
-    description: 'Read the canonical revision-bound daily decision contract: one next action, deadline-ordered next actions, recruiting agenda, relevant DecisionRequests, material coverage warnings, executability and latest-start protection.',
+    description: 'Read the canonical revision-bound daily decision contract: one next action, deadline-ordered next actions, recruiting agenda, relevant DecisionRequests, material coverage warnings, executability and latest-start protection. capacityLimitedActions keeps today’s time-limited tasks accessible without claiming they fit; recoveryItems lists past recruiting obligations needing confirmation, never automatic completion.',
     inputSchema: getTodayBriefSchema, annotations: readOnlyAnnotations,
   }, async (args) => invokeReadTool(source, 'get_today_brief', args))
 
   server.registerTool('get_today_plan', {
     title: 'Get TodayAction today plan',
-    description: 'Read Today actions in actual deadline order with an optional available-time budget and real fixed-event constraints.',
+    description: 'Read Today actions in actual deadline order with an optional available-time budget and real fixed-event constraints. startableActions is the feasible time plan; capacityLimitedActions remains accessible outside that recommendation. blockedOrRecoveryItems distinguishes past recruiting events needing confirmation from current capacity conflicts; no status is changed.',
     inputSchema: getTodayPlanSchema, annotations: readOnlyAnnotations,
   }, async (args) => invokeReadTool(source, 'get_today_plan', args))
 
