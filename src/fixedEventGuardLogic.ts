@@ -46,13 +46,19 @@ export function processRecoveryItems(input: {
   now: Date
   timezone: string
 }): ProcessRecoveryItem[] {
-  const inactiveIds = inactiveProcessActionIds(input)
-  const owners = actionNodesById(input.nodes, input.actions, input.opportunities, input.processEvents)
+  // Ordinary and resolved history needs no process timing projection. Retained
+  // process-backed actions still qualify even when their source event is absent.
+  const candidates = input.actions.filter(action => action.processEventId
+    && (action.status === 'todo' || action.status === 'doing')
+    && action.kind !== 'apply' && action.kind !== 'group_decision' && action.kind !== 'follow_up')
+  if (!candidates.length) return []
+  const inactiveIds = inactiveProcessActionIds({ ...input, actions: candidates })
+  const active = candidates.filter(action => !inactiveIds.has(action.id))
+  if (!active.length) return []
+  const owners = actionNodesById(input.nodes, active, input.opportunities, input.processEvents)
   const events = new Map(input.processEvents?.map(item => [item.id, item]))
-  return input.actions.flatMap(action => {
-    if (inactiveIds.has(action.id) || !action.processEventId
-      || action.kind === 'apply' || action.kind === 'group_decision' || action.kind === 'follow_up') return []
-    const event = events.get(action.processEventId)
+  return active.flatMap(action => {
+    const event = events.get(action.processEventId!)
     const opportunityId = action.opportunityId ?? event?.opportunityId
     const owner = owners.get(action.id)
     // A terminal canonical occurrence is resolved history, even if raw action

@@ -5,6 +5,7 @@ import { actionForProcessEvent } from '../src/processEvents.js'
 import { createSnapshot } from '../src/snapshot.js'
 import { readModelSnapshot } from '../src/readModelSnapshot.js'
 import { actionNodesById } from '../src/deadlineOrder.js'
+import * as deadlineOrder from '../src/deadlineOrder.js'
 import { processRecoveryItems } from '../src/fixedEventGuardLogic.js'
 import { buildConsumerTimePlan } from '../src/today/consumerTimePlan.js'
 import { selectTodayWeb, selectTodayWebNormalized } from '../src/today/todayWebSelector.js'
@@ -76,6 +77,23 @@ const oldItems = () => [process('interview', '2026-09-21T08:00:00Z', 90, true),
   process('assessment28', '2026-09-28T08:00:00Z', 45), process('assessment30', '2026-09-30T08:00:00Z', 40)]
 
 describe('read-only overdue process recovery', () => {
+  it('does not project timing owners for ordinary work or resolved process history', () => {
+    const item = process('resolved'); item.action.status = 'done'
+    const snapshot = source([item], [action('ordinary', { plannedDate: '2026-10-11' })])
+    const before = structuredClone(snapshot)
+    const owners = vi.spyOn(deadlineOrder, 'actionNodesById')
+    try {
+      expect(recovery(snapshot)).toEqual([])
+      expect(owners).not.toHaveBeenCalled()
+      expect(snapshot).toEqual(before)
+    } finally { owners.mockRestore() }
+  })
+  it('still recovers a retained process action when its source event is absent', () => {
+    const snapshot = source(); snapshot.data.processEvents = []
+    const before = structuredClone(snapshot)
+    expect(recovery(snapshot).map(item => item.actionId)).toEqual(['event-action:old'])
+    expect(snapshot).toEqual(before)
+  })
   it.each([
     ['2026-10-11T00:00:00Z', 1440], ['2026-10-11T08:00:00Z', 480], ['2026-10-11T23:04:00Z', 56],
   ])('separates five retained process records from capacity at %s / %i minutes', (instant, availableMinutes) => {
@@ -251,6 +269,18 @@ describe('read-only overdue process recovery', () => {
 })
 
 describe('time advice never hides existing Today tasks', () => {
+  it('reuses recommended views without dropping capacity-limited work', () => {
+    const snapshot = source([], [action('first', { plannedDate: '2026-10-11' }), action('second', { plannedDate: '2026-10-11' })])
+    const before = structuredClone(snapshot)
+    const fits = selectTodayWeb(snapshot, { availableMinutes: 60 }, context)
+    expect(fits.visibleActions).toBe(fits.actions)
+    const limited = selectTodayWeb(snapshot, { availableMinutes: 30 }, context)
+    expect(limited.actions.map(item => item.actionId)).toEqual(['first'])
+    expect(limited.visibleActions.map(item => item.actionId)).toEqual(['first', 'second'])
+    expect(limited.visibleActions[0]).toBe(limited.actions[0])
+    expect(limited.insufficientTimeActionIds).toEqual(['second'])
+    expect(snapshot).toEqual(before)
+  })
   it.each([0, 56])('keeps hard and flexible tasks accessible at %i minutes without pretending they fit', availableMinutes => {
     const snapshot = source([process('today', '2026-10-11T09:00:00Z', 90)], [action('manual', { plannedDate: '2026-10-11', estimatedMinutes: 60 })])
     const before = structuredClone(snapshot)

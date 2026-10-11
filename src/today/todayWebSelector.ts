@@ -91,11 +91,15 @@ export function selectTodayWebNormalized(snapshot: PJSDASSnapshot, input: TodayW
     48,
     snapshot.data.processEvents,
   ))
-  const visibleRanked = [...new Map([...plan.planned, ...plan.deferredToday].map(item => [item.action.id, item])).values()]
+  // The planner already sorts the recommendation. Most renders have no excess
+  // work, so avoid repeating canonical owner resolution and view projection.
+  const actionViews = new Map(actions.map(action => [action.actionId, action]))
+  const visibleRanked = plan.deferredToday.length ? [...new Map([...plan.planned, ...plan.deferredToday].map(item => [item.action.id, item])).values()]
     .sort((a, b) => compareActionDeadlines(a.action, b.action, context.timezone,
       todayProcessTimingOwner(a.action, latestActionNode(a.action, nodes, snapshot.data.opportunities, snapshot.data.processEvents)),
-      todayProcessTimingOwner(b.action, latestActionNode(b.action, nodes, snapshot.data.opportunities, snapshot.data.processEvents))))
-  const visibleActions = visibleRanked.map(item => actionView(item, nodes, opportunities, context.now, context.timezone, 48, snapshot.data.processEvents))
+      todayProcessTimingOwner(b.action, latestActionNode(b.action, nodes, snapshot.data.opportunities, snapshot.data.processEvents)))) : []
+  const visibleActions = plan.deferredToday.length ? visibleRanked.map(item => actionViews.get(item.action.id)
+    ?? actionView(item, nodes, opportunities, context.now, context.timezone, 48, snapshot.data.processEvents)) : actions
   const openGroups = groupOpenDecisions(partitionDecisions(snapshot.data.decisionRequests ?? [], {
     opportunities: snapshot.data.opportunities, scheduleNodes: nodes,
     reminderIntents: snapshot.data.reminderIntents, now: context.now,

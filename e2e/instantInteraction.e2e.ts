@@ -30,6 +30,10 @@ test('dense capacity and completion settle before delayed server confirmation', 
     while (document.querySelector('[data-action-id="dense-action-0"]') && performance.now() - started < 5000) await new Promise(requestAnimationFrame)
     return performance.now() - started
   })
+  // Preserve the measured stages even when the strict optimistic UI gate fails.
+  const optimisticTiming = { capacityMs, completeMs, measured: await page.evaluate(() => (window as any).interactionMeasures) }
+  console.log(`INSTANT_OPTIMISTIC_UI_TIMING:${JSON.stringify(optimisticTiming)}`)
+  await info.attach('dense-optimistic-timings.json', { body: JSON.stringify(optimisticTiming, null, 2), contentType: 'application/json' })
   expect(completeMs).toBeLessThanOrEqual(150)
   await expect(page.getByRole('button', { name: '撤销', exact: true })).toBeVisible()
   await expect.poll(() => server.sent.length).toBe(2)
