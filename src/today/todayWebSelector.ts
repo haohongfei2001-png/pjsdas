@@ -3,7 +3,7 @@ import { readModelSnapshot } from '../readModelSnapshot.js'
 import { decisionNeedsToday, groupOpenDecisions } from '../decisionPresentation.js'
 import { partitionDecisions } from '../decisionActionability.js'
 import { rankActions } from '../decisionV3.js'
-import { compareActionDeadlines, latestActionNode } from '../deadlineOrder.js'
+import { actionNodesById, compareActionDeadlines } from '../deadlineOrder.js'
 import type { DecisionRequest } from '../model.js'
 import { type PJSDASSnapshot } from '../snapshot.js'
 import {
@@ -70,17 +70,26 @@ export function selectTodayWebNormalized(snapshot: PJSDASSnapshot, input: TodayW
   const ranked = rankActions(snapshot.data.actions, snapshot.data.opportunities, context.now, undefined, context.timezone, nodes)
   const plan = buildConsumerTimePlan({ ranked, actions: snapshot.data.actions, nodes, opportunities: snapshot.data.opportunities, processEvents: snapshot.data.processEvents, preferences: snapshot.data.timePlanning,
     availableMinutes: input.availableMinutes, useRemainingDayDefault: true, now: context.now, timezone: context.timezone })
+  // Resolve the ranked projection once, including known absence of an owner.
+  // Sorting and hundreds of visible cards must not rebuild the index per row.
+  const owners = actionNodesById(nodes, ranked.map(item => item.action), snapshot.data.opportunities, snapshot.data.processEvents)
   const todayActionIds = new Set([...plan.planned, ...plan.deferredToday].map(item => item.action.id))
   const protectedRanked = ranked.filter(item => todayActionIds.has(item.action.id))
     .filter((item) => item.action.timingMode !== 'fixed')
     .filter((item) => protectedByLatestStart(
       item.action,
-      latestActionNode(item.action, nodes, snapshot.data.opportunities, snapshot.data.processEvents),
+      owners.get(item.action.id),
       context.now,
       context.timezone,
       48,
     ))
-    .sort((a, b) => compareActionDeadlines(a.action, b.action, context.timezone, latestActionNode(a.action, nodes), latestActionNode(b.action, nodes)))
+  if (protectedRanked.length > 1) {
+    // Preserve the existing protected list's context-free ordering separately
+    // from its source-aware membership; neither projection is recomputed in sort.
+    const sortOwners = actionNodesById(nodes, protectedRanked.map(item => item.action))
+    protectedRanked.sort((a, b) => compareActionDeadlines(a.action, b.action, context.timezone,
+      sortOwners.get(a.action.id), sortOwners.get(b.action.id)))
+  }
 
   const actions = plan.planned.map((item) => actionView(
     item,
@@ -90,16 +99,18 @@ export function selectTodayWebNormalized(snapshot: PJSDASSnapshot, input: TodayW
     context.timezone,
     48,
     snapshot.data.processEvents,
+    owners,
   ))
   // The planner already sorts the recommendation. Most renders have no excess
   // work, so avoid repeating canonical owner resolution and view projection.
   const actionViews = new Map(actions.map(action => [action.actionId, action]))
   const visibleRanked = plan.deferredToday.length ? [...new Map([...plan.planned, ...plan.deferredToday].map(item => [item.action.id, item])).values()]
     .sort((a, b) => compareActionDeadlines(a.action, b.action, context.timezone,
-      todayProcessTimingOwner(a.action, latestActionNode(a.action, nodes, snapshot.data.opportunities, snapshot.data.processEvents)),
-      todayProcessTimingOwner(b.action, latestActionNode(b.action, nodes, snapshot.data.opportunities, snapshot.data.processEvents)))) : []
+      todayProcessTimingOwner(a.action, owners.get(a.action.id)),
+      todayProcessTimingOwner(b.action, owners.get(b.action.id)))) : []
   const visibleActions = plan.deferredToday.length ? visibleRanked.map(item => actionViews.get(item.action.id)
-    ?? actionView(item, nodes, opportunities, context.now, context.timezone, 48, snapshot.data.processEvents)) : actions
+    ?? actionView(item, nodes, opportunities, context.now, context.timezone, 48, snapshot.data.processEvents, owners)) : actions
+  for (const action of visibleActions) actionViews.set(action.actionId, action)
   const openGroups = groupOpenDecisions(partitionDecisions(snapshot.data.decisionRequests ?? [], {
     opportunities: snapshot.data.opportunities, scheduleNodes: nodes,
     reminderIntents: snapshot.data.reminderIntents, now: context.now,
@@ -128,8 +139,7 @@ export function selectTodayWebNormalized(snapshot: PJSDASSnapshot, input: TodayW
     visibleActionCount: visibleActions.length,
     insufficientTimeActionIds: plan.deferredToday.map(item => item.action.id),
     recoveryItems: plan.recoveryItems,
-    notSelectedHardActions: plan.deferredHard.map(item => actionView(item, nodes, opportunities, context.now,
-      context.timezone, 48, snapshot.data.processEvents)),
+    notSelectedHardActions: plan.deferredHard.map(item => actionViews.get(item.action.id)!),
     decisions,
     actionCount: actions.length,
     decisionCount: decisions.length,

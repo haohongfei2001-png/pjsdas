@@ -9,7 +9,9 @@ import * as deadlineOrder from '../src/deadlineOrder.js'
 import { processRecoveryItems } from '../src/fixedEventGuardLogic.js'
 import { buildConsumerTimePlan } from '../src/today/consumerTimePlan.js'
 import { selectTodayWeb, selectTodayWebNormalized } from '../src/today/todayWebSelector.js'
-import { buildTodayBrief } from '../src/todayBrief.js'
+import { actionView, buildTodayBrief, latestByOccurrence } from '../src/todayBrief.js'
+import { rankActions } from '../src/decisionV3.js'
+import { unknownDeadlineWorkspace } from './fixtures/unknownDeadlineWorkspace.js'
 import { getTodayPlan } from '../src/ai/readLayer.js'
 import TodayFeature from '../src/today/TodayFeature.js'
 import { createCapacityAutosaver } from '../src/today/capacityAutosave.js'
@@ -269,6 +271,60 @@ describe('read-only overdue process recovery', () => {
 })
 
 describe('time advice never hides existing Today tasks', () => {
+  it('shares an owner index without resolving ownerless visible cards again', () => {
+    const snapshot = source([], Array.from({ length: 80 }, (_, index) => action(`ordinary-${index}`, { plannedDate: '2026-10-11' })))
+    const before = structuredClone(snapshot)
+    const resolve = vi.spyOn(deadlineOrder, 'latestActionNode')
+    try {
+      const web = selectTodayWeb(snapshot, { availableMinutes: 0 }, context)
+      expect(web.visibleActions).toHaveLength(80)
+      expect(web.insufficientTimeActionIds).toHaveLength(80)
+      expect(resolve).not.toHaveBeenCalled()
+      expect(snapshot).toEqual(before)
+    } finally { resolve.mockRestore() }
+  })
+  it('keeps bulk ranked owners and indexed views equivalent to per-action projection', () => {
+    const terminal = process('terminal', '2026-10-11T09:00:00Z')
+    terminal.action.plannedDate = '2026-10-11'
+    const projected = process('projected', '2026-10-11T10:00:00Z')
+    projected.event.temporal = { shape: 'deadline', precision: 'datetime', timezone: 'UTC',
+      deadlineAt: projected.event.dueAt, resolutionBasis: 'source_explicit' }
+    const natural = process('natural', new Date(2026, 9, 11, 23, 59).toISOString())
+    natural.event.id = 'progress-event:nl3:event:natural'
+    natural.action.processEventId = natural.event.id
+    natural.action.processStage = 'assessment'
+    const processSnapshot = source([terminal, projected, natural], [action('ownerless', { plannedDate: '2026-10-11' })])
+    owner(processSnapshot).state = 'completed'
+    processSnapshot.data.scheduleNodes = processSnapshot.data.scheduleNodes!.filter(node => node.processEventId !== projected.event.id)
+    const applicationSnapshot = unknownDeadlineWorkspace(2, true)
+    applicationSnapshot.data.opportunities[0].detail!.deadlineCorrections![0].acknowledgedNodeFacts = []
+    const shared = action('shared', { opportunityId: 'real-deadline', plannedDate: '2026-10-02' })
+    applicationSnapshot.data.actions.push(shared)
+    const applicationNode = applicationSnapshot.data.scheduleNodes!.find(node => node.opportunityId === 'real-deadline')!
+    applicationNode.relatedActionIds.push(shared.id)
+    applicationSnapshot.data.scheduleNodes!.push({ ...structuredClone(applicationNode), id: 'conflicting-application',
+      occurrenceId: 'conflicting-application', temporal: { ...applicationNode.temporal, deadlineAt: '2026-10-03T15:59:59Z' } })
+    for (const snapshot of [processSnapshot, applicationSnapshot]) {
+      const before = structuredClone(snapshot)
+      const nodes = latestByOccurrence(snapshot.data.scheduleNodes!)
+      const ranked = rankActions(snapshot.data.actions, snapshot.data.opportunities, NOW, undefined, 'UTC', nodes)
+      const owners = actionNodesById(nodes, ranked.map(item => item.action), snapshot.data.opportunities, snapshot.data.processEvents)
+      const opportunities = new Map(snapshot.data.opportunities.map(item => [item.id, item]))
+      if (snapshot === processSnapshot) {
+        const naturalRanked = ranked.find(item => item.action.id === natural.action.id)
+        expect(naturalRanked).toBeDefined()
+        expect(naturalRanked!.action.processEventId).toBeUndefined()
+        expect(owners.get(terminal.action.id)?.state).toBe('completed')
+        expect(owners.get(projected.action.id)?.projectionOnly).toBe(true)
+      }
+      for (const item of ranked) {
+        expect(owners.get(item.action.id)).toEqual(deadlineOrder.latestActionNode(item.action, nodes, snapshot.data.opportunities, snapshot.data.processEvents))
+        expect(actionView(item, nodes, opportunities, NOW, 'UTC', 48, snapshot.data.processEvents, owners))
+          .toEqual(actionView(item, nodes, opportunities, NOW, 'UTC', 48, snapshot.data.processEvents))
+      }
+      expect(snapshot).toEqual(before)
+    }
+  })
   it('reuses recommended views without dropping capacity-limited work', () => {
     const snapshot = source([], [action('first', { plannedDate: '2026-10-11' }), action('second', { plannedDate: '2026-10-11' })])
     const before = structuredClone(snapshot)

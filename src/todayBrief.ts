@@ -416,8 +416,10 @@ export function actionView(
   timezone: string,
   hardDeadlineHorizonHours: number,
   processEvents: ProcessEvent[] = [],
+  owners?: ReadonlyMap<string, ActionTimingOwner>,
 ): TodayBriefAction {
-  const node = todayProcessTimingOwner(ranked.action, latestActionNode(ranked.action, nodes, [...opportunities.values()], processEvents))
+  const node = todayProcessTimingOwner(ranked.action, owners ? owners.get(ranked.action.id)
+    : latestActionNode(ranked.action, nodes, [...opportunities.values()], processEvents))
   const opportunity = ranked.action.opportunityId ? opportunities.get(ranked.action.opportunityId) : undefined
   return {
     actionId: ranked.action.id,
