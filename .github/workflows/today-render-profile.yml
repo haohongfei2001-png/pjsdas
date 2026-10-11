@@ -12,6 +12,43 @@ permissions:
   contents: read
 
 jobs:
+  focused-three-browser-check:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    container:
+      image: mcr.microsoft.com/playwright:v1.63.0-noble@sha256:eff16c30e6f3f4af0a03fa4b706120d5e9b0891c344a27d64559aff5900a4a27
+      options: --init --ipc=host
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install exact browser runner
+        run: |
+          npm ci
+          node scripts/verify-installed-runtime-lock.mjs --capture
+          npm install --no-save @playwright/test@1.63.0
+          node scripts/verify-installed-runtime-lock.mjs
+          chown "$(id -u):$(id -g)" "$HOME"
+      - name: Run all five Today recovery cases in Chromium, Firefox and WebKit
+        env:
+          TODAY_FIND_DIAGNOSTIC: '1'
+          PLAYWRIGHT_HTML_OUTPUT_DIR: playwright-report/focused
+        run: npx playwright test --config=playwright.config.mts --project=chromium --project=firefox --project=webkit --workers=1 --output=test-results/focused e2e/todayRecoveryVisibility.e2e.ts
+      - name: Preserve focused browser evidence
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v5
+        with:
+          name: today-focused-browsers-${{ github.event.pull_request.head.sha }}
+          path: |
+            test-results/focused/
+            playwright-report/focused/
+          if-no-files-found: error
+          retention-days: 7
   same-runner-comparison:
     if: github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-24.04
