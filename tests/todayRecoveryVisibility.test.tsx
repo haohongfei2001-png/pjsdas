@@ -1,0 +1,311 @@
+import { describe, expect, it, vi } from 'vitest'
+import { renderToStaticMarkup } from 'react-dom/server'
+import type { Action, Opportunity, ProcessEvent, ScheduleNode } from '../src/model.js'
+import { actionForProcessEvent } from '../src/processEvents.js'
+import { createSnapshot } from '../src/snapshot.js'
+import { readModelSnapshot } from '../src/readModelSnapshot.js'
+import { actionNodesById } from '../src/deadlineOrder.js'
+import { processRecoveryItems } from '../src/fixedEventGuardLogic.js'
+import { buildConsumerTimePlan } from '../src/today/consumerTimePlan.js'
+import { selectTodayWeb, selectTodayWebNormalized } from '../src/today/todayWebSelector.js'
+import { buildTodayBrief } from '../src/todayBrief.js'
+import { getTodayPlan } from '../src/ai/readLayer.js'
+import TodayFeature from '../src/today/TodayFeature.js'
+import { createCapacityAutosaver } from '../src/today/capacityAutosave.js'
+import { buildScheduleStream } from '../src/schedule/scheduleStream.js'
+
+const language = vi.hoisted(() => ({ lang: 'en' }))
+vi.mock('../src/uiLanguage.js', () => ({ useUiLanguage: () => language }))
+const CREATED = '2026-09-01T00:00:00Z'
+const NOW = new Date('2026-10-11T08:00:00Z')
+const context = { now: NOW, timezone: 'UTC' }
+
+function action(id: string, extra: Partial<Action> = {}): Action {
+  return { id, kind: 'manual', title: `Task ${id}`, status: 'todo', estimatedMinutes: 30,
+    leverage: 0, delayCost: 0, createdAt: CREATED, updatedAt: CREATED, ...extra }
+}
+function process(id: string, dueAt = '2026-09-27T15:00:00Z', minutes = 45, fixed = false) {
+  const opportunity: Opportunity = { id: `job-${id}`, company: `Company ${id}`, role: 'Engineer',
+    currentStageLabel: fixed ? 'Interview' : 'Assessment', processStage: fixed ? 'interview' : 'assessment',
+    participationStatus: 'active', early: false, opportunityValue: 0, fitScore: 0, importedAt: CREATED }
+  const event: ProcessEvent = { id, opportunityId: opportunity.id, company: opportunity.company, role: opportunity.role,
+    type: fixed ? 'interview_invite' : 'assessment_invite', dueAt, duePrecision: 'datetime', timingMode: fixed ? 'fixed' : 'deadline',
+    estimatedMinutes: minutes, occurredAt: CREATED, source: 'email', createdAt: CREATED, updatedAt: CREATED }
+  return { opportunity, event, action: actionForProcessEvent(event)! }
+}
+function source(items = [process('old')], extras: Action[] = []) {
+  return createSnapshot({ opportunities: items.map(item => item.opportunity), processEvents: items.map(item => item.event),
+    actions: [...items.map(item => item.action), ...extras], processes: [], prep: [], applicationGroups: [] }, NOW.toISOString())
+}
+
+function owner(snapshot: ReturnType<typeof source>): ScheduleNode {
+  const action = snapshot.data.actions[0]
+  const existing = actionNodesById(snapshot.data.scheduleNodes!, snapshot.data.actions).get(action.id)
+  if (existing) return existing
+  const node: ScheduleNode = { id: 'canonical-owner', occurrenceId: 'canonical-owner', version: 1,
+    kind: 'assessment', state: 'scheduled', constraintKind: 'employer_hard', opportunityId: action.opportunityId, processEventId: action.processEventId,
+    temporal: { shape: 'deadline', precision: 'datetime', timezone: 'UTC', deadlineAt: action.dueAt, resolutionBasis: 'source_explicit' },
+    evidenceRefs: [], sourceVersionRefs: [], relatedActionIds: [action.id], relatedPrepIds: [], createdAt: CREATED, updatedAt: CREATED }
+  snapshot.data.scheduleNodes!.push(node)
+  return node
+}
+
+function invalidate(snapshot: ReturnType<typeof source>) {
+    snapshot.data.semanticReceipts!.push({ id: 'receipt', inputId: 'review', sourceKind: 'user', sourceId: 'review', sourceRecordId: 'review',
+      status: 'committed', summary: 'Reviewed event', affectedObjects: [], decisionRequestIds: [], undoAvailable: false, createdAt: CREATED, updatedAt: CREATED })
+    snapshot.data.processEvents[0].invalidation = { commandId: 'withdraw', receiptId: 'receipt',
+      legacyReview: { expectedEventFingerprint: '0'.repeat(64), sourceRefs: ['source:event'] },
+      invalidatedAt: NOW.toISOString(), reason: 'withdrawn', evidenceRefs: ['source:event'] }
+}
+
+function recovery(snapshot: ReturnType<typeof source>, at = context) {
+  return processRecoveryItems({ ...snapshot.data, nodes: snapshot.data.scheduleNodes ?? [], ...at })
+}
+function render(snapshot: ReturnType<typeof source>, availableMinutes: number, at = context) {
+  const selection = selectTodayWeb(snapshot, { availableMinutes }, at)
+  return renderToStaticMarkup(<TodayFeature selection={selection}
+    stream={buildScheduleStream(snapshot, { ...at, accountKey: 'test', workspaceRevision: '1' })}
+    opportunities={snapshot.data.opportunities} now={at.now} workspaceEmpty={false} freshness={{ state: 'current' }}
+    onStart={() => {}} capacityScope="test" capacityAutosaver={createCapacityAutosaver(async () => {}, () => {})}
+    capacitySaveState={{ pending: false }} onRetry={() => {}} onOpenDecision={() => {}} onOpenAgenda={() => {}}
+    onExecute={async () => {}} onMark={async () => {}} onOpenOpportunity={() => {}} />)
+}
+
+const oldItems = () => [process('interview', '2026-09-21T08:00:00Z', 90, true),
+  process('assessment22', '2026-09-22T08:00:00Z', 45), process('written27', '2026-09-27T08:00:00Z', 30),
+  process('assessment28', '2026-09-28T08:00:00Z', 45), process('assessment30', '2026-09-30T08:00:00Z', 40)]
+
+describe('read-only overdue process recovery', () => {
+  it.each([
+    ['2026-10-11T00:00:00Z', 1440], ['2026-10-11T08:00:00Z', 480], ['2026-10-11T23:04:00Z', 56],
+  ])('separates five retained process records from capacity at %s / %i minutes', (instant, availableMinutes) => {
+    const snapshot = source(oldItems()), before = structuredClone(snapshot)
+    const at = { ...context, now: new Date(instant) }
+    const web = selectTodayWeb(snapshot, { availableMinutes }, at)
+    const mcp = getTodayPlan(snapshot, { availableMinutes }, at)
+    const brief = buildTodayBrief(snapshot, { availableMinutes }, at)
+    const ids = snapshot.data.actions.map(item => item.id)
+    expect(web.recoveryItems.map(item => item.actionId)).toEqual(ids)
+    expect(web.actions).toEqual([]); expect(web.visibleActions).toEqual([])
+    expect(web.businessConflicts).toEqual([]); expect(web.notSelectedHardActions).toEqual([])
+    expect(web.protectedActionIds).toEqual([])
+    expect(mcp.capacityConflict).toBe(false); expect(mcp.startableActions).toEqual([])
+    expect(mcp.blockedOrRecoveryItems.map(item => item.id)).toEqual(ids)
+    expect(mcp.blockedOrRecoveryItems.every(item => item.reason.includes('确认'))).toBe(true)
+    expect(brief.recoveryItems).toEqual(web.recoveryItems)
+    expect(brief.materialCoverageWarnings.filter(item => ['capacity_conflict', 'hard_deadline_unplanned'].includes(item.code))).toEqual([])
+    expect(selectTodayWebNormalized(readModelSnapshot(snapshot), { availableMinutes }, at)).toEqual(web)
+    expect(getTodayPlan(readModelSnapshot(snapshot), { availableMinutes }, at)).toEqual(mcp)
+    expect(snapshot).toEqual(before)
+  })
+
+  it.each([56, 480, 1440])('does not let historical deadlines block a planned 30-minute task with %i minutes', availableMinutes => {
+    const snapshot = source(oldItems(), [action('fresh', { plannedDate: '2026-10-11' })])
+    const before = structuredClone(snapshot)
+    const plan = buildConsumerTimePlan({ ranked: snapshot.data.actions.map(action => ({ action, reasons: [] })),
+      ...snapshot.data, nodes: snapshot.data.scheduleNodes!, availableMinutes, useRemainingDayDefault: true, ...context })
+    expect(plan.planned.map(item => item.action.id)).toEqual(['fresh'])
+    expect(plan.plannedMinutes).toBe(30); expect(plan.deferredHard).toEqual([])
+    expect(plan.recoveryItems).toHaveLength(5)
+    expect(snapshot).toEqual(before)
+  })
+
+  it.each(['todo', 'doing'] as const)('retains unresolved %s fixed events as confirmation items', status => {
+    const item = process('fixed', undefined, 90, true); item.action.status = status
+    expect(recovery(source([item]))).toHaveLength(1)
+  })
+  it.each(['done', 'skipped'] as const)('does not recover %s actions', status => {
+    const item = process('resolved'); item.action.status = status
+    const snapshot = source([item])
+    expect(recovery(snapshot)).toEqual([])
+    expect(selectTodayWeb(snapshot, {}, context).recoveryItems).toEqual([])
+    expect(getTodayPlan(snapshot, {}, context).blockedOrRecoveryItems).toEqual([])
+  })
+  it.each(['closed', 'abandoned'] as const)('does not recover %s process state', state => {
+    const item = process('inactive')
+    if (state === 'closed') item.opportunity.processStage = 'closed'
+    if (state === 'abandoned') item.opportunity.participationStatus = 'abandoned'
+    const snapshot = source([item])
+    expect(recovery(snapshot)).toEqual([])
+    expect(selectTodayWeb(snapshot, {}, context).recoveryItems).toEqual([])
+    expect(getTodayPlan(snapshot, {}, context).blockedOrRecoveryItems).toEqual([])
+  })
+  it.each(['closed', 'abandoned'] as const)('does not revive explicitly planned %s work when job identity lives only on the event', state => {
+    const item = process('event-linked-job')
+    item.action.opportunityId = undefined; item.action.plannedDate = '2026-10-11'
+    if (state === 'closed') item.opportunity.processStage = 'closed'
+    else item.opportunity.participationStatus = 'abandoned'
+    const snapshot = source([item]), before = structuredClone(snapshot)
+    const web = selectTodayWeb(snapshot, {}, context)
+    expect(web.visibleActions).toEqual([]); expect(web.businessConflicts).toEqual([])
+    expect(web.protectedActionIds).toEqual([]); expect(web.recoveryItems).toEqual([])
+    expect(getTodayPlan(snapshot, {}, context).startableActions).toEqual([])
+    expect(buildTodayBrief(snapshot, {}, context).internalDiagnostics.protectedActionIds).toEqual([])
+    expect(snapshot).toEqual(before)
+  })
+  it('excludes invalidated evidence without modifying retained action or event state', () => {
+    const snapshot = source()
+    invalidate(snapshot)
+    const before = structuredClone(snapshot)
+    expect(recovery(snapshot)).toEqual([])
+    expect(selectTodayWeb(snapshot, {}, context).recoveryItems).toEqual([])
+    expect(getTodayPlan(snapshot, {}, context).blockedOrRecoveryItems).toEqual([])
+    expect(snapshot).toEqual(before)
+  })
+  it('excludes invalidated future fixed events from every Today surface', () => {
+    const snapshot = source([process('withdrawn-fixed', '2026-10-11T10:00:00Z', 90, true)])
+    owner(snapshot).temporal.resolutionBasis = 'source_explicit'
+    invalidate(snapshot)
+    const before = structuredClone(snapshot)
+    const web = selectTodayWeb(snapshot, {}, context)
+    expect(web.visibleActions).toEqual([]); expect(web.recoveryItems).toEqual([]); expect(web.businessConflicts).toEqual([])
+    const mcp = getTodayPlan(snapshot, {}, context)
+    expect(mcp.fixedEvents).toEqual([]); expect(mcp.startableActions).toEqual([]); expect(mcp.blockedOrRecoveryItems).toEqual([])
+    expect(buildTodayBrief(snapshot, {}, context).agendaGroups).toEqual([])
+    expect(snapshot).toEqual(before)
+  })
+  it('keeps elapsed_unresolved canonical events in recovery', () => {
+    const snapshot = source([process('elapsed', undefined, 90, true)])
+    owner(snapshot).state = 'elapsed_unresolved'
+    expect(recovery(snapshot)).toHaveLength(1)
+    expect(selectTodayWeb(snapshot, {}, context).recoveryItems).toHaveLength(1)
+    expect(getTodayPlan(snapshot, {}, context).blockedOrRecoveryItems).toHaveLength(1)
+  })
+  it.each(['completed', 'cancelled', 'superseded'] as const)('does not revive %s canonical owners', state => {
+    const snapshot = source()
+    const node = owner(snapshot)
+    node.state = state
+    const before = structuredClone(snapshot)
+    expect(recovery(snapshot)).toEqual([])
+    expect(selectTodayWeb(snapshot, {}, context).recoveryItems).toEqual([])
+    expect(getTodayPlan(snapshot, {}, context).blockedOrRecoveryItems.filter(item => item.reason.includes('确认'))).toEqual([])
+    expect(snapshot).toEqual(before)
+  })
+  it.each(['completed', 'cancelled', 'superseded'] as const)('keeps %s recruiting history outside Today unless explicitly planned, with no revived deadline', state => {
+    const snapshot = source()
+    owner(snapshot).state = state
+    const unplanned = structuredClone(snapshot)
+    const empty = selectTodayWeb(snapshot, { availableMinutes: 60 }, context)
+    expect(empty.visibleActions).toEqual([]); expect(empty.businessConflicts).toEqual([])
+    expect(empty.protectedActionIds).toEqual([])
+    expect(getTodayPlan(snapshot, { availableMinutes: 60 }, context).startableActions).toEqual([])
+    expect(snapshot).toEqual(unplanned)
+    snapshot.data.actions[0].plannedDate = '2026-10-11'
+    const before = structuredClone(snapshot)
+    const web = selectTodayWeb(snapshot, { availableMinutes: 60 }, context)
+    expect(web.actions).toHaveLength(1); expect(web.visibleActions).toHaveLength(1)
+    expect(web.actions[0].timing).toBeUndefined(); expect(web.actions[0].protectedByLatestStart).toBe(false)
+    expect(web.businessConflicts).toEqual([]); expect(web.recoveryItems).toEqual([]); expect(web.protectedActionIds).toEqual([])
+    const mcp = getTodayPlan(snapshot, { availableMinutes: 60 }, context)
+    expect(mcp.startableActions).toHaveLength(1); expect(mcp.startableActions[0].dueAt).toBeUndefined()
+    expect(mcp.capacityConflict).toBe(false); expect(mcp.blockedOrRecoveryItems).toEqual([])
+    const brief = buildTodayBrief(snapshot, { availableMinutes: 60 }, context)
+    expect(brief.nextAction?.timing).toBeUndefined(); expect(brief.internalDiagnostics.protectedActionIds).toEqual([])
+    const zero = selectTodayWeb(snapshot, { availableMinutes: 0 }, context)
+    expect(zero.visibleActions).toHaveLength(1); expect(zero.insufficientTimeActionIds).toEqual([snapshot.data.actions[0].id])
+    expect(zero.businessConflicts).toEqual([])
+    expect(snapshot).toEqual(before)
+  })
+  it('keeps source-zone date-only deadlines valid for their whole calendar day', () => {
+    const item = process('date', '2026-10-11')
+    item.event.duePrecision = item.action.duePrecision = 'date'
+    item.event.temporal = { shape: 'date_only', precision: 'date', date: '2026-10-11', timezone: 'America/Los_Angeles', resolutionBasis: 'source_explicit' }
+    const snapshot = source([item])
+    const before = structuredClone(snapshot)
+    for (const timezone of ['UTC', 'Asia/Shanghai', 'America/Los_Angeles']) {
+      for (const [instant, count] of [['2026-10-12T06:59:59.999Z', 0], ['2026-10-12T07:00:00Z', 1]] as const) {
+        const at = { now: new Date(instant), timezone }
+        expect(recovery(snapshot, at)).toHaveLength(count)
+        expect(selectTodayWeb(snapshot, {}, at).recoveryItems).toHaveLength(count)
+        expect(getTodayPlan(snapshot, {}, at).blockedOrRecoveryItems.filter(item => item.reason.includes('确认'))).toHaveLength(count)
+      }
+    }
+    expect(snapshot).toEqual(before)
+  })
+  it('does not invent a midnight time for a retained bare-date recovery item', () => {
+    const item = process('bare-date', '2026-09-27')
+    item.action.duePrecision = undefined; item.event.duePrecision = undefined
+    const snapshot = source([item])
+    const html = render(snapshot, 480)
+    expect(html).toContain('2026-09-27')
+    expect(html).not.toContain('00:00')
+  })
+  it('uses an exact deadline boundary, not latest-start expiry, for recovery', () => {
+    const snapshot = source([process('later', '2026-10-11T09:00:00Z', 90)])
+    const node = owner(snapshot)
+    node.temporal.latestStartAt = '2026-10-11T07:00:00Z'
+    const web = selectTodayWeb(snapshot, { availableMinutes: 480 }, context)
+    expect(web.recoveryItems).toEqual([])
+    expect(web.businessConflicts[0]?.kind).toBe('hard_deadline_capacity')
+    const deadline = new Date('2026-10-11T09:00:00Z')
+    expect(recovery(snapshot, { ...context, now: deadline })).toEqual([])
+    expect(recovery(snapshot, { ...context, now: new Date(deadline.getTime() + 1) })).toHaveLength(1)
+  })
+  it('does not broaden expired application or unplanned ordinary task membership', () => {
+    const snapshot = source([], [action('expired-application', { kind: 'apply', dueAt: '2026-09-30', duePrecision: 'date', plannedDate: '2026-10-11' }),
+      action('unplanned', { dueAt: '2026-10-11T15:00:00Z' }), action('future-plan', { plannedDate: '2026-10-12' })])
+    const web = selectTodayWeb(snapshot, {}, context)
+    expect(web.visibleActions).toEqual([]); expect(web.recoveryItems).toEqual([])
+    expect(getTodayPlan(snapshot, {}, context).capacityLimitedActions).toEqual([])
+  })
+})
+
+describe('time advice never hides existing Today tasks', () => {
+  it.each([0, 56])('keeps hard and flexible tasks accessible at %i minutes without pretending they fit', availableMinutes => {
+    const snapshot = source([process('today', '2026-10-11T09:00:00Z', 90)], [action('manual', { plannedDate: '2026-10-11', estimatedMinutes: 60 })])
+    const before = structuredClone(snapshot)
+    const web = selectTodayWeb(snapshot, { availableMinutes }, context)
+    const ids = ['event-action:today', 'manual']
+    expect(web.actions).toEqual([])
+    expect(web.visibleActions.map(item => item.actionId)).toEqual(ids)
+    expect(web.visibleActionCount).toBe(2)
+    expect(web.insufficientTimeActionIds).toEqual(ids)
+    expect(web.notSelectedHardActions.map(item => item.actionId)).toEqual(['event-action:today'])
+    expect(web.businessConflicts[0]?.kind).toBe('hard_deadline_capacity')
+    const mcp = getTodayPlan(snapshot, { availableMinutes }, context)
+    expect(mcp.startableActions).toEqual([])
+    expect(mcp.capacityLimitedActions.map(item => item.actionId)).toEqual(ids)
+    expect(buildTodayBrief(snapshot, { availableMinutes }, context).capacityLimitedActions).toEqual(mcp.capacityLimitedActions)
+    const html = render(snapshot, availableMinutes)
+    for (const id of ids) {
+      expect(html).toContain(`data-action-id="${id}"`)
+      expect(html).toContain(`data-capacity-limited-action-id="${id}"`)
+    }
+    expect(html).toContain('View process'); expect(html).toContain('>Start</button>')
+    expect(html.match(/>Done<\/button>/g)).toHaveLength(2)
+    expect(html).not.toContain('disabled=""')
+    expect(html).not.toContain('Nothing requires action right now')
+    expect(snapshot).toEqual(before)
+  })
+  it('does not duplicate mixed feasible, capacity-limited, or recovery cards', () => {
+    const snapshot = source([process('today', '2026-10-11T09:00:00Z', 40), process('old')],
+      [action('small', { plannedDate: '2026-10-11', estimatedMinutes: 10 }), action('large', { plannedDate: '2026-10-11', estimatedMinutes: 60 })])
+    const web = selectTodayWeb(snapshot, { availableMinutes: 56 }, context)
+    expect(web.actions.map(item => item.actionId)).toEqual(['event-action:today', 'small'])
+    expect(web.visibleActions.map(item => item.actionId)).toEqual(['event-action:today', 'large', 'small'])
+    expect(web.insufficientTimeActionIds).toEqual(['large'])
+    const html = render(snapshot, 56)
+    expect(html.match(/data-action-id=/g)).toHaveLength(3)
+    expect(html.match(/data-recovery-action-id=/g)).toHaveLength(1)
+    expect(web.recoveryItems[0].deepLink).toBe('/opportunities/job-old')
+  })
+  it.each(['en', 'zh'])('shows recovery instead of an all-clear empty state in %s', lang => {
+    language.lang = lang
+    const html = render(source(oldItems()), 1440)
+    expect(html).toContain(lang === 'zh' ? '过期流程待确认' : 'Past recruiting events need confirmation')
+    expect(html.match(/data-recovery-action-id=/g)).toHaveLength(5)
+    expect(html).not.toContain('Nothing requires action right now')
+    expect(html).not.toContain('现在没有必须处理的任务')
+    language.lang = 'en'
+  })
+  it('does not show an all-clear empty state while fixed conflicts remain', () => {
+    const snapshot = source([], [])
+    const base: ScheduleNode = { id: 'one', occurrenceId: 'one', version: 1, kind: 'interview', state: 'scheduled', constraintKind: 'employer_hard',
+      temporal: { shape: 'fixed_range', precision: 'datetime', timezone: 'UTC', startAt: '2026-10-11T10:00:00Z', endAt: '2026-10-11T11:00:00Z', resolutionBasis: 'source_explicit' },
+      evidenceRefs: [], sourceVersionRefs: [], relatedActionIds: [], relatedPrepIds: [], createdAt: CREATED, updatedAt: CREATED }
+    snapshot.data.scheduleNodes = [base, { ...base, id: 'two', occurrenceId: 'two' }]
+    const html = render(snapshot, 480)
+    expect(html).toContain('Two fixed commitments overlap.')
+    expect(html).not.toContain('Nothing requires action right now')
+  })
+})

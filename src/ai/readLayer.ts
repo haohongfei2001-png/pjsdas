@@ -1,3 +1,4 @@
+import { inactiveProcessActionIds, todayProcessTimingOwner } from '../fixedEventGuardLogic.js'
 import { buildOpportunityDecisionList } from '../opportunityDecisionRead.js'
 import { resolveApplicationDeadline } from '../applicationDeadline.js'
 import { todayCapacity } from '../today/localDayCapacity.js'
@@ -6,7 +7,6 @@ import { canonicalOpportunityId } from '../opportunityCanonicalization.js'
 import { processNeedsReview, rankActions } from '../decisionV3.js'
 import { discoveryProfileForSnapshot, type DiscoveryProfile } from '../discoveryProfile.js'
 import { discoveryFeedbackSummary, recentRejectedDiscoveryFeedback } from '../discoveryFeedback.js'
-import { isUnresolvedPastProcessEvent } from '../fixedEventGuardLogic.js'
 import {
   overlayProcessEventsOnOpportunities,
   overlayProcessEventsOnProcesses,
@@ -17,7 +17,7 @@ import {
 import { validateSnapshot, type PJSDASSnapshot } from '../snapshot.js'
 import { validPlanningDate } from '../timePlanningPreferences.js'
 import { localDateKey as displayDateKey } from '../todayBrief.js'
-import { buildConsumerTimePlan } from '../today/consumerTimePlan.js'
+import { buildConsumerTimePlan, capacityLimitedAction, type CapacityLimitedAction } from '../today/consumerTimePlan.js'
 import { calendarNodeProjection, scheduleNodeEligible } from '../scheduleEligibility.js'
 import type {
   Action,
@@ -87,6 +87,8 @@ export interface GetTodayPlanOutput {
     timingMode?: Action['timingMode']
     rationale: string[]
   }>
+  /** Today candidates outside the recommended time plan; they remain actionable. */
+  capacityLimitedActions: CapacityLimitedAction[]
   fixedEvents: Array<{
     eventId: string
     company?: string
@@ -366,8 +368,13 @@ export function getTodayPlan(
     throw new BridgeReadError('INVALID_ARGUMENT', 'availableMinutes must be between 0 and 1440.')
   }
 
-  const ranked = rankActions(workspace.actions, workspace.opportunities, now, undefined, context.timezone, snapshot.data.scheduleNodes ?? [])
-  const consumerPlan = buildConsumerTimePlan({ ranked, nodes: snapshot.data.scheduleNodes ?? [], opportunities: workspace.opportunities, processEvents: workspace.processEvents,
+  // Retained invitations cannot reopen an explicitly closed/abandoned job in
+  // this Today projection, even when a legacy process overlay still has them.
+  const ended = new Set(snapshot.data.opportunities.filter(item => item.processStage === 'closed' || item.participationStatus === 'abandoned').map(item => item.id))
+  const inactiveIds = inactiveProcessActionIds({ actions: workspace.actions, opportunities: snapshot.data.opportunities, processEvents: snapshot.data.processEvents })
+  const todayActions = workspace.actions.filter(action => !inactiveIds.has(action.id) && (!action.opportunityId || !ended.has(action.opportunityId)))
+  const ranked = rankActions(todayActions, workspace.opportunities, now, undefined, context.timezone, snapshot.data.scheduleNodes ?? [])
+  const consumerPlan = buildConsumerTimePlan({ ranked, actions: todayActions, nodes: snapshot.data.scheduleNodes ?? [], opportunities: workspace.opportunities, processEvents: snapshot.data.processEvents,
     preferences: snapshot.data.timePlanning, availableMinutes, now, timezone: context.timezone, useRemainingDayDefault: true })
   const capacityMinutes = consumerPlan.capacityMinutes ?? todayCapacity(snapshot.data.timePlanning, now, context.timezone, availableMinutes).minutes
 
@@ -375,7 +382,7 @@ export function getTodayPlan(
   const activeNodes = actionNodesById(nodes, workspace.actions, workspace.opportunities, workspace.processEvents)
   const linkedActions = new Set(nodes.flatMap(node => node.relatedActionIds))
   const timingFor = (action: Action) => {
-    const node = activeNodes.get(action.id)
+    const node = todayProcessTimingOwner(action, activeNodes.get(action.id))
     const timing = node ? actionDeadline(action, node) : linkedActions.has(action.id) ? { id: action.id } : actionDeadline(action)
     const timingMode = !timing.deadline ? undefined : node && 'completionDeadline' in node ? 'deadline' as const : node?.temporal.shape === 'fixed_range' ? 'fixed' as const
       : node?.temporal.shape === 'deadline' ? 'deadline' as const : action.timingMode
@@ -396,13 +403,13 @@ export function getTodayPlan(
       duePrecision: timing.precision,
       timezone: timing.timezone,
       timingMode: timing.timingMode,
-      rationale: [...item.reasons],
+      rationale: !timing.deadline ? ['截止日期未明确，排在已知截止之后'] : [...item.reasons],
     }
   })
 
   const fixedEvents = ranked.flatMap((item) => {
     const node = activeNodes.get(item.action.id)
-    if (!node || node.timingUnknown || !['scheduled', 'in_progress'].includes(node.state) || !scheduleNodeEligible(node, workspace)) return []
+    if (!node || node.timingUnknown || !['scheduled', 'in_progress'].includes(node.state) || !scheduleNodeEligible(node, snapshot.data)) return []
     const temporal = calendarNodeProjection(node).temporal
     const timing = { id: item.action.id, deadline: temporal.startAt ?? temporal.date, precision: temporal.precision, timezone: temporal.timezone }
     if (!timing.deadline || (deadlineBoundaryMs(timing, context.timezone) ?? -Infinity) < now.getTime()) return []
@@ -419,13 +426,11 @@ export function getTodayPlan(
     }]
   })
 
-  const recovery = workspace.actions
-    .filter((action) => isUnresolvedPastProcessEvent(action, now, activeNodes.get(action.id), context.timezone))
-    .map((action) => ({
-      id: action.id,
-      label: action.title,
-      reason: '流程节点已过但仍未确认结果，需要先确认完成状态或采取恢复动作。',
-    }))
+  const recovery = consumerPlan.recoveryItems.map((item) => ({
+    id: item.actionId,
+    label: item.title,
+    reason: '流程节点已过但仍未确认结果，需要先确认完成状态或采取恢复动作。',
+  }))
 
   const blocked = consumerPlan.conflicts.flatMap(conflict => conflict.relatedIds.map(id => ({
     id,
@@ -447,6 +452,7 @@ export function getTodayPlan(
     plannedMinutes: consumerPlan.plannedMinutes,
     capacityConflict: consumerPlan.conflicts.length > 0 || consumerPlan.overBudgetMinutes > 0,
     startableActions,
+    capacityLimitedActions: consumerPlan.deferredToday.map(capacityLimitedAction),
     fixedEvents,
     blockedOrRecoveryItems,
   }
