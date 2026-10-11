@@ -137,3 +137,93 @@ for (const minutes of [0, 56]) test(`Chinese Today ${minutes} minutes preserves 
   await expect(page.locator('[data-recovery-action-id="event-action:old"]')).toBeVisible()
   expect((await read(page)).data).toEqual(before.data)
 })
+
+test('all 500 dense Today tasks remain accessible, searchable, printable and keyboard-operable', async ({ page }, info) => {
+  await page.route('**/*', route => new URL(route.request().url()).hostname === '127.0.0.1' ? route.continue() : route.abort())
+  await page.addInitScript(() => localStorage.setItem('pjsdas-ui-language', 'en'))
+  await page.clock.setFixedTime(NOW)
+  await page.setViewportSize({ width: 1280, height: 720 })
+  const lastTitle = 'Dense task 499: Review portfolio and supporting examples 核对作品集与面试材料，保留完整标题和全部操作'
+  const snapshot = createSnapshot({ opportunities: [], processes: [], processEvents: [], prep: [], applicationGroups: [],
+    actions: Array.from({ length: 500 }, (_, index) => ({
+      ...action(`dense-${String(index).padStart(3, '0')}`, index === 499 ? lastTitle : `Dense task ${index}`, undefined, 0, '2026-10-11'),
+      estimatedMinutes: 20,
+    })), timePlanning: { version: 1, dateOverrides: { '2026-10-11': 0 }, updatedAt: NOW.toISOString() },
+  }, NOW.toISOString())
+  await page.goto('/pjsdas/today')
+  await page.locator('.tsui-primary-nav').waitFor()
+  await page.evaluate(async value => (await import('/pjsdas/src/db.ts')).replaceLocalSnapshotFromCloud(value), snapshot)
+  await page.goto('/pjsdas/today')
+  await expect(page.locator('[data-action-id]')).toHaveCount(500)
+  await expect(page.locator('[data-capacity-limited-action-id]')).toHaveCount(500)
+  await expect(page.locator('.tsui-task-list')).toHaveClass(/is-dense/)
+  const before = await read(page)
+  const last = page.locator('[data-action-id="dense-499"]')
+  const start = last.getByRole('button', { name: 'Start', exact: true })
+  const done = last.locator('button.tsui-done-action')
+  await expect(page.getByRole('heading', { level: 3 })).toHaveCount(500)
+  await expect(last.getByRole('heading', { name: lastTitle, exact: true })).toHaveCount(1)
+  await expect(start).toHaveAccessibleName('Start')
+  await expect(done).toHaveAccessibleName(/Done/)
+  const accessible = await last.ariaSnapshot()
+  expect(accessible).toContain(lastTitle)
+  expect(accessible).toContain('Start')
+  expect(accessible).toContain('Done')
+  await info.attach('dense-last-task-accessibility.txt', { body: accessible, contentType: 'text/plain' })
+  const findResult = await page.evaluate(title => {
+    window.scrollTo(0, 0)
+    const find = (window as Window & { find?: (text: string) => boolean }).find
+    return { supported: typeof find === 'function', found: find?.call(window, title), selection: getSelection()?.toString() }
+  }, lastTitle)
+  expect(findResult.supported).toBe(true)
+  expect(findResult.found).toBe(true)
+  expect(findResult.selection).toBe(lastTitle)
+  await expect(last).toBeInViewport()
+  await page.evaluate(() => { getSelection()?.removeAllRanges(); window.scrollTo(0, 0) })
+  // Native focus must reveal the off-screen row; Tab retains the existing order.
+  await start.focus()
+  await expect(start).toBeFocused()
+  await expect(start).toBeInViewport()
+  await page.keyboard.press('Tab')
+  await expect(done).toBeFocused()
+  await expect(done).toBeInViewport()
+  await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur())
+  expect(await last.evaluate(card => card.matches(':focus-within'))).toBe(false)
+  await page.emulateMedia({ media: 'print' })
+  expect(await page.locator('[data-action-id]').evaluateAll(cards => cards.every(card => {
+    const style = getComputedStyle(card)
+    return style.contentVisibility === 'visible' && style.contain === 'none'
+  }))).toBe(true)
+  await expect(page.locator('[data-action-id]')).toHaveCount(500)
+  await page.emulateMedia({ media: 'screen' })
+  await page.setViewportSize({ width: 390, height: 844 })
+  await last.scrollIntoViewIfNeeded()
+  const bounds = await last.evaluate(card => {
+    const rect = card.getBoundingClientRect(), heading = card.querySelector('h3')!
+    const title = heading.getBoundingClientRect()
+    return { pageWidth: document.documentElement.scrollWidth, viewportWidth: innerWidth,
+      focused: card.matches(':focus-within'), contentVisibility: getComputedStyle(card).contentVisibility,
+      supportsAuto: CSS.supports('content-visibility', 'auto') && CSS.supports('contain-intrinsic-block-size', 'auto 120px'),
+      titleFits: heading.scrollHeight <= heading.clientHeight + 1 && title.left >= rect.left - 1
+        && title.right <= rect.right + 1 && title.top >= rect.top - 1 && title.bottom <= rect.bottom + 1,
+      controlsInside: [...card.querySelectorAll('button')].every(button => {
+        const box = button.getBoundingClientRect()
+        return box.left >= rect.left - 1 && box.right <= rect.right + 1 && box.bottom <= rect.bottom + 1
+      }) }
+  })
+  expect(bounds.pageWidth).toBeLessThanOrEqual(bounds.viewportWidth)
+  expect(bounds.focused).toBe(false)
+  if (bounds.supportsAuto) expect(bounds.contentVisibility).toBe('auto')
+  expect(bounds.titleFits).toBe(true)
+  expect(bounds.controlsInside).toBe(true)
+  expect((await read(page)).data).toEqual(before.data)
+  await start.click()
+  await expect.poll(async () => (await read(page)).data.actions.find(item => item.id === 'dense-499')?.status).toBe('doing')
+  await expect(done).toHaveText('Done')
+  await expect(done).toBeEnabled()
+  await done.click()
+  await expect.poll(async () => (await read(page)).data.actions.find(item => item.id === 'dense-499')?.status).toBe('done')
+  await expect(page.locator('[data-action-id]')).toHaveCount(499)
+  expect((await read(page)).data.actions.filter(item => item.id !== 'dense-499')).toEqual(before.data.actions.filter(item => item.id !== 'dense-499'))
+  console.log(`TODAY_DENSE_ACCESSIBILITY:${JSON.stringify({ tasks: 500, findResult, bounds, userCompleted: 'dense-499' })}`)
+})

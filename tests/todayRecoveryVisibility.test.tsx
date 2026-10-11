@@ -271,6 +271,20 @@ describe('read-only overdue process recovery', () => {
 })
 
 describe('time advice never hides existing Today tasks', () => {
+  it.each([100, 101, 500])('retains every card and control when the dense rendering hint applies to %i tasks', count => {
+    const snapshot = source([], Array.from({ length: count }, (_, index) => action(`dense-${index}`, { plannedDate: '2026-10-11' })))
+    const before = structuredClone(snapshot)
+    const html = render(snapshot, 0)
+    expect(html).toContain(count > 100 ? 'class="tsui-task-list is-dense"' : 'class="tsui-task-list"')
+    expect(html.match(/data-action-id=/g)).toHaveLength(count)
+    expect(html.match(/data-capacity-limited-action-id=/g)).toHaveLength(count)
+    expect(html.match(/>Start<\/button>/g)).toHaveLength(count)
+    expect(html.match(/>Done<\/button>/g)).toHaveLength(count)
+    const cards = html.match(/<article\b[\s\S]*?<\/article>/g) ?? []
+    expect(cards).toHaveLength(count)
+    expect(cards.some(card => card.includes('aria-hidden="true"'))).toBe(false)
+    expect(snapshot).toEqual(before)
+  })
   it('shares an owner index without resolving ownerless visible cards again', () => {
     const snapshot = source([], Array.from({ length: 80 }, (_, index) => action(`ordinary-${index}`, { plannedDate: '2026-10-11' })))
     const before = structuredClone(snapshot)
