@@ -1,0 +1,73 @@
+name: Today Render Profile (diagnostic)
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths:
+      - '.github/workflows/today-render-profile.yml'
+      - 'e2e/fixtures/todayRenderProfile.ts'
+      - 'e2e/tsui05Performance.perf.ts'
+
+permissions:
+  contents: read
+
+jobs:
+  same-runner-comparison:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    container:
+      image: mcr.microsoft.com/playwright:v1.63.0-noble@sha256:eff16c30e6f3f4af0a03fa4b706120d5e9b0891c344a27d64559aff5900a4a27
+      options: --init --ipc=host
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          path: candidate
+      - uses: actions/checkout@v7
+        with:
+          ref: 4ffac9e4a1b52cf7e4c750132f43cc602defe5ba
+          path: baseline
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: candidate/package-lock.json
+      - name: Install identical diagnostic runners and identify exact sources
+        run: |
+          for directory in baseline candidate; do
+            (cd "$directory" && npm ci && node scripts/verify-installed-runtime-lock.mjs --capture && npm install --no-save @playwright/test@1.63.0 && node scripts/verify-installed-runtime-lock.mjs)
+            git -C "$directory" rev-parse HEAD
+          done
+          # Only the observational test harness is shared. Baseline product code
+          # remains the exact production-main source, and neither run deploys.
+          cp candidate/e2e/fixtures/todayRenderProfile.ts baseline/e2e/fixtures/todayRenderProfile.ts
+          cp candidate/e2e/tsui05Performance.perf.ts baseline/e2e/tsui05Performance.perf.ts
+          sha256sum baseline/e2e/tsui05Performance.perf.ts candidate/e2e/tsui05Performance.perf.ts
+      - name: Profile production-main baseline first (sampling overhead)
+        working-directory: baseline
+        env:
+          TODAY_RENDER_PROFILE: '1'
+          TODAY_RENDER_TRACE: '1'
+          PLAYWRIGHT_HTML_OUTPUT_DIR: playwright-report/profile
+        run: npx playwright test --config=playwright.perf.config.mts --project=chromium --workers=1 --output=test-results/profile e2e/tsui05Performance.perf.ts
+      - name: Profile exact PR head second on the same runner (sampling overhead)
+        if: ${{ !cancelled() }}
+        working-directory: candidate
+        env:
+          TODAY_RENDER_PROFILE: '1'
+          TODAY_RENDER_TRACE: '1'
+          PLAYWRIGHT_HTML_OUTPUT_DIR: playwright-report/profile
+        run: npx playwright test --config=playwright.perf.config.mts --project=chromium --workers=1 --output=test-results/profile e2e/tsui05Performance.perf.ts
+      - name: Preserve both diagnostic results even when the original 150ms assertion fails
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v5
+        with:
+          name: today-render-profile-${{ github.event.pull_request.head.sha }}
+          path: |
+            baseline/test-results/profile/
+            baseline/playwright-report/profile/
+            candidate/test-results/profile/
+            candidate/playwright-report/profile/
+          if-no-files-found: error
+          retention-days: 7
