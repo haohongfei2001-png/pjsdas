@@ -271,11 +271,26 @@ describe('time advice never hides existing Today tasks', () => {
       expect(html).toContain(`data-action-id="${id}"`)
       expect(html).toContain(`data-capacity-limited-action-id="${id}"`)
     }
+    expect(html).toContain('Estimated 90 min'); expect(html).toContain('Estimated 60 min')
     expect(html).toContain('View process'); expect(html).toContain('>Start</button>')
     expect(html.match(/>Done<\/button>/g)).toHaveLength(2)
     expect(html).not.toContain('disabled=""')
     expect(html).not.toContain('Nothing requires action right now')
     expect(snapshot).toEqual(before)
+  })
+  it.each(['en', 'zh'])('keeps budget-fit task rows unchanged and shows duration only for insufficient time in %s', lang => {
+    language.lang = lang
+    try {
+      const snapshot = source([], [action('normal', { plannedDate: '2026-10-11', estimatedMinutes: 30 })])
+      const normal = render(snapshot, 60)
+      expect(normal).toContain('data-action-id="normal"')
+      expect(normal).not.toContain(lang === 'zh' ? '预计 30 分钟' : 'Estimated 30 min')
+      expect(normal).not.toContain('data-capacity-limited-action-id=')
+      const limited = render(snapshot, 0)
+      expect(limited).toContain(lang === 'zh' ? '预计 30 分钟' : 'Estimated 30 min')
+      expect(limited).toContain('data-capacity-limited-action-id="normal"')
+      expect(limited).toContain(lang === 'zh' ? '当前可用时间不足' : 'Insufficient available time')
+    } finally { language.lang = 'en' }
   })
   it('does not duplicate mixed feasible, capacity-limited, or recovery cards', () => {
     const snapshot = source([process('today', '2026-10-11T09:00:00Z', 40), process('old')],
@@ -285,6 +300,8 @@ describe('time advice never hides existing Today tasks', () => {
     expect(web.visibleActions.map(item => item.actionId)).toEqual(['event-action:today', 'large', 'small'])
     expect(web.insufficientTimeActionIds).toEqual(['large'])
     const html = render(snapshot, 56)
+    expect(html).toContain('Estimated 60 min')
+    expect(html).not.toContain('Estimated 40 min'); expect(html).not.toContain('Estimated 10 min')
     expect(html.match(/data-action-id=/g)).toHaveLength(3)
     expect(html.match(/data-recovery-action-id=/g)).toHaveLength(1)
     expect(web.recoveryItems[0].deepLink).toBe('/opportunities/job-old')

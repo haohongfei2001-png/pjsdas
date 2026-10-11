@@ -26,6 +26,7 @@ for (const minutes of [0, 56]) test(`Today ${minutes} minutes keeps tasks intera
   await page.route('**/*', route => new URL(route.request().url()).hostname === '127.0.0.1' ? route.continue() : route.abort())
   await page.addInitScript(() => localStorage.setItem('pjsdas-ui-language', 'en'))
   await page.clock.setFixedTime(NOW)
+  await page.setViewportSize({ width: 1440, height: 1000 })
   await page.goto('/pjsdas/today')
   await page.locator('.tsui-primary-nav').waitFor()
   await page.evaluate(async value => (await import('/pjsdas/src/db.ts')).replaceLocalSnapshotFromCloud(value), fixture(minutes))
@@ -38,6 +39,13 @@ for (const minutes of [0, 56]) test(`Today ${minutes} minutes keeps tasks intera
   await expect(page.locator('[data-recovery-action-id="event-action:old"]')).toBeVisible()
   await expect(page.locator('.tsui-task-panel .tsui-count')).toHaveText('3')
   await expect(page.getByText('Nothing requires action right now', { exact: true })).toHaveCount(0)
+  // Synthetic initial cards and recovery state are reviewable in artifacts and
+  // plain CI logs; no production data or external network is involved.
+  await info.attach(`today-recovery-${minutes}-initial`, { body: await page.screenshot({ fullPage: true }), contentType: 'image/png' })
+  const visual = (await page.screenshot({ type: 'jpeg', quality: 55, fullPage: true })).toString('base64')
+  console.log(`TODAY_RECOVERY_VISUAL_${minutes}_BEGIN`)
+  for (let offset = 0; offset < visual.length; offset += 3000) console.log(`TODAY_RECOVERY_VISUAL_${minutes}_DATA:${visual.slice(offset, offset + 3000)}`)
+  console.log(`TODAY_RECOVERY_VISUAL_${minutes}_END`)
   // Passive rendering and recovery navigation do not mark any task complete.
   expect((await read(page)).data.actions).toEqual(initial.data.actions)
   await page.locator('[data-recovery-action-id="event-action:old"]').click()
@@ -63,5 +71,5 @@ for (const minutes of [0, 56]) test(`Today ${minutes} minutes keeps tasks intera
   expect(after.data.actions.find(item => item.id === 'event-action:old')?.status).toBe('todo')
   expect(after.data.processEvents).toEqual(initial.data.processEvents)
   expect(after.data.scheduleNodes).toEqual(initial.data.scheduleNodes)
-  await info.attach(`today-recovery-${minutes}`, { body: await page.screenshot({ fullPage: true }), contentType: 'image/png' })
+  await info.attach(`today-recovery-${minutes}-after-user-actions`, { body: await page.screenshot({ fullPage: true }), contentType: 'image/png' })
 })
