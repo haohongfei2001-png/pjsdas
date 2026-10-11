@@ -36,7 +36,6 @@ jobs:
           chown "$(id -u):$(id -g)" "$HOME"
       - name: Run all five Today recovery cases in Chromium, Firefox and WebKit
         env:
-          TODAY_FIND_DIAGNOSTIC: '1'
           PLAYWRIGHT_HTML_OUTPUT_DIR: playwright-report/focused
         run: npx playwright test --config=playwright.config.mts --project=chromium --project=firefox --project=webkit --workers=1 --output=test-results/focused e2e/todayRecoveryVisibility.e2e.ts
       - name: Preserve focused browser evidence

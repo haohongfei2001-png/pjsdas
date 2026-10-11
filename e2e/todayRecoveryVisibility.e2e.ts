@@ -138,7 +138,7 @@ for (const minutes of [0, 56]) test(`Chinese Today ${minutes} minutes preserves 
   expect((await read(page)).data).toEqual(before.data)
 })
 
-test('all 500 dense Today tasks remain accessible, searchable, printable and keyboard-operable', async ({ page, browserName }, info) => {
+test('all 500 dense Today tasks remain accessible, searchable, printable and keyboard-operable', async ({ page }, info) => {
   await page.route('**/*', route => new URL(route.request().url()).hostname === '127.0.0.1' ? route.continue() : route.abort())
   await page.addInitScript(() => localStorage.setItem('pjsdas-ui-language', 'en'))
   await page.clock.setFixedTime(NOW)
@@ -175,61 +175,11 @@ test('all 500 dense Today tasks remain accessible, searchable, printable and key
     const find = (window as Window & { find?: (text: string) => boolean }).find
     return { supported: typeof find === 'function', found: find?.call(window, title), selection: getSelection()?.toString() }
   }, lastTitle)
-  if (browserName === 'firefox' && process.env.TODAY_FIND_DIAGNOSTIC === '1') {
-    const observations: unknown[] = [{ mode: 'auto', phase: 'immediate', ...findResult }]
-    const observe = async (mode: string, phase: string) => {
-      const observation = await last.evaluate((card, label) => {
-        const selection = getSelection(), textBeforeLayout = selection?.toString()
-        const rect = card.getBoundingClientRect()
-        const neighbors: unknown[] = []
-        let previous = card.previousElementSibling
-        for (let index = 0; previous && index < 3; index++, previous = previous.previousElementSibling) {
-          const box = previous.getBoundingClientRect()
-          neighbors.push({ id: previous.getAttribute('data-action-id'), inViewport: box.bottom > 0 && box.top < innerHeight,
-            rendered: previous.checkVisibility({ contentVisibilityAuto: true }), title: previous.querySelector('h3')?.textContent })
-        }
-        return { ...label, textBeforeLayout, textAfterLayout: selection?.toString(), rangeCount: selection?.rangeCount,
-          anchor: selection?.anchorNode?.parentElement?.outerHTML, scrollY,
-          inViewport: rect.bottom > 0 && rect.top < innerHeight,
-          contentVisibility: getComputedStyle(card).contentVisibility, neighbors }
-      }, { mode, phase })
-      observations.push(observation)
-    }
-    const settle = async (mode: string) => {
-      let viewportMatched = true
-      await expect(last).toBeInViewport({ timeout: 1000 }).catch(() => { viewportMatched = false })
-      observations.push({ mode, phase: 'viewport', matched: viewportMatched })
-      await observe(mode, 'after-viewport')
-      await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => resolve())))
-      await observe(mode, 'next-frame')
-      let pollMatched = true
-      await expect.poll(() => page.evaluate(() => getSelection()?.toString()), { timeout: 1000 }).toBe(lastTitle)
-        .catch(() => { pollMatched = false })
-      observations.push({ mode, phase: 'poll', matched: pollMatched })
-      await observe(mode, 'after-poll')
-    }
-    await settle('auto')
-    await info.attach('firefox-find-auto', { body: await page.screenshot(), contentType: 'image/png' })
-    const override = await page.addStyleTag({ content: '.tsui-task-list.is-dense>.tsui-task-row[data-action-id]{content-visibility:visible!important;contain:none!important;contain-intrinsic-block-size:none!important}' })
-    try {
-      await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => resolve())))
-      const plain = await page.evaluate(title => {
-        getSelection()?.removeAllRanges(); window.scrollTo(0, 0)
-        const find = (window as Window & { find?: (text: string) => boolean }).find
-        return { found: find?.call(window, title), selection: getSelection()?.toString() }
-      }, lastTitle)
-      observations.push({ mode: 'forced-visible', phase: 'immediate', ...plain })
-      await settle('forced-visible')
-      await info.attach('firefox-find-forced-visible', { body: await page.screenshot(), contentType: 'image/png' })
-    } finally { await override.evaluate(style => style.remove()) }
-    expect((await read(page)).data).toEqual(before.data)
-    console.log(`TODAY_FIND_DIAGNOSTIC:${JSON.stringify(observations)}`)
-    await info.attach('firefox-find-observations.json', { body: JSON.stringify(observations, null, 2), contentType: 'application/json' })
-  }
   expect(findResult.supported).toBe(true)
   expect(findResult.found).toBe(true)
-  expect(findResult.selection).toBe(lastTitle)
   await expect(last).toBeInViewport()
+  // Firefox materializes an off-screen auto-contained selection after revealing it.
+  await expect.poll(() => page.evaluate(() => getSelection()?.toString())).toBe(lastTitle)
   await page.evaluate(() => { getSelection()?.removeAllRanges(); window.scrollTo(0, 0) })
   // Native focus must reveal the off-screen row; Tab retains the existing order.
   await start.focus()
