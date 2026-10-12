@@ -1,3 +1,4 @@
+import { boundedCompanyNames } from './companyIdentity.js'
 import { jobRoleSimilarity, normalizeJobCompany } from './jobPosting.js'
 import type { Opportunity, SemanticTargetRef } from './model.js'
 
@@ -23,7 +24,7 @@ export function resolveOpportunityTarget(opportunities: Opportunity[], target?: 
   let pool = opportunities
   if (target.company?.trim()) {
     const company = normalCompany(target.company)
-    pool = pool.filter(item => normalCompany(item.company) === company)
+    pool = pool.filter(item => boundedCompanyNames(item.company).some(name => normalCompany(name) === company))
   }
   if (target.role?.trim()) {
     const role = target.role.trim()

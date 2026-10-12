@@ -1,3 +1,4 @@
+import { boundedCompanyNames } from './companyIdentity.js'
 import {
   defaultMinutesForProcessEvent,
   defaultTimingModeForProcessEvent,
@@ -68,7 +69,7 @@ function genericRole(alias: string) {
 
 function companyAliases(company: string) {
   const raw = identityAlias(company)
-  const aliases = new Set<string>([raw])
+  const aliases = new Set<string>(boundedCompanyNames(company).map(identityAlias))
   let short = raw
   for (const suffix of companySuffixes) {
     const normalizedSuffix = normalize(suffix)
@@ -78,6 +79,13 @@ function companyAliases(company: string) {
     }
   }
   return [...aliases].filter((item) => item.length >= 2)
+}
+
+export function commonNotificationCompany(text: string, opportunities: Opportunity[]): string | undefined {
+  if (opportunities.length < 2) return undefined
+  return companyAliases(opportunities[0]!.company).filter(alias => identityContains(notificationIdentityText(text), alias)
+    && opportunities.every(item => companyAliases(item.company).includes(alias)))
+    .sort((a, b) => b.length - a.length)[0]
 }
 
 function roleAliases(role: string) {
@@ -129,13 +137,13 @@ export function notificationIdentityCompatible(text: string, target: Opportunity
   const targetCompanies = companyAliases(target.company)
   const targetRoles = roleAliases(target.role)
   for (const clause of evidence.split(/[；;\n]+/)) {
-    const lead = clause.split(/(?:很遗憾|感谢|恭喜|祝贺|请|邀请|诚邀|面试|测评|笔试|招聘|\b(?:we|your|please|recruiting|recruitment|interview|assessment|regret|congratulations)\b)/i)[0]!
+    const lead = clause.split(/(?:很遗憾|感谢|恭喜|祝贺|请|邀请|诚邀|欢迎|面试|测评|笔试|招聘|\b(?:we|your|please|recruiting|recruitment|interview|assessment|regret|congratulations)\b)/i)[0]!
     if ([...targetCompanies, ...targetRoles].some(alias => identityContains(lead, alias))
       && !neutralIdentityLanguage(withoutTargetIdentity(lead, target))) return false
   }
   for (const other of opportunities) {
     if (normalize(other.company) !== normalize(target.company)
-      && companyAliases(other.company).some(alias => identityContains(evidence, alias))) return false
+      && companyAliases(other.company).some(alias => !targetCompanies.includes(alias) && identityContains(evidence, alias))) return false
     if (normalize(other.role) !== normalize(target.role)
       && roleAliases(other.role).some(alias => identityContains(evidence, alias)
         && !targetRoles.some(targetAlias => identityContains(targetAlias, alias) || identityContains(alias, targetAlias)))) return false
@@ -172,7 +180,8 @@ export function matchNotificationOpportunity(
       const roles = roleAliases(opportunity.role)
       const fullCompany = companies[0]
 
-      if (fullCompany && identityContains(text, fullCompany)) {
+      const bilingualBrand = /[a-z]/i.test(opportunity.company) && boundedCompanyNames(opportunity.company).slice(1).some(name => identityContains(text, identityAlias(name)))
+      if (fullCompany && (identityContains(text, fullCompany) || bilingualBrand)) {
         score += 70
         reasons.push('完整公司名命中')
       } else {
@@ -187,7 +196,9 @@ export function matchNotificationOpportunity(
       }
 
       const fullRole = roles[0]
-      if (fullRole && fullRole.length >= 3 && identityContains(text, fullRole)) {
+      const labelledRole = [...text.matchAll(/(?:^|[；;\n])\s*(?:(?:面试|笔试|测评|应聘|申请))?(?:职位|岗位|role|position)\s*[:：]\s*([^；;\n]+)/gi)]
+        .some(match => identityAlias(match[1]!.trim()) === fullRole)
+      if (fullRole && fullRole.length >= 3 && (identityContains(text, fullRole) || labelledRole)) {
         score += 34
         reasons.push('完整岗位名命中')
       } else {
@@ -255,8 +266,8 @@ export function detectNotificationType(text: string, assertedByUser = false): { 
 
 function detectTimingMode(text: string, type?: ProcessEventType): ActionTimingMode | undefined {
   if (!type || !['assessment_invite', 'written_test_invite', 'interview_invite'].includes(type)) return undefined
-  if (type === 'interview_invite') return 'fixed'
   if (/(截止|最晚|前完成|之前完成|有效期至|有效期到|失效|链接.*失效|请在.*前|请于.*前)/.test(text)) return 'deadline'
+  if (type === 'interview_invite') return 'fixed'
   if (/(固定时间|考试时间|笔试时间|开考|准时参加|场次|统一笔试|统一考试)/.test(text)) return 'fixed'
   return defaultTimingModeForProcessEvent(type)
 }
