@@ -45,7 +45,9 @@ export const INITIAL_LOOKBACK_DAYS = 90
 export const RECONCILIATION_LOOKBACK_DAYS = 7
 export const RECONCILIATION_MAX_MESSAGES = 5000
 export const RECONCILIATION_BATCH_SIZE = UU06_MAX_MESSAGES_PER_RUN
-export const RECONCILIATION_PARSE_SLICE_SIZE = 5
+// A whole-snapshot commit can consume most of the unchanged execution window.
+// Keep one complete source message atomic; never advance an uncommitted cursor.
+export const RECONCILIATION_PARSE_SLICE_SIZE = 1
 const GMAIL_RECONCILIATION_PARSER_VERSION = 'reconciliation-v2'
 export const GMAIL_FRAGMENT_PARSE_LIMIT = 80
 
