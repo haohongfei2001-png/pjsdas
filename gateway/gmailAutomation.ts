@@ -1007,6 +1007,50 @@ function currentGmailAssertion(raw: string) {
   return { text: current.join('\n').trim(), quoted }
 }
 
+function gmailSourceUrlSpans(value: string) {
+  return [...value.matchAll(/https?:\/\/[^\s<>，。；]+/gi)].map(match => {
+    // A Chinese request immediately after an ASCII comma is prose, not a
+    // meeting URL suffix. Ordinary commas inside the URL remain untouched.
+    const boundary = /[,;](?=请于|请在|请|确认|回执)/.exec(match[0])
+    const length = boundary?.index ?? match[0].length
+    return { start: match.index!, end: match.index! + length }
+  })
+}
+function gmailAssertionWithoutUrls(value: string) {
+  let assertion = value
+  for (const span of gmailSourceUrlSpans(value).reverse()) assertion = assertion.slice(0, span.start) + ' ' + assertion.slice(span.end)
+  return assertion
+}
+function attendanceConfirmationDeadline(value: string) {
+  const assertion = gmailAssertionWithoutUrls(value)
+  return /(?:确认|回执).{0,16}(?:是否)?参加|(?:是否)?参加.{0,16}(?:确认|回执)/.test(assertion)
+    && /(?:前|截止|最晚|最迟)/.test(assertion)
+}
+
+/** Separate only explicit comma-delimited RSVP requests. Preserve the original
+ * non-RSVP bytes (including URL commas) and keep RSVP identity evidence. */
+function splitAttendanceConfirmation(value: string): string[] {
+  if (!attendanceConfirmationDeadline(value)) return [value]
+  const urls = gmailSourceUrlSpans(value)
+  const commas = [...value.matchAll(/[，,]/g)].map(match => match.index!)
+    .filter(index => !urls.some(span => index >= span.start && index < span.end))
+  const boundaries = [-1, ...commas, value.length]
+  const clauses = boundaries.slice(1).map((end, index) => ({ start: boundaries[index]! + 1, end }))
+  const requests = clauses.filter(clause => attendanceConfirmationDeadline(value.slice(clause.start, clause.end)))
+  if (!requests.length) return [value]
+  const result: string[] = []
+  let start = 0
+  for (const request of requests) {
+    const preceding = value.slice(start, Math.max(start, request.start - 1)).trim()
+    if (preceding) result.push(preceding)
+    result.push(value.slice(request.start, request.end).trim())
+    start = request.end + 1
+  }
+  const remaining = value.slice(start).trim()
+  if (remaining) result.push(remaining)
+  return result
+}
+
 /** A labelled invitation block is one assertion, not one invitation per field.
  * Only adjacent, closed labels may contribute identity or timing. */
 function gmailAssertionPieces(pieces: string[]) {
@@ -1174,7 +1218,11 @@ export function gmailSemanticRecordFromMessage(
   if (/https?:\/\//i.test(text)) capabilityBoundaries.push('Linked pages are NOT_SUPPORTED; no link is opened or treated as verified source content.')
   if (body.length >= 12_000) interpretationGaps.push('Message exceeds the bounded body limit; remaining content was not interpreted.')
   const nonAssertion = !text && current.quoted || /^(?:示例|假设|假如|hypothetical|for example)\b/i.test(text)
-  const allPieces = text.replace(/https?:\/\/[^\s<>]+/gi, url => url.replaceAll(';', '%3B').replaceAll('；', '%3B')).split(/[；;。\n]+/).map((item) => item.trim()).filter(Boolean)
+  let fragmentText = text
+  for (const span of gmailSourceUrlSpans(text).reverse()) {
+    fragmentText = fragmentText.slice(0, span.start) + text.slice(span.start, span.end).replaceAll(';', '%3B') + fragmentText.slice(span.end)
+  }
+  const allPieces = fragmentText.split(/[；;。\n]+/).map((item) => item.trim()).filter(Boolean).flatMap(splitAttendanceConfirmation)
   const boundedPieces = gmailAssertionPieces(allPieces.slice(0, GMAIL_FRAGMENT_PARSE_LIMIT))
   if (allPieces.length > GMAIL_FRAGMENT_PARSE_LIMIT) {
     interpretationGaps.push(`Message exceeds the bounded ${GMAIL_FRAGMENT_PARSE_LIMIT}-fragment interpretation limit.`)
@@ -1196,7 +1244,8 @@ export function gmailSemanticRecordFromMessage(
       // every opportunity. Cache repeated wording within this source only.
       const labelledBlock = /(?:^|；)(?:面试|笔试|测评)详情如下[:：]?；/.test(piece)
         && /(?:^|；)(?:面试|笔试|测评)(?:职位|岗位)[:：]/.test(piece)
-      parsed = parseRecruitingNotification(instructionOnly ? '' : labelledBlock ? [subject, piece].join('\n') : piece,
+      const assertionPiece = gmailAssertionWithoutUrls(piece)
+      parsed = parseRecruitingNotification(instructionOnly ? '' : labelledBlock ? [subject, assertionPiece].join('\n') : assertionPiece,
         instructionOnly ? [] : opportunities, parsedAt)
       fragmentParseCache.set(piece, parsed)
     }
@@ -1223,8 +1272,7 @@ export function gmailSemanticRecordFromMessage(
   for (const [index, item] of pieces.entries()) {
     const { piece, parsed } = item
     if (item.instructionOnly || conditionalCompletionDisclaimer(piece)) continue
-    if (/(?:确认|回执).{0,16}(?:是否)?参加|(?:是否)?参加.{0,16}(?:确认|回执)/.test(piece)
-      && /(?:前|截止|最晚|最迟)/.test(piece)) {
+    if (attendanceConfirmationDeadline(piece)) {
       businessAmbiguities.push('Attendance confirmation is a separate request; its deadline is not the test or interview time and no attendance choice was made.')
       continue
     }
@@ -1285,7 +1333,7 @@ export function gmailSemanticRecordFromMessage(
       continue
     }
     const originalTimestamp = originalReceivedAt ?? ''
-    const temporal = resolveSourceTemporal(piece.replace(/https?:\/\/[^\s<>；;]+/gi, ''), { receivedAt: originalTimestamp,
+    const temporal = resolveSourceTemporal(gmailAssertionWithoutUrls(piece), { receivedAt: originalTimestamp,
       timezone: 'Asia/Shanghai', mode: submissionDeadline ? 'deadline' : parsed.timingMode })
     const dueAt = temporal?.startAt ?? temporal?.deadlineAt ?? temporal?.date
     const duePrecision = temporal?.precision

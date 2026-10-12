@@ -171,6 +171,57 @@ describe('Gmail single-event descriptions remain one evidenced assertion', () =>
   })
 })
 
+describe('RSVP clauses do not swallow an independent fixed event', () => {
+  const target = opportunity('synthetic-rsvp', '甲星科技', '产品经理')
+  const subject = '甲星科技 产品经理 面试邀请'
+  it.each([
+    '面试时间2026年10月15日18:50，请于10月13日前确认是否参加',
+    '请于10月13日前确认是否参加，面试时间2026年10月15日18:50',
+    '面试时间2026年10月15日18:50,请于2026年10月13日17:00前确认是否参加',
+    '请于2026年10月13日17:00前确认是否参加，面试时间2026年10月15日18:50',
+    '面试时间2026年10月15日18:50\n请于2026年10月13日17:00前确认是否参加',
+  ])('retains the event clock and the independent RSVP ambiguity: %s', body => {
+    const record = parse(body, [target], subject)
+    expect(record.observation.candidates).toHaveLength(1)
+    expect(record.observation.candidates[0]).toMatchObject({ kind: 'process_event', target: { opportunityId: target.id }, timingMode: 'fixed',
+      temporal: { shape: 'fixed_range', startAt: '2026-10-15T18:50:00+08:00' } })
+    expect(record.gaps.join(' ')).toContain('Attendance confirmation')
+    const result = apply(record, [target])
+    expect(result.snapshot.data.processEvents).toHaveLength(1)
+    expect(result.snapshot.data.scheduleNodes![0]!.temporal.startAt).toBe('2026-10-15T18:50:00+08:00')
+  })
+  it.each([
+    '面试时间2026年10月15日18:50，会议链接 https://meeting.example.invalid/a,b ，请于10月13日前确认是否参加',
+    '面试时间2026年10月15日18:50，会议链接 https://meeting.example.invalid/a,b，请于10月13日前确认是否参加',
+    '面试时间2026年10月15日18:50，会议链接 https://meeting.example.invalid/a,b,请于10月13日前确认是否参加',
+    '面试时间2026年10月15日18:50，会议链接 https://meeting.synthetic.invalid/a,b；请于10月13日前确认是否参加',
+  ])('preserves URL comma bytes and keeps adjacent RSVP text out of timing: %s', body => {
+    const record = parse(body, [target], subject)
+    expect(record.observation.candidates).toHaveLength(1)
+    expect(record.observation.candidates[0]).toMatchObject({ kind: 'process_event', timingMode: 'fixed', joinUrl: body.includes('meeting.synthetic.invalid') ? 'https://meeting.synthetic.invalid/a,b' : 'https://meeting.example.invalid/a,b',
+      temporal: { shape: 'fixed_range', startAt: '2026-10-15T18:50:00+08:00' } })
+    expect(record.gaps.join(' ')).toContain('Attendance confirmation')
+  })
+  it('keeps RSVP-only mail from inventing an event or confirming attendance', () => {
+    const record = parse('请于2026年10月13日17:00前确认是否参加面试', [target], subject)
+    expect(record.observation.candidates).toHaveLength(0)
+    const result = apply(record, [target])
+    expect(result.snapshot.data.processEvents).toHaveLength(0)
+    expect(result.snapshot.data.actions).toHaveLength(0)
+  })
+  it('preserves separate interview and test facts without assigning the RSVP clock to either', () => {
+    const record = parse('甲星科技 产品经理 面试时间2026年10月15日18:50，请于2026年10月13日17:00前确认是否参加；甲星科技 产品经理 统一笔试时间2026年10月16日10:00', [target], subject)
+    expect(record.observation.candidates.filter(candidate => candidate.kind === 'process_event').map(candidate => candidate.dueAt))
+      .toEqual(['2026-10-15T18:50:00+08:00', '2026-10-16T10:00:00+08:00'])
+    expect(apply(record, [target]).snapshot.data.processEvents).toHaveLength(2)
+  })
+  it.each(['乙月公司 产品经理', '甲星科技 数据分析师'])('does not remove contradictory RSVP identity before inheriting a subject: %s', identity => {
+    const record = parse(`${identity} 请于2026年10月13日17:00前确认是否参加面试，面试时间2026年10月15日18:50`, [target], subject)
+    expect(record.observation.candidates[0]?.target?.opportunityId).toBeUndefined()
+    expect(apply(record, [target]).snapshot.data.processEvents).toHaveLength(0)
+  })
+})
+
 describe('receipt-relative deadlines require the original email anchor', () => {
   const options = { receivedAt, timezone: 'Asia/Shanghai', mode: 'deadline' as const }
   it('recognizes Chinese clock fields without turning a completion deadline into a fixed interview', () => {
