@@ -171,8 +171,14 @@ function interpreterCandidate(candidate: ReturnType<typeof candidateIdentity>, s
 /** Observation clocks and input IDs may change during replay; source facts may not. */
 export function dismissedSemanticCandidate(snapshot: PJSDASSnapshot, observation: SemanticIntakeObservation, candidate: SemanticCandidate): boolean {
   return (snapshot.data.decisionRequests ?? []).some(request => {
-    const interpreterEquivalent = sameGmailInterpreterContent(snapshot, request, observation)
     const source = request.payloadBinding.source
+    // Only an audited dismissal for this exact source can suppress a candidate.
+    // Reject other requests before recovering fingerprints from the full ledger.
+    if (request.state !== 'dismissed' || !request.dismissal
+      || source.kind !== observation.source.kind
+      || source.sourceId !== observation.source.sourceId
+      || source.sourceRecordId !== observation.source.sourceRecordId) return false
+    const interpreterEquivalent = sameGmailInterpreterContent(snapshot, request, observation)
     const fingerprint = dismissalSourceFingerprint(snapshot, request)
     const gmailParserBinding = source.kind === 'gmail'
     const originalCandidate = interpreterEquivalent
