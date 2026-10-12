@@ -612,7 +612,7 @@ test('Undo journal crash before local transaction recovers the original identity
   expect(server.sent[1]).toBe(undoId)
 })
 
-test('confirmed blocked projection recovers with a read-only snapshot after equivalence returns', async ({ page, context }) => {
+test('confirmed blocked projection recovers with a read-only snapshot after equivalence returns', async ({ page, context }, info) => {
   const server = await setup(context)
   server.setDelay(700)
   await start(page)
@@ -629,6 +629,12 @@ test('confirmed blocked projection recovers with a read-only snapshot after equi
   })
   } finally { releaseConfirmation() }
   await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem('pjsdas-cgr01-pending:instant-owner') ?? '[]')[0]?.status)).toBe('projection_pending')
+  expect(server.snapshot.data.actions[0].status).toBe('done')
+  await expect.poll(() => page.evaluate(async () => !(await import('/pjsdas/src/cloud/interactionActivity.ts')).interactionIsRecent('instant-owner'))).toBe(true)
+  await page.evaluate(() => window.dispatchEvent(new Event('focus')))
+  await expect(page.getByText('本机状态待核对', { exact: false })).toBeVisible()
+  await expect(page.getByText('正在确认修改的同步结果…', { exact: true })).toHaveCount(0)
+  await info.attach('confirmed-projection-recovery', { body: await page.screenshot({ fullPage: true }), contentType: 'image/png' })
   await page.evaluate(async () => { const db = await (await import('/pjsdas/src/db.ts')).dbPromise; await db.put('actions', (window as any).originalAction) })
   await page.evaluate(async () => {
     const api = await import('/pjsdas/src/db.ts')
@@ -1424,7 +1430,8 @@ test('empty no-op acknowledgement never advances the cache before unseen facts a
 })
 
 
-for (const existingConflict of [false, true]) test(`slow completion confirmation ${existingConflict ? 'preserves a real conflict' : 'does not request device reconciliation'}`, async ({ page, context }, info) => {
+for (const recoveryState of ['ordinary', 'conflict'] as const) test(`slow completion confirmation preserves ${recoveryState} semantics`, async ({ page, context }, info) => {
+  const existingConflict = recoveryState !== 'ordinary'
   const server = await setup(context, 40); server.setDelay(0)
   await start(page)
   const release = server.holdNextConfirmation()
@@ -1438,7 +1445,7 @@ for (const existingConflict of [false, true]) test(`slow completion confirmation
       const activity = await import('/pjsdas/src/cloud/interactionActivity.ts')
       return activity.interactionIsRecent('instant-owner')
     })).toBe(false)
-    if (existingConflict) await page.evaluate(async () => {
+    if (recoveryState === 'conflict') await page.evaluate(async () => {
       const sync = await import('/pjsdas/src/cloud/syncState.ts')
       sync.patchAccountCheckpoint('instant-owner', { conflict: { remoteVersion: 'txn:1204', remoteFingerprint: 'known-conflict', remoteUpdatedAt: new Date().toISOString() } })
     })
@@ -1452,7 +1459,7 @@ for (const existingConflict of [false, true]) test(`slow completion confirmation
       await expect(page.getByRole('button', { name: '打开设置', exact: true })).toHaveCount(0)
     }
     expect(server.snapshot.data.actions[0].status).toBe('todo')
-    await info.attach(`pending-confirmation-${existingConflict ? 'real-conflict' : 'ordinary'}`, { body: await page.screenshot({ fullPage: true }), contentType: 'image/png' })
+    await info.attach(`pending-confirmation-${recoveryState}`, { body: await page.screenshot({ fullPage: true }), contentType: 'image/png' })
   } finally { release() }
   await expect.poll(() => server.snapshot.data.actions[0].status, { timeout: 15000 }).toBe('done')
   if (!existingConflict) {
