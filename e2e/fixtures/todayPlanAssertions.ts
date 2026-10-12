@@ -19,11 +19,10 @@ export async function expectTodayPlan(page: Page, recommendedIds: string[], visi
   await expect(cards).toHaveCount(visibleCount)
   expect(await cards.evaluateAll(items => items.map(item => item.getAttribute('data-action-id'))))
     .toEqual(current.selection.visibleActions.map(item => item.actionId))
-  const limited = page.locator('.tsui-task-panel [data-capacity-limited-action-id]')
-  await expect(limited).toHaveCount(visibleCount - recommendedIds.length)
-  expect((await limited.evaluateAll(items => items.map(item => item.getAttribute('data-capacity-limited-action-id')))).sort())
-    .toEqual([...current.selection.insufficientTimeActionIds].sort())
-  const recommendedCards = cards.filter({ hasNot: page.locator('[data-capacity-limited-action-id]') })
-  expect(await recommendedCards.evaluateAll(items => items.map(item => item.getAttribute('data-action-id')))).toEqual(recommendedIds)
+  // Recommendation membership remains a read-model fact, not an extra UI badge.
+  const visibleIds = current.selection.visibleActions.map(item => item.actionId)
+  expect([...current.selection.insufficientTimeActionIds].sort())
+    .toEqual(visibleIds.filter(id => !recommendedIds.includes(id)).sort())
+  await expect(page.locator('.tsui-task-panel [data-capacity-limited-action-id]')).toHaveCount(0)
   return current.snapshot
 }

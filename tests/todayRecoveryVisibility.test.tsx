@@ -110,8 +110,7 @@ describe('read-only overdue process recovery', () => {
     expect(web.businessConflicts).toEqual([]); expect(web.notSelectedHardActions).toEqual([])
     expect(web.protectedActionIds).toEqual([])
     expect(mcp.capacityConflict).toBe(false); expect(mcp.startableActions).toEqual([])
-    expect(mcp.blockedOrRecoveryItems.map(item => item.id)).toEqual(ids)
-    expect(mcp.blockedOrRecoveryItems.every(item => item.reason.includes('确认'))).toBe(true)
+    expect(mcp.blockedOrRecoveryItems).toEqual([])
     expect(brief.recoveryItems).toEqual(web.recoveryItems)
     expect(brief.materialCoverageWarnings.filter(item => ['capacity_conflict', 'hard_deadline_unplanned'].includes(item.code))).toEqual([])
     expect(selectTodayWebNormalized(readModelSnapshot(snapshot), { availableMinutes }, at)).toEqual(web)
@@ -189,7 +188,7 @@ describe('read-only overdue process recovery', () => {
     owner(snapshot).state = 'elapsed_unresolved'
     expect(recovery(snapshot)).toHaveLength(1)
     expect(selectTodayWeb(snapshot, {}, context).recoveryItems).toHaveLength(1)
-    expect(getTodayPlan(snapshot, {}, context).blockedOrRecoveryItems).toHaveLength(1)
+    expect(getTodayPlan(snapshot, {}, context).blockedOrRecoveryItems).toEqual([])
   })
   it.each(['completed', 'cancelled', 'superseded'] as const)('does not revive %s canonical owners', state => {
     const snapshot = source()
@@ -237,7 +236,7 @@ describe('read-only overdue process recovery', () => {
         const at = { now: new Date(instant), timezone }
         expect(recovery(snapshot, at)).toHaveLength(count)
         expect(selectTodayWeb(snapshot, {}, at).recoveryItems).toHaveLength(count)
-        expect(getTodayPlan(snapshot, {}, at).blockedOrRecoveryItems.filter(item => item.reason.includes('确认'))).toHaveLength(count)
+        expect(getTodayPlan(snapshot, {}, at).blockedOrRecoveryItems.filter(item => item.reason.includes('确认'))).toEqual([])
       }
     }
     expect(snapshot).toEqual(before)
@@ -247,7 +246,8 @@ describe('read-only overdue process recovery', () => {
     item.action.duePrecision = undefined; item.event.duePrecision = undefined
     const snapshot = source([item])
     const html = render(snapshot, 480)
-    expect(html).toContain('2026-09-27')
+    expect(recovery(snapshot)[0].deadline.deadline).toBe('2026-09-27')
+    expect(html).not.toContain('data-recovery-action-id')
     expect(html).not.toContain('00:00')
   })
   it('uses an exact deadline boundary, not latest-start expiry, for recovery', () => {
@@ -277,7 +277,7 @@ describe('time advice never hides existing Today tasks', () => {
     const html = render(snapshot, 0)
     expect(html).toContain(count > 100 ? 'class="tsui-task-list is-dense"' : 'class="tsui-task-list"')
     expect(html.match(/data-action-id=/g)).toHaveLength(count)
-    expect(html.match(/data-capacity-limited-action-id=/g)).toHaveLength(count)
+    expect(html).not.toContain('data-capacity-limited-action-id')
     expect(html.match(/>Start<\/button>/g)).toHaveLength(count)
     expect(html.match(/>Done<\/button>/g)).toHaveLength(count)
     const cards = html.match(/<article\b[\s\S]*?<\/article>/g) ?? []
@@ -369,16 +369,16 @@ describe('time advice never hides existing Today tasks', () => {
     const html = render(snapshot, availableMinutes)
     for (const id of ids) {
       expect(html).toContain(`data-action-id="${id}"`)
-      expect(html).toContain(`data-capacity-limited-action-id="${id}"`)
+      expect(html).not.toContain('data-capacity-limited-action-id')
     }
-    expect(html).toContain('Estimated 90 min'); expect(html).toContain('Estimated 60 min')
+    expect(html).not.toContain('Estimated 90 min'); expect(html).not.toContain('Estimated 60 min')
     expect(html).toContain('View process'); expect(html).toContain('>Start</button>')
     expect(html.match(/>Done<\/button>/g)).toHaveLength(2)
     expect(html).not.toContain('disabled=""')
     expect(html).not.toContain('Nothing requires action right now')
     expect(snapshot).toEqual(before)
   })
-  it.each(['en', 'zh'])('keeps budget-fit task rows unchanged and shows duration only for insufficient time in %s', lang => {
+  it.each(['en', 'zh'])('keeps original task row design at every capacity in %s', lang => {
     language.lang = lang
     try {
       const snapshot = source([], [action('normal', { plannedDate: '2026-10-11', estimatedMinutes: 30 })])
@@ -387,9 +387,9 @@ describe('time advice never hides existing Today tasks', () => {
       expect(normal).not.toContain(lang === 'zh' ? '预计 30 分钟' : 'Estimated 30 min')
       expect(normal).not.toContain('data-capacity-limited-action-id=')
       const limited = render(snapshot, 0)
-      expect(limited).toContain(lang === 'zh' ? '预计 30 分钟' : 'Estimated 30 min')
-      expect(limited).toContain('data-capacity-limited-action-id="normal"')
-      expect(limited).toContain(lang === 'zh' ? '当前可用时间不足' : 'Insufficient available time')
+      expect(limited).not.toContain(lang === 'zh' ? '预计 30 分钟' : 'Estimated 30 min')
+      expect(limited).not.toContain('data-capacity-limited-action-id')
+      expect(limited).not.toContain(lang === 'zh' ? '当前可用时间不足' : 'Insufficient available time')
     } finally { language.lang = 'en' }
   })
   it('does not duplicate mixed feasible, capacity-limited, or recovery cards', () => {
@@ -400,17 +400,20 @@ describe('time advice never hides existing Today tasks', () => {
     expect(web.visibleActions.map(item => item.actionId)).toEqual(['event-action:today', 'large', 'small'])
     expect(web.insufficientTimeActionIds).toEqual(['large'])
     const html = render(snapshot, 56)
-    expect(html).toContain('Estimated 60 min')
+    expect(html).not.toContain('Estimated 60 min')
     expect(html).not.toContain('Estimated 40 min'); expect(html).not.toContain('Estimated 10 min')
     expect(html.match(/data-action-id=/g)).toHaveLength(3)
-    expect(html.match(/data-recovery-action-id=/g)).toHaveLength(1)
+    expect(html).not.toContain('data-recovery-action-id')
     expect(web.recoveryItems[0].deepLink).toBe('/opportunities/job-old')
   })
-  it.each(['en', 'zh'])('shows recovery instead of an all-clear empty state in %s', lang => {
+  it.each(['en', 'zh'])('does not turn elapsed history into homepage confirmation work in %s', lang => {
     language.lang = lang
     const html = render(source(oldItems()), 1440)
-    expect(html).toContain(lang === 'zh' ? '过期流程待确认' : 'Past recruiting events need confirmation')
-    expect(html.match(/data-recovery-action-id=/g)).toHaveLength(5)
+    expect(html).not.toContain('data-recovery-action-id')
+    expect(html).not.toContain('tsui-recovery-history')
+    expect(html).toContain(lang === 'zh' ? '当前没有今日任务' : 'No tasks for today')
+    expect(html).toContain(lang === 'zh' ? '暂无近期节点' : 'No upcoming nodes')
+    expect(html).not.toContain(lang === 'zh' ? '查看并确认' : 'Review and confirm')
     expect(html).not.toContain('Nothing requires action right now')
     expect(html).not.toContain('现在没有必须处理的任务')
     language.lang = 'en'
@@ -424,5 +427,31 @@ describe('time advice never hides existing Today tasks', () => {
     const html = render(snapshot, 480)
     expect(html).toContain('Two fixed commitments overlap.')
     expect(html).not.toContain('Nothing requires action right now')
+  })
+})
+
+describe('explicit chosen work survives historical classification', () => {
+  it.each(['todo', 'doing'] as const)('keeps an active non-fixed %s process task explicitly planned today', status => {
+    const item = process('explicit-past')
+    item.action.plannedDate = '2026-10-11'; item.action.status = status
+    const snapshot = source([item]); const before = structuredClone(snapshot)
+    const web = selectTodayWeb(snapshot, { availableMinutes: 480 }, context)
+    expect(web.visibleActions.map(item => item.actionId)).toEqual([item.action.id])
+    expect(web.businessConflicts).toEqual([])
+    expect(getTodayPlan(snapshot, { availableMinutes: 480 }, context).startableActions.map(item => item.actionId)).toEqual([item.action.id])
+    expect(snapshot).toEqual(before)
+  })
+  it.each(['fixed', 'done', 'skipped', 'closed', 'abandoned', 'invalidated', 'tomorrow'] as const)('does not reopen %s history from an old chosen date', state => {
+    const item = process('excluded', undefined, 45, state === 'fixed')
+    item.action.plannedDate = state === 'tomorrow' ? '2026-10-12' : '2026-10-11'
+    if (state === 'done' || state === 'skipped') item.action.status = state
+    if (state === 'closed') item.opportunity.processStage = 'closed'
+    if (state === 'abandoned') item.opportunity.participationStatus = 'abandoned'
+    const snapshot = source([item])
+    if (state === 'invalidated') invalidate(snapshot)
+    const before = structuredClone(snapshot)
+    expect(selectTodayWeb(snapshot, { availableMinutes: 480 }, context).visibleActions).toEqual([])
+    expect(getTodayPlan(snapshot, { availableMinutes: 480 }, context).startableActions).toEqual([])
+    expect(snapshot).toEqual(before)
   })
 })

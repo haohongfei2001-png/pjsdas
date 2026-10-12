@@ -62,11 +62,11 @@ test('elapsed recruiting node stays unresolved until an explicit completion fact
 
   await page.locator('.tsui-primary-nav').getByRole('button', { name: /日程|Schedule/ }).click()
   await page.locator('.tsui-schedule-tabs').getByRole('button', { name: /已发生|Past/ }).click()
-  await page.locator('.tsui-schedule-context').getByRole('button', { name: /过去安排待确认|Past arrangements to confirm/ }).click()
+  await page.locator('.tsui-schedule-context').getByRole('button', { name: /过往安排|Past arrangements/ }).click()
   const unresolved = page.locator('.tsui-schedule-panel .tsui-schedule-row').filter({ hasText: '节点测试科技' })
   await expect(unresolved).toBeVisible()
   await expect(unresolved).toContainText('面试')
-  await expect(unresolved).toContainText('待确认')
+  await expect(unresolved).toContainText('未记录结果')
 
   await page.locator('.tsui-topbar').getByRole('button', { name: /设置|Settings/ }).click()
   const interfaceGroup = page.locator('details.settings-group').filter({ has: page.locator('summary strong').filter({ hasText: /^(界面|Interface)$/ }) })
@@ -74,8 +74,8 @@ test('elapsed recruiting node stays unresolved until an explicit completion fact
   await interfaceGroup.getByRole('button', { name: 'EN', exact: true }).click()
   await page.locator('.tsui-primary-nav').getByRole('button', { name: /Schedule/ }).click()
   await page.locator('.tsui-schedule-tabs').getByRole('button', { name: /Past/ }).click()
-  await page.locator('.tsui-schedule-context').getByRole('button', { name: /Past arrangements to confirm/ }).click()
-  await expect(page.locator('.tsui-schedule-panel .tsui-schedule-row').filter({ hasText: 'Unresolved' })).toBeVisible()
+  await page.locator('.tsui-schedule-context').getByRole('button', { name: /Past arrangements/ }).click()
+  await expect(page.locator('.tsui-schedule-panel .tsui-schedule-row').filter({ hasText: 'Outcome not recorded' })).toBeVisible()
 
   await page.locator('.tsui-tell-button').click()
   await page.locator('.cgr-capture-input').fill('节点测试科技 AI产品经理 面试已经完成。')
@@ -98,6 +98,6 @@ test('a question about an elapsed event remains read-only and does not complete 
 
   await page.locator('.tsui-primary-nav').getByRole('button', { name: /日程|Schedule/ }).click()
   await page.locator('.tsui-schedule-tabs').getByRole('button', { name: /已发生|Past/ }).click()
-  await page.locator('.tsui-schedule-context').getByRole('button', { name: /过去安排待确认|Past arrangements to confirm/ }).click()
+  await page.locator('.tsui-schedule-context').getByRole('button', { name: /过往安排|Past arrangements/ }).click()
   await expect(page.locator('.tsui-schedule-panel .tsui-schedule-row').filter({ hasText: '节点测试科技' })).toBeVisible()
 })

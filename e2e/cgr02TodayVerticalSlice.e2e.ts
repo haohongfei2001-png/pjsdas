@@ -541,7 +541,7 @@ test('connected Today keeps a fixed interview, date-only deadline and elapsed un
   await expect(page.locator('.tsui-unresolved-link')).toHaveCount(0)
   await page.locator('.tsui-primary-nav').getByRole('button', { name: /日程|Schedule/ }).click()
   await page.locator('.tsui-schedule-tabs').getByRole('button', { name: /已发生|Past/ }).click()
-  await page.locator('.tsui-schedule-context').getByRole('button', { name: /过去安排待确认|Past arrangements to confirm/ }).click()
+  await page.locator('.tsui-schedule-context').getByRole('button', { name: /过往安排|Past arrangements/ }).click()
   await expect(page).toHaveURL(/\/schedule\?view=unresolved$/)
   await expect(page.locator('.tsui-schedule-panel .tsui-schedule-row')).toHaveCount(1)
 })
@@ -707,7 +707,7 @@ test('quiet Today and a real DecisionRequest remain legible without invented act
   await installServer(page, state)
 
   await page.goto('/pjsdas/today')
-  await expect(page.getByText('现在没有必须处理的任务')).toBeVisible()
+  await expect(page.getByText('当前没有今日任务')).toBeVisible()
   await expect(page.locator('.tsui-task-row')).toHaveCount(0)
   await mkdir(VISUAL_DIR, { recursive: true })
   expect((await page.locator('.tsui-task-panel').boundingBox())!.height).toBeLessThan(300)
