@@ -1,3 +1,4 @@
+import type { GmailExecutionObserver } from './gmailExecutionDiagnostics.js'
 import type { GoogleRefreshLifecycle } from './googleRefreshLifecycle.js'
 import { dismissedSemanticCandidate } from '../src/decisionDismissal.js'
 import { aggregateHistoryLag, type GmailExecutionMetrics } from './gmailExecutionMetrics.js'
@@ -740,7 +741,7 @@ export async function runGmailReconciliationForBinding(options: {
   fetchImpl?: typeof fetch
   now?: () => Date
   forceStart?: boolean
-  execution?: { beforeWorkspaceWrite: () => Promise<void>; canProcessNextMessage?: () => boolean }
+  execution?: { observer?: GmailExecutionObserver; beforeWorkspaceWrite: () => Promise<void>; canProcessNextMessage?: () => boolean }
 }): Promise<GmailReconciliationRunResult> {
   const fetchImpl = options.fetchImpl ?? fetch
   const now = options.now?.() ?? new Date()
@@ -757,6 +758,7 @@ export async function runGmailReconciliationForBinding(options: {
     throw new WorkspaceSourceError('GOOGLE_GMAIL_SCOPE_MISSING', 'Gmail reconciliation requires the Gmail read-only permission.', false)
   }
 
+  options.execution?.observer?.phase('token_refresh')
   const refreshToken = await decryptSecret(options.binding.refreshTokenCiphertext, options.tokenEncryptionKey)
   const accessToken = await refreshGoogleAccessToken(refreshToken, {
     ...options.refreshLifecycle,
@@ -777,8 +779,10 @@ export async function runGmailReconciliationForBinding(options: {
         fetchImpl,
       })
     : createDriveWorkspaceSource({ getAccessToken: () => accessToken, fetchImpl, timezone: 'Asia/Shanghai' })
+  options.execution?.observer?.phase('workspace_read')
   const workspace = await source.read()
   const priorState = options.binding.gmailReconciliationState
+  options.execution?.observer?.phase('gmail_list')
   const batch = await fetchGmailReconciliationBatch({
     accessToken,
     continuation: priorState,
@@ -786,6 +790,7 @@ export async function runGmailReconciliationForBinding(options: {
     fetchImpl,
     now,
   })
+  options.execution?.observer?.phase('message_parse')
   const fetchedCount = batch.scannedCount
   const messagesById = new Map(batch.messages.map(message => [message.id, message]))
   const records: GmailSemanticRecord[] = []
@@ -798,6 +803,7 @@ export async function runGmailReconciliationForBinding(options: {
       if (record) records.push(reconciliationRecordVersion(record))
     }
     processedCount += 1
+    options.execution?.observer?.processed()
   }
   if (batch.selectedMessageIds.length && !processedCount) {
     throw new WorkspaceSourceError('BUDGET_EXHAUSTED', 'Gmail reconciliation has no budget for a complete message; continuation was preserved.', true)
@@ -836,6 +842,7 @@ export async function runGmailReconciliationForBinding(options: {
     ...batch.selectedMessageIds,
   ].join('|')
   const runId = `gmail:reconcile:${stableIngestionHash(batchIdentity)}`
+  options.execution?.observer?.phase('semantic_apply')
   const result = applyGmailSemanticBatch(workspace.snapshot, {
     runId,
     sourceId: GMAIL_SOURCE_ID,
@@ -908,6 +915,7 @@ export async function runGmailReconciliationForBinding(options: {
   let workspaceVersion = workspace.context.workspaceVersion
   if (!result.alreadyApplied) {
     await options.execution?.beforeWorkspaceWrite()
+    options.execution?.observer?.phase('workspace_commit')
     const written = await requireWritableWorkspaceSource(source).write({
       snapshot: result.snapshot,
       expectedWorkspaceVersion: workspace.context.workspaceVersion,
@@ -930,6 +938,7 @@ export async function runGmailReconciliationForBinding(options: {
     workspaceVersion = written.context.workspaceVersion
   }
 
+  options.execution?.observer?.phase('checkpoint')
   return {
     userId: options.binding.userId,
     checkedAt,
@@ -1415,7 +1424,7 @@ export async function runGmailAutomationForBinding(options: {
   refreshLifecycle?: GoogleRefreshLifecycle
   fetchImpl?: typeof fetch
   now?: () => Date
-  execution?: { beforeWorkspaceWrite: () => Promise<void> }
+  execution?: { observer?: GmailExecutionObserver; beforeWorkspaceWrite: () => Promise<void> }
 }): Promise<GmailAutomationRunResult> {
   if (options.binding.gmailIntakeConsentVersion !== 'uu06-v1') return runLegacyGmailAutomationForBinding(options)
   const fetchImpl = options.fetchImpl ?? fetch
@@ -1425,6 +1434,7 @@ export async function runGmailAutomationForBinding(options: {
     throw new WorkspaceSourceError('GOOGLE_GMAIL_SCOPE_MISSING', 'Gmail automation requires the Gmail read-only permission. Reconnect Google and enable recruiting-email tracking.', false)
   }
 
+  options.execution?.observer?.phase('token_refresh')
   const refreshToken = await decryptSecret(options.binding.refreshTokenCiphertext, options.tokenEncryptionKey)
   const accessToken = await refreshGoogleAccessToken(refreshToken, {
     ...options.refreshLifecycle,
@@ -1449,10 +1459,12 @@ export async function runGmailAutomationForBinding(options: {
         fetchImpl,
         timezone: 'Asia/Shanghai',
       })
+  options.execution?.observer?.phase('workspace_read')
   const workspace = await source.read()
   const backfillComplete = (workspace.snapshot.data.timeline ?? []).some((item) =>
     item.ingestion?.sourceKind === 'gmail' && item.ingestion.sourceId === GMAIL_SOURCE_ID
     && item.ingestion.sourceRecordId === 'coverage-boundary:uu06-90-days')
+  options.execution?.observer?.phase('gmail_list')
   const batch = await fetchGmailAutomationBatch({
     accessToken,
     startHistoryId: options.binding.gmailHistoryId,
@@ -1464,8 +1476,9 @@ export async function runGmailAutomationForBinding(options: {
     } : undefined,
     fetchImpl, now, coverage: 'uu06',
   })
+  options.execution?.observer?.phase('message_parse')
   const records = batch.messages
-    .map((message) => gmailSemanticRecordFromMessage(message, workspace.snapshot.data.opportunities, now))
+    .map((message) => { const record = gmailSemanticRecordFromMessage(message, workspace.snapshot.data.opportunities, now); options.execution?.observer?.processed(); return record })
     .filter((record): record is GmailSemanticRecord => Boolean(record))
   for (const sourceRecordId of batch.unavailableMessageIds) {
     records.push({
@@ -1510,6 +1523,7 @@ export async function runGmailAutomationForBinding(options: {
       },
     })
   }
+  options.execution?.observer?.phase('semantic_apply')
   const result = applyGmailSemanticBatch(workspace.snapshot, {
     runId: `gmail:auto:${checkedAt}`, sourceId: GMAIL_SOURCE_ID, checkedAt,
     cursor: batch.coverageComplete ? batch.nextHistoryId : undefined, records,
@@ -1519,6 +1533,7 @@ export async function runGmailAutomationForBinding(options: {
   let workspaceVersion = workspace.context.workspaceVersion
   if (!result.alreadyApplied) {
     await options.execution?.beforeWorkspaceWrite()
+    options.execution?.observer?.phase('workspace_commit')
     const writable = requireWritableWorkspaceSource(source)
     const written = await writable.write({
       snapshot: result.snapshot,
@@ -1534,6 +1549,7 @@ export async function runGmailAutomationForBinding(options: {
     workspaceVersion = written.context.workspaceVersion
   }
 
+  options.execution?.observer?.phase('checkpoint')
   return {
     userId: options.binding.userId,
     checkedAt,
@@ -1560,7 +1576,7 @@ async function runLegacyGmailAutomationForBinding(options: {
   refreshLifecycle?: GoogleRefreshLifecycle
   fetchImpl?: typeof fetch
   now?: () => Date
-  execution?: { beforeWorkspaceWrite: () => Promise<void> }
+  execution?: { observer?: GmailExecutionObserver; beforeWorkspaceWrite: () => Promise<void> }
 }): Promise<GmailAutomationRunResult> {
   const fetchImpl = options.fetchImpl ?? fetch
   const now = options.now?.() ?? new Date()
@@ -1569,6 +1585,7 @@ async function runLegacyGmailAutomationForBinding(options: {
     throw new WorkspaceSourceError('GOOGLE_GMAIL_SCOPE_MISSING', 'Gmail automation requires the Gmail read-only permission. Reconnect Google and enable recruiting-email tracking.', false)
   }
 
+  options.execution?.observer?.phase('token_refresh')
   const refreshToken = await decryptSecret(options.binding.refreshTokenCiphertext, options.tokenEncryptionKey)
   const accessToken = await refreshGoogleAccessToken(refreshToken, {
     ...options.refreshLifecycle,
@@ -1593,7 +1610,9 @@ async function runLegacyGmailAutomationForBinding(options: {
         fetchImpl,
         timezone: 'Asia/Shanghai',
       })
+  options.execution?.observer?.phase('workspace_read')
   const workspace = await source.read()
+  options.execution?.observer?.phase('gmail_list')
   const batch = await fetchGmailAutomationBatch({
     accessToken,
     startHistoryId: options.binding.gmailHistoryId,
@@ -1605,8 +1624,9 @@ async function runLegacyGmailAutomationForBinding(options: {
     } : undefined,
     fetchImpl,
   })
+  options.execution?.observer?.phase('message_parse')
   const messages = batch.messages
-    .map((message) => gmailObservationFromMessage(message, workspace.snapshot.data.opportunities, now))
+    .map((message) => { const record = gmailObservationFromMessage(message, workspace.snapshot.data.opportunities, now); options.execution?.observer?.processed(); return record })
     .filter((message): message is HardenedGmailMessageObservation => Boolean(message))
   for (const sourceRecordId of batch.unavailableMessageIds) {
     messages.push({
@@ -1628,6 +1648,7 @@ async function runLegacyGmailAutomationForBinding(options: {
       notes: batch.recoveryGapReason.slice(0, 800),
     })
   }
+  options.execution?.observer?.phase('semantic_apply')
   const result = applyGmailIngestionHardened(workspace.snapshot, {
     runId: `gmail:auto:${checkedAt}`,
     sourceId: GMAIL_SOURCE_ID,
@@ -1642,6 +1663,7 @@ async function runLegacyGmailAutomationForBinding(options: {
   let workspaceVersion = workspace.context.workspaceVersion
   if (!result.alreadyApplied) {
     await options.execution?.beforeWorkspaceWrite()
+    options.execution?.observer?.phase('workspace_commit')
     const writable = requireWritableWorkspaceSource(source)
     const written = await writable.write({
       snapshot: result.snapshot,
@@ -1651,6 +1673,7 @@ async function runLegacyGmailAutomationForBinding(options: {
     workspaceVersion = written.context.workspaceVersion
   }
 
+  options.execution?.observer?.phase('checkpoint')
   return {
     userId: options.binding.userId,
     checkedAt,
