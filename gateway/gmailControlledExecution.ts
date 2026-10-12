@@ -183,7 +183,11 @@ export async function runControlledGmailReconciliations(
           fetchImpl: budgetFetch,
           now: config.now,
           forceStart,
-          execution: { beforeWorkspaceWrite: async () => {
+          execution: {
+            // Reserve time for semantic application, the fenced workspace
+            // commit and final continuation checkpoint. Never extend the cap.
+            canProcessNextMessage: () => !controller.signal.aborted && remaining() > limitMs * 0.4,
+            beforeWorkspaceWrite: async () => {
             ensureBudget()
             await store.assertGmailExecution(binding.userId, executionToken)
             ensureBudget()
