@@ -716,7 +716,7 @@ export function buildTodayBrief(
     nextAction: visibleActions[0],
     nextActions: visibleActions.slice(1),
     recoveryItems: plan.recoveryItems,
-    capacityLimitedActions: plan.deferredToday.map(capacityLimitedAction),
+    capacityLimitedActions: plan.deferredToday.map(item => capacityLimitedAction(item, plan.deadlinePassedActionIds.includes(item.action.id) ? 'deadline_passed' : 'insufficient_time')),
     agendaGroups,
     relevantDecisionRequests: decisions,
     recentChanges: recentSemanticChanges(snapshot),

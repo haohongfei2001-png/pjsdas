@@ -371,8 +371,10 @@ export function getTodayPlan(
   // Retained invitations cannot reopen an explicitly closed/abandoned job in
   // this Today projection, even when a legacy process overlay still has them.
   const ended = new Set(snapshot.data.opportunities.filter(item => item.processStage === 'closed' || item.participationStatus === 'abandoned').map(item => item.id))
-  const inactiveIds = inactiveProcessActionIds({ actions: workspace.actions, opportunities: snapshot.data.opportunities, processEvents: snapshot.data.processEvents })
-  const todayActions = workspace.actions.filter(action => !inactiveIds.has(action.id) && (!action.opportunityId || !ended.has(action.opportunityId)))
+  const inactiveIds = inactiveProcessActionIds({ actions: snapshot.data.actions, opportunities: snapshot.data.opportunities, processEvents: snapshot.data.processEvents })
+  // Today shares stored task membership with Web. A later recruiting stage is
+  // not an explicit completion/invalidation of an earlier outstanding Action.
+  const todayActions = snapshot.data.actions.filter(action => !inactiveIds.has(action.id) && (!action.opportunityId || !ended.has(action.opportunityId)))
   const ranked = rankActions(todayActions, workspace.opportunities, now, undefined, context.timezone, snapshot.data.scheduleNodes ?? [])
   const consumerPlan = buildConsumerTimePlan({ ranked, actions: todayActions, nodes: snapshot.data.scheduleNodes ?? [], opportunities: workspace.opportunities, processEvents: snapshot.data.processEvents,
     preferences: snapshot.data.timePlanning, availableMinutes, now, timezone: context.timezone, useRemainingDayDefault: true })
@@ -446,7 +448,7 @@ export function getTodayPlan(
     plannedMinutes: consumerPlan.plannedMinutes,
     capacityConflict: consumerPlan.conflicts.length > 0 || consumerPlan.overBudgetMinutes > 0,
     startableActions,
-    capacityLimitedActions: consumerPlan.deferredToday.map(capacityLimitedAction),
+    capacityLimitedActions: consumerPlan.deferredToday.map(item => capacityLimitedAction(item, consumerPlan.deadlinePassedActionIds.includes(item.action.id) ? 'deadline_passed' : 'insufficient_time')),
     fixedEvents,
     blockedOrRecoveryItems,
   }

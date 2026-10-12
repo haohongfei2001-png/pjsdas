@@ -45,6 +45,7 @@ function timeLabel(item: TodayBriefAction, zh: boolean, displayTimezone: string)
   if (timing.precision === 'date' && timing.date) return timing.date
   const at = timing.startAt ?? timing.deadlineAt
   if (!at) return zh ? '今天' : 'Today'
+  if (/^\d{4}-\d{2}-\d{2}$/.test(at)) return at
   const date = new Date(at)
   if (!Number.isFinite(date.getTime())) return zh ? '时间待定' : 'Time TBD'
   const formatted = formatScheduleTemporal(timing, zh, displayTimezone)

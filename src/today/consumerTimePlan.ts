@@ -1,5 +1,6 @@
+import { defaultTimingModeForProcessEvent } from '../processEvents.js'
 import { actionArrangementDate, calendarNodeProjection, isExplicitActionArrangement, scheduleNodeEligible } from '../scheduleEligibility.js'
-import { actionDeadline, actionNodesById, compareActionDeadlines, deadlineBoundaryMs } from '../deadlineOrder.js'
+import { actionDeadline, actionNodesById, compareActionDeadlines, deadlineBoundaryMs, deadlineHasPassed } from '../deadlineOrder.js'
 import { inactiveProcessActionIds, processRecoveryItems, todayProcessTimingOwner, type ProcessRecoveryItem } from '../fixedEventGuardLogic.js'
 import type { Action, Opportunity, ProcessEvent, RankedAction, ScheduleNode } from '../model.js'
 import type { TimePlanningPreferences } from '../timePlanningPreferences.js'
@@ -19,13 +20,13 @@ export interface CapacityLimitedAction {
   title: string
   estimatedMinutes: number
   deepLink: string
-  reason: 'insufficient_time'
+  reason: 'insufficient_time' | 'deadline_passed'
 }
 
-export function capacityLimitedAction(item: RankedAction): CapacityLimitedAction {
+export function capacityLimitedAction(item: RankedAction, reason: CapacityLimitedAction['reason'] = 'insufficient_time'): CapacityLimitedAction {
   return { actionId: item.action.id, title: item.action.title, estimatedMinutes: item.action.estimatedMinutes,
     deepLink: item.action.opportunityId ? `/opportunities/${encodeURIComponent(item.action.opportunityId)}` : '/today',
-    reason: 'insufficient_time' }
+    reason }
 }
 
 export interface ConsumerTimePlan {
@@ -37,6 +38,8 @@ export interface ConsumerTimePlan {
   deferredCount: number
   deferredHard: RankedAction[]
   deferredToday: RankedAction[]
+  /** Deferred hard obligations whose deadline has already passed, excluding explicit work plans. */
+  deadlinePassedActionIds: string[]
   recoveryItems: ProcessRecoveryItem[]
   conflicts: ConsumerTimeConflict[]
   selectionSearch?: { complete: boolean; explored: number; limit: number }
@@ -131,6 +134,21 @@ export function buildConsumerTimePlan(input: {
   const inactiveIds = inactiveProcessActionIds({ ...input, actions })
   const recoveryItems = processRecoveryItems({ ...input, actions })
   const recoveryIds = new Set(recoveryItems.map(item => item.actionId))
+  const sourceEvents = new Map(input.processEvents?.map(event => [event.id, event]))
+  const overdueActions = input.ranked.filter(({ action }) => recoveryIds.has(action.id)).map(item => item.action)
+  const overdueOwners = actionNodesById(input.nodes, overdueActions, input.opportunities, input.processEvents)
+  // A missed completion deadline does not complete or cancel the obligation.
+  // Past fixed occurrences remain history; only a still-valid deadline source
+  // can restore unplanned work to today's ordinary task membership.
+  const overdueObligationIds = new Set(overdueActions.filter(action => {
+    const event = action.processEventId ? sourceEvents.get(action.processEventId) : undefined
+    const owner = overdueOwners.get(action.id)
+    const eventMode = event ? event.timingMode ?? defaultTimingModeForProcessEvent(event.type) : undefined
+    return (action.timingMode ?? eventMode) === 'deadline' && !action.scheduledTemporal
+      && event && eventMode === 'deadline' && !event.invalidation
+      && Boolean(actionDeadline(action, owner).deadline)
+      && (!owner || ['deadline', 'date_only', 'availability_window'].includes(owner.temporal.shape) && ['scheduled', 'in_progress'].includes(owner.state))
+  }).map(action => action.id))
   const today = localDateKey(input.now, input.timezone)
   // Preserve an explicit chosen work day; elapsed history must not erase user intent.
   // A retained fixed occurrence or scheduled arrangement is not reopened here.
@@ -138,7 +156,7 @@ export function buildConsumerTimePlan(input: {
     && action.plannedDate === today && action.timingMode !== 'fixed' && !action.scheduledTemporal
     && (action.status === 'todo' || action.status === 'doing')).map(item => item.action.id))
   const ranked = input.ranked.filter(item => !inactiveIds.has(item.action.id)
-    && (!recoveryIds.has(item.action.id) || explicitPastPlans.has(item.action.id)))
+    && (!recoveryIds.has(item.action.id) || explicitPastPlans.has(item.action.id) || overdueObligationIds.has(item.action.id)))
   const weekday = new Date(`${today}T12:00:00.000Z`).getUTCDay()
   const todayChoice = input.useRemainingDayDefault ? todayCapacity(input.preferences, input.now, input.timezone, input.availableMinutes) : undefined
   const capacityMinutes = todayChoice?.minutes ?? input.availableMinutes ?? capacityForDate(input.preferences, today, weekday)
@@ -196,7 +214,8 @@ export function buildConsumerTimePlan(input: {
     // A live recruiting obligation may be due without a chosen plan.
     // Ordinary task deadlines and old automatic apply tasks do not choose today.
     const event = input.processEvents?.find(event => event.id === action.processEventId && !event.invalidation)
-    return Boolean(event && event.dueAt && event.timingMode !== 'fixed'
+    return Boolean(event && actionDeadline(action, owner).deadline
+      && (event.timingMode ?? defaultTimingModeForProcessEvent(event.type)) !== 'fixed'
       && needsStartToday(item, nodeMap.get(action.id), today, input.timezone))
   }).sort(compare)
   const deadlineFor = (item: RankedAction) => {
@@ -270,7 +289,11 @@ export function buildConsumerTimePlan(input: {
   }
   const planned = [...chosen]
   const selected = new Set(planned.map(item => item.action.id))
-  const deferredHard = mandatory.filter(item => !selected.has(item.action.id))
+  const missedHard = mandatory.filter(item => !selected.has(item.action.id))
+  const deadlinePassedActionIds = missedHard.filter(item => deadlineHasPassed(
+    actionDeadline(item.action, nodeMap.get(item.action.id)), input.now, input.timezone)).map(item => item.action.id)
+  const passedIds = new Set(deadlinePassedActionIds)
+  const deferredHard = missedHard.filter(item => !passedIds.has(item.action.id))
   if (deferredHard.length) conflicts.push({ kind: 'hard_deadline_capacity',
     relatedIds: deferredHard.map(item => item.action.id), selectedIds: planned.map(item => item.action.id) })
   const todayFree = freeBefore(bounds.dayEnd)
@@ -299,5 +322,5 @@ export function buildConsumerTimePlan(input: {
   planned.sort(compare)
   const overBudgetMinutes = capacityMinutes === undefined ? 0 : Math.max(0, plannedMinutes - capacityMinutes)
   return { capacityMinutes, fixedMinutes, plannedMinutes, overBudgetMinutes, planned, deferredHard,
-    deferredToday, recoveryItems, deferredCount, conflicts }
+    deferredToday, deadlinePassedActionIds, recoveryItems, deferredCount, conflicts }
 }

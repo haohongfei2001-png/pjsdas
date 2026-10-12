@@ -21,7 +21,7 @@ function fixture(minutes: number) {
   }, NOW.toISOString())
 }
 
-for (const minutes of [0, 56]) test(`Today ${minutes} minutes keeps tasks interactive and elapsed history out of Today`, async ({ page }, info) => {
+for (const minutes of [0, 56]) test(`Today ${minutes} minutes keeps outstanding tasks interactive without confirmation prompts`, async ({ page }, info) => {
   const pageErrors: string[] = []
   page.on('pageerror', error => pageErrors.push(error.message))
   // No test request may leave the local fixture server, including auth/analytics.
@@ -34,12 +34,12 @@ for (const minutes of [0, 56]) test(`Today ${minutes} minutes keeps tasks intera
   await page.evaluate(async value => (await import('/pjsdas/src/db.ts')).replaceLocalSnapshotFromCloud(value), fixture(minutes))
   await page.goto('/pjsdas/today')
   const initial = await read(page)
-  const ids = ['event-action:today', 'manual', 'small']
+  const ids = ['event-action:old', 'event-action:today', 'manual', 'small']
   for (const id of ids) await expect(page.locator(`[data-action-id="${id}"]`)).toHaveCount(1)
-  await expect(page.locator('[data-action-id]')).toHaveCount(3)
+  await expect(page.locator('[data-action-id]')).toHaveCount(4)
   await expect(page.locator('[data-capacity-limited-action-id]')).toHaveCount(0)
   await expect(page.locator('[data-recovery-action-id]')).toHaveCount(0)
-  await expect(page.locator('.tsui-task-panel .tsui-count')).toHaveText('3')
+  await expect(page.locator('.tsui-task-panel .tsui-count')).toHaveText('4')
   await expect(page.getByText('Nothing requires action right now', { exact: true })).toHaveCount(0)
   // Synthetic initial cards and recovery state are reviewable in artifacts and
   // plain CI logs; no production data or external network is involved.
@@ -108,7 +108,7 @@ for (const minutes of [0, 56]) test(`Today ${minutes} minutes keeps tasks intera
   await info.attach(`today-recovery-${minutes}-after-user-actions`, { body: await page.screenshot({ fullPage: true }), contentType: 'image/png' })
 })
 
-for (const minutes of [0, 56]) test(`Chinese Today ${minutes} minutes preserves state while displaying accessible work and recovery`, async ({ page }, info) => {
+for (const minutes of [0, 56]) test(`Chinese Today ${minutes} minutes preserves state while displaying active overdue work`, async ({ page }, info) => {
   await page.route('**/*', route => new URL(route.request().url()).hostname === '127.0.0.1' ? route.continue() : route.abort())
   await page.addInitScript(() => localStorage.setItem('pjsdas-ui-language', 'zh'))
   await page.clock.setFixedTime(NOW)
@@ -117,7 +117,7 @@ for (const minutes of [0, 56]) test(`Chinese Today ${minutes} minutes preserves 
   await page.locator('.tsui-primary-nav').waitFor()
   await page.evaluate(async value => (await import('/pjsdas/src/db.ts')).replaceLocalSnapshotFromCloud(value), fixture(minutes))
   await page.goto('/pjsdas/today')
-  await expect(page.locator('[data-action-id]')).toHaveCount(3)
+  await expect(page.locator('[data-action-id]')).toHaveCount(4)
   await expect(page.locator('[data-capacity-limited-action-id]')).toHaveCount(0)
   await expect(page.locator('[data-recovery-action-id]')).toHaveCount(0)
   await expect(page.getByRole('region', { name: '过期流程待确认', exact: true })).toHaveCount(0)
@@ -131,7 +131,7 @@ for (const minutes of [0, 56]) test(`Chinese Today ${minutes} minutes preserves 
   console.log(`TODAY_RECOVERY_ZH_VISUAL_${minutes}_END`)
   expect((await read(page)).data).toEqual(before.data)
   await page.reload()
-  await expect(page.locator('[data-action-id]')).toHaveCount(3)
+  await expect(page.locator('[data-action-id]')).toHaveCount(4)
   await expect(page.locator('[data-recovery-action-id]')).toHaveCount(0)
   expect((await read(page)).data).toEqual(before.data)
 })
@@ -227,13 +227,13 @@ test('all 500 dense Today tasks remain accessible, searchable, printable and key
   console.log(`TODAY_DENSE_ACCESSIBILITY:${JSON.stringify({ tasks: 500, findResult, bounds, userCompleted: 'dense-499' })}`)
 })
 
-test('approved Today empty panels do not turn nine elapsed records into confirmation work', async ({ page }, info) => {
+for (const obligationCount of [0, 5]) test(`approved Today preserves ${obligationCount} overdue obligations without turning nine elapsed records into confirmation work`, async ({ page }, info) => {
   await page.route('**/*', route => new URL(route.request().url()).hostname === '127.0.0.1' ? route.continue() : route.abort())
   await page.addInitScript(() => localStorage.setItem('pjsdas-ui-language', 'zh'))
   await page.clock.setFixedTime(NOW)
   const jobs = Array.from({ length: 9 }, (_, index) => ({ ...opportunity(`past-${index}`, `合成公司${index + 1}`, '研发工程师'), processStage: 'assessment' as const }))
   const events: ProcessEvent[] = jobs.map((job, index) => ({ id: `past-event-${index}`, opportunityId: job.id, company: job.company, role: job.role,
-    type: 'assessment_invite', source: 'email', occurredAt: '2026-09-01T00:00:00Z', dueAt: '2026-09-27T09:00:00Z', duePrecision: 'datetime', timingMode: 'deadline',
+    type: index < 9 - obligationCount ? 'interview_invite' : 'assessment_invite', source: 'email', occurredAt: '2026-09-01T00:00:00Z', dueAt: '2026-09-27T09:00:00Z', duePrecision: 'datetime', timingMode: index < 9 - obligationCount ? 'fixed' : 'deadline',
     estimatedMinutes: 30, createdAt: '2026-09-01T00:00:00Z', updatedAt: '2026-09-01T00:00:00Z' }))
   const value = createSnapshot({ opportunities: jobs, processEvents: events, actions: events.map(event => actionForProcessEvent(event)!), processes: [], prep: [], applicationGroups: [] }, NOW.toISOString())
   await page.goto('/pjsdas/today'); await page.locator('.tsui-primary-nav').waitFor()
@@ -243,12 +243,15 @@ test('approved Today empty panels do not turn nine elapsed records into confirma
   for (const [width, scale] of [[1440, 100], [390, 100], [320, 200]]) {
     await page.setViewportSize({ width, height: 900 })
     await page.evaluate(size => { document.documentElement.style.fontSize = `${size}%` }, scale)
-    await expect(page.getByText('当前没有今日任务', { exact: true })).toBeVisible()
+    await expect(page.getByText('当前没有今日任务', { exact: true })).toHaveCount(obligationCount ? 0 : 1)
+    await expect(page.locator('[data-action-id]')).toHaveCount(obligationCount)
+    for (let i = 9 - obligationCount; i < 9; i++) await expect(page.locator(`[data-action-id="event-action:past-event-${i}"]`)).toBeVisible()
     await expect(page.locator('[data-recovery-action-id]')).toHaveCount(0)
     await expect(page.getByText('过期流程待确认', { exact: true })).toHaveCount(0)
-    await expect(page.locator('.tsui-task-panel .tsui-count')).toHaveText('0')
+    await expect(page.locator('.tsui-task-panel .tsui-count')).toHaveText(String(obligationCount))
+    await expect(page.locator('.tsui-inline-notice')).toHaveCount(0)
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true)
-    await info.attach(`approved-empty-${width}-${scale}`, { body: await page.screenshot({ fullPage: true }), contentType: 'image/png' })
+    await info.attach(`approved-obligations-${obligationCount}-${width}-${scale}`, { body: await page.screenshot({ fullPage: true }), contentType: 'image/png' })
     if (width <= 700) await page.locator('.tsui-mobile-switch button').nth(1).click()
     await expect(page.getByText('暂无近期节点', { exact: true })).toBeVisible()
     if (width <= 700) await page.locator('.tsui-mobile-switch button').first().click()
