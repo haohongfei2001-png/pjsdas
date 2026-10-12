@@ -38,6 +38,21 @@ beforeEach(() => {
   source.write.mockImplementation(async input => { persisted = input.snapshot; writes += 1; return { snapshot: persisted, context: { workspaceVersion: `synthetic-${writes}` } } })
 })
 describe('bounded Gmail reconciliation whole-message prefixes', () => {
+  it('observes phases without changing the five-message commit or continuation', async () => {
+    const phases: string[] = []
+    let processed = 0
+    const observed = await runGmailReconciliationForBinding({ binding, tokenEncryptionKey: 'synthetic-key', googleClientId: 'synthetic-client', googleClientSecret: 'synthetic-value',
+      forceStart: true, now: () => now, fetchImpl, execution: {
+        observer: { phase: value => phases.push(value), processed: () => { processed += 1 } },
+        beforeWorkspaceWrite: async () => { phases.push('lease_assert') },
+      } })
+    expect(phases).toEqual(['token_refresh', 'workspace_read', 'gmail_list', 'message_parse', 'semantic_apply', 'lease_assert', 'workspace_commit', 'checkpoint'])
+    expect(processed).toBe(5)
+    expect(observed.summary.scannedCount).toBe(5)
+    expect(observed.continuation?.pendingMessageIds).toEqual(ids.slice(5))
+    expect(writes).toBe(1)
+  })
+
   it('commits a budget-bounded prefix, retains fetched remainder and eventually covers all records once', async () => {
     let allowed = 2
     let result = await run(binding, () => allowed-- > 0)

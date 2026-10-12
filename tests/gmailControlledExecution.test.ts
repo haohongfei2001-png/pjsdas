@@ -211,3 +211,34 @@ describe('opt-in controlled Gmail worker', () => {
     expect(aggregateHistoryLag([999000,850000,0,NaN,2000000],1000000)).toEqual({ count:3,sumMs:1151000,maxMs:1000000,under2m:1,under15m:1,over15m:1 })
   })
 })
+
+describe('diagnostics survive the original finish and generic error cleanup paths', () => {
+  for (const reconcile of [false, true]) {
+    for (const phase of ['workspace_read', 'gmail_fetch', 'message_parse', 'semantic_apply', 'workspace_commit', 'checkpoint'] as const) {
+      it(`${reconcile ? 'reconciliation' : 'polling'} preserves ${phase} on generic failure`, async () => {
+        const { writes, invoke, reconcile: scan } = harness()
+        const worker = reconcile ? state.reconcile : state.run
+        worker.mockImplementation(async options => {
+          options.execution.observer.phase(phase)
+          options.execution.observer.processed()
+          throw new Error('Synthetic error containing private material that must not be persisted')
+        })
+        await (reconcile ? scan() : invoke())
+        const finish = writes.find(item => item.rpc === (reconcile ? 'pjsdas_finish_gmail_reconciliation' : 'pjsdas_finish_gmail_execution'))!
+        expect(finish.data.metrics).toMatchObject({ status: 'error', errorCode: 'AUTOMATION_FAILED', diagnostics: { version: 1, phase, processedCount: 1 } })
+        expect(JSON.stringify(finish.data.metrics)).not.toContain('private material')
+      })
+    }
+    it(`${reconcile ? 'reconciliation' : 'polling'} retains the active phase after budget abort`, async () => {
+      const { writes, invoke, reconcile: scan } = harness({ budgetMs: 100 })
+      const worker = reconcile ? state.reconcile : state.run
+      worker.mockImplementation(async options => {
+        options.execution.observer.phase('workspace_commit')
+        await options.fetchImpl('https://example.invalid/slow')
+      })
+      await (reconcile ? scan() : invoke())
+      const finish = writes.find(item => item.rpc === (reconcile ? 'pjsdas_finish_gmail_reconciliation' : 'pjsdas_finish_gmail_execution'))!
+      expect(finish.data.metrics).toMatchObject({ errorCode: 'BUDGET_EXHAUSTED', diagnostics: { phase: 'workspace_commit' } })
+    })
+  }
+})

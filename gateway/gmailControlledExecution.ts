@@ -1,3 +1,4 @@
+import { createGmailExecutionDiagnostics } from './gmailExecutionDiagnostics.js'
 import { automationGoogleRefreshLifecycle } from './googleRefreshLifecycle.js'
 import { randomUUID } from 'node:crypto'
 import { createAutomationConnectionStore } from './automationConnectionStore.js'
@@ -20,8 +21,13 @@ export async function runControlledGmailExecutions(config: GmailAutomationHandle
       throw new WorkspaceSourceError('BUDGET_EXHAUSTED', 'Gmail execution budget exhausted; continuation was preserved.', true)
     }
   }
+  let diagnostics = createGmailExecutionDiagnostics()
   const rawFetch = config.fetchImpl ?? fetch
   const budgetFetch: typeof fetch = (input, init) => {
+    // Classify only the fixed Gmail endpoint; never retain the URL or IDs.
+    const url = new URL(input instanceof Request ? input.url : String(input))
+    if (url.hostname === 'gmail.googleapis.com') diagnostics.observer.phase(
+      /\/messages\/[^/]+$/.test(url.pathname) ? 'gmail_fetch' : 'gmail_list')
     ensureBudget()
     const priorSignal = init?.signal ?? (input instanceof Request ? input.signal : undefined)
     return rawFetch(input, { ...init, signal: priorSignal ? AbortSignal.any([controller.signal, priorSignal]) : controller.signal })
@@ -37,6 +43,7 @@ export async function runControlledGmailExecutions(config: GmailAutomationHandle
     if (requestedUserId) bindings = bindings.filter((binding) => binding.userId === requestedUserId)
     for (const [index, listed] of bindings.entries()) {
       if (controller.signal.aborted || remaining() <= reserveMs + 50) { deferredUsers = bindings.length - index; break }
+      diagnostics = createGmailExecutionDiagnostics()
       const executionToken = randomUUID()
       let owned = false
       try {
@@ -46,10 +53,12 @@ export async function runControlledGmailExecutions(config: GmailAutomationHandle
         const run = await runGmailAutomationForBinding({ binding, refreshLifecycle: { ...automationGoogleRefreshLifecycle(config.tokenEncryptionKey, binding, store, executionToken), signal: controller.signal }, tokenEncryptionKey: config.tokenEncryptionKey,
           googleClientId: config.googleClientId, googleClientSecret: config.googleClientSecret,
           fetchImpl: budgetFetch, now: config.now,
-          execution: { beforeWorkspaceWrite: async () => {
+          execution: { observer: diagnostics.observer, beforeWorkspaceWrite: async () => {
+            diagnostics.observer.phase('lease_assert')
             ensureBudget(); await store.assertGmailExecution(binding.userId, executionToken); ensureBudget()
           } },
         })
+        diagnostics.observer.phase('checkpoint')
         if (remaining() <= 1) {
           throw new WorkspaceSourceError('BUDGET_EXHAUSTED', 'Gmail execution budget exhausted before finalization.', true)
         }
@@ -68,7 +77,7 @@ export async function runControlledGmailExecutions(config: GmailAutomationHandle
               ...(run.coverageComplete && run.nextHistoryId ? { historyId: run.nextHistoryId } : {}),
               continuation: run.coverageComplete ? null : run.continuation,
               ...(run.coverageComplete ? { successAt: run.checkedAt } : {}),
-            }, run.metrics ?? { status: 'completed', mode: 'unknown' },
+            }, { ...(run.metrics ?? { status: 'completed' as const, mode: 'unknown' as const }), diagnostics: diagnostics.snapshot() },
           )
         } finally {
           clearTimeout(finishTimer)
@@ -77,7 +86,7 @@ export async function runControlledGmailExecutions(config: GmailAutomationHandle
       } catch (caught) {
         const code = controller.signal.aborted ? 'BUDGET_EXHAUSTED'
           : caught instanceof WorkspaceSourceError ? caught.code : 'AUTOMATION_FAILED'
-        const failureMetrics = controller.signal.aborted ? {} : gmailFailureMetrics(caught)
+        const failureMetrics = { ...(controller.signal.aborted ? {} : gmailFailureMetrics(caught)), diagnostics: diagnostics.snapshot() }
         if (owned && remaining() > 0) {
           const cleanup = new AbortController()
           const cleanupTimer = setTimeout(() => cleanup.abort(), Math.max(1, remaining()))
@@ -118,8 +127,13 @@ export async function runControlledGmailReconciliations(
       throw new WorkspaceSourceError('BUDGET_EXHAUSTED', 'Gmail reconciliation budget exhausted before complete coverage.', true)
     }
   }
+  let diagnostics = createGmailExecutionDiagnostics()
   const rawFetch = config.fetchImpl ?? fetch
   const budgetFetch: typeof fetch = (input, init) => {
+    // Classify only the fixed Gmail endpoint; never retain the URL or IDs.
+    const url = new URL(input instanceof Request ? input.url : String(input))
+    if (url.hostname === 'gmail.googleapis.com') diagnostics.observer.phase(
+      /\/messages\/[^/]+$/.test(url.pathname) ? 'gmail_fetch' : 'gmail_list')
     ensureBudget()
     const priorSignal = init?.signal ?? (input instanceof Request ? input.signal : undefined)
     return rawFetch(input, { ...init, signal: priorSignal ? AbortSignal.any([controller.signal, priorSignal]) : controller.signal })
@@ -150,6 +164,7 @@ export async function runControlledGmailReconciliations(
         deferredUsers = bindings.length - index
         break
       }
+      diagnostics = createGmailExecutionDiagnostics()
       const executionToken = randomUUID()
       let owned = false
       try {
@@ -184,15 +199,18 @@ export async function runControlledGmailReconciliations(
           now: config.now,
           forceStart,
           execution: {
+            observer: diagnostics.observer,
             // Reserve time for semantic application, the fenced workspace
             // commit and final continuation checkpoint. Never extend the cap.
             canProcessNextMessage: () => !controller.signal.aborted && remaining() > limitMs * 0.4,
             beforeWorkspaceWrite: async () => {
+            diagnostics.observer.phase('lease_assert')
             ensureBudget()
             await store.assertGmailExecution(binding.userId, executionToken)
             ensureBudget()
           } },
         })
+        diagnostics.observer.phase('checkpoint')
         if (remaining() <= 1) {
           throw new WorkspaceSourceError('BUDGET_EXHAUSTED', 'Gmail reconciliation budget exhausted before finalization.', true)
         }
@@ -214,7 +232,7 @@ export async function runControlledGmailReconciliations(
                 state: run.cycleComplete ? null : run.continuation,
                 cycleComplete: run.cycleComplete,
               },
-              run.metrics,
+              { ...run.metrics, diagnostics: diagnostics.snapshot() },
             )
           owned = false
         } finally {
@@ -224,7 +242,7 @@ export async function runControlledGmailReconciliations(
       } catch (caught) {
         const code = controller.signal.aborted ? 'BUDGET_EXHAUSTED'
           : caught instanceof WorkspaceSourceError ? caught.code : 'AUTOMATION_FAILED'
-        const failureMetrics = controller.signal.aborted ? {} : gmailFailureMetrics(caught)
+        const failureMetrics = { ...(controller.signal.aborted ? {} : gmailFailureMetrics(caught)), diagnostics: diagnostics.snapshot() }
         if (owned && remaining() > 0) {
           const cleanup = new AbortController()
           const cleanupTimer = setTimeout(() => cleanup.abort(), Math.max(1, remaining()))
