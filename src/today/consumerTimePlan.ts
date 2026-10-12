@@ -1,3 +1,4 @@
+import { defaultTimingModeForProcessEvent } from '../processEvents.js'
 import { actionArrangementDate, calendarNodeProjection, isExplicitActionArrangement, scheduleNodeEligible } from '../scheduleEligibility.js'
 import { actionDeadline, actionNodesById, compareActionDeadlines, deadlineBoundaryMs } from '../deadlineOrder.js'
 import { inactiveProcessActionIds, processRecoveryItems, todayProcessTimingOwner, type ProcessRecoveryItem } from '../fixedEventGuardLogic.js'
@@ -131,6 +132,20 @@ export function buildConsumerTimePlan(input: {
   const inactiveIds = inactiveProcessActionIds({ ...input, actions })
   const recoveryItems = processRecoveryItems({ ...input, actions })
   const recoveryIds = new Set(recoveryItems.map(item => item.actionId))
+  const sourceEvents = new Map(input.processEvents?.map(event => [event.id, event]))
+  const overdueActions = input.ranked.filter(({ action }) => recoveryIds.has(action.id)).map(item => item.action)
+  const overdueOwners = actionNodesById(input.nodes, overdueActions, input.opportunities, input.processEvents)
+  // A missed completion deadline does not complete or cancel the obligation.
+  // Past fixed occurrences remain history; only a still-valid deadline source
+  // can restore unplanned work to today's ordinary task membership.
+  const overdueObligationIds = new Set(overdueActions.filter(action => {
+    const event = action.processEventId ? sourceEvents.get(action.processEventId) : undefined
+    const owner = overdueOwners.get(action.id)
+    return action.timingMode === 'deadline' && !action.scheduledTemporal
+      && event && (event.timingMode ?? defaultTimingModeForProcessEvent(event.type)) === 'deadline' && !event.invalidation
+      && Boolean(actionDeadline(action, owner).deadline)
+      && (!owner || ['deadline', 'date_only', 'availability_window'].includes(owner.temporal.shape) && ['scheduled', 'in_progress'].includes(owner.state))
+  }).map(action => action.id))
   const today = localDateKey(input.now, input.timezone)
   // Preserve an explicit chosen work day; elapsed history must not erase user intent.
   // A retained fixed occurrence or scheduled arrangement is not reopened here.
@@ -138,7 +153,7 @@ export function buildConsumerTimePlan(input: {
     && action.plannedDate === today && action.timingMode !== 'fixed' && !action.scheduledTemporal
     && (action.status === 'todo' || action.status === 'doing')).map(item => item.action.id))
   const ranked = input.ranked.filter(item => !inactiveIds.has(item.action.id)
-    && (!recoveryIds.has(item.action.id) || explicitPastPlans.has(item.action.id)))
+    && (!recoveryIds.has(item.action.id) || explicitPastPlans.has(item.action.id) || overdueObligationIds.has(item.action.id)))
   const weekday = new Date(`${today}T12:00:00.000Z`).getUTCDay()
   const todayChoice = input.useRemainingDayDefault ? todayCapacity(input.preferences, input.now, input.timezone, input.availableMinutes) : undefined
   const capacityMinutes = todayChoice?.minutes ?? input.availableMinutes ?? capacityForDate(input.preferences, today, weekday)
@@ -196,7 +211,8 @@ export function buildConsumerTimePlan(input: {
     // A live recruiting obligation may be due without a chosen plan.
     // Ordinary task deadlines and old automatic apply tasks do not choose today.
     const event = input.processEvents?.find(event => event.id === action.processEventId && !event.invalidation)
-    return Boolean(event && event.dueAt && event.timingMode !== 'fixed'
+    return Boolean(event && actionDeadline(action, owner).deadline
+      && (event.timingMode ?? defaultTimingModeForProcessEvent(event.type)) !== 'fixed'
       && needsStartToday(item, nodeMap.get(action.id), today, input.timezone))
   }).sort(compare)
   const deadlineFor = (item: RankedAction) => {
