@@ -1,3 +1,4 @@
+import { createNotificationIdentityMatcher } from './notificationIdentityRegions.js'
 import { boundedCompanyNames } from './companyIdentity.js'
 import {
   defaultMinutesForProcessEvent,
@@ -51,16 +52,6 @@ function normalize(value: string) {
 function identityAlias(value: string) {
   return value.toLowerCase().match(/[\p{L}\p{N}]+/gu)?.join(' ') ?? ''
 }
-function identityContains(text: string, alias: string) {
-  // Spaces can separate a multiword name; punctuation cannot create a name.
-  const regions = text.toLowerCase().split(/[^\p{L}\p{N}\s]+/u)
-  return regions.some(region => {
-    const tokens = region.match(/[\p{L}\p{N}]+/gu) ?? []
-    const value = tokens.join(' ')
-    if (/^[a-z0-9 ]+$/i.test(alias)) return (` ${value} `).includes(` ${alias} `)
-    return value.includes(alias)
-  })
-}
 
 function genericRole(alias: string) {
   const value = normalize(alias).replace(/20\d{2}届?/g, '').replace(/^(?:秋季|春季|秋招|春招|应届)/, '')
@@ -82,6 +73,7 @@ function companyAliases(company: string) {
 }
 
 export function commonNotificationCompany(text: string, opportunities: Opportunity[]): string | undefined {
+  const identityContains = createNotificationIdentityMatcher()
   if (opportunities.length < 2) return undefined
   return companyAliases(opportunities[0]!.company).filter(alias => identityContains(notificationIdentityText(text), alias)
     && opportunities.every(item => companyAliases(item.company).includes(alias)))
@@ -133,6 +125,7 @@ export function notificationIdentityCanInherit(text: string, target: Opportunity
 
 /** A company hit cannot override an explicitly different role/company. */
 export function notificationIdentityCompatible(text: string, target: Opportunity, opportunities: Opportunity[]): boolean {
+  const identityContains = createNotificationIdentityMatcher()
   const evidence = notificationIdentityText(text)
   const targetCompanies = companyAliases(target.company)
   const targetRoles = roleAliases(target.role)
@@ -171,6 +164,7 @@ export function matchNotificationOpportunity(
   text: string,
   opportunities: Opportunity[],
 ): { selected?: Opportunity; candidates: OpportunityCandidate[]; confidence: 'high' | 'medium' | 'low' } {
+  const identityContains = createNotificationIdentityMatcher()
   text = notificationIdentityText(text)
   const scored = opportunities
     .map((opportunity): OpportunityCandidate => {
