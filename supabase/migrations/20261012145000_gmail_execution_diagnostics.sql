@@ -181,7 +181,10 @@ begin
             then least(25000, (metrics#>>'{diagnostics,durationsMs,workspace_commit}')::integer) else null end,
           'checkpoint', case when jsonb_typeof(metrics#>'{diagnostics,durationsMs,checkpoint}') = 'number'
             and coalesce(metrics#>>'{diagnostics,durationsMs,checkpoint}', '') ~ '^[0-9]{1,5}$'
-            then least(25000, (metrics#>>'{diagnostics,durationsMs,checkpoint}')::integer) else null end
+            then least(25000, (metrics#>>'{diagnostics,durationsMs,checkpoint}')::integer) else null end,
+          'complete', case when jsonb_typeof(metrics#>'{diagnostics,durationsMs,complete}') = 'number'
+            and coalesce(metrics#>>'{diagnostics,durationsMs,complete}', '') ~ '^[0-9]{1,5}$'
+            then least(25000, (metrics#>>'{diagnostics,durationsMs,complete}')::integer) else null end
         ))
       ))
     );
@@ -450,7 +453,10 @@ begin
             then least(25000, (metrics#>>'{diagnostics,durationsMs,workspace_commit}')::integer) else null end,
           'checkpoint', case when jsonb_typeof(metrics#>'{diagnostics,durationsMs,checkpoint}') = 'number'
             and coalesce(metrics#>>'{diagnostics,durationsMs,checkpoint}', '') ~ '^[0-9]{1,5}$'
-            then least(25000, (metrics#>>'{diagnostics,durationsMs,checkpoint}')::integer) else null end
+            then least(25000, (metrics#>>'{diagnostics,durationsMs,checkpoint}')::integer) else null end,
+          'complete', case when jsonb_typeof(metrics#>'{diagnostics,durationsMs,complete}') = 'number'
+            and coalesce(metrics#>>'{diagnostics,durationsMs,complete}', '') ~ '^[0-9]{1,5}$'
+            then least(25000, (metrics#>>'{diagnostics,durationsMs,complete}')::integer) else null end
         ))
       ))
     );

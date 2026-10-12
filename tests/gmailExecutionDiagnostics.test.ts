@@ -33,6 +33,14 @@ describe('bounded content-free Gmail execution diagnostics', () => {
     expect(collector.snapshot()).toEqual({ version: 1, phase: 'claim', processedCount: 100, durationsMs: { claim: 25_000 } })
     expect(JSON.stringify(collector.snapshot())).not.toContain('private-id')
   })
+  it('retains complete as a valid bounded duration matching the SQL contract', () => {
+    let now = 0
+    const collector = createGmailExecutionDiagnostics(() => now)
+    now = 10; collector.observer.phase('complete')
+    now = 35
+    expect(collector.snapshot()).toEqual({ version: 1, phase: 'complete', processedCount: 0,
+      durationsMs: { claim: 10, complete: 25 } })
+  })
   it('samples checkpoint time before the finish request without inventing future response duration', () => {
     let now = 0
     const collector = createGmailExecutionDiagnostics(() => now)
@@ -54,7 +62,10 @@ describe('bounded content-free Gmail execution diagnostics', () => {
       const added = after.slice(start, end)
       expect(added).toContain("jsonb_typeof(metrics->'diagnostics') = 'object'")
       expect(added).toContain("metrics#>'{diagnostics,version}' = '1'::jsonb")
-      for (const phase of GMAIL_EXECUTION_PHASES) expect(added).toContain(`'${phase}'`)
+      for (const phase of GMAIL_EXECUTION_PHASES) {
+        expect(added).toContain(`'${phase}'`)
+        expect(added).toContain(`{diagnostics,durationsMs,${phase}}`)
+      }
       expect(added).toContain('least(25000,')
       expect(added).toContain('least(100,')
       expect(added).not.toMatch(/state_patch|worker_token|target_user_id|execution_token|update public|execute|grant|revoke/i)
