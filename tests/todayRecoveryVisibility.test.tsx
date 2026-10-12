@@ -13,7 +13,7 @@ import { actionView, buildTodayBrief, latestByOccurrence } from '../src/todayBri
 import { rankActions } from '../src/decisionV3.js'
 import { unknownDeadlineWorkspace } from './fixtures/unknownDeadlineWorkspace.js'
 import { getTodayPlan } from '../src/ai/readLayer.js'
-import TodayFeature from '../src/today/TodayFeature.js'
+import TodayFeature, { type TodayFreshnessView } from '../src/today/TodayFeature.js'
 import { createCapacityAutosaver } from '../src/today/capacityAutosave.js'
 import { buildScheduleStream } from '../src/schedule/scheduleStream.js'
 
@@ -64,11 +64,11 @@ function invalidate(snapshot: ReturnType<typeof source>) {
 function recovery(snapshot: ReturnType<typeof source>, at = context) {
   return processRecoveryItems({ ...snapshot.data, nodes: snapshot.data.scheduleNodes ?? [], ...at })
 }
-function render(snapshot: ReturnType<typeof source>, availableMinutes: number, at = context) {
+function render(snapshot: ReturnType<typeof source>, availableMinutes: number, at = context, freshness: TodayFreshnessView = { state: 'current' }) {
   const selection = selectTodayWeb(snapshot, { availableMinutes }, at)
   return renderToStaticMarkup(<TodayFeature selection={selection}
     stream={buildScheduleStream(snapshot, { ...at, accountKey: 'test', workspaceRevision: '1' })}
-    opportunities={snapshot.data.opportunities} now={at.now} workspaceEmpty={false} freshness={{ state: 'current' }}
+    opportunities={snapshot.data.opportunities} now={at.now} workspaceEmpty={false} freshness={freshness}
     onStart={() => {}} capacityScope="test" capacityAutosaver={createCapacityAutosaver(async () => {}, () => {})}
     capacitySaveState={{ pending: false }} onRetry={() => {}} onOpenDecision={() => {}} onOpenAgenda={() => {}}
     onExecute={async () => {}} onMark={async () => {}} onOpenOpportunity={() => {}} />)
@@ -595,5 +595,24 @@ describe('truthful overdue and capacity reasons', () => {
     expect(selectTodayWeb(snapshot, { availableMinutes: 480 }, context).visibleActions).toEqual([])
     expect(getTodayPlan(snapshot, { availableMinutes: 480 }, context).capacityLimitedActions).toEqual([])
     expect(snapshot).toEqual(before)
+  })
+})
+
+
+describe('pending confirmation is not a device conflict', () => {
+  it.each(['en', 'zh'])('keeps pending changes visible without asking for reconciliation in %s', lang => {
+    language.lang = lang
+    try {
+      const snapshot = source([], []), before = structuredClone(snapshot)
+      const pending = render(snapshot, 480, context, { state: 'pending' })
+      expect(pending).toContain(lang === 'zh' ? '正在确认修改的同步结果' : 'Waiting for confirmation of your changes')
+      expect(pending).not.toContain(lang === 'zh' ? '本机状态待核对' : 'Review this device')
+      expect(pending).not.toContain(lang === 'zh' ? '打开设置' : 'Open settings')
+      expect(pending).toContain(lang === 'zh' ? '现有记录中没有今日任务' : 'No today tasks in the available records')
+      const blocked = render(snapshot, 480, context, { state: 'blocked' })
+      expect(blocked).toContain(lang === 'zh' ? '本机状态待核对' : 'Review this device')
+      expect(blocked).toContain(lang === 'zh' ? '打开设置' : 'Open settings')
+      expect(snapshot).toEqual(before)
+    } finally { language.lang = 'en' }
   })
 })

@@ -394,6 +394,11 @@ export default function AppV8() {
             latencyMs: result.latencyMs,
           })
           if (result.changed) await reload()
+        } else if (result.state === 'pending_operations' && !getAccountCheckpoint(accountKey).conflict
+          && !listAccountPendingOperations(accountKey).some(item => item.status === 'conflict' || item.status === 'rollback_pending' || item.status === 'projection_pending')) {
+          // A durable command awaiting its receipt is normal asynchronous work,
+          // not evidence that the user needs to reconcile this device.
+          setTodayFreshness({ state: 'pending', observedAt: result.observedAt, latencyMs: result.latencyMs })
         } else {
           setTodayFreshness({
             state: 'blocked',
