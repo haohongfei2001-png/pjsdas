@@ -130,3 +130,52 @@ describe('universal audited semantic decision dismissal', () => {
   })
 
 })
+
+describe('dismissal lookup source prefilter', () => {
+  it('does not scan legacy evidence for 350 non-dismissed or other-source requests', () => {
+    const base = seeded()
+    const template = base.data.decisionRequests![0]!
+    const input = observation()
+    input.source.sourceVersion = 'reconciliation-v2'
+    base.data.decisionRequests = Array.from({ length: 350 }, (_, index) => {
+      const request = structuredClone(template)
+      request.id = `synthetic-history-${index}`
+      request.state = index % 2 ? 'superseded' : 'dismissed'
+      request.payloadBinding.source.sourceVersion = 'reconciliation-v1'
+      delete request.payloadBinding.originalTextFingerprint
+      if (request.state === 'dismissed') {
+        request.payloadBinding.source.sourceRecordId = `synthetic-other-${index}`
+        request.dismissal = { commandId: `synthetic-dismiss-${index}`, dismissedAt: now.toISOString(),
+          reason: 'Synthetic dismissal', evidenceRefs: [], expectedRequestUpdatedAt: now.toISOString(), expectedFingerprint: 'a'.repeat(64) }
+      }
+      return request
+    })
+    let scans = 0
+    base.data.timeline = new Proxy(base.data.timeline ?? [], {
+      get(target, key, receiver) {
+        if (key === 'flatMap') scans += 1
+        return Reflect.get(target, key, receiver)
+      },
+    })
+    for (let index = 0; index < 17; index += 1) {
+      expect(dismissedSemanticCandidate(base, input, input.candidates[0]!)).toBe(false)
+    }
+    expect(scans).toBe(0)
+  })
+
+  it.each(['open', 'expired', 'answered', 'auto_resolved', 'superseded'] as const)('does not treat a %s request as a dismissal', state => {
+    const base = seeded()
+    const request = base.data.decisionRequests![0]!
+    request.state = state
+    request.dismissal = { commandId: 'synthetic-prior-dismiss', dismissedAt: now.toISOString(), reason: 'Synthetic',
+      evidenceRefs: [], expectedRequestUpdatedAt: now.toISOString(), expectedFingerprint: 'a'.repeat(64) }
+    expect(dismissedSemanticCandidate(base, observation(), observation().candidates[0]!)).toBe(false)
+  })
+
+  it('requires dismissal audit even when the state and source match', () => {
+    const base = seeded()
+    base.data.decisionRequests![0]!.state = 'dismissed'
+    delete base.data.decisionRequests![0]!.dismissal
+    expect(dismissedSemanticCandidate(base, observation(), observation().candidates[0]!)).toBe(false)
+  })
+})
