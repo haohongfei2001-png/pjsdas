@@ -707,7 +707,7 @@ test('quiet Today and a real DecisionRequest remain legible without invented act
   await installServer(page, state)
 
   await page.goto('/pjsdas/today')
-  await expect(page.getByText('现在没有必须处理的任务')).toBeVisible()
+  await expect(page.getByText('当前没有今日任务')).toBeVisible()
   await expect(page.locator('.tsui-task-row')).toHaveCount(0)
   await mkdir(VISUAL_DIR, { recursive: true })
   expect((await page.locator('.tsui-task-panel').boundingBox())!.height).toBeLessThan(300)
