@@ -448,7 +448,7 @@ export function getTodayPlan(
     plannedMinutes: consumerPlan.plannedMinutes,
     capacityConflict: consumerPlan.conflicts.length > 0 || consumerPlan.overBudgetMinutes > 0,
     startableActions,
-    capacityLimitedActions: consumerPlan.deferredToday.map(capacityLimitedAction),
+    capacityLimitedActions: consumerPlan.deferredToday.map(item => capacityLimitedAction(item, consumerPlan.deadlinePassedActionIds.includes(item.action.id) ? 'deadline_passed' : 'insufficient_time')),
     fixedEvents,
     blockedOrRecoveryItems,
   }

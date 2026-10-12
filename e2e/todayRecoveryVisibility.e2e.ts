@@ -249,6 +249,7 @@ for (const obligationCount of [0, 5]) test(`approved Today preserves ${obligatio
     await expect(page.locator('[data-recovery-action-id]')).toHaveCount(0)
     await expect(page.getByText('过期流程待确认', { exact: true })).toHaveCount(0)
     await expect(page.locator('.tsui-task-panel .tsui-count')).toHaveText(String(obligationCount))
+    await expect(page.locator('.tsui-inline-notice')).toHaveCount(0)
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true)
     await info.attach(`approved-obligations-${obligationCount}-${width}-${scale}`, { body: await page.screenshot({ fullPage: true }), contentType: 'image/png' })
     if (width <= 700) await page.locator('.tsui-mobile-switch button').nth(1).click()

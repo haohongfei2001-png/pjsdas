@@ -109,12 +109,13 @@ describe('read-only overdue process recovery', () => {
     const obligations = ids.slice(1)
     expect(web.actions).toEqual([])
     expect(web.visibleActions.map(item => item.actionId)).toEqual(obligations)
-    expect(web.businessConflicts[0]?.kind).toBe('hard_deadline_capacity')
-    expect(web.notSelectedHardActions.map(item => item.actionId)).toEqual(obligations)
-    expect(mcp.capacityConflict).toBe(true); expect(mcp.startableActions).toEqual([])
+    expect(web.businessConflicts).toEqual([])
+    expect(web.notSelectedHardActions).toEqual([])
+    expect(mcp.capacityConflict).toBe(false); expect(mcp.startableActions).toEqual([])
     expect(mcp.capacityLimitedActions.map(item => item.actionId)).toEqual(obligations)
     expect(brief.capacityLimitedActions).toEqual(mcp.capacityLimitedActions)
-    expect(mcp.blockedOrRecoveryItems.map(item => item.id)).toEqual(obligations)
+    expect(mcp.blockedOrRecoveryItems).toEqual([])
+    expect(mcp.capacityLimitedActions.every(item => item.reason === 'deadline_passed')).toBe(true)
     expect(mcp.blockedOrRecoveryItems.every(item => !item.reason.includes('确认'))).toBe(true)
     expect(brief.recoveryItems).toEqual(web.recoveryItems)
     expect(selectTodayWebNormalized(readModelSnapshot(snapshot), { availableMinutes }, at)).toEqual(web)
@@ -128,7 +129,8 @@ describe('read-only overdue process recovery', () => {
     const plan = buildConsumerTimePlan({ ranked: snapshot.data.actions.map(action => ({ action, reasons: [] })),
       ...snapshot.data, nodes: snapshot.data.scheduleNodes!, availableMinutes, useRemainingDayDefault: true, ...context })
     expect(plan.planned.map(item => item.action.id)).toEqual(['fresh'])
-    expect(plan.plannedMinutes).toBe(30); expect(plan.deferredHard.map(item => item.action.id)).toEqual(snapshot.data.actions.slice(1, 5).map(item => item.id))
+    expect(plan.plannedMinutes).toBe(30); expect(plan.deferredHard).toEqual([])
+    expect(plan.deadlinePassedActionIds).toEqual(snapshot.data.actions.slice(1, 5).map(item => item.id))
     expect(plan.recoveryItems).toHaveLength(5)
     expect(snapshot).toEqual(before)
   })
@@ -483,12 +485,16 @@ describe('approved overdue obligation membership', () => {
       expect(plan.startableActions).toEqual([])
       expect(plan.capacityLimitedActions.map(item => item.actionId)).toEqual(ids)
       expect(brief.capacityLimitedActions).toEqual(plan.capacityLimitedActions)
-      expect(plan.blockedOrRecoveryItems.map(item => item.id)).toEqual(ids)
+      expect(plan.blockedOrRecoveryItems).toEqual([])
+      expect(plan.capacityConflict).toBe(false)
+      expect(web.businessConflicts).toEqual([])
+      expect(plan.capacityLimitedActions.every(item => item.reason === 'deadline_passed')).toBe(true)
       expect(plan.blockedOrRecoveryItems.every(item => !item.reason.includes('确认'))).toBe(true)
       const html = render(snapshot, availableMinutes)
       expect(html.match(/data-action-id=/g)).toHaveLength(5)
       expect(html).not.toContain('No tasks for today')
       expect(html).not.toContain('data-recovery-action-id')
+      expect(html).not.toContain('tsui-inline-notice')
     }
     expect(snapshot).toEqual(before)
     const completed = structuredClone(snapshot)
@@ -524,7 +530,7 @@ describe('approved overdue obligation membership', () => {
 })
 
 describe('canonical overdue deadline forms', () => {
-  it.each(['date_only', 'availability_window', 'default_mode', 'window_without_raw_due'] as const)('keeps %s source obligations without fabricated timing', form => {
+  it.each(['date_only', 'availability_window', 'default_mode', 'missing_action_mode', 'missing_both_modes', 'window_without_raw_due'] as const)('keeps %s source obligations without fabricated timing', form => {
     const item = process(`shape-${form}`, form === 'date_only' ? '2026-09-27' : '2026-09-27T15:00:00Z')
     if (form === 'date_only') {
       item.event.duePrecision = item.action.duePrecision = 'date'
@@ -532,7 +538,10 @@ describe('canonical overdue deadline forms', () => {
     } else if (form === 'availability_window' || form === 'window_without_raw_due') {
       item.event.temporal = { shape: 'availability_window', precision: 'datetime', timezone: 'UTC', startAt: '2026-09-26T09:00:00Z', endAt: '2026-09-27T15:00:00Z', resolutionBasis: 'source_explicit' }
       if (form === 'window_without_raw_due') { item.event.dueAt = undefined; item.action.dueAt = undefined }
-    } else item.event.timingMode = undefined
+    } else {
+      if (form !== 'missing_action_mode') item.event.timingMode = undefined
+      if (form !== 'default_mode') item.action.timingMode = undefined
+    }
     const snapshot = source([item]), before = structuredClone(snapshot)
     for (const timezone of ['UTC', 'Asia/Shanghai', 'America/Los_Angeles']) {
       const at = { ...context, timezone }
@@ -540,6 +549,51 @@ describe('canonical overdue deadline forms', () => {
       expect(getTodayPlan(snapshot, { availableMinutes: 0 }, at).capacityLimitedActions.map(x => x.actionId)).toEqual([item.action.id])
       expect(buildTodayBrief(snapshot, { availableMinutes: 0 }, at).capacityLimitedActions.map(x => x.actionId)).toEqual([item.action.id])
     }
+    expect(snapshot).toEqual(before)
+  })
+})
+
+
+describe('truthful overdue and capacity reasons', () => {
+  it.each([0, 480])('keeps explicitly chosen past work classified by actual capacity at %i minutes', availableMinutes => {
+    const item = process('explicit-reason'); item.action.plannedDate = '2026-10-11'
+    const snapshot = source([item]), before = structuredClone(snapshot)
+    const web = selectTodayWeb(snapshot, { availableMinutes }, context)
+    const plan = getTodayPlan(snapshot, { availableMinutes }, context)
+    const brief = buildTodayBrief(snapshot, { availableMinutes }, context)
+    expect(web.visibleActions.map(x => x.actionId)).toEqual([item.action.id])
+    expect(web.businessConflicts).toEqual([])
+    expect(plan.capacityLimitedActions.map(x => x.reason)).toEqual(availableMinutes ? [] : ['insufficient_time'])
+    expect(brief.capacityLimitedActions).toEqual(plan.capacityLimitedActions)
+    expect(plan.startableActions.map(x => x.actionId)).toEqual(availableMinutes ? [item.action.id] : [])
+    expect(snapshot).toEqual(before)
+  })
+  it('keeps a future hard capacity conflict separate from an already missed deadline', () => {
+    const old = process('missed'), future = process('future-hard', '2026-10-11T09:00:00Z', 90)
+    const snapshot = source([old, future]), before = structuredClone(snapshot)
+    const web = selectTodayWeb(snapshot, { availableMinutes: 480 }, context)
+    const plan = getTodayPlan(snapshot, { availableMinutes: 480 }, context)
+    expect(web.visibleActions.map(x => x.actionId)).toEqual([old.action.id, future.action.id])
+    expect(web.businessConflicts).toHaveLength(1)
+    expect(web.businessConflicts[0].relatedIds).toEqual([future.action.id])
+    expect(plan.startableActions).toEqual([])
+    expect(plan.capacityLimitedActions.map(x => x.reason)).toEqual(['deadline_passed', 'insufficient_time'])
+    expect(buildTodayBrief(snapshot, { availableMinutes: 480 }, context).capacityLimitedActions).toEqual(plan.capacityLimitedActions)
+    expect(snapshot).toEqual(before)
+  })
+  it.each(['interview_invite', 'written_test_invite'] as const)('does not restore default fixed %s when modes are absent', type => {
+    const item = process('default-fixed'); item.event.type = type
+    item.event.timingMode = undefined; item.action.timingMode = undefined
+    const snapshot = source([item]), before = structuredClone(snapshot)
+    expect(selectTodayWeb(snapshot, { availableMinutes: 480 }, context).visibleActions).toEqual([])
+    expect(getTodayPlan(snapshot, { availableMinutes: 480 }, context).capacityLimitedActions).toEqual([])
+    expect(snapshot).toEqual(before)
+  })
+  it('does not override an explicitly fixed action with a deadline event', () => {
+    const item = process('explicit-fixed'); item.action.timingMode = 'fixed'
+    const snapshot = source([item]), before = structuredClone(snapshot)
+    expect(selectTodayWeb(snapshot, { availableMinutes: 480 }, context).visibleActions).toEqual([])
+    expect(getTodayPlan(snapshot, { availableMinutes: 480 }, context).capacityLimitedActions).toEqual([])
     expect(snapshot).toEqual(before)
   })
 })
