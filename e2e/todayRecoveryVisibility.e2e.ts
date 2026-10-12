@@ -21,7 +21,7 @@ function fixture(minutes: number) {
   }, NOW.toISOString())
 }
 
-for (const minutes of [0, 56]) test(`Today ${minutes} minutes keeps tasks interactive and overdue events reviewable`, async ({ page }, info) => {
+for (const minutes of [0, 56]) test(`Today ${minutes} minutes keeps tasks interactive and elapsed history out of Today`, async ({ page }, info) => {
   const pageErrors: string[] = []
   page.on('pageerror', error => pageErrors.push(error.message))
   // No test request may leave the local fixture server, including auth/analytics.
@@ -37,8 +37,8 @@ for (const minutes of [0, 56]) test(`Today ${minutes} minutes keeps tasks intera
   const ids = ['event-action:today', 'manual', 'small']
   for (const id of ids) await expect(page.locator(`[data-action-id="${id}"]`)).toHaveCount(1)
   await expect(page.locator('[data-action-id]')).toHaveCount(3)
-  await expect(page.locator('[data-capacity-limited-action-id]')).toHaveCount(minutes ? 2 : 3)
-  await expect(page.locator('[data-recovery-action-id="event-action:old"]')).toBeVisible()
+  await expect(page.locator('[data-capacity-limited-action-id]')).toHaveCount(0)
+  await expect(page.locator('[data-recovery-action-id]')).toHaveCount(0)
   await expect(page.locator('.tsui-task-panel .tsui-count')).toHaveText('3')
   await expect(page.getByText('Nothing requires action right now', { exact: true })).toHaveCount(0)
   // Synthetic initial cards and recovery state are reviewable in artifacts and
@@ -50,7 +50,7 @@ for (const minutes of [0, 56]) test(`Today ${minutes} minutes keeps tasks intera
   console.log(`TODAY_RECOVERY_VISUAL_${minutes}_END`)
   // Passive rendering and recovery navigation do not mark any task complete.
   expect((await read(page)).data.actions).toEqual(initial.data.actions)
-  await page.locator('[data-recovery-action-id="event-action:old"]').click()
+  await page.goto('/pjsdas/library/job-old')
   await expect(page).toHaveURL(/\/library\/job-old$/)
   await expect(page.getByRole('heading', { name: 'Role old', exact: true })).toBeVisible()
   await page.goBack()
@@ -100,7 +100,7 @@ for (const minutes of [0, 56]) test(`Today ${minutes} minutes keeps tasks intera
   await page.reload()
   await expect(page.locator('[data-action-id="event-action:today"]')).toHaveCount(1)
   await expect(page.locator('[data-action-id="small"]')).toHaveCount(1)
-  await expect(page.locator('[data-recovery-action-id="event-action:old"]')).toHaveCount(1)
+  await expect(page.locator('[data-recovery-action-id]')).toHaveCount(0)
   const after = await read(page)
   expect(after.data.actions.find(item => item.id === 'event-action:old')?.status).toBe('todo')
   expect(after.data.processEvents).toEqual(initial.data.processEvents)
@@ -118,12 +118,10 @@ for (const minutes of [0, 56]) test(`Chinese Today ${minutes} minutes preserves 
   await page.evaluate(async value => (await import('/pjsdas/src/db.ts')).replaceLocalSnapshotFromCloud(value), fixture(minutes))
   await page.goto('/pjsdas/today')
   await expect(page.locator('[data-action-id]')).toHaveCount(3)
-  await expect(page.locator('[data-capacity-limited-action-id]')).toHaveCount(minutes ? 2 : 3)
-  await expect(page.locator('[data-recovery-action-id="event-action:old"]')).toBeVisible()
-  const recoveryTitle = page.getByRole('region', { name: '过期流程待确认', exact: true }).locator('strong')
-  await expect(recoveryTitle).toHaveText('过期流程待确认 · 1')
-  await expect(recoveryTitle).toBeVisible()
-  await expect(page.locator('[data-action-id="manual"]')).toContainText('当前可用时间不足')
+  await expect(page.locator('[data-capacity-limited-action-id]')).toHaveCount(0)
+  await expect(page.locator('[data-recovery-action-id]')).toHaveCount(0)
+  await expect(page.getByRole('region', { name: '过期流程待确认', exact: true })).toHaveCount(0)
+  await expect(page.locator('[data-action-id="manual"]')).not.toContainText('当前可用时间不足')
   await expect(page.getByText('现在没有必须处理的任务', { exact: true })).toHaveCount(0)
   const before = await read(page)
   await info.attach(`today-recovery-zh-${minutes}-initial`, { body: await page.screenshot({ fullPage: true }), contentType: 'image/png' })
@@ -134,7 +132,7 @@ for (const minutes of [0, 56]) test(`Chinese Today ${minutes} minutes preserves 
   expect((await read(page)).data).toEqual(before.data)
   await page.reload()
   await expect(page.locator('[data-action-id]')).toHaveCount(3)
-  await expect(page.locator('[data-recovery-action-id="event-action:old"]')).toBeVisible()
+  await expect(page.locator('[data-recovery-action-id]')).toHaveCount(0)
   expect((await read(page)).data).toEqual(before.data)
 })
 
@@ -155,7 +153,7 @@ test('all 500 dense Today tasks remain accessible, searchable, printable and key
   await page.evaluate(async value => (await import('/pjsdas/src/db.ts')).replaceLocalSnapshotFromCloud(value), snapshot)
   await page.goto('/pjsdas/today')
   await expect(page.locator('[data-action-id]')).toHaveCount(500)
-  await expect(page.locator('[data-capacity-limited-action-id]')).toHaveCount(500)
+  await expect(page.locator('[data-capacity-limited-action-id]')).toHaveCount(0)
   await expect(page.locator('.tsui-task-list')).toHaveClass(/is-dense/)
   const before = await read(page)
   const last = page.locator('[data-action-id="dense-499"]')
@@ -227,4 +225,38 @@ test('all 500 dense Today tasks remain accessible, searchable, printable and key
   await expect(page.locator('[data-action-id]')).toHaveCount(499)
   expect((await read(page)).data.actions.filter(item => item.id !== 'dense-499')).toEqual(before.data.actions.filter(item => item.id !== 'dense-499'))
   console.log(`TODAY_DENSE_ACCESSIBILITY:${JSON.stringify({ tasks: 500, findResult, bounds, userCompleted: 'dense-499' })}`)
+})
+
+test('approved Today empty panels do not turn nine elapsed records into confirmation work', async ({ page }, info) => {
+  await page.route('**/*', route => new URL(route.request().url()).hostname === '127.0.0.1' ? route.continue() : route.abort())
+  await page.addInitScript(() => localStorage.setItem('pjsdas-ui-language', 'zh'))
+  await page.clock.setFixedTime(NOW)
+  const jobs = Array.from({ length: 9 }, (_, index) => ({ ...opportunity(`past-${index}`, `合成公司${index + 1}`, '研发工程师'), processStage: 'assessment' as const }))
+  const events: ProcessEvent[] = jobs.map((job, index) => ({ id: `past-event-${index}`, opportunityId: job.id, company: job.company, role: job.role,
+    type: 'assessment_invite', source: 'email', occurredAt: '2026-09-01T00:00:00Z', dueAt: '2026-09-27T09:00:00Z', duePrecision: 'datetime', timingMode: 'deadline',
+    estimatedMinutes: 30, createdAt: '2026-09-01T00:00:00Z', updatedAt: '2026-09-01T00:00:00Z' }))
+  const value = createSnapshot({ opportunities: jobs, processEvents: events, actions: events.map(event => actionForProcessEvent(event)!), processes: [], prep: [], applicationGroups: [] }, NOW.toISOString())
+  await page.goto('/pjsdas/today'); await page.locator('.tsui-primary-nav').waitFor()
+  await page.evaluate(async snapshot => (await import('/pjsdas/src/db.ts')).replaceLocalSnapshotFromCloud(snapshot), value)
+  await page.goto('/pjsdas/today')
+  const before = await read(page)
+  for (const [width, scale] of [[1440, 100], [390, 100], [320, 200]]) {
+    await page.setViewportSize({ width, height: 900 })
+    await page.evaluate(size => { document.documentElement.style.fontSize = `${size}%` }, scale)
+    await expect(page.getByText('当前没有今日任务', { exact: true })).toBeVisible()
+    await expect(page.locator('[data-recovery-action-id]')).toHaveCount(0)
+    await expect(page.getByText('过期流程待确认', { exact: true })).toHaveCount(0)
+    await expect(page.locator('.tsui-task-panel .tsui-count')).toHaveText('0')
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true)
+    await info.attach(`approved-empty-${width}-${scale}`, { body: await page.screenshot({ fullPage: true }), contentType: 'image/png' })
+    if (width <= 700) await page.locator('.tsui-mobile-switch button').nth(1).click()
+    await expect(page.getByText('暂无近期节点', { exact: true })).toBeVisible()
+    if (width <= 700) await page.locator('.tsui-mobile-switch button').first().click()
+  }
+  expect((await read(page)).data).toEqual(before.data)
+  for (const job of jobs) {
+    await page.goto(`/pjsdas/library/${job.id}`)
+    await expect(page.getByRole('heading', { name: '研发工程师', exact: true })).toBeVisible()
+  }
+  expect((await read(page)).data.actions).toEqual(before.data.actions)
 })

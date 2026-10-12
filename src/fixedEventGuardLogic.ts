@@ -12,7 +12,7 @@ export function isUnresolvedPastFixed(action: Action, now: Date) {
   return action.timingMode === 'fixed' && isUnresolvedPastProcessEvent(action, now)
 }
 
-/** A read-only confirmation item, never a completion or abandonment decision. */
+/** A read-only historical record. Elapsed time alone requests no user action and decides no completion or abandonment. */
 export interface ProcessRecoveryItem {
   actionId: string
   opportunityId?: string

@@ -131,8 +131,14 @@ export function buildConsumerTimePlan(input: {
   const inactiveIds = inactiveProcessActionIds({ ...input, actions })
   const recoveryItems = processRecoveryItems({ ...input, actions })
   const recoveryIds = new Set(recoveryItems.map(item => item.actionId))
-  const ranked = input.ranked.filter(item => !inactiveIds.has(item.action.id) && !recoveryIds.has(item.action.id))
   const today = localDateKey(input.now, input.timezone)
+  // Preserve an explicit chosen work day; elapsed history must not erase user intent.
+  // A retained fixed occurrence or scheduled arrangement is not reopened here.
+  const explicitPastPlans = new Set(input.ranked.filter(({ action }) => recoveryIds.has(action.id)
+    && action.plannedDate === today && action.timingMode !== 'fixed' && !action.scheduledTemporal
+    && (action.status === 'todo' || action.status === 'doing')).map(item => item.action.id))
+  const ranked = input.ranked.filter(item => !inactiveIds.has(item.action.id)
+    && (!recoveryIds.has(item.action.id) || explicitPastPlans.has(item.action.id)))
   const weekday = new Date(`${today}T12:00:00.000Z`).getUTCDay()
   const todayChoice = input.useRemainingDayDefault ? todayCapacity(input.preferences, input.now, input.timezone, input.availableMinutes) : undefined
   const capacityMinutes = todayChoice?.minutes ?? input.availableMinutes ?? capacityForDate(input.preferences, today, weekday)
@@ -200,7 +206,7 @@ export function buildConsumerTimePlan(input: {
   }
   const mandatory = startable.filter(item => {
     const node = nodeMap.get(item.action.id)
-    return isHard(item, node) && needsStartToday(item, node, today, input.timezone)
+    return !explicitPastPlans.has(item.action.id) && isHard(item, node) && needsStartToday(item, node, today, input.timezone)
   }).sort(compare)
   // Exact instants can cross local midnight. Reserve fixed commitments through
   // those deadlines too; a local calendar boundary is not a fabricated cutoff.

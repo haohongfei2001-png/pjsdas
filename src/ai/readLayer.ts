@@ -426,12 +426,6 @@ export function getTodayPlan(
     }]
   })
 
-  const recovery = consumerPlan.recoveryItems.map((item) => ({
-    id: item.actionId,
-    label: item.title,
-    reason: '流程节点已过但仍未确认结果，需要先确认完成状态或采取恢复动作。',
-  }))
-
   const blocked = consumerPlan.conflicts.flatMap(conflict => conflict.relatedIds.map(id => ({
     id,
     label: workspace.actions.find(action => action.id === id)?.title ?? id,
@@ -439,7 +433,7 @@ export function getTodayPlan(
   })))
 
   const blockedIds = new Set<string>()
-  const blockedOrRecoveryItems = [...recovery, ...blocked].filter((item) => {
+  const blockedOrRecoveryItems = blocked.filter((item) => {
     if (blockedIds.has(item.id)) return false
     blockedIds.add(item.id)
     return true

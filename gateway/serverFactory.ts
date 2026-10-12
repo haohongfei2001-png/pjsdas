@@ -250,13 +250,13 @@ export function createPjsdasMcpServer(
 
   server.registerTool('get_today_brief', {
     title: 'Get TodayAction Today brief',
-    description: 'Read the canonical revision-bound daily decision contract: one next action, deadline-ordered next actions, recruiting agenda, relevant DecisionRequests, material coverage warnings, executability and latest-start protection. capacityLimitedActions keeps today’s time-limited tasks accessible without claiming they fit; recoveryItems lists past recruiting obligations needing confirmation, never automatic completion.',
+    description: 'Read the canonical revision-bound daily decision contract: one next action, deadline-ordered next actions, recruiting agenda, relevant DecisionRequests, material coverage warnings, executability and latest-start protection. capacityLimitedActions keeps today’s time-limited tasks accessible without claiming they fit; recoveryItems is read-only past recruiting history: elapsed time alone does not request confirmation or imply completion; actionable DecisionRequests identify concrete business questions.',
     inputSchema: getTodayBriefSchema, annotations: readOnlyAnnotations,
   }, async (args) => invokeReadTool(source, 'get_today_brief', args))
 
   server.registerTool('get_today_plan', {
     title: 'Get TodayAction today plan',
-    description: 'Read Today actions in actual deadline order with an optional available-time budget and real fixed-event constraints. startableActions is the feasible time plan; capacityLimitedActions remains accessible outside that recommendation. blockedOrRecoveryItems distinguishes past recruiting events needing confirmation from current capacity conflicts; no status is changed.',
+    description: 'Read Today actions in actual deadline order with an optional available-time budget and real fixed-event constraints. startableActions is the feasible time plan; capacityLimitedActions remains accessible outside that recommendation. blockedOrRecoveryItems contains actual current business conflicts; elapsed recruiting history alone requires no confirmation and no status is changed.',
     inputSchema: getTodayPlanSchema, annotations: readOnlyAnnotations,
   }, async (args) => invokeReadTool(source, 'get_today_plan', args))
 
