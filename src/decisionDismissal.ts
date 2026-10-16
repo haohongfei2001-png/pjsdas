@@ -152,9 +152,9 @@ export function dismissalSourceFingerprint(snapshot: PJSDASSnapshot, request: De
   return fingerprints.size === 1 ? [...fingerprints][0] : undefined
 }
 
-/** Only these two Gmail parser tags describe the same bytes, not new source versions. */
+/** Only these known Gmail parser tags describe the same bytes, not new source versions. */
 function sameGmailInterpreterContent(snapshot: PJSDASSnapshot, request: DecisionRequest, observation: SemanticIntakeObservation) {
-  const known = new Set(['uu06-v1', 'reconciliation-v1'])
+  const known = new Set(['uu06-v1', 'reconciliation-v1', 'reconciliation-v2'])
   return observation.source.kind === 'gmail'
     && request.payloadBinding.source.kind === 'gmail'
     && known.has(request.payloadBinding.source.sourceVersion ?? '')
@@ -171,8 +171,14 @@ function interpreterCandidate(candidate: ReturnType<typeof candidateIdentity>, s
 /** Observation clocks and input IDs may change during replay; source facts may not. */
 export function dismissedSemanticCandidate(snapshot: PJSDASSnapshot, observation: SemanticIntakeObservation, candidate: SemanticCandidate): boolean {
   return (snapshot.data.decisionRequests ?? []).some(request => {
-    const interpreterEquivalent = sameGmailInterpreterContent(snapshot, request, observation)
     const source = request.payloadBinding.source
+    // Only an audited dismissal for this exact source can suppress a candidate.
+    // Reject other requests before recovering fingerprints from the full ledger.
+    if (request.state !== 'dismissed' || !request.dismissal
+      || source.kind !== observation.source.kind
+      || source.sourceId !== observation.source.sourceId
+      || source.sourceRecordId !== observation.source.sourceRecordId) return false
+    const interpreterEquivalent = sameGmailInterpreterContent(snapshot, request, observation)
     const fingerprint = dismissalSourceFingerprint(snapshot, request)
     const gmailParserBinding = source.kind === 'gmail'
     const originalCandidate = interpreterEquivalent

@@ -13,7 +13,7 @@ import TodayCapacityControl from './TodayCapacityControl.js'
 import { remainingLocalDayMinutes } from './localDayCapacity.js'
 import { hasRepeatedApplicationContext } from './taskContext.js'
 
-export type TodayFreshnessState = 'local' | 'initial' | 'refreshing' | 'current' | 'updated' | 'cached' | 'blocked' | 'unavailable'
+export type TodayFreshnessState = 'local' | 'initial' | 'refreshing' | 'current' | 'updated' | 'cached' | 'pending' | 'blocked' | 'unavailable'
 export interface TodayFreshnessView {
   state: TodayFreshnessState
   observedAt?: string
@@ -45,6 +45,7 @@ function timeLabel(item: TodayBriefAction, zh: boolean, displayTimezone: string)
   if (timing.precision === 'date' && timing.date) return timing.date
   const at = timing.startAt ?? timing.deadlineAt
   if (!at) return zh ? '今天' : 'Today'
+  if (/^\d{4}-\d{2}-\d{2}$/.test(at)) return at
   const date = new Date(at)
   if (!Number.isFinite(date.getTime())) return zh ? '时间待定' : 'Time TBD'
   const formatted = formatScheduleTemporal(timing, zh, displayTimezone)
@@ -74,25 +75,20 @@ export default function TodayFeature({ selection, stream, opportunities, readOnl
   const awaiting = freshness.state === 'initial' && workspaceEmpty
   const unavailable = freshness.state === 'unavailable' && workspaceEmpty
   const verifiedEmpty = workspaceEmpty && (freshness.state === 'current' || freshness.state === 'updated')
-  const uncertainEmpty = freshness.state === 'cached' || freshness.state === 'blocked'
+  const uncertainEmpty = freshness.state === 'cached' || freshness.state === 'blocked' || freshness.state === 'pending'
+  const visibleActions = selection.visibleActions
+  const deferredHard = new Set(selection.notSelectedHardActions.map(item => item.actionId))
   const fixedConflict = selection.businessConflicts.find(item => item.kind === 'fixed_overlap')
   const deadlineConflict = selection.businessConflicts.find(item => item.kind === 'hard_deadline_capacity')
   const selectedHard = selection.actions.filter(item => deadlineConflict?.selectedIds?.includes(item.actionId))
-  const notSelectedHard = selection.notSelectedHardActions ?? []
   const tradeoffLabel = (item: TodayBriefAction) => [item.company, item.role].filter(Boolean).join(' · ')
     ? `${[item.company, item.role].filter(Boolean).join(' · ')}：${item.title}` : item.title
-  const dueToday = (item: TodayBriefAction) => item.timing?.precision === 'date' ? item.timing.date === todayKey
-    : Boolean(item.timing?.deadlineAt && localDateKey(new Date(item.timing.deadlineAt), selection.displayTimezone) === todayKey)
   const fixedNotice = fixedConflict ? <div className="tsui-inline-notice tsui-deadline-notice" role="status"><strong>{zh ? '两个固定安排时间冲突。' : 'Two fixed commitments overlap.'}</strong> <span>{fixedConflict.relatedIds.map(id => stream.sections.upcoming.find(entry => entry.nodeId === id)?.title ?? id).join(' · ')}</span> <button type="button" onClick={onOpenAgenda}>{zh ? '查看相关安排' : 'Review commitments'}</button></div> : null
   const deadlineNotice = deadlineConflict ? <div className="tsui-inline-notice tsui-deadline-notice" role="status">
     <strong>{zh ? '这些截止事项无法全部在可用时间内完成' : 'These deadlines do not all fit the available time'}</strong>
     <p>{selectedHard.length ? (zh ? '剩余时间预计可完成：' : 'Expected to fit: ') + selectedHard.map(tradeoffLabel).join('、')
       : (zh ? '按当前剩余时间，没有可完整完成的硬截止任务。' : 'No complete deadline task fits the remaining time.')}</p>
-    <p>{zh ? '以下事项未选入今天：' : 'Not selected for today: '}</p>
-    <ul>{notSelectedHard.map(item => <li key={item.actionId}>
-      <button type="button" data-deferred-action-id={item.actionId} onClick={event => item.opportunityId ? onOpenOpportunity(item.opportunityId, event.currentTarget) : onOpenAgenda()}>{tradeoffLabel(item)}</button>
-      {' · '}{zh ? '可用时间不足，未改变任务状态' : 'Insufficient available time; task status unchanged'}
-    </li>)}</ul>
+    <p>{zh ? '时间不足仅作提醒；所有今日事项仍在下方，可打开处理。' : 'Time is advisory. All today tasks remain available below to open and work on.'}</p>
     <button type="button" onClick={onOpenAgenda}>{zh ? '查看相关安排' : 'Review commitments'}</button>
   </div> : null
   async function act(id: string, operation: () => Promise<void>) {
@@ -105,25 +101,26 @@ export default function TodayFeature({ selection, stream, opportunities, readOnl
     </header>
 
     {readOnly ? <div className="tsui-alert" role="alert">{zh ? '今天暂时只读；已有记录和回执保留。' : 'Today is temporarily read only; existing records and receipts are retained.'}</div> : null}
+    {freshness.state === 'pending' ? <p className="tsui-freshness-note" role="status">{zh ? '正在确认修改的同步结果…' : 'Waiting for confirmation of your changes…'}</p> : null}
     {freshness.state === 'cached' ? <p className="tsui-freshness-note">{zh ? '显示已保存记录，等待更新。' : 'Showing saved records while updates are unavailable.'}</p> : null}
     {freshness.state === 'blocked' || (freshness.state === 'unavailable' && !workspaceEmpty) ? <div className="tsui-status tsui-compact-state" role="status">{freshness.state === 'blocked' ? (zh ? '本机状态待核对' : 'Review this device’s sync state') : (zh ? '暂时无法读取最新状态' : 'Latest state unavailable')} <button type="button" onClick={freshness.state === 'blocked' ? onStart : onRetry}>{freshness.state === 'blocked' ? (zh ? '打开设置' : 'Open settings') : (zh ? '重试' : 'Retry')}</button></div> : null}
     {awaiting || unavailable ? <div className="tsui-empty" role="status">{awaiting ? (zh ? '正在确认最新状态…' : 'Checking the latest state…') : <>{zh ? '暂时无法确认今天。' : 'Today is unavailable.'} <button type="button" onClick={onRetry}>{zh ? '重试' : 'Retry'}</button></>}</div> : <>
-      <div className="tsui-mobile-switch" role="group" aria-label={zh ? '今天内容' : 'Today content'}><button type="button" className={mobileView === 'tasks' ? 'active' : ''} onClick={() => setMobileView('tasks')}>{zh ? '任务' : 'Tasks'} <span>{selection.actionCount + selection.decisionCount}</span></button><button type="button" className={mobileView === 'nodes' ? 'active' : ''} onClick={() => setMobileView('nodes')}>{zh ? '节点' : 'Nodes'} <span>{stream.counts.upcoming}</span></button></div>
+      <div className="tsui-mobile-switch" role="group" aria-label={zh ? '今天内容' : 'Today content'}><button type="button" className={mobileView === 'tasks' ? 'active' : ''} onClick={() => setMobileView('tasks')}>{zh ? '任务' : 'Tasks'} <span>{visibleActions.length + selection.decisionCount}</span></button><button type="button" className={mobileView === 'nodes' ? 'active' : ''} onClick={() => setMobileView('nodes')}>{zh ? '节点' : 'Nodes'} <span>{stream.counts.upcoming}</span></button></div>
       <div className="tsui-today-grid">
-        <section className={'tsui-panel tsui-task-panel' + (mobileView === 'nodes' ? ' mobile-hidden' : '') + (selection.actionCount + selection.decisionCount <= 1 ? ' is-sparse' : '')} aria-label={zh ? '今天的任务' : 'Tasks for today'}>
-          <div className="tsui-panel-header"><div><h2>{zh ? '今日任务' : 'Today’s tasks'} <span className="tsui-count">{selection.actionCount + selection.decisionCount}</span></h2></div></div>
+        <section className={'tsui-panel tsui-task-panel' + (mobileView === 'nodes' ? ' mobile-hidden' : '') + (visibleActions.length + selection.decisionCount <= 1 ? ' is-sparse' : '')} aria-label={zh ? '今天的任务' : 'Tasks for today'}>
+          <div className="tsui-panel-header"><div><h2>{zh ? '今日任务' : 'Today’s tasks'} <span className="tsui-count">{visibleActions.length + selection.decisionCount}</span></h2></div></div>
           {deadlineNotice}
-          {selection.actions.length === 0 && selection.decisions.length === 0 ? <div className="tsui-empty">{uncertainEmpty ? <><strong>{zh ? '现有记录中没有今日任务' : 'No today tasks in the available records'}</strong><p>{freshness.state === 'cached' ? (zh ? '已保存记录中暂无今日任务；联网后会自动更新。' : 'No tasks in saved records; this updates when connected.') : (zh ? '本机状态待核对，请从上方进入设置。' : 'Review this device’s state in Settings above.')}</p></> : workspaceEmpty ? <><strong>{verifiedEmpty ? (zh ? '账号工作区已读取，目前没有今日任务' : 'Account workspace checked; no tasks for today') : (zh ? '先让 TodayAction 了解你的求职进展' : 'Start by adding your job search')}</strong><p>{verifiedEmpty ? (zh ? '可以记录新的进展，或在设置中检查连接。' : 'Record new progress or check your connections in Settings.') : (zh ? '在设置中连接已有账号，或使用上方“告诉 TodayAction”记录进展。' : 'Connect your existing account in Settings or record progress with Tell TodayAction above.')}</p><button type="button" onClick={onStart}>{zh ? '打开设置' : 'Open settings'}</button></> : <strong>{zh ? '现在没有必须处理的任务' : 'Nothing requires action right now'}</strong>}</div> : null}
-          <div className="tsui-task-list">
+          {visibleActions.length === 0 && selection.decisions.length === 0 ? <div className="tsui-empty">{uncertainEmpty ? <><strong>{zh ? '现有记录中没有今日任务' : 'No today tasks in the available records'}</strong><p>{freshness.state === 'pending' ? (zh ? '修改结果尚待同步确认。' : 'Changes are still awaiting sync confirmation.') : freshness.state === 'cached' ? (zh ? '已保存记录中暂无今日任务；联网后会自动更新。' : 'No tasks in saved records; this updates when connected.') : (zh ? '本机状态待核对，请从上方进入设置。' : 'Review this device’s state in Settings above.')}</p></> : workspaceEmpty ? <><strong>{verifiedEmpty ? (zh ? '账号工作区已读取，目前没有今日任务' : 'Account workspace checked; no tasks for today') : (zh ? '先让 TodayAction 了解你的求职进展' : 'Start by adding your job search')}</strong><p>{verifiedEmpty ? (zh ? '可以记录新的进展，或在设置中检查连接。' : 'Record new progress or check your connections in Settings.') : (zh ? '在设置中连接已有账号，或使用上方“告诉 TodayAction”记录进展。' : 'Connect your existing account in Settings or record progress with Tell TodayAction above.')}</p><button type="button" onClick={onStart}>{zh ? '打开设置' : 'Open settings'}</button></> : <strong>{zh ? '当前没有今日任务' : 'No tasks for today'}</strong>}</div> : null}
+          <div className={'tsui-task-list' + (visibleActions.length > 100 ? ' is-dense' : '')}>
             {selection.decisions.map((item) => <article className="tsui-task-row" data-icon="?" key={item.id}><div className="tsui-task-copy"><small>{zh ? '需要你决定' : 'Decision needed'}</small><strong>{presentDecision(item.request, opportunities, zh).title}</strong><span>{presentDecision(item.request, opportunities, zh).context}</span><span>{presentDecision(item.request, opportunities, zh).explanation}</span></div><button className="tsui-row-action" type="button" onClick={() => onOpenDecision(item.request.id)}>{zh ? '处理' : 'Review'}</button></article>)}
-            {selection.actions.map((item) => <article className="tsui-task-row" key={item.actionId} data-action-id={item.actionId} data-icon={item.company?.slice(0, 1) ?? '✓'}><div className="tsui-task-copy">{item.opportunityId ? !hasRepeatedApplicationContext(item) ? <button className="tsui-task-context" type="button" onClick={event => onOpenOpportunity(item.opportunityId!, event.currentTarget)}>{[item.company, item.role].filter(Boolean).join(' · ')}</button> : null : <small>{zh ? '独立任务' : 'Independent task'}</small>}<h3>{item.title}</h3><span>{timeLabel(item, zh, selection.displayTimezone)}</span></div><div className="tsui-task-actions"><button className="tsui-row-action" type="button" disabled={pendingId === item.actionId || readOnly} onClick={() => { void act(item.actionId, () => onExecute(item)) }}>{actionLabel(item, zh)}</button><button className={item.kind === 'apply' ? 'tsui-done-action tsui-submission-action' : 'tsui-done-action'} type="button" disabled={pendingId === item.actionId || readOnly} onClick={() => { void act(item.actionId, () => onMark(item.actionId, 'done', item.kind === 'apply' ? 'application_submission' : undefined)) }}>{pendingId === item.actionId ? (zh ? '处理中…' : 'Working…') : (item.kind === 'apply' ? (zh ? '我已投递' : 'I applied') : (zh ? '完成' : 'Done'))}</button></div></article>)}
+            {visibleActions.map((item) => <article className="tsui-task-row" key={item.actionId} data-action-id={item.actionId} data-deferred-action-id={deferredHard.has(item.actionId) ? item.actionId : undefined} data-icon={item.company?.slice(0, 1) ?? '✓'}><div className="tsui-task-copy">{item.opportunityId ? !hasRepeatedApplicationContext(item) ? <button className="tsui-task-context" type="button" onClick={event => onOpenOpportunity(item.opportunityId!, event.currentTarget)}>{[item.company, item.role].filter(Boolean).join(' · ')}</button> : null : <small>{zh ? '独立任务' : 'Independent task'}</small>}<h3>{item.title}</h3><span>{timeLabel(item, zh, selection.displayTimezone)}</span></div><div className="tsui-task-actions"><button className="tsui-row-action" type="button" disabled={pendingId === item.actionId || readOnly} onClick={() => { void act(item.actionId, () => onExecute(item)) }}>{actionLabel(item, zh)}</button><button className={item.kind === 'apply' ? 'tsui-done-action tsui-submission-action' : 'tsui-done-action'} type="button" disabled={pendingId === item.actionId || readOnly} onClick={() => { void act(item.actionId, () => onMark(item.actionId, 'done', item.kind === 'apply' ? 'application_submission' : undefined)) }}>{pendingId === item.actionId ? (zh ? '处理中…' : 'Working…') : (item.kind === 'apply' ? (zh ? '我已投递' : 'I applied') : (zh ? '完成' : 'Done'))}</button></div></article>)}
           </div>
           {completedToday.length > 0 ? <section className="tsui-completed"><button type="button" aria-expanded={showCompleted} onClick={() => setShowCompleted((value) => !value)}>{zh ? '今日已完成' : 'Completed today'} · {completedToday.length} <span>{showCompleted ? '⌃' : '⌄'}</span></button>{showCompleted ? completedToday.map((entry) => <div key={entry.id}>{entry.title}</div>) : null}</section> : null}
         </section>
         <aside className={'tsui-panel tsui-node-panel' + (mobileView === 'tasks' ? ' mobile-hidden' : '') + (stream.counts.upcoming === 0 ? ' is-empty' : '')} aria-label={zh ? '近期节点' : 'Upcoming nodes'}>
           <div className="tsui-panel-header"><div><h2>{zh ? '近期节点' : 'Upcoming nodes'}</h2><p>{zh ? '面试、笔试与真实截止时间' : 'Interviews, tests and real deadlines'}</p></div><button type="button" className="tsui-panel-link" onClick={onOpenAgenda}>{zh ? '打开日程' : 'Open schedule'} ›</button></div>
           {fixedNotice}
-          <div className="tsui-node-scroll"><ScheduleWindowList key={stream.key} stream={stream} section="upcoming" opportunities={opportunities} onOpenOpportunity={onOpenOpportunity} /></div>
+          <div className="tsui-node-scroll">{stream.counts.upcoming === 0 ? <p className="tsui-empty">{zh ? '暂无近期节点' : 'No upcoming nodes'}</p> : <ScheduleWindowList key={stream.key} stream={stream} section="upcoming" opportunities={opportunities} onOpenOpportunity={onOpenOpportunity} />}</div>
         </aside>
       </div>
     </>}

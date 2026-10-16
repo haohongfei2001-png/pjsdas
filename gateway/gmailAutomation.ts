@@ -1,3 +1,4 @@
+import type { GmailExecutionObserver } from './gmailExecutionDiagnostics.js'
 import type { GoogleRefreshLifecycle } from './googleRefreshLifecycle.js'
 import { dismissedSemanticCandidate } from '../src/decisionDismissal.js'
 import { aggregateHistoryLag, type GmailExecutionMetrics } from './gmailExecutionMetrics.js'
@@ -9,7 +10,7 @@ import {
   type GmailReconciliationContinuationState,
 } from './gmailReconciliationState.js'
 import { resolveSourceTemporal } from '../src/sourceTemporal.js'
-import { notificationIdentityCanInherit, notificationIdentityCompatible, notificationIdentityText, parseRecruitingNotification } from '../src/notificationParser.js'
+import { commonNotificationCompany, notificationIdentityCanInherit, notificationIdentityCompatible, notificationIdentityText, parseRecruitingNotification } from '../src/notificationParser.js'
 import { stageForProcessEvent } from '../src/processEvents.js'
 import {
   applyGmailIngestionHardened,
@@ -44,6 +45,10 @@ export const INITIAL_LOOKBACK_DAYS = 90
 export const RECONCILIATION_LOOKBACK_DAYS = 7
 export const RECONCILIATION_MAX_MESSAGES = 5000
 export const RECONCILIATION_BATCH_SIZE = UU06_MAX_MESSAGES_PER_RUN
+// A whole-snapshot commit can consume most of the unchanged execution window.
+// Keep one complete source message atomic; never advance an uncommitted cursor.
+export const RECONCILIATION_PARSE_SLICE_SIZE = 1
+const GMAIL_RECONCILIATION_PARSER_VERSION = 'reconciliation-v2'
 export const GMAIL_FRAGMENT_PARSE_LIMIT = 80
 
 interface GmailHeader { name?: string; value?: string }
@@ -147,7 +152,8 @@ function stripHtml(value: string) {
     .replace(/<style[\s\S]*?<\/style>/gi, ' ')
     .replace(/<script[\s\S]*?<\/script>/gi, ' ')
     .replace(/<br\s*\/?\s*>/gi, '\n')
-    .replace(/<\/p>/gi, '\n')
+    .replace(/<\/?(?:p|div|li|tr|h[1-6]|section|article|blockquote)(?:\s[^>]*)?>/gi, '\n')
+    .replace(/<\/?(?:span|font|b|strong|i|em|u|a|small|sup|sub)(?:\s[^>]*)?>/gi, '')
     .replace(/<[^>]+>/g, ' ')
     .replace(/&nbsp;/gi, ' ')
     .replace(/&amp;/gi, '&')
@@ -536,6 +542,7 @@ export async function fetchGmailReconciliationBatch(options: {
   continuation?: GmailReconciliationContinuationState
   fetchImpl?: typeof fetch
   now?: Date
+  maxMessages?: number
 }) {
   const fetchImpl = options.fetchImpl ?? fetch
   const now = options.now ?? new Date()
@@ -563,8 +570,9 @@ export async function fetchGmailReconciliationBatch(options: {
     )
   }
 
-  const selectedMessageIds = ids.slice(0, RECONCILIATION_BATCH_SIZE)
-  const pendingMessageIds = ids.slice(RECONCILIATION_BATCH_SIZE)
+  const limit = Math.max(1, Math.min(RECONCILIATION_BATCH_SIZE, Math.floor(options.maxMessages ?? RECONCILIATION_BATCH_SIZE)))
+  const selectedMessageIds = ids.slice(0, limit)
+  const pendingMessageIds = ids.slice(limit)
   const fetched = await fetchMessages(fetchImpl, options.accessToken, selectedMessageIds)
   const coverageComplete = pendingMessageIds.length === 0 && !nextPageToken
 
@@ -707,20 +715,20 @@ function finalReconciliationSummary(
   }
 }
 
-function reconciliationRecordVersion(record: GmailSemanticRecord): GmailSemanticRecord {
+export function reconciliationRecordVersion(record: GmailSemanticRecord): GmailSemanticRecord {
   const sourceRecordId = record.observation.source.sourceRecordId
   return {
     ...record,
     observation: {
       ...record.observation,
-      inputId: `gmail:${sourceRecordId}:reconciliation-v1`,
+      inputId: `gmail:${sourceRecordId}:${GMAIL_RECONCILIATION_PARSER_VERSION}`,
       source: {
         ...record.observation.source,
-        sourceVersion: 'reconciliation-v1',
+        sourceVersion: GMAIL_RECONCILIATION_PARSER_VERSION,
       },
       candidates: record.observation.candidates.map((candidate) => ({
         ...candidate,
-        sourceVersionRefs: [`${sourceRecordId}:reconciliation-v1`],
+        sourceVersionRefs: [`${sourceRecordId}:${GMAIL_RECONCILIATION_PARSER_VERSION}`],
       })),
     },
   }
@@ -735,7 +743,7 @@ export async function runGmailReconciliationForBinding(options: {
   fetchImpl?: typeof fetch
   now?: () => Date
   forceStart?: boolean
-  execution?: { beforeWorkspaceWrite: () => Promise<void> }
+  execution?: { observer?: GmailExecutionObserver; beforeWorkspaceWrite: () => Promise<void>; canProcessNextMessage?: () => boolean }
 }): Promise<GmailReconciliationRunResult> {
   const fetchImpl = options.fetchImpl ?? fetch
   const now = options.now?.() ?? new Date()
@@ -752,6 +760,7 @@ export async function runGmailReconciliationForBinding(options: {
     throw new WorkspaceSourceError('GOOGLE_GMAIL_SCOPE_MISSING', 'Gmail reconciliation requires the Gmail read-only permission.', false)
   }
 
+  options.execution?.observer?.phase('token_refresh')
   const refreshToken = await decryptSecret(options.binding.refreshTokenCiphertext, options.tokenEncryptionKey)
   const accessToken = await refreshGoogleAccessToken(refreshToken, {
     ...options.refreshLifecycle,
@@ -772,18 +781,42 @@ export async function runGmailReconciliationForBinding(options: {
         fetchImpl,
       })
     : createDriveWorkspaceSource({ getAccessToken: () => accessToken, fetchImpl, timezone: 'Asia/Shanghai' })
+  options.execution?.observer?.phase('workspace_read')
   const workspace = await source.read()
   const priorState = options.binding.gmailReconciliationState
+  options.execution?.observer?.phase('gmail_list')
   const batch = await fetchGmailReconciliationBatch({
     accessToken,
     continuation: priorState,
+    maxMessages: RECONCILIATION_PARSE_SLICE_SIZE,
     fetchImpl,
     now,
   })
-  const records = batch.messages
-    .map((message) => gmailSemanticRecordFromMessage(message, workspace.snapshot.data.opportunities, now))
-    .filter((record): record is GmailSemanticRecord => Boolean(record))
-    .map(reconciliationRecordVersion)
+  options.execution?.observer?.phase('message_parse')
+  const fetchedCount = batch.scannedCount
+  const messagesById = new Map(batch.messages.map(message => [message.id, message]))
+  const records: GmailSemanticRecord[] = []
+  let processedCount = 0
+  for (const id of batch.selectedMessageIds) {
+    if (processedCount >= RECONCILIATION_PARSE_SLICE_SIZE || options.execution?.canProcessNextMessage?.() === false) break
+    const message = messagesById.get(id)
+    if (message) {
+      const record = gmailSemanticRecordFromMessage(message, workspace.snapshot.data.opportunities, now)
+      if (record) records.push(reconciliationRecordVersion(record))
+    }
+    processedCount += 1
+    options.execution?.observer?.processed()
+  }
+  if (batch.selectedMessageIds.length && !processedCount) {
+    throw new WorkspaceSourceError('BUDGET_EXHAUSTED', 'Gmail reconciliation has no budget for a complete message; continuation was preserved.', true)
+  }
+  // Commit only whole-message prefixes. Already fetched but unparsed IDs stay
+  // ahead of the provider continuation, including after a lost finalization.
+  batch.pendingMessageIds = [...batch.selectedMessageIds.slice(processedCount), ...batch.pendingMessageIds]
+  batch.selectedMessageIds = batch.selectedMessageIds.slice(0, processedCount)
+  batch.unavailableMessageIds = batch.unavailableMessageIds.filter(id => batch.selectedMessageIds.includes(id))
+  batch.scannedCount = processedCount
+  batch.coverageComplete = !batch.pendingMessageIds.length && !batch.nextPageToken
   for (const sourceRecordId of batch.unavailableMessageIds) {
     records.push({
       receivedAt: checkedAt,
@@ -805,11 +838,13 @@ export async function runGmailReconciliationForBinding(options: {
   }
 
   const batchIdentity = [
+    GMAIL_RECONCILIATION_PARSER_VERSION,
     batch.cycleStartedAt,
     priorState?.pageToken ?? 'start',
     ...batch.selectedMessageIds,
   ].join('|')
   const runId = `gmail:reconcile:${stableIngestionHash(batchIdentity)}`
+  options.execution?.observer?.phase('semantic_apply')
   const result = applyGmailSemanticBatch(workspace.snapshot, {
     runId,
     sourceId: GMAIL_SOURCE_ID,
@@ -882,6 +917,7 @@ export async function runGmailReconciliationForBinding(options: {
   let workspaceVersion = workspace.context.workspaceVersion
   if (!result.alreadyApplied) {
     await options.execution?.beforeWorkspaceWrite()
+    options.execution?.observer?.phase('workspace_commit')
     const written = await requireWritableWorkspaceSource(source).write({
       snapshot: result.snapshot,
       expectedWorkspaceVersion: workspace.context.workspaceVersion,
@@ -896,7 +932,7 @@ export async function runGmailReconciliationForBinding(options: {
           batchScannedCount: batch.scannedCount,
           cycleComplete: batch.coverageComplete,
         },
-        provenance: { sourceId: GMAIL_SOURCE_ID, adapterVersion: 'reconciliation-v1' },
+        provenance: { sourceId: GMAIL_SOURCE_ID, adapterVersion: GMAIL_RECONCILIATION_PARSER_VERSION },
         compensation: { ...result.compensation },
         effectiveTime: checkedAt,
       },
@@ -904,6 +940,7 @@ export async function runGmailReconciliationForBinding(options: {
     workspaceVersion = written.context.workspaceVersion
   }
 
+  options.execution?.observer?.phase('checkpoint')
   return {
     userId: options.binding.userId,
     checkedAt,
@@ -915,7 +952,7 @@ export async function runGmailReconciliationForBinding(options: {
     metrics: {
       status: 'completed',
       mode: 'reconciliation',
-      receivedCount: batch.scannedCount,
+      receivedCount: fetchedCount,
       accountedCount: batch.scannedCount,
       unresolvedCount: batchAccumulator.stateCounts.UNRESOLVED,
       recordGapCount: batch.unavailableMessageIds.length,
@@ -979,6 +1016,124 @@ function currentGmailAssertion(raw: string) {
     current.push(line)
   }
   return { text: current.join('\n').trim(), quoted }
+}
+
+function gmailSourceUrlSpans(value: string) {
+  return [...value.matchAll(/https?:\/\/[^\s<>，。；]+/gi)].map(match => {
+    // A Chinese request immediately after an ASCII comma is prose, not a
+    // meeting URL suffix. Ordinary commas inside the URL remain untouched.
+    const boundary = /[,;](?=请于|请在|请|确认|回执)/.exec(match[0])
+    const length = boundary?.index ?? match[0].length
+    return { start: match.index!, end: match.index! + length }
+  })
+}
+function gmailAssertionWithoutUrls(value: string) {
+  let assertion = value
+  for (const span of gmailSourceUrlSpans(value).reverse()) assertion = assertion.slice(0, span.start) + ' ' + assertion.slice(span.end)
+  return assertion
+}
+function attendanceConfirmationDeadline(value: string) {
+  const assertion = gmailAssertionWithoutUrls(value)
+  return /(?:确认|回执).{0,16}(?:是否)?参加|(?:是否)?参加.{0,16}(?:确认|回执)/.test(assertion)
+    && /(?:前|截止|最晚|最迟)/.test(assertion)
+}
+
+/** Separate only explicit comma-delimited RSVP requests. Preserve the original
+ * non-RSVP bytes (including URL commas) and keep RSVP identity evidence. */
+function splitAttendanceConfirmation(value: string): string[] {
+  if (!attendanceConfirmationDeadline(value)) return [value]
+  const urls = gmailSourceUrlSpans(value)
+  const commas = [...value.matchAll(/[，,]/g)].map(match => match.index!)
+    .filter(index => !urls.some(span => index >= span.start && index < span.end))
+  const boundaries = [-1, ...commas, value.length]
+  const clauses = boundaries.slice(1).map((end, index) => ({ start: boundaries[index]! + 1, end }))
+  const requests = clauses.filter(clause => attendanceConfirmationDeadline(value.slice(clause.start, clause.end)))
+  if (!requests.length) return [value]
+  const result: string[] = []
+  let start = 0
+  for (const request of requests) {
+    const preceding = value.slice(start, Math.max(start, request.start - 1)).trim()
+    if (preceding) result.push(preceding)
+    result.push(value.slice(request.start, request.end).trim())
+    start = request.end + 1
+  }
+  const remaining = value.slice(start).trim()
+  if (remaining) result.push(remaining)
+  return result
+}
+
+/** A labelled invitation block is one assertion, not one invitation per field.
+ * Only adjacent, closed labels may contribute identity or timing. */
+function gmailAssertionPieces(pieces: string[]) {
+  const result = [...pieces]
+  for (let start = 0; start < result.length; start += 1) {
+    if (!/^(?:面试|笔试|测评)详情如下[:：]?$/.test(result[start]!)) continue
+    const type = /^(面试|笔试|测评)/.exec(result[start]!)![1]!
+    let end = start + 1
+    while (end < result.length && new RegExp(`^${type}(?:职位|岗位|时间|形式|地址|地点)\\s*[:：]`).test(result[end]!)) end += 1
+    const fields = result.slice(start + 1, end)
+    const labels = fields.map(field => field.split(/[:：]/)[0])
+    if (fields.length < 2 || new Set(labels).size !== labels.length) continue
+    // A preceding invitation supplies company identity; unknown prose and
+    // another event are never traversed to find an identity.
+    const previous = result[start - 1]
+    const includePrevious = Boolean(previous && new RegExp(`(?:邀请|诚邀|欢迎).{0,12}(?:参加)?${type}`).test(previous)
+      && !/(?:取消|撤销|已完成|改期|改为|调整|另|再次|下一轮|第二|第三)/.test(previous))
+    const first = includePrevious ? start - 1 : start
+    result[first] = result.slice(first, end).join('；')
+    for (let index = first + 1; index < end; index += 1) result[index] = ''
+    start = end - 1
+  }
+  return result
+}
+
+type GmailEventCandidate = Extract<SemanticCandidate, { kind: 'process_event' }>
+function gmailEventIdentity(candidate: GmailEventCandidate) {
+  const target = candidate.target
+  return JSON.stringify([target?.opportunityId ?? null, target?.company ?? null, target?.role ?? null])
+}
+function gmailEventTemporal(candidate: GmailEventCandidate) {
+  const temporal = candidate.temporal
+  return JSON.stringify([temporal?.shape, temporal?.startAt, temporal?.endAt, temporal?.deadlineAt,
+    temporal?.date, temporal?.latestStartAt, candidate.dueAt, candidate.timingMode])
+}
+
+/** Coalesce only repeated descriptions of one evidenced event; never choose a
+ * date, role, round or supplementary detail between competing assertions. */
+function coalesceGmailEventDescriptions(candidates: SemanticCandidate[], pieces: string[]) {
+  const events = candidates.filter((candidate): candidate is GmailEventCandidate => candidate.kind === 'process_event')
+  const removed = new Set<SemanticCandidate>()
+  const merge = (anchor: GmailEventCandidate, detail: GmailEventCandidate) => {
+    anchor.evidenceRefs = [...new Set([...anchor.evidenceRefs, ...detail.evidenceRefs])]
+    anchor.sourceVersionRefs = [...new Set([...anchor.sourceVersionRefs, ...detail.sourceVersionRefs])]
+    anchor.location ??= detail.location
+    anchor.joinUrl ??= detail.joinUrl
+    removed.add(detail)
+  }
+  const conflicts = (a: GmailEventCandidate, b: GmailEventCandidate) =>
+    Boolean(a.location && b.location && a.location !== b.location || a.joinUrl && b.joinUrl && a.joinUrl !== b.joinUrl)
+  const independent = (candidate: GmailEventCandidate) => /(?:另一次|另外|再次|下一轮|第二|第三|一面|二面|三面|终面|或|或者|另行|待定|后续通知|改期|改为|调整)/.test(pieces[Number(candidate.id.split(':')[1])] ?? '')
+  for (const candidate of events) {
+    if (removed.has(candidate) || !candidate.temporal || independent(candidate)) continue
+    for (const detail of events) {
+      if (detail === candidate || removed.has(detail) || independent(detail) || conflicts(candidate, detail)
+        || detail.eventType !== candidate.eventType || gmailEventIdentity(detail) !== gmailEventIdentity(candidate)) continue
+      if (detail.temporal && gmailEventTemporal(detail) === gmailEventTemporal(candidate)
+        && (candidateHasOpportunityIdentity(candidate) || pieces[Number(candidate.id.split(':')[1])] === pieces[Number(detail.id.split(':')[1])])) merge(candidate, detail)
+    }
+  }
+  for (const detail of events) {
+    if (removed.has(detail) || detail.temporal || independent(detail)) continue
+    const raw = pieces[Number(detail.id.split(':')[1])] ?? ''
+    // An unresolved date or alternative anchor is evidence of uncertainty,
+    // not a duplicate invitation which may borrow the other event's date.
+    if (/20\d{2}|\d{1,2}[:：]\d{2}|\d+\s*(?:年|月|日|号|点|分钟|天)|明天|后天|今天|周[一二三四五六日天]|小时|hours?|截止|最晚|确认|回执/.test(raw)) continue
+    const anchors = events.filter(candidate => !removed.has(candidate) && candidate.temporal && !independent(candidate)
+      && candidate.eventType === detail.eventType && gmailEventIdentity(candidate) === gmailEventIdentity(detail)
+      && candidateHasOpportunityIdentity(candidate) && !conflicts(candidate, detail))
+    if (anchors.length === 1) merge(anchors[0]!, detail)
+  }
+  return candidates.filter(candidate => !removed.has(candidate))
 }
 
 export function gmailObservationFromMessage(
@@ -1074,8 +1229,12 @@ export function gmailSemanticRecordFromMessage(
   if (/https?:\/\//i.test(text)) capabilityBoundaries.push('Linked pages are NOT_SUPPORTED; no link is opened or treated as verified source content.')
   if (body.length >= 12_000) interpretationGaps.push('Message exceeds the bounded body limit; remaining content was not interpreted.')
   const nonAssertion = !text && current.quoted || /^(?:示例|假设|假如|hypothetical|for example)\b/i.test(text)
-  const allPieces = text.replace(/https?:\/\/[^\s<>]+/gi, url => url.replaceAll(';', '%3B').replaceAll('；', '%3B')).split(/[；;。\n]+/).map((item) => item.trim()).filter(Boolean)
-  const boundedPieces = allPieces.slice(0, GMAIL_FRAGMENT_PARSE_LIMIT)
+  let fragmentText = text
+  for (const span of gmailSourceUrlSpans(text).reverse()) {
+    fragmentText = fragmentText.slice(0, span.start) + text.slice(span.start, span.end).replaceAll(';', '%3B') + fragmentText.slice(span.end)
+  }
+  const allPieces = fragmentText.split(/[；;。\n]+/).map((item) => item.trim()).filter(Boolean).flatMap(splitAttendanceConfirmation)
+  const boundedPieces = gmailAssertionPieces(allPieces.slice(0, GMAIL_FRAGMENT_PARSE_LIMIT))
   if (allPieces.length > GMAIL_FRAGMENT_PARSE_LIMIT) {
     interpretationGaps.push(`Message exceeds the bounded ${GMAIL_FRAGMENT_PARSE_LIMIT}-fragment interpretation limit.`)
   }
@@ -1087,10 +1246,22 @@ export function gmailSemanticRecordFromMessage(
   const subjectType = /interview invitation/i.test(subject) ? 'interview_invite'
     : /(?:assessment|test) invitation/i.test(subject) ? 'assessment_invite'
     : !recruitingInstructionOnly(subject) && subjectParsed.type && subjectParsed.type !== 'other' && subjectParsed.confidence.type === 'high' ? subjectParsed.type : undefined
-  const parsedPieces = boundedPieces.map((piece) => ({
-    piece, instructionOnly: recruitingInstructionOnly(piece),
-    parsed: parseRecruitingNotification(piece, opportunities, parsedAt),
-  }))
+  const fragmentParseCache = new Map<string, ReturnType<typeof parseRecruitingNotification>>()
+  const parsedPieces = boundedPieces.map((piece) => {
+    const instructionOnly = recruitingInstructionOnly(piece)
+    let parsed = fragmentParseCache.get(piece)
+    if (!parsed) {
+      // Closed procedural clauses have no business target to match against
+      // every opportunity. Cache repeated wording within this source only.
+      const labelledBlock = /(?:^|；)(?:面试|笔试|测评)详情如下[:：]?；/.test(piece)
+        && /(?:^|；)(?:面试|笔试|测评)(?:职位|岗位)[:：]/.test(piece)
+      const assertionPiece = gmailAssertionWithoutUrls(piece)
+      parsed = parseRecruitingNotification(instructionOnly ? '' : labelledBlock ? [subject, assertionPiece].join('\n') : assertionPiece,
+        instructionOnly ? [] : opportunities, parsedAt)
+      fragmentParseCache.set(piece, parsed)
+    }
+    return { piece, instructionOnly, parsed }
+  })
   // Only the subject or a leading identity-only header can supply omitted
   // identity. Never borrow a target from an independent event elsewhere.
   const firstPiece = parsedPieces[0]
@@ -1112,6 +1283,10 @@ export function gmailSemanticRecordFromMessage(
   for (const [index, item] of pieces.entries()) {
     const { piece, parsed } = item
     if (item.instructionOnly || conditionalCompletionDisclaimer(piece)) continue
+    if (attendanceConfirmationDeadline(piece)) {
+      businessAmbiguities.push('Attendance confirmation is a separate request; its deadline is not the test or interview time and no attendance choice was made.')
+      continue
+    }
     const submissionDeadline = /(?:提交|交卷|submission|submit).{0,12}(?:截止|最晚|deadline|by)|(?:截止|deadline).{0,12}(?:提交|交卷|submission|submit)/i.test(piece)
     const previous = pieces[index - 1]
     // A submission deadline immediately following a directly identified test
@@ -1132,8 +1307,7 @@ export function gmailSemanticRecordFromMessage(
     const selected = parsed.opportunity ?? inherited ?? precedingWindow?.opportunity
     const plausible = parsed.candidates
       .filter(item => item.score >= 40 && notificationIdentityCompatible(piece, item.opportunity, opportunities))
-    const commonCompany = plausible.length >= 2 && plausible.every(item =>
-      item.opportunity.company === plausible[0]?.opportunity.company) ? plausible[0]?.opportunity.company : undefined
+    const commonCompany = commonNotificationCompany(piece, plausible.map(item => item.opportunity))
     const commonRole = plausible.length >= 2 && plausible.every(item =>
       item.opportunity.role === plausible[0]?.opportunity.role) ? plausible[0]?.opportunity.role : undefined
     const eventType = submissionDeadline && deadlineContextType ? deadlineContextType
@@ -1170,7 +1344,7 @@ export function gmailSemanticRecordFromMessage(
       continue
     }
     const originalTimestamp = originalReceivedAt ?? ''
-    const temporal = resolveSourceTemporal(piece, { receivedAt: originalTimestamp,
+    const temporal = resolveSourceTemporal(gmailAssertionWithoutUrls(piece), { receivedAt: originalTimestamp,
       timezone: 'Asia/Shanghai', mode: submissionDeadline ? 'deadline' : parsed.timingMode })
     const dueAt = temporal?.startAt ?? temporal?.deadlineAt ?? temporal?.date
     const duePrecision = temporal?.precision
@@ -1212,6 +1386,7 @@ export function gmailSemanticRecordFromMessage(
     candidates.splice(0, candidates.length, ...retained)
   }
 
+  candidates.splice(0, candidates.length, ...coalesceGmailEventDescriptions(candidates, boundedPieces))
   const eventCandidates = candidates.filter((candidate) => candidate.kind === 'process_event')
   if (eventCandidates.length === 1) {
     const candidate = eventCandidates[0]!
@@ -1251,7 +1426,7 @@ export async function runGmailAutomationForBinding(options: {
   refreshLifecycle?: GoogleRefreshLifecycle
   fetchImpl?: typeof fetch
   now?: () => Date
-  execution?: { beforeWorkspaceWrite: () => Promise<void> }
+  execution?: { observer?: GmailExecutionObserver; beforeWorkspaceWrite: () => Promise<void> }
 }): Promise<GmailAutomationRunResult> {
   if (options.binding.gmailIntakeConsentVersion !== 'uu06-v1') return runLegacyGmailAutomationForBinding(options)
   const fetchImpl = options.fetchImpl ?? fetch
@@ -1261,6 +1436,7 @@ export async function runGmailAutomationForBinding(options: {
     throw new WorkspaceSourceError('GOOGLE_GMAIL_SCOPE_MISSING', 'Gmail automation requires the Gmail read-only permission. Reconnect Google and enable recruiting-email tracking.', false)
   }
 
+  options.execution?.observer?.phase('token_refresh')
   const refreshToken = await decryptSecret(options.binding.refreshTokenCiphertext, options.tokenEncryptionKey)
   const accessToken = await refreshGoogleAccessToken(refreshToken, {
     ...options.refreshLifecycle,
@@ -1285,10 +1461,12 @@ export async function runGmailAutomationForBinding(options: {
         fetchImpl,
         timezone: 'Asia/Shanghai',
       })
+  options.execution?.observer?.phase('workspace_read')
   const workspace = await source.read()
   const backfillComplete = (workspace.snapshot.data.timeline ?? []).some((item) =>
     item.ingestion?.sourceKind === 'gmail' && item.ingestion.sourceId === GMAIL_SOURCE_ID
     && item.ingestion.sourceRecordId === 'coverage-boundary:uu06-90-days')
+  options.execution?.observer?.phase('gmail_list')
   const batch = await fetchGmailAutomationBatch({
     accessToken,
     startHistoryId: options.binding.gmailHistoryId,
@@ -1300,8 +1478,9 @@ export async function runGmailAutomationForBinding(options: {
     } : undefined,
     fetchImpl, now, coverage: 'uu06',
   })
+  options.execution?.observer?.phase('message_parse')
   const records = batch.messages
-    .map((message) => gmailSemanticRecordFromMessage(message, workspace.snapshot.data.opportunities, now))
+    .map((message) => { const record = gmailSemanticRecordFromMessage(message, workspace.snapshot.data.opportunities, now); options.execution?.observer?.processed(); return record })
     .filter((record): record is GmailSemanticRecord => Boolean(record))
   for (const sourceRecordId of batch.unavailableMessageIds) {
     records.push({
@@ -1346,6 +1525,7 @@ export async function runGmailAutomationForBinding(options: {
       },
     })
   }
+  options.execution?.observer?.phase('semantic_apply')
   const result = applyGmailSemanticBatch(workspace.snapshot, {
     runId: `gmail:auto:${checkedAt}`, sourceId: GMAIL_SOURCE_ID, checkedAt,
     cursor: batch.coverageComplete ? batch.nextHistoryId : undefined, records,
@@ -1355,6 +1535,7 @@ export async function runGmailAutomationForBinding(options: {
   let workspaceVersion = workspace.context.workspaceVersion
   if (!result.alreadyApplied) {
     await options.execution?.beforeWorkspaceWrite()
+    options.execution?.observer?.phase('workspace_commit')
     const writable = requireWritableWorkspaceSource(source)
     const written = await writable.write({
       snapshot: result.snapshot,
@@ -1370,6 +1551,7 @@ export async function runGmailAutomationForBinding(options: {
     workspaceVersion = written.context.workspaceVersion
   }
 
+  options.execution?.observer?.phase('checkpoint')
   return {
     userId: options.binding.userId,
     checkedAt,
@@ -1396,7 +1578,7 @@ async function runLegacyGmailAutomationForBinding(options: {
   refreshLifecycle?: GoogleRefreshLifecycle
   fetchImpl?: typeof fetch
   now?: () => Date
-  execution?: { beforeWorkspaceWrite: () => Promise<void> }
+  execution?: { observer?: GmailExecutionObserver; beforeWorkspaceWrite: () => Promise<void> }
 }): Promise<GmailAutomationRunResult> {
   const fetchImpl = options.fetchImpl ?? fetch
   const now = options.now?.() ?? new Date()
@@ -1405,6 +1587,7 @@ async function runLegacyGmailAutomationForBinding(options: {
     throw new WorkspaceSourceError('GOOGLE_GMAIL_SCOPE_MISSING', 'Gmail automation requires the Gmail read-only permission. Reconnect Google and enable recruiting-email tracking.', false)
   }
 
+  options.execution?.observer?.phase('token_refresh')
   const refreshToken = await decryptSecret(options.binding.refreshTokenCiphertext, options.tokenEncryptionKey)
   const accessToken = await refreshGoogleAccessToken(refreshToken, {
     ...options.refreshLifecycle,
@@ -1429,7 +1612,9 @@ async function runLegacyGmailAutomationForBinding(options: {
         fetchImpl,
         timezone: 'Asia/Shanghai',
       })
+  options.execution?.observer?.phase('workspace_read')
   const workspace = await source.read()
+  options.execution?.observer?.phase('gmail_list')
   const batch = await fetchGmailAutomationBatch({
     accessToken,
     startHistoryId: options.binding.gmailHistoryId,
@@ -1441,8 +1626,9 @@ async function runLegacyGmailAutomationForBinding(options: {
     } : undefined,
     fetchImpl,
   })
+  options.execution?.observer?.phase('message_parse')
   const messages = batch.messages
-    .map((message) => gmailObservationFromMessage(message, workspace.snapshot.data.opportunities, now))
+    .map((message) => { const record = gmailObservationFromMessage(message, workspace.snapshot.data.opportunities, now); options.execution?.observer?.processed(); return record })
     .filter((message): message is HardenedGmailMessageObservation => Boolean(message))
   for (const sourceRecordId of batch.unavailableMessageIds) {
     messages.push({
@@ -1464,6 +1650,7 @@ async function runLegacyGmailAutomationForBinding(options: {
       notes: batch.recoveryGapReason.slice(0, 800),
     })
   }
+  options.execution?.observer?.phase('semantic_apply')
   const result = applyGmailIngestionHardened(workspace.snapshot, {
     runId: `gmail:auto:${checkedAt}`,
     sourceId: GMAIL_SOURCE_ID,
@@ -1478,6 +1665,7 @@ async function runLegacyGmailAutomationForBinding(options: {
   let workspaceVersion = workspace.context.workspaceVersion
   if (!result.alreadyApplied) {
     await options.execution?.beforeWorkspaceWrite()
+    options.execution?.observer?.phase('workspace_commit')
     const writable = requireWritableWorkspaceSource(source)
     const written = await writable.write({
       snapshot: result.snapshot,
@@ -1487,6 +1675,7 @@ async function runLegacyGmailAutomationForBinding(options: {
     workspaceVersion = written.context.workspaceVersion
   }
 
+  options.execution?.observer?.phase('checkpoint')
   return {
     userId: options.binding.userId,
     checkedAt,

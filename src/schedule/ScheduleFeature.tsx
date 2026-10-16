@@ -81,7 +81,7 @@ export function ScheduleWindowList({ stream, section, opportunities, onOpenOppor
         <button className="tsui-node-row" type="button" disabled={!opportunity} onClick={() => { if (entry.opportunityId) onOpenOpportunity(entry.opportunityId) }}>
         <span className="tsui-node-time">{timeLabel(entry, zh, stream.timezone)}</span>
         <span className="tsui-node-copy"><strong>{title}</strong><small>{text || (zh ? '独立事项' : 'Independent item')}</small></span>
-        {entry.state === 'elapsed_unresolved' ? <span className="tsui-node-badge">{zh ? '待确认' : 'Unresolved'}</span> : null}
+        {entry.state === 'elapsed_unresolved' ? <span className="tsui-node-badge">{zh ? '未记录结果' : 'Outcome not recorded'}</span> : null}
         {opportunity ? <span className="tsui-node-arrow" aria-hidden="true">›</span> : null}
         </button>
       </Fragment>
@@ -332,7 +332,7 @@ export default function ScheduleFeature({
       </div>
     </div>
     {(stream.counts.no_deadline > 0 || view !== 'upcoming' && (stream.counts.unresolved > 0 || stream.counts.undated > 0)) ? <div className="tsui-schedule-context">
-      {view !== 'upcoming' && stream.counts.unresolved > 0 ? <button type="button" onClick={() => changeView('unresolved')}>{zh ? '过去安排待确认' : 'Past arrangements to confirm'} · {stream.counts.unresolved}</button> : null}
+      {view !== 'upcoming' && stream.counts.unresolved > 0 ? <button type="button" onClick={() => changeView('unresolved')}>{zh ? '过往安排' : 'Past arrangements'} · {stream.counts.unresolved}</button> : null}
       {view !== 'upcoming' && stream.counts.undated > 0 ? <button type="button" onClick={() => changeView('undated')}>{zh ? '时间待定' : 'Time TBD'} · {stream.counts.undated}</button> : null}
       {stream.counts.no_deadline > 0 ? <button type="button" onClick={() => changeView('no_deadline')}>{zh ? '无截止日期' : 'No deadline'} · {stream.counts.no_deadline}</button> : null}
       {view === 'unresolved' || view === 'undated' || view === 'no_deadline' ? <button type="button" onClick={() => changeView('all')}>{zh ? '返回全部' : 'Back to all'}</button> : null}
@@ -352,7 +352,7 @@ export default function ScheduleFeature({
       {selectedPending?.status === 'projection_pending' ? <p role="status">{zh ? '这次修改已保存，日程正在更新。' : 'This change is saved; the schedule is updating.'}</p> : null}
       {selectedPending?.status === 'unknown' ? <p role="status">{zh ? '正在核对这次修改是否已保存。' : 'Checking whether this change was saved.'}</p> : null}
       {selected.opportunityId && byId.has(selected.opportunityId) ? <p>{byId.get(selected.opportunityId)!.company} · {byId.get(selected.opportunityId)!.role}</p> : null}
-      {selected.state === 'elapsed_unresolved' ? <p className="tsui-schedule-warning">{zh ? '时间已过，结果仍待确认；不会自动标记完成。' : 'The time passed, but the outcome is unconfirmed.'}</p> : null}
+      {selected.state === 'elapsed_unresolved' ? <p className="tsui-schedule-warning">{zh ? '此安排时间已过，尚未记录结果；状态保持不变。' : 'This arrangement is in the past with no recorded outcome; its status is unchanged.'}</p> : null}
       {selected.opportunityId && byId.has(selected.opportunityId) ? <button type="button" className="tsui-schedule-job-link" onClick={() => onOpenOpportunity(selected.opportunityId!)}>{zh ? '查看岗位详情' : 'View job details'} →</button> : null}
       {selected.node?.occurrenceId && (selected.state === 'scheduled' || selected.state === 'elapsed_unresolved') ? <div className="tsui-schedule-commands">
         <h3>{zh ? '更新这次安排' : 'Update this occurrence'}</h3>
@@ -379,7 +379,7 @@ export default function ScheduleFeature({
           <button className="tsui-schedule-row" data-schedule-entry={entry.id} type="button" onClick={() => openEntry(entry)}>
             <span className="tsui-schedule-time">{entry.node?.temporal.precision === 'date' && !entry.occurredAt ? zh ? '具体时间待定' : 'Exact time TBD' : timeLabel(entry, zh, stream.timezone)}</span>
             <span className="tsui-schedule-copy"><strong>{title}</strong><small>{opportunity ? opportunity.company + ' · ' + opportunity.role : zh ? '独立事项' : 'Independent item'}</small></span>
-            <span className={'tsui-schedule-state state-' + entry.section}>{entry.invalidated ? zh ? '已失效' : 'Invalidated' : entry.section === 'no_deadline' ? zh ? '无截止日期' : 'No deadline' : entry.state === 'elapsed_unresolved' ? zh ? '待确认' : 'Unresolved'
+            <span className={'tsui-schedule-state state-' + entry.section}>{entry.invalidated ? zh ? '已失效' : 'Invalidated' : entry.section === 'no_deadline' ? zh ? '无截止日期' : 'No deadline' : entry.state === 'elapsed_unresolved' ? zh ? '未记录结果' : 'Outcome not recorded'
               : entry.state === 'completed' ? zh ? '已完成' : 'Completed'
                 : entry.state === 'cancelled' ? zh ? '已取消' : 'Cancelled'
                   : entry.state === 'superseded' ? zh ? '已改期' : 'Rescheduled'

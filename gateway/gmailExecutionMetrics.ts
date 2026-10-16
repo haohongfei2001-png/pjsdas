@@ -1,3 +1,4 @@
+import type { GmailExecutionDiagnostics } from './gmailExecutionDiagnostics.js'
 export type GmailRunMode = 'history' | 'initial_backfill' | 'history_recovery' | 'reconciliation' | 'unknown'
 export interface GmailHistoryLag {
   count: number
@@ -19,6 +20,7 @@ export interface GmailExecutionMetrics {
   receivedCount?: number
   accountedCount?: number
   unresolvedCount?: number
+  diagnostics?: GmailExecutionDiagnostics
   historyLag?: GmailHistoryLag
 }
 

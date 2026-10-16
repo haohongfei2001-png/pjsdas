@@ -16,7 +16,19 @@ export function resolveSourceTemporal(text: string, options: {
     parts = Object.fromEntries(new Intl.DateTimeFormat('en-CA', { timeZone: options.timezone,
       year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(received).map((part) => [part.type, part.value]))
   } catch { return undefined }
-  const explicitRange = /(20\d{2})[年\/-](\d{1,2})[月\/-](\d{1,2})日?[^\d]{0,12}(\d{1,2})[:：](\d{2})\s*(?:-|—|–|~|～|至|到)\s*(\d{1,2})[:：](\d{2})/.exec(text)
+  // Receipt-relative durations need an explicit source-message anchor. A link
+  // arrival, first login or an unanchored duration is not the email timestamp.
+  const receiptHours = /(?:收到|接收)(?:本|此|这封)?(?:邮件|电子邮件)(?:后|后的|起)?\s*(\d{1,3})\s*小时(?:之)?内/.exec(text)
+  if (receiptHours) {
+    const hours = Number(receiptHours[1])
+    if (options.mode !== 'deadline' || hours < 1 || hours > 168
+      || (text.match(/\d+\s*小时/g) ?? []).length !== 1
+      || /20\d{2}[年\/-]|\d{1,2}[:：]\d{2}|明天|后天|今天|收到链接|首次|登录|登陆|或|工作日/.test(text)) return undefined
+    return { shape: 'deadline', deadlineAt: new Date(received.getTime() + hours * 3_600_000).toISOString(),
+      precision: 'datetime', timezone: options.timezone, resolutionBasis: 'source_explicit',
+      rawExpression: receiptHours[0] }
+  }
+  const explicitRange = /(20\d{2})[年\/-](\d{1,2})[月\/-](\d{1,2})日?[^\d]{0,12}(\d{1,2})(?:[:：]|时)(\d{2})分?\s*(?:-|—|–|~|～|至|到)\s*(\d{1,2})(?:[:：]|时)(\d{2})分?/.exec(text)
   if (explicitRange) {
     const day = `${explicitRange[1]}-${explicitRange[2]!.padStart(2, '0')}-${explicitRange[3]!.padStart(2, '0')}`
     const checked = new Date(`${day}T00:00:00Z`)
@@ -33,7 +45,7 @@ export function resolveSourceTemporal(text: string, options: {
       options.timezone,
     )
     if (!startAt || !endAt || Date.parse(endAt) <= Date.parse(startAt)) return undefined
-    const latestMatch = /(?:最晚|最迟)\s*(?:开始|开考|入场|进入|启动)?\s*[:：]?\s*(\d{1,2})[:：](\d{2})|latest\s+start(?:\s+time)?\s*[:：]?\s*(\d{1,2})[:：](\d{2})/i.exec(text)
+    const latestMatch = /(?:最晚|最迟)\s*(?:开始|开考|入场|进入|启动)?\s*[:：]?\s*(\d{1,2})(?:[:：]|时)(\d{2})分?|latest\s+start(?:\s+time)?\s*[:：]?\s*(\d{1,2})(?:[:：]|时)(\d{2})分?/i.exec(text)
     let latestStartAt: string | undefined
     if (latestMatch) {
       const hour = Number(latestMatch[1] ?? latestMatch[3])
@@ -100,7 +112,7 @@ export function resolveSourceTemporal(text: string, options: {
     originalDay.setUTCDate(originalDay.getUTCDate() + offset)
     day = originalDay.toISOString().slice(0, 10)
   }
-  const clocks = [...text.matchAll(/(?:^|[^\d])(\d{1,2})[:：](\d{2})(?:\s*(am|pm))?/gi)]
+  const clocks = [...text.matchAll(/(?:^|[^\d])(\d{1,2})(?:[:：]|时)(\d{2})分?(?:\s*(am|pm))?/gi)]
   if (!clocks.length && options.mode === 'deadline') return { shape: 'date_only', date: day,
     precision: 'date', timezone: options.timezone, resolutionBasis: 'source_explicit', rawExpression: expression }
   if (clocks.length !== 1) return undefined

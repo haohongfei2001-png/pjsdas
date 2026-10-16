@@ -30,6 +30,10 @@ test('dense capacity and completion settle before delayed server confirmation', 
     while (document.querySelector('[data-action-id="dense-action-0"]') && performance.now() - started < 5000) await new Promise(requestAnimationFrame)
     return performance.now() - started
   })
+  // Preserve the measured stages even when the strict optimistic UI gate fails.
+  const optimisticTiming = { capacityMs, completeMs, measured: await page.evaluate(() => (window as any).interactionMeasures) }
+  console.log(`INSTANT_OPTIMISTIC_UI_TIMING:${JSON.stringify(optimisticTiming)}`)
+  await info.attach('dense-optimistic-timings.json', { body: JSON.stringify(optimisticTiming, null, 2), contentType: 'application/json' })
   expect(completeMs).toBeLessThanOrEqual(150)
   await expect(page.getByRole('button', { name: '撤销', exact: true })).toBeVisible()
   await expect.poll(() => server.sent.length).toBe(2)
@@ -647,7 +651,7 @@ test('Undo journal crash before local transaction recovers the original identity
   expect(server.sent[1]).toBe(undoId)
 })
 
-test('confirmed blocked projection recovers with a read-only snapshot after equivalence returns', async ({ page, context }) => {
+test('confirmed blocked projection recovers with a read-only snapshot after equivalence returns', async ({ page, context }, info) => {
   const server = await setup(context)
   server.setDelay(700)
   await start(page)
@@ -664,6 +668,12 @@ test('confirmed blocked projection recovers with a read-only snapshot after equi
   })
   } finally { releaseConfirmation() }
   await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem('pjsdas-cgr01-pending:instant-owner') ?? '[]')[0]?.status)).toBe('projection_pending')
+  expect(server.snapshot.data.actions[0].status).toBe('done')
+  await expect.poll(() => page.evaluate(async () => !(await import('/pjsdas/src/cloud/interactionActivity.ts')).interactionIsRecent('instant-owner'))).toBe(true)
+  await page.evaluate(() => window.dispatchEvent(new Event('focus')))
+  await expect(page.getByText('本机状态待核对', { exact: false })).toBeVisible()
+  await expect(page.getByText('正在确认修改的同步结果…', { exact: true })).toHaveCount(0)
+  await info.attach('confirmed-projection-recovery', { body: await page.screenshot({ fullPage: true }), contentType: 'image/png' })
   await page.evaluate(async () => { const db = await (await import('/pjsdas/src/db.ts')).dbPromise; await db.put('actions', (window as any).originalAction) })
   await page.evaluate(async () => {
     const api = await import('/pjsdas/src/db.ts')
@@ -1456,4 +1466,47 @@ test('empty no-op acknowledgement never advances the cache before unseen facts a
   expect(afterRead.journal?.state).toBe('confirmed')
   expect(afterRead.journal?.compensation).toBeUndefined()
   expect(server.sent).toEqual(['empty-noop'])
+})
+
+
+for (const recoveryState of ['ordinary', 'conflict'] as const) test(`slow completion confirmation preserves ${recoveryState} semantics`, async ({ page, context }, info) => {
+  const existingConflict = recoveryState !== 'ordinary'
+  const server = await setup(context, 40); server.setDelay(0)
+  await start(page)
+  const release = server.holdNextConfirmation()
+  try {
+    await page.locator('[data-action-id="dense-action-0"] .tsui-done-action').click()
+    await expect.poll(() => server.sent.length).toBe(1)
+    await expect(page.locator('[data-action-id="dense-action-0"]')).toHaveCount(0)
+    // The normal one-second paint/interaction quiet period has elapsed while
+    // the receipt is still deliberately held by the server.
+    await expect.poll(() => page.evaluate(async () => {
+      const activity = await import('/pjsdas/src/cloud/interactionActivity.ts')
+      return activity.interactionIsRecent('instant-owner')
+    })).toBe(false)
+    if (recoveryState === 'conflict') await page.evaluate(async () => {
+      const sync = await import('/pjsdas/src/cloud/syncState.ts')
+      sync.patchAccountCheckpoint('instant-owner', { conflict: { remoteVersion: 'txn:1204', remoteFingerprint: 'known-conflict', remoteUpdatedAt: new Date().toISOString() } })
+    })
+    await page.evaluate(() => window.dispatchEvent(new Event('focus')))
+    if (existingConflict) {
+      await expect(page.getByText('本机状态待核对', { exact: false })).toBeVisible()
+      await expect(page.getByRole('button', { name: '打开设置', exact: true })).toBeVisible()
+    } else {
+      await expect(page.getByText('正在确认修改的同步结果…', { exact: true })).toBeVisible()
+      await expect(page.getByText('本机状态待核对', { exact: false })).toHaveCount(0)
+      await expect(page.getByRole('button', { name: '打开设置', exact: true })).toHaveCount(0)
+    }
+    expect(server.snapshot.data.actions[0].status).toBe('todo')
+    await info.attach(`pending-confirmation-${recoveryState}`, { body: await page.screenshot({ fullPage: true }), contentType: 'image/png' })
+  } finally { release() }
+  await expect.poll(() => server.snapshot.data.actions[0].status, { timeout: 15000 }).toBe('done')
+  if (!existingConflict) {
+    await expect.poll(() => pendingCount(page), { timeout: 15000 }).toBe(0)
+    await expect.poll(() => page.evaluate(async () => !(await import('/pjsdas/src/cloud/interactionActivity.ts')).interactionIsRecent('instant-owner'))).toBe(true)
+    await page.evaluate(() => window.dispatchEvent(new Event('focus')))
+    await expect(page.getByText('正在确认修改的同步结果…', { exact: true })).toHaveCount(0)
+    await expect(page.getByText('本机状态待核对', { exact: false })).toHaveCount(0)
+    expect(server.sent).toHaveLength(1)
+  }
 })

@@ -849,6 +849,33 @@ function applyCandidate(
     }
   }
 
+  // A fresh Gmail thread is not proof of a second interview. Same employer
+  // role/day/meeting room with a different clock time needs an explicit
+  // correction, rather than silently scheduling both or last-message-wins.
+  if (observation.source.kind === 'gmail' && candidate.kind === 'process_event'
+    && candidate.eventType === 'interview_invite' && candidate.temporal?.shape === 'fixed_range'
+    && candidate.temporal.startAt && candidate.joinUrl) {
+    const dayFormatter = new Intl.DateTimeFormat('en-CA', { timeZone: candidate.temporal.timezone,
+      year: 'numeric', month: '2-digit', day: '2-digit' })
+    const candidateDay = dayFormatter.format(new Date(candidate.temporal.startAt))
+    const nodes = snapshot.data.scheduleNodes ?? []
+    const conflicting = snapshot.data.processEvents.find(event => !event.invalidation
+      && event.opportunityId === opportunity?.id && event.type === candidate.eventType
+      && event.joinUrl === candidate.joinUrl && nodes.some(node => {
+        const latest = latestScheduleOccurrence(nodes, node.occurrenceId)
+        return node.processEventId === event.id && latest?.id === node.id && latest.state === 'scheduled'
+          && latest.temporal.shape === 'fixed_range' && latest.temporal.startAt
+          && dayFormatter.format(new Date(latest.temporal.startAt)) === candidateDay
+          && Date.parse(latest.temporal.startAt) !== Date.parse(candidate.temporal!.startAt!)
+      }))
+    if (conflicting && !resolution?.confirm) return { status: 'decision', snapshot, reason: 'material_conflict',
+      summary: 'An interview for this role uses the same meeting link and day at a different time. Keep it unchanged or confirm this is a separate interview; a replacement requires the explicit reschedule flow.',
+      choices: [
+        { id: 'ignore', label: 'Keep the existing occurrence', consequence: 'No schedule is replaced.', resolution: { dismiss: true } },
+        { id: 'separate', label: 'This is a separate interview', consequence: 'Keep the existing interview and add this separately confirmed occurrence. For a time correction, use the explicit reschedule flow.', resolution: { confirm: true } },
+      ], affected: [{ type: 'opportunity', id: conflicting.opportunityId }] }
+  }
+
   if (candidate.kind === 'process_event' && candidate.target?.occurrenceId) {
     const sourceNode = (snapshot.data.scheduleNodes ?? []).find((node) => node.evidenceRefs.includes(`source-occurrence:${candidate.target!.occurrenceId}`))
     const existing = latestScheduleOccurrence(snapshot.data.scheduleNodes ?? [], sourceNode?.occurrenceId ?? candidate.target.occurrenceId)

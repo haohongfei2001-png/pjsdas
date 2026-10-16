@@ -17,7 +17,8 @@ describe('UU-04 final Web visual hierarchy', () => {
   it('renders equal task rows and an independently scrolling node panel', () => {
     expect(today).toContain('tsui-task-row')
     expect(today).toContain('tsui-node-panel')
-    expect(today).toContain('selection.actions.map')
+    expect(today).toContain('const visibleActions = selection.visibleActions')
+    expect(today).toContain('visibleActions.map')
     expect(today).not.toContain('cgr-primary-action')
     expect(app).toContain("import './tsui02.css'")
     expect(app).not.toContain('function TodaySurface')
