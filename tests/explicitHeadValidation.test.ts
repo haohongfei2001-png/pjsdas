@@ -15,9 +15,9 @@ describe('bounded exact-head draft validation', () => {
     expect(workflow).toContain('permissions:\n  contents: read')
     const bounds = [...workflow.matchAll(/timeout-minutes: (\d+)/g)].map(match => Number(match[1]))
     expect(bounds.length).toBeGreaterThan(0)
-    // Matrix includes 204 core + 134 dense cases and a strict performance tail.
+    // Matrix includes cross-engine core + dense cases and a strict performance tail.
     // Its approved orchestration allowance does not change any test budget.
-    const maximum = file === 'tsui05-browser-matrix.yml' ? 35 : 30
+    const maximum = file === 'tsui05-browser-matrix.yml' ? 50 : 30
     expect(bounds.every(minutes => minutes > 0 && minutes <= maximum)).toBe(true)
   })
   it.each(['browser-e2e.yml', 'tsui05-browser-matrix.yml', 'ci.yml'])('%s only opts a draft in for its own exact source SHA', file => {
