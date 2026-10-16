@@ -455,7 +455,9 @@ function ActiveCloudProvider({ children }: { children: ReactNode }) {
             accountMismatch: false,
           })
         }
-        const result = await runCloudSync(session.user.id, { passive: true })
+        // Sign-out is explicit: recent input must not masquerade as unsaved data.
+        // Pending commands, conflicts and account lease checks still apply.
+        const result = await runCloudSync(session.user.id, { passive: false })
         const refreshedPending = pendingCommandSummary(session.user.id)
         const refreshedCheckpoint = getAccountCheckpoint(session.user.id)
         const refreshedVerifiedCache = getCloudDeviceState().workspaceOwnerUserId === session.user.id

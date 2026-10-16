@@ -1,5 +1,5 @@
 import { submitWebSemanticCapture, undoWebSemanticChange, type WebSemanticCaptureResult, type LocalSemanticUndoToken } from './webSemanticIntake.js'
-import { interactionIsRecent, observeInteractionActivity } from './cloud/interactionActivity.js'
+import { createInteractionQuietScheduler, interactionIsRecent, observeInteractionActivity } from './cloud/interactionActivity.js'
 import { todayScheduleSnapshot, patchConsumerSnapshot } from './today/consumerScheduleSnapshot.js'
 import { interactionMetric } from './cloud/interactionMetrics.js'
 import { beginInstantCommand, beginInstantUndo, recoverInstantInteraction, type InteractionEvent } from './cloud/instantCommandClient.js'
@@ -385,8 +385,11 @@ export default function AppV8() {
 
     let active = true
     let running = false
+    const quietRefresh = createInteractionQuietScheduler(accountKey, () => { if (active) void refresh() })
     const refresh = async (initial = false) => {
-      if (!passiveCloudReadAllowed() || running || (interactionIsRecent(accountKey) && !getAccountCheckpoint(accountKey).conflict)) return
+      if (!passiveCloudReadAllowed() || running) return
+      if (interactionIsRecent(accountKey) && !getAccountCheckpoint(accountKey).conflict) { quietRefresh.schedule(); return }
+      quietRefresh.cancel()
       const previousFreshness = todayFreshnessRef.current
       running = true
       setTodayFreshness((current) => ({
@@ -396,7 +399,7 @@ export default function AppV8() {
       try {
         const result = await refreshConnectedAuthoritativeCache(accountKey, { passive: true })
         if (!active) return
-        if (interactionIsRecent(accountKey) && !getAccountCheckpoint(accountKey).conflict) { setTodayFreshness(previousFreshness); return }
+        if (interactionIsRecent(accountKey) && !getAccountCheckpoint(accountKey).conflict) { setTodayFreshness(previousFreshness); quietRefresh.schedule(); return }
         if (result.state === 'current' || result.state === 'updated') {
           setTodayFreshness({
             state: result.state,
@@ -447,6 +450,7 @@ export default function AppV8() {
     document.addEventListener('visibilitychange', visible)
     return () => {
       active = false
+      quietRefresh.cancel()
       window.clearInterval(interval)
       window.removeEventListener('focus', focus)
       window.removeEventListener('online', online)
