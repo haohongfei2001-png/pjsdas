@@ -674,6 +674,15 @@ test('confirmed blocked projection recovers with a read-only snapshot after equi
   await expect(page.getByText('本机状态待核对', { exact: false })).toBeVisible()
   await expect(page.getByText('正在确认修改的同步结果…', { exact: true })).toHaveCount(0)
   await info.attach('confirmed-projection-recovery', { body: await page.screenshot({ fullPage: true }), contentType: 'image/png' })
+  // Focus recovery may still own a single flight with the blocked local snapshot.
+  // Drain it before restoring equivalence so the next attempt samples fresh state.
+  await page.evaluate(async () => {
+    const api = await import('/pjsdas/src/db.ts')
+    const original = (await api.readCommandInteractions('instant-owner')).find(item => item.state === 'projection_pending')!
+    await (await import('/pjsdas/src/cloud/instantCommandClient.ts')).recoverInstantInteraction('instant-owner', original.commandId)
+  })
+  expect(await page.evaluate(() => JSON.parse(localStorage.getItem('pjsdas-cgr01-pending:instant-owner') ?? '[]')[0]?.status)).toBe('projection_pending')
+  expect(server.sent).toHaveLength(1)
   await page.evaluate(async () => { const db = await (await import('/pjsdas/src/db.ts')).dbPromise; await db.put('actions', (window as any).originalAction) })
   await page.evaluate(async () => {
     const api = await import('/pjsdas/src/db.ts')
