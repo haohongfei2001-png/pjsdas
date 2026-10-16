@@ -1,3 +1,5 @@
+import { createMcpHandler } from '@modelcontextprotocol/server'
+import { createPjsdasMcpServer } from '../gateway/serverFactory.js'
 import { describe, expect, it } from 'vitest'
 import { applySemanticCompensation } from '../src/semanticIntake.js'
 import { invokeAddOpportunities } from '../gateway/addOpportunities.js'
@@ -200,4 +202,56 @@ describe('explicit user-authorized opportunity writes', () => {
     expect(source.snapshot.data.scheduleNodes).toEqual([])
   })
 
+})
+
+
+describe('explicit-save MCP HTTP contract', () => {
+  const request = (method: string, params: Record<string, unknown> = {}) => new Request('https://synthetic.invalid/api/mcp', {
+    method: 'POST', headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream',
+      'MCP-Protocol-Version': '2026-07-28', 'Mcp-Method': method,
+      ...(method === 'tools/call' ? { 'Mcp-Name': String(params.name) } : {}) },
+    body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params: { ...params, _meta: {
+      'io.modelcontextprotocol/protocolVersion': '2026-07-28',
+      'io.modelcontextprotocol/clientInfo': { name: 'synthetic-contract', version: '1' },
+      'io.modelcontextprotocol/clientCapabilities': {},
+    } } }),
+  })
+  async function payload(response: Response) {
+    expect(response.status).toBe(200)
+    const text = await response.text()
+    return JSON.parse(text.startsWith('event:') ? text.split('\n').find(line => line.startsWith('data:'))!.slice(5) : text)
+  }
+  it('advertises facts-only company/title input without retired scoring or required source fields', async () => {
+    const source = new WritableSource()
+    const handler = createMcpHandler(() => createPjsdasMcpServer(source, { explicitUserWriteMode: 'enabled' }))
+    const catalog = await payload(await handler.fetch(request('tools/list')))
+    const tool = catalog.result.tools.find((entry: { name: string }) => entry.name === 'add_opportunities')
+    expect(tool).toBeDefined()
+    const item = tool.inputSchema.properties.opportunities.items
+    expect(item.required).toEqual(['company', 'role'])
+    for (const retired of ['roleType', 'fitScore', 'fitConfidence', 'opportunityValue', 'opportunityValueConfidence', 'rationale']) {
+      expect(item.properties).not.toHaveProperty(retired)
+    }
+    expect(item.additionalProperties).toBe(false)
+    expect(tool.description).toContain('source URL optional')
+    expect(source.writes).toHaveLength(0)
+  })
+  it('accepts and deduplicates explicit source-free jobs over the advertised HTTP tool with no discovery profile', async () => {
+    const source = new WritableSource()
+    source.snapshot.data.discoveryProfile = undefined
+    const handler = createMcpHandler(() => createPjsdasMcpServer(source, { explicitUserWriteMode: 'enabled' }))
+    const params = { name: 'add_opportunities', arguments: { commandId: 'synthetic-http-save', opportunities: [
+      { company: 'Synthetic Employer', role: 'Synthetic Product Role' },
+    ] } }
+    const first = await payload(await handler.fetch(request('tools/call', params)))
+    expect(first.result.isError).not.toBe(true)
+    expect(first.result.structuredContent).toMatchObject({ applied: true, createdCount: 1, reviewRequired: false })
+    const second = await payload(await handler.fetch(request('tools/call', params)))
+    expect(second.result.isError).not.toBe(true)
+    expect(second.result.structuredContent).toMatchObject({ createdCount: 0, duplicateCount: 1 })
+    expect(source.writes).toHaveLength(1)
+    expect(source.snapshot.data.opportunities).toHaveLength(1)
+    expect(source.snapshot.data.actions).toHaveLength(0)
+    expect(source.snapshot.data.scheduleNodes).toHaveLength(0)
+  })
 })
