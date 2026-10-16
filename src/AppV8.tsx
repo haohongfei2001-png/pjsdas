@@ -1,5 +1,5 @@
 import { submitWebSemanticCapture, undoWebSemanticChange, type WebSemanticCaptureResult, type LocalSemanticUndoToken } from './webSemanticIntake.js'
-import { interactionIsRecent } from './cloud/interactionActivity.js'
+import { interactionIsRecent, observeInteractionActivity } from './cloud/interactionActivity.js'
 import { todayScheduleSnapshot, patchConsumerSnapshot } from './today/consumerScheduleSnapshot.js'
 import { interactionMetric } from './cloud/interactionMetrics.js'
 import { beginInstantCommand, beginInstantUndo, recoverInstantInteraction, type InteractionEvent } from './cloud/instantCommandClient.js'
@@ -369,6 +369,12 @@ export default function AppV8() {
       window.removeEventListener('keydown', keyboard)
     }
   }, [route])
+
+  useEffect(() => {
+    const accountKey = cloud.session?.user.id
+    if (!accountKey || !connectedWorkspaceAuthorityEnabled() || (surface !== 'today' && surface !== 'schedule')) return
+    return observeInteractionActivity(accountKey, window)
+  }, [cloud.session?.user.id, surface])
 
   useEffect(() => {
     const accountKey = cloud.session?.user.id
