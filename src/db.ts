@@ -20,7 +20,7 @@ import {
   suppressSupersededActions,
 } from './processEvents.js'
 import { mergeActionsForReimport } from './reimportState.js'
-import { createSnapshot, upgradeSnapshotToLatest, validateSnapshot, type PJSDASSnapshot } from './snapshot.js'
+import { createSnapshot, createSnapshotFromOwnedData, upgradeSnapshotToLatest, validateSnapshot, type PJSDASSnapshot } from './snapshot.js'
 import {
   cancelScheduleNodeForProcessEvent,
   processEventHasHistoricalOccurrences,
@@ -1072,13 +1072,16 @@ async function readLocalSnapshotData(tx: LocalSnapshotTransaction) {
   }
 }
 
-async function readLocalSnapshot(tx: LocalSnapshotTransaction, assertCurrent?: () => void) {
+async function readLocalSnapshot(tx: LocalSnapshotTransaction, assertCurrent?: () => void, options?: { consumeReadData?: boolean }) {
   assertCurrent?.()
   const data = await readLocalSnapshotData(tx)
   // A hot intent may arrive while IndexedDB is reading. Stop before cloning
   // and validating the historical workspace on the UI thread.
   assertCurrent?.()
-  return createSnapshot(data)
+  // get/getAll already provide fresh structured clones owned by this read.
+  // The currentness check may consume them without cloning the whole history
+  // a second time. All normalization, validation and transaction locks remain.
+  return options?.consumeReadData ? createSnapshotFromOwnedData(data) : createSnapshot(data)
 }
 
 export async function exportLocalSnapshot(assertCurrent?: () => void) {
@@ -1486,7 +1489,7 @@ export async function assertLocalSnapshotCurrent(expected: PJSDASSnapshot, asser
   const tx = db.transaction([...DATA_STORES], 'readwrite')
   try {
     assertCurrent()
-    if (canonicalWorkspaceJson(await readLocalSnapshot(tx, assertCurrent)) !== canonicalWorkspaceJson(expected)) throw new AccountCacheChangedError()
+    if (canonicalWorkspaceJson(await readLocalSnapshot(tx, assertCurrent, { consumeReadData: true })) !== canonicalWorkspaceJson(expected)) throw new AccountCacheChangedError()
     assertCurrent()
     await tx.done
   } catch (caught) {

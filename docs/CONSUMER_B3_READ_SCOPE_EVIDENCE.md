@@ -200,3 +200,117 @@ semantics and scale. Local full unit acceptance is 331 files / 3623 tests, with
 typecheck and production build passing. These results do not replace native
 browser profiling or the original unprofiled 50ms gate. No historical performance
 failure is waived and no performance threshold changed.
+
+The first complete repaired visual run (39066618891, artifact 12113324045)
+passed all Today/Schedule exact comparisons and the added one-pixel controls.
+Baseline passed 19/19; candidate passed 16/19. The three remaining failures were
+unchanged Library rows1440 (8 pixels), rows390 (394), and search320/200 (11).
+For rows390, 362 differences are the entire final raster row: its 358.953125px
+panel starts at viewport y486 after the locator scroll, crossing the 844px
+viewport. Playwright 1.63 decides `fitsViewport` from width/height alone and
+passes `captureBeyondViewport: false`, incorrectly clipping that edge:
+- https://github.com/microsoft/playwright/blob/v1.63.0/packages/playwright-core/src/server/screenshotter.ts#L223
+- https://github.com/microsoft/playwright/blob/v1.63.0/packages/playwright-core/src/server/chromium/crPage.ts#L273
+
+The region capture now uses native full-page document-coordinate clips with the
+same complete enclosing integer rectangle (Playwright's own rounding). All
+region pixels, dimensions and exact hash assertions remain; no edge is removed
+or pixel rewritten. A separate synthetic below-viewport fractional-edge case
+must detect a genuine one-pixel change on that final row. Remaining rounded-edge
+differences are not waived by this capture repair and require actual evidence.
+
+The isolated clip run39067631508 / artifact12114067028 confirmed that the
+complete 362x359 rows390 image now differs by 32 rounded-edge pixels, with zero
+last-row differences (formerly 394 including 362 clipped pixels). Both 20x21
+synthetic negative images alter exactly output pixel (0,20) on the final row and
+are rejected. Rows1440 still differs by eight pixels, search320 by eleven; all
+three original exact assertions remain failed, not exempted.
+
+Unprofiled repair-head run39066618889 / artifact12113369029 passed recovery38
+and isolation5 but failed the original history3940 long-task gate at 55ms.
+Compact confirmation and domain budgets passed that run; they do not waive this
+failure or the older compact51ms. Native clock evidence places the 55ms task at
+3109.5–3164.5 before the first pointerdown3233.4 and first capacity window3264.5,
+inside Playwright's first locator wait but without a CPU stack to identify its
+cause. It is not the separate 62ms second capacity elapsed sample. The next
+single native profile retained the observer boundary and did reproduce a 53ms
+failure (run39067631508 / artifact12113987345), with timeline/CPU/GC evidence
+preserved for attribution. No observation-window filtering or added settling
+wait is used to exclude either failure.
+
+The native 53ms failure is now attributed to application work. Its renderer
+RunTask spans 2944.130–2997.219ms (53.089ms), with 52.931ms in RunMicrotasks.
+CPU samples resolve to `readLocalSnapshot -> createSnapshot`, followed by
+`assertLocalSnapshotCurrent -> canonicalWorkspaceJson` for both values.
+`createSnapshot` occupies approximately 28.82ms (sampling estimate), including
+5.707ms of measured MinorGC; its redundant structured-clone phase has roughly
+11.5ms of self samples. The two canonical computations take approximately
+11.42ms and 10.94ms, followed by about 1.29ms comparing their large strings.
+The neighboring async work is consistent with the post-fetch currentness check
+in `runCloudSync`. This is not Playwright selector injection, and the original
+observer correctly reports failure even though input arrives later.
+
+The narrow repair consumes the fresh, exclusively owned IndexedDB get/getAll
+results only inside that currentness check, avoiding a second full-history clone.
+A shared normalization/validation implementation is used by both entry points;
+the public `createSnapshot` still defensively clones its caller's data first.
+The all-store readwrite transaction, every lease check, complete validation,
+abort handling and exact two-sided canonical comparison are unchanged. Other
+snapshot read paths continue to copy. Tests cover dense-history output parity,
+legacy normalization, public-copy isolation, invalid audit facts, all-store
+locking, late local changes, externally mutated expected data, discarded-read
+aliasing, and lease changes during reads. No timer or observer change is used.
+
+A neighboring 48.941ms task in `isRecordedAccountProjection` also performs a
+large recorded-proof comparison. It did not exceed the original threshold in
+this trace, but remains a performance risk; this narrow change does not alter
+its proof or canonical semantics. Neither the original 55ms failure nor the
+older unknown-cause 51ms task is retroactively dismissed. Browser acceptance
+must rerun the unchanged unprofiled performance gate on the final product head.
+
+Narrow-repair local validation: 333 files / 3637 tests passed with two local
+workers, typecheck and sequential production build passed. The earlier concurrent
+full-unit/build attempt ended with two SIGKILL workers and build exit137; its
+331 passing files are not counted as a full pass. No CI worker setting or budget
+was changed. Independent read-only review passed 22 focused tests and 28 old-
+implementation parity cases (eight accepted, twenty identically rejected),
+including frozen inputs, nested alias mutations and receipt-order normalization.
+This establishes limited correctness only, not native performance acceptance.
+
+## Complete-region tile-raster determinism
+
+The bounded visual-only experiment on unchanged product2c1bb8 is retained at
+https://github.com/haohongfei2001-png/pjsdas/actions/runs/39068515885/artifacts/12114098368
+Both the original dbad720 source and candidate used the official
+`--default-tile-height=4096` together with the previously reviewed
+`--disable-partial-raster`. Chromium153.0.8010.12 reads the height setting here:
+https://github.com/chromium/chromium/blob/153.0.8010.12/third_party/blink/renderer/platform/widget/compositing/layer_tree_settings.cc#L257
+Native `cc::Tile` content rectangles all had vertical origin0, with actual
+layer-bounded heights such as896,960,1024 and1792. The flag is not expected to
+make every small layer4096px tall. No production DOM or CSS changed.
+
+Both four-test phases passed: all24 protected first PNG pairs and their repeats
+were byte-identical. The prior rows1440/rows390/search320 differences8/32/11
+were zero. In each phase the separate20x21 edge negative changed exactly
+(x0,y20) from(30,60,90) to(244,0,244), rejected by the original exact hash gate.
+Independent review confirmed unchanged old/new Library geometry contracts and
+all24 captured Library DOM element/root/state contracts. The old→new environment
+still changes pixels: baseline/candidate19/11 for rows1440,6/38 for rows390,
+and7/14 for search320. Old images and failures are preserved; this does not
+claim the original PNGs are unchanged or replace the fixed baseline source.
+
+The diagnostic also added read-only native tracing, which can affect timing.
+Therefore it is a limited clean result, not proof that a single causal variable
+has been completely isolated. The official secondary configuration adds only
+the tile-height argument; its original complete20-test gate has no new CDP hooks
+and must independently pass both source builds. Every original exact region,
+whole-page assertion, first-capture rule, geometry/filter contract, threshold
+and one-pixel negative remains. Default-tile-specific browser artifacts are not
+claimed covered by this deterministic environment. Production and performance
+browser configurations are unchanged.
+
+An earlier metadata-only attempt failed before any journey because this harness
+intentionally excludes `--enable-automation`; its optional command-line query
+was removed without adding that flag. Failure evidence remains:
+https://github.com/haohongfei2001-png/pjsdas/actions/runs/39068275328/artifacts/12114461013
+The history profile job was not repeated in either visual experiment.

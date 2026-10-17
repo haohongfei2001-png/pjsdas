@@ -172,6 +172,22 @@ async function saveRenderContract(page: Page, name: string, selector = '.cgr-app
   await writeFile(`${evidence}/${name}.json`, JSON.stringify(dom, null, 2))
 }
 
+// Capture the entire enclosing document rectangle, including its final row.
+// Playwright 1.63 locator screenshots set captureBeyondViewport=false when only
+// the element's dimensions fit, even if a fractional bottom edge is offscreen.
+// Its own enclosingIntRect rounding is retained; no edge pixels are discarded.
+async function captureDocumentRegion(page: Page, selector: string, path: string) {
+  const region = page.locator(selector)
+  await expect(region).toBeVisible()
+  const clip = await region.evaluate(element => {
+    const box = element.getBoundingClientRect()
+    const x = Math.floor(box.x + scrollX + 1e-3), y = Math.floor(box.y + scrollY + 1e-3)
+    const right = Math.ceil(box.x + scrollX + box.width - 1e-3), bottom = Math.ceil(box.y + scrollY + box.height - 1e-3)
+    return { x, y, width: right - x, height: bottom - y }
+  })
+  return page.screenshot({ path, fullPage: true, clip, animations: 'disabled', caret: 'hide' })
+}
+
 // B3 permits the new scope block, ninth query and retired Inbox link only.
 // Keep the unmodified full-page evidence, then compare real DOM regions without
 // masking, repainting, moving elements, changing the baseline, or pixel tolerance.
@@ -259,12 +275,10 @@ async function protectLibrary(page: Page, width: number, scale: number) {
   }
   for (const [label, selector] of [['HEADING', '.tsui-library-heading'], ['SEARCH', '.tsui-library-toolbar input'], ['ROWS', '.tsui-library-panel'], ['TOTAL', '.tsui-library-total']] as const) {
     const name = `LIBRARY_${label}-${width}-${scale}.png`
-    const bytes = await page.locator(selector).screenshot({ path: `${evidence}/${name}`, animations: 'disabled', caret: 'hide' })
+    const bytes = await captureDocumentRegion(page, selector, `${evidence}/${name}`)
     if (diagnoseRaster) {
       const hashes = [digest(bytes)]
-      for (let index = 1; index <= 2; index++) hashes.push(digest(await page.locator(selector).screenshot({
-        path: `${evidence}/${name}.repeat-${index}.png`, animations: 'disabled', caret: 'hide',
-      })))
+      for (let index = 1; index <= 2; index++) hashes.push(digest(await captureDocumentRegion(page, selector, `${evidence}/${name}.repeat-${index}.png`)))
       await writeFile(`${evidence}/${name}.repeat.json`, JSON.stringify({ hashes }, null, 2))
       await saveRenderContract(page, `${name}.dom`, selector)
     }
@@ -550,4 +564,16 @@ for (const width of [1440, 390]) test(`exact visual comparison detects a real on
   const changed = await page.screenshot({ path: `${evidence}/NEGATIVE_ONE_PIXEL-${width}.png`, fullPage: true, animations: 'disabled', caret: 'hide' })
   expect(() => expect(digest(changed), 'the original exact gate must reject a real paint mutation').toBe(digest(original))).toThrow()
   expect(mutations).toEqual([])
+})
+
+// Synthetic clipped-edge regression, isolated from every application journey.
+// The element fits by size but extends below the 844px viewport; its complete
+// enclosing rectangle must retain a genuine change on the final raster row.
+test('document region capture retains the fractional final row below the viewport', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.setContent('<style>body{margin:0}#region{position:absolute;left:14px;top:830px;width:20px;height:20.953125px;background:rgb(30,60,90)}</style><div id="region"></div>')
+  const original = await captureDocumentRegion(page, '#region', `${evidence}/REGION_EDGE_REFERENCE.png`)
+  await page.addStyleTag({ content: '#region::after { content:""; position:absolute; left:0; top:20px; width:1px; height:1px; background:rgb(244,0,244) }' })
+  const changed = await captureDocumentRegion(page, '#region', `${evidence}/REGION_EDGE_ONE_PIXEL.png`)
+  expect(() => expect(digest(changed), 'the complete clip must detect a final-row pixel change').toBe(digest(original))).toThrow()
 })

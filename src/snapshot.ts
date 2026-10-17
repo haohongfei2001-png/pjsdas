@@ -282,7 +282,14 @@ function backfillSemanticReceiptOrder(data: SnapshotData) {
 }
 
 export function createSnapshot(data: SnapshotData, exportedAt = new Date().toISOString()): PJSDASSnapshot {
-  const normalized = structuredClone(data)
+  return createSnapshotFromOwnedData(structuredClone(data), exportedAt)
+}
+
+/** @internal Consumes exclusively owned data, such as fresh IndexedDB results.
+ * Never pass a caller's snapshot or shared application state to this entry point.
+ * Normalization and validation are identical to the defensive-copy public API.
+ */
+export function createSnapshotFromOwnedData(normalized: SnapshotData, exportedAt = new Date().toISOString()): PJSDASSnapshot {
   ensureScheduleContractInPlace(normalized)
   normalized.decisionRequests ??= []
   normalized.semanticReceipts ??= []
