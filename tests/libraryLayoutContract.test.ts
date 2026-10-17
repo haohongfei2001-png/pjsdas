@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { assertLibraryFlow, type LibraryFlow } from '../e2e/support/libraryLayoutContract.js'
+import { assertLibraryFlow, assertOriginalLibraryFilters, type LibraryFlow } from '../e2e/support/libraryLayoutContract.js'
 import { readFileSync } from 'node:fs'
 
 function mobile(count = 9): LibraryFlow {
@@ -43,5 +43,30 @@ describe('B3 bounded Library layout contract', () => {
     expect(() => assertLibraryFlow(flow)).not.toThrow()
     flow.buttons[0].height = 600
     expect(() => assertLibraryFlow(flow)).toThrow('filter height follows unchanged text')
+  })
+})
+
+describe('relocated original query rendering contract', () => {
+  const reference = [{ label: '全部', markup: '全部', pressed: 'true', active: true, disabled: false, tabIndex: 0,
+    style: { 'font-family': 'sans-serif', 'font-size': '14px', 'font-weight': '400', 'line-height': '20px',
+      color: 'rgb(20, 30, 40)', 'background-color': 'rgb(240, 242, 255)', 'border-top-width': '1px',
+      'border-top-style': 'solid', 'border-top-color': 'rgb(200, 200, 200)', padding: '4px 8px',
+      'border-radius': '8px', 'box-shadow': 'none', 'text-shadow': 'none', opacity: '1', transform: 'none' },
+    before: { content: 'none', 'background-color': 'transparent' }, after: { content: 'none', color: 'inherit' } }]
+  it('accepts unchanged text, all rendering properties, pseudo-elements and state', () => {
+    expect(() => assertOriginalLibraryFilters(structuredClone(reference), reference)).not.toThrow()
+  })
+  it('rejects any changed font, color, border, padding, radius, shadow or rendering property', () => {
+    for (const property of Object.keys(reference[0].style)) {
+      const changed = structuredClone(reference)
+      ;(changed[0].style as Record<string, string>)[property] = 'regressed'
+      expect(() => assertOriginalLibraryFilters(changed, reference), property).toThrow('original query rendering')
+    }
+  })
+  it('rejects changed text, child markup, pseudo rendering and interactive states', () => {
+    for (const change of [
+      { label: '变更' }, { markup: '<span>全部</span>' }, { pressed: 'false' }, { active: false }, { disabled: true }, { tabIndex: -1 },
+      { before: { content: 'none', 'background-color': 'red' } }, { after: { content: '"badge"', color: 'inherit' } },
+    ]) expect(() => assertOriginalLibraryFilters([{ ...reference[0], ...change }], reference)).toThrow('original query rendering')
   })
 })

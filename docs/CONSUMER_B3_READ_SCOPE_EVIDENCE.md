@@ -47,7 +47,7 @@ only for whitespace and case. Retrieval terms do not substitute for exclusions.
 
 ## Validation status
 
-- Local full suite: **330 files / 3615 tests passed** after the independent-review fixes; original per-test timeout/performance thresholds unchanged.
+- Local full suite: **330 files / 3618 tests passed** after the independent-review fixes; original per-test timeout/performance thresholds unchanged.
 - TypeScript/build passed. The generated release-identity build output is not
   committed as a claimed deployed identity.
 - Added/updated actual Playwright journeys cover read cutover/count, no mark on
@@ -85,8 +85,16 @@ only for whitespace and case. Retrieval terms do not substitute for exclusions.
   A packed-flex layout oracle independently derives each button width/line/height
   from the original styles and text, and fixes search/row spacing to the reference.
   Negative tests reject a 600px blank filter region, shifted search, changed button
-  width and line/panel gaps. Same-size original buttons retain exact pixel hashes;
-  responsive last-line redistribution retains every style plus strict geometry.
+  width and line/panel gaps. The added block/query relocates the old buttons;
+  real CI observed two ±1 corner pixels at desktop, 11 at 320/200%, and a
+  fractional clip's neighbor strip at 390. These are retained in raw button and
+  full-page evidence, not erased or reported as equal. Per the bounded acceptance
+  decision, only these relocated controls use exact rendering/style/state plus
+  geometry instead of image hashes. All computed properties (including font,
+  color, border, padding, radius and shadow), both full pseudo-element styles,
+  text/child markup, active/pressed/disabled/tab state are compared to the fixed
+  reference, with negative mutations for these properties. Other region and
+  Today/Schedule hash gates remain exact.
   Both runtimes execute original eight query, deadline ordering, 40/45 pagination
   and text-search regressions. Baseline Discovery preview and candidate Search
   Scope use separate explicit contracts. No baseline update, masking, image

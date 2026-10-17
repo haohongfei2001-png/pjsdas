@@ -62,3 +62,10 @@ export function assertLibraryFlow(flow: LibraryFlow) {
   }
   assert.equal(panel.y, toolbar.y + toolbar.height + flow.toolbarMarginBottom, 'rows immediately follow toolbar')
 }
+
+/** The approved extra controls relocate only the original eight query buttons.
+ * All collected rendering properties, pseudo-elements, text/markup and state
+ * still match the fixed reference exactly. Sizes are checked by the flow oracle. */
+export function assertOriginalLibraryFilters(actual: unknown, reference: unknown) {
+  assert.deepEqual(actual, reference, 'original query rendering and state remain exact')
+}
