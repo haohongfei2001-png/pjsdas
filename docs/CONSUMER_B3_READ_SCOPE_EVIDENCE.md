@@ -130,3 +130,10 @@ probe requires `--enable-automation`, which this runner does not set. The probe
 was removed rather than changing automation behavior just to observe it. The
 same single-renderer-flag experiment is rerun with actual browser version and
 Playwright's effective configured arguments recorded separately.
+
+The single-switch experiment completed on run 38998988581. Every failing
+before/after hash was identical to the default-renderer run; the flag therefore
+had no effect on this discrepancy and was removed. The next bounded diagnostic
+keeps the original gates and adds direct real-route captures plus html/body/root
+size/background/compositing state, all DOM attributes and ordered CSS rules.
+No additional flags or thresholds are introduced.

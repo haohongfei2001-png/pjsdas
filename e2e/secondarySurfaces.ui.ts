@@ -16,7 +16,6 @@ const originalJobFilters = ['全部', '待投递', '已投递', '收到笔试', 
 
 test.beforeAll(async ({ browser }, testInfo) => {
   const configuredArguments = testInfo.project.use.launchOptions?.args ?? []
-  expect(configuredArguments).toContain('--disable-skia-runtime-opts')
   await mkdir(evidence, { recursive: true })
   await writeFile(`${evidence}/BROWSER_RUNTIME.json`, JSON.stringify({ version: browser.version(), configuredArguments }, null, 2))
 })
@@ -155,9 +154,18 @@ async function saveRenderContract(page: Page, name: string, selector = '.cgr-app
     fonts: { status: document.fonts.status, faces: [...document.fonts].map(font => ({ family: font.family, status: font.status, style: font.style, weight: font.weight })) },
     activeElement: document.activeElement?.outerHTML,
     animations: document.getAnimations().map(animation => ({ playState: animation.playState, currentTime: animation.currentTime, timing: animation.effect?.getComputedTiming() })),
-  }, elements: [root, ...root.querySelectorAll('*')].map(element => {
+  }, roots: [document.documentElement, document.body, document.getElementById('root')!].map(element => {
     const box = element.getBoundingClientRect(), css = getComputedStyle(element)
-    return { tag: element.tagName, className: element.className, text: element.childElementCount ? undefined : element.textContent,
+    return { tag: element.tagName, attributes: Object.fromEntries([...element.attributes].map(attr => [attr.name, attr.value])),
+      box: { x: box.x, y: box.y, width: box.width, height: box.height },
+      scrollWidth: element.scrollWidth, scrollHeight: element.scrollHeight, clientWidth: element.clientWidth, clientHeight: element.clientHeight,
+      style: Object.fromEntries([...css].map(key => [key, css.getPropertyValue(key)])),
+      pseudo: ['::before', '::after'].map(selector => { const value = getComputedStyle(element, selector); return Object.fromEntries([...value].map(key => [key, value.getPropertyValue(key)])) }) }
+  }), styleSheets: [...document.styleSheets].map(sheet => ({ href: sheet.href, disabled: sheet.disabled,
+    media: sheet.media.mediaText, rules: [...sheet.cssRules].map(rule => rule.cssText) })),
+  elements: [root, ...root.querySelectorAll('*')].map(element => {
+    const box = element.getBoundingClientRect(), css = getComputedStyle(element)
+    return { tag: element.tagName, className: element.className, attributes: Object.fromEntries([...element.attributes].map(attr => [attr.name, attr.value])), text: element.childElementCount ? undefined : element.textContent,
       box: { x: box.x, y: box.y + scrollY, width: box.width, height: box.height },
       style: Object.fromEntries([...css].map(key => [key, css.getPropertyValue(key)])) }
   }) }))
@@ -417,6 +425,20 @@ for (const width of [1440, 390, 320]) test(`details and settings retain readable
   await page.locator('.event-close').click()
   expect(mutations).toEqual([])
 })
+
+// A minimal real-route replay isolates prior navigation/compositor history.
+// It is additional evidence: it never replaces a failing original route gate.
+for (const [width, route, nav] of [[1440, 'schedule', '日程'], [390, 'today', '今天']] as const) {
+  test(`direct-route raster replay ${route} at ${width}`, async ({ page }) => {
+    const mutations = await seed(page, true)
+    await page.setViewportSize({ width, height: width < 600 ? 844 : 900 })
+    await page.goto(`/pjsdas/${route}`)
+    await expect(page.locator(route === 'schedule' ? '.tsui-schedule-row' : '.tsui-task-row[data-action-id]')).toHaveCount(route === 'schedule' ? 1 : 2)
+    await page.locator('.tsui-primary-nav').getByRole('button', { name: nav, exact: true }).click()
+    await capture(page, `DIRECT_${route.toUpperCase()}`, width, 100, true)
+    expect(mutations).toEqual([])
+  })
+}
 
 for (const width of [1440, 390, 320]) test(`secondary previews and unknown-save state stay intact at ${width}`, async ({ page }) => {
   const mutations = await seed(page)
