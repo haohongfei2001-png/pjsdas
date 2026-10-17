@@ -89,7 +89,7 @@ export interface PjsdasMcpServerOptions {
   proposalSigningKey?: string
   trustedIngestionMode?: 'disabled' | 'enabled'
   trustedIngestionCapabilities?: { discovery: boolean; gmail: boolean }
-  trustedIngestionAuthorizer?: (name: 'ingest_discovery_run' | 'ingest_gmail_run', sourceId: string) => Promise<void>
+  trustedIngestionAuthorizer?: (name: 'ingest_discovery_run' | 'ingest_gmail_run', sourceId: string) => Promise<void | import('./workspaceSource.js').DiscoveryCommitAuthorization>
   explicitUserWriteMode?: 'disabled' | 'enabled'
   explicitUserCommandMode?: 'disabled' | 'enabled'
   semanticIntakeMode?: 'disabled' | 'enabled'

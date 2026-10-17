@@ -5,7 +5,7 @@ import { todayCapacity } from '../today/localDayCapacity.js'
 import { compareDeadlines, actionDeadline, actionNodesById, deadlineBoundaryMs } from '../deadlineOrder.js'
 import { canonicalOpportunityId } from '../opportunityCanonicalization.js'
 import { processNeedsReview, rankActions } from '../decisionV3.js'
-import { discoveryProfileForSnapshot, type DiscoveryProfile } from '../discoveryProfile.js'
+import { discoverySearchScope, isDiscoveryProfileConfigured, isDiscoverySearchScopeConfirmed, discoveryProfileForSnapshot, type DiscoverySearchScope } from '../discoveryProfile.js'
 import { discoveryFeedbackSummary, recentRejectedDiscoveryFeedback } from '../discoveryFeedback.js'
 import {
   overlayProcessEventsOnOpportunities,
@@ -166,15 +166,15 @@ export interface GetPipelineOutput {
 }
 
 export interface GetDiscoveryContextOutput {
+  scopeConfirmed: boolean
   meta: BridgeMeta
   configured: boolean
-  profile: DiscoveryProfile
+  profile: DiscoverySearchScope
   existingOpportunities: Array<{
     opportunityId: string
     company: string
     role: string
     stage: string
-    roleType: Opportunity['roleType']
     deadline?: string
   }>
   recentlyClosed: Array<{
@@ -565,26 +565,13 @@ export function getDecisionRules(_snapshot: PJSDASSnapshot, _context: BridgeRead
   throw new BridgeReadError('SCORING_RETIRED', 'Decision scoring and user score policies have been retired. Read Today actions or factual deadlines instead.')
 }
 
-function discoveryProfileConfigured(profile: DiscoveryProfile) {
-  return Boolean(
-    profile.targetRoleQueries.length ||
-    profile.preferredLocations.length ||
-    profile.locationNotes ||
-    profile.minimumAnnualCompensationWan !== undefined ||
-    profile.mustHave.length ||
-    profile.mustNotHave.length ||
-    profile.strengths.length ||
-    profile.notes
-  )
-}
-
 export function getDiscoveryContext(
   snapshot: PJSDASSnapshot,
   bridgeContext: BridgeReadContext = {},
 ): GetDiscoveryContextOutput {
   const context = resolvedContext(bridgeContext)
   const workspace = readWorkspace(snapshot)
-  const { minimumFitScore: _fit, minimumOpportunityValue: _value, ...profile } = discoveryProfileForSnapshot(snapshot.data.discoveryProfile)
+  const profile = discoverySearchScope(snapshot.data.discoveryProfile)
   const active = workspace.opportunities
     .filter((item) => item.processStage !== 'closed')
     .sort((a, b) => a.company.localeCompare(b.company) || a.role.localeCompare(b.role))
@@ -603,14 +590,14 @@ export function getDiscoveryContext(
 
   return {
     meta: meta(context),
-    configured: discoveryProfileConfigured(profile),
+    configured: isDiscoveryProfileConfigured(discoveryProfileForSnapshot(snapshot.data.discoveryProfile)),
+    scopeConfirmed: isDiscoverySearchScopeConfirmed(discoveryProfileForSnapshot(snapshot.data.discoveryProfile)),
     profile,
     existingOpportunities: active.map((item) => ({
       opportunityId: item.id,
       company: item.company,
       role: item.role,
       stage: item.processStage,
-      roleType: item.roleType,
       deadline: resolveApplicationDeadline(item, snapshot.data).deadline,
       participationStatus: item.participationStatus ?? 'active',
     })),
@@ -639,7 +626,8 @@ export function getDiscoveryContext(
     instructions: [
       'Use the explicit Discovery Profile as durable search preferences; do not silently infer or rewrite it.',
       'Search public job sources outside TodayAction, and keep unknown salary, deadline or location fields unknown instead of inventing them.',
-      'Do not rediscover an obviously identical company+role already present in existingOpportunities.',
+      'A configured historical profile may still have scopeConfirmed=false. Confirm the complete current scope before any new automatic discovery; preserve historical preferences.',
+      'Deduplicate by verified publisher, tenant and native posting identity; matching company/title alone never proves two postings are the same.',
       'Avoid recentlyRejected roles unless the user explicitly asks to reconsider them; the quality gate also suppresses highly similar recent rejections.',
       'Do not repeatedly surface roles already present in discoveryInbox with new, seen or later status; dismissed inbox items are suppressed for 120 days.',
       'Use propose_changes for any candidate the user wants to add; never claim discovery results were added before ChangeSet review and Apply.',

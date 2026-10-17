@@ -1,20 +1,21 @@
-import { createDiscoveryAutomationHandler } from '../gateway/discoveryAutomationHandler.js'
+import { createDiscoveryRuntime } from '../gateway/discoveryRuntime.js'
 import {
   PJSDAS_SUPABASE_PUBLISHABLE_KEY,
   PJSDAS_SUPABASE_URL,
 } from '../gateway/supabaseProject.js'
 
-const handler = createDiscoveryAutomationHandler({
-  supabaseUrl: PJSDAS_SUPABASE_URL,
-  supabasePublishableKey: PJSDAS_SUPABASE_PUBLISHABLE_KEY,
-  supabaseServiceRoleKey: process.env.PJSDAS_SUPABASE_SERVICE_ROLE_KEY ?? '',
-  tokenEncryptionKey: process.env.PJSDAS_TOKEN_ENCRYPTION_KEY ?? '',
-  googleClientId: process.env.PJSDAS_GOOGLE_CLIENT_ID ?? '',
-  googleClientSecret: process.env.PJSDAS_GOOGLE_CLIENT_SECRET ?? '',
-  // A plain provider/model string is intentionally used here. On Vercel the
-  // AI SDK routes it through AI Gateway and owns project OIDC authentication;
-  // AI_GATEWAY_API_KEY remains an operator-level fallback understood by the SDK.
-  aiGatewayModel: process.env.PJSDAS_DISCOVERY_MODEL ?? 'perplexity/sonar',
+const handler = createDiscoveryRuntime({
+  // This release is source-enforced paid-OFF. Environment configuration cannot
+  // activate paid Discovery; a separately reviewed/approved release must remove this gate.
+  environment: { PJSDAS_DISCOVERY_RUNTIME_ENABLED: 'false' },
+  base: {
+    supabaseUrl: PJSDAS_SUPABASE_URL,
+    supabasePublishableKey: PJSDAS_SUPABASE_PUBLISHABLE_KEY,
+    supabaseServiceRoleKey: process.env.PJSDAS_SUPABASE_SERVICE_ROLE_KEY ?? '',
+    tokenEncryptionKey: process.env.PJSDAS_TOKEN_ENCRYPTION_KEY ?? '',
+    googleClientId: process.env.PJSDAS_GOOGLE_CLIENT_ID ?? '',
+    googleClientSecret: process.env.PJSDAS_GOOGLE_CLIENT_SECRET ?? '',
+  },
 })
 
 export default {

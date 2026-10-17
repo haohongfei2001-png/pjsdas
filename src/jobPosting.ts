@@ -1,3 +1,4 @@
+import type { DiscoverySourceProof } from './discoveryFactSchema.js'
 import type {
   DiscoveryInboxItem,
   DiscoveryInboxStatus,
@@ -100,13 +101,37 @@ export function logicalJobMatches(
 export type OpportunityPostingIdentityResolution =
   | { kind: 'same_posting'; opportunity: Opportunity; canonicalSourceUrl: string }
   | { kind: 'distinct_posting'; canonicalSourceUrl: string }
-  | { kind: 'ambiguous'; opportunities: Opportunity[]; canonicalSourceUrl: string; reason: 'legacy_missing_posting' | 'multiple_same_posting' }
+  | { kind: 'ambiguous'; opportunities: Opportunity[]; canonicalSourceUrl: string; reason: 'legacy_missing_posting' | 'multiple_same_posting' | 'conflicting_source_identity' }
 
 export function resolveOpportunityPostingIdentity(
-  candidate: { company: string; role: string; location?: string; sourceUrl: string },
+  candidate: { company: string; role: string; location?: string; sourceUrl: string; recruitmentBatch?: string; publishedAt?: string; sourceProof?: DiscoverySourceProof },
   opportunities: Opportunity[],
 ): OpportunityPostingIdentityResolution {
-  const canonicalSourceUrl = canonicalizeJobSourceUrl(candidate.sourceUrl)
+  const canonicalSourceUrl = candidate.sourceProof ? canonicalizeVerifiedJobSourceUrl(candidate.sourceUrl) : canonicalizeJobSourceUrl(candidate.sourceUrl)
+  const identity = candidate.sourceProof?.postingIdentity
+  if (identity) {
+    const matching = opportunities.filter(item => (item.detail?.discovery?.posting?.sourceProof ?? item.detail?.discovery?.sourceProof)?.postingIdentity === identity)
+    if (matching.length > 1) return { kind: 'ambiguous', opportunities: matching, canonicalSourceUrl, reason: 'multiple_same_posting' }
+    if (matching.length === 1) {
+      const existing = matching[0]!, old = existing.detail?.discovery?.posting
+      const conflicts = (old?.recruitmentBatch && candidate.recruitmentBatch && old.recruitmentBatch !== candidate.recruitmentBatch)
+        || (old?.publishedAt && candidate.publishedAt && old.publishedAt !== candidate.publishedAt)
+        || (old?.location && candidate.location && normalizeJobLocation(old.location) !== normalizeJobLocation(candidate.location))
+      if (conflicts) return { kind: 'ambiguous', opportunities: matching, canonicalSourceUrl, reason: 'conflicting_source_identity' }
+      return { kind: 'same_posting', opportunity: existing, canonicalSourceUrl }
+    }
+    const sameSource = opportunities.filter(item => {
+      const raw = item.detail?.discovery?.sourceUrl ?? item.detail?.userFacts?.applicationUrl
+      try { return raw && canonicalizeVerifiedJobSourceUrl(raw) === canonicalSourceUrl } catch { return false }
+    })
+    if (sameSource.length) {
+      const provable = sameSource.filter(item => !(item.detail?.discovery?.posting?.sourceProof ?? item.detail?.discovery?.sourceProof)
+        && normalizeJobCompany(item.company) === normalizeJobCompany(candidate.company)
+        && (!item.detail?.discovery?.location || !candidate.location || normalizeJobLocation(item.detail.discovery.location) === normalizeJobLocation(candidate.location)))
+      if (sameSource.length === 1 && provable.length === 1) return { kind: 'same_posting', opportunity: provable[0]!, canonicalSourceUrl }
+      return { kind: 'ambiguous', opportunities: sameSource, canonicalSourceUrl, reason: 'conflicting_source_identity' }
+    }
+  }
   const exact = (value: string | undefined) => (value ?? '').trim().replace(/\s+/g, ' ').toLocaleLowerCase()
   const logical = opportunities.filter((item) => item.detail?.userFacts?.creationCommandId
     ? exact(item.company) === exact(candidate.company) && exact(item.role) === exact(candidate.role)
@@ -117,7 +142,7 @@ export function resolveOpportunityPostingIdentity(
     && Boolean(item.detail.userFacts.location) !== Boolean(candidate.location)
     && item.detail.userFacts.applicationUrl && canonicalizeJobSourceUrl(item.detail.userFacts.applicationUrl) === canonicalSourceUrl)
   if (ambiguousUserLocations.length) return { kind: 'ambiguous', opportunities: ambiguousUserLocations, canonicalSourceUrl, reason: 'legacy_missing_posting' }
-  const samePosting = logical.filter((item) => {
+  const samePosting = identity ? [] : logical.filter((item) => {
     const current = item.detail?.discovery?.posting
     if (current) return current.canonicalSourceUrl === canonicalSourceUrl
     const sourceUrl = item.detail?.discovery?.sourceUrl ?? item.detail?.userFacts?.applicationUrl
@@ -162,6 +187,17 @@ export function canonicalizeJobSourceUrl(value: string) {
   return url.toString()
 }
 
+/** Source adapters need identity-bearing query parameters and SPA routes.
+ * Only well-known analytics keys are removed; legacy canonical values remain decodable. */
+export function canonicalizeVerifiedJobSourceUrl(value: string) {
+  const url = new URL(value)
+  for (const key of [...url.searchParams.keys()]) if (/^utm_/i.test(key) || /^(fbclid|gclid)$/i.test(key)) url.searchParams.delete(key)
+  url.searchParams.sort()
+  if (url.hash && !/^#(?:\/|!|.*[=?])/.test(url.hash)) url.hash = ''
+  if (url.pathname.length > 1) url.pathname = url.pathname.replace(/\/+$/, '')
+  return url.toString()
+}
+
 export function jobSourceHost(sourceUrl: string) {
   return new URL(sourceUrl).hostname.toLocaleLowerCase().replace(/^www\./, '')
 }
@@ -173,13 +209,18 @@ export interface CreateJobPostingEvidenceInput {
   sourceTitle: string
   location?: string
   deadline?: string
+  deadlinePrecision?: 'date' | 'datetime'
+  publishedAt?: string
+  publishedPrecision?: 'date' | 'datetime'
+  recruitmentBatch?: string
+  sourceProof?: DiscoverySourceProof
   compensationText?: string
   postingStatus?: JobPostingStatus
   observedAt: string
 }
 
 export function createJobPostingEvidence(input: CreateJobPostingEvidenceInput): JobPostingEvidence {
-  const canonicalSourceUrl = canonicalizeJobSourceUrl(input.sourceUrl)
+  const canonicalSourceUrl = input.sourceProof ? canonicalizeVerifiedJobSourceUrl(input.sourceUrl) : canonicalizeJobSourceUrl(input.sourceUrl)
   const identityKey = jobIdentityKey(input.company, input.role, input.location)
   const postingStatus = input.postingStatus ?? 'unknown'
   const fingerprintPayload = [
@@ -188,10 +229,11 @@ export function createJobPostingEvidence(input: CreateJobPostingEvidenceInput): 
     input.sourceTitle.trim(),
     postingStatus,
     input.deadline ?? '',
-    input.compensationText ?? '',
+    input.compensationText ?? '', input.deadlinePrecision ?? '', input.publishedAt ?? '', input.publishedPrecision ?? '',
+    input.recruitmentBatch ?? '', input.sourceProof?.postingIdentity ?? '', [...new Set(input.sourceProof?.unresolvedFields ?? [])].sort().join(','),
   ].join('|')
   return {
-    id: `posting:${stableHash(canonicalSourceUrl)}`,
+    id: `posting:${stableHash(input.sourceProof?.postingIdentity ?? canonicalSourceUrl)}`,
     identityKey,
     sourceUrl: input.sourceUrl,
     canonicalSourceUrl,
@@ -200,12 +242,26 @@ export function createJobPostingEvidence(input: CreateJobPostingEvidenceInput): 
     postingStatus,
     location: input.location,
     deadline: input.deadline,
+    deadlinePrecision: input.deadlinePrecision, publishedAt: input.publishedAt, publishedPrecision: input.publishedPrecision,
+    recruitmentBatch: input.recruitmentBatch, sourceProof: input.sourceProof,
     compensationText: input.compensationText,
     firstSeenAt: input.observedAt,
     lastSeenAt: input.observedAt,
     lastVerifiedAt: input.observedAt,
     fingerprint: stableHash(fingerprintPayload),
   }
+}
+
+/** With no source timezone, a calendar deadline is certainly past only after
+ * that date has ended in every civil timezone. This is a filter bound, not a
+ * fabricated deadline timestamp written to the job. */
+export function jobDeadlineDefinitelyExpired(value: string | undefined, now = new Date()) {
+  if (!value) return false
+  const parsed = Date.parse(value)
+  if (!Number.isFinite(parsed)) return false
+  return /^\d{4}-\d{2}-\d{2}$/.test(value)
+    ? now.getTime() >= parsed + 36 * 60 * 60 * 1000
+    : now.getTime() > parsed
 }
 
 function dateValue(value: string | undefined) {
@@ -215,8 +271,7 @@ function dateValue(value: string | undefined) {
 
 export function jobPostingFreshness(posting: JobPostingEvidence, now = new Date()): JobPostingFreshness {
   if (posting.postingStatus === 'closed') return 'closed'
-  const deadline = dateValue(posting.deadline)
-  if (Number.isFinite(deadline) && deadline < now.getTime()) return 'closed'
+  if (!posting.sourceProof?.unresolvedFields?.includes('deadline')&&jobDeadlineDefinitelyExpired(posting.deadline, now)) return 'closed'
   const checkedAt = dateValue(posting.lastVerifiedAt)
   if (!Number.isFinite(checkedAt)) return 'unknown'
   const ageDays = Math.max(0, (now.getTime() - checkedAt) / DAY_MS)
@@ -230,7 +285,7 @@ export function validateJobPostingEvidence(posting: JobPostingEvidence) {
   if (!posting.id?.trim() || !posting.identityKey?.trim() || !posting.fingerprint?.trim()) errors.push('岗位发布记录缺少稳定身份字段。')
   if (!posting.sourceUrl?.trim() || !posting.canonicalSourceUrl?.trim() || !posting.sourceHost?.trim() || !posting.sourceTitle?.trim()) errors.push('岗位发布记录缺少来源字段。')
   try {
-    if (canonicalizeJobSourceUrl(posting.sourceUrl) !== posting.canonicalSourceUrl) errors.push('岗位发布记录 canonicalSourceUrl 与来源不一致。')
+    if ((posting.sourceProof ? canonicalizeVerifiedJobSourceUrl(posting.sourceUrl) : canonicalizeJobSourceUrl(posting.sourceUrl)) !== posting.canonicalSourceUrl) errors.push('岗位发布记录 canonicalSourceUrl 与来源不一致。')
   } catch {
     errors.push('岗位发布记录来源 URL 无效。')
   }
@@ -250,10 +305,41 @@ function newerIso(a: string, b: string) {
   return a >= b ? a : b
 }
 
+export function isOlderVerifiedPosting(previous:JobPostingEvidence|undefined,incoming:JobPostingEvidence){
+  return Boolean(previous?.sourceProof&&incoming.sourceProof
+    &&Date.parse(incoming.sourceProof.verifiedAt)<Date.parse(previous.sourceProof.verifiedAt))
+}
 function mergeSameSource(previous: JobPostingEvidence, incoming: JobPostingEvidence): JobPostingEvidence {
+  if(isOlderVerifiedPosting(previous,incoming))return previous
+  const previousProof = previous.sourceProof, incomingProof = incoming.sourceProof
+  const strictlyNewer = Boolean(previousProof && incomingProof && Date.parse(incomingProof.verifiedAt) > Date.parse(previousProof.verifiedAt))
+  const unresolved = new Set([...(previousProof?.unresolvedFields ?? []), ...(incomingProof?.unresolvedFields ?? [])])
+  if (previousProof && incomingProof && !strictlyNewer) {
+    // Equal timestamps are unordered observations, not newer confirmation. The
+    // batch verifier can share one clock tick across several source responses.
+    for (const field of ['deadline', 'recruitmentBatch'] as const) {
+      const before = previousProof.fields.find(item => item.field === field)?.value
+      const after = incomingProof.fields.find(item => item.field === field)?.value
+      if (before !== undefined && after !== undefined && before !== after) unresolved.add(field)
+    }
+  }
   return {
     ...previous,
     ...incoming,
+    location: incoming.location ?? previous.location,
+    deadline: incoming.deadline ?? previous.deadline,
+    deadlinePrecision: incoming.deadline ? incoming.deadlinePrecision : previous.deadlinePrecision,
+    publishedAt: incoming.publishedAt ?? previous.publishedAt,
+    publishedPrecision: incoming.publishedAt ? incoming.publishedPrecision : previous.publishedPrecision,
+    recruitmentBatch: incoming.recruitmentBatch ?? previous.recruitmentBatch,
+    compensationText: previous.compensationText,
+    postingStatus: incoming.postingStatus === 'unknown' ? previous.postingStatus : incoming.postingStatus,
+    sourceProof: incoming.sourceProof ? { ...incoming.sourceProof,
+      unresolvedFields: [...unresolved].filter(field => !strictlyNewer || incomingProof!.unresolvedFields?.includes(field)
+        || !incomingProof!.fields.some(proof => proof.field === field)).sort(),
+      fields: [...new Map([
+      ...(previous.sourceProof?.fields ?? []), ...incoming.sourceProof.fields,
+    ].map(field => [field.field, field])).values()] } : previous.sourceProof,
     firstSeenAt: previous.firstSeenAt <= incoming.firstSeenAt ? previous.firstSeenAt : incoming.firstSeenAt,
     lastSeenAt: newerIso(previous.lastSeenAt, incoming.lastSeenAt),
     lastVerifiedAt: newerIso(previous.lastVerifiedAt, incoming.lastVerifiedAt),
@@ -267,6 +353,10 @@ export function mergeJobPostingEvidence(
   incoming: JobPostingEvidence,
   _now = new Date(),
 ) {
+  if (incoming.sourceProof && (current.sourceProof?.postingIdentity === incoming.sourceProof.postingIdentity
+    || !current.sourceProof && canonicalizeVerifiedJobSourceUrl(current.sourceUrl) === canonicalizeVerifiedJobSourceUrl(incoming.sourceUrl))) {
+    incoming = { ...incoming, id: current.id }
+  }
   if (incoming.id === current.id) {
     return {
       current: mergeSameSource(current, incoming),

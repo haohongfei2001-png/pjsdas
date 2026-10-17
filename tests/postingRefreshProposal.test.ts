@@ -1,3 +1,4 @@
+import { recruitingPagesFixture } from './fixtures/verifiedDiscovery.js'
 import { describe, expect, it } from 'vitest'
 import { invokeProposeChanges } from '../gateway/proposeChanges.js'
 import { verifySignedProposalToken } from '../gateway/proposalToken.js'
@@ -14,8 +15,8 @@ const base = createFileWorkspaceSource({
   workspaceVersion: 'drive:30',
 })
 
-const sourceUrl = 'https://careers.example.com/jobs/alpha?utm_source=old'
-const canonicalSourceUrl = 'https://careers.example.com/jobs/alpha'
+const sourceUrl = 'https://www.liepin.com/job/9404.shtml?utm_source=old'
+const canonicalSourceUrl = 'https://www.liepin.com/job/9404.shtml'
 
 function source(): WorkspaceSource {
   return {
@@ -80,7 +81,7 @@ describe('v1.7 Round 2 review-only posting refresh proposals', () => {
         ownerId: 'opp-alpha',
         postingId: posting.id,
         canonicalSourceUrl,
-        sourceUrl: 'https://careers.example.com/jobs/alpha?utm_source=refresh',
+        sourceUrl: 'https://www.liepin.com/job/9404.shtml?utm_source=refresh',
         sourceTitle: '示例科技 AI 产品经理｜招聘官网',
         postingStatus: 'open',
         observedAt: '2026-09-12T09:58:00+08:00',
@@ -88,9 +89,9 @@ describe('v1.7 Round 2 review-only posting refresh proposals', () => {
       discoveryRunContext: {
         mode: 'refresh',
         queries: ['复核示例科技 AI 产品经理'],
-        searchedSourceHosts: ['careers.example.com'],
+        searchedSourceHosts: ['liepin.com'],
       },
-    }, { signingKey })
+    }, { signingKey, fetchImpl: recruitingPagesFixture([{ company: '示例科技', role: 'AI 产品经理', sourceUrl: 'https://www.liepin.com/job/9404.shtml?utm_source=refresh' }]) })
 
     expect(result.isError).not.toBe(true)
     const envelope = await envelopeFrom(result)
@@ -100,12 +101,13 @@ describe('v1.7 Round 2 review-only posting refresh proposals', () => {
       ownerId: 'opp-alpha',
       expectedPostingId: posting.id,
       expectedCanonicalSourceUrl: canonicalSourceUrl,
-      postingStatus: 'open',
+      postingStatus: 'unknown',
+      verifiedObservation: { sourceVerification: 'verified' },
     })
     expect(envelope.changeSet.discoveryRun).toMatchObject({
       mode: 'refresh',
       queries: ['复核示例科技 AI 产品经理'],
-      searchedSourceHosts: ['careers.example.com'],
+      searchedSourceHosts: ['liepin.com'],
       receivedCount: 1,
       reviewCandidateCount: 1,
     })
@@ -136,7 +138,7 @@ describe('v1.7 Round 2 review-only posting refresh proposals', () => {
         ownerId: 'opp-alpha',
         postingId: posting.id,
         canonicalSourceUrl,
-        sourceUrl: 'https://careers.example.com/jobs/different',
+        sourceUrl: 'https://www.liepin.com/job/9405.shtml',
         sourceTitle: '另一个招聘来源',
         postingStatus: 'open',
       }],

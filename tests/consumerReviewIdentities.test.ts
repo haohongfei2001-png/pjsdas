@@ -111,7 +111,9 @@ it('the actual prepare command keeps plaintext outside the upload directory, wit
   const env = { ...process.env, PJSDAS_SUPABASE_SERVICE_ROLE_KEY: '', TA_REVIEW_MODE: 'provision', TA_REVIEW_EXPECTED_SHA: input().expectedSha,
     TA_REVIEW_VERIFIED_CLIENT_ID: input().clientId, TA_REVIEW_EXPIRES_AT: input().expiresAt, TA_REVIEW_RECIPIENT_PUBLIC_KEY_BASE64: Buffer.from(pair.publicKey.export({ type: 'spki', format: 'pem' })).toString('base64'), TA_REVIEW_OUTPUT_DIR: output, TA_REVIEW_PRIVATE_PACKET: privatePath }
   try {
-    const log = execFileSync(process.execPath, ['node_modules/tsx/dist/cli.mjs', 'scripts/consumer-management/review-identities-cli.ts', '--prepare'], { env, encoding: 'utf8' })
+    // Official tsx Node loader runs the same real CLI entry and assertions,
+    // without starting the convenience CLI's unrelated local IPC server.
+    const log = execFileSync(process.execPath, ['--import', 'tsx', 'scripts/consumer-management/review-identities-cli.ts', '--prepare'], { env, encoding: 'utf8' })
     expect(readdirSync(output).sort()).toEqual(['identity-manifest.json', 'recovery.encrypted.json'])
     expect(statSync(privatePath).mode & 0o777).toBe(0o600)
     const packet = JSON.parse(readFileSync(privatePath, 'utf8'))

@@ -41,6 +41,8 @@ jobs:
           node scripts/verify-installed-runtime-lock.mjs
       - name: Install browser
         run: npx playwright install --with-deps ${{ matrix.browser }}
+      - name: Prove mock cloud isolation before application browser tests
+        run: npx playwright test --config=playwright.cloud-guard.config.mts --project=${{ matrix.project }}
       - name: Run RC browser hardening
         run: npx playwright test --config=playwright.config.mts --project=${{ matrix.project }} ${{ matrix.suite }}
       - name: Upload RC browser evidence

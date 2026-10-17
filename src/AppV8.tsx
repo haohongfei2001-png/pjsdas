@@ -1,5 +1,6 @@
+import { currentAccountCacheSession, isAccountCacheSessionResolved } from './cloud/accountCacheLease.js'
 import { submitWebSemanticCapture, undoWebSemanticChange, type WebSemanticCaptureResult, type LocalSemanticUndoToken } from './webSemanticIntake.js'
-import { interactionIsRecent } from './cloud/interactionActivity.js'
+import { createInteractionQuietScheduler, interactionIsRecent, observeInteractionActivity } from './cloud/interactionActivity.js'
 import { todayScheduleSnapshot, patchConsumerSnapshot } from './today/consumerScheduleSnapshot.js'
 import { interactionMetric } from './cloud/interactionMetrics.js'
 import { beginInstantCommand, beginInstantUndo, recoverInstantInteraction, type InteractionEvent } from './cloud/instantCommandClient.js'
@@ -27,6 +28,8 @@ import CloudSettingsCard from './cloud/CloudSettingsCard.js'
 import { useCloud } from './cloud/CloudContext.js'
 import { ensureAuthoritativePersistence } from './cloud/authoritativePersistence.js'
 import { connectedWorkspaceAuthorityEnabled } from './cloud/connectedWorkspaceRepository.js'
+import { captureWorkspaceWriteLease, workspaceWriteIdentityMatches } from './cloud/workspaceWriteLease.js'
+import { scheduleRouteReturnPosition } from './routeReturnFocus.js'
 import { getAccountCheckpoint } from './cloud/syncState.js'
 import {
   refreshConnectedAuthoritativeCache,
@@ -86,7 +89,7 @@ import './tsui02.css'
 type Surface = 'today' | 'opportunities' | 'schedule' | 'decisions' | 'history' | 'settings'
 type PrimarySurface = 'today' | 'opportunities' | 'schedule'
 type OpportunityTab = 'opportunities' | 'prepare' | 'discovery'
-type CompletionFeedback = { id: string; title: string; previousStatus?: Action['status']; commandId?: string; localUndo?: ActionStatusUndo; syncMessage?: string; outcome: 'done' | 'no_write' | 'queued' | 'confirmed_pending' | 'error'; error?: string }
+type CompletionFeedback = { id: string; title: string; previousStatus?: Action['status']; commandId?: string; localUndo?: ActionStatusUndo; accountKey?: string; writeLease?: ReturnType<typeof captureWorkspaceWriteLease>; syncMessage?: string; outcome: 'done' | 'no_write' | 'queued' | 'confirmed_pending' | 'error'; error?: string }
 type RouteState = {
   surface: Surface
   capture: boolean
@@ -157,6 +160,9 @@ function LanguageSwitch() {
 export default function AppV8() {
   const { lang } = useUiLanguage()
   const cloud = useCloud()
+  // CloudContext publishes Auth/binding changes; a painted cache is not write admission.
+  const jobWriteBlocked = cloud.loading || !isAccountCacheSessionResolved()
+    || !workspaceWriteIdentityMatches(cloud.session?.user.id, currentAccountCacheSession(), cloud.device.workspaceOwnerUserId)
   const zh = lang === 'zh'
   const [route, setRoute] = useState<RouteState>(() => routeFromPath())
   const [captureReturnPath, setCaptureReturnPath] = useState('/today')
@@ -268,6 +274,7 @@ export default function AppV8() {
   todayFreshnessRef.current = todayFreshness
 
   async function setTodayCapacity(minutes: number, expectedScope: string) {
+    const writeLease = captureWorkspaceWriteLease(cloud.session?.user.id)
     if (!Number.isInteger(minutes) || minutes < 0 || minutes > 1440) throw new Error('今日可用时间应在 0 到 24 小时之间。')
     const currentTime = new Date()
     const currentTimezone = resolveDeviceTimezone()
@@ -281,12 +288,14 @@ export default function AppV8() {
       const commandId = createConnectedCommandId('set-date-capacity')
       if (!snapshot) throw new Error('账号记录尚未读取。')
       await beginInstantCommand(cloud.session.user.id, snapshot, { commandId, kind: 'set_date_capacity', date, minutes })
+      writeLease.assertCurrent()
       return
     } else {
       const current = snapshot?.data.timePlanning ?? { version: 1 as const, updatedAt: timestamp }
-      await saveLocalTimePlanning({ ...current, dateOverrides: { ...current.dateOverrides, [date]: minutes }, updatedAt: timestamp })
+      await saveLocalTimePlanning({ ...current, dateOverrides: { ...current.dateOverrides, [date]: minutes }, updatedAt: timestamp }, writeLease.assertCurrent)
     }
     await reload()
+    writeLease.assertCurrent()
   }
 
   function navigate(path: string, replace = false) {
@@ -368,6 +377,12 @@ export default function AppV8() {
 
   useEffect(() => {
     const accountKey = cloud.session?.user.id
+    if (!accountKey || !connectedWorkspaceAuthorityEnabled() || (surface !== 'today' && surface !== 'schedule')) return
+    return observeInteractionActivity(accountKey, window)
+  }, [cloud.session?.user.id, surface])
+
+  useEffect(() => {
+    const accountKey = cloud.session?.user.id
     if ((surface !== 'today' && surface !== 'schedule') || !accountKey || !connectedWorkspaceAuthorityEnabled()) {
       setTodayFreshness({ state: 'local' })
       return
@@ -375,8 +390,11 @@ export default function AppV8() {
 
     let active = true
     let running = false
+    const quietRefresh = createInteractionQuietScheduler(accountKey, () => { if (active) void refresh() })
     const refresh = async (initial = false) => {
-      if (running || (interactionIsRecent(accountKey) && !getAccountCheckpoint(accountKey).conflict)) return
+      if (!passiveCloudReadAllowed() || running) return
+      if (interactionIsRecent(accountKey) && !getAccountCheckpoint(accountKey).conflict) { quietRefresh.schedule(); return }
+      quietRefresh.cancel()
       const previousFreshness = todayFreshnessRef.current
       running = true
       setTodayFreshness((current) => ({
@@ -386,7 +404,7 @@ export default function AppV8() {
       try {
         const result = await refreshConnectedAuthoritativeCache(accountKey, { passive: true })
         if (!active) return
-        if (interactionIsRecent(accountKey) && !getAccountCheckpoint(accountKey).conflict) { setTodayFreshness(previousFreshness); return }
+        if (interactionIsRecent(accountKey) && !getAccountCheckpoint(accountKey).conflict) { setTodayFreshness(previousFreshness); quietRefresh.schedule(); return }
         if (result.state === 'current' || result.state === 'updated') {
           setTodayFreshness({
             state: result.state,
@@ -437,6 +455,7 @@ export default function AppV8() {
     document.addEventListener('visibilitychange', visible)
     return () => {
       active = false
+      quietRefresh.cancel()
       window.clearInterval(interval)
       window.removeEventListener('focus', focus)
       window.removeEventListener('online', online)
@@ -540,14 +559,16 @@ export default function AppV8() {
   async function recordJobAction(opportunityId: string, kind: 'today' | 'submission'): Promise<WebSemanticCaptureResult | void> {
     if (CGR02_TODAY_READ_ONLY) throw new Error('This workspace is read-only.')
     const accountKey = cloud.session?.user.id
+    const writeLease = captureWorkspaceWriteLease(accountKey)
     if (kind === 'submission' && accountKey && connectedWorkspaceAuthorityEnabled() && snapshot) {
       const target = opportunities.find(item => item.id === opportunityId)
       if (!target) throw new Error('Choose an existing job before recording submission.')
       const apply = actions.find(item => item.opportunityId === opportunityId && item.kind === 'apply')
       const commandId = createConnectedCommandId('instant-action')
       await beginInstantCommand(accountKey, snapshot, { commandId, kind: 'record_application_submission', opportunityId })
+      writeLease.assertCurrent()
       setLastCompletedAction({ id: apply?.id ?? `submission:${opportunityId}`, title: apply?.title ?? `${target.company} · ${target.role}`,
-        previousStatus: apply?.status, commandId, outcome: 'done', syncMessage: navigator.onLine ? undefined
+        previousStatus: apply?.status, commandId, accountKey, writeLease, outcome: 'done', syncMessage: navigator.onLine ? undefined
           : (zh ? '已保存在本机，联网后自动同步。' : 'Saved on this device; sync resumes when online.') })
       return
     }
@@ -564,11 +585,14 @@ export default function AppV8() {
           ? { kind: 'application_action' as const, plannedDate: day }
           : { kind: 'application_submitted' as const, occurredAt: at.toISOString() }) }] })
     await reload()
+    writeLease.assertCurrent()
     return result
   }
   async function undoJobAction(token: LocalSemanticUndoToken) {
+    const writeLease = captureWorkspaceWriteLease(token.accountKey)
     await undoWebSemanticChange(token)
     await reload()
+    writeLease.assertCurrent()
   }
 
   async function markAction(id: string, status: Action['status'], intent?: 'application_submission') {
@@ -576,7 +600,10 @@ export default function AppV8() {
     if (!before) return
     let authoritativeCommandId: string | undefined
     let localUndo: ActionStatusUndo | undefined
+    let assertWriteCurrent: (() => void) | undefined
     try {
+      const writeLease = captureWorkspaceWriteLease(cloud.session?.user.id)
+      assertWriteCurrent = writeLease.assertCurrent
       if (before.kind === 'apply' && status === 'done' && intent !== 'application_submission') {
         throw new Error('请使用“我已投递”确认真实投递。Use I applied to confirm an application submission.')
       }
@@ -587,16 +614,18 @@ export default function AppV8() {
           ? { commandId, kind: 'record_application_submission' as const, opportunityId: before.opportunityId! }
           : { commandId, kind: 'set_action_status' as const, actionId: id, status }
         await beginInstantCommand(cloud.session.user.id, snapshot, command)
-        if (status === 'done') setLastCompletedAction({ id, title: before.title, previousStatus: before.status, commandId, outcome: 'done', syncMessage: navigator.onLine ? undefined : (zh ? '已保存在本机，联网后自动同步。' : 'Saved on this device; sync resumes when online.') })
+        writeLease.assertCurrent()
+        if (status === 'done') setLastCompletedAction({ id, title: before.title, previousStatus: before.status, commandId, accountKey: cloud.session.user.id, writeLease, outcome: 'done', syncMessage: navigator.onLine ? undefined : (zh ? '已保存在本机，联网后自动同步。' : 'Saved on this device; sync resumes when online.') })
         return
       }
       {
         if (before.kind === 'apply' && status === 'done') throw new Error('确认投递需要已连接的账户；此操作未写入。')
-        const applied = await applyActionStatusChangeSet(id, status)
+        const applied = await applyActionStatusChangeSet(id, status, writeLease.assertCurrent)
         localUndo = applied?.actionCompensations?.[0]
         if (cloud.session) await ensureAuthoritativePersistence(true, cloud.syncNow)
       }
       await reload()
+      writeLease.assertCurrent()
       if (status === 'done' && before.status !== 'done') {
         setLastCompletedAction({
           id: before.id,
@@ -604,11 +633,16 @@ export default function AppV8() {
           previousStatus: before.status,
           commandId: authoritativeCommandId,
           localUndo,
+          accountKey: cloud.session?.user.id,
+          writeLease,
           outcome: 'done',
         })
       } else if (lastCompletedAction?.id === id) setLastCompletedAction(null)
     } catch (caught) {
+      // A late callback may not restore the previous account's receipt UI.
+      if (assertWriteCurrent) { try { assertWriteCurrent() } catch { return } }
       await reload()
+      if (assertWriteCurrent) { try { assertWriteCurrent() } catch { return } }
       setLastCompletedAction({
         id: before.id,
         title: before.title,
@@ -623,23 +657,40 @@ export default function AppV8() {
   async function undoLastCompletion() {
     const item = lastCompletedAction
     if (!item || item.outcome !== 'done' || !snapshot) return
+    let assertWriteCurrent: (() => void) | undefined
     try {
-      if (cloud.session && connectedWorkspaceAuthorityEnabled() && item.commandId) {
+      // Compensation belongs to the original admitted operation, even if an
+      // identical action postimage survives login or an account switch.
+      if (!item.writeLease) throw new Error('Undo lacks its original account admission; no changes written.')
+      const writeLease = item.writeLease
+      assertWriteCurrent = writeLease.assertCurrent
+      writeLease.assertCurrent()
+      if (item.localUndo && item.accountKey && connectedWorkspaceAuthorityEnabled()) {
+        throw new Error('本地撤销不能应用到已连接的账号；没有写入变化。 / Local Undo cannot modify a connected account. No changes were saved.')
+      }
+      if (item.accountKey && connectedWorkspaceAuthorityEnabled() && item.commandId) {
         if (item.commandId.startsWith('instant-action:')) {
-          await beginInstantUndo(cloud.session.user.id, item.commandId, snapshot)
+          await beginInstantUndo(item.accountKey, item.commandId, snapshot)
+          writeLease.assertCurrent()
           setLastCompletedAction(null)
           return
         }
-        const result = await undoConnectedBusinessCommand(cloud.session.user.id, item.commandId)
+        const result = await undoConnectedBusinessCommand(item.accountKey, item.commandId)
         if (result.outcome === 'CONFLICT') throw new Error(result.conflict?.message ?? 'Undo conflicted with a dependent authoritative update.')
       } else {
         if (!item.localUndo) throw new Error('Undo lacks exact completion evidence; no changes written.')
-        await undoActionStatusChange(item.localUndo)
+        await undoActionStatusChange(item.localUndo, writeLease.assertCurrent)
         if (cloud.session) await ensureAuthoritativePersistence(true, cloud.syncNow)
       }
       await reload()
+      writeLease.assertCurrent()
       setLastCompletedAction(null)
     } catch (caught) {
+      // A late callback may not restore the previous account's receipt UI.
+      if (assertWriteCurrent) { try { assertWriteCurrent() } catch {
+        setLastCompletedAction(current => current === item ? null : current)
+        return
+      } }
       setLastCompletedAction({ ...item, outcome: 'error', error: caught instanceof Error ? caught.message : String(caught) })
     }
   }
@@ -666,7 +717,7 @@ export default function AppV8() {
   }
 
   function restoreDetailOrigin(origin: { scrollY: number; actionId?: string; opportunityId?: string }) {
-    window.requestAnimationFrame(() => window.requestAnimationFrame(() => {
+    scheduleRouteReturnPosition(window, document, () => {
       window.scrollTo(0, origin.scrollY)
       if (origin.actionId) {
         const row = [...document.querySelectorAll<HTMLElement>('.tsui-task-row[data-action-id], [data-deferred-action-id]')]
@@ -678,7 +729,7 @@ export default function AppV8() {
           .find((element) => element.dataset.opportunityId === origin.opportunityId)
         row?.focus()
       }
-    }))
+    })
   }
 
   function closeOpportunity() {
@@ -918,7 +969,7 @@ export default function AppV8() {
             onCapture={openCapture} onNavigate={navigateFromDetail}
             onOpenDecision={(id) => navigate('/decisions/' + encodeURIComponent(id) + '?from=' + encodeURIComponent(selectedOpportunity.id))}
             onJobAction={recordJobAction} onUndoJobAction={undoJobAction}
-            onMarkAction={markAction} readOnly={CGR02_TODAY_READ_ONLY}
+            onMarkAction={markAction} readOnly={CGR02_TODAY_READ_ONLY} writeBlocked={jobWriteBlocked}
           />
         ) : null}
         {!loading && surface === 'decisions' ? <DecisionRequestsView requests={decisionRequests} opportunities={opportunities} scheduleNodes={snapshot?.data.scheduleNodes ?? []} reminderIntents={snapshot?.data.reminderIntents ?? []} focusRequestId={route.decisionRequestId}
@@ -1099,3 +1150,4 @@ function formatMinutes(minutes: number) {
   const value = Number.isInteger(hours) ? String(hours) : hours.toFixed(1)
   return zh ? `${value} 小时` : `${value} hr`
 }
+import { passiveCloudReadAllowed } from './cloud/runtimeCloudMode.js'

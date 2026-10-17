@@ -1,3 +1,4 @@
+import { MOCK_TARGET_AUTH_ORIGIN } from './support/mockCloudTargets.js'
 import { expect, test } from '@playwright/test'
 import { freezeTodayFixture } from './support/consumerFixtureClock.js'
 import { AUTH_KEY, BACKEND, cors, health, session, workspace } from './fixtures/todayWorkspace.js'
@@ -16,7 +17,7 @@ for (const scenario of ['sign-out', 'local-edit', 'command-sign-out', 'command-l
       localStorage.setItem('pcr-race-seeded', '1')
     }
   }, { key: AUTH_KEY, value: session('account-a', 'token-a') })
-  await page.route('https://*.supabase.co/auth/v1/**', route => cors(route, {}, 200))
+  await page.route(`${MOCK_TARGET_AUTH_ORIGIN}/auth/v1/**`, route => cors(route, {}, 200))
   await page.route(BACKEND + '/**', async route => {
     if (route.request().method() === 'OPTIONS') return cors(route, {}, 204)
     if (new URL(route.request().url()).pathname === '/api/health') return cors(route, health())
@@ -57,8 +58,19 @@ for (const scenario of ['sign-out', 'local-edit', 'command-sign-out', 'command-l
     })
     revision = 9
     snapshot.data.actions[1].title = 'Newer remote change'
+    if (scenario === 'checkpoint-interruption-edited') await page.addInitScript(() => {
+      ;(window as any).__checkpointRecovery = []
+      window.addEventListener('pjsdas:command-recovered', event => {
+        const detail = (event as CustomEvent).detail
+        if (detail.commandId === 'interrupted') (window as any).__checkpointRecovery.push(detail)
+      })
+    })
     await page.reload()
     if (scenario === 'checkpoint-interruption-edited') {
+      // Prove automatic receipt recovery ran after reload and refused to
+      // overwrite the local edit, rather than only reading preexisting IDB.
+      await expect.poll(() => page.evaluate(() => (window as any).__checkpointRecovery)).toContainEqual(
+        expect.objectContaining({ commandId: 'interrupted', outcome: 'ALREADY_APPLIED', localProjection: 'pending' }))
       await expect.poll(() => page.evaluate(async () => (await (await import('/pjsdas/src/db.ts')).exportLocalSnapshot()).data.actions.find(a => a.id === 'A-action-1')?.title)).toBe('Genuine post-projection edit')
       expect(await page.evaluate(() => localStorage.getItem('pjsdas-cgr01-pending:account-a'))).not.toBeNull()
       expect(commandCalls).toBe(1)
@@ -195,7 +207,7 @@ for (const edited of [false, true]) test(`first login sync settles before an old
   // Isolate the two real coordinators on the real IndexedDB, without a third
   // background UI timer changing the deliberately held commit boundary.
   await page.route('**/pjsdas/consumer-read-race', route => route.fulfill({ contentType: 'text/html', body: '<!doctype html><title>Consumer read race</title>' }))
-  await page.route('https://*.supabase.co/auth/v1/**', route => cors(route, {}, 200))
+  await page.route(`${MOCK_TARGET_AUTH_ORIGIN}/auth/v1/**`, route => cors(route, {}, 200))
   await page.route(BACKEND + '/**', async route => {
     if (route.request().method() === 'OPTIONS') return cors(route, {}, 204)
     if (new URL(route.request().url()).pathname === '/api/health') return cors(route, health())
@@ -207,12 +219,15 @@ for (const edited of [false, true]) test(`first login sync settles before an old
   })
   await page.goto('/pjsdas/consumer-read-race')
   await page.evaluate(async () => {
-    const { setAccountCacheSession } = await import('/pjsdas/src/cloud/accountCacheLease.ts')
+    const { setAccountCacheSession, AccountCacheChangedError } = await import('/pjsdas/src/cloud/accountCacheLease.ts')
     setAccountCacheSession('account-a')
     const db = await import('/pjsdas/src/db.ts')
     await db.exportLocalSnapshot()
     const { refreshConnectedAuthoritativeCache } = await import('/pjsdas/src/cloud/authoritativeReadModelClient.ts')
-    ;(window as any).__consumerRead = refreshConnectedAuthoritativeCache('account-a')
+    ;(window as any).__consumerRead = refreshConnectedAuthoritativeCache('account-a').catch(error => {
+      if (!(error instanceof AccountCacheChangedError)) throw error
+      return { cancelledByNewerRead: true }
+    })
   })
   await expect.poll(() => Boolean(release)).toBe(true)
   await page.evaluate(async (edited) => {
@@ -229,7 +244,7 @@ for (const edited of [false, true]) test(`first login sync settles before an old
   }, edited)
   release!()
   const result = await page.evaluate(async () => (window as any).__consumerRead)
-  expect(result).toMatchObject({ state: edited ? 'local_changes_pending' : 'current', changed: false })
+  expect(result).toEqual({ cancelledByNewerRead: true })
   const title = await page.evaluate(async () => (await (await import('/pjsdas/src/db.ts')).exportLocalSnapshot()).data.actions.find(a => a.id === 'A-action-1')?.title)
   expect(title).toBe(edited ? 'Real edit after login sync' : 'A第一任务')
   expect(reads).toBe(2)

@@ -39,14 +39,14 @@ describe('Google refresh persistence fencing', () => {
     const store = createAutomationConnectionStore({ supabaseUrl: 'https://fixture.invalid', supabasePublishableKey: 'fixture', workerToken: 'fictional-worker', fetchImpl: async () => new Response(null, { status: 204 }) })
     await expect(store.updateDiscoveryRunState('fictional-owner', {}, 'v1.expected')).rejects.toMatchObject({ code: 'AUTH_INVALID' })
   })
-  it('uses trusted backend authentication only for credential mutation, with source/subject/generation binding', async () => {
+  it('keeps Gmail claims worker-scoped and requires backend authentication for credential mutation and versioned Discovery admission', async () => {
     const calls: Array<{ url: string; headers: Headers; body: Record<string, unknown> }> = []
     const store = createAutomationConnectionStore({ supabaseUrl: 'https://fixture.invalid', supabasePublishableKey: 'fictional-public', workerToken: 'fictional-worker',
       supabaseServiceRoleKey: 'fictional-backend', refreshSource: 'gmail', fetchImpl: async (input, init) => {
         calls.push({ url: String(input), headers: new Headers(init?.headers), body: JSON.parse(String(init?.body)) })
         return Response.json(String(input).includes('claim_') ? [] : true)
       } })
-    await store.listDiscoveryBindings()
+    await store.listEnabledGmailBindings()
     await store.updateGoogleRefreshState('fictional-owner', 'v1.previous', { nextCiphertext: 'v1.next' }, undefined, 'fictional-subject')
     expect(calls[0].headers.get('authorization')).toBeNull()
     expect(calls[0].headers.get('apikey')).toBe('fictional-public')
@@ -55,6 +55,11 @@ describe('Google refresh persistence fencing', () => {
     expect(calls[1].body).toMatchObject({ source_kind: 'gmail', target_user_id: 'fictional-owner', expected_subject: 'fictional-subject', expected_ciphertext: 'v1.previous', next_ciphertext: 'v1.next' })
     expect(calls[1].body).not.toHaveProperty('worker_token')
     expect(JSON.stringify(calls[1].body)).not.toContain('fictional-backend')
+    await store.listDiscoveryBindings()
+    expect(calls[2].url).toContain('pjsdas_claim_enabled_discovery_automation_bindings_v2')
+    expect(calls[2].headers.get('authorization')).toBe('Bearer fictional-backend')
+    expect(calls[2].body).toEqual({ worker_token: 'fictional-worker' })
+    expect(JSON.stringify(calls[2].body)).not.toContain('fictional-backend')
   })
   it('fails before contacting Google if privileged storage is not configured', async () => {
     const fetchImpl = vi.fn()

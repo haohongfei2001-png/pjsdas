@@ -41,7 +41,7 @@ describe('score-free scoped reads preserve raw editing authority', () => {
       expect(row).not.toHaveProperty('minimumOpportunityValue')
     }
     expect(read.fingerprint).toBe(await discoveryProfileManagementFingerprint(before.data.discoveryProfile))
-    const changed = await applyDiscoveryProfileManagement(snapshot, { kind: 'patch_discovery_profile', expectedFingerprint: read.fingerprint, patch: { notes: 'Explicit new preference' } }, 'read-edit-profile')
+    const changed = await applyDiscoveryProfileManagement(snapshot, { kind: 'patch_discovery_profile', expectedFingerprint: read.fingerprint, patch: { searchGoal: 'Explicit new preference' } }, 'read-edit-profile')
     expect(changed.snapshot.data.discoveryProfile).toMatchObject({ minimumFitScore: 96, minimumOpportunityValue: 97 })
     expect(snapshot).toEqual(before)
   })

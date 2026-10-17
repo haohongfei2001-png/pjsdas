@@ -1,9 +1,10 @@
+import { MOCK_TARGET_AUTH_KEY, MOCK_TARGET_BACKEND } from './support/mockCloudTargets.js'
 import { expect, test, type Page } from '@playwright/test'
 
 const id = '00000000-0000-4000-8000-000000000081'
 const email = `ta-consumer-review-a-${id}@example.invalid`
 const entry = '/pjsdas/?reviewer_login=1'
-const authKey = 'sb-yyrzwpoxlxpafdlbkdtg-auth-token'
+const authKey = MOCK_TARGET_AUTH_KEY
 const user = { id, email, aud: 'authenticated', role: 'authenticated', app_metadata: { provider: 'email' }, user_metadata: {}, identities: [], created_at: '2026-10-04T00:00:00Z' }
 function session(identity = user) {
   const encode = (value: unknown) => Buffer.from(JSON.stringify(value)).toString('base64url')

@@ -1,4 +1,6 @@
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { verifiedPostingFixture, recruitingPagesFixture } from './fixtures/verifiedDiscovery.js'
+import { bindVerifiedPostingRefresh } from '../src/postingRefresh.js'
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import { applyMcpSourceRefreshCommand } from '../src/mcpSourceRefreshCommand.js'
 import { createJobPostingEvidence } from '../src/jobPosting.js'
 import { createDiscoveryRunRecord } from '../src/discoveryRun.js'
@@ -14,7 +16,7 @@ const at = new Date('2026-09-24T03:00:00.000Z')
 const oldAt = '2026-09-22T03:00:00.000Z'
 const secret = 'test-signed-source-refresh'
 const posting = createJobPostingEvidence({
-  company: 'Example', role: 'Designer', sourceUrl: 'https://careers.example.com/jobs/1?utm_source=old',
+  company: 'Example', role: 'Designer', sourceUrl: 'https://www.liepin.com/job/9413.shtml?utm_source=old',
   sourceTitle: 'Designer', postingStatus: 'open', observedAt: oldAt,
 })
 const snapshot = () => createSnapshot({
@@ -39,10 +41,21 @@ const changeSet: ChangeSetRecord = {
     id: 'posting:refresh:opp-1', kind: 'refresh_job_posting', summary: 'Review public posting',
     ownerKind: 'opportunity', ownerId: 'opp-1', expectedPostingId: posting.id,
     expectedCanonicalSourceUrl: posting.canonicalSourceUrl,
-    sourceUrl: 'https://careers.example.com/jobs/1?utm_source=new', sourceTitle: 'Designer updated',
+    sourceUrl: 'https://www.liepin.com/job/9413.shtml?utm_source=new', sourceTitle: 'Designer updated',
     postingStatus: 'closed', observedAt: at.toISOString(),
   }],
 }
+
+beforeAll(async () => {
+  const verified = await verifiedPostingFixture({ company: 'Example', role: 'Designer', sourceUrl: 'https://www.liepin.com/job/9413.shtml?utm_source=new' }, at.toISOString())
+  // Exercise a signed trusted-adapter closure fact at this domain boundary;
+  // this is not a claim that the generic HTML verifier infers open/closed.
+  verified.postingStatus = 'closed'
+  verified.sourceProof!.fields.push({ field: 'postingStatus', value: 'closed', sourceUrl: verified.sourceUrl, selector: 'synthetic-closure', quote: 'Applications closed' })
+  const operation = changeSet.operations[0]
+  if (operation.kind !== 'refresh_job_posting') throw new Error('Unexpected fixture operation')
+  changeSet.operations[0] = bindVerifiedPostingRefresh(operation, verified)
+})
 
 afterEach(() => vi.unstubAllEnvs())
 
@@ -92,6 +105,7 @@ describe('CGR-05 signed source refresh authority', () => {
     expect(applyUserCommandSchema.safeParse({ kind: 'mcp_apply_source_refresh', token }).success).toBe(false)
     const fetchImpl = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = new URL(String(input))
+      if (url.origin === 'https://www.liepin.com') return recruitingPagesFixture([{ company: 'Example', role: 'Designer', sourceUrl: 'https://www.liepin.com/job/9413.shtml?utm_source=new' }])(input, init)
       if (url.pathname === '/rest/v1/pjsdas_workspaces') {
         return Response.json([{ id: 'ws-1', user_id: 'account-a', snapshot: current, revision, schema_version: current.version }])
       }
@@ -118,7 +132,11 @@ describe('CGR-05 signed source refresh authority', () => {
     expect(commits).toBe(0)
     const applied = await executor.execute({ kind: 'first_party_web', userId: 'account-a' }, command)
     expect(applied.outcome).toBe('COMMITTED')
-    expect(current.data.opportunities[0].detail?.discovery?.posting?.postingStatus).toBe('closed')
+    // Current public evidence supersedes an old signed status claim; an
+    // unknown current status preserves raw history instead of inventing closure.
+    expect(current.data.opportunities[0].detail?.discovery?.posting?.postingStatus).toBe('open')
+    expect(current.data.opportunities[0].processStage).toBe('screening')
+    expect(current.data.opportunities[0].detail?.discovery?.sourceProof?.fields.some(field => field.field === 'postingStatus')).toBe(false)
     expect(commits).toBe(1)
     await expect(executor.execute({ kind: 'first_party_web', userId: 'account-a' },
       { ...command, commandId: 'mcp-source-refresh:test-0002', baseRevision: 2 })).rejects.toMatchObject({ code: 'WORKSPACE_CONFLICT' })

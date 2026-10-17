@@ -11,3 +11,30 @@ export function interactionIsRecent(accountKey: string) {
   const age = performance.now() - at
   return age >= 0 && age < QUIET_PERIOD_MS
 }
+
+/** Observe input intent before focus-triggered passive refreshes can do full reads.
+ * This is only scheduling: explicit reads and conflict recovery retain their guards.
+ */
+export function observeInteractionActivity(accountKey: string, target: EventTarget): () => void {
+  const events = ['pointerdown', 'keydown', 'input'] as const
+  const mark = () => markInteractionActivity(accountKey)
+  for (const event of events) target.addEventListener(event, mark, { capture: true, passive: true })
+  return () => { for (const event of events) target.removeEventListener(event, mark, { capture: true }) }
+}
+
+/** Resume a requested passive refresh once input is quiet; never lose the request.
+ * Repeated requests coalesce, and owner cleanup cancels the deferred callback.
+ */
+export function createInteractionQuietScheduler(accountKey: string, resume: () => void) {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const cancel = () => { if (timer !== undefined) clearTimeout(timer); timer = undefined }
+  const schedule = () => {
+    if (timer !== undefined) return
+    timer = setTimeout(() => {
+      timer = undefined
+      if (interactionIsRecent(accountKey)) schedule()
+      else resume()
+    }, QUIET_PERIOD_MS)
+  }
+  return { schedule, cancel }
+}

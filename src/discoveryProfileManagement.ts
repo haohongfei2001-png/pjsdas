@@ -1,25 +1,24 @@
+import { discoveryScopeShape } from './discoveryScopeSchema.js'
 import { assertNoScoringInput, withoutRetiredScoring } from './scoringRetirement.js'
 import * as z from 'zod/v4'
-import { discoveryProfileForSnapshot, isDiscoveryProfileConfigured, validateDiscoveryProfile, type DiscoveryProfile } from './discoveryProfile.js'
+import { discoveryProfileForSnapshot, discoverySearchScope, isDiscoveryProfileConfigured, isDiscoverySearchScopeConfirmed, validateDiscoveryProfile, type DiscoveryProfile } from './discoveryProfile.js'
 import { SNAPSHOT_VERSION, validateSnapshot, type PJSDASSnapshot } from './snapshot.js'
 
 const MAX_BYTES = 262144
 const fingerprint = z.string().regex(/^[a-f0-9]{64}$/)
 const roles = z.array(z.enum(['core', 'backup', 'reach', 'lottery', 'practice'])).max(5)
-const list = z.array(z.string().trim().min(1).max(160)).max(30)
 const rawList = z.array(z.string().min(1).max(160).refine(value => value.trim().length > 0)).max(30)
 const optionalFields = {
   minimumAnnualCompensationWan: z.number().min(0).max(1000), preferredRoleTypes: roles,
   locationPolicy: z.enum(['prefer', 'strict']), minimumFitScore: z.number().min(0).max(100),
   minimumOpportunityValue: z.number().min(0).max(100), maxReviewCandidates: z.number().int().min(1).max(12),
 }
-const { minimumFitScore: _oldFit, minimumOpportunityValue: _oldValue, ...editableOptionalFields } = optionalFields
-const patch = z.object({
-  targetRoleQueries: list.optional(), preferredLocations: list.optional(),
-  locationNotes: z.string().max(1200).optional(), mustHave: list.optional(), mustNotHave: list.optional(),
-  strengths: list.optional(), notes: z.string().max(2400).optional(),
-  ...Object.fromEntries(Object.entries(editableOptionalFields).map(([key, schema]) => [key, schema.nullable().optional()])) as { [K in keyof typeof editableOptionalFields]: z.ZodOptional<z.ZodNullable<(typeof editableOptionalFields)[K]>> },
-}).strict().refine(value => Object.values(value).some(item => item !== undefined), 'A nonempty patch is required.')
+const patch = z.object({ ...discoveryScopeShape,
+  locationPolicy: discoveryScopeShape.locationPolicy.nullable(),
+  searchGoal: discoveryScopeShape.searchGoal.nullable(),
+  titleIncludes: discoveryScopeShape.titleIncludes.nullable(),
+  titleExcludes: discoveryScopeShape.titleExcludes.nullable(),
+}).partial().strict().refine(value => Object.values(value).some(item => item !== undefined), 'A nonempty patch is required.')
 export const discoveryProfileManagementSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('patch_discovery_profile'), expectedFingerprint: fingerprint, patch }).strict(),
   z.object({ kind: z.literal('reset_discovery_profile'), expectedFingerprint: fingerprint }).strict(),
@@ -62,6 +61,7 @@ const row = z.object({
   targetRoleQueries: rawList, preferredLocations: rawList, locationNotes: z.string().max(1200),
   mustHave: rawList, mustNotHave: rawList, strengths: rawList, notes: z.string().max(2400),
   ...Object.fromEntries(Object.entries(optionalFields).map(([key, schema]) => [key, schema.optional()])) as { [K in keyof typeof optionalFields]: z.ZodOptional<(typeof optionalFields)[K]> },
+  searchGoal: z.string().max(2400).optional(), titleIncludes: rawList.optional(), titleExcludes: rawList.optional(),
   updatedAt: z.string().refine(value => Number.isFinite(new Date(value).getTime())),
 }).passthrough()
 function validateProfile(value: DiscoveryProfile | null) {
@@ -85,7 +85,7 @@ export async function getDiscoveryProfileManagementRead(snapshot: PJSDASSnapshot
   const current = rawSnapshot(snapshot).data.discoveryProfile ?? null
   validateProfile(current)
   const effective = discoveryProfileForSnapshot(current ?? undefined)
-  return { raw: withoutRetiredScoring(current), effective: withoutRetiredScoring(effective), fingerprint: await discoveryProfileManagementFingerprint(current), configured: isDiscoveryProfileConfigured(effective) }
+  return { raw: withoutRetiredScoring(current), effective: discoverySearchScope(effective), fingerprint: await discoveryProfileManagementFingerprint(current), configured: isDiscoveryProfileConfigured(effective), scopeConfirmed: isDiscoverySearchScopeConfirmed(effective) }
 }
 /** This only stores explicitly supplied preferences. It never starts a search, changes a budget,
  * rewrites discovered facts, infers preferences or changes provider/credential settings. */
@@ -106,6 +106,10 @@ export async function applyDiscoveryProfileManagement(snapshot: PJSDASSnapshot, 
       if (value === null) delete (after as unknown as Record<string, unknown>)[key]
       else if (value !== undefined) Object.assign(after, { [key]: structuredClone(value) })
     }
+    // A small edit cannot silently consent to ignoring historical constraints.
+    // Explicitly replacing every required scope collection confirms this model;
+    // legacy notes/ratings remain in the raw row and in Undo compensation.
+    if (['targetRoleQueries', 'preferredLocations', 'mustHave', 'mustNotHave'].every(key => Object.hasOwn(input.patch, key))) after.searchScopeVersion = 1
     // An effective no-op on an absent row must not manufacture explicit defaults.
     if (equal(after, base)) after = before
   }

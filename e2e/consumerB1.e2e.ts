@@ -1,3 +1,5 @@
+import { withFailureDiagnostic } from './fixtures/failureDiagnostic.js'
+import { MOCK_TARGET_AUTH_ORIGIN } from './support/mockCloudTargets.js'
 import { expect, test, type Page } from '@playwright/test'
 import { BACKEND, cors, health, seedSession, workspace } from './fixtures/todayWorkspace.js'
 import { applySemanticIntake, applySemanticCompensation } from '../src/semanticIntake.js'
@@ -24,7 +26,7 @@ for (const width of [390, 1440]) test(`B1 global add, explicit today and timed t
   const mutations: string[] = []
   let holdSubmission = false, releaseSubmission = () => {}
   let submissionAcknowledgement = Promise.resolve()
-  await page.route(/https:\/\/[^/]+\.supabase\.co\//, route => route.abort())
+  await page.route(`${MOCK_TARGET_AUTH_ORIGIN}/**`, route => route.abort())
   await page.route(BACKEND + '/**', async route => {
     const request = route.request(), path = new URL(request.url()).pathname
     if (request.method() === 'OPTIONS') return cors(route, {}, 204)
@@ -100,7 +102,32 @@ for (const width of [390, 1440]) test(`B1 global add, explicit today and timed t
     if (width === 390) await page.evaluate(() => Object.defineProperty(navigator, 'onLine', { configurable: true, value: false }))
     await page.getByRole('button', { name: '我已投递', exact: true }).click()
     const undo = page.locator('.action-undo-toast').getByRole('button', { name: '撤销', exact: true })
-    await expect(undo).toBeVisible()
+    await withFailureDiagnostic(() => expect(undo).toBeVisible(), async () => {
+      // Failure-only, synthetic fixture diagnostics. Never serialize Auth storage,
+      // tokens, command payloads, or the workspace itself.
+      const diagnostic = await page.evaluate(async () => {
+        const lease = await import('/pjsdas/src/cloud/accountCacheLease.ts')
+        const account = lease.currentAccountCacheSession()
+        const state = JSON.parse(localStorage.getItem('pjsdas-google-drive-sync-state-v2') ?? 'null')
+        if (account !== 'b1-owner' || state?.workspaceOwnerUserId !== 'b1-owner') {
+          return { syntheticAccountMatches: false, generation: lease.currentAccountCacheGeneration(), resolved: lease.isAccountCacheSessionResolved() }
+        }
+        const checkpoint = state.accounts?.['b1-owner'] ?? {}
+        const { pendingCommandSummary } = await import('/pjsdas/src/cloud/authoritativeCommandClient.ts')
+        const { exportLocalSnapshot } = await import('/pjsdas/src/db.ts')
+        const { fingerprintWorkspace } = await import('/pjsdas/src/cloud/workspaceFingerprint.ts')
+        return {
+          syntheticAccountMatches: true, generation: lease.currentAccountCacheGeneration(), resolved: lease.isAccountCacheSessionResolved(),
+          checkpoint: { lastSyncedVersion: checkpoint.lastSyncedVersion, lastSyncedFingerprint: checkpoint.lastSyncedFingerprint,
+            localPendingFingerprint: checkpoint.localPendingFingerprint, conflictPresent: Boolean(checkpoint.conflict) },
+          localFingerprint: await fingerprintWorkspace(await exportLocalSnapshot()),
+          pending: pendingCommandSummary('b1-owner'),
+        }
+      })
+      await info.attach('synthetic-submission-admission.json', {
+        body: JSON.stringify(diagnostic, null, 2), contentType: 'application/json',
+      })
+    })
     if (width === 390) {
       expect(mutations).toHaveLength(1)
       await page.evaluate(() => { Object.defineProperty(navigator, 'onLine', { configurable: true, value: true }); window.dispatchEvent(new Event('online')) })

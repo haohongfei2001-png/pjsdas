@@ -34,6 +34,10 @@ export async function invokeCoverageStatus(source: WorkspaceSource): Promise<Cal
           ? `${coverage.missingSourceCount} enabled ingestion source(s) have no completed durable run yet.`
           : coverage.staleSourceCount > 0
             ? `${coverage.staleSourceCount} enabled ingestion source(s) are outside their freshness SLA; Coverage is not green even if their last run was balanced.`
+            : coverage.partialSearchSourceCount
+              ? `${coverage.partialSearchSourceCount} Discovery source(s) have only partial query execution; saved jobs remain saved, but retrieval coverage is incomplete.`
+            : coverage.unverifiedSearchSourceCount
+              ? `${coverage.unverifiedSearchSourceCount} Discovery source(s) have no recorded public-web execution proof. Balanced historical input counts do not establish that search completed.`
             : coverage.activeUnresolvedCount > 0
               ? `${coverage.activeUnresolvedCount} enabled-source record(s) remain actively unresolved; lifetime audit contains ${coverage.lifetimeUnresolvedCount} source record(s) that were unresolved at ingestion time.`
               : 'At least one enabled source latest run is not balanced; inspect source summaries before relying on coverage.',

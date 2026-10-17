@@ -1,8 +1,9 @@
 import { validateWorkspaceDelta, type WorkspaceDelta } from '../workspaceDelta.js'
 import { captureAccountCacheLease, AccountCacheChangedError } from './accountCacheLease.js'
+import { captureWorkspaceWriteLease } from './workspaceWriteLease.js'
 import type { UserDomainCommand } from '../domainCommands.js'
 import type { DiscoveryStatusCommand } from '../discoveryStatusCommand.js'
-import type { DiscoveryProfile } from '../discoveryProfile.js'
+import type { DiscoveryScopeInput } from '../discoveryScopeSchema.js'
 import type { SemanticIntakeObservation } from '../model.js'
 import { validateSnapshot, type PJSDASSnapshot } from '../snapshot.js'
 import { fetchBackend } from '../backendEndpoints.js'
@@ -16,7 +17,7 @@ export type ConnectedBusinessCommand =
   | { type: 'semantic_intake'; value: SemanticIntakeObservation }
   | { type: 'resolve_semantic_decision'; value: { requestId: string; choiceId: string } }
   | { type: 'discovery_status'; value: DiscoveryStatusCommand }
-  | { type: 'discovery_profile'; value: DiscoveryProfile }
+  | { type: 'discovery_profile'; value: DiscoveryScopeInput }
   | { type: 'discovery_promotion'; value: { inboxItemId: string } }
   | { type: 'process_event_delete'; value: { eventId: string } }
   | { type: 'mcp_save_inbox'; value: { token: string } }
@@ -446,7 +447,8 @@ async function submitPending(accountKey: string, pending: PendingCommand): Promi
   }
 }
 
-function forCaller(result: ConnectedCommandResponse, allowProjectionPending?: boolean) {
+function forCaller(result: ConnectedCommandResponse, allowProjectionPending?: boolean, assertCurrent?: () => void) {
+  assertCurrent?.()
   if (result.localProjection === 'pending' && result.outcome !== 'NO_WRITE' && !allowProjectionPending) {
     throw new ConnectedProjectionPendingError()
   }
@@ -458,6 +460,7 @@ export async function executeConnectedBusinessCommand(
   command: ConnectedBusinessCommand,
   options: { commandId?: string; baseRevision?: number; allowProjectionPending?: boolean } = {},
 ) {
+  const writeLease = captureWorkspaceWriteLease(accountKey)
   const commandId = options.commandId
     ?? (command.type === 'domain' ? command.value.commandId : createConnectedCommandId(command.type))
   if (command.type === 'domain' && command.value.commandId !== commandId) {
@@ -476,10 +479,11 @@ export async function executeConnectedBusinessCommand(
       }
       if (existing.status === 'projection_pending') throw new ConnectedProjectionPendingError()
       return submitPending(accountKey, existing)
-    }), options.allowProjectionPending)
+    }), options.allowProjectionPending, writeLease.assertCurrent)
   }
 
   const base = options.baseRevision ?? revisionFromCheckpoint(accountKey) ?? await currentRevision(accountKey)
+  writeLease.assertCurrent()
   const timestamp = new Date().toISOString()
   const pending: PendingCommand = {
     commandId,
@@ -491,7 +495,7 @@ export async function executeConnectedBusinessCommand(
     updatedAt: timestamp,
   }
   upsertPending(accountKey, pending)
-  return forCaller(await oneCommandFlight(accountKey, commandId, () => submitPending(accountKey, pending)), options.allowProjectionPending)
+  return forCaller(await oneCommandFlight(accountKey, commandId, () => submitPending(accountKey, pending)), options.allowProjectionPending, writeLease.assertCurrent)
 }
 
 /** Persist user intent before any network request. Requires a verified account cache. */
@@ -500,6 +504,7 @@ export async function queueConnectedBusinessCommand(
   command: ConnectedBusinessCommand,
   options: { commandId?: string } = {},
 ) {
+  const writeLease = captureWorkspaceWriteLease(accountKey)
   const commandId = options.commandId
     ?? (command.type === 'domain' ? command.value.commandId : createConnectedCommandId(command.type))
   if (command.type === 'domain' && command.value.commandId !== commandId) {
@@ -529,6 +534,7 @@ export async function queueConnectedBusinessCommand(
   await assertLocalSnapshotCurrent(local, lease.assertCurrent)
   lease.assertCurrent()
   const timestamp = new Date().toISOString()
+  writeLease.assertCurrent()
   upsertPending(accountKey, { commandId, action: 'command', command, baseRevision,
     status: 'pending', createdAt: timestamp, updatedAt: timestamp })
   return commandId
@@ -536,6 +542,7 @@ export async function queueConnectedBusinessCommand(
 
 export async function confirmConnectedCommand(accountKey: string, commandId: string,
   options: { allowProjectionPending?: boolean } = {}): Promise<ConnectedCommandResponse> {
+  const writeLease = captureWorkspaceWriteLease(accountKey)
   return forCaller(await oneCommandFlight(accountKey, commandId, async () => {
   try {
     const recovered = await lookupConnectedCommandReceipt(accountKey, commandId)
@@ -551,7 +558,7 @@ export async function confirmConnectedCommand(accountKey: string, commandId: str
   if (existing?.status === 'projection_pending') throw new ConnectedProjectionPendingError()
   if (existing) return submitPending(accountKey, existing)
   throw new UnknownCommandOutcomeError('无法找到原操作记录；未发送新的操作。请在设置中核对账号状态。')
-  }), options.allowProjectionPending)
+  }), options.allowProjectionPending, writeLease.assertCurrent)
 }
 
 export async function undoConnectedBusinessCommand(
@@ -559,6 +566,7 @@ export async function undoConnectedBusinessCommand(
   targetCommandId: string,
   options: { commandId?: string } = {},
 ) {
+  const writeLease = captureWorkspaceWriteLease(accountKey)
   const commandId = options.commandId ?? createConnectedCommandId(`undo:${targetCommandId}`)
   const existing = readPending(accountKey).find((item) => item.commandId === commandId)
   if (existing) {
@@ -570,7 +578,7 @@ export async function undoConnectedBusinessCommand(
       }
       if (existing.status === 'projection_pending') throw new ConnectedProjectionPendingError()
       return submitPending(accountKey, existing)
-    }))
+    }), undefined, writeLease.assertCurrent)
   }
   const timestamp = new Date().toISOString()
   const pending: PendingCommand = {
@@ -582,7 +590,7 @@ export async function undoConnectedBusinessCommand(
     updatedAt: timestamp,
   }
   upsertPending(accountKey, pending)
-  return forCaller(await oneCommandFlight(accountKey, commandId, () => submitPending(accountKey, pending)))
+  return forCaller(await oneCommandFlight(accountKey, commandId, () => submitPending(accountKey, pending)), undefined, writeLease.assertCurrent)
 }
 
 export async function replayAccountPendingOperations(accountKey: string) {

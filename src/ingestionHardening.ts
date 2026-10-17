@@ -18,6 +18,7 @@ import {
 import {
   createJobPostingEvidence,
   mergeJobPostingEvidence,
+  isOlderVerifiedPosting,
   resolveOpportunityPostingIdentity,
 } from './jobPosting.js'
 import { actionForProcessEvent } from './processEvents.js'
@@ -56,7 +57,8 @@ function monitorFingerprint(observation: MonitorJobObservation) {
     observation.sourceUrl,
     observation.location ?? '',
     observation.deadline ?? '',
-    observation.compensationText ?? '',
+    observation.deadlinePrecision ?? '', observation.publishedAt ?? '', observation.publishedPrecision ?? '',
+    observation.recruitmentBatch ?? '', observation.sourceProof?.postingIdentity ?? '', [...new Set(observation.sourceProof?.unresolvedFields ?? [])].sort().join(','),
     observation.postingStatus ?? 'unknown',
     observation.sourceVerification ?? 'unverified',
   ]))
@@ -75,42 +77,46 @@ function mergeExistingMonitorObservation(existing: Opportunity, observation: Mon
     sourceTitle: observation.sourceTitle,
     location: observation.location,
     deadline: observation.deadline,
-    compensationText: observation.compensationText,
+    deadlinePrecision: observation.deadlinePrecision, publishedAt: observation.publishedAt, publishedPrecision: observation.publishedPrecision,
+    recruitmentBatch: observation.recruitmentBatch, sourceProof: observation.sourceProof,
     postingStatus: observation.postingStatus ?? 'unknown',
     observedAt: sourceVerifiedAt,
   })
   const discovery = existing.detail?.discovery
   const current = discovery?.posting
+  if(isOlderVerifiedPosting(current,incoming))return {opportunity:existing,changed:false}
   const mergedPosting = current
     ? mergeJobPostingEvidence(current, discovery?.postingHistory, incoming, new Date(observedAt))
     : { current: incoming, history: [] }
   const sameFingerprint = current?.id === incoming.id && current.fingerprint === incoming.fingerprint
   const deadlineChanged = Boolean(observation.deadline && observation.deadline !== existing.deadline)
-  const compensationChanged = Boolean(observation.compensationText && observation.compensationText !== existing.salaryReference)
   const next: Opportunity = {
     ...existing,
+    company: observation.sourceProof ? observation.company : existing.company,
+    role: observation.sourceProof ? observation.role : existing.role,
     deadline: observation.deadline ?? existing.deadline,
-    salaryReference: observation.compensationText ?? existing.salaryReference,
+    deadlinePrecision: observation.deadline ? observation.deadlinePrecision : existing.deadlinePrecision,
     detail: {
       ...existing.detail,
       discovery: {
         sourceUrl: mergedPosting.current.sourceUrl,
         sourceTitle: mergedPosting.current.sourceTitle,
         location: observation.location ?? discovery?.location,
-        compensationText: observation.compensationText ?? discovery?.compensationText,
-        rationale: discovery?.rationale ?? observation.rationale,
+        compensationText: discovery?.compensationText,
+        rationale: discovery?.rationale,
         discoveredAt: discovery?.discoveredAt ?? observedAt,
         sourceVerification: observation.sourceVerification ?? discovery?.sourceVerification,
         sourceVerifiedAt: observation.sourceVerifiedAt ?? discovery?.sourceVerifiedAt,
-        fitConfidence: discovery?.fitConfidence ?? 'low',
-        opportunityValueConfidence: discovery?.opportunityValueConfidence ?? 'low',
+        sourceProof: mergedPosting.current.sourceProof ?? discovery?.sourceProof,
+        fitConfidence: discovery?.fitConfidence,
+        opportunityValueConfidence: discovery?.opportunityValueConfidence,
         profileWarnings: discovery?.profileWarnings,
         posting: mergedPosting.current,
         postingHistory: mergedPosting.history.length ? mergedPosting.history : undefined,
       },
     },
   }
-  return { opportunity: next, changed: !sameFingerprint || deadlineChanged || compensationChanged }
+  return { opportunity: next, changed: !sameFingerprint || deadlineChanged }
 }
 
 function replaceRunTimeline(snapshot: PJSDASSnapshot, input: HardenedRunIdentity, sourceKind: 'gpt_monitor' | 'gmail', records: TimelineRecord[], cursor?: string) {
@@ -240,7 +246,9 @@ export function applyMonitorIngestionHardened(snapshot: PJSDASSnapshot, input: H
     let reason = duplicate ? `来源记录 ${observation.sourceRecordId} 的当前事实已在先前 run 对账。` : undefined
     let opportunityId = duplicate && previous?.ingestion?.opportunityId ? canonicalOpportunityId(next, previous.ingestion.opportunityId) : undefined
 
-    if (!duplicate) {
+    // A repeated fact can still carry a genuinely newer independent source
+    // check. Preserve its identity/outcome while refreshing evidence metadata.
+    if (!duplicate || observation.sourceVerification === 'verified') {
       const identity = resolveCanonicalPostingIdentity(next, observation)
       if (identity.kind !== 'same_posting') {
         reason = identity.kind === 'ambiguous'

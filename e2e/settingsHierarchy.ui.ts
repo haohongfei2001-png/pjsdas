@@ -1,3 +1,4 @@
+import { MOCK_TARGET_AUTH_ORIGIN } from './support/mockCloudTargets.js'
 import { expect, test } from '@playwright/test'
 import { createIngestionLedgerTimeline } from '../src/ingestion.js'
 import { BACKEND, cors, health, seedSession, workspace } from './fixtures/todayWorkspace.js'
@@ -26,7 +27,7 @@ for (const state of ['enabled', 'pending', 'partial', 'error', 'transient', 'con
       : state === 'transient' ? 'GOOGLE_DRIVE_UNAVAILABLE: Synthetic temporary outage'
         : state === 'configuration' ? 'GOOGLE_AUTH_CONFIG_INVALID: Synthetic client configuration failure' : null
     const calls: unknown[] = []
-    await page.route(/https:\/\/[^/]+\.supabase\.co\//, route => route.abort())
+    await page.route(`${MOCK_TARGET_AUTH_ORIGIN}/**`, route => route.abort())
     await page.route(BACKEND + '/**', route => {
       const request = route.request(), path = new URL(request.url()).pathname
       if (request.method() === 'OPTIONS') return cors(route, {}, 204)
@@ -165,7 +166,7 @@ test('Today hides only a repeated application identity and retains job access an
   const snapshot = workspace('2026-10-02')
   snapshot.data.actions[0] = { ...snapshot.data.actions[0]!, kind: 'apply', title: '投递 A公司｜产品经理' }
   snapshot.data.timePlanning = { version: 1, defaultDailyMinutes: 480, updatedAt: now }
-  await page.route(/https:\/\/[^/]+\.supabase\.co\//, route => route.abort())
+  await page.route(`${MOCK_TARGET_AUTH_ORIGIN}/**`, route => route.abort())
   await page.route(BACKEND + '/**', route => {
     const request = route.request(), path = new URL(request.url()).pathname
     if (request.method() === 'OPTIONS') return cors(route, {}, 204)
@@ -190,7 +191,7 @@ for (const width of [1440, 390, 320]) test(`signed-out Settings has one language
   const oauth: string[] = []
   const writes: unknown[] = []
   await page.setViewportSize({ width, height: width < 600 ? 844 : 900 })
-  await page.route(/https:\/\/[^/]+\.supabase\.co\//, route => {
+  await page.route(`${MOCK_TARGET_AUTH_ORIGIN}/**`, route => {
     if (route.request().url().includes('/authorize')) oauth.push(route.request().url())
     return route.abort()
   })

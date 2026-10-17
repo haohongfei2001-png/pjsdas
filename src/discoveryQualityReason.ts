@@ -1,4 +1,7 @@
 export const DISCOVERY_QUALITY_REASON_CODES = [
+  'title_condition_mismatch',
+  'source_unverified',
+  'required_fact_missing',
   'posting_closed',
   'deadline_expired',
   'role_type_not_allowed',
@@ -34,6 +37,12 @@ function stringParam(detail: DiscoveryQualityReasonDetail, key: string) {
 export function presentDiscoveryQualityReason(detail: DiscoveryQualityReasonDetail, zh: boolean) {
   const p = (key: string) => stringParam(detail, key)
   switch (detail.code) {
+    case 'title_condition_mismatch':
+      return zh ? '原岗位标题不符合已确认的标题条件。' : 'The original job title does not satisfy the confirmed title conditions.'
+    case 'source_unverified':
+      return zh ? '岗位及招聘来源尚未通过独立核验。' : 'The job and recruiting source have not passed independent verification.'
+    case 'required_fact_missing':
+      return zh ? `来源未证实必须条件“${p('rule')}”。` : `The source does not establish the required condition “${p('rule')}”.`
     case 'posting_closed':
       return zh ? '公开来源明确显示岗位已关闭。' : 'The public source explicitly shows that this job is closed.'
     case 'deadline_expired':

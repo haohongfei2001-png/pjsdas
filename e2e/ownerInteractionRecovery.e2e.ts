@@ -1,3 +1,4 @@
+import { MOCK_TARGET_AUTH_ORIGIN } from './support/mockCloudTargets.js'
 import { expect, test } from '@playwright/test'
 import { AUTH_KEY, BACKEND, cors, health, session, workspace } from './fixtures/todayWorkspace.js'
 
@@ -18,7 +19,7 @@ test('stale owner conflict follows the latest revision and equivalent cache conv
       localStorage.setItem('owner-interaction-seeded', '1')
     }
   }, { key: AUTH_KEY, value: session('account-a', 'token-a') })
-  await page.route('https://*.supabase.co/auth/v1/**', route => cors(route, {}, 200))
+  await page.route(`${MOCK_TARGET_AUTH_ORIGIN}/auth/v1/**`, route => cors(route, {}, 200))
   await page.route(`${BACKEND}/**`, async route => {
     if (route.request().method() === 'OPTIONS') return cors(route, {}, 204)
     if (new URL(route.request().url()).pathname === '/api/health') return cors(route, health())
@@ -69,7 +70,7 @@ test('a real local edit stays intact while a Settings conflict tracks newer remo
       localStorage.setItem('owner-interaction-seeded', '1')
     }
   }, { key: AUTH_KEY, value: session('account-a', 'token-a') })
-  await page.route('https://*.supabase.co/auth/v1/**', route => cors(route, {}, 200))
+  await page.route(`${MOCK_TARGET_AUTH_ORIGIN}/auth/v1/**`, route => cors(route, {}, 200))
   await page.route(`${BACKEND}/**`, async route => {
     if (route.request().method() === 'OPTIONS') return cors(route, {}, 204)
     if (new URL(route.request().url()).pathname === '/api/health') return cors(route, health())
@@ -125,7 +126,7 @@ test('Settings recovers an old verified cache after a separate authoritative upd
       localStorage.setItem('owner-interaction-seeded', '1')
     }
   }, { key: AUTH_KEY, value: session('account-a', 'token-a') })
-  await page.route('https://*.supabase.co/auth/v1/**', route => cors(route, {}, 200))
+  await page.route(`${MOCK_TARGET_AUTH_ORIGIN}/auth/v1/**`, route => cors(route, {}, 200))
   await page.route(`${BACKEND}/**`, route => {
     if (route.request().method() === 'OPTIONS') return cors(route, {}, 204)
     if (new URL(route.request().url()).pathname === '/api/health') return cors(route, health())
@@ -165,7 +166,7 @@ test('normal connected Settings keeps sync mechanics behind advanced diagnostics
       localStorage.setItem('owner-interaction-seeded', '1')
     }
   }, { key: AUTH_KEY, value: session('account-a', 'token-a') })
-  await page.route('https://*.supabase.co/auth/v1/**', route => cors(route, {}, 200))
+  await page.route(`${MOCK_TARGET_AUTH_ORIGIN}/auth/v1/**`, route => cors(route, {}, 200))
   await page.route(`${BACKEND}/**`, route => {
     if (route.request().method() === 'OPTIONS') return cors(route, {}, 204)
     if (new URL(route.request().url()).pathname === '/api/health') return cors(route, health())
@@ -210,7 +211,7 @@ test('Settings does not call an old checkpoint current after an offline local ed
       localStorage.setItem('owner-interaction-seeded', '1')
     }
   }, { key: AUTH_KEY, value: session('account-a', 'token-a') })
-  await page.route('https://*.supabase.co/auth/v1/**', route => cors(route, {}, 200))
+  await page.route(`${MOCK_TARGET_AUTH_ORIGIN}/auth/v1/**`, route => cors(route, {}, 200))
   await page.route(`${BACKEND}/**`, route => {
     if (route.request().method() === 'OPTIONS') return cors(route, {}, 204)
     if (new URL(route.request().url()).pathname === '/api/health') return cors(route, health())

@@ -1,3 +1,4 @@
+import { MOCK_TARGET_AUTH_ORIGIN } from './support/mockCloudTargets.js'
 import { expect, test } from '@playwright/test'
 import { BACKEND, cors, health, seedSession, workspace } from './fixtures/todayWorkspace.js'
 
@@ -9,7 +10,7 @@ for (const state of ['connected', 'unverified', 'missing', 'expired', 'gmail_sco
     let verified = state !== 'unverified'
     let statusReads = 0
     const snapshot = workspace()
-    await page.route(/https:\/\/[^/]+\.supabase\.co\//, route => {
+    await page.route(`${MOCK_TARGET_AUTH_ORIGIN}/**`, route => {
       if (route.request().url().includes('/authorize')) oauth.push(route.request().url())
       return route.abort()
     })

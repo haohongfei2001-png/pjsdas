@@ -1,9 +1,12 @@
+import { offlineSearchFixture } from './fixtures/discoverySearch.rebuilt.js'
+import { recruitingPagesFixture } from './fixtures/verifiedDiscovery.js'
 import { syntheticDiscoveryBudget } from './fixtures/discoveryBudget.js'
 import { readFile } from 'node:fs/promises'
 import { describe, expect, it, vi } from 'vitest'
 import {
   classifyDiscoveryAutomationRunState,
   discoverSourceRun,
+  retrieveDiscoverySourceRun,
   verifyDiscoverySourceObservation,
   type DiscoveryGenerateText,
   type DiscoveryGenerateTextInput,
@@ -23,9 +26,14 @@ function sourceRun(): DiscoveryAutomationSourcePlan {
     freshnessSlaMinutes: 2160,
     objective: 'Find urgent current campus recruiting opportunities.',
     queryHints: ['AI 产品经理 北京 校招 截止 新增'],
+    webQueries: [{ query: 'AI 产品经理 北京 校招 截止 新增', coverage: 'general_web' }],
     refreshTargets: [],
     maxObservations: 6,
   }
+}
+
+function fundedSearch() {
+  return { ...syntheticDiscoveryBudget, ...offlineSearchFixture([{ url: 'https://www.liepin.com/job/9301.shtml', title: 'AI Product Manager' }]) }
 }
 
 function generator(content: string, seen?: DiscoveryGenerateTextInput[]): DiscoveryGenerateText {
@@ -63,35 +71,31 @@ describe('server-owned discovery worker model boundary', () => {
       sourceRecordId: 'job-123',
       company: 'Example AI',
       role: 'AI Product Manager',
-      sourceUrl: 'https://careers.example.com/jobs/123',
+      sourceUrl: 'https://www.liepin.com/job/9301.shtml',
       sourceTitle: 'AI Product Manager - 2027 Campus',
       location: 'Beijing',
-      rationale: 'Official employer posting matches the explicit target role.',
-      roleType: 'core',
       postingStatus: 'open',
-      discoveredAt: '2026-09-15T01:00:00.000Z',
     }] }), seen)
 
     const observations = await discoverSourceRun(snapshot, sourceRun(), {
       executionRules: ['Use exact source identity.', 'Unknown facts remain unknown.'],
       incrementalSince: '2026-09-14T01:00:00.000Z',
       now: new Date('2026-09-15T01:00:00.000Z'),
-      ai: { ...syntheticDiscoveryBudget, generateTextImpl },
-      fetchImpl: vi.fn(async () => new Response(
-        '<html><head><title>AI Product Manager - Example AI</title></head><body>Example AI AI Product Manager 2027 Campus Beijing</body></html>',
-        { status: 200, headers: { 'content-type': 'text/html' } },
-      )) as unknown as typeof fetch,
+      ai: { ...fundedSearch(), generateTextImpl },
+      fetchImpl: recruitingPagesFixture([{ company: 'Example AI', role: 'AI Product Manager', sourceUrl: 'https://www.liepin.com/job/9301.shtml', location: 'Beijing' }]),
     })
 
     expect(observations).toHaveLength(1)
     expect(observations[0]).toMatchObject({
-      sourceRecordId: expect.stringMatching(/^verified:/),
+      sourceRecordId: expect.any(String),
       company: 'Example AI',
       sourceVerification: 'verified',
       sourceTitle: 'AI Product Manager - Example AI',
       postingStatus: 'unknown',
       location: 'Beijing',
     })
+    expect(observations[0].sourceRecordId).toBe(observations[0].sourceProof?.postingIdentity)
+    expect(observations[0].sourceProof?.authority).toBe('recruiting_platform')
     expect(seen).toHaveLength(1)
     expect(seen[0]).toMatchObject({
       model: 'perplexity/sonar',
@@ -103,14 +107,21 @@ describe('server-owned discovery worker model boundary', () => {
     expect(seen[0]?.prompt).toContain('2026-09-14T01:00:00.000Z')
   })
 
-  it('accepts an explicit zero-result completed search', async () => {
-    const snapshot = await demoSnapshot()
-    const observations = await discoverSourceRun(snapshot, sourceRun(), {
-      executionRules: [],
-      now: new Date('2026-09-15T01:00:00.000Z'),
-      ai: { ...syntheticDiscoveryBudget, generateTextImpl: generator('{"observations":[]}') },
-    })
-    expect(observations).toEqual([])
+  it('accepts actual empty search-provider evidence without invoking the model', async () => {
+    const snapshot = await demoSnapshot(), search = offlineSearchFixture(), generateTextImpl = generator('{"observations":[]}')
+    const result = await retrieveDiscoverySourceRun(snapshot, sourceRun(), { executionRules: [], now: new Date('2026-09-15T01:00:00Z'),
+      ai: { ...syntheticDiscoveryBudget, ...search, generateTextImpl } })
+    expect(result.observations).toEqual([]); expect(result.omittedHitCount).toBe(0)
+    expect(result.executions).toEqual([expect.objectContaining({ outcome: 'empty', resultCount: 0, providerRequestId: expect.any(String) })])
+    expect(search.queries).toHaveLength(1); expect(search.reservations).toHaveLength(1)
+    expect(generateTextImpl).not.toHaveBeenCalled()
+  })
+
+  it('does not treat empty model interpretation as evidence that retrieved hits were not jobs', async () => {
+    const result = await retrieveDiscoverySourceRun(await demoSnapshot(), sourceRun(), { executionRules: [], now: new Date('2026-09-15T01:00:00Z'),
+      ai: { ...fundedSearch(), generateTextImpl: generator('{"observations":[]}') } })
+    expect(result.observations).toEqual([]); expect(result.omittedHitCount).toBe(1)
+    expect(result.executions[0]).toMatchObject({ outcome: 'success', resultCount: 1 })
   })
 
   it('fails closed on malformed or non-source-backed model output instead of inventing missing fields', async () => {
@@ -120,14 +131,12 @@ describe('server-owned discovery worker model boundary', () => {
       company: 'Example AI',
       role: 'AI Product Manager',
       sourceTitle: 'AI Product Manager',
-      rationale: 'Looks relevant.',
-      roleType: 'core',
     }] }))
 
     await expect(discoverSourceRun(snapshot, sourceRun(), {
       executionRules: [],
       now: new Date('2026-09-15T01:00:00.000Z'),
-      ai: { ...syntheticDiscoveryBudget, generateTextImpl },
+      ai: { ...fundedSearch(), generateTextImpl },
     })).rejects.toMatchObject({ code: 'DISCOVERY_MODEL_INVALID' })
   })
 
@@ -137,16 +146,14 @@ describe('server-owned discovery worker model boundary', () => {
       sourceRecordId: 'job-duplicate',
       company: 'Example AI',
       role: 'AI Product Manager',
-      sourceUrl: 'https://careers.example.com/jobs/123',
+      sourceUrl: 'https://www.liepin.com/job/9301.shtml',
       sourceTitle: 'AI Product Manager',
-      rationale: 'Official source.',
-      roleType: 'core',
     }
 
     await expect(discoverSourceRun(snapshot, sourceRun(), {
       executionRules: [],
       now: new Date('2026-09-15T01:00:00.000Z'),
-      ai: { ...syntheticDiscoveryBudget, generateTextImpl: generator(JSON.stringify({ observations: [base, base] })) },
+      ai: { ...fundedSearch(), generateTextImpl: generator(JSON.stringify({ observations: [base, base] })) },
     })).rejects.toMatchObject({ code: 'DISCOVERY_MODEL_INVALID' })
   })
 
@@ -155,12 +162,12 @@ describe('server-owned discovery worker model boundary', () => {
     await expect(discoverSourceRun(snapshot, sourceRun(), {
       executionRules: [],
       now: new Date('2026-09-15T01:00:00.000Z'),
-      ai: { ...syntheticDiscoveryBudget,
+      ai: { ...fundedSearch(),
         generateTextImpl: async () => { throw { statusCode: 429, message: 'provider-private-detail' } },
       },
     })).rejects.toMatchObject({
       code: 'DISCOVERY_MODEL_UNAVAILABLE',
-      retryable: true,
+      retryable: false,
       message: expect.not.stringContaining('provider-private-detail'),
     })
   })
@@ -170,7 +177,7 @@ describe('server-owned discovery worker model boundary', () => {
     await expect(discoverSourceRun(snapshot, sourceRun(), {
       executionRules: [],
       now: new Date('2026-09-15T01:00:00.000Z'),
-      ai: { ...syntheticDiscoveryBudget,
+      ai: { ...fundedSearch(),
         generateTextImpl: async () => {
           throw {
             statusCode: 403,
@@ -194,7 +201,7 @@ describe('server-owned discovery worker model boundary', () => {
     await expect(discoverSourceRun(snapshot, sourceRun(), {
       executionRules: [],
       now: new Date('2026-09-15T01:00:00.000Z'),
-      ai: { ...syntheticDiscoveryBudget,
+      ai: { ...fundedSearch(),
         generateTextImpl: async () => {
           throw {
             statusCode: 402,
@@ -218,7 +225,7 @@ describe('server-owned discovery worker model boundary', () => {
     await expect(discoverSourceRun(snapshot, sourceRun(), {
       executionRules: [],
       now: new Date('2026-09-15T01:00:00.000Z'),
-      ai: { ...syntheticDiscoveryBudget,
+      ai: { ...fundedSearch(),
         generateTextImpl: async () => {
           throw {
             name: 'GatewayForbiddenError',
@@ -241,7 +248,7 @@ describe('server-owned discovery worker model boundary', () => {
     await expect(discoverSourceRun(snapshot, sourceRun(), {
       executionRules: [],
       now: new Date('2026-09-15T01:00:00.000Z'),
-      ai: { ...syntheticDiscoveryBudget,
+      ai: { ...fundedSearch(),
         generateTextImpl: async () => {
           throw {
             statusCode: 403,
@@ -264,7 +271,7 @@ describe('server-owned discovery worker model boundary', () => {
     await expect(discoverSourceRun(snapshot, sourceRun(), {
       executionRules: [],
       now: new Date('2026-09-15T01:00:00.000Z'),
-      ai: { ...syntheticDiscoveryBudget,
+      ai: { ...fundedSearch(),
         generateTextImpl: async () => {
           throw {
             statusCode: 403,
@@ -287,13 +294,12 @@ describe('server-owned discovery worker model boundary', () => {
       sourceRecordId: 'job-mismatch',
       company: 'Example AI',
       role: 'AI Product Manager',
-      sourceUrl: 'https://careers.example.com/jobs/123',
+      sourceUrl: 'https://www.liepin.com/job/9301.shtml',
       sourceTitle: 'Model supplied title',
       location: 'Beijing',
       deadline: '2026-10-10',
       compensationText: '300k RMB',
       rationale: 'Model says this is the job.',
-      roleType: 'core',
       postingStatus: 'open',
     }, {
       now: new Date('2026-09-19T00:00:00.000Z'),
@@ -305,7 +311,7 @@ describe('server-owned discovery worker model boundary', () => {
 
     expect(observation).toMatchObject({
       sourceVerification: 'unverified',
-      sourceVerificationReason: expect.stringContaining('corroborate'),
+      sourceVerificationReason: expect.stringContaining('DISCOVERY_SOURCE_UNVERIFIED'),
     })
   })
 
@@ -319,10 +325,9 @@ describe('server-owned discovery worker model boundary', () => {
       sourceRecordId: 'job-redirect',
       company: 'Example AI',
       role: 'AI Product Manager',
-      sourceUrl: 'https://careers.example.com/jobs/redirect',
+      sourceUrl: 'https://www.liepin.com/job/9302.shtml',
       sourceTitle: 'Example',
       rationale: 'Example',
-      roleType: 'core',
     }, { fetchImpl })
 
     expect(observation).toMatchObject({
@@ -337,20 +342,16 @@ describe('server-owned discovery worker model boundary', () => {
       sourceRecordId: 'job-facts',
       company: 'Example AI',
       role: 'AI Product Manager',
-      sourceUrl: 'https://careers.example.com/jobs/123',
+      sourceUrl: 'https://www.liepin.com/job/9301.shtml',
       sourceTitle: 'Model title',
       location: 'Shanghai',
       deadline: '2026-10-10',
       compensationText: '300k RMB',
       rationale: 'Model assessment.',
-      roleType: 'core',
       postingStatus: 'open',
     }, {
       now: new Date('2026-09-19T00:00:00.000Z'),
-      fetchImpl: vi.fn(async () => new Response(
-        '<html><head><title>Example AI - AI Product Manager</title></head><body>Example AI is hiring an AI Product Manager in Beijing.</body></html>',
-        { status: 200, headers: { 'content-type': 'text/html' } },
-      )) as unknown as typeof fetch,
+      fetchImpl: recruitingPagesFixture([{ company: 'Example AI', role: 'AI Product Manager', sourceUrl: 'https://www.liepin.com/job/9301.shtml' }]),
     })
 
     expect(observation).toMatchObject({

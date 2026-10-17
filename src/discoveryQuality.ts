@@ -8,6 +8,7 @@ import {
 import {
   createJobPostingEvidence,
   jobPostingFreshness,
+  jobDeadlineDefinitelyExpired,
   jobRoleSimilarity,
   knownJobPostings,
   logicalJobMatches,
@@ -37,12 +38,13 @@ export interface DiscoveryCandidateForQuality {
   annualCompensationMinWan?: number
   sourceEvidenceText?: string
   postingStatus?: DiscoveryPostingStatus
-  roleType: OpportunityRole
+  roleType?: OpportunityRole
   opportunityValue?: number
   fitScore?: number
   fitConfidence?: DiscoveryConfidence
   opportunityValueConfidence?: DiscoveryConfidence
   discoveredAt?: string
+  sourceVerification?: 'verified' | 'unverified'
 }
 
 export interface ScreenedDiscoveryCandidate<T extends DiscoveryCandidateForQuality = DiscoveryCandidateForQuality> {
@@ -115,11 +117,6 @@ function literalRulePresent(rule: string, evidence: string) {
   return token.length >= 2 && evidence.includes(token)
 }
 
-function deadlineInstant(value: string) {
-  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return new Date(`${value}T23:59:59.999Z`).getTime()
-  return new Date(value).getTime()
-}
-
 function locationMatches(profile: DiscoveryProfile, location: string) {
   const actual = compact(location)
   return profile.preferredLocations.some((item) => {
@@ -144,20 +141,21 @@ export function evaluateDiscoveryCandidate(
     hardRejectReasons.push(presentDiscoveryQualityReason(detail, true))
   }
 
+  if (candidate.sourceVerification === 'unverified') reject({ code: 'source_unverified' })
+
   if (candidate.postingStatus === 'closed') {
     reject({ code: 'posting_closed' })
   } else if (!candidate.postingStatus || candidate.postingStatus === 'unknown') {
     warnings.push('公开来源没有明确验证岗位仍开放。')
   }
 
-  if (candidate.deadline && deadlineInstant(candidate.deadline) < now.getTime()) {
+  if (candidate.deadline && jobDeadlineDefinitelyExpired(candidate.deadline, now)) {
     reject({ code: 'deadline_expired', params: { deadline: candidate.deadline } })
   }
 
-  const preferredRoleTypes = profile.preferredRoleTypes ?? []
-  if (preferredRoleTypes.length > 0 && !preferredRoleTypes.includes(candidate.roleType)) {
-    reject({ code: 'role_type_not_allowed', params: { roleType: candidate.roleType } })
-  }
+  const title = compact(candidate.role)
+  if (profile.titleIncludes?.length && !profile.titleIncludes.some(rule => literalRulePresent(rule, title))) reject({ code: 'title_condition_mismatch' })
+  if (profile.titleExcludes?.some(rule => literalRulePresent(rule, title))) reject({ code: 'title_condition_mismatch' })
 
   for (const exclusion of profile.mustNotHave) {
     if (literalRulePresent(exclusion, evidence)) {
@@ -167,7 +165,7 @@ export function evaluateDiscoveryCandidate(
 
   for (const requirement of profile.mustHave) {
     if (!literalRulePresent(requirement, evidence)) {
-      warnings.push(`尚未从提交的来源证据中确认必须条件“${requirement}”。`)
+      reject({ code: 'required_fact_missing', params: { rule: requirement } })
     }
   }
 
@@ -182,16 +180,6 @@ export function evaluateDiscoveryCandidate(
     }
   }
 
-  if (profile.minimumAnnualCompensationWan !== undefined) {
-    if (candidate.annualCompensationMinWan === undefined) {
-      warnings.push(`来源没有可结构化验证的最低年薪，无法确认 ${profile.minimumAnnualCompensationWan} 万元薪资门槛。`)
-    } else if (candidate.annualCompensationMinWan < profile.minimumAnnualCompensationWan) {
-      reject({
-        code: 'compensation_below_minimum',
-        params: { actual: candidate.annualCompensationMinWan, minimum: profile.minimumAnnualCompensationWan },
-      })
-    }
-  }
 
   return {
     accepted: hardRejectReasons.length === 0,
@@ -361,7 +349,9 @@ export function screenDiscoveryCandidates<T extends DiscoveryCandidateForQuality
     { id: a.candidate.sourceUrl, deadline: a.candidate.deadline },
     { id: b.candidate.sourceUrl, deadline: b.candidate.deadline }))
 
-  const maxReviewCandidates = Math.max(1, Math.min(12, profile.maxReviewCandidates ?? 6))
+  // Existing review-adapter safety bound, not a retired user-profile ranking
+  // preference. Every remaining candidate is still explicitly accounted for.
+  const maxReviewCandidates = 12
   const accepted = eligible.slice(0, maxReviewCandidates)
   const deferredCandidates = eligible.slice(maxReviewCandidates).map((item) => {
     const reasonDetail: DiscoveryQualityReasonDetail = {

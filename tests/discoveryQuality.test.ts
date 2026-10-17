@@ -128,7 +128,7 @@ describe('v1.4 discovery quality gate', () => {
     expect(lowScore).not.toHaveProperty('qualityScore')
   })
 
-  it('keeps unknown evidence visible instead of fabricating salary or must-have facts', () => {
+  it('blocks unknown mandatory facts without fabricating salary or proof', () => {
     const result = evaluateDiscoveryCandidate(
       profile(),
       candidate({
@@ -141,9 +141,9 @@ describe('v1.4 discovery quality gate', () => {
       weights,
       now,
     )
-    expect(result.accepted).toBe(true)
-    expect(result.warnings.join(' ')).toContain('最低年薪')
-    expect(result.warnings.join(' ')).toContain('2027 届校园招聘')
+    expect(result.accepted).toBe(false)
+    expect(result.warnings.join(' ')).not.toContain('最低年薪')
+    expect(result.hardRejectReasons.join(' ')).toContain('2027 届校园招聘')
     expect(result.warnings.join(' ')).toContain('仍开放')
   })
 
@@ -153,10 +153,11 @@ describe('v1.4 discovery quality gate', () => {
     expect(evaluateDiscoveryCandidate(strict, candidate({ location: undefined }), weights, now).accepted).toBe(false)
   })
 
-  it('rejects explicitly verified compensation below the user floor', () => {
+  it('preserves but ignores a retired historical compensation filter', () => {
     const result = evaluateDiscoveryCandidate(profile(), candidate({ annualCompensationMinWan: 18 }), weights, now)
-    expect(result.accepted).toBe(false)
-    expect(result.hardRejectReasons.join(' ')).toContain('18')
+    expect(result.accepted).toBe(true)
+    expect(result.hardRejectReasons).toEqual([])
+    expect(profile().minimumAnnualCompensationWan).toBe(20)
   })
 
   it('suppresses a highly similar role the user explicitly rejected recently', () => {
@@ -257,7 +258,7 @@ describe('v1.4 discovery quality gate', () => {
     expect(result.accepted[0].warnings.join(' ')).toContain('exact posting source 不同')
   })
 
-  it('deduplicates against existing similar roles and keeps only the strongest bounded review batch', () => {
+  it('deduplicates exact sources while ignoring historical score-based review limits', () => {
     const configured = { ...profile(), maxReviewCandidates: 2 }
     const result = screenDiscoveryCandidates(configured, [
       candidate({ company: '候选科技', role: 'AI 产品经理' }),
@@ -267,8 +268,16 @@ describe('v1.4 discovery quality gate', () => {
     ], [existing()], weights, now)
 
     expect(result.skippedDuplicates).toHaveLength(1)
-    expect(result.accepted.map((item) => item.candidate.company)).toEqual(['甲公司', '乙公司'])
-    expect(result.deferredCandidates).toHaveLength(1)
-    expect(result.deferredCandidates[0].company).toBe('丙公司')
+    expect(result.accepted.map((item) => item.candidate.company)).toEqual(['甲公司', '乙公司', '丙公司'])
+    expect(result.deferredCandidates).toHaveLength(0)
   })
+})
+
+
+it('retains a bounded factual review batch without ranking by scores', () => {
+  const candidates = Array.from({ length: 13 }, (_, index) => candidate({ company: `Synthetic company ${index}`, sourceUrl: `https://careers.example.com/post-${index}` }))
+  const result = screenDiscoveryCandidates(profile(), candidates, [], weights, now)
+  expect(result.accepted).toHaveLength(12)
+  expect(result.deferredCandidates).toHaveLength(1)
+  expect(result.skippedDuplicates).toHaveLength(0)
 })

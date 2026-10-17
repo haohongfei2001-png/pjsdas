@@ -226,7 +226,7 @@ export async function invokeReadTool(
           now: context.now ?? new Date(),
         })
         const automationPlan = buildDiscoveryAutomationPlan({
-          profile: output.profile,
+          profile: snapshot.data.discoveryProfile,
           continuousDiscovery,
           sources: enabledSourceRegistry(snapshot.data.timeline),
         })

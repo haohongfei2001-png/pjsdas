@@ -1,3 +1,4 @@
+import { MOCK_TARGET_AUTH_ORIGIN } from './support/mockCloudTargets.js'
 import { expect, test, type Page } from '@playwright/test'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { validateSnapshot } from '../src/snapshot.js'
@@ -30,7 +31,7 @@ function fixture() {
 async function server(page: Page, value = fixture(), options: { failed?: boolean; held?: Promise<void> } = {}) {
   const state = { failed: options.failed ?? false, reads: 0, writes: [] as string[] }
   await seedSession(page.context())
-  await page.route(/https:\/\/[^/]+\.supabase\.co\//, route => route.abort())
+  await page.route(`${MOCK_TARGET_AUTH_ORIGIN}/**`, route => route.abort())
   await page.route(BACKEND + '/**', async route => {
     const request = route.request(), path = new URL(request.url()).pathname
     if (request.method() === 'OPTIONS') return cors(route, {}, 204)
@@ -140,7 +141,7 @@ test('TA-02 loaded surfaces retain identifiers, detail, capture and keyboard foc
 })
 test('TA-02 first use and signed-in empty workspace are distinct and truthful',async ({page,browser})=>{
   test.setTimeout(90000)
-  await page.route(/https:\/\/[^/]+\.supabase\.co\//,route=>route.abort())
+  await page.route(`${MOCK_TARGET_AUTH_ORIGIN}/**`,route=>route.abort())
   await page.goto(base+'today')
   await expect(page.getByText('先让 TodayAction 了解你的求职进展')).toBeVisible()
   await matrix(page,'FIRST_USE')

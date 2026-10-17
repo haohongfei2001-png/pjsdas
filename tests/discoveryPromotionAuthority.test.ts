@@ -1,3 +1,5 @@
+import { verifiedPostingFixture } from './fixtures/verifiedDiscovery.js'
+import { createJobPostingEvidence } from '../src/jobPosting.js'
 import { describe, expect, it, vi } from 'vitest'
 import { applyDiscoveryPromotionCommand } from '../src/discoveryPromotionCommand.js'
 import { applyDomainCompensation } from '../src/domainCommands.js'
@@ -9,7 +11,7 @@ import type { DiscoveryInboxItem } from '../src/model.js'
 const time = '2026-09-24T00:00:00.000Z'
 const item: DiscoveryInboxItem = {
   id: 'inbox:job-1', candidateOpportunityId: 'job-1', company: 'Example', role: 'Designer',
-  roleType: 'core', sourceUrl: 'https://example.com/job/1', sourceTitle: 'Designer',
+  roleType: 'core', sourceUrl: 'https://www.liepin.com/job/9401.shtml', sourceTitle: 'Designer',
   rationale: 'Source-backed role', opportunityValue: 70, fitScore: 75,
   fitConfidence: 'medium', opportunityValueConfidence: 'medium', status: 'new',
   discoveredAt: time, createdAt: time, updatedAt: time,
@@ -20,8 +22,11 @@ const snapshot = () => createSnapshot({
 }, time)
 
 describe('CGR-05 first-party Discovery promotion authority', () => {
-  it('creates the reviewed Opportunity-only facts and audit atomically with a guarded Undo', () => {
+  it('creates the reviewed Opportunity-only facts and audit atomically with a guarded Undo', async () => {
     const before = snapshot()
+    const observation = await verifiedPostingFixture(item, time)
+    before.data.discoveryInbox![0].posting = createJobPostingEvidence({ ...observation, observedAt: time })
+    before.data.discoveryInbox![0].sourceProof = observation.sourceProof
     const applied = applyDiscoveryPromotionCommand(before, { inboxItemId: item.id }, new Date('2026-09-24T01:00:00.000Z'))
     expect(applied.snapshot.data.discoveryInbox?.[0]).toMatchObject({ status: 'promoted', promotedOpportunityId: 'job-1' })
     expect(applied.snapshot.data.opportunities).toHaveLength(1)

@@ -1,3 +1,4 @@
+import { MOCK_TARGET_AUTH_ORIGIN } from './support/mockCloudTargets.js'
 import { expect, test } from '@playwright/test'
 import { BACKEND, cors, health, opportunity, seedSession, workspace } from './fixtures/todayWorkspace.js'
 
@@ -15,7 +16,7 @@ for (const width of [1440, 390]) test(`deadline-only settings and job library at
   ]
   snapshot.data.actions = []
   const unexpectedWrites: string[] = []
-  await page.route(/https:\/\/[^/]+\.supabase\.co\//, (route) => route.abort())
+  await page.route(`${MOCK_TARGET_AUTH_ORIGIN}/**`, (route) => route.abort())
   await page.route(BACKEND + '/**', (route) => {
     const request = route.request(), path = new URL(request.url()).pathname
     if (request.method() === 'OPTIONS') return cors(route, {}, 204)

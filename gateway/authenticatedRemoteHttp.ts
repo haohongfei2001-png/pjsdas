@@ -4,7 +4,7 @@ import { createOwnerBusinessManagementRuntime } from './businessManagementRuntim
 import { createMcpHandler } from '@modelcontextprotocol/server'
 import { createAuthenticatedDriveWorkspaceSource } from './authenticatedDriveSource.js'
 import { createTransactionalWorkspaceSource } from './transactionalWorkspaceSource.js'
-import { createAuthorizationGrantStore, grantAllows, type AuthorizationGrant } from './authorizationGrantStore.js'
+import { createAuthorizationGrantStore, createDiscoveryGrantAdmission, grantAllows, type AuthorizationGrant } from './authorizationGrantStore.js'
 import { createConfiguredAudienceAccessGuard } from './audienceAccess.js'
 import { backendUrl } from './backendOrigin.js'
 import { createPjsdasMcpServer } from './serverFactory.js'
@@ -118,13 +118,21 @@ export async function authenticatedRemoteMcpFetch(request: Request) {
       })
       grants = await grantStore.listActiveForClient(identity.userId, identity.oauthClientId, accessToken)
     }
+    const admitDiscoveryGrant = identity.oauthClientId ? createDiscoveryGrantAdmission(identity.userId, identity.oauthClientId) : undefined
     const authorizeTrustedIngestion = async (name: 'ingest_discovery_run' | 'ingest_gmail_run', sourceId: string) => {
-      if (!identity.oauthClientId || !grantAllows(grants, name, sourceId)) {
+      const currentGrants = name === 'ingest_discovery_run' && identity.oauthClientId
+        ? await createAuthorizationGrantStore({ supabaseUrl: PJSDAS_SUPABASE_URL, publishableKey: PJSDAS_SUPABASE_PUBLISHABLE_KEY })
+          .listActiveForClient(identity.userId, identity.oauthClientId, accessToken)
+        : grants
+      if (!identity.oauthClientId || !grantAllows(currentGrants, name, sourceId)) {
         throw new WorkspaceSourceError(
           'AUTH_FORBIDDEN',
           `This delegated client is not authorized for ${name} on source ${sourceId}.`,
           false,
         )
+      }
+      if (name === 'ingest_discovery_run') {
+        return admitDiscoveryGrant!(currentGrants, sourceId)
       }
     }
     const authorizeSemanticIntake = async (sourceRef: SemanticIntakeSourceRef) => {

@@ -26,12 +26,13 @@ try {
   process.env.PJSDAS_SUPABASE_SERVICE_ROLE_KEY = 'synthetic-service'
   const snapshot = JSON.parse(await readFile(path.join(repo, 'gateway/fixtures/demo-workspace.json'), 'utf8'))
   snapshot.data.discoveryProfile = {
-    ...createDefaultDiscoveryProfile(), targetRoleQueries: ['Synthetic role'],
+    ...createDefaultDiscoveryProfile(), targetRoleQueries: ['Synthetic role'], searchScopeVersion: 1,
   }
   let generated = 0
   for (const force of [false, true]) {
     await assert.rejects(() => runDiscoveryAutomationForBinding({
-      binding: { userId: owner, refreshTokenCiphertext: 'synthetic-unused' },
+      binding: { userId: owner, googleSubject: 'synthetic-subject', refreshTokenCiphertext: 'synthetic-unused', discoveryConsentGeneration: '11111111-1111-4111-8111-111111111111' },
+      authorize: async () => {},
       tokenEncryptionKey: 'synthetic-unused',
       googleClientId: 'synthetic-unused',
       googleClientSecret: 'synthetic-unused',
@@ -44,6 +45,7 @@ try {
       fetchImpl: async (input, init) => {
         assert.equal(init?.method ?? 'GET', 'GET')
         const url = new URL(String(input))
+        if (url.pathname.endsWith('/pjsdas_command_ledger')) return Response.json([])
         assert.ok(url.pathname.endsWith('/pjsdas_workspaces'))
         assert.equal(url.searchParams.get('user_id'), `eq.${owner}`)
         return Response.json([{

@@ -1,3 +1,4 @@
+import { MOCK_TARGET_AUTH_KEY } from './support/mockCloudTargets.js'
 import { SCOPED_MANAGEMENT_CONSENTS, scopedManagementConsentHash, type ScopedManagementDomain } from '../gateway/scopedManagementConsent.js'
 import { expect, test, type Page, type Route } from '@playwright/test'
 const owner='00000000-0000-4000-8000-000000000001', clientId='00000000-0000-4000-8000-000000000002'
@@ -10,7 +11,7 @@ async function fixture(page:Page,unknownFirst=false,options:{neverCommitted?:boo
  const viewDescriptors=await Promise.all(descriptors.map(async d=>({...d,consentTextHash:await scopedManagementConsentHash(d.domain as ScopedManagementDomain)})))
  const state={canInitialize:true,account:{id:owner,email:'synthetic@example.invalid'},descriptors:viewDescriptors,clients:[{id:clientId,name:'Synthetic client',canApprove:true,grants:[] as any[]}]}
  const posts:any[]=[],initializations:any[]=[],receipts=new Map<string,unknown>();let expired=Boolean(options.expired),viewState=state
- await page.addInitScript(({owner})=>{localStorage.setItem('sb-yyrzwpoxlxpafdlbkdtg-auth-token',JSON.stringify({access_token:'synthetic-session',refresh_token:'synthetic-refresh',token_type:'bearer',expires_in:86400,expires_at:Math.floor(Date.now()/1000)+86400,user:{id:owner,aud:'authenticated',role:'authenticated',email:'synthetic@example.invalid',app_metadata:{provider:'google',providers:['google']},user_metadata:{sub:owner},identities:[],created_at:'2026-10-01T00:00:00Z'}}))},{owner})
+ await page.addInitScript(({owner,authKey})=>{localStorage.setItem(authKey,JSON.stringify({access_token:'synthetic-session',refresh_token:'synthetic-refresh',token_type:'bearer',expires_in:86400,expires_at:Math.floor(Date.now()/1000)+86400,user:{id:owner,aud:'authenticated',role:'authenticated',email:'synthetic@example.invalid',app_metadata:{provider:'google',providers:['google']},user_metadata:{sub:owner},identities:[],created_at:'2026-10-01T00:00:00Z'}}))},{owner,authKey:MOCK_TARGET_AUTH_KEY})
  await page.route('**/*',route=>['127.0.0.1','localhost'].includes(new URL(route.request().url()).hostname)?route.continue():route.abort())
  await page.route('**/api/health',route=>json(route,{status:'ok',version:'1.10.0-alpha.1',workspaceAuthority:'transactional',mode:'transactional-connected',capabilities:{deploymentPortability:true}}))
  await page.route('**/api/workspace',async route=>{if(route.request().method()==='OPTIONS')return json(route,{});if(route.request().method()==='GET')return json(route,{code:'WORKSPACE_MIGRATION_REQUIRED'},409);const b=route.request().postDataJSON();if(b.action==='read')return json(route,{code:'WORKSPACE_MIGRATION_REQUIRED'},409);expect(b.action).toBe('initialize_empty');initializations.push(b);expect(b.expectedAccountId).toBe(owner);expect(b.confirmStartEmpty).toBe(true);return json(route,{outcome:'INITIALIZED_OR_EXISTING',workspaceId:'synthetic-workspace'})})
@@ -76,6 +77,7 @@ test('ambiguous batch response preserves exact choices across reload and same-ID
  await page.reload();await expect(page.getByRole('button',{name:'重试同一请求'})).toBeEnabled();await page.getByRole('button',{name:'重试同一请求'}).click()
  await expect.poll(()=>f.posts.length).toBe(2);expect(f.posts[1]).toEqual(submitted)
  expect(f.state.clients[0].grants.every(g=>g.revision===1)).toBe(true)
+ await page.goto('about:blank') // Settle the mocked document before context teardown.
 })
 
 test('committed approval receipt remains recoverable after disconnect, then revoke stays available',async({page})=>{
@@ -177,6 +179,7 @@ for (const width of [1280,390]) test(`all consumer flags off retains owned revoc
  await choice.selectOption('revoke');await page.getByLabel('我已核对账号、客户端及上方列出的本次变更。').check();await page.getByRole('button',{name:'确认所选变更'}).click()
  await expect.poll(()=>f.posts.length).toBe(1);expect(f.posts[0].choices).toHaveLength(1)
  expect(f.posts[0].choices[0]).toMatchObject({domain:'business',decision:'revoke',expectedGrant:{revision:3}})
+ await expect(page.getByText('这次决定已记录；下方展示重新读取的当前授权状态。',{exact:true})).toBeVisible()
  await expect.poll(()=>f.state.clients[0].grants[0].revoked_at).not.toBeNull()
  expect(f.initializations).toEqual([])
 })

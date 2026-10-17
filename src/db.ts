@@ -1,5 +1,10 @@
-import { appendOpportunityOnly } from './opportunityCreation.js'
-import { ScoringRetiredError, assertNoNewOpportunityRating, preserveRetiredProfileFields } from './scoringRetirement.js'
+import { applyMcpSourceRefreshCommand } from './mcpSourceRefreshCommand.js'
+import { createMcpProposalEnvelope } from './ai/mcpProposal.js'
+import { mergeDiscoveryScope } from './discoveryScopeSchema.js'
+import { applyUserDomainCommand } from './domainCommands.js'
+import { observationFromVerifiedOpportunity } from './verifiedOpportunityCommand.js'
+import { applyDiscoveryPromotionCommand } from './discoveryPromotionCommand.js'
+import { ScoringRetiredError, assertNoNewOpportunityRating } from './scoringRetirement.js'
 import { interactionMetric } from './cloud/interactionMetrics.js'
 import { applyWorkspaceDelta, patchDeltaRow, DELTA_COLLECTIONS, type WorkspaceDelta, type DeltaRow } from './workspaceDelta.js'
 import { canonicalWorkspaceJson } from './cloud/workspaceFingerprint.js'
@@ -33,8 +38,6 @@ import type { TimePlanningPreferences } from './timePlanningPreferences.js'
 import { validateTimePlanningPreferences } from './timePlanningPreferences.js'
 import {
   createDefaultDiscoveryProfile,
-  normalizeDiscoveryProfile,
-  validateDiscoveryProfile,
   type DiscoveryProfile,
 } from './discoveryProfile.js'
 import {
@@ -369,13 +372,23 @@ export async function getDiscoveryProfile() {
   return stored ?? createDefaultDiscoveryProfile('1970-01-01T00:00:00.000Z')
 }
 
-export async function saveDiscoveryProfile(profile: DiscoveryProfile) {
-  const previous = await (await dbPromise).get('discoveryProfiles', 'current')
-  const next = normalizeDiscoveryProfile(preserveRetiredProfileFields(profile, previous))
-  const errors = validateDiscoveryProfile(next)
-  if (errors.length) throw new Error(errors[0])
-  await (await dbPromise).put('discoveryProfiles', next)
-  return next
+export async function saveDiscoveryProfile(profile: unknown, assertCurrent?: () => void) {
+  assertCurrent?.()
+  const tx = (await dbPromise).transaction('discoveryProfiles', 'readwrite')
+  try {
+    assertCurrent?.()
+    const previous = await tx.store.get('current')
+    const next = mergeDiscoveryScope(previous, profile, new Date().toISOString())
+    assertCurrent?.()
+    await tx.store.put(next)
+    assertCurrent?.()
+    await tx.done
+    return next
+  } catch (caught) {
+    try { tx.abort() } catch { /* The transaction may have already aborted. */ }
+    await tx.done.catch(() => {})
+    throw caught
+  }
 }
 
 export async function getAllTimelineRecords() {
@@ -392,14 +405,22 @@ export async function getAllChangeSets() {
   return records.sort((a, b) => b.createdAt.localeCompare(a.createdAt))
 }
 
-export async function savePendingChangeSet(changeSet: ChangeSetRecord) {
+export async function savePendingChangeSet(changeSet: ChangeSetRecord, assertCurrent?: () => void) {
+  assertCurrent?.()
   assertChangeSetValid(changeSet)
   if (changeSet.status !== 'pending') throw new Error('只能暂存 pending ChangeSet。')
   const db = await dbPromise
-  const existing = await db.get('changeSets', changeSet.id)
-  if (existing && existing.status === 'applied') throw new Error(`ChangeSet ${changeSet.id} 已应用，不能覆盖。`)
-  await db.put('changeSets', changeSet)
-  return changeSet
+  const tx = db.transaction('changeSets', 'readwrite')
+  try {
+    assertCurrent?.()
+    const existing = await tx.store.get(changeSet.id)
+    if (existing && existing.status === 'applied') throw new Error(`ChangeSet ${changeSet.id} 已应用，不能覆盖。`)
+    assertCurrent?.()
+    await tx.store.put(changeSet)
+    assertCurrent?.()
+    await tx.done
+    return changeSet
+  } catch (caught) { try { tx.abort() } catch {} await tx.done.catch(() => {}); throw caught }
 }
 
 export async function discardChangeSet(id: string) {
@@ -415,7 +436,8 @@ export async function discardChangeSet(id: string) {
 export async function saveDecisionRules(_rules: DecisionRules): Promise<never> { throw new ScoringRetiredError() }
 export async function resetDecisionRules(): Promise<never> { throw new ScoringRetiredError() }
 
-export async function updateActionStatus(id: string, status: Action['status'], expectedStatus?: Action['status']) {
+export async function updateActionStatus(id: string, status: Action['status'], expectedStatus?: Action['status'], assertCurrent?: () => void) {
+  assertCurrent?.()
   const db = await dbPromise
   return withTimelineMutation(db, async (tx) => {
     const now = new Date().toISOString()
@@ -450,10 +472,11 @@ export async function updateActionStatus(id: string, status: Action['status'], e
     for (const process of contract.processes) await tx.objectStore('processes').put(process)
     await tx.objectStore('timeline').put(timelineFromActionStatus(action, action.status, status, now))
     return captureActionStatusUndo(beforeData, contract, [id])
-  })
+  }, false, assertCurrent)
 }
 
-export async function undoActionStatusChange(undo: ActionStatusUndo) {
+export async function undoActionStatusChange(undo: ActionStatusUndo, assertCurrent?: () => void) {
+  assertCurrent?.()
   const db = await dbPromise
   return withTimelineMutation(db, async (tx) => {
     const snapshot = await readLocalSnapshot(tx)
@@ -465,7 +488,7 @@ export async function undoActionStatusChange(undo: ActionStatusUndo) {
     }
     for (const node of snapshot.data.scheduleNodes ?? []) await tx.objectStore('scheduleNodes').put(node)
     for (const process of snapshot.data.processes) await tx.objectStore('processes').put(process)
-  })
+  }, false, assertCurrent)
 }
 
 async function localCanonicalOpportunityId(tx: LocalSnapshotTransaction, id: string) {
@@ -476,7 +499,8 @@ async function localCanonicalOpportunityId(tx: LocalSnapshotTransaction, id: str
   return alias.canonicalOpportunityId
 }
 
-export async function addProcessEvent(event: ProcessEvent) {
+export async function addProcessEvent(event: ProcessEvent, assertCurrent?: () => void) {
+  assertCurrent?.()
   const db = await dbPromise
   return withTimelineMutation(db, async (tx) => {
     event = { ...event, opportunityId: await localCanonicalOpportunityId(tx, event.opportunityId) }
@@ -488,10 +512,11 @@ export async function addProcessEvent(event: ProcessEvent) {
     if (action) await tx.objectStore('actions').put(action)
     if (node) await tx.objectStore('scheduleNodes').put(node)
     await tx.objectStore('timeline').put(timelineFromProcessEvent(event))
-  })
+  }, false, assertCurrent)
 }
 
-export async function deleteProcessEvent(id: string) {
+export async function deleteProcessEvent(id: string, assertCurrent?: () => void) {
+  assertCurrent?.()
   const db = await dbPromise
   return withTimelineMutation(db, async (tx) => {
     const event = await tx.objectStore('processEvents').get(id)
@@ -516,7 +541,7 @@ export async function deleteProcessEvent(id: string) {
     }
     await tx.objectStore('processEvents').delete(id)
     await tx.objectStore('actions').delete(`event-action:${id}`)
-  })
+  }, false, assertCurrent)
 }
 function defaultLocalOpportunity(
   operation: Extract<ProgressOperation, { kind: 'upsert_opportunity' }>,
@@ -575,7 +600,8 @@ async function upsertLocalProcess(
   })
 }
 
-export async function applyProgressUpdate(operations: ProgressOperation[]) {
+export async function applyProgressUpdate(operations: ProgressOperation[], assertCurrent?: () => void) {
+  assertCurrent?.()
   const executable = operations.filter((item) => item.kind !== 'unresolved' && item.kind !== 'ignored')
   if (executable.length === 0) return { applied: 0 }
 
@@ -741,7 +767,7 @@ export async function applyProgressUpdate(operations: ProgressOperation[]) {
     }
 
     return { applied: executable.length }
-  })
+  }, false, assertCurrent)
 }
 
 export async function stageProgressChangeSet(operations: ExecutableProgressOperation[]) {
@@ -752,94 +778,128 @@ export async function stageProgressChangeSet(operations: ExecutableProgressOpera
 
 export async function applyDecisionRulesChangeSet(_rules: DecisionRules, _mode: 'save' | 'reset' = 'save'): Promise<never> { throw new ScoringRetiredError() }
 
-export async function applyProcessEventChangeSet(event: ProcessEvent) {
+export async function applyProcessEventChangeSet(event: ProcessEvent, assertCurrent?: () => void) {
+  assertCurrent?.()
   const changeSet = createProcessEventChangeSet(event)
-  await savePendingChangeSet(changeSet)
-  return applyChangeSet(changeSet.id)
+  await savePendingChangeSet(changeSet, assertCurrent)
+  return applyChangeSet(changeSet.id, assertCurrent)
 }
 
-export async function applyProcessEventDeleteChangeSet(eventId: string) {
+export async function applyProcessEventDeleteChangeSet(eventId: string, assertCurrent?: () => void) {
+  assertCurrent?.()
   const db = await dbPromise
   const event = await db.get('processEvents', eventId)
   if (!event) return undefined
   const changeSet = createProcessEventDeleteChangeSet(event)
-  await savePendingChangeSet(changeSet)
-  return applyChangeSet(changeSet.id)
+  await savePendingChangeSet(changeSet, assertCurrent)
+  return applyChangeSet(changeSet.id, assertCurrent)
 }
 
-export async function applyActionStatusChangeSet(actionId: string, status: Action['status']) {
+export async function applyActionStatusChangeSet(actionId: string, status: Action['status'], assertCurrent?: () => void) {
+  assertCurrent?.()
   const db = await dbPromise
   const action = await db.get('actions', actionId) ?? (await getAllActions()).find((item) => item.id === actionId)
   if (!action) return undefined
   const changeSet = createActionStatusChangeSet(action, status)
   if (!changeSet) return undefined
-  await savePendingChangeSet(changeSet)
-  return applyChangeSet(changeSet.id)
-}
-
-function compactOpportunityIdentity(value: string) {
-  return value.toLocaleLowerCase().replace(/[\s\u3000·•｜|（）()【】\[\]，,。.!！?？:：;；/\\_-]+/g, '')
-}
-
-function opportunityIdentity(company: string, role: string) {
-  return `${compactOpportunityIdentity(company)}|${compactOpportunityIdentity(role)}`
+  await savePendingChangeSet(changeSet, assertCurrent)
+  return applyChangeSet(changeSet.id, assertCurrent)
 }
 
 type DiscoveredChangeOperation = Extract<ChangeSetRecord['operations'][number], { kind: 'add_discovered_opportunity' }>
 
-async function applyDiscoveredOpportunityOperations(operations: DiscoveredChangeOperation[], changeSetId: string) {
+async function applyDiscoveredOpportunityOperations(changeSet: ChangeSetRecord, assertCurrent?: () => void) {
+  assertCurrent?.()
   const db = await dbPromise
-  return withTimelineMutation(db, async (tx) => {
-    const existing = await tx.objectStore('opportunities').getAll()
-    const existingIds = new Set(existing.map((item) => item.id))
-    const aliases = await tx.objectStore('opportunityAliases').getAll()
-    const identities = new Set([...existing, ...aliases.map(alias => alias.originalOpportunity)].map((item) => opportunityIdentity(item.company, item.role)))
-    for (const alias of aliases) existingIds.add(alias.id)
-    const batchIds = new Set<string>()
-    const batchIdentities = new Set<string>()
-
-    for (const operation of operations) {
-      const opportunity = operation.opportunity
-      const identity = opportunityIdentity(opportunity.company, opportunity.role)
-      if (existingIds.has(opportunity.id) || identities.has(identity)) {
-        throw new Error(`岗位 ${opportunity.company}｜${opportunity.role} 已存在，请重新让 ChatGPT 基于最新工作区生成提议。`)
-      }
-      if (batchIds.has(opportunity.id) || batchIdentities.has(identity)) {
-        throw new Error(`岗位发现 ChangeSet 内含重复岗位：${opportunity.company}｜${opportunity.role}。`)
-      }
-      batchIds.add(opportunity.id)
-      batchIdentities.add(identity)
+  return withTimelineMutation(db, async tx => {
+    const current = await tx.objectStore('changeSets').get(changeSet.id)
+    if (!current) throw new Error(`找不到 ChangeSet ${changeSet.id}。`)
+    if (current.status === 'applied') return current
+    if (current.status !== 'pending') throw new Error('The reviewed Discovery batch is no longer pending.')
+    let snapshot = await readLocalSnapshot(tx)
+    const now = new Date(), appliedOperations: ChangeSetRecord['operations'] = []
+    for (const operation of current.operations) {
+      if (operation.kind !== 'add_discovered_opportunity') throw new Error('岗位发现 ChangeSet 必须作为独立批次应用。')
+      assertNoNewOpportunityRating(operation.opportunity)
+      const evaluated = applyUserDomainCommand(snapshot, {
+        kind: 'save_verified_discovery_opportunity', commandId: `local-discovery:${current.id}:${operation.id}`,
+        opportunityId: operation.opportunity.id, observation: observationFromVerifiedOpportunity(operation.opportunity),
+      }, now)
+      if (evaluated.status !== 'APPLIED') throw new Error('This exact source posting is already saved. Refresh the reviewed batch.')
+      snapshot = evaluated.snapshot
+      appliedOperations.push({ ...operation, opportunity: evaluated.opportunity })
     }
-
-    const opportunityStore = tx.objectStore('opportunities')
-    const timelineStore = tx.objectStore('timeline')
-    const recordedAt = new Date().toISOString()
-
-    for (const operation of operations) {
+    const timestamp = now.toISOString()
+    const applied: ChangeSetRecord = { ...current, operations: appliedOperations, status: 'applied', appliedAt: timestamp,
+      updatedAt: timestamp, error: undefined, failedAt: undefined }
+    // Facts, complete batch status and its audit commit in this one transaction.
+    // Any invalid selected candidate aborts every preceding candidate as well.
+    for (const operation of appliedOperations) {
+      if (operation.kind !== 'add_discovered_opportunity') continue
       const opportunity = operation.opportunity
-      const facts = appendOpportunityOnly({ opportunities: [], opportunityAliases: aliases }, opportunity)
-      await opportunityStore.put(facts)
-      await timelineStore.put({
-        id: `timeline:discovery:${opportunity.id}`,
-        kind: 'opportunity_added',
-        category: 'opportunity',
-        source: 'changeset',
-        occurredAt: opportunity.importedAt,
-        recordedAt,
-        title: '接受 AI 发现岗位',
-        detail: opportunity.detail?.discovery?.rationale,
-        opportunityId: opportunity.id,
-        changeSetId,
-        company: opportunity.company,
-        role: opportunity.role,
-        sourceRef: opportunity.detail?.discovery?.sourceUrl,
-      })
+      await tx.objectStore('opportunities').put(opportunity)
+      await tx.objectStore('timeline').put({ id: `timeline:discovery:${opportunity.id}`, kind: 'opportunity_added', category: 'opportunity',
+        source: 'changeset', occurredAt: opportunity.importedAt, recordedAt: timestamp, title: '接受 AI 发现岗位',
+        opportunityId: opportunity.id, changeSetId: current.id, company: opportunity.company, role: opportunity.role,
+        sourceRef: opportunity.detail?.discovery?.sourceUrl })
     }
+    await tx.objectStore('changeSets').put(applied)
+    await tx.objectStore('timeline').put(timelineFromChangeSetApplied(applied))
+    return applied
+  }, false, assertCurrent)
+}
 
+export async function applyLocalDiscoveryPromotion(inboxItemId: string, assertCurrent?: () => void) {
+  assertCurrent?.()
+  const db = await dbPromise
+  return withTimelineMutation(db, async tx => {
+    const snapshot = await readLocalSnapshot(tx)
+    const evaluated = applyDiscoveryPromotionCommand(snapshot, { inboxItemId })
+    if (evaluated.status !== 'ALREADY_APPLIED') {
+      // The pure command owns identity, fact validation and the exact audit.
+      // Keep promotion status and job creation indivisible in the local adapter.
+      const originalJobs = new Set(snapshot.data.opportunities.map(item => item.id))
+      const originalChanges = new Set(snapshot.data.changeSets?.map(item => item.id))
+      const originalAudit = new Set(snapshot.data.timeline?.map(item => item.id))
+      for (const opportunity of evaluated.snapshot.data.opportunities) if (!originalJobs.has(opportunity.id)) await tx.objectStore('opportunities').put(opportunity)
+      for (const changeSet of evaluated.snapshot.data.changeSets ?? []) if (!originalChanges.has(changeSet.id)) await tx.objectStore('changeSets').put(changeSet)
+      for (const record of evaluated.snapshot.data.timeline ?? []) if (!originalAudit.has(record.id)) await tx.objectStore('timeline').put(record)
+      const promoted = evaluated.snapshot.data.discoveryInbox!.find(item => item.id === inboxItemId)!
+      await tx.objectStore('discoveryInbox').put(promoted)
+    }
+    return evaluated.snapshot.data.discoveryInbox!.find(item => item.id === inboxItemId)!
+  }, false, assertCurrent)
+}
+
+export async function applyLocalDiscoveryExtension(changeSet: ChangeSetRecord) {
+  const db = await dbPromise
+  return withTimelineMutation(db, async tx => {
+    const current = await tx.objectStore('changeSets').get(changeSet.id)
+    if (current?.status === 'applied') return current
+    if (current && current.status !== 'pending') throw new Error('The reviewed source change is no longer pending.')
+    const snapshot = await readLocalSnapshot(tx)
+    snapshot.data.changeSets = (snapshot.data.changeSets ?? []).filter(item => item.id !== changeSet.id)
+    const now = new Date()
+    const evaluated = applyMcpSourceRefreshCommand(snapshot, createMcpProposalEnvelope(changeSet, changeSet.expectedWorkspaceVersion, now), now)
+    for (const operation of changeSet.operations) if (operation.kind === 'refresh_job_posting') {
+      if (operation.ownerKind === 'opportunity') {
+        const updated = evaluated.snapshot.data.opportunities.find(item => item.id === operation.ownerId)!
+        await tx.objectStore('opportunities').put(updated)
+      } else {
+        const updated = evaluated.snapshot.data.discoveryInbox!.find(item => item.id === operation.ownerId)!
+        await tx.objectStore('discoveryInbox').put(updated)
+      }
+    }
+    const oldAudit = new Set(snapshot.data.timeline?.map(item => item.id))
+    for (const record of evaluated.snapshot.data.timeline ?? []) if (!oldAudit.has(record.id)) await tx.objectStore('timeline').put(record)
+    const applied = evaluated.snapshot.data.changeSets!.find(item => item.id === changeSet.id)!
+    await tx.objectStore('changeSets').put(applied)
+    return applied
   })
 }
 
-async function markChangeSetFailed(changeSet: ChangeSetRecord, caught: unknown) {
+async function markChangeSetFailed(changeSet: ChangeSetRecord, caught: unknown, assertCurrent?: () => void) {
+  assertCurrent?.()
   const now = new Date().toISOString()
   const failed: ChangeSetRecord = {
     ...changeSet,
@@ -848,12 +908,20 @@ async function markChangeSetFailed(changeSet: ChangeSetRecord, caught: unknown) 
     updatedAt: now,
     error: caught instanceof Error ? caught.message : String(caught),
   }
-  await (await dbPromise).put('changeSets', failed)
+  const tx = (await dbPromise).transaction('changeSets', 'readwrite')
+  try {
+    assertCurrent?.()
+    await tx.store.put(failed)
+    assertCurrent?.()
+    await tx.done
+  } catch (error) { try { tx.abort() } catch {} await tx.done.catch(() => {}); throw error }
 }
 
-export async function applyChangeSet(id: string): Promise<ChangeSetRecord & { actionCompensations?: ActionStatusUndo[] }> {
+export async function applyChangeSet(id: string, assertCurrent?: () => void): Promise<ChangeSetRecord & { actionCompensations?: ActionStatusUndo[] }> {
+  assertCurrent?.()
   const db = await dbPromise
   const changeSet = await db.get('changeSets', id)
+  assertCurrent?.()
   if (!changeSet) throw new Error(`找不到 ChangeSet ${id}。`)
   assertChangeSetValid(changeSet)
   if (changeSet.status === 'applied') return changeSet
@@ -868,28 +936,28 @@ export async function applyChangeSet(id: string): Promise<ChangeSetRecord & { ac
   try {
     const discoveredOperations = changeSet.operations.filter((operation): operation is DiscoveredChangeOperation => operation.kind === 'add_discovered_opportunity')
     if (discoveredOperations.length > 0) {
-      await applyDiscoveredOpportunityOperations(discoveredOperations, changeSet.id)
+      return { ...await applyDiscoveredOpportunityOperations(changeSet, assertCurrent), actionCompensations }
     } else {
     const progressOperations = changeSet.operations.filter((operation) => operation.kind === 'progress_update')
     if (progressOperations.length === changeSet.operations.length) {
       // The primary Natural Language Update path remains one IndexedDB transaction:
       // either every normalized operation is committed or none of them is.
-      await applyProgressUpdate(progressOperations.map((operation) => restoreProgressOperation(operation, changeSet.id)))
+      await applyProgressUpdate(progressOperations.map((operation) => restoreProgressOperation(operation, changeSet.id)), assertCurrent)
     } else for (const operation of changeSet.operations) {
       if (operation.kind === 'progress_update') {
-        await applyProgressUpdate([restoreProgressOperation(operation, changeSet.id)])
+        await applyProgressUpdate([restoreProgressOperation(operation, changeSet.id)], assertCurrent)
         continue
       }
 
       if (operation.kind === 'replace_decision_rules') throw new ScoringRetiredError()
 
       if (operation.kind === 'add_process_event') {
-        await addProcessEvent(operation.event)
+        await addProcessEvent(operation.event, assertCurrent)
         continue
       }
 
       if (operation.kind === 'delete_process_event') {
-        await deleteProcessEvent(operation.eventId)
+        await deleteProcessEvent(operation.eventId, assertCurrent)
         continue
       }
 
@@ -907,7 +975,7 @@ export async function applyChangeSet(id: string): Promise<ChangeSetRecord & { ac
       if (action.status !== operation.expectedStatus) {
         throw new Error(`Action ${operation.actionId} 状态已经变化，请重新操作。`)
       }
-      const compensation = await updateActionStatus(operation.actionId, operation.status, operation.expectedStatus)
+      const compensation = await updateActionStatus(operation.actionId, operation.status, operation.expectedStatus, assertCurrent)
       if (compensation) actionCompensations.push(compensation)
     }
     }
@@ -922,12 +990,17 @@ export async function applyChangeSet(id: string): Promise<ChangeSetRecord & { ac
       failedAt: undefined,
     }
     const tx = db.transaction(['changeSets', 'timeline'], 'readwrite')
+    try {
+    assertCurrent?.()
     await tx.objectStore('changeSets').put(applied)
     await tx.objectStore('timeline').put(timelineFromChangeSetApplied(applied))
+    assertCurrent?.()
     await tx.done
+    } catch (caught) { try { tx.abort() } catch {} await tx.done.catch(() => {}); throw caught }
     return { ...applied, actionCompensations }
   } catch (caught) {
-    await markChangeSetFailed(changeSet, caught)
+    assertCurrent?.()
+    await markChangeSetFailed(changeSet, caught, assertCurrent)
     throw caught
   }
 }
@@ -1022,17 +1095,25 @@ export async function exportLocalSnapshot(assertCurrent?: () => void) {
   }
 }
 
-export async function saveLocalTimePlanning(preferences: TimePlanningPreferences) {
+export async function saveLocalTimePlanning(preferences: TimePlanningPreferences, assertCurrent?: () => void) {
+  assertCurrent?.()
   const errors = validateTimePlanningPreferences(preferences)
   if (errors.length) throw new Error(errors[0])
   const db = await dbPromise
-  await db.put('meta', { ...structuredClone(preferences), key: 'timePlanning' })
+  const tx = db.transaction('meta', 'readwrite')
+  try {
+    assertCurrent?.()
+    await tx.store.put({ ...structuredClone(preferences), key: 'timePlanning' })
+    assertCurrent?.()
+    await tx.done
+  } catch (caught) { try { tx.abort() } catch {} await tx.done.catch(() => {}); throw caught }
 }
 
 async function withTimelineMutation<T>(
   db: Awaited<typeof dbPromise>,
   mutate: (tx: IDBPTransaction<PJSDASDatabase, (typeof DATA_STORES)[number][], 'readwrite'>) => Promise<T>,
   baselineAfterMutation = false,
+  assertCurrent?: () => void,
 ) {
   // Lock the source stores while validating and materializing the baseline.
   // Baseline and source edit commit together; no queued cache replacement can
@@ -1048,6 +1129,7 @@ async function withTimelineMutation<T>(
     }
   }
   try {
+    assertCurrent?.()
     if (!baselineAfterMutation) await materializeBaseline()
     const result = await mutate(tx)
     // Once aliases exist, every local write must retain the canonical identity invariant.
@@ -1059,6 +1141,7 @@ async function withTimelineMutation<T>(
         .some(item => item.opportunityId && aliases.has(item.opportunityId))) throw new Error('Local write references a merged opportunity; refresh the canonical target.')
     }
     if (baselineAfterMutation) await materializeBaseline()
+    assertCurrent?.()
     await tx.done
     return result
   } catch (caught) {
@@ -1088,16 +1171,19 @@ export async function exportLocalRecoveryArchive() {
   return { schema: 'todayaction-recovery-archive', exportedAt: new Date().toISOString(), stores: Object.fromEntries(rows) }
 }
 
-export async function clearLocalWorkspaceCache() {
+export async function clearLocalWorkspaceCache(assertCurrent?: () => void) {
   const db = await dbPromise
+  assertCurrent?.()
   const tx = db.transaction([...DATA_STORES, 'projectionDeltas'], 'readwrite')
   let cleared: PJSDASSnapshot
   try {
+    assertCurrent?.()
     await Promise.all(DATA_STORES.map((storeName) => tx.objectStore(storeName).clear()))
     // Proofs describe the cleared cache; original account-scoped commands
     // remain quarantined for that account's receipt-first recovery.
     await tx.objectStore('projectionDeltas').clear()
     cleared = await readLocalSnapshot(tx as LocalSnapshotTransaction)
+    assertCurrent?.()
     await tx.done
   } catch (caught) {
     // A synchronous store failure must also abort clears already enqueued.

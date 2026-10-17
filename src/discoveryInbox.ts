@@ -45,10 +45,10 @@ export function validateDiscoveryInboxItem(item: DiscoveryInboxItem): string[] {
   if (item.roleType !== undefined && !roleTypes.has(item.roleType)) errors.push('发现箱岗位类型无效。')
   if (!statuses.has(item.status)) errors.push('发现箱状态无效。')
   if (!item.sourceUrl?.startsWith('http://') && !item.sourceUrl?.startsWith('https://')) errors.push('发现箱来源 URL 无效。')
-  if (!item.sourceTitle?.trim() || !item.rationale?.trim()) errors.push('发现箱来源证据不完整。')
+  if (!item.sourceTitle?.trim() || (item.rationale !== undefined && !item.rationale.trim())) errors.push('发现箱来源证据不完整。')
   if (!Number.isFinite(item.opportunityValue) || item.opportunityValue < 0 || item.opportunityValue > 100) errors.push('发现箱机会价值无效。')
   if (!Number.isFinite(item.fitScore) || item.fitScore < 0 || item.fitScore > 100) errors.push('发现箱匹配度无效。')
-  if (!confidences.has(item.fitConfidence) || !confidences.has(item.opportunityValueConfidence)) errors.push('发现箱置信度无效。')
+  if ((item.fitConfidence !== undefined && !confidences.has(item.fitConfidence)) || (item.opportunityValueConfidence !== undefined && !confidences.has(item.opportunityValueConfidence))) errors.push('发现箱置信度无效。')
   for (const [label, value] of [['discoveredAt', item.discoveredAt], ['createdAt', item.createdAt], ['updatedAt', item.updatedAt]] as const) {
     if (Number.isNaN(new Date(value).getTime())) errors.push(`发现箱 ${label} 无效。`)
   }

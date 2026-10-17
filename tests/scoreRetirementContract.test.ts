@@ -63,9 +63,9 @@ describe('scoring retirement contracts and factual compatibility', () => {
   it('preserves historical profile thresholds while facts remain editable and active reads exclude ratings', () => {
     const snapshot = unknownDeadlineWorkspace(1)
     snapshot.data.discoveryProfile = { ...createDefaultDiscoveryProfile(), targetRoleQueries: ['Research'], minimumFitScore: 99, minimumOpportunityValue: 98 }
-    const { minimumFitScore, minimumOpportunityValue, ...facts } = snapshot.data.discoveryProfile
-    const updated = applyDiscoveryProfileCommand(snapshot, { ...facts, notes: 'An explicit factual preference' })
-    expect(updated.snapshot.data.discoveryProfile).toMatchObject({ minimumFitScore: 99, minimumOpportunityValue: 98, notes: 'An explicit factual preference' })
+    snapshot.data.discoveryProfile.notes = 'Original historical note'
+    const updated = applyDiscoveryProfileCommand(snapshot, { targetRoleQueries: ['Research'], preferredLocations: [], mustHave: [], mustNotHave: [], searchGoal: 'An explicit current search' })
+    expect(updated.snapshot.data.discoveryProfile).toMatchObject({ minimumFitScore: 99, minimumOpportunityValue: 98, notes: 'Original historical note', searchGoal: 'An explicit current search' })
     const read = getDiscoveryContext(updated.snapshot)
     expect(read).not.toHaveProperty('decisionWeights')
     expect(read.profile).not.toHaveProperty('minimumFitScore')

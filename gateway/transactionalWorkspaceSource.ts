@@ -46,6 +46,13 @@ export function createTransactionalWorkspaceSource(options: TransactionalWorkspa
   let readPreimage: ConnectedWorkspaceRecord | undefined
 
   return {
+    async readRawForCheckpoint() {
+      readPreimage = undefined
+      const workspace = await store.readForUser(options.userId, { preserveRawData: true, includeStoredSchema: true })
+      if (!workspace) throw new WorkspaceSourceError('WORKSPACE_MIGRATION_REQUIRED', 'The authoritative workspace is not available.', false)
+      return { snapshot: workspace.snapshot, context: { now: now(), timezone: resolvePlanningTimezone(workspace.snapshot.data.timePlanning, timezone),
+        workspaceVersion: `txn:${workspace.revision}`, workspaceOwnerUserId: options.userId } }
+    },
     async read() {
       readPreimage = undefined
       const workspace = await store.readForUser(options.userId, { includeStoredSchema: options.reuseReadPreimage })
@@ -71,11 +78,13 @@ export function createTransactionalWorkspaceSource(options: TransactionalWorkspa
     },
 
     async write(input: WorkspaceWriteInput) {
+      const checkpoint = input.command?.operation === 'checkpoint_discovery_search'
       const expectedRevision = revisionFromWorkspaceVersion(input.expectedWorkspaceVersion)
       const observed = readPreimage
       readPreimage = undefined
       let workspace: ConnectedWorkspaceRecord | null
-      if (observed?.userId === options.userId && observed.revision === expectedRevision) {
+      if (checkpoint) workspace = await store.readForUser(options.userId, { preserveRawData: true, includeStoredSchema: true })
+      else if (observed?.userId === options.userId && observed.revision === expectedRevision) {
         const identity = await store.readIdentityForUser(options.userId)
         if (!identity) workspace = null
         else if (identity.workspaceId !== observed.workspaceId || identity.revision !== observed.revision || identity.schemaVersion !== observed.storedSchemaVersion) {
@@ -106,7 +115,7 @@ export function createTransactionalWorkspaceSource(options: TransactionalWorkspa
         payloadHash,
         expectedRevision,
         snapshot: input.snapshot,
-        schemaVersion: input.snapshot.version,
+        schemaVersion: checkpoint ? workspace.storedSchemaVersion ?? workspace.schemaVersion : input.snapshot.version,
         principalKind: options.principalKind,
         clientId: options.clientId,
         provenance: {
@@ -115,6 +124,7 @@ export function createTransactionalWorkspaceSource(options: TransactionalWorkspa
           ...(semanticCommand?.provenance ?? {}),
         },
         compensation: semanticCommand?.compensation,
+        discoveryAuthorization: semanticCommand?.discoveryAuthorization,
         effectiveTime: semanticCommand?.effectiveTime ?? input.snapshot.exportedAt,
         receiptContext: {
           contractVersion: 2,
@@ -140,6 +150,8 @@ export function createTransactionalWorkspaceSource(options: TransactionalWorkspa
       }
       return {
         snapshot: result.snapshot,
+        commandReceipt: result.receipt,
+        commandOutcome: result.outcome,
         context: {
           now: now(),
           timezone: resolvePlanningTimezone(result.snapshot.data.timePlanning, timezone),
@@ -147,6 +159,17 @@ export function createTransactionalWorkspaceSource(options: TransactionalWorkspa
           workspaceOwnerUserId: options.userId,
         },
       }
+    },
+
+    async readCommandReceipt(commandId: string) {
+      return store.readCommandForUser(options.userId, commandId)
+    },
+
+    async readLatestDiscoveryReceipt(sourceId: string, scopeFingerprint: string) {
+      return store.readLatestDiscoveryCommandForUser(options.userId, sourceId, scopeFingerprint)
+    },
+    async readDiscoveryScopeRecords(sourceId: string, scopeFingerprint: string, planFingerprint: string, cycleId?: string) {
+      return store.readDiscoveryScopeRecordsForUser(options.userId, sourceId, scopeFingerprint, planFingerprint, cycleId)
     },
 
     async prepareUndo(targetCommandId: string) {

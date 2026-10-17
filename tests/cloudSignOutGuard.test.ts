@@ -64,6 +64,12 @@ describe('cloud sign-out guard', () => {
     expect(contextSource.indexOf('busyRef.current = false', criticalSection)).toBeGreaterThan(localDirtyCheck)
   })
 
+  it('uses an explicit safety read for sign-out so recent input is not classified as unsaved data', () => {
+    const section = contextSource.slice(contextSource.indexOf('const signOut = useCallback'))
+    expect(section).toContain('await runCloudSync(session.user.id, { passive: false })')
+    expect(section).not.toContain('await runCloudSync(session.user.id, { passive: true })')
+  })
+
   it('disables the visible sign-out action while sync or startup restoration is active', () => {
     expect(settingsSource).toContain('disabled={cloud.syncing || cloud.loading}')
     expect(settingsSource).toContain('void run(cloud.signOut)')

@@ -10,7 +10,7 @@ const owner = '00000000-0000-4000-8000-000000000001', client = '00000000-0000-40
 const principal = { kind: 'delegated_mcp' as const, userId: owner, clientId: client }
 const grant: DiscoveryProfileManagementGrant = { id: grantId, revision: 1, userId: owner, clientId: client, consentVersion: 5, capability: 'workspace.discovery-profile.manage', grantedAt: '2026-10-01T00:00:00Z' }
 function fixture(): PJSDASSnapshot { return upgradeSnapshotToLatest({ schema: 'pjsdas-local-snapshot', version: 4, exportedAt: '2026-10-02T00:00:00Z', data: { opportunities: [{ id: 'opp-a', company: 'Synthetic', role: 'Engineer', processStage: 'screening', currentStageLabel: 'User application', roleType: 'core', early: false, opportunityValue: 70, fitScore: 80, importedAt: '2026-10-01T00:00:00Z' }], processes: [], processEvents: [], actions: [], prep: [], applicationGroups: [], scheduleNodes: [], timeline: [] } }) }
-async function command(snapshot = fixture()) { const read = await getDiscoveryProfileManagementRead(snapshot); return { commandId: 'synthetic-v5-command', baseRevision: 0, command: { type: 'discovery_profile_management', value: { kind: 'patch_discovery_profile', expectedFingerprint: read.fingerprint, patch: { notes: 'Explicit preference' } } } } }
+async function command(snapshot = fixture()) { const read = await getDiscoveryProfileManagementRead(snapshot); return { commandId: 'synthetic-v5-command', baseRevision: 0, command: { type: 'discovery_profile_management', value: { kind: 'patch_discovery_profile', expectedFingerprint: read.fingerprint, patch: { searchGoal: 'Explicit preference' } } } } }
 function storeFixture(initial = fixture()) {
   let snapshot = structuredClone(initial), revision = 0
   const records: Record<string, any>[] = []
@@ -52,7 +52,7 @@ describe('v5 grant discrimination and atomic kernel', () => {
     expect(f.posts).toHaveLength(1)
     expect(f.posts[0]).toMatchObject({ path: '/rest/v1/rpc/pjsdas_commit_discovery_profile_workspace_v1', body: { target_grant_id: grantId, target_grant_revision: 1, target_user_id: owner, target_client_id: client, target_operation: 'discovery_profile_management' } })
     expect(f.records[0].compensation.operation).toBe('discovery_profile_management_restore')
-    await expect(executor.execute(principal, { ...input, command: { ...input.command, value: { ...input.command.value, patch: { notes: 'Different preference' } } } })).rejects.toThrow(/reused/)
+    await expect(executor.execute(principal, { ...input, command: { ...input.command, value: { ...input.command.value, patch: { searchGoal: 'Different preference' } } } })).rejects.toThrow(/reused/)
   })
   it('preserves raw legacy dates and cancelled nodes through gateway commit and restore', async () => {
     const initial = unknownDeadlineWorkspace(1)

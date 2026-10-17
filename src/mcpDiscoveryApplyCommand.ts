@@ -1,7 +1,7 @@
-import { appendOpportunityOnly } from './opportunityCreation.js'
+import { applyUserDomainCommand } from './domainCommands.js'
+import { observationFromVerifiedOpportunity } from './verifiedOpportunityCommand.js'
 import { assertNoNewOpportunityRating } from './scoringRetirement.js'
 import { deriveDiscoveryReviewChangeSet, createDiscoveryFeedbackRecords, type DiscoveryRejectionSelection } from './discoveryFeedback.js'
-import { discoveryInboxIdentity } from './discoveryInbox.js'
 import { upgradeSnapshotToLatest, validateSnapshot, type PJSDASSnapshot } from './snapshot.js'
 import { timelineFromChangeSetApplied } from './timeline.js'
 import type { McpProposalEnvelope } from './ai/mcpProposal.js'
@@ -15,7 +15,7 @@ export function applyMcpDiscoveryCommand(
   rejectionSelections: Record<string, DiscoveryRejectionSelection>,
   now = new Date(),
 ) {
-  const next = upgradeSnapshotToLatest(snapshot)
+  let next = upgradeSnapshotToLatest(snapshot)
   if (proposal.changeSet.source !== 'mcp' || proposal.changeSet.status !== 'pending') {
     throw new Error('Only a pending MCP discovery proposal can be applied.')
   }
@@ -29,26 +29,28 @@ export function applyMcpDiscoveryCommand(
   if (Object.keys(rejectionSelections).some((id) => !known.has(id))) {
     throw new Error('Discovery rejection reason refers to an unknown operation.')
   }
-  const identities = new Set(next.data.opportunities.map((item) => discoveryInboxIdentity(item.company, item.role)))
   const newIds = new Set<string>()
+  const appliedOperations: typeof reviewed.operations=[]
   for (const operation of reviewed.operations) {
     if (operation.kind !== 'add_discovered_opportunity') throw new Error('Discovery proposal contains another operation type.')
     const opportunity = operation.opportunity
     assertNoNewOpportunityRating(opportunity)
-    const identity = discoveryInboxIdentity(opportunity.company, opportunity.role)
-    if (next.data.opportunities.some((item) => item.id === opportunity.id) || identities.has(identity) || newIds.has(opportunity.id)) {
+    if (next.data.opportunities.some((item) => item.id === opportunity.id) || newIds.has(opportunity.id)) {
       throw new Error(`Job ${opportunity.company} | ${opportunity.role} already exists. Request a proposal based on the current workspace.`)
     }
-    identities.add(identity)
+    const evaluated=applyUserDomainCommand(next,{kind:'save_verified_discovery_opportunity',commandId:`mcp:${reviewed.id}:${operation.id}`,
+      opportunityId:opportunity.id,observation:observationFromVerifiedOpportunity(opportunity)},now)
+    if(evaluated.status!=='APPLIED')throw new Error(`The exact source posting for ${opportunity.company} | ${opportunity.role} is already saved. Refresh this proposal.`)
+    next=evaluated.snapshot
+    appliedOperations.push({...operation,opportunity:evaluated.opportunity})
     newIds.add(opportunity.id)
   }
   const timestamp = now.toISOString()
-  const applied = { ...reviewed, status: 'applied' as const, appliedAt: timestamp, updatedAt: timestamp }
+  const applied = { ...reviewed, operations:appliedOperations,status: 'applied' as const, appliedAt: timestamp, updatedAt: timestamp }
   const timeline: TimelineRecord[] = [...(next.data.timeline ?? [])]
-  for (const operation of reviewed.operations) {
+  for (const operation of applied.operations) {
     if (operation.kind !== 'add_discovered_opportunity') continue
     const opportunity = operation.opportunity
-    appendOpportunityOnly(next.data, opportunity)
     timeline.push({
       id: `timeline:discovery:${opportunity.id}`, kind: 'opportunity_added', category: 'opportunity',
       source: 'changeset', occurredAt: opportunity.importedAt, recordedAt: timestamp,

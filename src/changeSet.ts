@@ -63,6 +63,8 @@ export type ChangeSetOperation =
   | {
       id: string
       kind: 'refresh_job_posting'
+      /** First-party source verifier output; never accepted in an external proposal input. */
+      verifiedObservation?: import('./autonomousIngestion.js').MonitorJobObservation
       summary: string
       ownerKind: 'opportunity' | 'inbox'
       ownerId: string
@@ -236,7 +238,7 @@ function validateDiscoveredOpportunity(raw: Record<string, unknown>, operationId
   if (typeof opportunity.company !== 'string' || !opportunity.company.trim() || opportunity.company.length > 200) errors.push(`ChangeSet operation ${operationId} 的公司名无效。`)
   if (typeof opportunity.role !== 'string' || !opportunity.role.trim() || opportunity.role.length > 240) errors.push(`ChangeSet operation ${operationId} 的岗位名无效。`)
   if (opportunity.processStage !== 'not_applied' || opportunity.currentStageLabel !== '待投') errors.push(`ChangeSet operation ${operationId} 的发现岗位必须处于待投状态。`)
-  if (!['core', 'backup', 'reach', 'lottery', 'practice'].includes(String(opportunity.roleType))) errors.push(`ChangeSet operation ${operationId} 的岗位类型无效。`)
+  if (opportunity.roleType !== undefined && !['core', 'backup', 'reach', 'lottery', 'practice'].includes(String(opportunity.roleType))) errors.push(`ChangeSet operation ${operationId} 的岗位类型无效。`)
   if (typeof opportunity.opportunityValue !== 'number' || opportunity.opportunityValue < 0 || opportunity.opportunityValue > 100) errors.push(`ChangeSet operation ${operationId} 的机会价值无效。`)
   if (typeof opportunity.fitScore !== 'number' || opportunity.fitScore < 0 || opportunity.fitScore > 100) errors.push(`ChangeSet operation ${operationId} 的匹配度无效。`)
   if (opportunity.locallyManaged !== true) errors.push(`ChangeSet operation ${operationId} 的发现岗位必须标记为本地管理。`)
@@ -264,10 +266,10 @@ function validateDiscoveredOpportunity(raw: Record<string, unknown>, operationId
   const discovery = opportunity.detail.discovery
   if (!validPublicHttpUrl(discovery.sourceUrl)) errors.push(`ChangeSet operation ${operationId} 的来源 URL 无效。`)
   if (typeof discovery.sourceTitle !== 'string' || !discovery.sourceTitle.trim() || discovery.sourceTitle.length > 300) errors.push(`ChangeSet operation ${operationId} 的来源标题无效。`)
-  if (typeof discovery.rationale !== 'string' || !discovery.rationale.trim() || discovery.rationale.length > 1600) errors.push(`ChangeSet operation ${operationId} 的匹配理由无效。`)
+  if (discovery.rationale !== undefined && (typeof discovery.rationale !== 'string' || !discovery.rationale.trim() || discovery.rationale.length > 1600)) errors.push(`ChangeSet operation ${operationId} 的匹配理由无效。`)
   if (!validIso(discovery.discoveredAt)) errors.push(`ChangeSet operation ${operationId} 的发现时间证据无效。`)
-  if (!['high', 'medium', 'low'].includes(String(discovery.fitConfidence))) errors.push(`ChangeSet operation ${operationId} 的匹配度置信度无效。`)
-  if (!['high', 'medium', 'low'].includes(String(discovery.opportunityValueConfidence))) errors.push(`ChangeSet operation ${operationId} 的机会价值置信度无效。`)
+  if (discovery.fitConfidence !== undefined && !['high', 'medium', 'low'].includes(String(discovery.fitConfidence))) errors.push(`ChangeSet operation ${operationId} 的匹配度置信度无效。`)
+  if (discovery.opportunityValueConfidence !== undefined && !['high', 'medium', 'low'].includes(String(discovery.opportunityValueConfidence))) errors.push(`ChangeSet operation ${operationId} 的机会价值置信度无效。`)
   if (discovery.location !== undefined && (typeof discovery.location !== 'string' || discovery.location.length > 240)) errors.push(`ChangeSet operation ${operationId} 的地点字段无效。`)
   if (discovery.compensationText !== undefined && (typeof discovery.compensationText !== 'string' || discovery.compensationText.length > 500)) errors.push(`ChangeSet operation ${operationId} 的薪资证据无效。`)
   if (discovery.profileWarnings !== undefined && (!Array.isArray(discovery.profileWarnings) || discovery.profileWarnings.length > 10 || discovery.profileWarnings.some((item) => typeof item !== 'string' || item.length > 300))) {

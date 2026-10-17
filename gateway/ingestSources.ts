@@ -1,3 +1,9 @@
+import { applyUserDomainCommand } from '../src/domainCommands.js'
+import { discoveryProfileForSnapshot, isDiscoveryProfileConfigured, isDiscoverySearchScopeConfirmed } from '../src/discoveryProfile.js'
+import { discoveryProfileManagementFingerprint } from '../src/discoveryProfileManagement.js'
+import { hashMutationPayload } from './mutationKernel.js'
+import { prepareVerifiedDiscoveryCommand, commitVerifiedDiscoveryRun, readVerifiedDiscoveryReceipt, verifiedDiscoveryCommandId } from './verifiedDiscoveryCommit.js'
+import { discoveryObservationClaimSchema } from '../src/discoveryFactSchema.js'
 import { assertNoScoringInput, ScoringRetiredError } from '../src/scoringRetirement.js'
 import type { CallToolResult } from '@modelcontextprotocol/server'
 import * as z from 'zod/v4'
@@ -12,13 +18,12 @@ import {
 import { jobRoleSimilarity, normalizeJobCompany } from '../src/jobPosting.js'
 import type { IngestionRunSummary, Opportunity } from '../src/model.js'
 import { resolveSourcePolicy } from '../src/sourceRegistry.js'
-import { requireWritableWorkspaceSource, WorkspaceSourceError, type WorkspaceSource } from './workspaceSource.js'
-import { verifyDiscoverySourceObservation } from './discoverySourceVerifier.js'
+import { requireWritableWorkspaceSource, WorkspaceSourceError, type WorkspaceSource, type DiscoveryCommitAuthorization } from './workspaceSource.js'
+import { createDiscoverySourceVerifier } from './discoverySourceVerifier.js'
 
 const isoString = z.string().min(1).refine((value) => !Number.isNaN(new Date(value).getTime()), 'Must be a valid ISO/date timestamp.')
 const confidenceSchema = z.enum(['high', 'medium', 'low'])
 const roleTypeSchema = z.enum(['core', 'backup', 'reach', 'lottery', 'practice'])
-const postingStatusSchema = z.enum(['open', 'closed', 'unknown'])
 const processEventTypeSchema = z.enum(['assessment_invite', 'written_test_invite', 'interview_invite', 'offer', 'rejection', 'status_update', 'other'])
 const processStageSchema = z.enum(['unknown', 'not_applied', 'screening', 'assessment', 'written_test', 'interview', 'offer', 'waiting_release', 'closed'])
 const timingModeSchema = z.enum(['deadline', 'fixed'])
@@ -26,7 +31,7 @@ const eventStateSchema = z.enum(['scheduled', 'rescheduled', 'completed', 'cance
 const sourcePolicySchema = z.object({
   version: z.literal(1), enabled: z.boolean(), label: z.string().trim().min(1).max(160).optional(),
   cadenceMinutes: z.number().int().min(15).max(60 * 24 * 30), freshnessSlaMinutes: z.number().int().min(15).max(60 * 24 * 30),
-})
+}).strict()
 const simulationFields = {
   dryRun: z.boolean().optional(),
   replayOfRunId: z.string().trim().min(1).max(180).optional(),
@@ -35,13 +40,8 @@ const simulationFields = {
 export const ingestDiscoveryRunSchema = z.object({
   runId: z.string().trim().min(1).max(180), sourceId: z.string().trim().min(1).max(180), startedAt: isoString, completedAt: isoString,
   sourcePolicy: sourcePolicySchema.optional(), ...simulationFields,
-  observations: z.array(z.object({
-    sourceRecordId: z.string().trim().min(1).max(500), company: z.string().trim().min(1).max(200), role: z.string().trim().min(1).max(260),
-    sourceUrl: z.string().url().max(2_000), sourceTitle: z.string().trim().min(1).max(400), location: z.string().trim().max(240).optional(), deadline: isoString.optional(),
-    compensationText: z.string().trim().max(600).optional(), rationale: z.string().trim().min(1).max(1_600), roleType: roleTypeSchema,
-    postingStatus: postingStatusSchema.optional(), discoveredAt: isoString.optional(),
-  })).max(100),
-})
+  observations: z.array(discoveryObservationClaimSchema).max(100),
+}).strict()
 
 export const ingestGmailRunSchema = z.object({
   runId: z.string().trim().min(1).max(180), sourceId: z.string().trim().min(1).max(180), startedAt: isoString, completedAt: isoString,
@@ -154,7 +154,7 @@ export async function invokeTrustedIngestion(
   name: TrustedIngestionToolName,
   args: unknown,
   options: {
-    authorize?: (name: TrustedIngestionToolName, sourceId: string) => Promise<void>
+    authorize?: (name: TrustedIngestionToolName, sourceId: string) => Promise<void | DiscoveryCommitAuthorization>
     fetchImpl?: typeof fetch
     sourceVerifier?: (observation: MonitorJobObservation) => Promise<MonitorJobObservation>
   } = {},
@@ -163,29 +163,54 @@ export async function invokeTrustedIngestion(
     assertNoScoringInput(args)
     if (name === 'ingest_discovery_run') {
       const parsed = ingestDiscoveryRunSchema.parse(args) as HardenedMonitorIngestionRunInput & SimulationArgs
-      await options.authorize?.(name, parsed.sourceId)
-      const verifyObservation = options.sourceVerifier ?? ((observation: MonitorJobObservation) =>
-        verifyDiscoverySourceObservation(observation, {
-          fetchImpl: options.fetchImpl,
-          now: new Date(parsed.completedAt),
-        }))
-      const verifiedObservations = await Promise.all(parsed.observations.map((observation) => verifyObservation(observation)))
+      const discoveryAuthorization = await options.authorize?.(name, parsed.sourceId)
       const workspace = await source.read()
+      const now = workspace.context.now ?? new Date()
       if (parsed.replayOfRunId && !parsed.dryRun) return toolError('INVALID_ARGUMENT', 'replayOfRunId is dry-run only.', false)
       if (!parsed.dryRun) requireWritableWorkspaceSource(source)
+      const policy = resolveSourcePolicy('gpt_monitor', parsed.sourceId, parsed.sourcePolicy)
+      const request = { sourceId: parsed.sourceId, runId: parsed.runId, sourcePolicy: policy, observations: parsed.observations }
+      const fingerprint = await hashMutationPayload('ingest_verified_discovery', request)
+      const previous = !parsed.replayOfRunId && findRun(workspace.snapshot, 'gpt_monitor', parsed.sourceId, parsed.runId)
+      if (previous) {
+        const commandId = await verifiedDiscoveryCommandId(parsed.sourceId, parsed.runId)
+        if (previous.inputFingerprint !== fingerprint || previous.commandId !== commandId) return toolError('COMMAND_ID_REUSED', 'This run ID has different facts or unsupported legacy evidence.', false)
+        if (parsed.dryRun) return success({ ...outputFor(workspace.context.workspaceVersion, { snapshot: workspace.snapshot, run: previous, records: [],
+          alreadyApplied: true, createdOpportunityIds: [], touchedOpportunityIds: [], processEventIds: [] }, parsed),
+          durableCommit: false, readbackVerified: false, commandId })
+        const receipt = await readVerifiedDiscoveryReceipt(source, { commandId, kind: 'ingest_verified_discovery', inputFingerprint: fingerprint }, workspace.context.workspaceVersion)
+        if (!receipt) return toolError('DISCOVERY_COMMIT_UNVERIFIED', 'This run has no matching authoritative command receipt.', true)
+        return success({ ...outputFor(workspace.context.workspaceVersion, { snapshot: workspace.snapshot, run: previous, records: [],
+          alreadyApplied: true, createdOpportunityIds: [], touchedOpportunityIds: [], processEventIds: [] }, parsed),
+          durableCommit: true, readbackVerified: true, commandId, receipt })
+      }
+      if (!isDiscoveryProfileConfigured(discoveryProfileForSnapshot(workspace.snapshot.data.discoveryProfile))) {
+        return toolError('DISCOVERY_PROFILE_REQUIRED', 'Confirm the search scope before automatic Discovery ingestion. Explicit user job creation remains a separate command.', false)
+      }
+      if (!isDiscoverySearchScopeConfirmed(discoveryProfileForSnapshot(workspace.snapshot.data.discoveryProfile))) {
+        return toolError('DISCOVERY_SCOPE_CONFIRMATION_REQUIRED', 'Confirm the complete current search scope before automatic Discovery ingestion. Historical preferences remain unchanged.', false)
+      }
+      const scopeFingerprint = await discoveryProfileManagementFingerprint(workspace.snapshot.data.discoveryProfile ?? null)
+      const verifyObservation = options.sourceVerifier ?? createDiscoverySourceVerifier({ fetchImpl: options.fetchImpl, now })
+      const verifiedObservations = await Promise.all(parsed.observations.map(observation => verifyObservation(observation)))
       const baseline = parsed.replayOfRunId ? findRun(workspace.snapshot, 'gpt_monitor', parsed.sourceId, parsed.replayOfRunId) : undefined
       if (parsed.replayOfRunId && !baseline) return toolError('REPLAY_BASELINE_NOT_FOUND', `Run ${parsed.replayOfRunId} was not found for ${parsed.sourceId}.`, false)
-      const simulationSnapshot = snapshotForReplay(workspace.snapshot, 'gpt_monitor', parsed.sourceId, parsed.replayOfRunId)
-      const input: HardenedMonitorIngestionRunInput = {
-        ...parsed,
-        producer: 'mcp_trusted_ingestion',
-        observations: verifiedObservations,
-        sourcePolicy: resolveSourcePolicy('gpt_monitor', parsed.sourceId, parsed.sourcePolicy),
+      const command = await prepareVerifiedDiscoveryCommand({ request, scopeFingerprint, run: {
+        sourceId: parsed.sourceId, runId: parsed.runId, producer: 'mcp_trusted_ingestion',
+        startedAt: now.toISOString(), completedAt: now.toISOString(), sourcePolicy: policy,
+        observations: verifiedObservations as Parameters<typeof prepareVerifiedDiscoveryCommand>[0]['run']['observations'],
+      } })
+      if (parsed.dryRun) {
+        const simulationSnapshot = snapshotForReplay(workspace.snapshot, 'gpt_monitor', parsed.sourceId, parsed.replayOfRunId)
+        const applied = applyUserDomainCommand(simulationSnapshot, command, now)
+        return success({ ...outputFor(workspace.context.workspaceVersion, applied.ingestion, parsed, baseline), durableCommit: false, readbackVerified: false })
       }
-      const result = applyMonitorIngestionHardened(simulationSnapshot, input)
-      if (parsed.dryRun) return success(outputFor(workspace.context.workspaceVersion, result, parsed, baseline))
-      const persisted = await persistResult(source, workspace.context.workspaceVersion, `gpt-monitor:${input.sourceId}`, result)
-      return success(outputFor(persisted.workspaceVersion, persisted.result))
+      const persisted = await commitVerifiedDiscoveryRun(source, command, { discoveryAuthorization: discoveryAuthorization || undefined,
+        authorize: async () => { await options.authorize?.(name, parsed.sourceId) } })
+      return success({ ...outputFor(persisted.workspaceVersion, persisted.result),
+        durableCommit: persisted.durableCommit, readbackVerified: persisted.readbackVerified,
+        commandId: persisted.commandId, receipt: persisted.receipt,
+        ...('verificationWarning' in persisted ? { verificationWarning: persisted.verificationWarning } : {}) })
     }
 
     const parsed = ingestGmailRunSchema.parse(args) as HardenedGmailIngestionRunInput & SimulationArgs

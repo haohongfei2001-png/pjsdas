@@ -13,7 +13,7 @@ describe('stable account and sync session carried into v1.9', () => {
     expect(supabaseClient).toContain('window.localStorage')
     expect(supabaseClient).not.toContain('window.sessionStorage')
     expect(supabaseClient).toContain('persistSession: true')
-    expect(supabaseClient).toContain('autoRefreshToken: true')
+    expect(supabaseClient).toContain('autoRefreshToken: !mock')
   })
 
   it('uses Supabase Google OAuth for durable account identity instead of the old in-memory GIS token model', () => {

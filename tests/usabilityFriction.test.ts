@@ -8,8 +8,13 @@ const today = readFileSync(new URL('../src/today/TodayFeature.tsx', import.meta.
 describe('UU-04 Web friction rules', () => {
   it('keeps action completion reversible through the existing bounded status path', () => {
     expect(app).toContain('lastCompletedAction')
-    expect(app).toContain('undoActionStatusChange(item.localUndo)')
+    expect(app).toContain('undoActionStatusChange(item.localUndo, writeLease.assertCurrent)')
     expect(app).toContain('Undo lacks exact completion evidence')
+    expect(app).toContain('const writeLease = item.writeLease')
+    expect(app).toContain('item.localUndo && item.accountKey && connectedWorkspaceAuthorityEnabled()')
+    const undo = app.slice(app.indexOf('async function undoLastCompletion'), app.indexOf('function chooseOpportunityTab'))
+    expect(undo.indexOf('writeLease.assertCurrent()')).toBeLessThan(undo.indexOf('undoActionStatusChange(item.localUndo'))
+    expect(undo).not.toContain('captureWorkspaceWriteLease(cloud.session')
     expect(app).toContain('action-undo-toast')
     expect(app).not.toContain('updateActionStatus(')
   })

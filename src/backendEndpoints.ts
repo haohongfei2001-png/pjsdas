@@ -12,6 +12,7 @@ function normalizeOrigin(value: string) {
 }
 
 export function readBackendOrigins() {
+  if (mockCloudMode()) return [MOCK_BACKEND_ORIGIN]
   const env = import.meta.env as Record<string, string | undefined>
   const raw = (env.VITE_PJSDAS_BACKEND_ORIGINS ?? env.VITE_PJSDAS_BACKEND_ORIGIN ?? '').trim()
   const configured = raw ? raw.split(',') : []
@@ -77,7 +78,9 @@ export async function resolveBackendOrigin(fetchImpl: typeof fetch = fetch) {
     }
   }
 
-  throw new Error('TodayAction 后端当前不可用。系统没有找到可用的主后端或备用后端。')
+  throw new Error(mockCloudMode()
+    ? '本地模拟模式尚未配置模拟后端。真实云服务未连接。 / Local mock backend is not configured; live cloud services are disconnected.'
+    : 'TodayAction 后端当前不可用。系统没有找到可用的主后端或备用后端。')
 }
 
 export async function fetchBackend(path: string, init?: RequestInit, fetchImpl: typeof fetch = fetch) {
@@ -96,3 +99,4 @@ export async function fetchBackend(path: string, init?: RequestInit, fetchImpl: 
 export function resetBackendSelection() {
   activeOrigin = undefined
 }
+import { mockCloudMode, MOCK_BACKEND_ORIGIN } from './cloud/runtimeCloudMode.js'

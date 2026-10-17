@@ -1,4 +1,4 @@
-import { discoveryProfileForSnapshot, isDiscoveryProfileConfigured, validateDiscoveryProfile, type DiscoveryProfile } from '../src/discoveryProfile.js'
+import { discoveryProfileForSnapshot, isDiscoveryProfileConfigured, isDiscoverySearchScopeConfirmed, validateDiscoveryProfile, type DiscoveryProfile } from '../src/discoveryProfile.js'
 import type { DiscoveryReadiness } from '../src/discoveryReadiness.js'
 
 /** Read only the verified account's profile projection, never its full snapshot.
@@ -19,7 +19,7 @@ export function createDiscoveryReadinessReader(options: { transactional: boolean
       if (typeof raw !== 'object' || Array.isArray(raw)) return unknown
       if (validateDiscoveryProfile(raw as DiscoveryProfile).length) return unknown
       const profile = discoveryProfileForSnapshot(raw as DiscoveryProfile)
-      return { ...unknown, profileConfigured: isDiscoveryProfileConfigured(profile) }
+      return { ...unknown, profileConfigured: isDiscoveryProfileConfigured(profile), scopeConfirmed: isDiscoverySearchScopeConfirmed(profile) }
     } catch { return unknown }
   }
 }

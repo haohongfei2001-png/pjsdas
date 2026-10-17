@@ -328,6 +328,39 @@ describe('production self-test', () => {
     expect(result.checks.find((item) => item.name === 'discovery-automation.worker-unauthorized')?.status).toBe('fail')
   })
 
+  it.each([
+    ['disabled', 503, { code: 'DISCOVERY_RUNTIME_DISABLED', retryable: false }, true],
+    ['unrelated outage', 503, { code: 'TEMPORARILY_UNAVAILABLE', retryable: false }, false],
+    ['retryable disabled', 503, { code: 'DISCOVERY_RUNTIME_DISABLED', retryable: true }, false],
+    ['missing disabled contract', 503, { code: 'DISCOVERY_RUNTIME_DISABLED' }, false],
+    ['successful anonymous execution', 200, { code: 'DISCOVERY_RUNTIME_DISABLED', retryable: false }, false],
+  ] as const)('checks the exact Discovery disabled contract: %s', async (_name, status, body, safe) => {
+    const ordinary = publicFetch()
+    const fetchImpl = vi.fn(async (input: RequestInfo | URL | Request, init?: RequestInit) => {
+      const url = input instanceof Request ? input.url : String(input)
+      return url.endsWith('/api/automation-discovery') ? Response.json(body, { status }) : ordinary(input, init)
+    }) as typeof fetch
+    const result = await runProductionSelfTest({ baseUrl: BASE_URL, fetchImpl })
+    expect(result.ok).toBe(safe)
+    expect(result.checks.find(item => item.name === 'discovery-automation.worker-unauthorized')?.status).toBe(safe ? 'pass' : 'fail')
+  })
+
+  it.each([
+    ['malformed JSON', '{', 'application/json'],
+    ['HTML outage', '<html>unavailable</html>', 'text/html'],
+    ['wrong content type', '{"code":"DISCOVERY_RUNTIME_DISABLED","retryable":false}', 'text/plain'],
+  ])('rejects a Discovery 503 with %s', async (_name, body, contentType) => {
+    const ordinary = publicFetch()
+    const fetchImpl = vi.fn(async (input: RequestInfo | URL | Request, init?: RequestInit) => {
+      const url = input instanceof Request ? input.url : String(input)
+      return url.endsWith('/api/automation-discovery')
+        ? new Response(body, { status: 503, headers: { 'content-type': contentType } }) : ordinary(input, init)
+    }) as typeof fetch
+    const result = await runProductionSelfTest({ baseUrl: BASE_URL, fetchImpl })
+    expect(result.ok).toBe(false)
+    expect(result.checks.find(item => item.name === 'discovery-automation.worker-unauthorized')?.status).toBe('fail')
+  })
+
   it('fails closed when the backend health contract belongs to a different git commit', async () => {
     const matching = await runProductionSelfTest({
       baseUrl: BASE_URL,

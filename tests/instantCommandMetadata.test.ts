@@ -2,12 +2,12 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { PJSDASSnapshot } from '../src/snapshot.js'
 import type { CommandInteractionRecord } from '../src/db.js'
 
-const state = vi.hoisted(() => ({ snapshot: undefined as unknown as PJSDASSnapshot, records: new Map<string, CommandInteractionRecord>(), failAfterNoopWrite: false, holdPending: undefined as undefined | Promise<void>, holdRead: undefined as undefined | { id: string; wait: Promise<void> } }))
+const state = vi.hoisted(() => ({ snapshot: undefined as unknown as PJSDASSnapshot, records: new Map<string, CommandInteractionRecord>(), failAfterNoopWrite: false, projectionGuard: undefined as undefined | ((snapshot: PJSDASSnapshot) => Promise<boolean>), holdPending: undefined as undefined | Promise<void>, holdRead: undefined as undefined | { id: string; wait: Promise<void> } }))
 vi.mock('../src/db.js', async () => {
   const { applyWorkspaceDelta } = await import('../src/workspaceDelta.js')
   return {
     exportLocalSnapshot: async () => structuredClone(state.snapshot),
-    isRecordedAccountProjection: async () => true,
+    isRecordedAccountProjection: async (_account: string, snapshot: PJSDASSnapshot) => state.projectionGuard ? state.projectionGuard(snapshot) : true,
     replaceLocalSnapshotFromCloud: async (snapshot: PJSDASSnapshot, guard: { assertCurrent: () => void; interactionSteps: Array<{ record: CommandInteractionRecord; delta: import('../src/workspaceDelta.js').WorkspaceDelta }> }) => {
       guard.assertCurrent(); let next = structuredClone(snapshot)
       for (const { delta } of guard.interactionSteps) next = applyWorkspaceDelta(next, delta)
@@ -56,13 +56,58 @@ function response(payload: unknown) { return new Response(JSON.stringify(payload
 
 describe('confirmed interaction metadata recovery', () => {
   beforeEach(() => {
-    state.snapshot = instantDenseWorkspace(0); state.records.clear(); state.failAfterNoopWrite = false; state.holdRead = undefined; state.holdPending = undefined
+    state.snapshot = instantDenseWorkspace(0); state.records.clear(); state.failAfterNoopWrite = false; state.holdRead = undefined; state.holdPending = undefined; state.projectionGuard = undefined
     setAccountCacheSession(undefined); setAccountCacheSession('metadata-owner')
     Object.defineProperty(globalThis, 'window', { configurable: true, value: { localStorage: new MemoryStorage(), dispatchEvent: vi.fn() } })
     Object.defineProperty(globalThis, 'navigator', { configurable: true, value: { onLine: false } })
     bindLocalWorkspaceToUser('metadata-owner')
     patchAccountCheckpoint('metadata-owner', { lastSyncedVersion: 'txn:1204', lastSyncedFingerprint: 'synthetic-baseline' })
     vi.mocked(fetchBackend).mockReset()
+  })
+  it('joins a blocked recovery flight and requires a fresh recovery after local equivalence returns', async () => {
+    const command = { commandId: 'blocked-flight', kind: 'set_action_status' as const, actionId: 'dense-action-0', status: 'done' as const }
+    await beginInstantCommand('metadata-owner', state.snapshot, command)
+    // Drain offline preparation before arranging a deterministic recovery interleaving.
+    await new Promise(resolve => setTimeout(resolve, 0))
+    const equivalent = structuredClone(state.snapshot)
+    state.snapshot.data.actions.find(item => item.id === command.actionId)!.status = 'skipped'
+    const requests: string[] = []
+    vi.mocked(fetchBackend).mockImplementation(async (_url, options) => {
+      const body = JSON.parse(String(options!.body)); requests.push(body.action)
+      if (body.action === 'receipt') return response({ found: true, outcome: 'COMMITTED', revision: 1205,
+        snapshot: equivalent, receipt: { commandId: command.commandId, revision: 1205 } })
+      if (body.action === 'read') return response({ revision: 1205, workspaceVersion: 'txn:1205', snapshot: equivalent })
+      throw new Error('Recovery must not send a write')
+    })
+    let entered!: () => void, release!: () => void
+    const captured = new Promise<void>(resolve => { entered = resolve })
+    const barrier = new Promise<void>(resolve => { release = resolve })
+    let checks = 0
+    state.projectionGuard = async snapshot => {
+      checks++
+      if (checks === 1) { entered(); await barrier }
+      return snapshot.data.actions.find(item => item.id === command.actionId)!.status === 'done'
+    }
+    Object.defineProperty(navigator, 'onLine', { configurable: true, value: true })
+    const background = recoverInstantInteraction('metadata-owner', command.commandId)
+    await captured
+    state.snapshot = structuredClone(equivalent)
+    const joined = recoverInstantInteraction('metadata-owner', command.commandId)
+    try { expect(checks).toBe(1) } finally { release() }
+    await Promise.all([background, joined])
+    expect(checks).toBe(1)
+    expect(state.records.get(command.commandId)!.state).toBe('projection_pending')
+    expect(listAccountPendingOperations('metadata-owner')).toHaveLength(1)
+    expect(getAccountCheckpoint('metadata-owner').lastSyncedVersion).toBe('txn:1204')
+    expect(requests).toEqual(['receipt', 'receipt'])
+    // The completed flight no longer owns the next attempt: resample the restored local snapshot.
+    await recoverInstantInteraction('metadata-owner', command.commandId)
+    expect(checks).toBe(2)
+    expect(state.records.get(command.commandId)!.state).toBe('confirmed')
+    expect(listAccountPendingOperations('metadata-owner')).toHaveLength(0)
+    expect(getAccountCheckpoint('metadata-owner').lastSyncedVersion).toBe('txn:1205')
+    expect(state.snapshot.data.actions).toEqual(equivalent.data.actions)
+    expect(requests.every(action => action === 'receipt' || action === 'read')).toBe(true)
   })
   it('does not recover a live action preparation and releases the guard after local settlement', async () => {
     let release!: () => void

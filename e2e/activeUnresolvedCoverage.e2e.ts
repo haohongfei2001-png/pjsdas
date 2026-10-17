@@ -4,10 +4,11 @@ import { buildIngestionRunSummary, createIngestionLedgerTimeline, createIngestio
 import { reconcileIngestionDebt } from '../src/ingestionResolution.js'
 import { createSnapshot, type PJSDASSnapshot } from '../src/snapshot.js'
 import { opportunity } from './fixtures/todayWorkspace.js'
+import { emptySearchExecution } from '../tests/fixtures/discoverySearch.rebuilt.js'
 
 const NOW = new Date('2026-09-27T00:00:00.000Z')
 
-function fixture(active: boolean) {
+async function fixture(active: boolean) {
   const ledger = (id: string, extra: Partial<Parameters<typeof createIngestionLedgerTimeline>[0]> = {}) => createIngestionLedgerTimeline({
     sourceKind: 'gmail', sourceId: 'gmail:primary', sourceRecordId: id,
     runId: `old:${id}`, recordType: 'recruiting_message', outcome: 'unresolved',
@@ -21,11 +22,18 @@ function fixture(active: boolean) {
     ledger('replay', { outcome: 'duplicate', runId: 'later:replay', accountedAt: '2026-09-26T00:00:00.000Z' }),
   ]
   if (active) history.push(ledger('multi-role', { company: 'Example' }), ledger('live-ambiguity', { opportunityId: 'live' }))
-  const runs = PJSDAS_EXPECTED_INGESTION_SOURCES.map((source) => createIngestionRunTimeline(buildIngestionRunSummary({
+  const runs = await Promise.all(PJSDAS_EXPECTED_INGESTION_SOURCES.map(async (source) => {
+    const run = buildIngestionRunSummary({
     runId: `fresh:${source.sourceId}`, sourceKind: source.sourceKind, sourceId: source.sourceId,
     producer: 'server_scheduler', startedAt: NOW.toISOString(), completedAt: NOW.toISOString(), records: [],
     sourcePolicy: { version: 1, enabled: true, cadenceMinutes: 10, freshnessSlaMinutes: 20, label: source.label },
-  })))
+    })
+    if (source.sourceKind === 'gpt_monitor') {
+      run.searchExecutions = await emptySearchExecution(source.sourceId, run.completedAt)
+      run.retrievalStatus = 'complete'
+    }
+    return createIngestionRunTimeline(run)
+  }))
   const base = createSnapshot({
     opportunities: [opportunity('closed', 'Closed', 'Product'), opportunity('live', 'Live', 'Product'), opportunity('role-a', 'Example', 'A'), opportunity('role-b', 'Example', 'B')],
     processes: [{ id: 'closed-process', opportunityId: 'closed', company: 'Closed', role: 'Product', stage: 'closed', stageLabel: 'Closed', progress: 'completed', result: 'rejected', participationState: 'active' }],
@@ -50,7 +58,7 @@ async function mountCoverage(page: Page, snapshot?: PJSDASSnapshot) {
 }
 
 for (const active of [false, true]) test(`R02 durable Coverage UI/API: active debt ${active ? 'blocks' : 'cleared with lifetime audit retained'}`, async ({ page }) => {
-  const snapshot = fixture(active)
+  const snapshot = await fixture(active)
   const api = await invokeCoverageStatus({ async read() { return { snapshot, context: { workspaceVersion: 'txn:r02-synthetic', now: NOW } } } })
   expect(api.isError).not.toBe(true)
   expect(api.structuredContent?.coverage).toMatchObject({ activeUnresolvedCount: active ? 2 : 0, lifetimeUnresolvedCount: active ? 6 : 4, allCaughtUp: !active })

@@ -6,7 +6,14 @@ export type DiscoveryLocationPolicy = 'prefer' | 'strict'
 export interface DiscoveryProfile {
   key: 'current'
   version: typeof DISCOVERY_PROFILE_VERSION
+  /** Set only when the complete current search scope is explicitly saved.
+   * Historical profiles keep their original fields until that confirmation. */
+  searchScopeVersion?: 1
   targetRoleQueries: string[]
+  /** Explicit user goal. Historical notes/strengths never supply this value. */
+  searchGoal?: string
+  titleIncludes?: string[]
+  titleExcludes?: string[]
   preferredLocations: string[]
   locationNotes: string
   minimumAnnualCompensationWan?: number
@@ -106,23 +113,36 @@ export function normalizeDiscoveryProfile(profile: DiscoveryProfile, now = new D
 
 export function isDiscoveryProfileConfigured(profile: DiscoveryProfile) {
   const normalized = discoveryProfileForSnapshot(profile)
-  return Boolean(
-    normalized.targetRoleQueries.length ||
-    normalized.preferredLocations.length ||
-    normalized.locationNotes ||
-    normalized.minimumAnnualCompensationWan !== undefined ||
-    (normalized.preferredRoleTypes?.length ?? 0) ||
-    normalized.mustHave.length ||
-    normalized.mustNotHave.length ||
-    normalized.strengths.length ||
-    normalized.notes
-  )
+  return Boolean(normalized.targetRoleQueries.length || normalized.searchGoal?.trim())
 }
+
+export function isDiscoverySearchScopeConfirmed(profile: DiscoveryProfile) {
+  return profile.searchScopeVersion === 1 && isDiscoveryProfileConfigured(profile)
+}
+
+/** A read projection only. The raw profile remains available to restore/Undo. */
+export function discoverySearchScope(profile?: DiscoveryProfile) {
+  const value = discoveryProfileForSnapshot(profile)
+  return {
+    key: value.key, version: value.version,
+    searchGoal: value.searchGoal?.trim() || undefined,
+    targetRoleQueries: normalizedStrings(value.targetRoleQueries),
+    preferredLocations: normalizedStrings(value.preferredLocations),
+    locationPolicy: value.locationPolicy,
+    mustHave: normalizedStrings(value.mustHave),
+    mustNotHave: normalizedStrings(value.mustNotHave),
+    titleIncludes: normalizedStrings(value.titleIncludes ?? []),
+    titleExcludes: normalizedStrings(value.titleExcludes ?? []),
+    updatedAt: value.updatedAt,
+  }
+}
+export type DiscoverySearchScope = ReturnType<typeof discoverySearchScope>
 
 export function validateDiscoveryProfile(profile: DiscoveryProfile): string[] {
   const errors: string[] = []
   if (profile.key !== 'current') errors.push('岗位发现偏好 key 必须为 current。')
   if (profile.version !== DISCOVERY_PROFILE_VERSION) errors.push('岗位发现偏好版本无效。')
+  if (profile.searchScopeVersion !== undefined && profile.searchScopeVersion !== 1) errors.push('搜索范围确认版本无效。')
   if (Number.isNaN(new Date(profile.updatedAt).getTime())) errors.push('岗位发现偏好更新时间无效。')
 
   const boundedList = (label: string, values: string[], maxItems: number) => {
@@ -140,6 +160,9 @@ export function validateDiscoveryProfile(profile: DiscoveryProfile): string[] {
   boundedList('偏好地点', profile.preferredLocations, 30)
   boundedList('必须满足', profile.mustHave, 30)
   boundedList('明确排除', profile.mustNotHave, 30)
+  boundedList('标题条件', profile.titleIncludes ?? [], 30)
+  boundedList('标题排除', profile.titleExcludes ?? [], 30)
+  if (profile.searchGoal !== undefined && (typeof profile.searchGoal !== 'string' || profile.searchGoal.length > 2400)) errors.push('搜索目标过长或格式无效。')
   boundedList('个人优势', profile.strengths, 30)
 
   if (profile.preferredRoleTypes !== undefined) {

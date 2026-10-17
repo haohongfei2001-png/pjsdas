@@ -83,11 +83,13 @@ test('TSUI-03 300-job paging, exact posting identity, routed detail and truthful
   const b = page.locator('.tsui-job-row[data-opportunity-id="tsui03-posting-b"]')
   await expect(a.locator('.tsui-job-apply')).toHaveAttribute('href', 'https://apply.example.test/posting/a')
   await expect(b.locator('.tsui-job-apply')).toHaveAttribute('href', 'https://apply.example.test/posting/b')
-  await context.route('https://apply.example.test/**', (route) => route.fulfill({ status: 200, contentType: 'text/html', body: '<title>Application destination</title>' }))
+  await context.route('https://apply.example.test/**', (route) => route.fulfill({ status: 200, contentType: 'text/html', body: '<title>Application destination</title><link rel="icon" href="data:,">' }))
   const popupPromise = page.waitForEvent('popup')
   await a.locator('.tsui-job-apply').click()
   const popup = await popupPromise
   await expect(popup).toHaveURL('https://apply.example.test/posting/a')
+  await expect(popup).toHaveTitle('Application destination')
+  await popup.goto('about:blank')
   await popup.close()
   const stage = await page.evaluate(async () => new Promise<string | undefined>((resolve, reject) => {
     const request = indexedDB.open('pjsdas')
@@ -152,8 +154,32 @@ test('TSUI-03 300-job paging, exact posting identity, routed detail and truthful
   await page.screenshot({ path: 'test-results/tsui03/detail-mobile.png', fullPage: true, animations: 'disabled' })
   await emitVisual(page, 'DETAIL_MOBILE')
   await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1)
-  await page.locator('.job-detail-back').click()
+  // Exercise the real Back handler while controlling its two-frame return.
+  // A user who selects Search before restoration must keep focus and typing.
+  await page.evaluate(() => {
+    const original = window.requestAnimationFrame
+    const pending: FrameRequestCallback[] = []
+    window.requestAnimationFrame = callback => { pending.push(callback); return pending.length }
+    ;(window as any).__flushDetailReturn = () => {
+      try {
+        for (let frame = 0; frame < 2; frame++) pending.splice(0).forEach(callback => callback(performance.now()))
+      } finally {
+        window.requestAnimationFrame = original
+        pending.splice(0).forEach(callback => original.call(window, callback))
+        delete (window as any).__flushDetailReturn
+      }
+    }
+    document.querySelector<HTMLButtonElement>('.job-detail-back')!.click()
+  })
+  try {
+    await expect(search).toBeVisible()
+    await search.focus()
+  } finally {
+    await page.evaluate(() => (window as any).__flushDetailReturn?.())
+  }
+  await expect(search).toBeFocused()
   await search.fill('')
+  await expect(search).toHaveValue('')
   await expect(rows).toHaveCount(40)
   await page.setViewportSize({ width: 320, height: 640 })
   const normalFont = await page.evaluate(() => parseFloat(getComputedStyle(document.documentElement).fontSize))

@@ -100,7 +100,13 @@ for (const [connected, application] of [[false, false], [true, false], [true, tr
     await page.reload(); await expect(page.locator(selector)).toBeVisible()
     await checkHistory(page, before)
   }
-  const restarted = await context.newPage(); await restarted.goto('/pjsdas/today'); await page.close()
+  const restarted = await context.newPage(); await restarted.goto('/pjsdas/today')
+  // Preserve the durable restart while quiescing the old app before its route
+  // hooks stop being called during page.close.
+  console.log(`Mock restart lifecycle: history Undo before blank ${new Date().toISOString()}`)
+  await page.goto('about:blank')
+  console.log(`Mock restart lifecycle: history Undo before close ${new Date().toISOString()}`)
+  await page.close()
   await expect(restarted.getByTestId('cgr02-today')).toBeVisible(); await checkHistory(restarted, before)
   expect(await rows(restarted, 'timeline')).toEqual(retainedTimeline)
   if (connected) {
@@ -150,6 +156,8 @@ test('queued action completion becomes confirmed with Undo after automatic recon
   await expect(page.locator('.action-undo-toast').getByRole('button', { name: /撤销|Undo/ })).toBeVisible()
   await expect.poll(() => state.commands.length).toBe(1)
   expect((await rows(page, 'actions')).find((item) => item.id === 'history-task')?.status).toBe('done')
+  // Finish the app document under active mocks before the fixture closes it.
+  await page.goto('about:blank')
 })
 
 test('local durable completion evidence rejects a later occurrence edit atomically', async ({ page }) => {

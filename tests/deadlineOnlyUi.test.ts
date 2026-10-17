@@ -40,9 +40,8 @@ describe('deadline-only product surfaces', () => {
   it('keeps factual discovery preferences and removes all minimum-score controls', () => {
     const profile = source('DiscoveryProfileCardHeavy.tsx')
     expect(profile).not.toMatch(/minimumFitScore|minimumOpportunityValue|匹配度|机会价值|score threshold/i)
-    expect(profile).toContain('minimumAnnualCompensationWan')
-    expect(profile).toContain('preferredRoleTypes')
-    expect(profile).toContain('locationNotes')
+    for (const field of ['searchGoal', 'targetRoleQueries', 'preferredLocations', 'mustHave', 'mustNotHave']) expect(profile).toContain(field)
+    expect(profile).not.toMatch(/minimumAnnualCompensationWan|preferredRoleTypes|locationNotes|strengths|\.notes/)
   })
 
   it('shows real application quotas and stored choices with no automatic portfolio selection', () => {

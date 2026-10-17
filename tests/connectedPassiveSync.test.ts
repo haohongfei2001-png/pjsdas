@@ -1,6 +1,6 @@
 import { setAccountCacheSession } from '../src/cloud/accountCacheLease.js'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { markInteractionActivity } from '../src/cloud/interactionActivity.js'
+import { markInteractionActivity, observeInteractionActivity } from '../src/cloud/interactionActivity.js'
 
 const fixture = vi.hoisted(() => {
   const remote = {
@@ -78,6 +78,44 @@ describe('connected passive sync authority', () => {
     expect(fixture.export).toHaveBeenCalledTimes(1)
     expect(fixture.read).toHaveBeenCalledTimes(1)
     expect(fixture.update).not.toHaveBeenCalled()
+  })
+
+  it.each(['pointerdown', 'keydown', 'input'])('defers passive reads from UI %s before a command exists, then resumes', async event => {
+    const clock = vi.spyOn(performance, 'now').mockReturnValue(4000)
+    const target = new EventTarget()
+    const stop = observeInteractionActivity('qa-account', target)
+    try {
+      target.dispatchEvent(new Event(event))
+      expect(await runCloudSync('qa-account', { passive: true })).toMatchObject({ kind: 'local_pending' })
+      expect(fixture.export).not.toHaveBeenCalled()
+      expect(fixture.read).not.toHaveBeenCalled()
+      await runCloudSync('qa-account', { passive: false })
+      expect(fixture.read).toHaveBeenCalledTimes(1)
+      clock.mockReturnValue(5001)
+      await runCloudSync('qa-account', { passive: true })
+      expect(fixture.read).toHaveBeenCalledTimes(2)
+      stop()
+      target.dispatchEvent(new Event(event))
+      await runCloudSync('qa-account', { passive: true })
+      expect(fixture.read).toHaveBeenCalledTimes(3)
+    } finally { stop() }
+  })
+
+  it('does not defer another account or passive window events', async () => {
+    vi.spyOn(performance, 'now').mockReturnValue(9000)
+    const target = new EventTarget()
+    const stop = observeInteractionActivity('other-account', target)
+    try {
+      target.dispatchEvent(new Event('pointerdown'))
+      await runCloudSync('qa-account', { passive: true })
+      expect(fixture.read).toHaveBeenCalledTimes(1)
+    } finally { stop() }
+    const stopCurrent = observeInteractionActivity('qa-account', target)
+    try {
+      for (const name of ['focus', 'visibilitychange', 'mousemove', 'scroll']) target.dispatchEvent(new Event(name))
+      await runCloudSync('qa-account', { passive: true })
+      expect(fixture.read).toHaveBeenCalledTimes(2)
+    } finally { stopCurrent() }
   })
 
   it.each([false, true])('reclassifies stale conflicts against the latest remote despite recent interaction (passive=%s)', async passive => {

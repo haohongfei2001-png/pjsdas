@@ -10,6 +10,8 @@ on:
       - 'playwright.brand.config.mts'
       - '.github/workflows/todayaction-brand.yml'
   workflow_dispatch:
+env:
+  VITE_PJSDAS_CLOUD_MODE: mock
 permissions:
   contents: read
 jobs:
@@ -35,6 +37,8 @@ jobs:
           npm install --no-save @playwright/test@1.63.0
           node scripts/verify-installed-runtime-lock.mjs
       - run: npx playwright install --with-deps chromium
+      - name: Prove mock cloud isolation before application browser tests
+        run: npx playwright test --config=playwright.cloud-guard.config.mts --project=chromium
       - name: Root-path production build and browser readback
         env:
           PJSDAS_VITE_BASE: /

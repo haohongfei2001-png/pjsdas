@@ -1,13 +1,10 @@
-import { preserveRetiredProfileFields } from './scoringRetirement.js'
-import { normalizeDiscoveryProfile, validateDiscoveryProfile, type DiscoveryProfile } from './discoveryProfile.js'
+import { mergeDiscoveryScope } from './discoveryScopeSchema.js'
 import { upgradeSnapshotToLatest, validateSnapshot, type PJSDASSnapshot } from './snapshot.js'
 
-export function applyDiscoveryProfileCommand(snapshot: PJSDASSnapshot, profile: DiscoveryProfile, now = new Date()) {
+export function applyDiscoveryProfileCommand(snapshot: PJSDASSnapshot, profile: unknown, now = new Date()) {
   const next = upgradeSnapshotToLatest(snapshot)
   const previous = next.data.discoveryProfile
-  const normalized = normalizeDiscoveryProfile(preserveRetiredProfileFields(profile, previous), now.toISOString())
-  const errors = validateDiscoveryProfile(normalized)
-  if (errors.length) throw new Error(errors[0])
+  const normalized = mergeDiscoveryScope(previous, profile, now.toISOString())
   next.data.discoveryProfile = normalized
   next.exportedAt = now.toISOString()
   validateSnapshot(next)

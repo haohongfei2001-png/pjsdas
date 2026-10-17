@@ -15,7 +15,7 @@ const empty = () => createSnapshot({
 describe('CGR-05 first-party Discovery Profile authority', () => {
   it('writes only the profile and compensates to the prior value', () => {
     const before = empty()
-    const profile = { ...createDefaultDiscoveryProfile(time), targetRoleQueries: ['Product Designer'] }
+    const profile = { targetRoleQueries: ['Product Designer'], preferredLocations: [], mustHave: [], mustNotHave: [] }
     const applied = applyDiscoveryProfileCommand(before, profile, new Date('2026-09-24T01:00:00.000Z'))
     expect(applied.snapshot.data.discoveryProfile?.targetRoleQueries).toEqual(['Product Designer'])
     expect(before.data.discoveryProfile).toBeUndefined()
@@ -24,7 +24,7 @@ describe('CGR-05 first-party Discovery Profile authority', () => {
   })
 
   it('rejects delegated MCP callers and does not expand its tool schema', async () => {
-    const profile = { ...createDefaultDiscoveryProfile(time), targetRoleQueries: ['Product Designer'] }
+    const profile = { targetRoleQueries: ['Product Designer'], preferredLocations: [], mustHave: [], mustNotHave: [] }
     const command = { commandId: 'discovery-profile:test-0001', baseRevision: 1, command: { type: 'discovery_profile', value: profile } }
     expect(authoritativeBusinessCommandSchema.safeParse(command).success).toBe(true)
     expect(applyUserCommandSchema.safeParse({ commandId: command.commandId, kind: 'discovery_profile', profile }).success).toBe(false)

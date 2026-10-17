@@ -1,3 +1,4 @@
+import type { DiscoverySourceProof } from './discoveryFactSchema.js'
 import { appendOpportunityOnly } from './opportunityCreation.js'
 import { canonicalOpportunityId, resolveCanonicalPostingIdentity } from './opportunityCanonicalization.js'
 import { discoveryProfileForSnapshot } from './discoveryProfile.js'
@@ -6,6 +7,7 @@ import {
   createJobPostingEvidence,
   jobIdentityKey,
   mergeJobPostingEvidence,
+  isOlderVerifiedPosting,
 } from './jobPosting.js'
 import {
   alreadyIngested,
@@ -45,8 +47,9 @@ export interface MonitorJobObservation {
   location?: string
   deadline?: string
   compensationText?: string
-  rationale: string
-  roleType: OpportunityRole
+  /** Historical/internal compatibility only; fresh gateways reject these fields. */
+  rationale?: string
+  roleType?: OpportunityRole
   opportunityValue?: number
   fitScore?: number
   fitConfidence?: DiscoveryConfidence
@@ -56,7 +59,14 @@ export interface MonitorJobObservation {
   sourceVerification?: 'verified' | 'unverified'
   sourceVerifiedAt?: string
   sourceVerificationReason?: string
+  sourceProof?: DiscoverySourceProof
+  sourceEvidenceText?: string
+  deadlinePrecision?: 'date' | 'datetime'
+  publishedAt?: string
+  publishedPrecision?: 'date' | 'datetime'
+  recruitmentBatch?: string
 }
+
 
 export interface MonitorIngestionRunInput {
   runId: string
@@ -131,7 +141,7 @@ function monitorOpportunityId(observation: MonitorJobObservation, canonicalSourc
   return `auto-opportunity:${stableIngestionHash(`${identity || `${observation.company}|${observation.role}`}|${canonicalSourceUrl}`)}`
 }
 
-function createMonitorOpportunity(observation: MonitorJobObservation, observedAt: string): Opportunity {
+export function createMonitorOpportunity(observation: MonitorJobObservation, observedAt: string): Opportunity {
   const sourceVerifiedAt = observation.sourceVerifiedAt ?? observedAt
   const posting = createJobPostingEvidence({
     company: observation.company,
@@ -140,7 +150,8 @@ function createMonitorOpportunity(observation: MonitorJobObservation, observedAt
     sourceTitle: observation.sourceTitle,
     location: observation.location,
     deadline: observation.deadline,
-    compensationText: observation.compensationText,
+    deadlinePrecision: observation.deadlinePrecision, publishedAt: observation.publishedAt, publishedPrecision: observation.publishedPrecision,
+    recruitmentBatch: observation.recruitmentBatch, sourceProof: observation.sourceProof,
     postingStatus: observation.postingStatus ?? 'unknown',
     observedAt: sourceVerifiedAt,
   })
@@ -150,14 +161,10 @@ function createMonitorOpportunity(observation: MonitorJobObservation, observedAt
     role: observation.role.trim(),
     currentStageLabel: '待投',
     processStage: 'not_applied',
-    roleType: observation.roleType,
     assessmentStatus: 'unassessed',
     early: false,
     deadline: observation.deadline,
-    sourcePriority: 'GPT Monitor 自动摄入',
-    salaryReference: observation.compensationText,
-    nextActionLabel: '审阅并投递',
-    prepEstimateMinutes: 45,
+    deadlinePrecision: observation.deadlinePrecision,
     opportunityValue: 0, // Legacy snapshot field only; never scored or ranked.
     fitScore: 0,
     locallyManaged: true,
@@ -167,13 +174,10 @@ function createMonitorOpportunity(observation: MonitorJobObservation, observedAt
         sourceUrl: observation.sourceUrl,
         sourceTitle: observation.sourceTitle,
         location: observation.location,
-        compensationText: observation.compensationText,
-        rationale: observation.rationale,
         discoveredAt: observedAt,
         sourceVerification: observation.sourceVerification,
         sourceVerifiedAt: observation.sourceVerifiedAt,
-        fitConfidence: 'low',
-        opportunityValueConfidence: 'low',
+        sourceProof: observation.sourceProof,
         posting,
       },
     },
@@ -189,33 +193,38 @@ function mergeMonitorObservation(existing: Opportunity, observation: MonitorJobO
     sourceTitle: observation.sourceTitle,
     location: observation.location,
     deadline: observation.deadline,
-    compensationText: observation.compensationText,
+    deadlinePrecision: observation.deadlinePrecision, publishedAt: observation.publishedAt, publishedPrecision: observation.publishedPrecision,
+    recruitmentBatch: observation.recruitmentBatch, sourceProof: observation.sourceProof,
     postingStatus: observation.postingStatus ?? 'unknown',
     observedAt: sourceVerifiedAt,
   })
   const discovery = existing.detail?.discovery
   const current = discovery?.posting
+  if(isOlderVerifiedPosting(current,incoming))return {opportunity:existing,changed:false}
   const mergedPosting = current
     ? mergeJobPostingEvidence(current, discovery?.postingHistory, incoming, new Date(observedAt))
     : { current: incoming, history: [] }
   const sameFingerprint = current?.id === incoming.id && current.fingerprint === incoming.fingerprint
   const next: Opportunity = {
     ...existing,
+    company: observation.sourceProof ? observation.company : existing.company,
+    role: observation.sourceProof ? observation.role : existing.role,
     deadline: observation.deadline ?? existing.deadline,
-    salaryReference: observation.compensationText ?? existing.salaryReference,
+    deadlinePrecision: observation.deadline ? observation.deadlinePrecision : existing.deadlinePrecision,
     detail: {
       ...existing.detail,
       discovery: {
         sourceUrl: mergedPosting.current.sourceUrl,
         sourceTitle: mergedPosting.current.sourceTitle,
         location: observation.location ?? discovery?.location,
-        compensationText: observation.compensationText ?? discovery?.compensationText,
-        rationale: discovery?.rationale ?? observation.rationale,
+        compensationText: discovery?.compensationText,
+        rationale: discovery?.rationale,
         discoveredAt: discovery?.discoveredAt ?? observedAt,
         sourceVerification: observation.sourceVerification ?? discovery?.sourceVerification,
         sourceVerifiedAt: observation.sourceVerifiedAt ?? discovery?.sourceVerifiedAt,
-        fitConfidence: discovery?.fitConfidence ?? 'low',
-        opportunityValueConfidence: discovery?.opportunityValueConfidence ?? 'low',
+        sourceProof: mergedPosting.current.sourceProof ?? discovery?.sourceProof,
+        fitConfidence: discovery?.fitConfidence,
+        opportunityValueConfidence: discovery?.opportunityValueConfidence,
         profileWarnings: discovery?.profileWarnings,
         posting: mergedPosting.current,
         postingHistory: mergedPosting.history.length ? mergedPosting.history : undefined,
@@ -232,7 +241,8 @@ function monitorFingerprint(observation: MonitorJobObservation) {
     observation.sourceUrl,
     observation.location ?? '',
     observation.deadline ?? '',
-    observation.compensationText ?? '',
+    observation.deadlinePrecision ?? '', observation.publishedAt ?? '', observation.publishedPrecision ?? '',
+    observation.recruitmentBatch ?? '', observation.sourceProof?.postingIdentity ?? '', [...new Set(observation.sourceProof?.unresolvedFields ?? [])].sort().join(','),
     observation.postingStatus ?? 'unknown',
     observation.sourceVerification ?? 'unverified',
   ]))

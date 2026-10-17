@@ -1,3 +1,4 @@
+import { MOCK_TARGET_AUTH_ORIGIN } from './support/mockCloudTargets.js'
 import { expect, test, type Page } from '@playwright/test'
 import { BACKEND, cors, health, opportunity, seedSession, workspace } from './fixtures/todayWorkspace.js'
 
@@ -28,7 +29,7 @@ for (const width of [1440, 390]) test(`Calendar keeps actual events apart from o
   ]
   snapshot.data.scheduleNodes.push({ ...snapshot.data.scheduleNodes[0], id: 'completed-interview', occurrenceId: 'completed-interview', state: 'completed', completedAt: '2026-10-02T08:00:00Z', temporal: { shape: 'fixed_range', precision: 'datetime', timezone: 'Asia/Shanghai', startAt: '2026-10-02T07:00:00Z', resolutionBasis: 'source_explicit' } })
   const writes: string[] = []
-  await page.route(/https:\/\/[^/]+\.supabase\.co\//, route => route.abort())
+  await page.route(`${MOCK_TARGET_AUTH_ORIGIN}/**`, route => route.abort())
   await page.route(BACKEND + '/**', route => {
     const req = route.request(), path = new URL(req.url()).pathname
     if (req.method() === 'OPTIONS') return cors(route, {}, 204)

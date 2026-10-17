@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { describe, expect, it, vi } from 'vitest'
+import { WorkspaceSourceError } from '../gateway/workspaceSource.js'
 import { requireDiscoverySpendReservation, type DiscoverySpendReservation } from '../gateway/discoveryBudgetGuard.js'
 import { syntheticReserveDiscoverySpend } from './fixtures/discoveryBudget.js'
 const base = { accountId: 'owner-a', sourceId: 'monitor:urgent-campus', model: 'perplexity/sonar', prompt: 'Synthetic public job request', system: 'fixture', maxOutputTokens: 5000 }
@@ -31,7 +32,7 @@ describe('TodayAction request-time paid discovery boundary', () => {
     expect(seen).toHaveLength(1); expect(Object.isFrozen(receipt)).toBe(true)
   })
   it('fails closed on budget exhaustion and overlarge input without model activity', async () => {
-    const reserve = vi.fn(async () => { throw new Error('budget exhausted') })
+    const reserve = vi.fn(async () => { throw new WorkspaceSourceError('DISCOVERY_BUDGET_EXHAUSTED', 'budget exhausted') })
     await expect(requireDiscoverySpendReservation({ ...base, reserve })).rejects.toThrow('budget exhausted')
     reserve.mockClear()
     await expect(requireDiscoverySpendReservation({ ...base, prompt: 'x'.repeat(262145), reserve })).rejects.toMatchObject({ code: 'DISCOVERY_BUDGET_INPUT_TOO_LARGE' })

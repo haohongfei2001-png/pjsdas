@@ -1,4 +1,5 @@
-import { setAccountCacheSession } from '../src/cloud/accountCacheLease.js'
+import { WorkspaceWriteAuthError } from '../src/cloud/workspaceWriteLease.js'
+import { beginAccountCacheSessionResolution, setAccountCacheSession } from '../src/cloud/accountCacheLease.js'
 import { AccountCacheChangedError } from '../src/cloud/accountCacheLease.js'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -28,6 +29,7 @@ import {
   listAccountPendingOperations,
   lookupConnectedCommandReceipt,
   queueConnectedBusinessCommand,
+  undoConnectedBusinessCommand,
   readAccountDraft,
   replayAccountPendingOperations,
   saveAccountDraft,
@@ -82,6 +84,34 @@ describe('CGR-01 account-scoped connected command client', () => {
     vi.mocked(fetchBackend).mockReset()
     vi.mocked(exportLocalSnapshot).mockReset().mockImplementation(async () => snapshot())
     vi.mocked(replaceLocalSnapshotFromCloud).mockReset().mockImplementation(async value => value)
+  })
+
+  it.each(['execute', 'queue', 'undo', 'confirm'] as const)('blocks %s before reading, staging, or sending while Auth is unresolved', async mode => {
+    beginAccountCacheSessionResolution()
+    const command = { type: 'domain' as const, value: { commandId: 'unresolved-command',
+      kind: 'set_action_status' as const, actionId: 'action-a', status: 'done' as const } }
+    const operation = mode === 'execute' ? executeConnectedBusinessCommand('account-a', command)
+      : mode === 'queue' ? queueConnectedBusinessCommand('account-a', command)
+        : mode === 'undo' ? undoConnectedBusinessCommand('account-a', 'prior-receipt')
+          : confirmConnectedCommand('account-a', 'prior-receipt')
+    await expect(operation).rejects.toBeInstanceOf(WorkspaceWriteAuthError)
+    expect(listAccountPendingOperations('account-a')).toEqual([])
+    expect(exportLocalSnapshot).not.toHaveBeenCalled()
+    expect(fetchBackend).not.toHaveBeenCalled()
+  })
+
+  it('does not stage a command after its revision read changes the active account', async () => {
+    vi.mocked(fetchBackend).mockImplementationOnce(async () => {
+      setAccountCacheSession('account-b')
+      return response({ revision: 7, workspaceVersion: 'txn:7', schemaVersion: 4, snapshot: snapshot() })
+    })
+    await expect(executeConnectedBusinessCommand('account-a', { type: 'domain', value: {
+      commandId: 'delayed-revision', kind: 'set_action_status', actionId: 'action-a', status: 'done',
+    } })).rejects.toBeInstanceOf(AccountCacheChangedError)
+    expect(listAccountPendingOperations('account-a')).toEqual([])
+    expect(listAccountPendingOperations('account-b')).toEqual([])
+    expect(fetchBackend).toHaveBeenCalledTimes(1)
+    expect(replaceLocalSnapshotFromCloud).not.toHaveBeenCalled()
   })
 
   it('keeps drafts and pending operations isolated by account', async () => {
@@ -227,7 +257,7 @@ describe('CGR-01 account-scoped connected command client', () => {
     const fingerprint = await fingerprintWorkspace(snapshot())
     patchAccountCheckpoint('account-a', { lastSyncedVersion: 'txn:7', lastSyncedFingerprint: fingerprint })
     bindLocalWorkspaceToUser('account-b')
-    await expect(queueConnectedBusinessCommand('account-a', command)).rejects.toThrow('尚无已核实')
+    await expect(queueConnectedBusinessCommand('account-a', command)).rejects.toBeInstanceOf(WorkspaceWriteAuthError)
     bindLocalWorkspaceToUser('account-a')
     await queueConnectedBusinessCommand('account-a', command)
     await expect(queueConnectedBusinessCommand('account-a', { type: 'domain', value: {

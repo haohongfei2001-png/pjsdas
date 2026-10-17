@@ -1,4 +1,5 @@
 import { interactionIsRecent } from './interactionActivity.js'
+import { rememberInitialMockBinding } from './mockCacheBoundary.js'
 import { captureAccountCacheLease, AccountCacheChangedError } from './accountCacheLease.js'
 import { isRecordedAccountProjection, assertLocalSnapshotCurrent } from '../db.js'
 import { exportLocalSnapshot, replaceLocalSnapshotFromCloud } from '../db.js'
@@ -125,7 +126,10 @@ export async function runCloudSync(userId: string, options: { passive?: boolean;
   if (device.workspaceOwnerUserId && device.workspaceOwnerUserId !== userId) {
     return { kind: 'account_mismatch' }
   }
-  if (!device.workspaceOwnerUserId) bindLocalWorkspaceToUser(userId)
+  if (!device.workspaceOwnerUserId) {
+    if (typeof window !== 'undefined') rememberInitialMockBinding(window.localStorage, device, userId)
+    bindLocalWorkspaceToUser(userId)
+  }
   // An ordinary in-flight command already owns local projection. Defer
   // expensive full read/fingerprint work until it settles; persisted conflicts
   // still classify against the latest server revision below.
@@ -138,7 +142,7 @@ export async function runCloudSync(userId: string, options: { passive?: boolean;
     if (hotPending()) return { kind: 'local_pending', version: getAccountCheckpoint(userId).lastSyncedVersion }
     const localFingerprint = await fingerprintWorkspace(local)
     if (hotPending()) return { kind: 'local_pending', version: getAccountCheckpoint(userId).lastSyncedVersion }
-    const remoteRaw = await fetchRemoteWorkspace(userId, assertCurrent)
+    const remoteRaw = options.passive ? await fetchRemoteWorkspace(userId, assertCurrent, { passive: true }) : await fetchRemoteWorkspace(userId, assertCurrent)
     if (hotPending()) return { kind: 'local_pending', version: getAccountCheckpoint(userId).lastSyncedVersion }
     const remote = remoteRaw ? await verifyRemote(remoteRaw) : null
     targetVersion = remote?.version

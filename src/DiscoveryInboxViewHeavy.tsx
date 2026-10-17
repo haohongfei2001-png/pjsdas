@@ -1,3 +1,4 @@
+import { captureWorkspaceWriteLease } from './cloud/workspaceWriteLease.js'
 import { useEffect, useMemo, useState } from 'react'
 import { DISCOVERY_REJECTION_REASON_OPTIONS } from './discoveryFeedback.js'
 import {
@@ -77,14 +78,17 @@ export default function DiscoveryInboxView() {
   )
   const selectedMutable = selectedItems.filter((item) => item.status !== 'promoted')
 
-  async function syncAfterMutation(success: string) {
+  async function syncAfterMutation(success: string, assertCurrent: () => void) {
     await reload()
+    assertCurrent()
     window.dispatchEvent(new Event('pjsdas:workspace-replaced'))
     if (cloud.session && !cloud.checkpoint.conflict) {
       try {
         await ensureAuthoritativePersistence(true, cloud.syncNow)
+        assertCurrent()
         setMessage(`${success}${zh ? '，并已请求同步到 Google Drive。' : '; Google Drive sync requested.'}`)
       } catch {
+        assertCurrent()
         setMessage(`${success}${zh ? '；Google Drive 暂未同步。' : '; Google Drive sync did not complete.'}`)
       }
     } else setMessage(success)
@@ -107,14 +111,16 @@ export default function DiscoveryInboxView() {
     setError('')
     setMessage('')
     try {
+      const writeLease = captureWorkspaceWriteLease(cloud.session?.user.id)
       if (connectedWorkspaceAuthorityEnabled() && cloud.session) {
         if (status === 'promoted') throw new Error('加入机会池需要明确的确认操作。')
         await commitConnectedStatus(item.id, status, status === 'dismissed' ? reasons[item.id] : undefined)
         await reload()
+        writeLease.assertCurrent()
         setMessage(zh ? '发现箱状态已保存到账号工作区。' : 'Discovery Inbox status saved to the account workspace.')
       } else {
-        await updateDiscoveryInboxStatus(item.id, status, status === 'dismissed' ? reasons[item.id] : undefined)
-        await syncAfterMutation(zh ? '发现箱状态已更新' : 'Discovery Inbox updated')
+        await updateDiscoveryInboxStatus(item.id, status, status === 'dismissed' ? reasons[item.id] : undefined, writeLease.assertCurrent)
+        await syncAfterMutation(zh ? '发现箱状态已更新' : 'Discovery Inbox updated', writeLease.assertCurrent)
       }
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : String(caught))
@@ -127,6 +133,7 @@ export default function DiscoveryInboxView() {
     setError('')
     setMessage('')
     try {
+      const writeLease = captureWorkspaceWriteLease(cloud.session?.user.id)
       if (connectedWorkspaceAuthorityEnabled() && cloud.session) {
         for (const item of selectedMutable) {
           await commitConnectedStatus(item.id, status, status === 'dismissed' ? bulkReason : undefined)
@@ -136,16 +143,20 @@ export default function DiscoveryInboxView() {
           selectedMutable.map((item) => item.id),
           status,
           status === 'dismissed' ? bulkReason : undefined,
+          writeLease.assertCurrent,
         )
       }
+      writeLease.assertCurrent()
       setSelectedIds([])
       setCompareOpen(false)
       if (connectedWorkspaceAuthorityEnabled() && cloud.session) {
         await reload()
+        writeLease.assertCurrent()
         setMessage(zh ? `已将 ${selectedMutable.length} 个候选状态保存到账号工作区。` : `Saved ${selectedMutable.length} candidate statuses to the account workspace.`)
       } else {
         await syncAfterMutation(
           zh ? `已批量更新 ${selectedMutable.length} 个候选` : `Updated ${selectedMutable.length} candidates`,
+          writeLease.assertCurrent,
         )
       }
     } catch (caught) {
@@ -159,6 +170,7 @@ export default function DiscoveryInboxView() {
     setError('')
     setMessage('')
     try {
+      const writeLease = captureWorkspaceWriteLease(cloud.session?.user.id)
       if (connectedWorkspaceAuthorityEnabled() && cloud.session) {
         const result = await executeConnectedBusinessCommand(cloud.session.user.id, {
           type: 'discovery_promotion', value: { inboxItemId: item.id },
@@ -167,11 +179,13 @@ export default function DiscoveryInboxView() {
           throw new Error(result.conflict?.message ?? '岗位未加入账号工作区。')
         }
         await reload()
+        writeLease.assertCurrent()
         setMessage(zh ? '岗位已加入账号 Opportunities。' : 'Job added to account Opportunities.')
       } else {
-        await promoteDiscoveryInboxItem(item.id)
-        await syncAfterMutation(zh ? '岗位已加入 Opportunities' : 'Job added to Opportunities')
+        await promoteDiscoveryInboxItem(item.id, writeLease.assertCurrent)
+        await syncAfterMutation(zh ? '岗位已加入 Opportunities' : 'Job added to Opportunities', writeLease.assertCurrent)
       }
+      writeLease.assertCurrent()
       setPromotePreview(null)
       setSelectedIds((current) => current.filter((id) => id !== item.id))
     } catch (caught) {

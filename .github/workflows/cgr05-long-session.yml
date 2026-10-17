@@ -22,6 +22,8 @@ jobs:
           npm install --no-save @playwright/test@1.63.0
           node scripts/verify-installed-runtime-lock.mjs
       - run: npx playwright install --with-deps chromium
+      - name: Prove mock cloud isolation before application browser tests
+        run: npx playwright test --config=playwright.cloud-guard.config.mts --project=chromium
       - name: Run two-hour connected browser session
         env:
           PJSDAS_SOAK_MINUTES: '120'

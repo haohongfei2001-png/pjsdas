@@ -1,14 +1,18 @@
+import { MOCK_TARGET_AUTH_KEY, MOCK_TARGET_BACKEND, MOCK_TARGET_AUTH_ORIGIN } from './support/mockCloudTargets.js'
 import { freezeTodayFixture } from './support/consumerFixtureClock.js'
 import { expect, test, type Page, type Route } from '@playwright/test'
 import { upgradeSnapshotToLatest, type PJSDASSnapshot } from '../src/snapshot.js'
 import { applyDiscoveryPromotionCommand } from '../src/discoveryPromotionCommand.js'
+import { applyDiscoveryProfileCommand } from '../src/discoveryProfileCommand.js'
+import { createJobPostingEvidence } from '../src/jobPosting.js'
+import { verifiedPostingFixture } from '../tests/fixtures/verifiedDiscovery.js'
 import { applyDomainCompensation, applyUserDomainCommand, type DomainCompensation } from '../src/domainCommands.js'
 import { applyProcessEventDeleteCommand } from '../src/processEventDeleteCommand.js'
 
 test.beforeEach(async ({ page }) => { await freezeTodayFixture(page) })
 
-const AUTH_KEY = 'sb-yyrzwpoxlxpafdlbkdtg-auth-token'
-const BACKEND = 'https://pjsdas-remote-alpha.vercel.app'
+const AUTH_KEY = MOCK_TARGET_AUTH_KEY
+const BACKEND = MOCK_TARGET_BACKEND
 
 function action(id: string, title: string, opportunityId: string) {
   return {
@@ -93,6 +97,12 @@ function session(accountKey: string, token: string) {
 
 async function seedInitialSession(page: Page, accountKey: string, token: string) {
   await freezeTodayFixture(page)
+  await page.route(`${MOCK_TARGET_AUTH_ORIGIN}/auth/v1/logout*`, route => {
+    if (route.request().method() === 'OPTIONS') return cors(route, {}, 204)
+    expect(route.request().method()).toBe('POST')
+    expect(tokenOf(route)).toBe(token)
+    return cors(route, {}, 200)
+  })
   await page.addInitScript(({ key, value }) => {
     if (!window.localStorage.getItem('cgr01-e2e-auth-seeded')) {
       window.localStorage.setItem(key, JSON.stringify(value))
@@ -150,13 +160,14 @@ async function readIndexedActions(page: Page) {
   }))
 }
 
-test('lost response after server commit survives reload and recovers one durable receipt without duplicate mutation', async ({ page }) => {
+for (const restart of ['reload', 'direct close'] as const) test(`lost response after server commit survives ${restart} and recovers one durable receipt without duplicate mutation`, async ({ page: initialPage, context }) => {
+  let page = initialPage
   await seedInitialSession(page, 'account-a', 'token-a')
   const state: AccountState = { revision: 7, snapshot: workspace('A'), receipts: new Map() }
   let commandCalls = 0
   let receiptCalls = 0
 
-  await page.route(`${BACKEND}/**`, async (route) => {
+  await context.route(`${BACKEND}/**`, async (route) => {
     const request = route.request()
     const url = new URL(request.url())
     if (request.method() === 'OPTIONS') return cors(route, {}, 204)
@@ -215,12 +226,22 @@ test('lost response after server commit survives reload and recovers one durable
   expect(commandCalls).toBe(1)
   await expect.poll(() => receiptCalls).toBe(1)
 
-  await page.reload()
+  if (restart === 'direct close') {
+    const committed = structuredClone(state.snapshot)
+    await page.close() // Actual user close, deliberately no blank navigation.
+    expect(state.snapshot).toEqual(committed)
+    expect(commandCalls).toBe(1)
+    page = await context.newPage()
+    await freezeTodayFixture(page)
+    await page.goto('/')
+  } else await page.reload()
   await expect(page.getByRole('heading', { name: 'A第一任务' })).toHaveCount(0)
   expect(commandCalls).toBe(1)
   await expect.poll(() => receiptCalls).toBeGreaterThanOrEqual(2)
   // UI absence can precede receipt projection and durable pending-record removal.
   await expect.poll(() => page.evaluate(() => window.localStorage.getItem('pjsdas-cgr01-pending:account-a'))).toBeNull()
+  expect(state.receipts.size).toBe(1)
+  expect(state.revision).toBe(8)
 })
 
 test('connected Web recovers a lost command response and Undo preserves unrelated later state', async ({ page }) => {
@@ -501,7 +522,7 @@ test('account A sign-out then account B never displays or replays A cache drafts
   await page.getByRole('button', { name: '退出 TodayAction' }).click()
   await expect.poll(() => page.evaluate(() => (window as any).__signOutWitness.auth.some((event: any) => event.event === 'SIGNED_OUT' && event.account === null))).toBe(true)
   await expect.poll(async () => (await readIndexedActions(page)).length).toBe(0)
-  const signedOut = await page.evaluate(() => ({ witness: (window as any).__signOutWitness, authPresent: Boolean(localStorage.getItem('sb-yyrzwpoxlxpafdlbkdtg-auth-token')) }))
+  const signedOut = await page.evaluate(authKey => ({ witness: (window as any).__signOutWitness, authPresent: Boolean(localStorage.getItem(authKey)) }), AUTH_KEY)
   expect(signedOut.authPresent).toBe(false)
   await info.attach('reached-signed-out-boundary.json', { body: JSON.stringify(signedOut, null, 2), contentType: 'application/json' })
   await page.clock.resume()
@@ -521,13 +542,13 @@ test('account A sign-out then account B never displays or replays A cache drafts
   expect(bBodies.some((body) => ['commit', 'command', 'undo'].includes(body.action))).toBe(false)
   } finally {
     await page.clock.resume().catch(() => undefined)
-    const evidence = await page.evaluate(() => ({
+    const evidence = await page.evaluate(authKey => ({
       witness: (window as any).__signOutWitness,
-      authPresent: Boolean(localStorage.getItem('sb-yyrzwpoxlxpafdlbkdtg-auth-token')),
+      authPresent: Boolean(localStorage.getItem(authKey)),
       errors: [...document.querySelectorAll('.cloud-error')].map(node => node.textContent),
       account: document.querySelector('.cloud-account-identity strong')?.textContent,
       recoveryVisible: Boolean(document.querySelector('.startup-recovery')),
-    })).catch(error => ({ unavailable: String(error) }))
+    }), AUTH_KEY).catch(error => ({ unavailable: String(error) }))
     await info.attach('sign-out-boundary.json', { body: JSON.stringify(evidence, null, 2), contentType: 'application/json' })
   }
 
@@ -630,11 +651,15 @@ test('CGR-05 Discovery status, Profile and promotion use scoped first-party comm
   const state: AccountState = { revision: 7, snapshot: workspace('A'), receipts: new Map() }
   state.snapshot.data.discoveryInbox = [{
     id: 'inbox:cgr05-job', candidateOpportunityId: 'cgr05-job', company: '合成公司', role: '产品设计师',
-    roleType: 'core', sourceUrl: 'https://example.test/job/1', sourceTitle: '产品设计师',
+    roleType: 'core', sourceUrl: 'https://www.liepin.com/job/9401.shtml', sourceTitle: '产品设计师',
     rationale: '可核对的招聘来源', opportunityValue: 72, fitScore: 78,
     fitConfidence: 'medium', opportunityValueConfidence: 'medium', status: 'new',
     discoveredAt: '2026-09-23T00:00:00.000Z', createdAt: '2026-09-23T00:00:00.000Z', updatedAt: '2026-09-23T00:00:00.000Z',
   }]
+  const inboxItem = state.snapshot.data.discoveryInbox[0]
+  const observation = await verifiedPostingFixture(inboxItem, inboxItem.discoveredAt)
+  inboxItem.posting = createJobPostingEvidence({ ...observation, observedAt: inboxItem.discoveredAt })
+  inboxItem.sourceProof = observation.sourceProof
   const commandBodies: Array<Record<string, any>> = []
   let snapshotCommits = 0
 
@@ -665,8 +690,8 @@ test('CGR-05 Discovery status, Profile and promotion use scoped first-party comm
             item.seenAt = new Date().toISOString()
             item.updatedAt = item.seenAt
           }
-        } else if (command?.type === 'discovery_profile' && command.value?.key === 'current') {
-          state.snapshot.data.discoveryProfile = command.value
+        } else if (command?.type === 'discovery_profile') {
+          state.snapshot = applyDiscoveryProfileCommand(state.snapshot, command.value).snapshot
         } else if (command?.type === 'discovery_promotion' && command.value?.inboxItemId === 'inbox:cgr05-job') {
           state.snapshot = applyDiscoveryPromotionCommand(state.snapshot, command.value).snapshot
         } else return cors(route, { code: 'UNEXPECTED_COMMAND' }, 400)

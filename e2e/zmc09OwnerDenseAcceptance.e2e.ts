@@ -169,6 +169,11 @@ test('dense owner day survives Gmail refresh, a cross-device update and offline 
     // Close and relaunch the browser process with the same IndexedDB profile and outbox.
     firstUnavailable = true
     await firstContext.setOffline(false)
+    // Keep mocks active while the old app document unloads; the following
+    // context close/relaunch still discards the entire browser process.
+    console.log(`Mock restart lifecycle: dense owner before blank ${new Date().toISOString()}`)
+    await first.goto('about:blank')
+    console.log(`Mock restart lifecycle: dense owner before close ${new Date().toISOString()}`)
     await first.close()
     await firstContext.close()
     firstContext = await browser.browserType().launchPersistentContext(profilePath, {

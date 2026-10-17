@@ -1,3 +1,4 @@
+import { emptySearchExecution } from './fixtures/discoverySearch.rebuilt.js'
 import { describe, expect, it } from 'vitest'
 import { applyGmailIngestionHardened, applyMonitorIngestionHardened } from '../src/ingestionHardening.js'
 import { createDefaultDecisionRules } from '../src/decisionRules.js'
@@ -58,17 +59,29 @@ describe('Coverage freshness and configured-source completeness', () => {
     expect(coverage.missingSourceCount).toBe(PJSDAS_EXPECTED_INGESTION_SOURCES.length)
   })
 
-  it('shows green when every configured source has a balanced fresh run and no unresolved records', () => {
+  it('keeps historical monitor runs without query proof non-green even if their ledgers are balanced', () => {
     const snapshot = addAllSources()
     const coverage = summarizeCoverage(snapshot.data.timeline, {
       now: new Date('2026-09-13T10:15:00.000Z'),
       expectedSources: PJSDAS_EXPECTED_INGESTION_SOURCES,
     })
-    expect(coverage.allCaughtUp).toBe(true)
+    expect(coverage.allCaughtUp).toBe(false)
     expect(coverage.missingSourceCount).toBe(0)
     expect(coverage.staleSourceCount).toBe(0)
     expect(coverage.sourceCount).toBe(PJSDAS_EXPECTED_INGESTION_SOURCES.length)
     expect(coverage.sources.every((item) => item.producer === 'server_scheduler')).toBe(true)
+  })
+
+  it('shows green only when fresh balanced monitors carry actual synthetic query execution proof', async () => {
+    const snapshot = addAllSources()
+    for (const record of snapshot.data.timeline ?? []) if (record.ingestionRun?.sourceKind === 'gpt_monitor') {
+      record.ingestionRun.searchExecutions = await emptySearchExecution(record.ingestionRun.sourceId, record.ingestionRun.completedAt)
+      record.ingestionRun.retrievalStatus = 'complete'
+      record.ingestionRun.omittedSearchHitCount = 0
+    }
+    const coverage = summarizeCoverage(snapshot.data.timeline, { now: new Date('2026-09-13T10:15:00.000Z'), expectedSources: PJSDAS_EXPECTED_INGESTION_SOURCES })
+    expect(coverage.allCaughtUp).toBe(true)
+    expect(coverage.missingSourceCount).toBe(0); expect(coverage.staleSourceCount).toBe(0)
   })
 
   it('turns Coverage non-green when Gmail misses its 20-minute freshness SLA even though the last run was balanced', () => {
