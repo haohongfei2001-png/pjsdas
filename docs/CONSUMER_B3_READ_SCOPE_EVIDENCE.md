@@ -314,3 +314,65 @@ intentionally excludes `--enable-automation`; its optional command-line query
 was removed without adding that flag. Failure evidence remains:
 https://github.com/haohongfei2001-png/pjsdas/actions/runs/39068275328/artifacts/12114461013
 The history profile job was not repeated in either visual experiment.
+
+## Full validation and command-first binding regression
+
+Exact product head5d88235573ef412827a586dc898e0f97ffa979be passed the official,
+uninstrumented secondary visual gate: fixed dbad72020/20, candidate20/20,
+isolation3/3 and settings28/28. Artifact:
+https://github.com/haohongfei2001-png/pjsdas/actions/runs/39069006448/artifacts/12114667018
+Independent artifact review found26 protected first main pairs plus12 complete
+Library pairs byte-identical, stable repeats, and all six one-pixel negatives
+rejected. Both phases used the same two secondary-only browser flags; there
+were no diagnostic CDP hooks. The original source and failed images remain.
+
+Its full Matrix also passed: Firefox/WebKit core288, dense146 and all four
+original unprofiled performance tests, with no changed observer or budget.
+History100/3940 both reported no long tasks and settled p95=38ms; compact20
+commands had max payload4147B and no long tasks. Evidence:
+https://github.com/haohongfei2001-png/pjsdas/actions/runs/39069006471/artifacts/12115052075
+These real passes do not erase or retrospectively excuse the prior51/55/53ms
+failures. The CI unit suite passed333files/3637tests on that head.
+
+Browser core on5d8823 had275 first-pass cases plus one built-in retry, rather
+than276 first-pass passes. Dense73 passed. The first B1 390px attempt failed
+its unchanged immediate offline Undo assertion. Its original trace is retained:
+https://github.com/haohongfei2001-png/pjsdas/actions/runs/39069006470/artifacts/12115261449
+The initial passive read overlapped form input and was deferred. Save therefore
+performed its own currentRevision read, then committed semantic_intake revision2.
+Full navigation cancelled the deferred refresh; offline mode preceded the700ms
+sync timer on detail. Clicking submission was rejected within about23ms, with
+no submission request. The failure alert was account/cache changed, not a slow
+Undo toast. The manual job had no discoveryRead, so no B3 job_viewed effect ran.
+
+The command full-snapshot projection wrote checkpoint metadata but omitted the
+first workspace owner binding. The strict immediate-interaction journal correctly
+refused this unbound cache. This is a pre-existing fail-closed product reliability
+defect, not an acceptable first-pass success. The minimal repair captures the
+workspace write lease across snapshot replacement, both fingerprints and first
+mock-proof hashing, then establishes the same-account owner after the guarded
+projection. It completes eligible mock provenance before resolving. Another
+owner/account/device cannot be adopted; unknown pre-owned caches are never
+relabelled. Same-account token/source changes produce no mock proof, and the
+existing reload provenance gate stays closed. A failed hash or a competing
+interaction makes the projection pending, never applied. No journal guard,
+700ms timer, hot-input protection or UI-readiness wait is relaxed.
+
+A real-module delayed passive bootstrap / command-first regression failed on
+old code at the missing owner assertion, then passed after the correction.
+The original11-case unit version produced8 failures on old code, including
+receipt projection device/owner guard counterexamples. The final18-case suite
+also checks receipt recovery, old unknown binding, account/device/owner changes,
+projection failure, token/storage changes, awaiting the first proof, hash failure
+and concurrent immediate intent. Focused52tests pass. Full334files/3655tests
+passed with all18 cases on the committed product tree.
+Typecheck and sequential production build pass. The new deterministic browser
+case first establishes a controlled in-flight passive request, holds its response,
+and uses the supported autoSync=false setting, so only the explicit command can
+establish ownership, then navigates and submits offline. The final request-start
+scheduling change passed typecheck and browser-test discovery; it does not
+complete a read or wait for account/cache readiness.
+The original B1 cases and assertions remain unchanged. This newly added browser
+case was not run against old code locally because browser launch is prohibited
+here; the original CI trace is the browser RED. All official gates must run on
+the new final head, including this added case, before merge acceptance.
