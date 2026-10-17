@@ -47,7 +47,7 @@ only for whitespace and case. Retrieval terms do not substitute for exclusions.
 
 ## Validation status
 
-- Local full suite: **330 files / 3614 tests passed** after the independent-review fixes; original per-test timeout/performance thresholds unchanged.
+- Local full suite: **330 files / 3615 tests passed** after the independent-review fixes; original per-test timeout/performance thresholds unchanged.
 - TypeScript/build passed. The generated release-identity build output is not
   committed as a claimed deployed identity.
 - Added/updated actual Playwright journeys cover read cutover/count, no mark on
@@ -65,6 +65,15 @@ only for whitespace and case. Retrieval terms do not substitute for exclusions.
   allow a safe detail-reopen/explicit retry without an automatic effect loop.
   Regression tests include the pure-title→broader quality sequence and a
   controlled late 503 after leaving detail.
+- Real CI exposed two Search Scope timing failures: an editor opened before Auth
+  ownership settled could remount closed, and one opened before the delayed
+  authority read could keep an empty draft while the outside summary updated.
+  Opening now requires owner admission. A pristine open editor follows the
+  admitted profile and its save fingerprint; every edit/proposal/save freezes
+  its baseline, preserving dirty input and rejecting competing remote saves.
+  Controlled delayed-read browser cases cover all input paths and save failure;
+  the original two-device reload assertion remains. Exact-head browser validation
+  of this fix is pending. Existing version/owner cache guards are unchanged.
 - The previously observed main B1 offline-first-action readiness flake is not
   fixed or reclassified by this change. Admission guards remain intact.
 - The visual gate retains fixed pre-B1 `dbad72074299c8f585a9b13d5f4ae0b3a6b32116`

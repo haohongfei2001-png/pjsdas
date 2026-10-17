@@ -1,3 +1,5 @@
+import { proposeSearchScope } from '../src/searchScopeDraft.js'
+import { discoveryProfileManagementFingerprint } from '../src/discoveryProfileManagement.js'
 import { applyJobViewedCommand } from '../src/jobReadState.js'
 import { MOCK_TARGET_AUTH_KEY, MOCK_TARGET_BACKEND, MOCK_TARGET_AUTH_ORIGIN } from './support/mockCloudTargets.js'
 import { freezeTodayFixture } from './support/consumerFixtureClock.js'
@@ -764,6 +766,9 @@ test('B3 job viewed and Search Scope persist across devices through scoped first
     await expect(pageB.locator('.tsui-job-open').filter({ hasText: 'B独立公司' })).toBeVisible()
     await expect(pageB.locator('[data-job-filter="new"]')).toContainText('1')
     expect(accountB.snapshot.data.opportunities[0].discoveryRead?.viewedAt).toBeUndefined()
+    await pageB.getByRole('button', { name: '搜索范围', exact: true }).click()
+    await expect(pageB.getByRole('dialog').getByLabel('你想找什么岗位？')).toHaveValue('')
+    await expect(pageB.getByRole('dialog').getByLabel('检索岗位词 1', { exact: true })).toHaveCount(0)
     expect(commandBodies).toHaveLength(3)
 
   } finally {
@@ -771,6 +776,106 @@ test('B3 job viewed and Search Scope persist across devices through scoped first
     await second.close()
   }
 })
+
+// Hold a real authority response, rather than sleeping until the initial sync happens.
+// Cached identity is admitted before the dialog opens; the remote profile arrives later.
+for (const edit of ['pristine', 'goal', 'query', 'refinement', 'criteria', 'remove', 'save-failure'] as const) {
+  test(`B3 delayed authority hydrates only a pristine Search Scope (${edit})`, async ({ page }) => {
+    const state: AccountState = { revision: 7, snapshot: workspace('A'), receipts: new Map() }
+    if (edit !== 'goal') state.snapshot = applyDiscoveryProfileCommand(state.snapshot, {
+      ...proposeSearchScope('缓存产品经理'), targetRoleQueries: ['缓存产品经理', '缓存设计师'], preferredLocations: ['上海'],
+    }).snapshot
+    const originalFingerprint = await discoveryProfileManagementFingerprint(state.snapshot.data.discoveryProfile ?? null)
+    const commands: Array<Record<string, any>> = []
+    let holdRead = false
+    let releaseRead: (() => void) | undefined
+    await seedInitialSession(page, 'account-a', 'token-a')
+    await page.route(`${BACKEND}/**`, async route => {
+      const request = route.request(), url = new URL(request.url())
+      if (request.method() === 'OPTIONS') return cors(route, {}, 204)
+      if (url.pathname === '/api/health') return cors(route, health())
+      if (url.pathname !== '/api/workspace') return cors(route, { code: 'NOT_FOUND' }, 404)
+      const body = request.postDataJSON() as Record<string, any>
+      const envelope = () => ({ workspaceId: 'ws-a', workspaceVersion: `txn:${state.revision}`, revision: state.revision,
+        schemaVersion: state.snapshot.version, snapshot: state.snapshot })
+      if (body.action === 'read') {
+        if (holdRead) await new Promise<void>(resolve => { releaseRead = resolve })
+        return cors(route, envelope())
+      }
+      if (body.action === 'command') {
+        commands.push(body)
+        expect(body.command.type).toBe('discovery_profile')
+        expect(body).not.toHaveProperty('snapshot')
+        if (edit === 'save-failure') return cors(route, { code: 'SYNTHETIC_FAILURE', message: 'Scope save temporarily unavailable' }, 503)
+        if (body.command.expectedFingerprint !== await discoveryProfileManagementFingerprint(state.snapshot.data.discoveryProfile ?? null)) {
+          return cors(route, { ...envelope(), outcome: 'CONFLICT', conflict: {
+            kind: 'OBJECT_CONFLICT', message: '搜索范围已由其他设备更新，请关闭后重新读取。',
+            objects: [{ type: 'discovery_profile', id: 'current' }], interveningCommandIds: ['other-device-scope'],
+          } }, 409)
+        }
+        state.snapshot = applyDiscoveryProfileCommand(state.snapshot, body.command.value).snapshot
+        state.revision += 1
+        return cors(route, { ...envelope(), outcome: 'COMMITTED', receipt: {
+          commandId: body.commandId, receiptId: `command-receipt:${body.commandId}`, status: 'COMMITTED', revision: state.revision,
+          affectedObjects: [{ type: 'discovery_profile', id: 'current' }], result: { type: 'discovery_profile', status: 'APPLIED', summary: 'Saved scope.' },
+        } })
+      }
+      if (body.action === 'commit') throw new Error('Scope edits must not write snapshots')
+      return cors(route, { ...envelope(), found: false })
+    })
+    await page.goto('/pjsdas/library')
+    await expect(page.locator('.tsui-job-open').filter({ hasText: 'A公司' })).toBeVisible()
+    if (edit !== 'goal') await expect(page.locator('.ta-scope-summary')).toContainText('缓存产品经理')
+    // Establish the old admitted cache, then emulate another device's newer commit.
+    holdRead = true
+    state.snapshot = applyDiscoveryProfileCommand(state.snapshot, proposeSearchScope('远端产品设计师')).snapshot
+    state.revision += 1
+    const newerFingerprint = await discoveryProfileManagementFingerprint(state.snapshot.data.discoveryProfile)
+    await page.reload()
+    await page.getByRole('button', { name: '搜索范围', exact: true }).click()
+    const dialog = page.getByRole('dialog')
+    await expect(dialog).toBeVisible()
+    if (edit === 'goal') await dialog.getByLabel('你想找什么岗位？').fill('我正在输入的岗位')
+    else {
+      await expect(dialog.getByLabel('检索岗位词 1', { exact: true })).toHaveValue('缓存产品经理')
+      if (edit === 'query') await dialog.getByLabel('检索岗位词 1', { exact: true }).fill('我的岗位词')
+      if (edit === 'refinement') await dialog.getByLabel('修改搜索范围').fill('不要运营')
+      if (edit === 'criteria') await dialog.getByLabel('地点（未填写则不限）').fill('北京')
+      if (edit === 'remove') await dialog.getByRole('button', { name: '删除检索词 2', exact: true }).click()
+    }
+    await expect.poll(() => typeof releaseRead).toBe('function')
+    holdRead = false
+    releaseRead!()
+    await expect(page.locator('.ta-scope-summary')).toContainText('远端产品设计师')
+    await expect(dialog).toBeVisible()
+    if (edit === 'pristine' || edit === 'save-failure') {
+      await expect(dialog.getByLabel('检索岗位词 1', { exact: true })).toHaveValue('远端产品设计师')
+      await expect(dialog.getByLabel('检索岗位词 2', { exact: true })).toHaveCount(0)
+    } else if (edit === 'goal') {
+      await expect(dialog.getByLabel('你想找什么岗位？')).toHaveValue('我正在输入的岗位')
+      await dialog.getByRole('button', { name: '整理搜索范围' }).click()
+    } else {
+      await expect(dialog.getByLabel('检索岗位词 1', { exact: true })).toHaveValue(edit === 'query' ? '我的岗位词' : '缓存产品经理')
+      if (edit === 'refinement') {
+        await expect(dialog.getByLabel('修改搜索范围')).toHaveValue('不要运营')
+        await dialog.getByRole('button', { name: '更新准则' }).click()
+      }
+      if (edit === 'criteria') await expect(dialog.getByLabel('地点（未填写则不限）')).toHaveValue('北京')
+      if (edit === 'remove') await expect(dialog.getByLabel('检索岗位词 2', { exact: true })).toHaveCount(0)
+    }
+    await dialog.getByRole('button', { name: '保存搜索范围' }).click()
+    if (edit === 'pristine') await expect(dialog.getByRole('status')).toContainText('搜索范围已保存')
+    else if (edit === 'save-failure') {
+      await expect(dialog.getByRole('alert')).toBeVisible()
+      await expect(dialog.getByLabel('检索岗位词 1', { exact: true })).toHaveValue('远端产品设计师')
+      await expect(dialog.getByRole('button', { name: '保存搜索范围' })).toBeEnabled()
+      await expect(dialog.getByRole('alert')).toBeVisible()
+    } else await expect(dialog.getByRole('alert')).toContainText('其他设备更新')
+    expect(commands).toHaveLength(1)
+    expect(commands[0].command.expectedFingerprint).toBe(edit === 'pristine' || edit === 'save-failure' ? newerFingerprint : originalFingerprint)
+    expect(state.snapshot.data.discoveryProfile?.targetRoleQueries).toEqual(['远端产品设计师'])
+  })
+}
 
 test('CGR-05 process recovery creates and deletes one account event across clients without snapshot writes', async ({ browser }) => {
   test.setTimeout(60000)

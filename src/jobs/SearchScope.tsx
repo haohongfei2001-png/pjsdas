@@ -18,6 +18,8 @@ export default function SearchScope({ profile, blocked, onChanged }: { profile?:
   const cloud = useCloud(), ai = useAiAccess(), { lang } = useUiLanguage(), zh = lang === 'zh'
   const dialog = useRef<HTMLDialogElement>(null), trigger = useRef<HTMLButtonElement>(null)
   const baseline = useRef<DiscoveryProfile | undefined>(undefined)
+  // Synchronous admission protects input even before React commits its next render.
+  const dirty = useRef(false)
   const [goal, setGoal] = useState(''), [refinement, setRefinement] = useState('')
   const [draft, setDraft] = useState<DiscoveryScopeInput>(), [busy, setBusy] = useState(false), [message, setMessage] = useState(''), [error, setError] = useState('')
   const confirmed = Boolean(profile && isDiscoverySearchScopeConfirmed(profile))
@@ -25,20 +27,32 @@ export default function SearchScope({ profile, blocked, onChanged }: { profile?:
   const summary = savedScope ? [savedScope.targetRoleQueries.join(' / '), savedScope.preferredLocations.length ? `${zh ? '地点' : 'Locations'}: ${savedScope.preferredLocations.join(' / ')}` : '', savedScope.titleEquals.length ? `${zh ? '完整标题' : 'Exact title'}: ${savedScope.titleEquals.join(' / ')}` : '', savedScope.titleExcludes.length ? `${zh ? '排除标题' : 'Excluded titles'}: ${savedScope.titleExcludes.join(' / ')}` : ''].filter(Boolean).join(' · ') : (zh ? '尚未确认搜索范围' : 'Search scope not confirmed')
   const status = discoveryReadinessLabel({ verified: ai.statusVerified, enabled: ai.gmailAutomation?.discoveryEnabled, readiness: ai.gmailAutomation?.discoveryReadiness }, zh)
   useEffect(() => () => { dialog.current?.close() }, [])
-  function open() {
+  function readProfile() {
     baseline.current = profile && structuredClone(profile)
     const saved = confirmed ? discoverySearchScope(profile) : undefined
     setGoal(saved?.searchGoal ?? ''); setRefinement(''); setError(''); setMessage('')
     setDraft(saved ? discoveryScopeSchema.parse(Object.fromEntries(Object.entries(saved).filter(([key]) => !['key', 'version', 'updatedAt'].includes(key)))) : undefined)
+  }
+  useEffect(() => {
+    // AppV8 keys this editor by account. Only its current admitted cache may rebase
+    // an untouched open editor; edited drafts retain their exact conflict baseline.
+    if (dialog.current?.open && !blocked && !dirty.current && !busy && !message) readProfile()
+  }, [profile, blocked, busy, message])
+  function open() {
+    if (blocked) return
+    dirty.current = false
+    readProfile()
     dialog.current?.showModal()
   }
   function close() { dialog.current?.close(); trigger.current?.focus() }
   function propose() {
+    dirty.current = true
     try { setDraft(proposeSearchScope(draft ? refinement : goal, draft)); setRefinement(''); setError(''); setMessage('') }
     catch (caught) { setError(caught instanceof Error ? caught.message : String(caught)) }
   }
   async function save() {
     if (!draft || busy || blocked) return
+    dirty.current = true
     let lease: ReturnType<typeof captureWorkspaceWriteLease> | undefined
     setBusy(true); setError(''); setMessage('')
     try {
@@ -66,13 +80,13 @@ export default function SearchScope({ profile, blocked, onChanged }: { profile?:
     ['mustHave', '事实包含全部', 'Required facts'], ['mustNotHave', '事实排除', 'Excluded facts'],
   ]
   return <div className="ta-search-scope">
-    <div className="ta-scope-summary"><span>{summary}</span><button ref={trigger} type="button" onClick={open}>{zh ? '搜索范围' : 'Search scope'}</button></div>
+    <div className="ta-scope-summary"><span>{summary}</span><button ref={trigger} type="button" disabled={blocked} onClick={open}>{zh ? '搜索范围' : 'Search scope'}</button></div>
     <p className="ta-scope-status">{status}{ai.gmailAutomation?.discoveryLastSuccessAt ? ` · ${zh ? '历史已提交：' : 'Last committed: '}${new Date(ai.gmailAutomation.discoveryLastSuccessAt).toLocaleString()}` : ` · ${zh ? '尚无已提交发现' : 'No committed discovery'}`}</p>
     <dialog ref={dialog} className="ta-scope-dialog" aria-labelledby="ta-scope-title" onCancel={event => { event.preventDefault(); if (!busy) close() }}>
       <header><h2 id="ta-scope-title">{zh ? '每天帮你找新岗位' : 'Find new jobs each day'}</h2><button type="button" aria-label={zh ? '关闭搜索范围' : 'Close search scope'} disabled={busy} onClick={close}>×</button></header>
-      {!draft && !message ? <><label htmlFor="ta-scope-goal">{zh ? '你想找什么岗位？' : 'What jobs are you looking for?'}</label><input id="ta-scope-goal" autoFocus value={goal} maxLength={2400} onChange={e => setGoal(e.target.value)} /><p>{zh ? '先说明想找什么，再确认少量搜索准则。' : 'Describe the job titles, then confirm a few search criteria.'}</p></> : null}
-      {draft ? <><p>{zh ? '将按这些准则搜索；修改后确认保存。' : 'Review these search criteria before saving.'}</p><div className="ta-scope-query-chips" role="group" aria-label={zh ? '检索岗位词' : 'Search terms'}>{draft.targetRoleQueries.map((term, index) => <div className="ta-scope-query-chip" key={index}><input aria-label={`${zh ? '检索岗位词' : 'Search term'} ${index + 1}`} value={term} maxLength={160} onChange={e => { const next = [...draft.targetRoleQueries]; next[index] = e.target.value; setDraft({ ...draft, targetRoleQueries: next }); setError('') }} /><button type="button" aria-label={`${zh ? '删除检索词' : 'Remove search term'} ${index + 1}`} onClick={() => setDraft({ ...draft, targetRoleQueries: draft.targetRoleQueries.filter((_, i) => i !== index) })}>×</button></div>)}</div><div className="ta-scope-criteria">{fields.filter(([key]) => key === 'preferredLocations' || (draft[key] as string[] | undefined)?.length).map(([key, cn, en]) => <label key={key}>{zh ? cn : en}<input aria-label={zh ? cn : en} value={(draft[key] as string[] | undefined)?.join('、') ?? ''} onChange={e => setDraft({ ...draft, [key]: e.target.value.split(/[、,，]/).map(v => v.trim()).filter(Boolean) })} /></label>)}</div>
-      <div className="ta-scope-refine"><input aria-label={zh ? '修改搜索范围' : 'Refine search scope'} placeholder={zh ? '例如：更广一些、不要运营' : 'For example: broader, exclude operations'} value={refinement} maxLength={2400} onChange={e => setRefinement(e.target.value)} /><button type="button" disabled={!refinement.trim() || busy} onClick={propose}>{zh ? '更新准则' : 'Update criteria'}</button></div></> : null}
+      {!draft && !message ? <><label htmlFor="ta-scope-goal">{zh ? '你想找什么岗位？' : 'What jobs are you looking for?'}</label><input id="ta-scope-goal" autoFocus value={goal} maxLength={2400} onChange={e => { dirty.current = true; setGoal(e.target.value) }} /><p>{zh ? '先说明想找什么，再确认少量搜索准则。' : 'Describe the job titles, then confirm a few search criteria.'}</p></> : null}
+      {draft ? <><p>{zh ? '将按这些准则搜索；修改后确认保存。' : 'Review these search criteria before saving.'}</p><div className="ta-scope-query-chips" role="group" aria-label={zh ? '检索岗位词' : 'Search terms'}>{draft.targetRoleQueries.map((term, index) => <div className="ta-scope-query-chip" key={index}><input aria-label={`${zh ? '检索岗位词' : 'Search term'} ${index + 1}`} value={term} maxLength={160} onChange={e => { dirty.current = true; const next = [...draft.targetRoleQueries]; next[index] = e.target.value; setDraft({ ...draft, targetRoleQueries: next }); setError('') }} /><button type="button" aria-label={`${zh ? '删除检索词' : 'Remove search term'} ${index + 1}`} onClick={() => { dirty.current = true; setDraft({ ...draft, targetRoleQueries: draft.targetRoleQueries.filter((_, i) => i !== index) }) }}>×</button></div>)}</div><div className="ta-scope-criteria">{fields.filter(([key]) => key === 'preferredLocations' || (draft[key] as string[] | undefined)?.length).map(([key, cn, en]) => <label key={key}>{zh ? cn : en}<input aria-label={zh ? cn : en} value={(draft[key] as string[] | undefined)?.join('、') ?? ''} onChange={e => { dirty.current = true; setDraft({ ...draft, [key]: e.target.value.split(/[、,，]/).map(v => v.trim()).filter(Boolean) }) }} /></label>)}</div>
+      <div className="ta-scope-refine"><input aria-label={zh ? '修改搜索范围' : 'Refine search scope'} placeholder={zh ? '例如：更广一些、不要运营' : 'For example: broader, exclude operations'} value={refinement} maxLength={2400} onChange={e => { dirty.current = true; setRefinement(e.target.value) }} /><button type="button" disabled={!refinement.trim() || busy} onClick={propose}>{zh ? '更新准则' : 'Update criteria'}</button></div></> : null}
       <p>{zh ? '仅整理明确条件，不会自动搜索或改变开关。开启前仍需单独批准搜索预算。' : 'Only explicit criteria are prepared. Search does not start automatically; starting requires a separately approved search budget.'}</p>
       {error ? <p role="alert">{error}</p> : null}{message ? <p role="status">{message}</p> : null}
       <div className="ta-scope-controls">{ai.statusVerified && ai.gmailAutomation?.discoveryEnabled ? <button type="button" disabled={ai.busy || busy} onClick={() => void ai.setDiscoveryAutomationEnabled(false)}>{zh ? '暂停每日发现' : 'Pause daily discovery'}</button> : <button type="button" disabled title={zh ? '需要单独批准的 TA 搜索预算' : 'A separately approved TodayAction search budget is required'}>{zh ? '开启每日发现（待预算）' : 'Start daily discovery (budget required)'}</button>}{ai.errorSource === 'discovery' && ai.error ? <p role="alert">{ai.error}</p> : null}</div>

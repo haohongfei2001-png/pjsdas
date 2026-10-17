@@ -17,11 +17,15 @@ export function assertLibraryFlow(flow: LibraryFlow) {
   let y = filters.y
   for (let offset = 0; offset < buttons.length; offset += columns) {
     const row = buttons.slice(offset, offset + columns)
-    const flexWidth = Math.round((filters.width - columnGap * (row.length - 1)) / row.length * 64) / 64
+    const freeWidth = filters.width - columnGap * (row.length - 1)
+    // Blink partitions a flex line at cumulative 1/64 CSS-pixel boundaries.
+    // Rounding each item independently loses the middle residual (292/3).
+    const boundary = (index: number) => Math.round(freeWidth * index / row.length * 64) / 64
+    const widths = row.map((button, index) => stacked ? boundary(index + 1) - boundary(index) : button.width)
     const heights = row.map((button, index) => {
       const text = flow.textMetrics?.[offset + index]
       if (!text) return button.height
-      const available = (stacked ? flexWidth : button.width) - text.paddingX
+      const available = widths[index] - text.paddingX
       let lines = 1, used = 0
       for (const advance of text.advances) {
         if (used + advance > available) { lines++; used = 0 }
@@ -33,7 +37,7 @@ export function assertLibraryFlow(flow: LibraryFlow) {
     let x = filters.x
     for (const [index, button] of row.entries()) {
       assert.equal(button.height, heights[index], 'filter height follows unchanged text and padding')
-      if (stacked) assert.equal(button.width, flexWidth, 'original filter flex width')
+      if (stacked) assert.equal(button.width, widths[index], 'original filter flex width')
       assert.equal(button.x, x, 'filter horizontal placement')
       assert.equal(button.y, y + (rowHeight - button.height) / 2, 'filter line placement')
       x += button.width + columnGap

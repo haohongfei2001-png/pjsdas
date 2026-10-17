@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { assertLibraryFlow, type LibraryFlow } from '../e2e/support/libraryLayoutContract.js'
+import { readFileSync } from 'node:fs'
 
 function mobile(count = 9): LibraryFlow {
   const height = Math.ceil(count / 3) * 44
@@ -11,6 +12,10 @@ function mobile(count = 9): LibraryFlow {
     }), rowGap: 0, columnGap: 0, basis: 90, filterMarginBottom: 12, toolbarMarginBottom: 20, stacked: true }
 }
 describe('B3 bounded Library layout contract', () => {
+  it('accepts exact fixed-baseline Chromium metrics including cumulative fractional flex widths', () => {
+    const fixture = JSON.parse(readFileSync(new URL('./fixtures/libraryLayoutBaseline.json', import.meta.url), 'utf8'))
+    for (const sample of fixture.samples) expect(() => assertLibraryFlow(sample.flow)).not.toThrow()
+  })
   it('accepts exactly packed original eight and approved ninth-query wrapping', () => {
     expect(() => assertLibraryFlow(mobile(8))).not.toThrow()
     expect(() => assertLibraryFlow(mobile(9))).not.toThrow()
