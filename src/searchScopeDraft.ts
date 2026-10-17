@@ -13,7 +13,15 @@ export function proposeSearchScope(text: string, previous?: DiscoveryScopeInput)
   if (previous && exclusion) return discoveryScopeSchema.parse({ ...base, titleExcludes: unique([...(base.titleExcludes ?? []), exclusion[1]]) })
   if (previous && /^(?:更广一些|更广一点|broader)$/i.test(input)) {
     if (!base.targetRoleQueries.some(value => value === '产品经理')) throw new Error('请直接说明想增加的岗位词。 / Specify the additional job titles.')
-    return discoveryScopeSchema.parse({ ...base, targetRoleQueries: unique([...base.targetRoleQueries, 'AI 产品经理', 'AI 应用产品经理']) })
+    const additions = ['AI 产品经理', 'AI 应用产品经理'].filter(term => !base.targetRoleQueries.includes(term))
+    const compact = (value: string) => value.toLocaleLowerCase().replace(/[\s\u3000·•｜|（）()【】\[\]，,。.!！?？:：;；/\\_-]+/g, '')
+    const matches = (rule: string, title: string) => compact(rule).length >= 2 && compact(title).includes(compact(rule))
+    if (additions.some(title => Boolean(base.titleEquals?.length && !base.titleEquals.some(rule => rule.trim().replace(/\s+/g, ' ').toLocaleLowerCase() === title.toLocaleLowerCase()))
+      || Boolean(base.titleIncludes?.length && !base.titleIncludes.some(rule => matches(rule, title)))
+      || base.titleExcludes?.some(rule => matches(rule, title)))) {
+      throw new Error('现有完整标题、包含或排除条件会挡住扩展岗位；仅增加检索词不能扩大范围。请明确调整这些条件后再确认，当前限制未改动。 / Existing exact-title, inclusion or exclusion conditions block the broader titles. Adding search terms alone cannot broaden the scope; explicitly revise the conditions before confirming. Existing restrictions are unchanged.')
+    }
+    return discoveryScopeSchema.parse({ ...base, targetRoleQueries: unique([...base.targetRoleQueries, ...additions]) })
   }
   const add = previous && /^(?:增加|加入|add\s+)(.+)$/i.exec(input)
   if (add) return discoveryScopeSchema.parse({ ...base, targetRoleQueries: unique([...base.targetRoleQueries, ...add[1].split(/[、,，\n]/)]) })

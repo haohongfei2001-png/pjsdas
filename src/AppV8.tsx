@@ -176,10 +176,10 @@ export default function AppV8() {
   const [jobVisibleCount, setJobVisibleCount] = useState(40)
   const [opportunityQuery, setOpportunityQuery] = useState('')
   const [retainedNewIds, setRetainedNewIds] = useState<string[]>([])
-  const [readError, setReadError] = useState('')
+  const [readError, setReadError] = useState<{ id: string; message: string }>()
   const [readRetry, setReadRetry] = useState(0)
   const readAttempts = useRef(new Map<string, { commandId: string; attempt: number }>())
-  useEffect(() => { setRetainedNewIds([]); setReadError(''); readAttempts.current.clear() }, [cloud.session?.user.id])
+  useEffect(() => { setRetainedNewIds([]); setReadError(undefined); readAttempts.current.clear() }, [cloud.session?.user.id])
   const detailOrigin = useRef<{ path: string; scrollY: number; actionId?: string; opportunityId?: string } | null>(null)
   const [interactionNotice, setInteractionNotice] = useState<{ commandId: string; message: string }>()
   const completionRef = useRef<CompletionFeedback | null>(null)
@@ -529,7 +529,6 @@ export default function AppV8() {
     const commandId = priorAttempt?.commandId ?? createConnectedCommandId('job-viewed')
     readAttempts.current.set(key, { commandId, attempt: readRetry })
     const id = selectedOpportunity.id
-    let active = true
     const lease = captureWorkspaceWriteLease(cloud.session?.user.id)
     void (async () => {
       try {
@@ -544,12 +543,17 @@ export default function AppV8() {
         }
         lease.assertCurrent()
         await reload()
+        lease.assertCurrent()
+        setReadError(current => current?.id === id ? undefined : current)
       } catch (error) {
         try { lease.assertCurrent() } catch { return }
-        if (active) setReadError(error instanceof Error ? error.message : String(error))
+        // Release only the attempt suppression. Reopening/explicit Retry reuses
+        // the original command identity, including an unknown server outcome.
+        // readError is not an effect dependency, so this cannot auto-loop.
+        readAttempts.current.set(key, { commandId, attempt: -1 })
+        setReadError({ id, message: error instanceof Error ? error.message : String(error) })
       }
     })()
-    return () => { active = false }
   }, [selectedOpportunity?.id, selectedOpportunity?.discoveryRead?.viewedAt, accountKey, jobWriteBlocked, loading, readRetry])
   const selectedDecisionRequests: DecisionRequest[] = selectedOpportunity
     ? partitionDecisions(decisionRequests, {
@@ -986,7 +990,7 @@ export default function AppV8() {
           onOccurrenceCommand={scheduleOccurrenceCommand} onPendingOccurrence={pendingScheduleOccurrence}
           onUndoOccurrenceCommand={undoScheduleOccurrenceCommand} /> : null}
 
-        {readError ? <p role="status">{zh ? '已读状态尚未确认：' : 'Read state is not yet confirmed: '}{readError}{selectedOpportunity ? <button type="button" onClick={() => { setReadError(''); setReadRetry(value => value + 1) }}>{zh ? '重试' : 'Retry'}</button> : null}</p> : null}
+        {readError && (!selectedOpportunity || selectedOpportunity.id === readError.id) ? <p role="status">{zh ? '已读状态尚未确认：' : 'Read state is not yet confirmed: '}{readError.message}{selectedOpportunity ? <button type="button" onClick={() => { setReadError(undefined); setReadRetry(value => value + 1) }}>{zh ? '重试' : 'Retry'}</button> : null}</p> : null}
         {!loading && surface === 'opportunities' && opportunityDecisionList && !selectedOpportunityId ? (
           <OpportunitiesSurface searchScope={<SearchScope key={accountKey} profile={snapshot?.data.discoveryProfile} blocked={jobWriteBlocked} onChanged={reload} />} read={opportunityDecisionList} opportunities={opportunities} prep={prep} tab={opportunityTab} onTabChange={chooseOpportunityTab}
             retainedNewIds={retainedNewIds} view={opportunityView} onViewChange={value => { setRetainedNewIds([]); setOpportunityView(value) }} query={opportunityQuery} onQueryChange={value => { setRetainedNewIds([]); setOpportunityQuery(value) }}

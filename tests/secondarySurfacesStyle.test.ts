@@ -40,4 +40,18 @@ describe('secondary-surface styling stays outside the protected main UI', () => 
     expect(pixelGate).not.toContain("filter({ hasText: '可用时间' }).click()")
     expect(pixelGate).not.toMatch(/compareOutsideCaptureButton|repaintMainOnce|protectedMainPixels/)
   })
+  it('bounds B3 Library changes while keeping exact old regions and both runtime contracts', () => {
+    const gate = read('e2e/secondarySurfaces.ui.ts')
+    expect(gate).toContain("await capture(page, 'MAIN_JOBS', width, scale)")
+    for (const surface of ['MAIN_TODAY', 'MAIN_SCHEDULE', 'MAIN_AFTER_SETTINGS', 'MAIN_AFTER_CAPTURE']) {
+      expect(gate).toContain(`await capture(page, '${surface}', width, scale, true)`)
+    }
+    for (const selector of ['.tsui-library-heading', '.tsui-library-panel', '.tsui-library-total']) expect(gate).toContain(selector)
+    expect(gate).toContain('expect(geometry.oldFilters).toEqual(before.oldFilters)')
+    expect(gate).toContain('geometry.scopeExtent + geometry.toolbar.height - before.toolbar.height')
+    expect(gate).toContain('original eight Library queries, deadline order and 40-row paging')
+    expect(gate).toContain("await capture(page, 'DISCOVERY_DETAIL', width, scale)")
+    expect(gate).toContain("await capture(page, 'SEARCH_SCOPE', width, scale)")
+    expect(gate).not.toMatch(/mask:|maxDiffPixels|maxDiffPixelRatio|pixelmatch|\.style\.(?:display|visibility)\s*=/)
+  })
 })

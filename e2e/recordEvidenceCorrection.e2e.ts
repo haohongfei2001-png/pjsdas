@@ -13,7 +13,8 @@ for (const mobile of [false, true]) test(`eight exclusive categories and correct
   if (mobile) await page.setViewportSize({ width: 390, height: 844 })
   await seed(page)
   const filters = page.locator('.tsui-library-filters')
-  await expect(filters.getByRole('button')).toHaveCount(8)
+  await expect(filters.locator('button:not([data-job-filter="new"])')).toHaveCount(8)
+  await expect(filters.locator('[data-job-filter="new"]')).toHaveCount(1)
   for (const [label, ids] of categories) {
     await filters.getByRole('button', { name: label, exact: true }).click()
     await expect(page.locator('.tsui-job-row')).toHaveCount(ids.length)

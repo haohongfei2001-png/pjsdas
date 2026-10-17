@@ -47,8 +47,7 @@ only for whitespace and case. Retrieval terms do not substitute for exclusions.
 
 ## Validation status
 
-- Local full suite: **329 files / 3607 tests passed** before final browser-test
-  additions; original per-test timeout/performance thresholds unchanged.
+- Local full suite: **329 files / 3609 tests passed** after the independent-review fixes; original per-test timeout/performance thresholds unchanged.
 - TypeScript/build passed. The generated release-identity build output is not
   committed as a claimed deployed identity.
 - Added/updated actual Playwright journeys cover read cutover/count, no mark on
@@ -60,8 +59,24 @@ only for whitespace and case. Retrieval terms do not substitute for exclusions.
   browser PASS results or product failures. Existing CI Playwright containers
   must execute the journeys; screenshots/visual review and exact-head CI are
   still pending. No system security settings were changed.
+- Independent review found and corrected two P2 cases: contradictory broader
+  refinements now explain the blocked expansion without removing existing
+  restrictions; late read-state failures retain the original command ID and
+  allow a safe detail-reopen/explicit retry without an automatic effect loop.
+  Regression tests include the pure-title→broader quality sequence and a
+  controlled late 503 after leaving detail.
 - The previously observed main B1 offline-first-action readiness flake is not
   fixed or reclassified by this change. Admission guards remain intact.
+- The visual gate retains fixed pre-B1 `dbad72074299c8f585a9b13d5f4ae0b3a6b32116`
+  and exact whole-page Today/Schedule hashes. Library keeps original unmodified
+  whole-page evidence and exact heading/search/row-panel/total region hashes. Only the
+  added Search Scope block, ninth query wrapping and removed Inbox link may
+  differ: original eight query labels/styles, search style, panel geometry and
+  the precise scope/toolbar vertical displacement are automatic assertions.
+  Both runtimes execute original eight query, deadline ordering, 40/45 pagination
+  and text-search regressions. Baseline Discovery preview and candidate Search
+  Scope use separate explicit contracts. No baseline update, masking, image
+  rewriting, arbitrary pixel tolerance or whole-Library exemption is used.
 
 This is a candidate, not a release/deployment or a claim that all B3/A17 gates
 have passed. Unsupported broad natural-language interpretation remains explicit.

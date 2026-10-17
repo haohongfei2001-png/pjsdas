@@ -28,6 +28,18 @@ describe('B3 explicit search scope proposals', () => {
     const english = mergeDiscoveryScope(raw, { ...draft, titleEquals: ['Product Manager'], titleExcludes: [] }, at)
     expect(evaluateDiscoveryCandidate(english, { ...candidate, role: ' PRODUCT   manager ' }, undefined, new Date(at)).accepted).toBe(true)
   })
+  it('does not falsely broaden exact or excluded scopes and keeps quality restrictions unchanged', () => {
+    const exact = proposeSearchScope('只要纯产品经理', proposeSearchScope('产品经理'))
+    const before = structuredClone(exact)
+    expect(() => proposeSearchScope('更广一些', exact)).toThrow('仅增加检索词不能扩大范围')
+    expect(exact).toEqual(before)
+    const saved = mergeDiscoveryScope(undefined, exact, at)
+    const candidate = { company: 'A', role: 'AI 产品经理', sourceUrl: 'https://example.com/job', sourceTitle: 'Job', sourceEvidenceText: 'AI 产品经理', postingStatus: 'open' as const }
+    expect(evaluateDiscoveryCandidate(saved, candidate, undefined, new Date(at)).accepted).toBe(false)
+    const excluded = proposeSearchScope('不要AI', proposeSearchScope('产品经理'))
+    expect(() => proposeSearchScope('更广一些', excluded)).toThrow('当前限制未改动')
+    expect(excluded.titleExcludes).toEqual(['AI'])
+  })
   it('rejects contradictory exact conditions, unsupported instructions and unknown fields', () => {
     const draft = proposeSearchScope('产品经理')
     expect(() => mergeDiscoveryScope(undefined, { ...draft, titleEquals: ['产品经理'], titleExcludes: ['产品'] }, at)).toThrow('冲突')

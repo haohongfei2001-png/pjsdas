@@ -9,7 +9,8 @@ const phase = process.env.TA_SECONDARY_PHASE === 'before' ? 'before' : 'after'
 const evidence = `secondary-ui-${phase}`
 const now = '2026-09-23T08:00:00.000Z'
 const digest = (bytes: Buffer) => createHash('sha256').update(bytes).digest('hex')
-const modalRoots = '.cgr-capture-sheet, .backup-dialog, .event-dock, .prep-graph-dialog, .discovery-inbox-modal, .mcp-proposal-card'
+const modalRoots = '.cgr-capture-sheet, .backup-dialog, .event-dock, .prep-graph-dialog, .discovery-inbox-modal, .mcp-proposal-card, .ta-scope-dialog[open]'
+const originalJobFilters = ['全部', '待投递', '已投递', '收到笔试', '收到面试', '流程结束', '时间截止', '无截止日期']
 
 function fixture(appliedForLayout = false) {
   const snapshot = workspace()
@@ -57,10 +58,9 @@ function fixture(appliedForLayout = false) {
   return snapshot
 }
 
-async function seed(page: Page, appliedForLayout = false) {
+async function seed(page: Page, appliedForLayout = false, snapshot = fixture(appliedForLayout)) {
   await page.clock.setFixedTime(new Date(now))
   await seedSession(page.context())
-  const snapshot = fixture(appliedForLayout)
   const mutations: string[] = []
   await page.route(`${MOCK_TARGET_AUTH_ORIGIN}/**`, route => route.abort())
   await page.route(BACKEND + '/**', route => {
@@ -93,7 +93,7 @@ async function capture(page: Page, label: string, width: number, scale = 100, pr
   if (scrollRoot) await page.locator(scrollRoot).evaluate(element => { element.scrollTop = element.scrollHeight })
   const name = `${label}-${width}-${scale}.png`
   await mkdir(evidence, { recursive: true })
-  const overlay = await page.locator('.cgr-capture-backdrop, .backup-backdrop, .event-dock-backdrop, .prep-graph-backdrop, .discovery-inbox-modal-backdrop, .mcp-proposal-backdrop').count()
+  const overlay = await page.locator('.cgr-capture-backdrop, .backup-backdrop, .event-dock-backdrop, .prep-graph-backdrop, .discovery-inbox-modal-backdrop, .mcp-proposal-backdrop, .ta-scope-dialog[open]').count()
   const bytes = await page.screenshot({ path: `${evidence}/${name}`, fullPage: overlay === 0, animations: 'disabled', caret: 'hide' })
   if (protectMain && phase === 'after') {
     const baseline = await readFile(`secondary-ui-before/${name}`)
@@ -129,6 +129,105 @@ async function capture(page: Page, label: string, width: number, scale = 100, pr
   }
 }
 
+// B3 permits the new scope block, ninth query and retired Inbox link only.
+// Keep the unmodified full-page evidence, then compare real DOM regions without
+// masking, repainting, moving elements, changing the baseline, or pixel tolerance.
+async function protectLibrary(page: Page, width: number, scale: number) {
+  await capture(page, 'MAIN_JOBS', width, scale)
+  const filters = page.locator('.tsui-library-filters button')
+  await expect(filters).toHaveCount(phase === 'before' ? 8 : 9)
+  expect((await filters.allTextContents()).filter(label => !/^新发现 /.test(label))).toEqual(originalJobFilters)
+  await expect(page.locator('.ta-search-scope')).toHaveCount(phase === 'before' ? 0 : 1)
+  if (phase === 'after') await expect(page.locator('[data-job-filter="new"]')).toHaveText('新发现 0')
+  const geometry = await page.evaluate(labels => {
+    const rect = (selector: string) => {
+      const box = document.querySelector(selector)!.getBoundingClientRect()
+      return { x: box.x, y: box.y + scrollY, width: box.width, height: box.height }
+    }
+    const style = (element: Element) => {
+      const css = getComputedStyle(element)
+      // Actual flex wrapping may change with the ninth query. All original
+      // labels, typography, padding, colors, borders and flex rules stay exact.
+      return Object.fromEntries(['fontFamily', 'fontSize', 'fontWeight', 'lineHeight', 'color', 'backgroundColor',
+        'border', 'borderRadius', 'padding', 'minHeight', 'flex', 'gap'].map(key => [key, css[key as keyof CSSStyleDeclaration]]))
+    }
+    const oldFilters = labels.map(label => {
+      const button = [...document.querySelectorAll<HTMLButtonElement>('.tsui-library-filters button')].find(item => item.textContent === label)!
+      return { label, style: style(button), pressed: button.getAttribute('aria-pressed') }
+    })
+    const scope = document.querySelector('.ta-search-scope')
+    const scopeExtent = scope ? scope.getBoundingClientRect().height + parseFloat(getComputedStyle(scope).marginBottom) : 0
+    return { heading: rect('.tsui-library-heading'), toolbar: rect('.tsui-library-toolbar'), search: rect('.tsui-library-toolbar input'), panel: rect('.tsui-library-panel'),
+      total: rect('.tsui-library-total'), scopeExtent, oldFilters, searchStyle: style(document.querySelector('.tsui-library-toolbar input')!) }
+  }, originalJobFilters)
+  const metricName = `LIBRARY_CONTRACT-${width}-${scale}.json`
+  await writeFile(`${evidence}/${metricName}`, JSON.stringify(geometry, null, 2))
+  if (phase === 'after') {
+    const before = JSON.parse(await readFile(`secondary-ui-before/${metricName}`, 'utf8'))
+    expect(geometry.heading).toEqual(before.heading)
+    expect(geometry.oldFilters).toEqual(before.oldFilters)
+    expect(geometry.searchStyle).toEqual(before.searchStyle)
+    expect(geometry.toolbar.y - before.toolbar.y, 'only the scope block displaces the toolbar').toBe(geometry.scopeExtent)
+    expect(geometry.panel.y - before.panel.y, 'only scope height and query wrapping displace rows')
+      .toBe(geometry.scopeExtent + geometry.toolbar.height - before.toolbar.height)
+    expect(geometry.total.y - geometry.panel.y - geometry.panel.height).toBe(before.total.y - before.panel.y - before.panel.height)
+    for (const region of ['search', 'panel', 'total'] as const) {
+      expect({ ...geometry[region], y: 0 }).toEqual({ ...before[region], y: 0 })
+    }
+  }
+  for (const [label, selector] of [['HEADING', '.tsui-library-heading'], ['SEARCH', '.tsui-library-toolbar input'], ['ROWS', '.tsui-library-panel'], ['TOTAL', '.tsui-library-total']] as const) {
+    const name = `LIBRARY_${label}-${width}-${scale}.png`
+    const bytes = await page.locator(selector).screenshot({ path: `${evidence}/${name}`, animations: 'disabled', caret: 'hide' })
+    if (phase === 'after') {
+      const baseline = await readFile(`secondary-ui-before/${name}`)
+      expect(digest(bytes), `${name}: unchanged original Library region`).toBe(digest(baseline))
+    }
+  }
+  await page.evaluate(() => window.scrollTo(0, 0))
+}
+
+for (const width of [1440, 390, 320]) test(`original eight Library queries, deadline order and 40-row paging at ${width}`, async ({ page }) => {
+  const snapshot = fixture()
+  snapshot.data.actions = []; snapshot.data.scheduleNodes = []; snapshot.data.decisionRequests = []
+  snapshot.data.opportunities = Array.from({ length: 45 }, (_, index) => ({
+    ...snapshot.data.opportunities[0]!, id: `page-${String(index).padStart(3, '0')}`, company: `分页公司 ${index}`, role: '产品经理',
+    processStage: (['not_applied', 'screening', 'written_test', 'interview', 'offer', 'not_applied'] as const)[index] ?? 'not_applied',
+    ...(index === 0 || index === 5 ? { deadline: index === 0 ? '2026-09-25' : '2026-09-21', deadlinePrecision: 'date' as const } : {}),
+  }))
+  validateSnapshot(snapshot)
+  const mutations = await seed(page, false, snapshot)
+  await page.setViewportSize({ width, height: 900 })
+  await page.goto('/pjsdas/library')
+  const rows = page.locator('.tsui-job-row'), filters = page.locator('.tsui-library-filters')
+  await expect(rows).toHaveCount(40)
+  await expect(rows.nth(0)).toHaveAttribute('data-opportunity-id', 'page-005')
+  await expect(rows.nth(1)).toHaveAttribute('data-opportunity-id', 'page-000')
+  await expect(page.locator('.tsui-library-more')).toContainText('40/45')
+  await page.locator('.tsui-library-more').click()
+  await expect(rows).toHaveCount(45)
+  const ids = await rows.evaluateAll(elements => elements.map(element => element.getAttribute('data-opportunity-id')))
+  expect(new Set(ids).size).toBe(45)
+  await expect(page.locator('.tsui-library-more')).toHaveCount(0)
+  for (const [label, count] of originalJobFilters.map((label, index) => [label, [40, 1, 1, 1, 1, 1, 1, 39][index]] as const)) {
+    await filters.getByRole('button', { name: label, exact: true }).click()
+    await expect(rows).toHaveCount(count)
+    await expect(filters.getByRole('button', { name: label, exact: true })).toHaveAttribute('aria-pressed', 'true')
+  }
+  await filters.getByRole('button', { name: '全部', exact: true }).click()
+  const search = page.getByRole('searchbox', { name: '搜索公司或岗位', exact: true })
+  await search.fill('分页公司 44')
+  await expect(rows).toHaveCount(1)
+  await expect(rows).toHaveAttribute('data-opportunity-id', 'page-044')
+  await search.fill('')
+  await expect(rows).toHaveCount(40)
+  if (phase === 'after') {
+    await page.locator('[data-job-filter="new"]').click()
+    await expect(rows).toHaveCount(0)
+    await expect(page.locator('[data-job-filter="new"]')).toHaveText('新发现 0')
+  }
+  expect(mutations).toEqual([])
+})
+
 for (const width of [1440, 390, 320]) test(`main pixels stay fixed before and after secondary navigation at ${width}`, async ({ page }) => {
   const mutations = await seed(page, true)
   const scale = width === 320 ? 200 : 100
@@ -140,7 +239,7 @@ for (const width of [1440, 390, 320]) test(`main pixels stay fixed before and af
   await capture(page, 'MAIN_TODAY', width, scale, true)
   await page.locator('.tsui-primary-nav').getByRole('button', { name: '岗位库', exact: true }).click()
   await expect(page.locator('.tsui-job-open')).toHaveCount(2)
-  await capture(page, 'MAIN_JOBS', width, scale, true)
+  await protectLibrary(page, width, scale)
   await page.locator('.tsui-primary-nav').getByRole('button', { name: '日程', exact: true }).click()
   await expect(page.locator('.tsui-schedule-row')).toHaveCount(1)
   await capture(page, 'MAIN_SCHEDULE', width, scale, true)
@@ -208,9 +307,15 @@ for (const width of [1440, 390, 320]) test(`details and settings retain readable
   await expect(page.locator('.settings-group > summary').filter({ hasText: '可用时间' })).toHaveCount(0)
   await expect(page.getByRole('button', { name: '保存时段', exact: true })).toHaveCount(0)
   await capture(page, 'SETTINGS_PLANNING_RETIRED', width, width === 320 ? 200 : 100)
-  await page.locator('.settings-group > summary').filter({ hasText: '岗位发现偏好' }).click()
-  await expect(page.locator('.discovery-profile-grid')).toBeVisible()
-  await capture(page, 'SETTINGS_DISCOVERY', width, width === 320 ? 200 : 100)
+  if (phase === 'before') {
+    await page.locator('.settings-group > summary').filter({ hasText: '岗位发现偏好' }).click()
+    await expect(page.locator('.discovery-profile-grid')).toBeVisible()
+    await capture(page, 'SETTINGS_DISCOVERY', width, width === 320 ? 200 : 100)
+  } else {
+    await expect(page.locator('.settings-group > summary').filter({ hasText: '岗位发现偏好' })).toHaveCount(0)
+    await expect(page.locator('.discovery-profile-grid')).toHaveCount(0)
+    await capture(page, 'SETTINGS_DISCOVERY_RETIRED', width, width === 320 ? 200 : 100)
+  }
   if (phase === 'after') {
     await expect(page.locator('.settings-group > summary').filter({ hasText: '决策规则' })).toHaveCount(0)
     await expect(page.locator('.rules-grid')).toHaveCount(0)
@@ -242,11 +347,24 @@ for (const width of [1440, 390, 320]) test(`secondary previews and unknown-save 
   await capture(page, 'PREPARATION_DETAIL', width, scale)
   await page.locator('.prep-graph-close').click()
   await page.locator('.tsui-library-back').click()
-  await page.getByRole('button', { name: '搜索范围', exact: true }).click()
-  await expect(page.getByRole('dialog', { name: '每天帮你找新岗位' })).toBeVisible()
-  await capture(page, 'SEARCH_SCOPE', width, scale)
-  await page.getByRole('dialog').getByRole('button', { name: '关闭', exact: true }).click()
-  await expect(page.getByRole('dialog')).not.toBeVisible()
+  if (phase === 'before') {
+    await page.locator('.tsui-library-secondary button').filter({ hasText: '发现箱' }).click()
+    await page.getByRole('button', { name: '加入 Opportunities', exact: true }).click()
+    await expect(page.getByRole('dialog', { name: '加入机会池预览' })).toBeVisible()
+    await capture(page, 'DISCOVERY_DETAIL', width, scale)
+    await page.locator('.discovery-inbox-modal-actions').getByRole('button', { name: '取消', exact: true }).click()
+    await expect(page.locator('.discovery-inbox-modal')).toHaveCount(0)
+  } else {
+    await expect(page.locator('.tsui-library-secondary button').filter({ hasText: '发现箱' })).toHaveCount(0)
+    await page.getByRole('button', { name: '搜索范围', exact: true }).click()
+    const scope = page.getByRole('dialog', { name: '每天帮你找新岗位' })
+    await expect(scope).toBeVisible()
+    await expect(scope.getByRole('button', { name: '开启每日发现（待预算）', exact: true })).toBeDisabled()
+    await capture(page, 'SEARCH_SCOPE', width, scale)
+    await scope.getByRole('button', { name: '关闭', exact: true }).click()
+    await expect(scope).not.toBeVisible()
+    await expect(page.getByRole('button', { name: '搜索范围', exact: true })).toBeFocused()
+  }
   await page.goto('/pjsdas/today#pjsdas-proposal=synthetic-invalid-signature')
   await expect(page.locator('.mcp-proposal-card').getByRole('button', { name: '关闭', exact: true })).toBeVisible()
   await capture(page, 'PROPOSAL_REJECTED', width, scale)

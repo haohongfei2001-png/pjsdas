@@ -653,6 +653,8 @@ test('B3 job viewed and Search Scope persist across devices through scoped first
   accountB.snapshot.data.opportunities[0].company = 'B独立公司'
   const commandBodies: Array<Record<string, any>> = []
   let snapshotCommits = 0
+  let releaseViewFailure: (() => void) | undefined
+  let failFirstView = true
 
   async function install(page: Page) {
     await seedInitialSession(page, 'account-a', 'token-a')
@@ -675,6 +677,11 @@ test('B3 job viewed and Search Scope persist across devices through scoped first
       if (body.action === 'command') {
         commandBodies.push(body)
         const command = body.command
+        if (command?.type === 'job_viewed' && failFirstView) {
+          failFirstView = false
+          await new Promise<void>(resolve => { releaseViewFailure = resolve })
+          return cors(route, { code: 'SYNTHETIC_TRANSIENT_FAILURE', message: 'Synthetic late read-state failure' }, 503)
+        }
         if (command?.type === 'job_viewed' && command.value?.opportunityId === jobId) {
           activeState.snapshot = applyJobViewedCommand(activeState.snapshot, jobId).snapshot
         } else if (command?.type === 'discovery_profile') {
@@ -716,7 +723,17 @@ test('B3 job viewed and Search Scope persist across devices through scoped first
     await pageA.goto('/pjsdas/library')
     await expect(pageA.locator('[data-job-filter="new"]')).toContainText('1')
     await pageA.locator(`.tsui-job-open[data-opportunity-id="${jobId}"]`).click()
-    await expect.poll(() => commandBodies.length).toBe(1)
+    await expect.poll(() => typeof releaseViewFailure).toBe('function')
+    await pageA.goBack()
+    await expect(pageA.locator('.tsui-library')).toBeVisible()
+    releaseViewFailure!()
+    await expect(pageA.getByRole('status').filter({ hasText: '已读状态尚未确认' })).toBeVisible()
+    expect(commandBodies).toHaveLength(1)
+    expect(state.snapshot.data.opportunities[0].discoveryRead?.viewedAt).toBeUndefined()
+    await pageA.locator(`.tsui-job-open[data-opportunity-id="${jobId}"]`).click()
+    await expect.poll(() => commandBodies.length).toBe(2)
+    await expect.poll(() => state.snapshot.data.opportunities[0].discoveryRead?.viewedAt).toBeTruthy()
+    expect(commandBodies[1].commandId).toBe(commandBodies[0].commandId)
     expect(commandBodies[0].command).toEqual({ type: 'job_viewed', value: { opportunityId: jobId } })
     expect(commandBodies[0]).not.toHaveProperty('snapshot')
     expect(snapshotCommits).toBe(0)
@@ -729,9 +746,9 @@ test('B3 job viewed and Search Scope persist across devices through scoped first
     await scope.getByRole('button', { name: '整理搜索范围' }).click()
     await scope.getByRole('button', { name: '保存搜索范围' }).click()
     await expect(scope.getByRole('status')).toContainText('搜索范围已保存')
-    expect(commandBodies).toHaveLength(2)
-    expect(commandBodies[1].command).toMatchObject({ type: 'discovery_profile', value: { targetRoleQueries: ['合成产品设计师'] } })
-    expect(commandBodies[1].command.expectedFingerprint).toMatch(/^[a-f0-9]{64}$/)
+    expect(commandBodies).toHaveLength(3)
+    expect(commandBodies[2].command).toMatchObject({ type: 'discovery_profile', value: { targetRoleQueries: ['合成产品设计师'] } })
+    expect(commandBodies[2].command.expectedFingerprint).toMatch(/^[a-f0-9]{64}$/)
     expect(snapshotCommits).toBe(0)
     await pageB.reload()
     await pageB.getByRole('button', { name: '搜索范围', exact: true }).click()
@@ -747,7 +764,7 @@ test('B3 job viewed and Search Scope persist across devices through scoped first
     await expect(pageB.locator('.tsui-job-open').filter({ hasText: 'B独立公司' })).toBeVisible()
     await expect(pageB.locator('[data-job-filter="new"]')).toContainText('1')
     expect(accountB.snapshot.data.opportunities[0].discoveryRead?.viewedAt).toBeUndefined()
-    expect(commandBodies).toHaveLength(2)
+    expect(commandBodies).toHaveLength(3)
 
   } finally {
     await first.close()
