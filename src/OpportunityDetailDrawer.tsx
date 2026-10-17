@@ -40,6 +40,7 @@ interface OpportunityDetailDrawerProps {
   onMarkAction: (id: string, status: Action['status'], intent?: 'application_submission') => Promise<void>
   onJobAction?: (id: string, kind: 'today' | 'submission') => Promise<WebSemanticCaptureResult | void>
   onUndoJobAction?: (token: LocalSemanticUndoToken) => Promise<void>
+  writeBlocked?: boolean
   readOnly?: boolean
   asPage?: boolean
   returnLabel?: string
@@ -109,6 +110,7 @@ export default function OpportunityDetailDrawer({
   onJobAction,
   onUndoJobAction,
   readOnly = false,
+  writeBlocked = false,
   asPage = false,
   returnLabel,
 }: OpportunityDetailDrawerProps) {
@@ -177,7 +179,7 @@ export default function OpportunityDetailDrawer({
   }, [onClose, asPage])
 
   async function saveJobIntent(kind: 'today' | 'submission') {
-    if (!onJobAction || pendingActionId || jobIntentFlightRef.current) return
+    if (writeBlocked || !onJobAction || pendingActionId || jobIntentFlightRef.current) return
     jobIntentFlightRef.current = true
     setPendingActionId(kind)
     setJobReceipt(undefined)
@@ -224,15 +226,17 @@ export default function OpportunityDetailDrawer({
           <div className="job-detail-actions">
             {eligibleToApply && confirmedApplicationUrl ? <a href={confirmedApplicationUrl} target="_blank" rel="noopener noreferrer">{zh ? '打开申请入口 ↗' : 'Open application ↗'}</a> : null}
             {eligibleToApply && !readOnly && onJobAction ? <>
-              <button type="button" disabled={Boolean(pendingActionId)} onClick={() => { void saveJobIntent('today') }}>{pendingActionId === 'today' ? (zh ? '保存中…' : 'Saving…') : (zh ? '加入今天' : 'Add to today')}</button>
-              <button type="button" disabled={Boolean(pendingActionId)} onClick={() => { void saveJobIntent('submission') }}>{pendingActionId === 'submission' ? (zh ? '确认中…' : 'Confirming…') : (zh ? '我已投递' : 'I applied')}</button>
-            </> : eligibleToApply && applyAction && !readOnly ? <button type="button" disabled={Boolean(pendingActionId)} onClick={() => {
+              <button type="button" disabled={writeBlocked || Boolean(pendingActionId)} onClick={() => { void saveJobIntent('today') }}>{pendingActionId === 'today' ? (zh ? '保存中…' : 'Saving…') : (zh ? '加入今天' : 'Add to today')}</button>
+              <button type="button" disabled={writeBlocked || Boolean(pendingActionId)} onClick={() => { void saveJobIntent('submission') }}>{pendingActionId === 'submission' ? (zh ? '确认中…' : 'Confirming…') : (zh ? '我已投递' : 'I applied')}</button>
+            </> : eligibleToApply && applyAction && !readOnly ? <button type="button" disabled={writeBlocked || Boolean(pendingActionId)} onClick={() => {
+              if (writeBlocked) return
               setPendingActionId(applyAction.id)
               void onMarkAction(applyAction.id, 'done', 'application_submission').finally(() => setPendingActionId(undefined))
             }}>{zh ? '我已投递' : 'I applied'}</button> : null}
             {eligibleToApply && !confirmedApplicationUrl ? <span className="job-detail-no-link">{zh ? '暂无已确认的申请入口' : 'No confirmed application link'}</span> : null}
             <button type="button" className="job-detail-capture" disabled={readOnly} onClick={onCapture}>{zh ? '告诉 TodayAction' : 'Tell TodayAction'}</button>
           </div>
+          {writeBlocked && !readOnly ? <p role="status">{zh ? '账号尚未确认，确认后可记录投递或加入今天。' : 'Account not confirmed. Recording submission and adding to today will be available after account confirmation.'}</p> : null}
           {jobReceipt ? <p role={jobReceipt.error ? 'alert' : 'status'}>{jobReceipt.message} {jobReceipt.undo && onUndoJobAction ? <button type="button" disabled={Boolean(pendingActionId)} onClick={() => {
             setPendingActionId('undo')
             void onUndoJobAction(jobReceipt.undo!).then(() => setJobReceipt({ message: zh ? '已撤销。' : 'Undone.' })).catch(error => setJobReceipt({ message: String(error), error: true })).finally(() => setPendingActionId(undefined))

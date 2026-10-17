@@ -8,6 +8,12 @@ export class WorkspaceWriteAuthError extends Error {
   }
 }
 
+/** Shared identity predicate for UI availability and the authoritative lease.
+ * A retained owner alone never grants write authority. */
+export function workspaceWriteIdentityMatches(accountKey: string | undefined, active: string | undefined, owner: string | undefined) {
+  return accountKey ? active === accountKey && (!owner || owner === accountKey) : !owner && !active
+}
+
 /** Admission never derives authority from a retained cache owner. The caller
  * must supply its resolved account, or be a known anonymous, unbound user. */
 export function captureWorkspaceWriteLease(accountKey?: string) {
@@ -16,7 +22,7 @@ export function captureWorkspaceWriteLease(accountKey?: string) {
     if (!isAccountCacheSessionResolved()) throw new WorkspaceWriteAuthError()
     const owner = readBinding()?.workspaceOwnerUserId
     const active = currentAccountCacheSession()
-    if (accountKey ? active !== accountKey || Boolean(owner && owner !== accountKey) : Boolean(owner || active)) {
+    if (!workspaceWriteIdentityMatches(accountKey, active, owner)) {
       throw new WorkspaceWriteAuthError()
     }
   }

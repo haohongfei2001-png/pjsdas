@@ -1,3 +1,4 @@
+import { currentAccountCacheSession, isAccountCacheSessionResolved } from './cloud/accountCacheLease.js'
 import { submitWebSemanticCapture, undoWebSemanticChange, type WebSemanticCaptureResult, type LocalSemanticUndoToken } from './webSemanticIntake.js'
 import { createInteractionQuietScheduler, interactionIsRecent, observeInteractionActivity } from './cloud/interactionActivity.js'
 import { todayScheduleSnapshot, patchConsumerSnapshot } from './today/consumerScheduleSnapshot.js'
@@ -27,7 +28,7 @@ import CloudSettingsCard from './cloud/CloudSettingsCard.js'
 import { useCloud } from './cloud/CloudContext.js'
 import { ensureAuthoritativePersistence } from './cloud/authoritativePersistence.js'
 import { connectedWorkspaceAuthorityEnabled } from './cloud/connectedWorkspaceRepository.js'
-import { captureWorkspaceWriteLease } from './cloud/workspaceWriteLease.js'
+import { captureWorkspaceWriteLease, workspaceWriteIdentityMatches } from './cloud/workspaceWriteLease.js'
 import { getAccountCheckpoint } from './cloud/syncState.js'
 import {
   refreshConnectedAuthoritativeCache,
@@ -158,6 +159,9 @@ function LanguageSwitch() {
 export default function AppV8() {
   const { lang } = useUiLanguage()
   const cloud = useCloud()
+  // CloudContext publishes Auth/binding changes; a painted cache is not write admission.
+  const jobWriteBlocked = cloud.loading || !isAccountCacheSessionResolved()
+    || !workspaceWriteIdentityMatches(cloud.session?.user.id, currentAccountCacheSession(), cloud.device.workspaceOwnerUserId)
   const zh = lang === 'zh'
   const [route, setRoute] = useState<RouteState>(() => routeFromPath())
   const [captureReturnPath, setCaptureReturnPath] = useState('/today')
@@ -964,7 +968,7 @@ export default function AppV8() {
             onCapture={openCapture} onNavigate={navigateFromDetail}
             onOpenDecision={(id) => navigate('/decisions/' + encodeURIComponent(id) + '?from=' + encodeURIComponent(selectedOpportunity.id))}
             onJobAction={recordJobAction} onUndoJobAction={undoJobAction}
-            onMarkAction={markAction} readOnly={CGR02_TODAY_READ_ONLY}
+            onMarkAction={markAction} readOnly={CGR02_TODAY_READ_ONLY} writeBlocked={jobWriteBlocked}
           />
         ) : null}
         {!loading && surface === 'decisions' ? <DecisionRequestsView requests={decisionRequests} opportunities={opportunities} scheduleNodes={snapshot?.data.scheduleNodes ?? []} reminderIntents={snapshot?.data.reminderIntents ?? []} focusRequestId={route.decisionRequestId}
