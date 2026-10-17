@@ -1,0 +1,117 @@
+name: B3 library clip and history profile (DIAGNOSTIC_ONLY)
+on:
+  pull_request:
+    types: [opened]
+    paths:
+      - 'e2e/libraryClipDiagnostic.ui.ts'
+      - 'e2e/historyScalingDiagnostic.perf.ts'
+      - 'playwright.library-clip.config.mts'
+      - '.github/workflows/b3-library-history-diagnosis.yml'
+env:
+  VITE_PJSDAS_CLOUD_MODE: mock
+permissions:
+  contents: read
+jobs:
+  library-clip:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      # Fixed, already accepted pre-B1 runtime: deadline-only copy (#255) and
+      # operation-history separation (#256). Never use the candidate or transform pixels.
+      TA_SECONDARY_BASE: dbad72074299c8f585a9b13d5f4ae0b3a6b32116
+      TA_SECONDARY_DIAG: 1
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: |
+          node scripts/verify-installed-runtime-lock.mjs --capture
+          npm install --no-save @playwright/test@1.63.0
+          node scripts/verify-installed-runtime-lock.mjs
+      - run: npx playwright install --with-deps chromium
+      - name: Prove mock cloud isolation before application browser tests
+        run: npx playwright test --config=playwright.cloud-guard.config.mts --project=chromium
+      - name: Render the fixed approved pre-B1 reference
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch --depth=1 origin "$TA_SECONDARY_BASE"
+          baseline_dir="$RUNNER_TEMP/secondary-ui-base"
+          git worktree add --detach "$baseline_dir" "$TA_SECONDARY_BASE"
+          copy_baseline_evidence() {
+            if [ -d "$baseline_dir/secondary-ui-before" ]; then
+              cp -R "$baseline_dir/secondary-ui-before" "$GITHUB_WORKSPACE/"
+            fi
+            for name in library-clip-report test-results; do
+              if [ -d "$baseline_dir/$name" ]; then
+                mkdir -p "$GITHUB_WORKSPACE/secondary-baseline-evidence"
+                cp -R "$baseline_dir/$name" "$GITHUB_WORKSPACE/secondary-baseline-evidence/"
+              fi
+            done
+          }
+          trap copy_baseline_evidence EXIT
+          cp e2e/libraryClipDiagnostic.ui.ts "$baseline_dir/e2e/"
+          mkdir -p "$baseline_dir/e2e/support"
+          cp e2e/support/mockCloudIsolation.mts e2e/support/mockCloudProxySetup.mjs e2e/support/mockCloudTargets.ts e2e/support/libraryLayoutContract.ts "$baseline_dir/e2e/support/"
+          cp playwright.library-clip.config.mts "$baseline_dir/"
+          ln -s "$GITHUB_WORKSPACE/node_modules" "$baseline_dir/node_modules"
+          cd "$baseline_dir"
+          GITHUB_SHA="$TA_SECONDARY_BASE" PJSDAS_VITE_BASE=/pjsdas/ VITE_PJSDAS_CONNECTED_AUTHORITY=transactional npm run build
+          TA_SECONDARY_PHASE=before npx playwright test --config=playwright.library-clip.config.mts --grep 'main pixels stay fixed|document region capture retains'
+      - name: Check complete native region clips against the fixed reference
+        run: |
+          PJSDAS_VITE_BASE=/pjsdas/ VITE_PJSDAS_CONNECTED_AUTHORITY=transactional npm run build
+          TA_SECONDARY_PHASE=after npx playwright test --config=playwright.library-clip.config.mts --grep 'main pixels stay fixed|document region capture retains'
+      - name: Keep both phases and their failure evidence
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v5
+        with:
+          name: library-clip-before-after
+          path: |
+            secondary-ui-before/
+            secondary-baseline-evidence/
+            secondary-ui-after/
+            library-clip-report/
+            test-results/library-clip-diagnostic/
+          retention-days: 14
+  history-scaling-profile:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    container:
+      image: mcr.microsoft.com/playwright:v1.63.0-noble@sha256:eff16c30e6f3f4af0a03fa4b706120d5e9b0891c344a27d64559aff5900a4a27
+      options: --init --ipc=host
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: |
+          node scripts/verify-installed-runtime-lock.mjs --capture
+          npm install --no-save @playwright/test@1.63.0
+          node scripts/verify-installed-runtime-lock.mjs
+      - run: chown "$(id -u):$(id -g)" "$HOME"
+      - name: Prove mock cloud isolation
+        run: npx playwright test --config=playwright.cloud-guard.config.mts --project=chromium
+      - name: Record one native history-scaling profile (not acceptance)
+        env:
+          PLAYWRIGHT_HTML_OUTPUT_DIR: playwright-report/history-native-diagnostic
+        run: >-
+          npx playwright test --config=playwright.perf.config.mts --project=chromium
+          e2e/historyScalingDiagnostic.perf.ts
+      - uses: actions/upload-artifact@v5
+        if: ${{ !cancelled() }}
+        with:
+          name: history-scaling-native-diagnostic
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 7
