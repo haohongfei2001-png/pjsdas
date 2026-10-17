@@ -13,11 +13,12 @@ import { getAccountCheckpoint, getCloudDeviceState, patchAccountCheckpoint } fro
 import { equivalentReadProjection, fingerprintWorkspace } from './workspaceFingerprint.js'
 
 export type ConnectedBusinessCommand =
+  | { type: 'job_viewed'; value: { opportunityId: string } }
   | { type: 'domain'; value: UserDomainCommand }
   | { type: 'semantic_intake'; value: SemanticIntakeObservation }
   | { type: 'resolve_semantic_decision'; value: { requestId: string; choiceId: string } }
   | { type: 'discovery_status'; value: DiscoveryStatusCommand }
-  | { type: 'discovery_profile'; value: DiscoveryScopeInput }
+  | { type: 'discovery_profile'; value: DiscoveryScopeInput; expectedFingerprint?: string }
   | { type: 'discovery_promotion'; value: { inboxItemId: string } }
   | { type: 'process_event_delete'; value: { eventId: string } }
   | { type: 'mcp_save_inbox'; value: { token: string } }

@@ -368,6 +368,12 @@ export function validateSnapshot(value: unknown): asserts value is PJSDASSnapsho
 
   const opportunityIds = assertUniqueIds(data.opportunities, 'Opportunity')
   for (const opportunity of data.opportunities as Opportunity[]) {
+    if (opportunity.discoveryRead !== undefined) {
+      const read = opportunity.discoveryRead
+      if (!isObject(read) || read.version !== 1 || Object.keys(read).some(key => !['version', 'addedAt', 'viewedAt'].includes(key))) throw new Error('Invalid job read metadata.')
+      assertIsoDate(read.addedAt, 'Job addedAt')
+      if (read.viewedAt !== undefined) assertIsoDate(read.viewedAt, 'Job viewedAt')
+    }
     const corrections = opportunity.detail?.deadlineCorrections
     if (corrections !== undefined && !Array.isArray(corrections)) throw new Error('备份损坏：投递截止更正历史无效。')
     const ids = new Set<string>()

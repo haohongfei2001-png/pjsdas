@@ -1,3 +1,4 @@
+import { isUnreadJob } from './jobReadState.js'
 import { currentAccountCacheSession, isAccountCacheSessionResolved } from './cloud/accountCacheLease.js'
 import { submitWebSemanticCapture, undoWebSemanticChange, type WebSemanticCaptureResult, type LocalSemanticUndoToken } from './webSemanticIntake.js'
 import { createInteractionQuietScheduler, interactionIsRecent, observeInteractionActivity } from './cloud/interactionActivity.js'
@@ -15,6 +16,7 @@ import {
   exportLocalSnapshot,
   replaceImportedData,
   saveLocalTimePlanning,
+  markLocalJobViewed,
 } from './db.js'
 import { parsePJSDASWorkbook } from './importExcelV2.js'
 import { presentPrepSourceState } from './prepSemantics.js'
@@ -44,8 +46,8 @@ import {
   queueConnectedBusinessCommand,
   undoConnectedBusinessCommand,
 } from './cloud/authoritativeCommandClient.js'
-import DiscoveryProfileCard from './DiscoveryProfileCard.js'
-import DiscoveryInboxView from './DiscoveryInboxView.js'
+import SearchScope from './jobs/SearchScope.js'
+import type { ReactNode } from 'react'
 import PrepGraphDock from './PrepGraphDock.js'
 import ProcessEventDock from './ProcessEventDock.js'
 import LocalBackupDock from './LocalBackupDock.js'
@@ -88,7 +90,7 @@ import './tsui02.css'
 
 type Surface = 'today' | 'opportunities' | 'schedule' | 'decisions' | 'history' | 'settings'
 type PrimarySurface = 'today' | 'opportunities' | 'schedule'
-type OpportunityTab = 'opportunities' | 'prepare' | 'discovery'
+type OpportunityTab = 'opportunities' | 'prepare'
 type CompletionFeedback = { id: string; title: string; previousStatus?: Action['status']; commandId?: string; localUndo?: ActionStatusUndo; accountKey?: string; writeLease?: ReturnType<typeof captureWorkspaceWriteLease>; syncMessage?: string; outcome: 'done' | 'no_write' | 'queued' | 'confirmed_pending' | 'error'; error?: string }
 type RouteState = {
   surface: Surface
@@ -173,6 +175,11 @@ export default function AppV8() {
   const [opportunityView, setOpportunityView] = useState<JobFilter>('all')
   const [jobVisibleCount, setJobVisibleCount] = useState(40)
   const [opportunityQuery, setOpportunityQuery] = useState('')
+  const [retainedNewIds, setRetainedNewIds] = useState<string[]>([])
+  const [readError, setReadError] = useState('')
+  const [readRetry, setReadRetry] = useState(0)
+  const readAttempts = useRef(new Map<string, { commandId: string; attempt: number }>())
+  useEffect(() => { setRetainedNewIds([]); setReadError(''); readAttempts.current.clear() }, [cloud.session?.user.id])
   const detailOrigin = useRef<{ path: string; scrollY: number; actionId?: string; opportunityId?: string } | null>(null)
   const [interactionNotice, setInteractionNotice] = useState<{ commandId: string; message: string }>()
   const completionRef = useRef<CompletionFeedback | null>(null)
@@ -514,6 +521,36 @@ export default function AppV8() {
   const decisionRequests = snapshot?.data.decisionRequests ?? []
   const workspaceEmpty = opportunities.length === 0 && actions.length === 0 && processes.length === 0 && prep.length === 0
   const selectedOpportunity = selectedOpportunityId ? opportunities.find((item) => item.id === selectedOpportunityId) : undefined
+  useEffect(() => {
+    if (!selectedOpportunity || !isUnreadJob(selectedOpportunity) || jobWriteBlocked || loading) return
+    const key = `${accountKey}:${selectedOpportunity.id}`
+    const priorAttempt = readAttempts.current.get(key)
+    if (priorAttempt?.attempt === readRetry) return
+    const commandId = priorAttempt?.commandId ?? createConnectedCommandId('job-viewed')
+    readAttempts.current.set(key, { commandId, attempt: readRetry })
+    const id = selectedOpportunity.id
+    let active = true
+    const lease = captureWorkspaceWriteLease(cloud.session?.user.id)
+    void (async () => {
+      try {
+        lease.assertCurrent()
+        if (cloud.session && connectedWorkspaceAuthorityEnabled()) {
+          const result = await executeConnectedBusinessCommand(cloud.session.user.id,
+            { type: 'job_viewed', value: { opportunityId: id } }, { commandId })
+          if (!['COMMITTED', 'ALREADY_APPLIED'].includes(result.outcome)) throw new Error(result.conflict?.message ?? 'Read state was not saved.')
+        } else {
+          await markLocalJobViewed(id, lease.assertCurrent)
+          if (cloud.session) await ensureAuthoritativePersistence(true, cloud.syncNow)
+        }
+        lease.assertCurrent()
+        await reload()
+      } catch (error) {
+        try { lease.assertCurrent() } catch { return }
+        if (active) setReadError(error instanceof Error ? error.message : String(error))
+      }
+    })()
+    return () => { active = false }
+  }, [selectedOpportunity?.id, selectedOpportunity?.discoveryRead?.viewedAt, accountKey, jobWriteBlocked, loading, readRetry])
   const selectedDecisionRequests: DecisionRequest[] = selectedOpportunity
     ? partitionDecisions(decisionRequests, {
       opportunities, scheduleNodes: snapshot?.data.scheduleNodes,
@@ -705,6 +742,7 @@ export default function AppV8() {
   }
 
   function openOpportunity(id: string, opener?: HTMLElement) {
+    if (opportunityView === 'new') setRetainedNewIds(ids => ids.includes(id) ? ids : [...ids, id])
     const active = opener ?? document.activeElement as HTMLElement | null
     detailOrigin.current = {
       path: selectedOpportunityId ? '/library' : semanticPath() + window.location.search,
@@ -727,7 +765,7 @@ export default function AppV8() {
       } else if (origin.opportunityId) {
         const row = [...document.querySelectorAll<HTMLElement>('.opportunity-decision-row[data-opportunity-id]')]
           .find((element) => element.dataset.opportunityId === origin.opportunityId)
-        row?.focus()
+        ;(row ?? document.querySelector<HTMLElement>('[data-job-filter="new"]'))?.focus()
       }
     })
   }
@@ -948,9 +986,10 @@ export default function AppV8() {
           onOccurrenceCommand={scheduleOccurrenceCommand} onPendingOccurrence={pendingScheduleOccurrence}
           onUndoOccurrenceCommand={undoScheduleOccurrenceCommand} /> : null}
 
+        {readError ? <p role="status">{zh ? '已读状态尚未确认：' : 'Read state is not yet confirmed: '}{readError}{selectedOpportunity ? <button type="button" onClick={() => { setReadError(''); setReadRetry(value => value + 1) }}>{zh ? '重试' : 'Retry'}</button> : null}</p> : null}
         {!loading && surface === 'opportunities' && opportunityDecisionList && !selectedOpportunityId ? (
-          <OpportunitiesSurface read={opportunityDecisionList} opportunities={opportunities} prep={prep} tab={opportunityTab} onTabChange={chooseOpportunityTab}
-            view={opportunityView} onViewChange={setOpportunityView} query={opportunityQuery} onQueryChange={setOpportunityQuery}
+          <OpportunitiesSurface searchScope={<SearchScope key={accountKey} profile={snapshot?.data.discoveryProfile} blocked={jobWriteBlocked} onChanged={reload} />} read={opportunityDecisionList} opportunities={opportunities} prep={prep} tab={opportunityTab} onTabChange={chooseOpportunityTab}
+            retainedNewIds={retainedNewIds} view={opportunityView} onViewChange={value => { setRetainedNewIds([]); setOpportunityView(value) }} query={opportunityQuery} onQueryChange={value => { setRetainedNewIds([]); setOpportunityQuery(value) }}
             visibleCount={jobVisibleCount} onVisibleCountChange={setJobVisibleCount} onOpenOpportunity={openOpportunity} />
         ) : null}
         {!loading && surface === 'opportunities' && selectedOpportunityId && !selectedOpportunity ? (
@@ -1006,8 +1045,10 @@ export default function AppV8() {
 
 function OpportunitiesSurface({
   read, opportunities, prep, tab, onTabChange, view, onViewChange, query, onQueryChange,
-  visibleCount, onVisibleCountChange, onOpenOpportunity,
+  visibleCount, onVisibleCountChange, onOpenOpportunity, retainedNewIds, searchScope,
 }: {
+  searchScope: ReactNode
+  retainedNewIds: string[]
   read: OpportunityDecisionListRead
   opportunities: PJSDASSnapshot['data']['opportunities']
   prep: Prep[]
@@ -1025,16 +1066,15 @@ function OpportunitiesSurface({
   const zh = lang === 'zh'
   return <section className="opportunities-surface">
     {tab === 'opportunities' ? <>
-      <JobLibrary read={read} opportunities={opportunities} filter={view} onFilterChange={onViewChange}
+      <JobLibrary searchScope={searchScope} retainedNewIds={retainedNewIds} read={read} opportunities={opportunities} filter={view} onFilterChange={onViewChange}
         query={query} onQueryChange={onQueryChange} visibleCount={visibleCount}
         onVisibleCountChange={onVisibleCountChange} onOpenOpportunity={onOpenOpportunity} />
       <div className="tsui-library-secondary">
         <button type="button" onClick={() => onTabChange('prepare')}>{zh ? '准备资产' : 'Preparation'} · {prep.length}</button>
-        <button type="button" onClick={() => onTabChange('discovery')}>{zh ? '发现箱' : 'Discovery inbox'}</button>
       </div>
     </> : <>
       <button className="tsui-library-back" type="button" onClick={() => onTabChange('opportunities')}>← {zh ? '返回岗位库' : 'Back to jobs'}</button>
-      {tab === 'prepare' ? <PreparePanel prep={prep} /> : <DiscoveryInboxView />}
+      <PreparePanel prep={prep} />
     </>}
   </section>
 }
@@ -1094,10 +1134,6 @@ function SettingsSurface({ lastImport, onChanged, onOpenActivity, onOpenDataQual
       <div className="settings-preferences tsui-panel" aria-label={zh ? '偏好与数据' : 'Preferences and data'}>
 
 
-      <details className="settings-group">
-        <summary><div><strong>{zh ? '岗位发现偏好' : 'Discovery preferences'}</strong><span>{zh ? '想找的岗位、城市与公司' : 'Roles, locations and companies'}</span></div></summary>
-        <div className="settings-group-body"><DiscoveryProfileCard /></div>
-      </details>
 
       <details className="settings-group">
         <summary><div><strong>{zh ? '数据与恢复' : 'Data & recovery'}</strong><span>{zh ? '备份、导入和恢复路径' : 'Backup, import, and recovery paths'}</span></div></summary>

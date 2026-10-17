@@ -1,55 +1,33 @@
 import { expect, test } from '@playwright/test'
 
-test('Job discovery preferences are bilingual, persist, and never show stale save success after edits', async ({ page }) => {
-  await page.goto('/')
-  await expect(page.getByRole('heading', { name: '今天', exact: true })).toBeVisible()
-
+test('B3 Search Scope proposes then saves factual criteria, reloads, and is bilingual', async ({ page }) => {
+  await page.goto('/pjsdas/library')
+  await page.getByRole('button', { name: '搜索范围', exact: true }).click()
+  const dialog = page.getByRole('dialog')
+  await dialog.getByLabel('你想找什么岗位？').fill('产品经理')
+  await dialog.getByRole('button', { name: '整理搜索范围' }).click()
+  await dialog.getByLabel('修改搜索范围', { exact: true }).fill('更广一些')
+  await dialog.getByRole('button', { name: '更新准则' }).click()
+  await expect(dialog.locator('.ta-scope-query-chip input')).toHaveCount(3)
+  await expect(dialog.getByLabel('检索岗位词 2', { exact: true })).toHaveValue('AI 产品经理')
+  await dialog.getByLabel('修改搜索范围', { exact: true }).fill('只要纯产品经理')
+  await dialog.getByRole('button', { name: '更新准则' }).click()
+  await expect(dialog.getByLabel('完整标题仅', { exact: true })).toHaveValue('产品经理')
+  await expect(dialog.getByRole('button', { name: '开启每日发现（待预算）' })).toBeDisabled()
+  await dialog.getByRole('button', { name: '保存搜索范围' }).click()
+  await expect(dialog.getByRole('status')).toContainText('搜索范围已保存')
+  await dialog.getByRole('button', { name: '关闭', exact: true }).click()
+  await expect(page.getByRole('button', { name: '搜索范围', exact: true })).toBeFocused()
+  await page.reload()
+  await page.getByRole('button', { name: '搜索范围', exact: true }).click()
+  await expect(dialog.getByLabel('完整标题仅', { exact: true })).toHaveValue('产品经理')
+  await page.keyboard.press('Escape')
   await page.locator('.tsui-topbar').getByRole('button', { name: /设置/ }).click()
-  await page.locator('.tsui-topbar').getByRole('button', { name: /设置|Settings/ }).click()
   const interfaceGroup = page.locator('details.settings-group').filter({ has: page.locator('summary strong').filter({ hasText: /^(界面|Interface)$/ }) })
   await interfaceGroup.locator('summary').click()
   await interfaceGroup.getByRole('button', { name: 'EN', exact: true }).click()
-  await expect(page.getByRole('heading', { name: 'Settings' })).toBeVisible()
-  await page.locator('details.settings-group').filter({ hasText: 'Discovery preferences' }).locator('summary').click()
-
-  const card = page.locator('.discovery-profile-card')
-  await expect(card.getByRole('heading', { name: 'Job discovery preferences' })).toBeVisible()
-  await expect(card.getByText('Target roles / search queries', { exact: true })).toBeVisible()
-  await expect(card.getByText('Preferred locations', { exact: true })).toBeVisible()
-  await expect(card.getByText('Job discovery history', { exact: true })).toBeVisible()
-  await expect(card.getByText(/V1\.3|ROUND 3/)).toHaveCount(0)
-
-  const targetRoles = card.locator('.discovery-profile-grid label').filter({ hasText: 'Target roles / search queries' }).locator('textarea')
-  await targetRoles.fill('AI Product Manager\nBusiness Analysis')
-  await card.getByRole('button', { name: 'Save preferences' }).click()
-  await expect(card.locator('.notice.success')).toContainText('Job-discovery preferences saved locally')
-
-  const stored = await page.evaluate(async () => {
-    return new Promise<string[]>((resolve, reject) => {
-      const request = indexedDB.open('pjsdas')
-      request.onerror = () => reject(request.error)
-      request.onsuccess = () => {
-        const db = request.result
-        const transaction = db.transaction('discoveryProfiles', 'readonly')
-        const getRequest = transaction.objectStore('discoveryProfiles').get('current')
-        getRequest.onerror = () => reject(getRequest.error)
-        getRequest.onsuccess = () => {
-          const values = getRequest.result?.targetRoleQueries ?? []
-          db.close()
-          resolve(values)
-        }
-      }
-    })
-  })
-  expect(stored).toEqual(['AI Product Manager', 'Business Analysis'])
-
-  await targetRoles.fill('AI Product Manager\nBusiness Analysis\nStrategy')
-  await expect(card.locator('.notice.success')).toHaveCount(0)
-  await expect(card.locator('.notice.error')).toHaveCount(0)
-
-  await page.reload()
-  await expect(page).toHaveURL(/\/settings$/)
-  await expect(page.getByRole('heading', { name: 'Settings' })).toBeVisible()
-  await page.locator('details.settings-group').filter({ hasText: 'Discovery preferences' }).locator('summary').click()
-  await expect(page.locator('.discovery-profile-card textarea').first()).toHaveValue('AI Product Manager\nBusiness Analysis')
+  await page.locator('.tsui-primary-nav').getByRole('button', { name: /Jobs/ }).click()
+  await page.getByRole('button', { name: 'Search scope', exact: true }).click()
+  await expect(dialog.getByRole('heading', { name: 'Find new jobs each day' })).toBeVisible()
+  await expect(dialog.getByLabel('Exact title', { exact: true })).toHaveValue('产品经理')
 })

@@ -372,12 +372,13 @@ export async function getDiscoveryProfile() {
   return stored ?? createDefaultDiscoveryProfile('1970-01-01T00:00:00.000Z')
 }
 
-export async function saveDiscoveryProfile(profile: unknown, assertCurrent?: () => void) {
+export async function saveDiscoveryProfile(profile: unknown, assertCurrent?: () => void, expected?: { profile: DiscoveryProfile | undefined }) {
   assertCurrent?.()
   const tx = (await dbPromise).transaction('discoveryProfiles', 'readwrite')
   try {
     assertCurrent?.()
     const previous = await tx.store.get('current')
+    if (expected && JSON.stringify(previous) !== JSON.stringify(expected.profile)) throw new Error('Search scope changed. Reopen it before saving.')
     const next = mergeDiscoveryScope(previous, profile, new Date().toISOString())
     assertCurrent?.()
     await tx.store.put(next)
@@ -1617,4 +1618,17 @@ export async function readCommandInteraction(accountKey: string, commandId: stri
 }
 export async function saveCommandInteraction(record: CommandInteractionRecord) {
   await (await dbPromise).put('commandInteractions', record)
+}
+
+/** Local-only metadata mutation, admitted by the same account lease as other local writes. */
+export async function markLocalJobViewed(id: string, assertCurrent: () => void) {
+  assertCurrent()
+  const tx = (await dbPromise).transaction('opportunities', 'readwrite')
+  try {
+    const job = await tx.store.get(id)
+    assertCurrent()
+    if (job?.discoveryRead && !job.discoveryRead.viewedAt) await tx.store.put({ ...job, discoveryRead: { ...job.discoveryRead, viewedAt: new Date().toISOString() } })
+    assertCurrent()
+    await tx.done
+  } catch (caught) { try { tx.abort() } catch {} await tx.done.catch(() => {}); throw caught }
 }

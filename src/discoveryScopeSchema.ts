@@ -10,6 +10,7 @@ export const discoveryScopeShape = {
   mustHave: list,
   mustNotHave: list,
   titleIncludes: list.optional(),
+  titleEquals: list.optional(),
   titleExcludes: list.optional(),
 }
 export const discoveryScopeSchema = z.object(discoveryScopeShape).strict()
@@ -20,7 +21,7 @@ export function mergeDiscoveryScope(previous: DiscoveryProfile | undefined, raw:
   const input = discoveryScopeSchema.parse(raw)
   const next: DiscoveryProfile = { ...(previous ?? {
     key: 'current', version: 1, locationNotes: '', strengths: [], notes: '',
-  }), ...input, searchScopeVersion: 1, searchGoal: input.searchGoal || undefined, titleIncludes: input.titleIncludes ?? [], titleExcludes: input.titleExcludes ?? [],
+  }), ...input, searchScopeVersion: 1, searchGoal: input.searchGoal || undefined, titleIncludes: input.titleIncludes ?? [], titleEquals: input.titleEquals ?? [], titleExcludes: input.titleExcludes ?? [],
   locationPolicy: input.locationPolicy ?? 'prefer', updatedAt: at }
   const errors = validateDiscoveryProfile(next)
   if (errors.length) throw new Error(errors[0])
