@@ -7,7 +7,12 @@ export default defineConfig({
   timeout: 90_000, expect: { timeout: 8_000 },
   outputDir: 'test-results/secondary-ui-checks',
   reporter: [['list'], ['html', { open: 'never', outputFolder: 'secondary-ui-report' }]],
-  use: { ...mockCloudTestUse, baseURL: 'http://127.0.0.1:4173', timezoneId: 'Asia/Shanghai',
+  // Chromium 153 partial-raster history retained pixels despite identical native
+  // paint commands; vertical tile boundaries also changed relocated round edges.
+  // The bounded experiments and real 1px negative controls are
+  // recorded in CONSUMER_B3_READ_SCOPE_EVIDENCE.md. Apply only to visual tests,
+  // identically to the fixed reference and candidate; keep exact pixel gates.
+  use: { ...mockCloudTestUse, launchOptions: { ...mockCloudTestUse.launchOptions, args: ['--disable-partial-raster', '--default-tile-height=4096'] }, baseURL: 'http://127.0.0.1:4173', timezoneId: 'Asia/Shanghai',
     trace: 'retain-on-failure', screenshot: 'only-on-failure' },
   webServer: { command: 'npm run preview -- --host 127.0.0.1 --port 4173',
     url: 'http://127.0.0.1:4173/pjsdas/', reuseExistingServer: false, timeout: 60_000 },

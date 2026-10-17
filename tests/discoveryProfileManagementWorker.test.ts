@@ -1,3 +1,4 @@
+import { discoverySearchScope } from '../src/discoveryProfile.js'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { runDiscoveryAutomationForBinding, discoverSourceRun } from '../gateway/discoveryAutomationWorker.js'
 import { applyDiscoveryProfileManagement, getDiscoveryProfileManagementRead } from '../src/discoveryProfileManagement.js'
@@ -15,7 +16,7 @@ async function configured() {
   db.snapshot.data.discoveryProfile!.strengths = ['Historical strength must not be inferred']
   db.snapshot = (await applyDiscoveryProfileManagement(db.snapshot, { kind: 'patch_discovery_profile',
     expectedFingerprint: (await getDiscoveryProfileManagementRead(db.snapshot)).fingerprint,
-    patch: { targetRoleQueries: ['Explicit role'], preferredLocations: ['Explicit city'], mustHave: [], mustNotHave: [], searchGoal: 'Explicit current search goal' } }, 'scope-worker-update', db.now)).snapshot
+    patch: { targetRoleQueries: ['Explicit role'], preferredLocations: ['Explicit city'], mustHave: [], mustNotHave: [], searchGoal: 'Explicit current search goal', titleEquals: ['Explicit role'] } }, 'scope-worker-update', db.now)).snapshot
   return db
 }
 function options(db: LedgerHarness, generateTextImpl = vi.fn(async () => ({ text: '{"observations":[]}' }))) {
@@ -56,6 +57,8 @@ describe('scope changes neither grant spending nor preserve stale discovery auth
     expect(generateTextImpl).toHaveBeenCalledOnce()
     const request = generateTextImpl.mock.calls[0][0] as any
     expect(request.prompt).toContain('Explicit current search goal')
+    expect(request.prompt).toContain('titleEquals')
+    expect(discoverySearchScope(profile).titleEquals).toEqual(['Explicit role'])
     expect(request.prompt).not.toContain(profile.notes); expect(request.prompt).not.toContain(profile.strengths[0]); expect(request.maxRetries).toBe(0)
     expect(search.queries).toHaveLength(source.webQueries!.length)
   })

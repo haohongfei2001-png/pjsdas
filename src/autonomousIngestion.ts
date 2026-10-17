@@ -340,6 +340,7 @@ export function applyMonitorIngestion(
             reason = '存在标题相似但缺少足够 posting identity 的历史 Opportunity；为避免错误归并，本次自动摄入保留为 unresolved。'
           } else {
             const opportunity = createMonitorOpportunity(observation, receivedAt)
+            opportunity.discoveryRead = { version: 1, addedAt: input.completedAt }
             if ((next.data.opportunityAliases ?? []).some(alias => alias.id === opportunity.id)) throw new Error('An aliased opportunity cannot be recreated.')
             appendOpportunityOnly(next.data, opportunity)
             opportunityId = opportunity.id
@@ -522,6 +523,7 @@ export function applyGmailIngestion(
       let created = false
       if (!opportunity) {
         opportunity = createGmailShellOpportunity(message)
+        opportunity.discoveryRead = { version: 1, addedAt: input.completedAt }
         if ((next.data.opportunityAliases ?? []).some(alias => alias.id === opportunity!.id)) throw new Error('An aliased opportunity cannot be recreated.')
         next.data.opportunities.push(opportunity)
         createdOpportunityIds.push(opportunity.id)

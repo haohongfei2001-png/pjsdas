@@ -1,0 +1,53 @@
+import { mkdir } from 'node:fs/promises'
+import { expect, test } from '@playwright/test'
+
+test('B3 unread cutover, detail-only read, stable return focus, filtering and responsive scope', async ({ page }) => {
+  await page.goto('/pjsdas/library')
+  await expect(page.locator('.tsui-library')).toBeVisible()
+  await page.evaluate(async () => {
+    const { dbPromise } = await import('/pjsdas/src/db.ts')
+    const db = await dbPromise
+    const tx = db.transaction('opportunities', 'readwrite')
+    for (let i = 0; i < 43; i++) await tx.store.put({ id: `read-job-${i}`, company: `发现公司 ${i}`, role: '产品经理', currentStageLabel: '待投递', processStage: 'not_applied', early: false, opportunityValue: 0, fitScore: 0, importedAt: '2026-10-01T00:00:00.000Z', ...(i === 42 ? {} : { discoveryRead: { version: 1, addedAt: new Date(Date.UTC(2026, 9, 17, 0, i)).toISOString() } }) })
+    await tx.done
+  })
+  await page.reload()
+  const fresh = page.locator('[data-job-filter="new"]')
+  await expect(fresh).toContainText('42')
+  await fresh.click()
+  await expect(page.locator('.tsui-job-row')).toHaveCount(40)
+  await expect(page.locator('.tsui-job-row').first()).toHaveAttribute('data-opportunity-id', 'read-job-41')
+  const opener = page.locator('.tsui-job-open[data-opportunity-id="read-job-41"]')
+  await opener.focus()
+  await expect(fresh).toContainText('42')
+  await opener.press('Enter')
+  await expect(page).toHaveURL(/library\/read-job-41$/)
+  await page.goBack()
+  await expect(opener).toBeFocused()
+  await expect(fresh).toContainText('41')
+  await expect(opener).toBeVisible()
+  await page.locator('[data-job-filter="all"]').click()
+  await fresh.click()
+  await expect(opener).toHaveCount(0)
+  await page.getByRole('searchbox').fill('发现公司 40')
+  await expect(page.locator('.tsui-job-row')).toHaveCount(1)
+  await page.getByRole('searchbox').fill('')
+  await page.reload()
+  await expect(fresh).toContainText('41')
+  await mkdir('test-results/b3', { recursive: true })
+  for (const width of [1440, 390, 320]) {
+    await page.setViewportSize({ width, height: 900 })
+    await page.screenshot({ path: `test-results/b3/library-${width}.png`, fullPage: true })
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+    await page.getByRole('button', { name: '搜索范围', exact: true }).click()
+    const dialog = page.getByRole('dialog')
+    await expect(dialog).toBeVisible()
+    await dialog.getByLabel('你想找什么岗位？').fill('产品经理')
+    await dialog.getByRole('button', { name: '整理搜索范围' }).click()
+    await page.screenshot({ path: `test-results/b3/scope-${width}.png`, fullPage: true })
+    const box = await dialog.boundingBox()
+    expect(box!.width).toBeLessThanOrEqual(width)
+    await page.keyboard.press('Escape')
+    await expect(page.getByRole('button', { name: '搜索范围', exact: true })).toBeFocused()
+  }
+})

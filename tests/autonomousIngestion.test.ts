@@ -60,6 +60,7 @@ describe('autonomous monitor ingestion', () => {
       observations: [observation()],
     })
 
+    expect(result.snapshot.data.opportunities[0].discoveryRead).toEqual({ version: 1, addedAt: monitorRun.completedAt })
     expect(result.alreadyApplied).toBe(false)
     expect(result.snapshot.data.opportunities).toHaveLength(1)
     expect(result.snapshot.data.actions).toHaveLength(0)

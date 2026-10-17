@@ -9,15 +9,17 @@ import { validateSnapshot, type PJSDASSnapshot } from '../snapshot.js'
 import { fetchBackend } from '../backendEndpoints.js'
 import { isRecordedAccountProjection, assertLocalSnapshotCurrent, exportLocalSnapshot, replaceLocalSnapshotFromCloud, persistInteractionProjection, readCommandInteraction } from '../db.js'
 import { getAccountAccessToken } from './cloudClient.js'
-import { getAccountCheckpoint, getCloudDeviceState, patchAccountCheckpoint } from './syncState.js'
+import { bindLocalWorkspaceToUser, getAccountCheckpoint, getCloudDeviceState, patchAccountCheckpoint } from './syncState.js'
+import { hasInitialMockBinding, markVerifiedMockCache, rememberInitialMockBinding } from './mockCacheBoundary.js'
 import { equivalentReadProjection, fingerprintWorkspace } from './workspaceFingerprint.js'
 
 export type ConnectedBusinessCommand =
+  | { type: 'job_viewed'; value: { opportunityId: string } }
   | { type: 'domain'; value: UserDomainCommand }
   | { type: 'semantic_intake'; value: SemanticIntakeObservation }
   | { type: 'resolve_semantic_decision'; value: { requestId: string; choiceId: string } }
   | { type: 'discovery_status'; value: DiscoveryStatusCommand }
-  | { type: 'discovery_profile'; value: DiscoveryScopeInput }
+  | { type: 'discovery_profile'; value: DiscoveryScopeInput; expectedFingerprint?: string }
   | { type: 'discovery_promotion'; value: { inboxItemId: string } }
   | { type: 'process_event_delete'; value: { eventId: string } }
   | { type: 'mcp_save_inbox'; value: { token: string } }
@@ -243,15 +245,24 @@ async function projectAuthoritativeResult(accountKey: string, result: ConnectedC
   guard: { expectedLocal: PJSDASSnapshot; assertCurrent: () => void }) {
   if (!result.snapshot) return
   const snapshot = result.snapshot
+  const writeLease = captureWorkspaceWriteLease(accountKey)
   const assertCurrent = () => {
     guard.assertCurrent()
+    writeLease.assertCurrent()
     if (readPending(accountKey).some(item => item.interaction && item.status !== 'conflict')) throw new AccountCacheChangedError()
     if ((revisionFromCheckpoint(accountKey) ?? -1) > result.revision) throw new AccountCacheChangedError()
   }
+  assertCurrent()
+  // Remember source identity before any awaited projection. An existing,
+  // unknown binding must never acquire development provenance this way.
+  if (typeof window !== 'undefined') rememberInitialMockBinding(window.localStorage, getCloudDeviceState(), accountKey)
   const committed = await replaceLocalSnapshotFromCloud(snapshot, { ...guard, assertCurrent, accountKey, version: result.workspaceVersion })
   const fingerprint = await fingerprintWorkspace(snapshot)
   const projectedFingerprint = await fingerprintWorkspace(committed)
   assertCurrent()
+  // A command may finish before the first passive read. Complete its verified
+  // account binding before reporting saved or admitting an offline interaction.
+  bindLocalWorkspaceToUser(accountKey)
   patchAccountCheckpoint(accountKey, {
     clearedCacheFingerprint: undefined,
     lastSyncedVersion: result.workspaceVersion ?? `txn:${result.revision}`,
@@ -262,6 +273,10 @@ async function projectAuthoritativeResult(accountKey: string, result: ConnectedC
     conflict: undefined,
     lastError: undefined,
   })
+  if (typeof window !== 'undefined' && hasInitialMockBinding(window.localStorage, getCloudDeviceState(), accountKey)) {
+    await markVerifiedMockCache(window.localStorage, getCloudDeviceState, accountKey, assertCurrent)
+  }
+  assertCurrent()
   if (typeof window !== 'undefined') window.dispatchEvent(new Event('pjsdas:workspace-replaced'))
 }
 

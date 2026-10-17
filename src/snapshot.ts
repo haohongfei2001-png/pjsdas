@@ -282,7 +282,14 @@ function backfillSemanticReceiptOrder(data: SnapshotData) {
 }
 
 export function createSnapshot(data: SnapshotData, exportedAt = new Date().toISOString()): PJSDASSnapshot {
-  const normalized = structuredClone(data)
+  return createSnapshotFromOwnedData(structuredClone(data), exportedAt)
+}
+
+/** @internal Consumes exclusively owned data, such as fresh IndexedDB results.
+ * Never pass a caller's snapshot or shared application state to this entry point.
+ * Normalization and validation are identical to the defensive-copy public API.
+ */
+export function createSnapshotFromOwnedData(normalized: SnapshotData, exportedAt = new Date().toISOString()): PJSDASSnapshot {
   ensureScheduleContractInPlace(normalized)
   normalized.decisionRequests ??= []
   normalized.semanticReceipts ??= []
@@ -368,6 +375,12 @@ export function validateSnapshot(value: unknown): asserts value is PJSDASSnapsho
 
   const opportunityIds = assertUniqueIds(data.opportunities, 'Opportunity')
   for (const opportunity of data.opportunities as Opportunity[]) {
+    if (opportunity.discoveryRead !== undefined) {
+      const read = opportunity.discoveryRead
+      if (!isObject(read) || read.version !== 1 || Object.keys(read).some(key => !['version', 'addedAt', 'viewedAt'].includes(key))) throw new Error('Invalid job read metadata.')
+      assertIsoDate(read.addedAt, 'Job addedAt')
+      if (read.viewedAt !== undefined) assertIsoDate(read.viewedAt, 'Job viewedAt')
+    }
     const corrections = opportunity.detail?.deadlineCorrections
     if (corrections !== undefined && !Array.isArray(corrections)) throw new Error('备份损坏：投递截止更正历史无效。')
     const ids = new Set<string>()

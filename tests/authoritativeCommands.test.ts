@@ -849,3 +849,28 @@ describe('business management through existing authoritative transaction', () =>
     expect(h.ledger).toHaveLength(0)
   })
 })
+
+describe('B3 first-party viewed metadata', () => {
+  it('writes only the owned job read field, rejects external clients, and replays idempotently', async () => {
+    const initial = snapshot()
+    initial.data.opportunities[0].discoveryRead = { version: 1, addedAt: '2026-10-17T01:00:00.000Z' }
+    const h = harness(initial)
+    const command = { commandId: 'view-job-command-1', baseRevision: 1, command: { type: 'job_viewed', value: { opportunityId: 'opp-1' } } }
+    await expect(h.executor.execute({ kind: 'delegated_mcp', userId: 'user-a', clientId: 'external' } as any, command)).rejects.toThrow('first-party')
+    const before = h.state().current
+    const result = await h.executor.execute(h.principal, command)
+    expect(result.outcome).toBe('COMMITTED')
+    expect(result.snapshot.data.opportunities[0].discoveryRead?.viewedAt).toBeTruthy()
+    expect(result.snapshot.data.actions).toEqual(before.data.actions)
+    expect(result.snapshot.data.opportunities[1]).toEqual(before.data.opportunities[1])
+    expect((await h.executor.execute(h.principal, command)).outcome).toBe('ALREADY_APPLIED')
+    expect(h.ledger).toHaveLength(1)
+    await expect(h.executor.execute(h.principal, { ...command, commandId: 'view-missing-command', command: { type: 'job_viewed', value: { opportunityId: 'foreign-job' } } })).rejects.toThrow('current workspace')
+  })
+  it('rejects a scope save against another saved version even at the current revision', async () => {
+    const h = harness()
+    await expect(h.executor.execute(h.principal, { commandId: 'stale-scope-save', baseRevision: 1,
+      command: { type: 'discovery_profile', expectedFingerprint: 'a'.repeat(64), value: { targetRoleQueries: ['产品经理'], titleEquals: ['产品经理'], preferredLocations: [], mustHave: [], mustNotHave: [] } } })).rejects.toThrow('Search scope changed')
+    expect(h.ledger).toHaveLength(0)
+  })
+})

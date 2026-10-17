@@ -13,6 +13,7 @@ export interface DiscoveryProfile {
   /** Explicit user goal. Historical notes/strengths never supply this value. */
   searchGoal?: string
   titleIncludes?: string[]
+  titleEquals?: string[]
   titleExcludes?: string[]
   preferredLocations: string[]
   locationNotes: string
@@ -132,6 +133,7 @@ export function discoverySearchScope(profile?: DiscoveryProfile) {
     mustHave: normalizedStrings(value.mustHave),
     mustNotHave: normalizedStrings(value.mustNotHave),
     titleIncludes: normalizedStrings(value.titleIncludes ?? []),
+    titleEquals: normalizedStrings(value.titleEquals ?? []),
     titleExcludes: normalizedStrings(value.titleExcludes ?? []),
     updatedAt: value.updatedAt,
   }
@@ -160,8 +162,14 @@ export function validateDiscoveryProfile(profile: DiscoveryProfile): string[] {
   boundedList('偏好地点', profile.preferredLocations, 30)
   boundedList('必须满足', profile.mustHave, 30)
   boundedList('明确排除', profile.mustNotHave, 30)
+  boundedList('完整标题', profile.titleEquals ?? [], 30)
   boundedList('标题条件', profile.titleIncludes ?? [], 30)
   boundedList('标题排除', profile.titleExcludes ?? [], 30)
+  if (!errors.length && profile.titleEquals?.length) {
+    const compact = (value: string) => value.toLocaleLowerCase().replace(/[\s\u3000·•｜|（）()【】\[\]，,。.!！?？:：;；/\\_-]+/g, '')
+    if (profile.titleEquals.some(title => (profile.titleExcludes ?? []).some(exclusion => compact(exclusion).length >= 2 && compact(title).includes(compact(exclusion)))
+      || Boolean(profile.titleIncludes?.length && !profile.titleIncludes.some(include => compact(include).length >= 2 && compact(title).includes(compact(include)))))) errors.push('完整标题与标题包含或排除条件冲突。 / Exact titles conflict with inclusion or exclusion conditions.')
+  }
   if (profile.searchGoal !== undefined && (typeof profile.searchGoal !== 'string' || profile.searchGoal.length > 2400)) errors.push('搜索目标过长或格式无效。')
   boundedList('个人优势', profile.strengths, 30)
 

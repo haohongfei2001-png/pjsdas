@@ -9,9 +9,9 @@ async function patch(s: PJSDASSnapshot, value: any, id = 'profile-command') { re
 const fields = [
   ['targetRoleQueries', ['Product manager']], ['preferredLocations', ['Shanghai']],
   ['mustHave', ['Growth']], ['mustNotHave', ['Night shifts']], ['searchGoal', 'Explicit user search goal'],
-  ['titleIncludes', ['Product']], ['titleExcludes', ['Sales']], ['locationPolicy', 'strict'],
+  ['titleEquals', ['Product manager']], ['titleIncludes', ['Product']], ['titleExcludes', ['Sales']], ['locationPolicy', 'strict'],
 ] as const
-const optional = ['searchGoal', 'titleIncludes', 'titleExcludes', 'locationPolicy']
+const optional = ['titleEquals', 'searchGoal', 'titleIncludes', 'titleExcludes', 'locationPolicy']
 function protectedData(s: PJSDASSnapshot) { return Object.fromEntries(Object.entries(s.data).filter(([key]) => !['discoveryProfile', 'timeline'].includes(key))) }
 describe('raw-preserving discovery profile management v5', () => {
   it.each(['minimumFitScore', 'minimumOpportunityValue'])('rejects retired %s edits and preserves historical storage', async key => {

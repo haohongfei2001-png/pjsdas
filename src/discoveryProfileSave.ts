@@ -10,6 +10,7 @@ export function discoveryProfileSavePayload(profile: DiscoveryProfile): Discover
     locationPolicy: profile.locationPolicy,
     mustHave: [...profile.mustHave],
     mustNotHave: [...profile.mustNotHave],
+    titleEquals: [...(profile.titleEquals ?? [])],
     titleIncludes: [...(profile.titleIncludes ?? [])],
     titleExcludes: [...(profile.titleExcludes ?? [])],
   })

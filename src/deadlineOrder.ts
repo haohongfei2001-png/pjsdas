@@ -73,17 +73,40 @@ export function actionNodesById(nodes: ScheduleNode[], actions: Action[] = [], o
   const eventActions = new Map<string, Action[]>()
   const applicationActions = new Map<string, Action[]>()
   for (const action of actions) {
-    if (action.processEventId) eventActions.set(action.processEventId, [...(eventActions.get(action.processEventId) ?? []), action])
-    if (action.kind === 'apply' && action.opportunityId) applicationActions.set(action.opportunityId, [...(applicationActions.get(action.opportunityId) ?? []), action])
+    if (action.processEventId) {
+      const related = eventActions.get(action.processEventId)
+      if (related) related.push(action)
+      else eventActions.set(action.processEventId, [action])
+    }
+    if (action.kind === 'apply' && action.opportunityId) {
+      const related = applicationActions.get(action.opportunityId)
+      if (related) related.push(action)
+      else applicationActions.set(action.opportunityId, [action])
+    }
   }
   const latest = new Map<string, ScheduleNode>()
   for (const node of nodes) {
     const previous = latest.get(node.occurrenceId)
     if (!previous || node.version > previous.version) latest.set(node.occurrenceId, node)
   }
+  // Preserve Array.find's first-match semantics, including invalidated duplicates.
+  const liveEvents = new Map<string | undefined, ProcessEvent>()
+  for (const event of processEvents) if (!event.invalidation && !liveEvents.has(event.id)) liveEvents.set(event.id, event)
+  const opportunitiesById = new Map<string | undefined, Opportunity>()
+  for (const opportunity of opportunities) if (!opportunitiesById.has(opportunity.id)) opportunitiesById.set(opportunity.id, opportunity)
+  const arrangementsByAction = new Map<string, ScheduleNode>()
   const byAction = new Map<string, ActionTimingOwner>()
   const ownersByAction = new Map<string, ScheduleNode[]>()
   for (const node of latest.values()) {
+    // The former stable descending sort selected the first latest occurrence on
+    // version ties. Strictly-greater replacement retains that same choice.
+    if (node.constraintKind === 'user_plan' && node.kind !== 'application_deadline'
+      && node.temporal.resolutionBasis === 'user_explicit' && node.temporal.shape === 'fixed_range') {
+      for (const id of node.relatedActionIds) {
+        const previous = arrangementsByAction.get(id)
+        if (!previous || node.version > previous.version) arrangementsByAction.set(id, node)
+      }
+    }
     // Canonical ownership may precede a generated action, so explicit entity
     // identity also establishes the relationship without fabricating stored links.
     const byEvent = node.processEventId ? (eventActions.get(node.processEventId) ?? [])
@@ -92,7 +115,9 @@ export function actionNodesById(nodes: ScheduleNode[], actions: Action[] = [], o
       ? applicationActions.get(node.opportunityId) ?? [] : []
     const ids = new Set([...node.relatedActionIds, ...byEvent.map(action => action.id), ...byApplication.map(action => action.id)])
     for (const id of ids) {
-      ownersByAction.set(id, [...(ownersByAction.get(id) ?? []), node])
+      const owners = ownersByAction.get(id)
+      if (owners) owners.push(node)
+      else ownersByAction.set(id, [node])
       const previous = byAction.get(id)
       // Retain a terminal owner so consumers cannot mistake withdrawal for no
       // canonical history and revive a retained raw action date. An independent
@@ -125,7 +150,7 @@ export function actionNodesById(nodes: ScheduleNode[], actions: Action[] = [], o
     byAction.set(id, confirmed?.node ?? { ...byAction.get(id)!, timingUnknown: true })
   }
   for (const action of actions) {
-    const event = processEvents.find(item => item.id === action.processEventId && !item.invalidation)
+    const event = liveEvents.get(action.processEventId)
     if (!byAction.has(action.id) && event?.temporal && ['deadline', 'date_only', 'availability_window'].includes(event.temporal.shape) && event.timingMode !== 'fixed') {
       byAction.set(action.id, { projectionOnly: true, id: `process-obligation:${event.id}`, occurrenceId: `process-obligation:${event.id}`, version: 1,
         opportunityId: event.opportunityId, processEventId: event.id, kind: event.type === 'written_test_invite' ? 'written_test' : 'assessment',
@@ -144,7 +169,7 @@ export function actionNodesById(nodes: ScheduleNode[], actions: Action[] = [], o
           deadlineAt: action.duePrecision === 'date' ? undefined : action.dueAt },
         completionDeadline: { id: action.id, deadline: action.dueAt, precision: action.duePrecision } })
     }
-    const opportunity = opportunities.find(item => item.id === action.opportunityId)
+    const opportunity = opportunitiesById.get(action.opportunityId)
     let deadline: DeadlineOrderValue | undefined
     if (action.kind === 'apply' && opportunity?.detail?.deadlineCorrections?.at(-1)?.acknowledgedNodeFacts !== undefined) {
       const fact = resolveApplicationDeadline(opportunity, { scheduleNodes: nodes })
@@ -160,10 +185,7 @@ export function actionNodesById(nodes: ScheduleNode[], actions: Action[] = [], o
         completionDeadline: deadline,
       })
     }
-    const arrangement = [...latest.values()].filter(node => node.constraintKind === 'user_plan'
-      && node.kind !== 'application_deadline' && node.relatedActionIds.includes(action.id)
-      && node.temporal.resolutionBasis === 'user_explicit' && node.temporal.shape === 'fixed_range')
-      .sort((a, b) => b.version - a.version)[0]
+    const arrangement = arrangementsByAction.get(action.id)
     if (arrangement) byAction.set(action.id, { ...arrangement,
       completionDeadline: deadline ?? { id: action.id, deadline: action.dueAt, precision: action.duePrecision } })
   }

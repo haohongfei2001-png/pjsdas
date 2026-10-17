@@ -185,7 +185,8 @@ test('TSUI-03 Jobs shows one filter group and a conclusion-first routed detail',
   await expect(rows.filter({ hasText: '结束科技' })).toBeVisible()
   await expect(page.getByText(/Fit 88|Value 90|机会价值 90/)).toHaveCount(0)
   const filters = page.locator('.tsui-library-filters')
-  await expect(filters.getByRole('button')).toHaveCount(8)
+  await expect(filters.locator('button:not([data-job-filter="new"])')).toHaveCount(8)
+  await expect(filters.locator('[data-job-filter="new"]')).toHaveCount(1)
   await expect(filters.getByRole('button', { name: /全部|All/ })).toHaveAttribute('aria-pressed', 'true')
 
   await filters.getByRole('button', { name: /待投递|To apply/ }).click()

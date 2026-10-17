@@ -777,6 +777,8 @@ export interface OpportunityDetail {
 
 export interface Opportunity {
   id: string
+  /** Account-workspace read metadata. Absent on pre-cutover and user-confirmed jobs. */
+  discoveryRead?: { version: 1; addedAt: string; viewedAt?: string }
   /** Exact command or progress-operation ownership; withdrawn proof stays auditable. */
   applicationSubmissionProofs?: Record<string, 'active' | 'withdrawn'>
   company: string

@@ -1,3 +1,4 @@
+import { applyJobViewedCommand } from '../src/jobReadState.js'
 import { observationFromVerifiedOpportunity } from '../src/verifiedOpportunityCommand.js'
 import { bindVerifiedPostingRefresh, resolvePostingRefreshTarget } from '../src/postingRefresh.js'
 import { discoveryScopeSchema } from '../src/discoveryScopeSchema.js'
@@ -95,7 +96,8 @@ export const authoritativeBusinessCommandSchema = z.object({
     z.object({ type: z.literal('private_reminder_management'), value: privateReminderManagementSchema }).strict(),
     z.object({ type: z.literal('semantic_intake'), value: semanticIntakeSchema }).strict(),
     z.object({ type: z.literal('resolve_semantic_decision'), value: resolveSemanticDecisionSchema }).strict(),
-    z.object({ type: z.literal('discovery_profile'), value: discoveryProfileSchema }).strict(),
+    z.object({ type: z.literal('job_viewed'), value: z.object({ opportunityId: z.string().trim().min(1).max(500) }).strict() }).strict(),
+    z.object({ type: z.literal('discovery_profile'), value: discoveryProfileSchema, expectedFingerprint: z.string().regex(/^[a-f0-9]{64}$/).optional() }).strict(),
     z.object({ type: z.literal('discovery_promotion'), value: z.object({ inboxItemId: z.string().trim().min(1).max(240) }).strict() }).strict(),
     z.object({ type: z.literal('process_event_delete'), value: z.object({ eventId: z.string().trim().min(1).max(240) }).strict() }).strict(),
     z.object({ type: z.literal('mcp_save_inbox'), value: z.object({ token: z.string().min(1).max(32_000) }).strict() }).strict(),
@@ -158,7 +160,7 @@ function resultPayload(command: AuthoritativeBusinessCommand['command'], evaluat
   if (command.type === 'planning_management') return { type: command.type, status: evaluated.status, summary: evaluated.summary, objects: evaluated.objects, compensationFingerprint: evaluated.compensationFingerprint }
   if (command.type === 'opportunity_management') return { type: command.type, status: evaluated.status, summary: evaluated.summary, objects: evaluated.objects, compensationFingerprint: evaluated.compensationFingerprint, archivedOpportunityIds: evaluated.archivedOpportunityIds }
   if (command.type === 'business_management') return { type: command.type, status: evaluated.status, summary: evaluated.summary, objects: evaluated.objects }
-  if (command.type === 'domain' || command.type === 'discovery_status' || command.type === 'discovery_profile' || command.type === 'discovery_promotion' || command.type === 'process_event_delete' || command.type === 'mcp_save_inbox' || command.type === 'mcp_apply_discovery' || command.type === 'mcp_apply_actions' || command.type === 'mcp_apply_rules' || command.type === 'mcp_apply_source_refresh' || command.type === 'mcp_apply_progress' || command.type === 'mcp_apply_mixed' || command.type === 'mcp_discard') {
+  if (command.type === 'job_viewed' || command.type === 'domain' || command.type === 'discovery_status' || command.type === 'discovery_profile' || command.type === 'discovery_promotion' || command.type === 'process_event_delete' || command.type === 'mcp_save_inbox' || command.type === 'mcp_apply_discovery' || command.type === 'mcp_apply_actions' || command.type === 'mcp_apply_rules' || command.type === 'mcp_apply_source_refresh' || command.type === 'mcp_apply_progress' || command.type === 'mcp_apply_mixed' || command.type === 'mcp_discard') {
     return {
       type: command.type,
       status: evaluated.status,
@@ -188,6 +190,7 @@ function operationFor(command: AuthoritativeBusinessCommand['command']) {
 }
 
 function typedFactAlreadyCurrent(command: AuthoritativeBusinessCommand['command'], snapshot: PJSDASSnapshot) {
+  if (command.type === 'job_viewed') { const job = snapshot.data.opportunities.find(item => item.id === command.value.opportunityId); return Boolean(job && (!job.discoveryRead || job.discoveryRead.viewedAt)) }
   if (command.type !== 'domain') return false
   const value = command.value
   if (value.kind !== 'correct_opportunity_fact' && value.kind !== 'set_opportunity_preference') return false
@@ -199,6 +202,7 @@ function typedFactAlreadyCurrent(command: AuthoritativeBusinessCommand['command'
 }
 
 function intentObjects(command: AuthoritativeBusinessCommand['command'], snapshot: PJSDASSnapshot, proposal?: McpProposalEnvelope, commandId = '') {
+  if (command.type === 'job_viewed') return [{ type: 'opportunity', id: command.value.opportunityId }]
   if (command.type === 'private_reminder_management') return privateReminderManagementObjectRefs(snapshot, command.value, commandId)
   if (command.type === 'discovery_profile_management') return discoveryProfileManagementObjectRefs()
   if (command.type === 'planning_management') return planningManagementObjectRefs(command.value)
@@ -469,7 +473,7 @@ export function createAuthoritativeCommandExecutor(options: AuthoritativeCommand
     if (principal.kind === 'first_party_web' && parsed.command.type === 'semantic_intake' && parsed.command.value.source.kind !== 'web') {
       throw new WorkspaceSourceError('AUTH_FORBIDDEN', 'First-party Web Semantic Intake may write only web-origin observations.', false)
     }
-    if (['discovery_status','discovery_profile','discovery_promotion','process_event_delete','mcp_save_inbox','mcp_apply_discovery','mcp_apply_actions','mcp_apply_rules','mcp_apply_source_refresh','mcp_apply_progress','mcp_apply_mixed','mcp_discard'].includes(parsed.command.type) && principal.kind !== 'first_party_web') {
+    if (['job_viewed','discovery_status','discovery_profile','discovery_promotion','process_event_delete','mcp_save_inbox','mcp_apply_discovery','mcp_apply_actions','mcp_apply_rules','mcp_apply_source_refresh','mcp_apply_progress','mcp_apply_mixed','mcp_discard'].includes(parsed.command.type) && principal.kind !== 'first_party_web') {
       throw new WorkspaceSourceError('AUTH_FORBIDDEN', 'Discovery review commands are restricted to the first-party Web client.', false)
     }
 
@@ -544,7 +548,7 @@ export function createAuthoritativeCommandExecutor(options: AuthoritativeCommand
       const intent = intentObjects(parsed.command, current.snapshot, proposal, parsed.commandId)
       const intentFields = parsed.command.type === 'domain'
         ? intentFieldScopes(parsed.command.value as UserDomainCommand, intent)
-        : intent.map(ref => ({ ...ref, field: '*' }))
+        : intent.map(ref => ({ ...ref, field: parsed.command.type === 'job_viewed' ? 'discoveryRead' : '*' }))
       if (parsed.baseRevision < current.revision) {
         const intervening = await store.readCommandsAfterRevision(principal.userId, parsed.baseRevision)
         const conflict = conflictFromIntervening(intent, intentFields, current.snapshot, intervening)
@@ -571,7 +575,10 @@ export function createAuthoritativeCommandExecutor(options: AuthoritativeCommand
         evaluated = applyUserDomainCommand(current.snapshot, parsed.command.value as UserDomainCommand, now)
       } else if (parsed.command.type === 'discovery_status') {
         evaluated = applyDiscoveryStatusCommand(current.snapshot, parsed.command.value, now)
+      } else if (parsed.command.type === 'job_viewed') {
+        evaluated = applyJobViewedCommand(current.snapshot, parsed.command.value.opportunityId, now)
       } else if (parsed.command.type === 'discovery_profile') {
+        if (parsed.command.expectedFingerprint && parsed.command.expectedFingerprint !== await discoveryProfileManagementFingerprint(current.snapshot.data.discoveryProfile ?? null)) throw new WorkspaceSourceError('WORKSPACE_CONFLICT', 'Search scope changed. Reopen it before saving.', false)
         evaluated = applyDiscoveryProfileCommand(current.snapshot, parsed.command.value, now)
       } else if (parsed.command.type === 'discovery_promotion') {
         const inboxItemId=parsed.command.value.inboxItemId

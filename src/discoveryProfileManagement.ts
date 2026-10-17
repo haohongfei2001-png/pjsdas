@@ -17,6 +17,7 @@ const patch = z.object({ ...discoveryScopeShape,
   locationPolicy: discoveryScopeShape.locationPolicy.nullable(),
   searchGoal: discoveryScopeShape.searchGoal.nullable(),
   titleIncludes: discoveryScopeShape.titleIncludes.nullable(),
+  titleEquals: discoveryScopeShape.titleEquals.nullable(),
   titleExcludes: discoveryScopeShape.titleExcludes.nullable(),
 }).partial().strict().refine(value => Object.values(value).some(item => item !== undefined), 'A nonempty patch is required.')
 export const discoveryProfileManagementSchema = z.discriminatedUnion('kind', [
@@ -61,7 +62,7 @@ const row = z.object({
   targetRoleQueries: rawList, preferredLocations: rawList, locationNotes: z.string().max(1200),
   mustHave: rawList, mustNotHave: rawList, strengths: rawList, notes: z.string().max(2400),
   ...Object.fromEntries(Object.entries(optionalFields).map(([key, schema]) => [key, schema.optional()])) as { [K in keyof typeof optionalFields]: z.ZodOptional<(typeof optionalFields)[K]> },
-  searchGoal: z.string().max(2400).optional(), titleIncludes: rawList.optional(), titleExcludes: rawList.optional(),
+  searchGoal: z.string().max(2400).optional(), titleIncludes: rawList.optional(), titleEquals: rawList.optional(), titleExcludes: rawList.optional(),
   updatedAt: z.string().refine(value => Number.isFinite(new Date(value).getTime())),
 }).passthrough()
 function validateProfile(value: DiscoveryProfile | null) {

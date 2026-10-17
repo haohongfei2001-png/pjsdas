@@ -15,8 +15,19 @@ async function visual(page: Page, label: string) {
   console.log(`B1_VISUAL_${label}_END`)
 }
 
-for (const width of [390, 1440]) test(`B1 global add, explicit today and timed task preserve authority at ${width}px`, async ({ page }, info) => {
+for (const { width, deferredBootstrap } of [
+  { width: 390, deferredBootstrap: false },
+  { width: 1440, deferredBootstrap: false },
+  { width: 390, deferredBootstrap: true },
+]) test(`B1 global add, explicit today and timed task preserve authority at ${width}px${deferredBootstrap ? ' with deferred passive bootstrap' : ''}`, async ({ page }, info) => {
   await seedSession(page.context(), 'b1-owner', 'synthetic-b1-token')
+  if (deferredBootstrap) await page.addInitScript(() => {
+    // A supported setting disables timer-driven sync, not the command path.
+    // Consumer passive reads are held below, so only the explicit save can
+    // establish the first owner. Do not wait for a hidden readiness predicate.
+    const key = 'pjsdas-google-drive-sync-state-v2'
+    if (!localStorage.getItem(key)) localStorage.setItem(key, JSON.stringify({ version: 2, deviceId: 'synthetic-command-first', autoSync: false, accounts: {} }))
+  })
   await page.clock.setFixedTime(NOW)
   await page.setViewportSize({ width, height: width === 390 ? 844 : 1000 })
   let snapshot = workspace(), revision = 1
@@ -26,6 +37,10 @@ for (const width of [390, 1440]) test(`B1 global add, explicit today and timed t
   const mutations: string[] = []
   let holdSubmission = false, releaseSubmission = () => {}
   let submissionAcknowledgement = Promise.resolve()
+  let passiveReads = 0, releaseBootstrap = () => {}, bootstrapRequested = () => {}
+  const bootstrapBlocked = new Promise<void>(resolve => { releaseBootstrap = resolve })
+  const bootstrapStarted = new Promise<void>(resolve => { bootstrapRequested = resolve })
+  page.on('close', releaseBootstrap)
   await page.route(`${MOCK_TARGET_AUTH_ORIGIN}/**`, route => route.abort())
   await page.route(BACKEND + '/**', async route => {
     const request = route.request(), path = new URL(request.url()).pathname
@@ -35,7 +50,16 @@ for (const width of [390, 1440]) test(`B1 global add, explicit today and timed t
     const body = request.postDataJSON()
     const base = () => ({ workspaceId: 'synthetic-b1', revision, workspaceVersion: `txn:${revision}`, schemaVersion: snapshot.version, snapshot })
     if (path === '/api/automation-settings' && body.action === 'read') return cors(route, { googleEmail: 'synthetic@example.test', gmailScopeGranted: false, gmailEnabled: false, discoveryEnabled: false, discoveryReadiness: { profileConfigured: false, budgetState: 'approval_required' } })
-    if (path === '/api/workspace' && body.action === 'read') return cors(route, base())
+    if (path === '/api/workspace' && body.action === 'read') {
+      if (deferredBootstrap && !body.projection) {
+        passiveReads++
+        bootstrapRequested()
+        await bootstrapBlocked
+        // The first document has deliberately navigated away by release.
+        if (request.failure() || page.isClosed()) return
+      }
+      return cors(route, base())
+    }
     if (path === '/api/workspace' && body.action === 'receipt') {
       const prior = commands.get(body.commandId)
       return cors(route, { ...base(), found: !!prior, ...(prior?.result ?? {}) })
@@ -72,6 +96,8 @@ for (const width of [390, 1440]) test(`B1 global add, explicit today and timed t
     return cors(route, { code: 'UNEXPECTED' }, 409)
   })
   await page.goto('/pjsdas/today/capture')
+  // Establish the controlled in-flight request, never completed authority.
+  if (deferredBootstrap) await bootstrapStarted
   await page.getByRole('button', { name: '手动填写岗位', exact: true }).click()
   await expect(page.getByRole('heading', { name: '添加岗位', exact: true })).toBeVisible()
   await page.getByLabel('公司名称', { exact: true }).fill('示例科技')
@@ -81,8 +107,23 @@ for (const width of [390, 1440]) test(`B1 global add, explicit today and timed t
   await page.screenshot({ path: info.outputPath(`manual-job-${width}.png`), fullPage: true })
   await visual(page, `FORM_${width}`)
   expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBeLessThanOrEqual(1)
+  if (deferredBootstrap) {
+    expect(passiveReads).toBeGreaterThan(0)
+    const state = await page.evaluate(() => JSON.parse(localStorage.getItem('pjsdas-google-drive-sync-state-v2')!))
+    expect(state.autoSync).toBe(false)
+    expect(state.workspaceOwnerUserId).toBeUndefined()
+  }
   await page.getByRole('button', { name: '保存岗位', exact: true }).evaluate(button => { (button as HTMLButtonElement).click(); (button as HTMLButtonElement).click() })
   await expect(page.locator('.cgr-capture-receipt')).toContainText('岗位已保存')
+  if (deferredBootstrap) {
+    // Immediate observations, not polling or extra settling before navigation.
+    const binding = await page.evaluate(async () => {
+      const { canMountMockAccountCache } = await import('/pjsdas/src/cloud/mockCacheBoundary.ts')
+      const { getCloudDeviceState } = await import('/pjsdas/src/cloud/syncState.ts')
+      return { owner: getCloudDeviceState().workspaceOwnerUserId, reloadable: await canMountMockAccountCache(localStorage, getCloudDeviceState) }
+    })
+    expect(binding).toEqual({ owner: 'b1-owner', reloadable: true })
+  }
   expect(mutations).toHaveLength(1)
   expect(snapshot.data.opportunities).toHaveLength(1)
   expect(snapshot.data.actions).toEqual([])
@@ -136,7 +177,7 @@ for (const width of [390, 1440]) test(`B1 global add, explicit today and timed t
     expect(snapshot.data.actions).toEqual([])
     await undo.click()
     await expect(page.getByRole('button', { name: '我已投递', exact: true })).toBeVisible()
-  } finally { holdSubmission = false; releaseSubmission() }
+  } finally { holdSubmission = false; releaseSubmission(); releaseBootstrap() }
   await expect.poll(() => snapshot.data.opportunities[0].processStage).toBe('not_applied')
   await expect.poll(() => mutations.length).toBe(3)
   expect(snapshot.data.actions).toEqual([])

@@ -1,0 +1,554 @@
+{
+  "source": "GitHub Actions run 38996392906, fixed dbad72074299c8f585a9b13d5f4ae0b3a6b32116 actual Chromium DOM; unmodified flow metrics",
+  "samples": [
+    {
+      "width": 1440,
+      "scale": 100,
+      "flow": {
+        "toolbar": {
+          "x": 160,
+          "y": 161,
+          "width": 1120,
+          "height": 44
+        },
+        "filters": {
+          "x": 160,
+          "y": 161,
+          "width": 672,
+          "height": 44
+        },
+        "search": {
+          "x": 1040,
+          "y": 161,
+          "width": 240,
+          "height": 44
+        },
+        "panel": {
+          "x": 160,
+          "y": 225,
+          "width": 1120,
+          "height": 179
+        },
+        "buttons": [
+          {
+            "x": 160,
+            "y": 161,
+            "width": 56,
+            "height": 44
+          },
+          {
+            "x": 222,
+            "y": 161,
+            "width": 70,
+            "height": 44
+          },
+          {
+            "x": 298,
+            "y": 161,
+            "width": 70,
+            "height": 44
+          },
+          {
+            "x": 374,
+            "y": 161,
+            "width": 84,
+            "height": 44
+          },
+          {
+            "x": 464,
+            "y": 161,
+            "width": 84,
+            "height": 44
+          },
+          {
+            "x": 554,
+            "y": 161,
+            "width": 84,
+            "height": 44
+          },
+          {
+            "x": 644,
+            "y": 161,
+            "width": 84,
+            "height": 44
+          },
+          {
+            "x": 734,
+            "y": 161,
+            "width": 98,
+            "height": 44
+          }
+        ],
+        "textMetrics": [
+          {
+            "advances": [
+              14,
+              14
+            ],
+            "lineHeight": 21,
+            "paddingX": 28,
+            "paddingY": 0,
+            "minHeight": 44
+          },
+          {
+            "advances": [
+              14,
+              14,
+              14
+            ],
+            "lineHeight": 21,
+            "paddingX": 28,
+            "paddingY": 0,
+            "minHeight": 44
+          },
+          {
+            "advances": [
+              14,
+              14,
+              14
+            ],
+            "lineHeight": 21,
+            "paddingX": 28,
+            "paddingY": 0,
+            "minHeight": 44
+          },
+          {
+            "advances": [
+              14,
+              14,
+              14,
+              14
+            ],
+            "lineHeight": 21,
+            "paddingX": 28,
+            "paddingY": 0,
+            "minHeight": 44
+          },
+          {
+            "advances": [
+              14,
+              14,
+              14,
+              14
+            ],
+            "lineHeight": 21,
+            "paddingX": 28,
+            "paddingY": 0,
+            "minHeight": 44
+          },
+          {
+            "advances": [
+              14,
+              14,
+              14,
+              14
+            ],
+            "lineHeight": 21,
+            "paddingX": 28,
+            "paddingY": 0,
+            "minHeight": 44
+          },
+          {
+            "advances": [
+              14,
+              14,
+              14,
+              14
+            ],
+            "lineHeight": 21,
+            "paddingX": 28,
+            "paddingY": 0,
+            "minHeight": 44
+          },
+          {
+            "advances": [
+              14,
+              14,
+              14,
+              14,
+              14
+            ],
+            "lineHeight": 21,
+            "paddingX": 28,
+            "paddingY": 0,
+            "minHeight": 44
+          }
+        ],
+        "rowGap": 6,
+        "columnGap": 6,
+        "basis": null,
+        "stacked": false,
+        "filterMarginBottom": 0,
+        "toolbarMarginBottom": 20,
+        "searchTopGap": -44,
+        "toolbarBottomGap": 0
+      }
+    },
+    {
+      "width": 390,
+      "scale": 100,
+      "flow": {
+        "toolbar": {
+          "x": 14,
+          "y": 197,
+          "width": 362,
+          "height": 144
+        },
+        "filters": {
+          "x": 14,
+          "y": 197,
+          "width": 362,
+          "height": 88
+        },
+        "search": {
+          "x": 14,
+          "y": 297,
+          "width": 362,
+          "height": 44
+        },
+        "panel": {
+          "x": 14,
+          "y": 361,
+          "width": 362,
+          "height": 358.953125
+        },
+        "buttons": [
+          {
+            "x": 14,
+            "y": 197,
+            "width": 90.5,
+            "height": 44
+          },
+          {
+            "x": 104.5,
+            "y": 197,
+            "width": 90.5,
+            "height": 44
+          },
+          {
+            "x": 195,
+            "y": 197,
+            "width": 90.5,
+            "height": 44
+          },
+          {
+            "x": 285.5,
+            "y": 197,
+            "width": 90.5,
+            "height": 44
+          },
+          {
+            "x": 14,
+            "y": 241,
+            "width": 90.5,
+            "height": 44
+          },
+          {
+            "x": 104.5,
+            "y": 241,
+            "width": 90.5,
+            "height": 44
+          },
+          {
+            "x": 195,
+            "y": 241,
+            "width": 90.5,
+            "height": 44
+          },
+          {
+            "x": 285.5,
+            "y": 241,
+            "width": 90.5,
+            "height": 44
+          }
+        ],
+        "textMetrics": [
+          {
+            "advances": [
+              13,
+              13
+            ],
+            "lineHeight": 19.5,
+            "paddingX": 14,
+            "paddingY": 0,
+            "minHeight": 44
+          },
+          {
+            "advances": [
+              13,
+              13,
+              13
+            ],
+            "lineHeight": 19.5,
+            "paddingX": 14,
+            "paddingY": 0,
+            "minHeight": 44
+          },
+          {
+            "advances": [
+              13,
+              13,
+              13
+            ],
+            "lineHeight": 19.5,
+            "paddingX": 14,
+            "paddingY": 0,
+            "minHeight": 44
+          },
+          {
+            "advances": [
+              13,
+              13,
+              13,
+              13
+            ],
+            "lineHeight": 19.5,
+            "paddingX": 14,
+            "paddingY": 0,
+            "minHeight": 44
+          },
+          {
+            "advances": [
+              13,
+              13,
+              13,
+              13
+            ],
+            "lineHeight": 19.5,
+            "paddingX": 14,
+            "paddingY": 0,
+            "minHeight": 44
+          },
+          {
+            "advances": [
+              13,
+              13,
+              13,
+              13
+            ],
+            "lineHeight": 19.5,
+            "paddingX": 14,
+            "paddingY": 0,
+            "minHeight": 44
+          },
+          {
+            "advances": [
+              13,
+              13,
+              13,
+              13
+            ],
+            "lineHeight": 19.5,
+            "paddingX": 14,
+            "paddingY": 0,
+            "minHeight": 44
+          },
+          {
+            "advances": [
+              13,
+              13,
+              13,
+              13,
+              13
+            ],
+            "lineHeight": 19.5,
+            "paddingX": 14,
+            "paddingY": 0,
+            "minHeight": 44
+          }
+        ],
+        "rowGap": 0,
+        "columnGap": 0,
+        "basis": 90,
+        "stacked": true,
+        "filterMarginBottom": 12,
+        "toolbarMarginBottom": 20,
+        "searchTopGap": 12,
+        "toolbarBottomGap": 0
+      }
+    },
+    {
+      "width": 320,
+      "scale": 200,
+      "flow": {
+        "toolbar": {
+          "x": 14,
+          "y": 300,
+          "width": 292,
+          "height": 220
+        },
+        "filters": {
+          "x": 14,
+          "y": 300,
+          "width": 292,
+          "height": 160
+        },
+        "search": {
+          "x": 14,
+          "y": 476,
+          "width": 292,
+          "height": 44
+        },
+        "panel": {
+          "x": 14,
+          "y": 540,
+          "width": 292,
+          "height": 824.84375
+        },
+        "buttons": [
+          {
+            "x": 14,
+            "y": 300,
+            "width": 97.328125,
+            "height": 44
+          },
+          {
+            "x": 111.328125,
+            "y": 300,
+            "width": 97.34375,
+            "height": 44
+          },
+          {
+            "x": 208.671875,
+            "y": 300,
+            "width": 97.328125,
+            "height": 44
+          },
+          {
+            "x": 14,
+            "y": 344,
+            "width": 97.328125,
+            "height": 72
+          },
+          {
+            "x": 111.328125,
+            "y": 344,
+            "width": 97.34375,
+            "height": 72
+          },
+          {
+            "x": 208.671875,
+            "y": 344,
+            "width": 97.328125,
+            "height": 72
+          },
+          {
+            "x": 14,
+            "y": 416,
+            "width": 146,
+            "height": 44
+          },
+          {
+            "x": 160,
+            "y": 416,
+            "width": 146,
+            "height": 44
+          }
+        ],
+        "textMetrics": [
+          {
+            "advances": [
+              24,
+              24
+            ],
+            "lineHeight": 36,
+            "paddingX": 14,
+            "paddingY": 0,
+            "minHeight": 44
+          },
+          {
+            "advances": [
+              24,
+              24,
+              24
+            ],
+            "lineHeight": 36,
+            "paddingX": 14,
+            "paddingY": 0,
+            "minHeight": 44
+          },
+          {
+            "advances": [
+              24,
+              24,
+              24
+            ],
+            "lineHeight": 36,
+            "paddingX": 14,
+            "paddingY": 0,
+            "minHeight": 44
+          },
+          {
+            "advances": [
+              24,
+              24,
+              24,
+              24
+            ],
+            "lineHeight": 36,
+            "paddingX": 14,
+            "paddingY": 0,
+            "minHeight": 44
+          },
+          {
+            "advances": [
+              24,
+              24,
+              24,
+              24
+            ],
+            "lineHeight": 36,
+            "paddingX": 14,
+            "paddingY": 0,
+            "minHeight": 44
+          },
+          {
+            "advances": [
+              24,
+              24,
+              24,
+              24
+            ],
+            "lineHeight": 36,
+            "paddingX": 14,
+            "paddingY": 0,
+            "minHeight": 44
+          },
+          {
+            "advances": [
+              24,
+              24,
+              24,
+              24
+            ],
+            "lineHeight": 36,
+            "paddingX": 14,
+            "paddingY": 0,
+            "minHeight": 44
+          },
+          {
+            "advances": [
+              24,
+              24,
+              24,
+              24,
+              24
+            ],
+            "lineHeight": 36,
+            "paddingX": 14,
+            "paddingY": 0,
+            "minHeight": 44
+          }
+        ],
+        "rowGap": 0,
+        "columnGap": 0,
+        "basis": 90,
+        "stacked": true,
+        "filterMarginBottom": 12,
+        "toolbarMarginBottom": 20,
+        "searchTopGap": 16,
+        "toolbarBottomGap": 0
+      }
+    }
+  ]
+}

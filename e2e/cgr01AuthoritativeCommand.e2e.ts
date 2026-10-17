@@ -1,11 +1,11 @@
+import { proposeSearchScope } from '../src/searchScopeDraft.js'
+import { discoveryProfileManagementFingerprint } from '../src/discoveryProfileManagement.js'
+import { applyJobViewedCommand } from '../src/jobReadState.js'
 import { MOCK_TARGET_AUTH_KEY, MOCK_TARGET_BACKEND, MOCK_TARGET_AUTH_ORIGIN } from './support/mockCloudTargets.js'
 import { freezeTodayFixture } from './support/consumerFixtureClock.js'
 import { expect, test, type Page, type Route } from '@playwright/test'
 import { upgradeSnapshotToLatest, type PJSDASSnapshot } from '../src/snapshot.js'
-import { applyDiscoveryPromotionCommand } from '../src/discoveryPromotionCommand.js'
 import { applyDiscoveryProfileCommand } from '../src/discoveryProfileCommand.js'
-import { createJobPostingEvidence } from '../src/jobPosting.js'
-import { verifiedPostingFixture } from '../tests/fixtures/verifiedDiscovery.js'
 import { applyDomainCompensation, applyUserDomainCommand, type DomainCompensation } from '../src/domainCommands.js'
 import { applyProcessEventDeleteCommand } from '../src/processEventDeleteCommand.js'
 
@@ -646,22 +646,17 @@ test('CGR-05 background and manual connected sync preserve pending local changes
   expect((await readIndexedActions(page)).find((item) => item.id === 'A-action-1')?.title).toBe('本地待处理修改')
 })
 
-test('CGR-05 Discovery status, Profile and promotion use scoped first-party commands', async ({ browser }) => {
+test('B3 job viewed and Search Scope persist across devices through scoped first-party commands', async ({ browser }) => {
   test.setTimeout(60000)
   const state: AccountState = { revision: 7, snapshot: workspace('A'), receipts: new Map() }
-  state.snapshot.data.discoveryInbox = [{
-    id: 'inbox:cgr05-job', candidateOpportunityId: 'cgr05-job', company: '合成公司', role: '产品设计师',
-    roleType: 'core', sourceUrl: 'https://www.liepin.com/job/9401.shtml', sourceTitle: '产品设计师',
-    rationale: '可核对的招聘来源', opportunityValue: 72, fitScore: 78,
-    fitConfidence: 'medium', opportunityValueConfidence: 'medium', status: 'new',
-    discoveredAt: '2026-09-23T00:00:00.000Z', createdAt: '2026-09-23T00:00:00.000Z', updatedAt: '2026-09-23T00:00:00.000Z',
-  }]
-  const inboxItem = state.snapshot.data.discoveryInbox[0]
-  const observation = await verifiedPostingFixture(inboxItem, inboxItem.discoveredAt)
-  inboxItem.posting = createJobPostingEvidence({ ...observation, observedAt: inboxItem.discoveredAt })
-  inboxItem.sourceProof = observation.sourceProof
+  state.snapshot.data.opportunities[0].discoveryRead = { version: 1, addedAt: '2026-10-17T01:00:00.000Z' }
+  const jobId = state.snapshot.data.opportunities[0].id
+  const accountB: AccountState = { revision: 7, snapshot: structuredClone(state.snapshot), receipts: new Map() }
+  accountB.snapshot.data.opportunities[0].company = 'B独立公司'
   const commandBodies: Array<Record<string, any>> = []
   let snapshotCommits = 0
+  let releaseViewFailure: (() => void) | undefined
+  let failFirstView = true
 
   async function install(page: Page) {
     await seedInitialSession(page, 'account-a', 'token-a')
@@ -671,10 +666,11 @@ test('CGR-05 Discovery status, Profile and promotion use scoped first-party comm
       if (request.method() === 'OPTIONS') return cors(route, {}, 204)
       if (url.pathname === '/api/health') return cors(route, health())
       if (url.pathname !== '/api/workspace') return cors(route, { code: 'NOT_FOUND' }, 404)
+      const activeState = tokenOf(route) === 'token-b' ? accountB : state
       const body = request.postDataJSON() as Record<string, any>
       if (body.action === 'read') return cors(route, {
-        workspaceId: 'ws-a', workspaceVersion: `txn:${state.revision}`, revision: state.revision,
-        schemaVersion: state.snapshot.version, snapshot: state.snapshot,
+        workspaceId: 'ws-a', workspaceVersion: `txn:${activeState.revision}`, revision: activeState.revision,
+        schemaVersion: activeState.snapshot.version, snapshot: activeState.snapshot,
       })
       if (body.action === 'commit') {
         snapshotCommits += 1
@@ -683,40 +679,36 @@ test('CGR-05 Discovery status, Profile and promotion use scoped first-party comm
       if (body.action === 'command') {
         commandBodies.push(body)
         const command = body.command
-        if (command?.type === 'discovery_status' && command.value?.inboxItemId === 'inbox:cgr05-job') {
-          const item = state.snapshot.data.discoveryInbox?.[0]
-          if (item) {
-            item.status = command.value.status
-            item.seenAt = new Date().toISOString()
-            item.updatedAt = item.seenAt
-          }
+        if (command?.type === 'job_viewed' && failFirstView) {
+          failFirstView = false
+          await new Promise<void>(resolve => { releaseViewFailure = resolve })
+          return cors(route, { code: 'SYNTHETIC_TRANSIENT_FAILURE', message: 'Synthetic late read-state failure' }, 503)
+        }
+        if (command?.type === 'job_viewed' && command.value?.opportunityId === jobId) {
+          activeState.snapshot = applyJobViewedCommand(activeState.snapshot, jobId).snapshot
         } else if (command?.type === 'discovery_profile') {
-          state.snapshot = applyDiscoveryProfileCommand(state.snapshot, command.value).snapshot
-        } else if (command?.type === 'discovery_promotion' && command.value?.inboxItemId === 'inbox:cgr05-job') {
-          state.snapshot = applyDiscoveryPromotionCommand(state.snapshot, command.value).snapshot
+          activeState.snapshot = applyDiscoveryProfileCommand(activeState.snapshot, command.value).snapshot
         } else return cors(route, { code: 'UNEXPECTED_COMMAND' }, 400)
-        state.revision += 1
+        activeState.revision += 1
         const receipt = {
           commandId: body.commandId, receiptId: `command-receipt:${body.commandId}`,
-          status: 'COMMITTED', revision: state.revision,
+          status: 'COMMITTED', revision: activeState.revision,
           affectedObjects: command.type === 'discovery_profile'
             ? [{ type: 'discovery_profile', id: 'current' }]
-            : command.type === 'discovery_promotion'
-              ? [{ type: 'discovery_inbox', id: 'inbox:cgr05-job' }, { type: 'opportunity', id: 'cgr05-job' }]
-              : [{ type: 'discovery_inbox', id: 'inbox:cgr05-job' }],
+            : [{ type: 'opportunity', id: jobId }],
           result: { type: command.type, status: 'APPLIED', summary: 'Saved first-party Discovery data.' },
         }
-        state.receipts.set(body.commandId, receipt)
+        activeState.receipts.set(body.commandId, receipt)
         return cors(route, {
-          outcome: 'COMMITTED', revision: state.revision, workspaceVersion: `txn:${state.revision}`,
-          schemaVersion: state.snapshot.version, snapshot: state.snapshot, receipt,
+          outcome: 'COMMITTED', revision: activeState.revision, workspaceVersion: `txn:${activeState.revision}`,
+          schemaVersion: activeState.snapshot.version, snapshot: activeState.snapshot, receipt,
         })
       }
       if (body.action === 'receipt') {
-        const receipt = state.receipts.get(body.commandId)
+        const receipt = activeState.receipts.get(body.commandId)
         return cors(route, {
-          found: Boolean(receipt), revision: state.revision, workspaceVersion: `txn:${state.revision}`,
-          schemaVersion: state.snapshot.version, snapshot: state.snapshot, receipt,
+          found: Boolean(receipt), revision: activeState.revision, workspaceVersion: `txn:${activeState.revision}`,
+          schemaVersion: activeState.snapshot.version, snapshot: activeState.snapshot, receipt,
         })
       }
       return cors(route, { code: 'UNEXPECTED_ACTION', action: body.action }, 400)
@@ -730,64 +722,160 @@ test('CGR-05 Discovery status, Profile and promotion use scoped first-party comm
     const pageB = await second.newPage()
     await install(pageA)
     await install(pageB)
-    await pageA.goto('/pjsdas/opportunities')
-    await pageA.locator('.tsui-library-secondary').getByRole('button', { name: /发现箱/ }).click()
-    const itemA = pageA.locator('.discovery-inbox-item').filter({ hasText: '合成公司' })
-    await expect(itemA).toHaveClass(/status-new/)
-    await itemA.getByRole('button', { name: '已看' }).click()
-    await expect(itemA).toHaveClass(/status-seen/)
-    await expect.poll(() => commandBodies.length).toBe(1)
-    expect(commandBodies[0].command.value).toMatchObject({ inboxItemId: 'inbox:cgr05-job', status: 'seen' })
+    await pageA.goto('/pjsdas/library')
+    await expect(pageA.locator('[data-job-filter="new"]')).toContainText('1')
+    await pageA.locator(`.tsui-job-open[data-opportunity-id="${jobId}"]`).click()
+    await expect.poll(() => typeof releaseViewFailure).toBe('function')
+    await pageA.goBack()
+    await expect(pageA.locator('.tsui-library')).toBeVisible()
+    releaseViewFailure!()
+    await expect(pageA.getByRole('status').filter({ hasText: '已读状态尚未确认' })).toBeVisible()
+    expect(commandBodies).toHaveLength(1)
+    expect(state.snapshot.data.opportunities[0].discoveryRead?.viewedAt).toBeUndefined()
+    await pageA.locator(`.tsui-job-open[data-opportunity-id="${jobId}"]`).click()
+    await expect.poll(() => commandBodies.length).toBe(2)
+    await expect.poll(() => state.snapshot.data.opportunities[0].discoveryRead?.viewedAt).toBeTruthy()
+    expect(commandBodies[1].commandId).toBe(commandBodies[0].commandId)
+    expect(commandBodies[0].command).toEqual({ type: 'job_viewed', value: { opportunityId: jobId } })
     expect(commandBodies[0]).not.toHaveProperty('snapshot')
     expect(snapshotCommits).toBe(0)
-
-    await pageB.goto('/pjsdas/opportunities')
-    await pageB.locator('.tsui-library-secondary').getByRole('button', { name: /发现箱/ }).click()
-    await expect(pageB.locator('.discovery-inbox-item').filter({ hasText: '合成公司' })).toHaveClass(/status-seen/)
-
-    await pageA.goto('/pjsdas/settings')
-    await pageA.locator('details.settings-group').filter({ hasText: '岗位发现偏好' }).locator('summary').click()
-    const profileCard = pageA.locator('.discovery-profile-card')
-    await profileCard.locator('textarea').first().fill('合成产品设计师')
-    await profileCard.getByRole('button', { name: '保存偏好' }).click()
-    await expect(profileCard.locator('.notice.success')).toContainText('已保存到账号工作区')
-    expect(commandBodies).toHaveLength(2)
-    expect(commandBodies[1].command).toMatchObject({ type: 'discovery_profile', value: { targetRoleQueries: ['合成产品设计师'] } })
-    expect(snapshotCommits).toBe(0)
-
-    await pageB.evaluate(() => window.dispatchEvent(new Event('online')))
-    await expect.poll(() => pageB.evaluate(async () => new Promise<string[]>((resolve, reject) => {
-      const request = indexedDB.open('pjsdas')
-      request.onerror = () => reject(request.error)
-      request.onsuccess = () => {
-        const db = request.result
-        const tx = db.transaction('discoveryProfiles', 'readonly')
-        const get = tx.objectStore('discoveryProfiles').get('current')
-        get.onerror = () => reject(get.error)
-        get.onsuccess = () => { db.close(); resolve(get.result?.targetRoleQueries ?? []) }
-      }
-    }))).toEqual(['合成产品设计师'])
-    await pageB.goto('/pjsdas/settings')
-    await pageB.locator('details.settings-group').filter({ hasText: '岗位发现偏好' }).locator('summary').click()
-    await expect(pageB.locator('.discovery-profile-card textarea').first()).toHaveValue('合成产品设计师')
-
-    await pageA.goto('/pjsdas/opportunities')
-    await pageA.locator('.tsui-library-secondary').getByRole('button', { name: /发现箱/ }).click()
-    const promoted = pageA.locator('.discovery-inbox-item').filter({ hasText: '合成公司' })
-    await promoted.getByRole('button', { name: '加入 Opportunities' }).click()
-    const confirmation = pageA.getByRole('dialog', { name: '加入机会池预览' })
-    await expect(confirmation).toBeVisible()
-    await confirmation.getByRole('button', { name: '确认加入 Opportunities' }).click()
-    await expect(promoted).toHaveClass(/status-promoted/)
+    await pageB.goto('/pjsdas/library')
+    await expect(pageB.locator('[data-job-filter="new"]')).toContainText('0')
+    await pageA.goto('/pjsdas/library')
+    await pageA.getByRole('button', { name: '搜索范围', exact: true }).click()
+    const scope = pageA.getByRole('dialog')
+    await scope.getByLabel('你想找什么岗位？').fill('合成产品设计师')
+    await scope.getByRole('button', { name: '整理搜索范围' }).click()
+    await scope.getByRole('button', { name: '保存搜索范围' }).click()
+    await expect(scope.getByRole('status')).toContainText('搜索范围已保存')
     expect(commandBodies).toHaveLength(3)
-    expect(commandBodies[2].command).toMatchObject({ type: 'discovery_promotion', value: { inboxItemId: 'inbox:cgr05-job' } })
+    expect(commandBodies[2].command).toMatchObject({ type: 'discovery_profile', value: { targetRoleQueries: ['合成产品设计师'] } })
+    expect(commandBodies[2].command.expectedFingerprint).toMatch(/^[a-f0-9]{64}$/)
     expect(snapshotCommits).toBe(0)
-    expect(state.snapshot.data.opportunities.some((opportunity) => opportunity.id === 'cgr05-job')).toBe(true)
+    await pageB.reload()
+    await pageB.getByRole('button', { name: '搜索范围', exact: true }).click()
+    await expect(pageB.getByRole('dialog').getByLabel('检索岗位词 1', { exact: true })).toHaveValue('合成产品设计师')
+    expect(state.snapshot.data.opportunities[0].discoveryRead?.viewedAt).toBeTruthy()
+    await pageB.getByRole('dialog').getByRole('button', { name: '关闭', exact: true }).click()
+    await pageB.goto('/pjsdas/settings')
+    await pageB.getByLabel('管理账号与同步', { exact: true }).click()
+    await pageB.getByRole('button', { name: '退出 TodayAction' }).click()
+    await expect.poll(() => pageB.evaluate(key => localStorage.getItem(key), AUTH_KEY)).toBeNull()
+    await pageB.evaluate(({ key, value }) => localStorage.setItem(key, JSON.stringify(value)), { key: AUTH_KEY, value: session('account-b', 'token-b') })
+    await pageB.goto('/pjsdas/library')
+    await expect(pageB.locator('.tsui-job-open').filter({ hasText: 'B独立公司' })).toBeVisible()
+    await expect(pageB.locator('[data-job-filter="new"]')).toContainText('1')
+    expect(accountB.snapshot.data.opportunities[0].discoveryRead?.viewedAt).toBeUndefined()
+    await pageB.getByRole('button', { name: '搜索范围', exact: true }).click()
+    await expect(pageB.getByRole('dialog').getByLabel('你想找什么岗位？')).toHaveValue('')
+    await expect(pageB.getByRole('dialog').getByLabel('检索岗位词 1', { exact: true })).toHaveCount(0)
+    expect(commandBodies).toHaveLength(3)
+
   } finally {
     await first.close()
     await second.close()
   }
 })
+
+// Hold a real authority response, rather than sleeping until the initial sync happens.
+// Cached identity is admitted before the dialog opens; the remote profile arrives later.
+for (const edit of ['pristine', 'goal', 'query', 'refinement', 'criteria', 'remove', 'save-failure'] as const) {
+  test(`B3 delayed authority hydrates only a pristine Search Scope (${edit})`, async ({ page }) => {
+    const state: AccountState = { revision: 7, snapshot: workspace('A'), receipts: new Map() }
+    if (edit !== 'goal') state.snapshot = applyDiscoveryProfileCommand(state.snapshot, {
+      ...proposeSearchScope('缓存产品经理'), targetRoleQueries: ['缓存产品经理', '缓存设计师'], preferredLocations: ['上海'],
+    }).snapshot
+    const originalFingerprint = await discoveryProfileManagementFingerprint(state.snapshot.data.discoveryProfile ?? null)
+    const commands: Array<Record<string, any>> = []
+    let holdRead = false
+    let releaseRead: (() => void) | undefined
+    await seedInitialSession(page, 'account-a', 'token-a')
+    await page.route(`${BACKEND}/**`, async route => {
+      const request = route.request(), url = new URL(request.url())
+      if (request.method() === 'OPTIONS') return cors(route, {}, 204)
+      if (url.pathname === '/api/health') return cors(route, health())
+      if (url.pathname !== '/api/workspace') return cors(route, { code: 'NOT_FOUND' }, 404)
+      const body = request.postDataJSON() as Record<string, any>
+      const envelope = () => ({ workspaceId: 'ws-a', workspaceVersion: `txn:${state.revision}`, revision: state.revision,
+        schemaVersion: state.snapshot.version, snapshot: state.snapshot })
+      if (body.action === 'read') {
+        if (holdRead) await new Promise<void>(resolve => { releaseRead = resolve })
+        return cors(route, envelope())
+      }
+      if (body.action === 'command') {
+        commands.push(body)
+        expect(body.command.type).toBe('discovery_profile')
+        expect(body).not.toHaveProperty('snapshot')
+        if (edit === 'save-failure') return cors(route, { code: 'SYNTHETIC_FAILURE', message: 'Scope save temporarily unavailable' }, 503)
+        if (body.command.expectedFingerprint !== await discoveryProfileManagementFingerprint(state.snapshot.data.discoveryProfile ?? null)) {
+          return cors(route, { ...envelope(), outcome: 'CONFLICT', conflict: {
+            kind: 'OBJECT_CONFLICT', message: '搜索范围已由其他设备更新，请关闭后重新读取。',
+            objects: [{ type: 'discovery_profile', id: 'current' }], interveningCommandIds: ['other-device-scope'],
+          } }, 409)
+        }
+        state.snapshot = applyDiscoveryProfileCommand(state.snapshot, body.command.value).snapshot
+        state.revision += 1
+        return cors(route, { ...envelope(), outcome: 'COMMITTED', receipt: {
+          commandId: body.commandId, receiptId: `command-receipt:${body.commandId}`, status: 'COMMITTED', revision: state.revision,
+          affectedObjects: [{ type: 'discovery_profile', id: 'current' }], result: { type: 'discovery_profile', status: 'APPLIED', summary: 'Saved scope.' },
+        } })
+      }
+      if (body.action === 'commit') throw new Error('Scope edits must not write snapshots')
+      return cors(route, { ...envelope(), found: false })
+    })
+    await page.goto('/pjsdas/library')
+    await expect(page.locator('.tsui-job-open').filter({ hasText: 'A公司' })).toBeVisible()
+    if (edit !== 'goal') await expect(page.locator('.ta-scope-summary')).toContainText('缓存产品经理')
+    // Establish the old admitted cache, then emulate another device's newer commit.
+    holdRead = true
+    state.snapshot = applyDiscoveryProfileCommand(state.snapshot, proposeSearchScope('远端产品设计师')).snapshot
+    state.revision += 1
+    const newerFingerprint = await discoveryProfileManagementFingerprint(state.snapshot.data.discoveryProfile)
+    await page.reload()
+    await page.getByRole('button', { name: '搜索范围', exact: true }).click()
+    const dialog = page.getByRole('dialog')
+    await expect(dialog).toBeVisible()
+    if (edit === 'goal') await dialog.getByLabel('你想找什么岗位？').fill('我正在输入的岗位')
+    else {
+      await expect(dialog.getByLabel('检索岗位词 1', { exact: true })).toHaveValue('缓存产品经理')
+      if (edit === 'query') await dialog.getByLabel('检索岗位词 1', { exact: true }).fill('我的岗位词')
+      if (edit === 'refinement') await dialog.getByLabel('修改搜索范围').fill('不要运营')
+      if (edit === 'criteria') await dialog.getByLabel('地点（未填写则不限）').fill('北京')
+      if (edit === 'remove') await dialog.getByRole('button', { name: '删除检索词 2', exact: true }).click()
+    }
+    await expect.poll(() => typeof releaseRead).toBe('function')
+    holdRead = false
+    releaseRead!()
+    await expect(page.locator('.ta-scope-summary')).toContainText('远端产品设计师')
+    await expect(dialog).toBeVisible()
+    if (edit === 'pristine' || edit === 'save-failure') {
+      await expect(dialog.getByLabel('检索岗位词 1', { exact: true })).toHaveValue('远端产品设计师')
+      await expect(dialog.getByLabel('检索岗位词 2', { exact: true })).toHaveCount(0)
+    } else if (edit === 'goal') {
+      await expect(dialog.getByLabel('你想找什么岗位？')).toHaveValue('我正在输入的岗位')
+      await dialog.getByRole('button', { name: '整理搜索范围' }).click()
+    } else {
+      await expect(dialog.getByLabel('检索岗位词 1', { exact: true })).toHaveValue(edit === 'query' ? '我的岗位词' : '缓存产品经理')
+      if (edit === 'refinement') {
+        await expect(dialog.getByLabel('修改搜索范围')).toHaveValue('不要运营')
+        await dialog.getByRole('button', { name: '更新准则' }).click()
+      }
+      if (edit === 'criteria') await expect(dialog.getByLabel('地点（未填写则不限）')).toHaveValue('北京')
+      if (edit === 'remove') await expect(dialog.getByLabel('检索岗位词 2', { exact: true })).toHaveCount(0)
+    }
+    await dialog.getByRole('button', { name: '保存搜索范围' }).click()
+    if (edit === 'pristine') await expect(dialog.getByRole('status')).toContainText('搜索范围已保存')
+    else if (edit === 'save-failure') {
+      await expect(dialog.getByRole('alert')).toBeVisible()
+      await expect(dialog.getByLabel('检索岗位词 1', { exact: true })).toHaveValue('远端产品设计师')
+      await expect(dialog.getByRole('button', { name: '保存搜索范围' })).toBeEnabled()
+      await expect(dialog.getByRole('alert')).toBeVisible()
+    } else await expect(dialog.getByRole('alert')).toContainText('其他设备更新')
+    expect(commands).toHaveLength(1)
+    expect(commands[0].command.expectedFingerprint).toBe(edit === 'pristine' || edit === 'save-failure' ? newerFingerprint : originalFingerprint)
+    expect(state.snapshot.data.discoveryProfile?.targetRoleQueries).toEqual(['远端产品设计师'])
+  })
+}
 
 test('CGR-05 process recovery creates and deletes one account event across clients without snapshot writes', async ({ browser }) => {
   test.setTimeout(60000)

@@ -1,4 +1,5 @@
-import { useMemo } from 'react'
+import { isUnreadJob } from '../jobReadState.js'
+import { useMemo, type ReactNode } from 'react'
 import type { JobCategory } from '../applicationDeadline.js'
 import type { Opportunity } from '../model.js'
 import type { OpportunityDecisionListRead, OpportunityDecisionRead } from '../opportunityDecisionRead.js'
@@ -6,7 +7,7 @@ import { presentStageLabel } from '../stagePresentation.js'
 import { useUiLanguage } from '../uiLanguage.js'
 import './jobs.css'
 
-export type JobFilter = 'all' | JobCategory
+export type JobFilter = 'new' | 'all' | JobCategory
 
 function applicationUrl(opportunity: Opportunity | undefined, stage: OpportunityDecisionRead['process']['stage']) {
   if (!opportunity || stage !== 'not_applied' || opportunity.participationStatus === 'abandoned') return undefined
@@ -27,7 +28,9 @@ function deadlineLabel(item: OpportunityDecisionRead, zh: boolean) {
   return new Intl.DateTimeFormat(zh ? 'zh-CN' : 'en-GB', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false }).format(date)
 }
 
-export default function JobLibrary({ read, opportunities, filter, onFilterChange, query, onQueryChange, visibleCount, onVisibleCountChange, onOpenOpportunity }: {
+export default function JobLibrary({ read, opportunities, filter, onFilterChange, query, onQueryChange, visibleCount, onVisibleCountChange, onOpenOpportunity, retainedNewIds = [], searchScope }: {
+  searchScope?: ReactNode
+  retainedNewIds?: string[]
   read: OpportunityDecisionListRead
   opportunities: Opportunity[]
   filter: JobFilter
@@ -44,21 +47,22 @@ export default function JobLibrary({ read, opportunities, filter, onFilterChange
   const filtered = useMemo(() => {
     const needle = query.trim().toLocaleLowerCase()
     return read.all.filter((item) => {
-      if (filter !== 'all' && item.category !== filter) return false
+      if (filter === 'new' ? !isUnreadJob(byId.get(item.opportunityId)) && !retainedNewIds.includes(item.opportunityId) : filter !== 'all' && item.category !== filter) return false
       return !needle || `${item.company} ${item.role}`.toLocaleLowerCase().includes(needle)
-    })
-  }, [read, byId, filter, query])
+    }).sort((a, b) => filter === 'new' ? Date.parse(byId.get(b.opportunityId)?.discoveryRead?.addedAt ?? '') - Date.parse(byId.get(a.opportunityId)?.discoveryRead?.addedAt ?? '') || a.opportunityId.localeCompare(b.opportunityId) : 0)
+  }, [read, byId, filter, query, retainedNewIds])
   const visible = filtered.slice(0, visibleCount)
   const options: Array<[JobFilter, string, string]> = [
-    ['all', '全部', 'All'], ['to_apply', '待投递', 'To apply'], ['applied', '已投递', 'Applied'],
+    ['all', '全部', 'All'], ['new', `新发现 ${opportunities.filter(isUnreadJob).length}`, `New ${opportunities.filter(isUnreadJob).length}`], ['to_apply', '待投递', 'To apply'], ['applied', '已投递', 'Applied'],
     ['written_test', '收到笔试', 'Written test'], ['interview', '收到面试', 'Interview'],
     ['process_ended', '流程结束', 'Process ended'], ['deadline_passed', '时间截止', 'Deadline passed'], ['no_deadline', '无截止日期', 'No deadline'],
   ]
   return <section className="tsui-library" aria-label={zh ? '岗位库' : 'Job library'}>
     <header className="tsui-library-heading"><h1>{zh ? '岗位库' : 'Job library'}</h1><span>{read.all.length} {zh ? '个岗位' : 'jobs'}</span></header>
+    {searchScope}
     <div className="tsui-library-toolbar">
       <div className="tsui-library-filters" role="group" aria-label={zh ? '岗位状态' : 'Job status'}>
-        {options.map(([value, labelZh, labelEn]) => <button key={value} type="button" aria-pressed={filter === value} className={filter === value ? 'active' : ''} onClick={() => { onFilterChange(value); onVisibleCountChange(40) }}>{zh ? labelZh : labelEn}</button>)}
+        {options.map(([value, labelZh, labelEn]) => <button key={value} type="button" aria-pressed={filter === value} data-job-filter={value} className={filter === value ? 'active' : ''} onClick={() => { onFilterChange(value); onVisibleCountChange(40) }}>{zh ? labelZh : labelEn}</button>)}
       </div>
       <input type="search" value={query} onChange={(event) => { onQueryChange(event.target.value); onVisibleCountChange(40) }} aria-label={zh ? '搜索公司或岗位' : 'Search company or role'} placeholder={zh ? '搜索公司或岗位' : 'Search company or role'} />
     </div>
@@ -71,7 +75,7 @@ export default function JobLibrary({ read, opportunities, filter, onFilterChange
         return <article className="tsui-job-row" key={item.opportunityId} data-opportunity-id={item.opportunityId}>
           <button type="button" className="opportunity-decision-row tsui-job-open" data-opportunity-id={item.opportunityId} onClick={event => onOpenOpportunity(item.opportunityId, event.currentTarget)}>
             <span className="tsui-job-mark" aria-hidden="true">{item.company.slice(0, 2)}</span>
-            <span className="tsui-job-identity"><strong>{item.company}</strong><span>{item.role}</span></span>
+            <span className="tsui-job-identity"><strong>{item.company}{filter !== 'new' && isUnreadJob(opportunity) ? <small className="ta-job-unread">{zh ? '新' : 'New'}</small> : null}</strong><span>{item.role}</span></span>
             <span className="tsui-job-meta"><strong>{deadline ?? (item.category === 'no_deadline' ? (zh ? '无截止日期' : 'No deadline') : presentStageLabel(item.process.stage, undefined, lang))}</strong><span>{deadline ? (zh ? '申请截止' : 'Application deadline') : presentStageLabel(item.process.stage, undefined, lang)}</span></span>
             {!url ? <span className="tsui-job-state">{stateLabel} <span aria-hidden="true">→</span></span> : null}
           </button>

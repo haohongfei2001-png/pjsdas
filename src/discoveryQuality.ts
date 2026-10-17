@@ -154,6 +154,7 @@ export function evaluateDiscoveryCandidate(
   }
 
   const title = compact(candidate.role)
+  if (profile.titleEquals?.length && !profile.titleEquals.some(rule => rule.trim().replace(/\s+/g, ' ').toLocaleLowerCase() === candidate.role.trim().replace(/\s+/g, ' ').toLocaleLowerCase())) reject({ code: 'title_condition_mismatch' })
   if (profile.titleIncludes?.length && !profile.titleIncludes.some(rule => literalRulePresent(rule, title))) reject({ code: 'title_condition_mismatch' })
   if (profile.titleExcludes?.some(rule => literalRulePresent(rule, title))) reject({ code: 'title_condition_mismatch' })
 
