@@ -119,7 +119,10 @@ function importedNoticeCandidates(plan: ReturnType<typeof parseProgressUpdate>, 
     const meridiems = timeEvidence.match(/上午|下午|(?:am|pm)\b/gi) ?? []
     if (meridiems.length > 1 || /晚上|早上|中午/.test(timeEvidence)) return undefined
     const temporal = resolveSourceTemporal(timeEvidence, { receivedAt: now.toISOString(), timezone, mode: operation.timingMode })
-    if (!temporal || temporal.latestStartAt || temporal.shape === 'availability_window') return undefined
+    // A supplied half-day cannot be silently downgraded to a whole-day fact.
+    // The current DTO has no half-day representation, so require its clock.
+    if (!temporal || temporal.latestStartAt || temporal.shape === 'availability_window'
+      || meridiems.length > 0 && temporal.precision !== 'datetime') return undefined
     const weekday = /[（(](?:星期|周)([一二三四五六日天])[）)]/.exec(timeEvidence)
     const day = /(20\d{2})[年\/-](\d{1,2})[月\/-](\d{1,2})/.exec(timeEvidence)
     if (weekday && day && new Date(Date.UTC(Number(day[1]), Number(day[2]) - 1, Number(day[3]))).getUTCDay()

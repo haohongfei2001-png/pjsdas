@@ -10,6 +10,9 @@ recruiting notice may select the first source layer as data. Plain quotes,
 questions, examples, hypotheticals, rewrite requests and source commands do not
 grant user intent, actor identity, permission or personal operations. An unquoted
 first-party tail is not discarded to make the import writable.
+Current Chinese wrappers are anchored `请导入/请保存/请记录` requests naming the
+following notice, plus equivalent bounded English import/save/record wrappers.
+The source header names the exact known company and role separated by whitespace.
 
 This bounded adapter supports known-job interview, written-test and assessment
 invitations with a full, unambiguous absolute date. It uses the supplied timezone,
@@ -44,13 +47,24 @@ This candidate was reconstructed against the verified remote main tree. Previous
   where gateway-validated `applySemanticIntake` must return `NO_WRITE`.
 - After the bounded metadata fix, all 20 initial cases passed, including the eight
   negative controls and supported room/URL positives.
-- Reconstructed contract plus existing B1/completion suites: 144 tests passed
-  (92 new cases and 52 existing cases). The first run's one test-fixture failure
+- Reconstructed contract plus existing B1/completion suites: 172 tests passed
+  (120 new cases and 52 existing cases). The first run's one test-fixture failure
   used overlapping company/role labels (`1` versus `10`); the corrected boundary
   fixture uses distinct alphabetic labels without changing assertions.
-- TypeScript build-mode checking passed. Independent review and full CI are
-  pending. New browser journeys have not yet been executed; test discovery is
-  not browser acceptance.
+- Independent review reproduced five half-day-precision failures: a standalone
+  morning/afternoon constraint was discarded, including a conflicting batch.
+  Requiring a supported datetime whenever a meridiem is supplied closes this
+  class; the reviewer's original five negatives, ten meridiem controls and 13
+  authority/identity/lifecycle/type controls independently pass (28/28). The
+  bounded code review is CLEAN. Both real RED records remain evidence.
+- Fresh full unit suite: 336 files / 3775 tests passed first attempt in 24.82s.
+  TypeScript build-mode checking and production build passed. The existing
+  >500KB chunk warning remains; no limit was changed. This build regenerated its
+  usual release identity; only the committed unbound fallback is retained in the
+  source change. Full official CI acceptance is pending.
+- Browser discovery finds all 25 tests across the two relevant files, including
+  six new notice cases and the added held-hydration case. These new browser
+  journeys have not yet executed; discovery is not browser acceptance.
 
 The browser cases use the real gateway DTO and domain core behind a synthetic
 transport, with authoritative and local business deltas, repeated import after
