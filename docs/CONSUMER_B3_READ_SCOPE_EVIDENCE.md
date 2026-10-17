@@ -102,3 +102,25 @@ only for whitespace and case. Retrieval terms do not substitute for exclusions.
 
 This is a candidate, not a release/deployment or a claim that all B3/A17 gates
 have passed. Unsupported broad natural-language interpretation remains explicit.
+
+## Native raster diagnostic (not a relaxed image gate)
+
+The unmodified Chromium 153.0.8010.12 / Playwright 1.63.0 runs retained stable
+fixed-reference frames across four jobs. A separate diagnostic head captured
+three consecutive native screenshots per state: all three matched within each
+runtime, while the candidate still differed at a few rounded edges. Schedule
+1440 had identical 40-element DOM geometry/computed styles/text; Today after
+Settings at 390 had identical 81-element geometry/computed styles/text. Focus,
+fonts, scroll, device scale and animation state also matched. Library descendants
+only had the independently approved block displacement; their styles matched.
+
+The next diagnostic uses one documented rendering switch identically in both
+runtimes: `--disable-skia-runtime-opts`. Chromium's exact tested version defines
+this as its baseline CPU path for web tests, and GoogleChrome's tooling guide
+records it. It does not change the page, antialiasing policy, screenshot pixels,
+baseline source or exact comparison threshold. Runtime version/arguments and all
+raw repeats are retained. This is a rendering-path experiment, not a claim that
+the failed comparisons have passed. No further flags will be stacked without
+evidence. Sources checked 2026-10-17:
+- https://github.com/chromium/chromium/blob/153.0.8010.12/content/public/common/content_switches.cc#L216-L218
+- https://github.com/GoogleChrome/chrome-launcher/blob/main/docs/chrome-flags-for-tools.md#rendering--gpu

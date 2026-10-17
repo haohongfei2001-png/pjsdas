@@ -14,6 +14,16 @@ const diagnoseRaster = process.env.TA_SECONDARY_DIAG === '1'
 const modalRoots = '.cgr-capture-sheet, .backup-dialog, .event-dock, .prep-graph-dialog, .discovery-inbox-modal, .mcp-proposal-card, .ta-scope-dialog[open]'
 const originalJobFilters = ['全部', '待投递', '已投递', '收到笔试', '收到面试', '流程结束', '时间截止', '无截止日期']
 
+test.beforeAll(async ({ browser }) => {
+  const session = await browser.newBrowserCDPSession()
+  const command = await session.send('Browser.getBrowserCommandLine')
+  await session.detach()
+  expect(command.arguments).toContain('--disable-skia-runtime-opts')
+  await mkdir(evidence, { recursive: true })
+  await writeFile(`${evidence}/BROWSER_RUNTIME.json`, JSON.stringify({ version: browser.version(), arguments: command.arguments }, null, 2))
+})
+
+
 function fixture(appliedForLayout = false) {
   const snapshot = workspace()
   snapshot.data.opportunities[0]!.company = '示例公司 · 产品与用户研究团队'

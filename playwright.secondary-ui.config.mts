@@ -7,7 +7,10 @@ export default defineConfig({
   timeout: 90_000, expect: { timeout: 8_000 },
   outputDir: 'test-results/secondary-ui-checks',
   reporter: [['list'], ['html', { open: 'never', outputFolder: 'secondary-ui-report' }]],
-  use: { ...mockCloudTestUse, baseURL: 'http://127.0.0.1:4173', timezoneId: 'Asia/Shanghai',
+  // Chromium 153's documented web-test baseline Skia path. Both fixed before
+  // and candidate use this same config; no image pixels or thresholds change.
+  // https://github.com/chromium/chromium/blob/153.0.8010.12/content/public/common/content_switches.cc#L216-L218
+  use: { ...mockCloudTestUse, launchOptions: { ...mockCloudTestUse.launchOptions, args: ['--disable-skia-runtime-opts'] }, baseURL: 'http://127.0.0.1:4173', timezoneId: 'Asia/Shanghai',
     trace: 'retain-on-failure', screenshot: 'only-on-failure' },
   webServer: { command: 'npm run preview -- --host 127.0.0.1 --port 4173',
     url: 'http://127.0.0.1:4173/pjsdas/', reuseExistingServer: false, timeout: 60_000 },

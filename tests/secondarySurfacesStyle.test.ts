@@ -33,6 +33,7 @@ describe('secondary-surface styling stays outside the protected main UI', () => 
     expect(workflow).toContain('contents: read')
     expect(workflow).toContain('timeout-minutes: 15')
     expect(read('playwright.secondary-ui.config.mts')).toContain('retries: 0')
+    expect(read('playwright.secondary-ui.config.mts')).toContain("args: ['--disable-skia-runtime-opts']")
     const pixelGate = read('e2e/secondarySurfaces.ui.ts')
     expect(pixelGate).toContain('toBe(digest(baseline))')
     expect(pixelGate).toContain("filter({ hasText: '可用时间' })).toHaveCount(0)")
