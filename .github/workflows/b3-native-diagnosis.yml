@@ -76,6 +76,8 @@ jobs:
             test-results/native-paint-diagnostic/
           retention-days: 14
   compact-confirmation-profile:
+    # One bounded profile was captured on opening this diagnostic PR.
+    if: github.event.action == 'opened'
     runs-on: ubuntu-24.04
     timeout-minutes: 12
     container:

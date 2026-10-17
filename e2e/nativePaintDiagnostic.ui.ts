@@ -109,7 +109,6 @@ for (const width of [1440, 390]) test(`native paint records locate navigation re
   const paints: any[] = []
   session.on('LayerTree.layerTreeDidChange', event => { layers = event.layers ?? [] })
   session.on('LayerTree.layerPainted', event => { paints.push(event) })
-  await session.send('LayerTree.enable')
   const record = async (label: string) => {
     const prefix = `${evidence}/NATIVE_${label}-${width}`
     await page.screenshot({ path: `${prefix}.png`, fullPage: true, animations: 'disabled', caret: 'hide' })
@@ -135,6 +134,10 @@ for (const width of [1440, 390]) test(`native paint records locate navigation re
     await page.setViewportSize({ width, height: width < 600 ? 844 : 900 })
     await page.goto('/pjsdas/today')
     await expect(page.locator('.tsui-task-row[data-action-id]')).toHaveCount(2)
+    // Chromium intentionally drops LayerTree instrumentation on document navigation.
+    // https://chromium.googlesource.com/chromium/src/+/main/third_party/blink/renderer/core/inspector/inspector_layer_tree_agent.cc
+    await session.send('DOM.getDocument', { depth: 0 })
+    await session.send('LayerTree.enable')
     await capture(page, 'NATIVE_JOURNEY_TODAY', width)
     await page.locator('.tsui-primary-nav').getByRole('button', { name: '岗位库', exact: true }).click()
     await expect(page.locator('.tsui-job-open')).toHaveCount(2)
