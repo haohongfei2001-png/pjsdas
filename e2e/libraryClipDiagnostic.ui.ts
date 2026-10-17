@@ -25,17 +25,21 @@ test.beforeAll(async ({ browser }, testInfo) => {
 // content rectangles. No DOM, paint, snapshot bytes or thresholds are changed.
 let tileSession: CDPSession | undefined
 let tileEvents: unknown[] = []
+let tileTracingStarted = false
 test.beforeEach(async ({ page }, testInfo) => {
   tileSession = await page.context().newCDPSession(page)
-  const commandLine = await tileSession.send('Browser.getBrowserCommandLine')
-  expect(commandLine.arguments).toContain('--default-tile-height=4096')
-  await testInfo.attach('native-command-line', { body: JSON.stringify(commandLine), contentType: 'application/json' })
+  // This harness intentionally excludes --enable-automation. Do not add it
+  // merely to expose Browser.getBrowserCommandLine; actual cc tile rectangles
+  // below provide runtime evidence without another browser configuration change.
+  expect(testInfo.project.use.launchOptions?.args).toContain('--default-tile-height=4096')
+  await testInfo.attach('native-browser-version', { body: JSON.stringify(await tileSession.send('Browser.getVersion')), contentType: 'application/json' })
   tileEvents = []
   tileSession.on('Tracing.dataCollected', event => tileEvents.push(...event.value))
   await tileSession.send('Tracing.start', { categories: 'cc,disabled-by-default-cc.debug,devtools.timeline', transferMode: 'ReportEvents' })
+  tileTracingStarted = true
 })
 test.afterEach(async ({}, testInfo) => {
-  if (!tileSession) return
+  if (!tileSession || !tileTracingStarted) return
   const complete = new Promise<void>(resolve => tileSession!.once('Tracing.tracingComplete', () => resolve()))
   await tileSession.send('Tracing.end')
   await complete
@@ -44,6 +48,7 @@ test.afterEach(async ({}, testInfo) => {
   await testInfo.attach('native-tiles', { path, contentType: 'application/json' })
   await tileSession.detach()
   tileSession = undefined
+  tileTracingStarted = false
 })
 
 
