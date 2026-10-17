@@ -146,3 +146,57 @@ the same user navigation but captures only native whole pages; the original
 locator-capture path and every original gate remain intact. This distinguishes
 capture-operation history from application navigation without altering DOM,
 pixels, thresholds, or the fixed reference.
+
+## Native compositor root cause and bounded visual environment repair
+
+The separate, now closed, diagnostic PR #271 preserved three artifacts:
+- Native paint records: https://github.com/haohongfei2001-png/pjsdas/actions/runs/39065481597/artifacts/12113231075
+- Single-variable partial-raster experiment: https://github.com/haohongfei2001-png/pjsdas/actions/runs/39066078626/artifacts/12112917675
+- One compact-confirmation profile: https://github.com/haohongfei2001-png/pjsdas/actions/runs/39065284317/artifacts/12112861826
+
+Schedule1440 retained exactly one pixel from the preceding Library scope text;
+Today390 after Settings differed at six rounded-edge pixels. The corresponding
+current LayerTree command lists (84 and 102 commands) were identical between the
+fixed reference and candidate, as were their native replay PNGs. Actual native
+screen PNGs still differed. This locates the discrepancy after current paint
+recording, in the compositor's history-dependent raster path rather than changed
+current DOM drawing instructions. Replay images are diagnostic evidence only;
+they do not replace screenshots in any gate.
+
+Chromium 153.0.8010.12 explicitly reads `--disable-partial-raster` into
+`LayerTreeSettings.use_partial_raster`:
+https://github.com/chromium/chromium/blob/153.0.8010.12/third_party/blink/renderer/platform/widget/compositing/layer_tree_settings.cc#L297
+The bounded test used this single flag identically for the original dbad720
+source and candidate. Both actual protected PNGs became byte-identical. Four
+real CSS negative controls each altered exactly pixel (159,225); exact hashes
+rejected all four. An independent review permitted this environment repair only
+in the secondary visual configuration, with proxy/isolation and every original
+navigation, first screenshot, baseline source and assertion retained.
+
+This changes the rendering environment, not the baseline source: Schedule's old
+baseline PNG differs by seven pixels from the new-environment baseline, and its
+candidate differs by eight. Native paint commands remain unchanged. We do not
+claim old PNG bytes were preserved or that a high-contrast one-pixel mutation
+proves coverage of every default-partial-raster-specific bug. Production and
+performance browsers retain their original configuration. The original complete
+visual gate, including Library and 320/200%, must still pass independently; no
+AA ignore, mask, crop-edge removal, tolerance or production repaint is permitted.
+The one-pixel sensitivity check is also retained on a separate page in that gate.
+
+## Measured timing-ownership indexing repair
+
+The single native compact profile did not reproduce the historical 51ms task;
+its exact cause remains unknown. It did show a real 19.095ms renderer task with
+about 11.884ms inclusive / 8.255ms self time in `actionNodesById`. That function
+rescanned and sorted all latest nodes for every action, plus repeated linear
+opportunity/event searches. The repair indexes these relationships once while
+retaining first live-event/opportunity matches, latest-occurrence insertion
+order, stable version ties, terminal/live ownership, conflicts and corrections.
+Only local derived lookup arrays/maps are mutated, never snapshot objects.
+
+A frozen pre-repair scan-based oracle, 200 seeded mixed histories, explicit
+missing/null/duplicate cases and a 1000-action/1000-node linear-access test guard
+semantics and scale. Local full unit acceptance is 331 files / 3623 tests, with
+typecheck and production build passing. These results do not replace native
+browser profiling or the original unprofiled 50ms gate. No historical performance
+failure is waived and no performance threshold changed.

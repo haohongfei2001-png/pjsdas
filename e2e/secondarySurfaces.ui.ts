@@ -536,3 +536,18 @@ for (const width of [1440, 390, 320]) test(`secondary previews and unknown-save 
   expect(commandIds).toHaveLength(1)
   expect(mutations).toEqual([])
 })
+
+// A separate page tests the comparator's sensitivity without repainting any
+// protected navigation or modifying an accepted screenshot.
+for (const width of [1440, 390]) test(`exact visual comparison detects a real one-pixel paint mutation at ${width}`, async ({ page }) => {
+  const mutations = await seed(page, true)
+  await page.setViewportSize({ width, height: width < 600 ? 844 : 900 })
+  await page.goto('/pjsdas/today')
+  await expect(page.locator('.tsui-task-row[data-action-id]')).toHaveCount(2)
+  await page.evaluate(() => document.fonts.ready)
+  const original = await page.screenshot({ path: `${evidence}/NEGATIVE_REFERENCE-${width}.png`, fullPage: true, animations: 'disabled', caret: 'hide' })
+  await page.addStyleTag({ content: 'body::after { content: "" !important; position: fixed !important; left: 159px !important; top: 225px !important; width: 1px !important; height: 1px !important; background: rgb(244, 0, 244) !important; z-index: 2147483647 !important; pointer-events: none !important; }' })
+  const changed = await page.screenshot({ path: `${evidence}/NEGATIVE_ONE_PIXEL-${width}.png`, fullPage: true, animations: 'disabled', caret: 'hide' })
+  expect(() => expect(digest(changed), 'the original exact gate must reject a real paint mutation').toBe(digest(original))).toThrow()
+  expect(mutations).toEqual([])
+})
