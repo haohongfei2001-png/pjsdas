@@ -1,6 +1,7 @@
 import { MOCK_TARGET_AUTH_ORIGIN } from './support/mockCloudTargets.js'
 import { expect, test, type Page } from '@playwright/test'
-import { mkdir, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, writeFile } from 'node:fs/promises'
+import { createHash } from 'node:crypto'
 import { BACKEND, cors, health, seedSession, workspace } from './fixtures/todayWorkspace.js'
 import { validateSnapshot } from '../src/snapshot.js'
 
@@ -153,6 +154,22 @@ for (const width of [1440, 390]) test(`native paint records locate navigation re
     await expect(page.locator('.tsui-task-row[data-action-id]')).toHaveCount(2)
     await capture(page, 'NATIVE_JOURNEY_AFTER_SETTINGS', width)
     if (width === 390) await record('AFTER_SETTINGS')
+    const protectedLabel = width === 1440 ? 'SCHEDULE' : 'AFTER_SETTINGS'
+    if (phase === 'after') {
+      const name = `NATIVE_${protectedLabel}-${width}.png`
+      const digest = (value: Buffer) => createHash('sha256').update(value).digest('hex')
+      const baseline = await readFile(`secondary-ui-before/${name}`)
+      const candidate = await readFile(`${evidence}/${name}`)
+      expect.soft(digest(candidate), 'all native screen pixels still match the fixed reference').toBe(digest(baseline))
+    }
+    // Negative control: a real one-CSS-pixel paint change must still fail exact
+    // comparison. Never use this stylesheet in an accepted screenshot or app.
+    const original = await page.screenshot({ fullPage: true, animations: 'disabled', caret: 'hide' })
+    await page.addStyleTag({ content: 'body::after { content: "" !important; position: fixed !important; left: 159px !important; top: 225px !important; width: 1px !important; height: 1px !important; background: rgb(244, 0, 244) !important; z-index: 2147483647 !important; pointer-events: none !important; }' })
+    const mutated = await page.screenshot({ path: `${evidence}/NEGATIVE_ONE_PIXEL-${width}.png`, fullPage: true, animations: 'disabled', caret: 'hide' })
+    await writeFile(`${evidence}/NEGATIVE_REFERENCE-${width}.png`, original)
+    const digest = (value: Buffer) => createHash('sha256').update(value).digest('hex')
+    expect(() => expect(digest(mutated), 'known real one-pixel mutation must fail the exact gate').toBe(digest(original))).toThrow()
     expect(mutations).toEqual([])
   } finally { await session.detach() }
 })
