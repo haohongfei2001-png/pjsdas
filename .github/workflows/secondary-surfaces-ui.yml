@@ -29,6 +29,7 @@ jobs:
       # Fixed, already accepted pre-B1 runtime: deadline-only copy (#255) and
       # operation-history separation (#256). Never use the candidate or transform pixels.
       TA_SECONDARY_BASE: dbad72074299c8f585a9b13d5f4ae0b3a6b32116
+      TA_SECONDARY_DIAG: 1
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7

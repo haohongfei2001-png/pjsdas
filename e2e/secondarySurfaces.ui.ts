@@ -10,6 +10,7 @@ const phase = process.env.TA_SECONDARY_PHASE === 'before' ? 'before' : 'after'
 const evidence = `secondary-ui-${phase}`
 const now = '2026-09-23T08:00:00.000Z'
 const digest = (bytes: Buffer) => createHash('sha256').update(bytes).digest('hex')
+const diagnoseRaster = process.env.TA_SECONDARY_DIAG === '1'
 const modalRoots = '.cgr-capture-sheet, .backup-dialog, .event-dock, .prep-graph-dialog, .discovery-inbox-modal, .mcp-proposal-card, .ta-scope-dialog[open]'
 const originalJobFilters = ['全部', '待投递', '已投递', '收到笔试', '收到面试', '流程结束', '时间截止', '无截止日期']
 
@@ -96,9 +97,17 @@ async function capture(page: Page, label: string, width: number, scale = 100, pr
   await mkdir(evidence, { recursive: true })
   const overlay = await page.locator('.cgr-capture-backdrop, .backup-backdrop, .event-dock-backdrop, .prep-graph-backdrop, .discovery-inbox-modal-backdrop, .mcp-proposal-backdrop, .ta-scope-dialog[open]').count()
   const bytes = await page.screenshot({ path: `${evidence}/${name}`, fullPage: overlay === 0, animations: 'disabled', caret: 'hide' })
+  if (diagnoseRaster && protectMain) {
+    const hashes = [digest(bytes)]
+    for (let index = 1; index <= 2; index++) hashes.push(digest(await page.screenshot({
+      path: `${evidence}/${name}.repeat-${index}.png`, fullPage: overlay === 0, animations: 'disabled', caret: 'hide',
+    })))
+    await writeFile(`${evidence}/${name}.repeat.json`, JSON.stringify({ hashes }, null, 2))
+    await saveRenderContract(page, `${name}.dom`)
+  }
   if (protectMain && phase === 'after') {
     const baseline = await readFile(`secondary-ui-before/${name}`)
-    expect(digest(bytes), `${label}: all main pixels must match the approved pre-B1 reference dbad720`).toBe(digest(baseline))
+    expect.soft(digest(bytes), `${label}: all main pixels must match the approved pre-B1 reference dbad720`).toBe(digest(baseline))
   }
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)
   const overflowNodes = overflow > 1 ? await page.evaluate(() => [...document.querySelectorAll<HTMLElement>('body *')]
@@ -128,6 +137,23 @@ async function capture(page: Page, label: string, width: number, scale = 100, pr
       expect(overflow, `${name}: unchanged background overflow`).toBeLessThanOrEqual(baseline.overflow)
     } else expect(overflow, `${name}: no horizontal overflow`).toBeLessThanOrEqual(1)
   }
+}
+
+// Diagnostic evidence only: native screenshots and DOM reads. No retry selects
+// a passing image, no styles/pixels are changed, and the first capture is gated.
+async function saveRenderContract(page: Page, name: string, selector = '.cgr-app-shell') {
+  const dom = await page.locator(selector).evaluate(root => ({ state: {
+    scrollX, scrollY, innerWidth, innerHeight, devicePixelRatio, readyState: document.readyState,
+    fonts: { status: document.fonts.status, faces: [...document.fonts].map(font => ({ family: font.family, status: font.status, style: font.style, weight: font.weight })) },
+    activeElement: document.activeElement?.outerHTML,
+    animations: document.getAnimations().map(animation => ({ playState: animation.playState, currentTime: animation.currentTime, timing: animation.effect?.getComputedTiming() })),
+  }, elements: [root, ...root.querySelectorAll('*')].map(element => {
+    const box = element.getBoundingClientRect(), css = getComputedStyle(element)
+    return { tag: element.tagName, className: element.className, text: element.childElementCount ? undefined : element.textContent,
+      box: { x: box.x, y: box.y + scrollY, width: box.width, height: box.height },
+      style: Object.fromEntries([...css].map(key => [key, css.getPropertyValue(key)])) }
+  }) }))
+  await writeFile(`${evidence}/${name}.json`, JSON.stringify(dom, null, 2))
 }
 
 // B3 permits the new scope block, ninth query and retired Inbox link only.
@@ -218,6 +244,14 @@ async function protectLibrary(page: Page, width: number, scale: number) {
   for (const [label, selector] of [['HEADING', '.tsui-library-heading'], ['SEARCH', '.tsui-library-toolbar input'], ['ROWS', '.tsui-library-panel'], ['TOTAL', '.tsui-library-total']] as const) {
     const name = `LIBRARY_${label}-${width}-${scale}.png`
     const bytes = await page.locator(selector).screenshot({ path: `${evidence}/${name}`, animations: 'disabled', caret: 'hide' })
+    if (diagnoseRaster) {
+      const hashes = [digest(bytes)]
+      for (let index = 1; index <= 2; index++) hashes.push(digest(await page.locator(selector).screenshot({
+        path: `${evidence}/${name}.repeat-${index}.png`, animations: 'disabled', caret: 'hide',
+      })))
+      await writeFile(`${evidence}/${name}.repeat.json`, JSON.stringify({ hashes }, null, 2))
+      await saveRenderContract(page, `${name}.dom`, selector)
+    }
     if (phase === 'after') {
       const baseline = await readFile(`secondary-ui-before/${name}`)
       expect.soft(digest(bytes), `${name}: unchanged original Library region`).toBe(digest(baseline))
