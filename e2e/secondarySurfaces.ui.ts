@@ -358,6 +358,47 @@ for (const width of [1440, 390, 320]) test(`main pixels stay fixed before and af
   expect(mutations).toEqual([])
 })
 
+// Isolate screenshot-operation history without changing the user navigation.
+// The original region-capture journey above remains a strict independent gate.
+for (const width of [1440, 390, 320]) test(`page-only capture replays the same secondary navigation at ${width}`, async ({ page }) => {
+  const mutations = await seed(page, true)
+  const scale = width === 320 ? 200 : 100
+  await page.setViewportSize({ width, height: width < 600 ? 844 : 900 })
+  await page.goto('/pjsdas/today')
+  await expect(page.locator('.tsui-task-row[data-action-id]')).toHaveCount(2)
+  await expect(page.locator('.tsui-task-row:not([data-action-id])')).toHaveCount(1)
+  await expect(page.locator('.tsui-node-panel .tsui-node-row')).toHaveCount(1)
+  await capture(page, 'PAGE_ONLY_MAIN_TODAY', width, scale, true)
+  await page.locator('.tsui-primary-nav').getByRole('button', { name: '岗位库', exact: true }).click()
+  await expect(page.locator('.tsui-job-open')).toHaveCount(2)
+  await capture(page, 'PAGE_ONLY_JOBS', width, scale)
+  await page.locator('.tsui-primary-nav').getByRole('button', { name: '日程', exact: true }).click()
+  await expect(page.locator('.tsui-schedule-row')).toHaveCount(1)
+  await capture(page, 'PAGE_ONLY_MAIN_SCHEDULE', width, scale, true)
+  await page.locator('.tsui-topbar').getByRole('button', { name: '设置', exact: true }).click()
+  await expect(page.getByRole('heading', { name: '账号', exact: true })).toBeVisible()
+  await capture(page, 'PAGE_ONLY_SETTINGS', width, scale)
+  await page.locator('.tsui-primary-nav').getByRole('button', { name: '今天', exact: true }).click()
+  await expect(page.locator('.tsui-task-row')).not.toHaveCount(0)
+  await capture(page, 'PAGE_ONLY_MAIN_AFTER_SETTINGS', width, scale, true)
+  await page.locator('.tsui-tell-button').click()
+  await expect(page.getByRole('textbox', { name: '要告诉 TodayAction 的内容' })).toBeFocused()
+  if (phase === 'after') {
+    const ring = await page.locator('.cgr-capture-input').evaluate(element => ({
+      color: getComputedStyle(element).outlineColor, width: getComputedStyle(element).outlineWidth,
+    }))
+    expect(ring).toEqual({ color: 'rgb(49, 94, 197)', width: '3px' })
+  }
+  await capture(page, 'PAGE_ONLY_CAPTURE', width, scale)
+  await page.getByRole('textbox', { name: '要告诉 TodayAction 的内容' }).fill('例如：明天下午准备面试。')
+  await expect(page.locator('.cgr-understanding')).toBeVisible()
+  await capture(page, 'PAGE_ONLY_CAPTURE_PREVIEW', width, scale)
+  await page.keyboard.press('Escape')
+  await expect(page.locator('.tsui-tell-button')).toBeFocused()
+  await capture(page, 'PAGE_ONLY_MAIN_AFTER_CAPTURE', width, scale, true)
+  expect(mutations).toEqual([])
+})
+
 for (const width of [1440, 390, 320]) test(`details and settings retain readable complete content at ${width}`, async ({ page }) => {
   const mutations = await seed(page)
   await page.setViewportSize({ width, height: width < 600 ? 844 : 900 })

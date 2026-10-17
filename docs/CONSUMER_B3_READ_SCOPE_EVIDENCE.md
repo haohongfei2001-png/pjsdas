@@ -137,3 +137,12 @@ had no effect on this discrepancy and was removed. The next bounded diagnostic
 keeps the original gates and adds direct real-route captures plus html/body/root
 size/background/compositing state, all DOM attributes and ordered CSS rules.
 No additional flags or thresholds are introduced.
+
+The root-state/direct-route diagnostic (run 38999617414) found exact fresh-route
+Today/Schedule pixels, while the original navigation still differed. In both
+failing main states the full html/body/root geometry, styles/pseudos and all
+main DOM attributes/styles/geometry were equal. The next paired replay retains
+the same user navigation but captures only native whole pages; the original
+locator-capture path and every original gate remain intact. This distinguishes
+capture-operation history from application navigation without altering DOM,
+pixels, thresholds, or the fixed reference.
