@@ -1,5 +1,5 @@
 import { MOCK_TARGET_AUTH_ORIGIN } from './support/mockCloudTargets.js'
-import { expect, test, type Page } from '@playwright/test'
+import { expect, test, type Page, type CDPSession } from '@playwright/test'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { createHash } from 'node:crypto'
 import { BACKEND, cors, health, seedSession, workspace } from './fixtures/todayWorkspace.js'
@@ -18,6 +18,32 @@ test.beforeAll(async ({ browser }, testInfo) => {
   const configuredArguments = testInfo.project.use.launchOptions?.args ?? []
   await mkdir(evidence, { recursive: true })
   await writeFile(`${evidence}/BROWSER_RUNTIME.json`, JSON.stringify({ version: browser.version(), configuredArguments }, null, 2))
+})
+
+// DIAGNOSTIC_ONLY: native compositor metadata verifies that the official
+// tile-height switch reaches the launched browser and records actual tile
+// content rectangles. No DOM, paint, snapshot bytes or thresholds are changed.
+let tileSession: CDPSession | undefined
+let tileEvents: unknown[] = []
+test.beforeEach(async ({ page }, testInfo) => {
+  tileSession = await page.context().newCDPSession(page)
+  const commandLine = await tileSession.send('Browser.getBrowserCommandLine')
+  expect(commandLine.arguments).toContain('--default-tile-height=4096')
+  await testInfo.attach('native-command-line', { body: JSON.stringify(commandLine), contentType: 'application/json' })
+  tileEvents = []
+  tileSession.on('Tracing.dataCollected', event => tileEvents.push(...event.value))
+  await tileSession.send('Tracing.start', { categories: 'cc,disabled-by-default-cc.debug,devtools.timeline', transferMode: 'ReportEvents' })
+})
+test.afterEach(async ({}, testInfo) => {
+  if (!tileSession) return
+  const complete = new Promise<void>(resolve => tileSession!.once('Tracing.tracingComplete', () => resolve()))
+  await tileSession.send('Tracing.end')
+  await complete
+  const path = testInfo.outputPath('native-tiles.json')
+  await writeFile(path, JSON.stringify({ traceEvents: tileEvents }))
+  await testInfo.attach('native-tiles', { path, contentType: 'application/json' })
+  await tileSession.detach()
+  tileSession = undefined
 })
 
 
