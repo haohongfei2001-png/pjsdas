@@ -4,6 +4,7 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { createHash } from 'node:crypto'
 import { BACKEND, cors, health, seedSession, workspace } from './fixtures/todayWorkspace.js'
 import { validateSnapshot } from '../src/snapshot.js'
+import { assertLibraryFlow } from './support/libraryLayoutContract.js'
 
 const phase = process.env.TA_SECONDARY_PHASE === 'before' ? 'before' : 'after'
 const evidence = `secondary-ui-${phase}`
@@ -140,39 +141,81 @@ async function protectLibrary(page: Page, width: number, scale: number) {
   await expect(page.locator('.ta-search-scope')).toHaveCount(phase === 'before' ? 0 : 1)
   if (phase === 'after') await expect(page.locator('[data-job-filter="new"]')).toHaveText('新发现 0')
   const geometry = await page.evaluate(labels => {
-    const rect = (selector: string) => {
-      const box = document.querySelector(selector)!.getBoundingClientRect()
+    const rect = (selector: string | Element) => {
+      const box = (typeof selector === 'string' ? document.querySelector(selector)! : selector).getBoundingClientRect()
       return { x: box.x, y: box.y + scrollY, width: box.width, height: box.height }
     }
     const style = (element: Element) => {
       const css = getComputedStyle(element)
-      // Actual flex wrapping may change with the ninth query. All original
-      // labels, typography, padding, colors, borders and flex rules stay exact.
-      return Object.fromEntries(['fontFamily', 'fontSize', 'fontWeight', 'lineHeight', 'color', 'backgroundColor',
-        'border', 'borderRadius', 'padding', 'minHeight', 'flex', 'gap'].map(key => [key, css[key as keyof CSSStyleDeclaration]]))
+      // Computed sizes/origins follow the independently checked flex layout.
+      // Every other computed property stays exact, including min-height,
+      // margins, display, positioning, padding and pseudo-element contents.
+      const dimensions = ['width', 'height', 'inline-size', 'block-size', 'perspective-origin', 'transform-origin']
+      return Object.fromEntries([...css].filter(key => !dimensions.includes(key)).map(key => [key, css.getPropertyValue(key)]))
     }
     const oldFilters = labels.map(label => {
       const button = [...document.querySelectorAll<HTMLButtonElement>('.tsui-library-filters button')].find(item => item.textContent === label)!
-      return { label, style: style(button), pressed: button.getAttribute('aria-pressed') }
+      return { label, style: style(button), pressed: button.getAttribute('aria-pressed'),
+        before: getComputedStyle(button, '::before').content, after: getComputedStyle(button, '::after').content }
+    })
+    const filterBox = document.querySelector('.tsui-library-filters')!, toolbar = document.querySelector('.tsui-library-toolbar')!
+    const filterCss = getComputedStyle(filterBox), toolbarCss = getComputedStyle(toolbar)
+    const buttons = [...filterBox.querySelectorAll('button')]
+    const canvas = document.createElement('canvas').getContext('2d')!
+    const textMetrics = buttons.map(button => {
+      const css = getComputedStyle(button); canvas.font = css.font
+      return { advances: [...button.textContent!].map(character => canvas.measureText(character).width),
+        lineHeight: parseFloat(css.lineHeight), paddingX: parseFloat(css.paddingLeft) + parseFloat(css.paddingRight),
+        paddingY: parseFloat(css.paddingTop) + parseFloat(css.paddingBottom), minHeight: parseFloat(css.minHeight) }
     })
     const scope = document.querySelector('.ta-search-scope')
     const scopeExtent = scope ? scope.getBoundingClientRect().height + parseFloat(getComputedStyle(scope).marginBottom) : 0
     return { heading: rect('.tsui-library-heading'), toolbar: rect('.tsui-library-toolbar'), search: rect('.tsui-library-toolbar input'), panel: rect('.tsui-library-panel'),
-      total: rect('.tsui-library-total'), scopeExtent, oldFilters, searchStyle: style(document.querySelector('.tsui-library-toolbar input')!) }
+      total: rect('.tsui-library-total'), scopeExtent, oldFilters, searchStyle: style(document.querySelector('.tsui-library-toolbar input')!),
+      filterStyle: style(filterBox), toolbarStyle: style(toolbar),
+      oldButtonBoxes: labels.map(label => rect(buttons.find(button => button.textContent === label)!)),
+      flow: { toolbar: rect(toolbar), filters: rect(filterBox), search: rect('.tsui-library-toolbar input'), panel: rect('.tsui-library-panel'),
+        buttons: buttons.map(rect), textMetrics, rowGap: parseFloat(filterCss.rowGap) || 0, columnGap: parseFloat(filterCss.columnGap) || 0,
+        basis: parseFloat(getComputedStyle(buttons[0]).flexBasis), stacked: toolbarCss.display !== 'flex' || toolbarCss.flexDirection === 'column',
+        filterMarginBottom: parseFloat(filterCss.marginBottom), toolbarMarginBottom: parseFloat(toolbarCss.marginBottom) } }
   }, originalJobFilters)
   const metricName = `LIBRARY_CONTRACT-${width}-${scale}.json`
   await writeFile(`${evidence}/${metricName}`, JSON.stringify(geometry, null, 2))
+  const before = phase === 'after' ? JSON.parse(await readFile(`secondary-ui-before/${metricName}`, 'utf8')) : undefined
+  const referenceFlow = before?.flow ?? geometry.flow
+  // The unchanged inline search input can have native line-box ascent/descent
+  // space at 200% text. Preserve those exact reference gaps, not candidate gaps.
+  assertLibraryFlow({ ...geometry.flow,
+    searchTopGap: referenceFlow.search.y - referenceFlow.filters.y - referenceFlow.filters.height,
+    toolbarBottomGap: referenceFlow.toolbar.y + referenceFlow.toolbar.height - referenceFlow.search.y - referenceFlow.search.height })
   if (phase === 'after') {
-    const before = JSON.parse(await readFile(`secondary-ui-before/${metricName}`, 'utf8'))
     expect(geometry.heading).toEqual(before.heading)
     expect(geometry.oldFilters).toEqual(before.oldFilters)
     expect(geometry.searchStyle).toEqual(before.searchStyle)
+    expect(geometry.filterStyle).toEqual(before.filterStyle)
+    expect(geometry.toolbarStyle).toEqual(before.toolbarStyle)
+    for (let index = 0; index < originalJobFilters.length; index++) {
+      if (!geometry.flow.stacked) expect(geometry.oldButtonBoxes[index].width, 'original desktop filter width').toBe(before.oldButtonBoxes[index].width)
+    }
     expect(geometry.toolbar.y - before.toolbar.y, 'only the scope block displaces the toolbar').toBe(geometry.scopeExtent)
     expect(geometry.panel.y - before.panel.y, 'only scope height and query wrapping displace rows')
       .toBe(geometry.scopeExtent + geometry.toolbar.height - before.toolbar.height)
     expect(geometry.total.y - geometry.panel.y - geometry.panel.height).toBe(before.total.y - before.panel.y - before.panel.height)
     for (const region of ['search', 'panel', 'total'] as const) {
       expect({ ...geometry[region], y: 0 }).toEqual({ ...before[region], y: 0 })
+    }
+  }
+  for (let index = 0; index < originalJobFilters.length; index++) {
+    const name = `LIBRARY_FILTER_${index}-${width}-${scale}.png`
+    const bytes = await page.locator('.tsui-library-filters').getByRole('button', { name: originalJobFilters[index], exact: true })
+      .screenshot({ path: `${evidence}/${name}`, animations: 'disabled', caret: 'hide' })
+    // Mobile flex redistribution can resize the old final line. Its exact
+    // derived width and every computed style remain checked above; unchanged
+    // size buttons additionally retain their exact original pixels.
+    if (before && geometry.oldButtonBoxes[index].width === before.oldButtonBoxes[index].width
+      && geometry.oldButtonBoxes[index].height === before.oldButtonBoxes[index].height) {
+      const baseline = await readFile(`secondary-ui-before/${name}`)
+      expect(digest(bytes), `${name}: unchanged original filter pixels`).toBe(digest(baseline))
     }
   }
   for (const [label, selector] of [['HEADING', '.tsui-library-heading'], ['SEARCH', '.tsui-library-toolbar input'], ['ROWS', '.tsui-library-panel'], ['TOTAL', '.tsui-library-total']] as const) {
@@ -192,7 +235,7 @@ for (const width of [1440, 390, 320]) test(`original eight Library queries, dead
   snapshot.data.opportunities = Array.from({ length: 45 }, (_, index) => ({
     ...snapshot.data.opportunities[0]!, id: `page-${String(index).padStart(3, '0')}`, company: `分页公司 ${index}`, role: '产品经理',
     processStage: (['not_applied', 'screening', 'written_test', 'interview', 'offer', 'not_applied'] as const)[index] ?? 'not_applied',
-    ...(index === 0 || index === 5 ? { deadline: index === 0 ? '2026-09-25' : '2026-09-21', deadlinePrecision: 'date' as const } : {}),
+    ...([0, 5, 6].includes(index) ? { deadline: index === 0 ? '2026-09-25' : index === 6 ? '2026-09-24' : '2026-09-21', deadlinePrecision: 'date' as const } : {}),
   }))
   validateSnapshot(snapshot)
   const mutations = await seed(page, false, snapshot)
@@ -200,15 +243,16 @@ for (const width of [1440, 390, 320]) test(`original eight Library queries, dead
   await page.goto('/pjsdas/library')
   const rows = page.locator('.tsui-job-row'), filters = page.locator('.tsui-library-filters')
   await expect(rows).toHaveCount(40)
-  await expect(rows.nth(0)).toHaveAttribute('data-opportunity-id', 'page-005')
+  await expect(rows.nth(0)).toHaveAttribute('data-opportunity-id', 'page-006')
   await expect(rows.nth(1)).toHaveAttribute('data-opportunity-id', 'page-000')
   await expect(page.locator('.tsui-library-more')).toContainText('40/45')
   await page.locator('.tsui-library-more').click()
   await expect(rows).toHaveCount(45)
   const ids = await rows.evaluateAll(elements => elements.map(element => element.getAttribute('data-opportunity-id')))
   expect(new Set(ids).size).toBe(45)
+  expect(ids.at(-1), 'expired jobs retain the original ended-last grouping').toBe('page-005')
   await expect(page.locator('.tsui-library-more')).toHaveCount(0)
-  for (const [label, count] of originalJobFilters.map((label, index) => [label, [40, 1, 1, 1, 1, 1, 1, 39][index]] as const)) {
+  for (const [label, count] of originalJobFilters.map((label, index) => [label, [40, 2, 1, 1, 1, 1, 1, 38][index]] as const)) {
     await filters.getByRole('button', { name: label, exact: true }).click()
     await expect(rows).toHaveCount(count)
     await expect(filters.getByRole('button', { name: label, exact: true })).toHaveAttribute('aria-pressed', 'true')

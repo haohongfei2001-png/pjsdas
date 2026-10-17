@@ -47,7 +47,7 @@ only for whitespace and case. Retrieval terms do not substitute for exclusions.
 
 ## Validation status
 
-- Local full suite: **329 files / 3609 tests passed** after the independent-review fixes; original per-test timeout/performance thresholds unchanged.
+- Local full suite: **330 files / 3614 tests passed** after the independent-review fixes; original per-test timeout/performance thresholds unchanged.
 - TypeScript/build passed. The generated release-identity build output is not
   committed as a claimed deployed identity.
 - Added/updated actual Playwright journeys cover read cutover/count, no mark on
@@ -73,6 +73,11 @@ only for whitespace and case. Retrieval terms do not substitute for exclusions.
   added Search Scope block, ninth query wrapping and removed Inbox link may
   differ: original eight query labels/styles, search style, panel geometry and
   the precise scope/toolbar vertical displacement are automatic assertions.
+  A packed-flex layout oracle independently derives each button width/line/height
+  from the original styles and text, and fixes search/row spacing to the reference.
+  Negative tests reject a 600px blank filter region, shifted search, changed button
+  width and line/panel gaps. Same-size original buttons retain exact pixel hashes;
+  responsive last-line redistribution retains every style plus strict geometry.
   Both runtimes execute original eight query, deadline ordering, 40/45 pagination
   and text-search regressions. Baseline Discovery preview and candidate Search
   Scope use separate explicit contracts. No baseline update, masking, image

@@ -48,6 +48,8 @@ describe('secondary-surface styling stays outside the protected main UI', () => 
     }
     for (const selector of ['.tsui-library-heading', '.tsui-library-panel', '.tsui-library-total']) expect(gate).toContain(selector)
     expect(gate).toContain('expect(geometry.oldFilters).toEqual(before.oldFilters)')
+    expect(gate).toContain('assertLibraryFlow({ ...geometry.flow,')
+    expect(gate).toContain('expect(geometry.filterStyle).toEqual(before.filterStyle)')
     expect(gate).toContain('geometry.scopeExtent + geometry.toolbar.height - before.toolbar.height')
     expect(gate).toContain('original eight Library queries, deadline order and 40-row paging')
     expect(gate).toContain("await capture(page, 'DISCOVERY_DETAIL', width, scale)")

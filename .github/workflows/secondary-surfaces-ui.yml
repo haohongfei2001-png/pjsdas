@@ -14,6 +14,7 @@ on:
       - 'playwright.settings-ui.config.mts'
       - 'src/secondarySurfaces.css'
       - 'e2e/secondarySurfaces.ui.ts'
+      - 'e2e/support/libraryLayoutContract.ts'
       - 'playwright.secondary-ui.config.mts'
       - '.github/workflows/secondary-surfaces-ui.yml'
 env:
@@ -63,7 +64,7 @@ jobs:
           trap copy_baseline_evidence EXIT
           cp e2e/secondarySurfaces.ui.ts "$baseline_dir/e2e/"
           mkdir -p "$baseline_dir/e2e/support"
-          cp e2e/support/mockCloudIsolation.mts e2e/support/mockCloudProxySetup.mjs e2e/support/mockCloudTargets.ts "$baseline_dir/e2e/support/"
+          cp e2e/support/mockCloudIsolation.mts e2e/support/mockCloudProxySetup.mjs e2e/support/mockCloudTargets.ts e2e/support/libraryLayoutContract.ts "$baseline_dir/e2e/support/"
           cp playwright.secondary-ui.config.mts "$baseline_dir/"
           ln -s "$GITHUB_WORKSPACE/node_modules" "$baseline_dir/node_modules"
           cd "$baseline_dir"
