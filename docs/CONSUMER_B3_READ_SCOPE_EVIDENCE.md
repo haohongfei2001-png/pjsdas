@@ -118,9 +118,15 @@ The next diagnostic uses one documented rendering switch identically in both
 runtimes: `--disable-skia-runtime-opts`. Chromium's exact tested version defines
 this as its baseline CPU path for web tests, and GoogleChrome's tooling guide
 records it. It does not change the page, antialiasing policy, screenshot pixels,
-baseline source or exact comparison threshold. Runtime version/arguments and all
+baseline source or exact comparison threshold. Actual runtime version, configured launch arguments and all
 raw repeats are retained. This is a rendering-path experiment, not a claim that
 the failed comparisons have passed. No further flags will be stacked without
 evidence. Sources checked 2026-10-17:
 - https://github.com/chromium/chromium/blob/153.0.8010.12/content/public/common/content_switches.cc#L216-L218
 - https://github.com/GoogleChrome/chrome-launcher/blob/main/docs/chrome-flags-for-tools.md#rendering--gpu
+
+The first renderer experiment did not enter a page: the optional CDP command-line
+probe requires `--enable-automation`, which this runner does not set. The probe
+was removed rather than changing automation behavior just to observe it. The
+same single-renderer-flag experiment is rerun with actual browser version and
+Playwright's effective configured arguments recorded separately.
