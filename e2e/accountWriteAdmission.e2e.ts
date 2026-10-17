@@ -154,8 +154,23 @@ async function delayAuthModule(page: Page) {
 async function attemptBlockedWrites(page: Page, before: Awaited<ReturnType<typeof durableEvidence>>, server: SyntheticAuthority) {
   await expect(page.getByRole('heading', { name: '产品经理', exact: true })).toBeVisible()
   await expect.poll(() => admission(page)).toEqual({ resolved: false, account: null, owner: OWNER })
-  await page.getByRole('button', { name: '我已投递', exact: true }).click()
-  await expect(page.locator('.job-detail-page').getByRole('alert')).toContainText('Account not confirmed')
+  // Unresolved Auth now prevents the interaction before it reaches the handler.
+  // Do not wait for Playwright to enable a deliberately blocked control.
+  for (const name of ['我已投递', '加入今天']) {
+    const button = page.getByRole('button', { name, exact: true })
+    await expect(button).toBeDisabled()
+    await button.evaluate(element => (element as HTMLButtonElement).click())
+  }
+  await expect(page.locator('.job-detail-page').getByRole('status')).toContainText('账号尚未确认')
+  // Keep the synchronous admission defense covered independently of disabled
+  // DOM controls: neither an absent account nor the retained owner is authority.
+  expect(await page.evaluate(async owner => {
+    const { captureWorkspaceWriteLease } = await import('/pjsdas/src/cloud/workspaceWriteLease.ts')
+    return [undefined, owner].map(account => {
+      try { captureWorkspaceWriteLease(account); return 'unexpectedly admitted' }
+      catch (error) { return (error as { code?: string }).code }
+    })
+  }, OWNER)).toEqual(['ACCOUNT_WRITE_UNCONFIRMED', 'ACCOUNT_WRITE_UNCONFIRMED'])
   await expect(page.locator('.job-detail-page').getByRole('status').filter({ hasText: /已记录投递|Application recorded/ })).toHaveCount(0)
   await expect(page.locator('.action-undo-toast')).toHaveCount(0)
   await expect(page.locator('.job-detail-page').getByRole('button', { name: '撤销', exact: true })).toHaveCount(0)

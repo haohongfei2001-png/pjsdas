@@ -154,8 +154,32 @@ test('TSUI-03 300-job paging, exact posting identity, routed detail and truthful
   await page.screenshot({ path: 'test-results/tsui03/detail-mobile.png', fullPage: true, animations: 'disabled' })
   await emitVisual(page, 'DETAIL_MOBILE')
   await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1)
-  await page.locator('.job-detail-back').click()
+  // Exercise the real Back handler while controlling its two-frame return.
+  // A user who selects Search before restoration must keep focus and typing.
+  await page.evaluate(() => {
+    const original = window.requestAnimationFrame
+    const pending: FrameRequestCallback[] = []
+    window.requestAnimationFrame = callback => { pending.push(callback); return pending.length }
+    ;(window as any).__flushDetailReturn = () => {
+      try {
+        for (let frame = 0; frame < 2; frame++) pending.splice(0).forEach(callback => callback(performance.now()))
+      } finally {
+        window.requestAnimationFrame = original
+        pending.splice(0).forEach(callback => original.call(window, callback))
+        delete (window as any).__flushDetailReturn
+      }
+    }
+    document.querySelector<HTMLButtonElement>('.job-detail-back')!.click()
+  })
+  try {
+    await expect(search).toBeVisible()
+    await search.focus()
+  } finally {
+    await page.evaluate(() => (window as any).__flushDetailReturn?.())
+  }
+  await expect(search).toBeFocused()
   await search.fill('')
+  await expect(search).toHaveValue('')
   await expect(rows).toHaveCount(40)
   await page.setViewportSize({ width: 320, height: 640 })
   const normalFont = await page.evaluate(() => parseFloat(getComputedStyle(document.documentElement).fontSize))

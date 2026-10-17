@@ -29,6 +29,7 @@ import { useCloud } from './cloud/CloudContext.js'
 import { ensureAuthoritativePersistence } from './cloud/authoritativePersistence.js'
 import { connectedWorkspaceAuthorityEnabled } from './cloud/connectedWorkspaceRepository.js'
 import { captureWorkspaceWriteLease, workspaceWriteIdentityMatches } from './cloud/workspaceWriteLease.js'
+import { scheduleRouteReturnPosition } from './routeReturnFocus.js'
 import { getAccountCheckpoint } from './cloud/syncState.js'
 import {
   refreshConnectedAuthoritativeCache,
@@ -716,7 +717,7 @@ export default function AppV8() {
   }
 
   function restoreDetailOrigin(origin: { scrollY: number; actionId?: string; opportunityId?: string }) {
-    window.requestAnimationFrame(() => window.requestAnimationFrame(() => {
+    scheduleRouteReturnPosition(window, document, () => {
       window.scrollTo(0, origin.scrollY)
       if (origin.actionId) {
         const row = [...document.querySelectorAll<HTMLElement>('.tsui-task-row[data-action-id], [data-deferred-action-id]')]
@@ -728,7 +729,7 @@ export default function AppV8() {
           .find((element) => element.dataset.opportunityId === origin.opportunityId)
         row?.focus()
       }
-    }))
+    })
   }
 
   function closeOpportunity() {
