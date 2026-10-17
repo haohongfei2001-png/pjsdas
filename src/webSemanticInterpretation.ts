@@ -1,4 +1,5 @@
 import { resolveSourceTemporal } from './sourceTemporal.js'
+import { completedWebRecruitingKind, resolveWebRecruitingTime } from './webRecruitingTime.js'
 import { latestScheduleOccurrence } from './scheduleNodes.js'
 import { parseProgressUpdate, type CanonicalJobReference } from './progressUpdate.js'
 import type {
@@ -188,16 +189,13 @@ function importedNoticeCandidates(plan: ReturnType<typeof parseProgressUpdate>, 
   return candidates
 }
 
-function explicitCompletionKind(text: string, mode: SemanticStatementMode): ScheduleNodeKind | undefined {
+function explicitDeadlineInstruction(text: string) {
+  return /(?:请|需要|需|须|必须|务必|应当)[^。！？；;\n]*(?:前|之前)\s*完成[^。！？；;\n]*(?:面试|笔试|测评)/.test(text)
+}
+
+function explicitCompletionKind(text: string, mode: SemanticStatementMode, opportunities: Opportunity[]): ScheduleNodeKind | undefined {
   if (mode !== 'assertion' && mode !== 'current_intent') return undefined
-  const trimmed = text.trim()
-  if (/(?:完成时间|完成日期|完成期限|完成要求|截止|最晚|请|需要|需|待).{0,12}(?:面试|笔试|测评)/.test(trimmed)) return undefined
-  const patterns: Array<[ScheduleNodeKind, RegExp]> = [
-    ['interview', /(?:面试|一面|二面|三面|终面|AI面|业务面|HR面).{0,8}(?:已经|已|刚刚?|刚)?(?:完成(?:了)?|结束(?:了)?|面完(?:了)?|完毕)|(?:完成(?:了)?|结束(?:了)?|面完(?:了)?).{0,8}(?:面试|一面|二面|三面|终面|AI面|业务面|HR面)/i],
-    ['written_test', /(?:笔试|考试).{0,8}(?:已经|已|刚刚?|刚)?(?:完成(?:了)?|做完(?:了)?|考完(?:了)?|结束(?:了)?|完毕)|(?:完成(?:了)?|做完(?:了)?|考完(?:了)?).{0,8}(?:笔试|考试)/i],
-    ['assessment', /(?:测评|在线测试|性格测试).{0,8}(?:已经|已|刚刚?|刚)?(?:完成(?:了)?|做完(?:了)?|结束(?:了)?|完毕)|(?:完成(?:了)?|做完(?:了)?).{0,8}(?:测评|在线测试|性格测试)/i],
-  ]
-  return patterns.find(([, pattern]) => pattern.test(trimmed))?.[0]
+  return completedWebRecruitingKind(text, opportunities)
 }
 
 function occurrenceKind(type: ProcessEventType): ScheduleNodeKind | undefined {
@@ -296,6 +294,7 @@ function unresolvedCandidate(
   operation: ReturnType<typeof parseProgressUpdate>['unresolved'][number],
   opportunities: Opportunity[],
 ): SemanticCandidate | undefined {
+  if (explicitDeadlineInstruction(operation.sourceText)) return undefined
   if (/(?:已投递成功|投递成功|申请已提交|申请成功)/.test(operation.sourceText)) {
     const exact = opportunities.filter((item) => operation.sourceText.includes(item.company) && operation.sourceText.includes(item.role))
     if (exact.length === 1) return {
@@ -321,13 +320,13 @@ function unresolvedCandidate(
   if (/(?:投递|已投|申请)/.test(operation.sourceText)) {
     return { ...base, kind: 'application_submitted', target, occurredAt: operation.occurredAt }
   }
-  if (/(?:笔试).*(?:完成|做完|结束)|(?:完成|做完|结束).*(?:笔试)/.test(operation.sourceText)) {
+  if (explicitCompletionKind(operation.sourceText, 'assertion', opportunities) === 'written_test') {
     return { ...base, kind: 'occurrence_completed', target: { ...target, occurrenceKind: 'written_test' }, occurredAt: operation.occurredAt }
   }
-  if (/(?:面试).*(?:完成|结束)|(?:完成|结束).*(?:面试)/.test(operation.sourceText)) {
+  if (explicitCompletionKind(operation.sourceText, 'assertion', opportunities) === 'interview') {
     return { ...base, kind: 'occurrence_completed', target: { ...target, occurrenceKind: 'interview' }, occurredAt: operation.occurredAt }
   }
-  if (/(?:测评).*(?:完成|做完|结束)|(?:完成|做完|结束).*(?:测评)/.test(operation.sourceText)) {
+  if (explicitCompletionKind(operation.sourceText, 'assertion', opportunities) === 'assessment') {
     return { ...base, kind: 'occurrence_completed', target: { ...target, occurrenceKind: 'assessment' }, occurredAt: operation.occurredAt }
   }
   return undefined
@@ -351,7 +350,7 @@ function explicitCompletionCandidate(
   opportunities: Opportunity[],
   baseline: PJSDASSnapshot,
 ): SemanticCandidate | undefined {
-  const kind = explicitCompletionKind(text, mode)
+  const kind = explicitCompletionKind(text, mode, opportunities)
   if (!kind) return undefined
 
   const ids = operationOpportunityIds(plan)
@@ -399,7 +398,7 @@ export function buildWebSemanticInterpretation(
   baseline: PJSDASSnapshot,
   references: CanonicalJobReference[],
   now = new Date(),
-  timezone = baseline.data.timePlanning?.timezone ?? Intl.DateTimeFormat().resolvedOptions().timeZone ?? 'UTC',
+  timezone = baseline.data.timePlanning?.timezone,
 ) {
   const importedNotice = explicitlyImportedNotice(text)
   const mode = webStatementMode(importedNotice?.outer ?? text)
@@ -415,8 +414,8 @@ export function buildWebSemanticInterpretation(
   // Reuse the source-time resolver: ambiguous local times remain unresolved.
   if (!importedNotice && /准备|整理|复习|练习|修改|准备材料|prepare|practice|revise/i.test(current.text)
     && !/截止|最晚|通知|邀请|收到|deadline|invitation|received/i.test(current.text)) {
-    const temporal = resolveSourceTemporal(current.text, { receivedAt: now.toISOString(), timezone,
-      mode: hasExplicitClock(current.text) ? 'fixed' : 'deadline' })
+    const temporal = timezone ? resolveSourceTemporal(current.text, { receivedAt: now.toISOString(), timezone,
+      mode: hasExplicitClock(current.text) ? 'fixed' : 'deadline' }) : undefined
     if (temporal) {
       const scheduledTemporal = temporal.startAt ? { ...temporal, resolutionBasis: 'user_explicit' as const } : undefined
       const plannedDate = temporal.date ?? (temporal.startAt ? new Intl.DateTimeFormat('en-CA', { timeZone: timezone, year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(temporal.startAt)) : undefined)
@@ -424,6 +423,7 @@ export function buildWebSemanticInterpretation(
         kind: 'manual_action', title: current.text, plannedDate, scheduledTemporal }
       return { mode, candidates: [candidate], unresolved: [], ignored: current.excluded ? [text] : [] }
     }
+    return { mode, candidates: [], unresolved: ['任务的时间或可靠时区尚未确定，本次未写入。'], ignored: current.excluded ? [text] : [] }
   }
   let plan = parseProgressUpdate(current.text, opportunities, now, references)
   if (importedNotice) {
@@ -433,18 +433,46 @@ export function buildWebSemanticInterpretation(
     }
     const unsupported = plan.executable.some(operation => operation.kind !== 'process_event' || operation.completed || operation.confidence !== 'high'
       || !['interview_invite', 'written_test_invite', 'assessment_invite'].includes(operation.eventType))
-    const candidates = !unsupported && !plan.unresolved.length && !plan.ignored.length && plan.executable.length
+    const candidates = timezone && !unsupported && !plan.unresolved.length && !plan.ignored.length && plan.executable.length
       ? importedNoticeCandidates(plan, baseline, now, timezone) : undefined
     return { mode, candidates: candidates ?? [], unresolved: candidates ? [] : ['引用通知的岗位、时间、招聘轮次或已有安排仍需核实，本次未写入。'],
       ignored: current.excluded ? ['Quoted older thread context was excluded.'] : [] }
   }
+  const conflictingCompletion = current.text.split(/[。！？；;\n]/).some(clause => {
+    const completedKind = explicitCompletionKind(clause, mode, opportunities)
+    return completedKind && plan.executable.some(operation => operation.kind === 'process_event'
+      && occurrenceKind(operation.eventType) === completedKind && explicitDeadlineInstruction(operation.sourceText)
+      && clause.includes(operation.company) && clause.includes(operation.role))
+  })
+  if (conflictingCompletion) return { mode, candidates: [], unresolved: ['同一岗位的完成事实与新的截止义务需要区分具体轮次，本次未写入。'], ignored: [] }
   const explicitCompletion = explicitCompletionCandidate(current.text, mode, plan, opportunities, baseline)
   const explicitKind = explicitCompletion?.target?.occurrenceKind
   const executableOperations = explicitCompletion && explicitKind
-    ? plan.executable.filter((operation) => explicitCompletionKind(operation.sourceText, mode) !== explicitKind)
+    ? plan.executable.filter((operation) => explicitCompletionKind(operation.sourceText, mode, opportunities) !== explicitKind)
     : plan.executable
+  const unresolvedTimes: string[] = []
   let executableCandidates = executableOperations
-    .map(operationCandidate)
+    .map(operation => {
+      const obligation = operation.kind === 'process_event' && explicitDeadlineInstruction(operation.sourceText)
+      const candidate = operationCandidate(obligation ? { ...operation, completed: false, timingMode: 'deadline' } : operation)
+      if (candidate?.kind === 'occurrence_completed' && !explicitCompletionKind(operation.sourceText, mode, opportunities)) {
+        unresolvedTimes.push('完成事实仍需明确的既成证据，本次未写入该事件。')
+        return undefined
+      }
+      if (candidate?.kind !== 'process_event' || !candidate.dueAt) return candidate
+      // The legacy progress parser uses the execution host's local clock.
+      // Its date cannot cross the semantic boundary as source-time evidence.
+      const temporal = operation.kind === 'process_event' ? resolveWebRecruitingTime(operation.sourceText, {
+        company: operation.company, role: operation.role, eventType: operation.eventType,
+        receivedAt: now.toISOString(), timezone, mode: candidate.timingMode,
+      }) : undefined
+      if (!temporal) {
+        unresolvedTimes.push('招聘事件的时间或可靠时区尚未确定，本次未写入该事件。')
+        return undefined
+      }
+      return { ...candidate, temporal, dueAt: temporal.startAt ?? temporal.deadlineAt ?? temporal.date,
+        duePrecision: temporal.precision, temporalConfidence: 'high' as const }
+    })
     .filter((item): item is SemanticCandidate => Boolean(item))
 
   if (explicitCompletion) {
@@ -462,7 +490,7 @@ export function buildWebSemanticInterpretation(
   return {
     mode,
     candidates,
-    unresolved: convertedUnresolved.filter((item) => !item.candidate).map((item) => item.operation.reason),
+    unresolved: [...unresolvedTimes, ...convertedUnresolved.filter((item) => !item.candidate).map((item) => item.operation.reason)],
     ignored: [...plan.ignored.map((item) => item.reason), ...(current.excluded ? ['Quoted thread context was excluded from current facts.'] : [])],
   }
 }

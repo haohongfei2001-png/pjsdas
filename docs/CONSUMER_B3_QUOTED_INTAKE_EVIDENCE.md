@@ -57,19 +57,76 @@ This candidate was reconstructed against the verified remote main tree. Previous
   class; the reviewer's original five negatives, ten meridiem controls and 13
   authority/identity/lifecycle/type controls independently pass (28/28). The
   bounded code review is CLEAN. Both real RED records remain evidence.
-- Fresh full unit suite: 336 files / 3775 tests passed first attempt in 24.82s.
+- Initial `1ba76f7` local full unit suite: 336 files / 3775 tests passed first attempt in 24.82s.
   TypeScript build-mode checking and production build passed. The existing
   >500KB chunk warning remains; no limit was changed. This build regenerated its
   usual release identity; only the committed unbound fallback is retained in the
   source change. Full official CI acceptance is pending.
-- Browser discovery finds all 25 tests across the two relevant files, including
-  six new notice cases and the added held-hydration case. These new browser
-  journeys have not yet executed; discovery is not browser acceptance.
+- Initial `1ba76f7` official Browser run
+  [39077249303](https://github.com/haohongfei2001-png/pjsdas/actions/runs/39077249303)
+  passed first attempt: 3 isolation, 7 deadline UI, 284 core and 73 dense tests.
+  The six new notice cases and the added held-hydration case all passed without
+  retry. [Artifact 12118385964](https://github.com/haohongfei2001-png/pjsdas/actions/runs/39077249303/artifacts/12118385964)
+  preserves the results. These results do not cover the subsequent timezone fix.
 
 The browser cases use the real gateway DTO and domain core behind a synthetic
 transport, with authoritative and local business deltas, repeated import after
 reload, source/outer-intent negative controls, and 320/390/1440px screenshots.
 No real account input, mail, application or paid discovery is exercised.
+
+## First official CI exposed a legacy Tell timezone defect
+
+The first exact-head CI for `1ba76f75e3d8c6cd7bb20dabb8893c2ed4ef8770`
+([run 39077249280](https://github.com/haohongfei2001-png/pjsdas/actions/runs/39077249280))
+failed one new Tell/import/Gmail equivalence assertion: 335 files / 3774 tests
+passed and the remaining timestamp differed by exactly eight hours. The previous
+local full result ran on a Shanghai-time host. Its success does not replace the
+official failure; the expected timestamp is unchanged.
+
+Separate Node processes under `TZ=UTC` and `TZ=Asia/Shanghai` reproduced four
+failures each in eight initial controls. Imported notice and Gmail timestamps
+were stable, but the older direct Tell adapter copied its legacy parser's
+host-local date despite receiving an explicit timezone. It also accepted empty
+or invalid zones. The Web boundary now resolves timed process events against the
+supplied timezone or the actual workspace preference, without inventing a host
+fallback. Unresolvable dates, invalid zones and unsupported explicit source-zone
+qualifiers remain unresolved. Gmail and other legacy-parser consumers are not
+changed. This is deliberately conservative: formerly guessed partial dates and
+unsupported clock spellings are not claimed as supported equivalents.
+
+Independent review reproduced actual event/node miswrites for attached `+0900`,
+`+09`, `北京时间`, `ET`, `(HKT)`, `(AEST)` and compound named-zone qualifiers.
+The final pure Web time adapter uses a finite residual grammar after an anchored
+known company/title header and represented date/clock. Unknown source qualifiers
+are rejected rather than removed under a growing timezone-name list. Normal
+time-field labels remain positive controls. The original failures are retained.
+
+Deadline controls also exposed an older completion classifier error: a full date
+placed “前完成面试” beyond its short obligation guard. Explicit deadline
+instructions are now excluded from completion receipts. The original source
+actually completed an existing node for a future deadline instruction. Tests now
+cover that existing-occurrence case, genuine completed statements, and same-job
+completed/deadline mixtures that require clarification instead of partial writes.
+A legitimate new deadline may be applied while the existing node remains
+scheduled; that case is not mislabeled as `NO_WRITE`.
+
+Review also caught marker-only (`面试已经` / `面试刚刚`) completion regressions
+and differently scoped `面试前完成了`. Completion now requires an anchored full
+word order, an appropriate completion predicate and genuine past evidence.
+The four actual failing controls remain recorded. A planning branch without a
+reliable timezone also stops unresolved rather than falling back to host-local
+legacy deadlines.
+
+At this stage, 88 additional pure/domain controls plus the original 172 targeted
+cases pass in separate UTC and Shanghai Node processes (260 each). Type checking
+passes. Independent closure review checks the four fixed source/test hashes,
+runs the 88 new cases in both host zones, and reports CLEAN for this bounded
+change. A single frozen full suite in UTC then passes 338 files / 3863 tests on
+its first attempt (67.06s), followed by one successful production build. The
+existing >500KB chunk warning is retained. Only the build-generated release
+identity is restored to its committed unbound fallback, as in the initial build.
+Official browser/CI acceptance for the new commit is pending; initial `1ba76f7`
+results are not substituted for the additional bytes.
 
 ## Separate main browser fixture race
 
@@ -88,7 +145,9 @@ Only this existing-task race test now establishes actual fixture visibility
 before opening capture. A held-read variant proves the fixture is absent until
 its response is released. All owner-field conflict, blocked projection, retained
 draft and stable receipt/reload assertions remain; no post-Save readiness delay
-or B1 first-write wait is added. Its new browser acceptance remains pending.
+or B1 first-write wait is added. Both variants passed first attempt in initial
+`1ba76f7` Browser run 39077249303; the later timezone candidate still needs its
+own browser acceptance.
 
 ## Remaining scope
 
