@@ -1,4 +1,5 @@
 import { userJobFactsShape } from '../src/userJobFactsSchema.js'
+import { validLatestStartWindow } from './latestStartTemporal.js'
 import { invalidateLegacyProcessEvent } from '../src/legacyProcessCorrection.js'
 import { dismissSemanticDecision } from '../src/decisionDismissal.js'
 import { applyOpportunityMerge, opportunityMergeSchema } from '../src/opportunityMerge.js'
@@ -24,12 +25,13 @@ const scheduleTemporal = z.object({
   timezone: z.string().trim().min(1).max(120),
   startAt: isoString.optional(),
   endAt: isoString.optional(),
+  latestStartAt: z.iso.datetime({ offset: true }).optional(),
   deadlineAt: isoString.optional(),
   date: dateOnly.optional(),
   rawExpression: z.string().trim().max(500).optional(),
   resolutionBasis: z.enum(['source_explicit', 'user_explicit', 'legacy_projection', 'system_estimate']),
   legacyProjectionAt: z.string().trim().max(100).optional(),
-}).strict()
+}).strict().refine(validLatestStartWindow, { path: ['latestStartAt'], message: 'Latest start requires a valid bounded availability window and timezone.' })
 
 const repairRevision = z.string().regex(/^txn:\d+$/)
 const evidenceRefs = z.array(z.string().trim().min(1).max(1000)).min(1).max(20)

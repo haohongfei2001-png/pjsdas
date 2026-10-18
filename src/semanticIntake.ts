@@ -16,6 +16,7 @@ import type {
   Opportunity,
   ProcessEvent,
   ScheduleNode,
+  ScheduleNodeTemporal,
   SemanticCandidate,
   SemanticConfidence,
   SemanticIntakeObservation,
@@ -245,7 +246,7 @@ export function semanticCandidateFactKey(snapshot: PJSDASSnapshot, candidate: Se
       normalInstant(candidate.temporal.endAt),
       normalInstant(candidate.temporal.deadlineAt),
       candidate.temporal.date ?? '',
-    ])}`
+    ])}${latestStartFactSuffix(candidate.temporal)}`
   }
   if (candidate.kind === 'process_event') {
     return `process_event|opp:${opportunityId}|${candidate.eventType}|${JSON.stringify([
@@ -255,7 +256,7 @@ export function semanticCandidateFactKey(snapshot: PJSDASSnapshot, candidate: Se
       normalInstant(candidate.temporal?.endAt),
       normalInstant(candidate.temporal?.deadlineAt),
       candidate.temporal?.date ?? '',
-    ])}`
+    ])}${latestStartFactSuffix(candidate.temporal)}`
   }
   if (candidate.kind === 'manual_action') {
     return `manual_action|${candidate.title.trim().toLowerCase()}|${normalInstant(candidate.dueAt)}`
@@ -282,13 +283,37 @@ export function semanticCandidateFactKey(snapshot: PJSDASSnapshot, candidate: Se
   return undefined
 }
 
-function existingFactReceipt(snapshot: PJSDASSnapshot, factKey: string | undefined) {
+function latestStartFactSuffix(temporal: ScheduleNodeTemporal | undefined) {
+  return temporal?.latestStartAt === undefined ? '' : `|latestStartAt:${normalInstant(temporal.latestStartAt)}`
+}
+
+function legacyLatestStartKey(factKey: string, candidate: SemanticCandidate) {
+  if (candidate.kind !== 'process_event' && candidate.kind !== 'occurrence_rescheduled') return undefined
+  const suffix = latestStartFactSuffix(candidate.temporal)
+  return suffix && factKey.endsWith(suffix) ? factKey.slice(0, -suffix.length) : undefined
+}
+
+function existingFactReceipt(snapshot: PJSDASSnapshot, factKey: string | undefined, candidate?: SemanticCandidate) {
   if (!factKey) return undefined
-  return (snapshot.data.semanticReceipts ?? []).find((item) =>
+  const find = (key: string) => (snapshot.data.semanticReceipts ?? []).find((item) =>
     item.status === 'committed'
-    && item.factKeys?.some(key => sameSemanticFactKey(snapshot, key, factKey))
-    && !receiptInvalidatedFactKeys(snapshot, item).has(canonicalSemanticFactKey(snapshot, factKey)),
+    && item.factKeys?.some(value => sameSemanticFactKey(snapshot, value, key))
+    && !receiptInvalidatedFactKeys(snapshot, item).has(canonicalSemanticFactKey(snapshot, key))
+    && (!candidate || receiptProvesCandidate(snapshot, item, candidate)),
   )
+  const current = find(factKey)
+  if (current || !candidate) return current
+  // Old receipts did not encode latest-start. Their exact current object proof,
+  // never the incomplete key alone, may establish this one duplicate fact.
+  const legacy = legacyLatestStartKey(factKey, candidate)
+  return legacy ? find(legacy) : undefined
+}
+
+function sameTemporalMeaning(old: ScheduleNodeTemporal, next: ScheduleNodeTemporal) {
+  return old.shape === next.shape && old.precision === next.precision
+    && (old.precision !== 'date' || old.timezone === next.timezone)
+    && (['startAt', 'endAt', 'latestStartAt', 'deadlineAt', 'date'] as const).every(key =>
+      old[key] === next[key] || Boolean(old[key] && next[key] && Date.parse(old[key]) === Date.parse(next[key])))
 }
 
 function sameProcessMeaning(event: ProcessEvent, candidate: Extract<SemanticCandidate, { kind: 'process_event' }>, temporal = event.temporal) {
@@ -308,13 +333,29 @@ function sameProcessMeaning(event: ProcessEvent, candidate: Extract<SemanticCand
     && (!candidate.duePrecision || event.duePrecision === candidate.duePrecision)
 }
 function receiptProvesCandidate(snapshot: PJSDASSnapshot, value: SemanticIntakeReceipt, candidate: SemanticCandidate) {
+  const factKey = semanticCandidateFactKey(snapshot, candidate)
+  const legacyKey = factKey ? legacyLatestStartKey(factKey, candidate) : undefined
+  const matchingObjects = Object.entries(value.factMutationObjects ?? {})
+    .filter(([key]) => factKey && (sameSemanticFactKey(snapshot, key, factKey)
+      || legacyKey && sameSemanticFactKey(snapshot, key, legacyKey)))
+  const proofRefs = value.factMutationObjects ? matchingObjects.flatMap(([, refs]) => refs) : value.affectedObjects
+  if (candidate.kind === 'occurrence_rescheduled') {
+    const nodes = (snapshot.data.scheduleNodes ?? []).filter(node => proofRefs.some(ref => ref.type === 'schedule_node' && ref.id === node.id))
+    const target = opportunityResolution(snapshot, candidate)
+    const occurrence = occurrenceResolution(snapshot, candidate, target.status === 'unique' ? target.opportunity : undefined)
+    // Keep unrelated legacy temporal deduplication unchanged. Latest-start
+    // facts need the receipt's exact current node, not a historical arrangement.
+    if (candidate.temporal.latestStartAt === undefined && !nodes.some(node => node.temporal.latestStartAt !== undefined)
+      && !(occurrence.status === 'unique' && occurrence.node.temporal.latestStartAt !== undefined)) return true
+    return occurrence.status === 'unique' && !['cancelled', 'completed', 'superseded'].includes(occurrence.node.state)
+      && nodes.some(node => node.id === occurrence.node.id) && sameTemporalMeaning(occurrence.node.temporal, candidate.temporal)
+  }
   if (candidate.kind !== 'process_event') return true
   const target = opportunityResolution(snapshot, candidate)
   if (target.status !== 'unique') return false
-  const factKey = semanticCandidateFactKey(snapshot, candidate)
   const bound = Object.entries(value.factMutationObjects ?? {})
     .filter(([key]) => factKey && sameSemanticFactKey(snapshot, key, factKey)).flatMap(([, refs]) => refs)
-  const refs = bound.length ? bound : value.affectedObjects
+  const refs = candidate.temporal?.latestStartAt !== undefined ? proofRefs : bound.length ? bound : value.affectedObjects
   const eventIds = new Set(refs.flatMap(item => item.type === 'process_event' ? [item.id]
     : item.type === 'schedule_node' ? (snapshot.data.scheduleNodes ?? []).filter(node => node.id === item.id && node.processEventId).map(node => node.processEventId!) : []))
   const occurrence = occurrenceResolution(snapshot, candidate, target.opportunity)
@@ -322,7 +363,14 @@ function receiptProvesCandidate(snapshot: PJSDASSnapshot, value: SemanticIntakeR
   return snapshot.data.processEvents.some(event => eventIds.has(event.id) && !event.invalidation
     && canonicalOpportunityId(snapshot, event.opportunityId) === target.opportunity.id
     && (!occurrenceId || event.sourceOccurrenceId === occurrenceId || (snapshot.data.scheduleNodes ?? []).some(node => node.processEventId === event.id && node.occurrenceId === occurrenceId))
-    && sameProcessMeaning(event, candidate))
+    && (() => {
+      const eventNodes = (snapshot.data.scheduleNodes ?? []).filter(node => node.processEventId === event.id)
+      const current = eventNodes.length ? latestScheduleOccurrence(eventNodes, eventNodes[0]!.occurrenceId) : undefined
+      if (candidate.temporal?.latestStartAt !== undefined && current
+        && (!proofRefs.some(ref => ref.type === 'schedule_node' && ref.id === current.id)
+          || ['cancelled', 'completed', 'superseded'].includes(current.state))) return false
+      return sameProcessMeaning(event, candidate, candidate.temporal?.latestStartAt !== undefined && current ? current.temporal : event.temporal)
+    })())
 }
 
 function assertObservation(observation: SemanticIntakeObservation) {
@@ -1067,7 +1115,7 @@ export function applySemanticIntake(
     && request.payloadBinding.source.sourceId === observation.source.sourceId
     && request.payloadBinding.source.sourceRecordId === observation.source.sourceRecordId)
     && observation.candidates.some(candidate => !dismissedSemanticCandidate(base, observation, candidate)
-      && !existingFactReceipt(base, semanticCandidateFactKey(base, candidate)))
+      && !existingFactReceipt(base, semanticCandidateFactKey(base, candidate), candidate))
   const replay = changedDismissedSource ? undefined : existingReceipt(base, observation)
   const openSourceChoices = observation.source.kind === 'gmail'
     ? (base.data.decisionRequests ?? []).filter(item => item.state === 'open'
@@ -1112,6 +1160,7 @@ export function applySemanticIntake(
   const priorSemanticApplications = (base.data.timeline ?? []).filter((item) =>
     item.kind === 'semantic_intake_applied' && item.commandId === semanticCommandId).length
   const recoveryFactKeys = pendingRecoveryFactKeys(base, observation)
+  let unprovenLatestRecovery = false
   const commandInputId = priorSemanticApplications || recoveryFactKeys.size
     ? `${observation.inputId}:recovery:${priorSemanticApplications}`
     : observation.inputId
@@ -1243,14 +1292,21 @@ export function applySemanticIntake(
     // Recheck the open fragment and any newly parsed fragment, while retaining
     // receipts that already prove another fragment's business fact or answer.
     if (needsChoiceRecheck && !openSourceChoices.some(item => item.payloadBinding.candidateId === candidate.id)) {
-      const alreadyRecorded = existingFactReceipt(working, semanticCandidateFactKey(working, candidate))
+      const alreadyRecorded = existingFactReceipt(working, semanticCandidateFactKey(working, candidate), candidate)
       if (alreadyRecorded && receiptProvesCandidate(working, alreadyRecorded, candidate)) continue
     }
     const factKey = semanticCandidateFactKey(working, candidate)
     // A partially invalidated receipt still proves its other facts. A new recovery
     // command must never recreate those domain objects (notably manual actions).
-    if (recoveryFactKeys.size && (!factKey || !recoveryFactKeys.has(factKey))) continue
-    const matchedFact = existingFactReceipt(working, factKey)
+    if (recoveryFactKeys.size && (!factKey || !recoveryFactKeys.has(factKey))) {
+      const legacyKey = factKey ? legacyLatestStartKey(factKey, candidate) : undefined
+      if (legacyKey && recoveryFactKeys.has(legacyKey)) {
+        unprovenLatestRecovery = true
+        coverageDebtCount += 1
+      }
+      continue
+    }
+    const matchedFact = existingFactReceipt(working, factKey, candidate)
     const priorFact = matchedFact && receiptProvesCandidate(working, matchedFact, candidate) ? matchedFact : undefined
     const deadlineTarget = candidate.kind === 'opportunity_deadline' ? working.data.opportunities.find(item => item.id === canonicalOpportunityId(working, candidate.target?.opportunityId ?? '')) : undefined
     const repeatedAssertedDeadline = priorFact && candidate.kind === 'opportunity_deadline' && deadlineTarget
@@ -1261,6 +1317,10 @@ export function applySemanticIntake(
       summaries.push('Cross-source fact already recorded; source receipt retained without a second business mutation.')
       affectedObjects.push(...priorFact.affectedObjects)
       if (factKey) factKeys.push(factKey)
+      // Preserve the proven legacy receipt dependency for guarded Undo; do not
+      // rewrite old receipt keys or equate distinct latest-start values globally.
+      const legacyKey = factKey ? legacyLatestStartKey(factKey, candidate) : undefined
+      if (legacyKey && priorFact.factKeys?.some(key => sameSemanticFactKey(working, key, legacyKey))) factKeys.push(legacyKey)
       continue
     }
     const applied = applyCandidate(
@@ -1352,7 +1412,8 @@ export function applySemanticIntake(
     }
     return {
       status: 'NO_WRITE', snapshot: supersededCount ? working : base, changed: supersededCount > 0,
-      summary: coverageDebtCount ? 'Source interpretation needs coverage review; no answerable user decision was created.' : 'No business change.',
+      summary: unprovenLatestRecovery ? 'Legacy latest-start recovery lacks a value-bound receipt; provide a fresh confirmed notice.'
+        : coverageDebtCount ? 'Source interpretation needs coverage review; no answerable user decision was created.' : 'No business change.',
       decisionRequests: [], coverageDebtCount,
       ...(retiredRequests.length ? { compensation: { operation: 'semantic_batch' as const, payload: {
         domainCompensations: [], decisionRequestIds: [], receiptIds: [], restoreDecisionRequests: retiredRequests,
@@ -1364,6 +1425,7 @@ export function applySemanticIntake(
   const summary = [
     summaries.length ? `${summaries.length} bounded update(s) committed.` : '',
     decisions.length ? `${decisions.length} item(s) need a decision.` : '',
+    unprovenLatestRecovery ? 'Legacy latest-start was not restored: its receipt does not bind the value; provide a fresh confirmed notice.' : '',
   ].filter(Boolean).join(' ')
   const value = receipt({
     observation,

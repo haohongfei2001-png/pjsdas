@@ -1,4 +1,5 @@
 import { userJobFactsShape } from '../src/userJobFactsSchema.js'
+import { validLatestStartWindow } from './latestStartTemporal.js'
 import { applyDecisionDismissalCompensation, type DecisionDismissalCompensation } from '../src/decisionDismissal.js'
 import { restoreOpportunityMerge, type OpportunityMergeCompensation } from '../src/opportunityMerge.js'
 import type { CallToolResult } from '@modelcontextprotocol/server'
@@ -39,12 +40,13 @@ const temporal = z.object({
   timezone: z.string().trim().min(1).max(120),
   startAt: isoString.optional(),
   endAt: isoString.optional(),
+  latestStartAt: z.iso.datetime({ offset: true }).optional(),
   deadlineAt: isoString.optional(),
   date: dateOnly.optional(),
   rawExpression: z.string().trim().max(500).optional(),
   resolutionBasis: z.enum(['source_explicit', 'user_explicit', 'legacy_projection', 'system_estimate']),
   legacyProjectionAt: z.string().trim().max(100).optional(),
-}).strict()
+}).strict().refine(validLatestStartWindow, { path: ['latestStartAt'], message: 'Latest start requires a valid bounded availability window and timezone.' })
 
 const baseCandidate = {
   id: z.string().trim().min(1).max(180),
