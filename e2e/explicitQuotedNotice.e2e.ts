@@ -123,3 +123,46 @@ for (const width of [320, 390, 1440]) {
     expect(await localBusiness(page)).toEqual({ processEvents: [], scheduleNodes: [] })
   })
 }
+
+test('explicit structured quoted job saves only an Opportunity, repeats safely, and respects withdrawal', async ({ page }) => {
+  const server = await fixture(page, 390)
+  const text = '请导入以下岗位说明。\n> 公司：示例科技\n> 岗位：AI产品经理\n> 地点：上海\n> 招聘链接：https://careers.example.test/jobs/pm-2027\n> 申请截止：2026-10-30'
+  const input = page.getByLabel('要告诉 TodayAction 的内容', { exact: true })
+  const localJobs = () => page.evaluate(async () => {
+    const { exportLocalSnapshot } = await import('/pjsdas/src/db.ts')
+    const { opportunities, actions, processes, processEvents, scheduleNodes } = (await exportLocalSnapshot()).data
+    return { opportunities, actions, processes, processEvents, scheduleNodes }
+  })
+  await input.fill(text)
+  await expect(page.locator('.cgr-understanding')).toContainText('添加岗位 · 示例科技 · AI产品经理')
+  await page.getByRole('button', { name: '确认并保存', exact: true }).click()
+  await expect(page.locator('.cgr-capture-receipt')).toContainText('已保存')
+  expect(server.commands).toHaveLength(1)
+  expect(server.commands[0]).toMatchObject({ status: 'APPLIED', candidates: [{ kind: 'user_opportunity' }] })
+  const first = structuredClone(server.snapshot().data)
+  expect(first.opportunities).toHaveLength(2)
+  expect(first.opportunities[1]).toMatchObject({ company: '示例科技', role: 'AI产品经理', processStage: 'not_applied',
+    deadline: '2026-10-30', deadlinePrecision: 'date', detail: { userFacts: { provenance: 'user_asserted', location: '上海' } } })
+  const expected = { opportunities: first.opportunities, actions: [], processes: [], processEvents: [], scheduleNodes: [] }
+  expect(await localJobs()).toEqual(expected)
+  await page.reload()
+  await expect(page.getByRole('dialog', { name: '告诉 TodayAction', exact: true })).toBeVisible()
+  expect(await localJobs()).toEqual(expected)
+  await input.fill(text)
+  await expect(page.locator('.cgr-understanding')).toContainText('添加岗位')
+  await page.getByRole('button', { name: '确认并保存', exact: true }).click()
+  await expect(page.locator('.cgr-capture-receipt')).toBeVisible()
+  expect(server.commands).toHaveLength(2)
+  expect(server.snapshot().data.opportunities).toEqual(first.opportunities)
+  expect(await localJobs()).toEqual(expected)
+  const beforeWithdrawal = structuredClone(server.snapshot().data)
+  await input.fill(text + '\n先不要导入，这只是示例。')
+  await expect(page.locator('.cgr-understanding')).toHaveAttribute('aria-busy', 'false')
+  await expect(page.locator('.cgr-understanding li')).toHaveCount(0)
+  await page.getByRole('button', { name: '确认并保存', exact: true }).click()
+  await expect(page.locator('.cgr-capture-receipt')).toContainText('没有被当作当前事实写入')
+  expect(server.commands).toHaveLength(3)
+  expect(server.commands[2]).toMatchObject({ status: 'NO_WRITE', candidates: [] })
+  expect(server.snapshot().data).toEqual(beforeWithdrawal)
+  expect(await localJobs()).toEqual(expected)
+})
