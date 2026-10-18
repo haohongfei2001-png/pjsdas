@@ -27,7 +27,10 @@ export function completedWebRecruitingKind(text: string, identities: Array<{ com
     ['written_test', '(?:笔试|考试)', '(?:完成|结束|做完|考完|完毕)', '考完'],
     ['assessment', '(?:测评|在线测试|性格测试)', '(?:完成|结束|做完|完毕)'],
   ]
-  for (const [kind, event, predicate, shorthand] of kinds) {
+  for (const [kind, eventName, predicate, shorthand] of kinds) {
+    // A demonstrative selects the current occurrence; it does not weaken the
+    // required past marker, completion predicate, or full-sentence anchoring.
+    const event = `(?:这次)?${eventName}`
     const forms = [
       `${marker}?${event}${marker}?${predicate}了?`,
       `${marker}?${predicate}了?${event}了?`,

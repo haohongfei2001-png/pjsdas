@@ -125,8 +125,58 @@ change. A single frozen full suite in UTC then passes 338 files / 3863 tests on
 its first attempt (67.06s), followed by one successful production build. The
 existing >500KB chunk warning is retained. Only the build-generated release
 identity is restored to its committed unbound fallback, as in the initial build.
-Official browser/CI acceptance for the new commit is pending; initial `1ba76f7`
-results are not substituted for the additional bytes.
+Official CI for `6990166711abf1fbbce74b32b2823cb2574b3f52`
+([39079212459](https://github.com/haohongfei2001-png/pjsdas/actions/runs/39079212459))
+passed all 338 files / 3863 tests on its first attempt, followed by type checking,
+audit, build and the existing standby dry-run. Brand and UI Review also passed.
+Its Browser run did not pass; that real failure is recorded below. Initial
+`1ba76f7` results are not substituted for the additional bytes.
+
+## Browser compatibility correction batch
+
+The first exact-`6990166` Browser run
+[39079212483](https://github.com/haohongfei2001-png/pjsdas/actions/runs/39079212483)
+passed isolation and deadline UI, then 276 core tests passed and eight failed
+on both their first and retry attempts. Dense tests did not run. The
+[original artifact](https://github.com/haohongfei2001-png/pjsdas/actions/runs/39079212483/artifacts/12118920698)
+has SHA256 `9d9a1e5137cd4589c99254d1fe83f02c907e67848e94352285cb7efa8247a099`.
+No browser assertion or wait is changed to close these failures.
+
+Seven failures had the same product cause: the new preparation-time guard also
+blocked untimed explicit tasks such as `事项：整理面试材料`. The eighth was the
+existing contextual completed statement `这次面试已经完成了。`, omitted from the
+finite completion grammar. The existing affected browser input inventory has
+19 literal input sites and nine unique strings, plus a reused const input.
+These were moved into a small compatibility matrix, not rewritten in the browser
+suite. After fixing an initial gateway test-fixture omission, the unchanged
+`6990166` production code produces 13 deterministic failures and 14 passes.
+
+The correction preserves the legacy general-task title/confidence path for
+untimed preparation, but never copies its manufactured host-midnight deadline.
+Independent review demonstrated that hidden default in both UTC and Shanghai;
+the domain requested a decision rather than persisting that case. Three more
+real controls proved that unsupported relative/dotted-date time claims cannot
+be disguised as untimed tasks.
+
+The pure Web planning boundary now supports a deliberately finite schedule form:
+an optional task label, one full absolute or supported relative date prefix,
+an optional `HH:mm` / `H时mm` clock, then a preparation verb and task text.
+Unresolved calendar/duration/placement/qualifier forms keep their original input
+and request clarification. Plain preparation tasks have no timezone dependency.
+Whole-input source-time validation remains in force: review caught three source
+zone suffixes lost by prefix-only resolution, and all three original failures
+are retained as regressions. Shared legacy parsers and Gmail remain unchanged.
+
+Completion accepts the optional demonstrative `这次` before the event name while
+retaining the required past evidence, complete predicate and full anchoring.
+Missing predicates, before-event obligations, conditions and negation still fail
+closed. Existing unit, browser and original timezone assertions are retained.
+Final independent review reports CLEAN, including 34 assertion groups and the
+original counterexamples in UTC and Shanghai. The final local frozen batch then
+passes 340 files / 3930 tests in UTC on its first attempt (59.08s), followed by one
+successful production build. The original chunk warning remains unchanged;
+only this build's generated release identity is restored to the committed
+unbound fallback. This correction still awaits new exact-head official CI.
 
 ## Separate main browser fixture race
 

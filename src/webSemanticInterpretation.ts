@@ -1,4 +1,5 @@
 import { resolveSourceTemporal } from './sourceTemporal.js'
+import { readWebPlanningTime } from './webPlanningTime.js'
 import { completedWebRecruitingKind, resolveWebRecruitingTime } from './webRecruitingTime.js'
 import { latestScheduleOccurrence } from './scheduleNodes.js'
 import { parseProgressUpdate, type CanonicalJobReference } from './progressUpdate.js'
@@ -412,10 +413,11 @@ export function buildWebSemanticInterpretation(
   }
   // A first-party task plan is distinct from a recruiting notice or deadline.
   // Reuse the source-time resolver: ambiguous local times remain unresolved.
+  let untimedPreparation = false
   if (!importedNotice && /准备|整理|复习|练习|修改|准备材料|prepare|practice|revise/i.test(current.text)
     && !/截止|最晚|通知|邀请|收到|deadline|invitation|received/i.test(current.text)) {
-    const temporal = timezone ? resolveSourceTemporal(current.text, { receivedAt: now.toISOString(), timezone,
-      mode: hasExplicitClock(current.text) ? 'fixed' : 'deadline' }) : undefined
+    const planningTime = readWebPlanningTime(current.text, now.toISOString(), timezone)
+    const temporal = planningTime.kind === 'resolved' ? planningTime.temporal : undefined
     if (temporal) {
       const scheduledTemporal = temporal.startAt ? { ...temporal, resolutionBasis: 'user_explicit' as const } : undefined
       const plannedDate = temporal.date ?? (temporal.startAt ? new Intl.DateTimeFormat('en-CA', { timeZone: timezone, year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(temporal.startAt)) : undefined)
@@ -423,7 +425,12 @@ export function buildWebSemanticInterpretation(
         kind: 'manual_action', title: current.text, plannedDate, scheduledTemporal }
       return { mode, candidates: [candidate], unresolved: [], ignored: current.excluded ? [text] : [] }
     }
-    return { mode, candidates: [], unresolved: ['任务的时间或可靠时区尚未确定，本次未写入。'], ignored: current.excluded ? [text] : [] }
+    if (planningTime.kind === 'unresolved') {
+      return { mode, candidates: [], unresolved: ['任务的时间或可靠时区尚未确定，本次未写入。'], ignored: current.excluded ? [text] : [] }
+    }
+    // A task without a time claim has no timezone dependency. Preserve the
+    // existing general-task parser, including its title and quoted-tail rules.
+    untimedPreparation = true
   }
   let plan = parseProgressUpdate(current.text, opportunities, now, references)
   if (importedNotice) {
@@ -452,7 +459,11 @@ export function buildWebSemanticInterpretation(
     : plan.executable
   const unresolvedTimes: string[] = []
   let executableCandidates = executableOperations
-    .map(operation => {
+    .map(originalOperation => {
+      // The legacy standalone-task adapter manufactures host-midnight dueAt.
+      // No time claim means no deadline, regardless of that parser default.
+      const operation = untimedPreparation && originalOperation.kind === 'manual_action'
+        ? { ...originalOperation, dueAt: undefined } : originalOperation
       const obligation = operation.kind === 'process_event' && explicitDeadlineInstruction(operation.sourceText)
       const candidate = operationCandidate(obligation ? { ...operation, completed: false, timingMode: 'deadline' } : operation)
       if (candidate?.kind === 'occurrence_completed' && !explicitCompletionKind(operation.sourceText, mode, opportunities)) {
