@@ -269,6 +269,65 @@ test('bound cache rejects job and capture while both Auth imports wait, then ret
   } finally { delayed.release('continue') }
 })
 
+test('a completed real preview cannot move the confirmation target between pointer down and up', async ({ page }) => {
+  // Delay only delivery of the real read-only interpretation, not its contents
+  // or command authority. This forces the timing captured in PR277's Firefox
+  // failure without sleeps, readiness waits on Save, or production test hooks.
+  await page.addInitScript(() => {
+    ;(window as any).__capturePreviewDelivery = { ready: false, delivered: false, candidateCount: 0 }
+  })
+  await page.route('**/src/webSemanticIntake.ts*', async route => {
+    const response = await route.fetch()
+    const original = await response.text()
+    const declaration = 'export async function previewWebSemanticCapture('
+    expect(original.split(declaration)).toHaveLength(2)
+    const body = original.replace(declaration, 'async function actualPreviewWebSemanticCapture(') + `
+export async function previewWebSemanticCapture(...args) {
+  const result = await actualPreviewWebSemanticCapture(...args);
+  const delivery = window.__capturePreviewDelivery;
+  delivery.candidateCount = result.candidates.length;
+  delivery.ready = true;
+  await new Promise(resolve => { delivery.release = resolve; });
+  delivery.delivered = true;
+  return result;
+}
+`
+    await route.fulfill({ response, body })
+  })
+  const server = await bootstrapBoundAccount(page)
+  await page.getByRole('button', { name: '＋ 告诉 TodayAction', exact: true }).click()
+  await page.getByRole('textbox', { name: '要告诉 TodayAction 的内容' }).fill(CAPTURE_TEXT)
+  await expect.poll(() => page.evaluate(() => (window as any).__capturePreviewDelivery.ready)).toBe(true)
+  expect(await page.evaluate(() => (window as any).__capturePreviewDelivery.candidateCount)).toBeGreaterThan(0)
+  const confirmation = page.getByRole('button', { name: '确认并保存', exact: true })
+  await expect(confirmation).toBeEnabled()
+  await expect(page.locator('.cgr-understanding')).toHaveAttribute('aria-busy', 'true')
+  await confirmation.hover()
+  const before = await confirmation.boundingBox()
+  expect(before).not.toBeNull()
+  await page.mouse.down()
+  await page.evaluate(() => (window as any).__capturePreviewDelivery.release())
+  await expect.poll(() => page.evaluate(() => (window as any).__capturePreviewDelivery.delivered)).toBe(true)
+  // Let React commit and the browser paint the resolved result before testing
+  // geometry. The old component inserts the body and moves this button here.
+  await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))))
+  await expect(page.locator('.cgr-understanding')).toHaveAttribute('aria-busy', 'true')
+  expect(await confirmation.boundingBox()).toEqual(before)
+  expect(server.mutations).toEqual([]) // pointer-down never submits
+  await page.mouse.up()
+  await expect(page.locator('.cgr-capture-receipt')).toContainText('已记录明确事实')
+  await expect.poll(() => server.mutations.length).toBe(1)
+  expect(server.mutations[0]).toMatchObject({ action: 'command', type: 'semantic_intake' })
+  await authoritativeReadback(page, server, 'screening')
+  await page.locator('.cgr-capture-receipt').getByRole('button', { name: '撤销', exact: true }).click()
+  await expect(page.locator('.cgr-capture-receipt')).toContainText('已撤销')
+  await expect.poll(() => server.mutations.length).toBe(2)
+  expect(server.mutations[1].action).toBe('undo')
+  await authoritativeReadback(page, server, 'not_applied')
+  expect(server.receipts.size).toBe(2)
+  expect(server.unexpected).toEqual([])
+})
+
 test('failed Auth module never becomes anonymous write permission or clears the bound cache', async ({ page }) => {
   const server = await bootstrapBoundAccount(page)
   const before = await durableEvidence(page)

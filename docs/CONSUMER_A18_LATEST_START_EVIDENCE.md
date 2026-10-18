@@ -79,6 +79,45 @@ action or clear the pending latest constraint.
 - Official final-head CI/browser/performance remains required before merge. No
   thresholds, baselines, browser assertions or workflow gates were changed.
 
+## Browser confirmation target regression
+
+The first official head `a91c25fa65bc4fabe0c7dab6fbea3cc4a082df52`
+passed CI (4177 unit tests), strict UI, Brand and the Chromium browser suites.
+Its Matrix workflow reported success, but core Firefox contained **one real first-
+attempt failure followed by a passing retry** (287 passed / 1 flaky). That is
+retained as a merge blocker, not described as first-pass acceptance:
+[original run](https://github.com/haohongfei2001-png/pjsdas/actions/runs/39099116101),
+[original trace artifact](https://github.com/haohongfei2001-png/pjsdas/actions/runs/39099116101/artifacts/12126028477).
+
+The trace shows the asynchronous preview body appearing after confirmation was
+stable and the click began, but before the click completed. The footer moved from
+under the pointer. The receipt never appeared and there was **no semantic command
+request**, ruling out a successful hidden save. Original Auth admission, domain
+command and Undo checks had already passed. Matrix dense and all four original
+performance checks passed first time; their limits are unchanged.
+
+The narrow fix holds only preview presentation while the footer is occupied by
+pointer or keyboard focus. Both must leave before a queued result can display.
+Text, account/session, close, mode and save transitions invalidate queued and late
+results. Submission still uses current text and its existing authority/lease path;
+no pointer-down submission, readiness wait, CSS or baseline change is introduced.
+
+The new deterministic browser case delays delivery of the **real** read-only
+preview result in test middleware, then delivers it between actual mouse-down and
+mouse-up. It checks stable button geometry and zero premature mutations, followed
+by authoritative save, exact readback and Undo. The pre-existing failing case has
+no added wait. The new case has not been run against old production source: the
+original official trace is the browser RED evidence. Local browser execution is
+unavailable; official final-head browser acceptance is still required.
+
+Runtime/test candidate `7b25d59609854cbef6185b0173889d5f30358ee6`, tree
+`6df338ca08787e3bad87f76939d0aa7ba05dcc27`, received independent CLEAN review.
+All 48 related unit cases and app type checking passed; the reviewer independently
+reran the 12 presentation cases and app types. One frozen UTC full run passed
+**347 files / 4189 tests first time**, followed by production build PASS,
+2026-10-18 05:50:16–05:50:53 UTC. Build identity was retained separately and restored;
+only this evidence document was added after the tested runtime/test commit.
+
 ## Operational boundary
 
 All messages, jobs and provider inputs in this evidence are synthetic. No real

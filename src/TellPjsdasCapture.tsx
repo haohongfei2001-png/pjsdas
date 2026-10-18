@@ -1,3 +1,4 @@
+import { createCapturePreviewPresentation } from './capturePreviewPresentation.js'
 import ManualJobFields from './capture/ManualJobFields.js'
 import { manualJobDraft, readManualJobDraft, manualJobCandidate } from './capture/manualJob.js'
 import type { UserJobFacts } from './opportunityCreation.js'
@@ -158,6 +159,15 @@ export default function TellPjsdasCapture({
   const connected = Boolean(cloud.session && connectedWorkspaceAuthorityEnabled())
   const recoveryLocked = saveState === 'unknown' || saveState === 'reauth' || saveState === 'confirmed_pending' || saveState === 'offline'
 
+  const previewPresentation = useRef(createCapturePreviewPresentation())
+  const previewIdentity = useRef<unknown[]>([])
+  const identity = [open, text, manualMode, correctionMode, busy, cloud.session]
+  if (identity.some((value, index) => value !== previewIdentity.current[index])) {
+    previewPresentation.current.invalidate()
+    previewIdentity.current = identity
+    if (!open || correctionMode) previewPresentation.current.reset()
+  }
+
   useEffect(() => {
     if (!open) {
       initializedUserIdRef.current = undefined
@@ -249,32 +259,30 @@ export default function TellPjsdasCapture({
   }, [open, saveState, stableCommandId, cloud.session?.user.id, zh])
 
   useEffect(() => {
-    if (!open || manualMode || !text.trim() || busy) {
+    if (!open || manualMode || correctionMode || !text.trim() || busy) {
       setPreviewBusy(false)
       if (!text.trim()) setPreview(undefined)
       return
     }
-    let active = true
+    const presentation = previewPresentation.current.begin()
     setPreviewBusy(true)
     const id = window.setTimeout(() => {
       void previewWebSemanticCapture(text)
         .then((next) => {
-          if (!active) return
-          setPreview(next)
+          presentation.publish(() => { setPreview(next); setPreviewBusy(false) })
         })
         .catch((caught) => {
-          if (!active) return
-          setError(caught instanceof Error ? caught.message : String(caught))
-        })
-        .finally(() => {
-          if (active) setPreviewBusy(false)
+          presentation.publish(() => {
+            setError(caught instanceof Error ? caught.message : String(caught))
+            setPreviewBusy(false)
+          })
         })
     }, 180)
     return () => {
-      active = false
+      presentation.cancel()
       window.clearTimeout(id)
     }
-  }, [open, text, busy, manualMode])
+  }, [open, text, busy, manualMode, correctionMode, cloud.session])
 
   useEffect(() => {
     if (!open) return
@@ -530,7 +538,13 @@ export default function TellPjsdasCapture({
         ) : null}
 
         </>}
-        <div className="cgr-capture-footer">
+        <div className="cgr-capture-footer"
+          onPointerEnter={() => previewPresentation.current.hold('pointer', true)}
+          onPointerLeave={() => previewPresentation.current.hold('pointer', false)}
+          onFocusCapture={() => previewPresentation.current.hold('focus', true)}
+          onBlurCapture={event => {
+            if (!event.currentTarget.contains(event.relatedTarget as Node | null)) previewPresentation.current.hold('focus', false)
+          }}>
           <button className="text-button cgr-capture-mode" type="button" disabled={busy || recoveryLocked} onClick={switchManualMode}>{manualMode ? (zh ? '用自然语言添加' : 'Use natural language') : (zh ? '手动填写岗位' : 'Enter job manually')}</button>
           {manualMode ? <button className="text-button" type="button" disabled={busy} onClick={onClose}>{zh ? '取消' : 'Cancel'}</button> : null}
           <button className="cgr-primary-button" type="button" disabled={busy || !text.trim() || manualMode && (!manualJob.company.trim() || !manualJob.role.trim())} onClick={() => { void submit() }}>
