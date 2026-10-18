@@ -14,8 +14,12 @@ The currently asserted message body must contain one known-job notice such as:
 
 The subject must identify the same company/role and be the finite recruiting
 progress or interview-reschedule subject. Both dates include year and clock;
-trusted source timezone is retained. Unknown qualifiers, missing or future source
-timestamp, elapsed arrangements, ambiguous identity/history, multiple fragments
+trusted source timezone is retained. A valid decimal provider internalDate is
+authoritative; only when absent can one complete RFC Date header with explicit
+numeric ±HHMM offset provide the source clock. Unknown zones, malformed provider
+values, conflicting headers or invalid calendar/weekday fields remain unresolved.
+Unknown qualifiers, missing or future source timestamp, elapsed arrangements,
+ambiguous identity/history, multiple fragments
 and unsupported temporal forms remain unresolved. The same exact current-node
 and old-instant preconditions apply as the existing Web adapter. No new interview
 or Action is created by the reschedule.
@@ -84,7 +88,7 @@ counts after successful commits, new cycles and lost-finalization retries.
   explicit durable aliases on pending, receipt and node owners, preserving all
   other proof requirements. The negative without the alias remains unresolved;
   immutable receipts and existing occurrence versions are unchanged.
-- Final product/test candidate `efdbd1019435379f4b1959d89e55f64ce77a07b0`, tree
+- First frozen product/test candidate `efdbd1019435379f4b1959d89e55f64ce77a07b0`, tree
   `0c8e3c17fefa4d96a3398a3c00fd445a6de832f6`, received independent CLEAN review.
   Final independent verification passed 3 files / 87 tests and type checking.
 - One frozen UTC full run passed **344 files / 4125 tests** first time, followed
@@ -94,6 +98,41 @@ counts after successful commits, new cycles and lost-finalization retries.
 - Required official CI remains pending. No browser, performance or production-
   Gmail PASS is inferred from Node results. No existing threshold, fixture
   baseline or gate changed.
+
+## Source-clock closure after the first frozen candidate
+
+While the initial PR276 CI ran on `6300000ef3de50b87353a4137bddd4e2d47fe509`,
+a bounded probe found a pre-existing Gmail Date-header fallback issue. Without
+internalDate, `20 Sep 2026 12:00:00` used the host timezone, yielding source instants
+8 hours apart under UTC and Asia/Shanghai; both previously authorized this finite
+reschedule. Normal Gmail full responses are expected to include internalDate;
+no real provider omission was observed. The accepted adapter fallback nevertheless
+must not grant this new bound path an unknown source clock.
+
+Candidate `b1c6ce2dfbb0ed7ba668c7fdd4a3ffbb6fa9a42d` limits only the new bound
+path to strict provider time or a complete numeric-offset RFC header. Its fallback
+constructs and checks calendar/time/weekday fields using UTC operations, with no
+host Date.parse. Duplicate/invalid Date headers, unsupported zones, malformed
+provider values and future timestamps cannot establish binding. A valid provider
+acceptance timestamp takes precedence over sender Date, which may legitimately
+differ due to delivery delay. Existing general Gmail parsing is unchanged.
+
+- Nine negative cases were RED under each timezone, with four controls passing.
+- Independent review found three finite but out-of-range provider values that
+  threw in the legacy classifier before the new validation. Their actual RED
+  traces are retained. Strict bound-source recognition now happens first; invalid
+  bound clocks use a metadata-only classifier copy with time fields absent.
+  The original message is unchanged, source assertedAt is absent, and explicit
+  interpretation_failure prevents any business mutation. The classifier's
+  processing-time fallback cannot become source fact authority.
+- Final source-clock candidate `6048b5d56ddfbd50063c9166ca3a6ed0a2f8fd57`, tree
+  `ff08e04844b44b623397545f912ec2880eae5ee3`, passed 4 targeted files / 170 tests
+  under UTC and 89 tests under Asia/Shanghai. Narrow independent review is CLEAN;
+  gateway, app and node TypeScript checks passed with no emit.
+- New-head official CI remains pending. The earlier 4125-test full run/build
+  belongs to the preceding runtime, not this new delta. The original CI is
+  preserved; its result cannot certify new bytes. No local full-suite repetition
+  was used for this small reviewed closure.
 
 ## Rollout boundaries
 

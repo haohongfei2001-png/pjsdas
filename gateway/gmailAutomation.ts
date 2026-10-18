@@ -137,6 +137,30 @@ function header(part: GmailPart | undefined, name: string) {
   return cleanText(part?.headers?.find((item) => item.name?.toLowerCase() === name.toLowerCase())?.value)
 }
 
+/** Narrow proof for the new bound-notice path only. Never infer a sender
+ * clock from this worker's host timezone or normalize malformed provider data. */
+function boundGmailSourceInstant(message: GmailMessage, now: Date): string | undefined {
+  if (message.internalDate !== undefined) {
+    if (typeof message.internalDate !== 'string' || !/^\d{1,16}$/.test(message.internalDate)) return undefined
+    const value = Number(message.internalDate)
+    if (!Number.isSafeInteger(value) || !Number.isFinite(new Date(value).getTime()) || value > now.getTime()) return undefined
+    return new Date(value).toISOString()
+  }
+  const dates = message.payload?.headers?.filter(item => item.name?.toLowerCase() === 'date') ?? []
+  if (dates.length !== 1) return undefined
+  const value = cleanText(dates[0]?.value)
+  const match = /^(?:(Sun|Mon|Tue|Wed|Thu|Fri|Sat), )?(\d{1,2}) (Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) (\d{4}) ([01]\d|2[0-3]):([0-5]\d)(?::([0-5]\d))? ([+-])([01]\d|2[0-3])([0-5]\d)$/i.exec(value)
+  if (!match) return undefined
+  const year = Number(match[4]), day = Number(match[2])
+  const month = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'].indexOf(match[3]!.toLowerCase())
+  const calendar = new Date(Date.UTC(year, month, day, Number(match[5]), Number(match[6]), Number(match[7] ?? 0)))
+  if (year < 1900 || calendar.getUTCFullYear() !== year || calendar.getUTCMonth() !== month || calendar.getUTCDate() !== day
+    || match[1] && ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'][calendar.getUTCDay()] !== match[1].toLowerCase()) return undefined
+  const offset = (Number(match[9]) * 60 + Number(match[10])) * (match[8] === '+' ? 1 : -1)
+  const instant = calendar.getTime() - offset * 60_000
+  return instant <= now.getTime() ? new Date(instant).toISOString() : undefined
+}
+
 function decodeBase64Url(value: string | undefined) {
   if (!value) return ''
   try {
@@ -1288,14 +1312,7 @@ export function gmailSemanticRecordFromMessage(
   opportunities: Opportunity[],
   now = new Date(),
 ): GmailSemanticRecord | undefined {
-  const originalHeaderTime = Date.parse(header(message.payload, 'date'))
-  const originalInternalTime = message.internalDate ? Number(message.internalDate) : NaN
-  const originalTime = Number.isFinite(originalInternalTime) && !Number.isNaN(new Date(originalInternalTime).getTime())
-    ? originalInternalTime : originalHeaderTime
-  const originalReceivedAt = Number.isFinite(originalTime) ? new Date(originalTime).toISOString() : undefined
-  const prior = gmailObservationFromMessage(message, opportunities, now)
-  if (!prior) return undefined
-  const legacy = { ...prior, receivedAt: originalReceivedAt ?? prior.receivedAt }
+  if (!message.id) return undefined
   const excluded = message.labelIds?.some((label) => label === 'SPAM' || label === 'TRASH')
   const content = excluded ? { text: '', uninterpretedHtml: false } : messageBodyContent(message.payload, true)
   const body = content.text
@@ -1303,6 +1320,25 @@ export function gmailSemanticRecordFromMessage(
   const sourceText = excluded ? '' : body || subject || cleanText(message.snippet)
   const current = currentGmailAssertion(sourceText)
   const text = current.text
+  const boundedRescheduleSource = /面试改期通知\s*[:：]\s*原定/.test(text)
+  const boundedSourceTime = boundedRescheduleSource ? boundGmailSourceInstant(message, now) : undefined
+  const originalHeaderTime = Date.parse(header(message.payload, 'date'))
+  const originalInternalTime = message.internalDate ? Number(message.internalDate) : NaN
+  const originalTime = Number.isFinite(originalInternalTime) && !Number.isNaN(new Date(originalInternalTime).getTime())
+    ? originalInternalTime : originalHeaderTime
+  const originalReceivedAt = boundedRescheduleSource ? boundedSourceTime
+    : Number.isFinite(originalTime) ? new Date(originalTime).toISOString() : undefined
+  // The legacy classifier may convert a finite but out-of-range number to ISO.
+  // For an invalid bound-source clock, classify metadata using a copy without
+  // untrusted time fields. This supplies no fact time: assertedAt stays absent,
+  // and the explicit interpretation gap below prevents every business write.
+  const classificationMessage = boundedRescheduleSource && !boundedSourceTime
+    ? { ...message, internalDate: undefined, payload: { ...message.payload,
+        headers: message.payload?.headers?.filter(item => item.name?.toLowerCase() !== 'date') } }
+    : message
+  const prior = gmailObservationFromMessage(classificationMessage, opportunities, now)
+  if (!prior) return undefined
+  const legacy = { ...prior, receivedAt: originalReceivedAt ?? prior.receivedAt }
   const interpretationGaps: string[] = originalReceivedAt ? [] : ['Original message timestamp is unavailable; automatic facts require clarification.']
   if (content.uninterpretedHtml) interpretationGaps.push('HTML body exceeds the supported parsing complexity or could not be interpreted; inspect the original mail.')
   const businessAmbiguities: string[] = []
@@ -1368,7 +1404,9 @@ export function gmailSemanticRecordFromMessage(
   const deadlineContextType = timedContextTypes.length === 1 ? timedContextTypes[0] : undefined
   const candidates: SemanticCandidate[] = []
   let pendingInterviewReschedule: GmailSemanticRecord['pendingInterviewReschedule']
-  const boundedRescheduleSource = /面试改期通知\s*[:：]\s*原定/.test(text)
+  if (boundedRescheduleSource && (!boundedSourceTime || boundedSourceTime !== originalReceivedAt)) {
+    interpretationGaps.push('Bound reschedule requires a valid provider timestamp or one complete, explicitly offset RFC Date header; source clock remains unresolved.')
+  }
   for (const [index, item] of pieces.entries()) {
     const { piece, parsed } = item
     if (item.instructionOnly || conditionalCompletionDisclaimer(piece)) continue
@@ -1422,7 +1460,8 @@ export function gmailSemanticRecordFromMessage(
       businessAmbiguities.push(GMAIL_RESCHEDULE_TIME_GAP)
       // Do not let unsupported suffixes turn this old/new notice into a
       // completion/cancellation or commit a parsed prefix of a mixed message.
-      if (selected && !nonAssertion && body && boundedPieces.length === 1 && text.length <= 2048
+      if (selected && !nonAssertion && body && boundedSourceTime === originalReceivedAt && boundedSourceTime
+        && boundedPieces.length === 1 && text.length <= 2048
         && [`${selected.company} ${selected.role} 招聘进展`, `${selected.company} ${selected.role} 面试改期通知`].includes(subject.trim())) {
         pendingInterviewReschedule = { text, opportunityId: selected.id }
       }
@@ -1511,7 +1550,7 @@ export function gmailSemanticRecordFromMessage(
     observation: {
       contractVersion: 1, inputId: `gmail:${message.id}:uu06-v1`,
       source: { kind: 'gmail', sourceId: GMAIL_SOURCE_ID, sourceRecordId: message.id!,
-        sourceVersion: 'uu06-v1', observedAt: now.toISOString(), assertedAt: legacy.receivedAt, timezone: 'Asia/Shanghai' },
+        sourceVersion: 'uu06-v1', observedAt: now.toISOString(), assertedAt: boundedRescheduleSource ? boundedSourceTime : legacy.receivedAt, timezone: 'Asia/Shanghai' },
       originalTextFingerprint: `fnv1a:${stableIngestionHash(sourceText)}`,
       statementMode: nonAssertion ? 'quote' : 'assertion', candidates,
     },

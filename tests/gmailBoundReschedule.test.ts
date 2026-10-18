@@ -180,6 +180,47 @@ describe('A18/A19 bounded Gmail interview reschedule', () => {
       expect(result.run.outcomes.unresolved).toBe(1)
     }
   })
+  it.each([
+    { date: '20 Sep 2026 12:00:00' },
+    { date: '20 Sep 2026 12:00:00 PST' },
+    { date: '20 Sep 2026 12:00:00 +2500' },
+    { date: '31 Sep 2026 12:00:00 +0800' },
+    { date: 'Mon, 20 Sep 2026 12:00:00 +0800' },
+    { date: '20 Sep 2026 12:00:00 +0800', second: '20 Sep 2026 13:00:00 +0800' },
+    { date: '20 Sep 2026 12:00:00 +0800', internal: 'invalid' },
+    { date: '20 Sep 2026 12:00:00 +0800', internal: '1.7899056e12' },
+    { date: '20 Sep 2026 12:00:00 +0800', internal: '1789905600000.5' },
+    ...['8640000000000001', '9007199254740991', '1e20'].map(internal => ({ date: '20 Sep 2026 12:00:00 +0800', internal })),
+  ])('requires unambiguous bounded source-clock evidence: %j', ({ date, second, internal }) => {
+    const base = fixture(), original = mail(change(), 'source-clock-guard')
+    const message = { ...original, internalDate: internal, payload: { ...original.payload,
+      headers: [...original.payload.headers, { name: 'Date', value: date }, ...(second ? [{ name: 'Date', value: second }] : [])] } }
+    const source = gmailSemanticRecordFromMessage(message, base.data.opportunities, NOW)!
+    expect(source.pendingInterviewReschedule).toBeUndefined()
+    expect(source.observation.source.assertedAt).toBeUndefined()
+    expect(source.issueKinds).toContain('interpretation_failure')
+    const result = batch(base, [source], 'source-clock-guard-run')
+    expect(result.run.outcomes.unresolved).toBe(1)
+    sameBusiness(result.snapshot, base)
+  })
+  it.each([
+    ['Sun, 20 Sep 2026 12:00:00 +0800', '2026-09-20T04:00:00.000Z'],
+    ['20 Sep 2026 12:00:00 -0400', '2026-09-20T16:00:00.000Z'],
+    ['20 Sep 2026 12:00 +0000', '2026-09-20T12:00:00.000Z'],
+  ])('accepts an explicitly offset RFC source clock without host timezone: %s', (date, expected) => {
+    const base = fixture(), original = mail(change(), 'source-clock-rfc')
+    const message = { ...original, internalDate: undefined, payload: { ...original.payload, headers: [...original.payload.headers, { name: 'Date', value: date }] } }
+    const source = gmailSemanticRecordFromMessage(message, base.data.opportunities, NOW)!
+    expect(source.observation.source.assertedAt).toBe(expected)
+    expect(batch(base, [source], 'source-clock-rfc-run').run.outcomes.updated).toBe(1)
+  })
+  it('keeps a valid provider internalDate authoritative over sender Date and delivery delay', () => {
+    const base = fixture(), original = mail(change(), 'source-clock-provider')
+    original.payload.headers.push({ name: 'Date', value: '20 Sep 2026 12:00:00' })
+    const source = gmailSemanticRecordFromMessage(original, base.data.opportunities, NOW)!
+    expect(source.observation.source.assertedAt).toBe('2026-09-20T12:00:00.000Z')
+    expect(batch(base, [source], 'source-clock-provider-run').run.outcomes.updated).toBe(1)
+  })
   it('does not recover a missing or future original timestamp from the processing clock', () => {
     const base = fixture()
     for (const receivedAt of [undefined, '2026-09-22T00:00:00Z']) {
