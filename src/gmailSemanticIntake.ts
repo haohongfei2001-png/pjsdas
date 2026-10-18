@@ -5,6 +5,9 @@ import type { PJSDASSnapshot } from './snapshot.js'
 import { applySemanticIntake, semanticCandidateFactKey, type SemanticBatchCompensation } from './semanticIntake.js'
 import { alreadyIngested, buildIngestionRunSummary, createIngestionLedgerTimeline, createIngestionRunTimeline, stableIngestionHash } from './ingestion.js'
 import { bootstrapPolicyFor } from './sourceRegistry.js'
+import { readImportedInterviewReschedule } from './boundInterviewReschedule.js'
+
+export const GMAIL_RESCHEDULE_TIME_GAP = 'Reschedule lacks an unambiguous full date/time; the existing occurrence was preserved.'
 
 export interface GmailSemanticRecord {
   observation: SemanticIntakeObservation
@@ -14,6 +17,34 @@ export interface GmailSemanticRecord {
   gaps: string[]
   capabilityBoundaries?: string[]
   issueKinds?: IngestionIssueKind[]
+  /** Bounded current-body evidence only, never persisted. Bind after earlier
+   * records in this batch have passed through the shared authoritative core. */
+  pendingInterviewReschedule?: { text: string; opportunityId: string }
+}
+
+function bindPendingInterview(record: GmailSemanticRecord, snapshot: PJSDASSnapshot, prior: TimelineRecord | undefined, sourceId: string, checkedAt: string) {
+  const pending = record.pendingInterviewReschedule, observation = record.observation
+  if (!pending || observation.statementMode !== 'assertion' || observation.source.kind !== 'gmail'
+    || observation.candidates.length || record.issueKinds?.includes('interpretation_failure')
+    || observation.source.sourceId !== sourceId || !Number.isFinite(Date.parse(record.receivedAt))
+    || Date.parse(record.receivedAt) !== Date.parse(observation.source.assertedAt ?? '')
+    || Date.parse(record.receivedAt) > Date.parse(checkedAt)
+    || !record.gaps.includes(GMAIL_RESCHEDULE_TIME_GAP)) return record
+  // A consumed exact source does not become ambiguous merely because its own
+  // successful reschedule changed the old-time precondition. Never replay it.
+  const consumed = prior?.ingestion?.outcome !== 'unresolved' && Boolean(prior?.ingestion)
+    && prior!.ingestion!.fingerprint === observation.originalTextFingerprint
+  // This grammar contains two complete absolute dates. Current eligibility is
+  // checked at processing time; the source's original fact clock stays below.
+  const candidate = consumed ? undefined : readImportedInterviewReschedule(pending.text, snapshot,
+    new Date(checkedAt), observation.source.timezone)
+  if (!consumed && (!candidate || candidate.target?.opportunityId !== pending.opportunityId)) return record
+  const gaps = record.gaps.filter(gap => gap !== GMAIL_RESCHEDULE_TIME_GAP)
+  return { ...record, gaps, issueKinds: record.issueKinds?.filter(kind => kind !== 'business_ambiguity' || gaps.length > 0),
+    observation: { ...observation, candidates: candidate ? [{ ...candidate, id: 'fragment:0',
+      objectConfidence: 'high' as const, eventConfidence: 'high' as const, temporalConfidence: 'high' as const,
+      evidenceRefs: [`${observation.source.sourceId}:${observation.source.sourceRecordId}:fragment:0`],
+      sourceVersionRefs: [`${observation.source.sourceRecordId}:${observation.source.sourceVersion}`] }] : [] } }
 }
 
 /** Source accounting surrounds the shared policy; this adapter never changes business state itself. */
@@ -38,7 +69,10 @@ export function applyGmailSemanticBatch(snapshot: PJSDASSnapshot, input: {
   const priorRun = (snapshot.data.timeline ?? []).find((item) => item.ingestionRun?.runId === input.runId
     && item.ingestionRun.sourceKind === 'gmail' && item.ingestionRun.sourceId === input.sourceId)?.ingestionRun
   if (priorRun) return { snapshot, run: priorRun, compensation, alreadyApplied: true }
-  for (const record of [...input.records].sort((a, b) => a.receivedAt.localeCompare(b.receivedAt))) {
+  for (const sourceRecord of [...input.records].sort((a, b) => a.receivedAt.localeCompare(b.receivedAt))) {
+    const prior = alreadyIngested(working.data.timeline, { sourceKind: 'gmail', sourceId: input.sourceId,
+      sourceRecordId: sourceRecord.observation.source.sourceRecordId })
+    const record = bindPendingInterview(sourceRecord, working, prior, input.sourceId, input.checkedAt)
     // Accounting a source as unresolved must not still commit its parsed
     // prefix. A later, unparsed fragment may negate or qualify that outcome.
     const independentGap = record.gaps.length > 0 || Boolean(record.issueKinds?.some(kind => kind !== 'business_ambiguity'))
@@ -47,7 +81,6 @@ export function applyGmailSemanticBatch(snapshot: PJSDASSnapshot, input: {
     const sourceRecordId = observation.source.sourceRecordId
     // Preserve pre-UU06 consumption, including unresolved historical evidence. A new
     // interpreter is not permission to replay old consumed mail as a new business fact.
-    const prior = alreadyIngested(working.data.timeline, { sourceKind: 'gmail', sourceId: input.sourceId, sourceRecordId })
     const result = prior && !input.reconcileExisting ? undefined : applySemanticIntake(working, observation, {
       authorized: true, now: new Date(input.checkedAt), workspaceRevision: input.workspaceRevision,
     })

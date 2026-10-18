@@ -1,3 +1,4 @@
+import { parseFragment, serialize, type DefaultTreeAdapterTypes } from 'parse5'
 import type { GmailExecutionObserver } from './gmailExecutionDiagnostics.js'
 import type { GoogleRefreshLifecycle } from './googleRefreshLifecycle.js'
 import { dismissedSemanticCandidate } from '../src/decisionDismissal.js'
@@ -9,6 +10,8 @@ import {
   type GmailReconciliationAccumulator,
   type GmailReconciliationContinuationState,
 } from './gmailReconciliationState.js'
+import { canonicalOpportunityId } from '../src/opportunityCanonicalization.js'
+import { semanticCandidateFactKey } from '../src/semanticIntake.js'
 import { resolveSourceTemporal } from '../src/sourceTemporal.js'
 import { commonNotificationCompany, notificationIdentityCanInherit, notificationIdentityCompatible, notificationIdentityText, parseRecruitingNotification } from '../src/notificationParser.js'
 import { stageForProcessEvent } from '../src/processEvents.js'
@@ -19,7 +22,7 @@ import {
 import { bootstrapPolicyFor } from '../src/sourceRegistry.js'
 import { alreadyIngested, stableIngestionHash } from '../src/ingestion.js'
 import { validateSnapshot, type PJSDASSnapshot } from '../src/snapshot.js'
-import { applyGmailSemanticBatch, type GmailSemanticRecord } from '../src/gmailSemanticIntake.js'
+import { applyGmailSemanticBatch, GMAIL_RESCHEDULE_TIME_GAP, type GmailSemanticRecord } from '../src/gmailSemanticIntake.js'
 import type {
   GmailReconciliationProof,
   GmailReconciliationState,
@@ -134,6 +137,30 @@ function header(part: GmailPart | undefined, name: string) {
   return cleanText(part?.headers?.find((item) => item.name?.toLowerCase() === name.toLowerCase())?.value)
 }
 
+/** Narrow proof for the new bound-notice path only. Never infer a sender
+ * clock from this worker's host timezone or normalize malformed provider data. */
+function boundGmailSourceInstant(message: GmailMessage, now: Date): string | undefined {
+  if (message.internalDate !== undefined) {
+    if (typeof message.internalDate !== 'string' || !/^\d{1,16}$/.test(message.internalDate)) return undefined
+    const value = Number(message.internalDate)
+    if (!Number.isSafeInteger(value) || !Number.isFinite(new Date(value).getTime()) || value > now.getTime()) return undefined
+    return new Date(value).toISOString()
+  }
+  const dates = message.payload?.headers?.filter(item => item.name?.toLowerCase() === 'date') ?? []
+  if (dates.length !== 1) return undefined
+  const value = cleanText(dates[0]?.value)
+  const match = /^(?:(Sun|Mon|Tue|Wed|Thu|Fri|Sat), )?(\d{1,2}) (Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) (\d{4}) ([01]\d|2[0-3]):([0-5]\d)(?::([0-5]\d))? ([+-])([01]\d|2[0-3])([0-5]\d)$/i.exec(value)
+  if (!match) return undefined
+  const year = Number(match[4]), day = Number(match[2])
+  const month = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'].indexOf(match[3]!.toLowerCase())
+  const calendar = new Date(Date.UTC(year, month, day, Number(match[5]), Number(match[6]), Number(match[7] ?? 0)))
+  if (year < 1900 || calendar.getUTCFullYear() !== year || calendar.getUTCMonth() !== month || calendar.getUTCDate() !== day
+    || match[1] && ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'][calendar.getUTCDay()] !== match[1].toLowerCase()) return undefined
+  const offset = (Number(match[9]) * 60 + Number(match[10])) * (match[8] === '+' ? 1 : -1)
+  const instant = calendar.getTime() - offset * 60_000
+  return instant <= now.getTime() ? new Date(instant).toISOString() : undefined
+}
+
 function decodeBase64Url(value: string | undefined) {
   if (!value) return ''
   try {
@@ -162,21 +189,62 @@ function stripHtml(value: string) {
     .replace(/&quot;/gi, '"')
 }
 
-function messageBodyText(part: GmailPart | undefined): string {
-  if (!part) return ''
-  const plain: string[] = []
-  const html: string[] = []
+/** Unsupported HTML is coverage debt, never a successfully parsed prefix. */
+function semanticHtmlText(value: string): string | undefined {
+  // Limit the input before parse5 allocates a tree. Depth and node bounds are
+  // checked iteratively before serialize (which also traverses recursively).
+  if (value.length > 128 * 1024) return undefined
+  try {
+    const document = parseFragment(value)
+    const stack: Array<{ node: DefaultTreeAdapterTypes.Node; depth: number }> = [{ node: document, depth: 0 }]
+    let count = 0
+    while (stack.length) {
+      const { node, depth } = stack.pop()!
+      if (++count > 4096 || depth > 64) return undefined
+      if ('tagName' in node) {
+        // Template content is inert and has a separate tree; it is not an
+        // understood current-body assertion or part of this bounded reader.
+        if (node.tagName === 'template') return undefined
+        const attribute = (name: string) => node.attrs.find(item => item.name === name)?.value.toLowerCase() ?? ''
+        const classes = attribute('class').split(/\s+/)
+        if (node.tagName === 'blockquote' || attribute('type') === 'cite'
+          || classes.some(name => ['gmail_quote', 'gmail_quote_container', 'yahoo_quoted', 'moz-cite-prefix'].includes(name))
+          || attribute('id') === 'divrplyfwdmsg') {
+          node.childNodes = [{ nodeName: '#text', value: '\n> quoted mail thread\n', parentNode: node }]
+          continue
+        }
+      }
+      if ('childNodes' in node) {
+        for (const child of node.childNodes) stack.push({ node: child, depth: depth + 1 })
+      }
+    }
+    return stripHtml(serialize(document))
+  } catch {
+    return undefined
+  }
+}
+
+function messageBodyContent(part: GmailPart | undefined, preserveQuoteBoundary = false) {
+  const plain: string[] = [], html: string[] = []
   const visit = (item: GmailPart) => {
     if (item.filename) return
     const decoded = decodeBase64Url(item.body?.data)
     if (decoded) {
       if (item.mimeType?.toLowerCase().startsWith('text/plain')) plain.push(decoded)
-      else if (item.mimeType?.toLowerCase().startsWith('text/html')) html.push(stripHtml(decoded))
+      else if (item.mimeType?.toLowerCase().startsWith('text/html')) html.push(decoded)
     }
     for (const child of item.parts ?? []) visit(child)
   }
-  visit(part)
-  return (plain.length ? plain : html).join('\n').replace(/\u0000/g, '').trim().slice(0, 12_000)
+  if (part) visit(part)
+  // A preferred plaintext alternative does not require interpreting its HTML
+  // duplicate. Never let an unused complex HTML part poison valid plain mail.
+  const bodies = plain.length ? plain : html.map(value => preserveQuoteBoundary ? semanticHtmlText(value) : stripHtml(value))
+  return { text: bodies.filter(value => value !== undefined).join('\n').replace(/\u0000/g, '').trim().slice(0, 12_000),
+    uninterpretedHtml: bodies.some(value => value === undefined) }
+}
+
+function messageBodyText(part: GmailPart | undefined) {
+  return messageBodyContent(part).text
 }
 
 type GoogleApiErrorPayload = {
@@ -604,6 +672,40 @@ function recentLiveProcesses(snapshot: import('../src/snapshot.js').PJSDASSnapsh
   })
 }
 
+/** Read-only reconciliation attribution, never a candidate or write authority.
+ * A replay cannot bind the old-time precondition against the final snapshot;
+ * instead require exact consumed source identity plus its committed mutation. */
+function committedInterviewReschedule(record: GmailSemanticRecord, snapshot?: PJSDASSnapshot) {
+  const pending = record.pendingInterviewReschedule, observation = record.observation, source = observation.source
+  if (!snapshot || !pending || source.kind !== 'gmail' || observation.statementMode !== 'assertion'
+    || observation.candidates.length || !observation.originalTextFingerprint
+    || record.gaps.some(gap => gap !== GMAIL_RESCHEDULE_TIME_GAP)
+    || record.issueKinds?.some(kind => kind !== 'business_ambiguity')) return undefined
+  const prior = alreadyIngested(snapshot.data.timeline, { sourceKind: 'gmail', sourceId: source.sourceId, sourceRecordId: source.sourceRecordId })?.ingestion
+  if (!prior || !['updated', 'duplicate'].includes(prior.outcome)
+    || prior.fingerprint !== observation.originalTextFingerprint) return undefined
+  const opportunityId = canonicalOpportunityId(snapshot, pending.opportunityId)
+  for (const receipt of snapshot.data.semanticReceipts ?? []) {
+    if (receipt.status !== 'committed' || receipt.sourceKind !== source.kind || receipt.sourceId !== source.sourceId
+      || receipt.sourceRecordId !== source.sourceRecordId || !receipt.sourceVersion) continue
+    for (const key of receipt.mutatedFactKeys ?? []) {
+      if (!key.startsWith('occurrence_rescheduled|') || receipt.factInvalidations?.some(item => item.factKey === key)) continue
+      const affected = receipt.factMutationObjects?.[key] ?? []
+      if (!affected.some(item => item.type === 'opportunity' && canonicalOpportunityId(snapshot, item.id) === opportunityId)) continue
+      const node = snapshot.data.scheduleNodes?.find(node => node.kind === 'interview'
+        && node.opportunityId && canonicalOpportunityId(snapshot, node.opportunityId) === opportunityId
+        && affected.some(item => item.type === 'schedule_node' && item.id === node.id)
+        && node.evidenceRefs.includes(`${source.sourceId}:${source.sourceRecordId}:fragment:0`)
+        && node.sourceVersionRefs.includes(`${source.sourceRecordId}:${receipt.sourceVersion}`)
+        && semanticCandidateFactKey(snapshot, { id: 'reconciliation-proof-readonly', kind: 'occurrence_rescheduled',
+          objectConfidence: 'low', eventConfidence: 'low', evidenceRefs: [], sourceVersionRefs: [],
+          target: { occurrenceId: node.occurrenceId }, temporal: node.temporal }) === key)
+      if (node) return node
+    }
+  }
+  return undefined
+}
+
 export function gmailReconciliationStateForRecord(record: GmailSemanticRecord, snapshot?: PJSDASSnapshot): GmailReconciliationState | undefined {
   if (snapshot?.data.decisionRequests?.some(request => (request.state === 'open' || request.state === 'expired')
     && request.payloadBinding.source.kind === record.observation.source.kind
@@ -615,6 +717,7 @@ export function gmailReconciliationStateForRecord(record: GmailSemanticRecord, s
     && item.ingestion.sourceRecordId === record.observation.source.sourceRecordId)
     .sort((a, b) => b.ingestion!.accountedAt.localeCompare(a.ingestion!.accountedAt))[0]?.ingestion
   if (latestAccounted?.outcome === 'unresolved') return 'UNRESOLVED'
+  if (committedInterviewReschedule(record, snapshot)) return 'ACTION_REQUIRED'
   const relevant = Boolean(record.recruitingRelevant || record.gaps.length || record.observation.candidates.length)
   if (!relevant) return undefined
   const candidates = record.observation.candidates.filter(candidate => !snapshot || !dismissedSemanticCandidate(snapshot, record.observation, candidate))
@@ -658,7 +761,13 @@ function reconciliationBatchAccumulator(
     const state = gmailReconciliationStateForRecord(record, snapshot)
     if (!state) continue
     stateCounts[state] += 1
-    let hasBoundTarget = false
+    const committed = state === 'ACTION_REQUIRED' ? committedInterviewReschedule(record, snapshot) : undefined
+    let hasBoundTarget = Boolean(committed)
+    if (committed?.opportunityId) {
+      gmailOpportunityIds.add(committed.opportunityId)
+      const instant = Date.parse(committed.temporal.startAt ?? '')
+      if (committed.temporal.shape === 'fixed_range' && instant >= now.getTime() && instant <= horizon) fixedOrHardWithin7DaysCount += 1
+    }
     const candidates = record.observation.candidates.filter(candidate => !dismissedSemanticCandidate(snapshot, record.observation, candidate))
     for (const candidate of candidates) {
       if (candidate.target?.opportunityId) {
@@ -1203,21 +1312,35 @@ export function gmailSemanticRecordFromMessage(
   opportunities: Opportunity[],
   now = new Date(),
 ): GmailSemanticRecord | undefined {
-  const originalHeaderTime = Date.parse(header(message.payload, 'date'))
-  const originalInternalTime = message.internalDate ? Number(message.internalDate) : NaN
-  const originalTime = Number.isFinite(originalInternalTime) && !Number.isNaN(new Date(originalInternalTime).getTime())
-    ? originalInternalTime : originalHeaderTime
-  const originalReceivedAt = Number.isFinite(originalTime) ? new Date(originalTime).toISOString() : undefined
-  const prior = gmailObservationFromMessage(message, opportunities, now)
-  if (!prior) return undefined
-  const legacy = { ...prior, receivedAt: originalReceivedAt ?? prior.receivedAt }
+  if (!message.id) return undefined
   const excluded = message.labelIds?.some((label) => label === 'SPAM' || label === 'TRASH')
-  const body = excluded ? '' : messageBodyText(message.payload)
+  const content = excluded ? { text: '', uninterpretedHtml: false } : messageBodyContent(message.payload, true)
+  const body = content.text
   const subject = excluded ? '' : header(message.payload, 'subject')
   const sourceText = excluded ? '' : body || subject || cleanText(message.snippet)
   const current = currentGmailAssertion(sourceText)
   const text = current.text
+  const boundedRescheduleSource = /面试改期通知\s*[:：]\s*原定/.test(text)
+  const boundedSourceTime = boundedRescheduleSource ? boundGmailSourceInstant(message, now) : undefined
+  const originalHeaderTime = Date.parse(header(message.payload, 'date'))
+  const originalInternalTime = message.internalDate ? Number(message.internalDate) : NaN
+  const originalTime = Number.isFinite(originalInternalTime) && !Number.isNaN(new Date(originalInternalTime).getTime())
+    ? originalInternalTime : originalHeaderTime
+  const originalReceivedAt = boundedRescheduleSource ? boundedSourceTime
+    : Number.isFinite(originalTime) ? new Date(originalTime).toISOString() : undefined
+  // The legacy classifier may convert a finite but out-of-range number to ISO.
+  // For an invalid bound-source clock, classify metadata using a copy without
+  // untrusted time fields. This supplies no fact time: assertedAt stays absent,
+  // and the explicit interpretation gap below prevents every business write.
+  const classificationMessage = boundedRescheduleSource && !boundedSourceTime
+    ? { ...message, internalDate: undefined, payload: { ...message.payload,
+        headers: message.payload?.headers?.filter(item => item.name?.toLowerCase() !== 'date') } }
+    : message
+  const prior = gmailObservationFromMessage(classificationMessage, opportunities, now)
+  if (!prior) return undefined
+  const legacy = { ...prior, receivedAt: originalReceivedAt ?? prior.receivedAt }
   const interpretationGaps: string[] = originalReceivedAt ? [] : ['Original message timestamp is unavailable; automatic facts require clarification.']
+  if (content.uninterpretedHtml) interpretationGaps.push('HTML body exceeds the supported parsing complexity or could not be interpreted; inspect the original mail.')
   const businessAmbiguities: string[] = []
   const capabilityBoundaries: string[] = []
   const visit = (part: GmailPart | undefined) => {
@@ -1280,6 +1403,10 @@ export function gmailSemanticRecordFromMessage(
     .filter((type) => type && requiresTiming(type)))]
   const deadlineContextType = timedContextTypes.length === 1 ? timedContextTypes[0] : undefined
   const candidates: SemanticCandidate[] = []
+  let pendingInterviewReschedule: GmailSemanticRecord['pendingInterviewReschedule']
+  if (boundedRescheduleSource && (!boundedSourceTime || boundedSourceTime !== originalReceivedAt)) {
+    interpretationGaps.push('Bound reschedule requires a valid provider timestamp or one complete, explicitly offset RFC Date header; source clock remains unresolved.')
+  }
   for (const [index, item] of pieces.entries()) {
     const { piece, parsed } = item
     if (item.instructionOnly || conditionalCompletionDisclaimer(piece)) continue
@@ -1329,6 +1456,17 @@ export function gmailSemanticRecordFromMessage(
       eventConfidence: !originalReceivedAt ? 'low' as const : application ? 'high' as const : eventConfidence,
       evidenceRefs: [evidenceRef], sourceVersionRefs: [`${message.id}:uu06-v1`],
     }
+    if (boundedRescheduleSource) {
+      businessAmbiguities.push(GMAIL_RESCHEDULE_TIME_GAP)
+      // Do not let unsupported suffixes turn this old/new notice into a
+      // completion/cancellation or commit a parsed prefix of a mixed message.
+      if (selected && !nonAssertion && body && boundedSourceTime === originalReceivedAt && boundedSourceTime
+        && boundedPieces.length === 1 && text.length <= 2048
+        && [`${selected.company} ${selected.role} 招聘进展`, `${selected.company} ${selected.role} 面试改期通知`].includes(subject.trim())) {
+        pendingInterviewReschedule = { text, opportunityId: selected.id }
+      }
+      continue
+    }
     if (application) {
       candidates.push({ ...base, kind: 'application_submitted', occurredAt: legacy.receivedAt })
       continue
@@ -1351,7 +1489,7 @@ export function gmailSemanticRecordFromMessage(
     if (occurrenceKind && /改期|改为|调整为|reschedul/i.test(piece)) {
       if (temporal) {
         candidates.push({ ...base, kind: 'occurrence_rescheduled', temporal, temporalConfidence: 'high', target: { ...base.target, occurrenceKind } })
-      } else businessAmbiguities.push('Reschedule lacks an unambiguous full date/time; the existing occurrence was preserved.')
+      } else businessAmbiguities.push(GMAIL_RESCHEDULE_TIME_GAP)
       continue
     }
     const location = /(?:地点|location|venue)\s*[:：]\s*([^；;。\n]+)/i.exec(piece)?.[1]?.trim().slice(0, 200)
@@ -1401,6 +1539,7 @@ export function gmailSemanticRecordFromMessage(
   }
   return {
     receivedAt: legacy.receivedAt,
+    pendingInterviewReschedule,
     recruitingRelevant: !excluded && legacy.classification === 'recruiting',
     gaps: !excluded && (legacy.classification === 'recruiting' || candidates.length) ? [...new Set([...interpretationGaps, ...businessAmbiguities])] : [],
     issueKinds: !excluded && (legacy.classification === 'recruiting' || candidates.length) ? [
@@ -1411,7 +1550,7 @@ export function gmailSemanticRecordFromMessage(
     observation: {
       contractVersion: 1, inputId: `gmail:${message.id}:uu06-v1`,
       source: { kind: 'gmail', sourceId: GMAIL_SOURCE_ID, sourceRecordId: message.id!,
-        sourceVersion: 'uu06-v1', observedAt: now.toISOString(), assertedAt: legacy.receivedAt, timezone: 'Asia/Shanghai' },
+        sourceVersion: 'uu06-v1', observedAt: now.toISOString(), assertedAt: boundedRescheduleSource ? boundedSourceTime : legacy.receivedAt, timezone: 'Asia/Shanghai' },
       originalTextFingerprint: `fnv1a:${stableIngestionHash(sourceText)}`,
       statementMode: nonAssertion ? 'quote' : 'assertion', candidates,
     },

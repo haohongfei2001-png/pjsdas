@@ -574,6 +574,7 @@ function toDomainCommand(
       commandId,
       kind: 'reschedule_occurrence',
       occurrenceId: occurrence!.occurrenceId,
+      occurredAt: observation.source.assertedAt,
       temporal: candidate.temporal,
       evidenceRefs: candidateEvidence(observation, candidate),
       sourceVersionRefs: candidateSourceVersions(observation, candidate),
