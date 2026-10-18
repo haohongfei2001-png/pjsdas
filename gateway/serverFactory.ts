@@ -26,7 +26,8 @@ import {
   ingestGmailRunSchema,
   invokeTrustedIngestion,
 } from './ingestSources.js'
-import { addOpportunitiesSchema, invokeAddOpportunities } from './addOpportunities.js'
+import { invokeAddOpportunities } from './addOpportunities.js'
+import { addOpportunitiesMcpSchema } from './addOpportunitiesMcpSchema.js'
 import { applyUserCommandSchema, invokeApplyUserCommand } from './userCommands.js'
 import {
   invokePaiaIntake,
@@ -336,7 +337,7 @@ export function createPjsdasMcpServer(
     server.registerTool('add_opportunities', {
       title: 'Add explicitly user-authorized TodayAction opportunities',
       description: 'Save user-source jobs (company and title required, source URL optional; no automatic application Action or calendar event) to the canonical TodayAction workspace only when the current user message explicitly asks to add, save, record, or write those specific jobs. This is an immediate duplicate-safe additive write with no review click; never use it for mere recommendations or autonomous discovery.',
-      inputSchema: addOpportunitiesSchema, annotations: directWriteAnnotations,
+      inputSchema: addOpportunitiesMcpSchema, annotations: directWriteAnnotations,
     }, async (args) => invokeAddOpportunities(source, args))
 
   }
