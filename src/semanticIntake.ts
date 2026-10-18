@@ -1,3 +1,4 @@
+import { boundInterviewRescheduleMatches } from './boundInterviewReschedule.js'
 import { normalizedUserJobFacts, userJobIdentity } from './opportunityCreation.js'
 import { dismissedSemanticCandidate } from './decisionDismissal.js'
 import { canonicalOpportunityId, canonicalSemanticFactKey, sameSemanticFactKey, resolveCanonicalOpportunityTarget } from './opportunityCanonicalization.js'
@@ -668,6 +669,9 @@ function applyCandidate(
   commandInputId = observation.inputId,
 ): CandidateApplyResult {
   const candidate = resolvedTarget(originalCandidate, resolution)
+  // Recheck at the mutation point too: another candidate or a later decision
+  // must not retarget or confirm past the captured authoritative precondition.
+  if (!boundInterviewRescheduleMatches(snapshot, candidate)) throw new Error('The expected interview arrangement changed; refresh the notice before recording it.')
   const opportunityNeeded = candidate.kind !== 'user_opportunity' && candidate.kind !== 'manual_action'
     && candidate.kind !== 'reminder_intent'
     && candidate.kind !== 'reminder_cancelled'
@@ -1094,6 +1098,13 @@ export function applySemanticIntake(
       receipt: replay,
       decisionRequests: (base.data.decisionRequests ?? []).filter((item) => replay.decisionRequestIds.includes(item.id)),
     }
+  }
+
+  // Reject the entire bound input before any receipt, decision or domain write.
+  // A same-input committed replay above is already a no-mutation outcome.
+  if (observation.candidates.some(candidate => !boundInterviewRescheduleMatches(base, candidate))) {
+    return { status: 'NO_WRITE', snapshot: base, changed: false,
+      summary: 'The expected interview arrangement changed or is ambiguous; refresh the notice before recording it.', decisionRequests: [] }
   }
 
   const semanticCommandId = `semantic-intake:${observation.inputId}`

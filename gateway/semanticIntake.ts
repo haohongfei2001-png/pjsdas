@@ -81,7 +81,11 @@ const candidate = z.discriminatedUnion('kind', [
     precision,
   }).strict(),
   z.object({ ...baseCandidate, kind: z.enum(['occurrence_completed', 'occurrence_cancelled']), occurredAt: isoString.optional() }).strict(),
-  z.object({ ...baseCandidate, kind: z.literal('occurrence_rescheduled'), temporal }).strict(),
+  z.object({ ...baseCandidate, kind: z.literal('occurrence_rescheduled'), temporal,
+    expectedScheduleNodeId: z.string().trim().min(1).max(320).optional(),
+    expectedStartAt: z.iso.datetime({ offset: true }).optional(),
+  }).strict().refine(value => (value.expectedScheduleNodeId === undefined) === (value.expectedStartAt === undefined),
+    'Expected schedule node and start instant must be supplied together.'),
   z.object({ ...baseCandidate, kind: z.literal('abandon_opportunity'), occurredAt: isoString.optional() }).strict(),
   z.object({
     ...baseCandidate,

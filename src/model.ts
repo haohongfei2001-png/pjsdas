@@ -231,6 +231,9 @@ export type SemanticCandidate =
     })
   | (SemanticCandidateBase & {
       kind: 'occurrence_rescheduled'
+      /** Paired authoritative precondition for a bounded imported notice. */
+      expectedScheduleNodeId?: string
+      expectedStartAt?: string
       temporal: ScheduleNodeTemporal
     })
   | (SemanticCandidateBase & {

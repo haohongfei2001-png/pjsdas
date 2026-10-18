@@ -42,12 +42,16 @@ async function fixture(page: Page, width: number) {
         // success response. Only the transport/account fixture is synthetic.
         const observation = semanticIntakeSchema.parse(body.command.value)
         const evaluated = applySemanticIntake(snapshot, observation, { authorized: true, workspaceRevision: `txn:${revision}`, now: NOW })
-        snapshot = evaluated.snapshot; revision++
         const result = { status: evaluated.status, summary: evaluated.summary, semanticReceiptId: evaluated.receipt?.id, decisionRequestIds: evaluated.decisionRequests.map(item => item.id) }
+        commands.push({ id: body.commandId, candidates: observation.candidates, status: evaluated.status })
+        // Match the real executor: a no-mutation semantic result does not
+        // commit a new revision or append an authoritative command receipt.
+        if (!evaluated.changed) return cors(route, { ...base(), result,
+          outcome: evaluated.status === 'ALREADY_APPLIED' ? 'ALREADY_APPLIED' : 'NO_WRITE', receipt: evaluated.receipt })
+        snapshot = evaluated.snapshot; revision++
         const response = { outcome: 'COMMITTED', result, receipt: { commandId: body.commandId, receiptId: `receipt:${body.commandId}`, status: 'COMMITTED', revision,
           undoAvailable: false, result } }
         receipts.set(body.commandId, { input, response })
-        commands.push({ id: body.commandId, candidates: observation.candidates, status: evaluated.status })
         return cors(route, { ...base(), ...response })
       } catch (error) { return cors(route, { code: 'INVALID_COMMAND', message: String(error) }, 422) }
     }
@@ -60,7 +64,7 @@ async function fixture(page: Page, width: number) {
     const { exportLocalSnapshot } = await import('/pjsdas/src/db.ts')
     return (await exportLocalSnapshot()).data.opportunities.map(job => job.id)
   })).toEqual(['jd'])
-  return { snapshot: () => snapshot, commands }
+  return { snapshot: () => snapshot, commands, revision: () => revision, receiptCount: () => receipts.size }
 }
 
 async function localBusiness(page: Page) {
@@ -165,4 +169,41 @@ test('explicit structured quoted job saves only an Opportunity, repeats safely, 
   expect(server.commands[2]).toMatchObject({ status: 'NO_WRITE', candidates: [] })
   expect(server.snapshot().data).toEqual(beforeWithdrawal)
   expect(await localJobs()).toEqual(expected)
+})
+
+test('explicit interview reschedule keeps one occurrence and rejects the old notice after reload', async ({ page }) => {
+  const server = await fixture(page, 390), input = page.getByLabel('要告诉 TodayAction 的内容', { exact: true })
+  await input.fill(IMPORT)
+  await expect(page.locator('.cgr-understanding')).toContainText('记录面试安排')
+  await page.getByRole('button', { name: '确认并保存', exact: true }).click()
+  await expect(page.locator('.cgr-capture-receipt')).toContainText('已保存')
+  const original = structuredClone(server.snapshot().data), oldNode = original.scheduleNodes![0]!
+  const change = '请导入以下转发的面试通知。\n-----Forwarded message-----\n京东 AI产品经理 面试改期通知：原定2026年9月25日14:30，改为2026年9月26日14:30'
+  await input.fill(change)
+  await expect(page.locator('.cgr-understanding')).toContainText('更新招聘时间')
+  await page.getByRole('button', { name: '确认并保存', exact: true }).click()
+  await expect(page.locator('.cgr-capture-receipt')).toContainText('已保存')
+  expect(server.commands).toHaveLength(2)
+  expect(server.commands[1]).toMatchObject({ status: 'APPLIED', candidates: [{ kind: 'occurrence_rescheduled',
+    expectedScheduleNodeId: oldNode.id, expectedStartAt: '2026-09-25T14:30:00+08:00' }] })
+  const changed = structuredClone(server.snapshot().data), committedRevision = server.revision(), committedReceipts = server.receiptCount()
+  expect(changed.actions).toHaveLength(original.actions.length)
+  expect(changed.processEvents).toHaveLength(original.processEvents.length)
+  expect(changed.scheduleNodes).toHaveLength(2)
+  expect(changed.scheduleNodes!.map(node => node.occurrenceId)).toEqual([oldNode.occurrenceId, oldNode.occurrenceId])
+  expect(changed.scheduleNodes!.find(node => node.state === 'scheduled')?.temporal.startAt).toBe('2026-09-26T14:30:00+08:00')
+  expect(await localBusiness(page)).toEqual({ processEvents: changed.processEvents, scheduleNodes: changed.scheduleNodes })
+  await page.reload()
+  await expect(page.getByRole('dialog', { name: '告诉 TodayAction', exact: true })).toBeVisible()
+  for (const text of [change, IMPORT]) {
+    await input.fill(text)
+    await expect(page.locator('.cgr-understanding')).toHaveAttribute('aria-busy', 'false')
+    await expect(page.locator('.cgr-understanding li')).toHaveCount(0)
+    await page.getByRole('button', { name: '确认并保存', exact: true }).click()
+    await expect(page.locator('.cgr-capture-receipt')).toContainText('没有被当作当前事实写入')
+    expect(server.snapshot().data).toEqual(changed)
+    expect(server.revision()).toBe(committedRevision)
+    expect(server.receiptCount()).toBe(committedReceipts)
+    expect(await localBusiness(page)).toEqual({ processEvents: changed.processEvents, scheduleNodes: changed.scheduleNodes })
+  }
 })

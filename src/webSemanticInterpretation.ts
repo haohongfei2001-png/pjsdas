@@ -1,3 +1,4 @@
+import { readImportedInterviewReschedule } from './boundInterviewReschedule.js'
 import { resolveSourceTemporal } from './sourceTemporal.js'
 import { readWebPlanningTime } from './webPlanningTime.js'
 import { readExplicitStructuredQuotedJob } from './explicitStructuredQuotedJob.js'
@@ -420,6 +421,12 @@ export function buildWebSemanticInterpretation(
   if (importedNotice && (webStatementMode(current.text) !== 'assertion'
     || /编造|伪造|虚构|假设|例如|比如|不要|并非|不是真|忽略.{0,16}指令|(?:请|帮我).{0,30}(?:记录|创建|生成|导入|保存|删除|修改)|fabricat|invent|hypothetical|for example|ignore.{0,20}instructions/i.test(current.text))) {
     return { mode, candidates: [], unresolved: ['引用正文包含假设、否定或操作指令，不能作为确定的招聘通知写入。'], ignored: [] }
+  }
+  if (importedNotice && /改期|改到|改为|调整为|reschedul/i.test(current.text)) {
+    const change = readImportedInterviewReschedule(current.text, baseline, now, timezone)
+    const candidates: SemanticCandidate[] = change ? [{ ...candidateBase(`web-import-reschedule:${stableHash(text)}`, text, 'high'), ...change }] : []
+    return { mode, candidates, unresolved: change ? [] : ['改期通知需要唯一的当前面试、完整原时间及新时间和可靠时区，本次未写入。'],
+      ignored: current.excluded ? ['Quoted older thread context was excluded.'] : [] }
   }
   // A first-party task plan is distinct from a recruiting notice or deadline.
   // Reuse the source-time resolver: ambiguous local times remain unresolved.
