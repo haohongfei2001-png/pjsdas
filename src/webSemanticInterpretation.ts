@@ -1,5 +1,6 @@
 import { resolveSourceTemporal } from './sourceTemporal.js'
 import { readWebPlanningTime } from './webPlanningTime.js'
+import { readExplicitStructuredQuotedJob } from './explicitStructuredQuotedJob.js'
 import { completedWebRecruitingKind, resolveWebRecruitingTime } from './webRecruitingTime.js'
 import { latestScheduleOccurrence } from './scheduleNodes.js'
 import { parseProgressUpdate, type CanonicalJobReference } from './progressUpdate.js'
@@ -401,6 +402,15 @@ export function buildWebSemanticInterpretation(
   now = new Date(),
   timezone = baseline.data.timePlanning?.timezone,
 ) {
+  const importedJob = readExplicitStructuredQuotedJob(text)
+  if (importedJob) {
+    const candidate: SemanticCandidate | undefined = importedJob.facts ? {
+      ...candidateBase('web-import-job:' + stableHash(text), text, 'high'),
+      kind: 'user_opportunity', ...importedJob.facts,
+    } : undefined
+    return { mode: 'current_intent' as const, candidates: candidate ? [candidate] : [],
+      unresolved: candidate ? [] : ['引用岗位说明需要明确的公司、岗位与受支持的完整字段，本次未写入。'], ignored: [] }
+  }
   const importedNotice = explicitlyImportedNotice(text)
   const mode = webStatementMode(importedNotice?.outer ?? text)
   if (mode !== 'assertion' && mode !== 'current_intent') {
