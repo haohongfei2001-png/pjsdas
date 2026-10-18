@@ -84,6 +84,8 @@ export type UserDomainCommand =
       commandId: string
       kind: 'reschedule_occurrence'
       occurrenceId: string
+      /** Source fact time; omitted by legacy/manual commands. Audit time stays now. */
+      occurredAt?: string
       temporal: ScheduleNodeTemporal
       evidenceRefs?: string[]
       sourceVersionRefs?: string[]
@@ -774,6 +776,11 @@ export function applyUserDomainCommand(
   }
 
   if (command.kind === 'reschedule_occurrence') {
+    const occurredAt = command.occurredAt ?? timestamp
+    if (command.occurredAt !== undefined && (!/^\d{4}-\d{2}-\d{2}T(?:[01]\d|2[0-3]):[0-5]\d(?::[0-5]\d(?:\.\d{1,3})?)?(?:Z|[+-](?:[01]\d|2[0-3]):[0-5]\d)$/.test(occurredAt)
+      || !validPlanningDate(occurredAt.slice(0, 10)) || !Number.isFinite(Date.parse(occurredAt)) || Date.parse(occurredAt) > now.getTime())) {
+      throw new Error('Reschedule source occurredAt must be a valid non-future instant.')
+    }
     const current = activeScheduleNode(next, command.occurrenceId)
     if (!current) throw new Error(`Schedule occurrence ${command.occurrenceId} was not found.`)
     if (current.kind === 'application_deadline') throw new Error('A job deadline is not a calendar occurrence; update its deadline fact instead.')
@@ -825,7 +832,8 @@ export function applyUserDomainCommand(
     for (const process of affectedProcesses) {
       process.progress = 'scheduled'
       process.currentAction = process.currentAction
-      process.lastProgressAt = timestamp
+      process.lastProgressAt = process.lastProgressAt && Date.parse(process.lastProgressAt) > Date.parse(occurredAt)
+        ? process.lastProgressAt : occurredAt
     }
     projectScheduleNodesToLegacyInPlace(next.data)
     appendTimeline(next, {
@@ -833,7 +841,7 @@ export function applyUserDomainCommand(
       kind: 'semantic_intake_applied',
       category: 'process',
       source: 'user_action',
-      occurredAt: timestamp,
+      occurredAt,
       recordedAt: timestamp,
       title: '更新招聘节点时间',
       detail: `${replacement.kind} · ${replacement.occurrenceId}`,
