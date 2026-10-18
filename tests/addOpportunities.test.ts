@@ -1,8 +1,9 @@
 import { createMcpHandler } from '@modelcontextprotocol/server'
 import { createPjsdasMcpServer } from '../gateway/serverFactory.js'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { applySemanticCompensation } from '../src/semanticIntake.js'
-import { invokeAddOpportunities } from '../gateway/addOpportunities.js'
+import { addOpportunitiesSchema, invokeAddOpportunities } from '../gateway/addOpportunities.js'
+import { addOpportunitiesMcpSchema } from '../gateway/addOpportunitiesMcpSchema.js'
 import type { GatewayWorkspace, WorkspaceSource, WorkspaceWriteInput } from '../gateway/workspaceSource.js'
 import { createDefaultDecisionRules } from '../src/decisionRules.js'
 import { createDefaultDiscoveryProfile } from '../src/discoveryProfile.js'
@@ -221,12 +222,92 @@ describe('explicit-save MCP HTTP contract', () => {
     const text = await response.text()
     return JSON.parse(text.startsWith('event:') ? text.split('\n').find(line => line.startsWith('data:'))!.slice(5) : text)
   }
+  it('accepts the installed legacy client required roleType without restoring classification or requiring Discovery', async () => {
+    const source = new WritableSource()
+    source.snapshot.data.discoveryProfile = undefined
+    const handler = createMcpHandler(() => createPjsdasMcpServer(source, { explicitUserWriteMode: 'enabled' }))
+    // Exact required shape of the installed client's stale tool catalog. All
+    // employers and URLs here are synthetic; this never calls a live workspace.
+    const legacy = { company: 'Synthetic Legacy Employer', role: 'Synthetic Product Role',
+      sourceTitle: 'Synthetic listing', sourceUrl: 'https://synthetic.invalid/jobs/one', roleType: 'core' }
+    const response = await payload(await handler.fetch(request('tools/call', {
+      name: 'add_opportunities', arguments: { opportunities: [legacy] },
+    })))
+    expect(response.result.isError).not.toBe(true)
+    expect(response.result.structuredContent).toMatchObject({ applied: true, createdCount: 1, reviewRequired: false })
+    expect(source.writes).toHaveLength(1)
+    expect(source.snapshot.data.opportunities).toHaveLength(1)
+    expect(source.snapshot.data.opportunities[0]).not.toHaveProperty('roleType')
+    expect(JSON.stringify(source.writes)).not.toContain('roleType')
+    expect(source.snapshot.data.actions).toEqual([])
+    expect(source.snapshot.data.scheduleNodes).toEqual([])
+  })
+  it.each(['core', 'backup', 'reach', 'lottery', 'practice'])('discards legacy %s before identity, receipts, and replay', async roleType => {
+    const source = new WritableSource()
+    source.snapshot.data.discoveryProfile = undefined
+    const handler = createMcpHandler(() => createPjsdasMcpServer(source, { explicitUserWriteMode: 'enabled' }))
+    const facts = { company: 'Synthetic Employer', role: 'Synthetic Role',
+      sourceTitle: 'Synthetic listing', sourceUrl: 'https://synthetic.invalid/jobs/replay' }
+    const call = async (candidate: Record<string, unknown>) => payload(await handler.fetch(request('tools/call', {
+      name: 'add_opportunities', arguments: { opportunities: [candidate] },
+    })))
+    const first = await call({ ...facts, roleType })
+    expect(first.result.isError).not.toBe(true)
+    const saved = structuredClone(source.snapshot)
+    for (const candidate of [facts, { ...facts, roleType }, { ...facts, roleType: roleType === 'core' ? 'backup' : 'core' }]) {
+      const replay = await call(candidate)
+      expect(replay.result.isError).not.toBe(true)
+      expect(replay.result.structuredContent).toMatchObject({ commandId: first.result.structuredContent.commandId,
+        createdCount: 0, duplicateCount: 1 })
+      expect(source.snapshot).toEqual(saved)
+    }
+    expect(source.writes).toHaveLength(1)
+    expect(JSON.stringify(source.writes)).not.toContain('roleType')
+    const standard = await addOpportunitiesMcpSchema['~standard'].validate({ opportunities: [{ ...facts, roleType }] })
+    expect(standard).toEqual({ value: { opportunities: [facts] } })
+  })
+  it.each([
+    ['invalid roleType', { roleType: 'preferred' }], ['null roleType', { roleType: null }], ['numeric roleType', { roleType: 0 }],
+    ['fitScore', { fitScore: 0 }], ['fitConfidence', { fitConfidence: 'high' }],
+    ['opportunityValue', { opportunityValue: 0 }], ['opportunityValueConfidence', { opportunityValueConfidence: 'low' }],
+    ['rationale', { rationale: 'Retired' }], ['discoveredAt', { discoveredAt: '2026-10-18T00:00:00Z' }],
+    ['postingStatus', { postingStatus: 'open' }], ['unknown field', { extra: true }],
+    ['invalid company', { company: '' }], ['invalid URL', { sourceUrl: 'not a URL' }],
+  ])('rejects legacy %s before any workspace read or write', async (_name, delta) => {
+    const source = new WritableSource()
+    const read = vi.spyOn(source, 'read')
+    const before = structuredClone(source.snapshot)
+    const handler = createMcpHandler(() => createPjsdasMcpServer(source, { explicitUserWriteMode: 'enabled' }))
+    const result = await payload(await handler.fetch(request('tools/call', {
+      name: 'add_opportunities', arguments: { opportunities: [{ company: 'Synthetic', role: 'Synthetic Role', roleType: 'core', ...delta }] },
+    })))
+    expect(result.result.isError).toBe(true)
+    expect(read).not.toHaveBeenCalled()
+    expect(source.writes).toEqual([])
+    expect(source.snapshot).toEqual(before)
+  })
+  it.each([
+    { roleType: 'core', opportunities: [{ company: 'Synthetic', role: 'Role' }] },
+    { extra: true, opportunities: [{ company: 'Synthetic', role: 'Role' }] },
+    { opportunities: [] },
+    { opportunities: Array.from({ length: 13 }, (_, i) => ({ company: `Synthetic ${i}`, role: 'Role', roleType: 'core' })) },
+    { opportunities: [{ company: 'Valid Synthetic', role: 'Role', roleType: 'core' }, { company: 'Invalid Synthetic', role: 'Role', fitScore: 0 }] },
+  ])('rejects invalid envelope or mixed batch atomically %#', async args => {
+    const source = new WritableSource()
+    const read = vi.spyOn(source, 'read')
+    const handler = createMcpHandler(() => createPjsdasMcpServer(source, { explicitUserWriteMode: 'enabled' }))
+    const result = await payload(await handler.fetch(request('tools/call', { name: 'add_opportunities', arguments: args })))
+    expect(result.result.isError).toBe(true)
+    expect(read).not.toHaveBeenCalled()
+    expect(source.writes).toEqual([])
+  })
   it('advertises facts-only company/title input without retired scoring or required source fields', async () => {
     const source = new WritableSource()
     const handler = createMcpHandler(() => createPjsdasMcpServer(source, { explicitUserWriteMode: 'enabled' }))
     const catalog = await payload(await handler.fetch(request('tools/list')))
     const tool = catalog.result.tools.find((entry: { name: string }) => entry.name === 'add_opportunities')
     expect(tool).toBeDefined()
+    expect(tool.inputSchema).toEqual(addOpportunitiesSchema['~standard'].jsonSchema.input({ target: 'draft-2020-12' }))
     const item = tool.inputSchema.properties.opportunities.items
     expect(item.required).toEqual(['company', 'role'])
     for (const retired of ['roleType', 'fitScore', 'fitConfidence', 'opportunityValue', 'opportunityValueConfidence', 'rationale']) {

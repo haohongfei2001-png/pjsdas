@@ -1,3 +1,5 @@
+import { createMcpHandler } from '@modelcontextprotocol/server'
+import { createPjsdasMcpServer } from '../gateway/serverFactory.js'
 import { describe, expect, it } from 'vitest'
 import { hashMutationPayload } from '../gateway/mutationKernel.js'
 import { invokeAddOpportunities } from '../gateway/addOpportunities.js'
@@ -46,6 +48,48 @@ class Source implements WorkspaceSource {
 const body = (result: Awaited<ReturnType<typeof invokeAddOpportunities>>) => result.structuredContent as any
 
 describe('B2 explicit user job receipt truth', () => {
+  it.each([false, true])('keeps canonical transactional receipts across legacy-role retries (lost acknowledgement: %s)', async lostAcknowledgement => {
+    const source = new Source()
+    source.lostAcknowledgement = lostAcknowledgement
+    const handler = createMcpHandler(() => createPjsdasMcpServer(source, { explicitUserWriteMode: 'enabled' }))
+    const call = async (roleType?: string, changedFacts = false) => {
+      const arguments_ = { ...input, opportunities: input.opportunities.map(facts => ({ ...facts, ...(changedFacts ? { role: 'Different Role' } : {}), ...(roleType ? { roleType } : {}) })) }
+      const response = await handler.fetch(new Request('https://synthetic.invalid/api/mcp', {
+        method: 'POST', headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream',
+          'MCP-Protocol-Version': '2026-07-28', 'Mcp-Method': 'tools/call', 'Mcp-Name': 'add_opportunities' },
+        body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: {
+          name: 'add_opportunities', arguments: arguments_, _meta: {
+            'io.modelcontextprotocol/protocolVersion': '2026-07-28',
+            'io.modelcontextprotocol/clientInfo': { name: 'synthetic-contract', version: '1' },
+            'io.modelcontextprotocol/clientCapabilities': {},
+          },
+        } }),
+      }))
+      expect(response.status).toBe(200)
+      const text = await response.text()
+      const result = JSON.parse(text.startsWith('event:') ? text.split('\n').find(line => line.startsWith('data:'))!.slice(5) : text).result
+      if (changedFacts) expect(result.isError).toBe(true)
+      else expect(result.isError).not.toBe(true)
+      return result.structuredContent
+    }
+    const first = await call('core')
+    expect(first).toMatchObject({ applied: true, durableCommit: true, readbackVerified: true, commandReceipt: { revision: 2 } })
+    const snapshot = structuredClone(source.snapshot)
+    const receipt = structuredClone(source.receipts.get(input.commandId)!)
+    expect(receipt.payloadHash).toBe(await hashMutationPayload('add_opportunities', input))
+    for (const roleType of [undefined, 'backup', 'reach', 'lottery', 'practice', 'core']) {
+      expect(await call(roleType)).toMatchObject({ alreadyApplied: true, createdCount: 0, duplicateCount: 1,
+        durableCommit: true, readbackVerified: true, commandReceipt: first.commandReceipt, originalOperationTime: first.originalOperationTime })
+    }
+    expect(await call('core', true)).toMatchObject({ code: 'COMMAND_ID_REUSED' })
+    expect(source.snapshot).toEqual(snapshot)
+    expect(source.receipts.get(input.commandId)).toEqual(receipt)
+    expect(source.writes).toHaveLength(1)
+    expect(JSON.stringify(source.writes)).not.toContain('roleType')
+    expect(source.snapshot.data.actions).toEqual([])
+    expect(source.snapshot.data.scheduleNodes).toEqual([])
+  })
+
   it('returns a joined command receipt and original operation time without new objects or times on replay', async () => {
     const source = new Source()
     const first = await invokeAddOpportunities(source, input)
