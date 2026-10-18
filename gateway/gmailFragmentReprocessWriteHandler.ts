@@ -1,6 +1,6 @@
 import { automationGoogleRefreshLifecycle } from './googleRefreshLifecycle.js'
 import { createAutomationConnectionStore, GMAIL_READONLY_SCOPE } from './automationConnectionStore.js'
-import { fetchGmailSemanticRecordsByIds } from './gmailAutomation.js'
+import { fetchGmailSemanticRecordsByIds, GMAIL_DEFAULT_TIMEZONE } from './gmailAutomation.js'
 import { fragmentLimitReprocessTargetIds, reprocessVersion, type GmailFragmentReprocessDryRunConfig } from './gmailFragmentReprocessDryRunHandler.js'
 import { refreshGoogleAccessToken } from './googleOAuthTokens.js'
 import { createTransactionalWorkspaceSource } from './transactionalWorkspaceSource.js'
@@ -253,6 +253,7 @@ export function createGmailFragmentReprocessWriteHandler(config: GmailFragmentRe
           })
           return fetchGmailSemanticRecordsByIds({
             accessToken, messageIds: targets, opportunities: snapshot.data.opportunities,
+            timezone: snapshot.data.timePlanning?.timezone ?? GMAIL_DEFAULT_TIMEZONE,
             fetchImpl: config.fetchImpl, now,
           })
         },

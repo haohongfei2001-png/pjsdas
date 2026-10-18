@@ -2,6 +2,7 @@ import { automationGoogleRefreshLifecycle } from './googleRefreshLifecycle.js'
 import { createAutomationConnectionStore, GMAIL_READONLY_SCOPE } from './automationConnectionStore.js'
 import {
   fetchGmailSemanticRecordsByIds,
+  gmailWorkspaceTimezone,
   GMAIL_FRAGMENT_PARSE_LIMIT,
   gmailReconciliationStateForRecord,
 } from './gmailAutomation.js'
@@ -214,6 +215,7 @@ export function createGmailFragmentReprocessDryRunHandler(config: GmailFragmentR
           accessToken,
           messageIds: targets,
           opportunities: workspace.snapshot.data.opportunities,
+          timezone: gmailWorkspaceTimezone(workspace),
           fetchImpl: config.fetchImpl,
           now,
         })
