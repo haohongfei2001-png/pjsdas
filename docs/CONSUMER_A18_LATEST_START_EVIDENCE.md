@@ -118,6 +118,33 @@ reran the 12 presentation cases and app types. One frozen UTC full run passed
 2026-10-18 05:50:16–05:50:53 UTC. Build identity was retained separately and restored;
 only this evidence document was added after the tested runtime/test commit.
 
+## Pressed-state regression fixture correction
+
+The subsequent head `0654e4e2ddc6cc344f00d8b6306497230e4b4d15` passed
+CI (4189 unit tests), Brand and strict UI. Its new regression case failed in all
+three browser engines; all pre-existing core cases passed (286 Chromium and 288
+Matrix). Dense and performance steps were skipped after those failures, not passed.
+[Browser failure](https://github.com/haohongfei2001-png/pjsdas/actions/runs/39102036779),
+[Matrix failure](https://github.com/haohongfei2001-png/pjsdas/actions/runs/39102036720),
+[Browser trace](https://github.com/haohongfei2001-png/pjsdas/actions/runs/39102036779/artifacts/12126908344),
+[Matrix trace](https://github.com/haohongfei2001-png/pjsdas/actions/runs/39102036720/artifacts/12127281693).
+
+The trace confirms the preview was still held (`aria-busy=true`). The test had
+compared pre-press geometry with geometry during the existing 160ms native CSS
+transition to `button:active { transform: translateY(1px) }`. The Chromium shift
+was 0.538208px, with unchanged width and height. This is a fixture baseline error,
+separate from the original asynchronous preview/footer race.
+
+Test-only candidate `07ac4490081e9bebca52ab2c4f840e61ced6cede` received independent
+CLEAN review. While the real preview remains held, it waits for existing button
+animations to finish, asserts active state and the exact 1px transform, and only
+then captures pressed-state geometry and releases the result. The exact before/
+after comparison, zero early mutations, real save and Undo remain. No tolerance,
+CSS, original-case wait, visual baseline or production code changed. Test discovery
+passed; local browser execution remains unavailable. The prior frozen full unit
+and build results apply to unchanged runtime bytes; new official browser/Matrix
+acceptance is still required. This document is the only later local change.
+
 ## Operational boundary
 
 All messages, jobs and provider inputs in this evidence are synthetic. No real

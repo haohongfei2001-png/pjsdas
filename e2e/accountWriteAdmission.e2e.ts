@@ -303,9 +303,18 @@ export async function previewWebSemanticCapture(...args) {
   await expect(confirmation).toBeEnabled()
   await expect(page.locator('.cgr-understanding')).toHaveAttribute('aria-busy', 'true')
   await confirmation.hover()
+  await page.mouse.down()
+  // The existing design system animates :active by exactly 1px. Establish the
+  // pressed-state baseline while preview delivery is still held; comparing a
+  // hover box to a mid-transition pressed box would test that unrelated motion.
+  const pressedTransform = await confirmation.evaluate(async element => {
+    await Promise.all(element.getAnimations().map(animation => animation.finished))
+    const matrix = new DOMMatrix(getComputedStyle(element).transform)
+    return { active: element.matches(':active'), values: [matrix.a, matrix.b, matrix.c, matrix.d, matrix.e, matrix.f] }
+  })
+  expect(pressedTransform).toEqual({ active: true, values: [1, 0, 0, 1, 0, 1] })
   const before = await confirmation.boundingBox()
   expect(before).not.toBeNull()
-  await page.mouse.down()
   await page.evaluate(() => (window as any).__capturePreviewDelivery.release())
   await expect.poll(() => page.evaluate(() => (window as any).__capturePreviewDelivery.delivered)).toBe(true)
   // Let React commit and the browser paint the resolved result before testing
