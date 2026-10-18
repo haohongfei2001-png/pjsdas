@@ -13,6 +13,7 @@ import {
 import { canonicalOpportunityId } from '../src/opportunityCanonicalization.js'
 import { semanticCandidateFactKey } from '../src/semanticIntake.js'
 import { resolveSourceTemporal } from '../src/sourceTemporal.js'
+import { validPlanningTimezone } from '../src/timePlanningPreferences.js'
 import { commonNotificationCompany, notificationIdentityCanInherit, notificationIdentityCompatible, notificationIdentityText, parseRecruitingNotification } from '../src/notificationParser.js'
 import { stageForProcessEvent } from '../src/processEvents.js'
 import {
@@ -35,9 +36,19 @@ import { createTransactionalWorkspaceSource } from './transactionalWorkspaceSour
 import { refreshGoogleAccessToken } from './googleOAuthTokens.js'
 import { decryptSecret } from './tokenCrypto.js'
 import { GMAIL_READONLY_SCOPE, type GmailAutomationBinding } from './automationConnectionStore.js'
-import { requireWritableWorkspaceSource, WorkspaceSourceError } from './workspaceSource.js'
+import { requireWritableWorkspaceSource, WorkspaceSourceError, type GatewayWorkspace } from './workspaceSource.js'
 import { gmailProviderRequestError, type GmailProviderOperation } from './gmailProviderFailure.js'
 import { PJSDAS_SUPABASE_URL } from './supabaseProject.js'
+
+// Existing Gmail service default; absence of an owner override preserves legacy
+// behavior. This is explicit service configuration, never the execution host.
+export const GMAIL_DEFAULT_TIMEZONE = 'Asia/Shanghai'
+
+export function gmailWorkspaceTimezone(workspace: GatewayWorkspace): string {
+  // Drive read context predates saved preferences. A present but invalid owner
+  // value must fail closed, not fall through to a more convenient default.
+  return workspace.snapshot.data.timePlanning?.timezone ?? workspace.context.timezone ?? ''
+}
 
 const GMAIL_API = 'https://gmail.googleapis.com/gmail/v1/users/me'
 const GMAIL_SOURCE_ID = 'gmail:primary'
@@ -466,6 +477,7 @@ export async function fetchGmailSemanticRecordsByIds(options: {
   accessToken: string
   messageIds: string[]
   opportunities: Opportunity[]
+  timezone?: string
   fetchImpl?: typeof fetch
   now?: Date
 }) {
@@ -481,7 +493,7 @@ export async function fetchGmailSemanticRecordsByIds(options: {
   }
   const fetched = await fetchMessages(fetchImpl, options.accessToken, uniqueIds)
   const records = fetched.messages
-    .map((message) => gmailSemanticRecordFromMessage(message, options.opportunities, now))
+    .map((message) => gmailSemanticRecordFromMessage(message, options.opportunities, now, options.timezone))
     .filter((record): record is GmailSemanticRecord => Boolean(record))
   return {
     requestedCount: uniqueIds.length,
@@ -910,7 +922,7 @@ export async function runGmailReconciliationForBinding(options: {
     if (processedCount >= RECONCILIATION_PARSE_SLICE_SIZE || options.execution?.canProcessNextMessage?.() === false) break
     const message = messagesById.get(id)
     if (message) {
-      const record = gmailSemanticRecordFromMessage(message, workspace.snapshot.data.opportunities, now)
+      const record = gmailSemanticRecordFromMessage(message, workspace.snapshot.data.opportunities, now, gmailWorkspaceTimezone(workspace))
       if (record) records.push(reconciliationRecordVersion(record))
     }
     processedCount += 1
@@ -938,7 +950,7 @@ export async function runGmailReconciliationForBinding(options: {
         source: {
           kind: 'gmail', sourceId: GMAIL_SOURCE_ID, sourceRecordId,
           sourceVersion: 'reconciliation-unavailable-v1', observedAt: checkedAt,
-          timezone: workspace.context.timezone ?? 'Asia/Shanghai',
+          timezone: gmailWorkspaceTimezone(workspace) || 'unresolved',
         },
         statementMode: 'assertion',
         candidates: [],
@@ -1306,13 +1318,25 @@ export function gmailObservationFromMessage(
   }
 }
 
+/** Preserve the existing explicit Beijing label only in the bounded source
+ * date-prefix form. Other source-zone syntax stays unresolved, never replaced
+ * by a workspace preference or propagated into another fragment. */
+function gmailFragmentTimezone(piece: string, fallback: string | undefined) {
+  if (!piece.includes('北京时间')) return fallback
+  if ((piece.match(/北京时间/g) ?? []).length !== 1
+    || !/(?:^|[:：])\s*(?:请于\s*)?北京时间\s*20\d{2}(?:年\d{1,2}月\d{1,2}日|[-/]\d{1,2}[-/]\d{1,2})/.test(piece)) return undefined
+  return 'Asia/Shanghai'
+}
+
 /** Bounded structured adapter. Raw mail/attachment/link content never enters receipts. */
 export function gmailSemanticRecordFromMessage(
   message: GmailMessage,
   opportunities: Opportunity[],
   now = new Date(),
+  timezone = GMAIL_DEFAULT_TIMEZONE,
 ): GmailSemanticRecord | undefined {
   if (!message.id) return undefined
+  const interpretationTimezone = validPlanningTimezone(timezone) ? timezone : undefined
   const excluded = message.labelIds?.some((label) => label === 'SPAM' || label === 'TRASH')
   const content = excluded ? { text: '', uninterpretedHtml: false } : messageBodyContent(message.payload, true)
   const body = content.text
@@ -1426,7 +1450,7 @@ export function gmailSemanticRecordFromMessage(
       && !/(?:取消|撤销|已完成|已经完成|已提交|改期|改为|调整|cancel|completed|reschedul)/i.test(previous.piece)
       && notificationIdentityCompatible(piece, previous.parsed.opportunity, opportunities)
       && notificationIdentityCanInherit(piece, previous.parsed.opportunity)
-      && resolveSourceTemporal(previous.piece, { receivedAt: originalReceivedAt ?? '', timezone: 'Asia/Shanghai', mode: previous.parsed.timingMode })?.shape === 'availability_window'
+      && resolveSourceTemporal(previous.piece, { receivedAt: originalReceivedAt ?? '', timezone: gmailFragmentTimezone(previous.piece, interpretationTimezone) ?? '', mode: previous.parsed.timingMode })?.shape === 'availability_window'
       ? previous.parsed : undefined
     const inherited = contextSafe && contextTarget
       && notificationIdentityCompatible(piece, contextTarget, opportunities)
@@ -1456,6 +1480,9 @@ export function gmailSemanticRecordFromMessage(
       eventConfidence: !originalReceivedAt ? 'low' as const : application ? 'high' as const : eventConfidence,
       evidenceRefs: [evidenceRef], sourceVersionRefs: [`${message.id}:uu06-v1`],
     }
+    if (!interpretationTimezone && boundedRescheduleSource) {
+      interpretationGaps.push('Recruiting time requires a valid workspace timezone; the source remains unresolved.')
+    }
     if (boundedRescheduleSource) {
       businessAmbiguities.push(GMAIL_RESCHEDULE_TIME_GAP)
       // Do not let unsupported suffixes turn this old/new notice into a
@@ -1481,9 +1508,13 @@ export function gmailSemanticRecordFromMessage(
       candidates.push({ ...base, kind: 'occurrence_completed', target: { ...base.target, occurrenceKind }, occurredAt: legacy.receivedAt })
       continue
     }
+    const fragmentTimezone = gmailFragmentTimezone(piece, interpretationTimezone)
+    if (!fragmentTimezone && requiresTiming(eventType ?? 'other')) {
+      interpretationGaps.push('Recruiting time requires a valid workspace timezone; the source remains unresolved.')
+    }
     const originalTimestamp = originalReceivedAt ?? ''
     const temporal = resolveSourceTemporal(gmailAssertionWithoutUrls(piece), { receivedAt: originalTimestamp,
-      timezone: 'Asia/Shanghai', mode: submissionDeadline ? 'deadline' : parsed.timingMode })
+      timezone: fragmentTimezone ?? '', mode: submissionDeadline ? 'deadline' : parsed.timingMode })
     const dueAt = temporal?.startAt ?? temporal?.deadlineAt ?? temporal?.date
     const duePrecision = temporal?.precision
     if (occurrenceKind && /改期|改为|调整为|reschedul/i.test(piece)) {
@@ -1537,6 +1568,10 @@ export function gmailSemanticRecordFromMessage(
     && eventCandidates.some((candidate) => !candidate.location && !candidate.joinUrl)) {
     businessAmbiguities.push('Supplementary location/link details could not be uniquely assigned across multiple events.')
   }
+  const timingZones = new Set(candidates.flatMap(candidate =>
+    (candidate.kind === 'process_event' || candidate.kind === 'occurrence_rescheduled') && candidate.temporal
+      ? [candidate.temporal.timezone].filter(validPlanningTimezone) : []))
+  const sourceTimezone = timingZones.size === 1 ? [...timingZones][0]! : interpretationTimezone ?? 'unresolved'
   return {
     receivedAt: legacy.receivedAt,
     pendingInterviewReschedule,
@@ -1550,7 +1585,7 @@ export function gmailSemanticRecordFromMessage(
     observation: {
       contractVersion: 1, inputId: `gmail:${message.id}:uu06-v1`,
       source: { kind: 'gmail', sourceId: GMAIL_SOURCE_ID, sourceRecordId: message.id!,
-        sourceVersion: 'uu06-v1', observedAt: now.toISOString(), assertedAt: boundedRescheduleSource ? boundedSourceTime : legacy.receivedAt, timezone: 'Asia/Shanghai' },
+        sourceVersion: 'uu06-v1', observedAt: now.toISOString(), assertedAt: boundedRescheduleSource ? boundedSourceTime : legacy.receivedAt, timezone: sourceTimezone },
       originalTextFingerprint: `fnv1a:${stableIngestionHash(sourceText)}`,
       statementMode: nonAssertion ? 'quote' : 'assertion', candidates,
     },
@@ -1619,7 +1654,7 @@ export async function runGmailAutomationForBinding(options: {
   })
   options.execution?.observer?.phase('message_parse')
   const records = batch.messages
-    .map((message) => { const record = gmailSemanticRecordFromMessage(message, workspace.snapshot.data.opportunities, now); options.execution?.observer?.processed(); return record })
+    .map((message) => { const record = gmailSemanticRecordFromMessage(message, workspace.snapshot.data.opportunities, now, gmailWorkspaceTimezone(workspace)); options.execution?.observer?.processed(); return record })
     .filter((record): record is GmailSemanticRecord => Boolean(record))
   for (const sourceRecordId of batch.unavailableMessageIds) {
     records.push({
@@ -1635,7 +1670,7 @@ export async function runGmailAutomationForBinding(options: {
           sourceRecordId,
           sourceVersion: 'payload-unavailable-v1',
           observedAt: checkedAt,
-          timezone: workspace.context.timezone ?? 'Asia/Shanghai',
+          timezone: gmailWorkspaceTimezone(workspace) || 'unresolved',
         },
         statementMode: 'assertion',
         candidates: [],
@@ -1648,7 +1683,7 @@ export async function runGmailAutomationForBinding(options: {
       gaps: [],
       capabilityBoundaries: ['Gmail initial backfill covers the previous 90 days, including archived mail; older mail and spam/trash are outside this bounded coverage. Push delivery is not configured; periodic history polling remains active.'],
       observation: { contractVersion: 1, inputId: 'gmail:coverage-boundary:uu06-90-days',
-        source: { kind: 'gmail', sourceId: GMAIL_SOURCE_ID, sourceRecordId: 'coverage-boundary:uu06-90-days', observedAt: checkedAt, timezone: 'Asia/Shanghai' },
+        source: { kind: 'gmail', sourceId: GMAIL_SOURCE_ID, sourceRecordId: 'coverage-boundary:uu06-90-days', observedAt: checkedAt, timezone: gmailWorkspaceTimezone(workspace) || 'unresolved' },
         statementMode: 'assertion', candidates: [] },
     })
   }
@@ -1659,7 +1694,7 @@ export async function runGmailAutomationForBinding(options: {
         contractVersion: 1, inputId: `gmail:coverage-gap:${stableCoverageGapId(options.binding.gmailHistoryId ?? 'initial', checkedAt)}`,
         source: { kind: 'gmail', sourceId: GMAIL_SOURCE_ID,
           sourceRecordId: `coverage-gap:${stableCoverageGapId(options.binding.gmailHistoryId ?? 'initial', checkedAt)}`,
-          observedAt: checkedAt, timezone: workspace.context.timezone ?? 'Asia/Shanghai' },
+          observedAt: checkedAt, timezone: gmailWorkspaceTimezone(workspace) || 'unresolved' },
         statementMode: 'assertion', candidates: [],
       },
     })

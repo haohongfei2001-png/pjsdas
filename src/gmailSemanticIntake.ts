@@ -1,10 +1,11 @@
 import { sameSemanticFactKey } from './opportunityCanonicalization.js'
 import { dismissedSemanticCandidate } from './decisionDismissal.js'
-import type { IngestionIssueKind, SemanticIntakeObservation, TimelineRecord } from './model.js'
+import type { IngestionIssueKind, ScheduleNodeTemporal, SemanticIntakeObservation, SemanticIntakeReceipt, TimelineRecord } from './model.js'
 import type { PJSDASSnapshot } from './snapshot.js'
 import { applySemanticIntake, semanticCandidateFactKey, type SemanticBatchCompensation } from './semanticIntake.js'
 import { alreadyIngested, buildIngestionRunSummary, createIngestionLedgerTimeline, createIngestionRunTimeline, stableIngestionHash } from './ingestion.js'
 import { bootstrapPolicyFor } from './sourceRegistry.js'
+import { validPlanningTimezone } from './timePlanningPreferences.js'
 import { readImportedInterviewReschedule } from './boundInterviewReschedule.js'
 
 export const GMAIL_RESCHEDULE_TIME_GAP = 'Reschedule lacks an unambiguous full date/time; the existing occurrence was preserved.'
@@ -47,6 +48,130 @@ function bindPendingInterview(record: GmailSemanticRecord, snapshot: PJSDASSnaps
       sourceVersionRefs: [`${observation.source.sourceRecordId}:${observation.source.sourceVersion}`] }] : [] } }
 }
 
+function receiptBindsTemporal(key: string, temporal: ScheduleNodeTemporal) {
+  const marker = key.indexOf('|[')
+  if (marker < 0) return false
+  const instant = (value: string | undefined) => value && Number.isFinite(Date.parse(value)) ? new Date(value).toISOString() : value ?? ''
+  const suffix = JSON.stringify([temporal.shape, temporal.precision, instant(temporal.startAt),
+    instant(temporal.endAt), instant(temporal.deadlineAt), temporal.date ?? ''])
+    // A legacy key binds the base time but not latest-start. This proves only
+    // its historical timezone; the shared core still validates latest identity.
+    + (key.includes('|latestStartAt:') && temporal.latestStartAt ? `|latestStartAt:${instant(temporal.latestStartAt)}` : '')
+  return key.slice(marker + 1) === suffix
+}
+
+/** Legacy dueAt-only decisions materialized source-offset nodes, not the
+ * original IANA zone. Prove that zone from this exact historical resolution;
+ * this is provenance only and grants no current answer or recovery authority. */
+function legacyDecisionTimezone(record: GmailSemanticRecord, snapshot: PJSDASSnapshot, receipt: SemanticIntakeReceipt, key: string, refs: SemanticIntakeReceipt['affectedObjects']) {
+  if (receipt.status !== 'committed' && receipt.status !== 'undone') return undefined
+  for (const id of receipt.decisionRequestIds) {
+    const request = snapshot.data.decisionRequests?.find(item => item.id === id)
+    if (!request) continue
+    const binding = request.payloadBinding, source = binding.source, candidate = binding.candidate
+    if (candidate.kind !== 'process_event' || candidate.temporal || candidate.duePrecision !== 'datetime'
+      || !candidate.dueAt || !/(?:Z|[+-]\d{2}:\d{2})$/i.test(candidate.dueAt) || !Number.isFinite(Date.parse(candidate.dueAt))
+      || source.kind !== receipt.sourceKind || source.sourceId !== receipt.sourceId || source.sourceRecordId !== receipt.sourceRecordId
+      || source.sourceVersion !== receipt.sourceVersion || !validPlanningTimezone(source.timezone)
+      || !binding.originalTextFingerprint || binding.originalTextFingerprint !== record.observation.originalTextFingerprint) continue
+    const choice = request.choices.find(item => item.resolution && !item.resolution.dismiss
+      && receipt.inputId === `decision-resolution:${request.id}:${item.id}`
+      && receipt.commandId === `semantic-decision:${request.id}:${item.id}`)
+    if (!choice?.resolution || (receipt.status === 'committed' && (request.state !== 'answered' || request.answerChoiceId !== choice.id))) continue
+    const resolved = { ...candidate, target: { ...candidate.target,
+      ...(choice.resolution.opportunityId ? { opportunityId: choice.resolution.opportunityId } : {}),
+      ...(choice.resolution.occurrenceId ? { occurrenceId: choice.resolution.occurrenceId } : {}) } }
+    if (semanticCandidateFactKey(snapshot, resolved) !== key) continue
+    const opportunityId = resolved.target.opportunityId
+    if (!opportunityId) continue
+    const expectedKind = candidate.eventType === 'assessment_invite' ? 'assessment' : candidate.eventType === 'written_test_invite' ? 'written_test' : candidate.eventType === 'interview_invite' ? 'interview' : undefined
+    const sameInstant = (value: string | undefined) => Boolean(value && Number.isFinite(Date.parse(value)) && Date.parse(value) === Date.parse(candidate.dueAt!))
+    const objectProof = refs.some(ref => {
+      if (ref.type === 'process_event') {
+        const event = snapshot.data.processEvents.find(item => item.id === ref.id)
+        return event?.opportunityId === opportunityId && event.type === candidate.eventType
+          && !event.temporal && event.duePrecision === candidate.duePrecision && sameInstant(event.dueAt)
+      }
+      if (ref.type !== 'schedule_node') return false
+      const node = snapshot.data.scheduleNodes?.find(item => item.id === ref.id)
+      if (!node || !expectedKind) return false
+      const temporal = node.temporal
+      return node.kind === expectedKind && node.opportunityId === opportunityId && Boolean(node.processEventId && refs.some(item => item.type === 'process_event' && item.id === node.processEventId))
+        && temporal?.shape === 'fixed_range' && temporal.precision === 'datetime' && sameInstant(temporal.startAt)
+        && !temporal.endAt && !temporal.deadlineAt && !temporal.latestStartAt && !temporal.date
+    })
+    if (objectProof) return source.timezone
+  }
+  return undefined
+}
+
+/** A new parser version is not permission to reinterpret an already consumed
+ * source under today's account preference. Use exact historical receipt refs
+ * and value-bound temporal keys, never follow an old occurrence to its latest
+ * node or use a later edited event as proof of the original interpretation. */
+function preserveConsumedTimezone(record: GmailSemanticRecord, snapshot: PJSDASSnapshot) {
+  if (!record.pendingInterviewReschedule && !record.observation.candidates.some(candidate =>
+    candidate.kind === 'occurrence_rescheduled' || candidate.kind === 'process_event' && (candidate.temporal || candidate.dueAt))) return record
+  const source = record.observation.source
+  const zones = new Set<string>(), provenKeys = new Set<string>()
+  let hasTimedFact = false, unknownProof = false
+  for (const receipt of snapshot.data.semanticReceipts ?? []) {
+    if (receipt.sourceKind !== 'gmail' || receipt.sourceId !== source.sourceId || receipt.sourceRecordId !== source.sourceRecordId) continue
+    for (const key of receipt.factKeys ?? []) {
+      if (!/^(?:process_event|occurrence_rescheduled)\|/.test(key) || !/\|\[[^\]]*\d{4}-\d{2}-\d{2}/.test(key)) continue
+      hasTimedFact = true
+      const refs = receipt.factMutationObjects ? receipt.factMutationObjects[key] ?? [] : receipt.affectedObjects
+      const exact = refs.flatMap(ref => {
+        if (ref.type === 'schedule_node') {
+          const node = snapshot.data.scheduleNodes?.find(item => item.id === ref.id)
+          return node ? [node.temporal] : []
+        }
+        if (ref.type === 'process_event') {
+          const event = snapshot.data.processEvents.find(item => item.id === ref.id)
+          return event?.temporal ? [event.temporal] : []
+        }
+        return []
+      }).filter(temporal => receiptBindsTemporal(key, temporal) && validPlanningTimezone(temporal.timezone))
+      const legacyZone = exact.length ? undefined : legacyDecisionTimezone(record, snapshot, receipt, key, refs)
+      if (!exact.length && !legacyZone) unknownProof = true
+      if (legacyZone) zones.add(legacyZone)
+      if (exact.length) provenKeys.add(key)
+      for (const temporal of exact) zones.add(temporal.timezone)
+    }
+  }
+  if (!hasTimedFact) {
+    // Pre-UU06 consumption has a source-bound ledger/event link, but no
+    // semantic source-zone receipt. A projected source-offset is not an IANA
+    // proof. Keep that timed history unresolved instead of replaying it in the
+    // owner's new zone. No-fact/unresolved legacy mail may still be interpreted.
+    const legacyTimed = (snapshot.data.timeline ?? []).some(row => {
+      const entry = row.ingestion
+      if (entry?.sourceKind !== 'gmail' || entry.sourceId !== source.sourceId
+        || entry.sourceRecordId !== source.sourceRecordId || !entry.processEventId) return false
+      const event = snapshot.data.processEvents.find(item => item.id === entry.processEventId)
+      const timing = (temporal: ScheduleNodeTemporal | undefined) => Boolean(temporal?.startAt || temporal?.endAt || temporal?.deadlineAt || temporal?.date)
+      return Boolean(event?.dueAt || timing(event?.temporal))
+        || Boolean(snapshot.data.scheduleNodes?.some(node => node.processEventId === entry.processEventId && timing(node.temporal)))
+    })
+    if (legacyTimed) { hasTimedFact = true; unknownProof = true }
+  }
+  // Explicit source-zone facts can remain byte-identical even when today's
+  // workspace preference differs. Full value-bound keys prove no timing was
+  // reinterpreted, including mixed-zone messages. Admission/Undo still run below.
+  const timed = record.observation.candidates.filter(candidate => candidate.kind === 'occurrence_rescheduled'
+    || candidate.kind === 'process_event' && (candidate.temporal || candidate.dueAt))
+  const unchanged = !record.pendingInterviewReschedule && timed.length > 0
+    && timed.every(candidate => {
+      const key = semanticCandidateFactKey(snapshot, candidate)
+      return key !== undefined && provenKeys.has(key)
+    })
+  if (!hasTimedFact || !unknownProof && (unchanged || zones.size === 1 && zones.has(source.timezone))) return record
+  return { ...record,
+    gaps: [...record.gaps, 'The consumed message timing cannot be reinterpreted in the current workspace timezone; its existing arrangement was retained and needs a fresh confirmed notice.'],
+    issueKinds: [...new Set([...(record.issueKinds ?? []), 'interpretation_failure' as const])],
+  }
+}
+
 /** Source accounting surrounds the shared policy; this adapter never changes business state itself. */
 export function applyGmailSemanticBatch(snapshot: PJSDASSnapshot, input: {
   runId: string
@@ -72,7 +197,8 @@ export function applyGmailSemanticBatch(snapshot: PJSDASSnapshot, input: {
   for (const sourceRecord of [...input.records].sort((a, b) => a.receivedAt.localeCompare(b.receivedAt))) {
     const prior = alreadyIngested(working.data.timeline, { sourceKind: 'gmail', sourceId: input.sourceId,
       sourceRecordId: sourceRecord.observation.source.sourceRecordId })
-    const record = bindPendingInterview(sourceRecord, working, prior, input.sourceId, input.checkedAt)
+    const protectedSource = prior && input.reconcileExisting ? preserveConsumedTimezone(sourceRecord, working) : sourceRecord
+    const record = bindPendingInterview(protectedSource, working, prior, input.sourceId, input.checkedAt)
     // Accounting a source as unresolved must not still commit its parsed
     // prefix. A later, unparsed fragment may negate or qualify that outcome.
     const independentGap = record.gaps.length > 0 || Boolean(record.issueKinds?.some(kind => kind !== 'business_ambiguity'))
