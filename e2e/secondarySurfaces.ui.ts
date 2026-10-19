@@ -724,6 +724,35 @@ test('inline capture preserves the underlying page and outside clicks remain usa
   expect(mutations).toEqual([])
 })
 
+for (const entry of ['global', 'contextual'] as const) {
+  for (const dismissal of ['Escape', 'Close'] as const) {
+    test(`job-detail capture restores the actual ${entry} opener after ${dismissal}`, async ({ page }) => {
+      test.skip(phase === 'before', 'Candidate-only nonmodal focus ownership')
+      const mutations = await seed(page)
+      await page.goto('/pjsdas/library')
+      await page.locator('.tsui-job-open').last().click()
+      await expect(page.locator('.job-detail-page h1')).toBeVisible()
+      const opener = page.locator(entry === 'global' ? '.tsui-tell-button' : '.job-detail-capture')
+      const detailUrl = page.url()
+      await opener.click()
+      const input = page.locator('.cgr-capture-input')
+      await expect(input).toBeFocused()
+      await input.fill('今天提交周报')
+      if (dismissal === 'Escape') await input.press('Escape')
+      else {
+        await page.getByRole('button', { name: '更多操作', exact: true }).click()
+        await page.getByRole('button', { name: '关闭', exact: true }).click()
+      }
+      await expect(page.getByRole('dialog', { name: '告诉 TodayAction' })).toHaveCount(0)
+      // Include queued close callbacks, not only the transient restored focus.
+      await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))))
+      await expect(opener).toBeFocused()
+      await expect(page).toHaveURL(detailUrl)
+      expect(mutations).toEqual([])
+    })
+  }
+}
+
 test('anonymous inline drafts survive Escape and reopening without being submitted', async ({ page }) => {
   test.skip(phase === 'before', 'Candidate-only anonymous draft retention')
   await page.route(`${MOCK_TARGET_AUTH_ORIGIN}/**`, route => route.abort())

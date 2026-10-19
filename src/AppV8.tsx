@@ -321,14 +321,11 @@ export default function AppV8() {
     setCaptureExpanded(true)
   }
 
-  function closeCapture(restoreFocus = true) {
+  function closeCapture() {
     setCaptureExpanded(false)
     if (route.capture) navigate('/today', true)
-    if (restoreFocus && captureContextOpportunityId) {
-      window.requestAnimationFrame(() => {
-        document.querySelector<HTMLButtonElement>('.job-detail-page .job-detail-capture, .opportunity-detail-drawer .cgr-context-capture')?.focus()
-      })
-    }
+    // TellPjsdasCapture owns restoration to the actual opener. Job context
+    // is not focus ownership: the global + can also open from a job detail.
     setCaptureContextOpportunityId(undefined)
   }
 

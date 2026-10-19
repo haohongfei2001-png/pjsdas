@@ -374,7 +374,7 @@ async function finishCaptureReadback(page: Page) {
   await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))))
 }
 
-async function captureWithHeldReadback(page: Page, operation: 'save' | 'undo' = 'save') {
+async function captureWithHeldReadback(page: Page, operation: 'save' | 'undo' = 'save', jobEntry?: 'global' | 'contextual') {
   // Keep the background navigation target outside the anchored composer in
   // every configured browser; mobile geometry has separate visual coverage.
   await page.setViewportSize({ width: 1440, height: 1000 })
@@ -384,7 +384,12 @@ async function captureWithHeldReadback(page: Page, operation: 'save' | 'undo' = 
   await installCaptureReadbackHold(page)
   await page.goto('/pjsdas/today')
   await expect(page.getByRole('heading', { name: 'A第一任务', exact: true })).toBeVisible()
-  const opener = page.locator('.tsui-tell-button')
+  if (jobEntry) {
+    await page.getByRole('navigation', { name: '主导航' }).getByRole('button', { name: /岗位/ }).click()
+    await page.locator('.tsui-job-open').last().click()
+    await expect(page.locator('.job-detail-page h1')).toBeVisible()
+  }
+  const opener = page.locator(jobEntry === 'contextual' ? '.job-detail-capture' : '.tsui-tell-button')
   await opener.click()
   const dialog = page.getByRole('dialog', { name: '告诉 TodayAction', exact: true })
   const input = dialog.getByRole('textbox', { name: '要告诉 TodayAction 的内容' })
@@ -430,6 +435,25 @@ for (const operation of ['save', 'undo'] as const) test(`capture ${operation} ke
     expect(state.commandBodies.map(body => body.action)).toEqual(operation === 'save' ? ['command'] : ['command', 'undo'])
   } finally { await releaseCaptureReadback(page) }
 })
+
+for (const jobEntry of ['global', 'contextual'] as const) {
+  for (const operation of ['save', 'undo'] as const) {
+    test(`job-detail ${operation} restores the ${jobEntry} opener without a delayed focus override`, async ({ page }) => {
+      const { state, opener, dialog } = await captureWithHeldReadback(page, operation, jobEntry)
+      const detailUrl = page.url()
+      try {
+        await page.keyboard.press('Escape')
+        await expect(dialog).toHaveCount(0)
+        await expect(opener).toBeFocused()
+        await finishCaptureReadback(page)
+        await expect(dialog).toHaveCount(0)
+        await expect(opener).toBeFocused()
+        await expect(page).toHaveURL(detailUrl)
+        expect(state.commandBodies.map(body => body.action)).toEqual(operation === 'save' ? ['command'] : ['command', 'undo'])
+      } finally { await releaseCaptureReadback(page) }
+    })
+  }
+}
 
 for (const departure of ['outside focus', 'keyboard navigation', 'pointer dismissal'] as const) test(`held capture completion respects ${departure} without restoring the old opener`, async ({ page }) => {
   const { state, opener, dialog, input } = await captureWithHeldReadback(page)
