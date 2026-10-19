@@ -68,7 +68,10 @@ test('Brand name, accessible capture, language and narrow header preserve the TS
   await page.locator('.tsui-topbar').getByRole('button', { name: /告诉 TodayAction/ }).click()
   const dialog = page.getByRole('dialog', { name: '告诉 TodayAction' })
   await expect(dialog.getByRole('textbox', { name: '要告诉 TodayAction 的内容' })).toBeFocused()
-  await expect(page).toHaveTitle('记录进展 · TodayAction')
+  await expect(dialog).toHaveAttribute('aria-modal', 'false')
+  expect(new URL(page.url()).pathname).toBe(base + 'today')
+  await expect(page).toHaveTitle('今天 · TodayAction')
+  await dialog.getByRole('button', { name: '更多操作', exact: true }).click()
   await dialog.getByRole('button', { name: '关闭', exact: true }).click()
   for (const width of [390, 360, 320]) {
     await page.setViewportSize({ width, height: 844 })

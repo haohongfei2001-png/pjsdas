@@ -161,7 +161,9 @@ export default function AppV8() {
     || !workspaceWriteIdentityMatches(cloud.session?.user.id, currentAccountCacheSession(), cloud.device.workspaceOwnerUserId)
   const zh = lang === 'zh'
   const [route, setRoute] = useState<RouteState>(() => routeFromPath())
-  const [captureReturnPath, setCaptureReturnPath] = useState('/today')
+  const [captureExpanded, setCaptureExpanded] = useState(false)
+  const captureOpen = route.capture || captureExpanded
+  const captureAnchorRef = useRef<HTMLButtonElement>(null)
   const [captureContextOpportunityId, setCaptureContextOpportunityId] = useState<string>()
   const [todayFreshness, setTodayFreshness] = useState<TodayFreshnessView>({ state: 'local' })
   const [opportunityView, setOpportunityView] = useState<JobFilter>('all')
@@ -298,6 +300,8 @@ export default function AppV8() {
   }
 
   function navigate(path: string, replace = false) {
+    setCaptureExpanded(false)
+    setCaptureContextOpportunityId(undefined)
     const destination = browserPath(path)
     if (replace) window.history.replaceState(null, '', destination)
     else window.history.pushState(null, '', destination)
@@ -309,19 +313,19 @@ export default function AppV8() {
       navigate('/today')
       return
     }
-    const current = semanticPath() + window.location.search
+    if (captureOpen) {
+      document.getElementById('tell-pjsdas-input')?.focus()
+      return
+    }
     setCaptureContextOpportunityId(route.opportunityId)
-    setCaptureReturnPath(current === '/capture' || current === '/today/capture' ? '/today' : current)
-    navigate('/today/capture')
+    setCaptureExpanded(true)
   }
 
   function closeCapture() {
-    navigate(captureReturnPath || '/today', true)
-    if (captureContextOpportunityId) {
-      window.requestAnimationFrame(() => {
-        document.querySelector<HTMLButtonElement>('.job-detail-page .job-detail-capture, .opportunity-detail-drawer .cgr-context-capture')?.focus()
-      })
-    }
+    setCaptureExpanded(false)
+    if (route.capture) navigate('/today', true)
+    // TellPjsdasCapture owns restoration to the actual opener. Job context
+    // is not focus ownership: the global + can also open from a job detail.
     setCaptureContextOpportunityId(undefined)
   }
 
@@ -353,7 +357,7 @@ export default function AppV8() {
     window.addEventListener('pageshow', updateClock)
     document.addEventListener('visibilitychange', visibleClock)
     const refresh = () => { void reload() }
-    const pop = () => setRoute(routeFromPath())
+    const pop = () => { setCaptureExpanded(false); setCaptureContextOpportunityId(undefined); setRoute(routeFromPath()) }
     const keyboard = (event: KeyboardEvent) => {
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
         event.preventDefault()
@@ -372,7 +376,7 @@ export default function AppV8() {
       window.removeEventListener('popstate', pop)
       window.removeEventListener('keydown', keyboard)
     }
-  }, [route])
+  }, [route, captureOpen])
 
   useEffect(() => {
     const accountKey = cloud.session?.user.id
@@ -920,7 +924,7 @@ export default function AppV8() {
           })}
         </nav>
         <div className="tsui-top-actions">
-          <button className="tsui-tell-button" type="button" aria-label={zh ? '＋ 告诉 TodayAction' : '＋ Tell TodayAction'} onClick={openCapture} disabled={CGR02_TODAY_READ_ONLY}><span aria-hidden="true">＋</span></button>
+          <button ref={captureAnchorRef} className="tsui-tell-button" type="button" aria-expanded={captureOpen} aria-controls="tell-pjsdas-composer" aria-label={zh ? '＋ 告诉 TodayAction' : '＋ Tell TodayAction'} onClick={() => captureOpen ? closeCapture() : openCapture()} disabled={CGR02_TODAY_READ_ONLY}><span aria-hidden="true">＋</span></button>
           <button className="tsui-settings-button" type="button" aria-label={zh ? '设置' : 'Settings'} onClick={() => navigate('/settings')}>⚙</button>
         </div>
       </header>
@@ -994,7 +998,8 @@ export default function AppV8() {
 
 
       <TellPjsdasCapture
-        open={!CGR02_TODAY_READ_ONLY && route.capture}
+        open={!CGR02_TODAY_READ_ONLY && captureOpen}
+        anchorRef={captureAnchorRef}
         onClose={closeCapture}
         onChanged={reload}
         onOpenDecisions={() => navigate('/decisions')}

@@ -1,8 +1,11 @@
-import { createCapturePreviewPresentation } from './capturePreviewPresentation.js'
+import { createCapturePreviewPresentation, canRetainRecoveryPreview } from './capturePreviewPresentation.js'
 import ManualJobFields from './capture/ManualJobFields.js'
+import { readCaptureTextFile, appendCaptureQuote, CaptureTextFileError } from './capture/textFile.js'
+import { capturePopoverLayout } from './capture/popoverLayout.js'
+import { captureFocusIsVacant, createCaptureOperationLifecycle } from './capture/operationLifecycle.js'
 import { manualJobDraft, readManualJobDraft, manualJobCandidate } from './capture/manualJob.js'
 import type { UserJobFacts } from './opportunityCreation.js'
-import { lazy, Suspense, useEffect, useRef, useState } from 'react'
+import { lazy, Suspense, useEffect, useLayoutEffect, useRef, useState, type RefObject } from 'react'
 const RecordCorrectionReview = lazy(() => import('./RecordCorrectionReview.js'))
 import {
   previewWebSemanticCapture,
@@ -34,7 +37,8 @@ import './capture/capture.css'
 
 interface TellPjsdasCaptureProps {
   open: boolean
-  onClose: () => void
+  onClose: (restoreFocus?: boolean) => void
+  anchorRef?: RefObject<HTMLButtonElement | null>
   onChanged: () => Promise<void>
   onOpenDecisions: () => void
   contextLabel?: string
@@ -124,6 +128,7 @@ function saveErrorCopy(state: CaptureSaveState, zh: boolean) {
 export default function TellPjsdasCapture({
   open,
   onClose,
+  anchorRef,
   onChanged,
   onOpenDecisions,
   contextLabel,
@@ -133,14 +138,23 @@ export default function TellPjsdasCapture({
   const cloud = useCloud()
   const zh = lang === 'zh'
   const [manualMode, setManualMode] = useState(false)
+  const [moreOpen, setMoreOpen] = useState(false)
   const naturalDraftRef = useRef('')
   const manualDraftRef = useRef<UserJobFacts>({ company: '', role: '' })
   const [correctionMode, setCorrectionMode] = useState(false)
   useEffect(() => { if (!open) setCorrectionMode(false) }, [open])
   const [text, setText] = useState('')
   const [busy, setBusy] = useState(false)
-  const submissionFlightRef = useRef(false)
   const [previewBusy, setPreviewBusy] = useState(false)
+  const [previewRequest, setPreviewRequest] = useState(0)
+  const [fileReading, setFileReading] = useState(false)
+  const [fileAttachment, setFileAttachment] = useState<{ name: string; quote: string }>()
+  const [fileNotice, setFileNotice] = useState('')
+  const [fileError, setFileError] = useState('')
+  const fileInputRef = useRef<HTMLInputElement | null>(null)
+  const fileTriggerRef = useRef<HTMLButtonElement | null>(null)
+  const previewSectionRef = useRef<HTMLElement | null>(null)
+  const fileReadEpochRef = useRef(0)
   const [preview, setPreview] = useState<WebSemanticCapturePreview>()
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
@@ -151,35 +165,155 @@ export default function TellPjsdasCapture({
   const [undo, setUndo] = useState<LocalSemanticUndoToken>()
   const [stableCommandId, setStableCommandId] = useState<string>()
   const textareaRef = useRef<HTMLTextAreaElement | null>(null)
+  const correctionBackRef = useRef<HTMLButtonElement | null>(null)
   const sheetRef = useRef<HTMLElement | null>(null)
   const openerRef = useRef<HTMLElement | null>(null)
+  const restoreFocusRef = useRef(true)
+  const closedDraftRef = useRef<{ accountKey: string | null; text: string } | undefined>(undefined)
+  const [popoverStyle, setPopoverStyle] = useState<ReturnType<typeof capturePopoverLayout>>()
   const initializedUserIdRef = useRef<string | null | undefined>(undefined)
   const textRef = useRef('')
+  const operationLifecycle = useRef(createCaptureOperationLifecycle())
+  const accountKey = cloud.session?.user.id ?? null
+
+  useLayoutEffect(() => {
+    operationLifecycle.current.updateView(open, accountKey)
+    setBusy(false)
+    if (saveState === 'saving') {
+      // Account jitter can preserve the draft without reinitializing the view.
+      // Keep its command identity recoverable, never an abandoned Saving label.
+      setSaveState(stableCommandId ? 'unknown' : 'idle')
+      setError(stableCommandId ? saveErrorCopy('unknown', zh) : '')
+      setUndo(undefined)
+      setMessage('')
+      setAuthoritativeSaveConfirmed(false)
+      setDecisionCount(0)
+      setUnresolvedCount(0)
+    }
+  }, [open, accountKey])
+  useLayoutEffect(() => {
+    if (!busy) operationLifecycle.current.restoreFocus(textareaRef.current
+      ?? sheetRef.current?.querySelector<HTMLElement>('input:not([type="hidden"]):not(:disabled)'))
+  })
+  useLayoutEffect(() => () => operationLifecycle.current.invalidate(), [])
 
   const connected = Boolean(cloud.session && connectedWorkspaceAuthorityEnabled())
   const recoveryLocked = saveState === 'unknown' || saveState === 'reauth' || saveState === 'confirmed_pending' || saveState === 'offline'
 
   const previewPresentation = useRef(createCapturePreviewPresentation())
   const previewIdentity = useRef<unknown[]>([])
-  const identity = [open, text, manualMode, correctionMode, busy, cloud.session]
+  const settledPreviewIdentity = useRef<readonly unknown[] | undefined>(undefined)
+  const fileReadIdentity = useRef<unknown[]>([])
+  const inputIdentity = [open, text, manualMode, correctionMode, busy, cloud.session, recoveryLocked]
+  if (inputIdentity.some((value, index) => value !== fileReadIdentity.current[index])) {
+    fileReadEpochRef.current += 1
+    fileReadIdentity.current = inputIdentity
+  }
+  const parsedIdentity = [open, text, manualMode, correctionMode, cloud.session, previewRequest]
+  if (settledPreviewIdentity.current && parsedIdentity.some((value, index) => value !== settledPreviewIdentity.current![index])) settledPreviewIdentity.current = undefined
+  const identity = [...inputIdentity, previewRequest]
   if (identity.some((value, index) => value !== previewIdentity.current[index])) {
     previewPresentation.current.invalidate()
     previewIdentity.current = identity
     if (!open || correctionMode) previewPresentation.current.reset()
   }
 
+  useEffect(() => { setFileReading(false); setFileAttachment(undefined); setFileNotice(''); setFileError('') }, [open, manualMode, correctionMode, cloud.session])
+  useEffect(() => { setFileReading(false) }, [text, busy, recoveryLocked])
+
   useEffect(() => {
     if (!open) {
+      if (initializedUserIdRef.current === null && !cloud.session?.user.id) closedDraftRef.current = { accountKey: null, text: textRef.current }
       initializedUserIdRef.current = undefined
+      setMoreOpen(false)
       return
     }
-    openerRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
-    const id = window.setTimeout(() => textareaRef.current?.focus(), 0)
+    restoreFocusRef.current = true
+    openerRef.current = document.activeElement instanceof HTMLElement && document.activeElement !== document.body ? document.activeElement : anchorRef?.current ?? null
+    const sheet = sheetRef.current
+    const id = window.setTimeout(() => { if (restoreFocusRef.current) textareaRef.current?.focus({ preventScroll: true }) }, 0)
     return () => {
       window.clearTimeout(id)
-      openerRef.current?.focus()
+      if (restoreFocusRef.current && (captureFocusIsVacant(document) || sheet?.contains(document.activeElement))) openerRef.current?.focus({ preventScroll: true })
     }
   }, [open])
+
+  useLayoutEffect(() => {
+    if (!open) return
+    const place = () => {
+      const viewport = window.visualViewport
+      setPopoverStyle(capturePopoverLayout(anchorRef?.current?.getBoundingClientRect(), {
+        left: viewport?.offsetLeft ?? 0, top: viewport?.offsetTop ?? 0,
+        width: viewport?.width ?? window.innerWidth, height: viewport?.height ?? window.innerHeight,
+      }))
+    }
+    place()
+    const observer = new ResizeObserver(place)
+    if (anchorRef?.current) observer.observe(anchorRef.current)
+    window.addEventListener('resize', place)
+    window.addEventListener('scroll', place, true)
+    window.visualViewport?.addEventListener('resize', place)
+    window.visualViewport?.addEventListener('scroll', place)
+    return () => {
+      observer.disconnect()
+      window.removeEventListener('resize', place)
+      window.removeEventListener('scroll', place, true)
+      window.visualViewport?.removeEventListener('resize', place)
+      window.visualViewport?.removeEventListener('scroll', place)
+    }
+  }, [open, anchorRef])
+
+  useLayoutEffect(() => {
+    const input = textareaRef.current
+    if (!open || !input) return
+    const fit = () => {
+      input.style.height = '0px'
+      input.style.height = `${Math.min(160, Math.max(44, input.scrollHeight))}px`
+    }
+    fit()
+    const observer = new MutationObserver(fit)
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ['style', 'class', 'lang'] })
+    return () => observer.disconnect()
+  }, [open, text, manualMode, correctionMode, popoverStyle?.width])
+
+  function dismissCapture(restoreFocus = true) {
+    closedDraftRef.current = initializedUserIdRef.current === null && !cloud.session?.user.id ? { accountKey: null, text: textRef.current } : undefined
+    restoreFocusRef.current = restoreFocus
+    operationLifecycle.current.invalidate()
+    onClose(restoreFocus)
+  }
+
+  useEffect(() => {
+    if (!open) return
+    const trackFocusOwnership = (event: Event) => {
+      if (!(event.target instanceof Node)) return
+      if (sheetRef.current?.contains(event.target)) { restoreFocusRef.current = true; return }
+      restoreFocusRef.current = false
+      operationLifecycle.current.releaseFocus()
+    }
+    const outside = (event: PointerEvent) => {
+      trackFocusOwnership(event)
+      const target = event.target
+      if (!(target instanceof Node) || sheetRef.current?.contains(target) || anchorRef?.current?.contains(target)) return
+      dismissCapture(false)
+    }
+    document.addEventListener('pointerdown', outside, true)
+    document.addEventListener('focusin', trackFocusOwnership, true)
+    document.addEventListener('click', trackFocusOwnership, true)
+    return () => {
+      document.removeEventListener('pointerdown', outside, true)
+      document.removeEventListener('focusin', trackFocusOwnership, true)
+      document.removeEventListener('click', trackFocusOwnership, true)
+    }
+  }, [open, cloud.session?.user.id, onClose, anchorRef])
+
+  useEffect(() => {
+    if (!open) return
+    // Run after capturing the opener. The secondary trigger unmounts in review
+    // mode; keep focus in the dialog and restore the preserved natural draft.
+    if (correctionMode) correctionBackRef.current?.focus()
+    else if (!manualMode) textareaRef.current?.focus()
+  }, [open, correctionMode, manualMode])
 
   useEffect(() => {
     if (!open) return
@@ -197,9 +331,10 @@ export default function TellPjsdasCapture({
       }
       return
     }
+    const retainedDraft = closedDraftRef.current?.accountKey === (userId ?? null) ? closedDraftRef.current.text : ''
     const initial = userId && connectedWorkspaceAuthorityEnabled()
       ? readAccountDraft(userId, 'tell-pjsdas')
-      : ''
+      : retainedDraft
     const resumable = userId && connectedWorkspaceAuthorityEnabled() && initial
       ? findAccountPendingSemanticOperation(userId, initial)
       : undefined
@@ -264,12 +399,18 @@ export default function TellPjsdasCapture({
       if (!text.trim()) setPreview(undefined)
       return
     }
+    // A queued/uncertain command locks this exact input. Keep its settled
+    // preview instead of starting another layout-changing parse under Save.
+    if (canRetainRecoveryPreview(recoveryLocked, parsedIdentity, settledPreviewIdentity.current)) {
+      setPreviewBusy(false)
+      return
+    }
     const presentation = previewPresentation.current.begin()
     setPreviewBusy(true)
     const id = window.setTimeout(() => {
       void previewWebSemanticCapture(text)
         .then((next) => {
-          presentation.publish(() => { setPreview(next); setPreviewBusy(false) })
+          presentation.publish(() => { settledPreviewIdentity.current = parsedIdentity; setPreview(next); setPreviewBusy(false) })
         })
         .catch((caught) => {
           presentation.publish(() => {
@@ -282,14 +423,15 @@ export default function TellPjsdasCapture({
       presentation.cancel()
       window.clearTimeout(id)
     }
-  }, [open, text, busy, manualMode, correctionMode, cloud.session])
+  }, [open, text, busy, manualMode, correctionMode, cloud.session, previewRequest, recoveryLocked])
 
   useEffect(() => {
     if (!open) return
     const key = (event: KeyboardEvent) => {
+      if (!(event.target instanceof Node) || !sheetRef.current?.contains(event.target)) return
       if (event.key === 'Escape') {
         event.preventDefault()
-        onClose()
+        dismissCapture()
         return
       }
       if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
@@ -298,39 +440,26 @@ export default function TellPjsdasCapture({
         void submit()
         return
       }
-      if (event.key !== 'Tab' || !sheetRef.current) return
-      const focusable = [...sheetRef.current.querySelectorAll<HTMLElement>(
-        'button:not([disabled]), textarea:not([disabled]), input:not([disabled]), [href], [tabindex]:not([tabindex="-1"])',
-      )]
-      if (!focusable.length) return
-      const first = focusable[0]!
-      const last = focusable[focusable.length - 1]!
-      if (event.shiftKey && document.activeElement === first) {
-        event.preventDefault()
-        last.focus()
-      } else if (!event.shiftKey && document.activeElement === last) {
-        event.preventDefault()
-        first.focus()
-      }
     }
     window.addEventListener('keydown', key)
     return () => window.removeEventListener('keydown', key)
-  }, [open, text, busy, stableCommandId, saveState, correctionMode, manualMode])
+  }, [open, text, busy, stableCommandId, saveState, correctionMode, manualMode, cloud.session])
 
-  async function submit() {
-    if (!text.trim() || busy || submissionFlightRef.current) return
+  async function submit(invokedControl?: HTMLElement) {
+    if (!text.trim() || busy) return
     if (manualMode) {
       const invalid = sheetRef.current?.querySelector<HTMLInputElement>('input:invalid')
       if (invalid) { invalid.reportValidity(); return }
     }
     const queueOffline = connected && typeof navigator !== 'undefined' && !navigator.onLine
     if (queueOffline && recoveryLocked) return
-
     const commandId = connected
       ? stableCommandId ?? createConnectedCommandId('web-semantic')
       : undefined
+    const operation = operationLifecycle.current.begin(sheetRef.current, document, invokedControl)
+    if (!operation) return
+    const submittedText = text
     if (commandId) setStableCommandId(commandId)
-    submissionFlightRef.current = true
     setBusy(true)
     setSaveState('saving')
     setMessage('')
@@ -347,47 +476,57 @@ export default function TellPjsdasCapture({
         candidates: manualMode ? [manualJobCandidate(readManualJobDraft(text) ?? manualDraftRef.current)] : undefined,
       })
       if (result.status === 'QUEUED') {
-        saveAccountDraft(cloud.session!.user.id, 'tell-pjsdas', text)
-        setSaveState('offline')
-        setMessage(zh ? '已保存在此设备，联网后自动提交。' : 'Saved on this device; it will submit when connected.')
+        if (operation.isCurrent()) {
+          saveAccountDraft(cloud.session!.user.id, 'tell-pjsdas', submittedText)
+          setSaveState('offline')
+          setMessage(zh ? '已保存在此设备，联网后自动提交。' : 'Saved on this device; it will submit when connected.')
+        }
         return
       }
       if ((result.status === 'APPLIED' || result.status === 'DECISION_REQUIRED') && cloud.session && !connectedWorkspaceAuthorityEnabled()) {
         await ensureAuthoritativePersistence(true, cloud.syncNow)
       }
-      setUndo(result.undo)
-      setDecisionCount(result.decisionRequestIds.length)
-      setUnresolvedCount(result.unresolved.length)
-      setSaveState('saved')
-      setAuthoritativeSaveConfirmed(result.status === 'APPLIED' || result.status === 'ALREADY_APPLIED')
-      setStableCommandId(undefined)
-      if (result.status === 'NO_WRITE') {
-        setMessage(zh
-          ? '没有被当作当前事实写入：这段内容是问题、引用，或缺少可确认事实。'
-          : 'Nothing was written: this was read-only, a question/quote, or did not contain a confirmable fact.')
-      } else if (result.status === 'ALREADY_APPLIED') {
-        setMessage(zh ? '服务器确认这条来源已经处理过，没有重复写入。' : 'The server confirmed this source was already handled; no duplicate was created.')
-      } else {
-        const summary = manualMode ? (zh ? '岗位已保存。' : 'Job saved.') : /^\d+ bounded update\(s\) committed\.$/.test(result.summary.trim())
-          ? (zh ? '已记录明确事实。' : 'Confirmed facts recorded.')
-          : result.summary
-        const parts = [
-          summary,
-          result.decisionRequestIds.length ? (zh ? `${result.decisionRequestIds.length} 项需要你决定。` : `${result.decisionRequestIds.length} item(s) need your decision.`) : '',
-          result.unresolved.length ? (zh ? `${result.unresolved.length} 个片段仍不够明确，未写入。` : `${result.unresolved.length} fragment(s) remain ambiguous and were not written.`) : '',
-          result.ignored.length ? (zh ? `${result.ignored.length} 个片段未作为当前事实处理。` : `${result.ignored.length} fragment(s) were not treated as current facts.`) : '',
-        ].filter(Boolean)
-        setMessage(parts.join(' '))
-        if (result.status === 'APPLIED') {
-          if (manualMode) manualDraftRef.current = { company: '', role: '' }
-          textRef.current = ''
-          setText('')
-          setPreview(undefined)
-          if (cloud.session && connectedWorkspaceAuthorityEnabled()) clearAccountDraft(cloud.session.user.id, 'tell-pjsdas')
-        }
-        await onChanged()
+      if (result.status === 'APPLIED') {
+        if (closedDraftRef.current?.accountKey === accountKey && closedDraftRef.current.text === submittedText) closedDraftRef.current = undefined
+        if (connected && accountKey && readAccountDraft(accountKey, 'tell-pjsdas') === submittedText) clearAccountDraft(accountKey, 'tell-pjsdas')
       }
+      if (operation.isCurrent() || result.status === 'APPLIED' && operation.canReconcileDraft(submittedText, textRef.current)) {
+        setError('')
+        setUndo(result.undo)
+        setDecisionCount(result.decisionRequestIds.length)
+        setUnresolvedCount(result.unresolved.length)
+        setSaveState('saved')
+        setAuthoritativeSaveConfirmed(result.status === 'APPLIED' || result.status === 'ALREADY_APPLIED')
+        setStableCommandId(undefined)
+        if (result.status === 'NO_WRITE') {
+          setMessage(zh
+            ? '没有被当作当前事实写入：这段内容是问题、引用，或缺少可确认事实。'
+            : 'Nothing was written: this was read-only, a question/quote, or did not contain a confirmable fact.')
+        } else if (result.status === 'ALREADY_APPLIED') {
+          setMessage(zh ? '服务器确认这条来源已经处理过，没有重复写入。' : 'The server confirmed this source was already handled; no duplicate was created.')
+        } else {
+          const summary = manualMode ? (zh ? '岗位已保存。' : 'Job saved.') : /^\d+ bounded update\(s\) committed\.$/.test(result.summary.trim())
+            ? (zh ? '已记录明确事实。' : 'Confirmed facts recorded.')
+            : result.summary
+          const parts = [
+            summary,
+            result.decisionRequestIds.length ? (zh ? `${result.decisionRequestIds.length} 项需要你决定。` : `${result.decisionRequestIds.length} item(s) need your decision.`) : '',
+            result.unresolved.length ? (zh ? `${result.unresolved.length} 个片段仍不够明确，未写入。` : `${result.unresolved.length} fragment(s) remain ambiguous and were not written.`) : '',
+            result.ignored.length ? (zh ? `${result.ignored.length} 个片段未作为当前事实处理。` : `${result.ignored.length} fragment(s) were not treated as current facts.`) : '',
+          ].filter(Boolean)
+          setMessage(parts.join(' '))
+          if (result.status === 'APPLIED') {
+            closedDraftRef.current = undefined
+            if (manualMode) manualDraftRef.current = { company: '', role: '' }
+            textRef.current = ''
+            setText('')
+            setPreview(undefined)
+          }
+        }
+      }
+      if (result.status !== 'NO_WRITE' && result.status !== 'ALREADY_APPLIED') await onChanged()
     } catch (caught) {
+      if (!operation.isCurrent()) return
       const detail = caught instanceof Error ? caught.message : String(caught)
       setError(detail)
       if (caught instanceof WorkspaceWriteAuthError) setSaveState('auth_unconfirmed')
@@ -401,28 +540,33 @@ export default function TellPjsdasCapture({
       else if (/CONFLICT|conflict/i.test(detail)) setSaveState('conflict')
       else setSaveState('error')
     } finally {
-      submissionFlightRef.current = false
-      setBusy(false)
+      if (operation.settle()) setBusy(false)
     }
   }
 
-  async function undoLast() {
+  async function undoLast(invokedControl?: HTMLElement) {
     if (!undo || busy) return
+    const operation = operationLifecycle.current.begin(sheetRef.current, document, invokedControl)
+    if (!operation) return
     setBusy(true)
+    setSaveState('saving')
     setError('')
     try {
       await undoWebSemanticChange(undo)
       if (cloud.session && !connectedWorkspaceAuthorityEnabled()) await ensureAuthoritativePersistence(true, cloud.syncNow)
-      setUndo(undefined)
-      setSaveState('saved')
-      setAuthoritativeSaveConfirmed(false)
-      setMessage(zh ? '刚才的权威写入已撤销；其他后续更新保持不变。' : 'The authoritative write was undone; unrelated later updates remain intact.')
+      if (operation.isCurrent()) {
+        setUndo(undefined)
+        setSaveState('saved')
+        setAuthoritativeSaveConfirmed(false)
+        setMessage(zh ? '刚才的权威写入已撤销；其他后续更新保持不变。' : 'The authoritative write was undone; unrelated later updates remain intact.')
+      }
       await onChanged()
     } catch (caught) {
+      if (!operation.isCurrent()) return
       setError(caught instanceof Error ? caught.message : String(caught))
       setSaveState('conflict')
     } finally {
-      setBusy(false)
+      if (operation.settle()) setBusy(false)
     }
   }
 
@@ -443,6 +587,51 @@ export default function TellPjsdasCapture({
     if (!recoveryLocked) setSaveState('idle')
   }
 
+  async function importTextFile(file: File) {
+    if (busy || recoveryLocked || manualMode || correctionMode || !open) return
+    const epoch = ++fileReadEpochRef.current
+    const draft = textRef.current
+    setFileReading(true); setFileNotice(''); setFileError('')
+    try {
+      const quote = await readCaptureTextFile(file, '')
+      if (epoch !== fileReadEpochRef.current || textRef.current !== draft) return
+      setFileAttachment({ name: file.name, quote })
+    } catch (caught) {
+      if (epoch !== fileReadEpochRef.current) return
+      const code = caught instanceof CaptureTextFileError ? caught.code : 'read'
+      const copy: Record<string, [string, string]> = {
+        format: ['仅支持 UTF-8 文本文件（.txt、.md），暂不支持 PDF、Word 或图片。', 'Use a UTF-8 .txt or .md file. PDF, Word and images are not supported yet.'],
+        size: ['文件不能超过 32 KB。', 'Files must be 32 KB or smaller.'],
+        encoding: ['文件不是有效的 UTF-8 文本，请转换编码后再添加。', 'This is not valid UTF-8 text. Convert its encoding first.'],
+        binary: ['文件包含非文本内容，未加入输入框。', 'The file contains non-text data and was not added.'],
+        empty: ['文件没有可读取的文字。', 'The file has no readable text.'],
+        length: ['加入后将超过 8000 字符，请缩短内容。', 'The combined text would exceed 8,000 characters. Shorten it first.'],
+        read: ['无法读取文件，原输入内容已保留。', 'Could not read the file. Your draft is unchanged.'],
+      }
+      setFileError(copy[code]![zh ? 0 : 1])
+    } finally {
+      if (epoch === fileReadEpochRef.current) setFileReading(false)
+    }
+  }
+
+  function addFileQuote() {
+    if (!fileAttachment || busy || recoveryLocked) return
+    try {
+      editText(appendCaptureQuote(textRef.current, fileAttachment.quote))
+      setFileAttachment(undefined)
+      setFileNotice(zh ? '文件已作为引用加入。请在引用前说明要记录什么，再核对保存。' : 'File text added as a quote. State what to record before it, then review and save.')
+      textareaRef.current?.focus()
+    } catch {
+      setFileError(zh ? '加入后将超过 8000 字符，请缩短内容。' : 'The combined text would exceed 8,000 characters. Shorten it first.')
+    }
+  }
+
+  function requestPreview() {
+    if (!text.trim() || busy || recoveryLocked) return
+    setPreviewRequest(value => value + 1)
+    previewSectionRef.current?.focus()
+  }
+
   function switchManualMode() {
     if (busy || recoveryLocked) return
     if (manualMode) {
@@ -461,48 +650,72 @@ export default function TellPjsdasCapture({
 
 
   const modeNote = preview ? modeExplanation(preview, zh) : undefined
+  const moreActions = <button type="button" className="cgr-capture-more" aria-label={zh ? '更多操作' : 'More options'} aria-expanded={moreOpen} onClick={() => setMoreOpen(value => !value)}>＋</button>
+  const secondaryActions = moreOpen ? <div className="cgr-capture-secondary">
+    {!manualMode && !correctionMode ? <>
+          <button ref={fileTriggerRef} type="button" className="cgr-capture-tool" aria-label={zh ? '添加文本文件（.txt、.md）' : 'Add a text file (.txt, .md)'} title={zh ? '仅本地读取文本，最多 32 KB' : 'Read text locally, up to 32 KB'} disabled={busy || recoveryLocked || fileReading} onClick={() => { setFileNotice(zh ? '支持 .txt、.md，最多 32 KB，仅在本地读取。' : 'Text and Markdown (.txt, .md), up to 32 KB. Read locally.'); fileInputRef.current?.click() }}>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m8 12 6-6a3 3 0 0 1 4.25 4.25l-8.5 8.5a5 5 0 0 1-7.07-7.07L12 2.5" /></svg><span>{zh ? '文本文件' : 'Text file'}</span>
+          </button>
+          <button type="button" className="cgr-capture-voice" disabled aria-label={zh ? '语音输入，正在开发中' : 'Voice input, in development'}>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="3" width="6" height="12" rx="3" /><path d="M6 11v1a6 6 0 0 0 12 0v-1M12 18v3M9 21h6" /></svg>
+            <span>{zh ? '语音 · 开发中' : 'Voice · Coming soon'}</span>
+          </button>
+    </> : null}
+    {!manualMode && !correctionMode ? <button type="button" className="text-button cgr-correction-toggle" disabled={busy || recoveryLocked} onClick={() => setCorrectionMode(true)}>{zh ? '核实已有记录' : 'Review existing records'}</button> : null}
+    {!correctionMode ? <button className="text-button cgr-capture-mode" type="button" disabled={busy || recoveryLocked} onClick={switchManualMode}>{manualMode ? (zh ? '用自然语言添加' : 'Use natural language') : (zh ? '手动填写岗位' : 'Enter job manually')}</button> : null}
+    {!manualMode && !correctionMode ? <button className="cgr-capture-close" type="button" onClick={() => dismissCapture()} aria-label={zh ? '关闭' : 'Close'}>{zh ? '收起' : 'Close'}</button> : null}
+  </div> : null
+
 
   return (
-    <div className="cgr-capture-backdrop" role="presentation" onMouseDown={onClose}>
+    <div className="cgr-capture-popover" style={popoverStyle}>
       <section
+        id="tell-pjsdas-composer"
         ref={sheetRef}
+        tabIndex={-1}
         className="cgr-capture-sheet"
         role="dialog"
-        aria-modal="true"
-        aria-labelledby="tell-pjsdas-title"
-        aria-describedby="tell-pjsdas-description"
-        onMouseDown={(event) => event.stopPropagation()}
+        aria-modal="false"
+        aria-label={manualMode ? (zh ? '添加岗位' : 'Add job') : (zh ? '告诉 TodayAction' : 'Tell TodayAction')}
       >
-        <header className="cgr-capture-header">
-          <div>
-            <div className="cgr-kicker">TELL TodayAction</div>
-            <h2 id="tell-pjsdas-title">{manualMode ? (zh ? '添加岗位' : 'Add job') : (zh ? '告诉 TodayAction' : 'Tell TodayAction')}</h2>
-            <p id="tell-pjsdas-description">{manualMode ? (zh ? '保存你已了解的岗位。' : 'Save a job you know about.') : zh
-              ? '记录求职进展，确认后保存。'
-              : 'Record an update, then confirm before saving.'}</p>
-            {contextLabel ? <span className="cgr-capture-context">{zh ? '当前上下文：' : 'Context: '}{contextLabel}</span> : null}
-          </div>
-          <button className="cgr-icon-button" type="button" onClick={onClose} aria-label={zh ? '关闭' : 'Close'}>×</button>
-        </header>
-
-        {!manualMode ? <button type="button" className="cgr-correction-toggle" disabled={busy || recoveryLocked} onClick={() => setCorrectionMode(value => !value)}>{correctionMode ? (zh ? '返回记录进展' : 'Back to progress capture') : (zh ? '核实已有记录' : 'Review existing records')}</button> : null}
+        {contextLabel ? <span className="cgr-capture-context">{contextLabel}</span> : null}
+        {manualMode || correctionMode ? <div className="cgr-capture-mode-tools">{moreActions}<button className="cgr-capture-close" type="button" onClick={() => dismissCapture()} aria-label={zh ? '关闭' : 'Close'}>×</button></div> : null}
+        {correctionMode ? secondaryActions : null}
+        {correctionMode ? <button ref={correctionBackRef} type="button" className="text-button cgr-correction-toggle" disabled={busy || recoveryLocked} onClick={() => setCorrectionMode(false)}>{zh ? '返回记录进展' : 'Back to progress capture'}</button> : null}
         {correctionMode ? <Suspense fallback={<p role="status">{zh ? '正在打开核对入口…' : 'Opening review…'}</p>}><RecordCorrectionReview key={cloud.session?.user.id ?? 'signed-out'} onChanged={onChanged} /></Suspense> : <>
         {manualMode ? <ManualJobFields value={manualJob} onChange={value => { manualDraftRef.current = value; editText(manualJobDraft(value)) }} disabled={busy || recoveryLocked} zh={zh} /> : <>
+        <div className="cgr-capture-composer">
         <textarea
+          id="tell-pjsdas-input"
           ref={textareaRef}
           className="cgr-capture-input"
           aria-label={zh ? '要告诉 TodayAction 的内容' : 'What to tell TodayAction'}
-          rows={5}
+          rows={1}
           value={text}
           disabled={busy || recoveryLocked}
           onChange={(event) => editText(event.target.value)}
-          placeholder={zh
-            ? '例如：京东笔试做完了。\n这个岗位我不投了。\n明天15:00小鹏面试。'
-            : 'For example: 京东笔试做完了。\n这个岗位我不投了。\n明天15:00小鹏面试。'}
+          placeholder={zh ? '说说你的任务或日程…' : 'Tell me about a task or plan…'}
         />
+        {fileAttachment ? <div className="cgr-capture-attachment">
+          <span title={fileAttachment.name}>{fileAttachment.name}</span>
+          <small>{zh ? '本地文本' : 'Local text'}</small>
+          <button type="button" disabled={busy || recoveryLocked} onClick={addFileQuote}>{zh ? '加入引用' : 'Add as quote'}</button>
+          <button type="button" aria-label={zh ? `移除文件 ${fileAttachment.name}` : `Remove file ${fileAttachment.name}`} disabled={busy || recoveryLocked} onClick={() => { setFileAttachment(undefined); setFileError(''); (fileTriggerRef.current && !fileTriggerRef.current.disabled ? fileTriggerRef.current : textareaRef.current)?.focus() }}>×</button>
+        </div> : null}
+        <div className="cgr-capture-tools">
+          <input ref={fileInputRef} type="file" hidden tabIndex={-1} accept=".txt,.md,text/plain,text/markdown" disabled={busy || recoveryLocked || fileReading}
+            onChange={event => { const file = event.currentTarget.files?.[0]; event.currentTarget.value = ''; if (file) void importTextFile(file) }} />
+          {moreActions}
+          <button type="button" className="cgr-capture-send" aria-label={zh ? '整理输入内容并预览' : 'Organize input and preview'} title={zh ? '整理并预览' : 'Organize and preview'} disabled={!text.trim() || busy || recoveryLocked} onClick={requestPreview}>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V5m-6 6 6-6 6 6" /></svg>
+          </button>
+        </div>
+        </div>
+        {fileReading || fileNotice ? <p className="cgr-capture-file-note" role="status">{fileReading ? (zh ? '正在本地读取…' : 'Reading locally…') : fileNotice}</p> : null}
+        {fileError ? <p className="cgr-capture-file-error" role="alert">{fileError}</p> : null}
 
         {text.trim() ? (
-          <section className="cgr-understanding" aria-live="polite" aria-busy={previewBusy}>
+          <section ref={previewSectionRef} tabIndex={-1} className="cgr-understanding" aria-label={zh ? '整理结果' : 'Interpretation preview'} aria-live="polite" aria-busy={previewBusy}>
             <div className="cgr-understanding-head">
               <strong>{previewBusy ? (zh ? '正在理解…' : 'Understanding…') : (zh ? 'TodayAction 理解为' : 'TodayAction understands')}</strong>
               <span data-state={saveState}>
@@ -524,10 +737,10 @@ export default function TellPjsdasCapture({
                     {preview.candidates.map((candidate) => <li key={candidate.id}>{candidateLabel(candidate, zh)}</li>)}
                   </ul>
                 ) : !modeNote ? (
-                  <p className="cgr-understanding-note">{zh ? '暂时没有足够明确、可写入的事实。' : 'No sufficiently clear writable fact has been identified yet.'}</p>
+                  <p className="cgr-understanding-note">{zh ? '还没有识别出可保存的内容。请补充具体事项或时间。' : 'Nothing is ready to save yet. Add the specific task or time.'}</p>
                 ) : null}
                 {preview.unresolved.length ? (
-                  <p className="cgr-understanding-warning">{zh ? `${preview.unresolved.length} 个片段仍需更明确的公司、岗位或招聘节点。` : `${preview.unresolved.length} fragment(s) still need a clearer company, role, or recruiting event.`}</p>
+                  <p className="cgr-understanding-warning">{zh ? `${preview.unresolved.length} 处内容仍需补充或确认，请核对具体事项、对象和时间。` : `${preview.unresolved.length} part(s) need clarification. Check the task, target, and time.`}</p>
                 ) : null}
                 {preview.ignored.length ? (
                   <p className="cgr-understanding-note">{zh ? `${preview.ignored.length} 个片段未作为当前事实处理（如引用的旧消息）。` : `${preview.ignored.length} fragment(s) were not treated as current facts (such as quoted history).`}</p>
@@ -538,23 +751,25 @@ export default function TellPjsdasCapture({
         ) : null}
 
         </>}
-        <div className="cgr-capture-footer"
+        <div className="cgr-capture-actions"
           onPointerEnter={() => previewPresentation.current.hold('pointer', true)}
           onPointerLeave={() => previewPresentation.current.hold('pointer', false)}
           onFocusCapture={() => previewPresentation.current.hold('focus', true)}
           onBlurCapture={event => {
             if (!event.currentTarget.contains(event.relatedTarget as Node | null)) previewPresentation.current.hold('focus', false)
           }}>
-          <button className="text-button cgr-capture-mode" type="button" disabled={busy || recoveryLocked} onClick={switchManualMode}>{manualMode ? (zh ? '用自然语言添加' : 'Use natural language') : (zh ? '手动填写岗位' : 'Enter job manually')}</button>
-          {manualMode ? <button className="text-button" type="button" disabled={busy} onClick={onClose}>{zh ? '取消' : 'Cancel'}</button> : null}
-          <button className="cgr-primary-button" type="button" disabled={busy || !text.trim() || manualMode && (!manualJob.company.trim() || !manualJob.role.trim())} onClick={() => { void submit() }}>
+        {secondaryActions}
+        {manualMode || text.trim() && preview || busy || recoveryLocked ? <div className="cgr-capture-footer">
+
+          {manualMode || text.trim() && preview || busy || recoveryLocked ? <button className="cgr-primary-button" type="button" disabled={busy || !text.trim() || manualMode && (!manualJob.company.trim() || !manualJob.role.trim())} onClick={event => { void submit(event.currentTarget) }}>
             {busy ? (zh ? '正在权威保存…' : 'Saving authoritatively…')
               : saveState === 'unknown' ? (zh ? '确认保存状态' : 'Confirm save status')
                 : saveState === 'confirmed_pending' ? (zh ? '核对本机状态' : 'Check device state')
                 : saveState === 'offline' ? (zh ? '确认保存状态' : 'Check save status')
                 : saveState === 'reauth' ? (zh ? '重新确认' : 'Retry confirmation')
                   : manualMode ? (zh ? '保存岗位' : 'Save job') : (zh ? '确认并保存' : 'Confirm and save')}
-          </button>
+          </button> : null}
+        </div> : null}
         </div>
 
         {message ? (
@@ -566,7 +781,7 @@ export default function TellPjsdasCapture({
               <span>{message}</span>
             </div>
             <div className="cgr-capture-receipt-actions">
-              {undo ? <button type="button" onClick={() => { void undoLast() }}>{zh ? '撤销' : 'Undo'}</button> : null}
+              {undo ? <button type="button" disabled={busy} onClick={event => { void undoLast(event.currentTarget) }}>{zh ? '撤销' : 'Undo'}</button> : null}
               {decisionCount > 0 ? <button type="button" onClick={onOpenDecisions}>{zh ? '去决定' : 'Review decisions'}</button> : null}
             </div>
           </div>
@@ -574,8 +789,8 @@ export default function TellPjsdasCapture({
 
         {unresolvedCount > 0 && !decisionCount ? (
           <p className="cgr-capture-hint">{zh
-            ? '没有足够证据的片段不会进入 Today。补充公司、岗位或具体是哪一次笔试/面试即可。'
-            : 'Fragments without enough evidence do not enter Today. Add the company, role, or exact test/interview occurrence.'}</p>
+            ? '尚未明确的内容不会进入 Today。请补充具体事项、时间，或对应的已有记录。'
+            : 'Unclear content does not enter Today. Add the task, time, or matching existing record.'}</p>
         ) : null}
         {error ? (
           <div className={`cgr-capture-error state-${saveState}`} role="alert">

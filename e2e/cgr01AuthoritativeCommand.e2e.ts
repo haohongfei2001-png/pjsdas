@@ -483,6 +483,7 @@ test('account A sign-out then account B never displays or replays A cache drafts
 
   await page.locator('.tsui-tell-button').click()
   await page.locator('.cgr-capture-input').fill('A 的私有草稿')
+  await page.getByRole('button', { name: '更多操作', exact: true }).click()
   await page.getByRole('button', { name: '关闭' }).click()
   await page.evaluate(() => {
     window.localStorage.setItem('pjsdas-cgr01-pending:account-a', JSON.stringify([{

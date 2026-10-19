@@ -171,6 +171,7 @@ test('TSUI-04 real schedule: today anchor, both directions, unresolved and undat
   await expect(capture).not.toContainText('⌘ Enter')
   await page.screenshot({ path: 'test-results/tsui04/capture-mobile.png', fullPage: true, animations: 'disabled' })
   await visual(page, 'CAPTURE_MOBILE')
+  await capture.getByRole('button', { name: /更多操作|More options/ }).click()
   await capture.getByRole('button', { name: /关闭|Close/ }).click()
   await page.locator('.tsui-topbar').getByRole('button', { name: /设置|Settings/ }).click()
   await expect(page.locator('.settings-surface > .surface-header h1')).toHaveText(/设置|Settings/)

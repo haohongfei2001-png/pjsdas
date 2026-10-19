@@ -102,7 +102,7 @@ async function capture(page: Page, label: string, width: number, scale = 100, pr
   if (scrollRoot) await page.locator(scrollRoot).evaluate(element => { element.scrollTop = element.scrollHeight })
   const name = `${label}-${width}-${scale}.png`
   await mkdir(evidence, { recursive: true })
-  const overlay = await page.locator('.cgr-capture-backdrop, .backup-backdrop, .event-dock-backdrop, .prep-graph-backdrop, .discovery-inbox-modal-backdrop, .mcp-proposal-backdrop, .ta-scope-dialog[open]').count()
+  const overlay = await page.locator('.cgr-capture-backdrop, .cgr-capture-popover, .backup-backdrop, .event-dock-backdrop, .prep-graph-backdrop, .discovery-inbox-modal-backdrop, .mcp-proposal-backdrop, .ta-scope-dialog[open]').count()
   const bytes = await page.screenshot({ path: `${evidence}/${name}`, fullPage: overlay === 0, animations: 'disabled', caret: 'hide' })
   if (diagnoseRaster && protectMain) {
     const hashes = [digest(bytes)]
@@ -357,18 +357,99 @@ for (const width of [1440, 390, 320]) test(`main pixels stay fixed before and af
   await page.locator('.tsui-tell-button').click()
   await expect(page.getByRole('textbox', { name: '要告诉 TodayAction 的内容' })).toBeFocused()
   if (phase === 'after') {
-    const ring = await page.locator('.cgr-capture-input').evaluate(element => ({
-      color: getComputedStyle(element).outlineColor, width: getComputedStyle(element).outlineWidth,
+    const ring = await page.locator('.cgr-capture-composer').evaluate(element => ({
+      color: getComputedStyle(element).outlineColor, width: getComputedStyle(element).outlineWidth, offset: getComputedStyle(element).outlineOffset,
     }))
-    expect(ring).toEqual({ color: 'rgb(49, 94, 197)', width: '3px' })
+    expect(ring).toEqual({ color: 'rgb(49, 94, 197)', width: '2px', offset: '0px' })
+    expect(await page.locator('.cgr-capture-input').evaluate(element => getComputedStyle(element).outlineStyle)).toBe('none')
   }
   await capture(page, 'CAPTURE', width, scale)
+  if (phase === 'after') {
+    await expect(page.locator('#tell-pjsdas-description')).toHaveCount(0)
+    await expect(page.locator('.cgr-capture-eyebrow, .cgr-capture-prompt')).toHaveCount(0)
+    await expect(page.getByRole('button', { name: '语音输入，正在开发中' })).toHaveCount(0)
+    await expect(page.getByRole('button', { name: '整理输入内容并预览' })).toBeDisabled()
+    await expect(page.locator('.cgr-capture-input')).toHaveAttribute('placeholder', '说说你的任务或日程…')
+    await expect(page.locator('.cgr-capture-more')).toHaveAttribute('aria-expanded', 'false')
+    await expect(page.locator('.cgr-capture-secondary')).toHaveCount(0)
+    await expect(page.getByRole('dialog', { name: '告诉 TodayAction' })).toHaveAttribute('aria-modal', 'false')
+    await expect(page.locator('.cgr-capture-header')).toHaveCount(0)
+    await expect(page.locator('.cgr-capture-backdrop')).toHaveCount(0)
+    expect(await page.locator('.cgr-capture-sheet').evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true)
+    if (scale === 100) {
+      const composer = (await page.locator('.cgr-capture-composer').boundingBox())!
+      expect(composer.height).toBeLessThanOrEqual(60)
+      expect((await page.locator('.cgr-capture-input').boundingBox())!.width).toBeGreaterThanOrEqual(composer.width / 2)
+      for (const control of await page.locator('.cgr-capture-tools button').all()) expect((await control.boundingBox())!.width).toBeGreaterThanOrEqual(44)
+    }
+  }
   await page.getByRole('textbox', { name: '要告诉 TodayAction 的内容' }).fill('例如：明天下午准备面试。')
   await expect(page.locator('.cgr-understanding')).toBeVisible()
   await capture(page, 'CAPTURE_PREVIEW', width, scale)
   await page.keyboard.press('Escape')
   await expect(page.locator('.tsui-tell-button')).toBeFocused()
   await capture(page, 'MAIN_AFTER_CAPTURE', width, scale, true)
+  expect(mutations).toEqual([])
+})
+
+test('refined capture preserves drafts through both secondary entries without writing', async ({ page }) => {
+  test.skip(phase === 'before', 'Candidate-only interaction for the explicitly changed modal')
+  const mutations = await seed(page)
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.goto('/pjsdas/today/capture')
+  const input = page.getByRole('textbox', { name: '要告诉 TodayAction 的内容' })
+  await input.fill('今天提交周报')
+  await expect(page.locator('.cgr-understanding')).toContainText('今天提交周报')
+  await input.press('Tab')
+  await expect(page.locator('.cgr-capture-more')).toBeFocused()
+  expect(await page.locator('.cgr-capture-more').evaluate(element => getComputedStyle(element).outlineWidth)).toBe('2px')
+  await page.keyboard.press('Enter')
+  await expect(page.getByRole('button', { name: '语音输入，正在开发中' })).toBeDisabled()
+  await page.keyboard.press('Tab')
+  await expect(page.getByRole('button', { name: '整理输入内容并预览' })).toBeFocused()
+  await page.keyboard.press('Tab')
+  await expect(page.getByRole('button', { name: '添加文本文件（.txt、.md）' })).toBeFocused()
+  expect(await page.locator('.cgr-capture-tool').evaluate(element => getComputedStyle(element).outlineWidth)).toBe('2px')
+  await page.keyboard.press('Tab')
+  await expect(page.getByRole('button', { name: '核实已有记录', exact: true })).toBeFocused()
+  await page.keyboard.press('Enter')
+  await expect(page.locator('.cgr-correction-review')).toBeVisible()
+  await expect(page.getByRole('button', { name: '返回记录进展', exact: true })).toBeFocused()
+  await capture(page, 'CAPTURE_RECORD_REVIEW', 390)
+  await page.keyboard.press('Enter')
+  await expect(input).toBeFocused()
+  await expect(input).toHaveValue('今天提交周报')
+  if (await page.locator('.cgr-capture-more').getAttribute('aria-expanded') === 'false') await page.locator('.cgr-capture-more').click()
+  await page.getByRole('button', { name: '手动填写岗位', exact: true }).click()
+  await page.getByRole('textbox', { name: '公司名称', exact: true }).fill('合成示例公司')
+  await capture(page, 'CAPTURE_MANUAL', 390)
+  await page.getByRole('button', { name: '用自然语言添加', exact: true }).click()
+  await expect(input).toHaveValue('今天提交周报')
+  // Real editing leaves the footer pointer target; fill() alone preserves its
+  // previous click position and intentionally keeps async preview layout held.
+  await input.click()
+  await input.fill('周五下午开个会')
+  await expect(page.locator('.cgr-understanding-warning')).toContainText('仍需补充或确认')
+  await capture(page, 'CAPTURE_CLARIFICATION', 390)
+  await page.getByRole('button', { name: '整理输入内容并预览' }).click()
+  await expect(page.getByRole('region', { name: '整理结果' })).toBeFocused()
+  await expect(page.locator('.cgr-understanding-warning')).toContainText('仍需补充或确认')
+  const fileInput = page.locator('.cgr-capture-tools input[type=file]')
+  await fileInput.setInputFiles({ name: 'notes.md', mimeType: 'text/markdown', buffer: Buffer.from('今天提交周报') })
+  await expect(page.locator('.cgr-capture-attachment')).toContainText('notes.md')
+  await expect(input).toHaveValue('周五下午开个会')
+  await capture(page, 'CAPTURE_ATTACHMENT', 390)
+  await page.getByRole('button', { name: '移除文件 notes.md' }).click()
+  await expect(page.getByRole('button', { name: '添加文本文件（.txt、.md）' })).toBeFocused()
+  await expect(page.locator('.cgr-capture-attachment')).toHaveCount(0)
+  await expect(input).toHaveValue('周五下午开个会')
+  await fileInput.setInputFiles({ name: 'notes.md', mimeType: 'text/markdown', buffer: Buffer.from('今天提交周报') })
+  await page.getByRole('button', { name: '加入引用', exact: true }).click()
+  await expect(input).toHaveValue('周五下午开个会\n\n> 今天提交周报')
+  await expect(page.locator('.cgr-capture-file-note')).toContainText('请在引用前说明')
+  await fileInput.setInputFiles({ name: 'file.pdf', mimeType: 'application/pdf', buffer: Buffer.from('not a PDF parser') })
+  await expect(page.locator('.cgr-capture-file-error')).toContainText('暂不支持 PDF')
+  await expect(input).toHaveValue('周五下午开个会\n\n> 今天提交周报')
   expect(mutations).toEqual([])
 })
 
@@ -398,10 +479,11 @@ for (const width of [1440, 390, 320]) test(`page-only capture replays the same s
   await page.locator('.tsui-tell-button').click()
   await expect(page.getByRole('textbox', { name: '要告诉 TodayAction 的内容' })).toBeFocused()
   if (phase === 'after') {
-    const ring = await page.locator('.cgr-capture-input').evaluate(element => ({
-      color: getComputedStyle(element).outlineColor, width: getComputedStyle(element).outlineWidth,
+    const ring = await page.locator('.cgr-capture-composer').evaluate(element => ({
+      color: getComputedStyle(element).outlineColor, width: getComputedStyle(element).outlineWidth, offset: getComputedStyle(element).outlineOffset,
     }))
-    expect(ring).toEqual({ color: 'rgb(49, 94, 197)', width: '3px' })
+    expect(ring).toEqual({ color: 'rgb(49, 94, 197)', width: '2px', offset: '0px' })
+    expect(await page.locator('.cgr-capture-input').evaluate(element => getComputedStyle(element).outlineStyle)).toBe('none')
   }
   await capture(page, 'PAGE_ONLY_CAPTURE', width, scale)
   await page.getByRole('textbox', { name: '要告诉 TodayAction 的内容' }).fill('例如：明天下午准备面试。')
@@ -423,10 +505,18 @@ for (const width of [1440, 390, 320]) test(`details and settings retain readable
   await expect(page.locator('.cgr-capture-context')).toContainText('示例公司')
   await capture(page, 'CONTEXT_CAPTURE', width, width === 320 ? 200 : 100)
   if (width === 320) {
+    if (phase === 'after') await page.locator('.cgr-capture-more').click()
     await capture(page, 'CONTEXT_CAPTURE_BOTTOM', width, 200, false, '.cgr-capture-sheet')
-    const footerButtons = page.locator('.cgr-capture-footer button')
-    await expect(footerButtons).toHaveCount(phase === 'after' ? 2 : 1)
-    for (const button of await footerButtons.all()) await expect(button).toBeInViewport()
+    const footerButtons = page.locator(phase === 'after' ? '.cgr-capture-secondary button' : '.cgr-capture-footer button')
+    // Empty composer keeps confirmation out of the initial state. Both secondary entries remain.
+    await expect(footerButtons).toHaveCount(phase === 'after' ? 5 : 1)
+    for (const button of await footerButtons.all()) {
+      await expect(button).toBeInViewport()
+      if (phase === 'after') expect(await button.evaluate(element => {
+        const box = element.getBoundingClientRect(), sheet = element.closest('.cgr-capture-sheet')!.getBoundingClientRect()
+        return box.left >= sheet.left && box.right <= sheet.right && box.top >= Math.max(0, sheet.top) && box.bottom <= Math.min(innerHeight, sheet.bottom)
+      }), 'complete footer control remains visible at 200% text').toBe(true)
+    }
     if (phase === 'after') expect(await page.locator('.cgr-capture-mode').evaluate(element => parseFloat(getComputedStyle(element).fontSize))).toBeGreaterThanOrEqual(25)
   }
   await page.keyboard.press('Escape')
@@ -581,4 +671,141 @@ test('document region capture retains the fractional final row below the viewpor
   await page.addStyleTag({ content: '#region::after { content:""; position:absolute; left:0; top:20px; width:1px; height:1px; background:rgb(244,0,244) }' })
   const changed = await captureDocumentRegion(page, '#region', `${evidence}/REGION_EDGE_ONE_PIXEL.png`)
   expect(() => expect(digest(changed), 'the complete clip must detect a final-row pixel change').toBe(digest(original))).toThrow()
+})
+
+
+test('inline capture preserves the underlying page and outside clicks remain usable', async ({ page }) => {
+  test.skip(phase === 'before', 'Candidate-only nonmodal composer')
+  const mutations = await seed(page)
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await page.goto('/pjsdas/library')
+  await expect(page.locator('.tsui-job-open')).toHaveCount(2)
+  const opener = page.locator('.tsui-tell-button')
+  await opener.click()
+  await expect(page).toHaveURL(/\/pjsdas\/library$/)
+  const panel = page.getByRole('dialog', { name: '告诉 TodayAction' })
+  const input = page.locator('.cgr-capture-input')
+  await expect(panel).toHaveAttribute('aria-modal', 'false')
+  const anchor = (await opener.boundingBox())!
+  const box = (await page.locator('.cgr-capture-popover').boundingBox())!
+  expect(Math.abs(box.x + box.width - anchor.x - anchor.width)).toBeLessThanOrEqual(1)
+  expect(Math.abs(box.y - anchor.y)).toBeLessThanOrEqual(1)
+  expect((await page.locator('.cgr-capture-composer').boundingBox())!.height).toBeLessThanOrEqual(60)
+  await input.press('Shift+Tab')
+  expect(await panel.evaluate(element => element.contains(document.activeElement))).toBe(false)
+  await page.keyboard.press('Control+Enter')
+  expect(mutations).toEqual([])
+  await input.click()
+  await input.fill('今天提交周报')
+  await page.keyboard.press('Control+k')
+  await expect(input).toHaveValue('今天提交周报')
+  await expect(input).toBeFocused()
+  await page.setViewportSize({ width: 390, height: 844 })
+  const mobile = (await page.locator('.cgr-capture-popover').boundingBox())!
+  expect(mobile.x).toBe(12)
+  expect(mobile.width).toBe(366)
+  const outsideTarget = page.locator('.tsui-job-open').last()
+  const outsideBox = (await outsideTarget.boundingBox())!
+  const occupied = (await page.locator('.cgr-capture-popover').boundingBox())!
+  expect(outsideBox.y).toBeGreaterThan(occupied.y + occupied.height)
+  await outsideTarget.click()
+  await expect(panel).toHaveCount(0)
+  await expect(page.locator('.job-detail-page h1')).toBeVisible()
+  expect(await page.evaluate(() => document.activeElement?.closest('.cgr-capture-popover'))).toBeNull()
+  const detailUrl = page.url()
+  await opener.click()
+  await expect(input).toHaveValue('今天提交周报')
+  await expect(page).toHaveURL(detailUrl)
+  await input.fill('较长的输入内容。'.repeat(20))
+  expect((await input.boundingBox())!.height).toBeGreaterThan(44)
+  expect((await input.boundingBox())!.height).toBeLessThanOrEqual(160)
+  await input.press('Escape')
+  await expect(opener).toBeFocused()
+  expect(mutations).toEqual([])
+})
+
+for (const entry of ['global', 'contextual'] as const) {
+  for (const dismissal of ['Escape', 'Close'] as const) {
+    test(`job-detail capture restores the actual ${entry} opener after ${dismissal}`, async ({ page }) => {
+      test.skip(phase === 'before', 'Candidate-only nonmodal focus ownership')
+      const mutations = await seed(page)
+      await page.goto('/pjsdas/library')
+      await page.locator('.tsui-job-open').last().click()
+      await expect(page.locator('.job-detail-page h1')).toBeVisible()
+      const opener = page.locator(entry === 'global' ? '.tsui-tell-button' : '.job-detail-capture')
+      const detailUrl = page.url()
+      await opener.click()
+      const input = page.locator('.cgr-capture-input')
+      await expect(input).toBeFocused()
+      await input.fill('今天提交周报')
+      if (dismissal === 'Escape') await input.press('Escape')
+      else {
+        await page.getByRole('button', { name: '更多操作', exact: true }).click()
+        await page.getByRole('button', { name: '关闭', exact: true }).click()
+      }
+      await expect(page.getByRole('dialog', { name: '告诉 TodayAction' })).toHaveCount(0)
+      // Include queued close callbacks, not only the transient restored focus.
+      await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))))
+      await expect(opener).toBeFocused()
+      await expect(page).toHaveURL(detailUrl)
+      expect(mutations).toEqual([])
+    })
+  }
+}
+
+test('anonymous inline drafts survive Escape and reopening without being submitted', async ({ page }) => {
+  test.skip(phase === 'before', 'Candidate-only anonymous draft retention')
+  await page.route(`${MOCK_TARGET_AUTH_ORIGIN}/**`, route => route.abort())
+  await page.goto('/pjsdas/today')
+  await page.locator('.tsui-tell-button').click()
+  const input = page.locator('.cgr-capture-input')
+  await input.fill('尚未提交的临时想法')
+  await input.press('Escape')
+  await page.locator('.tsui-tell-button').click()
+  await expect(input).toHaveValue('尚未提交的临时想法')
+  await input.press('Escape')
+  await expect(page.locator('.tsui-task-row[data-action-id]')).toHaveCount(0)
+})
+
+test('local file reads cannot overwrite edits or reopen a closed composer', async ({ page }) => {
+  test.skip(phase === 'before', 'Candidate-only local-file boundary')
+  const mutations = await seed(page)
+  await page.goto('/pjsdas/today/capture')
+  const input = page.locator('.cgr-capture-input')
+  await input.fill('今天提交周报')
+  await page.evaluate(() => {
+    const original = File.prototype.arrayBuffer
+    const state = window as typeof window & { releaseCaptureFile?: () => void }
+    File.prototype.arrayBuffer = async function () {
+      const held = new Promise<void>(resolve => { state.releaseCaptureFile = resolve })
+      const result = await original.call(this)
+      await held
+      return result
+    }
+  })
+  await page.locator('.cgr-capture-more').click()
+  const files = page.locator('.cgr-capture-tools input[type=file]')
+  await files.setInputFiles({ name: 'held.txt', mimeType: 'text/plain', buffer: Buffer.from('stale imported text') })
+  await expect(page.locator('.cgr-capture-file-note')).toContainText('正在本地读取')
+  await input.fill('今天填写报销单')
+  await page.evaluate(() => (window as typeof window & { releaseCaptureFile?: () => void }).releaseCaptureFile?.())
+  await expect(input).toHaveValue('今天填写报销单')
+  await expect(page.locator('.cgr-capture-attachment')).toHaveCount(0)
+  await expect(page.getByRole('button', { name: '添加文本文件（.txt、.md）' })).toBeEnabled()
+  await files.setInputFiles({ name: 'preview.txt', mimeType: 'text/plain', buffer: Buffer.from('preview must not cancel this file') })
+  await expect(page.locator('.cgr-capture-file-note')).toContainText('正在本地读取')
+  await page.getByRole('button', { name: '整理输入内容并预览' }).click()
+  await page.evaluate(() => (window as typeof window & { releaseCaptureFile?: () => void }).releaseCaptureFile?.())
+  await expect(page.locator('.cgr-capture-attachment')).toContainText('preview.txt')
+  await expect(page.getByRole('button', { name: '添加文本文件（.txt、.md）' })).toBeEnabled()
+  await files.setInputFiles({ name: 'held.txt', mimeType: 'text/plain', buffer: Buffer.from('still stale') })
+  await expect(page.locator('.cgr-capture-file-note')).toContainText('正在本地读取')
+  await page.getByRole('button', { name: '移除文件 preview.txt' }).click()
+  await expect(input).toBeFocused()
+  await page.keyboard.press('Escape')
+  await page.evaluate(() => (window as typeof window & { releaseCaptureFile?: () => void }).releaseCaptureFile?.())
+  await page.locator('.tsui-tell-button').click()
+  await expect(page.locator('.cgr-capture-attachment')).toHaveCount(0)
+  await expect(input).toHaveValue('今天填写报销单')
+  expect(mutations).toEqual([])
 })

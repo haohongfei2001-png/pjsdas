@@ -53,7 +53,7 @@ async function seedPastEvent(page: Page) {
 
 async function openCapture(page: Page) {
   await page.locator('.tsui-tell-button').click()
-  await expect(page.getByRole('heading', { name: '告诉 TodayAction' })).toBeVisible()
+  await expect(page.getByRole('dialog', { name: '告诉 TodayAction' })).toBeVisible()
 }
 
 test('elapsed recruiting node stays unresolved until an explicit completion fact resolves it', async ({ page }) => {
@@ -81,6 +81,7 @@ test('elapsed recruiting node stays unresolved until an explicit completion fact
   await page.locator('.cgr-capture-input').fill('节点测试科技 AI产品经理 面试已经完成。')
   await page.getByRole('button', { name: 'Confirm and save' }).click()
   await expect(page.getByRole('status')).toBeVisible()
+  await page.getByRole('button', { name: 'More options', exact: true }).click()
   await page.getByRole('button', { name: 'Close' }).click()
 
   await expect(page.locator('.tsui-schedule-panel .tsui-schedule-row').filter({ hasText: '节点测试科技' })).toHaveCount(0)
@@ -94,6 +95,7 @@ test('a question about an elapsed event remains read-only and does not complete 
   await page.locator('.cgr-capture-input').fill('节点测试科技 AI产品经理 面试完成了吗？')
   await page.getByRole('button', { name: '确认并保存' }).click()
   await expect(page.getByRole('status')).toContainText('没有被当作当前事实写入')
+  await page.getByRole('button', { name: '更多操作', exact: true }).click()
   await page.getByRole('button', { name: '关闭' }).click()
 
   await page.locator('.tsui-primary-nav').getByRole('button', { name: /日程|Schedule/ }).click()

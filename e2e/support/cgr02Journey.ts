@@ -1,5 +1,5 @@
 import { MOCK_TARGET_AUTH_KEY, MOCK_TARGET_BACKEND } from './mockCloudTargets.js'
-import { type Page, type Route } from '@playwright/test'
+import { expect, type Page, type Route } from '@playwright/test'
 import { upgradeSnapshotToLatest } from '../../src/snapshot.js'
 import { freezeTodayFixture } from './consumerFixtureClock.js'
 
@@ -16,6 +16,89 @@ function reply(route: Route, body: unknown, status = 200) {
       'content-type': 'application/json',
     },
     body: JSON.stringify(body),
+  })
+}
+
+/** Wait for the initial fixture's durable account projection, without repairing it. */
+export async function waitForJourneyReady(page: Page) {
+  await expect.poll(() => page.evaluate(async () => {
+    const key = 'pjsdas-google-drive-sync-state-v2'
+    const before = localStorage.getItem(key)
+    const device = JSON.parse(before ?? '{}') as {
+      workspaceOwnerUserId?: string
+      accounts?: Record<string, {
+        lastSyncedVersion?: string
+        lastSyncedFingerprint?: string
+        lastReadProjectionFingerprint?: string
+        lastReadProjectionSourceFingerprint?: string
+      }>
+    }
+    const checkpoint = device.accounts?.['voiceover-account']
+    const binding = {
+      owner: device.workspaceOwnerUserId,
+      version: checkpoint?.lastSyncedVersion,
+      fingerprintRecorded: Boolean(checkpoint?.lastSyncedFingerprint && checkpoint.lastReadProjectionFingerprint
+        && checkpoint.lastReadProjectionSourceFingerprint === checkpoint.lastSyncedFingerprint),
+    }
+    if (binding.owner !== 'voiceover-account' || binding.version !== 'txn:1' || !binding.fingerprintRecorded) return binding
+    // Opening an absent database would create it. Check first, then abort an
+    // upgrade if deletion races this read; fixture readiness must never write.
+    if (!(await indexedDB.databases()).some(database => database.name === 'pjsdas')) return { ...binding, database: 'missing' }
+    const database = await new Promise<IDBDatabase>((resolve, reject) => {
+      const request = indexedDB.open('pjsdas')
+      let blocked = false
+      request.onupgradeneeded = () => request.transaction?.abort()
+      request.onerror = () => reject(request.error)
+      request.onblocked = () => { blocked = true; reject(new Error('Fixture database read is blocked.')) }
+      request.onsuccess = () => { if (blocked) request.result.close(); else resolve(request.result) }
+    })
+    try {
+      const stores = ['meta', 'actions', 'scheduleNodes', 'opportunities']
+      if (stores.some(store => !database.objectStoreNames.contains(store))) return { ...binding, database: 'incomplete' }
+      const tx = database.transaction(stores, 'readonly')
+      const read = (store: string, id: string) => new Promise<any>((resolve, reject) => {
+        const request = tx.objectStore(store).get(id)
+        request.onsuccess = () => resolve(request.result)
+        request.onerror = () => reject(request.error)
+      })
+      const complete = new Promise<void>((resolve, reject) => {
+        tx.oncomplete = () => resolve()
+        tx.onabort = () => reject(tx.error ?? new Error('Fixture database read aborted.'))
+        tx.onerror = () => reject(tx.error)
+      })
+      const [projection, action, node, opportunity] = await Promise.all([
+        read('meta', 'authoritativeProjection'), read('actions', 'voiceover-action'),
+        read('scheduleNodes', 'voiceover-node'), read('opportunities', 'voiceover-opportunity'), complete,
+      ])
+      // meta stores the projection object directly, not a { value } wrapper.
+      const recorded = projection?.canonical ? JSON.parse(projection.canonical) : undefined
+      const actionFacts = (row: any) => row && ({ id: row.id, title: row.title, plannedDate: row.plannedDate, status: row.status })
+      const nodeFacts = (row: any) => row && ({ id: row.id, occurrenceId: row.occurrenceId, version: row.version,
+        state: row.state, date: row.temporal?.date, opportunityId: row.opportunityId })
+      const opportunityFacts = (row: any) => row && ({ id: row.id, company: row.company, role: row.role })
+      return {
+        ...binding,
+        checkpointStable: before === localStorage.getItem(key),
+        projection: { key: projection?.key, accountKey: projection?.accountKey, version: projection?.version },
+        action: actionFacts(action), node: nodeFacts(node), opportunity: opportunityFacts(opportunity),
+        recordedAction: actionFacts(recorded?.actions?.find((row: any) => row.id === 'voiceover-action')),
+        recordedNode: nodeFacts(recorded?.scheduleNodes?.find((row: any) => row.id === 'voiceover-node')),
+        recordedOpportunity: opportunityFacts(recorded?.opportunities?.find((row: any) => row.id === 'voiceover-opportunity')),
+      }
+    } finally { database.close() }
+  }), { message: 'Initial VoiceOver fixture must be durably projected for its account', timeout: 30_000, intervals: [100, 250, 500] }).toMatchObject({
+    owner: 'voiceover-account', version: 'txn:1', fingerprintRecorded: true, checkpointStable: true,
+    projection: { key: 'authoritativeProjection', accountKey: 'voiceover-account', version: 'txn:1' },
+    ...Object.fromEntries(['action', 'recordedAction'].map(key => [key, {
+      id: 'voiceover-action', title: 'A第一任务', plannedDate: '2026-09-30', status: 'todo',
+    }])),
+    ...Object.fromEntries(['node', 'recordedNode'].map(key => [key, {
+      id: 'voiceover-node', occurrenceId: 'voiceover-occurrence', version: 1, state: 'scheduled',
+      date: '2026-10-20', opportunityId: 'voiceover-opportunity',
+    }])),
+    ...Object.fromEntries(['opportunity', 'recordedOpportunity'].map(key => [key, {
+      id: 'voiceover-opportunity', company: '合成机会科技', role: 'AI产品经理',
+    }])),
   })
 }
 

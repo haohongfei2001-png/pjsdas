@@ -234,6 +234,7 @@ test('bound cache rejects job and capture while both Auth imports wait, then ret
     await delayed.entered
     expect(delayed.requests).toBeGreaterThan(0)
     await attemptBlockedWrites(page, before, server)
+    await page.locator('.cgr-capture-sheet').getByRole('button', { name: '更多操作', exact: true }).click()
     await page.locator('.cgr-capture-sheet').getByRole('button', { name: '关闭', exact: true }).click()
     delayed.release('continue')
     await expect.poll(() => admission(page)).toEqual({ resolved: true, account: OWNER, owner: OWNER })
@@ -274,7 +275,7 @@ test('a completed real preview cannot move the confirmation target between point
   // or command authority. This forces the timing captured in PR277's Firefox
   // failure without sleeps, readiness waits on Save, or production test hooks.
   await page.addInitScript(() => {
-    ;(window as any).__capturePreviewDelivery = { ready: false, delivered: false, candidateCount: 0 }
+    ;(window as any).__capturePreviewDelivery = { ready: false, delivered: false, candidateCount: 0, calls: 0 }
   })
   await page.route('**/src/webSemanticIntake.ts*', async route => {
     const response = await route.fetch()
@@ -285,6 +286,7 @@ test('a completed real preview cannot move the confirmation target between point
 export async function previewWebSemanticCapture(...args) {
   const result = await actualPreviewWebSemanticCapture(...args);
   const delivery = window.__capturePreviewDelivery;
+  if (++delivery.calls === 1) return result;
   delivery.candidateCount = result.candidates.length;
   delivery.ready = true;
   await new Promise(resolve => { delivery.release = resolve; });
@@ -297,6 +299,13 @@ export async function previewWebSemanticCapture(...args) {
   const server = await bootstrapBoundAccount(page)
   await page.getByRole('button', { name: '＋ 告诉 TodayAction', exact: true }).click()
   await page.getByRole('textbox', { name: '要告诉 TodayAction 的内容' }).fill(CAPTURE_TEXT)
+  // Confirmation now exists only after a real preview. Refresh that same real
+  // interpretation and hold its delivery: its body is hidden while busy, so
+  // publishing it during pointer-down would still move the target without the
+  // production presentation guard. No readiness wait or authority gate changed.
+  await expect(page.locator('.cgr-understanding-body li')).not.toHaveCount(0)
+  await expect(page.locator('.cgr-understanding')).toHaveAttribute('aria-busy', 'false')
+  await page.getByRole('button', { name: '整理输入内容并预览' }).click()
   await expect.poll(() => page.evaluate(() => (window as any).__capturePreviewDelivery.ready)).toBe(true)
   expect(await page.evaluate(() => (window as any).__capturePreviewDelivery.candidateCount)).toBeGreaterThan(0)
   const confirmation = page.getByRole('button', { name: '确认并保存', exact: true })

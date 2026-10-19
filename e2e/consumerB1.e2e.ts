@@ -98,8 +98,11 @@ for (const { width, deferredBootstrap } of [
   await page.goto('/pjsdas/today/capture')
   // Establish the controlled in-flight request, never completed authority.
   if (deferredBootstrap) await bootstrapStarted
+  await page.locator('.cgr-capture-more').click()
   await page.getByRole('button', { name: '手动填写岗位', exact: true }).click()
-  await expect(page.getByRole('heading', { name: '添加岗位', exact: true })).toBeVisible()
+  const manualCapture = page.getByRole('dialog', { name: '添加岗位', exact: true })
+  await expect(manualCapture).toBeVisible()
+  await expect(manualCapture).toHaveAttribute('aria-modal', 'false')
   await page.getByLabel('公司名称', { exact: true }).fill('示例科技')
   await page.getByLabel('岗位名称', { exact: true }).fill('产品经理 2027')
   await page.getByText('地点与截止日期＋', { exact: true }).click()
@@ -202,6 +205,7 @@ for (const { width, deferredBootstrap } of [
   expect(snapshot.data.scheduleNodes).toHaveLength(1)
   expect(snapshot.data.scheduleNodes![0].relatedActionIds).toEqual([timed.id])
   expect(snapshot.data.scheduleNodes![0].temporal.endAt).toBeUndefined()
+  await page.getByRole('button', { name: '更多操作', exact: true }).click()
   await page.getByRole('button', { name: '关闭', exact: true }).click()
   await page.goto('/pjsdas/schedule')
   await expect(page.locator('.tsui-schedule-row')).toHaveCount(1)
