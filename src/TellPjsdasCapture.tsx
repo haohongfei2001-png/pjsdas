@@ -2,6 +2,7 @@ import { createCapturePreviewPresentation, canRetainRecoveryPreview } from './ca
 import ManualJobFields from './capture/ManualJobFields.js'
 import { readCaptureTextFile, appendCaptureQuote, CaptureTextFileError } from './capture/textFile.js'
 import { capturePopoverLayout } from './capture/popoverLayout.js'
+import { captureFocusIsVacant, createCaptureOperationLifecycle } from './capture/operationLifecycle.js'
 import { manualJobDraft, readManualJobDraft, manualJobCandidate } from './capture/manualJob.js'
 import type { UserJobFacts } from './opportunityCreation.js'
 import { lazy, Suspense, useEffect, useLayoutEffect, useRef, useState, type RefObject } from 'react'
@@ -144,7 +145,6 @@ export default function TellPjsdasCapture({
   useEffect(() => { if (!open) setCorrectionMode(false) }, [open])
   const [text, setText] = useState('')
   const [busy, setBusy] = useState(false)
-  const submissionFlightRef = useRef(false)
   const [previewBusy, setPreviewBusy] = useState(false)
   const [previewRequest, setPreviewRequest] = useState(0)
   const [fileReading, setFileReading] = useState(false)
@@ -173,6 +173,29 @@ export default function TellPjsdasCapture({
   const [popoverStyle, setPopoverStyle] = useState<ReturnType<typeof capturePopoverLayout>>()
   const initializedUserIdRef = useRef<string | null | undefined>(undefined)
   const textRef = useRef('')
+  const operationLifecycle = useRef(createCaptureOperationLifecycle())
+  const accountKey = cloud.session?.user.id ?? null
+
+  useLayoutEffect(() => {
+    operationLifecycle.current.updateView(open, accountKey)
+    setBusy(false)
+    if (saveState === 'saving') {
+      // Account jitter can preserve the draft without reinitializing the view.
+      // Keep its command identity recoverable, never an abandoned Saving label.
+      setSaveState(stableCommandId ? 'unknown' : 'idle')
+      setError(stableCommandId ? saveErrorCopy('unknown', zh) : '')
+      setUndo(undefined)
+      setMessage('')
+      setAuthoritativeSaveConfirmed(false)
+      setDecisionCount(0)
+      setUnresolvedCount(0)
+    }
+  }, [open, accountKey])
+  useLayoutEffect(() => {
+    if (!busy) operationLifecycle.current.restoreFocus(textareaRef.current
+      ?? sheetRef.current?.querySelector<HTMLElement>('input:not([type="hidden"]):not(:disabled)'))
+  })
+  useLayoutEffect(() => () => operationLifecycle.current.invalidate(), [])
 
   const connected = Boolean(cloud.session && connectedWorkspaceAuthorityEnabled())
   const recoveryLocked = saveState === 'unknown' || saveState === 'reauth' || saveState === 'confirmed_pending' || saveState === 'offline'
@@ -207,10 +230,11 @@ export default function TellPjsdasCapture({
     }
     restoreFocusRef.current = true
     openerRef.current = document.activeElement instanceof HTMLElement && document.activeElement !== document.body ? document.activeElement : anchorRef?.current ?? null
-    const id = window.setTimeout(() => textareaRef.current?.focus(), 0)
+    const sheet = sheetRef.current
+    const id = window.setTimeout(() => { if (restoreFocusRef.current) textareaRef.current?.focus({ preventScroll: true }) }, 0)
     return () => {
       window.clearTimeout(id)
-      if (restoreFocusRef.current) openerRef.current?.focus()
+      if (restoreFocusRef.current && (captureFocusIsVacant(document) || sheet?.contains(document.activeElement))) openerRef.current?.focus({ preventScroll: true })
     }
   }, [open])
 
@@ -255,18 +279,32 @@ export default function TellPjsdasCapture({
   function dismissCapture(restoreFocus = true) {
     closedDraftRef.current = initializedUserIdRef.current === null && !cloud.session?.user.id ? { accountKey: null, text: textRef.current } : undefined
     restoreFocusRef.current = restoreFocus
+    operationLifecycle.current.invalidate()
     onClose(restoreFocus)
   }
 
   useEffect(() => {
     if (!open) return
+    const trackFocusOwnership = (event: Event) => {
+      if (!(event.target instanceof Node)) return
+      if (sheetRef.current?.contains(event.target)) { restoreFocusRef.current = true; return }
+      restoreFocusRef.current = false
+      operationLifecycle.current.releaseFocus()
+    }
     const outside = (event: PointerEvent) => {
+      trackFocusOwnership(event)
       const target = event.target
       if (!(target instanceof Node) || sheetRef.current?.contains(target) || anchorRef?.current?.contains(target)) return
       dismissCapture(false)
     }
-    document.addEventListener('pointerdown', outside)
-    return () => document.removeEventListener('pointerdown', outside)
+    document.addEventListener('pointerdown', outside, true)
+    document.addEventListener('focusin', trackFocusOwnership, true)
+    document.addEventListener('click', trackFocusOwnership, true)
+    return () => {
+      document.removeEventListener('pointerdown', outside, true)
+      document.removeEventListener('focusin', trackFocusOwnership, true)
+      document.removeEventListener('click', trackFocusOwnership, true)
+    }
   }, [open, cloud.session?.user.id, onClose, anchorRef])
 
   useEffect(() => {
@@ -405,23 +443,23 @@ export default function TellPjsdasCapture({
     }
     window.addEventListener('keydown', key)
     return () => window.removeEventListener('keydown', key)
-  }, [open, text, busy, stableCommandId, saveState, correctionMode, manualMode])
+  }, [open, text, busy, stableCommandId, saveState, correctionMode, manualMode, cloud.session])
 
-  async function submit() {
-    if (!text.trim() || busy || submissionFlightRef.current) return
+  async function submit(invokedControl?: HTMLElement) {
+    if (!text.trim() || busy) return
     if (manualMode) {
       const invalid = sheetRef.current?.querySelector<HTMLInputElement>('input:invalid')
       if (invalid) { invalid.reportValidity(); return }
     }
     const queueOffline = connected && typeof navigator !== 'undefined' && !navigator.onLine
     if (queueOffline && recoveryLocked) return
-    const focusedControl = document.activeElement instanceof HTMLElement && sheetRef.current?.contains(document.activeElement) ? document.activeElement : undefined
-
     const commandId = connected
       ? stableCommandId ?? createConnectedCommandId('web-semantic')
       : undefined
+    const operation = operationLifecycle.current.begin(sheetRef.current, document, invokedControl)
+    if (!operation) return
+    const submittedText = text
     if (commandId) setStableCommandId(commandId)
-    submissionFlightRef.current = true
     setBusy(true)
     setSaveState('saving')
     setMessage('')
@@ -438,48 +476,57 @@ export default function TellPjsdasCapture({
         candidates: manualMode ? [manualJobCandidate(readManualJobDraft(text) ?? manualDraftRef.current)] : undefined,
       })
       if (result.status === 'QUEUED') {
-        saveAccountDraft(cloud.session!.user.id, 'tell-pjsdas', text)
-        setSaveState('offline')
-        setMessage(zh ? '已保存在此设备，联网后自动提交。' : 'Saved on this device; it will submit when connected.')
+        if (operation.isCurrent()) {
+          saveAccountDraft(cloud.session!.user.id, 'tell-pjsdas', submittedText)
+          setSaveState('offline')
+          setMessage(zh ? '已保存在此设备，联网后自动提交。' : 'Saved on this device; it will submit when connected.')
+        }
         return
       }
       if ((result.status === 'APPLIED' || result.status === 'DECISION_REQUIRED') && cloud.session && !connectedWorkspaceAuthorityEnabled()) {
         await ensureAuthoritativePersistence(true, cloud.syncNow)
       }
-      setUndo(result.undo)
-      setDecisionCount(result.decisionRequestIds.length)
-      setUnresolvedCount(result.unresolved.length)
-      setSaveState('saved')
-      setAuthoritativeSaveConfirmed(result.status === 'APPLIED' || result.status === 'ALREADY_APPLIED')
-      setStableCommandId(undefined)
-      if (result.status === 'NO_WRITE') {
-        setMessage(zh
-          ? '没有被当作当前事实写入：这段内容是问题、引用，或缺少可确认事实。'
-          : 'Nothing was written: this was read-only, a question/quote, or did not contain a confirmable fact.')
-      } else if (result.status === 'ALREADY_APPLIED') {
-        setMessage(zh ? '服务器确认这条来源已经处理过，没有重复写入。' : 'The server confirmed this source was already handled; no duplicate was created.')
-      } else {
-        const summary = manualMode ? (zh ? '岗位已保存。' : 'Job saved.') : /^\d+ bounded update\(s\) committed\.$/.test(result.summary.trim())
-          ? (zh ? '已记录明确事实。' : 'Confirmed facts recorded.')
-          : result.summary
-        const parts = [
-          summary,
-          result.decisionRequestIds.length ? (zh ? `${result.decisionRequestIds.length} 项需要你决定。` : `${result.decisionRequestIds.length} item(s) need your decision.`) : '',
-          result.unresolved.length ? (zh ? `${result.unresolved.length} 个片段仍不够明确，未写入。` : `${result.unresolved.length} fragment(s) remain ambiguous and were not written.`) : '',
-          result.ignored.length ? (zh ? `${result.ignored.length} 个片段未作为当前事实处理。` : `${result.ignored.length} fragment(s) were not treated as current facts.`) : '',
-        ].filter(Boolean)
-        setMessage(parts.join(' '))
-        if (result.status === 'APPLIED') {
-          closedDraftRef.current = undefined
-          if (manualMode) manualDraftRef.current = { company: '', role: '' }
-          textRef.current = ''
-          setText('')
-          setPreview(undefined)
-          if (cloud.session && connectedWorkspaceAuthorityEnabled()) clearAccountDraft(cloud.session.user.id, 'tell-pjsdas')
-        }
-        await onChanged()
+      if (result.status === 'APPLIED') {
+        if (closedDraftRef.current?.accountKey === accountKey && closedDraftRef.current.text === submittedText) closedDraftRef.current = undefined
+        if (connected && accountKey && readAccountDraft(accountKey, 'tell-pjsdas') === submittedText) clearAccountDraft(accountKey, 'tell-pjsdas')
       }
+      if (operation.isCurrent() || result.status === 'APPLIED' && operation.canReconcileDraft(submittedText, textRef.current)) {
+        setError('')
+        setUndo(result.undo)
+        setDecisionCount(result.decisionRequestIds.length)
+        setUnresolvedCount(result.unresolved.length)
+        setSaveState('saved')
+        setAuthoritativeSaveConfirmed(result.status === 'APPLIED' || result.status === 'ALREADY_APPLIED')
+        setStableCommandId(undefined)
+        if (result.status === 'NO_WRITE') {
+          setMessage(zh
+            ? '没有被当作当前事实写入：这段内容是问题、引用，或缺少可确认事实。'
+            : 'Nothing was written: this was read-only, a question/quote, or did not contain a confirmable fact.')
+        } else if (result.status === 'ALREADY_APPLIED') {
+          setMessage(zh ? '服务器确认这条来源已经处理过，没有重复写入。' : 'The server confirmed this source was already handled; no duplicate was created.')
+        } else {
+          const summary = manualMode ? (zh ? '岗位已保存。' : 'Job saved.') : /^\d+ bounded update\(s\) committed\.$/.test(result.summary.trim())
+            ? (zh ? '已记录明确事实。' : 'Confirmed facts recorded.')
+            : result.summary
+          const parts = [
+            summary,
+            result.decisionRequestIds.length ? (zh ? `${result.decisionRequestIds.length} 项需要你决定。` : `${result.decisionRequestIds.length} item(s) need your decision.`) : '',
+            result.unresolved.length ? (zh ? `${result.unresolved.length} 个片段仍不够明确，未写入。` : `${result.unresolved.length} fragment(s) remain ambiguous and were not written.`) : '',
+            result.ignored.length ? (zh ? `${result.ignored.length} 个片段未作为当前事实处理。` : `${result.ignored.length} fragment(s) were not treated as current facts.`) : '',
+          ].filter(Boolean)
+          setMessage(parts.join(' '))
+          if (result.status === 'APPLIED') {
+            closedDraftRef.current = undefined
+            if (manualMode) manualDraftRef.current = { company: '', role: '' }
+            textRef.current = ''
+            setText('')
+            setPreview(undefined)
+          }
+        }
+      }
+      if (result.status !== 'NO_WRITE' && result.status !== 'ALREADY_APPLIED') await onChanged()
     } catch (caught) {
+      if (!operation.isCurrent()) return
       const detail = caught instanceof Error ? caught.message : String(caught)
       setError(detail)
       if (caught instanceof WorkspaceWriteAuthError) setSaveState('auth_unconfirmed')
@@ -493,35 +540,33 @@ export default function TellPjsdasCapture({
       else if (/CONFLICT|conflict/i.test(detail)) setSaveState('conflict')
       else setSaveState('error')
     } finally {
-      submissionFlightRef.current = false
-      setBusy(false)
-      // A confirmed natural-language save removes its button. Keep keyboard
-      // focus in the still-open composer, without stealing an outside click.
-      if (focusedControl) window.requestAnimationFrame(() => {
-        if (!sheetRef.current?.isConnected || document.activeElement !== document.body) return
-        if (focusedControl.isConnected && !focusedControl.matches(':disabled')) focusedControl.focus()
-        else textareaRef.current?.focus()
-      })
+      if (operation.settle()) setBusy(false)
     }
   }
 
-  async function undoLast() {
+  async function undoLast(invokedControl?: HTMLElement) {
     if (!undo || busy) return
+    const operation = operationLifecycle.current.begin(sheetRef.current, document, invokedControl)
+    if (!operation) return
     setBusy(true)
+    setSaveState('saving')
     setError('')
     try {
       await undoWebSemanticChange(undo)
       if (cloud.session && !connectedWorkspaceAuthorityEnabled()) await ensureAuthoritativePersistence(true, cloud.syncNow)
-      setUndo(undefined)
-      setSaveState('saved')
-      setAuthoritativeSaveConfirmed(false)
-      setMessage(zh ? '刚才的权威写入已撤销；其他后续更新保持不变。' : 'The authoritative write was undone; unrelated later updates remain intact.')
+      if (operation.isCurrent()) {
+        setUndo(undefined)
+        setSaveState('saved')
+        setAuthoritativeSaveConfirmed(false)
+        setMessage(zh ? '刚才的权威写入已撤销；其他后续更新保持不变。' : 'The authoritative write was undone; unrelated later updates remain intact.')
+      }
       await onChanged()
     } catch (caught) {
+      if (!operation.isCurrent()) return
       setError(caught instanceof Error ? caught.message : String(caught))
       setSaveState('conflict')
     } finally {
-      setBusy(false)
+      if (operation.settle()) setBusy(false)
     }
   }
 
@@ -627,6 +672,7 @@ export default function TellPjsdasCapture({
       <section
         id="tell-pjsdas-composer"
         ref={sheetRef}
+        tabIndex={-1}
         className="cgr-capture-sheet"
         role="dialog"
         aria-modal="false"
@@ -715,7 +761,7 @@ export default function TellPjsdasCapture({
         {secondaryActions}
         {manualMode || text.trim() && preview || busy || recoveryLocked ? <div className="cgr-capture-footer">
 
-          {manualMode || text.trim() && preview || busy || recoveryLocked ? <button className="cgr-primary-button" type="button" disabled={busy || !text.trim() || manualMode && (!manualJob.company.trim() || !manualJob.role.trim())} onClick={() => { void submit() }}>
+          {manualMode || text.trim() && preview || busy || recoveryLocked ? <button className="cgr-primary-button" type="button" disabled={busy || !text.trim() || manualMode && (!manualJob.company.trim() || !manualJob.role.trim())} onClick={event => { void submit(event.currentTarget) }}>
             {busy ? (zh ? '正在权威保存…' : 'Saving authoritatively…')
               : saveState === 'unknown' ? (zh ? '确认保存状态' : 'Confirm save status')
                 : saveState === 'confirmed_pending' ? (zh ? '核对本机状态' : 'Check device state')
@@ -735,7 +781,7 @@ export default function TellPjsdasCapture({
               <span>{message}</span>
             </div>
             <div className="cgr-capture-receipt-actions">
-              {undo ? <button type="button" onClick={() => { void undoLast() }}>{zh ? '撤销' : 'Undo'}</button> : null}
+              {undo ? <button type="button" disabled={busy} onClick={event => { void undoLast(event.currentTarget) }}>{zh ? '撤销' : 'Undo'}</button> : null}
               {decisionCount > 0 ? <button type="button" onClick={onOpenDecisions}>{zh ? '去决定' : 'Review decisions'}</button> : null}
             </div>
           </div>

@@ -4,17 +4,17 @@ import { prepareJourney, waitForJourneyReady } from './support/cgr02Journey.js'
 import { namedVoiceOverItem as namedItem } from './support/voiceoverItemText.js'
 
 test('real VoiceOver can find Today, Tell TodayAction and the authoritative saved result', async ({ page, voiceOver }, testInfo) => {
-  type Observation = { item: string; spoken: string[] }
+  type Observation = { item: string; spoken: string[]; full: boolean }
   const observations: Array<Observation & { action: string }> = []
   const compact = (value: string) => value.replace(/\s+/g, '')
-  const capture = async (action: string, perform: () => Promise<unknown>): Promise<Observation> => {
+  const capture = async (action: string, perform: () => Promise<unknown>, full = true): Promise<Observation> => {
     const start = (await voiceOver.spokenPhraseLog()).length
     await perform()
-    const observation = { item: await voiceOver.itemText(), spoken: (await voiceOver.spokenPhraseLog()).slice(start) }
+    const observation = { item: await voiceOver.itemText(), spoken: (await voiceOver.spokenPhraseLog()).slice(start), full }
     observations.push({ action, ...observation })
     return observation
   }
-  const speaks = (observation: Observation, name: string) => observation.spoken.some(phrase => compact(phrase).includes(compact(name)))
+  const speaks = (observation: Observation, name: string) => compact(observation.spoken.join(' ')).includes(compact(name))
   const controls = page.locator('button, input:not([type="hidden"]), textarea, select, a[href], [role="button"], [role="textbox"], [tabindex]').filter({ visible: true })
   const findControl = async (name: string, role: 'button' | 'textbox', direction: 'next' | 'previous', current: Observation, spokenName = name, textbox?: Locator) => {
     // One pass over this fixture's currently visible control inventory, not a
@@ -23,7 +23,7 @@ test('real VoiceOver can find Today, Tell TodayAction and the authoritative save
     const metadata = textbox ? { value: await textbox.inputValue(), placeholder: await textbox.getAttribute('placeholder') ?? '' } : undefined
     for (let step = 0; step <= limit; step += 1) {
       if (namedItem(current.item, name, role, metadata)) {
-        if (!speaks(current, spokenName)) {
+        if (!current.full || !speaks(current, spokenName)) {
           current = await capture(`describe ${name}`, () => voiceOver.perform(voiceOver.keyboardCommands.describeItem, { capture: true }))
         }
         expect(namedItem(current.item, name, role, metadata), JSON.stringify(current)).toBe(true)
@@ -34,8 +34,10 @@ test('real VoiceOver can find Today, Tell TodayAction and the authoritative save
       if (step === limit) break
       current = await capture(`${direction} control for ${name}`, () => voiceOver.perform(
         direction === 'next' ? voiceOver.keyboardCommands.findNextControl : voiceOver.keyboardCommands.findPreviousControl,
-        { capture: true },
-      ))
+        // Inspect each native item without waiting through every usage hint.
+        // The exact target is described with full capture above.
+        { capture: 'initial' },
+      ), false)
     }
     throw new Error(`VoiceOver did not reach the exact ${role} "${name}" within one pass of ${limit} controls: ${JSON.stringify(observations)}`)
   }
@@ -63,10 +65,15 @@ test('real VoiceOver can find Today, Tell TodayAction and the authoritative save
     const headingLimit = Math.min(24, await page.getByRole('heading').count())
     let foundTodayTask = false
     for (let i = 0; i < headingLimit; i += 1) {
-      current = await capture('next heading', () => voiceOver.nextHeading({ capture: true }))
+      current = await capture('next heading', () => voiceOver.nextHeading({ capture: 'initial' }), false)
       headingPhrases.push(...current.spoken)
-      if (speaks(current, 'A第一任务')) {
-        foundTodayTask = true
+      // Identify the real native heading first, not a possibly interrupted
+      // initial announcement. Only its complete spoken description passes.
+      if (/^A第一任务headinglevel[1-6]$/.test(compact(current.item))) {
+        current = await capture('describe Today task heading', () => voiceOver.perform(voiceOver.keyboardCommands.describeItem, { capture: true }))
+        headingPhrases.push(...current.spoken)
+        expect(/^A第一任务headinglevel[1-6]$/.test(compact(current.item)), JSON.stringify(current)).toBe(true)
+        foundTodayTask = speaks(current, 'A第一任务')
         break
       }
     }
@@ -94,28 +101,35 @@ test('real VoiceOver can find Today, Tell TodayAction and the authoritative save
     await expect(dialog.getByText(/新增行动 · 填写报销单/)).toBeVisible()
     await expect(dialog.getByRole('button', { name: '确认并保存', exact: true })).toBeEnabled()
     current = await findControl('确认并保存', 'button', 'next', current)
-    const receiptLogStart = (await voiceOver.spokenPhraseLog()).length
+    const receiptObservationStart = observations.length
     current = await capture('activate authoritative save', () => voiceOver.act({ capture: true }))
     await expect(dialog.getByRole('status')).toContainText('已记录：填写报销单')
     await expect(input).toBeFocused()
-    let receiptPhrases = (await voiceOver.spokenPhraseLog()).slice(receiptLogStart)
-    const isReceipt = (spoken: string) => spoken.includes('已记录') && spoken.includes('填写报销单')
-    let foundReceipt = receiptPhrases.some(isReceipt)
+    const isReceipt = (phrases: string[]) => {
+      const spoken = phrases.join(' ')
+      return spoken.includes('已记录') && spoken.includes('填写报销单')
+    }
+    // Both receipt tokens must come from one complete native action capture;
+    // initial navigation snippets and unrelated actions cannot satisfy this.
+    const receiptWasSpoken = () => observations.slice(receiptObservationStart).some(observation => observation.full && isReceipt(observation.spoken))
+    let foundReceipt = receiptWasSpoken()
     if (!foundReceipt) {
       // Re-enter through real native control navigation, never a CDP-focus repair.
       current = await capture('describe current item after saving', () => voiceOver.perform(voiceOver.keyboardCommands.describeItem, { capture: true }))
       current = await findControl(inputName, 'textbox', 'next', current, inputName, input)
-      receiptPhrases = (await voiceOver.spokenPhraseLog()).slice(receiptLogStart)
-      foundReceipt = receiptPhrases.some(isReceipt)
+      foundReceipt = receiptWasSpoken()
       // The receipt follows the textarea/tools in this settled composer. Bound
       // reading to its visible DOM elements, rather than looping the whole page.
       const receiptLimit = Math.min(32, await dialog.locator('*:visible').count())
       for (let i = 0; i < receiptLimit && !foundReceipt; i += 1) {
-        current = await capture('read saved receipt', () => voiceOver.next({ capture: true }))
-        receiptPhrases = (await voiceOver.spokenPhraseLog()).slice(receiptLogStart)
-        foundReceipt = receiptPhrases.some(isReceipt)
+        current = await capture('next item toward saved receipt', () => voiceOver.next({ capture: 'initial' }), false)
+        if (compact(current.item) === '已保存' || isReceipt([current.item])) {
+          current = await capture('describe saved receipt', () => voiceOver.perform(voiceOver.keyboardCommands.describeItem, { capture: true }))
+        }
+        foundReceipt = receiptWasSpoken()
       }
     }
+    const receiptPhrases = observations.slice(receiptObservationStart).flatMap(observation => observation.spoken)
     expect(foundReceipt, receiptPhrases.join(' | ')).toBe(true)
   } catch (error) {
     // Read-only official VO diagnostics distinguish native keyboard focus from

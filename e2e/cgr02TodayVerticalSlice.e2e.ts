@@ -329,6 +329,174 @@ test('Today capture supports a keyboard-only save with named controls and restor
   await expect(opener).toBeFocused()
 })
 
+// Hold only capture's post-receipt callback, before its real local read. Other
+// App reloads and all command/receipt/projection code retain their normal paths.
+// This makes the disabled-control interval deterministic rather than adding a
+// readiness wait after the receipt to the keyboard-only journey above.
+async function installCaptureReadbackHold(page: Page) {
+  await page.addInitScript(() => {
+    ;(window as any).__captureReadbackHold = { armed: false, entered: 0, completed: 0 }
+  })
+  await page.route('**/src/AppV8.tsx*', async route => {
+    const response = await route.fetch()
+    const original = await response.text()
+    const captureCallback = /onChanged:\s*reload,(\s*onOpenDecisions:)/g
+    expect([...original.matchAll(captureCallback)]).toHaveLength(1)
+    const body = original.replace(captureCallback, (_, nextProp) => `onChanged: async () => {
+      const gate = window.__captureReadbackHold;
+      let held = false;
+      if (gate.armed) {
+        gate.armed = false;
+        held = true;
+        gate.entered++;
+        await new Promise(resolve => { gate.release = resolve; });
+      }
+      await reload();
+      if (held) gate.completed++;
+    },${nextProp}`)
+    await route.fulfill({ response, body })
+  })
+}
+
+async function armCaptureReadback(page: Page) {
+  await page.evaluate(() => { (window as any).__captureReadbackHold.armed = true })
+}
+
+async function releaseCaptureReadback(page: Page) {
+  await page.evaluate(() => { (window as any).__captureReadbackHold.release?.() })
+}
+
+async function finishCaptureReadback(page: Page) {
+  await releaseCaptureReadback(page)
+  await expect.poll(() => page.evaluate(() => (window as any).__captureReadbackHold.completed)).toBe(1)
+  // The callback has returned: flush the corresponding React commit and any
+  // queued focus-restoration frame before asserting that focus was not stolen.
+  await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))))
+}
+
+async function captureWithHeldReadback(page: Page, operation: 'save' | 'undo' = 'save') {
+  // Keep the background navigation target outside the anchored composer in
+  // every configured browser; mobile geometry has separate visual coverage.
+  await page.setViewportSize({ width: 1440, height: 1000 })
+  await seedSession(page.context())
+  const state: State = { revision: 26, snapshot: workspace(), receipts: new Map(), commandBodies: [] }
+  await installServer(page, state)
+  await installCaptureReadbackHold(page)
+  await page.goto('/pjsdas/today')
+  await expect(page.getByRole('heading', { name: 'A第一任务', exact: true })).toBeVisible()
+  const opener = page.locator('.tsui-tell-button')
+  await opener.click()
+  const dialog = page.getByRole('dialog', { name: '告诉 TodayAction', exact: true })
+  const input = dialog.getByRole('textbox', { name: '要告诉 TodayAction 的内容' })
+  await input.fill('事项：填写报销单')
+  const save = dialog.getByRole('button', { name: '确认并保存', exact: true })
+  await expect(save).toBeEnabled()
+  if (operation === 'save') await armCaptureReadback(page)
+  await save.focus()
+  await expect(save).toBeFocused()
+  await page.keyboard.press('Enter')
+  await expect(dialog.getByRole('status')).toContainText('已记录：填写报销单')
+  if (operation === 'undo') {
+    await expect(input).toBeEnabled()
+    await expect(input).toBeFocused()
+    await armCaptureReadback(page)
+    const undo = dialog.getByRole('button', { name: '撤销', exact: true })
+    await undo.focus()
+    await expect(undo).toBeFocused()
+    await page.keyboard.press('Enter')
+    await expect(dialog.getByRole('status')).toContainText('刚才的权威写入已撤销；其他后续更新保持不变')
+    await expect(undo).toHaveCount(0)
+  }
+  await expect.poll(() => page.evaluate(() => (window as any).__captureReadbackHold.entered)).toBe(1)
+  expect(await page.evaluate(() => (window as any).__captureReadbackHold.completed)).toBe(0)
+  await expect(input).toBeDisabled()
+  await expect(dialog).toHaveAttribute('tabindex', '-1')
+  await expect(dialog).toBeFocused()
+  expect(state.commandBodies.map(body => body.action)).toEqual(operation === 'save' ? ['command'] : ['command', 'undo'])
+  expect(state.snapshot.data.actions.some(item => item.id === 'capture-action')).toBe(operation === 'save')
+  return { state, opener, dialog, input }
+}
+
+for (const operation of ['save', 'undo'] as const) test(`capture ${operation} keeps keyboard ownership through a held post-receipt read and immediate Escape`, async ({ page }) => {
+  const { state, opener, dialog } = await captureWithHeldReadback(page, operation)
+  try {
+    // No completion/readiness wait: the real post-receipt read is still held.
+    await page.keyboard.press('Escape')
+    await expect(dialog).toHaveCount(0)
+    await expect(opener).toBeFocused()
+    await finishCaptureReadback(page)
+    await expect(dialog).toHaveCount(0)
+    await expect(opener).toBeFocused()
+    expect(state.commandBodies.map(body => body.action)).toEqual(operation === 'save' ? ['command'] : ['command', 'undo'])
+  } finally { await releaseCaptureReadback(page) }
+})
+
+for (const departure of ['outside focus', 'keyboard navigation', 'pointer dismissal'] as const) test(`held capture completion respects ${departure} without restoring the old opener`, async ({ page }) => {
+  const { state, opener, dialog, input } = await captureWithHeldReadback(page)
+  const jobs = page.getByRole('navigation', { name: '主导航' }).getByRole('button', { name: /岗位/ })
+  try {
+    if (departure === 'pointer dismissal') {
+      await jobs.click()
+    } else {
+      // Leave the nonmodal sheet with real Tab navigation, without focus() or
+      // locator.press() silently moving focus to the background navigation.
+      for (let step = 0; step < 30 && !(await jobs.evaluate(node => node === document.activeElement)); step++) {
+        await page.keyboard.press('Tab')
+      }
+      await expect(jobs).toBeFocused()
+      await expect(dialog).toBeVisible()
+      if (departure === 'keyboard navigation') await page.keyboard.press('Enter')
+    }
+    await expect(jobs).toBeFocused()
+    await expect(opener).not.toBeFocused()
+    if (departure !== 'outside focus') {
+      await expect(page).toHaveURL(/\/pjsdas\/library$/)
+      await expect(dialog).toHaveCount(0)
+    }
+    await finishCaptureReadback(page)
+    await expect(jobs).toBeFocused()
+    await expect(opener).not.toBeFocused()
+    if (departure === 'outside focus') {
+      await expect(dialog).toBeVisible()
+      await expect(input).toBeEnabled()
+      await page.keyboard.press('Enter')
+      await expect(page).toHaveURL(/\/pjsdas\/library$/)
+      await expect(dialog).toHaveCount(0)
+      await expect(jobs).toBeFocused()
+    } else {
+      await expect(dialog).toHaveCount(0)
+    }
+    expect(state.commandBodies.map(body => body.action)).toEqual(['command'])
+  } finally { await releaseCaptureReadback(page) }
+})
+
+test('a held completion cannot retake focus or overwrite the next composer session', async ({ page }) => {
+  const { state, opener, dialog, input } = await captureWithHeldReadback(page)
+  try {
+    // Authority is already APPLIED, so no durable recovery lock is bypassed.
+    // Only the previous view's post-receipt callback remains in flight.
+    await page.keyboard.press('Escape')
+    await expect(dialog).toHaveCount(0)
+    await expect(opener).toBeFocused()
+    await page.keyboard.press('Enter')
+    await expect(dialog).toBeVisible()
+    await expect(input).toBeEnabled()
+    await expect(input).toBeFocused()
+    await input.fill('下次草稿：核对差旅材料')
+    expect(await page.evaluate(() => localStorage.getItem('pjsdas-cgr01-draft:account-a:tell-pjsdas'))).toBe('下次草稿：核对差旅材料')
+    const more = dialog.getByRole('button', { name: '更多操作', exact: true })
+    await page.keyboard.press('Tab')
+    await expect(more).toBeFocused()
+    await finishCaptureReadback(page)
+    await expect(more).toBeFocused()
+    await expect(input).toHaveValue('下次草稿：核对差旅材料')
+    expect(await page.evaluate(() => localStorage.getItem('pjsdas-cgr01-draft:account-a:tell-pjsdas'))).toBe('下次草稿：核对差旅材料')
+    await expect(dialog.getByRole('status').filter({ hasText: '已记录：填写报销单' })).toHaveCount(0)
+    expect(state.commandBodies.map(body => body.action)).toEqual(['command'])
+    expect(state.snapshot.data.actions.filter(item => item.id === 'capture-action')).toHaveLength(1)
+  } finally { await releaseCaptureReadback(page) }
+})
+
 test('unknown semantic save keeps one stable command identity and recovers by receipt before retry', async ({ page }) => {
   await seedSession(page.context())
   const state: State = { revision: 30, snapshot: workspace(), receipts: new Map(), commandBodies: [] }
