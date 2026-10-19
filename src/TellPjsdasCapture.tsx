@@ -1,6 +1,6 @@
 import { createCapturePreviewPresentation } from './capturePreviewPresentation.js'
 import ManualJobFields from './capture/ManualJobFields.js'
-import { captureExamples } from './capture/captureExamples.js'
+import { readCaptureTextFile, appendCaptureQuote, CaptureTextFileError } from './capture/textFile.js'
 import { manualJobDraft, readManualJobDraft, manualJobCandidate } from './capture/manualJob.js'
 import type { UserJobFacts } from './opportunityCreation.js'
 import { lazy, Suspense, useEffect, useRef, useState } from 'react'
@@ -142,6 +142,15 @@ export default function TellPjsdasCapture({
   const [busy, setBusy] = useState(false)
   const submissionFlightRef = useRef(false)
   const [previewBusy, setPreviewBusy] = useState(false)
+  const [previewRequest, setPreviewRequest] = useState(0)
+  const [fileReading, setFileReading] = useState(false)
+  const [fileAttachment, setFileAttachment] = useState<{ name: string; quote: string }>()
+  const [fileNotice, setFileNotice] = useState('')
+  const [fileError, setFileError] = useState('')
+  const fileInputRef = useRef<HTMLInputElement | null>(null)
+  const fileTriggerRef = useRef<HTMLButtonElement | null>(null)
+  const previewSectionRef = useRef<HTMLElement | null>(null)
+  const fileReadEpochRef = useRef(0)
   const [preview, setPreview] = useState<WebSemanticCapturePreview>()
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
@@ -163,12 +172,21 @@ export default function TellPjsdasCapture({
 
   const previewPresentation = useRef(createCapturePreviewPresentation())
   const previewIdentity = useRef<unknown[]>([])
-  const identity = [open, text, manualMode, correctionMode, busy, cloud.session]
+  const fileReadIdentity = useRef<unknown[]>([])
+  const inputIdentity = [open, text, manualMode, correctionMode, busy, cloud.session, recoveryLocked]
+  if (inputIdentity.some((value, index) => value !== fileReadIdentity.current[index])) {
+    fileReadEpochRef.current += 1
+    fileReadIdentity.current = inputIdentity
+  }
+  const identity = [...inputIdentity, previewRequest]
   if (identity.some((value, index) => value !== previewIdentity.current[index])) {
     previewPresentation.current.invalidate()
     previewIdentity.current = identity
     if (!open || correctionMode) previewPresentation.current.reset()
   }
+
+  useEffect(() => { setFileReading(false); setFileAttachment(undefined); setFileNotice(''); setFileError('') }, [open, manualMode, correctionMode, cloud.session])
+  useEffect(() => { setFileReading(false) }, [text, busy, recoveryLocked])
 
   useEffect(() => {
     if (!open) {
@@ -292,7 +310,7 @@ export default function TellPjsdasCapture({
       presentation.cancel()
       window.clearTimeout(id)
     }
-  }, [open, text, busy, manualMode, correctionMode, cloud.session])
+  }, [open, text, busy, manualMode, correctionMode, cloud.session, previewRequest])
 
   useEffect(() => {
     if (!open) return
@@ -310,8 +328,8 @@ export default function TellPjsdasCapture({
       }
       if (event.key !== 'Tab' || !sheetRef.current) return
       const focusable = [...sheetRef.current.querySelectorAll<HTMLElement>(
-        'button:not([disabled]), textarea:not([disabled]), input:not([disabled]), [href], [tabindex]:not([tabindex="-1"])',
-      )]
+        'button:not([disabled]), textarea:not([disabled]), input:not([disabled]), summary, [href], [tabindex]:not([tabindex="-1"])',
+      )].filter(element => element.getClientRects().length > 0)
       if (!focusable.length) return
       const first = focusable[0]!
       const last = focusable[focusable.length - 1]!
@@ -453,6 +471,51 @@ export default function TellPjsdasCapture({
     if (!recoveryLocked) setSaveState('idle')
   }
 
+  async function importTextFile(file: File) {
+    if (busy || recoveryLocked || manualMode || correctionMode || !open) return
+    const epoch = ++fileReadEpochRef.current
+    const draft = textRef.current
+    setFileReading(true); setFileNotice(''); setFileError('')
+    try {
+      const quote = await readCaptureTextFile(file, '')
+      if (epoch !== fileReadEpochRef.current || textRef.current !== draft) return
+      setFileAttachment({ name: file.name, quote })
+    } catch (caught) {
+      if (epoch !== fileReadEpochRef.current) return
+      const code = caught instanceof CaptureTextFileError ? caught.code : 'read'
+      const copy: Record<string, [string, string]> = {
+        format: ['仅支持 UTF-8 文本文件（.txt、.md），暂不支持 PDF、Word 或图片。', 'Use a UTF-8 .txt or .md file. PDF, Word and images are not supported yet.'],
+        size: ['文件不能超过 32 KB。', 'Files must be 32 KB or smaller.'],
+        encoding: ['文件不是有效的 UTF-8 文本，请转换编码后再添加。', 'This is not valid UTF-8 text. Convert its encoding first.'],
+        binary: ['文件包含非文本内容，未加入输入框。', 'The file contains non-text data and was not added.'],
+        empty: ['文件没有可读取的文字。', 'The file has no readable text.'],
+        length: ['加入后将超过 8000 字符，请缩短内容。', 'The combined text would exceed 8,000 characters. Shorten it first.'],
+        read: ['无法读取文件，原输入内容已保留。', 'Could not read the file. Your draft is unchanged.'],
+      }
+      setFileError(copy[code]![zh ? 0 : 1])
+    } finally {
+      if (epoch === fileReadEpochRef.current) setFileReading(false)
+    }
+  }
+
+  function addFileQuote() {
+    if (!fileAttachment || busy || recoveryLocked) return
+    try {
+      editText(appendCaptureQuote(textRef.current, fileAttachment.quote))
+      setFileAttachment(undefined)
+      setFileNotice(zh ? '文件已作为引用加入。请在引用前说明要记录什么，再核对保存。' : 'File text added as a quote. State what to record before it, then review and save.')
+      textareaRef.current?.focus()
+    } catch {
+      setFileError(zh ? '加入后将超过 8000 字符，请缩短内容。' : 'The combined text would exceed 8,000 characters. Shorten it first.')
+    }
+  }
+
+  function requestPreview() {
+    if (!text.trim() || busy || recoveryLocked) return
+    setPreviewRequest(value => value + 1)
+    previewSectionRef.current?.focus()
+  }
+
   function switchManualMode() {
     if (busy || recoveryLocked) return
     if (manualMode) {
@@ -480,16 +543,11 @@ export default function TellPjsdasCapture({
         role="dialog"
         aria-modal="true"
         aria-labelledby="tell-pjsdas-title"
-        aria-describedby="tell-pjsdas-description"
         onMouseDown={(event) => event.stopPropagation()}
       >
         <header className="cgr-capture-header">
           <div>
-            {!manualMode && !correctionMode ? <span className="cgr-capture-eyebrow">{zh ? '用你的话说' : 'In your own words'}</span> : null}
             <h2 id="tell-pjsdas-title">{manualMode ? (zh ? '添加岗位' : 'Add job') : (zh ? '告诉 TodayAction' : 'Tell TodayAction')}</h2>
-            <p id="tell-pjsdas-description">{manualMode ? (zh ? '保存你已了解的岗位。' : 'Save a job you know about.') : zh
-              ? '想做什么，直接说。'
-              : 'What’s on your mind?'}</p>
             {contextLabel ? <span className="cgr-capture-context">{zh ? '当前上下文：' : 'Context: '}{contextLabel}</span> : null}
           </div>
           <button className="cgr-icon-button" type="button" onClick={onClose} aria-label={zh ? '关闭' : 'Close'}>×</button>
@@ -499,24 +557,43 @@ export default function TellPjsdasCapture({
         {correctionMode ? <Suspense fallback={<p role="status">{zh ? '正在打开核对入口…' : 'Opening review…'}</p>}><RecordCorrectionReview key={cloud.session?.user.id ?? 'signed-out'} onChanged={onChanged} /></Suspense> : <>
         {manualMode ? <ManualJobFields value={manualJob} onChange={value => { manualDraftRef.current = value; editText(manualJobDraft(value)) }} disabled={busy || recoveryLocked} zh={zh} /> : <>
         <div className="cgr-capture-composer">
-        <label className="cgr-capture-prompt" htmlFor="tell-pjsdas-input">{zh ? '任务、日程或进展，都可以记在这里。' : 'A task, a plan, or an update. Start here.'}</label>
         <textarea
           id="tell-pjsdas-input"
           ref={textareaRef}
           className="cgr-capture-input"
           aria-label={zh ? '要告诉 TodayAction 的内容' : 'What to tell TodayAction'}
-          aria-describedby="tell-pjsdas-input-hint"
-          rows={5}
+          rows={4}
           value={text}
           disabled={busy || recoveryLocked}
           onChange={(event) => editText(event.target.value)}
-          placeholder={`${zh ? '比如' : 'For example'}\n${captureExamples[zh ? 'zh' : 'en'].join('\n')}`}
+          placeholder={zh ? '说说你的任务或日程…' : 'Tell me about a task or plan…'}
         />
-        <p className="cgr-capture-input-hint" id="tell-pjsdas-input-hint">{zh ? '先核对整理结果，再确认保存。不明确的内容可以继续补充。' : 'Review the result before saving. Add details if anything is unclear.'}</p>
+        {fileAttachment ? <div className="cgr-capture-attachment">
+          <span title={fileAttachment.name}>{fileAttachment.name}</span>
+          <small>{zh ? '本地文本' : 'Local text'}</small>
+          <button type="button" disabled={busy || recoveryLocked} onClick={addFileQuote}>{zh ? '加入引用' : 'Add as quote'}</button>
+          <button type="button" aria-label={zh ? `移除文件 ${fileAttachment.name}` : `Remove file ${fileAttachment.name}`} disabled={busy || recoveryLocked} onClick={() => { setFileAttachment(undefined); setFileError(''); (fileTriggerRef.current?.disabled ? textareaRef.current : fileTriggerRef.current)?.focus() }}>×</button>
+        </div> : null}
+        <div className="cgr-capture-tools">
+          <input ref={fileInputRef} type="file" hidden tabIndex={-1} accept=".txt,.md,text/plain,text/markdown" disabled={busy || recoveryLocked || fileReading}
+            onChange={event => { const file = event.currentTarget.files?.[0]; event.currentTarget.value = ''; if (file) void importTextFile(file) }} />
+          <button ref={fileTriggerRef} type="button" className="cgr-capture-tool" aria-label={zh ? '添加文本文件（.txt、.md）' : 'Add a text file (.txt, .md)'} title={zh ? '仅本地读取文本，最多 32 KB' : 'Read text locally, up to 32 KB'} disabled={busy || recoveryLocked || fileReading} onClick={() => { setFileNotice(zh ? '支持 .txt、.md，最多 32 KB，仅在本地读取。' : 'Text and Markdown (.txt, .md), up to 32 KB. Read locally.'); fileInputRef.current?.click() }}>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m8 12 6-6a3 3 0 0 1 4.25 4.25l-8.5 8.5a5 5 0 0 1-7.07-7.07L12 2.5" /></svg>
+          </button>
+          <button type="button" className="cgr-capture-voice" disabled aria-label={zh ? '语音输入，正在开发中' : 'Voice input, in development'}>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="3" width="6" height="12" rx="3" /><path d="M6 11v1a6 6 0 0 0 12 0v-1M12 18v3M9 21h6" /></svg>
+            <span>{zh ? '开发中' : 'Coming soon'}</span>
+          </button>
+          <button type="button" className="cgr-capture-send" aria-label={zh ? '整理输入内容并预览' : 'Organize input and preview'} title={zh ? '整理并预览' : 'Organize and preview'} disabled={!text.trim() || busy || recoveryLocked} onClick={requestPreview}>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V5m-6 6 6-6 6 6" /></svg>
+          </button>
         </div>
+        </div>
+        {fileReading || fileNotice ? <p className="cgr-capture-file-note" role="status">{fileReading ? (zh ? '正在本地读取…' : 'Reading locally…') : fileNotice}</p> : null}
+        {fileError ? <p className="cgr-capture-file-error" role="alert">{fileError}</p> : null}
 
         {text.trim() ? (
-          <section className="cgr-understanding" aria-live="polite" aria-busy={previewBusy}>
+          <section ref={previewSectionRef} tabIndex={-1} className="cgr-understanding" aria-label={zh ? '整理结果' : 'Interpretation preview'} aria-live="polite" aria-busy={previewBusy}>
             <div className="cgr-understanding-head">
               <strong>{previewBusy ? (zh ? '正在理解…' : 'Understanding…') : (zh ? 'TodayAction 理解为' : 'TodayAction understands')}</strong>
               <span data-state={saveState}>
@@ -559,19 +636,22 @@ export default function TellPjsdasCapture({
           onBlurCapture={event => {
             if (!event.currentTarget.contains(event.relatedTarget as Node | null)) previewPresentation.current.hold('focus', false)
           }}>
+          <details className="cgr-capture-more">
+          <summary aria-label={zh ? '更多操作' : 'More options'}>···</summary>
           <div className="cgr-capture-secondary">
           {!manualMode ? <button type="button" className="text-button cgr-correction-toggle" disabled={busy || recoveryLocked} onClick={() => setCorrectionMode(true)}>{zh ? '核实已有记录' : 'Review existing records'}</button> : null}
           <button className="text-button cgr-capture-mode" type="button" disabled={busy || recoveryLocked} onClick={switchManualMode}>{manualMode ? (zh ? '用自然语言添加' : 'Use natural language') : (zh ? '手动填写岗位' : 'Enter job manually')}</button>
           {manualMode ? <button className="text-button" type="button" disabled={busy} onClick={onClose}>{zh ? '取消' : 'Cancel'}</button> : null}
           </div>
-          <button className="cgr-primary-button" type="button" disabled={busy || !text.trim() || manualMode && (!manualJob.company.trim() || !manualJob.role.trim())} onClick={() => { void submit() }}>
+          </details>
+          {manualMode || text.trim() && preview || busy || recoveryLocked ? <button className="cgr-primary-button" type="button" disabled={busy || !text.trim() || manualMode && (!manualJob.company.trim() || !manualJob.role.trim())} onClick={() => { void submit() }}>
             {busy ? (zh ? '正在权威保存…' : 'Saving authoritatively…')
               : saveState === 'unknown' ? (zh ? '确认保存状态' : 'Confirm save status')
                 : saveState === 'confirmed_pending' ? (zh ? '核对本机状态' : 'Check device state')
                 : saveState === 'offline' ? (zh ? '确认保存状态' : 'Check save status')
                 : saveState === 'reauth' ? (zh ? '重新确认' : 'Retry confirmation')
                   : manualMode ? (zh ? '保存岗位' : 'Save job') : (zh ? '确认并保存' : 'Confirm and save')}
-          </button>
+          </button> : null}
         </div>
 
         {message ? (

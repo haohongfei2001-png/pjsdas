@@ -13,10 +13,14 @@ function packet(server: Awaited<ReturnType<typeof setupInstantServer>>) {
     entries: [{ company: target.company, role: target.role, reviewStatus: 'ready', command: { commandId: 'synthetic-review-browser-command', kind: 'correct_application_deadline', opportunityId: target.id, expectedDeadlineFingerprint: applicationDeadlineFingerprint(target, server.snapshot.data), correction: { state: 'unknown', sourceUrl: 'https://careers.example.test/verified-role', sourceAuthority: 'university_repost', evidence: 'Synthetic verified source does not publish a deadline; availability is unknown.', checkedAt: INSTANT_NOW.toISOString(), postingStatus: 'unknown' } } }],
   }
 }
+async function enterReview(page: Page) {
+  if (await page.locator('.cgr-capture-more').getAttribute('open') === null) await page.locator('.cgr-capture-more summary').click()
+  await page.getByRole('button', { name: '核实已有记录', exact: true }).click()
+}
 async function open(page: Page) {
   await page.goto('/pjsdas/today/capture')
   await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem('pjsdas-google-drive-sync-state-v2') ?? '{}').accounts?.['instant-owner']?.lastSyncedVersion)).toBe('txn:1204')
-  await page.getByRole('button', { name: '核实已有记录', exact: true }).click()
+  await enterReview(page)
   await expect(page.locator('.cgr-correction-review')).toBeVisible()
 }
 async function upload(page: Page, value: unknown) {
@@ -50,7 +54,7 @@ test('authenticated correction reviews evidence, commits once, retains history a
   const rows = Object.values(buildScheduleStream(server.snapshot, { accountKey: 'instant-owner', workspaceRevision: 'txn:1205', timezone: 'Asia/Shanghai', now: INSTANT_NOW }).sections).flat()
   expect(rows.filter(row => row.opportunityId === target.id)).toEqual([])
   expect(rows.some(row => row.actionId === 'dense-action-0')).toBe(true)
-  await page.reload(); await page.getByRole('button', { name: '核实已有记录', exact: true }).click()
+  await page.reload(); await enterReview(page)
   await expect(page.locator('.cgr-correction-entries')).toHaveCount(0)
   await expect(page.locator('.cgr-correction-review')).toContainText('不提供普通撤销')
 })
@@ -100,13 +104,13 @@ test('closing a pending review clears private file and ignores late reads', asyn
   await page.getByRole('dialog').getByRole('button', { name: '关闭', exact: true }).click()
   release()
   await page.locator('.tsui-topbar').getByRole('button', { name: /告诉 TodayAction/ }).click()
-  await page.getByRole('button', { name: '核实已有记录', exact: true }).click()
+  await enterReview(page)
   await expect(page.locator('.cgr-correction-entries')).toHaveCount(0)
   expect(server.sent).toEqual([])
 })
 
 test('signed-out review entry cannot import or apply a local correction', async ({ page }) => {
-  await page.goto('/pjsdas/today/capture'); await page.getByRole('button', { name: '核实已有记录', exact: true }).click()
+  await page.goto('/pjsdas/today/capture'); await enterReview(page)
   await expect(page.locator('.cgr-correction-review input[type=file]')).toBeDisabled()
   await expect(page.locator('.cgr-correction-review')).toContainText('不会修改本地模式的数据')
 })
@@ -121,7 +125,7 @@ test('an intervening account lease change prevents submission and close clears i
   await page.getByRole('dialog').getByRole('button', { name: '关闭', exact: true }).click()
   await page.evaluate(async () => (await import('/pjsdas/src/cloud/accountCacheLease.ts')).setAccountCacheSession('instant-owner'))
   await page.locator('.tsui-topbar').getByRole('button', { name: /告诉 TodayAction/ }).click()
-  await page.getByRole('button', { name: '核实已有记录', exact: true }).click()
+  await enterReview(page)
   await expect(page.locator('.cgr-correction-entries')).toHaveCount(0)
 })
 
@@ -130,7 +134,7 @@ test('review mode never submits hidden natural-language capture through keyboard
   await page.clock.setFixedTime(INSTANT_NOW); await open(page)
   await page.getByRole('button', { name: '返回记录进展', exact: true }).click()
   await page.getByRole('textbox', { name: '要告诉 TodayAction 的内容', exact: true }).fill('新增行动：核对合成岗位')
-  await page.getByRole('button', { name: '核实已有记录', exact: true }).click()
+  await enterReview(page)
   await page.keyboard.press('Control+Enter')
   await expect(page.locator('.cgr-correction-review input[type=file]')).toBeVisible()
   expect(server.sent).toEqual([])

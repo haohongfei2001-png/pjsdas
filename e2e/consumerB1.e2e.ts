@@ -98,6 +98,7 @@ for (const { width, deferredBootstrap } of [
   await page.goto('/pjsdas/today/capture')
   // Establish the controlled in-flight request, never completed authority.
   if (deferredBootstrap) await bootstrapStarted
+  await page.locator('.cgr-capture-more summary').click()
   await page.getByRole('button', { name: '手动填写岗位', exact: true }).click()
   await expect(page.getByRole('heading', { name: '添加岗位', exact: true })).toBeVisible()
   await page.getByLabel('公司名称', { exact: true }).fill('示例科技')

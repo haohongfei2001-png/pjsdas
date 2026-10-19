@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
-import { captureExamples } from '../src/capture/captureExamples.js'
+const captureExamples = { zh: ['今天提交周报', '明天 15:00 填写报销单'], en: ['Today revise the report', 'Tomorrow 15:00 revise the draft'] }
 import { buildWebSemanticInterpretation } from '../src/webSemanticInterpretation.js'
 import { createSnapshot } from '../src/snapshot.js'
 import { semanticIntakeSchema } from '../gateway/semanticIntake.js'
@@ -9,10 +9,10 @@ import { applySemanticIntake } from '../src/semanticIntake.js'
 const now = new Date('2026-10-19T00:00:00Z')
 const source = readFileSync(new URL('../src/TellPjsdasCapture.tsx', import.meta.url), 'utf8')
 
-describe('capture refinement keeps public examples honest and confirmation intact', () => {
+describe('capture refinement retains neutral task parsing and confirmation', () => {
   for (const [locale, examples] of Object.entries(captureExamples)) {
     for (const timezone of ['UTC', 'Asia/Shanghai']) {
-      it(`interprets the displayed ${locale} examples with ${timezone}, without losing time`, () => {
+      it(`retains neutral ${locale} task examples with ${timezone}, without losing time`, () => {
         for (const [index, text] of examples.entries()) {
           const snapshot = createSnapshot({ opportunities: [], processes: [], processEvents: [], actions: [], prep: [], applicationGroups: [], timeline: [] })
           const parsed = buildWebSemanticInterpretation(text, [], snapshot, [], now, timezone)
@@ -35,11 +35,13 @@ describe('capture refinement keeps public examples honest and confirmation intac
     }
   }
   it('uses neutral examples and keeps the real review-before-save wording', () => {
-    expect(source).toContain("captureExamples[zh ? 'zh' : 'en']")
+    expect(source).toContain('说说你的任务或日程…')
     expect(source).not.toMatch(/京东|小鹏|任意表达|AI 会帮你/)
-    expect(source).toContain('先核对整理结果，再确认保存')
+    expect(source).toContain('整理输入内容并预览')
+    expect(source).toContain('语音输入，正在开发中')
     expect(source).toContain('确认并保存')
-    expect(source).toContain('aria-describedby="tell-pjsdas-input-hint"')
+    expect(source).toContain("aria-label={zh ? '要告诉 TodayAction 的内容'")
+    expect(source).not.toContain('cgr-capture-eyebrow')
   })
   it('groups secondary entries without removing any preview interaction guard', () => {
     expect(source).toContain('className="cgr-capture-secondary"')
