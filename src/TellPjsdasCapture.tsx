@@ -47,7 +47,7 @@ interface TellPjsdasCaptureProps {
   contextRefs?: string[]
 }
 
-type CaptureSaveState = 'idle' | 'saving' | 'saved' | 'offline' | 'unknown' | 'reauth' | 'conflict' | 'error' | 'confirmed_pending' | 'blocked_by_pending' | 'auth_unconfirmed'
+type CaptureSaveState = 'ai_preview_error' | 'idle' | 'saving' | 'saved' | 'offline' | 'unknown' | 'reauth' | 'conflict' | 'error' | 'confirmed_pending' | 'blocked_by_pending' | 'auth_unconfirmed'
 
 function targetLabel(candidate: SemanticCandidate) {
   const target = candidate.target
@@ -104,6 +104,9 @@ function modeExplanation(preview: WebSemanticCapturePreview, zh: boolean) {
 }
 
 function saveErrorCopy(state: CaptureSaveState, zh: boolean) {
+  if (state === 'ai_preview_error') return zh
+    ? '没有生成可确认的 AI 预览，也没有保存任何内容。输入仍保留，可点击箭头重试。'
+    : 'No reviewable AI preview was generated and nothing was saved. Your input is retained; click the arrow to retry.'
   if (state === 'auth_unconfirmed') return zh
     ? '内容尚未保存。请等待账号恢复后重试；若一直无法恢复，请到设置重新连接。'
     : 'Nothing was saved. Retry after your account recovers, or reconnect in Settings if it stays unavailable.'
@@ -430,6 +433,7 @@ export default function TellPjsdasCapture({
           presentation.publish(() => {
             const failure = caught instanceof Error ? caught.message : String(caught)
             setError(failure)
+            if (modelCapture) setSaveState('ai_preview_error')
             // Only a known stale/expired result permits a new inference identity.
             // Unknown provider/network outcomes keep their original receipt ID.
             if (modelCapture && /^(AI_CAPTURE_STALE|AI_CAPTURE_EXPIRED):/.test(failure)) setAiRequest(undefined)
@@ -834,7 +838,9 @@ export default function TellPjsdasCapture({
         ) : null}
         {error ? (
           <div className={`cgr-capture-error state-${saveState}`} role="alert">
-            <strong>{saveState === 'auth_unconfirmed'
+            <strong>{saveState === 'ai_preview_error'
+              ? (zh ? 'AI 理解暂时不可用' : 'AI interpretation is unavailable')
+              : saveState === 'auth_unconfirmed'
               ? (zh ? '账号尚未确认' : 'Account not confirmed')
               : saveState === 'unknown'
               ? (zh ? '保存结果暂时未知' : 'Save outcome is not confirmed yet')
