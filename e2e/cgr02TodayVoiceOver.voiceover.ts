@@ -1,6 +1,7 @@
 import { test } from './support/voiceoverMockTest.js'
-import { expect } from '@playwright/test'
+import { expect, type Locator } from '@playwright/test'
 import { prepareJourney, waitForJourneyReady } from './support/cgr02Journey.js'
+import { namedVoiceOverItem as namedItem } from './support/voiceoverItemText.js'
 
 test('real VoiceOver can find Today, Tell TodayAction and the authoritative saved result', async ({ page, voiceOver }, testInfo) => {
   type Observation = { item: string; spoken: string[] }
@@ -14,25 +15,18 @@ test('real VoiceOver can find Today, Tell TodayAction and the authoritative save
     return observation
   }
   const speaks = (observation: Observation, name: string) => observation.spoken.some(phrase => compact(phrase).includes(compact(name)))
-  const namedItem = (item: string, name: string, role: 'button' | 'textbox') => {
-    // Native itemText includes role metadata, e.g. "TodayAction，今天 button, group".
-    // Strip only the expected role suffix, then compare the complete name. In
-    // particular, the opener must never match the dialog or its named textarea.
-    const suffix = role === 'button' ? /(?:,\s*)?\s*(?:(?:expanded|collapsed)\s+)?button\b[\s\S]*$/i
-      : /(?:,\s*)?\s*(?:edit text|text entry area|text field|text area|textbox)\b[\s\S]*$/i
-    return suffix.test(item) && compact(item.replace(suffix, '')) === compact(name)
-  }
   const controls = page.locator('button, input:not([type="hidden"]), textarea, select, a[href], [role="button"], [role="textbox"], [tabindex]').filter({ visible: true })
-  const findControl = async (name: string, role: 'button' | 'textbox', direction: 'next' | 'previous', current: Observation, spokenName = name) => {
+  const findControl = async (name: string, role: 'button' | 'textbox', direction: 'next' | 'previous', current: Observation, spokenName = name, textbox?: Locator) => {
     // One pass over this fixture's currently visible control inventory, not a
     // retry budget. Different controls may legitimately share the same name.
     const limit = await controls.count()
+    const metadata = textbox ? { value: await textbox.inputValue(), placeholder: await textbox.getAttribute('placeholder') ?? '' } : undefined
     for (let step = 0; step <= limit; step += 1) {
-      if (namedItem(current.item, name, role)) {
+      if (namedItem(current.item, name, role, metadata)) {
         if (!speaks(current, spokenName)) {
           current = await capture(`describe ${name}`, () => voiceOver.perform(voiceOver.keyboardCommands.describeItem, { capture: true }))
         }
-        expect(namedItem(current.item, name, role), JSON.stringify(current)).toBe(true)
+        expect(namedItem(current.item, name, role, metadata), JSON.stringify(current)).toBe(true)
         expect(speaks(current, spokenName), JSON.stringify(current)).toBe(true)
         if (role === 'button') expect(current.spoken.join(' ')).toMatch(/\bbutton\b/i)
         return current
@@ -57,6 +51,12 @@ test('real VoiceOver can find Today, Tell TodayAction and the authoritative save
     // Establish web entry once. Subsequent interaction stays on the native VO
     // cursor; CDP DOM focus alone does not establish macOS keyboard/AX focus.
     let current = await capture('enter at brand', () => voiceOver.perform(voiceOver.keyboardCommands.moveCursorToKeyboardFocus, { capture: true }))
+    expect(namedItem(current.item, 'TodayAction，今天', 'button'), JSON.stringify(current)).toBe(true)
+    // A new-window announcement can replace web-entry speech. Describe the
+    // verified native item once; a correct item never substitutes for speech.
+    if (!speaks(current, 'TodayAction，今天')) {
+      current = await capture('describe brand after web entry', () => voiceOver.perform(voiceOver.keyboardCommands.describeItem, { capture: true }))
+    }
     expect(namedItem(current.item, 'TodayAction，今天', 'button'), JSON.stringify(current)).toBe(true)
     expect(speaks(current, 'TodayAction，今天'), JSON.stringify(current)).toBe(true)
     const headingPhrases: string[] = []
@@ -88,7 +88,7 @@ test('real VoiceOver can find Today, Tell TodayAction and the authoritative save
     // Native activation need not move the VO cursor into a nonmodal dialog.
     // Verify actual reachability and the full spoken input name independently.
     current = await capture('describe current item after opening', () => voiceOver.perform(voiceOver.keyboardCommands.describeItem, { capture: true }))
-    current = await findControl(inputName, 'textbox', 'next', current)
+    current = await findControl(inputName, 'textbox', 'next', current, inputName, input)
 
     await input.fill('事项：填写报销单')
     await expect(dialog.getByText(/新增行动 · 填写报销单/)).toBeVisible()
@@ -104,7 +104,7 @@ test('real VoiceOver can find Today, Tell TodayAction and the authoritative save
     if (!foundReceipt) {
       // Re-enter through real native control navigation, never a CDP-focus repair.
       current = await capture('describe current item after saving', () => voiceOver.perform(voiceOver.keyboardCommands.describeItem, { capture: true }))
-      current = await findControl(inputName, 'textbox', 'next', current)
+      current = await findControl(inputName, 'textbox', 'next', current, inputName, input)
       receiptPhrases = (await voiceOver.spokenPhraseLog()).slice(receiptLogStart)
       foundReceipt = receiptPhrases.some(isReceipt)
       // The receipt follows the textarea/tools in this settled composer. Bound
