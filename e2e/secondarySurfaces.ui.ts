@@ -363,12 +363,46 @@ for (const width of [1440, 390, 320]) test(`main pixels stay fixed before and af
     expect(ring).toEqual({ color: 'rgb(49, 94, 197)', width: '3px' })
   }
   await capture(page, 'CAPTURE', width, scale)
+  if (phase === 'after') {
+    await expect(page.locator('.cgr-capture-prompt')).toHaveText('任务、日程或进展，都可以记在这里。')
+    await expect(page.locator('.cgr-capture-input')).toHaveAttribute('placeholder', '比如\n今天提交周报\n明天 15:00 填写报销单')
+    await expect(page.locator('.cgr-capture-secondary button')).toHaveText(['核实已有记录', '手动填写岗位'])
+    expect(await page.locator('.cgr-capture-sheet').evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true)
+  }
   await page.getByRole('textbox', { name: '要告诉 TodayAction 的内容' }).fill('例如：明天下午准备面试。')
   await expect(page.locator('.cgr-understanding')).toBeVisible()
   await capture(page, 'CAPTURE_PREVIEW', width, scale)
   await page.keyboard.press('Escape')
   await expect(page.locator('.tsui-tell-button')).toBeFocused()
   await capture(page, 'MAIN_AFTER_CAPTURE', width, scale, true)
+  expect(mutations).toEqual([])
+})
+
+test('refined capture preserves drafts through both secondary entries without writing', async ({ page }) => {
+  test.skip(phase === 'before', 'Candidate-only interaction for the explicitly changed modal')
+  const mutations = await seed(page)
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.goto('/pjsdas/today/capture')
+  const input = page.getByRole('textbox', { name: '要告诉 TodayAction 的内容' })
+  await input.fill('今天提交周报')
+  await expect(page.locator('.cgr-understanding')).toContainText('今天提交周报')
+  await input.press('Tab')
+  await expect(page.getByRole('button', { name: '核实已有记录', exact: true })).toBeFocused()
+  await page.keyboard.press('Enter')
+  await expect(page.locator('.cgr-correction-review')).toBeVisible()
+  await expect(page.getByRole('button', { name: '返回记录进展', exact: true })).toBeFocused()
+  await capture(page, 'CAPTURE_RECORD_REVIEW', 390)
+  await page.keyboard.press('Enter')
+  await expect(input).toBeFocused()
+  await expect(input).toHaveValue('今天提交周报')
+  await page.getByRole('button', { name: '手动填写岗位', exact: true }).click()
+  await page.getByRole('textbox', { name: '公司名称', exact: true }).fill('合成示例公司')
+  await capture(page, 'CAPTURE_MANUAL', 390)
+  await page.getByRole('button', { name: '用自然语言添加', exact: true }).click()
+  await expect(input).toHaveValue('今天提交周报')
+  await input.fill('周五下午开个会')
+  await expect(page.locator('.cgr-understanding-warning')).toContainText('仍需补充或确认')
+  await capture(page, 'CAPTURE_CLARIFICATION', 390)
   expect(mutations).toEqual([])
 })
 
@@ -425,8 +459,15 @@ for (const width of [1440, 390, 320]) test(`details and settings retain readable
   if (width === 320) {
     await capture(page, 'CONTEXT_CAPTURE_BOTTOM', width, 200, false, '.cgr-capture-sheet')
     const footerButtons = page.locator('.cgr-capture-footer button')
-    await expect(footerButtons).toHaveCount(phase === 'after' ? 2 : 1)
-    for (const button of await footerButtons.all()) await expect(button).toBeInViewport()
+    // Review is now grouped with manual entry as a secondary footer action.
+    await expect(footerButtons).toHaveCount(phase === 'after' ? 3 : 1)
+    for (const button of await footerButtons.all()) {
+      await expect(button).toBeInViewport()
+      if (phase === 'after') expect(await button.evaluate(element => {
+        const box = element.getBoundingClientRect(), sheet = element.closest('.cgr-capture-sheet')!.getBoundingClientRect()
+        return box.left >= sheet.left && box.right <= sheet.right && box.top >= Math.max(0, sheet.top) && box.bottom <= Math.min(innerHeight, sheet.bottom)
+      }), 'complete footer control remains visible at 200% text').toBe(true)
+    }
     if (phase === 'after') expect(await page.locator('.cgr-capture-mode').evaluate(element => parseFloat(getComputedStyle(element).fontSize))).toBeGreaterThanOrEqual(25)
   }
   await page.keyboard.press('Escape')

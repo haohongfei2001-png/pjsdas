@@ -1,5 +1,6 @@
 import { createCapturePreviewPresentation } from './capturePreviewPresentation.js'
 import ManualJobFields from './capture/ManualJobFields.js'
+import { captureExamples } from './capture/captureExamples.js'
 import { manualJobDraft, readManualJobDraft, manualJobCandidate } from './capture/manualJob.js'
 import type { UserJobFacts } from './opportunityCreation.js'
 import { lazy, Suspense, useEffect, useRef, useState } from 'react'
@@ -151,6 +152,7 @@ export default function TellPjsdasCapture({
   const [undo, setUndo] = useState<LocalSemanticUndoToken>()
   const [stableCommandId, setStableCommandId] = useState<string>()
   const textareaRef = useRef<HTMLTextAreaElement | null>(null)
+  const correctionBackRef = useRef<HTMLButtonElement | null>(null)
   const sheetRef = useRef<HTMLElement | null>(null)
   const openerRef = useRef<HTMLElement | null>(null)
   const initializedUserIdRef = useRef<string | null | undefined>(undefined)
@@ -180,6 +182,14 @@ export default function TellPjsdasCapture({
       openerRef.current?.focus()
     }
   }, [open])
+
+  useEffect(() => {
+    if (!open) return
+    // Run after capturing the opener. The secondary trigger unmounts in review
+    // mode; keep focus in the dialog and restore the preserved natural draft.
+    if (correctionMode) correctionBackRef.current?.focus()
+    else if (!manualMode) textareaRef.current?.focus()
+  }, [open, correctionMode, manualMode])
 
   useEffect(() => {
     if (!open) return
@@ -475,31 +485,35 @@ export default function TellPjsdasCapture({
       >
         <header className="cgr-capture-header">
           <div>
-            <div className="cgr-kicker">TELL TodayAction</div>
+            {!manualMode && !correctionMode ? <span className="cgr-capture-eyebrow">{zh ? '用你的话说' : 'In your own words'}</span> : null}
             <h2 id="tell-pjsdas-title">{manualMode ? (zh ? '添加岗位' : 'Add job') : (zh ? '告诉 TodayAction' : 'Tell TodayAction')}</h2>
             <p id="tell-pjsdas-description">{manualMode ? (zh ? '保存你已了解的岗位。' : 'Save a job you know about.') : zh
-              ? '记录求职进展，确认后保存。'
-              : 'Record an update, then confirm before saving.'}</p>
+              ? '想做什么，直接说。'
+              : 'What’s on your mind?'}</p>
             {contextLabel ? <span className="cgr-capture-context">{zh ? '当前上下文：' : 'Context: '}{contextLabel}</span> : null}
           </div>
           <button className="cgr-icon-button" type="button" onClick={onClose} aria-label={zh ? '关闭' : 'Close'}>×</button>
         </header>
 
-        {!manualMode ? <button type="button" className="cgr-correction-toggle" disabled={busy || recoveryLocked} onClick={() => setCorrectionMode(value => !value)}>{correctionMode ? (zh ? '返回记录进展' : 'Back to progress capture') : (zh ? '核实已有记录' : 'Review existing records')}</button> : null}
+        {correctionMode ? <button ref={correctionBackRef} type="button" className="text-button cgr-correction-toggle" disabled={busy || recoveryLocked} onClick={() => setCorrectionMode(false)}>{zh ? '返回记录进展' : 'Back to progress capture'}</button> : null}
         {correctionMode ? <Suspense fallback={<p role="status">{zh ? '正在打开核对入口…' : 'Opening review…'}</p>}><RecordCorrectionReview key={cloud.session?.user.id ?? 'signed-out'} onChanged={onChanged} /></Suspense> : <>
         {manualMode ? <ManualJobFields value={manualJob} onChange={value => { manualDraftRef.current = value; editText(manualJobDraft(value)) }} disabled={busy || recoveryLocked} zh={zh} /> : <>
+        <div className="cgr-capture-composer">
+        <label className="cgr-capture-prompt" htmlFor="tell-pjsdas-input">{zh ? '任务、日程或进展，都可以记在这里。' : 'A task, a plan, or an update. Start here.'}</label>
         <textarea
+          id="tell-pjsdas-input"
           ref={textareaRef}
           className="cgr-capture-input"
           aria-label={zh ? '要告诉 TodayAction 的内容' : 'What to tell TodayAction'}
+          aria-describedby="tell-pjsdas-input-hint"
           rows={5}
           value={text}
           disabled={busy || recoveryLocked}
           onChange={(event) => editText(event.target.value)}
-          placeholder={zh
-            ? '例如：京东笔试做完了。\n这个岗位我不投了。\n明天15:00小鹏面试。'
-            : 'For example: 京东笔试做完了。\n这个岗位我不投了。\n明天15:00小鹏面试。'}
+          placeholder={`${zh ? '比如' : 'For example'}\n${captureExamples[zh ? 'zh' : 'en'].join('\n')}`}
         />
+        <p className="cgr-capture-input-hint" id="tell-pjsdas-input-hint">{zh ? '先核对整理结果，再确认保存。不明确的内容可以继续补充。' : 'Review the result before saving. Add details if anything is unclear.'}</p>
+        </div>
 
         {text.trim() ? (
           <section className="cgr-understanding" aria-live="polite" aria-busy={previewBusy}>
@@ -524,10 +538,10 @@ export default function TellPjsdasCapture({
                     {preview.candidates.map((candidate) => <li key={candidate.id}>{candidateLabel(candidate, zh)}</li>)}
                   </ul>
                 ) : !modeNote ? (
-                  <p className="cgr-understanding-note">{zh ? '暂时没有足够明确、可写入的事实。' : 'No sufficiently clear writable fact has been identified yet.'}</p>
+                  <p className="cgr-understanding-note">{zh ? '还没有识别出可保存的内容。请补充具体事项或时间。' : 'Nothing is ready to save yet. Add the specific task or time.'}</p>
                 ) : null}
                 {preview.unresolved.length ? (
-                  <p className="cgr-understanding-warning">{zh ? `${preview.unresolved.length} 个片段仍需更明确的公司、岗位或招聘节点。` : `${preview.unresolved.length} fragment(s) still need a clearer company, role, or recruiting event.`}</p>
+                  <p className="cgr-understanding-warning">{zh ? `${preview.unresolved.length} 处内容仍需补充或确认，请核对具体事项、对象和时间。` : `${preview.unresolved.length} part(s) need clarification. Check the task, target, and time.`}</p>
                 ) : null}
                 {preview.ignored.length ? (
                   <p className="cgr-understanding-note">{zh ? `${preview.ignored.length} 个片段未作为当前事实处理（如引用的旧消息）。` : `${preview.ignored.length} fragment(s) were not treated as current facts (such as quoted history).`}</p>
@@ -545,8 +559,11 @@ export default function TellPjsdasCapture({
           onBlurCapture={event => {
             if (!event.currentTarget.contains(event.relatedTarget as Node | null)) previewPresentation.current.hold('focus', false)
           }}>
+          <div className="cgr-capture-secondary">
+          {!manualMode ? <button type="button" className="text-button cgr-correction-toggle" disabled={busy || recoveryLocked} onClick={() => setCorrectionMode(true)}>{zh ? '核实已有记录' : 'Review existing records'}</button> : null}
           <button className="text-button cgr-capture-mode" type="button" disabled={busy || recoveryLocked} onClick={switchManualMode}>{manualMode ? (zh ? '用自然语言添加' : 'Use natural language') : (zh ? '手动填写岗位' : 'Enter job manually')}</button>
           {manualMode ? <button className="text-button" type="button" disabled={busy} onClick={onClose}>{zh ? '取消' : 'Cancel'}</button> : null}
+          </div>
           <button className="cgr-primary-button" type="button" disabled={busy || !text.trim() || manualMode && (!manualJob.company.trim() || !manualJob.role.trim())} onClick={() => { void submit() }}>
             {busy ? (zh ? '正在权威保存…' : 'Saving authoritatively…')
               : saveState === 'unknown' ? (zh ? '确认保存状态' : 'Confirm save status')
@@ -574,8 +591,8 @@ export default function TellPjsdasCapture({
 
         {unresolvedCount > 0 && !decisionCount ? (
           <p className="cgr-capture-hint">{zh
-            ? '没有足够证据的片段不会进入 Today。补充公司、岗位或具体是哪一次笔试/面试即可。'
-            : 'Fragments without enough evidence do not enter Today. Add the company, role, or exact test/interview occurrence.'}</p>
+            ? '尚未明确的内容不会进入 Today。请补充具体事项、时间，或对应的已有记录。'
+            : 'Unclear content does not enter Today. Add the task, time, or matching existing record.'}</p>
         ) : null}
         {error ? (
           <div className={`cgr-capture-error state-${saveState}`} role="alert">
